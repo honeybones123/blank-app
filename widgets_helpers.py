@@ -1,3 +1,4 @@
+# widgets_helpers.py
 import streamlit as st
 
 
@@ -40,26 +41,14 @@ def apply_global_widget_css():
 
 def number_row(label, key, step, sync_callbacks, *, width_ratio=(1.5, 1), help_text=None):
     """
-    Renders:
-        [ label ]   [ number input ]
+    Renders: [ label ]  [ number input ]
     in a single row.
 
-    Keeps Streamlit session-state contract untouched.
-
-    Parameters
-    ----------
-    label : str
-        Markdown label shown on the left.
-    key : str
-        Widget key (must exist in TAB_KEYS).
-    step : float | int
-        Step for the number_input.
-    sync_callbacks : dict
-        Dict from get_sync_callbacks() used for on_change.
-    width_ratio : tuple
-        Column width ratio (label, widget).
-    help_text : str | None
-        Optional tooltip text describing what changing this value does.
+    - label: text on the left (Markdown)
+    - key: widget key (must exist in TAB_KEYS)
+    - step: number_input step
+    - sync_callbacks: dict from get_sync_callbacks()
+    - help_text: optional tooltip (shows as ? icon)
     """
     col_label, col_widget = st.columns(width_ratio)
 
