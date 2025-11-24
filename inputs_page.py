@@ -10,6 +10,12 @@ from state_and_helpers import (
 
 from widgets_helpers import apply_global_widget_css, number_row
 
+# --- Pure compute functions from design pages (called to keep summary fresh)
+from bending_page import _compute_bending_capacity
+from shear_page import _compute_shear_capacity       # you'll add this in shear_page.py
+from crack_page import _compute_crack_results       # you'll add this in crack_page.py
+from deflection import _compute_deflection_results  # you'll add this in deflection.py
+
 
 # ------------------------------------------------------------
 #  GLOBAL PAGE STYLING (margins + compact inputs)
@@ -777,3 +783,4 @@ def render_inputs():
             5.0,
             sync_callbacks,
         )
+
