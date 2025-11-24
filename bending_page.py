@@ -136,7 +136,7 @@ def _make_cross_section_figure(b, D, d, a, nb_bot, db_bot, cover_bot):
     if cover_bot is None or cover_bot < 0:
         cover_bot = 40.0
 
-    # 🔧 NEW: ensure nb_bot is treated as an integer for range()
+    # 🔧 Ensure nb_bot is treated as an integer for range()
     try:
         nb_bot_int = max(1, int(round(nb_bot)))
     except (TypeError, ValueError):
@@ -257,6 +257,35 @@ def render_bending():
     apply_global_widget_css()  # same styling as Inputs page
 
     # ============================================================
+    #  SIDEBAR GLOSSARY (BENDING TERMS)
+    # ============================================================
+    with st.sidebar.expander("📘 Glossary – Bending terms", expanded=False):
+        st.markdown(
+            """
+            **Mu*** – Factored design bending moment at the critical section (kNm).  
+            **b** – Beam/web width (mm).  
+            **D** – Overall section depth (mm).  
+            **d** – Effective depth to tension steel (mm).  
+            **Ast,bot** – Area of bottom (tension) reinforcement (mm²).  
+            **As,min** – Minimum required tensile steel for ductile behaviour.  
+            **f'c** – Concrete cylinder strength (MPa).  
+            **fsy** – Steel yield strength (MPa).  
+            **Ec, Es** – Elastic moduli of concrete and steel (MPa).  
+
+            **c** – Neutral axis depth from the top fibre (mm).  
+            **a = γc** – Equivalent rectangular stress block depth (mm).  
+            **kᵤ = c/d** – Neutral axis depth ratio (ductility indicator).  
+            **α₂, γ** – AS 3600-style stress block factors (teaching values).  
+            **ϕ** – Strength reduction factor for bending.  
+
+            **M_cr** – Cracking moment (kNm) based on f_ct,f and gross section.  
+            **M_u** – Nominal flexural capacity (kNm).  
+            **ϕM_u,cap** – Design flexural capacity (kNm).  
+            **Utilisation** – M_u* / ϕM_u,cap → should be ≤ 1.0.  
+            """
+        )
+
+    # ============================================================
     #  TOP RESULT SUMMARY (Ast, As,min, φMu, ku, utilisation)
     # ============================================================
     top_results = _compute_bending_capacity()
@@ -347,39 +376,109 @@ def render_bending():
     st.markdown("---")
 
     # ============================================================
-    #  DESIGN ACTIONS (Mu*, N*, P*)
+    #  DESIGN ACTIONS (Mu*, N*, P*) – WITH INSIGHTS
     # ============================================================
     st.subheader("Design Actions for Bending")
 
     da1, da2, da3 = st.columns(3)
 
     with da1:
-        number_row("Design moment Mu* (kNm)", "bending_Mu_star", 10.0, sync_callbacks)
+        number_row(
+            "Design moment Mu* (kNm)",
+            "bending_Mu_star",
+            10.0,
+            sync_callbacks,
+            help_text="Factored design bending moment at the critical section. "
+                      "Increasing Mu* increases bending demand and utilisation.",
+        )
     with da2:
-        number_row("Axial force N* (kN)", "bending_N_star", 50.0, sync_callbacks)
+        number_row(
+            "Axial force N* (kN)",
+            "bending_N_star",
+            50.0,
+            sync_callbacks,
+            help_text="Axial force acting with bending. Compression (negative in many conventions) "
+                      "can reduce tension in the steel; tension increases demand.",
+        )
     with da3:
-        number_row("Prestress force P* (kN)", "bending_P_star", 50.0, sync_callbacks)
+        number_row(
+            "Prestress force P* (kN)",
+            "bending_P_star",
+            50.0,
+            sync_callbacks,
+            help_text="Prestress / pre-compression in the section. Increasing P* typically "
+                      "reduces tensile demand in the bottom reinforcement.",
+        )
 
     st.markdown("---")
 
     # ============================================================
-    #  MAIN INPUTS (GEOMETRY, MATERIALS, REO)
+    #  MAIN INPUTS (GEOMETRY, MATERIALS, REO) – WITH INSIGHTS
     # ============================================================
 
     g1, g2 = st.columns(2)
 
     with g1:
         st.subheader("Geometry")
-        number_row("Width b (mm)", "bending_b", 10.0, sync_callbacks)
-        number_row("Depth D (mm)", "bending_D", 10.0, sync_callbacks)
-        number_row("Span L (mm)", "bending_L", 100.0, sync_callbacks)
+        number_row(
+            "Width b (mm)",
+            "bending_b",
+            10.0,
+            sync_callbacks,
+            help_text="Section width. Increasing b increases compression block area and "
+                      "reduces required tensile steel for a given Mu*.",
+        )
+        number_row(
+            "Depth D (mm)",
+            "bending_D",
+            10.0,
+            sync_callbacks,
+            help_text="Overall section depth. Larger D increases lever arm (d) and "
+                      "typically increases bending capacity.",
+        )
+        number_row(
+            "Span L (mm)",
+            "bending_L",
+            100.0,
+            sync_callbacks,
+            help_text="Member span. Used mainly for serviceability checks and linking to "
+                      "deflection; not directly in φMu,cap here.",
+        )
 
     with g2:
         st.subheader("Materials")
-        number_row("Concrete strength f'c (MPa)", "bending_fc", 2.0, sync_callbacks)
-        number_row("Steel yield fsy (MPa)", "bending_fsy", 10.0, sync_callbacks)
-        number_row("Ec (MPa)", "bending_Ec", 1000.0, sync_callbacks)
-        number_row("Es (MPa)", "bending_Es", 10000.0, sync_callbacks)
+        number_row(
+            "Concrete strength f'c (MPa)",
+            "bending_fc",
+            2.0,
+            sync_callbacks,
+            help_text="Concrete compressive strength. Higher f'c increases compression "
+                      "capacity and may reduce required steel, but also changes ductility limits.",
+        )
+        number_row(
+            "Steel yield fsy (MPa)",
+            "bending_fsy",
+            10.0,
+            sync_callbacks,
+            help_text="Yield strength of reinforcing steel. Higher fsy increases the "
+                      "force carried by a given area of steel.",
+        )
+        number_row(
+            "Ec (MPa)",
+            "bending_Ec",
+            1000.0,
+            sync_callbacks,
+            help_text="Short-term modulus of concrete. Mainly affects stiffness and "
+                      "SLS behaviour rather than φMu,cap.",
+        )
+        number_row(
+            "Es (MPa)",
+            "bending_Es",
+            10000.0,
+            sync_callbacks,
+            help_text="Steel modulus. Typically ~200,000 MPa; affects cracked-section "
+                      "stiffness and strain calculations.",
+        )
 
     st.markdown("---")
 
@@ -387,17 +486,71 @@ def render_bending():
 
     with r1:
         st.subheader("Bottom Longitudinal Reinforcement")
-        number_row("Number of bottom bars nb_bot", "bending_nb_bot", 1, sync_callbacks)
-        number_row("Bottom bar diameter db_bot (mm)", "bending_db_bot", 2.0, sync_callbacks)
-        number_row("Bottom row gap (mm)", "bending_rowgap_bot", 5.0, sync_callbacks)
-        number_row("Bottom cover (mm)", "bending_cover_bot", 5.0, sync_callbacks)
+        number_row(
+            "Number of bottom bars nb_bot",
+            "bending_nb_bot",
+            1,
+            sync_callbacks,
+            help_text="Number of tension bars at the bottom. Increasing nb_bot increases Ast,bot "
+                      "and hence bending capacity.",
+        )
+        number_row(
+            "Bottom bar diameter db_bot (mm)",
+            "bending_db_bot",
+            2.0,
+            sync_callbacks,
+            help_text="Nominal diameter of bottom bars (e.g. N24 = 24 mm). Larger diameter "
+                      "bars increase Ast,bot but may impact spacing and ductility.",
+        )
+        number_row(
+            "Bottom row gap (mm)",
+            "bending_rowgap_bot",
+            5.0,
+            sync_callbacks,
+            help_text="Vertical gap between bottom bar rows (if 2 rows are used). Increasing "
+                      "this moves the second row further from the tension face, increasing its lever arm.",
+        )
+        number_row(
+            "Bottom cover (mm)",
+            "bending_cover_bot",
+            5.0,
+            sync_callbacks,
+            help_text="Concrete cover to bottom reinforcement. Increasing cover reduces "
+                      "effective depth d and reduces φMu,cap, but may be required for durability.",
+        )
 
     with r2:
         st.subheader("Top Longitudinal Reinforcement")
-        number_row("Number of top bars nb_top", "bending_nb_top", 1, sync_callbacks)
-        number_row("Top bar diameter db_top (mm)", "bending_db_top", 2.0, sync_callbacks)
-        number_row("Top row gap (mm)", "bending_rowgap_top", 5.0, sync_callbacks)
-        number_row("Top cover (mm)", "bending_cover_top", 5.0, sync_callbacks)
+        number_row(
+            "Number of top bars nb_top",
+            "bending_nb_top",
+            1,
+            sync_callbacks,
+            help_text="Number of top bars (compression or hanger steel). "
+                      "Important for negative moment regions and detailing.",
+        )
+        number_row(
+            "Top bar diameter db_top (mm)",
+            "bending_db_top",
+            2.0,
+            sync_callbacks,
+            help_text="Nominal diameter of top bars (e.g. N16 = 16 mm).",
+        )
+        number_row(
+            "Top row gap (mm)",
+            "bending_rowgap_top",
+            5.0,
+            sync_callbacks,
+            help_text="Vertical gap between top bar rows if more than one row is used.",
+        )
+        number_row(
+            "Top cover (mm)",
+            "bending_cover_top",
+            5.0,
+            sync_callbacks,
+            help_text="Concrete cover to top reinforcement. Affects effective depth to "
+                      "compression reinforcement and durability.",
+        )
 
     st.markdown("---")
 
@@ -707,3 +860,7 @@ def render_bending():
     # Debug view of session_state (read-only in UI)
     with st.expander("Debug: raw session_state (optional)"):
         st.write(dict(st.session_state))
+
+
+if __name__ == "__main__":
+    render_bending()
