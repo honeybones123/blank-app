@@ -15,6 +15,22 @@ from widgets_helpers import apply_global_widget_css, number_row
 
 
 # ------------------------------------------------------------
+#  Small formatting helper for tables
+# ------------------------------------------------------------
+
+def _fmt(val, pattern="{:.2f}"):
+    """Safe formatter for table values."""
+    try:
+        if val is None:
+            return "—"
+        if isinstance(val, float) and math.isnan(val):
+            return "—"
+        return pattern.format(val)
+    except Exception:
+        return "—"
+
+
+# ------------------------------------------------------------
 #  BENDING CAPACITY CALC (α2–γ stress block, AS3600 Cl. 8.1.3)
 # ------------------------------------------------------------
 
@@ -137,14 +153,11 @@ def _make_cross_section_figure(
     c=None,
     z=None,
 ):
-    """
-    Front cross-section with compression zone + top + bottom bars + labels.
-    """
-
+    """Front cross-section with compression zone + top + bottom bars + labels."""
     if None in (b, D):
         return None
 
-    # Defaults and safety for bottom bars
+    # Defaults for bottom bars
     if nb_bot is None or nb_bot < 1:
         nb_bot = 3
     if db_bot is None or db_bot <= 0:
@@ -152,7 +165,7 @@ def _make_cross_section_figure(
     if cover_bot is None or cover_bot <= 0:
         cover_bot = 40.0
 
-    # Defaults and safety for top bars
+    # Default values for top bars
     if nb_top is None or nb_top < 1:
         nb_top = 2
     if db_top is None or db_top <= 0:
@@ -160,39 +173,31 @@ def _make_cross_section_figure(
     if cover_top is None or cover_top <= 0:
         cover_top = 40.0
 
+    # Safe integer nb's
     nb_bot = max(1, int(round(nb_bot)))
     nb_top = max(1, int(round(nb_top)))
 
-    # Fallback effective depth
-    if d is None or math.isnan(d):
-        d = 0.9 * D
-
-    # Fallback compression block depth
-    if a is None or math.isnan(a) or a <= 0:
-        a = 0.15 * D
-
     fig, ax = plt.subplots(figsize=(4.5, 7))
 
-    # Outer concrete outline
+    # Outline
     outline = Rectangle((0, 0), b, D, fill=False, linewidth=2)
     ax.add_patch(outline)
 
     # Compression block
+    if a is None or (isinstance(a, float) and math.isnan(a)) or a <= 0:
+        a = 0.15 * D
+
     comp = Rectangle((0, 0), b, a, facecolor="#c7e3ff", edgecolor="none")
     ax.add_patch(comp)
-    ax.text(
-        b / 2,
-        a / 2,
-        "Compression\nzone",
-        ha="center",
-        va="center",
-        fontsize=10,
-    )
+    ax.text(b / 2, a / 2, "Compression\nzone", ha="center", va="center", fontsize=10)
 
     # -------------------------
-    # Bottom reo (red)
+    # Bottom reo
     # -------------------------
+    if d is None or (isinstance(d, float) and math.isnan(d)):
+        d = 0.9 * D
     y_bot = d
+
     inner_width_bot = b - 2 * cover_bot
     if inner_width_bot < db_bot:
         inner_width_bot = db_bot
@@ -205,19 +210,14 @@ def _make_cross_section_figure(
 
     for x in xs_bot:
         ax.add_patch(
-            Circle(
-                (x, y_bot),
-                radius=db_bot / 2,
-                fill=False,
-                edgecolor="red",
-                linewidth=1.6,
-            )
+            Circle((x, y_bot), radius=db_bot / 2, fill=False, linewidth=1.6)
         )
 
     # -------------------------
-    # Top reo (blue)
+    # TOP reo
     # -------------------------
     y_top = cover_top + db_top / 2
+
     inner_width_top = b - 2 * cover_top
     if inner_width_top < db_top:
         inner_width_top = db_top
@@ -234,75 +234,57 @@ def _make_cross_section_figure(
                 (x, y_top),
                 radius=db_top / 2,
                 fill=False,
-                edgecolor="blue",
+                edgecolor="black",
                 linewidth=1.6,
             )
         )
 
     # -------------------------
-    # LABELS (c, a, d, z) on RHS
+    # LABELS (c, a, d, z)
     # -------------------------
-    x_label = b + 10.0
-    text_offset = 8.0
-
-    # c: from top fibre (0) down to c
-    if c is not None and not math.isnan(c):
+    # c label
+    if c is not None and not (isinstance(c, float) and math.isnan(c)):
         ax.annotate(
-            "",
-            xy=(x_label, c),
-            xytext=(x_label, 0.0),
+            "c",
+            xy=(b + 10, c / 2),
+            xytext=(b + 40, c / 2),
             arrowprops=dict(arrowstyle="<->"),
-        )
-        ax.text(
-            x_label + text_offset,
-            c / 2.0,
-            f"c = {c:.0f} mm",
             va="center",
         )
+        ax.text(b + 45, c / 2, f"{c:.0f} mm", va="center")
 
-    # a: from top fibre (0) down to a
-    if a is not None and not math.isnan(a):
+    # a label
+    if a is not None and not (isinstance(a, float) and math.isnan(a)):
         ax.annotate(
-            "",
-            xy=(x_label + 25, a),
-            xytext=(x_label + 25, 0.0),
-            arrowprops=dict(arrowstyle="<->"),
-        )
-        ax.text(
-            x_label + 25 + text_offset,
-            a / 2.0,
             "a",
+            xy=(b + 10, a / 2),
+            xytext=(b + 40, a / 2),
+            arrowprops=dict(arrowstyle="<->"),
             va="center",
         )
 
-    # d: from top fibre (0) down to d
-    if d is not None and not math.isnan(d):
+    # d label
+    if d is not None and not (isinstance(d, float) and math.isnan(d)):
         ax.annotate(
-            "",
-            xy=(x_label, d),
-            xytext=(x_label, 0.0),
+            "d",
+            xy=(b + 10, d / 2),
+            xytext=(b + 40, d / 2),
             arrowprops=dict(arrowstyle="<->"),
-        )
-        ax.text(
-            x_label + text_offset,
-            d / 2.0,
-            f"d = {d:.0f} mm",
             va="center",
         )
 
-    # z: from depth a to depth d
-    if z is not None and not math.isnan(z) and d is not None:
-        y_mid_z = a + 0.5 * (d - a)
+    # z label
+    if (
+        z is not None
+        and not (isinstance(z, float) and math.isnan(z))
+        and a is not None
+        and not (isinstance(a, float) and math.isnan(a))
+    ):
         ax.annotate(
-            "",
-            xy=(x_label + 50, d),
-            xytext=(x_label + 50, a),
+            "z",
+            xy=(b + 10, d - z / 2),
+            xytext=(b + 40, d - z / 2),
             arrowprops=dict(arrowstyle="<->"),
-        )
-        ax.text(
-            x_label + 50 + text_offset,
-            y_mid_z,
-            f"z = {z:.0f} mm",
             va="center",
         )
 
@@ -310,7 +292,7 @@ def _make_cross_section_figure(
     # Axes settings
     # -------------------------
     ax.set_xlim(-20, b + 120)
-    ax.set_ylim(D + 40, -40)  # depth downward
+    ax.set_ylim(D + 40, -40)
     ax.set_aspect("equal", "box")
     ax.set_xlabel("Width (mm)")
     ax.set_ylabel("Depth (mm)")
@@ -767,29 +749,25 @@ def render_bending():
     Mu_min = 1.2 * Mcr if not math.isnan(Mcr) else float("nan")
 
     # ============================================================
-    #  DETAILED SUMMARY TEXT (with equations)
+    #  REPLACED DETAILED SUMMARY – NOW JUST A TABLE
     # ============================================================
-    st.subheader("Bending Capacity – Detailed Summary")
+    st.subheader("Bending Capacity – Detailed Summary (values only)")
 
-    # --- key section / material parameters for showing equations ---
-    fc_local = get_param("fc", 40.0)          # MPa
-    b_local = get_param("b", 400.0)           # mm
-    D_local = get_param("D", 600.0)           # mm
-    cover_bot_local = get_param("cover_bot", 40.0)
-    db_bot_local = get_param("db_bot", 20.0)
-    nb_bot_local = int(get_param("nb_bot", 4))
+    # Local copies for stress-block per code (for the table & ULS tab)
+    fc_local = fc if fc is not None else 40.0
+    D_local = D if D is not None else 600.0
+    cover_bot_local = cover_bot if cover_bot is not None else 40.0
+    db_bot_local = db_bot if db_bot is not None else 20.0
+    nb_bot_local = int(nb_bot) if nb_bot is not None else 4
 
-    # Effective depth (fallback if not yet in state)
-    d_eff = get_param("d_eff", None)
-    if d_eff is None:
+    d_eff = d
+    if d_eff is None or (isinstance(d_eff, float) and math.isnan(d_eff)):
         d_eff = D_local - cover_bot_local - 0.5 * db_bot_local
 
-    # Bottom steel area
-    Ast_bot = get_param("Ast_bot", None)
-    if Ast_bot is None:
+    Ast_bot = Ast
+    if Ast_bot is None or (isinstance(Ast_bot, float) and math.isnan(Ast_bot)):
         Ast_bot = nb_bot_local * math.pi * db_bot_local**2 / 4.0
 
-    # Stress-block factors from AS 3600:2018 Cl. 8.1.3
     alpha2_raw = 0.85 - 0.0015 * fc_local
     gamma_raw = 0.97 - 0.0025 * fc_local
     alpha2_sb = max(0.67, alpha2_raw)
@@ -797,60 +775,41 @@ def render_bending():
     phi_b = get_param("phi_bend", 0.85)
     ku_sb = ku if ku is not None else float("nan")
 
-    # --- Section properties (equations + substitution) ---
-    st.markdown("### Section properties")
+    Mu_nom_report = phi_Mu_cap / phi if phi and phi > 0 else float("nan")
 
-    st.markdown(
-        rf"- **Effective depth**  "
-        rf"$d = D - \text{{cover}}_{{\text{{bot}}}} - \dfrac{{d_{{b,\text{{bot}}}}}}2"
-        rf" = {D_local:.1f} - {cover_bot_local:.1f} - \dfrac{{{db_bot_local:.1f}}}2"
-        rf" = {d_eff:.1f}\ \text{{mm}}$"
-    )
+    rows = [
+        {"Parameter": "Beam width", "Symbol": "b", "Value": _fmt(b, "{:.1f}"), "Units": "mm"},
+        {"Parameter": "Overall depth", "Symbol": "D", "Value": _fmt(D, "{:.1f}"), "Units": "mm"},
+        {"Parameter": "Effective depth", "Symbol": "d", "Value": _fmt(d_eff, "{:.1f}"), "Units": "mm"},
+        {"Parameter": "Bottom cover", "Symbol": "cover_bot", "Value": _fmt(cover_bot, "{:.1f}"), "Units": "mm"},
+        {"Parameter": "Bottom bar dia.", "Symbol": "db_bot", "Value": _fmt(db_bot, "{:.1f}"), "Units": "mm"},
+        {"Parameter": "No. bottom bars", "Symbol": "nb_bot", "Value": _fmt(nb_bot, "{:.0f}"), "Units": "-"},
+        {"Parameter": "Bottom steel area", "Symbol": "Ast,bot", "Value": _fmt(Ast_bot, "{:.1f}"), "Units": "mm²"},
+        {"Parameter": "Concrete strength", "Symbol": "f'c", "Value": _fmt(fc, "{:.1f}"), "Units": "MPa"},
+        {"Parameter": "Steel yield", "Symbol": "fsy", "Value": _fmt(fsy, "{:.1f}"), "Units": "MPa"},
+        {"Parameter": "Flexural tensile strength", "Symbol": "fct,f", "Value": _fmt(fctf, "{:.3f}"), "Units": "MPa"},
+        {"Parameter": "Gross I", "Symbol": "Ig", "Value": _fmt(I_gross, "{:.3e}"), "Units": "mm⁴"},
+        {"Parameter": "Gross Z", "Symbol": "Zg", "Value": _fmt(Z_gross, "{:.3e}"), "Units": "mm³"},
+        {"Parameter": "Cracking moment", "Symbol": "Mcr", "Value": _fmt(Mcr, "{:.2f}"), "Units": "kNm"},
+        {"Parameter": "Teaching min moment", "Symbol": "Mu,min", "Value": _fmt(Mu_min, "{:.2f}"), "Units": "kNm"},
+        {"Parameter": "α₂ raw", "Symbol": "α2_raw", "Value": _fmt(alpha2_raw, "{:.3f}"), "Units": "-"},
+        {"Parameter": "α₂ adopted", "Symbol": "α2", "Value": _fmt(alpha2_sb, "{:.3f}"), "Units": "-"},
+        {"Parameter": "γ raw", "Symbol": "γ_raw", "Value": _fmt(gamma_raw, "{:.3f}"), "Units": "-"},
+        {"Parameter": "γ adopted", "Symbol": "γ", "Value": _fmt(gamma_sb, "{:.3f}"), "Units": "-"},
+        {"Parameter": "Strength reduction", "Symbol": "φb", "Value": _fmt(phi_b, "{:.3f}"), "Units": "-"},
+        {"Parameter": "Neutral axis depth", "Symbol": "c", "Value": _fmt(c, "{:.2f}"), "Units": "mm"},
+        {"Parameter": "Block depth", "Symbol": "a = γc", "Value": _fmt(a, "{:.2f}"), "Units": "mm"},
+        {"Parameter": "Neutral axis ratio", "Symbol": "ku = c/d", "Value": _fmt(ku_sb, "{:.3f}"), "Units": "-"},
+        {"Parameter": "Lever arm", "Symbol": "z", "Value": _fmt(z, "{:.2f}"), "Units": "mm"},
+        {"Parameter": "Nominal moment", "Symbol": "Mu", "Value": _fmt(Mu_nom_report, "{:.2f}"), "Units": "kNm"},
+        {"Parameter": "Design moment cap.", "Symbol": "φMu,cap", "Value": _fmt(phi_Mu_cap, "{:.2f}"), "Units": "kNm"},
+        {"Parameter": "Design moment used", "Symbol": "Mu*", "Value": _fmt(Mu_star, "{:.2f}"), "Units": "kNm"},
+        {"Parameter": "Utilisation", "Symbol": "Mu*/φMu,cap", "Value": _fmt(Mu_util, "{:.3f}"), "Units": "-"},
+        {"Parameter": "Minimum steel", "Symbol": "As,min", "Value": _fmt(As_min, "{:.1f}"), "Units": "mm²"},
+    ]
 
-    st.markdown(
-        rf"- **Bottom steel area**  "
-        rf"$A_{{st,bot}} = n_{{b,\text{{bot}}}}\;\dfrac{{\pi d_{{b,\text{{bot}}}}^2}}4"
-        rf" = {nb_bot_local:d}\;\dfrac{{\pi \times {db_bot_local:.1f}^2}}4"
-        rf" = {Ast_bot:.1f}\ \text{{mm}}^2$"
-    )
-
-    # ------------------------------------------------
-    # Stress-block (AS 3600:2018 Cl. 8.1.3)
-    # ------------------------------------------------
-    st.markdown("### Stress-block (teaching model) – AS 3600:2018 Cl. 8.1.3")
-    st.markdown(
-        "**Rectangular stress block parameters "
-        "(AS 3600:2018 Cl. 8.1.3)**"
-    )
-
-    # α2 on its own lines
-    st.markdown("**α₂ factor**")
-    st.latex(r"\alpha_2 = 0.85 - 0.0015\,f'_c \; (\ge 0.67)")
-    st.latex(
-        rf"\alpha_2 = 0.85 - 0.0015 \times {fc_local:.1f}"
-        rf" = {alpha2_raw:.3f}"
-    )
-    st.latex(
-        rf"\Rightarrow \alpha_2 = {alpha2_sb:.3f}"
-    )
-
-    # γ on its own lines
-    st.markdown("**γ factor**")
-    st.latex(r"\gamma = 0.97 - 0.0025\,f'_c \; (\ge 0.67)")
-    st.latex(
-        rf"\gamma = 0.97 - 0.0025 \times {fc_local:.1f}"
-        rf" = {gamma_raw:.3f}"
-    )
-    st.latex(
-        rf"\Rightarrow \gamma = {gamma_sb:.3f}"
-    )
-
-    # φ_b and k_u as a short line of text
-    st.markdown(
-        rf"**Strength reduction and NA ratio:** "
-        rf"\phi_b = {phi_b:.3f}, "
-        rf"k_u = {ku_sb:.3f}."
-    )
+    df_summary = pd.DataFrame(rows)
+    st.table(df_summary)
 
     st.markdown("---")
 
@@ -864,16 +823,14 @@ def render_bending():
         st.subheader("ULS Calculation (step-by-step)")
 
         if phi_Mu_cap > 0 and d and Ast:
-            # NOTE: text column narrower, diagram column wider
-            col_text, col_fig = st.columns([1.0, 1.4])
+            # narrower text column, wider diagram column
+            col_text, col_fig = st.columns([1.3, 1])
 
             # ===========================
             #  LEFT: TEXT / CALCS
             # ===========================
             with col_text:
-                # -------------------------------------------------
                 # 1. REQUIRED CALCULATED INPUTS FOR BENDING
-                # -------------------------------------------------
                 st.markdown("### 1. Required calculated inputs for bending")
 
                 # 1.1 Effective depth d
@@ -894,9 +851,7 @@ def render_bending():
 
                 st.markdown("---")
 
-                # -------------------------------------------------
                 # 2. STRESS-BLOCK PARAMETERS (AS 3600:2018 CL. 8.1.3)
-                # -------------------------------------------------
                 st.markdown(
                     "### 2. Stress-block parameters "
                     "(AS 3600:2018 Cl. 8.1.3)"
@@ -909,7 +864,7 @@ def render_bending():
                     rf"\alpha_2 = 0.85 - 0.0015 \times {fc:.1f}"
                     rf" = {alpha2_raw:.3f}"
                 )
-                st.latex(rf"\Rightarrow \alpha_2 = {alpha2:.3f}")
+                st.latex(rf"\Rightarrow \alpha_2 = {alpha2_sb:.3f}")
 
                 # 2.2 gamma factor
                 st.markdown("#### 2.2 $\\gamma$ factor")
@@ -918,19 +873,17 @@ def render_bending():
                     rf"\gamma = 0.97 - 0.0025 \times {fc:.1f}"
                     rf" = {gamma_raw:.3f}"
                 )
-                st.latex(rf"\Rightarrow \gamma = {gamma:.3f}")
+                st.latex(rf"\Rightarrow \gamma = {gamma_sb:.3f}")
 
                 # 2.3 strength reduction and neutral-axis ratio
                 st.markdown("#### 2.3 Strength reduction and NA ratio")
-                st.latex(rf"\phi_b = {phi:.2f}")
+                st.latex(rf"\phi_b = {phi_b:.2f}")
                 st.latex(r"k_u = \dfrac{c}{d}")
-                st.latex(rf"k_u = \dfrac{{{c:.2f}}}{{{d:.1f}}} = {ku:.3f}")
+                st.latex(rf"k_u = \dfrac{{{c:.2f}}}{{{d:.1f}}} = {ku_sb:.3f}")
 
                 st.markdown("---")
 
-                # -------------------------------------------------
                 # 3. MINIMUM STRENGTH REQUIREMENTS (AS 3600 CL. 8.1.6)
-                # -------------------------------------------------
                 st.markdown(
                     "### 3. Minimum strength requirements "
                     "(self-weight check – AS 3600 Cl. 8.1.6)"
@@ -979,7 +932,7 @@ def render_bending():
                 )
 
                 # 3.5 Minimum required ultimate strength (teaching rule)
-                Muo_min = Mu_min  # already 1.2 * Mcr from earlier
+                Muo_min = Mu_min
                 st.markdown(
                     "#### 3.5 Minimum required ultimate strength "
                     "$(M_{uo})_{min}$ (teaching simplification)"
@@ -1016,9 +969,7 @@ def render_bending():
 
                 st.markdown("---")
 
-                # -------------------------------------------------
                 # 4. ULTIMATE FLEXURAL CAPACITY (φMu,cap)
-                # -------------------------------------------------
                 st.markdown(
                     "### 4. Ultimate flexural capacity $\\phi M_{u,cap}$"
                 )
@@ -1040,8 +991,8 @@ def render_bending():
                     r"c = \dfrac{T}{\alpha_2 f'_c b \gamma}"
                 )
                 st.latex(
-                    rf"c = \dfrac{{{T:,.1f}}}{{{alpha2:.2f} \times {fc:.1f}"
-                    rf" \times {b:.1f} \times {gamma:.2f}}}"
+                    rf"c = \dfrac{{{T:,.1f}}}{{{alpha2_sb:.2f} \times {fc:.1f}"
+                    rf" \times {b:.1f} \times {gamma_sb:.2f}}}"
                     rf" = {c:.2f}\,\text{{ mm}}"
                 )
 
@@ -1049,7 +1000,7 @@ def render_bending():
                 st.markdown("#### 4.2 Lever arm and nominal moment $M_u$")
                 st.latex(r"a = \gamma c,\quad z = d - \dfrac{a}{2}")
                 st.latex(
-                    rf"a = {gamma:.2f} \times {c:.2f}"
+                    rf"a = {gamma_sb:.2f} \times {c:.2f}"
                     rf" = {a:.2f}\,\text{{ mm}}"
                 )
                 st.latex(
@@ -1103,25 +1054,16 @@ def render_bending():
                 st.markdown("#### ULS diagrams")
 
                 sec_fig = _make_cross_section_figure(
-                    b,
-                    D,
-                    d,
-                    a,
-                    nb_bot,
-                    db_bot,
-                    cover_bot,
-                    nb_top=nb_top,
-                    db_top=db_top,
-                    cover_top=cover_top,
-                    c=c,
-                    z=z,
+                    b, D, d, a, nb_bot, db_bot, cover_bot,
+                    nb_top=nb_top, db_top=db_top, cover_top=cover_top,
+                    c=c, z=z
                 )
                 if sec_fig is not None:
                     st.pyplot(sec_fig, use_container_width=True)
                     plt.close(sec_fig)
 
                 stress_fig = _make_stress_figure(
-                    fc, fsy, alpha2, D, d, c
+                    fc, fsy, alpha2_sb, D, d, c
                 )
                 if stress_fig is not None:
                     st.pyplot(stress_fig, use_container_width=True)
