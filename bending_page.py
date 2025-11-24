@@ -749,7 +749,7 @@ def render_bending():
     Mu_min = 1.2 * Mcr if not math.isnan(Mcr) else float("nan")
 
     # ============================================================
-    #  REPLACED DETAILED SUMMARY – NOW JUST A TABLE
+    #  DETAILED SUMMARY – CLEAN TABLE
     # ============================================================
     st.subheader("Bending Capacity – Detailed Summary (values only)")
 
@@ -777,8 +777,7 @@ def render_bending():
 
     Mu_nom_report = phi_Mu_cap / phi if phi and phi > 0 else float("nan")
 
-    # ---------- UPDATED SUMMARY TABLE LIST ----------
-           rows = [
+    rows = [
         {
             "Parameter": "Minimum steel",
             "Symbol": "As,min",
@@ -798,7 +797,7 @@ def render_bending():
             "Units": "kNm",
         },
         {
-            "Parameter": "Gross Z",
+            "Parameter": "Gross section modulus",
             "Symbol": "Zg",
             "Value": _fmt(Z_gross, "{:.3e}"),
             "Units": "mm³",
@@ -865,6 +864,10 @@ def render_bending():
         },
     ]
 
+    df_summary = pd.DataFrame(rows)
+    st.table(df_summary)
+
+    st.markdown("---")
 
     # ============================================================
     #  STEP-BY-STEP TABS (ULS / SLS ONLY)
@@ -936,7 +939,7 @@ def render_bending():
 
                 st.markdown("---")
 
-                                # 3. MINIMUM STRENGTH REQUIREMENTS (AS 3600 CL. 8.1.6)
+                # 3. MINIMUM STRENGTH REQUIREMENTS (AS 3600 CL. 8.1.6)
                 st.markdown(
                     "### 3. Minimum strength requirements "
                     "(self-weight check – AS 3600 Cl. 8.1.6)"
@@ -1010,6 +1013,7 @@ def render_bending():
                     rf"$M_{{u,\min}} \approx 1.2\,M_{{cr}} = {Muo_min:.2f}$ kNm."
                 )
 
+                st.markdown("---")
 
                 # 4. ULTIMATE FLEXURAL CAPACITY (φMu,cap)
                 st.markdown(
@@ -1194,6 +1198,3 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
-
-
-
