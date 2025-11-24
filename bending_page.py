@@ -639,36 +639,46 @@ def render_bending():
         rf" = {Ast_bot:.1f}\ \text{{mm}}^2$"
     )
     
-# ------------------------------------------------------------
-# Stress-block (AS 3600:2018 Cl. 8.1.3)
-# ------------------------------------------------------------
-st.markdown("### Stress-block (teaching model) – AS 3600:2018 Cl. 8.1.3")
-st.markdown("**Rectangular stress block parameters (AS 3600:2018 Cl. 8.1.3)**")
+    # ------------------------------------------------
+    # Stress-block (AS 3600:2018 Cl. 8.1.3)
+    # ------------------------------------------------
+    st.markdown("### Stress-block (teaching model) – AS 3600:2018 Cl. 8.1.3")
+    st.markdown(
+        "**Rectangular stress block parameters "
+        "(AS 3600:2018 Cl. 8.1.3)**"
+    )
 
-# α2 section
-st.markdown("**α₂ factor**")
-st.latex(r"\alpha_2 = 0.85 - 0.0015\,f'_c \quad (\ge 0.67)")
-st.latex(
-    rf"\alpha_2 = 0.85 - 0.0015 \times {fc:.1f}"
-    rf" = {alpha2_raw:.3f}"
-)
-st.latex(rf"\Rightarrow \alpha_2 = {alpha2:.3f}")
+    # α2 on its own lines
+    st.markdown("**α₂ factor**")
+    st.latex(r"\alpha_2 = 0.85 - 0.0015\,f'_c \; (\ge 0.67)")
+    st.latex(
+        rf"\alpha_2 = 0.85 - 0.0015 \times {fc:.1f}"
+        rf" = {alpha2_raw:.3f}"
+    )
+    st.latex(
+        rf"\Rightarrow \alpha_2 = {alpha2:.3f}"
+    )
 
-# γ section
-st.markdown("**γ factor**")
-st.latex(r"\gamma = 0.97 - 0.0025\,f'_c \quad (\ge 0.67)")
-st.latex(
-    rf"\gamma = 0.97 - 0.0025 \times {fc:.1f}"
-    rf" = {gamma_raw:.3f}"
-)
-st.latex(rf"\Rightarrow \gamma = {gamma:.3f}")
+    # γ on its own lines
+    st.markdown("**γ factor**")
+    st.latex(r"\gamma = 0.97 - 0.0025\,f'_c \; (\ge 0.67)")
+    st.latex(
+        rf"\gamma = 0.97 - 0.0025 \times {fc:.1f}"
+        rf" = {gamma_raw:.3f}"
+    )
+    st.latex(
+        rf"\Rightarrow \gamma = {gamma:.3f}"
+    )
 
-# φ_b and k_u short line
-st.markdown(
-    rf"**Strength reduction and NA ratio:**  "
-    rf"\(\phi_b = {phi_b:.3f}\), "
-    rf"\(k_u = {ku:.3f}\)."
-)
+    # φ_b and k_u as a short line of text
+    st.markdown(
+        rf"**Strength reduction and NA ratio:** "
+        rf"\phi_b = {phi_b:.3f}, "
+        rf"k_u = {ku:.3f}."
+    )
+
+    # --- ULS flexural capacity bullet summary ---
+
 
 
 
@@ -928,4 +938,5 @@ st.markdown(
 
 if __name__ == "__main__":
     render_bending()
+
 
