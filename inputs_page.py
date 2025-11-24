@@ -528,7 +528,276 @@ def render_inputs():
     sync_callbacks = get_sync_callbacks()
     apply_global_widget_css()
 
-        # Always keep summary in sync with latest inputs
+    # Container for the summary at the very top of the page.
+    # We'll fill it AFTER widgets + compute, so it always uses
+    # the latest synced values, but it still appears at the top.
+    summary_container = st.container()
+
+    st.markdown("---")
+
+    # ---------- inputs + 3D beam ----------
+    left_col, right_col = st.columns([1.2, 1.8])
+
+    with left_col:
+        st.subheader("Design Actions")
+        number_row(
+            "Design moment Mu* (kNm)",
+            "inputs_Mu_star",
+            10.0,
+            sync_callbacks,
+            help_text="Factored design bending moment at the critical section.",
+        )
+        number_row(
+            "Applied prestress P* (kN)",
+            "inputs_P_star",
+            10.0,
+            sync_callbacks,
+            help_text="Net prestress force at the section (compression positive).",
+        )
+        number_row(
+            "Design torsion Tu* (kNm)",
+            "inputs_Tu_star",
+            1.0,
+            sync_callbacks,
+            help_text="Factored torsion; used on torsion page (placeholder here).",
+        )
+        number_row(
+            "Design shear Vu* (kN)",
+            "inputs_Vu_star",
+            10.0,
+            sync_callbacks,
+            help_text="Factored design shear at the critical section.",
+        )
+        number_row(
+            "Axial force N* (kN)",
+            "inputs_N_star",
+            10.0,
+            sync_callbacks,
+            help_text="Axial action at the section (+compression / −tension).",
+        )
+
+        st.markdown("---")
+
+        st.subheader("Geometry")
+        number_row(
+            "Width b (mm)",
+            "inputs_b",
+            10.0,
+            sync_callbacks,
+            help_text="Beam/web width.",
+        )
+        number_row(
+            "Depth D (mm)",
+            "inputs_D",
+            10.0,
+            sync_callbacks,
+            help_text="Overall section depth from compression face to soffit.",
+        )
+        number_row(
+            "Span L (mm)",
+            "inputs_L",
+            100.0,
+            sync_callbacks,
+            help_text="Clear span used for deflection checks.",
+        )
+
+        st.markdown("---")
+
+        st.subheader("Materials")
+        number_row(
+            "Concrete strength f'c (MPa)",
+            "inputs_fc",
+            2.0,
+            sync_callbacks,
+            help_text="Characteristic compressive strength of concrete.",
+        )
+        number_row(
+            "Steel yield fsy (MPa)",
+            "inputs_fsy",
+            10.0,
+            sync_callbacks,
+            help_text="Yield stress of flexural reinforcement.",
+        )
+        number_row(
+            "Ec (MPa)",
+            "inputs_Ec",
+            1000.0,
+            sync_callbacks,
+            help_text="Short-term modulus of elasticity of concrete.",
+        )
+        number_row(
+            "Es (MPa)",
+            "inputs_Es",
+            5000.0,
+            sync_callbacks,
+            help_text="Elastic modulus of reinforcing steel.",
+        )
+
+    with right_col:
+        st.subheader("3D Beam – Bending & Shear Visual (Section A)")
+        fig3d = make_beam_3d_figure()
+        st.plotly_chart(fig3d, use_container_width=True)
+
+    st.markdown("---")
+
+    # ---------- reo + shear + crack ----------
+    reo_col, crack_col = st.columns(2)
+
+    # left column: bottom reo + side cover + shear
+    with reo_col:
+        st.subheader("Bottom Reinforcement")
+        number_row(
+            "Number of bottom bars",
+            "inputs_nb_bot",
+            1,
+            sync_callbacks,
+            help_text="Number of tension bars at the soffit in Section A.",
+        )
+        number_row(
+            "Bottom bar diameter db,bot (mm)",
+            "inputs_db_bot",
+            1.0,
+            sync_callbacks,
+            help_text="Nominal diameter of bottom bars.",
+        )
+        number_row(
+            "Bottom row gap (mm)",
+            "inputs_rowgap_bot",
+            5.0,
+            sync_callbacks,
+            help_text="Vertical gap between bottom rows if two layers are used.",
+        )
+        number_row(
+            "Bottom cover (mm)",
+            "inputs_cover_bot",
+            5.0,
+            sync_callbacks,
+            help_text="Clear cover to the bottom bars.",
+        )
+
+        # side cover – local only, styled like the others
+        cover_top_val = float(get_param("cover_top", 40.0) or 40.0)
+        cover_bot_val = float(get_param("cover_bot", 40.0) or 40.0)
+        default_side_cover = min(cover_top_val, cover_bot_val)
+
+        # NOTE: column split [1.3, 1] to match number_row label/input ratio
+        sc_label_col, sc_input_col = st.columns([1.3, 1])
+        with sc_label_col:
+            st.markdown("Side cover (mm)")
+        with sc_input_col:
+            # Wrap input in nr-field div so CSS forces same width
+            st.markdown('<div class="nr-field">', unsafe_allow_html=True)
+            st.number_input(
+                "",
+                value=float(
+                    st.session_state.get("inputs_cover_side_local", default_side_cover)
+                ),
+                step=1.0,
+                key="inputs_cover_side_local",
+                label_visibility="collapsed",
+                help="Clear side cover to longitudinal reinforcement used in the visuals.",
+            )
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        st.subheader("Shear reinforcement")
+        number_row(
+            "Lig diameter (mm)",
+            "inputs_lig_d",
+            1.0,
+            sync_callbacks,
+            help_text="Nominal diameter of shear ligatures.",
+        )
+        number_row(
+            "Lig legs",
+            "inputs_lig_legs",
+            1,
+            sync_callbacks,
+            help_text="Number of legs in each ligature crossing the web.",
+        )
+        number_row(
+            "Stirrup spacing s_lig (mm)",
+            "inputs_s_lig",
+            10.0,
+            sync_callbacks,
+            help_text="Centre-to-centre spacing of shear ligatures along the span.",
+        )
+
+    # right column: top reo + crack control
+    with crack_col:
+        st.subheader("Top Reinforcement")
+        number_row(
+            "Number of top bars",
+            "inputs_nb_top",
+            1,
+            sync_callbacks,
+            help_text="Number of compression-face bars at the top of the section.",
+        )
+        number_row(
+            "Top bar diameter db,top (mm)",
+            "inputs_db_top",
+            1.0,
+            sync_callbacks,
+            help_text="Nominal diameter of top bars.",
+        )
+        number_row(
+            "Top row gap (mm)",
+            "inputs_rowgap_top",
+            5.0,
+            sync_callbacks,
+            help_text="Vertical gap between top rows if two layers are used.",
+        )
+        number_row(
+            "Top cover (mm)",
+            "inputs_cover_top",
+            5.0,
+            sync_callbacks,
+            help_text="Clear cover to the top bars.",
+        )
+
+        st.subheader("Crack Control Inputs")
+
+        # Exposure class – same size & alignment as others
+        options = ["A1", "A2", "B1", "B2", "C1", "C2"]
+        current = get_param("exposure_class", "B1")
+        if current not in options:
+            current = "B1"
+
+        # NOTE: column split [1.3, 1] to match number_row label/input ratio
+        exp_label_col, exp_select_col = st.columns([1.3, 1])
+        with exp_label_col:
+            st.markdown("Exposure class")
+        with exp_select_col:
+            st.markdown('<div class="nr-field">', unsafe_allow_html=True)
+            if "inputs_exposure_class" in st.session_state:
+                st.selectbox(
+                    "",
+                    options,
+                    key="inputs_exposure_class",
+                    on_change=sync_callbacks["inputs_exposure_class"],
+                    label_visibility="collapsed",
+                    help="Exposure classification to AS 3600 – controls allowable crack width.",
+                )
+            else:
+                st.selectbox(
+                    "",
+                    options,
+                    key="inputs_exposure_class",
+                    index=options.index(current),
+                    on_change=sync_callbacks["inputs_exposure_class"],
+                    label_visibility="collapsed",
+                    help="Exposure classification to AS 3600 – controls allowable crack width.",
+                )
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        number_row(
+            "Bottom bar spacing for crack calc (mm)",
+            "inputs_s_bar_bot",
+            5.0,
+            sync_callbacks,
+            help_text="Centre-to-centre spacing of bottom bars used in crack-width check.",
+        )
+
+    # ---------- now recompute design results with the latest inputs ----------
     _compute_bending_capacity()
     _compute_shear_capacity()
     _compute_crack_results()
@@ -566,7 +835,7 @@ def render_inputs():
     eps_sh = (eps_sh_micro or 0.0) / 1e6
 
     if L > 0:
-        w_total = 8.0 * Mu_star / (L / 1000.0) ** 2  # kN/m
+        w_total = 8.0 * Mu_star / (L / 1000.0) ** 2  # kN/m (simple UDL back-calc)
     else:
         w_total = 0.0
 
@@ -657,137 +926,17 @@ def render_inputs():
     </div>
     """
 
-    # ---------- summary + mini section ----------
-    col_left, col_right = st.columns([2, 1])
-    with col_left:
-        st.title("Inputs")
-        st.markdown("### Summary (read-only from design pages)")
-        st.markdown(summary_table_html, unsafe_allow_html=True)
-
-    with col_right:
-        fig_sec = make_summary_cross_section_figure()
-        st.plotly_chart(fig_sec, use_container_width=False, config={"displayModeBar": False})
-
-    st.markdown("---")
-
-    # ---------- inputs + 3D beam ----------
-    left_col, right_col = st.columns([1.2, 1.8])
-
-    with left_col:
-        st.subheader("Design Actions")
-        number_row("Design moment Mu* (kNm)", "inputs_Mu_star", 10.0, sync_callbacks)
-        number_row("Applied prestress P* (kN)", "inputs_P_star", 10.0, sync_callbacks)
-        number_row("Design torsion Tu* (kNm)", "inputs_Tu_star", 1.0, sync_callbacks)
-        number_row("Design shear Vu* (kN)", "inputs_Vu_star", 10.0, sync_callbacks)
-        number_row("Axial force N* (kN)", "inputs_N_star", 10.0, sync_callbacks)
-
-        st.markdown("---")
-
-        st.subheader("Geometry")
-        number_row("Width b (mm)", "inputs_b", 10.0, sync_callbacks)
-        number_row("Depth D (mm)", "inputs_D", 10.0, sync_callbacks)
-        number_row("Span L (mm)", "inputs_L", 100.0, sync_callbacks)
-
-        st.markdown("---")
-
-        st.subheader("Materials")
-        number_row("Concrete strength f'c (MPa)", "inputs_fc", 2.0, sync_callbacks)
-        number_row("Steel yield fsy (MPa)", "inputs_fsy", 10.0, sync_callbacks)
-        number_row("Ec (MPa)", "inputs_Ec", 1000.0, sync_callbacks)
-        number_row("Es (MPa)", "inputs_Es", 5000.0, sync_callbacks)
-
-    with right_col:
-        st.subheader("3D Beam – Bending & Shear Visual (Section A)")
-        fig3d = make_beam_3d_figure()
-        st.plotly_chart(fig3d, use_container_width=True)
-
-    st.markdown("---")
-
-    # ---------- reo + shear + crack ----------
-    reo_col, crack_col = st.columns(2)
-
-    # left column: bottom reo + side cover + shear
-    with reo_col:
-        st.subheader("Bottom Reinforcement")
-        number_row("Number of bottom bars", "inputs_nb_bot", 1, sync_callbacks)
-        number_row("Bottom bar diameter db,bot (mm)", "inputs_db_bot", 1.0, sync_callbacks)
-        number_row("Bottom row gap (mm)", "inputs_rowgap_bot", 5.0, sync_callbacks)
-        number_row("Bottom cover (mm)", "inputs_cover_bot", 5.0, sync_callbacks)
-
-        # side cover – local only, styled like the others
-        cover_top_val = float(get_param("cover_top", 40.0) or 40.0)
-        cover_bot_val = float(get_param("cover_bot", 40.0) or 40.0)
-        default_side_cover = min(cover_top_val, cover_bot_val)
-
-        # NOTE: column split [1.3, 1] to match number_row label/input ratio
-        sc_label_col, sc_input_col = st.columns([1.3, 1])
-        with sc_label_col:
-            st.markdown("Side cover (mm)")
-        with sc_input_col:
-            # Wrap input in nr-field div so CSS forces same width
-            st.markdown('<div class="nr-field">', unsafe_allow_html=True)
-            st.number_input(
-                "",
-                value=float(
-                    st.session_state.get("inputs_cover_side_local", default_side_cover)
-                ),
-                step=1.0,
-                key="inputs_cover_side_local",
-                label_visibility="collapsed",
+    # ---------- summary + mini section (rendered at top via container) ----------
+    with summary_container:
+        col_left, col_right = st.columns([2, 1])
+        with col_left:
+            st.title("Inputs")
+            st.markdown("### Summary (read-only from design pages)")
+            st.markdown(summary_table_html, unsafe_allow_html=True)
+        with col_right:
+            fig_sec = make_summary_cross_section_figure()
+            st.plotly_chart(
+                fig_sec,
+                use_container_width=False,
+                config={"displayModeBar": False},
             )
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        st.subheader("Shear reinforcement")
-        number_row("Lig diameter (mm)", "inputs_lig_d", 1.0, sync_callbacks)
-        number_row("Lig legs", "inputs_lig_legs", 1, sync_callbacks)
-        number_row("Stirrup spacing s_lig (mm)", "inputs_s_lig", 10.0, sync_callbacks)
-
-    # right column: top reo + crack control
-    with crack_col:
-        st.subheader("Top Reinforcement")
-        number_row("Number of top bars", "inputs_nb_top", 1, sync_callbacks)
-        number_row("Top bar diameter db,top (mm)", "inputs_db_top", 1.0, sync_callbacks)
-        number_row("Top row gap (mm)", "inputs_rowgap_top", 5.0, sync_callbacks)
-        number_row("Top cover (mm)", "inputs_cover_top", 5.0, sync_callbacks)
-
-        st.subheader("Crack Control Inputs")
-
-        # Exposure class – same size & alignment as others
-        options = ["A1", "A2", "B1", "B2", "C1", "C2"]
-        current = get_param("exposure_class", "B1")
-        if current not in options:
-            current = "B1"
-
-        # NOTE: column split [1.3, 1] to match number_row label/input ratio
-        exp_label_col, exp_select_col = st.columns([1.3, 1])
-        with exp_label_col:
-            st.markdown("Exposure class")
-        with exp_select_col:
-            st.markdown('<div class="nr-field">', unsafe_allow_html=True)
-            if "inputs_exposure_class" in st.session_state:
-                st.selectbox(
-                    "",
-                    options,
-                    key="inputs_exposure_class",
-                    on_change=sync_callbacks["inputs_exposure_class"],
-                    label_visibility="collapsed",
-                )
-            else:
-                st.selectbox(
-                    "",
-                    options,
-                    key="inputs_exposure_class",
-                    index=options.index(current),
-                    on_change=sync_callbacks["inputs_exposure_class"],
-                    label_visibility="collapsed",
-                )
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        number_row(
-            "Bottom bar spacing for crack calc (mm)",
-            "inputs_s_bar_bot",
-            5.0,
-            sync_callbacks,
-        )
-
-
