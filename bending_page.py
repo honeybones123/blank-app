@@ -362,7 +362,7 @@ def render_bending():
           <tr style="background-color: {ku_colour};">
             <td style="padding: 4px 6px;"><strong>Neutral axis ratio k<sub>u</sub></strong></td>
             <td style="text-align:right; padding: 4px 6px;">k<sub>u</sub> = {ku_str}</td>
-            <td style="text-align:right; padding: 4px 6px;">Limit (teaching) ≤ 0.36</td>
+            <td style="text-angle:right; padding: 4px 6px;">Limit (teaching) ≤ 0.36</td>
             <td style="text-align:center; padding: 4px 6px;"><strong>{ku_status}</strong></td>
           </tr>
         </tbody>
@@ -592,89 +592,80 @@ def render_bending():
     Mu_min = 1.2 * Mcr if not math.isnan(Mcr) else float("nan")
 
     # ============================================================
-    #  EXISTING SUMMARY (more detailed text)
+    #  DETAILED SUMMARY TEXT (with equations)
     # ============================================================
     st.subheader("Bending Capacity – Detailed Summary")
 
-    # ------------------------------------------------
-    # Grab the key section & material parameters
-    # ------------------------------------------------
-    fc = get_param("fc", 40.0)          # MPa
-    b = get_param("b", 400.0)           # mm
-    D = get_param("D", 600.0)           # mm
-    cover_bot = get_param("cover_bot", 40.0)
-    db_bot = get_param("db_bot", 20.0)
-    nb_bot = int(get_param("nb_bot", 4))
-    
-    # These should already be in your bending results, but we
-    # re-use them here for clarity in the equations:
-    d = get_param("d_eff", None)
-    if d is None:
-        d = D - cover_bot - 0.5 * db_bot
-    
+    # --- key section / material parameters for showing equations ---
+    fc_local = get_param("fc", 40.0)          # MPa
+    b_local = get_param("b", 400.0)           # mm
+    D_local = get_param("D", 600.0)           # mm
+    cover_bot_local = get_param("cover_bot", 40.0)
+    db_bot_local = get_param("db_bot", 20.0)
+    nb_bot_local = int(get_param("nb_bot", 4))
+
+    # Effective depth (fallback if not yet in state)
+    d_eff = get_param("d_eff", None)
+    if d_eff is None:
+        d_eff = D_local - cover_bot_local - 0.5 * db_bot_local
+
+    # Bottom steel area
     Ast_bot = get_param("Ast_bot", None)
     if Ast_bot is None:
-        Ast_bot = nb_bot * math.pi * db_bot**2 / 4.0
-    
-    alpha2 = get_param("alpha2", max(0.67, 0.85 - 0.0015 * fc))
-    gamma = get_param("gamma", max(0.67, 0.97 - 0.0025 * fc))
+        Ast_bot = nb_bot_local * math.pi * db_bot_local**2 / 4.0
+
+    # Stress-block factors from AS 3600:2018 Cl. 8.1.3
+    alpha2_raw = 0.85 - 0.0015 * fc_local
+    gamma_raw = 0.97 - 0.0025 * fc_local
+    alpha2_sb = max(0.67, alpha2_raw)
+    gamma_sb = max(0.67, gamma_raw)
     phi_b = get_param("phi_bend", 0.85)
-    ku = get_param("ku", 0.099)  # or however you already compute it
-    
-    alpha2_raw = 0.85 - 0.0015 * fc
-    gamma_raw = 0.97 - 0.0025 * fc
-    
-    # ------------------------------------------------
-    # Section properties (with equations + substitution)
-    # ------------------------------------------------
+    ku_sb = ku if ku is not None else float("nan")
+
+    # --- Section properties (equations + substitution) ---
     st.markdown("### Section properties")
-    
+
     st.markdown(
-        rf"- **Effective depth**  
-        "
-        rf"$d = D - \text{{cover}}_\text{{bot}} - \dfrac{{d_{{b,\text{{bot}}}}}}2"
-        rf" = {D:.1f} - {cover_bot:.1f} - \dfrac{{{db_bot:.1f}}}2"
-        rf" = {d:.1f}\ \text{{mm}}$"
+        rf"- **Effective depth**  "
+        rf"$d = D - \text{{cover}}_{{\text{{bot}}}} - \dfrac{{d_{{b,\text{{bot}}}}}}2"
+        rf" = {D_local:.1f} - {cover_bot_local:.1f} - \dfrac{{{db_bot_local:.1f}}}2"
+        rf" = {d_eff:.1f}\ \text{{mm}}$"
     )
-    
+
     st.markdown(
-        rf"- **Bottom steel area**  
-        "
+        rf"- **Bottom steel area**  "
         rf"$A_{{st,bot}} = n_{{b,\text{{bot}}}}\;\dfrac{{\pi d_{{b,\text{{bot}}}}^2}}4"
-        rf" = {nb_bot:d}\;\dfrac{{\pi \times {db_bot:.1f}^2}}4"
+        rf" = {nb_bot_local:d}\;\dfrac{{\pi \times {db_bot_local:.1f}^2}}4"
         rf" = {Ast_bot:.1f}\ \text{{mm}}^2$"
     )
-    
-    # ------------------------------------------------
-    # Stress-block (AS 3600:2018 Cl. 8.1.3)
-    # ------------------------------------------------
+
+    # --- Stress block (AS 3600:2018 Cl. 8.1.3) ---
     st.markdown("### Stress-block (teaching model) – AS 3600:2018 Cl. 8.1.3")
-    
+
     st.markdown(
-        rf"- **Rectangular stress block parameters**  
-        "
+        rf"- **Rectangular stress block parameters**  "
         rf"$\alpha_2 = 0.85 - 0.0015\,f'_c \ge 0.67"
-        rf" = 0.85 - 0.0015\times {fc:.1f}"
-        rf" = {alpha2_raw:.3f} \Rightarrow \alpha_2 = {alpha2:.3f}$  "
-        rf"<br>"
+        rf" = 0.85 - 0.0015\times {fc_local:.1f}"
+        rf" = {alpha2_raw:.3f} \Rightarrow \alpha_2 = {alpha2_sb:.3f}$  \n"
         rf"$\gamma = 0.97 - 0.0025\,f'_c \ge 0.67"
-        rf" = 0.97 - 0.0025\times {fc:.1f}"
-        rf" = {gamma_raw:.3f} \Rightarrow \gamma = {gamma:.3f}$  "
-        rf"<br>"
-        rf"$\phi_b = {phi_b:.3f},\quad k_u = {ku:.3f}$",
-        unsafe_allow_html=True,
+        rf" = 0.97 - 0.0025\times {fc_local:.1f}"
+        rf" = {gamma_raw:.3f} \Rightarrow \gamma = {gamma_sb:.3f}$  \n"
+        rf"$\phi_b = {phi_b:.3f},\quad k_u = {ku_sb:.3f}$"
     )
 
-
-**ULS flexural capacity**  
-- Neutral-axis depth: **c = {c:.2f} mm**,  block depth **a = γc = {a:.2f} mm**  
-- Lever arm: **z = {z:.2f} mm**  
-- Cracking moment: **M_cr = {Mcr:.2f} kNm**,  M_u,min ≈ **{Mu_min:.2f} kNm**  
-- Nominal capacity: **M_u = {Mu_nom:.2f} kNm**  
-- Design capacity: **ϕM_u,cap = {phi_Mu_cap:.2f} kNm**  
-- Utilisation: **M_u*/ϕM_u,cap = {Mu_util:.3f}**  
-- Design moment used: **M_u* = {Mu_star:.2f} kNm**
-"""
+    # --- ULS flexural capacity bullet summary ---
+    if not (math.isnan(c) or math.isnan(a) or math.isnan(z) or math.isnan(Mcr)):
+        Mu_nom_report = phi_Mu_cap / phi if phi and phi > 0 else float("nan")
+        summary_md = (
+            "**ULS flexural capacity**  \n"
+            f"- Neutral-axis depth: **c = {c:.2f} mm**,  block depth **a = γc = {a:.2f} mm**  \n"
+            f"- Lever arm: **z = {z:.2f} mm**  \n"
+            f"- Cracking moment: **M_cr = {Mcr:.2f} kNm**,  M_u,min ≈ **{Mu_min:.2f} kNm**  \n"
+            f"- Nominal capacity: **M_u = {Mu_nom_report:.2f} kNm**  \n"
+            f"- Design capacity: **ϕM_u,cap = {phi_Mu_cap:.2f} kNm**  \n"
+            f"- Utilisation: **M_u*/ϕM_u,cap = {Mu_util:.3f}**  \n"
+            f"- Design moment used: **M_u* = {Mu_star:.2f} kNm**"
+        )
     else:
         summary_md = "Bending capacity cannot be evaluated – check geometry / reo inputs."
 
@@ -918,5 +909,3 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
-
-
