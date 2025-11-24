@@ -596,74 +596,74 @@ def render_bending():
     # ============================================================
     st.subheader("Bending Capacity – Detailed Summary")
 
-# ------------------------------------------------
-# Grab the key section & material parameters
-# ------------------------------------------------
-fc = get_param("fc", 40.0)          # MPa
-b = get_param("b", 400.0)           # mm
-D = get_param("D", 600.0)           # mm
-cover_bot = get_param("cover_bot", 40.0)
-db_bot = get_param("db_bot", 20.0)
-nb_bot = int(get_param("nb_bot", 4))
-
-# These should already be in your bending results, but we
-# re-use them here for clarity in the equations:
-d = get_param("d_eff", None)
-if d is None:
-    d = D - cover_bot - 0.5 * db_bot
-
-Ast_bot = get_param("Ast_bot", None)
-if Ast_bot is None:
-    Ast_bot = nb_bot * math.pi * db_bot**2 / 4.0
-
-alpha2 = get_param("alpha2", max(0.67, 0.85 - 0.0015 * fc))
-gamma = get_param("gamma", max(0.67, 0.97 - 0.0025 * fc))
-phi_b = get_param("phi_bend", 0.85)
-ku = get_param("ku", 0.099)  # or however you already compute it
-
-alpha2_raw = 0.85 - 0.0015 * fc
-gamma_raw = 0.97 - 0.0025 * fc
-
-# ------------------------------------------------
-# Section properties (with equations + substitution)
-# ------------------------------------------------
-st.markdown("### Section properties")
-
-st.markdown(
-    rf"- **Effective depth**  
-    "
-    rf"$d = D - \text{{cover}}_\text{{bot}} - \dfrac{{d_{{b,\text{{bot}}}}}}2"
-    rf" = {D:.1f} - {cover_bot:.1f} - \dfrac{{{db_bot:.1f}}}2"
-    rf" = {d:.1f}\ \text{{mm}}$"
-)
-
-st.markdown(
-    rf"- **Bottom steel area**  
-    "
-    rf"$A_{{st,bot}} = n_{{b,\text{{bot}}}}\;\dfrac{{\pi d_{{b,\text{{bot}}}}^2}}4"
-    rf" = {nb_bot:d}\;\dfrac{{\pi \times {db_bot:.1f}^2}}4"
-    rf" = {Ast_bot:.1f}\ \text{{mm}}^2$"
-)
-
-# ------------------------------------------------
-# Stress-block (AS 3600:2018 Cl. 8.1.3)
-# ------------------------------------------------
-st.markdown("### Stress-block (teaching model) – AS 3600:2018 Cl. 8.1.3")
-
-st.markdown(
-    rf"- **Rectangular stress block parameters**  
-    "
-    rf"$\alpha_2 = 0.85 - 0.0015\,f'_c \ge 0.67"
-    rf" = 0.85 - 0.0015\times {fc:.1f}"
-    rf" = {alpha2_raw:.3f} \Rightarrow \alpha_2 = {alpha2:.3f}$  "
-    rf"<br>"
-    rf"$\gamma = 0.97 - 0.0025\,f'_c \ge 0.67"
-    rf" = 0.97 - 0.0025\times {fc:.1f}"
-    rf" = {gamma_raw:.3f} \Rightarrow \gamma = {gamma:.3f}$  "
-    rf"<br>"
-    rf"$\phi_b = {phi_b:.3f},\quad k_u = {ku:.3f}$",
-    unsafe_allow_html=True,
-)
+    # ------------------------------------------------
+    # Grab the key section & material parameters
+    # ------------------------------------------------
+    fc = get_param("fc", 40.0)          # MPa
+    b = get_param("b", 400.0)           # mm
+    D = get_param("D", 600.0)           # mm
+    cover_bot = get_param("cover_bot", 40.0)
+    db_bot = get_param("db_bot", 20.0)
+    nb_bot = int(get_param("nb_bot", 4))
+    
+    # These should already be in your bending results, but we
+    # re-use them here for clarity in the equations:
+    d = get_param("d_eff", None)
+    if d is None:
+        d = D - cover_bot - 0.5 * db_bot
+    
+    Ast_bot = get_param("Ast_bot", None)
+    if Ast_bot is None:
+        Ast_bot = nb_bot * math.pi * db_bot**2 / 4.0
+    
+    alpha2 = get_param("alpha2", max(0.67, 0.85 - 0.0015 * fc))
+    gamma = get_param("gamma", max(0.67, 0.97 - 0.0025 * fc))
+    phi_b = get_param("phi_bend", 0.85)
+    ku = get_param("ku", 0.099)  # or however you already compute it
+    
+    alpha2_raw = 0.85 - 0.0015 * fc
+    gamma_raw = 0.97 - 0.0025 * fc
+    
+    # ------------------------------------------------
+    # Section properties (with equations + substitution)
+    # ------------------------------------------------
+    st.markdown("### Section properties")
+    
+    st.markdown(
+        rf"- **Effective depth**  
+        "
+        rf"$d = D - \text{{cover}}_\text{{bot}} - \dfrac{{d_{{b,\text{{bot}}}}}}2"
+        rf" = {D:.1f} - {cover_bot:.1f} - \dfrac{{{db_bot:.1f}}}2"
+        rf" = {d:.1f}\ \text{{mm}}$"
+    )
+    
+    st.markdown(
+        rf"- **Bottom steel area**  
+        "
+        rf"$A_{{st,bot}} = n_{{b,\text{{bot}}}}\;\dfrac{{\pi d_{{b,\text{{bot}}}}^2}}4"
+        rf" = {nb_bot:d}\;\dfrac{{\pi \times {db_bot:.1f}^2}}4"
+        rf" = {Ast_bot:.1f}\ \text{{mm}}^2$"
+    )
+    
+    # ------------------------------------------------
+    # Stress-block (AS 3600:2018 Cl. 8.1.3)
+    # ------------------------------------------------
+    st.markdown("### Stress-block (teaching model) – AS 3600:2018 Cl. 8.1.3")
+    
+    st.markdown(
+        rf"- **Rectangular stress block parameters**  
+        "
+        rf"$\alpha_2 = 0.85 - 0.0015\,f'_c \ge 0.67"
+        rf" = 0.85 - 0.0015\times {fc:.1f}"
+        rf" = {alpha2_raw:.3f} \Rightarrow \alpha_2 = {alpha2:.3f}$  "
+        rf"<br>"
+        rf"$\gamma = 0.97 - 0.0025\,f'_c \ge 0.67"
+        rf" = 0.97 - 0.0025\times {fc:.1f}"
+        rf" = {gamma_raw:.3f} \Rightarrow \gamma = {gamma:.3f}$  "
+        rf"<br>"
+        rf"$\phi_b = {phi_b:.3f},\quad k_u = {ku:.3f}$",
+        unsafe_allow_html=True,
+    )
 
 
 **ULS flexural capacity**  
@@ -918,4 +918,5 @@ st.markdown(
 
 if __name__ == "__main__":
     render_bending()
+
 
