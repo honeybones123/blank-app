@@ -38,13 +38,28 @@ def apply_global_widget_css():
     )
 
 
-def number_row(label, key, step, sync_callbacks, *, width_ratio=(1.5, 1)):
+def number_row(label, key, step, sync_callbacks, *, width_ratio=(1.5, 1), help_text=None):
     """
     Renders:
         [ label ]   [ number input ]
     in a single row.
 
     Keeps Streamlit session-state contract untouched.
+
+    Parameters
+    ----------
+    label : str
+        Markdown label shown on the left.
+    key : str
+        Widget key (must exist in TAB_KEYS).
+    step : float | int
+        Step for the number_input.
+    sync_callbacks : dict
+        Dict from get_sync_callbacks() used for on_change.
+    width_ratio : tuple
+        Column width ratio (label, widget).
+    help_text : str | None
+        Optional tooltip text describing what changing this value does.
     """
     col_label, col_widget = st.columns(width_ratio)
 
@@ -58,4 +73,5 @@ def number_row(label, key, step, sync_callbacks, *, width_ratio=(1.5, 1)):
             step=step,
             label_visibility="collapsed",
             on_change=sync_callbacks[key],
+            help=help_text,
         )
