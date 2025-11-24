@@ -778,7 +778,7 @@ def render_bending():
     Mu_nom_report = phi_Mu_cap / phi if phi and phi > 0 else float("nan")
 
     # ---------- UPDATED SUMMARY TABLE LIST ----------
-    rows = [
+       rows = [
         {
             "Parameter": "Minimum steel",
             "Symbol": "As,min",
@@ -798,46 +798,28 @@ def render_bending():
             "Units": "kNm",
         },
         {
-            "Parameter": "Gross I",
-            "Symbol": "Ig",
-            "Value": _fmt(I_gross, "{:.3e}"),
-            "Units": "mm⁴",
-        },
-        {
             "Parameter": "Gross Z",
             "Symbol": "Zg",
             "Value": _fmt(Z_gross, "{:.3e}"),
             "Units": "mm³",
         },
         {
-            "Parameter": "α₂ raw",
-            "Symbol": "α2_raw",
-            "Value": _fmt(alpha2_raw, "{:.3f}"),
-            "Units": "-",
-        },
-        {
-            "Parameter": "α₂ adopted",
+            "Parameter": "α₂",
             "Symbol": "α2",
             "Value": _fmt(alpha2_sb, "{:.3f}"),
-            "Units": "-",
+            "Units": "•",
         },
         {
-            "Parameter": "γ raw",
-            "Symbol": "γ_raw",
-            "Value": _fmt(gamma_raw, "{:.3f}"),
-            "Units": "-",
-        },
-        {
-            "Parameter": "γ adopted",
+            "Parameter": "γ",
             "Symbol": "γ",
             "Value": _fmt(gamma_sb, "{:.3f}"),
-            "Units": "-",
+            "Units": "•",
         },
         {
             "Parameter": "Strength reduction",
             "Symbol": "φb",
             "Value": _fmt(phi_b, "{:.3f}"),
-            "Units": "-",
+            "Units": "•",
         },
         {
             "Parameter": "Neutral axis depth",
@@ -855,7 +837,7 @@ def render_bending():
             "Parameter": "Neutral axis ratio",
             "Symbol": "ku = c/d",
             "Value": _fmt(ku_sb, "{:.3f}"),
-            "Units": "-",
+            "Units": "•",
         },
         {
             "Parameter": "Lever arm",
@@ -880,13 +862,8 @@ def render_bending():
             "Symbol": "Mu*",
             "Value": _fmt(Mu_star, "{:.2f}"),
             "Units": "kNm",
-        },
+        }
     ]
-
-    df_summary = pd.DataFrame(rows)
-    st.table(df_summary)
-
-    st.markdown("---")
 
     # ============================================================
     #  STEP-BY-STEP TABS (ULS / SLS ONLY)
@@ -1216,4 +1193,5 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
 
