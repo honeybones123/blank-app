@@ -20,30 +20,18 @@ from widgets_helpers import apply_global_widget_css, number_row
 
 def _compute_bending_capacity():
     """
-    Compute φMu,cap using a rectangular stress block.
+    Compute a simple φMu,cap using a rectangular stress block.
     Uses shared session_state values only (via get_param).
-    Returns intermediate values for the step-by-step report.
+    Also returns intermediate values for the step-by-step report.
     """
     # Shared parameters (all from session state)
     b = get_param("b")
     D = get_param("D")
-    d = get_param("d")              # may be None – we handle below
+    d = get_param("d")
     fc = get_param("fc")
     fsy = get_param("fsy")
-    Ast = get_param("Ast_bot")      # may be None – we handle below
+    Ast = get_param("Ast_bot")
     Mu_star = get_param("Mu_star")
-
-    cover_bot = get_param("cover_bot")
-    db_bot = get_param("db_bot")
-    nb_bot = get_param("nb_bot")
-
-    # Fallback effective depth if d not stored
-    if d is None and None not in (D, cover_bot, db_bot):
-        d = D - cover_bot - 0.5 * db_bot
-
-    # Fallback steel area if Ast not stored
-    if Ast is None and None not in (nb_bot, db_bot):
-        Ast = nb_bot * math.pi * db_bot**2 / 4.0
 
     if None in (b, D, d, fc, fsy, Ast, Mu_star):
         return {
@@ -70,16 +58,14 @@ def _compute_bending_capacity():
     Z_gross = b * D**2 / 6.0                # mm^3
     Mcr = fctf * Z_gross / 1e6              # kNm
 
-    # ---- Minimum tensile reinforcement (teaching formula) ----
+    # ---- Minimum tensile reinforcement (same style as old sheet) ----
     kAst = 1.0
     As_min = kAst * (d / D) ** 2 * (fctf / fsy) * b * D
 
-    # ---- Stress-block factors (AS 3600:2018 Cl. 8.1.3) ----
-    alpha2_raw = 0.85 - 0.0015 * fc
-    gamma_raw = 0.97 - 0.0025 * fc
-    alpha2 = max(0.67, alpha2_raw)
-    gamma = max(0.67, gamma_raw)
-    phi = get_param("phi_bend", 0.85)
+    # ---- Stress-block factors (kept constant for teaching here) ----
+    alpha2 = 0.85
+    gamma = 0.85
+    phi = 0.85
 
     # ---- Flexural capacity ----
     T = Ast * fsy                              # N (Ast mm², fsy MPa = N/mm²)
@@ -289,7 +275,7 @@ def render_bending():
             **c** – Neutral axis depth from the top fibre (mm).  
             **a = γc** – Equivalent rectangular stress block depth (mm).  
             **kᵤ = c/d** – Neutral axis depth ratio (ductility indicator).  
-            **α₂, γ** – AS 3600-style stress block factors.  
+            **α₂, γ** – AS 3600-style stress block factors (teaching values).  
             **ϕ** – Strength reduction factor for bending.  
 
             **M_cr** – Cracking moment (kNm) based on f_ct,f and gross section.  
@@ -335,11 +321,23 @@ def render_bending():
     ku_status, ku_colour = _status_colour(ku_ok)
 
     Ast_str = f"{Ast:.1f} mm²" if Ast not in (None, float("nan")) else "—"
-    As_min_str = f"{As_min_top:.1f} mm²" if As_min_top and not math.isnan(As_min_top) else "—"
-    phiMu_str = f"{phi_Mu_cap_top:.2f} kNm" if phi_Mu_cap_top and phi_Mu_cap_top > 0 else "—"
+    As_min_str = (
+        f"{As_min_top:.1f} mm²" if As_min_top and not math.isnan(As_min_top) else "—"
+    )
+    phiMu_str = (
+        f"{phi_Mu_cap_top:.2f} kNm"
+        if phi_Mu_cap_top and phi_Mu_cap_top > 0
+        else "—"
+    )
     Mu_star_str = f"{Mu_star:.2f} kNm" if Mu_star not in (None, float("nan")) else "—"
-    Mu_util_str = f"{Mu_util_top:.3f}" if phi_Mu_cap_top and phi_Mu_cap_top > 0 else "—"
-    ku_str = f"{ku_top:.3f}" if ku_top is not None and not math.isnan(ku_top) else "—"
+    Mu_util_str = (
+        f"{Mu_util_top:.3f}" if phi_Mu_cap_top and phi_Mu_cap_top > 0 else "—"
+    )
+    ku_str = (
+        f"{ku_top:.3f}"
+        if ku_top is not None and not math.isnan(ku_top)
+        else "—"
+    )
 
     summary_html = f"""
     <div style="
@@ -402,8 +400,10 @@ def render_bending():
             "bending_Mu_star",
             10.0,
             sync_callbacks,
-            help_text="Factored design bending moment at the critical section. "
-                      "Increasing Mu* increases bending demand and utilisation.",
+            help_text=(
+                "Factored design bending moment at the critical section. "
+                "Increasing Mu* increases bending demand and utilisation."
+            ),
         )
     with da2:
         number_row(
@@ -411,8 +411,10 @@ def render_bending():
             "bending_N_star",
             50.0,
             sync_callbacks,
-            help_text="Axial force acting with bending. Compression (negative in many conventions) "
-                      "can reduce tension in the steel; tension increases demand.",
+            help_text=(
+                "Axial force acting with bending. Compression (negative in many "
+                "conventions) can reduce tension in the steel; tension increases demand."
+            ),
         )
     with da3:
         number_row(
@@ -420,8 +422,10 @@ def render_bending():
             "bending_P_star",
             50.0,
             sync_callbacks,
-            help_text="Prestress / pre-compression in the section. Increasing P* typically "
-                      "reduces tensile demand in the bottom reinforcement.",
+            help_text=(
+                "Prestress / pre-compression in the section. Increasing P* typically "
+                "reduces tensile demand in the bottom reinforcement."
+            ),
         )
 
     st.markdown("---")
@@ -439,24 +443,30 @@ def render_bending():
             "bending_b",
             10.0,
             sync_callbacks,
-            help_text="Section width. Increasing b increases compression block area and "
-                      "reduces required tensile steel for a given Mu*.",
+            help_text=(
+                "Section width. Increasing b increases compression block area and "
+                "reduces required tensile steel for a given Mu*."
+            ),
         )
         number_row(
             "Depth D (mm)",
             "bending_D",
             10.0,
             sync_callbacks,
-            help_text="Overall section depth. Larger D increases lever arm (d) and "
-                      "typically increases bending capacity.",
+            help_text=(
+                "Overall section depth. Larger D increases lever arm (d) and "
+                "typically increases bending capacity."
+            ),
         )
         number_row(
             "Span L (mm)",
             "bending_L",
             100.0,
             sync_callbacks,
-            help_text="Member span. Used mainly for serviceability checks and linking to "
-                      "deflection; not directly in φMu,cap here.",
+            help_text=(
+                "Member span. Used mainly for serviceability checks and linking to "
+                "deflection; not directly in φMu,cap here."
+            ),
         )
 
     with g2:
@@ -466,32 +476,40 @@ def render_bending():
             "bending_fc",
             2.0,
             sync_callbacks,
-            help_text="Concrete compressive strength. Higher f'c increases compression "
-                      "capacity and may reduce required steel, but also changes ductility limits.",
+            help_text=(
+                "Concrete compressive strength. Higher f'c increases compression "
+                "capacity and may reduce required steel, but also changes ductility limits."
+            ),
         )
         number_row(
             "Steel yield fsy (MPa)",
             "bending_fsy",
             10.0,
             sync_callbacks,
-            help_text="Yield strength of reinforcing steel. Higher fsy increases the "
-                      "force carried by a given area of steel.",
+            help_text=(
+                "Yield strength of reinforcing steel. Higher fsy increases the "
+                "force carried by a given area of steel."
+            ),
         )
         number_row(
             "Ec (MPa)",
             "bending_Ec",
             1000.0,
             sync_callbacks,
-            help_text="Short-term modulus of concrete. Mainly affects stiffness and "
-                      "SLS behaviour rather than φMu,cap.",
+            help_text=(
+                "Short-term modulus of concrete. Mainly affects stiffness and "
+                "SLS behaviour rather than φMu,cap."
+            ),
         )
         number_row(
             "Es (MPa)",
             "bending_Es",
             10000.0,
             sync_callbacks,
-            help_text="Steel modulus. Typically ~200,000 MPa; affects cracked-section "
-                      "stiffness and strain calculations.",
+            help_text=(
+                "Steel modulus. Typically ~200,000 MPa; affects cracked-section "
+                "stiffness and strain calculations."
+            ),
         )
 
     st.markdown("---")
@@ -505,32 +523,40 @@ def render_bending():
             "bending_nb_bot",
             1,
             sync_callbacks,
-            help_text="Number of tension bars at the bottom. Increasing nb_bot increases Ast,bot "
-                      "and hence bending capacity.",
+            help_text=(
+                "Number of tension bars at the bottom. Increasing nb_bot increases Ast,bot "
+                "and hence bending capacity."
+            ),
         )
         number_row(
             "Bottom bar diameter db_bot (mm)",
             "bending_db_bot",
             2.0,
             sync_callbacks,
-            help_text="Nominal diameter of bottom bars (e.g. N24 = 24 mm). Larger diameter "
-                      "bars increase Ast,bot but may impact spacing and ductility.",
+            help_text=(
+                "Nominal diameter of bottom bars (e.g. N24 = 24 mm). Larger diameter "
+                "bars increase Ast,bot but may impact spacing and ductility."
+            ),
         )
         number_row(
             "Bottom row gap (mm)",
             "bending_rowgap_bot",
             5.0,
             sync_callbacks,
-            help_text="Vertical gap between bottom bar rows (if 2 rows are used). Increasing "
-                      "this moves the second row further from the tension face, increasing its lever arm.",
+            help_text=(
+                "Vertical gap between bottom bar rows (if 2 rows are used). Increasing "
+                "this moves the second row further from the tension face, increasing its lever arm."
+            ),
         )
         number_row(
             "Bottom cover (mm)",
             "bending_cover_bot",
             5.0,
             sync_callbacks,
-            help_text="Concrete cover to bottom reinforcement. Increasing cover reduces "
-                      "effective depth d and reduces φMu,cap, but may be required for durability.",
+            help_text=(
+                "Concrete cover to bottom reinforcement. Increasing cover reduces "
+                "effective depth d and reduces φMu,cap, but may be required for durability."
+            ),
         )
 
     with r2:
@@ -540,8 +566,10 @@ def render_bending():
             "bending_nb_top",
             1,
             sync_callbacks,
-            help_text="Number of top bars (compression or hanger steel). "
-                      "Important for negative moment regions and detailing.",
+            help_text=(
+                "Number of top bars (compression or hanger steel). "
+                "Important for negative moment regions and detailing."
+            ),
         )
         number_row(
             "Top bar diameter db_top (mm)",
@@ -555,15 +583,19 @@ def render_bending():
             "bending_rowgap_top",
             5.0,
             sync_callbacks,
-            help_text="Vertical gap between top bar rows if more than one row is used.",
+            help_text=(
+                "Vertical gap between top bar rows if more than one row is used."
+            ),
         )
         number_row(
             "Top cover (mm)",
             "bending_cover_top",
             5.0,
             sync_callbacks,
-            help_text="Concrete cover to top reinforcement. Affects effective depth to "
-                      "compression reinforcement and durability.",
+            help_text=(
+                "Concrete cover to top reinforcement. Affects effective depth to "
+                "compression reinforcement and durability."
+            ),
         )
 
     st.markdown("---")
@@ -603,8 +635,95 @@ def render_bending():
     db_bot = get_param("db_bot")
     cover_bot = get_param("cover_bot")
 
-    # teaching minimum moment ~ 1.2 Mcr
     Mu_min = 1.2 * Mcr if not math.isnan(Mcr) else float("nan")
+
+    # ============================================================
+    #  DETAILED SUMMARY TEXT (with equations)
+    # ============================================================
+    st.subheader("Bending Capacity – Detailed Summary")
+
+    # --- key section / material parameters for showing equations ---
+    fc_local = get_param("fc", 40.0)          # MPa
+    b_local = get_param("b", 400.0)           # mm
+    D_local = get_param("D", 600.0)           # mm
+    cover_bot_local = get_param("cover_bot", 40.0)
+    db_bot_local = get_param("db_bot", 20.0)
+    nb_bot_local = int(get_param("nb_bot", 4))
+
+    # Effective depth (fallback if not yet in state)
+    d_eff = get_param("d_eff", None)
+    if d_eff is None:
+        d_eff = D_local - cover_bot_local - 0.5 * db_bot_local
+
+    # Bottom steel area
+    Ast_bot = get_param("Ast_bot", None)
+    if Ast_bot is None:
+        Ast_bot = nb_bot_local * math.pi * db_bot_local**2 / 4.0
+
+    # Stress-block factors from AS 3600:2018 Cl. 8.1.3
+    alpha2_raw = 0.85 - 0.0015 * fc_local
+    gamma_raw = 0.97 - 0.0025 * fc_local
+    alpha2_sb = max(0.67, alpha2_raw)
+    gamma_sb = max(0.67, gamma_raw)
+    phi_b = get_param("phi_bend", 0.85)
+    ku_sb = ku if ku is not None else float("nan")
+
+    # --- Section properties (equations + substitution) ---
+    st.markdown("### Section properties")
+
+    st.markdown(
+        rf"- **Effective depth**  "
+        rf"$d = D - \text{{cover}}_{{\text{{bot}}}} - \dfrac{{d_{{b,\text{{bot}}}}}}2"
+        rf" = {D_local:.1f} - {cover_bot_local:.1f} - \dfrac{{{db_bot_local:.1f}}}2"
+        rf" = {d_eff:.1f}\ \text{{mm}}$"
+    )
+
+    st.markdown(
+        rf"- **Bottom steel area**  "
+        rf"$A_{{st,bot}} = n_{{b,\text{{bot}}}}\;\dfrac{{\pi d_{{b,\text{{bot}}}}^2}}4"
+        rf" = {nb_bot_local:d}\;\dfrac{{\pi \times {db_bot_local:.1f}^2}}4"
+        rf" = {Ast_bot:.1f}\ \text{{mm}}^2$"
+    )
+
+    # ------------------------------------------------
+    # Stress-block (AS 3600:2018 Cl. 8.1.3)
+    # ------------------------------------------------
+    st.markdown("### Stress-block (teaching model) – AS 3600:2018 Cl. 8.1.3")
+    st.markdown(
+        "**Rectangular stress block parameters "
+        "(AS 3600:2018 Cl. 8.1.3)**"
+    )
+
+    # α2 on its own lines
+    st.markdown("**α₂ factor**")
+    st.latex(r"\alpha_2 = 0.85 - 0.0015\,f'_c \; (\ge 0.67)")
+    st.latex(
+        rf"\alpha_2 = 0.85 - 0.0015 \times {fc_local:.1f}"
+        rf" = {alpha2_raw:.3f}"
+    )
+    st.latex(
+        rf"\Rightarrow \alpha_2 = {alpha2_sb:.3f}"
+    )
+
+    # γ on its own lines
+    st.markdown("**γ factor**")
+    st.latex(r"\gamma = 0.97 - 0.0025\,f'_c \; (\ge 0.67)")
+    st.latex(
+        rf"\gamma = 0.97 - 0.0025 \times {fc_local:.1f}"
+        rf" = {gamma_raw:.3f}"
+    )
+    st.latex(
+        rf"\Rightarrow \gamma = {gamma_sb:.3f}"
+    )
+
+    # φ_b and k_u as a short line of text
+    st.markdown(
+        rf"**Strength reduction and NA ratio:** "
+        rf"\phi_b = {phi_b:.3f}, "
+        rf"k_u = {ku_sb:.3f}."
+    )
+
+    st.markdown("---")
 
     # ============================================================
     #  STEP-BY-STEP TABS (ULS / SLS ONLY)
@@ -616,7 +735,8 @@ def render_bending():
         st.subheader("ULS Calculation (step-by-step)")
 
         if phi_Mu_cap > 0 and d and Ast:
-            col_text, col_fig = st.columns([2, 1])
+            # NOTE: narrower text column, wider diagram column
+            col_text, col_fig = st.columns([1, 2.2])
 
             # ===========================
             #  LEFT: TEXT / CALCS
@@ -653,9 +773,6 @@ def render_bending():
                     "(AS 3600:2018 Cl. 8.1.3)"
                 )
 
-                alpha2_raw = 0.85 - 0.0015 * fc
-                gamma_raw = 0.97 - 0.0025 * fc
-
                 # 2.1 alpha2 factor
                 st.markdown("#### 2.1 $\\alpha_2$ factor")
                 st.latex(r"\alpha_2 = 0.85 - 0.0015 f'_c \ge 0.67")
@@ -690,15 +807,16 @@ def render_bending():
                     "(self-weight check – AS 3600 Cl. 8.1.6)"
                 )
                 st.markdown(
-                    "AS 3600 Cl. 8.1.6 requires a minimum ultimate bending "
-                    "strength so the member can support at least its own "
-                    "cracking moment (self-weight). For this teaching model "
-                    "we base it on the concrete flexural tensile strength and "
-                    "gross section properties."
+                    "AS 3600 requires a minimum ultimate bending strength so "
+                    "the member can at least support its own weight and initial "
+                    "cracking. Here we use your teaching model based on "
+                    "concrete flexural tensile strength and the gross section."
                 )
 
                 # 3.1 Concrete flexural tensile strength f_ct,f
-                st.markdown("#### 3.1 Concrete flexural tensile strength $f_{ct,f}$")
+                st.markdown(
+                    "#### 3.1 Concrete flexural tensile strength $f_{ct,f}$"
+                )
                 st.latex(r"f_{ct,f} = c_b (f'_c)^{2/3}")
                 st.latex(
                     rf"f_{{ct,f}} = 0.20 \times ({fc:.1f})^{{2/3}}"
@@ -706,7 +824,9 @@ def render_bending():
                 )
 
                 # 3.2 Gross second moment of area I_g
-                st.markdown("#### 3.2 Gross second moment of area $I_g$")
+                st.markdown(
+                    "#### 3.2 Gross second moment of area $I_g$"
+                )
                 st.latex(r"I_g = \dfrac{b D^3}{12}")
                 st.latex(
                     rf"I_g = \dfrac{{{b:.1f} \times {D:.1f}^3}}{{12}}"
@@ -730,14 +850,14 @@ def render_bending():
                 )
 
                 # 3.5 Minimum required ultimate strength (teaching rule)
-                Muo_min = Mu_min
+                Muo_min = Mu_min  # already 1.2 * Mcr from earlier
                 st.markdown(
                     "#### 3.5 Minimum required ultimate strength "
                     "$(M_{uo})_{min}$ (teaching simplification)"
                 )
                 st.markdown(
-                    "For a non-prestressed member we compare against a "
-                    "teaching minimum moment based on the cracking moment:"
+                    "For a non-prestressed member, we compare against "
+                    "a teaching minimum moment based on the cracking moment:"
                 )
                 st.latex(r"(M_{uo})_{min} \approx 1.2\,M_{cr}")
                 st.latex(
@@ -745,7 +865,7 @@ def render_bending():
                     rf" = {Muo_min:.2f}\,\text{{ kNm}}"
                 )
 
-                # 3.6 Minimum tensile reinforcement check
+                # 3.6 Minimum steel check
                 st.markdown("#### 3.6 Minimum tensile reinforcement check")
                 st.latex(
                     r"A_{st,\min} = k_{Ast}\left(\frac{d}{D}\right)^2 "
@@ -758,7 +878,7 @@ def render_bending():
                 )
                 st.markdown(
                     rf"Check: $A_{{st,bot}} = {Ast:.1f}\,\text{{ mm}}^2 "
-                    rf"\ge A_{{st,\min}} = {As_min:.1f}\,\text{{ mm}}^2$."
+                    rf"\;\ge\; A_{{st,\min}} = {As_min:.1f}\,\text{{ mm}}^2$"
                 )
                 st.markdown(
                     rf"Teaching minimum moment: "
@@ -770,11 +890,17 @@ def render_bending():
                 # -------------------------------------------------
                 # 4. ULTIMATE FLEXURAL CAPACITY (φMu,cap)
                 # -------------------------------------------------
-                st.markdown("### 4. Ultimate flexural capacity $\\phi M_{u,cap}$")
+                st.markdown(
+                    "### 4. Ultimate flexural capacity $\\phi M_{u,cap}$"
+                )
 
                 # 4.1 Internal forces and neutral-axis depth
-                st.markdown("#### 4.1 Internal forces and neutral-axis depth $c$")
-                st.latex(r"T = A_{st} f_{sy},\quad C = \alpha_2 f'_c b\, \gamma c")
+                st.markdown(
+                    "#### 4.1 Internal forces and neutral-axis depth $c$"
+                )
+                st.latex(
+                    r"T = A_{st} f_{sy},\quad C = \alpha_2 f'_c b\, \gamma c"
+                )
                 T = Ast * fsy
                 st.latex(
                     rf"T = {Ast:.1f} \times {fsy:.1f}"
@@ -810,8 +936,8 @@ def render_bending():
 
                 # 4.3 Factored capacity and utilisation
                 st.markdown("#### 4.3 Factored capacity and utilisation")
-                phiMu_str_local = f"{phi_Mu_cap:.2f}"
-                Mu_star_str_local = f"{Mu_star:.2f}"
+                phiMu_str2 = f"{phi_Mu_cap:.2f}"
+                Mu_star_str2 = f"{Mu_star:.2f}"
                 util_str = f"{Mu_util:.3f}"
 
                 st.latex(r"\phi M_{u,\mathrm{cap}} = \phi M_u")
@@ -821,16 +947,16 @@ def render_bending():
                     + r"\times "
                     + f"{Mu_nom:.2f}"
                     + r" = "
-                    + phiMu_str_local
+                    + phiMu_str2
                     + r"\,\text{kNm}"
                 )
                 st.latex(
                     r"\text{Utilisation} = "
                     r"\dfrac{M_u^*}{\phi M_{u,\mathrm{cap}}}"
                     r" = \dfrac{"
-                    + Mu_star_str_local
+                    + Mu_star_str2
                     + r"}{"
-                    + phiMu_str_local
+                    + phiMu_str2
                     + r"} = "
                     + util_str
                 )
