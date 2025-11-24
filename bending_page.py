@@ -124,74 +124,124 @@ def _compute_bending_capacity():
 # ------------------------------------------------------------
 
 def _make_cross_section_figure(b, D, d, a, nb_bot, db_bot, cover_bot):
-    """Front cross-section with compression zone + bottom bars."""
-    if None in (b, D) or math.isnan(b) or math.isnan(D):
+def _make_cross_section_figure(b, D, d, a, nb_bot, db_bot, cover_bot,
+                               nb_top=None, db_top=None, cover_top=None,
+                               c=None, z=None):
+    """Front cross-section with compression zone + top + bottom bars + labels."""
+
+    if None in (b, D):
         return None
 
-    # Fallbacks for optional reo inputs
-    if nb_bot is None or nb_bot < 1:
-        nb_bot = 3
-    if db_bot is None or db_bot <= 0:
-        db_bot = 20.0
-    if cover_bot is None or cover_bot < 0:
-        cover_bot = 40.0
+    # Default values for top bars
+    if nb_top is None or nb_top < 1:
+        nb_top = 2
+    if db_top is None or db_top <= 0:
+        db_top = 16.0
+    if cover_top is None or cover_top <= 0:
+        cover_top = 40.0
 
-    # Ensure nb_bot is treated as an integer for range()
-    try:
-        nb_bot_int = max(1, int(round(nb_bot)))
-    except (TypeError, ValueError):
-        nb_bot_int = 3
+    # Safe integer nb's
+    nb_bot = max(1, int(round(nb_bot)))
+    nb_top = max(1, int(round(nb_top)))
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(4.5, 7))
 
-    # Outer concrete outline
+    # Outline
     outline = Rectangle((0, 0), b, D, fill=False, linewidth=2)
     ax.add_patch(outline)
 
-    # Compression zone (depth "a" from top)
+    # Compression block
     if a is None or math.isnan(a) or a <= 0:
         a = 0.15 * D
-    comp = Rectangle((0, 0), b, a, linewidth=0, facecolor="#c7e3ff")
+
+    comp = Rectangle((0, 0), b, a, facecolor="#c7e3ff", edgecolor="none")
     ax.add_patch(comp)
-    ax.text(
-        0.5 * b,
-        0.5 * a,
-        "Compression\nzone",
-        ha="center",
-        va="center",
-        fontsize=10,
-    )
 
-    # Bottom reinforcement row at depth d
-    if d is None or math.isnan(d):
-        d = 0.9 * D
-    y_bar = d
+    ax.text(b/2, a/2, "Compression\nzone", ha="center", va="center", fontsize=10)
 
-    side_cover = min(cover_bot, 0.4 * b)
-    inner_width = max(b - 2 * side_cover, db_bot)
+    # -------------------------
+    # Bottom reo
+    # -------------------------
+    y_bot = d
+    inner_width = b - 2*cover_bot
+    if inner_width < db_bot:
+        inner_width = db_bot
 
-    if nb_bot_int == 1:
-        xs = [0.5 * b]
+    if nb_bot == 1:
+        xs_bot = [b/2]
     else:
-        spacing = inner_width / (nb_bot_int - 1)
-        xs = [side_cover + i * spacing for i in range(nb_bot_int)]
+        spacing = inner_width / (nb_bot - 1)
+        xs_bot = [cover_bot + i*spacing for i in range(nb_bot)]
 
-    radius = 0.5 * db_bot
-    for x in xs:
-        circ = Circle((x, y_bar), radius=radius, fill=False, linewidth=1.8)
-        ax.add_patch(circ)
+    for x in xs_bot:
+        ax.add_patch(Circle((x, y_bot), radius=db_bot/2, fill=False, linewidth=1.6))
 
-    ax.set_xlim(-0.1 * b, 1.1 * b)
-    ax.set_ylim(D + 0.1 * D, -0.1 * D)  # invert y (depth downwards)
+    # -------------------------
+    # TOP reo
+    # -------------------------
+    y_top = cover_top + db_top/2
+
+    inner_width_top = b - 2*cover_top
+    if inner_width_top < db_top:
+        inner_width_top = db_top
+
+    if nb_top == 1:
+        xs_top = [b/2]
+    else:
+        spacing = inner_width_top / (nb_top - 1)
+        xs_top = [cover_top + i*spacing for i in range(nb_top)]
+
+    for x in xs_top:
+        ax.add_patch(Circle((x, y_top), radius=db_top/2, fill=False,
+                            edgecolor="black", linewidth=1.6))
+
+    # -------------------------
+    # LABELS (c, a, d, z)
+    # -------------------------
+    if c is not None and not math.isnan(c):
+        ax.annotate("c",
+            xy=(b + 10, c/2),
+            xytext=(b + 40, c/2),
+            arrowprops=dict(arrowstyle="<->"),
+            va="center"
+        )
+        ax.text(b + 45, c/2, f"{c:.0f} mm", va="center")
+
+    if a is not None:
+        ax.annotate("a",
+            xy=(b + 10, a/2),
+            xytext=(b + 40, a/2),
+            arrowprops=dict(arrowstyle="<->"),
+            va="center"
+        )
+
+    if d is not None:
+        ax.annotate("d",
+            xy=(b + 10, d/2),
+            xytext=(b + 40, d/2),
+            arrowprops=dict(arrowstyle="<->"),
+            va="center"
+        )
+
+    if z is not None:
+        ax.annotate("z",
+            xy=(b + 10, (d + a)/2),
+            xytext=(b + 40, (d + a)/2),
+            arrowprops=dict(arrowstyle="<->"),
+            va="center"
+        )
+
+    # -------------------------
+    # Axes settings
+    # -------------------------
+    ax.set_xlim(-20, b + 120)
+    ax.set_ylim(D + 40, -40)
+    ax.set_aspect("equal", "box")
     ax.set_xlabel("Width (mm)")
     ax.set_ylabel("Depth (mm)")
     ax.set_title("ULS SECTION")
-    ax.set_aspect("equal", "box")
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
 
     return fig
-
 
 def _make_stress_figure(fc, fsy, alpha2, D, d, c):
     """Simple ULS stress diagram: α₂ f'c in compression, fsy in steel."""
@@ -736,7 +786,7 @@ def render_bending():
 
         if phi_Mu_cap > 0 and d and Ast:
             # NOTE: narrower text column, wider diagram column
-            col_text, col_fig = st.columns([1, 2.2])
+            col_text, col_fig = st.columns([1.3, 1])
 
             # ===========================
             #  LEFT: TEXT / CALCS
@@ -1070,3 +1120,4 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
