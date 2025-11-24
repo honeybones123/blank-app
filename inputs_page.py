@@ -528,6 +528,12 @@ def render_inputs():
     sync_callbacks = get_sync_callbacks()
     apply_global_widget_css()
 
+        # Always keep summary in sync with latest inputs
+    _compute_bending_capacity()
+    _compute_shear_capacity()
+    _compute_crack_results()
+    _compute_deflection_results()
+
     # ---------- summary values ----------
     Mu_star = get_param("Mu_star", 0.0)
     Vu_star = get_param("Vu_star", 0.0)
@@ -783,4 +789,5 @@ def render_inputs():
             5.0,
             sync_callbacks,
         )
+
 
