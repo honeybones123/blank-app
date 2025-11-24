@@ -123,16 +123,36 @@ def _compute_bending_capacity():
 #  DIAGRAM HELPERS (cross-section + stress)
 # ------------------------------------------------------------
 
-def _make_cross_section_figure(b, D, d, a, nb_bot, db_bot, cover_bot):
-def _make_cross_section_figure(b, D, d, a, nb_bot, db_bot, cover_bot,
-                               nb_top=None, db_top=None, cover_top=None,
-                               c=None, z=None):
-    """Front cross-section with compression zone + top + bottom bars + labels."""
+def _make_cross_section_figure(
+    b,
+    D,
+    d,
+    a,
+    nb_bot,
+    db_bot,
+    cover_bot,
+    nb_top=None,
+    db_top=None,
+    cover_top=None,
+    c=None,
+    z=None,
+):
+    """
+    Front cross-section with compression zone + top + bottom bars + labels.
+    """
 
     if None in (b, D):
         return None
 
-    # Default values for top bars
+    # Defaults and safety for bottom bars
+    if nb_bot is None or nb_bot < 1:
+        nb_bot = 3
+    if db_bot is None or db_bot <= 0:
+        db_bot = 20.0
+    if cover_bot is None or cover_bot <= 0:
+        cover_bot = 40.0
+
+    # Defaults and safety for top bars
     if nb_top is None or nb_top < 1:
         nb_top = 2
     if db_top is None or db_top <= 0:
@@ -140,108 +160,164 @@ def _make_cross_section_figure(b, D, d, a, nb_bot, db_bot, cover_bot,
     if cover_top is None or cover_top <= 0:
         cover_top = 40.0
 
-    # Safe integer nb's
     nb_bot = max(1, int(round(nb_bot)))
     nb_top = max(1, int(round(nb_top)))
 
+    # Fallback effective depth
+    if d is None or math.isnan(d):
+        d = 0.9 * D
+
+    # Fallback compression block depth
+    if a is None or math.isnan(a) or a <= 0:
+        a = 0.15 * D
+
     fig, ax = plt.subplots(figsize=(4.5, 7))
 
-    # Outline
+    # Outer concrete outline
     outline = Rectangle((0, 0), b, D, fill=False, linewidth=2)
     ax.add_patch(outline)
 
     # Compression block
-    if a is None or math.isnan(a) or a <= 0:
-        a = 0.15 * D
-
     comp = Rectangle((0, 0), b, a, facecolor="#c7e3ff", edgecolor="none")
     ax.add_patch(comp)
-
-    ax.text(b/2, a/2, "Compression\nzone", ha="center", va="center", fontsize=10)
+    ax.text(
+        b / 2,
+        a / 2,
+        "Compression\nzone",
+        ha="center",
+        va="center",
+        fontsize=10,
+    )
 
     # -------------------------
-    # Bottom reo
+    # Bottom reo (red)
     # -------------------------
     y_bot = d
-    inner_width = b - 2*cover_bot
-    if inner_width < db_bot:
-        inner_width = db_bot
+    inner_width_bot = b - 2 * cover_bot
+    if inner_width_bot < db_bot:
+        inner_width_bot = db_bot
 
     if nb_bot == 1:
-        xs_bot = [b/2]
+        xs_bot = [b / 2]
     else:
-        spacing = inner_width / (nb_bot - 1)
-        xs_bot = [cover_bot + i*spacing for i in range(nb_bot)]
+        spacing_bot = inner_width_bot / (nb_bot - 1)
+        xs_bot = [cover_bot + i * spacing_bot for i in range(nb_bot)]
 
     for x in xs_bot:
-        ax.add_patch(Circle((x, y_bot), radius=db_bot/2, fill=False, linewidth=1.6))
+        ax.add_patch(
+            Circle(
+                (x, y_bot),
+                radius=db_bot / 2,
+                fill=False,
+                edgecolor="red",
+                linewidth=1.6,
+            )
+        )
 
     # -------------------------
-    # TOP reo
+    # Top reo (blue)
     # -------------------------
-    y_top = cover_top + db_top/2
-
-    inner_width_top = b - 2*cover_top
+    y_top = cover_top + db_top / 2
+    inner_width_top = b - 2 * cover_top
     if inner_width_top < db_top:
         inner_width_top = db_top
 
     if nb_top == 1:
-        xs_top = [b/2]
+        xs_top = [b / 2]
     else:
-        spacing = inner_width_top / (nb_top - 1)
-        xs_top = [cover_top + i*spacing for i in range(nb_top)]
+        spacing_top = inner_width_top / (nb_top - 1)
+        xs_top = [cover_top + i * spacing_top for i in range(nb_top)]
 
     for x in xs_top:
-        ax.add_patch(Circle((x, y_top), radius=db_top/2, fill=False,
-                            edgecolor="black", linewidth=1.6))
+        ax.add_patch(
+            Circle(
+                (x, y_top),
+                radius=db_top / 2,
+                fill=False,
+                edgecolor="blue",
+                linewidth=1.6,
+            )
+        )
 
     # -------------------------
-    # LABELS (c, a, d, z)
+    # LABELS (c, a, d, z) on RHS
     # -------------------------
+    x_label = b + 10.0
+    text_offset = 8.0
+
+    # c: from top fibre (0) down to c
     if c is not None and not math.isnan(c):
-        ax.annotate("c",
-            xy=(b + 10, c/2),
-            xytext=(b + 40, c/2),
+        ax.annotate(
+            "",
+            xy=(x_label, c),
+            xytext=(x_label, 0.0),
             arrowprops=dict(arrowstyle="<->"),
-            va="center"
         )
-        ax.text(b + 45, c/2, f"{c:.0f} mm", va="center")
-
-    if a is not None:
-        ax.annotate("a",
-            xy=(b + 10, a/2),
-            xytext=(b + 40, a/2),
-            arrowprops=dict(arrowstyle="<->"),
-            va="center"
+        ax.text(
+            x_label + text_offset,
+            c / 2.0,
+            f"c = {c:.0f} mm",
+            va="center",
         )
 
-    if d is not None:
-        ax.annotate("d",
-            xy=(b + 10, d/2),
-            xytext=(b + 40, d/2),
+    # a: from top fibre (0) down to a
+    if a is not None and not math.isnan(a):
+        ax.annotate(
+            "",
+            xy=(x_label + 25, a),
+            xytext=(x_label + 25, 0.0),
             arrowprops=dict(arrowstyle="<->"),
-            va="center"
+        )
+        ax.text(
+            x_label + 25 + text_offset,
+            a / 2.0,
+            "a",
+            va="center",
         )
 
-    if z is not None:
-        ax.annotate("z",
-            xy=(b + 10, (d + a)/2),
-            xytext=(b + 40, (d + a)/2),
+    # d: from top fibre (0) down to d
+    if d is not None and not math.isnan(d):
+        ax.annotate(
+            "",
+            xy=(x_label, d),
+            xytext=(x_label, 0.0),
             arrowprops=dict(arrowstyle="<->"),
-            va="center"
+        )
+        ax.text(
+            x_label + text_offset,
+            d / 2.0,
+            f"d = {d:.0f} mm",
+            va="center",
+        )
+
+    # z: from depth a to depth d
+    if z is not None and not math.isnan(z) and d is not None:
+        y_mid_z = a + 0.5 * (d - a)
+        ax.annotate(
+            "",
+            xy=(x_label + 50, d),
+            xytext=(x_label + 50, a),
+            arrowprops=dict(arrowstyle="<->"),
+        )
+        ax.text(
+            x_label + 50 + text_offset,
+            y_mid_z,
+            f"z = {z:.0f} mm",
+            va="center",
         )
 
     # -------------------------
     # Axes settings
     # -------------------------
     ax.set_xlim(-20, b + 120)
-    ax.set_ylim(D + 40, -40)
+    ax.set_ylim(D + 40, -40)  # depth downward
     ax.set_aspect("equal", "box")
     ax.set_xlabel("Width (mm)")
     ax.set_ylabel("Depth (mm)")
     ax.set_title("ULS SECTION")
 
     return fig
+
 
 def _make_stress_figure(fc, fsy, alpha2, D, d, c):
     """Simple ULS stress diagram: α₂ f'c in compression, fsy in steel."""
@@ -684,6 +760,9 @@ def render_bending():
     nb_bot = get_param("nb_bot")
     db_bot = get_param("db_bot")
     cover_bot = get_param("cover_bot")
+    nb_top = get_param("nb_top")
+    db_top = get_param("db_top")
+    cover_top = get_param("cover_top")
 
     Mu_min = 1.2 * Mcr if not math.isnan(Mcr) else float("nan")
 
@@ -785,8 +864,8 @@ def render_bending():
         st.subheader("ULS Calculation (step-by-step)")
 
         if phi_Mu_cap > 0 and d and Ast:
-            # NOTE: narrower text column, wider diagram column
-            col_text, col_fig = st.columns([1.3, 1])
+            # NOTE: text column narrower, diagram column wider
+            col_text, col_fig = st.columns([1.0, 1.4])
 
             # ===========================
             #  LEFT: TEXT / CALCS
@@ -1024,7 +1103,18 @@ def render_bending():
                 st.markdown("#### ULS diagrams")
 
                 sec_fig = _make_cross_section_figure(
-                    b, D, d, a, nb_bot, db_bot, cover_bot
+                    b,
+                    D,
+                    d,
+                    a,
+                    nb_bot,
+                    db_bot,
+                    cover_bot,
+                    nb_top=nb_top,
+                    db_top=db_top,
+                    cover_top=cover_top,
+                    c=c,
+                    z=z,
                 )
                 if sec_fig is not None:
                     st.pyplot(sec_fig, use_container_width=True)
@@ -1120,4 +1210,3 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
-
