@@ -777,6 +777,7 @@ def render_bending():
 
     Mu_nom_report = phi_Mu_cap / phi if phi and phi > 0 else float("nan")
 
+        # ---------- DETAILED SUMMARY TABLE (cleaned) ----------
     rows = [
         {
             "Parameter": "Minimum steel",
@@ -797,7 +798,7 @@ def render_bending():
             "Units": "kNm",
         },
         {
-            "Parameter": "Gross section modulus",
+            "Parameter": "Gross Z",
             "Symbol": "Zg",
             "Value": _fmt(Z_gross, "{:.3e}"),
             "Units": "mm³",
@@ -1198,3 +1199,4 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
