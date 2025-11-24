@@ -778,7 +778,7 @@ def render_bending():
     Mu_nom_report = phi_Mu_cap / phi if phi and phi > 0 else float("nan")
 
     # ---------- UPDATED SUMMARY TABLE LIST ----------
-       rows = [
+           rows = [
         {
             "Parameter": "Minimum steel",
             "Symbol": "As,min",
@@ -862,8 +862,9 @@ def render_bending():
             "Symbol": "Mu*",
             "Value": _fmt(Mu_star, "{:.2f}"),
             "Units": "kNm",
-        }
+        },
     ]
+
 
     # ============================================================
     #  STEP-BY-STEP TABS (ULS / SLS ONLY)
@@ -1193,5 +1194,6 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
 
 
