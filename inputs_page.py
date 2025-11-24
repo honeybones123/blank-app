@@ -12,9 +12,9 @@ from widgets_helpers import apply_global_widget_css, number_row
 
 # --- Pure compute functions from design pages (called to keep summary fresh)
 from bending_page import _compute_bending_capacity
-from shear_page import _compute_shear_capacity       # you'll add this in shear_page.py
-from crack_page import _compute_crack_results       # you'll add this in crack_page.py
-from deflection import _compute_deflection_results  # you'll add this in deflection.py
+# from shear_page import _compute_shear_capacity       # TODO: add later
+# from crack_page import _compute_crack_results       # TODO: add later
+# from deflection import _compute_deflection_results  # TODO: add later
 
 
 # ------------------------------------------------------------
@@ -225,8 +225,12 @@ def make_summary_cross_section_figure():
     y2_bot = y1_bot - rowgap_bot
     min_z_bot = 0.5 * db_bot + 5.0
     max_z_bot = D - 0.5 * db_bot - 5.0
-    y1_bot = float(np.clip(y1_bot, max(y_min_cage, min_z_bot), min(y_max_cage, max_z_bot)))
-    y2_bot = float(np.clip(y2_bot, max(y_min_cage, min_z_bot), min(y_max_cage, max_z_bot)))
+    y1_bot = float(
+        np.clip(y1_bot, max(y_min_cage, min_z_bot), min(y_max_cage, max_z_bot))
+    )
+    y2_bot = float(
+        np.clip(y2_bot, max(y_min_cage, min_z_bot), min(y_max_cage, max_z_bot))
+    )
 
     bx1, bx2 = _two_row_positions_width(nb_bot, db_bot, x_min, x_max)
     bot_x = bx1 + bx2
@@ -237,8 +241,12 @@ def make_summary_cross_section_figure():
     y2_top = y1_top + rowgap_top
     min_z_top = 0.5 * db_top + 5.0
     max_z_top = D - 0.5 * db_top - 5.0
-    y1_top = float(np.clip(y1_top, max(y_min_cage, min_z_top), min(y_max_cage, max_z_top)))
-    y2_top = float(np.clip(y2_top, max(y_min_cage, min_z_top), min(y_max_cage, max_z_top)))
+    y1_top = float(
+        np.clip(y1_top, max(y_min_cage, min_z_top), min(y_max_cage, max_z_top))
+    )
+    y2_top = float(
+        np.clip(y2_top, max(y_min_cage, min_z_top), min(y_max_cage, max_z_top))
+    )
 
     tx1, tx2 = _two_row_positions_width(nb_top, db_top, x_min, x_max)
     top_x = tx1 + tx2
@@ -250,7 +258,9 @@ def make_summary_cross_section_figure():
                 x=bot_x,
                 y=bot_y,
                 mode="markers",
-                marker=dict(color="red", size=7, line=dict(width=0.7, color="black")),
+                marker=dict(
+                    color="red", size=7, line=dict(width=0.7, color="black")
+                ),
                 hoverinfo="skip",
                 showlegend=False,
             )
@@ -262,7 +272,9 @@ def make_summary_cross_section_figure():
                 x=top_x,
                 y=top_y,
                 mode="markers",
-                marker=dict(color="blue", size=7, line=dict(width=0.7, color="black")),
+                marker=dict(
+                    color="blue", size=7, line=dict(width=0.7, color="black")
+                ),
                 hoverinfo="skip",
                 showlegend=False,
             )
@@ -408,7 +420,9 @@ def make_beam_3d_figure():
         return pos
 
     # bottom bars
-    bot_positions = _bar_positions_3d(nb_bot, db_bot, cover_bot, rowgap_bot, is_top=False)
+    bot_positions = _bar_positions_3d(
+        nb_bot, db_bot, cover_bot, rowgap_bot, is_top=False
+    )
     line_w_bot = max(2.0, abs(db_bot) * 0.4)
     for (yy, zz) in bot_positions:
         traces.append(
@@ -424,7 +438,9 @@ def make_beam_3d_figure():
         )
 
     # top bars
-    top_positions = _bar_positions_3d(nb_top, db_top, cover_top, rowgap_top, is_top=True)
+    top_positions = _bar_positions_3d(
+        nb_top, db_top, cover_top, rowgap_top, is_top=True
+    )
     line_w_top = max(2.0, abs(db_top) * 0.4)
     for (yy, zz) in top_positions:
         traces.append(
@@ -799,9 +815,9 @@ def render_inputs():
 
     # ---------- now recompute design results with the latest inputs ----------
     _compute_bending_capacity()
-    _compute_shear_capacity()
-    _compute_crack_results()
-    _compute_deflection_results()
+    # _compute_shear_capacity()
+    # _compute_crack_results()
+    # _compute_deflection_results()
 
     # ---------- summary values ----------
     Mu_star = get_param("Mu_star", 0.0)
