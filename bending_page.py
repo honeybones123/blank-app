@@ -958,16 +958,16 @@ def render_bending():
 
                 st.markdown("---")
 
-                # 3. MINIMUM STRENGTH REQUIREMENTS (AS 3600 CL. 8.1.6)
+                                # 3. MINIMUM STRENGTH REQUIREMENTS (AS 3600 CL. 8.1.6)
                 st.markdown(
                     "### 3. Minimum strength requirements "
                     "(self-weight check – AS 3600 Cl. 8.1.6)"
                 )
                 st.markdown(
-                    "AS 3600 requires a minimum ultimate bending strength so "
-                    "the member can at least support its own weight and initial "
-                    "cracking. Here we use your teaching model based on "
-                    "concrete flexural tensile strength and the gross section."
+                    "AS 3600 requires a minimum bending strength so that the beam "
+                    "can support its own selfweight without cracking. Here we use "
+                    "a teaching model based on concrete flexural tensile strength "
+                    "and the gross section modulus."
                 )
 
                 # 3.1 Concrete flexural tensile strength f_ct,f
@@ -980,36 +980,26 @@ def render_bending():
                     rf" = {fctf:.3f}\,\text{{ MPa}}"
                 )
 
-                # 3.2 Gross second moment of area I_g
-                st.markdown(
-                    "#### 3.2 Gross second moment of area $I_g$"
-                )
-                st.latex(r"I_g = \dfrac{b D^3}{12}")
-                st.latex(
-                    rf"I_g = \dfrac{{{b:.1f} \times {D:.1f}^3}}{{12}}"
-                    rf" = {I_gross:.3e}\,\text{{ mm}}^4"
-                )
-
-                # 3.3 Gross section modulus Z_g
-                st.markdown("#### 3.3 Gross section modulus $Z_g$")
+                # 3.2 Gross section modulus Z_g
+                st.markdown("#### 3.2 Gross section modulus $Z_g$")
                 st.latex(r"Z_g = \dfrac{b D^2}{6}")
                 st.latex(
                     rf"Z_g = \dfrac{{{b:.1f} \times {D:.1f}^2}}{{6}}"
                     rf" = {Z_gross:.3e}\,\text{{ mm}}^3"
                 )
 
-                # 3.4 Cracking moment M_cr
-                st.markdown("#### 3.4 Cracking moment $M_{cr}$")
+                # 3.3 Cracking moment M_cr
+                st.markdown("#### 3.3 Cracking moment $M_{cr}$")
                 st.latex(r"M_{cr} = \dfrac{f_{ct,f} Z_g}{10^6}")
                 st.latex(
                     rf"M_{{cr}} = \dfrac{{{fctf:.3f} \times {Z_gross:.3e}}}{{10^6}}"
                     rf" = {Mcr:.2f}\,\text{{ kNm}}"
                 )
 
-                # 3.5 Minimum required ultimate strength (teaching rule)
+                # 3.4 Minimum required ultimate strength (teaching rule)
                 Muo_min = Mu_min
                 st.markdown(
-                    "#### 3.5 Minimum required ultimate strength "
+                    "#### 3.4 Minimum required ultimate strength "
                     "$(M_{uo})_{min}$ (teaching simplification)"
                 )
                 st.markdown(
@@ -1022,8 +1012,8 @@ def render_bending():
                     rf" = {Muo_min:.2f}\,\text{{ kNm}}"
                 )
 
-                # 3.6 Minimum steel check
-                st.markdown("#### 3.6 Minimum tensile reinforcement check")
+                # 3.5 Minimum tensile reinforcement check
+                st.markdown("#### 3.5 Minimum tensile reinforcement check")
                 st.latex(
                     r"A_{st,\min} = k_{Ast}\left(\frac{d}{D}\right)^2 "
                     r"\frac{f_{ct,f}}{f_{sy}}\,bD"
@@ -1042,7 +1032,6 @@ def render_bending():
                     rf"$M_{{u,\min}} \approx 1.2\,M_{{cr}} = {Muo_min:.2f}$ kNm."
                 )
 
-                st.markdown("---")
 
                 # 4. ULTIMATE FLEXURAL CAPACITY (φMu,cap)
                 st.markdown(
@@ -1227,3 +1216,4 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
