@@ -139,9 +139,6 @@ def _compute_bending_capacity():
 #  DIAGRAM HELPERS (cross-section + stress)
 # ------------------------------------------------------------
 
-# ------------------------------------------------------------
-#  DIAGRAM HELPERS (cross-section + stress)
-# ------------------------------------------------------------
 def _make_cross_section_figure(
     b,
     D,
@@ -156,7 +153,10 @@ def _make_cross_section_figure(
     c=None,
     z=None,
 ):
-    """Front cross-section with compression zone + top + bottom bars + labels."""
+    """
+    Front cross-section with compression zone + top + bottom bars + labels.
+    Smaller figure, thinner lines; c on far right, d on right, z on left.
+    """
     if None in (b, D):
         return None
 
@@ -179,15 +179,15 @@ def _make_cross_section_figure(
     nb_bot = int(nb_bot)
     nb_top = int(nb_top)
 
-    # 🌟 EXACTLY 1/3 SMALLER FIGURE
-    fig, ax = plt.subplots(figsize=(3.0, 4.7))   # 33% smaller than 4.5 × 7
+    # ~1/3 smaller than original
+    fig, ax = plt.subplots(figsize=(3.0, 4.7))
 
     # Outline – slightly thinner
     ax.add_patch(
         Rectangle(
             (0, 0), b, D,
             fill=False,
-            linewidth=1.0     # was 2
+            linewidth=1.0,
         )
     )
 
@@ -200,26 +200,28 @@ def _make_cross_section_figure(
             (0, 0), b, a,
             facecolor="#c7e3ff",
             edgecolor="none",
-            alpha=0.9
+            alpha=0.9,
         )
     )
     ax.text(
-        b/2, a/2,
+        b / 2,
+        a / 2,
         "Compression\nzone",
-        ha="center", va="center",
-        fontsize=8     # smaller
+        ha="center",
+        va="center",
+        fontsize=8,
     )
 
     # -------------------------
     # Bottom reo
     # -------------------------
-    if d is None or math.isnan(d):
+    if d is None or (isinstance(d, float) and math.isnan(d)):
         d = 0.9 * D
     y_bot = d
 
     inner_width_bot = max(b - 2 * cover_bot, db_bot)
     if nb_bot == 1:
-        xs_bot = [b/2]
+        xs_bot = [b / 2]
     else:
         spacing = inner_width_bot / (nb_bot - 1)
         xs_bot = [cover_bot + spacing * i for i in range(nb_bot)]
@@ -230,18 +232,18 @@ def _make_cross_section_figure(
                 (x, y_bot),
                 radius=db_bot / 2,
                 fill=False,
-                linewidth=1.1    # thinner
+                linewidth=1.1,
             )
         )
 
     # -------------------------
     # Top reo
     # -------------------------
-    y_top = cover_top + db_top/2
+    y_top = cover_top + db_top / 2
     inner_width_top = max(b - 2 * cover_top, db_top)
 
     if nb_top == 1:
-        xs_top = [b/2]
+        xs_top = [b / 2]
     else:
         spacing_t = inner_width_top / (nb_top - 1)
         xs_top = [cover_top + spacing_t * i for i in range(nb_top)]
@@ -252,45 +254,58 @@ def _make_cross_section_figure(
                 (x, y_top),
                 radius=db_top / 2,
                 fill=False,
-                linewidth=1.1
+                linewidth=1.1,
             )
         )
 
     # ---------------------------------------------------------
-    # LABELS: z LEFT, d RIGHT, c FAR RIGHT (same positions)
+    # LABELS: z LEFT, d RIGHT, c FAR RIGHT
     # ---------------------------------------------------------
-    x_z = b * 0.23        # slightly more left
-    x_d = b + 15
-    x_c = b + 45
+    x_z = b * 0.23        # left-ish
+    x_d = b + 15          # right
+    x_c = b + 45          # far right (no overlap)
 
     # ---- c (far right)
-    if c is not None and not math.isnan(c):
+    if c is not None and not (isinstance(c, float) and math.isnan(c)):
         ax.annotate(
-            "", xy=(x_c, c), xytext=(x_c, 0),
-            arrowprops=dict(arrowstyle="<->", linewidth=0.9)
+            "",
+            xy=(x_c, c),
+            xytext=(x_c, 0),
+            arrowprops=dict(arrowstyle="<->", linewidth=0.9),
         )
-        ax.text(x_c + 3, c/2, "c", fontsize=8, ha="left", va="center")
+        ax.text(x_c + 3, c / 2, "c", fontsize=8, ha="left", va="center")
 
     # ---- d (right)
-    if d is not None and not math.isnan(d):
+    if d is not None and not (isinstance(d, float) and math.isnan(d)):
         ax.annotate(
-            "", xy=(x_d, d), xytext=(x_d, 0),
-            arrowprops=dict(arrowstyle="<->", linewidth=0.9)
+            "",
+            xy=(x_d, d),
+            xytext=(x_d, 0),
+            arrowprops=dict(arrowstyle="<->", linewidth=0.9),
         )
-        ax.text(x_d + 3, d/2, "d", fontsize=8, ha="left", va="center")
+        ax.text(x_d + 3, d / 2, "d", fontsize=8, ha="left", va="center")
 
-    # ---- z (vertical)
-    if z is not None and not math.isnan(z):
+    # ---- z (left)
+    if (
+        z is not None
+        and not (isinstance(z, float) and math.isnan(z))
+        and d is not None
+        and not (isinstance(d, float) and math.isnan(d))
+    ):
         y_top_z = d - z
         ax.annotate(
-            "", xy=(x_z, d), xytext=(x_z, y_top_z),
-            arrowprops=dict(arrowstyle="<->", linewidth=0.9)
+            "",
+            xy=(x_z, d),
+            xytext=(x_z, y_top_z),
+            arrowprops=dict(arrowstyle="<->", linewidth=0.9),
         )
         ax.text(
-            x_z - 4, (d + y_top_z)/2,
+            x_z - 4,
+            (d + y_top_z) / 2,
             "z",
             fontsize=8,
-            ha="right", va="center"
+            ha="right",
+            va="center",
         )
 
     # Axis settings (smaller fonts)
@@ -300,6 +315,67 @@ def _make_cross_section_figure(
     ax.set_xlabel("Width (mm)", fontsize=9)
     ax.set_ylabel("Depth (mm)", fontsize=9)
     ax.set_title("ULS SECTION", fontsize=10)
+    ax.tick_params(labelsize=8)
+
+    return fig
+
+
+def _make_stress_figure(fc, fsy, alpha2, D, d, c):
+    """
+    Simple ULS stress diagram:
+    - rectangular compression block of depth c with stress α2*f'c
+    - point for tensile steel stress at d with fsy.
+    """
+    def _bad(x):
+        return x is None or (isinstance(x, float) and math.isnan(x))
+
+    if _bad(fc) or _bad(fsy) or _bad(alpha2) or _bad(D) or _bad(d) or _bad(c):
+        return None
+
+    sig_c = alpha2 * fc
+    sig_s = fsy
+
+    sig_max = max(sig_c, sig_s)
+    if sig_max <= 0:
+        return None
+
+    fig, ax = plt.subplots(figsize=(3.0, 4.0))
+
+    # Compression block
+    ax.add_patch(
+        Rectangle(
+            (0, 0), sig_c, c,
+            facecolor="#c7e3ff",
+            edgecolor="black",
+            linewidth=1.0,
+        )
+    )
+    ax.text(
+        sig_c * 0.5,
+        c * 0.5,
+        r"$\alpha_2 f'_c$",
+        ha="center",
+        va="center",
+        fontsize=8,
+    )
+
+    # Tensile steel stress at depth d
+    ax.plot([0, sig_s], [d, d], linestyle="--", linewidth=1.0, color="black")
+    ax.plot(sig_s, d, "ko", markersize=3)
+    ax.text(
+        sig_s,
+        d + 15,
+        r"$f_{sy}$",
+        ha="right",
+        va="bottom",
+        fontsize=8,
+    )
+
+    # Axes
+    ax.set_xlim(0, 1.1 * sig_max)
+    ax.set_ylim(D + 10, -20)
+    ax.set_xlabel("ULS STRESS (MPa)", fontsize=9)
+    ax.set_ylabel("Depth (mm)", fontsize=9)
     ax.tick_params(labelsize=8)
 
     return fig
@@ -453,12 +529,14 @@ def render_bending():
 
     da1, da2, da3 = st.columns(3)
 
+    sync = sync_callbacks  # shorthand
+
     with da1:
         number_row(
             "Design moment Mu* (kNm)",
             "bending_Mu_star",
             10.0,
-            sync_callbacks,
+            sync,
             help_text=(
                 "Factored design bending moment at the critical section. "
                 "Increasing Mu* increases bending demand and utilisation."
@@ -469,7 +547,7 @@ def render_bending():
             "Axial force N* (kN)",
             "bending_N_star",
             50.0,
-            sync_callbacks,
+            sync,
             help_text=(
                 "Axial force acting with bending. Compression (negative in many "
                 "conventions) can reduce tension in the steel; tension increases demand."
@@ -480,7 +558,7 @@ def render_bending():
             "Prestress force P* (kN)",
             "bending_P_star",
             50.0,
-            sync_callbacks,
+            sync,
             help_text=(
                 "Prestress / pre-compression in the section. Increasing P* typically "
                 "reduces tensile demand in the bottom reinforcement."
@@ -501,7 +579,7 @@ def render_bending():
             "Width b (mm)",
             "bending_b",
             10.0,
-            sync_callbacks,
+            sync,
             help_text=(
                 "Section width. Increasing b increases compression block area and "
                 "reduces required tensile steel for a given Mu*."
@@ -511,7 +589,7 @@ def render_bending():
             "Depth D (mm)",
             "bending_D",
             10.0,
-            sync_callbacks,
+            sync,
             help_text=(
                 "Overall section depth. Larger D increases lever arm (d) and "
                 "typically increases bending capacity."
@@ -521,7 +599,7 @@ def render_bending():
             "Span L (mm)",
             "bending_L",
             100.0,
-            sync_callbacks,
+            sync,
             help_text=(
                 "Member span. Used mainly for serviceability checks and linking to "
                 "deflection; not directly in φMu,cap here."
@@ -534,7 +612,7 @@ def render_bending():
             "Concrete strength f'c (MPa)",
             "bending_fc",
             2.0,
-            sync_callbacks,
+            sync,
             help_text=(
                 "Concrete compressive strength. Higher f'c increases compression "
                 "capacity and may reduce required steel, but also changes ductility limits."
@@ -544,7 +622,7 @@ def render_bending():
             "Steel yield fsy (MPa)",
             "bending_fsy",
             10.0,
-            sync_callbacks,
+            sync,
             help_text=(
                 "Yield strength of reinforcing steel. Higher fsy increases the "
                 "force carried by a given area of steel."
@@ -554,7 +632,7 @@ def render_bending():
             "Ec (MPa)",
             "bending_Ec",
             1000.0,
-            sync_callbacks,
+            sync,
             help_text=(
                 "Short-term modulus of concrete. Mainly affects stiffness and "
                 "SLS behaviour rather than φMu,cap."
@@ -564,7 +642,7 @@ def render_bending():
             "Es (MPa)",
             "bending_Es",
             10000.0,
-            sync_callbacks,
+            sync,
             help_text=(
                 "Steel modulus. Typically ~200,000 MPa; affects cracked-section "
                 "stiffness and strain calculations."
@@ -581,7 +659,7 @@ def render_bending():
             "Number of bottom bars nb_bot",
             "bending_nb_bot",
             1,
-            sync_callbacks,
+            sync,
             help_text=(
                 "Number of tension bars at the bottom. Increasing nb_bot increases Ast,bot "
                 "and hence bending capacity."
@@ -591,7 +669,7 @@ def render_bending():
             "Bottom bar diameter db_bot (mm)",
             "bending_db_bot",
             2.0,
-            sync_callbacks,
+            sync,
             help_text=(
                 "Nominal diameter of bottom bars (e.g. N24 = 24 mm). Larger diameter "
                 "bars increase Ast,bot but may impact spacing and ductility."
@@ -601,7 +679,7 @@ def render_bending():
             "Bottom row gap (mm)",
             "bending_rowgap_bot",
             5.0,
-            sync_callbacks,
+            sync,
             help_text=(
                 "Vertical gap between bottom bar rows (if 2 rows are used). Increasing "
                 "this moves the second row further from the tension face, increasing its lever arm."
@@ -611,7 +689,7 @@ def render_bending():
             "Bottom cover (mm)",
             "bending_cover_bot",
             5.0,
-            sync_callbacks,
+            sync,
             help_text=(
                 "Concrete cover to bottom reinforcement. Increasing cover reduces "
                 "effective depth d and reduces φMu,cap, but may be required for durability."
@@ -624,7 +702,7 @@ def render_bending():
             "Number of top bars nb_top",
             "bending_nb_top",
             1,
-            sync_callbacks,
+            sync,
             help_text=(
                 "Number of top bars (compression or hanger steel). "
                 "Important for negative moment regions and detailing."
@@ -634,14 +712,14 @@ def render_bending():
             "Top bar diameter db_top (mm)",
             "bending_db_top",
             2.0,
-            sync_callbacks,
+            sync,
             help_text="Nominal diameter of top bars (e.g. N16 = 16 mm).",
         )
         number_row(
             "Top row gap (mm)",
             "bending_rowgap_top",
             5.0,
-            sync_callbacks,
+            sync,
             help_text=(
                 "Vertical gap between top bar rows if more than one row is used."
             ),
@@ -650,7 +728,7 @@ def render_bending():
             "Top cover (mm)",
             "bending_cover_top",
             5.0,
-            sync_callbacks,
+            sync,
             help_text=(
                 "Concrete cover to top reinforcement. Affects effective depth to "
                 "compression reinforcement and durability."
@@ -732,7 +810,6 @@ def render_bending():
 
     Mu_nom_report = phi_Mu_cap / phi if phi and phi > 0 else float("nan")
 
-    # ---------- DETAILED SUMMARY TABLE (cleaned) ----------
     rows = [
         {
             "Parameter": "Minimum steel",
@@ -842,7 +919,6 @@ def render_bending():
             #  LEFT: TEXT / CALCS
             # ===========================
             with col_text:
-                # 1. REQUIRED CALCULATED INPUTS FOR BENDING
                 st.markdown("### 1. Required calculated inputs for bending")
 
                 # 1.1 Effective depth d
@@ -863,7 +939,7 @@ def render_bending():
 
                 st.markdown("---")
 
-                # 2. STRESS-BLOCK PARAMETERS (AS 3600:2018 CL. 8.1.3)
+                # 2. Stress-block parameters
                 st.markdown(
                     "### 2. Stress-block parameters "
                     "(AS 3600:2018 Cl. 8.1.3)"
@@ -887,7 +963,7 @@ def render_bending():
                 )
                 st.latex(rf"\Rightarrow \gamma = {gamma_sb:.3f}")
 
-                # 2.3 strength reduction and neutral-axis ratio
+                # 2.3 strength reduction and NA ratio
                 st.markdown("#### 2.3 Strength reduction and NA ratio")
                 st.latex(rf"\phi_b = {phi_b:.2f}")
                 st.latex(r"k_u = \dfrac{c}{d}")
@@ -895,7 +971,7 @@ def render_bending():
 
                 st.markdown("---")
 
-                # 3. MINIMUM STRENGTH REQUIREMENTS (AS 3600 CL. 8.1.6)
+                # 3. Minimum strength requirements
                 st.markdown(
                     "### 3. Minimum strength requirements "
                     "(self-weight check – AS 3600 Cl. 8.1.6)"
@@ -907,7 +983,7 @@ def render_bending():
                     "and the gross section modulus."
                 )
 
-                # 3.1 Concrete flexural tensile strength f_ct,f
+                # 3.1 fctf
                 st.markdown(
                     "#### 3.1 Concrete flexural tensile strength $f_{ct,f}$"
                 )
@@ -917,7 +993,7 @@ def render_bending():
                     rf" = {fctf:.3f}\,\text{{ MPa}}"
                 )
 
-                # 3.2 Gross section modulus Z_g
+                # 3.2 Zg
                 st.markdown("#### 3.2 Gross section modulus $Z_g$")
                 st.latex(r"Z_g = \dfrac{b D^2}{6}")
                 st.latex(
@@ -925,7 +1001,7 @@ def render_bending():
                     rf" = {Z_gross:.3e}\,\text{{ mm}}^3"
                 )
 
-                # 3.3 Cracking moment M_cr
+                # 3.3 Mcr
                 st.markdown("#### 3.3 Cracking moment $M_{cr}$")
                 st.latex(r"M_{cr} = \dfrac{f_{ct,f} Z_g}{10^6}")
                 st.latex(
@@ -933,7 +1009,7 @@ def render_bending():
                     rf" = {Mcr:.2f}\,\text{{ kNm}}"
                 )
 
-                # 3.4 Minimum required ultimate strength (teaching rule)
+                # 3.4 Min ultimate strength
                 Muo_min = Mu_min
                 st.markdown(
                     "#### 3.4 Minimum required ultimate strength "
@@ -949,7 +1025,7 @@ def render_bending():
                     rf" = {Muo_min:.2f}\,\text{{ kNm}}"
                 )
 
-                # 3.5 Minimum tensile reinforcement check
+                # 3.5 Min tensile steel
                 st.markdown("#### 3.5 Minimum tensile reinforcement check")
                 st.latex(
                     r"A_{st,\min} = k_{Ast}\left(\frac{d}{D}\right)^2 "
@@ -971,12 +1047,12 @@ def render_bending():
 
                 st.markdown("---")
 
-                # 4. ULTIMATE FLEXURAL CAPACITY (φMu,cap)
+                # 4. Ultimate flexural capacity
                 st.markdown(
                     "### 4. Ultimate flexural capacity $\\phi M_{u,cap}$"
                 )
 
-                # 4.1 Internal forces and neutral-axis depth
+                # 4.1 internal forces & c
                 st.markdown(
                     "#### 4.1 Internal forces and neutral-axis depth $c$"
                 )
@@ -998,7 +1074,7 @@ def render_bending():
                     rf" = {c:.2f}\,\text{{ mm}}"
                 )
 
-                # 4.2 Lever arm and nominal moment
+                # 4.2 lever arm and Mu
                 st.markdown("#### 4.2 Lever arm and nominal moment $M_u$")
                 st.latex(r"a = \gamma c,\quad z = d - \dfrac{a}{2}")
                 st.latex(
@@ -1016,7 +1092,7 @@ def render_bending():
                     rf" = {Mu_nom:.2f}\,\text{{ kNm}}"
                 )
 
-                # 4.3 Factored capacity and utilisation
+                # 4.3 φMu_cap and utilisation
                 st.markdown("#### 4.3 Factored capacity and utilisation")
                 phiMu_str2 = f"{phi_Mu_cap:.2f}"
                 Mu_star_str2 = f"{Mu_star:.2f}"
@@ -1050,28 +1126,42 @@ def render_bending():
                 )
 
             # ===========================
-            #  # ===========================
-# RIGHT: DIAGRAMS
-# ===========================
-with col_fig:
-    # REMOVE: st.markdown("#### ULS diagrams")
+            #  RIGHT: DIAGRAMS
+            # ===========================
+            with col_fig:
+                # shift diagrams upward a bit
+                st.markdown(
+                    "<div style='margin-top:-2.5rem;'></div>",
+                    unsafe_allow_html=True,
+                )
 
-    # shift diagram upward
-    st.markdown("<div style='margin-top:-2.5rem;'></div>", unsafe_allow_html=True)
+                sec_fig = _make_cross_section_figure(
+                    b,
+                    D,
+                    d,
+                    a,
+                    nb_bot,
+                    db_bot,
+                    cover_bot,
+                    nb_top=nb_top,
+                    db_top=db_top,
+                    cover_top=cover_top,
+                    c=c,
+                    z=z,
+                )
+                if sec_fig is not None:
+                    st.pyplot(sec_fig, use_container_width=True)
+                    plt.close(sec_fig)
 
-    sec_fig = _make_cross_section_figure(
-        b, D, d, a, nb_bot, db_bot, cover_bot,
-        nb_top=nb_top, db_top=db_top, cover_top=cover_top,
-        c=c, z=z
-    )
-    if sec_fig is not None:
-        st.pyplot(sec_fig, use_container_width=True)
-        plt.close(sec_fig)
+                stress_fig = _make_stress_figure(
+                    fc, fsy, alpha2_sb, D, d, c
+                )
+                if stress_fig is not None:
+                    st.pyplot(stress_fig, use_container_width=True)
+                    plt.close(stress_fig)
 
-    stress_fig = _make_stress_figure(fc, fsy, alpha2_sb, D, d, c)
-    if stress_fig is not None:
-        st.pyplot(stress_fig, use_container_width=True)
-        plt.close(stress_fig)
+        else:
+            st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
 
     # ----- SLS detailed tab -----
     with tab_sls:
@@ -1153,6 +1243,3 @@ with col_fig:
 
 if __name__ == "__main__":
     render_bending()
-
-
-
