@@ -1080,7 +1080,7 @@ def render_bending():
     #  DETAILED SUMMARY + STRESS–STRAIN DIAGRAM (50/50 LAYOUT)
     #  (now BELOW inputs & design actions, just above ULS tab)
     # ============================================================
-    st.subheader("Bending Capacity – Detailed Summary (values only)")
+    st.subheader("Detailed Summary With Stress–strain Diagrams")
 
     rows = [
         {"Parameter": "Minimum steel",          "Symbol": "As,min",   "Value": _fmt(As_min, "{:.1f}"),        "Units": "mm²"},
@@ -1101,13 +1101,13 @@ def render_bending():
 
     df_summary = pd.DataFrame(rows)
 
-    colL, colR = st.columns([.7, 1.3])  # 50/50 layout
+    colL, colR = st.columns([.9, 1.1])  # 50/50 layout
 
     with colL:
         st.dataframe(df_summary, hide_index=True, use_container_width=True)
 
     with colR:
-        st.markdown("#### Stress–strain model")
+        st.markdown("")
         strain_state = st.radio(
             "State:",
             ["ULS", "SLS (cracked)", "Uncracked"],
@@ -1443,5 +1443,6 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
 
 
