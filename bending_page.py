@@ -320,113 +320,127 @@ def _make_cross_section_figure(
     return fig
 
 
-def _make_stress_figure(alpha2_val, gamma_val):
+def _make_stress_figure(fc, fsy, alpha2, D, d, c):
     """
-    Schematic ULS concrete stress block (teaching sketch only).
-
-    - Big concrete compression block with short arrows
-    - Shows α₂ and γ on the diagram
-    - No axes / scales and does NOT depend on widgets numerically
+    Static schematic stress/force diagram:
+    - thick vertical line
+    - compression block arrows with α2 f'c and Cc
+    - vertical γ k_u d arrow
+    - tensile Ts arrow at bottom
+    - no axes or numeric scales
     """
-    fig, ax = plt.subplots(figsize=(2.4, 3.0))
+    fig, ax = plt.subplots(figsize=(2.2, 4.0))
 
-    # Coordinate system: just an empty canvas
-    ax.set_xlim(0, 5)
-    ax.set_ylim(0, 6)
+    # Use a simple normalised coordinate system (0–10 both ways)
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+
+    # Turn off axes for a clean schematic
     ax.axis("off")
 
-    # Column edge (vertical line)
-    ax.add_patch(
-        Rectangle(
-            (1.0, 0.5),   # x, y
-            0.35,         # width
-            5.0,          # height
-            fill=False,
-            linewidth=1.0,
-        )
-    )
+    # Main vertical line (section)
+    x_line = 4.0
+    y_bot = 1.2
+    y_top = 9.0
+    ax.plot([x_line, x_line], [y_bot, y_top], color="black", linewidth=2.0)
 
-    # Concrete stress block on the compression side
-    block_y0 = 4.0
-    block_h = 1.3
-    block_x0 = 1.35
-    block_w = 1.6
+    # -----------------------------
+    # Compression block region
+    # -----------------------------
+    y_c_top = 8.2
+    y_c_bot = 5.8
 
-    ax.add_patch(
-        Rectangle(
-            (block_x0, block_y0),
-            block_w,
-            block_h,
-            facecolor="#c7e3ff",
-            edgecolor="black",
-            linewidth=1.0,
-        )
-    )
+    # Dashed green lines across compression block region
+    ax.hlines([y_c_top, y_c_bot], 1.0, 9.0, linestyles="dashed", linewidth=0.8)
 
-    # Short arrows showing compressive stress into the block
-    for i in range(4):
-        y_arrow = block_y0 + block_h * (0.15 + 0.2 * i)
+    # Three small arrows representing α2 f'c
+    arrow_x_start = x_line
+    arrow_x_end = 7.0
+    arrow_ys = [7.9, 7.0, 6.1]
+
+    for y in arrow_ys:
         ax.annotate(
             "",
-            xy=(block_x0 + 0.2, y_arrow),
-            xytext=(block_x0 + block_w - 0.15, y_arrow),
-            arrowprops=dict(arrowstyle="<-", linewidth=0.9),
+            xy=(arrow_x_end, y),
+            xytext=(arrow_x_start, y),
+            arrowprops=dict(arrowstyle="->", linewidth=1.1, color="#4c6faf"),
         )
 
-    # Label inside the block
+    # Label α2 f'c above arrows
     ax.text(
-        block_x0 + block_w * 0.5,
-        block_y0 + block_h * 0.5,
+        (arrow_x_start + arrow_x_end) / 2,
+        y_c_top + 0.4,
         r"$\alpha_2 f'_c$",
         ha="center",
+        va="bottom",
+        fontsize=9,
+    )
+
+    # Label Cc beside arrows
+    ax.text(
+        arrow_x_end + 0.3,
+        (y_c_top + y_c_bot) / 2,
+        r"$C_c$",
+        ha="left",
         va="center",
         fontsize=9,
     )
 
-    # Depth "a = γc" with double arrow
-    x_a = block_x0 + block_w + 0.6
+    # Vertical γ k_u d arrow on the left of the compression zone
+    x_g = x_line - 0.9
     ax.annotate(
         "",
-        xy=(x_a, block_y0 + block_h),
-        xytext=(x_a, block_y0),
-        arrowprops=dict(arrowstyle="<->", linewidth=0.9),
+        xy=(x_g, y_c_top),
+        xytext=(x_g, y_c_bot),
+        arrowprops=dict(arrowstyle="<->", linewidth=1.0),
     )
     ax.text(
-        x_a + 0.2,
-        block_y0 + block_h * 0.5,
-        r"$a = \gamma c$",
+        x_g - 0.3,
+        (y_c_top + y_c_bot) / 2,
+        r"$\gamma k_u d$",
+        ha="right",
+        va="center",
+        fontsize=9,
+        rotation=90,
+    )
+
+    # -----------------------------
+    # Tensile force Ts at bottom
+    # -----------------------------
+    y_ts = 2.0
+
+    # Dashed green line around tension level
+    ax.hlines([y_ts + 1.0, y_ts - 1.0], 1.0, 9.0, linestyles="dashed", linewidth=0.8)
+
+    # Ts arrow
+    ax.annotate(
+        "",
+        xy=(7.0, y_ts),
+        xytext=(x_line, y_ts),
+        arrowprops=dict(arrowstyle="->", linewidth=1.1, color="#4c6faf"),
+    )
+    ax.text(
+        7.0 + 0.3,
+        y_ts,
+        r"$T_s$",
         ha="left",
         va="center",
         fontsize=9,
     )
 
-    # Text showing α2 and γ values (from the calc) in the bottom-right
+    # -----------------------------
+    # Bottom label
+    # -----------------------------
     ax.text(
-        0.8,
-        1.2,
-        rf"$\alpha_2 = {alpha2_val:.3f}$",
-        fontsize=9,
-        ha="left",
-    )
-    ax.text(
-        0.8,
-        0.6,
-        rf"$\gamma = {gamma_val:.3f}$",
-        fontsize=9,
-        ha="left",
-    )
-
-    # Small caption
-    ax.text(
-        2.5,
-        0.2,
-        "ULS concrete stress block (schematic)",
-        fontsize=8,
+        x_line,
+        0.3,
+        "Stress / Force",
         ha="center",
+        va="bottom",
+        fontsize=9,
     )
 
     return fig
-
 
 # ------------------------------------------------------------
 #  PAGE RENDER
@@ -1293,3 +1307,4 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
