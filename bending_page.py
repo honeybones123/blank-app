@@ -191,7 +191,7 @@ def _make_cross_section_figure(
         )
     )
 
-    # Compression block (if a not provided, use 15% of depth)
+    # Compression block (for shading)
     if a is None or (isinstance(a, float) and math.isnan(a)) or a <= 0:
         a = 0.15 * D
 
@@ -320,21 +320,19 @@ def _make_cross_section_figure(
     return fig
 
 
-def _make_stress_figure(alpha2_value, gamma_value):
+def _make_stress_figure(alpha2_val, gamma_val):
     """
     Static schematic stress/force diagram:
-
     - thick vertical line
-    - light-blue concrete stress block with arrows (α2 f'c, Cc)
+    - rectangular compression block with arrows for α2 f'c and Cc
     - vertical γ k_u d arrow
     - tensile Ts arrow at bottom
     - no axes or numeric scales
-    - does NOT depend on the actual numeric values; purely schematic
+    Does NOT depend on live widget values (pure teaching schematic).
     """
-
     fig, ax = plt.subplots(figsize=(2.2, 4.0))
 
-    # Simple normalised coordinate system (0–10 both ways)
+    # Normalised coordinates
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 10)
     ax.axis("off")
@@ -343,45 +341,45 @@ def _make_stress_figure(alpha2_value, gamma_value):
     x_line = 4.0
     y_bot = 1.2
     y_top = 9.0
-    ax.plot([x_line, x_line], [y_bot, y_top], color="black", linewidth=2.4)
+    ax.plot([x_line, x_line], [y_bot, y_top], color="black", linewidth=2.2)
 
     # -----------------------------
     # Compression block region
     # -----------------------------
     y_c_top = 8.2
     y_c_bot = 5.8
-    x_block_left = x_line
-    x_block_right = 7.4
 
-    # Light blue stress block rectangle
+    block_x_left = x_line
+    block_width = 3.0
+
+    # Stress block outline
     ax.add_patch(
         Rectangle(
-            (x_block_left, y_c_bot),
-            x_block_right - x_block_left,
+            (block_x_left, y_c_bot),
+            block_width,
             y_c_top - y_c_bot,
-            facecolor="#c7e3ff",
-            edgecolor="black",
-            linewidth=1.0,
-            alpha=0.9,
+            fill=False,
+            edgecolor="#4c6faf",
+            linewidth=1.2,
         )
     )
 
-    # Three arrows pointing LEFT (compression toward section)
-    arrow_x_start = x_block_right - 0.2  # start near right edge
-    arrow_x_end = x_block_left + 0.2     # arrow heads near section
+    # Three arrows pointing LEFT (towards the section)
+    arrow_x_start = block_x_left + block_width - 0.2  # right side
+    arrow_x_end = block_x_left + 0.1                  # just right of the line
     arrow_ys = [7.9, 7.0, 6.1]
 
     for y in arrow_ys:
         ax.annotate(
             "",
-            xy=(arrow_x_end, y),          # arrow head
-            xytext=(arrow_x_start, y),    # tail
-            arrowprops=dict(arrowstyle="->", linewidth=1.1, color="#4c6faf"),
+            xy=(arrow_x_end, y),
+            xytext=(arrow_x_start, y),
+            arrowprops=dict(arrowstyle="->", linewidth=1.2, color="#4c6faf"),
         )
 
     # Label α2 f'c above arrows
     ax.text(
-        (x_block_left + x_block_right) / 2,
+        (block_x_left + block_x_left + block_width) / 2,
         y_c_top + 0.4,
         r"$\alpha_2 f'_c$",
         ha="center",
@@ -389,9 +387,9 @@ def _make_stress_figure(alpha2_value, gamma_value):
         fontsize=9,
     )
 
-    # Label Cc beside block
+    # Label Cc beside arrows
     ax.text(
-        x_block_right + 0.3,
+        block_x_left + block_width + 0.3,
         (y_c_top + y_c_bot) / 2,
         r"$C_c$",
         ha="left",
@@ -402,12 +400,12 @@ def _make_stress_figure(alpha2_value, gamma_value):
     # -----------------------------
     # Vertical γ k_u d arrow
     # -----------------------------
-    x_g = x_line - 1.0
+    x_g = x_line - 0.9
     ax.annotate(
         "",
         xy=(x_g, y_c_top),
         xytext=(x_g, y_c_bot),
-        arrowprops=dict(arrowstyle="<->", linewidth=1.0, color="black"),
+        arrowprops=dict(arrowstyle="<->", linewidth=1.1),
     )
     ax.text(
         x_g - 0.3,
@@ -428,7 +426,7 @@ def _make_stress_figure(alpha2_value, gamma_value):
         "",
         xy=(7.0, y_ts),
         xytext=(x_line, y_ts),
-        arrowprops=dict(arrowstyle="->", linewidth=1.1, color="#4c6faf"),
+        arrowprops=dict(arrowstyle="->", linewidth=1.2, color="#4c6faf"),
     )
     ax.text(
         7.0 + 0.3,
@@ -438,8 +436,6 @@ def _make_stress_figure(alpha2_value, gamma_value):
         va="center",
         fontsize=9,
     )
-
-    # No bottom labels (no α2=… or γ=…, no "Stress / Force")
 
     return fig
 
