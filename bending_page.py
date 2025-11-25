@@ -1,4 +1,5 @@
 import math
+import numpy as np
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -46,7 +47,7 @@ def _compute_bending_capacity():
     fsy = get_param("fsy")
     Ast = get_param("Ast_bot")
     Mu_star = get_param("Mu_star")
-    # NEW: strength reduction factor from shared state (widget)
+    # Strength reduction factor from shared state (e.g. Inputs page)
     phi = get_param("phi_bend", 0.85)
 
     if None in (b, D, d, fc, fsy, Ast, Mu_star):
@@ -78,10 +79,9 @@ def _compute_bending_capacity():
     kAst = 1.0
     As_min = kAst * (d / D) ** 2 * (fctf / fsy) * b * D
 
-    # ---- Stress-block factors (kept constant for teaching here) ----
+    # ---- Stress-block factors (teaching) ----
     alpha2 = 0.85
     gamma = 0.85
-    # phi already taken from shared state
 
     # ---- Flexural capacity ----
     T = Ast * fsy                              # N (Ast mm², fsy MPa = N/mm²)
@@ -178,10 +178,9 @@ def _make_cross_section_figure(
     nb_bot = int(nb_bot)
     nb_top = int(nb_top)
 
-    # ~30% smaller figure
     fig, ax = plt.subplots(figsize=(2.3, 3.3))
 
-    # Outline – thinner
+    # Outline
     ax.add_patch(
         Rectangle(
             (0, 0), b, D,
@@ -190,7 +189,7 @@ def _make_cross_section_figure(
         )
     )
 
-    # Compression block (for shading)
+    # Compression block
     if a is None or (isinstance(a, float) and math.isnan(a)) or a <= 0:
         a = 0.15 * D
 
@@ -211,9 +210,7 @@ def _make_cross_section_figure(
         fontsize=8,
     )
 
-    # -------------------------
     # Bottom reo
-    # -------------------------
     if d is None or (isinstance(d, float) and math.isnan(d)):
         d = 0.9 * D
     y_bot = d
@@ -235,9 +232,7 @@ def _make_cross_section_figure(
             )
         )
 
-    # -------------------------
     # Top reo
-    # -------------------------
     y_top = cover_top + db_top / 2
     inner_width_top = max(b - 2 * cover_top, db_top)
 
@@ -257,14 +252,12 @@ def _make_cross_section_figure(
             )
         )
 
-    # ---------------------------------------------------------
     # LABELS: z LEFT, d RIGHT, c FAR RIGHT
-    # ---------------------------------------------------------
-    x_z = b * 0.23        # left-ish
-    x_d = b + 15          # right
-    x_c = b + 45          # far right (no overlap)
+    x_z = b * 0.23
+    x_d = b + 15
+    x_c = b + 45
 
-    # ---- c (far right)
+    # c (far right)
     if c is not None and not (isinstance(c, float) and math.isnan(c)):
         ax.annotate(
             "",
@@ -274,7 +267,7 @@ def _make_cross_section_figure(
         )
         ax.text(x_c + 3, c / 2, "c", fontsize=7, ha="left", va="center")
 
-    # ---- d (right)
+    # d (right)
     if d is not None and not (isinstance(d, float) and math.isnan(d)):
         ax.annotate(
             "",
@@ -284,7 +277,7 @@ def _make_cross_section_figure(
         )
         ax.text(x_d + 3, d / 2, "d", fontsize=7, ha="left", va="center")
 
-    # ---- z (left)
+    # z (left)
     if (
         z is not None
         and not (isinstance(z, float) and math.isnan(z))
@@ -307,7 +300,6 @@ def _make_cross_section_figure(
             va="center",
         )
 
-    # Axis settings (smaller fonts)
     ax.set_xlim(-10, b + 70)
     ax.set_ylim(D + 10, -20)
     ax.set_aspect("equal")
@@ -321,37 +313,25 @@ def _make_cross_section_figure(
 
 def _make_stress_figure(alpha2_val, gamma_val):
     """
-    Static schematic stress/force diagram:
-    - thick vertical line
-    - rectangular compression block with arrows for α2 f'c and Cc
-    - vertical γ k_u d arrow
-    - tensile Ts arrow at bottom
-    - no axes or numeric scales
-    Does NOT depend on live widget values (pure teaching schematic).
+    Static schematic stress/force diagram (teaching).
     """
     fig, ax = plt.subplots(figsize=(2.2, 4.0))
 
-    # Normalised coordinates
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 10)
     ax.axis("off")
 
-    # Main vertical line (section)
     x_line = 4.0
     y_bot = 1.2
     y_top = 9.0
     ax.plot([x_line, x_line], [y_bot, y_top], color="black", linewidth=2.2)
 
-    # -----------------------------
-    # Compression block region
-    # -----------------------------
+    # Compression block
     y_c_top = 8.2
     y_c_bot = 5.8
-
     block_x_left = x_line
     block_width = 3.0
 
-    # Stress block outline
     ax.add_patch(
         Rectangle(
             (block_x_left, y_c_bot),
@@ -363,9 +343,8 @@ def _make_stress_figure(alpha2_val, gamma_val):
         )
     )
 
-    # Three arrows pointing LEFT (towards the section)
-    arrow_x_start = block_x_left + block_width - 0.2  # right side
-    arrow_x_end = block_x_left + 0.1                  # just right of the line
+    arrow_x_start = block_x_left + block_width - 0.2
+    arrow_x_end = block_x_left + 0.1
     arrow_ys = [7.9, 7.0, 6.1]
 
     for y in arrow_ys:
@@ -376,7 +355,6 @@ def _make_stress_figure(alpha2_val, gamma_val):
             arrowprops=dict(arrowstyle="->", linewidth=1.2, color="#4c6faf"),
         )
 
-    # Label α2 f'c above arrows
     ax.text(
         (block_x_left + block_x_left + block_width) / 2,
         y_c_top + 0.4,
@@ -386,7 +364,6 @@ def _make_stress_figure(alpha2_val, gamma_val):
         fontsize=9,
     )
 
-    # Label Cc beside arrows
     ax.text(
         block_x_left + block_width + 0.3,
         (y_c_top + y_c_bot) / 2,
@@ -396,9 +373,6 @@ def _make_stress_figure(alpha2_val, gamma_val):
         fontsize=9,
     )
 
-    # -----------------------------
-    # Vertical γ k_u d arrow
-    # -----------------------------
     x_g = x_line - 0.9
     ax.annotate(
         "",
@@ -416,11 +390,7 @@ def _make_stress_figure(alpha2_val, gamma_val):
         rotation=90,
     )
 
-    # -----------------------------
-    # Tensile force Ts at bottom
-    # -----------------------------
     y_ts = 2.0
-
     ax.annotate(
         "",
         xy=(7.0, y_ts),
@@ -440,6 +410,255 @@ def _make_stress_figure(alpha2_val, gamma_val):
 
 
 # ------------------------------------------------------------
+#  STRESS–STRAIN PROFILE HELPERS (AS3600 α2–γ)
+# ------------------------------------------------------------
+def _stress_strain_state(state: str):
+    """
+    Compute neutral axis and strain/stress info for the demo diagram.
+    Uses:
+        b, D, d, fc, fsy, Ast_bot from shared parameters.
+    Treats Ast_bot & d as the resultant bottom steel layer.
+    """
+    b = get_param("b")
+    D = get_param("D")
+    d = get_param("d")
+    fc = get_param("fc")
+    fsy = get_param("fsy")
+    As = get_param("Ast_bot")
+    Ec = get_param("Ec")
+    Es = get_param("Es")
+
+    if fc is None:
+        fc = 32.0
+    if Ec is None:
+        Ec = 4700 * math.sqrt(fc)
+    if Es is None:
+        Es = 200000.0
+
+    # AS3600 α2–γ
+    alpha2_raw = 0.85 - 0.0015 * fc
+    gamma_raw = 0.97 - 0.0025 * fc
+    alpha2 = max(0.67, alpha2_raw)
+    gamma = max(0.67, gamma_raw)
+
+    # Default strains
+    eps_cu_uls = 0.003
+    eps_c_sls = 0.0008
+    eps_ext_unc = 0.0002
+
+    # Fallback geometry
+    if D is None:
+        D = 600.0
+    if d is None:
+        d = 0.9 * D
+    if b is None:
+        b = 300.0
+    if As is None:
+        As = 500.0
+
+    if state == "ULS":
+        denom = alpha2 * fc * b * gamma
+        c = As * fsy / denom if denom > 0 else D / 2.0
+        c = min(max(c, 1.0), D - 1.0)
+        eps_c = -eps_cu_uls
+        eps_s = -eps_c * (d - c) / c
+        fs_t = fsy
+        return dict(c=c, eps_c=eps_c, eps_s=eps_s, gamma=gamma, fs_t=fs_t)
+
+    if state == "SLS (cracked)":
+        n = Es / Ec
+        a = b / 2.0
+        bq = n * As
+        cq = -n * As * d
+        discr = bq ** 2 - 4 * a * cq
+        if discr < 0:
+            c = D / 2.0
+        else:
+            r1 = (-bq + math.sqrt(discr)) / (2 * a)
+            r2 = (-bq - math.sqrt(discr)) / (2 * a)
+            cands = [r for r in (r1, r2) if 0 < r < D]
+            c = cands[0] if cands else D / 2.0
+        c = min(max(c, 1.0), D - 1.0)
+        eps_c = -eps_c_sls
+        eps_s = -eps_c * (d - c) / c
+        fs_t = Es * eps_s
+        return dict(c=c, eps_c=eps_c, eps_s=eps_s, gamma=0.8, fs_t=fs_t)
+
+    # Uncracked
+    c = D / 2.0
+    eps_c = -eps_ext_unc
+    eps_s = eps_ext_unc * (d - c) / c
+    fs_t = Ec * abs(eps_s)
+    return dict(c=c, eps_c=eps_c, eps_s=eps_s, gamma=1.0, fs_t=fs_t)
+
+
+def _plot_stress_strain_profiles(state_dict):
+    """
+    Draw strain profile + AS3600 α2–γ stress block side-by-side.
+    Uses shared D and d.
+    """
+    c = state_dict["c"]
+    eps_c = state_dict["eps_c"]
+    eps_s = state_dict["eps_s"]
+    gamma = state_dict["gamma"]
+    fs_t = state_dict["fs_t"]
+
+    D = get_param("D") or 600.0
+    d = get_param("d") or 0.9 * D
+
+    eps_max = max(abs(eps_c), abs(eps_s)) * 1.3 or 1e-4
+    steel_len = max(abs(fs_t), 1.0)
+    block_width = steel_len / 3.0
+
+    fig, (ax_strain, ax_stress) = plt.subplots(1, 2, figsize=(8, 4))
+    fig.subplots_adjust(wspace=0.4)
+
+    # Strain profile
+    y_vals = np.array([0.0, c, d])
+    eps_vals = np.array([eps_c, 0.0, eps_s])
+
+    ax_strain.axvline(0, color="black", linewidth=1)
+    ax_strain.plot(eps_vals, y_vals, color="black")
+    ax_strain.axhline(c, color="black", linestyle="--", linewidth=0.8)
+
+    ax_strain.text(
+        eps_c,
+        0,
+        r"$\varepsilon_c$",
+        ha="right" if eps_c < 0 else "left",
+        va="bottom",
+        color="tab:red",
+    )
+    ax_strain.text(
+        eps_s,
+        d,
+        r"$\varepsilon_s$",
+        ha="left" if eps_s > 0 else "right",
+        va="top",
+        color="tab:blue",
+    )
+
+    ax_strain.set_xticks([])
+    ax_strain.set_ylim(D, 0)
+    ax_strain.set_xlim(-eps_max, eps_max)
+    ax_strain.set_xlabel("Strain")
+    ax_strain.set_ylabel("Depth (mm)")
+    ax_strain.set_title("Strain Profile")
+    ax_strain.spines["top"].set_visible(False)
+    ax_strain.spines["right"].set_visible(False)
+
+    # Stress-block profile
+    ax_stress.axvline(0, color="black", linewidth=1)
+
+    block_top = 0.0
+    block_depth = gamma * c
+    block_bottom = block_top + block_depth
+    x_left = 0.0
+    x_right = block_width
+
+    ax_stress.fill_between(
+        [x_left, x_right],
+        [block_top, block_top],
+        [block_bottom, block_bottom],
+        edgecolor="tab:red",
+        facecolor="none",
+        linewidth=1.5,
+    )
+
+    ax_stress.axhline(c, color="black", linestyle="--", linewidth=0.8)
+
+    # α2 f'c width below NA
+    y_alpha = c + 0.05 * D
+    ax_stress.annotate(
+        "",
+        xy=(x_left, y_alpha),
+        xytext=(x_right, y_alpha),
+        arrowprops=dict(arrowstyle="<->", linewidth=1.3, color="tab:red"),
+    )
+    ax_stress.text(
+        (x_left + x_right) / 2,
+        y_alpha + 0.03 * D,
+        r"$\alpha_2 f'_c$",
+        ha="center",
+        va="bottom",
+        color="tab:red",
+    )
+
+    # γc vertical arrow
+    x_gc = x_right + 0.15 * x_right
+    ax_stress.annotate(
+        "",
+        xy=(x_gc, block_bottom),
+        xytext=(x_gc, block_top),
+        arrowprops=dict(arrowstyle="<->", linewidth=1.2, color="tab:red"),
+    )
+    ax_stress.text(
+        x_gc + 0.05 * x_right,
+        (block_top + block_bottom) / 2,
+        r"$\gamma c$",
+        va="center",
+        color="tab:red",
+    )
+
+    # three compression arrows
+    for frac in [0.25, 0.5, 0.75]:
+        y_mid = block_top + frac * block_depth
+        ax_stress.annotate(
+            "",
+            xy=(x_left + 0.1 * block_width, y_mid),
+            xytext=(x_right - 0.1 * block_width, y_mid),
+            arrowprops=dict(arrowstyle="->", linewidth=1.0, color="tab:red"),
+        )
+
+    # C resultant
+    C_y = (block_top + block_bottom) / 2
+    ax_stress.annotate(
+        "",
+        xy=(x_left, C_y),
+        xytext=(x_right * 0.8, C_y),
+        arrowprops=dict(arrowstyle="->", linewidth=1.5, color="tab:red"),
+    )
+    ax_stress.text(
+        x_left - 0.08 * block_width,
+        C_y,
+        "C",
+        ha="right",
+        va="center",
+        color="tab:red",
+    )
+
+    # Tension arrow with stress
+    T_y = d
+    ax_stress.annotate(
+        "",
+        xy=(steel_len, T_y),
+        xytext=(0.0, T_y),
+        arrowprops=dict(arrowstyle="->", linewidth=1.6, color="tab:blue"),
+    )
+    ax_stress.text(
+        steel_len * 1.02,
+        T_y,
+        f"T ({fs_t:.0f} MPa)",
+        ha="left",
+        va="center",
+        color="tab:blue",
+    )
+
+    x_max = steel_len * 1.3
+    ax_stress.set_xlim(-0.15 * x_max, x_max)
+    ax_stress.set_xticks([])
+
+    ax_stress.set_ylim(D, 0)
+    ax_stress.set_xlabel("Stress (MPa)")
+    ax_stress.set_ylabel("Depth (mm)")
+    ax_stress.set_title("Stress-block Profile (AS3600 α₂–γ)")
+    ax_stress.spines["top"].set_visible(False)
+    ax_stress.spines["right"].set_visible(False)
+
+    return fig
+
+
+# ------------------------------------------------------------
 #  PAGE RENDER
 # ------------------------------------------------------------
 def render_bending():
@@ -449,7 +668,7 @@ def render_bending():
     apply_global_widget_css()  # same styling as Inputs page
 
     # ============================================================
-    #  SIDEBAR GLOSSARY (BENDING TERMS)
+    #  SIDEBAR GLOSSARY
     # ============================================================
     with st.sidebar.expander("📘 Glossary – Bending terms", expanded=False):
         st.markdown(
@@ -459,7 +678,7 @@ def render_bending():
             **D** – Overall section depth (mm).  
             **d** – Effective depth to tension steel (mm).  
             **Ast,bot** – Area of bottom (tension) reinforcement (mm²).  
-            **As,min** – Minimum required tensile steel for ductile behaviour.  
+            **As_min** – Minimum required tensile steel for ductile behaviour.  
             **f'c** – Concrete cylinder strength (MPa).  
             **fsy** – Steel yield strength (MPa).  
             **Ec, Es** – Elastic moduli of concrete and steel (MPa).  
@@ -478,7 +697,7 @@ def render_bending():
         )
 
     # ============================================================
-    #  TOP RESULT SUMMARY (Ast, As_min, φMu, ku, utilisation)
+    #  TOP RESULT SUMMARY
     # ============================================================
     top_results = _compute_bending_capacity()
     Ast = get_param("Ast_bot")
@@ -494,7 +713,6 @@ def render_bending():
             return "Not calculated", "#e0e0e0"
         return ("OK", "#d5f5d5") if flag else ("Check", "#f8d0d0")
 
-    # checks
     As_ok = None
     if Ast is not None and As_min_top and not math.isnan(As_min_top):
         As_ok = Ast >= As_min_top
@@ -505,7 +723,7 @@ def render_bending():
 
     ku_ok = None
     if ku_top is not None and not math.isnan(ku_top):
-        ku_ok = (0.0 < ku_top <= 0.36)  # teaching limit
+        ku_ok = (0.0 < ku_top <= 0.36)
 
     As_status, As_colour = _status_colour(As_ok)
     Mu_status, Mu_colour = _status_colour(Mu_ok)
@@ -576,6 +794,111 @@ def render_bending():
     st.markdown("### Bending – Result Summary")
     st.markdown(summary_html, unsafe_allow_html=True)
 
+    # ============================================================
+    #  DETAILED SUMMARY + STRESS–STRAIN DIAGRAM (SIDE BY SIDE)
+    # ============================================================
+    st.subheader("Bending Capacity – Detailed Summary (values only)")
+
+    results = _compute_bending_capacity()
+    phi_Mu_cap = results["phi_Mu_cap"]
+    Mu_util = results["Mu_util"]
+    c = results["c"]
+    a = results["a"]
+    z = results["z"]
+    ku = results["ku"]
+    phi = results["phi"]
+    fctf = results["fctf"]
+    I_gross = results["I_gross"]
+    Z_gross = results["Z_gross"]
+    Mcr = results["Mcr"]
+    As_min = results["As_min"]
+
+    # Shared values
+    b = get_param("b")
+    D = get_param("D")
+    d = get_param("d")
+    Ast = get_param("Ast_bot")
+    fc = get_param("fc")
+    fsy = get_param("fsy")
+    Ec = get_param("Ec")
+    Es = get_param("Es")
+    Mu_star = get_param("Mu_star")
+    N_star = get_param("N_star")
+    P_star = get_param("P_star")
+    nb_bot = get_param("nb_bot")
+    db_bot = get_param("db_bot")
+    cover_bot = get_param("cover_bot")
+    nb_top = get_param("nb_top")
+    db_top = get_param("db_top")
+    cover_top = get_param("cover_top")
+
+    Mu_min = (
+        1.2 * Mcr
+        if (Mcr is not None and not (isinstance(Mcr, float) and math.isnan(Mcr)))
+        else float("nan")
+    )
+
+    # Local copies for stress-block per code (for table & ULS tab)
+    fc_local = fc if fc is not None else 40.0
+    D_local = D if D is not None else 600.0
+    cover_bot_local = cover_bot if cover_bot is not None else 40.0
+    db_bot_local = db_bot if db_bot is not None else 20.0
+    nb_bot_local = int(nb_bot) if nb_bot is not None else 4
+
+    d_eff = d
+    if d_eff is None or (isinstance(d_eff, float) and math.isnan(d_eff)):
+        d_eff = D_local - cover_bot_local - 0.5 * db_bot_local
+
+    Ast_bot = Ast
+    if Ast_bot is None or (isinstance(Ast_bot, float) and math.isnan(Ast_bot)):
+        Ast_bot = nb_bot_local * math.pi * db_bot_local**2 / 4.0
+
+    alpha2_raw = 0.85 - 0.0015 * fc_local
+    gamma_raw = 0.97 - 0.0025 * fc_local
+    alpha2_sb = max(0.67, alpha2_raw)
+    gamma_sb = max(0.67, gamma_raw)
+    phi_b = get_param("phi_bend", 0.85)
+    ku_sb = ku if ku is not None else float("nan")
+
+    Mu_nom_report = phi_Mu_cap / phi if phi and phi > 0 else float("nan")
+
+    rows = [
+        {"Parameter": "Minimum steel",          "Symbol": "As,min",   "Value": _fmt(As_min, "{:.1f}"),        "Units": "mm²"},
+        {"Parameter": "Cracking moment",        "Symbol": "Mcr",      "Value": _fmt(Mcr, "{:.2f}"),           "Units": "kNm"},
+        {"Parameter": "Minimum cracking moment","Symbol": "Mu,min",   "Value": _fmt(Mu_min, "{:.2f}"),        "Units": "kNm"},
+        {"Parameter": "Gross Z",                "Symbol": "Zg",       "Value": _fmt(Z_gross, "{:.3e}"),       "Units": "mm³"},
+        {"Parameter": "α₂",                     "Symbol": "α2",       "Value": _fmt(alpha2_sb, "{:.3f}"),     "Units": "•"},
+        {"Parameter": "γ",                      "Symbol": "γ",        "Value": _fmt(gamma_sb, "{:.3f}"),      "Units": "•"},
+        {"Parameter": "Strength reduction",     "Symbol": "φb",       "Value": _fmt(phi_b, "{:.3f}"),         "Units": "•"},
+        {"Parameter": "Neutral axis depth",     "Symbol": "c",        "Value": _fmt(c, "{:.2f}"),             "Units": "mm"},
+        {"Parameter": "Block depth",            "Symbol": "a = γc",   "Value": _fmt(a, "{:.2f}"),             "Units": "mm"},
+        {"Parameter": "Neutral axis ratio",     "Symbol": "ku = c/d", "Value": _fmt(ku_sb, "{:.3f}"),         "Units": "•"},
+        {"Parameter": "Lever arm",              "Symbol": "z",        "Value": _fmt(z, "{:.2f}"),             "Units": "mm"},
+        {"Parameter": "Nominal moment",         "Symbol": "Mu",       "Value": _fmt(Mu_nom_report, "{:.2f}"), "Units": "kNm"},
+        {"Parameter": "Design moment cap.",     "Symbol": "φMu,cap",  "Value": _fmt(phi_Mu_cap, "{:.2f}"),    "Units": "kNm"},
+        {"Parameter": "Design moment used",     "Symbol": "Mu*",      "Value": _fmt(Mu_star, "{:.2f}"),       "Units": "kNm"},
+    ]
+
+    df_summary = pd.DataFrame(rows)
+
+    colL, colR = st.columns([1.2, 0.8])
+
+    with colL:
+        st.dataframe(df_summary, hide_index=True, use_container_width=True)
+
+    # NEW: stress–strain model to the right of the summary table
+    with colR:
+        st.markdown("#### Stress–strain model")
+        strain_state = st.radio(
+            "State:",
+            ["ULS", "SLS (cracked)", "Uncracked"],
+            horizontal=True,
+            key="bending_strain_state_local",
+        )
+        ss_state = _stress_strain_state(strain_state)
+        fig_ss = _plot_stress_strain_profiles(ss_state)
+        st.pyplot(fig_ss, use_container_width=True)
+
     st.markdown("---")
 
     # ============================================================
@@ -623,7 +946,7 @@ def render_bending():
     st.markdown("---")
 
     # ============================================================
-    #  MAIN INPUTS (GEOMETRY, MATERIALS, REO) – WITH INSIGHTS
+    #  MAIN INPUTS (GEOMETRY, MATERIALS, REO)
     # ============================================================
     g1, g2 = st.columns(2)
 
@@ -700,17 +1023,6 @@ def render_bending():
             help_text=(
                 "Steel modulus. Typically ~200,000 MPa; affects cracked-section "
                 "stiffness and strain calculations."
-            ),
-        )
-        # NEW: strength reduction factor widget
-        number_row(
-            "Strength reduction φb",
-            "bending_phi_bend",
-            0.05,
-            sync,
-            help_text=(
-                "Strength reduction factor used for bending capacity. "
-                "Typical value is 0.85 for ductile members."
             ),
         )
 
@@ -803,106 +1115,7 @@ def render_bending():
     st.markdown("---")
 
     # ============================================================
-    #  RUN CAPACITY CALC (for detailed report & diagrams)
-    # ============================================================
-    results = _compute_bending_capacity()
-    phi_Mu_cap = results["phi_Mu_cap"]
-    Mu_util = results["Mu_util"]
-    c = results["c"]
-    a = results["a"]
-    z = results["z"]
-    ku = results["ku"]
-    alpha2 = results["alpha2"]
-    gamma = results["gamma"]
-    phi = results["phi"]
-    fctf = results["fctf"]
-    I_gross = results["I_gross"]
-    Z_gross = results["Z_gross"]
-    Mcr = results["Mcr"]
-    As_min = results["As_min"]
-
-    # Shared values for reporting / diagrams
-    b = get_param("b")
-    D = get_param("D")
-    d = get_param("d")
-    Ast = get_param("Ast_bot")
-    fc = get_param("fc")
-    fsy = get_param("fsy")
-    Ec = get_param("Ec")
-    Es = get_param("Es")
-    Mu_star = get_param("Mu_star")
-    N_star = get_param("N_star")
-    P_star = get_param("P_star")
-    nb_bot = get_param("nb_bot")
-    db_bot = get_param("db_bot")
-    cover_bot = get_param("cover_bot")
-    nb_top = get_param("nb_top")
-    db_top = get_param("db_top")
-    cover_top = get_param("cover_top")
-
-    Mu_min = (
-        1.2 * Mcr
-        if (Mcr is not None and not (isinstance(Mcr, float) and math.isnan(Mcr)))
-        else float("nan")
-    )
-
-    # ============================================================
-    #  DETAILED SUMMARY – CLEAN TABLE (LEFT-ALIGNED, NO ROW NUMBERS)
-    # ============================================================
-    st.subheader("Bending Capacity – Detailed Summary (values only)")
-
-    # Local copies for stress-block per code (for the table & ULS tab)
-    fc_local = fc if fc is not None else 40.0
-    D_local = D if D is not None else 600.0
-    cover_bot_local = cover_bot if cover_bot is not None else 40.0
-    db_bot_local = db_bot if db_bot is not None else 20.0
-    nb_bot_local = int(nb_bot) if nb_bot is not None else 4
-
-    d_eff = d
-    if d_eff is None or (isinstance(d_eff, float) and math.isnan(d_eff)):
-        d_eff = D_local - cover_bot_local - 0.5 * db_bot_local
-
-    Ast_bot = Ast
-    if Ast_bot is None or (isinstance(Ast_bot, float) and math.isnan(Ast_bot)):
-        Ast_bot = nb_bot_local * math.pi * db_bot_local**2 / 4.0
-
-    alpha2_raw = 0.85 - 0.0015 * fc_local
-    gamma_raw = 0.97 - 0.0025 * fc_local
-    alpha2_sb = max(0.67, alpha2_raw)
-    gamma_sb = max(0.67, gamma_raw)
-    phi_b = get_param("phi_bend", 0.85)
-    ku_sb = ku if ku is not None else float("nan")
-
-    Mu_nom_report = phi_Mu_cap / phi if phi and phi > 0 else float("nan")
-
-    rows = [
-        {"Parameter": "Minimum steel",          "Symbol": "As,min",   "Value": _fmt(As_min, "{:.1f}"),        "Units": "mm²"},
-        {"Parameter": "Cracking moment",        "Symbol": "Mcr",      "Value": _fmt(Mcr, "{:.2f}"),           "Units": "kNm"},
-        {"Parameter": "Minimum cracking moment","Symbol": "Mu,min",   "Value": _fmt(Mu_min, "{:.2f}"),        "Units": "kNm"},
-        {"Parameter": "Gross Z",                "Symbol": "Zg",       "Value": _fmt(Z_gross, "{:.3e}"),       "Units": "mm³"},
-        {"Parameter": "α₂",                     "Symbol": "α2",       "Value": _fmt(alpha2_sb, "{:.3f}"),     "Units": "•"},
-        {"Parameter": "γ",                      "Symbol": "γ",        "Value": _fmt(gamma_sb, "{:.3f}"),      "Units": "•"},
-        {"Parameter": "Strength reduction",     "Symbol": "φb",       "Value": _fmt(phi_b, "{:.3f}"),         "Units": "•"},
-        {"Parameter": "Neutral axis depth",     "Symbol": "c",        "Value": _fmt(c, "{:.2f}"),             "Units": "mm"},
-        {"Parameter": "Block depth",            "Symbol": "a = γc",   "Value": _fmt(a, "{:.2f}"),             "Units": "mm"},
-        {"Parameter": "Neutral axis ratio",     "Symbol": "ku = c/d", "Value": _fmt(ku_sb, "{:.3f}"),         "Units": "•"},
-        {"Parameter": "Lever arm",              "Symbol": "z",        "Value": _fmt(z, "{:.2f}"),             "Units": "mm"},
-        {"Parameter": "Nominal moment",         "Symbol": "Mu",       "Value": _fmt(Mu_nom_report, "{:.2f}"), "Units": "kNm"},
-        {"Parameter": "Design moment cap.",     "Symbol": "φMu,cap",  "Value": _fmt(phi_Mu_cap, "{:.2f}"),    "Units": "kNm"},
-        {"Parameter": "Design moment used",     "Symbol": "Mu*",      "Value": _fmt(Mu_star, "{:.2f}"),       "Units": "kNm"},
-    ]
-
-    df_summary = pd.DataFrame(rows)
-
-    # LEFT align by putting table inside a wider left column
-    colL, colR = st.columns([1.2, 0.8])
-    with colL:
-        st.dataframe(df_summary, hide_index=True, use_container_width=True)
-
-    st.markdown("---")
-
-    # ============================================================
-    #  STEP-BY-STEP TABS (ULS / SLS ONLY)
+    #  STEP-BY-STEP TABS (ULS / SLS)
     # ============================================================
     tab_uls, tab_sls = st.tabs(["ULS step-by-step", "SLS step-by-step"])
 
@@ -911,16 +1124,11 @@ def render_bending():
         st.subheader("ULS Calculation (step-by-step)")
 
         if phi_Mu_cap > 0 and d and Ast:
-            # narrower text column, wider diagram column
             col_text, col_fig = st.columns([1.3, 1])
 
-            # ===========================
-            #  LEFT: TEXT / CALCS
-            # ===========================
             with col_text:
                 st.markdown("### 1. Required calculated inputs for bending")
 
-                # 1.1 Effective depth d
                 st.markdown("#### 1.1 Effective depth $d$")
                 st.latex(r"d = D - \text{cover}_{bot} - \frac{d_{b,bot}}{2}")
                 st.latex(
@@ -928,23 +1136,20 @@ def render_bending():
                 )
                 st.latex(rf"d = {d:.1f}\,\text{{ mm}}")
 
-                # 1.2 Bottom steel area Ast,bot
                 st.markdown("#### 1.2 Bottom steel area $A_{st,bot}$")
                 st.latex(r"A_{st,bot} = n_{b,bot}\,\frac{\pi d_{b,bot}^2}{4}")
                 st.latex(
-                    rf"A_{{st,bot}} = {nb_bot:d}\,\frac{{\pi \times {db_bot:.1f}^2}}{4}"
+                    rf"A_{{st,bot}} = {int(nb_bot):d}\,\frac{{\pi \times {db_bot:.1f}^2}}{4}"
                 )
                 st.latex(rf"A_{{st,bot}} = {Ast:.1f}\,\text{{ mm}}^2")
 
                 st.markdown("---")
 
-                # 2. Stress-block parameters
                 st.markdown(
                     "### 2. Stress-block parameters "
                     "(AS 3600:2018 Cl. 8.1.3)"
                 )
 
-                # 2.1 alpha2 factor
                 st.markdown("#### 2.1 $\\alpha_2$ factor")
                 st.latex(r"\alpha_2 = 0.85 - 0.0015 f'_c \ge 0.67")
                 st.latex(
@@ -953,7 +1158,6 @@ def render_bending():
                 )
                 st.latex(rf"\Rightarrow \alpha_2 = {alpha2_sb:.3f}")
 
-                # 2.2 gamma factor
                 st.markdown("#### 2.2 $\\gamma$ factor")
                 st.latex(r"\gamma = 0.97 - 0.0025 f'_c \ge 0.67")
                 st.latex(
@@ -962,7 +1166,6 @@ def render_bending():
                 )
                 st.latex(rf"\Rightarrow \gamma = {gamma_sb:.3f}")
 
-                # 2.3 ku value (NEW heading)
                 st.markdown("#### 2.3 $k_u$ value")
                 st.latex(rf"\phi_b = {phi_b:.2f}")
                 st.latex(r"k_u = \dfrac{c}{d}")
@@ -970,11 +1173,11 @@ def render_bending():
 
                 st.markdown("---")
 
-                # 3. Minimum strength requirements
                 st.markdown(
                     "### 3. Minimum strength requirements "
                     "(self-weight check – AS 3600 Cl. 8.1.6)"
                 )
+
                 st.markdown(
                     "AS 3600 requires a minimum bending strength so that the beam "
                     "can support its own selfweight without cracking. Here we use "
@@ -982,7 +1185,6 @@ def render_bending():
                     "and the gross section modulus."
                 )
 
-                # 3.1 fctf
                 st.markdown(
                     "#### 3.1 Concrete flexural tensile strength $f_{ct,f}$"
                 )
@@ -992,7 +1194,6 @@ def render_bending():
                     rf" = {fctf:.3f}\,\text{{ MPa}}"
                 )
 
-                # 3.2 Zg
                 st.markdown("#### 3.2 Gross section modulus $Z_g$")
                 st.latex(r"Z_g = \dfrac{b D^2}{6}")
                 st.latex(
@@ -1000,7 +1201,6 @@ def render_bending():
                     rf" = {Z_gross:.3e}\,\text{{ mm}}^3"
                 )
 
-                # 3.3 Mcr
                 st.markdown("#### 3.3 Cracking moment $M_{cr}$")
                 st.latex(r"M_{cr} = \dfrac{f_{ct,f} Z_g}{10^6}")
                 st.latex(
@@ -1008,7 +1208,6 @@ def render_bending():
                     rf" = {Mcr:.2f}\,\text{{ kNm}}"
                 )
 
-                # 3.4 Min ultimate strength
                 Muo_min = Mu_min
                 st.markdown(
                     "#### 3.4 Minimum required ultimate strength "
@@ -1024,7 +1223,6 @@ def render_bending():
                     rf" = {Muo_min:.2f}\,\text{{ kNm}}"
                 )
 
-                # 3.5 Min tensile steel
                 st.markdown("#### 3.5 Minimum tensile reinforcement check")
                 st.latex(
                     r"A_{st,\min} = k_{Ast}\left(\frac{d}{D}\right)^2 "
@@ -1046,12 +1244,10 @@ def render_bending():
 
                 st.markdown("---")
 
-                # 4. Ultimate flexural capacity
                 st.markdown(
                     "### 4. Ultimate flexural capacity $\\phi M_{u,cap}$"
                 )
 
-                # 4.1 internal forces & c
                 st.markdown(
                     "#### 4.1 Internal forces and neutral-axis depth $c$"
                 )
@@ -1073,7 +1269,6 @@ def render_bending():
                     rf" = {c:.2f}\,\text{{ mm}}"
                 )
 
-                # 4.2 lever arm and Mu
                 st.markdown("#### 4.2 Lever arm and nominal moment $M_u$")
                 st.latex(r"a = \gamma c,\quad z = d - \dfrac{a}{2}")
                 st.latex(
@@ -1091,7 +1286,6 @@ def render_bending():
                     rf" = {Mu_nom:.2f}\,\text{{ kNm}}"
                 )
 
-                # 4.3 φMu_cap and utilisation
                 st.markdown("#### 4.3 Factored capacity and utilisation")
                 phiMu_str2 = f"{phi_Mu_cap:.2f}"
                 Mu_star_str2 = f"{Mu_star:.2f}"
@@ -1124,9 +1318,6 @@ def render_bending():
                     rf"and $(M_{{uo}})_{{min}} \approx {Muo_min:.2f}\,\text{{ kNm}}$."
                 )
 
-            # ===========================
-            #  RIGHT: DIAGRAMS
-            # ===========================
             with col_fig:
                 st.markdown(
                     "<div style='margin-top:-4rem;'></div>",
@@ -1151,7 +1342,6 @@ def render_bending():
                     st.pyplot(sec_fig, use_container_width=True)
                     plt.close(sec_fig)
 
-                # Gap before stress diagram
                 st.markdown(
                     "<div style='margin-top:3rem;'></div>",
                     unsafe_allow_html=True,
@@ -1238,7 +1428,6 @@ def render_bending():
         else:
             st.info("Not enough information to run SLS cracked-section example.")
 
-    # Debug view of session_state (read-only in UI)
     with st.expander("Debug: raw session_state (optional)"):
         st.write(dict(st.session_state))
 
