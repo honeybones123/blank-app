@@ -67,7 +67,8 @@ SHARED_DEFAULTS = {
     "fsy": 500.0,   # MPa
     "Ec": 30000.0,  # MPa
     "Es": 200000.0, # MPa
-
+    "phi_bend": 0.85,  # ← strength reduction factor for bending
+    
     # Actions
     "Mu_star": 500.0,  # kNm (controlling moment)
     "Vu_star": 300.0,  # kN
@@ -172,6 +173,7 @@ TAB_KEYS = {
     "bending_fsy": "fsy",
     "bending_Ec": "Ec",
     "bending_Es": "Es",
+    "bending_phi_b": "phi_bend",
 
     "bending_Mu_star": "Mu_star",
     "bending_P_star": "P_star",
@@ -399,3 +401,4 @@ def get_param(name: str, default=None):
     if name in st.session_state:
         return st.session_state[name]
     return SHARED_DEFAULTS.get(name, default)
+
