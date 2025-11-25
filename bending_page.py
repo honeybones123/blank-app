@@ -659,58 +659,60 @@ def render_bending():
             ),
         )
 
-with g2:
-    st.subheader("Materials")
-    number_row(
-        "Concrete strength f'c (MPa)",
-        "bending_fc",
-        2.0,
-        sync,
-        help_text=(
-            "Concrete compressive strength. Higher f'c increases compression "
-            "capacity and may reduce required steel, but also changes ductility limits."
-        ),
-    )
-    number_row(
-        "Steel yield fsy (MPa)",
-        "bending_fsy",
-        10.0,
-        sync,
-        help_text=(
-            "Yield strength of reinforcing steel. Higher fsy increases the "
-            "force carried by a given area of steel."
-        ),
-    )
-    number_row(
-        "Ec (MPa)",
-        "bending_Ec",
-        1000.0,
-        sync,
-        help_text=(
-            "Short-term modulus of concrete. Mainly affects stiffness and "
-            "SLS behaviour rather than φMu,cap."
-        ),
-    )
-    number_row(
-        "Es (MPa)",
-        "bending_Es",
-        10000.0,
-        sync,
-        help_text=(
-            "Steel modulus. Typically ~200,000 MPa; affects cracked-section "
-            "stiffness and strain calculations."
-        ),
-    )
-    number_row(
-        "Strength reduction φb",
-        "bending_phi_b",
-        0.01,
-        sync,
-        help_text=(
-            "Strength reduction factor for bending. Changing φb directly "
-            "changes the design capacity φMu,cap and utilisation."
-        ),
-    )
+    with g2:
+        st.subheader("Materials")
+        number_row(
+            "Concrete strength f'c (MPa)",
+            "bending_fc",
+            2.0,
+            sync,
+            help_text=(
+                "Concrete compressive strength. Higher f'c increases compression "
+                "capacity and may reduce required steel, but also changes ductility limits."
+            ),
+        )
+        number_row(
+            "Steel yield fsy (MPa)",
+            "bending_fsy",
+            10.0,
+            sync,
+            help_text=(
+                "Yield strength of reinforcing steel. Higher fsy increases the "
+                "force carried by a given area of steel."
+            ),
+        )
+        number_row(
+            "Ec (MPa)",
+            "bending_Ec",
+            1000.0,
+            sync,
+            help_text=(
+                "Short-term modulus of concrete. Mainly affects stiffness and "
+                "SLS behaviour rather than φMu,cap."
+            ),
+        )
+        number_row(
+            "Es (MPa)",
+            "bending_Es",
+            10000.0,
+            sync,
+            help_text=(
+                "Steel modulus. Typically ~200,000 MPa; affects cracked-section "
+                "stiffness and strain calculations."
+            ),
+        )
+        number_row(
+            "Strength reduction φb",
+            "bending_phi_b",
+            0.85,
+            sync,
+            help_text=(
+                "Strength reduction factor for bending. Changing φb directly "
+                "changes the design capacity φMu,cap and utilisation."
+            ),
+        )
+
+    st.markdown("---")
 
     st.markdown("---")
 
@@ -1242,4 +1244,5 @@ with g2:
 
 if __name__ == "__main__":
     render_bending()
+
 
