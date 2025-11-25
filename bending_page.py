@@ -1077,10 +1077,11 @@ def render_bending():
     st.markdown("---")
 
     # ============================================================
-    #  DETAILED SUMMARY + STRESS–STRAIN DIAGRAM (50/50 LAYOUT)
-    #  (now BELOW inputs & design actions, just above ULS tab)
+        # ============================================================
+    #  DETAILED SUMMARY (TABLE) + SECTION & STRESS–STRAIN DIAGRAMS
+    #  Table on its own row, diagrams underneath in two columns
     # ============================================================
-    st.subheader("Detailed Summary With Stress–strain Diagrams")
+    st.subheader("Bending Capacity – Detailed Summary (values only)")
 
     rows = [
         {"Parameter": "Minimum steel",          "Symbol": "As,min",   "Value": _fmt(As_min, "{:.1f}"),        "Units": "mm²"},
@@ -1101,13 +1102,38 @@ def render_bending():
 
     df_summary = pd.DataFrame(rows)
 
-    colL, colR = st.columns([.8, 1.2])  # 50/50 layout
+    # Table full width (nice and readable)
+    st.dataframe(df_summary, hide_index=True, use_container_width=True)
 
-    with colL:
-        st.dataframe(df_summary, hide_index=True, use_container_width=True)
+    # --- Diagrams row: 2D section + stress–strain model ---
+    st.markdown("### Section & stress–strain model")
 
-    with colR:
-        st.markdown("")
+    fig_col1, fig_col2 = st.columns(2)
+
+    # LEFT: 2D cross-section with compression block
+    with fig_col1:
+        st.markdown("#### ULS cross-section")
+        sec_fig = _make_cross_section_figure(
+            b or 300.0,
+            D or 600.0,
+            d or (D_local - cover_bot_local - 0.5 * db_bot_local),
+            a,
+            nb_bot or nb_bot_local,
+            db_bot or db_bot_local,
+            cover_bot or cover_bot_local,
+            nb_top=nb_top or 2,
+            db_top=db_top or 16.0,
+            cover_top=cover_top or 40.0,
+            c=c,
+            z=z,
+        )
+        if sec_fig is not None:
+            st.pyplot(sec_fig, use_container_width=True)
+            plt.close(sec_fig)
+
+    # RIGHT: stress–strain diagrams with toggle
+    with fig_col2:
+        st.markdown("#### Stress–strain model")
         strain_state = st.radio(
             "State:",
             ["ULS", "SLS (cracked)", "Uncracked"],
@@ -1443,6 +1469,7 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
 
 
 
