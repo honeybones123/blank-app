@@ -30,6 +30,10 @@ def _fmt(val, pattern="{:.2f}"):
         return "—"
 
 
+def _is_nan(x) -> bool:
+    return isinstance(x, float) and math.isnan(x)
+
+
 # ------------------------------------------------------------
 #  BENDING CAPACITY CALC (α2–γ stress block, AS3600 Cl. 8.1.3)
 # ------------------------------------------------------------
@@ -179,66 +183,51 @@ def _make_cross_section_figure(
     nb_bot = int(nb_bot)
     nb_top = int(nb_top)
 
-    # ~1/3 smaller than original
-        # 🌟 ~30% smaller figure
-    fig, ax = plt.subplots(figsize=(2.3, 3.3))   # was (3.0, 4.7)
+    # ~30% smaller than original
+    fig, ax = plt.subplots(figsize=(2.3, 3.3))
 
-    # Outline – thinner
+    # Outline
     ax.add_patch(
         Rectangle(
             (0, 0), b, D,
             fill=False,
-            linewidth=0.9     # was 1.0
+            linewidth=0.9,
         )
     )
 
-    ...
+    # Compression block (use supplied a, else 0.15D)
+    if a is None or _is_nan(a) or a <= 0:
+        a_eff = 0.15 * D
+    else:
+        a_eff = a
 
-    # ---- c (far right)
-    if c is not None and not math.isnan(c):
-        ax.annotate(
-            "", xy=(x_c, c), xytext=(x_c, 0),
-            arrowprops=dict(arrowstyle="<->", linewidth=0.8)
+    ax.add_patch(
+        Rectangle(
+            (0, 0),
+            b,
+            a_eff,
+            facecolor="#c7e3ff",
+            edgecolor="none",
+            alpha=0.9,
         )
-        ax.text(x_c + 3, c/2, "c", fontsize=7, ha="left", va="center")
-
-    # ---- d (right)
-    if d is not None and not math.isnan(d):
-        ax.annotate(
-            "", xy=(x_d, d), xytext=(x_d, 0),
-            arrowprops=dict(arrowstyle="<->", linewidth=0.8)
-        )
-        ax.text(x_d + 3, d/2, "d", fontsize=7, ha="left", va="center")
-
-    # ---- z (vertical)
-    if z is not None and not math.isnan(z):
-        y_top_z = d - z
-        ax.annotate(
-            "", xy=(x_z, d), xytext=(x_z, y_top_z),
-            arrowprops=dict(arrowstyle="<->", linewidth=0.8)
-        )
-        ax.text(
-            x_z - 4, (d + y_top_z)/2,
-            "z",
-            fontsize=7,
-            ha="right", va="center"
-        )
-
-    # Axis settings (smaller fonts)
-    ax.set_xlim(-10, b + 70)
-    ax.set_ylim(D + 10, -20)
-    ax.set_aspect("equal")
-    ax.set_xlabel("Width (mm)", fontsize=8)
-    ax.set_ylabel("Depth (mm)", fontsize=8)
-    ax.set_title("ULS SECTION", fontsize=9)
-    ax.tick_params(labelsize=7)
+    )
+    ax.text(
+        b / 2,
+        a_eff / 2,
+        "Compression\nzone",
+        ha="center",
+        va="center",
+        fontsize=8,
+    )
 
     # -------------------------
     # Bottom reo
     # -------------------------
-    if d is None or (isinstance(d, float) and math.isnan(d)):
-        d = 0.9 * D
-    y_bot = d
+    if d is None or _is_nan(d):
+        d_eff = 0.9 * D
+    else:
+        d_eff = d
+    y_bot = d_eff
 
     inner_width_bot = max(b - 2 * cover_bot, db_bot)
     if nb_bot == 1:
@@ -287,44 +276,44 @@ def _make_cross_section_figure(
     x_c = b + 45          # far right (no overlap)
 
     # ---- c (far right)
-    if c is not None and not (isinstance(c, float) and math.isnan(c)):
+    if c is not None and not _is_nan(c):
         ax.annotate(
             "",
             xy=(x_c, c),
             xytext=(x_c, 0),
-            arrowprops=dict(arrowstyle="<->", linewidth=0.9),
+            arrowprops=dict(arrowstyle="<->", linewidth=0.8),
         )
-        ax.text(x_c + 3, c / 2, "c", fontsize=8, ha="left", va="center")
+        ax.text(x_c + 3, c / 2, "c", fontsize=7, ha="left", va="center")
 
     # ---- d (right)
-    if d is not None and not (isinstance(d, float) and math.isnan(d)):
+    if d_eff is not None and not _is_nan(d_eff):
         ax.annotate(
             "",
-            xy=(x_d, d),
+            xy=(x_d, d_eff),
             xytext=(x_d, 0),
-            arrowprops=dict(arrowstyle="<->", linewidth=0.9),
+            arrowprops=dict(arrowstyle="<->", linewidth=0.8),
         )
-        ax.text(x_d + 3, d / 2, "d", fontsize=8, ha="left", va="center")
+        ax.text(x_d + 3, d_eff / 2, "d", fontsize=7, ha="left", va="center")
 
     # ---- z (left)
     if (
         z is not None
-        and not (isinstance(z, float) and math.isnan(z))
-        and d is not None
-        and not (isinstance(d, float) and math.isnan(d))
+        and not _is_nan(z)
+        and d_eff is not None
+        and not _is_nan(d_eff)
     ):
-        y_top_z = d - z
+        y_top_z = d_eff - z
         ax.annotate(
             "",
-            xy=(x_z, d),
+            xy=(x_z, d_eff),
             xytext=(x_z, y_top_z),
-            arrowprops=dict(arrowstyle="<->", linewidth=0.9),
+            arrowprops=dict(arrowstyle="<->", linewidth=0.8),
         )
         ax.text(
             x_z - 4,
-            (d + y_top_z) / 2,
+            (d_eff + y_top_z) / 2,
             "z",
-            fontsize=8,
+            fontsize=7,
             ha="right",
             va="center",
         )
@@ -333,10 +322,10 @@ def _make_cross_section_figure(
     ax.set_xlim(-10, b + 70)
     ax.set_ylim(D + 10, -20)
     ax.set_aspect("equal")
-    ax.set_xlabel("Width (mm)", fontsize=9)
-    ax.set_ylabel("Depth (mm)", fontsize=9)
-    ax.set_title("ULS SECTION", fontsize=10)
-    ax.tick_params(labelsize=8)
+    ax.set_xlabel("Width (mm)", fontsize=8)
+    ax.set_ylabel("Depth (mm)", fontsize=8)
+    ax.set_title("ULS SECTION", fontsize=9)
+    ax.tick_params(labelsize=7)
 
     return fig
 
@@ -347,6 +336,7 @@ def _make_stress_figure(fc, fsy, alpha2, D, d, c):
     - rectangular compression block of depth c with stress α2*f'c
     - point for tensile steel stress at d with fsy.
     """
+
     def _bad(x):
         return x is None or (isinstance(x, float) and math.isnan(x))
 
@@ -360,15 +350,18 @@ def _make_stress_figure(fc, fsy, alpha2, D, d, c):
     if sig_max <= 0:
         return None
 
-    fig, ax = plt.subplots(figsize=(3.0, 4.0))
+    # slightly smaller figure too
+    fig, ax = plt.subplots(figsize=(2.4, 3.4))
 
     # Compression block
     ax.add_patch(
         Rectangle(
-            (0, 0), sig_c, c,
+            (0, 0),
+            sig_c,
+            c,
             facecolor="#c7e3ff",
             edgecolor="black",
-            linewidth=1.0,
+            linewidth=0.9,
         )
     )
     ax.text(
@@ -381,7 +374,7 @@ def _make_stress_figure(fc, fsy, alpha2, D, d, c):
     )
 
     # Tensile steel stress at depth d
-    ax.plot([0, sig_s], [d, d], linestyle="--", linewidth=1.0, color="black")
+    ax.plot([0, sig_s], [d, d], linestyle="--", linewidth=0.9, color="black")
     ax.plot(sig_s, d, "ko", markersize=3)
     ax.text(
         sig_s,
@@ -395,9 +388,9 @@ def _make_stress_figure(fc, fsy, alpha2, D, d, c):
     # Axes
     ax.set_xlim(0, 1.1 * sig_max)
     ax.set_ylim(D + 10, -20)
-    ax.set_xlabel("ULS STRESS (MPa)", fontsize=9)
-    ax.set_ylabel("Depth (mm)", fontsize=9)
-    ax.tick_params(labelsize=8)
+    ax.set_xlabel("ULS STRESS (MPa)", fontsize=8)
+    ax.set_ylabel("Depth (mm)", fontsize=8)
+    ax.tick_params(labelsize=7)
 
     return fig
 
@@ -549,7 +542,6 @@ def render_bending():
     st.subheader("Design Actions for Bending")
 
     da1, da2, da3 = st.columns(3)
-
     sync = sync_callbacks  # shorthand
 
     with da1:
@@ -591,7 +583,6 @@ def render_bending():
     # ============================================================
     #  MAIN INPUTS (GEOMETRY, MATERIALS, REO) – WITH INSIGHTS
     # ============================================================
-
     g1, g2 = st.columns(2)
 
     with g1:
@@ -1264,4 +1255,3 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
-
