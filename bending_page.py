@@ -839,13 +839,12 @@ def render_bending():
         else float("nan")
     )
 
-   # ============================================================
-#  DETAILED SUMMARY – CLEAN TABLE (LEFT-ALIGNED, no row numbers)
 # ============================================================
-
+#  DETAILED SUMMARY – CLEAN TABLE (LEFT-ALIGNED, NO ROW NUMBERS)
+# ============================================================
 st.subheader("Bending Capacity – Detailed Summary (values only)")
 
-# Local copies for stress-block per code (for the table & ULS tab)
+# Local copies for stress-block per code (for the table only)
 fc_local = fc if fc is not None else 40.0
 D_local = D if D is not None else 600.0
 cover_bot_local = cover_bot if cover_bot is not None else 40.0
@@ -870,38 +869,29 @@ ku_sb = ku if ku is not None else float("nan")
 Mu_nom_report = phi_Mu_cap / phi if phi and phi > 0 else float("nan")
 
 rows = [
-    {"Parameter": "Minimum steel",             "Symbol": "As,min",   "Value": _fmt(As_min, "{:.1f}"),         "Units": "mm²"},
-    {"Parameter": "Cracking moment",           "Symbol": "Mcr",      "Value": _fmt(Mcr, "{:.2f}"),            "Units": "kNm"},
-    {"Parameter": "Minimum cracking moment",   "Symbol": "Mu,min",   "Value": _fmt(Mu_min, "{:.2f}"),         "Units": "kNm"},
-    {"Parameter": "Gross Z",                   "Symbol": "Zg",       "Value": _fmt(Z_gross, "{:.3e}"),        "Units": "mm³"},
-    {"Parameter": "α₂",                        "Symbol": "α2",       "Value": _fmt(alpha2_sb, "{:.3f}"),      "Units": "•"},
-    {"Parameter": "γ",                         "Symbol": "γ",        "Value": _fmt(gamma_sb, "{:.3f}"),       "Units": "•"},
-    {"Parameter": "Strength reduction",        "Symbol": "φb",       "Value": _fmt(phi_b, "{:.3f}"),          "Units": "•"},
-    {"Parameter": "Neutral axis depth",        "Symbol": "c",        "Value": _fmt(c, "{:.2f}"),              "Units": "mm"},
-    {"Parameter": "Block depth",               "Symbol": "a = γc",   "Value": _fmt(a, "{:.2f}"),              "Units": "mm"},
-    {"Parameter": "Neutral axis ratio",        "Symbol": "ku = c/d", "Value": _fmt(ku_sb, "{:.3f}"),          "Units": "•"},
-    {"Parameter": "Lever arm",                 "Symbol": "z",        "Value": _fmt(z, "{:.2f}"),              "Units": "mm"},
-    {"Parameter": "Nominal moment",            "Symbol": "Mu",       "Value": _fmt(Mu_nom_report, "{:.2f}"),  "Units": "kNm"},
-    {"Parameter": "Design moment cap.",        "Symbol": "φMu,cap",  "Value": _fmt(phi_Mu_cap, "{:.2f}"),     "Units": "kNm"},
-    {"Parameter": "Design moment used",        "Symbol": "Mu*",      "Value": _fmt(Mu_star, "{:.2f}"),        "Units": "kNm"},
+    {"Parameter": "Minimum steel",         "Symbol": "As,min",   "Value": _fmt(As_min, "{:.1f}"),      "Units": "mm²"},
+    {"Parameter": "Cracking moment",       "Symbol": "Mcr",      "Value": _fmt(Mcr, "{:.2f}"),         "Units": "kNm"},
+    {"Parameter": "Minimum cracking moment","Symbol": "Mu,min",  "Value": _fmt(Mu_min, "{:.2f}"),      "Units": "kNm"},
+    {"Parameter": "Gross Z",               "Symbol": "Zg",       "Value": _fmt(Z_gross, "{:.3e}"),     "Units": "mm³"},
+    {"Parameter": "α₂",                    "Symbol": "α2",       "Value": _fmt(alpha2_sb, "{:.3f}"),   "Units": "•"},
+    {"Parameter": "γ",                     "Symbol": "γ",        "Value": _fmt(gamma_sb, "{:.3f}"),    "Units": "•"},
+    {"Parameter": "Strength reduction",    "Symbol": "φb",       "Value": _fmt(phi_b, "{:.3f}"),       "Units": "•"},
+    {"Parameter": "Neutral axis depth",    "Symbol": "c",        "Value": _fmt(c, "{:.2f}"),           "Units": "mm"},
+    {"Parameter": "Block depth",           "Symbol": "a = γc",   "Value": _fmt(a, "{:.2f}"),           "Units": "mm"},
+    {"Parameter": "Neutral axis ratio",    "Symbol": "ku = c/d", "Value": _fmt(ku_sb, "{:.3f}"),       "Units": "•"},
+    {"Parameter": "Lever arm",             "Symbol": "z",        "Value": _fmt(z, "{:.2f}"),           "Units": "mm"},
+    {"Parameter": "Nominal moment",        "Symbol": "Mu",       "Value": _fmt(Mu_nom_report, "{:.2f}"),"Units": "kNm"},
+    {"Parameter": "Design moment cap.",    "Symbol": "φMu,cap",  "Value": _fmt(phi_Mu_cap, "{:.2f}"),  "Units": "kNm"},
+    {"Parameter": "Design moment used",    "Symbol": "Mu*",      "Value": _fmt(Mu_star, "{:.2f}"),     "Units": "kNm"},
 ]
 
 df_summary = pd.DataFrame(rows)
 
-# LEFT-ALIGN table using st.markdown container
-st.markdown(
-    """
-    <div style="max-width: 700px;">
-    """,
-    unsafe_allow_html=True,
-)
+# LEFT align by putting table inside a narrow column
+colL, colR = st.columns([1.2, 0.8])
 
-st.table(df_summary)
-
-st.markdown("</div>", unsafe_allow_html=True)
-
-st.markdown("---")
-
+with colL:
+    st.table(df_summary)
 
     # ============================================================
     #  STEP-BY-STEP TABS (ULS / SLS ONLY)
@@ -1248,4 +1238,5 @@ st.markdown("---")
 
 if __name__ == "__main__":
     render_bending()
+
 
