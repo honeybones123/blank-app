@@ -1050,29 +1050,28 @@ def render_bending():
                 )
 
             # ===========================
-            #  RIGHT: DIAGRAMS
-            # ===========================
-            with col_fig:
-                st.markdown("#### ULS diagrams")
+            #  # ===========================
+# RIGHT: DIAGRAMS
+# ===========================
+with col_fig:
+    # REMOVE: st.markdown("#### ULS diagrams")
 
-                sec_fig = _make_cross_section_figure(
-                    b, D, d, a, nb_bot, db_bot, cover_bot,
-                    nb_top=nb_top, db_top=db_top, cover_top=cover_top,
-                    c=c, z=z
-                )
-                if sec_fig is not None:
-                    st.pyplot(sec_fig, use_container_width=True)
-                    plt.close(sec_fig)
+    # shift diagram upward
+    st.markdown("<div style='margin-top:-2.5rem;'></div>", unsafe_allow_html=True)
 
-                stress_fig = _make_stress_figure(
-                    fc, fsy, alpha2_sb, D, d, c
-                )
-                if stress_fig is not None:
-                    st.pyplot(stress_fig, use_container_width=True)
-                    plt.close(stress_fig)
+    sec_fig = _make_cross_section_figure(
+        b, D, d, a, nb_bot, db_bot, cover_bot,
+        nb_top=nb_top, db_top=db_top, cover_top=cover_top,
+        c=c, z=z
+    )
+    if sec_fig is not None:
+        st.pyplot(sec_fig, use_container_width=True)
+        plt.close(sec_fig)
 
-        else:
-            st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
+    stress_fig = _make_stress_figure(fc, fsy, alpha2_sb, D, d, c)
+    if stress_fig is not None:
+        st.pyplot(stress_fig, use_container_width=True)
+        plt.close(stress_fig)
 
     # ----- SLS detailed tab -----
     with tab_sls:
@@ -1154,5 +1153,6 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
 
 
