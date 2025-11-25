@@ -34,7 +34,7 @@ def _fmt(val, pattern="{:.2f}"):
 #  BENDING CAPACITY CALC (α2–γ stress block, AS3600 Cl. 8.1.3)
 # ------------------------------------------------------------
 
-def _compute_bending_capacity():
+_compute_bending_capacity():
     """
     Compute a simple φMu,cap using a rectangular stress block.
     Uses shared session_state values only (via get_param).
@@ -164,7 +164,7 @@ def _make_cross_section_figure(
     if cover_bot is None or cover_bot <= 0:
         cover_bot = 40.0
 
-    # Default values for top bars
+    # Default top reo
     if nb_top is None or nb_top < 1:
         nb_top = 2
     if db_top is None or db_top <= 0:
@@ -172,115 +172,100 @@ def _make_cross_section_figure(
     if cover_top is None or cover_top <= 0:
         cover_top = 40.0
 
-    # Safe integer nb's
-    nb_bot = max(1, int(round(nb_bot)))
-    nb_top = max(1, int(round(nb_top)))
+    nb_bot = int(nb_bot)
+    nb_top = int(nb_top)
 
-    # Smaller figure so it doesn't run down the whole page
-    fig, ax = plt.subplots(figsize=(3.6, 5.0))
+    # 🌟 MAKE THE DIAGRAM MUCH SMALLER
+    fig, ax = plt.subplots(figsize=(2.8, 3.8))
 
     # Outline
-    outline = Rectangle((0, 0), b, D, fill=False, linewidth=2)
-    ax.add_patch(outline)
+    ax.add_patch(Rectangle((0, 0), b, D, fill=False, linewidth=2))
 
     # Compression block
     if a is None or (isinstance(a, float) and math.isnan(a)) or a <= 0:
         a = 0.15 * D
-
-    comp = Rectangle((0, 0), b, a, facecolor="#c7e3ff", edgecolor="none")
-    ax.add_patch(comp)
-    ax.text(b / 2, a / 2, "Compression\nzone", ha="center", va="center", fontsize=10)
+    ax.add_patch(Rectangle((0, 0), b, a, facecolor="#c7e3ff", edgecolor="none"))
+    ax.text(b/2, a/2, "Compression\nzone", ha="center", va="center", fontsize=9)
 
     # -------------------------
     # Bottom reo
     # -------------------------
-    if d is None or (isinstance(d, float) and math.isnan(d)):
+    if d is None or math.isnan(d):
         d = 0.9 * D
     y_bot = d
 
-    inner_width_bot = b - 2 * cover_bot
-    if inner_width_bot < db_bot:
-        inner_width_bot = db_bot
-
+    inner_width_bot = max(b - 2 * cover_bot, db_bot)
     if nb_bot == 1:
         xs_bot = [b / 2]
     else:
-        spacing_bot = inner_width_bot / (nb_bot - 1)
-        xs_bot = [cover_bot + i * spacing_bot for i in range(nb_bot)]
+        spacing = inner_width_bot / (nb_bot - 1)
+        xs_bot = [cover_bot + i * spacing for i in range(nb_bot)]
 
     for x in xs_bot:
-        ax.add_patch(
-            Circle((x, y_bot), radius=db_bot / 2, fill=False, linewidth=1.6)
-        )
+        ax.add_patch(Circle((x, y_bot), radius=db_bot/2, fill=False, linewidth=1.4))
 
     # -------------------------
-    # TOP reo
+    # Top reo
     # -------------------------
-    y_top = cover_top + db_top / 2
-
-    inner_width_top = b - 2 * cover_top
-    if inner_width_top < db_top:
-        inner_width_top = db_top
-
+    y_top = cover_top + db_top/2
+    inner_width_top = max(b - 2 * cover_top, db_top)
     if nb_top == 1:
-        xs_top = [b / 2]
+        xs_top = [b/2]
     else:
-        spacing_top = inner_width_top / (nb_top - 1)
-        xs_top = [cover_top + i * spacing_top for i in range(nb_top)]
+        spacing_t = inner_width_top / (nb_top - 1)
+        xs_top = [cover_top + i * spacing_t for i in range(nb_top)]
 
     for x in xs_top:
-        ax.add_patch(
-            Circle(
-                (x, y_top),
-                radius=db_top / 2,
-                fill=False,
-                edgecolor="black",
-                linewidth=1.6,
-            )
-        )
+        ax.add_patch(Circle((x, y_top), radius=db_top/2, fill=False, linewidth=1.4))
 
     # ---------------------------------------------------------
-    # LABELS (c on left, d on right, z slightly left of centre)
+    # LABELS: z LEFT, d RIGHT, c FAR RIGHT
     # ---------------------------------------------------------
-    x_left = -10          # left labels inside axis limits
-    x_right = b + 20      # right side labels
-    x_z = b / 2.0 - 20    # move z arrow left so text isn't on the line
 
-    # ---- c: neutral axis depth (LEFT SIDE) ----
-    if c is not None and not (isinstance(c, float) and math.isnan(c)):
+    x_z = b * 0.25                 # further left
+    x_d = b + 15                   # normal right
+    x_c = b + 45                   # FAR right so it doesn’t overlap d
+
+    # ---- c (far right)
+    if c is not None and not math.isnan(c):
         ax.annotate(
             "",
-            xy=(x_left, c),       # bottom of arrow at c
-            xytext=(x_left, 0),   # top fibre
-            arrowprops=dict(arrowstyle="<->", linewidth=1.2),
+            xy=(x_c, c),
+            xytext=(x_c, 0),
+            arrowprops=dict(arrowstyle="<->", linewidth=1.1),
         )
-        ax.text(x_left - 2, c / 2, "c", ha="right", va="center")
+        ax.text(x_c + 4, c/2, "c", ha="left", va="center")
 
-    # ---- d: effective depth (RIGHT SIDE) ----
-    if d is not None and not (isinstance(d, float) and math.isnan(d)):
+    # ---- d (right)
+    if d is not None and not math.isnan(d):
         ax.annotate(
             "",
-            xy=(x_right, d),      # bottom at steel level
-            xytext=(x_right, 0),  # top fibre
-            arrowprops=dict(arrowstyle="<->", linewidth=1.2),
+            xy=(x_d, d),
+            xytext=(x_d, 0),
+            arrowprops=dict(arrowstyle="<->", linewidth=1.1),
         )
-        ax.text(x_right + 3, d / 2, "d", ha="left", va="center")
+        ax.text(x_d + 4, d/2, "d", ha="left", va="center")
 
-    # ---- z: lever arm (VERTICAL, SHIFTED LEFT) ----
-    if (
-        z is not None
-        and not (isinstance(z, float) and math.isnan(z))
-        and d is not None
-        and not (isinstance(d, float) and math.isnan(d))
-    ):
+    # ---- z (shifted left)
+    if z is not None and not math.isnan(z):
         y_top_z = d - z
         ax.annotate(
             "",
-            xy=(x_z, d),          # bottom at steel level
+            xy=(x_z, d),
             xytext=(x_z, y_top_z),
-            arrowprops=dict(arrowstyle="<->", linewidth=1.2),
+            arrowprops=dict(arrowstyle="<->", linewidth=1.1),
         )
-        ax.text(x_z - 5, (d + y_top_z) / 2, "z", ha="right", va="center")
+        ax.text(x_z - 5, (d + y_top_z)/2, "z", ha="right", va="center")
+
+    # Axis settings
+    ax.set_xlim(-10, b + 70)
+    ax.set_ylim(D + 10, -20)
+    ax.set_aspect("equal")
+    ax.set_xlabel("Width (mm)")
+    ax.set_ylabel("Depth (mm)")
+    ax.set_title("ULS SECTION")
+
+    return fig
 
     # -------------------------
     # Axes settings
@@ -1205,6 +1190,7 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
 
 
 
