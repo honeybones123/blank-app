@@ -138,7 +138,6 @@ def _compute_bending_capacity():
 # ------------------------------------------------------------
 #  DIAGRAM HELPERS (cross-section + stress)
 # ------------------------------------------------------------
-
 def _make_cross_section_figure(
     b,
     D,
@@ -177,7 +176,8 @@ def _make_cross_section_figure(
     nb_bot = max(1, int(round(nb_bot)))
     nb_top = max(1, int(round(nb_top)))
 
-    fig, ax = plt.subplots(figsize=(4.5, 7))
+    # Smaller figure so it doesn't run down the whole page
+    fig, ax = plt.subplots(figsize=(3.6, 5.0))
 
     # Outline
     outline = Rectangle((0, 0), b, D, fill=False, linewidth=2)
@@ -239,33 +239,22 @@ def _make_cross_section_figure(
             )
         )
 
-   # ---------------------------------------------------------
-    # -------------------------
-    # LABELS (c on left, d/a on right, z in middle)
-    # -------------------------
-    x_left = -10          # inside x-limits for left labels
+    # ---------------------------------------------------------
+    # LABELS (c on left, d on right, z slightly left of centre)
+    # ---------------------------------------------------------
+    x_left = -10          # left labels inside axis limits
     x_right = b + 20      # right side labels
-    x_mid = b / 2.0       # centre for z
+    x_z = b / 2.0 - 20    # move z arrow left so text isn't on the line
 
     # ---- c: neutral axis depth (LEFT SIDE) ----
     if c is not None and not (isinstance(c, float) and math.isnan(c)):
         ax.annotate(
             "",
             xy=(x_left, c),       # bottom of arrow at c
-            xytext=(x_left, 0),   # top of arrow at top fibre
-            arrowprops=dict(arrowstyle="<->"),
+            xytext=(x_left, 0),   # top fibre
+            arrowprops=dict(arrowstyle="<->", linewidth=1.2),
         )
         ax.text(x_left - 2, c / 2, "c", ha="right", va="center")
-
-    # ---- a: block depth (RIGHT SIDE) ----
-    if a is not None and not (isinstance(a, float) and math.isnan(a)):
-        ax.annotate(
-            "",
-            xy=(x_right, a),      # bottom of arrow at a
-            xytext=(x_right, 0),  # top fibre
-            arrowprops=dict(arrowstyle="<->"),
-        )
-        ax.text(x_right + 2, a / 2, "a", ha="left", va="center")
 
     # ---- d: effective depth (RIGHT SIDE) ----
     if d is not None and not (isinstance(d, float) and math.isnan(d)):
@@ -273,25 +262,37 @@ def _make_cross_section_figure(
             "",
             xy=(x_right, d),      # bottom at steel level
             xytext=(x_right, 0),  # top fibre
-            arrowprops=dict(arrowstyle="<->"),
+            arrowprops=dict(arrowstyle="<->", linewidth=1.2),
         )
-        ax.text(x_right + 2, d / 2, "d", ha="left", va="center")
+        ax.text(x_right + 3, d / 2, "d", ha="left", va="center")
 
-    # ---- z: lever arm (MIDDLE OF SECTION) ----
+    # ---- z: lever arm (VERTICAL, SHIFTED LEFT) ----
     if (
         z is not None
         and not (isinstance(z, float) and math.isnan(z))
         and d is not None
         and not (isinstance(d, float) and math.isnan(d))
     ):
-        y_top_z = d - z          # top of lever arm
+        y_top_z = d - z
         ax.annotate(
             "",
-            xy=(x_mid, d),        # bottom at steel level
-            xytext=(x_mid, y_top_z),
-            arrowprops=dict(arrowstyle="<->"),
+            xy=(x_z, d),          # bottom at steel level
+            xytext=(x_z, y_top_z),
+            arrowprops=dict(arrowstyle="<->", linewidth=1.2),
         )
-        ax.text(x_mid, (d + y_top_z) / 2, "z", ha="center", va="center")
+        ax.text(x_z - 5, (d + y_top_z) / 2, "z", ha="right", va="center")
+
+    # -------------------------
+    # Axes settings
+    # -------------------------
+    ax.set_xlim(-20, b + 80)     # tighter width
+    ax.set_ylim(D + 20, -20)     # tighter height so figure is more compact
+    ax.set_aspect("equal", "box")
+    ax.set_xlabel("Width (mm)")
+    ax.set_ylabel("Depth (mm)")
+    ax.set_title("ULS SECTION")
+
+    return fig
 
     # -------------------------
     # Axes settings
@@ -1204,6 +1205,7 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
 
 
 
