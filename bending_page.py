@@ -267,84 +267,6 @@ def _make_cross_section_figure(
 
     return fig
 
-    # -------------------------
-    # Axes settings
-    # -------------------------
-    ax.set_xlim(-20, b + 80)     # tighter width
-    ax.set_ylim(D + 20, -20)     # tighter height so figure is more compact
-    ax.set_aspect("equal", "box")
-    ax.set_xlabel("Width (mm)")
-    ax.set_ylabel("Depth (mm)")
-    ax.set_title("ULS SECTION")
-
-    return fig
-
-    # -------------------------
-    # Axes settings
-    # -------------------------
-    ax.set_xlim(-20, b + 120)
-    ax.set_ylim(D + 40, -40)
-    ax.set_aspect("equal", "box")
-    ax.set_xlabel("Width (mm)")
-    ax.set_ylabel("Depth (mm)")
-    ax.set_title("ULS SECTION")
-
-    return fig
-
-
-def _make_stress_figure(fc, fsy, alpha2, D, d, c):
-    """Simple ULS stress diagram: α₂ f'c in compression, fsy in steel."""
-    if None in (fc, fsy):
-        return None
-
-    if alpha2 is None or math.isnan(alpha2):
-        alpha2 = 0.85
-    if D is None or math.isnan(D):
-        D = 600.0
-    if d is None or math.isnan(d):
-        d = 0.9 * D
-    if c is None or math.isnan(c):
-        c = 0.2 * D
-
-    fc_comp = alpha2 * fc  # MPa
-    x_max = 1.2 * max(fc_comp, fsy)
-
-    fig, ax = plt.subplots()
-
-    # Compression block stress
-    comp = Rectangle((0, 0), fc_comp, c, linewidth=0, facecolor="#c7e3ff")
-    ax.add_patch(comp)
-    ax.text(
-        0.5 * fc_comp,
-        0.05 * c,
-        r"$\alpha_2 f'_c$",
-        ha="center",
-        va="bottom",
-        fontsize=10,
-    )
-
-    # Steel stress at depth d (assume yields)
-    ax.hlines(d, 0.0, fsy, linewidth=2.5)
-    ax.text(
-        0.5 * fsy,
-        d + 0.04 * D,
-        rf"{fsy:.0f} MPa (Steel yields)",
-        ha="center",
-        va="bottom",
-        fontsize=9,
-    )
-
-    ax.set_xlim(0.0, x_max)
-    ax.set_ylim(D + 0.1 * D, -0.1 * D)  # depth downwards
-    ax.set_xlabel("Stress (MPa)")
-    ax.set_ylabel("Depth (mm)")
-    ax.set_title("ULS STRESS (MPa)")
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-
-    return fig
-
-
 # ------------------------------------------------------------
 #  PAGE RENDER
 # ------------------------------------------------------------
@@ -1190,6 +1112,7 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
 
 
 
