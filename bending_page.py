@@ -1101,7 +1101,7 @@ def render_bending():
 
     df_summary = pd.DataFrame(rows)
 
-    colL, colR = st.columns([1, 1])  # 50/50 layout
+    colL, colR = st.columns([.7, 1.3])  # 50/50 layout
 
     with colL:
         st.dataframe(df_summary, hide_index=True, use_container_width=True)
@@ -1443,4 +1443,5 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
 
