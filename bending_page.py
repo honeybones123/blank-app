@@ -239,54 +239,47 @@ def _make_cross_section_figure(
             )
         )
 
-    # -------------------------
-    # LABELS (c, a, d, z)
-    # -------------------------
-    # c label
-    if c is not None and not (isinstance(c, float) and math.isnan(c)):
-        ax.annotate(
-            "c",
-            xy=(b + 10, c / 2),
-            xytext=(b + 40, c / 2),
-            arrowprops=dict(arrowstyle="<->"),
-            va="center",
-        )
-        ax.text(b + 45, c / 2, f"{c:.0f} mm", va="center")
+   # ---------------------------------------------------------
+# LABELS (c on left, d on right, a on right, z in middle)
+# ---------------------------------------------------------
 
-    # a label
-    if a is not None and not (isinstance(a, float) and math.isnan(a)):
-        ax.annotate(
-            "a",
-            xy=(b + 10, a / 2),
-            xytext=(b + 40, a / 2),
-            arrowprops=dict(arrowstyle="<->"),
-            va="center",
-        )
+# LEFT SIDE X-POSITION FOR c
+x_left = -40           # outside the left face
+x_right = b + 20       # right side (for d & a)
+x_middle = b / 2       # centre (for z)
 
-    # d label
-    if d is not None and not (isinstance(d, float) and math.isnan(d)):
-        ax.annotate(
-            "d",
-            xy=(b + 10, d / 2),
-            xytext=(b + 40, d / 2),
-            arrowprops=dict(arrowstyle="<->"),
-            va="center",
-        )
+# ---- c: Neutral axis depth (LEFT SIDE) ----
+if c is not None and not (isinstance(c, float) and math.isnan(c)):
+    ax.annotate(
+        "", xy=(0, c), xytext=(x_left, 0),
+        arrowprops=dict(arrowstyle="<->")
+    )
+    ax.text(x_left - 5, c/2, f"c = {c:.0f} mm", ha="right", va="center")
 
-    # z label
-    if (
-        z is not None
-        and not (isinstance(z, float) and math.isnan(z))
-        and a is not None
-        and not (isinstance(a, float) and math.isnan(a))
-    ):
-        ax.annotate(
-            "z",
-            xy=(b + 10, d - z / 2),
-            xytext=(b + 40, d - z / 2),
-            arrowprops=dict(arrowstyle="<->"),
-            va="center",
-        )
+# ---- a: Block depth (RIGHT SIDE) ----
+if a is not None and not (isinstance(a, float) and math.isnan(a)):
+    ax.annotate(
+        "", xy=(b, a), xytext=(x_right, 0),
+        arrowprops=dict(arrowstyle="<->")
+    )
+    ax.text(x_right + 5, a/2, "a", ha="left", va="center")
+
+# ---- d: Effective depth (RIGHT SIDE) ----
+if d is not None and not (isinstance(d, float) and math.isnan(d)):
+    ax.annotate(
+        "", xy=(b, d), xytext=(x_right, 0),
+        arrowprops=dict(arrowstyle="<->")
+    )
+    ax.text(x_right + 5, d/2, "d", ha="left", va="center")
+
+# ---- z: Lever arm (CENTRE OF SECTION) ----
+if z is not None and not (isinstance(z, float) and math.isnan(z)):
+    y_mid = d - z/2
+    ax.annotate(
+        "", xy=(b/2, d), xytext=(b/2, d - z),
+        arrowprops=dict(arrowstyle="<->")
+    )
+    ax.text(x_middle, y_mid, "z", ha="center", va="center")
 
     # -------------------------
     # Axes settings
@@ -1199,4 +1192,5 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
 
