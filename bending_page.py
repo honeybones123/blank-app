@@ -191,7 +191,7 @@ def _make_cross_section_figure(
         )
     )
 
-    # Compression block
+    # Compression block (if a not provided, use 15% of depth)
     if a is None or (isinstance(a, float) and math.isnan(a)) or a <= 0:
         a = 0.15 * D
 
@@ -320,69 +320,78 @@ def _make_cross_section_figure(
     return fig
 
 
-def _make_stress_figure(alpha2_val, gamma_val):
+def _make_stress_figure(alpha2_value, gamma_value):
     """
-    Static schematic stress/force diagram (teaching only):
+    Static schematic stress/force diagram:
 
     - thick vertical line
-    - compression block arrows with α2 f'c and Cc
+    - light-blue concrete stress block with arrows (α2 f'c, Cc)
     - vertical γ k_u d arrow
     - tensile Ts arrow at bottom
     - no axes or numeric scales
+    - does NOT depend on the actual numeric values; purely schematic
     """
-    fig, ax = plt.subplots(figsize=(2.4, 4.0))
+
+    fig, ax = plt.subplots(figsize=(2.2, 4.0))
 
     # Simple normalised coordinate system (0–10 both ways)
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 10)
-
-    # Turn off axes for a clean schematic
     ax.axis("off")
 
-    # -------------------------------------------------
     # Main vertical line (section)
-    # -------------------------------------------------
     x_line = 4.0
     y_bot = 1.2
-    y_top = 9.2
-    ax.plot([x_line, x_line], [y_bot, y_top], color="black", linewidth=2.2)
+    y_top = 9.0
+    ax.plot([x_line, x_line], [y_bot, y_top], color="black", linewidth=2.4)
 
-    # -------------------------------------------------
-    # Compression block region (top)
-    # -------------------------------------------------
-    y_c_top = 8.4
-    y_c_bot = 6.0
+    # -----------------------------
+    # Compression block region
+    # -----------------------------
+    y_c_top = 8.2
+    y_c_bot = 5.8
+    x_block_left = x_line
+    x_block_right = 7.4
 
-    # Dashed green lines across compression block region
-    ax.hlines([y_c_top, y_c_bot], 1.0, 9.0,
-              linestyles="dashed", linewidth=0.8, colors="#7ec97e")
+    # Light blue stress block rectangle
+    ax.add_patch(
+        Rectangle(
+            (x_block_left, y_c_bot),
+            x_block_right - x_block_left,
+            y_c_top - y_c_bot,
+            facecolor="#c7e3ff",
+            edgecolor="black",
+            linewidth=1.0,
+            alpha=0.9,
+        )
+    )
 
-    # Three small arrows representing α2 f'c
-    arrow_x_start = x_line
-    arrow_x_end = 7.3
-    arrow_ys = [7.9, 7.2, 6.5]
+    # Three arrows pointing LEFT (compression toward section)
+    arrow_x_start = x_block_right - 0.2  # start near right edge
+    arrow_x_end = x_block_left + 0.2     # arrow heads near section
+    arrow_ys = [7.9, 7.0, 6.1]
 
     for y in arrow_ys:
         ax.annotate(
             "",
-            xy=(arrow_x_end, y),
-            xytext=(arrow_x_start, y),
+            xy=(arrow_x_end, y),          # arrow head
+            xytext=(arrow_x_start, y),    # tail
             arrowprops=dict(arrowstyle="->", linewidth=1.1, color="#4c6faf"),
         )
 
     # Label α2 f'c above arrows
     ax.text(
-        (arrow_x_start + arrow_x_end) / 2,
-        y_c_top + 0.3,
+        (x_block_left + x_block_right) / 2,
+        y_c_top + 0.4,
         r"$\alpha_2 f'_c$",
         ha="center",
         va="bottom",
         fontsize=9,
     )
 
-    # Label Cc beside arrows
+    # Label Cc beside block
     ax.text(
-        arrow_x_end + 0.3,
+        x_block_right + 0.3,
         (y_c_top + y_c_bot) / 2,
         r"$C_c$",
         ha="left",
@@ -390,15 +399,15 @@ def _make_stress_figure(alpha2_val, gamma_val):
         fontsize=9,
     )
 
-    # -------------------------------------------------
-    # Vertical γ k_u d arrow on the left of the compression zone
-    # -------------------------------------------------
-    x_g = x_line - 0.9
+    # -----------------------------
+    # Vertical γ k_u d arrow
+    # -----------------------------
+    x_g = x_line - 1.0
     ax.annotate(
         "",
         xy=(x_g, y_c_top),
         xytext=(x_g, y_c_bot),
-        arrowprops=dict(arrowstyle="<->", linewidth=1.0),
+        arrowprops=dict(arrowstyle="<->", linewidth=1.0, color="black"),
     )
     ax.text(
         x_g - 0.3,
@@ -410,24 +419,19 @@ def _make_stress_figure(alpha2_val, gamma_val):
         rotation=90,
     )
 
-    # -------------------------------------------------
+    # -----------------------------
     # Tensile force Ts at bottom
-    # -------------------------------------------------
-    y_ts = 2.2
+    # -----------------------------
+    y_ts = 2.0
 
-    # Dashed green band around tension level
-    ax.hlines([y_ts + 0.9, y_ts - 0.9], 1.0, 9.0,
-              linestyles="dashed", linewidth=0.8, colors="#7ec97e")
-
-    # Ts arrow
     ax.annotate(
         "",
-        xy=(7.3, y_ts),
+        xy=(7.0, y_ts),
         xytext=(x_line, y_ts),
         arrowprops=dict(arrowstyle="->", linewidth=1.1, color="#4c6faf"),
     )
     ax.text(
-        7.3 + 0.3,
+        7.0 + 0.3,
         y_ts,
         r"$T_s$",
         ha="left",
@@ -435,34 +439,7 @@ def _make_stress_figure(alpha2_val, gamma_val):
         fontsize=9,
     )
 
-    # -------------------------------------------------
-    # Bottom labels: α2 and γ values + "Stress / Force"
-    # -------------------------------------------------
-    ax.text(
-        x_line - 1.6,
-        0.9,
-        rf"$\alpha_2 = {alpha2_val:.3f}$",
-        ha="left",
-        va="bottom",
-        fontsize=9,
-    )
-    ax.text(
-        x_line - 1.6,
-        0.3,
-        rf"$\gamma = {gamma_val:.3f}$",
-        ha="left",
-        va="bottom",
-        fontsize=9,
-    )
-
-    ax.text(
-        x_line + 1.6,
-        0.3,
-        "Stress / Force",
-        ha="center",
-        va="bottom",
-        fontsize=9,
-    )
+    # No bottom labels (no α2=… or γ=…, no "Stress / Force")
 
     return fig
 
@@ -1214,7 +1191,7 @@ def render_bending():
             #  RIGHT: DIAGRAMS
             # ===========================
             with col_fig:
-                # Pull the cross-section up
+                # Pull the diagrams up a bit
                 st.markdown(
                     "<div style='margin-top:-4rem;'></div>",
                     unsafe_allow_html=True,
@@ -1238,7 +1215,7 @@ def render_bending():
                     st.pyplot(sec_fig, use_container_width=True)
                     plt.close(sec_fig)
 
-                # Big gap before stress diagram
+                # Nice big gap before the stress diagram
                 st.markdown(
                     "<div style='margin-top:3rem;'></div>",
                     unsafe_allow_html=True,
