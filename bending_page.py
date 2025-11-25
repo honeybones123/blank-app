@@ -46,7 +46,8 @@ def _compute_bending_capacity():
     fsy = get_param("fsy")
     Ast = get_param("Ast_bot")
     Mu_star = get_param("Mu_star")
-    phi_b = get_param("phi_bend", 0.85)  # NEW: strength reduction from shared state
+    # NEW: strength reduction factor from shared state (widget)
+    phi = get_param("phi_bend", 0.85)
 
     if None in (b, D, d, fc, fsy, Ast, Mu_star):
         return {
@@ -58,7 +59,7 @@ def _compute_bending_capacity():
             "ku": float("nan"),
             "alpha2": 0.85,
             "gamma": 0.85,
-            "phi": phi_b,
+            "phi": phi,
             "fctf": float("nan"),
             "I_gross": float("nan"),
             "Z_gross": float("nan"),
@@ -80,7 +81,7 @@ def _compute_bending_capacity():
     # ---- Stress-block factors (kept constant for teaching here) ----
     alpha2 = 0.85
     gamma = 0.85
-    phi = phi_b  # use user-selected strength reduction
+    # phi already taken from shared state
 
     # ---- Flexural capacity ----
     T = Ast * fsy                              # N (Ast mm², fsy MPa = N/mm²)
@@ -701,15 +702,15 @@ def render_bending():
                 "stiffness and strain calculations."
             ),
         )
-        # NEW: user-controlled bending strength factor
+        # NEW: strength reduction factor widget
         number_row(
-            "Bending strength factor φb",
-            "bending_phi_b",
-            0.01,
+            "Strength reduction φb",
+            "bending_phi_bend",
+            0.05,
             sync,
             help_text=(
-                "Strength reduction factor for bending. "
-                "Typical values 0.8–0.9 (AS 3600), default 0.85."
+                "Strength reduction factor used for bending capacity. "
+                "Typical value is 0.85 for ductile members."
             ),
         )
 
@@ -961,7 +962,7 @@ def render_bending():
                 )
                 st.latex(rf"\Rightarrow \gamma = {gamma_sb:.3f}")
 
-                # 2.3 ku value (and show φb + formula)
+                # 2.3 ku value (NEW heading)
                 st.markdown("#### 2.3 $k_u$ value")
                 st.latex(rf"\phi_b = {phi_b:.2f}")
                 st.latex(r"k_u = \dfrac{c}{d}")
