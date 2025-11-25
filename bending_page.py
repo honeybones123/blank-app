@@ -180,37 +180,58 @@ def _make_cross_section_figure(
     nb_top = int(nb_top)
 
     # ~1/3 smaller than original
-    fig, ax = plt.subplots(figsize=(3.0, 4.7))
+        # 🌟 ~30% smaller figure
+    fig, ax = plt.subplots(figsize=(2.3, 3.3))   # was (3.0, 4.7)
 
-    # Outline – slightly thinner
+    # Outline – thinner
     ax.add_patch(
         Rectangle(
             (0, 0), b, D,
             fill=False,
-            linewidth=1.0,
+            linewidth=0.9     # was 1.0
         )
     )
 
-    # Compression block
-    if a is None or (isinstance(a, float) and math.isnan(a)) or a <= 0:
-        a = 0.15 * D
+    ...
 
-    ax.add_patch(
-        Rectangle(
-            (0, 0), b, a,
-            facecolor="#c7e3ff",
-            edgecolor="none",
-            alpha=0.9,
+    # ---- c (far right)
+    if c is not None and not math.isnan(c):
+        ax.annotate(
+            "", xy=(x_c, c), xytext=(x_c, 0),
+            arrowprops=dict(arrowstyle="<->", linewidth=0.8)
         )
-    )
-    ax.text(
-        b / 2,
-        a / 2,
-        "Compression\nzone",
-        ha="center",
-        va="center",
-        fontsize=8,
-    )
+        ax.text(x_c + 3, c/2, "c", fontsize=7, ha="left", va="center")
+
+    # ---- d (right)
+    if d is not None and not math.isnan(d):
+        ax.annotate(
+            "", xy=(x_d, d), xytext=(x_d, 0),
+            arrowprops=dict(arrowstyle="<->", linewidth=0.8)
+        )
+        ax.text(x_d + 3, d/2, "d", fontsize=7, ha="left", va="center")
+
+    # ---- z (vertical)
+    if z is not None and not math.isnan(z):
+        y_top_z = d - z
+        ax.annotate(
+            "", xy=(x_z, d), xytext=(x_z, y_top_z),
+            arrowprops=dict(arrowstyle="<->", linewidth=0.8)
+        )
+        ax.text(
+            x_z - 4, (d + y_top_z)/2,
+            "z",
+            fontsize=7,
+            ha="right", va="center"
+        )
+
+    # Axis settings (smaller fonts)
+    ax.set_xlim(-10, b + 70)
+    ax.set_ylim(D + 10, -20)
+    ax.set_aspect("equal")
+    ax.set_xlabel("Width (mm)", fontsize=8)
+    ax.set_ylabel("Depth (mm)", fontsize=8)
+    ax.set_title("ULS SECTION", fontsize=9)
+    ax.tick_params(labelsize=7)
 
     # -------------------------
     # Bottom reo
@@ -1131,7 +1152,7 @@ def render_bending():
             with col_fig:
                 # shift diagrams upward a bit
                 st.markdown(
-                    "<div style='margin-top:-2.5rem;'></div>",
+                    "<div style='margin-top:-5rem;'></div>",
                     unsafe_allow_html=True,
                 )
 
@@ -1243,3 +1264,4 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
