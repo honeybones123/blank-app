@@ -139,6 +139,9 @@ def _compute_bending_capacity():
 #  DIAGRAM HELPERS (cross-section + stress)
 # ------------------------------------------------------------
 
+# ------------------------------------------------------------
+#  DIAGRAM HELPERS (cross-section + stress)
+# ------------------------------------------------------------
 def _make_cross_section_figure(
     b,
     D,
@@ -177,16 +180,41 @@ def _make_cross_section_figure(
     nb_top = int(nb_top)
 
     # Smaller figure
-    fig, ax = plt.subplots(figsize=(2.2, 3.0))
+    fig, ax = plt.subplots(figsize=(2.6, 3.4))
 
-    # Outline
-    ax.add_patch(Rectangle((0, 0), b, D, fill=False, linewidth=2))
+    # Outline – thinner line
+    ax.add_patch(
+        Rectangle(
+            (0, 0),
+            b,
+            D,
+            fill=False,
+            linewidth=1.0,   # was 2
+        )
+    )
 
     # Compression block
     if a is None or (isinstance(a, float) and math.isnan(a)) or a <= 0:
         a = 0.15 * D
-    ax.add_patch(Rectangle((0, 0), b, a, facecolor="#c7e3ff", edgecolor="none"))
-    ax.text(b / 2, a / 2, "Compression\nzone", ha="center", va="center", fontsize=9)
+
+    ax.add_patch(
+        Rectangle(
+            (0, 0),
+            b,
+            a,
+            facecolor="#c7e3ff",
+            edgecolor="none",
+            alpha=0.9,
+        )
+    )
+    ax.text(
+        b / 2,
+        a / 2,
+        "Compression\nzone",
+        ha="center",
+        va="center",
+        fontsize=8,       # smaller font
+    )
 
     # -------------------------
     # Bottom reo
@@ -203,7 +231,14 @@ def _make_cross_section_figure(
         xs_bot = [cover_bot + i * spacing for i in range(nb_bot)]
 
     for x in xs_bot:
-        ax.add_patch(Circle((x, y_bot), radius=db_bot / 2, fill=False, linewidth=1.4))
+        ax.add_patch(
+            Circle(
+                (x, y_bot),
+                radius=db_bot / 2,
+                fill=False,
+                linewidth=0.9,   # thinner bars
+            )
+        )
 
     # -------------------------
     # Top reo
@@ -217,15 +252,21 @@ def _make_cross_section_figure(
         xs_top = [cover_top + i * spacing_t for i in range(nb_top)]
 
     for x in xs_top:
-        ax.add_patch(Circle((x, y_top), radius=db_top / 2, fill=False, linewidth=1.4))
+        ax.add_patch(
+            Circle(
+                (x, y_top),
+                radius=db_top / 2,
+                fill=False,
+                linewidth=0.9,
+            )
+        )
 
     # ---------------------------------------------------------
-    # LABELS: z LEFT, d RIGHT, c FAR RIGHT (further apart)
+    # LABELS: z LEFT, d RIGHT, c FAR RIGHT (thin arrows + small text)
     # ---------------------------------------------------------
-
-    x_z = b * 0.15                 # further left
-    x_d = b + 15                   # right of section
-    x_c = b + 60                   # far right so it doesn’t overlap d
+    x_z = b * 0.25        # left
+    x_d = b + 15          # right
+    x_c = b + 45          # far right
 
     # ---- c (far right)
     if c is not None and not (isinstance(c, float) and math.isnan(c)):
@@ -233,9 +274,9 @@ def _make_cross_section_figure(
             "",
             xy=(x_c, c),
             xytext=(x_c, 0),
-            arrowprops=dict(arrowstyle="<->", linewidth=1.1),
+            arrowprops=dict(arrowstyle="<->", linewidth=0.8),
         )
-        ax.text(x_c + 4, c / 2, "c", ha="left", va="center")
+        ax.text(x_c + 3, c / 2, "c", ha="left", va="center", fontsize=8)
 
     # ---- d (right)
     if d is not None and not (isinstance(d, float) and math.isnan(d)):
@@ -243,81 +284,41 @@ def _make_cross_section_figure(
             "",
             xy=(x_d, d),
             xytext=(x_d, 0),
-            arrowprops=dict(arrowstyle="<->", linewidth=1.1),
+            arrowprops=dict(arrowstyle="<->", linewidth=0.8),
         )
-        ax.text(x_d + 4, d / 2, "d", ha="left", va="center")
+        ax.text(x_d + 3, d / 2, "d", ha="left", va="center", fontsize=8)
 
-    # ---- z (shifted left, label offset so it’s not on top of the line)
-    if z is not None and not (isinstance(z, float) and math.isnan(z)):
+    # ---- z (shifted left)
+    if (
+        z is not None
+        and not (isinstance(z, float) and math.isnan(z))
+        and d is not None
+        and not (isinstance(d, float) and math.isnan(d))
+    ):
         y_top_z = d - z
         ax.annotate(
             "",
             xy=(x_z, d),
             xytext=(x_z, y_top_z),
-            arrowprops=dict(arrowstyle="<->", linewidth=1.1),
+            arrowprops=dict(arrowstyle="<->", linewidth=0.8),
         )
-        ax.text(x_z - 6, (d + y_top_z) / 2, "z", ha="right", va="center")
+        ax.text(
+            x_z - 4,
+            (d + y_top_z) / 2,
+            "z",
+            ha="right",
+            va="center",
+            fontsize=8,
+        )
 
-    # Axis settings
-    ax.set_xlim(-10, b + 75)
+    # Axis + title formatting – smaller fonts
+    ax.set_xlim(-10, b + 70)
     ax.set_ylim(D + 10, -20)
     ax.set_aspect("equal")
-    ax.set_xlabel("Width (mm)")
-    ax.set_ylabel("Depth (mm)")
-    ax.set_title("ULS SECTION")
-
-    return fig
-
-
-def _make_stress_figure(fc, fsy, alpha2, D, d, c):
-    """Simple ULS stress diagram: α₂ f'c in compression, fsy in steel."""
-    if None in (fc, fsy):
-        return None
-
-    if alpha2 is None or (isinstance(alpha2, float) and math.isnan(alpha2)):
-        alpha2 = 0.85
-    if D is None or (isinstance(D, float) and math.isnan(D)):
-        D = 600.0
-    if d is None or (isinstance(d, float) and math.isnan(d)):
-        d = 0.9 * D
-    if c is None or (isinstance(c, float) and math.isnan(c)):
-        c = 0.2 * D
-
-    fc_comp = alpha2 * fc  # MPa
-    x_max = 1.2 * max(fc_comp, fsy)
-
-    fig, ax = plt.subplots()
-
-    # Compression block stress
-    comp = Rectangle((0, 0), fc_comp, c, linewidth=0, facecolor="#c7e3ff")
-    ax.add_patch(comp)
-    ax.text(
-        0.5 * fc_comp,
-        0.05 * c,
-        r"$\alpha_2 f'_c$",
-        ha="center",
-        va="bottom",
-        fontsize=10,
-    )
-
-    # Steel stress at depth d (assume yields)
-    ax.hlines(d, 0.0, fsy, linewidth=2.5)
-    ax.text(
-        0.5 * fsy,
-        d + 0.04 * D,
-        rf"{fsy:.0f} MPa (Steel yields)",
-        ha="center",
-        va="bottom",
-        fontsize=9,
-    )
-
-    ax.set_xlim(0.0, x_max)
-    ax.set_ylim(D + 0.1 * D, -0.1 * D)  # depth downwards
-    ax.set_xlabel("Stress (MPa)")
-    ax.set_ylabel("Depth (mm)")
-    ax.set_title("ULS STRESS (MPa)")
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
+    ax.set_xlabel("Width (mm)", fontsize=9)
+    ax.set_ylabel("Depth (mm)", fontsize=9)
+    ax.set_title("ULS SECTION", fontsize=11)
+    ax.tick_params(labelsize=8)
 
     return fig
 
@@ -1171,3 +1172,4 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
