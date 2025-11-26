@@ -610,6 +610,8 @@ def _plot_stress_strain_profiles(state_dict):
         fontsize=9,
     )
 
+# --- lift all titles upward (fix overlap)
+plt.subplots_adjust(top=0.82)
     return fig
 
 
@@ -1856,6 +1858,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
