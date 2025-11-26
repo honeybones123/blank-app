@@ -608,58 +608,50 @@ def _plot_stress_strain_profiles(state):
 
     ax.text(x_section + b / 2, -0.07 * D, "ULS Section", ha="center")
 
-    # =====================================================
-    # 2) STRAIN PANEL
-    # =====================================================
-    ax.plot([x_strain, x_strain], [0, D], color="black", lw=1)
+   # =====================================================
+# 2) STRAIN PANEL
+# =====================================================
+x_c = x_strain + eps_c * 12000
+x_s = x_strain - eps_s * 12000
 
-    x_c = x_strain - eps_c * 12000
-    x_s = x_strain - eps_s * 12000
+ax.plot([x_c, x_s], [0, d], color="black")
 
-    ax.plot([x_c, x_s], [0, d], color="black")
+ax.text(x_c, 0, f"εc={eps_c:.4f}", color="tab:red")
+ax.text(x_s, d, f"εs={eps_s:.4f}", color="tab:blue")
 
-    ax.text(x_c, 0, f"εc={eps_c:.4f}", color="tab:red")
-    ax.text(x_s, d, f"εs={eps_s:.4f}", color="tab:blue")
+ax.text(x_strain, -0.07 * D, "Strain Profile", ha="center")
 
-    ax.text(x_strain, -0.07 * D, "Strain Profile", ha="center")
+# =====================================================
+# 3) STRESS PANEL
+# =====================================================
+ax.plot([x_stress, x_stress], [0, D], color="black", lw=1)
 
-    # =====================================================
-    # 3) STRESS PANEL
-    # =====================================================
-    ax.plot([x_stress, x_stress], [0, D], color="black", lw=1)
+# steel arrow
+ax.annotate(
+    "",
+    xy=(x_stress + fs_t / 4, d),
+    xytext=(x_stress, d),
+    arrowprops=dict(arrowstyle="->", color="tab:blue", lw=1.3),
+)
+ax.text(x_stress + fs_t / 3, d, f"T={fs_t:.0f} MPa", color="tab:blue")
 
-    # steel arrow
-    ax.annotate(
-        "",
-        xy=(x_stress + fs_t / 4, d),
-        xytext=(x_stress, d),
-        arrowprops=dict(arrowstyle="->", color="tab:blue", lw=1.3),
+# compression block
+block_w = fs_t / 8
+ax.add_patch(
+    Rectangle(
+        (x_stress, 0),
+        block_w,
+        gamma * c,
+        fill=False,
+        edgecolor="tab:red",
+        lw=1.3,
     )
-    ax.text(x_stress + fs_t / 3, d, f"T={fs_t:.0f} MPa", color="tab:blue")
+)
 
-    # compression block
-    block_w = fs_t / 8
-    ax.add_patch(
-        Rectangle(
-            (x_stress, 0),
-            block_w,
-            gamma * c,
-            fill=False,
-            edgecolor="tab:red",
-            lw=1.3,
-        )
-    )
+ax.hlines(c, x_stress - 10, x_stress + block_w + 20, ls="--")
+ax.text(x_stress, -0.07 * D, "Stress Block", ha="left")
 
-    ax.hlines(c, x_stress - 10, x_stress + block_w + 20, ls="--")
-
-    ax.text(
-        x_stress,
-        -0.07 * D,
-        "Stress Block",
-        ha="left",
-    )
-
-    return fig
+return fig
 
 
 # ------------------------------------------------------------
@@ -714,5 +706,6 @@ def _make_uls_stress_block_figure(c, d, gamma_sb, fsy, show_lever_arm=False):
         ax.text(0.72, (d + 0.5 * gamma_sb * c) / 2, "z")
 
     ax.set_title("ULS Stress Block")
-
     return fig
+
+
