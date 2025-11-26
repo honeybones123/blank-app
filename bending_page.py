@@ -549,16 +549,15 @@ def _plot_stress_strain_profiles(state_dict):
     steel_len = max(abs(fs_t), 1.0)
     block_width = steel_len / 3.0
 
-    # 3 panels: section, strain, stress – share y (depth) axis
-    # -> 25% smaller than previous (11, 4) ≈ (8.25, 3)
+    # Slightly smaller overall figure (about 25% smaller than original)
     fig, (ax_sec, ax_strain, ax_stress) = plt.subplots(
-        1, 3, figsize=(8.25, 3.0), sharey=True
+        1, 3, figsize=(8.5, 3.0), sharey=True
     )
     fig.subplots_adjust(wspace=0.35)
 
-    # -------------------------------------------------
+    # =============================================================
     # 1) ULS CROSS-SECTION (left)
-    # -------------------------------------------------
+    # =============================================================
     # outer concrete
     ax_sec.add_patch(
         Rectangle((0, 0), b, D, fill=False, linewidth=1.5, edgecolor="black")
@@ -640,17 +639,17 @@ def _plot_stress_strain_profiles(state_dict):
     ax_sec.text(x_d + 0.03 * b, d / 2.0, "d", va="center", fontsize=9)
 
     ax_sec.set_xlim(-0.1 * b, 1.6 * b)
-    # 🔑 DO NOT set aspect equal – we want the same visual height as the other plots
-    # ax_sec.set_aspect("equal", adjustable="box")
+    ax_sec.set_ylim(D, 0)  # IMPORTANT: same depth scale as other panels
+    ax_sec.set_aspect("equal", adjustable="box")
     ax_sec.set_xlabel("Section")
     ax_sec.set_ylabel("Depth (mm)")
     ax_sec.set_title("Section (ULS view)", pad=18)
     ax_sec.spines["top"].set_visible(False)
     ax_sec.spines["right"].set_visible(False)
 
-    # -------------------------------------------------
+    # =============================================================
     # 2) STRAIN PROFILE (middle)
-    # -------------------------------------------------
+    # =============================================================
     y_vals = np.array([0.0, c, d])
     eps_vals = np.array([eps_c, 0.0, eps_s])
 
@@ -676,23 +675,25 @@ def _plot_stress_strain_profiles(state_dict):
     )
 
     ax_strain.set_xticks([])
+    ax_strain.set_ylim(D, 0)
     ax_strain.set_xlim(-eps_max, eps_max)
     ax_strain.set_xlabel("Strain")
     ax_strain.set_title("Strain Profile", pad=18)
     ax_strain.spines["top"].set_visible(False)
     ax_strain.spines["right"].set_visible(False)
 
-    # -------------------------------------------------
+    # =============================================================
     # 3) STRESS-BLOCK PROFILE (right)
-    # -------------------------------------------------
+    # =============================================================
     ax_stress.axvline(0, color="black", linewidth=1)
 
     block_top = 0.0
-    block_depth_sb = gamma * c
-    block_bottom = block_top + block_depth_sb
+    block_depth = gamma * c
+    block_bottom = block_top + block_depth
     x_left = 0.0
     x_right = block_width
 
+    # compression block outline
     ax_stress.fill_between(
         [x_left, x_right],
         [block_top, block_top],
@@ -702,10 +703,20 @@ def _plot_stress_strain_profiles(state_dict):
         linewidth=1.5,
     )
 
-    # neutral axis
+    # neutral axis line
     ax_stress.axhline(c, color="black", linestyle="--", linewidth=0.8)
 
-    # α2 f'c width arrow just below NA (so it's not on the dashed line)
+    # label for neutral axis ("NA") on the left at the NA depth
+    ax_stress.text(
+        x_left - 0.08 * block_width,
+        c,
+        "NA",
+        ha="right",
+        va="center",
+        color="tab:red",
+    )
+
+    # α2 f'c width arrow just below NA, with label BELOW the arrow
     y_alpha = c + 0.05 * D
     ax_stress.annotate(
         "",
@@ -715,7 +726,7 @@ def _plot_stress_strain_profiles(state_dict):
     )
     ax_stress.text(
         (x_left + x_right) / 2.0,
-        y_alpha - 0.04 * D,
+        y_alpha + 0.04 * D,
         r"$\alpha_2 f'_c$",
         ha="center",
         va="top",
@@ -738,32 +749,15 @@ def _plot_stress_strain_profiles(state_dict):
         color="tab:red",
     )
 
-    # compression arrows inside block
+    # compression arrows inside block (keep these, but no separate "C" resultant arrow)
     for frac in [0.25, 0.5, 0.75]:
-        y_mid = block_top + frac * block_depth_sb
+        y_mid = block_top + frac * block_depth
         ax_stress.annotate(
             "",
             xy=(x_left + 0.1 * block_width, y_mid),
             xytext=(x_right - 0.1 * block_width, y_mid),
             arrowprops=dict(arrowstyle="->", linewidth=1.0, color="tab:red"),
         )
-
-    # resultant C
-    C_y = (block_top + block_bottom) / 2
-    ax_stress.annotate(
-        "",
-        xy=(x_left, C_y),
-        xytext=(x_right * 0.8, C_y),
-        arrowprops=dict(arrowstyle="->", linewidth=1.5, color="tab:red"),
-    )
-    ax_stress.text(
-        x_left - 0.08 * block_width,
-        C_y,
-        "C",
-        ha="right",
-        va="center",
-        color="tab:red",
-    )
 
     # tension arrow at depth d
     T_y = d
@@ -785,302 +779,13 @@ def _plot_stress_strain_profiles(state_dict):
     x_max = steel_len * 1.3
     ax_stress.set_xlim(-0.15 * x_max, x_max)
     ax_stress.set_xticks([])
+    ax_stress.set_ylim(D, 0)
     ax_stress.set_xlabel("Stress (MPa)")
     ax_stress.set_title("Stress-block Profile (AS3600 α₂–γ)", pad=18)
     ax_stress.spines["top"].set_visible(False)
     ax_stress.spines["right"].set_visible(False)
 
-    # 🔑 Enforce identical vertical limits for all three axes
-    for ax in (ax_sec, ax_strain, ax_stress):
-        ax.set_ylim(D, 0)
-
     return fig
-
-
-# ------------------------------------------------------------
-#  NEW: STEP-BY-STEP FIGURES REUSING SAME GEOMETRY
-# ------------------------------------------------------------
-def _section_panel_from_state(state: str, title: str):
-    """Single cross-section panel (for ULS / Uncracked steps)."""
-    ss = _stress_strain_state(state)
-    c = ss["c"]
-    gamma = ss["gamma"]
-
-    b = get_param("b") or 300.0
-    D = get_param("D") or 600.0
-    d = get_param("d")
-    nb_bot = get_param("nb_bot")
-    db_bot = get_param("db_bot")
-    cover_bot = get_param("cover_bot")
-    nb_top = get_param("nb_top")
-    db_top = get_param("db_top")
-    cover_top = get_param("cover_top")
-
-    if cover_bot is None or cover_bot <= 0:
-        cover_bot = 40.0
-    if cover_top is None or cover_top <= 0:
-        cover_top = 40.0
-    if db_bot is None or db_bot <= 0:
-        db_bot = 24.0
-    if db_top is None or db_top <= 0:
-        db_top = 16.0
-    if nb_bot is None or nb_bot < 1:
-        nb_bot = 3
-    if nb_top is None or nb_top < 1:
-        nb_top = 2
-
-    nb_bot = int(nb_bot)
-    nb_top = int(nb_top)
-
-    if d is None or (isinstance(d, float) and math.isnan(d)):
-        d = D - cover_bot - db_bot / 2.0
-
-    if c is None or (isinstance(c, float) and math.isnan(c)):
-        c = 0.15 * D
-
-    fig, ax = plt.subplots(figsize=(3.0, 3.8))  # smaller for step-by-step
-
-    # outer concrete
-    ax.add_patch(
-        Rectangle((0, 0), b, D, fill=False, linewidth=1.5, edgecolor="black")
-    )
-
-    # compression block (0 → γc)
-    block_depth = max(0.0, min(gamma * c, D))
-    ax.add_patch(
-        Rectangle(
-            (0, 0),
-            b,
-            block_depth,
-            facecolor="#c7e3ff",
-            edgecolor="tab:red",
-            linewidth=1.0,
-            alpha=0.8,
-        )
-    )
-
-    # bottom bars
-    inner_width_bot = max(b - 2 * cover_bot, db_bot)
-    if nb_bot == 1:
-        xs_bot = [b / 2.0]
-    else:
-        spacing_bot = inner_width_bot / (nb_bot - 1)
-        xs_bot = [cover_bot + spacing_bot * i for i in range(nb_bot)]
-
-    y_bot = d
-    r_bot = db_bot / 2.0
-    for x in xs_bot:
-        ax.add_patch(
-            Circle(
-                (x, y_bot),
-                radius=r_bot,
-                facecolor="none",
-                edgecolor="tab:blue",
-                linewidth=1.4,
-            )
-        )
-
-    # top bars
-    inner_width_top = max(b - 2 * cover_top, db_top)
-    if nb_top == 1:
-        xs_top = [b / 2.0]
-    else:
-        spacing_top = inner_width_top / (nb_top - 1)
-        xs_top = [cover_top + spacing_top * i for i in range(nb_top)]
-
-    y_top = cover_top + db_top / 2.0
-    r_top = db_top / 2.0
-    for x in xs_top:
-        ax.add_patch(
-            Circle(
-                (x, y_top),
-                radius=r_top,
-                facecolor="none",
-                edgecolor="tab:red",
-                linewidth=1.4,
-            )
-        )
-
-    # c and d arrows on the right
-    x_c = b + 0.15 * b
-    ax.annotate(
-        "",
-        xy=(x_c, c),
-        xytext=(x_c, 0),
-        arrowprops=dict(arrowstyle="<->", linewidth=1.0),
-    )
-    ax.text(x_c + 0.03 * b, c / 2.0, "c", va="center", fontsize=9)
-
-    x_d = b + 0.35 * b
-    ax.annotate(
-        "",
-        xy=(x_d, d),
-        xytext=(x_d, 0),
-        arrowprops=dict(arrowstyle="<->", linewidth=1.0),
-    )
-    ax.text(x_d + 0.03 * b, d / 2.0, "d", va="center", fontsize=9)
-
-    ax.set_xlim(-0.1 * b, 1.6 * b)
-    ax.set_ylim(D, 0)
-    ax.set_aspect("equal", adjustable="box")
-    ax.set_xlabel("Section")
-    ax.set_ylabel("Depth (mm)")
-    ax.set_title(title, pad=14)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-
-    return fig
-
-
-def _stress_block_panel_from_state(
-    state: str,
-    title: str,
-    show_lever_arm: bool = False,
-):
-    """Single stress-block panel (for ULS / lever-arm steps)."""
-    ss = _stress_strain_state(state)
-    c = ss["c"]
-    gamma = ss["gamma"]
-    fs_t = ss["fs_t"]
-
-    D = get_param("D") or 600.0
-    d = get_param("d")
-    if d is None or (isinstance(d, float) and math.isnan(d)):
-        # fall back to generic effective depth
-        cover_bot = get_param("cover_bot") or 40.0
-        db_bot = get_param("db_bot") or 24.0
-        d = D - cover_bot - db_bot / 2.0
-
-    steel_len = max(abs(fs_t), 1.0)
-    block_width = steel_len / 3.0
-
-    fig, ax = plt.subplots(figsize=(3.0, 3.8))
-
-    ax.axvline(0, color="black", linewidth=1)
-
-    block_top = 0.0
-    block_depth = gamma * c
-    block_bottom = block_top + block_depth
-    x_left = 0.0
-    x_right = block_width
-
-    ax.fill_between(
-        [x_left, x_right],
-        [block_top, block_top],
-        [block_bottom, block_bottom],
-        edgecolor="tab:red",
-        facecolor="none",
-        linewidth=1.5,
-    )
-
-    # neutral axis
-    ax.axhline(c, color="black", linestyle="--", linewidth=0.8)
-
-    # α2 f'c width arrow
-    y_alpha = c + 0.05 * D
-    ax.annotate(
-        "",
-        xy=(x_left, y_alpha),
-        xytext=(x_right, y_alpha),
-        arrowprops=dict(arrowstyle="<->", linewidth=1.3, color="tab:red"),
-    )
-    ax.text(
-        (x_left + x_right) / 2.0,
-        y_alpha - 0.04 * D,
-        r"$\alpha_2 f'_c$",
-        ha="center",
-        va="top",
-        color="tab:red",
-    )
-
-    # γc vertical arrow
-    x_gc = x_right + 0.15 * x_right
-    ax.annotate(
-        "",
-        xy=(x_gc, block_bottom),
-        xytext=(x_gc, block_top),
-        arrowprops=dict(arrowstyle="<->", linewidth=1.2, color="tab:red"),
-    )
-    ax.text(
-        x_gc + 0.05 * x_right,
-        (block_top + block_bottom) / 2.0,
-        r"$\gamma c$",
-        va="center",
-        color="tab:red",
-    )
-
-    # compression arrows inside block
-    for frac in [0.25, 0.5, 0.75]:
-        y_mid = block_top + frac * block_depth
-        ax.annotate(
-            "",
-            xy=(x_left + 0.1 * block_width, y_mid),
-            xytext=(x_right - 0.1 * block_width, y_mid),
-            arrowprops=dict(arrowstyle="->", linewidth=1.0, color="tab:red"),
-        )
-
-    # resultant C
-    C_y = (block_top + block_bottom) / 2.0
-    ax.annotate(
-        "",
-        xy=(x_left, C_y),
-        xytext=(x_right * 0.8, C_y),
-        arrowprops=dict(arrowstyle="->", linewidth=1.5, color="tab:red"),
-    )
-    ax.text(
-        x_left - 0.08 * block_width,
-        C_y,
-        "C",
-        ha="right",
-        va="center",
-        color="tab:red",
-    )
-
-    # tension arrow at depth d
-    T_y = d
-    ax.annotate(
-        "",
-        xy=(steel_len, T_y),
-        xytext=(0.0, T_y),
-        arrowprops=dict(arrowstyle="->", linewidth=1.6, color="tab:blue"),
-    )
-    ax.text(
-        steel_len * 1.02,
-        T_y,
-        f"T ({fs_t:.0f} MPa)",
-        ha="left",
-        va="center",
-        color="tab:blue",
-    )
-
-    # optional lever arm z (C to T)
-    if show_lever_arm:
-        x_z = steel_len * 0.6
-        ax.annotate(
-            "",
-            xy=(x_z, T_y),
-            xytext=(x_z, C_y),
-            arrowprops=dict(arrowstyle="<->", linewidth=1.2, color="tab:green"),
-        )
-        ax.text(
-            x_z + steel_len * 0.05,
-            (T_y + C_y) / 2.0,
-            "z",
-            va="center",
-            color="tab:green",
-        )
-
-    x_max = steel_len * 1.3
-    ax.set_xlim(-0.15 * x_max, x_max)
-    ax.set_xticks([])
-    ax.set_ylim(D, 0)
-    ax.set_xlabel("Stress (MPa)")
-    ax.set_title(title, pad=14)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-
-    return fig
-
 
 # ------------------------------------------------------------
 #  PAGE RENDER
@@ -1871,4 +1576,5 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
 
