@@ -638,7 +638,7 @@ def _plot_stress_strain_profiles(state_dict):
 
     ax_sec.set_xlim(-0.1 * b, 1.6 * b)
     ax_sec.set_ylim(D, 0)
-    ax_sec.set_aspect("equal", adjustable="box")
+    ax_sec.set_aspect("auto")
     ax_sec.set_xlabel("Section")
     ax_sec.set_ylabel("Depth (mm)")
     ax_sec.set_title("Section (ULS view)", pad=18)
@@ -1517,6 +1517,7 @@ def render_bending():
     # Optional debug
     with st.expander("Debug: raw session_state (optional)"):
         st.write(dict(st.session_state))
+
 
 
 
