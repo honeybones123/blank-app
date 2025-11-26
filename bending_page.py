@@ -573,6 +573,57 @@ def _make_uls_stress_block_figure(c, d, gamma, fs_t, show_lever_arm=False):
 # ------------------------------------------------------------
 #  STRESS–STRAIN PROFILE HELPERS (AS3600 α2–γ)
 # ------------------------------------------------------------
+# -----------------------------
+# Helper: lay out bars in rows (for section diagram)
+# -----------------------------
+def _layout_bars_in_rows(n_bars, b, cover, db, min_spacing, n_rows_max=2):
+    """
+    Return a list of (x_rel, row_index) for bars.
+    row_index = 0 for first row (bottom or top, depending on caller),
+                1 for row above/below, etc.
+
+    If spacing is too tight for a single row, bars are wrapped into a new row.
+    """
+    if n_bars is None or n_bars <= 0:
+        return []
+
+    n_bars = int(n_bars)
+    inner = max(b - 2 * cover, db)
+
+    # Try to fit in 1 row
+    if n_bars == 1:
+        n_per_row = [1]
+    else:
+        spacing_1row = inner / (n_bars - 1)
+        if spacing_1row >= min_spacing or n_rows_max == 1:
+            n_per_row = [n_bars]
+        else:
+            # Simple 2-row layout: round up into first row, rest in second
+            n1 = math.ceil(n_bars / 2)
+            n2 = n_bars - n1
+            n_per_row = [n1, n2]
+
+    coords = []
+    bar_index = 0
+    for row_idx, n_in_row in enumerate(n_per_row):
+        if n_in_row <= 0:
+            continue
+        if n_in_row == 1:
+            xs = [b / 2.0]
+        else:
+            inner = max(b - 2 * cover, db)
+            spacing_row = inner / (n_in_row - 1)
+            spacing_row = max(spacing_row, min_spacing)
+            xs = [cover + spacing_row * i for i in range(n_in_row)]
+        for x in xs:
+            coords.append((x, row_idx))
+            bar_index += 1
+            if bar_index >= n_bars:
+                break
+        if bar_index >= n_bars:
+            break
+    return coords
+
 def _stress_strain_state(state: str):
     """
     Compute neutral axis and strain/stress info for the demo diagram.
@@ -601,6 +652,15 @@ def _stress_strain_state(state: str):
     gamma_raw = 0.97 - 0.0025 * fc
     alpha2 = max(0.67, alpha2_raw)
     gamma = max(0.67, gamma_raw)
+
+    # Default strains
+    eps_cu_uls = 0.003
+    eps_c_sls = 0.0008
+    eps_ext_unc = 0.0002
+
+    # Fallback geometry
+    ...
+    # (rest of your existing code from here down)
 
 # -----------------------------
 # Helper: lay out bars in rows (for section diagram)
@@ -1863,4 +1923,5 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
 
