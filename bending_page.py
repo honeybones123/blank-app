@@ -112,12 +112,19 @@ def _compute_bending_capacity():
     # Strength reduction factor from shared state (e.g. Inputs page)
     phi = get_param("phi_bend", 0.85)
 
-    # Effective depth – FIRST choice is centroid of tensile reo
+        # Effective depth – FIRST choice is centroid of tensile reo
     d_centroid = _effective_depth_centroid()
     d_input = get_param("d")
     d = d_centroid if d_centroid not in (None, 0) else d_input
 
-    if None in (b, D, d, fc, fsy, Ast, Mu_star):
+    # ---- EARLY GUARD: bail out if key inputs are missing or zero ----
+    # Note: Mu_star is allowed to be 0 (simply means no bending demand),
+    # but b, D, d, fc, fsy, Ast must all be positive to do any meaningful calc.
+    bad_core_inputs = any(
+        val in (None, 0)
+        for val in (b, D, d, fc, fsy, Ast)
+    )
+    if bad_core_inputs or Mu_star is None:
         return {
             "phi_Mu_cap": 0.0,
             "Mu_util": float("nan"),
@@ -135,6 +142,7 @@ def _compute_bending_capacity():
             "As_min": float("nan"),
             "d": d,
         }
+
 
     # ---- Concrete in tension (for min steel & Mcr) ----
     cb = 0.2
@@ -898,21 +906,35 @@ def _make_cross_section_figure(
             )
 
     # arrows for c and z (optional), drawn just outside right edge
-    if c is not None:
-        x_c = b + 20.0
+        if c is not None:
         ax.annotate(
             "",
-            xy=(x_c, c),
-            xytext=(x_c, 0),
+            xy=(b + 10.0, c),
+            xytext=(b + 10.0, 0),
             arrowprops=dict(arrowstyle="<->", linewidth=1.0, color="tab:red"),
         )
         ax.text(
-            x_c + 5.0,
+            b + 15.0,
             c / 2.0,
-            f"c = {c:.0f} mm",
+            f"NA = {c:.0f} mm",   # <--- was "c = ..."
             va="center",
             color="tab:red",
         )
+
+    if z is not None and d is not None:
+        ax.annotate(
+            "",
+            xy=(b + 40.0, d),
+            xytext=(b + 40.0, 0),
+            arrowprops=dict(arrowstyle="<->", linewidth=1.0),
+        )
+        ax.text(
+            b + 45.0,
+            d / 2.0,
+            f"d = {d:.0f} mm",    # <--- was "z = ..."
+            va="center",
+        )
+
 
     if z is not None and d is not None:
         x_z = b + 50.0
@@ -1822,3 +1844,4 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
