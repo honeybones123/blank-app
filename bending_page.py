@@ -1507,7 +1507,7 @@ def render_bending():
     fig_ss = _plot_stress_strain_profiles(ss_state)
     st.pyplot(fig_ss, use_container_width=True)
 
-    # ============================================================
+      # ============================================================
     #  STEP-BY-STEP TABS (ULS / SLS)
     # ============================================================
     tab_uls, tab_sls = st.tabs(["ULS step-by-step", "SLS step-by-step"])
@@ -1531,18 +1531,41 @@ def render_bending():
                     "bottom tensile reinforcement. For a single row of bars this is "
                     "often approximated as:"
                 )
-                st.latex(r"d \approx D - \text{cover}_{bot} - \frac{d_{b,bot}}{2}")
+
+                # Traditional textbook-format calculation for a single row
+                D_val = D or 0.0
+                cover_bot_val = cover_bot or 0.0
+                db_bot_val = db_bot or 0.0
+                d_single = D_val - cover_bot_val - db_bot_val / 2.0
+
+                # Symbolic expression
+                st.latex(
+                    r"d \approx D - \text{cover}_{bot} - \dfrac{d_{b,bot}}{2}"
+                )
+
+                # Substitution with numbers
+                st.latex(
+                    rf"d \approx {D_val:.1f} - {cover_bot_val:.1f} - "
+                    rf"\dfrac{{{db_bot_val:.1f}}}{{2}}"
+                )
+
+                # Numerical result of the simple single-row approximation
+                st.latex(rf"d \approx {d_single:.1f}\,\text{{ mm}}")
+
+                # Then clarify what the app actually uses (centroid of all bottom bars)
                 st.markdown(
-                    f"For the current bottom bar layout (including any second row), "
-                    f"the app calculates:  \n"
-                    f"**d = {d:.1f}\\,\\text{{ mm}}**."
+                    "For the **current bottom bar layout** (including any second row), "
+                    "the app uses the centroid of all bottom bars, giving:  \n"
+                    f"**d = {d:.1f} mm**."
                 )
 
                 st.markdown("#### 1.2 Bottom steel area $A_{st,bot}$")
-                st.latex(r"A_{st,bot} = n_{b,bot}\,\frac{\pi d_{b,bot}^2}{4}")
+                st.latex(r"A_{st,bot} = n_{b,bot}\,\dfrac{\pi d_{b,bot}^2}{4}")
+
+                nb_bot_val = int(nb_bot) if nb_bot is not None else 0
                 st.latex(
-                    rf"A_{{st,bot}} = {int(nb_bot):d}\,"
-                    rf"\frac{{\pi \times {db_bot:.1f}^2}}{4}"
+                    rf"A_{{st,bot}} = {nb_bot_val:d}\,"
+                    rf"\dfrac{{\pi \times {db_bot_val:.1f}^2}}{4}"
                 )
                 st.latex(rf"A_{{st,bot}} = {Ast:.1f}\,\text{{ mm}}^2")
 
@@ -1705,6 +1728,7 @@ def render_bending():
                     plt.close(fig_uls_uncracked)
 
             st.markdown("---")
+
 
             # =======================
             # Section 4 – φMu,cap + stress block with lever arm
@@ -1877,6 +1901,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
