@@ -151,10 +151,15 @@ def _make_cross_section_figure(
     cover_top=None,
     c=None,
     z=None,
+    show_compression=True,
+    title="ULS SECTION",
 ):
     """
     Front cross-section with compression zone + top + bottom bars + labels.
     Smaller figure, thinner lines; c on far right, d on right, z on left.
+
+    show_compression = False → draws an 'uncracked' elastic section
+    (no shaded compression block).
     """
     if None in (b, D):
         return None
@@ -189,26 +194,27 @@ def _make_cross_section_figure(
         )
     )
 
-    # Compression block
-    if a is None or (isinstance(a, float) and math.isnan(a)) or a <= 0:
-        a = 0.15 * D
+    # Compression block (optional – for ULS cracked picture)
+    if show_compression:
+        if a is None or (isinstance(a, float) and math.isnan(a)) or a <= 0:
+            a = 0.15 * D
 
-    ax.add_patch(
-        Rectangle(
-            (0, 0), b, a,
-            facecolor="#c7e3ff",
-            edgecolor="none",
-            alpha=0.9,
+        ax.add_patch(
+            Rectangle(
+                (0, 0), b, a,
+                facecolor="#c7e3ff",
+                edgecolor="none",
+                alpha=0.9,
+            )
         )
-    )
-    ax.text(
-        b / 2,
-        a / 2,
-        "Compression\nzone",
-        ha="center",
-        va="center",
-        fontsize=8,
-    )
+        ax.text(
+            b / 2,
+            a / 2,
+            "Compression\nzone",
+            ha="center",
+            va="center",
+            fontsize=8,
+        )
 
     # Bottom reo
     if d is None or (isinstance(d, float) and math.isnan(d)):
@@ -305,7 +311,7 @@ def _make_cross_section_figure(
     ax.set_aspect("equal")
     ax.set_xlabel("Width (mm)", fontsize=8)
     ax.set_ylabel("Depth (mm)", fontsize=8)
-    ax.set_title("ULS SECTION", fontsize=9)
+    ax.set_title(title, fontsize=9)
     ax.tick_params(labelsize=7)
 
     return fig
@@ -314,6 +320,7 @@ def _make_cross_section_figure(
 def _make_stress_figure(alpha2_val, gamma_val):
     """
     Static schematic stress/force diagram (teaching).
+    (Still used as a small teaching figure if you want elsewhere.)
     """
     fig, ax = plt.subplots(figsize=(2.2, 4.0))
 
@@ -405,6 +412,160 @@ def _make_stress_figure(alpha2_val, gamma_val):
         va="center",
         fontsize=9,
     )
+
+    return fig
+
+
+def _make_uls_stress_block_figure(c, d, gamma, fs_t, show_lever_arm=False):
+    """
+    ULS stress-block profile using real c, d, γ from the section.
+    If show_lever_arm=True, also draws the lever arm z between C and T.
+    """
+    D = get_param("D") or 600.0
+
+    if c is None or (isinstance(c, float) and math.isnan(c)):
+        c = 0.15 * D
+    if d is None or (isinstance(d, float) and math.isnan(d)):
+        # simple fallback
+        cover_bot = get_param("cover_bot") or 40.0
+        db_bot = get_param("db_bot") or 24.0
+        d = D - cover_bot - db_bot / 2.0
+
+    # nice scaling for tension arrow length
+    steel_len = max(abs(fs_t), 1.0)
+    block_width = steel_len / 3.0
+
+    fig, ax = plt.subplots(figsize=(3.0, 4.0))
+
+    # vertical axis
+    ax.axvline(0, color="black", linewidth=1)
+
+    # compression block
+    block_top = 0.0
+    block_depth = gamma * c
+    block_depth = max(0.0, min(block_depth, D))
+    block_bottom = block_top + block_depth
+    x_left = 0.0
+    x_right = block_width
+
+    ax.fill_between(
+        [x_left, x_right],
+        [block_top, block_top],
+        [block_bottom, block_bottom],
+        edgecolor="tab:red",
+        facecolor="none",
+        linewidth=1.5,
+    )
+
+    # neutral axis
+    ax.axhline(c, color="black", linestyle="--", linewidth=0.8)
+
+    # α2 f'c label just below NA
+    y_alpha = c + 0.05 * D
+    ax.annotate(
+        "",
+        xy=(x_left, y_alpha),
+        xytext=(x_right, y_alpha),
+        arrowprops=dict(arrowstyle="<->", linewidth=1.3, color="tab:red"),
+    )
+    ax.text(
+        (x_left + x_right) / 2.0,
+        y_alpha - 0.04 * D,
+        r"$\alpha_2 f'_c$",
+        ha="center",
+        va="top",
+        color="tab:red",
+    )
+
+    # γc vertical arrow
+    x_gc = x_right + 0.15 * x_right
+    ax.annotate(
+        "",
+        xy=(x_gc, block_bottom),
+        xytext=(x_gc, block_top),
+        arrowprops=dict(arrowstyle="<->", linewidth=1.2, color="tab:red"),
+    )
+    ax.text(
+        x_gc + 0.05 * x_right,
+        (block_top + block_bottom) / 2,
+        r"$\gamma c$",
+        va="center",
+        color="tab:red",
+    )
+
+    # compression arrows inside block
+    for frac in [0.25, 0.5, 0.75]:
+        y_mid = block_top + frac * block_depth
+        ax.annotate(
+            "",
+            xy=(x_left + 0.1 * block_width, y_mid),
+            xytext=(x_right - 0.1 * block_width, y_mid),
+            arrowprops=dict(arrowstyle="->", linewidth=1.0, color="tab:red"),
+        )
+
+    # resultant C
+    C_y = (block_top + block_bottom) / 2
+    ax.annotate(
+        "",
+        xy=(x_left, C_y),
+        xytext=(x_right * 0.8, C_y),
+        arrowprops=dict(arrowstyle="->", linewidth=1.5, color="tab:red"),
+    )
+    ax.text(
+        x_left - 0.08 * block_width,
+        C_y,
+        "C",
+        ha="right",
+        va="center",
+        color="tab:red",
+    )
+
+    # tension arrow at depth d
+    T_y = d
+    ax.annotate(
+        "",
+        xy=(steel_len, T_y),
+        xytext=(0.0, T_y),
+        arrowprops=dict(arrowstyle="->", linewidth=1.6, color="tab:blue"),
+    )
+    ax.text(
+        steel_len * 1.02,
+        T_y,
+        f"T ({fs_t:.0f} MPa)",
+        ha="left",
+        va="center",
+        color="tab:blue",
+    )
+
+    # optional lever arm z between C and T
+    if show_lever_arm:
+        z = d - C_y
+        x_z = steel_len * 1.15
+        ax.annotate(
+            "",
+            xy=(x_z, d),
+            xytext=(x_z, C_y),
+            arrowprops=dict(arrowstyle="<->", linewidth=1.2, color="black"),
+        )
+        ax.text(
+            x_z + 0.05 * x_right,
+            (d + C_y) / 2.0,
+            "z",
+            va="center",
+            color="black",
+        )
+
+    x_max = steel_len * 1.3
+    ax.set_xlim(-0.15 * x_max, x_max)
+    ax.set_xticks([])
+    ax.set_ylim(D, 0)
+    ax.set_xlabel("Stress (MPa)")
+    title = "ULS Stress-block Profile"
+    if show_lever_arm:
+        title += " (showing lever arm z)"
+    ax.set_title(title, pad=18)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
 
     return fig
 
@@ -638,7 +799,7 @@ def _plot_stress_strain_profiles(state_dict):
 
     ax_sec.set_xlim(-0.1 * b, 1.6 * b)
     ax_sec.set_ylim(D, 0)
-    ax_sec.set_aspect("auto")
+    ax_sec.set_aspect("equal", adjustable="box")
     ax_sec.set_xlabel("Section")
     ax_sec.set_ylabel("Depth (mm)")
     ax_sec.set_title("Section (ULS view)", pad=18)
@@ -790,6 +951,7 @@ def _plot_stress_strain_profiles(state_dict):
     ax_stress.spines["right"].set_visible(False)
 
     return fig
+
 
 # ------------------------------------------------------------
 #  PAGE RENDER
@@ -1249,7 +1411,7 @@ def render_bending():
     st.pyplot(fig_ss, use_container_width=True)
 
     # ============================================================
-    #  STEP-BY-STEP TABS (ULS / SLS) – TEXT ONLY
+    #  STEP-BY-STEP TABS (ULS / SLS) – TEXT + NEW DIAGRAMS
     # ============================================================
     tab_uls, tab_sls = st.tabs(["ULS step-by-step", "SLS step-by-step"])
 
@@ -1260,17 +1422,40 @@ def render_bending():
         if phi_Mu_cap > 0 and d and Ast:
             st.markdown("### 1. Required calculated inputs for bending")
 
+            # 1.1 Effective depth
             st.markdown("#### 1.1 Effective depth $d$")
             st.latex(r"d = D - \text{cover}_{bot} - \frac{d_{b,bot}}{2}")
             st.latex(rf"d = {D:.1f} - {cover_bot:.1f} - \frac{{{db_bot:.1f}}}{2}")
             st.latex(rf"d = {d:.1f}\,\text{{ mm}}")
 
+            # 1.2 Ast,bot
             st.markdown("#### 1.2 Bottom steel area $A_{st,bot}$")
             st.latex(r"A_{st,bot} = n_{b,bot}\,\frac{\pi d_{b,bot}^2}{4}")
             st.latex(
                 rf"A_{{st,bot}} = {int(nb_bot):d}\,\frac{{\pi \times {db_bot:.1f}^2}}{4}"
             )
             st.latex(rf"A_{{st,bot}} = {Ast:.1f}\,\text{{ mm}}^2")
+
+            # --- Diagram for Section 1: ULS cross-section ---
+            fig_uls_sec1 = _make_cross_section_figure(
+                b or 300.0,
+                D or 600.0,
+                d,
+                a,
+                nb_bot,
+                db_bot,
+                cover_bot,
+                nb_top=nb_top,
+                db_top=db_top,
+                cover_top=cover_top,
+                c=c,
+                z=z,
+                show_compression=True,
+                title="ULS cross-section (cracked)",
+            )
+            if fig_uls_sec1 is not None:
+                st.pyplot(fig_uls_sec1, use_container_width=True)
+                plt.close(fig_uls_sec1)
 
             st.markdown("---")
 
@@ -1299,6 +1484,13 @@ def render_bending():
             st.latex(rf"\phi_b = {phi_b:.2f}")
             st.latex(r"k_u = \dfrac{c}{d}")
             st.latex(rf"k_u = \dfrac{{{c:.2f}}}{{{d:.1f}}} = {ku_sb:.3f}")
+
+            # --- Diagram for Section 2: ULS stress-block profile (no z) ---
+            fig_uls_sb_plain = _make_uls_stress_block_figure(
+                c, d, gamma_sb, fsy, show_lever_arm=False
+            )
+            st.pyplot(fig_uls_sb_plain, use_container_width=True)
+            plt.close(fig_uls_sb_plain)
 
             st.markdown("---")
 
@@ -1368,12 +1560,35 @@ def render_bending():
                 rf"$M_{{u,\min}} \approx 1.2\,M_{{cr}} = {Muo_min:.2f}$ kNm."
             )
 
+            # --- Diagram for Section 3: Uncracked elastic section ---
+            fig_uls_uncracked = _make_cross_section_figure(
+                b or 300.0,
+                D or 600.0,
+                d,
+                a,
+                nb_bot,
+                db_bot,
+                cover_bot,
+                nb_top=nb_top,
+                db_top=db_top,
+                cover_top=cover_top,
+                c=None,   # no NA / compression block in elastic picture
+                z=None,
+                show_compression=False,
+                title="Uncracked elastic section (self-weight)",
+            )
+            if fig_uls_uncracked is not None:
+                st.pyplot(fig_uls_uncracked, use_container_width=True)
+                plt.close(fig_uls_uncracked)
+
             st.markdown("---")
 
             st.markdown("### 4. Ultimate flexural capacity $\\phi M_{u,cap}$")
 
             st.markdown("#### 4.1 Internal forces and neutral-axis depth $c$")
-            st.latex(r"T = A_{st} f_{sy},\quad C = \alpha_2 f'_c b\, \gamma c")
+            st.latex(
+                r"T = A_{st} f_{sy},\quad C = \alpha_2 f'_c b\, \gamma c"
+            )
             T = Ast * fsy
             st.latex(
                 rf"T = {Ast:.1f} \times {fsy:.1f}"
@@ -1437,6 +1652,13 @@ def render_bending():
                 rf"vs. $\phi M_{{u,cap}} = {phi_Mu_cap:.2f}\,\text{{ kNm}}$ "
                 rf"and $(M_{{uo}})_{{min}} \approx {Muo_min:.2f}\,\text{{ kNm}}$."
             )
+
+            # --- Diagram for Section 4: ULS stress block with lever arm z ---
+            fig_uls_sb_z = _make_uls_stress_block_figure(
+                c, d, gamma_sb, fsy, show_lever_arm=True
+            )
+            st.pyplot(fig_uls_sb_z, use_container_width=True)
+            plt.close(fig_uls_sb_z)
 
         else:
             st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
@@ -1519,5 +1741,5 @@ def render_bending():
         st.write(dict(st.session_state))
 
 
-
-
+if __name__ == "__main__":
+    render_bending()
