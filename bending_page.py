@@ -1515,7 +1515,14 @@ def render_bending():
         key="bending_strain_state_local",
     )
 
+    # Get the stress/strain state for the chosen condition
     ss_state = _stress_strain_state(strain_state)
+
+    # IMPORTANT: add a label so the plotting helper
+    # can change the section title (ULS / SLS / Uncracked)
+    ss_state["state_label"] = strain_state
+
+    # Plot combined section + strain + stress-block profiles
     fig_ss = _plot_stress_strain_profiles(ss_state)
     st.pyplot(fig_ss, use_container_width=True)
 
@@ -1962,6 +1969,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
