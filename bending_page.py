@@ -814,7 +814,6 @@ def _make_cross_section_figure(
 
     # turn off axes box completely
     ax.axis("off")
-        )
     )
 
     # compression block at top
@@ -1826,4 +1825,5 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
 
