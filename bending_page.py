@@ -291,8 +291,7 @@ def _plot_stress_strain_profiles(state_dict):
         return x0_stress + (sig / stress_max) * (panel_w_stress * 0.8)
 
     fig, ax = plt.subplots(figsize=(9, 3.5))
-
-    # common depth scale
+    ax.set_aspect("equal", adjustable="box")  # keep circles round, common depth scale
     ax.set_ylim(D, 0)
     ax.set_xlim(0, total_x_max)
 
@@ -1857,5 +1856,6 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
