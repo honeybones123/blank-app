@@ -873,174 +873,99 @@ def _stress_strain_state(state: str):
 # ------------------------------------------------------------
 #  Simple ULS cross-section figure for step-by-step tabs
 # ------------------------------------------------------------
-def _make_cross_section_figure(
-    b, D, d, a,
-    nb_bot, db_bot, cover_bot,
-    nb_top=None, db_top=None, cover_top=None,
-    c=None, z=None,
-    show_compression=True,
-    title="ULS cross-section (cracked)",
-):
-    """
-    Step-by-step cross-section diagram.
+        with col1_text:
+            st.markdown("#### 1.1 Effective depth $d$ to tensile centroid")
 
-    Draws only the section and reo – NO outer border/frame.
+            # local copies
+            D_loc = D or 0.0
+            cover_bot_loc = cover_bot or 0.0
+            db_bot_loc = db_bot or 0.0
+            rowgap_bot_loc = get_param("rowgap_bot") or 25.0
+            nb_bot_loc = int(nb_bot or 0)
 
-    Arrows/labels:
-        - "NA = ..." at the neutral axis depth c
-        - "d = ..." at the tensile centroid depth d
-    """
-    if b is None or D is None:
-        return None
+            # depth to first (bottom) row centre
+            d1 = D_loc - cover_bot_loc - db_bot_loc / 2.0
 
-    nb_bot = nb_bot or 0
-    db_bot = db_bot or 0
-    cover_bot = cover_bot or 0
-    nb_top = nb_top or 0
-    db_top = db_top or 0
-    cover_top = cover_top or 0
-
-    fig, ax = plt.subplots(figsize=(3, 6))
-
-    # extra room on the right for arrows
-    ax.set_xlim(0, b + 80.0)
-    ax.set_ylim(D, 0)
-    ax.set_aspect("equal")
-    ax.axis("off")
-
-    # concrete outline
-    ax.add_patch(
-        Rectangle(
-            (0, 0),
-            b,
-            D,
-            fill=False,
-            linewidth=1.5,
-            edgecolor="black",
-        )
-    )
-
-    # compression block + NA line
-    if show_compression and a is not None and c is not None:
-        block_depth = max(0.0, min(a, D))
-        ax.add_patch(
-            Rectangle(
-                (0, 0),
-                b,
-                block_depth,
-                facecolor="#c7e3ff",
-                edgecolor="tab:red",
-                linewidth=1.2,
-                alpha=0.8,
+            # how many bars per row (same logic as layout helper)
+            min_spacing_bot = 2.0 * db_bot_loc if db_bot_loc > 0 else 0.0
+            layout_bot = _layout_bars_in_rows(
+                n_bars=nb_bot_loc,
+                b=b or 0.0,
+                cover=cover_bot_loc,
+                db=db_bot_loc,
+                min_spacing=min_spacing_bot,
+                n_rows_max=2,
             )
-        )
+            n_row0 = sum(1 for _, row_idx in layout_bot if row_idx == 0)
+            n_row1 = sum(1 for _, row_idx in layout_bot if row_idx == 1)
 
-        ax.hlines(
-            c,
-            0,
-            b,
-            colors="tab:red",
-            linestyles="--",
-            linewidth=1.0,
-        )
+            st.markdown(
+                "Effective depth $d$ is measured to the **centroid** of the "
+                "bottom tension reinforcement. For a general two-row layout "
+                "we treat each row as a line of bars and take the centroid."
+            )
 
-    # bottom reo
-    if nb_bot > 0 and db_bot > 0:
-        r_bot = db_bot / 2.0
-        rowgap_bot = get_param("rowgap_bot") or 25.0
-        min_spacing_bot = 2.0 * db_bot
-
-        layout_bot = _layout_bars_in_rows(
-            n_bars=nb_bot,
-            b=b,
-            cover=cover_bot,
-            db=db_bot,
-            min_spacing=min_spacing_bot,
-            n_rows_max=2,
-        )
-        row_pitch_bot = db_bot + rowgap_bot
-        d_row0 = D - cover_bot - db_bot / 2.0
-
-        for x_rel, row_idx in layout_bot:
-            x = x_rel
-            y = d_row0 - row_idx * row_pitch_bot
-            ax.add_patch(
-                Circle(
-                    (x, y),
-                    radius=r_bot,
-                    facecolor="none",
-                    edgecolor="tab:blue",
-                    linewidth=1.3,
+            # --- one-row case ---
+            if n_row1 == 0:
+                st.markdown("**Single bottom row** (no second row used):")
+                st.latex(
+                    r"d = D - \text{cover}_{bot} - \dfrac{d_{b,bot}}{2}"
                 )
-            )
-
-    # top reo
-    if nb_top > 0 and db_top > 0:
-        r_top = db_top / 2.0
-        rowgap_top = get_param("rowgap_top") or 25.0
-        min_spacing_top = 2.0 * db_top
-
-        layout_top = _layout_bars_in_rows(
-            n_bars=nb_top,
-            b=b,
-            cover=cover_top,
-            db=db_top,
-            min_spacing=min_spacing_top,
-            n_rows_max=2,
-        )
-        y_top_base = cover_top + db_top / 2.0
-        row_pitch_top = db_top + rowgap_top
-
-        for x_rel, row_idx in layout_top:
-            x = x_rel
-            y = y_top_base + row_idx * row_pitch_top
-            ax.add_patch(
-                Circle(
-                    (x, y),
-                    radius=r_top,
-                    facecolor="none",
-                    edgecolor="tab:red",
-                    linewidth=1.3,
+                st.latex(
+                    rf"d = {D_loc:.1f} - {cover_bot_loc:.1f}"
+                    rf" - \dfrac{{{db_bot_loc:.1f}}}{{2}}"
+                    rf" = {d1:.1f}\,\text{{ mm}}"
                 )
+                st.markdown(
+                    f"So the app uses **d = {d:.1f} mm** (to the centroid of "
+                    "the single bottom row)."
+                )
+
+            # --- two-row centroid case ---
+            else:
+                pitch = db_bot_loc + rowgap_bot_loc
+                d2 = d1 - pitch
+
+                st.markdown("**Two bottom rows** – centroid of both rows:")
+                st.latex(
+                    r"d_1 = D - \text{cover}_{bot} - \dfrac{d_{b,bot}}{2}"
+                )
+                st.latex(
+                    rf"d_1 = {D_loc:.1f} - {cover_bot_loc:.1f}"
+                    rf" - \dfrac{{{db_bot_loc:.1f}}}{{2}}"
+                    rf" = {d1:.1f}\,\text{{ mm}}"
+                )
+
+                st.latex(
+                    r"d_2 = d_1 - \big(d_{b,bot} + \text{rowgap}_{bot}\big)"
+                )
+                st.latex(
+                    rf"d_2 = {d1:.1f}"
+                    rf" - \big({db_bot_loc:.1f} + {rowgap_bot_loc:.1f}\big)"
+                    rf" = {d2:.1f}\,\text{{ mm}}"
+                )
+
+                st.latex(
+                    r"d = \dfrac{n_1 d_1 + n_2 d_2}{n_1 + n_2}"
+                )
+                st.latex(
+                    rf"d = \dfrac{{{n_row0:d} \times {d1:.1f}"
+                    rf" + {n_row1:d} \times {d2:.1f}}}{{{n_row0 + n_row1:d}}}"
+                    rf" = {d:.1f}\,\text{{ mm}}"
+                )
+
+                st.markdown(
+                    f"So the app uses **d = {d:.1f} mm** to the centroid of "
+                    "the two-row bottom steel layout."
+                )
+
+            st.markdown("#### 1.2 Bottom steel area $A_{st,bot}$")
+            st.latex(r"A_{st,bot} = n_{b,bot}\,\frac{\pi d_{b,bot}^2}{4}")
+            st.latex(
+                rf"A_{{st,bot}} = {int(nb_bot):d}\,"
+                rf"\frac{{\pi \times {db_bot:.1f}^2}}{4}"
             )
-
-    # --- arrows on the right ---
-
-    # NA arrow + label
-    if c is not None:
-        x_na = b + 10.0
-        ax.annotate(
-            "",
-            xy=(x_na, c),
-            xytext=(x_na, 0),
-            arrowprops=dict(arrowstyle="<->", linewidth=1.0, color="tab:red"),
-        )
-        ax.text(
-            x_na + 5.0,
-            c / 2.0,
-            f"NA = {c:.0f} mm",
-            va="center",
-            color="tab:red",
-        )
-
-    # d arrow + label (to tensile centroid)
-    if d is not None:
-        x_d = b + 40.0
-        ax.annotate(
-            "",
-            xy=(x_d, d),
-            xytext=(x_d, 0),
-            arrowprops=dict(arrowstyle="<->", linewidth=1.0),
-        )
-        ax.text(
-            x_d + 5.0,
-            d / 2.0,
-            f"d = {d:.0f} mm",
-            va="center",
-        )
-
-    ax.set_title(title)
-    return fig
+            st.latex(rf"A_{{st,bot}} = {Ast:.1f}\,\text{{ mm}}^2")
 
 # ------------------------------------------------------------
 #  Simple ULS stress-block figure for step-by-step tabs
@@ -2004,6 +1929,7 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
 
 
 
