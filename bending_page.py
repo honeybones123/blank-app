@@ -998,6 +998,147 @@ def _section_panel_from_state(state_label: str, title: str):
     ax.spines["right"].set_visible(False)
 
     return fig
+def _stress_block_panel_from_state(state_label: str, title: str):
+    """
+    Small standalone stress-block panel for the ULS step-by-step section.
+
+    state_label: "ULS", "SLS (cracked)", or "Uncracked"
+    title      : panel title, e.g. "ULS stress-block profile"
+    """
+    # Get stress–strain state (c, γ, fs_t etc.)
+    state = _stress_strain_state(state_label)
+    c = state["c"]
+    gamma = state["gamma"]
+    fs_t = state["fs_t"]
+
+    # Geometry / reo from shared params (with safe defaults)
+    b = get_param("b") or 300.0
+    D = get_param("D") or 600.0
+    d = get_param("d")
+    cover_bot = get_param("cover_bot")
+    db_bot = get_param("db_bot")
+
+    if cover_bot is None or cover_bot <= 0:
+        cover_bot = 40.0
+    if db_bot is None or db_bot <= 0:
+        db_bot = 24.0
+    if d is None or (isinstance(d, float) and math.isnan(d)):
+        d = D - cover_bot - db_bot / 2.0
+
+    if c is None or (isinstance(c, float) and math.isnan(c)):
+        c = 0.15 * D
+
+    # Simple scaling
+    steel_len = max(abs(fs_t), 1.0)
+    block_width = steel_len / 3.0
+
+    fig, ax = plt.subplots(figsize=(2.4, 2.8))
+
+    # Vertical axis: depth (same sense as main figure)
+    y_top = 0.0
+    y_bottom = D
+
+    # Concrete “zero” line
+    ax.axvline(0, color="black", linewidth=1.0)
+
+    # Compression block (0 → γc)
+    block_top = 0.0
+    block_depth = gamma * c
+    block_bottom = block_top + block_depth
+    x_left = 0.0
+    x_right = block_width
+
+    ax.fill_between(
+        [x_left, x_right],
+        [block_top, block_top],
+        [block_bottom, block_bottom],
+        edgecolor="tab:red",
+        facecolor="none",
+        linewidth=1.4,
+    )
+
+    # Neutral axis line + NA label
+    ax.axhline(c, color="black", linestyle="--", linewidth=0.8)
+    ax.text(
+        -0.12 * block_width,
+        c,
+        "NA",
+        ha="right",
+        va="center",
+        color="tab:red",
+    )
+
+    # α2 f'c width arrow (label BELOW the arrow)
+    y_alpha = c + 0.03 * D
+    ax.annotate(
+        "",
+        xy=(x_right, y_alpha),      # head at right
+        xytext=(x_left, y_alpha),   # tail at left
+        arrowprops=dict(arrowstyle="<->", linewidth=1.2, color="tab:red"),
+    )
+    ax.text(
+        (x_left + x_right) / 2.0,
+        y_alpha + 0.03 * D,
+        r"$\alpha_2 f'_c$",
+        ha="center",
+        va="top",
+        color="tab:red",
+    )
+
+    # γc vertical arrow
+    x_gc = x_right + 0.20 * x_right
+    ax.annotate(
+        "",
+        xy=(x_gc, block_bottom),
+        xytext=(x_gc, block_top),
+        arrowprops=dict(arrowstyle="<->", linewidth=1.1, color="tab:red"),
+    )
+    ax.text(
+        x_gc + 0.06 * x_right,
+        (block_top + block_bottom) / 2.0,
+        r"$\gamma c$",
+        va="center",
+        color="tab:red",
+    )
+
+    # Internal compression arrows (pointing to the RIGHT)
+    for frac in [0.25, 0.5, 0.75]:
+        y_mid = block_top + frac * block_depth
+        ax.annotate(
+            "",
+            xy=(x_right - 0.1 * block_width, y_mid),
+            xytext=(x_left + 0.1 * block_width, y_mid),
+            arrowprops=dict(arrowstyle="->", linewidth=1.0, color="tab:red"),
+        )
+
+    # Bottom tension arrow
+    T_y = d
+    ax.annotate(
+        "",
+        xy=(steel_len, T_y),
+        xytext=(0.0, T_y),
+        arrowprops=dict(arrowstyle="->", linewidth=1.4, color="tab:blue"),
+    )
+    ax.text(
+        steel_len * 1.02,
+        T_y,
+        f"T ({fs_t:.0f} MPa)",
+        ha="left",
+        va="center",
+        color="tab:blue",
+    )
+
+    # Axes limits / cosmetics
+    x_max = steel_len * 1.3
+    ax.set_xlim(-0.15 * x_max, x_max)
+    ax.set_ylim(y_bottom, y_top)     # IMPORTANT: matches other plots
+    ax.set_xticks([])
+    ax.set_xlabel("Stress (MPa)", fontsize=8)
+    ax.set_title(title, fontsize=9, pad=10)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    return fig
 
 
 def _stress_panel_from_state(state_label: str, title: str, show_lever_arm: bool = False):
@@ -1908,6 +2049,7 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
 
 
 
