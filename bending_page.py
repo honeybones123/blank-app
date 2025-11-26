@@ -1492,7 +1492,7 @@ def render_bending():
     fig_ss = _plot_stress_strain_profiles(ss_state)
     st.pyplot(fig_ss, use_container_width=True)
 
-    # ============================================================
+        # ============================================================
     #  STEP-BY-STEP TABS (ULS / SLS)
     # ============================================================
     tab_uls, tab_sls = st.tabs(["ULS step-by-step", "SLS step-by-step"])
@@ -1509,101 +1509,108 @@ def render_bending():
             st.markdown("### 1. Required calculated inputs for bending")
             col1_text, col1_fig = st.columns([3, 2])
 
-                    with col1_text:
-            st.markdown("#### 1.1 Effective depth $d$ to tensile centroid")
+            # ---------- 1.1 Effective depth d to tensile centroid ----------
+            with col1_text:
+                st.markdown("#### 1.1 Effective depth $d$ to tensile centroid")
 
-            # local copies (they should all be non-None here)
-            D_loc = D or 0.0
-            cover_bot_loc = cover_bot or 0.0
-            db_bot_loc = db_bot or 0.0
-            rowgap_bot_loc = get_param("rowgap_bot") or 25.0
-            nb_bot_loc = int(nb_bot or 0)
+                # local copies
+                D_loc = D or 0.0
+                cover_bot_loc = cover_bot or 0.0
+                db_bot_loc = db_bot or 0.0
+                rowgap_bot_loc = get_param("rowgap_bot") or 25.0
+                nb_bot_loc = int(nb_bot or 0)
 
-            # depth to first (bottom) row centre
-            d1 = D_loc - cover_bot_loc - db_bot_loc / 2.0
+                # depth to first (bottom) row centre
+                d1 = D_loc - cover_bot_loc - db_bot_loc / 2.0
 
-            # how many bars per row (same logic as layout helper)
-            min_spacing_bot = 2.0 * db_bot_loc if db_bot_loc > 0 else 0.0
-            layout_bot = _layout_bars_in_rows(
-                n_bars=nb_bot_loc,
-                b=b or 0.0,
-                cover=cover_bot_loc,
-                db=db_bot_loc,
-                min_spacing=min_spacing_bot,
-                n_rows_max=2,
-            )
-            n_row0 = sum(1 for _, row_idx in layout_bot if row_idx == 0)
-            n_row1 = sum(1 for _, row_idx in layout_bot if row_idx == 1)
-
-            st.markdown(
-                "Effective depth $d$ is measured to the **centroid** of the "
-                "bottom tension reinforcement. For a general two-row layout "
-                "we treat each row as a line of bars and take the centroid."
-            )
-
-            # --- one-row case ---
-            if n_row1 == 0:
-                st.markdown("**Single bottom row** (no second row used):")
-                st.latex(
-                    r"d = D - \text{cover}_{bot} - \dfrac{d_{b,bot}}{2}"
+                # how many bars per row (same as layout helper)
+                min_spacing_bot = 2.0 * db_bot_loc if db_bot_loc > 0 else 0.0
+                layout_bot = _layout_bars_in_rows(
+                    n_bars=nb_bot_loc,
+                    b=b or 0.0,
+                    cover=cover_bot_loc,
+                    db=db_bot_loc,
+                    min_spacing=min_spacing_bot,
+                    n_rows_max=2,
                 )
-                st.latex(
-                    rf"d = {D_loc:.1f} - {cover_bot_loc:.1f}"
-                    rf" - \dfrac{{{db_bot_loc:.1f}}}{{2}}"
-                    rf" = {d1:.1f}\,\text{{ mm}}"
-                )
-                st.markdown(
-                    f"So the app uses **d = {d:.1f} mm** (to the centroid of "
-                    "the single bottom row)."
-                )
-
-            # --- two-row centroid case ---
-            else:
-                pitch = db_bot_loc + rowgap_bot_loc
-                d2 = d1 - pitch
-
-                st.markdown("**Two bottom rows** – centroid of both rows:")
-                st.latex(
-                    r"d_1 = D - \text{cover}_{bot} - \dfrac{d_{b,bot}}{2}"
-                )
-                st.latex(
-                    rf"d_1 = {D_loc:.1f} - {cover_bot_loc:.1f}"
-                    rf" - \dfrac{{{db_bot_loc:.1f}}}{{2}}"
-                    rf" = {d1:.1f}\,\text{{ mm}}"
-                )
-
-                st.latex(
-                    r"d_2 = d_1 - \big(d_{b,bot} + \text{rowgap}_{bot}\big)"
-                )
-                st.latex(
-                    rf"d_2 = {d1:.1f}"
-                    rf" - \big({db_bot_loc:.1f} + {rowgap_bot_loc:.1f}\big)"
-                    rf" = {d2:.1f}\,\text{{ mm}}"
-                )
-
-                st.latex(
-                    r"d = \dfrac{n_1 d_1 + n_2 d_2}{n_1 + n_2}"
-                )
-                st.latex(
-                    rf"d = \dfrac{{{n_row0:d} \times {d1:.1f}"
-                    rf" + {n_row1:d} \times {d2:.1f}}}{{{n_row0 + n_row1:d}}}"
-                    rf" = {d:.1f}\,\text{{ mm}}"
-                )
+                n_row0 = sum(1 for _, row_idx in layout_bot if row_idx == 0)
+                n_row1 = sum(1 for _, row_idx in layout_bot if row_idx == 1)
 
                 st.markdown(
-                    f"So the app uses **d = {d:.1f} mm** to the centroid of "
-                    "the two-row bottom steel layout."
+                    "Effective depth $d$ is measured to the **centroid** of the "
+                    "bottom tension reinforcement. For a general two-row layout "
+                    "we treat each row as a line of bars and take the centroid."
                 )
 
-            st.markdown("#### 1.2 Bottom steel area $A_{st,bot}$")
-            st.latex(r"A_{st,bot} = n_{b,bot}\,\frac{\pi d_{b,bot}^2}{4}")
-            st.latex(
-                rf"A_{{st,bot}} = {int(nb_bot):d}\,"
-                rf"\frac{{\pi \times {db_bot:.1f}^2}}{4}"
-            )
-            st.latex(rf"A_{{st,bot}} = {Ast:.1f}\,\text{{ mm}}^2")
+                # --- single bottom row case ---
+                if n_row1 == 0:
+                    st.markdown("**Single bottom row** (no second row used):")
+                    st.latex(
+                        r"d = D - \text{cover}_{bot} - \dfrac{d_{b,bot}}{2}"
+                    )
+                    st.latex(
+                        rf"d = {D_loc:.1f} - {cover_bot_loc:.1f}"
+                        rf" - \dfrac{{{db_bot_loc:.1f}}}{{2}}"
+                        rf" = {d1:.1f}\,\text{{ mm}}"
+                    )
+                    st.markdown(
+                        f"So the app uses **d = {d:.1f} mm** to the centroid of "
+                        "the single bottom row."
+                    )
 
+                # --- two-row centroid case ---
+                else:
+                    pitch = db_bot_loc + rowgap_bot_loc
+                    d2 = d1 - pitch
 
+                    st.markdown("**Two bottom rows** – centroid of both rows:")
+                    # step 1: d1
+                    st.latex(
+                        r"d_1 = D - \text{cover}_{bot} - \dfrac{d_{b,bot}}{2}"
+                    )
+                    st.latex(
+                        rf"d_1 = {D_loc:.1f} - {cover_bot_loc:.1f}"
+                        rf" - \dfrac{{{db_bot_loc:.1f}}}{{2}}"
+                        rf" = {d1:.1f}\,\text{{ mm}}"
+                    )
+
+                    # step 2: d2
+                    st.latex(
+                        r"d_2 = d_1 - \big(d_{b,bot} + \text{rowgap}_{bot}\big)"
+                    )
+                    st.latex(
+                        rf"d_2 = {d1:.1f}"
+                        rf" - \big({db_bot_loc:.1f} + {rowgap_bot_loc:.1f}\big)"
+                        rf" = {d2:.1f}\,\text{{ mm}}"
+                    )
+
+                    # step 3: centroid formula
+                    st.latex(
+                        r"d = \dfrac{n_1 d_1 + n_2 d_2}{n_1 + n_2}"
+                    )
+                    st.latex(
+                        rf"d = \dfrac{{{n_row0:d} \times {d1:.1f}"
+                        rf" + {n_row1:d} \times {d2:.1f}}}{{{n_row0 + n_row1:d}}}"
+                        rf" = {d:.1f}\,\text{{ mm}}"
+                    )
+
+                    st.markdown(
+                        f"So the app uses **d = {d:.1f} mm** to the centroid of "
+                        "the two-row bottom steel layout."
+                    )
+
+                # ---------- 1.2 Bottom steel area Ast,bot ----------
+                st.markdown("#### 1.2 Bottom steel area $A_{st,bot}$")
+                st.latex(r"A_{st,bot} = n_{b,bot}\,\frac{\pi d_{b,bot}^2}{4}")
+                st.latex(
+                    rf"A_{{st,bot}} = {int(nb_bot):d}\,"
+                    rf"\frac{{\pi \times {db_bot:.1f}^2}}{4}"
+                )
+                st.latex(
+                    rf"A_{{st,bot}} = {Ast:.1f}\,\text{{ mm}}^2"
+                )
+
+            # ---------- matching cross-section diagram ----------
             with col1_fig:
                 fig_uls_sec1 = _make_cross_section_figure(
                     b or 300.0,
@@ -1626,6 +1633,11 @@ def render_bending():
                     plt.close(fig_uls_sec1)
 
             st.markdown("---")
+
+            # (leave your existing Sections 2, 3, 4 as they were below here)
+
+        else:
+            st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
 
             # =======================
             # Section 2 – stress-block parameters + ULS stress block
@@ -1929,6 +1941,7 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
 
 
 
