@@ -482,11 +482,15 @@ def _plot_stress_strain_profiles(state_dict):
     def stress_to_x(sig):
         return x0_stress + (sig / stress_max) * (panel_w_stress * 0.8)
 
+    # --- create figure and enforce equal x–y scaling so bars stay round ---
     fig, ax = plt.subplots(figsize=(9, 3.5))
 
-    # common depth scale
+    # common depth scale (same D for all three panels)
     ax.set_ylim(D, 0)
     ax.set_xlim(0, total_x_max)
+
+    # key line: make data units equal in x and y → circles look like circles
+    ax.set_aspect("equal", adjustable="box")
 
     # tidy up axes
     ax.spines["top"].set_visible(False)
@@ -1970,6 +1974,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
