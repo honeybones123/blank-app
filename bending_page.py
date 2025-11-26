@@ -776,12 +776,9 @@ def _stress_strain_state(state: str):
 
 # ===== END PART 2 =====
 # ============================
-# PART 3 — SECTION FIGURES + ULS STRESS BLOCK FIGURE
+# PART 3A — CROSS-SECTION FIGURE (ULS / UNCRACKED)
 # ============================
 
-# ------------------------------------------------------------
-#  Simple ULS cross-section figure for step-by-step tabs
-# ------------------------------------------------------------
 def _make_cross_section_figure(
     b, D, d, a,
     nb_bot, db_bot, cover_bot,
@@ -795,10 +792,16 @@ def _make_cross_section_figure(
 
     Draws only the section and reo – NO extra outer border/frame –
     so it visually matches the main ULS section diagram.
+
+    NOTE:
+      • We *draw* arrows for NA and d only.
+      • Text labels are "NA = ... mm" and "d = ... mm"
+        (no 'c' or 'z' in the figure labels).
     """
     if b is None or D is None:
         return None
 
+    # safe fallbacks
     nb_bot = nb_bot or 0
     db_bot = db_bot or 0
     cover_bot = cover_bot or 0
@@ -807,12 +810,12 @@ def _make_cross_section_figure(
     cover_top = cover_top or 0
 
     fig, ax = plt.subplots(figsize=(3, 6))
-    ax.set_xlim(0, b + 80)   # small margin on right for arrows
+    ax.set_xlim(0, b + 80)   # margin on right for arrows
     ax.set_ylim(D + 40, -40)
     ax.set_aspect("equal")
     ax.axis("off")
 
-    # outer concrete section (only one outline)
+    # ---------------- Concrete outline ----------------
     ax.add_patch(
         Rectangle(
             (0, 0),
@@ -824,7 +827,7 @@ def _make_cross_section_figure(
         )
     )
 
-    # compression block at top
+    # ---------------- Compression block ----------------
     if show_compression and a is not None and c is not None:
         block_depth = max(0.0, min(a, D))
         ax.add_patch(
@@ -839,7 +842,7 @@ def _make_cross_section_figure(
             )
         )
 
-        # NA dashed line
+        # NA dashed line at depth "c"
         ax.hlines(
             c,
             0,
@@ -849,7 +852,7 @@ def _make_cross_section_figure(
             linewidth=1.0,
         )
 
-    # bottom reo
+    # ---------------- Bottom reinforcement -------------
     if nb_bot > 0 and db_bot > 0:
         r_bot = db_bot / 2.0
         rowgap_bot = get_param("rowgap_bot") or 25.0
@@ -879,7 +882,7 @@ def _make_cross_section_figure(
                 )
             )
 
-    # top reo
+    # ---------------- Top reinforcement ----------------
     if nb_top > 0 and db_top > 0:
         r_top = db_top / 2.0
         rowgap_top = get_param("rowgap_top") or 25.0
@@ -909,49 +912,58 @@ def _make_cross_section_figure(
                 )
             )
 
-    # arrows for c and z (optional), drawn just outside right edge
-if c is not None:
-    x_c = b + 20.0
-    ax.annotate(
-        "",
-        xy=(x_c, c),
-        xytext=(x_c, 0),
-        arrowprops=dict(arrowstyle="<->", linewidth=1.0, color="tab:red"),
-    )
-    ax.text(
-        x_c + 5.0,
-        c / 2.0,
-        f"NA = {c:.0f} mm",     # <-- FIXED LABEL
-        va="center",
-        color="tab:red",
-    )
+    # ---------------- NA arrow + label (use NA) --------
+    if c is not None:
+        x_na = b + 20.0
+        ax.annotate(
+            "",
+            xy=(x_na, c),
+            xytext=(x_na, 0),
+            arrowprops=dict(arrowstyle="<->", linewidth=1.0, color="tab:red"),
+        )
+        ax.text(
+            x_na + 5.0,
+            c / 2.0,
+            f"NA = {c:.0f} mm",
+            va="center",
+            color="tab:red",
+        )
 
-# Show effective depth d (not z)
-if d is not None:
-    x_d = b + 50.0
-    ax.annotate(
-        "",
-        xy=(x_d, d),
-        xytext=(x_d, 0),
-        arrowprops=dict(arrowstyle="<->", linewidth=1.0),
-    )
-    ax.text(
-        x_d + 5.0,
-        d / 2.0,
-        f"d = {d:.0f} mm",      # <-- FIXED LABEL
-        va="center",
-    )
+    # ---------------- d arrow + label (effective depth) -
+    if d is not None:
+        x_d = b + 50.0
+        ax.annotate(
+            "",
+            xy=(x_d, d),
+            xytext=(x_d, 0),
+            arrowprops=dict(arrowstyle="<->", linewidth=1.0),
+        )
+        ax.text(
+            x_d + 5.0,
+            d / 2.0,
+            f"d = {d:.0f} mm",
+            va="center",
+        )
 
-ax.set_title(title)
-return fig
+    ax.set_title(title)
+    return fig
 
 
-# ------------------------------------------------------------
-#  Simple ULS stress-block figure for step-by-step tabs
-# ------------------------------------------------------------
+# ============================
+# PART 3B — ULS STRESS-BLOCK FIGURE
+# ============================
+
 def _make_uls_stress_block_figure(c, d, gamma_sb, fsy, show_lever_arm=False):
     """
     Simple 2D stress-block diagram used in the step-by-step ULS tab.
+
+    Inputs
+    ------
+    c : neutral axis depth (mm)
+    d : effective depth to tensile centroid (mm)
+    gamma_sb : γ stress-block factor
+    fsy : steel yield stress (MPa)
+    show_lever_arm : if True, draw z = d - 0.5 γc arrow
     """
     if c in (None, 0) or d in (None, 0):
         fig, ax = plt.subplots()
@@ -962,13 +974,12 @@ def _make_uls_stress_block_figure(c, d, gamma_sb, fsy, show_lever_arm=False):
     fig, ax = plt.subplots(figsize=(3, 6))
     ax.set_ylim(d + 50.0, -50.0)
     ax.set_xlim(0, 1.2)
-
     ax.axis("off")
 
-    # NA
+    # Neutral axis (depth c)
     ax.hlines(c, 0.0, 1.0, linestyles="--", colors="black", linewidth=1.0)
 
-    # block
+    # Compression block (0 → γc)
     block_top = 0.0
     block_bottom = gamma_sb * c
     ax.fill_between(
@@ -980,7 +991,7 @@ def _make_uls_stress_block_figure(c, d, gamma_sb, fsy, show_lever_arm=False):
         linewidth=1.2,
     )
 
-    # steel force arrow at d
+    # Steel tension force arrow at depth d
     ax.annotate(
         "",
         xy=(1.0, d),
@@ -995,6 +1006,7 @@ def _make_uls_stress_block_figure(c, d, gamma_sb, fsy, show_lever_arm=False):
         color="tab:blue",
     )
 
+    # Optional lever arm z
     if show_lever_arm:
         z = d - 0.5 * gamma_sb * c
         ax.annotate(
@@ -1014,6 +1026,7 @@ def _make_uls_stress_block_figure(c, d, gamma_sb, fsy, show_lever_arm=False):
     return fig
 
 # ===== END PART 3 =====
+
 # ============================
 # PART 4 — PAGE RENDER (FULL render_bending FUNCTION)
 # ============================
@@ -1842,3 +1855,4 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
