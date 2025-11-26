@@ -407,10 +407,10 @@ def _plot_stress_strain_profiles(state_dict):
       2) Strain profile (centre)
       3) Stress-block profile (right)
 
-    The section panel has aspect = 'equal' so the bars stay circular and
-    the section is to scale.  The *overall* figure height/width are scaled
-    with D and b so the plotting actually looks deeper/wider when the
-    section changes.
+    The section panel has aspect = 'equal' so the bars stay circular.
+    The overall figure height and width are scaled directly with D and b,
+    so changing D or b makes the *whole picture* taller/shorter and
+    wider/narrower.
     """
 
     # ---- unpack state from _stress_strain_state ----
@@ -450,28 +450,34 @@ def _plot_stress_strain_profiles(state_dict):
     stress_max = max(sigma_c, sigma_s, 1.0) * 1.2
 
     # =====================================================
-    #  FIGURE SIZE SCALED WITH b AND D
+    #  FIGURE SIZE SCALED STRONGLY WITH b AND D
     # =====================================================
     ref_D = 300.0
     ref_b = 300.0
-    depth_scale = max(D / ref_D, 0.4)    # clamp so tiny beams don't vanish
-    width_scale = max(b / ref_b, 0.4)
+
+    depth_scale = D / ref_D if ref_D > 0 else 1.0  # no clamping
+    width_scale = b / ref_b if ref_b > 0 else 1.0
 
     base_fig_w = 9.0
     base_fig_h = 3.5
-    fig_w = base_fig_w * min(width_scale, 2.0)   # cap extremes
-    fig_h = base_fig_h * min(depth_scale, 2.0)
+
+    # NOW: if D doubles, fig_h doubles; if b doubles, fig_w doubles.
+    fig_w = base_fig_w * max(width_scale, 0.2)
+    fig_h = base_fig_h * max(depth_scale, 0.2)
 
     fig, (ax_sec, ax_str, ax_stress) = plt.subplots(
         1,
         3,
         figsize=(fig_w, fig_h),
         gridspec_kw={"width_ratios": [1.25, 1.0, 1.25]},
+        constrained_layout=True,
     )
 
-    # Common depth scale
+    # Common depth scale (all three panels share the same y-range)
+    ymin = 0.0
+    ymax = D
     for ax in (ax_sec, ax_str, ax_stress):
-        ax.set_ylim(D, 0)
+        ax.set_ylim(ymax, ymin)  # depth downwards
         ax.tick_params(axis="y", labelsize=8)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
@@ -484,11 +490,10 @@ def _plot_stress_strain_profiles(state_dict):
     # -----------------------------------------------------
     # 1) CROSS-SECTION PANEL – LEFT
     # -----------------------------------------------------
-    # Give a little margin on left/right for arrows, but everything in mm
     margin_left = 10.0
     margin_right = 60.0
     ax_sec.set_xlim(-margin_left, b + margin_right)
-    ax_sec.set_aspect("equal", adjustable="box")  # <- TRUE SCALE IN mm
+    ax_sec.set_aspect("equal", adjustable="box")
     ax_sec.spines["left"].set_visible(True)
     ax_sec.set_ylabel("Depth (mm)")
 
@@ -536,7 +541,7 @@ def _plot_stress_strain_profiles(state_dict):
         ax_sec.scatter(
             [x],
             [y],
-            s=db_bot**2,   # marker size in pt² – just a visual proxy for bar dia
+            s=db_bot**2,
             facecolors="none",
             edgecolors="tab:blue",
             linewidths=1.3,
@@ -607,14 +612,12 @@ def _plot_stress_strain_profiles(state_dict):
     # 2) STRAIN PROFILE – MIDDLE
     # -----------------------------------------------------
     ax_str.set_xlim(-eps_max, eps_max)
-    ax_str.axvline(0.0, color="black", linewidth=1.0)  # neutral vertical axis
+    ax_str.axvline(0.0, color="black", linewidth=1.0)
 
-    # strain line through (0, top), (0, NA), (eps_s, d)
     y_vals = np.array([0.0, c, d])
     eps_vals = np.array([eps_c, 0.0, eps_s])
     ax_str.plot(eps_vals, y_vals, color="black")
 
-    # NA line
     ax_str.hlines(
         c,
         -eps_max,
@@ -624,7 +627,6 @@ def _plot_stress_strain_profiles(state_dict):
         linewidth=0.8,
     )
 
-    # labels
     ax_str.text(
         eps_c,
         0.0,
@@ -654,7 +656,6 @@ def _plot_stress_strain_profiles(state_dict):
     block_top = 0.0
     block_bottom = gamma * c
 
-    # compression block outline
     ax_stress.fill_between(
         [0.0, sigma_c],
         [block_top, block_top],
@@ -664,7 +665,6 @@ def _plot_stress_strain_profiles(state_dict):
         linewidth=1.3,
     )
 
-    # NA line
     ax_stress.hlines(
         c,
         0.0,
@@ -674,7 +674,6 @@ def _plot_stress_strain_profiles(state_dict):
         linewidth=0.8,
     )
 
-    # α2 f'c arrow
     y_alpha = c + 0.05 * D
     ax_stress.annotate(
         "",
@@ -691,7 +690,6 @@ def _plot_stress_strain_profiles(state_dict):
         color="tab:red",
     )
 
-    # γc arrow
     x_gc = sigma_c * 1.05
     ax_stress.annotate(
         "",
@@ -707,7 +705,6 @@ def _plot_stress_strain_profiles(state_dict):
         color="tab:red",
     )
 
-    # steel tension arrow
     ax_stress.annotate(
         "",
         xy=(sigma_s, d),
@@ -726,7 +723,6 @@ def _plot_stress_strain_profiles(state_dict):
     ax_stress.set_title("Stress-block profile\n(AS3600 α₂–γ)", fontsize=10)
     ax_stress.set_xlabel("Stress (MPa)")
 
-    fig.tight_layout()
     return fig
 
 
@@ -1642,6 +1638,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
