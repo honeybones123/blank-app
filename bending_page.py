@@ -449,7 +449,6 @@ def _plot_stress_strain_profiles(state_dict):
 
     # =====================================================
     #  CREATE 3 SUBPLOTS SIDE-BY-SIDE
-    #  (NO sharey, we will sync y-lims manually)
     # =====================================================
     fig, (ax_sec, ax_str, ax_stress) = plt.subplots(
         1,
@@ -466,15 +465,16 @@ def _plot_stress_strain_profiles(state_dict):
         ax.spines["right"].set_visible(False)
         ax.spines["bottom"].set_visible(False)
 
-    # Only show y-axis ticks/label on the section plot
-    ax_str.set_yticklabels([])
-    ax_stress.set_yticklabels([])
+    # Only left axis shows y ticks/labels
+    ax_str.tick_params(axis="y", left=False, labelleft=False)
+    ax_stress.tick_params(axis="y", left=False, labelleft=False)
 
     # -----------------------------------------------------
     # 1) CROSS-SECTION PANEL – LEFT
     # -----------------------------------------------------
-    ax_sec.set_xlim(-10, b + 110)
-    ax_sec.set_aspect("equal", adjustable="box")  # <- keeps bars circular
+    # Tight-ish x-range but with room for arrows on the right
+    ax_sec.set_xlim(-10, b + 60)
+    ax_sec.set_aspect("equal", adjustable="box")  # keeps section to scale
     ax_sec.spines["left"].set_visible(True)
     ax_sec.set_ylabel("Depth (mm)")
 
@@ -555,7 +555,7 @@ def _plot_stress_strain_profiles(state_dict):
         )
 
     # d arrow
-    x_d = b + 30.0
+    x_d = b + 20.0
     ax_sec.annotate(
         "",
         xy=(x_d, d),
@@ -571,7 +571,7 @@ def _plot_stress_strain_profiles(state_dict):
     )
 
     # NA arrow
-    x_na = b + 70.0
+    x_na = b + 40.0
     ax_sec.annotate(
         "",
         xy=(x_na, c),
@@ -593,13 +593,14 @@ def _plot_stress_strain_profiles(state_dict):
     # 2) STRAIN PROFILE – MIDDLE
     # -----------------------------------------------------
     ax_str.set_xlim(-eps_max, eps_max)
-    ax_str.spines["left"].set_visible(False)
     ax_str.axvline(0.0, color="black", linewidth=1.0)  # neutral vertical axis
 
+    # strain line through (0, top), (0, NA), (eps_s, d)
     y_vals = np.array([0.0, c, d])
     eps_vals = np.array([eps_c, 0.0, eps_s])
     ax_str.plot(eps_vals, y_vals, color="black")
 
+    # NA line
     ax_str.hlines(
         c,
         -eps_max,
@@ -609,6 +610,7 @@ def _plot_stress_strain_profiles(state_dict):
         linewidth=0.8,
     )
 
+    # labels
     ax_str.text(
         eps_c,
         0.0,
@@ -633,12 +635,12 @@ def _plot_stress_strain_profiles(state_dict):
     # 3) STRESS-BLOCK PROFILE – RIGHT
     # -----------------------------------------------------
     ax_stress.set_xlim(0.0, stress_max)
-    ax_stress.spines["left"].set_visible(False)
     ax_stress.axvline(0.0, color="black", linewidth=1.0)
 
     block_top = 0.0
     block_bottom = gamma * c
 
+    # compression block outline
     ax_stress.fill_between(
         [0.0, sigma_c],
         [block_top, block_top],
@@ -648,6 +650,7 @@ def _plot_stress_strain_profiles(state_dict):
         linewidth=1.3,
     )
 
+    # NA line
     ax_stress.hlines(
         c,
         0.0,
@@ -657,6 +660,7 @@ def _plot_stress_strain_profiles(state_dict):
         linewidth=0.8,
     )
 
+    # α2 f'c arrow
     y_alpha = c + 0.05 * D
     ax_stress.annotate(
         "",
@@ -673,6 +677,7 @@ def _plot_stress_strain_profiles(state_dict):
         color="tab:red",
     )
 
+    # γc arrow
     x_gc = sigma_c * 1.05
     ax_stress.annotate(
         "",
@@ -688,6 +693,7 @@ def _plot_stress_strain_profiles(state_dict):
         color="tab:red",
     )
 
+    # steel tension arrow
     ax_stress.annotate(
         "",
         xy=(sigma_s, d),
@@ -709,82 +715,6 @@ def _plot_stress_strain_profiles(state_dict):
     fig.tight_layout()
     return fig
 
-
-# ============================
-# PART 3B — ULS STRESS-BLOCK FIGURE
-# ============================
-
-def _make_uls_stress_block_figure(c, d, gamma_sb, fsy, show_lever_arm=False):
-    """
-    Simple 2D stress-block diagram used in the step-by-step ULS tab.
-
-    Inputs
-    ------
-    c : neutral axis depth (mm)
-    d : effective depth to tensile centroid (mm)
-    gamma_sb : γ stress-block factor
-    fsy : steel yield stress (MPa)
-    show_lever_arm : if True, draw z = d - 0.5 γc arrow
-    """
-    if c in (None, 0) or d in (None, 0):
-        fig, ax = plt.subplots()
-        ax.text(0.5, 0.5, "No data", ha="center")
-        ax.axis("off")
-        return fig
-
-    fig, ax = plt.subplots(figsize=(3, 6))
-    ax.set_ylim(d + 50.0, -50.0)
-    ax.set_xlim(0, 1.2)
-    ax.axis("off")
-
-    # Neutral axis (depth c)
-    ax.hlines(c, 0.0, 1.0, linestyles="--", colors="black", linewidth=1.0)
-
-    # Compression block (0 → γc)
-    block_top = 0.0
-    block_bottom = gamma_sb * c
-    ax.fill_between(
-        [0.0, 0.5],
-        [block_top, block_top],
-        [block_bottom, block_bottom],
-        facecolor="#c7e3ff",
-        edgecolor="tab:red",
-        linewidth=1.2,
-    )
-
-    # Steel tension force arrow at depth d
-    ax.annotate(
-        "",
-        xy=(1.0, d),
-        xytext=(0.5, d),
-        arrowprops=dict(arrowstyle="->", linewidth=1.5, color="tab:blue"),
-    )
-    ax.text(
-        1.02,
-        d,
-        r"$T = A_{st} f_{sy}$",
-        va="center",
-        color="tab:blue",
-    )
-
-    # Optional lever arm z
-    if show_lever_arm:
-        z = d - 0.5 * gamma_sb * c
-        ax.annotate(
-            "",
-            xy=(0.7, d),
-            xytext=(0.7, 0.5 * gamma_sb * c),
-            arrowprops=dict(arrowstyle="<->", linewidth=1.2),
-        )
-        ax.text(
-            0.72,
-            (d + 0.5 * gamma_sb * c) / 2.0,
-            "z",
-            va="center",
-        )
-
-    ax.set_title("ULS stress block")
-    return fig
 
 # ===== END PART 3 =====
 
@@ -1697,6 +1627,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
