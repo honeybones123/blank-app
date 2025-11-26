@@ -579,7 +579,7 @@ def _plot_stress_strain_profiles(state_dict):
         )
 
     # ---- d arrow & label (inner) ----
-    x_d = x0_sec + b + 40.0
+    x_d = x0_sec + b + 40.0  # first arrow just outside the section
     ax.annotate(
         "",
         xy=(x_d, d),
@@ -587,15 +587,16 @@ def _plot_stress_strain_profiles(state_dict):
         arrowprops=dict(arrowstyle="<->", linewidth=1.0),
     )
     ax.text(
-        x_d + 20.0,
+        x_d + 12.0,
         d / 2.0,
         f"d ({d:.0f} mm)",
         va="center",
         fontsize=9,
     )
 
-    # ---- NA arrow & label (outer) ----
-    x_na = x_d + 80.0
+    # ---- NA arrow & label (closer to d to save width) ----
+    na_gap = 40.0  # was 80.0 – bring NA closer to d
+    x_na = x_d + na_gap
     ax.annotate(
         "",
         xy=(x_na, c),
@@ -603,7 +604,7 @@ def _plot_stress_strain_profiles(state_dict):
         arrowprops=dict(arrowstyle="<->", linewidth=1.0),
     )
     ax.text(
-        x_na + 20.0,
+        x_na + 12.0,
         c / 2.0,
         f"NA = {c:.0f} mm",
         va="center",
@@ -1969,6 +1970,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
