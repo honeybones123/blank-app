@@ -214,8 +214,7 @@ def _compute_bending_capacity():
 # ===== END PART 1 =====
 
 # ============================
-# ============================
-# PART 2 — BAR LAYOUT + STRESS–STRAIN HELPERS
+# PART 2A — BAR LAYOUT + SAFE STRESS–STRAIN STATE
 # ============================
 
 def _layout_bars_in_rows(n_bars, b, cover, db, min_spacing, n_rows_max=2):
@@ -275,6 +274,10 @@ def _stress_strain_state(state: str):
 
     NOTE: d here is the depth to the CENTROID of the bottom tensile
     reinforcement, consistent with the capacity calculation.
+
+    This version is SAFE against:
+      • Ec = 0  → no division by zero in n = Es / Ec
+      • b = 0 or As = 0 in the cracked-section quadratic
     """
     # Try to use real values from the app; fall back to teaching defaults
     b = get_param("b") or 300.0
@@ -285,14 +288,14 @@ def _stress_strain_state(state: str):
     Ec = get_param("Ec")
     Es = get_param("Es")
 
-    # Fallbacks if missing
+    # Fallbacks if missing / zero
     if fc is None:
         fc = 32.0
-    if fsy is None:
+    if fsy is None or fsy == 0:
         fsy = 500.0
-    if Ec is None:
+    if Ec is None or Ec == 0:
         Ec = 4700 * math.sqrt(fc)
-    if Es is None:
+    if Es is None or Es == 0:
         Es = 200000.0
 
     # Effective depth to centroid of bottom steel
@@ -302,8 +305,8 @@ def _stress_strain_state(state: str):
         db_bot = get_param("db_bot") or 24.0
         d = D - cover_bot - db_bot / 2.0
 
-    # If As missing, estimate from nb_bot & db_bot
-    if As is None:
+    # If As missing or zero, estimate from nb_bot & db_bot
+    if As is None or As == 0:
         nb_bot = get_param("nb_bot") or 3
         db_bot = get_param("db_bot") or 24.0
         As = nb_bot * math.pi * db_bot**2 / 4.0
@@ -322,7 +325,12 @@ def _stress_strain_state(state: str):
     # ----- ULS state -----
     if state == "ULS":
         denom = alpha2 * fc * b * gamma
-        c = As * fsy / denom if denom > 0 else D / 2.0
+        if denom > 0:
+            c = As * fsy / denom
+        else:
+            c = D / 2.0
+
+        # clamp c to sensible range
         c = min(max(c, 1.0), D - 1.0)
 
         eps_c = -eps_cu_uls
@@ -338,20 +346,32 @@ def _stress_strain_state(state: str):
 
     # ----- SLS cracked state -----
     if state == "SLS (cracked)":
-        n = Es / Ec
-        a = b / 2.0
-        bq = n * As
-        cq = -n * As * d
-        discr = bq ** 2 - 4 * a * cq
-        if discr < 0:
+        # modular ratio – safe if Ec is zero
+        n = Es / Ec if Ec not in (None, 0) else 0.0
+
+        # If n or As is zero, fall back to a simple c
+        if n == 0.0 or As in (None, 0) or b in (None, 0):
             c = D / 2.0
         else:
-            r1 = (-bq + math.sqrt(discr)) / (2 * a)
-            r2 = (-bq - math.sqrt(discr)) / (2 * a)
-            cands = [r for r in (r1, r2) if 0 < r < D]
-            c = cands[0] if cands else D / 2.0
+            a_quad = 0.5 * b  # coefficient of c^2
+            b_coef = n * As
+            c_coef = -n * As * d
 
+            if a_quad == 0:
+                c = D / 2.0
+            else:
+                discr = b_coef ** 2 - 4 * a_quad * c_coef
+                if discr < 0:
+                    c = D / 2.0
+                else:
+                    r1 = (-b_coef + math.sqrt(discr)) / (2 * a_quad)
+                    r2 = (-b_coef - math.sqrt(discr)) / (2 * a_quad)
+                    cands = [r for r in (r1, r2) if 0 < r < D]
+                    c = cands[0] if cands else D / 2.0
+
+        # clamp c
         c = min(max(c, 1.0), D - 1.0)
+
         eps_c = -eps_c_sls
         eps_s = -eps_c * (d - c) / c
         fs_t = Es * eps_s
@@ -375,6 +395,9 @@ def _stress_strain_state(state: str):
         gamma=1.0, fs_t=fs_t,
         fc=fc, fsy=fsy, alpha2=alpha2,
     )
+
+# ===== END PART 2A =====
+
 
 
 def _plot_stress_strain_profiles(state_dict):
@@ -1854,6 +1877,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
