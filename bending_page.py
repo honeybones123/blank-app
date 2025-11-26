@@ -399,9 +399,6 @@ def _stress_strain_state(state: str):
 # ===== END PART 2A =====
 
 
-# ------------------------------------------------------------
-#  DIAGRAM HELPERS (cross-section + schematic stress block)
-# ------------------------------------------------------------
 def _plot_stress_strain_profiles(state_dict):
     """
     THREE-PANEL FIGURE:
@@ -452,12 +449,12 @@ def _plot_stress_strain_profiles(state_dict):
 
     # =====================================================
     #  CREATE 3 SUBPLOTS SIDE-BY-SIDE
+    #  (NO sharey, we will sync y-lims manually)
     # =====================================================
     fig, (ax_sec, ax_str, ax_stress) = plt.subplots(
         1,
         3,
         figsize=(9, 3.5),
-        sharey=True,
         gridspec_kw={"width_ratios": [1.25, 1.0, 1.25]},
     )
 
@@ -468,6 +465,10 @@ def _plot_stress_strain_profiles(state_dict):
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
         ax.spines["bottom"].set_visible(False)
+
+    # Only show y-axis ticks/label on the section plot
+    ax_str.set_yticklabels([])
+    ax_stress.set_yticklabels([])
 
     # -----------------------------------------------------
     # 1) CROSS-SECTION PANEL – LEFT
@@ -595,12 +596,10 @@ def _plot_stress_strain_profiles(state_dict):
     ax_str.spines["left"].set_visible(False)
     ax_str.axvline(0.0, color="black", linewidth=1.0)  # neutral vertical axis
 
-    # strain line through (0, top), (0, NA), (eps_s, d)
     y_vals = np.array([0.0, c, d])
     eps_vals = np.array([eps_c, 0.0, eps_s])
     ax_str.plot(eps_vals, y_vals, color="black")
 
-    # NA line
     ax_str.hlines(
         c,
         -eps_max,
@@ -610,7 +609,6 @@ def _plot_stress_strain_profiles(state_dict):
         linewidth=0.8,
     )
 
-    # labels
     ax_str.text(
         eps_c,
         0.0,
@@ -641,7 +639,6 @@ def _plot_stress_strain_profiles(state_dict):
     block_top = 0.0
     block_bottom = gamma * c
 
-    # compression block outline
     ax_stress.fill_between(
         [0.0, sigma_c],
         [block_top, block_top],
@@ -651,7 +648,6 @@ def _plot_stress_strain_profiles(state_dict):
         linewidth=1.3,
     )
 
-    # NA line
     ax_stress.hlines(
         c,
         0.0,
@@ -661,7 +657,6 @@ def _plot_stress_strain_profiles(state_dict):
         linewidth=0.8,
     )
 
-    # α2 f'c arrow
     y_alpha = c + 0.05 * D
     ax_stress.annotate(
         "",
@@ -678,7 +673,6 @@ def _plot_stress_strain_profiles(state_dict):
         color="tab:red",
     )
 
-    # γc arrow
     x_gc = sigma_c * 1.05
     ax_stress.annotate(
         "",
@@ -694,7 +688,6 @@ def _plot_stress_strain_profiles(state_dict):
         color="tab:red",
     )
 
-    # steel tension arrow
     ax_stress.annotate(
         "",
         xy=(sigma_s, d),
@@ -715,6 +708,7 @@ def _plot_stress_strain_profiles(state_dict):
 
     fig.tight_layout()
     return fig
+
 
 # ============================
 # PART 3B — ULS STRESS-BLOCK FIGURE
@@ -1703,6 +1697,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
