@@ -550,8 +550,9 @@ def _plot_stress_strain_profiles(state_dict):
     block_width = steel_len / 3.0
 
     # 3 panels: section, strain, stress – share y (depth) axis
+    # -> 25% smaller than previous (11, 4) ≈ (8.25, 3)
     fig, (ax_sec, ax_strain, ax_stress) = plt.subplots(
-        1, 3, figsize=(8.25, 3.0), sharey=True   # 25% smaller than 11x4
+        1, 3, figsize=(8.25, 3.0), sharey=True
     )
     fig.subplots_adjust(wspace=0.35)
 
@@ -639,8 +640,8 @@ def _plot_stress_strain_profiles(state_dict):
     ax_sec.text(x_d + 0.03 * b, d / 2.0, "d", va="center", fontsize=9)
 
     ax_sec.set_xlim(-0.1 * b, 1.6 * b)
-    ax_sec.set_ylim(D, 0)
-    ax_sec.set_aspect("equal", adjustable="box")
+    # 🔑 DO NOT set aspect equal – we want the same visual height as the other plots
+    # ax_sec.set_aspect("equal", adjustable="box")
     ax_sec.set_xlabel("Section")
     ax_sec.set_ylabel("Depth (mm)")
     ax_sec.set_title("Section (ULS view)", pad=18)
@@ -675,7 +676,6 @@ def _plot_stress_strain_profiles(state_dict):
     )
 
     ax_strain.set_xticks([])
-    ax_strain.set_ylim(D, 0)
     ax_strain.set_xlim(-eps_max, eps_max)
     ax_strain.set_xlabel("Strain")
     ax_strain.set_title("Strain Profile", pad=18)
@@ -688,8 +688,8 @@ def _plot_stress_strain_profiles(state_dict):
     ax_stress.axvline(0, color="black", linewidth=1)
 
     block_top = 0.0
-    block_depth = gamma * c
-    block_bottom = block_top + block_depth
+    block_depth_sb = gamma * c
+    block_bottom = block_top + block_depth_sb
     x_left = 0.0
     x_right = block_width
 
@@ -705,7 +705,7 @@ def _plot_stress_strain_profiles(state_dict):
     # neutral axis
     ax_stress.axhline(c, color="black", linestyle="--", linewidth=0.8)
 
-    # α2 f'c width arrow just below NA
+    # α2 f'c width arrow just below NA (so it's not on the dashed line)
     y_alpha = c + 0.05 * D
     ax_stress.annotate(
         "",
@@ -732,7 +732,7 @@ def _plot_stress_strain_profiles(state_dict):
     )
     ax_stress.text(
         x_gc + 0.05 * x_right,
-        (block_top + block_bottom) / 2.0,
+        (block_top + block_bottom) / 2,
         r"$\gamma c$",
         va="center",
         color="tab:red",
@@ -740,7 +740,7 @@ def _plot_stress_strain_profiles(state_dict):
 
     # compression arrows inside block
     for frac in [0.25, 0.5, 0.75]:
-        y_mid = block_top + frac * block_depth
+        y_mid = block_top + frac * block_depth_sb
         ax_stress.annotate(
             "",
             xy=(x_left + 0.1 * block_width, y_mid),
@@ -749,7 +749,7 @@ def _plot_stress_strain_profiles(state_dict):
         )
 
     # resultant C
-    C_y = (block_top + block_bottom) / 2.0
+    C_y = (block_top + block_bottom) / 2
     ax_stress.annotate(
         "",
         xy=(x_left, C_y),
@@ -785,11 +785,14 @@ def _plot_stress_strain_profiles(state_dict):
     x_max = steel_len * 1.3
     ax_stress.set_xlim(-0.15 * x_max, x_max)
     ax_stress.set_xticks([])
-    ax_stress.set_ylim(D, 0)
     ax_stress.set_xlabel("Stress (MPa)")
     ax_stress.set_title("Stress-block Profile (AS3600 α₂–γ)", pad=18)
     ax_stress.spines["top"].set_visible(False)
     ax_stress.spines["right"].set_visible(False)
+
+    # 🔑 Enforce identical vertical limits for all three axes
+    for ax in (ax_sec, ax_strain, ax_stress):
+        ax.set_ylim(D, 0)
 
     return fig
 
@@ -1868,3 +1871,4 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
