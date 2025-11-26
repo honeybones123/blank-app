@@ -64,7 +64,7 @@ def _effective_depth_centroid():
     # Bottom row depth (to bar centre) from top fibre
     d_row0 = D - cover_bot - db_bot / 2.0
 
-    # Horizontal layout (how many bars per row)
+    # Horizontal layout (bars per row)
     min_spacing_bot = 2.0 * db_bot
     layout = _layout_bars_in_rows(
         n_bars=nb_bot,
@@ -78,19 +78,17 @@ def _effective_depth_centroid():
     if not layout:
         return d_row0
 
-    # Vertical layout: second row sits above first by db + rowgap_bot
+    # Vertical layout (row spacing)
     row_pitch_bot = db_bot + rowgap_bot
 
     y_positions = []
     for _, row_idx in layout:
-        y = d_row0 - row_idx * row_pitch_bot
-        y_positions.append(y)
+        y_positions.append(d_row0 - row_idx * row_pitch_bot)
 
     if not y_positions:
         return d_row0
 
-    d_centroid = sum(y_positions) / len(y_positions)
-    return d_centroid
+    return sum(y_positions) / len(y_positions)
 
 
 # ------------------------------------------------------------
@@ -99,13 +97,12 @@ def _effective_depth_centroid():
 def _compute_bending_capacity():
     """
     Compute a simple φMu,cap using a rectangular stress block.
-    Uses shared session_state values only (via get_param).
-    Also returns intermediate values for the step-by-step report.
 
-    IMPORTANT: d is taken as the depth to the CENTROID of the bottom
-    tensile reinforcement (using _effective_depth_centroid()).
+    IMPORTANT:
+      • d is depth to CENTROID of tensile reo
+      • this version includes SAFE As_min calculation (no zero division)
     """
-    # Shared parameters (all from session state)
+    # Shared parameters
     b = get_param("b")
     D = get_param("D")
     fc = get_param("fc")
@@ -113,14 +110,14 @@ def _compute_bending_capacity():
     Ast = get_param("Ast_bot")
     Mu_star = get_param("Mu_star")
 
-    # Strength reduction factor from shared state (e.g. Inputs page)
     phi = get_param("phi_bend", 0.85)
 
-    # Effective depth – FIRST choice is centroid of tensile reo
+    # Effective depth
     d_centroid = _effective_depth_centroid()
     d_input = get_param("d")
     d = d_centroid if d_centroid not in (None, 0) else d_input
 
+    # Missing-info fallback
     if None in (b, D, d, fc, fsy, Ast, Mu_star):
         return {
             "phi_Mu_cap": 0.0,
@@ -140,25 +137,32 @@ def _compute_bending_capacity():
             "d": d,
         }
 
-    # ---- Concrete in tension (for min steel & Mcr) ----
+    # Concrete tensile strength and cracking moment
     cb = 0.2
-    fctf = cb * (fc ** (2.0 / 3.0))          # MPa
-    I_gross = b * D**3 / 12.0               # mm^4
-    Z_gross = b * D**2 / 6.0                # mm^3
-    Mcr = fctf * Z_gross / 1e6              # kNm
+    fctf = cb * (fc ** (2.0 / 3.0))
+    I_gross = b * D**3 / 12.0
+    Z_gross = b * D**2 / 6.0
+    Mcr = fctf * Z_gross / 1e6
 
-    # ---- Minimum tensile reinforcement ----
+    # ---- SAFE As_min (never divides by zero) ----
     kAst = 1.0
-    As_min = kAst * (d / D) ** 2 * (fctf / fsy) * b * D
+    As_min = float("nan")
+    if (
+        d not in (None, 0)
+        and D not in (None, 0)
+        and fsy not in (None, 0)
+        and b not in (None, 0)
+    ):
+        As_min = kAst * (d / D) ** 2 * (fctf / fsy) * b * D
 
-    # ---- Stress-block factors (code-based, to match diagrams) ----
+    # Stress-block factors
     alpha2_raw = 0.85 - 0.0015 * fc
     gamma_raw = 0.97 - 0.0025 * fc
     alpha2 = max(0.67, alpha2_raw)
     gamma = max(0.67, gamma_raw)
 
-    # ---- Flexural capacity ----
-    T = Ast * fsy                              # N (Ast mm², fsy MPa = N/mm²)
+    # Flexural capacity
+    T = Ast * fsy
     denom = alpha2 * fc * b * gamma
     if denom <= 0:
         return {
@@ -179,17 +183,14 @@ def _compute_bending_capacity():
             "d": d,
         }
 
-    c = T / denom                             # NA depth
-    a = gamma * c                             # block depth
-    z = d - 0.5 * a                           # lever arm
-    Mu_nom = T * z / 1e6                      # kNm (N·mm → kNm)
+    c = T / denom
+    a = gamma * c
+    z = d - 0.5 * a
+    Mu_nom = T * z / 1e6
     phi_Mu_cap = phi * Mu_nom
     Mu_util = Mu_star / phi_Mu_cap if phi_Mu_cap > 0 else float("inf")
-
-    # k_u = c/d
     ku = c / d if d not in (None, 0) else float("nan")
 
-    # Store in shared "results" dict via helpers (SESSION-STATE SAFE)
     update_results(phi_Mu_cap=phi_Mu_cap, Mu_utilisation=Mu_util)
 
     return {
@@ -211,6 +212,7 @@ def _compute_bending_capacity():
     }
 
 # ===== END PART 1 =====
+
 # ============================
 # PART 2 — STRESS–STRAIN DIAGRAM HELPERS + BAR LAYOUT
 # ============================
@@ -1855,4 +1857,5 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
