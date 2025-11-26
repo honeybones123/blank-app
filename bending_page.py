@@ -425,13 +425,14 @@ def _plot_stress_strain_profiles(state_dict):
     fc = state_dict["fc"]
     alpha2 = state_dict["alpha2"]
 
-if state_label == "ULS":
-    section_title = "Section (ULS view – TEST)"
-elif "SLS" in state_label:
-    section_title = "Section (SLS cracked – TEST)"
-else:
-    section_title = "Section (uncracked – TEST)"
-
+    # decide section title based on state label
+    state_label = state_dict.get("state_label", "ULS")
+    if state_label == "ULS":
+        section_title = "Section (ULS view – TEST)"
+    elif "SLS" in state_label:
+        section_title = "Section (SLS cracked – TEST)"
+    else:
+        section_title = "Section (uncracked – TEST)"
 
     # ---- reinforcement & cover from app (with safe fallbacks) ----
     nb_bot = int(get_param("nb_bot") or 4)
@@ -461,7 +462,7 @@ else:
     base_fig_w = 9.0
     base_fig_h = 3.5
 
-    # NOW: if D doubles, fig_h doubles; if b doubles, fig_w doubles.
+    # if D doubles, fig_h doubles; if b doubles, fig_w doubles
     fig_w = base_fig_w * max(width_scale, 0.2)
     fig_h = base_fig_h * max(depth_scale, 0.2)
 
@@ -499,14 +500,7 @@ else:
 
     # section outline
     ax_sec.add_patch(
-        Rectangle(
-            (0, 0),
-            b,
-            D,
-            fill=False,
-            linewidth=1.5,
-            edgecolor="black",
-        )
+        Rectangle((0, 0), b, D, fill=False, linewidth=1.5, edgecolor="black")
     )
 
     # compression zone (0 → γc)
@@ -1638,6 +1632,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
