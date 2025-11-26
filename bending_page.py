@@ -814,16 +814,6 @@ def _make_cross_section_figure(
 
     # turn off axes box completely
     ax.axis("off")
-
-    # outer concrete section
-    ax.add_patch(
-        Rectangle(
-            (0, 0),
-            b,
-            D,
-            fill=False,
-            linewidth=1.5,
-            edgecolor="black",
         )
     )
 
@@ -1836,3 +1826,4 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
