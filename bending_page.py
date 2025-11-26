@@ -31,6 +31,65 @@ def _fmt(val, pattern="{:.2f}"):
 
 
 # ------------------------------------------------------------
+#  Helper – bottom tensile centroid depth
+# ------------------------------------------------------------
+def _effective_depth_centroid():
+    """
+    Return effective depth d to the CENTROID of bottom tensile reinforcement.
+
+    Uses:
+        b, D, nb_bot, db_bot, cover_bot, rowgap_bot
+
+    If anything essential is missing, returns None and the caller can fall back.
+    """
+    b = get_param("b")
+    D = get_param("D")
+    nb_bot = get_param("nb_bot")
+    db_bot = get_param("db_bot")
+    cover_bot = get_param("cover_bot")
+    rowgap_bot = get_param("rowgap_bot")
+
+    if b in (None, 0) or D in (None, 0) or nb_bot in (None, 0) or db_bot in (None, 0) or cover_bot in (None, 0):
+        return None
+
+    nb_bot = int(nb_bot)
+    db_bot = float(db_bot)
+    cover_bot = float(cover_bot)
+    rowgap_bot = float(rowgap_bot) if rowgap_bot not in (None, 0) else 0.0
+
+    # Bottom row depth (to bar centre) from top fibre
+    d_row0 = D - cover_bot - db_bot / 2.0
+
+    # Horizontal layout (how many bars per row)
+    min_spacing_bot = 2.0 * db_bot
+    layout = _layout_bars_in_rows(
+        n_bars=nb_bot,
+        b=b,
+        cover=cover_bot,
+        db=db_bot,
+        min_spacing=min_spacing_bot,
+        n_rows_max=2,
+    )
+
+    if not layout:
+        return d_row0
+
+    # Vertical layout: second row sits above first by db + rowgap_bot
+    row_pitch_bot = db_bot + rowgap_bot
+
+    y_positions = []
+    for _, row_idx in layout:
+        y = d_row0 - row_idx * row_pitch_bot
+        y_positions.append(y)
+
+    if not y_positions:
+        return d_row0
+
+    d_centroid = sum(y_positions) / len(y_positions)
+    return d_centroid
+
+
+# ------------------------------------------------------------
 #  BENDING CAPACITY CALC (α2–γ stress block, AS3600 Cl. 8.1.3)
 # ------------------------------------------------------------
 def _compute_bending_capacity():
@@ -38,17 +97,25 @@ def _compute_bending_capacity():
     Compute a simple φMu,cap using a rectangular stress block.
     Uses shared session_state values only (via get_param).
     Also returns intermediate values for the step-by-step report.
+
+    IMPORTANT: d is taken as the depth to the CENTROID of the bottom
+    tensile reinforcement (using _effective_depth_centroid()).
     """
     # Shared parameters (all from session state)
     b = get_param("b")
     D = get_param("D")
-    d = get_param("d")
     fc = get_param("fc")
     fsy = get_param("fsy")
     Ast = get_param("Ast_bot")
     Mu_star = get_param("Mu_star")
+
     # Strength reduction factor from shared state (e.g. Inputs page)
     phi = get_param("phi_bend", 0.85)
+
+    # Effective depth – FIRST choice is centroid of tensile reo
+    d_centroid = _effective_depth_centroid()
+    d_input = get_param("d")
+    d = d_centroid if d_centroid not in (None, 0) else d_input
 
     if None in (b, D, d, fc, fsy, Ast, Mu_star):
         return {
@@ -66,6 +133,7 @@ def _compute_bending_capacity():
             "Z_gross": float("nan"),
             "Mcr": float("nan"),
             "As_min": float("nan"),
+            "d": d,
         }
 
     # ---- Concrete in tension (for min steel & Mcr) ----
@@ -102,6 +170,7 @@ def _compute_bending_capacity():
             "Z_gross": Z_gross,
             "Mcr": Mcr,
             "As_min": As_min,
+            "d": d,
         }
 
     c = T / denom                             # NA depth
@@ -132,6 +201,7 @@ def _compute_bending_capacity():
         "Z_gross": Z_gross,
         "Mcr": Mcr,
         "As_min": As_min,
+        "d": d,
     }
 
 
@@ -140,19 +210,19 @@ def _compute_bending_capacity():
 # ------------------------------------------------------------
 def _plot_stress_strain_profiles(state_dict):
     """
-    Single-axis figure with three panels laid out in X, matching the
-    standalone demo:
+    Single-axis figure with three panels laid out in X:
 
-        - Section (ULS view)  – left
-        - Strain profile      – centre
-        - Stress-block        – right
+        - Section (ULS view)      – left
+        - Strain profile          – centre
+        - Stress-block profile    – right
 
     Uses real geometry / reo from the main app so it updates with inputs.
+    d in the state_dict is the depth to the CENTROID of bottom steel.
     """
     # --- unpack state from _stress_strain_state ---
     b = state_dict["b"]
     D = state_dict["D"]
-    d = state_dict["d"]
+    d = state_dict["d"]          # centroid depth
     c = state_dict["c"]
     eps_c = state_dict["eps_c"]
     eps_s = state_dict["eps_s"]
@@ -168,6 +238,8 @@ def _plot_stress_strain_profiles(state_dict):
     nb_top = get_param("nb_top") or 2
     db_top = get_param("db_top") or 16.0
     cover_top = get_param("cover_top") or 40.0
+    rowgap_bot = get_param("rowgap_bot") or 25.0
+    rowgap_top = get_param("rowgap_top") or 25.0
 
     nb_bot = int(nb_bot)
     nb_top = int(nb_top)
@@ -259,11 +331,12 @@ def _plot_stress_strain_profiles(state_dict):
         n_rows_max=2,
     )
     r_bot = db_bot / 2.0
-    row_pitch_bot = db_bot + 15.0
+    row_pitch_bot = db_bot + rowgap_bot
+    d_row0 = D - cover_bot - db_bot / 2.0  # depth to first row
 
     for x_rel, row_idx in bot_layout:
         x = x0_sec + x_rel
-        y = d - row_idx * row_pitch_bot
+        y = d_row0 - row_idx * row_pitch_bot
         ax.add_patch(
             Circle(
                 (x, y),
@@ -286,7 +359,7 @@ def _plot_stress_strain_profiles(state_dict):
     )
     r_top = db_top / 2.0
     y_top_base = cover_top + db_top / 2.0
-    row_pitch_top = db_top + 15.0
+    row_pitch_top = db_top + rowgap_top
 
     for x_rel, row_idx in top_layout:
         x = x0_sec + x_rel
@@ -318,7 +391,7 @@ def _plot_stress_strain_profiles(state_dict):
         color="tab:red",
     )
 
-    # d arrow & label
+    # d arrow & label – d is centroid depth
     x_d = x_na + 80.0
     ax.annotate(
         "",
@@ -599,11 +672,13 @@ def _stress_strain_state(state: str):
         gamma                – γ factor (for block depth γc)
         fs_t                 – steel stress (MPa) for tension arrow
         fc, fsy, alpha2      – material properties / block factor
+
+    NOTE: d here is the depth to the CENTROID of the bottom tensile
+    reinforcement, consistent with the capacity calculation.
     """
     # Try to use real values from the app; fall back to teaching defaults
     b = get_param("b") or 300.0
     D = get_param("D") or 600.0
-    d = get_param("d")
     fc = get_param("fc")
     fsy = get_param("fsy")
     As = get_param("Ast_bot")
@@ -619,11 +694,16 @@ def _stress_strain_state(state: str):
         Ec = 4700 * math.sqrt(fc)
     if Es is None:
         Es = 200000.0
-    if d is None:
-        # use cover + db if possible
+
+    # Effective depth to centroid of bottom steel
+    d = _effective_depth_centroid()
+    if d in (None, 0):
+        # crude fallback if centroids can't be computed
         cover_bot = get_param("cover_bot") or 40.0
         db_bot = get_param("db_bot") or 24.0
         d = D - cover_bot - db_bot / 2.0
+
+    # If As missing, estimate from nb_bot & db_bot
     if As is None:
         nb_bot = get_param("nb_bot") or 3
         db_bot = get_param("db_bot") or 24.0
@@ -700,51 +780,42 @@ def _stress_strain_state(state: str):
 
 
 # ------------------------------------------------------------
-#  EXTRA HELPERS FOR STEP-BY-STEP TABS
-#  (re-added so NameError goes away)
+#  Simple ULS cross-section figure for step-by-step tabs
 # ------------------------------------------------------------
 def _make_cross_section_figure(
-    b,
-    D,
-    d,
-    a,
-    nb_bot,
-    db_bot,
-    cover_bot,
-    nb_top=None,
-    db_top=None,
-    cover_top=None,
-    c=None,
-    z=None,
+    b, D, d, a,
+    nb_bot, db_bot, cover_bot,
+    nb_top=None, db_top=None, cover_top=None,
+    c=None, z=None,
     show_compression=True,
-    title="",
+    title="ULS cross-section (cracked)",
 ):
     """
-    Simple 2D cross-section used in the ULS step-by-step tab.
+    Step-by-step cross-section diagram.
 
-    - Draws outer rectangle
-    - Optional compression block (depth = a)
-    - Bottom and top bars laid out using the same layout helper
-    - Optional NA line and lever arm arrow
+    Draws only the section and reo – NO outer border/frame – so that
+    it visually matches the main ULS section diagram.
     """
     if b is None or D is None:
         return None
 
-    nb_bot = int(nb_bot) if nb_bot is not None else 0
-    db_bot = db_bot or 0.0
-    cover_bot = cover_bot or 40.0
+    nb_bot = nb_bot or 0
+    db_bot = db_bot or 0
+    cover_bot = cover_bot or 0
+    nb_top = nb_top or 0
+    db_top = db_top or 0
+    cover_top = cover_top or 0
 
-    nb_top = int(nb_top) if nb_top is not None else 0
-    db_top = db_top or 0.0
-    cover_top = cover_top or 40.0
+    # figure
+    fig, ax = plt.subplots(figsize=(3, 6))
+    ax.set_xlim(0, b)
+    ax.set_ylim(D, 0)
+    ax.set_aspect("equal")
 
-    fig, ax = plt.subplots(figsize=(4, 4))
+    # turn off axes box completely
+    ax.axis("off")
 
-    # axes
-    ax.set_xlim(0, b + 60)
-    ax.set_ylim(D + 40, -40)  # invert so 0 at top
-
-    # outer section
+    # outer concrete section
     ax.add_patch(
         Rectangle(
             (0, 0),
@@ -757,13 +828,13 @@ def _make_cross_section_figure(
     )
 
     # compression block at top
-    if show_compression and a is not None and not math.isnan(a) and a > 0:
-        a_use = min(a, D)
+    if show_compression and a is not None and c is not None:
+        block_depth = max(0.0, min(a, D))
         ax.add_patch(
             Rectangle(
                 (0, 0),
                 b,
-                a_use,
+                block_depth,
                 facecolor="#c7e3ff",
                 edgecolor="tab:red",
                 linewidth=1.2,
@@ -771,10 +842,23 @@ def _make_cross_section_figure(
             )
         )
 
-    # bottom bars
+        # NA dashed line
+        ax.hlines(
+            c,
+            0,
+            b,
+            colors="tab:red",
+            linestyles="--",
+            linewidth=1.0,
+        )
+
+    # bottom reo
     if nb_bot > 0 and db_bot > 0:
+        r_bot = db_bot / 2.0
+        rowgap_bot = get_param("rowgap_bot") or 25.0
         min_spacing_bot = 2.0 * db_bot
-        bot_layout = _layout_bars_in_rows(
+
+        layout_bot = _layout_bars_in_rows(
             n_bars=nb_bot,
             b=b,
             cover=cover_bot,
@@ -782,16 +866,12 @@ def _make_cross_section_figure(
             min_spacing=min_spacing_bot,
             n_rows_max=2,
         )
-        r_bot = db_bot / 2.0
-        row_pitch_bot = db_bot + 10.0
-        for x_rel, row_idx in bot_layout:
+        row_pitch_bot = db_bot + rowgap_bot
+        d_row0 = D - cover_bot - db_bot / 2.0
+
+        for x_rel, row_idx in layout_bot:
             x = x_rel
-            # d measured from top; bar centre from bottom:
-            if d is not None:
-                # row 0 at depth d; row 1 above etc.
-                y = d - row_idx * row_pitch_bot
-            else:
-                y = D - cover_bot - r_bot - row_idx * row_pitch_bot
+            y = d_row0 - row_idx * row_pitch_bot
             ax.add_patch(
                 Circle(
                     (x, y),
@@ -802,10 +882,13 @@ def _make_cross_section_figure(
                 )
             )
 
-    # top bars
+    # top reo
     if nb_top > 0 and db_top > 0:
+        r_top = db_top / 2.0
+        rowgap_top = get_param("rowgap_top") or 25.0
         min_spacing_top = 2.0 * db_top
-        top_layout = _layout_bars_in_rows(
+
+        layout_top = _layout_bars_in_rows(
             n_bars=nb_top,
             b=b,
             cover=cover_top,
@@ -813,10 +896,10 @@ def _make_cross_section_figure(
             min_spacing=min_spacing_top,
             n_rows_max=2,
         )
-        r_top = db_top / 2.0
-        y_top_base = cover_top + r_top
-        row_pitch_top = db_top + 10.0
-        for x_rel, row_idx in top_layout:
+        y_top_base = cover_top + db_top / 2.0
+        row_pitch_top = db_top + rowgap_top
+
+        for x_rel, row_idx in layout_top:
             x = x_rel
             y = y_top_base + row_idx * row_pitch_top
             ax.add_patch(
@@ -829,153 +912,106 @@ def _make_cross_section_figure(
                 )
             )
 
-    # neutral axis line
-    if c is not None and not math.isnan(c) and c > 0:
-        ax.axhline(c, color="tab:red", linestyle="--", linewidth=1.0)
+    # arrows for c and z (optional)
+    if c is not None:
+        ax.annotate(
+            "",
+            xy=(b + 10.0, c),
+            xytext=(b + 10.0, 0),
+            arrowprops=dict(arrowstyle="<->", linewidth=1.0, color="tab:red"),
+        )
         ax.text(
-            b + 5,
-            c,
+            b + 15.0,
+            c / 2.0,
             f"c = {c:.0f} mm",
             va="center",
-            fontsize=8,
             color="tab:red",
         )
 
-    # lever arm arrow (simplified: from ~0.5a to d)
-    if z is not None and not math.isnan(z) and z > 0 and d is not None:
-        y_cg = (a or 0.0) / 2.0
-        x0 = b + 10
+    if z is not None and d is not None:
         ax.annotate(
             "",
-            xy=(x0, d),
-            xytext=(x0, y_cg),
-            arrowprops=dict(arrowstyle="<->", color="black", linewidth=1.0),
+            xy=(b + 40.0, d),
+            xytext=(b + 40.0, 0),
+            arrowprops=dict(arrowstyle="<->", linewidth=1.0),
         )
         ax.text(
-            x0 + 5,
-            (d + y_cg) / 2.0,
+            b + 45.0,
+            d / 2.0,
             f"z = {z:.0f} mm",
             va="center",
-            fontsize=8,
         )
 
-    ax.set_aspect("equal", adjustable="box")
-    ax.set_xticks([])
-    ax.set_yticks([])
-    if title:
-        ax.set_title(title, fontsize=10)
-
-    fig.tight_layout()
+    ax.set_title(title)
     return fig
 
 
-def _make_uls_stress_block_figure(c, d, gamma, fsy, show_lever_arm=False):
+# ------------------------------------------------------------
+#  Simple ULS stress-block figure for step-by-step tabs
+# ------------------------------------------------------------
+def _make_uls_stress_block_figure(c, d, gamma_sb, fsy, show_lever_arm=False):
     """
-    Simple standalone stress-block figure for the ULS step-by-step tab.
-    This is a schematic only (not to scale in stress).
+    Simple 2D stress-block diagram used in the step-by-step ULS tab.
     """
-    if c is None or math.isnan(c) or c <= 0 or d is None or d <= 0:
-        # fall back to simple dummy
-        c = 200.0
-        d = 450.0
-    gamma = gamma or 0.85
-    a = gamma * c
+    if c in (None, 0) or d in (None, 0):
+        fig, ax = plt.subplots()
+        ax.text(0.5, 0.5, "No data", ha="center")
+        ax.axis("off")
+        return fig
 
-    # choose a plotting depth
-    D_plot = max(d + 0.2 * d, c + a + 0.2 * d)
+    fig, ax = plt.subplots(figsize=(3, 6))
+    ax.set_ylim(d + 50.0, -50.0)
+    ax.set_xlim(0, 1.2)
 
-    fig, ax = plt.subplots(figsize=(4, 4))
+    ax.axis("off")
 
-    # coordinates:
-    # y from top (0) downwards, invert later
-    ax.set_xlim(-10, 120)
-    ax.set_ylim(D_plot + 20, -20)
+    # NA
+    ax.hlines(c, 0.0, 1.0, linestyles="--", colors="black", linewidth=1.0)
 
-    # vertical axis at x = 0
-    ax.plot([0, 0], [0, D_plot], color="black", linewidth=1.0)
-
-    # compression block at top
-    block_width = 40.0
-    ax.add_patch(
-        Rectangle(
-            (0, 0),
-            block_width,
-            a,
-            facecolor="#c7e3ff",
-            edgecolor="tab:red",
-            linewidth=1.2,
-        )
+    # block
+    block_top = 0.0
+    block_bottom = gamma_sb * c
+    ax.fill_between(
+        [0.0, 0.5],
+        [block_top, block_top],
+        [block_bottom, block_bottom],
+        facecolor="#c7e3ff",
+        edgecolor="tab:red",
+        linewidth=1.2,
     )
 
-    # NA line at depth c
-    ax.axhline(c, color="tab:red", linestyle="--", linewidth=1.0)
-    ax.text(
-        block_width + 5,
-        c,
-        f"c = {c:.0f} mm",
-        va="center",
-        fontsize=8,
-        color="tab:red",
-    )
-
-    # label gamma c
+    # steel force arrow at d
     ax.annotate(
         "",
-        xy=(block_width + 15, a),
-        xytext=(block_width + 15, 0),
-        arrowprops=dict(arrowstyle="<->", color="tab:red", linewidth=1.0),
+        xy=(1.0, d),
+        xytext=(0.5, d),
+        arrowprops=dict(arrowstyle="->", linewidth=1.5, color="tab:blue"),
     )
     ax.text(
-        block_width + 20,
-        a / 2.0,
-        f"γc = {a:.0f} mm",
-        va="center",
-        fontsize=8,
-        color="tab:red",
-    )
-
-    # tension force arrow at depth d
-    xT0 = 0.0
-    xT1 = 80.0
-    ax.annotate(
-        "",
-        xy=(xT1, d),
-        xytext=(xT0, d),
-        arrowprops=dict(arrowstyle="->", color="tab:blue", linewidth=1.4),
-    )
-    ax.text(
-        xT1 + 5,
+        1.02,
         d,
-        "T = Ast fsy",
+        r"$T = A_{st} f_{sy}$",
         va="center",
-        fontsize=8,
         color="tab:blue",
     )
 
-    # lever arm between compression resultant and T
     if show_lever_arm:
-        yC = a / 2.0
-        xz = xT1 + 10.0
+        # lever arm z between T and block centroid
+        z = d - 0.5 * gamma_sb * c
         ax.annotate(
             "",
-            xy=(xz, d),
-            xytext=(xz, yC),
-            arrowprops=dict(arrowstyle="<->", color="black", linewidth=1.0),
+            xy=(0.7, d),
+            xytext=(0.7, 0.5 * gamma_sb * c),
+            arrowprops=dict(arrowstyle="<->", linewidth=1.2),
         )
-        z_val = d - yC
         ax.text(
-            xz + 5,
-            (d + yC) / 2.0,
-            f"z ≈ {z_val:.0f} mm",
+            0.72,
+            (d + 0.5 * gamma_sb * c) / 2.0,
+            "z",
             va="center",
-            fontsize=8,
         )
 
-    ax.set_aspect("equal", adjustable="box")
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.set_title("ULS stress-block schematic", fontsize=10)
-    fig.tight_layout()
+    ax.set_title("ULS stress block")
     return fig
 
 
@@ -997,7 +1033,7 @@ def render_bending():
             **Mu*** – Factored design bending moment at the critical section (kNm).  
             **b** – Beam/web width (mm).  
             **D** – Overall section depth (mm).  
-            **d** – Effective depth to tension steel (mm).  
+            **d** – Effective depth to **centroid of tension steel** (mm).  
             **Ast,bot** – Area of bottom (tension) reinforcement (mm²).  
             **As_min** – Minimum required tensile steel for ductile behaviour.  
             **f'c** – Concrete cylinder strength (MPa).  
@@ -1133,11 +1169,11 @@ def render_bending():
     Z_gross = top_results["Z_gross"]
     Mcr = top_results["Mcr"]
     As_min = top_results["As_min"]
+    d = top_results["d"]
 
     # Shared values for reporting / diagrams
     b = get_param("b")
     D = get_param("D")
-    d = get_param("d")
     fc = get_param("fc")
     fsy = get_param("fsy")
     Ec = get_param("Ec")
@@ -1341,8 +1377,8 @@ def render_bending():
             5.0,
             sync,
             help_text=(
-                "Vertical gap between bottom bar rows (if 2 rows are used). Increasing "
-                "this moves the second row further from the tension face, increasing its lever arm."
+                "Vertical clear gap between bottom bar rows (if 2 rows are used). "
+                "This affects the centroid depth d of the tensile reinforcement."
             ),
         )
         number_row(
@@ -1454,13 +1490,18 @@ def render_bending():
             col1_text, col1_fig = st.columns([3, 2])
 
             with col1_text:
-                st.markdown("#### 1.1 Effective depth $d$")
-                st.latex(r"d = D - \text{cover}_{bot} - \frac{d_{b,bot}}{2}")
-                st.latex(
-                    rf"d = {D:.1f} - {cover_bot:.1f} - "
-                    rf"\frac{{{db_bot:.1f}}}{2}"
+                st.markdown("#### 1.1 Effective depth $d$ to tensile centroid")
+                st.markdown(
+                    "Effective depth $d$ is measured to the **centroid** of the "
+                    "bottom tensile reinforcement. For a single row of bars this is "
+                    "often approximated as:"
                 )
-                st.latex(rf"d = {d:.1f}\,\text{{ mm}}")
+                st.latex(r"d \approx D - \text{cover}_{bot} - \frac{d_{b,bot}}{2}")
+                st.markdown(
+                    f"For the current bottom bar layout (including any second row), "
+                    f"the app calculates:  \n"
+                    f"**d = {d:.1f}\\,\\text{{ mm}}**."
+                )
 
                 st.markdown("#### 1.2 Bottom steel area $A_{st,bot}$")
                 st.latex(r"A_{st,bot} = n_{b,bot}\,\frac{\pi d_{b,bot}^2}{4}")
