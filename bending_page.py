@@ -98,8 +98,12 @@ def _compute_bending_capacity():
     Uses shared session_state values only (via get_param).
     Also returns intermediate values for the step-by-step report.
 
-    IMPORTANT: d is taken as the depth to the CENTROID of the bottom
-    tensile reinforcement (using _effective_depth_centroid()).
+    IMPORTANT:
+    - d is taken as the depth to the CENTROID of the bottom tensile
+      reinforcement (using _effective_depth_centroid()).
+    - This function is now robust to missing/zero inputs so it
+      doesn't crash when other pages/tabs (e.g. SLS) call it while
+      inputs are still being edited.
     """
     # Shared parameters (all from session state)
     b = get_param("b")
@@ -112,19 +116,34 @@ def _compute_bending_capacity():
     # Strength reduction factor from shared state (e.g. Inputs page)
     phi = get_param("phi_bend", 0.85)
 
-        # Effective depth – FIRST choice is centroid of tensile reo
+    # Effective depth – FIRST choice is centroid of tensile reo
     d_centroid = _effective_depth_centroid()
     d_input = get_param("d")
     d = d_centroid if d_centroid not in (None, 0) else d_input
 
-    # ---- EARLY GUARD: bail out if key inputs are missing or zero ----
-    # Note: Mu_star is allowed to be 0 (simply means no bending demand),
-    # but b, D, d, fc, fsy, Ast must all be positive to do any meaningful calc.
-    bad_core_inputs = any(
-        val in (None, 0)
-        for val in (b, D, d, fc, fsy, Ast)
+    # ------------------------------------------------------------------
+    # EARLY GUARD:
+    # If key inputs are missing or zero, bail out gracefully.
+    # This prevents ZeroDivisionError in states where the UI/session
+    # hasn't fully populated all values yet (e.g. switching tabs).
+    # ------------------------------------------------------------------
+    def _is_bad(v):
+        # treat None or 0 as "bad" for core geometry/materials
+        return v is None or v == 0
+
+    bad_core_inputs = (
+        _is_bad(b) or
+        _is_bad(D) or
+        _is_bad(fc) or
+        _is_bad(fsy) or
+        _is_bad(Ast) or
+        _is_bad(d)
     )
+
     if bad_core_inputs or Mu_star is None:
+        # Still store something into the shared "results" dict so
+        # other pages don't break when reading it.
+        update_results(phi_Mu_cap=0.0, Mu_utilisation=float("nan"))
         return {
             "phi_Mu_cap": 0.0,
             "Mu_util": float("nan"),
@@ -143,6 +162,82 @@ def _compute_bending_capacity():
             "d": d,
         }
 
+    # ------------------------------------------------------------------
+    # From here on, we assume all core inputs are valid and non-zero.
+    # ------------------------------------------------------------------
+
+    # ---- Concrete in tension (for min steel & Mcr) ----
+    cb = 0.2
+    fctf = cb * (fc ** (2.0 / 3.0))          # MPa
+    I_gross = b * D**3 / 12.0               # mm^4
+    Z_gross = b * D**2 / 6.0                # mm^3
+    Mcr = fctf * Z_gross / 1e6              # kNm
+
+    # ---- Minimum tensile reinforcement ----
+    # Avoid division by zero (we already checked fsy>0 above, but
+    # keep this extra guard as a second line of defence).
+    kAst = 1.0
+    As_min = kAst * (d / D) ** 2 * (fctf / fsy) * b * D if fsy != 0 else float("nan")
+
+    # ---- Stress-block factors (teaching) ----
+    # (We keep these as fixed teaching values here;
+    # more detailed α2, γ are handled elsewhere for diagrams.)
+    alpha2 = 0.85
+    gamma = 0.85
+
+    # ---- Flexural capacity ----
+    T = Ast * fsy                              # N (Ast mm², fsy MPa = N/mm²)
+    denom = alpha2 * fc * b * gamma
+    if denom <= 0:
+        update_results(phi_Mu_cap=0.0, Mu_utilisation=float("nan"))
+        return {
+            "phi_Mu_cap": 0.0,
+            "Mu_util": float("nan"),
+            "c": float("nan"),
+            "a": float("nan"),
+            "z": float("nan"),
+            "ku": float("nan"),
+            "alpha2": alpha2,
+            "gamma": gamma,
+            "phi": phi,
+            "fctf": fctf,
+            "I_gross": I_gross,
+            "Z_gross": Z_gross,
+            "Mcr": Mcr,
+            "As_min": As_min,
+            "d": d,
+        }
+
+    c = T / denom                             # NA depth (mm)
+    a = gamma * c                             # block depth (mm)
+    z = d - 0.5 * a                           # lever arm (mm)
+    Mu_nom = T * z / 1e6                      # kNm (N·mm → kNm)
+    phi_Mu_cap = phi * Mu_nom
+    Mu_util = Mu_star / phi_Mu_cap if phi_Mu_cap > 0 else float("inf")
+
+    # k_u = c/d
+    ku = c / d if d not in (None, 0) else float("nan")
+
+    # Store in shared "results" dict via helpers (SESSION-STATE SAFE)
+    update_results(phi_Mu_cap=phi_Mu_cap, Mu_utilisation=Mu_util)
+
+    return {
+        "phi_Mu_cap": phi_Mu_cap,
+        "Mu_util": Mu_util,
+        "c": c,
+        "a": a,
+        "z": z,
+        "ku": ku,
+        "alpha2": alpha2,
+        "gamma": gamma,
+        "phi": phi,
+        "fctf": fctf,
+        "I_gross": I_gross,
+        "Z_gross": Z_gross,
+        "Mcr": Mcr,
+        "As_min": As_min,
+        "d": d,
+    }
 
     # ---- Concrete in tension (for min steel & Mcr) ----
     cb = 0.2
@@ -789,8 +884,12 @@ def _make_cross_section_figure(
     """
     Step-by-step cross-section diagram.
 
-    Draws only the section and reo – NO extra outer border/frame –
-    so it visually matches the main ULS section diagram.
+    Draws only the section and reo – NO outer border/frame – so that
+    it visually matches the main ULS section diagram.
+
+    Arrows:
+        - "NA = ..." at the neutral axis depth c
+        - "d = ..." at the tensile centroid depth d
     """
     if b is None or D is None:
         return None
@@ -802,13 +901,18 @@ def _make_cross_section_figure(
     db_top = db_top or 0
     cover_top = cover_top or 0
 
+    # figure
     fig, ax = plt.subplots(figsize=(3, 6))
-    ax.set_xlim(0, b + 80)   # small margin on right for arrows
-    ax.set_ylim(D + 40, -40)
+
+    # Allow some right-hand space for NA/d arrows
+    ax.set_xlim(0, b + 80.0)
+    ax.set_ylim(D, 0)
     ax.set_aspect("equal")
+
+    # turn off axes box completely
     ax.axis("off")
 
-    # outer concrete section (only one outline)
+    # outer concrete section
     ax.add_patch(
         Rectangle(
             (0, 0),
@@ -905,55 +1009,42 @@ def _make_cross_section_figure(
                 )
             )
 
-    # arrows for c and z (optional), drawn just outside right edge
-        if c is not None:
+    # arrows for NA (c) and d (tensile centroid)
+    # NA arrow + label
+    if c is not None:
+        x_na = b + 10.0
         ax.annotate(
             "",
-            xy=(b + 10.0, c),
-            xytext=(b + 10.0, 0),
+            xy=(x_na, c),
+            xytext=(x_na, 0),
             arrowprops=dict(arrowstyle="<->", linewidth=1.0, color="tab:red"),
         )
         ax.text(
-            b + 15.0,
+            x_na + 5.0,
             c / 2.0,
-            f"NA = {c:.0f} mm",   # <--- was "c = ..."
+            f"NA = {c:.0f} mm",
             va="center",
             color="tab:red",
         )
 
-    if z is not None and d is not None:
+    # d arrow + label (depth to centroid of tension steel)
+    if d is not None:
+        x_d = b + 40.0
         ax.annotate(
             "",
-            xy=(b + 40.0, d),
-            xytext=(b + 40.0, 0),
+            xy=(x_d, d),
+            xytext=(x_d, 0),
             arrowprops=dict(arrowstyle="<->", linewidth=1.0),
         )
         ax.text(
-            b + 45.0,
+            x_d + 5.0,
             d / 2.0,
-            f"d = {d:.0f} mm",    # <--- was "z = ..."
-            va="center",
-        )
-
-
-    if z is not None and d is not None:
-        x_z = b + 50.0
-        ax.annotate(
-            "",
-            xy=(x_z, d),
-            xytext=(x_z, 0),
-            arrowprops=dict(arrowstyle="<->", linewidth=1.0),
-        )
-        ax.text(
-            x_z + 5.0,
-            d / 2.0,
-            f"z = {z:.0f} mm",
+            f"d = {d:.0f} mm",
             va="center",
         )
 
     ax.set_title(title)
     return fig
-
 
 # ------------------------------------------------------------
 #  Simple ULS stress-block figure for step-by-step tabs
@@ -1844,4 +1935,5 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
 
