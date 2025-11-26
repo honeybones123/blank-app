@@ -529,7 +529,6 @@ def _plot_stress_strain_profiles(state_dict):
     return fig
 
 
-
 # ------------------------------------------------------------
 #  STRESS–STRAIN PROFILE HELPERS (AS3600 α2–γ)
 # ------------------------------------------------------------
@@ -698,6 +697,287 @@ def _stress_strain_state(state: str):
         gamma=1.0, fs_t=fs_t,
         fc=fc, fsy=fsy, alpha2=alpha2,
     )
+
+
+# ------------------------------------------------------------
+#  EXTRA HELPERS FOR STEP-BY-STEP TABS
+#  (re-added so NameError goes away)
+# ------------------------------------------------------------
+def _make_cross_section_figure(
+    b,
+    D,
+    d,
+    a,
+    nb_bot,
+    db_bot,
+    cover_bot,
+    nb_top=None,
+    db_top=None,
+    cover_top=None,
+    c=None,
+    z=None,
+    show_compression=True,
+    title="",
+):
+    """
+    Simple 2D cross-section used in the ULS step-by-step tab.
+
+    - Draws outer rectangle
+    - Optional compression block (depth = a)
+    - Bottom and top bars laid out using the same layout helper
+    - Optional NA line and lever arm arrow
+    """
+    if b is None or D is None:
+        return None
+
+    nb_bot = int(nb_bot) if nb_bot is not None else 0
+    db_bot = db_bot or 0.0
+    cover_bot = cover_bot or 40.0
+
+    nb_top = int(nb_top) if nb_top is not None else 0
+    db_top = db_top or 0.0
+    cover_top = cover_top or 40.0
+
+    fig, ax = plt.subplots(figsize=(4, 4))
+
+    # axes
+    ax.set_xlim(0, b + 60)
+    ax.set_ylim(D + 40, -40)  # invert so 0 at top
+
+    # outer section
+    ax.add_patch(
+        Rectangle(
+            (0, 0),
+            b,
+            D,
+            fill=False,
+            linewidth=1.5,
+            edgecolor="black",
+        )
+    )
+
+    # compression block at top
+    if show_compression and a is not None and not math.isnan(a) and a > 0:
+        a_use = min(a, D)
+        ax.add_patch(
+            Rectangle(
+                (0, 0),
+                b,
+                a_use,
+                facecolor="#c7e3ff",
+                edgecolor="tab:red",
+                linewidth=1.2,
+                alpha=0.8,
+            )
+        )
+
+    # bottom bars
+    if nb_bot > 0 and db_bot > 0:
+        min_spacing_bot = 2.0 * db_bot
+        bot_layout = _layout_bars_in_rows(
+            n_bars=nb_bot,
+            b=b,
+            cover=cover_bot,
+            db=db_bot,
+            min_spacing=min_spacing_bot,
+            n_rows_max=2,
+        )
+        r_bot = db_bot / 2.0
+        row_pitch_bot = db_bot + 10.0
+        for x_rel, row_idx in bot_layout:
+            x = x_rel
+            # d measured from top; bar centre from bottom:
+            if d is not None:
+                # row 0 at depth d; row 1 above etc.
+                y = d - row_idx * row_pitch_bot
+            else:
+                y = D - cover_bot - r_bot - row_idx * row_pitch_bot
+            ax.add_patch(
+                Circle(
+                    (x, y),
+                    radius=r_bot,
+                    facecolor="none",
+                    edgecolor="tab:blue",
+                    linewidth=1.3,
+                )
+            )
+
+    # top bars
+    if nb_top > 0 and db_top > 0:
+        min_spacing_top = 2.0 * db_top
+        top_layout = _layout_bars_in_rows(
+            n_bars=nb_top,
+            b=b,
+            cover=cover_top,
+            db=db_top,
+            min_spacing=min_spacing_top,
+            n_rows_max=2,
+        )
+        r_top = db_top / 2.0
+        y_top_base = cover_top + r_top
+        row_pitch_top = db_top + 10.0
+        for x_rel, row_idx in top_layout:
+            x = x_rel
+            y = y_top_base + row_idx * row_pitch_top
+            ax.add_patch(
+                Circle(
+                    (x, y),
+                    radius=r_top,
+                    facecolor="none",
+                    edgecolor="tab:red",
+                    linewidth=1.3,
+                )
+            )
+
+    # neutral axis line
+    if c is not None and not math.isnan(c) and c > 0:
+        ax.axhline(c, color="tab:red", linestyle="--", linewidth=1.0)
+        ax.text(
+            b + 5,
+            c,
+            f"c = {c:.0f} mm",
+            va="center",
+            fontsize=8,
+            color="tab:red",
+        )
+
+    # lever arm arrow (simplified: from ~0.5a to d)
+    if z is not None and not math.isnan(z) and z > 0 and d is not None:
+        y_cg = (a or 0.0) / 2.0
+        x0 = b + 10
+        ax.annotate(
+            "",
+            xy=(x0, d),
+            xytext=(x0, y_cg),
+            arrowprops=dict(arrowstyle="<->", color="black", linewidth=1.0),
+        )
+        ax.text(
+            x0 + 5,
+            (d + y_cg) / 2.0,
+            f"z = {z:.0f} mm",
+            va="center",
+            fontsize=8,
+        )
+
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    if title:
+        ax.set_title(title, fontsize=10)
+
+    fig.tight_layout()
+    return fig
+
+
+def _make_uls_stress_block_figure(c, d, gamma, fsy, show_lever_arm=False):
+    """
+    Simple standalone stress-block figure for the ULS step-by-step tab.
+    This is a schematic only (not to scale in stress).
+    """
+    if c is None or math.isnan(c) or c <= 0 or d is None or d <= 0:
+        # fall back to simple dummy
+        c = 200.0
+        d = 450.0
+    gamma = gamma or 0.85
+    a = gamma * c
+
+    # choose a plotting depth
+    D_plot = max(d + 0.2 * d, c + a + 0.2 * d)
+
+    fig, ax = plt.subplots(figsize=(4, 4))
+
+    # coordinates:
+    # y from top (0) downwards, invert later
+    ax.set_xlim(-10, 120)
+    ax.set_ylim(D_plot + 20, -20)
+
+    # vertical axis at x = 0
+    ax.plot([0, 0], [0, D_plot], color="black", linewidth=1.0)
+
+    # compression block at top
+    block_width = 40.0
+    ax.add_patch(
+        Rectangle(
+            (0, 0),
+            block_width,
+            a,
+            facecolor="#c7e3ff",
+            edgecolor="tab:red",
+            linewidth=1.2,
+        )
+    )
+
+    # NA line at depth c
+    ax.axhline(c, color="tab:red", linestyle="--", linewidth=1.0)
+    ax.text(
+        block_width + 5,
+        c,
+        f"c = {c:.0f} mm",
+        va="center",
+        fontsize=8,
+        color="tab:red",
+    )
+
+    # label gamma c
+    ax.annotate(
+        "",
+        xy=(block_width + 15, a),
+        xytext=(block_width + 15, 0),
+        arrowprops=dict(arrowstyle="<->", color="tab:red", linewidth=1.0),
+    )
+    ax.text(
+        block_width + 20,
+        a / 2.0,
+        f"γc = {a:.0f} mm",
+        va="center",
+        fontsize=8,
+        color="tab:red",
+    )
+
+    # tension force arrow at depth d
+    xT0 = 0.0
+    xT1 = 80.0
+    ax.annotate(
+        "",
+        xy=(xT1, d),
+        xytext=(xT0, d),
+        arrowprops=dict(arrowstyle="->", color="tab:blue", linewidth=1.4),
+    )
+    ax.text(
+        xT1 + 5,
+        d,
+        "T = Ast fsy",
+        va="center",
+        fontsize=8,
+        color="tab:blue",
+    )
+
+    # lever arm between compression resultant and T
+    if show_lever_arm:
+        yC = a / 2.0
+        xz = xT1 + 10.0
+        ax.annotate(
+            "",
+            xy=(xz, d),
+            xytext=(xz, yC),
+            arrowprops=dict(arrowstyle="<->", color="black", linewidth=1.0),
+        )
+        z_val = d - yC
+        ax.text(
+            xz + 5,
+            (d + yC) / 2.0,
+            f"z ≈ {z_val:.0f} mm",
+            va="center",
+            fontsize=8,
+        )
+
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_title("ULS stress-block schematic", fontsize=10)
+    fig.tight_layout()
+    return fig
+
 
 # ------------------------------------------------------------
 #  PAGE RENDER
@@ -1156,7 +1436,7 @@ def render_bending():
     fig_ss = _plot_stress_strain_profiles(ss_state)
     st.pyplot(fig_ss, use_container_width=True)
 
-       # ============================================================
+    # ============================================================
     #  STEP-BY-STEP TABS (ULS / SLS)
     # ============================================================
     tab_uls, tab_sls = st.tabs(["ULS step-by-step", "SLS step-by-step"])
@@ -1435,12 +1715,6 @@ def render_bending():
         else:
             st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
 
-    # ----- SLS detailed tab (unchanged) -----
-    with tab_sls:
-        st.subheader("SLS Bending – Cracked Section (Teaching Model)")
-        # ... keep your existing SLS code here ...
-
-
     # ----- SLS detailed tab -----
     with tab_sls:
         st.subheader("SLS Bending – Cracked Section (Teaching Model)")
@@ -1521,7 +1795,3 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
-
-
-
-
