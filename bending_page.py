@@ -788,6 +788,9 @@ def _plot_stress_strain_profiles(state_dict):
 # ------------------------------------------------------------
 #  PAGE RENDER
 # ------------------------------------------------------------
+# ------------------------------------------------------------
+#  PAGE RENDER
+# ------------------------------------------------------------
 def render_bending():
     st.title("Bending Capacity")
 
@@ -1204,9 +1207,7 @@ def render_bending():
     st.markdown("---")
 
     # ============================================================
-        # ============================================================
     #  DETAILED SUMMARY (TABLE) + SECTION & STRESS–STRAIN DIAGRAMS
-    #  Table on its own row, diagrams underneath in two columns
     # ============================================================
     st.subheader("Bending Capacity – Detailed Summary (values only)")
 
@@ -1228,11 +1229,9 @@ def render_bending():
     ]
 
     df_summary = pd.DataFrame(rows)
-
-    # Table full width (nice and readable)
     st.dataframe(df_summary, hide_index=True, use_container_width=True)
 
-      # --- Diagrams: section + strain + stress-block in ONE figure ---
+    # --- Diagrams: section + strain + stress-block in ONE figure ---
     st.markdown("### Section & stress–strain model")
 
     strain_state = st.radio(
@@ -1243,8 +1242,7 @@ def render_bending():
     )
 
     ss_state = _stress_strain_state(strain_state)
-    fig_ss = _plot_stress_strain_profiles(ss_state)  # now returns 3 panels:
-                                                     # section + strain + stress
+    fig_ss = _plot_stress_strain_profiles(ss_state)  # 3 panels: section + strain + stress
     st.pyplot(fig_ss, use_container_width=True)
 
     # ============================================================
@@ -1451,40 +1449,14 @@ def render_bending():
                     rf"and $(M_{{uo}})_{{min}} \approx {Muo_min:.2f}\,\text{{ kNm}}$."
                 )
 
-            # RIGHT: diagrams
+            # RIGHT: no diagrams here now – they live in main section above
             with col_fig:
                 st.markdown(
-                    "<div style='margin-top:-4rem;'></div>",
+                    "<div style='margin-top:1rem; font-size:0.9rem; color:#666;'>"
+                    "Diagrams are shown in the main <em>Section & stress–strain model</em> area above."
+                    "</div>",
                     unsafe_allow_html=True,
                 )
-
-                sec_fig = _make_cross_section_figure(
-                    b,
-                    D,
-                    d,
-                    a,
-                    nb_bot,
-                    db_bot,
-                    cover_bot,
-                    nb_top=nb_top,
-                    db_top=db_top,
-                    cover_top=cover_top,
-                    c=c,
-                    z=z,
-                )
-                if sec_fig is not None:
-                    st.pyplot(sec_fig, use_container_width=True)
-                    plt.close(sec_fig)
-
-                st.markdown(
-                    "<div style='margin-top:3rem;'></div>",
-                    unsafe_allow_html=True,
-                )
-
-                stress_fig = _make_stress_figure(alpha2_sb, gamma_sb)
-                if stress_fig is not None:
-                    st.pyplot(stress_fig, use_container_width=True)
-                    plt.close(stress_fig)
 
         else:
             st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
@@ -1565,16 +1537,4 @@ def render_bending():
     # Optional debug
     with st.expander("Debug: raw session_state (optional)"):
         st.write(dict(st.session_state))
-
-
-
-if __name__ == "__main__":
-    render_bending()
-
-
-
-
-
-
-
 
