@@ -1524,7 +1524,7 @@ def render_bending():
             st.markdown("### 1. Required calculated inputs for bending")
             col1_text, col1_fig = st.columns([3, 2])
 
-            with col1_text:
+                        with col1_text:
                 st.markdown("#### 1.1 Effective depth $d$ to tensile centroid")
                 st.markdown(
                     "Effective depth $d$ is measured to the **centroid** of the "
@@ -1532,27 +1532,76 @@ def render_bending():
                     "often approximated as:"
                 )
 
-                # Traditional textbook-format calculation for a single row
+                # Pull values for the worked example
                 D_val = D or 0.0
                 cover_bot_val = cover_bot or 0.0
                 db_bot_val = db_bot or 0.0
-                d_single = D_val - cover_bot_val - db_bot_val / 2.0
+                nb_bot_val = int(nb_bot) if nb_bot is not None else 0
+                rowgap_bot_val = get_param("rowgap_bot") or 25.0
+                b_val = b or 300.0
 
-                # Symbolic expression
-                st.latex(
-                    r"d \approx D - \text{cover}_{bot} - \dfrac{d_{b,bot}}{2}"
-                )
+                # Work out whether the layout actually has a second row
+                has_second_row = False
+                if nb_bot_val > 0 and db_bot_val > 0 and b_val > 0:
+                    min_spacing_bot = 2.0 * db_bot_val
+                    layout_bot_for_d = _layout_bars_in_rows(
+                        n_bars=nb_bot_val,
+                        b=b_val,
+                        cover=cover_bot_val,
+                        db=db_bot_val,
+                        min_spacing=min_spacing_bot,
+                        n_rows_max=2,
+                    )
+                    has_second_row = any(row_idx == 1 for _, row_idx in layout_bot_for_d)
 
-                # Substitution with numbers
-                st.latex(
-                    rf"d \approx {D_val:.1f} - {cover_bot_val:.1f} - "
-                    rf"\dfrac{{{db_bot_val:.1f}}}{{2}}"
-                )
+                # --- Case A: single bottom row (traditional shortcut) ---
+                if not has_second_row:
+                    # Symbolic expression
+                    st.latex(
+                        r"d \approx D - \text{cover}_{bot} - \dfrac{d_{b,bot}}{2}"
+                    )
+                    # Substitution with numbers
+                    st.latex(
+                        rf"d \approx {D_val:.1f} - {cover_bot_val:.1f} - "
+                        rf"\dfrac{{{db_bot_val:.1f}}}{{2}}"
+                    )
+                    # Numerical result
+                    d_single = D_val - cover_bot_val - db_bot_val / 2.0
+                    st.latex(rf"d \approx {d_single:.1f}\,\text{{ mm}}")
 
-                # Numerical result of the simple single-row approximation
-                st.latex(rf"d \approx {d_single:.1f}\,\text{{ mm}}")
+                # --- Case B: two bottom rows – centroid of two rows ---
+                else:
+                    # First row depth d1
+                    st.latex(
+                        r"d_1 = D - \text{cover}_{bot} - \dfrac{d_{b,bot}}{2}"
+                    )
+                    st.latex(
+                        rf"d_1 = {D_val:.1f} - {cover_bot_val:.1f} - "
+                        rf"\dfrac{{{db_bot_val:.1f}}}{{2}}"
+                    )
+                    d1 = D_val - cover_bot_val - db_bot_val / 2.0
+                    st.latex(rf"d_1 = {d1:.1f}\,\text{{ mm}}")
 
-                # Then clarify what the app actually uses (centroid of all bottom bars)
+                    # Second row depth d2
+                    st.latex(
+                        r"d_2 = d_1 - \left(d_{b,bot} + \text{rowgap}_{bot}\right)"
+                    )
+                    st.latex(
+                        rf"d_2 = {d1:.1f} - ({db_bot_val:.1f} + {rowgap_bot_val:.1f})"
+                    )
+                    pitch = db_bot_val + rowgap_bot_val
+                    d2 = d1 - pitch
+                    st.latex(rf"d_2 = {d2:.1f}\,\text{{ mm}}")
+
+                    # Centroid of the two rows
+                    st.latex(r"d \approx \dfrac{d_1 + d_2}{2}")
+                    st.latex(
+                        rf"d \approx \dfrac{{{d1:.1f} + {d2:.1f}}}{2}"
+                    )
+                    d_two_rows = 0.5 * (d1 + d2)
+                    st.latex(rf"d \approx {d_two_rows:.1f}\,\text{{ mm}}")
+
+                # Finally, state what the app actually uses
                 st.markdown(
                     "For the **current bottom bar layout** (including any second row), "
                     "the app uses the centroid of all bottom bars, giving:  \n"
@@ -1561,13 +1610,12 @@ def render_bending():
 
                 st.markdown("#### 1.2 Bottom steel area $A_{st,bot}$")
                 st.latex(r"A_{st,bot} = n_{b,bot}\,\dfrac{\pi d_{b,bot}^2}{4}")
-
-                nb_bot_val = int(nb_bot) if nb_bot is not None else 0
                 st.latex(
                     rf"A_{{st,bot}} = {nb_bot_val:d}\,"
                     rf"\dfrac{{\pi \times {db_bot_val:.1f}^2}}{4}"
                 )
                 st.latex(rf"A_{{st,bot}} = {Ast:.1f}\,\text{{ mm}}^2")
+
 
             with col1_fig:
                 fig_uls_sec1 = _make_cross_section_figure(
@@ -1901,6 +1949,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
