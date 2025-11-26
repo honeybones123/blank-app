@@ -425,13 +425,13 @@ def _plot_stress_strain_profiles(state_dict):
     fc = state_dict["fc"]
     alpha2 = state_dict["alpha2"]
 
-    state_label = state_dict.get("state_label", "ULS")
-    if state_label == "ULS":
-        section_title = "Section (ULS view)"
-    elif "SLS" in state_label:
-        section_title = "Section (SLS cracked view)"
-    else:
-        section_title = "Section (uncracked view)"
+if state_label == "ULS":
+    section_title = "Section (ULS view – TEST)"
+elif "SLS" in state_label:
+    section_title = "Section (SLS cracked – TEST)"
+else:
+    section_title = "Section (uncracked – TEST)"
+
 
     # ---- reinforcement & cover from app (with safe fallbacks) ----
     nb_bot = int(get_param("nb_bot") or 4)
@@ -1638,6 +1638,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
