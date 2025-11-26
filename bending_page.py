@@ -884,10 +884,9 @@ def _make_cross_section_figure(
     """
     Step-by-step cross-section diagram.
 
-    Draws only the section and reo – NO outer border/frame – so that
-    it visually matches the main ULS section diagram.
+    Draws only the section and reo – NO outer border/frame.
 
-    Arrows:
+    Arrows/labels:
         - "NA = ..." at the neutral axis depth c
         - "d = ..." at the tensile centroid depth d
     """
@@ -901,18 +900,15 @@ def _make_cross_section_figure(
     db_top = db_top or 0
     cover_top = cover_top or 0
 
-    # figure
     fig, ax = plt.subplots(figsize=(3, 6))
 
-    # Allow some right-hand space for NA/d arrows
+    # extra room on the right for arrows
     ax.set_xlim(0, b + 80.0)
     ax.set_ylim(D, 0)
     ax.set_aspect("equal")
-
-    # turn off axes box completely
     ax.axis("off")
 
-    # outer concrete section
+    # concrete outline
     ax.add_patch(
         Rectangle(
             (0, 0),
@@ -924,7 +920,7 @@ def _make_cross_section_figure(
         )
     )
 
-    # compression block at top
+    # compression block + NA line
     if show_compression and a is not None and c is not None:
         block_depth = max(0.0, min(a, D))
         ax.add_patch(
@@ -939,7 +935,6 @@ def _make_cross_section_figure(
             )
         )
 
-        # NA dashed line
         ax.hlines(
             c,
             0,
@@ -1009,7 +1004,8 @@ def _make_cross_section_figure(
                 )
             )
 
-    # arrows for NA (c) and d (tensile centroid)
+    # --- arrows on the right ---
+
     # NA arrow + label
     if c is not None:
         x_na = b + 10.0
@@ -1027,7 +1023,7 @@ def _make_cross_section_figure(
             color="tab:red",
         )
 
-    # d arrow + label (depth to centroid of tension steel)
+    # d arrow + label (to tensile centroid)
     if d is not None:
         x_d = b + 40.0
         ax.annotate(
@@ -1588,27 +1584,100 @@ def render_bending():
             st.markdown("### 1. Required calculated inputs for bending")
             col1_text, col1_fig = st.columns([3, 2])
 
-            with col1_text:
-                st.markdown("#### 1.1 Effective depth $d$ to tensile centroid")
-                st.markdown(
-                    "Effective depth $d$ is measured to the **centroid** of the "
-                    "bottom tensile reinforcement. For a single row of bars this is "
-                    "often approximated as:"
+                    with col1_text:
+            st.markdown("#### 1.1 Effective depth $d$ to tensile centroid")
+
+            # local copies (they should all be non-None here)
+            D_loc = D or 0.0
+            cover_bot_loc = cover_bot or 0.0
+            db_bot_loc = db_bot or 0.0
+            rowgap_bot_loc = get_param("rowgap_bot") or 25.0
+            nb_bot_loc = int(nb_bot or 0)
+
+            # depth to first (bottom) row centre
+            d1 = D_loc - cover_bot_loc - db_bot_loc / 2.0
+
+            # how many bars per row (same logic as layout helper)
+            min_spacing_bot = 2.0 * db_bot_loc if db_bot_loc > 0 else 0.0
+            layout_bot = _layout_bars_in_rows(
+                n_bars=nb_bot_loc,
+                b=b or 0.0,
+                cover=cover_bot_loc,
+                db=db_bot_loc,
+                min_spacing=min_spacing_bot,
+                n_rows_max=2,
+            )
+            n_row0 = sum(1 for _, row_idx in layout_bot if row_idx == 0)
+            n_row1 = sum(1 for _, row_idx in layout_bot if row_idx == 1)
+
+            st.markdown(
+                "Effective depth $d$ is measured to the **centroid** of the "
+                "bottom tension reinforcement. For a general two-row layout "
+                "we treat each row as a line of bars and take the centroid."
+            )
+
+            # --- one-row case ---
+            if n_row1 == 0:
+                st.markdown("**Single bottom row** (no second row used):")
+                st.latex(
+                    r"d = D - \text{cover}_{bot} - \dfrac{d_{b,bot}}{2}"
                 )
-                st.latex(r"d \approx D - \text{cover}_{bot} - \frac{d_{b,bot}}{2}")
+                st.latex(
+                    rf"d = {D_loc:.1f} - {cover_bot_loc:.1f}"
+                    rf" - \dfrac{{{db_bot_loc:.1f}}}{{2}}"
+                    rf" = {d1:.1f}\,\text{{ mm}}"
+                )
                 st.markdown(
-                    f"For the current bottom bar layout (including any second row), "
-                    f"the app calculates:  \n"
-                    f"**d = {d:.1f}\\,\\text{{ mm}}**."
+                    f"So the app uses **d = {d:.1f} mm** (to the centroid of "
+                    "the single bottom row)."
                 )
 
-                st.markdown("#### 1.2 Bottom steel area $A_{st,bot}$")
-                st.latex(r"A_{st,bot} = n_{b,bot}\,\frac{\pi d_{b,bot}^2}{4}")
+            # --- two-row centroid case ---
+            else:
+                pitch = db_bot_loc + rowgap_bot_loc
+                d2 = d1 - pitch
+
+                st.markdown("**Two bottom rows** – centroid of both rows:")
                 st.latex(
-                    rf"A_{{st,bot}} = {int(nb_bot):d}\,"
-                    rf"\frac{{\pi \times {db_bot:.1f}^2}}{4}"
+                    r"d_1 = D - \text{cover}_{bot} - \dfrac{d_{b,bot}}{2}"
                 )
-                st.latex(rf"A_{{st,bot}} = {Ast:.1f}\,\text{{ mm}}^2")
+                st.latex(
+                    rf"d_1 = {D_loc:.1f} - {cover_bot_loc:.1f}"
+                    rf" - \dfrac{{{db_bot_loc:.1f}}}{{2}}"
+                    rf" = {d1:.1f}\,\text{{ mm}}"
+                )
+
+                st.latex(
+                    r"d_2 = d_1 - \big(d_{b,bot} + \text{rowgap}_{bot}\big)"
+                )
+                st.latex(
+                    rf"d_2 = {d1:.1f}"
+                    rf" - \big({db_bot_loc:.1f} + {rowgap_bot_loc:.1f}\big)"
+                    rf" = {d2:.1f}\,\text{{ mm}}"
+                )
+
+                st.latex(
+                    r"d = \dfrac{n_1 d_1 + n_2 d_2}{n_1 + n_2}"
+                )
+                st.latex(
+                    rf"d = \dfrac{{{n_row0:d} \times {d1:.1f}"
+                    rf" + {n_row1:d} \times {d2:.1f}}}{{{n_row0 + n_row1:d}}}"
+                    rf" = {d:.1f}\,\text{{ mm}}"
+                )
+
+                st.markdown(
+                    f"So the app uses **d = {d:.1f} mm** to the centroid of "
+                    "the two-row bottom steel layout."
+                )
+
+            st.markdown("#### 1.2 Bottom steel area $A_{st,bot}$")
+            st.latex(r"A_{st,bot} = n_{b,bot}\,\frac{\pi d_{b,bot}^2}{4}")
+            st.latex(
+                rf"A_{{st,bot}} = {int(nb_bot):d}\,"
+                rf"\frac{{\pi \times {db_bot:.1f}^2}}{4}"
+            )
+            st.latex(rf"A_{{st,bot}} = {Ast:.1f}\,\text{{ mm}}^2")
+
 
             with col1_fig:
                 fig_uls_sec1 = _make_cross_section_figure(
@@ -1935,5 +2004,6 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
 
 
