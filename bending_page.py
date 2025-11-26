@@ -407,13 +407,15 @@ def _plot_stress_strain_profiles(state_dict):
       2) Strain profile (centre)
       3) Stress-block profile (right)
 
-    The section panel has aspect = 'equal' so the bars stay circular.
-    Strain and stress panels use their own x-scales.
+    The section panel has aspect = 'equal' so the bars stay circular and
+    the section is to scale.  The *overall* figure height/width are scaled
+    with D and b so the plotting actually looks deeper/wider when the
+    section changes.
     """
 
     # ---- unpack state from _stress_strain_state ----
-    b = state_dict["b"]
-    D = state_dict["D"]
+    b = float(state_dict["b"])
+    D = float(state_dict["D"])
     d = state_dict["d"]          # centroid depth (mm)
     c = state_dict["c"]          # NA depth (mm)
     eps_c = state_dict["eps_c"]  # top strain
@@ -448,12 +450,22 @@ def _plot_stress_strain_profiles(state_dict):
     stress_max = max(sigma_c, sigma_s, 1.0) * 1.2
 
     # =====================================================
-    #  CREATE 3 SUBPLOTS SIDE-BY-SIDE
+    #  FIGURE SIZE SCALED WITH b AND D
     # =====================================================
+    ref_D = 300.0
+    ref_b = 300.0
+    depth_scale = max(D / ref_D, 0.4)    # clamp so tiny beams don't vanish
+    width_scale = max(b / ref_b, 0.4)
+
+    base_fig_w = 9.0
+    base_fig_h = 3.5
+    fig_w = base_fig_w * min(width_scale, 2.0)   # cap extremes
+    fig_h = base_fig_h * min(depth_scale, 2.0)
+
     fig, (ax_sec, ax_str, ax_stress) = plt.subplots(
         1,
         3,
-        figsize=(9, 3.5),
+        figsize=(fig_w, fig_h),
         gridspec_kw={"width_ratios": [1.25, 1.0, 1.25]},
     )
 
@@ -472,9 +484,11 @@ def _plot_stress_strain_profiles(state_dict):
     # -----------------------------------------------------
     # 1) CROSS-SECTION PANEL – LEFT
     # -----------------------------------------------------
-    # Tight-ish x-range but with room for arrows on the right
-    ax_sec.set_xlim(-10, b + 60)
-    ax_sec.set_aspect("equal", adjustable="box")  # keeps section to scale
+    # Give a little margin on left/right for arrows, but everything in mm
+    margin_left = 10.0
+    margin_right = 60.0
+    ax_sec.set_xlim(-margin_left, b + margin_right)
+    ax_sec.set_aspect("equal", adjustable="box")  # <- TRUE SCALE IN mm
     ax_sec.spines["left"].set_visible(True)
     ax_sec.set_ylabel("Depth (mm)")
 
@@ -522,7 +536,7 @@ def _plot_stress_strain_profiles(state_dict):
         ax_sec.scatter(
             [x],
             [y],
-            s=db_bot**2,
+            s=db_bot**2,   # marker size in pt² – just a visual proxy for bar dia
             facecolors="none",
             edgecolors="tab:blue",
             linewidths=1.3,
@@ -714,6 +728,7 @@ def _plot_stress_strain_profiles(state_dict):
 
     fig.tight_layout()
     return fig
+
 
 
 # ===== END PART 3 =====
@@ -1627,6 +1642,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
