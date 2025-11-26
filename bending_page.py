@@ -1524,7 +1524,7 @@ def render_bending():
             st.markdown("### 1. Required calculated inputs for bending")
             col1_text, col1_fig = st.columns([3, 2])
 
-                        with col1_text:
+                 with col1_text:
                 st.markdown("#### 1.1 Effective depth $d$ to tensile centroid")
                 st.markdown(
                     "Effective depth $d$ is measured to the **centroid** of the "
@@ -1615,7 +1615,6 @@ def render_bending():
                     rf"\dfrac{{\pi \times {db_bot_val:.1f}^2}}{4}"
                 )
                 st.latex(rf"A_{{st,bot}} = {Ast:.1f}\,\text{{ mm}}^2")
-
 
             with col1_fig:
                 fig_uls_sec1 = _make_cross_section_figure(
@@ -1949,6 +1948,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
