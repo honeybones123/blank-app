@@ -404,29 +404,28 @@ def _stress_strain_state(state: str):
 # ------------------------------------------------------------
 def _plot_stress_strain_profiles(state_dict):
     """
-    Single-axis figure with three panels laid out in X:
+    THREE-PANEL FIGURE:
 
-        - Section (ULS / SLS / Uncracked) – left
-        - Strain profile                  – centre
-        - Stress-block profile            – right
+      1) Section (left) – real geometry + reo
+      2) Strain profile (centre)
+      3) Stress-block profile (right)
 
-    Uses real geometry / reo from the main app so it updates with inputs.
-    d in the state_dict is the depth to the CENTROID of bottom steel.
+    The section panel has aspect = 'equal' so the bars stay circular.
+    Strain and stress panels use their own x-scales.
     """
 
-    # --- unpack state from _stress_strain_state ---
+    # ---- unpack state from _stress_strain_state ----
     b = state_dict["b"]
     D = state_dict["D"]
-    d = state_dict["d"]          # centroid depth
-    c = state_dict["c"]
-    eps_c = state_dict["eps_c"]
-    eps_s = state_dict["eps_s"]
+    d = state_dict["d"]          # centroid depth (mm)
+    c = state_dict["c"]          # NA depth (mm)
+    eps_c = state_dict["eps_c"]  # top strain
+    eps_s = state_dict["eps_s"]  # bottom steel strain
     gamma = state_dict["gamma"]
-    fs_t = state_dict["fs_t"]
+    fs_t = state_dict["fs_t"]    # steel stress (MPa)
     fc = state_dict["fc"]
     alpha2 = state_dict["alpha2"]
 
-    # Optional label for dynamic title
     state_label = state_dict.get("state_label", "ULS")
     if state_label == "ULS":
         section_title = "Section (ULS view)"
@@ -435,77 +434,53 @@ def _plot_stress_strain_profiles(state_dict):
     else:
         section_title = "Section (uncracked view)"
 
-    # --- reinforcement & cover from app (with safe fallbacks) ---
-    nb_bot = get_param("nb_bot") or 4
-    db_bot = get_param("db_bot") or 20.0
-    cover_bot = get_param("cover_bot") or 40.0
-    nb_top = get_param("nb_top") or 2
-    db_top = get_param("db_top") or 16.0
-    cover_top = get_param("cover_top") or 40.0
-    rowgap_bot = get_param("rowgap_bot") or 25.0
-    rowgap_top = get_param("rowgap_top") or 25.0
+    # ---- reinforcement & cover from app (with safe fallbacks) ----
+    nb_bot = int(get_param("nb_bot") or 4)
+    db_bot = float(get_param("db_bot") or 20.0)
+    cover_bot = float(get_param("cover_bot") or 40.0)
+    nb_top = int(get_param("nb_top") or 2)
+    db_top = float(get_param("db_top") or 16.0)
+    cover_top = float(get_param("cover_top") or 40.0)
+    rowgap_bot = float(get_param("rowgap_bot") or 25.0)
+    rowgap_top = float(get_param("rowgap_top") or 25.0)
 
-    nb_bot = int(nb_bot)
-    nb_top = int(nb_top)
-
-    # scaling for strain & stress (horizontal only)
+    # ---- scaling for strain & stress (horizontal only) ----
     eps_max = max(abs(eps_c), abs(eps_s), 1e-4) * 1.3
-    sigma_c = alpha2 * fc           # compression block stress (for label)
-    sigma_s = abs(fs_t)             # steel stress (for label & arrow length)
-    stress_max = max(sigma_c, sigma_s, 1.0)
-
-    # ----------------- layout in X -----------------
-    gap = 150.0
-
-    # section panel (left)
-    x0_sec = 0.0
-    x1_sec = x0_sec + b + 200.0  # extra for arrows
-
-    # strain panel (centre)
-    panel_w_strain = 200.0
-    x0_strain = x1_sec + gap
-    x1_strain = x0_strain + panel_w_strain
-    x_mid_strain = (x0_strain + x1_strain) / 2.0
-
-    # stress panel (right)
-    panel_w_stress = 260.0
-    x0_stress = x1_strain + gap
-    x1_stress = x0_stress + panel_w_stress
-
-    total_x_max = x1_stress + 40.0
-
-    # mapping helpers
-    def strain_to_x(eps):
-        half_w = panel_w_strain * 0.4
-        return x_mid_strain + (eps / eps_max) * half_w
-
-    def stress_to_x(sig):
-        return x0_stress + (sig / stress_max) * (panel_w_stress * 0.8)
-
-    # --- create figure ---
-    fig, ax = plt.subplots(figsize=(9, 3.5))
-
-    # common depth scale (same D for all three panels)
-    ax.set_ylim(D, 0)
-    ax.set_xlim(0, total_x_max)
-
-    # IMPORTANT: keep 1:1 geometry so circles are actually circles.
-    ax.set_aspect("equal", adjustable="box")
-
-    # tidy up axes
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["bottom"].set_visible(False)
-    ax.spines["left"].set_visible(False)
-    ax.tick_params(left=True, labelleft=True, bottom=False, labelbottom=False)
+    sigma_c = alpha2 * fc                # compression block stress
+    sigma_s = abs(fs_t)                  # steel stress
+    stress_max = max(sigma_c, sigma_s, 1.0) * 1.2
 
     # =====================================================
-    # 1) CROSS-SECTION – LEFT
+    #  CREATE 3 SUBPLOTS SIDE-BY-SIDE
     # =====================================================
-    # outline
-    ax.add_patch(
+    fig, (ax_sec, ax_str, ax_stress) = plt.subplots(
+        1,
+        3,
+        figsize=(9, 3.5),
+        sharey=True,
+        gridspec_kw={"width_ratios": [1.25, 1.0, 1.25]},
+    )
+
+    # Common depth scale
+    for ax in (ax_sec, ax_str, ax_stress):
+        ax.set_ylim(D, 0)
+        ax.tick_params(axis="y", labelsize=8)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["bottom"].set_visible(False)
+
+    # -----------------------------------------------------
+    # 1) CROSS-SECTION PANEL – LEFT
+    # -----------------------------------------------------
+    ax_sec.set_xlim(-10, b + 110)
+    ax_sec.set_aspect("equal", adjustable="box")  # <- keeps bars circular
+    ax_sec.spines["left"].set_visible(True)
+    ax_sec.set_ylabel("Depth (mm)")
+
+    # section outline
+    ax_sec.add_patch(
         Rectangle(
-            (x0_sec, 0),
+            (0, 0),
             b,
             D,
             fill=False,
@@ -516,9 +491,9 @@ def _plot_stress_strain_profiles(state_dict):
 
     # compression zone (0 → γc)
     block_depth = max(0.0, min(gamma * c, D))
-    ax.add_patch(
+    ax_sec.add_patch(
         Rectangle(
-            (x0_sec, 0),
+            (0, 0),
             b,
             block_depth,
             facecolor="#c7e3ff",
@@ -528,7 +503,7 @@ def _plot_stress_strain_profiles(state_dict):
         )
     )
 
-    # bottom bars (with row wrapping) – drawn with scatter so they stay round
+    # bottom bars (with possible 2nd row)
     min_spacing_bot = 2.0 * db_bot
     bot_layout = _layout_bars_in_rows(
         n_bars=nb_bot,
@@ -538,23 +513,22 @@ def _plot_stress_strain_profiles(state_dict):
         min_spacing=min_spacing_bot,
         n_rows_max=2,
     )
+    d_row0 = D - cover_bot - db_bot / 2.0
     row_pitch_bot = db_bot + rowgap_bot
-    d_row0 = D - cover_bot - db_bot / 2.0  # depth to first row
-
     for x_rel, row_idx in bot_layout:
-        x = x0_sec + x_rel
+        x = x_rel
         y = d_row0 - row_idx * row_pitch_bot
-        ax.scatter(
+        ax_sec.scatter(
             [x],
             [y],
-            s=(db_bot ** 2),
+            s=db_bot**2,
             facecolors="none",
             edgecolors="tab:blue",
             linewidths=1.3,
             zorder=3,
         )
 
-    # top bars (with row wrapping) – also scatter markers
+    # top bars
     min_spacing_top = 2.0 * db_top
     top_layout = _layout_bars_in_rows(
         n_bars=nb_top,
@@ -566,47 +540,45 @@ def _plot_stress_strain_profiles(state_dict):
     )
     y_top_base = cover_top + db_top / 2.0
     row_pitch_top = db_top + rowgap_top
-
     for x_rel, row_idx in top_layout:
-        x = x0_sec + x_rel
+        x = x_rel
         y = y_top_base + row_idx * row_pitch_top
-        ax.scatter(
+        ax_sec.scatter(
             [x],
             [y],
-            s=(db_top ** 2),
+            s=db_top**2,
             facecolors="none",
             edgecolors="tab:red",
             linewidths=1.3,
             zorder=3,
         )
 
-    # ---- d arrow & label (inner) ----
-    x_d = x0_sec + b + 40.0  # first arrow just outside the section
-    ax.annotate(
+    # d arrow
+    x_d = b + 30.0
+    ax_sec.annotate(
         "",
         xy=(x_d, d),
         xytext=(x_d, 0),
         arrowprops=dict(arrowstyle="<->", linewidth=1.0),
     )
-    ax.text(
-        x_d + 12.0,
+    ax_sec.text(
+        x_d + 5.0,
         d / 2.0,
         f"d ({d:.0f} mm)",
         va="center",
         fontsize=9,
     )
 
-    # ---- NA arrow & label (closer to d to save width) ----
-    na_gap = 40.0  # reduced from 80 so NA arrow is closer to d
-    x_na = x_d + na_gap
-    ax.annotate(
+    # NA arrow
+    x_na = b + 70.0
+    ax_sec.annotate(
         "",
         xy=(x_na, c),
         xytext=(x_na, 0),
         arrowprops=dict(arrowstyle="<->", linewidth=1.0),
     )
-    ax.text(
-        x_na + 12.0,
+    ax_sec.text(
+        x_na + 5.0,
         c / 2.0,
         f"NA = {c:.0f} mm",
         va="center",
@@ -614,56 +586,41 @@ def _plot_stress_strain_profiles(state_dict):
         color="tab:red",
     )
 
-    # section title
-    ax.text(
-        x0_sec + b / 2.0,
-        -0.13 * D,
-        section_title,
-        ha="center",
-        va="top",
-        fontsize=10,
-    )
+    ax_sec.set_title(section_title, fontsize=10)
 
-    ax.set_ylabel("Depth (mm)")
-
-    # =====================================================
+    # -----------------------------------------------------
     # 2) STRAIN PROFILE – MIDDLE
-    # =====================================================
-    # vertical axis
-    ax.plot(
-        [x_mid_strain, x_mid_strain],
-        [0, D],
-        color="black",
-        linewidth=1.0,
-    )
+    # -----------------------------------------------------
+    ax_str.set_xlim(-eps_max, eps_max)
+    ax_str.spines["left"].set_visible(False)
+    ax_str.axvline(0.0, color="black", linewidth=1.0)  # neutral vertical axis
 
-    # strain line
+    # strain line through (0, top), (0, NA), (eps_s, d)
     y_vals = np.array([0.0, c, d])
     eps_vals = np.array([eps_c, 0.0, eps_s])
-    x_vals = [strain_to_x(e) for e in eps_vals]
-    ax.plot(x_vals, y_vals, color="black")
+    ax_str.plot(eps_vals, y_vals, color="black")
 
-    # NA line over strain panel
-    ax.hlines(
+    # NA line
+    ax_str.hlines(
         c,
-        x0_strain - 10.0,
-        x1_strain + 10.0,
+        -eps_max,
+        eps_max,
         colors="black",
         linestyles="--",
         linewidth=0.8,
     )
 
-    # strain labels
-    ax.text(
-        strain_to_x(eps_c),
+    # labels
+    ax_str.text(
+        eps_c,
         0.0,
         rf"$\varepsilon_c = {eps_c:.4f}$",
         ha="right" if eps_c < 0 else "left",
         va="bottom",
         color="tab:red",
     )
-    ax.text(
-        strain_to_x(eps_s),
+    ax_str.text(
+        eps_s,
         d,
         rf"$\varepsilon_s = {eps_s:.4f}$",
         ha="left" if eps_s > 0 else "right",
@@ -671,90 +628,49 @@ def _plot_stress_strain_profiles(state_dict):
         color="tab:blue",
     )
 
-    ax.text(
-        x_mid_strain,
-        -0.13 * D,
-        "Strain Profile",
-        ha="center",
-        va="top",
-        fontsize=10,
-    )
-    ax.text(
-        x_mid_strain,
-        D + 0.14 * D,
-        "Strain",
-        ha="center",
-        va="bottom",
-        fontsize=9,
-    )
+    ax_str.set_title("Strain profile", fontsize=10)
+    ax_str.set_xlabel("Strain")
 
-    # =====================================================
+    # -----------------------------------------------------
     # 3) STRESS-BLOCK PROFILE – RIGHT
-    # =====================================================
-    # vertical axis
-    ax.plot(
-        [x0_stress, x0_stress],
-        [0, D],
-        color="black",
-        linewidth=1.0,
-    )
-
-    # Steel tension arrow (scaled with σ_s)
-    x_T = stress_to_x(sigma_s)
-    T_y = d
-    ax.annotate(
-        "",
-        xy=(x_T, T_y),
-        xytext=(x0_stress, T_y),
-        arrowprops=dict(arrowstyle="->", linewidth=1.4, color="tab:blue"),
-    )
-    ax.text(
-        x_T + 0.02 * panel_w_stress,
-        T_y,
-        f"T ({sigma_s:.0f} MPa)",
-        ha="left",
-        va="center",
-        color="tab:blue",
-    )
-
-    # Compression block width = fixed ratio of steel arrow
-    block_ratio = 1.0 / 3.0
-    block_width = (x_T - x0_stress) * block_ratio
-    x_block_right = x0_stress + block_width
+    # -----------------------------------------------------
+    ax_stress.set_xlim(0.0, stress_max)
+    ax_stress.spines["left"].set_visible(False)
+    ax_stress.axvline(0.0, color="black", linewidth=1.0)
 
     block_top = 0.0
     block_bottom = gamma * c
 
-    # block outline
-    ax.fill_between(
-        [x0_stress, x_block_right],
+    # compression block outline
+    ax_stress.fill_between(
+        [0.0, sigma_c],
         [block_top, block_top],
         [block_bottom, block_bottom],
-        edgecolor="tab:red",
         facecolor="none",
-        linewidth=1.5,
+        edgecolor="tab:red",
+        linewidth=1.3,
     )
 
-    # NA line over stress panel
-    ax.hlines(
+    # NA line
+    ax_stress.hlines(
         c,
-        x0_stress - 10.0,
-        x1_stress,
+        0.0,
+        stress_max,
         colors="black",
         linestyles="--",
         linewidth=0.8,
     )
 
-    # α2 f'c arrow & label (below arrow)
+    # α2 f'c arrow
     y_alpha = c + 0.05 * D
-    ax.annotate(
+    ax_stress.annotate(
         "",
-        xy=(x0_stress, y_alpha),
-        xytext=(x_block_right, y_alpha),
+        xy=(0.0, y_alpha),
+        xytext=(sigma_c, y_alpha),
         arrowprops=dict(arrowstyle="<->", linewidth=1.2, color="tab:red"),
     )
-    ax.text(
-        (x0_stress + x_block_right) / 2.0,
+    ax_stress.text(
+        sigma_c / 2.0,
         y_alpha + 0.08 * D,
         rf"$\alpha_2 f'_c = {sigma_c:.0f}\ \mathrm{{MPa}}$",
         ha="center",
@@ -762,53 +678,43 @@ def _plot_stress_strain_profiles(state_dict):
         color="tab:red",
     )
 
-    # γc arrow + value
-    x_gc = x_block_right + 0.12 * panel_w_stress
-    ax.annotate(
+    # γc arrow
+    x_gc = sigma_c * 1.05
+    ax_stress.annotate(
         "",
         xy=(x_gc, block_bottom),
         xytext=(x_gc, block_top),
         arrowprops=dict(arrowstyle="<->", linewidth=1.2, color="tab:red"),
     )
-    val_gammac = gamma * c
-    ax.text(
-        x_gc + 0.06 * panel_w_stress,
+    ax_stress.text(
+        x_gc * 1.03,
         (block_top + block_bottom) / 2.0,
-        rf"$\gamma c = {val_gammac:.0f}\ \mathrm{{mm}}$",
+        rf"$\gamma c = {gamma * c:.0f}\ \mathrm{{mm}}$",
         va="center",
         color="tab:red",
     )
 
-    # internal compression arrows (pointing left)
-    for frac in [0.25, 0.5, 0.75]:
-        y_mid = block_top + frac * (block_bottom - block_top)
-        ax.annotate(
-            "",
-            xy=(x0_stress + 0.15 * block_width, y_mid),
-            xytext=(x_block_right - 0.15 * block_width, y_mid),
-            arrowprops=dict(arrowstyle="<-", linewidth=1.0, color="tab:red"),
-        )
-
-    ax.text(
-        (x0_stress + x1_stress) / 2.0,
-        -0.13 * D,
-        "Stress-block Profile (AS3600 α₂–γ)",
-        ha="center",
-        va="top",
-        fontsize=10,
+    # steel tension arrow
+    ax_stress.annotate(
+        "",
+        xy=(sigma_s, d),
+        xytext=(0.0, d),
+        arrowprops=dict(arrowstyle="->", linewidth=1.4, color="tab:blue"),
     )
-    ax.text(
-        (x0_stress + x1_stress) / 2.0,
-        D + 0.14 * D,
-        "Stress (MPa)",
-        ha="center",
-        va="bottom",
-        fontsize=9,
+    ax_stress.text(
+        sigma_s * 1.02,
+        d,
+        f"T ({sigma_s:.0f} MPa)",
+        ha="left",
+        va="center",
+        color="tab:blue",
     )
 
+    ax_stress.set_title("Stress-block profile\n(AS3600 α₂–γ)", fontsize=10)
+    ax_stress.set_xlabel("Stress (MPa)")
+
+    fig.tight_layout()
     return fig
-
-
 
 # ============================
 # PART 3B — ULS STRESS-BLOCK FIGURE
@@ -1797,6 +1703,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
