@@ -1224,46 +1224,20 @@ def render_bending():
     # Table full width (nice and readable)
     st.dataframe(df_summary, hide_index=True, use_container_width=True)
 
-    # --- Diagrams row: 2D section + stress–strain model ---
+      # --- Diagrams: section + strain + stress-block in ONE figure ---
     st.markdown("### Section & stress–strain model")
 
-    fig_col1, fig_col2 = st.columns(2)
+    strain_state = st.radio(
+        "State:",
+        ["ULS", "SLS (cracked)", "Uncracked"],
+        horizontal=True,
+        key="bending_strain_state_local",
+    )
 
-    # LEFT: 2D cross-section with compression block
-    with fig_col1:
-        st.markdown("#### ULS cross-section")
-        sec_fig = _make_cross_section_figure(
-            b or 300.0,
-            D or 600.0,
-            d or (D_local - cover_bot_local - 0.5 * db_bot_local),
-            a,
-            nb_bot or nb_bot_local,
-            db_bot or db_bot_local,
-            cover_bot or cover_bot_local,
-            nb_top=nb_top or 2,
-            db_top=db_top or 16.0,
-            cover_top=cover_top or 40.0,
-            c=c,
-            z=z,
-        )
-        if sec_fig is not None:
-            st.pyplot(sec_fig, use_container_width=True)
-            plt.close(sec_fig)
-
-    # RIGHT: stress–strain diagrams with toggle
-    with fig_col2:
-        st.markdown("#### Stress–strain model")
-        strain_state = st.radio(
-            "State:",
-            ["ULS", "SLS (cracked)", "Uncracked"],
-            horizontal=True,
-            key="bending_strain_state_local",
-        )
-        ss_state = _stress_strain_state(strain_state)
-        fig_ss = _plot_stress_strain_profiles(ss_state)
-        st.pyplot(fig_ss, use_container_width=True)
-
-    st.markdown("---")
+    ss_state = _stress_strain_state(strain_state)
+    fig_ss = _plot_stress_strain_profiles(ss_state)  # now returns 3 panels:
+                                                     # section + strain + stress
+    st.pyplot(fig_ss, use_container_width=True)
 
     # ============================================================
     #  STEP-BY-STEP TABS (ULS / SLS)
@@ -1588,6 +1562,7 @@ def render_bending():
 
 if __name__ == "__main__":
     render_bending()
+
 
 
 
