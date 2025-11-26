@@ -1,3 +1,7 @@
+# ============================
+# PART 1 — IMPORTS + HELPERS + BENDING CAPACITY
+# ============================
+
 import math
 import numpy as np
 import pandas as pd
@@ -206,6 +210,10 @@ def _compute_bending_capacity():
         "d": d,
     }
 
+# ===== END PART 1 =====
+# ============================
+# PART 2 — STRESS–STRAIN DIAGRAM HELPERS + BAR LAYOUT
+# ============================
 
 # ------------------------------------------------------------
 #  DIAGRAM HELPERS (cross-section + schematic stress block)
@@ -766,6 +774,10 @@ def _stress_strain_state(state: str):
         fc=fc, fsy=fsy, alpha2=alpha2,
     )
 
+# ===== END PART 2 =====
+# ============================
+# PART 3 — SECTION FIGURES + ULS STRESS BLOCK FIGURE
+# ============================
 
 # ------------------------------------------------------------
 #  Simple ULS cross-section figure for step-by-step tabs
@@ -1000,10 +1012,11 @@ def _make_uls_stress_block_figure(c, d, gamma_sb, fsy, show_lever_arm=False):
     ax.set_title("ULS stress block")
     return fig
 
+# ===== END PART 3 =====
+# ============================
+# PART 4 — PAGE RENDER (FULL render_bending FUNCTION)
+# ============================
 
-# ------------------------------------------------------------
-#  PAGE RENDER
-# ------------------------------------------------------------
 def render_bending():
     st.title("Bending Capacity")
 
@@ -1819,6 +1832,12 @@ def render_bending():
     with st.expander("Debug: raw session_state (optional)"):
         st.write(dict(st.session_state))
 
+# ===== END PART 4 =====
+# ============================
+# PART 5 — MAIN GUARD
+# ============================
 
 if __name__ == "__main__":
     render_bending()
+
+# ===== END PART 5 =====
