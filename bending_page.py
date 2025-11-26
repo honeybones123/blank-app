@@ -399,18 +399,21 @@ def _stress_strain_state(state: str):
 # ===== END PART 2A =====
 
 
-
+# ------------------------------------------------------------
+#  DIAGRAM HELPERS (cross-section + schematic stress block)
+# ------------------------------------------------------------
 def _plot_stress_strain_profiles(state_dict):
     """
     Single-axis figure with three panels laid out in X:
 
-        - Section (ULS view)      – left
-        - Strain profile          – centre
-        - Stress-block profile    – right
+        - Section (ULS / SLS / Uncracked) – left
+        - Strain profile                  – centre
+        - Stress-block profile            – right
 
     Uses real geometry / reo from the main app so it updates with inputs.
     d in the state_dict is the depth to the CENTROID of bottom steel.
     """
+
     # --- unpack state from _stress_strain_state ---
     b = state_dict["b"]
     D = state_dict["D"]
@@ -422,6 +425,15 @@ def _plot_stress_strain_profiles(state_dict):
     fs_t = state_dict["fs_t"]
     fc = state_dict["fc"]
     alpha2 = state_dict["alpha2"]
+
+    # Optional label for dynamic title
+    state_label = state_dict.get("state_label", "ULS")
+    if state_label == "ULS":
+        section_title = "Section (ULS view)"
+    elif "SLS" in state_label:
+        section_title = "Section (SLS cracked view)"
+    else:
+        section_title = "Section (uncracked view)"
 
     # --- reinforcement & cover from app (with safe fallbacks) ---
     nb_bot = get_param("nb_bot") or 4
@@ -475,7 +487,6 @@ def _plot_stress_strain_profiles(state_dict):
     # common depth scale
     ax.set_ylim(D, 0)
     ax.set_xlim(0, total_x_max)
-    ax.set_aspect("equal", adjustable="box")  # keep circles round, NA aligned
 
     # tidy up axes
     ax.spines["top"].set_visible(False)
@@ -485,7 +496,7 @@ def _plot_stress_strain_profiles(state_dict):
     ax.tick_params(left=True, labelleft=True, bottom=False, labelbottom=False)
 
     # =====================================================
-    # 1) CROSS-SECTION (ULS view) – LEFT
+    # 1) CROSS-SECTION – LEFT
     # =====================================================
     # outline
     ax.add_patch(
@@ -567,8 +578,24 @@ def _plot_stress_strain_profiles(state_dict):
             )
         )
 
-    # NA arrow & label WITH value (only on section)
-    x_na = x0_sec + b + 40.0
+    # ---- d arrow & label (inner) ----
+    x_d = x0_sec + b + 40.0
+    ax.annotate(
+        "",
+        xy=(x_d, d),
+        xytext=(x_d, 0),
+        arrowprops=dict(arrowstyle="<->", linewidth=1.0),
+    )
+    ax.text(
+        x_d + 20.0,
+        d / 2.0,
+        f"d ({d:.0f} mm)",
+        va="center",
+        fontsize=9,
+    )
+
+    # ---- NA arrow & label (outer) ----
+    x_na = x_d + 80.0
     ax.annotate(
         "",
         xy=(x_na, c),
@@ -584,27 +611,11 @@ def _plot_stress_strain_profiles(state_dict):
         color="tab:red",
     )
 
-    # d arrow & label – d is centroid depth
-    x_d = x_na + 80.0
-    ax.annotate(
-        "",
-        xy=(x_d, d),
-        xytext=(x_d, 0),
-        arrowprops=dict(arrowstyle="<->", linewidth=1.0),
-    )
-    ax.text(
-        x_d + 20.0,
-        d / 2.0,
-        f"d ({d:.0f} mm)",
-        va="center",
-        fontsize=9,
-    )
-
-    # section title – raised a bit higher (more negative y)
+    # section title
     ax.text(
         x0_sec + b / 2.0,
-        -0.22 * D,
-        "Section (ULS view)",
+        -0.13 * D,
+        section_title,
         ha="center",
         va="top",
         fontsize=10,
@@ -659,7 +670,7 @@ def _plot_stress_strain_profiles(state_dict):
 
     ax.text(
         x_mid_strain,
-        -0.22 * D,
+        -0.13 * D,
         "Strain Profile",
         ha="center",
         va="top",
@@ -777,7 +788,7 @@ def _plot_stress_strain_profiles(state_dict):
 
     ax.text(
         (x0_stress + x1_stress) / 2.0,
-        -0.22 * D,
+        -0.13 * D,
         "Stress-block Profile (AS3600 α₂–γ)",
         ha="center",
         va="top",
@@ -793,6 +804,7 @@ def _plot_stress_strain_profiles(state_dict):
     )
 
     return fig
+
 
 # ===== END PART 2 =====
 
@@ -1950,6 +1962,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
