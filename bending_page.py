@@ -1507,7 +1507,7 @@ def render_bending():
     fig_ss = _plot_stress_strain_profiles(ss_state)
     st.pyplot(fig_ss, use_container_width=True)
 
-      # ============================================================
+       # ============================================================
     #  STEP-BY-STEP TABS (ULS / SLS)
     # ============================================================
     tab_uls, tab_sls = st.tabs(["ULS step-by-step", "SLS step-by-step"])
@@ -1524,7 +1524,7 @@ def render_bending():
             st.markdown("### 1. Required calculated inputs for bending")
             col1_text, col1_fig = st.columns([3, 2])
 
-                 with col1_text:
+            with col1_text:
                 st.markdown("#### 1.1 Effective depth $d$ to tensile centroid")
                 st.markdown(
                     "Effective depth $d$ is measured to the **centroid** of the "
@@ -1552,7 +1552,9 @@ def render_bending():
                         min_spacing=min_spacing_bot,
                         n_rows_max=2,
                     )
-                    has_second_row = any(row_idx == 1 for _, row_idx in layout_bot_for_d)
+                    has_second_row = any(
+                        row_idx == 1 for _, row_idx in layout_bot_for_d
+                    )
 
                 # --- Case A: single bottom row (traditional shortcut) ---
                 if not has_second_row:
@@ -1948,6 +1950,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
