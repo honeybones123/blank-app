@@ -482,15 +482,16 @@ def _plot_stress_strain_profiles(state_dict):
     def stress_to_x(sig):
         return x0_stress + (sig / stress_max) * (panel_w_stress * 0.8)
 
-    # --- create figure and enforce equal x–y scaling so bars stay round ---
+    # --- create figure ---
     fig, ax = plt.subplots(figsize=(9, 3.5))
 
     # common depth scale (same D for all three panels)
     ax.set_ylim(D, 0)
     ax.set_xlim(0, total_x_max)
 
-    # key line: make data units equal in x and y → circles look like circles
-    ax.set_aspect("equal", adjustable="box")
+    # DO NOT fix aspect here – let Streamlit stretch,
+    # and keep bars circular via scatter markers instead.
+    # ax.set_aspect("equal", adjustable="box")
 
     # tidy up axes
     ax.spines["top"].set_visible(False)
@@ -528,7 +529,7 @@ def _plot_stress_strain_profiles(state_dict):
         )
     )
 
-    # bottom bars (with row wrapping)
+    # bottom bars (with row wrapping) – drawn with scatter so they stay round
     min_spacing_bot = 2.0 * db_bot
     bot_layout = _layout_bars_in_rows(
         n_bars=nb_bot,
@@ -538,24 +539,23 @@ def _plot_stress_strain_profiles(state_dict):
         min_spacing=min_spacing_bot,
         n_rows_max=2,
     )
-    r_bot = db_bot / 2.0
     row_pitch_bot = db_bot + rowgap_bot
     d_row0 = D - cover_bot - db_bot / 2.0  # depth to first row
 
     for x_rel, row_idx in bot_layout:
         x = x0_sec + x_rel
         y = d_row0 - row_idx * row_pitch_bot
-        ax.add_patch(
-            Circle(
-                (x, y),
-                radius=r_bot,
-                facecolor="none",
-                edgecolor="tab:blue",
-                linewidth=1.3,
-            )
+        ax.scatter(
+            [x],
+            [y],
+            s=(db_bot ** 2),          # scale roughly with bar size
+            facecolors="none",
+            edgecolors="tab:blue",
+            linewidths=1.3,
+            zorder=3,
         )
 
-    # top bars (with row wrapping)
+    # top bars (with row wrapping) – also scatter markers
     min_spacing_top = 2.0 * db_top
     top_layout = _layout_bars_in_rows(
         n_bars=nb_top,
@@ -565,21 +565,20 @@ def _plot_stress_strain_profiles(state_dict):
         min_spacing=min_spacing_top,
         n_rows_max=2,
     )
-    r_top = db_top / 2.0
     y_top_base = cover_top + db_top / 2.0
     row_pitch_top = db_top + rowgap_top
 
     for x_rel, row_idx in top_layout:
         x = x0_sec + x_rel
         y = y_top_base + row_idx * row_pitch_top
-        ax.add_patch(
-            Circle(
-                (x, y),
-                radius=r_top,
-                facecolor="none",
-                edgecolor="tab:red",
-                linewidth=1.3,
-            )
+        ax.scatter(
+            [x],
+            [y],
+            s=(db_top ** 2),
+            facecolors="none",
+            edgecolors="tab:red",
+            linewidths=1.3,
+            zorder=3,
         )
 
     # ---- d arrow & label (inner) ----
@@ -599,7 +598,7 @@ def _plot_stress_strain_profiles(state_dict):
     )
 
     # ---- NA arrow & label (closer to d to save width) ----
-    na_gap = 40.0  # was 80.0 – bring NA closer to d
+    na_gap = 40.0  # reduced from 80 so NA arrow is closer to d
     x_na = x_d + na_gap
     ax.annotate(
         "",
@@ -809,6 +808,7 @@ def _plot_stress_strain_profiles(state_dict):
     )
 
     return fig
+
 
 
 # ===== END PART 2 =====
@@ -1974,6 +1974,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
