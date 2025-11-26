@@ -910,39 +910,40 @@ def _make_cross_section_figure(
             )
 
     # arrows for c and z (optional), drawn just outside right edge
-    if c is not None:
-        x_c = b + 20.0
-        ax.annotate(
-            "",
-            xy=(x_c, c),
-            xytext=(x_c, 0),
-            arrowprops=dict(arrowstyle="<->", linewidth=1.0, color="tab:red"),
-        )
-        ax.text(
-            x_c + 5.0,
-            c / 2.0,
-            f"c = {c:.0f} mm",
-            va="center",
-            color="tab:red",
-        )
+if c is not None:
+    x_c = b + 20.0
+    ax.annotate(
+        "",
+        xy=(x_c, c),
+        xytext=(x_c, 0),
+        arrowprops=dict(arrowstyle="<->", linewidth=1.0, color="tab:red"),
+    )
+    ax.text(
+        x_c + 5.0,
+        c / 2.0,
+        f"NA = {c:.0f} mm",     # <-- FIXED LABEL
+        va="center",
+        color="tab:red",
+    )
 
-    if z is not None and d is not None:
-        x_z = b + 50.0
-        ax.annotate(
-            "",
-            xy=(x_z, d),
-            xytext=(x_z, 0),
-            arrowprops=dict(arrowstyle="<->", linewidth=1.0),
-        )
-        ax.text(
-            x_z + 5.0,
-            d / 2.0,
-            f"z = {z:.0f} mm",
-            va="center",
-        )
+# Show effective depth d (not z)
+if d is not None:
+    x_d = b + 50.0
+    ax.annotate(
+        "",
+        xy=(x_d, d),
+        xytext=(x_d, 0),
+        arrowprops=dict(arrowstyle="<->", linewidth=1.0),
+    )
+    ax.text(
+        x_d + 5.0,
+        d / 2.0,
+        f"d = {d:.0f} mm",      # <-- FIXED LABEL
+        va="center",
+    )
 
-    ax.set_title(title)
-    return fig
+ax.set_title(title)
+return fig
 
 
 # ------------------------------------------------------------
