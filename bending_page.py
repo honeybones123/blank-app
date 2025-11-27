@@ -408,9 +408,8 @@ def _plot_stress_strain_profiles(state_dict):
 
         [Section]  [Strain profile]  [Stress-block profile]
 
-    All panels share the SAME vertical depth scale (0 → D),
-    so NA and d line up perfectly and circles stay round.
-    Only the SECTION panel has aspect='equal'.
+    All panels share the SAME vertical depth scale (0 → D).
+    The subplots have the same physical height so nothing looks taller/shorter.
     """
 
     # -----------------------------------------------------------
@@ -437,12 +436,12 @@ def _plot_stress_strain_profiles(state_dict):
         section_title = "Section (uncracked view)"
 
     # Reinforcement (fallbacks)
-    nb_bot    = int(get_param("nb_bot") or 4)
-    db_bot    = float(get_param("db_bot") or 20)
-    cover_bot = float(get_param("cover_bot") or 40)
-    nb_top    = int(get_param("nb_top") or 2)
-    db_top    = float(get_param("db_top") or 16)
-    cover_top = float(get_param("cover_top") or 40)
+    nb_bot     = int(get_param("nb_bot") or 4)
+    db_bot     = float(get_param("db_bot") or 20)
+    cover_bot  = float(get_param("cover_bot") or 40)
+    nb_top     = int(get_param("nb_top") or 2)
+    db_top     = float(get_param("db_top") or 16)
+    cover_top  = float(get_param("cover_top") or 40)
     rowgap_bot = float(get_param("rowgap_bot") or 25)
     rowgap_top = float(get_param("rowgap_top") or 25)
 
@@ -456,28 +455,26 @@ def _plot_stress_strain_profiles(state_dict):
     stress_max = max(sigma_c, sigma_s, 1.0)
 
     # -----------------------------------------------------------
-    # 2. CREATE THREE SIDE-BY-SIDE SUBPLOTS
+    # 2. CREATE THREE SIDE-BY-SIDE SUBPLOTS (SHARED DEPTH)
     # -----------------------------------------------------------
     fig, (ax_sec, ax_str, ax_stress) = plt.subplots(
         1,
         3,
-        figsize=(10, 4.5),
+        figsize=(10, 4.0),
         sharey=True,
         gridspec_kw={"width_ratios": [1.3, 1.0, 1.3]},
         constrained_layout=True,
     )
 
-    # Common depth scale
-    ymin, ymax = 0, D
+    # Common depth scale: 0 at top, D at bottom
     for ax in (ax_sec, ax_str, ax_stress):
-        ax.set_ylim(ymax, ymin)   # reverse (depth downward)
+        ax.set_ylim(D, 0)  # invert so depth increases downward
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
 
     # -----------------------------------------------------------
-    # 3. LEFT PANEL — SECTION VIEW (aspect = equal)
+    # 3. LEFT PANEL — SECTION VIEW
     # -----------------------------------------------------------
-    ax_sec.set_aspect("equal", adjustable="box")
     ax_sec.set_xlim(-10, b + 90)
     ax_sec.set_ylabel("Depth (mm)")
 
@@ -486,7 +483,7 @@ def _plot_stress_strain_profiles(state_dict):
         Rectangle((0, 0), b, D, fill=False, linewidth=1.5, edgecolor="black")
     )
 
-    # Compression zone
+    # Compression zone (0 → γc)
     block_depth = max(0, min(gamma * c, D))
     ax_sec.add_patch(
         Rectangle(
@@ -495,6 +492,7 @@ def _plot_stress_strain_profiles(state_dict):
             block_depth,
             facecolor="#c7e3ff",
             edgecolor="tab:red",
+            linewidth=1.0,
             alpha=0.7,
         )
     )
@@ -549,19 +547,27 @@ def _plot_stress_strain_profiles(state_dict):
 
     # ---- Arrows: d & NA ----
     x_d = b + 25
-    ax_sec.annotate("", xy=(x_d, d), xytext=(x_d, 0),
-                    arrowprops=dict(arrowstyle="<->", linewidth=1))
-    ax_sec.text(x_d + 8, d/2, f"d = {d:.0f} mm", va="center")
+    ax_sec.annotate(
+        "",
+        xy=(x_d, d),
+        xytext=(x_d, 0),
+        arrowprops=dict(arrowstyle="<->", linewidth=1),
+    )
+    ax_sec.text(x_d + 8, d / 2, f"d = {d:.0f} mm", va="center")
 
     x_na = b + 55
-    ax_sec.annotate("", xy=(x_na, c), xytext=(x_na, 0),
-                    arrowprops=dict(arrowstyle="<->", linewidth=1))
-    ax_sec.text(x_na + 8, c/2, f"NA = {c:.0f} mm", va="center", color="tab:red")
+    ax_sec.annotate(
+        "",
+        xy=(x_na, c),
+        xytext=(x_na, 0),
+        arrowprops=dict(arrowstyle="<->", linewidth=1),
+    )
+    ax_sec.text(x_na + 8, c / 2, f"NA = {c:.0f} mm", va="center", color="tab:red")
 
     ax_sec.set_title(section_title, fontsize=11)
 
     # -----------------------------------------------------------
-    # 4. STRAIN PROFILE (middle)
+    # 4. STRAIN PROFILE (MIDDLE PANEL)
     # -----------------------------------------------------------
     ax_str.set_xlim(-eps_max, eps_max)
     ax_str.axvline(0, color="black", linewidth=1)
@@ -570,18 +576,32 @@ def _plot_stress_strain_profiles(state_dict):
     eps_vals = np.array([eps_c, 0, eps_s])
     ax_str.plot(eps_vals, y_vals, color="black")
 
+    # NA line
     ax_str.hlines(c, -eps_max, eps_max, linestyles="--", linewidth=0.8)
 
-    ax_str.text(eps_c, 0, rf"$\varepsilon_c={eps_c:.4f}$",
-                color="tab:red", ha="left")
-    ax_str.text(eps_s, d, rf"$\varepsilon_s={eps_s:.4f}$",
-                color="tab:blue", ha="left", va="bottom")
+    # Labels
+    ax_str.text(
+        eps_c,
+        0,
+        rf"$\varepsilon_c = {eps_c:.4f}$",
+        color="tab:red",
+        ha="left",
+        va="bottom",
+    )
+    ax_str.text(
+        eps_s,
+        d,
+        rf"$\varepsilon_s = {eps_s:.4f}$",
+        color="tab:blue",
+        ha="left",
+        va="bottom",
+    )
 
     ax_str.set_title("Strain Profile", fontsize=11)
     ax_str.set_xlabel("Strain")
 
     # -----------------------------------------------------------
-    # 5. STRESS BLOCK (right)
+    # 5. STRESS-BLOCK (RIGHT PANEL)
     # -----------------------------------------------------------
     ax_stress.set_xlim(0, stress_max)
     ax_stress.axvline(0, color="black", linewidth=1)
@@ -589,20 +609,27 @@ def _plot_stress_strain_profiles(state_dict):
     block_top = 0
     block_bottom = gamma * c
 
+    # Compression block outline
     ax_stress.fill_between(
-        [0, sigma_c], [block_top, block_top], [block_bottom, block_bottom],
-        edgecolor="tab:red", facecolor="none", linewidth=1.5
+        [0, sigma_c],
+        [block_top, block_top],
+        [block_bottom, block_bottom],
+        edgecolor="tab:red",
+        facecolor="none",
+        linewidth=1.5,
     )
 
+    # NA line
     ax_stress.hlines(c, 0, stress_max, linestyles="--", linewidth=0.8)
 
-    # Compression label
+    # α2 f'c label
     ax_stress.text(
         sigma_c * 0.5,
         block_bottom + 0.05 * D,
-        rf"$\alpha_2 f'_c = {sigma_c:.0f}$ MPa",
+        rf"$\alpha_2 f'_c = {sigma_c:.0f}\ \mathrm{{MPa}}$",
         color="tab:red",
-        ha="center"
+        ha="center",
+        va="bottom",
     )
 
     # Steel tension arrow
@@ -625,6 +652,7 @@ def _plot_stress_strain_profiles(state_dict):
     ax_stress.set_xlabel("Stress (MPa)")
 
     return fig
+
 
 
 
@@ -1791,6 +1819,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
