@@ -454,8 +454,8 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     sigma_s = abs(fs_t)
     stress_max = max(sigma_c, sigma_s, 1.0)
 
-    # ----------------- layout in X (SPACING ONLY CHANGE: gap) -----------------
-    gap = 220.0  # was 150.0 – just to spread the panels out a bit more
+    # ----------------- layout in X (slightly increased spacing) -----------------
+    gap = 220.0  # spread panels out a bit
 
     x0_sec = 0.0
     x1_sec = x0_sec + b + 200.0
@@ -653,15 +653,16 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     block_top = 0
     block_bottom = gamma * c if state_label == "ULS" else c
 
+    # ULS: RECTANGULAR block (use fill instead of fill_between to avoid error)
     if state_label == "ULS":
-        ax.fill_between(
-            [x0_stress, x_block_right],
-            [block_top, block_top],
-            [block_bottom, block_bottom],
+        ax.fill(
+            [x0_stress, x_block_right, x_block_right, x0_stress],
+            [block_top, block_top, block_bottom, block_bottom],
             fill=False,
             edgecolor="tab:red",
             linewidth=1.5,
         )
+    # SLS / Uncracked: TRIANGULAR block
     else:
         ax.fill(
             [x0_stress, x0_stress, x_block_right],
@@ -714,7 +715,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         va="center",
     )
 
-    # internal compression arrows (LEFT/RIGHT as in your version)
+    # internal compression arrows (same direction as your base version)
     for frac in [0.25, 0.5, 0.75]:
         y_mid = block_top + frac * (block_bottom - block_top)
         ax.annotate(
@@ -1893,6 +1894,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
