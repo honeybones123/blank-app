@@ -810,6 +810,7 @@ def _plot_stress_strain_profiles(state_dict, state_label="ULS"):
 
     return fig
 
+
 # ===== END PART 2 =====
 
 
@@ -1966,6 +1967,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
