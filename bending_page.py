@@ -410,9 +410,9 @@ def _plot_stress_strain_profiles(state_dict):
 
     All panels share the SAME vertical depth scale (0 → D).
 
-    The left section panel uses a fixed visual width (b_plot) so it
-    doesn't get stretched when b is large – we just scale bar x-positions
-    into that width.
+    The left panel uses a fixed plotting width (b_plot) so the section
+    doesn’t get stretched horizontally when b is large. We just scale
+    bar x-positions into that width.
     """
 
     # -----------------------------------------------------------
@@ -463,7 +463,7 @@ def _plot_stress_strain_profiles(state_dict):
     fig, (ax_sec, ax_str, ax_stress) = plt.subplots(
         1,
         3,
-        figsize=(10, 4.0),
+        figsize=(8, 4.0),  # slightly less wide so it doesn’t feel stretched
         sharey=True,
         gridspec_kw={"width_ratios": [1.3, 1.0, 1.3]},
         constrained_layout=True,
@@ -476,20 +476,19 @@ def _plot_stress_strain_profiles(state_dict):
         ax.spines["right"].set_visible(False)
 
     # -----------------------------------------------------------
-    # 3. LEFT PANEL — SECTION VIEW (with fixed visual width)
+    # 3. LEFT PANEL — SECTION VIEW WITH FIXED WIDTH
     # -----------------------------------------------------------
-    # Fixed plotting width so the section doesn't stretch with b
-    b_plot = 400.0
+    b_plot = 350.0  # visual width, constant
     scale_x = b_plot / b if b > 0 else 1.0
 
-    def x_sec(val_mm: float) -> float:
-        """Map physical mm in width direction to plotting x."""
-        return val_mm * scale_x
+    def x_plot(x_mm: float) -> float:
+        """Map actual mm across the width into plotting x."""
+        return x_mm * scale_x
 
     ax_sec.set_xlim(-10, b_plot + 90)
     ax_sec.set_ylabel("Depth (mm)")
 
-    # Outline
+    # Concrete outline
     ax_sec.add_patch(
         Rectangle((0, 0), b_plot, D, fill=False, linewidth=1.5, edgecolor="black")
     )
@@ -524,7 +523,7 @@ def _plot_stress_strain_profiles(state_dict):
     for x_rel_mm, row_idx in bot_layout:
         ax_sec.add_patch(
             Circle(
-                (x_sec(x_rel_mm), d_row0 - row_idx * row_pitch_bot),
+                (x_plot(x_rel_mm), d_row0 - row_idx * row_pitch_bot),
                 radius=r_bot,
                 facecolor="none",
                 edgecolor="tab:blue",
@@ -548,7 +547,7 @@ def _plot_stress_strain_profiles(state_dict):
     for x_rel_mm, row_idx in top_layout:
         ax_sec.add_patch(
             Circle(
-                (x_sec(x_rel_mm), y_top0 + row_idx * row_pitch_top),
+                (x_plot(x_rel_mm), y_top0 + row_idx * row_pitch_top),
                 radius=r_top,
                 facecolor="none",
                 edgecolor="tab:red",
@@ -663,6 +662,7 @@ def _plot_stress_strain_profiles(state_dict):
     ax_stress.set_xlabel("Stress (MPa)")
 
     return fig
+
 
 
 # ===== END PART 2 =====
@@ -1828,6 +1828,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
