@@ -916,80 +916,168 @@ def _make_cross_section_figure(
 
 
 # ============================
-# PART 3B — ULS STRESS-BLOCK FIGURE
+# PART 3B — ULS STRESS-BLOCK FIGURE (TEACHING STYLE)
 # ============================
 
-def _make_uls_stress_block_figure(c, d, gamma_sb, fsy, show_lever_arm=False):
+def _make_uls_stress_block_figure(
+    c,
+    d,
+    gamma_sb,
+    alpha2,
+    fc,
+    fsy,
+    show_lever_arm=False,
+):
     """
-    Simple 2D stress-block diagram used in the step-by-step ULS tab.
+    Teaching-style ULS stress-block diagram used in the ULS step-by-step tab.
 
-    Inputs
-    ------
-    c : neutral axis depth (mm)
-    d : effective depth to tensile centroid (mm)
-    gamma_sb : γ stress-block factor
-    fsy : steel yield stress (MPa)
-    show_lever_arm : if True, draw z = d - 0.5 γc arrow
+    • Vertical stress axis
+    • Rectangular compression block at the top
+    • Blue dashed line at γc
+    • Labels:  α₂ f'c  and  γc (mm)
+    • Bottom tension arrow T (fsy)
+    • Optional lever arm z between compression resultant and tension force
     """
-    if c in (None, 0) or d in (None, 0):
+    # basic sanity check
+    if (
+        c in (None, 0)
+        or d in (None, 0)
+        or gamma_sb in (None, 0)
+        or fc in (None, 0)
+        or fsy in (None, 0)
+        or alpha2 in (None, 0)
+    ):
         fig, ax = plt.subplots()
-        ax.text(0.5, 0.5, "No data", ha="center")
+        ax.text(0.5, 0.5, "No data", ha="center", va="center")
         ax.axis("off")
         return fig
 
-    fig, ax = plt.subplots(figsize=(3, 6))
-    ax.set_ylim(d + 50.0, -50.0)
-    ax.set_xlim(0, 1.2)
+    sigma_c = alpha2 * fc          # α2 f'c  (MPa)
+    gamma_c_mm = gamma_sb * c      # γc       (mm)
+
+    fig, ax = plt.subplots(figsize=(2.6, 4.5))
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.0)
     ax.axis("off")
 
-    # Neutral axis (depth c)
-    ax.hlines(c, 0.0, 1.0, linestyles="--", colors="black", linewidth=1.0)
+    # main vertical stress axis
+    x_axis = 0.25
+    y_axis_bottom = 0.05
+    y_axis_top = 0.95
+    ax.plot([x_axis, x_axis], [y_axis_bottom, y_axis_top], color="black", linewidth=2.0)
 
-    # Compression block (0 → γc)
-    block_top = 0.0
-    block_bottom = gamma_sb * c
-    ax.fill_between(
-        [0.0, 0.5],
-        [block_top, block_top],
-        [block_bottom, block_bottom],
-        facecolor="#c7e3ff",
-        edgecolor="tab:red",
-        linewidth=1.2,
+    # layout positions (normalised – it's a teaching sketch, not to scale)
+    y_T = 0.85               # bottom steel
+    y_gamma = 0.35           # γc depth
+    block_height = 0.10
+    block_width = 0.18
+    x_block = x_axis + 0.06
+    y_block_top = y_gamma - block_height
+
+    # dashed γc line
+    ax.hlines(
+        y_gamma,
+        x_axis,
+        0.95,
+        linestyles="--",
+        colors="tab:blue",
+        linewidth=2.0,
     )
 
-    # Steel tension force arrow at depth d
+    # compression block rectangle
+    ax.add_patch(
+        Rectangle(
+            (x_block, y_block_top),
+            block_width,
+            block_height,
+            fill=False,
+            edgecolor="tab:red",
+            linewidth=2.0,
+        )
+    )
+
+    # simple red "squiggle" inside the block to suggest compression
+    zig_x = np.linspace(x_block + 0.02, x_block + block_width - 0.02, 5)
+    zig_y_top = y_block_top + 0.01
+    zig_y_bot = y_block_top + block_height - 0.01
+    zz_x, zz_y = [], []
+    for i, x in enumerate(zig_x):
+        zz_x.append(x)
+        zz_y.append(zig_y_top if i % 2 == 0 else zig_y_bot)
+    ax.plot(zz_x, zz_y, color="tab:red", linewidth=1.5)
+
+    # α2 f'c label above the block
+    ax.text(
+        x_block + block_width / 2,
+        y_block_top - 0.06,
+        rf"$\alpha_2 f'_c = {sigma_c:.0f}\ \text{{MPa}}$",
+        ha="center",
+        va="bottom",
+        fontsize=9,
+        color="tab:red",
+    )
+
+    # γc label next to dashed line
+    ax.text(
+        x_block + block_width + 0.10,
+        y_gamma,
+        rf"$\gamma c = {gamma_c_mm:.0f}\ \text{{mm}}$",
+        ha="left",
+        va="center",
+        fontsize=9,
+        color="tab:red",
+    )
+
+    # bottom tension arrow T (fsy)
     ax.annotate(
         "",
-        xy=(1.0, d),
-        xytext=(0.5, d),
-        arrowprops=dict(arrowstyle="->", linewidth=1.5, color="tab:blue"),
+        xy=(0.85, y_T),
+        xytext=(x_axis, y_T),
+        arrowprops=dict(arrowstyle="->", linewidth=2.0, color="tab:blue"),
     )
     ax.text(
-        1.02,
-        d,
-        r"$T = A_{st} f_{sy}$",
+        0.87,
+        y_T,
+        rf"$T\ ({fsy:.0f}\ \text{{MPa}})$",
+        ha="left",
         va="center",
+        fontsize=9,
         color="tab:blue",
     )
 
-    # Optional lever arm z
+    # optional lever arm z (from compression resultant to T)
     if show_lever_arm:
-        z = d - 0.5 * gamma_sb * c
+        # take compression resultant at mid-depth of the block
+        y_C = y_block_top + 0.5 * block_height
+        x_z = x_block + block_width + 0.04
+
         ax.annotate(
             "",
-            xy=(0.7, d),
-            xytext=(0.7, 0.5 * gamma_sb * c),
-            arrowprops=dict(arrowstyle="<->", linewidth=1.2),
+            xy=(x_z, y_T),
+            xytext=(x_z, y_C),
+            arrowprops=dict(arrowstyle="<->", linewidth=1.6),
         )
         ax.text(
-            0.72,
-            (d + 0.5 * gamma_sb * c) / 2.0,
+            x_z + 0.03,
+            (y_T + y_C) / 2,
             "z",
+            ha="left",
             va="center",
+            fontsize=9,
         )
 
-    ax.set_title("ULS stress block")
+    # stress axis label at (approx.) bottom
+    ax.text(
+        0.5,
+        0.02,
+        "Stress (MPa)",
+        ha="center",
+        va="bottom",
+        fontsize=11,
+    )
+
     return fig
+
 
 # ===== END PART 3 =====
 
@@ -1894,6 +1982,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
