@@ -1708,10 +1708,17 @@ def render_bending():
 
             with col2_fig:
                 fig_uls_sb_plain = _make_uls_stress_block_figure(
-                    c, d, gamma_sb, fsy, show_lever_arm=False
-                )
-                st.pyplot(fig_uls_sb_plain, use_container_width=True)
-                plt.close(fig_uls_sb_plain)
+                    c=c,
+                    d=d,
+                gamma_sb=gamma_sb,
+                alpha2=alpha2_sb,
+                fc=fc,
+                fsy=fsy,
+                show_lever_arm=False,
+        )
+        st.pyplot(fig_uls_sb_plain, use_container_width=True)
+        plt.close(fig_uls_sb_plain)
+
 
             st.markdown("---")
 
@@ -1888,10 +1895,17 @@ def render_bending():
 
             with col4_fig:
                 fig_uls_sb_z = _make_uls_stress_block_figure(
-                    c, d, gamma_sb, fsy, show_lever_arm=True
+                    c=c,
+                    d=d,
+                    gamma_sb=gamma_sb,
+                    alpha2=alpha2_sb,
+                    fc=fc,
+                    fsy=fsy,
+                    show_lever_arm=True,
                 )
                 st.pyplot(fig_uls_sb_z, use_container_width=True)
                 plt.close(fig_uls_sb_z)
+
 
         else:
             st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
@@ -1982,6 +1996,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
