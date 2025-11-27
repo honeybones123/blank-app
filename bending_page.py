@@ -717,6 +717,16 @@ def _plot_stress_strain_profiles(state_dict):
     ax_stress.set_title("Stress-block profile\n(AS3600 α₂–γ)", fontsize=10)
     ax_stress.set_xlabel("Stress (MPa)")
 
+        ax_sec.text(
+        b / 2.0,
+        -0.08 * D,
+        "DEBUG: v3_with_TEST_title",
+        ha="center",
+        va="top",
+        fontsize=8,
+        color="grey",
+    )
+
     return fig
 
 
@@ -730,8 +740,9 @@ def _plot_stress_strain_profiles(state_dict):
 def render_bending():
     st.title("Bending Capacity")
 
-    sync_callbacks = get_sync_callbacks()
-    apply_global_widget_css()  # same styling as Inputs page
+    # DEBUG – show which file this page is coming from
+    st.caption(f"DEBUG: bending module = {__file__}")
+    st.caption("DEBUG: bending page version = v3_with_TEST_title")
 
     # ============================================================
     #  SIDEBAR GLOSSARY (BENDING TERMS)
@@ -1632,6 +1643,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
