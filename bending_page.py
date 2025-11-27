@@ -455,16 +455,16 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     stress_max = max(sigma_c, sigma_s, 1.0)
 
     # layout
-    gap = 150.0
+    gap = 190.0
     x0_sec = 0.0
     x1_sec = x0_sec + b + 200.0
 
-    panel_w_strain = 200.0
+    panel_w_strain = 215.0
     x0_strain = x1_sec + gap
     x1_strain = x0_strain + panel_w_strain
     x_mid_strain = (x0_strain + x1_strain) / 2.0
 
-    panel_w_stress = 260.0
+    panel_w_stress = 285.0
     x0_stress = x1_strain + gap
     x1_stress = x0_stress + panel_w_stress
 
@@ -1887,6 +1887,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
