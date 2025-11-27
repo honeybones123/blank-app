@@ -409,7 +409,10 @@ def _plot_stress_strain_profiles(state_dict):
         [Section]  [Strain profile]  [Stress-block profile]
 
     All panels share the SAME vertical depth scale (0 → D).
-    The subplots have the same physical height so nothing looks taller/shorter.
+
+    The left section panel uses a fixed visual width (b_plot) so it
+    doesn't get stretched when b is large – we just scale bar x-positions
+    into that width.
     """
 
     # -----------------------------------------------------------
@@ -473,14 +476,22 @@ def _plot_stress_strain_profiles(state_dict):
         ax.spines["right"].set_visible(False)
 
     # -----------------------------------------------------------
-    # 3. LEFT PANEL — SECTION VIEW
+    # 3. LEFT PANEL — SECTION VIEW (with fixed visual width)
     # -----------------------------------------------------------
-    ax_sec.set_xlim(-10, b + 90)
+    # Fixed plotting width so the section doesn't stretch with b
+    b_plot = 400.0
+    scale_x = b_plot / b if b > 0 else 1.0
+
+    def x_sec(val_mm: float) -> float:
+        """Map physical mm in width direction to plotting x."""
+        return val_mm * scale_x
+
+    ax_sec.set_xlim(-10, b_plot + 90)
     ax_sec.set_ylabel("Depth (mm)")
 
     # Outline
     ax_sec.add_patch(
-        Rectangle((0, 0), b, D, fill=False, linewidth=1.5, edgecolor="black")
+        Rectangle((0, 0), b_plot, D, fill=False, linewidth=1.5, edgecolor="black")
     )
 
     # Compression zone (0 → γc)
@@ -488,7 +499,7 @@ def _plot_stress_strain_profiles(state_dict):
     ax_sec.add_patch(
         Rectangle(
             (0, 0),
-            b,
+            b_plot,
             block_depth,
             facecolor="#c7e3ff",
             edgecolor="tab:red",
@@ -510,10 +521,10 @@ def _plot_stress_strain_profiles(state_dict):
     row_pitch_bot = db_bot + rowgap_bot
     d_row0 = D - cover_bot - db_bot / 2
 
-    for x_rel, row_idx in bot_layout:
+    for x_rel_mm, row_idx in bot_layout:
         ax_sec.add_patch(
             Circle(
-                (x_rel, d_row0 - row_idx * row_pitch_bot),
+                (x_sec(x_rel_mm), d_row0 - row_idx * row_pitch_bot),
                 radius=r_bot,
                 facecolor="none",
                 edgecolor="tab:blue",
@@ -534,10 +545,10 @@ def _plot_stress_strain_profiles(state_dict):
     row_pitch_top = db_top + rowgap_top
     y_top0 = cover_top + db_top / 2
 
-    for x_rel, row_idx in top_layout:
+    for x_rel_mm, row_idx in top_layout:
         ax_sec.add_patch(
             Circle(
-                (x_rel, y_top0 + row_idx * row_pitch_top),
+                (x_sec(x_rel_mm), y_top0 + row_idx * row_pitch_top),
                 radius=r_top,
                 facecolor="none",
                 edgecolor="tab:red",
@@ -546,7 +557,7 @@ def _plot_stress_strain_profiles(state_dict):
         )
 
     # ---- Arrows: d & NA ----
-    x_d = b + 25
+    x_d = b_plot + 25
     ax_sec.annotate(
         "",
         xy=(x_d, d),
@@ -555,7 +566,7 @@ def _plot_stress_strain_profiles(state_dict):
     )
     ax_sec.text(x_d + 8, d / 2, f"d = {d:.0f} mm", va="center")
 
-    x_na = b + 55
+    x_na = b_plot + 55
     ax_sec.annotate(
         "",
         xy=(x_na, c),
@@ -652,8 +663,6 @@ def _plot_stress_strain_profiles(state_dict):
     ax_stress.set_xlabel("Stress (MPa)")
 
     return fig
-
-
 
 
 # ===== END PART 2 =====
@@ -1819,6 +1828,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
