@@ -408,9 +408,10 @@ def _plot_stress_strain_profiles(state_dict):
 
         [Section]  [Strain profile]  [Stress-block profile]
 
-    All panels share the SAME vertical depth scale (0 → D), and the
-    actual section depth D is also used to scale the physical figure
-    size so deeper sections look taller.
+    All panels share the SAME vertical depth scale (0 → D).
+    Figure *height* is scaled with D so the whole block looks taller
+    for deep sections and shorter for shallow sections, while the
+    section panel uses equal x/y data units (no stretching).
     """
 
     # -----------------------------------------------------------
@@ -456,15 +457,14 @@ def _plot_stress_strain_profiles(state_dict):
     stress_max = max(sigma_c, sigma_s, 1.0)
 
     # -----------------------------------------------------------
-    # 2. FIGURE SIZE SCALED BY D (so height follows section depth)
+    # 2. FIGURE SIZE – height depends on D (width fixed)
     # -----------------------------------------------------------
-    D_ref = 600.0  # reference depth (mm)
+    D_ref = 600.0  # reference depth in mm
     scale = D / D_ref if D_ref > 0 else 1.0
-    # Clamp so tiny or huge D doesn't blow things up
-    scale = max(0.7, min(1.5, scale))
+    scale = max(0.7, min(1.5, scale))  # clamp for sanity
 
-    fig_width = 8.0 * scale
-    fig_height = 4.0 * scale
+    fig_width = 8.0          # inches – fixed
+    fig_height = 4.0 * scale # inches – varies with D
 
     fig, (ax_sec, ax_str, ax_stress) = plt.subplots(
         1,
@@ -486,6 +486,9 @@ def _plot_stress_strain_profiles(state_dict):
     # -----------------------------------------------------------
     ax_sec.set_xlim(-10.0, b + 90.0)
     ax_sec.set_ylabel("Depth (mm)")
+
+    # IMPORTANT: ensure mm are equal in x and y so no stretching
+    ax_sec.set_aspect("equal", adjustable="box")
 
     # Concrete outline
     ax_sec.add_patch(
@@ -667,6 +670,7 @@ def _plot_stress_strain_profiles(state_dict):
     ax_stress.set_xlabel("Stress (MPa)")
 
     return fig
+
 
 
 
@@ -1581,6 +1585,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
