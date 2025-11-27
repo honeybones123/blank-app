@@ -408,12 +408,13 @@ def _plot_stress_strain_profiles(state_dict):
 
         [Section]  [Strain profile]  [Stress-block profile]
 
-    All panels share the SAME vertical depth scale (0 → D). The section
-    width and depth come from the current session-state values (b, D).
+    All panels share the SAME vertical depth scale (0 → D), and the
+    actual section depth D is also used to scale the physical figure
+    size so deeper sections look taller.
     """
 
     # -----------------------------------------------------------
-    # 1. UNPACK STATE (already built from session state)
+    # 1. UNPACK STATE (built from session state)
     # -----------------------------------------------------------
     b      = float(state_dict["b"])
     D      = float(state_dict["D"])
@@ -455,12 +456,20 @@ def _plot_stress_strain_profiles(state_dict):
     stress_max = max(sigma_c, sigma_s, 1.0)
 
     # -----------------------------------------------------------
-    # 2. CREATE THREE SIDE-BY-SIDE SUBPLOTS (SHARED DEPTH)
+    # 2. FIGURE SIZE SCALED BY D (so height follows section depth)
     # -----------------------------------------------------------
+    D_ref = 600.0  # reference depth (mm)
+    scale = D / D_ref if D_ref > 0 else 1.0
+    # Clamp so tiny or huge D doesn't blow things up
+    scale = max(0.7, min(1.5, scale))
+
+    fig_width = 8.0 * scale
+    fig_height = 4.0 * scale
+
     fig, (ax_sec, ax_str, ax_stress) = plt.subplots(
         1,
         3,
-        figsize=(8.0, 4.0),
+        figsize=(fig_width, fig_height),
         sharey=True,
         gridspec_kw={"width_ratios": [1.5, 1.0, 1.5]},
         constrained_layout=True,
@@ -475,19 +484,19 @@ def _plot_stress_strain_profiles(state_dict):
     # -----------------------------------------------------------
     # 3. LEFT PANEL — SECTION VIEW (b × D from session state)
     # -----------------------------------------------------------
-    ax_sec.set_xlim(-10, b + 90)
+    ax_sec.set_xlim(-10.0, b + 90.0)
     ax_sec.set_ylabel("Depth (mm)")
 
     # Concrete outline
     ax_sec.add_patch(
-        Rectangle((0, 0), b, D, fill=False, linewidth=1.5, edgecolor="black")
+        Rectangle((0.0, 0.0), b, D, fill=False, linewidth=1.5, edgecolor="black")
     )
 
     # Compression zone (0 → γc)
     block_depth = max(0.0, min(gamma * c, D))
     ax_sec.add_patch(
         Rectangle(
-            (0, 0),
+            (0.0, 0.0),
             b,
             block_depth,
             facecolor="#c7e3ff",
@@ -550,7 +559,7 @@ def _plot_stress_strain_profiles(state_dict):
     ax_sec.annotate(
         "",
         xy=(x_d, d),
-        xytext=(x_d, 0),
+        xytext=(x_d, 0.0),
         arrowprops=dict(arrowstyle="<->", linewidth=1.0),
     )
     ax_sec.text(x_d + 8.0, d / 2.0, f"d = {d:.0f} mm", va="center")
@@ -559,7 +568,7 @@ def _plot_stress_strain_profiles(state_dict):
     ax_sec.annotate(
         "",
         xy=(x_na, c),
-        xytext=(x_na, 0),
+        xytext=(x_na, 0.0),
         arrowprops=dict(arrowstyle="<->", linewidth=1.0),
     )
     ax_sec.text(
@@ -658,6 +667,7 @@ def _plot_stress_strain_profiles(state_dict):
     ax_stress.set_xlabel("Stress (MPa)")
 
     return fig
+
 
 
 
@@ -1571,6 +1581,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
