@@ -435,7 +435,7 @@ def _plot_stress_strain_profiles(state_dict):
     else:
         section_title = "Section (uncracked view)"
 
-    # Reinforcement (fallbacks) – these ARE from session state via get_param
+    # Reinforcement (fallbacks) – from session state
     nb_bot     = int(get_param("nb_bot") or 4)
     db_bot     = float(get_param("db_bot") or 20)
     cover_bot  = float(get_param("cover_bot") or 40)
@@ -460,9 +460,9 @@ def _plot_stress_strain_profiles(state_dict):
     fig, (ax_sec, ax_str, ax_stress) = plt.subplots(
         1,
         3,
-        figsize=(9, 4.0),
+        figsize=(6, 6),  # taller & less wide -> avoids stretched look
         sharey=True,
-        gridspec_kw={"width_ratios": [1.3, 1.0, 1.3]},
+        gridspec_kw={"width_ratios": [1.2, 1.0, 1.2]},
         constrained_layout=True,
     )
 
@@ -471,6 +471,9 @@ def _plot_stress_strain_profiles(state_dict):
         ax.set_ylim(D, 0)  # invert so depth increases downward
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
+
+    # Make SECTION panel geometrically to-scale (mm in x == mm in y)
+    ax_sec.set_aspect("equal", adjustable="box")
 
     # -----------------------------------------------------------
     # 3. LEFT PANEL — REAL SECTION GEOMETRY
@@ -653,83 +656,6 @@ def _plot_stress_strain_profiles(state_dict):
 
     return fig
 
-
-
-# ============================
-# PART 3B — ULS STRESS-BLOCK FIGURE
-# ============================
-
-def _make_uls_stress_block_figure(c, d, gamma_sb, fsy, show_lever_arm=False):
-    """
-    Simple 2D stress-block diagram used in the step-by-step ULS tab.
-
-    Inputs
-    ------
-    c : neutral axis depth (mm)
-    d : effective depth to tensile centroid (mm)
-    gamma_sb : γ stress-block factor
-    fsy : steel yield stress (MPa)
-    show_lever_arm : if True, draw z = d - 0.5 γc arrow
-    """
-    if c in (None, 0) or d in (None, 0):
-        fig, ax = plt.subplots()
-        ax.text(0.5, 0.5, "No data", ha="center")
-        ax.axis("off")
-        return fig
-
-    fig, ax = plt.subplots(figsize=(3, 6))
-    ax.set_ylim(d + 50.0, -50.0)
-    ax.set_xlim(0, 1.2)
-    ax.axis("off")
-
-    # Neutral axis (depth c)
-    ax.hlines(c, 0.0, 1.0, linestyles="--", colors="black", linewidth=1.0)
-
-    # Compression block (0 → γc)
-    block_top = 0.0
-    block_bottom = gamma_sb * c
-    ax.fill_between(
-        [0.0, 0.5],
-        [block_top, block_top],
-        [block_bottom, block_bottom],
-        facecolor="#c7e3ff",
-        edgecolor="tab:red",
-        linewidth=1.2,
-    )
-
-    # Steel tension force arrow at depth d
-    ax.annotate(
-        "",
-        xy=(1.0, d),
-        xytext=(0.5, d),
-        arrowprops=dict(arrowstyle="->", linewidth=1.5, color="tab:blue"),
-    )
-    ax.text(
-        1.02,
-        d,
-        r"$T = A_{st} f_{sy}$",
-        va="center",
-        color="tab:blue",
-    )
-
-    # Optional lever arm z
-    if show_lever_arm:
-        z = d - 0.5 * gamma_sb * c
-        ax.annotate(
-            "",
-            xy=(0.7, d),
-            xytext=(0.7, 0.5 * gamma_sb * c),
-            arrowprops=dict(arrowstyle="<->", linewidth=1.2),
-        )
-        ax.text(
-            0.72,
-            (d + 0.5 * gamma_sb * c) / 2.0,
-            "z",
-            va="center",
-        )
-
-    ax.set_title("ULS stress block")
-    return fig
 
 # ===== END PART 3 =====
 
@@ -1641,6 +1567,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
