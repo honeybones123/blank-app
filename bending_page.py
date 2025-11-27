@@ -400,21 +400,24 @@ def _stress_strain_state(state: str):
 
 
 
-def _plot_stress_strain_profiles(state_dict):
+def _plot_stress_strain_profiles(state_dict, state_label="ULS"):
     """
     Single-axis figure with three panels laid out in X:
 
-        - Section (ULS view)      – left
-        - Strain profile          – centre
-        - Stress-block profile    – right
+        - Section view (left)
+        - Strain profile (centre)
+        - Stress-block / steel stress profile (right)
 
-    Uses real geometry / reo from the main app so it updates with inputs.
-    d in the state_dict is the depth to the CENTROID of bottom steel.
+    All three share the same vertical (depth) axis so that the
+    geometry remains to scale.
+
+    state_dict comes from _stress_strain_state(state_label) and must contain:
+        b, D, d, c, eps_c, eps_s, gamma, fs_t, fc, alpha2
     """
     # --- unpack state from _stress_strain_state ---
     b = state_dict["b"]
     D = state_dict["D"]
-    d = state_dict["d"]          # centroid depth
+    d = state_dict["d"]          # centroid depth to bottom steel
     c = state_dict["c"]
     eps_c = state_dict["eps_c"]
     eps_s = state_dict["eps_s"]
@@ -435,6 +438,14 @@ def _plot_stress_strain_profiles(state_dict):
 
     nb_bot = int(nb_bot)
     nb_top = int(nb_top)
+
+    # dynamic section heading based on state
+    if state_label == "ULS":
+        sec_title = "Section (ULS view)"
+    elif "SLS" in state_label:
+        sec_title = "Section (SLS cracked view)"
+    else:
+        sec_title = "Section (uncracked elastic view)"
 
     # scaling for strain & stress (horizontal only)
     eps_max = max(abs(eps_c), abs(eps_s), 1e-4) * 1.3
@@ -485,7 +496,7 @@ def _plot_stress_strain_profiles(state_dict):
     ax.tick_params(left=True, labelleft=True, bottom=False, labelbottom=False)
 
     # =====================================================
-    # 1) CROSS-SECTION (ULS view) – LEFT
+    # 1) CROSS-SECTION – LEFT
     # =====================================================
     # outline
     ax.add_patch(
@@ -500,12 +511,12 @@ def _plot_stress_strain_profiles(state_dict):
     )
 
     # compression zone (0 → γc)
-    block_depth_sec = max(0.0, min(gamma * c, D))
+    block_depth = max(0.0, min(gamma * c, D))
     ax.add_patch(
         Rectangle(
             (x0_sec, 0),
             b,
-            block_depth_sec,
+            block_depth,
             facecolor="#c7e3ff",
             edgecolor="tab:red",
             linewidth=1.0,
@@ -567,44 +578,46 @@ def _plot_stress_strain_profiles(state_dict):
             )
         )
 
-    # NA arrow & label WITH value (only on section)
-    x_na = x0_sec + b + 40.0
-    ax.annotate(
-        "",
-        xy=(x_na, c),
-        xytext=(x_na, 0),
-        arrowprops=dict(arrowstyle="<->", linewidth=1.0),
-    )
-    ax.text(
-        x_na + 20.0,
-        c / 2.0,
-        f"NA = {c:.0f} mm",
-        va="center",
-        fontsize=9,
-        color="tab:red",
-    )
+    # --- d arrow & label (NOW closest to section) ---
+    if d is not None:
+        x_d = x0_sec + b + 25.0   # just to the right of the section
+        ax.annotate(
+            "",
+            xy=(x_d, d),
+            xytext=(x_d, 0),
+            arrowprops=dict(arrowstyle="<->", linewidth=1.0),
+        )
+        ax.text(
+            x_d + 10.0,
+            d / 2.0,
+            f"d = {d:.0f} mm",
+            va="center",
+            fontsize=9,
+        )
 
-    # d arrow & label – d is centroid depth
-    x_d = x_na + 80.0
-    ax.annotate(
-        "",
-        xy=(x_d, d),
-        xytext=(x_d, 0),
-        arrowprops=dict(arrowstyle="<->", linewidth=1.0),
-    )
-    ax.text(
-        x_d + 20.0,
-        d / 2.0,
-        f"d = {d:.0f} mm",
-        va="center",
-        fontsize=9,
-    )
+    # --- NA arrow & label (NOW outside d arrow) ---
+    if c is not None:
+        x_na = x0_sec + b + 90.0   # further out from the section
+        ax.annotate(
+            "",
+            xy=(x_na, c),
+            xytext=(x_na, 0),
+            arrowprops=dict(arrowstyle="<->", linewidth=1.0, color="tab:red"),
+        )
+        ax.text(
+            x_na + 10.0,
+            c / 2.0,
+            f"NA = {c:.0f} mm",
+            va="center",
+            fontsize=9,
+            color="tab:red",
+        )
 
     # section title
     ax.text(
         x0_sec + b / 2.0,
         -0.22 * D,
-        "Section (ULS view)",
+        sec_title,
         ha="center",
         va="top",
         fontsize=10,
@@ -657,14 +670,7 @@ def _plot_stress_strain_profiles(state_dict):
         color="tab:blue",
     )
 
-    ax.text(
-        x_mid_strain,
-        -0.22 * D,
-        "Strain profile",
-        ha="center",
-        va="top",
-        fontsize=10,
-    )
+    # keep bottom label
     ax.text(
         x_mid_strain,
         D + 0.14 * D,
@@ -675,7 +681,7 @@ def _plot_stress_strain_profiles(state_dict):
     )
 
     # =====================================================
-    # 3) STRESS-BLOCK PROFILE – RIGHT
+    # 3) STRESS-BLOCK / STEEL STRESS – RIGHT
     # =====================================================
     # vertical axis
     ax.plot(
@@ -703,37 +709,38 @@ def _plot_stress_strain_profiles(state_dict):
         color="tab:blue",
     )
 
-    # Decide whether this is ULS (rectangular) or service (triangular)
-    is_uls = abs(eps_c) > 0.0025
-
-    # Common geometry for the compression region
+    # Compression block geometry depends on state
     block_ratio = 1.0 / 3.0
     block_width = (x_T - x0_stress) * block_ratio
+    x_block_right = x0_stress + block_width
+
+    # depth to top of compression is 0, bottom is gamma*c
     block_top = 0.0
     block_bottom = gamma * c
-    x_block_face = x0_stress + block_width
 
-    if is_uls:
-        # ---------- ULS: rectangular compression block ----------
+    # --- ULS: rectangular block ---
+    if state_label == "ULS":
         ax.fill_between(
-            [x0_stress, x_block_face],
+            [x0_stress, x_block_right],
             [block_top, block_top],
             [block_bottom, block_bottom],
             edgecolor="tab:red",
             facecolor="none",
             linewidth=1.5,
         )
+    # --- SLS / Uncracked: triangular block ---
     else:
-        # ---------- SLS & Uncracked: triangular compression block ----------
+        # triangle from full stress at top to zero at NA (approx c)
+        y_tri_bottom = c
         ax.fill(
-            [x0_stress, x0_stress, x_block_face],
-            [block_bottom, block_top, block_top],
-            facecolor="none",
+            [x0_stress, x0_stress, x_block_right],
+            [y_tri_bottom, block_top, block_top],
             edgecolor="tab:red",
+            facecolor="none",
             linewidth=1.5,
         )
 
-    # NA line over stress panel (same for all states)
+    # NA line over stress panel
     ax.hlines(
         c,
         x0_stress - 10.0,
@@ -748,11 +755,11 @@ def _plot_stress_strain_profiles(state_dict):
     ax.annotate(
         "",
         xy=(x0_stress, y_alpha),
-        xytext=(x_block_face, y_alpha),
+        xytext=(x_block_right, y_alpha),
         arrowprops=dict(arrowstyle="<->", linewidth=1.2, color="tab:red"),
     )
     ax.text(
-        (x0_stress + x_block_face) / 2.0,
+        (x0_stress + x_block_right) / 2.0,
         y_alpha + 0.08 * D,
         rf"$\alpha_2 f'_c = {sigma_c:.0f}\ \mathrm{{MPa}}$",
         ha="center",
@@ -761,7 +768,7 @@ def _plot_stress_strain_profiles(state_dict):
     )
 
     # γc arrow + value
-    x_gc = x_block_face + 0.12 * panel_w_stress
+    x_gc = x_block_right + 0.12 * panel_w_stress
     ax.annotate(
         "",
         xy=(x_gc, block_bottom),
@@ -777,31 +784,21 @@ def _plot_stress_strain_profiles(state_dict):
         color="tab:red",
     )
 
-    # Internal compression arrows
-    if is_uls:
-        # ULS: 3 arrows
-        frac_list = [0.25, 0.5, 0.75]
-    else:
-        # SLS & Uncracked: 2 left-facing arrows
-        frac_list = [0.33, 0.67]
-
-    for frac in frac_list:
-        y_mid = block_top + frac * (block_bottom - block_top)
+    # internal compression arrows (pointing left) – keep for all states
+    for frac in [0.25, 0.5, 0.75]:
+        if state_label == "ULS":
+            y_mid = block_top + frac * (block_bottom - block_top)
+        else:
+            # for triangle, keep arrows within compression zone above NA
+            y_mid = block_top + frac * (c - block_top)
         ax.annotate(
             "",
             xy=(x0_stress + 0.15 * block_width, y_mid),
-            xytext=(x0_stress + 0.85 * block_width, y_mid),
+            xytext=(x_block_right - 0.15 * block_width, y_mid),
             arrowprops=dict(arrowstyle="<-", linewidth=1.0, color="tab:red"),
         )
 
-    ax.text(
-        (x0_stress + x1_stress) / 2.0,
-        -0.22 * D,
-        "Stress-block Profile (AS3600 α₂–γ)",
-        ha="center",
-        va="top",
-        fontsize=10,
-    )
+    # bottom label for stress axis
     ax.text(
         (x0_stress + x1_stress) / 2.0,
         D + 0.14 * D,
@@ -812,8 +809,6 @@ def _plot_stress_strain_profiles(state_dict):
     )
 
     return fig
-
-
 
 # ===== END PART 2 =====
 
@@ -1971,6 +1966,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
