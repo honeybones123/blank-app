@@ -399,7 +399,6 @@ def _stress_strain_state(state: str):
 # ===== END PART 2A =====
 
 
-
 def _plot_stress_strain_profiles(state_dict, state_label=None):
     """
     Single-axis figure with three panels laid out in X:
@@ -737,9 +736,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     return fig
 
 
-
 # ===== END PART 2 =====
-
 
 # ============================
 # PART 3A — CROSS-SECTION FIGURE (ULS / UNCRACKED)
@@ -1539,7 +1536,7 @@ def render_bending():
     fig_ss = _plot_stress_strain_profiles(ss_state)
     st.pyplot(fig_ss, use_container_width=True)
 
-       # ============================================================
+    # ============================================================
     #  STEP-BY-STEP TABS (ULS / SLS)
     # ============================================================
     tab_uls, tab_sls = st.tabs(["ULS step-by-step", "SLS step-by-step"])
@@ -1710,15 +1707,14 @@ def render_bending():
                 fig_uls_sb_plain = _make_uls_stress_block_figure(
                     c=c,
                     d=d,
-                gamma_sb=gamma_sb,
-                alpha2=alpha2_sb,
-                fc=fc,
-                fsy=fsy,
-                show_lever_arm=False,
-        )
-        st.pyplot(fig_uls_sb_plain, use_container_width=True)
-        plt.close(fig_uls_sb_plain)
-
+                    gamma_sb=gamma_sb,
+                    alpha2=alpha2_sb,
+                    fc=fc,
+                    fsy=fsy,
+                    show_lever_arm=False,
+                )
+                st.pyplot(fig_uls_sb_plain, use_container_width=True)
+                plt.close(fig_uls_sb_plain)
 
             st.markdown("---")
 
@@ -1817,7 +1813,6 @@ def render_bending():
 
             st.markdown("---")
 
-
             # =======================
             # Section 4 – φMu,cap + stress block with lever arm
             # =======================
@@ -1905,7 +1900,6 @@ def render_bending():
                 )
                 st.pyplot(fig_uls_sb_z, use_container_width=True)
                 plt.close(fig_uls_sb_z)
-
 
         else:
             st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
@@ -1996,31 +1990,3 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
