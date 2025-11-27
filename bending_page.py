@@ -494,8 +494,8 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
 
     fig, ax = plt.subplots(figsize=(9, 3.5))
 
-    # common depth scale
-    ax.set_ylim(D, 0)
+    # common depth scale – give a bit of extra headroom above and below
+    ax.set_ylim(D * 1.2, -0.2 * D)
     ax.set_xlim(0, total_x_max)
     ax.set_aspect("equal", adjustable="box")  # keep circles round, NA aligned
 
@@ -763,8 +763,8 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         linewidth=0.8,
     )
 
-    # α2 f'c arrow & label – horizontally just above the block
-    y_alpha = block_top + 0.15 * block_bottom
+    # α2 f'c arrow & label – ABOVE the block
+    y_alpha = -0.05 * D          # a little above the top fibre
     ax.annotate(
         "",
         xy=(x0_stress, y_alpha),
@@ -773,14 +773,14 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     )
     ax.text(
         (x0_stress + x_block_right) / 2.0,
-        max(0.0, y_alpha - 0.08 * D),
+        y_alpha - 0.04 * D,
         rf"$\alpha_2 f'_c = {sigma_c:.0f}\ \mathrm{{MPa}}$",
         ha="center",
         va="bottom",
         color="tab:red",
     )
 
-    # depth arrow (γc for ULS, c for SLS/Uncracked)
+    # depth arrow (γc for ULS, NA = c for SLS/Uncracked)
     x_gc = x_block_right + 0.12 * panel_w_stress
     ax.annotate(
         "",
@@ -792,7 +792,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     if state_label == "ULS":
         depth_label = rf"$\gamma c = {val_gammac:.0f}\ \mathrm{{mm}}$"
     else:
-        depth_label = rf"$c = {c:.0f}\ \mathrm{{mm}}$"
+        depth_label = rf"$\mathrm{{NA}} = {c:.0f}\ \mathrm{{mm}}$"
     ax.text(
         x_gc + 0.06 * panel_w_stress,
         (block_top + block_bottom) / 2.0,
@@ -801,7 +801,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         color="tab:red",
     )
 
-    # internal compression arrows – now pointing LEFT
+    # internal compression arrows – NOW pointing LEFT
     if state_label == "ULS":
         y_min = block_top
         y_max = block_bottom
@@ -812,9 +812,9 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         y_mid = y_min + frac * (y_max - y_min)
         ax.annotate(
             "",
-            xy=(x0_stress + 0.15 * block_width, y_mid),
-            xytext=(x_block_right - 0.15 * block_width, y_mid),
-            arrowprops=dict(arrowstyle="<-", linewidth=1.0, color="tab:red"),
+            xy=(x0_stress + 0.15 * block_width, y_mid),          # left end (arrow head)
+            xytext=(x_block_right - 0.15 * block_width, y_mid), # right end
+            arrowprops=dict(arrowstyle="->", linewidth=1.0, color="tab:red"),
         )
 
     # bottom label for stress axis
@@ -1987,6 +1987,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
