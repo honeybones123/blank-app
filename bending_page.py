@@ -408,11 +408,8 @@ def _plot_stress_strain_profiles(state_dict):
 
         [Section]  [Strain profile]  [Stress-block profile]
 
-    All panels share the SAME vertical depth scale (0 → D).
-
-    The left panel uses a fixed plotting width (b_plot) so the section
-    doesn’t get stretched horizontally when b is large. We just scale
-    bar x-positions into that width.
+    All panels share the SAME vertical depth scale (0 → D), and the
+    section is drawn with its real width b (so depth and NA are to scale).
     """
 
     # -----------------------------------------------------------
@@ -438,7 +435,7 @@ def _plot_stress_strain_profiles(state_dict):
     else:
         section_title = "Section (uncracked view)"
 
-    # Reinforcement (fallbacks)
+    # Reinforcement (fallbacks) – these ARE from session state via get_param
     nb_bot     = int(get_param("nb_bot") or 4)
     db_bot     = float(get_param("db_bot") or 20)
     cover_bot  = float(get_param("cover_bot") or 40)
@@ -463,7 +460,7 @@ def _plot_stress_strain_profiles(state_dict):
     fig, (ax_sec, ax_str, ax_stress) = plt.subplots(
         1,
         3,
-        figsize=(8, 4.0),  # slightly less wide so it doesn’t feel stretched
+        figsize=(9, 4.0),
         sharey=True,
         gridspec_kw={"width_ratios": [1.3, 1.0, 1.3]},
         constrained_layout=True,
@@ -476,21 +473,14 @@ def _plot_stress_strain_profiles(state_dict):
         ax.spines["right"].set_visible(False)
 
     # -----------------------------------------------------------
-    # 3. LEFT PANEL — SECTION VIEW WITH FIXED WIDTH
+    # 3. LEFT PANEL — REAL SECTION GEOMETRY
     # -----------------------------------------------------------
-    b_plot = 350.0  # visual width, constant
-    scale_x = b_plot / b if b > 0 else 1.0
-
-    def x_plot(x_mm: float) -> float:
-        """Map actual mm across the width into plotting x."""
-        return x_mm * scale_x
-
-    ax_sec.set_xlim(-10, b_plot + 90)
+    ax_sec.set_xlim(-10, b + 90)
     ax_sec.set_ylabel("Depth (mm)")
 
-    # Concrete outline
+    # Concrete outline (real width b)
     ax_sec.add_patch(
-        Rectangle((0, 0), b_plot, D, fill=False, linewidth=1.5, edgecolor="black")
+        Rectangle((0, 0), b, D, fill=False, linewidth=1.5, edgecolor="black")
     )
 
     # Compression zone (0 → γc)
@@ -498,7 +488,7 @@ def _plot_stress_strain_profiles(state_dict):
     ax_sec.add_patch(
         Rectangle(
             (0, 0),
-            b_plot,
+            b,
             block_depth,
             facecolor="#c7e3ff",
             edgecolor="tab:red",
@@ -520,10 +510,10 @@ def _plot_stress_strain_profiles(state_dict):
     row_pitch_bot = db_bot + rowgap_bot
     d_row0 = D - cover_bot - db_bot / 2
 
-    for x_rel_mm, row_idx in bot_layout:
+    for x_rel, row_idx in bot_layout:
         ax_sec.add_patch(
             Circle(
-                (x_plot(x_rel_mm), d_row0 - row_idx * row_pitch_bot),
+                (x_rel, d_row0 - row_idx * row_pitch_bot),
                 radius=r_bot,
                 facecolor="none",
                 edgecolor="tab:blue",
@@ -544,10 +534,10 @@ def _plot_stress_strain_profiles(state_dict):
     row_pitch_top = db_top + rowgap_top
     y_top0 = cover_top + db_top / 2
 
-    for x_rel_mm, row_idx in top_layout:
+    for x_rel, row_idx in top_layout:
         ax_sec.add_patch(
             Circle(
-                (x_plot(x_rel_mm), y_top0 + row_idx * row_pitch_top),
+                (x_rel, y_top0 + row_idx * row_pitch_top),
                 radius=r_top,
                 facecolor="none",
                 edgecolor="tab:red",
@@ -556,7 +546,7 @@ def _plot_stress_strain_profiles(state_dict):
         )
 
     # ---- Arrows: d & NA ----
-    x_d = b_plot + 25
+    x_d = b + 25
     ax_sec.annotate(
         "",
         xy=(x_d, d),
@@ -565,7 +555,7 @@ def _plot_stress_strain_profiles(state_dict):
     )
     ax_sec.text(x_d + 8, d / 2, f"d = {d:.0f} mm", va="center")
 
-    x_na = b_plot + 55
+    x_na = b + 55
     ax_sec.annotate(
         "",
         xy=(x_na, c),
@@ -663,183 +653,6 @@ def _plot_stress_strain_profiles(state_dict):
 
     return fig
 
-
-
-# ===== END PART 2 =====
-
-
-# ============================
-# PART 3A — CROSS-SECTION FIGURE (ULS / UNCRACKED)
-# ============================
-
-def _make_cross_section_figure(
-    b, D, d, a,
-    nb_bot, db_bot, cover_bot,
-    nb_top=None, db_top=None, cover_top=None,
-    c=None, z=None,
-    show_compression=True,
-    title="ULS cross-section (cracked)",
-):
-    """
-    Step-by-step cross-section diagram.
-
-    Draws only the section and reo – NO extra outer border/frame –
-    so it visually matches the main ULS section diagram.
-
-    NOTE:
-      • We *draw* arrows for NA and d only.
-      • Text labels are "NA = ... mm" and "d = ... mm"
-        (no 'c' or 'z' in the figure labels).
-    """
-    if b is None or D is None:
-        return None
-
-    # safe fallbacks
-    nb_bot = nb_bot or 0
-    db_bot = db_bot or 0
-    cover_bot = cover_bot or 0
-    nb_top = nb_top or 0
-    db_top = db_top or 0
-    cover_top = cover_top or 0
-
-    fig, ax = plt.subplots(figsize=(3, 6))
-    ax.set_xlim(0, b + 80)   # margin on right for arrows
-    ax.set_ylim(D + 40, -40)
-    ax.set_aspect("equal")
-    ax.axis("off")
-
-    # ---------------- Concrete outline ----------------
-    ax.add_patch(
-        Rectangle(
-            (0, 0),
-            b,
-            D,
-            fill=False,
-            linewidth=1.5,
-            edgecolor="black",
-        )
-    )
-
-    # ---------------- Compression block ----------------
-    if show_compression and a is not None and c is not None:
-        block_depth = max(0.0, min(a, D))
-        ax.add_patch(
-            Rectangle(
-                (0, 0),
-                b,
-                block_depth,
-                facecolor="#c7e3ff",
-                edgecolor="tab:red",
-                linewidth=1.2,
-                alpha=0.8,
-            )
-        )
-
-        # NA dashed line at depth "c"
-        ax.hlines(
-            c,
-            0,
-            b,
-            colors="tab:red",
-            linestyles="--",
-            linewidth=1.0,
-        )
-
-    # ---------------- Bottom reinforcement -------------
-    if nb_bot > 0 and db_bot > 0:
-        r_bot = db_bot / 2.0
-        rowgap_bot = get_param("rowgap_bot") or 25.0
-        min_spacing_bot = 2.0 * db_bot
-
-        layout_bot = _layout_bars_in_rows(
-            n_bars=nb_bot,
-            b=b,
-            cover=cover_bot,
-            db=db_bot,
-            min_spacing=min_spacing_bot,
-            n_rows_max=2,
-        )
-        row_pitch_bot = db_bot + rowgap_bot
-        d_row0 = D - cover_bot - db_bot / 2.0
-
-        for x_rel, row_idx in layout_bot:
-            x = x_rel
-            y = d_row0 - row_idx * row_pitch_bot
-            ax.add_patch(
-                Circle(
-                    (x, y),
-                    radius=r_bot,
-                    facecolor="none",
-                    edgecolor="tab:blue",
-                    linewidth=1.3,
-                )
-            )
-
-    # ---------------- Top reinforcement ----------------
-    if nb_top > 0 and db_top > 0:
-        r_top = db_top / 2.0
-        rowgap_top = get_param("rowgap_top") or 25.0
-        min_spacing_top = 2.0 * db_top
-
-        layout_top = _layout_bars_in_rows(
-            n_bars=nb_top,
-            b=b,
-            cover=cover_top,
-            db=db_top,
-            min_spacing=min_spacing_top,
-            n_rows_max=2,
-        )
-        y_top_base = cover_top + db_top / 2.0
-        row_pitch_top = db_top + rowgap_top
-
-        for x_rel, row_idx in layout_top:
-            x = x_rel
-            y = y_top_base + row_idx * row_pitch_top
-            ax.add_patch(
-                Circle(
-                    (x, y),
-                    radius=r_top,
-                    facecolor="none",
-                    edgecolor="tab:red",
-                    linewidth=1.3,
-                )
-            )
-
-    # ---------------- NA arrow + label (use NA) --------
-    if c is not None:
-        x_na = b + 20.0
-        ax.annotate(
-            "",
-            xy=(x_na, c),
-            xytext=(x_na, 0),
-            arrowprops=dict(arrowstyle="<->", linewidth=1.0, color="tab:red"),
-        )
-        ax.text(
-            x_na + 5.0,
-            c / 2.0,
-            f"NA = {c:.0f} mm",
-            va="center",
-            color="tab:red",
-        )
-
-    # ---------------- d arrow + label (effective depth) -
-    if d is not None:
-        x_d = b + 50.0
-        ax.annotate(
-            "",
-            xy=(x_d, d),
-            xytext=(x_d, 0),
-            arrowprops=dict(arrowstyle="<->", linewidth=1.0),
-        )
-        ax.text(
-            x_d + 5.0,
-            d / 2.0,
-            f"d = {d:.0f} mm",
-            va="center",
-        )
-
-    ax.set_title(title)
-    return fig
 
 
 # ============================
@@ -1383,8 +1196,8 @@ def render_bending():
 
     # Plot combined section + strain + stress-block profiles
     fig_ss = _plot_stress_strain_profiles(ss_state)
-    st.pyplot(fig_ss, use_container_width=True)
-
+    st.pyplot(fig_ss)          # <- remove use_container_width=True
+    plt.close(fig_ss)
        # ============================================================
     #  STEP-BY-STEP TABS (ULS / SLS)
     # ============================================================
@@ -1828,6 +1641,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
