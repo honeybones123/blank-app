@@ -669,6 +669,169 @@ def _plot_stress_strain_profiles(state_dict):
     ax_stress.set_xlabel("Stress (MPa)")
 
     return fig
+# ------------------------------------------------------------
+#  SIMPLE CROSS-SECTION FIGURE FOR STEP-BY-STEP TABS
+# ------------------------------------------------------------
+def _make_cross_section_figure(
+    b,
+    D,
+    d,
+    a,
+    nb_bot,
+    db_bot,
+    cover_bot,
+    nb_top=None,
+    db_top=None,
+    cover_top=None,
+    c=None,
+    z=None,
+    show_compression=True,
+    title="Cross-section",
+):
+    """
+    Small standalone cross-section used in the ULS/SLS step-by-step tabs.
+
+    b, D       : section width & depth (mm)
+    d          : effective depth to bottom tensile centroid (mm)
+    a          : block depth = γc (mm)
+    nb_bot     : number of bottom bars
+    db_bot     : bottom bar diameter (mm)
+    cover_bot  : bottom cover (mm)
+    nb_top     : number of top bars (optional)
+    db_top     : top bar diameter (mm)
+    cover_top  : top cover (mm)
+    c          : neutral axis depth (optional)
+    z          : lever arm (optional – just used for a label if needed)
+    show_compression : if True, draw compression block
+    """
+
+    if b in (None, 0) or D in (None, 0):
+        fig, ax = plt.subplots()
+        ax.text(0.5, 0.5, "No section", ha="center", va="center")
+        ax.axis("off")
+        return fig
+
+    # Fallbacks for top bars
+    nb_top = int(nb_top or 0)
+    db_top = float(db_top or 16.0)
+    cover_top = float(cover_top or 40.0)
+
+    nb_bot = int(nb_bot or 0)
+    db_bot = float(db_bot or 20.0)
+    cover_bot = float(cover_bot or 40.0)
+
+    # Row gaps from session if available (just for nice layout)
+    rowgap_bot = float(get_param("rowgap_bot") or 25.0)
+    rowgap_top = float(get_param("rowgap_top") or 25.0)
+
+    min_spacing_bot = 2.0 * db_bot
+    min_spacing_top = 2.0 * db_top
+
+    fig, ax = plt.subplots(figsize=(3.0, 5.0))
+    ax.set_ylim(D + 20.0, -20.0)
+    ax.set_xlim(-20.0, b + 100.0)
+    ax.set_aspect("equal")
+    ax.axis("off")
+
+    # Concrete outline
+    ax.add_patch(
+        Rectangle((0.0, 0.0), b, D, fill=False, linewidth=1.5, edgecolor="black")
+    )
+
+    # Compression block (if requested)
+    if show_compression and c is not None and a is not None:
+        block_depth = max(0.0, min(a, D))
+        ax.add_patch(
+            Rectangle(
+                (0.0, 0.0),
+                b,
+                block_depth,
+                facecolor="#c7e3ff",
+                edgecolor="tab:red",
+                linewidth=1.2,
+                alpha=0.7,
+            )
+        )
+
+    # Bottom bars (using same layout helper as the main section)
+    bot_layout = _layout_bars_in_rows(
+        n_bars=nb_bot,
+        b=b,
+        cover=cover_bot,
+        db=db_bot,
+        min_spacing=min_spacing_bot,
+        n_rows_max=2,
+    )
+    r_bot = db_bot / 2.0
+    row_pitch_bot = db_bot + rowgap_bot
+    d_row0 = D - cover_bot - db_bot / 2.0
+
+    for x_rel, row_idx in bot_layout:
+        ax.add_patch(
+            Circle(
+                (x_rel, d_row0 - row_idx * row_pitch_bot),
+                radius=r_bot,
+                facecolor="none",
+                edgecolor="tab:blue",
+                linewidth=1.3,
+            )
+        )
+
+    # Top bars
+    if nb_top > 0:
+        top_layout = _layout_bars_in_rows(
+            n_bars=nb_top,
+            b=b,
+            cover=cover_top,
+            db=db_top,
+            min_spacing=min_spacing_top,
+            n_rows_max=2,
+        )
+        r_top = db_top / 2.0
+        row_pitch_top = db_top + rowgap_top
+        y_top0 = cover_top + db_top / 2.0
+
+        for x_rel, row_idx in top_layout:
+            ax.add_patch(
+                Circle(
+                    (x_rel, y_top0 + row_idx * row_pitch_top),
+                    radius=r_top,
+                    facecolor="none",
+                    edgecolor="tab:red",
+                    linewidth=1.3,
+                )
+            )
+
+    # Arrow for d (if provided)
+    if d not in (None, 0):
+        x_d = b + 25.0
+        ax.annotate(
+            "",
+            xy=(x_d, d),
+            xytext=(x_d, 0.0),
+            arrowprops=dict(arrowstyle="<->", linewidth=1.0),
+        )
+        ax.text(x_d + 5.0, d / 2.0, f"d = {d:.0f} mm", va="center")
+
+    # Arrow for NA (if provided)
+    if c not in (None, 0):
+        x_na = b + 55.0
+        ax.annotate(
+            "",
+            xy=(x_na, c),
+            xytext=(x_na, 0.0),
+            arrowprops=dict(arrowstyle="<->", linewidth=1.0),
+        )
+        ax.text(
+            x_na + 5.0,
+            c / 2.0,
+            f"NA = {c:.0f} mm",
+            va="center",
+            color="tab:red",
+        )
+
+    ax.set_title(title, fontsize=10)
+    return fig
 
 
 # ===== END PART 3 =====
@@ -1581,6 +1744,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
