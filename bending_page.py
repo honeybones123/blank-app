@@ -499,12 +499,13 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     ax.set_xlim(0, total_x_max)
     ax.set_aspect("equal", adjustable="box")  # keep circles round, NA aligned
 
-    # tidy up axes
+    # tidy up axes (NO SCALE / TICKS on the side)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.spines["bottom"].set_visible(False)
     ax.spines["left"].set_visible(False)
-    ax.tick_params(left=True, labelleft=True, bottom=False, labelbottom=False)
+    # changed: remove left ticks & labels
+    ax.tick_params(left=False, labelleft=False, bottom=False, labelbottom=False)
 
     # =====================================================
     # 1) CROSS-SECTION – LEFT
@@ -801,7 +802,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         color="tab:red",
     )
 
-    # internal compression arrows – NOW pointing LEFT
+    # internal compression arrows – pointing LEFT
     if state_label == "ULS":
         y_min = block_top
         y_max = block_bottom
@@ -828,6 +829,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     )
 
     return fig
+
 
 
 
@@ -1987,6 +1989,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
