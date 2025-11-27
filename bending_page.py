@@ -422,7 +422,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     if state_label is None:
         try:
             state_label = st.session_state.get("bending_strain_state_local", "ULS")
-        except Exception:  # very defensive
+        except Exception:
             state_label = "ULS"
 
     # --- unpack state from _stress_strain_state ---
@@ -521,13 +521,13 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         )
     )
 
-    # compression zone (0 → γc)
-    block_depth = max(0.0, min(gamma * c, D))
+    # compression zone (0 → γc) for all states in the section diagram
+    block_depth_sec = max(0.0, min(gamma * c, D))
     ax.add_patch(
         Rectangle(
             (x0_sec, 0),
             b,
-            block_depth,
+            block_depth_sec,
             facecolor="#c7e3ff",
             edgecolor="tab:red",
             linewidth=1.0,
@@ -606,7 +606,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             fontsize=9,
         )
 
-    # --- NA arrow & label (slightly further right than before) ---
+    # --- NA arrow & label (slightly further right) ---
     if c is not None:
         x_na = x0_sec + b + 80.0
         ax.annotate(
@@ -624,7 +624,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             color="tab:red",
         )
 
-    # section title **at the bottom**, centred under the section
+    # section title at the bottom
     ax.text(
         x0_sec + b / 2.0,
         D + 0.14 * D,
@@ -720,13 +720,18 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         color="tab:blue",
     )
 
-    # Common geometry bits
+    # compression block width and depth for stress diagram
     block_ratio = 1.0 / 3.0
     block_width = (x_T - x0_stress) * block_ratio
     x_block_right = x0_stress + block_width
 
     block_top = 0.0
-    block_bottom = gamma * c  # for γc arrow / label
+
+    # ULS: depth = γc; SLS/Uncracked: depth = c (NA)
+    if state_label == "ULS":
+        block_bottom = gamma * c
+    else:
+        block_bottom = c
 
     # --- ULS: rectangular compression block ---
     if state_label == "ULS":
@@ -738,19 +743,17 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             facecolor="none",
             linewidth=1.5,
         )
-    # --- SLS / Uncracked: triangular compression block ---
+    # --- SLS / Uncracked: triangular compression block (0 → c) ---
     else:
-        # triangle from full stress at top to zero at NA depth c
-        y_tri_bottom = c
         ax.fill(
             [x0_stress, x0_stress, x_block_right],
-            [y_tri_bottom, block_top, block_top],
+            [block_bottom, block_top, block_top],
             edgecolor="tab:red",
             facecolor="none",
             linewidth=1.5,
         )
 
-    # NA line over stress panel
+    # NA line over stress panel (at depth c)
     ax.hlines(
         c,
         x0_stress - 10.0,
@@ -760,8 +763,8 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         linewidth=0.8,
     )
 
-    # α2 f'c arrow & label (below arrow)
-    y_alpha = c + 0.05 * D
+    # α2 f'c arrow & label – horizontally just above the block
+    y_alpha = block_top + 0.15 * block_bottom
     ax.annotate(
         "",
         xy=(x0_stress, y_alpha),
@@ -770,14 +773,14 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     )
     ax.text(
         (x0_stress + x_block_right) / 2.0,
-        y_alpha + 0.08 * D,
+        max(0.0, y_alpha - 0.08 * D),
         rf"$\alpha_2 f'_c = {sigma_c:.0f}\ \mathrm{{MPa}}$",
         ha="center",
-        va="top",
+        va="bottom",
         color="tab:red",
     )
 
-    # γc arrow + value
+    # depth arrow (γc for ULS, c for SLS/Uncracked)
     x_gc = x_block_right + 0.12 * panel_w_stress
     ax.annotate(
         "",
@@ -786,29 +789,32 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         arrowprops=dict(arrowstyle="<->", linewidth=1.2, color="tab:red"),
     )
     val_gammac = gamma * c
+    if state_label == "ULS":
+        depth_label = rf"$\gamma c = {val_gammac:.0f}\ \mathrm{{mm}}$"
+    else:
+        depth_label = rf"$c = {c:.0f}\ \mathrm{{mm}}$"
     ax.text(
         x_gc + 0.06 * panel_w_stress,
         (block_top + block_bottom) / 2.0,
-        rf"$\gamma c = {val_gammac:.0f}\ \mathrm{{mm}}$",
+        depth_label,
         va="center",
         color="tab:red",
     )
 
-    # internal compression arrows – now facing RIGHT
-    # keep them within the compression region
+    # internal compression arrows – now pointing LEFT
     if state_label == "ULS":
         y_min = block_top
         y_max = block_bottom
     else:
         y_min = block_top
-        y_max = c
+        y_max = block_bottom
     for frac in [0.25, 0.5, 0.75]:
         y_mid = y_min + frac * (y_max - y_min)
         ax.annotate(
             "",
-            xy=(x_block_right - 0.15 * block_width, y_mid),
-            xytext=(x0_stress + 0.15 * block_width, y_mid),
-            arrowprops=dict(arrowstyle="->", linewidth=1.0, color="tab:red"),
+            xy=(x0_stress + 0.15 * block_width, y_mid),
+            xytext=(x_block_right - 0.15 * block_width, y_mid),
+            arrowprops=dict(arrowstyle="<-", linewidth=1.0, color="tab:red"),
         )
 
     # bottom label for stress axis
@@ -1981,6 +1987,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
