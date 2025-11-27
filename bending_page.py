@@ -409,9 +409,8 @@ def _plot_stress_strain_profiles(state_dict):
         [Section]  [Strain profile]  [Stress-block profile]
 
     All panels share the SAME vertical depth scale (0 → D).
-    Figure *height* is scaled with D so the whole block looks taller
-    for deep sections and shorter for shallow sections, while the
-    section panel uses equal x/y data units (no stretching).
+    Figure height is scaled with D so the whole block looks taller
+    for deep sections and shorter for shallow sections.
     """
 
     # -----------------------------------------------------------
@@ -487,8 +486,8 @@ def _plot_stress_strain_profiles(state_dict):
     ax_sec.set_xlim(-10.0, b + 90.0)
     ax_sec.set_ylabel("Depth (mm)")
 
-    # IMPORTANT: ensure mm are equal in x and y so no stretching
-    ax_sec.set_aspect("equal", adjustable="box")
+    # NOTE: NO aspect("equal") here – so this axis now has the same
+    # pixel height as the strain and stress axes, all with 0→D range.
 
     # Concrete outline
     ax_sec.add_patch(
@@ -670,9 +669,6 @@ def _plot_stress_strain_profiles(state_dict):
     ax_stress.set_xlabel("Stress (MPa)")
 
     return fig
-
-
-
 
 
 # ===== END PART 3 =====
@@ -1585,6 +1581,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
