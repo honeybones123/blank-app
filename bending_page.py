@@ -1075,6 +1075,30 @@ def _make_uls_stress_block_figure(
 
     return fig
 
+# ------------------------------------------------------------
+#  Simple "calc box" helper + CSS
+# ------------------------------------------------------------
+def calcbox(md: str):
+    """Render a highlighted calculation box."""
+    st.markdown(f"<div class='calcbox'>{md}</div>", unsafe_allow_html=True)
+
+
+# Global CSS for calc boxes
+st.markdown(
+    """
+    <style>
+    .calcbox {
+        border-left: 4px solid #4a90e2;
+        background-color: #f7faff;
+        padding: 0.75rem 1rem;
+        margin: 0.5rem 0 1rem 0;
+        border-radius: 4px;
+        font-size: 0.95rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # ===== END PART 3 =====
 
@@ -1539,370 +1563,18 @@ def render_bending():
     # ============================================================
     #  STEP-BY-STEP TABS (ULS / SLS)
     # ============================================================
-    tab_uls, tab_sls = st.tabs(["ULS step-by-step", "SLS step-by-step"])
+   tab_uls, tab_sls = st.tabs(["ULS step-by-step", "SLS step-by-step"])
 
-    # ----- ULS detailed tab -----
-    with tab_uls:
-        st.subheader("ULS Calculation (step-by-step)")
+# ----- ULS detailed tab -----
+with tab_uls:
+    st.subheader("ULS Calculation (step-by-step)")
 
-        if phi_Mu_cap > 0 and d and Ast:
+    if phi_Mu_cap > 0 and d and Ast:
+        ...
+        ...
+    else:
+        st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
 
-            # =======================
-            # Section 1 – inputs + ULS cross-section
-            # =======================
-            st.markdown("### 1. Required calculated inputs for bending")
-            col1_text, col1_fig = st.columns([3, 2])
-
-            with col1_text:
-                st.markdown("#### 1.1 Effective depth $d$ to tensile centroid")
-                st.markdown(
-                    "Effective depth $d$ is measured to the **centroid** of the "
-                    "bottom tensile reinforcement. For a single row of bars this is "
-                    "often approximated as:"
-                )
-
-                # Pull values for the worked example
-                D_val = D or 0.0
-                cover_bot_val = cover_bot or 0.0
-                db_bot_val = db_bot or 0.0
-                nb_bot_val = int(nb_bot) if nb_bot is not None else 0
-                rowgap_bot_val = get_param("rowgap_bot") or 25.0
-                b_val = b or 300.0
-
-                # Work out whether the layout actually has a second row
-                has_second_row = False
-                if nb_bot_val > 0 and db_bot_val > 0 and b_val > 0:
-                    min_spacing_bot = 2.0 * db_bot_val
-                    layout_bot_for_d = _layout_bars_in_rows(
-                        n_bars=nb_bot_val,
-                        b=b_val,
-                        cover=cover_bot_val,
-                        db=db_bot_val,
-                        min_spacing=min_spacing_bot,
-                        n_rows_max=2,
-                    )
-                    has_second_row = any(
-                        row_idx == 1 for _, row_idx in layout_bot_for_d
-                    )
-
-                # --- Case A: single bottom row (traditional shortcut) ---
-                if not has_second_row:
-                    # Symbolic expression
-                    st.latex(
-                        r"d \approx D - \text{cover}_{bot} - \dfrac{d_{b,bot}}{2}"
-                    )
-                    # Substitution with numbers
-                    st.latex(
-                        rf"d \approx {D_val:.1f} - {cover_bot_val:.1f} - "
-                        rf"\dfrac{{{db_bot_val:.1f}}}{{2}}"
-                    )
-                    # Numerical result
-                    d_single = D_val - cover_bot_val - db_bot_val / 2.0
-                    st.latex(rf"d \approx {d_single:.1f}\,\text{{ mm}}")
-
-                # --- Case B: two bottom rows – centroid of two rows ---
-                else:
-                    # First row depth d1
-                    st.latex(
-                        r"d_1 = D - \text{cover}_{bot} - \dfrac{d_{b,bot}}{2}"
-                    )
-                    st.latex(
-                        rf"d_1 = {D_val:.1f} - {cover_bot_val:.1f} - "
-                        rf"\dfrac{{{db_bot_val:.1f}}}{{2}}"
-                    )
-                    d1 = D_val - cover_bot_val - db_bot_val / 2.0
-                    st.latex(rf"d_1 = {d1:.1f}\,\text{{ mm}}")
-
-                    # Second row depth d2
-                    st.latex(
-                        r"d_2 = d_1 - \left(d_{b,bot} + \text{rowgap}_{bot}\right)"
-                    )
-                    st.latex(
-                        rf"d_2 = {d1:.1f} - ({db_bot_val:.1f} + {rowgap_bot_val:.1f})"
-                    )
-                    pitch = db_bot_val + rowgap_bot_val
-                    d2 = d1 - pitch
-                    st.latex(rf"d_2 = {d2:.1f}\,\text{{ mm}}")
-
-                    # Centroid of the two rows
-                    st.latex(r"d \approx \dfrac{d_1 + d_2}{2}")
-                    st.latex(
-                        rf"d \approx \dfrac{{{d1:.1f} + {d2:.1f}}}{2}"
-                    )
-                    d_two_rows = 0.5 * (d1 + d2)
-                    st.latex(rf"d \approx {d_two_rows:.1f}\,\text{{ mm}}")
-
-                # Finally, state what the app actually uses
-                st.markdown(
-                    "For the **current bottom bar layout** (including any second row), "
-                    "the app uses the centroid of all bottom bars, giving:  \n"
-                    f"**d = {d:.1f} mm**."
-                )
-
-                st.markdown("#### 1.2 Bottom steel area $A_{st,bot}$")
-                st.latex(r"A_{st,bot} = n_{b,bot}\,\dfrac{\pi d_{b,bot}^2}{4}")
-                st.latex(
-                    rf"A_{{st,bot}} = {nb_bot_val:d}\,"
-                    rf"\dfrac{{\pi \times {db_bot_val:.1f}^2}}{4}"
-                )
-                st.latex(rf"A_{{st,bot}} = {Ast:.1f}\,\text{{ mm}}^2")
-
-            with col1_fig:
-                fig_uls_sec1 = _make_cross_section_figure(
-                    b or 300.0,
-                    D or 600.0,
-                    d,
-                    a,
-                    nb_bot,
-                    db_bot,
-                    cover_bot,
-                    nb_top=nb_top,
-                    db_top=db_top,
-                    cover_top=cover_top,
-                    c=c,
-                    z=z,
-                    show_compression=True,
-                    title="ULS cross-section (cracked)",
-                )
-                if fig_uls_sec1 is not None:
-                    st.pyplot(fig_uls_sec1, use_container_width=True)
-                    plt.close(fig_uls_sec1)
-
-            st.markdown("---")
-
-            # =======================
-            # Section 2 – stress-block parameters + ULS stress block
-            # =======================
-            st.markdown(
-                "### 2. Stress-block parameters "
-                "(AS 3600:2018 Cl. 8.1.3)"
-            )
-            col2_text, col2_fig = st.columns([3, 2])
-
-            with col2_text:
-                st.markdown("#### 2.1 $\\alpha_2$ factor")
-                st.latex(r"\alpha_2 = 0.85 - 0.0015 f'_c \ge 0.67")
-                st.latex(
-                    rf"\alpha_2 = 0.85 - 0.0015 \times {fc:.1f}"
-                    rf" = {alpha2_raw:.3f}"
-                )
-                st.latex(rf"\Rightarrow \alpha_2 = {alpha2_sb:.3f}")
-
-                st.markdown("#### 2.2 $\\gamma$ factor")
-                st.latex(r"\gamma = 0.97 - 0.0025 f'_c \ge 0.67")
-                st.latex(
-                    rf"\gamma = 0.97 - 0.0025 \times {fc:.1f}"
-                    rf" = {gamma_raw:.3f}"
-                )
-                st.latex(rf"\Rightarrow \gamma = {gamma_sb:.3f}")
-
-                st.markdown("#### 2.3 $k_u$ value")
-                st.latex(rf"\phi_b = {phi_b:.2f}")
-                st.latex(r"k_u = \dfrac{c}{d}")
-                st.latex(
-                    rf"k_u = \dfrac{{{c:.2f}}}{{{d:.1f}}} = {ku_sb:.3f}"
-                )
-
-            with col2_fig:
-                fig_uls_sb_plain = _make_uls_stress_block_figure(
-                    c=c,
-                    d=d,
-                    gamma_sb=gamma_sb,
-                    alpha2=alpha2_sb,
-                    fc=fc,
-                    fsy=fsy,
-                    show_lever_arm=False,
-                )
-                st.pyplot(fig_uls_sb_plain, use_container_width=True)
-                plt.close(fig_uls_sb_plain)
-
-            st.markdown("---")
-
-            # =======================
-            # Section 3 – minimum strength + uncracked section
-            # =======================
-            st.markdown(
-                "### 3. Minimum strength requirements "
-                "(self-weight check – AS 3600 Cl. 8.1.6)"
-            )
-            col3_text, col3_fig = st.columns([3, 2])
-
-            with col3_text:
-                st.markdown(
-                    "AS 3600 requires a minimum bending strength so that the beam "
-                    "can support its own selfweight without cracking. Here we use "
-                    "a teaching model based on concrete flexural tensile strength "
-                    "and the gross section modulus."
-                )
-
-                st.markdown("#### 3.1 Concrete flexural tensile strength $f_{ct,f}$")
-                st.latex(r"f_{ct,f} = c_b (f'_c)^{2/3}")
-                st.latex(
-                    rf"f_{{ct,f}} = 0.20 \times ({fc:.1f})^{{2/3}}"
-                    rf" = {fctf:.3f}\,\text{{ MPa}}"
-                )
-
-                st.markdown("#### 3.2 Gross section modulus $Z_g$")
-                st.latex(r"Z_g = \dfrac{b D^2}{6}")
-                st.latex(
-                    rf"Z_g = \dfrac{{{b:.1f} \times {D:.1f}^2}}{{6}}"
-                    rf" = {Z_gross:.3e}\,\text{{ mm}}^3"
-                )
-
-                st.markdown("#### 3.3 Cracking moment $M_{cr}$")
-                st.latex(r"M_{cr} = \dfrac{f_{ct,f} Z_g}{10^6}")
-                st.latex(
-                    rf"M_{{cr}} = \dfrac{{{fctf:.3f} \times {Z_gross:.3e}}}{{10^6}}"
-                    rf" = {Mcr:.2f}\,\text{{ kNm}}"
-                )
-
-                Muo_min = Mu_min
-                st.markdown(
-                    "#### 3.4 Minimum required ultimate strength "
-                    "$(M_{uo})_{min}$ (teaching simplification)"
-                )
-                st.markdown(
-                    "For a non-prestressed member, we compare against "
-                    "a teaching minimum moment based on the cracking moment:"
-                )
-                st.latex(r"(M_{uo})_{min} \approx 1.2\,M_{cr}")
-                st.latex(
-                    rf"(M_{{uo}})_{{min}} \approx 1.2 \times {Mcr:.2f}"
-                    rf" = {Muo_min:.2f}\,\text{{ kNm}}"
-                )
-
-                st.markdown("#### 3.5 Minimum tensile reinforcement check")
-                st.latex(
-                    r"A_{st,\min} = k_{Ast}\left(\frac{d}{D}\right)^2 "
-                    r"\frac{f_{ct,f}}{f_{sy}}\,bD"
-                )
-                st.latex(
-                    rf"A_{{st,\min}} = 1.0 \left(\frac{{{d:.1f}}}{{{D:.1f}}}\right)^2"
-                    rf"\left(\frac{{{fctf:.3f}}}{{{fsy:.1f}}}\right)"
-                    rf"{b:.1f}\,{D:.1f} = {As_min:.1f}\,\text{{ mm}}^2"
-                )
-                st.markdown(
-                    rf"Check: $A_{{st,bot}} = {Ast:.1f}\,\text{{ mm}}^2 "
-                    rf"\;\ge\; A_{{st,\min}} = {As_min:.1f}\,\text{{ mm}}^2$"
-                )
-                st.markdown(
-                    rf"Teaching minimum moment: "
-                    rf"$M_{{u,\min}} \approx 1.2\,M_{{cr}} = {Muo_min:.2f}$ kNm."
-                )
-
-            with col3_fig:
-                fig_uls_uncracked = _make_cross_section_figure(
-                    b or 300.0,
-                    D or 600.0,
-                    d,
-                    a,
-                    nb_bot,
-                    db_bot,
-                    cover_bot,
-                    nb_top=nb_top,
-                    db_top=db_top,
-                    cover_top=cover_top,
-                    c=None,
-                    z=None,
-                    show_compression=False,
-                    title="Uncracked elastic section (self-weight)",
-                )
-                if fig_uls_uncracked is not None:
-                    st.pyplot(fig_uls_uncracked, use_container_width=True)
-                    plt.close(fig_uls_uncracked)
-
-            st.markdown("---")
-
-            # =======================
-            # Section 4 – φMu,cap + stress block with lever arm
-            # =======================
-            st.markdown("### 4. Ultimate flexural capacity $\\phi M_{u,cap}$")
-            col4_text, col4_fig = st.columns([3, 2])
-
-            with col4_text:
-                st.markdown("#### 4.1 Internal forces and neutral-axis depth $c$")
-                st.latex(
-                    r"T = A_{st} f_{sy},\quad C = \alpha_2 f'_c b\, \gamma c"
-                )
-                T = Ast * fsy
-                st.latex(
-                    rf"T = {Ast:.1f} \times {fsy:.1f}"
-                    rf" = {T:,.1f}\,\text{{ N}}"
-                )
-                st.latex(
-                    r"C = T \Rightarrow "
-                    r"c = \dfrac{T}{\alpha_2 f'_c b \gamma}"
-                )
-                st.latex(
-                    rf"c = \dfrac{{{T:,.1f}}}{{{alpha2_sb:.2f} \times {fc:.1f}"
-                    rf" \times {b:.1f} \times {gamma_sb:.2f}}}"
-                    rf" = {c:.2f}\,\text{{ mm}}"
-                )
-
-                st.markdown("#### 4.2 Lever arm and nominal moment $M_u$")
-                st.latex(r"a = \gamma c,\quad z = d - \dfrac{a}{2}")
-                st.latex(
-                    rf"a = {gamma_sb:.2f} \times {c:.2f}"
-                    rf" = {a:.2f}\,\text{{ mm}}"
-                )
-                st.latex(
-                    rf"z = {d:.1f} - \dfrac{{{a:.2f}}}{{2}}"
-                    rf" = {z:.2f}\,\text{{ mm}}"
-                )
-                Mu_nom = phi_Mu_cap / phi
-                st.latex(r"M_u = \dfrac{T z}{10^6}")
-                st.latex(
-                    rf"M_u = \dfrac{{{T:,.1f} \times {z:.2f}}}{{10^6}}"
-                    rf" = {Mu_nom:.2f}\,\text{{ kNm}}"
-                )
-
-                st.markdown("#### 4.3 Factored capacity and utilisation")
-                phiMu_str2 = f"{phi_Mu_cap:.2f}"
-                Mu_star_str2 = f"{Mu_star:.2f}"
-                util_str = f"{Mu_util:.3f}"
-
-                st.latex(r"\phi M_{u,\mathrm{cap}} = \phi M_u")
-                st.latex(
-                    r"\phi M_{u,\mathrm{cap}} = "
-                    + f"{phi:.2f}"
-                    + r"\times "
-                    + f"{Mu_nom:.2f}"
-                    + r" = "
-                    + phiMu_str2
-                    + r"\,\text{kNm}"
-                )
-                st.latex(
-                    r"\text{Utilisation} = "
-                    r"\dfrac{M_u^*}{\phi M_{u,\mathrm{cap}}}"
-                    r" = \dfrac{"
-                    + Mu_star_str2
-                    + r"}{"
-                    + phiMu_str2
-                    + r"} = "
-                    + util_str
-                )
-
-                st.markdown(
-                    rf"Check: $M_u^* = {Mu_star:.2f}\,\text{{ kNm}}$ "
-                    rf"vs. $\phi M_{{u,cap}} = {phi_Mu_cap:.2f}\,\text{{ kNm}}$ "
-                    rf"and $(M_{{uo}})_{{min}} \approx {Mu_min:.2f}\,\text{{ kNm}}$."
-                )
-
-            with col4_fig:
-                fig_uls_sb_z = _make_uls_stress_block_figure(
-                    c=c,
-                    d=d,
-                    gamma_sb=gamma_sb,
-                    alpha2=alpha2_sb,
-                    fc=fc,
-                    fsy=fsy,
-                    show_lever_arm=True,
-                )
-                st.pyplot(fig_uls_sb_z, use_container_width=True)
-                plt.close(fig_uls_sb_z)
-
-        else:
-            st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
 
     # ----- SLS detailed tab -----
     with tab_sls:
@@ -1990,4 +1662,5 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
