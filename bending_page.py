@@ -1516,22 +1516,6 @@ $$
 T = {Ast:.1f} \times {fsy:.1f}
   = {T:,.0f}\ \text{{ N}}
 $$
-
-From the strain diagram (similar triangles, Warner Fig. 7.6) the steel strain
-is proportional to
-
-$$
-\varepsilon_s \propto \frac{{d - d_n}}{{d_n}}
-$$
-
-so for teaching we can also write a simple relation:
-
-$$
-T \propto f_{{sy}} (d - d_n)
-$$
-
-In design we **use** $T = A_{{st}} f_{{sy}}$ to compute the moment capacity.
-"""
             )
 
             st.markdown("---")
@@ -1850,6 +1834,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
