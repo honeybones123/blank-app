@@ -1080,27 +1080,17 @@ def _make_uls_stress_block_figure(
 # ------------------------------------------------------------
 def calcbox(md: str):
     """Render a highlighted calculation box (half-width, LaTeX-safe)."""
-
-    # 1) open the wrapper divs
     st.markdown(
-        """
-        <div class="calcbox-wrapper">
-            <div class="calcbox-inner">
-        """,
+        f"""
+<div class="calcbox-wrapper">
+  <div class="calcbox-inner">
+  {md}
+  </div>
+</div>
+""",
         unsafe_allow_html=True,
     )
 
-    # 2) render the actual markdown / LaTeX normally
-    st.markdown(md)
-
-    # 3) close the wrapper divs
-    st.markdown(
-        """
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
 
 
 # ------------------------------------------------------------
@@ -2029,6 +2019,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
