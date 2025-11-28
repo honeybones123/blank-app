@@ -1476,11 +1476,6 @@ $$
                 st.pyplot(fig_uls_sb, use_container_width=True)
                 plt.close(fig_uls_sb)
 
-                st.caption(
-                    "Compression block starts at the top fibre and extends down to "
-                    "a = γ dₙ. The dashed line shows the neutral axis depth dₙ. "
-                    "Red arrows show compression acting towards the block; the blue "
-                    "arrow at the bottom shows the tensile force T."
                 )
 
             st.markdown("---")
@@ -1764,6 +1759,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
