@@ -1403,46 +1403,43 @@ def render_bending():
     # ============================================================
     tab_uls, tab_sls = st.tabs(["ULS step-by-step", "SLS step-by-step"])
 
-    # ----- ULS detailed tab -----
-    with tab_uls:
-        st.subheader("ULS Calculation (step-by-step)")
+   # ----- ULS detailed tab -----
+with tab_uls:
+    st.subheader("ULS Calculation (step-by-step)")
 
-        if phi_Mu_cap > 0 and d and Ast:
-            # ----------------------------------------------------
-            # 1. ULS derivation – Warner-style trial d_n
-            # ----------------------------------------------------
-            st.header("1. Ultimate limit state (ULS) – trial neutral axis")
+    if phi_Mu_cap > 0 and d and Ast:
+        # ----------------------------------------------------
+        # 1. ULS derivation – Warner-style trial d_n
+        # ----------------------------------------------------
+        st.header("1. Ultimate limit state (ULS) – trial neutral axis")
 
-            # Re-compute stress-block parameters in this scope
-            alpha2_raw_uls = 0.85 - 0.0015 * fc
-            gamma_raw_uls = 0.97 - 0.0025 * fc
-            alpha2_uls = max(0.67, alpha2_raw_uls)
-            gamma_uls = max(0.67, gamma_raw_uls)
+        alpha2_raw_uls = 0.85 - 0.0015 * fc
+        gamma_raw_uls = 0.97 - 0.0025 * fc
+        alpha2_uls = max(0.67, alpha2_raw_uls)
+        gamma_uls = max(0.67, gamma_raw_uls)
 
-            # Steel force and neutral axis from existing results
-            T = Ast * fsy              # N
-            dn = c                     # solved previously in _compute_bending_capacity
-            a_uls = gamma_uls * dn
-            z_uls = d - 0.5 * a_uls
-            Mu_nom_uls = T * z_uls / 1e6
-            phi_Mu_cap_uls = phi * Mu_nom_uls
+        T = Ast * fsy
+        dn = c
+        a_uls = gamma_uls * dn
+        z_uls = d - 0.5 * a_uls
+        Mu_nom_uls = T * z_uls / 1e6
+        phi_Mu_cap_uls = phi * Mu_nom_uls
 
-            # Minimum strength quantities from earlier calc
-            fctf_teach = fctf
-            Zg = Z_gross
-            Mcr_teach = Mcr
-            Mu_min_teach = 1.2 * Mcr_teach
-            Ast_min_teach = As_min
+        fctf_teach = fctf
+        Zg = Z_gross
+        Mcr_teach = Mcr
+        Mu_min_teach = 1.2 * Mcr_teach
+        Ast_min_teach = As_min
 
-            # 1.1 α2 and γ
-st.subheader("1.1 Stress-block parameters (AS 3600 / Warner)")
+        # 1.1 α2 and γ
+        st.subheader("1.1 Stress-block parameters (AS 3600 / Warner)")
 
-# --- 60% calculation, 40% sketch ---
-col_calc, col_fig = st.columns([3, 2])
+        # --- 60% calculation, 40% sketch ---
+        col_calc, col_fig = st.columns([3, 2])
 
-with col_calc:
-    calcbox(
-        rf"""
+        with col_calc:
+            calcbox(
+                rf"""
 From AS 3600 rectangular stress block (also Warner, *R.C. Design*):
 
 $$
@@ -1471,32 +1468,31 @@ $$
 \gamma = {gamma_uls:.3f}
 $$
 """
-    )
+            )
 
-with col_fig:
-    fig_uls_sb = _make_uls_stress_block_figure(
-        b_mm=b,
-        D_mm=D,
-        d_mm=d,
-        dn_mm=dn,
-        a_mm=a_uls,
-        alpha2=alpha2_uls,
-        gamma=gamma_uls,
-        fc=fc,
-        fsy=fsy,
-        show_lever_arm=False,
-    )
-    st.pyplot(fig_uls_sb, use_container_width=True)
-    plt.close(fig_uls_sb)
+        with col_fig:
+            fig_uls_sb = _make_uls_stress_block_figure(
+                b_mm=b,
+                D_mm=D,
+                d_mm=d,
+                dn_mm=dn,
+                a_mm=a_uls,
+                alpha2=alpha2_uls,
+                gamma=gamma_uls,
+                fc=fc,
+                fsy=fsy,
+                show_lever_arm=False,
+            )
+            st.pyplot(fig_uls_sb, use_container_width=True)
+            plt.close(fig_uls_sb)
 
-st.markdown("---")
+        st.markdown("---")
 
+        # 1.2 Steel force
+        st.subheader("1.2 Steel force in tension")
 
-            # 1.2 Steel force
-            st.subheader("1.2 Steel force in tension")
-
-            calcbox(
-                rf"""
+        calcbox(
+            rf"""
 Assuming the tension steel yields at $M_u$, the steel force is:
 
 $$
@@ -1525,15 +1521,15 @@ $$
 
 In design we **use** $T = A_{{st}} f_{{sy}}$ to compute the moment capacity.
 """
-            )
+        )
 
-            st.markdown("---")
+        st.markdown("---")
 
-            # 1.3 Set compression = tension and solve for d_n
-            st.subheader("1.3 Set compression = tension and solve for $d_n$")
+        # 1.3 d_n
+        st.subheader("1.3 Set compression = tension and solve for $d_n$")
 
-            calcbox(
-                rf"""
+        calcbox(
+            rf"""
 Concrete compression is represented by a rectangular stress block of depth
 $a = \gamma d_n$:
 
@@ -1544,7 +1540,7 @@ $$
 At ultimate strength, horizontal equilibrium gives:
 
 $$
-C_c = T \;\Rightarrow\;
+C_c = T \Rightarrow
 \alpha_2 f'_c\, b\, \gamma d_n = T
 $$
 
@@ -1569,15 +1565,15 @@ $$
 d_n = {dn:.1f}\ \text{{mm}}
 $$
 """
-            )
+        )
 
-            st.markdown("---")
+        st.markdown("---")
 
-            # 1.4 Block depth, lever arm, moment
-            st.subheader("1.4 Block depth, lever arm and moment capacity")
+        # 1.4 a, z, Mu, φMu
+        st.subheader("1.4 Block depth, lever arm and moment capacity")
 
-            calcbox(
-                rf"""
+        calcbox(
+            rf"""
 Block depth:
 
 $$
@@ -1622,9 +1618,15 @@ $$
                            = {phi_Mu_cap_uls:.2f}\ \text{{ kNm}}
 $$
 """
-            )
+        )
 
-            st.markdown("---")
+        st.markdown("---")
+
+        # 2.x minimum strength stuff (unchanged)
+        # ... keep your existing 2.1–2.5 blocks here, at this same indent ...
+
+    else:
+        st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
 
             # ----------------------------------------------------
             # 2. Minimum strength (self-weight check)
@@ -1771,6 +1773,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
