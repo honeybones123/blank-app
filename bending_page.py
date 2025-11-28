@@ -156,7 +156,7 @@ def _compute_bending_capacity():
 
     IMPORTANT:
       • d is depth to CENTROID of tensile reo
-      • this version includes SAFE As_min calculation (no zero division)
+      • fctf, Mcr and As_min follow AS 3600-style expressions
     """
     # Shared parameters
     b = get_param("b")
@@ -193,23 +193,25 @@ def _compute_bending_capacity():
             "d": d,
         }
 
-    # Concrete tensile strength and cracking moment
-    cb = 0.2
-    fctf = cb * (fc ** (2.0 / 3.0))
+    # Concrete flexural tensile strength (AS 3600-style)
+    # f_ctf ≈ 0.6 * sqrt(fc)  [MPa] for normal-weight concrete
+    fctf = 0.6 * math.sqrt(fc)
+
+    # Gross section properties and cracking moment
     I_gross = b * D**3 / 12.0
     Z_gross = b * D**2 / 6.0
-    Mcr = fctf * Z_gross / 1e6
+    Mcr = fctf * Z_gross / 1e6  # kNm
 
-    # ---- SAFE As_min (never divides by zero) ----
-    kAst = 1.0
+    # ---- As_min per AS 3600-style expression ----
+    # As_min = 0.4 * fctf * b * d / fsy
     As_min = float("nan")
     if (
         d not in (None, 0)
-        and D not in (None, 0)
         and fsy not in (None, 0)
         and b not in (None, 0)
+        and fctf not in (None, 0)
     ):
-        As_min = kAst * (d / D) ** 2 * (fctf / fsy) * b * D
+        As_min = 0.4 * fctf * b * d / fsy
 
     # Stress-block factors
     alpha2_raw = 0.85 - 0.0015 * fc
@@ -238,6 +240,35 @@ def _compute_bending_capacity():
             "As_min": As_min,
             "d": d,
         }
+
+    c = T / denom
+    a = gamma * c
+    z = d - 0.5 * a
+    Mu_nom = T * z / 1e6
+    phi_Mu_cap = phi * Mu_nom
+    Mu_util = Mu_star / phi_Mu_cap if phi_Mu_cap > 0 else float("inf")
+    ku = c / d if d not in (None, 0) else float("nan")
+
+    update_results(phi_Mu_cap=phi_Mu_cap, Mu_utilisation=Mu_util)
+
+    return {
+        "phi_Mu_cap": phi_Mu_cap,
+        "Mu_util": Mu_util,
+        "c": c,
+        "a": a,
+        "z": z,
+        "ku": ku,
+        "alpha2": alpha2,
+        "gamma": gamma,
+        "phi": phi,
+        "fctf": fctf,
+        "I_gross": I_gross,
+        "Z_gross": Z_gross,
+        "Mcr": Mcr,
+        "As_min": As_min,
+        "d": d,
+    }
+
 
     c = T / denom
     a = gamma * c
@@ -1576,36 +1607,48 @@ $$
 
             st.markdown("---")
 
-            # ----------------------------------------------------
-            # 2. Minimum strength (self-weight check)
-            # ----------------------------------------------------
-            st.header("2. Minimum strength requirements (self-weight check – AS 3600 Cl. 8.1.6)")
+                    # ----------------------------------------------------
+        # 2. Minimum strength requirements (AS 3600-style)
+        # ----------------------------------------------------
+        st.header("2. Minimum strength requirements (AS 3600)")
 
-            # 2.1 f_ct,f
-            st.subheader("2.1 Concrete flexural tensile strength $f_{ct,f}$")
+        # Pull values already computed in _compute_bending_capacity()
+        fctf_as = fctf
+        Zg = Z_gross
+        Mcr_as = Mcr
+        Mu_min_as = 1.2 * Mcr_as if Mcr_as is not None and not math.isnan(Mcr_as) else float("nan")
+        Ast_min_as = As_min
 
-            calcbox(
-                rf"""
-For a teaching model we take (cf. your notes / Warner):
+        # 2.1 f_ct,f
+        st.subheader("2.1 Concrete flexural tensile strength $f_{ct,f}$")
+
+        calcbox(
+            rf"""
+For normal-weight concrete we use an AS 3600-style expression for
+flexural tensile strength:
 
 $$
-f_{{ct,f}} = c_t \, (f'_c)^{{2/3}}, \quad c_t \approx 0.20
+f_{{ct,f}} \approx 0.6 \sqrt{{f'_c}}
 $$
 
 Substituting:
 
 $$
-f_{{ct,f}} = 0.20 \times ({fc:.1f})^{{2/3}}
-          = {fctf_teach:.3f}\ \text{{ MPa}}
+f_{{ct,f}} \approx 0.6 \sqrt{{{fc:.1f}}}
+          = {fctf_as:.3f}\ \text{{ MPa}}
+$$
 """
-            )
+        )
 
-            # 2.2 Zg
-            st.subheader("2.2 Gross section modulus $Z_g$")
+        st.markdown("---")
 
-            calcbox(
-                rf"""
-For a rectangular section:
+        # 2.2 Zg
+        st.subheader("2.2 Gross section modulus $Z_g$")
+
+        calcbox(
+            rf"""
+For a rectangular section the gross section modulus about the
+tension face is:
 
 $$
 Z_g = \dfrac{{b D^2}}{6}
@@ -1616,95 +1659,102 @@ Substituting:
 $$
 Z_g = \dfrac{{{b:.1f} \times {D:.1f}^2}}{6}
     = {Zg:,.3e}\ \text{{ mm}}^3
+$$
 """
-            )
+        )
 
-            # 2.3 Mcr
-            st.subheader("2.3 Cracking moment $M_{cr}$")
+        st.markdown("---")
 
-            calcbox(
-                rf"""
-Cracking moment is approximated by:
+        # 2.3 Mcr
+        st.subheader("2.3 Cracking moment $M_{{cr}}$")
+
+        calcbox(
+            rf"""
+The cracking moment is based on the flexural tensile strength
+and gross section modulus:
 
 $$
 M_{{cr}} = \dfrac{{f_{{ct,f}} Z_g}}{{10^6}}
+\quad (\text{{kNm}})
 $$
 
 Substituting:
 
 $$
-M_{{cr}} = \dfrac{{{fctf_teach:.3f} \times {Zg:,.3e}}}{{10^6}}
-         = {Mcr_teach:.2f}\ \text{{ kNm}}
+M_{{cr}} = \dfrac{{{fctf_as:.3f} \times {Zg:,.3e}}}{{10^6}}
+         = {Mcr_as:.2f}\ \text{{ kNm}}
+$$
 """
-            )
+        )
 
-            # 2.4 Mu_min
-            st.subheader("2.4 Minimum required ultimate strength $(M_{uo})_{{min}}$ (teaching simplification)")
+        st.markdown("---")
 
-            calcbox(
-                rf"""
-For a non-prestressed member we compare against a teaching minimum
-ultimate moment based on the cracking moment:
+        # 2.4 Minimum required ultimate strength (1.2 × cracking moment)
+        st.subheader("2.4 Minimum design moment capacity $(M_{{u,cap}})_{{\min}}$")
+
+        calcbox(
+            rf"""
+To ensure the member can sustain post-cracking behaviour, the
+ultimate design moment capacity is taken not less than 1.2 times
+the cracking moment:
 
 $$
-(M_{{uo}})_{{min}} \approx 1.2\, M_{{cr}}
+(M_{{u,cap}})_{{\min}} = 1.2\, M_{{cr}}
 $$
 
 Substituting:
 
 $$
-(M_{{uo}})_{{min}} \approx 1.2 \times {Mcr_teach:.2f}
-                   = {Mu_min_teach:.2f}\ \text{{ kNm}}
+(M_{{u,cap}})_{{\min}} = 1.2 \times {Mcr_as:.2f}
+                       = {Mu_min_as:.2f}\ \text{{ kNm}}
+$$
+
+That is, the design ultimate capacity should be at least
+$1.2 \times$ the cracking moment.
 """
-            )
+        )
 
-            # 2.5 As_min check
-            st.subheader("2.5 Minimum tensile reinforcement check")
+        st.markdown("---")
 
-            calcbox(
-                rf"""
-A teaching form of the minimum tensile reinforcement equation is:
+        # 2.5 Minimum tensile reinforcement check
+        st.subheader("2.5 Minimum tensile reinforcement $A_{{st,\min}}$")
+
+        calcbox(
+            rf"""
+An AS 3600-style expression for the minimum area of tensile
+reinforcement in flexure is:
 
 $$
-A_{{st,\min}} = k_{{ast}}
-\left( \dfrac{{d}}{{D}} \right)^2
-\dfrac{{f_{{ct,f}}}}{{f_{{sy}}}}\, b D
+A_{{st,\min}} = 0.4\, \dfrac{{f_{{ct,f}}}}{{f_{{sy}}}}\, b\, d
 $$
 
-With $k_{{ast}} = 1.0$ and substituting:
+Substituting:
 
 $$
 A_{{st,\min}} =
-1.0
-\left( \dfrac{{{d:.1f}}}{{{D:.1f}}} \right)^2
-\dfrac{{{fctf_teach:.3f}}}{{{fsy:.1f}}}
-\times {b:.1f} \times {D:.1f}
-= {Ast_min_teach:.1f}\ \text{{ mm}}^2
+0.4 \times \dfrac{{{fctf_as:.3f}}}{{{fsy:.1f}}}
+\times {b:.1f} \times {d:.1f}
+= {Ast_min_as:.1f}\ \text{{ mm}}^2
 $$
 
-We compare the **net** tensile reinforcement with this minimum:
+Compare with the provided tensile steel:
 
 $$
-A_{{st,net}} = A_{{st}} = {Ast:.1f}\ \text{{ mm}}^2
+A_{{st}} = {Ast:.1f}\ \text{{ mm}}^2
 $$
 
 Check:
 
 $$
-A_{{st,net}} = {Ast:.1f}\ \text{{ mm}}^2
+A_{{st}} = {Ast:.1f}\ \text{{ mm}}^2
 \;\;\ge\;\;
-A_{{st,\min}} = {Ast_min_teach:.1f}\ \text{{ mm}}^2
-$$
-
-Teaching minimum moment (from 2.4):
-
-$$
-M_{{u,\min}} \approx 1.2\, M_{{cr}} = {Mu_min_teach:.2f}\ \text{{ kNm}}
+A_{{st,\min}} = {Ast_min_as:.1f}\ \text{{ mm}}^2
 $$
 """
-            )
+        )
 
-            st.markdown("---")
+        st.markdown("---")
+
 
         else:
             st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
@@ -1793,6 +1843,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
