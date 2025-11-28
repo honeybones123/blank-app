@@ -23,61 +23,6 @@ from widgets_helpers import (
     calcbox,
 )
 
-apply_global_widget_css()
-apply_calcbox_css()
-
-
-apply_global_widget_css()
-apply_calcbox_css()
-
-
-# ------------------------------------------------------------
-#  Simple "calc box" helper + CSS  (MATCHES MINI APP)
-# ------------------------------------------------------------
-def calcbox(md: str):
-    """Render a highlighted calculation box (full-width inside its column)."""
-    st.markdown(f"<div class='calcbox'>{md}</div>", unsafe_allow_html=True)
-
-
-# Global CSS for calc boxes
-st.markdown(
-    """
-    <style>
-    .calcbox {
-        border-left: 4px solid #4a90e2;
-        background-color: #f7faff;
-        padding: 0.75rem 1rem;
-        margin: 0.5rem 0 1rem 0;
-        border-radius: 4px;
-        font-size: 0.95rem;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-# CSS for the calc boxes
-st.markdown(
-    """
-    <style>
-    .calcbox-wrapper {
-        max-width: 48%;
-        margin: 0.75rem 0 1.25rem 0;
-    }
-    .calcbox-inner {
-        border-left: 4px solid #4a90e2;
-        background-color: #f7faff;
-        padding: 0.75rem 1rem;
-        border-radius: 4px;
-        font-size: 0.95rem;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-
 
 # ------------------------------------------------------------
 #  Small formatting helper for tables
@@ -974,7 +919,8 @@ def render_bending():
     st.title("Bending Capacity")
 
     sync_callbacks = get_sync_callbacks()
-    apply_global_widget_css()  # same styling as Inputs page
+    apply_global_widget_css()
+    apply_calcbox_css()
 
     # ============================================================
     #  SIDEBAR GLOSSARY (BENDING TERMS)
@@ -1847,6 +1793,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
