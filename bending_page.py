@@ -1516,6 +1516,7 @@ $$
 T = {Ast:.1f} \times {fsy:.1f}
   = {T:,.0f}\ \text{{ N}}
 $$
+"""
             )
 
             st.markdown("---")
