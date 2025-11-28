@@ -822,22 +822,23 @@ def _make_uls_stress_block_figure(
         )
     )
 
-    # compression arrows (LEFT pointing)
-    block_h = block_bottom - block_top
-    if block_h > 0:
-        ys = np.linspace(block_top + 0.2 * block_h,
-                         block_bottom - 0.2 * block_h, 3)
-        for yy in ys:
-            ax.annotate(
-                "",
-                xy=(block_left + 2.0, yy),
-                xytext=(block_left + block_width - 2.0, yy),
-                arrowprops=dict(
-                    arrowstyle="<-",
-                    color="tab:red",
-                    linewidth=1.6,
-                ),
-            )
+   # compression arrows (RIGHT pointing towards the block)
+block_h = block_bottom - block_top
+if block_h > 0:
+    ys = np.linspace(block_top + 0.2 * block_h,
+                     block_bottom - 0.2 * block_h, 3)
+    for yy in ys:
+        ax.annotate(
+            "",
+            xy=(block_left + block_width - 2.0, yy),   # arrow head at right
+            xytext=(block_left + 2.0, yy),
+            arrowprops=dict(
+                arrowstyle="->",
+                color="tab:red",
+                linewidth=1.6,
+            ),
+        )
+
 
     # α2 f'c label
     ax.text(
@@ -1415,9 +1416,13 @@ def render_bending():
             Mu_min_teach = 1.2 * Mcr_teach
             Ast_min_teach = As_min
 
-            # 1.1 α2 and γ + NEW WARNER FIG
-            st.subheader("1.1 Stress-block parameters (AS 3600 / Warner)")
+                   # 1.1 α2 and γ
+        st.subheader("1.1 Stress-block parameters (AS 3600 / Warner)")
 
+        # Put calc box on the left, sketch on the right
+        col_calc, col_fig = st.columns([2, 1])
+
+        with col_calc:
             calcbox(
                 rf"""
 From AS 3600 rectangular stress block (also Warner, *R.C. Design*):
@@ -1450,7 +1455,8 @@ $$
 """
             )
 
-            # >>> THIS IS THE ONLY WARNER STRESS-BLOCK FIG <<<
+        with col_fig:
+            # >>> Warner-style ULS stress-block sketch <<<
             fig_uls_sb = _make_uls_stress_block_figure(
                 b_mm=b,
                 D_mm=D,
@@ -1469,8 +1475,8 @@ $$
             st.caption(
                 "Compression block starts at the top fibre and extends down to "
                 "a = γ dₙ. The dashed line shows the neutral axis depth dₙ. "
-                "Red arrows show compression acting left; the blue arrow at the "
-                "bottom shows the tensile force T."
+                "Red arrows show compression acting towards the block; the blue "
+                "arrow at the bottom shows the tensile force T."
             )
 
             st.markdown("---")
@@ -1826,3 +1832,4 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
