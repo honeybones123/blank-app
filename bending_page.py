@@ -1435,18 +1435,18 @@ def render_bending():
             Ast_min_teach = As_min
 
             # 1.1 α2 and γ
-            st.subheader("1.1 Stress-block parameters (AS 3600 / Warner)")
+st.subheader("1.1 Stress-block parameters (AS 3600 / Warner)")
 
-            # Put calc box on the left, sketch on the right
-            col_calc, col_fig = st.columns([2, 1])
+# --- 60% calculation, 40% sketch ---
+col_calc, col_fig = st.columns([3, 2])
 
-            with col_calc:
-                calcbox(
-                    rf"""
+with col_calc:
+    calcbox(
+        rf"""
 From AS 3600 rectangular stress block (also Warner, *R.C. Design*):
 
 $$
-\alpha_2 = 0.85 - 0.0015 f'_c \;\; (\ge 0.67)
+\alpha_2 = 0.85 - 0.0015 f'_c \; (\ge 0.67)
 $$
 
 Substituting:
@@ -1454,50 +1454,43 @@ Substituting:
 $$
 \alpha_2 = 0.85 - 0.0015 \times {fc:.1f}
        = {alpha2_raw_uls:.3f}
-       \;\Rightarrow\;
+       \Rightarrow
 \alpha_2 = {alpha2_uls:.3f}
 $$
 
 Similarly,
 
 $$
-\gamma = 0.97 - 0.0025 f'_c \;\; (\ge 0.67)
+\gamma = 0.97 - 0.0025 f'_c \; (\ge 0.67)
 $$
 
 $$
 \gamma = 0.97 - 0.0025 \times {fc:.1f}
        = {gamma_raw_uls:.3f}
-       \;\Rightarrow\;
+       \Rightarrow
 \gamma = {gamma_uls:.3f}
 $$
 """
-                )
+    )
 
-            with col_fig:
-                # Warner-style ULS stress-block sketch
-                fig_uls_sb = _make_uls_stress_block_figure(
-                    b_mm=b,
-                    D_mm=D,
-                    d_mm=d,
-                    dn_mm=dn,
-                    a_mm=a_uls,
-                    alpha2=alpha2_uls,
-                    gamma=gamma_uls,
-                    fc=fc,
-                    fsy=fsy,
-                    show_lever_arm=False,
-                )
-                st.pyplot(fig_uls_sb, use_container_width=True)
-                plt.close(fig_uls_sb)
+with col_fig:
+    fig_uls_sb = _make_uls_stress_block_figure(
+        b_mm=b,
+        D_mm=D,
+        d_mm=d,
+        dn_mm=dn,
+        a_mm=a_uls,
+        alpha2=alpha2_uls,
+        gamma=gamma_uls,
+        fc=fc,
+        fsy=fsy,
+        show_lever_arm=False,
+    )
+    st.pyplot(fig_uls_sb, use_container_width=True)
+    plt.close(fig_uls_sb)
 
-                st.caption(
-                    "Compression block starts at the top fibre and extends down to "
-                    "a = γ dₙ. The dashed line shows the neutral axis depth dₙ. "
-                    "Red arrows show compression acting towards the block; the blue "
-                    "arrow at the bottom shows the tensile force T."
-                )
+st.markdown("---")
 
-            st.markdown("---")
 
             # 1.2 Steel force
             st.subheader("1.2 Steel force in tension")
@@ -1778,6 +1771,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
