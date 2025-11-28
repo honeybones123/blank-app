@@ -1076,9 +1076,6 @@ def _make_uls_stress_block_figure(
     return fig
 
 # ------------------------------------------------------------
-#  Simple "calc box" helper (inline styles)
-# ------------------------------------------------------------
-# ------------------------------------------------------------
 #  Simple "calc box" helper (half-width)
 # ------------------------------------------------------------
 def calcbox(md: str):
@@ -1095,16 +1092,9 @@ def calcbox(md: str):
     )
 
 
-    # Render the actual LaTeX / markdown safely
-    st.markdown(md)
-
-    st.markdown(
-        """
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+# ------------------------------------------------------------
+#  CSS for calc boxes (half-width styling)
+# ------------------------------------------------------------
 st.markdown(
     """
     <style>
@@ -1123,6 +1113,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 # ===== END PART 3 =====
 
@@ -2027,6 +2018,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
