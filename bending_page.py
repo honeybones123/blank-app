@@ -270,6 +270,83 @@ def _compute_bending_capacity():
     }
 
 
+    # Concrete flexural tensile strength (AS 3600-style)
+    # f_ctf ≈ 0.6 * sqrt(fc)  [MPa] for normal-weight concrete
+    fctf = 0.6 * math.sqrt(fc)
+
+    # Gross section properties and cracking moment
+    I_gross = b * D**3 / 12.0
+    Z_gross = b * D**2 / 6.0
+    Mcr = fctf * Z_gross / 1e6  # kNm
+
+    # ---- As_min per AS 3600-style expression ----
+    # As_min = 0.4 * fctf * b * d / fsy
+    As_min = float("nan")
+    if (
+        d not in (None, 0)
+        and fsy not in (None, 0)
+        and b not in (None, 0)
+        and fctf not in (None, 0)
+    ):
+        As_min = 0.4 * fctf * b * d / fsy
+
+    # Stress-block factors
+    alpha2_raw = 0.85 - 0.0015 * fc
+    gamma_raw = 0.97 - 0.0025 * fc
+    alpha2 = max(0.67, alpha2_raw)
+    gamma = max(0.67, gamma_raw)
+
+    # Flexural capacity
+    T = Ast * fsy
+    denom = alpha2 * fc * b * gamma
+    if denom <= 0:
+        return {
+            "phi_Mu_cap": 0.0,
+            "Mu_util": float("nan"),
+            "c": float("nan"),
+            "a": float("nan"),
+            "z": float("nan"),
+            "ku": float("nan"),
+            "alpha2": alpha2,
+            "gamma": gamma,
+            "phi": phi,
+            "fctf": fctf,
+            "I_gross": I_gross,
+            "Z_gross": Z_gross,
+            "Mcr": Mcr,
+            "As_min": As_min,
+            "d": d,
+        }
+
+    c = T / denom
+    a = gamma * c
+    z = d - 0.5 * a
+    Mu_nom = T * z / 1e6
+    phi_Mu_cap = phi * Mu_nom
+    Mu_util = Mu_star / phi_Mu_cap if phi_Mu_cap > 0 else float("inf")
+    ku = c / d if d not in (None, 0) else float("nan")
+
+    update_results(phi_Mu_cap=phi_Mu_cap, Mu_utilisation=Mu_util)
+
+    return {
+        "phi_Mu_cap": phi_Mu_cap,
+        "Mu_util": Mu_util,
+        "c": c,
+        "a": a,
+        "z": z,
+        "ku": ku,
+        "alpha2": alpha2,
+        "gamma": gamma,
+        "phi": phi,
+        "fctf": fctf,
+        "I_gross": I_gross,
+        "Z_gross": Z_gross,
+        "Mcr": Mcr,
+        "As_min": As_min,
+        "d": d,
+    }
+
+
     c = T / denom
     a = gamma * c
     z = d - 0.5 * a
@@ -1712,157 +1789,7 @@ $$
         else:
             st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
 
-                    # ----------------------------------------------------
-        # 2. Minimum strength requirements (AS 3600-style)
-        # ----------------------------------------------------
-        st.header("2. Minimum strength requirements (AS 3600)")
-
-        # Pull values already computed in _compute_bending_capacity()
-        fctf_as = fctf
-        Zg = Z_gross
-        Mcr_as = Mcr
-        Mu_min_as = 1.2 * Mcr_as if Mcr_as is not None and not math.isnan(Mcr_as) else float("nan")
-        Ast_min_as = As_min
-
-        # 2.1 f_ct,f
-        st.subheader("2.1 Concrete flexural tensile strength $f_{ct,f}$")
-
-        calcbox(
-            rf"""
-For normal-weight concrete we use an AS 3600-style expression for
-flexural tensile strength:
-
-$$
-f_{{ct,f}} \approx 0.6 \sqrt{{f'_c}}
-$$
-
-Substituting:
-
-$$
-f_{{ct,f}} \approx 0.6 \sqrt{{{fc:.1f}}}
-          = {fctf_as:.3f}\ \text{{ MPa}}
-$$
-"""
-        )
-
-        st.markdown("---")
-
-        # 2.2 Zg
-        st.subheader("2.2 Gross section modulus $Z_g$")
-
-        calcbox(
-            rf"""
-For a rectangular section the gross section modulus about the
-tension face is:
-
-$$
-Z_g = \dfrac{{b D^2}}{6}
-$$
-
-Substituting:
-
-$$
-Z_g = \dfrac{{{b:.1f} \times {D:.1f}^2}}{6}
-    = {Zg:,.3e}\ \text{{ mm}}^3
-$$
-"""
-        )
-
-        st.markdown("---")
-
-        # 2.3 Mcr
-        st.subheader("2.3 Cracking moment $M_{{cr}}$")
-
-        calcbox(
-            rf"""
-The cracking moment is based on the flexural tensile strength
-and gross section modulus:
-
-$$
-M_{{cr}} = \dfrac{{f_{{ct,f}} Z_g}}{{10^6}}
-\quad (\text{{kNm}})
-$$
-
-Substituting:
-
-$$
-M_{{cr}} = \dfrac{{{fctf_as:.3f} \times {Zg:,.3e}}}{{10^6}}
-         = {Mcr_as:.2f}\ \text{{ kNm}}
-$$
-"""
-        )
-
-        st.markdown("---")
-
-        # 2.4 Minimum required ultimate strength (1.2 × cracking moment)
-        st.subheader("2.4 Minimum design moment capacity $(M_{{u,cap}})_{{\min}}$")
-
-        calcbox(
-            rf"""
-To ensure the member can sustain post-cracking behaviour, the
-ultimate design moment capacity is taken not less than 1.2 times
-the cracking moment:
-
-$$
-(M_{{u,cap}})_{{\min}} = 1.2\, M_{{cr}}
-$$
-
-Substituting:
-
-$$
-(M_{{u,cap}})_{{\min}} = 1.2 \times {Mcr_as:.2f}
-                       = {Mu_min_as:.2f}\ \text{{ kNm}}
-$$
-
-That is, the design ultimate capacity should be at least
-$1.2 \times$ the cracking moment.
-"""
-        )
-
-        st.markdown("---")
-
-        # 2.5 Minimum tensile reinforcement check
-        st.subheader("2.5 Minimum tensile reinforcement $A_{{st,\min}}$")
-
-        calcbox(
-            rf"""
-An AS 3600-style expression for the minimum area of tensile
-reinforcement in flexure is:
-
-$$
-A_{{st,\min}} = 0.4\, \dfrac{{f_{{ct,f}}}}{{f_{{sy}}}}\, b\, d
-$$
-
-Substituting:
-
-$$
-A_{{st,\min}} =
-0.4 \times \dfrac{{{fctf_as:.3f}}}{{{fsy:.1f}}}
-\times {b:.1f} \times {d:.1f}
-= {Ast_min_as:.1f}\ \text{{ mm}}^2
-$$
-
-Compare with the provided tensile steel:
-
-$$
-A_{{st}} = {Ast:.1f}\ \text{{ mm}}^2
-$$
-
-Check:
-
-$$
-A_{{st}} = {Ast:.1f}\ \text{{ mm}}^2
-\;\;\ge\;\;
-A_{{st,\min}} = {Ast_min_as:.1f}\ \text{{ mm}}^2
-$$
-"""
-        )
-
-        st.markdown("---")
-
-
-        else:
-            st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
+    
 
     # ----- SLS detailed tab -----
     with tab_sls:
@@ -1948,6 +1875,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
