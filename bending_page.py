@@ -1361,26 +1361,36 @@ def render_bending():
     # ============================================================
     tab_uls, tab_sls = st.tabs(["ULS step-by-step", "SLS step-by-step"])
 
-    # ----- ULS detailed tab -----
-    with tab_uls:
-        st.subheader("ULS Calculation (step-by-step)")
+# ----- ULS detailed tab -----
+with tab_uls:
+    st.subheader("ULS Calculation (step-by-step)")
 
-        if phi_Mu_cap > 0 and d and Ast:
+    if phi_Mu_cap > 0 and d and Ast:
 
-            # ----------------------------------------------------
-            # 1. Ultimate Limit State (ULS)
-            # ----------------------------------------------------
-            st.header("1. Ultimate Limit State (ULS)")
+        # ----------------------------------------------------
+        # 1. Ultimate Limit State (ULS)
+        # ----------------------------------------------------
+        st.header("1. Ultimate Limit State (ULS)")
 
-            alpha2_raw_uls = 0.85 - 0.0015 * fc
-            gamma_raw_uls = 0.97 - 0.0025 * fc
-            alpha2_uls = max(0.67, alpha2_raw_uls)
-            gamma_uls = max(0.67, gamma_raw_uls)
+        # Stress-block factors
+        alpha2_raw_uls = 0.85 - 0.0015 * fc
+        gamma_raw_uls = 0.97 - 0.0025 * fc
+        alpha2_uls = max(0.67, alpha2_raw_uls)
+        gamma_uls = max(0.67, gamma_raw_uls)
 
-            # 1.1 Stress-block parameters
-            st.subheader("1.1 Stress-block parameters (α₂ and γ)")
-            calcbox(
-                rf"""
+        # Pre-compute ULS internal forces / geometry once
+        T = Ast * fsy
+        denom = alpha2_uls * fc * b * gamma_uls
+        dn = T / denom if denom > 0 else float("nan")
+        a_uls = gamma_uls * dn
+        z_uls = d - 0.5 * a_uls
+        Mu_nom_uls = T * z_uls / 1e6
+        phi_Mu_cap_uls = phi * Mu_nom_uls
+
+        # 1.1 Stress-block parameters
+        st.subheader("1.1 Stress-block parameters (α₂ and γ)")
+        calcbox(
+            rf"""
 From AS 3600 rectangular stress block:
 
 $$
@@ -1407,15 +1417,29 @@ $$
        \Rightarrow \gamma = {gamma_uls:.3f}
 $$
 """
-            )
-            st.markdown("---")
+        )
 
-            # 1.2 Steel force
-            st.subheader("1.2 Steel force in tension")
+        # ULS stress-block model (no lever arm) – section 1.1
+        fig_uls_11 = _make_uls_stress_block_figure(
+            b_mm=b or 0.0,
+            D_mm=D or 0.0,
+            d_mm=d,
+            dn_mm=dn,
+            a_mm=a_uls,
+            alpha2=alpha2_uls,
+            gamma=gamma_uls,
+            fc=fc,
+            fsy=fsy,
+            show_lever_arm=False,
+        )
+        st.pyplot(fig_uls_11, use_container_width=False)
 
-            T = Ast * fsy
-            calcbox(
-                rf"""
+        st.markdown("---")
+
+        # 1.2 Steel force
+        st.subheader("1.2 Steel force in tension")
+        calcbox(
+            rf"""
 Assuming the tension steel yields:
 
 $$
@@ -1429,21 +1453,14 @@ T = {Ast:.1f} \times {fsy:.1f}
   = {T:,.0f}\ \text{{N}}
 $$
 """
-            )
-            st.markdown("---")
+        )
+        st.markdown("---")
 
-            # 1.3 Neutral axis depth
-            st.subheader("1.3 Neutral axis depth $d_n$")
+        # 1.3 Neutral axis depth
+        st.subheader("1.3 Neutral axis depth $d_n$")
 
-            denom = alpha2_uls * fc * b * gamma_uls
-            dn = T / denom if denom > 0 else float("nan")
-            a_uls = gamma_uls * dn
-            z_uls = d - 0.5 * a_uls
-            Mu_nom_uls = T * z_uls / 1e6
-            phi_Mu_cap_uls = phi * Mu_nom_uls
-
-            calcbox(
-                rf"""
+        calcbox(
+            rf"""
 Equilibrium of internal forces:
 
 $$
@@ -1465,14 +1482,30 @@ d_n =
 = {dn:.1f}\ \text{{mm}}
 $$
 """
-            )
-            st.markdown("---")
+        )
 
-            # 1.4 Block depth, lever arm, capacity
-            st.subheader("1.4 Block depth, lever arm, and moment capacity")
+        # ULS stress-block model (with lever arm) – section 1.3
+        fig_uls_13 = _make_uls_stress_block_figure(
+            b_mm=b or 0.0,
+            D_mm=D or 0.0,
+            d_mm=d,
+            dn_mm=dn,
+            a_mm=a_uls,
+            alpha2=alpha2_uls,
+            gamma=gamma_uls,
+            fc=fc,
+            fsy=fsy,
+            show_lever_arm=True,   # now shows z
+        )
+        st.pyplot(fig_uls_13, use_container_width=False)
 
-            calcbox(
-                rf"""
+        st.markdown("---")
+
+        # 1.4 Block depth, lever arm, capacity
+        st.subheader("1.4 Block depth, lever arm, and moment capacity")
+
+        calcbox(
+            rf"""
 Block depth:
 
 $$
@@ -1510,28 +1543,28 @@ $$
                = {phi_Mu_cap_uls:.2f}\ \text{{kNm}}
 $$
 """
-            )
-            st.markdown("---")
+        )
+        st.markdown("---")
 
-            # ----------------------------------------------------
-            # 2. Minimum strength requirements (AS 3600)
-            # ----------------------------------------------------
-            st.header("2. Minimum strength requirements (AS 3600)")
+        # ----------------------------------------------------
+        # 2. Minimum strength requirements (AS 3600)
+        # ----------------------------------------------------
+        st.header("2. Minimum strength requirements (AS 3600)")
 
-            fctf_as = fctf
-            Zg = Z_gross
-            Mcr_as = Mcr
-            Mu_min_as = (
-                1.2 * Mcr_as
-                if Mcr_as is not None and not math.isnan(Mcr_as)
-                else float("nan")
-            )
-            Ast_min_as = As_min
+        fctf_as = fctf
+        Zg = Z_gross
+        Mcr_as = Mcr
+        Mu_min_as = (
+            1.2 * Mcr_as
+            if Mcr_as is not None and not math.isnan(Mcr_as)
+            else float("nan")
+        )
+        Ast_min_as = As_min
 
-            # 2.1 f_ct,f
-            st.subheader("2.1 Concrete flexural tensile strength $f_{{ct,f}}$")
-            calcbox(
-                rf"""
+        # 2.1 f_ct,f
+        st.subheader("2.1 Concrete flexural tensile strength $f_{{ct,f}}$")
+        calcbox(
+            rf"""
 AS 3600-style expression for flexural tensile strength:
 
 $$
@@ -1545,13 +1578,13 @@ f_{{ct,f}} \approx 0.6 \sqrt{{{fc:.1f}}}
           = {fctf_as:.3f}\ \text{{MPa}}
 $$
 """
-            )
-            st.markdown("---")
+        )
+        st.markdown("---")
 
-            # 2.2 Z_g
-            st.subheader("2.2 Gross section modulus $Z_g$")
-            calcbox(
-                rf"""
+        # 2.2 Z_g
+        st.subheader("2.2 Gross section modulus $Z_g$")
+        calcbox(
+            rf"""
 Gross section modulus:
 
 $$
@@ -1565,13 +1598,13 @@ Z_g = \frac{{{b:.1f} \times {D:.1f}^2}}{{6}}
     = {Zg:,.3e}\ \text{{mm}}^3
 $$
 """
-            )
-            st.markdown("---")
+        )
+        st.markdown("---")
 
-            # 2.3 M_cr
-            st.subheader("2.3 Cracking moment $M_{{cr}}$")
-            calcbox(
-                rf"""
+        # 2.3 M_cr
+        st.subheader("2.3 Cracking moment $M_{{cr}}$")
+        calcbox(
+            rf"""
 Cracking moment:
 
 $$
@@ -1585,13 +1618,13 @@ M_{{cr}} = \frac{{{fctf_as:.3f} \times {Zg:,.3e}}}{{10^6}}
        = {Mcr_as:.2f}\ \text{{kNm}}
 $$
 """
-            )
-            st.markdown("---")
+        )
+        st.markdown("---")
 
-            # 2.4 Minimum required capacity (1.2 Mcr)
-            st.subheader("2.4 Minimum required design capacity $(M_{{u,cap}})_{{min}}$")
-            calcbox(
-                rf"""
+        # 2.4 Minimum required capacity (1.2 Mcr)
+        st.subheader("2.4 Minimum required design capacity $(M_{{u,cap}})_{{min}}$")
+        calcbox(
+            rf"""
 To ensure post-cracking behaviour:
 
 $$
@@ -1609,13 +1642,13 @@ $$
 Meaning the design ultimate strength must exceed
 **1.2 × cracking moment**.
 """
-            )
-            st.markdown("---")
+        )
+        st.markdown("---")
 
-            # 2.5 Minimum tensile reinforcement
-            st.subheader("2.5 Minimum tensile reinforcement $A_{{st,min}}$")
-            calcbox(
-                rf"""
+        # 2.5 Minimum tensile reinforcement
+        st.subheader("2.5 Minimum tensile reinforcement $A_{{st,min}}$")
+        calcbox(
+            rf"""
 AS 3600-style minimum tensile reinforcement:
 
 $$
@@ -1640,11 +1673,12 @@ A_{{st}} = {Ast:.1f}\ \text{{mm}}^2
 A_{{st,min}} = {Ast_min_as:.1f}\ \text{{mm}}^2
 $$
 """
-            )
-            st.markdown("---")
+        )
+        st.markdown("---")
 
-        else:
-            st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
+    else:
+        st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
+
 
     # ----- SLS detailed tab -----
     with tab_sls:
@@ -1725,3 +1759,4 @@ $$
 # ============================
 if __name__ == "__main__":
     render_bending()
+
