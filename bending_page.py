@@ -22,20 +22,33 @@ from widgets_helpers import apply_global_widget_css, number_row
 # ------------------------------------------------------------
 #  Simple "calc box" helper + CSS  (MATCHES MINI APP)
 # ------------------------------------------------------------
+# ------------------------------------------------------------
+#  Simple "calc box" helper (blue box) + CSS
+# ------------------------------------------------------------
 def calcbox(md: str):
-    """Render a highlighted calculation box (full-width, LaTeX-safe)."""
-    st.markdown(f"<div class='calcbox'>{md}</div>", unsafe_allow_html=True)
+    """Render a highlighted calculation box (half-width, LaTeX-safe)."""
+    box_html = f"""
+<div class="calcbox-wrapper">
+  <div class="calcbox-inner">
+{md}
+  </div>
+</div>
+"""
+    st.markdown(box_html, unsafe_allow_html=True)
 
 
-# Global CSS for calc boxes
+# CSS for the calc boxes
 st.markdown(
     """
     <style>
-    .calcbox {
+    .calcbox-wrapper {
+        max-width: 48%;
+        margin: 0.75rem 0 1.25rem 0;
+    }
+    .calcbox-inner {
         border-left: 4px solid #4a90e2;
         background-color: #f7faff;
         padding: 0.75rem 1rem;
-        margin: 0.5rem 0 1rem 0;
         border-radius: 4px;
         font-size: 0.95rem;
     }
@@ -43,6 +56,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 
 # ------------------------------------------------------------
@@ -1764,6 +1778,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
