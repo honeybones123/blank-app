@@ -1403,46 +1403,46 @@ def render_bending():
     # ============================================================
     tab_uls, tab_sls = st.tabs(["ULS step-by-step", "SLS step-by-step"])
 
-   # ----- ULS detailed tab -----
-with tab_uls:
-    st.subheader("ULS Calculation (step-by-step)")
+    # ----- ULS detailed tab -----
+    with tab_uls:
+        st.subheader("ULS Calculation (step-by-step)")
 
-    if phi_Mu_cap > 0 and d and Ast:
-        # ----------------------------------------------------
-        # 1. ULS derivation – Warner-style trial d_n
-        # ----------------------------------------------------
-        st.header("1. Ultimate limit state (ULS) – trial neutral axis")
+        if phi_Mu_cap > 0 and d and Ast:
+            # ----------------------------------------------------
+            # 1. ULS derivation – Warner-style trial d_n
+            # ----------------------------------------------------
+            st.header("1. Ultimate limit state (ULS) – trial neutral axis")
 
-        # Re-compute stress-block parameters in this scope
-        alpha2_raw_uls = 0.85 - 0.0015 * fc
-        gamma_raw_uls = 0.97 - 0.0025 * fc
-        alpha2_uls = max(0.67, alpha2_raw_uls)
-        gamma_uls = max(0.67, gamma_raw_uls)
+            # Re-compute stress-block parameters in this scope
+            alpha2_raw_uls = 0.85 - 0.0015 * fc
+            gamma_raw_uls = 0.97 - 0.0025 * fc
+            alpha2_uls = max(0.67, alpha2_raw_uls)
+            gamma_uls = max(0.67, gamma_raw_uls)
 
-        # Steel force and neutral axis from existing results
-        T = Ast * fsy              # N
-        dn = c                     # we already solved for c in _compute_bending_capacity
-        a_uls = gamma_uls * dn
-        z_uls = d - 0.5 * a_uls
-        Mu_nom_uls = T * z_uls / 1e6
-        phi_Mu_cap_uls = phi * Mu_nom_uls
+            # Steel force and neutral axis from existing results
+            T = Ast * fsy              # N
+            dn = c                     # neutral axis depth from earlier calc
+            a_uls = gamma_uls * dn
+            z_uls = d - 0.5 * a_uls
+            Mu_nom_uls = T * z_uls / 1e6
+            phi_Mu_cap_uls = phi * Mu_nom_uls
 
-        # Minimum strength quantities from earlier calc
-        fctf_teach = fctf          # same as in _compute_bending_capacity
-        Zg = Z_gross
-        Mcr_teach = Mcr
-        Mu_min_teach = 1.2 * Mcr_teach
-        Ast_min_teach = As_min
+            # Minimum strength quantities from earlier calc
+            fctf_teach = fctf
+            Zg = Z_gross
+            Mcr_teach = Mcr
+            Mu_min_teach = 1.2 * Mcr_teach
+            Ast_min_teach = As_min
 
-        # 1.1 α2 and γ
-        st.subheader("1.1 Stress-block parameters (AS 3600 / Warner)")
+            # 1.1 α2 and γ
+            st.subheader("1.1 Stress-block parameters (AS 3600 / Warner)")
 
-        # 60% calculation, 40% sketch
-        col_calc, col_fig = st.columns([3, 2])
+            # 60% calculation, 40% sketch
+            col_calc, col_fig = st.columns([3, 2])
 
-        with col_calc:
-            calcbox(
-                rf"""
+            with col_calc:
+                calcbox(
+                    rf"""
 From AS 3600 rectangular stress block (also Warner, *R.C. Design*):
 
 $$
@@ -1471,32 +1471,31 @@ $$
 \gamma = {gamma_uls:.3f}
 $$
 """
-            )
+                )
 
-        with col_fig:
-            # Warner-style ULS stress-block sketch
-            fig_uls_sb = _make_uls_stress_block_figure(
-                b_mm=b,
-                D_mm=D,
-                d_mm=d,
-                dn_mm=dn,
-                a_mm=a_uls,
-                alpha2=alpha2_uls,
-                gamma=gamma_uls,
-                fc=fc,
-                fsy=fsy,
-                show_lever_arm=False,
-            )
-            st.pyplot(fig_uls_sb, use_container_width=True)
-            plt.close(fig_uls_sb)
+            with col_fig:
+                fig_uls_sb = _make_uls_stress_block_figure(
+                    b_mm=b,
+                    D_mm=D,
+                    d_mm=d,
+                    dn_mm=dn,
+                    a_mm=a_uls,
+                    alpha2=alpha2_uls,
+                    gamma=gamma_uls,
+                    fc=fc,
+                    fsy=fsy,
+                    show_lever_arm=False,
+                )
+                st.pyplot(fig_uls_sb, use_container_width=True)
+                plt.close(fig_uls_sb)
 
-        st.markdown("---")
+            st.markdown("---")
 
-        # 1.2 Steel force
-        st.subheader("1.2 Steel force in tension")
+            # 1.2 Steel force
+            st.subheader("1.2 Steel force in tension")
 
-        calcbox(
-            rf"""
+            calcbox(
+                rf"""
 Assuming the tension steel yields at $M_u$, the steel force is:
 
 $$
@@ -1525,15 +1524,15 @@ $$
 
 In design we **use** $T = A_{{st}} f_{{sy}}$ to compute the moment capacity.
 """
-        )
+            )
 
-        st.markdown("---")
+            st.markdown("---")
 
-        # 1.3 Set compression = tension and solve for d_n
-        st.subheader("1.3 Set compression = tension and solve for $d_n$")
+            # 1.3 Set compression = tension and solve for d_n
+            st.subheader("1.3 Set compression = tension and solve for $d_n$")
 
-        calcbox(
-            rf"""
+            calcbox(
+                rf"""
 Concrete compression is represented by a rectangular stress block of depth
 $a = \gamma d_n$:
 
@@ -1569,15 +1568,15 @@ $$
 d_n = {dn:.1f}\ \text{{mm}}
 $$
 """
-        )
+            )
 
-        st.markdown("---")
+            st.markdown("---")
 
-        # 1.4 Block depth, lever arm, moment
-        st.subheader("1.4 Block depth, lever arm and moment capacity")
+            # 1.4 Block depth, lever arm, moment
+            st.subheader("1.4 Block depth, lever arm and moment capacity")
 
-        calcbox(
-            rf"""
+            calcbox(
+                rf"""
 Block depth:
 
 $$
@@ -1622,143 +1621,9 @@ $$
                            = {phi_Mu_cap_uls:.2f}\ \text{{ kNm}}
 $$
 """
-        )
+            )
 
-        st.markdown("---")
-
-        # ----------------------------------------------------
-        # 2. Minimum strength (self-weight check)
-        # ----------------------------------------------------
-        st.header("2. Minimum strength requirements (self-weight check – AS 3600 Cl. 8.1.6)")
-
-        # 2.1 f_ct,f
-        st.subheader("2.1 Concrete flexural tensile strength $f_{ct,f}$")
-
-        calcbox(
-            rf"""
-For a teaching model we take (cf. your notes / Warner):
-
-$$
-f_{{ct,f}} = c_t \, (f'_c)^{{2/3}}, \quad c_t \approx 0.20
-$$
-
-Substituting:
-
-$$
-f_{{ct,f}} = 0.20 \times ({fc:.1f})^{{2/3}}
-          = {fctf_teach:.3f}\ \text{{ MPa}}
-"""
-        )
-
-        # 2.2 Zg
-        st.subheader("2.2 Gross section modulus $Z_g$")
-
-        calcbox(
-            rf"""
-For a rectangular section:
-
-$$
-Z_g = \dfrac{{b D^2}}{6}
-$$
-
-Substituting:
-
-$$
-Z_g = \dfrac{{{b:.1f} \times {D:.1f}^2}}{6}
-    = {Zg:,.3e}\ \text{{ mm}}^3
-"""
-        )
-
-        # 2.3 Mcr
-        st.subheader("2.3 Cracking moment $M_{cr}$")
-
-        calcbox(
-            rf"""
-Cracking moment is approximated by:
-
-$$
-M_{{cr}} = \dfrac{{f_{{ct,f}} Z_g}}{{10^6}}
-$$
-
-Substituting:
-
-$$
-M_{{cr}} = \dfrac{{{fctf_teach:.3f} \times {Zg:,.3e}}}{{10^6}}
-         = {Mcr_teach:.2f}\ \text{{ kNm}}
-"""
-        )
-
-        # 2.4 Mu_min
-        st.subheader("2.4 Minimum required ultimate strength $(M_{uo})_{{min}}$ (teaching simplification)")
-
-        calcbox(
-            rf"""
-For a non-prestressed member we compare against a teaching minimum
-ultimate moment based on the cracking moment:
-
-$$
-(M_{{uo}})_{{min}} \approx 1.2\, M_{{cr}}
-$$
-
-Substituting:
-
-$$
-(M_{{uo}})_{{min}} \approx 1.2 \times {Mcr_teach:.2f}
-                   = {Mu_min_teach:.2f}\ \text{{ kNm}}
-"""
-        )
-
-        # 2.5 As_min check
-        st.subheader("2.5 Minimum tensile reinforcement check")
-
-        calcbox(
-            rf"""
-A teaching form of the minimum tensile reinforcement equation is:
-
-$$
-A_{{st,\min}} = k_{{ast}}
-\left( \dfrac{{d}}{{D}} \right)^2
-\dfrac{{f_{{ct,f}}}}{{f_{{sy}}}}\, b D
-$$
-
-With $k_{{ast}} = 1.0$ and substituting:
-
-$$
-A_{{st,\min}} =
-1.0
-\left( \dfrac{{{d:.1f}}}{{{D:.1f}}} \right)^2
-\dfrac{{{fctf_teach:.3f}}}{{{fsy:.1f}}}
-\times {b:.1f} \times {D:.1f}
-= {Ast_min_teach:.1f}\ \text{{ mm}}^2
-$$
-
-We compare the **net** tensile reinforcement with this minimum:
-
-$$
-A_{{st,net}} = A_{{st}} = {Ast:.1f}\ \text{{ mm}}^2
-$$
-
-Check:
-
-$$
-A_{{st,net}} = {Ast:.1f}\ \text{{ mm}}^2
-\;\;\ge\;\;
-A_{{st,\min}} = {Ast_min_teach:.1f}\ \text{{ mm}}^2
-$$
-
-Teaching minimum moment (from 2.4):
-
-$$
-M_{{u,\min}} \approx 1.2\, M_{{cr}} = {Mu_min_teach:.2f}\ \text{{ kNm}}
-$$
-"""
-        )
-
-        st.markdown("---")
-
-    else:
-        st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
-
+            st.markdown("---")
 
             # ----------------------------------------------------
             # 2. Minimum strength (self-weight check)
@@ -1893,6 +1758,78 @@ $$
         else:
             st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
 
+    # ----- SLS detailed tab -----
+    with tab_sls:
+        st.subheader("SLS Bending – Cracked Section (Teaching Model)")
+
+        if d and Ast and Ec and Es and b and D:
+            Ms = Mu_star
+            st.markdown(f"Using service moment **Ms = Mu* = {Ms:.1f} kNm**.")
+
+            n_sls = Es / Ec if Ec else 0.0
+            st.markdown(
+                f"**1. Modular ratio:**  n = Es / Ec = {Es:.0f} / {Ec:.0f} = {n_sls:.2f}"
+            )
+
+            st.markdown("**2. Neutral axis depth dₙ** (from equilibrium of areas):")
+            st.latex(r"\frac{b d_n^2}{2} = n A_s (d - d_n)")
+            a_quad = 0.5 * b
+            b_coef = n_sls * Ast
+            c_coef = -n_sls * Ast * d
+            dn_sls = float("nan")
+            if a_quad != 0:
+                disc = b_coef**2 - 4 * a_quad * c_coef
+                if disc >= 0:
+                    roots = [
+                        (-b_coef + math.sqrt(disc)) / (2 * a_quad),
+                        (-b_coef - math.sqrt(disc)) / (2 * a_quad),
+                    ]
+                    roots = [r for r in roots if 0 < r < D]
+                    if roots:
+                        dn_sls = min(roots, key=lambda x: abs(x - d / 2))
+            if math.isnan(dn_sls):
+                dn_sls = D / 3.0
+
+            st.markdown(f"Computed **dₙ = {dn_sls:.2f} mm**.")
+
+            st.markdown("**3. Cracked moment of inertia I_cr**:")
+            st.latex(r"I_{cr} = \tfrac13 b d_n^3 + n A_s (d - d_n)^2")
+            Icr = b * dn_sls**3 / 3.0 + n_sls * Ast * (d - dn_sls) ** 2
+            st.markdown(f"I_cr = {Icr:,.2f} mm⁴")
+
+            st.markdown("**4. Curvature κ at service moment**:")
+            st.latex(r"\kappa = M_s / (E_c I_{cr})")
+            Ms_Nmm = Ms * 1e6
+            kappa = Ms_Nmm / (Ec * Icr) if Ec and Icr else 0.0
+            st.markdown(f"κ = {kappa:.3e} mm⁻¹")
+
+            st.markdown("**5. Strain distribution ε(y) = κ (y − dₙ)**:")
+            layers = [
+                ("Top fibre", 0.0),
+                ("Tension steel (d)", d),
+                ("Bottom fibre", D),
+            ]
+            strain_rows = []
+            for name, yi in layers:
+                eps = kappa * (yi - dn_sls)
+                strain_rows.append(
+                    {"Layer": name, "Depth y (mm)": yi, "ε": eps}
+                )
+            st.table(pd.DataFrame(strain_rows))
+
+            fig_eps, ax_eps = plt.subplots()
+            ys = [0.0, dn_sls, D]
+            eps_vals = [kappa * (y - dn_sls) for y in ys]
+            ax_eps.plot(eps_vals, ys, marker="o")
+            ax_eps.axhline(dn_sls, linestyle="--", linewidth=0.8)
+            ax_eps.set_xlabel("Strain ε")
+            ax_eps.set_ylabel("Depth from top (mm)")
+            ax_eps.set_title("SLS strain distribution")
+            ax_eps.invert_yaxis()
+            st.pyplot(fig_eps, use_container_width=True)
+            plt.close(fig_eps)
+        else:
+            st.info("Not enough information to run SLS cracked-section example.")
 
 # ===== END PART 4 =====
 
@@ -1905,6 +1842,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
