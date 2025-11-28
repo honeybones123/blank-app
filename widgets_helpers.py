@@ -1,4 +1,3 @@
-# widgets_helpers.py
 import streamlit as st
 
 
@@ -37,6 +36,34 @@ def apply_global_widget_css():
         """,
         unsafe_allow_html=True,
     )
+
+
+# ------------------------------------------------------------
+#  🔵 Calcbox – Global Blue Calculation Box Styling
+# ------------------------------------------------------------
+def apply_calcbox_css():
+    """Apply global CSS for the blue calculation boxes."""
+    st.markdown(
+        """
+        <style>
+        .calcbox {
+            border-left: 4px solid #4a90e2;
+            background-color: #f7faff;
+            padding: 0.75rem 1rem;
+            margin: 0.5rem 0 1rem 0;
+            border-radius: 4px;
+            font-size: 0.95rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def calcbox(md: str):
+    """Render a blue calculation box using global CSS."""
+    st.markdown(f"<div class='calcbox'>{md}</div>", unsafe_allow_html=True)
+
 
 
 def number_row(label, key, step, sync_callbacks, *, width_ratio=(1.5, 1), help_text=None):
