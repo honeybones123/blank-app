@@ -913,160 +913,167 @@ def _make_cross_section_figure(
 
 
 # ============================
-# PART 3B — ULS STRESS-BLOCK FIGURE (TEACHING STYLE)
+# PART 3B — ULS STRESS-BLOCK FIGURE (WARNER-STYLE, RIGHT WAY UP)
 # ============================
 
 def _make_uls_stress_block_figure(
-    c,
-    d,
-    gamma_sb,
-    alpha2,
-    fc,
-    fsy,
-    show_lever_arm=False,
+    b_mm: float,
+    D_mm: float,
+    d_mm: float,
+    dn_mm: float,
+    a_mm: float,
+    alpha2: float,
+    gamma: float,
+    fc: float,
+    fsy: float,
+    show_lever_arm: bool = False,
 ):
     """
-    Teaching-style ULS stress-block diagram used in the ULS step-by-step tab.
+    Warner-style ULS stress block (right-way up):
 
-    • Vertical stress axis
-    • Rectangular compression block at the top
-    • Blue dashed line at γc
-    • Labels:  α₂ f'c  and  γc (mm)
-    • Bottom tension arrow T (fsy)
-    • Optional lever arm z between compression resultant and tension force
+    • Vertical 'Stress (MPa)' axis on the left
+    • Rectangular compression block from TOP fibre (0 mm) down to a = γ d_n
+    • Dashed line at neutral axis depth d_n (below the block)
+    • LEFT-pointing compression arrows inside the block
+    • Bottom tension arrow T (fsy) at depth d
     """
-    # basic sanity check
-    if (
-        c in (None, 0)
-        or d in (None, 0)
-        or gamma_sb in (None, 0)
-        or fc in (None, 0)
-        or fsy in (None, 0)
-        or alpha2 in (None, 0)
-    ):
+
+    vals = [b_mm, D_mm, d_mm, dn_mm, a_mm, alpha2, gamma, fc, fsy]
+    if any(v is None or (isinstance(v, float) and math.isnan(v)) for v in vals):
         fig, ax = plt.subplots()
-        ax.text(0.5, 0.5, "No data", ha="center", va="center")
         ax.axis("off")
+        ax.text(0.5, 0.5, "No data", ha="center", va="center")
         return fig
 
-    sigma_c = alpha2 * fc          # α2 f'c  (MPa)
-    gamma_c_mm = gamma_sb * c      # γc       (mm)
+    sigma_c = alpha2 * fc  # MPa
 
-    fig, ax = plt.subplots(figsize=(2.6, 4.5))
-    ax.set_xlim(0.0, 1.0)
-    ax.set_ylim(0.0, 1.0)
+    # Use depth in mm directly on y-axis (0 at top, D_ref at bottom)
+    D_ref = max(D_mm, d_mm, dn_mm, a_mm) * 1.05
+
+    fig, ax = plt.subplots(figsize=(3, 5))
+
+    # x: arbitrary "mm" for aspect; y: depth from TOP (0) downward
+    ax.set_xlim(0.0, 100.0)
+    ax.set_ylim(D_ref, 0.0)  # IMPORTANT: 0 at TOP
     ax.axis("off")
 
-    # main vertical stress axis
-    x_axis = 0.25
-    y_axis_bottom = 0.05
-    y_axis_top = 0.95
-    ax.plot([x_axis, x_axis], [y_axis_bottom, y_axis_top], color="black", linewidth=2.0)
+    # ----- main vertical stress axis -----
+    x_axis = 20.0
+    ax.plot([x_axis, x_axis], [0.0, D_ref], color="black", linewidth=2.0)
 
-    # layout positions (normalised – it's a teaching sketch, not to scale)
-    y_T = 0.85               # bottom steel
-    y_gamma = 0.35           # γc depth
-    block_height = 0.10
-    block_width = 0.18
-    x_block = x_axis + 0.06
-    y_block_top = y_gamma - block_height
+    # ----- compression block from 0 → a_mm (top down) -----
+    block_left = x_axis
+    block_width = 22.0
+    block_top = 0.0           # top fibre
+    block_bottom = a_mm       # depth of block
 
-    # dashed γc line
-    ax.hlines(
-        y_gamma,
-        x_axis,
-        0.95,
-        linestyles="--",
-        colors="tab:blue",
-        linewidth=2.0,
-    )
-
-    # compression block rectangle
     ax.add_patch(
         Rectangle(
-            (x_block, y_block_top),
+            (block_left, block_top),
             block_width,
-            block_height,
+            block_bottom - block_top,
             fill=False,
             edgecolor="tab:red",
             linewidth=2.0,
         )
     )
 
-    # simple red "squiggle" inside the block to suggest compression
-    zig_x = np.linspace(x_block + 0.02, x_block + block_width - 0.02, 5)
-    zig_y_top = y_block_top + 0.01
-    zig_y_bot = y_block_top + block_height - 0.01
-    zz_x, zz_y = [], []
-    for i, x in enumerate(zig_x):
-        zz_x.append(x)
-        zz_y.append(zig_y_top if i % 2 == 0 else zig_y_bot)
-    ax.plot(zz_x, zz_y, color="tab:red", linewidth=1.5)
+    # LEFT-pointing compression arrows inside the block
+    block_h = block_bottom - block_top
+    if block_h > 0:
+        ys = np.linspace(block_top + 0.2 * block_h,
+                         block_bottom - 0.2 * block_h, 3)
+        for yy in ys:
+            ax.annotate(
+                "",
+                xy=(block_left + 2.0, yy),                 # arrow head near axis
+                xytext=(block_left + block_width - 2.0, yy),
+                arrowprops=dict(arrowstyle="<-",           # faces LEFT
+                                color="tab:red",
+                                linewidth=1.6),
+            )
 
-    # α2 f'c label above the block
+    # α2 f'c label just ABOVE the block (plain text, not LaTeX)
     ax.text(
-        x_block + block_width / 2,
-        y_block_top - 0.06,
-        rf"$\alpha_2 f'_c = {sigma_c:.0f}\ \text{{MPa}}$",
+        block_left,
+        -0.06 * D_ref,
+        f"α₂ f'c = {sigma_c:.0f} MPa",
+        ha="left",
+        va="bottom",
+        fontsize=10,
+        color="tab:red",
+    )
+
+    # ----- dashed line at neutral axis d_n (below the block) -----
+    ax.hlines(
+        dn_mm,
+        x_axis,
+        95.0,
+        linestyles="--",
+        colors="tab:blue",
+        linewidth=2.0,
+    )
+    ax.text(
+        (x_axis + 95.0) / 2.0,
+        dn_mm + 0.04 * D_ref,
+        f"dₙ = {dn_mm:.1f} mm",
         ha="center",
         va="bottom",
-        fontsize=9,
-        color="tab:red",
-    )
-
-    # γc label next to dashed line
-    ax.text(
-        x_block + block_width + 0.10,
-        y_gamma,
-        rf"$\gamma c = {gamma_c_mm:.0f}\ \text{{mm}}$",
-        ha="left",
-        va="center",
-        fontsize=9,
-        color="tab:red",
-    )
-
-    # bottom tension arrow T (fsy)
-    ax.annotate(
-        "",
-        xy=(0.85, y_T),
-        xytext=(x_axis, y_T),
-        arrowprops=dict(arrowstyle="->", linewidth=2.0, color="tab:blue"),
-    )
-    ax.text(
-        0.87,
-        y_T,
-        rf"$T\ ({fsy:.0f}\ \text{{MPa}})$",
-        ha="left",
-        va="center",
-        fontsize=9,
+        fontsize=10,
         color="tab:blue",
     )
 
-    # optional lever arm z (from compression resultant to T)
-    if show_lever_arm:
-        # take compression resultant at mid-depth of the block
-        y_C = y_block_top + 0.5 * block_height
-        x_z = x_block + block_width + 0.04
+    # Label for a = γ d_n, centred on block depth
+    ax.text(
+        block_left + block_width + 4.0,
+        0.5 * a_mm,
+        f"a = γ dₙ = {a_mm:.1f} mm",
+        ha="left",
+        va="center",
+        fontsize=10,
+        color="tab:blue",
+    )
 
+    # ----- bottom tension arrow at depth d_mm -----
+    ax.annotate(
+        "",
+        xy=(90.0, d_mm),
+        xytext=(x_axis, d_mm),
+        arrowprops=dict(arrowstyle="->", linewidth=2.0, color="tab:blue"),
+    )
+    ax.text(
+        92.0,
+        d_mm,
+        f"T ({fsy:.0f} MPa)",
+        ha="left",
+        va="center",
+        fontsize=10,
+        color="tab:blue",
+    )
+
+    # optional lever arm z (from centroid of block to T)
+    if show_lever_arm:
+        y_C = 0.5 * a_mm
+        x_z = block_left + block_width + 8.0
         ax.annotate(
             "",
-            xy=(x_z, y_T),
+            xy=(x_z, d_mm),
             xytext=(x_z, y_C),
             arrowprops=dict(arrowstyle="<->", linewidth=1.6),
         )
         ax.text(
-            x_z + 0.03,
-            (y_T + y_C) / 2,
+            x_z + 3.0,
+            0.5 * (d_mm + y_C),
             "z",
             ha="left",
             va="center",
             fontsize=9,
         )
 
-    # stress axis label at (approx.) bottom
+    # axis label
     ax.text(
-        0.5,
-        0.02,
+        50.0,
+        D_ref + 0.07 * D_ref,
         "Stress (MPa)",
         ha="center",
         va="bottom",
@@ -1074,6 +1081,7 @@ def _make_uls_stress_block_figure(
     )
 
     return fig
+
 
 # ------------------------------------------------------------
 #  Simple "calc box" helper (half-width)
@@ -1114,7 +1122,6 @@ st.markdown(
 
 
 # ===== END PART 3 =====
-
 # ============================
 # PART 4 — PAGE RENDER (FULL render_bending FUNCTION)
 # ============================
@@ -1578,13 +1585,13 @@ def render_bending():
     # ============================================================
     tab_uls, tab_sls = st.tabs(["ULS step-by-step", "SLS step-by-step"])
 
-    # ----- ULS detailed tab (NEW calc-box version) -----
+    # ----- ULS detailed tab -----
     with tab_uls:
         st.subheader("ULS Calculation (step-by-step)")
 
         if phi_Mu_cap > 0 and d and Ast:
             # ----------------------------------------------------
-            # 1. ULS derivation – same content as your mini app
+            # 1. ULS derivation – Warner-style trial d_n
             # ----------------------------------------------------
             st.header("1. Ultimate limit state (ULS) – trial neutral axis")
 
@@ -1643,6 +1650,29 @@ $$
 \gamma = {gamma_uls:.3f}
 $$
 """
+            )
+
+            # Warner-style ULS stress-block sketch inside 1.1
+            fig_uls_sb = _make_uls_stress_block_figure(
+                b_mm=b,
+                D_mm=D,
+                d_mm=d,
+                dn_mm=dn,
+                a_mm=a_uls,
+                alpha2=alpha2_uls,
+                gamma=gamma_uls,
+                fc=fc,
+                fsy=fsy,
+                show_lever_arm=False,
+            )
+            st.pyplot(fig_uls_sb, use_container_width=True)
+            plt.close(fig_uls_sb)
+
+            st.caption(
+                "Compression block starts at the top fibre and extends down to "
+                "a = γ dₙ. The dashed line shows the neutral axis depth dₙ. "
+                "Red arrows show compression acting left; the blue arrow at the "
+                "bottom shows the tensile force T."
             )
 
             st.markdown("---")
@@ -1783,7 +1813,7 @@ $$
             st.markdown("---")
 
             # ----------------------------------------------------
-            # 2. Minimum strength (same as mini app)
+            # 2. Minimum strength (self-weight check)
             # ----------------------------------------------------
             st.header("2. Minimum strength requirements (self-weight check – AS 3600 Cl. 8.1.6)")
 
@@ -1803,7 +1833,6 @@ Substituting:
 $$
 f_{{ct,f}} = 0.20 \times ({fc:.1f})^{{2/3}}
           = {fctf_teach:.3f}\ \text{{ MPa}}
-$$
 """
             )
 
@@ -1823,7 +1852,6 @@ Substituting:
 $$
 Z_g = \dfrac{{{b:.1f} \times {D:.1f}^2}}{6}
     = {Zg:,.3e}\ \text{{ mm}}^3
-$$
 """
             )
 
@@ -1843,7 +1871,6 @@ Substituting:
 $$
 M_{{cr}} = \dfrac{{{fctf_teach:.3f} \times {Zg:,.3e}}}{{10^6}}
          = {Mcr_teach:.2f}\ \text{{ kNm}}
-$$
 """
             )
 
@@ -1864,7 +1891,6 @@ Substituting:
 $$
 (M_{{uo}})_{{min}} \approx 1.2 \times {Mcr_teach:.2f}
                    = {Mu_min_teach:.2f}\ \text{{ kNm}}
-$$
 """
             )
 
@@ -1916,25 +1942,10 @@ $$
 
             st.markdown("---")
 
-            # ULS stress block sketch (use existing helper)
-            st.subheader("ULS stress-block sketch")
-
-            fig_uls_sb = _make_uls_stress_block_figure(
-                c=dn,
-                d=d,
-                gamma_sb=gamma_uls,
-                alpha2=alpha2_uls,
-                fc=fc,
-                fsy=fsy,
-                show_lever_arm=True,
-            )
-            st.pyplot(fig_uls_sb, use_container_width=True)
-            plt.close(fig_uls_sb)
-
         else:
             st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
 
-    # ----- SLS detailed tab (unchanged from before) -----
+    # ----- SLS detailed tab (unchanged teaching model) -----
     with tab_sls:
         st.subheader("SLS Bending – Cracked Section (Teaching Model)")
 
@@ -2016,3 +2027,4 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
