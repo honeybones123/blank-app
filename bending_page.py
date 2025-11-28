@@ -16,7 +16,19 @@ from state_and_helpers import (
 )
 
 # NEW: shared widget helpers (same as Inputs page)
-from widgets_helpers import apply_global_widget_css, number_row
+from widgets_helpers import (
+    apply_global_widget_css,
+    apply_calcbox_css,
+    number_row,
+    calcbox,
+)
+
+apply_global_widget_css()
+apply_calcbox_css()
+
+
+apply_global_widget_css()
+apply_calcbox_css()
 
 
 # ------------------------------------------------------------
@@ -1835,6 +1847,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
