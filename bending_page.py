@@ -1405,45 +1405,25 @@ def render_bending():
         st.subheader("ULS Calculation (step-by-step)")
 
         if phi_Mu_cap > 0 and d and Ast:
-            # ----------------------------------------------------
-            # 1. ULS derivation – Warner-style trial d_n
-            # ----------------------------------------------------
-            st.header("1. Ultimate limit state (ULS) – trial neutral axis")
 
-            # Re-compute stress-block parameters in this scope
+            # ----------------------------------------------------
+            # 1.1 Stress-block parameters (AS 3600)
+            # ----------------------------------------------------
+            st.header("1. Ultimate Limit State (ULS)")
+
             alpha2_raw_uls = 0.85 - 0.0015 * fc
             gamma_raw_uls = 0.97 - 0.0025 * fc
             alpha2_uls = max(0.67, alpha2_raw_uls)
             gamma_uls = max(0.67, gamma_raw_uls)
 
-            # Steel force and neutral axis from existing results
-            T = Ast * fsy              # N
-            dn = c                     # neutral axis depth from earlier calc
-            a_uls = gamma_uls * dn
-            z_uls = d - 0.5 * a_uls
-            Mu_nom_uls = T * z_uls / 1e6
-            phi_Mu_cap_uls = phi * Mu_nom_uls
+            st.subheader("1.1 Stress-block parameters (α₂ and γ)")
 
-            # Minimum strength quantities from earlier calc
-            fctf_teach = fctf
-            Zg = Z_gross
-            Mcr_teach = Mcr
-            Mu_min_teach = 1.2 * Mcr_teach
-            Ast_min_teach = As_min
-
-            # 1.1 α2 and γ
-            st.subheader("1.1 Stress-block parameters (AS 3600 / Warner)")
-
-            # 60% calculation, 40% sketch
-            col_calc, col_fig = st.columns([3, 2])
-
-            with col_calc:
-                calcbox(
-                    rf"""
-From AS 3600 rectangular stress block (also Warner, *R.C. Design*):
+            calcbox(
+                rf"""
+From AS 3600 rectangular stress block:
 
 $$
-\alpha_2 = 0.85 - 0.0015 f'_c \;\; (\geq 0.67)
+\alpha_2 = 0.85 - 0.0015 f'_c \;(\ge 0.67)
 $$
 
 Substituting:
@@ -1451,161 +1431,286 @@ Substituting:
 $$
 \alpha_2 = 0.85 - 0.0015 \times {fc:.1f}
          = {alpha2_raw_uls:.3f}
-         \Rightarrow
-\alpha_2 = {alpha2_uls:.3f}
+         \Rightarrow \alpha_2 = {alpha2_uls:.3f}
 $$
 
 Similarly,
 
 $$
-\gamma = 0.97 - 0.0025 f'_c \;\; (\geq 0.67)
+\gamma = 0.97 - 0.0025 f'_c \;(\ge 0.67)
 $$
 
 $$
 \gamma = 0.97 - 0.0025 \times {fc:.1f}
        = {gamma_raw_uls:.3f}
-       \Rightarrow
-\gamma = {gamma_uls:.3f}
+       \Rightarrow \gamma = {gamma_uls:.3f}
 $$
 """
-                )
-
-            with col_fig:
-                fig_uls_sb = _make_uls_stress_block_figure(
-                    b_mm=b,
-                    D_mm=D,
-                    d_mm=d,
-                    dn_mm=dn,
-                    a_mm=a_uls,
-                    alpha2=alpha2_uls,
-                    gamma=gamma_uls,
-                    fc=fc,
-                    fsy=fsy,
-                    show_lever_arm=False,
-                )
-                st.pyplot(fig_uls_sb, use_container_width=True)
-                plt.close(fig_uls_sb)
+            )
 
             st.markdown("---")
 
+            # ----------------------------------------------------
             # 1.2 Steel force
+            # ----------------------------------------------------
             st.subheader("1.2 Steel force in tension")
+
+            T = Ast * fsy
 
             calcbox(
                 rf"""
-Assuming the tension steel yields at $M_u$, the steel force is:
+Assuming the tension steel yields:
 
 $$
-T = A_{{st}} f_{{sy}}
+T = A_{st} f_{sy}
 $$
 
 Substituting:
 
 $$
 T = {Ast:.1f} \times {fsy:.1f}
-  = {T:,.0f}\ \text{{ N}}
+  = {T:,.0f}\ \text{{N}}
 $$
 """
             )
 
             st.markdown("---")
 
-            # 1.3 Set compression = tension and solve for d_n
-            st.subheader("1.3 Set compression = tension and solve for $d_n$")
+            # ----------------------------------------------------
+            # 1.3 Neutral axis depth
+            # ----------------------------------------------------
+            st.subheader("1.3 Neutral axis depth $d_n$")
+
+            denom = alpha2_uls * fc * b * gamma_uls
+            dn = T / denom if denom > 0 else float("nan")
+            a_uls = gamma_uls * dn
+            z_uls = d - 0.5 * a_uls
+            Mu_nom_uls = T * z_uls / 1e6
+            phi_Mu_cap_uls = phi * Mu_nom_uls
 
             calcbox(
                 rf"""
-Concrete compression is represented by a rectangular stress block of depth
-$a = \gamma d_n$:
+Equilibrium of internal forces:
 
 $$
-C_c = \alpha_2 f'_c\, b\, \gamma d_n
-$$
-
-At ultimate strength, horizontal equilibrium gives:
-
-$$
-C_c = T \;\Rightarrow\;
 \alpha_2 f'_c\, b\, \gamma d_n = T
 $$
 
 So:
 
 $$
-d_n = \dfrac{{T}}{{\alpha_2 f'_c\, b\, \gamma}}
+d_n = \frac{T}{\alpha_2 f'_c\, b\, \gamma}
 $$
 
 Substituting:
 
 $$
-d_n =
-\dfrac{{{T:,.0f}}}
-      {{ {alpha2_uls:.3f} \times {fc:.1f} \times {b:.1f} \times {gamma_uls:.3f} }}
-= {dn:.1f}\ \text{{ mm}}
-$$
-
-**Neutral axis depth (trial):**
-
-$$
-d_n = {dn:.1f}\ \text{{mm}}
+d_n = 
+\frac{{{T:,.0f}}}
+     {{ {alpha2_uls:.3f} \times {fc:.1f} \times {b:.1f} \times {gamma_uls:.3f} }}
+= {dn:.1f}\ \text{{mm}}
 $$
 """
             )
 
             st.markdown("---")
 
-            # 1.4 Block depth, lever arm, moment
-            st.subheader("1.4 Block depth, lever arm and moment capacity")
+            # ----------------------------------------------------
+            # 1.4 Block depth, lever arm, and moment capacity
+            # ----------------------------------------------------
+            st.subheader("1.4 Block depth, lever arm, and moment capacity")
 
             calcbox(
                 rf"""
 Block depth:
 
 $$
-a = \gamma d_n
+a = \gamma d_n = {gamma_uls:.3f} \times {dn:.1f}
+  = {a_uls:.1f}\ \text{{mm}}
+$$
+
+Lever arm:
+
+$$
+z = d - \frac{a}{2}
 $$
 
 $$
-a = {gamma_uls:.3f} \times {dn:.1f}
-  = {a_uls:.1f}\ \text{{ mm}}
+z = {d:.1f} - \frac{{{a_uls:.1f}}}{2}
+  = {z_uls:.1f}\ \text{{mm}}
 $$
 
-Lever arm between compression resultant and tensile force:
+Nominal moment:
 
 $$
-z = d - \dfrac{{a}}{{2}}
-$$
-
-$$
-z = {d:.1f} - \dfrac{{{a_uls:.1f}}}{{2}}
-  = {z_uls:.1f}\ \text{{ mm}}
-$$
-
-Nominal moment capacity:
-
-$$
-M_u = \dfrac{{T z}}{{10^6}}
+M_u = \frac{T z}{10^6}
 $$
 
 $$
-M_u = \dfrac{{{T:,.0f} \times {z_uls:.1f}}}{{10^6}}
-    = {Mu_nom_uls:.2f}\ \text{{ kNm}}
+M_u = \frac{{{T:,.0f} \times {z_uls:.1f}}}{10^6}
+    = {Mu_nom_uls:.2f}\ \text{{kNm}}
 $$
 
-Design (factored) capacity:
+Design moment:
 
 $$
-\phi M_{{u,\mathrm{{cap}}}} = \phi M_u
-$$
-
-$$
-\phi M_{{u,\mathrm{{cap}}}} = {phi:.2f} \times {Mu_nom_uls:.2f}
-                           = {phi_Mu_cap_uls:.2f}\ \text{{ kNm}}
+\phi M_{u,cap} = \phi M_u
+               = {phi:.2f} \times {Mu_nom_uls:.2f}
+               = {phi_Mu_cap_uls:.2f}\ \text{{kNm}}
 $$
 """
             )
 
             st.markdown("---")
+
+            # ==================================================================
+            # SECTION 2 — Minimum strength requirements (AS 3600)
+            # ==================================================================
+            st.header("2. Minimum strength requirements (AS 3600)")
+
+            fctf_as = fctf
+            Zg = Z_gross
+            Mcr_as = Mcr
+            Mu_min_as = 1.2 * Mcr_as if Mcr_as is not None and not math.isnan(Mcr_as) else float("nan")
+            Ast_min_as = As_min
+
+            # ----------------------------------------------------
+            # 2.1 f_ct,f
+            # ----------------------------------------------------
+            st.subheader("2.1 Concrete flexural tensile strength $f_{ct,f}$")
+
+            calcbox(
+                rf"""
+AS 3600-style expression for flexural tensile strength:
+
+$$
+f_{ct,f} \approx 0.6 \sqrt{{f'_c}}
+$$
+
+Substituting:
+
+$$
+f_{ct,f} \approx 0.6 \sqrt{{{fc:.1f}}}
+          = {fctf_as:.3f}\ \text{{MPa}}
+$$
+"""
+            )
+
+            st.markdown("---")
+
+            # ----------------------------------------------------
+            # 2.2 Z_g
+            # ----------------------------------------------------
+            st.subheader("2.2 Gross section modulus $Z_g$")
+
+            calcbox(
+                rf"""
+Gross section modulus:
+
+$$
+Z_g = \frac{{b D^2}}{6}
+$$
+
+Substituting:
+
+$$
+Z_g = \frac{{{b:.1f} \times {D:.1f}^2}}{6}
+    = {Zg:,.3e}\ \text{{mm}}^3
+$$
+"""
+            )
+
+            st.markdown("---")
+
+            # ----------------------------------------------------
+            # 2.3 Cracking moment
+            # ----------------------------------------------------
+            st.subheader("2.3 Cracking moment $M_{cr}$")
+
+            calcbox(
+                rf"""
+Cracking moment:
+
+$$
+M_{cr} = \frac{{f_{ct,f} Z_g}}{{10^6}}
+$$
+
+Substituting:
+
+$$
+M_{cr} = \frac{{{fctf_as:.3f} \times {Zg:,.3e}}}{{10^6}}
+       = {Mcr_as:.2f}\ \text{{kNm}}
+$$
+"""
+            )
+
+            st.markdown("---")
+
+            # ----------------------------------------------------
+            # 2.4 Minimum design strength (1.2 * Mcr)
+            # ----------------------------------------------------
+            st.subheader("2.4 Minimum required design capacity $(M_{u,cap})_{min}$")
+
+            calcbox(
+                rf"""
+To ensure post-cracking behaviour:
+
+$$
+(M_{u,cap})_{min} = 1.2\, M_{cr}
+$$
+
+Substituting:
+
+$$
+(M_{u,cap})_{min}
+= 1.2 \times {Mcr_as:.2f}
+= {Mu_min_as:.2f}\ \text{{kNm}}
+$$
+
+Meaning the design ultimate strength must exceed
+**1.2 × cracking moment**.
+"""
+            )
+
+            st.markdown("---")
+
+            # ----------------------------------------------------
+            # 2.5 Minimum tensile reinforcement
+            # ----------------------------------------------------
+            st.subheader("2.5 Minimum tensile reinforcement $A_{st,min}$")
+
+            calcbox(
+                rf"""
+AS 3600-style minimum tensile reinforcement:
+
+$$
+A_{st,min}
+= 0.4\;\frac{{f_{ct,f}}}{{f_{sy}}}\; b d
+$$
+
+Substituting:
+
+$$
+A_{st,min}
+= 0.4 \times \frac{{{fctf_as:.3f}}}{{{fsy:.1f}}}
+\times {b:.1f} \times {d:.1f}
+= {Ast_min_as:.1f}\ \text{{mm}}^2
+$$
+
+Compare:
+
+$$
+A_{st} = {Ast:.1f}\ \text{{mm}}^2
+\qquad\text{vs.}\qquad
+A_{st,min} = {Ast_min_as:.1f}\ \text{{mm}}^2
+$$
+"""
+            )
+
+            st.markdown("---")
+
+        else:
+            st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
 
                     # ----------------------------------------------------
         # 2. Minimum strength requirements (AS 3600-style)
@@ -1843,6 +1948,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
