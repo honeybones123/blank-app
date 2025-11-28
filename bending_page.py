@@ -1080,17 +1080,14 @@ def _make_uls_stress_block_figure(
 # ------------------------------------------------------------
 def calcbox(md: str):
     """Render a highlighted calculation box (half-width, LaTeX-safe)."""
-    st.markdown(
-        f"""
+    box_html = f"""
 <div class="calcbox-wrapper">
   <div class="calcbox-inner">
-  {md}
+{md}
   </div>
 </div>
-""",
-        unsafe_allow_html=True,
-    )
-
+"""
+    st.markdown(box_html, unsafe_allow_html=True)
 
 
 # ------------------------------------------------------------
@@ -1587,9 +1584,9 @@ def render_bending():
 
         if phi_Mu_cap > 0 and d and Ast:
             # ----------------------------------------------------
-            # 2. ULS derivation – same content as your mini app
+            # 1. ULS derivation – same content as your mini app
             # ----------------------------------------------------
-            st.header("2. Ultimate limit state (ULS) – trial neutral axis")
+            st.header("1. Ultimate limit state (ULS) – trial neutral axis")
 
             # Re-compute stress-block parameters in this scope
             alpha2_raw_uls = 0.85 - 0.0015 * fc
@@ -1613,8 +1610,8 @@ def render_bending():
             Mu_min_teach = 1.2 * Mcr_teach
             Ast_min_teach = As_min
 
-            # 2.1 α2 and γ
-            st.subheader("2.1 Stress-block parameters (AS 3600 / Warner)")
+            # 1.1 α2 and γ
+            st.subheader("1.1 Stress-block parameters (AS 3600 / Warner)")
 
             calcbox(
                 rf"""
@@ -1650,8 +1647,8 @@ $$
 
             st.markdown("---")
 
-            # 2.2 Steel force
-            st.subheader("2.2 Steel force in tension")
+            # 1.2 Steel force
+            st.subheader("1.2 Steel force in tension")
 
             calcbox(
                 rf"""
@@ -1687,8 +1684,8 @@ In design we **use** $T = A_{{st}} f_{{sy}}$ to compute the moment capacity.
 
             st.markdown("---")
 
-            # 2.3 Set compression = tension and solve for d_n
-            st.subheader("2.3 Set compression = tension and solve for $d_n$")
+            # 1.3 Set compression = tension and solve for d_n
+            st.subheader("1.3 Set compression = tension and solve for $d_n$")
 
             denom_uls = alpha2_uls * fc * b * gamma_uls  # N/mm
             calcbox(
@@ -1732,8 +1729,8 @@ $$
 
             st.markdown("---")
 
-            # 2.4 Block depth, lever arm, moment
-            st.subheader("2.4 Block depth, lever arm and moment capacity")
+            # 1.4 Block depth, lever arm, moment
+            st.subheader("1.4 Block depth, lever arm and moment capacity")
 
             calcbox(
                 rf"""
@@ -1786,12 +1783,12 @@ $$
             st.markdown("---")
 
             # ----------------------------------------------------
-            # 3. Minimum strength (same as mini app)
+            # 2. Minimum strength (same as mini app)
             # ----------------------------------------------------
-            st.header("3. Minimum strength requirements (self-weight check – AS 3600 Cl. 8.1.6)")
+            st.header("2. Minimum strength requirements (self-weight check – AS 3600 Cl. 8.1.6)")
 
-            # 3.1 f_ct,f
-            st.subheader("3.1 Concrete flexural tensile strength $f_{ct,f}$")
+            # 2.1 f_ct,f
+            st.subheader("2.1 Concrete flexural tensile strength $f_{ct,f}$")
 
             calcbox(
                 rf"""
@@ -1810,8 +1807,8 @@ $$
 """
             )
 
-            # 3.2 Zg
-            st.subheader("3.2 Gross section modulus $Z_g$")
+            # 2.2 Zg
+            st.subheader("2.2 Gross section modulus $Z_g$")
 
             calcbox(
                 rf"""
@@ -1830,8 +1827,8 @@ $$
 """
             )
 
-            # 3.3 Mcr
-            st.subheader("3.3 Cracking moment $M_{cr}$")
+            # 2.3 Mcr
+            st.subheader("2.3 Cracking moment $M_{cr}$")
 
             calcbox(
                 rf"""
@@ -1850,8 +1847,8 @@ $$
 """
             )
 
-            # 3.4 Mu_min
-            st.subheader("3.4 Minimum required ultimate strength $(M_{uo})_{{min}}$ (teaching simplification)")
+            # 2.4 Mu_min
+            st.subheader("2.4 Minimum required ultimate strength $(M_{uo})_{{min}}$ (teaching simplification)")
 
             calcbox(
                 rf"""
@@ -1871,8 +1868,8 @@ $$
 """
             )
 
-            # 3.5 As_min check
-            st.subheader("3.5 Minimum tensile reinforcement check")
+            # 2.5 As_min check
+            st.subheader("2.5 Minimum tensile reinforcement check")
 
             calcbox(
                 rf"""
@@ -1909,7 +1906,7 @@ A_{{st,net}} = {Ast:.1f}\ \text{{ mm}}^2
 A_{{st,\min}} = {Ast_min_teach:.1f}\ \text{{ mm}}^2
 $$
 
-Teaching minimum moment (from 3.4):
+Teaching minimum moment (from 2.4):
 
 $$
 M_{{u,\min}} \approx 1.2\, M_{{cr}} = {Mu_min_teach:.2f}\ \text{{ kNm}}
@@ -2019,14 +2016,3 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
-
-
-
-
-
-
-
-
-
-
-
