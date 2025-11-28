@@ -908,11 +908,14 @@ def _make_uls_stress_block_figure(
         )
     )
 
-       # compression arrows (RIGHT pointing towards the block)
+    # compression arrows (RIGHT pointing towards the block)
     block_h = block_bottom - block_top
     if block_h > 0:
-        ys = np.linspace(block_top + 0.2 * block_h,
-                         block_bottom - 0.2 * block_h, 3)
+        ys = np.linspace(
+            block_top + 0.2 * block_h,
+            block_bottom - 0.2 * block_h,
+            3,
+        )
         for yy in ys:
             ax.annotate(
                 "",
@@ -1474,11 +1477,11 @@ def render_bending():
     # ============================================================
     #  STEP-BY-STEP TABS (ULS / SLS)
     # ============================================================
-    tab_uls, tab_sls = st.tabs(["ULS step-by-step", "SLS step-by-step"])
+        tab_uls, tab_sls = st.tabs(["ULS step-by-step", "SLS step-by-step"])
 
-
-     # ----- ULS detailed tab -----
+    # ----- ULS detailed tab -----
     with tab_uls:
+
         st.subheader("ULS Calculation (step-by-step)")
 
         if phi_Mu_cap > 0 and d and Ast:
@@ -1847,6 +1850,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
