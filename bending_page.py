@@ -1399,33 +1399,36 @@ def render_bending():
             # ----------------------------------------------------
             st.header("1. Ultimate limit state (ULS) – trial neutral axis")
 
+            # Re-compute stress-block parameters in this scope
             alpha2_raw_uls = 0.85 - 0.0015 * fc
             gamma_raw_uls = 0.97 - 0.0025 * fc
             alpha2_uls = max(0.67, alpha2_raw_uls)
             gamma_uls = max(0.67, gamma_raw_uls)
 
-            T = Ast * fsy
-            dn = c
+            # Steel force and neutral axis from existing results
+            T = Ast * fsy              # N
+            dn = c                     # solved previously in _compute_bending_capacity
             a_uls = gamma_uls * dn
             z_uls = d - 0.5 * a_uls
             Mu_nom_uls = T * z_uls / 1e6
             phi_Mu_cap_uls = phi * Mu_nom_uls
 
+            # Minimum strength quantities from earlier calc
             fctf_teach = fctf
             Zg = Z_gross
             Mcr_teach = Mcr
             Mu_min_teach = 1.2 * Mcr_teach
             Ast_min_teach = As_min
 
-                   # 1.1 α2 and γ
-        st.subheader("1.1 Stress-block parameters (AS 3600 / Warner)")
+            # 1.1 α2 and γ
+            st.subheader("1.1 Stress-block parameters (AS 3600 / Warner)")
 
-        # Put calc box on the left, sketch on the right
-        col_calc, col_fig = st.columns([2, 1])
+            # Put calc box on the left, sketch on the right
+            col_calc, col_fig = st.columns([2, 1])
 
-        with col_calc:
-            calcbox(
-                rf"""
+            with col_calc:
+                calcbox(
+                    rf"""
 From AS 3600 rectangular stress block (also Warner, *R.C. Design*):
 
 $$
@@ -1454,31 +1457,31 @@ $$
 \gamma = {gamma_uls:.3f}
 $$
 """
-            )
+                )
 
-        with col_fig:
-            # >>> Warner-style ULS stress-block sketch <<<
-            fig_uls_sb = _make_uls_stress_block_figure(
-                b_mm=b,
-                D_mm=D,
-                d_mm=d,
-                dn_mm=dn,
-                a_mm=a_uls,
-                alpha2=alpha2_uls,
-                gamma=gamma_uls,
-                fc=fc,
-                fsy=fsy,
-                show_lever_arm=False,
-            )
-            st.pyplot(fig_uls_sb, use_container_width=True)
-            plt.close(fig_uls_sb)
+            with col_fig:
+                # Warner-style ULS stress-block sketch
+                fig_uls_sb = _make_uls_stress_block_figure(
+                    b_mm=b,
+                    D_mm=D,
+                    d_mm=d,
+                    dn_mm=dn,
+                    a_mm=a_uls,
+                    alpha2=alpha2_uls,
+                    gamma=gamma_uls,
+                    fc=fc,
+                    fsy=fsy,
+                    show_lever_arm=False,
+                )
+                st.pyplot(fig_uls_sb, use_container_width=True)
+                plt.close(fig_uls_sb)
 
-            st.caption(
-                "Compression block starts at the top fibre and extends down to "
-                "a = γ dₙ. The dashed line shows the neutral axis depth dₙ. "
-                "Red arrows show compression acting towards the block; the blue "
-                "arrow at the bottom shows the tensile force T."
-            )
+                st.caption(
+                    "Compression block starts at the top fibre and extends down to "
+                    "a = γ dₙ. The dashed line shows the neutral axis depth dₙ. "
+                    "Red arrows show compression acting towards the block; the blue "
+                    "arrow at the bottom shows the tensile force T."
+                )
 
             st.markdown("---")
 
@@ -1749,78 +1752,6 @@ $$
         else:
             st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
 
-    # ----- SLS detailed tab -----
-    with tab_sls:
-        st.subheader("SLS Bending – Cracked Section (Teaching Model)")
-
-        if d and Ast and Ec and Es and b and D:
-            Ms = Mu_star
-            st.markdown(f"Using service moment **Ms = Mu* = {Ms:.1f} kNm**.")
-
-            n_sls = Es / Ec if Ec else 0.0
-            st.markdown(
-                f"**1. Modular ratio:**  n = Es / Ec = {Es:.0f} / {Ec:.0f} = {n_sls:.2f}"
-            )
-
-            st.markdown("**2. Neutral axis depth dₙ** (from equilibrium of areas):")
-            st.latex(r"\frac{b d_n^2}{2} = n A_s (d - d_n)")
-            a_quad = 0.5 * b
-            b_coef = n_sls * Ast
-            c_coef = -n_sls * Ast * d
-            dn = float("nan")
-            if a_quad != 0:
-                disc = b_coef**2 - 4 * a_quad * c_coef
-                if disc >= 0:
-                    roots = [
-                        (-b_coef + math.sqrt(disc)) / (2 * a_quad),
-                        (-b_coef - math.sqrt(disc)) / (2 * a_quad),
-                    ]
-                    roots = [r for r in roots if 0 < r < D]
-                    if roots:
-                        dn = min(roots, key=lambda x: abs(x - d / 2))
-            if math.isnan(dn):
-                dn = D / 3.0
-
-            st.markdown(f"Computed **dₙ = {dn:.2f} mm**.")
-
-            st.markdown("**3. Cracked moment of inertia I_cr**:")
-            st.latex(r"I_{cr} = \tfrac13 b d_n^3 + n A_s (d - d_n)^2")
-            Icr = b * dn**3 / 3.0 + n_sls * Ast * (d - dn) ** 2
-            st.markdown(f"I_cr = {Icr:,.2f} mm⁴")
-
-            st.markdown("**4. Curvature κ at service moment**:")
-            st.latex(r"\kappa = M_s / (E_c I_{cr})")
-            Ms_Nmm = Ms * 1e6
-            kappa = Ms_Nmm / (Ec * Icr) if Ec and Icr else 0.0
-            st.markdown(f"κ = {kappa:.3e} mm⁻¹")
-
-            st.markdown("**5. Strain distribution ε(y) = κ (y − dₙ)**:")
-            layers = [
-                ("Top fibre", 0.0),
-                ("Tension steel (d)", d),
-                ("Bottom fibre", D),
-            ]
-            strain_rows = []
-            for name, yi in layers:
-                eps = kappa * (yi - dn)
-                strain_rows.append(
-                    {"Layer": name, "Depth y (mm)": yi, "ε": eps}
-                )
-            st.table(pd.DataFrame(strain_rows))
-
-            fig_eps, ax_eps = plt.subplots()
-            ys = [0.0, dn, D]
-            eps_vals = [kappa * (y - dn) for y in ys]
-            ax_eps.plot(eps_vals, ys, marker="o")
-            ax_eps.axhline(dn, linestyle="--", linewidth=0.8)
-            ax_eps.set_xlabel("Strain ε")
-            ax_eps.set_ylabel("Depth from top (mm)")
-            ax_eps.set_title("SLS strain distribution")
-            ax_eps.invert_yaxis()
-            st.pyplot(fig_eps, use_container_width=True)
-            plt.close(fig_eps)
-        else:
-            st.info("Not enough information to run SLS cracked-section example.")
 
 # ===== END PART 4 =====
 
@@ -1833,5 +1764,6 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
