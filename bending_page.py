@@ -822,22 +822,23 @@ def _make_uls_stress_block_figure(
         )
     )
 
-   # compression arrows (RIGHT pointing towards the block)
-block_h = block_bottom - block_top
-if block_h > 0:
-    ys = np.linspace(block_top + 0.2 * block_h,
-                     block_bottom - 0.2 * block_h, 3)
-    for yy in ys:
-        ax.annotate(
-            "",
-            xy=(block_left + block_width - 2.0, yy),   # arrow head at right
-            xytext=(block_left + 2.0, yy),
-            arrowprops=dict(
-                arrowstyle="->",
-                color="tab:red",
-                linewidth=1.6,
-            ),
-        )
+       # compression arrows (RIGHT pointing towards the block)
+    block_h = block_bottom - block_top
+    if block_h > 0:
+        ys = np.linspace(block_top + 0.2 * block_h,
+                         block_bottom - 0.2 * block_h, 3)
+        for yy in ys:
+            ax.annotate(
+                "",
+                xy=(block_left + block_width - 2.0, yy),   # arrow head at right
+                xytext=(block_left + 2.0, yy),
+                arrowprops=dict(
+                    arrowstyle="->",
+                    color="tab:red",
+                    linewidth=1.6,
+                ),
+            )
+
 
 
     # α2 f'c label
@@ -1832,4 +1833,5 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
