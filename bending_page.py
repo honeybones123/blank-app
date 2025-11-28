@@ -741,7 +741,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             "",
             xy=(x0_stress + 0.15 * block_width, y_mid),
             xytext=(x_block_right - 0.15 * block_width, y_mid),
-            arrowprops=dict(arrowstyle="->", color="tab:red", linewidth=0.9),
+            arrowprops=dict(arrowstyle="<-", color="tab:red", linewidth=0.9),
         )
 
     ax.text(
@@ -1764,6 +1764,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
