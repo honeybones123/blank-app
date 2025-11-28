@@ -1076,29 +1076,25 @@ def _make_uls_stress_block_figure(
     return fig
 
 # ------------------------------------------------------------
-#  Simple "calc box" helper + CSS
+#  Simple "calc box" helper (inline styles)
 # ------------------------------------------------------------
 def calcbox(md: str):
     """Render a highlighted calculation box."""
-    st.markdown(f"<div class='calcbox'>{md}</div>", unsafe_allow_html=True)
-
-
-# Global CSS for calc boxes
-st.markdown(
-    """
-    <style>
-    .calcbox {
-        border-left: 4px solid #4a90e2;
-        background-color: #f7faff;
-        padding: 0.75rem 1rem;
-        margin: 0.5rem 0 1rem 0;
-        border-radius: 4px;
-        font-size: 0.95rem;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+    st.markdown(
+        f"""
+        <div style="
+            border-left: 4px solid #4a90e2;
+            background-color: #f7faff;
+            padding: 0.75rem 1rem;
+            margin: 0.75rem 0 1rem 0;
+            border-radius: 4px;
+            font-size: 0.95rem;
+        ">
+            {md}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 # ===== END PART 3 =====
 
@@ -2003,6 +1999,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
