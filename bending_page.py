@@ -1,5 +1,5 @@
 # ============================
-# PART 1 — IMPORTS + HELPERS + BENDING CAPACITY
+# BENDING PAGE
 # ============================
 
 import math
@@ -15,14 +15,12 @@ from state_and_helpers import (
     update_results,
 )
 
-# NEW: shared widget helpers (same as Inputs page)
 from widgets_helpers import (
     apply_global_widget_css,
     apply_calcbox_css,
     number_row,
     calcbox,
 )
-
 
 # ------------------------------------------------------------
 #  Small formatting helper for tables
@@ -269,118 +267,10 @@ def _compute_bending_capacity():
         "d": d,
     }
 
-    # Concrete flexural tensile strength (AS 3600-style)
-    # f_ctf ≈ 0.6 * sqrt(fc)  [MPa] for normal-weight concrete
-    fctf = 0.6 * math.sqrt(fc)
-
-    # Gross section properties and cracking moment
-    I_gross = b * D**3 / 12.0
-    Z_gross = b * D**2 / 6.0
-    Mcr = fctf * Z_gross / 1e6  # kNm
-
-    # ---- As_min per AS 3600-style expression ----
-    # As_min = 0.4 * fctf * b * d / fsy
-    As_min = float("nan")
-    if (
-        d not in (None, 0)
-        and fsy not in (None, 0)
-        and b not in (None, 0)
-        and fctf not in (None, 0)
-    ):
-        As_min = 0.4 * fctf * b * d / fsy
-
-    # Stress-block factors
-    alpha2_raw = 0.85 - 0.0015 * fc
-    gamma_raw = 0.97 - 0.0025 * fc
-    alpha2 = max(0.67, alpha2_raw)
-    gamma = max(0.67, gamma_raw)
-
-    # Flexural capacity
-    T = Ast * fsy
-    denom = alpha2 * fc * b * gamma
-    if denom <= 0:
-        return {
-            "phi_Mu_cap": 0.0,
-            "Mu_util": float("nan"),
-            "c": float("nan"),
-            "a": float("nan"),
-            "z": float("nan"),
-            "ku": float("nan"),
-            "alpha2": alpha2,
-            "gamma": gamma,
-            "phi": phi,
-            "fctf": fctf,
-            "I_gross": I_gross,
-            "Z_gross": Z_gross,
-            "Mcr": Mcr,
-            "As_min": As_min,
-            "d": d,
-        }
-
-    c = T / denom
-    a = gamma * c
-    z = d - 0.5 * a
-    Mu_nom = T * z / 1e6
-    phi_Mu_cap = phi * Mu_nom
-    Mu_util = Mu_star / phi_Mu_cap if phi_Mu_cap > 0 else float("inf")
-    ku = c / d if d not in (None, 0) else float("nan")
-
-    update_results(phi_Mu_cap=phi_Mu_cap, Mu_utilisation=Mu_util)
-
-    return {
-        "phi_Mu_cap": phi_Mu_cap,
-        "Mu_util": Mu_util,
-        "c": c,
-        "a": a,
-        "z": z,
-        "ku": ku,
-        "alpha2": alpha2,
-        "gamma": gamma,
-        "phi": phi,
-        "fctf": fctf,
-        "I_gross": I_gross,
-        "Z_gross": Z_gross,
-        "Mcr": Mcr,
-        "As_min": As_min,
-        "d": d,
-    }
-
-
-    c = T / denom
-    a = gamma * c
-    z = d - 0.5 * a
-    Mu_nom = T * z / 1e6
-    phi_Mu_cap = phi * Mu_nom
-    Mu_util = Mu_star / phi_Mu_cap if phi_Mu_cap > 0 else float("inf")
-    ku = c / d if d not in (None, 0) else float("nan")
-
-    update_results(phi_Mu_cap=phi_Mu_cap, Mu_utilisation=Mu_util)
-
-    return {
-        "phi_Mu_cap": phi_Mu_cap,
-        "Mu_util": Mu_util,
-        "c": c,
-        "a": a,
-        "z": z,
-        "ku": ku,
-        "alpha2": alpha2,
-        "gamma": gamma,
-        "phi": phi,
-        "fctf": fctf,
-        "I_gross": I_gross,
-        "Z_gross": Z_gross,
-        "Mcr": Mcr,
-        "As_min": As_min,
-        "d": d,
-    }
-
-# ===== END PART 1 =====
-
 
 # ============================
 # PART 2 — STRESS–STRAIN STATE + MAIN 3-PANEL FIGURE
 # ============================
-
 def _stress_strain_state(state: str):
     """
     Compute neutral axis and strain/stress info for the demo diagram.
@@ -841,13 +731,10 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
 
     return fig
 
-# ===== END PART 2 =====
-
 
 # ============================
 # PART 3 — WARNER-STYLE ULS STRESS-BLOCK FIGURE
 # ============================
-
 def _make_uls_stress_block_figure(
     b_mm: float,
     D_mm: float,
@@ -866,7 +753,7 @@ def _make_uls_stress_block_figure(
     • Vertical 'Stress (MPa)' axis on the left
     • Rectangular compression block from TOP fibre (0 mm) down to a = γ d_n
     • Dashed line at neutral axis depth d_n (below the block)
-    • LEFT-pointing compression arrows inside the block
+    • RIGHT-pointing compression arrows inside the block
     • Bottom tension arrow T (fsy) at depth d
     """
 
@@ -927,8 +814,6 @@ def _make_uls_stress_block_figure(
                     linewidth=1.6,
                 ),
             )
-
-
 
     # α2 f'c label
     ax.text(
@@ -1018,13 +903,10 @@ def _make_uls_stress_block_figure(
 
     return fig
 
-# ===== END PART 3 =====
-
 
 # ============================
 # PART 4 — PAGE RENDER (FULL render_bending FUNCTION)
 # ============================
-
 def render_bending():
     st.title("Bending Capacity")
 
@@ -1477,17 +1359,16 @@ def render_bending():
     # ============================================================
     #  STEP-BY-STEP TABS (ULS / SLS)
     # ============================================================
-        tab_uls, tab_sls = st.tabs(["ULS step-by-step", "SLS step-by-step"])
+    tab_uls, tab_sls = st.tabs(["ULS step-by-step", "SLS step-by-step"])
 
     # ----- ULS detailed tab -----
     with tab_uls:
-
         st.subheader("ULS Calculation (step-by-step)")
 
         if phi_Mu_cap > 0 and d and Ast:
 
             # ----------------------------------------------------
-            # 1. ULTIMATE LIMIT STATE (ULS)
+            # 1. Ultimate Limit State (ULS)
             # ----------------------------------------------------
             st.header("1. Ultimate Limit State (ULS)")
 
@@ -1538,7 +1419,7 @@ $$
 Assuming the tension steel yields:
 
 $$
-T = A_{st} f_{sy}
+T = A_{{st}} f_{{sy}}
 $$
 
 Substituting:
@@ -1572,7 +1453,7 @@ $$
 So:
 
 $$
-d_n = \frac{T}{\alpha_2 f'_c\, b\, \gamma}
+d_n = \frac{{T}}{{\alpha_2 f'_c\, b\, \gamma}}
 $$
 
 Substituting:
@@ -1602,7 +1483,7 @@ $$
 Lever arm:
 
 $$
-z = d - \frac{a}{2}
+z = d - \frac{{a}}{2}
 $$
 
 $$
@@ -1613,18 +1494,18 @@ $$
 Nominal moment:
 
 $$
-M_u = \frac{T z}{10^6}
+M_u = \frac{{T z}}{{10^6}}
 $$
 
 $$
-M_u = \frac{{{T:,.0f} \times {z_uls:.1f}}}{10^6}
+M_u = \frac{{{T:,.0f} \times {z_uls:.1f}}}{{10^6}}
     = {Mu_nom_uls:.2f}\ \text{{kNm}}
 $$
 
 Design moment:
 
 $$
-\phi M_{u,cap} = \phi M_u
+\phi M_{{u,cap}} = \phi M_u
                = {phi:.2f} \times {Mu_nom_uls:.2f}
                = {phi_Mu_cap_uls:.2f}\ \text{{kNm}}
 $$
@@ -1633,7 +1514,7 @@ $$
             st.markdown("---")
 
             # ----------------------------------------------------
-            # 2. MINIMUM STRENGTH REQUIREMENTS (AS 3600)
+            # 2. Minimum strength requirements (AS 3600)
             # ----------------------------------------------------
             st.header("2. Minimum strength requirements (AS 3600)")
 
@@ -1648,19 +1529,19 @@ $$
             Ast_min_as = As_min
 
             # 2.1 f_ct,f
-            st.subheader("2.1 Concrete flexural tensile strength $f_{ct,f}$")
+            st.subheader("2.1 Concrete flexural tensile strength $f_{{ct,f}}$")
             calcbox(
                 rf"""
 AS 3600-style expression for flexural tensile strength:
 
 $$
-f_{ct,f} \approx 0.6 \sqrt{{f'_c}}
+f_{{ct,f}} \approx 0.6 \sqrt{{f'_c}}
 $$
 
 Substituting:
 
 $$
-f_{ct,f} \approx 0.6 \sqrt{{{fc:.1f}}}
+f_{{ct,f}} \approx 0.6 \sqrt{{{fc:.1f}}}
           = {fctf_as:.3f}\ \text{{MPa}}
 $$
 """
@@ -1674,13 +1555,13 @@ $$
 Gross section modulus:
 
 $$
-Z_g = \frac{{b D^2}}{6}
+Z_g = \frac{{b D^2}}{{6}}
 $$
 
 Substituting:
 
 $$
-Z_g = \frac{{{b:.1f} \times {D:.1f}^2}}{6}
+Z_g = \frac{{{b:.1f} \times {D:.1f}^2}}{{6}}
     = {Zg:,.3e}\ \text{{mm}}^3
 $$
 """
@@ -1688,19 +1569,19 @@ $$
             st.markdown("---")
 
             # 2.3 M_cr
-            st.subheader("2.3 Cracking moment $M_{cr}$")
+            st.subheader("2.3 Cracking moment $M_{{cr}}$")
             calcbox(
                 rf"""
 Cracking moment:
 
 $$
-M_{cr} = \frac{{f_{ct,f} Z_g}}{{10^6}}
+M_{{cr}} = \frac{{f_{{ct,f}} Z_g}}{{10^6}}
 $$
 
 Substituting:
 
 $$
-M_{cr} = \frac{{{fctf_as:.3f} \times {Zg:,.3e}}}{{10^6}}
+M_{{cr}} = \frac{{{fctf_as:.3f} \times {Zg:,.3e}}}{{10^6}}
        = {Mcr_as:.2f}\ \text{{kNm}}
 $$
 """
@@ -1708,19 +1589,19 @@ $$
             st.markdown("---")
 
             # 2.4 Minimum required capacity (1.2 Mcr)
-            st.subheader("2.4 Minimum required design capacity $(M_{u,cap})_{min}$")
+            st.subheader("2.4 Minimum required design capacity $(M_{{u,cap}})_{{min}}$")
             calcbox(
                 rf"""
 To ensure post-cracking behaviour:
 
 $$
-(M_{u,cap})_{min} = 1.2\, M_{cr}
+(M_{{u,cap}})_{{min}} = 1.2\, M_{{cr}}
 $$
 
 Substituting:
 
 $$
-(M_{u,cap})_{min}
+(M_{{u,cap}})_{{min}}
 = 1.2 \times {Mcr_as:.2f}
 = {Mu_min_as:.2f}\ \text{{kNm}}
 $$
@@ -1732,20 +1613,20 @@ Meaning the design ultimate strength must exceed
             st.markdown("---")
 
             # 2.5 Minimum tensile reinforcement
-            st.subheader("2.5 Minimum tensile reinforcement $A_{st,min}$")
+            st.subheader("2.5 Minimum tensile reinforcement $A_{{st,min}}$")
             calcbox(
                 rf"""
 AS 3600-style minimum tensile reinforcement:
 
 $$
-A_{st,min}
-= 0.4\;\frac{{f_{ct,f}}}{{f_{sy}}}\; b d
+A_{{st,min}}
+= 0.4\;\frac{{f_{{ct,f}}}}{{f_{{sy}}}}\; b d
 $$
 
 Substituting:
 
 $$
-A_{st,min}
+A_{{st,min}}
 = 0.4 \times \frac{{{fctf_as:.3f}}}{{{fsy:.1f}}}
 \times {b:.1f} \times {d:.1f}
 = {Ast_min_as:.1f}\ \text{{mm}}^2
@@ -1754,9 +1635,9 @@ $$
 Compare:
 
 $$
-A_{st} = {Ast:.1f}\ \text{{mm}}^2
-\qquad\text{vs.}\qquad
-A_{st,min} = {Ast_min_as:.1f}\ \text{{mm}}^2
+A_{{st}} = {Ast:.1f}\ \text{{mm}}^2
+\qquad\text{{vs.}}\qquad
+A_{{st,min}} = {Ast_min_as:.1f}\ \text{{mm}}^2
 $$
 """
             )
@@ -1764,7 +1645,6 @@ $$
 
         else:
             st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
-  
 
     # ----- SLS detailed tab -----
     with tab_sls:
@@ -1839,31 +1719,9 @@ $$
         else:
             st.info("Not enough information to run SLS cracked-section example.")
 
-# ===== END PART 4 =====
-
 
 # ============================
 # PART 5 — MAIN GUARD
 # ============================
-
 if __name__ == "__main__":
     render_bending()
-
-# ===== END PART 5 =====
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
