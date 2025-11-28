@@ -269,7 +269,6 @@ def _compute_bending_capacity():
         "d": d,
     }
 
-
     # Concrete flexural tensile strength (AS 3600-style)
     # f_ctf ≈ 0.6 * sqrt(fc)  [MPa] for normal-weight concrete
     fctf = 0.6 * math.sqrt(fc)
@@ -1477,14 +1476,15 @@ def render_bending():
     # ============================================================
     tab_uls, tab_sls = st.tabs(["ULS step-by-step", "SLS step-by-step"])
 
-    # ----- ULS detailed tab -----
+
+     # ----- ULS detailed tab -----
     with tab_uls:
         st.subheader("ULS Calculation (step-by-step)")
 
         if phi_Mu_cap > 0 and d and Ast:
 
             # ----------------------------------------------------
-            # 1.1 Stress-block parameters (AS 3600)
+            # 1. ULTIMATE LIMIT STATE (ULS)
             # ----------------------------------------------------
             st.header("1. Ultimate Limit State (ULS)")
 
@@ -1493,8 +1493,8 @@ def render_bending():
             alpha2_uls = max(0.67, alpha2_raw_uls)
             gamma_uls = max(0.67, gamma_raw_uls)
 
+            # 1.1 Stress-block parameters
             st.subheader("1.1 Stress-block parameters (α₂ and γ)")
-
             calcbox(
                 rf"""
 From AS 3600 rectangular stress block:
@@ -1524,16 +1524,12 @@ $$
 $$
 """
             )
-
             st.markdown("---")
 
-            # ----------------------------------------------------
             # 1.2 Steel force
-            # ----------------------------------------------------
             st.subheader("1.2 Steel force in tension")
 
             T = Ast * fsy
-
             calcbox(
                 rf"""
 Assuming the tension steel yields:
@@ -1550,12 +1546,9 @@ T = {Ast:.1f} \times {fsy:.1f}
 $$
 """
             )
-
             st.markdown("---")
 
-            # ----------------------------------------------------
             # 1.3 Neutral axis depth
-            # ----------------------------------------------------
             st.subheader("1.3 Neutral axis depth $d_n$")
 
             denom = alpha2_uls * fc * b * gamma_uls
@@ -1582,19 +1575,16 @@ $$
 Substituting:
 
 $$
-d_n = 
+d_n =
 \frac{{{T:,.0f}}}
      {{ {alpha2_uls:.3f} \times {fc:.1f} \times {b:.1f} \times {gamma_uls:.3f} }}
 = {dn:.1f}\ \text{{mm}}
 $$
 """
             )
-
             st.markdown("---")
 
-            # ----------------------------------------------------
-            # 1.4 Block depth, lever arm, and moment capacity
-            # ----------------------------------------------------
+            # 1.4 Block depth, lever arm, capacity
             st.subheader("1.4 Block depth, lever arm, and moment capacity")
 
             calcbox(
@@ -1637,25 +1627,25 @@ $$
 $$
 """
             )
-
             st.markdown("---")
 
-            # ==================================================================
-            # SECTION 2 — Minimum strength requirements (AS 3600)
-            # ==================================================================
+            # ----------------------------------------------------
+            # 2. MINIMUM STRENGTH REQUIREMENTS (AS 3600)
+            # ----------------------------------------------------
             st.header("2. Minimum strength requirements (AS 3600)")
 
             fctf_as = fctf
             Zg = Z_gross
             Mcr_as = Mcr
-            Mu_min_as = 1.2 * Mcr_as if Mcr_as is not None and not math.isnan(Mcr_as) else float("nan")
+            Mu_min_as = (
+                1.2 * Mcr_as
+                if Mcr_as is not None and not math.isnan(Mcr_as)
+                else float("nan")
+            )
             Ast_min_as = As_min
 
-            # ----------------------------------------------------
             # 2.1 f_ct,f
-            # ----------------------------------------------------
             st.subheader("2.1 Concrete flexural tensile strength $f_{ct,f}$")
-
             calcbox(
                 rf"""
 AS 3600-style expression for flexural tensile strength:
@@ -1672,14 +1662,10 @@ f_{ct,f} \approx 0.6 \sqrt{{{fc:.1f}}}
 $$
 """
             )
-
             st.markdown("---")
 
-            # ----------------------------------------------------
             # 2.2 Z_g
-            # ----------------------------------------------------
             st.subheader("2.2 Gross section modulus $Z_g$")
-
             calcbox(
                 rf"""
 Gross section modulus:
@@ -1696,14 +1682,10 @@ Z_g = \frac{{{b:.1f} \times {D:.1f}^2}}{6}
 $$
 """
             )
-
             st.markdown("---")
 
-            # ----------------------------------------------------
-            # 2.3 Cracking moment
-            # ----------------------------------------------------
+            # 2.3 M_cr
             st.subheader("2.3 Cracking moment $M_{cr}$")
-
             calcbox(
                 rf"""
 Cracking moment:
@@ -1720,14 +1702,10 @@ M_{cr} = \frac{{{fctf_as:.3f} \times {Zg:,.3e}}}{{10^6}}
 $$
 """
             )
-
             st.markdown("---")
 
-            # ----------------------------------------------------
-            # 2.4 Minimum design strength (1.2 * Mcr)
-            # ----------------------------------------------------
+            # 2.4 Minimum required capacity (1.2 Mcr)
             st.subheader("2.4 Minimum required design capacity $(M_{u,cap})_{min}$")
-
             calcbox(
                 rf"""
 To ensure post-cracking behaviour:
@@ -1748,14 +1726,10 @@ Meaning the design ultimate strength must exceed
 **1.2 × cracking moment**.
 """
             )
-
             st.markdown("---")
 
-            # ----------------------------------------------------
             # 2.5 Minimum tensile reinforcement
-            # ----------------------------------------------------
             st.subheader("2.5 Minimum tensile reinforcement $A_{st,min}$")
-
             calcbox(
                 rf"""
 AS 3600-style minimum tensile reinforcement:
@@ -1783,13 +1757,11 @@ A_{st,min} = {Ast_min_as:.1f}\ \text{{mm}}^2
 $$
 """
             )
-
             st.markdown("---")
 
         else:
             st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
-
-    
+  
 
     # ----- SLS detailed tab -----
     with tab_sls:
@@ -1875,6 +1847,7 @@ if __name__ == "__main__":
     render_bending()
 
 # ===== END PART 5 =====
+
 
 
 
