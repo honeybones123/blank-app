@@ -2,14 +2,14 @@ import streamlit as st
 
 from state_and_helpers import init_shared_session_state
 
-from inputs_page import render_inputs
-from bending_page import render_bending
-from shear_page import render_shear
-
-from creep import render_creep
-from shrinkage import render_shrinkage
-from deflection import render_deflection
-from crack_page import render_crack_control
+# 🔁 Import modules, not individual functions
+import inputs_page
+import bending_page
+import shear_page
+import creep
+import shrinkage
+import deflection
+import crack_page
 
 
 def main():
@@ -48,19 +48,19 @@ def main():
     for tab, label in zip(tabs, tab_labels):
         with tab:
             if label == "Inputs":
-                render_inputs()
+                inputs_page.render_inputs()
             elif label == "Bending":
-                render_bending()
+                bending_page.render_bending()
             elif label == "Shear":
-                render_shear()
+                shear_page.render_shear()
             elif label == "Creep":
-                render_creep()
+                creep.render_creep()
             elif label == "Shrinkage":
-                render_shrinkage()
+                shrinkage.render_shrinkage()
             elif label == "Deflection":
-                render_deflection()
+                deflection.render_deflection()
             elif label == "Crack Control":
-                render_crack_control()
+                crack_page.render_crack_control()
 
 
 if __name__ == "__main__":
