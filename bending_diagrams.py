@@ -78,11 +78,13 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     stress_max = max(sigma_c, sigma_s, 1.0)
 
     # -------------------------
-    # FIXED panel positions (spread out a bit more)
+    # FIXED panel positions
+    #   - moved slightly left overall
+    #   - spaced a little further apart
     # -------------------------
-    x_center_sec = 200.0
-    x_center_strain = 750.0
-    x_center_stress = 1300.0
+    x_center_sec    = 150.0
+    x_center_strain = 760.0
+    x_center_stress = 1370.0
 
     sec_width = float(b)
     x0_sec = x_center_sec - sec_width / 2.0
@@ -111,7 +113,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     # Fixed axes -> no movement, and extra space on the left so the section
     # is never clipped even for wider beams.
     ax.set_ylim(D * 1.2, -0.2 * D)
-    ax.set_xlim(-200.0, 1500.0)
+    ax.set_xlim(-220.0, 1500.0)
     ax.set_aspect("equal", adjustable="box")
     ax.set_xmargin(0)
     ax.set_ymargin(0)
@@ -125,14 +127,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     # 1) SECTION PANEL
     # ====================================================
     ax.add_patch(
-        Rectangle(
-            (x0_sec, 0),
-            b,
-            D,
-            fill=False,
-            linewidth=LINE_THICK,
-            edgecolor="black",
-        )
+        Rectangle((x0_sec, 0), b, D, fill=False, linewidth=LINE_THICK, edgecolor="black")
     )
 
     block_depth_sec = max(0.0, min(gamma * c, D))
@@ -441,6 +436,7 @@ def _make_uls_stress_block_figure(
     show_lever_arm: bool = False,
     show_dn: bool = True,
     show_alpha_label: bool = True,
+    height_scale: float = 1.0,
 ):
     """
     Warner-style ULS stress block (right-way up)
@@ -449,6 +445,8 @@ def _make_uls_stress_block_figure(
       - show_lever_arm:   show / hide z arrow
       - show_dn:          show / hide dashed d_n line + label
       - show_alpha_label: show / hide α2 f'c text above the block
+      - height_scale:     scale factor on diagram height so each calc
+                          diagram can be tuned to match its calcbox.
     """
 
     vals = [b_mm, D_mm, d_mm, dn_mm, a_mm, alpha2, gamma, fc, fsy]
@@ -461,8 +459,8 @@ def _make_uls_stress_block_figure(
     sigma_c = alpha2 * fc  # MPa
     D_ref = max(D_mm, d_mm, dn_mm, a_mm) * 1.05
 
-    # Shorter figure so it lines up visually with the calc box height
-    fig, ax = plt.subplots(figsize=(3, 2.6))
+    # Height scaled so we can match blue calc boxes per step
+    fig, ax = plt.subplots(figsize=(3, 5 * height_scale))
 
     ax.set_xlim(0.0, 100.0)
     ax.set_ylim(D_ref, 0.0)  # 0 at top
