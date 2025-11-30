@@ -656,3 +656,131 @@ def _make_uls_stress_block_figure(
 
     return fig
 
+
+# ============================================================
+#  ULS FORCE MODEL FIGURE (for Section 1.4)
+# ============================================================
+def _make_uls_force_model_figure(
+    D_mm: float,
+    d_mm: float,
+    a_mm: float,
+):
+    """
+    Simple C–T–z force model for Section 1.4.
+
+    - Same sizing style as the ULS stress-block figures.
+    - Vertical reference line.
+    - Compression force C at mid-depth of a.
+    - Tension force T at depth d.
+    - Lever arm z between C and T.
+    """
+
+    vals = [D_mm, d_mm, a_mm]
+    if any(v is None or (isinstance(v, float) and math.isnan(v)) for v in vals):
+        fig, ax = plt.subplots()
+        ax.axis("off")
+        ax.text(0.5, 0.5, "No data", ha="center", va="center")
+        return fig
+
+    base_span = max(D_mm, d_mm, a_mm)
+    D_ref = base_span * 1.05
+
+    fig, ax = plt.subplots(figsize=(3.0, 3.2))
+    ax.set_xlim(0.0, 100.0)
+    ax.set_ylim(D_ref, 0.0)  # 0 at top
+    ax.axis("off")
+
+    # vertical reference line
+    x_axis = 20.0
+    ax.plot(
+        [x_axis, x_axis],
+        [0.0, D_ref],
+        color="black",
+        linewidth=LINE_THICK,
+    )
+
+    # Compression force C (leftwards arrow)
+    y_C = 0.5 * a_mm
+    x_C_head = x_axis - 2.0
+    x_C_tail = x_axis + 30.0
+
+    ax.annotate(
+        "",
+        xy=(x_C_head, y_C),
+        xytext=(x_C_tail, y_C),
+        arrowprops=dict(
+            arrowstyle="->",   # arrow head at xy (left)
+            linewidth=LINE_MED,
+            color="tab:red",
+            mutation_scale=ARROW_SCALE,
+        ),
+    )
+    ax.text(
+        x_C_head - 6.0,
+        y_C,
+        "C",
+        ha="right",
+        va="center",
+        fontsize=FS_LABEL,
+        color="tab:red",
+    )
+
+    # Tension force T (rightwards arrow)
+    y_T = d_mm
+    x_T_tail = x_axis
+    x_T_head = x_axis + 35.0
+
+    ax.annotate(
+        "",
+        xy=(x_T_head, y_T),
+        xytext=(x_T_tail, y_T),
+        arrowprops=dict(
+            arrowstyle="->",   # arrow head at xy (right)
+            linewidth=LINE_MED,
+            color="tab:blue",
+            mutation_scale=ARROW_SCALE,
+        ),
+    )
+    ax.text(
+        x_T_head + 4.0,
+        y_T,
+        "T",
+        ha="left",
+        va="center",
+        fontsize=FS_LABEL,
+        color="tab:blue",
+    )
+
+    # Lever arm z between C and T
+    x_z = x_axis + 55.0
+    ax.annotate(
+        "",
+        xy=(x_z, y_T),
+        xytext=(x_z, y_C),
+        arrowprops=dict(
+            arrowstyle="<->",
+            linewidth=LINE_MED,
+            color="black",
+            mutation_scale=ARROW_SCALE,
+        ),
+    )
+    ax.text(
+        x_z + 4.0,
+        0.5 * (y_C + y_T),
+        "z",
+        ha="left",
+        va="center",
+        fontsize=FS_LABEL,
+    )
+
+    # Title
+    ax.text(
+        50.0,
+        D_ref + 0.07 * D_ref,
+        "Force model",
+        ha="center",
+        va="bottom",
+        fontsize=FS_TITLE,
+    )
+
+    return fig
