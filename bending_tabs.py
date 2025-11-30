@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import streamlit as st
 
 from widgets_helpers import calcbox
-from bending_diagrams import _make_uls_stress_block_figure
+from bending_diagrams import _make_uls_stress_block_figure, _make_uls_force_model_figure
 from bending_core import _fmt
 
 
@@ -180,10 +180,14 @@ $$
 
         st.markdown("---")
 
-        # 1.4 Moment capacity
+        # 1.4 Moment capacity + force model figure
         st.subheader("1.4 Nominal and design moment capacity")
-        calcbox(
-            rf"""
+
+        col_calc_14, col_fig_14 = st.columns([2, 1])
+
+        with col_calc_14:
+            calcbox(
+                rf"""
 Nominal moment:
 
 $$
@@ -203,7 +207,16 @@ $$
                = {phi_Mu_cap_uls:.2f}\ \text{{kNm}}
 $$
 """
-        )
+            )
+
+        with col_fig_14:
+            fig_uls_14 = _make_uls_force_model_figure(
+                D_mm=D or 0.0,
+                d_mm=d,
+                a_mm=a_uls,
+            )
+            st.pyplot(fig_uls_14, use_container_width=False)
+
         st.markdown("---")
 
     else:
