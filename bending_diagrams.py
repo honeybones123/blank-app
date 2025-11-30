@@ -482,17 +482,15 @@ def _make_uls_stress_block_figure(
 
     sigma_c = alpha2 * fc  # MPa
 
-    # Different vertical spans for 1.1 vs 1.3 so the diagrams
-    # roughly match the height of their calc boxes.
+    # Make sure the vertical span always includes d, d_n and a.
     base_span = max(D_mm, d_mm, dn_mm, a_mm)
 
     if variant == "13":
-        # a bit taller to match the deeper 1.3 calcbox
-        D_ref = base_span * 1.10
-        fig_height = 3.2
-    else:  # "11" by default – more compact (shorter)
-        D_ref = base_span * 0.55   # tighter so 1.1 is noticeably shorter
-        fig_height = 2.6
+        D_ref = base_span * 1.05      # axis height
+        fig_height = 3.2              # visually a bit taller
+    else:  # "11" – same axis height, but shorter figure
+        D_ref = base_span * 1.05
+        fig_height = 2.4
 
     fig, ax = plt.subplots(figsize=(3.0, fig_height))
     ax.set_xlim(0.0, 100.0)
@@ -539,7 +537,7 @@ def _make_uls_stress_block_figure(
                 xy=(block_left + 2.0, yy),
                 xytext=(block_left + block_width - 2.0, yy),
                 arrowprops=dict(
-                    arrowstyle="->",  # leftwards
+                    arrowstyle="->",
                     color="tab:red",
                     linewidth=LINE_MED,
                     mutation_scale=ARROW_SCALE,
@@ -602,7 +600,7 @@ def _make_uls_stress_block_figure(
         color="tab:blue",
     )
 
-    # bottom tension arrow
+    # bottom tension arrow (now guaranteed to be inside the axes)
     ax.annotate(
         "",
         xy=(90.0, d_mm),
@@ -657,3 +655,4 @@ def _make_uls_stress_block_figure(
     )
 
     return fig
+
