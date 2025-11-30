@@ -125,7 +125,14 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     # 1) SECTION PANEL
     # ====================================================
     ax.add_patch(
-        Rectangle((x0_sec, 0), b, D, fill=False, linewidth=LINE_THICK, edgecolor="black")
+        Rectangle(
+            (x0_sec, 0),
+            b,
+            D,
+            fill=False,
+            linewidth=LINE_THICK,
+            edgecolor="black",
+        )
     )
 
     block_depth_sec = max(0.0, min(gamma * c, D))
@@ -439,8 +446,8 @@ def _make_uls_stress_block_figure(
     Warner-style ULS stress block (right-way up)
 
     Flags:
-      - show_lever_arm: show / hide z arrow
-      - show_dn:        show / hide dashed d_n line + label
+      - show_lever_arm:   show / hide z arrow
+      - show_dn:          show / hide dashed d_n line + label
       - show_alpha_label: show / hide α2 f'c text above the block
     """
 
@@ -454,7 +461,8 @@ def _make_uls_stress_block_figure(
     sigma_c = alpha2 * fc  # MPa
     D_ref = max(D_mm, d_mm, dn_mm, a_mm) * 1.05
 
-    fig, ax = plt.subplots(figsize=(3, 5))
+    # Shorter figure so it lines up visually with the calc box height
+    fig, ax = plt.subplots(figsize=(3, 2.6))
 
     ax.set_xlim(0.0, 100.0)
     ax.set_ylim(D_ref, 0.0)  # 0 at top
