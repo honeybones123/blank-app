@@ -657,9 +657,6 @@ def _make_uls_stress_block_figure(
     return fig
 
 
-# ============================================================
-#  ULS FORCE MODEL FIGURE (1.4 C–T–z)
-# ============================================================
 def _make_uls_force_model_figure(
     D_mm: float,
     d_mm: float,
@@ -667,12 +664,7 @@ def _make_uls_force_model_figure(
 ):
     """
     Simple C–T–z force model for Section 1.4.
-
-    - Same sizing style as the ULS stress-block figures.
-    - Vertical reference line.
-    - Compression force C at mid-depth of a.
-    - Tension force T at depth d.
-    - Lever arm z between C and T.
+    Matches calc-box height and aligns C/T symmetrically.
     """
 
     vals = [D_mm, d_mm, a_mm]
@@ -682,23 +674,32 @@ def _make_uls_force_model_figure(
         ax.text(0.5, 0.5, "No data", ha="center", va="center")
         return fig
 
+    # Slightly shorter height than 1.3 to match the calcbox
     base_span = max(D_mm, d_mm, a_mm)
-    D_ref = base_span * 1.05
+    D_ref = base_span * 0.90     # <— shortened from 1.05
 
-    # Height now matches the other calc-box diagrams (same 3.2 as 1.3)
-    fig, ax = plt.subplots(figsize=(3.6, 3.2))
+    fig, ax = plt.subplots(figsize=(3.6, 2.7))  # <— slightly shorter figure
     ax.set_xlim(0.0, 100.0)
     ax.set_ylim(D_ref, 0.0)
     ax.axis("off")
 
-    # vertical reference line
+    # ============================================================
+    # Vertical reference line
+    # ============================================================
     x_axis = 20.0
     ax.plot([x_axis, x_axis], [0.0, D_ref], color="black", linewidth=LINE_THICK)
 
-    # Compression C (leftwards) at centroid of block — slightly to the right
+    # ============================================================
+    # Compression C — same distance from the axis as T
+    # ============================================================
     y_C = 0.5 * a_mm
-    x_C_head = x_axis + 8.0
-    x_C_tail = x_axis + 40.0
+
+    # MATCH T DISTANCE: tension arrow head is ~35 mm from x_axis
+    ARROW_OFFSET = 35.0
+
+    x_C_tail = x_axis + ARROW_OFFSET
+    x_C_head = x_axis                  # arrow points left toward the axis
+
     ax.annotate(
         "",
         xy=(x_C_head, y_C),
@@ -710,20 +711,25 @@ def _make_uls_force_model_figure(
             mutation_scale=ARROW_SCALE,
         ),
     )
+
+    # "C" NOW ON THE RIGHT OF THE ARROW
     ax.text(
-        x_C_head - 6.0,
+        x_C_tail + 6.0,
         y_C,
         "C",
-        ha="right",
+        ha="left",
         va="center",
         fontsize=FS_LABEL,
         color="tab:red",
     )
 
-    # Tension T (rightwards) at depth d
+    # ============================================================
+    # Tension T — unchanged
+    # ============================================================
     y_T = d_mm
+    x_T_head = x_axis + ARROW_OFFSET
     x_T_tail = x_axis
-    x_T_head = x_axis + 35.0
+
     ax.annotate(
         "",
         xy=(x_T_head, y_T),
@@ -735,8 +741,9 @@ def _make_uls_force_model_figure(
             mutation_scale=ARROW_SCALE,
         ),
     )
+
     ax.text(
-        x_T_head + 4.0,
+        x_T_head + 6.0,
         y_T,
         "T",
         ha="left",
@@ -745,8 +752,10 @@ def _make_uls_force_model_figure(
         color="tab:blue",
     )
 
-    # Lever arm z between C and T
-    x_z = x_axis + 65.0
+    # ============================================================
+    # Lever arm z — unchanged
+    # ============================================================
+    x_z = x_axis + ARROW_OFFSET + 25.0   # ensure spacing looks balanced
     ax.annotate(
         "",
         xy=(x_z, y_T),
@@ -768,7 +777,7 @@ def _make_uls_force_model_figure(
 
     ax.text(
         50.0,
-        D_ref + 0.07 * D_ref,
+        D_ref + 0.08 * D_ref,
         "Force model",
         ha="center",
         va="bottom",
@@ -776,4 +785,5 @@ def _make_uls_force_model_figure(
     )
 
     return fig
+
 
