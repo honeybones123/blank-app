@@ -5,7 +5,11 @@ import matplotlib.pyplot as plt
 import streamlit as st
 
 from widgets_helpers import calcbox
-from bending_diagrams import _make_uls_stress_block_figure, _make_uls_force_model_figure
+from bending_diagrams import (
+    _make_uls_stress_block_figure,
+    _make_uls_force_model_figure,
+    _make_uls_section_mini_figure,
+)
 from bending_core import _fmt
 
 
@@ -29,7 +33,7 @@ def render_uls_tab(top_results, b, D, fc, fsy, Ast, d):
         gamma_uls = max(0.67, gamma_raw_uls)
 
         # Pre-compute ULS internal forces / geometry once
-        T = Ast * fsy
+        T = Ast * fsy  # N
         denom_uls = alpha2_uls * fc * b * gamma_uls
         dn = T / denom_uls if denom_uls > 0 else float("nan")
         a_uls = gamma_uls * dn
@@ -37,11 +41,16 @@ def render_uls_tab(top_results, b, D, fc, fsy, Ast, d):
         Mu_nom_uls = T * z_uls / 1e6
         phi_Mu_cap_uls = phi * Mu_nom_uls
 
-        # 1.1 Stress-block parameters (α2 and γ) + FIGURE ON RIGHT
-        st.subheader("1.1 Stress-block parameters (α₂ and γ)")
-        col_calc, col_fig = st.columns([2, 1])
+        # Concrete force at ULS (using a = γ d_n)
+        C_N = alpha2_uls * fc * b * a_uls  # N
 
-        with col_calc:
+        # --------------------------------------------------
+        # 1.1 Stress-block parameters (α2 and γ)
+        # --------------------------------------------------
+        st.subheader("1.1 Stress-block parameters (α₂ and γ)")
+        col_calc_11, col_fig_11 = st.columns([2, 1])
+
+        with col_calc_11:
             calcbox(
                 rf"""
 From AS 3600 rectangular stress block:
@@ -72,7 +81,7 @@ $$
 """
             )
 
-        with col_fig:
+        with col_fig_11:
             # Variant "11": compact height to match this calc box.
             fig_uls_11 = _make_uls_stress_block_figure(
                 b_mm=b or 0.0,
@@ -93,11 +102,57 @@ $$
 
         st.markdown("---")
 
-        # 1.2 Steel force
-        st.subheader("1.2 Steel force in tension")
+        # --------------------------------------------------
+        # 1.2 Concrete compressive force C
+        # --------------------------------------------------
+        st.subheader("1.2 Concrete compressive force $C$")
+        C_kN = C_N / 1000.0 if C_N is not None else float("nan")
+
         calcbox(
             rf"""
-Assuming the tension steel yields:
+Resultant concrete compression is taken as:
+
+$$
+C = \alpha_2 f'_c \, b \, a
+$$
+
+with block depth
+
+$$
+a = \gamma d_n
+$$
+
+Using the ULS stress-block parameters:
+
+$$
+C = \alpha_2 f'_c \, b \, a
+  = {alpha2_uls:.3f} \times {fc:.1f} \times {b:.1f} \times {a_uls:.1f}
+  = {C_kN:.1f}\ \text{{kN}}
+$$
+
+This force acts at the centroid of the compression block.
+"""
+        )
+
+        st.markdown("---")
+
+        # --------------------------------------------------
+        # 1.3 Steel area and steel tension force T
+        # --------------------------------------------------
+        st.subheader("1.3 Steel area and tension force $T$")
+
+        col_calc_13, col_fig_13 = st.columns([2, 1])
+
+        with col_calc_13:
+            calcbox(
+                rf"""
+From the section inputs, the total area of bottom tensile steel is:
+
+$$
+A_{{st}} = {Ast:.1f}\ \text{{mm}}^2
+$$
+
+Assuming the tension steel yields at $f_{{sy}}$:
 
 $$
 T = A_{{st}} f_{{sy}}
@@ -108,26 +163,53 @@ Substituting:
 $$
 T = {Ast:.1f} \times {fsy:.1f}
   = {T:,.0f}\ \text{{N}}
+  = {T/1000.0:.1f}\ \text{{kN}}
 $$
 """
-        )
+            )
+
+        with col_fig_13:
+            # Small section sketch, depth matched visually to this calc box
+            fig_sec_13 = _make_uls_section_mini_figure(
+                b_mm=b or 0.0,
+                D_mm=D or 0.0,
+                d_mm=d,
+                c_mm=dn,
+                gamma=gamma_uls,
+            )
+            st.pyplot(fig_sec_13, use_container_width=False)
+
         st.markdown("---")
 
-        # 1.3 Neutral axis depth + FIGURE ON RIGHT (with z)
-        st.subheader("1.3 Neutral axis depth $d_n$ and lever arm $z$")
+        # --------------------------------------------------
+        # 1.4 Neutral axis depth d_n and block depth a
+        # --------------------------------------------------
+        st.subheader("1.4 Neutral axis depth $d_n$ and block depth $a$")
 
-        col_calc_13, col_fig_13 = st.columns([2, 1])
+        col_calc_14, col_fig_14 = st.columns([2, 1])
 
-        with col_calc_13:
+        with col_calc_14:
             calcbox(
                 rf"""
-Equilibrium of internal forces:
+Equilibrium of internal forces requires:
+
+$$
+C = T
+$$
+
+Using the rectangular stress block:
+
+$$
+C = \alpha_2 f'_c\, b\, \gamma d_n
+$$
+
+So, setting $C = T$:
 
 $$
 \alpha_2 f'_c\, b\, \gamma d_n = T
 $$
 
-So:
+Rearranging:
 
 $$
 d_n = \frac{{T}}{{\alpha_2 f'_c\, b\, \gamma}}
@@ -148,20 +230,12 @@ $$
 a = \gamma d_n = {gamma_uls:.3f} \times {dn:.1f}
   = {a_uls:.1f}\ \text{{mm}}
 $$
-
-Lever arm:
-
-$$
-z = d - \frac{{a}}{2}
-  = {d:.1f} - \frac{{{a_uls:.1f}}}{2}
-  = {z_uls:.1f}\ \text{{mm}}
-$$
 """
             )
 
-        with col_fig_13:
-            # Variant "13": taller to match this calc box.
-            fig_uls_13 = _make_uls_stress_block_figure(
+        with col_fig_14:
+            # Variant "13": taller – matches this calc box.
+            fig_uls_14 = _make_uls_stress_block_figure(
                 b_mm=b or 0.0,
                 D_mm=D or 0.0,
                 d_mm=d,
@@ -171,23 +245,68 @@ $$
                 gamma=gamma_uls,
                 fc=fc,
                 fsy=fsy,
-                show_lever_arm=True,     # show z
+                show_lever_arm=True,     # still shows z, as before
                 show_dn=True,            # show d_n
-                show_alpha_label=True,   # add back width / α2 f'c annotation
+                show_alpha_label=True,   # α2 f'c + width arrow
                 variant="13",
             )
-            st.pyplot(fig_uls_13, use_container_width=False)
+            st.pyplot(fig_uls_14, use_container_width=False)
 
         st.markdown("---")
 
-        # 1.4 Moment capacity + force model figure
-        st.subheader("1.4 Nominal and design moment capacity")
+        # --------------------------------------------------
+        # 1.5 Neutral axis ratio k_u
+        # --------------------------------------------------
+        st.subheader("1.5 Neutral axis ratio $k_u$")
 
-        col_calc_14, col_fig_14 = st.columns([2, 1])
+        ku = dn / d if d else float("nan")
 
-        with col_calc_14:
+        calcbox(
+            rf"""
+A convenient non-dimensional measure of the neutral axis depth is:
+
+$$
+k_u = \frac{{d_n}}{{d}}
+$$
+
+Substituting:
+
+$$
+k_u = \frac{{{dn:.1f}}}{{{d:.1f}}}
+    = {ku:.3f}
+$$
+
+This ratio shows how deep the neutral axis is relative to the
+effective depth of the tension steel.
+"""
+        )
+
+        st.markdown("---")
+
+        # --------------------------------------------------
+        # 1.6 Lever arm z and moment capacity (+ force model)
+        # --------------------------------------------------
+        st.subheader("1.6 Lever arm $z$ and moment capacity")
+
+        col_calc_16, col_fig_16 = st.columns([2, 1])
+
+        with col_calc_16:
             calcbox(
                 rf"""
+Lever arm between compression and tension resultants:
+
+$$
+z = d - \frac{{a}}{2}
+$$
+
+Substituting:
+
+$$
+z = d - \frac{{a}}{{2}}
+  = {d:.1f} - \frac{{{a_uls:.1f}}}{{2}}
+  = {z_uls:.1f}\ \text{{mm}}
+$$
+
 Nominal moment:
 
 $$
@@ -209,13 +328,15 @@ $$
 """
             )
 
-        with col_fig_14:
-            fig_uls_14 = _make_uls_force_model_figure(
+        with col_fig_16:
+            fig_uls_16 = _make_uls_force_model_figure(
                 D_mm=D or 0.0,
                 d_mm=d,
                 a_mm=a_uls,
+                C_N=C_N,
+                T_N=T,
             )
-            st.pyplot(fig_uls_14, use_container_width=False)
+            st.pyplot(fig_uls_16, use_container_width=False)
 
         st.markdown("---")
 
@@ -223,10 +344,144 @@ $$
         st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
 
 
-# (rest of bending_tabs.py – Minimum strength tab + SLS tab – unchanged)
+# ----------------------------------------------------------------------
+#  REST OF FILE – Minimum strength tab + SLS tab (unchanged)
 # ----------------------------------------------------------------------
 def render_min_strength_tab(top_results, b, D, fc, fsy, Ast):
-    ...
+    """
+    Tab 2 – Minimum strength requirements.
+    """
+    fctf = top_results["fctf"]
+    Z_gross = top_results["Z_gross"]
+    Mcr = top_results["Mcr"]
+    As_min = top_results["As_min"]
+
+    fctf_as = fctf
+    Zg = Z_gross
+    Mcr_as = Mcr
+    Mu_min_as = (
+        1.2 * Mcr_as
+        if Mcr_as is not None and not math.isnan(Mcr_as)
+        else float("nan")
+    )
+    Ast_min_as = As_min
+
+    st.header("2. Minimum strength requirements (AS 3600)")
+
+    # 2.1 f_ct,f
+    st.subheader("2.1 Concrete flexural tensile strength $f_{{ct,f}}$")
+    calcbox(
+        rf"""
+AS 3600-style expression for flexural tensile strength:
+
+$$
+f_{{ct,f}} \approx 0.6 \sqrt{{f'_c}}
+$$
+
+Substituting:
+
+$$
+f_{{ct,f}} \approx 0.6 \sqrt{{{fc:.1f}}}
+          = {fctf_as:.3f}\ \text{{MPa}}
+$$
+"""
+    )
+    st.markdown("---")
+
+    # 2.2 Z_g
+    st.subheader("2.2 Gross section modulus $Z_g$")
+    calcbox(
+        rf"""
+Gross section modulus:
+
+$$
+Z_g = \frac{{b D^2}}{{6}}
+$$
+
+Substituting:
+
+$$
+Z_g = \frac{{{b:.1f} \times {D:.1f}^2}}{{6}}
+    = {Zg:,.3e}\ \text{{mm}}^3
+$$
+"""
+    )
+    st.markdown("---")
+
+    # 2.3 M_cr
+    st.subheader("2.3 Cracking moment $M_{{cr}}$")
+    calcbox(
+        rf"""
+Cracking moment:
+
+$$
+M_{{cr}} = \frac{{f_{{ct,f}} Z_g}}{{10^6}}
+$$
+
+Substituting:
+
+$$
+M_{{cr}} = \frac{{{fctf_as:.3f} \times {Zg:,.3e}}}{{10^6}}
+       = {Mcr_as:.2f}\ \text{{kNm}}
+$$
+"""
+    )
+    st.markdown("---")
+
+    # 2.4 Minimum required capacity (1.2 Mcr)
+    st.subheader("2.4 Minimum required design capacity $(M_{{u,cap}})_{{min}}$")
+    calcbox(
+        rf"""
+To ensure post-cracking behaviour:
+
+$$
+(M_{{u,cap}})_{{min}} = 1.2\, M_{{cr}}
+$$
+
+Substituting:
+
+$$
+(M_{{u,cap}})_{{min}}
+= 1.2 \times {Mcr_as:.2f}
+= {Mu_min_as:.2f}\ \text{{kNm}}
+$$
+
+Meaning the design ultimate strength must exceed
+**1.2 × cracking moment**.
+"""
+    )
+    st.markdown("---")
+
+    # 2.5 Minimum tensile reinforcement
+    st.subheader("2.5 Minimum tensile reinforcement $A_{{st,min}}$")
+    calcbox(
+        rf"""
+AS 3600-style minimum tensile reinforcement:
+
+$$
+A_{{st,min}}
+= 0.4\;\frac{{f_{{ct,f}}}}{{f_{{sy}}}}\; b d
+$$
+
+Substituting:
+
+$$
+A_{{st,min}}
+= 0.4 \times \frac{{{fctf_as:.3f}}}{{{fsy:.1f}}}
+\times {b:.1f} \times {top_results['d']:.1f}
+= {Ast_min_as:.1f}\ \text{{mm}}^2
+$$
+
+Compare:
+
+$$
+A_{{st}} = {Ast:.1f}\ \text{{mm}}^2
+\qquad\text{{vs.}}\qquad
+A_{{st,min}} = {Ast_min_as:.1f}\ \text{{mm}}^2
+$$
+"""
+    )
+    st.markdown("---")
 
 
 def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
