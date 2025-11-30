@@ -28,12 +28,21 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     D = state_dict["D"]
     d = state_dict["d"]
     c = state_dict["c"]
-    eps_c = state_dict["eps_c"]
-    eps_s = state_dict["eps_s"]
+    eps_c_raw = state_dict["eps_c"]
+    eps_s_raw = state_dict["eps_s"]
     gamma = state_dict["gamma"]
     fs_t = state_dict["fs_t"]
     fc = state_dict["fc"]
     alpha2 = state_dict["alpha2"]
+
+    # ------------------------------------------------------------
+    # SIGN CONVENTION FOR THIS FIGURE (Warner-style):
+    #   • Concrete strain positive (compression)
+    #   • Steel strain negative (tension)
+    # We only flip for plotting – calculations elsewhere unchanged.
+    # ------------------------------------------------------------
+    eps_c = abs(eps_c_raw)
+    eps_s = -abs(eps_s_raw)
 
     # reinforcement parameters
     nb_bot = int(get_param("nb_bot") or 4)
@@ -53,31 +62,45 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     else:
         sec_title = "Section (uncracked elastic view)"
 
-    # scaling
+    # -------------------------
+    # SCALING (unchanged)
+    # -------------------------
     eps_max = max(abs(eps_c), abs(eps_s), 1e-4) * 1.3
     sigma_c = alpha2 * fc
     sigma_s = abs(fs_t)
     stress_max = max(sigma_c, sigma_s, 1.0)
 
-    # layout in X
-    gap = 220.0
-    x0_sec = 0.0
-    x1_sec = x0_sec + b + 200.0
+    # -------------------------
+    # LAYOUT: evenly spaced panels
+    # We only move panels horizontally – panel widths/scales unchanged.
+    # -------------------------
+    sec_width = b + 200.0            # as before
+    panel_w_strain = 200.0           # unchanged
+    panel_w_stress = 260.0           # unchanged
 
-    panel_w_strain = 200.0
-    x0_strain = x1_sec + gap
-    x1_strain = x0_strain + panel_w_strain
-    x_mid_strain = (x0_strain + x1_strain) / 2.0
+    gap_centres = 450.0              # equal spacing between panel centres
 
-    panel_w_stress = 260.0
-    x0_stress = x1_strain + gap
-    x1_stress = x0_stress + panel_w_stress
+    # panel centres
+    x_center_sec = 0.0
+    x_center_strain = x_center_sec + gap_centres
+    x_center_stress = x_center_strain + gap_centres
 
-    total_x_max = x1_stress + 40.0
+    # left / right positions
+    x0_sec = x_center_sec - sec_width / 2.0
+    x1_sec = x_center_sec + sec_width / 2.0
+
+    x0_strain = x_center_strain - panel_w_strain / 2.0
+    x1_strain = x_center_strain + panel_w_strain / 2.0
+
+    x0_stress = x_center_stress - panel_w_stress / 2.0
+    x1_stress = x_center_stress + panel_w_stress / 2.0
+
+    total_x_min = x0_sec - 60.0
+    total_x_max = x1_stress + 60.0
 
     def strain_to_x(eps):
         half_w = panel_w_strain * 0.4
-        return x_mid_strain + (eps / eps_max) * half_w
+        return x_center_strain + (eps / eps_max) * half_w
 
     def stress_to_x(sig):
         return x0_stress + (sig / stress_max) * (panel_w_stress * 0.8)
@@ -85,14 +108,12 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     fig, ax = plt.subplots(figsize=(9, 3.5))
 
     ax.set_ylim(D * 1.2, -0.2 * D)
-    ax.set_xlim(0, total_x_max)
+    ax.set_xlim(total_x_min, total_x_max)
     ax.set_aspect("equal", adjustable="box")
 
     # remove ticks / axis markings
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["bottom"].set_visible(False)
-    ax.spines["left"].set_visible(False)
+    for spine in ["top", "right", "bottom", "left"]:
+        ax.spines[spine].set_visible(False)
     ax.tick_params(left=False, labelleft=False, bottom=False, labelbottom=False)
 
     # 1) SECTION PANEL
@@ -151,23 +172,32 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
 
     # d arrow
     if d:
-        x_d = x0_sec + b + 30
+        x_d = x1_sec + 30
         ax.annotate(
             "",
             xy=(x_d, d),
             xytext=(x_d, 0),
-            arrowprops=dict(arrowstyle="<->", linewidth=1.0),
+            arrowprops=dict(
+                arrowstyle="<->",
+                linewidth=1.0,
+                mutation_scale=8,   # smaller arrow heads
+            ),
         )
         ax.text(x_d + 10, d / 2, f"d = {d:.0f} mm", fontsize=6, va="center")
 
     # NA arrow
     if c:
-        x_na = x0_sec + b + 80
+        x_na = x1_sec + 80
         ax.annotate(
             "",
             xy=(x_na, c),
             xytext=(x_na, 0),
-            arrowprops=dict(arrowstyle="<->", linewidth=1.0, color="tab:red"),
+            arrowprops=dict(
+                arrowstyle="<->",
+                linewidth=1.0,
+                color="tab:red",
+                mutation_scale=8,
+            ),
         )
         ax.text(
             x_na + 10,
@@ -188,10 +218,10 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     )
 
     # 2) STRAIN PANEL
-    ax.plot([x_mid_strain, x_mid_strain], [0, D], color="black", linewidth=1)
+    ax.plot([x_center_strain, x_center_strain], [0, D], color="black", linewidth=1)
 
     y_vals = np.array([0, c, d])
-    eps_vals = np.array([eps_c, 0, eps_s])
+    eps_vals = np.array([eps_c, 0.0, eps_s])
     x_vals = [strain_to_x(e) for e in eps_vals]
     ax.plot(x_vals, y_vals, color="black")
 
@@ -215,7 +245,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     )
 
     ax.text(
-        x_mid_strain,
+        x_center_strain,
         D + 0.14 * D,
         "Strain",
         ha="center",
@@ -231,7 +261,12 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         "",
         xy=(x_T, d),
         xytext=(x0_stress, d),
-        arrowprops=dict(arrowstyle="->", linewidth=1.4, color="tab:blue"),
+        arrowprops=dict(
+            arrowstyle="->",
+            linewidth=1.4,
+            color="tab:blue",
+            mutation_scale=8,
+        ),
     )
     ax.text(
         x_T + 8,
@@ -249,7 +284,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     block_top = 0
     block_bottom = gamma * c if state_label == "ULS" else c
 
-    sigma_c = alpha2 * fc
+    sigma_c_val = alpha2 * fc
 
     # ULS: rectangular block
     if state_label == "ULS":
@@ -277,12 +312,17 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         "",
         xy=(x0_stress, y_alpha),
         xytext=(x_block_right, y_alpha),
-        arrowprops=dict(arrowstyle="<->", linewidth=1.2, color="tab:red"),
+        arrowprops=dict(
+            arrowstyle="<->",
+            linewidth=1.2,
+            color="tab:red",
+            mutation_scale=8,
+        ),
     )
     ax.text(
         (x0_stress + x_block_right) / 2,
         y_alpha - 0.04 * D,
-        rf"$\alpha_2 f'_c = {sigma_c:.0f}\ \mathrm{{MPa}}$",
+        rf"$\alpha_2 f'_c = {sigma_c_val:.0f}\ \mathrm{{MPa}}$",
         fontsize=6,
         color="tab:red",
         ha="center",
@@ -294,7 +334,11 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         "",
         xy=(x_gc, block_bottom),
         xytext=(x_gc, block_top),
-        arrowprops=dict(arrowstyle="<->", color="tab:red"),
+        arrowprops=dict(
+            arrowstyle="<->",
+            color="tab:red",
+            mutation_scale=8,
+        ),
     )
 
     depth_label = (
@@ -312,14 +356,19 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         va="center",
     )
 
-    # internal compression arrows
+    # internal compression arrows – now facing LEFT
     for frac in [0.25, 0.5, 0.75]:
         y_mid = block_top + frac * (block_bottom - block_top)
         ax.annotate(
             "",
             xy=(x0_stress + 0.15 * block_width, y_mid),
             xytext=(x_block_right - 0.15 * block_width, y_mid),
-            arrowprops=dict(arrowstyle="<-", color="tab:red", linewidth=0.9),
+            arrowprops=dict(
+                arrowstyle="->",          # arrow head at left
+                color="tab:red",
+                linewidth=0.9,
+                mutation_scale=8,
+            ),
         )
 
     ax.text(
@@ -387,7 +436,7 @@ def _make_uls_stress_block_figure(
         )
     )
 
-    # compression arrows
+    # compression arrows – face LEFT
     block_h = block_bottom - block_top
     if block_h > 0:
         ys = np.linspace(
@@ -398,12 +447,13 @@ def _make_uls_stress_block_figure(
         for yy in ys:
             ax.annotate(
                 "",
-                xy=(block_left + block_width - 2.0, yy),
-                xytext=(block_left + 2.0, yy),
+                xy=(block_left + 2.0, yy),
+                xytext=(block_left + block_width - 2.0, yy),
                 arrowprops=dict(
-                    arrowstyle="->",
+                    arrowstyle="->",        # leftwards
                     color="tab:red",
                     linewidth=1.6,
+                    mutation_scale=8,
                 ),
             )
 
@@ -453,7 +503,12 @@ def _make_uls_stress_block_figure(
         "",
         xy=(90.0, d_mm),
         xytext=(x_axis, d_mm),
-        arrowprops=dict(arrowstyle="->", linewidth=2.0, color="tab:blue"),
+        arrowprops=dict(
+            arrowstyle="->",
+            linewidth=2.0,
+            color="tab:blue",
+            mutation_scale=8,
+        ),
     )
     ax.text(
         92.0,
@@ -473,7 +528,11 @@ def _make_uls_stress_block_figure(
             "",
             xy=(x_z, d_mm),
             xytext=(x_z, y_C),
-            arrowprops=dict(arrowstyle="<->", linewidth=1.6),
+            arrowprops=dict(
+                arrowstyle="<->",
+                linewidth=1.6,
+                mutation_scale=8,
+            ),
         )
         ax.text(
             x_z + 3.0,
