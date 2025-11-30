@@ -657,14 +657,146 @@ def _make_uls_stress_block_figure(
     return fig
 
 
+# ============================================================
+#  MINI SECTION FIGURE FOR STEP 1.3 (Ast + T)
+# ============================================================
+def _make_uls_section_mini_figure(
+    b_mm: float,
+    D_mm: float,
+    d_mm: float,
+    c_mm: float,
+    gamma: float,
+):
+    """
+    Small section sketch for Step 1.3.
+    Matches style of the main section but in a compact figure.
+    """
+
+    vals = [b_mm, D_mm, d_mm, c_mm, gamma]
+    if any(v is None or (isinstance(v, float) and math.isnan(v)) for v in vals):
+        fig, ax = plt.subplots()
+        ax.axis("off")
+        ax.text(0.5, 0.5, "No data", ha="center", va="center")
+        return fig
+
+    # Use actual depth as reference; slightly padded
+    D_ref = D_mm * 1.05
+
+    fig, ax = plt.subplots(figsize=(3.0, 2.6))
+    ax.set_xlim(0.0, b_mm * 1.4 if b_mm > 0 else 140.0)
+    ax.set_ylim(D_ref, 0.0)
+    ax.axis("off")
+
+    # left margin
+    x0_sec = 10.0
+    b = b_mm
+    D = D_mm
+
+    # outer rectangle
+    ax.add_patch(
+        Rectangle(
+            (x0_sec, 0.0),
+            b,
+            D,
+            fill=False,
+            linewidth=LINE_THICK,
+            edgecolor="black",
+        )
+    )
+
+    # compression zone using γ d_n (clipped)
+    block_depth = max(0.0, min(gamma * c_mm, D))
+    ax.add_patch(
+        Rectangle(
+            (x0_sec, 0.0),
+            b,
+            block_depth,
+            facecolor="#c7e3ff",
+            edgecolor="tab:red",
+            linewidth=LINE_MED,
+            alpha=0.8,
+        )
+    )
+
+    # bottom bars (use same layout helper + params)
+    nb_bot = int(get_param("nb_bot") or 4)
+    db_bot = get_param("db_bot") or 20.0
+    cover_bot = get_param("cover_bot") or 40.0
+    rowgap_bot = get_param("rowgap_bot") or 25.0
+
+    min_spacing_bot = 2 * db_bot
+    bot_layout = _layout_bars_in_rows(
+        nb_bot, b, cover_bot, db_bot, min_spacing_bot, 2
+    )
+    r_bot = db_bot / 2.0
+    row_pitch_bot = db_bot + rowgap_bot
+    d_row0 = D - cover_bot - r_bot
+
+    for x_rel, row_idx in bot_layout:
+        ax.add_patch(
+            Circle(
+                (x0_sec + x_rel, d_row0 - row_idx * row_pitch_bot),
+                radius=r_bot,
+                fill=False,
+                edgecolor="tab:blue",
+                linewidth=LINE_MED,
+            )
+        )
+
+    # top bars (if any)
+    nb_top = int(get_param("nb_top") or 2)
+    db_top = get_param("db_top") or 16.0
+    cover_top = get_param("cover_top") or 40.0
+    rowgap_top = get_param("rowgap_top") or 25.0
+
+    min_spacing_top = 2 * db_top
+    top_layout = _layout_bars_in_rows(
+        nb_top, b, cover_top, db_top, min_spacing_top, 2
+    )
+    r_top = db_top / 2.0
+    y_top_base = cover_top + r_top
+    row_pitch_top = db_top + rowgap_top
+
+    for x_rel, row_idx in top_layout:
+        ax.add_patch(
+            Circle(
+                (x0_sec + x_rel, y_top_base + row_idx * row_pitch_top),
+                radius=r_top,
+                fill=False,
+                edgecolor="tab:red",
+                linewidth=LINE_MED,
+            )
+        )
+
+    # small title
+    ax.text(
+        x0_sec + 0.5 * b,
+        D_ref + 0.08 * D_ref,
+        "Section",
+        ha="center",
+        va="bottom",
+        fontsize=FS_TITLE,
+    )
+
+    return fig
+
+
+# ============================================================
+#  ULS C–T–z FORCE MODEL FIGURE (STEP 1.6)
+# ============================================================
 def _make_uls_force_model_figure(
     D_mm: float,
     d_mm: float,
     a_mm: float,
+    C_N: float | None = None,
+    T_N: float | None = None,
 ):
     """
-    Simple C–T–z force model for Section 1.4.
-    Matches calc-box height and aligns C/T symmetrically.
+    Simple C–T–z force model for the final ULS step.
+
+    - Matches calc-box height reasonably well.
+    - C and T arrows are symmetric distances from the axis.
+    - Can optionally show numeric values for C and T.
     """
 
     vals = [D_mm, d_mm, a_mm]
@@ -674,14 +806,25 @@ def _make_uls_force_model_figure(
         ax.text(0.5, 0.5, "No data", ha="center", va="center")
         return fig
 
-    # Slightly shorter height than 1.3 to match the calcbox
+    # Slightly shorter height to match that calcbox visually
     base_span = max(D_mm, d_mm, a_mm)
-    D_ref = base_span * 0.90     # <— shortened from 1.05
+    D_ref = base_span * 0.90
 
-    fig, ax = plt.subplots(figsize=(3.6, 2.7))  # <— slightly shorter figure
+    fig, ax = plt.subplots(figsize=(3.6, 2.7))
     ax.set_xlim(0.0, 100.0)
     ax.set_ylim(D_ref, 0.0)
     ax.axis("off")
+
+    # Prepare labels with optional numeric values (kN)
+    if C_N is not None and not (isinstance(C_N, float) and math.isnan(C_N)):
+        C_label = f"C = {C_N / 1000.0:.1f} kN"
+    else:
+        C_label = "C"
+
+    if T_N is not None and not (isinstance(T_N, float) and math.isnan(T_N)):
+        T_label = f"T = {T_N / 1000.0:.1f} kN"
+    else:
+        T_label = "T"
 
     # ============================================================
     # Vertical reference line
@@ -712,11 +855,11 @@ def _make_uls_force_model_figure(
         ),
     )
 
-    # "C" NOW ON THE RIGHT OF THE ARROW
+    # label for C on the right of the arrow, with value if provided
     ax.text(
         x_C_tail + 6.0,
         y_C,
-        "C",
+        C_label,
         ha="left",
         va="center",
         fontsize=FS_LABEL,
@@ -724,7 +867,7 @@ def _make_uls_force_model_figure(
     )
 
     # ============================================================
-    # Tension T — unchanged
+    # Tension T
     # ============================================================
     y_T = d_mm
     x_T_head = x_axis + ARROW_OFFSET
@@ -745,7 +888,7 @@ def _make_uls_force_model_figure(
     ax.text(
         x_T_head + 6.0,
         y_T,
-        "T",
+        T_label,
         ha="left",
         va="center",
         fontsize=FS_LABEL,
@@ -753,9 +896,9 @@ def _make_uls_force_model_figure(
     )
 
     # ============================================================
-    # Lever arm z — unchanged
+    # Lever arm z
     # ============================================================
-    x_z = x_axis + ARROW_OFFSET + 25.0   # ensure spacing looks balanced
+    x_z = x_axis + ARROW_OFFSET + 25.0
     ax.annotate(
         "",
         xy=(x_z, y_T),
@@ -785,5 +928,3 @@ def _make_uls_force_model_figure(
     )
 
     return fig
-
-
