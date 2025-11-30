@@ -1,614 +1,511 @@
-# bending_diagrams.py
+# bending_tabs.py
 import math
-import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle, Circle
 import streamlit as st
 
-from state_and_helpers import get_param
-from bending_core import _layout_bars_in_rows
-
-# ------------------------------------------------------------
-# Global styling constants
-# ------------------------------------------------------------
-LINE_THICK = 1.0   # main outlines
-LINE_MED   = 0.8   # normal lines
-LINE_THIN  = 0.6   # light lines
-
-FS_TITLE  = 8      # diagram titles
-FS_LABEL  = 7      # axis labels / main text
-FS_ANNOT  = 5      # small annotations
-
-ARROW_SCALE = 4    # small arrowheads
+from widgets_helpers import calcbox
+from bending_diagrams import _make_uls_stress_block_figure
+from bending_core import _fmt
 
 
-def _plot_stress_strain_profiles(state_dict, state_label=None):
+def render_uls_tab(top_results, b, D, fc, fsy, Ast, d):
     """
-    Three-panel figure:
-
-        - Section (left)
-        - Strain profile (centre)
-        - Stress / stress-block (right)
-
-    Panel positions and axes limits are FIXED so the diagrams
-    do not jump around when switching between ULS / SLS / Uncracked.
+    Tab 1 – ULS step-by-step.
     """
-    if state_label is None:
-        try:
-            state_label = st.session_state.get("bending_strain_state_local", "ULS")
-        except Exception:
-            state_label = "ULS"
+    phi_Mu_cap = top_results["phi_Mu_cap"]
+    phi = top_results["phi"]
 
-    # unpack state
-    b = state_dict["b"]
-    D = state_dict["D"]
-    d = state_dict["d"]
-    c = state_dict["c"]
-    eps_c_raw = state_dict["eps_c"]
-    eps_s_raw = state_dict["eps_s"]
-    gamma = state_dict["gamma"]
-    fs_t = state_dict["fs_t"]
-    fc = state_dict["fc"]
-    alpha2 = state_dict["alpha2"]
+    st.subheader("ULS Calculation (step-by-step)")
 
-    # Warner-style sign convention for THIS FIGURE ONLY:
-    #   concrete strain positive, steel strain negative
-    eps_c = abs(eps_c_raw)
-    eps_s = -abs(eps_s_raw)
+    if phi_Mu_cap > 0 and d and Ast:
+        # 1. Ultimate Limit State
+        st.header("1. Ultimate Limit State (ULS)")
 
-    # reinforcement parameters
-    nb_bot = int(get_param("nb_bot") or 4)
-    db_bot = get_param("db_bot") or 20.0
-    cover_bot = get_param("cover_bot") or 40.0
-    rowgap_bot = get_param("rowgap_bot") or 25.0
-    nb_top = int(get_param("nb_top") or 2)
-    db_top = get_param("db_top") or 16.0
-    cover_top = get_param("cover_top") or 40.0
-    rowgap_top = get_param("rowgap_top") or 25.0
+        # Stress-block factors
+        alpha2_raw_uls = 0.85 - 0.0015 * fc
+        gamma_raw_uls = 0.97 - 0.0025 * fc
+        alpha2_uls = max(0.67, alpha2_raw_uls)
+        gamma_uls = max(0.67, gamma_raw_uls)
 
-    # Short, constant heading to avoid changing figure bbox
-    sec_title = "Section"
+        # Pre-compute ULS internal forces / geometry once
+        T = Ast * fsy
+        denom_uls = alpha2_uls * fc * b * gamma_uls
+        dn = T / denom_uls if denom_uls > 0 else float("nan")
+        a_uls = gamma_uls * dn
+        z_uls = d - 0.5 * a_uls
+        Mu_nom_uls = T * z_uls / 1e6
+        phi_Mu_cap_uls = phi * Mu_nom_uls
 
-    # -------------------------
-    # Scaling
-    # -------------------------
-    eps_max = max(abs(eps_c), abs(eps_s), 1e-4) * 1.3
-    sigma_c = alpha2 * fc
-    sigma_s = abs(fs_t)
-    stress_max = max(sigma_c, sigma_s, 1.0)
+        # 1.1 Stress-block parameters (α2 and γ) + FIGURE ON RIGHT
+        st.subheader("1.1 Stress-block parameters (α₂ and γ)")
+        col_calc, col_fig = st.columns([2, 1])
 
-    # -------------------------
-    # FIXED panel positions (slightly spread out)
-    # -------------------------
-    x_center_sec = 180.0
-    x_center_strain = 730.0
-    x_center_stress = 1280.0
+        with col_calc:
+            calcbox(
+                rf"""
+From AS 3600 rectangular stress block:
 
-    sec_width = float(b)
-    x0_sec = x_center_sec - sec_width / 2.0
-    x1_sec = x_center_sec + sec_width / 2.0
+$$
+\alpha_2 = 0.85 - 0.0015 f'_c \;(\ge 0.67)
+$$
 
-    panel_w_strain = 200.0
-    x0_strain = x_center_strain - panel_w_strain / 2.0
-    x1_strain = x_center_strain + panel_w_strain / 2.0
+Substituting:
 
-    panel_w_stress = 260.0
-    x0_stress = x_center_stress - panel_w_stress / 2.0
-    x1_stress = x_center_stress + panel_w_stress / 2.0
+$$
+\alpha_2 = 0.85 - 0.0015 \times {fc:.1f}
+         = {alpha2_raw_uls:.3f}
+         \Rightarrow \alpha_2 = {alpha2_uls:.3f}
+$$
 
-    def strain_to_x(eps):
-        half_w = panel_w_strain * 0.4
-        return x_center_strain + (eps / eps_max) * half_w
+Similarly,
 
-    def stress_to_x(sig):
-        return x0_stress + (sig / stress_max) * (panel_w_stress * 0.8)
+$$
+\gamma = 0.97 - 0.0025 f'_c \;(\ge 0.67)
+$$
 
-    fig, ax = plt.subplots(figsize=(9, 3.5))
-
-    # Lock how much of the figure the axes occupy (avoids tiny shifts)
-    fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
-
-    # Fixed axes -> no movement, and extra space on the left so the section
-    # is never clipped even for wider beams.
-    ax.set_ylim(D * 1.2, -0.2 * D)
-    ax.set_xlim(-220.0, 1500.0)
-    ax.set_aspect("equal", adjustable="box")
-    ax.set_xmargin(0)
-    ax.set_ymargin(0)
-
-    # remove ticks / axis markings
-    for spine in ["top", "right", "bottom", "left"]:
-        ax.spines[spine].set_visible(False)
-    ax.tick_params(left=False, labelleft=False, bottom=False, labelbottom=False)
-
-    # ====================================================
-    # 1) SECTION PANEL
-    # ====================================================
-    ax.add_patch(
-        Rectangle((x0_sec, 0), b, D, fill=False, linewidth=LINE_THICK, edgecolor="black")
-    )
-
-    block_depth_sec = max(0.0, min(gamma * c, D))
-    ax.add_patch(
-        Rectangle(
-            (x0_sec, 0),
-            b,
-            block_depth_sec,
-            facecolor="#c7e3ff",
-            edgecolor="tab:red",
-            linewidth=LINE_MED,
-            alpha=0.8,
-        )
-    )
-
-    # bottom bars
-    min_spacing_bot = 2 * db_bot
-    bot_layout = _layout_bars_in_rows(nb_bot, b, cover_bot, db_bot, min_spacing_bot, 2)
-    r_bot = db_bot / 2.0
-    row_pitch_bot = db_bot + rowgap_bot
-    d_row0 = D - cover_bot - r_bot
-
-    for x_rel, row_idx in bot_layout:
-        ax.add_patch(
-            Circle(
-                (x0_sec + x_rel, d_row0 - row_idx * row_pitch_bot),
-                radius=r_bot,
-                fill=False,
-                edgecolor="tab:blue",
-                linewidth=LINE_MED,
+$$
+\gamma = 0.97 - 0.0025 \times {fc:.1f}
+       = {gamma_raw_uls:.3f}
+       \Rightarrow \gamma = {gamma_uls:.3f}
+$$
+"""
             )
-        )
 
-    # top bars
-    min_spacing_top = 2 * db_top
-    top_layout = _layout_bars_in_rows(nb_top, b, cover_top, db_top, min_spacing_top, 2)
-    r_top = db_top / 2.0
-    y_top_base = cover_top + r_top
-    row_pitch_top = db_top + rowgap_top
-
-    for x_rel, row_idx in top_layout:
-        ax.add_patch(
-            Circle(
-                (x0_sec + x_rel, y_top_base + row_idx * row_pitch_top),
-                radius=r_top,
-                fill=False,
-                edgecolor="tab:red",
-                linewidth=LINE_MED,
+        with col_fig:
+            # Variant for 1.1:
+            #   - shorter figure (show_dn=False)
+            #   - no lever arm
+            #   - show α2 f'c label
+            fig_uls_11 = _make_uls_stress_block_figure(
+                b_mm=b or 0.0,
+                D_mm=D or 0.0,
+                d_mm=d,
+                dn_mm=dn,
+                a_mm=a_uls,
+                alpha2=alpha2_uls,
+                gamma=gamma_uls,
+                fc=fc,
+                fsy=fsy,
+                show_lever_arm=False,
+                show_dn=False,          # <— makes 1.1 diagram shorter
+                show_alpha_label=True,
             )
+            st.pyplot(fig_uls_11, use_container_width=False)
+
+        st.markdown("---")
+
+        # 1.2 Steel force
+        st.subheader("1.2 Steel force in tension")
+        calcbox(
+            rf"""
+Assuming the tension steel yields:
+
+$$
+T = A_{{st}} f_{{sy}}
+$$
+
+Substituting:
+
+$$
+T = {Ast:.1f} \times {fsy:.1f}
+  = {T:,.0f}\ \text{{N}}
+$$
+"""
         )
+        st.markdown("---")
 
-    # depth arrows kept next to section only
-    beam_right = x0_sec + b
+        # 1.3 Neutral axis depth + FIGURE ON RIGHT (with z)
+        st.subheader("1.3 Neutral axis depth $d_n$ and lever arm $z$")
 
-    if d:
-        x_d = min(beam_right + 30.0, x0_strain - 40.0)
-        ax.annotate(
-            "",
-            xy=(x_d, d),
-            xytext=(x_d, 0),
-            arrowprops=dict(
-                arrowstyle="<->",
-                linewidth=LINE_THIN,
-                mutation_scale=ARROW_SCALE,
-            ),
+        col_calc_13, col_fig_13 = st.columns([2, 1])
+
+        with col_calc_13:
+            calcbox(
+                rf"""
+Equilibrium of internal forces:
+
+$$
+\alpha_2 f'_c\, b\, \gamma d_n = T
+$$
+
+So:
+
+$$
+d_n = \frac{{T}}{{\alpha_2 f'_c\, b\, \gamma}}
+$$
+
+Substituting:
+
+$$
+d_n =
+\frac{{{T:,.0f}}}
+     {{ {alpha2_uls:.3f} \times {fc:.1f} \times {b:.1f} \times {gamma_uls:.3f} }}
+= {dn:.1f}\ \text{{mm}}
+$$
+
+Block depth:
+
+$$
+a = \gamma d_n = {gamma_uls:.3f} \times {dn:.1f}
+  = {a_uls:.1f}\ \text{{mm}}
+$$
+
+Lever arm:
+
+$$
+z = d - \frac{{a}}{2}
+  = {d:.1f} - \frac{{{a_uls:.1f}}}{2}
+  = {z_uls:.1f}\ \text{{mm}}
+$$
+"""
+            )
+
+        with col_fig_13:
+            # Variant for 1.3:
+            #   - taller figure (show_dn=True)
+            #   - show lever arm z
+            #   - keep α2 f'c label
+            fig_uls_13 = _make_uls_stress_block_figure(
+                b_mm=b or 0.0,
+                D_mm=D or 0.0,
+                d_mm=d,
+                dn_mm=dn,
+                a_mm=a_uls,
+                alpha2=alpha2_uls,
+                gamma=gamma_uls,
+                fc=fc,
+                fsy=fsy,
+                show_lever_arm=True,    # shows z
+                show_dn=True,           # <— taller, with d_n line
+                show_alpha_label=True,
+            )
+            st.pyplot(fig_uls_13, use_container_width=False)
+
+        st.markdown("---")
+
+        # 1.4 Moment capacity
+        st.subheader("1.4 Nominal and design moment capacity")
+        calcbox(
+            rf"""
+Nominal moment:
+
+$$
+M_u = \frac{{T z}}{{10^6}}
+$$
+
+$$
+M_u = \frac{{{T:,.0f} \times {z_uls:.1f}}}{{10^6}}
+    = {Mu_nom_uls:.2f}\ \text{{kNm}}
+$$
+
+Design moment:
+
+$$
+\phi M_{{u,cap}} = \phi M_u
+               = {phi:.2f} \times {Mu_nom_uls:.2f}
+               = {phi_Mu_cap_uls:.2f}\ \text{{kNm}}
+$$
+"""
         )
-        ax.text(
-            x_d + 10,
-            d / 2,
-            f"d = {d:.0f} mm",
-            fontsize=FS_ANNOT,
-            va="center",
-        )
+        st.markdown("---")
 
-    if c:
-        x_na = min(beam_right + 80.0, x0_strain - 10.0)
-        ax.annotate(
-            "",
-            xy=(x_na, c),
-            xytext=(x_na, 0),
-            arrowprops=dict(
-                arrowstyle="<->",
-                linewidth=LINE_THIN,
-                color="tab:red",
-                mutation_scale=ARROW_SCALE,
-            ),
-        )
-        ax.text(
-            x_na + 10,
-            c / 2,
-            "dₙ = {:.0f} mm".format(c),
-            fontsize=FS_ANNOT,
-            color="tab:red",
-            va="center",
-        )
-
-    ax.text(
-        x_center_sec,
-        D + 0.14 * D,
-        sec_title,
-        ha="center",
-        va="bottom",
-        fontsize=FS_TITLE,
-    )
-
-    # ====================================================
-    # 2) STRAIN PANEL
-    # ====================================================
-    ax.plot(
-        [x_center_strain, x_center_strain],
-        [0, D],
-        color="black",
-        linewidth=LINE_MED,
-    )
-
-    y_vals = np.array([0, c, d])
-    eps_vals = np.array([eps_c, 0.0, eps_s])
-    x_vals = [strain_to_x(e) for e in eps_vals]
-    ax.plot(x_vals, y_vals, color="black", linewidth=LINE_MED)
-
-    ax.hlines(
-        c,
-        x0_strain - 10,
-        x1_strain + 10,
-        colors="black",
-        linestyles="--",
-        linewidth=LINE_THIN,
-    )
-
-    ax.text(
-        strain_to_x(eps_c),
-        0,
-        rf"$\varepsilon_c = {eps_c:.4f}$",
-        fontsize=FS_ANNOT,
-        color="tab:red",
-        va="bottom",
-    )
-    ax.text(
-        strain_to_x(eps_s),
-        d,
-        rf"$\varepsilon_s = {eps_s:.4f}$",
-        fontsize=FS_ANNOT,
-        color="tab:blue",
-        va="top",
-    )
-
-    ax.text(
-        x_center_strain,
-        D + 0.14 * D,
-        "Strain",
-        ha="center",
-        va="bottom",
-        fontsize=FS_TITLE,
-    )
-
-    # ====================================================
-    # 3) STRESS PANEL
-    # ====================================================
-    ax.plot([x0_stress, x0_stress], [0, D], color="black", linewidth=LINE_MED)
-
-    x_T = stress_to_x(sigma_s)
-    ax.annotate(
-        "",
-        xy=(x_T, d),
-        xytext=(x0_stress, d),
-        arrowprops=dict(
-            arrowstyle="->",
-            linewidth=LINE_MED,
-            color="tab:blue",
-            mutation_scale=ARROW_SCALE,
-        ),
-    )
-    ax.text(
-        x_T + 8,
-        d,
-        f"T ({sigma_s:.0f} MPa)",
-        fontsize=FS_ANNOT,
-        color="tab:blue",
-        va="center",
-    )
-
-    block_ratio = 1 / 3
-    block_width = (x_T - x0_stress) * block_ratio
-    x_block_right = x0_stress + block_width
-
-    block_top = 0
-    block_bottom = gamma * c if state_label == "ULS" else c
-
-    sigma_c_val = alpha2 * fc
-
-    # compression block outline
-    if state_label == "ULS":
-        ax.fill(
-            [x0_stress, x_block_right, x_block_right, x0_stress],
-            [block_top, block_top, block_bottom, block_bottom],
-            fill=False,
-            edgecolor="tab:red",
-            linewidth=LINE_MED,
-        )
     else:
-        ax.fill(
-            [x0_stress, x0_stress, x_block_right],
-            [block_bottom, block_top, block_top],
-            fill=False,
-            edgecolor="tab:red",
-            linewidth=LINE_MED,
-        )
-
-    ax.hlines(
-        c,
-        x0_stress - 10,
-        x1_stress,
-        linestyles="--",
-        linewidth=LINE_THIN,
-        colors="black",
-    )
-
-    # α2 f'c width arrow
-    y_alpha = -0.05 * D
-    ax.annotate(
-        "",
-        xy=(x0_stress, y_alpha),
-        xytext=(x_block_right, y_alpha),
-        arrowprops=dict(
-            arrowstyle="<->",
-            linewidth=LINE_THIN,
-            color="tab:red",
-            mutation_scale=ARROW_SCALE,
-        ),
-    )
-    ax.text(
-        (x0_stress + x_block_right) / 2,
-        y_alpha - 0.04 * D,
-        rf"$\alpha_2 f'_c = {sigma_c_val:.0f}\ \mathrm{{MPa}}$",
-        fontsize=FS_ANNOT,
-        color="tab:red",
-        ha="center",
-    )
-
-    # γc / d_n depth arrow
-    x_gc = x_block_right + 0.12 * panel_w_stress
-    ax.annotate(
-        "",
-        xy=(x_gc, block_bottom),
-        xytext=(x_gc, block_top),
-        arrowprops=dict(
-            arrowstyle="<->",
-            color="tab:red",
-            linewidth=LINE_THIN,
-            mutation_scale=ARROW_SCALE,
-        ),
-    )
-
-    depth_label = (
-        rf"$\gamma d_n = {gamma*c:.0f}\ \mathrm{{mm}}$"
-        if state_label == "ULS"
-        else rf"$d_n = {c:.0f}\ \mathrm{{mm}}$"
-    )
-
-    ax.text(
-        x_gc + 10,
-        (block_top + block_bottom) / 2,
-        depth_label,
-        fontsize=FS_ANNOT,
-        color="tab:red",
-        va="center",
-    )
-
-    # internal compression arrows – facing LEFT
-    for frac in [0.25, 0.5, 0.75]:
-        y_mid = block_top + frac * (block_bottom - block_top)
-        ax.annotate(
-            "",
-            xy=(x0_stress + 0.15 * block_width, y_mid),
-            xytext=(x_block_right - 0.15 * block_width, y_mid),
-            arrowprops=dict(
-                arrowstyle="->",  # arrow head at left
-                color="tab:red",
-                linewidth=LINE_THIN,
-                mutation_scale=ARROW_SCALE,
-            ),
-        )
-
-    ax.text(
-        x_center_stress,
-        D + 0.14 * D,
-        "Stress (MPa)",
-        ha="center",
-        va="bottom",
-        fontsize=FS_TITLE,
-    )
-
-    return fig
+        st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
 
 
-def _make_uls_stress_block_figure(
-    b_mm: float,
-    D_mm: float,
-    d_mm: float,
-    dn_mm: float,
-    a_mm: float,
-    alpha2: float,
-    gamma: float,
-    fc: float,
-    fsy: float,
-    show_lever_arm: bool = False,
-    show_dn: bool = True,
-    show_alpha_label: bool = True,
-):
+def render_min_strength_tab(top_results, b, D, fc, fsy, Ast):
     """
-    Warner-style ULS stress block (right-way up)
-
-    Flags:
-      - show_lever_arm: show / hide z arrow
-      - show_dn:        show / hide dashed d_n line + label
-      - show_alpha_label: show / hide α2 f'c text above the block
-
-    NOTE:
-      We use a slightly shorter figure for 1.1 (show_dn=False),
-      and a taller one for 1.3 (show_dn=True) so each fits the
-      depth of its calc box more nicely.
+    Tab 2 – Minimum strength requirements.
     """
+    fctf = top_results["fctf"]
+    Z_gross = top_results["Z_gross"]
+    Mcr = top_results["Mcr"]
+    As_min = top_results["As_min"]
 
-    vals = [b_mm, D_mm, d_mm, dn_mm, a_mm, alpha2, gamma, fc, fsy]
-    if any(v is None or (isinstance(v, float) and math.isnan(v)) for v in vals):
-        fig, ax = plt.subplots()
-        ax.axis("off")
-        ax.text(0.5, 0.5, "No data", ha="center", va="center")
-        return fig
-
-    sigma_c = alpha2 * fc  # MPa
-    D_base = max(D_mm, d_mm, dn_mm, a_mm)
-    D_ref = D_base * 1.05
-
-    # Different heights for 1.1 vs 1.3
-    if show_dn:
-        fig, ax = plt.subplots(figsize=(2.1, 3.9))   # 1.3 – a bit taller
-    else:
-        fig, ax = plt.subplots(figsize=(2.1, 3.1))   # 1.1 – a bit shorter
-
-    ax.set_xlim(0.0, 100.0)
-    ax.set_ylim(D_ref, 0.0)  # 0 at top
-    ax.axis("off")
-
-    # vertical axis
-    x_axis = 20.0
-    ax.plot([x_axis, x_axis], [0.0, D_ref], color="black", linewidth=LINE_THICK)
-
-    # block
-    block_left = x_axis
-    block_width = 22.0
-    block_top = 0.0
-    block_bottom = a_mm
-
-    ax.add_patch(
-        Rectangle(
-            (block_left, block_top),
-            block_width,
-            block_bottom - block_top,
-            fill=False,
-            edgecolor="tab:red",
-            linewidth=LINE_MED,
-        )
+    fctf_as = fctf
+    Zg = Z_gross
+    Mcr_as = Mcr
+    Mu_min_as = (
+        1.2 * Mcr_as
+        if Mcr_as is not None and not math.isnan(Mcr_as)
+        else float("nan")
     )
+    Ast_min_as = As_min
 
-    # compression arrows – face LEFT
-    block_h = block_bottom - block_top
-    if block_h > 0:
-        ys = np.linspace(
-            block_top + 0.2 * block_h,
-            block_bottom - 0.2 * block_h,
-            3,
+    st.header("2. Minimum strength requirements (AS 3600)")
+
+    # 2.1 f_ct,f
+    st.subheader("2.1 Concrete flexural tensile strength $f_{{ct,f}}$")
+    calcbox(
+        rf"""
+AS 3600-style expression for flexural tensile strength:
+
+$$
+f_{{ct,f}} \approx 0.6 \sqrt{{f'_c}}
+$$
+
+Substituting:
+
+$$
+f_{{ct,f}} \approx 0.6 \sqrt{{{fc:.1f}}}
+          = {fctf_as:.3f}\ \text{{MPa}}
+$$
+"""
+    )
+    st.markdown("---")
+
+    # 2.2 Z_g
+    st.subheader("2.2 Gross section modulus $Z_g$")
+    calcbox(
+        rf"""
+Gross section modulus:
+
+$$
+Z_g = \frac{{b D^2}}{{6}}
+$$
+
+Substituting:
+
+$$
+Z_g = \frac{{{b:.1f} \times {D:.1f}^2}}{{6}}
+    = {Zg:,.3e}\ \text{{mm}}^3
+$$
+"""
+    )
+    st.markdown("---")
+
+    # 2.3 M_cr
+    st.subheader("2.3 Cracking moment $M_{{cr}}$")
+    calcbox(
+        rf"""
+Cracking moment:
+
+$$
+M_{{cr}} = \frac{{f_{{ct,f}} Z_g}}{{10^6}}
+$$
+
+Substituting:
+
+$$
+M_{{cr}} = \frac{{{fctf_as:.3f} \times {Zg:,.3e}}}{{10^6}}
+       = {Mcr_as:.2f}\ \text{{kNm}}
+$$
+"""
+    )
+    st.markdown("---")
+
+    # 2.4 Minimum required capacity (1.2 Mcr)
+    st.subheader("2.4 Minimum required design capacity $(M_{{u,cap}})_{{min}}$")
+    calcbox(
+        rf"""
+To ensure post-cracking behaviour:
+
+$$
+(M_{{u,cap}})_{{min}} = 1.2\, M_{{cr}}
+$$
+
+Substituting:
+
+$$
+(M_{{u,cap}})_{{min}}
+= 1.2 \times {Mcr_as:.2f}
+= {Mu_min_as:.2f}\ \text{{kNm}}
+$$
+
+Meaning the design ultimate strength must exceed
+**1.2 × cracking moment**.
+"""
+    )
+    st.markdown("---")
+
+    # 2.5 Minimum tensile reinforcement
+    st.subheader("2.5 Minimum tensile reinforcement $A_{{st,min}}$")
+    calcbox(
+        rf"""
+AS 3600-style minimum tensile reinforcement:
+
+$$
+A_{{st,min}}
+= 0.4\;\frac{{f_{{ct,f}}}}{{f_{{sy}}}}\; b d
+$$
+
+Substituting:
+
+$$
+A_{{st,min}}
+= 0.4 \times \frac{{{fctf_as:.3f}}}{{{fsy:.1f}}}
+\times {b:.1f} \times {top_results['d']:.1f}
+= {Ast_min_as:.1f}\ \text{{mm}}^2
+$$
+
+Compare:
+
+$$
+A_{{st}} = {Ast:.1f}\ \text{{mm}}^2
+\qquad\text{{vs.}}\qquad
+A_{{st,min}} = {Ast_min_as:.1f}\ \text{{mm}}^2
+$$
+"""
+    )
+    st.markdown("---")
+
+
+def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
+    """
+    Tab 3 – SLS cracked-section teaching model.
+    """
+    st.header("3. SLS Bending – Cracked Section (Teaching Model)")
+
+    if d and Ast and Ec and Es and b and D and Mu_star is not None:
+        Ms = Mu_star
+
+        # 3.1 Modular ratio
+        st.subheader("3.1 Modular ratio $n = E_s / E_c$")
+        calcbox(
+            rf"""
+Modular ratio:
+
+$$
+n = \frac{{E_s}}{{E_c}}
+$$
+
+Substituting:
+
+$$
+n = \frac{{{Es:.0f}}}{{{Ec:.0f}}}
+  = {Es/Ec:.2f}
+$$
+"""
         )
-        for yy in ys:
-            ax.annotate(
-                "",
-                xy=(block_left + 2.0, yy),
-                xytext=(block_left + block_width - 2.0, yy),
-                arrowprops=dict(
-                    arrowstyle="->",  # leftwards
-                    color="tab:red",
-                    linewidth=LINE_MED,
-                    mutation_scale=ARROW_SCALE,
-                ),
+
+        # 3.2 Neutral axis depth
+        st.subheader("3.2 Neutral axis depth $d_n$ (cracked section)")
+        a_quad = 0.5 * b
+        n_sls = Es / Ec if Ec else 0.0
+        b_coef = n_sls * Ast
+        c_coef = -n_sls * Ast * d
+        dn_sls = float("nan")
+        if a_quad != 0:
+            disc = b_coef**2 - 4 * a_quad * c_coef
+            if disc >= 0:
+                roots = [
+                    (-b_coef + math.sqrt(disc)) / (2 * a_quad),
+                    (-b_coef - math.sqrt(disc)) / (2 * a_quad),
+                ]
+                roots = [r for r in roots if 0 < r < D]
+                if roots:
+                    dn_sls = min(roots, key=lambda x: abs(x - d / 2))
+        if math.isnan(dn_sls):
+            dn_sls = D / 3.0
+
+        calcbox(
+            rf"""
+From equilibrium of transformed areas:
+
+$$
+\frac{{b d_n^2}}{2} = n A_s (d - d_n)
+$$
+
+Solving this quadratic for $d_n$ gives:
+
+$$
+d_n = {dn_sls:.2f}\ \text{{mm}}
+$$
+"""
+        )
+
+        # 3.3 Cracked I
+        st.subheader("3.3 Cracked moment of inertia $I_{{cr}}$")
+        Icr = b * dn_sls**3 / 3.0 + n_sls * Ast * (d - dn_sls) ** 2
+        calcbox(
+            rf"""
+Cracked moment of inertia:
+
+$$
+I_{{cr}} = \frac{{b d_n^3}}{3} + n A_s (d - d_n)^2
+$$
+
+Substituting:
+
+$$
+I_{{cr}} = \frac{{{b:.1f} \times {dn_sls:.2f}^3}}{3}
+        + {n_sls:.2f} \times {Ast:.1f} ( {d:.1f} - {dn_sls:.2f} )^2
+        = {Icr:,.2f}\ \text{{mm}}^4
+$$
+"""
+        )
+
+        # 3.4 Curvature
+        st.subheader("3.4 Curvature at service moment")
+        Ms_Nmm = Ms * 1e6
+        kappa = Ms_Nmm / (Ec * Icr) if Ec and Icr else 0.0
+        calcbox(
+            rf"""
+Using $M_s$ as the service moment:
+
+$$
+\kappa = \frac{{M_s}}{{E_c I_{{cr}}}}
+$$
+
+Substituting:
+
+$$
+\kappa = \frac{{{Ms:.2f}\times 10^6}}{{{Ec:.0f} \times {Icr:,.2f}}}
+       = {kappa:.3e}\ \text{{mm}}^{{-1}}
+$$
+"""
+        )
+
+        # 3.5 Strain distribution + figure on the right
+        st.subheader("3.5 Strain distribution $\\varepsilon(y) = \\kappa (y - d_n)$")
+
+        layers = [
+            ("Top fibre", 0.0),
+            ("Tension steel (d)", d),
+            ("Bottom fibre", D),
+        ]
+        strain_rows = []
+        for name, yi in layers:
+            eps = kappa * (yi - dn_sls)
+            strain_rows.append(
+                {"Layer": name, "Depth y (mm)": yi, "ε": eps}
             )
+        df_eps = pd.DataFrame(strain_rows)
 
-    # α2 f'c label (optional)
-    if show_alpha_label:
-        ax.text(
-            block_left,
-            -0.06 * D_ref,
-            f"α₂ f'c = {sigma_c:.0f} MPa",
-            ha="left",
-            va="bottom",
-            fontsize=FS_LABEL,
-            color="tab:red",
-        )
+        col_sls_calc, col_sls_fig = st.columns([2, 1])
 
-    # dashed d_n line + label (optional)
-    if show_dn:
-        ax.hlines(
-            dn_mm,
-            x_axis,
-            95.0,
-            linestyles="--",
-            colors="tab:blue",
-            linewidth=LINE_MED,
-        )
-        # move label further right so it doesn't clash with z
-        x_dn_label = 95.0
-        ax.text(
-            x_dn_label + 2.0,
-            dn_mm + 0.04 * D_ref,
-            f"dₙ = {dn_mm:.1f} mm",
-            ha="left",
-            va="bottom",
-            fontsize=FS_LABEL,
-            color="tab:blue",
-        )
+        with col_sls_calc:
+            calcbox(
+                rf"""
+Strain at depth $y$ from the top:
 
-    # a label
-    ax.text(
-        block_left + block_width + 4.0,
-        0.5 * a_mm,
-        f"a = γ dₙ = {a_mm:.1f} mm",
-        ha="left",
-        va="center",
-        fontsize=FS_LABEL,
-        color="tab:blue",
-    )
+$$
+\varepsilon(y) = \kappa (y - d_n)
+$$
 
-    # bottom tension arrow – ALWAYS shown
-    ax.annotate(
-        "",
-        xy=(90.0, d_mm),
-        xytext=(x_axis, d_mm),
-        arrowprops=dict(
-            arrowstyle="->",
-            linewidth=LINE_MED,
-            color="tab:blue",
-            mutation_scale=ARROW_SCALE,
-        ),
-    )
-    ax.text(
-        92.0,
-        d_mm,
-        f"T ({fsy:.0f} MPa)",
-        ha="left",
-        va="center",
-        fontsize=FS_LABEL,
-        color="tab:blue",
-    )
+For key layers:
 
-    # optional lever arm (for 1.3)
-    if show_lever_arm:
-        y_C = 0.5 * a_mm
-        x_z = block_left + block_width + 8.0
-        ax.annotate(
-            "",
-            xy=(x_z, d_mm),
-            xytext=(x_z, y_C),
-            arrowprops=dict(
-                arrowstyle="<->",
-                linewidth=LINE_MED,
-                mutation_scale=ARROW_SCALE,
-            ),
-        )
-        ax.text(
-            x_z + 3.0,
-            0.5 * (d_mm + y_C),
-            "z",
-            ha="left",
-            va="center",
-            fontsize=FS_LABEL,
-        )
+- Top fibre: $y = 0$  
+- Tension steel: $y = d = {d:.1f}\,\text{{mm}}$  
+- Bottom fibre: $y = D = {D:.1f}\,\text{{mm}}$
 
-    ax.text(
-        50.0,
-        D_ref + 0.07 * D_ref,
-        "Stress (MPa)",
-        ha="center",
-        va="bottom",
-        fontsize=FS_TITLE,
-    )
+The table below lists the computed strains.
+"""
+            )
+            st.table(df_eps)
 
-    return fig
+        with col_sls_fig:
+            fig_eps, ax_eps = plt.subplots()
+            ys = [0.0, dn_sls, D]
+            eps_vals = [kappa * (y - dn_sls) for y in ys]
+            ax_eps.plot(eps_vals, ys, marker="o")
+            ax_eps.axhline(dn_sls, linestyle="--", linewidth=0.8)
+            ax_eps.set_xlabel("Strain ε")
+            ax_eps.set_ylabel("Depth from top (mm)")
+            ax_eps.set_title("SLS strain distribution")
+            ax_eps.invert_yaxis()
+            st.pyplot(fig_eps, use_container_width=True)
+            plt.close(fig_eps)
+    else:
+        st.info("Not enough information to run SLS cracked-section example.")
