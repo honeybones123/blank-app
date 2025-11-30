@@ -8,7 +8,7 @@ from widgets_helpers import calcbox
 from bending_diagrams import (
     _make_uls_stress_block_figure,
     _make_uls_force_model_figure,
-    _make_uls_section_mini_figure,
+    _make_uls_section_mini_figure,  # kept, even if not used
 )
 from bending_core import _fmt
 
@@ -96,6 +96,8 @@ $$
                 show_lever_arm=False,
                 show_dn=False,          # no d_n for 1.1
                 show_alpha_label=True,  # α2 f'c width annotation
+                show_C=False,           # no C arrow in 1.1
+                C_N=None,
                 variant="11",
             )
             st.pyplot(fig_uls_11, use_container_width=False)
@@ -108,8 +110,11 @@ $$
         st.subheader("1.2 Concrete compressive force $C$")
         C_kN = C_N / 1000.0 if C_N is not None else float("nan")
 
-        calcbox(
-            rf"""
+        col_calc_12, col_fig_12 = st.columns([2, 1])
+
+        with col_calc_12:
+            calcbox(
+                rf"""
 Resultant concrete compression is taken as:
 
 $$
@@ -132,7 +137,28 @@ $$
 
 This force acts at the centroid of the compression block.
 """
-        )
+            )
+
+        # SAME stress-block diagram as 1.1, but now with C arrow at the centroid
+        with col_fig_12:
+            fig_uls_12 = _make_uls_stress_block_figure(
+                b_mm=b or 0.0,
+                D_mm=D or 0.0,
+                d_mm=d,
+                dn_mm=dn,
+                a_mm=a_uls,
+                alpha2=alpha2_uls,
+                gamma=gamma_uls,
+                fc=fc,
+                fsy=fsy,
+                show_lever_arm=False,
+                show_dn=False,
+                show_alpha_label=True,
+                show_C=True,        # <--- show C arrow in 1.2
+                C_N=C_N,
+                variant="11",
+            )
+            st.pyplot(fig_uls_12, use_container_width=False)
 
         st.markdown("---")
 
@@ -168,16 +194,26 @@ $$
 """
             )
 
+        # SAME style stress-block diagram as 1.1 (no C arrow here)
         with col_fig_13:
-            # Small section sketch, depth matched visually to this calc box
-            fig_sec_13 = _make_uls_section_mini_figure(
+            fig_uls_13 = _make_uls_stress_block_figure(
                 b_mm=b or 0.0,
                 D_mm=D or 0.0,
                 d_mm=d,
-                c_mm=dn,
+                dn_mm=dn,
+                a_mm=a_uls,
+                alpha2=alpha2_uls,
                 gamma=gamma_uls,
+                fc=fc,
+                fsy=fsy,
+                show_lever_arm=False,
+                show_dn=False,
+                show_alpha_label=True,
+                show_C=False,   # no C arrow in 1.3, just like 1.1
+                C_N=None,
+                variant="11",
             )
-            st.pyplot(fig_sec_13, use_container_width=False)
+            st.pyplot(fig_uls_13, use_container_width=False)
 
         st.markdown("---")
 
@@ -245,9 +281,11 @@ $$
                 gamma=gamma_uls,
                 fc=fc,
                 fsy=fsy,
-                show_lever_arm=True,     # still shows z, as before
+                show_lever_arm=True,     # show z
                 show_dn=True,            # show d_n
                 show_alpha_label=True,   # α2 f'c + width arrow
+                show_C=False,
+                C_N=None,
                 variant="13",
             )
             st.pyplot(fig_uls_14, use_container_width=False)
@@ -383,7 +421,6 @@ Substituting:
 $$
 f_{{ct,f}} \approx 0.6 \sqrt{{{fc:.1f}}}
           = {fctf_as:.3f}\ \text{{MPa}}
-$$
 """
     )
     st.markdown("---")
@@ -403,7 +440,6 @@ Substituting:
 $$
 Z_g = \frac{{{b:.1f} \times {D:.1f}^2}}{{6}}
     = {Zg:,.3e}\ \text{{mm}}^3
-$$
 """
     )
     st.markdown("---")
@@ -423,7 +459,6 @@ Substituting:
 $$
 M_{{cr}} = \frac{{{fctf_as:.3f} \times {Zg:,.3e}}}{{10^6}}
        = {Mcr_as:.2f}\ \text{{kNm}}
-$$
 """
     )
     st.markdown("---")
@@ -445,9 +480,6 @@ $$
 = 1.2 \times {Mcr_as:.2f}
 = {Mu_min_as:.2f}\ \text{{kNm}}
 $$
-
-Meaning the design ultimate strength must exceed
-**1.2 × cracking moment**.
 """
     )
     st.markdown("---")
@@ -470,14 +502,6 @@ A_{{st,min}}
 = 0.4 \times \frac{{{fctf_as:.3f}}}{{{fsy:.1f}}}
 \times {b:.1f} \times {top_results['d']:.1f}
 = {Ast_min_as:.1f}\ \text{{mm}}^2
-$$
-
-Compare:
-
-$$
-A_{{st}} = {Ast:.1f}\ \text{{mm}}^2
-\qquad\text{{vs.}}\qquad
-A_{{st,min}} = {Ast_min_as:.1f}\ \text{{mm}}^2
 $$
 """
     )
@@ -508,7 +532,6 @@ Substituting:
 $$
 n = \frac{{{Es:.0f}}}{{{Ec:.0f}}}
   = {Es/Ec:.2f}
-$$
 """
         )
 
@@ -544,7 +567,6 @@ Solving this quadratic for $d_n$ gives:
 
 $$
 d_n = {dn_sls:.2f}\ \text{{mm}}
-$$
 """
         )
 
@@ -565,7 +587,6 @@ $$
 I_{{cr}} = \frac{{{b:.1f} \times {dn_sls:.2f}^3}}{3}
         + {n_sls:.2f} \times {Ast:.1f} ( {d:.1f} - {dn_sls:.2f} )^2
         = {Icr:,.2f}\ \text{{mm}}^4
-$$
 """
         )
 
@@ -586,7 +607,6 @@ Substituting:
 $$
 \kappa = \frac{{{Ms:.2f}\times 10^6}}{{{Ec:.0f} \times {Icr:,.2f}}}
        = {kappa:.3e}\ \text{{mm}}^{{-1}}
-$$
 """
         )
 
