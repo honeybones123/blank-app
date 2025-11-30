@@ -73,6 +73,7 @@ $$
             )
 
         with col_fig:
+            # 1.1: show α2 f'c, but NO d_n line
             fig_uls_11 = _make_uls_stress_block_figure(
                 b_mm=b or 0.0,
                 D_mm=D or 0.0,
@@ -84,8 +85,10 @@ $$
                 fc=fc,
                 fsy=fsy,
                 show_lever_arm=False,
+                show_dn=False,          # hide d_n here
+                show_alpha_label=True,  # keep α2 f'c
             )
-            st.pyplot(fig_uls_11, use_container_width=False)
+            st.pyplot(fig_uls_11, use_container_width=True)
 
         st.markdown("---")
 
@@ -156,6 +159,7 @@ $$
             )
 
         with col_fig_13:
+            # 1.3: geometry figure – show d_n & z, but NO α2 f'c text
             fig_uls_13 = _make_uls_stress_block_figure(
                 b_mm=b or 0.0,
                 D_mm=D or 0.0,
@@ -166,9 +170,11 @@ $$
                 gamma=gamma_uls,
                 fc=fc,
                 fsy=fsy,
-                show_lever_arm=True,   # shows z
+                show_lever_arm=True,      # shows z
+                show_dn=True,             # keep d_n
+                show_alpha_label=False,   # remove α2 f'c label
             )
-            st.pyplot(fig_uls_13, use_container_width=False)
+            st.pyplot(fig_uls_13, use_container_width=True)
 
         st.markdown("---")
 
