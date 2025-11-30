@@ -80,9 +80,9 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     # -------------------------
     # FIXED panel positions (spread out a bit more)
     # -------------------------
-    x_center_sec = 150.0
-    x_center_strain = 700.0
-    x_center_stress = 1250.0
+    x_center_sec = 200.0
+    x_center_strain = 750.0
+    x_center_stress = 1300.0
 
     sec_width = float(b)
     x0_sec = x_center_sec - sec_width / 2.0
@@ -105,9 +105,13 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
 
     fig, ax = plt.subplots(figsize=(9, 3.5))
 
-    # Fixed axes -> no movement
+    # Lock how much of the figure the axes occupy (avoids tiny shifts)
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
+
+    # Fixed axes -> no movement, and extra space on the left so the section
+    # is never clipped even for wider beams.
     ax.set_ylim(D * 1.2, -0.2 * D)
-    ax.set_xlim(0.0, 1400.0)
+    ax.set_xlim(-200.0, 1500.0)
     ax.set_aspect("equal", adjustable="box")
     ax.set_xmargin(0)
     ax.set_ymargin(0)
@@ -212,7 +216,8 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         ax.text(
             x_na + 10,
             c / 2,
-            f"NA = {c:.0f} mm",
+            # Warner-style: d_n instead of NA
+            "dₙ = {:.0f} mm".format(c),
             fontsize=FS_ANNOT,
             color="tab:red",
             va="center",
@@ -361,7 +366,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         ha="center",
     )
 
-    # γc / NA depth arrow
+    # γc / d_n depth arrow
     x_gc = x_block_right + 0.12 * panel_w_stress
     ax.annotate(
         "",
@@ -376,9 +381,9 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     )
 
     depth_label = (
-        rf"$\gamma c = {gamma*c:.0f}\ \mathrm{{mm}}$"
+        rf"$\gamma d_n = {gamma*c:.0f}\ \mathrm{{mm}}$"
         if state_label == "ULS"
-        else rf"$NA = {c:.0f}\ \mathrm{{mm}}$"
+        else rf"$d_n = {c:.0f}\ \mathrm{{mm}}$"
     )
 
     ax.text(
@@ -502,7 +507,7 @@ def _make_uls_stress_block_figure(
         color="tab:red",
     )
 
-    # dashed NA line
+    # dashed d_n line
     ax.hlines(
         dn_mm,
         x_axis,
