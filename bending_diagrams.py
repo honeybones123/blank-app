@@ -1,4 +1,3 @@
-# bending_diagrams.py
 import math
 import numpy as np
 import matplotlib.pyplot as plt
@@ -445,7 +444,103 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
 
 
 # ============================================================
-#  ULS STRESS BLOCK FIGURE (1.1 / 1.2 / 1.3 / 1.4 VARIANTS)
+#  HELPER: SLS STEEL LAYERS FOR MULTI-LAYER MODEL
+# ============================================================
+def get_sls_steel_layers(b_mm: float, D_mm: float):
+    """
+    Compute steel layers for SLS using the same layout logic
+    as the main section diagram.
+
+    Returns (tension_layers, compression_layers), where each
+    layer is a dict with:
+        {
+          "name": "T1" / "T2" / "C1" / ...,
+          "y": depth from top (mm),
+          "As": area (mm^2),
+          "db": bar diameter (mm),
+          "count": number of bars in that row,
+          "face": "bottom" or "top"
+        }
+    """
+    # Bottom (tension) reinforcement
+    nb_bot = int(get_param("nb_bot") or 0)
+    db_bot = get_param("db_bot") or 0.0
+    cover_bot = get_param("cover_bot") or 0.0
+    rowgap_bot = get_param("rowgap_bot") or 0.0
+
+    # Top (potential compression) reinforcement
+    nb_top = int(get_param("nb_top") or 0)
+    db_top = get_param("db_top") or 0.0
+    cover_top = get_param("cover_top") or 0.0
+    rowgap_top = get_param("rowgap_top") or 0.0
+
+    tension_layers = []
+    compression_layers = []
+
+    # --- bottom layers (tension) ---
+    if nb_bot > 0 and db_bot > 0.0:
+        min_spacing_bot = 2 * db_bot
+        bot_layout = _layout_bars_in_rows(
+            nb_bot, b_mm, cover_bot, db_bot, min_spacing_bot, 3
+        )
+        r_bot = db_bot / 2.0
+        row_pitch_bot = db_bot + rowgap_bot
+        d_row0 = D_mm - cover_bot - r_bot
+
+        # count bars per row
+        counts_bot = {}
+        for _, row_idx in bot_layout:
+            counts_bot[row_idx] = counts_bot.get(row_idx, 0) + 1
+
+        area_one = 0.25 * math.pi * db_bot**2
+
+        for idx, (row_idx, count) in enumerate(sorted(counts_bot.items()), start=1):
+            y = d_row0 - row_idx * row_pitch_bot
+            tension_layers.append(
+                {
+                    "name": f"T{idx}",
+                    "y": y,
+                    "As": count * area_one,
+                    "db": db_bot,
+                    "count": count,
+                    "face": "bottom",
+                }
+            )
+
+    # --- top layers (compression candidates) ---
+    if nb_top > 0 and db_top > 0.0:
+        min_spacing_top = 2 * db_top
+        top_layout = _layout_bars_in_rows(
+            nb_top, b_mm, cover_top, db_top, min_spacing_top, 3
+        )
+        r_top = db_top / 2.0
+        row_pitch_top = db_top + rowgap_top
+        y_top_base = cover_top + r_top
+
+        counts_top = {}
+        for _, row_idx in top_layout:
+            counts_top[row_idx] = counts_top.get(row_idx, 0) + 1
+
+        area_one_top = 0.25 * math.pi * db_top**2
+
+        for idx, (row_idx, count) in enumerate(sorted(counts_top.items()), start=1):
+            y = y_top_base + row_idx * row_pitch_top
+            compression_layers.append(
+                {
+                    "name": f"C{idx}",
+                    "y": y,
+                    "As": count * area_one_top,
+                    "db": db_top,
+                    "count": count,
+                    "face": "top",
+                }
+            )
+
+    return tension_layers, compression_layers
+
+
+# ============================================================
+#  ULS STRESS BLOCK FIGURE (1.1 / 1.3 VARIANTS)
 # ============================================================
 def _make_uls_stress_block_figure(
     b_mm: float,
@@ -460,8 +555,6 @@ def _make_uls_stress_block_figure(
     show_lever_arm: bool = False,
     show_dn: bool = True,
     show_alpha_label: bool = True,
-    show_C: bool = False,
-    C_N: float | None = None,
     variant: str = "11",
 ):
     """
@@ -471,10 +564,8 @@ def _make_uls_stress_block_figure(
       - show_lever_arm:   show / hide z arrow
       - show_dn:          show / hide dashed d_n line + label
       - show_alpha_label: show / hide α2 f'c text + width arrow
-      - show_C:           show / hide resultant C arrow at centroid
-      - C_N:              optional concrete force (N) for C label
       - variant: "11" (shorter figure for Section 1.1),
-                 "13" (slightly taller for Section 1.3/1.4)
+                 "13" (slightly taller for Section 1.3)
     """
 
     vals = [b_mm, D_mm, d_mm, dn_mm, a_mm, alpha2, gamma, fc, fsy]
@@ -547,39 +638,6 @@ def _make_uls_stress_block_figure(
                     mutation_scale=ARROW_SCALE,
                 ),
             )
-
-    # Optional resultant C arrow at centroid of block (for step 1.2)
-    if show_C and a_mm > 0:
-        if C_N is not None and not (isinstance(C_N, float) and math.isnan(C_N)):
-            C_label = f"C = {C_N/1000.0:.1f} kN"
-        else:
-            C_label = "C"
-
-        y_C = 0.5 * a_mm
-        x_tail = block_left + block_width - 2.0
-        x_head = block_left + 2.0
-
-        ax.annotate(
-            "",
-            xy=(x_head, y_C),
-            xytext=(x_tail, y_C),
-            arrowprops=dict(
-                arrowstyle="->",  # arrow head at centroid side
-                linewidth=LINE_MED,
-                color="tab:red",
-                mutation_scale=ARROW_SCALE,
-            ),
-        )
-
-        ax.text(
-            x_tail + 4.0,
-            y_C - 0.06 * D_ref,
-            C_label,
-            ha="left",
-            va="center",
-            fontsize=FS_LABEL,
-            color="tab:red",
-        )
 
     # α2 f'c width arrow + label (optional)
     if show_alpha_label:
@@ -661,12 +719,12 @@ def _make_uls_stress_block_figure(
 
     # optional lever arm
     if show_lever_arm:
-        y_Cc = 0.5 * a_mm
+        y_C = 0.5 * a_mm
         x_z = block_left + block_width + 8.0
         ax.annotate(
             "",
             xy=(x_z, d_mm),
-            xytext=(x_z, y_Cc),
+            xytext=(x_z, y_C),
             arrowprops=dict(
                 arrowstyle="<->",
                 linewidth=LINE_MED,
@@ -675,7 +733,7 @@ def _make_uls_stress_block_figure(
         )
         ax.text(
             x_z + 3.0,
-            0.5 * (d_mm + y_Cc),
+            0.5 * (d_mm + y_C),
             "z",
             ha="left",
             va="center",
@@ -695,116 +753,16 @@ def _make_uls_stress_block_figure(
 
 
 # ============================================================
-#  MINI SECTION FIGURE FOR STEP 1.3 (kept for future use)
-# ============================================================
-def _make_uls_section_mini_figure(
-    b_mm: float,
-    D_mm: float,
-    d_mm: float,
-    c_mm: float,
-    gamma: float,
-):
-    """
-    Small section sketch (currently unused after latest change,
-    but kept here in case we want it again).
-    """
-
-    vals = [b_mm, D_mm, d_mm, c_mm, gamma]
-    if any(v is None or (isinstance(v, float) and math.isnan(v)) for v in vals):
-        fig, ax = plt.subplots()
-        ax.axis("off")
-        ax.text(0.5, 0.5, "No data", ha="center", va="center")
-        return fig
-
-    D_ref = D_mm * 1.05
-
-    fig, ax = plt.subplots(figsize=(3.0, 2.6))
-    ax.set_xlim(0.0, b_mm * 1.4 if b_mm > 0 else 140.0)
-    ax.set_ylim(D_ref, 0.0)
-    ax.axis("off")
-
-    x0_sec = 10.0
-    b = b_mm
-    D = D_mm
-
-    ax.add_patch(
-        Rectangle(
-            (x0_sec, 0.0),
-            b,
-            D,
-            fill=False,
-            linewidth=LINE_THICK,
-            edgecolor="black",
-        )
-    )
-
-    block_depth = max(0.0, min(gamma * c_mm, D))
-    ax.add_patch(
-        Rectangle(
-            (x0_sec, 0.0),
-            b,
-            block_depth,
-            facecolor="#c7e3ff",
-            edgecolor="tab:red",
-            linewidth=LINE_MED,
-            alpha=0.8,
-        )
-    )
-
-    # bottom bars
-    nb_bot = int(get_param("nb_bot") or 4)
-    db_bot = get_param("db_bot") or 20.0
-    cover_bot = get_param("cover_bot") or 40.0
-    rowgap_bot = get_param("rowgap_bot") or 25.0
-
-    min_spacing_bot = 2 * db_bot
-    bot_layout = _layout_bars_in_rows(
-        nb_bot, b, cover_bot, db_bot, min_spacing_bot, 2
-    )
-    r_bot = db_bot / 2.0
-    row_pitch_bot = db_bot + rowgap_bot
-    d_row0 = D - cover_bot - r_bot
-
-    for x_rel, row_idx in bot_layout:
-        ax.add_patch(
-            Circle(
-                (x0_sec + x_rel, d_row0 - row_idx * row_pitch_bot),
-                radius=r_bot,
-                fill=False,
-                edgecolor="tab:blue",
-                linewidth=LINE_MED,
-            )
-        )
-
-    ax.text(
-        x0_sec + 0.5 * b,
-        D_ref + 0.08 * D_ref,
-        "Section",
-        ha="center",
-        va="bottom",
-        fontsize=FS_TITLE,
-    )
-
-    return fig
-
-
-# ============================================================
-#  ULS C–T–z FORCE MODEL FIGURE (STEP 1.6)
+#  ULS FORCE MODEL FIGURE (1.4)
 # ============================================================
 def _make_uls_force_model_figure(
     D_mm: float,
     d_mm: float,
     a_mm: float,
-    C_N: float | None = None,
-    T_N: float | None = None,
 ):
     """
-    Simple C–T–z force model for the final ULS step.
-
-    - Matches calc-box height reasonably well.
-    - C and T arrows are symmetric distances from the axis.
-    - Always fits d, even for deep beams.
-    - Can optionally show numeric values for C and T.
+    Simple C–T–z force model for Section 1.4.
+    Matches calc-box height and aligns C/T symmetrically.
     """
 
     vals = [D_mm, d_mm, a_mm]
@@ -814,41 +772,26 @@ def _make_uls_force_model_figure(
         ax.text(0.5, 0.5, "No data", ha="center", va="center")
         return fig
 
-    # Ensure the full depth (including d) fits comfortably
+    # Height scaled to comfortably fit any reasonable depth
     base_span = max(D_mm, d_mm, a_mm)
-    D_ref = base_span * 1.05   # <- increased so T never gets cut off
+    D_ref = base_span * 1.10
 
-    fig, ax = plt.subplots(figsize=(3.6, 2.7))
-    ax.set_xlim(0.0, 100.0)
+    fig, ax = plt.subplots(figsize=(3.6, 2.8))
+    ax.set_xlim(0.0, 120.0)
     ax.set_ylim(D_ref, 0.0)
     ax.axis("off")
 
-    # Prepare labels with optional numeric values (kN)
-    if C_N is not None and not (isinstance(C_N, float) and math.isnan(C_N)):
-        C_label = f"C = {C_N / 1000.0:.1f} kN"
-    else:
-        C_label = "C"
-
-    if T_N is not None and not (isinstance(T_N, float) and math.isnan(T_N)):
-        T_label = f"T = {T_N / 1000.0:.1f} kN"
-    else:
-        T_label = "T"
-
-    # ============================================================
-    # Vertical reference line
-    # ============================================================
-    x_axis = 20.0
+    # Vertical reference
+    x_axis = 25.0
     ax.plot([x_axis, x_axis], [0.0, D_ref], color="black", linewidth=LINE_THICK)
 
-    # ============================================================
-    # Compression C — same distance from the axis as T
-    # ============================================================
+    # Common horizontal offset for both C and T
+    ARROW_OFF = 35.0
+
+    # Compression C at mid–block
     y_C = 0.5 * a_mm
-
-    ARROW_OFFSET = 35.0  # distance from axis (matches T)
-
-    x_C_tail = x_axis + ARROW_OFFSET
-    x_C_head = x_axis                  # arrow points left toward the axis
+    x_C_head = x_axis          # head at the axis
+    x_C_tail = x_axis + ARROW_OFF
 
     ax.annotate(
         "",
@@ -861,23 +804,20 @@ def _make_uls_force_model_figure(
             mutation_scale=ARROW_SCALE,
         ),
     )
-
     ax.text(
         x_C_tail + 6.0,
         y_C,
-        C_label,
+        "C",
         ha="left",
         va="center",
         fontsize=FS_LABEL,
         color="tab:red",
     )
 
-    # ============================================================
-    # Tension T
-    # ============================================================
+    # Tension T at d
     y_T = d_mm
-    x_T_head = x_axis + ARROW_OFFSET
     x_T_tail = x_axis
+    x_T_head = x_axis + ARROW_OFF
 
     ax.annotate(
         "",
@@ -890,21 +830,18 @@ def _make_uls_force_model_figure(
             mutation_scale=ARROW_SCALE,
         ),
     )
-
     ax.text(
         x_T_head + 6.0,
         y_T,
-        T_label,
+        "T",
         ha="left",
         va="center",
         fontsize=FS_LABEL,
         color="tab:blue",
     )
 
-    # ============================================================
     # Lever arm z
-    # ============================================================
-    x_z = x_axis + ARROW_OFFSET + 25.0
+    x_z = x_axis + ARROW_OFF + 25.0
     ax.annotate(
         "",
         xy=(x_z, y_T),
@@ -925,7 +862,7 @@ def _make_uls_force_model_figure(
     )
 
     ax.text(
-        50.0,
+        60.0,
         D_ref + 0.08 * D_ref,
         "Force model",
         ha="center",
