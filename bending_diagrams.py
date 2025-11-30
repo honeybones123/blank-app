@@ -350,7 +350,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         xy=(x0_stress, y_alpha),
         xytext=(x_block_right, y_alpha),
         arrowprops=dict(
-            arrowstyle("<->"),
+            arrowstyle="<->",
             linewidth=LINE_THIN,
             color="tab:red",
             mutation_scale=ARROW_SCALE,
