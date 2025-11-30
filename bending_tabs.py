@@ -73,7 +73,7 @@ $$
             )
 
         with col_fig:
-            # 1.1: show α2 f'c, but NO d_n line
+            # 1.1 diagram – height_scale = 1.0 (this one already matches nicely)
             fig_uls_11 = _make_uls_stress_block_figure(
                 b_mm=b or 0.0,
                 D_mm=D or 0.0,
@@ -85,10 +85,11 @@ $$
                 fc=fc,
                 fsy=fsy,
                 show_lever_arm=False,
-                show_dn=False,          # hide d_n here
-                show_alpha_label=True,  # keep α2 f'c
+                show_dn=False,           # no d_n in 1.1
+                show_alpha_label=True,
+                height_scale=1.0,
             )
-            st.pyplot(fig_uls_11, use_container_width=True)
+            st.pyplot(fig_uls_11, use_container_width=False)
 
         st.markdown("---")
 
@@ -159,7 +160,7 @@ $$
             )
 
         with col_fig_13:
-            # 1.3: geometry figure – show d_n & z, but NO α2 f'c text
+            # 1.3 diagram – a bit taller so it visually matches calcbox depth
             fig_uls_13 = _make_uls_stress_block_figure(
                 b_mm=b or 0.0,
                 D_mm=D or 0.0,
@@ -171,10 +172,11 @@ $$
                 fc=fc,
                 fsy=fsy,
                 show_lever_arm=True,      # shows z
-                show_dn=True,             # keep d_n
-                show_alpha_label=False,   # remove α2 f'c label
+                show_dn=True,             # show d_n here
+                show_alpha_label=False,   # remove α2 f'c text here
+                height_scale=1.25,        # <--- tweak if you want slightly taller/shorter
             )
-            st.pyplot(fig_uls_13, use_container_width=True)
+            st.pyplot(fig_uls_13, use_container_width=False)
 
         st.markdown("---")
 
