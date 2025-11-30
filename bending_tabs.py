@@ -2,6 +2,7 @@ import math
 import pandas as pd
 import matplotlib.pyplot as plt
 import streamlit as st
+from matplotlib.patches import Rectangle, Circle   # ⬅️ ADD THIS LINE
 
 from widgets_helpers import calcbox
 from bending_diagrams import (
