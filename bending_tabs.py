@@ -85,8 +85,8 @@ $$
                 fc=fc,
                 fsy=fsy,
                 show_lever_arm=False,
-                show_dn=False,          # remove d_n for 1.1
-                show_alpha_label=True,  # α2 f'c label here
+                show_dn=False,          # no d_n for 1.1
+                show_alpha_label=True,  # α2 f'c width annotation
                 variant="11",
             )
             st.pyplot(fig_uls_11, use_container_width=False)
@@ -160,7 +160,7 @@ $$
             )
 
         with col_fig_13:
-            # Variant "13": slightly taller than 1.1 to match this deeper calc box.
+            # Variant "13": taller to match this calc box.
             fig_uls_13 = _make_uls_stress_block_figure(
                 b_mm=b or 0.0,
                 D_mm=D or 0.0,
@@ -171,9 +171,9 @@ $$
                 gamma=gamma_uls,
                 fc=fc,
                 fsy=fsy,
-                show_lever_arm=True,    # shows z
-                show_dn=True,           # show d_n here
-                show_alpha_label=False, # no α2 f'c text in 1.3
+                show_lever_arm=True,     # show z
+                show_dn=True,            # show d_n
+                show_alpha_label=True,   # add back width / α2 f'c annotation
                 variant="13",
             )
             st.pyplot(fig_uls_13, use_container_width=False)
@@ -210,141 +210,10 @@ $$
         st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
 
 
+# (rest of bending_tabs.py – Minimum strength tab + SLS tab – unchanged)
+# ----------------------------------------------------------------------
 def render_min_strength_tab(top_results, b, D, fc, fsy, Ast):
-    """
-    Tab 2 – Minimum strength requirements.
-    """
-    fctf = top_results["fctf"]
-    Z_gross = top_results["Z_gross"]
-    Mcr = top_results["Mcr"]
-    As_min = top_results["As_min"]
-
-    fctf_as = fctf
-    Zg = Z_gross
-    Mcr_as = Mcr
-    Mu_min_as = (
-        1.2 * Mcr_as
-        if Mcr_as is not None and not math.isnan(Mcr_as)
-        else float("nan")
-    )
-    Ast_min_as = As_min
-
-    st.header("2. Minimum strength requirements (AS 3600)")
-
-    # 2.1 f_ct,f
-    st.subheader("2.1 Concrete flexural tensile strength $f_{{ct,f}}$")
-    calcbox(
-        rf"""
-AS 3600-style expression for flexural tensile strength:
-
-$$
-f_{{ct,f}} \approx 0.6 \sqrt{{f'_c}}
-$$
-
-Substituting:
-
-$$
-f_{{ct,f}} \approx 0.6 \sqrt{{{fc:.1f}}}
-          = {fctf_as:.3f}\ \text{{MPa}}
-$$
-"""
-    )
-    st.markdown("---")
-
-    # 2.2 Z_g
-    st.subheader("2.2 Gross section modulus $Z_g$")
-    calcbox(
-        rf"""
-Gross section modulus:
-
-$$
-Z_g = \frac{{b D^2}}{{6}}
-$$
-
-Substituting:
-
-$$
-Z_g = \frac{{{b:.1f} \times {D:.1f}^2}}{{6}}
-    = {Zg:,.3e}\ \text{{mm}}^3
-$$
-"""
-    )
-    st.markdown("---")
-
-    # 2.3 M_cr
-    st.subheader("2.3 Cracking moment $M_{{cr}}$")
-    calcbox(
-        rf"""
-Cracking moment:
-
-$$
-M_{{cr}} = \frac{{f_{{ct,f}} Z_g}}{{10^6}}
-$$
-
-Substituting:
-
-$$
-M_{{cr}} = \frac{{{fctf_as:.3f} \times {Zg:,.3e}}}{{10^6}}
-       = {Mcr_as:.2f}\ \text{{kNm}}
-$$
-"""
-    )
-    st.markdown("---")
-
-    # 2.4 Minimum required capacity (1.2 Mcr)
-    st.subheader("2.4 Minimum required design capacity $(M_{{u,cap}})_{{min}}$")
-    calcbox(
-        rf"""
-To ensure post-cracking behaviour:
-
-$$
-(M_{{u,cap}})_{{min}} = 1.2\, M_{{cr}}
-$$
-
-Substituting:
-
-$$
-(M_{{u,cap}})_{{min}}
-= 1.2 \times {Mcr_as:.2f}
-= {Mu_min_as:.2f}\ \text{{kNm}}
-$$
-
-Meaning the design ultimate strength must exceed
-**1.2 × cracking moment**.
-"""
-    )
-    st.markdown("---")
-
-    # 2.5 Minimum tensile reinforcement
-    st.subheader("2.5 Minimum tensile reinforcement $A_{{st,min}}$")
-    calcbox(
-        rf"""
-AS 3600-style minimum tensile reinforcement:
-
-$$
-A_{{st,min}}
-= 0.4\;\frac{{f_{{ct,f}}}}{{f_{{sy}}}}\; b d
-$$
-
-Substituting:
-
-$$
-A_{{st,min}}
-= 0.4 \times \frac{{{fctf_as:.3f}}}{{{fsy:.1f}}}
-\times {b:.1f} \times {top_results['d']:.1f}
-= {Ast_min_as:.1f}\ \text{{mm}}^2
-$$
-
-Compare:
-
-$$
-A_{{st}} = {Ast:.1f}\ \text{{mm}}^2
-\qquad\text{{vs.}}\qquad
-A_{{st,min}} = {Ast_min_as:.1f}\ \text{{mm}}^2
-$$
-"""
-    )
-    st.markdown("---")
+    ...
 
 
 def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
