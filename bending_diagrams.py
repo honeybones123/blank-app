@@ -658,7 +658,7 @@ def _make_uls_stress_block_figure(
 
 
 # ============================================================
-#  ULS FORCE MODEL FIGURE (for Section 1.4)
+#  ULS FORCE MODEL FIGURE (1.4 C–T–z)
 # ============================================================
 def _make_uls_force_model_figure(
     D_mm: float,
@@ -685,31 +685,26 @@ def _make_uls_force_model_figure(
     base_span = max(D_mm, d_mm, a_mm)
     D_ref = base_span * 1.05
 
-    fig, ax = plt.subplots(figsize=(3.0, 3.2))
+    # Height now matches the other calc-box diagrams (same 3.2 as 1.3)
+    fig, ax = plt.subplots(figsize=(3.6, 3.2))
     ax.set_xlim(0.0, 100.0)
-    ax.set_ylim(D_ref, 0.0)  # 0 at top
+    ax.set_ylim(D_ref, 0.0)
     ax.axis("off")
 
     # vertical reference line
     x_axis = 20.0
-    ax.plot(
-        [x_axis, x_axis],
-        [0.0, D_ref],
-        color="black",
-        linewidth=LINE_THICK,
-    )
+    ax.plot([x_axis, x_axis], [0.0, D_ref], color="black", linewidth=LINE_THICK)
 
-    # Compression force C (leftwards arrow)
+    # Compression C (leftwards) at centroid of block — slightly to the right
     y_C = 0.5 * a_mm
-    x_C_head = x_axis - 2.0
-    x_C_tail = x_axis + 30.0
-
+    x_C_head = x_axis + 8.0
+    x_C_tail = x_axis + 40.0
     ax.annotate(
         "",
         xy=(x_C_head, y_C),
         xytext=(x_C_tail, y_C),
         arrowprops=dict(
-            arrowstyle="->",   # arrow head at xy (left)
+            arrowstyle="->",
             linewidth=LINE_MED,
             color="tab:red",
             mutation_scale=ARROW_SCALE,
@@ -725,17 +720,16 @@ def _make_uls_force_model_figure(
         color="tab:red",
     )
 
-    # Tension force T (rightwards arrow)
+    # Tension T (rightwards) at depth d
     y_T = d_mm
     x_T_tail = x_axis
     x_T_head = x_axis + 35.0
-
     ax.annotate(
         "",
         xy=(x_T_head, y_T),
         xytext=(x_T_tail, y_T),
         arrowprops=dict(
-            arrowstyle="->",   # arrow head at xy (right)
+            arrowstyle="->",
             linewidth=LINE_MED,
             color="tab:blue",
             mutation_scale=ARROW_SCALE,
@@ -752,7 +746,7 @@ def _make_uls_force_model_figure(
     )
 
     # Lever arm z between C and T
-    x_z = x_axis + 55.0
+    x_z = x_axis + 65.0
     ax.annotate(
         "",
         xy=(x_z, y_T),
@@ -760,7 +754,6 @@ def _make_uls_force_model_figure(
         arrowprops=dict(
             arrowstyle="<->",
             linewidth=LINE_MED,
-            color="black",
             mutation_scale=ARROW_SCALE,
         ),
     )
@@ -773,7 +766,6 @@ def _make_uls_force_model_figure(
         fontsize=FS_LABEL,
     )
 
-    # Title
     ax.text(
         50.0,
         D_ref + 0.07 * D_ref,
@@ -784,3 +776,4 @@ def _make_uls_force_model_figure(
     )
 
     return fig
+
