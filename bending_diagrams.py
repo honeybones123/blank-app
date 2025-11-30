@@ -433,9 +433,16 @@ def _make_uls_stress_block_figure(
     fc: float,
     fsy: float,
     show_lever_arm: bool = False,
+    show_dn: bool = True,
+    show_alpha_label: bool = True,
 ):
     """
     Warner-style ULS stress block (right-way up)
+
+    Flags:
+      - show_lever_arm: show / hide z arrow
+      - show_dn:        show / hide dashed d_n line + label
+      - show_alpha_label: show / hide α2 f'c text above the block
     """
 
     vals = [b_mm, D_mm, d_mm, dn_mm, a_mm, alpha2, gamma, fc, fsy]
@@ -496,35 +503,39 @@ def _make_uls_stress_block_figure(
                 ),
             )
 
-    # α2 f'c label
-    ax.text(
-        block_left,
-        -0.06 * D_ref,
-        f"α₂ f'c = {sigma_c:.0f} MPa",
-        ha="left",
-        va="bottom",
-        fontsize=FS_LABEL,
-        color="tab:red",
-    )
+    # α2 f'c label (optional)
+    if show_alpha_label:
+        ax.text(
+            block_left,
+            -0.06 * D_ref,
+            f"α₂ f'c = {sigma_c:.0f} MPa",
+            ha="left",
+            va="bottom",
+            fontsize=FS_LABEL,
+            color="tab:red",
+        )
 
-    # dashed d_n line
-    ax.hlines(
-        dn_mm,
-        x_axis,
-        95.0,
-        linestyles="--",
-        colors="tab:blue",
-        linewidth=LINE_MED,
-    )
-    ax.text(
-        (x_axis + 95.0) / 2.0,
-        dn_mm + 0.04 * D_ref,
-        f"dₙ = {dn_mm:.1f} mm",
-        ha="center",
-        va="bottom",
-        fontsize=FS_LABEL,
-        color="tab:blue",
-    )
+    # dashed d_n line + label (optional)
+    if show_dn:
+        ax.hlines(
+            dn_mm,
+            x_axis,
+            95.0,
+            linestyles="--",
+            colors="tab:blue",
+            linewidth=LINE_MED,
+        )
+        # move label further right so it doesn't clash with z
+        x_dn_label = 95.0
+        ax.text(
+            x_dn_label + 2.0,
+            dn_mm + 0.04 * D_ref,
+            f"dₙ = {dn_mm:.1f} mm",
+            ha="left",
+            va="bottom",
+            fontsize=FS_LABEL,
+            color="tab:blue",
+        )
 
     # a label
     ax.text(
@@ -592,3 +603,4 @@ def _make_uls_stress_block_figure(
     )
 
     return fig
+
