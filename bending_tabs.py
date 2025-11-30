@@ -228,6 +228,61 @@ $$
 
 
 # ----------------------------------------------------------------------
+#  SIMPLE MINIMUM-STRENGTH TAB (keeps imports happy)
+# ----------------------------------------------------------------------
+def render_min_strength_tab(top_results, b, D, fc, fsy, Ast):
+    """
+    Tab 2 – Minimum strength / code check.
+
+    NOTE: This is a lightweight version so the module always
+    defines render_min_strength_tab (avoids ImportError).
+    It just summarises the key bending results.
+    """
+    st.header("2. Minimum strength check")
+
+    phi_Mu_cap = top_results.get("phi_Mu_cap")
+    Mu_star = top_results.get("Mu_star") or get_param("Mu_star")
+
+    calcbox(
+        rf"""
+Design capacity from ULS bending check:
+
+- Section width: $b = {b:.1f}\ \text{{mm}}$
+- Overall depth: $D = {D:.1f}\ \text{{mm}}$
+- Steel yield strength: $f_{{sy}} = {fsy:.0f}\ \text{{MPa}}$
+
+If $M^*$ is the applied design moment and
+$\phi M_{{u,cap}}$ is the design bending capacity:
+
+$$
+\phi M_{{u,cap}} = {phi_Mu_cap:.2f}\ \text{{kNm}}
+$$
+
+Applied design moment:
+
+$$
+M^* = {Mu_star if Mu_star is not None else 0:.2f}\ \text{{kNm}}
+$$
+
+This tab simply compares demand and capacity; a more detailed
+code-min check can be added later.
+"""
+    )
+
+    data = [
+        {"Quantity": "φMu,cap (kNm)", "Value": phi_Mu_cap},
+        {"Quantity": "Mu* (kNm)", "Value": Mu_star},
+        {"Quantity": "b (mm)", "Value": b},
+        {"Quantity": "D (mm)", "Value": D},
+        {"Quantity": "Ast (mm²)", "Value": Ast},
+        {"Quantity": "fsy (MPa)", "Value": fsy},
+        {"Quantity": "fc' (MPa)", "Value": fc},
+    ]
+    df = pd.DataFrame(data)
+    st.table(df)
+
+
+# ----------------------------------------------------------------------
 #  SLS TAB – MULTI-LAYER CRACKED SECTION
 # ----------------------------------------------------------------------
 def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
@@ -316,7 +371,6 @@ geometry as the main section diagram.
                 db = layer["db"]
                 count = layer["count"]
                 r = db / 2.0
-                # offset small horizontal spread if multiple bars
                 if count == 1:
                     xs = [x_mid]
                 else:
@@ -343,7 +397,7 @@ geometry as the main section diagram.
                     va="center",
                 )
 
-            ax_sec.set_title("Steel layout (SLS)", fontsize=FS_TITLE)
+            ax_sec.set_title("Steel layout (SLS)", fontsize=8)
             st.pyplot(fig_sec, use_container_width=False)
             plt.close(fig_sec)
 
