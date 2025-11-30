@@ -73,7 +73,7 @@ $$
             )
 
         with col_fig:
-            # 1.1 diagram – height_scale = 1.0 (this one already matches nicely)
+            # Variant "11": compact height to match this calc box.
             fig_uls_11 = _make_uls_stress_block_figure(
                 b_mm=b or 0.0,
                 D_mm=D or 0.0,
@@ -85,9 +85,9 @@ $$
                 fc=fc,
                 fsy=fsy,
                 show_lever_arm=False,
-                show_dn=False,           # no d_n in 1.1
-                show_alpha_label=True,
-                height_scale=1.0,
+                show_dn=False,          # remove d_n for 1.1
+                show_alpha_label=True,  # α2 f'c label here
+                variant="11",
             )
             st.pyplot(fig_uls_11, use_container_width=False)
 
@@ -160,7 +160,7 @@ $$
             )
 
         with col_fig_13:
-            # 1.3 diagram – a bit taller so it visually matches calcbox depth
+            # Variant "13": slightly taller than 1.1 to match this deeper calc box.
             fig_uls_13 = _make_uls_stress_block_figure(
                 b_mm=b or 0.0,
                 D_mm=D or 0.0,
@@ -171,10 +171,10 @@ $$
                 gamma=gamma_uls,
                 fc=fc,
                 fsy=fsy,
-                show_lever_arm=True,      # shows z
-                show_dn=True,             # show d_n here
-                show_alpha_label=False,   # remove α2 f'c text here
-                height_scale=1.25,        # <--- tweak if you want slightly taller/shorter
+                show_lever_arm=True,    # shows z
+                show_dn=True,           # show d_n here
+                show_alpha_label=False, # no α2 f'c text in 1.3
+                variant="13",
             )
             st.pyplot(fig_uls_13, use_container_width=False)
 
