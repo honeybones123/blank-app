@@ -81,9 +81,9 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
 
     # -------------------------
     # FIXED panel positions
-    # (slightly more left & spaced out)
+    # (section moved a bit further left, spacing preserved)
     # -------------------------
-    x_center_sec    = 160.0
+    x_center_sec    = 135.0   # was 160
     x_center_strain = 650.0
     x_center_stress = 1140.0
 
@@ -462,10 +462,10 @@ def _make_uls_stress_block_figure(
     # roughly match the height of their calc boxes.
     if variant == "13":
         D_ref = max(D_mm, d_mm, a_mm, dn_mm) * 1.10
-    else:  # "11" by default – a bit more compact
-        D_ref = max(D_mm, a_mm, d_mm) * 0.85
+    else:  # "11" by default – more compact (shorter)
+        D_ref = max(D_mm, a_mm, d_mm) * 0.65   # was 0.85 → shorten further
 
-    fig, ax = plt.subplots(figsize=(3, 4.0))
+    fig, ax = plt.subplots(figsize=(3, 3.2))   # shorter overall
     ax.set_xlim(0.0, 100.0)
     ax.set_ylim(D_ref, 0.0)  # 0 at top
     ax.axis("off")
