@@ -8,6 +8,19 @@ import streamlit as st
 from state_and_helpers import get_param
 from bending_core import _layout_bars_in_rows
 
+# ------------------------------------------------------------
+# Global styling constants
+# ------------------------------------------------------------
+LINE_THICK = 1.0   # main outlines
+LINE_MED   = 0.8   # normal lines
+LINE_THIN  = 0.6   # light lines
+
+FS_TITLE  = 8      # diagram titles
+FS_LABEL  = 7      # axis labels / main text
+FS_ANNOT  = 5      # small annotations
+
+ARROW_SCALE = 4    # small arrowheads
+
 
 def _plot_stress_strain_profiles(state_dict, state_label=None):
     """
@@ -65,11 +78,11 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     stress_max = max(sigma_c, sigma_s, 1.0)
 
     # -------------------------
-    # FIXED panel positions (no jumping)
+    # FIXED panel positions (spread out a bit more)
     # -------------------------
-    x_center_sec = 200.0
-    x_center_strain = 650.0
-    x_center_stress = 1100.0
+    x_center_sec = 150.0
+    x_center_strain = 700.0
+    x_center_stress = 1250.0
 
     sec_width = float(b)
     x0_sec = x_center_sec - sec_width / 2.0
@@ -94,7 +107,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
 
     # Fixed axes -> no movement
     ax.set_ylim(D * 1.2, -0.2 * D)
-    ax.set_xlim(0.0, 1350.0)
+    ax.set_xlim(0.0, 1400.0)
     ax.set_aspect("equal", adjustable="box")
     ax.set_xmargin(0)
     ax.set_ymargin(0)
@@ -108,7 +121,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     # 1) SECTION PANEL
     # ====================================================
     ax.add_patch(
-        Rectangle((x0_sec, 0), b, D, fill=False, linewidth=1.5, edgecolor="black")
+        Rectangle((x0_sec, 0), b, D, fill=False, linewidth=LINE_THICK, edgecolor="black")
     )
 
     block_depth_sec = max(0.0, min(gamma * c, D))
@@ -119,7 +132,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             block_depth_sec,
             facecolor="#c7e3ff",
             edgecolor="tab:red",
-            linewidth=1.0,
+            linewidth=LINE_MED,
             alpha=0.8,
         )
     )
@@ -138,7 +151,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
                 radius=r_bot,
                 fill=False,
                 edgecolor="tab:blue",
-                linewidth=1.2,
+                linewidth=LINE_MED,
             )
         )
 
@@ -156,7 +169,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
                 radius=r_top,
                 fill=False,
                 edgecolor="tab:red",
-                linewidth=1.2,
+                linewidth=LINE_MED,
             )
         )
 
@@ -171,11 +184,17 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             xytext=(x_d, 0),
             arrowprops=dict(
                 arrowstyle="<->",
-                linewidth=1.0,
-                mutation_scale=4,  # smaller arrow heads
+                linewidth=LINE_THIN,
+                mutation_scale=ARROW_SCALE,
             ),
         )
-        ax.text(x_d + 10, d / 2, f"d = {d:.0f} mm", fontsize=6, va="center")
+        ax.text(
+            x_d + 10,
+            d / 2,
+            f"d = {d:.0f} mm",
+            fontsize=FS_ANNOT,
+            va="center",
+        )
 
     if c:
         x_na = min(beam_right + 80.0, x0_strain - 10.0)
@@ -185,16 +204,16 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             xytext=(x_na, 0),
             arrowprops=dict(
                 arrowstyle="<->",
-                linewidth=1.0,
+                linewidth=LINE_THIN,
                 color="tab:red",
-                mutation_scale=4,
+                mutation_scale=ARROW_SCALE,
             ),
         )
         ax.text(
             x_na + 10,
             c / 2,
             f"NA = {c:.0f} mm",
-            fontsize=6,
+            fontsize=FS_ANNOT,
             color="tab:red",
             va="center",
         )
@@ -205,26 +224,38 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         sec_title,
         ha="center",
         va="bottom",
-        fontsize=10,
+        fontsize=FS_TITLE,
     )
 
     # ====================================================
     # 2) STRAIN PANEL
     # ====================================================
-    ax.plot([x_center_strain, x_center_strain], [0, D], color="black", linewidth=1)
+    ax.plot(
+        [x_center_strain, x_center_strain],
+        [0, D],
+        color="black",
+        linewidth=LINE_MED,
+    )
 
     y_vals = np.array([0, c, d])
     eps_vals = np.array([eps_c, 0.0, eps_s])
     x_vals = [strain_to_x(e) for e in eps_vals]
-    ax.plot(x_vals, y_vals, color="black")
+    ax.plot(x_vals, y_vals, color="black", linewidth=LINE_MED)
 
-    ax.hlines(c, x0_strain - 10, x1_strain + 10, colors="black", linestyles="--")
+    ax.hlines(
+        c,
+        x0_strain - 10,
+        x1_strain + 10,
+        colors="black",
+        linestyles="--",
+        linewidth=LINE_THIN,
+    )
 
     ax.text(
         strain_to_x(eps_c),
         0,
         rf"$\varepsilon_c = {eps_c:.4f}$",
-        fontsize=6,
+        fontsize=FS_ANNOT,
         color="tab:red",
         va="bottom",
     )
@@ -232,7 +263,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         strain_to_x(eps_s),
         d,
         rf"$\varepsilon_s = {eps_s:.4f}$",
-        fontsize=6,
+        fontsize=FS_ANNOT,
         color="tab:blue",
         va="top",
     )
@@ -243,13 +274,13 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         "Strain",
         ha="center",
         va="bottom",
-        fontsize=9,
+        fontsize=FS_TITLE,
     )
 
     # ====================================================
     # 3) STRESS PANEL
     # ====================================================
-    ax.plot([x0_stress, x0_stress], [0, D], color="black", linewidth=1)
+    ax.plot([x0_stress, x0_stress], [0, D], color="black", linewidth=LINE_MED)
 
     x_T = stress_to_x(sigma_s)
     ax.annotate(
@@ -258,16 +289,16 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         xytext=(x0_stress, d),
         arrowprops=dict(
             arrowstyle="->",
-            linewidth=1.4,
+            linewidth=LINE_MED,
             color="tab:blue",
-            mutation_scale=4,
+            mutation_scale=ARROW_SCALE,
         ),
     )
     ax.text(
         x_T + 8,
         d,
         f"T ({sigma_s:.0f} MPa)",
-        fontsize=6,
+        fontsize=FS_ANNOT,
         color="tab:blue",
         va="center",
     )
@@ -288,7 +319,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             [block_top, block_top, block_bottom, block_bottom],
             fill=False,
             edgecolor="tab:red",
-            linewidth=1.5,
+            linewidth=LINE_MED,
         )
     else:
         ax.fill(
@@ -296,10 +327,17 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             [block_bottom, block_top, block_top],
             fill=False,
             edgecolor="tab:red",
-            linewidth=1.5,
+            linewidth=LINE_MED,
         )
 
-    ax.hlines(c, x0_stress - 10, x1_stress, linestyles="--")
+    ax.hlines(
+        c,
+        x0_stress - 10,
+        x1_stress,
+        linestyles="--",
+        linewidth=LINE_THIN,
+        colors="black",
+    )
 
     # α2 f'c width arrow
     y_alpha = -0.05 * D
@@ -309,16 +347,16 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         xytext=(x_block_right, y_alpha),
         arrowprops=dict(
             arrowstyle="<->",
-            linewidth=1.2,
+            linewidth=LINE_THIN,
             color="tab:red",
-            mutation_scale=4,
+            mutation_scale=ARROW_SCALE,
         ),
     )
     ax.text(
         (x0_stress + x_block_right) / 2,
         y_alpha - 0.04 * D,
         rf"$\alpha_2 f'_c = {sigma_c_val:.0f}\ \mathrm{{MPa}}$",
-        fontsize=6,
+        fontsize=FS_ANNOT,
         color="tab:red",
         ha="center",
     )
@@ -332,7 +370,8 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         arrowprops=dict(
             arrowstyle="<->",
             color="tab:red",
-            mutation_scale=4,
+            linewidth=LINE_THIN,
+            mutation_scale=ARROW_SCALE,
         ),
     )
 
@@ -346,7 +385,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         x_gc + 10,
         (block_top + block_bottom) / 2,
         depth_label,
-        fontsize=6,
+        fontsize=FS_ANNOT,
         color="tab:red",
         va="center",
     )
@@ -361,8 +400,8 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             arrowprops=dict(
                 arrowstyle="->",  # arrow head at left
                 color="tab:red",
-                linewidth=0.9,
-                mutation_scale=4,
+                linewidth=LINE_THIN,
+                mutation_scale=ARROW_SCALE,
             ),
         )
 
@@ -372,7 +411,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         "Stress (MPa)",
         ha="center",
         va="bottom",
-        fontsize=9,
+        fontsize=FS_TITLE,
     )
 
     return fig
@@ -412,7 +451,7 @@ def _make_uls_stress_block_figure(
 
     # vertical axis
     x_axis = 20.0
-    ax.plot([x_axis, x_axis], [0.0, D_ref], color="black", linewidth=2.0)
+    ax.plot([x_axis, x_axis], [0.0, D_ref], color="black", linewidth=LINE_THICK)
 
     # block
     block_left = x_axis
@@ -427,7 +466,7 @@ def _make_uls_stress_block_figure(
             block_bottom - block_top,
             fill=False,
             edgecolor="tab:red",
-            linewidth=2.0,
+            linewidth=LINE_MED,
         )
     )
 
@@ -447,8 +486,8 @@ def _make_uls_stress_block_figure(
                 arrowprops=dict(
                     arrowstyle="->",  # leftwards
                     color="tab:red",
-                    linewidth=1.6,
-                    mutation_scale=4,
+                    linewidth=LINE_MED,
+                    mutation_scale=ARROW_SCALE,
                 ),
             )
 
@@ -459,7 +498,7 @@ def _make_uls_stress_block_figure(
         f"α₂ f'c = {sigma_c:.0f} MPa",
         ha="left",
         va="bottom",
-        fontsize=10,
+        fontsize=FS_LABEL,
         color="tab:red",
     )
 
@@ -470,7 +509,7 @@ def _make_uls_stress_block_figure(
         95.0,
         linestyles="--",
         colors="tab:blue",
-        linewidth=2.0,
+        linewidth=LINE_MED,
     )
     ax.text(
         (x_axis + 95.0) / 2.0,
@@ -478,7 +517,7 @@ def _make_uls_stress_block_figure(
         f"dₙ = {dn_mm:.1f} mm",
         ha="center",
         va="bottom",
-        fontsize=10,
+        fontsize=FS_LABEL,
         color="tab:blue",
     )
 
@@ -489,7 +528,7 @@ def _make_uls_stress_block_figure(
         f"a = γ dₙ = {a_mm:.1f} mm",
         ha="left",
         va="center",
-        fontsize=10,
+        fontsize=FS_LABEL,
         color="tab:blue",
     )
 
@@ -500,9 +539,9 @@ def _make_uls_stress_block_figure(
         xytext=(x_axis, d_mm),
         arrowprops=dict(
             arrowstyle="->",
-            linewidth=2.0,
+            linewidth=LINE_MED,
             color="tab:blue",
-            mutation_scale=4,
+            mutation_scale=ARROW_SCALE,
         ),
     )
     ax.text(
@@ -511,7 +550,7 @@ def _make_uls_stress_block_figure(
         f"T ({fsy:.0f} MPa)",
         ha="left",
         va="center",
-        fontsize=10,
+        fontsize=FS_LABEL,
         color="tab:blue",
     )
 
@@ -525,8 +564,8 @@ def _make_uls_stress_block_figure(
             xytext=(x_z, y_C),
             arrowprops=dict(
                 arrowstyle="<->",
-                linewidth=1.6,
-                mutation_scale=4,
+                linewidth=LINE_MED,
+                mutation_scale=ARROW_SCALE,
             ),
         )
         ax.text(
@@ -535,7 +574,7 @@ def _make_uls_stress_block_figure(
             "z",
             ha="left",
             va="center",
-            fontsize=9,
+            fontsize=FS_LABEL,
         )
 
     ax.text(
@@ -544,7 +583,7 @@ def _make_uls_stress_block_figure(
         "Stress (MPa)",
         ha="center",
         va="bottom",
-        fontsize=11,
+        fontsize=FS_TITLE,
     )
 
     return fig
