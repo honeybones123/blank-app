@@ -216,7 +216,6 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         ax.text(
             x_na + 10,
             c / 2,
-            # Warner-style: d_n instead of NA
             "dₙ = {:.0f} mm".format(c),
             fontsize=FS_ANNOT,
             color="tab:red",
@@ -603,4 +602,3 @@ def _make_uls_stress_block_figure(
     )
 
     return fig
-
