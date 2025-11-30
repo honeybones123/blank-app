@@ -19,9 +19,12 @@ FS_TITLE  = 8      # diagram titles
 FS_LABEL  = 7      # axis labels / main text
 FS_ANNOT  = 5      # small annotations
 
-ARROW_SCALE = 4    # small arrowheads
+ARROW_SCALE = 4    # small arrowheads for everything
 
 
+# ============================================================
+#  MAIN 3-PANEL SECTION / STRAIN / STRESS DIAGRAM
+# ============================================================
 def _plot_stress_strain_profiles(state_dict, state_label=None):
     """
     Three-panel figure:
@@ -51,7 +54,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     fc = state_dict["fc"]
     alpha2 = state_dict["alpha2"]
 
-    # Warner-style sign convention for THIS FIGURE ONLY:
+    # Warner-style sign convention (for this figure only):
     #   concrete strain positive, steel strain negative
     eps_c = abs(eps_c_raw)
     eps_s = -abs(eps_s_raw)
@@ -66,7 +69,6 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     cover_top = get_param("cover_top") or 40.0
     rowgap_top = get_param("rowgap_top") or 25.0
 
-    # Short, constant heading to avoid changing figure bbox
     sec_title = "Section"
 
     # -------------------------
@@ -79,16 +81,14 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
 
     # -------------------------
     # FIXED panel positions
-    #   - moved slightly left overall
-    #   - spaced a little further apart
+    # (slightly more left & spaced out)
     # -------------------------
-    x_center_sec    = 150.0
-    x_center_strain = 760.0
-    x_center_stress = 1370.0
+    x_center_sec    = 160.0
+    x_center_strain = 650.0
+    x_center_stress = 1140.0
 
     sec_width = float(b)
     x0_sec = x_center_sec - sec_width / 2.0
-    x1_sec = x_center_sec + sec_width / 2.0
 
     panel_w_strain = 200.0
     x0_strain = x_center_strain - panel_w_strain / 2.0
@@ -106,14 +106,11 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         return x0_stress + (sig / stress_max) * (panel_w_stress * 0.8)
 
     fig, ax = plt.subplots(figsize=(9, 3.5))
-
-    # Lock how much of the figure the axes occupy (avoids tiny shifts)
     fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
 
-    # Fixed axes -> no movement, and extra space on the left so the section
-    # is never clipped even for wider beams.
+    # fixed axes → positions frozen across ULS / SLS / Uncracked
     ax.set_ylim(D * 1.2, -0.2 * D)
-    ax.set_xlim(-220.0, 1500.0)
+    ax.set_xlim(-200.0, 1450.0)
     ax.set_aspect("equal", adjustable="box")
     ax.set_xmargin(0)
     ax.set_ymargin(0)
@@ -179,7 +176,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             )
         )
 
-    # depth arrows kept next to section only
+    # depth arrows next to section only
     beam_right = x0_sec + b
 
     if d:
@@ -203,11 +200,11 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         )
 
     if c:
-        x_na = min(beam_right + 80.0, x0_strain - 10.0)
+        x_dn = min(beam_right + 80.0, x0_strain - 10.0)
         ax.annotate(
             "",
-            xy=(x_na, c),
-            xytext=(x_na, 0),
+            xy=(x_dn, c),
+            xytext=(x_dn, 0),
             arrowprops=dict(
                 arrowstyle="<->",
                 linewidth=LINE_THIN,
@@ -216,7 +213,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             ),
         )
         ax.text(
-            x_na + 10,
+            x_dn + 10,
             c / 2,
             "dₙ = {:.0f} mm".format(c),
             fontsize=FS_ANNOT,
@@ -367,7 +364,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         ha="center",
     )
 
-    # γc / d_n depth arrow
+    # γ d_n / d_n depth arrow
     x_gc = x_block_right + 0.12 * panel_w_stress
     ax.annotate(
         "",
@@ -423,6 +420,9 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     return fig
 
 
+# ============================================================
+#  ULS STRESS BLOCK FIGURE (1.1 / 1.3 VARIANTS)
+# ============================================================
 def _make_uls_stress_block_figure(
     b_mm: float,
     D_mm: float,
@@ -436,17 +436,17 @@ def _make_uls_stress_block_figure(
     show_lever_arm: bool = False,
     show_dn: bool = True,
     show_alpha_label: bool = True,
-    height_scale: float = 1.0,
+    variant: str = "11",
 ):
     """
     Warner-style ULS stress block (right-way up)
 
     Flags:
-      - show_lever_arm:   show / hide z arrow
-      - show_dn:          show / hide dashed d_n line + label
+      - show_lever_arm:  show / hide z arrow
+      - show_dn:         show / hide dashed d_n line + label
       - show_alpha_label: show / hide α2 f'c text above the block
-      - height_scale:     scale factor on diagram height so each calc
-                          diagram can be tuned to match its calcbox.
+      - variant: "11" (shorter figure for Section 1.1),
+                 "13" (slightly taller for Section 1.3)
     """
 
     vals = [b_mm, D_mm, d_mm, dn_mm, a_mm, alpha2, gamma, fc, fsy]
@@ -457,11 +457,15 @@ def _make_uls_stress_block_figure(
         return fig
 
     sigma_c = alpha2 * fc  # MPa
-    D_ref = max(D_mm, d_mm, dn_mm, a_mm) * 1.05
 
-    # Height scaled so we can match blue calc boxes per step
-    fig, ax = plt.subplots(figsize=(3, 5 * height_scale))
+    # Different vertical spans for 1.1 vs 1.3 so the diagrams
+    # roughly match the height of their calc boxes.
+    if variant == "13":
+        D_ref = max(D_mm, d_mm, a_mm, dn_mm) * 1.10
+    else:  # "11" by default – a bit more compact
+        D_ref = max(D_mm, a_mm, d_mm) * 0.85
 
+    fig, ax = plt.subplots(figsize=(3, 4.0))
     ax.set_xlim(0.0, 100.0)
     ax.set_ylim(D_ref, 0.0)  # 0 at top
     ax.axis("off")
@@ -512,7 +516,7 @@ def _make_uls_stress_block_figure(
     if show_alpha_label:
         ax.text(
             block_left,
-            -0.06 * D_ref,
+            -0.08 * D_ref,
             f"α₂ f'c = {sigma_c:.0f} MPa",
             ha="left",
             va="bottom",
@@ -530,11 +534,10 @@ def _make_uls_stress_block_figure(
             colors="tab:blue",
             linewidth=LINE_MED,
         )
-        # move label further right so it doesn't clash with z
         x_dn_label = 95.0
         ax.text(
             x_dn_label + 2.0,
-            dn_mm + 0.04 * D_ref,
+            dn_mm + 0.03 * D_ref,
             f"dₙ = {dn_mm:.1f} mm",
             ha="left",
             va="bottom",
