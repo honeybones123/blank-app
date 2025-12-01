@@ -290,23 +290,26 @@ summary can show shear utilisation.
 """
     )
 
-    # =====================================================
-    # 3. EQUIVALENT SHEAR V_eq*
-    # =====================================================
-    st.markdown("---")
-    st.subheader("2. Equivalent shear $V_{{eq}}^*$ (Cl. 8.2.3)")
+# =====================================================
+# 3. EQUIVALENT SHEAR V_eq*
+# =====================================================
+st.markdown("---")
+st.subheader("2. Equivalent shear $V_{eq}^*$ (Cl. 8.2.3)")
 
-    T_star_Nmm = T_star * 1e6
-    torsion_eq_N = 0.9 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
-    torsion_eq_kN = torsion_eq_N / 1e3
+T_star_Nmm = T_star * 1e6
+torsion_eq_N = 0.9 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
+torsion_eq_kN = torsion_eq_N / 1e3
 
-    V_eq = math.sqrt(V_star**2 + torsion_eq_kN**2)
+V_eq = math.sqrt(V_star**2 + torsion_eq_kN**2)
 
-    st.write(
-        f"$V_{{eq}}^* = \\sqrt{{V^{*2} + (0.9 T^* u_h / 2 A_o)^2}}"
-        f" = {V_eq:.1f}\\ \\text{{kN}}$  "
-        f"(torsion contribution = {torsion_eq_kN:.1f} kN)"
-    )
+# --- SAFE LATEX OUTPUT (raw latex + f-string for numbers) ---
+latex_expr = (
+    r"$V_{eq}^* = \sqrt{V^{*2} + \left(\frac{0.9\,T^*\,u_h}{2A_o}\right)^2}$"
+    + f" = {V_eq:.1f}\ \text{{kN}}"
+)
+
+st.write(latex_expr)
+st.write(f"(torsion contribution = {torsion_eq_kN:.1f} kN)")
 
     # ---- Step 2 calc box summary ----
     calcbox(
@@ -593,3 +596,4 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
 
 if __name__ == "__main__":
     render_shear()
+
