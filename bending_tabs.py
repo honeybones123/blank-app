@@ -107,16 +107,13 @@ $$
         st.markdown("---")
 
         # --------------------------------------------------
-        # 1.2 Concrete compressive force C
+        # 1.2 Concrete compressive force C  (NO DIAGRAM)
         # --------------------------------------------------
         st.subheader("1.2 Concrete compressive force $C$")
         C_kN = C_N / 1000.0 if C_N is not None else float("nan")
 
-        col_calc_12, col_fig_12 = st.columns([2, 1])
-
-        with col_calc_12:
-            calcbox(
-                rf"""
+        calcbox(
+            rf"""
 Resultant concrete compression is taken as:
 
 $$
@@ -139,41 +136,17 @@ $$
 
 This force acts at the centroid of the compression block.
 """
-            )
-
-        # SAME stress-block diagram as 1.1, but now with C arrow at the centroid
-        with col_fig_12:
-            fig_uls_12 = _make_uls_stress_block_figure(
-                b_mm=b or 0.0,
-                D_mm=D or 0.0,
-                d_mm=d,
-                dn_mm=dn,
-                a_mm=a_uls,
-                alpha2=alpha2_uls,
-                gamma=gamma_uls,
-                fc=fc,
-                fsy=fsy,
-                show_lever_arm=False,
-                show_dn=False,
-                show_alpha_label=True,
-                show_C=True,        # show C arrow in 1.2
-                C_N=C_N,
-                variant="11",
-            )
-            st.pyplot(fig_uls_12, use_container_width=False)
+        )
 
         st.markdown("---")
 
         # --------------------------------------------------
-        # 1.3 Steel area and steel tension force T
+        # 1.3 Steel area and steel tension force T (NO DIAGRAM)
         # --------------------------------------------------
         st.subheader("1.3 Steel area and tension force $T$")
 
-        col_calc_13, col_fig_13 = st.columns([2, 1])
-
-        with col_calc_13:
-            calcbox(
-                rf"""
+        calcbox(
+            rf"""
 From the section inputs, the total area of bottom tensile steel is:
 
 $$
@@ -193,28 +166,7 @@ T = {Ast:.1f} \times {fsy:.1f}
   = {T:,.0f}\ \text{{N}}
   = {T/1000.0:.1f}\ \text{{kN}}
 """
-            )
-
-        # SAME style stress-block diagram as 1.1 (no C arrow here)
-        with col_fig_13:
-            fig_uls_13 = _make_uls_stress_block_figure(
-                b_mm=b or 0.0,
-                D_mm=D or 0.0,
-                d_mm=d,
-                dn_mm=dn,
-                a_mm=a_uls,
-                alpha2=alpha2_uls,
-                gamma=gamma_uls,
-                fc=fc,
-                fsy=fsy,
-                show_lever_arm=False,
-                show_dn=False,
-                show_alpha_label=True,
-                show_C=False,   # no C arrow in 1.3, just like 1.1
-                C_N=None,
-                variant="11",
-            )
-            st.pyplot(fig_uls_13, use_container_width=False)
+        )
 
         st.markdown("---")
 
@@ -380,6 +332,7 @@ $$
 
     else:
         st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
+
 
 
 # ============================================================
