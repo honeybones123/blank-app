@@ -721,27 +721,16 @@ $$
         )
 
     with col_I_fig:
-        # Simple cracked-section figure with NA, block, and steel layers
-        fig_sec, ax_sec = plt.subplots(figsize=(3.0, 2.6))
-        ax_sec.set_xlim(0.0, b * 1.3 if b > 0 else 100.0)
-        ax_sec.set_ylim(D * 1.05, -0.05 * D)
-        ax_sec.axis("off")
-
-        # Section outline
-        ax_sec.plot([0, b, b, 0, 0], [0, 0, D, D, 0], "k-", linewidth=1.0)
-
-        # NA line
-        ax_sec.axhline(dn_sls, linestyle="--", linewidth=0.8, color="black")
-
-        # Simple triangular compression block above d_n (elastic SLS idea)
-        ax_sec.fill(
-            [0, 0, b],
-            [dn_sls, 0.0, dn_sls],
-            facecolor="#c7e3ff",
-            edgecolor="tab:red",
-            linewidth=0.8,
-            alpha=0.6,
+        # Use the dedicated SLS stress-block / section figure so it matches
+        # the other tab exactly.
+        fig_sls = _make_sls_stress_block_figure(
+            D_mm=D or 0.0,
+            d_mm=d,
+            dn_mm=dn_sls,
+            include_comp=bool(include_comp and comp_layer is not None),
+            d_comp_mm=comp_layer["y"] if (include_comp and comp_layer is not None) else None,
         )
+        st.pyplot(fig_sls, use_container_width=False)
 
         # Plot steel layers
         for layer in layers_tension:
