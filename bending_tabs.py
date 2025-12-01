@@ -629,26 +629,21 @@ $$
     st.subheader("3.2 Neutral axis depth $d_n$ (cracked section)")
 
     def equilibrium_residual(dn: float) -> float:
-        """
-        C(dn) - T(dn) = 0 for cracked section.
+        """C(dn) - T(dn) = 0 for cracked section."""
+        # Concrete compression resultant
+        C_conc = 0.5 * b * dn**2  # mm² * mm → N / n factor is outside
 
-        Concrete compression:
-            C_conc = 0.5 * b * d_n^2   (triangular)
-        Steel (transformed) above NA contributes to compression,
-        below NA contributes to tension.
-        """
-        C_conc = 0.5 * b * dn**2
-
+        # Steel contributions (transformed)
         T_steel = 0.0
-
         # tension layers
         for layer in layers_tension:
-            As_i = layer["As"]
-            y_i = layer["y"]
-            if y_i > dn:
-                T_steel += n_sls * As_i * (y_i - dn)
+            As = layer["As"]
+            y = layer["y"]
+            if y > dn:
+                T_steel += n_sls * As * (y - dn)
             else:
-                C_conc += n_sls * As_i * (dn - y_i)
+                # if a "tension" layer ever ends up above NA, treat as compression
+                C_conc += n_sls * As * (dn - y)
 
         # optional compression layer
         if include_comp and comp_layer is not None:
@@ -659,6 +654,7 @@ $$
             else:
                 T_steel += n_sls * As_c * (y_c - dn)
 
+        # Concrete is already in N-equivalent units under transformed method
         return C_conc - T_steel
 
     # Simple bisection between near-top and near-bottom
@@ -679,7 +675,7 @@ $$
                 f_low = f_mid
         dn_sls = 0.5 * (dn_low + dn_high)
     else:
-        # Fallback: original single-layer quadratic
+        # Fallback: use the original single-layer quadratic if bracketing fails
         a_quad = 0.5 * b
         b_coef = n_sls * Ast
         c_coef = -n_sls * Ast * d
@@ -697,8 +693,11 @@ $$
         if math.isnan(dn_sls):
             dn_sls = D / 3.0
 
-    calcbox(
-        rf"""
+    col_32_calc, col_32_fig = st.columns([2, 1])
+
+    with col_32_calc:
+        calcbox(
+            rf"""
 From equilibrium of transformed areas:
 
 Tension side:
@@ -719,38 +718,42 @@ $$
 d_n = {dn_sls:.2f}\ \text{{mm}}
 $$
 """
-    )
+        )
 
-    # SLS stress diagram figure (unchanged orientation etc.)
-    fig_sls = _make_sls_stress_block_figure(
-        D_mm=D or 0.0,
-        d_mm=d,
-        dn_mm=dn_sls,
-        include_comp=bool(include_comp and comp_layer is not None),
-        d_comp_mm=comp_layer["y"]
-        if (include_comp and comp_layer is not None)
-        else None,
-    )
-    st.pyplot(fig_sls, use_container_width=False)
+    with col_32_fig:
+        # SLS stress diagram beside the calc box
+        fig_sls = _make_sls_stress_block_figure(
+            D_mm=D or 0.0,
+            d_mm=d,
+            dn_mm=dn_sls,
+            include_comp=bool(include_comp and comp_layer is not None),
+            d_comp_mm=(
+                comp_layer["y"]
+                if (include_comp and comp_layer is not None)
+                else None
+            ),
+        )
+        st.pyplot(fig_sls, use_container_width=False)
 
     st.markdown("---")
 
     # --------------------------------------------------
-    # 3.3 Cracked moment of inertia I_cr
+    # 3.3 Cracked moment of inertia I_cr + SLS section figure
     # --------------------------------------------------
     st.subheader("3.3 Cracked moment of inertia $I_{{cr}}$")
 
+    # Classify compression / tension for Icr based on dn_sls
     I_conc = b * dn_sls**3 / 3.0
     I_t = 0.0
     I_c = 0.0
 
     for layer in layers_tension:
-        As_i = layer["As"]
-        y_i = layer["y"]
-        if y_i >= dn_sls:
-            I_t += n_sls * As_i * (y_i - dn_sls) ** 2
+        As = layer["As"]
+        y = layer["y"]
+        if y >= dn_sls:
+            I_t += n_sls * As * (y - dn_sls) ** 2
         else:
-            I_c += n_sls * As_i * (dn_sls - y_i) ** 2
+            I_c += n_sls * As * (dn_sls - y) ** 2
 
     if include_comp and comp_layer is not None:
         As_c = comp_layer["As"]
@@ -762,8 +765,11 @@ $$
 
     Icr = I_conc + I_t + I_c
 
-    calcbox(
-        rf"""
+    col_I_calc, col_I_fig = st.columns([2, 1])
+
+    with col_I_calc:
+        calcbox(
+            rf"""
 Cracked moment of inertia (transformed section):
 
 $$
@@ -785,8 +791,10 @@ $$
 I_{{cr}} = {Icr:,.2f}\ \text{{mm}}^4
 $$
 """
-    )
-    st.markdown("---")
+        )
+
+    # 3.3 no extra figure now (the SLS stress diagram lives in 3.2)
+
 
     # --------------------------------------------------
     # 3.4 Curvature at service moment
