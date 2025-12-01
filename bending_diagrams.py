@@ -875,11 +875,12 @@ def _make_sls_stress_block_figure(
 
     # Triangular compression block sitting ABOVE the neutral axis,
     # same orientation as the SLS stress diagram:
+    # triangular compression region (right angle at TOP LEFT)
     block_left = x_axis
-    block_width = 22.0
+    block_width = 20.0
     ax.fill(
         [block_left, block_left + block_width, block_left],
-        [0.0, dn_mm, dn_mm],
+        [0.0, 0.0, dn_mm],
         facecolor="#c7e3ff",
         edgecolor="tab:red",
         linewidth=LINE_MED,
