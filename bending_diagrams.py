@@ -1,12 +1,14 @@
-# bending_diagrams.py
 import math
-import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle, Circle
 import streamlit as st
 
-from state_and_helpers import get_param
-from bending_core import _layout_bars_in_rows
+from widgets_helpers import calcbox
+from bending_diagrams import (
+    _make_uls_stress_block_figure,
+    _make_uls_force_model_figure,
+)
+from bending_core import _fmt
 
 # ------------------------------------------------------------
 # Global styling constants
