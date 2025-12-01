@@ -828,10 +828,10 @@ def _make_sls_stress_block_figure(
     Simple SLS cracked-section figure for Step 3.2.
 
     - Vertical concrete "axis" with neutral axis at d_n
-    - Triangular compression region above the NA
-      (RIGHT ANGLE at the TOP LEFT, to match your screenshot)
+    - Triangular compression stress block above d_n
+      (right angle at top-left, matching the main SLS stress panel)
     - Tension steel shown at depth d
-    - Optional compression steel depth arrow if desired
+    - Optional compression steel shown at depth d_comp_mm
     """
 
     vals = [D_mm, d_mm, dn_mm]
@@ -841,71 +841,48 @@ def _make_sls_stress_block_figure(
         ax.text(0.5, 0.5, "No data", ha="center", va="center")
         return fig
 
-    # Make sure the drawing always contains d, d_n, D and any compression bar
-    base_span = max(D_mm, d_mm, dn_mm, (d_comp_mm or 0.0))
+    base_span = max(D_mm, d_mm, dn_mm, d_comp_mm or 0.0)
     D_ref = base_span * 1.05
 
-    fig, ax = plt.subplots(figsize=(3.0, 4.0))
-    ax.set_xlim(0.0, 120.0)
-    ax.set_ylim(D_ref, 0.0)
+    fig, ax = plt.subplots(figsize=(3.0, 2.6))
+    ax.set_xlim(0.0, 100.0)
+    ax.set_ylim(D_ref, 0.0)  # 0 at top
     ax.axis("off")
 
-    x_axis = 25.0
+    x_axis = 20.0
 
-    # vertical "section" line
+    # concrete "section" line
     ax.plot([x_axis, x_axis], [0.0, D_ref], color="black", linewidth=LINE_THICK)
 
-    # neutral axis (d_n)
+    # neutral axis
     ax.hlines(
         dn_mm,
         x_axis,
-        110.0,
+        95.0,
         linestyles="--",
         linewidth=LINE_THIN,
         colors="black",
     )
 
-    # --------------------------------------------------
-    # Triangular compression region (RIGHT ANGLE AT TOP LEFT)
-    # vertices: (x_axis, 0) → (x_axis + w, 0) → (x_axis, d_n)
-    # --------------------------------------------------
+    # triangular compression region (0 → d_n), right angle at top-left
     block_left = x_axis
-    block_width = 28.0
-
+    block_width = 22.0
     ax.fill(
         [block_left, block_left + block_width, block_left],
         [0.0, 0.0, dn_mm],
-        facecolor="#c7e3ff",
+        fill=False,
         edgecolor="tab:red",
         linewidth=LINE_MED,
-        alpha=0.7,
     )
 
-    # little internal compression arrows (leftwards)
-    h = dn_mm
-    if h > 0:
-        ys = np.linspace(0.2 * h, 0.8 * h, 3)
-        for yy in ys:
-            ax.annotate(
-                "",
-                xy=(block_left + 4.0, yy),
-                xytext=(block_left + block_width - 4.0, yy),
-                arrowprops=dict(
-                    arrowstyle="->",
-                    linewidth=LINE_THIN,
-                    color="tab:red",
-                    mutation_scale=ARROW_SCALE,
-                ),
-            )
-
-    # α2 f'c label with a left-pointing arrow across the top
+    # horizontal width arrow + α2 f'c label (no numeric value needed here)
     y_alpha = -0.08 * D_ref
     ax.annotate(
         "",
-        xy=(block_left + block_width, y_alpha),
-        xytext=(block_left, y_alpha),
+        xy=(block_left, y_alpha),
+        xytext=(block_left + block_width, y_alpha),
         arrowprops=dict(
-            arrowstyle="<-",
+            arrowstyle="<->",
             linewidth=LINE_THIN,
             color="tab:red",
             mutation_scale=ARROW_SCALE,
@@ -921,43 +898,10 @@ def _make_sls_stress_block_figure(
         color="tab:red",
     )
 
-    # vertical d_n arrow to the right
-    x_dn = block_left + block_width + 20.0
-    ax.annotate(
-        "",
-        xy=(x_dn, dn_mm),
-        xytext=(x_dn, 0.0),
-        arrowprops=dict(
-            arrowstyle="<->",
-            linewidth=LINE_THIN,
-            color="tab:red",
-            mutation_scale=ARROW_SCALE,
-        ),
-    )
-    ax.text(
-        x_dn + 4.0,
-        0.5 * dn_mm,
-        rf"$d_n = {dn_mm:.0f}\ \mathrm{{mm}}$",
-        ha="left",
-        va="center",
-        fontsize=FS_LABEL,
-        color="tab:red",
-    )
-
-    # Tension steel arrow at depth d
-    x_T0 = x_axis
-    x_T1 = x_axis + 55.0
-    ax.annotate(
-        "",
-        xy=(x_T1, d_mm),
-        xytext=(x_T0, d_mm),
-        arrowprops=dict(
-            arrowstyle="->",
-            linewidth=LINE_MED,
-            color="tab:blue",
-            mutation_scale=ARROW_SCALE,
-        ),
-    )
+    # tension steel marker at depth d
+    x_T0 = x_axis + 35.0
+    x_T1 = x_axis + 70.0
+    ax.plot([x_T0, x_T1], [d_mm, d_mm], color="tab:blue", linewidth=LINE_MED)
     ax.text(
         x_T1 + 4.0,
         d_mm,
@@ -968,18 +912,20 @@ def _make_sls_stress_block_figure(
         color="tab:blue",
     )
 
-    # Optional: show compression-steel depth (just a small marker)
+    # compression steel (optional)
     if include_comp and d_comp_mm is not None:
+        x_C0 = x_axis + 35.0
+        x_C1 = x_axis + 70.0
         ax.plot(
-            [x_T0 + 5.0, x_T0 + 25.0],
+            [x_C0, x_C1],
             [d_comp_mm, d_comp_mm],
             color="tab:red",
             linewidth=LINE_MED,
         )
         ax.text(
-            x_T0 + 28.0,
+            x_C1 + 4.0,
             d_comp_mm,
-            "Cₛ",
+            "C_s",
             ha="left",
             va="center",
             fontsize=FS_LABEL,
@@ -987,7 +933,7 @@ def _make_sls_stress_block_figure(
         )
 
     ax.text(
-        60.0,
+        50.0,
         D_ref + 0.08 * D_ref,
         "Stress (MPa)",
         ha="center",
