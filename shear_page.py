@@ -1,3 +1,5 @@
+# shear_page.py
+
 import math
 import pandas as pd
 import streamlit as st
@@ -10,7 +12,6 @@ from state_and_helpers import (
 
 from widgets_helpers import (
     apply_global_widget_css,
-    number_row,
 )
 
 # ------------------------------------------------------------
@@ -26,6 +27,91 @@ def _fmt(val, pattern="{:.2f}"):
         return pattern.format(val)
     except Exception:
         return "—"
+
+
+# ------------------------------------------------------------
+#  Local number-row helper for SHEAR page only
+#  (avoids MixedNumericTypes by controlling types explicitly)
+# ------------------------------------------------------------
+def _number_row_shear(
+    label: str,
+    widget_key: str,
+    col,
+    sync_callbacks: dict | None,
+    *,
+    as_int: bool = False,
+    min_value=None,
+    max_value=None,
+    step=None,
+):
+    """
+    Render a one-line label + number_input, using shear widget key.
+
+    - Uses sync_callbacks[widget_key] if available.
+    - If as_int=False → everything is treated as float.
+    - If as_int=True  → everything is treated as int.
+    """
+    cb = None
+    if sync_callbacks is not None and widget_key in sync_callbacks:
+        cb = sync_callbacks[widget_key]
+
+    with col:
+        # Label + widget side by side (similar to your number_row style)
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            st.markdown(label)
+
+        # Get current value from session_state (initialised by init_shared_session_state)
+        raw_val = st.session_state.get(widget_key, 0)
+
+        with c2:
+            if as_int:
+                # ----- integer style -----
+                try:
+                    value = int(raw_val)
+                except Exception:
+                    value = 0
+                if min_value is None:
+                    min_value = 0
+                if step is None:
+                    step = 1
+                value = int(value)
+                min_value = int(min_value)
+                step = int(step)
+
+                st.number_input(
+                    "",
+                    key=widget_key,
+                    value=value,
+                    min_value=min_value,
+                    max_value=max_value,
+                    step=step,
+                    on_change=cb,
+                )
+            else:
+                # ----- float style -----
+                try:
+                    value = float(raw_val)
+                except Exception:
+                    value = 0.0
+                if min_value is None:
+                    min_value = 0.0
+                if step is None:
+                    step = 1.0
+                value = float(value)
+                min_value = float(min_value)
+                step = float(step)
+
+                st.number_input(
+                    "",
+                    key=widget_key,
+                    value=value,
+                    min_value=min_value,
+                    max_value=max_value,
+                    step=step,
+                    on_change=cb,
+                    format="%.2f",
+                )
 
 
 # ------------------------------------------------------------
@@ -290,24 +376,24 @@ def render_shear():
     with col1:
         st.markdown("### 1.1 Geometry & materials (linked to Inputs)")
 
-        number_row("b – beam/web width (mm)", "shear_b", col1, sync_callbacks)
-        number_row("D – overall depth (mm)", "shear_D", col1, sync_callbacks)
-        number_row("L – span L (mm)", "shear_L", col1, sync_callbacks)
+        _number_row_shear("b – beam/web width (mm)", "shear_b", col1, sync_callbacks)
+        _number_row_shear("D – overall depth (mm)", "shear_D", col1, sync_callbacks)
+        _number_row_shear("L – span L (mm)", "shear_L", col1, sync_callbacks)
 
-        number_row("f'c (MPa)", "shear_fc", col1, sync_callbacks)
-        number_row("f_sy (MPa)", "shear_fsy", col1, sync_callbacks)
-        number_row("E_c (MPa)", "shear_Ec", col1, sync_callbacks)
-        number_row("E_s (MPa)", "shear_Es", col1, sync_callbacks)
+        _number_row_shear("f'c (MPa)", "shear_fc", col1, sync_callbacks)
+        _number_row_shear("f_sy (MPa)", "shear_fsy", col1, sync_callbacks)
+        _number_row_shear("E_c (MPa)", "shear_Ec", col1, sync_callbacks)
+        _number_row_shear("E_s (MPa)", "shear_Es", col1, sync_callbacks)
 
     with col2:
         st.markdown("### 1.2 Design actions (linked to Inputs)")
 
-        number_row("V* – design shear (kN)", "shear_Vu_star", col2, sync_callbacks)
-        number_row("T* – torsion at section (kNm)", "shear_Tu_star", col2, sync_callbacks)
-        number_row("P* – prestress / axial (kN)", "shear_P_star", col2, sync_callbacks)
-        number_row("N* – axial force (kN, +tension)", "shear_N_star", col2, sync_callbacks)
-        number_row("φ_v – strength reduction for shear", "shear_phi_v", col2, sync_callbacks)
-        number_row("φ_t – strength reduction for torsion", "shear_phi_t", col2, sync_callbacks)
+        _number_row_shear("V* – design shear (kN)", "shear_Vu_star", col2, sync_callbacks)
+        _number_row_shear("T* – torsion at section (kNm)", "shear_Tu_star", col2, sync_callbacks)
+        _number_row_shear("P* – prestress / axial (kN)", "shear_P_star", col2, sync_callbacks)
+        _number_row_shear("N* – axial force (kN, +tension)", "shear_N_star", col2, sync_callbacks)
+        _number_row_shear("φ_v – strength reduction for shear", "shear_phi_v", col2, sync_callbacks)
+        _number_row_shear("φ_t – strength reduction for torsion", "shear_phi_t", col2, sync_callbacks)
 
     st.markdown("---")
 
@@ -316,11 +402,11 @@ def render_shear():
 
     col3, col4 = st.columns(2)
     with col3:
-        number_row("d_lig – ligature diameter (mm)", "shear_lig_d", col3, sync_callbacks)
-        number_row("s_lig – ligature spacing (mm)", "shear_s_lig", col3, sync_callbacks)
+        _number_row_shear("d_lig – ligature diameter (mm)", "shear_lig_d", col3, sync_callbacks)
+        _number_row_shear("s_lig – ligature spacing (mm)", "shear_s_lig", col3, sync_callbacks)
 
     with col4:
-        number_row("n_legs – legs per ligature", "shear_lig_legs", col4, sync_callbacks)
+        _number_row_shear("n_legs – legs per ligature", "shear_lig_legs", col4, sync_callbacks, as_int=True, min_value=1, step=1)
 
     st.markdown("---")
 
