@@ -56,14 +56,13 @@ def _number_row_shear(
     label: str,
     widget_key: str,
     col,
-    sync_callbacks=None,   # ← no union operator
+    sync_callbacks=None,
     *,
     as_int: bool = False,
     min_value=None,
     max_value=None,
     step=None,
 ):
-
     """
     Local helper just for the shear page.
 
@@ -71,6 +70,7 @@ def _number_row_shear(
     • Uses shear widget keys (shear_b, shear_Vu_star, …) which are mapped in TAB_KEYS.
     • Hooks into sync_callbacks[widget_key] to update shared state + derived values.
     """
+
     cb = None
     if sync_callbacks is not None and widget_key in sync_callbacks:
         cb = sync_callbacks[widget_key]
@@ -586,4 +586,5 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
 
 if __name__ == "__main__":
     render_shear()
+
 
