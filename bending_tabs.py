@@ -1,4 +1,3 @@
-# bending_tabs.py
 import math
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -6,12 +5,12 @@ import streamlit as st
 
 from widgets_helpers import calcbox
 from bending_diagrams import (
+    _plot_stress_strain_profiles,
     _make_uls_stress_block_figure,
     _make_uls_force_model_figure,
-    _make_uls_section_mini_figure,  # kept, even if not used
+    _make_sls_stress_block_figure,
 )
 from bending_core import _fmt
-
 
 # ============================================================
 #  TAB 1 – ULS (UNCHANGED)
