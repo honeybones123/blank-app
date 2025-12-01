@@ -288,7 +288,8 @@ code-min check can be added later.
 # ----------------------------------------------------------------------
 def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
     """
-    Tab 3 – SLS cracked-section teaching model (multi-layer).
+    Tab 3 – SLS cracked-section teaching model.
+    Uses tension steel at depth d and optional compression steel near the top.
     """
     st.header("3. SLS Bending – Cracked Section (Teaching Model)")
 
@@ -298,118 +299,55 @@ def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
 
     Ms = Mu_star
 
-    # Steel layout from the shared bar-layout engine
-    tension_layers, comp_layers_all = get_sls_steel_layers(b, D)
+    # --------------------------------------------------
+    # Steel layer data (bottom tension + optional compression)
+    # --------------------------------------------------
+    Ast_t = Ast or 0.0  # bottom/tension steel (from caller)
 
-    # Toggle – include compression steel in section properties?
-    include_comp_steel = bool(get_param("include_comp_steel") or False)
-    comp_layers = comp_layers_all if include_comp_steel else []
+    # Compression steel from shared state (if present)
+    Ast_comp = float(get_param("Ast_top", 0.0) or 0.0)
 
-    # Convenience – combined list for tables/plots
-    all_layers = tension_layers + comp_layers
+    cover_top = float(get_param("cover_top", 40.0) or 40.0)
+    db_top = float(get_param("db_top", 16.0) or 16.0)
+    d_comp = cover_top + db_top / 2.0  # depth of compression steel from top
 
-    # ------------------------------------------------------------------
-    # 3.1 Service moment & section steel layout
-    # ------------------------------------------------------------------
-    st.subheader("3.1 Service moment and steel layout")
+    # Toggle: include / ignore compression steel in cracked-section calcs
+    include_comp = st.checkbox(
+        "Include compression steel in SLS cracked-section analysis",
+        value=False,
+        key="sls_include_comp",
+    )
 
-    col31_calc, col31_fig = st.columns([2, 1])
-
-    with col31_calc:
-        calcbox(
-            rf"""
-Service design moment from the main bending check:
-
-$$
-M_s = M^* = {Ms:.2f}\ \text{{kNm}}
-$$
-
-Section properties used for the cracked-section model:
-
-- Width: $b = {b:.1f}\ \text{{mm}}$  
-- Overall depth: $D = {D:.1f}\ \text{{mm}}$  
-
-The steel is grouped into layers (rows of bars) using the same
-geometry as the main section diagram.
-"""
-        )
-
-        if all_layers:
-            rows = []
-            for layer in all_layers:
-                rows.append(
-                    {
-                        "Layer": layer["name"],
-                        "Face": "Bottom" if layer["face"] == "bottom" else "Top",
-                        "Depth y (mm)": layer["y"],
-                        "Bar dia (mm)": layer["db"],
-                        "Count": layer["count"],
-                        "A_s (mm²)": layer["As"],
-                    }
-                )
-            df_layout = pd.DataFrame(rows)
-            st.table(df_layout)
-        else:
-            st.info("No reinforcement layers found from current inputs.")
-
-    with col31_fig:
-        # Simple section sketch with layers (no NA yet)
-        if all_layers:
-            fig_sec, ax_sec = plt.subplots(figsize=(3.0, 2.8))
-            ax_sec.set_xlim(0, b)
-            ax_sec.set_ylim(D, 0)
-            ax_sec.axis("off")
-
-            # section
-            ax_sec.add_patch(
-                Rectangle((0, 0), b, D, fill=False, linewidth=1.0, edgecolor="black")
-            )
-
-            # plot layers as circles along centreline
-            x_mid = 0.5 * b
-            for layer in all_layers:
-                y = layer["y"]
-                db = layer["db"]
-                count = layer["count"]
-                r = db / 2.0
-                if count == 1:
-                    xs = [x_mid]
-                else:
-                    spacing = 1.2 * db
-                    start = x_mid - 0.5 * (count - 1) * spacing
-                    xs = [start + i * spacing for i in range(count)]
-                for x in xs:
-                    ax_sec.add_patch(
-                        Circle(
-                            (x, y),
-                            radius=r,
-                            fill=False,
-                            linewidth=0.8,
-                            edgecolor="tab:blue"
-                            if layer["face"] == "bottom"
-                            else "tab:red",
-                        )
-                    )
-                ax_sec.text(
-                    x_mid + 0.15 * b,
-                    y,
-                    layer["name"],
-                    fontsize=5,
-                    va="center",
-                )
-
-            ax_sec.set_title("Steel layout (SLS)", fontsize=8)
-            st.pyplot(fig_sec, use_container_width=False)
-            plt.close(fig_sec)
-
-    st.markdown("---")
-
-    # ------------------------------------------------------------------
-    # 3.2 Modular ratio & transformed areas
-    # ------------------------------------------------------------------
-    st.subheader("3.2 Modular ratio and transformed steel areas")
+    # --------------------------------------------------
+    # 3.1 Modular ratio & transformed steel areas
+    # --------------------------------------------------
+    st.subheader("3.1 Modular ratio and transformed steel areas")
 
     n_sls = Es / Ec if Ec else 0.0
+    Ast_t_tr = n_sls * Ast_t
+    Ast_c_tr = n_sls * Ast_comp if include_comp and Ast_comp > 0.0 else 0.0
+
+    # Small table of layers
+    rows = [
+        {
+            "Layer": "Tension steel (bottom)",
+            "Depth y (mm)": d,
+            "A_s (mm²)": Ast_t,
+            "n A_s (mm²)": Ast_t_tr,
+        }
+    ]
+    if include_comp and Ast_comp > 0.0:
+        rows.insert(
+            0,
+            {
+                "Layer": "Compression steel (top)",
+                "Depth y (mm)": d_comp,
+                "A_s (mm²)": Ast_comp,
+                "n A_s (mm²)": Ast_c_tr,
+            },
+        )
+
+    df_layers = pd.DataFrame(rows)
 
     calcbox(
         rf"""
@@ -426,193 +364,156 @@ n = \frac{{{Es:.0f}}}{{{Ec:.0f}}}
   = {n_sls:.2f}
 $$
 
-Each steel layer is transformed to an equivalent concrete area:
+Each steel layer is converted to an equivalent concrete area:
 
 $$
-A'_s = n A_s
+A_s' = n A_s
 $$
 """
     )
+    st.table(df_layers)
 
-    if all_layers:
-        rows_tr = []
-        for layer in all_layers:
-            As = layer["As"]
-            As_tr = n_sls * As
-            rows_tr.append(
-                {
-                    "Layer": layer["name"],
-                    "Face": "Bottom" if layer["face"] == "bottom" else "Top",
-                    "Depth y (mm)": layer["y"],
-                    "A_s (mm²)": As,
-                    "A_s' = n A_s (mm²)": As_tr,
-                }
-            )
-        df_tr = pd.DataFrame(rows_tr)
-        st.table(df_tr)
+    # --------------------------------------------------
+    # 3.2 Neutral axis depth d_n (cracked section)
+    # --------------------------------------------------
+    st.subheader("3.2 Neutral axis depth $d_n$ (cracked section)")
 
-    st.markdown("---")
-
-    # ------------------------------------------------------------------
-    # 3.3 Neutral axis depth d_n (multi-layer)
-    # ------------------------------------------------------------------
-    st.subheader("3.3 Neutral axis depth $d_n$ (cracked section)")
-
-    # Helper: residual of force equilibrium at a trial d_n
-    def _equilibrium_residual(dn_trial: float):
-        # concrete compression (triangular)
-        C_conc = 0.5 * b * dn_trial**2
-
-        # compression steel contribution (if enabled)
-        C_s = 0.0
-        if include_comp_steel:
-            for layer in comp_layers:
-                if dn_trial > layer["y"]:
-                    C_s += n_sls * layer["As"] * (dn_trial - layer["y"])
-
-        # tension steel
-        T_tot = 0.0
-        for layer in tension_layers:
-            if layer["y"] > dn_trial:
-                T_tot += n_sls * layer["As"] * (layer["y"] - dn_trial)
-
-        # equilibrium: C_conc + C_s = T_tot
-        return C_conc + C_s - T_tot
-
-    # Bisection search for root of residual = 0
+    a_quad = 0.5 * b
     dn_sls = float("nan")
-    try:
-        y_min = 1e-6
-        y_max = min(D - 1e-3, max([ly["y"] for ly in tension_layers] + [D]))
 
-        f_min = _equilibrium_residual(y_min)
-        f_max = _equilibrium_residual(y_max)
-
-        if f_min * f_max < 0:
-            a = y_min
-            b_hi = y_max
-            for _ in range(60):
-                mid = 0.5 * (a + b_hi)
-                f_mid = _equilibrium_residual(mid)
-                if f_min * f_mid <= 0:
-                    b_hi = mid
-                    f_max = f_mid
-                else:
-                    a = mid
-                    f_min = f_mid
-            dn_sls = 0.5 * (a + b_hi)
+    if a_quad > 0.0 and n_sls > 0.0 and Ast_t > 0.0:
+        if include_comp and Ast_comp > 0.0:
+            # b/2 * d_n^2 + n(Ast + Asc) d_n - n(Ast d + Asc d_comp) = 0
+            b_coef = n_sls * (Ast_t + Ast_comp)
+            c_coef = -n_sls * (Ast_t * d + Ast_comp * d_comp)
         else:
-            dn_sls = D / 3.0
-    except Exception:
-        dn_sls = D / 3.0
+            # b/2 * d_n^2 = n Ast (d - d_n)
+            # ⇒ b/2 d_n^2 + n Ast d_n - n Ast d = 0
+            b_coef = n_sls * Ast_t
+            c_coef = -n_sls * Ast_t * d
 
-    ku_sls = dn_sls / d if d else float("nan")
+        disc = b_coef**2 - 4.0 * a_quad * c_coef
+        if disc >= 0.0:
+            r1 = (-b_coef + math.sqrt(disc)) / (2.0 * a_quad)
+            r2 = (-b_coef - math.sqrt(disc)) / (2.0 * a_quad)
+            roots = [r for r in (r1, r2) if 0.0 < r < D]
+            if roots:
+                # pick the root closest to mid-depth
+                dn_sls = min(roots, key=lambda x: abs(x - D / 2.0))
 
-    # Build a small forces table at the converged d_n
-    C_conc = 0.5 * b * dn_sls**2
-    C_s = 0.0
-    if include_comp_steel:
-        for layer in comp_layers:
-            if dn_sls > layer["y"]:
-                C_s += n_sls * layer["As"] * (dn_sls - layer["y"])
-    T_tot = 0.0
-    for layer in tension_layers:
-        if layer["y"] > dn_sls:
-            T_tot += n_sls * layer["As"] * (layer["y"] - dn_sls)
+    if math.isnan(dn_sls):
+        dn_sls = D / 3.0  # modest fallback
+
+    if include_comp and Ast_comp > 0.0:
+        eqn_text = (
+            r"""
+From equilibrium of transformed areas and forces:
+
+$$
+\frac{b d_n^2}{2} + n A_{sc}(d_n - d_{sc})
+= n A_{st}(d - d_n)
+$$
+"""
+        )
+    else:
+        eqn_text = (
+            r"""
+From equilibrium of transformed areas:
+
+$$
+\frac{b d_n^2}{2} = n A_s (d - d_n)
+$$
+"""
+        )
 
     calcbox(
         rf"""
-For equilibrium of transformed forces:
+{eqn_text}
 
-- Concrete compression (triangular block):  
-  $C_c = \dfrac{{b d_n^2}}{2}$
-
-- Tension steel (sum of layers):  
-  $T = \sum n A_{{s,i}} (d_i - d_n)$
-
-If compression steel is included, additional compression is:
+Solving for $d_n$ gives:
 
 $$
-C_s = \sum n A_{{sc,j}} (d_n - d_{{sc,j}})
+d_n = {dn_sls:.2f}\ \text{{mm}}
 $$
-
-Equilibrium condition:
-
-$$
-C_c + C_s = T
-$$
-
-Solving numerically for $d_n$ gives:
-
-$$
-d_n = {dn_sls:.2f}\ \text{{mm}}, \qquad
-k_u = \frac{{d_n}}{{d}} = {ku_sls:.3f}
-$$
-
-At this neutral axis depth:
-
-- $C_c = {C_conc:,.0f}$ (transformed units)  
-- $C_s = {C_s:,.0f}$ (if included)  
-- $T   = {T_tot:,.0f}$
 """
     )
 
-    st.markdown("---")
+    # --------------------------------------------------
+    # 3.3 Cracked moment of inertia $I_{{cr}}$ + SLS stress block figure
+    # --------------------------------------------------
+    st.subheader("3.3 Cracked moment of inertia $I_{{cr}}$")
 
-    # ------------------------------------------------------------------
-    # 3.4 Cracked moment of inertia I_cr
-    # ------------------------------------------------------------------
-    st.subheader("3.4 Cracked moment of inertia $I_{{cr}}$")
+    Icr_conc = b * dn_sls**3 / 3.0
+    Icr_tens = n_sls * Ast_t * (d - dn_sls) ** 2
+    Icr_comp = (
+        n_sls * Ast_comp * (dn_sls - d_comp) ** 2
+        if include_comp and Ast_comp > 0.0
+        else 0.0
+    )
+    Icr = Icr_conc + Icr_tens + Icr_comp
 
-    # concrete part
-    I_conc = b * dn_sls**3 / 3.0
+    col_I_calc, col_I_fig = st.columns([2, 1])
 
-    # steel parts (about neutral axis)
-    I_tension = 0.0
-    for layer in tension_layers:
-        if layer["y"] > dn_sls:
-            I_tension += n_sls * layer["As"] * (layer["y"] - dn_sls) ** 2
-
-    I_comp = 0.0
-    if include_comp_steel:
-        for layer in comp_layers:
-            if dn_sls > layer["y"]:
-                I_comp += n_sls * layer["As"] * (dn_sls - layer["y"]) ** 2
-
-    Icr = I_conc + I_tension + I_comp
-
-    calcbox(
-        rf"""
-Cracked moment of inertia about the neutral axis:
+    with col_I_calc:
+        if include_comp and Ast_comp > 0.0:
+            calcbox(
+                rf"""
+Cracked moment of inertia:
 
 $$
 I_{{cr}} = \frac{{b d_n^3}}{3}
-         + \sum_{{\text{{tension}}}} n A_{{s,i}} (d_i - d_n)^2
-         + \sum_{{\text{{compression}}}} n A_{{sc,j}} (d_n - d_{{sc,j}})^2
+        + n A_{{st}} (d - d_n)^2
+        + n A_{{sc}} (d_n - d_{{sc}})^2
 $$
 
-Substituting for this section:
-
-- $I_c = \dfrac{{{b:.1f} \times {dn_sls:.2f}^3}}{3}
-      = {I_conc:,.2f}$
-- Steel in tension: $I_t = {I_tension:,.2f}$
-- Steel in compression: $I_c^s = {I_comp:,.2f}$
+Substituting:
 
 $$
-I_{{cr}} = {Icr:,.2f}\ \text{{mm}}^4
+I_{{cr}} =
+\frac{{{b:.1f} \times {dn_sls:.2f}^3}}{3}
++ {n_sls:.2f} \times {Ast_t:.1f} ( {d:.1f} - {dn_sls:.2f} )^2
++ {n_sls:.2f} \times {Ast_comp:.1f} ( {dn_sls:.2f} - {d_comp:.1f} )^2
+= {Icr:,.2f}\ \text{{mm}}^4
 $$
 """
-    )
+            )
+        else:
+            calcbox(
+                rf"""
+Cracked moment of inertia (no compression steel):
 
-    st.markdown("---")
+$$
+I_{{cr}} = \frac{{b d_n^3}}{3} + n A_s (d - d_n)^2
+$$
 
-    # ------------------------------------------------------------------
-    # 3.5 Curvature at service moment
-    # ------------------------------------------------------------------
-    st.subheader("3.5 Curvature at service moment")
+Substituting:
+
+$$
+I_{{cr}} =
+\frac{{{b:.1f} \times {dn_sls:.2f}^3}}{3}
++ {n_sls:.2f} \times {Ast_t:.1f} ( {d:.1f} - {dn_sls:.2f} )^2
+= {Icr:,.2f}\ \text{{mm}}^4
+$$
+"""
+            )
+
+    with col_I_fig:
+        fig_sls = _make_sls_stress_block_figure(
+            D_mm=D or 0.0,
+            d_mm=d,
+            dn_mm=dn_sls,
+            include_comp=include_comp and Ast_comp > 0.0,
+            d_comp_mm=d_comp if include_comp and Ast_comp > 0.0 else None,
+        )
+        st.pyplot(fig_sls, use_container_width=False)
+
+    # --------------------------------------------------
+    # 3.4 Curvature at service moment
+    # --------------------------------------------------
+    st.subheader("3.4 Curvature at service moment")
 
     Ms_Nmm = Ms * 1e6
-    kappa = Ms_Nmm / (Ec * Icr) if Ec and Icr else 0.0
+    kappa = Ms_Nmm / (Ec * Icr) if Ec and Icr > 0.0 else 0.0
 
     calcbox(
         rf"""
@@ -631,78 +532,50 @@ $$
 """
     )
 
-    st.markdown("---")
+    # --------------------------------------------------
+    # 3.5 Strain distribution and steel stresses
+    # --------------------------------------------------
+    st.subheader("3.5 Strain and steel stresses at key layers")
 
-    # ------------------------------------------------------------------
-    # 3.6 Strain and stress in each steel layer
-    # ------------------------------------------------------------------
-    st.subheader("3.6 Steel strains and stresses at SLS")
+    layers = [
+        ("Top fibre", 0.0),
+    ]
+    if include_comp and Ast_comp > 0.0:
+        layers.append(("Compression steel", d_comp))
+    layers.append(("Tension steel (d)", d))
+    layers.append(("Bottom fibre", D))
 
     rows_eps = []
-
-    # Top and bottom fibres (for context)
-    eps_top = kappa * (0.0 - dn_sls)
-    eps_bot = kappa * (D - dn_sls)
-
-    rows_eps.append(
-        {
-            "Point": "Top fibre",
-            "Depth y (mm)": 0.0,
-            "ε": eps_top,
-            "f_s (MPa)": Es * eps_top,
-        }
-    )
-
-    for layer in all_layers:
-        eps_i = kappa * (layer["y"] - dn_sls)
-        fs_i = Es * eps_i  # MPa if Es in MPa
+    for name, yi in layers:
+        eps = kappa * (yi - dn_sls)
+        fs = Es * eps  # MPa, since Es is MPa and strain is dimensionless
         rows_eps.append(
             {
-                "Point": layer["name"],
-                "Depth y (mm)": layer["y"],
-                "ε": eps_i,
-                "f_s (MPa)": fs_i,
+                "Layer": name,
+                "Depth y (mm)": yi,
+                "ε": eps,
+                "f_s (MPa)": fs,
             }
         )
 
-    rows_eps.append(
-        {
-            "Point": "Bottom fibre",
-            "Depth y (mm)": D,
-            "ε": eps_bot,
-            "f_s (MPa)": Es * eps_bot,
-        }
-    )
-
     df_eps = pd.DataFrame(rows_eps)
+
+    calcbox(
+        rf"""
+Strain at depth $y$ from the top:
+
+$$
+\varepsilon(y) = \kappa (y - d_n)
+$$
+
+Steel stress in each layer:
+
+$$
+f_s = E_s \varepsilon
+$$
+
+The table below lists the strain and stress at the top fibre, each steel layer
+(and the bottom fibre).
+"""
+    )
     st.table(df_eps)
-
-    # Simple strain diagram with points at each steel layer
-    fig_eps, ax_eps = plt.subplots(figsize=(3.0, 3.0))
-    ys_plot = [0.0, dn_sls, D]
-    eps_plot = [kappa * (y - dn_sls) for y in ys_plot]
-    ax_eps.plot(eps_plot, ys_plot, "k-")
-
-    for layer in all_layers:
-        eps_i = kappa * (layer["y"] - dn_sls)
-        ax_eps.plot(
-            eps_i,
-            layer["y"],
-            "o",
-            color="tab:blue" if layer["face"] == "bottom" else "tab:red",
-        )
-        ax_eps.text(
-            eps_i,
-            layer["y"],
-            f" {layer['name']}",
-            va="center",
-            fontsize=5,
-        )
-
-    ax_eps.axhline(dn_sls, linestyle="--", linewidth=0.8, color="grey")
-    ax_eps.set_xlabel("Strain ε")
-    ax_eps.set_ylabel("Depth from top (mm)")
-    ax_eps.set_title("SLS strain distribution")
-    ax_eps.invert_yaxis()
-    st.pyplot(fig_eps, use_container_width=False)
-    plt.close(fig_eps)
