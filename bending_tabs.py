@@ -1,19 +1,22 @@
+# bending_tabs.py
 import math
 import pandas as pd
 import matplotlib.pyplot as plt
 import streamlit as st
-from matplotlib.patches import Rectangle, Circle   # ⬅️ ADD THIS LINE
 
 from widgets_helpers import calcbox
 from bending_diagrams import (
     _make_uls_stress_block_figure,
     _make_uls_force_model_figure,
-    get_sls_steel_layers,
+    _make_sls_stress_block_figure,
 )
 from bending_core import _fmt
 from state_and_helpers import get_param
 
 
+# ============================================================
+#  TAB 1 – ULS STEP-BY-STEP
+# ============================================================
 def render_uls_tab(top_results, b, D, fc, fsy, Ast, d):
     """
     Tab 1 – ULS step-by-step.
@@ -42,7 +45,9 @@ def render_uls_tab(top_results, b, D, fc, fsy, Ast, d):
         Mu_nom_uls = T * z_uls / 1e6
         phi_Mu_cap_uls = phi * Mu_nom_uls
 
-        # 1.1 Stress-block parameters (α2 and γ) + FIGURE ON RIGHT
+        # --------------------------------------------------
+        # 1.1 Stress-block parameters (α2 and γ)
+        # --------------------------------------------------
         st.subheader("1.1 Stress-block parameters (α₂ and γ)")
         col_calc, col_fig = st.columns([2, 1])
 
@@ -98,7 +103,9 @@ $$
 
         st.markdown("---")
 
+        # --------------------------------------------------
         # 1.2 Steel force
+        # --------------------------------------------------
         st.subheader("1.2 Steel force in tension")
         calcbox(
             rf"""
@@ -118,7 +125,9 @@ $$
         )
         st.markdown("---")
 
-        # 1.3 Neutral axis depth + FIGURE ON RIGHT (with z)
+        # --------------------------------------------------
+        # 1.3 Neutral axis depth and lever arm
+        # --------------------------------------------------
         st.subheader("1.3 Neutral axis depth $d_n$ and lever arm $z$")
 
         col_calc_13, col_fig_13 = st.columns([2, 1])
@@ -185,7 +194,9 @@ $$
 
         st.markdown("---")
 
+        # --------------------------------------------------
         # 1.4 Moment capacity + force model figure
+        # --------------------------------------------------
         st.subheader("1.4 Nominal and design moment capacity")
 
         col_calc_14, col_fig_14 = st.columns([2, 1])
@@ -228,64 +239,76 @@ $$
         st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
 
 
-# ----------------------------------------------------------------------
-#  SIMPLE MINIMUM-STRENGTH TAB (keeps imports happy)
-# ----------------------------------------------------------------------
+# ============================================================
+#  TAB 2 – MINIMUM STRENGTH / DESIGN ACTION CHECK
+# ============================================================
 def render_min_strength_tab(top_results, b, D, fc, fsy, Ast):
     """
-    Tab 2 – Minimum strength / code check.
-
-    NOTE: This is a lightweight version so the module always
-    defines render_min_strength_tab (avoids ImportError).
-    It just summarises the key bending results.
+    Tab 2 – simple minimum-strength / design-action summary.
+    Can be expanded later; kept light so it doesn't clash with other logic.
     """
-    st.header("2. Minimum strength check")
+    st.header("2. Minimum Strength / Design Action")
 
-    phi_Mu_cap = top_results.get("phi_Mu_cap")
-    Mu_star = top_results.get("Mu_star") or get_param("Mu_star")
+    Mu_star = top_results.get("Mu_star", None)
+    phi_Mu_cap = top_results.get("phi_Mu_cap", None)
+    phi = top_results.get("phi", None)
+
+    if Mu_star is None or phi_Mu_cap is None or phi is None:
+        st.info("Not enough information to summarise minimum strength check.")
+        return
+
+    util = Mu_star / phi_Mu_cap if phi_Mu_cap > 0 else float("inf")
+
+    st.subheader("2.1 Action vs Capacity")
 
     calcbox(
         rf"""
-Design capacity from ULS bending check:
+Factored design moment:
 
-- Section width: $b = {b:.1f}\ \text{{mm}}$
-- Overall depth: $D = {D:.1f}\ \text{{mm}}$
-- Steel yield strength: $f_{{sy}} = {fsy:.0f}\ \text{{MPa}}$
+$$
+M_u^* = {Mu_star:.2f}\ \text{{kNm}}
+$$
 
-If $M^*$ is the applied design moment and
-$\phi M_{{u,cap}}$ is the design bending capacity:
+Design capacity:
 
 $$
 \phi M_{{u,cap}} = {phi_Mu_cap:.2f}\ \text{{kNm}}
 $$
 
-Applied design moment:
+Utilisation:
 
 $$
-M^* = {Mu_star if Mu_star is not None else 0:.2f}\ \text{{kNm}}
+\eta = \frac{{M_u^*}}{{\phi M_{{u,cap}}}}
+     = \frac{{{Mu_star:.2f}}}{{{phi_Mu_cap:.2f}}}
+     = {util:.2f}
 $$
-
-This tab simply compares demand and capacity; a more detailed
-code-min check can be added later.
 """
     )
 
-    data = [
-        {"Quantity": "φMu,cap (kNm)", "Value": phi_Mu_cap},
-        {"Quantity": "Mu* (kNm)", "Value": Mu_star},
-        {"Quantity": "b (mm)", "Value": b},
-        {"Quantity": "D (mm)", "Value": D},
-        {"Quantity": "Ast (mm²)", "Value": Ast},
-        {"Quantity": "fsy (MPa)", "Value": fsy},
-        {"Quantity": "fc' (MPa)", "Value": fc},
-    ]
-    df = pd.DataFrame(data)
+    status = "OK (capacity ≥ action)" if util <= 1.0 else "NG (capacity < action)"
+
+    df = pd.DataFrame(
+        {
+            "Quantity": [
+                "Factored moment $M_u^*$",
+                "Design capacity $\phi M_{u,cap}$",
+                "Utilisation $\eta$",
+                "Status",
+            ],
+            "Value": [
+                f"{Mu_star:.2f} kNm",
+                f"{phi_Mu_cap:.2f} kNm",
+                f"{util:.2f}",
+                status,
+            ],
+        }
+    )
     st.table(df)
 
 
-# ----------------------------------------------------------------------
-#  SLS TAB – MULTI-LAYER CRACKED SECTION
-# ----------------------------------------------------------------------
+# ============================================================
+#  TAB 3 – SLS CRACKED-SECTION TEACHING MODEL
+# ============================================================
 def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
     """
     Tab 3 – SLS cracked-section teaching model.
@@ -327,7 +350,7 @@ def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
     Ast_t_tr = n_sls * Ast_t
     Ast_c_tr = n_sls * Ast_comp if include_comp and Ast_comp > 0.0 else 0.0
 
-    # Small table of layers
+    # Table of layers
     rows = [
         {
             "Layer": "Tension steel (bottom)",
@@ -439,7 +462,7 @@ $$
     )
 
     # --------------------------------------------------
-    # 3.3 Cracked moment of inertia $I_{{cr}}$ + SLS stress block figure
+    # 3.3 Cracked moment of inertia + SLS stress-block figure
     # --------------------------------------------------
     st.subheader("3.3 Cracked moment of inertia $I_{{cr}}$")
 
