@@ -2,140 +2,171 @@ import math
 import streamlit as st
 
 from state_and_helpers import (
+    get_param,
     get_sync_callbacks,
 )
 
-# Shared helpers (same as Inputs / Bending pages)
+# Shared helpers (same as Inputs / Bending)
 from widgets_helpers import apply_global_widget_css, number_row
 
 
 def render_shear():
-    """Shear & Torsion page — WIDGETS ONLY, matching Inputs/Bending contract."""
-    # Same global CSS + sync pattern as other pages
-    sync_callbacks = get_sync_callbacks()
+    # Same global CSS + layout as other pages
     apply_global_widget_css()
 
     st.title("Shear & Torsion")
+
+    # One shared callback dict for ALL widgets (contract)
+    sync_callbacks = get_sync_callbacks()
+
     st.markdown(
         """
-This page will perform an AS 3600 shear + torsion check with a step-by-step ULS calculation.
-
-For now, we are just setting up the **input widgets** so they behave identically to the
-Inputs and Bending pages (same layout, same number_row helper, same session-state contract).
+This page will perform an AS 3600 shear + torsion check.
+For now, we're just wiring the **Design Inputs** so they behave
+identically to the Inputs and Bending pages (same widget contract and layout).
 """
     )
 
-    st.markdown("---")
+    # =====================================================
+    # 1. DESIGN INPUTS (shared + local)
+    # =====================================================
     st.subheader("Design Inputs")
 
-    # Match the "three-block" style: Actions, Geometry, Materials
-    col_actions, col_geom, col_mat = st.columns(3)
+    # EXACT same pattern as Inputs/Bending:
+    #   - number_row(...)
+    #   - widget keys: shear_* (mapped in TAB_KEYS)
+    #   - values pulled via get_param(...)
+    #   - sync_callbacks passed through
+    col_geom, col_actions, col_eps = st.columns(3)
 
-    # ------------------------------------------------------------
-    # 1. Design actions (Vu*, Tu*, N*, P_v) — shared via TAB_KEYS
-    # ------------------------------------------------------------
+    # ------------------ 1.1 Shared geometry & materials ------------------
+    with col_geom:
+        st.markdown("**Shared geometry & materials (linked to Inputs tab)**")
+
+        number_row(
+            "b – beam/web width (mm)",
+            "shear_b",
+            get_param("b", 400.0),
+            sync_callbacks,
+            help_text="Shared with Inputs tab.",
+            min_value=100.0,
+            max_value=1200.0,
+            step=10.0,
+        )
+        number_row(
+            "D – overall depth (mm)",
+            "shear_D",
+            get_param("D", 600.0),
+            sync_callbacks,
+            help_text="Shared with Inputs tab.",
+            min_value=200.0,
+            max_value=2000.0,
+            step=10.0,
+        )
+        number_row(
+            "L – span L (mm)",
+            "shear_L",
+            get_param("L", 3000.0),
+            sync_callbacks,
+            help_text="Shared with Inputs tab.",
+            min_value=500.0,
+            max_value=30000.0,
+            step=50.0,
+        )
+
+        number_row(
+            "f'c (MPa)",
+            "shear_fc",
+            get_param("fc", 40.0),
+            sync_callbacks,
+            help_text="Concrete compressive strength (AS 3600).",
+            min_value=20.0,
+            max_value=100.0,
+            step=1.0,
+        )
+        number_row(
+            "f_sy (MPa)",
+            "shear_fsy",
+            get_param("fsy", 500.0),
+            sync_callbacks,
+            help_text="Steel yield strength.",
+            min_value=300.0,
+            max_value=600.0,
+            step=10.0,
+        )
+        number_row(
+            "E_c (MPa)",
+            "shear_Ec",
+            get_param("Ec", 30000.0),
+            sync_callbacks,
+            help_text="Concrete modulus (used in εₓ calc).",
+            min_value=15000.0,
+            max_value=45000.0,
+            step=500.0,
+        )
+        number_row(
+            "E_s (MPa)",
+            "shear_Es",
+            get_param("Es", 200000.0),
+            sync_callbacks,
+            help_text="Steel modulus.",
+            min_value=150000.0,
+            max_value=220000.0,
+            step=5000.0,
+        )
+
+    # ------------------ 1.2 Shear / axial / torsion (shared) -------------
     with col_actions:
-        st.subheader("Actions")
+        st.markdown("**Shear, axial & torsion (linked to Inputs tab)**")
 
         number_row(
-            "Design shear Vu* (kN)",
+            "V* – design shear (kN)",
             "shear_Vu_star",
-            10.0,
+            get_param("Vu_star", 300.0),
             sync_callbacks,
-            help_text="Factored design shear at the critical section.",
+            help_text="Controlling ultimate shear at the section.",
+            min_value=0.0,
+            max_value=5000.0,
+            step=10.0,
         )
         number_row(
-            "Design torsion Tu* (kNm)",
-            "shear_Tu_star",
-            0.0,
-            sync_callbacks,
-            help_text="Factored torsion at the section.",
-        )
-        number_row(
-            "Axial force N* (kN, +tension)",
+            "N* – axial force (kN, +tension)",
             "shear_N_star",
-            0.0,
+            get_param("N_star", 0.0),
             sync_callbacks,
-            help_text="Axial action at the section (+tension / −compression).",
+            help_text="Axial force at the section (+tension).",
+            min_value=-5000.0,
+            max_value=5000.0,
+            step=10.0,
         )
         number_row(
-            "Vertical prestress / axial P_v (kN)",
+            "P_v – vertical prestress / axial (kN)",
             "shear_P_star",
-            0.0,
+            get_param("P_star", 0.0),
             sync_callbacks,
             help_text="Prestress or additional vertical axial force assisting shear.",
+            min_value=-5000.0,
+            max_value=5000.0,
+            step=10.0,
+        )
+        number_row(
+            "T* – torsion at section (kNm)",
+            "shear_Tu_star",
+            get_param("Tu_star", 0.0),
+            sync_callbacks,
+            help_text="Design torsion at the section.",
+            min_value=0.0,
+            max_value=5000.0,
+            step=10.0,
         )
 
-    # ------------------------------------------------------------
-    # 2. Geometry (b, D, L) — shared via TAB_KEYS
-    # ------------------------------------------------------------
-    with col_geom:
-        st.subheader("Geometry")
+    # ------------------ 1.3 εx helper inputs (LOCAL ONLY) ----------------
+    # These are not part of the shared contract (no TAB_KEYS mapping), so
+    # we *deliberately* use plain st.number_input, just like any local
+    # widget on Bending/Inputs.
+    with col_eps:
+        st.markdown("**εₓ helper inputs (local to this page)**")
 
-        number_row(
-            "Width b (mm)",
-            "shear_b",
-            300.0,
-            sync_callbacks,
-            help_text="Beam/web width used for shear checks.",
-        )
-        number_row(
-            "Depth D (mm)",
-            "shear_D",
-            600.0,
-            sync_callbacks,
-            help_text="Overall section depth from compression face to soffit.",
-        )
-        number_row(
-            "Span L (mm)",
-            "shear_L",
-            6000.0,
-            sync_callbacks,
-            help_text="Member span (used mainly for linkage to deflection page).",
-        )
-
-    # ------------------------------------------------------------
-    # 3. Materials (fc, fsy, Ec, Es) — shared via TAB_KEYS
-    # ------------------------------------------------------------
-    with col_mat:
-        st.subheader("Materials")
-
-        number_row(
-            "Concrete strength f'c (MPa)",
-            "shear_fc",
-            40.0,
-            sync_callbacks,
-            help_text="Characteristic compressive strength of concrete.",
-        )
-        number_row(
-            "Steel yield fsy (MPa)",
-            "shear_fsy",
-            500.0,
-            sync_callbacks,
-            help_text="Yield strength of reinforcing steel.",
-        )
-        number_row(
-            "Ec (MPa)",
-            "shear_Ec",
-            30000.0,
-            sync_callbacks,
-            help_text="Short-term modulus of elasticity of concrete.",
-        )
-        number_row(
-            "Es (MPa)",
-            "shear_Es",
-            200000.0,
-            sync_callbacks,
-            help_text="Elastic modulus of reinforcing steel.",
-        )
-
-    st.markdown("---")
-    st.subheader("εₓ helper inputs (local to this page)")
-
-    # These are *local-only* for the shear εx calc.
-    # Styling is simpler for now; we can upgrade to a number_row-style wrapper later if you want.
-    c1, c2 = st.columns(2)
-    with c1:
         A_st = st.number_input(
             "A_st (mm²) – non-prestressed tension steel",
             value=float(4 * (math.pi * 20**2 / 4)),
@@ -144,21 +175,25 @@ Inputs and Bending pages (same layout, same number_row helper, same session-stat
             "A_pt (mm²) – prestressing steel",
             value=0.0,
         )
-    with c2:
         f_po = st.number_input(
             "f_po (MPa) – effective tendon stress",
             value=0.0,
         )
         A_ct = st.number_input(
             "A_ct (mm²) – area of concrete in tension",
-            value=400.0 * 300.0,
-            help="Approx. b × (effective tension zone depth).",
+            value=float((get_param("b", 400.0)) * (get_param("D", 600.0) / 2.0)),
         )
 
-    st.info(
-        "Widgets are now using the same `number_row` helper and layout contract as the "
-        "Inputs and Bending pages. Shear/torsion calculations and blue calc boxes will "
-        "be wired in next, using these shared values."
+        st.info(
+            "These εₓ helper inputs are local to the Shear page. "
+            "Shared geometry/materials/actions above are fully synced with Inputs/Bending."
+        )
+
+    # Placeholder so the page doesn’t feel “unfinished”
+    st.markdown("---")
+    st.markdown(
+        "_Shear & torsion calculations, step-by-step boxes, and utilisation summary "
+        "will plug in **below** this line once we’re happy with the widget contract._"
     )
 
 
