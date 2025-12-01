@@ -306,21 +306,22 @@ def render_shear():
     with col1:
         st.markdown("### 1.1 Geometry & materials (linked to Inputs)")
 
-        number_row("b – beam/web width (mm)", "b", col=col1, sync_callbacks=sync_callbacks)
-        number_row("D – overall depth (mm)", "D", col=col1, sync_callbacks=sync_callbacks)
-        number_row("d – effective depth to tension steel (mm)", "d", col=col1, sync_callbacks=sync_callbacks)
-        number_row("f'c (MPa)", "fc", col=col1, sync_callbacks=sync_callbacks)
-        number_row("f_sy (MPa)", "fsy", col=col1, sync_callbacks=sync_callbacks)
-        number_row("E_s (MPa)", "Es", col=col1, sync_callbacks=sync_callbacks)
+        number_row("b – beam/web width (mm)", "b", col1, sync_callbacks)
+        number_row("D – overall depth (mm)", "D", col1, sync_callbacks)
+        number_row("d – effective depth to tension steel (mm)", "d", col1, sync_callbacks)
+        number_row("f'c (MPa)", "fc", col1, sync_callbacks)
+        number_row("f_sy (MPa)", "fsy", col1, sync_callbacks)
+        number_row("E_s (MPa)", "Es", col1, sync_callbacks)
+
 
     with col2:
         st.markdown("### 1.2 Design actions (linked to Inputs)")
 
-        number_row("V* – design shear (kN)", "V_star", col=col2, sync_callbacks=sync_callbacks)
-        number_row("T* – torsion at section (kNm)", "T_star", col=col2, sync_callbacks=sync_callbacks)
-        number_row("N* – axial force (kN, +tension)", "N_star", col=col2, sync_callbacks=sync_callbacks)
-        number_row("φ_v – strength reduction for shear", "phi_shear", col=col2, sync_callbacks=sync_callbacks)
-        number_row("φ_t – strength reduction for torsion", "phi_torsion", col=col2, sync_callbacks=sync_callbacks)
+        number_row("V* – design shear (kN)", "V_star", col2, sync_callbacks)
+        number_row("T* – torsion at section (kNm)", "T_star", col2, sync_callbacks)
+        number_row("N* – axial force (kN, +tension)", "N_star", col2, sync_callbacks)
+        number_row("φ_v – strength reduction for shear", "phi_shear", col2, sync_callbacks)
+        number_row("φ_t – strength reduction for torsion", "phi_torsion", col2, sync_callbacks)
 
     st.markdown("---")
 
@@ -329,11 +330,11 @@ def render_shear():
 
     col3, col4 = st.columns(2)
     with col3:
-        number_row("s_v – stirrup spacing (mm)", "sv", col=col3, sync_callbacks=sync_callbacks)
-        number_row("A_v – area of one leg (mm²)", "Av", col=col3, sync_callbacks=sync_callbacks)
+        number_row("s_v – stirrup spacing (mm)", "sv", col3, sync_callbacks)
+        number_row("A_v – area of one leg (mm²)", "Av", col3, sync_callbacks)
 
     with col4:
-        number_row("n_legs – legs per stirrup crossing shear crack", "n_legs", col=col4, sync_callbacks=sync_callbacks)
+        number_row("n_legs – legs per stirrup crossing shear crack", "n_legs", col4, sync_callbacks)
 
     st.markdown("---")
 
@@ -474,3 +475,4 @@ Design capacity:
     )
 
     summary_placeholder.dataframe(df, use_container_width=True)
+
