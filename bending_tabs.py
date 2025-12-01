@@ -80,14 +80,15 @@ def _make_sls_stress_block_figure_32(D_mm, d_mm, dn_mm, layers_tension):
         fontsize=9,
     )
 
-    # A few internal compression arrows (pointing left)
+    # A few internal compression arrows (pointing left towards the axis)
     for frac in [0.2, 0.5, 0.8]:
         y_i = frac * dn_mm
         ax.annotate(
             "",
-            xy=(0.05 * x_comp_max, y_i),
-            xytext=(0.9 * x_comp_max, y_i),
-            arrowprops=dict(arrowstyle="<-", color="red", linewidth=0.8),
+            # arrow goes from right (xytext) to left (xy)
+            xy=(0.05 * x_comp_max, y_i),      # head (left)
+            xytext=(0.9 * x_comp_max, y_i),   # tail (right)
+            arrowprops=dict(arrowstyle="->", color="red", linewidth=0.8),
         )
 
     # d_n arrow + label to the right of the block
