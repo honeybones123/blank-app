@@ -7,8 +7,8 @@ from state_and_helpers import (
     update_results,
 )
 
-# Optional: shared CSS like the bending page
-from widgets_helpers import apply_global_widget_css
+# Use the same helpers as Inputs/Bending
+from widgets_helpers import apply_global_widget_css, number_row
 
 
 # ------------------------------------------------------------
@@ -52,75 +52,6 @@ def calcbox(md: str):
     st.markdown(box_html, unsafe_allow_html=True)
 
 
-def _number_row_shear(
-    label: str,
-    widget_key: str,
-    col,
-    sync_callbacks=None,
-    *,
-    as_int: bool = False,
-    min_value=None,
-    max_value=None,
-    step=None,
-):
-    """
-    Local helper just for the shear page.
-
-    • Puts label on the left and a compact widget on the right (like bending).
-    • Uses shear widget keys (shear_b, shear_Vu_star, …) which are mapped in TAB_KEYS.
-    • Hooks into sync_callbacks[widget_key] to update shared state + derived values.
-    """
-    cb = None
-    if sync_callbacks is not None and widget_key in sync_callbacks:
-        cb = sync_callbacks[widget_key]
-
-    with col:
-        c1, c2 = st.columns([2, 1])
-        with c1:
-            st.markdown(label)
-
-        raw_val = st.session_state.get(widget_key, 0)
-
-        with c2:
-            if as_int:
-                try:
-                    value = int(raw_val)
-                except Exception:
-                    value = 0
-                if min_value is None:
-                    min_value = 0
-                if step is None:
-                    step = 1
-                st.number_input(
-                    "",
-                    key=widget_key,
-                    value=int(value),
-                    min_value=int(min_value),
-                    max_value=None if max_value is None else int(max_value),
-                    step=int(step),
-                    on_change=cb,
-                )
-            else:
-                try:
-                    value = float(raw_val)
-                except Exception:
-                    value = 0.0
-                if min_value is None:
-                    min_value = 0.0
-                if step is None:
-                    step = 1.0
-                st.number_input(
-                    "",
-                    key=widget_key,
-                    value=float(value),
-                    min_value=float(min_value),
-                    max_value=None if max_value is None else float(max_value),
-                    step=float(step),
-                    on_change=cb,
-                    format="%.2f",
-                )
-
-
 # ------------------------------------------------------------
 #  MAIN PAGE RENDER FUNCTION  (original logic + calc boxes)
 # ------------------------------------------------------------
@@ -147,37 +78,37 @@ summary can show shear utilisation.
     # =====================================================
     st.subheader("Design Inputs")
 
-    col_geom, col_actions, col_eps = st.columns(3)
+    col_geom, col_actions = st.columns(2)
 
     # ------------------ 1.1 Shared geometry & materials ------------------
     with col_geom:
         st.markdown("**Shared geometry & materials (linked to Inputs tab)**")
 
-        _number_row_shear("b – beam/web width (mm)", "shear_b", col_geom, sync_callbacks)
-        _number_row_shear("D – overall depth (mm)", "shear_D", col_geom, sync_callbacks)
-        _number_row_shear("L – span L (mm)", "shear_L", col_geom, sync_callbacks)
+        number_row("b – beam/web width (mm)", "shear_b", col_geom, sync_callbacks)
+        number_row("D – overall depth (mm)", "shear_D", col_geom, sync_callbacks)
+        number_row("L – span L (mm)", "shear_L", col_geom, sync_callbacks)
 
-        _number_row_shear("f'c (MPa)", "shear_fc", col_geom, sync_callbacks)
-        _number_row_shear("f_sy (MPa)", "shear_fsy", col_geom, sync_callbacks)
-        _number_row_shear("E_c (MPa)", "shear_Ec", col_geom, sync_callbacks)
-        _number_row_shear("E_s (MPa)", "shear_Es", col_geom, sync_callbacks)
+        number_row("f'c (MPa)", "shear_fc", col_geom, sync_callbacks)
+        number_row("f_sy (MPa)", "shear_fsy", col_geom, sync_callbacks)
+        number_row("E_c (MPa)", "shear_Ec", col_geom, sync_callbacks)
+        number_row("E_s (MPa)", "shear_Es", col_geom, sync_callbacks)
 
-    # ------------------ 1.1 Shear actions ------------------
+    # ------------------ 1.2 Shear actions ------------------
     with col_actions:
         st.markdown("**Shear action & axial (linked to Inputs tab)**")
 
-        _number_row_shear("V* – design shear (kN)", "shear_Vu_star", col_actions, sync_callbacks)
-        _number_row_shear("N* – axial force (kN, +tension)", "shear_N_star", col_actions, sync_callbacks)
-        _number_row_shear("P_v – vertical prestress / axial (kN)", "shear_P_star", col_actions, sync_callbacks)
+        number_row("V* – design shear (kN)", "shear_Vu_star", col_actions, sync_callbacks)
+        number_row("N* – axial force (kN, +tension)", "shear_N_star", col_actions, sync_callbacks)
+        number_row("P_v – vertical prestress / axial (kN)", "shear_P_star", col_actions, sync_callbacks)
 
-    # ------------------ 1.2 Torsion & φ (local only) ------------------
+    # ------------------ 1.3 Torsion & φ (local only) ------------------
     col_torsion, col_local = st.columns(2)
 
     with col_torsion:
         st.markdown("**Torsion & φ (linked T* + local factors)**")
 
         # T* is still shared via shear_Tu_star → Tu_star mapping
-        _number_row_shear("T* – torsion at section (kNm)", "shear_Tu_star", col_torsion, sync_callbacks)
+        number_row("T* – torsion at section (kNm)", "shear_Tu_star", col_torsion, sync_callbacks)
 
         phi = st.number_input(
             "φ – strength reduction for shear",
@@ -302,12 +233,10 @@ summary can show shear utilisation.
 
     V_eq = math.sqrt(V_star**2 + torsion_eq_kN**2)
 
-    # --- SAFE LATEX OUTPUT (raw latex + f-string for numbers) ---
     latex_expr = (
         r"$V_{eq}^* = \sqrt{V^{*2} + \left(\frac{0.9\,T^*\,u_h}{2A_o}\right)^2}$"
         + f" = {V_eq:.1f}\\ \\text{{kN}}"
     )
-
     st.write(latex_expr)
     st.write(f"(torsion contribution = {torsion_eq_kN:.1f} kN)")
 
