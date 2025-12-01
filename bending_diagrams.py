@@ -1,16 +1,12 @@
+# bending_diagrams.py
 import math
-import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle, Circle
 import streamlit as st
 
-from widgets_helpers import calcbox
-from bending_diagrams import (
-    _make_uls_stress_block_figure,
-    _make_uls_force_model_figure,
-    _make_sls_stress_block_figure,   # NEW
-)
-from bending_core import _fmt
-from state_and_helpers import get_param   # NEW (for compression steel data)
+from state_and_helpers import get_param
+from bending_core import _layout_bars_in_rows
 
 # ------------------------------------------------------------
 # Global styling constants
@@ -449,102 +445,6 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
 
 
 # ============================================================
-#  HELPER: SLS STEEL LAYERS FOR MULTI-LAYER MODEL
-# ============================================================
-def get_sls_steel_layers(b_mm: float, D_mm: float):
-    """
-    Compute steel layers for SLS using the same layout logic
-    as the main section diagram.
-
-    Returns (tension_layers, compression_layers), where each
-    layer is a dict with:
-        {
-          "name": "T1" / "T2" / "C1" / ...,
-          "y": depth from top (mm),
-          "As": area (mm^2),
-          "db": bar diameter (mm),
-          "count": number of bars in that row,
-          "face": "bottom" or "top"
-        }
-    """
-    # Bottom (tension) reinforcement
-    nb_bot = int(get_param("nb_bot") or 0)
-    db_bot = get_param("db_bot") or 0.0
-    cover_bot = get_param("cover_bot") or 0.0
-    rowgap_bot = get_param("rowgap_bot") or 0.0
-
-    # Top (potential compression) reinforcement
-    nb_top = int(get_param("nb_top") or 0)
-    db_top = get_param("db_top") or 0.0
-    cover_top = get_param("cover_top") or 0.0
-    rowgap_top = get_param("rowgap_top") or 0.0
-
-    tension_layers = []
-    compression_layers = []
-
-    # --- bottom layers (tension) ---
-    if nb_bot > 0 and db_bot > 0.0:
-        min_spacing_bot = 2 * db_bot
-        bot_layout = _layout_bars_in_rows(
-            nb_bot, b_mm, cover_bot, db_bot, min_spacing_bot, 3
-        )
-        r_bot = db_bot / 2.0
-        row_pitch_bot = db_bot + rowgap_bot
-        d_row0 = D_mm - cover_bot - r_bot
-
-        # count bars per row
-        counts_bot = {}
-        for _, row_idx in bot_layout:
-            counts_bot[row_idx] = counts_bot.get(row_idx, 0) + 1
-
-        area_one = 0.25 * math.pi * db_bot**2
-
-        for idx, (row_idx, count) in enumerate(sorted(counts_bot.items()), start=1):
-            y = d_row0 - row_idx * row_pitch_bot
-            tension_layers.append(
-                {
-                    "name": f"T{idx}",
-                    "y": y,
-                    "As": count * area_one,
-                    "db": db_bot,
-                    "count": count,
-                    "face": "bottom",
-                }
-            )
-
-    # --- top layers (compression candidates) ---
-    if nb_top > 0 and db_top > 0.0:
-        min_spacing_top = 2 * db_top
-        top_layout = _layout_bars_in_rows(
-            nb_top, b_mm, cover_top, db_top, min_spacing_top, 3
-        )
-        r_top = db_top / 2.0
-        row_pitch_top = db_top + rowgap_top
-        y_top_base = cover_top + r_top
-
-        counts_top = {}
-        for _, row_idx in top_layout:
-            counts_top[row_idx] = counts_top.get(row_idx, 0) + 1
-
-        area_one_top = 0.25 * math.pi * db_top**2
-
-        for idx, (row_idx, count) in enumerate(sorted(counts_top.items()), start=1):
-            y = y_top_base + row_idx * row_pitch_top
-            compression_layers.append(
-                {
-                    "name": f"C{idx}",
-                    "y": y,
-                    "As": count * area_one_top,
-                    "db": db_top,
-                    "count": count,
-                    "face": "top",
-                }
-            )
-
-    return tension_layers, compression_layers
-
-
-# ============================================================
 #  ULS STRESS BLOCK FIGURE (1.1 / 1.3 VARIANTS)
 # ============================================================
 def _make_uls_stress_block_figure(
@@ -758,7 +658,7 @@ def _make_uls_stress_block_figure(
 
 
 # ============================================================
-#  ULS FORCE MODEL FIGURE (1.4)
+#  SIMPLE ULS FORCE MODEL FIGURE (1.4)
 # ============================================================
 def _make_uls_force_model_figure(
     D_mm: float,
@@ -777,26 +677,24 @@ def _make_uls_force_model_figure(
         ax.text(0.5, 0.5, "No data", ha="center", va="center")
         return fig
 
-    # Height scaled to comfortably fit any reasonable depth
     base_span = max(D_mm, d_mm, a_mm)
-    D_ref = base_span * 1.10
+    D_ref = base_span * 0.90     # shortened to match calc-box depth
 
-    fig, ax = plt.subplots(figsize=(3.6, 2.8))
-    ax.set_xlim(0.0, 120.0)
+    fig, ax = plt.subplots(figsize=(3.6, 2.7))
+    ax.set_xlim(0.0, 100.0)
     ax.set_ylim(D_ref, 0.0)
     ax.axis("off")
 
-    # Vertical reference
-    x_axis = 25.0
+    # Vertical reference line
+    x_axis = 20.0
     ax.plot([x_axis, x_axis], [0.0, D_ref], color="black", linewidth=LINE_THICK)
 
-    # Common horizontal offset for both C and T
-    ARROW_OFF = 35.0
-
-    # Compression C at mid–block
+    # Compression C
     y_C = 0.5 * a_mm
-    x_C_head = x_axis          # head at the axis
-    x_C_tail = x_axis + ARROW_OFF
+    ARROW_OFFSET = 35.0  # distance from axis, matched to T
+
+    x_C_tail = x_axis + ARROW_OFFSET
+    x_C_head = x_axis
 
     ax.annotate(
         "",
@@ -819,10 +717,10 @@ def _make_uls_force_model_figure(
         color="tab:red",
     )
 
-    # Tension T at d
+    # Tension T
     y_T = d_mm
+    x_T_head = x_axis + ARROW_OFFSET
     x_T_tail = x_axis
-    x_T_head = x_axis + ARROW_OFF
 
     ax.annotate(
         "",
@@ -846,7 +744,7 @@ def _make_uls_force_model_figure(
     )
 
     # Lever arm z
-    x_z = x_axis + ARROW_OFF + 25.0
+    x_z = x_axis + ARROW_OFFSET + 25.0
     ax.annotate(
         "",
         xy=(x_z, y_T),
@@ -867,7 +765,7 @@ def _make_uls_force_model_figure(
     )
 
     ax.text(
-        60.0,
+        50.0,
         D_ref + 0.08 * D_ref,
         "Force model",
         ha="center",
@@ -876,138 +774,96 @@ def _make_uls_force_model_figure(
     )
 
     return fig
+
+
+# ============================================================
+#  NEW: SLS STRESS-BLOCK / SECTION FIGURE FOR 3.3
+# ============================================================
 def _make_sls_stress_block_figure(
     D_mm: float,
     d_mm: float,
     dn_mm: float,
     include_comp: bool = False,
-    d_comp_mm: float | None = None,
+    d_comp_mm: float = None,
 ):
     """
-    Simple cracked-section SLS stress-block figure.
+    Simple SLS cracked-section figure for Step 3.3.
 
-    - Vertical axis at the left
-    - Triangular compression block from top to d_n
-    - Tension steel at depth d
-    - Optional compression steel at depth d_comp (include_comp = True)
-
-    Purely illustrative (no actual stress values on the x-axis).
+    - Vertical concrete section with neutral axis at d_n
+    - Triangular compression "stress block" above d_n
+    - Tension steel shown at depth d
+    - Optional compression steel shown at depth d_comp_mm
     """
 
     vals = [D_mm, d_mm, dn_mm]
-    if any(
-        v is None or (isinstance(v, float) and (math.isnan(v) or v <= 0.0))
-        for v in vals
-    ):
+    if any(v is None or (isinstance(v, float) and math.isnan(v)) for v in vals):
         fig, ax = plt.subplots()
         ax.axis("off")
         ax.text(0.5, 0.5, "No data", ha="center", va="center")
         return fig
 
-    # Make sure the axis is tall enough for everything
-    extra = d_comp_mm or 0.0
-    base_span = max(D_mm, d_mm, dn_mm, extra)
+    base_span = max(D_mm, d_mm, dn_mm, d_comp_mm or 0.0)
     D_ref = base_span * 1.05
 
-    fig, ax = plt.subplots(figsize=(3.0, 2.8))
+    fig, ax = plt.subplots(figsize=(3.0, 3.0))
     ax.set_xlim(0.0, 100.0)
-    ax.set_ylim(D_ref, 0.0)  # 0 at top
+    ax.set_ylim(D_ref, 0.0)
     ax.axis("off")
 
     x_axis = 20.0
-    ax.plot(
-        [x_axis, x_axis],
-        [0.0, D_ref],
-        color="black",
-        linewidth=LINE_THICK,
-    )
 
-    # ------------------------------------------------------------
-    # Triangular compression block (cracked)
-    # ------------------------------------------------------------
-    block_left = x_axis
-    block_width = 22.0
-    block_right = block_left + block_width
+    # concrete "section" line
+    ax.plot([x_axis, x_axis], [0.0, D_ref], color="black", linewidth=LINE_THICK)
 
-    # triangle with max at top, zero at d_n
-    ax.plot(
-        [block_left, block_right, block_left],
-        [dn_mm, 0.0, 0.0],
-        color="tab:red",
-        linewidth=LINE_MED,
-    )
-
-    # neutral axis (d_n)
+    # neutral axis
     ax.hlines(
         dn_mm,
-        block_left - 5.0,
-        block_right + 10.0,
+        x_axis,
+        95.0,
         linestyles="--",
         linewidth=LINE_THIN,
         colors="black",
     )
-    ax.text(
-        block_right + 12.0,
-        dn_mm,
-        f"dₙ = {dn_mm:.1f} mm",
-        ha="left",
-        va="center",
-        fontsize=FS_LABEL,
+
+    # triangular compression region (0 → d_n)
+    block_left = x_axis
+    block_width = 20.0
+    ax.fill(
+        [block_left, block_left + block_width, block_left],
+        [0.0, 0.0, dn_mm],
+        fill=False,
+        edgecolor="tab:red",
+        linewidth=LINE_MED,
     )
 
-    # ------------------------------------------------------------
-    # Tension steel (bottom)
-    # ------------------------------------------------------------
-    ARROW_OFFSET = 35.0  # match ULS force figure spacing
-
-    y_T = d_mm
-    x_T_head = x_axis + ARROW_OFFSET
-    x_T_tail = x_axis
-
-    ax.annotate(
-        "",
-        xy=(x_T_head, y_T),
-        xytext=(x_T_tail, y_T),
-        arrowprops=dict(
-            arrowstyle="->",
-            linewidth=LINE_MED,
-            color="tab:blue",
-            mutation_scale=ARROW_SCALE,
-        ),
-    )
+    # tension steel marker at depth d
+    x_T0 = x_axis + 28.0
+    x_T1 = x_axis + 42.0
+    ax.plot([x_T0, x_T1], [d_mm, d_mm], color="tab:blue", linewidth=LINE_MED)
     ax.text(
-        x_T_head + 6.0,
-        y_T,
-        "T (SLS)",
+        x_T1 + 4.0,
+        d_mm,
+        "T",
         ha="left",
         va="center",
         fontsize=FS_LABEL,
         color="tab:blue",
     )
 
-    # ------------------------------------------------------------
-    # Optional compression steel (top layer)
-    # ------------------------------------------------------------
-    if include_comp and d_comp_mm is not None and d_comp_mm > 0.0:
-        y_Cs = d_comp_mm
-        x_Cs_tail = x_axis + ARROW_OFFSET
-        x_Cs_head = x_axis
-
-        ax.annotate(
-            "",
-            xy=(x_Cs_head, y_Cs),
-            xytext=(x_Cs_tail, y_Cs),
-            arrowprops=dict(
-                arrowstyle="->",
-                linewidth=LINE_MED,
-                color="tab:red",
-                mutation_scale=ARROW_SCALE,
-            ),
+    # compression steel (optional)
+    if include_comp and d_comp_mm is not None:
+        x_C0 = x_axis + 28.0
+        x_C1 = x_axis + 42.0
+        ax.plot(
+            [x_C0, x_C1],
+            [d_comp_mm, d_comp_mm],
+            color="tab:red",
+            linewidth=LINE_MED,
         )
         ax.text(
-            x_Cs_tail + 6.0,
-            y_Cs,
-            "Cₛ (SLS)",
+            x_C1 + 4.0,
+            d_comp_mm,
+            "C_s",
             ha="left",
             va="center",
             fontsize=FS_LABEL,
@@ -1017,7 +873,7 @@ def _make_sls_stress_block_figure(
     ax.text(
         50.0,
         D_ref + 0.08 * D_ref,
-        "SLS stress block",
+        "SLS cracked section",
         ha="center",
         va="bottom",
         fontsize=FS_TITLE,
