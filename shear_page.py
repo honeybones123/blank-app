@@ -7,7 +7,7 @@ from state_and_helpers import (
     update_results,
 )
 
-# Use the same helpers as Inputs/Bending
+# Shared helpers (same as Bending page)
 from widgets_helpers import apply_global_widget_css, number_row
 
 
@@ -78,37 +78,155 @@ summary can show shear utilisation.
     # =====================================================
     st.subheader("Design Inputs")
 
-    col_geom, col_actions = st.columns(2)
+    col_geom, col_actions, col_eps = st.columns(3)
 
     # ------------------ 1.1 Shared geometry & materials ------------------
     with col_geom:
         st.markdown("**Shared geometry & materials (linked to Inputs tab)**")
 
-        number_row("b – beam/web width (mm)", "shear_b", col_geom, sync_callbacks)
-        number_row("D – overall depth (mm)", "shear_D", col_geom, sync_callbacks)
-        number_row("L – span L (mm)", "shear_L", col_geom, sync_callbacks)
+        number_row(
+            "b – beam/web width (mm)",
+            "shear_b",
+            get_param("b", 400.0),
+            sync_callbacks,
+            help_text="Shared with Inputs tab.",
+            min_value=100.0,
+            max_value=1200.0,
+            step=10.0,
+        )
+        number_row(
+            "D – overall depth (mm)",
+            "shear_D",
+            get_param("D", 600.0),
+            sync_callbacks,
+            help_text="Shared with Inputs tab.",
+            min_value=200.0,
+            max_value=2000.0,
+            step=10.0,
+        )
+        number_row(
+            "L – span L (mm)",
+            "shear_L",
+            get_param("L", 3000.0),
+            sync_callbacks,
+            help_text="Shared with Inputs tab.",
+            min_value=500.0,
+            max_value=30000.0,
+            step=50.0,
+        )
 
-        number_row("f'c (MPa)", "shear_fc", col_geom, sync_callbacks)
-        number_row("f_sy (MPa)", "shear_fsy", col_geom, sync_callbacks)
-        number_row("E_c (MPa)", "shear_Ec", col_geom, sync_callbacks)
-        number_row("E_s (MPa)", "shear_Es", col_geom, sync_callbacks)
+        number_row(
+            "f'c (MPa)",
+            "shear_fc",
+            get_param("fc", 40.0),
+            sync_callbacks,
+            help_text="Concrete compressive strength (AS 3600).",
+            min_value=20.0,
+            max_value=100.0,
+            step=1.0,
+        )
+        number_row(
+            "f_sy (MPa)",
+            "shear_fsy",
+            get_param("fsy", 500.0),
+            sync_callbacks,
+            help_text="Steel yield strength.",
+            min_value=300.0,
+            max_value=600.0,
+            step=10.0,
+        )
+        number_row(
+            "E_c (MPa)",
+            "shear_Ec",
+            get_param("Ec", 30000.0),
+            sync_callbacks,
+            help_text="Concrete modulus (used in εₓ calc).",
+            min_value=15000.0,
+            max_value=45000.0,
+            step=500.0,
+        )
+        number_row(
+            "E_s (MPa)",
+            "shear_Es",
+            get_param("Es", 200000.0),
+            sync_callbacks,
+            help_text="Steel modulus.",
+            min_value=150000.0,
+            max_value=220000.0,
+            step=5000.0,
+        )
 
     # ------------------ 1.2 Shear actions ------------------
     with col_actions:
         st.markdown("**Shear action & axial (linked to Inputs tab)**")
 
-        number_row("V* – design shear (kN)", "shear_Vu_star", col_actions, sync_callbacks)
-        number_row("N* – axial force (kN, +tension)", "shear_N_star", col_actions, sync_callbacks)
-        number_row("P_v – vertical prestress / axial (kN)", "shear_P_star", col_actions, sync_callbacks)
+        number_row(
+            "V* – design shear (kN)",
+            "shear_Vu_star",
+            get_param("Vu_star", 300.0),
+            sync_callbacks,
+            help_text="Controlling ultimate shear at the section.",
+            min_value=0.0,
+            max_value=5000.0,
+            step=10.0,
+        )
+        number_row(
+            "N* – axial force (kN, +tension)",
+            "shear_N_star",
+            get_param("N_star", 0.0),
+            sync_callbacks,
+            help_text="Axial force at the section (+tension).",
+            min_value=-5000.0,
+            max_value=5000.0,
+            step=10.0,
+        )
+        number_row(
+            "P_v – vertical prestress / axial (kN)",
+            "shear_P_star",
+            get_param("P_star", 0.0),
+            sync_callbacks,
+            help_text="Prestress or additional vertical axial force assisting shear.",
+            min_value=-5000.0,
+            max_value=5000.0,
+            step=10.0,
+        )
 
-    # ------------------ 1.3 Torsion & φ (local only) ------------------
-    col_torsion, col_local = st.columns(2)
+    # ------------------ 1.3 εx helper inputs (local only) ------------------
+    with col_eps:
+        st.markdown("**εₓ inputs (ULS flexural strain)**")
 
+        A_st = st.number_input(
+            "A_st (mm²) – non-prestressed tension steel",
+            value=float(4 * (math.pi * 20**2 / 4)),
+        )
+        A_pt = st.number_input(
+            "A_pt (mm²) – prestressing steel",
+            value=0.0,
+        )
+        f_po = st.number_input(
+            "f_po (MPa) – effective tendon stress",
+            value=0.0,
+        )
+        A_ct = st.number_input(
+            "A_ct (mm²) – area of concrete in tension",
+            value=float((get_param("b", 400.0)) * (get_param("D", 600.0) / 2.0)),
+        )
+
+    # ------------------ 1.4 Torsion & φ (local only) ------------------
+    col_torsion, col_dummy = st.columns(2)
     with col_torsion:
         st.markdown("**Torsion & φ (linked T* + local factors)**")
 
-        # T* is still shared via shear_Tu_star → Tu_star mapping
-        number_row("T* – torsion at section (kNm)", "shear_Tu_star", col_torsion, sync_callbacks)
+        number_row(
+            "T* – torsion at section (kNm)",
+            "shear_Tu_star",
+            get_param("Tu_star", 0.0),
+            sync_callbacks,
+            help_text="Design torsion at the section.",
+            min_value=0.0,
+            max_value=5000.0,
+            step=10.0,
+        )
 
         phi = st.number_input(
             "φ – strength reduction for shear",
@@ -124,29 +242,8 @@ summary can show shear utilisation.
             help="Used in torsion cracking torque T_cr.",
         )
 
-    with col_local:
-        st.markdown("**εₓ inputs (ULS flexural strain)**")
-
-        A_st = st.number_input(
-            "A_st (mm²) – non-prestressed tension steel",
-            value=4 * (math.pi * 20**2 / 4),
-        )
-        A_pt = st.number_input(
-            "A_pt (mm²) – prestressing steel",
-            value=0.0,
-        )
-        f_po = st.number_input(
-            "f_po (MPa) – effective tendon stress",
-            value=0.0,
-        )
-        A_ct = st.number_input(
-            "A_ct (mm²) – area of concrete in tension",
-            value=(get_param("b") or 400.0) * ((get_param("D") or 600.0) / 2.0),
-        )
-
     # -------------------------------------------------
     # Pull shared values for calculations
-    # (original logic preserved)
     # -------------------------------------------------
     b = get_param("b")
     D = get_param("D")
@@ -513,7 +610,6 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
 | εₓ, k_v, θ_v | **εₓ = {eps_x:.5f},  k_v = {k_v:.3f},  θ_v = {theta_v_deg:.1f}°** |
 """
 
-    # Push shear results into shared RESULT_KEYS for Inputs summary
     shear_util = V_eq / phi_Vu if phi_Vu > 0 else 0.0
     update_results(
         phi_Vu_cap=phi_Vu,
