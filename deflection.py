@@ -7,6 +7,28 @@ import matplotlib.pyplot as plt
 from state_and_helpers import get_param
 
 
+def _seed_from_param(name: str, fallback: float) -> float:
+    """
+    Read a numeric value from shared state with get_param(name).
+    If missing / NaN / non-numeric, return fallback.
+    """
+    try:
+        v = get_param(name)
+    except TypeError:
+        # If get_param doesn't accept defaults, ignore extra args elsewhere
+        v = None
+
+    try:
+        if v is None:
+            return float(fallback)
+        v = float(v)
+        if math.isnan(v):
+            return float(fallback)
+        return v
+    except Exception:
+        return float(fallback)
+
+
 def render_deflection():
     """
     Deflection page: short-term + long-term (creep + shrinkage).
@@ -39,29 +61,38 @@ def render_deflection():
     with col_geom:
         st.subheader("Geometry")
 
+        # Width b
+        b_min = 100.0
+        b_seed = _seed_from_param("b", 400.0)
         b = st.number_input(
             "Width b (mm)",
-            min_value=100.0,
+            min_value=b_min,
             max_value=3000.0,
-            value=float(get_param("b", 400.0)),
+            value=max(b_seed, b_min),
             step=10.0,
             key="defl_b",
         )
 
+        # Depth D
+        D_min = 100.0
+        D_seed = _seed_from_param("D", 600.0)
         D = st.number_input(
             "Overall depth D (mm)",
-            min_value=100.0,
+            min_value=D_min,
             max_value=3000.0,
-            value=float(get_param("D", 600.0)),
+            value=max(D_seed, D_min),
             step=10.0,
             key="defl_D",
         )
 
+        # Span L – often not in shared state, so fall back to 3000 mm
+        L_min = 1000.0
+        L_seed = _seed_from_param("L", 3000.0)
         L = st.number_input(
             "Span L (mm)",
-            min_value=1000.0,
+            min_value=L_min,
             max_value=30000.0,
-            value=float(get_param("L", 3000.0)),
+            value=max(L_seed, L_min),
             step=100.0,
             key="defl_L",
         )
@@ -69,15 +100,19 @@ def render_deflection():
     with col_mat:
         st.subheader("Materials & Loads")
 
+        # Ec
+        Ec_min = 15000.0
+        Ec_seed = _seed_from_param("Ec", 30000.0)
         Ec = st.number_input(
             "Short-term Ec (MPa)",
-            min_value=15000.0,
+            min_value=Ec_min,
             max_value=50000.0,
-            value=float(get_param("Ec", 30000.0)),
+            value=max(Ec_seed, Ec_min),
             step=500.0,
             key="defl_Ec",
         )
 
+        # Service loads (local only, no shared state)
         q_dead = st.number_input(
             "Service dead load w_g (kN/m)",
             min_value=0.0,
@@ -117,9 +152,9 @@ def render_deflection():
     # --------------------------------------------------
     # Section properties & deflection calc
     # --------------------------------------------------
-    b_mm = max(1.0, b)
-    D_mm = max(1.0, D)
-    L_mm = max(1.0, L)
+    b_mm = max(1.0, float(b))
+    D_mm = max(1.0, float(D))
+    L_mm = max(1.0, float(L))
 
     I_gross = b_mm * D_mm**3 / 12.0  # mm^4
     w_total = q_dead + q_live        # N/mm (same numeric as kN/m)
