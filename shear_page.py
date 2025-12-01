@@ -51,7 +51,6 @@ def calcbox(md: str):
 """
     st.markdown(box_html, unsafe_allow_html=True)
 
-
 def _number_row_shear(
     label: str,
     widget_key: str,
@@ -586,5 +585,6 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
 
 if __name__ == "__main__":
     render_shear()
+
 
 
