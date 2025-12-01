@@ -7,6 +7,9 @@ from state_and_helpers import (
     update_results,
 )
 
+# Match bending page styling
+from widgets_helpers import apply_global_widget_css, calcbox
+
 
 def cot(rad: float) -> float:
     """Cotangent with protection against tan(pi/2) etc."""
@@ -14,6 +17,9 @@ def cot(rad: float) -> float:
 
 
 def render_shear():
+    # Global UI styling (same as bending page)
+    apply_global_widget_css()
+
     st.title("Shear & Torsion")
 
     sync_callbacks = get_sync_callbacks()
@@ -22,7 +28,7 @@ def render_shear():
     st.markdown(
         """
         This page performs an AS 3600 shear + torsion check with a step-by-step ULS calculation.
-        Geometry, materials and design actions are shared with the Inputs tab via the session-state
+        Geometry, materials and design actions are shared with the **Inputs** tab via the session-state
         contract. Results are written to the global RESULTS using `update_results()` so the Inputs
         summary can show shear utilisation.
         """
@@ -103,7 +109,7 @@ def render_shear():
 
         st.number_input(
             "T* – torsion at section (kNm)",
-            key="shear_Tu_star",            # mapped to Tu_star in helpers
+            key="shear_Tu_star",  # mapped to Tu_star in helpers
             on_change=sync_callbacks["shear_Tu_star"],
         )
 
@@ -173,7 +179,7 @@ def render_shear():
     # 2. SECTION GEOMETRY FOR TORSION
     # =====================================================
     st.markdown("---")
-    st.subheader("1. Torsion geometry and cracking torque T_cr")
+    st.subheader("1. Torsion geometry and cracking torque $T_{cr}$")
 
     cover_t = 40.0  # assumed for closed stirrup centroid
     A_cp = b * D
@@ -190,20 +196,63 @@ def render_shear():
     )
     Tcr_kNm = Tcr_Nmm / 1e6
 
-    st.write(f"T_cr = **{Tcr_kNm:,.1f} kNm**")
-
     torsion_required_limit = 0.25 * phi * Tcr_kNm
     torsion_required = T_star > torsion_required_limit
 
-    st.write(
-        f"Torsion required? → {'Yes (T* > 0.25 φT_cr)' if torsion_required else 'No (T* ≤ 0.25 φT_cr)'}"
+    calcbox(
+        rf"""
+From AS 3600 torsion provisions, the cracking torque is taken as:
+
+$$
+T_{{cr}}
+= 0.33 \sqrt{{f'_c}} \;\frac{{A_{{cp}}^2}}{{u_c}}
+ \sqrt{{1 + \frac{{\sigma_{{cp}}}}{{0.33 \sqrt{{f'_c}}}}}}
+$$
+
+where:
+
+- $A_{{cp}} = b D$  
+- $u_c = 2(b + D)$  
+- $\sigma_{{cp}}$ is the average compressive stress from prestress.
+
+Substituting:
+
+- $A_{{cp}} = {A_cp:.0f}\ \text{{mm}}^2$  
+- $u_c = {u_c:.0f}\ \text{{mm}}$  
+- $\sqrt{{f'_c}} = {sqrt_fc:.3f}\ \text{{MPa}}$  
+- $\sigma_{{cp}} = {sigma_cp:.3f}\ \text{{MPa}}$
+
+gives:
+
+$$
+T_{{cr}} = {Tcr_kNm:,.1f}\ \text{{kNm}}
+$$
+
+Torsion is **required** when:
+
+$$
+T^* > 0.25\, \phi T_{{cr}}
+$$
+
+Here:
+
+$$
+0.25\,\phi T_{{cr}} = 0.25 \times {phi:.2f} \times {Tcr_kNm:,.1f}
+= {torsion_required_limit:,.1f}\ \text{{kNm}}
+$$
+
+So:
+
+- $T^* = {T_star:,.1f}\ \text{{kNm}}$  
+- Torsion required? → **{ 'Yes (T* > 0.25 φT_cr)' if torsion_required else 'No (T* ≤ 0.25 φT_cr)' }**
+"""
     )
 
     # =====================================================
     # 3. EQUIVALENT SHEAR V_eq*
     # =====================================================
     st.markdown("---")
-    st.subheader("2. Equivalent shear V_eq* (Cl. 8.2.3)")
+    st.subheader("2. Equivalent shear $V^*_{{eq}}$ (Cl. 8.2.3)")
 
     T_star_Nmm = T_star * 1e6
     torsion_eq_N = 0.9 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
@@ -211,9 +260,40 @@ def render_shear():
 
     V_eq = math.sqrt(V_star**2 + torsion_eq_kN**2)
 
-    st.write(
-        f"V_eq* = √(V*² + (0.9 T* u_h / 2A_o)²) = **{V_eq:.1f} kN** "
-        f"(with torsion component = {torsion_eq_kN:.1f} kN)"
+    calcbox(
+        rf"""
+AS 3600 Cl. 8.2.3 defines an equivalent shear which combines torsion and shear:
+
+$$
+V^*_{{eq}} = \sqrt{ (V^*)^2 + V_{{t}}^2 }
+$$
+
+where the torsion component in shear form is:
+
+$$
+V_t = \frac{{0.9 T^* u_h}}{{2 A_o}}
+$$
+
+For this section:
+
+- $u_h = 2[(b - \text{{cover}}_t) + (D - \text{{cover}}_t)] = {uh:.0f}\ \text{{mm}}$  
+- $A_o \approx 0.9 A_{{cp}} = 0.9 \times {A_cp:.0f} = {Ao:,.0f}\ \text{{mm}}^2$  
+
+Thus:
+
+$$
+V_t = \frac{{0.9 \times {T_star:,.1f} \times 10^6 \times {uh:.0f}}}
+           {{2 \times {Ao:,.0f}}}
+    = {torsion_eq_kN:,.1f}\ \text{{kN}}
+$$
+
+and
+
+$$
+V^*_{{eq}} = \sqrt{{({V_star:,.1f})^2 + ({torsion_eq_kN:,.1f})^2}}
+           = {V_eq:,.1f}\ \text{{kN}}
+$$
+"""
     )
 
     # =====================================================
@@ -265,7 +345,7 @@ def render_shear():
     with col_ligs3:
         st.write("Extra shear/torsion detailing (hangers, etc.) can be added later.")
 
-    st.markdown("**3.1 Effective web width b_v and shear depth d_v (Cl. 8.2.2)**")
+    st.markdown("**3.1 Effective web width $b_v$ and shear depth $d_v$ (Cl. 8.2.2)**")
 
     sum_duct = st.number_input(
         "Σ duct diameters crossing web (mm)",
@@ -287,26 +367,58 @@ def render_shear():
     k_d = kd_opt[1]
 
     b_v = b - k_d * sum_duct
-    d_v = max(0.72 * D, 0.9 * d)
-
-    st.write(f"b_v = **{b_v:.1f} mm**")
     dv_1 = 0.72 * D
     dv_2 = 0.9 * d
-    st.write(f"0.72 D = {dv_1:.1f} mm,   0.9 d = {dv_2:.1f} mm → d_v = **{d_v:.1f} mm**")
+    d_v = max(dv_1, dv_2)
+
+    calcbox(
+        rf"""
+Effective web width and shear depth (AS 3600 Cl. 8.2.2):
+
+- Ducts reduce the web width via
+
+$$
+b_v = b - k_d \sum d_{{\text{{duct}}}}
+$$
+
+For this section:
+
+- $b = {b:.1f}\ \text{{mm}}$  
+- $\sum d_{{\text{{duct}}}} = {sum_duct:.1f}\ \text{{mm}}$  
+- $k_d = {k_d:.2f}$  
+
+So:
+
+$$
+b_v = {b:.1f} - {k_d:.2f} \times {sum_duct:.1f}
+    = {b_v:.1f}\ \text{{mm}}
+$$
+
+Shear depth is taken as:
+
+$$
+d_v = \max(0.72 D,\ 0.9 d)
+$$
+
+with:
+
+- $0.72 D = 0.72 \times {D:.1f} = {dv_1:.1f}\ \text{{mm}}$  
+- $0.9 d = 0.9 \times {d:.1f} = {dv_2:.1f}\ \text{{mm}}$
+
+Thus:
+
+$$
+d_v = {d_v:.1f}\ \text{{mm}}
+$$
+"""
+    )
 
     # =====================================================
     # 5. LONGITUDINAL STRAIN εx
     # =====================================================
-    st.subheader("4. Longitudinal strain εₓ at mid-depth (Cl. 8.2.4.2.3)")
+    st.subheader("4. Longitudinal strain $\\varepsilon_x$ at mid-depth (Cl. 8.2.4.2.3)")
 
-    st.latex(
-        r"\varepsilon_x = "
-        r"\frac{\displaystyle \frac{|M^*|}{d_v} + "
-        r"\sqrt{\left(|V^*| - P_v\right)^2 + \left(\frac{0.97 T^* u_h}{2 A_o}\right)^2}"
-        r" + 0.5 N^* - A_{pt} f_{po}}"
-        r"{2(E_s A_{st} + E_p A_{pt})} \le 3.0\times10^{-3}"
-    )
-
+    # Original latex – keep it in the calcbox
     M_star_Nmm = abs(M_star) * 1e6
     term_M = M_star_Nmm / (d_v or 1.0)
 
@@ -314,7 +426,7 @@ def render_shear():
     Vprime_N = Vprime_kN * 1e3
 
     torsion_N = 0.97 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
-    sqrt_inner = math.sqrt(Vprime_N ** 2 + torsion_N ** 2)
+    sqrt_inner = math.sqrt(Vprime_N**2 + torsion_N**2)
 
     N_star_N = 0.5 * N_star * 1e3
     A_pt_fpo_N = A_pt * f_po
@@ -332,12 +444,47 @@ def render_shear():
     else:
         eps_x = max(0.0, min(eps_x_1, 0.003))
 
+    calcbox(
+        rf"""
+AS 3600 Cl. 8.2.4.2.3 gives the longitudinal strain at mid-depth:
+
+$$
+\varepsilon_x =
+\frac{{ \dfrac{{|M^*|}}{{d_v}} +
+\sqrt{{(|V^*| - P_v)^2 + \left(\dfrac{{0.97 T^* u_h}}{{2 A_o}}\right)^2}}
++ 0.5 N^* - A_{{pt}} f_{{po}} }}
+{{ 2(E_s A_{{st}} + E_p A_{{pt}}) }}
+\le 3.0\times10^{{-3}}
+$$
+
+For this section:
+
+- $|M^*| = {abs(M_star):.1f}\ \text{{kNm}}$  
+- $d_v = {d_v:.1f}\ \text{{mm}}$  
+- $|V^*| - P_v = {Vprime_kN:.1f}\ \text{{kN}}$  
+- $T^* = {T_star:.1f}\ \text{{kNm}}$  
+- $u_h = {uh:.1f}\ \text{{mm}}$  
+- $A_o = {Ao:,.1f}\ \text{{mm}}^2$  
+- $N^* = {N_star:.1f}\ \text{{kN}}$  
+
+After substitution and sign checks, we obtain:
+
+$$
+\varepsilon_x = {eps_x:.5f}
+$$
+
+The code limits:
+
+- $-2.0\times 10^{{-4}} \le \varepsilon_x \le 0.003$
+"""
+    )
+
     st.write(f"εₓ = **{eps_x:.5f}**")
 
     # =====================================================
     # 6. k_v and θ_v
     # =====================================================
-    st.subheader("5. k_v and θ_v (shear strength parameters)")
+    st.subheader("5. $k_v$ and $\\theta_v$ (shear strength parameters)")
 
     if use_general_kv:
         if fc <= 65:
@@ -367,15 +514,96 @@ def render_shear():
 
     theta_v_rad = math.radians(theta_v_deg)
 
+    calcbox(
+        rf"""
+Shear strength parameters are obtained from AS 3600 Cl. 8.2.4:
+
+- **General εₓ-based method (Cl. 8.2.4.2)**  
+
+If the provided shear reinforcement is less than the minimum:
+
+$$
+k_v =
+\frac{{0.4}}{{1 + 1500 \varepsilon_x}}
+\;\frac{{1300}}{{1000 + k_{{dg}} d_v}}
+$$
+
+Otherwise:
+
+$$
+k_v = \frac{{0.4}}{{1 + 1500 \varepsilon_x}}
+$$
+
+The shear angle is:
+
+$$
+\theta_v = 29^\circ + 7000 \varepsilon_x
+$$
+
+- **Simplified non-prestressed method (Cl. 8.2.4.3)**  
+
+If not using the general method:
+
+$$
+k_v =
+\begin{cases}
+\min\left(\dfrac{{200}}{{1000 + 1.3 d_v}}, 0.10\right),
+& \text{{if }} \dfrac{{A_{{sv}}}}{{s}} < 0.08 \sqrt{{f'_c}} \dfrac{{b_v}}{{f_{{sy,v}}}} \\
+0.15, & \text{{otherwise}}
+\end{cases}
+$$
+
+and
+
+$$
+\theta_v = 36^\circ
+$$
+
+For the selected method and inputs:
+
+- $k_v = {k_v:.3f}$  
+- $\theta_v = {theta_v_deg:.1f}^\circ$
+"""
+    )
+
     st.write(f"k_v = **{k_v:.3f}**")
     st.write(f"θ_v = **{theta_v_deg:.1f}°**")
 
-    st.markdown("**5.3 Concrete shear strength V_uc (Cl. 8.2.4.1)**")
-    st.latex(r"V_{uc} = k_v\, b_v d_v \sqrt{f'_c},\quad \sqrt{f'_c} \le 8.0\ \text{MPa}")
+    # -----------------------------------------------------
+    # 5.3 Concrete shear strength V_uc
+    # -----------------------------------------------------
+    st.markdown("**5.3 Concrete shear strength $V_{uc}$ (Cl. 8.2.4.1)**")
 
     sqrt_fc_limited = min(math.sqrt(fc), 8.0)
     Vuc_N = k_v * b_v * d_v * sqrt_fc_limited
     Vuc_kN = Vuc_N / 1e3
+
+    calcbox(
+        rf"""
+Concrete shear strength (AS 3600 Cl. 8.2.4.1):
+
+$$
+V_{{uc}} = k_v\, b_v d_v \sqrt{{f'_c}}, \qquad
+\sqrt{{f'_c}} \le 8.0\ \text{{MPa}}
+$$
+
+For this section:
+
+- $k_v = {k_v:.3f}$  
+- $b_v = {b_v:.1f}\ \text{{mm}}$  
+- $d_v = {d_v:.1f}\ \text{{mm}}$  
+- $\sqrt{{f'_c}} = {math.sqrt(fc):.3f}\ \text{{MPa}}$  
+- Limited $\sqrt{{f'_c}} = {sqrt_fc_limited:.3f}\ \text{{MPa}}$
+
+So:
+
+$$
+V_{{uc}} = {k_v:.3f} \times {b_v:.1f} \times {d_v:.1f}
+           \times {sqrt_fc_limited:.3f} / 1000
+         = {Vuc_kN:,.1f}\ \text{{kN}}
+$$
+"""
+    )
 
     st.write(f"√f'c (limited) = {sqrt_fc_limited:.3f} MPa")
     st.write(f"V_uc = **{Vuc_kN:,.1f} kN**")
@@ -383,33 +611,93 @@ def render_shear():
     # =====================================================
     # 7. V_us and sectional shear check
     # =====================================================
-    st.subheader("6. Shear reinforcement contribution V_us and sectional shear check")
+    st.subheader("6. Shear reinforcement contribution $V_{us}$ and sectional shear check")
 
-    st.markdown("**6.1 V_us for perpendicular ligs (Cl. 8.2.5.2(a))**")
-    st.latex(r"V_{us} = \left(\frac{A_{sv} f_{sy,v} d_v}{s}\right)\cot \theta_v")
+    st.markdown("**6.1 $V_{us}$ for perpendicular ligs (Cl. 8.2.5.2(a))**")
 
     Vus_N = (Asv * f_syv * d_v / s) * cot(theta_v_rad)
     Vus_kN = Vus_N / 1e3
 
+    calcbox(
+        rf"""
+For perpendicular shear ligatures (AS 3600 Cl. 8.2.5.2(a)):
+
+$$
+V_{{us}} = \left(\frac{{A_{{sv}} f_{{sy,v}} d_v}}{{s}}\right) \cot \theta_v
+$$
+
+For this section:
+
+- $A_{{sv}} = {Asv:,.1f}\ \text{{mm}}^2$  
+- $f_{{sy,v}} = {f_syv:.1f}\ \text{{MPa}}$  
+- $d_v = {d_v:.1f}\ \text{{mm}}$  
+- $s = {s:.1f}\ \text{{mm}}$  
+- $\theta_v = {theta_v_deg:.1f}^\circ$  
+
+So:
+
+$$
+V_{{us}} = \left(\frac{{{Asv:,.1f} \times {f_syv:.1f} \times {d_v:.1f}}}{{{s:.1f}}}\right)
+\cot({theta_v_deg:.1f}^\circ) / 1000
+= {Vus_kN:,.1f}\ \text{{kN}}
+$$
+"""
+    )
+
     st.write(f"V_us = **{Vus_kN:,.1f} kN**")
 
     st.markdown("**6.2 Total shear strength and check (Cl. 8.2.3.1)**")
-    st.latex(r"V_u = V_{uc} + V_{us} + P_v,\quad \phi V_u \ge V_{eq}^*")
 
     Vu_total_kN = Vuc_kN + Vus_kN + P_v
     phi_Vu = phi * Vu_total_kN
 
     shear_ok = phi_Vu >= V_eq
 
+    calcbox(
+        rf"""
+Sectional shear strength (AS 3600 Cl. 8.2.3.1):
+
+$$
+V_u = V_{{uc}} + V_{{us}} + P_v, \qquad
+\phi V_u \ge V^*_{{eq}}
+$$
+
+Here:
+
+- $V_{{uc}} = {Vuc_kN:,.1f}\ \text{{kN}}$  
+- $V_{{us}} = {Vus_kN:,.1f}\ \text{{kN}}$  
+- $P_v = {P_v:,.1f}\ \text{{kN}}$  
+
+So:
+
+$$
+V_u = {Vuc_kN:,.1f} + {Vus_kN:,.1f} + {P_v:,.1f}
+    = {Vu_total_kN:,.1f}\ \text{{kN}}
+$$
+
+Applying $\phi = {phi:.2f}$:
+
+$$
+\phi V_u = {phi:.2f} \times {Vu_total_kN:,.1f}
+         = {phi_Vu:,.1f}\ \text{{kN}}
+$$
+
+Compare with:
+
+$$
+V^*_{{eq}} = {V_eq:,.1f}\ \text{{kN}}
+$$
+
+Hence:
+
+- Shear check → **{ 'OK (φV_u ≥ V_eq*)' if shear_ok else 'NG (φV_u < V_eq*)' }**
+"""
+    )
+
     # =====================================================
     # 8. Web crushing check
     # =====================================================
     st.subheader("7. Web-crushing capacity (Cl. 8.2.6)")
-
-    st.latex(
-        r"V_{u,\max} = 0.55 f'_c b_v d_v "
-        r"\frac{\cot\theta_v + \cot\theta_1}{1 + \cot^2\theta_v} + P_v"
-    )
 
     theta_1_deg = 90.0
     theta_1_rad = math.radians(theta_1_deg)
@@ -421,8 +709,6 @@ def render_shear():
     ) + P_v * 1e3
     Vu_max_kN = Vu_max_N / 1e3
 
-    st.write(f"V_u,max (web crushing) = **{Vu_max_kN:,.1f} kN**")
-
     V_star_N = V_star * 1e3
     term_V = V_star_N / (b_v * d_v or 1.0)
     term_T = T_star_Nmm * uh / (1.7 * (A_oh**2 or 1.0))
@@ -431,6 +717,57 @@ def render_shear():
     RHS = phi * Vu_max_N / (b_v * d_v or 1.0)
 
     web_ok = LHS <= RHS
+
+    calcbox(
+        rf"""
+Web-crushing check (AS 3600 Cl. 8.2.6):
+
+The maximum shear capacity is:
+
+$$
+V_{{u,\max}} =
+0.55 f'_c b_v d_v
+\frac{{\cot\theta_v + \cot\theta_1}}{{1 + \cot^2\theta_v}} + P_v
+$$
+
+For this section:
+
+- $f'_c = {fc:.1f}\ \text{{MPa}}$  
+- $b_v = {b_v:.1f}\ \text{{mm}}$  
+- $d_v = {d_v:.1f}\ \text{{mm}}$  
+- $\theta_v = {theta_v_deg:.1f}^\circ$  
+- $\theta_1 = 90^\circ$  
+- $P_v = {P_v:.1f}\ \text{{kN}}$  
+
+So:
+
+$$
+V_{{u,\max}} = {Vu_max_kN:,.1f}\ \text{{kN}}
+$$
+
+The combined shear + torsion demand is checked via:
+
+$$
+\sqrt{
+\left(\frac{{V^*}}{{b_v d_v}}\right)^2 +
+\left(\frac{{T^* u_h}}{{1.7 A_{{oh}}^2}}\right)^2
+}
+\le
+\frac{{\phi V_{{u,\max}}}}{{b_v d_v}}
+$$
+
+For this section:
+
+- LHS = {LHS:,.3f}  
+- RHS = {RHS:,.3f}
+
+Hence the web-crushing check is:
+
+- **{ 'OK (LHS ≤ RHS)' if web_ok else 'NG (LHS > RHS)' }**
+"""
+    )
+
+    st.write(f"V_u,max (web crushing) = **{Vu_max_kN:,.1f} kN**")
 
     if not web_ok:
         st.error("Web-crushing limit exceeded – revise section/ligs.")
