@@ -56,13 +56,14 @@ def _number_row_shear(
     label: str,
     widget_key: str,
     col,
-    sync_callbacks: dict | None,
+    sync_callbacks=None,   # ← no union operator
     *,
     as_int: bool = False,
     min_value=None,
     max_value=None,
     step=None,
 ):
+
     """
     Local helper just for the shear page.
 
@@ -585,3 +586,4 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
 
 if __name__ == "__main__":
     render_shear()
+
