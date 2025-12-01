@@ -1,11 +1,16 @@
 import math
-import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle, Circle
 import streamlit as st
 
-from state_and_helpers import get_param
-from bending_core import _layout_bars_in_rows
+from widgets_helpers import calcbox
+from bending_diagrams import (
+    _make_uls_stress_block_figure,
+    _make_uls_force_model_figure,
+    _make_sls_stress_block_figure,   # NEW
+)
+from bending_core import _fmt
+from state_and_helpers import get_param   # NEW (for compression steel data)
 
 # ------------------------------------------------------------
 # Global styling constants
@@ -865,6 +870,154 @@ def _make_uls_force_model_figure(
         60.0,
         D_ref + 0.08 * D_ref,
         "Force model",
+        ha="center",
+        va="bottom",
+        fontsize=FS_TITLE,
+    )
+
+    return fig
+def _make_sls_stress_block_figure(
+    D_mm: float,
+    d_mm: float,
+    dn_mm: float,
+    include_comp: bool = False,
+    d_comp_mm: float | None = None,
+):
+    """
+    Simple cracked-section SLS stress-block figure.
+
+    - Vertical axis at the left
+    - Triangular compression block from top to d_n
+    - Tension steel at depth d
+    - Optional compression steel at depth d_comp (include_comp = True)
+
+    Purely illustrative (no actual stress values on the x-axis).
+    """
+
+    vals = [D_mm, d_mm, dn_mm]
+    if any(
+        v is None or (isinstance(v, float) and (math.isnan(v) or v <= 0.0))
+        for v in vals
+    ):
+        fig, ax = plt.subplots()
+        ax.axis("off")
+        ax.text(0.5, 0.5, "No data", ha="center", va="center")
+        return fig
+
+    # Make sure the axis is tall enough for everything
+    extra = d_comp_mm or 0.0
+    base_span = max(D_mm, d_mm, dn_mm, extra)
+    D_ref = base_span * 1.05
+
+    fig, ax = plt.subplots(figsize=(3.0, 2.8))
+    ax.set_xlim(0.0, 100.0)
+    ax.set_ylim(D_ref, 0.0)  # 0 at top
+    ax.axis("off")
+
+    x_axis = 20.0
+    ax.plot(
+        [x_axis, x_axis],
+        [0.0, D_ref],
+        color="black",
+        linewidth=LINE_THICK,
+    )
+
+    # ------------------------------------------------------------
+    # Triangular compression block (cracked)
+    # ------------------------------------------------------------
+    block_left = x_axis
+    block_width = 22.0
+    block_right = block_left + block_width
+
+    # triangle with max at top, zero at d_n
+    ax.plot(
+        [block_left, block_right, block_left],
+        [dn_mm, 0.0, 0.0],
+        color="tab:red",
+        linewidth=LINE_MED,
+    )
+
+    # neutral axis (d_n)
+    ax.hlines(
+        dn_mm,
+        block_left - 5.0,
+        block_right + 10.0,
+        linestyles="--",
+        linewidth=LINE_THIN,
+        colors="black",
+    )
+    ax.text(
+        block_right + 12.0,
+        dn_mm,
+        f"dₙ = {dn_mm:.1f} mm",
+        ha="left",
+        va="center",
+        fontsize=FS_LABEL,
+    )
+
+    # ------------------------------------------------------------
+    # Tension steel (bottom)
+    # ------------------------------------------------------------
+    ARROW_OFFSET = 35.0  # match ULS force figure spacing
+
+    y_T = d_mm
+    x_T_head = x_axis + ARROW_OFFSET
+    x_T_tail = x_axis
+
+    ax.annotate(
+        "",
+        xy=(x_T_head, y_T),
+        xytext=(x_T_tail, y_T),
+        arrowprops=dict(
+            arrowstyle="->",
+            linewidth=LINE_MED,
+            color="tab:blue",
+            mutation_scale=ARROW_SCALE,
+        ),
+    )
+    ax.text(
+        x_T_head + 6.0,
+        y_T,
+        "T (SLS)",
+        ha="left",
+        va="center",
+        fontsize=FS_LABEL,
+        color="tab:blue",
+    )
+
+    # ------------------------------------------------------------
+    # Optional compression steel (top layer)
+    # ------------------------------------------------------------
+    if include_comp and d_comp_mm is not None and d_comp_mm > 0.0:
+        y_Cs = d_comp_mm
+        x_Cs_tail = x_axis + ARROW_OFFSET
+        x_Cs_head = x_axis
+
+        ax.annotate(
+            "",
+            xy=(x_Cs_head, y_Cs),
+            xytext=(x_Cs_tail, y_Cs),
+            arrowprops=dict(
+                arrowstyle="->",
+                linewidth=LINE_MED,
+                color="tab:red",
+                mutation_scale=ARROW_SCALE,
+            ),
+        )
+        ax.text(
+            x_Cs_tail + 6.0,
+            y_Cs,
+            "Cₛ (SLS)",
+            ha="left",
+            va="center",
+            fontsize=FS_LABEL,
+            color="tab:red",
+        )
+
+    ax.text(
+        50.0,
+        D_ref + 0.08 * D_ref,
+        "SLS stress block",
         ha="center",
         va="bottom",
         fontsize=FS_TITLE,
