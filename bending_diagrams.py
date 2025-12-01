@@ -1,14 +1,12 @@
+# bending_diagrams.py
 import math
-import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle, Circle
 import streamlit as st
 
-from widgets_helpers import calcbox
-from bending_diagrams import (
-    _make_uls_stress_block_figure,
-    _make_uls_force_model_figure,
-)
-from bending_core import _fmt
+from state_and_helpers import get_param
+from bending_core import _layout_bars_in_rows
 
 # ------------------------------------------------------------
 # Global styling constants
@@ -462,6 +460,8 @@ def _make_uls_stress_block_figure(
     show_lever_arm: bool = False,
     show_dn: bool = True,
     show_alpha_label: bool = True,
+    show_C: bool = False,
+    C_N: float | None = None,
     variant: str = "11",
 ):
     """
@@ -471,6 +471,7 @@ def _make_uls_stress_block_figure(
       - show_lever_arm:   show / hide z arrow
       - show_dn:          show / hide dashed d_n line + label
       - show_alpha_label: show / hide α2 f'c text + width arrow
+      - show_C:           show concrete C arrow at centroid (for 1.2)
       - variant: "11" (shorter figure for Section 1.1),
                  "13" (slightly taller for Section 1.3)
     """
@@ -624,6 +625,32 @@ def _make_uls_stress_block_figure(
         color="tab:blue",
     )
 
+    # optional C arrow at centroid of block (for 1.2)
+    if show_C and C_N is not None:
+        y_C = 0.5 * a_mm
+        x_C_tail = block_left + block_width + 18.0
+        x_C_head = block_left + block_width + 4.0
+        ax.annotate(
+            "",
+            xy=(x_C_head, y_C),
+            xytext=(x_C_tail, y_C),
+            arrowprops=dict(
+                arrowstyle="->",
+                linewidth=LINE_MED,
+                color="tab:red",
+                mutation_scale=ARROW_SCALE,
+            ),
+        )
+        ax.text(
+            x_C_tail + 3.0,
+            y_C,
+            f"C = {C_N/1000.0:.1f} kN",
+            ha="left",
+            va="center",
+            fontsize=FS_LABEL,
+            color="tab:red",
+        )
+
     # optional lever arm
     if show_lever_arm:
         y_C = 0.5 * a_mm
@@ -660,15 +687,17 @@ def _make_uls_stress_block_figure(
 
 
 # ============================================================
-#  SIMPLE ULS FORCE MODEL FIGURE (1.4)
+#  SIMPLE ULS FORCE MODEL FIGURE (1.6)
 # ============================================================
 def _make_uls_force_model_figure(
     D_mm: float,
     d_mm: float,
     a_mm: float,
+    C_N: float | None = None,
+    T_N: float | None = None,
 ):
     """
-    Simple C–T–z force model for Section 1.4.
+    Simple C–T–z force model for Section 1.6.
     Matches calc-box height and aligns C/T symmetrically.
     """
 
@@ -691,7 +720,7 @@ def _make_uls_force_model_figure(
     x_axis = 20.0
     ax.plot([x_axis, x_axis], [0.0, D_ref], color="black", linewidth=LINE_THICK)
 
-    # Compression C
+    # Compression C at a/2
     y_C = 0.5 * a_mm
     ARROW_OFFSET = 35.0  # distance from axis, matched to T
 
@@ -709,17 +738,20 @@ def _make_uls_force_model_figure(
             mutation_scale=ARROW_SCALE,
         ),
     )
+    label_C = "C"
+    if C_N is not None:
+        label_C += f" = {C_N/1000.0:.1f} kN"
     ax.text(
         x_C_tail + 6.0,
         y_C,
-        "C",
+        label_C,
         ha="left",
         va="center",
         fontsize=FS_LABEL,
         color="tab:red",
     )
 
-    # Tension T
+    # Tension T at depth d
     y_T = d_mm
     x_T_head = x_axis + ARROW_OFFSET
     x_T_tail = x_axis
@@ -735,10 +767,13 @@ def _make_uls_force_model_figure(
             mutation_scale=ARROW_SCALE,
         ),
     )
+    label_T = "T"
+    if T_N is not None:
+        label_T += f" = {T_N/1000.0:.1f} kN"
     ax.text(
         x_T_head + 6.0,
         y_T,
-        "T",
+        label_T,
         ha="left",
         va="center",
         fontsize=FS_LABEL,
@@ -786,7 +821,7 @@ def _make_sls_stress_block_figure(
     d_mm: float,
     dn_mm: float,
     include_comp: bool = False,
-    d_comp_mm: float = None,
+    d_comp_mm: float | None = None,
 ):
     """
     Simple SLS cracked-section figure for Step 3.3.
