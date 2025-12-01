@@ -709,7 +709,8 @@ def _make_uls_force_model_figure(
         return fig
 
     base_span = max(D_mm, d_mm, a_mm)
-    D_ref = base_span * 0.90     # shortened to match calc-box depth
+    # Add a bit of margin so C, T and z stay visible even for deep beams.
+    D_ref = base_span * 1.10
 
     fig, ax = plt.subplots(figsize=(3.6, 2.7))
     ax.set_xlim(0.0, 100.0)
