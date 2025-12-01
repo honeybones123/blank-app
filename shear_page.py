@@ -51,6 +51,7 @@ def calcbox(md: str):
 """
     st.markdown(box_html, unsafe_allow_html=True)
 
+
 def _number_row_shear(
     label: str,
     widget_key: str,
@@ -69,7 +70,6 @@ def _number_row_shear(
     • Uses shear widget keys (shear_b, shear_Vu_star, …) which are mapped in TAB_KEYS.
     • Hooks into sync_callbacks[widget_key] to update shared state + derived values.
     """
-
     cb = None
     if sync_callbacks is not None and widget_key in sync_callbacks:
         cb = sync_callbacks[widget_key]
@@ -269,11 +269,15 @@ summary can show shear utilisation.
     torsion_required = T_star > torsion_required_limit
 
     st.write(
-        f"Torsion required? → "
-        f"{'**Yes (T* > 0.25 φT_cr)**' if torsion_required else 'No (T* ≤ 0.25 φT_cr)'}"
+        "Torsion required? → "
+        + ("**Yes (T* > 0.25 φT_cr)**" if torsion_required else "No (T* ≤ 0.25 φT_cr)")
     )
 
     # ---- Step 1 calc box summary ----
+    step1_req = ">" if torsion_required else "\\le"
+    step1_text = (
+        "required" if torsion_required else "not required (strength check only)"
+    )
     calcbox(
         f"""
 **Step 1 – Torsion geometry & cracking torque $T_{{cr}}$**
@@ -281,8 +285,8 @@ summary can show shear utilisation.
 - Gross area: $A_{{cp}} = {A_cp:.0f}\\ \\text{{mm}}^2$  
 - Perimeter: $u_c = {u_c:.0f}\\ \\text{{mm}}$  
 - Cracking torque: $T_{{cr}} = {Tcr_kNm:,.1f}\\ \\text{{kNm}}$  
-- Requirement: $T^* {'>' if torsion_required else '\\le'} 0.25\\,φ T_{{cr}}$  
-  → **Torsion design {'required' if torsion_required else 'not required (strength check only)'}**
+- Requirement: $T^* {step1_req} 0.25\\,φ T_{{cr}}$  
+  → **Torsion design {step1_text}**
 """
     )
 
@@ -299,8 +303,8 @@ summary can show shear utilisation.
     V_eq = math.sqrt(V_star**2 + torsion_eq_kN**2)
 
     st.write(
-        f"$V_{{eq}}^* = \\sqrt{{V^{*2} + "
-        f"(0.9 T^* u_h / 2 A_o)^2}} = {V_eq:.1f}\\ \\text{{kN}}$  "
+        f"$V_{{eq}}^* = \\sqrt{{V^{*2} + (0.9 T^* u_h / 2 A_o)^2}}"
+        f" = {V_eq:.1f}\\ \\text{{kN}}$  "
         f"(torsion contribution = {torsion_eq_kN:.1f} kN)"
     )
 
@@ -368,7 +372,7 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
     st.markdown("**3.1 Effective web width $b_v$ and shear depth $d_v$ (Cl. 8.2.2)**")
 
     sum_duct = st.number_input(
-        "Σ duct diameters crossing web (mm)",
+        "Sum of duct diameters crossing web (mm)",
         value=0.0,
         min_value=0.0,
     )
@@ -415,7 +419,7 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
     Vprime_N = Vprime_kN * 1e3
 
     torsion_N = 0.97 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
-    sqrt_inner = math.sqrt(Vprime_N ** 2 + torsion_N ** 2)
+    sqrt_inner = math.sqrt(Vprime_N**2 + torsion_N**2)
 
     N_star_N = 0.5 * N_star * 1e3
     A_pt_fpo_N = A_pt * f_po
@@ -545,31 +549,35 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
 - Steel shear: $V_{{us}} = {Vus_kN:,.1f}\\ \\text{{kN}}$  
 - Total: $V_u = V_{{uc}} + V_{{us}} + P_v = {Vu_total_kN:,.1f}\\ \\text{{kN}}$  
 - Design: $φ V_u = {phi_Vu:,.1f}\\ \\text{{kN}}$ vs $V_{{eq}}^* = {V_eq:,.1f}\\ \\text{{kN}}$  
-  → **Sectional shear check: {'OK' if shear_ok else 'NG'}**
+  → **Sectional shear check: {"OK" if shear_ok else "NG"}**
 
 **Step 4 – Web-crushing strength**
 
 - $V_{{u,\\max}}$ (web crushing) = {Vu_max_kN:,.1f} kN  
 - Check: LHS = {LHS:,.1f} ≤ RHS = {RHS:,.1f} ?  
-  → **Web crushing: {'OK' if web_ok else 'NG'}**
+  → **Web crushing: {"OK" if web_ok else "NG"}**
 """
     )
 
     # =======================================================
     # 9. SUMMARY BANNER + PUSH RESULTS TO GLOBAL RESULTS
     # =======================================================
+    torsion_label = (
+        "**Yes (T* > 0.25 φT_cr)**" if torsion_required else "No (strength check)"
+    )
+
     summary_md = f"""
 ### Shear/Torsion ULS Summary
 
 | Item | Value |
 |------|-------|
-| Torsion considered? | {"**Yes (T* > 0.25 φT_cr)**" if torsion_required else "No (strength check)"} |
+| Torsion considered? | {torsion_label} |
 | V_eq* | **{V_eq:.1f} kN** |
 | V_uc | **{Vuc_kN:,.1f} kN** |
 | V_us | **{Vus_kN:,.1f} kN** |
-| φV_u vs V_eq* | **{phi_Vu:.1f} kN / {V_eq:.1f} kN → {'OK' if shear_ok else 'NG'}** |
+| φV_u vs V_eq* | **{phi_Vu:.1f} kN / {V_eq:.1f} kN → {"OK" if shear_ok else "NG"}** |
 | V_u,max (web crushing) | **{Vu_max_kN:,.1f} kN** |
-| Web-crushing check | **{'OK' if web_ok else 'NG'}** |
+| Web-crushing check | **{"OK" if web_ok else "NG"}** |
 | εₓ, k_v, θ_v | **εₓ = {eps_x:.5f},  k_v = {k_v:.3f},  θ_v = {theta_v_deg:.1f}°** |
 """
 
@@ -585,6 +593,3 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
 
 if __name__ == "__main__":
     render_shear()
-
-
-
