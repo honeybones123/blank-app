@@ -68,7 +68,11 @@ SHARED_DEFAULTS = {
     "Ec": 30000.0,  # MPa
     "Es": 200000.0, # MPa
     "phi_bend": 0.85,  # ← strength reduction factor for bending
-    
+
+    # Shear & torsion strength reduction factors
+    "phi_shear": 0.75,
+    "phi_torsion": 0.75,
+
     # Actions
     "Mu_star": 500.0,  # kNm (controlling moment)
     "Vu_star": 300.0,  # kN
@@ -110,6 +114,8 @@ SHARED_DEFAULTS = {
     "Mu_utilisation": 0.0,
     "phi_Vu_cap": 0.0,
     "Vu_utilisation": 0.0,
+    "phi_Tu_cap": 0.0,
+    "Tu_utilisation": 0.0,
     "crack_width": 0.0,
     "crack_utilisation": 0.0,
 }
@@ -120,6 +126,8 @@ RESULT_KEYS = {
     "Mu_utilisation",
     "phi_Vu_cap",
     "Vu_utilisation",
+    "phi_Tu_cap",
+    "Tu_utilisation",
     "crack_width",
     "crack_utilisation",
 }
@@ -205,6 +213,9 @@ TAB_KEYS = {
     "shear_Tu_star": "Tu_star",
     "shear_P_star": "P_star",
     "shear_N_star": "N_star",
+
+    "shear_phi_v": "phi_shear",
+    "shear_phi_t": "phi_torsion",
 
     "shear_nb_bot": "nb_bot",
     "shear_db_bot": "db_bot",
@@ -401,4 +412,3 @@ def get_param(name: str, default=None):
     if name in st.session_state:
         return st.session_state[name]
     return SHARED_DEFAULTS.get(name, default)
-
