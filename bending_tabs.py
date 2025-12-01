@@ -479,7 +479,6 @@ $$
 (M_{{u,cap}})_{{min}}
 = 1.2 \times {Mcr_as:.2f}
 = {Mu_min_as:.2f}\ \text{{kNm}}
-$$
 """
     )
     st.markdown("---")
@@ -693,13 +692,13 @@ From equilibrium of transformed areas:
 Tension side:
 
 $$
-T = \sum n A_{s,i} (d_i - d_n)
+T = \sum n A_{{s,i}} (d_i - d_n)
 $$
 
 Concrete (and any compression steel) provide compression $C$ so that:
 
 $$
-\frac{{b d_n^2}}{2} + \sum n A_{s,c} (d_n - d_{s,c}) = \sum n A_{s,i} (d_i - d_n)
+\frac{{b d_n^2}}{2} + \sum n A_{{s,c}} (d_n - d_{{s,c}}) = \sum n A_{{s,i}} (d_i - d_n)
 $$
 
 Solving this equilibrium numerically for this section gives:
@@ -750,15 +749,15 @@ Cracked moment of inertia (transformed section):
 $$
 I_{{cr}} =
 \frac{{b d_n^3}}{3}
-+ \sum n A_{s,i} (d_i - d_n)^2
-+ \sum n A_{s,c} (d_n - d_{s,c})^2
++ \sum n A_{{s,i}} (d_i - d_n)^2
++ \sum n A_{{s,c}} (d_n - d_{{s,c}})^2
 $$
 
 For this section:
 
 - Concrete term: $\dfrac{{b d_n^3}}{3} = {_fmt(I_conc)}\ \text{{mm}}^4$  
-- Steel in tension: $\sum n A_{s,i} (d_i - d_n)^2 = {_fmt(I_t)}\ \text{{mm}}^4$  
-- Steel in compression: $\sum n A_{s,c} (d_n - d_{s,c})^2 = {_fmt(I_c)}\ \text{{mm}}^4$
+- Steel in tension: $\sum n A_{{s,i}} (d_i - d_n)^2 = {_fmt(I_t)}\ \text{{mm}}^4$  
+- Steel in compression: $\sum n A_{{s,c}} (d_n - d_{{s,c}})^2 = {_fmt(I_c)}\ \text{{mm}}^4$
 
 So:
 
@@ -952,16 +951,16 @@ For key layers (including each steel layer), the table lists:
 Steel strain in each layer is:
 
 $$
-\varepsilon_{s,i} = \kappa (d_i - d_n)
+\varepsilon_{{s,i}} = \kappa (d_i - d_n)
 $$
 
 and the corresponding stress is:
 
 $$
-f_{s,i} = E_s\, \varepsilon_{s,i}
+f_{{s,i}} = E_s\, \varepsilon_{{s,i}}
 $$
 
-The table below lists $\varepsilon_{s,i}$ and $f_{s,i}$ for each steel layer.
+The table below lists $\varepsilon_{{s,i}}$ and $f_{{s,i}}$ for each steel layer.
 """
     )
     st.table(df_steel)
@@ -991,7 +990,7 @@ is typically taken as the stress in the deepest tension layer.
 From the table above, this is approximately:
 
 $$
-f_{s,ser} \approx {fs_tension:.1f}\ \text{{MPa}}
+f_{{s,ser}} \approx {fs_tension:.1f}\ \text{{MPa}}
 $$
 
 This is the value you would use in the crack-control checks
