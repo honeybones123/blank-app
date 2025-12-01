@@ -721,20 +721,19 @@ $$
         )
 
     with col_I_fig:
-        # Use the dedicated SLS stress-block / section figure so it matches
-        # the other tab exactly.
+        # SLS stress-block / section figure using the same style as
+        # the SLS stress diagram (vertical axis + triangular block).
+        fc_sls = top_results.get("fc")
+        alpha2_sls = top_results.get("alpha2")
+
         fig_sls = _make_sls_stress_block_figure(
             D_mm=D or 0.0,
             d_mm=d,
             dn_mm=dn_sls,
-            include_comp=bool(include_comp and comp_layer is not None),
-            d_comp_mm=comp_layer["y"]
-            if (include_comp and comp_layer is not None)
-            else None,
+            fc=fc_sls,
+            alpha2=alpha2_sls,
         )
         st.pyplot(fig_sls, use_container_width=False)
-        plt.close(fig_sls)
-
 
 
     # --------------------------------------------------
