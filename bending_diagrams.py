@@ -827,10 +827,12 @@ def _make_sls_stress_block_figure(
     """
     Simple SLS cracked-section figure for Step 3.3.
 
-    - Vertical concrete section with neutral axis at d_n
-    - Triangular compression "stress block" above d_n
-    - Tension steel shown at depth d
-    - Optional compression steel shown at depth d_comp_mm
+    Matches the "boxed" cracked section you like:
+      - Full rectangle for the section
+      - Triangular compression region above the neutral axis
+      - Dashed neutral axis line
+      - Bottom tension steel labelled T1
+      - Optional compression steel bar near the top
     """
 
     vals = [D_mm, d_mm, dn_mm]
@@ -840,58 +842,77 @@ def _make_sls_stress_block_figure(
         ax.text(0.5, 0.5, "No data", ha="center", va="center")
         return fig
 
-    base_span = max(D_mm, d_mm, dn_mm, d_comp_mm or 0.0)
-    D_ref = base_span * 1.05
+    # Vertical scaling
+    D_ref = D_mm * 1.05 if D_mm > 0 else max(d_mm, dn_mm, 1.0) * 1.2
 
-    fig, ax = plt.subplots(figsize=(3.0, 3.0))
-    ax.set_xlim(0.0, 100.0)
-    ax.set_ylim(D_ref, 0.0)
+    # We'll just use a fixed width – this keeps the aspect nice and simple
+    width = 80.0
+
+    fig, ax = plt.subplots(figsize=(3.0, 2.6))
+    ax.set_xlim(0.0, width)
+    ax.set_ylim(D_ref, -0.05 * D_ref)
     ax.axis("off")
 
-    x_axis = 20.0
-
-    # concrete "section" line
-    ax.plot([x_axis, x_axis], [0.0, D_ref], color="black", linewidth=LINE_THICK)
-
-    # neutral axis
-    ax.hlines(
-        dn_mm,
-        x_axis,
-        95.0,
-        linestyles="--",
-        linewidth=LINE_THIN,
-        colors="black",
+    # --------------------------------------------------
+    # Full section rectangle
+    # --------------------------------------------------
+    ax.plot(
+        [0.0, width, width, 0.0, 0.0],
+        [0.0, 0.0, D_mm, D_mm, 0.0],
+        "k-",
+        linewidth=LINE_THICK,
     )
 
-    # triangular compression region (0 → d_n)
-    block_left = x_axis
-    block_width = 20.0
+    # --------------------------------------------------
+    # Neutral axis (d_n)
+    # --------------------------------------------------
+    ax.axhline(
+        dn_mm,
+        linestyle="--",
+        linewidth=LINE_THIN,
+        color="black",
+    )
+
+    # --------------------------------------------------
+    # Triangular compression region above d_n
+    #   (triangle with vertices: (0,dn), (0,0), (width,dn))
+    # --------------------------------------------------
     ax.fill(
-        [block_left, block_left + block_width, block_left],
-        [0.0, 0.0, dn_mm],
-        fill=False,
+        [0.0, 0.0, width],
+        [dn_mm, 0.0, dn_mm],
+        facecolor="#c7e3ff",
         edgecolor="tab:red",
         linewidth=LINE_MED,
+        alpha=0.6,
     )
 
-    # tension steel marker at depth d
-    x_T0 = x_axis + 28.0
-    x_T1 = x_axis + 42.0
-    ax.plot([x_T0, x_T1], [d_mm, d_mm], color="tab:blue", linewidth=LINE_MED)
+    # --------------------------------------------------
+    # Bottom tension steel (T1)
+    # --------------------------------------------------
+    x_T0 = 0.15 * width
+    x_T1 = 0.85 * width
+    ax.plot(
+        [x_T0, x_T1],
+        [d_mm, d_mm],
+        color="tab:blue",
+        linewidth=LINE_MED,
+    )
     ax.text(
         x_T1 + 4.0,
         d_mm,
-        "T",
+        "T1",
         ha="left",
         va="center",
         fontsize=FS_LABEL,
         color="tab:blue",
     )
 
-    # compression steel (optional)
+    # --------------------------------------------------
+    # Optional compression steel
+    # --------------------------------------------------
     if include_comp and d_comp_mm is not None:
-        x_C0 = x_axis + 28.0
-        x_C1 = x_axis + 42.0
+        x_C0 = 0.15 * width
+        x_C1 = 0.85 * width
         ax.plot(
             [x_C0, x_C1],
             [d_comp_mm, d_comp_mm],
@@ -901,15 +922,18 @@ def _make_sls_stress_block_figure(
         ax.text(
             x_C1 + 4.0,
             d_comp_mm,
-            "C_s",
+            "C1",
             ha="left",
             va="center",
             fontsize=FS_LABEL,
             color="tab:red",
         )
 
+    # --------------------------------------------------
+    # Title
+    # --------------------------------------------------
     ax.text(
-        50.0,
+        0.5 * width,
         D_ref + 0.08 * D_ref,
         "SLS cracked section",
         ha="center",
@@ -918,3 +942,4 @@ def _make_sls_stress_block_figure(
     )
 
     return fig
+
