@@ -508,7 +508,7 @@ def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
         # how many bars fall into each row.
         min_spacing_bot = 2 * db_bot
         layout_bot = _layout_bars_in_rows(
-            nb_bot, b, cover_bot, db_bot, min_spacing_bot, max_rows=3
+            nb_bot, b, cover_bot, db_bot, min_spacing_bot, 3
         )
         # Count bars per row index
         row_counts: dict[int, int] = {}
