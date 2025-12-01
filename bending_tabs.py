@@ -335,7 +335,6 @@ $$
         st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
 
 
-
 # ============================================================
 #  TAB 2 – Minimum Strength (UNCHANGED)
 # ============================================================
@@ -504,12 +503,12 @@ def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
 
     # --- Bottom tension layers (T1, T2, ...) ---
     if nb_bot > 0 and db_bot > 0 and cover_bot > 0:
-        # Use the same helper as the section diagram to work out
-        # how many bars fall into each row.
+        # Same helper as section diagram → rows of bars
         min_spacing_bot = 2 * db_bot
         layout_bot = _layout_bars_in_rows(
             nb_bot, b, cover_bot, db_bot, min_spacing_bot, 3
         )
+
         # Count bars per row index
         row_counts: dict[int, int] = {}
         for _, row_idx in layout_bot:
@@ -517,10 +516,8 @@ def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
 
         As_bar_bot = math.pi * db_bot**2 / 4.0
         r_bot = db_bot / 2.0
-        # depth of first (outermost) row from top
-        y_row0 = D - cover_bot - r_bot
+        y_row0 = D - cover_bot - r_bot  # outermost row depth from top
 
-        # Create a layer for each row present
         for row_idx in sorted(row_counts.keys()):
             n_row = row_counts[row_idx]
             if n_row <= 0:
@@ -590,7 +587,6 @@ Substituting:
 $$
 n = \frac{{{Es:.0f}}}{{{Ec:.0f}}}
   = {Es/Ec:.2f}
-$$
 """
     )
 
@@ -624,26 +620,27 @@ $$
     st.markdown("---")
 
     # --------------------------------------------------
-    # 3.2 Neutral axis depth d_n (cracked section)
+    # 3.2 Neutral axis depth d_n (cracked section) + SLS stress figure
     # --------------------------------------------------
     st.subheader("3.2 Neutral axis depth $d_n$ (cracked section)")
 
     def equilibrium_residual(dn: float) -> float:
         """C(dn) - T(dn) = 0 for cracked section."""
         # Concrete compression resultant
-        C_conc = 0.5 * b * dn**2  # mm² * mm → N / n factor is outside
+        C_conc = 0.5 * b * dn**2
 
         # Steel contributions (transformed)
         T_steel = 0.0
+
         # tension layers
         for layer in layers_tension:
-            As = layer["As"]
-            y = layer["y"]
-            if y > dn:
-                T_steel += n_sls * As * (y - dn)
+            As_i = layer["As"]
+            y_i = layer["y"]
+            if y_i > dn:
+                T_steel += n_sls * As_i * (y_i - dn)
             else:
-                # if a "tension" layer ever ends up above NA, treat as compression
-                C_conc += n_sls * As * (dn - y)
+                # if a "tension" layer ends up above NA, treat as compression
+                C_conc += n_sls * As_i * (dn - y_i)
 
         # optional compression layer
         if include_comp and comp_layer is not None:
@@ -654,7 +651,6 @@ $$
             else:
                 T_steel += n_sls * As_c * (y_c - dn)
 
-        # Concrete is already in N-equivalent units under transformed method
         return C_conc - T_steel
 
     # Simple bisection between near-top and near-bottom
@@ -721,24 +717,19 @@ $$
         )
 
     with col_32_fig:
-        # SLS stress diagram beside the calc box
+        # SLS stress diagram beside the calc box –
+        # matches the main SLS panel style.
         fig_sls = _make_sls_stress_block_figure(
             D_mm=D or 0.0,
             d_mm=d,
             dn_mm=dn_sls,
-            include_comp=bool(include_comp and comp_layer is not None),
-            d_comp_mm=(
-                comp_layer["y"]
-                if (include_comp and comp_layer is not None)
-                else None
-            ),
         )
         st.pyplot(fig_sls, use_container_width=False)
 
     st.markdown("---")
 
     # --------------------------------------------------
-    # 3.3 Cracked moment of inertia I_cr + SLS section figure
+    # 3.3 Cracked moment of inertia I_cr (CALC BOX ONLY)
     # --------------------------------------------------
     st.subheader("3.3 Cracked moment of inertia $I_{{cr}}$")
 
@@ -748,12 +739,12 @@ $$
     I_c = 0.0
 
     for layer in layers_tension:
-        As = layer["As"]
-        y = layer["y"]
-        if y >= dn_sls:
-            I_t += n_sls * As * (y - dn_sls) ** 2
+        As_i = layer["As"]
+        y_i = layer["y"]
+        if y_i >= dn_sls:
+            I_t += n_sls * As_i * (y_i - dn_sls) ** 2
         else:
-            I_c += n_sls * As * (dn_sls - y) ** 2
+            I_c += n_sls * As_i * (dn_sls - y_i) ** 2
 
     if include_comp and comp_layer is not None:
         As_c = comp_layer["As"]
@@ -765,11 +756,8 @@ $$
 
     Icr = I_conc + I_t + I_c
 
-    col_I_calc, col_I_fig = st.columns([2, 1])
-
-    with col_I_calc:
-        calcbox(
-            rf"""
+    calcbox(
+        rf"""
 Cracked moment of inertia (transformed section):
 
 $$
@@ -791,10 +779,9 @@ $$
 I_{{cr}} = {Icr:,.2f}\ \text{{mm}}^4
 $$
 """
-        )
+    )
 
-    # 3.3 no extra figure now (the SLS stress diagram lives in 3.2)
-
+    st.markdown("---")
 
     # --------------------------------------------------
     # 3.4 Curvature at service moment
@@ -937,7 +924,7 @@ The table below lists $\varepsilon_{{s,i}}$ and $f_{{s,i}}$ for each steel layer
     # --------------------------------------------------
     st.subheader("3.7 SLS steel stress used in crack-width checks")
 
-    # OUTERMOST tension layer (deepest y) controls crack width
+    # OUTERMOST tension layer (deepest y) with positive stress
     fs_tension = None
     if steel_rows:
         deepest = max(
