@@ -494,9 +494,7 @@ def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
     db_top = st.session_state.get("db_top", 0.0) or 0.0
     cover_top = st.session_state.get("cover_top", 0.0) or 0.0
 
-    As_top = (
-        nb_top * math.pi * db_top**2 / 4.0 if nb_top and db_top else 0.0
-    )
+    As_top = nb_top * math.pi * db_top**2 / 4.0 if nb_top and db_top else 0.0
     y_top = cover_top + db_top / 2.0 if db_top else 0.0
     comp_layer = (
         {
@@ -542,14 +540,14 @@ n = \frac{{{Es:.0f}}}{{{Ec:.0f}}}
     # Table of steel layers (transformed areas)
     layer_rows = []
     for layer in layers_tension:
-        As = layer["As"]
+        As_i = layer["As"]
         layer_rows.append(
             {
                 "Layer": layer["name"],
                 "Description": layer["label"],
                 "Depth y (mm)": layer["y"],
-                "A_s (mm²)": As,
-                "n A_s (mm²)": n_sls * As,
+                "A_s (mm²)": As_i,
+                "n A_s (mm²)": n_sls * As_i,
             }
         )
 
@@ -569,8 +567,7 @@ n = \frac{{{Es:.0f}}}{{{Ec:.0f}}}
     st.markdown("---")
 
     # --------------------------------------------------
-    # 3.2 Neutral axis depth d_n (cracked section)
-    #     + SLS stress diagram
+    # 3.2 Neutral axis depth d_n (cracked section) + SLS stress diagram
     # --------------------------------------------------
     st.subheader("3.2 Neutral axis depth $d_n$ (cracked section)")
 
@@ -581,15 +578,16 @@ n = \frac{{{Es:.0f}}}{{{Ec:.0f}}}
 
         # Steel contributions (transformed)
         T_steel = 0.0
+
         # tension layers
         for layer in layers_tension:
-            As = layer["As"]
-            y = layer["y"]
-            if y > dn:
-                T_steel += n_sls * As * (y - dn)
+            As_i = layer["As"]
+            y_i = layer["y"]
+            if y_i > dn:
+                T_steel += n_sls * As_i * (y_i - dn)
             else:
                 # if a "tension" layer ever ends up above NA, treat as compression
-                C_conc += n_sls * As * (dn - y)
+                C_conc += n_sls * As_i * (dn - y_i)
 
         # optional compression layer
         if include_comp and comp_layer is not None:
@@ -667,7 +665,6 @@ $$
         )
 
     with col_dn_fig:
-        # SLS stress diagram (same style as the SLS tab)
         fig_sls = _make_sls_stress_block_figure(
             D_mm=D or 0.0,
             d_mm=d,
@@ -694,12 +691,12 @@ $$
     I_c = 0.0
 
     for layer in layers_tension:
-        As = layer["As"]
-        y = layer["y"]
-        if y >= dn_sls:
-            I_t += n_sls * As * (y - dn_sls) ** 2
+        As_i = layer["As"]
+        y_i = layer["y"]
+        if y_i >= dn_sls:
+            I_t += n_sls * As_i * (y_i - dn_sls) ** 2
         else:
-            I_c += n_sls * As * (dn_sls - y) ** 2
+            I_c += n_sls * As_i * (dn_sls - y_i) ** 2
 
     if include_comp and comp_layer is not None:
         As_c = comp_layer["As"]
@@ -711,11 +708,8 @@ $$
 
     Icr = I_conc + I_t + I_c
 
-    col_I_calc, _ = st.columns([2, 1])
-
-    with col_I_calc:
-        calcbox(
-            rf"""
+    calcbox(
+        rf"""
 Cracked moment of inertia (transformed section):
 
 $$
@@ -737,11 +731,173 @@ $$
 I_{{cr}} = {Icr:,.2f}\ \text{{mm}}^4
 $$
 """
-        )
+    )
 
     st.markdown("---")
 
     # --------------------------------------------------
-    # 3.4 – 3.7 (unchanged)
+    # 3.4 Curvature at service moment  (UNCHANGED)
     # --------------------------------------------------
-    # ... your existing 3.4, 3.5, 3.6, 3.7 code stays as-is below ...
+    st.subheader("3.4 Curvature at service moment")
+
+    Ms_Nmm = Ms * 1e6
+    kappa = Ms_Nmm / (Ec * Icr) if Ec and Icr else 0.0
+
+    calcbox(
+        rf"""
+Using $M_s$ as the service moment:
+
+$$
+\kappa = \frac{{M_s}}{{E_c I_{{cr}}}}
+$$
+
+Substituting:
+
+$$
+\kappa = \frac{{{Ms:.2f}\times 10^6}}{{{Ec:.0f} \times {Icr:,.2f}}}
+       = {kappa:.3e}\ \text{{mm}}^{{-1}}
+"""
+    )
+    st.markdown("---")
+
+    # --------------------------------------------------
+    # 3.5 Strain distribution ε(y) = κ (y − d_n)
+    # --------------------------------------------------
+    st.subheader("3.5 Strain distribution $\\varepsilon(y) = \\kappa (y - d_n)$")
+
+    strain_points = [("Top fibre", 0.0)]
+    for layer in layers_tension:
+        strain_points.append((layer["label"], layer["y"]))
+    if include_comp and comp_layer is not None:
+        strain_points.append((comp_layer["label"], comp_layer["y"]))
+    strain_points.append(("Bottom fibre", D))
+
+    strain_rows = []
+    for name, yi in strain_points:
+        eps = kappa * (yi - dn_sls)
+        strain_rows.append({"Layer": name, "Depth y (mm)": yi, "ε": eps})
+
+    df_eps = pd.DataFrame(strain_rows)
+
+    col_sls_calc, col_sls_fig = st.columns([2, 1])
+
+    with col_sls_calc:
+        calcbox(
+            rf"""
+Strain at depth $y$ from the top:
+
+$$
+\varepsilon(y) = \kappa (y - d_n)
+$$
+
+For key layers (including each steel layer), the table lists:
+
+- Depth $y$  
+- Strain $\varepsilon(y)$
+"""
+        )
+        st.table(df_eps)
+
+    with col_sls_fig:
+        fig_eps, ax_eps = plt.subplots()
+        ys = [row["Depth y (mm)"] for row in strain_rows]
+        eps_vals = [row["ε"] for row in strain_rows]
+        ax_eps.plot(eps_vals, ys, marker="o")
+        ax_eps.axhline(dn_sls, linestyle="--", linewidth=0.8, color="black")
+        ax_eps.set_xlabel("Strain ε")
+        ax_eps.set_ylabel("Depth from top (mm)")
+        ax_eps.set_title("SLS strain distribution")
+        ax_eps.invert_yaxis()
+        ax_eps.grid(True, linewidth=0.3)
+        st.pyplot(fig_eps, use_container_width=True)
+        plt.close(fig_eps)
+
+    st.markdown("---")
+
+    # --------------------------------------------------
+    # 3.6 Steel stresses at SLS
+    # --------------------------------------------------
+    st.subheader("3.6 Steel stresses at SLS")
+
+    steel_rows = []
+    # tension layers
+    for layer in layers_tension:
+        eps_s = kappa * (layer["y"] - dn_sls)
+        fs = Es * eps_s  # MPa
+        steel_rows.append(
+            {
+                "Layer": layer["name"],
+                "Description": layer["label"],
+                "Depth y (mm)": layer["y"],
+                "ε_s": eps_s,
+                "f_s (MPa)": fs,
+            }
+        )
+
+    # compression layer (if any)
+    if include_comp and comp_layer is not None:
+        eps_s_c = kappa * (comp_layer["y"] - dn_sls)
+        fs_c = Es * eps_s_c
+        steel_rows.append(
+            {
+                "Layer": comp_layer["name"],
+                "Description": comp_layer["label"],
+                "Depth y (mm)": comp_layer["y"],
+                "ε_s": eps_s_c,
+                "f_s (MPa)": fs_c,
+            }
+        )
+
+    df_steel = pd.DataFrame(steel_rows)
+
+    calcbox(
+        rf"""
+Steel strain in each layer is:
+
+$$
+\varepsilon_{{s,i}} = \kappa (d_i - d_n)
+$$
+
+and the corresponding stress is:
+
+$$
+f_{{s,i}} = E_s\, \varepsilon_{{s,i}}
+$$
+
+The table below lists $\varepsilon_{{s,i}}$ and $f_{{s,i}}$ for each steel layer.
+"""
+    )
+    st.table(df_steel)
+    st.markdown("---")
+
+    # --------------------------------------------------
+    # 3.7 Link to crack-width calculation
+    # --------------------------------------------------
+    st.subheader("3.7 SLS steel stress used in crack-width checks")
+
+    # Take the bottom-most tension layer as the controlling one for cracking
+    fs_tension = None
+    if steel_rows:
+        deepest = max(steel_rows, key=lambda row: row["Depth y (mm)"])
+        fs_tension = deepest["f_s (MPa)"]
+
+    if fs_tension is not None:
+        calcbox(
+            rf"""
+For crack-width calculations, the **critical tension steel stress** at SLS
+is typically taken as the stress in the deepest tension layer.
+
+From the table above, this is approximately:
+
+$$
+f_{{s,ser}} \approx {fs_tension:.1f}\ \text{{MPa}}
+$$
+
+This is the value you would use in the crack-control checks
+(e.g. on the Crack Width tab) when relating steel stress to crack width.
+"""
+        )
+    else:
+        st.info(
+            "No tension layer found for crack-width link – check the SLS inputs."
+        )
