@@ -8,9 +8,150 @@ from bending_diagrams import (
     _plot_stress_strain_profiles,
     _make_uls_stress_block_figure,
     _make_uls_force_model_figure,
-    _make_sls_stress_block_figure,
+    _make_sls_stress_block_figure,  # still used elsewhere, untouched
 )
 from bending_core import _fmt, _layout_bars_in_rows  # <-- add _layout_bars_in_rows here
+
+
+# ============================================================
+#  LOCAL HELPER – SLS STRESS FIGURE FOR 3.2 ONLY
+# ============================================================
+def _make_sls_stress_block_figure_32(D_mm, d_mm, dn_mm, layers_tension):
+    """
+    Local SLS stress diagram used ONLY in 3.2.
+
+    Matches the style of the main SLS panel:
+    - triangular compression block
+    - α2 f'c width arrow on top
+    - internal compression arrows
+    - dashed NA, vertical d_n arrow + label
+    - one T arrow for each tension layer (T1, T2, ...)
+    """
+
+    if D_mm <= 0 or math.isnan(D_mm):
+        D_mm = 600.0
+    if dn_mm <= 0 or math.isnan(dn_mm):
+        dn_mm = D_mm / 3.0
+
+    # Set some "stress axis" widths in arbitrary units
+    x_comp_max = 1.0       # compression extent
+    x_T_max = 1.8          # tension arrow extent
+    margin_top = 0.3 * D_mm
+    margin_bot = 0.3 * D_mm
+
+    y_min = -margin_top
+    y_max = D_mm + margin_bot
+
+    fig, ax = plt.subplots(figsize=(3.0, 3.6))
+
+    # Vertical stress axis
+    ax.plot([0, 0], [0, D_mm], color="black", linewidth=1.5)
+
+    # Compression triangle (right angle at top-left)
+    tri_x = [0, x_comp_max, 0]
+    tri_y = [0, 0, dn_mm]
+    ax.fill(tri_x, tri_y, color="#ffcccc", alpha=0.7, zorder=1)
+    ax.plot(tri_x + [tri_x[0]], tri_y + [tri_y[0]], color="red", linewidth=1.2, zorder=2)
+
+    # Dashed neutral axis at y = dn
+    ax.plot(
+        [0, x_T_max],
+        [dn_mm, dn_mm],
+        linestyle="--",
+        linewidth=0.8,
+        color="black",
+    )
+
+    # α2 f'c label and width arrow above triangle
+    y_alpha = -0.08 * D_mm
+    ax.annotate(
+        "",
+        xy=(0, y_alpha),
+        xytext=(x_comp_max, y_alpha),
+        arrowprops=dict(arrowstyle="<->", color="red", linewidth=1.0),
+    )
+    ax.text(
+        x_comp_max / 2.0,
+        y_alpha - 0.04 * D_mm,
+        r"$\alpha_2 f'_c$",
+        color="red",
+        ha="center",
+        va="top",
+        fontsize=9,
+    )
+
+    # A few internal compression arrows (pointing left)
+    for frac in [0.2, 0.5, 0.8]:
+        y_i = frac * dn_mm
+        ax.annotate(
+            "",
+            xy=(0.05 * x_comp_max, y_i),
+            xytext=(0.9 * x_comp_max, y_i),
+            arrowprops=dict(arrowstyle="<-", color="red", linewidth=0.8),
+        )
+
+    # d_n arrow + label to the right of the block
+    x_dn = x_T_max * 0.9
+    ax.annotate(
+        "",
+        xy=(x_dn, dn_mm),
+        xytext=(x_dn, 0),
+        arrowprops=dict(arrowstyle="<->", color="red", linewidth=0.9),
+    )
+    ax.text(
+        x_dn + 0.05 * x_T_max,
+        dn_mm / 2.0,
+        r"$d_n = %.0f\ \text{mm}$" % dn_mm,
+        color="red",
+        ha="left",
+        va="center",
+        fontsize=9,
+    )
+
+    # Tension arrows for each layer
+    if layers_tension:
+        # sort by depth from top
+        layers_sorted = sorted(layers_tension, key=lambda L: L["y"])
+        for i, layer in enumerate(layers_sorted):
+            y_layer = layer["y"]
+            name = layer["name"]
+
+            # Clamp y within [0, D_mm]
+            y_layer = max(0.0, min(D_mm, y_layer))
+
+            ax.annotate(
+                "",
+                xy=(x_T_max, y_layer),
+                xytext=(0, y_layer),
+                arrowprops=dict(arrowstyle="->", color="tab:blue", linewidth=1.0),
+            )
+            # Slight vertical offset per layer so labels don't collide
+            ax.text(
+                x_T_max + 0.05 * x_T_max,
+                y_layer + (i * 0.04 * D_mm),
+                name,
+                color="tab:blue",
+                ha="left",
+                va="center",
+                fontsize=8,
+            )
+
+    # "Stress (MPa)" label at bottom
+    ax.text(
+        x_T_max / 2.0,
+        D_mm + 0.18 * D_mm,
+        "Stress (MPa)",
+        ha="center",
+        va="bottom",
+        fontsize=9,
+    )
+
+    # Style
+    ax.set_xlim(-0.2 * x_comp_max, x_T_max * 1.3)
+    ax.set_ylim(y_max, y_min)  # invert so top is visually "up"
+    ax.axis("off")
+
+    return fig
 
 
 # ============================================================
@@ -717,14 +858,15 @@ $$
         )
 
     with col_32_fig:
-        # SLS stress diagram beside the calc box –
-        # matches the main SLS panel style.
-        fig_sls = _make_sls_stress_block_figure(
+        # Local, detailed SLS stress diagram (this does NOT touch the main SLS panel)
+        fig_sls = _make_sls_stress_block_figure_32(
             D_mm=D or 0.0,
             d_mm=d,
             dn_mm=dn_sls,
+            layers_tension=layers_tension,
         )
         st.pyplot(fig_sls, use_container_width=False)
+        plt.close(fig_sls)
 
     st.markdown("---")
 
