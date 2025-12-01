@@ -10,7 +10,8 @@ from bending_diagrams import (
     _make_uls_force_model_figure,
     _make_sls_stress_block_figure,
 )
-from bending_core import _fmt
+from bending_core import _fmt, _layout_bars_in_rows  # <-- add _layout_bars_in_rows here
+
 
 # ============================================================
 #  TAB 1 – ULS (UNCHANGED)
@@ -461,12 +462,20 @@ $$
 
 
 # ============================================================
-#  TAB 3 – SLS (UPDATED WITH 3.6 & 3.7, LAYERS, COMP STEEL)
+#  TAB 3 – SLS (UPDATED WITH LAYERS + COMP STEEL)
 # ============================================================
 def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
     """
     Tab 3 – SLS cracked-section teaching model.
-    Uses a layered steel model (bottom layer + optional compression steel).
+
+    IMPORTANT:
+    - For BENDING capacity we can combine bottom bars to one layer.
+    - For CRACK CONTROL (AS 3600) we want stresses in EACH steel layer,
+      and the OUTERMOST tension layer controls f_s,ser.
+
+    Here we:
+      * Build one layer for each bottom bar ROW (T1, T2, ...)
+      * Optionally one compression layer for top bars (C1)
     """
     st.header("3. SLS Bending – Cracked Section (Teaching Model)")
 
@@ -477,24 +486,71 @@ def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
     Ms = Mu_star  # service moment (kNm)
 
     # --------------------------------------------------
-    #  Build steel layers
+    #  Read bar layout info from session_state
     # --------------------------------------------------
-    # Bottom tension layer (always present)
-    layers_tension = [
-        {
-            "name": "T1",
-            "label": "Bottom tension steel",
-            "y": d,
-            "As": Ast,
-        }
-    ]
+    nb_bot = st.session_state.get("nb_bot", 0) or 0
+    db_bot = st.session_state.get("db_bot", 0.0) or 0.0
+    cover_bot = st.session_state.get("cover_bot", 0.0) or 0.0
+    rowgap_bot = st.session_state.get("rowgap_bot", 0.0) or 0.0
 
-    # Candidate compression layer from top bars (if present in session_state)
     nb_top = st.session_state.get("nb_top", 0) or 0
     db_top = st.session_state.get("db_top", 0.0) or 0.0
     cover_top = st.session_state.get("cover_top", 0.0) or 0.0
 
-    As_top = nb_top * math.pi * db_top**2 / 4.0 if nb_top and db_top else 0.0
+    # --------------------------------------------------
+    #  Build STEEL LAYERS
+    # --------------------------------------------------
+    layers_tension: list[dict] = []
+
+    # --- Bottom tension layers (T1, T2, ...) ---
+    if nb_bot > 0 and db_bot > 0 and cover_bot > 0:
+        # Use the same helper as the section diagram to work out
+        # how many bars fall into each row.
+        min_spacing_bot = 2 * db_bot
+        layout_bot = _layout_bars_in_rows(
+            nb_bot, b, cover_bot, db_bot, min_spacing_bot, max_rows=3
+        )
+        # Count bars per row index
+        row_counts: dict[int, int] = {}
+        for _, row_idx in layout_bot:
+            row_counts[row_idx] = row_counts.get(row_idx, 0) + 1
+
+        As_bar_bot = math.pi * db_bot**2 / 4.0
+        r_bot = db_bot / 2.0
+        # depth of first (outermost) row from top
+        y_row0 = D - cover_bot - r_bot
+
+        # Create a layer for each row present
+        for row_idx in sorted(row_counts.keys()):
+            n_row = row_counts[row_idx]
+            if n_row <= 0:
+                continue
+            As_row = n_row * As_bar_bot
+            y_row = y_row0 - row_idx * (db_bot + rowgap_bot)
+            layers_tension.append(
+                {
+                    "name": f"T{row_idx + 1}",
+                    "label": f"Bottom tension steel (row {row_idx + 1})",
+                    "y": y_row,
+                    "As": As_row,
+                }
+            )
+
+    # Fallback: if something is missing, use a single equivalent layer
+    if not layers_tension:
+        layers_tension = [
+            {
+                "name": "T1",
+                "label": "Bottom tension steel",
+                "y": d,
+                "As": Ast,
+            }
+        ]
+
+    # --- Top compression layer (C1), if present ---
+    As_top = (
+        nb_top * math.pi * db_top**2 / 4.0 if nb_top and db_top else 0.0
+    )
     y_top = cover_top + db_top / 2.0 if db_top else 0.0
     comp_layer = (
         {
@@ -534,6 +590,7 @@ Substituting:
 $$
 n = \frac{{{Es:.0f}}}{{{Ec:.0f}}}
   = {Es/Ec:.2f}
+$$
 """
     )
 
@@ -567,16 +624,21 @@ n = \frac{{{Es:.0f}}}{{{Ec:.0f}}}
     st.markdown("---")
 
     # --------------------------------------------------
-    # 3.2 Neutral axis depth d_n (cracked section) + SLS stress diagram
+    # 3.2 Neutral axis depth d_n (cracked section)
     # --------------------------------------------------
     st.subheader("3.2 Neutral axis depth $d_n$ (cracked section)")
 
     def equilibrium_residual(dn: float) -> float:
-        """C(dn) - T(dn) = 0 for cracked section."""
-        # Concrete compression resultant
-        C_conc = 0.5 * b * dn**2  # mm² * mm → N / n factor is outside
+        """
+        C(dn) - T(dn) = 0 for cracked section.
 
-        # Steel contributions (transformed)
+        Concrete compression:
+            C_conc = 0.5 * b * d_n^2   (triangular)
+        Steel (transformed) above NA contributes to compression,
+        below NA contributes to tension.
+        """
+        C_conc = 0.5 * b * dn**2
+
         T_steel = 0.0
 
         # tension layers
@@ -586,7 +648,6 @@ n = \frac{{{Es:.0f}}}{{{Ec:.0f}}}
             if y_i > dn:
                 T_steel += n_sls * As_i * (y_i - dn)
             else:
-                # if a "tension" layer ever ends up above NA, treat as compression
                 C_conc += n_sls * As_i * (dn - y_i)
 
         # optional compression layer
@@ -598,7 +659,6 @@ n = \frac{{{Es:.0f}}}{{{Ec:.0f}}}
             else:
                 T_steel += n_sls * As_c * (y_c - dn)
 
-        # Concrete is already in N-equivalent units under transformed method
         return C_conc - T_steel
 
     # Simple bisection between near-top and near-bottom
@@ -619,7 +679,7 @@ n = \frac{{{Es:.0f}}}{{{Ec:.0f}}}
                 f_low = f_mid
         dn_sls = 0.5 * (dn_low + dn_high)
     else:
-        # Fallback: use the original single-layer quadratic if bracketing fails
+        # Fallback: original single-layer quadratic
         a_quad = 0.5 * b
         b_coef = n_sls * Ast
         c_coef = -n_sls * Ast * d
@@ -637,11 +697,8 @@ n = \frac{{{Es:.0f}}}{{{Ec:.0f}}}
         if math.isnan(dn_sls):
             dn_sls = D / 3.0
 
-    col_dn_calc, col_dn_fig = st.columns([2, 1])
-
-    with col_dn_calc:
-        calcbox(
-            rf"""
+    calcbox(
+        rf"""
 From equilibrium of transformed areas:
 
 Tension side:
@@ -662,30 +719,27 @@ $$
 d_n = {dn_sls:.2f}\ \text{{mm}}
 $$
 """
-        )
+    )
 
-    with col_dn_fig:
-        fig_sls = _make_sls_stress_block_figure(
-            D_mm=D or 0.0,
-            d_mm=d,
-            dn_mm=dn_sls,
-            include_comp=bool(include_comp and comp_layer is not None),
-            d_comp_mm=(
-                comp_layer["y"]
-                if (include_comp and comp_layer is not None)
-                else None
-            ),
-        )
-        st.pyplot(fig_sls, use_container_width=False)
+    # SLS stress diagram figure (unchanged orientation etc.)
+    fig_sls = _make_sls_stress_block_figure(
+        D_mm=D or 0.0,
+        d_mm=d,
+        dn_mm=dn_sls,
+        include_comp=bool(include_comp and comp_layer is not None),
+        d_comp_mm=comp_layer["y"]
+        if (include_comp and comp_layer is not None)
+        else None,
+    )
+    st.pyplot(fig_sls, use_container_width=False)
 
     st.markdown("---")
 
     # --------------------------------------------------
-    # 3.3 Cracked moment of inertia I_cr  (NO DIAGRAM)
+    # 3.3 Cracked moment of inertia I_cr
     # --------------------------------------------------
     st.subheader("3.3 Cracked moment of inertia $I_{{cr}}$")
 
-    # Classify compression / tension for Icr based on dn_sls
     I_conc = b * dn_sls**3 / 3.0
     I_t = 0.0
     I_c = 0.0
@@ -732,11 +786,10 @@ I_{{cr}} = {Icr:,.2f}\ \text{{mm}}^4
 $$
 """
     )
-
     st.markdown("---")
 
     # --------------------------------------------------
-    # 3.4 Curvature at service moment  (UNCHANGED)
+    # 3.4 Curvature at service moment
     # --------------------------------------------------
     st.subheader("3.4 Curvature at service moment")
 
@@ -815,11 +868,12 @@ For key layers (including each steel layer), the table lists:
     st.markdown("---")
 
     # --------------------------------------------------
-    # 3.6 Steel stresses at SLS
+    # 3.6 Steel stresses at SLS (each layer)
     # --------------------------------------------------
     st.subheader("3.6 Steel stresses at SLS")
 
     steel_rows = []
+
     # tension layers
     for layer in layers_tension:
         eps_s = kappa * (layer["y"] - dn_sls)
@@ -875,17 +929,22 @@ The table below lists $\varepsilon_{{s,i}}$ and $f_{{s,i}}$ for each steel layer
     # --------------------------------------------------
     st.subheader("3.7 SLS steel stress used in crack-width checks")
 
-    # Take the bottom-most tension layer as the controlling one for cracking
+    # OUTERMOST tension layer (deepest y) controls crack width
     fs_tension = None
     if steel_rows:
-        deepest = max(steel_rows, key=lambda row: row["Depth y (mm)"])
-        fs_tension = deepest["f_s (MPa)"]
+        deepest = max(
+            (row for row in steel_rows if row["f_s (MPa)"] > 0.0),
+            key=lambda row: row["Depth y (mm)"],
+            default=None,
+        )
+        if deepest is not None:
+            fs_tension = deepest["f_s (MPa)"]
 
     if fs_tension is not None:
         calcbox(
             rf"""
 For crack-width calculations, the **critical tension steel stress** at SLS
-is typically taken as the stress in the deepest tension layer.
+is taken as the stress in the **outermost tension layer**.
 
 From the table above, this is approximately:
 
