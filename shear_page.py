@@ -52,6 +52,46 @@ def calcbox(md: str):
     st.markdown(box_html, unsafe_allow_html=True)
 
 
+def local_row(
+    label: str,
+    key: str,
+    default_value: float,
+    *,
+    min_value=None,
+    max_value=None,
+    step=None,
+    help_text: str | None = None,
+):
+    """
+    Row-style number input for LOCAL (non-shared) values.
+
+    Visual layout matches number_row:
+    - label on the left
+    - compact widget on the right
+
+    Does NOT participate in the session-state contract
+    (no TAB_KEYS / sync_callbacks).
+    """
+    # Use existing value if present, otherwise the provided default
+    current = st.session_state.get(key, default_value)
+
+    col_label, col_input = st.columns([2, 1])
+    with col_label:
+        if help_text:
+            st.markdown(f"{label}  \n<span style='font-size: 0.8rem; color: #666;'>{help_text}</span>", unsafe_allow_html=True)
+        else:
+            st.markdown(label)
+    with col_input:
+        st.number_input(
+            "",
+            key=key,
+            value=float(current),
+            min_value=None if min_value is None else float(min_value),
+            max_value=None if max_value is None else float(max_value),
+            step=1.0 if step is None else float(step),
+        )
+
+
 # ------------------------------------------------------------
 #  MAIN PAGE RENDER FUNCTION  (original logic + calc boxes)
 # ------------------------------------------------------------
@@ -195,24 +235,37 @@ summary can show shear utilisation.
     with col_eps:
         st.markdown("**εₓ inputs (ULS flexural strain)**")
 
-        A_st = st.number_input(
+        local_row(
             "A_st (mm²) – non-prestressed tension steel",
-            value=float(4 * (math.pi * 20**2 / 4)),
+            "shear_A_st",
+            default_value=float(4 * (math.pi * 20**2 / 4)),
+            min_value=0.0,
+            help_text="Total area of non-prestressed tension steel.",
         )
-        A_pt = st.number_input(
+        local_row(
             "A_pt (mm²) – prestressing steel",
-            value=0.0,
+            "shear_A_pt",
+            default_value=0.0,
+            min_value=0.0,
+            help_text="Total area of prestressing tendons.",
         )
-        f_po = st.number_input(
+        local_row(
             "f_po (MPa) – effective tendon stress",
-            value=0.0,
+            "shear_f_po",
+            default_value=0.0,
+            min_value=0.0,
+            help_text="Effective stress in prestressing steel at ULS.",
         )
-        A_ct = st.number_input(
+        # For A_ct we still use get_param for default size, but do NOT sync across tabs
+        local_row(
             "A_ct (mm²) – area of concrete in tension",
-            value=float((get_param("b", 400.0)) * (get_param("D", 600.0) / 2.0)),
+            "shear_A_ct",
+            default_value=float((get_param("b", 400.0)) * (get_param("D", 600.0) / 2.0)),
+            min_value=0.0,
+            help_text="Approximate concrete area in tension zone.",
         )
 
-    # ------------------ 1.4 Torsion & φ (local only) ------------------
+    # ------------------ 1.4 Torsion & φ (local/shared mix) ------------------
     col_torsion, col_dummy = st.columns(2)
     with col_torsion:
         st.markdown("**Torsion & φ (linked T* + local factors)**")
@@ -228,18 +281,22 @@ summary can show shear utilisation.
             step=10.0,
         )
 
-        phi = st.number_input(
+        # φ and σ_cp are local-only, so use local_row
+        local_row(
             "φ – strength reduction for shear",
-            value=0.75,
+            "shear_phi",
+            default_value=0.75,
             min_value=0.5,
             max_value=0.9,
             step=0.05,
+            help_text="Strength reduction factor for shear/torsion.",
         )
-
-        sigma_cp = st.number_input(
-            "σ_cp – average prestress (MPa)",
-            value=0.0,
-            help="Used in torsion cracking torque T_cr.",
+        local_row(
+            "σ_cp (MPa) – average prestress",
+            "shear_sigma_cp",
+            default_value=0.0,
+            min_value=0.0,
+            help_text="Used in torsion cracking torque T_cr.",
         )
 
     # -------------------------------------------------
@@ -265,6 +322,18 @@ summary can show shear utilisation.
     s_lig = get_param("s_lig")
 
     d = get_param("d")
+
+    # Local-only values pulled from session_state (set via local_row)
+    phi = float(st.session_state.get("shear_phi", 0.75))
+    sigma_cp = float(st.session_state.get("shear_sigma_cp", 0.0))
+    A_st = float(st.session_state.get("shear_A_st", 4 * (math.pi * 20**2 / 4)))
+    A_pt = float(st.session_state.get("shear_A_pt", 0.0))
+    f_po = float(st.session_state.get("shear_f_po", 0.0))
+    A_ct = float(
+        st.session_state.get(
+            "shear_A_ct", (get_param("b", 400.0)) * (get_param("D", 600.0) / 2.0)
+        )
+    )
 
     if not (b and D and d):
         st.error("Geometry (b, D, d) not fully defined – check Inputs / Bending tab.")
@@ -355,12 +424,16 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
     st.markdown("---")
     st.subheader("3. Effective web section and shear reinforcement")
 
-    d_g = st.number_input(
+    # Local row for d_g
+    local_row(
         "d_g – max aggregate size (mm)",
-        value=20.0,
+        "shear_d_g",
+        default_value=20.0,
         min_value=5.0,
         max_value=40.0,
+        step=1.0,
     )
+    d_g = float(st.session_state.get("shear_d_g", 20.0))
 
     lig_d = lig_d or 10.0
     legs = legs or 2.0
@@ -400,11 +473,14 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
 
     st.markdown("**3.1 Effective web width $b_v$ and shear depth $d_v$ (Cl. 8.2.2)**")
 
-    sum_duct = st.number_input(
+    # Local row for sum_duct
+    local_row(
         "Sum of duct diameters crossing web (mm)",
-        value=0.0,
+        "shear_sum_duct",
+        default_value=0.0,
         min_value=0.0,
     )
+    sum_duct = float(st.session_state.get("shear_sum_duct", 0.0))
 
     kd_opt = st.selectbox(
         "k_d factor for prestressing ducts",
