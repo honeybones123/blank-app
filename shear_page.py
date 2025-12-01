@@ -1,5 +1,3 @@
-# shear_page.py
-
 import math
 import pandas as pd
 import streamlit as st
@@ -71,47 +69,51 @@ def calcbox(md: str):
 # ------------------------------------------------------------
 def _compute_shear_torsion():
     """
-    Compute a simple φV_u,cap and φT_u,cap with step values.
+    Compute a simple φVu,cap and φTu,cap with step values.
 
-    This is intentionally 'teaching style' rather than a full MCFT engine.
-    You can later swap the internals out without changing the UI.
+    Teaching-style MCFT-ish implementation – easy to swap out later.
     """
 
-    # Basic section + materials
+    # Basic section + materials  (shared keys)
     b = get_param("b")
     D = get_param("D")
-    d = get_param("d")  # effective depth to tension steel centroid (from bending)
+    d = get_param("d")  # derived in recalc_derived_values()
     fc = get_param("fc")
     fsy = get_param("fsy")
 
-    # Actions
-    V_star = get_param("V_star")     # kN
-    T_star = get_param("T_star")     # kNm (may be zero)
-    N_star = get_param("N_star")     # kN (tension +ve, compression -ve)
+    # Actions (shared keys from Inputs)
+    V_star = get_param("Vu_star")    # kN
+    T_star = get_param("Tu_star")    # kNm
+    N_star = get_param("N_star")     # kN (tension +ve)
+    P_star = get_param("P_star")     # kN (if you want to use it later)
 
-    # Shear reinforcement data (you might already store these)
-    # For now we read them generically; adjust keys to match your Inputs tab.
-    sv = get_param("sv")             # stirrup spacing (mm)
-    Av = get_param("Av")             # stirrup area per leg (mm²)
-    n_legs = get_param("n_legs")     # number of legs crossing shear crack
+    # Reduction factors
     phi_shear = get_param("phi_shear", 0.75)
+    phi_torsion = get_param("phi_torsion", 0.75)
+
+    # Shear reinforcement – use existing shared keys
+    lig_d = get_param("lig_d")          # mm
+    lig_legs = get_param("lig_legs")    # legs per stirrup
+    s_lig = get_param("s_lig")          # mm spacing
+
+    # Convert ligature data to MCFT-style Av, sv, n_legs
+    Av = None
+    if lig_d not in (None, 0):
+        Av = math.pi * lig_d**2 / 4.0  # one leg area (mm²)
+    n_legs = lig_legs
+    sv = s_lig
 
     # εx support inputs (derived from bending / Inputs)
-    Ast = get_param("Ast_bot")       # mm² – non-prestressed tension steel
-    Apt = get_param("Apt_ULS")       # mm² – prestressing steel
-    f_po = get_param("f_po_ULS")     # MPa – effective tendon stress
-    Act = get_param("Act_tension")   # mm² – area of concrete in tension
+    Ast = get_param("Ast_bot")          # mm² – non-prestressed tension steel
+    Apt = get_param("Apt_ULS")          # mm² – prestressing steel (may be None)
+    f_po = get_param("f_po_ULS")        # MPa – effective tendon stress (may be None)
+    Act = get_param("Act_tension")      # mm² – area of concrete in tension (may be None)
 
     # Basic checks + fallbacks
-    if d in (None, 0):
-        # crude fallback on overall depth if bending hasn't set d yet
-        if D not in (None, 0):
-            d = 0.9 * D
-        else:
-            d = None
+    if d in (None, 0) and D not in (None, 0):
+        d = 0.9 * D
 
     if None in (b, D, d, fc, fsy, V_star):
-        # Not enough info; return NaNs but still safe
         return dict(
             dv=float("nan"),
             eps_x=float("nan"),
@@ -125,36 +127,33 @@ def _compute_shear_torsion():
             T_u_cap=float("nan"),
             phi_T_u_cap=0.0,
             T_util=float("nan"),
+            Ast=Ast,
+            Apt=Apt,
+            f_po=f_po,
+            Act=Act,
             inputs=dict(
                 b=b,
                 D=D,
                 d=d,
                 fc=fc,
                 fsy=fsy,
-                V_star=V_star,
-                T_star=T_star,
+                Vu_star=V_star,
+                Tu_star=T_star,
+                N_star=N_star,
             ),
         )
 
     # --------------------------------------------------------
     # 1. Shear depth dv
     # --------------------------------------------------------
-    # dv is usually taken as ~0.9 d and limited by code; we'll keep it simple.
-    dv = 0.9 * d
-    dv = min(dv, 0.9 * D)
+    dv = min(0.9 * d, 0.9 * D)
 
     # --------------------------------------------------------
     # 2. Flexural strain εx at the tension steel (AS3600 MCFT-style)
     # --------------------------------------------------------
-    # Very simplified: εx from total tension in bottom fibre.
-    # You can replace with your exact AS3600 expression.
-    #
-    #   εx = ( (M* / (z * Es * As_eq)) + (N* / (Es * As_eq)) - f_po / Es * (Apt/As_eq) )
-    #
-    # where As_eq = Ast + Apt, N* tension positive.
     Es = get_param("Es") or 200_000.0  # MPa
-    Mu_star = get_param("Mu_star")     # kNm (from bending page)
-    z = 0.9 * d                        # internal lever arm approximation
+    Mu_star = get_param("Mu_star")     # kNm (bending page)
+    z = 0.9 * d
 
     As_eq = (Ast or 0.0) + (Apt or 0.0)
     eps_x = float("nan")
@@ -162,13 +161,11 @@ def _compute_shear_torsion():
     if As_eq > 0 and Es not in (None, 0):
         term_M = 0.0
         if Mu_star not in (None, 0) and z not in (None, 0):
-            # convert Mu* from kNm → Nmm: 1 kNm = 10^6 Nmm
-            term_M = (Mu_star * 1e6) / (z * Es * As_eq)
+            term_M = (Mu_star * 1e6) / (z * Es * As_eq)  # kNm→Nmm
 
         term_N = 0.0
         if N_star not in (None, 0):
-            # N* in kN → N
-            term_N = (N_star * 1e3) / (Es * As_eq)
+            term_N = (N_star * 1e3) / (Es * As_eq)       # kN→N
 
         term_prestress = 0.0
         if f_po not in (None, 0) and Apt not in (None, 0):
@@ -177,28 +174,23 @@ def _compute_shear_torsion():
         eps_x = term_M + term_N - term_prestress
 
     # --------------------------------------------------------
-    # 3. βv and θ (AS3600 MCFT factors – teaching version)
+    # 3. βv and θ (simplified MCFT)
     # --------------------------------------------------------
-    # Common AS3600 / MCFT style:
-    #    βv = 1 / (1 + 0.63 * sqrt(500 εx))   (clamped)
     beta_v = float("nan")
     if eps_x not in (None, 0) and eps_x > 0:
         beta_v = 1.0 / (1.0 + 0.63 * math.sqrt(500.0 * eps_x))
         beta_v = max(0.1, min(beta_v, 1.0))
 
-    # Shear crack angle; often taken 30–40°. Use 35° unless you prefer a formula.
     theta_deg = 35.0
     theta_rad = math.radians(theta_deg)
 
     # --------------------------------------------------------
-    # 4. Concrete shear capacity V_uc  (no shear reinforcement)
+    # 4. Concrete shear capacity V_uc
     # --------------------------------------------------------
-    # Example AS3600-style: v_uc = 0.18 * βv * sqrt(fc') (MPa)
-    #   → V_uc = v_uc * b * dv  (N) → /1000 = kN
     V_uc = float("nan")
     if beta_v not in (None, 0) and fc not in (None, 0) and b not in (None, 0) and dv not in (None, 0):
-        v_uc = 0.18 * beta_v * math.sqrt(fc)  # MPa = N/mm²
-        V_uc = v_uc * b * dv / 1000.0        # kN
+        v_uc = 0.18 * beta_v * math.sqrt(fc)   # MPa
+        V_uc = v_uc * b * dv / 1000.0         # kN
 
     # --------------------------------------------------------
     # 5. Shear reinforcement contribution V_us
@@ -211,8 +203,7 @@ def _compute_shear_torsion():
         and fsy not in (None, 0)
         and d not in (None, 0)
     ):
-        # V_us = (A_v * f_y * d * n_legs / s_v) / 1000  (kN)
-        V_us = (Av * n_legs * fsy * d / sv) / 1000.0
+        V_us = (Av * n_legs * fsy * d / sv) / 1000.0  # kN
 
     # --------------------------------------------------------
     # 6. Total shear capacity & utilisation
@@ -227,20 +218,15 @@ def _compute_shear_torsion():
     # --------------------------------------------------------
     # 7. Torsion (simple teaching placeholder)
     # --------------------------------------------------------
-    # For now we use a proportional check only; you can later replace with
-    # your full AS3600 torsion expressions.
-    phi_T_u_cap = 0.0
     T_u_cap = float("nan")
+    phi_T_u_cap = 0.0
     T_util = float("nan")
-    phi_torsion = get_param("phi_torsion", 0.75)
 
-    if T_star not in (None, 0):
-        # crude teaching: assume torsion capacity scales with shear capacity
-        # T_u_cap ≈ V_u_cap * (0.5 * D)   (kNm)
-        if V_u_cap not in (None, 0) and D not in (None, 0):
-            T_u_cap = V_u_cap * (0.5 * D) / 1000.0  # N * mm → kNm approx
-            phi_T_u_cap = phi_torsion * T_u_cap
-            T_util = T_star / phi_T_u_cap if phi_T_u_cap > 0 else float("inf")
+    if T_star not in (None, 0) and V_u_cap not in (None, 0) and D not in (None, 0):
+        # simple proportional torsion capacity
+        T_u_cap = V_u_cap * (0.5 * D) / 1000.0    # kNm approx
+        phi_T_u_cap = phi_torsion * T_u_cap
+        T_util = T_star / phi_T_u_cap if phi_T_u_cap > 0 else float("inf")
 
     # Push key results into the shared results dict for the summary page
     update_results(
@@ -273,13 +259,11 @@ def _compute_shear_torsion():
             d=d,
             fc=fc,
             fsy=fsy,
-            V_star=V_star,
-            T_star=T_star,
+            Vu_star=V_star,
+            Tu_star=T_star,
             N_star=N_star,
-            sv=sv,
-            Av=Av,
-            n_legs=n_legs,
             phi_shear=phi_shear,
+            phi_torsion=phi_torsion,
         ),
     )
 
@@ -306,22 +290,24 @@ def render_shear():
     with col1:
         st.markdown("### 1.1 Geometry & materials (linked to Inputs)")
 
-        number_row("b – beam/web width (mm)", "b", col1, sync_callbacks)
-        number_row("D – overall depth (mm)", "D", col1, sync_callbacks)
-        number_row("d – effective depth to tension steel (mm)", "d", col1, sync_callbacks)
-        number_row("f'c (MPa)", "fc", col1, sync_callbacks)
-        number_row("f_sy (MPa)", "fsy", col1, sync_callbacks)
-        number_row("E_s (MPa)", "Es", col1, sync_callbacks)
+        number_row("b – beam/web width (mm)", "shear_b", col1, sync_callbacks)
+        number_row("D – overall depth (mm)", "shear_D", col1, sync_callbacks)
+        number_row("L – span L (mm)", "shear_L", col1, sync_callbacks)
 
+        number_row("f'c (MPa)", "shear_fc", col1, sync_callbacks)
+        number_row("f_sy (MPa)", "shear_fsy", col1, sync_callbacks)
+        number_row("E_c (MPa)", "shear_Ec", col1, sync_callbacks)
+        number_row("E_s (MPa)", "shear_Es", col1, sync_callbacks)
 
     with col2:
         st.markdown("### 1.2 Design actions (linked to Inputs)")
 
-        number_row("V* – design shear (kN)", "V_star", col2, sync_callbacks)
-        number_row("T* – torsion at section (kNm)", "T_star", col2, sync_callbacks)
-        number_row("N* – axial force (kN, +tension)", "N_star", col2, sync_callbacks)
-        number_row("φ_v – strength reduction for shear", "phi_shear", col2, sync_callbacks)
-        number_row("φ_t – strength reduction for torsion", "phi_torsion", col2, sync_callbacks)
+        number_row("V* – design shear (kN)", "shear_Vu_star", col2, sync_callbacks)
+        number_row("T* – torsion at section (kNm)", "shear_Tu_star", col2, sync_callbacks)
+        number_row("P* – prestress / axial (kN)", "shear_P_star", col2, sync_callbacks)
+        number_row("N* – axial force (kN, +tension)", "shear_N_star", col2, sync_callbacks)
+        number_row("φ_v – strength reduction for shear", "shear_phi_v", col2, sync_callbacks)
+        number_row("φ_t – strength reduction for torsion", "shear_phi_t", col2, sync_callbacks)
 
     st.markdown("---")
 
@@ -330,11 +316,11 @@ def render_shear():
 
     col3, col4 = st.columns(2)
     with col3:
-        number_row("s_v – stirrup spacing (mm)", "sv", col3, sync_callbacks)
-        number_row("A_v – area of one leg (mm²)", "Av", col3, sync_callbacks)
+        number_row("d_lig – ligature diameter (mm)", "shear_lig_d", col3, sync_callbacks)
+        number_row("s_lig – ligature spacing (mm)", "shear_s_lig", col3, sync_callbacks)
 
     with col4:
-        number_row("n_legs – legs per stirrup crossing shear crack", "n_legs", col4, sync_callbacks)
+        number_row("n_legs – legs per ligature", "shear_lig_legs", col4, sync_callbacks)
 
     st.markdown("---")
 
@@ -460,8 +446,8 @@ Design capacity:
 
     df = pd.DataFrame(
         [
-            ["Design shear", "V*", _fmt(results["inputs"]["V_star"]), "kN", ""],
-            ["Design torsion", "T*", _fmt(results["inputs"]["T_star"]), "kNm", ""],
+            ["Design shear", "V*", _fmt(results["inputs"]["Vu_star"]), "kN", ""],
+            ["Design torsion", "T*", _fmt(results["inputs"]["Tu_star"]), "kNm", ""],
             ["Shear depth", "d_v", _fmt(dv), "mm", "AS 3600 cl. 8.x"],
             ["Flexural strain", "ε_x", _fmt(results["eps_x"], "{:.6f}"), "–", "AS 3600 MCFT"],
             ["Concrete shear capacity", "V_uc", _fmt(V_uc), "kN", "AS 3600 cl. 8.x"],
@@ -475,4 +461,3 @@ Design capacity:
     )
 
     summary_placeholder.dataframe(df, use_container_width=True)
-
