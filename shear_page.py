@@ -1,4 +1,3 @@
-# app/pages/shear_torsion.py
 import math
 import streamlit as st
 
@@ -12,6 +11,9 @@ from state_and_helpers import (
 from widgets_helpers import apply_global_widget_css, number_row
 
 
+# ------------------------------------------------------------
+#  Small helpers
+# ------------------------------------------------------------
 def cot(rad: float) -> float:
     """Cotangent with protection against tan(pi/2) etc."""
     return 1.0 / math.tan(rad)
@@ -50,6 +52,9 @@ def calcbox(md: str):
     st.markdown(box_html, unsafe_allow_html=True)
 
 
+# ------------------------------------------------------------
+#  MAIN PAGE RENDER FUNCTION
+# ------------------------------------------------------------
 def render_shear():
     apply_global_widget_css()
     _inject_calcbox_css()
@@ -69,7 +74,7 @@ summary can show shear utilisation.
     )
 
     # =====================================================
-    # 1. DESIGN INPUTS (shared + local)
+    # 1. DESIGN INPUTS (shared + local)  — SAME WIDGET CONTRACT
     # =====================================================
     st.subheader("Design Inputs")
 
@@ -176,27 +181,6 @@ summary can show shear utilisation.
             help="Used in torsion cracking torque T_cr (AS 3600 Cl. 8.3.4).",
         )
 
-        st.markdown("### Torsion geometry (stirrup path)")
-        uh = st.number_input(
-            "u_h (mm) — stirrup centreline perimeter",
-            value=float(max(1.0, 2.0 * (get_param("b", 300.0) + 0.72 * get_param("D", 600.0)))),
-            help="Perimeter of the closed stirrup centreline.",
-        )
-        Ao = st.number_input(
-            "A_o (mm²) — effective torsion area",
-            value=float(max(1.0, 0.85 * get_param("b", 300.0) * 0.72 * get_param("D", 600.0))),
-            help="Area enclosed by shear flow path (approx).",
-        )
-        A_oh = st.number_input(
-            "A_oh (mm²) — area inside stirrup centreline",
-            value=float(max(1.0, 0.9 * Ao)),
-            help="Used in web-crushing torsion term.",
-        )
-        torsion_required = st.checkbox(
-            "Include torsion in design checks",
-            value=(get_param("Tu_star", 0.0) > 0.0),
-        )
-
     # ---------- 1.3 εx helper inputs (local only) ----------
     with col_eps:
         st.markdown("### εₓ inputs (ULS flexural strain)")
@@ -245,6 +229,65 @@ summary can show shear utilisation.
         return
 
     # =====================================================
+    # 2. STEP 1 — TORSION CRACKING CHECK (T_cr)
+    # =====================================================
+    st.markdown("---")
+    st.markdown(
+        "### Step 1 – Does torsion crack the section? "
+        "(T_cr check, AS 3600 Cl. 8.3.4)"
+    )
+
+    # Static formula (no f-string → no brace issues)
+    st.latex(
+        r"T_{cr} = 0.33 \sqrt{f'_c}\,"
+        r"\frac{A_{cp}^2}{u_c}"
+        r"\sqrt{1 + \frac{\sigma_{cp}}{0.33 \sqrt{f'_c}}}"
+    )
+
+    cover_t = 40.0  # assumed for closed stirrup centroid
+    A_cp = b * D
+    u_c = 2 * (b + D)
+    Ao = 0.9 * A_cp
+
+    # closed stirrup path (used again in Step 2 and web crushing)
+    uh = 2 * ((b - cover_t) + (D - cover_t))
+    A_oh = (b - cover_t) * (D - cover_t)
+
+    sqrt_fc = math.sqrt(fc)
+    denom = 0.33 * sqrt_fc
+    Tcr_Nmm = 0.33 * sqrt_fc * (A_cp**2) / u_c * math.sqrt(
+        1 + (sigma_cp / denom if denom > 0 else 0.0)
+    )
+    Tcr_kNm = Tcr_Nmm / 1e6
+
+    torsion_required_limit = 0.25 * phi * Tcr_kNm
+    torsion_required = T_star > torsion_required_limit
+
+    step1_req = ">" if torsion_required else "<="
+    step1_text = "required" if torsion_required else "not required (strength check only)"
+
+    calcbox(
+        f"""
+Inputs
+- Section width b = {b:.0f} mm
+- Section depth D = {D:.0f} mm
+- Gross torsion box area A_cp = b × D = {A_cp:.0f} mm^2
+- Perimeter of torsion box u_c = 2 (b + D) = {u_c:.0f} mm
+- Concrete strength f'c = {fc:.1f} MPa
+- Average prestress sigma_cp = {sigma_cp:.2f} MPa
+
+Cracking torque T_cr
+- Computed T_cr = {Tcr_kNm:.1f} kNm
+
+Torsion design check
+- 0.25 φ T_cr = 0.25 × {phi:.2f} × {Tcr_kNm:.1f} = {torsion_required_limit:.1f} kNm
+- Demand T* = {T_star:.1f} kNm
+- Condition: T* {step1_req} 0.25 φ T_cr
+- Conclusion: torsion design is {step1_text}.
+"""
+    )
+
+    # =====================================================
     # 3. STEP 2 — CONVERT TORSION INTO AN EQUIVALENT SHEAR V_eq*
     # =====================================================
     st.markdown("---")
@@ -253,80 +296,58 @@ summary can show shear utilisation.
         "$V_{eq}^*$ (AS 3600 Cl. 8.2.3)"
     )
 
-    T_star_Nmm = T_star * 1e6
+    # Static formulas (no f-string)
+    st.latex(r"V_{t,eq} = 0.9\,\dfrac{T^* u_h}{2 A_o}")
+    st.latex(r"V_{eq}^* = \sqrt{(V^*)^2 + V_{t,eq}^2}")
 
     if torsion_required:
+        # --- Full equivalent shear including torsion ---
+        T_star_Nmm = T_star * 1e6
         torsion_eq_N = 0.9 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
         torsion_eq_kN = torsion_eq_N / 1e3
         V_eq = math.sqrt(V_star**2 + torsion_eq_kN**2)
 
         calcbox(
-            fr"""
+            f"""
 Inputs
-- Shear demand: $V^* = {V_star:.1f}\,\text{{kN}}$
-- Torsion: $T^* = {T_star:.1f}\,\text{{kNm}}$
-- Stirrup path: $u_h = {uh:.0f}\,\text{{mm}}$
-- Effective torsion area: $A_o = {Ao:.0f}\,\text{{mm}}^2$
+- Shear demand V* = {V_star:.1f} kN
+- Torsion T* = {T_star:.1f} kNm
+- Stirrup path u_h = {uh:.0f} mm
+- Effective torsion area A_o = {Ao:.0f} mm^2
 
-Formula (AS 3600 Cl. 8.2.3)
-\[
-V_{{t,eq}} = 0.9\,\frac{{T^* u_h}}{{2 A_o}}
-\]
-\[
-V_{{eq}}^* = \sqrt{{V^{{*2}} + V_{{t,eq}}^2}}
-\]
-
-Substitution
-\[
-V_{{t,eq}} =
-0.9\,\frac{{{T_star:.1f}\times 10^6 \times {uh:.0f}}}{{2 \times {Ao:.0f}}}
-= {torsion_eq_kN:.1f}\,\text{{kN}}
-\]
-\[
-V_{{eq}}^* =
-\sqrt{{({V_star:.1f})^2 + ({torsion_eq_kN:.1f})^2}}
-= {V_eq:.1f}\,\text{{kN}}
-\]
+Equivalent shear
+- V_t,eq = 0.9 × T* × u_h / (2 A_o) = {torsion_eq_kN:.1f} kN
+- V_eq* = sqrt( V*^2 + V_t,eq^2 ) = {V_eq:.1f} kN
 
 Result / check
 - Torsion is included as an equivalent shear.
-- This $V_{{eq}}^*$ is used in the sectional shear and web-crushing checks.
+- This V_eq* is used in the sectional shear and web-crushing checks.
 """
         )
-
     else:
+        # --- No torsion design: equivalent shear = shear only ---
         torsion_eq_kN = 0.0
         V_eq = V_star
 
         calcbox(
-            fr"""
+            f"""
 Inputs
-- Shear demand: $V^* = {V_star:.1f}\,\text{{kN}}$
-- Torsion: $T^* = {T_star:.1f}\,\text{{kNm}}$  
+- Shear demand V* = {V_star:.1f} kN
+- Torsion T* = {T_star:.1f} kNm
   (from Step 1, torsion design is not required)
 
-Formula (AS 3600 Cl. 8.2.3)
-\[
-V_{{eq}}^* = \sqrt{{V^{{*2}} + V_{{t,eq}}^2}}
-\]
-Since $V_{{t,eq}} = 0$,  
-\[
-V_{{eq}}^* = V^*
-\]
-
-Substitution
-\[
-V_{{t,eq}} = 0.0\,\text{{kN}}
-\]
-\[
-V_{{eq}}^* = V^* = {V_eq:.1f}\,\text{{kN}}
-\]
+Equivalent shear
+- V_t,eq = 0.0 kN
+- V_eq* = V* = {V_eq:.1f} kN
 
 Result / check
 - Torsion is not treated as a design action.
-- This $V_{{eq}}^*$ is carried into the sectional shear and web-crushing checks.
+- This V_eq* is carried into the sectional shear and web-crushing checks.
 """
         )
+
+
+
 
     # =====================================================
     # 4. STEP 3 — EFFECTIVE SECTION & SHEAR REINFORCEMENT
@@ -353,7 +374,7 @@ Result / check
         st.markdown(
             f"**Lig diameter (session)** = {lig_d:.1f} mm  \n"
             f"**Legs per lig (session)** = {legs:.0f}  \n"
-            f"**Stirrup spacing s (session)** = {s:.1f} mm"
+            f"**Stirrup spacing s_lig (session)** = {s_lig:.1f} mm"
         )
 
     with col_ligs2:
@@ -526,6 +547,7 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for use of the general MCFT exp
     st.write(f"$k_v = {k_v:.3f}$")
     st.write(f"$\\theta_v = {theta_v_deg:.1f}^\\circ$")
 
+    # For the summary text inside the calcbox
     Asv_over_s = Asv / s
     Asv_min_over_s = 0.08 * math.sqrt(fc) * b_v / (f_syv or 1.0)
     k_dg_display = locals().get("k_dg", float("nan"))
@@ -615,7 +637,7 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for use of the general MCFT exp
 
     V_star_N = V_star * 1e3
     term_V = V_star_N / (b_v * d_v or 1.0)
-    term_T = T_star_Nmm * uh / (1.7 * ((A_oh or 1.0) ** 2))
+    term_T = T_star_Nmm * uh / (1.7 * (A_oh**2 or 1.0))
 
     LHS = math.sqrt(term_V**2 + term_T**2)
     RHS = phi * Vu_max_N / (b_v * d_v or 1.0)
@@ -645,7 +667,7 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for use of the general MCFT exp
     # 9. SUMMARY BANNER + PUSH RESULTS
     # =======================================================
     torsion_label = (
-        "**Yes (included)**" if torsion_required else "No (strength check)"
+        "**Yes (T* > 0.25 φT_cr)**" if torsion_required else "No (strength check)"
     )
 
     summary_md = f"""
@@ -674,3 +696,22 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for use of the general MCFT exp
 
 if __name__ == "__main__":
     render_shear()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
