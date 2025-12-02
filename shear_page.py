@@ -74,7 +74,7 @@ summary can show shear utilisation.
     )
 
     # =====================================================
-    # 1. DESIGN INPUTS (shared + local)  — IDENTICAL CONTRACT
+    # 1. DESIGN INPUTS (shared + local)  — SAME WIDGET CONTRACT
     # =====================================================
     st.subheader("Design Inputs")
 
@@ -144,7 +144,7 @@ summary can show shear utilisation.
             "shear_Vu_star",
             get_param("Vu_star", 300.0),
             sync_callbacks,
-            help_text="Factored shear at the section, including torsion if applicable.",
+            help_text="Factored shear at the section.",
         )
         number_row(
             "Axial force N* (kN, +tension)",
@@ -184,7 +184,7 @@ summary can show shear utilisation.
             help="Used in torsion cracking torque T_cr (AS 3600 Cl. 8.3.4).",
         )
 
-    # ---------- 1.3 εx helper inputs (local) ----------
+    # ---------- 1.3 εx helper inputs (local only) ----------
     with col_eps:
         st.markdown("### εₓ inputs (ULS flexural strain)")
 
@@ -268,13 +268,14 @@ summary can show shear utilisation.
     )
     calcbox(
         f"""
-**Step 1 – Torsion geometry & cracking torque $T_{{cr}}$**
+**Step 1 – Torsion cracking check (AS 3600 Cl. 8.3.4)**
 
 - Gross area: $A_{{cp}} = {A_cp:.0f}\\ \\text{{mm}}^2$  
 - Perimeter: $u_c = {u_c:.0f}\\ \\text{{mm}}$  
 - Cracking torque: $T_{{cr}} = {Tcr_kNm:,.1f}\\ \\text{{kNm}}$  
 - Requirement: $T^* {step1_req} 0.25\\,φ T_{{cr}}$  
-  → **Torsion design {step1_text}**
+
+→ **Result:** Torsion design is **{step1_text}**.
 """
     )
 
@@ -295,16 +296,17 @@ summary can show shear utilisation.
         + f" = {V_eq:.1f}\\ \\text{{kN}}"
     )
     st.write(latex_expr)
-    st.write(f"(torsion contribution = {torsion_eq_kN:.1f} kN)")
+    st.write(f"(torsion contribution $V_{{t,eq}}$ = {torsion_eq_kN:.1f} kN)")
 
     calcbox(
         f"""
-**Step 2 – Equivalent shear with torsion**
+**Step 2 – Equivalent shear including torsion (AS 3600 Cl. 8.2.3)**
 
+- Shear component: $V^* = {V_star:.1f}\\ \\text{{kN}}$  
 - Torsion-equivalent shear: $V_{{t,eq}} = {torsion_eq_kN:.1f}\\ \\text{{kN}}$  
-- Combined action: $V_{{eq}}^* = {V_eq:.1f}\\ \\text{{kN}}$  
+- Combined: $V_{{eq}}^* = {V_eq:.1f}\\ \\text{{kN}}$  
 
-This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
+This $V_{{eq}}^*$ is used in the sectional shear and web-crushing checks.
 """
     )
 
@@ -427,6 +429,19 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
 
     st.write(f"$\\varepsilon_x = {eps_x:.5f}$")
 
+    calcbox(
+        f"""
+**Step 3 – Longitudinal strain at mid-depth (AS 3600 Cl. 8.2.4.2.3)**
+
+- Moment term: $|M^*|/d_v = {term_M:,.0f}\\ \\text{{N}}$  
+- Shear + torsion term: $\\sqrt{{(|V^*| - P_v)^2 + (0.97 T^* u_h / 2 A_o)^2}}$  
+- Axial / prestress terms: $0.5 N^*$ and $A_{{pt}} f_{{po}}$  
+- Resulting strain: $\\varepsilon_x = {eps_x:.5f}$  
+
+Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for the general MCFT expression.
+"""
+    )
+
     # =====================================================
     # 6. k_v and θ_v
     # =====================================================
@@ -463,7 +478,12 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
     st.write(f"$k_v = {k_v:.3f}$")
     st.write(f"$\\theta_v = {theta_v_deg:.1f}^\\circ$")
 
-    st.markdown("**5.3 Concrete shear strength $V_{uc}$ (Cl. 8.2.4.1)**")
+    # =====================================================
+    # 7. V_uc, V_us and sectional shear check
+    # =====================================================
+    st.subheader("6. Shear strength $V_{uc}$, $V_{us}$ and sectional check")
+
+    st.markdown("**6.1 Concrete shear strength $V_{uc}$ (Cl. 8.2.4.1)**")
     st.latex(r"V_{uc} = k_v\, b_v d_v \sqrt{f'_c},\quad \sqrt{f'_c} \le 8.0\ \text{MPa}")
 
     sqrt_fc_limited = min(math.sqrt(fc), 8.0)
@@ -473,12 +493,7 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
     st.write(f"$\\sqrt{{f'_c}}$ (limited) = {sqrt_fc_limited:.3f} MPa")
     st.write(f"$V_{{uc}} = {Vuc_kN:,.1f}\\ \\text{{kN}}$")
 
-    # =====================================================
-    # 7. V_us and sectional shear check
-    # =====================================================
-    st.subheader("6. Shear reinforcement contribution $V_{us}$ and sectional shear check")
-
-    st.markdown("**6.1 $V_{us}$ for perpendicular ligs (Cl. 8.2.5.2(a))**")
+    st.markdown("**6.2 Steel shear contribution $V_{us}$ (Cl. 8.2.5.2(a))**")
     st.latex(r"V_{us} = \left(\frac{A_{sv} f_{sy,v} d_v}{s}\right)\cot \theta_v")
 
     Vus_N = (Asv * f_syv * d_v / s) * cot(theta_v_rad)
@@ -486,13 +501,26 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
 
     st.write(f"$V_{{us}} = {Vus_kN:,.1f}\\ \\text{{kN}}$")
 
-    st.markdown("**6.2 Total shear strength and check (Cl. 8.2.3.1)**")
+    st.markdown("**6.3 Total sectional shear strength (Cl. 8.2.3.1)**")
     st.latex(r"V_u = V_{uc} + V_{us} + P_v,\quad \phi V_u \ge V_{eq}^*")
 
     Vu_total_kN = Vuc_kN + Vus_kN + P_v
     phi_Vu = phi * Vu_total_kN
-
     shear_ok = phi_Vu >= V_eq
+
+    calcbox(
+        f"""
+**Step 4 – Sectional shear strength (AS 3600 Cl. 8.2.3 & 8.2.4)**
+
+- Concrete shear: $V_{{uc}} = {Vuc_kN:,.1f}\\ \\text{{kN}}$  
+- Steel shear: $V_{{us}} = {Vus_kN:,.1f}\\ \\text{{kN}}$  
+- Total factored capacity: $V_u = {Vu_total_kN:,.1f}\\ \\text{{kN}}$  
+- Design strength: $φV_u = {phi_Vu:,.1f}\\ \\text{{kN}}$  
+- Demand: $V_{{eq}}^* = {V_eq:,.1f}\\ \\text{{kN}}$  
+
+→ **Sectional shear check:** {":green[OK]" if shear_ok else ":red[NOT OK]"}.
+"""
+    )
 
     # =====================================================
     # 8. Web crushing check
@@ -530,19 +558,13 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
 
     calcbox(
         f"""
-**Step 3 – Sectional shear strength**
+**Step 5 – Web-crushing strength (AS 3600 Cl. 8.2.6)**
 
-- Concrete shear: $V_{{uc}} = {Vuc_kN:,.1f}\\ \\text{{kN}}$  
-- Steel shear: $V_{{us}} = {Vus_kN:,.1f}\\ \\text{{kN}}$  
-- Total: $V_u = V_{{uc}} + V_{{us}} + P_v = {Vu_total_kN:,.1f}\\ \\text{{kN}}$  
-- Design: $φ V_u = {phi_Vu:,.1f}\\ \\text{{kN}}$ vs $V_{{eq}}^* = {V_eq:,.1f}\\ \\text{{kN}}$  
-  → **Sectional shear check: {"OK" if shear_ok else "NG"}**
+- Web-crushing shear capacity: $V_{{u,\\max}} = {Vu_max_kN:,.1f}\\ \\text{{kN}}$  
+- Combined demand term: $\\sqrt{{(V^*/b_v d_v)^2 + (T^* u_h / 1.7 A_{{oh}}^2)^2}} = {LHS:,.1f}$  
+- Limit: $φ V_{{u,\\max}} / (b_v d_v) = {RHS:,.1f}$  
 
-**Step 4 – Web-crushing strength**
-
-- $V_{{u,\\max}}$ (web crushing) = {Vu_max_kN:,.1f} kN  
-- Check: LHS = {LHS:,.1f} ≤ RHS = {RHS:,.1f} ?  
-  → **Web crushing: {"OK" if web_ok else "NG"}**
+→ **Web-crushing check:** {":green[OK]" if web_ok else ":red[NOT OK]"}.
 """
     )
 
@@ -579,4 +601,3 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
 
 if __name__ == "__main__":
     render_shear()
-
