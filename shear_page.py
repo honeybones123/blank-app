@@ -314,26 +314,26 @@ summary can show shear utilisation.
     )
 
     if torsion_required:
-        # -------- FULL EQUIVALENT SHEAR CASE (torsion included) --------
+        # -------- CASE A: TORSION DESIGN REQUIRED (torsion included) --------
         T_star_Nmm = T_star * 1e6
         torsion_eq_N = 0.9 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
         torsion_eq_kN = torsion_eq_N / 1e3
         V_eq = math.sqrt(V_star**2 + torsion_eq_kN**2)
 
-       _md = r"""
+        md = r"""
 ### **1. Inputs**
 
-- Shear demand: $V^* = %.1f\ \text{kN}$
-- Torsion: $T^* = %.1f\ \text{kNm}$
-- Stirrup path: $u_h = %.0f\ \text{mm}$
-- Torsion area: $A_o = %.0f\ \text{mm}^2$
+- Shear demand: $V^* = %.1f\ \text{kN}$  
+- Torsion: $T^* = %.1f\ \text{kNm}$  
+- Stirrup path: $u_h = %.0f\ \text{mm}$  
+- Effective torsion area: $A_o = %.0f\ \text{mm}^2$  
 
 ---
 
 ### **2. Formula (AS 3600 Cl. 8.2.3)**
 
 - Torsion-equivalent shear:  
-  $$V_{t,eq} = 0.9\,\frac{T^*\,u_h}{2A_o}$$  
+  $$V_{t,eq} = 0.9\,\frac{T^* u_h}{2 A_o}$$  
 
 - Combined equivalent shear:  
   $$V_{eq}^* = \sqrt{V^{*2} + V_{t,eq}^2}$$  
@@ -342,56 +342,61 @@ summary can show shear utilisation.
 
 ### **3. Substitution**
 
-- Torsion-equivalent shear:  
+- Torsion-equivalent shear:
 
-  $$V_{t,eq} = 0.9\,
+  $$V_{t,eq}
+    = 0.9\,
       \frac{\left(%.1f\times10^6\right)\,(%.0f)}
            {2\,(%.0f)}
-      = %.1f\ \text{kN}$$  
+    = %.1f\ \text{kN}$$  
 
-- Combined equivalent shear:  
+- Combined equivalent shear:
 
-  $$V_{eq}^* =
-      \sqrt{(%.1f)^2 + (%.1f)^2}
-      = %.1f\ \text{kN}$$  
+  $$V_{eq}^*
+    = \sqrt{(%.1f)^2 + (%.1f)^2}
+    = %.1f\ \text{kN}$$  
 
 ---
 
 ### **4. Result**
 
-**Equivalent shear including torsion:**  
+**Equivalent shear including torsion:**
 
 $$\boxed{V_{eq}^* = %.1f\ \text{kN}}$$  
 
 This $V_{eq}^*$ is used in the sectional shear and web-crushing checks.
 """ % (
-            V_star,          # inputs section
+            # Inputs
+            V_star,
             T_star,
             uh,
             Ao,
-            T_star,          # V_t,eq substitution
+            # V_t,eq substitution
+            T_star,
             uh,
             Ao,
             torsion_eq_kN,
-            V_star,          # V_eq substitution
+            # V_eq substitution
+            V_star,
             torsion_eq_kN,
             V_eq,
-            V_eq,            # boxed result
+            # Boxed result
+            V_eq,
         )
 
-        calcbox(_md)
+        calcbox(md)
 
     else:
-        # -------- NO TORSION DESIGN REQUIRED (V_eq* = V*) --------
+        # -------- CASE B: TORSION DESIGN NOT REQUIRED (V_eq* = V*) --------
         torsion_eq_kN = 0.0
         V_eq = V_star
 
-        _md = r"""
+        md = r"""
 ### **1. Inputs**
 
 - From Step 1: torsion design **not required**  
 - Shear demand: $V^* = %.1f\ \text{kN}$  
-- Therefore $V_{t,eq} = 0$ (torsion not treated as a design action)
+- Therefore $V_{t,eq} = 0$ (torsion not treated as a design action).  
 
 ---
 
@@ -404,16 +409,17 @@ This $V_{eq}^*$ is used in the sectional shear and web-crushing checks.
 
 ### **3. Substitution**
 
-- With $V_{t,eq} = 0$:  
+With $V_{t,eq} = 0$:
 
-  $$V_{eq}^* = \sqrt{(%.1f)^2 + 0^2}
-     = %.1f\ \text{kN}$$  
+$$V_{eq}^*
+  = \sqrt{(%.1f)^2 + 0^2}
+  = %.1f\ \text{kN}$$  
 
 ---
 
 ### **4. Result**
 
-**Equivalent shear (torsion ignored):**  
+**Equivalent shear (torsion ignored):**
 
 $$\boxed{V_{eq}^* = %.1f\ \text{kN}}$$  
 
@@ -425,7 +431,7 @@ This $V_{eq}^*$ is carried into the sectional shear and web-crushing checks.
             V_eq,    # boxed result
         )
 
-        calcbox(_md)
+        calcbox(md)
 
 
 
@@ -777,6 +783,7 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for use of the general MCFT exp
 
 if __name__ == "__main__":
     render_shear()
+
 
 
 
