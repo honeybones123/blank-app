@@ -702,6 +702,18 @@ $$\\varepsilon_{{x,2}} = \\frac{{{numerator_2:,.0f}}}{{{denom2:,.0f}}} = {eps_x_
 
     calcbox(
         f"""
+*Purpose: Calculate the longitudinal strain $\\varepsilon_x$ at mid-depth for use in the MCFT shear model (AS 3600 Cl. 8.2.4.2.2).*
+
+**Inputs used in this step:**
+
+- Section / shear geometry: $b = {_fmt(b)}$ mm, $D = {_fmt(D)}$ mm, $d = {_fmt(d)}$ mm, $d_v = {_fmt(d_v)}$ mm
+- Actions at the section: $M^* = {_fmt(M_star)}$ kNm, $V^* = {_fmt(V_star)}$ kN, $P_v = {_fmt(P_v)}$ kN, $N^* = {_fmt(N_star)}$ kN, $T^* = {_fmt(T_star)}$ kNm
+- Material stiffness: $E_s = {_fmt(Es,0)}$ MPa, $E_p = {_fmt(Ep,0)}$ MPa, $E_c = {_fmt(Ec,0)}$ MPa
+- Reinforcement / concrete areas: $A_{{st}} = {_fmt(A_st,1)}$ mm², $A_{{pt}} = {_fmt(A_pt,1)}$ mm², $A_{{ct}} = {_fmt(A_ct,1)}$ mm²
+- Torsion geometry: $u_h = {_fmt(uh)}$ mm, $A_o = {_fmt(Ao)}$ mm²
+
+---
+
 **Moment term:**
 
 $$|M^*|/d_v = \\frac{{|{M_star:.1f}| \\times 10^6}}{{{d_v:.1f}}} = {term_M:,.0f} \\text{{ N}}$$
@@ -930,6 +942,7 @@ This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative 
 
 if __name__ == "__main__":
     render_shear()
+
 
 
 
