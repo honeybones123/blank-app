@@ -304,67 +304,96 @@ summary can show shear utilisation.
 
 
 
-    # =====================================================
-    # 3. STEP 2 — CONVERT TORSION INTO AN EQUIVALENT SHEAR
-    # =====================================================
-    st.markdown("---")
-    st.markdown(
-        r"### Step 2 – Convert torsion into an equivalent shear "
-        r"$V_{eq}^*$ (Cl. 8.2.3)"
+# =====================================================
+# 3. STEP 2 — CONVERT TORSION INTO AN EQUIVALENT SHEAR
+# =====================================================
+st.markdown("---")
+st.markdown(
+    r"### Step 2 – Convert torsion into an equivalent shear $V_{eq}^*$ "
+    r"(AS 3600 Cl. 8.2.3)"
+)
+
+if torsion_required:
+
+    # -------- FULL EQUIVALENT SHEAR CASE --------
+    T_star_Nmm = T_star * 1e6
+    torsion_eq_N = 0.9 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
+    torsion_eq_kN = torsion_eq_N / 1e3
+    V_eq = math.sqrt(V_star**2 + torsion_eq_kN**2)
+
+    md = r"""
+### **1. Inputs**
+- Shear demand: $V^* = %.1f\ \text{kN}$
+- Torsion: $T^* = %.1f\ \text{kNm}$
+- Stirrup path: $u_h = %.0f\ \text{mm}$
+- Torsion area: $A_o = %.0f\ \text{mm}^2$
+
+### **2. Formula (AS 3600 Cl. 8.2.3)**
+- Torsion-equivalent shear:  
+  $$V_{t,eq} = 0.9\,\frac{T^*\,u_h}{2A_o}$$  
+
+- Combined equivalent shear:  
+  $$V_{eq}^* = \sqrt{V^{*2} + V_{t,eq}^2}$$  
+
+### **3. Substitution**
+- $$V_{t,eq} = 0.9\,\frac{(%.1f\times10^6)\,(%.0f)}{2(%.0f)} 
+   = %.1f\ \text{kN}$$
+
+- $$V_{eq}^* = \sqrt{(%.1f)^2 + (%.1f)^2} 
+   = %.1f\ \text{kN}$$
+
+### **4. Result**
+**Equivalent shear including torsion:**  
+$$\boxed{V_{eq}^* = %.1f\ \text{kN}}$$
+
+This $V_{eq}^*$ is used in the sectional shear and web-crushing checks.
+""" % (
+        V_star,
+        T_star,
+        uh,
+        Ao,
+        T_star,
+        uh,
+        Ao,
+        torsion_eq_kN,
+        V_star,
+        torsion_eq_kN,
+        V_eq,
+        V_eq,
     )
 
-    if torsion_required:
-        # -------- FULL EQUIVALENT SHEAR CASE --------
-        T_star_Nmm = T_star * 1e6
-        torsion_eq_N = 0.9 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
-        torsion_eq_kN = torsion_eq_N / 1e3
+    calcbox(md)
 
-        V_eq = math.sqrt(V_star**2 + torsion_eq_kN**2)
+else:
 
-        # Build the markdown in small, safe pieces
-        md = ""
-        md += "### **Equivalent shear formulas**\n"
-        md += "- $V_{t,eq} = 0.9\\,\\dfrac{T^* u_h}{2 A_o}$\n"
-        md += "- $V_{eq}^* = \\sqrt{V^{*2} + V_{t,eq}^2}$\n\n"
-        md += "---\n\n"
+    # -------- NO TORSION DESIGN CASE --------
+    torsion_eq_kN = 0.0
+    V_eq = V_star
 
-        md += "### **Substitution with values**\n"
-        md += f"- **Shear demand:**  \n  $V^* = {V_star:.1f}\\,\\text{{kN}}$\n\n"
-        md += (
-            "- **Torsion-equivalent shear:**  \n"
-            f"  $V_{{t,eq}} = {torsion_eq_kN:.1f}\\,\\text{{kN}}$\n\n"
-        )
-        md += (
-            "- **Combined equivalent shear:**  \n"
-            f"  $V_{{eq}}^* = {V_eq:.1f}\\,\\text{{kN}}$\n\n"
-        )
+    md = r"""
+### **1. Inputs**
+- From Step 1: torsion design **not required**  
+- Therefore $V_{t,eq} = 0$
 
-        md += "---\n\n"
-        md += "This $V_{eq}^*$ is used in the sectional shear and web-crushing checks.\n"
+### **2. Formula (general form)**
+$$V_{eq}^* = \sqrt{V^{*2} + V_{t,eq}^2}$$
 
-        calcbox(md)
+### **3. Substitution**
+$$V_{eq}^* = \sqrt{(%.1f)^2 + 0^2} = %.1f\ \text{kN}$$
 
-    else:
-        # -------- NO TORSION DESIGN REQUIRED --------
-        torsion_eq_kN = 0.0
-        V_eq = V_star
+### **4. Result**
+**Equivalent shear (torsion ignored):**  
+$$\boxed{V_{eq}^* = %.1f\ \text{kN}}$$
 
-        md = ""
-        md += "### **Equivalent shear formula**\n"
-        md += "- $V_{eq}^* = V^*$  \n"
-        md += "  *(torsion design not required from Step 1 → $V_{t,eq} = 0$)*\n\n"
-        md += "---\n\n"
+This $V_{eq}^*$ proceeds to all shear & web-crushing checks.
+""" % (
+        V_star,
+        V_eq,
+        V_eq,
+    )
 
-        md += "### **Substitution with values**\n"
-        md += "- **Torsion-equivalent shear:**  \n"
-        md += "  $V_{t,eq} = 0.0\\,\\text{kN}$\n\n"
-        md += "- **Equivalent shear:**  \n"
-        md += f"  $V_{{eq}}^* = V^* = {V_eq:.1f}\\,\\text{{kN}}$\n\n"
+    calcbox(md)
 
-        md += "---\n\n"
-        md += "This $V_{eq}^*$ is carried into the sectional shear and web-crushing checks.\n"
-
-        calcbox(md)
 
 
     # =====================================================
@@ -714,6 +743,7 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for use of the general MCFT exp
 
 if __name__ == "__main__":
     render_shear()
+
 
 
 
