@@ -554,7 +554,7 @@ $$\\Rightarrow d_v = {_fmt(d_v)} \\text{{ mm}}$$
             )
 
             st.markdown("---")
-            st.markdown("### **Equation 1 – Mid-depth in tension (εₓ ≥ 0)**")
+            st.markdown("### **Equation (1) – mid-depth in tension (εₓ ≥ 0)**")
 
             st.markdown(
                 r"""
@@ -576,38 +576,22 @@ $$\\Rightarrow d_v = {_fmt(d_v)} \\text{{ mm}}$$
     \dfrac{0.97\,T^*\,u_h}{2A_o}
 \right)^2
 }
++ 0.5N^* - A_{pt}f_{po}
 }
 {
 2(E_s A_{st} + E_p A_{pt})
-}
-+
-\frac{
-0.5N^* - A_{pt}f_{po}
-}
-{
-E_s A_{st} + E_p A_{pt}
 }
 \quad\text{(AS 3600 8.2.4.2.2(1))}
 """
             )
 
-            st.markdown(
-                r"""
-**Interpretation:**
-
-- Moment term → induces tensile force at mid-depth  
-- Shear/torsion term → vertical component acting as longitudinal shear force  
-- Axial & prestress contributions → direct effects on longitudinal strain  
-"""
-            )
-
             st.markdown("---")
-            st.markdown("### **Equation 2 – Mid-depth in slight compression (εₓ < 0)**")
+            st.markdown("### **Equation (2) – mid-depth in slight compression (εₓ < 0)**")
 
             st.markdown(
                 r"""
 **Use when:**  
-- The εₓ from Equation 1 comes out **negative**.  
+- The εₓ from Equation (1) comes out **negative**.  
 - Mid-depth is in **slight compression**, meaning the concrete **still carries compressive stress**.  
 - The concrete term $E_c A_{ct}$ is added to the denominator.
 """
@@ -630,12 +614,10 @@ E_s A_{st} + E_p A_{pt}
 
             st.markdown(
                 r"""
-**Highlights:**
+**Code limits:**  
 
-- Concrete stiffness helps resist compression at mid-depth.  
-- Less conservative than Equation 1 (higher shear capacity).  
-- Must remain within:  
-  $$-2.0\times10^{-4} \le \varepsilon_x \le 0$$
+- For the tension case (Eq. 1):  $\varepsilon_x \le 3.0\times10^{-3}$  
+- For the compression case (Eq. 2):  $-2.0\times10^{-4} \le \varepsilon_x \le 0$
 """
             )
 
@@ -645,66 +627,150 @@ E_s A_{st} + E_p A_{pt}
                 r"""
 ### **How the app uses these equations**
 
-1. Compute εₓ using **Equation 1**.  
-2. If εₓ is **negative**, recalculate using **Equation 2** *or* cap at 0.  
+1. Compute εₓ using **Equation (1)**.  
+2. If εₓ is **negative**, recompute using **Equation (2)**.  
 3. Apply AS 3600 limits:  
    $$-2.0\times10^{-4} \le \varepsilon_x \le 3.0\times10^{-3}$$
 4. Use the resulting εₓ to compute $k_v$ in Step 5.
 """
             )
 
+    # ------------------------------
+    #  Compute εx terms (numerical)
+    # ------------------------------
     M_star_Nmm = abs(M_star) * 1e6
     term_M = M_star_Nmm / (d_v or 1.0)
 
+    # Shear + torsion term for Eq. (1)
     Vprime_kN = abs(V_star) - P_v
     Vprime_N = Vprime_kN * 1e3
 
     torsion_N = 0.97 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
     sqrt_inner = math.sqrt(Vprime_N**2 + torsion_N**2)
 
+    # Axial / prestress
     N_star_N = 0.5 * N_star * 1e3
     A_pt_fpo_N = A_pt * f_po
 
-    numerator = term_M + sqrt_inner + N_star_N - A_pt_fpo_N
+    # Common numerator for Eq. (1)
+    numerator_1 = term_M + sqrt_inner + N_star_N - A_pt_fpo_N
 
     Ep = 195000.0  # tendon modulus, MPa
     denom1 = 2.0 * (Es * A_st + Ep * A_pt)
-    eps_x_1 = numerator / denom1 if denom1 > 0 else 0.0
+    eps_x_1 = numerator_1 / denom1 if denom1 > 0 else 0.0
 
-    if eps_x_1 < 0:
-        denom2 = 2.0 * (Es * A_st + Ep * A_pt + Ec * A_ct)
-        eps_x = numerator / denom2 if denom2 > 0 else 0.0
-        eps_x = max(-0.0002, min(eps_x, 0.0))
+    # For Eq. (2) we use |V*| (no torsion term in numerator; torsion is still handled via V_eq)
+    V_abs_N = abs(V_star) * 1e3
+    numerator_2 = term_M + V_abs_N - P_v * 1e3 + N_star_N - A_pt_fpo_N
+    denom2 = 2.0 * (Es * A_st + Ep * A_pt + Ec * A_ct)
+    eps_x_2 = numerator_2 / denom2 if denom2 > 0 else 0.0
+
+    # Choose governing εx according to AS 3600
+    if eps_x_1 >= 0:
+        eps_x_raw = eps_x_1
+        eq_used = "Equation (1) – mid-depth in tension"
     else:
-        eps_x = max(0.0, min(eps_x_1, 0.003))
+        eps_x_raw = eps_x_2
+        eq_used = "Equation (2) – mid-depth in slight compression"
 
-    st.write(f"$\\varepsilon_x = {eps_x:.5f}$")
+    # Apply code limits
+    eps_x = max(-0.0002, min(eps_x_raw, 0.003))
+
+    sign_note = (
+        " (mid-depth in **tension**, εₓ ≥ 0)" if eps_x >= 0 else
+        " (mid-depth in **slight compression**, εₓ < 0)"
+    )
+
+    st.write(f"$\\varepsilon_x = {eps_x:.5f}$" + sign_note)
+
+    # ------------------------------
+    #  Calc box with full Equation + substitution
+    # ------------------------------
+    eq2_note = ""
+    if eps_x_1 < 0:
+        eq2_note = f"""
+**Since the strain from Equation (1) is negative**  
+$\\varepsilon_{{x,1}} = {eps_x_1:.5f} < 0$, mid-depth is in slight compression.  
+AS 3600 allows εₓ to be taken as 0 or recalculated with **Equation (2)** including the
+concrete stiffness term:
+
+$$
+\\varepsilon_{{x,2}} =
+\\frac{{|M^*|/d_v + |V^*| - P_v + 0.5N^* - A_{{pt}} f_{{po}}}}
+{{
+2(E_s A_{{st}} + E_p A_{{pt}} + E_c A_{{ct}})
+}}
+$$
+
+Substituting the derived numerator and denominator:
+
+$$
+\\varepsilon_{{x,2}} =
+\\frac{{{numerator_2:,.0f}}}{{{denom2:,.0f}}}
+= {eps_x_2:.5f}
+$$
+"""
 
     calcbox(
         f"""
 **Moment term:**
 
-$$|M^*|/d_v = \\dfrac{{|{M_star:.1f}| \\times 10^6}}{{{d_v:.1f}}} = {term_M:,.0f} \\text{{ N}}$$
+$$|M^*|/d_v = \\dfrac{{|{M_star:.1f}| \\times 10^6}}{{{d_v:.1f}}}
+= {term_M:,.0f} \\text{{ N}}$$
 
-**Shear + torsion term inside the square-root:**
+**Shear + torsion term inside the square-root (for Equation (1)):**
 
 - $V' = |V^*| - P_v = |{V_star:.1f}| - {P_v:.1f} = {Vprime_kN:.1f}$ kN
-- $0.97 T^* u_h / (2A_o) = {torsion_N:,.0f}$ N (in shear-force units)
+- $0.97 T^* u_h / (2A_o) = {torsion_N:,.0f}$ N (shear-force units)
 
 $$\\sqrt{{V'^2 + (0.97 T^* u_h / 2A_o)^2}} = {sqrt_inner:,.0f} \\text{{ N}}$$
 
 **Axial / prestress contributions:**
 
-- $0.5 N^* = 0.5 \\times {N_star:.1f} \\times 10^3 = {N_star_N:,.0f}$ N
+- $0.5N^* = 0.5 \\times {N_star:.1f} \\times 10^3 = {N_star_N:,.0f}$ N
 - $A_{{pt}} f_{{po}} = {A_pt:.1f} \\times {f_po:.1f} = {A_pt_fpo_N:,.0f}$ N
 
-**Final strain:**
+---
 
-$$\\varepsilon_x = {eps_x:.5f}$$
+### Equation (1) – mid-depth in tension (εₓ ≥ 0)
 
-(capped to $[-2.0 \\times 10^{{-4}},\\, 3.0 \\times 10^{{-3}}]$)
+$$
+\\varepsilon_{{x,1}} =
+\\frac{{
+|M^*|/d_v +
+\\sqrt{{V'^2 + (0.97 T^* u_h / 2A_o)^2}} +
+0.5N^* - A_{{pt}} f_{{po}}
+}}
+{{
+2(E_s A_{{st}} + E_p A_{{pt}})
+}}
+$$
 
-**Check:** $\\varepsilon_x \\le 3.0 \\times 10^{{-3}}$ for use of the general MCFT expression.
+Substituting the derived terms:
+
+$$
+\\varepsilon_{{x,1}} =
+\\frac{{{numerator_1:,.0f}}}{{{denom1:,.0f}}}
+= {eps_x_1:.5f}
+$$
+
+{eq2_note}
+
+---
+
+### Final strain used for MCFT
+
+- Governing equation: **{eq_used}**  
+- Raw strain: $\\varepsilon_x = {eps_x_raw:.5f}$  
+- After applying AS 3600 limits  
+  $[-2.0 \\times 10^{{-4}},\\, 3.0 \\times 10^{{-3}}]$:
+
+$$
+\\varepsilon_x = {eps_x:.5f}
+$$
+
+This value is **{ "positive (tension at mid-depth)" if eps_x >= 0 else "negative (slight compression at mid-depth)" }**
+and is used in **Step 5** to compute $k_v$ and $\\theta_v$.
 """
     )
 
