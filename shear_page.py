@@ -237,19 +237,12 @@ summary can show shear utilisation.
         "(T_cr check, AS 3600 Cl. 8.3.4)"
     )
 
-    # Static formula (no f-string → no brace issues)
-    st.latex(
-        r"T_{cr} = 0.33 \sqrt{f'_c}\,"
-        r"\frac{A_{cp}^2}{u_c}"
-        r"\sqrt{1 + \frac{\sigma_{cp}}{0.33 \sqrt{f'_c}}}"
-    )
-
     cover_t = 40.0  # assumed for closed stirrup centroid
     A_cp = b * D
     u_c = 2 * (b + D)
     Ao = 0.9 * A_cp
 
-    # closed stirrup path (used again in Step 2 and web crushing)
+    # Closed stirrup path (reused in Step 2 & εx)
     uh = 2 * ((b - cover_t) + (D - cover_t))
     A_oh = (b - cover_t) * (D - cover_t)
 
@@ -263,27 +256,45 @@ summary can show shear utilisation.
     torsion_required_limit = 0.25 * phi * Tcr_kNm
     torsion_required = T_star > torsion_required_limit
 
-    step1_req = ">" if torsion_required else "<="
-    step1_text = "required" if torsion_required else "not required (strength check only)"
+    step1_req = ">" if torsion_required else "\\le"
+    step1_text = (
+        "required" if torsion_required else "not required (strength check only)"
+    )
 
     calcbox(
         f"""
-Inputs
-- Section width b = {b:.0f} mm
-- Section depth D = {D:.0f} mm
-- Gross torsion box area A_cp = b × D = {A_cp:.0f} mm^2
-- Perimeter of torsion box u_c = 2 (b + D) = {u_c:.0f} mm
-- Concrete strength f'c = {fc:.1f} MPa
-- Average prestress sigma_cp = {sigma_cp:.2f} MPa
+Inputs:
+- Section width: $b = {b:.0f}\\,\\text{{mm}}$
+- Section depth: $D = {D:.0f}\\,\\text{{mm}}$
+- Gross torsion box area: $A_{{cp}} = bD = {A_cp:.0f}\\,\\text{{mm}}^2$
+- Perimeter of torsion box: $u_c = 2(b + D) = {u_c:.0f}\\,\\text{{mm}}$
+- Concrete strength: $f'_c = {fc:.1f}\\,\\text{{MPa}}$
+- Average prestress: $\\sigma_{{cp}} = {sigma_cp:.2f}\\,\\text{{MPa}}$
+- Effective torsion area: $A_o \\approx 0.9 A_{{cp}} = {Ao:.0f}\\,\\text{{mm}}^2$
+- Stirrup centreline path: $u_h = 2[(b - c_t) + (D - c_t)] = {uh:.0f}\\,\\text{{mm}}$  
+  (with $c_t = {cover_t:.0f}\\,\\text{{mm}}$)
 
-Cracking torque T_cr
-- Computed T_cr = {Tcr_kNm:.1f} kNm
+Formula (AS 3600 Cl. 8.3.4)
+\\[
+T_{{cr}} = 0.33\\sqrt{{f'_c}}\\,
+          \\frac{{A_{{cp}}^2}}{{u_c}}
+          \\sqrt{{1 + \\frac{{\\sigma_{{cp}}}}{{0.33\\sqrt{{f'_c}}}}}}
+\\]
 
-Torsion design check
-- 0.25 φ T_cr = 0.25 × {phi:.2f} × {Tcr_kNm:.1f} = {torsion_required_limit:.1f} kNm
-- Demand T* = {T_star:.1f} kNm
-- Condition: T* {step1_req} 0.25 φ T_cr
-- Conclusion: torsion design is {step1_text}.
+Substitution
+\\[
+T_{{cr}} = 0.33\\sqrt{{{fc:.1f}}}\\,
+          \\frac{{{A_cp:.0f}^2}}{{{u_c:.0f}}}
+          \\sqrt{{1 + \\frac{{{sigma_cp:.2f}}}{{0.33\\sqrt{{{fc:.1f}}}}}}}
+        = {Tcr_kNm:,.1f}\\,\\text{{kNm}}
+\\]
+
+Result / check
+- Limit: $0.25\\,\\phi T_{{cr}} = 0.25 \\times {phi:.2f} \\times {Tcr_kNm:,.1f}
+  = {torsion_required_limit:,.1f}\\,\\text{{kNm}}$
+- Demand: $T^* = {T_star:.1f}\\,\\text{{kNm}}$
+- Condition: $T^* {step1_req} 0.25\\,\\phi T_{{cr}}$
+- Conclusion: torsion design is **{step1_text}**.
 """
     )
 
@@ -296,10 +307,6 @@ Torsion design check
         "$V_{eq}^*$ (AS 3600 Cl. 8.2.3)"
     )
 
-    # Static formulas (no f-string)
-    st.latex(r"V_{t,eq} = 0.9\,\dfrac{T^* u_h}{2 A_o}")
-    st.latex(r"V_{eq}^* = \sqrt{(V^*)^2 + V_{t,eq}^2}")
-
     if torsion_required:
         # --- Full equivalent shear including torsion ---
         T_star_Nmm = T_star * 1e6
@@ -310,20 +317,37 @@ Torsion design check
         calcbox(
             f"""
 Inputs
-- Shear demand V* = {V_star:.1f} kN
-- Torsion T* = {T_star:.1f} kNm
-- Stirrup path u_h = {uh:.0f} mm
-- Effective torsion area A_o = {Ao:.0f} mm^2
+- Shear demand: $V^* = {V_star:.1f}\\,\\text{{kN}}$
+- Torsion: $T^* = {T_star:.1f}\\,\\text{{kNm}}$
+- Stirrup path: $u_h = {uh:.0f}\\,\\text{{mm}}$
+- Effective torsion area: $A_o = {Ao:.0f}\\,\\text{{mm}}^2$
 
-Equivalent shear
-- V_t,eq = 0.9 × T* × u_h / (2 A_o) = {torsion_eq_kN:.1f} kN
-- V_eq* = sqrt( V*^2 + V_t,eq^2 ) = {V_eq:.1f} kN
+Formula (AS 3600 Cl. 8.2.3)
+\\[
+V_{{t,eq}} = 0.9\\,\\frac{{T^* u_h}}{{2 A_o}}
+\\]
+\\[
+V_{{eq}}^* = \\sqrt{{(V^*)^2 + V_{{t,eq}}^2}}
+\\]
+
+Substitution
+\\[
+V_{{t,eq}} =
+0.9\\,\\frac{{{T_star:.1f}\\times 10^6 \\times {uh:.0f}}}{{2 \\times {Ao:.0f}}}
+= {torsion_eq_kN:.1f}\\,\\text{{kN}}
+\\]
+\\[
+V_{{eq}}^* =
+\\sqrt{{({V_star:.1f})^2 + ({torsion_eq_kN:.1f})^2}}
+= {V_eq:.1f}\\,\\text{{kN}}
+\\]
 
 Result / check
 - Torsion is included as an equivalent shear.
-- This V_eq* is used in the sectional shear and web-crushing checks.
+- This $V_{{eq}}^*$ is used in the sectional shear and web-crushing checks.
 """
         )
+
     else:
         # --- No torsion design: equivalent shear = shear only ---
         torsion_eq_kN = 0.0
@@ -332,19 +356,33 @@ Result / check
         calcbox(
             f"""
 Inputs
-- Shear demand V* = {V_star:.1f} kN
-- Torsion T* = {T_star:.1f} kNm
+- Shear demand: $V^* = {V_star:.1f}\\,\\text{{kN}}$
+- Torsion: $T^* = {T_star:.1f}\\,\\text{{kNm}}$  
   (from Step 1, torsion design is not required)
 
-Equivalent shear
-- V_t,eq = 0.0 kN
-- V_eq* = V* = {V_eq:.1f} kN
+Formula (AS 3600 Cl. 8.2.3)
+\\[
+V_{{eq}}^* = \\sqrt{{V^{*2} + V_{{t,eq}}^2}}
+\\]
+Since $V_{{t,eq}} = 0$,
+\\[
+V_{{eq}}^* = V^*
+\\]
+
+Substitution
+\\[
+V_{{t,eq}} = 0.0\\,\\text{{kN}}
+\\]
+\\[
+V_{{eq}}^* = V^* = {V_eq:.1f}\\,\\text{{kN}}
+\\]
 
 Result / check
 - Torsion is not treated as a design action.
-- This V_eq* is carried into the sectional shear and web-crushing checks.
+- This $V_{{eq}}^*$ is carried into the sectional shear and web-crushing checks.
 """
         )
+
 
 
 
@@ -696,6 +734,7 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for use of the general MCFT exp
 
 if __name__ == "__main__":
     render_shear()
+
 
 
 
