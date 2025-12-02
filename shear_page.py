@@ -228,72 +228,87 @@ summary can show shear utilisation.
         st.error("Geometry (b, D, d) not fully defined – check Inputs / Bending tab.")
         return
 
-    # =====================================================
-    # 2. STEP 1 — TORSION CRACKING CHECK
-    # =====================================================
-    st.markdown("---")
-    st.markdown(
-        "### Step 1 – Does torsion crack the section? "
-        "(T_cr check, AS 3600 Cl. 8.3.4)"
-    )
+# =====================================================
+# 2. STEP 1 — TORSION CRACKING CHECK
+# =====================================================
+st.markdown("---")
+st.markdown(
+    "### Step 1 – Does torsion crack the section? "
+    "(T_cr check, AS 3600 Cl. 8.3.4)"
+)
 
-    cover_t = 40.0  # assumed for closed stirrup centroid
-    A_cp = b * D
-    u_c = 2 * (b + D)
-    Ao = 0.9 * A_cp
+cover_t = 40.0
+A_cp = b * D
+u_c = 2 * (b + D)
+Ao = 0.9 * A_cp
 
-    uh = 2 * ((b - cover_t) + (D - cover_t))
-    A_oh = (b - cover_t) * (D - cover_t)
+uh = 2 * ((b - cover_t) + (D - cover_t))
+A_oh = (b - cover_t) * (D - cover_t)
 
-    sqrt_fc = math.sqrt(fc)
-    denom = 0.33 * sqrt_fc
-    Tcr_Nmm = 0.33 * sqrt_fc * (A_cp**2) / u_c * math.sqrt(
-        1 + (sigma_cp / denom if denom > 0 else 0.0)
-    )
-    Tcr_kNm = Tcr_Nmm / 1e6
+sqrt_fc = math.sqrt(fc)
+denom = 0.33 * sqrt_fc
+Tcr_Nmm = 0.33 * sqrt_fc * (A_cp**2) / u_c * math.sqrt(
+    1 + (sigma_cp / denom if denom > 0 else 0.0)
+)
+Tcr_kNm = Tcr_Nmm / 1e6
 
-    torsion_required_limit = 0.25 * phi * Tcr_kNm
-    torsion_required = T_star > torsion_required_limit
+torsion_required_limit = 0.25 * phi * Tcr_kNm
+torsion_required = T_star > torsion_required_limit
 
-    step1_req = ">" if torsion_required else "\\le"
-    step1_text = "required" if torsion_required else "not required (strength check only)"
+step1_req = ">" if torsion_required else "\\le"
+step1_text = "required" if torsion_required else "not required (strength check only)"
 
-    calcbox(
-        rf"""
-- **Given gross torsion box (AS 3600 Cl. 8.3.4):**  
-  - $A_{{cp}} = bD = {b:.0f} \times {D:.0f} = {A_cp:.0f}\ \text{{mm}}^2$  
-  - $u_c = 2(b + D) = 2({b:.0f} + {D:.0f}) = {u_c:.0f}\ \text{{mm}}$  
+calcbox(
+    rf"""
+**Given gross torsion box (AS 3600 Cl. 8.3.4):**
 
-- **Concrete strength & average prestress:**  
-  - $f'_c = {fc:.1f}\ \text{{MPa}}$  
-  - $\sigma_{{cp}} = {sigma_cp:.2f}\ \text{{MPa}}$  
+- $A_{{cp}} = bD = {b:.0f} \times {D:.0f} = {A_cp:.0f}\ \text{{mm}}^2$
+- $u_c = 2(b + D) = 2({b:.0f} + {D:.0f}) = {u_c:.0f}\ \text{{mm}}$
 
-- **Effective torsion area and stirrup path:**  
-  - $A_o \approx 0.9 A_{{cp}} = 0.9 \times {A_cp:.0f} = {Ao:.0f}\ \text{{mm}}^2$  
-  - $u_h = 2[(b - c_t) + (D - c_t)] = 2[({b:.0f} - {cover_t:.0f}) + ({D:.0f} - {cover_t:.0f})] = {uh:.0f}\ \text{{mm}}$  
+**Concrete strength & average prestress:**
 
-- **Cracking torque:**  
+- $f'_c = {fc:.1f}\ \text{{MPa}}$
+- $\sigma_{{cp}} = {sigma_cp:.2f}\ \text{{MPa}}$
 
-  - Base form (AS 3600 Cl. 8.3.4):  
+**Effective torsion area & stirrup path:**
 
-    $$T_{{cr}} = 0.33 \sqrt{{f'_c}}\,
-      \frac{{A_{{cp}}^2}}{{u_c}}
-      \sqrt{{1 + \frac{{\sigma_{{cp}}}}{{0.33 \sqrt{{f'_c}}}}}}$$  
+- $A_o \approx 0.9 A_{{cp}} = 0.9 \times {A_cp:.0f} = {Ao:.0f}\ \text{{mm}}^2$
+- $u_h = 2[(b - c_t) + (D - c_t)] = 2[({b:.0f} - {cover_t:.0f}) + ({D:.0f} - {cover_t:.0f})] = {uh:.0f}\ \text{{mm}}$
 
-  - Substituting values:  
+---
 
-    $$T_{{cr}} = 0.33 \sqrt{{{fc:.1f}}}\,
-      \frac{{{A_cp:.0f}^2}}{{{u_c:.0f}}}
-      \sqrt{{1 + \frac{{{sigma_cp:.2f}}}{{0.33 \sqrt{{{fc:.1f}}}}}}}
-      = {Tcr_kNm:,.1f}\ \text{{kNm}}$$  
+**Cracking torque formula:**
 
-- **Torsion design requirement:**  
-  - Limit: $0.25\,\phi T_{{cr}} = 0.25 \times {phi:.2f} \times {Tcr_kNm:,.1f} = {torsion_required_limit:,.1f}\ \text{{kNm}}$  
-  - Demand: $T^* = {T_star:.1f}\ \text{{kNm}}$ with condition $T^* {step1_req} 0.25\,\phi T_{{cr}}$  
+$$
+T_{{cr}}
+ = 0.33 \sqrt{{f'_c}}
+ \frac{{A_{{cp}}^2}}{{u_c}}
+ \sqrt{1 + \frac{{\sigma_{{cp}}}}{{0.33\sqrt{f'_c}}}}
+$$
 
-- **Conclusion:** torsion design is **{step1_text}**.
+**Substituting values:**
+
+$$
+T_{{cr}}
+ = 0.33\sqrt{{{fc:.1f}}}\,
+   \frac{{{A_cp:.0f}^2}}{{{u_c:.0f}}}
+   \sqrt{{1 + \frac{{{sigma_cp:.2f}}}{{0.33\sqrt{{{fc:.1f}}}}}}}
+ = {Tcr_kNm:,.1f}\ \text{{kNm}}
+$$
+
+---
+
+**Torsion design requirement:**
+
+- Limit: $0.25\phi T_{{cr}} = 0.25 \times {phi:.2f} \times {Tcr_kNm:,.1f} = {torsion_required_limit:,.1f}\ \text{{kNm}}$
+- Demand: $T^* = {T_star:.1f}\ \text{{kNm}}$  
+  Condition: $T^* {step1_req} 0.25\phi T_{{cr}}$
+
+---
+
+**Conclusion:** Torsion design is **{step1_text}**.
 """
-    )
+)
 
 
 
@@ -683,6 +698,7 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for use of the general MCFT exp
 
 if __name__ == "__main__":
     render_shear()
+
 
 
 
