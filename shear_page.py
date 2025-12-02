@@ -229,76 +229,6 @@ summary can show shear utilisation.
         return
 
     # =====================================================
-    # 2. STEP 1 — TORSION CRACKING CHECK (T_cr)
-    # =====================================================
-    st.markdown("---")
-    st.markdown(
-        "### Step 1 – Does torsion crack the section? "
-        "(T_cr check, AS 3600 Cl. 8.3.4)"
-    )
-
-    cover_t = 40.0  # assumed for closed stirrup centroid
-    A_cp = b * D
-    u_c = 2 * (b + D)
-    Ao = 0.9 * A_cp
-
-    # closed stirrup path (used again in Step 2)
-    uh = 2 * ((b - cover_t) + (D - cover_t))
-    A_oh = (b - cover_t) * (D - cover_t)
-
-    sqrt_fc = math.sqrt(fc)
-    denom = 0.33 * sqrt_fc
-    Tcr_Nmm = 0.33 * sqrt_fc * (A_cp**2) / u_c * math.sqrt(
-        1 + (sigma_cp / denom if denom > 0 else 0.0)
-    )
-    Tcr_kNm = Tcr_Nmm / 1e6
-
-    torsion_required_limit = 0.25 * phi * Tcr_kNm
-    torsion_required = T_star > torsion_required_limit
-
-    step1_req = ">" if torsion_required else "\\le"
-    step1_text = (
-        "required" if torsion_required else "not required (strength check only)"
-    )
-
-    calcbox(
-        f"""
-Inputs:
-- Section width: $b = {b:.0f}\\,\\text{{mm}}$
-- Section depth: $D = {D:.0f}\\,\\text{{mm}}$
-- Gross torsion box area: $A_{{cp}} = bD = {A_cp:.0f}\\,\\text{{mm}}^2$
-- Perimeter of torsion box: $u_c = 2(b + D) = {u_c:.0f}\\,\\text{{mm}}$
-- Concrete strength: $f'_c = {fc:.1f}\\,\\text{{MPa}}$
-- Average prestress: $\\sigma_{{cp}} = {sigma_cp:.2f}\\,\\text{{MPa}}$
-- Effective torsion area: $A_o \\approx 0.9 A_{{cp}} = {Ao:.0f}\\,\\text{{mm}}^2$
-- Stirrup centreline path: $u_h = 2[(b - c_t) + (D - c_t)] = {uh:.0f}\\,\\text{{mm}}$  
-  (with $c_t = {cover_t:.0f}\\,\\text{{mm}}$)
-
-Formula (AS 3600 Cl. 8.3.4):
-\\[
-T_{{cr}} = 0.33\\sqrt{{f'_c}}\\,
-          \\frac{{A_{{cp}}^2}}{{u_c}}
-          \\sqrt{{1 + \\frac{{\\sigma_{{cp}}}}{{0.33\\sqrt{{f'_c}}}}}}
-\\]
-
-Substitution:
-\\[
-T_{{cr}} = 0.33\\sqrt{{{fc:.1f}}}\\,
-          \\frac{{{A_cp:.0f}^2}}{{{u_c:.0f}}}
-          \\sqrt{{1 + \\frac{{{sigma_cp:.2f}}}{{0.33\\sqrt{{{fc:.1f}}}}}}}
-        = {Tcr_kNm:,.1f}\\,\\text{{kNm}}
-\\]
-
-Result / Check:
-- Limit: $0.25\\,\\phi T_{{cr}} = 0.25 \\times {phi:.2f} \\times {Tcr_kNm:,.1f}
-  = {torsion_required_limit:,.1f}\\,\\text{{kNm}}$
-- Demand: $T^* = {T_star:.1f}\\,\\text{{kNm}}$
-- Condition: $T^* {step1_req} 0.25\\,\\phi T_{{cr}}$
-- Conclusion: torsion design is **{step1_text}**.
-"""
-    )
-
-    # =====================================================
     # 3. STEP 2 — CONVERT TORSION INTO AN EQUIVALENT SHEAR V_eq*
     # =====================================================
     st.markdown("---")
@@ -307,34 +237,41 @@ Result / Check:
         "$V_{eq}^*$ (AS 3600 Cl. 8.2.3)"
     )
 
+    # Use T* in N·mm for torsion terms (also used later in Step 4 & 7)
+    T_star_Nmm = T_star * 1e6
+
     if torsion_required:
-        ...
+        # --- Full equivalent shear including torsion ---
+        torsion_eq_N = 0.9 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
+        torsion_eq_kN = torsion_eq_N / 1e3
+        V_eq = math.sqrt(V_star**2 + torsion_eq_kN**2)
+
         calcbox(
-            f"""
+            fr"""
 Inputs
-- Shear demand: $V^* = {V_star:.1f}\\,\\text{{kN}}$
-- Torsion: $T^* = {T_star:.1f}\\,\\text{{kNm}}$
-- Stirrup path: $u_h = {uh:.0f}\\,\\text{{mm}}$
-- Effective torsion area: $A_o = {Ao:.0f}\\,\\text{{mm}}^2$
+- Shear demand: $V^* = {V_star:.1f}\,\text{{kN}}$
+- Torsion: $T^* = {T_star:.1f}\,\text{{kNm}}$
+- Stirrup path: $u_h = {uh:.0f}\,\text{{mm}}$
+- Effective torsion area: $A_o = {Ao:.0f}\,\text{{mm}}^2$
 
 Formula (AS 3600 Cl. 8.2.3)
 \[
-V_{{t,eq}} = 0.9\\,\\frac{{T^* u_h}}{{2 A_o}}
+V_{{t,eq}} = 0.9\,\frac{{T^* u_h}}{{2 A_o}}
 \]
 \[
-V_{{eq}}^* = \\sqrt{{V^{{*2}} + V_{{t,eq}}^2}}
+V_{{eq}}^* = \sqrt{{V^{{*2}} + V_{{t,eq}}^2}}
 \]
 
 Substitution
 \[
 V_{{t,eq}} =
-0.9\\,\\frac{{{T_star:.1f}\\times 10^6 \\times {uh:.0f}}}{{2 \\times {Ao:.0f}}}
-= {torsion_eq_kN:.1f}\\,\\text{{kN}}
+0.9\,\frac{{{T_star:.1f}\times 10^6 \times {uh:.0f}}}{{2 \times {Ao:.0f}}}
+= {torsion_eq_kN:.1f}\,\text{{kN}}
 \]
 \[
 V_{{eq}}^* =
-\\sqrt{{({V_star:.1f})^2 + ({torsion_eq_kN:.1f})^2}}
-= {V_eq:.1f}\\,\\text{{kN}}
+\sqrt{{({V_star:.1f})^2 + ({torsion_eq_kN:.1f})^2}}
+= {V_eq:.1f}\,\text{{kN}}
 \]
 
 Result / check
@@ -344,19 +281,20 @@ Result / check
         )
 
     else:
+        # --- No torsion design: equivalent shear = shear only ---
         torsion_eq_kN = 0.0
         V_eq = V_star
 
         calcbox(
-            f"""
+            fr"""
 Inputs
-- Shear demand: $V^* = {V_star:.1f}\\,\\text{{kN}}$
-- Torsion: $T^* = {T_star:.1f}\\,\\text{{kNm}}$  
+- Shear demand: $V^* = {V_star:.1f}\,\text{{kN}}$
+- Torsion: $T^* = {T_star:.1f}\,\text{{kNm}}$  
   (from Step 1, torsion design is not required)
 
 Formula (AS 3600 Cl. 8.2.3)
 \[
-V_{{eq}}^* = \\sqrt{{V^{{*2}} + V_{{t,eq}}^2}}
+V_{{eq}}^* = \sqrt{{V^{{*2}} + V_{{t,eq}}^2}}
 \]
 Since $V_{{t,eq}} = 0$,  
 \[
@@ -365,10 +303,10 @@ V_{{eq}}^* = V^*
 
 Substitution
 \[
-V_{{t,eq}} = 0.0\\,\\text{{kN}}
+V_{{t,eq}} = 0.0\,\text{{kN}}
 \]
 \[
-V_{{eq}}^* = V^* = {V_eq:.1f}\\,\\text{{kN}}
+V_{{eq}}^* = V^* = {V_eq:.1f}\,\text{{kN}}
 \]
 
 Result / check
@@ -377,40 +315,6 @@ Result / check
 """
         )
 
-
-    else:
-        torsion_eq_kN = 0.0
-        V_eq = V_star
-
-        calcbox(
-            f"""
-Inputs
-- Shear demand: $V^* = {V_star:.1f}\\,\\text{{kN}}$
-- Torsion: $T^* = {T_star:.1f}\\,\\text{{kNm}}$  
-  (from Step 1, torsion design is not required)
-
-Formula (AS 3600 Cl. 8.2.3)
-\\[
-V_{{eq}}^* = \\sqrt{{V^{*2} + V_{{t,eq}}^2}}
-\\]
-Since $V_{{t,eq}} = 0$,  
-\\[
-V_{{eq}}^* = V^*
-\\]
-
-Substitution
-\\[
-V_{{t,eq}} = 0.0\\,\\text{{kN}}
-\\]
-\\[
-V_{{eq}}^* = V^* = {V_eq:.1f}\\,\\text{{kN}}
-\\]
-
-Result / check
-- Torsion is not treated as a design action.
-- This $V_{{eq}}^*$ is carried into the sectional shear and web-crushing checks.
-"""
-        )
 
 
 
@@ -761,6 +665,7 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for use of the general MCFT exp
 
 if __name__ == "__main__":
     render_shear()
+
 
 
 
