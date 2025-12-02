@@ -316,13 +316,13 @@ Result / Check:
 
         calcbox(
             f"""
-Inputs:
+Inputs
 - Shear demand: $V^* = {V_star:.1f}\\,\\text{{kN}}$
 - Torsion: $T^* = {T_star:.1f}\\,\\text{{kNm}}$
 - Stirrup path: $u_h = {uh:.0f}\\,\\text{{mm}}$
 - Effective torsion area: $A_o = {Ao:.0f}\\,\\text{{mm}}^2$
 
-Formula (AS 3600 Cl. 8.2.3):
+Formula (AS 3600 Cl. 8.2.3)
 \\[
 V_{{t,eq}} = 0.9\\,\\frac{{T^* u_h}}{{2 A_o}}
 \\]
@@ -330,20 +330,20 @@ V_{{t,eq}} = 0.9\\,\\frac{{T^* u_h}}{{2 A_o}}
 V_{{eq}}^* = \\sqrt{{V^{*2} + V_{{t,eq}}^2}}
 \\]
 
-Substitution:
+Substitution
 \\[
 V_{{t,eq}} =
-0.9\\,\\frac{{{T_star:.1f}\\times 10^6 \\times {uh:.0f}}}
-        {{2 \\times {Ao:.0f}}}
+0.9\\,\\frac{{T^* u_h}}{{2 A_o}}
+= 0.9\\,\\frac{{{T_star:.1f}\\times 10^6 \\times {uh:.0f}}}{{2 \\times {Ao:.0f}}}
 = {torsion_eq_kN:.1f}\\,\\text{{kN}}
 \\]
 \\[
 V_{{eq}}^* =
-\\sqrt{{{V_star:.1f}}^2 + {torsion_eq_kN:.1f}^2}
+\\sqrt{{({V_star:.1f})^2 + ({torsion_eq_kN:.1f})^2}}
 = {V_eq:.1f}\\,\\text{{kN}}
 \\]
 
-Result / Check:
+Result / check
 - Torsion is included as an equivalent shear.
 - This $V_{{eq}}^*$ is used in the sectional shear and web-crushing checks.
 """
@@ -356,12 +356,12 @@ Result / Check:
 
         calcbox(
             f"""
-Inputs:
+Inputs
 - Shear demand: $V^* = {V_star:.1f}\\,\\text{{kN}}$
 - Torsion: $T^* = {T_star:.1f}\\,\\text{{kNm}}$  
   (from Step 1, torsion design is not required)
 
-Formula (AS 3600 Cl. 8.2.3):
+Formula (AS 3600 Cl. 8.2.3)
 \\[
 V_{{eq}}^* = \\sqrt{{V^{*2} + V_{{t,eq}}^2}}
 \\]
@@ -371,7 +371,7 @@ V_{{t,eq}} = 0 \\;\\Rightarrow\\;
 V_{{eq}}^* = V^*
 \\]
 
-Substitution:
+Substitution
 \\[
 V_{{t,eq}} = 0.0\\,\\text{{kN}}
 \\]
@@ -379,7 +379,7 @@ V_{{t,eq}} = 0.0\\,\\text{{kN}}
 V_{{eq}}^* = V^* = {V_eq:.1f}\\,\\text{{kN}}
 \\]
 
-Result / Check:
+Result / check
 - Torsion is not treated as a design action for this section.
 - This $V_{{eq}}^*$ is carried into the sectional shear and web-crushing checks.
 """
@@ -734,6 +734,7 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for use of the general MCFT exp
 
 if __name__ == "__main__":
     render_shear()
+
 
 
 
