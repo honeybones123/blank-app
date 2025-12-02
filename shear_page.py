@@ -706,10 +706,10 @@ $$\\varepsilon_{{x,2}} = \\frac{{{numerator_2:,.0f}}}{{{denom2:,.0f}}} = {eps_x_
 
 **Inputs used in this step:**
 
-- Section / shear geometry: $b = {_fmt(b)}$ mm, $D = {_fmt(D)}$ mm, $d = {_fmt(d)}$ mm, $d_v = {_fmt(d_v)}$ mm
-- Actions at the section: $M^* = {_fmt(M_star)}$ kNm, $V^* = {_fmt(V_star)}$ kN, $P_v = {_fmt(P_v)}$ kN, $N^* = {_fmt(N_star)}$ kN, $T^* = {_fmt(T_star)}$ kNm
-- Material stiffness: $E_s = {_fmt(Es,0)}$ MPa, $E_p = {_fmt(Ep,0)}$ MPa, $E_c = {_fmt(Ec,0)}$ MPa
-- Reinforcement / concrete areas: $A_{{st}} = {_fmt(A_st,1)}$ mm², $A_{{pt}} = {_fmt(A_pt,1)}$ mm², $A_{{ct}} = {_fmt(A_ct,1)}$ mm²
+- Shear depth: $d_v = {_fmt(d_v)}$ mm
+- Actions: $M^* = {_fmt(M_star)}$ kNm, $V^* = {_fmt(V_star)}$ kN, $P_v = {_fmt(P_v)}$ kN, $N^* = {_fmt(N_star)}$ kN, $T^* = {_fmt(T_star)}$ kNm
+- Material stiffness: $E_s = {_fmt(Es,0)}$ MPa, $E_p = {_fmt(Ep,0)}$ MPa
+- Steel areas: $A_{{st}} = {_fmt(A_st,1)}$ mm², $A_{{pt}} = {_fmt(A_pt,1)}$ mm², $f_{{po}} = {_fmt(f_po)}$ MPa
 - Torsion geometry: $u_h = {_fmt(uh)}$ mm, $A_o = {_fmt(Ao)}$ mm²
 
 ---
@@ -718,12 +718,16 @@ $$\\varepsilon_{{x,2}} = \\frac{{{numerator_2:,.0f}}}{{{denom2:,.0f}}} = {eps_x_
 
 $$|M^*|/d_v = \\frac{{|{M_star:.1f}| \\times 10^6}}{{{d_v:.1f}}} = {term_M:,.0f} \\text{{ N}}$$
 
-**Shear + torsion term inside the square-root (for Equation (1)):**
+&nbsp;
 
-- $V' = |V^*| - P_v = |{V_star:.1f}| - {P_v:.1f} = {Vprime_kN:.1f}$ kN
-- $0.97 T^* u_h / (2A_o) = {torsion_N:,.0f}$ N (shear-force units)
+**Shear + torsion term (for Equation 1):**
 
-$$\\sqrt{{V'^{{2}} + (0.97 T^* u_h / 2A_o)^2}} = {sqrt_inner:,.0f} \\text{{ N}}$$
+- $V' = |V^*| - P_v = |{V_star:.1f}| - {P_v:.1f} = {Vprime_kN:.1f}$ kN  $= {Vprime_N:,.0f}$ N
+- $0.97 T^* u_h / (2A_o) = {torsion_N:,.0f}$ N
+
+$$\\sqrt{{V'^{{2}} + (0.97 T^* u_h / 2A_o)^2}} = \\sqrt{{{Vprime_N:,.0f}^2 + {torsion_N:,.0f}^2}} = {sqrt_inner:,.0f} \\text{{ N}}$$
+
+&nbsp;
 
 **Axial / prestress contributions:**
 
@@ -732,11 +736,15 @@ $$\\sqrt{{V'^{{2}} + (0.97 T^* u_h / 2A_o)^2}} = {sqrt_inner:,.0f} \\text{{ N}}$
 
 ---
 
-**Equation (1) – mid-depth in tension (εₓ ≥ 0)**
+### Equation (1) – mid-depth in tension (εₓ ≥ 0)
 
-$$\\varepsilon_{{x,1}} = \\frac{{|M^*|/d_v + \\sqrt{{V'^{{2}} + (0.97 T^* u_h / 2A_o)^2}} + 0.5N^* - A_{{pt}} f_{{po}}}}{{2(E_s A_{{st}} + E_p A_{{pt}})}}$$
+$$\\Large \\varepsilon_{{x,1}} = \\frac{{|M^*|/d_v + \\sqrt{{V'^{{2}} + (0.97 T^* u_h / 2A_o)^2}} + 0.5N^* - A_{{pt}} f_{{po}}}}{{2(E_s A_{{st}} + E_p A_{{pt}})}}$$
 
-Substituting the derived terms:
+&nbsp;
+
+Substituting all values:
+
+$$\\varepsilon_{{x,1}} = \\frac{{{term_M:,.0f} + {sqrt_inner:,.0f} + {N_star_N:,.0f} - {A_pt_fpo_N:,.0f}}}{{2 \\times ({Es:,.0f} \\times {A_st:.1f} + {Ep:,.0f} \\times {A_pt:.1f})}}$$
 
 $$\\varepsilon_{{x,1}} = \\frac{{{numerator_1:,.0f}}}{{{denom1:,.0f}}} = {eps_x_1:.5f}$$
 
@@ -750,7 +758,7 @@ $$\\varepsilon_{{x,1}} = \\frac{{{numerator_1:,.0f}}}{{{denom1:,.0f}}} = {eps_x_
 - Raw strain: $\\varepsilon_x = {eps_x_raw:.5f}$
 - After applying AS 3600 limits $[-2.0 \\times 10^{{-4}},\\, 3.0 \\times 10^{{-3}}]$:
 
-$$\\varepsilon_x = {eps_x:.5f}$$
+$$\\Large \\varepsilon_x = {eps_x:.5f}$$
 
 This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative (slight compression at mid-depth)"}** and is used in **Step 5** to compute $k_v$ and $\\theta_v$.
 """
@@ -942,7 +950,6 @@ This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative 
 
 if __name__ == "__main__":
     render_shear()
-
 
 
 
