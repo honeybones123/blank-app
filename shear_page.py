@@ -62,8 +62,10 @@ blockquote p:last-child {
 
 def calcbox(md: str):
     """Render a highlighted calculation box with native Streamlit LaTeX support."""
-    # Convert \[...\] to $$...$$ for Streamlit's LaTeX renderer
+    # Convert \[...\] to $$...$$ for display math
     converted = md.replace("\\[", "$$").replace("\\]", "$$")
+    # Convert \(...\) to $...$ for inline math
+    converted = converted.replace("\\(", "$").replace("\\)", "$")
     # Convert to blockquote format - prefix each line with >
     lines = converted.strip().split('\n')
     blockquote = '\n'.join('> ' + line for line in lines)
@@ -485,88 +487,52 @@ Result / check
     dv_2 = 0.9 * d
 
     calcbox(
-        rf"""
-**Step 3 – Shear-resisting section \((b_v, d_v, A_{{sv}})\)**  
+        f"""
+*Purpose: Calculate the shear-resisting section parameters $A_{{sv}}$, $b_v$ and $d_v$ for AS 3600 shear design.*
 
-*Purpose: Use the current inputs to calculate the shear-resisting section parameters
-\(A_{{sv}}\), \(b_v\) and \(d_v\) for the AS 3600 shear design.*
+**Inputs used in this step:**
 
-**Inputs used in this step (from top-of-page Inputs):**
-
-- Section geometry:
-  \(b = {_fmt(b)}\ \text{{mm}},\ D = {_fmt(D)}\ \text{{mm}},\ d = {_fmt(d)}\ \text{{mm}}\)
-- Transverse reinforcement:
-  \(d_{{\text{{lig}}}} = {_fmt(lig_d)}\ \text{{mm}},\
-n_{{\text{{legs}}}} = {_fmt(legs, 0)},\
-s_{{\text{{lig}}}} = {_fmt(s)}\ \text{{mm}},\
-f_{{sy,v}} = {_fmt(f_syv)}\ \text{{MPa}}\)
-- Ducts in web:
-  \(\sum d_{{\text{{duct}}}} = {_fmt(sum_duct)}\ \text{{mm}},\
-k_d = {_fmt(k_d)}\)
-- Shear model choice:
-  \(k_v\) method = {method}
+- Section geometry: $b = {_fmt(b)}$ mm, $D = {_fmt(D)}$ mm, $d = {_fmt(d)}$ mm
+- Transverse reinforcement: $d_{{lig}} = {_fmt(lig_d)}$ mm, $n_{{legs}} = {_fmt(legs, 0)}$, $s_{{lig}} = {_fmt(s)}$ mm, $f_{{sy,v}} = {_fmt(f_syv)}$ MPa
+- Ducts in web: $\\sum d_{{duct}} = {_fmt(sum_duct)}$ mm, $k_d = {_fmt(k_d)}$
+- Shear model: $k_v$ method = {method}
 
 ---
 
-### (a) Transverse steel area \(A_{{sv}}\)
+**(a) Transverse steel area $A_{{sv}}$**
 
-\[
-A_{{sv}} = n_{{\text{{legs}}}} \cdot \frac{{\pi d_{{\text{{lig}}}}^2}}{{4}}
-\]
+$$A_{{sv}} = n_{{legs}} \\cdot \\frac{{\\pi d_{{lig}}^2}}{{4}}$$
 
-\[
-A_{{sv}}
-= {_fmt(legs, 0)} \cdot \frac{{\pi ({_fmt(lig_d)})^2}}{{4}}
-= {_fmt(Asv)}\ \text{{mm}}^2
-\]
+$$A_{{sv}} = {_fmt(legs, 0)} \\cdot \\frac{{\\pi \\times {_fmt(lig_d)}^2}}{{4}} = {_fmt(Asv)} \\text{{ mm}}^2$$
 
-Stirrups at:
-\[
-s_{{\text{{lig}}}} = {_fmt(s)}\ \text{{mm}}
-\]
+Stirrups at spacing: $s_{{lig}} = {_fmt(s)}$ mm
 
 ---
 
-### (b) Effective web width \(b_v\) (AS 3600 Cl. 8.2.2)
+**(b) Effective web width $b_v$ (AS 3600 Cl. 8.2.2)**
 
-\[
-b_v = b - k_d \sum d_{{\text{{duct}}}}
-\]
+$$b_v = b - k_d \\sum d_{{duct}}$$
 
-\[
-b_v
-= {_fmt(b)} - {_fmt(k_d)} \times {_fmt(sum_duct)}
-= {_fmt(b_v)}\ \text{{mm}}
-\]
-
-(Here \(b_v\) is reduced if ducts cross the web.)
+$$b_v = {_fmt(b)} - {_fmt(k_d)} \\times {_fmt(sum_duct)} = {_fmt(b_v)} \\text{{ mm}}$$
 
 ---
 
-### (c) Shear depth \(d_v\) (AS 3600 Cl. 8.2.2)
+**(c) Shear depth $d_v$ (AS 3600 Cl. 8.2.2)**
 
-\[
-d_v = \max(0.72D,\ 0.9d)
-\]
+$$d_v = \\max(0.72D,\\ 0.9d)$$
 
-\[
-0.72D = 0.72 \times {_fmt(D)} = {_fmt(dv_1)}\ \text{{mm}}
-\]
+$0.72D = 0.72 \\times {_fmt(D)} = {_fmt(dv_1)}$ mm
 
-\[
-0.9d = 0.9 \times {_fmt(d)} = {_fmt(dv_2)}\ \text{{mm}}
-\]
+$0.9d = 0.9 \\times {_fmt(d)} = {_fmt(dv_2)}$ mm
 
-\[
-\Rightarrow d_v = {_fmt(d_v)}\ \text{{mm}}
-\]
+$$\\Rightarrow d_v = {_fmt(d_v)} \\text{{ mm}}$$
 
 ---
 
 **Result for Step 3**
 
-- \(A_{{sv}} = {_fmt(Asv)}\ \text{{mm}}^2\) with stirrups at \(s_{{\text{{lig}}}} = {_fmt(s)}\ \text{{mm}}\)
-- \(b_v = {_fmt(b_v)}\ \text{{mm}},\quad d_v = {_fmt(d_v)}\ \text{{mm}}\)
+- $A_{{sv}} = {_fmt(Asv)}$ mm² with stirrups at $s_{{lig}} = {_fmt(s)}$ mm
+- $b_v = {_fmt(b_v)}$ mm, $d_v = {_fmt(d_v)}$ mm
 
 *(These values are used in the ULS shear check in Step 4.)*
 """
