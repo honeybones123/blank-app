@@ -364,7 +364,7 @@ Inputs
 
 Formula (AS 3600 Cl. 8.2.3)
 \\[
-V_{{eq}}^* = \\sqrt{{V^{*2} + V_{{t,eq}}^2}}
+V_{{eq}}^* = \\sqrt{{V^{{*2}} + V_{{t,eq}}^2}}
 \\]
 Since $V_{{t,eq}} = 0$,
 \\[
@@ -736,19 +736,6 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for use of the general MCFT exp
 
 if __name__ == "__main__":
     render_shear()
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
