@@ -19,6 +19,16 @@ def cot(rad: float) -> float:
     return 1.0 / math.tan(rad)
 
 
+def _fmt(val, decimals=1):
+    """Safe number formatter for text in calc boxes."""
+    try:
+        if val is None:
+            return "—"
+        return f"{float(val):.{decimals}f}"
+    except Exception:
+        return "—"
+
+
 def _inject_calcbox_css():
     st.markdown(
         """
@@ -474,23 +484,91 @@ Result / check
     dv_1 = 0.72 * D
     dv_2 = 0.9 * d
 
-    st.write(f"$b_v = {b_v:.1f}\\ \\text{{mm}}$  (reduced for ducts)")
-    st.write(f"$0.72 D = {dv_1:.1f}$ mm,   $0.9 d = {dv_2:.1f}$ mm → $d_v = {d_v:.1f}$ mm")
-
     calcbox(
         rf"""
-- Effective web width (AS 3600 Cl. 8.2.2):  
-  - $b_v = b - k_d \sum d_{{duct}} = {b:.0f} - {k_d:.2f} \times {sum_duct:.1f} = {b_v:.1f}\ \text{{mm}}$  
+**Step 3 – Shear-resisting section \((b_v, d_v, A_{{sv}})\)**  
 
-- Shear depth:  
-  - $d_v = \max(0.72D,\ 0.9d)$  
-  - $0.72D = 0.72 \times {D:.0f} = {dv_1:.1f}\ \text{{mm}}$  
-  - $0.9d = 0.9 \times {d:.0f} = {dv_2:.1f}\ \text{{mm}}$  
-  - Hence $d_v = {d_v:.1f}\ \text{{mm}}$  
+*Purpose: Use the current inputs to calculate the shear-resisting section parameters
+\(A_{{sv}}\), \(b_v\) and \(d_v\) for the AS 3600 shear design.*
 
-- Transverse steel per spacing:  
-  - $A_{{sv}} = n_{{legs}} \dfrac{{\pi d_{{lig}}^2}}4 = {legs:.0f} \dfrac{{\pi {lig_d:.1f}^2}}4 = {Asv:,.1f}\ \text{{mm}}^2$  
-  - Spacing: $s = {s:.1f}\ \text{{mm}}$.
+**Inputs used in this step (from top-of-page Inputs):**
+
+- Section geometry:
+  \(b = {_fmt(b)}\ \text{{mm}},\ D = {_fmt(D)}\ \text{{mm}},\ d = {_fmt(d)}\ \text{{mm}}\)
+- Transverse reinforcement:
+  \(d_{{\text{{lig}}}} = {_fmt(lig_d)}\ \text{{mm}},\
+n_{{\text{{legs}}}} = {_fmt(legs, 0)},\
+s_{{\text{{lig}}}} = {_fmt(s)}\ \text{{mm}},\
+f_{{sy,v}} = {_fmt(f_syv)}\ \text{{MPa}}\)
+- Ducts in web:
+  \(\sum d_{{\text{{duct}}}} = {_fmt(sum_duct)}\ \text{{mm}},\
+k_d = {_fmt(k_d)}\)
+- Shear model choice:
+  \(k_v\) method = {method}
+
+---
+
+### (a) Transverse steel area \(A_{{sv}}\)
+
+\[
+A_{{sv}} = n_{{\text{{legs}}}} \cdot \frac{{\pi d_{{\text{{lig}}}}^2}}{{4}}
+\]
+
+\[
+A_{{sv}}
+= {_fmt(legs, 0)} \cdot \frac{{\pi ({_fmt(lig_d)})^2}}{{4}}
+= {_fmt(Asv)}\ \text{{mm}}^2
+\]
+
+Stirrups at:
+\[
+s_{{\text{{lig}}}} = {_fmt(s)}\ \text{{mm}}
+\]
+
+---
+
+### (b) Effective web width \(b_v\) (AS 3600 Cl. 8.2.2)
+
+\[
+b_v = b - k_d \sum d_{{\text{{duct}}}}
+\]
+
+\[
+b_v
+= {_fmt(b)} - {_fmt(k_d)} \times {_fmt(sum_duct)}
+= {_fmt(b_v)}\ \text{{mm}}
+\]
+
+(Here \(b_v\) is reduced if ducts cross the web.)
+
+---
+
+### (c) Shear depth \(d_v\) (AS 3600 Cl. 8.2.2)
+
+\[
+d_v = \max(0.72D,\ 0.9d)
+\]
+
+\[
+0.72D = 0.72 \times {_fmt(D)} = {_fmt(dv_1)}\ \text{{mm}}
+\]
+
+\[
+0.9d = 0.9 \times {_fmt(d)} = {_fmt(dv_2)}\ \text{{mm}}
+\]
+
+\[
+\Rightarrow d_v = {_fmt(d_v)}\ \text{{mm}}
+\]
+
+---
+
+**Result for Step 3**
+
+- \(A_{{sv}} = {_fmt(Asv)}\ \text{{mm}}^2\) with stirrups at \(s_{{\text{{lig}}}} = {_fmt(s)}\ \text{{mm}}\)
+- \(b_v = {_fmt(b_v)}\ \text{{mm}},\quad d_v = {_fmt(d_v)}\ \text{{mm}}\)
+
+*(These values are used in the ULS shear check in Step 4.)*
 """
     )
 
