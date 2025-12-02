@@ -326,38 +326,33 @@ summary can show shear utilisation.
 
     calcbox(
         f"""
-Inputs:
-- Section width: $b = {b:.0f}\\,\\text{{mm}}$
-- Section depth: $D = {D:.0f}\\,\\text{{mm}}$
-- Gross torsion box area: $A_{{cp}} = bD = {A_cp:.0f}\\,\\text{{mm}}^2$
-- Perimeter of torsion box: $u_c = 2(b + D) = {u_c:.0f}\\,\\text{{mm}}$
-- Concrete strength: $f'_c = {fc:.1f}\\,\\text{{MPa}}$
-- Average prestress: $\\sigma_{{cp}} = {sigma_cp:.2f}\\,\\text{{MPa}}$
-- Effective torsion area: $A_o \\approx 0.9 A_{{cp}} = {Ao:.0f}\\,\\text{{mm}}^2$
-- Stirrup centreline path: $u_h = 2[(b - c_t) + (D - c_t)] = {uh:.0f}\\,\\text{{mm}}$  
-  (with $c_t = {cover_t:.0f}\\,\\text{{mm}}$)
+*Purpose: Determine if torsion design is required by checking if $T^* > 0.25 \\phi T_{{cr}}$.*
 
-Formula (AS 3600 Cl. 8.3.4)
-\\[
-T_{{cr}} = 0.33\\sqrt{{f'_c}}\\,
-          \\frac{{A_{{cp}}^2}}{{u_c}}
-          \\sqrt{{1 + \\frac{{\\sigma_{{cp}}}}{{0.33\\sqrt{{f'_c}}}}}}
-\\]
+**Inputs:**
 
-Substitution
-\\[
-T_{{cr}} = 0.33\\sqrt{{{fc:.1f}}}\\,
-          \\frac{{{A_cp:.0f}^2}}{{{u_c:.0f}}}
-          \\sqrt{{1 + \\frac{{{sigma_cp:.2f}}}{{0.33\\sqrt{{{fc:.1f}}}}}}}
-        = {Tcr_kNm:,.1f}\\,\\text{{kNm}}
-\\]
+- Section: $b = {b:.0f}$ mm, $D = {D:.0f}$ mm
+- Derived: $A_{{cp}} = bD = {A_cp:.0f}$ mm², $u_c = 2(b + D) = {u_c:.0f}$ mm
+- Concrete: $f'_c = {fc:.1f}$ MPa, $\\sigma_{{cp}} = {sigma_cp:.2f}$ MPa
+- Torsion geometry: $A_o = 0.9 A_{{cp}} = {Ao:.0f}$ mm², $u_h = {uh:.0f}$ mm
 
-Result / check
-- Limit: $0.25\\,\\phi T_{{cr}} = 0.25 \\times {phi:.2f} \\times {Tcr_kNm:,.1f}
-  = {torsion_required_limit:,.1f}\\,\\text{{kNm}}$
-- Demand: $T^* = {T_star:.1f}\\,\\text{{kNm}}$
-- Condition: $T^* {step1_req} 0.25\\,\\phi T_{{cr}}$
-- Conclusion: torsion design is **{step1_text}**.
+---
+
+**Formula (AS 3600 Cl. 8.3.4):**
+
+$$\\large T_{{cr}} = 0.33\\sqrt{{f'_c}} \\cdot \\frac{{A_{{cp}}^2}}{{u_c}} \\cdot \\sqrt{{1 + \\frac{{\\sigma_{{cp}}}}{{0.33\\sqrt{{f'_c}}}}}}$$
+
+**Substitution:**
+
+$$\\large T_{{cr}} = 0.33\\sqrt{{{fc:.1f}}} \\cdot \\frac{{{A_cp:.0f}^2}}{{{u_c:.0f}}} \\cdot \\sqrt{{1 + \\frac{{{sigma_cp:.2f}}}{{0.33\\sqrt{{{fc:.1f}}}}}}} = {Tcr_kNm:,.1f} \\text{{ kNm}}$$
+
+---
+
+**Result:**
+
+- Limit: $0.25 \\phi T_{{cr}} = 0.25 \\times {phi:.2f} \\times {Tcr_kNm:,.1f} = {torsion_required_limit:,.1f}$ kNm
+- Demand: $T^* = {T_star:.1f}$ kNm
+- Condition: $T^* {step1_req} 0.25 \\phi T_{{cr}}$
+- **Conclusion: torsion design is {step1_text}.**
 """
     )
 
@@ -381,35 +376,34 @@ Result / check
 
         calcbox(
             f"""
-Inputs
-- Shear demand: $V^* = {V_star:.1f}\\,\\text{{kN}}$
-- Torsion: $T^* = {T_star:.1f}\\,\\text{{kNm}}$
-- Stirrup path: $u_h = {uh:.0f}\\,\\text{{mm}}$
-- Effective torsion area: $A_o = {Ao:.0f}\\,\\text{{mm}}^2$
+*Purpose: Convert torsion into an equivalent shear force for combined shear + torsion design.*
 
-Formula (AS 3600 Cl. 8.2.3)
-\\[
-V_{{t,eq}} = 0.9\\,\\frac{{T^* u_h}}{{2 A_o}}
-\\]
-\\[
-V_{{eq}}^* = \\sqrt{{(V^*)^2 + V_{{t,eq}}^2}}
-\\]
+**Inputs:**
 
-Substitution
-\\[
-V_{{t,eq}} =
-0.9\\,\\frac{{{T_star:.1f}\\times 10^6 \\times {uh:.0f}}}{{2 \\times {Ao:.0f}}}
-= {torsion_eq_kN:.1f}\\,\\text{{kN}}
-\\]
-\\[
-V_{{eq}}^* =
-\\sqrt{{({V_star:.1f})^2 + ({torsion_eq_kN:.1f})^2}}
-= {V_eq:.1f}\\,\\text{{kN}}
-\\]
+- Shear demand: $V^* = {V_star:.1f}$ kN
+- Torsion: $T^* = {T_star:.1f}$ kNm
+- Torsion geometry: $u_h = {uh:.0f}$ mm, $A_o = {Ao:.0f}$ mm²
 
-Result / check
+---
+
+**Formula (AS 3600 Cl. 8.2.3):**
+
+$$\\large V_{{t,eq}} = 0.9 \\cdot \\frac{{T^* u_h}}{{2 A_o}}$$
+
+$$\\large V_{{eq}}^* = \\sqrt{{(V^*)^2 + V_{{t,eq}}^2}}$$
+
+**Substitution:**
+
+$$\\large V_{{t,eq}} = 0.9 \\cdot \\frac{{{T_star:.1f} \\times 10^6 \\times {uh:.0f}}}{{2 \\times {Ao:.0f}}} = {torsion_eq_kN:.1f} \\text{{ kN}}$$
+
+$$\\large V_{{eq}}^* = \\sqrt{{({V_star:.1f})^2 + ({torsion_eq_kN:.1f})^2}} = {V_eq:.1f} \\text{{ kN}}$$
+
+---
+
+**Result:**
+
 - Torsion is included as an equivalent shear.
-- This $V_{{eq}}^*$ is used in the sectional shear and web-crushing checks.
+- **$V_{{eq}}^* = {V_eq:.1f}$ kN** is used in Steps 4–7.
 """
         )
 
@@ -420,31 +414,33 @@ Result / check
 
         calcbox(
             f"""
-Inputs
-- Shear demand: $V^* = {V_star:.1f}\\,\\text{{kN}}$
-- Torsion: $T^* = {T_star:.1f}\\,\\text{{kNm}}$  
-  (from Step 1, torsion design is not required)
+*Purpose: Convert torsion into an equivalent shear force (if required).*
 
-Formula (AS 3600 Cl. 8.2.3)
-\\[
-V_{{eq}}^* = \\sqrt{{V^{{*2}} + V_{{t,eq}}^2}}
-\\]
-Since $V_{{t,eq}} = 0$,
-\\[
-V_{{eq}}^* = V^*
-\\]
+**Inputs:**
 
-Substitution
-\\[
-V_{{t,eq}} = 0.0\\,\\text{{kN}}
-\\]
-\\[
-V_{{eq}}^* = V^* = {V_eq:.1f}\\,\\text{{kN}}
-\\]
+- Shear demand: $V^* = {V_star:.1f}$ kN
+- Torsion: $T^* = {T_star:.1f}$ kNm (from Step 1, torsion design is not required)
 
-Result / check
+---
+
+**Formula (AS 3600 Cl. 8.2.3):**
+
+$$\\large V_{{eq}}^* = \\sqrt{{(V^*)^2 + V_{{t,eq}}^2}}$$
+
+Since $V_{{t,eq}} = 0$:
+
+$$\\large V_{{eq}}^* = V^*$$
+
+**Substitution:**
+
+$$\\large V_{{eq}}^* = V^* = {V_eq:.1f} \\text{{ kN}}$$
+
+---
+
+**Result:**
+
 - Torsion is not treated as a design action.
-- This $V_{{eq}}^*$ is carried into the sectional shear and web-crushing checks.
+- **$V_{{eq}}^* = {V_eq:.1f}$ kN** is used in Steps 4–7.
 """
         )
 
@@ -476,7 +472,7 @@ Result / check
         f"""
 *Purpose: Calculate the shear-resisting section parameters $A_{{sv}}$, $b_v$ and $d_v$ for AS 3600 shear design.*
 
-**Inputs used in this step:**
+**Inputs:**
 
 - Section geometry: $b = {_fmt(b)}$ mm, $D = {_fmt(D)}$ mm, $d = {_fmt(d)}$ mm
 - Transverse reinforcement: $d_{{lig}} = {_fmt(lig_d)}$ mm, $n_{{legs}} = {_fmt(legs, 0)}$, $s_{{lig}} = {_fmt(s)}$ mm, $f_{{sy,v}} = {_fmt(f_syv)}$ MPa
@@ -485,42 +481,48 @@ Result / check
 
 ---
 
-**(a) Transverse steel area $A_{{sv}}$**
+**Formula (a) – Transverse steel area $A_{{sv}}$:**
 
-$$A_{{sv}} = n_{{legs}} \\cdot \\frac{{\\pi d_{{lig}}^2}}{{4}}$$
+$$\\large A_{{sv}} = n_{{legs}} \\cdot \\frac{{\\pi d_{{lig}}^2}}{{4}}$$
 
-$$A_{{sv}} = {_fmt(legs, 0)} \\cdot \\frac{{\\pi \\times {_fmt(lig_d)}^2}}{{4}} = {_fmt(Asv)} \\text{{ mm}}^2$$
+**Substitution:**
+
+$$\\large A_{{sv}} = {_fmt(legs, 0)} \\cdot \\frac{{\\pi \\times {_fmt(lig_d)}^2}}{{4}} = {_fmt(Asv)} \\text{{ mm}}^2$$
 
 Stirrups at spacing: $s_{{lig}} = {_fmt(s)}$ mm
 
 ---
 
-**(b) Effective web width $b_v$ (AS 3600 Cl. 8.2.2)**
+**Formula (b) – Effective web width $b_v$ (AS 3600 Cl. 8.2.2):**
 
-$$b_v = b - k_d \\sum d_{{duct}}$$
+$$\\large b_v = b - k_d \\sum d_{{duct}}$$
 
-$$b_v = {_fmt(b)} - {_fmt(k_d)} \\times {_fmt(sum_duct)} = {_fmt(b_v)} \\text{{ mm}}$$
+**Substitution:**
+
+$$\\large b_v = {_fmt(b)} - {_fmt(k_d)} \\times {_fmt(sum_duct)} = {_fmt(b_v)} \\text{{ mm}}$$
 
 ---
 
-**(c) Shear depth $d_v$ (AS 3600 Cl. 8.2.2)**
+**Formula (c) – Shear depth $d_v$ (AS 3600 Cl. 8.2.2):**
 
-$$d_v = \\max(0.72D,\\ 0.9d)$$
+$$\\large d_v = \\max(0.72D,\\ 0.9d)$$
+
+**Substitution:**
 
 $0.72D = 0.72 \\times {_fmt(D)} = {_fmt(dv_1)}$ mm
 
 $0.9d = 0.9 \\times {_fmt(d)} = {_fmt(dv_2)}$ mm
 
-$$\\Rightarrow d_v = {_fmt(d_v)} \\text{{ mm}}$$
+$$\\large d_v = {_fmt(d_v)} \\text{{ mm}}$$
 
 ---
 
-**Result for Step 3**
+**Result:**
 
 - $A_{{sv}} = {_fmt(Asv)}$ mm² with stirrups at $s_{{lig}} = {_fmt(s)}$ mm
 - $b_v = {_fmt(b_v)}$ mm, $d_v = {_fmt(d_v)}$ mm
 
-*(These values are used in the ULS shear check in Step 4.)*
+*(These values are used in Step 4.)*
 """
     )
 
@@ -702,9 +704,9 @@ $$\\varepsilon_{{x,2}} = \\frac{{{numerator_2:,.0f}}}{{{denom2:,.0f}}} = {eps_x_
 
     calcbox(
         f"""
-*Purpose: Calculate the longitudinal strain $\\varepsilon_x$ at mid-depth for use in the MCFT shear model (AS 3600 Cl. 8.2.4.2.2).*
+*Purpose: Calculate the longitudinal strain $\\varepsilon_x$ at mid-depth for use in the MCFT shear model.*
 
-**Inputs used in this step:**
+**Inputs:**
 
 - Shear depth: $d_v = {_fmt(d_v)}$ mm
 - Actions: $M^* = {_fmt(M_star)}$ kNm, $V^* = {_fmt(V_star)}$ kN, $P_v = {_fmt(P_v)}$ kN, $N^* = {_fmt(N_star)}$ kN, $T^* = {_fmt(T_star)}$ kNm
@@ -714,13 +716,15 @@ $$\\varepsilon_{{x,2}} = \\frac{{{numerator_2:,.0f}}}{{{denom2:,.0f}}} = {eps_x_
 
 ---
 
-**Moment term:**
+**Derivation of terms:**
+
+*Moment term:*
 
 $$|M^*|/d_v = \\frac{{|{M_star:.1f}| \\times 10^6}}{{{d_v:.1f}}} = {term_M:,.0f} \\text{{ N}}$$
 
 &nbsp;
 
-**Shear + torsion term (for Equation 1):**
+*Shear + torsion term:*
 
 - $V' = |V^*| - P_v = |{V_star:.1f}| - {P_v:.1f} = {Vprime_kN:.1f}$ kN  $= {Vprime_N:,.0f}$ N
 - $0.97 T^* u_h / (2A_o) = {torsion_N:,.0f}$ N
@@ -729,36 +733,36 @@ $$\\sqrt{{V'^{{2}} + (0.97 T^* u_h / 2A_o)^2}} = \\sqrt{{{Vprime_N:,.0f}^2 + {to
 
 &nbsp;
 
-**Axial / prestress contributions:**
+*Axial / prestress:*
 
 - $0.5N^* = 0.5 \\times {N_star:.1f} \\times 10^3 = {N_star_N:,.0f}$ N
 - $A_{{pt}} f_{{po}} = {A_pt:.1f} \\times {f_po:.1f} = {A_pt_fpo_N:,.0f}$ N
 
 ---
 
-### Equation (1) – mid-depth in tension (εₓ ≥ 0)
+**Formula (AS 3600 Cl. 8.2.4.2.2(1)) – mid-depth in tension (εₓ ≥ 0):**
 
-$$\\Large \\varepsilon_{{x,1}} = \\frac{{|M^*|/d_v + \\sqrt{{V'^{{2}} + (0.97 T^* u_h / 2A_o)^2}} + 0.5N^* - A_{{pt}} f_{{po}}}}{{2(E_s A_{{st}} + E_p A_{{pt}})}}$$
+$$\\huge \\varepsilon_{{x,1}} = \\frac{{|M^*|/d_v + \\sqrt{{V'^{{2}} + (0.97 T^* u_h / 2A_o)^2}} + 0.5N^* - A_{{pt}} f_{{po}}}}{{2(E_s A_{{st}} + E_p A_{{pt}})}}$$
 
 &nbsp;
 
-Substituting all values:
+**Substitution:**
 
-$$\\varepsilon_{{x,1}} = \\frac{{{term_M:,.0f} + {sqrt_inner:,.0f} + {N_star_N:,.0f} - {A_pt_fpo_N:,.0f}}}{{2 \\times ({Es:,.0f} \\times {A_st:.1f} + {Ep:,.0f} \\times {A_pt:.1f})}}$$
+$$\\large \\varepsilon_{{x,1}} = \\frac{{{term_M:,.0f} + {sqrt_inner:,.0f} + {N_star_N:,.0f} - {A_pt_fpo_N:,.0f}}}{{2 \\times ({Es:,.0f} \\times {A_st:.1f} + {Ep:,.0f} \\times {A_pt:.1f})}}$$
 
-$$\\varepsilon_{{x,1}} = \\frac{{{numerator_1:,.0f}}}{{{denom1:,.0f}}} = {eps_x_1:.5f}$$
+$$\\large \\varepsilon_{{x,1}} = \\frac{{{numerator_1:,.0f}}}{{{denom1:,.0f}}} = {eps_x_1:.5f}$$
 
 {eq2_note}
 
 ---
 
-**Final strain used for MCFT**
+**Result:**
 
 - Governing equation: **{eq_used}**
 - Raw strain: $\\varepsilon_x = {eps_x_raw:.5f}$
 - After applying AS 3600 limits $[-2.0 \\times 10^{{-4}},\\, 3.0 \\times 10^{{-3}}]$:
 
-$$\\Large \\varepsilon_x = {eps_x:.5f}$$
+$$\\huge \\varepsilon_x = {eps_x:.5f}$$
 
 This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative (slight compression at mid-depth)"}** and is used in **Step 5** to compute $k_v$ and $\\theta_v$.
 """
