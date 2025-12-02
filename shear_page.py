@@ -223,6 +223,48 @@ summary can show shear utilisation.
             value=float((get_param("b", 300.0)) * (get_param("D", 600.0) / 2.0)),
         )
 
+    # ---------- 1.4 Shear section inputs (for Step 3) ----------
+    st.markdown("### Shear section parameters")
+    col_shear1, col_shear2, col_shear3 = st.columns(3)
+
+    with col_shear1:
+        d_g = st.number_input(
+            "Maximum aggregate size d_g (mm)",
+            value=20.0,
+            min_value=5.0,
+            max_value=40.0,
+        )
+        sum_duct = st.number_input(
+            "Sum of duct diameters crossing web (mm)",
+            value=0.0,
+            min_value=0.0,
+        )
+
+    with col_shear2:
+        kd_opt = st.selectbox(
+            "k_d factor for prestressing ducts",
+            (
+                ("None (no ducts in web)", 0.0),
+                ("0.5 – steel ducts, grouted", 0.5),
+                ("0.8 – plastic ducts, grouted", 0.8),
+                ("1.2 – ungrouted ducts", 1.2),
+            ),
+            index=0,
+            format_func=lambda kv: kv[0],
+        )
+        k_d = kd_opt[1]
+
+    with col_shear3:
+        method = st.radio(
+            "k_v method",
+            (
+                "General εₓ-based (Cl. 8.2.4.2)",
+                "Simplified non-prestressed (Cl. 8.2.4.3)",
+            ),
+            index=0,
+        )
+        use_general_kv = method.startswith("General")
+
     # -------------------------------------------------
     # Pull shared values for calculations
     # -------------------------------------------------
@@ -416,69 +458,13 @@ Result / check
     st.markdown("---")
     st.markdown("### Step 3 – Determine shear-resisting section (b_v, d_v, ligs)")
 
-    d_g = st.number_input(
-        "Maximum aggregate size d_g (mm)",
-        value=20.0,
-        min_value=5.0,
-        max_value=40.0,
-    )
-
+    # Use values from session state / inputs section
     lig_d = lig_d or 10.0
     legs = legs or 2.0
     s = s_lig or 200.0
 
     Asv = legs * math.pi * lig_d**2 / 4.0
     f_syv = fsy
-
-    col_ligs1, col_ligs2, col_ligs3 = st.columns(3)
-    with col_ligs1:
-        st.markdown(
-            f"**Lig diameter (session)** = {lig_d:.1f} mm  \n"
-            f"**Legs per lig (session)** = {legs:.0f}  \n"
-            f"**Stirrup spacing s_lig (session)** = {s_lig:.1f} mm"
-        )
-
-    with col_ligs2:
-        st.markdown(
-            f"**$A_{{sv}}$ (calculated)** = {Asv:,.1f} mm²  \n"
-            f"$= n_{{legs}} \\times \\frac{{\\pi d_{{lig}}^2}}4$  \n"
-            f"**Shear lig yield $f_{{sy,v}}$** = {f_syv:.1f} MPa  \n"
-            f"(taken equal to longitudinal $f_{{sy}}$)"
-        )
-
-        method = st.radio(
-            "k_v method",
-            (
-                "General εₓ-based (Cl. 8.2.4.2)",
-                "Simplified non-prestressed (Cl. 8.2.4.3)",
-            ),
-            index=0,
-        )
-        use_general_kv = method.startswith("General")
-
-    with col_ligs3:
-        st.write("Extra shear/torsion detailing (hangers, etc.) can be added later.")
-
-    st.markdown("**Effective web width $b_v$ and shear depth $d_v$ (Cl. 8.2.2)**")
-
-    sum_duct = st.number_input(
-        "Sum of duct diameters crossing web (mm)",
-        value=0.0,
-        min_value=0.0,
-    )
-
-    kd_opt = st.selectbox(
-        "k_d factor for prestressing ducts",
-        (
-            ("None (no ducts in web)", 0.0),
-            ("0.5 – steel ducts, grouted", 0.5),
-            ("0.8 – plastic ducts, grouted", 0.8),
-            ("1.2 – ungrouted ducts", 1.2),
-        ),
-        index=0,
-        format_func=lambda kv: kv[0],
-    )
-    k_d = kd_opt[1]
 
     b_v = b - k_d * sum_duct
     d_v = max(0.72 * D, 0.9 * d)
