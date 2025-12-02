@@ -229,7 +229,7 @@ summary can show shear utilisation.
         return
 
     # =====================================================
-    # 2. STEP 1 — TORSION CRACKING CHECK
+    # 2. STEP 1 — TORSION CRACKING CHECK (T_cr)
     # =====================================================
     st.markdown("---")
     st.markdown(
@@ -238,201 +238,152 @@ summary can show shear utilisation.
     )
 
     cover_t = 40.0  # assumed for closed stirrup centroid
-
-    # Geometry of torsion box
     A_cp = b * D
     u_c = 2 * (b + D)
     Ao = 0.9 * A_cp
 
-    # Effective torsion area and stirrup path
+    # closed stirrup path (used again in Step 2)
     uh = 2 * ((b - cover_t) + (D - cover_t))
     A_oh = (b - cover_t) * (D - cover_t)
 
-    # Cracking torque T_cr (AS 3600 Cl. 8.3.4)
     sqrt_fc = math.sqrt(fc)
-    denom = 0.33 * sqrt_fc if fc > 0 else 0.0
-
-    if denom > 0 and u_c > 0:
-        Tcr_Nmm = 0.33 * sqrt_fc * (A_cp**2) / u_c * math.sqrt(
-            1.0 + sigma_cp / denom
-        )
-    else:
-        Tcr_Nmm = 0.0
-
+    denom = 0.33 * sqrt_fc
+    Tcr_Nmm = 0.33 * sqrt_fc * (A_cp**2) / u_c * math.sqrt(
+        1 + (sigma_cp / denom if denom > 0 else 0.0)
+    )
     Tcr_kNm = Tcr_Nmm / 1e6
 
-    # Torsion design trigger
     torsion_required_limit = 0.25 * phi * Tcr_kNm
     torsion_required = T_star > torsion_required_limit
 
     step1_req = ">" if torsion_required else "\\le"
-    step1_text = "required" if torsion_required else "not required (strength check only)"
-
-    # NOTE: remove any old `st.write(f"$T_{{cr}} = ...")` line above – we only use the box now.
+    step1_text = (
+        "required" if torsion_required else "not required (strength check only)"
+    )
 
     calcbox(
         f"""
-- **Given gross torsion box (AS 3600 Cl. 8.3.4):**  
-  - $A_{{cp}} = bD = {b:.0f}\\times {D:.0f} = {A_cp:.0f}\\ \\text{{mm}}^2$  
-  - $u_c = 2(b + D) = 2({b:.0f} + {D:.0f}) = {u_c:.0f}\\ \\text{{mm}}$  
+Inputs:
+- Section width: $b = {b:.0f}\\,\\text{{mm}}$
+- Section depth: $D = {D:.0f}\\,\\text{{mm}}$
+- Gross torsion box area: $A_{{cp}} = bD = {A_cp:.0f}\\,\\text{{mm}}^2$
+- Perimeter of torsion box: $u_c = 2(b + D) = {u_c:.0f}\\,\\text{{mm}}$
+- Concrete strength: $f'_c = {fc:.1f}\\,\\text{{MPa}}$
+- Average prestress: $\\sigma_{{cp}} = {sigma_cp:.2f}\\,\\text{{MPa}}$
+- Effective torsion area: $A_o \\approx 0.9 A_{{cp}} = {Ao:.0f}\\,\\text{{mm}}^2$
+- Stirrup centreline path: $u_h = 2[(b - c_t) + (D - c_t)] = {uh:.0f}\\,\\text{{mm}}$  
+  (with $c_t = {cover_t:.0f}\\,\\text{{mm}}$)
 
-- **Concrete strength & average prestress:**  
-  - $f'_c = {fc:.1f}\\ \\text{{MPa}}$  
-  - $\\sigma_{{cp}} = {sigma_cp:.2f}\\ \\text{{MPa}}$  
+Formula (AS 3600 Cl. 8.3.4):
+\\[
+T_{{cr}} = 0.33\\sqrt{{f'_c}}\\,
+          \\frac{{A_{{cp}}^2}}{{u_c}}
+          \\sqrt{{1 + \\frac{{\\sigma_{{cp}}}}{{0.33\\sqrt{{f'_c}}}}}}
+\\]
 
-- **Effective torsion area and stirrup path:**  
-  - $A_o \\approx 0.9 A_{{cp}} = 0.9 \\times {A_cp:.0f} = {Ao:.0f}\\ \\text{{mm}}^2$  
-  - $u_h = 2[(b - c_t) + (D - c_t)] = 2[({b:.0f} - {cover_t:.0f}) + ({D:.0f} - {cover_t:.0f})] = {uh:.0f}\\ \\text{{mm}}$  
+Substitution:
+\\[
+T_{{cr}} = 0.33\\sqrt{{{fc:.1f}}}\\,
+          \\frac{{{A_cp:.0f}^2}}{{{u_c:.0f}}}
+          \\sqrt{{1 + \\frac{{{sigma_cp:.2f}}}{{0.33\\sqrt{{{fc:.1f}}}}}}}
+        = {Tcr_kNm:,.1f}\\,\\text{{kNm}}
+\\]
 
-- **Cracking torque (AS 3600 Cl. 8.3.4):**  
-  - Base form:  
-    $T_{{cr}} = 0.33\\sqrt{{f'_c}}\\,\\dfrac{{A_{{cp}}^2}}{{u_c}}\\sqrt{{1 + \\dfrac{{\\sigma_{{cp}}}}{{0.33\\sqrt{{f'_c}}}}}}$  
-  - Substituting values (auto):  
-    $T_{{cr}} = 0.33\\sqrt{{{fc:.1f}}}\\,\\dfrac{{{A_cp:.0f}^2}}{{{u_c:.0f}}}
-    \\sqrt{{1 + \\dfrac{{{sigma_cp:.2f}}}{{0.33\\sqrt{{{fc:.1f}}}}}}}
-    = {Tcr_kNm:,.1f}\\ \\text{{kNm}}$  
-
-- **Torsion design requirement:**  
-  - Limit: $0.25\\,\\phi T_{{cr}} = 0.25 \\times {phi:.2f} \\times {Tcr_kNm:,.1f}
-    = {torsion_required_limit:,.1f}\\ \\text{{kNm}}$  
-  - Demand: $T^* = {T_star:.1f}\\ \\text{{kNm}}$ with condition
-    $T^* {step1_req} 0.25\\,\\phi T_{{cr}}$  
-
-- **Conclusion:** torsion design is **{step1_text}**.
+Result / Check:
+- Limit: $0.25\\,\\phi T_{{cr}} = 0.25 \\times {phi:.2f} \\times {Tcr_kNm:,.1f}
+  = {torsion_required_limit:,.1f}\\,\\text{{kNm}}$
+- Demand: $T^* = {T_star:.1f}\\,\\text{{kNm}}$
+- Condition: $T^* {step1_req} 0.25\\,\\phi T_{{cr}}$
+- Conclusion: torsion design is **{step1_text}**.
 """
     )
 
-
-
     # =====================================================
-    # 3. STEP 2 — CONVERT TORSION INTO AN EQUIVALENT SHEAR
+    # 3. STEP 2 — CONVERT TORSION INTO AN EQUIVALENT SHEAR V_eq*
     # =====================================================
     st.markdown("---")
     st.markdown(
-        r"### Step 2 – Convert torsion into an equivalent shear $V_{eq}^*$ "
-        r"(AS 3600 Cl. 8.2.3)"
+        "### Step 2 – Convert torsion into an equivalent shear "
+        "$V_{eq}^*$ (AS 3600 Cl. 8.2.3)"
     )
 
     if torsion_required:
-        # -------- CASE A: TORSION DESIGN REQUIRED (torsion included) --------
+        # --- Full equivalent shear including torsion ---
         T_star_Nmm = T_star * 1e6
         torsion_eq_N = 0.9 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
         torsion_eq_kN = torsion_eq_N / 1e3
         V_eq = math.sqrt(V_star**2 + torsion_eq_kN**2)
 
-        md = r"""
-### **1. Inputs**
+        calcbox(
+            f"""
+Inputs:
+- Shear demand: $V^* = {V_star:.1f}\\,\\text{{kN}}$
+- Torsion: $T^* = {T_star:.1f}\\,\\text{{kNm}}$
+- Stirrup path: $u_h = {uh:.0f}\\,\\text{{mm}}$
+- Effective torsion area: $A_o = {Ao:.0f}\\,\\text{{mm}}^2$
 
-- Shear demand: $V^* = %.1f\ \text{kN}$  
-- Torsion: $T^* = %.1f\ \text{kNm}$  
-- Stirrup path: $u_h = %.0f\ \text{mm}$  
-- Effective torsion area: $A_o = %.0f\ \text{mm}^2$  
+Formula (AS 3600 Cl. 8.2.3):
+\\[
+V_{{t,eq}} = 0.9\\,\\frac{{T^* u_h}}{{2 A_o}}
+\\]
+\\[
+V_{{eq}}^* = \\sqrt{{V^{*2} + V_{{t,eq}}^2}}
+\\]
 
----
+Substitution:
+\\[
+V_{{t,eq}} =
+0.9\\,\\frac{{{T_star:.1f}\\times 10^6 \\times {uh:.0f}}}
+        {{2 \\times {Ao:.0f}}}
+= {torsion_eq_kN:.1f}\\,\\text{{kN}}
+\\]
+\\[
+V_{{eq}}^* =
+\\sqrt{{{V_star:.1f}}^2 + {torsion_eq_kN:.1f}^2}
+= {V_eq:.1f}\\,\\text{{kN}}
+\\]
 
-### **2. Formula (AS 3600 Cl. 8.2.3)**
-
-- Torsion-equivalent shear:  
-  $$V_{t,eq} = 0.9\,\frac{T^* u_h}{2 A_o}$$  
-
-- Combined equivalent shear:  
-  $$V_{eq}^* = \sqrt{V^{*2} + V_{t,eq}^2}$$  
-
----
-
-### **3. Substitution**
-
-- Torsion-equivalent shear:
-
-  $$V_{t,eq}
-    = 0.9\,
-      \frac{\left(%.1f\times10^6\right)\,(%.0f)}
-           {2\,(%.0f)}
-    = %.1f\ \text{kN}$$  
-
-- Combined equivalent shear:
-
-  $$V_{eq}^*
-    = \sqrt{(%.1f)^2 + (%.1f)^2}
-    = %.1f\ \text{kN}$$  
-
----
-
-### **4. Result**
-
-**Equivalent shear including torsion:**
-
-$$\boxed{V_{eq}^* = %.1f\ \text{kN}}$$  
-
-This $V_{eq}^*$ is used in the sectional shear and web-crushing checks.
-""" % (
-            # Inputs
-            V_star,
-            T_star,
-            uh,
-            Ao,
-            # V_t,eq substitution
-            T_star,
-            uh,
-            Ao,
-            torsion_eq_kN,
-            # V_eq substitution
-            V_star,
-            torsion_eq_kN,
-            V_eq,
-            # Boxed result
-            V_eq,
+Result / Check:
+- Torsion is included as an equivalent shear.
+- This $V_{{eq}}^*$ is used in the sectional shear and web-crushing checks.
+"""
         )
 
-        calcbox(md)
-
     else:
-        # -------- CASE B: TORSION DESIGN NOT REQUIRED (V_eq* = V*) --------
+        # --- No torsion design: equivalent shear = shear only ---
         torsion_eq_kN = 0.0
         V_eq = V_star
 
-        md = r"""
-### **1. Inputs**
+        calcbox(
+            f"""
+Inputs:
+- Shear demand: $V^* = {V_star:.1f}\\,\\text{{kN}}$
+- Torsion: $T^* = {T_star:.1f}\\,\\text{{kNm}}$  
+  (from Step 1, torsion design is not required)
 
-- From Step 1: torsion design **not required**  
-- Shear demand: $V^* = %.1f\ \text{kN}$  
-- Therefore $V_{t,eq} = 0$ (torsion not treated as a design action).  
+Formula (AS 3600 Cl. 8.2.3):
+\\[
+V_{{eq}}^* = \\sqrt{{V^{*2} + V_{{t,eq}}^2}}
+\\]
+When torsion is not designed,
+\\[
+V_{{t,eq}} = 0 \\;\\Rightarrow\\;
+V_{{eq}}^* = V^*
+\\]
 
----
+Substitution:
+\\[
+V_{{t,eq}} = 0.0\\,\\text{{kN}}
+\\]
+\\[
+V_{{eq}}^* = V^* = {V_eq:.1f}\\,\\text{{kN}}
+\\]
 
-### **2. Formula (general form, AS 3600 Cl. 8.2.3)**
-
-- Combined equivalent shear:  
-  $$V_{eq}^* = \sqrt{V^{*2} + V_{t,eq}^2}$$  
-
----
-
-### **3. Substitution**
-
-With $V_{t,eq} = 0$:
-
-$$V_{eq}^*
-  = \sqrt{(%.1f)^2 + 0^2}
-  = %.1f\ \text{kN}$$  
-
----
-
-### **4. Result**
-
-**Equivalent shear (torsion ignored):**
-
-$$\boxed{V_{eq}^* = %.1f\ \text{kN}}$$  
-
-This $V_{eq}^*$ is carried into the sectional shear and web-crushing checks.
-""" % (
-            V_star,  # inputs
-            V_star,  # substitution
-            V_eq,
-            V_eq,    # boxed result
+Result / Check:
+- Torsion is not treated as a design action for this section.
+- This $V_{{eq}}^*$ is carried into the sectional shear and web-crushing checks.
+"""
         )
-
-        calcbox(md)
-
 
 
 
@@ -783,6 +734,7 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for use of the general MCFT exp
 
 if __name__ == "__main__":
     render_shear()
+
 
 
 
