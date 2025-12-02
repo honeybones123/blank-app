@@ -528,18 +528,130 @@ $$\\Rightarrow d_v = {_fmt(d_v)} \\text{{ mm}}$$
     # 5. STEP 4 — LONGITUDINAL STRAIN εx
     # =====================================================
     st.markdown("---")
-    st.markdown(
-        "### Step 4 – Calculate longitudinal strain "
-        "$\\varepsilon_x$ for MCFT (Cl. 8.2.4.2.3)"
-    )
 
-    st.latex(
-        r"\varepsilon_x = "
-        r"\frac{\displaystyle \frac{|M^*|}{d_v} + "
-        r"\sqrt{\left(|V^*| - P_v\right)^2 + \left(\frac{0.97 T^* u_h}{2 A_o}\right)^2}"
-        r" + 0.5 N^* - A_{pt} f_{po}}"
-        r"{2(E_s A_{st} + E_p A_{pt})} \le 3.0\times10^{-3}"
-    )
+    # Step 4 heading with info bubble
+    col_title, col_info = st.columns([1, 0.08])
+
+    with col_title:
+        st.markdown(
+            "### Step 4 – Calculate longitudinal strain "
+            r"$\varepsilon_x$ for MCFT (Cl. 8.2.4.2.2)"
+        )
+
+    with col_info:
+        with st.popover("ℹ️", use_container_width=True):
+            st.markdown("### Understanding the Longitudinal Strain Equations")
+
+            st.markdown(
+                r"""
+**Where is εₓ measured?**
+
+- εₓ is the **longitudinal strain at the mid-depth** of the cross-section at the shear-critical location.  
+- The sign of εₓ tells us whether the concrete at **mid-depth** is in:
+  - **Tension** → cracking → reduced shear resistance  
+  - **Slight compression** → concrete still helps → increased shear resistance  
+"""
+            )
+
+            st.markdown("---")
+            st.markdown("### **Equation 1 – Mid-depth in tension (εₓ ≥ 0)**")
+
+            st.markdown(
+                r"""
+**Use when:**  
+- The calculated εₓ is **zero or positive**.  
+- Mid-depth is in **tension**, so concrete is cracked and does not contribute.  
+- Only **steel stiffness** is included in the denominator.
+"""
+            )
+
+            st.latex(
+                r"""
+\varepsilon_x =
+\frac{
+\dfrac{|M^*|}{d_v} +
+\sqrt{
+(|V^*| - P_v)^2 +
+\left(
+    \dfrac{0.97\,T^*\,u_h}{2A_o}
+\right)^2
+}
+}
+{
+2(E_s A_{st} + E_p A_{pt})
+}
++
+\frac{
+0.5N^* - A_{pt}f_{po}
+}
+{
+E_s A_{st} + E_p A_{pt}
+}
+\quad\text{(AS 3600 8.2.4.2.2(1))}
+"""
+            )
+
+            st.markdown(
+                r"""
+**Interpretation:**
+
+- Moment term → induces tensile force at mid-depth  
+- Shear/torsion term → vertical component acting as longitudinal shear force  
+- Axial & prestress contributions → direct effects on longitudinal strain  
+"""
+            )
+
+            st.markdown("---")
+            st.markdown("### **Equation 2 – Mid-depth in slight compression (εₓ < 0)**")
+
+            st.markdown(
+                r"""
+**Use when:**  
+- The εₓ from Equation 1 comes out **negative**.  
+- Mid-depth is in **slight compression**, meaning the concrete **still carries compressive stress**.  
+- The concrete term $E_c A_{ct}$ is added to the denominator.
+"""
+            )
+
+            st.latex(
+                r"""
+\varepsilon_x =
+\frac{
+\dfrac{|M^*|}{d_v} +
+|V^*| - P_v +
+0.5N^* - A_{pt}f_{po}
+}
+{
+2(E_s A_{st} + E_p A_{pt} + E_c A_{ct})
+}
+\quad\text{(AS 3600 8.2.4.2.2(2))}
+"""
+            )
+
+            st.markdown(
+                r"""
+**Highlights:**
+
+- Concrete stiffness helps resist compression at mid-depth.  
+- Less conservative than Equation 1 (higher shear capacity).  
+- Must remain within:  
+  $$-2.0\times10^{-4} \le \varepsilon_x \le 0$$
+"""
+            )
+
+            st.markdown("---")
+
+            st.markdown(
+                r"""
+### **How the app uses these equations**
+
+1. Compute εₓ using **Equation 1**.  
+2. If εₓ is **negative**, recalculate using **Equation 2** *or* cap at 0.  
+3. Apply AS 3600 limits:  
+   $$-2.0\times10^{-4} \le \varepsilon_x \le 3.0\times10^{-3}$$
+4. Use the resulting εₓ to compute $k_v$ in Step 5.
+"""
+            )
 
     M_star_Nmm = abs(M_star) * 1e6
     term_M = M_star_Nmm / (d_v or 1.0)
