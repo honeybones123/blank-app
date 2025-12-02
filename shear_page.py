@@ -23,15 +23,19 @@ def _inject_calcbox_css():
     st.markdown(
         """
 <style>
-/* Style bordered containers as blue calc boxes */
-div[data-testid="stVerticalBlockBorderWrapper"] {
-  border: none !important;
+/* Style blockquotes as blue calc boxes */
+blockquote {
   border-left: 4px solid #1f77b4 !important;
-  border-radius: 0.35rem !important;
-  background-color: rgba(31, 119, 180, 0.06) !important;
-  padding: 0.5rem 0.75rem !important;
-  margin-top: 0.5rem;
-  margin-bottom: 0.75rem;
+  background-color: rgba(31, 119, 180, 0.08) !important;
+  padding: 0.75rem 1rem !important;
+  margin: 0.5rem 0 0.75rem 0 !important;
+  border-radius: 0 0.35rem 0.35rem 0 !important;
+}
+blockquote p {
+  margin-bottom: 0.5rem !important;
+}
+blockquote p:last-child {
+  margin-bottom: 0 !important;
 }
 </style>
 """,
@@ -43,9 +47,11 @@ def calcbox(md: str):
     """Render a highlighted calculation box with native Streamlit LaTeX support."""
     # Convert \[...\] to $$...$$ for Streamlit's LaTeX renderer
     converted = md.replace("\\[", "$$").replace("\\]", "$$")
-    with st.container(border=True):
-        # Use native markdown which supports LaTeX ($$...$$ for display math)
-        st.markdown(converted)
+    # Convert to blockquote format - prefix each line with >
+    lines = converted.strip().split('\n')
+    blockquote = '\n'.join('> ' + line for line in lines)
+    # Use native markdown which supports LaTeX
+    st.markdown(blockquote)
 
 
 # ------------------------------------------------------------
