@@ -296,6 +296,7 @@ summary can show shear utilisation.
     )
 
 
+
     # =====================================================
     # 3. STEP 2 — EQUIVALENT SHEAR V_eq*
     # =====================================================
@@ -682,5 +683,6 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for use of the general MCFT exp
 
 if __name__ == "__main__":
     render_shear()
+
 
 
