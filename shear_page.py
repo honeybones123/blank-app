@@ -307,12 +307,14 @@ Result / check
         "$V_{eq}^*$ (AS 3600 Cl. 8.2.3)"
     )
 
+    # Convert torsion to Nmm (needed for εₓ and web-crushing even if torsion design not required)
+    T_star_Nmm = T_star * 1e6
+
     if torsion_required:
         # --- Full equivalent shear including torsion ---
-        T_star_Nmm = T_star * 1e6
         torsion_eq_N = 0.9 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
         torsion_eq_kN = torsion_eq_N / 1e3
-        V_eq = math.sqrt(V_star ** 2 + torsion_eq_kN ** 2)
+        V_eq = math.sqrt(V_star**2 + torsion_eq_kN**2)
 
         calcbox(
             f"""
@@ -327,7 +329,7 @@ Formula (AS 3600 Cl. 8.2.3)
 V_{{t,eq}} = 0.9\\,\\frac{{T^* u_h}}{{2 A_o}}
 \\]
 \\[
-V_{{eq}}^* = \\sqrt{{V^{{*2}} + V_{{t,eq}}^2}}
+V_{{eq}}^* = \\sqrt{{(V^*)^2 + V_{{t,eq}}^2}}
 \\]
 
 Substitution
@@ -364,7 +366,7 @@ Formula (AS 3600 Cl. 8.2.3)
 \\[
 V_{{eq}}^* = \\sqrt{{V^{*2} + V_{{t,eq}}^2}}
 \\]
-Since $V_{{t,eq}} = 0$,  
+Since $V_{{t,eq}} = 0$,
 \\[
 V_{{eq}}^* = V^*
 \\]
@@ -734,7 +736,6 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for use of the general MCFT exp
 
 if __name__ == "__main__":
     render_shear()
-
 
 
 
