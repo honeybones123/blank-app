@@ -263,19 +263,32 @@ summary can show shear utilisation.
     )
 
     step1_req = ">" if torsion_required else "\\le"
-    step1_text = (
-        "required" if torsion_required else "not required (strength check only)"
-    )
+    step1_text = "required" if torsion_required else "not required (strength check only)"
+
     calcbox(
         f"""
-**Step 1 – Torsion cracking check (AS 3600 Cl. 8.3.4)**
+**Step 1 – Torsion cracking check** (AS 3600 Cl. 8.3.4)
 
-- Gross area: $A_{{cp}} = {A_cp:.0f}\\ \\text{{mm}}^2$  
-- Perimeter: $u_c = {u_c:.0f}\\ \\text{{mm}}$  
-- Cracking torque: $T_{{cr}} = {Tcr_kNm:,.1f}\\ \\text{{kNm}}$  
-- Requirement: $T^* {step1_req} 0.25\\,φ T_{{cr}}$  
+- Gross area:  
+  $A_{{cp}} = bD = {A_cp:.0f}\\,\\text{{mm}}^2$
+- Perimeter:  
+  $u_c = 2(b + D) = {u_c:.0f}\\,\\text{{mm}}$
+- Cracking torque (with prestress):  
+  $T_{{cr}} = 0.33\\sqrt{{f'_c}}\\,\\dfrac{{A_{{cp}}^2}}{{u_c}}\\,
+   \\sqrt{{1 + \\dfrac{{\\sigma_{{cp}}}}{{0.33\\sqrt{{f'_c}}}}}}
+  = {Tcr_kNm:.1f}\\,\\text{{kNm}}$
 
-→ **Result:** Torsion design is **{step1_text}**.
+- Design torsion:  
+  $T^* = {T_star:.1f}\\,\\text{{kNm}}$
+- Limit for torsion design:  
+  $0.25\\,\\phi T_{{cr}} = 0.25 \\times {phi:.2f} \\times {Tcr_kNm:.1f}
+  = {torsion_required_limit:.1f}\\,\\text{{kNm}}$
+
+**Check**
+
+$T^* {step1_req} 0.25\\,\\phi T_{{cr}}$
+
+→ **Torsion design {step1_text}.**
 """
     )
 
@@ -300,11 +313,24 @@ summary can show shear utilisation.
 
     calcbox(
         f"""
-**Step 2 – Equivalent shear including torsion (AS 3600 Cl. 8.2.3)**
+**Step 2 – Equivalent shear including torsion** (AS 3600 Cl. 8.2.3)
 
-- Shear component: $V^* = {V_star:.1f}\\ \\text{{kN}}$  
-- Torsion-equivalent shear: $V_{{t,eq}} = {torsion_eq_kN:.1f}\\ \\text{{kN}}$  
-- Combined: $V_{{eq}}^* = {V_eq:.1f}\\ \\text{{kN}}$  
+- Shear component:  
+  $V^* = {V_star:.1f}\\,\\text{{kN}}$
+
+- Torsion-equivalent shear:  
+
+  $$
+  V_{{t,eq}} = 0.9\\,T^*\\,\\dfrac{{u_h}}{{2A_o}}
+            = {torsion_eq_kN:.1f}\\,\\text{{kN}}
+  $$
+
+- Combined equivalent shear:
+
+  $$
+  V_{{eq}}^* = \\sqrt{V^{*2} + V_{{t,eq}}^{2}}
+             = {V_eq:.1f}\\,\\text{{kN}}
+  $$
 
 This $V_{{eq}}^*$ is used in the sectional shear and web-crushing checks.
 """
@@ -389,6 +415,49 @@ This $V_{{eq}}^*$ is used in the sectional shear and web-crushing checks.
     dv_2 = 0.9 * d
     st.write(f"$0.72 D = {dv_1:.1f}$ mm,   $0.9 d = {dv_2:.1f}$ mm → $d_v = {d_v:.1f}$ mm")
 
+    # --- Step 3 calc box: web section + ligs ---
+    calcbox(
+        f"""
+**Step 3 – Web section and shear reinforcement**  
+(AS 3600 Cl. 8.2.2 & 8.2.5)
+
+**Web & ducts**
+
+- Duct factor: $k_d = {k_d:.2f}$  
+- Sum of duct diameters in web: $\\sum d_{{duct}} = {sum_duct:.1f}\\,\\text{{mm}}$  
+- Effective web width:  
+
+  $$
+  b_v = b - k_d \\sum d_{{duct}}
+      = {b_v:.1f}\\,\\text{{mm}}
+  $$
+
+**Effective shear depth**
+
+- $0.72D = 0.72\\times{D:.1f} = {dv_1:.1f}\\,\\text{{mm}}$  
+- $0.9d = 0.9\\times{d:.1f} = {dv_2:.1f}\\,\\text{{mm}}$  
+
+  $$
+  d_v = \\max(0.72D, 0.9d) = {d_v:.1f}\\,\\text{{mm}}
+  $$
+
+**Shear ligatures**
+
+- Bar diameter: $d_{{lig}} = {lig_d:.1f}\\,\\text{{mm}}$  
+- Number of legs: $n_{{legs}} = {legs:.0f}$  
+- Spacing: $s_{{lig}} = {s_lig:.1f}\\,\\text{{mm}}$  
+
+- Shear steel per stirrup:
+
+  $$
+  A_{{sv}} = n_{{legs}}\\,\\frac{\\pi d_{{lig}}^2}{4}
+          = {Asv:.1f}\\,\\text{{mm}}^2
+  $$
+
+- Shear steel yield: $f_{{sy,v}} = {f_syv:.1f}\\,\\text{{MPa}}$
+"""
+    )
+
     # =====================================================
     # 5. LONGITUDINAL STRAIN εx
     # =====================================================
@@ -431,14 +500,65 @@ This $V_{{eq}}^*$ is used in the sectional shear and web-crushing checks.
 
     calcbox(
         f"""
-**Step 3 – Longitudinal strain at mid-depth (AS 3600 Cl. 8.2.4.2.3)**
+**Step 4 – Longitudinal strain at mid-depth**  
+(AS 3600 Cl. 8.2.4.2.3 – general MCFT expression)
 
-- Moment term: $|M^*|/d_v = {term_M:,.0f}\\ \\text{{N}}$  
-- Shear + torsion term: $\\sqrt{{(|V^*| - P_v)^2 + (0.97 T^* u_h / 2 A_o)^2}}$  
-- Axial / prestress terms: $0.5 N^*$ and $A_{{pt}} f_{{po}}$  
-- Resulting strain: $\\varepsilon_x = {eps_x:.5f}$  
+**Numerator**
 
-Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for the general MCFT expression.
+- Moment term:
+
+  $$
+  \\frac{{|M^*|}}{{d_v}}
+  = \\frac{{{M_star_Nmm:,.0f}}}{{{d_v:.1f}}}
+  = {term_M:,.0f}\\,\\text{{N}}
+  $$
+
+- Shear + torsion term:
+
+  $$
+  \\sqrt{
+    (|V^*| - P_v)^2 +
+    \\left( \\frac{0.97 T^* u_h}{2 A_o} \\right)^2
+  }
+  = {sqrt_inner:,.0f}\\,\\text{{N}}
+  $$
+
+- Axial / prestress terms:
+
+  $0.5N^* = {N_star_N:,.0f}\\,\\text{{N}}$  
+  $A_{{pt}} f_{{po}} = {A_pt_fpo_N:,.0f}\\,\\text{{N}}$
+
+- Total numerator:
+
+  $$
+  \\text{{Num}} = {numerator:,.0f}\\,\\text{{N}}
+  $$
+
+**Denominator**
+
+- Using $E_s A_{{st}}$ and $E_p A_{{pt}}$:
+
+  $$
+  \\text{{Den}}_1
+  = 2(E_s A_{{st}} + E_p A_{{pt}})
+  = {denom1:,.0f}
+  $$
+
+**Resulting strain**
+
+- Final adopted longitudinal strain:
+
+  $$
+  \\varepsilon_x = {eps_x:.5f}
+  $$
+
+- Check:
+
+  $$
+  \\varepsilon_x \\le 3.0\\times 10^{-3}
+  $$
+
+→ **Strain check satisfied** if $\\varepsilon_x \\le 0.003$.
 """
     )
 
@@ -478,6 +598,31 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for the general MCFT expression
     st.write(f"$k_v = {k_v:.3f}$")
     st.write(f"$\\theta_v = {theta_v_deg:.1f}^\\circ$")
 
+    kv_method_label = (
+        "General ε_x-based (Cl. 8.2.4.2)"
+        if use_general_kv
+        else "Simplified non-prestressed (Cl. 8.2.4.3)"
+    )
+
+    calcbox(
+        f"""
+**Step 5 – Shear strength parameters $k_v$ and $\\theta_v$**  
+(AS 3600 Cl. 8.2.4.2 / 8.2.4.3)
+
+- Method used: **{kv_method_label}**  
+- Longitudinal strain: $\\varepsilon_x = {eps_x:.5f}$  
+- Maximum aggregate size: $d_g = {d_g:.1f}\\,\\text{{mm}}$
+
+**Resulting parameters**
+
+- $k_v = {k_v:.3f}$  
+- $\\theta_v = {theta_v_deg:.1f}^\\circ$
+
+These parameters are used in the concrete shear strength $V_{{uc}}$  
+and the steel shear contribution $V_{{us}}$.
+"""
+    )
+
     # =====================================================
     # 7. V_uc, V_us and sectional shear check
     # =====================================================
@@ -508,17 +653,66 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for the general MCFT expression
     phi_Vu = phi * Vu_total_kN
     shear_ok = phi_Vu >= V_eq
 
+    shear_status = "OK" if shear_ok else "NOT OK"
+
     calcbox(
         f"""
-**Step 4 – Sectional shear strength (AS 3600 Cl. 8.2.3 & 8.2.4)**
+**Step 6 – Sectional shear strength**  
+(AS 3600 Cl. 8.2.3 & 8.2.4)
 
-- Concrete shear: $V_{{uc}} = {Vuc_kN:,.1f}\\ \\text{{kN}}$  
-- Steel shear: $V_{{us}} = {Vus_kN:,.1f}\\ \\text{{kN}}$  
-- Total factored capacity: $V_u = {Vu_total_kN:,.1f}\\ \\text{{kN}}$  
-- Design strength: $φV_u = {phi_Vu:,.1f}\\ \\text{{kN}}$  
-- Demand: $V_{{eq}}^* = {V_eq:,.1f}\\ \\text{{kN}}$  
+**Concrete shear (Cl. 8.2.4.1)**
 
-→ **Sectional shear check:** {":green[OK]" if shear_ok else ":red[NOT OK]"}.
+- Limited concrete strength:
+
+  $$
+  \\sqrt{{f'_c}}_{{\\text{{lim}}}} = {sqrt_fc_limited:.3f}\\,\\text{{MPa}}
+  $$
+
+- Concrete shear capacity:
+
+  $$
+  V_{{uc}} = k_v b_v d_v \\sqrt{{f'_c}}_{{\\text{{lim}}}}
+           = {Vuc_kN:.1f}\\,\\text{{kN}}
+  $$
+
+**Steel shear (Cl. 8.2.5.2(a))**
+
+- Shear lig contribution:
+
+  $$
+  V_{{us}} =
+  \\left(
+    \\frac{A_{{sv}} f_{{sy,v}} d_v}{s}
+  \\right)
+  \\cot \\theta_v
+  = {Vus_kN:.1f}\\,\\text{{kN}}
+  $$
+
+**Total sectional shear strength (Cl. 8.2.3.1)**
+
+- Nominal capacity:
+
+  $$
+  V_u = V_{{uc}} + V_{{us}} + P_v
+      = {Vu_total_kN:.1f}\\,\\text{{kN}}
+  $$
+
+- Design strength:
+
+  $$
+  \\phi V_u = {phi_Vu:.1f}\\,\\text{{kN}}
+  $$
+
+- Demand:
+
+  $$
+  V_{{eq}}^* = {V_eq:.1f}\\,\\text{{kN}}
+  $$
+
+**Check**
+
+$\\phi V_u \\ge V_{{eq}}^*$  
+→ **Sectional shear check: {shear_status}.**
 """
     )
 
@@ -556,15 +750,54 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for the general MCFT expression
     if not web_ok:
         st.error("Web-crushing limit exceeded – revise section/ligs.")
 
+    web_status = "OK" if web_ok else "NOT OK"
+
     calcbox(
         f"""
-**Step 5 – Web-crushing strength (AS 3600 Cl. 8.2.6)**
+**Step 7 – Web-crushing strength** (AS 3600 Cl. 8.2.6)
 
-- Web-crushing shear capacity: $V_{{u,\\max}} = {Vu_max_kN:,.1f}\\ \\text{{kN}}$  
-- Combined demand term: $\\sqrt{{(V^*/b_v d_v)^2 + (T^* u_h / 1.7 A_{{oh}}^2)^2}} = {LHS:,.1f}$  
-- Limit: $φ V_{{u,\\max}} / (b_v d_v) = {RHS:,.1f}$  
+**Web-crushing shear capacity**
 
-→ **Web-crushing check:** {":green[OK]" if web_ok else ":red[NOT OK]"}.
+- Ultimate web-crushing capacity:
+
+  $$
+  V_{{u,\\max}} =
+  0.55 f'_c b_v d_v\\,
+  \\frac{{\\cot\\theta_v + \\cot\\theta_1}}{{1 + \\cot^2\\theta_v}}
+  + P_v
+  = {Vu_max_kN:.1f}\\,\\text{{kN}}
+  $$
+
+**Combined shear + torsion demand**
+
+- Demand term:
+
+  $$
+  \\text{{LHS}} =
+  \\sqrt{
+    \\left(
+      \\frac{V^*}{b_v d_v}
+    \\right)^2
+    +
+    \\left(
+      \\frac{T^* u_h}{1.7 A_{{oh}}^2}
+    \\right)^2
+  }
+  = {LHS:.1f}
+  $$
+
+- Limit:
+
+  $$
+  \\text{{RHS}} =
+  \\phi \\frac{V_{{u,\\max}}}{b_v d_v}
+  = {RHS:.1f}
+  $$
+
+**Check**
+
+$\\text{{LHS}} \\le \\text{{RHS}}$  
+→ **Web-crushing check: {web_status}.**
 """
     )
 
