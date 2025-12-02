@@ -23,11 +23,13 @@ def _inject_calcbox_css():
     st.markdown(
         """
 <style>
-div[data-testid="stVerticalBlock"] > div:has(> div.calcbox-marker) {
-  padding: 0.75rem 1.0rem;
-  border-radius: 0.35rem;
-  border-left: 4px solid #1f77b4;
-  background-color: rgba(31, 119, 180, 0.06);
+/* Style bordered containers as blue calc boxes */
+div[data-testid="stVerticalBlockBorderWrapper"] {
+  border: none !important;
+  border-left: 4px solid #1f77b4 !important;
+  border-radius: 0.35rem !important;
+  background-color: rgba(31, 119, 180, 0.06) !important;
+  padding: 0.5rem 0.75rem !important;
   margin-top: 0.5rem;
   margin-bottom: 0.75rem;
 }
@@ -41,9 +43,7 @@ def calcbox(md: str):
     """Render a highlighted calculation box with native Streamlit LaTeX support."""
     # Convert \[...\] to $$...$$ for Streamlit's LaTeX renderer
     converted = md.replace("\\[", "$$").replace("\\]", "$$")
-    with st.container():
-        # Marker div for CSS targeting
-        st.markdown('<div class="calcbox-marker"></div>', unsafe_allow_html=True)
+    with st.container(border=True):
         # Use native markdown which supports LaTeX ($$...$$ for display math)
         st.markdown(converted)
 
