@@ -7,7 +7,7 @@ from state_and_helpers import (
     update_results,
 )
 
-# Shared helpers (same as Inputs/Bending)
+# Shared helpers (same contract as Inputs/Bending)
 from widgets_helpers import apply_global_widget_css, number_row
 
 
@@ -19,14 +19,13 @@ def cot(rad: float) -> float:
     return 1.0 / math.tan(rad)
 
 
-def _inject_calcbox_css() -> None:
-    """Blue calc-box styling (identical look across pages)."""
+def _inject_calcbox_css():
     st.markdown(
         """
 <style>
 .calcbox-wrapper {
   margin-top: 0.5rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
 }
 .calcbox-inner {
   padding: 0.75rem 1.0rem;
@@ -41,7 +40,7 @@ def _inject_calcbox_css() -> None:
     )
 
 
-def calcbox(md: str) -> None:
+def calcbox(md: str):
     """Render a highlighted calculation box (LaTeX-safe)."""
     box_html = f"""
 <div class="calcbox-wrapper">
@@ -54,145 +53,122 @@ def calcbox(md: str) -> None:
 
 
 # ------------------------------------------------------------
-#  MAIN PAGE
+#  MAIN PAGE RENDER FUNCTION
 # ------------------------------------------------------------
-def render_shear() -> None:
-    # Global CSS + calc box CSS (same contract as other pages)
+def render_shear():
     apply_global_widget_css()
     _inject_calcbox_css()
 
-    st.title("Shear & Torsion (AS 3600)")
+    st.title("Shear & Torsion")
 
     sync_callbacks = get_sync_callbacks()
     summary_placeholder = st.empty()
 
     st.markdown(
         """
-This page performs an AS 3600 sectional **shear + torsion** check with a step-by-step
-ULS calculation. Geometry, materials and actions are shared with the **Inputs** tab
-via the session-state contract. Results are pushed to `RESULTS` using
-`update_results()` so the Inputs summary can show **shear utilisation**.
+This page performs an AS 3600 shear + torsion check with a step-by-step ULS calculation.  
+Geometry, materials and design actions are shared with the Inputs tab via the session-state
+contract. Results are written to the global RESULTS using `update_results()` so the Inputs
+summary can show shear utilisation.
 """
     )
 
     # =====================================================
-    # 1. DESIGN INPUTS – WIDGETS (CONTRACT WITH INPUTS/BENDING)
+    # 1. DESIGN INPUTS (shared + local)  — IDENTICAL CONTRACT
     # =====================================================
     st.subheader("Design Inputs")
 
     col_geom, col_actions, col_eps = st.columns(3)
 
-    # ------------------ 1.1 Shared geometry & materials ------------------
+    # ---------- 1.1 Geometry & materials (shared) ----------
     with col_geom:
         st.markdown("### Geometry & materials")
 
         number_row(
             "Width b (mm)",
             "shear_b",
-            10.0,
+            get_param("b", 300.0),
             sync_callbacks,
-            help_text="Beam/web width. Shared with Inputs tab.",
-            min_value=100.0,
-            max_value=2000.0,
+            help_text="Shared with Inputs tab.",
         )
         number_row(
-            "Overall depth D (mm)",
+            "Depth D (mm)",
             "shear_D",
-            10.0,
+            get_param("D", 600.0),
             sync_callbacks,
-            help_text="Total section depth. Shared with Inputs tab.",
-            min_value=150.0,
-            max_value=3000.0,
+            help_text="Overall section depth, shared with Inputs.",
         )
         number_row(
             "Span L (mm)",
             "shear_L",
-            50.0,
+            get_param("L", 3000.0),
             sync_callbacks,
-            help_text="Clear span/analysis length. Shared with Inputs tab.",
-            min_value=500.0,
-            max_value=60000.0,
+            help_text="Clear span or design span for this section.",
         )
 
         number_row(
             "Concrete strength f'c (MPa)",
             "shear_fc",
-            1.0,
+            get_param("fc", 40.0),
             sync_callbacks,
             help_text="Concrete compressive strength (AS 3600).",
-            min_value=20.0,
-            max_value=100.0,
         )
         number_row(
-            "Steel yield fsy (MPa)",
+            "Steel yield f_sy (MPa)",
             "shear_fsy",
-            10.0,
+            get_param("fsy", 500.0),
             sync_callbacks,
-            help_text="Reinforcement yield strength.",
-            min_value=300.0,
-            max_value=600.0,
+            help_text="Yield stress of longitudinal & shear reinforcement.",
         )
         number_row(
-            "Ec (MPa)",
+            "Concrete modulus Ec (MPa)",
             "shear_Ec",
-            500.0,
+            get_param("Ec", 30000.0),
             sync_callbacks,
-            help_text="Concrete modulus (used in εₓ calc).",
-            min_value=15000.0,
-            max_value=45000.0,
+            help_text="Used in εₓ calc when compression develops.",
         )
         number_row(
-            "Es (MPa)",
+            "Steel modulus Es (MPa)",
             "shear_Es",
-            5000.0,
+            get_param("Es", 200000.0),
             sync_callbacks,
-            help_text="Steel modulus.",
-            min_value=150000.0,
-            max_value=220000.0,
+            help_text="Modulus of non-prestressed reinforcement.",
         )
 
-    # ------------------ 1.2 Shear actions + torsion ------------------
+    # ---------- 1.2 Shear actions (shared) ----------
     with col_actions:
         st.markdown("### Shear action & axial")
 
         number_row(
-            "V* – design shear (kN)",
+            "Design shear V* (kN)",
             "shear_Vu_star",
-            10.0,
+            get_param("Vu_star", 300.0),
             sync_callbacks,
-            help_text="Controlling ultimate shear at the section.",
-            min_value=0.0,
-            max_value=10000.0,
+            help_text="Factored shear at the section, including torsion if applicable.",
         )
         number_row(
-            "N* – axial force (kN, +tension)",
+            "Axial force N* (kN, +tension)",
             "shear_N_star",
-            10.0,
+            get_param("N_star", 0.0),
             sync_callbacks,
-            help_text="Axial force at the section (+tension).",
-            min_value=-10000.0,
-            max_value=10000.0,
+            help_text="Axial force at the section (+tension, −compression).",
         )
         number_row(
-            "P_v – vertical prestress / axial (kN)",
+            "Vertical prestress / axial P_v (kN)",
             "shear_P_star",
-            10.0,
+            get_param("P_star", 0.0),
             sync_callbacks,
-            help_text="Prestress or additional vertical axial force assisting shear.",
-            min_value=-10000.0,
-            max_value=10000.0,
+            help_text="Prestress or vertical axial force assisting shear.",
         )
 
         st.markdown("### Torsion & φ")
 
         number_row(
-            "T* – torsion at section (kNm)",
+            "Torsion T* (kNm)",
             "shear_Tu_star",
-            10.0,
+            get_param("Tu_star", 0.0),
             sync_callbacks,
-            help_text="Design torsion at the section.",
-            min_value=0.0,
-            max_value=10000.0,
+            help_text="Factored torsion at the section.",
         )
 
         phi = st.number_input(
@@ -205,35 +181,32 @@ via the session-state contract. Results are pushed to `RESULTS` using
         sigma_cp = st.number_input(
             "σ_cp – average prestress (MPa)",
             value=0.0,
-            help="Used in torsion cracking torque T_cr.",
+            help="Used in torsion cracking torque T_cr (AS 3600 Cl. 8.3.4).",
         )
 
-    # ------------------ 1.3 εx helper inputs (local only) ------------------
+    # ---------- 1.3 εx helper inputs (local) ----------
     with col_eps:
         st.markdown("### εₓ inputs (ULS flexural strain)")
 
         A_st = st.number_input(
-            "Ast (mm²) – non-prestressed tension steel",
-            value=float(4 * (math.pi * 20.0**2 / 4.0)),
+            "A_st (mm²) – non-prestressed tension steel",
+            value=float(4 * (math.pi * 20**2 / 4)),
         )
         A_pt = st.number_input(
-            "Apt (mm²) – prestressing steel",
+            "A_pt (mm²) – prestressing steel",
             value=0.0,
         )
         f_po = st.number_input(
-            "fpo (MPa) – effective tendon stress",
+            "f_po (MPa) – effective tendon stress",
             value=0.0,
         )
-        # use current b, D as a default for A_ct
-        b_default = get_param("b", 400.0) or 400.0
-        D_default = get_param("D", 600.0) or 600.0
         A_ct = st.number_input(
-            "Act (mm²) – area of concrete in tension",
-            value=float(b_default * (D_default / 2.0)),
+            "A_ct (mm²) – area of concrete in tension",
+            value=float((get_param("b", 300.0)) * (get_param("D", 600.0) / 2.0)),
         )
 
     # -------------------------------------------------
-    # 2. PULL SHARED VALUES FOR CALCS
+    # Pull shared values for calculations
     # -------------------------------------------------
     b = get_param("b")
     D = get_param("D")
@@ -244,11 +217,11 @@ via the session-state contract. Results are pushed to `RESULTS` using
     Ec = get_param("Ec")
     Es = get_param("Es")
 
-    M_star = get_param("Mu_star")
-    V_star = get_param("Vu_star")
-    T_star = get_param("Tu_star")
-    N_star = get_param("N_star")
-    P_v = get_param("P_star")
+    M_star = get_param("Mu_star") or 0.0
+    V_star = get_param("Vu_star") or 0.0
+    T_star = get_param("Tu_star") or 0.0
+    N_star = get_param("N_star") or 0.0
+    P_v = get_param("P_star") or 0.0
 
     lig_d = get_param("lig_d")
     legs = get_param("lig_legs")
@@ -258,32 +231,24 @@ via the session-state contract. Results are pushed to `RESULTS` using
         st.error("Geometry (b, D, d) not fully defined – check Inputs / Bending tab.")
         return
 
-    if fc is None or fsy is None or Ec is None or Es is None:
-        st.error("Material properties (f'c, fsy, Ec, Es) not fully defined.")
-        return
-
-    if M_star is None or V_star is None or T_star is None:
-        st.error("Actions (M*, V*, T*) not fully defined in Inputs/Bending tabs.")
-        return
-
     # =====================================================
-    # 3. TORSION GEOMETRY & T_cr
+    # 2. TORSION GEOMETRY & T_cr
     # =====================================================
     st.markdown("---")
     st.subheader("1. Torsion geometry and cracking torque $T_{cr}$")
 
     cover_t = 40.0  # assumed for closed stirrup centroid
     A_cp = b * D
-    u_c = 2.0 * (b + D)
+    u_c = 2 * (b + D)
     Ao = 0.9 * A_cp
 
-    uh = 2.0 * ((b - cover_t) + (D - cover_t))
+    uh = 2 * ((b - cover_t) + (D - cover_t))
     A_oh = (b - cover_t) * (D - cover_t)
 
     sqrt_fc = math.sqrt(fc)
     denom = 0.33 * sqrt_fc
     Tcr_Nmm = 0.33 * sqrt_fc * (A_cp**2) / u_c * math.sqrt(
-        1.0 + (sigma_cp / denom if denom > 0.0 else 0.0)
+        1 + (sigma_cp / denom if denom > 0 else 0.0)
     )
     Tcr_kNm = Tcr_Nmm / 1e6
 
@@ -314,10 +279,10 @@ via the session-state contract. Results are pushed to `RESULTS` using
     )
 
     # =====================================================
-    # 4. EQUIVALENT SHEAR V_eq*
+    # 3. EQUIVALENT SHEAR V_eq*
     # =====================================================
     st.markdown("---")
-    st.subheader("2. Equivalent shear $V_{{eq}}^*$ (Cl. 8.2.3)")
+    st.subheader("2. Equivalent shear $V_{eq}^*$ (Cl. 8.2.3)")
 
     T_star_Nmm = T_star * 1e6
     torsion_eq_N = 0.9 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
@@ -344,7 +309,7 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
     )
 
     # =====================================================
-    # 5. SHEAR REINFORCEMENT & EFFECTIVE SECTION
+    # 4. SHEAR REINFORCEMENT & EFFECTIVE SECTION
     # =====================================================
     st.markdown("---")
     st.subheader("3. Effective web section and shear reinforcement")
@@ -423,7 +388,7 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
     st.write(f"$0.72 D = {dv_1:.1f}$ mm,   $0.9 d = {dv_2:.1f}$ mm → $d_v = {d_v:.1f}$ mm")
 
     # =====================================================
-    # 6. LONGITUDINAL STRAIN εx
+    # 5. LONGITUDINAL STRAIN εx
     # =====================================================
     st.subheader("4. Longitudinal strain $\\varepsilon_x$ at mid-depth (Cl. 8.2.4.2.3)")
 
@@ -451,11 +416,11 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
 
     Ep = 195000.0  # tendon modulus, MPa
     denom1 = 2.0 * (Es * A_st + Ep * A_pt)
-    eps_x_1 = numerator / denom1 if denom1 > 0.0 else 0.0
+    eps_x_1 = numerator / denom1 if denom1 > 0 else 0.0
 
-    if eps_x_1 < 0.0:
+    if eps_x_1 < 0:
         denom2 = 2.0 * (Es * A_st + Ep * A_pt + Ec * A_ct)
-        eps_x = numerator / denom2 if denom2 > 0.0 else 0.0
+        eps_x = numerator / denom2 if denom2 > 0 else 0.0
         eps_x = max(-0.0002, min(eps_x, 0.0))
     else:
         eps_x = max(0.0, min(eps_x_1, 0.003))
@@ -463,15 +428,15 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
     st.write(f"$\\varepsilon_x = {eps_x:.5f}$")
 
     # =====================================================
-    # 7. k_v and θ_v
+    # 6. k_v and θ_v
     # =====================================================
     st.subheader("5. $k_v$ and $\\theta_v$ (shear strength parameters)")
 
     if use_general_kv:
-        if fc <= 65.0:
+        if fc <= 65:
             k_dg = 32.0 / (16.0 + d_g)
             k_dg = max(k_dg, 0.8)
-            if d_g >= 16.0:
+            if d_g >= 16:
                 k_dg = max(k_dg, 1.0)
         else:
             k_dg = 2.0
@@ -480,11 +445,12 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
         Asv_min_over_s = 0.08 * math.sqrt(fc) * b_v / (f_syv or 1.0)
 
         if Asv_over_s < Asv_min_over_s:
-            k_v = (0.4 / (1.0 + 1500.0 * eps_x)) * (1300.0 / (1000.0 + k_dg * d_v))
+            k_v = (0.4 / (1 + 1500 * eps_x)) * (1300 / (1000 + k_dg * d_v))
         else:
-            k_v = 0.4 / (1.0 + 1500.0 * eps_x)
+            k_v = 0.4 / (1 + 1500 * eps_x)
 
         theta_v_deg = 29.0 + 7000.0 * eps_x
+
     else:
         if Asv / s < 0.08 * math.sqrt(fc) * b_v / (f_syv or 1.0):
             k_v = min(200.0 / (1000.0 + 1.3 * d_v), 0.10)
@@ -508,7 +474,7 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
     st.write(f"$V_{{uc}} = {Vuc_kN:,.1f}\\ \\text{{kN}}$")
 
     # =====================================================
-    # 8. V_us AND SECTIONAL SHEAR CHECK
+    # 7. V_us and sectional shear check
     # =====================================================
     st.subheader("6. Shear reinforcement contribution $V_{us}$ and sectional shear check")
 
@@ -529,7 +495,7 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
     shear_ok = phi_Vu >= V_eq
 
     # =====================================================
-    # 9. WEB-CRUSHING CHECK
+    # 8. Web crushing check
     # =====================================================
     st.subheader("7. Web-crushing capacity (Cl. 8.2.6)")
 
@@ -544,7 +510,7 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
     cot_theta_1 = cot(theta_1_rad)
 
     Vu_max_N = 0.55 * fc * b_v * d_v * (cot_theta_v + cot_theta_1) / (
-        1.0 + cot_theta_v**2
+        1 + cot_theta_v**2
     ) + P_v * 1e3
     Vu_max_kN = Vu_max_N / 1e3
 
@@ -574,42 +540,43 @@ This $V_{{eq}}^*$ is used in the sectional shear check and web-crushing check.
 
 **Step 4 – Web-crushing strength**
 
-- $V_{{u,\\max}}$ (web crushing) = {Vu_max_kN:,.1f}\\ \\text{{kN}}$  
+- $V_{{u,\\max}}$ (web crushing) = {Vu_max_kN:,.1f} kN  
 - Check: LHS = {LHS:,.1f} ≤ RHS = {RHS:,.1f} ?  
   → **Web crushing: {"OK" if web_ok else "NG"}**
 """
     )
 
-    # =====================================================
-    # 10. SUMMARY BANNER + PUSH RESULTS
-    # =====================================================
+    # =======================================================
+    # 9. SUMMARY BANNER + PUSH RESULTS
+    # =======================================================
     torsion_label = (
         "**Yes (T* > 0.25 φT_cr)**" if torsion_required else "No (strength check)"
     )
 
     summary_md = f"""
-### Shear / Torsion ULS Summary
+### Shear/Torsion ULS Summary
 
 | Item | Value |
 |------|-------|
 | Torsion considered? | {torsion_label} |
-| $V_{{eq}}^*$ | **{V_eq:.1f} kN** |
-| $V_{{uc}}$ | **{Vuc_kN:,.1f} kN** |
-| $V_{{us}}$ | **{Vus_kN:,.1f} kN** |
-| $φV_u$ vs $V_{{eq}}^*$ | **{phi_Vu:.1f} kN / {V_eq:.1f} kN → {"OK" if shear_ok else "NG"}** |
-| $V_{{u,\\max}}$ (web crushing) | **{Vu_max_kN:,.1f} kN** |
+| V_eq* | **{V_eq:.1f} kN** |
+| V_uc | **{Vuc_kN:,.1f} kN** |
+| V_us | **{Vus_kN:,.1f} kN** |
+| φV_u vs V_eq* | **{phi_Vu:.1f} kN / {V_eq:.1f} kN → {"OK" if shear_ok else "NG"}** |
+| V_u,max (web crushing) | **{Vu_max_kN:,.1f} kN** |
 | Web-crushing check | **{"OK" if web_ok else "NG"}** |
 | εₓ, k_v, θ_v | **εₓ = {eps_x:.5f},  k_v = {k_v:.3f},  θ_v = {theta_v_deg:.1f}°** |
 """
 
-    summary_placeholder.markdown(summary_md)
-
-    shear_util = V_eq / phi_Vu if phi_Vu > 0.0 else 0.0
+    shear_util = V_eq / phi_Vu if phi_Vu > 0 else 0.0
     update_results(
         phi_Vu_cap=phi_Vu,
         Vu_utilisation=shear_util,
     )
 
+    summary_placeholder.markdown(summary_md)
+
 
 if __name__ == "__main__":
     render_shear()
+
