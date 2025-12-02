@@ -321,27 +321,18 @@ summary can show shear utilisation.
 
         V_eq = math.sqrt(V_star**2 + torsion_eq_kN**2)
 
-        st.latex(
-            r"V_{eq}^* = \sqrt{V^{*2} + \left(\dfrac{0.9\,T^*\,u_h}{2A_o}\right)^2}"
-        )
+        # Show the theory formulas (no numbers here, just LaTeX)
+        st.latex(r"V_{t,eq} = 0.9\,\dfrac{T^* u_h}{2 A_o}")
+        st.latex(r"V_{eq}^* = \sqrt{V^{*2} + V_{t,eq}^{2}}")
 
+        # Numeric summary in the blue calc box (no curly braces)
         calcbox(
             f"""
-- **Shear demand:** $V^* = {V_star:.1f}\\ \\text{{kN}}$  
+- Shear demand: V* = {V_star:.1f} kN  
+- Torsion-equivalent shear V_t,eq = {torsion_eq_kN:.1f} kN  
+- Combined equivalent shear V_eq* = {V_eq:.1f} kN  
 
-- **Torsion converted to an equivalent shear (AS 3600 Cl. 8.2.3):**  
-
-  - $V_{{t,eq}} = 0.9\\dfrac{{T^* u_h}}{{2A_o}}$  
-  - $V_{{t,eq}} = 0.9\\dfrac{{{T_star:.1f}\\times 10^6 \\times {uh:.0f}}}{{2 \\times {Ao:.0f}}}
-    = {torsion_eq_kN:.1f}\\ \\text{{kN}}$  
-
-- **Combined equivalent shear:**  
-
-  - $V_{{eq}}^* = \\sqrt{{(V^*)^2 + V_{{t,eq}}^{2}}}$  
-  - $V_{{eq}}^* = \\sqrt{{{V_star:.1f}^2 + {torsion_eq_kN:.1f}^2}}
-    = {V_eq:.1f}\\ \\text{{kN}}$  
-
-This $V_{{eq}}^*$ is used in the sectional shear and web-crushing checks.
+This V_eq* is used in the sectional shear and web-crushing checks.
 """
         )
 
@@ -350,6 +341,7 @@ This $V_{{eq}}^*$ is used in the sectional shear and web-crushing checks.
         torsion_eq_kN = 0.0
         V_eq = V_star
 
+        # Simple expression when torsion is not designed
         st.latex(
             r"V_{eq}^* = V^* \quad "
             r"\text{(torsion design not required from Step 1)}"
@@ -357,21 +349,15 @@ This $V_{{eq}}^*$ is used in the sectional shear and web-crushing checks.
 
         calcbox(
             f"""
-- **Result from Step 1:** torsion design is *not required* → torsion is **not**
+- Result from Step 1: torsion design is not required → torsion is not
   treated as a design action.  
 
-- **Equivalent shear:**  
+- Equivalent shear: since V_t,eq = 0,  
+  V_eq* = sqrt( V*² + 0² ) = V*  
 
-  - Base expression (when torsion is present):  
-    $V_{{eq}}^* = \\sqrt{{V^{*2} + V_{{t,eq}}^{2}}}$  
-  - Here, $V_{{t,eq}} = 0$ because torsion is not designed.  
+- For this section: V_eq* = {V_eq:.1f} kN  
 
-- **So for this section:**  
-
-  - $V_{{eq}}^* = \\sqrt{{V^{*2} + 0^2}} = V^*$  
-  - $V_{{eq}}^* = {V_eq:.1f}\\ \\text{{kN}}$  
-
-This $V_{{eq}}^*$ is carried into the sectional shear and web-crushing checks.
+This V_eq* is carried into the sectional shear and web-crushing checks.
 """
         )
 
@@ -723,6 +709,7 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for use of the general MCFT exp
 
 if __name__ == "__main__":
     render_shear()
+
 
 
 
