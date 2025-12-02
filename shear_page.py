@@ -308,12 +308,7 @@ Result / Check:
     )
 
     if torsion_required:
-        # --- Full equivalent shear including torsion ---
-        T_star_Nmm = T_star * 1e6
-        torsion_eq_N = 0.9 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
-        torsion_eq_kN = torsion_eq_N / 1e3
-        V_eq = math.sqrt(V_star**2 + torsion_eq_kN**2)
-
+        ...
         calcbox(
             f"""
 Inputs
@@ -323,30 +318,65 @@ Inputs
 - Effective torsion area: $A_o = {Ao:.0f}\\,\\text{{mm}}^2$
 
 Formula (AS 3600 Cl. 8.2.3)
-\\[
+\[
 V_{{t,eq}} = 0.9\\,\\frac{{T^* u_h}}{{2 A_o}}
-\\]
-\\[
-V_{{eq}}^* = \\sqrt{{V^{*2} + V_{{t,eq}}^2}}
-\\]
+\]
+\[
+V_{{eq}}^* = \\sqrt{{V^{{*2}} + V_{{t,eq}}^2}}
+\]
 
 Substitution
-\\[
+\[
 V_{{t,eq}} =
 0.9\\,\\frac{{{T_star:.1f}\\times 10^6 \\times {uh:.0f}}}{{2 \\times {Ao:.0f}}}
 = {torsion_eq_kN:.1f}\\,\\text{{kN}}
-\\]
-\\[
+\]
+\[
 V_{{eq}}^* =
 \\sqrt{{({V_star:.1f})^2 + ({torsion_eq_kN:.1f})^2}}
 = {V_eq:.1f}\\,\\text{{kN}}
-\\]
+\]
 
 Result / check
 - Torsion is included as an equivalent shear.
 - This $V_{{eq}}^*$ is used in the sectional shear and web-crushing checks.
 """
         )
+
+    else:
+        torsion_eq_kN = 0.0
+        V_eq = V_star
+
+        calcbox(
+            f"""
+Inputs
+- Shear demand: $V^* = {V_star:.1f}\\,\\text{{kN}}$
+- Torsion: $T^* = {T_star:.1f}\\,\\text{{kNm}}$  
+  (from Step 1, torsion design is not required)
+
+Formula (AS 3600 Cl. 8.2.3)
+\[
+V_{{eq}}^* = \\sqrt{{V^{{*2}} + V_{{t,eq}}^2}}
+\]
+Since $V_{{t,eq}} = 0$,  
+\[
+V_{{eq}}^* = V^*
+\]
+
+Substitution
+\[
+V_{{t,eq}} = 0.0\\,\\text{{kN}}
+\]
+\[
+V_{{eq}}^* = V^* = {V_eq:.1f}\\,\\text{{kN}}
+\]
+
+Result / check
+- Torsion is not treated as a design action.
+- This $V_{{eq}}^*$ is carried into the sectional shear and web-crushing checks.
+"""
+        )
+
 
     else:
         torsion_eq_kN = 0.0
@@ -731,6 +761,7 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for use of the general MCFT exp
 
 if __name__ == "__main__":
     render_shear()
+
 
 
 
