@@ -681,23 +681,30 @@ E_s A_{st} + E_p A_{pt}
     st.write(f"$\\varepsilon_x = {eps_x:.5f}$")
 
     calcbox(
-        rf"""
-- Moment term:  
-  - $|M^*|/d_v = \dfrac{{|{M_star:.1f}| \times 10^6}}{{{d_v:.1f}}} = {term_M:,.0f}\ \text{{N}}$  
+        f"""
+**Moment term:**
 
-- Shear + torsion term inside the square-root:  
-  - $V' = |V^*| - P_v = |{V_star:.1f}| - {P_v:.1f} = {Vprime_kN:.1f}\ \text{{kN}}$  
-  - $0.97 T^* u_h / (2A_o) = {torsion_N:,.0f}\ \text{{N}}$ (in shear-force units)  
-  - Combined: $\\sqrt{{V'^2 + (0.97 T^* u_h / 2A_o)^2}} = {sqrt_inner:,.0f}\ \text{{N}}$  
+$$|M^*|/d_v = \\dfrac{{|{M_star:.1f}| \\times 10^6}}{{{d_v:.1f}}} = {term_M:,.0f} \\text{{ N}}$$
 
-- Axial / prestress contributions:  
-  - $0.5 N^* = 0.5 \times {N_star:.1f} \times 10^3 = {N_star_N:,.0f}\ \text{{N}}$  
-  - $A_{{pt}} f_{{po}} = {A_pt:.1f} \times {f_po:.1f} = {A_pt_fpo_N:,.0f}\ \text{{N}}$  
+**Shear + torsion term inside the square-root:**
 
-- Final strain:  
-  - $\\varepsilon_x = {eps_x:.5f}$ (capped to $[-2.0\\times10^{{-4}},\,3.0\\times10^{{-3}}]$).  
+- $V' = |V^*| - P_v = |{V_star:.1f}| - {P_v:.1f} = {Vprime_kN:.1f}$ kN
+- $0.97 T^* u_h / (2A_o) = {torsion_N:,.0f}$ N (in shear-force units)
 
-Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for use of the general MCFT expression.
+$$\\sqrt{{V'^2 + (0.97 T^* u_h / 2A_o)^2}} = {sqrt_inner:,.0f} \\text{{ N}}$$
+
+**Axial / prestress contributions:**
+
+- $0.5 N^* = 0.5 \\times {N_star:.1f} \\times 10^3 = {N_star_N:,.0f}$ N
+- $A_{{pt}} f_{{po}} = {A_pt:.1f} \\times {f_po:.1f} = {A_pt_fpo_N:,.0f}$ N
+
+**Final strain:**
+
+$$\\varepsilon_x = {eps_x:.5f}$$
+
+(capped to $[-2.0 \\times 10^{{-4}},\\, 3.0 \\times 10^{{-3}}]$)
+
+**Check:** $\\varepsilon_x \\le 3.0 \\times 10^{{-3}}$ for use of the general MCFT expression.
 """
     )
 
