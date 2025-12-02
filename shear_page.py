@@ -284,20 +284,13 @@ summary can show shear utilisation.
   - $A_o \\approx 0.9 A_{{cp}} = 0.9 \\times {A_cp:.0f} = {Ao:.0f}\\ \\text{{mm}}^2$  
   - $u_h = 2[(b - c_t) + (D - c_t)] = 2[({b:.0f} - {cover_t:.0f}) + ({D:.0f} - {cover_t:.0f})] = {uh:.0f}\\ \\text{{mm}}$  
 
-- **Cracking torque (AS 3600 Cl. 8.3.4):**
-
-  Base form:
-
-  $$T_{{cr}} = 0.33\\sqrt{{f'_c}}\\,
-    \\frac{{A_{{cp}}^2}}{{u_c}}
-    \\sqrt{{1 + \\frac{{\\sigma_{{cp}}}}{{0.33\\sqrt{{f'_c}}}}}}$$  
-
-  Substituting values (auto):
-
-  $$T_{{cr}} = 0.33\\sqrt{{{fc:.1f}}}\\,
-    \\frac{{{A_cp:.0f}^2}}{{{u_c:.0f}}}
-    \\sqrt{{1 + \\frac{{{sigma_cp:.2f}}}{{0.33\\sqrt{{{fc:.1f}}}}}}}
-    = {Tcr_kNm:,.1f}\\ \\text{{kNm}}$$  
+- **Cracking torque (AS 3600 Cl. 8.3.4):**  
+  - Base form:  
+    $T_{{cr}} = 0.33\\sqrt{{f'_c}}\\,\\dfrac{{A_{{cp}}^2}}{{u_c}}\\sqrt{{1 + \\dfrac{{\\sigma_{{cp}}}}{{0.33\\sqrt{{f'_c}}}}}}$  
+  - Substituting values (auto):  
+    $T_{{cr}} = 0.33\\sqrt{{{fc:.1f}}}\\,\\dfrac{{{A_cp:.0f}^2}}{{{u_c:.0f}}}
+    \\sqrt{{1 + \\dfrac{{{sigma_cp:.2f}}}{{0.33\\sqrt{{{fc:.1f}}}}}}}
+    = {Tcr_kNm:,.1f}\\ \\text{{kNm}}$  
 
 - **Torsion design requirement:**  
   - Limit: $0.25\\,\\phi T_{{cr}} = 0.25 \\times {phi:.2f} \\times {Tcr_kNm:,.1f}
@@ -308,6 +301,7 @@ summary can show shear utilisation.
 - **Conclusion:** torsion design is **{step1_text}**.
 """
     )
+
 
 
     # =====================================================
@@ -696,6 +690,7 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for use of the general MCFT exp
 
 if __name__ == "__main__":
     render_shear()
+
 
 
 
