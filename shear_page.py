@@ -30,9 +30,16 @@ blockquote {
   padding: 0.75rem 1rem !important;
   margin: 0.5rem 0 0.75rem 0 !important;
   border-radius: 0 0.35rem 0.35rem 0 !important;
+  color: #1a1a1a !important;
+  opacity: 1 !important;
+}
+blockquote * {
+  color: #1a1a1a !important;
+  opacity: 1 !important;
 }
 blockquote p {
   margin-bottom: 0.5rem !important;
+  color: #1a1a1a !important;
 }
 blockquote p:last-child {
   margin-bottom: 0 !important;
