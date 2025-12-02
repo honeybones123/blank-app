@@ -228,6 +228,48 @@ summary can show shear utilisation.
         st.error("Geometry (b, D, d) not fully defined – check Inputs / Bending tab.")
         return
 
+    # =====================================================
+    # 2. STEP 1 — TORSION CRACKING CHECK
+    # =====================================================
+    st.markdown("---")
+    st.markdown(
+        "### Step 1 – Does torsion crack the section? "
+        "(T_cr check, AS 3600 Cl. 8.3.4)"
+    )
+
+    cover_t = 40.0  # assumed for closed stirrup centroid
+
+    # Geometry of torsion box
+    A_cp = b * D
+    u_c = 2 * (b + D)
+    Ao = 0.9 * A_cp
+
+    # Effective torsion area and stirrup path
+    uh = 2 * ((b - cover_t) + (D - cover_t))
+    A_oh = (b - cover_t) * (D - cover_t)
+
+    # Cracking torque T_cr (AS 3600 Cl. 8.3.4)
+    sqrt_fc = math.sqrt(fc)
+    denom = 0.33 * sqrt_fc if fc > 0 else 0.0
+
+    if denom > 0 and u_c > 0:
+        Tcr_Nmm = 0.33 * sqrt_fc * (A_cp**2) / u_c * math.sqrt(
+            1.0 + sigma_cp / denom
+        )
+    else:
+        Tcr_Nmm = 0.0
+
+    Tcr_kNm = Tcr_Nmm / 1e6
+
+    # Torsion design trigger
+    torsion_required_limit = 0.25 * phi * Tcr_kNm
+    torsion_required = T_star > torsion_required_limit
+
+    step1_req = ">" if torsion_required else "\\le"
+    step1_text = "required" if torsion_required else "not required (strength check only)"
+
+    # NOTE: remove any old `st.write(f"$T_{{cr}} = ...")` line above – we only use the box now.
+
     calcbox(
         f"""
 - **Given gross torsion box (AS 3600 Cl. 8.3.4):**  
@@ -654,8 +696,6 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for use of the general MCFT exp
 
 if __name__ == "__main__":
     render_shear()
-
-
 
 
 
