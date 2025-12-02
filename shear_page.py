@@ -333,8 +333,7 @@ V_{{eq}}^* = \\sqrt{{V^{*2} + V_{{t,eq}}^2}}
 Substitution
 \\[
 V_{{t,eq}} =
-0.9\\,\\frac{{T^* u_h}}{{2 A_o}}
-= 0.9\\,\\frac{{{T_star:.1f}\\times 10^6 \\times {uh:.0f}}}{{2 \\times {Ao:.0f}}}
+0.9\\,\\frac{{{T_star:.1f}\\times 10^6 \\times {uh:.0f}}}{{2 \\times {Ao:.0f}}}
 = {torsion_eq_kN:.1f}\\,\\text{{kN}}
 \\]
 \\[
@@ -350,7 +349,6 @@ Result / check
         )
 
     else:
-        # --- No torsion design: equivalent shear = shear only ---
         torsion_eq_kN = 0.0
         V_eq = V_star
 
@@ -365,9 +363,8 @@ Formula (AS 3600 Cl. 8.2.3)
 \\[
 V_{{eq}}^* = \\sqrt{{V^{*2} + V_{{t,eq}}^2}}
 \\]
-When torsion is not designed,
+Since $V_{{t,eq}} = 0$,  
 \\[
-V_{{t,eq}} = 0 \\;\\Rightarrow\\;
 V_{{eq}}^* = V^*
 \\]
 
@@ -380,11 +377,10 @@ V_{{eq}}^* = V^* = {V_eq:.1f}\\,\\text{{kN}}
 \\]
 
 Result / check
-- Torsion is not treated as a design action for this section.
+- Torsion is not treated as a design action.
 - This $V_{{eq}}^*$ is carried into the sectional shear and web-crushing checks.
 """
         )
-
 
 
 
@@ -735,6 +731,7 @@ Check: $\\varepsilon_x \\le 3.0\\times10^{{-3}}$ for use of the general MCFT exp
 
 if __name__ == "__main__":
     render_shear()
+
 
 
 
