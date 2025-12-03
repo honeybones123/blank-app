@@ -181,7 +181,9 @@ TAB_KEYS = {
     "bending_fsy": "fsy",
     "bending_Ec": "Ec",
     "bending_Es": "Es",
+    # Legacy key plus new explicit bending phi widget
     "bending_phi_b": "phi_bend",
+    "bending_phi_bend": "phi_bend",
 
     "bending_Mu_star": "Mu_star",
     "bending_P_star": "P_star",
@@ -372,7 +374,13 @@ def get_sync_callbacks():
     Ensures a single shared set of callbacks for the whole app.
     """
     global _SYNC_CALLBACKS
-    if _SYNC_CALLBACKS is None:
+
+    # Rebuild if not yet created or if TAB_KEYS has changed (e.g. new widget keys added)
+    if (
+        _SYNC_CALLBACKS is None
+        or len(_SYNC_CALLBACKS) != len(TAB_KEYS)
+        or any(w_key not in _SYNC_CALLBACKS for w_key in TAB_KEYS.keys())
+    ):
         _SYNC_CALLBACKS = {
             w_key: _make_sync_callback(w_key, sh_key)
             for w_key, sh_key in TAB_KEYS.items()
