@@ -62,59 +62,173 @@ def _build_beam_3d_figure(b, D, L, Mu_star, phi_Mu_cap, c):
     st.session_state["bending_phi_current"] = phi
     st.session_state["bending_c_current"] = c_now
 
-    # Concrete prism vertices (rectangular beam)
+    # --- base 3D beam model (with reinforcement + stirrups) copied from Inputs page ---
+    # parameters from session state
+    nb_bot = int(get_param("nb_bot", 4) or 0)
+    db_bot = float(get_param("db_bot", 20.0) or 20.0)
+    nb_top = int(get_param("nb_top", 2) or 0)
+    db_top = float(get_param("db_top", 16.0) or 16.0)
+    cover_bot = float(get_param("cover_bot", 40.0) or 40.0)
+    cover_top = float(get_param("cover_top", 40.0) or 40.0)
+    cover_side = float(
+        st.session_state.get("inputs_cover_side_local", min(cover_top, cover_bot))
+    )
+    rowgap_bot = float(get_param("rowgap_bot", 60.0) or 60.0)
+    rowgap_top = float(get_param("rowgap_top", 60.0) or 60.0)
+    lig_d = float(get_param("lig_d", 10.0) or 10.0)
+    lig_legs_raw = get_param("lig_legs", 2)
+    try:
+        lig_legs = int(lig_legs_raw or 0)
+    except Exception:
+        lig_legs = 0
+    s_lig = float(get_param("s_lig", 200.0) or 200.0)
+
+    traces = []
+    max_bar_d = max(db_bot, db_top, 0.0)
+    horiz_clear = 0.5 * max_bar_d
+
+    # concrete prism
     vx = np.array([0, L, L, 0, 0, L, L, 0])
     vy = np.array([0, 0, b, b, 0, 0, b, b])
-    vz = np.array([0, 0, 0, 0, D, D, D, D])  # depth from top
-
-    # Strain at each vertex
-    eps_v = phi * (vz - c_now)
-    cmax = float(max(abs(eps_v.min()), abs(eps_v.max()), 1e-9))
-
-    # Face connectivity
+    vz = np.array([0, 0, 0, 0, D, D, D, D])
     tri_i = [0, 0, 0, 4, 4, 1, 5, 2, 6, 3, 7, 6]
     tri_j = [1, 2, 3, 5, 7, 5, 6, 6, 7, 7, 4, 2]
     tri_k = [2, 3, 0, 6, 4, 2, 7, 3, 4, 0, 5, 1]
-
-    mesh = go.Mesh3d(
-        x=vx,
-        y=vy,
-        z=vz,
-        i=tri_i,
-        j=tri_j,
-        k=tri_k,
-        intensity=eps_v,
-        colorscale="RdBu",
-        cmin=-cmax,
-        cmax=cmax,
-        showscale=False,  # keep it clean – just colours
-        opacity=0.6,
-        flatshading=True,
-        name="Concrete",
+    traces.append(
+        go.Mesh3d(
+            x=vx,
+            y=vy,
+            z=vz,
+            i=tri_i,
+            j=tri_j,
+            k=tri_k,
+            color="#cccccc",
+            opacity=0.25,
+            flatshading=True,
+            hoverinfo="skip",
+            showscale=False,
+            name="Concrete",
+        )
     )
 
-    # Neutral axis plane
+    # longitudinal bar helper (same logic as inputs_page.make_beam_3d_figure)
+    def _bar_positions_3d(nbars, bar_dia, cover, rowgap, is_top):
+        if nbars <= 0 or bar_dia <= 0:
+            return []
+        y_min = cover_side + horiz_clear
+        y_max = b - cover_side - horiz_clear
+        if y_max <= y_min:
+            mid = 0.5 * b
+            span = max(10.0, (b - 2 * cover_side) * 0.4)
+            y_min = mid - span / 2.0
+            y_max = mid + span / 2.0
+        if is_top:
+            z1 = cover + 0.5 * bar_dia
+            z2 = z1 + rowgap
+        else:
+            z1 = D - (cover + 0.5 * bar_dia)
+            z2 = z1 - rowgap
+        min_z = 0.5 * bar_dia + 5.0
+        max_z = D - 0.5 * bar_dia - 5.0
+        z1 = float(np.clip(z1, min_z, max_z))
+        z2 = float(np.clip(z2, min_z, max_z))
+        # reuse width helper from inputs via simple linspace logic (no import)
+        span = y_max - y_min
+        if span <= 0:
+            return []
+        xs = np.linspace(y_min, y_max, max(1, nbars))
+        half = int(math.ceil(len(xs) / 2))
+        xs1 = xs[:half]
+        xs2 = xs[half:]
+        pos = [(yy, z1) for yy in xs1] + [(yy, z2) for yy in xs2]
+        return pos
+
+    # bottom bars
+    bot_positions = _bar_positions_3d(nb_bot, db_bot, cover_bot, rowgap_bot, False)
+    line_w_bot = max(2.0, abs(db_bot) * 0.4)
+    for (yy, zz) in bot_positions:
+        traces.append(
+            go.Scatter3d(
+                x=[0, L],
+                y=[yy, yy],
+                z=[zz, zz],
+                mode="lines",
+                line=dict(width=line_w_bot, color="red"),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+
+    # top bars
+    top_positions = _bar_positions_3d(nb_top, db_top, cover_top, rowgap_top, True)
+    line_w_top = max(2.0, abs(db_top) * 0.4)
+    for (yy, zz) in top_positions:
+        traces.append(
+            go.Scatter3d(
+                x=[0, L],
+                y=[yy, yy],
+                z=[zz, zz],
+                mode="lines",
+                line=dict(width=line_w_top, color="blue"),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+
+    # simple stirrup hoops along the length
+    if lig_d > 0 and s_lig > 0 and lig_legs >= 2:
+        s_eff = max(40.0, float(s_lig))
+        n_hoops = int(max(1, min(80, round(L / s_eff))))
+        xs = np.linspace(s_eff / 2.0, L - s_eff / 2.0, n_hoops)
+        y_left = cover_side
+        y_right = b - cover_side
+        z_top = cover_top + max(lig_d, 6.0)
+        z_bot = D - (cover_bot + max(lig_d, 6.0))
+        min_z = 5.0
+        max_z = D - 5.0
+        z_top_c = float(np.clip(z_top, min_z, max_z))
+        z_bot_c = float(np.clip(z_bot, min_z, max_z))
+        lw = max(1.5, abs(lig_d) * 0.35)
+        for x0 in xs:
+            Xs = [x0] * 5
+            Ys = [y_left, y_right, y_right, y_left, y_left]
+            Zs = [z_top_c, z_top_c, z_bot_c, z_bot_c, z_top_c]
+            traces.append(
+                go.Scatter3d(
+                    x=Xs,
+                    y=Ys,
+                    z=Zs,
+                    mode="lines",
+                    line=dict(width=lw, color="black"),
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
+            )
+
+    # Neutral axis plane over full beam
     Xg, Yg = np.meshgrid(np.linspace(0, L, 2), np.linspace(0, b, 2))
     Zg = np.full_like(Xg, c_now)
-    na_plane = go.Surface(
-        x=Xg,
-        y=Yg,
-        z=Zg,
-        colorscale=[[0, "orange"], [1, "orange"]],
-        showscale=False,
-        opacity=0.55,
-        name="NA",
+    traces.append(
+        go.Surface(
+            x=Xg,
+            y=Yg,
+            z=Zg,
+            colorscale=[[0, "orange"], [1, "orange"]],
+            showscale=False,
+            opacity=0.55,
+            name="NA",
+        )
     )
 
-    fig = go.Figure(data=[mesh, na_plane])
+    fig = go.Figure(data=traces)
     fig.update_layout(
         scene=dict(
-            xaxis_title="L",
-            yaxis_title="b",
-            zaxis_title="Depth from top",
+            xaxis_title="Length (mm)",
+            yaxis_title="Width (mm)",
+            zaxis_title="Depth from top (mm)",
             zaxis=dict(autorange="reversed"),
             aspectmode="data",
-            camera=dict(eye=dict(x=1.4, y=1.4, z=1.0)),
+            camera=dict(eye=dict(x=1.45, y=1.35, z=0.95)),
         ),
         margin=dict(l=0, r=0, t=10, b=0),
         height=350,
