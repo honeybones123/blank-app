@@ -224,38 +224,44 @@ def render_bending():
 
     st.markdown("---")
 
-    # ---------------- Design actions (read-only, vertical on left) ----------------
+    # ---------------- Design actions (interactive, single column) ----------------
     st.subheader("Design Actions for Bending")
+    sync = sync_callbacks
 
-    Mu_star_disp = get_param("Mu_star") or 0.0
-    N_star_disp = get_param("N_star") or 0.0
-    P_star_disp = get_param("P_star") or 0.0
-
-    st.text_input(
+    number_row(
         "Design moment Mu* (kNm)",
-        value=f"{Mu_star_disp:.2f}",
-        key="bending_Mu_star_display",
-        disabled=True,
+        "bending_Mu_star",
+        10.0,
+        sync,
+        help_text=(
+            "Factored design bending moment at the critical section. "
+            "Increasing Mu* increases bending demand and utilisation."
+        ),
     )
-
-    st.text_input(
+    number_row(
         "Axial force N* (kN)",
-        value=f"{N_star_disp:.2f}",
-        key="bending_N_star_display",
-        disabled=True,
+        "bending_N_star",
+        50.0,
+        sync,
+        help_text=(
+            "Axial force acting with bending. Compression (negative in many "
+            "conventions) can reduce tension in the steel; tension increases demand."
+        ),
     )
-
-    st.text_input(
+    number_row(
         "Prestress force P* (kN)",
-        value=f"{P_star_disp:.2f}",
-        key="bending_P_star_display",
-        disabled=True,
+        "bending_P_star",
+        50.0,
+        sync,
+        help_text=(
+            "Prestress / pre-compression in the section. Increasing P* typically "
+            "reduces tensile demand in the bottom reinforcement."
+        ),
     )
 
     st.markdown("---")
 
     # ---------------- Main inputs ----------------
-    sync = sync_callbacks
     g1, g2 = st.columns(2)
 
     with g1:
