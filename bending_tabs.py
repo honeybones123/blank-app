@@ -18,14 +18,14 @@ from bending_core import _fmt, _layout_bars_in_rows  # <-- add _layout_bars_in_r
 def calcbox(md: str):
     """
     Render a blue calculation box with proper LaTeX support.
-    Uses st.info() styling which supports LaTeX rendering.
+    Uses st.container with border - CSS styling applied globally.
     """
     # Convert \[...\] to $$...$$ for display math
     converted = md.replace("\\[", "$$").replace("\\]", "$$")
     # Convert \(...\) to $...$ for inline math
     converted = converted.replace("\\(", "$").replace("\\)", "$")
     
-    # Use st.container with custom border styling
+    # Use container with border - styled by global CSS in apply_calcbox_css()
     with st.container(border=True):
         st.markdown(converted)
 
