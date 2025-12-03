@@ -166,6 +166,7 @@ def render_bending():
     Mu_util_top = top_results["Mu_util"]
     ku_top = top_results["ku"]
     As_min_top = top_results["As_min"]
+    c_top = top_results["c"]
 
     def _status_colour(flag):
         if flag is None:
@@ -252,7 +253,47 @@ def render_bending():
     """
 
     st.markdown("### Bending – Result Summary")
-    st.markdown(summary_html, unsafe_allow_html=True)
+
+    summary_col, beam3d_top_col = st.columns([0.6, 0.4])
+
+    with summary_col:
+        st.markdown(summary_html, unsafe_allow_html=True)
+
+    with beam3d_top_col:
+        fig3d_top = _build_beam_3d_figure(
+            b=get_param("b"),
+            D=get_param("D"),
+            L=get_param("L"),
+            Mu_star=Mu_star,
+            phi_Mu_cap=phi_Mu_cap_top,
+            c=c_top,
+        )
+        if fig3d_top is not None:
+            st.markdown("#### 3D neutral axis view")
+            st.plotly_chart(fig3d_top, use_container_width=True)
+        else:
+            st.info("3D beam view will appear once geometry and moment capacity are defined.")
+
+        # Reinforcement snapshot from session state
+        st.markdown("#### Reinforcement (session state)")
+        nb_bot_ss = get_param("nb_bot")
+        db_bot_ss = get_param("db_bot")
+        cover_bot_ss = get_param("cover_bot")
+        nb_top_ss = get_param("nb_top")
+        db_top_ss = get_param("db_top")
+        cover_top_ss = get_param("cover_top")
+        rowgap_bot_ss = get_param("rowgap_bot")
+        rowgap_top_ss = get_param("rowgap_top")
+        d_ss = get_param("d")
+
+        st.markdown(
+            f"""
+- **Bottom steel**: nb_bot = {_fmt(nb_bot_ss, '{:.0f}')} bars, db_bot = {_fmt(db_bot_ss, '{:.0f}')} mm, cover = {_fmt(cover_bot_ss, '{:.0f}')} mm, row gap = {_fmt(rowgap_bot_ss, '{:.0f}')} mm  
+- **Top steel**: nb_top = {_fmt(nb_top_ss, '{:.0f}')} bars, db_top = {_fmt(db_top_ss, '{:.0f}')} mm, cover = {_fmt(cover_top_ss, '{:.0f}')} mm, row gap = {_fmt(rowgap_top_ss, '{:.0f}')} mm  
+- **Effective depth**: d = {_fmt(d_ss, '{:.1f}')} mm  
+- **Ast,bot** (shared): {_fmt(Ast, '{:.1f}')} mm²
+"""
+        )
 
     # values for later
     phi_Mu_cap = top_results["phi_Mu_cap"]
@@ -528,12 +569,9 @@ def render_bending():
 
     st.markdown("---")
 
-    # ---------------- Detailed summary table + 3D NA view ----------------
+    # ---------------- Detailed summary table (values only) ----------------
     st.subheader("Bending Capacity – Detailed Summary (values only)")
 
-    sum_col, beam3d_col = st.columns([0.6, 0.4])
-
-    # Left: numeric summary table
     rows = [
         {"Parameter": "Minimum steel",          "Symbol": "As,min",   "Value": _fmt(As_min, "{:.1f}"),        "Units": "mm²"},
         {"Parameter": "Cracking moment",        "Symbol": "Mcr",      "Value": _fmt(Mcr, "{:.2f}"),           "Units": "kNm"},
@@ -552,17 +590,7 @@ def render_bending():
     ]
 
     df_summary = pd.DataFrame(rows)
-    with sum_col:
-        st.dataframe(df_summary, hide_index=True, use_container_width=True)
-
-    # Right: 3D beam + NA using shared/session values
-    with beam3d_col:
-        fig3d = _build_beam_3d_figure(b, D, L_shared, Mu_star, phi_Mu_cap, c)
-        if fig3d is not None:
-            st.markdown("#### 3D neutral axis view")
-            st.plotly_chart(fig3d, use_container_width=True)
-        else:
-            st.info("3D beam view will appear once geometry and moment capacity are defined.")
+    st.dataframe(df_summary, hide_index=True, use_container_width=True)
 
     st.markdown("### Section & stress–strain model")
 
