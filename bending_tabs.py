@@ -483,7 +483,7 @@ $ d_n = {dn:.1f}$ mm, $ a = {a_uls:.1f}$ mm.
 A convenient non-dimensional measure of the neutral axis depth is:
 
 $$
-k_u = \\frac{d_n}{d}
+k_u = \\frac{{d_n}}{{d}}
 $$
 
 **Substitution:**
@@ -526,14 +526,14 @@ Neutral axis ratio $k_u = {ku:.3f}$.
 **Lever arm:**  
 
 $$
-z = d - \\frac{a}{2}
+z = d - \\frac{{a}}{{2}}
 $$
 
 **Substitution:**
 
 $$
-z = d - \\frac{a}{2}
-  = {d:.1f} - \\frac{{{a_uls:.1f}}}{2}
+z = d - \\frac{{a}}{{2}}
+  = {d:.1f} - \\frac{{{a_uls:.1f}}}{{2}}
   = {z_uls:.1f}\\ \\text{{mm}}
 $$
 
@@ -910,7 +910,7 @@ def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
 **Formula:**
 
 $$
-n = \\frac{E_s}{E_c}
+n = \\frac{{E_s}}{{E_c}}
 $$
 
 **Substitution:**
