@@ -15,18 +15,37 @@ from bending_core import _fmt, _layout_bars_in_rows  # <-- add _layout_bars_in_r
 # ============================================================
 #  LOCAL HELPER – CALCBOX WITH LATEX SUPPORT
 # ============================================================
+def _inject_calcbox_css():
+    """Inject CSS for blue blockquote styling."""
+    st.markdown(
+        """
+<style>
+blockquote {
+  border-left: 4px solid #1f77b4 !important;
+  background-color: rgba(31, 119, 180, 0.08) !important;
+  padding: 0.75rem 1rem !important;
+  margin: 0.5rem 0 0.75rem 0 !important;
+  border-radius: 0 6px 6px 0 !important;
+  color: #1a1a1a !important;
+}
+blockquote p, blockquote * { color: #1a1a1a !important; }
+</style>
+""",
+        unsafe_allow_html=True,
+    )
+
+
 def calcbox(md: str):
-    """
-    Render a styled calculation box with proper LaTeX support.
-    Uses st.expander (always expanded) for built-in styling.
-    """
+    """Render a blue calculation box with proper LaTeX support."""
     # Convert \[...\] to $$...$$ for display math
     converted = md.replace("\\[", "$$").replace("\\]", "$$")
     # Convert \(...\) to $...$ for inline math
     converted = converted.replace("\\(", "$").replace("\\)", "$")
     
-    with st.expander("📘 Calculation Details", expanded=True):
-        st.markdown(converted)
+    # Convert to blockquote format
+    lines = converted.strip().split("\n")
+    blockquote = "\n".join("> " + line for line in lines)
+    st.markdown(blockquote)
 
 
 # ============================================================
