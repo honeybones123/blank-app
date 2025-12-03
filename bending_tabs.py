@@ -15,17 +15,36 @@ from bending_core import _fmt, _layout_bars_in_rows  # <-- add _layout_bars_in_r
 # ============================================================
 #  LOCAL HELPER – CALCBOX WITH LATEX SUPPORT
 # ============================================================
+_calcbox_css_injected = False
+
 def calcbox(md: str):
     """
     Render a blue calculation box with proper LaTeX support.
-    Uses st.container with border - CSS styling applied globally.
     """
+    global _calcbox_css_injected
+    
+    # Inject CSS once
+    if not _calcbox_css_injected:
+        st.markdown(
+            """
+            <style>
+            div[style*="flex-direction: column"][style*="gap: 0.5rem"][style*="border-radius: 0.5rem"] {
+                border: none !important;
+                border-left: 4px solid #1f77b4 !important;
+                background-color: #f0f8ff !important;
+                border-radius: 0 8px 8px 0 !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+        _calcbox_css_injected = True
+    
     # Convert \[...\] to $$...$$ for display math
     converted = md.replace("\\[", "$$").replace("\\]", "$$")
     # Convert \(...\) to $...$ for inline math
     converted = converted.replace("\\(", "$").replace("\\)", "$")
     
-    # Use container with border - styled by global CSS in apply_calcbox_css()
     with st.container(border=True):
         st.markdown(converted)
 
