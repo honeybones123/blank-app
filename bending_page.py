@@ -374,55 +374,61 @@ def render_bending():
     )
     ku_str = f"{ku_top:.3f}" if ku_top is not None and not math.isnan(ku_top) else "—"
 
+    # Original summary card HTML (kept as a single string)
+    summary_html = f"""
+    <div style="
+        border: 1px solid #cccccc;
+        border-radius: 8px;
+        padding: 0.5rem 0.75rem;
+        margin-bottom: 1rem;
+        max-width: 900px;
+    ">
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+        <thead>
+          <tr style="background-color: #f5f5f5;">
+            <th style="text-align:left; padding: 4px 6px;">Item</th>
+            <th style="text-align:right; padding: 4px 6px;">Value</th>
+            <th style="text-align:right; padding: 4px 6px;">Criterion</th>
+            <th style="text-align:center; padding: 4px 6px;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="background-color: {As_colour};">
+            <td style="padding: 4px 6px;"><strong>Steel area Ast,bot</strong></td>
+            <td style="text-align:right; padding: 4px 6px;">{Ast_str}</td>
+            <td style="text-align:right; padding: 4px 6px;">≥ As,min = {As_min_str}</td>
+            <td style="text-align:center; padding: 4px 6px;"><strong>{As_status}</strong></td>
+          </tr>
+          <tr style="background-color: {Mu_colour};">
+            <td style="padding: 4px 6px;"><strong>Flexural capacity</strong></td>
+            <td style="text-align:right; padding: 4px 6px;">ϕM<sub>u,cap</sub> = {phiMu_str}</td>
+            <td style="text-align:right; padding: 4px 6px;">M<sub>u</sub>* = {Mu_star_str}</td>
+            <td style="text-align:center; padding: 4px 6px;">
+              Util = {Mu_util_str}<br><strong>{Mu_status}</strong>
+            </td>
+          </tr>
+          <tr style="background-color: {ku_colour};">
+            <td style="padding: 4px 6px;"><strong>Neutral axis ratio k<sub>u</sub></strong></td>
+            <td style="text-align:right; padding: 4px 6px;">k<sub>u</sub> = {ku_str}</td>
+            <td style="text-align:right; padding: 4px 6px;">Limit (teaching) ≤ 0.36</td>
+            <td style="text-align:center; padding: 4px 6px;"><strong>{ku_status}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    """
+
     # ---------------- TOP ROW – Summary table (left) + 3D model (right) ----------------
     st.markdown("### Bending – Result Summary")
 
     left_col, right_col = st.columns([0.55, 0.45])
 
     with left_col:
+        # narrower summary card so it can sit beside the 3D plot
         st.markdown(
-            f"""
-        <div style="
-            border: 1px solid #cccccc;
-            border-radius: 8px;
-            padding: 0.5rem 0.75rem;
-            margin-bottom: 1rem;
-            max-width: 650px;   /* REDUCED WIDTH */
-        ">
-          <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
-            <thead>
-              <tr style="background-color: #f5f5f5;">
-                <th style="text-align:left; padding: 4px 6px;">Item</th>
-                <th style="text-align:right; padding: 4px 6px;">Value</th>
-                <th style="text-align:right; padding: 4px 6px;">Criterion</th>
-                <th style="text-align:center; padding: 4px 6px;">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr style="background-color: {As_colour};">
-                <td style="padding: 4px 6px;"><strong>Steel area Ast,bot</strong></td>
-                <td style="text-align:right; padding: 4px 6px;">{Ast_str}</td>
-                <td style="text-align:right; padding: 4px 6px;">≥ As,min = {As_min_str}</td>
-                <td style="text-align:center; padding: 4px 6px;"><strong>{As_status}</strong></td>
-              </tr>
-              <tr style="background-color: {Mu_colour};">
-                <td style="padding: 4px 6px;"><strong>Flexural capacity</strong></td>
-                <td style="text-align:right; padding: 4px 6px;">ϕM<sub>u,cap</sub> = {phiMu_str}</td>
-                <td style="text-align:right; padding: 4px 6px;">M<sub>u</sub>* = {Mu_star_str}</td>
-                <td style="text-align:center; padding: 4px 6px;">
-                  Util = {Mu_util_str}<br><strong>{Mu_status}</strong>
-                </td>
-              </tr>
-              <tr style="background-color: {ku_colour};">
-                <td style="padding: 4px 6px;"><strong>Neutral axis ratio k<sub>u</sub></strong></td>
-                <td style="text-align:right; padding: 4px 6px;">k<sub>u</sub> = {ku_str}</td>
-                <td style="text-align:right; padding: 4px 6px;">Limit ≤ 0.36</td>
-                <td style="text-align:center; padding: 4px 6px;"><strong>{ku_status}</strong></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        """,
+            summary_html.replace("max-width: 900px", "max-width: 650px").replace(
+                "font-size: 0.9rem", "font-size: 0.85rem"
+            ),
             unsafe_allow_html=True,
         )
 
@@ -438,8 +444,17 @@ def render_bending():
         if fig3d_top is not None:
             st.markdown("#### 3D neutral axis view")
             st.plotly_chart(fig3d_top, use_container_width=True)
+            # shared state selector for ULS / SLS / Uncracked (same as Inputs page)
+            st.radio(
+                "State:",
+                ["ULS", "SLS (cracked)", "Uncracked"],
+                horizontal=True,
+                key="bending_strain_state",
+            )
         else:
-            st.info("3D beam view will appear once geometry is defined.")
+            st.info(
+                "3D beam view will appear once geometry and moment capacity are defined."
+            )
 
     # values for later
     phi_Mu_cap = top_results["phi_Mu_cap"]
@@ -740,12 +755,8 @@ def render_bending():
 
     st.markdown("### Section & stress–strain model")
 
-    strain_state = st.radio(
-        "State:",
-        ["ULS", "SLS (cracked)", "Uncracked"],
-        horizontal=True,
-        key="bending_strain_state_local",
-    )
+    # use the same state as the top 3D selector
+    strain_state = st.session_state.get("bending_strain_state", "ULS")
 
     ss_state = _stress_strain_state(strain_state)
     fig_ss = _plot_stress_strain_profiles(ss_state)
