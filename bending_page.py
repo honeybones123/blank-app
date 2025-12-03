@@ -490,14 +490,14 @@ def render_bending():
         <td style="text-align:right; padding: 4px 6px;">
           k<sub>u</sub> = {ku_str}
         </td>
-        <td style="text-align:right; padding: 4px 6px;">Limit (teaching) ≤ 0.36</td>
+        <td style="text-align:right; padding: 4px 6px;">AS 3600 limit ≤ 0.36</td>
         <td style="text-align:center; padding: 4px 6px;">
           <strong>{ku_status}</strong>
         </td>
       </tr>
 
       <tr>
-        <td style="padding: 4px 6px;"><strong>Neutral axis depth c</strong></td>
+        <td style="padding: 4px 6px;"><strong>Neutral axis depth d<sub>n</sub></strong></td>
         <td style="text-align:right; padding: 4px 6px;">c = {c_str}</td>
         <td style="text-align:right; padding: 4px 6px;"></td>
         <td style="text-align:center; padding: 4px 6px;"></td>
@@ -523,7 +523,7 @@ def render_bending():
             # Render HTML summary card using components.html to avoid escaping
             components.html(
                 summary_html.replace("max-width: 900px", "max-width: 650px"),
-                height=220,
+                height=280,
             )
 
         with right_col:
