@@ -4,32 +4,123 @@
 # ============================
 
 import math
+import numpy as np
 import pandas as pd
 import streamlit as st
+import plotly.graph_objects as go
 
-from state_and_helpers import (
-    get_sync_callbacks,
-    get_param,
-    update_results,
-)
-
-from widgets_helpers import (
-    apply_global_widget_css,
-    apply_calcbox_css,
-    number_row,
-)
-
-from bending_core import (
-    _fmt,
-    _compute_bending_capacity,
-    _stress_strain_state,
-)
+from state_and_helpers import get_sync_callbacks, get_param, update_results
+from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row
+from bending_core import _fmt, _compute_bending_capacity, _stress_strain_state
 from bending_diagrams import _plot_stress_strain_profiles
-from bending_tabs import (
-    render_uls_tab,
-    render_min_strength_tab,
-    render_sls_tab,
-)
+from bending_tabs import render_uls_tab, render_min_strength_tab, render_sls_tab
+
+
+def _build_beam_3d_figure(b, D, L, Mu_star, phi_Mu_cap, c):
+    """
+    Simple 3D visualisation:
+      - Concrete prism coloured by strain (tension/compression)
+      - Neutral axis plane
+
+    Inputs are taken from shared/session values so it stays in sync with
+    the main bending calcs (no extra widgets).
+    """
+
+    # Basic sanity checks
+    try:
+        vals = [b, D, L, Mu_star, phi_Mu_cap, c]
+        if any(v is None for v in vals):
+            return None
+        b = float(b)
+        D = float(D)
+        L = float(L)
+        Mu_star = float(Mu_star)
+        phi_Mu_cap = float(phi_Mu_cap)
+        c = float(c)
+        if any(math.isnan(v) for v in (b, D, L, Mu_star, phi_Mu_cap, c)):
+            return None
+    except Exception:
+        return None
+
+    if phi_Mu_cap <= 0.0 or D <= 0.0 or b <= 0.0 or L <= 0.0:
+        return None
+
+    # Ultimate curvature assuming ε_cu = 0.003 at current NA
+    eps_cu = 0.003
+    phi_u = eps_cu / max(c, 1e-9)
+
+    # Ratio of applied design moment to capacity (clipped)
+    r = Mu_star / phi_Mu_cap if phi_Mu_cap > 0 else 0.0
+    r = float(max(0.0, min(1.0, r)))
+
+    # Current curvature and NA depth (interpolate between mid-depth and ultimate c)
+    phi = r * phi_u
+    c0 = D / 2.0
+    c_now = (1.0 - r) * c0 + r * c
+
+    # Make available in session state for other pages if needed
+    st.session_state["bending_phi_current"] = phi
+    st.session_state["bending_c_current"] = c_now
+
+    # Concrete prism vertices (rectangular beam)
+    vx = np.array([0, L, L, 0, 0, L, L, 0])
+    vy = np.array([0, 0, b, b, 0, 0, b, b])
+    vz = np.array([0, 0, 0, 0, D, D, D, D])  # depth from top
+
+    # Strain at each vertex
+    eps_v = phi * (vz - c_now)
+    cmax = float(max(abs(eps_v.min()), abs(eps_v.max()), 1e-9))
+
+    # Face connectivity
+    tri_i = [0, 0, 0, 4, 4, 1, 5, 2, 6, 3, 7, 6]
+    tri_j = [1, 2, 3, 5, 7, 5, 6, 6, 7, 7, 4, 2]
+    tri_k = [2, 3, 0, 6, 4, 2, 7, 3, 4, 0, 5, 1]
+
+    mesh = go.Mesh3d(
+        x=vx,
+        y=vy,
+        z=vz,
+        i=tri_i,
+        j=tri_j,
+        k=tri_k,
+        intensity=eps_v,
+        colorscale="RdBu",
+        cmin=-cmax,
+        cmax=cmax,
+        showscale=False,  # keep it clean – just colours
+        opacity=0.6,
+        flatshading=True,
+        name="Concrete",
+    )
+
+    # Neutral axis plane
+    Xg, Yg = np.meshgrid(np.linspace(0, L, 2), np.linspace(0, b, 2))
+    Zg = np.full_like(Xg, c_now)
+    na_plane = go.Surface(
+        x=Xg,
+        y=Yg,
+        z=Zg,
+        colorscale=[[0, "orange"], [1, "orange"]],
+        showscale=False,
+        opacity=0.55,
+        name="NA",
+    )
+
+    fig = go.Figure(data=[mesh, na_plane])
+    fig.update_layout(
+        scene=dict(
+            xaxis_title="L",
+            yaxis_title="b",
+            zaxis_title="Depth from top",
+            zaxis=dict(autorange="reversed"),
+            aspectmode="data",
+            camera=dict(eye=dict(x=1.4, y=1.4, z=1.0)),
+        ),
+        margin=dict(l=0, r=0, t=10, b=0),
+        height=350,
+        showlegend=False,
+    )
+    return fig
 
 
 def render_bending():
@@ -186,6 +277,7 @@ def render_bending():
     Ec = get_param("Ec")
     Es = get_param("Es")
     Mu_star = get_param("Mu_star")
+    L_shared = get_param("L")
     nb_bot = get_param("nb_bot")
     db_bot = get_param("db_bot")
     cover_bot = get_param("cover_bot")
@@ -436,9 +528,12 @@ def render_bending():
 
     st.markdown("---")
 
-    # ---------------- Detailed summary table + main figure ----------------
+    # ---------------- Detailed summary table + 3D NA view ----------------
     st.subheader("Bending Capacity – Detailed Summary (values only)")
 
+    sum_col, beam3d_col = st.columns([0.6, 0.4])
+
+    # Left: numeric summary table
     rows = [
         {"Parameter": "Minimum steel",          "Symbol": "As,min",   "Value": _fmt(As_min, "{:.1f}"),        "Units": "mm²"},
         {"Parameter": "Cracking moment",        "Symbol": "Mcr",      "Value": _fmt(Mcr, "{:.2f}"),           "Units": "kNm"},
@@ -457,7 +552,17 @@ def render_bending():
     ]
 
     df_summary = pd.DataFrame(rows)
-    st.dataframe(df_summary, hide_index=True, use_container_width=True)
+    with sum_col:
+        st.dataframe(df_summary, hide_index=True, use_container_width=True)
+
+    # Right: 3D beam + NA using shared/session values
+    with beam3d_col:
+        fig3d = _build_beam_3d_figure(b, D, L_shared, Mu_star, phi_Mu_cap, c)
+        if fig3d is not None:
+            st.markdown("#### 3D neutral axis view")
+            st.plotly_chart(fig3d, use_container_width=True)
+        else:
+            st.info("3D beam view will appear once geometry and moment capacity are defined.")
 
     st.markdown("### Section & stress–strain model")
 
