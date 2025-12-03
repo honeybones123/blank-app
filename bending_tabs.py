@@ -3,7 +3,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import streamlit as st
 
-from widgets_helpers import calcbox
 from bending_diagrams import (
     _plot_stress_strain_profiles,
     _make_uls_stress_block_figure,
@@ -11,6 +10,24 @@ from bending_diagrams import (
     _make_sls_stress_block_figure,  # still used elsewhere, untouched
 )
 from bending_core import _fmt, _layout_bars_in_rows  # <-- add _layout_bars_in_rows here
+
+
+# ============================================================
+#  LOCAL HELPER – CALCBOX WITH LATEX SUPPORT
+# ============================================================
+def calcbox(md: str):
+    """
+    Render a blue calculation box with proper LaTeX support.
+    Uses st.info() styling which supports LaTeX rendering.
+    """
+    # Convert \[...\] to $$...$$ for display math
+    converted = md.replace("\\[", "$$").replace("\\]", "$$")
+    # Convert \(...\) to $...$ for inline math
+    converted = converted.replace("\\(", "$").replace("\\)", "$")
+    
+    # Use st.container with custom border styling
+    with st.container(border=True):
+        st.markdown(converted)
 
 
 # ============================================================
