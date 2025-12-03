@@ -10,8 +10,8 @@ from state_and_helpers import (
 
 from widgets_helpers import apply_global_widget_css, number_row
 
-# --- Pure compute functions from design pages (called to keep summary fresh)
-from bending_page import _compute_bending_capacity
+# --- Pure compute functions from design core (no circular imports)
+from bending_core import _compute_bending_capacity
 # from shear_page import _compute_shear_capacity       # TODO: add later
 # from crack_page import _compute_crack_results       # TODO: add later
 # from deflection import _compute_deflection_results  # TODO: add later
