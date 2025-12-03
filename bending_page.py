@@ -430,88 +430,88 @@ def render_bending():
 
     # Original summary card HTML (now with minimum strength row, no comments)
     summary_html = f"""
-    <div style="
-        border: 1px solid #cccccc;
-        border-radius: 8px;
-        padding: 0.5rem 0.75rem;
-        margin-bottom: 1rem;
-        max-width: 900px;
-    ">
-      <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
-        <thead>
-          <tr style="background-color: #f5f5f5;">
-            <th style="text-align:left; padding: 4px 6px;">Item</th>
-            <th style="text-align:right; padding: 4px 6px;">Value</th>
-            <th style="text-align:right; padding: 4px 6px;">Criterion</th>
-            <th style="text-align:center; padding: 4px 6px;">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr style="background-color: {As_colour};">
-            <td style="padding: 4px 6px;"><strong>Steel area Ast,bot</strong></td>
-            <td style="text-align:right; padding: 4px 6px;">{Ast_str}</td>
-            <td style="text-align:right; padding: 4px 6px;">≥ As,min = {As_min_str}</td>
-            <td style="text-align:center; padding: 4px 6px;">
-              <strong>{As_status}</strong>
-            </td>
-          </tr>
+<div style="
+  border: 1px solid #cccccc;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 1rem;
+  max-width: 900px;
+">
+  <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+    <thead>
+      <tr style="background-color: #f5f5f5;">
+        <th style="text-align:left; padding: 4px 6px;">Item</th>
+        <th style="text-align:right; padding: 4px 6px;">Value</th>
+        <th style="text-align:right; padding: 4px 6px;">Criterion</th>
+        <th style="text-align:center; padding: 4px 6px;">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="background-color: {As_colour};">
+        <td style="padding: 4px 6px;"><strong>Steel area Ast,bot</strong></td>
+        <td style="text-align:right; padding: 4px 6px;">{Ast_str}</td>
+        <td style="text-align:right; padding: 4px 6px;">≥ As,min = {As_min_str}</td>
+        <td style="text-align:center; padding: 4px 6px;">
+          <strong>{As_status}</strong>
+        </td>
+      </tr>
 
-          <tr style="background-color: {Mu_colour};">
-            <td style="padding: 4px 6px;"><strong>Flexural capacity</strong></td>
-            <td style="text-align:right; padding: 4px 6px;">
-              ϕM<sub>u,cap</sub> = {phiMu_str}
-            </td>
-            <td style="text-align:right; padding: 4px 6px;">
-              M<sub>u</sub>* = {Mu_star_str}
-            </td>
-            <td style="text-align:center; padding: 4px 6px;">
-              Util = M<sub>u</sub>* / ϕM<sub>u,cap</sub> = {Mu_util_str}<br>
-              <strong>{Mu_status}</strong>
-            </td>
-          </tr>
+      <tr style="background-color: {Mu_colour};">
+        <td style="padding: 4px 6px;"><strong>Flexural capacity</strong></td>
+        <td style="text-align:right; padding: 4px 6px;">
+          ϕM<sub>u,cap</sub> = {phiMu_str}
+        </td>
+        <td style="text-align:right; padding: 4px 6px;">
+          M<sub>u</sub>* = {Mu_star_str}
+        </td>
+        <td style="text-align:center; padding: 4px 6px;">
+          Util = M<sub>u</sub>* / ϕM<sub>u,cap</sub> = {Mu_util_str}<br>
+          <strong>{Mu_status}</strong>
+        </td>
+      </tr>
 
-          <tr style="background-color: {Mu_min_colour};">
-            <td style="padding: 4px 6px;"><strong>Minimum strength</strong></td>
-            <td style="text-align:right; padding: 4px 6px;">
-              ϕM<sub>u,cap</sub> = {phiMu_str}
-            </td>
-            <td style="text-align:right; padding: 4px 6px;">
-              M<sub>u,min</sub> = {Mu_min_str}
-            </td>
-            <td style="text-align:center; padding: 4px 6px;">
-              Util = M<sub>u,min</sub> / ϕM<sub>u,cap</sub> = {Mu_min_util_str}<br>
-              <strong>{Mu_min_status}</strong>
-            </td>
-          </tr>
+      <tr style="background-color: {Mu_min_colour};">
+        <td style="padding: 4px 6px;"><strong>Minimum strength</strong></td>
+        <td style="text-align:right; padding: 4px 6px;">
+          ϕM<sub>u,cap</sub> = {phiMu_str}
+        </td>
+        <td style="text-align:right; padding: 4px 6px;">
+          M<sub>u,min</sub> = {Mu_min_str}
+        </td>
+        <td style="text-align:center; padding: 4px 6px;">
+          Util = M<sub>u,min</sub> / ϕM<sub>u,cap</sub> = {Mu_min_util_str}<br>
+          <strong>{Mu_min_status}</strong>
+        </td>
+      </tr>
 
-          <tr style="background-color: {ku_colour};">
-            <td style="padding: 4px 6px;"><strong>Neutral axis ratio k<sub>u</sub></strong></td>
-            <td style="text-align:right; padding: 4px 6px;">
-              k<sub>u</sub> = {ku_str}
-            </td>
-            <td style="text-align:right; padding: 4px 6px;">Limit (teaching) ≤ 0.36</td>
-            <td style="text-align:center; padding: 4px 6px;">
-              <strong>{ku_status}</strong>
-            </td>
-          </tr>
+      <tr style="background-color: {ku_colour};">
+        <td style="padding: 4px 6px;"><strong>Neutral axis ratio k<sub>u</sub></strong></td>
+        <td style="text-align:right; padding: 4px 6px;">
+          k<sub>u</sub> = {ku_str}
+        </td>
+        <td style="text-align:right; padding: 4px 6px;">Limit (teaching) ≤ 0.36</td>
+        <td style="text-align:center; padding: 4px 6px;">
+          <strong>{ku_status}</strong>
+        </td>
+      </tr>
 
-          <tr>
-            <td style="padding: 4px 6px;"><strong>Neutral axis depth c</strong></td>
-            <td style="text-align:right; padding: 4px 6px;">c = {c_str}</td>
-            <td style="text-align:right; padding: 4px 6px;"></td>
-            <td style="text-align:center; padding: 4px 6px;"></td>
-          </tr>
+      <tr>
+        <td style="padding: 4px 6px;"><strong>Neutral axis depth c</strong></td>
+        <td style="text-align:right; padding: 4px 6px;">c = {c_str}</td>
+        <td style="text-align:right; padding: 4px 6px;"></td>
+        <td style="text-align:center; padding: 4px 6px;"></td>
+      </tr>
 
-          <tr>
-            <td style="padding: 4px 6px;"><strong>Stress block depth a = γc</strong></td>
-            <td style="text-align:right; padding: 4px 6px;">a = {a_str}</td>
-            <td style="text-align:right; padding: 4px 6px;"></td>
-            <td style="text-align:center; padding: 4px 6px;"></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    """
+      <tr>
+        <td style="padding: 4px 6px;"><strong>Stress block depth a = γc</strong></td>
+        <td style="text-align:right; padding: 4px 6px;">a = {a_str}</td>
+        <td style="text-align:right; padding: 4px 6px;"></td>
+        <td style="text-align:center; padding: 4px 6px;"></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+"""
 
     # ---------------- TOP CONTAINER – Title + summary + 3D (like Inputs page) ----------------
     with top_container:
