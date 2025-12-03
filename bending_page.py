@@ -517,7 +517,6 @@ def render_bending():
 
         with left_col:
             st.title("Bending Capacity")
-    st.markdown("### Bending – Result Summary")
             # slightly narrower card so it fits beside the 3D plot
             st.markdown(
                 summary_html.replace("max-width: 900px", "max-width: 650px"),
@@ -873,3 +872,4 @@ def render_bending():
 # ============================
 if __name__ == "__main__":
     render_bending()
+
