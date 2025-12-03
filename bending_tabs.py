@@ -156,7 +156,7 @@ def _make_sls_stress_block_figure_32(D_mm, d_mm, dn_mm, layers_tension):
 
 
 # ============================================================
-#  TAB 1 – ULS (UNCHANGED)
+#  TAB 1 – ULS (UNCHANGED LOGIC, TIDIED CALC BOXES)
 # ============================================================
 def render_uls_tab(top_results, b, D, fc, fsy, Ast, d):
     """
@@ -198,31 +198,48 @@ def render_uls_tab(top_results, b, D, fc, fsy, Ast, d):
         with col_calc_11:
             calcbox(
                 rf"""
-From AS 3600 rectangular stress block:
+*Purpose: Determine the ULS rectangular stress-block factors $\\alpha_2$ and $\\gamma$ for the given concrete strength.*  
+
+**Inputs:**  
+
+- Concrete strength: $f'_c = {fc:.1f}$ MPa  
+
+---
+
+**Formula (AS 3600):**
 
 $$
-\alpha_2 = 0.85 - 0.0015 f'_c \;(\ge 0.67)
+\\alpha_2 = 0.85 - 0.0015 f'_c \\; (\\ge 0.67)
 $$
 
-Substituting:
+**Substitution:**
 
 $$
-\alpha_2 = 0.85 - 0.0015 \times {fc:.1f}
+\\alpha_2 = 0.85 - 0.0015 \\times {fc:.1f}
          = {alpha2_raw_uls:.3f}
-         \Rightarrow \alpha_2 = {alpha2_uls:.3f}
+         \\Rightarrow \\alpha_2 = {alpha2_uls:.3f}
 $$
+
+---
 
 Similarly,
 
 $$
-\gamma = 0.97 - 0.0025 f'_c \;(\ge 0.67)
+\\gamma = 0.97 - 0.0025 f'_c \\; (\\ge 0.67)
 $$
 
+**Substitution:**
+
 $$
-\gamma = 0.97 - 0.0025 \times {fc:.1f}
+\\gamma = 0.97 - 0.0025 \\times {fc:.1f}
        = {gamma_raw_uls:.3f}
-       \Rightarrow \gamma = {gamma_uls:.3f}
+       \\Rightarrow \\gamma = {gamma_uls:.3f}
 $$
+
+---
+
+**Result:**  
+$\\alpha_2 = {alpha2_uls:.3f}$, $\\gamma = {gamma_uls:.3f}$ (to be used in Sections 1.2–1.6).
 """
             )
 
@@ -257,27 +274,43 @@ $$
 
         calcbox(
             rf"""
-Resultant concrete compression is taken as:
+*Purpose: Calculate the resultant concrete compressive force $C$ at ULS.*  
+
+**Inputs:**  
+
+- $\\alpha_2 = {alpha2_uls:.3f}$  
+- $f'_c = {fc:.1f}$ MPa  
+- Section width $b = {b:.1f}$ mm  
+- Compression block depth $a = {a_uls:.1f}$ mm  
+
+---
+
+**Formula:**
 
 $$
-C = \alpha_2 f'_c \, b \, a
+C = \\alpha_2 f'_c \\, b \\, a
 $$
 
 with block depth
 
 $$
-a = \gamma d_n
+a = \\gamma d_n
 $$
 
-Using the ULS stress-block parameters:
+---
+
+**Substitution:**
 
 $$
-C = \alpha_2 f'_c \, b \, a
-  = {alpha2_uls:.3f} \times {fc:.1f} \times {b:.1f} \times {a_uls:.1f}
-  = {C_kN:.1f}\ \text{{kN}}
+C = \\alpha_2 f'_c \\, b \\, a
+  = {alpha2_uls:.3f} \\times {fc:.1f} \\times {b:.1f} \\times {a_uls:.1f}
+  = {C_kN:.1f}\\ \\text{{kN}}
 $$
 
-This force acts at the centroid of the compression block.
+---
+
+**Result:**  
+Concrete compression resultant $C \\approx {C_kN:.1f}$ kN acting at the centroid of the compression block.
 """
         )
 
@@ -290,10 +323,21 @@ This force acts at the centroid of the compression block.
 
         calcbox(
             rf"""
+*Purpose: Relate the provided tensile reinforcement area to the tension force $T$ at ULS.*  
+
+**Inputs:**  
+
+- Tensile steel area: $A_{{st}} = {Ast:.1f}\\ \\text{{mm}}^2$  
+- Steel yield strength: $f_{{sy}} = {fsy:.1f}$ MPa  
+
+---
+
+**Formula:**
+
 From the section inputs, the total area of bottom tensile steel is:
 
 $$
-A_{{st}} = {Ast:.1f}\ \text{{mm}}^2
+A_{{st}} = {Ast:.1f}\\ \\text{{mm}}^2
 $$
 
 Assuming the tension steel yields at $f_{{sy}}$:
@@ -302,12 +346,20 @@ $$
 T = A_{{st}} f_{{sy}}
 $$
 
-Substituting:
+---
+
+**Substitution:**
 
 $$
-T = {Ast:.1f} \times {fsy:.1f}
-  = {T:,.0f}\ \text{{N}}
-  = {T/1000.0:.1f}\ \text{{kN}}
+T = {Ast:.1f} \\times {fsy:.1f}
+  = {T:,.0f}\\ \\text{{N}}
+  = {T/1000.0:.1f}\\ \\text{{kN}}
+$$
+
+---
+
+**Result:**  
+Tension force at ULS: $T \\approx {T/1000.0:.1f}$ kN.
 """
         )
 
@@ -323,7 +375,20 @@ T = {Ast:.1f} \times {fsy:.1f}
         with col_calc_14:
             calcbox(
                 rf"""
-Equilibrium of internal forces requires:
+*Purpose: Determine the neutral axis depth $d_n$ and corresponding block depth $a$ from force equilibrium.*  
+
+**Inputs:**  
+
+- Tension force: $T = {T/1000.0:.1f}$ kN  
+- $\\alpha_2 = {alpha2_uls:.3f}$, $\\gamma = {gamma_uls:.3f}$  
+- $f'_c = {fc:.1f}$ MPa  
+- $b = {b:.1f}$ mm  
+
+---
+
+**Force equilibrium:**  
+
+Internal equilibrium requires:
 
 $$
 C = T
@@ -332,35 +397,43 @@ $$
 Using the rectangular stress block:
 
 $$
-C = \alpha_2 f'_c\, b\, \gamma d_n
+C = \\alpha_2 f'_c\\, b\\, \\gamma d_n
 $$
 
 So, setting $C = T$:
 
 $$
-\alpha_2 f'_c\, b\, \gamma d_n = T
+\\alpha_2 f'_c\\, b\\, \\gamma d_n = T
 $$
 
 Rearranging:
 
 $$
-d_n = \frac{{T}}{{\alpha_2 f'_c\, b\, \gamma}}
+d_n = \\frac{T}{\\alpha_2 f'_c\\, b\\, \\gamma}
 $$
 
-Substituting:
+---
+
+**Substitution:**
 
 $$
 d_n =
-\frac{{{T:,.0f}}}
-     {{ {alpha2_uls:.3f} \times {fc:.1f} \times {b:.1f} \times {gamma_uls:.3f} }}
-= {dn:.1f}\ \text{{mm}}
+\\frac{{{T:,.0f}}}
+     {{ {alpha2_uls:.3f} \\times {fc:.1f} \\times {b:.1f} \\times {gamma_uls:.3f} }}
+= {dn:.1f}\\ \\text{{mm}}
 $$
 
 Block depth:
 
 $$
-a = \gamma d_n = {gamma_uls:.3f} \times {dn:.1f}
-  = {a_uls:.1f}\ \text{{mm}}
+a = \\gamma d_n = {gamma_uls:.3f} \\times {dn:.1f}
+  = {a_uls:.1f}\\ \\text{{mm}}
+$$
+
+---
+
+**Result:**  
+$ d_n = {dn:.1f}$ mm, $ a = {a_uls:.1f}$ mm.
 """
             )
 
@@ -396,21 +469,34 @@ a = \gamma d_n = {gamma_uls:.3f} \times {dn:.1f}
 
         calcbox(
             rf"""
+*Purpose: Express the neutral axis depth as a non-dimensional ratio $k_u$.*  
+
+**Inputs:**  
+
+- Neutral axis depth: $d_n = {dn:.1f}$ mm  
+- Effective depth: $d = {d:.1f}$ mm  
+
+---
+
+**Formula:**
+
 A convenient non-dimensional measure of the neutral axis depth is:
 
 $$
-k_u = \frac{{d_n}}{{d}}
+k_u = \\frac{d_n}{d}
 $$
 
-Substituting:
+**Substitution:**
 
 $$
-k_u = \frac{{{dn:.1f}}}{{{d:.1f}}}
+k_u = \\frac{{{dn:.1f}}}{{{d:.1f}}}
     = {ku:.3f}
 $$
 
-This ratio shows how deep the neutral axis is relative to the
-effective depth of the tension steel.
+---
+
+**Result:**  
+Neutral axis ratio $k_u = {ku:.3f}$.
 """
         )
 
@@ -426,38 +512,58 @@ effective depth of the tension steel.
         with col_calc_16:
             calcbox(
                 rf"""
-Lever arm between compression and tension resultants:
+*Purpose: Compute the internal lever arm $z$, nominal moment $M_u$ and design moment $\\phi M_{{u,cap}}$.*  
+
+**Inputs:**  
+
+- Effective depth: $d = {d:.1f}$ mm  
+- Block depth: $a = {a_uls:.1f}$ mm  
+- Tension force: $T = {T:,.0f}$ N  
+- Strength reduction factor: $\\phi = {phi:.2f}$  
+
+---
+
+**Lever arm:**  
 
 $$
-z = d - \frac{{a}}{2}
+z = d - \\frac{a}{2}
 $$
 
-Substituting:
+**Substitution:**
 
 $$
-z = d - \frac{{a}}{{2}}
-  = {d:.1f} - \frac{{{a_uls:.1f}}}{{2}}
-  = {z_uls:.1f}\ \text{{mm}}
+z = d - \\frac{a}{2}
+  = {d:.1f} - \\frac{{{a_uls:.1f}}}{2}
+  = {z_uls:.1f}\\ \\text{{mm}}
 $$
 
-Nominal moment:
+---
+
+**Nominal moment:**
 
 $$
-M_u = \frac{{T z}}{{10^6}}
+M_u = \\frac{T z}{10^6}
 $$
 
 $$
-M_u = \frac{{{T:,.0f} \times {z_uls:.1f}}}{{10^6}}
-    = {Mu_nom_uls:.2f}\ \text{{kNm}}
+M_u = \\frac{{{T:,.0f} \\times {z_uls:.1f}}}{10^6}
+    = {Mu_nom_uls:.2f}\\ \\text{{kNm}}
 $$
 
-Design moment:
+---
+
+**Design moment:**
 
 $$
-\phi M_{{u,cap}} = \phi M_u
-               = {phi:.2f} \times {Mu_nom_uls:.2f}
-               = {phi_Mu_cap_uls:.2f}\ \text{{kNm}}
+\\phi M_{{u,cap}} = \\phi M_u
+               = {phi:.2f} \\times {Mu_nom_uls:.2f}
+               = {phi_Mu_cap_uls:.2f}\\ \\text{{kNm}}
 $$
+
+---
+
+**Result:**  
+Design bending capacity $\\phi M_{{u,cap}} = {phi_Mu_cap_uls:.2f}$ kNm.
 """
             )
 
@@ -478,7 +584,7 @@ $$
 
 
 # ============================================================
-#  TAB 2 – Minimum Strength (UNCHANGED)
+#  TAB 2 – Minimum Strength (UNCHANGED LOGIC, TIDIED TEXT)
 # ============================================================
 def render_min_strength_tab(top_results, b, D, fc, fsy, Ast):
     """
@@ -505,17 +611,31 @@ def render_min_strength_tab(top_results, b, D, fc, fsy, Ast):
     st.subheader("2.1 Concrete flexural tensile strength $f_{{ct,f}}$")
     calcbox(
         rf"""
-AS 3600-style expression for flexural tensile strength:
+*Purpose: Estimate the concrete flexural tensile strength $f_{{ct,f}}$.*  
+
+**Inputs:**  
+
+- $f'_c = {fc:.1f}$ MPa  
+
+---
+
+**Formula (AS 3600 style):**
 
 $$
-f_{{ct,f}} \approx 0.6 \sqrt{{f'_c}}
+f_{{ct,f}} \\approx 0.6 \\sqrt{f'_c}
 $$
 
-Substituting:
+**Substitution:**
 
 $$
-f_{{ct,f}} \approx 0.6 \sqrt{{{fc:.1f}}}
-          = {fctf_as:.3f}\ \text{{MPa}}
+f_{{ct,f}} \\approx 0.6 \\sqrt{{{fc:.1f}}}
+          = {fctf_as:.3f}\\ \\text{{MPa}}
+$$
+
+---
+
+**Result:**  
+$f_{{ct,f}} \\approx {fctf_as:.3f}$ MPa.
 """
     )
     st.markdown("---")
@@ -524,17 +644,32 @@ f_{{ct,f}} \approx 0.6 \sqrt{{{fc:.1f}}}
     st.subheader("2.2 Gross section modulus $Z_g$")
     calcbox(
         rf"""
-Gross section modulus:
+*Purpose: Calculate the gross section modulus $Z_g$ of the rectangular section.*  
+
+**Inputs:**  
+
+- Width $b = {b:.1f}$ mm  
+- Overall depth $D = {D:.1f}$ mm  
+
+---
+
+**Formula:**
 
 $$
-Z_g = \frac{{b D^2}}{{6}}
+Z_g = \\frac{b D^2}{6}
 $$
 
-Substituting:
+**Substitution:**
 
 $$
-Z_g = \frac{{{b:.1f} \times {D:.1f}^2}}{{6}}
-    = {Zg:,.3e}\ \text{{mm}}^3
+Z_g = \\frac{{{b:.1f} \\times {D:.1f}^2}}{6}
+    = {Zg:,.3e}\\ \\text{{mm}}^3
+$$
+
+---
+
+**Result:**  
+$Z_g = {Zg:,.3e}\\ \\text{{mm}}^3$.
 """
     )
     st.markdown("---")
@@ -543,17 +678,32 @@ Z_g = \frac{{{b:.1f} \times {D:.1f}^2}}{{6}}
     st.subheader("2.3 Cracking moment $M_{{cr}}$")
     calcbox(
         rf"""
-Cracking moment:
+*Purpose: Determine the cracking moment $M_{{cr}}$ for the section.*  
+
+**Inputs:**  
+
+- $f_{{ct,f}} = {fctf_as:.3f}$ MPa  
+- $Z_g = {Zg:,.3e}\\ \\text{{mm}}^3$  
+
+---
+
+**Formula:**
 
 $$
-M_{{cr}} = \frac{{f_{{ct,f}} Z_g}}{{10^6}}
+M_{{cr}} = \\frac{f_{{ct,f}} Z_g}{10^6}
 $$
 
-Substituting:
+**Substitution:**
 
 $$
-M_{{cr}} = \frac{{{fctf_as:.3f} \times {Zg:,.3e}}}{{10^6}}
-       = {Mcr_as:.2f}\ \text{{kNm}}
+M_{{cr}} = \\frac{{{fctf_as:.3f} \\times {Zg:,.3e}}}{10^6}
+       = {Mcr_as:.2f}\\ \\text{{kNm}}
+$$
+
+---
+
+**Result:**  
+$M_{{cr}} \\approx {Mcr_as:.2f}$ kNm.
 """
     )
     st.markdown("---")
@@ -562,18 +712,32 @@ M_{{cr}} = \frac{{{fctf_as:.3f} \times {Zg:,.3e}}}{{10^6}}
     st.subheader("2.4 Minimum required design capacity $(M_{{u,cap}})_{{min}}$")
     calcbox(
         rf"""
-To ensure post-cracking behaviour:
+*Purpose: Check the minimum required design capacity relative to cracking moment.*  
+
+**Inputs:**  
+
+- $M_{{cr}} = {Mcr_as:.2f}$ kNm  
+
+---
+
+**Formula:**
 
 $$
-(M_{{u,cap}})_{{min}} = 1.2\, M_{{cr}}
+(M_{{u,cap}})_{{min}} = 1.2\\, M_{{cr}}
 $$
 
-Substituting:
+**Substitution:**
 
 $$
 (M_{{u,cap}})_{{min}}
-= 1.2 \times {Mcr_as:.2f}
-= {Mu_min_as:.2f}\ \text{{kNm}}
+= 1.2 \\times {Mcr_as:.2f}
+= {Mu_min_as:.2f}\\ \\text{{kNm}}
+$$
+
+---
+
+**Result:**  
+Minimum required design capacity $(M_{{u,cap}})_{{min}} = {Mu_min_as:.2f}$ kNm.
 """
     )
     st.markdown("---")
@@ -582,21 +746,37 @@ $$
     st.subheader("2.5 Minimum tensile reinforcement $A_{{st,min}}$")
     calcbox(
         rf"""
-AS 3600-style minimum tensile reinforcement:
+*Purpose: Calculate minimum tensile reinforcement according to AS 3600 style rules.*  
+
+**Inputs:**  
+
+- $f_{{ct,f}} = {fctf_as:.3f}$ MPa  
+- $f_{{sy}} = {fsy:.1f}$ MPa  
+- $b = {b:.1f}$ mm  
+- Effective depth $d = {top_results['d']:.1f}$ mm  
+
+---
+
+**Formula:**
 
 $$
 A_{{st,min}}
-= 0.4\;\frac{{f_{{ct,f}}}}{{f_{{sy}}}}\; b d
+= 0.4\\;\\frac{f_{{ct,f}}}{f_{{sy}}}\\; b d
 $$
 
-Substituting:
+**Substitution:**
 
 $$
 A_{{st,min}}
-= 0.4 \times \frac{{{fctf_as:.3f}}}{{{fsy:.1f}}}
-\times {b:.1f} \times {top_results['d']:.1f}
-= {Ast_min_as:.1f}\ \text{{mm}}^2
+= 0.4 \\times \\frac{{{fctf_as:.3f}}}{{{fsy:.1f}}}
+\\times {b:.1f} \\times {top_results['d']:.1f}
+= {Ast_min_as:.1f}\\ \\text{{mm}}^2
 $$
+
+---
+
+**Result:**  
+Minimum tensile steel area $A_{{st,min}} = {Ast_min_as:.1f}$ mm².
 """
     )
     st.markdown("---")
@@ -718,17 +898,34 @@ def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
 
     calcbox(
         rf"""
-Modular ratio:
+*Purpose: Compute the modular ratio and transformed steel areas for each layer.*  
+
+**Inputs:**  
+
+- $E_s = {Es:.0f}$ MPa  
+- $E_c = {Ec:.0f}$ MPa  
+
+---
+
+**Formula:**
 
 $$
-n = \frac{{E_s}}{{E_c}}
+n = \\frac{E_s}{E_c}
 $$
 
-Substituting:
+**Substitution:**
 
 $$
-n = \frac{{{Es:.0f}}}{{{Ec:.0f}}}
+n = \\frac{{{Es:.0f}}}{{{Ec:.0f}}}
   = {Es/Ec:.2f}
+$$
+
+The transformed area of each steel layer is $n A_s$.
+
+---
+
+**Result:**  
+Modular ratio $n = {Es/Ec:.2f}$ (used to compute $nA_s$ in the table below).
 """
     )
 
@@ -836,24 +1033,30 @@ n = \frac{{{Es:.0f}}}{{{Ec:.0f}}}
     with col_32_calc:
         calcbox(
             rf"""
-From equilibrium of transformed areas:
+*Purpose: Find the cracked-section neutral axis depth $d_n$ by enforcing equilibrium of transformed areas.*  
+
+**Concept:**  
 
 Tension side:
 
 $$
-T = \sum n A_{{s,i}} (d_i - d_n)
+T = \\sum n A_{{s,i}} (d_i - d_n)
 $$
 
 Concrete (and any compression steel) provide compression $C$ so that:
 
 $$
-\frac{{b d_n^2}}{2} + \sum n A_{{s,c}} (d_n - d_{{s,c}}) = \sum n A_{{s,i}} (d_i - d_n)
+\\frac{b d_n^2}{2} + \\sum n A_{{s,c}} (d_n - d_{{s,c}}) = \\sum n A_{{s,i}} (d_i - d_n)
 $$
 
-Solving this equilibrium numerically for this section gives:
+This equation is solved numerically for $d_n$ using bisection on the current section.
+
+---
+
+**Result (this section):**
 
 $$
-d_n = {dn_sls:.2f}\ \text{{mm}}
+d_n = {dn_sls:.2f}\\ \\text{{mm}}
 $$
 """
         )
@@ -901,26 +1104,33 @@ $$
 
     calcbox(
         rf"""
-Cracked moment of inertia (transformed section):
+*Purpose: Compute the cracked transformed moment of inertia $I_{{cr}}$ about the neutral axis.*  
+
+**Formula:**
 
 $$
 I_{{cr}} =
-\frac{{b d_n^3}}{3}
-+ \sum n A_{{s,i}} (d_i - d_n)^2
-+ \sum n A_{{s,c}} (d_n - d_{{s,c}})^2
+\\frac{b d_n^3}{3}
++ \\sum n A_{{s,i}} (d_i - d_n)^2
++ \\sum n A_{{s,c}} (d_n - d_{{s,c}})^2
 $$
 
 For this section:
 
-- Concrete term: $\dfrac{{b d_n^3}}{3} = {_fmt(I_conc)}\ \text{{mm}}^4$  
-- Steel in tension: $\sum n A_{{s,i}} (d_i - d_n)^2 = {_fmt(I_t)}\ \text{{mm}}^4$  
-- Steel in compression: $\sum n A_{{s,c}} (d_n - d_{{s,c}})^2 = {_fmt(I_c)}\ \text{{mm}}^4$
+- Concrete term: $\\dfrac{b d_n^3}{3} = {_fmt(I_conc)}\\ \\text{{mm}}^4$  
+- Steel in tension: $\\sum n A_{{s,i}} (d_i - d_n)^2 = {_fmt(I_t)}\\ \\text{{mm}}^4$  
+- Steel in compression: $\\sum n A_{{s,c}} (d_n - d_{{s,c}})^2 = {_fmt(I_c)}\\ \\text{{mm}}^4$  
 
 So:
 
 $$
-I_{{cr}} = {Icr:,.2f}\ \text{{mm}}^4
+I_{{cr}} = {Icr:,.2f}\\ \\text{{mm}}^4
 $$
+
+---
+
+**Result:**  
+Cracked transformed inertia $I_{{cr}} = {Icr:,.2f}\\ \\text{{mm}}^4$.
 """
     )
 
@@ -936,17 +1146,33 @@ $$
 
     calcbox(
         rf"""
-Using $M_s$ as the service moment:
+*Purpose: Evaluate curvature at the service moment using the cracked-section stiffness.*  
+
+**Inputs:**  
+
+- Service moment $M_s = {Ms:.2f}$ kNm  
+- $E_c = {Ec:.0f}$ MPa  
+- $I_{{cr}} = {Icr:,.2f}\\ \\text{{mm}}^4$  
+
+---
+
+**Formula:**
 
 $$
-\kappa = \frac{{M_s}}{{E_c I_{{cr}}}}
+\\kappa = \\frac{M_s}{E_c I_{{cr}}}
 $$
 
-Substituting:
+**Substitution:**
 
 $$
-\kappa = \frac{{{Ms:.2f}\times 10^6}}{{{Ec:.0f} \times {Icr:,.2f}}}
-       = {kappa:.3e}\ \text{{mm}}^{{-1}}
+\\kappa = \\frac{{{Ms:.2f}\\times 10^6}}{{{Ec:.0f} \\times {Icr:,.2f}}}
+       = {kappa:.3e}\\ \\text{{mm}}^{{-1}}
+$$
+
+---
+
+**Result:**  
+Curvature at service: $\\kappa = {kappa:.3e}\\ \\text{{mm}}^{{-1}}$.
 """
     )
     st.markdown("---")
@@ -975,16 +1201,25 @@ $$
     with col_sls_calc:
         calcbox(
             rf"""
+*Purpose: Compute the linear strain distribution at SLS for key depths.*  
+
+**Formula:**
+
 Strain at depth $y$ from the top:
 
 $$
-\varepsilon(y) = \kappa (y - d_n)
+\\varepsilon(y) = \\kappa (y - d_n)
 $$
 
 For key layers (including each steel layer), the table lists:
 
 - Depth $y$  
-- Strain $\varepsilon(y)$
+- Strain $\\varepsilon(y)$  
+
+---
+
+**Result:**  
+See table for $\\varepsilon(y)$ at the top fibre, each steel layer, and bottom fibre.
 """
         )
         st.table(df_eps)
@@ -1044,19 +1279,28 @@ For key layers (including each steel layer), the table lists:
 
     calcbox(
         rf"""
+*Purpose: Derive steel stresses at SLS for each reinforcement layer.*  
+
+**Formulae:**
+
 Steel strain in each layer is:
 
 $$
-\varepsilon_{{s,i}} = \kappa (d_i - d_n)
+\\varepsilon_{{s,i}} = \\kappa (d_i - d_n)
 $$
 
 and the corresponding stress is:
 
 $$
-f_{{s,i}} = E_s\, \varepsilon_{{s,i}}
+f_{{s,i}} = E_s\\, \\varepsilon_{{s,i}}
 $$
 
-The table below lists $\varepsilon_{{s,i}}$ and $f_{{s,i}}$ for each steel layer.
+The table below lists $\\varepsilon_{{s,i}}$ and $f_{{s,i}}$ for each steel layer.
+
+---
+
+**Result:**  
+See table for layer-by-layer SLS steel strains and stresses.
 """
     )
     st.table(df_steel)
@@ -1081,17 +1325,21 @@ The table below lists $\varepsilon_{{s,i}}$ and $f_{{s,i}}$ for each steel layer
     if fs_tension is not None:
         calcbox(
             rf"""
-For crack-width calculations, the **critical tension steel stress** at SLS
-is taken as the stress in the **outermost tension layer**.
+*Purpose: Identify the controlling SLS steel stress for use in crack-width checks.*  
+
+The **critical tension steel stress** at SLS is taken as the stress in the
+**outermost tension layer**.
 
 From the table above, this is approximately:
 
 $$
-f_{{s,ser}} \approx {fs_tension:.1f}\ \text{{MPa}}
+f_{{s,ser}} \\approx {fs_tension:.1f}\\ \\text{{MPa}}
 $$
 
-This is the value you would use in the crack-control checks
-(e.g. on the Crack Width tab) when relating steel stress to crack width.
+---
+
+**Result:**  
+Use $f_{{s,ser}} \\approx {fs_tension:.1f}$ MPa in crack-width calculations on the Crack Width tab.
 """
         )
     else:
