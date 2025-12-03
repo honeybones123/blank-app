@@ -428,7 +428,7 @@ def render_bending():
     if canonical_state not in state_options:
         canonical_state = "ULS"
 
-    # Original summary card HTML (now with minimum strength row)
+    # Original summary card HTML (now with minimum strength row, no comments)
     summary_html = f"""
     <div style="
         border: 1px solid #cccccc;
@@ -447,15 +447,15 @@ def render_bending():
           </tr>
         </thead>
         <tbody>
-          <!-- Steel area check -->
           <tr style="background-color: {As_colour};">
             <td style="padding: 4px 6px;"><strong>Steel area Ast,bot</strong></td>
             <td style="text-align:right; padding: 4px 6px;">{Ast_str}</td>
             <td style="text-align:right; padding: 4px 6px;">≥ As,min = {As_min_str}</td>
-            <td style="text-align:center; padding: 4px 6px;"><strong>{As_status}</strong></td>
+            <td style="text-align:center; padding: 4px 6px;">
+              <strong>{As_status}</strong>
+            </td>
           </tr>
 
-          <!-- Flexural capacity check: Mu* vs ϕMu,cap -->
           <tr style="background-color: {Mu_colour};">
             <td style="padding: 4px 6px;"><strong>Flexural capacity</strong></td>
             <td style="text-align:right; padding: 4px 6px;">
@@ -470,7 +470,6 @@ def render_bending():
             </td>
           </tr>
 
-          <!-- Minimum strength requirement: Mu,min vs ϕMu,cap -->
           <tr style="background-color: {Mu_min_colour};">
             <td style="padding: 4px 6px;"><strong>Minimum strength</strong></td>
             <td style="text-align:right; padding: 4px 6px;">
@@ -485,21 +484,24 @@ def render_bending():
             </td>
           </tr>
 
-          <!-- k_u limit -->
           <tr style="background-color: {ku_colour};">
             <td style="padding: 4px 6px;"><strong>Neutral axis ratio k<sub>u</sub></strong></td>
-            <td style="text-align:right; padding: 4px 6px;">k<sub>u</sub> = {ku_str}</td>
+            <td style="text-align:right; padding: 4px 6px;">
+              k<sub>u</sub> = {ku_str}
+            </td>
             <td style="text-align:right; padding: 4px 6px;">Limit (teaching) ≤ 0.36</td>
-            <td style="text-align:center; padding: 4px 6px;"><strong>{ku_status}</strong></td>
+            <td style="text-align:center; padding: 4px 6px;">
+              <strong>{ku_status}</strong>
+            </td>
           </tr>
 
-          <!-- Info-only: c and a -->
           <tr>
             <td style="padding: 4px 6px;"><strong>Neutral axis depth c</strong></td>
             <td style="text-align:right; padding: 4px 6px;">c = {c_str}</td>
             <td style="text-align:right; padding: 4px 6px;"></td>
             <td style="text-align:center; padding: 4px 6px;"></td>
           </tr>
+
           <tr>
             <td style="padding: 4px 6px;"><strong>Stress block depth a = γc</strong></td>
             <td style="text-align:right; padding: 4px 6px;">a = {a_str}</td>
@@ -872,4 +874,3 @@ def render_bending():
 # ============================
 if __name__ == "__main__":
     render_bending()
-
