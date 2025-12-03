@@ -351,12 +351,7 @@ def render_bending():
     As_min_top = top_results["As_min"]
     c_top = top_results["c"]
     Mcr_top = top_results["Mcr"]
-
-    # Minimum strength requirement (Mu,min = 1.2 * Mcr)
-    if Mcr_top is not None and not (isinstance(Mcr_top, float) and math.isnan(Mcr_top)):
-        Mu_min_top = 1.2 * Mcr_top
-    else:
-        Mu_min_top = float("nan")
+    Mu_min_top = top_results.get("Mu_min")
 
     def _status_colour(flag):
         if flag is None:
@@ -368,28 +363,32 @@ def render_bending():
     if Ast is not None and As_min_top and not math.isnan(As_min_top):
         As_ok = Ast >= As_min_top
 
+    # Flexural check: Mu* ≤ ϕMu,cap
     Mu_ok = None
     if phi_Mu_cap_top and phi_Mu_cap_top > 0 and Mu_star is not None:
         Mu_ok = Mu_star <= phi_Mu_cap_top
+
+    # Minimum strength requirement: ϕMu,cap ≥ Mu,min
+    Mu_min_ok = None
+    Mu_min_util = None
+    if (
+        phi_Mu_cap_top
+        and phi_Mu_cap_top > 0
+        and Mu_min_top is not None
+        and not (isinstance(Mu_min_top, float) and math.isnan(Mu_min_top))
+        and Mu_min_top > 0
+    ):
+        Mu_min_ok = phi_Mu_cap_top >= Mu_min_top
+        Mu_min_util = Mu_min_top / phi_Mu_cap_top
 
     ku_ok = None
     if ku_top is not None and not math.isnan(ku_top):
         ku_ok = (0.0 < ku_top <= 0.36)  # teaching limit
 
-    Mu_min_ok = None
-    if (
-        Mu_star is not None
-        and not (isinstance(Mu_star, float) and math.isnan(Mu_star))
-        and Mu_min_top is not None
-        and not (isinstance(Mu_min_top, float) and math.isnan(Mu_min_top))
-    ):
-        # check Mu* ≥ Mu_min
-        Mu_min_ok = Mu_star >= Mu_min_top
-
     As_status, As_colour = _status_colour(As_ok)
     Mu_status, Mu_colour = _status_colour(Mu_ok)
-    ku_status, ku_colour = _status_colour(ku_ok)
     Mu_min_status, Mu_min_colour = _status_colour(Mu_min_ok)
+    ku_status, ku_colour = _status_colour(ku_ok)
 
     Ast_str = f"{Ast:.1f} mm²" if Ast not in (None, float("nan")) else "—"
     As_min_str = (
@@ -404,22 +403,22 @@ def render_bending():
     Mu_util_str = (
         f"{Mu_util_top:.3f}" if phi_Mu_cap_top and phi_Mu_cap_top > 0 else "—"
     )
-    ku_str = f"{ku_top:.3f}" if ku_top is not None and not math.isnan(ku_top) else "—"
+
     Mu_min_str = (
         f"{Mu_min_top:.2f} kNm"
-        if Mu_min_top is not None and not math.isnan(Mu_min_top)
+        if Mu_min_top is not None
+        and not (isinstance(Mu_min_top, float) and math.isnan(Mu_min_top))
         else "—"
     )
-    Mu_min_util = (
-        Mu_min_top / Mu_star
-        if Mu_star not in (None, 0.0, float("nan"))
-        and Mu_min_top is not None
-        and not math.isnan(Mu_min_top)
-        else float("nan")
+    Mu_min_util_str = f"{Mu_min_util:.3f}" if Mu_min_util is not None else "—"
+
+    ku_str = f"{ku_top:.3f}" if ku_top is not None and not math.isnan(ku_top) else "—"
+    c_str = (
+        f"{c_top:.2f} mm" if c_top is not None and not math.isnan(c_top) else "—"
     )
-    Mu_min_util_str = (
-        f"{Mu_min_util:.3f}"
-        if Mu_min_util is not None and not math.isnan(Mu_min_util)
+    a_str = (
+        f"{(top_results['a'] or float('nan')):.2f} mm"
+        if "a" in top_results and not math.isnan(top_results["a"])
         else "—"
     )
 
@@ -448,33 +447,64 @@ def render_bending():
           </tr>
         </thead>
         <tbody>
+          <!-- Steel area check -->
           <tr style="background-color: {As_colour};">
             <td style="padding: 4px 6px;"><strong>Steel area Ast,bot</strong></td>
             <td style="text-align:right; padding: 4px 6px;">{Ast_str}</td>
             <td style="text-align:right; padding: 4px 6px;">≥ As,min = {As_min_str}</td>
             <td style="text-align:center; padding: 4px 6px;"><strong>{As_status}</strong></td>
           </tr>
+
+          <!-- Flexural capacity check: Mu* vs ϕMu,cap -->
           <tr style="background-color: {Mu_colour};">
             <td style="padding: 4px 6px;"><strong>Flexural capacity</strong></td>
-            <td style="text-align:right; padding: 4px 6px;">ϕM<sub>u,cap</sub> = {phiMu_str}</td>
-            <td style="text-align:right; padding: 4px 6px;">M<sub>u</sub>* = {Mu_star_str}</td>
+            <td style="text-align:right; padding: 4px 6px;">
+              ϕM<sub>u,cap</sub> = {phiMu_str}
+            </td>
+            <td style="text-align:right; padding: 4px 6px;">
+              M<sub>u</sub>* = {Mu_star_str}
+            </td>
             <td style="text-align:center; padding: 4px 6px;">
-              Util = {Mu_util_str}<br><strong>{Mu_status}</strong>
+              Util = M<sub>u</sub>* / ϕM<sub>u,cap</sub> = {Mu_util_str}<br>
+              <strong>{Mu_status}</strong>
             </td>
           </tr>
+
+          <!-- Minimum strength requirement: Mu,min vs ϕMu,cap -->
           <tr style="background-color: {Mu_min_colour};">
             <td style="padding: 4px 6px;"><strong>Minimum strength</strong></td>
-            <td style="text-align:right; padding: 4px 6px;">M<sub>u</sub>* = {Mu_star_str}</td>
-            <td style="text-align:right; padding: 4px 6px;">M<sub>u,min</sub> = {Mu_min_str}</td>
+            <td style="text-align:right; padding: 4px 6px;">
+              ϕM<sub>u,cap</sub> = {phiMu_str}
+            </td>
+            <td style="text-align:right; padding: 4px 6px;">
+              M<sub>u,min</sub> = {Mu_min_str}
+            </td>
             <td style="text-align:center; padding: 4px 6px;">
-              Util = {Mu_min_util_str}<br><strong>{Mu_min_status}</strong>
+              Util = M<sub>u,min</sub> / ϕM<sub>u,cap</sub> = {Mu_min_util_str}<br>
+              <strong>{Mu_min_status}</strong>
             </td>
           </tr>
+
+          <!-- k_u limit -->
           <tr style="background-color: {ku_colour};">
             <td style="padding: 4px 6px;"><strong>Neutral axis ratio k<sub>u</sub></strong></td>
             <td style="text-align:right; padding: 4px 6px;">k<sub>u</sub> = {ku_str}</td>
             <td style="text-align:right; padding: 4px 6px;">Limit (teaching) ≤ 0.36</td>
             <td style="text-align:center; padding: 4px 6px;"><strong>{ku_status}</strong></td>
+          </tr>
+
+          <!-- Info-only: c and a -->
+          <tr>
+            <td style="padding: 4px 6px;"><strong>Neutral axis depth c</strong></td>
+            <td style="text-align:right; padding: 4px 6px;">c = {c_str}</td>
+            <td style="text-align:right; padding: 4px 6px;"></td>
+            <td style="text-align:center; padding: 4px 6px;"></td>
+          </tr>
+          <tr>
+            <td style="padding: 4px 6px;"><strong>Stress block depth a = γc</strong></td>
+            <td style="text-align:right; padding: 4px 6px;">a = {a_str}</td>
+            <td style="text-align:right; padding: 4px 6px;"></td>
+            <td style="text-align:center; padding: 4px 6px;"></td>
           </tr>
         </tbody>
       </table>
@@ -487,7 +517,7 @@ def render_bending():
 
         with left_col:
             st.title("Bending Capacity")
-            st.markdown("### Bending – Result Summary")
+    st.markdown("### Bending – Result Summary")
             # slightly narrower card so it fits beside the 3D plot
             st.markdown(
                 summary_html.replace("max-width: 900px", "max-width: 650px"),
@@ -804,31 +834,6 @@ def render_bending():
                 "compression reinforcement and durability."
             ),
         )
-
-    st.markdown("---")
-
-    # ---------------- Detailed summary table (values only) ----------------
-    st.subheader("Bending Capacity – Detailed Summary (values only)")
-
-    rows = [
-        {"Parameter": "Minimum steel",          "Symbol": "As,min",   "Value": _fmt(As_min, "{:.1f}"),        "Units": "mm²"},
-        {"Parameter": "Cracking moment",        "Symbol": "Mcr",      "Value": _fmt(Mcr, "{:.2f}"),           "Units": "kNm"},
-        {"Parameter": "Minimum cracking moment","Symbol": "Mu,min",   "Value": _fmt(Mu_min, "{:.2f}"),        "Units": "kNm"},
-        {"Parameter": "Gross Z",                "Symbol": "Zg",       "Value": _fmt(Z_gross, "{:.3e}"),       "Units": "mm³"},
-        {"Parameter": "α₂",                     "Symbol": "α2",       "Value": _fmt(alpha2_sb, "{:.3f}"),     "Units": "•"},
-        {"Parameter": "γ",                      "Symbol": "γ",        "Value": _fmt(gamma_sb, "{:.3f}"),      "Units": "•"},
-        {"Parameter": "Strength reduction",     "Symbol": "φb",       "Value": _fmt(phi_b, "{:.3f}"),         "Units": "•"},
-        {"Parameter": "Neutral axis depth",     "Symbol": "c",        "Value": _fmt(c, "{:.2f}"),             "Units": "mm"},
-        {"Parameter": "Block depth",            "Symbol": "a = γc",   "Value": _fmt(a, "{:.2f}"),             "Units": "mm"},
-        {"Parameter": "Neutral axis ratio",     "Symbol": "ku = c/d", "Value": _fmt(ku_sb, "{:.3f}"),         "Units": "•"},
-        {"Parameter": "Lever arm",              "Symbol": "z",        "Value": _fmt(z, "{:.2f}"),             "Units": "mm"},
-        {"Parameter": "Nominal moment",         "Symbol": "Mu",       "Value": _fmt(Mu_nom_report, "{:.2f}"), "Units": "kNm"},
-        {"Parameter": "Design moment cap.",     "Symbol": "φMu,cap",  "Value": _fmt(phi_Mu_cap, "{:.2f}"),    "Units": "kNm"},
-        {"Parameter": "Design moment used",     "Symbol": "Mu*",      "Value": _fmt(Mu_star, "{:.2f}"),       "Units": "kNm"},
-    ]
-
-    df_summary = pd.DataFrame(rows)
-    st.dataframe(df_summary, hide_index=True, use_container_width=True)
 
     st.markdown("### Section & stress–strain model")
 
