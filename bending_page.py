@@ -326,7 +326,7 @@ def render_bending():
             """
         )
 
-    # ---------------- Top result summary ----------------
+    # ---------------- Top result summary (+ shared 3D NA view data) ----------------
     top_results = _compute_bending_capacity()
     Ast = get_param("Ast_bot")
     Mu_star = get_param("Mu_star")
@@ -372,11 +372,7 @@ def render_bending():
     Mu_util_str = (
         f"{Mu_util_top:.3f}" if phi_Mu_cap_top and phi_Mu_cap_top > 0 else "—"
     )
-    ku_str = (
-        f"{ku_top:.3f}"
-        if ku_top is not None and not math.isnan(ku_top)
-        else "—"
-    )
+    ku_str = f"{ku_top:.3f}" if ku_top is not None and not math.isnan(ku_top) else "—"
 
     summary_html = f"""
     <div style="
@@ -421,14 +417,10 @@ def render_bending():
     </div>
     """
 
-    st.markdown("### Bending – Result Summary")
+    # ---------------- TOP ROW – 3D model in top-right ----------------
+    top_left, top_right = st.columns([0.6, 0.4])
 
-    summary_col, beam3d_top_col = st.columns([0.6, 0.4])
-
-    with summary_col:
-        st.markdown(summary_html, unsafe_allow_html=True)
-
-    with beam3d_top_col:
+    with top_right:
         fig3d_top = _build_beam_3d_figure(
             b=get_param("b"),
             D=get_param("D"),
@@ -441,7 +433,17 @@ def render_bending():
             st.markdown("#### 3D neutral axis view")
             st.plotly_chart(fig3d_top, use_container_width=True)
         else:
-            st.info("3D beam view will appear once geometry and moment capacity are defined.")
+            st.info(
+                "3D beam view will appear once geometry, actions, and capacity are defined."
+            )
+
+    # left column left empty for now (keeps 3D high on the page)
+    with top_left:
+        st.empty()
+
+    # ---------------- Result summary (below the 3D model) ----------------
+    st.markdown("### Bending – Result Summary")
+    st.markdown(summary_html, unsafe_allow_html=True)
 
     # values for later
     phi_Mu_cap = top_results["phi_Mu_cap"]
