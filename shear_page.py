@@ -999,45 +999,51 @@ $$V_{{eq}}^* = {V_eq:.1f}\\text{{ kN}}$$
 
     calcbox(
         f"""
-*Purpose: Check that combined shear + torsion does not exceed the web-crushing limit (Cl. 8.2.6).*
+*Purpose: Check that combined shear + torsion does not exceed the web-crushing limit (Cl. 8.2.6).*  
 
-**Inputs:**
+**Inputs:**  
 
 - $f'_c = {fc:.1f}$ MPa, $b_v = {b_v:.1f}$ mm, $d_v = {d_v:.1f}$ mm  
-- $\\theta_v = {theta_v_deg:.1f}°$, $\\theta_1 = {theta_1_deg:.1f}°$  
+- $\\theta_v = {theta_v_deg:.1f}^\\circ$, $\\theta_1 = {theta_1_deg:.1f}^\\circ$  
 - $P_v = {P_v:.1f}$ kN  
 - Actions: $V^* = {V_star:.1f}$ kN, $T^* = {T_star:.1f}$ kNm  
 - Torsion geometry: $u_h = {uh:.1f}$ mm, $A_{{oh}} = {A_oh:.1f}$ mm²  
 
 ---
 
-**Web-crushing shear capacity (Cl. 8.2.6):**
+**Web-crushing shear capacity (Cl. 8.2.6):**  
 
-$$V_{{u,max}} = 0.55 f'_c b_v d_v \\frac{{\\cot\\theta_v + \\cot\\theta_1}}{{1 + \\cot^2\\theta_v}} + P_v$$
+$$\\large V_{{u,\\max}} = 0.55 f'_c b_v d_v \\frac{{\\cot\\theta_v + \\cot\\theta_1}}{{1 + \\cot^2\\theta_v}} + P_v$$
 
-**Substitution:**
+**Substitution:**  
 
-$$V_{{u,max}} = {Vu_max_kN:,.1f}\\text{{ kN}}$$
+$$\\large V_{{u,\\max}} = 0.55 \\times {fc:.1f} \\times {b_v:.1f} \\times {d_v:.1f} \\times \\frac{{\\cot({theta_v_deg:.1f}^\\circ) + \\cot({theta_1_deg:.1f}^\\circ)}}{{1 + \\cot^2({theta_v_deg:.1f}^\\circ)}} + {P_v:.1f} = {Vu_max_kN:,.1f}\\,\\text{{kN}}$$
 
 ---
 
-**Combined shear + torsion demand:**
+**Combined shear + torsion demand (per unit $b_v d_v$):**  
 
-$$\\text{{LHS}} = \\sqrt{{\\left(\\frac{{V^*}}{{b_v d_v}}\\right)^2 + \\left(\\frac{{T^* u_h}}{{1.7 A_{{oh}}^2}}\\right)^2}}$$
+$$\\large \\text{{Demand}} = \\sqrt{{\\left(\\frac{{V^*}}{{b_v d_v}}\\right)^2 + \\left(\\frac{{T^* u_h}}{{1.7 A_{{oh}}^2}}\\right)^2}}$$
 
-Substitution:
+**Substitution:**  
 
-$$\\text{{LHS}} = {LHS:,.1f}$$
+$$\\large \\text{{Demand}} = \\sqrt{{\\left(\\frac{{{V_star:.1f}}}{{{b_v:.1f} \\times {d_v:.1f}}}\\right)^2 + \\left(\\frac{{{T_star:.1f} \\times {uh:.1f}}}{{1.7 \\times {A_oh:.1f}^2}}\\right)^2}} = {LHS:,.1f}$$
 
-Design limit:
+---
 
-$$\\text{{RHS}} = \\frac{{\\phi V_{{u,max}}}}{{b_v d_v}} = {RHS:,.1f}$$
+**Design limit (web-crushing capacity per unit $b_v d_v$):**  
+
+$$\\large \\text{{Capacity}} = \\frac{{\\phi V_{{u,\\max}}}}{{b_v d_v}}$$
+
+**Substitution:**  
+
+$$\\large \\text{{Capacity}} = \\frac{{{phi:.2f} \\times {Vu_max_kN:,.1f}}}{{{b_v:.1f} \\times {d_v:.1f}}} = {RHS:,.1f}$$
 
 ---
 
 **Web-crushing check:**  
 
-- Requirement: LHS $\\le$ RHS  
+- Requirement: Demand $\\le$ Capacity  
 - Here: {LHS:,.1f} vs {RHS:,.1f} → **{"OK" if web_ok else "NOT OK"}**
 """
     )
