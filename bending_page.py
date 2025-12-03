@@ -350,6 +350,13 @@ def render_bending():
     ku_top = top_results["ku"]
     As_min_top = top_results["As_min"]
     c_top = top_results["c"]
+    Mcr_top = top_results["Mcr"]
+
+    # Minimum strength requirement (Mu,min = 1.2 * Mcr)
+    if Mcr_top is not None and not (isinstance(Mcr_top, float) and math.isnan(Mcr_top)):
+        Mu_min_top = 1.2 * Mcr_top
+    else:
+        Mu_min_top = float("nan")
 
     def _status_colour(flag):
         if flag is None:
@@ -369,9 +376,20 @@ def render_bending():
     if ku_top is not None and not math.isnan(ku_top):
         ku_ok = (0.0 < ku_top <= 0.36)  # teaching limit
 
+    Mu_min_ok = None
+    if (
+        Mu_star is not None
+        and not (isinstance(Mu_star, float) and math.isnan(Mu_star))
+        and Mu_min_top is not None
+        and not (isinstance(Mu_min_top, float) and math.isnan(Mu_min_top))
+    ):
+        # check Mu* ≥ Mu_min
+        Mu_min_ok = Mu_star >= Mu_min_top
+
     As_status, As_colour = _status_colour(As_ok)
     Mu_status, Mu_colour = _status_colour(Mu_ok)
     ku_status, ku_colour = _status_colour(ku_ok)
+    Mu_min_status, Mu_min_colour = _status_colour(Mu_min_ok)
 
     Ast_str = f"{Ast:.1f} mm²" if Ast not in (None, float("nan")) else "—"
     As_min_str = (
@@ -387,8 +405,31 @@ def render_bending():
         f"{Mu_util_top:.3f}" if phi_Mu_cap_top and phi_Mu_cap_top > 0 else "—"
     )
     ku_str = f"{ku_top:.3f}" if ku_top is not None and not math.isnan(ku_top) else "—"
+    Mu_min_str = (
+        f"{Mu_min_top:.2f} kNm"
+        if Mu_min_top is not None and not math.isnan(Mu_min_top)
+        else "—"
+    )
+    Mu_min_util = (
+        Mu_min_top / Mu_star
+        if Mu_star not in (None, 0.0, float("nan"))
+        and Mu_min_top is not None
+        and not math.isnan(Mu_min_top)
+        else float("nan")
+    )
+    Mu_min_util_str = (
+        f"{Mu_min_util:.3f}"
+        if Mu_min_util is not None and not math.isnan(Mu_min_util)
+        else "—"
+    )
 
-    # Original summary card HTML (kept as a single string)
+    # Canonical bending state shared by 3D & 2D buttons
+    state_options = ["ULS", "SLS (cracked)", "Uncracked"]
+    canonical_state = st.session_state.get("bending_state", "ULS")
+    if canonical_state not in state_options:
+        canonical_state = "ULS"
+
+    # Original summary card HTML (now with minimum strength row)
     summary_html = f"""
     <div style="
         border: 1px solid #cccccc;
@@ -421,6 +462,14 @@ def render_bending():
               Util = {Mu_util_str}<br><strong>{Mu_status}</strong>
             </td>
           </tr>
+          <tr style="background-color: {Mu_min_colour};">
+            <td style="padding: 4px 6px;"><strong>Minimum strength</strong></td>
+            <td style="text-align:right; padding: 4px 6px;">M<sub>u</sub>* = {Mu_star_str}</td>
+            <td style="text-align:right; padding: 4px 6px;">M<sub>u,min</sub> = {Mu_min_str}</td>
+            <td style="text-align:center; padding: 4px 6px;">
+              Util = {Mu_min_util_str}<br><strong>{Mu_min_status}</strong>
+            </td>
+          </tr>
           <tr style="background-color: {ku_colour};">
             <td style="padding: 4px 6px;"><strong>Neutral axis ratio k<sub>u</sub></strong></td>
             <td style="text-align:right; padding: 4px 6px;">k<sub>u</sub> = {ku_str}</td>
@@ -446,16 +495,7 @@ def render_bending():
             )
 
         with right_col:
-            st.markdown("#### 3D neutral axis view")
-
-            # State selector for NA view (ULS / SLS / Uncracked)
-            strain_state = st.radio(
-                "State:",
-                ["ULS", "SLS (cracked)", "Uncracked"],
-                horizontal=True,
-                key="bending_strain_state",
-            )
-
+            # 3D figure first
             fig3d_top = _build_beam_3d_figure(
                 b=get_param("b"),
                 D=get_param("D"),
@@ -463,7 +503,7 @@ def render_bending():
                 Mu_star=Mu_star,
                 phi_Mu_cap=phi_Mu_cap_top,
                 c=c_top,
-                strain_state=strain_state,
+                strain_state=canonical_state,
             )
             if fig3d_top is not None:
                 st.plotly_chart(fig3d_top, use_container_width=True)
@@ -471,6 +511,21 @@ def render_bending():
                 st.info(
                     "3D beam view will appear once geometry and moment capacity are defined."
                 )
+
+            # Then heading + buttons UNDER the model
+            st.markdown("#### 3D neutral axis view")
+            state_3d = st.radio(
+                "State:",
+                state_options,
+                horizontal=True,
+                key="bending_strain_state_3d",
+                index=state_options.index(canonical_state),
+            )
+            if state_3d != canonical_state:
+                canonical_state = state_3d
+
+    # Persist canonical bending state for the rest of the page (and next rerun)
+    st.session_state["bending_state"] = canonical_state
 
     # values for later
     phi_Mu_cap = top_results["phi_Mu_cap"]
@@ -574,6 +629,17 @@ def render_bending():
             help_text=(
                 "Prestress / pre-compression in the section. Increasing P* typically "
                 "reduces tensile demand in the bottom reinforcement."
+            ),
+        )
+        # NEW: strength reduction factor for bending (φ_bend) – in shared session state
+        number_row(
+            "Bending strength factor ϕb",
+            "bending_phi_bend",
+            0.01,
+            sync,
+            help_text=(
+                "Strength reduction factor for bending (AS 3600 ϕ-factor). "
+                "This multiplies the nominal capacity to give ϕM_u,cap."
             ),
         )
 
@@ -771,10 +837,19 @@ def render_bending():
 
     st.markdown("### Section & stress–strain model")
 
-    # Use the same state as the 3D NA selector
-    strain_state = st.session_state.get("bending_strain_state", "ULS")
+    # SECOND set of buttons – synced with the top ones via canonical_state
+    state_2d = st.radio(
+        "State:",
+        state_options,
+        horizontal=True,
+        key="bending_strain_state_2d",
+        index=state_options.index(canonical_state),
+    )
+    if state_2d != canonical_state:
+        canonical_state = state_2d
+        st.session_state["bending_state"] = canonical_state
 
-    ss_state = _stress_strain_state(strain_state)
+    ss_state = _stress_strain_state(canonical_state)
     fig_ss = _plot_stress_strain_profiles(ss_state)
     st.pyplot(fig_ss, use_container_width=True)
 
