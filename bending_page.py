@@ -7,6 +7,7 @@ import math
 import numpy as np
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 import plotly.graph_objects as go
 
 from state_and_helpers import get_sync_callbacks, get_param, update_results
@@ -519,10 +520,10 @@ def render_bending():
 
         with left_col:
             st.title("Bending Capacity")
-            # slightly narrower card so it fits beside the 3D plot
-            st.markdown(
+            # Render HTML summary card using components.html to avoid escaping
+            components.html(
                 summary_html.replace("max-width: 900px", "max-width: 650px"),
-                unsafe_allow_html=True,
+                height=220,
             )
 
         with right_col:
