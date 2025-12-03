@@ -409,7 +409,7 @@ $$
 Rearranging:
 
 $$
-d_n = \\frac{T}{\\alpha_2 f'_c\\, b\\, \\gamma}
+d_n = \\frac{{T}}{{\\alpha_2 f'_c\\, b\\, \\gamma}}
 $$
 
 ---
@@ -542,11 +542,11 @@ $$
 **Nominal moment:**
 
 $$
-M_u = \\frac{T z}{10^6}
+M_u = \\frac{{T z}}{{10^6}}
 $$
 
 $$
-M_u = \\frac{{{T:,.0f} \\times {z_uls:.1f}}}{10^6}
+M_u = \\frac{{{T:,.0f} \\times {z_uls:.1f}}}{{10^6}}
     = {Mu_nom_uls:.2f}\\ \\text{{kNm}}
 $$
 
@@ -622,7 +622,7 @@ def render_min_strength_tab(top_results, b, D, fc, fsy, Ast):
 **Formula (AS 3600 style):**
 
 $$
-f_{{ct,f}} \\approx 0.6 \\sqrt{f'_c}
+f_{{ct,f}} \\approx 0.6 \\sqrt{{f'_c}}
 $$
 
 **Substitution:**
@@ -656,13 +656,13 @@ $f_{{ct,f}} \\approx {fctf_as:.3f}$ MPa.
 **Formula:**
 
 $$
-Z_g = \\frac{b D^2}{6}
+Z_g = \\frac{{b D^2}}{{6}}
 $$
 
 **Substitution:**
 
 $$
-Z_g = \\frac{{{b:.1f} \\times {D:.1f}^2}}{6}
+Z_g = \\frac{{{b:.1f} \\times {D:.1f}^2}}{{6}}
     = {Zg:,.3e}\\ \\text{{mm}}^3
 $$
 
@@ -690,13 +690,13 @@ $Z_g = {Zg:,.3e}\\ \\text{{mm}}^3$.
 **Formula:**
 
 $$
-M_{{cr}} = \\frac{f_{{ct,f}} Z_g}{10^6}
+M_{{cr}} = \\frac{{f_{{ct,f}} Z_g}}{{10^6}}
 $$
 
 **Substitution:**
 
 $$
-M_{{cr}} = \\frac{{{fctf_as:.3f} \\times {Zg:,.3e}}}{10^6}
+M_{{cr}} = \\frac{{{fctf_as:.3f} \\times {Zg:,.3e}}}{{10^6}}
        = {Mcr_as:.2f}\\ \\text{{kNm}}
 $$
 
@@ -761,7 +761,7 @@ Minimum required design capacity $(M_{{u,cap}})_{{min}} = {Mu_min_as:.2f}$ kNm.
 
 $$
 A_{{st,min}}
-= 0.4\\;\\frac{f_{{ct,f}}}{f_{{sy}}}\\; b d
+= 0.4\\;\\frac{{f_{{ct,f}}}}{{f_{{sy}}}}\\; b d
 $$
 
 **Substitution:**
@@ -1046,7 +1046,7 @@ $$
 Concrete (and any compression steel) provide compression $C$ so that:
 
 $$
-\\frac{b d_n^2}{2} + \\sum n A_{{s,c}} (d_n - d_{{s,c}}) = \\sum n A_{{s,i}} (d_i - d_n)
+\\frac{{b d_n^2}}{{2}} + \\sum n A_{{s,c}} (d_n - d_{{s,c}}) = \\sum n A_{{s,i}} (d_i - d_n)
 $$
 
 This equation is solved numerically for $d_n$ using bisection on the current section.
@@ -1110,14 +1110,14 @@ $$
 
 $$
 I_{{cr}} =
-\\frac{b d_n^3}{3}
+\\frac{{b d_n^3}}{{3}}
 + \\sum n A_{{s,i}} (d_i - d_n)^2
 + \\sum n A_{{s,c}} (d_n - d_{{s,c}})^2
 $$
 
 For this section:
 
-- Concrete term: $\\dfrac{b d_n^3}{3} = {_fmt(I_conc)}\\ \\text{{mm}}^4$  
+- Concrete term: $\\dfrac{{b d_n^3}}{{3}} = {_fmt(I_conc)}\\ \\text{{mm}}^4$  
 - Steel in tension: $\\sum n A_{{s,i}} (d_i - d_n)^2 = {_fmt(I_t)}\\ \\text{{mm}}^4$  
 - Steel in compression: $\\sum n A_{{s,c}} (d_n - d_{{s,c}})^2 = {_fmt(I_c)}\\ \\text{{mm}}^4$  
 
@@ -1159,7 +1159,7 @@ Cracked transformed inertia $I_{{cr}} = {Icr:,.2f}\\ \\text{{mm}}^4$.
 **Formula:**
 
 $$
-\\kappa = \\frac{M_s}{E_c I_{{cr}}}
+\\kappa = \\frac{{M_s}}{{E_c I_{{cr}}}}
 $$
 
 **Substitution:**
