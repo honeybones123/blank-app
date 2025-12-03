@@ -274,27 +274,6 @@ def render_bending():
         else:
             st.info("3D beam view will appear once geometry and moment capacity are defined.")
 
-        # Reinforcement snapshot from session state
-        st.markdown("#### Reinforcement (session state)")
-        nb_bot_ss = get_param("nb_bot")
-        db_bot_ss = get_param("db_bot")
-        cover_bot_ss = get_param("cover_bot")
-        nb_top_ss = get_param("nb_top")
-        db_top_ss = get_param("db_top")
-        cover_top_ss = get_param("cover_top")
-        rowgap_bot_ss = get_param("rowgap_bot")
-        rowgap_top_ss = get_param("rowgap_top")
-        d_ss = get_param("d")
-
-        st.markdown(
-            f"""
-- **Bottom steel**: nb_bot = {_fmt(nb_bot_ss, '{:.0f}')} bars, db_bot = {_fmt(db_bot_ss, '{:.0f}')} mm, cover = {_fmt(cover_bot_ss, '{:.0f}')} mm, row gap = {_fmt(rowgap_bot_ss, '{:.0f}')} mm  
-- **Top steel**: nb_top = {_fmt(nb_top_ss, '{:.0f}')} bars, db_top = {_fmt(db_top_ss, '{:.0f}')} mm, cover = {_fmt(cover_top_ss, '{:.0f}')} mm, row gap = {_fmt(rowgap_top_ss, '{:.0f}')} mm  
-- **Effective depth**: d = {_fmt(d_ss, '{:.1f}')} mm  
-- **Ast,bot** (shared): {_fmt(Ast, '{:.1f}')} mm²
-"""
-        )
-
     # values for later
     phi_Mu_cap = top_results["phi_Mu_cap"]
     c = top_results["c"]
