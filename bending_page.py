@@ -228,6 +228,11 @@ def render_bending():
     st.subheader("Design Actions for Bending")
     sync = sync_callbacks
 
+    # Ensure bending widgets stay in sync with shared design actions
+    st.session_state["bending_Mu_star"] = get_param("Mu_star") or 0.0
+    st.session_state["bending_N_star"] = get_param("N_star") or 0.0
+    st.session_state["bending_P_star"] = get_param("P_star") or 0.0
+
     number_row(
         "Design moment Mu* (kNm)",
         "bending_Mu_star",
