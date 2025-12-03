@@ -508,11 +508,11 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     )
 
     # ---------- Short-term ----------
-with tab_short:
-    st.subheader("Short-term deflection – AS 3600 Cl. 8.5.3.1")
+    with tab_short:
+        st.subheader("Short-term deflection – AS 3600 Cl. 8.5.3.1")
 
-    calcbox(
-        r"""
+        calcbox(
+            r"""
 **Formula**
 
 \[
@@ -529,24 +529,250 @@ with tab_short:
 
 where \(w = g + q = %.2f \text{ kN/m}\).
 """
-        % (
-            results["k2"],
-            results["w_total"],
-            L_mm,
-            Ec,
-            Ief,
-            delta_short_total,
-            results["w_total"],
+            % (
+                results["k2"],
+                results["w_total"],
+                L_mm,
+                Ec,
+                Ief,
+                delta_short_total,
+                results["w_total"],
+            )
         )
-    )
 
-    st.markdown("#### Key inputs")
+        st.markdown("#### Key inputs")
 
-    st.write(rf"- $L_{{eff}}$ = **{L_mm:.0f} mm**")
-    st.write(rf"- $w = g + q$ = **{results['w_total']:.2f} kN/m**")
-    st.write(rf"- $k_2$ (from support type) = **{results['k2']:.5f}**")
-    st.write(rf"- $E_{{c,eff}}$ = **{Ec:.0f} MPa**")
-    st.write(rf"- $I_{{ef}}$ = **{Ief:,.3e} \,\text{mm}^4$**")
+        st.write(rf"- $L_{{eff}}$ = **{L_mm:.0f} mm**")
+        st.write(rf"- $w = g + q$ = **{results['w_total']:.2f} kN/m**")
+        st.write(rf"- $k_2$ (from support type) = **{results['k2']:.5f}**")
+        st.write(rf"- $E_{{c,eff}}$ = **{Ec:.0f} MPa**")
+        st.write(rf"- $I_{{ef}}$ = **{Ief:,.3e} \,\text{{mm}}^4$**")
+
+    # ---------- Long-term ----------
+    with tab_long:
+        st.subheader("Long-term deflection – AS 3600 Cl. 8.5.3.2")
+
+        calcbox(
+            r"""
+**Key relationships**
+
+\[
+k_{cs} = \max\left[\,2 - 1.2 \left(\frac{A_{sc}}{A_{st}}\right),\, 0.8 \right]
+\]
+
+\[
+\delta_{st,sust} = k_2 \frac{w_{sust} L_{eff}^4}{E_{c,eff} I_{ef}}
+\]
+
+\[
+\delta_{LT,add} = k_{cs} \, \delta_{st,sust}
+\quad\text{and}\quad
+\delta_{total} = \delta_{st,total} + \delta_{LT,add}
+\]
+"""
+        )
+
+        st.markdown("#### Inputs for long-term component")
+
+        st.write(
+            f"- Sustained load \(w_{{sust}} = g + \\psi_s q\) = **{results['w_sust']:.2f} kN/m**"
+        )
+        st.write(f"- ψₛ = **{psi_s:.2f}**")
+        st.write(f"- A_st = **{Ast:.0f} mm²**,  A_sc = **{Asc:.0f} mm²**")
+        st.write(f"- A_sc / A_st = **{(Asc / Ast if Ast > 0 else 0.0):.3f}**")
+        st.write(f"- → k_cs = **{kcs:.2f}**")
+
+        st.markdown("#### Results")
+
+        st.write("Short-term deflection due to **sustained load** only:")
+        st.write(f"- δ_st,sust = **{delta_short_sust:.2f} mm**")
+
+        st.write("Additional long-term deflection due to creep + shrinkage:")
+        st.write(
+            f"- δ_LT,add = k_cs × δ_st,sust = **{delta_long_add:.2f} mm**  →  {L_over_delta_long_add}"
+        )
+
+        st.write("Total deflection (short-term + long-term):")
+        st.write(f"- **δ_total = {delta_total:.2f} mm**  →  {L_over_delta_total}")
+
+    # ---------- Ief details ----------
+    with tab_ief:
+        st.subheader("Effective second moment of area Iₑf – AS 3600 Cl. 8.5.3.1")
+
+        calcbox(
+            r"""
+For **reinforced members**, the simplified expressions for \(I_{ef}\) are:
+
+- When \(p \ge p_{lim}\):
+
+\[
+I_{ef} = \left[(5 - 0.04 f'_c) p + 0.002 \right] b_{ef} d^3
+\]
+
+- When \(p < p_{lim}\):
+
+\[
+I_{ef} = \left[0.055 (f'_c)^{1/3} / \beta^{2/3} - 50 p \right] b_{ef} d^3
+\]
+
+with caps on \(I_{ef,max}\) depending on \(\beta\).
+"""
+        )
+
+        st.markdown("#### Section & reinforcement parameters")
+
+        st.write(f"b_w = **{bw:.1f} mm**,  bₑf = **{beff:.1f} mm**,  β = **{beta:.3f}**")
+        st.write(f"d = **{d:.1f} mm**")
+        st.write(f"A_st = **{Ast:.1f} mm²**")
+        st.write(f"p = A_st / (bₑf d) = **{p:.5f}**")
+        st.write(f"p_lim = **{p_lim:.5f}**")
+
+        st.markdown("#### Output")
+
+        st.write(f"Iₑf = **{Ief:,.3e} mm⁴**")
+        st.write(f"Iₑf,max = **{Ief_max:,.3e} mm⁴**")
+        st.write(f"k₁ = Iₑf / (bₑf d³) = **{k1_from_ief:.5f}**")
+
+    # ---------- Span/depth ----------
+    with tab_span:
+        st.subheader("Deemed-to-conform span-to-depth ratio – AS 3600 Cl. 8.5.4")
+
+        calcbox(
+            r"""
+\[
+\frac{L_{ef}}{d} \le 
+\left[
+\dfrac{k_1 \, (\Delta/L_{ef}) \, b_{ef} E_{c,eff}}{k_2 F_{d,ef}}
+\right]^{1/3}
+\]
+"""
+        )
+
+        st.markdown("#### Inputs")
+
+        st.write(f"- k₁ = **{k1_span:.5f}** (from Iₑf)")
+        st.write(f"- k₂ = **{k2_span:.5f}** (from support type)")
+        st.write(f"- Δ/L limit = **1/{defl_limit_ratio:.0f}**")
+        st.write(f"- F_d,ef = **{Fdef_kNm:.2f} kN/m**")
+        st.write(f"- Lₑf = **{L_mm:.0f} mm**,  d = **{d:.1f} mm** → Lₑf/d = **{L_over_d:.1f}**")
+
+        st.markdown("#### Check")
+
+        if L_over_d_limit is None:
+            st.warning("Could not compute Lₑf/d limit (F_d,ef ≤ 0).")
+        else:
+            ok_span = L_over_d <= L_over_d_limit
+            st.write(
+                f"Allowed \(Lₑf/d\) ≤ **{L_over_d_limit:.1f}** → "
+                f"{'✅ OK – deemed to conform' if ok_span else '❌ NG – exceeds deemed limit'}"
+            )
+
+    # ---------- Flow chart / explanation ----------
+    with tab_flow:
+        st.subheader("Flow chart – Deflection check to AS 3600")
+
+        st.markdown(
+            """
+### Step 1 – Define section, materials & loads
+- Geometry: \(L_{ef}, b_w, b_{ef}, d\)  
+- Materials: \(f'_c, E_{c,eff}, A_{st}, A_{sc}\)  
+- Loads: \(g, q, \\psi_s, F_{d,ef}\), deflection limit \(L/Δ\)
+
+---
+
+### Step 2 – Effective stiffness Iₑf (Cl. 8.5.3.1)
+
+1. Compute  
+   - \(\\beta = b_{ef} / b_w\)  
+   - \(p = A_{st} / (b_{ef} d)\)  
+   - \(p_{lim}\) from AS 3600  
+
+2. Use appropriate simplified expression to obtain \(I_{ef}\)  
+3. Cap at \(I_{ef,max}\) as per AS 3600  
+
+---
+
+### Step 3 – Short-term deflection (Cl. 8.5.3.1)
+
+1. Select \(k_2\) from support type  
+2. Compute total service load \(w = g + q\)  
+3. Evaluate  
+
+   \\[
+   \\delta_{st,total} = k_2 \\dfrac{w L_{eff}^4}{E_{c,eff} I_{ef}}
+   \\]
+
+---
+
+### Step 4 – Long-term deflection (Cl. 8.5.3.2)
+
+1. Sustained load  
+   \\(w_{sust} = g + \\psi_s q\\)  
+
+2. Short-term deflection from sustained load  
+
+   \\[
+   \\delta_{st,sust} = k_2 \\dfrac{w_{sust} L_{eff}^4}{E_{c,eff} I_{ef}}
+   \\]
+
+3. Creep/shrinkage multiplier  
+
+   \\[
+   k_{cs} = \\max[2 - 1.2(A_{sc}/A_{st}), 0.8]
+   \\]
+
+4. Additional long-term deflection  
+
+   \\[
+   \\delta_{LT,add} = k_{cs} \\delta_{st,sust}
+   \\]
+
+5. Total deflection  
+
+   \\[
+   \\delta_{total} = \\delta_{st,total} + \\delta_{LT,add}
+   \\]
+
+---
+
+### Step 5 – Serviceability checks
+
+1. Compare total deflection to limit:
+
+   \\[
+   \\delta_{total} \\le \\dfrac{L_{eff}}{(L/\\Delta)_{limit}}
+   \\]
+
+2. Optionally check deemed-to-conform span-depth ratio:
+
+   \\[
+   \\frac{L_{ef}}{d} \\le
+   \\left[
+   \\dfrac{k_1 (\\Delta/L_{ef}) b_{ef} E_{c,eff}}{k_2 F_{d,ef}}
+   \\right]^{1/3}
+   \\]
+
+3. Report **utilisation** and whether the span is **deemed to conform**.
+        """
+        )
+
+    # ---------- Deflected shape (like your original page) ----------
+    with tab_shape:
+        st.subheader("Deflected Shape (Illustrative – uses δ_total)")
+
+        x = np.linspace(0.0, L_mm, 200)
+        xi = x / L_mm
+        # simple parabolic shape scaled to δ_total
+        y_long = -delta_total * 4.0 * xi * (1.0 - xi)
+
+        fig, ax = plt.subplots()
+        ax.plot(x, y_long)
+        ax.set_xlabel("Span position x (mm)")
+        ax.set_ylabel("Deflection (mm)")
+        ax.axhline(0.0, linewidth=0.8)
+        ax.grid(True)
+
+        st.pyplot(fig)
 
 
     # ---------- Long-term ----------
@@ -774,4 +1000,5 @@ with caps on \(I_{ef,max}\) depending on \(\beta\).
         ax.grid(True)
 
         st.pyplot(fig)
+
 
