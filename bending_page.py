@@ -27,12 +27,9 @@ def _build_beam_3d_figure(b, D, L, Mu_star, phi_Mu_cap, c):
     """
     3D visualisation:
       - Concrete prism
-      - Longitudinal reo (layout matched to Inputs page)
+      - Longitudinal reo with consistent cover (matched to Inputs page intent)
       - Simple stirrups
       - Neutral axis plane
-
-    All inputs come from shared/session values so it stays in sync with the
-    Inputs tab.
     """
 
     # ---------- Basic sanity checks ----------
@@ -54,7 +51,7 @@ def _build_beam_3d_figure(b, D, L, Mu_star, phi_Mu_cap, c):
     if phi_Mu_cap <= 0.0 or D <= 0.0 or b <= 0.0 or L <= 0.0:
         return None
 
-    # ---------- Curvature + neutral axis depth (same logic as before) ----------
+    # ---------- Curvature + NA depth ----------
     eps_cu = 0.003
     phi_u = eps_cu / max(c, 1e-9)
 
@@ -68,213 +65,10 @@ def _build_beam_3d_figure(b, D, L, Mu_star, phi_Mu_cap, c):
     st.session_state["bending_phi_current"] = phi
     st.session_state["bending_c_current"] = c_now
 
-    # ---------- Reo + lig data from session state (same as Inputs) ----------
+    # ---------- Reo + lig data from session state ----------
     nb_bot = int(get_param("nb_bot", 4) or 0)
     db_bot = float(get_param("db_bot", 20.0) or 20.0)
-    nb_top = int(get_param("nb_top", 2) or 0)
-    db_top = float(get_param("db_top", 16.0) or 16.0)
-
-    cover_bot = float(get_param("cover_bot", 40.0) or 40.0)
-    cover_top = float(get_param("cover_top", 40.0) or 40.0)
-    # side cover: use Inputs local side cover if present, otherwise a sensible default
-    cover_side = float(
-        st.session_state.get("inputs_cover_side_local", min(cover_top, cover_bot))
-    )
-
-    rowgap_bot = float(get_param("rowgap_bot", 60.0) or 60.0)
-    rowgap_top = float(get_param("rowgap_top", 60.0) or 60.0)
-
-    lig_d = float(get_param("lig_d", 10.0) or 10.0)
-    lig_legs_raw = get_param("lig_legs", 2)
-    try:
-        lig_legs = int(lig_legs_raw or 0)
-    except Exception:
-        lig_legs = 0
-    s_lig = float(get_param("s_lig", 200.0) or 200.0)
-
-    traces: list[go.BaseTraceType] = []
-
-    # ---------- Concrete prism ----------
-    vx = np.array([0, L, L, 0, 0, L, L, 0])
-    vy = np.array([0, 0, b, b, 0, 0, b, b])
-    vz = np.array([0, 0, 0, 0, D, D, D, D])
-    tri_i = [0, 0, 0, 4, 4, 1, 5, 2, 6, 3, 7, 6]
-    tri_j = [1, 2, 3, 5, 7, 5, 6, 6, 7, 7, 4, 2]
-    tri_k = [2, 3, 0, 6, 4, 2, 7, 3, 4, 0, 5, 1]
-
-    traces.append(
-        go.Mesh3d(
-            x=vx,
-            y=vy,
-            z=vz,
-            i=tri_i,
-            j=tri_j,
-            k=tri_k,
-            color="#cccccc",
-            opacity=0.25,
-            flatshading=True,
-            hoverinfo="skip",
-            showscale=False,
-            name="Concrete",
-        )
-    )
-
-    # ---------- Helpers for reo layout (mirrors Inputs page logic) ----------
-    def _row_y_positions(nbars: int, bar_dia: float) -> list[float]:
-        """
-        Evenly space bars in a single row between side covers.
-        """
-        if nbars <= 0 or bar_dia <= 0:
-            return []
-        y_min = cover_side + 0.5 * bar_dia
-        y_max = b - cover_side - 0.5 * bar_dia
-        if y_max <= y_min:
-            mid = 0.5 * b
-            return [mid] * nbars
-        if nbars == 1:
-            return [0.5 * (y_min + y_max)]
-        return list(np.linspace(y_min, y_max, nbars))
-
-    def _layer_positions(
-        nbars: int, bar_dia: float, cover: float, rowgap: float, is_top: bool
-    ) -> list[tuple[float, float]]:
-        """
-        Return (y, z) pairs for bars in up to 2 rows:
-          - First row at cover
-          - Second row at cover ± rowgap if nbars > max_per_row
-        """
-        if nbars <= 0 or bar_dia <= 0:
-            return []
-
-        max_per_row = 5  # same teaching layout as Inputs page
-        n_row1 = min(nbars, max_per_row)
-        n_row2 = nbars - n_row1
-
-        # Row depths
-        if is_top:
-            z1 = cover + 0.5 * bar_dia
-            z2 = z1 + rowgap
-        else:
-            z1 = D - (cover + 0.5 * bar_dia)
-            z2 = z1 - rowgap
-
-        min_z = 0.5 * bar_dia + 5.0
-        max_z = D - 0.5 * bar_dia - 5.0
-
-        z1 = float(np.clip(z1, min_z, max_z))
-        z2 = float(np.clip(z2, min_z, max_z))
-
-        ys1 = _row_y_positions(n_row1, bar_dia)
-        positions: list[tuple[float, float]] = [(y, z1) for y in ys1]
-
-        if n_row2 > 0 and rowgap > 0.0:
-            ys2 = _row_y_positions(n_row2, bar_dia)
-            positions += [(y, z2) for y in ys2]
-
-        return positions
-
-    # ---------- Longitudinal bars ----------
-    max_bar_d = max(db_bot, db_top, 0.0)
-    line_w_base = 0.4  # scaling for line width
-
-    # Bottom layer: red (tension side for sagging)
-    bot_positions = _layer_positions(nb_bot, db_bot, cover_bot, rowgap_bot, is_top=False)
-    line_w_bot = max(2.0, abs(db_bot) * line_w_base)
-    for (yy, zz) in bot_positions:
-        traces.append(
-            go.Scatter3d(
-                x=[0, L],
-                y=[yy, yy],
-                z=[zz, zz],
-                mode="lines",
-                line=dict(width=line_w_bot, color="red"),
-                hoverinfo="skip",
-                showlegend=False,
-            )
-        )
-
-    # Top layer: blue
-    top_positions = _layer_positions(nb_top, db_top, cover_top, rowgap_top, is_top=True)
-    line_w_top = max(2.0, abs(db_top) * line_w_base)
-    for (yy, zz) in top_positions:
-        traces.append(
-            go.Scatter3d(
-                x=[0, L],
-                y=[yy, yy],
-                z=[zz, zz],
-                mode="lines",
-                line=dict(width=line_w_top, color="blue"),
-                hoverinfo="skip",
-                showlegend=False,
-            )
-        )
-
-    # ---------- Stirrups (simple rectangular hoops along length) ----------
-    if lig_d > 0 and s_lig > 0 and lig_legs >= 2:
-        s_eff = max(40.0, float(s_lig))
-        n_hoops = int(max(1, min(80, round(L / s_eff))))
-        xs = np.linspace(s_eff / 2.0, L - s_eff / 2.0, n_hoops)
-
-        y_left = cover_side
-        y_right = b - cover_side
-
-        z_top = cover_top + max(lig_d, 6.0)
-        z_bot = D - (cover_bot + max(lig_d, 6.0))
-
-        min_z = 5.0
-        max_z = D - 5.0
-        z_top_c = float(np.clip(z_top, min_z, max_z))
-        z_bot_c = float(np.clip(z_bot, min_z, max_z))
-
-        lw = max(1.5, abs(lig_d) * 0.35)
-
-        for x0 in xs:
-            Xs = [x0] * 5
-            Ys = [y_left, y_right, y_right, y_left, y_left]
-            Zs = [z_top_c, z_top_c, z_bot_c, z_bot_c, z_top_c]
-            traces.append(
-                go.Scatter3d(
-                    x=Xs,
-                    y=Ys,
-                    z=Zs,
-                    mode="lines",
-                    line=dict(width=lw, color="black"),
-                    hoverinfo="skip",
-                    showlegend=False,
-                )
-            )
-
-    # ---------- Neutral axis plane ----------
-    Xg, Yg = np.meshgrid(np.linspace(0, L, 2), np.linspace(0, b, 2))
-    Zg = np.full_like(Xg, c_now)
-    traces.append(
-        go.Surface(
-            x=Xg,
-            y=Yg,
-            z=Zg,
-            colorscale=[[0, "orange"], [1, "orange"]],
-            showscale=False,
-            opacity=0.55,
-            name="NA",
-        )
-    )
-
-    # ---------- Layout ----------
-    fig = go.Figure(data=traces)
-    fig.update_layout(
-        scene=dict(
-            xaxis_title="Length (mm)",
-            yaxis_title="Width (mm)",
-            zaxis_title="Depth from top (mm)",
-            zaxis=dict(autorange="reversed"),
-            aspectmode="data",
-            camera=dict(eye=dict(x=1.45, y=1.35, z=0.95)),
-        ),
-        margin=dict(l=0, r=0, t=10, b=0),
-        height=350,
-        showlegend=False,
-    )
-    return fig
+    nb_top = int(get_param("n
 
 
 
@@ -1471,5 +1265,6 @@ def render_bending():
 # ============================
 if __name__ == "__main__":
     render_bending()
+
 
 
