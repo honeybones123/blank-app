@@ -807,68 +807,68 @@ This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative 
     k_dg_display = locals().get("k_dg", float("nan"))
 
     if use_general_kv:
-        kv_formula_block = rf"""
+        kv_formula_block = f"""
 **General MCFT form (AS 3600 Cl. 8.2.4.2):**
 
 For *low* stirrup ratio $A_{{sv}}/s < (A_{{sv}}/s)_{{min}}$:
 
-$$\\large k_v = \\frac{{0.4}}{{1 + 1500\\varepsilon_x}} \\cdot \\frac{{1300}}{{1000 + k_{{dg}} d_v}}$$
+$$k_v = \\frac{{0.4}}{{1 + 1500\\varepsilon_x}} \\cdot \\frac{{1300}}{{1000 + k_{{dg}} d_v}}$$
 
 For *adequate* stirrups $A_{{sv}}/s \\ge (A_{{sv}}/s)_{{min}}$:
 
-$$\\large k_v = \\frac{{0.4}}{{1 + 1500\\varepsilon_x}}$$
+$$k_v = \\frac{{0.4}}{{1 + 1500\\varepsilon_x}}$$
 """
-        kv_sub_block = rf"""
+        kv_sub_block = f"""
 **Current case:** {kv_case}  
 
 - $\\varepsilon_x = {eps_x:.5f}$  
 - $k_{{dg}} \\approx {k_dg_display:.3f}$  
 - $d_v = {d_v:.1f}$ mm  
 
-$$\\large \\left(\\frac{{A_{{sv}}}}s\\right)_{{min}} = 0.08\\sqrt{{f'_c}}\\,\\frac{{b_v}}{{f_{{sy,v}}}} = {Asv_min_over_s:,.3f}\\ \\text{{mm}}^2/\\text{{mm}}$$
+$$(A_{{sv}}/s)_{{min}} = 0.08\\sqrt{{f'_c}} \\cdot \\frac{{b_v}}{{f_{{sy,v}}}} = {Asv_min_over_s:.3f}\\text{{ mm}}^2/\\text{{mm}}$$
 
-$$\\large \\frac{{A_{{sv}}}}s = {Asv_over_s:,.3f}\\ \\text{{mm}}^2/\\text{{mm}}$$
+$$A_{{sv}}/s = {Asv_over_s:.3f}\\text{{ mm}}^2/\\text{{mm}}$$
 
 Thus:
 
-$$\\large k_v = {k_v:.3f}$$
+$$k_v = {k_v:.3f}$$
 
 Strut angle (MCFT):
 
-$$\\large \\theta_v = 29 + 7000\\varepsilon_x = {theta_v_deg:.1f}^\\circ$$
+$$\\theta_v = 29 + 7000\\varepsilon_x = {theta_v_deg:.1f}°$$
 """
     else:
-        kv_formula_block = rf"""
+        kv_formula_block = f"""
 **Simplified non-prestressed form (AS 3600 Cl. 8.2.4.3):**
 
 If $A_{{sv}}/s < (A_{{sv}}/s)_{{min}}$:
 
-$$\\large k_v = \\min\\left(\\frac{{200}}{{1000 + 1.3 d_v}},\\ 0.10\\right)$$
+$$k_v = \\min\\left(\\frac{{200}}{{1000 + 1.3 d_v}}, 0.10\\right)$$
 
 Otherwise:
 
-$$\\large k_v = 0.15$$
+$$k_v = 0.15$$
 
 Strut angle is taken as:
 
-$$\\large \\theta_v = 36^\\circ$$
+$$\\theta_v = 36°$$
 """
-        kv_sub_block = rf"""
+        kv_sub_block = f"""
 **Current case:** {kv_case}  
 
 - $d_v = {d_v:.1f}$ mm  
 
-$$\\large \\left(\\frac{{A_{{sv}}}}s\\right)_{{min}} = 0.08\\sqrt{{f'_c}}\\,\\frac{{b_v}}{{f_{{sy,v}}}} = {Asv_min_over_s:,.3f}\\ \\text{{mm}}^2/\\text{{mm}}$$
+$$(A_{{sv}}/s)_{{min}} = 0.08\\sqrt{{f'_c}} \\cdot \\frac{{b_v}}{{f_{{sy,v}}}} = {Asv_min_over_s:.3f}\\text{{ mm}}^2/\\text{{mm}}$$
 
-$$\\large \\frac{{A_{{sv}}}}s = {Asv_over_s:,.3f}\\ \\text{{mm}}^2/\\text{{mm}}$$
+$$A_{{sv}}/s = {Asv_over_s:.3f}\\text{{ mm}}^2/\\text{{mm}}$$
 
 Hence:
 
-$$\\large k_v = {k_v:.3f},\\quad \\theta_v = {theta_v_deg:.1f}^\\circ$$
+$$k_v = {k_v:.3f}, \\quad \\theta_v = {theta_v_deg:.1f}°$$
 """
 
     calcbox(
-        rf"""
+        f"""
 *Purpose: Determine the shear parameters $k_v$ and $\\theta_v$ for use in $V_{{uc}}$ and web-crushing checks.*
 
 **Inputs:**
@@ -889,7 +889,7 @@ $$\\large k_v = {k_v:.3f},\\quad \\theta_v = {theta_v_deg:.1f}^\\circ$$
 **Result:**  
 
 - $k_v = {k_v:.3f}$  
-- $\\theta_v = {theta_v_deg:.1f}^\\circ$
+- $\\theta_v = {theta_v_deg:.1f}°$
 """
     )
 
@@ -925,7 +925,7 @@ $$\\large k_v = {k_v:.3f},\\quad \\theta_v = {theta_v_deg:.1f}^\\circ$$
     shear_ok = phi_Vu >= V_eq
 
     calcbox(
-        rf"""
+        f"""
 *Purpose: Combine concrete and steel contributions to shear strength and compare with demand $V_{{eq}}^*$.*
 
 **Inputs:**
@@ -933,7 +933,7 @@ $$\\large k_v = {k_v:.3f},\\quad \\theta_v = {theta_v_deg:.1f}^\\circ$$
 - $k_v = {k_v:.3f}$, $b_v = {b_v:.1f}$ mm, $d_v = {d_v:.1f}$ mm  
 - $f'_c = {fc:.1f}$ MPa (limited $\\sqrt{{f'_c}} = {sqrt_fc_limited:.3f}$ MPa)  
 - $A_{{sv}} = {Asv:.1f}$ mm², $s = {s:.1f}$ mm, $f_{{sy,v}} = {f_syv:.1f}$ MPa  
-- $\\theta_v = {theta_v_deg:.1f}^\\circ$  
+- $\\theta_v = {theta_v_deg:.1f}°$  
 - Axial/prestress: $P_v = {P_v:.1f}$ kN  
 - Demand: $V_{{eq}}^* = {V_eq:.1f}$ kN  
 
@@ -941,37 +941,37 @@ $$\\large k_v = {k_v:.3f},\\quad \\theta_v = {theta_v_deg:.1f}^\\circ$$
 
 **Concrete contribution (Cl. 8.2.4.1):**
 
-$$\\large V_{{uc}} = k_v b_v d_v \\sqrt{{f'_c}}$$
+$$V_{{uc}} = k_v b_v d_v \\sqrt{{f'_c}}$$
 
 **Substitution:**
 
-$$\\large V_{{uc}} = {k_v:.3f} \\times {b_v:.1f} \\times {d_v:.1f} \\times {sqrt_fc_limited:.3f} = {Vuc_kN:,.1f}\\ \\text{{kN}}$$
+$$V_{{uc}} = {k_v:.3f} \\times {b_v:.1f} \\times {d_v:.1f} \\times {sqrt_fc_limited:.3f} = {Vuc_kN:,.1f}\\text{{ kN}}$$
 
 ---
 
 **Steel contribution (Cl. 8.2.5.2(a)):**
 
-$$\\large V_{{us}} = \\left(\\frac{{A_{{sv}} f_{{sy,v}} d_v}}s\\right)\\cot \\theta_v$$
+$$V_{{us}} = \\left(\\frac{{A_{{sv}} f_{{sy,v}} d_v}}{{s}}\\right)\\cot \\theta_v$$
 
 **Substitution:**
 
-$$\\large V_{{us}} = \\left(\\frac{{{Asv:,.1f} \\times {f_syv:.1f} \\times {d_v:.1f}}}{{{s:.1f}}}\\right) \\cot {theta_v_deg:.1f}^\\circ = {Vus_kN:,.1f}\\ \\text{{kN}}$$
+$$V_{{us}} = \\left(\\frac{{{Asv:.1f} \\times {f_syv:.1f} \\times {d_v:.1f}}}{{{s:.1f}}}\\right) \\cot {theta_v_deg:.1f}° = {Vus_kN:,.1f}\\text{{ kN}}$$
 
 ---
 
 **Total sectional shear capacity (Cl. 8.2.3.1):**
 
-$$\\large V_u = V_{{uc}} + V_{{us}} + P_v$$
+$$V_u = V_{{uc}} + V_{{us}} + P_v$$
 
-$$\\large V_u = {Vuc_kN:,.1f} + {Vus_kN:,.1f} + {P_v:.1f} = {Vu_total_kN:,.1f}\\ \\text{{kN}}$$
+$$V_u = {Vuc_kN:,.1f} + {Vus_kN:,.1f} + {P_v:.1f} = {Vu_total_kN:,.1f}\\text{{ kN}}$$
 
 Design strength:
 
-$$\\large \\phi V_u = {phi:.2f} \\times {Vu_total_kN:,.1f} = {phi_Vu:,.1f}\\ \\text{{kN}}$$
+$$\\phi V_u = {phi:.2f} \\times {Vu_total_kN:,.1f} = {phi_Vu:,.1f}\\text{{ kN}}$$
 
 Demand:
 
-$$\\large V_{{eq}}^* = {V_eq:.1f}\\ \\text{{kN}}$$
+$$V_{{eq}}^* = {V_eq:.1f}\\text{{ kN}}$$
 
 ---
 
@@ -1024,13 +1024,13 @@ $$\\large V_{{eq}}^* = {V_eq:.1f}\\ \\text{{kN}}$$
         st.error("Web-crushing limit exceeded – revise section/ligs.")
 
     calcbox(
-        rf"""
+        f"""
 *Purpose: Check that combined shear + torsion does not exceed the web-crushing limit (Cl. 8.2.6).*
 
 **Inputs:**
 
 - $f'_c = {fc:.1f}$ MPa, $b_v = {b_v:.1f}$ mm, $d_v = {d_v:.1f}$ mm  
-- $\\theta_v = {theta_v_deg:.1f}^\\circ$, $\\theta_1 = {theta_1_deg:.1f}^\\circ$  
+- $\\theta_v = {theta_v_deg:.1f}°$, $\\theta_1 = {theta_1_deg:.1f}°$  
 - $P_v = {P_v:.1f}$ kN  
 - Actions: $V^* = {V_star:.1f}$ kN, $T^* = {T_star:.1f}$ kNm  
 - Torsion geometry: $u_h = {uh:.1f}$ mm, $A_{{oh}} = {A_oh:.1f}$ mm²  
@@ -1039,25 +1039,25 @@ $$\\large V_{{eq}}^* = {V_eq:.1f}\\ \\text{{kN}}$$
 
 **Web-crushing shear capacity (Cl. 8.2.6):**
 
-$$\\large V_{{u,\\max}} = 0.55 f'_c b_v d_v \\frac{{\\cot\\theta_v + \\cot\\theta_1}}{{1 + \\cot^2\\theta_v}} + P_v$$
+$$V_{{u,max}} = 0.55 f'_c b_v d_v \\frac{{\\cot\\theta_v + \\cot\\theta_1}}{{1 + \\cot^2\\theta_v}} + P_v$$
 
 **Substitution:**
 
-$$\\large V_{{u,\\max}} = {Vu_max_kN:,.1f}\\ \\text{{kN}}$$
+$$V_{{u,max}} = {Vu_max_kN:,.1f}\\text{{ kN}}$$
 
 ---
 
 **Combined shear + torsion demand:**
 
-$$\\large \\text{LHS} = \\sqrt{{\\left(\\frac{{V^*}}{{b_v d_v}}\\right)^2 + \\left(\\frac{{T^* u_h}}{{1.7 A_{{oh}}^2}}\\right)^2}}$$
+$$\\text{{LHS}} = \\sqrt{{\\left(\\frac{{V^*}}{{b_v d_v}}\\right)^2 + \\left(\\frac{{T^* u_h}}{{1.7 A_{{oh}}^2}}\\right)^2}}$$
 
 Substitution:
 
-$$\\large \\text{LHS} = {LHS:,.1f}$$
+$$\\text{{LHS}} = {LHS:,.1f}$$
 
 Design limit:
 
-$$\\large \\text{RHS} = \\frac{{\\phi V_{{u,\\max}}}}{{b_v d_v}} = {RHS:,.1f}$$
+$$\\text{{RHS}} = \\frac{{\\phi V_{{u,max}}}}{{b_v d_v}} = {RHS:,.1f}$$
 
 ---
 
