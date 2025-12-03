@@ -681,8 +681,6 @@ $$\\large d_v = {_fmt(d_v)}\\ \\text{{mm}}$$
         else " (mid-depth in **slight compression**, εₓ < 0)"
     )
 
-    st.write(f"$\\varepsilon_x = {eps_x:.5f}$" + sign_note)
-
     # ------------------------------
     #  Calc box with full Equation + substitution
     # ------------------------------
@@ -798,9 +796,6 @@ This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative 
 
     theta_v_rad = math.radians(theta_v_deg)
 
-    st.write(f"$k_v = {k_v:.3f}$")
-    st.write(f"$\\theta_v = {theta_v_deg:.1f}^\\circ$")
-
     # For the summary text inside the calcbox
     Asv_over_s = Asv / s
     Asv_min_over_s = 0.08 * math.sqrt(fc) * b_v / (f_syv or 1.0)
@@ -899,26 +894,12 @@ $$k_v = {k_v:.3f}, \\quad \\theta_v = {theta_v_deg:.1f}°$$
     st.markdown("---")
     st.markdown("### Step 6 – Concrete + steel shear strength and sectional check")
 
-    st.markdown("**Concrete shear strength $V_{uc}$ (Cl. 8.2.4.1)**")
-    st.latex(r"V_{uc} = k_v\, b_v d_v \sqrt{f'_c},\quad \sqrt{f'_c} \le 8.0\ \text{MPa}")
-
     sqrt_fc_limited = min(math.sqrt(fc), 8.0)
     Vuc_N = k_v * b_v * d_v * sqrt_fc_limited
     Vuc_kN = Vuc_N / 1e3
 
-    st.write(f"$\\sqrt{{f'_c}}$ (limited) = {sqrt_fc_limited:.3f} MPa")
-    st.write(f"$V_{{uc}} = {Vuc_kN:,.1f}\\ \\text{{kN}}$")
-
-    st.markdown("**Steel shear contribution $V_{us}$ (Cl. 8.2.5.2(a))**")
-    st.latex(r"V_{us} = \left(\frac{A_{sv} f_{sy,v} d_v}{s}\right)\cot \theta_v")
-
     Vus_N = (Asv * f_syv * d_v / s) * cot(theta_v_rad)
     Vus_kN = Vus_N / 1e3
-
-    st.write(f"$V_{{us}} = {Vus_kN:,.1f}\\ \\text{{kN}}$")
-
-    st.markdown("**Total sectional shear strength (Cl. 8.2.3.1)**")
-    st.latex(r"V_u = V_{uc} + V_{us} + P_v,\quad \phi V_u \ge V_{eq}^*")
 
     Vu_total_kN = Vuc_kN + Vus_kN + P_v
     phi_Vu = phi * Vu_total_kN
@@ -988,11 +969,6 @@ $$V_{{eq}}^* = {V_eq:.1f}\\text{{ kN}}$$
     st.markdown("---")
     st.markdown("### Step 7 – Check web-crushing strength (AS 3600 Cl. 8.2.6)")
 
-    st.latex(
-        r"V_{u,\max} = 0.55 f'_c b_v d_v "
-        r"\frac{\cot\theta_v + \cot\theta_1}{1 + \cot^2\theta_v} + P_v"
-    )
-
     theta_1_deg = 90.0
     theta_1_rad = math.radians(theta_1_deg)
     cot_theta_v = cot(theta_v_rad)
@@ -1008,8 +984,6 @@ $$V_{{eq}}^* = {V_eq:.1f}\\text{{ kN}}$$
         + P_v * 1e3
     )
     Vu_max_kN = Vu_max_N / 1e3
-
-    st.write(f"$V_{{u,\\max}}$ (web crushing) = {Vu_max_kN:,.1f} kN")
 
     V_star_N = V_star * 1e3
     term_V = V_star_N / (b_v * d_v or 1.0)
