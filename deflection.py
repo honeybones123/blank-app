@@ -508,11 +508,11 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     )
 
     # ---------- Short-term ----------
-    with tab_short:
-        st.subheader("Short-term deflection – AS 3600 Cl. 8.5.3.1")
+with tab_short:
+    st.subheader("Short-term deflection – AS 3600 Cl. 8.5.3.1")
 
-        calcbox(
-            r"""
+    calcbox(
+        r"""
 **Formula**
 
 \[
@@ -529,27 +529,25 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
 
 where \(w = g + q = %.2f \text{ kN/m}\).
 """
-            % (
-                results["k2"],
-                results["w_total"],
-                L_mm,
-                Ec,
-                Ief,
-                delta_short_total,
-                results["w_total"],
-            )
+        % (
+            results["k2"],
+            results["w_total"],
+            L_mm,
+            Ec,
+            Ief,
+            delta_short_total,
+            results["w_total"],
         )
+    )
 
-        st.markdown("#### Key inputs")
-        st.write(f"- Effective span \(L_{{eff}}\) = **{L_mm:.0f} mm**")
-        st.write(f"- Total service load \(w = g + q\) = **{results['w_total']:.2f} kN/m**")
-        st.write(f"- \(k_2\) (from support type) = **{results['k2']:.5f}**")
-        st.write(f"- \(E_{c,eff}\) = **{Ec:.0f} MPa**")
-        st.write(f"- \(I_{ef}\) = **{Ief:,.3e} mm⁴**")
+    st.markdown("#### Key inputs")
 
-        st.markdown("#### Result")
-        st.write(f"Short-term deflection due to **total service load**:")
-        st.write(f"**δ_st,total = {delta_short_total:.2f} mm**  →  {L_over_delta_short}")
+    st.write(rf"- $L_{{eff}}$ = **{L_mm:.0f} mm**")
+    st.write(rf"- $w = g + q$ = **{results['w_total']:.2f} kN/m**")
+    st.write(rf"- $k_2$ (from support type) = **{results['k2']:.5f}**")
+    st.write(rf"- $E_{{c,eff}}$ = **{Ec:.0f} MPa**")
+    st.write(rf"- $I_{{ef}}$ = **{Ief:,.3e} \,\text{mm}^4$**")
+
 
     # ---------- Long-term ----------
     with tab_long:
@@ -776,3 +774,4 @@ with caps on \(I_{ef,max}\) depending on \(\beta\).
         ax.grid(True)
 
         st.pyplot(fig)
+
