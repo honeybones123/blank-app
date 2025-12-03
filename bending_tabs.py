@@ -197,7 +197,7 @@ def render_uls_tab(top_results, b, D, fc, fsy, Ast, d):
 
         with col_calc_11:
             calcbox(
-                rf"""
+                f"""
 *Purpose: Determine the ULS rectangular stress-block factors $\\alpha_2$ and $\\gamma$ for the given concrete strength.*  
 
 **Inputs:**  
@@ -273,7 +273,7 @@ $\\alpha_2 = {alpha2_uls:.3f}$, $\\gamma = {gamma_uls:.3f}$ (to be used in Secti
         C_kN = C_N / 1000.0 if C_N is not None else float("nan")
 
         calcbox(
-            rf"""
+            f"""
 *Purpose: Calculate the resultant concrete compressive force $C$ at ULS.*  
 
 **Inputs:**  
@@ -322,7 +322,7 @@ Concrete compression resultant $C \\approx {C_kN:.1f}$ kN acting at the centroid
         st.subheader("1.3 Steel area and tension force $T$")
 
         calcbox(
-            rf"""
+            f"""
 *Purpose: Relate the provided tensile reinforcement area to the tension force $T$ at ULS.*  
 
 **Inputs:**  
@@ -374,7 +374,7 @@ Tension force at ULS: $T \\approx {T/1000.0:.1f}$ kN.
 
         with col_calc_14:
             calcbox(
-                rf"""
+                f"""
 *Purpose: Determine the neutral axis depth $d_n$ and corresponding block depth $a$ from force equilibrium.*  
 
 **Inputs:**  
@@ -468,7 +468,7 @@ $ d_n = {dn:.1f}$ mm, $ a = {a_uls:.1f}$ mm.
         ku = dn / d if d else float("nan")
 
         calcbox(
-            rf"""
+            f"""
 *Purpose: Express the neutral axis depth as a non-dimensional ratio $k_u$.*  
 
 **Inputs:**  
@@ -511,7 +511,7 @@ Neutral axis ratio $k_u = {ku:.3f}$.
 
         with col_calc_16:
             calcbox(
-                rf"""
+                f"""
 *Purpose: Compute the internal lever arm $z$, nominal moment $M_u$ and design moment $\\phi M_{{u,cap}}$.*  
 
 **Inputs:**  
@@ -610,7 +610,7 @@ def render_min_strength_tab(top_results, b, D, fc, fsy, Ast):
     # 2.1 f_ct,f
     st.subheader("2.1 Concrete flexural tensile strength $f_{{ct,f}}$")
     calcbox(
-        rf"""
+        f"""
 *Purpose: Estimate the concrete flexural tensile strength $f_{{ct,f}}$.*  
 
 **Inputs:**  
@@ -643,7 +643,7 @@ $f_{{ct,f}} \\approx {fctf_as:.3f}$ MPa.
     # 2.2 Z_g
     st.subheader("2.2 Gross section modulus $Z_g$")
     calcbox(
-        rf"""
+        f"""
 *Purpose: Calculate the gross section modulus $Z_g$ of the rectangular section.*  
 
 **Inputs:**  
@@ -677,7 +677,7 @@ $Z_g = {Zg:,.3e}\\ \\text{{mm}}^3$.
     # 2.3 M_cr
     st.subheader("2.3 Cracking moment $M_{{cr}}$")
     calcbox(
-        rf"""
+        f"""
 *Purpose: Determine the cracking moment $M_{{cr}}$ for the section.*  
 
 **Inputs:**  
@@ -711,7 +711,7 @@ $M_{{cr}} \\approx {Mcr_as:.2f}$ kNm.
     # 2.4 Minimum required capacity (1.2 Mcr)
     st.subheader("2.4 Minimum required design capacity $(M_{{u,cap}})_{{min}}$")
     calcbox(
-        rf"""
+        f"""
 *Purpose: Check the minimum required design capacity relative to cracking moment.*  
 
 **Inputs:**  
@@ -745,7 +745,7 @@ Minimum required design capacity $(M_{{u,cap}})_{{min}} = {Mu_min_as:.2f}$ kNm.
     # 2.5 Minimum tensile reinforcement
     st.subheader("2.5 Minimum tensile reinforcement $A_{{st,min}}$")
     calcbox(
-        rf"""
+        f"""
 *Purpose: Calculate minimum tensile reinforcement according to AS 3600 style rules.*  
 
 **Inputs:**  
@@ -897,7 +897,7 @@ def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
     st.subheader("3.1 Modular ratio $n = E_s / E_c$")
 
     calcbox(
-        rf"""
+        f"""
 *Purpose: Compute the modular ratio and transformed steel areas for each layer.*  
 
 **Inputs:**  
@@ -1032,7 +1032,7 @@ Modular ratio $n = {Es/Ec:.2f}$ (used to compute $nA_s$ in the table below).
 
     with col_32_calc:
         calcbox(
-            rf"""
+            f"""
 *Purpose: Find the cracked-section neutral axis depth $d_n$ by enforcing equilibrium of transformed areas.*  
 
 **Concept:**  
@@ -1103,7 +1103,7 @@ $$
     Icr = I_conc + I_t + I_c
 
     calcbox(
-        rf"""
+        f"""
 *Purpose: Compute the cracked transformed moment of inertia $I_{{cr}}$ about the neutral axis.*  
 
 **Formula:**
@@ -1145,7 +1145,7 @@ Cracked transformed inertia $I_{{cr}} = {Icr:,.2f}\\ \\text{{mm}}^4$.
     kappa = Ms_Nmm / (Ec * Icr) if Ec and Icr else 0.0
 
     calcbox(
-        rf"""
+        f"""
 *Purpose: Evaluate curvature at the service moment using the cracked-section stiffness.*  
 
 **Inputs:**  
@@ -1200,7 +1200,7 @@ Curvature at service: $\\kappa = {kappa:.3e}\\ \\text{{mm}}^{{-1}}$.
 
     with col_sls_calc:
         calcbox(
-            rf"""
+            f"""
 *Purpose: Compute the linear strain distribution at SLS for key depths.*  
 
 **Formula:**
@@ -1278,7 +1278,7 @@ See table for $\\varepsilon(y)$ at the top fibre, each steel layer, and bottom f
     df_steel = pd.DataFrame(steel_rows)
 
     calcbox(
-        rf"""
+        f"""
 *Purpose: Derive steel stresses at SLS for each reinforcement layer.*  
 
 **Formulae:**
@@ -1324,7 +1324,7 @@ See table for layer-by-layer SLS steel strains and stresses.
 
     if fs_tension is not None:
         calcbox(
-            rf"""
+            f"""
 *Purpose: Identify the controlling SLS steel stress for use in crack-width checks.*  
 
 The **critical tension steel stress** at SLS is taken as the stress in the
