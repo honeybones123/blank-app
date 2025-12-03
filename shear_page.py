@@ -42,6 +42,8 @@ blockquote {
   border-radius: 0 0.35rem 0.35rem 0 !important;
   color: #1a1a1a !important;
   opacity: 1 !important;
+  font-size: 0.9rem !important;
+  line-height: 1.35 !important;
 }
 blockquote * {
   color: #1a1a1a !important;
@@ -49,7 +51,6 @@ blockquote * {
 }
 blockquote p {
   margin-bottom: 0.5rem !important;
-  color: #1a1a1a !important;
 }
 blockquote p:last-child {
   margin-bottom: 0 !important;
@@ -67,8 +68,8 @@ def calcbox(md: str):
     # Convert \(...\) to $...$ for inline math
     converted = converted.replace("\\(", "$").replace("\\)", "$")
     # Convert to blockquote format - prefix each line with >
-    lines = converted.strip().split('\n')
-    blockquote = '\n'.join('> ' + line for line in lines)
+    lines = converted.strip().split("\n")
+    blockquote = "\n".join("> " + line for line in lines)
     # Use native markdown which supports LaTeX
     st.markdown(blockquote)
 
@@ -208,7 +209,7 @@ summary can show shear utilisation.
 
         A_st = st.number_input(
             "A_st (mm²) – non-prestressed tension steel",
-            value=float(4 * (math.pi * 20**2 / 4)),
+            value=float(4 * (math.pi * 20 ** 2 / 4)),
         )
         A_pt = st.number_input(
             "A_pt (mm²) – prestressing steel",
@@ -311,7 +312,7 @@ summary can show shear utilisation.
 
     sqrt_fc = math.sqrt(fc)
     denom = 0.33 * sqrt_fc
-    Tcr_Nmm = 0.33 * sqrt_fc * (A_cp**2) / u_c * math.sqrt(
+    Tcr_Nmm = 0.33 * sqrt_fc * (A_cp ** 2) / u_c * math.sqrt(
         1 + (sigma_cp / denom if denom > 0 else 0.0)
     )
     Tcr_kNm = Tcr_Nmm / 1e6
@@ -330,10 +331,10 @@ summary can show shear utilisation.
 
 **Inputs:**
 
-- Section: $b = {b:.0f}$ mm, $D = {D:.0f}$ mm
-- Derived: $A_{{cp}} = bD = {A_cp:.0f}$ mm², $u_c = 2(b + D) = {u_c:.0f}$ mm
-- Concrete: $f'_c = {fc:.1f}$ MPa, $\\sigma_{{cp}} = {sigma_cp:.2f}$ MPa
-- Torsion geometry: $A_o = 0.9 A_{{cp}} = {Ao:.0f}$ mm², $u_h = {uh:.0f}$ mm
+- Section: $b = {b:.0f}$ mm, $D = {D:.0f}$ mm  
+- Derived: $A_{{cp}} = bD = {A_cp:.0f}$ mm², $u_c = 2(b + D) = {u_c:.0f}$ mm  
+- Concrete: $f'_c = {fc:.1f}$ MPa, $\\sigma_{{cp}} = {sigma_cp:.2f}$ MPa  
+- Torsion geometry: $A_o = 0.9 A_{{cp}} = {Ao:.0f}$ mm², $u_h = {uh:.0f}$ mm  
 
 ---
 
@@ -343,15 +344,15 @@ $$\\large T_{{cr}} = 0.33\\sqrt{{f'_c}} \\cdot \\frac{{A_{{cp}}^2}}{{u_c}} \\cdo
 
 **Substitution:**
 
-$$\\large T_{{cr}} = 0.33\\sqrt{{{fc:.1f}}} \\cdot \\frac{{{A_cp:.0f}^2}}{{{u_c:.0f}}} \\cdot \\sqrt{{1 + \\frac{{{sigma_cp:.2f}}}{{0.33\\sqrt{{{fc:.1f}}}}}}} = {Tcr_kNm:,.1f} \\text{{ kNm}}$$
+$$\\large T_{{cr}} = 0.33\\sqrt{{{fc:.1f}}} \\cdot \\frac{{{A_cp:.0f}^2}}{{{u_c:.0f}}} \\cdot \\sqrt{{1 + \\frac{{{sigma_cp:.2f}}}{{0.33\\sqrt{{{fc:.1f}}}}}}} = {Tcr_kNm:,.1f}\\ \\text{{kNm}}$$
 
 ---
 
 **Result:**
 
-- Limit: $0.25 \\phi T_{{cr}} = 0.25 \\times {phi:.2f} \\times {Tcr_kNm:,.1f} = {torsion_required_limit:,.1f}$ kNm
-- Demand: $T^* = {T_star:.1f}$ kNm
-- Condition: $T^* {step1_req} 0.25 \\phi T_{{cr}}$
+- Limit: $0.25 \\phi T_{{cr}} = 0.25 \\times {phi:.2f} \\times {Tcr_kNm:,.1f} = {torsion_required_limit:,.1f}$ kNm  
+- Demand: $T^* = {T_star:.1f}$ kNm  
+- Condition: $T^* {step1_req} 0.25 \\phi T_{{cr}}$  
 - **Conclusion: torsion design is {step1_text}.**
 """
     )
@@ -372,7 +373,7 @@ $$\\large T_{{cr}} = 0.33\\sqrt{{{fc:.1f}}} \\cdot \\frac{{{A_cp:.0f}^2}}{{{u_c:
         # --- Full equivalent shear including torsion ---
         torsion_eq_N = 0.9 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
         torsion_eq_kN = torsion_eq_N / 1e3
-        V_eq = math.sqrt(V_star**2 + torsion_eq_kN**2)
+        V_eq = math.sqrt(V_star ** 2 + torsion_eq_kN ** 2)
 
         calcbox(
             f"""
@@ -380,9 +381,9 @@ $$\\large T_{{cr}} = 0.33\\sqrt{{{fc:.1f}}} \\cdot \\frac{{{A_cp:.0f}^2}}{{{u_c:
 
 **Inputs:**
 
-- Shear demand: $V^* = {V_star:.1f}$ kN
-- Torsion: $T^* = {T_star:.1f}$ kNm
-- Torsion geometry: $u_h = {uh:.0f}$ mm, $A_o = {Ao:.0f}$ mm²
+- Shear demand: $V^* = {V_star:.1f}$ kN  
+- Torsion: $T^* = {T_star:.1f}$ kNm  
+- Torsion geometry: $u_h = {uh:.0f}$ mm, $A_o = {Ao:.0f}$ mm²  
 
 ---
 
@@ -394,15 +395,15 @@ $$\\large V_{{eq}}^* = \\sqrt{{(V^*)^2 + V_{{t,eq}}^2}}$$
 
 **Substitution:**
 
-$$\\large V_{{t,eq}} = 0.9 \\cdot \\frac{{{T_star:.1f} \\times 10^6 \\times {uh:.0f}}}{{2 \\times {Ao:.0f}}} = {torsion_eq_kN:.1f} \\text{{ kN}}$$
+$$\\large V_{{t,eq}} = 0.9 \\cdot \\frac{{{T_star:.1f} \\times 10^6 \\times {uh:.0f}}}{{2 \\times {Ao:.0f}}} = {torsion_eq_kN:.1f}\\ \\text{{kN}}$$
 
-$$\\large V_{{eq}}^* = \\sqrt{{({V_star:.1f})^2 + ({torsion_eq_kN:.1f})^2}} = {V_eq:.1f} \\text{{ kN}}$$
+$$\\large V_{{eq}}^* = \\sqrt{{({V_star:.1f})^2 + ({torsion_eq_kN:.1f})^2}} = {V_eq:.1f}\\ \\text{{kN}}$$
 
 ---
 
 **Result:**
 
-- Torsion is included as an equivalent shear.
+- Torsion is included as an equivalent shear.  
 - **$V_{{eq}}^* = {V_eq:.1f}$ kN** is used in Steps 4–7.
 """
         )
@@ -418,8 +419,8 @@ $$\\large V_{{eq}}^* = \\sqrt{{({V_star:.1f})^2 + ({torsion_eq_kN:.1f})^2}} = {V
 
 **Inputs:**
 
-- Shear demand: $V^* = {V_star:.1f}$ kN
-- Torsion: $T^* = {T_star:.1f}$ kNm (from Step 1, torsion design is not required)
+- Shear demand: $V^* = {V_star:.1f}$ kN  
+- Torsion: $T^* = {T_star:.1f}$ kNm (from Step 1, torsion design is not required)  
 
 ---
 
@@ -433,20 +434,16 @@ $$\\large V_{{eq}}^* = V^*$$
 
 **Substitution:**
 
-$$\\large V_{{eq}}^* = V^* = {V_eq:.1f} \\text{{ kN}}$$
+$$\\large V_{{eq}}^* = V^* = {V_eq:.1f}\\ \\text{{kN}}$$
 
 ---
 
 **Result:**
 
-- Torsion is not treated as a design action.
+- Torsion is not treated as a design action.  
 - **$V_{{eq}}^* = {V_eq:.1f}$ kN** is used in Steps 4–7.
 """
         )
-
-
-
-
 
     # =====================================================
     # 4. STEP 3 — EFFECTIVE SECTION & SHEAR REINFORCEMENT
@@ -459,7 +456,7 @@ $$\\large V_{{eq}}^* = V^* = {V_eq:.1f} \\text{{ kN}}$$
     legs = legs or 2.0
     s = s_lig or 200.0
 
-    Asv = legs * math.pi * lig_d**2 / 4.0
+    Asv = legs * math.pi * lig_d ** 2 / 4.0
     f_syv = fsy
 
     b_v = b - k_d * sum_duct
@@ -474,10 +471,10 @@ $$\\large V_{{eq}}^* = V^* = {V_eq:.1f} \\text{{ kN}}$$
 
 **Inputs:**
 
-- Section geometry: $b = {_fmt(b)}$ mm, $D = {_fmt(D)}$ mm, $d = {_fmt(d)}$ mm
-- Transverse reinforcement: $d_{{lig}} = {_fmt(lig_d)}$ mm, $n_{{legs}} = {_fmt(legs, 0)}$, $s_{{lig}} = {_fmt(s)}$ mm, $f_{{sy,v}} = {_fmt(f_syv)}$ MPa
-- Ducts in web: $\\sum d_{{duct}} = {_fmt(sum_duct)}$ mm, $k_d = {_fmt(k_d)}$
-- Shear model: $k_v$ method = {method}
+- Section geometry: $b = {_fmt(b)}$ mm, $D = {_fmt(D)}$ mm, $d = {_fmt(d)}$ mm  
+- Transverse reinforcement: $d_{{lig}} = {_fmt(lig_d)}$ mm, $n_{{legs}} = {_fmt(legs, 0)}$, $s_{{lig}} = {_fmt(s)}$ mm, $f_{{sy,v}} = {_fmt(f_syv)}$ MPa  
+- Ducts in web: $\\sum d_{{duct}} = {_fmt(sum_duct)}$ mm, $k_d = {_fmt(k_d)}$  
+- Shear model: $k_v$ method = {method}  
 
 ---
 
@@ -487,9 +484,9 @@ $$\\large A_{{sv}} = n_{{legs}} \\cdot \\frac{{\\pi d_{{lig}}^2}}{{4}}$$
 
 **Substitution:**
 
-$$\\large A_{{sv}} = {_fmt(legs, 0)} \\cdot \\frac{{\\pi \\times {_fmt(lig_d)}^2}}{{4}} = {_fmt(Asv)} \\text{{ mm}}^2$$
+$$\\large A_{{sv}} = {_fmt(legs, 0)} \\cdot \\frac{{\\pi \\times {_fmt(lig_d)}^2}}{{4}} = {_fmt(Asv)}\\ \\text{{mm}}^2$$
 
-Stirrups at spacing: $s_{{lig}} = {_fmt(s)}$ mm
+Stirrups at spacing: $s_{{lig}} = {_fmt(s)}$ mm  
 
 ---
 
@@ -499,7 +496,7 @@ $$\\large b_v = b - k_d \\sum d_{{duct}}$$
 
 **Substitution:**
 
-$$\\large b_v = {_fmt(b)} - {_fmt(k_d)} \\times {_fmt(sum_duct)} = {_fmt(b_v)} \\text{{ mm}}$$
+$$\\large b_v = {_fmt(b)} - {_fmt(k_d)} \\times {_fmt(sum_duct)} = {_fmt(b_v)}\\ \\text{{mm}}$$
 
 ---
 
@@ -509,18 +506,18 @@ $$\\large d_v = \\max(0.72D,\\ 0.9d)$$
 
 **Substitution:**
 
-$0.72D = 0.72 \\times {_fmt(D)} = {_fmt(dv_1)}$ mm
+$0.72D = 0.72 \\times {_fmt(D)} = {_fmt(dv_1)}$ mm  
 
-$0.9d = 0.9 \\times {_fmt(d)} = {_fmt(dv_2)}$ mm
+$0.9d = 0.9 \\times {_fmt(d)} = {_fmt(dv_2)}$ mm  
 
-$$\\large d_v = {_fmt(d_v)} \\text{{ mm}}$$
+$$\\large d_v = {_fmt(d_v)}\\ \\text{{mm}}$$
 
 ---
 
 **Result:**
 
-- $A_{{sv}} = {_fmt(Asv)}$ mm² with stirrups at $s_{{lig}} = {_fmt(s)}$ mm
-- $b_v = {_fmt(b_v)}$ mm, $d_v = {_fmt(d_v)}$ mm
+- $A_{{sv}} = {_fmt(Asv)}$ mm² with stirrups at $s_{{lig}} = {_fmt(s)}$ mm  
+- $b_v = {_fmt(b_v)}$ mm, $d_v = {_fmt(d_v)}$ mm  
 
 *(These values are used in Step 4.)*
 """
@@ -648,7 +645,7 @@ $$\\large d_v = {_fmt(d_v)} \\text{{ mm}}$$
     Vprime_N = Vprime_kN * 1e3
 
     torsion_N = 0.97 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
-    sqrt_inner = math.sqrt(Vprime_N**2 + torsion_N**2)
+    sqrt_inner = math.sqrt(Vprime_N ** 2 + torsion_N ** 2)
 
     # Axial / prestress
     N_star_N = 0.5 * N_star * 1e3
@@ -679,8 +676,9 @@ $$\\large d_v = {_fmt(d_v)} \\text{{ mm}}$$
     eps_x = max(-0.0002, min(eps_x_raw, 0.003))
 
     sign_note = (
-        " (mid-depth in **tension**, εₓ ≥ 0)" if eps_x >= 0 else
-        " (mid-depth in **slight compression**, εₓ < 0)"
+        " (mid-depth in **tension**, εₓ ≥ 0)"
+        if eps_x >= 0
+        else " (mid-depth in **slight compression**, εₓ < 0)"
     )
 
     st.write(f"$\\varepsilon_x = {eps_x:.5f}$" + sign_note)
@@ -695,11 +693,11 @@ $$\\large d_v = {_fmt(d_v)} \\text{{ mm}}$$
 $\\varepsilon_{{x,1}} = {eps_x_1:.5f} < 0$, mid-depth is in slight compression.  
 AS 3600 allows εₓ to be taken as 0 or recalculated with **Equation (2)** including the concrete stiffness term:
 
-$$\\varepsilon_{{x,2}} = \\frac{{|M^*|/d_v + |V^*| - P_v + 0.5N^* - A_{{pt}} f_{{po}}}}{{2(E_s A_{{st}} + E_p A_{{pt}} + E_c A_{{ct}})}}$$
+$$\\large \\varepsilon_{{x,2}} = \\frac{{|M^*|/d_v + |V^*| - P_v + 0.5N^* - A_{{pt}} f_{{po}}}}{{2(E_s A_{{st}} + E_p A_{{pt}} + E_c A_{{ct}})}}$$
 
 Substituting the derived numerator and denominator:
 
-$$\\varepsilon_{{x,2}} = \\frac{{{numerator_2:,.0f}}}{{{denom2:,.0f}}} = {eps_x_2:.5f}$$
+$$\\large \\varepsilon_{{x,2}} = \\frac{{{numerator_2:,.0f}}}{{{denom2:,.0f}}} = {eps_x_2:.5f}$$
 """
 
     calcbox(
@@ -708,11 +706,11 @@ $$\\varepsilon_{{x,2}} = \\frac{{{numerator_2:,.0f}}}{{{denom2:,.0f}}} = {eps_x_
 
 **Inputs:**
 
-- Shear depth: $d_v = {_fmt(d_v)}$ mm
-- Actions: $M^* = {_fmt(M_star)}$ kNm, $V^* = {_fmt(V_star)}$ kN, $P_v = {_fmt(P_v)}$ kN, $N^* = {_fmt(N_star)}$ kN, $T^* = {_fmt(T_star)}$ kNm
-- Material stiffness: $E_s = {_fmt(Es,0)}$ MPa, $E_p = {_fmt(Ep,0)}$ MPa
-- Steel areas: $A_{{st}} = {_fmt(A_st,1)}$ mm², $A_{{pt}} = {_fmt(A_pt,1)}$ mm², $f_{{po}} = {_fmt(f_po)}$ MPa
-- Torsion geometry: $u_h = {_fmt(uh)}$ mm, $A_o = {_fmt(Ao)}$ mm²
+- Shear depth: $d_v = {_fmt(d_v)}$ mm  
+- Actions: $M^* = {_fmt(M_star)}$ kNm, $V^* = {_fmt(V_star)}$ kN, $P_v = {_fmt(P_v)}$ kN, $N^* = {_fmt(N_star)}$ kN, $T^* = {_fmt(T_star)}$ kNm  
+- Material stiffness: $E_s = {_fmt(Es,0)}$ MPa, $E_p = {_fmt(Ep,0)}$ MPa  
+- Steel areas: $A_{{st}} = {_fmt(A_st,1)}$ mm², $A_{{pt}} = {_fmt(A_pt,1)}$ mm², $f_{{po}} = {_fmt(f_po)}$ MPa  
+- Torsion geometry: $u_h = {_fmt(uh)}$ mm, $A_o = {_fmt(Ao)}$ mm²  
 
 ---
 
@@ -720,31 +718,25 @@ $$\\varepsilon_{{x,2}} = \\frac{{{numerator_2:,.0f}}}{{{denom2:,.0f}}} = {eps_x_
 
 *Moment term:*
 
-$$|M^*|/d_v = \\frac{{|{M_star:.1f}| \\times 10^6}}{{{d_v:.1f}}} = {term_M:,.0f} \\text{{ N}}$$
-
-&nbsp;
+$$\\large |M^*|/d_v = \\frac{{|{M_star:.1f}| \\times 10^6}}{{{d_v:.1f}}} = {term_M:,.0f}\\ \\text{{N}}$$
 
 *Shear + torsion term:*
 
-- $V' = |V^*| - P_v = |{V_star:.1f}| - {P_v:.1f} = {Vprime_kN:.1f}$ kN  $= {Vprime_N:,.0f}$ N
-- $0.97 T^* u_h / (2A_o) = {torsion_N:,.0f}$ N
+- $V' = |V^*| - P_v = |{V_star:.1f}| - {P_v:.1f} = {Vprime_kN:.1f}$ kN  $= {Vprime_N:,.0f}$ N  
+- $0.97 T^* u_h / (2A_o) = {torsion_N:,.0f}$ N  
 
-$$\\sqrt{{V'^{{2}} + (0.97 T^* u_h / 2A_o)^2}} = \\sqrt{{{Vprime_N:,.0f}^2 + {torsion_N:,.0f}^2}} = {sqrt_inner:,.0f} \\text{{ N}}$$
-
-&nbsp;
+$$\\large \\sqrt{{V'^{{2}} + (0.97 T^* u_h / 2A_o)^2}} = \\sqrt{{{Vprime_N:,.0f}^2 + {torsion_N:,.0f}^2}} = {sqrt_inner:,.0f}\\ \\text{{N}}$$
 
 *Axial / prestress:*
 
-- $0.5N^* = 0.5 \\times {N_star:.1f} \\times 10^3 = {N_star_N:,.0f}$ N
-- $A_{{pt}} f_{{po}} = {A_pt:.1f} \\times {f_po:.1f} = {A_pt_fpo_N:,.0f}$ N
+- $0.5N^* = 0.5 \\times {N_star:.1f} \\times 10^3 = {N_star_N:,.0f}$ N  
+- $A_{{pt}} f_{{po}} = {A_pt:.1f} \\times {f_po:.1f} = {A_pt_fpo_N:,.0f}$ N  
 
 ---
 
 **Formula (AS 3600 Cl. 8.2.4.2.2(1)) – mid-depth in tension (εₓ ≥ 0):**
 
-$$\\huge \\varepsilon_{{x,1}} = \\frac{{|M^*|/d_v + \\sqrt{{V'^{{2}} + (0.97 T^* u_h / 2A_o)^2}} + 0.5N^* - A_{{pt}} f_{{po}}}}{{2(E_s A_{{st}} + E_p A_{{pt}})}}$$
-
-&nbsp;
+$$\\large \\varepsilon_{{x,1}} = \\frac{{|M^*|/d_v + \\sqrt{{V'^{{2}} + (0.97 T^* u_h / 2A_o)^2}} + 0.5N^* - A_{{pt}} f_{{po}}}}{{2(E_s A_{{st}} + E_p A_{{pt}})}}$$
 
 **Substitution:**
 
@@ -758,11 +750,11 @@ $$\\large \\varepsilon_{{x,1}} = \\frac{{{numerator_1:,.0f}}}{{{denom1:,.0f}}} =
 
 **Result:**
 
-- Governing equation: **{eq_used}**
-- Raw strain: $\\varepsilon_x = {eps_x_raw:.5f}$
+- Governing equation: **{eq_used}**  
+- Raw strain: $\\varepsilon_x = {eps_x_raw:.5f}$  
 - After applying AS 3600 limits $[-2.0 \\times 10^{{-4}},\\, 3.0 \\times 10^{{-3}}]$:
 
-$$\\huge \\varepsilon_x = {eps_x:.5f}$$
+$$\\large \\varepsilon_x = {eps_x:.5f}$$
 
 This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative (slight compression at mid-depth)"}** and is used in **Step 5** to compute $k_v$ and $\\theta_v$.
 """
@@ -788,16 +780,20 @@ This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative 
 
         if Asv_over_s < Asv_min_over_s:
             k_v = (0.4 / (1 + 1500 * eps_x)) * (1300 / (1000 + k_dg * d_v))
+            kv_case = "general MCFT with **low stirrup ratio** ($A_{sv}/s < (A_{sv}/s)_{min}$)"
         else:
             k_v = 0.4 / (1 + 1500 * eps_x)
+            kv_case = "general MCFT with **adequate stirrup ratio**"
 
         theta_v_deg = 29.0 + 7000.0 * eps_x
 
     else:
         if Asv / s < 0.08 * math.sqrt(fc) * b_v / (f_syv or 1.0):
             k_v = min(200.0 / (1000.0 + 1.3 * d_v), 0.10)
+            kv_case = "simplified non-prestressed – **low stirrup ratio**"
         else:
             k_v = 0.15
+            kv_case = "simplified non-prestressed – **minimum stirrups provided**"
         theta_v_deg = 36.0
 
     theta_v_rad = math.radians(theta_v_deg)
@@ -810,20 +806,90 @@ This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative 
     Asv_min_over_s = 0.08 * math.sqrt(fc) * b_v / (f_syv or 1.0)
     k_dg_display = locals().get("k_dg", float("nan"))
 
+    if use_general_kv:
+        kv_formula_block = rf"""
+**General MCFT form (AS 3600 Cl. 8.2.4.2):**
+
+For *low* stirrup ratio $A_{{sv}}/s < (A_{{sv}}/s)_{{min}}$:
+
+$$\\large k_v = \\frac{{0.4}}{{1 + 1500\\varepsilon_x}} \\cdot \\frac{{1300}}{{1000 + k_{{dg}} d_v}}$$
+
+For *adequate* stirrups $A_{{sv}}/s \\ge (A_{{sv}}/s)_{{min}}$:
+
+$$\\large k_v = \\frac{{0.4}}{{1 + 1500\\varepsilon_x}}$$
+"""
+        kv_sub_block = rf"""
+**Current case:** {kv_case}  
+
+- $\\varepsilon_x = {eps_x:.5f}$  
+- $k_{{dg}} \\approx {k_dg_display:.3f}$  
+- $d_v = {d_v:.1f}$ mm  
+
+$$\\large \\left(\\frac{{A_{{sv}}}}s\\right)_{{min}} = 0.08\\sqrt{{f'_c}}\\,\\frac{{b_v}}{{f_{{sy,v}}}} = {Asv_min_over_s:,.3f}\\ \\text{{mm}}^2/\\text{{mm}}$$
+
+$$\\large \\frac{{A_{{sv}}}}s = {Asv_over_s:,.3f}\\ \\text{{mm}}^2/\\text{{mm}}$$
+
+Thus:
+
+$$\\large k_v = {k_v:.3f}$$
+
+Strut angle (MCFT):
+
+$$\\large \\theta_v = 29 + 7000\\varepsilon_x = {theta_v_deg:.1f}^\\circ$$
+"""
+    else:
+        kv_formula_block = rf"""
+**Simplified non-prestressed form (AS 3600 Cl. 8.2.4.3):**
+
+If $A_{{sv}}/s < (A_{{sv}}/s)_{{min}}$:
+
+$$\\large k_v = \\min\\left(\\frac{{200}}{{1000 + 1.3 d_v}},\\ 0.10\\right)$$
+
+Otherwise:
+
+$$\\large k_v = 0.15$$
+
+Strut angle is taken as:
+
+$$\\large \\theta_v = 36^\\circ$$
+"""
+        kv_sub_block = rf"""
+**Current case:** {kv_case}  
+
+- $d_v = {d_v:.1f}$ mm  
+
+$$\\large \\left(\\frac{{A_{{sv}}}}s\\right)_{{min}} = 0.08\\sqrt{{f'_c}}\\,\\frac{{b_v}}{{f_{{sy,v}}}} = {Asv_min_over_s:,.3f}\\ \\text{{mm}}^2/\\text{{mm}}$$
+
+$$\\large \\frac{{A_{{sv}}}}s = {Asv_over_s:,.3f}\\ \\text{{mm}}^2/\\text{{mm}}$$
+
+Hence:
+
+$$\\large k_v = {k_v:.3f},\\quad \\theta_v = {theta_v_deg:.1f}^\\circ$$
+"""
+
     calcbox(
         rf"""
-- Aggregate factor $k_{{dg}}$ (if general MCFT form used): ≈ {k_dg_display:.3f}  
+*Purpose: Determine the shear parameters $k_v$ and $\\theta_v$ for use in $V_{{uc}}$ and web-crushing checks.*
 
-- Minimum stirrup ratio (AS 3600 Cl. 8.2.4.2 / 8.2.4.3):  
-  - Required: $\\left(\\dfrac{{A_{{sv}}}}s\\right)_{{min}} = 0.08 \\sqrt{{f'_c}}\\,\\dfrac{{b_v}}{{f_{{sy,v}}}}$  
-  - Required value: {Asv_min_over_s:,.3f} mm²/mm  
-  - Actual: $A_{{sv}}/s = {Asv_over_s:,.3f}$ mm²/mm  
+**Inputs:**
 
-- Shear parameter $k_v$:  
-  - $k_v = {k_v:.3f}$  
+- Concrete: $f'_c = {fc:.1f}$ MPa  
+- Geometry: $b_v = {b_v:.1f}$ mm, $d_v = {d_v:.1f}$ mm, $d_g = {d_g:.1f}$ mm  
+- Transverse steel: $A_{{sv}} = {Asv:.1f}$ mm², spacing $s = {s:.1f}$ mm, $f_{{sy,v}} = {f_syv:.1f}$ MPa  
+- Strain: $\\varepsilon_x = {eps_x:.5f}$  
 
-- Strut angle:  
-  - $\\theta_v = {theta_v_deg:.1f}^\\circ$.
+---
+
+{kv_formula_block}
+
+---
+
+{kv_sub_block}
+
+**Result:**  
+
+- $k_v = {k_v:.3f}$  
+- $\\theta_v = {theta_v_deg:.1f}^\\circ$
 """
     )
 
@@ -860,13 +926,59 @@ This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative 
 
     calcbox(
         rf"""
-- Concrete contribution: $V_{{uc}} = {Vuc_kN:,.1f}\\ \\text{{kN}}$  
-- Steel contribution: $V_{{us}} = {Vus_kN:,.1f}\\ \\text{{kN}}$  
-- Total factored capacity: $V_u = V_{{uc}} + V_{{us}} + P_v = {Vu_total_kN:,.1f}\\ \\text{{kN}}$  
-- Design strength: $\\phi V_u = {phi:.2f} \\times {Vu_total_kN:,.1f} = {phi_Vu:,.1f}\\ \\text{{kN}}$  
-- Demand: $V_{{eq}}^* = {V_eq:.1f}\\ \\text{{kN}}$  
+*Purpose: Combine concrete and steel contributions to shear strength and compare with demand $V_{{eq}}^*$.*
 
-→ **Sectional shear check:** {"OK" if shear_ok else "NOT OK"} (require $\\phi V_u \\ge V_{{eq}}^*$).
+**Inputs:**
+
+- $k_v = {k_v:.3f}$, $b_v = {b_v:.1f}$ mm, $d_v = {d_v:.1f}$ mm  
+- $f'_c = {fc:.1f}$ MPa (limited $\\sqrt{{f'_c}} = {sqrt_fc_limited:.3f}$ MPa)  
+- $A_{{sv}} = {Asv:.1f}$ mm², $s = {s:.1f}$ mm, $f_{{sy,v}} = {f_syv:.1f}$ MPa  
+- $\\theta_v = {theta_v_deg:.1f}^\\circ$  
+- Axial/prestress: $P_v = {P_v:.1f}$ kN  
+- Demand: $V_{{eq}}^* = {V_eq:.1f}$ kN  
+
+---
+
+**Concrete contribution (Cl. 8.2.4.1):**
+
+$$\\large V_{{uc}} = k_v b_v d_v \\sqrt{{f'_c}}$$
+
+**Substitution:**
+
+$$\\large V_{{uc}} = {k_v:.3f} \\times {b_v:.1f} \\times {d_v:.1f} \\times {sqrt_fc_limited:.3f} = {Vuc_kN:,.1f}\\ \\text{{kN}}$$
+
+---
+
+**Steel contribution (Cl. 8.2.5.2(a)):**
+
+$$\\large V_{{us}} = \\left(\\frac{{A_{{sv}} f_{{sy,v}} d_v}}s\\right)\\cot \\theta_v$$
+
+**Substitution:**
+
+$$\\large V_{{us}} = \\left(\\frac{{{Asv:,.1f} \\times {f_syv:.1f} \\times {d_v:.1f}}}{{{s:.1f}}}\\right) \\cot {theta_v_deg:.1f}^\\circ = {Vus_kN:,.1f}\\ \\text{{kN}}$$
+
+---
+
+**Total sectional shear capacity (Cl. 8.2.3.1):**
+
+$$\\large V_u = V_{{uc}} + V_{{us}} + P_v$$
+
+$$\\large V_u = {Vuc_kN:,.1f} + {Vus_kN:,.1f} + {P_v:.1f} = {Vu_total_kN:,.1f}\\ \\text{{kN}}$$
+
+Design strength:
+
+$$\\large \\phi V_u = {phi:.2f} \\times {Vu_total_kN:,.1f} = {phi_Vu:,.1f}\\ \\text{{kN}}$$
+
+Demand:
+
+$$\\large V_{{eq}}^* = {V_eq:.1f}\\ \\text{{kN}}$$
+
+---
+
+**Sectional shear check:**  
+
+- Requirement: $\\phi V_u \\ge V_{{eq}}^*$  
+- Here: {phi_Vu:,.1f} kN vs {V_eq:.1f} kN → **{"OK" if shear_ok else "NOT OK"}**
 """
     )
 
@@ -886,18 +998,24 @@ This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative 
     cot_theta_v = cot(theta_v_rad)
     cot_theta_1 = cot(theta_1_rad)
 
-    Vu_max_N = 0.55 * fc * b_v * d_v * (cot_theta_v + cot_theta_1) / (
-        1 + cot_theta_v**2
-    ) + P_v * 1e3
+    Vu_max_N = (
+        0.55
+        * fc
+        * b_v
+        * d_v
+        * (cot_theta_v + cot_theta_1)
+        / (1 + cot_theta_v ** 2)
+        + P_v * 1e3
+    )
     Vu_max_kN = Vu_max_N / 1e3
 
     st.write(f"$V_{{u,\\max}}$ (web crushing) = {Vu_max_kN:,.1f} kN")
 
     V_star_N = V_star * 1e3
     term_V = V_star_N / (b_v * d_v or 1.0)
-    term_T = T_star_Nmm * uh / (1.7 * (A_oh**2 or 1.0))
+    term_T = T_star_Nmm * uh / (1.7 * (A_oh ** 2 or 1.0))
 
-    LHS = math.sqrt(term_V**2 + term_T**2)
+    LHS = math.sqrt(term_V ** 2 + term_T ** 2)
     RHS = phi * Vu_max_N / (b_v * d_v or 1.0)
 
     web_ok = LHS <= RHS
@@ -907,17 +1025,46 @@ This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative 
 
     calcbox(
         rf"""
-- Web-crushing shear capacity:  
-  - $V_{{u,\max}} = 0.55 f'_c b_v d_v \dfrac{{\cot\\theta_v + \cot\\theta_1}}{{1 + \cot^2\\theta_v}} + P_v$  
-  - Substituting gives $V_{{u,\max}} = {Vu_max_kN:,.1f}\\ \\text{{kN}}$  
+*Purpose: Check that combined shear + torsion does not exceed the web-crushing limit (Cl. 8.2.6).*
 
-- Combined shear + torsion demand (Cl. 8.2.6):  
-  - $\\sqrt{{(V^*/b_v d_v)^2 + (T^* u_h / (1.7 A_{{oh}}^2))^2}} = {LHS:,.1f}$  
+**Inputs:**
 
-- Limit:  
-  - $\\phi V_{{u,\max}} / (b_v d_v) = {RHS:,.1f}$  
+- $f'_c = {fc:.1f}$ MPa, $b_v = {b_v:.1f}$ mm, $d_v = {d_v:.1f}$ mm  
+- $\\theta_v = {theta_v_deg:.1f}^\\circ$, $\\theta_1 = {theta_1_deg:.1f}^\\circ$  
+- $P_v = {P_v:.1f}$ kN  
+- Actions: $V^* = {V_star:.1f}$ kN, $T^* = {T_star:.1f}$ kNm  
+- Torsion geometry: $u_h = {uh:.1f}$ mm, $A_{{oh}} = {A_oh:.1f}$ mm²  
 
-→ **Web-crushing check:** {"OK" if web_ok else "NOT OK"} (require LHS $\\le$ RHS).
+---
+
+**Web-crushing shear capacity (Cl. 8.2.6):**
+
+$$\\large V_{{u,\\max}} = 0.55 f'_c b_v d_v \\frac{{\\cot\\theta_v + \\cot\\theta_1}}{{1 + \\cot^2\\theta_v}} + P_v$$
+
+**Substitution:**
+
+$$\\large V_{{u,\\max}} = {Vu_max_kN:,.1f}\\ \\text{{kN}}$$
+
+---
+
+**Combined shear + torsion demand:**
+
+$$\\large \\text{LHS} = \\sqrt{{\\left(\\frac{{V^*}}{{b_v d_v}}\\right)^2 + \\left(\\frac{{T^* u_h}}{{1.7 A_{{oh}}^2}}\\right)^2}}$$
+
+Substitution:
+
+$$\\large \\text{LHS} = {LHS:,.1f}$$
+
+Design limit:
+
+$$\\large \\text{RHS} = \\frac{{\\phi V_{{u,\\max}}}}{{b_v d_v}} = {RHS:,.1f}$$
+
+---
+
+**Web-crushing check:**  
+
+- Requirement: LHS $\\le$ RHS  
+- Here: {LHS:,.1f} vs {RHS:,.1f} → **{"OK" if web_ok else "NOT OK"}**
 """
     )
 
@@ -954,10 +1101,3 @@ This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative 
 
 if __name__ == "__main__":
     render_shear()
-
-
-
-
-
-
-
