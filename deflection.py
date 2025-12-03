@@ -238,7 +238,327 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         """
     )
 
+    # --- reserve space for summary at the top (like shear page) ---
+    summary_placeholder = st.empty()
+
     st.markdown("### Design inputs")
+
+    # --------------------------------------------------------
+    # Inputs – seeded from shared state where possible
+    # --------------------------------------------------------
+    col_geom, col_mat, col_load = st.columns(3)
+
+    with col_geom:
+        L_seed_mm = _seed_from_param("L", 6000.0)
+        L_eff = st.number_input(
+            "Effective span Lₑf (m)",
+            value=L_seed_mm / 1000.0,
+            step=0.1,
+            key="defl_L_eff",
+        )
+
+        support_type = st.selectbox(
+            "Support condition (k₂)",
+            ["Simply supported", "Continuous – end span", "Continuous – interior span"],
+            index=0,
+            key="defl_support_type",
+        )
+
+        bw_seed = _seed_from_param("b", 300.0)
+        bw = st.number_input(
+            "Web / stem width b_w (mm)",
+            value=bw_seed,
+            step=10.0,
+            key="defl_bw",
+        )
+
+        beff = st.number_input(
+            "Effective flange width bₑf (mm)",
+            value=bw_seed,
+            step=10.0,
+            key="defl_beff",
+        )
+
+        d_seed = _seed_from_param("d", 550.0)
+        d = st.number_input(
+            "Effective depth d (mm)",
+            value=d_seed,
+            step=10.0,
+            key="defl_d",
+        )
+
+    with col_mat:
+        fc_seed = _seed_from_param("fc", 32.0)
+        fc = st.number_input(
+            "Concrete strength f'c (MPa)",
+            value=fc_seed,
+            step=1.0,
+            key="defl_fc",
+        )
+
+        Ec_seed = _seed_from_param("Ec", 28000.0)
+        Ec = st.number_input(
+            "Eceff (MPa)",
+            value=Ec_seed,
+            step=500.0,
+            key="defl_Ec",
+        )
+
+        Ast_seed = _seed_from_param("Ast_bot", 2010.0)
+        Ast = st.number_input(
+            "Tension reinforcement area A_st (mm²)",
+            value=Ast_seed,
+            step=10.0,
+            key="defl_Ast",
+        )
+
+        Asc = st.number_input(
+            "Compression reinforcement A_sc (mm²)",
+            value=0.0,
+            step=10.0,
+            key="defl_Asc",
+        )
+
+    with col_load:
+        st.markdown("**Service loads (per metre of span)**")
+
+        g_kNm = st.number_input(
+            "Dead load g (kN/m)",
+            value=8.0,
+            step=0.5,
+            key="defl_g",
+        )
+        q_kNm = st.number_input(
+            "Live load q (kN/m)",
+            value=4.0,
+            step=0.5,
+            key="defl_q",
+        )
+        psi_s = st.number_input(
+            "Sustained live-load factor ψₛ",
+            value=0.4,
+            step=0.05,
+            min_value=0.0,
+            key="defl_psi_s",
+        )
+        defl_limit_ratio = st.number_input(
+            "Deflection limit L/Δ (e.g. 250)",
+            value=250.0,
+            step=10.0,
+            key="defl_limit_ratio",
+        )
+        Fdef_kNm = st.number_input(
+            "F_d,ef for span-depth check (kN/m)",
+            value=12.0,
+            step=0.5,
+            help="Effective design load per unit length for Cl. 8.5.4",
+            key="defl_Fdef",
+        )
+
+    # --------------------------------------------------------
+    # Effective stiffness Ief
+    # --------------------------------------------------------
+    st.markdown("### Effective stiffness \(I_{ef}\)")
+
+    col_ief_left, col_ief_right = st.columns([2, 1])
+
+    with col_ief_left:
+        use_simplified_ief = st.checkbox(
+            "Use simplified reinforced-member Iₑf (AS 3600 Cl. 8.5.3.1(2),(3))",
+            value=True,
+            key="defl_use_simplified_ief",
+        )
+
+        if use_simplified_ief:
+            Ief, beta, p, p_lim, Ief_max, k1_from_ief = calc_ief_simplified(
+                fc=fc,
+                beff=beff,
+                bw=bw,
+                d=d,
+                Ast=Ast,
+            )
+
+            calcbox(
+                r"""
+**Reinforcement & section parameters**
+
+- \(\beta = \dfrac{b_{ef}}{b_w} = %.3f\)  
+- \(p = \dfrac{A_{st}}{b_{ef} d} = %.5f\)  
+- \(p_{lim} = %.5f\)  
+- \(I_{ef,max} = %.3e \text{ mm}^4\)  
+- \(k_1 = \dfrac{I_{ef}}{b_{ef} d^3} = %.5f\)
+"""
+                % (beta, p, p_lim, Ief_max, k1_from_ief)
+            )
+        else:
+            Ief = st.number_input(
+                "User-specified Iₑf (mm⁴)",
+                value=1.0e11,
+                step=1.0e10,
+                format="%.3e",
+                key="defl_Ief_user",
+            )
+            beta = beff / bw if bw > 0 else 1.0
+            p = Ast / (beff * d) if beff * d > 0 else 0.0
+            p_lim = 0.0
+            Ief_max = Ief
+            k1_from_ief = Ief / (beff * d ** 3)
+
+    with col_ief_right:
+        st.metric("Effective second moment Iₑf", f"{Ief:,.3e} mm⁴")
+        st.metric("k₁ = Iₑf / (bₑf d³)", f"{k1_from_ief:.4f}")
+
+    # --------------------------------------------------------
+    # Main AS 3600 deflection calculations
+    # --------------------------------------------------------
+    results = calc_deflection_as3600(
+        L_m=L_eff,
+        Ec=Ec,
+        Ief=Ief,
+        g_kNm=g_kNm,
+        q_kNm=q_kNm,
+        psi_s=psi_s,
+        support_type=support_type,
+        Ast=Ast,
+        Asc=Asc,
+    )
+
+    L_mm = results["L_mm"]
+    delta_short_total = results["delta_short_total"]
+    delta_short_sust = results["delta_short_sust"]
+    delta_long_add = results["delta_long_add"]
+    delta_total = results["delta_total"]
+    kcs = results["kcs"]
+
+    L_over_delta_short = format_L_over_delta(delta_short_total, L_mm)
+    L_over_delta_long_add = format_L_over_delta(delta_long_add, L_mm)
+    L_over_delta_total = format_L_over_delta(delta_total, L_mm)
+
+    L_over_d = (L_mm / d) if d > 0 else 0.0
+    L_over_d_limit, k1_span, k2_span = calc_span_depth_limit(
+        ief=Ief,
+        beff=beff,
+        bw=bw,
+        d=d,
+        fc=fc,
+        Ec=Ec,
+        Fdef_kNm=Fdef_kNm,
+        support_type=support_type,
+        defl_limit_ratio=defl_limit_ratio,
+    )
+
+    # --------------------------------------------------------
+    # SUMMARY at top (use placeholder)
+    # --------------------------------------------------------
+    with summary_placeholder.container():
+        st.markdown("## Summary")
+
+        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+
+        with col_s1:
+            st.metric(
+                "Short-term deflection (total load)",
+                f"{delta_short_total:.2f} mm",
+                L_over_delta_short,
+            )
+
+        with col_s2:
+            st.metric(
+                "Additional long-term deflection",
+                f"{delta_long_add:.2f} mm",
+                L_over_delta_long_add,
+            )
+
+        with col_s3:
+            util_text = ""
+            if delta_total > 0:
+                limit_delta = L_mm / defl_limit_ratio
+                util = delta_total / limit_delta if limit_delta > 0 else 0.0
+                util_text = f"Utilisation: {util:.2f}"
+            st.metric(
+                "Total deflection (short + long-term)",
+                f"{delta_total:.2f} mm",
+                L_over_delta_total + ("" if util_text == "" else f" ({util_text})"),
+            )
+
+        with col_s4:
+            if L_over_d_limit is not None:
+                ok_span = L_over_d <= L_over_d_limit
+                st.metric(
+                    "Span-to-depth check Lₑf/d",
+                    f"{L_over_d:.1f}",
+                    f"Limit ≈ {L_over_d_limit:.1f} → {'OK' if ok_span else 'NG'}",
+                )
+            else:
+                st.metric(
+                    "Span-to-depth check Lₑf/d",
+                    f"{L_over_d:.1f}",
+                    "No limit computed",
+                )
+
+        st.markdown("---")
+
+    # --------------------------------------------------------
+    # Tabs for step-by-step calcs (shear-style)
+    # --------------------------------------------------------
+    tab_short, tab_long, tab_ief, tab_span, tab_flow, tab_shape = st.tabs(
+        [
+            "Short-term deflection",
+            "Long-term deflection",
+            "Iₑf details",
+            "Span/depth check",
+            "Flow chart",
+            "Deflected shape",
+        ]
+    )
+
+    # ---------- Short-term ----------
+    with tab_short:
+        st.subheader("Short-term deflection – AS 3600 Cl. 8.5.3.1")
+
+        calcbox(
+            r"""
+**Formula**
+
+\[
+\delta_{st} = k_2 \frac{w L_{eff}^4}{E_{c,eff} I_{ef}}
+\]
+
+**With numbers**
+
+\[
+\delta_{st,total}
+= (%.5f) \times (%.2f)\, \frac{(%.0f)^4}{(%.0f) \times (%.3e)}
+\approx %.2f \text{ mm}
+\]
+
+where \(w = g + q = %.2f \text{ kN/m}\).
+"""
+            % (
+                results["k2"],
+                results["w_total"],
+                L_mm,
+                Ec,
+                Ief,
+                delta_short_total,
+                results["w_total"],
+            )
+        )
+
+        st.markdown("#### Key inputs")
+
+        st.write(rf"- $L_{{eff}}$ = **{L_mm:.0f} mm**")
+        st.write(rf"- $w = g + q$ = **{results['w_total']:.2f} kN/m**")
+        st.write(rf"- $k_2$ (from support type) = **{results['k2']:.5f}**")
+        st.write(rf"- $E_{{c,eff}}$ = **{Ec:.0f} MPa**")
+        st.write(rf"- $I_{{ef}}$ = **{Ief:,.3e} \,\text{{mm}}^4$")
+
+    # ---------- Long-term ----------
+    with tab_long:
+        st.subheader("Long-term deflection – AS 3600 Cl. 8.5.3.2")
+        ...
+        # (keep the rest of your tabs exactly as you have them now)
+
 
     # --------------------------------------------------------
     # Inputs – seeded from shared state where possible
@@ -1000,5 +1320,6 @@ with caps on \(I_{ef,max}\) depending on \(\beta\).
         ax.grid(True)
 
         st.pyplot(fig)
+
 
 
