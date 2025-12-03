@@ -224,45 +224,33 @@ def render_bending():
 
     st.markdown("---")
 
-    # ---------------- Design actions ----------------
+    # ---------------- Design actions (read-only, vertical on left) ----------------
     st.subheader("Design Actions for Bending")
 
-    da1, da2, da3 = st.columns(3)
-    sync = sync_callbacks
+    Mu_star_disp = get_param("Mu_star") or 0.0
+    N_star_disp = get_param("N_star") or 0.0
+    P_star_disp = get_param("P_star") or 0.0
 
-    with da1:
-        number_row(
-            "Design moment Mu* (kNm)",
-            "bending_Mu_star",
-            10.0,
-            sync,
-            help_text=(
-                "Factored design bending moment at the critical section. "
-                "Increasing Mu* increases bending demand and utilisation."
-            ),
-        )
-    with da2:
-        number_row(
-            "Axial force N* (kN)",
-            "bending_N_star",
-            50.0,
-            sync,
-            help_text=(
-                "Axial force acting with bending. Compression (negative in many "
-                "conventions) can reduce tension in the steel; tension increases demand."
-            ),
-        )
-    with da3:
-        number_row(
-            "Prestress force P* (kN)",
-            "bending_P_star",
-            50.0,
-            sync,
-            help_text=(
-                "Prestress / pre-compression in the section. Increasing P* typically "
-                "reduces tensile demand in the bottom reinforcement."
-            ),
-        )
+    st.text_input(
+        "Design moment Mu* (kNm)",
+        value=f"{Mu_star_disp:.2f}",
+        key="bending_Mu_star_display",
+        disabled=True,
+    )
+
+    st.text_input(
+        "Axial force N* (kN)",
+        value=f"{N_star_disp:.2f}",
+        key="bending_N_star_display",
+        disabled=True,
+    )
+
+    st.text_input(
+        "Prestress force P* (kN)",
+        value=f"{P_star_disp:.2f}",
+        key="bending_P_star_display",
+        disabled=True,
+    )
 
     st.markdown("---")
 
