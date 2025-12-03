@@ -255,6 +255,7 @@ def render_bending():
     st.markdown("---")
 
     # ---------------- Main inputs ----------------
+    sync = sync_callbacks
     g1, g2 = st.columns(2)
 
     with g1:
