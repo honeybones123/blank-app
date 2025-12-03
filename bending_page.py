@@ -224,45 +224,48 @@ def render_bending():
 
     st.markdown("---")
 
-    # ---------------- Design actions (interactive, single column) ----------------
-    st.subheader("Design Actions for Bending")
-    sync = sync_callbacks
+    # ---------------- Design actions (interactive, aligned with Geometry column) ----------------
+    da_col, _ = st.columns(2)
 
-    # Ensure bending widgets stay in sync with shared design actions
-    st.session_state["bending_Mu_star"] = get_param("Mu_star") or 0.0
-    st.session_state["bending_N_star"] = get_param("N_star") or 0.0
-    st.session_state["bending_P_star"] = get_param("P_star") or 0.0
+    with da_col:
+        st.subheader("Design Actions for Bending")
+        sync = sync_callbacks
 
-    number_row(
-        "Design moment Mu* (kNm)",
-        "bending_Mu_star",
-        10.0,
-        sync,
-        help_text=(
-            "Factored design bending moment at the critical section. "
-            "Increasing Mu* increases bending demand and utilisation."
-        ),
-    )
-    number_row(
-        "Axial force N* (kN)",
-        "bending_N_star",
-        50.0,
-        sync,
-        help_text=(
-            "Axial force acting with bending. Compression (negative in many "
-            "conventions) can reduce tension in the steel; tension increases demand."
-        ),
-    )
-    number_row(
-        "Prestress force P* (kN)",
-        "bending_P_star",
-        50.0,
-        sync,
-        help_text=(
-            "Prestress / pre-compression in the section. Increasing P* typically "
-            "reduces tensile demand in the bottom reinforcement."
-        ),
-    )
+        # Ensure bending widgets start from shared design actions
+        st.session_state["bending_Mu_star"] = get_param("Mu_star") or 0.0
+        st.session_state["bending_N_star"] = get_param("N_star") or 0.0
+        st.session_state["bending_P_star"] = get_param("P_star") or 0.0
+
+        number_row(
+            "Design moment Mu* (kNm)",
+            "bending_Mu_star",
+            10.0,
+            sync,
+            help_text=(
+                "Factored design bending moment at the critical section. "
+                "Increasing Mu* increases bending demand and utilisation."
+            ),
+        )
+        number_row(
+            "Axial force N* (kN)",
+            "bending_N_star",
+            50.0,
+            sync,
+            help_text=(
+                "Axial force acting with bending. Compression (negative in many "
+                "conventions) can reduce tension in the steel; tension increases demand."
+            ),
+        )
+        number_row(
+            "Prestress force P* (kN)",
+            "bending_P_star",
+            50.0,
+            sync,
+            help_text=(
+                "Prestress / pre-compression in the section. Increasing P* typically "
+                "reduces tensile demand in the bottom reinforcement."
+            ),
+        )
 
     st.markdown("---")
 
