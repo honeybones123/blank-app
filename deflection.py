@@ -450,55 +450,112 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     )
 
     # --------------------------------------------------------
-    # TOP SUMMARY BANNER (using placeholder so it sits near top)
+    # TOP SUMMARY TABLE (bending-style: rows + pass/fail colours)
     # --------------------------------------------------------
     with summary_placeholder.container():
         st.markdown("## Summary")
 
-        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+        # Deflection limit in mm (from L/Δ input)
+        limit_delta_mm = L_mm / defl_limit_ratio if defl_limit_ratio > 0 else None
 
-        with col_s1:
-            st.metric(
-                "Short-term deflection (total load)",
-                f"{delta_short_total:.2f} mm",
-                L_over_delta_short,
+        rows = []
+
+        # 1) Short-term deflection (total load)
+        if limit_delta_mm is not None and limit_delta_mm > 0:
+            util_short = delta_short_total / limit_delta_mm
+            status_short = "OK" if util_short <= 1.0 else "NG"
+            limit_str = f"{limit_delta_mm:.2f} mm (L/{defl_limit_ratio:.0f})"
+        else:
+            util_short = None
+            status_short = "—"
+            limit_str = "—"
+
+        rows.append(
+            {
+                "Check": "Short-term deflection (total load)",
+                "Value": f"{delta_short_total:.2f} mm ({L_over_delta_short})",
+                "Limit": limit_str,
+                "Utilisation": f"{util_short:.2f}" if util_short is not None else "—",
+                "Status": status_short,
+            }
+        )
+
+        # 2) Additional long-term deflection
+        if limit_delta_mm is not None and limit_delta_mm > 0:
+            util_long = delta_long_add / limit_delta_mm
+            status_long = "OK" if util_long <= 1.0 else "NG"
+        else:
+            util_long = None
+            status_long = "—"
+
+        rows.append(
+            {
+                "Check": "Additional long-term deflection",
+                "Value": f"{delta_long_add:.2f} mm ({L_over_delta_long_add})",
+                "Limit": limit_str,
+                "Utilisation": f"{util_long:.2f}" if util_long is not None else "—",
+                "Status": status_long,
+            }
+        )
+
+        # 3) Total deflection (short + long-term)
+        if limit_delta_mm is not None and limit_delta_mm > 0:
+            util_total = delta_total / limit_delta_mm
+            status_total = "OK" if util_total <= 1.0 else "NG"
+        else:
+            util_total = None
+            status_total = "—"
+
+        rows.append(
+            {
+                "Check": "Total deflection (short + long-term)",
+                "Value": f"{delta_total:.2f} mm ({L_over_delta_total})",
+                "Limit": limit_str,
+                "Utilisation": f"{util_total:.2f}" if util_total is not None else "—",
+                "Status": status_total,
+            }
+        )
+
+        # 4) Span-to-depth check L_eff/d
+        if L_over_d_limit is not None:
+            util_span = L_over_d / L_over_d_limit if L_over_d_limit > 0 else None
+            status_span = (
+                "OK" if (util_span is not None and util_span <= 1.0) else "NG"
             )
+            limit_span_str = f"{L_over_d_limit:.1f}"
+        else:
+            util_span = None
+            status_span = "—"
+            limit_span_str = "—"
 
-        with col_s2:
-            st.metric(
-                "Additional long-term deflection",
-                f"{delta_long_add:.2f} mm",
-                L_over_delta_long_add,
-            )
+        rows.append(
+            {
+                "Check": "Span-to-depth ratio Lₑf/d",
+                "Value": f"{L_over_d:.1f}",
+                "Limit": limit_span_str,
+                "Utilisation": f"{util_span:.2f}" if util_span is not None else "—",
+                "Status": status_span,
+            }
+        )
 
-        with col_s3:
-            util_text = ""
-            if delta_total > 0:
-                limit_delta = L_mm / defl_limit_ratio
-                util = delta_total / limit_delta if limit_delta > 0 else 0.0
-                util_text = f"Utilisation: {util:.2f}"
-            st.metric(
-                "Total deflection (short + long-term)",
-                f"{delta_total:.2f} mm",
-                L_over_delta_total + ("" if util_text == "" else f" ({util_text})"),
-            )
+        summary_df = pd.DataFrame(rows)
 
-        with col_s4:
-            if L_over_d_limit is not None:
-                ok_span = L_over_d <= L_over_d_limit
-                st.metric(
-                    "Span-to-depth check Lₑf/d",
-                    f"{L_over_d:.1f}",
-                    f"Limit ≈ {L_over_d_limit:.1f} → {'OK' if ok_span else 'NG'}",
-                )
+        # Colour formatting like bending: green = OK, red = NG
+        def _highlight_status(row):
+            status = row.get("Status", "")
+            if status == "OK":
+                color = "#d9ead3"  # light green
+            elif status == "NG":
+                color = "#f4cccc"  # light red
             else:
-                st.metric(
-                    "Span-to-depth check Lₑf/d",
-                    f"{L_over_d:.1f}",
-                    "No limit computed",
-                )
+                color = ""
+            return [f"background-color: {color}"] * len(row)
 
+        styled = summary_df.style.apply(_highlight_status, axis=1).hide_index()
+
+        st.dataframe(styled, use_container_width=True)
         st.markdown("---")
+
 
     # --------------------------------------------------------
     # Tabs in agreed order:
@@ -933,3 +990,4 @@ _Ref: AS 3600:2018 Cl. 8.5.4 – deemed-to-conform span-to-depth limits._
         ax.grid(True)
 
         st.pyplot(fig)
+
