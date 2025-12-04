@@ -490,9 +490,10 @@ def _make_uls_stress_block_figure(
 
     if variant == "13":
         D_ref = base_span * 1.05      # axis height
-        fig_height = 3.2              # visually a bit taller
+        # 1:1 aspect ratio, same depth as calc box
         fig_width = 3.0
-        use_equal_aspect = False
+        fig_height = 3.0  # Square figure for 1:1 aspect
+        use_equal_aspect = True
     else:  # "11" – 1:1 aspect ratio, same depth as calc box
         D_ref = base_span * 1.05
         # Use square figure size to support 1:1 aspect ratio
@@ -502,8 +503,8 @@ def _make_uls_stress_block_figure(
         use_equal_aspect = True
 
     fig, ax = plt.subplots(figsize=(fig_width, fig_height))
-    # Extend xlim for variant "11" to accommodate wider stress block and tension arrow
-    xlim_max = 180.0 if use_equal_aspect else 100.0
+    # Extend xlim for variants "11" and "13" to accommodate wider stress block and tension arrow (4:1 ratio)
+    xlim_max = 320.0 if use_equal_aspect else 100.0
     ax.set_xlim(0.0, xlim_max)
     ax.set_ylim(D_ref, 0.0)  # 0 at top
     if use_equal_aspect:
@@ -521,7 +522,7 @@ def _make_uls_stress_block_figure(
 
     # block
     block_left = x_axis
-    block_width = 44.0  # Double width for 2:1 ratio
+    block_width = 88.0  # 4:1 ratio (4x original 22.0)
     block_top = 0.0
     block_bottom = a_mm
 
@@ -614,8 +615,8 @@ def _make_uls_stress_block_figure(
     )
 
     # bottom tension arrow (now guaranteed to be inside the axes)
-    # Double the width for 2:1 ratio
-    tension_arrow_end = x_axis + 2.0 * (90.0 - x_axis)  # 20.0 + 2*70.0 = 160.0
+    # 4:1 ratio (4x original width)
+    tension_arrow_end = x_axis + 4.0 * (90.0 - x_axis)  # 20.0 + 4*70.0 = 300.0
     ax.annotate(
         "",
         xy=(tension_arrow_end, d_mm),
@@ -726,9 +727,11 @@ def _make_uls_force_model_figure(
     # Add a bit of margin so C, T and z stay visible even for deep beams.
     D_ref = base_span * 1.10
 
-    fig, ax = plt.subplots(figsize=(3.6, 2.7))
+    # 1:1 aspect ratio, same depth as calc box
+    fig, ax = plt.subplots(figsize=(3.0, 3.0))
     ax.set_xlim(0.0, 100.0)
     ax.set_ylim(D_ref, 0.0)
+    ax.set_aspect("equal", adjustable="box")
     ax.axis("off")
 
     # Vertical reference line
