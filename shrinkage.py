@@ -1,210 +1,585 @@
-# shrinkage.py
+# shrinkage_page.py
+# ============================
+# SHRINKAGE – AS 3600:2018 Cl. 3.1.7
+# ============================
 
 import math
 import numpy as np
-import pandas as pd
 import streamlit as st
-import matplotlib.pyplot as plt
+
+from state_and_helpers import (
+    get_param,
+    get_sync_callbacks,
+    update_results,  # kept for contract
+)
+from widgets_helpers import apply_global_widget_css, number_row
 
 
-def calc_notional_shrinkage_strain(fc, h_mm, rh):
+# ------------------------------------------------------------
+#  Small helpers / shared styling
+# ------------------------------------------------------------
+def _seed_from_param(name: str, fallback: float) -> float:
+    """Seed default widget values from shared state, with safe fallback."""
+    try:
+        v = get_param(name)
+    except TypeError:
+        v = None
+
+    try:
+        if v is None:
+            return float(fallback)
+        v = float(v)
+        if math.isnan(v):
+            return float(fallback)
+        return v
+    except Exception:
+        return float(fallback)
+
+
+def _inject_calcbox_css():
+    """Style markdown blockquotes as blue calc boxes (same feel as shear/deflection)."""
+    st.markdown(
+        """
+<style>
+blockquote {
+  border-left: 4px solid #1f77b4 !important;
+  background-color: rgba(31, 119, 180, 0.08) !important;
+  padding: 0.75rem 1rem !important;
+  margin: 0.5rem 0 0.75rem 0 !important;
+  border-radius: 0 0.35rem 0.35rem 0 !important;
+  color: #1a1a1a !important;
+  opacity: 1 !important;
+  font-size: 0.9rem !important;
+  line-height: 1.35 !important;
+}
+blockquote * {
+  color: #1a1a1a !important;
+  opacity: 1 !important;
+}
+blockquote p {
+  margin-bottom: 0.5rem !important;
+}
+blockquote p:last-child {
+  margin-bottom: 0 !important;
+}
+</style>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+def calcbox(md: str):
     """
-    Very simplified 'code-like' notional shrinkage strain ε_sh∞ (microstrain).
+    Render a highlighted calculation box with LaTeX-enabled markdown inside.
 
-    Behaviour:
-      - higher fc → lower shrinkage
-      - higher RH → lower shrinkage
-      - thinner members → higher shrinkage
+    - Converts \[ \] → $$ $$ for display math
+    - Converts \( \) → $ $ for inline math
+    - Wraps everything in a markdown blockquote (>) so CSS turns it blue
     """
-    # Base notional shrinkage (microstrain)
-    eps_base = 800.0  # microstrain
-
-    # Strength factor
-    k_f = 1.2 / (1.0 + (fc - 25.0) / 50.0)
-    k_f = max(0.5, min(k_f, 1.5))
-
-    # Humidity factor
-    k_h = 1.0 + (60.0 - rh) / 80.0
-    k_h = max(0.5, min(k_h, 1.5))
-
-    # Size factor
-    h_m = max(50.0, min(h_mm, 1000.0))
-    k_hsize = (200.0 / h_m) ** 0.2
-
-    eps_sh_inf = eps_base * k_f * k_h * k_hsize
-    return max(200.0, min(eps_sh_inf, 1200.0))  # limit 200–1200 με
+    converted = md.replace("\\[", "$$").replace("\\]", "$$")
+    converted = converted.replace("\\(", "$").replace("\\)", "$")
+    lines = converted.strip().split("\n")
+    blockquote = "\n".join("> " + line for line in lines)
+    st.markdown(blockquote)
 
 
-def calc_shrinkage_strain(eps_inf, t, t_s):
+# ------------------------------------------------------------
+#  Table 3.1.7.2 – final design drying shrinkage ε*csd (×10⁻⁶)
+#  Keys: fc' [MPa] → environment → th [mm]
+# ------------------------------------------------------------
+_SHRINKAGE_TABLE = {
+    25: {
+        "Arid":      {50: 810, 100: 720, 200: 590, 400: 470},
+        "Interior":  {50: 780, 100: 670, 200: 550, 400: 440},
+        "Temperate": {50: 740, 100: 630, 200: 520, 400: 410},
+        "Tropical":  {50: 610, 100: 530, 200: 440, 400: 350},
+    },
+    32: {
+        "Arid":      {50: 800, 100: 720, 200: 590, 400: 470},
+        "Interior":  {50: 770, 100: 670, 200: 560, 400: 440},
+        "Temperate": {50: 730, 100: 620, 200: 520, 400: 420},
+        "Tropical":  {50: 600, 100: 520, 200: 440, 400: 360},
+    },
+    40: {
+        "Arid":      {50: 790, 100: 710, 200: 590, 400: 480},
+        "Interior":  {50: 740, 100: 670, 200: 560, 400: 450},
+        "Temperate": {50: 700, 100: 620, 200: 530, 400: 420},
+        "Tropical":  {50: 580, 100: 500, 200: 440, 400: 360},
+    },
+    50: {
+        "Arid":      {50: 780, 100: 700, 200: 590, 400: 490},
+        "Interior":  {50: 730, 100: 660, 200: 560, 400: 460},
+        "Temperate": {50: 690, 100: 620, 200: 530, 400: 440},
+        "Tropical":  {50: 570, 100: 490, 200: 430, 400: 370},
+    },
+    65: {
+        "Arid":      {50: 770, 100: 700, 200: 600, 400: 510},
+        "Interior":  {50: 730, 100: 650, 200: 570, 400: 490},
+        "Temperate": {50: 690, 100: 610, 200: 530, 400: 450},
+        "Tropical":  {50: 560, 100: 490, 200: 420, 400: 390},
+    },
+    80: {
+        "Arid":      {50: 750, 100: 690, 200: 610, 400: 530},
+        "Interior":  {50: 720, 100: 660, 200: 590, 400: 510},
+        "Temperate": {50: 680, 100: 630, 200: 550, 400: 470},
+        "Tropical":  {50: 560, 100: 520, 200: 470, 400: 390},
+    },
+    100: {
+        "Arid":      {50: 740, 100: 690, 200: 620, 400: 560},
+        "Interior":  {50: 710, 100: 660, 200: 600, 400: 540},
+        "Temperate": {50: 680, 100: 640, 200: 580, 400: 520},
+        "Tropical":  {50: 560, 100: 530, 200: 490, 400: 420},
+    },
+}
+
+_ENV_LABELS = {
+    "Arid environment": "Arid",
+    "Interior environment": "Interior",
+    "Temperate inland environment": "Temperate",
+    "Tropical / near-coastal / coastal environment": "Tropical",
+}
+
+
+def _closest_fc_row(fc: float) -> int:
+    keys = sorted(_SHRINKAGE_TABLE.keys())
+    return min(keys, key=lambda k: abs(fc - k))
+
+
+def _closest_th(th: float) -> int:
+    options = [50, 100, 200, 400]
+    return min(options, key=lambda x: abs(th - x))
+
+
+def _shrinkage_eps_final(fc: float, env_label: str, th_table: float) -> float:
+    """Return ε*csd (final design drying shrinkage) as strain (not microstrain)."""
+    fc_key = _closest_fc_row(fc)
+    env_key = _ENV_LABELS[env_label]
+    th_key = _closest_th(th_table)
+    microstrain = _SHRINKAGE_TABLE[fc_key][env_key][th_key]
+    return microstrain * 1e-6  # convert ×10⁻⁶ to strain
+
+
+def calc_k1_shrinkage(t_days: float, th_mm: float) -> float:
     """
-    Time development of shrinkage strain ε_sh(t).
+    k1(t, th) from Fig. 3.1.7.2:
 
-    eps_inf in microstrain (με).
-    t   = age (days)
-    t_s = age at start of drying (days).
+        k1 = α_t t^0.8 / (t^0.8 + 0.15 th)
+        α_t = 0.8 + 1.2 e^(-0.005 th)
     """
-    if t <= t_s:
-        return 0.0
-
-    dt = t - t_s
-    beta_t = dt / (dt + 35.0)
-
-    eps_t = eps_inf * beta_t
-    return eps_t
+    t = max(t_days, 0.1)
+    th = max(th_mm, 1.0)
+    alpha_t = 0.8 + 1.2 * math.exp(-0.005 * th)
+    num = alpha_t * (t ** 0.8)
+    den = (t ** 0.8) + 0.15 * th
+    return num / den
 
 
+def calc_eps_cse(fc: float, t_days: float) -> float:
+    """
+    Autogenous (chemical) shrinkage ε_cse(t)
+    Cl. 3.1.7.2(2),(3). Returns strain (not microstrain).
+    """
+    if fc <= 50.0:
+        eps_final = (0.07 * fc - 0.5) * 50e-6
+    else:
+        eps_final = (0.08 * fc - 1.0) * 50e-6
+
+    t = max(t_days, 0.0)
+    return eps_final * (1.0 - math.exp(-0.04 * t))
+
+
+# ------------------------------------------------------------
+#  MAIN RENDER FUNCTION
+# ------------------------------------------------------------
 def render_shrinkage():
-    st.title("Shrinkage (Time-Dependent)")
+    apply_global_widget_css()
+    _inject_calcbox_css()
+    get_sync_callbacks()  # not used yet, but keeps contract
+
+    st.title("Shrinkage – AS 3600:2018 Clause 3.1.7")
 
     st.markdown(
         """
-        ### Required Inputs for Shrinkage
+This page estimates **shrinkage strain** of concrete in accordance with **AS 3600:2018 Cl. 3.1.7**:
 
-        This page estimates a **notional shrinkage strain** \\( \\varepsilon_{sh,\\infty} \\)
-        and its development \\( \\varepsilon_{sh}(t) \\).
-
-        These can later feed into:
-
-        - **Deflection page** → long-term curvature (shrinkage curvature + creep)  
-        - **Crack width page** → long-term tension stiffening / strain distributions
-        """
+- **Autogenous shrinkage** \\(\\varepsilon_{cse}\\) — Cl. 3.1.7.2(2),(3)  
+- **Drying shrinkage** \\(\\varepsilon_{csd}\\) — Cl. 3.1.7.2(4),(5)  
+- Notional thickness \\(t_h = 2A_g / u_e\\) — used for Fig. 3.1.7.2 and Table 3.1.7.2  
+- Total shrinkage \\(\\varepsilon_{cs} = \\varepsilon_{cse} + \\varepsilon_{csd}\\).
+"""
     )
 
-    # --------------------------------------------------
-    # Inputs
-    # --------------------------------------------------
-    col1, col2 = st.columns(2)
+    # --------------------------------------------------------
+    # Geometry + exposure inputs
+    # --------------------------------------------------------
+    st.markdown("### Geometry & exposure")
 
-    with col1:
+    col_geom, col_env = st.columns(2)
+
+    with col_geom:
+        b_seed = _seed_from_param("b", 300.0)
+        D_seed = _seed_from_param("D", 600.0)
+        b = st.number_input("Section width b (mm)", value=b_seed, step=10.0, key="sh_b")
+        D = st.number_input("Overall depth D (mm)", value=D_seed, step=10.0, key="sh_D")
+
+        faces_option = st.selectbox(
+            "Faces exposed to drying",
+            [
+                "Slab – one face exposed",
+                "Slab – two faces exposed",
+                "Beam – three faces exposed",
+                "Beam – four faces exposed",
+            ],
+            index=1,
+            key="sh_faces",
+        )
+
+    with col_env:
+        fc_seed = _seed_from_param("fc", 32.0)
         fc = st.number_input(
-            "Concrete strength f'c (MPa)",
-            min_value=20.0,
-            max_value=100.0,
-            value=40.0,
-            step=1.0,
-            key="sh_fc",
+            "Concrete strength f'c (MPa)", value=fc_seed, step=1.0, key="sh_fc"
         )
 
-        h_mm = st.number_input(
-            "Notional member size h (mm)\n(e.g. effective thickness)",
-            min_value=50.0,
-            max_value=2000.0,
-            value=400.0,
-            step=25.0,
-            key="sh_h_mm",
+        environment = st.selectbox(
+            "Shrinkage environment (Table 3.1.7.2)",
+            [
+                "Arid environment",
+                "Interior environment",
+                "Temperate inland environment",
+                "Tropical / near-coastal / coastal environment",
+            ],
+            index=2,
+            key="sh_env",
         )
 
-        rh = st.number_input(
-            "Ambient relative humidity RH (%)",
-            min_value=40.0,
-            max_value=100.0,
-            value=70.0,
-            step=1.0,
-            key="sh_rh",
-        )
-
-    with col2:
-        t_s = st.number_input(
-            "Age at start of drying tₛ (days)",
-            min_value=1.0,
-            max_value=3650.0,
-            value=7.0,
-            step=1.0,
-            key="sh_ts",
-        )
-
-        t_final = st.number_input(
-            "Final age t (days) for design shrinkage",
-            min_value=7.0,
-            max_value=36500.0,
-            value=3650.0,
+        t_days = st.number_input(
+            "Time since commencement of drying t (days)",
+            value=365.0,
             step=10.0,
-            key="sh_t_final",
+            min_value=1.0,
+            key="sh_t_days",
         )
 
-        # Optional: factor for restrained shrinkage use cases
-        k_rest = st.number_input(
-            "Restraint factor k_rest (0–1)\n(1 = fully free, 0 = fully restrained)",
-            min_value=0.0,
-            max_value=1.0,
-            value=1.0,
-            step=0.05,
-            key="sh_k_rest",
+    # --------------------------------------------------------
+    # Derived geometry: Ag, ue, th
+    # --------------------------------------------------------
+    Ag = b * D  # mm²
+
+    if faces_option == "Slab – one face exposed":
+        ue = b
+    elif faces_option == "Slab – two faces exposed":
+        ue = 2.0 * b
+    elif faces_option == "Beam – three faces exposed":
+        ue = b + 2.0 * D
+    else:  # four faces
+        ue = 2.0 * (b + D)
+
+    th_raw = 2.0 * Ag / ue if ue > 0 else 0.0
+    th_table = _closest_th(th_raw)
+
+    # --------------------------------------------------------
+    # Shrinkage components
+    # --------------------------------------------------------
+    k1 = calc_k1_shrinkage(t_days, th_table)
+    eps_cse = calc_eps_cse(fc, t_days)
+    eps_csd_final = _shrinkage_eps_final(fc, environment, th_table)
+    eps_csd_t = k1 * eps_csd_final
+    eps_cs_total = eps_cse + eps_csd_t
+
+    # --------------------------------------------------------
+    # Tabs (5): geometry, autogenous, drying, total, flow chart
+    # --------------------------------------------------------
+    tab_geom, tab_auto, tab_dry, tab_total, tab_flow = st.tabs(
+        [
+            "Geometry & tₕ",
+            "Autogenous shrinkage ε_cse",
+            "Drying shrinkage ε_csd",
+            "Total shrinkage ε_cs",
+            "Flow chart / references",
+        ]
+    )
+
+    # ---------- Tab 1: Geometry & t_h ----------
+    with tab_geom:
+        st.subheader("Notional thickness tₕ – AS 3600 (2Aᵍ / uₑ)")
+
+        calcbox(
+            rf"""
+**Purpose**
+
+Determine the **notional thickness** $t_h$ used in AS 3600 for **creep and shrinkage**.
+This thickness controls how quickly the member dries and is used in **Fig. 3.1.7.2**
+and **Table 3.1.7.2**.
+
+**Inputs**
+
+- Section width: $b = {b:.1f}\,\text{{mm}}$
+- Overall depth: $D = {D:.1f}\,\text{{mm}}$
+- Gross area: $A_g = b D = {Ag:.0f}\,\text{{mm}}^2$
+- Faces exposed option: **{faces_option}**
+- Exposed perimeter: $u_e = {ue:.1f}\,\text{{mm}}$
+
+**Formula**
+
+\[
+t_h = \frac{{2 A_g}}{{u_e}}
+\]
+
+**Substitution**
+
+\[
+t_h = \frac{{2 \times {Ag:.0f}}}{{{ue:.1f}}}
+\approx {th_raw:.1f}\,\text{{mm}}
+\]
+
+For compatibility with **Fig. 3.1.7.2** and **Table 3.1.7.2**, we adopt
+the nearest standard notional thickness:
+
+\[
+t_{{h,\text{{table}}}} = {th_table:d}\,\text{{mm}} \quad (\text{{nearest of 50, 100, 200, 400 mm}})
+\]
+
+**Result**
+
+- Calculated notional thickness: $t_{{h,\text{{calc}}}} \approx {th_raw:.1f}\,\text{{mm}}$  
+- **Adopted for shrinkage checks:** $t_{{h,\text{{table}}}} = {th_table:d}\,\text{{mm}}$
+
+_Ref: AS 3600:2018 definition of notional thickness \(t_h = 2 A_g/u_e\);
+Fig. 3.1.7.2 and Table 3.1.7.2._
+"""
         )
 
-    st.markdown("---")
+    # ---------- Tab 2: Autogenous shrinkage ----------
+    with tab_auto:
+        st.subheader("Autogenous shrinkage ε_cse – AS 3600 Cl. 3.1.7.2(2),(3)")
 
-    # --------------------------------------------------
-    # Calculations for selected time
-    # --------------------------------------------------
-    eps_inf = calc_notional_shrinkage_strain(fc, h_mm, rh)  # microstrain
-    eps_t = calc_shrinkage_strain(eps_inf, t_final, t_s)    # microstrain
+        # avoid division by zero if t_days is tiny
+        if t_days > 0:
+            eps_cse_final = eps_cse / (1.0 - math.exp(-0.04 * t_days))
+        else:
+            eps_cse_final = eps_cse
 
-    eps_t_eff = eps_t * k_rest
+        calcbox(
+            rf"""
+**Purpose**
 
-    # Summary table
-    summary_df = pd.DataFrame(
-        {
-            "Parameter": [
-                "f'c",
-                "Notional size h",
-                "RH",
-                "tₛ (start of drying)",
-                "t (final age)",
-                "ε_sh,∞ (notional)",
-                "ε_sh(t)",
-                "ε_sh,eff(t) (with k_rest)",
-            ],
-            "Value": [
-                f"{fc:.1f} MPa",
-                f"{h_mm:.0f} mm",
-                f"{rh:.0f} %",
-                f"{t_s:.0f} days",
-                f"{t_final:.0f} days",
-                f"{eps_inf:.0f} με",
-                f"{eps_t:.0f} με",
-                f"{eps_t_eff:.0f} με",
-            ],
-        }
-    )
+Estimate the **autogenous (chemical) shrinkage** strain $\varepsilon_{{cse}}$,
+which develops even without drying (mainly due to hydration).
 
-    st.subheader("Shrinkage Summary (Design Point)")
-    st.table(summary_df)
+**Inputs**
 
-    # --------------------------------------------------
-    # Graph ε_sh(t) vs time
-    # --------------------------------------------------
-    st.subheader("Shrinkage Development Over Time")
+- Concrete strength: $f'_c = {fc:.1f}\,\text{{MPa}}$
+- Time after setting: $t = {t_days:.0f}\,\text{{days}}$
 
-    t_max_for_plot = max(t_final, t_s + 30.0)
-    t_values = np.linspace(t_s, t_max_for_plot, 200)
-    eps_values = [calc_shrinkage_strain(eps_inf, t, t_s) for t in t_values]
+Final autogenous strain $\varepsilon^*_{{cse}}$:
 
-    fig, ax = plt.subplots()
-    ax.plot(t_values, eps_values)
-    ax.set_xlabel("Age t (days)")
-    ax.set_ylabel("Shrinkage strain ε_sh(t) [με]")
-    ax.grid(True)
+For $f'_c \le 50\ \text{{MPa}}$:
 
-    st.pyplot(fig)
+\[
+\varepsilon^*_{{cse}} = (0.07 f'_c - 0.5)\times 50\times 10^{-6}
+\]
 
-    st.markdown(
-        """
-        **Notes (conceptual only):**
+For $f'_c > 50\ \text{{MPa}}$:
 
-        - Shrinkage contributes to **curvature** in statically indeterminate members
-          and to **tension stiffening** behaviour in cracked regions.
-        - In deflection calculations, you can treat shrinkage as an **imposed strain**
-          which, combined with creep, affects long-term curvature.
-        """
-    )
+\[
+\varepsilon^*_{{cse}} = (0.08 f'_c - 1.0)\times 50\times 10^{-6}
+\]
 
-    # --------------------------------------------------
-    # HOOK FOR INTEGRATION (OPTIONAL)
-    # --------------------------------------------------
-    # For integration with other pages, you can store results in session_state:
-    #
-    # st.session_state["shrinkage_eps_design"] = eps_t_eff   # microstrain
-    # st.session_state["shrinkage_eps_inf"] = eps_inf       # microstrain
-    #
-    # Then deflection/crack width pages can read them and use them in curvature.
+Time development (Cl. 3.1.7.2(2)):
+
+\[
+\varepsilon_{{cse}}(t) = \varepsilon^*_{{cse}} (1 - e^{{-0.04 t}})
+\]
+
+**Substitution**
+
+Using $f'_c = {fc:.1f}$ MPa and $t = {t_days:.0f}$ days:
+
+- Final autogenous strain:
+  \[
+  \varepsilon^*_{{cse}} \approx {eps_cse_final:.3e}
+  \]
+- At time $t$:
+  \[
+  \varepsilon_{{cse}}(t) \approx {eps_cse:.3e}
+  \]
+
+**Result**
+
+- Autogenous shrinkage at $t = {t_days:.0f}$ days:
+  \[
+  \varepsilon_{{cse}} \approx {eps_cse*1e6:.1f}\times 10^{{-6}}
+  \]
+  (≈ {eps_cse*1e6:.1f} microstrain)
+
+_Ref: AS 3600:2018 Cl. 3.1.7.2(2),(3)._ 
+"""
+        )
+
+    # ---------- Tab 3: Drying shrinkage ----------
+    with tab_dry:
+        st.subheader("Drying shrinkage ε_csd – AS 3600 Cl. 3.1.7.2(4),(5)")
+        env_short = _ENV_LABELS[environment]
+
+        calcbox(
+            rf"""
+**Purpose**
+
+Estimate the **drying shrinkage** strain $\varepsilon_{{csd}}(t)$, which develops
+as moisture is lost from the member.
+
+**Inputs**
+
+- Environment: **{environment}**  
+- Concrete strength: $f'_c = {fc:.1f}\,\text{{MPa}}$  
+- Notional thickness for tables: $t_h = {th_table:d}\,\text{{mm}}$  
+- Time since commencement of drying: $t = {t_days:.0f}\,\text{{days}}$
+
+From **Table 3.1.7.2**, the **final design drying shrinkage**:
+
+\[
+\varepsilon^*_{{csd}} = {eps_csd_final*1e6:.0f}\times 10^{{-6}}
+\quad (\text{{for }} f'_c \approx {_closest_fc_row(fc):.0f}\ \text{{MPa}},
+\ t_h = {th_table:d}\ \text{{mm}},\ \text{{{env_short}}})
+\]
+
+Time development coefficient $k_1$ from **Fig. 3.1.7.2**:
+
+\[
+k_1(t, t_h) = \frac{{\alpha_t t^{0.8}}}{{t^{0.8} + 0.15 t_h}},
+\quad
+\alpha_t = 0.8 + 1.2 e^{{-0.005 t_h}}
+\]
+
+Drying shrinkage at time $t$:
+
+\[
+\varepsilon_{{csd}}(t) = k_1(t, t_h)\, \varepsilon^*_{{csd}}
+\]
+
+**Substitution**
+
+- $\alpha_t \approx 0.8 + 1.2 e^{{-0.005\times {th_table:d}}}$  
+- $k_1(t, t_h) \approx {k1:.3f}$  
+- Drying shrinkage:
+  \[
+  \varepsilon_{{csd}}(t)
+  = {k1:.3f} \times {eps_csd_final*1e6:.0f}\times 10^{{-6}}
+  \approx {eps_csd_t*1e6:.1f}\times 10^{{-6}}
+  \]
+
+**Result**
+
+- Drying shrinkage at $t = {t_days:.0f}$ days:
+  \[
+  \varepsilon_{{csd}} \approx {eps_csd_t*1e6:.1f}\times 10^{{-6}}
+  \]
+  (≈ {eps_csd_t*1e6:.1f} microstrain)
+
+_Ref: AS 3600:2018 Cl. 3.1.7.2(4),(5); Fig. 3.1.7.2 and Table 3.1.7.2._
+"""
+        )
+
+    # ---------- Tab 4: Total shrinkage ----------
+    with tab_total:
+        st.subheader("Total shrinkage ε_cs = ε_cse + ε_csd")
+
+        calcbox(
+            rf"""
+**Purpose**
+
+Combine **autogenous** and **drying** shrinkage to obtain the **total design
+shrinkage strain**:
+
+\[
+\varepsilon_{{cs}} = \varepsilon_{{cse}} + \varepsilon_{{csd}}
+\]
+
+**Inputs**
+
+- Autogenous component:
+  \[
+  \varepsilon_{{cse}} \approx {eps_cse*1e6:.1f}\times 10^{{-6}}
+  \]
+- Drying component:
+  \[
+  \varepsilon_{{csd}} \approx {eps_csd_t*1e6:.1f}\times 10^{{-6}}
+  \]
+
+**Formula**
+
+\[
+\varepsilon_{{cs}} = \varepsilon_{{cse}} + \varepsilon_{{csd}}
+\]
+
+**Substitution**
+
+\[
+\varepsilon_{{cs}}
+= {eps_cse*1e6:.1f}\times 10^{{-6}}
++ {eps_csd_t*1e6:.1f}\times 10^{{-6}}
+\approx {eps_cs_total*1e6:.1f}\times 10^{{-6}}
+\]
+
+**Result**
+
+- Total shrinkage at $t = {t_days:.0f}$ days:
+  \[
+  \varepsilon_{{cs}} \approx {eps_cs_total*1e6:.1f}\times 10^{{-6}}
+  \]
+  (≈ {eps_cs_total*1e6:.1f} microstrain)
+
+_Ref: AS 3600:2018 Cl. 3.1.7 – total shrinkage._ 
+"""
+        )
+
+    # ---------- Tab 5: Flow chart / references ----------
+    with tab_flow:
+        st.subheader("Shrinkage workflow – AS 3600:2018 Cl. 3.1.7")
+
+        st.markdown(
+            """
+### Step 1 – Geometry & exposure
+
+- Choose section dimensions \\(b, D\\)  
+- Select faces exposed → exposed perimeter \\(u_e\\)  
+- Compute gross area \\(A_g = bD\\) and notional thickness \\(t_h = 2 A_g / u_e\\)  
+- Snap \\(t_h\\) to **50, 100, 200 or 400 mm** for use with Fig. 3.1.7.2 and Table 3.1.7.2.
+
+---
+
+### Step 2 – Environment & strength
+
+- Environment: arid / interior / temperate inland / tropical & coastal  
+- Concrete strength \\(f'_c\\)  
+- Time since commencement of drying \\(t\\).
+
+---
+
+### Step 3 – Autogenous shrinkage \\(\\varepsilon_{cse}\\)
+
+- Compute final \\(\\varepsilon^*_{cse}\\) from \\(f'_c\\) (Cl. 3.1.7.2(3))  
+- Apply time function  
+  \\(\\varepsilon_{cse}(t) = \\varepsilon^*_{cse}(1 - e^{-0.04 t})\\).
+
+---
+
+### Step 4 – Drying shrinkage \\(\\varepsilon_{csd}\\)
+
+1. From **Table 3.1.7.2**, obtain final drying strain \\(\\varepsilon^*_{csd}\\)  
+   for \\(f'_c\\), environment and \\(t_h\\).  
+2. Compute \\(k_1(t, t_h)\\) from **Fig. 3.1.7.2**.  
+3. Calculate drying shrinkage at time \\(t\\):  
+   \\[
+   \\varepsilon_{csd}(t) = k_1(t, t_h)\\, \\varepsilon^*_{csd}
+   \\]
+
+---
+
+### Step 5 – Total shrinkage & use in design
+
+- Sum components: \\(\\varepsilon_{cs} = \\varepsilon_{cse} + \\varepsilon_{csd}\\).  
+- Use \\(\\varepsilon_{cs}\\) in **deflection**, **crack width** and other
+  **serviceability** checks.
+"""
+        )
