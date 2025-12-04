@@ -1,4 +1,5 @@
 import math
+import pandas as pd
 import streamlit as st
 
 from state_and_helpers import (
@@ -8,7 +9,7 @@ from state_and_helpers import (
 )
 
 # Shared helpers (same contract as Inputs/Bending)
-from widgets_helpers import apply_global_widget_css, number_row
+from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row
 
 
 # ------------------------------------------------------------
@@ -30,31 +31,19 @@ def _fmt(val, decimals=1):
 
 
 def _inject_calcbox_css():
+    """Inject CSS for blue blockquote styling."""
     st.markdown(
         """
 <style>
-/* Style blockquotes as blue calc boxes */
 blockquote {
   border-left: 4px solid #1f77b4 !important;
   background-color: rgba(31, 119, 180, 0.08) !important;
   padding: 0.75rem 1rem !important;
   margin: 0.5rem 0 0.75rem 0 !important;
-  border-radius: 0 0.35rem 0.35rem 0 !important;
+  border-radius: 0 6px 6px 0 !important;
   color: #1a1a1a !important;
-  opacity: 1 !important;
-  font-size: 0.9rem !important;
-  line-height: 1.35 !important;
 }
-blockquote * {
-  color: #1a1a1a !important;
-  opacity: 1 !important;
-}
-blockquote p {
-  margin-bottom: 0.5rem !important;
-}
-blockquote p:last-child {
-  margin-bottom: 0 !important;
-}
+blockquote p, blockquote * { color: #1a1a1a !important; }
 </style>
 """,
         unsafe_allow_html=True,
@@ -62,15 +51,15 @@ blockquote p:last-child {
 
 
 def calcbox(md: str):
-    """Render a highlighted calculation box with native Streamlit LaTeX support."""
+    """Render a blue calculation box with proper LaTeX support."""
     # Convert \[...\] to $$...$$ for display math
     converted = md.replace("\\[", "$$").replace("\\]", "$$")
     # Convert \(...\) to $...$ for inline math
     converted = converted.replace("\\(", "$").replace("\\)", "$")
-    # Convert to blockquote format - prefix each line with >
+    
+    # Convert to blockquote format
     lines = converted.strip().split("\n")
     blockquote = "\n".join("> " + line for line in lines)
-    # Use native markdown which supports LaTeX
     st.markdown(blockquote)
 
 
@@ -87,11 +76,20 @@ def render_shear():
     summary_placeholder = st.empty()
 
     st.markdown(
-        """
-This page performs an AS 3600 shear + torsion check with a step-by-step ULS calculation.  
-Geometry, materials and design actions are shared with the Inputs tab via the session-state
-contract. Results are written to the global RESULTS using `update_results()` so the Inputs
-summary can show shear utilisation.
+        r"""
+This page evaluates **design shear**, **shear reinforcement**, and **torsion resistance**
+for reinforced concrete beams in accordance with **AS 3600:2018**, using the full
+**variable-angle truss model** (Cl. 8.2–8.3). Calculations include:
+
+- **Concrete shear strength** $V_c$ (Cl. 8.2.7)  
+- **Shear reinforcement contribution** $V_s$ based on bar area, spacing and yield strength (Cl. 8.2.8)  
+- **Design shear capacity** $\phi V_{uc} = \phi (V_c + V_s)$  
+- **Shear stress** $\tau_v = V^* / (b_w d)$ and web capacity checks  
+- **Torsional cracking, torsional reinforcement, and design torsion capacity** (Cl. 8.3.6–8.3.7)  
+- **Interaction of shear and torsion** where applicable.  
+
+Results are expressed in kN and MPa, and directly feed into deflection, crack-width,
+and interaction checks.
 """
     )
 
@@ -1052,31 +1050,81 @@ $$\\large \\text{{Capacity}} = \\frac{{{phi:.2f} \\times {Vu_max_kN:,.1f}}}{{{b_
     # 9. SUMMARY BANNER + PUSH RESULTS
     # =======================================================
     torsion_label = (
-        "**Yes (T* > 0.25 φT_cr)**" if torsion_required else "No (strength check)"
+        "Yes (T* > 0.25 φT_cr)" if torsion_required else "No (strength check)"
     )
 
-    summary_md = f"""
-### Shear/Torsion ULS Summary
+    shear_util = V_eq / phi_Vu if phi_Vu > 0 else float("nan")
 
-| Item | Value |
-|------|-------|
-| Torsion considered? | {torsion_label} |
-| V_eq* | **{V_eq:.1f} kN** |
-| V_uc | **{Vuc_kN:,.1f} kN** |
-| V_us | **{Vus_kN:,.1f} kN** |
-| φV_u vs V_eq* | **{phi_Vu:.1f} kN / {V_eq:.1f} kN → {"OK" if shear_ok else "NG"}** |
-| V_u,max (web crushing) | **{Vu_max_kN:,.1f} kN** |
-| Web-crushing check | **{"OK" if web_ok else "NG"}** |
-| εₓ, k_v, θ_v | **εₓ = {eps_x:.5f},  k_v = {k_v:.3f},  θ_v = {theta_v_deg:.1f}°** |
-"""
+    # Deflection-style summary table
+    rows_summary = [
+        {
+            "Check": "Torsion considered?",
+            "Value": torsion_label,
+            "Limit": "",
+            "Utilisation": "—",
+            "Status": "—",
+        },
+        {
+            "Check": "Equivalent design shear V_eq*",
+            "Value": f"{V_eq:.1f} kN",
+            "Limit": f"φV_u,cap = {phi_Vu:.1f} kN",
+            "Utilisation": f"{shear_util:.2f}" if phi_Vu > 0 else "—",
+            "Status": "OK" if shear_ok else "NG",
+        },
+        {
+            "Check": "Concrete contribution V_c",
+            "Value": f"{Vuc_kN:,.1f} kN",
+            "Limit": "",
+            "Utilisation": "—",
+            "Status": "—",
+        },
+        {
+            "Check": "Shear reinforcement V_s",
+            "Value": f"{Vus_kN:,.1f} kN",
+            "Limit": "",
+            "Utilisation": "—",
+            "Status": "—",
+        },
+        {
+            "Check": "Web-crushing capacity V_u,max",
+            "Value": f"{Vu_max_kN:,.1f} kN",
+            "Limit": "Demand ≤ Capacity",
+            "Utilisation": "—",
+            "Status": "OK" if web_ok else "NG",
+        },
+        {
+            "Check": "εₓ, k_v, θ_v",
+            "Value": f"εₓ = {eps_x:.5f},  k_v = {k_v:.3f},  θ_v = {theta_v_deg:.1f}°",
+            "Limit": "",
+            "Utilisation": "—",
+            "Status": "—",
+        },
+    ]
 
-    shear_util = V_eq / phi_Vu if phi_Vu > 0 else 0.0
+    summary_df = pd.DataFrame(rows_summary)
+
+    def _highlight_status(row):
+        status = row.get("Status", "")
+        if status == "OK":
+            color = "#d9ead3"
+        elif status in ("NG", "Check"):
+            color = "#f4cccc"
+        else:
+            color = ""
+        return [f"background-color: {color}"] * len(row)
+
+    styled_summary = summary_df.style.apply(_highlight_status, axis=1)
+
+    # Publish key shear results for Inputs summary
     update_results(
         phi_Vu_cap=phi_Vu,
-        Vu_utilisation=shear_util,
+        Vu_utilisation=shear_util if not math.isnan(shear_util) else 0.0,
     )
 
-    summary_placeholder.markdown(summary_md)
+    with summary_placeholder.container():
+        st.markdown("### Shear / Torsion – Summary")
+        st.dataframe(styled_summary, use_container_width=True, hide_index=True)
+        st.markdown("---")
 
 
 if __name__ == "__main__":
