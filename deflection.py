@@ -61,17 +61,29 @@ def _inject_calcbox_css():
 
 def calcbox(md: str):
     """
-    Render a highlighted calculation box (LaTeX-safe).
-    Use for 'formula + numbers in one place', same as shear.
+    Render a highlighted calculation box with LaTeX-enabled markdown inside.
     """
-    html = f"""
+    # Open wrapper
+    st.markdown(
+        """
 <div class="calcbox-wrapper">
   <div class="calcbox-inner">
-{md}
+""",
+        unsafe_allow_html=True,
+    )
+
+    # Render the markdown / LaTeX normally so MathJax can process it
+    st.markdown(md)
+
+    # Close wrapper
+    st.markdown(
+        """
   </div>
 </div>
-"""
-    st.markdown(html, unsafe_allow_html=True)
+""",
+        unsafe_allow_html=True,
+    )
+
 
 
 # ------------------------------------------------------------
@@ -760,3 +772,4 @@ with caps on \(I_{ef,max}\) depending on \(\beta\).
         ax.grid(True)
 
         st.pyplot(fig)
+
