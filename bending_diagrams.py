@@ -116,6 +116,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
 
     # Section is square (1:1 aspect ratio) - scaled uniformly
     sec_width = sec_size * scale_factor
+    sec_height = sec_width  # 1:1 aspect ratio - square section
     x0_sec = x_center_sec - sec_width / 2.0
 
     panel_w_strain = 200.0 * scale_factor
@@ -161,8 +162,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     # ====================================================
     # 1) SECTION PANEL (1:1 aspect ratio - square)
     # ====================================================
-    # Section is square: use sec_width for both width and height
-    sec_height = sec_width  # 1:1 aspect ratio
+    # Section is square: use sec_width for both width and height (sec_height already defined above)
     ax.add_patch(
         Rectangle(
             (x0_sec, 0),
