@@ -204,7 +204,7 @@ def calc_k5(fc: float, th_mm: float, k4: float) -> float:
     """
     k5 – modification factor for high strength concrete (Cl. 3.1.8.3).
 
-        k5 = 1.0                for f'c ≤ 50 MPa
+        k5 = 1.0                      for f'c ≤ 50 MPa
         k5 = (2.0 − α3) − 0.02(1 − α3) f'c    for 50 < f'c ≤ 100 MPa
         α3 = 0.7 / (k4 α2)
         α2 = 1.0 + 1.12 e^(−0.008 th)
@@ -222,8 +222,8 @@ def calc_k6(stress_ratio: float) -> float:
     """
     k6 – non-linear creep factor for σ₀ > 0.45 f'c,mi (Cl. 3.1.8.3):
 
-        k6 = 1.0                                     when σ₀ ≤ 0.45 f'c,mi
-        k6 = exp[1.5 (σ₀ / f'c,mi − 0.45)]           when σ₀ > 0.45 f'c,mi
+        k6 = 1.0                          when σ₀ ≤ 0.45 f'c,mi
+        k6 = exp[1.5 (σ₀ / f'c,mi − 0.45)] when σ₀ > 0.45 f'c,mi
 
     stress_ratio = σ₀ / f'c,mi
     """
@@ -270,11 +270,9 @@ This page computes **concrete creep coefficient** and **creep strain** in accord
 **AS 3600:2018 Clause 3.1.8**, including:
 
 - **Basic creep coefficient** ($\varphi_{cc,b}$) — Table 3.1.8.2  
-- **Design creep coefficient** at time $t$,  
-  $\varphi_{cc}(t) = k_2 k_3 k_4 k_5 k_6 \, \varphi_{cc,b}$ — Cl. 3.1.8.3  
+- **Design creep coefficient** at time $t$, $\varphi_{cc}(t) = k_2 k_3 k_4 k_5 k_6 \, \varphi_{cc,b}$ — Cl. 3.1.8.3  
 - **Final creep coefficient** after 30 years, $\varphi^{\*}_{cc}$ — Table 3.1.8.3  
-- **Creep strain** at time $t$,  
-  $\varepsilon_{cc} = \varphi_{cc}(t)\, \sigma_0 / E_c$ — Cl. 3.1.8.1
+- **Creep strain** at time $t$, $\varepsilon_{cc} = \varphi_{cc}(t)\, \sigma_0 / E_c$ — Cl. 3.1.8.1
 
 Creep coefficients are dimensionless; creep strains are reported in microstrain ($\times 10^{-6}$).
 """
@@ -286,7 +284,7 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
     summary_placeholder = st.empty()
 
     # --------------------------------------------------------
-    # Geometry & exposure inputs
+    # Geometry, exposure & loading
     # --------------------------------------------------------
     st.markdown("### Geometry, exposure & loading")
 
