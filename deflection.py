@@ -38,20 +38,31 @@ def _seed_from_param(name: str, fallback: float) -> float:
 
 
 def _inject_calcbox_css():
-    """Blue calc box styling – same as shear page."""
+    """Style blockquotes as blue calc boxes (same as shear page)."""
     st.markdown(
         """
 <style>
-.calcbox-wrapper {
-  margin-top: 0.5rem;
-  margin-bottom: 0.75rem;
+/* Style blockquotes as blue calc boxes */
+blockquote {
+  border-left: 4px solid #1f77b4 !important;
+  background-color: rgba(31, 119, 180, 0.08) !important;
+  padding: 0.75rem 1rem !important;
+  margin: 0.5rem 0 0.75rem 0 !important;
+  border-radius: 0 0.35rem 0.35rem 0 !important;
+  color: #1a1a1a !important;
+  opacity: 1 !important;
+  font-size: 0.9rem !important;
+  line-height: 1.35 !important;
 }
-.calcbox-inner {
-  padding: 0.75rem 1.0rem;
-  border-radius: 0.35rem;
-  border-left: 4px solid #1f77b4;
-  background-color: rgba(31, 119, 180, 0.06);
-  font-size: 0.9rem;
+blockquote * {
+  color: #1a1a1a !important;
+  opacity: 1 !important;
+}
+blockquote p {
+  margin-bottom: 0.5rem !important;
+}
+blockquote p:last-child {
+  margin-bottom: 0 !important;
 }
 </style>
 """,
@@ -60,29 +71,20 @@ def _inject_calcbox_css():
 
 
 def calcbox(md: str):
-    """
-    Render a highlighted calculation box with LaTeX-enabled markdown inside.
-    """
-    # Open wrapper
-    st.markdown(
-        """
-<div class="calcbox-wrapper">
-  <div class="calcbox-inner">
-""",
-        unsafe_allow_html=True,
-    )
+    """Render a highlighted calculation box with native Streamlit LaTeX support.
 
-    # Render the markdown / LaTeX normally so MathJax can process it
-    st.markdown(md)
-
-    # Close wrapper
-    st.markdown(
-        """
-  </div>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
+    - Converts \[ \] to $$ $$ for display math
+    - Converts \( \) to $ $ for inline math
+    - Wraps everything in a markdown blockquote (>) so CSS turns it blue
+    """
+    # Convert \[...\] to $$...$$ for display math
+    converted = md.replace("\\[", "$$").replace("\\]", "$$")
+    # Convert \(...\) to $...$ for inline math
+    converted = converted.replace("\\(", "$").replace("\\)", "$")
+    # Prefix each line with ">" so it's rendered as a blockquote
+    lines = converted.strip().split("\n")
+    blockquote = "\n".join("> " + line for line in lines)
+    st.markdown(blockquote)
 
 
 
@@ -772,4 +774,5 @@ with caps on \(I_{ef,max}\) depending on \(\beta\).
         ax.grid(True)
 
         st.pyplot(fig)
+
 
