@@ -1,6 +1,6 @@
 # crack_page.py
 # ============================
-# CRACK WIDTH – AS 3600:2018 Cl. 8.6
+# CRACK WIDTH – AS 3600:2018 Cl. 8.6.2
 # ============================
 
 import math
@@ -16,7 +16,7 @@ from widgets_helpers import apply_global_widget_css, number_row
 
 
 # ------------------------------------------------------------
-#  Small helpers / shared styling (same pattern as shrinkage/creep)
+#  Small helpers / shared styling (same pattern as creep/shrinkage)
 # ------------------------------------------------------------
 def _seed_from_param(name: str, fallback: float) -> float:
     """Seed default widget values from shared state, with safe fallback."""
@@ -69,7 +69,7 @@ blockquote p:last-child {
 
 
 def calcbox(md: str):
-    """
+    r"""
     Render a highlighted calculation box with LaTeX-enabled markdown inside.
 
     - Converts \[ \] → $$ $$ for display math
@@ -84,11 +84,11 @@ def calcbox(md: str):
 
 
 # ------------------------------------------------------------
-#  Tables – AS 3600:2018 8.6.2.2(A) & 8.6.2.2(B)
+#  Tables – AS 3600:2018 8.6.2.2(A) & (B)
 # ------------------------------------------------------------
-# Table 8.6.2.2(A) – Maximum steel stress for tension or flexure (by bar diameter)
-# Structure: {db_mm: {w_lim_mm: sigma_s_max_MPa}}
-_CRACK_TABLE_DB = {
+# TABLE 8.6.2.2(A) – Maximum steel stress for tension or flexure
+# Structure: {db_mm: {wmax_mm: sigma_max_MPa}}
+_TABLE_8_6_2_2A = {
     10: {0.2: 190, 0.3: 265, 0.4: 335},
     12: {0.2: 175, 0.3: 245, 0.4: 305},
     16: {0.2: 155, 0.3: 215, 0.4: 270},
@@ -100,9 +100,9 @@ _CRACK_TABLE_DB = {
     40: {0.2: 90,  0.3: 130, 0.4: 165},
 }
 
-# Table 8.6.2.2(B) – Maximum steel stress for flexure (by bar spacing)
-# Structure: {spacing_mm: {w_lim_mm: sigma_s_max_MPa}}
-_CRACK_TABLE_SPACING = {
+# TABLE 8.6.2.2(B) – Maximum steel stress for flexure vs spacing
+# Structure: {spacing_mm: {wmax_mm: sigma_max_MPa}}
+_TABLE_8_6_2_2B = {
     50:  {0.2: 200, 0.3: 300, 0.4: 400},
     100: {0.2: 170, 0.3: 270, 0.4: 360},
     150: {0.2: 155, 0.3: 245, 0.4: 330},
@@ -112,109 +112,68 @@ _CRACK_TABLE_SPACING = {
 }
 
 
-def _closest_key(value: float, table: dict) -> int:
-    keys = sorted(table.keys())
-    return min(keys, key=lambda k: abs(value - k))
+def _nearest_key(mapping: dict, value: float) -> int:
+    """Return integer key in mapping closest to value."""
+    keys = sorted(mapping.keys())
+    return min(keys, key=lambda k: abs(k - value))
 
 
-def sigma_limit_from_tables(
-    db_mm: float,
-    spacing_mm: float,
-    w_lim_mm: float,
-    fsy: float,
-    primary_action: str,
-) -> float:
-    """
-    Return allowable steel stress σ_s,lim from 8.6.2.2 for given bar size, spacing and w'_max.
+def table_sigma_max_A(db_mm: float, wmax_mm: float) -> float:
+    """Lookup σ_s,max from Table 8.6.2.2(A) (nearest db, w'max)."""
+    wopt = min([0.2, 0.3, 0.4], key=lambda x: abs(x - wmax_mm))
+    db_key = _nearest_key(_TABLE_8_6_2_2A, db_mm)
+    return _TABLE_8_6_2_2A[db_key][wopt]
 
-    - For 'Tension' → Table 8.6.2.2(A) only
-    - For 'Flexure' → larger of Table 8.6.2.2(A) and 8.6.2.2(B)
-    - Always limited to 0.8 f_sy
-    """
-    db_key = _closest_key(db_mm, _CRACK_TABLE_DB)
-    s_key = _closest_key(spacing_mm, _CRACK_TABLE_SPACING)
 
-    sigma_A = _CRACK_TABLE_DB[db_key][w_lim_mm]
-
-    if primary_action == "Flexure":
-        sigma_B = _CRACK_TABLE_SPACING[s_key][w_lim_mm]
-        sigma_tables = max(sigma_A, sigma_B)
-    else:  # "Tension"
-        sigma_tables = sigma_A
-
-    sigma_08fsy = 0.8 * fsy
-    return min(sigma_tables, sigma_08fsy)
+def table_sigma_max_B(spacing_mm: float, wmax_mm: float) -> float:
+    """Lookup σ_s,max from Table 8.6.2.2(B) (nearest spacing, w'max)."""
+    wopt = min([0.2, 0.3, 0.4], key=lambda x: abs(x - wmax_mm))
+    s_key = _nearest_key(_TABLE_8_6_2_2B, spacing_mm)
+    return _TABLE_8_6_2_2B[s_key][wopt]
 
 
 # ------------------------------------------------------------
-#  Functions for calculated crack width – Cl. 8.6.2.3
+#  Direct calculation helpers – 8.6.2.3
 # ------------------------------------------------------------
-def effective_concrete_area(
-    b_mm: float,
-    D_mm: float,
-    d_mm: float,
-    kd_mm: float,
-) -> float:
-    """
-    Effective tension area A_c,eff (mm²) around longitudinal bars per Cl. 8.6.2.3:
-
-        h_c,eff = min( 2.5(D - d), (D - k_d)/3, D/2 )
-        A_c,eff = b * h_c,eff
-    """
-    h1 = 2.5 * (D_mm - d_mm)
-    h2 = (D_mm - kd_mm) / 3.0
-    h3 = 0.5 * D_mm
-    h_ceff = max(0.0, min(h1, h2, h3))
-    return b_mm * h_ceff
-
-
-def max_crack_spacing(
-    c_mm: float,
-    db_mm: float,
+def calc_eps_diff(
+    sigma_sr: float,
+    Es: float,
+    fct_eff: float,
     rho_eff: float,
-    k1: float,
-    k2: float,
+    ne: float,
+    eps_cs: float,
 ) -> float:
     """
-    Maximum final crack spacing s_r,max (mm) for bars at 'reasonably close centres':
+    ε_sm − ε_cm from 8.6.2.3(2):
 
-        s_r,max = 3.4 c + 0.3 k1 k2 d_b / ρ_eff
+      ε_sm − ε_cm = σ_sr / Es − 0.6 f_ct,eff / (Es ρ_eff) (1 + n_e ρ_eff) + ε_cs
+                  ≥ 0.6 σ_sr / Es
+
+    All strains are dimensionless.
     """
     if rho_eff <= 0:
-        return float("nan")
-    return 3.4 * c_mm + 0.3 * k1 * k2 * db_mm / rho_eff
+        return 0.0
 
-
-def strain_difference(
-    sigma_sr: float,
-    f_ct: float,
-    rho_eff: float,
-    eps_cs: float,
-    phi_cc: float,
-    Ec: float,
-    Es: float = 200000.0,
-) -> float:
-    """
-    ε_sm - ε_cm from 8.6.2.3(2):
-
-        ε_sm - ε_cm = σ_sr / E_s
-                      - 0.6 f_ct / (E_s ρ_eff) (1 + n_eff ρ_eff)
-                      + ε_cs  ≥  0.6 σ_sr / E_s
-
-    where n_eff = (1 + φ_cc) E_s / E_c.
-    All strains returned as dimensionless (not microstrain).
-    """
-    if rho_eff <= 0 or Ec <= 0 or Es <= 0:
-        return float("nan")
-
-    n_eff = (1.0 + phi_cc) * Es / Ec
     term1 = sigma_sr / Es
-    term2 = 0.6 * f_ct / (Es * rho_eff) * (1.0 + n_eff * rho_eff)
-    raw = term1 - term2 + eps_cs
+    term2 = 0.6 * fct_eff / (Es * rho_eff) * (1.0 + ne * rho_eff)
+    eps_diff = term1 - term2 + eps_cs
 
-    # Enforce lower bound 0.6 σ_sr / Es
-    lower = 0.6 * sigma_sr / Es
-    return max(raw, lower)
+    # Lower bound 0.6 σ_sr / Es
+    eps_min = 0.6 * sigma_sr / Es
+    return max(eps_diff, eps_min)
+
+
+def calc_sr_max(c_mm: float, db_mm: float, rho_eff: float, k1: float, k2: float) -> float:
+    """
+    Maximum crack spacing  s_r,max  from 8.6.2.3(3):
+
+        s_r,max = 3.4 c + 0.3 k1 k2 d_b / ρ_eff
+
+    Returns s_r,max in mm.
+    """
+    if rho_eff <= 0:
+        return 0.0
+    return 3.4 * c_mm + 0.3 * k1 * k2 * db_mm / rho_eff
 
 
 # ------------------------------------------------------------
@@ -228,114 +187,84 @@ def render_crack():
     # --------------------------------------------------------
     # Page title
     # --------------------------------------------------------
-    st.title("Crack control – AS 3600:2018 Clause 8.6")
+    st.title("Crack width – AS 3600:2018 Clause 8.6.2")
 
     # --------------------------------------------------------
     # Page description (directly under title)
     # --------------------------------------------------------
     st.markdown(
         r"""
-This page implements **crack control of reinforced concrete beams** in accordance with  
-**AS 3600:2018 Clause 8.6**, including:
+This page checks **flexural crack control in reinforced concrete beams** in accordance with  
+**AS 3600:2018 Clause 8.6.2**, using:
 
-- **Table-based crack control** without direct crack-width calculation (Cl. 8.6.2.2; Tables 8.6.2.2(A),(B))  
-- **Calculated crack width** for tension/flexure in reinforced beams (Cl. 8.6.2.3)  
-- Comparison of **design steel stress** and **crack width** against a selected limit \(w'_{\max}\)
+- **Table method (no direct crack width)** — limiting steel stress from Tables 8.6.2.2(A)–(B)  
+- **Direct crack-width calculation** — \(w = s_{r,\max} (\varepsilon_{sm} - \varepsilon_{cm}) \le w'_{\max}\) per Cl. 8.6.2.3  
 
-Crack widths are in millimetres; crack strains are reported in microstrain (\(\times 10^{-6}\)).
+The aim is to verify that cracking is **controlled** so that durability and appearance are not impaired.
 """
     )
 
     # --------------------------------------------------------
-    # Reserve space for summary table
+    # Reserve space for top summary
     # --------------------------------------------------------
     summary_placeholder = st.empty()
 
     # --------------------------------------------------------
-    # Inputs
+    # Inputs – geometry, reinforcement, material, crack limit
     # --------------------------------------------------------
-    st.markdown("### Key inputs")
+    st.markdown("### Inputs")
 
-    col_geom, col_steel, col_service = st.columns(3)
+    col_geom, col_reo, col_mat, col_crack = st.columns(4)
 
-    # --- Geometry / reinforcement for calculated method ---
     with col_geom:
         b_seed = _seed_from_param("b", 300.0)
         D_seed = _seed_from_param("D", 600.0)
-        d_seed = _seed_from_param("d", 550.0)
+        cover_seed = _seed_from_param("cover_bot", 40.0)
 
-        b = st.number_input("Section width b (mm)", value=b_seed, step=10.0, key="crk_b")
-        D = st.number_input("Overall depth D (mm)", value=D_seed, step=10.0, key="crk_D")
-        d = st.number_input("Effective depth d (mm)", value=d_seed, step=10.0, key="crk_d")
-
-        kd = st.number_input(
-            "Neutral axis depth k_d (mm)",
-            value=0.4 * D_seed,
+        b = st.number_input(
+            "Section width b (mm)",
+            value=b_seed,
             step=10.0,
-            min_value=1.0,
-            key="crk_kd",
+            key="crk_b",
         )
-
+        D = st.number_input(
+            "Overall depth D (mm)",
+            value=D_seed,
+            step=10.0,
+            key="crk_D",
+        )
         c = st.number_input(
-            "Clear cover to longitudinal bars c (mm)",
-            value=40.0,
+            "Clear cover to tensile bars c (mm)",
+            value=cover_seed,
             step=5.0,
-            min_value=5.0,
-            key="crk_cover",
+            key="crk_c",
         )
 
-        Ast_eff = st.number_input(
-            "Area of tension steel crossing cracks A_st,eff (mm² per metre width)",
-            value=2000.0,
-            step=100.0,
-            min_value=1.0,
-            key="crk_Ast_eff",
-        )
-
-    # --- Steel / exposure / table-based check ---
-    with col_steel:
-        fsy_seed = _seed_from_param("fsy", 500.0)
-
-        fsy = st.number_input(
-            "Steel yield strength fsy (MPa)",
-            value=fsy_seed,
-            step=10.0,
-            min_value=100.0,
-            key="crk_fsy",
-        )
-
+    with col_reo:
         db = st.number_input(
-            "Largest bar diameter d_b (mm)",
+            "Nominal bar diameter d_b (mm)",
             value=20.0,
             step=2.0,
             min_value=8.0,
             key="crk_db",
         )
-
         spacing = st.number_input(
-            "Centre-to-centre spacing of tensile bars s (mm)",
+            "Centre-to-centre spacing s (mm)",
             value=200.0,
             step=25.0,
             min_value=25.0,
             key="crk_spacing",
         )
-
-        primary_action = st.selectbox(
-            "Primary action for crack control",
-            ["Flexure", "Tension"],
-            index=0,
-            key="crk_action",
+        Ast_seed = _seed_from_param("Ast_bot", 3 * math.pi * 20.0**2 / 4.0)
+        Ast = st.number_input(
+            "Area of tensile steel A_s,t (mm²)",
+            value=float(Ast_seed),
+            step=50.0,
+            min_value=1.0,
+            key="crk_Ast",
         )
 
-        w_lim = st.selectbox(
-            "Selected characteristic max crack width w'max (mm)",
-            [0.2, 0.3, 0.4],
-            index=1,
-            key="crk_w_lim",
-        )
-
-    # --- Service loads / strains for calculated method ---
-    with col_service:
+    with col_mat:
         fc_seed = _seed_from_param("fc", 32.0)
         Ec_seed = _seed_from_param("Ec", 30000.0)
 
@@ -345,362 +274,395 @@ Crack widths are in millimetres; crack strains are reported in microstrain (\(\t
             step=1.0,
             key="crk_fc",
         )
-
         Ec = st.number_input(
             "Concrete modulus Ec (MPa)",
             value=Ec_seed,
             step=1000.0,
             key="crk_Ec",
         )
-
         Es = st.number_input(
             "Steel modulus Es (MPa)",
             value=200000.0,
-            step=5000.0,
+            step=10000.0,
             key="crk_Es",
         )
 
-        sigma_s = st.number_input(
-            "Calculated tensile steel stress σ_sr (MPa) at SLS",
+    with col_crack:
+        wmax_choice = st.selectbox(
+            "Characteristic crack width limit w'ₘₐₓ (mm)",
+            options=[0.2, 0.3, 0.4],
+            index=1,
+            format_func=lambda x: f"{x:.1f} mm",
+            key="crk_wmax",
+        )
+        member_type = st.selectbox(
+            "Resultant action",
+            options=["Primarily flexure", "Primarily tension"],
+            index=0,
+            key="crk_member_type",
+        )
+        sigma_sr = st.number_input(
+            "Steel stress at SLS σ_sr (MPa)",
             value=200.0,
             step=10.0,
             min_value=0.0,
             key="crk_sigma_sr",
         )
 
-        f_ct = st.number_input(
-            "Mean axial tensile strength f_ct (MPa) at cracking",
-            value=2.6,
-            step=0.1,
-            min_value=0.1,
-            key="crk_fct",
-        )
-
-        phi_cc = st.number_input(
-            "Creep coefficient φ_cc (long-term at cracking)",
-            value=2.0,
-            step=0.1,
-            min_value=0.0,
-            key="crk_phi_cc",
-        )
-
-        eps_cs_micro = st.number_input(
-            "Final shrinkage strain ε_cs (microstrain, +ve in tension)",
-            value=600.0,
-            step=50.0,
-            min_value=0.0,
-            key="crk_eps_cs_micro",
-        )
-
-        # k1 & k2 for crack spacing – user controlled
-        k1 = st.selectbox(
-            "k₁ – bond factor",
-            options=[
-                "0.8 (deformed bars – default)",
-                "1.6 (plain / poor bond)",
-            ],
-            index=0,
-            key="crk_k1_choice",
-        )
-        k1_val = 0.8 if "0.8" in k1 else 1.6
-
-        k2_val = st.number_input(
-            "k₂ – strain distribution factor (≈0.5 bending, 1.0 tension)",
-            value=0.5,
-            step=0.1,
-            min_value=0.3,
-            max_value=1.0,
-            key="crk_k2",
-        )
+    # Effective area in tension (very simplified) and ρ_eff
+    d_eff = D - c - db / 2.0
+    # Very simple Aceff: use 2.5c × (D − d) but not more than D/2, per definition idea
+    height_eff = min(2.5 * c, max(D - d_eff, 0.0), D / 2.0)
+    Aceff = b * max(height_eff, 1.0)  # mm²
+    rho_eff = Ast / Aceff
 
     # --------------------------------------------------------
-    #  Derived quantities for calculated method
+    # 8.6.2.2 – Table-based max steel stress
     # --------------------------------------------------------
-    A_ceff = effective_concrete_area(b, D, d, kd)
-    rho_eff = Ast_eff / A_ceff if A_ceff > 0 else float("nan")
+    # Table A limit (always applies)
+    sigma_table_A = table_sigma_max_A(db, wmax_choice)
+
+    # Table B limit (only for primarily flexure)
+    sigma_table_B = table_sigma_max_B(spacing, wmax_choice)
+
+    if member_type == "Primarily tension":
+        sigma_table_combined = sigma_table_A
+        table_basis = "Table 8.6.2.2(A) – bar diameter"
+    else:
+        sigma_table_combined = max(sigma_table_A, sigma_table_B)
+        table_basis = (
+            "Max of Table 8.6.2.2(A) (bar diameter) "
+            "and 8.6.2.2(B) (spacing)"
+        )
+
+    # 0.8 fsy cap (user will normally choose σ_sr not exceeding this)
+    fsy_seed = _seed_from_param("fsy", 500.0)
+    fsy = fsy_seed
+    sigma_08fsy = 0.8 * fsy
+
+    sigma_allow_table = min(sigma_table_combined, sigma_08fsy)
+    utilisation_table = sigma_sr / sigma_allow_table if sigma_allow_table > 0 else 0.0
+    passes_table = utilisation_table <= 1.0
+
+    # --------------------------------------------------------
+    # 8.6.2.3 – Direct crack width calculation
+    # --------------------------------------------------------
+    # Effective mean axial tensile strength – allow user override
+    fct_default = 0.6 * math.sqrt(max(fc, 1.0))
+    fct_eff = st.number_input(
+        "Effective mean tensile strength f_ct,eff (MPa)",
+        value=float(fct_default),
+        step=0.1,
+        min_value=0.1,
+        key="crk_fct_eff",
+    )
+
+    phi_ce = st.number_input(
+        "Creep coefficient φ_ce (for crack interval)",
+        value=2.0,
+        step=0.1,
+        min_value=0.0,
+        key="crk_phi_ce",
+    )
+
+    eps_cs_micro = st.number_input(
+        "Final long-term shrinkage strain ε_cs (microstrain)",
+        value=300.0,
+        step=10.0,
+        min_value=0.0,
+        key="crk_eps_cs_micro",
+    )
     eps_cs = eps_cs_micro * 1e-6
 
-    s_r_max = max_crack_spacing(c, db, rho_eff, k1_val, k2_val)
-    eps_diff = strain_difference(
-        sigma_sr=sigma_s,
-        f_ct=f_ct,
-        rho_eff=rho_eff,
-        eps_cs=eps_cs,
-        phi_cc=phi_cc,
-        Ec=Ec,
+    k1_choice = st.selectbox(
+        "k₁ (bond coefficient)",
+        options=[
+            ("Deformed bars (k₁ = 0.8)", 0.8),
+            ("Plain bars (k₁ = 1.6)", 1.6),
+        ],
+        index=0,
+        key="crk_k1",
+    )
+    k1 = k1_choice[1]
+
+    if member_type == "Primarily flexure":
+        k2_default = 0.5
+    else:
+        k2_default = 1.0
+
+    k2 = st.number_input(
+        "k₂ (strain distribution factor)",
+        value=float(k2_default),
+        step=0.1,
+        min_value=0.3,
+        max_value=1.5,
+        key="crk_k2",
+    )
+
+    # Modular ratio for effective stiffness
+    ne = (1.0 + phi_ce) * Es / Ec if Ec > 0 else 0.0
+
+    eps_diff = calc_eps_diff(
+        sigma_sr=sigma_sr,
         Es=Es,
+        fct_eff=fct_eff,
+        rho_eff=rho_eff,
+        ne=ne,
+        eps_cs=eps_cs,
     )
 
-    w_calc = s_r_max * eps_diff if (
-        not math.isnan(s_r_max) and not math.isnan(eps_diff)
-    ) else float("nan")
+    sr_max = calc_sr_max(c_mm=c, db_mm=db, rho_eff=rho_eff, k1=k1, k2=k2)
+    w_calc = sr_max * eps_diff  # mm (since sr_max in mm and strain is unitless)
+    utilisation_w = w_calc / wmax_choice if wmax_choice > 0 else 0.0
+    passes_w = utilisation_w <= 1.0
 
     # --------------------------------------------------------
-    #  Table-based allowable stress
-    # --------------------------------------------------------
-    sigma_allow_tables = sigma_limit_from_tables(
-        db_mm=db,
-        spacing_mm=spacing,
-        w_lim_mm=w_lim,
-        fsy=fsy,
-        primary_action=primary_action,
-    )
-
-    table_ok = sigma_s <= sigma_allow_tables
-    calc_ok = (not math.isnan(w_calc)) and (w_calc <= w_lim)
-
-    # --------------------------------------------------------
-    #  SUMMARY TABLE
+    # TOP SUMMARY TABLE
     # --------------------------------------------------------
     with summary_placeholder.container():
         st.markdown("## Summary")
 
         rows = [
             {
-                "Check": "Table-based steel stress limit (8.6.2.2)",
-                "Result": f"σ_sr = {sigma_s:.1f} MPa",
-                "Limit": f"σ_lim = {sigma_allow_tables:.1f} MPa",
-                "Pass?": "PASS ✅" if table_ok else "FAIL ❌",
+                "Check": "Table method – max steel stress σ_sr",
+                "Result": f"{sigma_sr:.1f} MPa",
+                "Limit": f"{sigma_allow_table:.1f} MPa",
+                "Utilisation": f"{utilisation_table:.2f}",
+                "Pass?": "PASS" if passes_table else "FAIL",
             },
             {
-                "Check": "Calculated crack width (8.6.2.3)",
-                "Result": f"w_calc = {w_calc:.3f} mm" if not math.isnan(w_calc) else "w_calc = —",
-                "Limit": f"w'max = {w_lim:.3f} mm",
-                "Pass?": "PASS ✅" if calc_ok else ("FAIL ❌" if not math.isnan(w_calc) else "N/A"),
+                "Check": "Direct crack width w",
+                "Result": f"{w_calc:.3f} mm",
+                "Limit": f"{wmax_choice:.3f} mm",
+                "Utilisation": f"{utilisation_w:.2f}",
+                "Pass?": "PASS" if passes_w else "FAIL",
             },
         ]
 
         summary_df = pd.DataFrame(rows)
-        st.dataframe(summary_df, use_container_width=True, hide_index=True)
+
+        def _highlight(row):
+            color = "#d9ead3" if "PASS" in row.get("Pass?", "") else "#f4cccc"
+            return [f"background-color: {color}"] * len(row)
+
+        styled = summary_df.style.apply(_highlight, axis=1)
+        st.dataframe(styled, use_container_width=True, hide_index=True)
         st.markdown("---")
 
     # --------------------------------------------------------
-    #  Tabs – table-based method, calculated method, workflow
+    # Tabs: table method & direct calculation
     # --------------------------------------------------------
     tab_table, tab_calc, tab_flow = st.tabs(
         [
-            "Table-based check (8.6.2.2)",
-            "Calculated crack width (8.6.2.3)",
+            "Table method (8.6.2.2)",
+            "Direct calculation (8.6.2.3)",
             "Workflow / notes",
         ]
     )
 
-    # ---------- Tab 1: Table-based crack control ----------
+    # ---------- Tab 1: Table method ----------
     with tab_table:
-        st.subheader("Crack control without direct calculation – Cl. 8.6.2.2")
+        st.subheader("Crack control **without** direct calculation of crack widths – Cl. 8.6.2.2")
 
         calcbox(
             rf"""
-**Purpose**
+**Concept**
 
-Check crack control by limiting the **tensile steel stress** on the cracked section,
-without explicitly calculating crack widths.
+Instead of calculating a crack width directly, Clause 8.6.2.2 limits the **steel stress**
+on the cracked section:
 
-**Inputs**
+- For members **primarily in tension**:  
+  \[
+  \sigma_{{sr}} \le \sigma_{{\text{{max,A}}}} \quad \text{{(Table 8.6.2.2(A))}}
+  \]
+- For members **primarily in flexure**:  
+  \[
+  \sigma_{{sr}} \le \max\left(\sigma_{{\text{{max,A}}}}, \sigma_{{\text{{max,B}}}}\right)
+  \]
+  where \(\sigma_{{\text{{max,B}}}}\) comes from **Table 8.6.2.2(B)**.
 
-- Primary action: **{primary_action}**  
-- Largest bar diameter in tensile zone: $d_b = {db:.1f}\,\text{{mm}}$  
-- Centre-to-centre spacing of bars: $s = {spacing:.1f}\,\text{{mm}}$  
-- Selected characteristic max crack width: $w'_{{\max}} = {w_lim:.3f}\,\text{{mm}}$  
-- Steel yield strength: $f_{{sy}} = {fsy:.1f}\,\text{{MPa}}$  
-- Calculated tensile steel stress at SLS: $\sigma_{{sr}} = {sigma_s:.1f}\,\text{{MPa}}$
+Under direct loading, \(\sigma_{{sr,1}} \le 0.8 f_{{sy}}\).
 
-**Steel stress limits**
+**Current input**
 
-From **Table 8.6.2.2(A)** (by diameter):
+- Bar diameter: \(d_b = {db:.1f}\,\text{{mm}}\)  
+- Spacing: \(s = {spacing:.0f}\,\text{{mm}}\)  
+- Crack width limit: \(w'_{{\max}} = {wmax_choice:.1f}\,\text{{mm}}\)  
+- SLS steel stress: \(\sigma_{{sr}} = {sigma_sr:.1f}\,\text{{MPa}}\)  
+- Yield strength: \(f_{{sy}} \approx {fsy:.0f}\,\text{{MPa}}\)
 
-\[
-\sigma_{{\text{{lim,A}}}} \approx {_CRACK_TABLE_DB[_closest_key(db, _CRACK_TABLE_DB)][w_lim]:.0f}\,\text{{MPa}}
-\]
+**From tables**
 
-For **flexure** (Cl. 8.6.2.2(b)), the limit is the larger of  
-Table 8.6.2.2(A) and **Table 8.6.2.2(B)** (by spacing).  
-For **tension** (Cl. 8.6.2.2(a)), only Table 8.6.2.2(A) applies.
+- Table 8.6.2.2(A): \(\sigma_{{\text{{max,A}}}} \approx {sigma_table_A:.1f}\,\text{{MPa}}\)  
+- Table 8.6.2.2(B): \(\sigma_{{\text{{max,B}}}} \approx {sigma_table_B:.1f}\,\text{{MPa}}\)  
+- Combined table limit ({table_basis}):  
+  \[
+  \sigma_{{\text{{table}}}} = {sigma_table_combined:.1f}\,\text{{MPa}}
+  \]
+- 0.8\(f_{{sy}}\) limit:
+  \[
+  0.8 f_{{sy}} \approx {sigma_08fsy:.1f}\,\text{{MPa}}
+  \]
 
-The table-based limit is therefore:
-
-\[
-\sigma_{{\text{{tables}}}} =
-\begin{cases}
-\sigma_{{\text{{lim,A}}}}, & \text{{tension}} \\
-\max\bigl(\sigma_{{\text{{lim,A}}}}, \sigma_{{\text{{lim,B}}}}\bigr), & \text{{flexure}}
-\end{cases}
-\]
-
-Additionally, under direct loading:
-
-\[
-\sigma_{{sr,1}} \le 0.8 f_{{sy}} = 0.8 \times {fsy:.1f}
-= {0.8*fsy:.1f}\,\text{{MPa}}
-\]
-
-So the **design limit** is:
+Overall allowable steel stress:
 
 \[
-\sigma_{{\text{{lim}}}}
-= \min\bigl(\sigma_{{\text{{tables}}}}, 0.8 f_{{sy}}\bigr)
-\approx {sigma_allow_tables:.1f}\,\text{{MPa}}
+\sigma_{{\text{{allow}}}} = \min\left(\sigma_{{\text{{table}}}},\,0.8 f_{{sy}}\right)
+= {sigma_allow_table:.1f}\,\text{{MPa}}
 \]
 
-**Result**
+**Check**
 
-- Calculated steel stress: $\sigma_{{sr}} = {sigma_s:.1f}\,\text{{MPa}}$  
-- Allowable stress from 8.6.2.2: $\sigma_{{\text{{lim}}}} \approx {sigma_allow_tables:.1f}\,\text{{MPa}}$  
-
-This check **{"meets" if table_ok else "exceeds"}** the table-based limit.
+\[
+\frac{{\sigma_{{sr}}}}{{\sigma_{{\text{{allow}}}}}}
+= \frac{{{sigma_sr:.1f}}}{{{sigma_allow_table:.1f}}}
+\approx {utilisation_table:.2f}
+\quad\Rightarrow\quad
+\text{{{"PASS" if passes_table else "FAIL"}}}
+\]
 """
         )
 
-    # ---------- Tab 2: Calculated crack width ----------
+    # ---------- Tab 2: Direct calculation ----------
     with tab_calc:
-        st.subheader("Crack control by calculation of crack widths – Cl. 8.6.2.3")
+        st.subheader("Crack control **by calculation of crack widths** – Cl. 8.6.2.3")
 
         calcbox(
             rf"""
-**Purpose**
+**Concept**
 
-Calculate the **maximum crack width** in a reinforced concrete beam:
+The calculated maximum crack width is:
 
 \[
-w = s_{{r,\max}} (\varepsilon_{{sm}} - \varepsilon_{{cm}}) \le w'_{{\max}}
+w = s_{{r,\max}}(\varepsilon_{{sm}} - \varepsilon_{{cm}}) \le w'_{{\max}}
 \]
 
-**Effective concrete area and reinforcement ratio**
+where:
 
-Effective tension area (Cl. 8.6.2.3):
+- \(s_{{r,\max}}\) = maximum crack spacing  
+- \(\varepsilon_{{sm}}\) = mean strain in reinforcement  
+- \(\varepsilon_{{cm}}\) = mean strain in concrete between cracks.
+
+**Step 1 – Effective reinforcement ratio**
+
+Effective area in tension (simplified):
 
 \[
-h_{{c,\text{{eff}}}} = \min\bigl( 2.5(D - d),\, (D - k_d)/3,\, D/2 \bigr)
+A_{{c,\text{{eff}}}} \approx b \, h_{{\text{{eff}}}}
+\quad\Rightarrow\quad
+A_{{c,\text{{eff}}}} \approx {Aceff:.0f}\,\text{{mm}}^2
 \]
 
-Using:
-
-- $b = {b:.1f}\,\text{{mm}}$, $D = {D:.1f}\,\text{{mm}}$, $d = {d:.1f}\,\text{{mm}}$, $k_d = {kd:.1f}\,\text{{mm}}$
-
-we obtain:
-
 \[
-A_{{c,\text{{eff}}}} = b \, h_{{c,\text{{eff}}}} \approx {A_ceff:.0f}\,\text{{mm}}^2
-\]
-
-Reinforcement ratio in the effective area:
-
-\[
-\rho_{{\text{{eff}}}} = \frac{{A_{{st,\text{{eff}}}}}}{{A_{{c,\text{{eff}}}}}}
-= \frac{{{Ast_eff:.0f}}}{{{A_ceff:.0f}}}
+\rho_{{\text{{eff}}}} = \frac{{A_{{s,t}}}}{{A_{{c,\text{{eff}}}}}}
+= \frac{{{Ast:.0f}}}{{{Aceff:.0f}}}
 \approx {rho_eff:.4f}
 \]
 
-**Maximum crack spacing**
-
-For bars at reasonably close centres (Cl. 8.6.2.3):
-
-\[
-s_{{r,\max}} = 3.4 c + 0.3 k_1 k_2 d_b / \rho_{{\text{{eff}}}}
-\]
-
-Using:
-
-- $c = {c:.1f}\,\text{{mm}}$  
-- $d_b = {db:.1f}\,\text{{mm}}$  
-- $k_1 = {k1_val:.2f}$, $k_2 = {k2_val:.2f}$  
-
-gives:
-
-\[
-s_{{r,\max}} \approx {s_r_max:.1f}\,\text{{mm}}
-\]
-
-(Valid for spacing $s \le 5(c + 0.5 d_b)$.)
-
-**Strain difference $(\varepsilon_{{sm}} - \varepsilon_{{cm}})$**
+**Step 2 – Difference in mean strain** \(\varepsilon_{{sm}} - \varepsilon_{{cm}}\)
 
 From Cl. 8.6.2.3(2):
 
 \[
 \varepsilon_{{sm}} - \varepsilon_{{cm}}
 = \frac{{\sigma_{{sr}}}}{{E_s}}
-- \frac{{0.6 f_{{ct}}}}{{E_s \rho_{{\text{{eff}}}}} (1 + n_{{\text{{eff}}}} \rho_{{\text{{eff}}}})
-+ \varepsilon_{{cs}} \ge 0.6 \frac{{\sigma_{{sr}}}}{{E_s}}
+- \frac{{0.6 f_{{ct,\text{{eff}}}}}}{{E_s \rho_{{\text{{eff}}}}}}\left(1 + n_e \rho_{{\text{{eff}}}}\right)
++ \varepsilon_{{cs}}
+\ge 0.6 \frac{{\sigma_{{sr}}}}{{E_s}}
 \]
 
-with
+With:
 
-\[
-n_{{\text{{eff}}}} = (1 + \varphi_{{cc}}) \frac{{E_s}}{{E_c}}
-\]
+- \(f_{{ct,\text{{eff}}}} = {fct_eff:.2f}\,\text{{MPa}}\)  
+- \(E_s = {Es:.0f}\,\text{{MPa}},\ E_c = {Ec:.0f}\,\text{{MPa}}\)  
+- \(\varphi_{{ce}} = {phi_ce:.2f}\)  
+- \(n_e = (1 + \varphi_{{ce}}) E_s/E_c \approx {ne:.2f}\)  
+- \(\varepsilon_{{cs}} \approx {eps_cs_micro:.1f}\times 10^{{-6}}\)
 
-Using:
-
-- $\sigma_{{sr}} = {sigma_s:.1f}\,\text{{MPa}}$  
-- $f_{{ct}} = {f_ct:.2f}\,\text{{MPa}}$  
-- $E_s = {Es:.0f}\,\text{{MPa}}$, $E_c = {Ec:.0f}\,\text{{MPa}}$  
-- $\varphi_{{cc}} = {phi_cc:.2f}$  
-- $\varepsilon_{{cs}} = {eps_cs_micro:.1f}\times 10^{{-6}}$
-
-we obtain:
+This gives:
 
 \[
 \varepsilon_{{sm}} - \varepsilon_{{cm}} \approx {eps_diff:.3e}
 \]
 
-**Crack width**
+**Step 3 – Maximum crack spacing**
 
 \[
-w = s_{{r,\max}} (\varepsilon_{{sm}} - \varepsilon_{{cm}})
-\approx {s_r_max:.1f} \times {eps_diff:.3e}
+s_{{r,\max}} = 3.4 c + 0.3 k_1 k_2 \frac{{d_b}}{{\rho_{{\text{{eff}}}}}}
+\]
+
+Using:
+
+- \(c = {c:.1f}\,\text{{mm}},\ d_b = {db:.1f}\,\text{{mm}}\)  
+- \(k_1 = {k1:.2f},\ k_2 = {k2:.2f}\)
+
+\[
+s_{{r,\max}} \approx {sr_max:.1f}\,\text{{mm}}
+\]
+
+**Step 4 – Crack width**
+
+\[
+w = s_{{r,\max}}(\varepsilon_{{sm}} - \varepsilon_{{cm}})
+\approx {sr_max:.1f} \times {eps_diff:.3e}
 \approx {w_calc:.3f}\,\text{{mm}}
 \]
 
-**Result**
+Limit:
 
-- Calculated crack width: $w \approx {w_calc:.3f}\,\text{{mm}}$  
-- Limit: $w'_{{\max}} = {w_lim:.3f}\,\text{{mm}}$  
-
-Thus this check **{"satisfies" if calc_ok else "does not satisfy"}** the crack-width limit.
+\[
+w'_{{\max}} = {wmax_choice:.1f}\,\text{{mm}}, \quad
+\frac{{w}}{{w'_{{\max}}}} \approx {utilisation_w:.2f}
+\Rightarrow\ \text{{{"PASS" if passes_w else "FAIL"}}}
+\]
 """
         )
 
-    # ---------- Tab 3: Workflow / notes ----------
+    # ---------- Tab 3: Workflow ----------
     with tab_flow:
-        st.subheader("Crack control workflow – AS 3600:2018 Clause 8.6")
+        st.subheader("Crack control workflow – AS 3600:2018 Clause 8.6.2")
 
         st.markdown(
             """
-### Step 1 – General crack control requirements (Cl. 8.6.1)
+### Step 1 – Minimum reinforcement & detailing
 
-- Ensure minimum reinforcement and bar spacing requirements are met (Cl. 8.1.6.1, 8.6.1(b)).  
-- Select a characteristic maximum crack width \(w'_{\max}\) based on exposure and function.
-
----
-
-### Step 2 – Option A: Table-based crack control (Cl. 8.6.2.2)
-
-- Choose \(w'_{\max}\), largest bar diameter \(d_b\) and bar spacing \(s\).  
-- Obtain maximum steel stresses from Tables 8.6.2.2(A) and 8.6.2.2(B).  
-- Apply the 0.8\(f_{sy}\) limit under direct loading.  
-- Check \(\sigma_{sr} \le \sigma_{\text{lim}}\).
+- Check minimum tensile reinforcement per Clause 8.1.6.1  
+- Check cover and spacing requirements (≤ 100 mm to nearest bar, ≤ 300 mm spacing, etc.).
 
 ---
 
-### Step 3 – Option B: Calculated crack width (Cl. 8.6.2.3)
+### Step 2 – Choose crack-control approach
 
-1. Determine geometry and reinforcement:
-   - \(b, D, d, k_d, c, A_{st,\text{eff}}\).  
-   - Compute \(A_{c,\text{eff}}\), \(\rho_{\text{eff}}\), \(s_{r,\max}\).
-2. Compute material/time-dependent quantities:
-   - \(f_{ct}\), \(\varphi_{cc}\), \(\varepsilon_{cs}\), \(E_c, E_s\).  
-   - Evaluate \(\varepsilon_{sm} - \varepsilon_{cm}\) from Cl. 8.6.2.3(2).
-3. Evaluate crack width:
-   - \(w = s_{r,\max} (\varepsilon_{sm} - \varepsilon_{cm})\).  
-   - Check \(w \le w'_{\max}\).
+- **Table method (8.6.2.2)** for most beams – simple steel-stress limit.  
+- **Direct crack-width calculation (8.6.2.3)** where a more refined check is needed.
 
 ---
 
-### Step 4 – Use in serviceability design
+### Step 3 – Table method
 
-- The more onerous of the table-based and calculated checks can be adopted.  
-- Use consistent \(w'_{\max}\) across beams on the same facade or exposure.  
-- Document assumptions on \(f_{ct}\), \(\varphi_{cc}\), \(\varepsilon_{cs}\), bar layout and cover.
+- Determine largest bar diameter and spacing in the tension zone.  
+- Choose characteristic crack-width limit \(w'_{\max}\) for the surface.  
+- Read off \(\sigma_{\text{max}}\) from Tables 8.6.2.2(A)–(B).  
+- Ensure \(\sigma_{sr} \le \min(\sigma_{\text{max}}, 0.8 f_{sy})\).
+
+---
+
+### Step 4 – Direct calculation (if used)
+
+- Compute effective reinforcement ratio \(\rho_{\text{eff}}\).  
+- Determine \(k_1, k_2\) based on bond and strain distribution.  
+- Obtain \(f_{ct,\text{eff}}, \varphi_{ce}, \varepsilon_{cs}\) (can be linked to your shrinkage/creep pages).  
+- Evaluate \(s_{r,\max}\), \(\varepsilon_{sm} - \varepsilon_{cm}\) and \(w\).  
+- Check \(w \le w'_{\max}\).
+
+---
+
+This page is intentionally **teaching-focused**: every step is exposed so students can
+see how the tables and equations in Clause 8.6.2 relate to each other.
 """
         )
+
+
+# For compatibility with whatever app.py calls
+def render_crack_page():
+    render_crack()
