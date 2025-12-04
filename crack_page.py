@@ -357,17 +357,24 @@ The aim is to verify that cracking is **controlled** so that durability and appe
         key="crk_fct_eff",
     )
 
+    # Try to seed φ_ce from the creep page result (φ_cc(t)),
+    # falling back to 2.0 if creep hasn't been run yet.
+    phi_ce_seed = _seed_from_param("phi_cc_t", 2.0)
+
     phi_ce = st.number_input(
         "Creep coefficient φ_ce (for crack interval)",
-        value=2.0,
+        value=float(phi_ce_seed),
         step=0.1,
         min_value=0.0,
         key="crk_phi_ce",
     )
 
+    # Seed ε_cs from shrinkage page (if run), otherwise ~300 με
+    eps_cs_seed_micro = _seed_from_param("eps_cs_total_micro", 300.0)
+
     eps_cs_micro = st.number_input(
         "Final long-term shrinkage strain ε_cs (microstrain)",
-        value=300.0,
+        value=float(eps_cs_seed_micro),
         step=10.0,
         min_value=0.0,
         key="crk_eps_cs_micro",
@@ -661,6 +668,21 @@ This page is intentionally **teaching-focused**: every step is exposed so studen
 see how the tables and equations in Clause 8.6.2 relate to each other.
 """
         )
+
+    # --------------------------------------------------------
+    # Publish crack-control results (optional, for dashboards)
+    # --------------------------------------------------------
+    update_results(
+        "crack",
+        {
+            "sigma_sr": sigma_sr,
+            "sigma_allow_table": sigma_allow_table,
+            "w_calc": w_calc,
+            "wmax_char": wmax_choice,
+            "passes_table": passes_table,
+            "passes_w": passes_w,
+        },
+    )
 
 
 # For compatibility with whatever app.py calls
