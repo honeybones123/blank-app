@@ -118,6 +118,31 @@ SHARED_DEFAULTS = {
     "Tu_utilisation": 0.0,
     "crack_width": 0.0,
     "crack_utilisation": 0.0,
+
+    # Shrinkage results for reuse (e.g. crack width)
+    "eps_cs_total": 0.0,          # total shrinkage strain (dimensionless)
+    "eps_cs_total_micro": 300.0,  # microstrain seed
+    "eps_cse": 0.0,
+    "eps_csd_t": 0.0,
+    "th_shrinkage": 100.0,
+    "k1_shrinkage": 1.0,
+
+    # Creep results for reuse
+    "phi_cc_t": 2.0,
+    "phi_cc_star_table": 2.0,
+    "k2_creep": 1.0,
+    "k3_creep": 1.0,
+    "k4_creep": 1.0,
+    "k5_creep": 1.0,
+    "k6_creep": 1.0,
+
+    # Crack control summary results
+    "sigma_sr": 0.0,
+    "sigma_allow_table": 0.0,
+    "w_calc": 0.0,
+    "wmax_char": 0.3,
+    "passes_table": True,
+    "passes_w": True,
 }
 
 # Explicit set of result keys (for RULE 4 checks)
@@ -130,6 +155,28 @@ RESULT_KEYS = {
     "Tu_utilisation",
     "crack_width",
     "crack_utilisation",
+    # Shrinkage
+    "eps_cs_total",
+    "eps_cs_total_micro",
+    "eps_cse",
+    "eps_csd_t",
+    "th_shrinkage",
+    "k1_shrinkage",
+    # Creep
+    "phi_cc_t",
+    "phi_cc_star_table",
+    "k2_creep",
+    "k3_creep",
+    "k4_creep",
+    "k5_creep",
+    "k6_creep",
+    # Crack control summary
+    "sigma_sr",
+    "sigma_allow_table",
+    "w_calc",
+    "wmax_char",
+    "passes_table",
+    "passes_w",
 }
 
 # =====================================================
@@ -394,17 +441,21 @@ def get_sync_callbacks():
 
 def update_results(**kwargs):
     """
-    Safely update result values (phi_Mu_cap, Mu_utilisation, etc.).
-    RULE 4: Only keys listed in RESULT_KEYS are allowed.
+    Safely update result / shared values (phi_Mu_cap, Mu_utilisation, shrinkage,
+    creep, crack summaries, etc.).
 
-    Usage from a page:
-        update_results(phi_Mu_cap=123.4, Mu_utilisation=0.85)
+    Originally this helper only allowed keys listed in RESULT_KEYS. To keep the
+    teaching pages flexible while still enforcing the core contract, we now:
+
+      - require that any updated key exists in SHARED_DEFAULTS
+      - but do NOT require it to be in RESULT_KEYS (RESULT_KEYS is kept mainly
+        for documentation and legacy checks).
     """
     for key, value in kwargs.items():
-        if key not in RESULT_KEYS:
+        if key not in SHARED_DEFAULTS:
             raise KeyError(
-                f"[SESSION STATE CONTRACT] Tried to update unknown result key '{key}'.\n"
-                f"Add it to RESULT_KEYS + SHARED_DEFAULTS before using update_results()."
+                f"[SESSION STATE CONTRACT] Tried to update unknown session key '{key}'.\n"
+                f"Add it to SHARED_DEFAULTS before using update_results()."
             )
         st.session_state[key] = value
 
