@@ -430,10 +430,8 @@ def render_bending():
     )
 
     # SLS steel stress string (for summary table; matches Deflection / Crack pages).
-    # Compute from the global SLS stress–strain state so it is always available,
-    # and publish it to shared state for Crack / Deflection pages.
-    sls_state = _stress_strain_state("SLS (cracked)")
-    fs_ser = sls_state.get("fs_t")
+    # Canonical value is published by the SLS Tab 3 (outermost tension layer).
+    fs_ser = get_param("sigma_s_sls", None)
     try:
         fs_ser_val = float(fs_ser) if fs_ser is not None else float("nan")
     except Exception:
@@ -443,9 +441,6 @@ def render_bending():
         fs_ser_str = "—"
     else:
         fs_ser_str = f"{fs_ser_val:.1f} MPa"
-
-    # push into shared state so other pages can consume it
-    update_results(sigma_s_sls=fs_ser_val if not math.isnan(fs_ser_val) else 200.0)
 
     # Canonical bending state shared by 3D & 2D buttons
     state_options = ["ULS", "SLS (cracked)", "Uncracked"]
@@ -547,11 +542,14 @@ def render_bending():
     </div>
     """
 
-    # ---------------- TOP CONTAINER – Title, description, full-width summary, then 3D ----------------
+    # ---------------- TOP CONTAINER – Title + 3D in one row, summary full-width below ----------------
     with top_container:
-        st.title("Bending Capacity")
-        st.markdown(
-            r"""
+        top_left, top_right = st.columns([0.58, 0.42])
+
+        with top_left:
+            st.title("Bending Capacity")
+            st.markdown(
+                r"""
 This page computes **ultimate flexural capacity**, **strain compatibility**, and
 **service-stress outputs** in accordance with **AS 3600:2018 Clause 8**, including:
 
@@ -564,15 +562,10 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 - **Strain-compatibility solution** for concrete and steel, showing ULS and SLS stress–strain states.
 
 - **Force equilibrium** between concrete compression and steel tension, using the AS 3600 $\alpha_2$–$\gamma$ rectangular stress block.
-            """
-        )
+                """
+            )
 
-        # Full-width summary card (same feel as deflection / creep pages)
-        components.html(summary_html, height=340)
-
-        # 3D neutral-axis view + state radio below the summary
-        threeD_left, threeD_right = st.columns([0.55, 0.45])
-        with threeD_right:
+        with top_right:
             fig3d_top = _build_beam_3d_figure(
                 b=get_param("b"),
                 D=get_param("D"),
@@ -598,6 +591,9 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             )
             if state_3d != canonical_state:
                 canonical_state = state_3d
+
+        # Summary table spans full width under the heading + 3D row
+        components.html(summary_html, height=340)
 
     # Persist canonical bending state for the rest of the page (and next rerun)
     st.session_state["bending_state"] = canonical_state
