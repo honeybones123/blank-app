@@ -194,7 +194,7 @@ def calc_eps_cse(fc: float, t_days: float) -> float:
 def render_shrinkage():
     apply_global_widget_css()
     _inject_calcbox_css()
-    get_sync_callbacks()  # keeps contract with Inputs page
+    get_sync_callbacks()  # maintains contract with Inputs page
 
     # --------------------------------------------------------
     # Page title
@@ -204,17 +204,17 @@ def render_shrinkage():
     # --------------------------------------------------------
     # Page description (appears directly under title)
     # --------------------------------------------------------
-st.markdown(
-    r"""
+    st.markdown(
+        r"""
 This page computes **concrete shrinkage strain** in accordance with  
 **AS 3600:2018 Clause 3.1.7**, consisting of:
 
-- **Autogenous shrinkage** $ \varepsilon_{cse} $ — Cl. 3.1.7.2(2),(3)
-- **Drying shrinkage** $ \varepsilon_{csd} $ — Cl. 3.1.7.2(4),(5)
+- **Autogenous shrinkage** \( \varepsilon_{cse} \) — Cl. 3.1.7.2(2),(3)
+- **Drying shrinkage** \( \varepsilon_{csd} \) — Cl. 3.1.7.2(4),(5)
 - **Notional thickness**
 
   $$
-  t_h = \frac{2A_g}{u_e}
+  t_h = \frac{2 A_g}{u_e}
   $$
 
   used in Fig. 3.1.7.2 and Table 3.1.7.2
@@ -225,11 +225,9 @@ This page computes **concrete shrinkage strain** in accordance with
   \varepsilon_{cs} = \varepsilon_{cse} + \varepsilon_{csd}
   $$
 
-All strains are reported in units of microstrain $ (\times 10^{-6}) $.
+All strains are reported in units of microstrain \( \times 10^{-6} \).
 """
-)
-
-
+    )
 
     # --------------------------------------------------------
     # Reserve space for the top summary table
@@ -237,44 +235,54 @@ All strains are reported in units of microstrain $ (\times 10^{-6}) $.
     summary_placeholder = st.empty()
 
     # --------------------------------------------------------
-    # Geometry block
+    # Geometry & Exposure
     # --------------------------------------------------------
     st.markdown("### Geometry & exposure")
-
 
     col_geom, col_env = st.columns(2)
 
     with col_geom:
         b_seed = _seed_from_param("b", 300.0)
         D_seed = _seed_from_param("D", 600.0)
-        b = st.number_input("Section width b (mm)", value=b_seed, step=10.0, key="sh_b")
-        D = st.number_input("Overall depth D (mm)", value=D_seed, step=10.0, key="sh_D")
+
+        b = st.number_input(
+            "Section width b (mm)",
+            value=b_seed,
+            step=10.0,
+            key="sh_b",
+        )
+
+        D = st.number_input(
+            "Overall depth D (mm)",
+            value=D_seed,
+            step=10.0,
+            key="sh_D",
+        )
 
         faces_option = st.selectbox(
-            "Faces exposed to drying",
-            [
-                "Slab – one face exposed",
-                "Slab – two faces exposed",
-                "Beam – three faces exposed",
-                "Beam – four faces exposed",
-            ],
+            "Number of exposed faces",
+            ["1 face", "2 faces", "3 faces", "4 faces"],
             index=1,
             key="sh_faces",
         )
 
     with col_env:
         fc_seed = _seed_from_param("fc", 32.0)
+
         fc = st.number_input(
-            "Concrete strength f'c (MPa)", value=fc_seed, step=1.0, key="sh_fc"
+            "Concrete strength f'c (MPa)",
+            value=fc_seed,
+            step=1.0,
+            key="sh_fc",
         )
 
-        environment = st.selectbox(
+        env_option = st.selectbox(
             "Shrinkage environment (Table 3.1.7.2)",
             [
                 "Arid environment",
                 "Interior environment",
                 "Temperate inland environment",
-                "Tropical / near-coastal / coastal environment",
+                "Tropical / coastal environment",
             ],
             index=2,
             key="sh_env",
@@ -646,6 +654,7 @@ _Ref: AS 3600:2018 Cl. 3.1.7 – total shrinkage._
   **serviceability** checks.
 """
         )
+
 
 
 
