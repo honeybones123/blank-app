@@ -410,6 +410,23 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
     phi_cc_t = k2 * k3 * k4 * k5 * k6 * phi_cc_b
     phi_cc_star_table = final_creep_coeff_table(fc, env_option, th_table)
 
+    # --------------------------------------------------------
+    # Publish key creep results to shared state
+    #   (for reuse in crack-width page etc.)
+    # --------------------------------------------------------
+    update_results(
+        "creep",
+        {
+            "phi_cc_t": phi_cc_t,  # design creep coeff at t
+            "phi_cc_star_table": phi_cc_star_table,  # 30-year table value
+            "k2_creep": k2,
+            "k3_creep": k3,
+            "k4_creep": k4,
+            "k5_creep": k5,
+            "k6_creep": k6,
+        },
+    )
+
     sigma0 = stress_ratio * fc  # MPa (approx using f'c,mi ≈ f'c)
     eps_cc = phi_cc_t * sigma0 / Ec  # dimensionless
     eps_cc_micro = eps_cc * 1e6
@@ -689,4 +706,3 @@ _Ref: AS 3600:2018 Cl. 3.1.8.1._
 - Use \(\varepsilon_{cc}\) in **deflection** and other **serviceability** checks.
 """
         )
-
