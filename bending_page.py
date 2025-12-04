@@ -448,99 +448,72 @@ def render_bending():
     if canonical_state not in state_options:
         canonical_state = "ULS"
 
-    # Original summary card HTML (now with minimum strength row, no comments)
-    summary_html = f"""
-    <div style="
-        border: 1px solid #cccccc;
-        border-radius: 8px;
-        padding: 0.5rem 0.75rem;
-        margin-bottom: 1rem;
-  max-width: 1200px;
-    ">
-      <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
-        <thead>
-          <tr style="background-color: #f5f5f5;">
-            <th style="text-align:left; padding: 4px 6px;">Item</th>
-            <th style="text-align:right; padding: 4px 6px;">Value</th>
-            <th style="text-align:right; padding: 4px 6px;">Criterion</th>
-            <th style="text-align:center; padding: 4px 6px;">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr style="background-color: {As_colour};">
-            <td style="padding: 4px 6px;"><strong>Steel area Ast,bot</strong></td>
-            <td style="text-align:right; padding: 4px 6px;">{Ast_str}</td>
-            <td style="text-align:right; padding: 4px 6px;">≥ As,min = {As_min_str}</td>
-        <td style="text-align:center; padding: 4px 6px;">
-          <strong>{As_status}</strong>
-        </td>
-          </tr>
+    # Summary rows in deflection-style format
+    rows_summary = [
+        {
+            "Check": "Steel area Ast,bot",
+            "Value": Ast_str,
+            "Limit": f"As,min = {As_min_str}",
+            "Utilisation": "—",
+            "Status": As_status,
+        },
+        {
+            "Check": "Flexural capacity",
+            "Value": f"ϕM\u2093,cap = {phiMu_str}",
+            "Limit": f"M\u2093* = {Mu_star_str}",
+            "Utilisation": Mu_util_str,
+            "Status": Mu_status,
+        },
+        {
+            "Check": "Minimum strength",
+            "Value": f"ϕM\u2093,cap = {phiMu_str}",
+            "Limit": f"M\u2093,min = {Mu_min_str}",
+            "Utilisation": Mu_min_util_str,
+            "Status": Mu_min_status,
+        },
+        {
+            "Check": "Neutral axis ratio k\u2091",
+            "Value": f"k\u2091 = {ku_str}",
+            "Limit": "AS 3600 limit ≤ 0.36",
+            "Utilisation": "—",
+            "Status": ku_status,
+        },
+        {
+            "Check": "SLS steel stress f\u209b,ser",
+            "Value": fs_ser_str,
+            "Limit": "SLS (for crack/deflection)",
+            "Utilisation": "—",
+            "Status": "—",
+        },
+        {
+            "Check": "Neutral axis depth d\u2099",
+            "Value": f"d\u2099 = {c_str}",
+            "Limit": "",
+            "Utilisation": "—",
+            "Status": "—",
+        },
+        {
+            "Check": "Stress block depth a = γc",
+            "Value": f"a = {a_str}",
+            "Limit": "",
+            "Utilisation": "—",
+            "Status": "—",
+        },
+    ]
 
-          <tr style="background-color: {Mu_colour};">
-            <td style="padding: 4px 6px;"><strong>Flexural capacity</strong></td>
-        <td style="text-align:right; padding: 4px 6px;">
-          ϕM<sub>u,cap</sub> = {phiMu_str}
-        </td>
-        <td style="text-align:right; padding: 4px 6px;">
-          M<sub>u</sub>* = {Mu_star_str}
-        </td>
-        <td style="text-align:center; padding: 4px 6px;">
-          Util = M<sub>u</sub>* / ϕM<sub>u,cap</sub> = {Mu_util_str}<br>
-          <strong>{Mu_status}</strong>
-        </td>
-      </tr>
+    summary_df = pd.DataFrame(rows_summary)
 
-      <tr style="background-color: {Mu_min_colour};">
-        <td style="padding: 4px 6px;"><strong>Minimum strength</strong></td>
-        <td style="text-align:right; padding: 4px 6px;">
-          ϕM<sub>u,cap</sub> = {phiMu_str}
-        </td>
-        <td style="text-align:right; padding: 4px 6px;">
-          M<sub>u,min</sub> = {Mu_min_str}
-        </td>
-            <td style="text-align:center; padding: 4px 6px;">
-          Util = M<sub>u,min</sub> / ϕM<sub>u,cap</sub> = {Mu_min_util_str}<br>
-          <strong>{Mu_min_status}</strong>
-            </td>
-          </tr>
+    def _highlight_status(row):
+        status = row.get("Status", "")
+        if status == "OK":
+            color = "#d9ead3"
+        elif status in ("Check", "NG"):
+            color = "#f4cccc"
+        else:
+            color = ""
+        return [f"background-color: {color}"] * len(row)
 
-          <tr style="background-color: {ku_colour};">
-            <td style="padding: 4px 6px;"><strong>Neutral axis ratio k<sub>u</sub></strong></td>
-        <td style="text-align:right; padding: 4px 6px;">
-          k<sub>u</sub> = {ku_str}
-        </td>
-        <td style="text-align:right; padding: 4px 6px;">AS 3600 limit ≤ 0.36</td>
-        <td style="text-align:center; padding: 4px 6px;">
-          <strong>{ku_status}</strong>
-        </td>
-      </tr>
-
-      <tr>
-        <td style="padding: 4px 6px;"><strong>SLS steel stress f<sub>s,ser</sub></strong></td>
-        <td style="text-align:right; padding: 4px 6px;">
-          {fs_ser_str}
-        </td>
-        <td style="text-align:right; padding: 4px 6px;">SLS (for crack/deflection)</td>
-        <td style="text-align:center; padding: 4px 6px;"></td>
-      </tr>
-
-      <tr>
-        <td style="padding: 4px 6px;"><strong>Neutral axis depth d<sub>n</sub></strong></td>
-        <td style="text-align:right; padding: 4px 6px;">c = {c_str}</td>
-        <td style="text-align:right; padding: 4px 6px;"></td>
-        <td style="text-align:center; padding: 4px 6px;"></td>
-      </tr>
-
-      <tr>
-        <td style="padding: 4px 6px;"><strong>Stress block depth a = γc</strong></td>
-        <td style="text-align:right; padding: 4px 6px;">a = {a_str}</td>
-        <td style="text-align:right; padding: 4px 6px;"></td>
-        <td style="text-align:center; padding: 4px 6px;"></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    """
+    styled_summary = summary_df.style.apply(_highlight_status, axis=1)
 
     # ---------------- TOP CONTAINER – Title + 3D in one row, summary full-width below ----------------
     with top_container:
@@ -592,8 +565,9 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             if state_3d != canonical_state:
                 canonical_state = state_3d
 
-        # Summary table spans full width under the heading + 3D row
-        components.html(summary_html, height=340)
+        # Summary table spans full width under the heading + 3D row (deflection-style)
+        st.markdown("### Bending – Summary")
+        st.dataframe(styled_summary, use_container_width=True, hide_index=True)
 
     # Persist canonical bending state for the rest of the page (and next rerun)
     st.session_state["bending_state"] = canonical_state
