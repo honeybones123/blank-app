@@ -94,19 +94,20 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     sec_size = max(float(b), float(D))
     
     # Calculate total width needed at original scale
-    # Rightmost point: stress panel end + margin for labels and T arrow
+    # Rightmost point: stress panel end + T arrow + labels
     x1_stress_orig = x_center_stress_orig + panel_w_stress_orig / 2.0
-    # Account for T arrow extending beyond stress panel (can be up to panel_w_stress * 0.8)
-    rightmost = x1_stress_orig + panel_w_stress_orig * 0.8 + 50.0  # Extra margin for labels
+    # T arrow can extend up to panel_w_stress * 0.8, plus label spacing
+    rightmost = x1_stress_orig + panel_w_stress_orig * 0.8 + 80.0  # Margin for T label
     # Leftmost point: section left edge (using square size) or xlim start
     leftmost = min(x_center_sec_orig - sec_size / 2.0, -200.0)
     total_width_needed = rightmost - leftmost
     
-    # Target width that fits on page (more conservative to ensure no cutoff)
-    target_width = 1100.0
+    # Target width that fits on page (conservative to prevent any cutoff)
+    # Account for Streamlit container margins and ensure nothing gets cut off
+    target_width = 900.0
     
-    # Simple scale factor: shrink by 1:1 ratio until it fits
-    # Apply scaling whenever content is wide, not just when > target
+    # Calculate scale factor: shrink proportionally by 1:1 ratio until it fits
+    # Scale down whenever content exceeds target to prevent cutoff
     scale_factor = min(1.0, target_width / total_width_needed)
     
     # Apply scale factor uniformly to all positions (1:1 ratio)
@@ -146,10 +147,20 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     # Use max of D and sec_height to ensure all content fits
     max_depth = max(D, sec_height)
     ax.set_ylim(max_depth * 1.2, -0.2 * max_depth)
-    # Set xlim based on original bounds, scaled uniformly
-    xlim_min_orig = -200.0
-    xlim_max_orig = 1450.0
-    ax.set_xlim(xlim_min_orig * scale_factor, xlim_max_orig * scale_factor)
+    
+    # Calculate actual content bounds after scaling to ensure nothing gets cut off
+    # Rightmost: stress panel + maximum T arrow extent + label spacing
+    x1_stress_scaled = x_center_stress + panel_w_stress / 2.0
+    # T arrow can extend up to panel_w_stress * 0.8 from x0_stress
+    x_T_max_scaled = x0_stress + (panel_w_stress * 0.8)
+    # Label extends further right
+    label_spacing = 8.0 * scale_factor
+    rightmost_scaled = x_T_max_scaled + label_spacing + 50.0 * scale_factor
+    # Leftmost: section left edge (accounting for square section)
+    leftmost_scaled = x0_sec
+    # Set xlim with padding to ensure all content fits and nothing gets cut off
+    padding = 30.0 * scale_factor
+    ax.set_xlim(leftmost_scaled - padding, rightmost_scaled + padding)
     ax.set_aspect("equal", adjustable="box")
     ax.set_xmargin(0)
     ax.set_ymargin(0)
@@ -275,7 +286,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
 
     ax.text(
         x_center_sec,
-        D + 0.14 * D,
+        max_depth + 0.14 * max_depth,
         sec_title,
         ha="center",
         va="bottom",
@@ -326,7 +337,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
 
     ax.text(
         x_center_strain,
-        D + 0.14 * D,
+        max_depth + 0.14 * max_depth,
         "Strain",
         ha="center",
         va="bottom",
@@ -479,7 +490,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
 
     ax.text(
         x_center_stress,
-        D + 0.14 * D,
+        max_depth + 0.14 * max_depth,
         "Stress (MPa)",
         ha="center",
         va="bottom",
