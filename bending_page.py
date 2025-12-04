@@ -423,6 +423,13 @@ def render_bending():
         else "—"
     )
 
+    # SLS steel stress string (for summary table; matches Deflection / Crack pages)
+    fs_ser = top_results.get("fs_ser")
+    if fs_ser is None or (isinstance(fs_ser, float) and math.isnan(fs_ser)):
+        top_results["fs_ser_str"] = "—"
+    else:
+        top_results["fs_ser_str"] = f"{fs_ser:.1f} MPa"
+
     # Canonical bending state shared by 3D & 2D buttons
     state_options = ["ULS", "SLS (cracked)", "Uncracked"]
     canonical_state = st.session_state.get("bending_state", "ULS")
@@ -431,34 +438,34 @@ def render_bending():
 
     # Original summary card HTML (now with minimum strength row, no comments)
     summary_html = f"""
-<div style="
-  border: 1px solid #cccccc;
-  border-radius: 8px;
-  padding: 0.5rem 0.75rem;
-  margin-bottom: 1rem;
-  max-width: 900px;
-">
-  <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
-    <thead>
-      <tr style="background-color: #f5f5f5;">
-        <th style="text-align:left; padding: 4px 6px;">Item</th>
-        <th style="text-align:right; padding: 4px 6px;">Value</th>
-        <th style="text-align:right; padding: 4px 6px;">Criterion</th>
-        <th style="text-align:center; padding: 4px 6px;">Status</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr style="background-color: {As_colour};">
-        <td style="padding: 4px 6px;"><strong>Steel area Ast,bot</strong></td>
-        <td style="text-align:right; padding: 4px 6px;">{Ast_str}</td>
-        <td style="text-align:right; padding: 4px 6px;">≥ As,min = {As_min_str}</td>
+    <div style="
+        border: 1px solid #cccccc;
+        border-radius: 8px;
+        padding: 0.5rem 0.75rem;
+        margin-bottom: 1rem;
+        max-width: 900px;
+    ">
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+        <thead>
+          <tr style="background-color: #f5f5f5;">
+            <th style="text-align:left; padding: 4px 6px;">Item</th>
+            <th style="text-align:right; padding: 4px 6px;">Value</th>
+            <th style="text-align:right; padding: 4px 6px;">Criterion</th>
+            <th style="text-align:center; padding: 4px 6px;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="background-color: {As_colour};">
+            <td style="padding: 4px 6px;"><strong>Steel area Ast,bot</strong></td>
+            <td style="text-align:right; padding: 4px 6px;">{Ast_str}</td>
+            <td style="text-align:right; padding: 4px 6px;">≥ As,min = {As_min_str}</td>
         <td style="text-align:center; padding: 4px 6px;">
           <strong>{As_status}</strong>
         </td>
-      </tr>
+          </tr>
 
-      <tr style="background-color: {Mu_colour};">
-        <td style="padding: 4px 6px;"><strong>Flexural capacity</strong></td>
+          <tr style="background-color: {Mu_colour};">
+            <td style="padding: 4px 6px;"><strong>Flexural capacity</strong></td>
         <td style="text-align:right; padding: 4px 6px;">
           ϕM<sub>u,cap</sub> = {phiMu_str}
         </td>
@@ -479,14 +486,14 @@ def render_bending():
         <td style="text-align:right; padding: 4px 6px;">
           M<sub>u,min</sub> = {Mu_min_str}
         </td>
-        <td style="text-align:center; padding: 4px 6px;">
+            <td style="text-align:center; padding: 4px 6px;">
           Util = M<sub>u,min</sub> / ϕM<sub>u,cap</sub> = {Mu_min_util_str}<br>
           <strong>{Mu_min_status}</strong>
-        </td>
-      </tr>
+            </td>
+          </tr>
 
-      <tr style="background-color: {ku_colour};">
-        <td style="padding: 4px 6px;"><strong>Neutral axis ratio k<sub>u</sub></strong></td>
+          <tr style="background-color: {ku_colour};">
+            <td style="padding: 4px 6px;"><strong>Neutral axis ratio k<sub>u</sub></strong></td>
         <td style="text-align:right; padding: 4px 6px;">
           k<sub>u</sub> = {ku_str}
         </td>
@@ -494,6 +501,15 @@ def render_bending():
         <td style="text-align:center; padding: 4px 6px;">
           <strong>{ku_status}</strong>
         </td>
+      </tr>
+
+      <tr>
+        <td style="padding: 4px 6px;"><strong>SLS steel stress f<sub>s,ser</sub></strong></td>
+        <td style="text-align:right; padding: 4px 6px;">
+          {top_results.get("fs_ser_str", "—")}
+        </td>
+        <td style="text-align:right; padding: 4px 6px;">SLS (for crack/deflection)</td>
+        <td style="text-align:center; padding: 4px 6px;"></td>
       </tr>
 
       <tr>
@@ -508,11 +524,11 @@ def render_bending():
         <td style="text-align:right; padding: 4px 6px;">a = {a_str}</td>
         <td style="text-align:right; padding: 4px 6px;"></td>
         <td style="text-align:center; padding: 4px 6px;"></td>
-      </tr>
-    </tbody>
-  </table>
-</div>
-"""
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    """
 
     # ---------------- TOP CONTAINER – Title + summary + 3D (like Inputs page) ----------------
     with top_container:
@@ -520,6 +536,22 @@ def render_bending():
 
         with left_col:
             st.title("Bending Capacity")
+            st.markdown(
+                """
+This page computes **ultimate flexural capacity**, **strain compatibility**, and
+**service-stress outputs** in accordance with **AS 3600:2018 Clause 8**, including:
+
+- **Ultimate moment capacity**  
+  \\( \\phi M_{u,\\text{cap}} = \\phi\\,T\\,(d - 0.5\\,\\gamma x_u) \\) — Cl. 8.1.3
+
+- **Steel stress at serviceability**,  
+  \\( f_{s,ser} = E_s\\,\\varepsilon_s \\), used in crack-width and deflection checks.
+
+- **Strain-compatibility solution** for concrete and steel, showing ULS and SLS stress–strain states.
+
+- **Force equilibrium** between concrete compression and steel tension, using the AS 3600 α₂–γ rectangular stress block.
+                """
+            )
             # Render HTML summary card using components.html to avoid escaping
             components.html(
                 summary_html.replace("max-width: 900px", "max-width: 650px"),
