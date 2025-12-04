@@ -301,9 +301,14 @@ The aim is to verify that cracking is **controlled** so that durability and appe
             index=0,
             key="crk_member_type",
         )
+
+        # Seed SLS steel stress from Bending SLS tab (outermost tension layer),
+        # but keep it fully editable on this page.
+        sigma_sr_seed = _seed_from_param("sigma_s_sls", 200.0)
+
         sigma_sr = st.number_input(
             "Steel stress at SLS σ_sr (MPa)",
-            value=200.0,
+            value=float(max(0.0, sigma_sr_seed)),
             step=10.0,
             min_value=0.0,
             key="crk_sigma_sr",
