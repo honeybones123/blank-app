@@ -73,7 +73,6 @@ def render_shear():
     st.title("Shear & Torsion")
 
     sync_callbacks = get_sync_callbacks()
-    summary_placeholder = st.empty()
 
     st.markdown(
         r"""
@@ -92,6 +91,9 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
 and interaction checks.
 """
     )
+
+    # Summary table placeholder – appears directly under the blurb
+    summary_placeholder = st.empty()
 
     # =====================================================
     # 1. DESIGN INPUTS (shared + local)  — SAME WIDGET CONTRACT
