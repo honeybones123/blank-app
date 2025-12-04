@@ -82,26 +82,43 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     stress_max = max(sigma_c, sigma_s, 1.0)
 
     # -------------------------
-    # Scale factor for wide sections (b >= 1000)
-    # Calculate based on actual content width to ensure it fits
+    # Calculate scale factor based on actual content width vs page width
+    # to ensure nothing gets cut off (1:1 ratio scaling for all three diagrams)
     # -------------------------
+    # First, calculate positions at original scale to determine actual width needed
+    x_center_sec_orig    = 135.0
+    x_center_strain_orig = 650.0
+    x_center_stress_orig = 1140.0
+    panel_w_stress_orig = 260.0
+    x1_stress_orig = x_center_stress_orig + panel_w_stress_orig / 2.0
+    
+    # Calculate the actual maximum x position needed (including section width and stress panel)
+    # Section extends from x_center_sec - b/2 to x_center_sec + b/2
+    # Stress panel extends to x1_stress, plus T arrow and label
+    # Account for labels/arrows that extend beyond panels
+    margin_right = 80.0  # Margin for T arrow label and other labels extending beyond stress panel
+    margin_left = 20.0   # Margin for left side
+    actual_max_x = max(x_center_sec_orig + b / 2.0, x1_stress_orig) + margin_right
+    actual_min_x = min(x_center_sec_orig - b / 2.0, -200.0) - margin_left
+    actual_width_needed = actual_max_x - actual_min_x
+    
+    # Target maximum width that fits on page (accounting for figure margins and Streamlit container)
+    # Use a conservative target to ensure nothing gets cut off
+    # Account for figure margins (2% each side) and potential Streamlit container constraints
+    target_max_width = 1000.0
+    
+    # Calculate scale factor to fit content (1:1 ratio scaling)
     scale_factor = 1.0
-    if b >= 1000.0:
-        # Base diagram width (xlim from -200 to 1450 = 1650)
-        base_width = 1650.0
-        # Target maximum width to fit on page (aggressive scaling to prevent cutoff)
-        target_max_width = 950.0
-        # Calculate scale factor to fit content proportionally
-        # This ensures all three diagrams scale down by the same 1:1 ratio
-        scale_factor = target_max_width / base_width
-
+    if actual_width_needed > target_max_width:
+        scale_factor = target_max_width / actual_width_needed
+    
     # -------------------------
-    # FIXED panel positions (scaled if b >= 1000)
+    # FIXED panel positions (scaled if needed to fit on page)
     # (section moved a bit further left, spacing preserved)
     # -------------------------
-    x_center_sec    = 135.0 * scale_factor   # was 160
-    x_center_strain = 650.0 * scale_factor
-    x_center_stress = 1140.0 * scale_factor
+    x_center_sec    = x_center_sec_orig * scale_factor
+    x_center_strain = x_center_strain_orig * scale_factor
+    x_center_stress = x_center_stress_orig * scale_factor
 
     sec_width = float(b) * scale_factor
     x0_sec = x_center_sec - sec_width / 2.0
@@ -121,15 +138,21 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     def stress_to_x(sig):
         return x0_stress + (sig / stress_max) * (panel_w_stress * 0.8)
 
-    # Scale figure size proportionally when b >= 1000
+    # Scale figure size proportionally to match content scaling (1:1 ratio)
+    # This ensures the entire figure scales down together, preventing cutoff
     fig_width = 9.0 * scale_factor
     fig_height = 3.5 * scale_factor
     fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+    # Keep margins consistent regardless of scale
     fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
 
-    # fixed axes → positions frozen across ULS / SLS / Uncracked (scaled if b >= 1000)
+    # fixed axes → positions frozen across ULS / SLS / Uncracked (scaled to fit on page)
     ax.set_ylim(D * 1.2, -0.2 * D)
-    ax.set_xlim(-200.0 * scale_factor, 1450.0 * scale_factor)
+    # Set xlim based on actual content bounds, scaled appropriately, with padding
+    padding = 20.0 * scale_factor  # Small padding to ensure nothing gets cut off
+    xlim_min = actual_min_x * scale_factor - padding
+    xlim_max = actual_max_x * scale_factor + padding
+    ax.set_xlim(xlim_min, xlim_max)
     ax.set_aspect("equal", adjustable="box")
     ax.set_xmargin(0)
     ax.set_ymargin(0)
