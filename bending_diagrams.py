@@ -83,13 +83,17 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
 
     # -------------------------
     # Scale factor for wide sections (b >= 1000)
+    # Calculate based on actual content width to ensure it fits
     # -------------------------
     scale_factor = 1.0
     if b >= 1000.0:
-        # Target width is ~1200 instead of 1650 to prevent cutoff
-        target_width = 1200.0
-        current_width = 1650.0  # xlim from -200 to 1450
-        scale_factor = target_width / current_width
+        # Base diagram width (xlim from -200 to 1450 = 1650)
+        base_width = 1650.0
+        # Target maximum width to fit on page (aggressive scaling to prevent cutoff)
+        target_max_width = 950.0
+        # Calculate scale factor to fit content proportionally
+        # This ensures all three diagrams scale down by the same 1:1 ratio
+        scale_factor = target_max_width / base_width
 
     # -------------------------
     # FIXED panel positions (scaled if b >= 1000)
@@ -117,7 +121,10 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     def stress_to_x(sig):
         return x0_stress + (sig / stress_max) * (panel_w_stress * 0.8)
 
-    fig, ax = plt.subplots(figsize=(9, 3.5))
+    # Scale figure size proportionally when b >= 1000
+    fig_width = 9.0 * scale_factor
+    fig_height = 3.5 * scale_factor
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
     fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
 
     # fixed axes → positions frozen across ULS / SLS / Uncracked (scaled if b >= 1000)
