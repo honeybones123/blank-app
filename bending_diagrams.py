@@ -90,28 +90,32 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     x_center_stress_orig = 1140.0
     panel_w_stress_orig = 260.0
     
+    # Make section square (1:1 aspect ratio) - use max(b, D) for both dimensions
+    sec_size = max(float(b), float(D))
+    
     # Calculate total width needed at original scale
-    # Rightmost point: stress panel end + margin for labels
+    # Rightmost point: stress panel end + margin for labels and T arrow
     x1_stress_orig = x_center_stress_orig + panel_w_stress_orig / 2.0
-    rightmost = x1_stress_orig + 100.0  # Margin for T arrow and labels
-    # Leftmost point: section left edge or xlim start
-    leftmost = min(x_center_sec_orig - b / 2.0, -200.0)
+    # Account for T arrow extending beyond stress panel (can be up to panel_w_stress * 0.8)
+    rightmost = x1_stress_orig + panel_w_stress_orig * 0.8 + 50.0  # Extra margin for labels
+    # Leftmost point: section left edge (using square size) or xlim start
+    leftmost = min(x_center_sec_orig - sec_size / 2.0, -200.0)
     total_width_needed = rightmost - leftmost
     
-    # Target width that fits on page
-    target_width = 1200.0
+    # Target width that fits on page (more conservative to ensure no cutoff)
+    target_width = 1100.0
     
     # Simple scale factor: shrink by 1:1 ratio until it fits
-    scale_factor = 1.0
-    if total_width_needed > target_width:
-        scale_factor = target_width / total_width_needed
+    # Apply scaling whenever content is wide, not just when > target
+    scale_factor = min(1.0, target_width / total_width_needed)
     
     # Apply scale factor uniformly to all positions (1:1 ratio)
     x_center_sec    = x_center_sec_orig * scale_factor
     x_center_strain = x_center_strain_orig * scale_factor
     x_center_stress = x_center_stress_orig * scale_factor
 
-    sec_width = float(b) * scale_factor
+    # Section is square (1:1 aspect ratio) - scaled uniformly
+    sec_width = sec_size * scale_factor
     x0_sec = x_center_sec - sec_width / 2.0
 
     panel_w_strain = 200.0 * scale_factor
@@ -138,7 +142,9 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
 
     # fixed axes → positions frozen across ULS / SLS / Uncracked (scaled uniformly by 1:1 ratio)
-    ax.set_ylim(D * 1.2, -0.2 * D)
+    # Use max of D and sec_height to ensure all content fits
+    max_depth = max(D, sec_height)
+    ax.set_ylim(max_depth * 1.2, -0.2 * max_depth)
     # Set xlim based on original bounds, scaled uniformly
     xlim_min_orig = -200.0
     xlim_max_orig = 1450.0
@@ -153,26 +159,28 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     ax.tick_params(left=False, labelleft=False, bottom=False, labelbottom=False)
 
     # ====================================================
-    # 1) SECTION PANEL
+    # 1) SECTION PANEL (1:1 aspect ratio - square)
     # ====================================================
+    # Section is square: use sec_width for both width and height
+    sec_height = sec_width  # 1:1 aspect ratio
     ax.add_patch(
         Rectangle(
             (x0_sec, 0),
-            sec_width,  # Use scaled width
-            D,
+            sec_width,  # Width
+            sec_height,  # Height (same as width for 1:1 ratio)
             fill=False,
             linewidth=LINE_THICK,
             edgecolor="black",
         )
     )
 
-    # compression zone (ULS-style block depth, but clipped to D)
-    block_depth_sec = max(0.0, min(gamma * c, D))
+    # compression zone (ULS-style block depth, but clipped to section height)
+    block_depth_sec = max(0.0, min(gamma * c, sec_height))
     ax.add_patch(
         Rectangle(
             (x0_sec, 0),
-            sec_width,  # Use scaled width
-            block_depth_sec,
+            sec_width,  # Width
+            block_depth_sec,  # Height
             facecolor="#c7e3ff",
             edgecolor="tab:red",
             linewidth=LINE_MED,
@@ -180,14 +188,14 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         )
     )
 
-    # bottom bars (use scaled width for layout)
+    # bottom bars (use scaled square section for layout)
     min_spacing_bot = 2 * db_bot
     bot_layout = _layout_bars_in_rows(
         nb_bot, sec_width, cover_bot, db_bot, min_spacing_bot, 2
     )
     r_bot = db_bot / 2.0
     row_pitch_bot = db_bot + rowgap_bot
-    d_row0 = D - cover_bot - r_bot
+    d_row0 = sec_height - cover_bot - r_bot  # Use square section height
 
     for x_rel, row_idx in bot_layout:
         ax.add_patch(
