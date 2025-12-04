@@ -430,15 +430,22 @@ def render_bending():
     )
 
     # SLS steel stress string (for summary table; matches Deflection / Crack pages).
-    # Read from shared state where SLS tab publishes it (sigma_s_sls).
-    fs_ser = get_param("sigma_s_sls", None)
-    if fs_ser is None or (isinstance(fs_ser, float) and math.isnan(fs_ser)):
+    # Compute from the global SLS stress–strain state so it is always available,
+    # and publish it to shared state for Crack / Deflection pages.
+    sls_state = _stress_strain_state("SLS (cracked)")
+    fs_ser = sls_state.get("fs_t")
+    try:
+        fs_ser_val = float(fs_ser) if fs_ser is not None else float("nan")
+    except Exception:
+        fs_ser_val = float("nan")
+
+    if math.isnan(fs_ser_val):
         fs_ser_str = "—"
     else:
-        try:
-            fs_ser_str = f"{float(fs_ser):.1f} MPa"
-        except Exception:
-            fs_ser_str = "—"
+        fs_ser_str = f"{fs_ser_val:.1f} MPa"
+
+    # push into shared state so other pages can consume it
+    update_results(sigma_s_sls=fs_ser_val if not math.isnan(fs_ser_val) else 200.0)
 
     # Canonical bending state shared by 3D & 2D buttons
     state_options = ["ULS", "SLS (cracked)", "Uncracked"]
@@ -448,13 +455,13 @@ def render_bending():
 
     # Original summary card HTML (now with minimum strength row, no comments)
     summary_html = f"""
-<div style="
-  border: 1px solid #cccccc;
-  border-radius: 8px;
-  padding: 0.5rem 0.75rem;
-  margin-bottom: 1rem;
+    <div style="
+        border: 1px solid #cccccc;
+        border-radius: 8px;
+        padding: 0.5rem 0.75rem;
+        margin-bottom: 1rem;
   max-width: 1200px;
-">
+    ">
       <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
         <thead>
           <tr style="background-color: #f5f5f5;">
@@ -540,14 +547,11 @@ def render_bending():
     </div>
     """
 
-    # ---------------- TOP CONTAINER – Title + summary + 3D (like Inputs page) ----------------
+    # ---------------- TOP CONTAINER – Title, description, full-width summary, then 3D ----------------
     with top_container:
-        left_col, right_col = st.columns([0.55, 0.45])
-
-        with left_col:
-            st.title("Bending Capacity")
-            st.markdown(
-                r"""
+        st.title("Bending Capacity")
+        st.markdown(
+            r"""
 This page computes **ultimate flexural capacity**, **strain compatibility**, and
 **service-stress outputs** in accordance with **AS 3600:2018 Clause 8**, including:
 
@@ -560,16 +564,15 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 - **Strain-compatibility solution** for concrete and steel, showing ULS and SLS stress–strain states.
 
 - **Force equilibrium** between concrete compression and steel tension, using the AS 3600 $\alpha_2$–$\gamma$ rectangular stress block.
-                """
-            )
-            # Render HTML summary card full-width in this column
-            components.html(
-                summary_html,
-                height=340,
-            )
+            """
+        )
 
-        with right_col:
-            # 3D figure first
+        # Full-width summary card (same feel as deflection / creep pages)
+        components.html(summary_html, height=340)
+
+        # 3D neutral-axis view + state radio below the summary
+        threeD_left, threeD_right = st.columns([0.55, 0.45])
+        with threeD_right:
             fig3d_top = _build_beam_3d_figure(
                 b=get_param("b"),
                 D=get_param("D"),
@@ -586,7 +589,6 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     "3D beam view will appear once geometry and moment capacity are defined."
                 )
 
-            # Buttons UNDER the model – label hidden for cleaner look
             state_3d = st.radio(
                 "",
                 state_options,
