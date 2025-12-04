@@ -37,7 +37,7 @@ def _seed_from_param(name: str, fallback: float) -> float:
 
 
 def _inject_calcbox_css():
-    """Style markdown blockquotes as blue calc boxes (same feel as shear/deflection)."""
+    """Style markdown blockquotes & readonly chips (same feel as shear/deflection)."""
     st.markdown(
         """
 <style>
@@ -61,6 +61,26 @@ blockquote p {
 }
 blockquote p:last-child {
   margin-bottom: 0 !important;
+}
+
+/* Read-only linked-parameter chips */
+.readonly-param {
+  border-left: 4px solid #6c757d;
+  background-color: rgba(108, 117, 125, 0.08);
+  padding: 0.4rem 0.6rem;
+  margin-bottom: 0.4rem;
+  border-radius: 0 0.35rem 0.35rem 0;
+  font-size: 0.85rem;
+}
+.readonly-param-title {
+  font-weight: 600;
+}
+.readonly-param-value {
+  font-weight: 500;
+}
+.readonly-param-source {
+  font-size: 0.78rem;
+  opacity: 0.8;
 }
 </style>
 """,
@@ -216,6 +236,7 @@ The aim is to verify that cracking is **controlled** so that durability and appe
 
     col_geom, col_reo, col_mat, col_crack = st.columns(4)
 
+    # --- Geometry ---
     with col_geom:
         b_seed = _seed_from_param("b", 300.0)
         D_seed = _seed_from_param("D", 600.0)
@@ -240,6 +261,7 @@ The aim is to verify that cracking is **controlled** so that durability and appe
             key="crk_c",
         )
 
+    # --- Reinforcement ---
     with col_reo:
         db = st.number_input(
             "Nominal bar diameter d_b (mm)",
@@ -264,6 +286,7 @@ The aim is to verify that cracking is **controlled** so that durability and appe
             key="crk_Ast",
         )
 
+    # --- Material ---
     with col_mat:
         fc_seed = _seed_from_param("fc", 32.0)
         Ec_seed = _seed_from_param("Ec", 30000.0)
@@ -287,6 +310,7 @@ The aim is to verify that cracking is **controlled** so that durability and appe
             key="crk_Es",
         )
 
+    # --- Crack limit settings + member type ---
     with col_crack:
         wmax_choice = st.selectbox(
             "Characteristic crack width limit w'ₘₐₓ (mm)",
@@ -302,21 +326,66 @@ The aim is to verify that cracking is **controlled** so that durability and appe
             key="crk_member_type",
         )
 
-        # Seed SLS steel stress from Bending SLS tab (outermost tension layer),
-        # but keep it fully editable on this page.
-        sigma_sr_seed = _seed_from_param("sigma_s_sls", 200.0)
+    # --------------------------------------------------------
+    # Linked SLS inputs from other pages (READ-ONLY)
+    # --------------------------------------------------------
+    st.markdown("### Linked SLS inputs (read-only from other pages)")
 
-        sigma_sr = st.number_input(
-            "Steel stress at SLS σ_sr (MPa)",
-            value=float(max(0.0, sigma_sr_seed)),
-            step=10.0,
-            min_value=0.0,
-            key="crk_sigma_sr",
+    col_sls1, col_sls2, col_sls3 = st.columns(3)
+
+    # σ_sr from bending page
+    sigma_sr_seed = _seed_from_param("sigma_s_sls", 200.0)
+    sigma_sr = float(max(0.0, sigma_sr_seed))
+
+    with col_sls1:
+        st.markdown(
+            f"""
+<div class="readonly-param">
+  <div class="readonly-param-title">Steel stress at SLS σ<sub>sr</sub></div>
+  <div class="readonly-param-value">{sigma_sr:.1f} MPa</div>
+  <div class="readonly-param-source">Source: Bending page (SLS steel stress)</div>
+</div>
+""",
+            unsafe_allow_html=True,
         )
 
-    # Effective area in tension (very simplified) and ρ_eff
+    # φ_ce from creep page (we use design creep coefficient φ_cc(t))
+    phi_ce_seed = _seed_from_param("phi_cc_t", 2.0)
+    phi_ce = float(max(0.0, phi_ce_seed))
+
+    with col_sls2:
+        st.markdown(
+            f"""
+<div class="readonly-param">
+  <div class="readonly-param-title">Creep coefficient φ<sub>ce</sub></div>
+  <div class="readonly-param-value">{phi_ce:.2f}</div>
+  <div class="readonly-param-source">Source: Creep page (ϕ<sub>cc</sub>(t))</div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
+    # ε_cs from shrinkage page
+    eps_cs_seed_micro = _seed_from_param("eps_cs_total_micro", 300.0)
+    eps_cs_micro = float(max(0.0, eps_cs_seed_micro))
+    eps_cs = eps_cs_micro * 1e-6
+
+    with col_sls3:
+        st.markdown(
+            f"""
+<div class="readonly-param">
+  <div class="readonly-param-title">Shrinkage strain ε<sub>cs</sub></div>
+  <div class="readonly-param-value">{eps_cs_micro:.1f} μɛ</div>
+  <div class="readonly-param-source">Source: Shrinkage page (ε<sub>cs,total</sub>)</div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
+    # --------------------------------------------------------
+    # Effective area in tension and ρ_eff
+    # --------------------------------------------------------
     d_eff = D - c - db / 2.0
-    # Very simple Aceff: use 2.5c × (D − d) but not more than D/2, per definition idea
     height_eff = min(2.5 * c, max(D - d_eff, 0.0), D / 2.0)
     Aceff = b * max(height_eff, 1.0)  # mm²
     rho_eff = Ast / Aceff
@@ -324,10 +393,7 @@ The aim is to verify that cracking is **controlled** so that durability and appe
     # --------------------------------------------------------
     # 8.6.2.2 – Table-based max steel stress
     # --------------------------------------------------------
-    # Table A limit (always applies)
     sigma_table_A = table_sigma_max_A(db, wmax_choice)
-
-    # Table B limit (only for primarily flexure)
     sigma_table_B = table_sigma_max_B(spacing, wmax_choice)
 
     if member_type == "Primarily tension":
@@ -340,7 +406,6 @@ The aim is to verify that cracking is **controlled** so that durability and appe
             "and 8.6.2.2(B) (spacing)"
         )
 
-    # 0.8 fsy cap (user will normally choose σ_sr not exceeding this)
     fsy_seed = _seed_from_param("fsy", 500.0)
     fsy = fsy_seed
     sigma_08fsy = 0.8 * fsy
@@ -362,30 +427,10 @@ The aim is to verify that cracking is **controlled** so that durability and appe
         key="crk_fct_eff",
     )
 
-    # Try to seed φ_ce from the creep page result (φ_cc(t)),
-    # falling back to 2.0 if creep hasn't been run yet.
-    phi_ce_seed = _seed_from_param("phi_cc_t", 2.0)
+    # Modular ratio for effective stiffness
+    ne = (1.0 + phi_ce) * Es / Ec if Ec > 0 else 0.0
 
-    phi_ce = st.number_input(
-        "Creep coefficient φ_ce (for crack interval)",
-        value=float(phi_ce_seed),
-        step=0.1,
-        min_value=0.0,
-        key="crk_phi_ce",
-    )
-
-    # Seed ε_cs from shrinkage page (if run), otherwise ~300 με
-    eps_cs_seed_micro = _seed_from_param("eps_cs_total_micro", 300.0)
-
-    eps_cs_micro = st.number_input(
-        "Final long-term shrinkage strain ε_cs (microstrain)",
-        value=float(eps_cs_seed_micro),
-        step=10.0,
-        min_value=0.0,
-        key="crk_eps_cs_micro",
-    )
-    eps_cs = eps_cs_micro * 1e-6
-
+    # k1, k2 remain user-chosen detailing parameters
     k1_choice = st.selectbox(
         "k₁ (bond coefficient)",
         options=[
@@ -411,9 +456,6 @@ The aim is to verify that cracking is **controlled** so that durability and appe
         key="crk_k2",
     )
 
-    # Modular ratio for effective stiffness
-    ne = (1.0 + phi_ce) * Es / Ec if Ec > 0 else 0.0
-
     eps_diff = calc_eps_diff(
         sigma_sr=sigma_sr,
         Es=Es,
@@ -424,7 +466,7 @@ The aim is to verify that cracking is **controlled** so that durability and appe
     )
 
     sr_max = calc_sr_max(c_mm=c, db_mm=db, rho_eff=rho_eff, k1=k1, k2=k2)
-    w_calc = sr_max * eps_diff  # mm (since sr_max in mm and strain is unitless)
+    w_calc = sr_max * eps_diff  # mm
     utilisation_w = w_calc / wmax_choice if wmax_choice > 0 else 0.0
     passes_w = utilisation_w <= 1.0
 
@@ -663,7 +705,7 @@ w'_{{\max}} = {wmax_choice:.1f}\,\text{{mm}}, \quad
 
 - Compute effective reinforcement ratio \(\rho_{\text{eff}}\).  
 - Determine \(k_1, k_2\) based on bond and strain distribution.  
-- Obtain \(f_{ct,\text{eff}}, \varphi_{ce}, \varepsilon_{cs}\) (can be linked to your shrinkage/creep pages).  
+- Obtain \(f_{ct,\text{eff}}, \varphi_{ce}, \varepsilon_{cs}\) (linked to **Creep** and **Shrinkage** pages).  
 - Evaluate \(s_{r,\max}\), \(\varepsilon_{sm} - \varepsilon_{cm}\) and \(w\).  
 - Check \(w \le w'_{\max}\).
 
@@ -693,6 +735,6 @@ def render_crack_control():
     render_crack()
 
 
-# Optional alias if imported elsewhere
 def render_crack_page():
+    """Optional alias if imported elsewhere."""
     render_crack()
