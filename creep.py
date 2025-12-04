@@ -415,16 +415,13 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
     #   (for reuse in crack-width page etc.)
     # --------------------------------------------------------
     update_results(
-        "creep",
-        {
-            "phi_cc_t": phi_cc_t,  # design creep coeff at t
-            "phi_cc_star_table": phi_cc_star_table,  # 30-year table value
-            "k2_creep": k2,
-            "k3_creep": k3,
-            "k4_creep": k4,
-            "k5_creep": k5,
-            "k6_creep": k6,
-        },
+        phi_cc_t=phi_cc_t,  # design creep coeff at t
+        phi_cc_star_table=phi_cc_star_table,  # 30-year table value
+        k2_creep=k2,
+        k3_creep=k3,
+        k4_creep=k4,
+        k5_creep=k5,
+        k6_creep=k6,
     )
 
     sigma0 = stress_ratio * fc  # MPa (approx using f'c,mi ≈ f'c)
