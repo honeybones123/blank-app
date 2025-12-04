@@ -525,6 +525,9 @@ def _make_uls_stress_block_figure(
     block_width = 88.0  # 4:1 ratio (4x original 22.0)
     block_top = 0.0
     block_bottom = a_mm
+    
+    # Consistent label spacing from stress block/arrows
+    label_spacing = 4.0
 
     ax.add_patch(
         Rectangle(
@@ -572,11 +575,12 @@ def _make_uls_stress_block_figure(
                 mutation_scale=ARROW_SCALE,
             ),
         )
+        # α₂ f'c label positioned at half the spacing distance from stress block (left side)
         ax.text(
-            block_left,
+            block_left - label_spacing / 2.0,
             y_alpha - 0.05 * D_ref,
             f"α₂ f'c = {sigma_c:.0f} MPa",
-            ha="left",
+            ha="right",
             va="bottom",
             fontsize=FS_LABEL,
             color="tab:red",
@@ -594,7 +598,7 @@ def _make_uls_stress_block_figure(
         )
         x_dn_label = 95.0
         ax.text(
-            x_dn_label + 2.0,
+            x_dn_label + label_spacing,
             dn_mm + 0.03 * D_ref,
             f"dₙ = {dn_mm:.1f} mm",
             ha="left",
@@ -603,9 +607,9 @@ def _make_uls_stress_block_figure(
             color="tab:blue",
         )
 
-    # a label
+    # a label - consistent spacing from stress block
     ax.text(
-        block_left + block_width + 4.0,
+        block_left + block_width + label_spacing,
         0.5 * a_mm,
         f"a = γ dₙ = {a_mm:.1f} mm",
         ha="left",
@@ -628,8 +632,9 @@ def _make_uls_stress_block_figure(
             mutation_scale=ARROW_SCALE,
         ),
     )
+    # Consistent spacing from arrow end
     ax.text(
-        tension_arrow_end + 2.0,
+        tension_arrow_end + label_spacing,
         d_mm,
         f"T ({fsy:.0f} MPa)",
         ha="left",
@@ -642,7 +647,7 @@ def _make_uls_stress_block_figure(
     if show_C and C_N is not None:
         y_C = 0.5 * a_mm
         x_C_tail = block_left + block_width + 18.0
-        x_C_head = block_left + block_width + 4.0
+        x_C_head = block_left + block_width + label_spacing
         ax.annotate(
             "",
             xy=(x_C_head, y_C),
@@ -655,7 +660,7 @@ def _make_uls_stress_block_figure(
             ),
         )
         ax.text(
-            x_C_tail + 3.0,
+            x_C_tail + label_spacing,
             y_C,
             f"C = {C_N/1000.0:.1f} kN",
             ha="left",
@@ -679,7 +684,7 @@ def _make_uls_stress_block_figure(
             ),
         )
         ax.text(
-            x_z + 3.0,
+            x_z + label_spacing,
             0.5 * (d_mm + y_C),
             "z",
             ha="left",
@@ -738,6 +743,9 @@ def _make_uls_force_model_figure(
     x_axis = 20.0
     ax.plot([x_axis, x_axis], [0.0, D_ref], color="black", linewidth=LINE_THICK)
 
+    # Consistent label spacing from arrows
+    label_spacing = 4.0
+
     # Compression C at a/2
     y_C = 0.5 * a_mm
     ARROW_OFFSET = 35.0  # distance from axis, matched to T
@@ -760,7 +768,7 @@ def _make_uls_force_model_figure(
     if C_N is not None:
         label_C += f" = {C_N/1000.0:.1f} kN"
     ax.text(
-        x_C_tail + 6.0,
+        x_C_tail + label_spacing,
         y_C,
         label_C,
         ha="left",
@@ -789,7 +797,7 @@ def _make_uls_force_model_figure(
     if T_N is not None:
         label_T += f" = {T_N/1000.0:.1f} kN"
     ax.text(
-        x_T_head + 6.0,
+        x_T_head + label_spacing,
         y_T,
         label_T,
         ha="left",
@@ -811,7 +819,7 @@ def _make_uls_force_model_figure(
         ),
     )
     ax.text(
-        x_z + 4.0,
+        x_z + label_spacing,
         0.5 * (y_C + y_T),
         "z",
         ha="left",
@@ -884,6 +892,10 @@ def _make_sls_stress_block_figure(
     # triangular compression region (0 → d_n), right angle at top-left
     block_left = x_axis
     block_width = 22.0
+    
+    # Consistent label spacing from stress block/arrows
+    label_spacing = 4.0
+    
     ax.fill(
         [block_left, block_left + block_width, block_left],
         [0.0, 0.0, dn_mm],
@@ -905,11 +917,12 @@ def _make_sls_stress_block_figure(
             mutation_scale=ARROW_SCALE,
         ),
     )
+    # α₂ f'c label positioned at half the spacing distance from stress block (left side)
     ax.text(
-        block_left,
+        block_left - label_spacing / 2.0,
         y_alpha - 0.05 * D_ref,
         r"$\alpha_2 f'_c$",
-        ha="left",
+        ha="right",
         va="bottom",
         fontsize=FS_LABEL,
         color="tab:red",
@@ -920,7 +933,7 @@ def _make_sls_stress_block_figure(
     x_T1 = x_axis + 70.0
     ax.plot([x_T0, x_T1], [d_mm, d_mm], color="tab:blue", linewidth=LINE_MED)
     ax.text(
-        x_T1 + 4.0,
+        x_T1 + label_spacing,
         d_mm,
         "T",
         ha="left",
@@ -940,7 +953,7 @@ def _make_sls_stress_block_figure(
             linewidth=LINE_MED,
         )
         ax.text(
-            x_C1 + 4.0,
+            x_C1 + label_spacing,
             d_comp_mm,
             "C_s",
             ha="left",
