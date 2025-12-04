@@ -673,15 +673,12 @@ see how the tables and equations in Clause 8.6.2 relate to each other.
     # Publish crack-control results (optional, for dashboards)
     # --------------------------------------------------------
     update_results(
-        "crack",
-        {
-            "sigma_sr": sigma_sr,
-            "sigma_allow_table": sigma_allow_table,
-            "w_calc": w_calc,
-            "wmax_char": wmax_choice,
-            "passes_table": passes_table,
-            "passes_w": passes_w,
-        },
+        sigma_sr=sigma_sr,
+        sigma_allow_table=sigma_allow_table,
+        w_calc=w_calc,
+        wmax_char=wmax_choice,
+        passes_table=passes_table,
+        passes_w=passes_w,
     )
 
 
