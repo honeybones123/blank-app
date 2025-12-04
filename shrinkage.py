@@ -313,8 +313,6 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
     # --------------------------------------------------------
     k1 = calc_k1_shrinkage(t_days, th_table)
     eps_cse = calc_eps_cse(fc, t_days)
-
-    # FIX: use env_option instead of undefined "environment"
     eps_csd_final = _shrinkage_eps_final(fc, env_option, th_table)
     eps_csd_t = k1 * eps_csd_final
     eps_cs_total = eps_cse + eps_csd_t
@@ -347,108 +345,10 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
 
         def _highlight_total(row):
             if "Total" in str(row.get("Component", "")):
-                return ["background-color: #d9ead3"] * len(row)  # light green
+                return ["background-color: #d9ead3"] * len(row)
             return [""] * len(row)
 
         styled = summary_df.style.apply(_highlight_total, axis=1)
-        st.dataframe(styled, use_container_width=True, hide_index=True)
-        st.markdown("---")
-
-    # --------------------------------------------------------
-    # Tabs (5): geometry, autogenous, drying, total, flow chart
-    #   (unchanged apart from using env_option where needed)
-    # --------------------------------------------------------
-    tab_geom, tab_auto, tab_dry, tab_total, tab_flow = st.tabs(
-        [
-            "Geometry & tₕ",
-            "Autogenous shrinkage ε_cse",
-            "Drying shrinkage ε_csd",
-            "Total shrinkage ε_cs",
-            "Flow chart / references",
-        ]
-    )
-
-    # ---------- Tab 1: Geometry & t_h ----------
-    with tab_geom:
-        st.subheader("Notional thickness tₕ – AS 3600 (2Aᵍ / uₑ)")
-        # … (keep your existing calcbox content here, no changes needed)
-
-    # ---------- Tab 2: Autogenous shrinkage ----------
-    with tab_auto:
-        # … your existing autogenous calcbox block (unchanged)
-
-    # ---------- Tab 3: Drying shrinkage ----------
-    with tab_dry:
-        env_short = _ENV_LABELS[env_option]
-        # … same calcbox as you have now, but using env_option/env_short
-
-    # ---------- Tab 4 & 5 ----------
-    with tab_total:
-        # … existing total-shrinkage calcbox
-
-    with tab_flow:
-        # … existing workflow markdown
-
-
-    # --------------------------------------------------------
-    # Derived geometry: Ag, ue, th
-    # --------------------------------------------------------
-    Ag = b * D  # mm²
-
-    if faces_option == "Slab – one face exposed":
-        ue = b
-    elif faces_option == "Slab – two faces exposed":
-        ue = 2.0 * b
-    elif faces_option == "Beam – three faces exposed":
-        ue = b + 2.0 * D
-    else:  # four faces
-        ue = 2.0 * (b + D)
-
-    th_raw = 2.0 * Ag / ue if ue > 0 else 0.0
-    th_table = _closest_th(th_raw)
-
-    # --------------------------------------------------------
-    # Shrinkage components
-    # --------------------------------------------------------
-    k1 = calc_k1_shrinkage(t_days, th_table)
-    eps_cse = calc_eps_cse(fc, t_days)
-    eps_csd_final = _shrinkage_eps_final(fc, environment, th_table)
-    eps_csd_t = k1 * eps_csd_final
-    eps_cs_total = eps_cse + eps_csd_t
-
-    # --------------------------------------------------------
-    # TOP SUMMARY TABLE (similar style to deflection)
-    # --------------------------------------------------------
-    with summary_placeholder.container():
-        st.markdown("## Summary")
-
-        rows = [
-            {
-                "Component": "Autogenous shrinkage ε_cse",
-                "Strain (×10⁻⁶)": f"{eps_cse*1e6:.1f}",
-                "Comment": "Cl. 3.1.7.2(2),(3) – chemical/autogenous",
-            },
-            {
-                "Component": "Drying shrinkage ε_csd",
-                "Strain (×10⁻⁶)": f"{eps_csd_t*1e6:.1f}",
-                "Comment": "k₁ · ε*csd – Table 3.1.7.2 & Fig. 3.1.7.2",
-            },
-            {
-                "Component": "Total shrinkage ε_cs",
-                "Strain (×10⁻⁶)": f"{eps_cs_total*1e6:.1f}",
-                "Comment": "ε_cse + ε_csd (design total)",
-            },
-        ]
-
-        summary_df = pd.DataFrame(rows)
-
-        def _highlight_total(row):
-            if "Total" in str(row.get("Component", "")):
-                return ["background-color: #d9ead3"] * len(row)  # light green
-            return [""] * len(row)
-
-        styled = summary_df.style.apply(_highlight_total, axis=1)
-
         st.dataframe(styled, use_container_width=True, hide_index=True)
         st.markdown("---")
 
@@ -584,7 +484,7 @@ _Ref: AS 3600:2018 Cl. 3.1.7.2(2),(3)._
     # ---------- Tab 3: Drying shrinkage ----------
     with tab_dry:
         st.subheader("Drying shrinkage ε_csd – AS 3600 Cl. 3.1.7.2(4),(5)")
-        env_short = _ENV_LABELS[environment]
+        env_short = _ENV_LABELS[env_option]
 
         calcbox(
             rf"""
@@ -595,7 +495,7 @@ as moisture is lost from the member.
 
 **Inputs**
 
-- Environment: **{environment}**  
+- Environment: **{env_option}**  
 - Concrete strength: $f'_c = {fc:.1f}\,\text{{MPa}}$  
 - Notional thickness for tables: $t_h = {th_table:d}\,\text{{mm}}$  
 - Time since commencement of drying: $t = {t_days:.0f}\,\text{{days}}$
@@ -748,6 +648,7 @@ _Ref: AS 3600:2018 Cl. 3.1.7 – total shrinkage._
   **serviceability** checks.
 """
         )
+
 
 
 
