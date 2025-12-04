@@ -471,63 +471,53 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
         st.subheader("Notional thickness tₕ & k₂ – AS 3600 (2Aᵍ / uₑ, Fig. 3.1.8.3)")
 
         calcbox(
-            rf"""
+            f"""
 **Purpose**
 
-Determine the **notional thickness** \(t_h\) and the **time-development factor** \(k_2\)
-used in AS 3600 for **creep**.
+Determine the notional thickness t_h and the time-development factor k₂
+used in AS 3600 for creep.
 
 **Inputs**
 
-- Section width: \(b = {b:.1f}\,\text{{mm}}\)
-- Overall depth: \(D = {D:.1f}\,\text{{mm}}\)
-- Gross area: \(A_g = bD = {Ag:.0f}\,\text{{mm}}^2\)
-- Faces exposed: **{faces_option}**
-- Exposed perimeter: \(u_e = {ue:.1f}\,\text{{mm}}\)
-- Time after loading: \(t = {t_creep:.0f}\,\text{{days}}\)
+- Section width: b = {b:.1f} mm
+- Overall depth: D = {D:.1f} mm
+- Gross area: A_g = b·D = {Ag:.0f} mm²
+- Faces exposed: {faces_option}
+- Exposed perimeter: u_e = {ue:.1f} mm
+- Time after loading: t = {t_creep:.0f} days
 
 **Notional thickness**
 
-\[
-t_h = \frac{{2 A_g}}{{u_e}}
-\]
+t_h = 2·A_g / u_e
 
-With \(A_g = {Ag:.0f}\,\text{{mm}}^2\) and \(u_e = {ue:.1f}\,\text{{mm}}\):
+Substitution:
 
-\[
-t_h \approx {th_raw:.1f}\,\text{{mm}}
-\]
+t_h = 2 × {Ag:.0f} / {ue:.1f} ≈ {th_raw:.1f} mm
 
-For compatibility with **Fig. 3.1.8.3** and **Table 3.1.8.3**, adopt the nearest
-standard value:
+For compatibility with Fig. 3.1.8.3 and Table 3.1.8.3 we adopt
+the nearest standard value:
 
-\[
-t_{{h,\text{{table}}}} = {th_table:d}\,\text{{mm}} \quad (\text{{nearest of 100, 200, 400 mm}})
-\]
+t_h,table = {th_table:d} mm  (nearest of 100, 200, 400 mm)
 
-**Time-development factor** \(k_2\) (Fig. 3.1.8.3)
+**Time-development factor k₂ (Fig. 3.1.8.3)**
 
-Creep development is modelled by
+k₂(t, t_h) = α₂ · t^0.8 / ( t^0.8 + 0.15·t_h )
 
-\[
-k_2(t, t_h) = \frac{{\alpha_2 t^{0.8}}}{{t^{0.8} + 0.15 t_h}}, \qquad
-\alpha_2 = 1.0 + 1.12\,e^{-0.008 t_h}
-\]
+α₂ = 1.0 + 1.12·exp( −0.008·t_h )
 
-At \(t = {t_creep:.0f}\) days and \(t_h = {th_table:d}\,\text{{mm}}\):
+For t = {t_creep:.0f} days and t_h = {th_table:d} mm:
 
-\[
-k_2 \approx {k2:.3f}
-\]
+k₂ ≈ {k2:.3f}
 
 **Result**
 
-- Adopted notional thickness: \(t_{{h,\text{{table}}}} = {th_table:d}\,\text{{mm}}\)  
-- Time-development factor: \(k_2 \approx {k2:.3f}\)
+- Adopted notional thickness: t_h,table = {th_table:d} mm  
+- Time-development factor: k₂ ≈ {k2:.3f}
 
-_Ref: AS 3600:2018 Cl. 3.1.8.3 and Fig. 3.1.8.3._ 
+Ref: AS 3600:2018 Cl. 3.1.8.3 and Fig. 3.1.8.3.
 """
         )
+
 
     # ---------- Tab 2: Creep coefficient ----------
     with tab_coeff:
@@ -699,3 +689,4 @@ _Ref: AS 3600:2018 Cl. 3.1.8.1._
 - Use \(\varepsilon_{cc}\) in **deflection** and other **serviceability** checks.
 """
         )
+
