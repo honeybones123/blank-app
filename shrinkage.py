@@ -320,9 +320,9 @@ This page estimates **shrinkage strain** of concrete in accordance with **AS 360
                 return ["background-color: #d9ead3"] * len(row)  # light green
             return [""] * len(row)
 
-        styled = summary_df.style.apply(_highlight_total, axis=1).hide_index()
+        styled = summary_df.style.apply(_highlight_total, axis=1)
 
-        st.dataframe(styled, use_container_width=True)
+        st.dataframe(styled, use_container_width=True, hide_index=True)
         st.markdown("---")
 
     # --------------------------------------------------------
@@ -621,3 +621,4 @@ _Ref: AS 3600:2018 Cl. 3.1.7 – total shrinkage._
   **serviceability** checks.
 """
         )
+
