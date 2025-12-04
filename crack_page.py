@@ -664,5 +664,11 @@ see how the tables and equations in Clause 8.6.2 relate to each other.
 
 
 # For compatibility with whatever app.py calls
+def render_crack_control():
+    """Entry point used by app.py – delegates to render_crack()."""
+    render_crack()
+
+
+# Optional alias if imported elsewhere
 def render_crack_page():
     render_crack()
