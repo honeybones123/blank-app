@@ -423,12 +423,16 @@ def render_bending():
         else "—"
     )
 
-    # SLS steel stress string (for summary table; matches Deflection / Crack pages)
-    fs_ser = top_results.get("fs_ser")
+    # SLS steel stress string (for summary table; matches Deflection / Crack pages).
+    # Read from shared state where SLS tab publishes it (sigma_s_sls).
+    fs_ser = get_param("sigma_s_sls", None)
     if fs_ser is None or (isinstance(fs_ser, float) and math.isnan(fs_ser)):
-        top_results["fs_ser_str"] = "—"
+        fs_ser_str = "—"
     else:
-        top_results["fs_ser_str"] = f"{fs_ser:.1f} MPa"
+        try:
+            fs_ser_str = f"{float(fs_ser):.1f} MPa"
+        except Exception:
+            fs_ser_str = "—"
 
     # Canonical bending state shared by 3D & 2D buttons
     state_options = ["ULS", "SLS (cracked)", "Uncracked"]
@@ -506,7 +510,7 @@ def render_bending():
       <tr>
         <td style="padding: 4px 6px;"><strong>SLS steel stress f<sub>s,ser</sub></strong></td>
         <td style="text-align:right; padding: 4px 6px;">
-          {top_results.get("fs_ser_str", "—")}
+          {fs_ser_str}
         </td>
         <td style="text-align:right; padding: 4px 6px;">SLS (for crack/deflection)</td>
         <td style="text-align:center; padding: 4px 6px;"></td>
@@ -555,7 +559,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             # Render HTML summary card using components.html to avoid escaping
             components.html(
                 summary_html.replace("max-width: 900px", "max-width: 650px"),
-                height=280,
+                height=340,
             )
 
         with right_col:
