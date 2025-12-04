@@ -769,16 +769,20 @@ def _make_uls_force_model_figure(
     x_T_head = x_axis + ARROW_OFFSET
     x_T_tail = x_axis
 
-    ax.annotate(
-        "",
-        xy=(x_T_head, y_T),
-        xytext=(x_T_tail, y_T),
-        arrowprops=dict(
-            arrowstyle="->",
-            linewidth=LINE_MED,
-            color="tab:blue",
-            mutation_scale=ARROW_SCALE,
-        ),
+    # Draw T arrow pointing right from vertical axis
+    # Using ax.arrow() for more reliable drawing
+    ax.arrow(
+        x_T_tail,  # Start x (vertical axis)
+        y_T,       # Start y
+        x_T_head - x_T_tail,  # dx (length of arrow)
+        0,         # dy (horizontal arrow)
+        head_width=3.0,
+        head_length=3.0,
+        fc="tab:blue",
+        ec="tab:blue",
+        linewidth=LINE_MED,
+        length_includes_head=True,
+        zorder=2,
     )
     label_T = "T"
     if T_N is not None:
@@ -791,6 +795,7 @@ def _make_uls_force_model_figure(
         va="center",
         fontsize=FS_LABEL,
         color="tab:blue",
+        zorder=3,  # Ensure label is on top
     )
 
     # Lever arm z - positioned between the vertical axis and force arrow ends
