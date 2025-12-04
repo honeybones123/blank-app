@@ -5,6 +5,7 @@
 
 import math
 import numpy as np
+import pandas as pd
 import streamlit as st
 
 from state_and_helpers import (
@@ -85,7 +86,6 @@ def calcbox(md: str):
 
 # ------------------------------------------------------------
 #  Table 3.1.7.2 – final design drying shrinkage ε*csd (×10⁻⁶)
-#  Keys: fc' [MPa] → environment → th [mm]
 # ------------------------------------------------------------
 _SHRINKAGE_TABLE = {
     25: {
@@ -198,22 +198,25 @@ def render_shrinkage():
 
     st.title("Shrinkage – AS 3600:2018 Clause 3.1.7")
 
+    # Placeholder for top summary table (populated after calcs)
+    summary_placeholder = st.empty()
+
     st.markdown(
         """
 This page estimates **shrinkage strain** of concrete in accordance with **AS 3600:2018 Cl. 3.1.7**:
 
-- **Autogenous shrinkage** \\(\\varepsilon_{cse}\\) — Cl. 3.1.7.2(2),(3)  
-- **Drying shrinkage** \\(\\varepsilon_{csd}\\) — Cl. 3.1.7.2(4),(5)  
-- Notional thickness \\(t_h = 2A_g / u_e\\) — used for Fig. 3.1.7.2 and Table 3.1.7.2  
-- Total shrinkage \\(\\varepsilon_{cs} = \\varepsilon_{cse} + \\varepsilon_{csd}\\).
+- **Autogenous shrinkage** ($\\varepsilon_{cse}$) — Cl. 3.1.7.2(2),(3)  
+- **Drying shrinkage** ($\\varepsilon_{csd}$) — Cl. 3.1.7.2(4),(5)  
+- Notional thickness $t_h = 2 A_g / u_e$ — used for Fig. 3.1.7.2 and Table 3.1.7.2  
+- Total shrinkage $\\varepsilon_{cs} = \\varepsilon_{cse} + \\varepsilon_{csd}$.
 """
     )
+
+    st.markdown("### Geometry & exposure")
 
     # --------------------------------------------------------
     # Geometry + exposure inputs
     # --------------------------------------------------------
-    st.markdown("### Geometry & exposure")
-
     col_geom, col_env = st.columns(2)
 
     with col_geom:
@@ -287,6 +290,42 @@ This page estimates **shrinkage strain** of concrete in accordance with **AS 360
     eps_cs_total = eps_cse + eps_csd_t
 
     # --------------------------------------------------------
+    # TOP SUMMARY TABLE (similar style to deflection)
+    # --------------------------------------------------------
+    with summary_placeholder.container():
+        st.markdown("## Summary")
+
+        rows = [
+            {
+                "Component": "Autogenous shrinkage ε_cse",
+                "Strain (×10⁻⁶)": f"{eps_cse*1e6:.1f}",
+                "Comment": "Cl. 3.1.7.2(2),(3) – chemical/autogenous",
+            },
+            {
+                "Component": "Drying shrinkage ε_csd",
+                "Strain (×10⁻⁶)": f"{eps_csd_t*1e6:.1f}",
+                "Comment": "k₁ · ε*csd – Table 3.1.7.2 & Fig. 3.1.7.2",
+            },
+            {
+                "Component": "Total shrinkage ε_cs",
+                "Strain (×10⁻⁶)": f"{eps_cs_total*1e6:.1f}",
+                "Comment": "ε_cse + ε_csd (design total)",
+            },
+        ]
+
+        summary_df = pd.DataFrame(rows)
+
+        def _highlight_total(row):
+            if "Total" in str(row.get("Component", "")):
+                return ["background-color: #d9ead3"] * len(row)  # light green
+            return [""] * len(row)
+
+        styled = summary_df.style.apply(_highlight_total, axis=1).hide_index()
+
+        st.dataframe(styled, use_container_width=True)
+        st.markdown("---")
+
+    # --------------------------------------------------------
     # Tabs (5): geometry, autogenous, drying, total, flow chart
     # --------------------------------------------------------
     tab_geom, tab_auto, tab_dry, tab_total, tab_flow = st.tabs(
@@ -353,7 +392,6 @@ Fig. 3.1.7.2 and Table 3.1.7.2._
     with tab_auto:
         st.subheader("Autogenous shrinkage ε_cse – AS 3600 Cl. 3.1.7.2(2),(3)")
 
-        # avoid division by zero if t_days is tiny
         if t_days > 0:
             eps_cse_final = eps_cse / (1.0 - math.exp(-0.04 * t_days))
         else:
