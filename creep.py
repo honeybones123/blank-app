@@ -69,7 +69,7 @@ blockquote p:last-child {
 
 
 def calcbox(md: str):
-    """
+    r"""
     Render a highlighted calculation box with LaTeX-enabled markdown inside.
 
     - Converts \[ \] → $$ $$ for display math
@@ -474,17 +474,17 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
             rf"""
 **Purpose**
 
-Determine the **notional thickness** $t_h$ and the **time-development factor** $k_2$
+Determine the **notional thickness** \(t_h\) and the **time-development factor** \(k_2\)
 used in AS 3600 for **creep**.
 
 **Inputs**
 
-- Section width: $b = {b:.1f}\,\text{{mm}}$
-- Overall depth: $D = {D:.1f}\,\text{{mm}}$
-- Gross area: $A_g = bD = {Ag:.0f}\,\text{{mm}}^2$
+- Section width: \(b = {b:.1f}\,\text{{mm}}\)
+- Overall depth: \(D = {D:.1f}\,\text{{mm}}\)
+- Gross area: \(A_g = bD = {Ag:.0f}\,\text{{mm}}^2\)
 - Faces exposed: **{faces_option}**
-- Exposed perimeter: $u_e = {ue:.1f}\,\text{{mm}}$
-- Time after loading: $t = {t_creep:.0f}\,\text{{days}}$
+- Exposed perimeter: \(u_e = {ue:.1f}\,\text{{mm}}\)
+- Time after loading: \(t = {t_creep:.0f}\,\text{{days}}\)
 
 **Notional thickness**
 
@@ -492,11 +492,10 @@ used in AS 3600 for **creep**.
 t_h = \frac{{2 A_g}}{{u_e}}
 \]
 
-Substitution:
+With \(A_g = {Ag:.0f}\,\text{{mm}}^2\) and \(u_e = {ue:.1f}\,\text{{mm}}\):
 
 \[
-t_h = \frac{{2 \times {Ag:.0f}}}{{{ue:.1f}}}
-\approx {th_raw:.1f}\,\text{{mm}}
+t_h \approx {th_raw:.1f}\,\text{{mm}}
 \]
 
 For compatibility with **Fig. 3.1.8.3** and **Table 3.1.8.3**, adopt the nearest
@@ -506,21 +505,25 @@ standard value:
 t_{{h,\text{{table}}}} = {th_table:d}\,\text{{mm}} \quad (\text{{nearest of 100, 200, 400 mm}})
 \]
 
-**Time-development factor** $k_2$ (Fig. 3.1.8.3)
+**Time-development factor** \(k_2\) (Fig. 3.1.8.3)
+
+Creep development is modelled by
 
 \[
-k_2(t, t_h) = \frac{{\alpha_2 t^{0.8}}}{{t^{0.8} + 0.15 t_h}},
-\qquad
-\alpha_2 = 1.0 + 1.12 e^{-0.008 t_h}
+k_2(t, t_h) = \frac{{\alpha_2 t^{0.8}}}{{t^{0.8} + 0.15 t_h}}, \qquad
+\alpha_2 = 1.0 + 1.12\,e^{-0.008 t_h}
 \]
 
-Substitution with $t = {t_creep:.0f}$ days and $t_h = {th_table:d}$ mm
-gives $k_2 \approx {k2:.3f}$.
+At \(t = {t_creep:.0f}\) days and \(t_h = {th_table:d}\,\text{{mm}}\):
+
+\[
+k_2 \approx {k2:.3f}
+\]
 
 **Result**
 
-- Notional thickness adopted: $t_{{h,\text{{table}}}} = {th_table:d}\,\text{{mm}}$  
-- Time-development factor: $k_2 \approx {k2:.3f}$
+- Adopted notional thickness: \(t_{{h,\text{{table}}}} = {th_table:d}\,\text{{mm}}\)  
+- Time-development factor: \(k_2 \approx {k2:.3f}\)
 
 _Ref: AS 3600:2018 Cl. 3.1.8.3 and Fig. 3.1.8.3._ 
 """
@@ -534,7 +537,7 @@ _Ref: AS 3600:2018 Cl. 3.1.8.3 and Fig. 3.1.8.3._
             rf"""
 **Purpose**
 
-Compute the **design creep coefficient** at time $t$:
+Compute the **design creep coefficient** at time \(t\):
 
 \[
 \varphi_{{cc}}(t) = k_2 k_3 k_4 k_5 k_6 \, \varphi_{{cc,b}}
@@ -542,12 +545,12 @@ Compute the **design creep coefficient** at time $t$:
 
 **Inputs**
 
-- Concrete strength: $f'_c = {fc:.1f}\,\text{{MPa}}$  
+- Concrete strength: \(f'_c = {fc:.1f}\,\text{{MPa}}\)  
 - Environment: **{env_option}**  
-- Age at loading: $\tau = {age_at_loading:.0f}\,\text{{days}}$  
-- Time after loading: $t = {t_creep:.0f}\,\text{{days}}$  
-- Notional thickness for tables: $t_h = {th_table:d}\,\text{{mm}}$  
-- Sustained stress ratio: $\sigma_0/f'_{{c,mi}} = {stress_ratio:.2f}$  
+- Age at loading: \(\tau = {age_at_loading:.0f}\,\text{{days}}\)  
+- Time after loading: \(t = {t_creep:.0f}\,\text{{days}}\)  
+- Notional thickness for tables: \(t_h = {th_table:d}\,\text{{mm}}\)  
+- Sustained stress ratio: \(\sigma_0/f'_{{c,mi}} = {stress_ratio:.2f}\)  
 
 **Basic creep coefficient** (Table 3.1.8.2)
 
@@ -557,11 +560,11 @@ Compute the **design creep coefficient** at time $t$:
 
 **Factors**
 
-- $k_2(t, t_h) \approx {k2:.3f}$  (Fig. 3.1.8.3)  
-- $k_3(\tau) = 2.7/[1 + \ln(\tau)] \approx {k3:.3f}$  
-- $k_4$ (environment factor) $= {k4:.2f}$  
-- $k_5$ (high-strength modification) $= {k5:.3f}$  
-- $k_6$ (non-linear creep for high stress) $= {k6:.3f}$  
+- \(k_2(t, t_h) \approx {k2:.3f}\)  (Fig. 3.1.8.3)  
+- \(k_3(\tau) = 2.7/[1 + \ln(\tau)] \approx {k3:.3f}\)  
+- \(k_4\) (environment factor) \(= {k4:.2f}\)  
+- \(k_5\) (high-strength modification) \(= {k5:.3f}\)  
+- \(k_6\) (non-linear creep for high stress) \(= {k6:.3f}\)  
 
 **Substitution**
 
@@ -574,7 +577,7 @@ Compute the **design creep coefficient** at time $t$:
 
 **Comparison with Table 3.1.8.3**
 
-For the same $f'_c$, environment and $t_h$, the **final 30-year coefficient**
+For the same \(f'_c\), environment and \(t_h\), the **final 30-year coefficient**
 from Table 3.1.8.3 is
 
 \[
@@ -583,7 +586,7 @@ from Table 3.1.8.3 is
 
 **Result**
 
-- Design creep coefficient at $t = {t_creep:.0f}$ days:
+- Design creep coefficient at \(t = {t_creep:.0f}\) days:
   \[
   \varphi_{{cc}}(t) \approx {phi_cc_t:.2f}
   \]
@@ -605,11 +608,11 @@ _Ref: AS 3600:2018 Cl. 3.1.8.3; Tables 3.1.8.2 & 3.1.8.3; Fig. 3.1.8.3._
 **Purpose**
 
 Convert the **creep coefficient** to a **creep strain** under sustained
-compressive stress $\sigma_0$.
+compressive stress \(\sigma_0\).
 
 **Inputs**
 
-- Design creep coefficient at time $t$:  
+- Design creep coefficient at time \(t\):  
   \[
   \varphi_{{cc}}(t) \approx {phi_cc_t:.2f}
   \]
@@ -617,13 +620,13 @@ compressive stress $\sigma_0$.
   \[
   \frac{{\sigma_0}}{{f'_{{c,mi}}}} = {stress_ratio:.2f}
   \]
-- Approximate design strength at loading: $f'_{{c,mi}} \approx f'_c = {fc:.1f}\,\text{{MPa}}$  
+- Approximate design strength at loading: \(f'_{{c,mi}} \approx f'_c = {fc:.1f}\,\text{{MPa}}\)  
   so:
   \[
   \sigma_0 \approx {stress_ratio:.2f} \times {fc:.1f}
   \approx {sigma0:.2f}\,\text{{MPa}}
   \]
-- Modulus of elasticity: $E_c = {Ec:.0f}\,\text{{MPa}}$
+- Modulus of elasticity: \(E_c = {Ec:.0f}\,\text{{MPa}}\)
 
 **Formula**
 
@@ -647,7 +650,7 @@ Expressed in microstrain:
 
 **Result**
 
-- Creep strain at $t = {t_creep:.0f}$ days under $\sigma_0 \approx {sigma0:.2f}$ MPa:  
+- Creep strain at \(t = {t_creep:.0f}\) days under \(\sigma_0 \approx {sigma0:.2f}\) MPa:  
   \[
   \varepsilon_{{cc}} \approx {eps_cc_micro:.1f}\,\mu\varepsilon
   \]
