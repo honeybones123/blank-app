@@ -491,13 +491,21 @@ def _make_uls_stress_block_figure(
     if variant == "13":
         D_ref = base_span * 1.05      # axis height
         fig_height = 3.2              # visually a bit taller
-    else:  # "11" – same axis height, but shorter figure
+        fig_width = 3.0
+        use_equal_aspect = False
+    else:  # "11" – 1:1 aspect ratio, same depth as calc box
         D_ref = base_span * 1.05
-        fig_height = 2.4
+        # Use square figure size to support 1:1 aspect ratio
+        # Match the depth of the calc box by using similar vertical extent
+        fig_width = 3.0
+        fig_height = 3.0  # Square figure for 1:1 aspect
+        use_equal_aspect = True
 
-    fig, ax = plt.subplots(figsize=(3.0, fig_height))
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
     ax.set_xlim(0.0, 100.0)
     ax.set_ylim(D_ref, 0.0)  # 0 at top
+    if use_equal_aspect:
+        ax.set_aspect("equal", adjustable="box")
     ax.axis("off")
 
     # vertical axis
