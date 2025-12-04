@@ -83,10 +83,8 @@ def calcbox(md: str):
     - Converts \( \) → $ $ for inline math
     - Wraps everything in a markdown blockquote (>) so CSS turns it blue
     """
-    # convert to dollar-delimited LaTeX for Streamlit
     converted = md.replace("\\[", "$$").replace("\\]", "$$")
     converted = converted.replace("\\(", "$").replace("\\)", "$")
-    # blockquote wrapper
     lines = converted.strip().split("\n")
     blockquote = "\n".join("> " + line for line in lines)
     st.markdown(blockquote)
@@ -253,14 +251,13 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         """
     )
 
-    # Reserve space for the summary banner (to sit near the top)
     summary_placeholder = st.empty()
-
-    st.markdown("### Design inputs")
 
     # --------------------------------------------------------
     # Inputs – seeded from shared state where possible
     # --------------------------------------------------------
+    st.markdown("### Design inputs")
+
     col_geom, col_mat, col_load = st.columns(3)
 
     with col_geom:
@@ -371,44 +368,30 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         )
 
     # --------------------------------------------------------
-    # Effective stiffness Ief (calculation, not the tab yet)
+    # Ief: get choice from session_state, compute once for whole page
     # --------------------------------------------------------
-    st.markdown("### Effective stiffness \(I_{ef}\) – input choice")
+    ss = st.session_state
+    if "defl_use_simplified_ief" not in ss:
+        ss["defl_use_simplified_ief"] = True
+    if "defl_Ief_user" not in ss:
+        ss["defl_Ief_user"] = 1.0e11
 
-    col_ief_left, col_ief_right = st.columns([2, 1])
-
-    with col_ief_left:
-        use_simplified_ief = st.checkbox(
-            "Use simplified reinforced-member Iₑf (AS 3600 Cl. 8.5.3.1(2),(3))",
-            value=True,
-            key="defl_use_simplified_ief",
+    if ss["defl_use_simplified_ief"]:
+        Ief, beta, p, p_lim, Ief_max, k1_from_ief = calc_ief_simplified(
+            fc=fc,
+            beff=beff,
+            bw=bw,
+            d=d,
+            Ast=Ast,
         )
-
-        if use_simplified_ief:
-            Ief, beta, p, p_lim, Ief_max, k1_from_ief = calc_ief_simplified(
-                fc=fc,
-                beff=beff,
-                bw=bw,
-                d=d,
-                Ast=Ast,
-            )
-        else:
-            Ief = st.number_input(
-                "User-specified Iₑf (mm⁴)",
-                value=1.0e11,
-                step=1.0e10,
-                format="%.3e",
-                key="defl_Ief_user",
-            )
-            beta = beff / bw if bw > 0 else 1.0
-            p = Ast / (beff * d) if beff * d > 0 else 0.0
-            p_lim = 0.0
-            Ief_max = Ief
-            k1_from_ief = Ief / (beff * (d ** 3))
-
-    with col_ief_right:
-        st.metric("Effective second moment Iₑf", f"{Ief:,.3e} mm⁴")
-        st.metric("k₁ = Iₑf / (bₑf d³)", f"{k1_from_ief:.4f}")
+    else:
+        Ief = float(ss["defl_Ief_user"])
+        Ief = max(Ief, 1.0)
+        beta = beff / bw if bw > 0 else 1.0
+        p = Ast / (beff * d) if beff * d > 0 else 0.0
+        p_lim = 0.0
+        Ief_max = Ief
+        k1_from_ief = Ief / (beff * (d ** 3)) if beff * d > 0 else 0.0
 
     # --------------------------------------------------------
     # Main AS 3600 deflection calculations
@@ -450,18 +433,16 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     )
 
     # --------------------------------------------------------
-    # TOP SUMMARY TABLE (bending-style: rows + pass/fail colours)
+    # TOP SUMMARY TABLE (bending-style)
     # --------------------------------------------------------
     with summary_placeholder.container():
         st.markdown("## Summary")
 
-        # Deflection limit in mm (from L/Δ input)
         limit_delta_mm = L_mm / defl_limit_ratio if defl_limit_ratio > 0 else None
-
         rows = []
 
-        # 1) Short-term deflection (total load)
-        if limit_delta_mm is not None and limit_delta_mm > 0:
+        # 1) Short-term
+        if limit_delta_mm:
             util_short = delta_short_total / limit_delta_mm
             status_short = "OK" if util_short <= 1.0 else "NG"
             limit_str = f"{limit_delta_mm:.2f} mm (L/{defl_limit_ratio:.0f})"
@@ -480,8 +461,8 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
             }
         )
 
-        # 2) Additional long-term deflection
-        if limit_delta_mm is not None and limit_delta_mm > 0:
+        # 2) Long-term additional
+        if limit_delta_mm:
             util_long = delta_long_add / limit_delta_mm
             status_long = "OK" if util_long <= 1.0 else "NG"
         else:
@@ -498,8 +479,8 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
             }
         )
 
-        # 3) Total deflection (short + long-term)
-        if limit_delta_mm is not None and limit_delta_mm > 0:
+        # 3) Total
+        if limit_delta_mm:
             util_total = delta_total / limit_delta_mm
             status_total = "OK" if util_total <= 1.0 else "NG"
         else:
@@ -516,7 +497,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
             }
         )
 
-        # 4) Span-to-depth check L_eff/d
+        # 4) Span/depth
         if L_over_d_limit is not None:
             util_span = L_over_d / L_over_d_limit if L_over_d_limit > 0 else None
             status_span = (
@@ -540,31 +521,22 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
 
         summary_df = pd.DataFrame(rows)
 
-        # Colour formatting like bending: green = OK, red = NG
         def _highlight_status(row):
             status = row.get("Status", "")
             if status == "OK":
-                color = "#d9ead3"  # light green
+                color = "#d9ead3"
             elif status == "NG":
-                color = "#f4cccc"  # light red
+                color = "#f4cccc"
             else:
                 color = ""
             return [f"background-color: {color}"] * len(row)
 
         styled = summary_df.style.apply(_highlight_status, axis=1)
-
         st.dataframe(styled, use_container_width=True)
         st.markdown("---")
 
-
     # --------------------------------------------------------
-    # Tabs in agreed order:
-    #   1) Ief
-    #   2) Short-term deflection
-    #   3) Long-term deflection
-    #   4) Span/depth check
-    #   5) Flow chart
-    #   6) Deflected shape
+    # Tabs
     # --------------------------------------------------------
     tab_ief, tab_short, tab_long, tab_span, tab_flow, tab_shape = st.tabs(
         [
@@ -579,6 +551,24 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
 
     # ---------- TAB 1: Ief details ----------
     with tab_ief:
+        st.markdown("### Effective stiffness (Iₑf) – input choice")
+
+        # Input choice lives here, but values are read earlier via session_state
+        use_simplified_ief = st.checkbox(
+            "Use simplified reinforced-member Iₑf (AS 3600 Cl. 8.5.3.1(2),(3))",
+            value=ss["defl_use_simplified_ief"],
+            key="defl_use_simplified_ief",
+        )
+
+        if not use_simplified_ief:
+            st.number_input(
+                "User-specified Iₑf (mm⁴)",
+                value=float(ss["defl_Ief_user"]),
+                step=1.0e10,
+                format="%.3e",
+                key="defl_Ief_user",
+            )
+
         st.subheader("Effective second moment of area Iₑf – AS 3600 Cl. 8.5.3.1")
 
         calcbox(
@@ -645,6 +635,8 @@ Using the current inputs:
   $I_{{ef}} = {Ief:,.3e}\,\text{{mm}}^4$
 - Stiffness factor:  
   $k_1 = {k1_from_ief:.5f}$
+- Cap for reference:  
+  $I_{{ef,max}} = {Ief_max:,.3e}\,\text{{mm}}^4$
 
 _Ref: AS 3600:2018 Cl. 8.5.3.1(2) & (3) – simplified $I_{{ef}}$ for reinforced members._
 """
@@ -677,7 +669,7 @@ using the effective stiffness $I_{{ef}}$ from the previous step (AS 3600 Cl. 8.5
 Short-term deflection due to total service load:
 
 \[
-\delta_{{st,total}} = k_2 \dfrac{{w\, L_{{eff}}^4}}{{E_{{c,eff}}\, I_{{ef}}}}
+\delta_{{st,total}} = k_2 \dfrac{{w\, L_{{eff}}^4}}{{E_{{c,eff}}\, I_{{ef}}}
 \]
 
 **Substitution**
@@ -706,6 +698,7 @@ _Ref: AS 3600:2018 Cl. 8.5.3.1 – deflection using effective stiffness $I_{{ef}
 
         w_sust = results["w_sust"]
         ratio_Asc_Ast = (Asc / Ast) if Ast > 0 else 0.0
+        k2 = results["k2"]
 
         calcbox(
             rf"""
@@ -738,7 +731,7 @@ Determine the **additional long-term deflection** due to sustained loading
 Short-term deflection due to **sustained load only**:
 
 \[
-\delta_{{st,sust}} = k_2 \dfrac{{w_{{sust}} L_{{eff}}^4}}{{E_{{c,eff}} I_{{ef}}}}
+\delta_{{st,sust}} = k_2 \dfrac{{w_{{sust}} L_{{eff}}^4}}{{E_{{c,eff}} I_{{ef}}}
 \]
 
 Creep/shrinkage multiplier:
@@ -979,7 +972,6 @@ _Ref: AS 3600:2018 Cl. 8.5.4 – deemed-to-conform span-to-depth limits._
 
         x = np.linspace(0.0, L_mm, 200)
         xi = x / L_mm
-        # Simple parabolic shape scaled to δ_total
         y_long = -delta_total * 4.0 * xi * (1.0 - xi)
 
         fig, ax = plt.subplots()
@@ -990,5 +982,3 @@ _Ref: AS 3600:2018 Cl. 8.5.4 – deemed-to-conform span-to-depth limits._
         ax.grid(True)
 
         st.pyplot(fig)
-
-
