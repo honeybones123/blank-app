@@ -575,10 +575,10 @@ def _make_uls_stress_block_figure(
                 mutation_scale=ARROW_SCALE,
             ),
         )
-        # α₂ f'c label positioned much closer to the arrow (left side)
+        # α₂ f'c label positioned much closer to the arrow (left side), moved down slightly
         ax.text(
             block_left + 5.0,  # Closer to the arrow start, not far to the left
-            y_alpha - 0.05 * D_ref,
+            y_alpha - 0.03 * D_ref,  # Moved down slightly (reduced from 0.05 to 0.03)
             f"α₂ f'c = {sigma_c:.0f} MPa",
             ha="left",
             va="bottom",
@@ -672,34 +672,12 @@ def _make_uls_stress_block_figure(
             color="tab:red",
         )
 
-    # optional lever arm
-    if show_lever_arm:
-        y_C = 0.5 * a_mm
-        # Position z line clearly between the "a" label line and dn line end, not overlapping with labels
-        # "a" label is at block_left + block_width + label_spacing
-        # dn line ends at block_left + block_width + label_spacing + 10.0
-        # z line should be between them
-        x_z = block_left + block_width + label_spacing + 5.0  # Midway between "a" label and dn line end
-        ax.annotate(
-            "",
-            xy=(x_z, d_mm),
-            xytext=(x_z, y_C),
-            arrowprops=dict(
-                arrowstyle="<->",
-                linewidth=LINE_MED,
-                mutation_scale=ARROW_SCALE,
-            ),
-        )
-        # Position z label on the line itself, not offset
-        ax.text(
-            x_z,
-            0.5 * (d_mm + y_C),
-            "z",
-            ha="center",
-            va="center",
-            fontsize=FS_LABEL,
-            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="none", alpha=0.8),
-        )
+    # optional lever arm - REMOVED per user request
+    # if show_lever_arm:
+    #     y_C = 0.5 * a_mm
+    #     x_z = block_left + block_width + label_spacing + 5.0
+    #     ax.annotate(...)
+    #     ax.text(...)
 
     # Center label based on xlim
     x_center = xlim_max / 2.0
@@ -757,7 +735,7 @@ def _make_uls_force_model_figure(
 
     # Compression C at a/2
     y_C = 0.5 * a_mm
-    ARROW_OFFSET = 60.0  # Significantly increased distance from axis for longer force lines
+    ARROW_OFFSET = 75.0  # Further increased distance from axis for longer force lines
 
     x_C_tail = x_axis + ARROW_OFFSET
     x_C_head = x_axis
@@ -815,8 +793,8 @@ def _make_uls_force_model_figure(
         color="tab:blue",
     )
 
-    # Lever arm z
-    x_z = x_axis + ARROW_OFFSET + 25.0
+    # Lever arm z - reintroduced with longer force lines
+    x_z = x_axis + ARROW_OFFSET + 30.0  # Positioned further right to account for longer force lines
     ax.annotate(
         "",
         xy=(x_z, y_T),
