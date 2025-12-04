@@ -209,25 +209,15 @@ def render_shrinkage():
 This page computes **concrete shrinkage strain** in accordance with  
 **AS 3600:2018 Clause 3.1.7**, consisting of:
 
-- **Autogenous shrinkage** \( \varepsilon_{cse} \) — Cl. 3.1.7.2(2),(3)
-- **Drying shrinkage** \( \varepsilon_{csd} \) — Cl. 3.1.7.2(4),(5)
-- **Notional thickness**
-
-  $$
-  t_h = \frac{2 A_g}{u_e}
-  $$
-
-  used in Fig. 3.1.7.2 and Table 3.1.7.2
-
-- **Total shrinkage**
-
-  $$
-  \varepsilon_{cs} = \varepsilon_{cse} + \varepsilon_{csd}
-  $$
+- **Autogenous shrinkage** \( \varepsilon_{cse} \) — Cl. 3.1.7.2(2),(3)  
+- **Drying shrinkage** \( \varepsilon_{csd} \) — Cl. 3.1.7.2(4),(5)  
+- **Notional thickness** \( t_h = \dfrac{2 A_g}{u_e} \) — used in Fig. 3.1.7.2 and Table 3.1.7.2  
+- **Total shrinkage** \( \varepsilon_{cs} = \varepsilon_{cse} + \varepsilon_{csd} \)
 
 All strains are reported in units of microstrain \( \times 10^{-6} \).
 """
     )
+
 
     # --------------------------------------------------------
     # Reserve space for the top summary table
@@ -654,6 +644,7 @@ _Ref: AS 3600:2018 Cl. 3.1.7 – total shrinkage._
   **serviceability** checks.
 """
         )
+
 
 
 
