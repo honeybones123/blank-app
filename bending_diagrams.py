@@ -735,7 +735,7 @@ def _make_uls_force_model_figure(
 
     # Compression C at a/2
     y_C = 0.5 * a_mm
-    ARROW_OFFSET = 75.0  # Further increased distance from axis for longer force lines
+    ARROW_OFFSET = 90.0  # Further increased distance from axis for longer force lines
 
     x_C_tail = x_axis + ARROW_OFFSET
     x_C_head = x_axis
@@ -793,8 +793,8 @@ def _make_uls_force_model_figure(
         color="tab:blue",
     )
 
-    # Lever arm z - reintroduced with longer force lines
-    x_z = x_axis + ARROW_OFFSET + 30.0  # Positioned further right to account for longer force lines
+    # Lever arm z - positioned between the vertical axis and force arrow ends
+    x_z = x_axis + ARROW_OFFSET * 0.6  # Positioned between the axis and force arrow ends
     ax.annotate(
         "",
         xy=(x_z, y_T),
