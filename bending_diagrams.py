@@ -82,40 +82,31 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     stress_max = max(sigma_c, sigma_s, 1.0)
 
     # -------------------------
-    # Calculate scale factor based on actual content width vs page width
-    # to ensure nothing gets cut off (1:1 ratio scaling for all three diagrams)
+    # Simple 1:1 ratio scaling - shrink everything uniformly until it fits
     # -------------------------
-    # First, calculate positions at original scale to determine actual width needed
+    # Original positions
     x_center_sec_orig    = 135.0
     x_center_strain_orig = 650.0
     x_center_stress_orig = 1140.0
     panel_w_stress_orig = 260.0
+    
+    # Calculate total width needed at original scale
+    # Rightmost point: stress panel end + margin for labels
     x1_stress_orig = x_center_stress_orig + panel_w_stress_orig / 2.0
+    rightmost = x1_stress_orig + 100.0  # Margin for T arrow and labels
+    # Leftmost point: section left edge or xlim start
+    leftmost = min(x_center_sec_orig - b / 2.0, -200.0)
+    total_width_needed = rightmost - leftmost
     
-    # Calculate the actual maximum x position needed (including section width and stress panel)
-    # Section extends from x_center_sec - b/2 to x_center_sec + b/2
-    # Stress panel extends to x1_stress, plus T arrow and label
-    # Account for labels/arrows that extend beyond panels
-    margin_right = 80.0  # Margin for T arrow label and other labels extending beyond stress panel
-    margin_left = 20.0   # Margin for left side
-    actual_max_x = max(x_center_sec_orig + b / 2.0, x1_stress_orig) + margin_right
-    actual_min_x = min(x_center_sec_orig - b / 2.0, -200.0) - margin_left
-    actual_width_needed = actual_max_x - actual_min_x
+    # Target width that fits on page
+    target_width = 1200.0
     
-    # Target maximum width that fits on page (accounting for figure margins and Streamlit container)
-    # Use a conservative target to ensure nothing gets cut off
-    # Account for figure margins (2% each side) and potential Streamlit container constraints
-    target_max_width = 1000.0
-    
-    # Calculate scale factor to fit content (1:1 ratio scaling)
+    # Simple scale factor: shrink by 1:1 ratio until it fits
     scale_factor = 1.0
-    if actual_width_needed > target_max_width:
-        scale_factor = target_max_width / actual_width_needed
+    if total_width_needed > target_width:
+        scale_factor = target_width / total_width_needed
     
-    # -------------------------
-    # FIXED panel positions (scaled if needed to fit on page)
-    # (section moved a bit further left, spacing preserved)
-    # -------------------------
+    # Apply scale factor uniformly to all positions (1:1 ratio)
     x_center_sec    = x_center_sec_orig * scale_factor
     x_center_strain = x_center_strain_orig * scale_factor
     x_center_stress = x_center_stress_orig * scale_factor
@@ -146,13 +137,12 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     # Keep margins consistent regardless of scale
     fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
 
-    # fixed axes → positions frozen across ULS / SLS / Uncracked (scaled to fit on page)
+    # fixed axes → positions frozen across ULS / SLS / Uncracked (scaled uniformly by 1:1 ratio)
     ax.set_ylim(D * 1.2, -0.2 * D)
-    # Set xlim based on actual content bounds, scaled appropriately, with padding
-    padding = 20.0 * scale_factor  # Small padding to ensure nothing gets cut off
-    xlim_min = actual_min_x * scale_factor - padding
-    xlim_max = actual_max_x * scale_factor + padding
-    ax.set_xlim(xlim_min, xlim_max)
+    # Set xlim based on original bounds, scaled uniformly
+    xlim_min_orig = -200.0
+    xlim_max_orig = 1450.0
+    ax.set_xlim(xlim_min_orig * scale_factor, xlim_max_orig * scale_factor)
     ax.set_aspect("equal", adjustable="box")
     ax.set_xmargin(0)
     ax.set_ymargin(0)
