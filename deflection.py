@@ -551,7 +551,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
                 color = ""
             return [f"background-color: {color}"] * len(row)
 
-        styled = summary_df.style.apply(_highlight_status, axis=1).hide_index()
+        styled = summary_df.style.apply(_highlight_status, axis=1)
 
         st.dataframe(styled, use_container_width=True)
         st.markdown("---")
@@ -990,4 +990,5 @@ _Ref: AS 3600:2018 Cl. 8.5.4 – deemed-to-conform span-to-depth limits._
         ax.grid(True)
 
         st.pyplot(fig)
+
 
