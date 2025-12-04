@@ -352,7 +352,13 @@ def render_bending():
     As_min_top = top_results["As_min"]
     c_top = top_results["c"]
     Mcr_top = top_results["Mcr"]
-    Mu_min_top = top_results.get("Mu_min")
+    # Minimum-strength design moment from Tab 2 logic: M_u,min = 1.2 M_cr
+    if Mcr_top is not None and not (
+        isinstance(Mcr_top, float) and math.isnan(Mcr_top)
+    ):
+        Mu_min_top = 1.2 * Mcr_top
+    else:
+        Mu_min_top = float("nan")
 
     def _status_colour(flag):
         if flag is None:
@@ -442,13 +448,13 @@ def render_bending():
 
     # Original summary card HTML (now with minimum strength row, no comments)
     summary_html = f"""
-    <div style="
-        border: 1px solid #cccccc;
-        border-radius: 8px;
-        padding: 0.5rem 0.75rem;
-        margin-bottom: 1rem;
-        max-width: 900px;
-    ">
+<div style="
+  border: 1px solid #cccccc;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 1rem;
+  max-width: 1200px;
+">
       <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
         <thead>
           <tr style="background-color: #f5f5f5;">
@@ -541,24 +547,24 @@ def render_bending():
         with left_col:
             st.title("Bending Capacity")
             st.markdown(
-                """
+                r"""
 This page computes **ultimate flexural capacity**, **strain compatibility**, and
 **service-stress outputs** in accordance with **AS 3600:2018 Clause 8**, including:
 
 - **Ultimate moment capacity**  
-  \\( \\phi M_{u,\\text{cap}} = \\phi\\,T\\,(d - 0.5\\,\\gamma x_u) \\) — Cl. 8.1.3
+  $ \phi M_{u,\mathrm{cap}} = \phi\,T\,(d - 0.5\,\gamma x_u) $ — Cl. 8.1.3
 
 - **Steel stress at serviceability**,  
-  \\( f_{s,ser} = E_s\\,\\varepsilon_s \\), used in crack-width and deflection checks.
+  $ f_{s,\mathrm{ser}} = E_s\,\varepsilon_s $, used in crack-width and deflection checks.
 
 - **Strain-compatibility solution** for concrete and steel, showing ULS and SLS stress–strain states.
 
-- **Force equilibrium** between concrete compression and steel tension, using the AS 3600 α₂–γ rectangular stress block.
+- **Force equilibrium** between concrete compression and steel tension, using the AS 3600 $\alpha_2$–$\gamma$ rectangular stress block.
                 """
             )
-            # Render HTML summary card using components.html to avoid escaping
+            # Render HTML summary card full-width in this column
             components.html(
-                summary_html.replace("max-width: 900px", "max-width: 650px"),
+                summary_html,
                 height=340,
             )
 
