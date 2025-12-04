@@ -575,12 +575,12 @@ def _make_uls_stress_block_figure(
                 mutation_scale=ARROW_SCALE,
             ),
         )
-        # α₂ f'c label positioned closer to stress block (left side)
+        # α₂ f'c label positioned much closer to the arrow (left side)
         ax.text(
-            block_left - 1.0,  # Closer to stress block
+            block_left + 5.0,  # Closer to the arrow start, not far to the left
             y_alpha - 0.05 * D_ref,
             f"α₂ f'c = {sigma_c:.0f} MPa",
-            ha="right",
+            ha="left",
             va="bottom",
             fontsize=FS_LABEL,
             color="tab:red",
@@ -588,8 +588,9 @@ def _make_uls_stress_block_figure(
 
     # dashed d_n line + label (optional)
     if show_dn:
-        # Extend dn line further to avoid overlap with z line
-        x_dn_end = block_left + block_width + label_spacing + 6.0  # Position between "a" label and z line
+        # Extend dn line much further to avoid overlap with z line
+        # Position it well past the "a" label but before z line
+        x_dn_end = block_left + block_width + label_spacing + 10.0  # Extended further
         ax.hlines(
             dn_mm,
             x_axis,
@@ -674,8 +675,11 @@ def _make_uls_stress_block_figure(
     # optional lever arm
     if show_lever_arm:
         y_C = 0.5 * a_mm
-        # Position z line between the "a" label and dn line, not overlapping with labels
-        x_z = block_left + block_width + label_spacing + 2.0  # Between "a" label and dn line end
+        # Position z line clearly between the "a" label line and dn line end, not overlapping with labels
+        # "a" label is at block_left + block_width + label_spacing
+        # dn line ends at block_left + block_width + label_spacing + 10.0
+        # z line should be between them
+        x_z = block_left + block_width + label_spacing + 5.0  # Midway between "a" label and dn line end
         ax.annotate(
             "",
             xy=(x_z, d_mm),
@@ -753,7 +757,7 @@ def _make_uls_force_model_figure(
 
     # Compression C at a/2
     y_C = 0.5 * a_mm
-    ARROW_OFFSET = 50.0  # Increased distance from axis for longer force lines
+    ARROW_OFFSET = 60.0  # Significantly increased distance from axis for longer force lines
 
     x_C_tail = x_axis + ARROW_OFFSET
     x_C_head = x_axis
