@@ -318,6 +318,25 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
     eps_cs_total = eps_cse + eps_csd_t
 
     # --------------------------------------------------------
+    # Publish key shrinkage results to shared state
+    #   (so other pages like crack width can reuse them)
+    # --------------------------------------------------------
+    update_results(
+        "shrinkage",
+        {
+            # total shrinkage strain (dimensionless and microstrain)
+            "eps_cs_total": eps_cs_total,
+            "eps_cs_total_micro": eps_cs_total * 1e6,
+            # components if you ever want them downstream
+            "eps_cse": eps_cse,
+            "eps_csd_t": eps_csd_t,
+            # notional thickness & k1 used for time development
+            "th_shrinkage": th_table,
+            "k1_shrinkage": k1,
+        },
+    )
+
+    # --------------------------------------------------------
     # TOP SUMMARY TABLE (similar style to deflection)
     # --------------------------------------------------------
     with summary_placeholder.container():
@@ -648,7 +667,6 @@ _Ref: AS 3600:2018 Cl. 3.1.7 – total shrinkage._
   **serviceability** checks.
 """
         )
-
 
 
 
