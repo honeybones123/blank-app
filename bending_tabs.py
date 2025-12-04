@@ -9,7 +9,8 @@ from bending_diagrams import (
     _make_uls_force_model_figure,
     _make_sls_stress_block_figure,  # still used elsewhere, untouched
 )
-from bending_core import _fmt, _layout_bars_in_rows  # <-- add _layout_bars_in_rows here
+from bending_core import _fmt, _layout_bars_in_rows
+from state_and_helpers import update_results
 
 
 # ============================================================
@@ -1377,6 +1378,8 @@ $$
 Use $f_{{s,ser}} \\approx {fs_tension:.1f}$ MPa in crack-width calculations on the Crack Width tab.
 """
         )
+        # Publish for Crack Width page – service tensile steel stress at SLS
+        update_results(sigma_s_sls=float(fs_tension))
     else:
         st.info(
             "No tension layer found for crack-width link – check the SLS inputs."
