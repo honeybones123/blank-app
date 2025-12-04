@@ -502,7 +502,9 @@ def _make_uls_stress_block_figure(
         use_equal_aspect = True
 
     fig, ax = plt.subplots(figsize=(fig_width, fig_height))
-    ax.set_xlim(0.0, 100.0)
+    # Extend xlim for variant "11" to accommodate wider stress block and tension arrow
+    xlim_max = 180.0 if use_equal_aspect else 100.0
+    ax.set_xlim(0.0, xlim_max)
     ax.set_ylim(D_ref, 0.0)  # 0 at top
     if use_equal_aspect:
         ax.set_aspect("equal", adjustable="box")
@@ -519,7 +521,7 @@ def _make_uls_stress_block_figure(
 
     # block
     block_left = x_axis
-    block_width = 22.0
+    block_width = 44.0  # Double width for 2:1 ratio
     block_top = 0.0
     block_bottom = a_mm
 
@@ -612,9 +614,11 @@ def _make_uls_stress_block_figure(
     )
 
     # bottom tension arrow (now guaranteed to be inside the axes)
+    # Double the width for 2:1 ratio
+    tension_arrow_end = x_axis + 2.0 * (90.0 - x_axis)  # 20.0 + 2*70.0 = 160.0
     ax.annotate(
         "",
-        xy=(90.0, d_mm),
+        xy=(tension_arrow_end, d_mm),
         xytext=(x_axis, d_mm),
         arrowprops=dict(
             arrowstyle="->",
@@ -624,7 +628,7 @@ def _make_uls_stress_block_figure(
         ),
     )
     ax.text(
-        92.0,
+        tension_arrow_end + 2.0,
         d_mm,
         f"T ({fsy:.0f} MPa)",
         ha="left",
@@ -682,8 +686,10 @@ def _make_uls_stress_block_figure(
             fontsize=FS_LABEL,
         )
 
+    # Center label based on xlim
+    x_center = xlim_max / 2.0
     ax.text(
-        50.0,
+        x_center,
         D_ref + 0.07 * D_ref,
         "Stress (MPa)",
         ha="center",
