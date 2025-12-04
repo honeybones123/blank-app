@@ -194,29 +194,48 @@ def calc_eps_cse(fc: float, t_days: float) -> float:
 def render_shrinkage():
     apply_global_widget_css()
     _inject_calcbox_css()
-    get_sync_callbacks()  # not used yet, but keeps contract
+    get_sync_callbacks()  # keeps contract with Inputs page
 
+    # --------------------------------------------------------
+    # Page title
+    # --------------------------------------------------------
     st.title("Shrinkage – AS 3600:2018 Clause 3.1.7")
 
-    # Placeholder for top summary table (populated after calcs)
-    summary_placeholder = st.empty()
-
+    # --------------------------------------------------------
+    # Page description (appears directly under title)
+    # --------------------------------------------------------
     st.markdown(
-        """
-This page estimates **shrinkage strain** of concrete in accordance with **AS 3600:2018 Cl. 3.1.7**:
+        r"""
+This page computes **concrete shrinkage strain** in accordance with  
+**AS 3600:2018 Clause 3.1.7**, consisting of:
 
-- **Autogenous shrinkage** ($\\varepsilon_{cse}$) — Cl. 3.1.7.2(2),(3)  
-- **Drying shrinkage** ($\\varepsilon_{csd}$) — Cl. 3.1.7.2(4),(5)  
-- Notional thickness $t_h = 2 A_g / u_e$ — used for Fig. 3.1.7.2 and Table 3.1.7.2  
-- Total shrinkage $\\varepsilon_{cs} = \\varepsilon_{cse} + \\varepsilon_{csd}$.
+- **Autogenous shrinkage** \( \varepsilon_{cse} \) — Cl. 3.1.7.2(2),(3)  
+- **Drying shrinkage** \( \varepsilon_{csd} \) — Cl. 3.1.7.2(4),(5)  
+- **Notional thickness**  
+  \[
+      t_h = \frac{2A_g}{u_e}
+  \]
+  used in Fig. 3.1.7.2 and Table 3.1.7.2  
+- **Total shrinkage**  
+  \[
+      \varepsilon_{cs} = \varepsilon_{cse} + \varepsilon_{csd}
+  \]
+
+All strains are reported in units of microstrain \((\times 10^{-6})\).
 """
     )
 
-    st.markdown("### Geometry & exposure")
+    # --------------------------------------------------------
+    # Reserve space for the top summary table
+    # --------------------------------------------------------
+    summary_placeholder = st.empty()
 
     # --------------------------------------------------------
-    # Geometry + exposure inputs
+    # Geometry block
     # --------------------------------------------------------
+    st.markdown("### Geometry & exposure")
+
+
     col_geom, col_env = st.columns(2)
 
     with col_geom:
@@ -621,4 +640,5 @@ _Ref: AS 3600:2018 Cl. 3.1.7 – total shrinkage._
   **serviceability** checks.
 """
         )
+
 
