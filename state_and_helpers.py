@@ -143,6 +143,8 @@ SHARED_DEFAULTS = {
     "wmax_char": 0.3,
     "passes_table": True,
     "passes_w": True,
+    # Bending SLS → crack link (service steel stress)
+    "sigma_s_sls": 200.0,
 }
 
 # Explicit set of result keys (for RULE 4 checks)
@@ -177,6 +179,8 @@ RESULT_KEYS = {
     "wmax_char",
     "passes_table",
     "passes_w",
+    # Bending SLS → crack link
+    "sigma_s_sls",
 }
 
 # =====================================================
