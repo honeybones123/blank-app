@@ -82,21 +82,31 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     stress_max = max(sigma_c, sigma_s, 1.0)
 
     # -------------------------
-    # FIXED panel positions
+    # Scale factor for wide sections (b >= 1000)
+    # -------------------------
+    scale_factor = 1.0
+    if b >= 1000.0:
+        # Target width is ~1200 instead of 1650 to prevent cutoff
+        target_width = 1200.0
+        current_width = 1650.0  # xlim from -200 to 1450
+        scale_factor = target_width / current_width
+
+    # -------------------------
+    # FIXED panel positions (scaled if b >= 1000)
     # (section moved a bit further left, spacing preserved)
     # -------------------------
-    x_center_sec    = 135.0   # was 160
-    x_center_strain = 650.0
-    x_center_stress = 1140.0
+    x_center_sec    = 135.0 * scale_factor   # was 160
+    x_center_strain = 650.0 * scale_factor
+    x_center_stress = 1140.0 * scale_factor
 
-    sec_width = float(b)
+    sec_width = float(b) * scale_factor
     x0_sec = x_center_sec - sec_width / 2.0
 
-    panel_w_strain = 200.0
+    panel_w_strain = 200.0 * scale_factor
     x0_strain = x_center_strain - panel_w_strain / 2.0
     x1_strain = x_center_strain + panel_w_strain / 2.0
 
-    panel_w_stress = 260.0
+    panel_w_stress = 260.0 * scale_factor
     x0_stress = x_center_stress - panel_w_stress / 2.0
     x1_stress = x_center_stress + panel_w_stress / 2.0
 
@@ -110,9 +120,9 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     fig, ax = plt.subplots(figsize=(9, 3.5))
     fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
 
-    # fixed axes → positions frozen across ULS / SLS / Uncracked
+    # fixed axes → positions frozen across ULS / SLS / Uncracked (scaled if b >= 1000)
     ax.set_ylim(D * 1.2, -0.2 * D)
-    ax.set_xlim(-200.0, 1450.0)
+    ax.set_xlim(-200.0 * scale_factor, 1450.0 * scale_factor)
     ax.set_aspect("equal", adjustable="box")
     ax.set_xmargin(0)
     ax.set_ymargin(0)
@@ -128,7 +138,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     ax.add_patch(
         Rectangle(
             (x0_sec, 0),
-            b,
+            sec_width,  # Use scaled width
             D,
             fill=False,
             linewidth=LINE_THICK,
@@ -141,7 +151,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     ax.add_patch(
         Rectangle(
             (x0_sec, 0),
-            b,
+            sec_width,  # Use scaled width
             block_depth_sec,
             facecolor="#c7e3ff",
             edgecolor="tab:red",
@@ -150,10 +160,10 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         )
     )
 
-    # bottom bars
+    # bottom bars (use scaled width for layout)
     min_spacing_bot = 2 * db_bot
     bot_layout = _layout_bars_in_rows(
-        nb_bot, b, cover_bot, db_bot, min_spacing_bot, 2
+        nb_bot, sec_width, cover_bot, db_bot, min_spacing_bot, 2
     )
     r_bot = db_bot / 2.0
     row_pitch_bot = db_bot + rowgap_bot
@@ -170,10 +180,10 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             )
         )
 
-    # top bars
+    # top bars (use scaled width for layout)
     min_spacing_top = 2 * db_top
     top_layout = _layout_bars_in_rows(
-        nb_top, b, cover_top, db_top, min_spacing_top, 2
+        nb_top, sec_width, cover_top, db_top, min_spacing_top, 2
     )
     r_top = db_top / 2.0
     y_top_base = cover_top + r_top
@@ -190,11 +200,11 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             )
         )
 
-    # depth arrows next to section only
-    beam_right = x0_sec + b
+    # depth arrows next to section only (scaled if b >= 1000)
+    beam_right = x0_sec + sec_width
 
     if d:
-        x_d = min(beam_right + 30.0, x0_strain - 40.0)
+        x_d = min(beam_right + 30.0 * scale_factor, x0_strain - 40.0 * scale_factor)
         ax.annotate(
             "",
             xy=(x_d, d),
@@ -206,7 +216,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             ),
         )
         ax.text(
-            x_d + 10,
+            x_d + 10 * scale_factor,
             d / 2,
             f"d = {d:.0f} mm",
             fontsize=FS_ANNOT,
@@ -214,7 +224,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         )
 
     if c:
-        x_dn = min(beam_right + 80.0, x0_strain - 10.0)
+        x_dn = min(beam_right + 80.0 * scale_factor, x0_strain - 10.0 * scale_factor)
         ax.annotate(
             "",
             xy=(x_dn, c),
@@ -227,7 +237,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             ),
         )
         ax.text(
-            x_dn + 10,
+            x_dn + 10 * scale_factor,
             c / 2,
             "dₙ = {:.0f} mm".format(c),
             fontsize=FS_ANNOT,
@@ -259,11 +269,11 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     x_vals = [strain_to_x(e) for e in eps_vals]
     ax.plot(x_vals, y_vals, color="black", linewidth=LINE_MED)
 
-    # dashed NA
+    # dashed NA (scaled if b >= 1000)
     ax.hlines(
         c,
-        x0_strain - 10,
-        x1_strain + 10,
+        x0_strain - 10 * scale_factor,
+        x1_strain + 10 * scale_factor,
         colors="black",
         linestyles="--",
         linewidth=LINE_THIN,
@@ -318,7 +328,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         ),
     )
     ax.text(
-        x_T + 8,
+        x_T + 8 * scale_factor,
         d,
         f"T ({sigma_s:.0f} MPa)",
         fontsize=FS_ANNOT,
@@ -326,8 +336,15 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         va="center",
     )
 
+    # Calculate stress block width at ORIGINAL scale to keep it the same size
+    # even when diagrams are scaled down
+    x0_stress_original = 1140.0 - 260.0 / 2.0  # Original unscaled position
+    panel_w_stress_original = 260.0
+    x_T_original = x0_stress_original + (sigma_s / stress_max) * (panel_w_stress_original * 0.8)
     block_ratio = 1 / 3
-    block_width = (x_T - x0_stress) * block_ratio
+    block_width_original = (x_T_original - x0_stress_original) * block_ratio
+    # Use original block width (not scaled) at the scaled position
+    block_width = block_width_original
     x_block_right = x0_stress + block_width
 
     block_top = 0
@@ -356,17 +373,17 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             linewidth=LINE_MED,
         )
 
-    # dashed NA
+    # dashed NA (scaled if b >= 1000)
     ax.hlines(
         c,
-        x0_stress - 10,
+        x0_stress - 10 * scale_factor,
         x1_stress,
         linestyles="--",
         linewidth=LINE_THIN,
         colors="black",
     )
 
-    # α2 f'c width arrow & label
+    # α2 f'c width arrow & label (scaled if b >= 1000)
     y_alpha = -0.05 * D
     ax.annotate(
         "",
@@ -388,7 +405,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         ha="center",
     )
 
-    # γ d_n / d_n depth arrow
+    # γ d_n / d_n depth arrow (scaled if b >= 1000, but keep spacing relative to block)
     x_gc = x_block_right + 0.12 * panel_w_stress
     ax.annotate(
         "",
@@ -409,7 +426,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     )
 
     ax.text(
-        x_gc + 10,
+        x_gc + 10 * scale_factor,
         (block_top + block_bottom) / 2,
         depth_label,
         fontsize=FS_ANNOT,
@@ -417,7 +434,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         va="center",
     )
 
-    # internal compression arrows – facing LEFT
+    # internal compression arrows – facing LEFT (block_width is not scaled, so arrows stay relative to block)
     for frac in [0.25, 0.5, 0.75]:
         y_mid = block_top + frac * (block_bottom - block_top)
         ax.annotate(
