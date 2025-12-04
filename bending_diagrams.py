@@ -575,9 +575,9 @@ def _make_uls_stress_block_figure(
                 mutation_scale=ARROW_SCALE,
             ),
         )
-        # α₂ f'c label positioned at half the spacing distance from stress block (left side)
+        # α₂ f'c label positioned closer to stress block (left side)
         ax.text(
-            block_left - label_spacing / 2.0,
+            block_left - 1.0,  # Closer to stress block
             y_alpha - 0.05 * D_ref,
             f"α₂ f'c = {sigma_c:.0f} MPa",
             ha="right",
@@ -588,15 +588,17 @@ def _make_uls_stress_block_figure(
 
     # dashed d_n line + label (optional)
     if show_dn:
+        # Extend dn line further to avoid overlap with z line
+        x_dn_end = block_left + block_width + label_spacing + 6.0  # Position between "a" label and z line
         ax.hlines(
             dn_mm,
             x_axis,
-            95.0,
+            x_dn_end,
             linestyles="--",
             colors="tab:blue",
             linewidth=LINE_MED,
         )
-        x_dn_label = 95.0
+        x_dn_label = x_dn_end
         ax.text(
             x_dn_label + label_spacing,
             dn_mm + 0.03 * D_ref,
@@ -672,7 +674,8 @@ def _make_uls_stress_block_figure(
     # optional lever arm
     if show_lever_arm:
         y_C = 0.5 * a_mm
-        x_z = block_left + block_width + 8.0
+        # Position z line between the "a" label and dn line, not overlapping with labels
+        x_z = block_left + block_width + label_spacing + 2.0  # Between "a" label and dn line end
         ax.annotate(
             "",
             xy=(x_z, d_mm),
@@ -683,13 +686,15 @@ def _make_uls_stress_block_figure(
                 mutation_scale=ARROW_SCALE,
             ),
         )
+        # Position z label on the line itself, not offset
         ax.text(
-            x_z + label_spacing,
+            x_z,
             0.5 * (d_mm + y_C),
             "z",
-            ha="left",
+            ha="center",
             va="center",
             fontsize=FS_LABEL,
+            bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="none", alpha=0.8),
         )
 
     # Center label based on xlim
@@ -748,7 +753,7 @@ def _make_uls_force_model_figure(
 
     # Compression C at a/2
     y_C = 0.5 * a_mm
-    ARROW_OFFSET = 35.0  # distance from axis, matched to T
+    ARROW_OFFSET = 50.0  # Increased distance from axis for longer force lines
 
     x_C_tail = x_axis + ARROW_OFFSET
     x_C_head = x_axis
