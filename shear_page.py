@@ -1437,8 +1437,8 @@ $$\\large d_v = {_fmt(d_v)}\\ \\text{{mm}}$$
             with st.popover("ℹ️", use_container_width=True):
                 st.markdown("### Understanding the Longitudinal Strain Equations")
 
-            st.markdown(
-                r"""
+                st.markdown(
+                    r"""
 **Where is εₓ measured?**
 
 - εₓ is the **longitudinal strain at the mid-depth** of the cross-section at the shear-critical location.  
@@ -1446,22 +1446,22 @@ $$\\large d_v = {_fmt(d_v)}\\ \\text{{mm}}$$
   - **Tension** → cracking → reduced shear resistance  
   - **Slight compression** → concrete still helps → increased shear resistance  
 """
-            )
+                )
 
-            st.markdown("---")
-            st.markdown("### **Equation (1) – mid-depth in tension (εₓ ≥ 0)**")
+                st.markdown("---")
+                st.markdown("### **Equation (1) – mid-depth in tension (εₓ ≥ 0)**")
 
-            st.markdown(
-                r"""
+                st.markdown(
+                    r"""
 **Use when:**  
 - The calculated εₓ is **zero or positive**.  
 - Mid-depth is in **tension**, so concrete is cracked and does not contribute.  
 - Only **steel stiffness** is included in the denominator.
 """
-            )
+                )
 
-            st.latex(
-                r"""
+                st.latex(
+                    r"""
 \varepsilon_x =
 \frac{
 \dfrac{|M^*|}{d_v} +
@@ -1478,22 +1478,22 @@ $$\\large d_v = {_fmt(d_v)}\\ \\text{{mm}}$$
 }
 \quad\text{(AS 3600 8.2.4.2.2(1))}
 """
-            )
+                )
 
-            st.markdown("---")
-            st.markdown("### **Equation (2) – mid-depth in slight compression (εₓ < 0)**")
+                st.markdown("---")
+                st.markdown("### **Equation (2) – mid-depth in slight compression (εₓ < 0)**")
 
-            st.markdown(
-                r"""
+                st.markdown(
+                    r"""
 **Use when:**  
 - The εₓ from Equation (1) comes out **negative**.  
 - Mid-depth is in **slight compression**, meaning the concrete **still carries compressive stress**.  
 - The concrete term $E_c A_{ct}$ is added to the denominator.
 """
-            )
+                )
 
-            st.latex(
-                r"""
+                st.latex(
+                    r"""
 \varepsilon_x =
 \frac{
 \dfrac{|M^*|}{d_v} +
@@ -1505,21 +1505,21 @@ $$\\large d_v = {_fmt(d_v)}\\ \\text{{mm}}$$
 }
 \quad\text{(AS 3600 8.2.4.2.2(2))}
 """
-            )
+                )
 
-            st.markdown(
-                r"""
+                st.markdown(
+                    r"""
 **Code limits:**  
 
 - For the tension case (Eq. 1):  $\varepsilon_x \le 3.0\times10^{-3}$  
 - For the compression case (Eq. 2):  $-2.0\times10^{-4} \le \varepsilon_x \le 0$
 """
-            )
+                )
 
-            st.markdown("---")
+                st.markdown("---")
 
-            st.markdown(
-                r"""
+                st.markdown(
+                    r"""
 ### **How the app uses these equations**
 
 1. Compute εₓ using **Equation (1)**.  
@@ -1528,7 +1528,7 @@ $$\\large d_v = {_fmt(d_v)}\\ \\text{{mm}}$$
    $$-2.0\times10^{-4} \le \varepsilon_x \le 3.0\times10^{-3}$$
 4. Use the resulting εₓ to compute $k_v$ in Step 5.
 """
-            )
+                )
 
         # ------------------------------
         #  Compute εx terms (numerical)
