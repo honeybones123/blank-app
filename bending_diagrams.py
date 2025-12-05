@@ -36,21 +36,34 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         - Strain (centre)
         - Stress (right)
     """
-    # Always let the radio button (session state) win.
-    try:
-        ses_label = st.session_state.get("bending_strain_state_local", None)
-    except Exception:
-        ses_label = None
+    # ------------------------------------
+    # Decide which "state" we're in:
+    #   1) explicit argument from the tab
+    #   2) otherwise fall back to session
+    #   3) otherwise default to ULS
+    # ------------------------------------
+    label_from_call = state_label
 
-    if ses_label:              # if the radio has been set, use that
-        state_label = ses_label
-    elif state_label is None:  # fall back to explicit arg or ULS
+    try:
+        label_from_session = st.session_state.get(
+            "bending_strain_state_local", None
+        )
+    except Exception:
+        label_from_session = None
+
+    if label_from_call is not None:
+        state_label = label_from_call
+    elif label_from_session:
+        state_label = label_from_session
+    else:
         state_label = "ULS"
 
     # Normalise for logic (robust to different display text)
-    label_str = (state_label or "ULS")
+    label_str = str(state_label or "ULS")
     label_low = label_str.lower()
-    is_uls = "uls" in label_low      # True only for ULS state
+    # True only for ULS state
+    is_uls = label_low.startswith("uls")
+    # (SLS / Uncracked won't start with "uls", so is_uls=False there)
 
     # unpack bending state
     b = state_dict["b"]
