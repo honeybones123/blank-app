@@ -1,4 +1,5 @@
 import math
+import os
 import pandas as pd
 import streamlit as st
 
@@ -64,6 +65,340 @@ def calcbox(md: str):
 
 
 # ------------------------------------------------------------
+#  SHEAR – DRAWINGS + INSIGHT BLOCKS
+# ------------------------------------------------------------
+
+def _safe_image(path: str, caption: str | None = None, width: int | None = None):
+    """Tiny helper so missing images don't break the app."""
+    if os.path.exists(path):
+        st.image(path, caption=caption, width=width)
+    else:
+        st.info(f"💡 Add image file at `{path}` for: {caption or 'shear illustration'}")
+
+
+def render_shear_intro_block():
+    """
+    Concept of shear + dv location.
+    Uses your custom cracked-beam diagram and the 'what is shear' + 'dv' slides.
+    """
+    st.markdown("### Shear action and the critical dv section")
+
+    col_left, col_right = st.columns([3, 2])
+
+    with col_left:
+        # 👉 Update these paths to wherever you save the PNGs
+        _safe_image(
+            "assets/shear_flexural_cracks_dv.png",
+            caption="Shear cracks forming around the dv section.",
+        )
+
+    with col_right:
+        calcbox(
+            r"""
+**What is shear in a beam?**
+
+
+
+- Shear forces act **perpendicular to the beam axis**.  
+
+- You can picture shear as a stack of playing cards where layers **try to slide** past each other.  
+
+- In a beam, one part of the cross-section wants to slide relative to the next, creating **internal shear stresses**.
+
+
+
+**Critical section for shear – dv**
+
+
+
+- The design shear check is taken at a distance **dv from the face of the support**.  
+
+- At this section we take the **design shear $V^*$**, ignoring any distributed load between the support and dv.  
+
+- If significant concentrated loads fall inside this region, the behaviour is closer to a **strut-and-tie / deep beam** and a STM model is required.  
+
+- AS 3600 defines **effective shear depth**  
+
+
+
+  $$d_v = \max\left(0.72D,\; 0.9d_0\right)$$
+
+
+
+  where $d_0$ is the depth to the centroid of the **tension reinforcement** in the tensile zone.
+
+"""
+        )
+
+
+def render_shear_behaviour_block():
+    """
+    Flexural vs deep-beam behaviour and shear transfer
+    before/after cracking.
+    """
+    st.markdown("### Flexural shear vs deep-beam behaviour")
+
+    col_left, col_right = st.columns([2, 3])
+
+    with col_left:
+        _safe_image(
+            "assets/shear_deep_vs_flexural.png",
+            caption="Deep-beam (load close to support) vs flexural shear region.",
+        )
+
+    with col_right:
+        calcbox(
+            r"""
+**Deep-beam behaviour**
+
+
+
+- Occurs when the **clear span-to-depth ratio is small** and loads act **within about dv of the support**.  
+
+- Load is carried mainly by **direct compression struts** rather than classic flexural action.  
+
+- Typical examples: **brackets, corbels, short-span webs**.  
+
+- Shear resistance is dominated by **concrete compression struts**, with failure as **web crushing** of these struts.
+
+
+
+**Flexural shear behaviour**
+
+
+
+- Governs when loads act **further than dv** from the support.  
+
+- Flexural cracks form first; with increasing load they **rotate into diagonal shear cracks** near the dv section.  
+
+- As diagonal cracks widen, **aggregate interlock reduces**, so concrete carries less shear and failure is **brittle**, local to the critical section.
+
+"""
+        )
+
+    st.markdown("### How shear is transferred – before and after cracking")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        calcbox(
+            r"""
+**Before cracking**
+
+
+
+- In the **uncracked** region, shear is carried by the **tensile and compressive strength of uncracked concrete**.  
+
+- Shear stress is distributed across the depth; the concrete alone provides **shear stiffness**.
+
+"""
+        )
+
+    with col2:
+        calcbox(
+            r"""
+**After cracking**
+
+
+
+Once flexural and diagonal cracks form:
+
+
+
+- Shear is transferred by:  
+
+  - **Compression in the concrete compression zone** ($V_{cc}$)  
+
+  - **Residual concrete shear stress** across cracks ($V_{cr}$)  
+
+  - **Aggregate interlock and friction** along crack faces ($V_{ca}$)  
+
+  - **Dowel action** of longitudinal reinforcement ($V_d$)  
+
+- Transverse steel **stitches the cracked section together**, improves aggregate interlock and adds a direct **steel shear component**.
+
+"""
+        )
+
+
+def render_shear_mcft_block():
+    """
+    High-level MCFT / Vuc / kv insight, linked to eps_x.
+    """
+    st.markdown("### MCFT concrete shear strength – role of εₓ and k_v")
+
+    col_left, col_right = st.columns([3, 2])
+
+    with col_left:
+        _safe_image(
+            "assets/shear_mcft_principal_struts.png",
+            caption="Principal compression struts and diagonal cracking in MCFT.",
+        )
+
+    with col_right:
+        calcbox(
+            r"""
+**Concrete contribution $V_{uc}$ in AS 3600**
+
+
+
+- In the **Simplified Modified Compression Field Theory (SMCFT)** used by AS 3600,  
+
+  concrete shear strength at the critical section is written as  
+
+
+
+  $$V_{uc} = k_v\, b_v\, d_v\, \sqrt{f'_c}$$
+
+
+
+- The factor **$k_v$** captures how shear is transferred across **cracked concrete**, combining:  
+
+  - direct concrete shear,  
+
+  - **aggregate interlock**, and  
+
+  - **dowel action** from longitudinal bars.
+
+
+
+**Influence of longitudinal strain εₓ**
+
+
+
+- The mid-depth longitudinal strain **εₓ** is derived from internal forces (moment, shear, torsion, axial, prestress).  
+
+- As **εₓ increases**, cracks widen and aggregate interlock reduces → **$k_v$ decreases** and the concrete contribution **$V_{uc}$ drops**.  
+
+- Higher εₓ flattens the compression struts (smaller $\theta_v$), increases longitudinal tension forces and raises concrete web compression.
+
+"""
+        )
+
+    calcbox(
+        r"""
+**Deriving $k_v$ from crack width**
+
+
+
+- SMCFT relates **crack width w** to strain and spacing as  
+
+
+
+  $$w \approx 0.2\ \text{mm} + 1000\,\varepsilon_x$$
+
+
+
+- The constant 0.2 mm represents the **initial crack width** at very small strains.  
+
+- The second term $1000\,\varepsilon_x$ captures **additional widening** as tensile strain grows.  
+
+- This $w$–$\varepsilon_x$ relationship feeds directly into **$k_v$**:  
+
+  - With **minimum or greater shear reinforcement**, a simple form  
+
+
+
+    $$k_v = \frac{0.4}{1 + 1500\,\varepsilon_x}$$  
+
+
+
+    is used.  
+
+  - With **less than minimum shear reinforcement**, an extra size and spacing factor  
+
+
+
+    $$\frac{1300}{1000 + k_{dg} d_v}$$  
+
+
+
+    adjusts $k_v$ for effective crack spacing and member depth.
+
+"""
+    )
+
+
+def render_shear_steel_and_spacing_block():
+    """
+    Steel contribution Vs + ligature spacing / detailing.
+    """
+    st.markdown("### Steel contribution and ligature spacing")
+
+    col_left, col_right = st.columns([2, 3])
+
+    with col_left:
+        _safe_image(
+            "assets/shear_ligatures_and_crack.png",
+            caption="Shear ligs crossing a diagonal crack over dv·cotθ.",
+        )
+
+    with col_right:
+        calcbox(
+            r"""
+**Steel contribution $V_s$**
+
+
+
+- Vertical or inclined shear ligatures cross the **inclined crack length**  
+
+
+
+  $$\ell_{cr} \approx d_v \cot\theta$$  
+
+
+
+- Within a spacing **s**, the amount of steel crossing the crack is  
+
+
+
+  $$n = \frac{d_v \cot\theta}{s}$$  
+
+
+
+- The shear carried by stirrups is  
+
+
+
+  $$V_s = V_{us} = \frac{A_{sv} f_{sy,v} d_v}{s}\,\cot\theta$$  
+
+
+
+- Shear steel **raises total shear capacity**, but more importantly it provides **ductility** and controls crack widths.
+
+"""
+        )
+
+    st.markdown("#### Detailing and spacing along the span")
+
+    col1, col2 = st.columns([3, 2])
+
+    with col1:
+        _safe_image(
+            "assets/shear_lig_spacing_code_diagram.png",
+            caption="Example of varying Asv/s along the span (based on AS 3600 Fig. C8.2.5.1).",
+        )
+
+    with col2:
+        calcbox(
+            r"""
+**Ligature spacing (AS 3600 Cl. 8.2.5.1)**
+
+
+
+- Where the required shear reinforcement **$A_{sv}/s$ varies** along the member, the code assumes a **linear variation** over each segment.  
+
+- Detailing should follow the **recommended patterns** (e.g. Figure C8.2.5.1), so that provided $A_{sv}/s$ ≥ required $A_{sv}/s$ in the **critical region**.  
+
+- Proper spacing is essential because shear failure due to **yielding of ligatures** tends to occur in a **localized zone** near peak shear.  
+
+- The goal is to avoid "gaps" in shear resistance where the **provided envelope drops below the required line**.
+
+"""
+        )
+
+
+# ------------------------------------------------------------
 #  MAIN PAGE RENDER FUNCTION
 # ------------------------------------------------------------
 def render_shear():
@@ -73,6 +408,9 @@ def render_shear():
     st.title("Shear & Torsion")
 
     sync_callbacks = get_sync_callbacks()
+
+    # Concept + dv drawing / insight
+    render_shear_intro_block()
 
     st.markdown(
         r"""
@@ -265,6 +603,10 @@ and interaction checks.
             index=0,
         )
         use_general_kv = method.startswith("General")
+
+    # --- Conceptual behaviour + shear transfer (flexural vs deep) ---
+    st.markdown("---")
+    render_shear_behaviour_block()
 
     # -------------------------------------------------
     # Pull shared values for calculations
@@ -758,6 +1100,10 @@ This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative 
 """
     )
 
+    # High-level MCFT / Vuc / kv insight tied to εx
+    st.markdown("---")
+    render_shear_mcft_block()
+
     # =====================================================
     # 6. STEP 5 — k_v AND θ_v
     # =====================================================
@@ -1047,6 +1393,10 @@ $$\\large \\text{{Capacity}} = \\frac{{{phi:.2f} \\times {Vu_max_kN:,.1f}}}{{{b_
 - Here: {LHS:,.1f} vs {RHS:,.1f} → **{"OK" if web_ok else "NOT OK"}**
 """
     )
+
+    # Steel contribution + lig spacing / detailing insights
+    st.markdown("---")
+    render_shear_steel_and_spacing_block()
 
     # =======================================================
     # 9. SUMMARY BANNER + PUSH RESULTS
