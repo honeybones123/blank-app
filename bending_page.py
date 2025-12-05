@@ -853,21 +853,23 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 
     st.markdown("### Section & stress–strain model")
 
-    # SECOND set of buttons – synced with the top ones via canonical_state
-    state_2d = st.radio(
+    # --- STATE RADIO ---
+    state_choice = st.radio(
         "State:",
-        state_options,
+        ("ULS", "SLS (cracked)", "Uncracked"),
+        key="bending_strain_state_local",
         horizontal=True,
-        key="bending_strain_state_2d",
-        index=state_options.index(canonical_state),
     )
-    if state_2d != canonical_state:
-        canonical_state = state_2d
-        st.session_state["bending_state"] = canonical_state
 
-    ss_state = _stress_strain_state(canonical_state)
-    fig_ss = _plot_stress_strain_profiles(ss_state)
-    st.plotly_chart(fig_ss, use_container_width=True)
+    # ... compute ss_state dict ...
+    ss_state = _stress_strain_state(state_choice)
+
+    # --- 3-panel diagram ---
+    fig_ss = _plot_stress_strain_profiles(
+        ss_state,
+        state_label=state_choice,   # <<< IMPORTANT
+    )
+    st.plotly_chart(fig_ss, use_container_width=True, config={"displayModeBar": False})
 
     # ---------------- Step-by-step tabs ----------------
     tab_uls, tab_min, tab_sls = st.tabs(
