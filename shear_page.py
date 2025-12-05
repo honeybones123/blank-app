@@ -2066,7 +2066,7 @@ $$V_{{us}} = \\left(\\frac{{{Asv:.1f} \\times {f_syv:.1f} \\times {d_v:.1f}}}{{{
 
 - **Steel shear strength:** $V_s = V_{{us}} = {Vus_kN:,.1f}$ kN  
 
-*(Concrete shear $V_{uc}$ was found in Step 6.)*
+*(Concrete shear $V_{{uc}}$ was found in Step 6.)*
 
 """
         )
