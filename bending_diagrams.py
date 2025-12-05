@@ -139,7 +139,12 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         col=1,
     )
 
-    # compression zone – depth depends on state
+    # ----------------------------------------
+    # Compression region in SECTION panel
+    #   ULS      → rectangular block to γ c
+    #   SLS/Uncr → rectangular block to d_n
+    #   (section view is area, not stress distribution)
+    # ----------------------------------------
     if state_label == "ULS":
         block_depth_sec = max(0.0, min(gamma * c, D))
     else:
@@ -407,7 +412,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     if state_label == "ULS":
         block_top = 0
         block_bottom = gamma * c
-        # rectangle
+        # rectangular ULS block
         fig.add_shape(
             type="rect",
             x0=x_axis,
@@ -415,20 +420,21 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             x1=x_block_right,
             y1=block_bottom,
             line=dict(color="red", width=1.0),
-            fillcolor="rgba(255,200,200,0.0)",
+            fillcolor="rgba(255,200,200,0.2)",
             row=1,
             col=3,
         )
     else:
         block_top = 0
         block_bottom = c
-        # triangular wedge – draw as polygon
+        # triangular SLS / Uncracked block
         fig.add_trace(
             go.Scatter(
                 x=[x_axis, x_axis, x_block_right, x_axis],
                 y=[block_bottom, block_top, block_top, block_bottom],
                 mode="lines",
-                fill="none",
+                fill="toself",
+                fillcolor="rgba(255,200,200,0.2)",
                 line=dict(color="red", width=1.0),
                 hoverinfo="skip",
                 showlegend=False,
