@@ -1435,7 +1435,7 @@ $$\\large d_v = {_fmt(d_v)}\\ \\text{{mm}}$$
 
         with col_info:
             with st.popover("ℹ️", use_container_width=True):
-            st.markdown("### Understanding the Longitudinal Strain Equations")
+                st.markdown("### Understanding the Longitudinal Strain Equations")
 
             st.markdown(
                 r"""
