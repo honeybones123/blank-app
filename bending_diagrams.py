@@ -195,6 +195,77 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             col=1,
         )
 
+    # ----------------------------------------
+    # Depth labels next to section: d and d_n
+    # ----------------------------------------
+    beam_right = b  # section goes from x = 0 → b
+
+    # position of d arrow (just to the right of the section)
+    x_d = beam_right + 0.12 * b
+    if d:
+        # arrow from top fibre (0) down to depth d
+        fig.add_annotation(
+            x=x_d,
+            y=d,
+            ax=x_d,
+            ay=0,
+            xref="x1",
+            yref="y1",
+            axref="x1",
+            ayref="y1",
+            text="",
+            showarrow=True,
+            arrowhead=3,
+            arrowsize=1.0,
+            arrowwidth=1.0,
+            arrowcolor="black",
+            row=1,
+            col=1,
+        )
+        # label for d (placed mid-depth)
+        fig.add_annotation(
+            x=x_d + 0.04 * b,
+            y=d / 2.0,
+            text=f"d = {d:.0f} mm",
+            showarrow=False,
+            font=dict(size=9, color="black"),
+            xanchor="left",
+            row=1,
+            col=1,
+        )
+
+    # position of d_n arrow (a bit further right, in red)
+    x_dn = beam_right + 0.30 * b
+    if c:
+        fig.add_annotation(
+            x=x_dn,
+            y=c,
+            ax=x_dn,
+            ay=0,
+            xref="x1",
+            yref="y1",
+            axref="x1",
+            ayref="y1",
+            text="",
+            showarrow=True,
+            arrowhead=3,
+            arrowsize=1.0,
+            arrowwidth=1.0,
+            arrowcolor="red",
+            row=1,
+            col=1,
+        )
+        fig.add_annotation(
+            x=x_dn + 0.04 * b,
+            y=c / 2.0,
+            text=f"dₙ = {c:.0f} mm",
+            showarrow=False,
+            font=dict(size=9, color="red"),
+            xanchor="left",
+            row=1,
+            col=1,
+        )
+
     # keep section 1:1 in x–y (width vs depth)
     fig.update_yaxes(
         scaleanchor="x",
@@ -216,6 +287,18 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     x_c = strain_to_x(eps_c)
     x_s = strain_to_x(eps_s)
     x_mid = panel_x_center
+
+    # vertical depth line at ε = 0 (concrete depth axis)
+    fig.add_shape(
+        type="line",
+        x0=panel_x_center,
+        y0=0,
+        x1=panel_x_center,
+        y1=D,
+        line=dict(color="black", width=1.0),
+        row=1,
+        col=2,
+    )
 
     # strain line (top → NA → steel)
     fig.add_trace(
