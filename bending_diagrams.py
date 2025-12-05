@@ -77,7 +77,6 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         rows=1,
         cols=3,
         shared_y=True,
-        column_widths=[0.9, 0.9, 1.2],
         horizontal_spacing=0.08,
         specs=[[{"type": "xy"}, {"type": "xy"}, {"type": "xy"}]],
         subplot_titles=("Section", "Strain", "Stress (MPa)"),
@@ -515,25 +514,14 @@ def _make_uls_stress_block_figure(
 
     if variant == "13":
         D_ref = base_span * 1.05      # axis height
-        # 1:1 aspect ratio, same depth as calc box
-        fig_width = 3.0
-        fig_height = 3.0  # Square figure for 1:1 aspect
-        use_equal_aspect = True
-    else:  # "11" – 1:1 aspect ratio, same depth as calc box
+        fig_height = 3.2              # visually a bit taller
+    else:  # "11" – same axis height, but shorter figure
         D_ref = base_span * 1.05
-        # Use square figure size to support 1:1 aspect ratio
-        # Match the depth of the calc box by using similar vertical extent
-        fig_width = 3.0
-        fig_height = 3.0  # Square figure for 1:1 aspect
-        use_equal_aspect = True
+        fig_height = 2.4
 
-    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
-    # Extend xlim for variants "11" and "13" to accommodate wider stress block and tension arrow (4:1 ratio)
-    xlim_max = 320.0 if use_equal_aspect else 100.0
-    ax.set_xlim(0.0, xlim_max)
+    fig, ax = plt.subplots(figsize=(3.0, fig_height))
+    ax.set_xlim(0.0, 100.0)
     ax.set_ylim(D_ref, 0.0)  # 0 at top
-    if use_equal_aspect:
-        ax.set_aspect("equal", adjustable="box")
     ax.axis("off")
 
     # vertical axis
@@ -547,12 +535,9 @@ def _make_uls_stress_block_figure(
 
     # block
     block_left = x_axis
-    block_width = 88.0  # 4:1 ratio (4x original 22.0)
+    block_width = 22.0
     block_top = 0.0
     block_bottom = a_mm
-    
-    # Consistent label spacing from stress block/arrows
-    label_spacing = 4.0
 
     ax.add_patch(
         Rectangle(
@@ -600,10 +585,9 @@ def _make_uls_stress_block_figure(
                 mutation_scale=ARROW_SCALE,
             ),
         )
-        # α₂ f'c label positioned much closer to the arrow (left side), moved down slightly
         ax.text(
-            block_left + 5.0,  # Closer to the arrow start, not far to the left
-            y_alpha - 0.03 * D_ref,  # Moved down slightly (reduced from 0.05 to 0.03)
+            block_left,
+            y_alpha - 0.05 * D_ref,
             f"α₂ f'c = {sigma_c:.0f} MPa",
             ha="left",
             va="bottom",
@@ -613,20 +597,17 @@ def _make_uls_stress_block_figure(
 
     # dashed d_n line + label (optional)
     if show_dn:
-        # Extend dn line much further to avoid overlap with z line
-        # Position it well past the "a" label but before z line
-        x_dn_end = block_left + block_width + label_spacing + 10.0  # Extended further
         ax.hlines(
             dn_mm,
             x_axis,
-            x_dn_end,
+            95.0,
             linestyles="--",
             colors="tab:blue",
             linewidth=LINE_MED,
         )
-        x_dn_label = x_dn_end
+        x_dn_label = 95.0
         ax.text(
-            x_dn_label + label_spacing,
+            x_dn_label + 2.0,
             dn_mm + 0.03 * D_ref,
             f"dₙ = {dn_mm:.1f} mm",
             ha="left",
@@ -635,9 +616,9 @@ def _make_uls_stress_block_figure(
             color="tab:blue",
         )
 
-    # a label - consistent spacing from stress block
+    # a label
     ax.text(
-        block_left + block_width + label_spacing,
+        block_left + block_width + 4.0,
         0.5 * a_mm,
         f"a = γ dₙ = {a_mm:.1f} mm",
         ha="left",
@@ -647,11 +628,9 @@ def _make_uls_stress_block_figure(
     )
 
     # bottom tension arrow (now guaranteed to be inside the axes)
-    # 4:1 ratio (4x original width)
-    tension_arrow_end = x_axis + 4.0 * (90.0 - x_axis)  # 20.0 + 4*70.0 = 300.0
     ax.annotate(
         "",
-        xy=(tension_arrow_end, d_mm),
+        xy=(90.0, d_mm),
         xytext=(x_axis, d_mm),
         arrowprops=dict(
             arrowstyle="->",
@@ -660,9 +639,8 @@ def _make_uls_stress_block_figure(
             mutation_scale=ARROW_SCALE,
         ),
     )
-    # Consistent spacing from arrow end
     ax.text(
-        tension_arrow_end + label_spacing,
+        92.0,
         d_mm,
         f"T ({fsy:.0f} MPa)",
         ha="left",
@@ -675,7 +653,7 @@ def _make_uls_stress_block_figure(
     if show_C and C_N is not None:
         y_C = 0.5 * a_mm
         x_C_tail = block_left + block_width + 18.0
-        x_C_head = block_left + block_width + label_spacing
+        x_C_head = block_left + block_width + 4.0
         ax.annotate(
             "",
             xy=(x_C_head, y_C),
@@ -688,7 +666,7 @@ def _make_uls_stress_block_figure(
             ),
         )
         ax.text(
-            x_C_tail + label_spacing,
+            x_C_tail + 3.0,
             y_C,
             f"C = {C_N/1000.0:.1f} kN",
             ha="left",
@@ -697,17 +675,31 @@ def _make_uls_stress_block_figure(
             color="tab:red",
         )
 
-    # optional lever arm - REMOVED per user request
-    # if show_lever_arm:
-    #     y_C = 0.5 * a_mm
-    #     x_z = block_left + block_width + label_spacing + 5.0
-    #     ax.annotate(...)
-    #     ax.text(...)
+    # optional lever arm
+    if show_lever_arm:
+        y_C = 0.5 * a_mm
+        x_z = block_left + block_width + 8.0
+        ax.annotate(
+            "",
+            xy=(x_z, d_mm),
+            xytext=(x_z, y_C),
+            arrowprops=dict(
+                arrowstyle="<->",
+                linewidth=LINE_MED,
+                mutation_scale=ARROW_SCALE,
+            ),
+        )
+        ax.text(
+            x_z + 3.0,
+            0.5 * (d_mm + y_C),
+            "z",
+            ha="left",
+            va="center",
+            fontsize=FS_LABEL,
+        )
 
-    # Center label based on xlim
-    x_center = xlim_max / 2.0
     ax.text(
-        x_center,
+        50.0,
         D_ref + 0.07 * D_ref,
         "Stress (MPa)",
         ha="center",
@@ -744,23 +736,18 @@ def _make_uls_force_model_figure(
     # Add a bit of margin so C, T and z stay visible even for deep beams.
     D_ref = base_span * 1.10
 
-    # 1:1 aspect ratio, same depth as calc box
-    fig, ax = plt.subplots(figsize=(3.0, 3.0))
+    fig, ax = plt.subplots(figsize=(3.6, 2.7))
     ax.set_xlim(0.0, 100.0)
     ax.set_ylim(D_ref, 0.0)
-    ax.set_aspect("equal", adjustable="box")
     ax.axis("off")
 
     # Vertical reference line
     x_axis = 20.0
     ax.plot([x_axis, x_axis], [0.0, D_ref], color="black", linewidth=LINE_THICK)
 
-    # Consistent label spacing from arrows
-    label_spacing = 4.0
-
     # Compression C at a/2
     y_C = 0.5 * a_mm
-    ARROW_OFFSET = 90.0  # Further increased distance from axis for longer force lines
+    ARROW_OFFSET = 35.0  # distance from axis, matched to T
 
     x_C_tail = x_axis + ARROW_OFFSET
     x_C_head = x_axis
@@ -780,7 +767,7 @@ def _make_uls_force_model_figure(
     if C_N is not None:
         label_C += f" = {C_N/1000.0:.1f} kN"
     ax.text(
-        x_C_tail + label_spacing,
+        x_C_tail + 6.0,
         y_C,
         label_C,
         ha="left",
@@ -794,37 +781,32 @@ def _make_uls_force_model_figure(
     x_T_head = x_axis + ARROW_OFFSET
     x_T_tail = x_axis
 
-    # Draw T arrow pointing right from vertical axis
-    # Using ax.arrow() for more reliable drawing
-    ax.arrow(
-        x_T_tail,  # Start x (vertical axis)
-        y_T,       # Start y
-        x_T_head - x_T_tail,  # dx (length of arrow)
-        0,         # dy (horizontal arrow)
-        head_width=3.0,
-        head_length=3.0,
-        fc="tab:blue",
-        ec="tab:blue",
-        linewidth=LINE_MED,
-        length_includes_head=True,
-        zorder=2,
+    ax.annotate(
+        "",
+        xy=(x_T_head, y_T),
+        xytext=(x_T_tail, y_T),
+        arrowprops=dict(
+            arrowstyle="->",
+            linewidth=LINE_MED,
+            color="tab:blue",
+            mutation_scale=ARROW_SCALE,
+        ),
     )
     label_T = "T"
     if T_N is not None:
         label_T += f" = {T_N/1000.0:.1f} kN"
     ax.text(
-        x_T_head + label_spacing,
+        x_T_head + 6.0,
         y_T,
         label_T,
         ha="left",
         va="center",
         fontsize=FS_LABEL,
         color="tab:blue",
-        zorder=3,  # Ensure label is on top
     )
 
-    # Lever arm z - positioned between the vertical axis and force arrow ends
-    x_z = x_axis + ARROW_OFFSET * 0.6  # Positioned between the axis and force arrow ends
+    # Lever arm z
+    x_z = x_axis + ARROW_OFFSET + 25.0
     ax.annotate(
         "",
         xy=(x_z, y_T),
@@ -836,7 +818,7 @@ def _make_uls_force_model_figure(
         ),
     )
     ax.text(
-        x_z + label_spacing,
+        x_z + 4.0,
         0.5 * (y_C + y_T),
         "z",
         ha="left",
@@ -909,10 +891,6 @@ def _make_sls_stress_block_figure(
     # triangular compression region (0 → d_n), right angle at top-left
     block_left = x_axis
     block_width = 22.0
-    
-    # Consistent label spacing from stress block/arrows
-    label_spacing = 4.0
-    
     ax.fill(
         [block_left, block_left + block_width, block_left],
         [0.0, 0.0, dn_mm],
@@ -934,12 +912,11 @@ def _make_sls_stress_block_figure(
             mutation_scale=ARROW_SCALE,
         ),
     )
-    # α₂ f'c label positioned at half the spacing distance from stress block (left side)
     ax.text(
-        block_left - label_spacing / 2.0,
+        block_left,
         y_alpha - 0.05 * D_ref,
         r"$\alpha_2 f'_c$",
-        ha="right",
+        ha="left",
         va="bottom",
         fontsize=FS_LABEL,
         color="tab:red",
@@ -950,7 +927,7 @@ def _make_sls_stress_block_figure(
     x_T1 = x_axis + 70.0
     ax.plot([x_T0, x_T1], [d_mm, d_mm], color="tab:blue", linewidth=LINE_MED)
     ax.text(
-        x_T1 + label_spacing,
+        x_T1 + 4.0,
         d_mm,
         "T",
         ha="left",
@@ -989,5 +966,6 @@ def _make_sls_stress_block_figure(
     )
 
     return fig
+
 
 
