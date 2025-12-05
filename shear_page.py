@@ -1046,10 +1046,41 @@ and interaction checks.
     col_main, col_side = st.columns([3, 2])
 
     with col_main:
-        st.markdown(
-            "### Step 1 – Does torsion crack the section? "
-            "(T_cr check, AS 3600 Cl. 8.3.4)"
-        )
+        col_title, col_info = st.columns([1, 0.08])
+
+        with col_title:
+            st.markdown(
+                "### Step 1 – Does torsion crack the section? "
+                "(T_cr check, AS 3600 Cl. 8.3.4)"
+            )
+
+        with col_info:
+            with st.popover("ℹ️", use_container_width=True):
+                st.markdown("### Step 1 – Shear + torsion cracking region")
+                st.markdown(
+                    r"""
+**Why we convert torsion into equivalent shear**
+
+
+
+- Torsion produces **diagonal tension** in the beam web, similar to shear-induced diagonal cracking.  
+
+- Treating torsion as an **equivalent shear demand** is conservative and avoids separate iterative torsion–shear coupling.  
+
+- Using an equivalent shear \(V_{eq}^*\) means:
+
+  - We track a **single internal force state** through all MCFT steps.  
+
+  - Longitudinal strain \( \varepsilon_x \) reflects the combined effect of **shear + torsion + axial**.  
+
+  - We don't under-predict crack width or over-predict concrete shear strength.
+
+
+
+This step tells you whether torsion must be treated as a **design action**, and if so, it will be rolled into \(V_{eq}^*\) in Step 2.
+
+"""
+                )
 
         cover_t = 40.0  # assumed for closed stirrup centroid
         A_cp = b * D
@@ -1121,10 +1152,59 @@ $$\\large T_{{cr}} = 0.33\\sqrt{{{fc:.1f}}} \\cdot \\frac{{{A_cp:.0f}^2}}{{{u_c:
     col_main, col_side = st.columns([3, 2])
 
     with col_main:
-        st.markdown(
-            "### Step 2 – Convert torsion into an equivalent shear "
-            "$V_{eq}^*$ (AS 3600 Cl. 8.2.3)"
-        )
+        col_title, col_info = st.columns([1, 0.08])
+
+        with col_title:
+            st.markdown(
+                "### Step 2 – Convert torsion into an equivalent shear "
+                "$V_{eq}^*$ (AS 3600 Cl. 8.2.3)"
+            )
+
+        with col_info:
+            with st.popover("ℹ️", use_container_width=True):
+                st.markdown("### Step 2 – Critical section and equivalent shear")
+                st.markdown(
+                    r"""
+**Why shear is checked at \(d_v\)**
+
+
+
+- Tests show that **peak diagonal cracking** and shear demand occur about **one effective depth \(d_v\)** from the support.  
+
+- Around this section:
+
+  - Flexural cracks rotate into steeper **diagonal shear cracks**.  
+
+  - **Aggregate interlock** begins to reduce.  
+
+  - **Concrete compression struts** form between load and support.  
+
+
+
+AS 3600 therefore takes the design shear at a distance **\(d_v\)** from the support.
+
+
+
+**Why we use \(V_{eq}^*\) instead of \(V^*\)**
+
+
+
+- MCFT works off a **single set of internal forces** to define the strain state.  
+
+- Shear, torsion and axial force all influence the **longitudinal strain \(\varepsilon_x\)**.  
+
+- Converting torsion into an equivalent shear \(V_{t,eq}\) and combining it with \(V^*\) gives:
+
+
+
+  $$V_{eq}^* = \sqrt{(V^*)^2 + V_{t,eq}^2}$$  
+
+
+
+so all subsequent steps use a **consistent combined shear demand**.
+
+"""
+                )
 
         # Convert torsion to Nmm (needed for εₓ and web-crushing even if torsion design not required)
         T_star_Nmm = T_star * 1e6
@@ -1219,7 +1299,52 @@ $$\\large V_{{eq}}^* = V^* = {V_eq:.1f}\\ \\text{{kN}}$$
     col_main, col_side = st.columns([3, 2])
 
     with col_main:
-        st.markdown("### Step 3 – Determine shear-resisting section (b_v, d_v, ligs)")
+        col_title, col_info = st.columns([1, 0.08])
+
+        with col_title:
+            st.markdown("### Step 3 – Determine shear-resisting section (b_v, d_v, ligs)")
+
+        with col_info:
+            with st.popover("ℹ️", use_container_width=True):
+                st.markdown("### Step 3 – What this step is doing")
+                st.markdown(
+                    r"""
+**Why we compute \(b_v\), \(d_v\) and \(A_{sv}\)**
+
+
+
+- \(b_v\) is the **effective web width** after accounting for ducts in the web.  
+
+- \(d_v\) is the **effective shear depth**, taken as:
+
+
+
+  $$d_v = \max(0.72D,\ 0.9d)$$  
+
+
+
+to reflect where diagonal cracking and compression struts develop.  
+
+- \(A_{sv}\) and \(s\) define how much **shear reinforcement** crosses potential cracks:
+
+
+
+  $$A_{sv} = n_{\text{legs}} \frac{\pi d_{lig}^2}{4}$$  
+
+
+
+These parameters are the **geometry + steel inputs** that feed into:
+
+
+
+- the strain calculation in Step 4,  
+
+- the concrete shear contribution \(V_{uc}\) in Step 6, and  
+
+- the steel contribution \(V_s\) in Step 6.
+
+"""
+                )
 
         # Use values from session state / inputs section
     lig_d = lig_d or 10.0
@@ -1555,7 +1680,82 @@ This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative 
     col_main, col_side = st.columns([3, 2])
 
     with col_main:
-        st.markdown("### Step 5 – Get MCFT shear parameters: $k_v$ and $\\theta_v$")
+        col_title, col_info = st.columns([1, 0.08])
+
+        with col_title:
+            st.markdown("### Step 5 – Get MCFT shear parameters: $k_v$ and $\\theta_v$")
+
+        with col_info:
+            with st.popover("ℹ️", use_container_width=True):
+                st.markdown("### Step 5 – What $k_v$ and $\\theta_v$ mean")
+                st.markdown(
+                    r"""
+**What \(k_v\) represents**
+
+
+
+- \(k_v\) is a **concrete shear-transfer efficiency factor** in MCFT.  
+
+- It wraps up:
+
+  - Residual concrete shear across cracks,  
+
+  - **Aggregate interlock**,  
+
+  - **Dowel action** from longitudinal bars,  
+
+  - Friction along the crack faces.  
+
+
+
+- For members with at least minimum shear reinforcement:
+
+
+
+  $$k_v = \frac{0.4}{1 + 1500\varepsilon_x}$$  
+
+
+
+- With less than minimum shear reinforcement, extra modifiers account for **member depth** and **crack spacing**.
+
+
+
+As \( \varepsilon_x \) increases, cracks widen and **\(k_v\)** drops, reducing the concrete contribution \(V_{uc}\).
+
+
+
+**What \(\\theta_v\) represents**
+
+
+
+- \(\\theta_v\) is the **angle of the diagonal compression strut** in the web.  
+
+- AS 3600 uses:
+
+
+
+  $$\\theta_v = 29^\circ + 7000\varepsilon_x$$  
+
+
+
+  with limits of **15°–50°**.  
+
+
+
+- Higher \(\\varepsilon_x\) → flatter stress field → **larger \(\\theta_v\)**.  
+
+
+
+Both \(k_v\) and \(\\theta_v\) control:
+
+
+
+- Concrete shear strength \(V_{uc}\), and  
+
+- Steel shear contribution \(V_s\) through \( \cot\\theta_v \).
+
+"""
+                )
 
         if use_general_kv:
             if fc <= 65:
@@ -1685,8 +1885,88 @@ $$k_v = {k_v:.3f}, \\quad \\theta_v = {theta_v_deg:.1f}°$$
     # 7. STEP 6 — V_uc, V_us AND SECTIONAL SHEAR CHECK
     # =====================================================
     st.markdown("---")
+
+    col_main, col_side = st.columns([3, 2])
+
     with col_main:
-        st.markdown("### Step 6 – Concrete + steel shear strength and sectional check")
+        col_title, col_info = st.columns([1, 0.08])
+
+        with col_title:
+            st.markdown("### Step 6 – Concrete + steel shear strength and sectional check")
+
+        with col_info:
+            with st.popover("ℹ️", use_container_width=True):
+                st.markdown("### Step 6 – How \(V_{uc}\) and \(V_s\) work together")
+                st.markdown(
+                    r"""
+**Concrete contribution \(V_{uc}\)**
+
+
+
+- MCFT gives concrete shear at the critical section as:
+
+
+
+  $$V_{uc} = k_v\, b_v\, d_v\, \sqrt{f'_c}$$  
+
+
+
+- \(V_{uc}\) decreases when:
+
+  - Longitudinal strain \(\\varepsilon_x\) increases (cracks widen),  
+
+  - Effective depth \(d_v\) increases,  
+
+  - Effective crack spacing increases,  
+
+  - Aggregate interlock and dowel action become less effective.
+
+
+
+**Steel contribution \(V_s\)**
+
+
+
+- Stirrups cross the **inclined crack length**:
+
+
+
+  $$\ell_{cr} \approx d_v \cot\\theta_v$$  
+
+
+
+- Number of stirrup legs crossing the crack within spacing \(s\):
+
+
+
+  $$n = \frac{d_v \cot\\theta_v}{s}$$  
+
+
+
+- Shear in stirrups:
+
+
+
+  $$V_s = V_{us} = \frac{A_{sv} f_{sy,v} d_v}{s}\cot\\theta_v$$  
+
+
+
+Stirrups provide:
+
+
+
+- Extra ultimate shear strength,  
+
+- **Ductility and warning**,  
+
+- **Crack-width control** after concrete cracks.
+
+
+
+This step adds \(V_{uc}\) and \(V_s\) to get the **total shear resistance** and checks it against \(V_{eq}^*\).
+
+"""
+                )
 
         sqrt_fc_limited = min(math.sqrt(fc), 8.0)
         Vuc_N = k_v * b_v * d_v * sqrt_fc_limited
@@ -1760,14 +2040,49 @@ $$V_{{eq}}^* = {V_eq:.1f}\\text{{ kN}}$$
     # =====================================================
     # 8. STEP 7 — WEB CRUSHING CHECK
     # =====================================================
-    # 8. STEP 7 — WEB CRUSHING CHECK
-    # =====================================================
     st.markdown("---")
 
     col_main, col_side = st.columns([3, 2])
 
     with col_main:
-        st.markdown("### Step 7 – Check web-crushing strength (AS 3600 Cl. 8.2.6)")
+        col_title, col_info = st.columns([1, 0.08])
+
+        with col_title:
+            st.markdown("### Step 7 – Check web-crushing strength (AS 3600 Cl. 8.2.6)")
+
+        with col_info:
+            with st.popover("ℹ️", use_container_width=True):
+                st.markdown("### Step 7 – Web-crushing limit \(V_{u,\max}\)")
+                st.markdown(
+                    r"""
+**Why we check web crushing**
+
+
+
+- Even with a lot of shear reinforcement, the concrete web can only carry a finite **compression strut force**.  
+
+- Once the diagonal concrete strut reaches its **crushing limit**, the failure is **sudden and brittle**.  
+
+
+
+AS 3600 caps the design shear by a web-crushing limit:
+
+
+
+$$V_{u,\max} = 0.55\, f'_c b_v d_v \frac{\cot\\theta_v + \cot\\theta_1}{1 + \cot^2\\theta_v} + P_v$$  
+
+
+
+- If the combined shear + torsion demand exceeds this, **increasing stirrups does not help**.  
+
+- You need to **change the geometry** (web thickness, depth, load position) or reduce the demand.
+
+
+
+This step ensures the design stays within the **concrete web strength envelope**, not just the stirrup capacity.
+
+"""
+                )
 
         theta_1_deg = 90.0
         theta_1_rad = math.radians(theta_1_deg)
