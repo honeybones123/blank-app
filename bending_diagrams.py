@@ -408,11 +408,13 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         col=3,
     )
 
-    # compression block
+    # -----------------------------
+    # Compression block in STRESS
+    # -----------------------------
     if state_label == "ULS":
-        block_top = 0
-        block_bottom = gamma * c
         # rectangular ULS block
+        block_top = 0.0
+        block_bottom = gamma * c
         fig.add_shape(
             type="rect",
             x0=x_axis,
@@ -425,9 +427,9 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             col=3,
         )
     else:
-        block_top = 0
+        # TRIANGULAR SLS / UNCRACKED block
+        block_top = 0.0
         block_bottom = c
-        # triangular SLS / Uncracked block
         fig.add_trace(
             go.Scatter(
                 x=[x_axis, x_axis, x_block_right, x_axis],
@@ -455,7 +457,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         col=3,
     )
 
-    # α2 f'c arrow + label (approx double-headed)
+    # α2 f'c arrow + label
     y_alpha = -0.07 * D
     fig.add_annotation(
         x=x_block_right,
@@ -522,7 +524,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         col=3,
     )
 
-    # internal compression arrows facing LEFT inside block
+    # internal compression arrows – always inside whatever block we drew
     for frac in [0.25, 0.5, 0.75]:
         y_mid = block_top + frac * (block_bottom - block_top)
         fig.add_annotation(
