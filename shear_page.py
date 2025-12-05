@@ -460,26 +460,28 @@ def _safe_image(path: str, caption: str | None = None, width: int | None = None)
 def render_shear_intro_block():
     """
     Concept of shear + dv location.
-    Uses your custom cracked-beam diagram and the 'what is shear' + 'dv' slides.
-    Diagram: always on the right.
-    Text: hidden in an expander.
+    Diagram on the right, theory in an ℹ️ popover attached to the diagram.
     """
     st.markdown("### Shear action and the critical dv section")
 
-    col_main, col_side = st.columns([3, 2])
+    # Empty left column, diagram + info button on the right
+    _, col_right = st.columns([3, 2])
 
-    # RIGHT – diagram always visible
-    with col_side:
-        _safe_image(
-            "assets/shear_flexural_cracks_dv.png",
-            caption="Shear cracks forming around the dv section.",
-        )
+    with col_right:
+        img_col, info_col = st.columns([4, 1])
 
-    # LEFT – theory only via toggle
-    with col_main:
-        with st.expander("Show shear introduction and dv explanation", expanded=False):
-            calcbox(
-                r"""
+        # Diagram
+        with img_col:
+            _safe_image(
+                "assets/shear_flexural_cracks_dv.png",
+                caption="Shear cracks forming around the dv section.",
+            )
+
+        # Info button attached to the diagram
+        with info_col:
+            with st.popover("ℹ️", use_container_width=True):
+                calcbox(
+                    r"""
 **What is shear in a beam?**
 
 
@@ -513,31 +515,34 @@ def render_shear_intro_block():
   where $d_0$ is the depth to the centroid of the **tension reinforcement** in the tensile zone.
 
 """
-            )
+                )
 
 
 def render_shear_behaviour_block():
     """
     Flexural vs deep-beam behaviour and shear transfer before/after cracking.
-    Diagram: always on the right.
-    Text: hidden in expanders.
+    Diagram on the right, all theory in an ℹ️ popover attached to it.
     """
     st.markdown("### Flexural shear vs deep-beam behaviour")
 
-    col_main, col_side = st.columns([3, 2])
+    _, col_right = st.columns([3, 2])
 
-    # RIGHT – diagram always visible
-    with col_side:
-        _safe_image(
-            "assets/shear_deep_vs_flexural.png",
-            caption="Deep-beam (load close to support) vs flexural shear region.",
-        )
+    with col_right:
+        img_col, info_col = st.columns([4, 1])
 
-    # LEFT – theory only via toggle
-    with col_main:
-        with st.expander("Show explanation of flexural vs deep-beam behaviour", expanded=False):
-            calcbox(
-                r"""
+        # Diagram
+        with img_col:
+            _safe_image(
+                "assets/shear_deep_vs_flexural.png",
+                caption="Deep-beam (load close to support) vs flexural shear region.",
+            )
+
+        # Info button with BOTH behaviour + transfer explanation
+        with info_col:
+            with st.popover("ℹ️", use_container_width=True):
+                st.markdown("#### Flexural vs deep-beam behaviour")
+                calcbox(
+                    r"""
 **Deep-beam behaviour**
 
 
@@ -563,17 +568,15 @@ def render_shear_behaviour_block():
 - As diagonal cracks widen, **aggregate interlock reduces**, so concrete carries less shear and failure is **brittle**, local to the critical section.
 
 """
-            )
+                )
 
-    st.markdown("### How shear is transferred – before and after cracking")
+                st.markdown("#### How shear is transferred – before and after cracking")
 
-    # Everything below also goes behind a toggle so it's not always on screen
-    with st.expander("Show shear transfer mechanisms before and after cracking", expanded=False):
-        col1, col2 = st.columns(2)
+                col1, col2 = st.columns(2)
 
-        with col1:
-            calcbox(
-                r"""
+                with col1:
+                    calcbox(
+                        r"""
 **Before cracking**
 
 
@@ -583,11 +586,11 @@ def render_shear_behaviour_block():
 - Shear stress is distributed across the depth; the concrete alone provides **shear stiffness**.
 
 """
-            )
+                    )
 
-        with col2:
-            calcbox(
-                r"""
+                with col2:
+                    calcbox(
+                        r"""
 **After cracking**
 
 
@@ -609,31 +612,33 @@ Once flexural and diagonal cracks form:
 - Transverse steel **stitches the cracked section together**, improves aggregate interlock and adds a direct **steel shear component**.
 
 """
-            )
+                    )
 
 
 def render_shear_mcft_block():
     """
     High-level MCFT / Vuc / kv insight, linked to eps_x.
-    Diagram: always on the right.
-    Text: hidden in an expander.
+    Diagram on the right, theory in an ℹ️ popover attached to it.
     """
     st.markdown("### MCFT concrete shear strength – role of εₓ and k_v")
 
-    col_main, col_side = st.columns([3, 2])
+    _, col_right = st.columns([3, 2])
 
-    # RIGHT – diagram
-    with col_side:
-        _safe_image(
-            "assets/shear_mcft_principal_struts.png",
-            caption="Principal compression struts and diagonal cracking in MCFT.",
-        )
+    with col_right:
+        img_col, info_col = st.columns([4, 1])
 
-    # LEFT – theory in toggle
-    with col_main:
-        with st.expander("Show MCFT explanation (V_uc, εₓ and k_v)", expanded=False):
-            calcbox(
-                r"""
+        # Diagram
+        with img_col:
+            _safe_image(
+                "assets/shear_mcft_principal_struts.png",
+                caption="Principal compression struts and diagonal cracking in MCFT.",
+            )
+
+        # Info button
+        with info_col:
+            with st.popover("ℹ️", use_container_width=True):
+                calcbox(
+                    r"""
 **Concrete contribution $V_{uc}$ in AS 3600**
 
 
@@ -669,10 +674,10 @@ def render_shear_mcft_block():
 - Higher εₓ flattens the compression struts (smaller $\theta_v$), increases longitudinal tension forces and raises concrete web compression.
 
 """
-            )
+                )
 
-            calcbox(
-                r"""
+                calcbox(
+                    r"""
 **Deriving $k_v$ from crack width**
 
 
@@ -712,7 +717,7 @@ def render_shear_mcft_block():
     adjusts $k_v$ for effective crack spacing and member depth.
 
 """
-            )
+                )
 
 
 def render_shear_steel_and_spacing_block():
