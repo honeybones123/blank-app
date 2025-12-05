@@ -411,6 +411,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     # -----------------------------
     # Compression block in STRESS
     # -----------------------------
+    # Initialize block_top and block_bottom based on state
     if state_label == "ULS":
         # rectangular ULS block
         block_top = 0.0
@@ -430,10 +431,12 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         # TRIANGULAR SLS / UNCRACKED block
         block_top = 0.0
         block_bottom = c
+        # Draw triangle using path: start at bottom-left, go to top-left, then top-right, close back
+        # Using Scatter with fill="toself" to create filled triangle
         fig.add_trace(
             go.Scatter(
-                x=[x_axis, x_axis, x_block_right, x_axis],
-                y=[block_bottom, block_top, block_top, block_bottom],
+                x=[x_axis, x_axis, x_block_right],
+                y=[block_bottom, block_top, block_top],
                 mode="lines",
                 fill="toself",
                 fillcolor="rgba(255,200,200,0.2)",
