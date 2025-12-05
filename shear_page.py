@@ -722,60 +722,10 @@ def render_shear_mcft_block():
 
 def render_shear_steel_and_spacing_block():
     """
-    Steel contribution Vs + ligature spacing / detailing.
-    Diagram: always on the right.
-    Text: hidden in an expander.
+    Ligature spacing / detailing only.
+    Steel contribution V_s is now covered in the main Step 7 calc box.
     """
-    st.markdown("### Steel contribution and ligature spacing")
-
-    col_main, col_side = st.columns([3, 2])
-
-    # RIGHT – main diagram
-    with col_side:
-        _safe_image(
-            "assets/shear_ligatures_and_crack.png",
-            caption="Shear ligs crossing a diagonal crack over dv·cotθ.",
-        )
-
-    # LEFT – Vs theory in toggle
-    with col_main:
-        with st.expander("Show explanation of steel contribution V_s", expanded=False):
-            calcbox(
-                r"""
-**Steel contribution $V_s$**
-
-
-
-- Vertical or inclined shear ligatures cross the **inclined crack length**  
-
-
-
-  $$\ell_{cr} \approx d_v \cot\theta$$  
-
-
-
-- Within a spacing **s**, the amount of steel crossing the crack is  
-
-
-
-  $$n = \frac{d_v \cot\theta}{s}$$  
-
-
-
-- The shear carried by stirrups is  
-
-
-
-  $$V_s = V_{us} = \frac{A_{sv} f_{sy,v} d_v}{s}\,\cot\theta$$  
-
-
-
-- Shear steel **raises total shear capacity**, but more importantly it provides **ductility** and controls crack widths.
-
-"""
-            )
-
-    st.markdown("#### Detailing and spacing along the span")
+    st.markdown("### Ligature spacing and detailing along the span")
 
     col_main2, col_side2 = st.columns([3, 2])
 
@@ -788,20 +738,32 @@ def render_shear_steel_and_spacing_block():
 
     # LEFT – spacing theory in toggle
     with col_main2:
-        with st.expander("Show ligature spacing and detailing explanation", expanded=False):
+        with st.expander(
+            "Show ligature spacing and detailing explanation", expanded=False
+        ):
             calcbox(
                 r"""
 **Ligature spacing (AS 3600 Cl. 8.2.5.1)**
 
 
 
+
+
 - Where the required shear reinforcement **$A_{sv}/s$ varies** along the member, the code assumes a **linear variation** over each segment.  
+
+
 
 - Detailing should follow the **recommended patterns** (e.g. Figure C8.2.5.1), so that provided $A_{sv}/s$ ≥ required $A_{sv}/s$ in the **critical region**.  
 
+
+
 - Proper spacing is essential because shear failure due to **yielding of ligatures** tends to occur in a **localized zone** near peak shear.  
 
+
+
 - The goal is to avoid "gaps" in shear resistance where the **provided envelope drops below the required line**.
+
+
 
 """
             )
@@ -1876,7 +1838,7 @@ $$k_v = {k_v:.3f}, \\quad \\theta_v = {theta_v_deg:.1f}°$$
     )
 
     # =====================================================
-    # 7. STEP 6 — V_uc, V_us AND SECTIONAL SHEAR CHECK
+    # 7. STEP 6 — CONCRETE SHEAR CONTRIBUTION V_uc ONLY
     # =====================================================
     st.markdown("---")
 
@@ -1886,153 +1848,357 @@ $$k_v = {k_v:.3f}, \\quad \\theta_v = {theta_v_deg:.1f}°$$
         col_title, col_info = st.columns([1, 0.08])
 
         with col_title:
-            st.markdown("### Step 6 – Concrete + steel shear strength and sectional check")
+            st.markdown("### Step 6 – Concrete shear strength $V_{uc}$")
 
         with col_info:
             with st.popover("ℹ️", use_container_width=True):
-                st.markdown("### Step 6 – How \(V_{uc}\) and \(V_s\) work together")
+                st.markdown("### Step 6 – Concrete contribution $V_{uc}$")
                 st.markdown(
                     r"""
-**Concrete contribution \(V_{uc}\)**
+- In the MCFT model used by AS 3600, concrete shear strength at the critical section is
 
 
 
-- MCFT gives concrete shear at the critical section as:
+  $$V_{uc} = k_v b_v d_v \sqrt{f'_c}$$  
 
 
 
-  $$V_{uc} = k_v\, b_v\, d_v\, \sqrt{f'_c}$$  
+- The factor $k_v$ depends mainly on **longitudinal strain** $\varepsilon_x$ and crack spacing:  
+
+  higher tensile strain → wider cracks → **smaller $k_v$** → smaller $V_{uc}$.
 
 
 
-- \(V_{uc}\) decreases when:
-
-  - Longitudinal strain \(\\varepsilon_x\) increases (cracks widen),  
-
-  - Effective depth \(d_v\) increases,  
-
-  - Effective crack spacing increases,  
-
-  - Aggregate interlock and dowel action become less effective.
+- $V_{uc}$ represents the combined effect of:  
 
 
 
-**Steel contribution \(V_s\)**
+  - residual shear across cracks,  
+
+  - **aggregate interlock**, and  
+
+  - **dowel action** from longitudinal bars.
 
 
 
-- Stirrups cross the **inclined crack length**:
-
-
-
-  $$\ell_{cr} \approx d_v \cot\\theta_v$$  
-
-
-
-- Number of stirrup legs crossing the crack within spacing \(s\):
-
-
-
-  $$n = \frac{d_v \cot\\theta_v}{s}$$  
-
-
-
-- Shear in stirrups:
-
-
-
-  $$V_s = V_{us} = \frac{A_{sv} f_{sy,v} d_v}{s}\cot\\theta_v$$  
-
-
-
-Stirrups provide:
-
-
-
-- Extra ultimate shear strength,  
-
-- **Ductility and warning**,  
-
-- **Crack-width control** after concrete cracks.
-
-
-
-This step adds \(V_{uc}\) and \(V_s\) to get the **total shear resistance** and checks it against \(V_{eq}^*\).
+This step isolates the **concrete-only** contribution before we add the stirrup shear $V_s$.
 
 """
                 )
 
+        # Concrete contribution only
         sqrt_fc_limited = min(math.sqrt(fc), 8.0)
         Vuc_N = k_v * b_v * d_v * sqrt_fc_limited
         Vuc_kN = Vuc_N / 1e3
 
+        calcbox(
+            f"""
+*Purpose: Calculate the concrete shear strength $V_{{uc}}$ at the critical section.*  
+
+
+
+**Inputs:**  
+
+
+
+- $k_v = {k_v:.3f}$  
+
+- $b_v = {b_v:.1f}$ mm, $d_v = {d_v:.1f}$ mm  
+
+- $f'_c = {fc:.1f}$ MPa (limited $\\sqrt{{f'_c}} = {sqrt_fc_limited:.3f}$ MPa)  
+
+
+
+---
+
+
+
+**Formula (AS 3600 Cl. 8.2.4.1):**  
+
+
+
+$$V_{{uc}} = k_v b_v d_v \\sqrt{{f'_c}}$$  
+
+
+
+**Substitution:**  
+
+
+
+$$V_{{uc}} = {k_v:.3f} \\times {b_v:.1f} \\times {d_v:.1f} \\times {sqrt_fc_limited:.3f} = {Vuc_kN:,.1f}\\,\\text{{kN}}$$  
+
+
+
+---
+
+
+
+**Result:**  
+
+
+
+- **Concrete shear strength:** $V_{{uc}} = {Vuc_kN:,.1f}$ kN  
+
+*(Steel contribution $V_s$ is added in the next step.)*
+
+"""
+        )
+
+    with col_side:
+        _safe_step_diagram(6)
+
+    # =====================================================
+    # 8. STEP 7 — STEEL SHEAR CONTRIBUTION V_s
+    # =====================================================
+    st.markdown("---")
+
+    col_main, col_side = st.columns([3, 2])
+
+    with col_main:
+        col_title, col_info = st.columns([1, 0.08])
+
+        with col_title:
+            st.markdown("### Step 7 – Steel shear strength $V_s$")
+
+        with col_info:
+            with st.popover("ℹ️", use_container_width=True):
+                st.markdown("### Step 7 – How stirrups contribute $V_s$")
+                calcbox(
+                    r"""
+**Steel contribution $V_s$**
+
+
+
+
+
+
+
+- Vertical or inclined shear ligatures cross the **inclined crack length**  
+
+
+
+  $$\ell_{cr} \approx d_v \cot\theta_v$$  
+
+
+
+
+
+
+
+- Within a spacing $s$, the amount of steel crossing the crack is  
+
+
+
+  $$n = \frac{d_v \cot\theta_v}{s}$$  
+
+
+
+
+
+
+
+- The shear carried by stirrups is  
+
+
+
+  $$V_s = V_{us} = \frac{A_{sv} f_{sy,v} d_v}{s}\,\cot\theta_v$$  
+
+
+
+
+
+
+
+- Shear steel **raises total shear capacity**, but more importantly it provides **ductility** and helps control crack widths after concrete has cracked.
+
+"""
+                )
+
+        # Steel contribution only
         Vus_N = (Asv * f_syv * d_v / s) * cot(theta_v_rad)
         Vus_kN = Vus_N / 1e3
+
+        calcbox(
+            f"""
+*Purpose: Calculate the shear strength provided by ligatures $V_s$.*  
+
+
+
+**Inputs:**  
+
+
+
+- $A_{{sv}} = {Asv:.1f}$ mm², spacing $s = {s:.1f}$ mm  
+
+- $f_{{sy,v}} = {f_syv:.1f}$ MPa  
+
+- $d_v = {d_v:.1f}$ mm, $\\theta_v = {theta_v_deg:.1f}°$  
+
+
+
+---
+
+
+
+**Formula (AS 3600 Cl. 8.2.5.2(a)):**  
+
+
+
+$$V_{{us}} = \\left(\\frac{{A_{{sv}} f_{{sy,v}} d_v}}{{s}}\\right)\\cot \\theta_v$$  
+
+
+
+**Substitution:**  
+
+
+
+$$V_{{us}} = \\left(\\frac{{{Asv:.1f} \\times {f_syv:.1f} \\times {d_v:.1f}}}{{{s:.1f}}}\\right) \\cot {theta_v_deg:.1f}° = {Vus_kN:,.1f}\\,\\text{{kN}}$$  
+
+
+
+---
+
+
+
+**Result:**  
+
+
+
+- **Steel shear strength:** $V_s = V_{{us}} = {Vus_kN:,.1f}$ kN  
+
+*(Concrete shear $V_{uc}$ was found in Step 6.)*
+
+"""
+        )
+
+    with col_side:
+        # Move the steel ligature diagram here
+        _safe_image(
+            "assets/shear_ligatures_and_crack.png",
+            caption="Shear ligatures crossing a diagonal crack over $d_v \\cot\\theta_v$.",
+        )
+
+    # =====================================================
+    # 9. STEP 8 — COMBINED SHEAR STRENGTH AND SECTIONAL CHECK
+    # =====================================================
+    st.markdown("---")
+
+    col_main, col_side = st.columns([3, 2])
+
+    with col_main:
+        col_title, col_info = st.columns([1, 0.08])
+
+        with col_title:
+            st.markdown(
+                "### Step 8 – Combine $V_{uc}$ and $V_s$ and compare with $V_{eq}^*$"
+            )
+
+        with col_info:
+            with st.popover("ℹ️", use_container_width=True):
+                st.markdown("### Step 8 – Sectional shear check")
+                st.markdown(
+                    r"""
+This step adds:
+
+
+
+- **Concrete shear strength** $V_{uc}$ (Step 6), and  
+
+- **Steel shear strength** $V_s$ (Step 7), plus any **axial/prestress $P_v$**  
+
+
+
+to give the total shear resistance:
+
+
+
+$$V_u = V_{uc} + V_s + P_v$$  
+
+
+
+Then we check the design strength:
+
+
+
+$$\phi V_u \ge V_{eq}^*$$  
+
+
+
+If this inequality is satisfied, the **sectional shear capacity** is adequate before web crushing is checked in the next step.
+
+"""
+                )
 
         Vu_total_kN = Vuc_kN + Vus_kN + P_v
         phi_Vu = phi * Vu_total_kN
         shear_ok = phi_Vu >= V_eq
 
         calcbox(
-        f"""
-*Purpose: Combine concrete and steel contributions to shear strength and compare with demand $V_{{eq}}^*$.*
+            f"""
+*Purpose: Combine concrete and steel contributions and check $\phi V_u$ against $V_{{eq}}^*$.*  
 
-**Inputs:**
 
-- $k_v = {k_v:.3f}$, $b_v = {b_v:.1f}$ mm, $d_v = {d_v:.1f}$ mm  
-- $f'_c = {fc:.1f}$ MPa (limited $\\sqrt{{f'_c}} = {sqrt_fc_limited:.3f}$ MPa)  
-- $A_{{sv}} = {Asv:.1f}$ mm², $s = {s:.1f}$ mm, $f_{{sy,v}} = {f_syv:.1f}$ MPa  
-- $\\theta_v = {theta_v_deg:.1f}°$  
-- Axial/prestress: $P_v = {P_v:.1f}$ kN  
+
+**Inputs:**  
+
+
+
+- $V_{{uc}} = {Vuc_kN:,.1f}$ kN (from Step 6)  
+
+- $V_s = {Vus_kN:,.1f}$ kN (from Step 7)  
+
+- $P_v = {P_v:.1f}$ kN  
+
+- Strength reduction: $\\phi = {phi:.2f}$  
+
 - Demand: $V_{{eq}}^* = {V_eq:.1f}$ kN  
 
----
 
-**Concrete contribution (Cl. 8.2.4.1):**
-
-$$V_{{uc}} = k_v b_v d_v \\sqrt{{f'_c}}$$
-
-**Substitution:**
-
-$$V_{{uc}} = {k_v:.3f} \\times {b_v:.1f} \\times {d_v:.1f} \\times {sqrt_fc_limited:.3f} = {Vuc_kN:,.1f}\\text{{ kN}}$$
 
 ---
 
-**Steel contribution (Cl. 8.2.5.2(a)):**
 
-$$V_{{us}} = \\left(\\frac{{A_{{sv}} f_{{sy,v}} d_v}}{{s}}\\right)\\cot \\theta_v$$
 
-**Substitution:**
+**Total sectional shear capacity (AS 3600 Cl. 8.2.3.1):**  
 
-$$V_{{us}} = \\left(\\frac{{{Asv:.1f} \\times {f_syv:.1f} \\times {d_v:.1f}}}{{{s:.1f}}}\\right) \\cot {theta_v_deg:.1f}° = {Vus_kN:,.1f}\\text{{ kN}}$$
 
----
 
-**Total sectional shear capacity (Cl. 8.2.3.1):**
+$$V_u = V_{{uc}} + V_s + P_v$$  
 
-$$V_u = V_{{uc}} + V_{{us}} + P_v$$
 
-$$V_u = {Vuc_kN:,.1f} + {Vus_kN:,.1f} + {P_v:.1f} = {Vu_total_kN:,.1f}\\text{{ kN}}$$
 
-Design strength:
+$$V_u = {Vuc_kN:,.1f} + {Vus_kN:,.1f} + {P_v:.1f} = {Vu_total_kN:,.1f}\\,\\text{{kN}}$$  
 
-$$\\phi V_u = {phi:.2f} \\times {Vu_total_kN:,.1f} = {phi_Vu:,.1f}\\text{{ kN}}$$
 
-Demand:
 
-$$V_{{eq}}^* = {V_eq:.1f}\\text{{ kN}}$$
+Design strength:  
+
+
+
+$$\\phi V_u = {phi:.2f} \\times {Vu_total_kN:,.1f} = {phi_Vu:,.1f}\\,\\text{{kN}}$$  
+
+
 
 ---
+
+
 
 **Sectional shear check:**  
 
+
+
 - Requirement: $\\phi V_u \\ge V_{{eq}}^*$  
+
 - Here: {phi_Vu:,.1f} kN vs {V_eq:.1f} kN → **{"OK" if shear_ok else "NOT OK"}**
+
 """
-    )
+        )
+
+    with col_side:
+        _safe_step_diagram(6)  # or a new combined diagram if you add one later
 
     # =====================================================
-    # 8. STEP 7 — WEB CRUSHING CHECK
+    # 10. STEP 9 — WEB CRUSHING CHECK
     # =====================================================
     st.markdown("---")
 
@@ -2042,11 +2208,11 @@ $$V_{{eq}}^* = {V_eq:.1f}\\text{{ kN}}$$
         col_title, col_info = st.columns([1, 0.08])
 
         with col_title:
-            st.markdown("### Step 7 – Check web-crushing strength (AS 3600 Cl. 8.2.6)")
+            st.markdown("### Step 9 – Check web-crushing strength (AS 3600 Cl. 8.2.6)")
 
         with col_info:
             with st.popover("ℹ️", use_container_width=True):
-                st.markdown("### Step 7 – Web-crushing limit \(V_{u,\max}\)")
+                st.markdown("### Step 9 – Web-crushing limit \(V_{u,\max}\)")
                 st.markdown(
                     r"""
 **Why we check web crushing**
