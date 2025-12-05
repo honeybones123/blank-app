@@ -6,7 +6,7 @@ from matplotlib.patches import Rectangle, Circle
 import streamlit as st
 
 from state_and_helpers import get_param
-from bending_core import _layout_bars_in_rows
+from section_layout import compute_section_layout
 
 # ------------------------------------------------------------
 # Global styling constants
@@ -61,17 +61,19 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     eps_c = abs(eps_c_raw)
     eps_s = -abs(eps_s_raw)
 
-    # reinforcement parameters
-    nb_bot = int(get_param("nb_bot") or 4)
-    db_bot = get_param("db_bot") or 20.0
-    cover_bot = get_param("cover_bot") or 40.0
-    rowgap_bot = get_param("rowgap_bot") or 25.0
-    nb_top = int(get_param("nb_top") or 2)
-    db_top = get_param("db_top") or 16.0
-    cover_top = get_param("cover_top") or 40.0
-    rowgap_top = get_param("rowgap_top") or 25.0
-
     sec_title = "Section"
+
+    # ------------------------------------------------
+    # Use the SAME section layout as Inputs 2D figure
+    # ------------------------------------------------
+    layout = compute_section_layout()
+    # Overwrite b, D in case they differ from state_dict
+    b = layout["b"]
+    D = layout["D"]
+
+    cage = layout["cage"]
+    bot = layout["bot"]
+    top = layout["top"]
 
     # -------------------------
     # Scaling
@@ -160,19 +162,13 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         )
     )
 
-    # bottom bars (use scaled width for layout)
-    min_spacing_bot = 2 * db_bot
-    bot_layout = _layout_bars_in_rows(
-        nb_bot, sec_width, cover_bot, db_bot, min_spacing_bot, 2
-    )
-    r_bot = db_bot / 2.0
-    row_pitch_bot = db_bot + rowgap_bot
-    d_row0 = D - cover_bot - r_bot
-
-    for x_rel, row_idx in bot_layout:
+    # bottom bars – EXACTLY same x,y as Inputs 2D, just shifted by x0_sec
+    # Scale x positions to match scaled section width
+    r_bot = bot["db"] / 2.0
+    for x_rel, y_rel in zip(bot["x"], bot["y"]):
         ax.add_patch(
             Circle(
-                (x0_sec + x_rel, d_row0 - row_idx * row_pitch_bot),
+                (x0_sec + x_rel * scale_factor, y_rel),
                 radius=r_bot,
                 fill=False,
                 edgecolor="tab:blue",
@@ -180,19 +176,12 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             )
         )
 
-    # top bars (use scaled width for layout)
-    min_spacing_top = 2 * db_top
-    top_layout = _layout_bars_in_rows(
-        nb_top, sec_width, cover_top, db_top, min_spacing_top, 2
-    )
-    r_top = db_top / 2.0
-    y_top_base = cover_top + r_top
-    row_pitch_top = db_top + rowgap_top
-
-    for x_rel, row_idx in top_layout:
+    # top bars – same mapping as Inputs
+    r_top = top["db"] / 2.0
+    for x_rel, y_rel in zip(top["x"], top["y"]):
         ax.add_patch(
             Circle(
-                (x0_sec + x_rel, y_top_base + row_idx * row_pitch_top),
+                (x0_sec + x_rel * scale_factor, y_rel),
                 radius=r_top,
                 fill=False,
                 edgecolor="tab:red",
