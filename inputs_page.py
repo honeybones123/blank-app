@@ -12,6 +12,7 @@ from widgets_helpers import apply_global_widget_css, number_row
 
 # --- Pure compute functions from design core (no circular imports)
 from bending_core import _compute_bending_capacity
+from section_layout import compute_section_layout
 # from shear_page import _compute_shear_capacity       # TODO: add later
 # from crack_page import _compute_crack_results       # TODO: add later
 # from deflection import _compute_deflection_results  # TODO: add later
@@ -116,49 +117,25 @@ def make_summary_cross_section_figure():
     Tiny 2D cross-section using Plotly (visual only).
     Concrete outline + lig cage + bottom/top bars.
 
-    Uses same two-row and leg layout logic as the 3D model,
-    plus top, bottom, and side covers.
-
-    Stirrups sit at least 0.5 * max(long bar dia) outside
-    the outermost longitudinal bars horizontally.
+    NOW uses the shared compute_section_layout() helper so that
+    the mapping and bar positions are identical to the bending
+    stress-strain section diagram.
     """
-    # Geometry
-    b = float(get_param("b", 400.0) or 400.0)
-    D = float(get_param("D", 600.0) or 600.0)
+    layout = compute_section_layout()
 
-    # Longitudinal reinforcement
-    nb_bot = int(get_param("nb_bot", 4) or 0)
-    nb_top = int(get_param("nb_top", 2) or 0)
-    db_bot = float(get_param("db_bot", 20.0) or 20.0)
-    db_top = float(get_param("db_top", 16.0) or 16.0)
+    b = layout["b"]
+    D = layout["D"]
+    cage = layout["cage"]
+    bot = layout["bot"]
+    top = layout["top"]
+    lig = layout["lig"]
 
-    rowgap_bot = float(get_param("rowgap_bot", 60.0) or 60.0)
-    rowgap_top = float(get_param("rowgap_top", 60.0) or 60.0)
-
-    cover_bot = float(get_param("cover_bot", 40.0) or 40.0)
-    cover_top = float(get_param("cover_top", 40.0) or 40.0)
-
-    # Local-only side cover value (from this page's widget)
-    cover_side = float(
-        st.session_state.get("inputs_cover_side_local", min(cover_top, cover_bot))
-    )
-
-    # Shear reinforcement
-    lig_legs_raw = get_param("lig_legs", 2)
-    try:
-        lig_legs = int(lig_legs_raw or 0)
-    except Exception:
-        lig_legs = 0
-
-    lig_d = float(get_param("lig_d", 10.0) or 10.0)
+    lig_d = lig["d"]
+    lig_legs = lig["legs"]
     lig_line_width = max(1.0, min(4.0, abs(lig_d) / 3.0))
 
     shapes = []
     traces = []
-
-    # Max longitudinal bar dia (for bar → lig clearance)
-    max_bar_d = max(db_bot, db_top, 0.0)
-    horiz_clear = 0.5 * max_bar_d  # minimum centreline gap between lig and bar
 
     # ----- outer concrete -----
     shapes.append(
@@ -173,11 +150,11 @@ def make_summary_cross_section_figure():
         )
     )
 
-    # ----- lig cage based on covers -----
-    cage_x0 = max(cover_side, 5.0)
-    cage_x1 = min(b - cover_side, b - 5.0)
-    cage_y0 = max(cover_top, 5.0)
-    cage_y1 = min(D - cover_bot, D - 5.0)
+    # ----- lig cage -----
+    cage_x0 = cage["x0"]
+    cage_x1 = cage["x1"]
+    cage_y0 = cage["y0"]
+    cage_y1 = cage["y1"]
 
     shapes.append(
         dict(
@@ -191,9 +168,9 @@ def make_summary_cross_section_figure():
         )
     )
 
-    # Internal vertical ties if specified
+    # internal legs (vertical ties)
     if lig_d > 0 and lig_legs > 2:
-        for xt in _internal_leg_positions(cage_x0, cage_x1, lig_legs):
+        for xt in lig["internal_x"]:
             shapes.append(
                 dict(
                     type="line",
@@ -205,58 +182,12 @@ def make_summary_cross_section_figure():
                 )
             )
 
-    # ----- bar positions -----
-    x_min = cage_x0 + horiz_clear
-    x_max = cage_x1 - horiz_clear
-    if x_max <= x_min:
-        # fall-back if covers are too big
-        mid = 0.5 * (cage_x0 + cage_x1)
-        span = max(10.0, (cage_x1 - cage_x0) * 0.4)
-        x_min = mid - span / 2.0
-        x_max = mid + span / 2.0
-
-    max_bar_d_vertical = max(db_bot, db_top, max(1.0, abs(lig_d)))
-    bar_edge_offset = max_bar_d_vertical * 0.8
-    y_min_cage = cage_y0 + bar_edge_offset
-    y_max_cage = cage_y1 - bar_edge_offset
-
-    # bottom bars
-    y1_bot = D - (cover_bot + 0.5 * db_bot)
-    y2_bot = y1_bot - rowgap_bot
-    min_z_bot = 0.5 * db_bot + 5.0
-    max_z_bot = D - 0.5 * db_bot - 5.0
-    y1_bot = float(
-        np.clip(y1_bot, max(y_min_cage, min_z_bot), min(y_max_cage, max_z_bot))
-    )
-    y2_bot = float(
-        np.clip(y2_bot, max(y_min_cage, min_z_bot), min(y_max_cage, max_z_bot))
-    )
-
-    bx1, bx2 = _two_row_positions_width(nb_bot, db_bot, x_min, x_max)
-    bot_x = bx1 + bx2
-    bot_y = [y1_bot] * len(bx1) + [y2_bot] * len(bx2)
-
-    # top bars
-    y1_top = cover_top + 0.5 * db_top
-    y2_top = y1_top + rowgap_top
-    min_z_top = 0.5 * db_top + 5.0
-    max_z_top = D - 0.5 * db_top - 5.0
-    y1_top = float(
-        np.clip(y1_top, max(y_min_cage, min_z_top), min(y_max_cage, max_z_top))
-    )
-    y2_top = float(
-        np.clip(y2_top, max(y_min_cage, min_z_top), min(y_max_cage, max_z_top))
-    )
-
-    tx1, tx2 = _two_row_positions_width(nb_top, db_top, x_min, x_max)
-    top_x = tx1 + tx2
-    top_y = [y1_top] * len(tx1) + [y2_top] * len(tx2)
-
-    if bot_x:
+    # ----- bottom bars -----
+    if bot["x"]:
         traces.append(
             go.Scatter(
-                x=bot_x,
-                y=bot_y,
+                x=bot["x"],
+                y=bot["y"],
                 mode="markers",
                 marker=dict(
                     color="red", size=7, line=dict(width=0.7, color="black")
@@ -266,11 +197,12 @@ def make_summary_cross_section_figure():
             )
         )
 
-    if top_x:
+    # ----- top bars -----
+    if top["x"]:
         traces.append(
             go.Scatter(
-                x=top_x,
-                y=top_y,
+                x=top["x"],
+                y=top["y"],
                 mode="markers",
                 marker=dict(
                     color="blue", size=7, line=dict(width=0.7, color="black")
@@ -281,7 +213,6 @@ def make_summary_cross_section_figure():
         )
 
     if not traces:
-        # invisible marker so Plotly doesn't error if no bars
         traces.append(
             go.Scatter(
                 x=[0],
