@@ -1,889 +1,985 @@
+# bending_diagrams.py
 import math
 import numpy as np
-import plotly.graph_objects as go
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle, Circle
 import streamlit as st
 
-from state_and_helpers import (
-    get_sync_callbacks,
-    get_param,
-)
-
-from widgets_helpers import apply_global_widget_css, number_row
-
-# --- Pure compute functions from design core (no circular imports)
-from bending_core import _compute_bending_capacity
-from section_layout import compute_section_layout
-# from shear_page import _compute_shear_capacity       # TODO: add later
-# from crack_page import _compute_crack_results       # TODO: add later
-# from deflection import _compute_deflection_results  # TODO: add later
-
+from state_and_helpers import get_param
+from bending_core import _layout_bars_in_rows
 
 # ------------------------------------------------------------
-#  GLOBAL PAGE STYLING (margins + compact inputs)
+# Global styling constants
 # ------------------------------------------------------------
-st.markdown(
+LINE_THICK = 1.0   # main outlines
+LINE_MED   = 0.8   # normal lines
+LINE_THIN  = 0.6   # light lines
+
+FS_TITLE  = 8      # diagram titles
+FS_LABEL  = 7      # axis labels / main text
+FS_ANNOT  = 5      # small annotations
+
+ARROW_SCALE = 4    # small arrowheads for everything
+
+
+# ============================================================
+#  MAIN 3-PANEL SECTION / STRAIN / STRESS DIAGRAM
+# ============================================================
+def _plot_stress_strain_profiles(state_dict, state_label=None):
     """
-    <style>
-    .main .block-container {
-        padding-left: 3rem;
-        padding-right: 3rem;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+    Three-panel figure:
 
-# Extra CSS so special widgets (side cover + exposure class)
-# use the same effective width as the standard number_row inputs.
-st.markdown(
+        - Section (left)
+        - Strain profile (centre)
+        - Stress / stress-block (right)
+
+    Panel positions and axes limits are FIXED so the diagrams
+    do not jump around when switching between ULS / SLS / Uncracked.
     """
-    <style>
-    .nr-field select,
-    .nr-field input {
-        width: 100% !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-# ------------------------------------------------------------
-#  SHARED HELPERS FOR BAR & LEG LAYOUT
-# ------------------------------------------------------------
-def _two_row_positions_width(n_bars, bar_dia, w_min, w_max):
-    """
-    Decide bar positions along width for up to 2 rows.
-
-    Rules:
-      - A single row can carry at most `max_single` bars based on min spacing.
-      - If n_bars > max_single, we use 2 rows and ensure BOTH rows
-        respect the same max bars/spacing rule.
-      - Row 2:
-          * if 1 bar  -> centred
-          * if >=2    -> spaced like row 1 (linspace over width)
-    """
-    if n_bars <= 0:
-        return [], []
-
-    span = w_max - w_min
-    if span <= 0:
-        return [], []
-
-    # basic spacing rule
-    min_pitch = max(bar_dia * 1.6, span / 20.0)
-    max_single = max(1, int(span // min_pitch))
-
-    # One row OK
-    if n_bars <= max_single:
-        xs1 = np.linspace(w_min, w_max, n_bars)
-        return xs1.tolist(), []
-
-    # Two rows, each respecting max_single
-    n1 = min(max_single, math.ceil(n_bars / 2))
-    n2 = n_bars - n1
-    if n2 > max_single:
-        n2 = max_single
-        n1 = n_bars - n2
-
-    xs1 = np.linspace(w_min, w_max, n1)
-
-    if n2 <= 0:
-        xs2 = np.array([])
-    elif n2 == 1:
-        xs2 = np.array([(w_min + w_max) / 2.0])
-    else:
-        xs2 = np.linspace(w_min, w_max, n2)
-
-    return xs1.tolist(), xs2.tolist()
-
-
-def _internal_leg_positions(y_min, y_max, n_legs):
-    """Internal stirrup leg positions across width."""
-    if n_legs <= 2:
-        return []
-    span = y_max - y_min
-    if span <= 0:
-        return []
-    # equally spaced between outer legs
-    return [y_min + span * j / (n_legs - 1) for j in range(1, n_legs - 1)]
-
-
-# ------------------------------------------------------------
-#  MINI 2D CROSS-SECTION  (SECTION A)
-# ------------------------------------------------------------
-def make_summary_cross_section_figure():
-    """
-    Tiny 2D cross-section using Plotly (visual only).
-    Concrete outline + lig cage + bottom/top bars.
-
-    NOW uses the shared compute_section_layout() helper so that
-    the mapping and bar positions are identical to the bending
-    stress-strain section diagram.
-    """
-    layout = compute_section_layout()
-
-    b = layout["b"]
-    D = layout["D"]
-    cage = layout["cage"]
-    bot = layout["bot"]
-    top = layout["top"]
-    lig = layout["lig"]
-
-    lig_d = lig["d"]
-    lig_legs = lig["legs"]
-    lig_line_width = max(1.0, min(4.0, abs(lig_d) / 3.0))
-
-    shapes = []
-    traces = []
-
-    # ----- outer concrete -----
-    shapes.append(
-        dict(
-            type="rect",
-            x0=0,
-            y0=0,
-            x1=b,
-            y1=D,
-            line=dict(width=1.2, color="black"),
-            fillcolor="rgba(0,0,0,0)",
-        )
-    )
-
-    # ----- lig cage -----
-    cage_x0 = cage["x0"]
-    cage_x1 = cage["x1"]
-    cage_y0 = cage["y0"]
-    cage_y1 = cage["y1"]
-
-    shapes.append(
-        dict(
-            type="rect",
-            x0=cage_x0,
-            y0=cage_y0,
-            x1=cage_x1,
-            y1=cage_y1,
-            line=dict(width=lig_line_width, color="black"),
-            fillcolor="rgba(0,0,0,0)",
-        )
-    )
-
-    # internal legs (vertical ties)
-    if lig_d > 0 and lig_legs > 2:
-        for xt in lig["internal_x"]:
-            shapes.append(
-                dict(
-                    type="line",
-                    x0=xt,
-                    y0=cage_y0,
-                    x1=xt,
-                    y1=cage_y1,
-                    line=dict(width=lig_line_width * 0.8, color="black"),
-                )
+    if state_label is None:
+        try:
+            state_label = st.session_state.get(
+                "bending_strain_state_local", "ULS"
             )
+        except Exception:
+            state_label = "ULS"
 
-    # ----- bottom bars -----
-    if bot["x"]:
-        traces.append(
-            go.Scatter(
-                x=bot["x"],
-                y=bot["y"],
-                mode="markers",
-                marker=dict(
-                    color="red", size=7, line=dict(width=0.7, color="black")
-                ),
-                hoverinfo="skip",
-                showlegend=False,
+    # unpack state
+    b = state_dict["b"]
+    D = state_dict["D"]
+    d = state_dict["d"]
+    c = state_dict["c"]
+    eps_c_raw = state_dict["eps_c"]
+    eps_s_raw = state_dict["eps_s"]
+    gamma = state_dict["gamma"]
+    fs_t = state_dict["fs_t"]
+    fc = state_dict["fc"]
+    alpha2 = state_dict["alpha2"]
+
+    # Warner-style sign convention (for this figure only):
+    #   concrete strain positive, steel strain negative
+    eps_c = abs(eps_c_raw)
+    eps_s = -abs(eps_s_raw)
+
+    # reinforcement parameters
+    nb_bot = int(get_param("nb_bot") or 4)
+    db_bot = get_param("db_bot") or 20.0
+    cover_bot = get_param("cover_bot") or 40.0
+    rowgap_bot = get_param("rowgap_bot") or 25.0
+    nb_top = int(get_param("nb_top") or 2)
+    db_top = get_param("db_top") or 16.0
+    cover_top = get_param("cover_top") or 40.0
+    rowgap_top = get_param("rowgap_top") or 25.0
+
+    sec_title = "Section"
+
+    # -------------------------
+    # Scaling
+    # -------------------------
+    eps_max = max(abs(eps_c), abs(eps_s), 1e-4) * 1.3
+    sigma_c = alpha2 * fc
+    sigma_s = abs(fs_t)
+    stress_max = max(sigma_c, sigma_s, 1.0)
+
+    # -------------------------
+    # Scale factor for wide sections (b >= 1000)
+    # -------------------------
+    scale_factor = 1.0
+    if b >= 1000.0:
+        # Target width is ~1200 instead of 1650 to prevent cutoff
+        target_width = 1200.0
+        current_width = 1650.0  # xlim from -200 to 1450
+        scale_factor = target_width / current_width
+
+    # -------------------------
+    # FIXED panel positions (scaled if b >= 1000)
+    # (section moved a bit further left, spacing preserved)
+    # -------------------------
+    x_center_sec    = 135.0 * scale_factor   # was 160
+    x_center_strain = 650.0 * scale_factor
+    x_center_stress = 1140.0 * scale_factor
+
+    sec_width = float(b) * scale_factor
+    x0_sec = x_center_sec - sec_width / 2.0
+
+    panel_w_strain = 200.0 * scale_factor
+    x0_strain = x_center_strain - panel_w_strain / 2.0
+    x1_strain = x_center_strain + panel_w_strain / 2.0
+
+    panel_w_stress = 260.0 * scale_factor
+    x0_stress = x_center_stress - panel_w_stress / 2.0
+    x1_stress = x_center_stress + panel_w_stress / 2.0
+
+    def strain_to_x(eps):
+        half_w = panel_w_strain * 0.4
+        return x_center_strain + (eps / eps_max) * half_w
+
+    def stress_to_x(sig):
+        return x0_stress + (sig / stress_max) * (panel_w_stress * 0.8)
+
+    fig, ax = plt.subplots(figsize=(9, 3.5))
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
+
+    # fixed axes → positions frozen across ULS / SLS / Uncracked (scaled if b >= 1000)
+    ax.set_ylim(D * 1.2, -0.2 * D)
+    ax.set_xlim(-200.0 * scale_factor, 1450.0 * scale_factor)
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_xmargin(0)
+    ax.set_ymargin(0)
+
+    # remove ticks / axis markings
+    for spine in ["top", "right", "bottom", "left"]:
+        ax.spines[spine].set_visible(False)
+    ax.tick_params(left=False, labelleft=False, bottom=False, labelbottom=False)
+
+    # ====================================================
+    # 1) SECTION PANEL
+    # ====================================================
+    ax.add_patch(
+        Rectangle(
+            (x0_sec, 0),
+            sec_width,  # Use scaled width
+            D,
+            fill=False,
+            linewidth=LINE_THICK,
+            edgecolor="black",
+        )
+    )
+
+    # compression zone (ULS-style block depth, but clipped to D)
+    block_depth_sec = max(0.0, min(gamma * c, D))
+    ax.add_patch(
+        Rectangle(
+            (x0_sec, 0),
+            sec_width,  # Use scaled width
+            block_depth_sec,
+            facecolor="#c7e3ff",
+            edgecolor="tab:red",
+            linewidth=LINE_MED,
+            alpha=0.8,
+        )
+    )
+
+    # bottom bars (use scaled width for layout)
+    min_spacing_bot = 2 * db_bot
+    bot_layout = _layout_bars_in_rows(
+        nb_bot, sec_width, cover_bot, db_bot, min_spacing_bot, 2
+    )
+    r_bot = db_bot / 2.0
+    row_pitch_bot = db_bot + rowgap_bot
+    d_row0 = D - cover_bot - r_bot
+
+    for x_rel, row_idx in bot_layout:
+        ax.add_patch(
+            Circle(
+                (x0_sec + x_rel, d_row0 - row_idx * row_pitch_bot),
+                radius=r_bot,
+                fill=False,
+                edgecolor="tab:blue",
+                linewidth=LINE_MED,
             )
         )
 
-    # ----- top bars -----
-    if top["x"]:
-        traces.append(
-            go.Scatter(
-                x=top["x"],
-                y=top["y"],
-                mode="markers",
-                marker=dict(
-                    color="blue", size=7, line=dict(width=0.7, color="black")
-                ),
-                hoverinfo="skip",
-                showlegend=False,
+    # top bars (use scaled width for layout)
+    min_spacing_top = 2 * db_top
+    top_layout = _layout_bars_in_rows(
+        nb_top, sec_width, cover_top, db_top, min_spacing_top, 2
+    )
+    r_top = db_top / 2.0
+    y_top_base = cover_top + r_top
+    row_pitch_top = db_top + rowgap_top
+
+    for x_rel, row_idx in top_layout:
+        ax.add_patch(
+            Circle(
+                (x0_sec + x_rel, y_top_base + row_idx * row_pitch_top),
+                radius=r_top,
+                fill=False,
+                edgecolor="tab:red",
+                linewidth=LINE_MED,
             )
         )
 
-    if not traces:
-        traces.append(
-            go.Scatter(
-                x=[0],
-                y=[0],
-                mode="markers",
-                marker=dict(size=1, color="rgba(0,0,0,0)"),
-                showlegend=False,
-            )
+    # depth arrows next to section only (scaled if b >= 1000)
+    beam_right = x0_sec + sec_width
+
+    if d:
+        x_d = min(beam_right + 30.0 * scale_factor, x0_strain - 40.0 * scale_factor)
+        ax.annotate(
+            "",
+            xy=(x_d, d),
+            xytext=(x_d, 0),
+            arrowprops=dict(
+                arrowstyle="<->",
+                linewidth=LINE_THIN,
+                mutation_scale=ARROW_SCALE,
+            ),
+        )
+        ax.text(
+            x_d + 10 * scale_factor,
+            d / 2,
+            f"d = {d:.0f} mm",
+            fontsize=FS_ANNOT,
+            va="center",
         )
 
-    fig = go.Figure(data=traces)
-    fig.update_xaxes(visible=False)
-    fig.update_yaxes(
-        visible=False,
-        scaleanchor="x",
-        scaleratio=1,
-        range=[D * 1.02, -0.10 * D],
-    )
-    fig.update_layout(
-        width=260,
-        height=300,
-        margin=dict(l=5, r=5, t=0, b=0),
-        shapes=shapes,
-        dragmode=False,
-        title="Section A",
-        title_x=0.5,
-    )
-    return fig
-
-
-# ------------------------------------------------------------
-#  3D BEAM – BENDING & SHEAR VISUAL  (SECTION A)
-# ------------------------------------------------------------
-def make_beam_3d_figure():
-    # --- parameters from session state ---
-    b = float(get_param("b", 400.0) or 400.0)
-    D = float(get_param("D", 600.0) or 600.0)
-    L = float(get_param("L", 8000.0) or 8000.0)
-
-    nb_bot = int(get_param("nb_bot", 4) or 0)
-    db_bot = float(get_param("db_bot", 20.0) or 20.0)
-
-    nb_top = int(get_param("nb_top", 2) or 0)
-    db_top = float(get_param("db_top", 16.0) or 16.0)
-
-    cover_bot = float(get_param("cover_bot", 40.0) or 40.0)
-    cover_top = float(get_param("cover_top", 40.0) or 40.0)
-
-    cover_side = float(
-        st.session_state.get("inputs_cover_side_local", min(cover_top, cover_bot))
-    )
-
-    rowgap_bot = float(get_param("rowgap_bot", 60.0) or 60.0)
-    rowgap_top = float(get_param("rowgap_top", 60.0) or 60.0)
-
-    lig_d = float(get_param("lig_d", 10.0) or 10.0)
-    lig_legs_raw = get_param("lig_legs", 2)
-    try:
-        lig_legs = int(lig_legs_raw or 0)
-    except Exception:
-        lig_legs = 0
-    s_lig = float(get_param("s_lig", 200.0) or 200.0)
-
-    traces = []
-
-    max_bar_d = max(db_bot, db_top, 0.0)
-    horiz_clear = 0.5 * max_bar_d
-
-    # ----- concrete beam -----
-    vx = np.array([0, L, L, 0, 0, L, L, 0])
-    vy = np.array([0, 0, b, b, 0, 0, b, b])
-    vz = np.array([0, 0, 0, 0, D, D, D, D])
-
-    tri_i = [0, 0, 0, 4, 4, 1, 5, 2, 6, 3, 7, 6]
-    tri_j = [1, 2, 3, 5, 7, 5, 6, 6, 7, 7, 4, 2]
-    tri_k = [2, 3, 0, 6, 4, 2, 7, 3, 4, 0, 5, 1]
-
-    traces.append(
-        go.Mesh3d(
-            x=vx,
-            y=vy,
-            z=vz,
-            i=tri_i,
-            j=tri_j,
-            k=tri_k,
-            color="#cccccc",
-            opacity=0.25,
-            flatshading=True,
-            hoverinfo="skip",
+    if c:
+        x_dn = min(beam_right + 80.0 * scale_factor, x0_strain - 10.0 * scale_factor)
+        ax.annotate(
+            "",
+            xy=(x_dn, c),
+            xytext=(x_dn, 0),
+            arrowprops=dict(
+                arrowstyle="<->",
+                linewidth=LINE_THIN,
+                color="tab:red",
+                mutation_scale=ARROW_SCALE,
+            ),
         )
-    )
-
-    # ----- Section A plane at mid-span -----
-    mid_x = 0.5 * L
-    Yg, Zg = np.meshgrid(np.linspace(0, b, 2), np.linspace(0, D, 2))
-    Xg = np.full_like(Yg, mid_x)
-    traces.append(
-        go.Surface(
-            x=Xg,
-            y=Yg,
-            z=Zg,
-            colorscale=[[0, "#3182bd"], [1, "#3182bd"]],
-            showscale=False,
-            opacity=0.15,
-            name="Section A",
-        )
-    )
-
-    # ----- longitudinal bar positions -----
-    def _bar_positions_3d(nbars, bar_dia, cover, rowgap, is_top):
-        if nbars <= 0 or bar_dia <= 0:
-            return []
-
-        y_min = cover_side + horiz_clear
-        y_max = b - cover_side - horiz_clear
-        if y_max <= y_min:
-            mid = 0.5 * b
-            span = max(10.0, (b - 2 * cover_side) * 0.4)
-            y_min = mid - span / 2.0
-            y_max = mid + span / 2.0
-
-        if is_top:
-            z1 = cover + 0.5 * bar_dia
-            z2 = z1 + rowgap
-        else:
-            z1 = D - (cover + 0.5 * bar_dia)
-            z2 = z1 - rowgap
-
-        min_z = 0.5 * bar_dia + 5.0
-        max_z = D - 0.5 * bar_dia - 5.0
-        z1 = float(np.clip(z1, min_z, max_z))
-        z2 = float(np.clip(z2, min_z, max_z))
-
-        xs1, xs2 = _two_row_positions_width(nbars, bar_dia, y_min, y_max)
-        pos = [(yy, z1) for yy in xs1] + [(yy, z2) for yy in xs2]
-        return pos
-
-    # bottom bars
-    bot_positions = _bar_positions_3d(
-        nb_bot, db_bot, cover_bot, rowgap_bot, is_top=False
-    )
-    line_w_bot = max(2.0, abs(db_bot) * 0.4)
-    for (yy, zz) in bot_positions:
-        traces.append(
-            go.Scatter3d(
-                x=[0, L],
-                y=[yy, yy],
-                z=[zz, zz],
-                mode="lines",
-                line=dict(width=line_w_bot, color="red"),
-                hoverinfo="skip",
-                showlegend=False,
-            )
+        ax.text(
+            x_dn + 10 * scale_factor,
+            c / 2,
+            "dₙ = {:.0f} mm".format(c),
+            fontsize=FS_ANNOT,
+            color="tab:red",
+            va="center",
         )
 
-    # top bars
-    top_positions = _bar_positions_3d(
-        nb_top, db_top, cover_top, rowgap_top, is_top=True
+    ax.text(
+        x_center_sec,
+        D + 0.14 * D,
+        sec_title,
+        ha="center",
+        va="bottom",
+        fontsize=FS_TITLE,
     )
-    line_w_top = max(2.0, abs(db_top) * 0.4)
-    for (yy, zz) in top_positions:
-        traces.append(
-            go.Scatter3d(
-                x=[0, L],
-                y=[yy, yy],
-                z=[zz, zz],
-                mode="lines",
-                line=dict(width=line_w_top, color="blue"),
-                hoverinfo="skip",
-                showlegend=False,
-            )
-        )
 
-    # ----- shear ligs -----
-    def add_shear_hoop_at_x(x0):
-        y_left = cover_side
-        y_right = b - cover_side
-        z_top = cover_top + max(lig_d, 6.0)
-        z_bot = D - (cover_bot + max(lig_d, 6.0))
+    # ====================================================
+    # 2) STRAIN PANEL
+    # ====================================================
+    ax.plot(
+        [x_center_strain, x_center_strain],
+        [0, D],
+        color="black",
+        linewidth=LINE_MED,
+    )
 
-        min_z = 5.0
-        max_z = D - 5.0
-        z_top_c = float(np.clip(z_top, min_z, max_z))
-        z_bot_c = float(np.clip(z_bot, min_z, max_z))
+    y_vals = np.array([0, c, d])
+    eps_vals = np.array([eps_c, 0.0, eps_s])
+    x_vals = [strain_to_x(e) for e in eps_vals]
+    ax.plot(x_vals, y_vals, color="black", linewidth=LINE_MED)
 
-        Xs = [x0] * 5
-        Ys = [y_left, y_right, y_right, y_left, y_left]
-        Zs = [z_top_c, z_top_c, z_bot_c, z_bot_c, z_top_c]
+    # dashed NA (scaled if b >= 1000)
+    ax.hlines(
+        c,
+        x0_strain - 10 * scale_factor,
+        x1_strain + 10 * scale_factor,
+        colors="black",
+        linestyles="--",
+        linewidth=LINE_THIN,
+    )
 
-        lw = max(1.5, abs(lig_d) * 0.35)
-        traces.append(
-            go.Scatter3d(
-                x=Xs,
-                y=Ys,
-                z=Zs,
-                mode="lines",
-                line=dict(width=lw, color="black"),
-                hoverinfo="skip",
-                showlegend=False,
-            )
-        )
+    ax.text(
+        strain_to_x(eps_c),
+        0,
+        rf"$\varepsilon_c = {eps_c:.4f}$",
+        fontsize=FS_ANNOT,
+        color="tab:red",
+        va="bottom",
+    )
+    ax.text(
+        strain_to_x(eps_s),
+        d,
+        rf"$\varepsilon_s = {eps_s:.4f}$",
+        fontsize=FS_ANNOT,
+        color="tab:blue",
+        va="top",
+    )
 
-        if lig_legs > 2:
-            for yi in _internal_leg_positions(y_left, y_right, lig_legs):
-                traces.append(
-                    go.Scatter3d(
-                        x=[x0, x0],
-                        y=[yi, yi],
-                        z=[z_top_c, z_bot_c],
-                        mode="lines",
-                        line=dict(width=lw * 0.9, color="black"),
-                        hoverinfo="skip",
-                        showlegend=False,
-                    )
-                )
+    ax.text(
+        x_center_strain,
+        D + 0.14 * D,
+        "Strain",
+        ha="center",
+        va="bottom",
+        fontsize=FS_TITLE,
+    )
 
-    if lig_d > 0 and s_lig > 0 and lig_legs >= 2:
-        s_eff = max(40.0, float(s_lig))
-        n_hoops = int(max(1, min(80, round(L / s_eff))))
-        xs = np.linspace(s_eff / 2.0, L - s_eff / 2.0, n_hoops)
-        for x0 in xs:
-            add_shear_hoop_at_x(x0)
+    # ====================================================
+    # 3) STRESS PANEL
+    # ====================================================
+    ax.plot(
+        [x0_stress, x0_stress],
+        [0, D],
+        color="black",
+        linewidth=LINE_MED,
+    )
 
-    fig = go.Figure(data=traces)
-    fig.update_layout(
-        height=780,  # roughly fills down to crack inputs
-        scene=dict(
-            xaxis_title="Length (mm)",
-            yaxis_title="Width (mm)",
-            zaxis_title="Depth from top (mm)",
-            zaxis=dict(autorange="reversed"),
-            aspectmode="data",
-            camera=dict(eye=dict(x=1.45, y=1.35, z=0.95)),
+    x_T = stress_to_x(sigma_s)
+    ax.annotate(
+        "",
+        xy=(x_T, d),
+        xytext=(x0_stress, d),
+        arrowprops=dict(
+            arrowstyle="->",
+            linewidth=LINE_MED,
+            color="tab:blue",
+            mutation_scale=ARROW_SCALE,
         ),
-        margin=dict(l=0, r=0, t=0, b=0),
-        showlegend=False,
-        title="Section A",
-        title_x=0.5,
     )
+    ax.text(
+        x_T + 8 * scale_factor,
+        d,
+        f"T ({sigma_s:.0f} MPa)",
+        fontsize=FS_ANNOT,
+        color="tab:blue",
+        va="center",
+    )
+
+    # Calculate stress block width at ORIGINAL scale to keep it the same size
+    # even when diagrams are scaled down
+    x0_stress_original = 1140.0 - 260.0 / 2.0  # Original unscaled position
+    panel_w_stress_original = 260.0
+    x_T_original = x0_stress_original + (sigma_s / stress_max) * (panel_w_stress_original * 0.8)
+    block_ratio = 1 / 3
+    block_width_original = (x_T_original - x0_stress_original) * block_ratio
+    # Use original block width (not scaled) at the scaled position
+    block_width = block_width_original
+    x_block_right = x0_stress + block_width
+
+    block_top = 0
+    # ULS = rectangular block to γ c; SLS/Uncracked = triangular wedge to c
+    block_bottom = gamma * c if state_label == "ULS" else c
+
+    sigma_c_val = alpha2 * fc
+
+    # compression block outline
+    if state_label == "ULS":
+        # rectangle
+        ax.fill(
+            [x0_stress, x_block_right, x_block_right, x0_stress],
+            [block_top, block_top, block_bottom, block_bottom],
+            fill=False,
+            edgecolor="tab:red",
+            linewidth=LINE_MED,
+        )
+    else:
+        # triangular (cracked / elastic)
+        ax.fill(
+            [x0_stress, x0_stress, x_block_right],
+            [block_bottom, block_top, block_top],
+            fill=False,
+            edgecolor="tab:red",
+            linewidth=LINE_MED,
+        )
+
+    # dashed NA (scaled if b >= 1000)
+    ax.hlines(
+        c,
+        x0_stress - 10 * scale_factor,
+        x1_stress,
+        linestyles="--",
+        linewidth=LINE_THIN,
+        colors="black",
+    )
+
+    # α2 f'c width arrow & label (scaled if b >= 1000)
+    y_alpha = -0.05 * D
+    ax.annotate(
+        "",
+        xy=(x0_stress, y_alpha),
+        xytext=(x_block_right, y_alpha),
+        arrowprops=dict(
+            arrowstyle="<->",
+            linewidth=LINE_THIN,
+            color="tab:red",
+            mutation_scale=ARROW_SCALE,
+        ),
+    )
+    ax.text(
+        (x0_stress + x_block_right) / 2,
+        y_alpha - 0.04 * D,
+        rf"$\alpha_2 f'_c = {sigma_c_val:.0f}\ \mathrm{{MPa}}$",
+        fontsize=FS_ANNOT,
+        color="tab:red",
+        ha="center",
+    )
+
+    # γ d_n / d_n depth arrow (scaled if b >= 1000, but keep spacing relative to block)
+    x_gc = x_block_right + 0.12 * panel_w_stress
+    ax.annotate(
+        "",
+        xy=(x_gc, block_bottom),
+        xytext=(x_gc, block_top),
+        arrowprops=dict(
+            arrowstyle="<->",
+            color="tab:red",
+            linewidth=LINE_THIN,
+            mutation_scale=ARROW_SCALE,
+        ),
+    )
+
+    depth_label = (
+        rf"$\gamma d_n = {gamma*c:.0f}\ \mathrm{{mm}}$"
+        if state_label == "ULS"
+        else rf"$d_n = {c:.0f}\ \mathrm{{mm}}$"
+    )
+
+    ax.text(
+        x_gc + 10 * scale_factor,
+        (block_top + block_bottom) / 2,
+        depth_label,
+        fontsize=FS_ANNOT,
+        color="tab:red",
+        va="center",
+    )
+
+    # internal compression arrows – facing LEFT (block_width is not scaled, so arrows stay relative to block)
+    for frac in [0.25, 0.5, 0.75]:
+        y_mid = block_top + frac * (block_bottom - block_top)
+        ax.annotate(
+            "",
+            xy=(x0_stress + 0.15 * block_width, y_mid),
+            xytext=(x_block_right - 0.15 * block_width, y_mid),
+            arrowprops=dict(
+                arrowstyle="->",  # arrow head at left
+                color="tab:red",
+                linewidth=LINE_THIN,
+                mutation_scale=ARROW_SCALE,
+            ),
+        )
+
+    ax.text(
+        x_center_stress,
+        D + 0.14 * D,
+        "Stress (MPa)",
+        ha="center",
+        va="bottom",
+        fontsize=FS_TITLE,
+    )
+
     return fig
 
 
-# ------------------------------------------------------------
-#  STATUS HELPER
-# ------------------------------------------------------------
-def _status_and_colour(util, cap_exists):
-    if not cap_exists or util is None or math.isnan(util):
-        return "Not calculated", "#e0e0e0"
-    if util < 0.95:
-        return "PASS", "#d5f5d5"
-    if util <= 1.0:
-        return "NEAR LIMIT", "#fff4c2"
-    return "FAIL", "#f8d0d0"
+# ============================================================
+#  ULS STRESS BLOCK FIGURE (1.1 / 1.3 VARIANTS)
+# ============================================================
+def _make_uls_stress_block_figure(
+    b_mm: float,
+    D_mm: float,
+    d_mm: float,
+    dn_mm: float,
+    a_mm: float,
+    alpha2: float,
+    gamma: float,
+    fc: float,
+    fsy: float,
+    show_lever_arm: bool = False,
+    show_dn: bool = True,
+    show_alpha_label: bool = True,
+    show_C: bool = False,
+    C_N: float | None = None,
+    variant: str = "11",
+):
+    """
+    Warner-style ULS stress block (right-way up)
 
-
-# ------------------------------------------------------------
-#  MAIN INPUT PAGE
-# ------------------------------------------------------------
-def render_inputs():
-    sync_callbacks = get_sync_callbacks()
-    apply_global_widget_css()
-
-    # Container for the summary at the very top of the page.
-    # We'll fill it AFTER widgets + compute, so it always uses
-    # the latest synced values, but it still appears at the top.
-    summary_container = st.container()
-
-    st.markdown("---")
-
-    # ---------- inputs + 3D beam ----------
-    left_col, right_col = st.columns([1.2, 1.8])
-
-    with left_col:
-        st.subheader("Design Actions")
-        number_row(
-            "Design moment Mu* (kNm)",
-            "inputs_Mu_star",
-            10.0,
-            sync_callbacks,
-            help_text="Factored design bending moment at the critical section.",
-        )
-        number_row(
-            "Applied prestress P* (kN)",
-            "inputs_P_star",
-            10.0,
-            sync_callbacks,
-            help_text="Net prestress force at the section (compression positive).",
-        )
-        number_row(
-            "Design torsion Tu* (kNm)",
-            "inputs_Tu_star",
-            1.0,
-            sync_callbacks,
-            help_text="Factored torsion; used on torsion page (placeholder here).",
-        )
-        number_row(
-            "Design shear Vu* (kN)",
-            "inputs_Vu_star",
-            10.0,
-            sync_callbacks,
-            help_text="Factored design shear at the critical section.",
-        )
-        number_row(
-            "Axial force N* (kN)",
-            "inputs_N_star",
-            10.0,
-            sync_callbacks,
-            help_text="Axial action at the section (+compression / −tension).",
-        )
-
-        st.markdown("---")
-
-        st.subheader("Geometry")
-        number_row(
-            "Width b (mm)",
-            "inputs_b",
-            10.0,
-            sync_callbacks,
-            help_text="Beam/web width.",
-        )
-        number_row(
-            "Depth D (mm)",
-            "inputs_D",
-            10.0,
-            sync_callbacks,
-            help_text="Overall section depth from compression face to soffit.",
-        )
-        number_row(
-            "Span L (mm)",
-            "inputs_L",
-            100.0,
-            sync_callbacks,
-            help_text="Clear span used for deflection checks.",
-        )
-
-        st.markdown("---")
-
-        st.subheader("Materials")
-        number_row(
-            "Concrete strength f'c (MPa)",
-            "inputs_fc",
-            2.0,
-            sync_callbacks,
-            help_text="Characteristic compressive strength of concrete.",
-        )
-        number_row(
-            "Steel yield fsy (MPa)",
-            "inputs_fsy",
-            10.0,
-            sync_callbacks,
-            help_text="Yield stress of flexural reinforcement.",
-        )
-        number_row(
-            "Ec (MPa)",
-            "inputs_Ec",
-            1000.0,
-            sync_callbacks,
-            help_text="Short-term modulus of elasticity of concrete.",
-        )
-        number_row(
-            "Es (MPa)",
-            "inputs_Es",
-            5000.0,
-            sync_callbacks,
-            help_text="Elastic modulus of reinforcing steel.",
-        )
-
-    with right_col:
-        st.subheader("3D Beam – Bending & Shear Visual (Section A)")
-        fig3d = make_beam_3d_figure()
-        st.plotly_chart(fig3d, use_container_width=True)
-
-    st.markdown("---")
-
-    # ---------- reo + shear + crack ----------
-    reo_col, crack_col = st.columns(2)
-
-    # left column: bottom reo + side cover + shear
-    with reo_col:
-        st.subheader("Bottom Reinforcement")
-        number_row(
-            "Number of bottom bars",
-            "inputs_nb_bot",
-            1,
-            sync_callbacks,
-            help_text="Number of tension bars at the soffit in Section A.",
-        )
-        number_row(
-            "Bottom bar diameter db,bot (mm)",
-            "inputs_db_bot",
-            1.0,
-            sync_callbacks,
-            help_text="Nominal diameter of bottom bars.",
-        )
-        number_row(
-            "Bottom row gap (mm)",
-            "inputs_rowgap_bot",
-            5.0,
-            sync_callbacks,
-            help_text="Vertical gap between bottom rows if two layers are used.",
-        )
-        number_row(
-            "Bottom cover (mm)",
-            "inputs_cover_bot",
-            5.0,
-            sync_callbacks,
-            help_text="Clear cover to the bottom bars.",
-        )
-
-        # side cover – local only, styled like the others
-        cover_top_val = float(get_param("cover_top", 40.0) or 40.0)
-        cover_bot_val = float(get_param("cover_bot", 40.0) or 40.0)
-        default_side_cover = min(cover_top_val, cover_bot_val)
-
-        # NOTE: column split [1.3, 1] to match number_row label/input ratio
-        sc_label_col, sc_input_col = st.columns([1.3, 1])
-        with sc_label_col:
-            st.markdown("Side cover (mm)")
-        with sc_input_col:
-            # Wrap input in nr-field div so CSS forces same width
-            st.markdown('<div class="nr-field">', unsafe_allow_html=True)
-            st.number_input(
-                "",
-                value=float(
-                    st.session_state.get("inputs_cover_side_local", default_side_cover)
-                ),
-                step=1.0,
-                key="inputs_cover_side_local",
-                label_visibility="collapsed",
-                help="Clear side cover to longitudinal reinforcement used in the visuals.",
-            )
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        st.subheader("Shear reinforcement")
-        number_row(
-            "Lig diameter (mm)",
-            "inputs_lig_d",
-            1.0,
-            sync_callbacks,
-            help_text="Nominal diameter of shear ligatures.",
-        )
-        number_row(
-            "Lig legs",
-            "inputs_lig_legs",
-            1,
-            sync_callbacks,
-            help_text="Number of legs in each ligature crossing the web.",
-        )
-        number_row(
-            "Stirrup spacing s_lig (mm)",
-            "inputs_s_lig",
-            10.0,
-            sync_callbacks,
-            help_text="Centre-to-centre spacing of shear ligatures along the span.",
-        )
-
-    # right column: top reo + crack control
-    with crack_col:
-        st.subheader("Top Reinforcement")
-        number_row(
-            "Number of top bars",
-            "inputs_nb_top",
-            1,
-            sync_callbacks,
-            help_text="Number of compression-face bars at the top of the section.",
-        )
-        number_row(
-            "Top bar diameter db,top (mm)",
-            "inputs_db_top",
-            1.0,
-            sync_callbacks,
-            help_text="Nominal diameter of top bars.",
-        )
-        number_row(
-            "Top row gap (mm)",
-            "inputs_rowgap_top",
-            5.0,
-            sync_callbacks,
-            help_text="Vertical gap between top rows if two layers are used.",
-        )
-        number_row(
-            "Top cover (mm)",
-            "inputs_cover_top",
-            5.0,
-            sync_callbacks,
-            help_text="Clear cover to the top bars.",
-        )
-
-        st.subheader("Crack Control Inputs")
-
-        # Exposure class – same size & alignment as others
-        options = ["A1", "A2", "B1", "B2", "C1", "C2"]
-        current = get_param("exposure_class", "B1")
-        if current not in options:
-            current = "B1"
-
-        # NOTE: column split [1.3, 1] to match number_row label/input ratio
-        exp_label_col, exp_select_col = st.columns([1.3, 1])
-        with exp_label_col:
-            st.markdown("Exposure class")
-        with exp_select_col:
-            st.markdown('<div class="nr-field">', unsafe_allow_html=True)
-            if "inputs_exposure_class" in st.session_state:
-                st.selectbox(
-                    "",
-                    options,
-                    key="inputs_exposure_class",
-                    on_change=sync_callbacks["inputs_exposure_class"],
-                    label_visibility="collapsed",
-                    help="Exposure classification to AS 3600 – controls allowable crack width.",
-                )
-            else:
-                st.selectbox(
-                    "",
-                    options,
-                    key="inputs_exposure_class",
-                    index=options.index(current),
-                    on_change=sync_callbacks["inputs_exposure_class"],
-                    label_visibility="collapsed",
-                    help="Exposure classification to AS 3600 – controls allowable crack width.",
-                )
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        number_row(
-            "Bottom bar spacing for crack calc (mm)",
-            "inputs_s_bar_bot",
-            5.0,
-            sync_callbacks,
-            help_text="Centre-to-centre spacing of bottom bars used in crack-width check.",
-        )
-
-    # ---------- now recompute design results with the latest inputs ----------
-    _compute_bending_capacity()
-    # _compute_shear_capacity()
-    # _compute_crack_results()
-    # _compute_deflection_results()
-
-    # ---------- summary values ----------
-    Mu_star = get_param("Mu_star", 0.0)
-    Vu_star = get_param("Vu_star", 0.0)
-
-    phi_Mu_cap = get_param("phi_Mu_cap", 0.0)
-    Mu_util = get_param("Mu_utilisation", 0.0)
-
-    phi_Vu_cap = get_param("phi_Vu_cap", 0.0)
-    Vu_util = get_param("Vu_utilisation", 0.0)
-
-    crack_width = get_param("crack_width", 0.0)
-    crack_util = get_param("crack_utilisation", 0.0)
-
-    L = get_param("L", 3000.0)
-    b = get_param("b", 400.0)
-    D = get_param("D", 600.0)
-    Ec = get_param("Ec", 30000.0)
-
-    phi_creep = st.session_state.get("creep_phi_design", None)
-    Ec_eff_design = st.session_state.get("Ec_eff_design", None)
-    eps_sh_micro = st.session_state.get("shrinkage_eps_design", None)
-
-    if Ec_eff_design is not None and Ec_eff_design > 0:
-        k_creep = Ec / Ec_eff_design
-    elif phi_creep is not None and phi_creep > 0:
-        k_creep = 1.0 + phi_creep
-    else:
-        k_creep = 1.0
-
-    eps_sh = (eps_sh_micro or 0.0) / 1e6
-
-    if L > 0:
-        w_total = 8.0 * Mu_star / (L / 1000.0) ** 2  # kN/m (simple UDL back-calc)
-    else:
-        w_total = 0.0
-
-    b_mm = max(1.0, b)
-    D_mm = max(1.0, D)
-    L_mm = max(1.0, L)
-    I_gross = b_mm * D_mm**3 / 12.0 if b_mm > 0 and D_mm > 0 else 1.0
-
-    delta_inst = 5.0 * w_total * L_mm**4 / (384.0 * Ec * I_gross) if Ec > 0 else 0.0
-    delta_creep = delta_inst * k_creep
-    phi_sh = eps_sh / (0.7 * D_mm) if D_mm > 0 else 0.0
-    delta_sh = phi_sh * L_mm**2 / 8.0
-    delta_total = delta_creep + delta_sh
-
-    defl_limit = L_mm / 250.0 if L_mm > 0 else 0.0
-    defl_util = delta_total / defl_limit if defl_limit > 0 else 0.0
-
-    # ---------- summary strings ----------
-    bending_demand = f"{Mu_star:.1f} kNm"
-    bending_cap = f"{phi_Mu_cap:.1f} kNm" if phi_Mu_cap > 0 else "—"
-    bending_util_str = f"{Mu_util:.2f}" if phi_Mu_cap > 0 else "—"
-    bending_status, bending_colour = _status_and_colour(Mu_util, phi_Mu_cap > 0)
-
-    shear_demand = f"{Vu_star:.1f} kN"
-    shear_cap = f"{phi_Vu_cap:.1f} kN" if phi_Vu_cap > 0 else "—"
-    shear_util_str = f"{Vu_util:.2f}" if phi_Vu_cap > 0 else "—"
-    shear_status, shear_colour = _status_and_colour(Vu_util, phi_Vu_cap > 0)
-
-    crack_demand = f"{crack_width:.3f} mm"
-    crack_cap = "w_lim" if crack_util > 0 else "—"
-    crack_util_str = f"{crack_util:.2f}" if crack_util > 0 else "—"
-    crack_status, crack_colour = _status_and_colour(crack_util, crack_util > 0)
-
-    defl_demand = f"{delta_total:.2f} mm"
-    defl_cap = f"{defl_limit:.2f} mm" if defl_limit > 0 else "—"
-    defl_util_str = f"{defl_util:.2f}" if defl_limit > 0 else "—"
-    defl_status, defl_colour = _status_and_colour(defl_util, defl_limit > 0)
-
-    summary_table_html = f"""
-    <div style="
-        border: 1px solid #cccccc;
-        border-radius: 8px;
-        padding: 0.5rem 0.75rem;
-        margin-bottom: 1rem;
-        max-width: 900px;
-    ">
-      <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
-        <thead>
-          <tr style="background-color: #f5f5f5;">
-            <th style="text-align:left; padding: 4px 6px;">Check</th>
-            <th style="text-align:right; padding: 4px 6px;">Demand</th>
-            <th style="text-align:right; padding: 4px 6px;">Capacity</th>
-            <th style="text-align:right; padding: 4px 6px;">Utilisation</th>
-            <th style="text-align:center; padding: 4px 6px;">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr style="background-color: {bending_colour};">
-            <td style="padding: 4px 6px;"><strong>Bending</strong></td>
-            <td style="text-align:right; padding: 4px 6px;">{bending_demand}</td>
-            <td style="text-align:right; padding: 4px 6px;">{bending_cap}</td>
-            <td style="text-align:right; padding: 4px 6px;">{bending_util_str}</td>
-            <td style="text-align:center; padding: 4px 6px;"><strong>{bending_status}</strong></td>
-          </tr>
-          <tr style="background-color: {shear_colour};">
-            <td style="padding: 4px 6px;"><strong>Shear</strong></td>
-            <td style="text-align:right; padding: 4px 6px;">{shear_demand}</td>
-            <td style="text-align:right; padding: 4px 6px;">{shear_cap}</td>
-            <td style="text-align:right; padding: 4px 6px;">{shear_util_str}</td>
-            <td style="text-align:center; padding: 4px 6px;"><strong>{shear_status}</strong></td>
-          </tr>
-          <tr style="background-color: {crack_colour};">
-            <td style="padding: 4px 6px;"><strong>Crack control</strong></td>
-            <td style="text-align:right; padding: 4px 6px;">{crack_demand}</td>
-            <td style="text-align:right; padding: 4px 6px;">{crack_cap}</td>
-            <td style="text-align:right; padding: 4px 6px;">{crack_util_str}</td>
-            <td style="text-align:center; padding: 4px 6px;"><strong>{crack_status}</strong></td>
-          </tr>
-          <tr style="background-color: {defl_colour};">
-            <td style="padding: 4px 6px;"><strong>Deflection</strong></td>
-            <td style="text-align:right; padding: 4px 6px;">{defl_demand}</td>
-            <td style="text-align:right; padding: 4px 6px;">{defl_cap}</td>
-            <td style="text-align:right; padding: 4px 6px;">{defl_util_str}</td>
-            <td style="text-align:center; padding: 4px 6px;"><strong>{defl_status}</strong></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    Flags:
+      - show_lever_arm:   show / hide z arrow
+      - show_dn:          show / hide dashed d_n line + label
+      - show_alpha_label: show / hide α2 f'c text + width arrow
+      - show_C:           show concrete C arrow at centroid (for 1.2)
+      - variant: "11" (shorter figure for Section 1.1),
+                 "13" (slightly taller for Section 1.3)
     """
 
-    # ---------- summary + mini section (rendered at top via container) ----------
-    with summary_container:
-        col_left, col_right = st.columns([2, 1])
-        with col_left:
-            st.title("Inputs")
-            st.markdown("### Summary (read-only from design pages)")
-            st.markdown(summary_table_html, unsafe_allow_html=True)
-        with col_right:
-            fig_sec = make_summary_cross_section_figure()
-            st.plotly_chart(
-                fig_sec,
-                use_container_width=False,
-                config={"displayModeBar": False},
+    vals = [b_mm, D_mm, d_mm, dn_mm, a_mm, alpha2, gamma, fc, fsy]
+    if any(v is None or (isinstance(v, float) and math.isnan(v)) for v in vals):
+        fig, ax = plt.subplots()
+        ax.axis("off")
+        ax.text(0.5, 0.5, "No data", ha="center", va="center")
+        return fig
+
+    sigma_c = alpha2 * fc  # MPa
+
+    # Make sure the vertical span always includes d, d_n and a.
+    base_span = max(D_mm, d_mm, dn_mm, a_mm)
+
+    if variant == "13":
+        D_ref = base_span * 1.05      # axis height
+        # 1:1 aspect ratio, same depth as calc box
+        fig_width = 3.0
+        fig_height = 3.0  # Square figure for 1:1 aspect
+        use_equal_aspect = True
+    else:  # "11" – 1:1 aspect ratio, same depth as calc box
+        D_ref = base_span * 1.05
+        # Use square figure size to support 1:1 aspect ratio
+        # Match the depth of the calc box by using similar vertical extent
+        fig_width = 3.0
+        fig_height = 3.0  # Square figure for 1:1 aspect
+        use_equal_aspect = True
+
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+    # Extend xlim for variants "11" and "13" to accommodate wider stress block and tension arrow (4:1 ratio)
+    xlim_max = 320.0 if use_equal_aspect else 100.0
+    ax.set_xlim(0.0, xlim_max)
+    ax.set_ylim(D_ref, 0.0)  # 0 at top
+    if use_equal_aspect:
+        ax.set_aspect("equal", adjustable="box")
+    ax.axis("off")
+
+    # vertical axis
+    x_axis = 20.0
+    ax.plot(
+        [x_axis, x_axis],
+        [0.0, D_ref],
+        color="black",
+        linewidth=LINE_THICK,
+    )
+
+    # block
+    block_left = x_axis
+    block_width = 88.0  # 4:1 ratio (4x original 22.0)
+    block_top = 0.0
+    block_bottom = a_mm
+    
+    # Consistent label spacing from stress block/arrows
+    label_spacing = 4.0
+
+    ax.add_patch(
+        Rectangle(
+            (block_left, block_top),
+            block_width,
+            block_bottom - block_top,
+            fill=False,
+            edgecolor="tab:red",
+            linewidth=LINE_MED,
+        )
+    )
+
+    # compression arrows – face LEFT
+    block_h = block_bottom - block_top
+    if block_h > 0:
+        ys = np.linspace(
+            block_top + 0.2 * block_h,
+            block_bottom - 0.2 * block_h,
+            3,
+        )
+        for yy in ys:
+            ax.annotate(
+                "",
+                xy=(block_left + 2.0, yy),
+                xytext=(block_left + block_width - 2.0, yy),
+                arrowprops=dict(
+                    arrowstyle="->",
+                    color="tab:red",
+                    linewidth=LINE_MED,
+                    mutation_scale=ARROW_SCALE,
+                ),
             )
+
+    # α2 f'c width arrow + label (optional)
+    if show_alpha_label:
+        y_alpha = -0.08 * D_ref
+        ax.annotate(
+            "",
+            xy=(block_left, y_alpha),
+            xytext=(block_left + block_width, y_alpha),
+            arrowprops=dict(
+                arrowstyle="<->",
+                linewidth=LINE_THIN,
+                color="tab:red",
+                mutation_scale=ARROW_SCALE,
+            ),
+        )
+        # α₂ f'c label positioned much closer to the arrow (left side), moved down slightly
+        ax.text(
+            block_left + 5.0,  # Closer to the arrow start, not far to the left
+            y_alpha - 0.03 * D_ref,  # Moved down slightly (reduced from 0.05 to 0.03)
+            f"α₂ f'c = {sigma_c:.0f} MPa",
+            ha="left",
+            va="bottom",
+            fontsize=FS_LABEL,
+            color="tab:red",
+        )
+
+    # dashed d_n line + label (optional)
+    if show_dn:
+        # Extend dn line much further to avoid overlap with z line
+        # Position it well past the "a" label but before z line
+        x_dn_end = block_left + block_width + label_spacing + 10.0  # Extended further
+        ax.hlines(
+            dn_mm,
+            x_axis,
+            x_dn_end,
+            linestyles="--",
+            colors="tab:blue",
+            linewidth=LINE_MED,
+        )
+        x_dn_label = x_dn_end
+        ax.text(
+            x_dn_label + label_spacing,
+            dn_mm + 0.03 * D_ref,
+            f"dₙ = {dn_mm:.1f} mm",
+            ha="left",
+            va="bottom",
+            fontsize=FS_LABEL,
+            color="tab:blue",
+        )
+
+    # a label - consistent spacing from stress block
+    ax.text(
+        block_left + block_width + label_spacing,
+        0.5 * a_mm,
+        f"a = γ dₙ = {a_mm:.1f} mm",
+        ha="left",
+        va="center",
+        fontsize=FS_LABEL,
+        color="tab:blue",
+    )
+
+    # bottom tension arrow (now guaranteed to be inside the axes)
+    # 4:1 ratio (4x original width)
+    tension_arrow_end = x_axis + 4.0 * (90.0 - x_axis)  # 20.0 + 4*70.0 = 300.0
+    ax.annotate(
+        "",
+        xy=(tension_arrow_end, d_mm),
+        xytext=(x_axis, d_mm),
+        arrowprops=dict(
+            arrowstyle="->",
+            linewidth=LINE_MED,
+            color="tab:blue",
+            mutation_scale=ARROW_SCALE,
+        ),
+    )
+    # Consistent spacing from arrow end
+    ax.text(
+        tension_arrow_end + label_spacing,
+        d_mm,
+        f"T ({fsy:.0f} MPa)",
+        ha="left",
+        va="center",
+        fontsize=FS_LABEL,
+        color="tab:blue",
+    )
+
+    # optional C arrow at centroid of block (for 1.2)
+    if show_C and C_N is not None:
+        y_C = 0.5 * a_mm
+        x_C_tail = block_left + block_width + 18.0
+        x_C_head = block_left + block_width + label_spacing
+        ax.annotate(
+            "",
+            xy=(x_C_head, y_C),
+            xytext=(x_C_tail, y_C),
+            arrowprops=dict(
+                arrowstyle="->",
+                linewidth=LINE_MED,
+                color="tab:red",
+                mutation_scale=ARROW_SCALE,
+            ),
+        )
+        ax.text(
+            x_C_tail + label_spacing,
+            y_C,
+            f"C = {C_N/1000.0:.1f} kN",
+            ha="left",
+            va="center",
+            fontsize=FS_LABEL,
+            color="tab:red",
+        )
+
+    # optional lever arm - REMOVED per user request
+    # if show_lever_arm:
+    #     y_C = 0.5 * a_mm
+    #     x_z = block_left + block_width + label_spacing + 5.0
+    #     ax.annotate(...)
+    #     ax.text(...)
+
+    # Center label based on xlim
+    x_center = xlim_max / 2.0
+    ax.text(
+        x_center,
+        D_ref + 0.07 * D_ref,
+        "Stress (MPa)",
+        ha="center",
+        va="bottom",
+        fontsize=FS_TITLE,
+    )
+
+    return fig
+
+
+# ============================================================
+#  SIMPLE ULS FORCE MODEL FIGURE (1.6)
+# ============================================================
+def _make_uls_force_model_figure(
+    D_mm: float,
+    d_mm: float,
+    a_mm: float,
+    C_N: float | None = None,
+    T_N: float | None = None,
+):
+    """
+    Simple C–T–z force model for Section 1.6.
+    Matches calc-box height and aligns C/T symmetrically.
+    """
+
+    vals = [D_mm, d_mm, a_mm]
+    if any(v is None or (isinstance(v, float) and math.isnan(v)) for v in vals):
+        fig, ax = plt.subplots()
+        ax.axis("off")
+        ax.text(0.5, 0.5, "No data", ha="center", va="center")
+        return fig
+
+    base_span = max(D_mm, d_mm, a_mm)
+    # Add a bit of margin so C, T and z stay visible even for deep beams.
+    D_ref = base_span * 1.10
+
+    # 1:1 aspect ratio, same depth as calc box
+    fig, ax = plt.subplots(figsize=(3.0, 3.0))
+    ax.set_xlim(0.0, 100.0)
+    ax.set_ylim(D_ref, 0.0)
+    ax.set_aspect("equal", adjustable="box")
+    ax.axis("off")
+
+    # Vertical reference line
+    x_axis = 20.0
+    ax.plot([x_axis, x_axis], [0.0, D_ref], color="black", linewidth=LINE_THICK)
+
+    # Consistent label spacing from arrows
+    label_spacing = 4.0
+
+    # Compression C at a/2
+    y_C = 0.5 * a_mm
+    ARROW_OFFSET = 90.0  # Further increased distance from axis for longer force lines
+
+    x_C_tail = x_axis + ARROW_OFFSET
+    x_C_head = x_axis
+
+    ax.annotate(
+        "",
+        xy=(x_C_head, y_C),
+        xytext=(x_C_tail, y_C),
+        arrowprops=dict(
+            arrowstyle="->",
+            linewidth=LINE_MED,
+            color="tab:red",
+            mutation_scale=ARROW_SCALE,
+        ),
+    )
+    label_C = "C"
+    if C_N is not None:
+        label_C += f" = {C_N/1000.0:.1f} kN"
+    ax.text(
+        x_C_tail + label_spacing,
+        y_C,
+        label_C,
+        ha="left",
+        va="center",
+        fontsize=FS_LABEL,
+        color="tab:red",
+    )
+
+    # Tension T at depth d
+    y_T = d_mm
+    x_T_head = x_axis + ARROW_OFFSET
+    x_T_tail = x_axis
+
+    # Draw T arrow pointing right from vertical axis
+    # Using ax.arrow() for more reliable drawing
+    ax.arrow(
+        x_T_tail,  # Start x (vertical axis)
+        y_T,       # Start y
+        x_T_head - x_T_tail,  # dx (length of arrow)
+        0,         # dy (horizontal arrow)
+        head_width=3.0,
+        head_length=3.0,
+        fc="tab:blue",
+        ec="tab:blue",
+        linewidth=LINE_MED,
+        length_includes_head=True,
+        zorder=2,
+    )
+    label_T = "T"
+    if T_N is not None:
+        label_T += f" = {T_N/1000.0:.1f} kN"
+    ax.text(
+        x_T_head + label_spacing,
+        y_T,
+        label_T,
+        ha="left",
+        va="center",
+        fontsize=FS_LABEL,
+        color="tab:blue",
+        zorder=3,  # Ensure label is on top
+    )
+
+    # Lever arm z - positioned between the vertical axis and force arrow ends
+    x_z = x_axis + ARROW_OFFSET * 0.6  # Positioned between the axis and force arrow ends
+    ax.annotate(
+        "",
+        xy=(x_z, y_T),
+        xytext=(x_z, y_C),
+        arrowprops=dict(
+            arrowstyle="<->",
+            linewidth=LINE_MED,
+            mutation_scale=ARROW_SCALE,
+        ),
+    )
+    ax.text(
+        x_z + label_spacing,
+        0.5 * (y_C + y_T),
+        "z",
+        ha="left",
+        va="center",
+        fontsize=FS_LABEL,
+    )
+
+    ax.text(
+        50.0,
+        D_ref + 0.08 * D_ref,
+        "Force model",
+        ha="center",
+        va="bottom",
+        fontsize=FS_TITLE,
+    )
+
+    return fig
+
+
+# ============================================================
+#  NEW: SLS STRESS-BLOCK / SECTION FIGURE FOR 3.3
+# ============================================================
+def _make_sls_stress_block_figure(
+    D_mm: float,
+    d_mm: float,
+    dn_mm: float,
+    include_comp: bool = False,
+    d_comp_mm: float | None = None,
+):
+    """
+    Simple SLS cracked-section figure for Step 3.2.
+
+    - Vertical concrete "axis" with neutral axis at d_n
+    - Triangular compression stress block above d_n
+      (right angle at top-left, matching the main SLS stress panel)
+    - Tension steel shown at depth d
+    - Optional compression steel shown at depth d_comp_mm
+    """
+
+    vals = [D_mm, d_mm, dn_mm]
+    if any(v is None or (isinstance(v, float) and math.isnan(v)) for v in vals):
+        fig, ax = plt.subplots()
+        ax.axis("off")
+        ax.text(0.5, 0.5, "No data", ha="center", va="center")
+        return fig
+
+    base_span = max(D_mm, d_mm, dn_mm, d_comp_mm or 0.0)
+    D_ref = base_span * 1.05
+
+    fig, ax = plt.subplots(figsize=(3.0, 2.6))
+    ax.set_xlim(0.0, 100.0)
+    ax.set_ylim(D_ref, 0.0)  # 0 at top
+    ax.axis("off")
+
+    x_axis = 20.0
+
+    # concrete "section" line
+    ax.plot([x_axis, x_axis], [0.0, D_ref], color="black", linewidth=LINE_THICK)
+
+    # neutral axis
+    ax.hlines(
+        dn_mm,
+        x_axis,
+        95.0,
+        linestyles="--",
+        linewidth=LINE_THIN,
+        colors="black",
+    )
+
+    # triangular compression region (0 → d_n), right angle at top-left
+    block_left = x_axis
+    block_width = 22.0
+    
+    # Consistent label spacing from stress block/arrows
+    label_spacing = 4.0
+    
+    ax.fill(
+        [block_left, block_left + block_width, block_left],
+        [0.0, 0.0, dn_mm],
+        fill=False,
+        edgecolor="tab:red",
+        linewidth=LINE_MED,
+    )
+
+    # horizontal width arrow + α2 f'c label (no numeric value needed here)
+    y_alpha = -0.08 * D_ref
+    ax.annotate(
+        "",
+        xy=(block_left, y_alpha),
+        xytext=(block_left + block_width, y_alpha),
+        arrowprops=dict(
+            arrowstyle="<->",
+            linewidth=LINE_THIN,
+            color="tab:red",
+            mutation_scale=ARROW_SCALE,
+        ),
+    )
+    # α₂ f'c label positioned at half the spacing distance from stress block (left side)
+    ax.text(
+        block_left - label_spacing / 2.0,
+        y_alpha - 0.05 * D_ref,
+        r"$\alpha_2 f'_c$",
+        ha="right",
+        va="bottom",
+        fontsize=FS_LABEL,
+        color="tab:red",
+    )
+
+    # tension steel marker at depth d
+    x_T0 = x_axis + 35.0
+    x_T1 = x_axis + 70.0
+    ax.plot([x_T0, x_T1], [d_mm, d_mm], color="tab:blue", linewidth=LINE_MED)
+    ax.text(
+        x_T1 + label_spacing,
+        d_mm,
+        "T",
+        ha="left",
+        va="center",
+        fontsize=FS_LABEL,
+        color="tab:blue",
+    )
+
+    # compression steel (optional)
+    if include_comp and d_comp_mm is not None:
+        x_C0 = x_axis + 35.0
+        x_C1 = x_axis + 70.0
+        ax.plot(
+            [x_C0, x_C1],
+            [d_comp_mm, d_comp_mm],
+            color="tab:red",
+            linewidth=LINE_MED,
+        )
+        ax.text(
+            x_C1 + label_spacing,
+            d_comp_mm,
+            "C_s",
+            ha="left",
+            va="center",
+            fontsize=FS_LABEL,
+            color="tab:red",
+        )
+
+    ax.text(
+        50.0,
+        D_ref + 0.08 * D_ref,
+        "Stress (MPa)",
+        ha="center",
+        va="bottom",
+        fontsize=FS_TITLE,
+    )
+
+    return fig
+
+
