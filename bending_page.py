@@ -867,7 +867,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 
     ss_state = _stress_strain_state(canonical_state)
     fig_ss = _plot_stress_strain_profiles(ss_state)
-    st.pyplot(fig_ss, use_container_width=True)
+    st.plotly_chart(fig_ss, use_container_width=True)
 
     # ---------------- Step-by-step tabs ----------------
     tab_uls, tab_min, tab_sls = st.tabs(
