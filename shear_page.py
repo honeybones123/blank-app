@@ -1427,14 +1427,14 @@ $$\\large d_v = {_fmt(d_v)}\\ \\text{{mm}}$$
         # Step 4 heading with info bubble
         col_title, col_info = st.columns([1, 0.08])
 
-    with col_title:
-        st.markdown(
-            "### Step 4 – Calculate longitudinal strain "
-            r"$\varepsilon_x$ for MCFT (Cl. 8.2.4.2.2)"
-        )
+        with col_title:
+            st.markdown(
+                "### Step 4 – Calculate longitudinal strain "
+                r"$\varepsilon_x$ for MCFT (Cl. 8.2.4.2.2)"
+            )
 
-    with col_info:
-        with st.popover("ℹ️", use_container_width=True):
+        with col_info:
+            with st.popover("ℹ️", use_container_width=True):
             st.markdown("### Understanding the Longitudinal Strain Equations")
 
             st.markdown(
