@@ -1140,9 +1140,7 @@ $$\\large T_{{cr}} = 0.33\\sqrt{{{fc:.1f}}} \\cdot \\frac{{{A_cp:.0f}^2}}{{{u_c:
 
     with col_side:
         _safe_step_diagram(1)
-
-        with st.expander("Show shear theory for Step 1", expanded=False):
-            render_shear_step_insight(1)
+        # theory for Step 1 is now only in the ℹ️ popover
 
     # =====================================================
     # 3. STEP 2 — CONVERT TORSION INTO AN EQUIVALENT SHEAR V_eq*
@@ -1288,9 +1286,6 @@ $$\\large V_{{eq}}^* = V^* = {V_eq:.1f}\\ \\text{{kN}}$$
     with col_side:
         _safe_step_diagram(2)
 
-        with st.expander("Show shear theory for Step 2", expanded=False):
-            render_shear_step_insight(2)
-
     # =====================================================
     # 4. STEP 3 — EFFECTIVE SECTION & SHEAR REINFORCEMENT
     # =====================================================
@@ -1420,9 +1415,6 @@ $$\\large d_v = {_fmt(d_v)}\\ \\text{{mm}}$$
 
     with col_side:
         _safe_step_diagram(3)
-
-        with st.expander("Show shear theory for Step 3", expanded=False):
-            render_shear_step_insight(3)
 
     # =====================================================
     # 5. STEP 4 — LONGITUDINAL STRAIN εx
@@ -1664,9 +1656,6 @@ This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative 
 
     with col_side:
         _safe_step_diagram(4)
-
-        with st.expander("Show shear theory for Step 4 – longitudinal strain εₓ", expanded=False):
-            render_shear_step_insight(4)
 
     # High-level MCFT / Vuc / kv insight tied to εx
     st.markdown("---")
@@ -2165,9 +2154,6 @@ $$\\large \\text{{Capacity}} = \\frac{{{phi:.2f} \\times {Vu_max_kN:,.1f}}}{{{b_
 
     with col_side:
         _safe_step_diagram(7)
-
-        with st.expander("Show shear theory for Step 7", expanded=False):
-            render_shear_step_insight(7)
 
     # Steel contribution + lig spacing / detailing insights
     st.markdown("---")
