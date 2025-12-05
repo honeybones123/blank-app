@@ -32,21 +32,25 @@ ARROW_SCALE = 4    # small arrowheads for everything
 def _plot_stress_strain_profiles(state_dict, state_label=None):
     """
     Three-panel Plotly figure:
-
-        - Section (left)    – uses same layout as Inputs 2D diagram
+        - Section (left)
         - Strain (centre)
         - Stress (right)
-
-    All rendered with Plotly, no axes/grid, with compression zone
-    changing with ULS / SLS / Uncracked.
     """
-    if state_label is None:
-        try:
-            state_label = st.session_state.get(
-                "bending_strain_state_local", "ULS"
-            )
-        except Exception:
-            state_label = "ULS"
+    # Always let the radio button (session state) win.
+    try:
+        ses_label = st.session_state.get("bending_strain_state_local", None)
+    except Exception:
+        ses_label = None
+
+    if ses_label:              # if the radio has been set, use that
+        state_label = ses_label
+    elif state_label is None:  # fall back to explicit arg or ULS
+        state_label = "ULS"
+
+    # Normalise for logic (robust to different display text)
+    label_str = (state_label or "ULS")
+    label_low = label_str.lower()
+    is_uls = "uls" in label_low      # True only for ULS state
 
     # unpack bending state
     b = state_dict["b"]
@@ -145,7 +149,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     #   SLS/Uncr → rectangular block to d_n
     #   (section view is area, not stress distribution)
     # ----------------------------------------
-    if state_label == "ULS":
+    if is_uls:
         block_depth_sec = max(0.0, min(gamma * c, D))
     else:
         block_depth_sec = max(0.0, min(c, D))
@@ -412,7 +416,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     # Compression block in STRESS
     # -----------------------------
     # Initialize block_top and block_bottom based on state
-    if state_label == "ULS":
+    if is_uls:
         # rectangular ULS block
         block_top = 0.0
         block_bottom = gamma * c
@@ -431,8 +435,6 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         # TRIANGULAR SLS / UNCRACKED block
         block_top = 0.0
         block_bottom = c
-        # Draw triangle using path: start at bottom-left, go to top-left, then top-right, close back
-        # Using Scatter with fill="toself" to create filled triangle
         fig.add_trace(
             go.Scatter(
                 x=[x_axis, x_axis, x_block_right],
@@ -513,7 +515,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     )
     depth_label = (
         f"γ dₙ = {gamma * c:.0f} mm"
-        if state_label == "ULS"
+        if is_uls
         else f"dₙ = {c:.0f} mm"
     )
     fig.add_annotation(
