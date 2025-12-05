@@ -76,10 +76,10 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     fig = make_subplots(
         rows=1,
         cols=3,
-        shared_y=True,
+        shared_yaxes=True,
         horizontal_spacing=0.08,
         specs=[[{"type": "xy"}, {"type": "xy"}, {"type": "xy"}]],
-        subplot_titles=("Section", "Strain", "Stress (MPa)"),
+        subplot_titles=["Section", "Strain", "Stress (MPa)"],
     )
 
     # consistent y-range across panels (0 at top, D at bottom)
