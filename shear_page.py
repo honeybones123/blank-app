@@ -464,11 +464,11 @@ def render_shear_intro_block():
     """
     st.markdown("### Shear action and the critical dv section")
 
-    # Empty left column, diagram + info button on the right
-    _, col_right = st.columns([3, 2])
+    # Centered diagram taking up most of the width
+    col_left, col_center, col_right = st.columns([1, 6, 1])
 
-    with col_right:
-        img_col, info_col = st.columns([4, 1])
+    with col_center:
+        img_col, info_col = st.columns([10, 1])
 
         # Diagram
         with img_col:
@@ -525,10 +525,11 @@ def render_shear_behaviour_block():
     """
     st.markdown("### Flexural shear vs deep-beam behaviour")
 
-    _, col_right = st.columns([3, 2])
+    # Centered diagram taking up most of the width
+    col_left, col_center, col_right = st.columns([1, 6, 1])
 
-    with col_right:
-        img_col, info_col = st.columns([4, 1])
+    with col_center:
+        img_col, info_col = st.columns([10, 1])
 
         # Diagram
         with img_col:
@@ -622,10 +623,11 @@ def render_shear_mcft_block():
     """
     st.markdown("### MCFT concrete shear strength – role of εₓ and k_v")
 
-    _, col_right = st.columns([3, 2])
+    # Centered diagram taking up most of the width
+    col_left, col_center, col_right = st.columns([1, 6, 1])
 
-    with col_right:
-        img_col, info_col = st.columns([4, 1])
+    with col_center:
+        img_col, info_col = st.columns([10, 1])
 
         # Diagram
         with img_col:
@@ -727,21 +729,20 @@ def render_shear_steel_and_spacing_block():
     """
     st.markdown("### Ligature spacing and detailing along the span")
 
-    col_main2, col_side2 = st.columns([3, 2])
+    # Centered diagram taking up most of the width
+    col_left, col_center, col_right = st.columns([1, 6, 1])
 
-    # RIGHT – spacing/detailing diagram
-    with col_side2:
+    with col_center:
         _safe_image(
             "assets/shear_lig_spacing_code_diagram.png",
             caption="Example of varying Asv/s along the span (AS 3600 Fig. C8.2.5.1).",
         )
 
-    # LEFT – spacing theory in toggle
-    with col_main2:
-        with st.expander(
-            "Show ligature spacing and detailing explanation", expanded=False
-        ):
-            calcbox(
+    # Spacing theory in toggle below
+    with st.expander(
+        "Show ligature spacing and detailing explanation", expanded=False
+    ):
+        calcbox(
                 r"""
 **Ligature spacing (AS 3600 Cl. 8.2.5.1)**
 
