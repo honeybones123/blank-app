@@ -169,6 +169,12 @@ SHARED_DEFAULTS = {
     "passes_w": True,
     # Bending SLS → crack link (service steel stress)
     "sigma_s_sls": 200.0,
+    
+    # SFD/BMD teaching page results
+    "sfd_case": "",  # Loading case name
+    "sfd_span_L_m": 0.0,  # Span length (m)
+    "sfd_Mmax_abs_kNm": 0.0,  # Maximum absolute bending moment (kNm)
+    "sfd_Vmax_abs_kN": 0.0,  # Maximum absolute shear force (kN)
 }
 
 # Explicit set of result keys (for RULE 4 checks)
