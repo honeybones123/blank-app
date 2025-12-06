@@ -79,6 +79,7 @@ SHARED_DEFAULTS = {
     "Tu_star": 0.0,    # kNm
     "P_star": 0.0,     # kN (prestress or axial in bending/shear)
     "N_star": 0.0,     # kN (additional axial)
+    "actions_source": "Manual design actions (inputs below)",  # Source of design actions
 
     # Longitudinal reinforcement
     "nb_bot": 4,       # bottom bars
