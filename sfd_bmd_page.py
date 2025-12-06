@@ -8,7 +8,12 @@ import matplotlib.pyplot as plt
 import streamlit as st
 
 from state_and_helpers import get_sync_callbacks, update_results
-from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row
+from widgets_helpers import (
+    apply_global_widget_css,
+    apply_calcbox_css,
+    number_row,
+    calcbox,
+)
 
 
 # ---------------------------------------------------
@@ -547,26 +552,38 @@ def render_derivation(case, L, params, results):
 # ---------------------------------------------------
 def render_sfd_bmd_page():
     """
-    Standalone SFD/BMD teaching page in the main beam app.
+    Standalone SFD/BMD teaching page in the beam app.
 
-    - No set_page_config, no sidebar
-    - Follows same styling helpers as other pages
-    - Publishes span + |M|max to results via update_results(...)
-      so Deflection page can read sfd_span_L_m and sfd_Mmax_abs_kNm.
+    - Same visual style as other pages (title, blurb, summary placeholder)
+    - No sidebar, no set_page_config
+    - Publishes span + |M|max + |V|max to results:
+          sfd_case
+          sfd_span_L_m
+          sfd_Mmax_abs_kNm
+          sfd_Vmax_abs_kN
     """
+
     apply_global_widget_css()
     apply_calcbox_css()
     sync_callbacks = get_sync_callbacks()
 
-    st.title("Shear and Bending Moment Diagrams")
+    st.title("Shear & Moment Diagrams (Teaching)")
+
+    summary_placeholder = st.empty()
 
     st.markdown(
         """
-Interactive teaching module for classic statically determinate beams.
+This page is a **teaching module** for classic statically determinate beams.
+It generates the **load diagram**, **shear force diagram (SFD)** and
+**bending moment diagram (BMD)** with full equilibrium derivation.
 
 **Sign convention (for diagrams):**
+
 - Shear \(V(x)\): **upward positive**
-- Bending moment \(M(x)\): **sagging positive** (cantilever hogging will appear negative)
+
+- Bending moment \(M(x)\): **sagging positive**  
+
+  (cantilever hogging appears negative)
 """
     )
 
@@ -593,8 +610,8 @@ Interactive teaching module for classic statically determinate beams.
             key="sfd_case",
         )
 
-        params = {}
-        results = {}
+        params: dict = {}
+        results: dict = {}
 
         # Length inputs
         if case == "Overhanging beam – right overhang with point load at free end":
@@ -659,13 +676,12 @@ Interactive teaching module for classic statically determinate beams.
             )
 
     # ---------------------------------------------------
-    # Compute V(x) and M(x) by case
+    # Compute V(x) and M(x) (same logic as your original)
     # ---------------------------------------------------
     x = None
     V = None
     M = None
     beam_length = L
-    M_max_abs = 0.0
 
     if case == "Simple beam – UDL over entire span":
         w = params["w"]
@@ -674,7 +690,6 @@ Interactive teaching module for classic statically determinate beams.
         V = R - w * x
         M = R * x - 0.5 * w * x**2
         results["R"] = R
-        M_max_abs = float(np.max(np.abs(M)))
 
     elif case == "Simple beam – partial UDL from left (length a)":
         w = params["w"]
@@ -694,7 +709,6 @@ Interactive teaching module for classic statically determinate beams.
                 M[i] = R1 * xi - w * a * (xi - a / 2)
         results["R1"] = R1
         results["R2"] = R2
-        M_max_abs = float(np.max(np.abs(M)))
 
     elif case == "Simple beam – point load at centre":
         P = params["P"]
@@ -712,7 +726,6 @@ Interactive teaching module for classic statically determinate beams.
                 M[i] = R1 * xi - P * (xi - a)
         results["R1"] = R1
         results["R2"] = R2
-        M_max_abs = float(np.max(np.abs(M)))
 
     elif case == "Simple beam – point load at distance a from left":
         P = params["P"]
@@ -733,14 +746,12 @@ Interactive teaching module for classic statically determinate beams.
                 M[i] = R1 * xi - P * (xi - a)
         results["R1"] = R1
         results["R2"] = R2
-        M_max_abs = float(np.max(np.abs(M)))
 
     elif case == "Cantilever – point load at free end":
         P = params["P"]
         x = np.linspace(0, L, 400)
         V = -P * np.ones_like(x)
         M = -P * (L - x)
-        M_max_abs = float(np.max(np.abs(M)))
 
     elif case == "Cantilever – point load at distance a from fixed end":
         P = params["P"]
@@ -756,14 +767,12 @@ Interactive teaching module for classic statically determinate beams.
             else:
                 V[i] = 0.0
                 M[i] = 0.0
-        M_max_abs = float(np.max(np.abs(M)))
 
     elif case == "Cantilever – UDL over entire span":
         w = params["w"]
         x = np.linspace(0, L, 400)
         V = -w * (L - x)
         M = -0.5 * w * (L - x) ** 2
-        M_max_abs = float(np.max(np.abs(M)))
 
     elif case == "Overhanging beam – right overhang with point load at free end":
         P = params["P"]
@@ -785,7 +794,10 @@ Interactive teaching module for classic statically determinate beams.
         beam_length = L_total
         results["RA"] = RA
         results["RB"] = RB
-        M_max_abs = float(np.max(np.abs(M)))
+
+    # Global maxima (absolute)
+    M_max_abs = float(np.max(np.abs(M))) if M is not None else 0.0
+    V_max_abs = float(np.max(np.abs(V))) if V is not None else 0.0
 
     # ---------------------------------------------------
     # Key formulas + publish to results
@@ -881,20 +893,54 @@ Interactive teaching module for classic statically determinate beams.
                 r"\end{cases}"
             )
 
-        st.markdown(f"**Maximum bending moment (|M|)** ≈ `{M_max_abs:.3g}` kNm")
+        # 4-step calc box, same style as other pages
+        calcbox(
+            f"""
+**Step 1 – Beam & load selection**
 
-        # Push into shared results so the Deflection page can use it
+- Loading case: `{case}`  
+
+- Span: `L = {L:.3g}` m
+
+**Step 2 – Equilibrium & reactions**
+
+- Reactions determined from \\(\\Sigma V = 0\\) and \\(\\Sigma M = 0\\)  
+
+- See derivation panel for full working.
+
+**Step 3 – Shear force diagram**
+
+- Shear function \\(V(x)\\) defined by sections  
+
+- Maximum absolute shear: `|V|_max ≈ {V_max_abs:.3g} kN`
+
+**Step 4 – Bending moment diagram**
+
+- Moment function \\(M(x)\\) obtained by integrating shear  
+
+- Maximum absolute moment: `|M|_max ≈ {M_max_abs:.3g} kNm`
+
+These `|V|_max` and `|M|_max` values can be used as design actions
+on the **Inputs** and **Deflection** pages when you select
+"Teaching SFD/BMD" as the action source.
+"""
+        )
+
+        # Push into shared results so Inputs/Deflection pages can use them
         update_results(
             {
                 "sfd_case": case,
                 "sfd_span_L_m": float(L),
                 "sfd_Mmax_abs_kNm": float(M_max_abs),
+                "sfd_Vmax_abs_kN": float(V_max_abs),
             }
         )
-        st.caption(
-            "These values are now available to the Deflection page as "
-            "`sfd_span_L_m` and `sfd_Mmax_abs_kNm` in results."
-        )
+
+    # Top summary bar (like other pages)
+    summary_placeholder.info(
+        f"SFD/BMD teaching beam: case = {case}, L = {L:.3g} m, "
+        f"|V|max ≈ {V_max_abs:.3g} kN, |M|max ≈ {M_max_abs:.3g} kNm."
+    )
 
     # ---------------------------------------------------
     # Load diagram + derivation
@@ -914,7 +960,7 @@ Interactive teaching module for classic statically determinate beams.
     # Show SFD & BMD
     # ---------------------------------------------------
     st.markdown("---")
-    st.subheader("Shear Force and Bending Moment Diagrams")
+    st.subheader("Shear force and bending moment diagrams")
 
     fig_sfd, fig_bmd = plot_sfd_bmd(x, V, M)
     col_sfd, col_bmd = st.columns(2)
@@ -924,3 +970,4 @@ Interactive teaching module for classic statically determinate beams.
 
     with col_bmd:
         st.pyplot(fig_bmd)
+
