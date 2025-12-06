@@ -808,9 +808,9 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
         )
 
     with col_right:
-        st.image(
-            "assets/shear_dv_diagram.png",  # <-- put your dv diagram filename here
-            use_container_width=True,
+        _safe_image(
+            "assets/shear_flexural_cracks_dv.png",
+            caption=None,
         )
 
     # Summary table placeholder – appears directly under the blurb
