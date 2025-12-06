@@ -816,27 +816,23 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
         st.markdown(
             """
         <style>
-        .shear-dv-img img {
-            object-fit: contain;      /* keep aspect ratio */
-            height: 100%;             /* match container height */
-            max-height: 420px;        /* adjust to match text block height */
-            width: auto;              /* prevent distortion */
+        .shear-intro-img img {
+            width: 60%;             /* <-- 40% smaller than full width */
             display: block;
             margin-left: auto;
-            margin-right: auto;       /* center the image */
+            margin-right: auto;     /* center the image */
         }
         </style>
         """,
             unsafe_allow_html=True,
         )
 
-        # Wrapper div to apply CSS
-        st.markdown('<div class="shear-dv-img">', unsafe_allow_html=True)
+        st.markdown('<div class="shear-intro-img">', unsafe_allow_html=True)
 
         _safe_image(
             "assets/shear_flexural_cracks_dv.png",
             caption=None,
-            use_container_width=False,
+            use_container_width=False,   # <-- important
         )
 
         st.markdown("</div>", unsafe_allow_html=True)
