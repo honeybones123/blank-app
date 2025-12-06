@@ -918,11 +918,9 @@ If "Teaching SFD/BMD" is selected, these come from that page's
     
     # Push final chosen actions into results (or wherever Bending/Shear/Deflection read)
     update_results(
-        {
-            "Mu_star": float(Mu_star),
-            "Vu_star": float(Vu_star),
-            "actions_source": action_source,
-        }
+        Mu_star=float(Mu_star),
+        Vu_star=float(Vu_star),
+        actions_source=action_source,
     )
 
     # ============================
