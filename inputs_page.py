@@ -476,13 +476,17 @@ def render_inputs():
     apply_global_widget_css()
 
     summary_container = st.container()
+
     st.markdown("---")
 
-    # ---------- inputs + 3D beam ----------
-    left_col, right_col = st.columns([1.2, 1.8])
+    # ============================
+    # 1. TOP ROW – Actions (left) + Geometry + Materials (right)
+    # ============================
+    col_actions, col_geom = st.columns([1.2, 1.2])
 
-    with left_col:
+    with col_actions:
         st.subheader("Design Actions")
+
         number_row(
             "Design moment Mu* (kNm)",
             "inputs_Mu_star",
@@ -490,6 +494,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Factored design bending moment at the critical section.",
         )
+
         number_row(
             "Applied prestress P* (kN)",
             "inputs_P_star",
@@ -497,6 +502,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Net prestress force at the section (compression positive).",
         )
+
         number_row(
             "Design torsion Tu* (kNm)",
             "inputs_Tu_star",
@@ -504,6 +510,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Factored torsion; used on torsion page (placeholder here).",
         )
+
         number_row(
             "Design shear Vu* (kN)",
             "inputs_Vu_star",
@@ -511,6 +518,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Factored design shear at the critical section.",
         )
+
         number_row(
             "Axial force N* (kN)",
             "inputs_N_star",
@@ -519,9 +527,9 @@ def render_inputs():
             help_text="Axial action at the section (+compression / −tension).",
         )
 
-        st.markdown("---")
-
+    with col_geom:
         st.subheader("Geometry")
+
         number_row(
             "Width b (mm)",
             "inputs_b",
@@ -529,6 +537,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Beam/web width.",
         )
+
         number_row(
             "Depth D (mm)",
             "inputs_D",
@@ -536,6 +545,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Overall section depth from compression face to soffit.",
         )
+
         number_row(
             "Span L (mm)",
             "inputs_L",
@@ -543,6 +553,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Clear span used for deflection checks.",
         )
+
         number_row(
             "Bottom cover (mm)",
             "inputs_cover_bot",
@@ -550,6 +561,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Clear cover to the bottom bars.",
         )
+
         number_row(
             "Top cover (mm)",
             "inputs_cover_top",
@@ -557,6 +569,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Clear cover to the top bars.",
         )
+
         number_row(
             "Side cover (mm)",
             "inputs_cover_side",
@@ -565,9 +578,8 @@ def render_inputs():
             help_text="Clear side cover to longitudinal reinforcement and ducts.",
         )
 
-        st.markdown("---")
-
         st.subheader("Materials")
+
         number_row(
             "Concrete strength f'c (MPa)",
             "inputs_fc",
@@ -575,6 +587,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Characteristic compressive strength of concrete.",
         )
+
         number_row(
             "Steel yield fsy (MPa)",
             "inputs_fsy",
@@ -582,6 +595,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Yield stress of flexural reinforcement.",
         )
+
         number_row(
             "Ec (MPa)",
             "inputs_Ec",
@@ -589,6 +603,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Short-term modulus of elasticity of concrete.",
         )
+
         number_row(
             "Es (MPa)",
             "inputs_Es",
@@ -597,19 +612,18 @@ def render_inputs():
             help_text="Elastic modulus of reinforcing steel.",
         )
 
-    with right_col:
-        st.subheader("3D Beam – Bending & Shear Visual (Section A)")
-        fig3d = make_beam_3d_figure()
-        st.plotly_chart(fig3d, use_container_width=True)
-
     st.markdown("---")
 
-    # ---------- reo + shear + crack ----------
+    # ============================
+    # 2. SECOND ROW – Reo, Shear, Ducts, Crack, Time
+    # ============================
     reo_col, crack_col = st.columns(2)
 
     # left column: bottom reo + shear + ducts
+
     with reo_col:
         st.subheader("Bottom Reinforcement (primary)")
+
         number_row(
             "Bottom bars or spacing (≤30 = bars, ≥30 = mm)",
             "inputs_bot_entry",
@@ -617,6 +631,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Enter a number of bars (≤30) or a spacing in mm (≥30).",
         )
+
         number_row(
             "Bottom bar diameter db,bot (mm)",
             "inputs_db_bot",
@@ -624,6 +639,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Nominal diameter of bottom bars.",
         )
+
         number_row(
             "Bottom row gap (mm)",
             "inputs_rowgap_bot",
@@ -633,6 +649,7 @@ def render_inputs():
         )
 
         st.subheader("Shear reinforcement")
+
         number_row(
             "Lig diameter (mm)",
             "inputs_lig_d",
@@ -640,6 +657,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Nominal diameter of shear ligatures.",
         )
+
         number_row(
             "Lig legs",
             "inputs_lig_legs",
@@ -647,6 +665,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Number of legs in each ligature crossing the web.",
         )
+
         number_row(
             "Stirrup spacing s_lig (mm)",
             "inputs_s_lig",
@@ -656,6 +675,7 @@ def render_inputs():
         )
 
         st.subheader("Ducts / Prestress voids")
+
         number_row(
             "Number of ducts crossing web",
             "inputs_n_ducts",
@@ -663,6 +683,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Total number of ducts crossing the web in the shear zone.",
         )
+
         number_row(
             "Duct diameter (mm)",
             "inputs_duct_dia",
@@ -672,8 +693,10 @@ def render_inputs():
         )
 
     # right column: top reo + crack + time-dependent
+
     with crack_col:
         st.subheader("Top Reinforcement (primary)")
+
         number_row(
             "Top bars or spacing (≤30 = bars, ≥30 = mm)",
             "inputs_top_entry",
@@ -681,6 +704,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Enter a number of bars (≤30) or a spacing in mm (≥30).",
         )
+
         number_row(
             "Top bar diameter db,top (mm)",
             "inputs_db_top",
@@ -688,6 +712,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Nominal diameter of top bars.",
         )
+
         number_row(
             "Top row gap (mm)",
             "inputs_rowgap_top",
@@ -699,14 +724,17 @@ def render_inputs():
         st.subheader("Crack Control Inputs")
 
         options = ["A1", "A2", "B1", "B2", "C1", "C2"]
+
         current = get_param("exposure_class", "B1")
+
         if current not in options:
             current = "B1"
 
-        # Use same column ratio as number_row (1.5, 1)
         exp_label_col, exp_select_col = st.columns([1.5, 1])
+
         with exp_label_col:
             st.markdown("Exposure class")
+
         with exp_select_col:
             if "inputs_exposure_class" in st.session_state:
                 st.selectbox(
@@ -717,6 +745,7 @@ def render_inputs():
                     label_visibility="collapsed",
                     help="Exposure classification to AS 3600 – controls allowable crack width.",
                 )
+
             else:
                 st.selectbox(
                     "",
@@ -737,6 +766,7 @@ def render_inputs():
         )
 
         st.subheader("Time-dependent inputs")
+
         number_row(
             "Creep time after loading t (days)",
             "inputs_t_creep",
@@ -744,6 +774,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Time after loading used for creep coefficient φ_cc,t.",
         )
+
         number_row(
             "Age at loading τ (days)",
             "inputs_age_at_loading",
@@ -751,6 +782,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Concrete age at application of sustained load.",
         )
+
         number_row(
             "Sustained stress ratio σ₀ / f'c,mi",
             "inputs_stress_ratio",
@@ -758,6 +790,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Ratio of sustained stress to mean in-situ strength.",
         )
+
         number_row(
             "Shrinkage time since drying t (days)",
             "inputs_t_shrink",
@@ -766,147 +799,258 @@ def render_inputs():
             help_text="Duration of drying used in shrinkage calculation.",
         )
 
-    # ---------- now recompute design results with the latest inputs ----------
+    st.markdown("---")
+
+    # ============================
+    # 3. THIRD ROW – 3D beam full width
+    # ============================
+    st.subheader("3D Beam – Bending & Shear Visual (Section A)")
+
+    fig3d = make_beam_3d_figure()
+
+    st.plotly_chart(fig3d, use_container_width=True)
+
+    # ============================
+    # 4. Recompute + Summary (unchanged)
+    # ============================
     _compute_bending_capacity()
+
     # _compute_shear_capacity()
+
     # _compute_crack_results()
+
     # _compute_deflection_results()
 
-    # ---------- summary values ----------
     Mu_star = get_param("Mu_star", 0.0)
+
     Vu_star = get_param("Vu_star", 0.0)
 
     phi_Mu_cap = get_param("phi_Mu_cap", 0.0)
+
     Mu_util = get_param("Mu_utilisation", 0.0)
 
     phi_Vu_cap = get_param("phi_Vu_cap", 0.0)
+
     Vu_util = get_param("Vu_utilisation", 0.0)
 
     crack_width = get_param("crack_width", 0.0)
+
     crack_util = get_param("crack_utilisation", 0.0)
 
     L = get_param("L", 3000.0)
+
     b = get_param("b", 400.0)
+
     D = get_param("D", 600.0)
+
     Ec = get_param("Ec", 30000.0)
 
     phi_creep = st.session_state.get("creep_phi_design", None)
+
     Ec_eff_design = st.session_state.get("Ec_eff_design", None)
+
     eps_sh_micro = st.session_state.get("shrinkage_eps_design", None)
 
     if Ec_eff_design is not None and Ec_eff_design > 0:
+
         k_creep = Ec / Ec_eff_design
+
     elif phi_creep is not None and phi_creep > 0:
+
         k_creep = 1.0 + phi_creep
+
     else:
+
         k_creep = 1.0
 
     eps_sh = (eps_sh_micro or 0.0) / 1e6
 
     if L > 0:
+
         w_total = 8.0 * Mu_star / (L / 1000.0) ** 2  # kN/m (simple UDL back-calc)
+
     else:
+
         w_total = 0.0
 
     b_mm = max(1.0, b)
+
     D_mm = max(1.0, D)
+
     L_mm = max(1.0, L)
+
     I_gross = b_mm * D_mm**3 / 12.0 if b_mm > 0 and D_mm > 0 else 1.0
 
     delta_inst = 5.0 * w_total * L_mm**4 / (384.0 * Ec * I_gross) if Ec > 0 else 0.0
+
     delta_creep = delta_inst * k_creep
+
     phi_sh = eps_sh / (0.7 * D_mm) if D_mm > 0 else 0.0
+
     delta_sh = phi_sh * L_mm**2 / 8.0
+
     delta_total = delta_creep + delta_sh
 
     defl_limit = L_mm / 250.0 if L_mm > 0 else 0.0
+
     defl_util = delta_total / defl_limit if defl_limit > 0 else 0.0
 
-    # ---------- summary strings ----------
     bending_demand = f"{Mu_star:.1f} kNm"
+
     bending_cap = f"{phi_Mu_cap:.1f} kNm" if phi_Mu_cap > 0 else "—"
+
     bending_util_str = f"{Mu_util:.2f}" if phi_Mu_cap > 0 else "—"
+
     bending_status, bending_colour = _status_and_colour(Mu_util, phi_Mu_cap > 0)
 
     shear_demand = f"{Vu_star:.1f} kN"
+
     shear_cap = f"{phi_Vu_cap:.1f} kN" if phi_Vu_cap > 0 else "—"
+
     shear_util_str = f"{Vu_util:.2f}" if phi_Vu_cap > 0 else "—"
+
     shear_status, shear_colour = _status_and_colour(Vu_util, phi_Vu_cap > 0)
 
     crack_demand = f"{crack_width:.3f} mm"
+
     crack_cap = "w_lim" if crack_util > 0 else "—"
+
     crack_util_str = f"{crack_util:.2f}" if crack_util > 0 else "—"
+
     crack_status, crack_colour = _status_and_colour(crack_util, crack_util > 0)
 
     defl_demand = f"{delta_total:.2f} mm"
+
     defl_cap = f"{defl_limit:.2f} mm" if defl_limit > 0 else "—"
+
     defl_util_str = f"{defl_util:.2f}" if defl_limit > 0 else "—"
+
     defl_status, defl_colour = _status_and_colour(defl_util, defl_limit > 0)
 
     summary_table_html = f"""
+
     <div style="
+
         border: 1px solid #cccccc;
+
         border-radius: 8px;
+
         padding: 0.5rem 0.75rem;
+
         margin-bottom: 1rem;
+
         max-width: 900px;
+
     ">
+
       <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+
         <thead>
+
           <tr style="background-color: #f5f5f5;">
+
             <th style="text-align:left; padding: 4px 6px;">Check</th>
+
             <th style="text-align:right; padding: 4px 6px;">Demand</th>
+
             <th style="text-align:right; padding: 4px 6px;">Capacity</th>
+
             <th style="text-align:right; padding: 4px 6px;">Utilisation</th>
+
             <th style="text-align:center; padding: 4px 6px;">Status</th>
+
           </tr>
+
         </thead>
+
         <tbody>
+
           <tr style="background-color: {bending_colour};">
+
             <td style="padding: 4px 6px;"><strong>Bending</strong></td>
+
             <td style="text-align:right; padding: 4px 6px;">{bending_demand}</td>
+
             <td style="text-align:right; padding: 4px 6px;">{bending_cap}</td>
+
             <td style="text-align:right; padding: 4px 6px;">{bending_util_str}</td>
+
             <td style="text-align:center; padding: 4px 6px;"><strong>{bending_status}</strong></td>
+
           </tr>
+
           <tr style="background-color: {shear_colour};">
+
             <td style="padding: 4px 6px;"><strong>Shear</strong></td>
+
             <td style="text-align:right; padding: 4px 6px;">{shear_demand}</td>
+
             <td style="text-align:right; padding: 4px 6px;">{shear_cap}</td>
+
             <td style="text-align:right; padding: 4px 6px;">{shear_util_str}</td>
+
             <td style="text-align:center; padding: 4px 6px;"><strong>{shear_status}</strong></td>
+
           </tr>
+
           <tr style="background-color: {crack_colour};">
+
             <td style="padding: 4px 6px;"><strong>Crack control</strong></td>
+
             <td style="text-align:right; padding: 4px 6px;">{crack_demand}</td>
+
             <td style="text-align:right; padding: 4px 6px;">{crack_cap}</td>
+
             <td style="text-align:right; padding: 4px 6px;">{crack_util_str}</td>
+
             <td style="text-align:center; padding: 4px 6px;"><strong>{crack_status}</strong></td>
+
           </tr>
+
           <tr style="background-color: {defl_colour};">
+
             <td style="padding: 4px 6px;"><strong>Deflection</strong></td>
+
             <td style="text-align:right; padding: 4px 6px;">{defl_demand}</td>
+
             <td style="text-align:right; padding: 4px 6px;">{defl_cap}</td>
+
             <td style="text-align:right; padding: 4px 6px;">{defl_util_str}</td>
+
             <td style="text-align:center; padding: 4px 6px;"><strong>{defl_status}</strong></td>
+
           </tr>
+
         </tbody>
+
       </table>
+
     </div>
+
     """
 
-    # ---------- summary + mini section (rendered at top via container) ----------
     with summary_container:
-        col_left, col_right = st.columns([2, 1])
-        with col_left:
-            st.title("Inputs")
-            st.markdown("### Summary (read-only from design pages)")
-            st.markdown(summary_table_html, unsafe_allow_html=True)
-        with col_right:
-            fig_sec = make_summary_cross_section_figure()
-            st.plotly_chart(
-                fig_sec,
-                use_container_width=False,
-                config={"displayModeBar": False},
-            )
 
+        col_left, col_right = st.columns([2, 1])
+
+        with col_left:
+
+            st.title("Inputs")
+
+            st.markdown("### Summary (read-only from design pages)")
+
+            st.markdown(summary_table_html, unsafe_allow_html=True)
+
+        with col_right:
+
+            fig_sec = make_summary_cross_section_figure()
+
+            st.plotly_chart(
+
+                fig_sec,
+
+                use_container_width=False,
+
+                config={"displayModeBar": False},
+
+            )
