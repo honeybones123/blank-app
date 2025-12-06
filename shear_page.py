@@ -813,29 +813,13 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
         )
 
     with col_right:
-        st.markdown(
-            """
-        <style>
-        .shear-intro-img img {
-            width: 60%;             /* <-- 40% smaller than full width */
-            display: block;
-            margin-left: auto;
-            margin-right: auto;     /* center the image */
-        }
-        </style>
-        """,
-            unsafe_allow_html=True,
-        )
-
-        st.markdown('<div class="shear-intro-img">', unsafe_allow_html=True)
-
+        # Use a fixed width (approximately 60% of half the page width)
+        # For a typical page width of ~1200px, half is ~600px, 60% of that is ~360px
         _safe_image(
             "assets/shear_flexural_cracks_dv.png",
             caption=None,
-            use_container_width=False,   # <-- important
+            width=360,  # Fixed width - adjust as needed
         )
-
-        st.markdown("</div>", unsafe_allow_html=True)
 
     # Summary table placeholder – appears directly under the blurb
     summary_placeholder = st.empty()
