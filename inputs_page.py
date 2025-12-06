@@ -237,8 +237,7 @@ def make_summary_cross_section_figure():
         margin=dict(l=5, r=5, t=0, b=0),
         shapes=shapes,
         dragmode=False,
-        title="Section A",
-        title_x=0.5,
+        # no title here – label will be rendered below in Streamlit
     )
     return fig
 
@@ -437,8 +436,18 @@ def make_beam_3d_figure():
             add_shear_hoop_at_x(x0)
 
     fig = go.Figure(data=traces)
+
+    # Add a frame around the whole plotting area (this figure only)
+    fig.add_shape(
+        type="rect",
+        x0=0, y0=0, x1=1, y1=1,
+        xref="paper", yref="paper",
+        line=dict(color="#555555", width=3),
+    )
+
     fig.update_layout(
         height=780,  # roughly fills down to crack inputs
+        paper_bgcolor="white",
         scene=dict(
             xaxis_title="Length (mm)",
             yaxis_title="Width (mm)",
@@ -727,36 +736,18 @@ def render_inputs():
     st.markdown("---")
 
     # ============================
-    # 3. THIRD ROW – 3D beam (centred, narrower, with border)
+    # 3. THIRD ROW – 3D beam (centred, narrower, with frame from Plotly)
     # ============================
     st.subheader("3D Beam – Bending & Shear Visual (Section A)")
 
     fig3d = make_beam_3d_figure()
 
-    # Centre the model and frame ONLY this plot
-    st.markdown(
-        """
-        <div style="display: flex; justify-content: center; margin-bottom: 0.75rem;">
-          <div style="
-              border: 3px solid #555555;
-              border-radius: 8px;
-              padding: 0.75rem;
-              max-width: 900px;
-              width: 100%;
-              background-color: #ffffff;
-              box-shadow: 0 0 6px rgba(0,0,0,0.08);
-          ">
-        """,
-        unsafe_allow_html=True,
-    )
-    st.plotly_chart(fig3d, use_container_width=True)
-    st.markdown(
-        """
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    # centre the model and make it a bit narrower than full page
+    c_left, c_mid, c_right = st.columns([0.15, 0.7, 0.15])
+    with c_mid:
+        st.plotly_chart(fig3d, use_container_width=True)
+
+    st.markdown("---")
 
     st.markdown("---")
 
@@ -1042,9 +1033,9 @@ def render_inputs():
         with col_right:
             fig_sec = make_summary_cross_section_figure()
 
-            # centre the 2D section and then label underneath
+            # centre the 2D section
             st.markdown(
-                '<div style="display:flex; justify-content:center; margin-left:0.5rem;">',
+                '<div style="display:flex; justify-content:center;">',
                 unsafe_allow_html=True,
             )
             st.plotly_chart(
@@ -1054,9 +1045,10 @@ def render_inputs():
             )
             st.markdown("</div>", unsafe_allow_html=True)
 
+            # label centred *below* the diagram
             st.markdown(
                 """
-                <div style="text-align:center; margin-top:0.25rem; margin-left:0.5rem;">
+                <div style="text-align:center; margin-top:0.25rem;">
                   <span style="font-weight:600;">Section A</span>
                 </div>
                 """,
