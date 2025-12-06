@@ -480,10 +480,11 @@ def render_inputs():
     st.markdown("---")
 
     # ============================
-    # 1. TOP ROW – Actions (left) + Geometry + Materials (right)
+    # 1. TOP ROW – Actions | Geometry | Materials
     # ============================
-    col_actions, col_geom = st.columns([1.2, 1.2])
+    col_actions, col_geom, col_mat = st.columns(3)
 
+    # --- Design actions ---
     with col_actions:
         st.subheader("Design Actions")
 
@@ -527,6 +528,7 @@ def render_inputs():
             help_text="Axial action at the section (+compression / −tension).",
         )
 
+    # --- Geometry ---
     with col_geom:
         st.subheader("Geometry")
 
@@ -578,6 +580,8 @@ def render_inputs():
             help_text="Clear side cover to longitudinal reinforcement and ducts.",
         )
 
+    # --- Materials ---
+    with col_mat:
         st.subheader("Materials")
 
         number_row(
@@ -615,13 +619,11 @@ def render_inputs():
     st.markdown("---")
 
     # ============================
-    # 2. SECOND ROW – Reo, Shear, Ducts, Crack, Time
+    # 2. SECOND ROW – Reo details only
     # ============================
-    reo_col, crack_col = st.columns(2)
+    col_bot_reo, col_top_reo = st.columns(2)
 
-    # left column: bottom reo + shear + ducts
-
-    with reo_col:
+    with col_bot_reo:
         st.subheader("Bottom Reinforcement (primary)")
 
         number_row(
@@ -648,6 +650,53 @@ def render_inputs():
             help_text="Vertical gap between bottom rows if two layers are used.",
         )
 
+    with col_top_reo:
+        st.subheader("Top Reinforcement (primary)")
+
+        number_row(
+            "Top bars or spacing (≤30 = bars, ≥30 = mm)",
+            "inputs_top_entry",
+            1.0,
+            sync_callbacks,
+            help_text="Enter a number of bars (≤30) or a spacing in mm (≥30).",
+        )
+
+        number_row(
+            "Top bar diameter db,top (mm)",
+            "inputs_db_top",
+            1.0,
+            sync_callbacks,
+            help_text="Nominal diameter of top bars.",
+        )
+
+        number_row(
+            "Top row gap (mm)",
+            "inputs_rowgap_top",
+            5.0,
+            sync_callbacks,
+            help_text="Vertical gap between top rows if two layers are used.",
+        )
+
+    st.markdown("---")
+
+    # ============================
+    # 3. THIRD ROW – 3D beam full width
+    # ============================
+    st.subheader("3D Beam – Bending & Shear Visual (Section A)")
+
+    fig3d = make_beam_3d_figure()
+
+    st.plotly_chart(fig3d, use_container_width=True)
+
+    st.markdown("---")
+
+    # ============================
+    # 4. FOURTH ROW – Rest of inputs (Shear/Ducts | Crack/Time)
+    # ============================
+    col_shear, col_rest = st.columns(2)
+
+    # --- Shear + ducts ---
+    with col_shear:
         st.subheader("Shear reinforcement")
 
         number_row(
@@ -692,35 +741,8 @@ def render_inputs():
             help_text="Nominal diameter of each duct.",
         )
 
-    # right column: top reo + crack + time-dependent
-
-    with crack_col:
-        st.subheader("Top Reinforcement (primary)")
-
-        number_row(
-            "Top bars or spacing (≤30 = bars, ≥30 = mm)",
-            "inputs_top_entry",
-            1.0,
-            sync_callbacks,
-            help_text="Enter a number of bars (≤30) or a spacing in mm (≥30).",
-        )
-
-        number_row(
-            "Top bar diameter db,top (mm)",
-            "inputs_db_top",
-            1.0,
-            sync_callbacks,
-            help_text="Nominal diameter of top bars.",
-        )
-
-        number_row(
-            "Top row gap (mm)",
-            "inputs_rowgap_top",
-            5.0,
-            sync_callbacks,
-            help_text="Vertical gap between top rows if two layers are used.",
-        )
-
+    # --- Crack control + time-dependent ---
+    with col_rest:
         st.subheader("Crack Control Inputs")
 
         options = ["A1", "A2", "B1", "B2", "C1", "C2"]
@@ -798,17 +820,6 @@ def render_inputs():
             sync_callbacks,
             help_text="Duration of drying used in shrinkage calculation.",
         )
-
-    st.markdown("---")
-
-    # ============================
-    # 3. THIRD ROW – 3D beam full width
-    # ============================
-    st.subheader("3D Beam – Bending & Shear Visual (Section A)")
-
-    fig3d = make_beam_3d_figure()
-
-    st.plotly_chart(fig3d, use_container_width=True)
 
     # ============================
     # 4. Recompute + Summary (unchanged)
