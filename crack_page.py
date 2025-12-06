@@ -280,7 +280,7 @@ The aim is to verify that cracking is **controlled** so that durability and appe
         Ast_seed = _seed_from_param("Ast_bot", 3 * math.pi * 20.0**2 / 4.0)
         Ast = st.number_input(
             "Area of tensile steel A_s,t (mm²)",
-            value=float(Ast_seed),
+            value=max(1.0, float(Ast_seed)),
             step=50.0,
             min_value=1.0,
             key="crk_Ast",
