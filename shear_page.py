@@ -1821,6 +1821,7 @@ $$k_v = {k_v:.3f}, \\quad \\theta_v = {theta_v_deg:.1f}°$$
 - Concrete: $f'_c = {fc:.1f}$ MPa  
 - Geometry: $b_v = {b_v:.1f}$ mm, $d_v = {d_v:.1f}$ mm, $d_g = {d_g:.1f}$ mm  
 - Transverse steel: $A_{{sv}} = {Asv:.1f}$ mm², spacing $s = {s:.1f}$ mm, $f_{{sy,v}} = {f_syv:.1f}$ MPa  
+- Aggregate size factor: $k_{{dg}} \\approx {k_dg_display:.3f}$  
 - Strain: $\\varepsilon_x = {eps_x:.5f}$  
 
 ---
@@ -1835,8 +1836,9 @@ $$k_v = {k_v:.3f}, \\quad \\theta_v = {theta_v_deg:.1f}°$$
 
 - $k_v = {k_v:.3f}$  
 - $\\theta_v = {theta_v_deg:.1f}°$
+
 """
-    )
+        )
 
     # =====================================================
     # 7. STEP 6 — CONCRETE SHEAR CONTRIBUTION V_uc ONLY
