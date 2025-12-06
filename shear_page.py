@@ -813,13 +813,64 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
         )
 
     with col_right:
-        # Use a fixed width (approximately 60% of half the page width)
-        # For a typical page width of ~1200px, half is ~600px, 60% of that is ~360px
-        _safe_image(
-            "assets/shear_flexural_cracks_dv.png",
-            caption=None,
-            width=360,  # Fixed width - adjust as needed
-        )
+        # Split the right column into image + info button
+        img_col, info_col = st.columns([5, 1])
+
+        with img_col:
+            # Center the image horizontally and make it ~15% bigger (360 → 415)
+            st.markdown("<div style='text-align:center;'>", unsafe_allow_html=True)
+            _safe_image(
+                "assets/shear_flexural_cracks_dv.png",
+                caption=None,
+                width=415,  # ~15% larger than previous 360
+            )
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        with info_col:
+            # ℹ️ popover attached to the drawing
+            with st.popover("ℹ️", use_container_width=True):
+                calcbox(
+                    r"""
+**What is shear in a beam?**
+
+
+
+
+
+- Shear forces act **perpendicular to the beam axis**.  
+
+- You can picture shear as a stack of playing cards where layers **try to slide** past each other.  
+
+- In a beam, one part of the cross-section wants to slide relative to the next, creating **internal shear stresses**.
+
+
+
+
+
+**Critical section for shear – $d_v$**
+
+
+
+
+
+- The design shear check is taken at a distance **$d_v$ from the face of the support**.  
+
+- At this section we take the **design shear $V^*$**, ignoring any distributed load between the support and $d_v$.  
+
+- If significant concentrated loads fall inside this region, the behaviour is closer to a **strut-and-tie / deep beam** and a STM model is required.  
+
+- AS 3600 defines effective shear depth  
+
+
+
+  $$d_v = \max\left(0.72D,\;0.9d_0\right)$$  
+
+
+
+  where $d_0$ is the depth to the centroid of the **tension reinforcement** in the tensile zone.
+
+"""
+                )
 
     # Summary table placeholder – appears directly under the blurb
     summary_placeholder = st.empty()
