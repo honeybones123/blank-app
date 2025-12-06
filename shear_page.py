@@ -813,16 +813,16 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
         )
 
     with col_right:
-        # Split the right column into image + info button
-        img_col, info_col = st.columns([5, 1])
+        # Add a small left spacer, then image, then info button
+        spacer_col, img_col, info_col = st.columns([1, 5, 1])
 
         with img_col:
-            # Center the image horizontally and make it ~15% bigger (360 → 415)
+            # Slightly right-shifted and ~10% bigger (360 → 396)
             st.markdown("<div style='text-align:center;'>", unsafe_allow_html=True)
             _safe_image(
                 "assets/shear_flexural_cracks_dv.png",
                 caption=None,
-                width=415,  # ~15% larger than previous 360
+                width=396,  # ~10% larger than original 360
             )
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -832,6 +832,8 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
                 calcbox(
                     r"""
 **What is shear in a beam?**
+
+
 
 
 
@@ -847,7 +849,11 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
 
 
 
+
+
 **Critical section for shear – $d_v$**
+
+
 
 
 
