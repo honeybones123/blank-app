@@ -232,12 +232,12 @@ def make_summary_cross_section_figure():
         range=[D * 1.02, -0.10 * D],
     )
     fig.update_layout(
-        width=260,
+        width=230,              # slightly narrower
         height=300,
-        margin=dict(l=5, r=5, t=0, b=0),
+        margin=dict(l=0, r=0, t=0, b=40),
         shapes=shapes,
         dragmode=False,
-        # no title here – label will be rendered below in Streamlit
+        # no title – label is added in Streamlit below the figure
     )
     return fig
 
@@ -437,17 +437,18 @@ def make_beam_3d_figure():
 
     fig = go.Figure(data=traces)
 
-    # Add a frame around the whole plotting area (this figure only)
+    # Subtle frame around the whole plotting area (this figure only)
     fig.add_shape(
         type="rect",
         x0=0, y0=0, x1=1, y1=1,
         xref="paper", yref="paper",
-        line=dict(color="#555555", width=3),
+        line=dict(color="#999999", width=2),
     )
 
     fig.update_layout(
-        height=780,  # roughly fills down to crack inputs
+        height=480,     # was 780 → now much shorter
         paper_bgcolor="white",
+        plot_bgcolor="white",
         scene=dict(
             xaxis_title="Length (mm)",
             yaxis_title="Width (mm)",
@@ -455,10 +456,9 @@ def make_beam_3d_figure():
             zaxis=dict(autorange="reversed"),
             aspectmode="data",
             camera=dict(eye=dict(x=1.45, y=1.35, z=0.95)),
-            # BIG callout for Section A – arrow to blue plane
             annotations=[
                 dict(
-                    x=mid_x,          # arrow tip on blue plane
+                    x=mid_x,
                     y=0.5 * b,
                     z=0.5 * D,
                     text="Section A",
@@ -467,7 +467,7 @@ def make_beam_3d_figure():
                     arrowsize=1.4,
                     arrowwidth=2,
                     arrowcolor="black",
-                    ax=80,            # move text outside the model
+                    ax=80,
                     ay=-80,
                     font=dict(size=16, color="black"),
                 )
@@ -743,7 +743,7 @@ def render_inputs():
     fig3d = make_beam_3d_figure()
 
     # centre the model and make it a bit narrower than full page
-    c_left, c_mid, c_right = st.columns([0.15, 0.7, 0.15])
+    c_left, c_mid, c_right = st.columns([0.2, 0.6, 0.2])
     with c_mid:
         st.plotly_chart(fig3d, use_container_width=True)
 
@@ -1033,23 +1033,25 @@ def render_inputs():
         with col_right:
             fig_sec = make_summary_cross_section_figure()
 
-            # centre the 2D section
+            # Wrap figure + label in the SAME centred container
             st.markdown(
-                '<div style="display:flex; justify-content:center;">',
+                """
+                <div style="text-align:center;">
+                """,
                 unsafe_allow_html=True,
             )
+
             st.plotly_chart(
                 fig_sec,
                 use_container_width=False,
                 config={"displayModeBar": False},
             )
-            st.markdown("</div>", unsafe_allow_html=True)
 
-            # label centred *below* the diagram
             st.markdown(
                 """
-                <div style="text-align:center; margin-top:0.25rem;">
-                  <span style="font-weight:600;">Section A</span>
+                  <div style="margin-top:0.25rem;">
+                    <span style="font-weight:600;">Section A</span>
+                  </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
