@@ -1033,33 +1033,35 @@ def render_inputs():
         with col_right:
             fig_sec = make_summary_cross_section_figure()
 
+            # Wrap figure + label in a centered flex container
             st.markdown(
                 """
                 <div style="
                     display: flex;
                     flex-direction: column;
                     align-items: center;
-                    margin-left: 1.5rem;   /* shift entire block slightly right */
+                    margin-left: 1.5rem;   /* nudges whole block slightly right */
                 ">
+                  <div style="display:flex; justify-content:center;">
                 """,
                 unsafe_allow_html=True,
             )
 
-            # 2D figure (centered)
+            # 2D figure (now centered within the inner div)
             st.plotly_chart(
                 fig_sec,
                 use_container_width=False,
                 config={"displayModeBar": False},
             )
 
-            # Centered label
+            # Centered label directly under the figure
             st.markdown(
                 """
-                <div style="text-align:center; margin-top:0.3rem;">
+                  </div>
+                  <div style="text-align:center; margin-top:0.3rem;">
                     <span style="font-weight:600; font-size:1.1rem;">Section A</span>
+                  </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
-
-            st.markdown("</div>", unsafe_allow_html=True)
