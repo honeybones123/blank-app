@@ -523,7 +523,8 @@ def render_inputs():
             "Manual design actions (inputs below)",
             "Teaching SFD/BMD page (|M|max, |V|max)",
         ],
-        key="actions_source",
+        key="inputs_actions_source",
+        on_change=sync_callbacks["inputs_actions_source"],
     )
 
     # Teaching values from SFD/BMD page (may be None first time)
