@@ -222,20 +222,16 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     summary_placeholder = st.empty()
 
     # Get action source and values
-    results = get_param("results", {})
-    if not isinstance(results, dict):
-        results = {}
-    
     # Read action_source from shared state (follows contract via TAB_KEYS)
     action_source = get_param("actions_source", "Manual design actions (inputs below)")
     Mu_star = get_param("Mu_star", 0.0)
     Vu_star = get_param("Vu_star", 0.0)
     
-    # Optional: also pull SFD/BMD info for display
-    M_sfd = results.get("sfd_Mmax_abs_kNm")
-    V_sfd = results.get("sfd_Vmax_abs_kN")
-    L_sfd = results.get("sfd_span_L_m")
-    case_sfd = results.get("sfd_case")
+    # Optional: also pull SFD/BMD info for display (stored directly in session_state)
+    M_sfd = get_param("sfd_Mmax_abs_kNm", None)
+    V_sfd = get_param("sfd_Vmax_abs_kN", None)
+    L_sfd = get_param("sfd_span_L_m", None)
+    case_sfd = get_param("sfd_case", None)
     
     # 4-step calcbox at top of Deflection page
     calcbox(
