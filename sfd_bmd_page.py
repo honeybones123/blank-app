@@ -928,12 +928,10 @@ on the **Inputs** and **Deflection** pages when you select
 
         # Push into shared results so Inputs/Deflection pages can use them
         update_results(
-            {
-                "sfd_case": case,
-                "sfd_span_L_m": float(L),
-                "sfd_Mmax_abs_kNm": float(M_max_abs),
-                "sfd_Vmax_abs_kN": float(V_max_abs),
-            }
+            sfd_case=case,
+            sfd_span_L_m=float(L),
+            sfd_Mmax_abs_kNm=float(M_max_abs),
+            sfd_Vmax_abs_kN=float(V_max_abs),
         )
 
     # Top summary bar (like other pages)
