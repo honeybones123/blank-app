@@ -452,7 +452,7 @@ def calcbox(md: str):
 def _safe_image(path: str, caption: str | None = None, width: int | None = None):
     """Tiny helper so missing images don't break the app."""
     if os.path.exists(path):
-        st.image(path, caption=caption, width=width)
+        st.image(path, caption=caption, use_container_width=True)
     else:
         st.info(f"💡 Add image file at `{path}` for: {caption or 'shear illustration'}")
 
