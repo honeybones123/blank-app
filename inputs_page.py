@@ -512,11 +512,6 @@ def render_inputs():
     # ============================
     st.subheader("Source of design actions (M*, V*)")
     
-    # Get current results to check for SFD/BMD values
-    results = get_param("results", {})
-    if not isinstance(results, dict):
-        results = {}
-    
     action_source = st.radio(
         "Source of design actions (M*, V*)",
         [
@@ -527,11 +522,12 @@ def render_inputs():
         on_change=sync_callbacks["inputs_actions_source"],
     )
 
-    # Teaching values from SFD/BMD page (may be None first time)
-    M_sfd = results.get("sfd_Mmax_abs_kNm")
-    V_sfd = results.get("sfd_Vmax_abs_kN")
-    L_sfd = results.get("sfd_span_L_m")
-    case_sfd = results.get("sfd_case")
+    # Teaching values from SFD/BMD page (stored directly in session_state, may be None first time)
+    M_sfd = get_param("sfd_Mmax_abs_kNm", None)
+    V_sfd = get_param("sfd_Vmax_abs_kN", None)
+    L_sfd = get_param("sfd_span_L_m", None)
+    # sfd_case is a widget key, read it directly from session_state
+    case_sfd = st.session_state.get("sfd_case", None)
 
     st.markdown("---")
 
