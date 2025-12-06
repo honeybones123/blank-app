@@ -231,7 +231,8 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     M_sfd = get_param("sfd_Mmax_abs_kNm", None)
     V_sfd = get_param("sfd_Vmax_abs_kN", None)
     L_sfd = get_param("sfd_span_L_m", None)
-    case_sfd = get_param("sfd_case", None)
+    # sfd_case is a widget key, read it directly from session_state
+    case_sfd = st.session_state.get("sfd_case", None)
     
     # 4-step calcbox at top of Deflection page
     calcbox(
