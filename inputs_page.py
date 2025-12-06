@@ -475,21 +475,6 @@ def render_inputs():
     sync_callbacks = get_sync_callbacks()
     apply_global_widget_css()
 
-    # Optional: give all Plotly charts a subtle border (incl. 3D beam)
-    st.markdown(
-        """
-        <style>
-        div[data-testid="stPlotlyChart"] {
-            border: 1px solid #dddddd;
-            border-radius: 8px;
-            padding: 0.5rem;
-            background-color: #fafafa;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
     summary_container = st.container()
 
     st.markdown("---")
@@ -718,13 +703,26 @@ def render_inputs():
     st.markdown("---")
 
     # ============================
-    # 3. THIRD ROW – 3D beam full width
+    # 3. THIRD ROW – 3D beam full width (with its own border)
     # ============================
     st.subheader("3D Beam – Bending & Shear Visual (Section A)")
 
     fig3d = make_beam_3d_figure()
 
+    # Wrap ONLY the 3D plot in a bordered container
+    st.markdown(
+        """
+        <div style="
+            border: 1px solid #dddddd;
+            border-radius: 8px;
+            padding: 0.5rem;
+            margin-bottom: 0.5rem;
+        ">
+        """,
+        unsafe_allow_html=True,
+    )
     st.plotly_chart(fig3d, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("---")
 
