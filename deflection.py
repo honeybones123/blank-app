@@ -221,6 +221,53 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     # Reserve space for the top summary table
     summary_placeholder = st.empty()
 
+    # Get action source and values
+    results = get_param("results", {})
+    if not isinstance(results, dict):
+        results = {}
+    
+    action_source = results.get("actions_source", "Manual design actions (inputs below)")
+    Mu_star = results.get("Mu_star", 0.0)
+    Vu_star = results.get("Vu_star", 0.0)
+    
+    # Optional: also pull SFD/BMD info for display
+    M_sfd = results.get("sfd_Mmax_abs_kNm")
+    V_sfd = results.get("sfd_Vmax_abs_kN")
+    L_sfd = results.get("sfd_span_L_m")
+    case_sfd = results.get("sfd_case")
+    
+    # 4-step calcbox at top of Deflection page
+    calcbox(
+        f"""
+**Step 1 – Actions adopted for deflection**
+
+- Source: `{action_source}`
+
+- Moment for deflection, M*: `{Mu_star:.3g}` kNm  
+
+Teaching SFD/BMD (if selected):
+
+- Case: `{case_sfd or "—"}`  
+
+- Span: `{L_sfd:.3g} m` if available  
+
+- |M|_max ≈ `{(M_sfd or 0.0):.3g}` kNm, |V|_max ≈ `{(V_sfd or 0.0):.3g}` kN
+
+**Step 2 – Section properties and stiffness**
+
+- Use EI, I_eff, etc. from Inputs/Bending.
+
+**Step 3 – Closed-form deflection formula**
+
+- Pick the appropriate formula for the chosen case
+  (e.g. simply supported UDL, centre point load, cantilever, etc.).
+
+**Step 4 – Check against SLS limits**
+
+- Compare computed deflection with span-based limit (e.g. L/250, L/300).
+"""
+    )
+
     st.markdown("### Design inputs")
 
     # ---------------- Geometry / materials / loads ----------------
