@@ -93,6 +93,29 @@ SHARED_DEFAULTS = {
     "cover_top": 40.0,
     "side_cover_bot": 40.0,
     "side_cover_top": 40.0,
+    "cover_side": 40.0,  # Geometry – side cover (to centroid or clear, whichever convention you use)
+
+    # New "bars or spacing" entries (≤30 = bars, ≥30 = spacing in mm)
+    "bot_entry": 4.0,   # bottom layer: 4 bars by default
+    "top_entry": 2.0,   # top layer: 2 bars by default
+
+    # Optional derived spacing (you can store these here or in a derived dict)
+    "s_bot": 200.0,     # effective bottom spacing (mm)
+    "s_top": 200.0,     # effective top spacing (mm)
+
+    # Duct inputs (prestress / voids)
+    "n_ducts": 0.0,     # number of ducts crossing the web
+    "duct_dia": 0.0,    # nominal duct diameter (mm)
+
+    # Derived duct summary – you'll compute these from n_ducts + duct_dia
+    "sum_duct": 0.0,        # ∑ duct diameters crossing web (mm)
+    "A_duct_total": 0.0,    # total duct area (mm²)
+
+    # Time-dependent inputs (creep + shrinkage)
+    "t_creep": 365.0,       # days after loading
+    "age_at_loading": 28.0, # days
+    "stress_ratio": 0.3,    # σ0 / f'c,mi
+    "t_shrink": 365.0,      # days since drying started
 
     # Shear reinforcement
     "lig_d": 10.0,     # lig/stirrup diameter (mm)
@@ -215,13 +238,31 @@ TAB_KEYS = {
     "inputs_cover_top": "cover_top",
     "inputs_side_cover_bot": "side_cover_bot",
     "inputs_side_cover_top": "side_cover_top",
+    "inputs_cover_side": "cover_side",  # Geometry – side cover (now a proper shared param)
+
+    # Reo: new bars/spacing entries instead of nb_* for the widgets
+    "inputs_bot_entry": "bot_entry",
+    "inputs_top_entry": "top_entry",
+    # We still keep nb_bot, nb_top etc. as params used by other pages.
+    # They will be *derived* from bot_entry/top_entry in recalc_derived_values().
+    # No widget keys needed for nb_bot / nb_top.
 
     "inputs_lig_d": "lig_d",
     "inputs_lig_legs": "lig_legs",
     "inputs_s_lig": "s_lig",
 
+    # Ducts
+    "inputs_n_ducts": "n_ducts",
+    "inputs_duct_dia": "duct_dia",
+
     "inputs_exposure_class": "exposure_class",
     "inputs_s_bar_bot": "s_bar_bot",
+
+    # Time-dependent inputs
+    "inputs_t_creep": "t_creep",
+    "inputs_age_at_loading": "age_at_loading",
+    "inputs_stress_ratio": "stress_ratio",
+    "inputs_t_shrink": "t_shrink",
 
     # ----------------- BENDING PAGE -----------------
     "bending_b": "b",
@@ -369,6 +410,60 @@ def init_shared_session_state():
     recalc_derived_values()
 
 
+def _decode_bars_or_spacing(entry, b, cover_side, bar_dia):
+    """
+    Interpret entry as:
+      - ≤ 30 => number of bars
+      - > 30 => spacing in mm
+
+    Returns (mode, n_eff, s_eff):
+      mode = "N" or "S"
+      n_eff = effective number of bars (int)
+      s_eff = effective spacing (mm) (float)
+    """
+    try:
+        val = float(entry)
+    except Exception:
+        return "N", 0, 0.0
+
+    # Fallbacks
+    try:
+        b_val = float(b)
+    except Exception:
+        b_val = 0.0
+    try:
+        cs_val = float(cover_side)
+    except Exception:
+        cs_val = 0.0
+
+    # width between bar centroids
+    L_centroid = max(0.0, b_val - 2.0 * cs_val)
+
+    if val <= 0.0 or L_centroid <= 0.0:
+        return "N", 0, 0.0
+
+    # Case 1: small value => number of bars
+    if val < 30.0:
+        n = int(round(val))
+        n = max(1, n)
+
+        if n == 1:
+            # single bar – spacing is not really defined, use L_centroid as a proxy
+            s_eff = L_centroid
+        else:
+            s_eff = L_centroid / (n - 1)
+
+        return "N", n, s_eff
+
+    # Case 2: large value => spacing in mm
+    s_target = val
+    # max(i) such that cover + (i-1)*s ≤ b-cover  → i ≤ L_centroid/s + 1
+    n = int(L_centroid // s_target) + 1
+    n = max(1, n)
+
+    return "S", n, s_target
+
+
 def recalc_derived_values():
     """
     Update derived geometry/reo values in session_state based on the
@@ -380,8 +475,65 @@ def recalc_derived_values():
     cover_top = st.session_state["cover_top"]
     db_bot = st.session_state["db_bot"]
     db_top = st.session_state["db_top"]
-    nb_bot = st.session_state["nb_bot"]
-    nb_top = st.session_state["nb_top"]
+    
+    # Get cover_side, with fallback to min of cover_top/cover_bot
+    cover_side = st.session_state.get("cover_side", min(
+        st.session_state.get("cover_top", 40.0),
+        st.session_state.get("cover_bot", 40.0),
+    ))
+
+    # ---------- 3.1 Bars vs spacing for bottom + top ----------
+    b = st.session_state.get("b", 0.0)
+    
+    # Bottom layer
+    bot_entry = st.session_state.get("bot_entry", st.session_state.get("nb_bot", 0.0))
+    mode_bot, nb_bot_eff, s_bot_eff = _decode_bars_or_spacing(
+        bot_entry, b, cover_side, db_bot
+    )
+
+    # Top layer
+    top_entry = st.session_state.get("top_entry", st.session_state.get("nb_top", 0.0))
+    mode_top, nb_top_eff, s_top_eff = _decode_bars_or_spacing(
+        top_entry, b, cover_side, db_top
+    )
+
+    # Write back "canonical" values that the rest of the app uses
+    nb_bot = nb_bot_eff
+    nb_top = nb_top_eff
+    st.session_state["nb_bot"] = nb_bot
+    st.session_state["nb_top"] = nb_top
+    st.session_state["s_bot"] = s_bot_eff
+    st.session_state["s_top"] = s_top_eff
+
+    # Store modes in derived (if you have a derived dict, otherwise skip)
+    # For now we'll skip since the current code doesn't use a separate derived dict
+
+    # ---------- 3.2 Duct summary ----------
+    n_ducts = float(st.session_state.get("n_ducts", 0.0) or 0.0)
+    duct_dia = float(st.session_state.get("duct_dia", 0.0) or 0.0)
+
+    if n_ducts > 0.0 and duct_dia > 0.0:
+        sum_duct = n_ducts * duct_dia               # mm
+        A_duct_total = n_ducts * math.pi * duct_dia**2 / 4.0  # mm²
+    else:
+        sum_duct = 0.0
+        A_duct_total = 0.0
+
+    st.session_state["sum_duct"] = sum_duct
+    st.session_state["A_duct_total"] = A_duct_total
+
+    # ---------- 3.3 Time-dependent inputs ----------
+    # For now we only normalise / store them; the creep/shrinkage pages
+    # will pick them up via get_param().
+    t_creep = float(st.session_state.get("t_creep", 365.0) or 365.0)
+    age_at_loading = float(st.session_state.get("age_at_loading", 28.0) or 28.0)
+    stress_ratio = float(st.session_state.get("stress_ratio", 0.3) or 0.3)
+    t_shrink = float(st.session_state.get("t_shrink", 365.0) or 365.0)
+
+    st.session_state["t_creep"] = t_creep
+    st.session_state["age_at_loading"] = age_at_loading
+    st.session_state["stress_ratio"] = stress_ratio
+    st.session_state["t_shrink"] = t_shrink
 
     # Effective depths
     st.session_state["d"] = D - cover_bot - db_bot / 2.0
