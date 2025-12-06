@@ -446,18 +446,21 @@ def make_beam_3d_figure():
             zaxis=dict(autorange="reversed"),
             aspectmode="data",
             camera=dict(eye=dict(x=1.45, y=1.35, z=0.95)),
-            # NEW: callout for the blue plane = Section A
+            # BIG callout for Section A – arrow to blue plane
             annotations=[
                 dict(
-                    x=mid_x,
+                    x=mid_x,          # arrow tip on blue plane
                     y=0.5 * b,
-                    z=1.02 * D,         # just above the top surface
+                    z=0.5 * D,
                     text="Section A",
                     showarrow=True,
-                    arrowhead=1,
-                    ax=0,
-                    ay=-40,
-                    font=dict(size=10),
+                    arrowhead=2,
+                    arrowsize=1.4,
+                    arrowwidth=2,
+                    arrowcolor="black",
+                    ax=80,            # move text outside the model
+                    ay=-80,
+                    font=dict(size=16, color="black"),
                 )
             ],
         ),
@@ -730,17 +733,18 @@ def render_inputs():
 
     fig3d = make_beam_3d_figure()
 
-    # Centre the model and give ONLY this plot a border
+    # Centre the model and frame ONLY this plot
     st.markdown(
         """
         <div style="display: flex; justify-content: center; margin-bottom: 0.75rem;">
           <div style="
-              border: 2px solid #888888;
+              border: 3px solid #555555;
               border-radius: 8px;
-              padding: 0.5rem;
+              padding: 0.75rem;
               max-width: 900px;
               width: 100%;
-              background-color: #fafafa;
+              background-color: #ffffff;
+              box-shadow: 0 0 6px rgba(0,0,0,0.08);
           ">
         """,
         unsafe_allow_html=True,
@@ -1036,17 +1040,25 @@ def render_inputs():
             st.markdown(summary_table_html, unsafe_allow_html=True)
 
         with col_right:
-            # Label and nudge the 2D section (Section A) slightly right
-            st.markdown("#### Section A")
+            fig_sec = make_summary_cross_section_figure()
 
+            # centre the 2D section and then label underneath
             st.markdown(
-                '<div style="margin-left: 0.5rem;">',
+                '<div style="display:flex; justify-content:center; margin-left:0.5rem;">',
                 unsafe_allow_html=True,
             )
-            fig_sec = make_summary_cross_section_figure()
             st.plotly_chart(
                 fig_sec,
                 use_container_width=False,
                 config={"displayModeBar": False},
             )
             st.markdown("</div>", unsafe_allow_html=True)
+
+            st.markdown(
+                """
+                <div style="text-align:center; margin-top:0.25rem; margin-left:0.5rem;">
+                  <span style="font-weight:600;">Section A</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
