@@ -1058,7 +1058,7 @@ def render_inputs():
             st.markdown(
                 """
                   </div>
-                  <div style="text-align:center; margin-top:0.3rem;">
+                  <div style="text-align:center; margin-top:0.1rem;">
                     <span style="font-weight:600; font-size:1.1rem;">Section A</span>
                   </div>
                 </div>
