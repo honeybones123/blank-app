@@ -6,9 +6,10 @@ import streamlit as st
 from state_and_helpers import (
     get_sync_callbacks,
     get_param,
+    update_results,
 )
 
-from widgets_helpers import apply_global_widget_css, number_row
+from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, calcbox
 
 # --- Pure compute functions from design core (no circular imports)
 from bending_core import _compute_bending_capacity
@@ -500,8 +501,36 @@ def _status_and_colour(util, cap_exists):
 def render_inputs():
     sync_callbacks = get_sync_callbacks()
     apply_global_widget_css()
+    apply_calcbox_css()
 
     summary_container = st.container()
+
+    st.markdown("---")
+
+    # ============================
+    # 0. ACTION SOURCE TOGGLE
+    # ============================
+    st.subheader("Source of design actions (M*, V*)")
+    
+    # Get current results to check for SFD/BMD values
+    results = get_param("results", {})
+    if not isinstance(results, dict):
+        results = {}
+    
+    action_source = st.radio(
+        "Source of design actions (M*, V*)",
+        [
+            "Manual design actions (inputs below)",
+            "Teaching SFD/BMD page (|M|max, |V|max)",
+        ],
+        key="actions_source",
+    )
+
+    # Teaching values from SFD/BMD page (may be None first time)
+    M_sfd = results.get("sfd_Mmax_abs_kNm")
+    V_sfd = results.get("sfd_Vmax_abs_kN")
+    L_sfd = results.get("sfd_span_L_m")
+    case_sfd = results.get("sfd_case")
 
     st.markdown("---")
 
@@ -856,6 +885,47 @@ def render_inputs():
         )
 
     # ============================
+    # 4. Determine final actions (manual vs teaching)
+    # ============================
+    # Read manual inputs
+    Mu_manual = get_param("Mu_star", 0.0)
+    Vu_manual = get_param("Vu_star", 0.0)
+    
+    # Determine which values to use
+    if action_source == "Teaching SFD/BMD page (|M|max, |V|max)":
+        # Prefer SFD/BMD values, fall back to manual if not available
+        Mu_star = M_sfd if M_sfd is not None else Mu_manual
+        Vu_star = V_sfd if V_sfd is not None else Vu_manual
+    else:
+        Mu_star = Mu_manual
+        Vu_star = Vu_manual
+    
+    # Optional calcbox to explain what's happening
+    calcbox(
+        f"""
+**Design actions used in all downstream checks**
+
+- Source: `{action_source}`
+
+- Bending moment M*: `{Mu_star:.3g}` kNm  
+
+- Shear force V*: `{Vu_star:.3g}` kN  
+
+If "Teaching SFD/BMD" is selected, these come from that page's
+`|M|_max` and `|V|_max` for the chosen load case and span.
+"""
+    )
+    
+    # Push final chosen actions into results (or wherever Bending/Shear/Deflection read)
+    update_results(
+        {
+            "Mu_star": float(Mu_star),
+            "Vu_star": float(Vu_star),
+            "actions_source": action_source,
+        }
+    )
+
+    # ============================
     # 5. Recompute + Summary (unchanged from before)
     # ============================
     _compute_bending_capacity()
@@ -865,10 +935,6 @@ def render_inputs():
     # _compute_crack_results()
 
     # _compute_deflection_results()
-
-    Mu_star = get_param("Mu_star", 0.0)
-
-    Vu_star = get_param("Vu_star", 0.0)
 
     phi_Mu_cap = get_param("phi_Mu_cap", 0.0)
 
