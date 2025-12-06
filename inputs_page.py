@@ -1,912 +1,740 @@
+# crack_page.py
+# ============================
+# CRACK WIDTH – AS 3600:2018 Cl. 8.6.2
+# ============================
+
 import math
-import numpy as np
-import plotly.graph_objects as go
+import pandas as pd
 import streamlit as st
 
 from state_and_helpers import (
-    get_sync_callbacks,
     get_param,
+    get_sync_callbacks,
+    update_results,  # kept for contract
 )
-
 from widgets_helpers import apply_global_widget_css, number_row
 
-# --- Pure compute functions from design core (no circular imports)
-from bending_core import _compute_bending_capacity
-from section_layout import compute_section_layout
-# from shear_page import _compute_shear_capacity       # TODO: add later
-# from crack_page import _compute_crack_results       # TODO: add later
-# from deflection import _compute_deflection_results  # TODO: add later
-
 
 # ------------------------------------------------------------
-#  GLOBAL PAGE STYLING (margins + compact inputs)
+#  Small helpers / shared styling (same pattern as creep/shrinkage)
 # ------------------------------------------------------------
-st.markdown(
-    """
-    <style>
-    .main .block-container {
-        padding-left: 3rem;
-        padding-right: 3rem;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-# Extra CSS so special widgets (side cover + exposure class)
-# use the same effective width as the standard number_row inputs.
-st.markdown(
-    """
-    <style>
-    .nr-field select,
-    .nr-field input {
-        width: 100% !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-# ------------------------------------------------------------
-#  SHARED HELPERS FOR BAR & LEG LAYOUT
-# ------------------------------------------------------------
-def _two_row_positions_width(n_bars, bar_dia, w_min, w_max):
-    """
-    Decide bar positions along width for up to 2 rows.
-
-    Rules:
-      - A single row can carry at most `max_single` bars based on min spacing.
-      - If n_bars > max_single, we use 2 rows and ensure BOTH rows
-        respect the same max bars/spacing rule.
-      - Row 2:
-          * if 1 bar  -> centred
-          * if >=2    -> spaced like row 1 (linspace over width)
-    """
-    if n_bars <= 0:
-        return [], []
-
-    span = w_max - w_min
-    if span <= 0:
-        return [], []
-
-    # basic spacing rule
-    min_pitch = max(bar_dia * 1.6, span / 20.0)
-    max_single = max(1, int(span // min_pitch))
-
-    # One row OK
-    if n_bars <= max_single:
-        xs1 = np.linspace(w_min, w_max, n_bars)
-        return xs1.tolist(), []
-
-    # Two rows, each respecting max_single
-    n1 = min(max_single, math.ceil(n_bars / 2))
-    n2 = n_bars - n1
-    if n2 > max_single:
-        n2 = max_single
-        n1 = n_bars - n2
-
-    xs1 = np.linspace(w_min, w_max, n1)
-
-    if n2 <= 0:
-        xs2 = np.array([])
-    elif n2 == 1:
-        xs2 = np.array([(w_min + w_max) / 2.0])
-    else:
-        xs2 = np.linspace(w_min, w_max, n2)
-
-    return xs1.tolist(), xs2.tolist()
-
-
-def _internal_leg_positions(y_min, y_max, n_legs):
-    """Internal stirrup leg positions across width."""
-    if n_legs <= 2:
-        return []
-    span = y_max - y_min
-    if span <= 0:
-        return []
-    # equally spaced between outer legs
-    return [y_min + span * j / (n_legs - 1) for j in range(1, n_legs - 1)]
-
-
-# ------------------------------------------------------------
-#  MINI 2D CROSS-SECTION  (SECTION A)
-# ------------------------------------------------------------
-def make_summary_cross_section_figure():
-    """
-    Tiny 2D cross-section using Plotly (visual only).
-    Concrete outline + lig cage + bottom/top bars.
-
-    NOW uses the shared compute_section_layout() helper so that
-    the mapping and bar positions are identical to the bending
-    stress-strain section diagram.
-    """
-    layout = compute_section_layout()
-
-    b = layout["b"]
-    D = layout["D"]
-    cage = layout["cage"]
-    bot = layout["bot"]
-    top = layout["top"]
-    lig = layout["lig"]
-
-    lig_d = lig["d"]
-    lig_legs = lig["legs"]
-    lig_line_width = max(1.0, min(4.0, abs(lig_d) / 3.0))
-
-    shapes = []
-    traces = []
-
-    # ----- outer concrete -----
-    shapes.append(
-        dict(
-            type="rect",
-            x0=0,
-            y0=0,
-            x1=b,
-            y1=D,
-            line=dict(width=1.2, color="black"),
-            fillcolor="rgba(0,0,0,0)",
-        )
-    )
-
-    # ----- lig cage -----
-    cage_x0 = cage["x0"]
-    cage_x1 = cage["x1"]
-    cage_y0 = cage["y0"]
-    cage_y1 = cage["y1"]
-
-    shapes.append(
-        dict(
-            type="rect",
-            x0=cage_x0,
-            y0=cage_y0,
-            x1=cage_x1,
-            y1=cage_y1,
-            line=dict(width=lig_line_width, color="black"),
-            fillcolor="rgba(0,0,0,0)",
-        )
-    )
-
-    # internal legs (vertical ties)
-    if lig_d > 0 and lig_legs > 2:
-        for xt in lig["internal_x"]:
-            shapes.append(
-                dict(
-                    type="line",
-                    x0=xt,
-                    y0=cage_y0,
-                    x1=xt,
-                    y1=cage_y1,
-                    line=dict(width=lig_line_width * 0.8, color="black"),
-                )
-            )
-
-    # ----- bottom bars -----
-    if bot["x"]:
-        traces.append(
-            go.Scatter(
-                x=bot["x"],
-                y=bot["y"],
-                mode="markers",
-                marker=dict(
-                    color="red", size=7, line=dict(width=0.7, color="black")
-                ),
-                hoverinfo="skip",
-                showlegend=False,
-            )
-        )
-
-    # ----- top bars -----
-    if top["x"]:
-        traces.append(
-            go.Scatter(
-                x=top["x"],
-                y=top["y"],
-                mode="markers",
-                marker=dict(
-                    color="blue", size=7, line=dict(width=0.7, color="black")
-                ),
-                hoverinfo="skip",
-                showlegend=False,
-            )
-        )
-
-    if not traces:
-        traces.append(
-            go.Scatter(
-                x=[0],
-                y=[0],
-                mode="markers",
-                marker=dict(size=1, color="rgba(0,0,0,0)"),
-                showlegend=False,
-            )
-        )
-
-    fig = go.Figure(data=traces)
-    fig.update_xaxes(visible=False)
-    fig.update_yaxes(
-        visible=False,
-        scaleanchor="x",
-        scaleratio=1,
-        range=[D * 1.02, -0.10 * D],
-    )
-    fig.update_layout(
-        width=260,
-        height=300,
-        margin=dict(l=5, r=5, t=0, b=0),
-        shapes=shapes,
-        dragmode=False,
-        title="Section A",
-        title_x=0.5,
-    )
-    return fig
-
-
-# ------------------------------------------------------------
-#  3D BEAM – BENDING & SHEAR VISUAL  (SECTION A)
-# ------------------------------------------------------------
-def make_beam_3d_figure():
-    # --- parameters from session state ---
-    b = float(get_param("b", 400.0) or 400.0)
-    D = float(get_param("D", 600.0) or 600.0)
-    L = float(get_param("L", 8000.0) or 8000.0)
-
-    nb_bot = int(get_param("nb_bot", 4) or 0)
-    db_bot = float(get_param("db_bot", 20.0) or 20.0)
-
-    nb_top = int(get_param("nb_top", 2) or 0)
-    db_top = float(get_param("db_top", 16.0) or 16.0)
-
-    cover_bot = float(get_param("cover_bot", 40.0) or 40.0)
-    cover_top = float(get_param("cover_top", 40.0) or 40.0)
-
-    cover_side = float(
-        get_param("cover_side", min(cover_top, cover_bot)) or min(cover_top, cover_bot)
-    )
-
-    rowgap_bot = float(get_param("rowgap_bot", 60.0) or 60.0)
-    rowgap_top = float(get_param("rowgap_top", 60.0) or 60.0)
-
-    lig_d = float(get_param("lig_d", 10.0) or 10.0)
-    lig_legs_raw = get_param("lig_legs", 2)
+def _seed_from_param(name: str, fallback: float) -> float:
+    """Seed default widget values from shared state, with safe fallback."""
     try:
-        lig_legs = int(lig_legs_raw or 0)
+        v = get_param(name)
+    except TypeError:
+        v = None
+
+    try:
+        if v is None:
+            return float(fallback)
+        v = float(v)
+        if math.isnan(v):
+            return float(fallback)
+        return v
     except Exception:
-        lig_legs = 0
-    s_lig = float(get_param("s_lig", 200.0) or 200.0)
+        return float(fallback)
 
-    traces = []
 
-    max_bar_d = max(db_bot, db_top, 0.0)
-    horiz_clear = 0.5 * max_bar_d
+def _inject_calcbox_css():
+    """Style markdown blockquotes & readonly chips (same feel as shear/deflection)."""
+    st.markdown(
+        """
+<style>
+blockquote {
+  border-left: 4px solid #1f77b4 !important;
+  background-color: rgba(31, 119, 180, 0.08) !important;
+  padding: 0.75rem 1rem !important;
+  margin: 0.5rem 0 0.75rem 0 !important;
+  border-radius: 0 0.35rem 0.35rem 0 !important;
+  color: #1a1a1a !important;
+  opacity: 1 !important;
+  font-size: 0.9rem !important;
+  line-height: 1.35 !important;
+}
+blockquote * {
+  color: #1a1a1a !important;
+  opacity: 1 !important;
+}
+blockquote p {
+  margin-bottom: 0.5rem !important;
+}
+blockquote p:last-child {
+  margin-bottom: 0 !important;
+}
 
-    # ----- concrete beam -----
-    vx = np.array([0, L, L, 0, 0, L, L, 0])
-    vy = np.array([0, 0, b, b, 0, 0, b, b])
-    vz = np.array([0, 0, 0, 0, D, D, D, D])
-
-    tri_i = [0, 0, 0, 4, 4, 1, 5, 2, 6, 3, 7, 6]
-    tri_j = [1, 2, 3, 5, 7, 5, 6, 6, 7, 7, 4, 2]
-    tri_k = [2, 3, 0, 6, 4, 2, 7, 3, 4, 0, 5, 1]
-
-    traces.append(
-        go.Mesh3d(
-            x=vx,
-            y=vy,
-            z=vz,
-            i=tri_i,
-            j=tri_j,
-            k=tri_k,
-            color="#cccccc",
-            opacity=0.25,
-            flatshading=True,
-            hoverinfo="skip",
-        )
+/* Read-only linked-parameter chips */
+.readonly-param {
+  border-left: 4px solid #6c757d;
+  background-color: rgba(108, 117, 125, 0.08);
+  padding: 0.4rem 0.6rem;
+  margin-bottom: 0.4rem;
+  border-radius: 0 0.35rem 0.35rem 0;
+  font-size: 0.85rem;
+}
+.readonly-param-title {
+  font-weight: 600;
+}
+.readonly-param-value {
+  font-weight: 500;
+}
+.readonly-param-source {
+  font-size: 0.78rem;
+  opacity: 0.8;
+}
+</style>
+""",
+        unsafe_allow_html=True,
     )
 
-    # ----- Section A plane at mid-span -----
-    mid_x = 0.5 * L
-    Yg, Zg = np.meshgrid(np.linspace(0, b, 2), np.linspace(0, D, 2))
-    Xg = np.full_like(Yg, mid_x)
-    traces.append(
-        go.Surface(
-            x=Xg,
-            y=Yg,
-            z=Zg,
-            colorscale=[[0, "#3182bd"], [1, "#3182bd"]],
-            showscale=False,
-            opacity=0.15,
-            name="Section A",
-        )
-    )
 
-    # ----- longitudinal bar positions -----
-    def _bar_positions_3d(nbars, bar_dia, cover, rowgap, is_top):
-        if nbars <= 0 or bar_dia <= 0:
-            return []
+def calcbox(md: str):
+    r"""
+    Render a highlighted calculation box with LaTeX-enabled markdown inside.
 
-        y_min = cover_side + horiz_clear
-        y_max = b - cover_side - horiz_clear
-        if y_max <= y_min:
-            mid = 0.5 * b
-            span = max(10.0, (b - 2 * cover_side) * 0.4)
-            y_min = mid - span / 2.0
-            y_max = mid + span / 2.0
-
-        if is_top:
-            z1 = cover + 0.5 * bar_dia
-            z2 = z1 + rowgap
-        else:
-            z1 = D - (cover + 0.5 * bar_dia)
-            z2 = z1 - rowgap
-
-        min_z = 0.5 * bar_dia + 5.0
-        max_z = D - 0.5 * bar_dia - 5.0
-        z1 = float(np.clip(z1, min_z, max_z))
-        z2 = float(np.clip(z2, min_z, max_z))
-
-        xs1, xs2 = _two_row_positions_width(nbars, bar_dia, y_min, y_max)
-        pos = [(yy, z1) for yy in xs1] + [(yy, z2) for yy in xs2]
-        return pos
-
-    # bottom bars
-    bot_positions = _bar_positions_3d(
-        nb_bot, db_bot, cover_bot, rowgap_bot, is_top=False
-    )
-    line_w_bot = max(2.0, abs(db_bot) * 0.4)
-    for (yy, zz) in bot_positions:
-        traces.append(
-            go.Scatter3d(
-                x=[0, L],
-                y=[yy, yy],
-                z=[zz, zz],
-                mode="lines",
-                line=dict(width=line_w_bot, color="red"),
-                hoverinfo="skip",
-                showlegend=False,
-            )
-        )
-
-    # top bars
-    top_positions = _bar_positions_3d(
-        nb_top, db_top, cover_top, rowgap_top, is_top=True
-    )
-    line_w_top = max(2.0, abs(db_top) * 0.4)
-    for (yy, zz) in top_positions:
-        traces.append(
-            go.Scatter3d(
-                x=[0, L],
-                y=[yy, yy],
-                z=[zz, zz],
-                mode="lines",
-                line=dict(width=line_w_top, color="blue"),
-                hoverinfo="skip",
-                showlegend=False,
-            )
-        )
-
-    # ----- shear ligs -----
-    def add_shear_hoop_at_x(x0):
-        y_left = cover_side
-        y_right = b - cover_side
-        z_top = cover_top + max(lig_d, 6.0)
-        z_bot = D - (cover_bot + max(lig_d, 6.0))
-
-        min_z = 5.0
-        max_z = D - 5.0
-        z_top_c = float(np.clip(z_top, min_z, max_z))
-        z_bot_c = float(np.clip(z_bot, min_z, max_z))
-
-        Xs = [x0] * 5
-        Ys = [y_left, y_right, y_right, y_left, y_left]
-        Zs = [z_top_c, z_top_c, z_bot_c, z_bot_c, z_top_c]
-
-        lw = max(1.5, abs(lig_d) * 0.35)
-        traces.append(
-            go.Scatter3d(
-                x=Xs,
-                y=Ys,
-                z=Zs,
-                mode="lines",
-                line=dict(width=lw, color="black"),
-                hoverinfo="skip",
-                showlegend=False,
-            )
-        )
-
-        if lig_legs > 2:
-            for yi in _internal_leg_positions(y_left, y_right, lig_legs):
-                traces.append(
-                    go.Scatter3d(
-                        x=[x0, x0],
-                        y=[yi, yi],
-                        z=[z_top_c, z_bot_c],
-                        mode="lines",
-                        line=dict(width=lw * 0.9, color="black"),
-                        hoverinfo="skip",
-                        showlegend=False,
-                    )
-                )
-
-    if lig_d > 0 and s_lig > 0 and lig_legs >= 2:
-        s_eff = max(40.0, float(s_lig))
-        n_hoops = int(max(1, min(80, round(L / s_eff))))
-        xs = np.linspace(s_eff / 2.0, L - s_eff / 2.0, n_hoops)
-        for x0 in xs:
-            add_shear_hoop_at_x(x0)
-
-    fig = go.Figure(data=traces)
-    fig.update_layout(
-        height=780,  # roughly fills down to crack inputs
-        scene=dict(
-            xaxis_title="Length (mm)",
-            yaxis_title="Width (mm)",
-            zaxis_title="Depth from top (mm)",
-            zaxis=dict(autorange="reversed"),
-            aspectmode="data",
-            camera=dict(eye=dict(x=1.45, y=1.35, z=0.95)),
-        ),
-        margin=dict(l=0, r=0, t=0, b=0),
-        showlegend=False,
-        title="Section A",
-        title_x=0.5,
-    )
-    return fig
-
-
-# ------------------------------------------------------------
-#  STATUS HELPER
-# ------------------------------------------------------------
-def _status_and_colour(util, cap_exists):
-    if not cap_exists or util is None or math.isnan(util):
-        return "Not calculated", "#e0e0e0"
-    if util < 0.95:
-        return "PASS", "#d5f5d5"
-    if util <= 1.0:
-        return "NEAR LIMIT", "#fff4c2"
-    return "FAIL", "#f8d0d0"
-
-
-# ------------------------------------------------------------
-#  MAIN INPUT PAGE
-# ------------------------------------------------------------
-def render_inputs():
-    sync_callbacks = get_sync_callbacks()
-    apply_global_widget_css()
-
-    summary_container = st.container()
-    st.markdown("---")
-
-    # ---------- inputs + 3D beam ----------
-    left_col, right_col = st.columns([1.2, 1.8])
-
-    with left_col:
-        st.subheader("Design Actions")
-        number_row(
-            "Design moment Mu* (kNm)",
-            "inputs_Mu_star",
-            10.0,
-            sync_callbacks,
-            help_text="Factored design bending moment at the critical section.",
-        )
-        number_row(
-            "Applied prestress P* (kN)",
-            "inputs_P_star",
-            10.0,
-            sync_callbacks,
-            help_text="Net prestress force at the section (compression positive).",
-        )
-        number_row(
-            "Design torsion Tu* (kNm)",
-            "inputs_Tu_star",
-            1.0,
-            sync_callbacks,
-            help_text="Factored torsion; used on torsion page (placeholder here).",
-        )
-        number_row(
-            "Design shear Vu* (kN)",
-            "inputs_Vu_star",
-            10.0,
-            sync_callbacks,
-            help_text="Factored design shear at the critical section.",
-        )
-        number_row(
-            "Axial force N* (kN)",
-            "inputs_N_star",
-            10.0,
-            sync_callbacks,
-            help_text="Axial action at the section (+compression / −tension).",
-        )
-
-        st.markdown("---")
-
-        st.subheader("Geometry")
-        number_row(
-            "Width b (mm)",
-            "inputs_b",
-            10.0,
-            sync_callbacks,
-            help_text="Beam/web width.",
-        )
-        number_row(
-            "Depth D (mm)",
-            "inputs_D",
-            10.0,
-            sync_callbacks,
-            help_text="Overall section depth from compression face to soffit.",
-        )
-        number_row(
-            "Span L (mm)",
-            "inputs_L",
-            100.0,
-            sync_callbacks,
-            help_text="Clear span used for deflection checks.",
-        )
-        number_row(
-            "Bottom cover (mm)",
-            "inputs_cover_bot",
-            5.0,
-            sync_callbacks,
-            help_text="Clear cover to the bottom bars.",
-        )
-        number_row(
-            "Top cover (mm)",
-            "inputs_cover_top",
-            5.0,
-            sync_callbacks,
-            help_text="Clear cover to the top bars.",
-        )
-        number_row(
-            "Side cover (mm)",
-            "inputs_cover_side",
-            5.0,
-            sync_callbacks,
-            help_text="Clear side cover to longitudinal reinforcement and ducts.",
-        )
-
-        st.markdown("---")
-
-        st.subheader("Materials")
-        number_row(
-            "Concrete strength f'c (MPa)",
-            "inputs_fc",
-            2.0,
-            sync_callbacks,
-            help_text="Characteristic compressive strength of concrete.",
-        )
-        number_row(
-            "Steel yield fsy (MPa)",
-            "inputs_fsy",
-            10.0,
-            sync_callbacks,
-            help_text="Yield stress of flexural reinforcement.",
-        )
-        number_row(
-            "Ec (MPa)",
-            "inputs_Ec",
-            1000.0,
-            sync_callbacks,
-            help_text="Short-term modulus of elasticity of concrete.",
-        )
-        number_row(
-            "Es (MPa)",
-            "inputs_Es",
-            5000.0,
-            sync_callbacks,
-            help_text="Elastic modulus of reinforcing steel.",
-        )
-
-    with right_col:
-        st.subheader("3D Beam – Bending & Shear Visual (Section A)")
-        fig3d = make_beam_3d_figure()
-        st.plotly_chart(fig3d, use_container_width=True)
-
-    st.markdown("---")
-
-    # ---------- reo + shear + crack ----------
-    reo_col, crack_col = st.columns(2)
-
-    # left column: bottom reo + shear + ducts
-    with reo_col:
-        st.subheader("Bottom Reinforcement (primary)")
-        number_row(
-            "Bottom bars or spacing (≤30 = bars, ≥30 = mm)",
-            "inputs_bot_entry",
-            1.0,
-            sync_callbacks,
-            help_text="Enter a number of bars (≤30) or a spacing in mm (≥30).",
-        )
-        number_row(
-            "Bottom bar diameter db,bot (mm)",
-            "inputs_db_bot",
-            1.0,
-            sync_callbacks,
-            help_text="Nominal diameter of bottom bars.",
-        )
-        number_row(
-            "Bottom row gap (mm)",
-            "inputs_rowgap_bot",
-            5.0,
-            sync_callbacks,
-            help_text="Vertical gap between bottom rows if two layers are used.",
-        )
-
-        st.subheader("Shear reinforcement")
-        number_row(
-            "Lig diameter (mm)",
-            "inputs_lig_d",
-            1.0,
-            sync_callbacks,
-            help_text="Nominal diameter of shear ligatures.",
-        )
-        number_row(
-            "Lig legs",
-            "inputs_lig_legs",
-            1,
-            sync_callbacks,
-            help_text="Number of legs in each ligature crossing the web.",
-        )
-        number_row(
-            "Stirrup spacing s_lig (mm)",
-            "inputs_s_lig",
-            10.0,
-            sync_callbacks,
-            help_text="Centre-to-centre spacing of shear ligatures along the span.",
-        )
-
-        st.subheader("Ducts / Prestress voids")
-        number_row(
-            "Number of ducts crossing web",
-            "inputs_n_ducts",
-            1.0,
-            sync_callbacks,
-            help_text="Total number of ducts crossing the web in the shear zone.",
-        )
-        number_row(
-            "Duct diameter (mm)",
-            "inputs_duct_dia",
-            1.0,
-            sync_callbacks,
-            help_text="Nominal diameter of each duct.",
-        )
-
-    # right column: top reo + crack + time-dependent
-    with crack_col:
-        st.subheader("Top Reinforcement (primary)")
-        number_row(
-            "Top bars or spacing (≤30 = bars, ≥30 = mm)",
-            "inputs_top_entry",
-            1.0,
-            sync_callbacks,
-            help_text="Enter a number of bars (≤30) or a spacing in mm (≥30).",
-        )
-        number_row(
-            "Top bar diameter db,top (mm)",
-            "inputs_db_top",
-            1.0,
-            sync_callbacks,
-            help_text="Nominal diameter of top bars.",
-        )
-        number_row(
-            "Top row gap (mm)",
-            "inputs_rowgap_top",
-            5.0,
-            sync_callbacks,
-            help_text="Vertical gap between top rows if two layers are used.",
-        )
-
-        st.subheader("Crack Control Inputs")
-
-        options = ["A1", "A2", "B1", "B2", "C1", "C2"]
-        current = get_param("exposure_class", "B1")
-        if current not in options:
-            current = "B1"
-
-        exp_label_col, exp_select_col = st.columns([1.3, 1])
-        with exp_label_col:
-            st.markdown("Exposure class")
-        with exp_select_col:
-            st.markdown('<div class="nr-field">', unsafe_allow_html=True)
-            if "inputs_exposure_class" in st.session_state:
-                st.selectbox(
-                    "",
-                    options,
-                    key="inputs_exposure_class",
-                    on_change=sync_callbacks["inputs_exposure_class"],
-                    label_visibility="collapsed",
-                    help="Exposure classification to AS 3600 – controls allowable crack width.",
-                )
-            else:
-                st.selectbox(
-                    "",
-                    options,
-                    key="inputs_exposure_class",
-                    index=options.index(current),
-                    on_change=sync_callbacks["inputs_exposure_class"],
-                    label_visibility="collapsed",
-                    help="Exposure classification to AS 3600 – controls allowable crack width.",
-                )
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        number_row(
-            "Bottom bar spacing for crack calc (mm)",
-            "inputs_s_bar_bot",
-            5.0,
-            sync_callbacks,
-            help_text="Centre-to-centre spacing of bottom bars used in crack-width check.",
-        )
-
-        st.subheader("Time-dependent inputs")
-        number_row(
-            "Creep time after loading t (days)",
-            "inputs_t_creep",
-            1.0,
-            sync_callbacks,
-            help_text="Time after loading used for creep coefficient φ_cc,t.",
-        )
-        number_row(
-            "Age at loading τ (days)",
-            "inputs_age_at_loading",
-            1.0,
-            sync_callbacks,
-            help_text="Concrete age at application of sustained load.",
-        )
-        number_row(
-            "Sustained stress ratio σ₀ / f'c,mi",
-            "inputs_stress_ratio",
-            0.01,
-            sync_callbacks,
-            help_text="Ratio of sustained stress to mean in-situ strength.",
-        )
-        number_row(
-            "Shrinkage time since drying t (days)",
-            "inputs_t_shrink",
-            1.0,
-            sync_callbacks,
-            help_text="Duration of drying used in shrinkage calculation.",
-        )
-
-    # ---------- now recompute design results with the latest inputs ----------
-    _compute_bending_capacity()
-    # _compute_shear_capacity()
-    # _compute_crack_results()
-    # _compute_deflection_results()
-
-    # ---------- summary values ----------
-    Mu_star = get_param("Mu_star", 0.0)
-    Vu_star = get_param("Vu_star", 0.0)
-
-    phi_Mu_cap = get_param("phi_Mu_cap", 0.0)
-    Mu_util = get_param("Mu_utilisation", 0.0)
-
-    phi_Vu_cap = get_param("phi_Vu_cap", 0.0)
-    Vu_util = get_param("Vu_utilisation", 0.0)
-
-    crack_width = get_param("crack_width", 0.0)
-    crack_util = get_param("crack_utilisation", 0.0)
-
-    L = get_param("L", 3000.0)
-    b = get_param("b", 400.0)
-    D = get_param("D", 600.0)
-    Ec = get_param("Ec", 30000.0)
-
-    phi_creep = st.session_state.get("creep_phi_design", None)
-    Ec_eff_design = st.session_state.get("Ec_eff_design", None)
-    eps_sh_micro = st.session_state.get("shrinkage_eps_design", None)
-
-    if Ec_eff_design is not None and Ec_eff_design > 0:
-        k_creep = Ec / Ec_eff_design
-    elif phi_creep is not None and phi_creep > 0:
-        k_creep = 1.0 + phi_creep
-    else:
-        k_creep = 1.0
-
-    eps_sh = (eps_sh_micro or 0.0) / 1e6
-
-    if L > 0:
-        w_total = 8.0 * Mu_star / (L / 1000.0) ** 2  # kN/m (simple UDL back-calc)
-    else:
-        w_total = 0.0
-
-    b_mm = max(1.0, b)
-    D_mm = max(1.0, D)
-    L_mm = max(1.0, L)
-    I_gross = b_mm * D_mm**3 / 12.0 if b_mm > 0 and D_mm > 0 else 1.0
-
-    delta_inst = 5.0 * w_total * L_mm**4 / (384.0 * Ec * I_gross) if Ec > 0 else 0.0
-    delta_creep = delta_inst * k_creep
-    phi_sh = eps_sh / (0.7 * D_mm) if D_mm > 0 else 0.0
-    delta_sh = phi_sh * L_mm**2 / 8.0
-    delta_total = delta_creep + delta_sh
-
-    defl_limit = L_mm / 250.0 if L_mm > 0 else 0.0
-    defl_util = delta_total / defl_limit if defl_limit > 0 else 0.0
-
-    # ---------- summary strings ----------
-    bending_demand = f"{Mu_star:.1f} kNm"
-    bending_cap = f"{phi_Mu_cap:.1f} kNm" if phi_Mu_cap > 0 else "—"
-    bending_util_str = f"{Mu_util:.2f}" if phi_Mu_cap > 0 else "—"
-    bending_status, bending_colour = _status_and_colour(Mu_util, phi_Mu_cap > 0)
-
-    shear_demand = f"{Vu_star:.1f} kN"
-    shear_cap = f"{phi_Vu_cap:.1f} kN" if phi_Vu_cap > 0 else "—"
-    shear_util_str = f"{Vu_util:.2f}" if phi_Vu_cap > 0 else "—"
-    shear_status, shear_colour = _status_and_colour(Vu_util, phi_Vu_cap > 0)
-
-    crack_demand = f"{crack_width:.3f} mm"
-    crack_cap = "w_lim" if crack_util > 0 else "—"
-    crack_util_str = f"{crack_util:.2f}" if crack_util > 0 else "—"
-    crack_status, crack_colour = _status_and_colour(crack_util, crack_util > 0)
-
-    defl_demand = f"{delta_total:.2f} mm"
-    defl_cap = f"{defl_limit:.2f} mm" if defl_limit > 0 else "—"
-    defl_util_str = f"{defl_util:.2f}" if defl_limit > 0 else "—"
-    defl_status, defl_colour = _status_and_colour(defl_util, defl_limit > 0)
-
-    summary_table_html = f"""
-    <div style="
-        border: 1px solid #cccccc;
-        border-radius: 8px;
-        padding: 0.5rem 0.75rem;
-        margin-bottom: 1rem;
-        max-width: 900px;
-    ">
-      <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
-        <thead>
-          <tr style="background-color: #f5f5f5;">
-            <th style="text-align:left; padding: 4px 6px;">Check</th>
-            <th style="text-align:right; padding: 4px 6px;">Demand</th>
-            <th style="text-align:right; padding: 4px 6px;">Capacity</th>
-            <th style="text-align:right; padding: 4px 6px;">Utilisation</th>
-            <th style="text-align:center; padding: 4px 6px;">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr style="background-color: {bending_colour};">
-            <td style="padding: 4px 6px;"><strong>Bending</strong></td>
-            <td style="text-align:right; padding: 4px 6px;">{bending_demand}</td>
-            <td style="text-align:right; padding: 4px 6px;">{bending_cap}</td>
-            <td style="text-align:right; padding: 4px 6px;">{bending_util_str}</td>
-            <td style="text-align:center; padding: 4px 6px;"><strong>{bending_status}</strong></td>
-          </tr>
-          <tr style="background-color: {shear_colour};">
-            <td style="padding: 4px 6px;"><strong>Shear</strong></td>
-            <td style="text-align:right; padding: 4px 6px;">{shear_demand}</td>
-            <td style="text-align:right; padding: 4px 6px;">{shear_cap}</td>
-            <td style="text-align:right; padding: 4px 6px;">{shear_util_str}</td>
-            <td style="text-align:center; padding: 4px 6px;"><strong>{shear_status}</strong></td>
-          </tr>
-          <tr style="background-color: {crack_colour};">
-            <td style="padding: 4px 6px;"><strong>Crack control</strong></td>
-            <td style="text-align:right; padding: 4px 6px;">{crack_demand}</td>
-            <td style="text-align:right; padding: 4px 6px;">{crack_cap}</td>
-            <td style="text-align:right; padding: 4px 6px;">{crack_util_str}</td>
-            <td style="text-align:center; padding: 4px 6px;"><strong>{crack_status}</strong></td>
-          </tr>
-          <tr style="background-color: {defl_colour};">
-            <td style="padding: 4px 6px;"><strong>Deflection</strong></td>
-            <td style="text-align:right; padding: 4px 6px;">{defl_demand}</td>
-            <td style="text-align:right; padding: 4px 6px;">{defl_cap}</td>
-            <td style="text-align:right; padding: 4px 6px;">{defl_util_str}</td>
-            <td style="text-align:center; padding: 4px 6px;"><strong>{defl_status}</strong></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    - Converts \[ \] → $$ $$ for display math
+    - Converts \( \) → $ $ for inline math
+    - Wraps everything in a markdown blockquote (>) so CSS turns it blue
     """
+    converted = md.replace("\\[", "$$").replace("\\]", "$$")
+    converted = converted.replace("\\(", "$").replace("\\)", "$")
+    lines = converted.strip().split("\n")
+    blockquote = "\n".join("> " + line for line in lines)
+    st.markdown(blockquote)
 
-    # ---------- summary + mini section (rendered at top via container) ----------
-    with summary_container:
-        col_left, col_right = st.columns([2, 1])
-        with col_left:
-            st.title("Inputs")
-            st.markdown("### Summary (read-only from design pages)")
-            st.markdown(summary_table_html, unsafe_allow_html=True)
-        with col_right:
-            fig_sec = make_summary_cross_section_figure()
-            st.plotly_chart(
-                fig_sec,
-                use_container_width=False,
-                config={"displayModeBar": False},
-            )
+
+# ------------------------------------------------------------
+#  Tables – AS 3600:2018 8.6.2.2(A) & (B)
+# ------------------------------------------------------------
+# TABLE 8.6.2.2(A) – Maximum steel stress for tension or flexure
+# Structure: {db_mm: {wmax_mm: sigma_max_MPa}}
+_TABLE_8_6_2_2A = {
+    10: {0.2: 190, 0.3: 265, 0.4: 335},
+    12: {0.2: 175, 0.3: 245, 0.4: 305},
+    16: {0.2: 155, 0.3: 215, 0.4: 270},
+    20: {0.2: 140, 0.3: 195, 0.4: 240},
+    24: {0.2: 125, 0.3: 175, 0.4: 215},
+    28: {0.2: 115, 0.3: 160, 0.4: 200},
+    32: {0.2: 105, 0.3: 150, 0.4: 185},
+    36: {0.2: 100, 0.3: 140, 0.4: 175},
+    40: {0.2: 90,  0.3: 130, 0.4: 165},
+}
+
+# TABLE 8.6.2.2(B) – Maximum steel stress for flexure vs spacing
+# Structure: {spacing_mm: {wmax_mm: sigma_max_MPa}}
+_TABLE_8_6_2_2B = {
+    50:  {0.2: 200, 0.3: 300, 0.4: 400},
+    100: {0.2: 170, 0.3: 270, 0.4: 360},
+    150: {0.2: 155, 0.3: 245, 0.4: 330},
+    200: {0.2: 145, 0.3: 225, 0.4: 300},
+    250: {0.2: 135, 0.3: 210, 0.4: 280},
+    300: {0.2: 125, 0.3: 200, 0.4: 260},
+}
+
+
+def _nearest_key(mapping: dict, value: float) -> int:
+    """Return integer key in mapping closest to value."""
+    keys = sorted(mapping.keys())
+    return min(keys, key=lambda k: abs(k - value))
+
+
+def table_sigma_max_A(db_mm: float, wmax_mm: float) -> float:
+    """Lookup σ_s,max from Table 8.6.2.2(A) (nearest db, w'max)."""
+    wopt = min([0.2, 0.3, 0.4], key=lambda x: abs(x - wmax_mm))
+    db_key = _nearest_key(_TABLE_8_6_2_2A, db_mm)
+    return _TABLE_8_6_2_2A[db_key][wopt]
+
+
+def table_sigma_max_B(spacing_mm: float, wmax_mm: float) -> float:
+    """Lookup σ_s,max from Table 8.6.2.2(B) (nearest spacing, w'max)."""
+    wopt = min([0.2, 0.3, 0.4], key=lambda x: abs(x - wmax_mm))
+    s_key = _nearest_key(_TABLE_8_6_2_2B, spacing_mm)
+    return _TABLE_8_6_2_2B[s_key][wopt]
+
+
+# ------------------------------------------------------------
+#  Direct calculation helpers – 8.6.2.3
+# ------------------------------------------------------------
+def calc_eps_diff(
+    sigma_sr: float,
+    Es: float,
+    fct_eff: float,
+    rho_eff: float,
+    ne: float,
+    eps_cs: float,
+) -> float:
+    """
+    ε_sm − ε_cm from 8.6.2.3(2):
+
+      ε_sm − ε_cm = σ_sr / Es − 0.6 f_ct,eff / (Es ρ_eff) (1 + n_e ρ_eff) + ε_cs
+                  ≥ 0.6 σ_sr / Es
+
+    All strains are dimensionless.
+    """
+    if rho_eff <= 0:
+        return 0.0
+
+    term1 = sigma_sr / Es
+    term2 = 0.6 * fct_eff / (Es * rho_eff) * (1.0 + ne * rho_eff)
+    eps_diff = term1 - term2 + eps_cs
+
+    # Lower bound 0.6 σ_sr / Es
+    eps_min = 0.6 * sigma_sr / Es
+    return max(eps_diff, eps_min)
+
+
+def calc_sr_max(c_mm: float, db_mm: float, rho_eff: float, k1: float, k2: float) -> float:
+    """
+    Maximum crack spacing  s_r,max  from 8.6.2.3(3):
+
+        s_r,max = 3.4 c + 0.3 k1 k2 d_b / ρ_eff
+
+    Returns s_r,max in mm.
+    """
+    if rho_eff <= 0:
+        return 0.0
+    return 3.4 * c_mm + 0.3 * k1 * k2 * db_mm / rho_eff
+
+
+# ------------------------------------------------------------
+#  MAIN RENDER FUNCTION
+# ------------------------------------------------------------
+def render_crack():
+    apply_global_widget_css()
+    _inject_calcbox_css()
+    get_sync_callbacks()  # keeps contract with Inputs page
+
+    # --------------------------------------------------------
+    # Page title
+    # --------------------------------------------------------
+    st.title("Crack width – AS 3600:2018 Clause 8.6.2")
+
+    # --------------------------------------------------------
+    # Page description (directly under title)
+    # --------------------------------------------------------
+    st.markdown(
+        r"""
+This page checks **flexural crack control in reinforced concrete beams** in accordance with  
+**AS 3600:2018 Clause 8.6.2**, using:
+
+- **Table method (no direct crack width)** — limiting steel stress from Tables 8.6.2.2(A)–(B)  
+- **Direct crack-width calculation** — \(w = s_{r,\max} (\varepsilon_{sm} - \varepsilon_{cm}) \le w'_{\max}\) per Cl. 8.6.2.3  
+
+The aim is to verify that cracking is **controlled** so that durability and appearance are not impaired.
+"""
+    )
+
+    # --------------------------------------------------------
+    # Reserve space for top summary
+    # --------------------------------------------------------
+    summary_placeholder = st.empty()
+
+    # --------------------------------------------------------
+    # Inputs – geometry, reinforcement, material, crack limit
+    # --------------------------------------------------------
+    st.markdown("### Inputs")
+
+    col_geom, col_reo, col_mat, col_crack = st.columns(4)
+
+    # --- Geometry ---
+    with col_geom:
+        b_seed = _seed_from_param("b", 300.0)
+        D_seed = _seed_from_param("D", 600.0)
+        cover_seed = _seed_from_param("cover_bot", 40.0)
+
+        b = st.number_input(
+            "Section width b (mm)",
+            value=b_seed,
+            step=10.0,
+            key="crk_b",
+        )
+        D = st.number_input(
+            "Overall depth D (mm)",
+            value=D_seed,
+            step=10.0,
+            key="crk_D",
+        )
+        c = st.number_input(
+            "Clear cover to tensile bars c (mm)",
+            value=cover_seed,
+            step=5.0,
+            key="crk_c",
+        )
+
+    # --- Reinforcement ---
+    with col_reo:
+        db = st.number_input(
+            "Nominal bar diameter d_b (mm)",
+            value=20.0,
+            step=2.0,
+            min_value=8.0,
+            key="crk_db",
+        )
+        spacing = st.number_input(
+            "Centre-to-centre spacing s (mm)",
+            value=200.0,
+            step=25.0,
+            min_value=25.0,
+            key="crk_spacing",
+        )
+        Ast_seed = _seed_from_param("Ast_bot", 3 * math.pi * 20.0**2 / 4.0)
+        Ast = st.number_input(
+            "Area of tensile steel A_s,t (mm²)",
+            value=max(1.0, float(Ast_seed)),
+            step=50.0,
+            min_value=1.0,
+            key="crk_Ast",
+        )
+
+    # --- Material ---
+    with col_mat:
+        fc_seed = _seed_from_param("fc", 32.0)
+        Ec_seed = _seed_from_param("Ec", 30000.0)
+
+        fc = st.number_input(
+            "Concrete strength f'c (MPa)",
+            value=fc_seed,
+            step=1.0,
+            key="crk_fc",
+        )
+        Ec = st.number_input(
+            "Concrete modulus Ec (MPa)",
+            value=Ec_seed,
+            step=1000.0,
+            key="crk_Ec",
+        )
+        Es = st.number_input(
+            "Steel modulus Es (MPa)",
+            value=200000.0,
+            step=10000.0,
+            key="crk_Es",
+        )
+
+    # --- Crack limit settings + member type ---
+    with col_crack:
+        wmax_choice = st.selectbox(
+            "Characteristic crack width limit w'ₘₐₓ (mm)",
+            options=[0.2, 0.3, 0.4],
+            index=1,
+            format_func=lambda x: f"{x:.1f} mm",
+            key="crk_wmax",
+        )
+        member_type = st.selectbox(
+            "Resultant action",
+            options=["Primarily flexure", "Primarily tension"],
+            index=0,
+            key="crk_member_type",
+        )
+
+    # --------------------------------------------------------
+    # Linked SLS inputs from other pages (READ-ONLY)
+    # --------------------------------------------------------
+    st.markdown("### Linked SLS inputs (read-only from other pages)")
+
+    col_sls1, col_sls2, col_sls3 = st.columns(3)
+
+    # σ_sr from bending page
+    sigma_sr_seed = _seed_from_param("sigma_s_sls", 200.0)
+    sigma_sr = float(max(0.0, sigma_sr_seed))
+
+    with col_sls1:
+        st.markdown(
+            f"""
+<div class="readonly-param">
+  <div class="readonly-param-title">Steel stress at SLS σ<sub>sr</sub></div>
+  <div class="readonly-param-value">{sigma_sr:.1f} MPa</div>
+  <div class="readonly-param-source">Source: Bending page (SLS steel stress)</div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
+    # φ_ce from creep page (we use design creep coefficient φ_cc(t))
+    phi_ce_seed = _seed_from_param("phi_cc_t", 2.0)
+    phi_ce = float(max(0.0, phi_ce_seed))
+
+    with col_sls2:
+        st.markdown(
+            f"""
+<div class="readonly-param">
+  <div class="readonly-param-title">Creep coefficient φ<sub>ce</sub></div>
+  <div class="readonly-param-value">{phi_ce:.2f}</div>
+  <div class="readonly-param-source">Source: Creep page (ϕ<sub>cc</sub>(t))</div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
+    # ε_cs from shrinkage page
+    eps_cs_seed_micro = _seed_from_param("eps_cs_total_micro", 300.0)
+    eps_cs_micro = float(max(0.0, eps_cs_seed_micro))
+    eps_cs = eps_cs_micro * 1e-6
+
+    with col_sls3:
+        st.markdown(
+            f"""
+<div class="readonly-param">
+  <div class="readonly-param-title">Shrinkage strain ε<sub>cs</sub></div>
+  <div class="readonly-param-value">{eps_cs_micro:.1f} μɛ</div>
+  <div class="readonly-param-source">Source: Shrinkage page (ε<sub>cs,total</sub>)</div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
+    # --------------------------------------------------------
+    # Effective area in tension and ρ_eff
+    # --------------------------------------------------------
+    d_eff = D - c - db / 2.0
+    height_eff = min(2.5 * c, max(D - d_eff, 0.0), D / 2.0)
+    Aceff = b * max(height_eff, 1.0)  # mm²
+    rho_eff = Ast / Aceff
+
+    # --------------------------------------------------------
+    # 8.6.2.2 – Table-based max steel stress
+    # --------------------------------------------------------
+    sigma_table_A = table_sigma_max_A(db, wmax_choice)
+    sigma_table_B = table_sigma_max_B(spacing, wmax_choice)
+
+    if member_type == "Primarily tension":
+        sigma_table_combined = sigma_table_A
+        table_basis = "Table 8.6.2.2(A) – bar diameter"
+    else:
+        sigma_table_combined = max(sigma_table_A, sigma_table_B)
+        table_basis = (
+            "Max of Table 8.6.2.2(A) (bar diameter) "
+            "and 8.6.2.2(B) (spacing)"
+        )
+
+    fsy_seed = _seed_from_param("fsy", 500.0)
+    fsy = fsy_seed
+    sigma_08fsy = 0.8 * fsy
+
+    sigma_allow_table = min(sigma_table_combined, sigma_08fsy)
+    utilisation_table = sigma_sr / sigma_allow_table if sigma_allow_table > 0 else 0.0
+    passes_table = utilisation_table <= 1.0
+
+    # --------------------------------------------------------
+    # 8.6.2.3 – Direct crack width calculation
+    # --------------------------------------------------------
+    # Effective mean axial tensile strength – allow user override
+    fct_default = 0.6 * math.sqrt(max(fc, 1.0))
+    fct_eff = st.number_input(
+        "Effective mean tensile strength f_ct,eff (MPa)",
+        value=float(fct_default),
+        step=0.1,
+        min_value=0.1,
+        key="crk_fct_eff",
+    )
+
+    # Modular ratio for effective stiffness
+    ne = (1.0 + phi_ce) * Es / Ec if Ec > 0 else 0.0
+
+    # k1, k2 remain user-chosen detailing parameters
+    k1_choice = st.selectbox(
+        "k₁ (bond coefficient)",
+        options=[
+            ("Deformed bars (k₁ = 0.8)", 0.8),
+            ("Plain bars (k₁ = 1.6)", 1.6),
+        ],
+        index=0,
+        key="crk_k1",
+    )
+    k1 = k1_choice[1]
+
+    if member_type == "Primarily flexure":
+        k2_default = 0.5
+    else:
+        k2_default = 1.0
+
+    k2 = st.number_input(
+        "k₂ (strain distribution factor)",
+        value=float(k2_default),
+        step=0.1,
+        min_value=0.3,
+        max_value=1.5,
+        key="crk_k2",
+    )
+
+    eps_diff = calc_eps_diff(
+        sigma_sr=sigma_sr,
+        Es=Es,
+        fct_eff=fct_eff,
+        rho_eff=rho_eff,
+        ne=ne,
+        eps_cs=eps_cs,
+    )
+
+    sr_max = calc_sr_max(c_mm=c, db_mm=db, rho_eff=rho_eff, k1=k1, k2=k2)
+    w_calc = sr_max * eps_diff  # mm
+    utilisation_w = w_calc / wmax_choice if wmax_choice > 0 else 0.0
+    passes_w = utilisation_w <= 1.0
+
+    # --------------------------------------------------------
+    # TOP SUMMARY TABLE
+    # --------------------------------------------------------
+    with summary_placeholder.container():
+        st.markdown("## Summary")
+
+        rows = [
+            {
+                "Check": "Table method – max steel stress σ_sr",
+                "Result": f"{sigma_sr:.1f} MPa",
+                "Limit": f"{sigma_allow_table:.1f} MPa",
+                "Utilisation": f"{utilisation_table:.2f}",
+                "Pass?": "PASS" if passes_table else "FAIL",
+            },
+            {
+                "Check": "Direct crack width w",
+                "Result": f"{w_calc:.3f} mm",
+                "Limit": f"{wmax_choice:.3f} mm",
+                "Utilisation": f"{utilisation_w:.2f}",
+                "Pass?": "PASS" if passes_w else "FAIL",
+            },
+        ]
+
+        summary_df = pd.DataFrame(rows)
+
+        def _highlight(row):
+            color = "#d9ead3" if "PASS" in row.get("Pass?", "") else "#f4cccc"
+            return [f"background-color: {color}"] * len(row)
+
+        styled = summary_df.style.apply(_highlight, axis=1)
+        st.dataframe(styled, use_container_width=True, hide_index=True)
+        st.markdown("---")
+
+    # --------------------------------------------------------
+    # Tabs: table method & direct calculation
+    # --------------------------------------------------------
+    tab_table, tab_calc, tab_flow = st.tabs(
+        [
+            "Table method (8.6.2.2)",
+            "Direct calculation (8.6.2.3)",
+            "Workflow / notes",
+        ]
+    )
+
+    # ---------- Tab 1: Table method ----------
+    with tab_table:
+        st.subheader("Crack control **without** direct calculation of crack widths – Cl. 8.6.2.2")
+
+        calcbox(
+            rf"""
+**Concept**
+
+Instead of calculating a crack width directly, Clause 8.6.2.2 limits the **steel stress**
+on the cracked section:
+
+- For members **primarily in tension**:  
+  \[
+  \sigma_{{sr}} \le \sigma_{{\text{{max,A}}}} \quad \text{{(Table 8.6.2.2(A))}}
+  \]
+- For members **primarily in flexure**:  
+  \[
+  \sigma_{{sr}} \le \max\left(\sigma_{{\text{{max,A}}}}, \sigma_{{\text{{max,B}}}}\right)
+  \]
+  where \(\sigma_{{\text{{max,B}}}}\) comes from **Table 8.6.2.2(B)**.
+
+Under direct loading, \(\sigma_{{sr,1}} \le 0.8 f_{{sy}}\).
+
+**Current input**
+
+- Bar diameter: \(d_b = {db:.1f}\,\text{{mm}}\)  
+- Spacing: \(s = {spacing:.0f}\,\text{{mm}}\)  
+- Crack width limit: \(w'_{{\max}} = {wmax_choice:.1f}\,\text{{mm}}\)  
+- SLS steel stress: \(\sigma_{{sr}} = {sigma_sr:.1f}\,\text{{MPa}}\)  
+- Yield strength: \(f_{{sy}} \approx {fsy:.0f}\,\text{{MPa}}\)
+
+**From tables**
+
+- Table 8.6.2.2(A): \(\sigma_{{\text{{max,A}}}} \approx {sigma_table_A:.1f}\,\text{{MPa}}\)  
+- Table 8.6.2.2(B): \(\sigma_{{\text{{max,B}}}} \approx {sigma_table_B:.1f}\,\text{{MPa}}\)  
+- Combined table limit ({table_basis}):  
+  \[
+  \sigma_{{\text{{table}}}} = {sigma_table_combined:.1f}\,\text{{MPa}}
+  \]
+- 0.8\(f_{{sy}}\) limit:
+  \[
+  0.8 f_{{sy}} \approx {sigma_08fsy:.1f}\,\text{{MPa}}
+  \]
+
+Overall allowable steel stress:
+
+\[
+\sigma_{{\text{{allow}}}} = \min\left(\sigma_{{\text{{table}}}},\,0.8 f_{{sy}}\right)
+= {sigma_allow_table:.1f}\,\text{{MPa}}
+\]
+
+**Check**
+
+\[
+\frac{{\sigma_{{sr}}}}{{\sigma_{{\text{{allow}}}}}}
+= \frac{{{sigma_sr:.1f}}}{{{sigma_allow_table:.1f}}}
+\approx {utilisation_table:.2f}
+\quad\Rightarrow\quad
+\text{{{"PASS" if passes_table else "FAIL"}}}
+\]
+"""
+        )
+
+    # ---------- Tab 2: Direct calculation ----------
+    with tab_calc:
+        st.subheader("Crack control **by calculation of crack widths** – Cl. 8.6.2.3")
+
+        calcbox(
+            rf"""
+**Concept**
+
+The calculated maximum crack width is:
+
+\[
+w = s_{{r,\max}}(\varepsilon_{{sm}} - \varepsilon_{{cm}}) \le w'_{{\max}}
+\]
+
+where:
+
+- \(s_{{r,\max}}\) = maximum crack spacing  
+- \(\varepsilon_{{sm}}\) = mean strain in reinforcement  
+- \(\varepsilon_{{cm}}\) = mean strain in concrete between cracks.
+
+**Step 1 – Effective reinforcement ratio**
+
+Effective area in tension (simplified):
+
+\[
+A_{{c,\text{{eff}}}} \approx b \, h_{{\text{{eff}}}}
+\quad\Rightarrow\quad
+A_{{c,\text{{eff}}}} \approx {Aceff:.0f}\,\text{{mm}}^2
+\]
+
+\[
+\rho_{{\text{{eff}}}} = \frac{{A_{{s,t}}}}{{A_{{c,\text{{eff}}}}}}
+= \frac{{{Ast:.0f}}}{{{Aceff:.0f}}}
+\approx {rho_eff:.4f}
+\]
+
+**Step 2 – Difference in mean strain** \(\varepsilon_{{sm}} - \varepsilon_{{cm}}\)
+
+From Cl. 8.6.2.3(2):
+
+\[
+\varepsilon_{{sm}} - \varepsilon_{{cm}}
+= \frac{{\sigma_{{sr}}}}{{E_s}}
+- \frac{{0.6 f_{{ct,\text{{eff}}}}}}{{E_s \rho_{{\text{{eff}}}}}}\left(1 + n_e \rho_{{\text{{eff}}}}\right)
++ \varepsilon_{{cs}}
+\ge 0.6 \frac{{\sigma_{{sr}}}}{{E_s}}
+\]
+
+With:
+
+- \(f_{{ct,\text{{eff}}}} = {fct_eff:.2f}\,\text{{MPa}}\)  
+- \(E_s = {Es:.0f}\,\text{{MPa}},\ E_c = {Ec:.0f}\,\text{{MPa}}\)  
+- \(\varphi_{{ce}} = {phi_ce:.2f}\)  
+- \(n_e = (1 + \varphi_{{ce}}) E_s/E_c \approx {ne:.2f}\)  
+- \(\varepsilon_{{cs}} \approx {eps_cs_micro:.1f}\times 10^{{-6}}\)
+
+This gives:
+
+\[
+\varepsilon_{{sm}} - \varepsilon_{{cm}} \approx {eps_diff:.3e}
+\]
+
+**Step 3 – Maximum crack spacing**
+
+\[
+s_{{r,\max}} = 3.4 c + 0.3 k_1 k_2 \frac{{d_b}}{{\rho_{{\text{{eff}}}}}}
+\]
+
+Using:
+
+- \(c = {c:.1f}\,\text{{mm}},\ d_b = {db:.1f}\,\text{{mm}}\)  
+- \(k_1 = {k1:.2f},\ k_2 = {k2:.2f}\)
+
+\[
+s_{{r,\max}} \approx {sr_max:.1f}\,\text{{mm}}
+\]
+
+**Step 4 – Crack width**
+
+\[
+w = s_{{r,\max}}(\varepsilon_{{sm}} - \varepsilon_{{cm}})
+\approx {sr_max:.1f} \times {eps_diff:.3e}
+\approx {w_calc:.3f}\,\text{{mm}}
+\]
+
+Limit:
+
+\[
+w'_{{\max}} = {wmax_choice:.1f}\,\text{{mm}}, \quad
+\frac{{w}}{{w'_{{\max}}}} \approx {utilisation_w:.2f}
+\Rightarrow\ \text{{{"PASS" if passes_w else "FAIL"}}}
+\]
+"""
+        )
+
+    # ---------- Tab 3: Workflow ----------
+    with tab_flow:
+        st.subheader("Crack control workflow – AS 3600:2018 Clause 8.6.2")
+
+        st.markdown(
+            """
+### Step 1 – Minimum reinforcement & detailing
+
+- Check minimum tensile reinforcement per Clause 8.1.6.1  
+- Check cover and spacing requirements (≤ 100 mm to nearest bar, ≤ 300 mm spacing, etc.).
+
+---
+
+### Step 2 – Choose crack-control approach
+
+- **Table method (8.6.2.2)** for most beams – simple steel-stress limit.  
+- **Direct crack-width calculation (8.6.2.3)** where a more refined check is needed.
+
+---
+
+### Step 3 – Table method
+
+- Determine largest bar diameter and spacing in the tension zone.  
+- Choose characteristic crack-width limit \(w'_{\max}\) for the surface.  
+- Read off \(\sigma_{\text{max}}\) from Tables 8.6.2.2(A)–(B).  
+- Ensure \(\sigma_{sr} \le \min(\sigma_{\text{max}}, 0.8 f_{sy})\).
+
+---
+
+### Step 4 – Direct calculation (if used)
+
+- Compute effective reinforcement ratio \(\rho_{\text{eff}}\).  
+- Determine \(k_1, k_2\) based on bond and strain distribution.  
+- Obtain \(f_{ct,\text{eff}}, \varphi_{ce}, \varepsilon_{cs}\) (linked to **Creep** and **Shrinkage** pages).  
+- Evaluate \(s_{r,\max}\), \(\varepsilon_{sm} - \varepsilon_{cm}\) and \(w\).  
+- Check \(w \le w'_{\max}\).
+
+---
+
+This page is intentionally **teaching-focused**: every step is exposed so students can
+see how the tables and equations in Clause 8.6.2 relate to each other.
+"""
+        )
+
+    # --------------------------------------------------------
+    # Publish crack-control results (optional, for dashboards)
+    # --------------------------------------------------------
+    update_results(
+        sigma_sr=sigma_sr,
+        sigma_allow_table=sigma_allow_table,
+        w_calc=w_calc,
+        wmax_char=wmax_choice,
+        passes_table=passes_table,
+        passes_w=passes_w,
+    )
+
+
+# For compatibility with whatever app.py calls
+def render_crack_control():
+    """Entry point used by app.py – delegates to render_crack()."""
+    render_crack()
+
+
+def render_crack_page():
+    """Optional alias if imported elsewhere."""
+    render_crack()
