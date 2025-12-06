@@ -928,106 +928,50 @@ def render_inputs():
     defl_status, defl_colour = _status_and_colour(defl_util, defl_limit > 0)
 
     summary_table_html = f"""
-
-    <div style="
-
-        border: 1px solid #cccccc;
-
-        border-radius: 8px;
-
-        padding: 0.5rem 0.75rem;
-
-        margin-bottom: 1rem;
-
-        max-width: 900px;
-
-    ">
-
-      <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
-
-        <thead>
-
-          <tr style="background-color: #f5f5f5;">
-
-            <th style="text-align:left; padding: 4px 6px;">Check</th>
-
-            <th style="text-align:right; padding: 4px 6px;">Demand</th>
-
-            <th style="text-align:right; padding: 4px 6px;">Capacity</th>
-
-            <th style="text-align:right; padding: 4px 6px;">Utilisation</th>
-
-            <th style="text-align:center; padding: 4px 6px;">Status</th>
-
-          </tr>
-
-        </thead>
-
-        <tbody>
-
-          <tr style="background-color: {bending_colour};">
-
-            <td style="padding: 4px 6px;"><strong>Bending</strong></td>
-
-            <td style="text-align:right; padding: 4px 6px;">{bending_demand}</td>
-
-            <td style="text-align:right; padding: 4px 6px;">{bending_cap}</td>
-
-            <td style="text-align:right; padding: 4px 6px;">{bending_util_str}</td>
-
-            <td style="text-align:center; padding: 4px 6px;"><strong>{bending_status}</strong></td>
-
-          </tr>
-
-          <tr style="background-color: {shear_colour};">
-
-            <td style="padding: 4px 6px;"><strong>Shear</strong></td>
-
-            <td style="text-align:right; padding: 4px 6px;">{shear_demand}</td>
-
-            <td style="text-align:right; padding: 4px 6px;">{shear_cap}</td>
-
-            <td style="text-align:right; padding: 4px 6px;">{shear_util_str}</td>
-
-            <td style="text-align:center; padding: 4px 6px;"><strong>{shear_status}</strong></td>
-
-          </tr>
-
-          <tr style="background-color: {crack_colour};">
-
-            <td style="padding: 4px 6px;"><strong>Crack control</strong></td>
-
-            <td style="text-align:right; padding: 4px 6px;">{crack_demand}</td>
-
-            <td style="text-align:right; padding: 4px 6px;">{crack_cap}</td>
-
-            <td style="text-align:right; padding: 4px 6px;">{crack_util_str}</td>
-
-            <td style="text-align:center; padding: 4px 6px;"><strong>{crack_status}</strong></td>
-
-          </tr>
-
-          <tr style="background-color: {defl_colour};">
-
-            <td style="padding: 4px 6px;"><strong>Deflection</strong></td>
-
-            <td style="text-align:right; padding: 4px 6px;">{defl_demand}</td>
-
-            <td style="text-align:right; padding: 4px 6px;">{defl_cap}</td>
-
-            <td style="text-align:right; padding: 4px 6px;">{defl_util_str}</td>
-
-            <td style="text-align:center; padding: 4px 6px;"><strong>{defl_status}</strong></td>
-
-          </tr>
-
-        </tbody>
-
-      </table>
-
-    </div>
-
-    """
+<div style="border: 1px solid #cccccc; border-radius: 8px; padding: 0.5rem 0.75rem; margin-bottom: 1rem; max-width: 900px;">
+  <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+    <thead>
+      <tr style="background-color: #f5f5f5;">
+        <th style="text-align:left; padding: 4px 6px;">Check</th>
+        <th style="text-align:right; padding: 4px 6px;">Demand</th>
+        <th style="text-align:right; padding: 4px 6px;">Capacity</th>
+        <th style="text-align:right; padding: 4px 6px;">Utilisation</th>
+        <th style="text-align:center; padding: 4px 6px;">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="background-color: {bending_colour};">
+        <td style="padding: 4px 6px;"><strong>Bending</strong></td>
+        <td style="text-align:right; padding: 4px 6px;">{bending_demand}</td>
+        <td style="text-align:right; padding: 4px 6px;">{bending_cap}</td>
+        <td style="text-align:right; padding: 4px 6px;">{bending_util_str}</td>
+        <td style="text-align:center; padding: 4px 6px;"><strong>{bending_status}</strong></td>
+      </tr>
+      <tr style="background-color: {shear_colour};">
+        <td style="padding: 4px 6px;"><strong>Shear</strong></td>
+        <td style="text-align:right; padding: 4px 6px;">{shear_demand}</td>
+        <td style="text-align:right; padding: 4px 6px;">{shear_cap}</td>
+        <td style="text-align:right; padding: 4px 6px;">{shear_util_str}</td>
+        <td style="text-align:center; padding: 4px 6px;"><strong>{shear_status}</strong></td>
+      </tr>
+      <tr style="background-color: {crack_colour};">
+        <td style="padding: 4px 6px;"><strong>Crack control</strong></td>
+        <td style="text-align:right; padding: 4px 6px;">{crack_demand}</td>
+        <td style="text-align:right; padding: 4px 6px;">{crack_cap}</td>
+        <td style="text-align:right; padding: 4px 6px;">{crack_util_str}</td>
+        <td style="text-align:center; padding: 4px 6px;"><strong>{crack_status}</strong></td>
+      </tr>
+      <tr style="background-color: {defl_colour};">
+        <td style="padding: 4px 6px;"><strong>Deflection</strong></td>
+        <td style="text-align:right; padding: 4px 6px;">{defl_demand}</td>
+        <td style="text-align:right; padding: 4px 6px;">{defl_cap}</td>
+        <td style="text-align:right; padding: 4px 6px;">{defl_util_str}</td>
+        <td style="text-align:center; padding: 4px 6px;"><strong>{defl_status}</strong></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+"""
 
     with summary_container:
 
