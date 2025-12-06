@@ -446,6 +446,20 @@ def make_beam_3d_figure():
             zaxis=dict(autorange="reversed"),
             aspectmode="data",
             camera=dict(eye=dict(x=1.45, y=1.35, z=0.95)),
+            # NEW: callout for the blue plane = Section A
+            annotations=[
+                dict(
+                    x=mid_x,
+                    y=0.5 * b,
+                    z=1.02 * D,         # just above the top surface
+                    text="Section A",
+                    showarrow=True,
+                    arrowhead=1,
+                    ax=0,
+                    ay=-40,
+                    font=dict(size=10),
+                )
+            ],
         ),
         margin=dict(l=0, r=0, t=0, b=0),
         showlegend=False,
@@ -710,33 +724,35 @@ def render_inputs():
     st.markdown("---")
 
     # ============================
-    # 3. THIRD ROW – 3D beam (narrower, with border)
+    # 3. THIRD ROW – 3D beam (centred, narrower, with border)
     # ============================
     st.subheader("3D Beam – Bending & Shear Visual (Section A)")
 
     fig3d = make_beam_3d_figure()
 
-    # Use a narrower left column so the model doesn't span full width
-    col_3d, col_spacer = st.columns([3, 1])
-
-    with col_3d:
-        st.markdown(
-            """
-            <div style="
-                border: 1px solid #dddddd;
-                border-radius: 8px;
-                padding: 0.5rem;
-                margin-bottom: 0.5rem;
-                max-width: 900px;
-                background-color: #fafafa;
-            ">
-            """,
-            unsafe_allow_html=True,
-        )
-        st.plotly_chart(fig3d, use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    # col_spacer left empty on purpose
+    # Centre the model and give ONLY this plot a border
+    st.markdown(
+        """
+        <div style="display: flex; justify-content: center; margin-bottom: 0.75rem;">
+          <div style="
+              border: 2px solid #888888;
+              border-radius: 8px;
+              padding: 0.5rem;
+              max-width: 900px;
+              width: 100%;
+              background-color: #fafafa;
+          ">
+        """,
+        unsafe_allow_html=True,
+    )
+    st.plotly_chart(fig3d, use_container_width=True)
+    st.markdown(
+        """
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.markdown("---")
 
@@ -1020,15 +1036,17 @@ def render_inputs():
             st.markdown(summary_table_html, unsafe_allow_html=True)
 
         with col_right:
+            # Label and nudge the 2D section (Section A) slightly right
+            st.markdown("#### Section A")
 
-            fig_sec = make_summary_cross_section_figure()
-
-            st.plotly_chart(
-
-                fig_sec,
-
-                use_container_width=False,
-
-                config={"displayModeBar": False},
-
+            st.markdown(
+                '<div style="margin-left: 0.5rem;">',
+                unsafe_allow_html=True,
             )
+            fig_sec = make_summary_cross_section_figure()
+            st.plotly_chart(
+                fig_sec,
+                use_container_width=False,
+                config={"displayModeBar": False},
+            )
+            st.markdown("</div>", unsafe_allow_html=True)
