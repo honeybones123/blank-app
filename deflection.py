@@ -226,9 +226,10 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     if not isinstance(results, dict):
         results = {}
     
-    action_source = results.get("actions_source", "Manual design actions (inputs below)")
-    Mu_star = results.get("Mu_star", 0.0)
-    Vu_star = results.get("Vu_star", 0.0)
+    # Read action_source directly from session_state (it's a widget key, not in results)
+    action_source = st.session_state.get("actions_source", "Manual design actions (inputs below)")
+    Mu_star = get_param("Mu_star", 0.0)
+    Vu_star = get_param("Vu_star", 0.0)
     
     # Optional: also pull SFD/BMD info for display
     M_sfd = results.get("sfd_Mmax_abs_kNm")
