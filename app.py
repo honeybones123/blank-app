@@ -10,6 +10,7 @@ import creep
 import shrinkage
 import deflection
 import crack_page
+import sfd_bmd_page
 
 
 def main():
@@ -37,6 +38,7 @@ def main():
         "Inputs",
         "Bending",
         "Shear",
+        "Design",
         "Creep",
         "Shrinkage",
         "Deflection",
@@ -53,6 +55,8 @@ def main():
                 bending_page.render_bending()
             elif label == "Shear":
                 shear_page.render_shear()
+            elif label == "Design":
+                sfd_bmd_page.render_sfd_bmd_page()
             elif label == "Creep":
                 creep.render_creep()
             elif label == "Shrinkage":
