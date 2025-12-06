@@ -449,11 +449,13 @@ def calcbox(md: str):
 #  SHEAR – DRAWINGS + INSIGHT BLOCKS
 # ------------------------------------------------------------
 
-def _safe_image(path: str, caption: str | None = None, width: int | None = None):
+def _safe_image(path: str, caption: str | None = None, width: int | None = None, use_container_width: bool | None = None):
     """Tiny helper so missing images don't break the app."""
     if os.path.exists(path):
         if width is not None:
             st.image(path, caption=caption, width=width)
+        elif use_container_width is not None:
+            st.image(path, caption=caption, use_container_width=use_container_width)
         else:
             st.image(path, caption=caption, use_container_width=True)
     else:
@@ -811,57 +813,33 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
         )
 
     with col_right:
-        # Image + info button in a small row
-        img_col, info_col = st.columns([5, 1])
+        st.markdown(
+            """
+        <style>
+        .shear-dv-img img {
+            object-fit: contain;      /* keep aspect ratio */
+            height: 100%;             /* match container height */
+            max-height: 420px;        /* adjust to match text block height */
+            width: auto;              /* prevent distortion */
+            display: block;
+            margin-left: auto;
+            margin-right: auto;       /* center the image */
+        }
+        </style>
+        """,
+            unsafe_allow_html=True,
+        )
 
-        with img_col:
-            # shrink the image – tweak 300 → 280/320 to taste
-            _safe_image(
-                "assets/shear_flexural_cracks_dv.png",
-                caption=None,
-                width=300,
-            )
+        # Wrapper div to apply CSS
+        st.markdown('<div class="shear-dv-img">', unsafe_allow_html=True)
 
-        with info_col:
-            with st.popover("ℹ️", use_container_width=True):
-                calcbox(
-                    r"""
-**What is shear and why at $d_v$?**
+        _safe_image(
+            "assets/shear_flexural_cracks_dv.png",
+            caption=None,
+            use_container_width=False,
+        )
 
-
-
-
-
-- Shear forces act **perpendicular to the beam axis** – like a stack of playing cards trying to slide.  
-
-- In a beam, one part of the section wants to slide relative to the next, creating **internal shear stresses**.  
-
-
-
-**Critical section for shear – $d_v$**
-
-
-
-- Tests show peak **diagonal cracking** and shear demand occur at about **one effective depth $d_v$** from the support.  
-
-- AS 3600 therefore takes the design shear at a distance **$d_v$ from the face of the support**,  
-
-  ignoring any distributed load between the support and this section.  
-
-- If significant point loads fall inside this region the behaviour is closer to a **deep beam / STM**, so a strut-and-tie model is required.  
-
-- Effective shear depth is defined as  
-
-
-
-  $$d_v = \max\left(0.72D,\;0.9d_0\right)$$  
-
-
-
-  where $d_0$ is the depth to the centroid of the **tension reinforcement** in the tensile zone.
-
-"""
-                )
+        st.markdown("</div>", unsafe_allow_html=True)
 
     # Summary table placeholder – appears directly under the blurb
     summary_placeholder = st.empty()
