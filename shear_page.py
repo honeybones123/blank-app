@@ -781,26 +781,37 @@ def render_shear():
 
     sync_callbacks = get_sync_callbacks()
 
-    # Concept + dv drawing / insight
-    render_shear_intro_block()
+    # --- Layout row: intro text (left) + dv diagram (right) ---
+    col_left, col_right = st.columns([1, 1])  # 50/50 split
 
-    st.markdown(
-        r"""
+    with col_left:
+        st.markdown(
+            r"""
 This page evaluates **design shear**, **shear reinforcement**, and **torsion resistance**
-for reinforced concrete beams in accordance with **AS 3600:2018**, using the full
-**variable-angle truss model** (Cl. 8.2–8.3). Calculations include:
+for reinforced concrete beams in accordance with **AS 3600:2018**, using the full MCFT-based 
+shear method.
 
-- **Concrete shear strength** $V_c$ (Cl. 8.2.7)  
-- **Shear reinforcement contribution** $V_s$ based on bar area, spacing and yield strength (Cl. 8.2.8)  
-- **Design shear capacity** $\phi V_{uc} = \phi (V_c + V_s)$  
-- **Shear stress** $\tau_v = V^* / (b_w d)$ and web capacity checks  
-- **Torsional cracking, torsional reinforcement, and design torsion capacity** (Cl. 8.3.6–8.3.7)  
-- **Interaction of shear and torsion** where applicable.  
+- Concrete shear strength $V_c$ (Cl. 8.2.7)  
 
-Results are expressed in kN and MPa, and directly feed into deflection, crack-width,
-and interaction checks.
-"""
-    )
+- Shear reinforcement contribution $V_s$ (Cl. 8.2.8)  
+
+- Design shear capacity $\phi V_{uc} = \phi (V_c + V_s)$  
+
+- Shear stress $\tau_v = V^*/(b_w d_v)$ and web-crushing checks  
+
+- Torsional cracking, torsional reinforcement, and design torsion capacity (Cl. 8.3.6–8.3.7)  
+
+- Interaction of shear and torsion where applicable  
+
+Results are expressed in kN and MPa, and directly feed into deflection, crack-width, and interaction checks.
+        """
+        )
+
+    with col_right:
+        st.image(
+            "assets/shear_dv_diagram.png",  # <-- put your dv diagram filename here
+            use_container_width=True,
+        )
 
     # Summary table placeholder – appears directly under the blurb
     summary_placeholder = st.empty()
