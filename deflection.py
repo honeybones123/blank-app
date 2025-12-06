@@ -226,8 +226,8 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     if not isinstance(results, dict):
         results = {}
     
-    # Read action_source directly from session_state (it's a widget key, not in results)
-    action_source = st.session_state.get("actions_source", "Manual design actions (inputs below)")
+    # Read action_source from shared state (follows contract via TAB_KEYS)
+    action_source = get_param("actions_source", "Manual design actions (inputs below)")
     Mu_star = get_param("Mu_star", 0.0)
     Vu_star = get_param("Vu_star", 0.0)
     
