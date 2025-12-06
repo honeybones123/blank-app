@@ -171,7 +171,7 @@ SHARED_DEFAULTS = {
     "sigma_s_sls": 200.0,
     
     # SFD/BMD teaching page results
-    "sfd_case": "",  # Loading case name
+    # Note: sfd_case is a widget key (st.selectbox), so it's managed by Streamlit, not stored here
     "sfd_span_L_m": 0.0,  # Span length (m)
     "sfd_Mmax_abs_kNm": 0.0,  # Maximum absolute bending moment (kNm)
     "sfd_Vmax_abs_kN": 0.0,  # Maximum absolute shear force (kN)
