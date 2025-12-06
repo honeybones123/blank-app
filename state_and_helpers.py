@@ -258,6 +258,7 @@ TAB_KEYS = {
 
     "inputs_exposure_class": "exposure_class",
     "inputs_s_bar_bot": "s_bar_bot",
+    "inputs_actions_source": "actions_source",  # Source of design actions (manual vs teaching)
 
     # Time-dependent inputs
     "inputs_t_creep": "t_creep",
