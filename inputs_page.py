@@ -619,12 +619,14 @@ def render_inputs():
     st.markdown("---")
 
     # ============================
-    # 2. SECOND ROW – Reo details + Shear reo
+    # 2. SECOND ROW – Bottom | Top | Shear
     # ============================
-    col_bot_reo, col_top_reo = st.columns(2)
+    col_bot_reo, col_top_reo, col_shear = st.columns(3)
 
+    # --- Bottom reo ---
     with col_bot_reo:
         st.subheader("Bottom Reinforcement (primary)")
+
         number_row(
             "Bottom bars or spacing (≤30 = bars, ≥30 = mm)",
             "inputs_bot_entry",
@@ -649,33 +651,10 @@ def render_inputs():
             help_text="Vertical gap between bottom rows if two layers are used.",
         )
 
-        st.subheader("Shear reinforcement")
-        number_row(
-            "Lig diameter (mm)",
-            "inputs_lig_d",
-            1.0,
-            sync_callbacks,
-            help_text="Nominal diameter of shear ligatures.",
-        )
-
-        number_row(
-            "Lig legs",
-            "inputs_lig_legs",
-            1,
-            sync_callbacks,
-            help_text="Number of legs in each ligature crossing the web.",
-        )
-
-        number_row(
-            "Stirrup spacing s_lig (mm)",
-            "inputs_s_lig",
-            10.0,
-            sync_callbacks,
-            help_text="Centre-to-centre spacing of shear ligatures along the span.",
-        )
-
+    # --- Top reo ---
     with col_top_reo:
         st.subheader("Top Reinforcement (primary)")
+
         number_row(
             "Top bars or spacing (≤30 = bars, ≥30 = mm)",
             "inputs_top_entry",
@@ -700,29 +679,64 @@ def render_inputs():
             help_text="Vertical gap between top rows if two layers are used.",
         )
 
+    # --- Shear reo (same row) ---
+    with col_shear:
+        st.subheader("Shear reinforcement")
+
+        number_row(
+            "Lig diameter (mm)",
+            "inputs_lig_d",
+            1.0,
+            sync_callbacks,
+            help_text="Nominal diameter of shear ligatures.",
+        )
+
+        number_row(
+            "Lig legs",
+            "inputs_lig_legs",
+            1,
+            sync_callbacks,
+            help_text="Number of legs in each ligature crossing the web.",
+        )
+
+        number_row(
+            "Stirrup spacing s_lig (mm)",
+            "inputs_s_lig",
+            10.0,
+            sync_callbacks,
+            help_text="Centre-to-centre spacing of shear ligatures along the span.",
+        )
+
     st.markdown("---")
 
     # ============================
-    # 3. THIRD ROW – 3D beam full width (with its own border)
+    # 3. THIRD ROW – 3D beam (narrower, with border)
     # ============================
     st.subheader("3D Beam – Bending & Shear Visual (Section A)")
 
     fig3d = make_beam_3d_figure()
 
-    # Wrap ONLY the 3D plot in a bordered container
-    st.markdown(
-        """
-        <div style="
-            border: 1px solid #dddddd;
-            border-radius: 8px;
-            padding: 0.5rem;
-            margin-bottom: 0.5rem;
-        ">
-        """,
-        unsafe_allow_html=True,
-    )
-    st.plotly_chart(fig3d, use_container_width=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    # Use a narrower left column so the model doesn't span full width
+    col_3d, col_spacer = st.columns([3, 1])
+
+    with col_3d:
+        st.markdown(
+            """
+            <div style="
+                border: 1px solid #dddddd;
+                border-radius: 8px;
+                padding: 0.5rem;
+                margin-bottom: 0.5rem;
+                max-width: 900px;
+                background-color: #fafafa;
+            ">
+            """,
+            unsafe_allow_html=True,
+        )
+        st.plotly_chart(fig3d, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # col_spacer left empty on purpose
 
     st.markdown("---")
 
