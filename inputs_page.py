@@ -262,7 +262,7 @@ def make_beam_3d_figure():
     cover_top = float(get_param("cover_top", 40.0) or 40.0)
 
     cover_side = float(
-        st.session_state.get("inputs_cover_side_local", min(cover_top, cover_bot))
+        get_param("cover_side", min(cover_top, cover_bot)) or min(cover_top, cover_bot)
     )
 
     rowgap_bot = float(get_param("rowgap_bot", 60.0) or 60.0)
@@ -475,11 +475,7 @@ def render_inputs():
     sync_callbacks = get_sync_callbacks()
     apply_global_widget_css()
 
-    # Container for the summary at the very top of the page.
-    # We'll fill it AFTER widgets + compute, so it always uses
-    # the latest synced values, but it still appears at the top.
     summary_container = st.container()
-
     st.markdown("---")
 
     # ---------- inputs + 3D beam ----------
@@ -547,6 +543,27 @@ def render_inputs():
             sync_callbacks,
             help_text="Clear span used for deflection checks.",
         )
+        number_row(
+            "Bottom cover (mm)",
+            "inputs_cover_bot",
+            5.0,
+            sync_callbacks,
+            help_text="Clear cover to the bottom bars.",
+        )
+        number_row(
+            "Top cover (mm)",
+            "inputs_cover_top",
+            5.0,
+            sync_callbacks,
+            help_text="Clear cover to the top bars.",
+        )
+        number_row(
+            "Side cover (mm)",
+            "inputs_cover_side",
+            5.0,
+            sync_callbacks,
+            help_text="Clear side cover to longitudinal reinforcement and ducts.",
+        )
 
         st.markdown("---")
 
@@ -590,15 +607,15 @@ def render_inputs():
     # ---------- reo + shear + crack ----------
     reo_col, crack_col = st.columns(2)
 
-    # left column: bottom reo + side cover + shear
+    # left column: bottom reo + shear + ducts
     with reo_col:
-        st.subheader("Bottom Reinforcement")
+        st.subheader("Bottom Reinforcement (primary)")
         number_row(
-            "Number of bottom bars",
-            "inputs_nb_bot",
-            1,
+            "Bottom bars or spacing (≤30 = bars, ≥30 = mm)",
+            "inputs_bot_entry",
+            1.0,
             sync_callbacks,
-            help_text="Number of tension bars at the soffit in Section A.",
+            help_text="Enter a number of bars (≤30) or a spacing in mm (≥30).",
         )
         number_row(
             "Bottom bar diameter db,bot (mm)",
@@ -614,37 +631,6 @@ def render_inputs():
             sync_callbacks,
             help_text="Vertical gap between bottom rows if two layers are used.",
         )
-        number_row(
-            "Bottom cover (mm)",
-            "inputs_cover_bot",
-            5.0,
-            sync_callbacks,
-            help_text="Clear cover to the bottom bars.",
-        )
-
-        # side cover – local only, styled like the others
-        cover_top_val = float(get_param("cover_top", 40.0) or 40.0)
-        cover_bot_val = float(get_param("cover_bot", 40.0) or 40.0)
-        default_side_cover = min(cover_top_val, cover_bot_val)
-
-        # NOTE: column split [1.3, 1] to match number_row label/input ratio
-        sc_label_col, sc_input_col = st.columns([1.3, 1])
-        with sc_label_col:
-            st.markdown("Side cover (mm)")
-        with sc_input_col:
-            # Wrap input in nr-field div so CSS forces same width
-            st.markdown('<div class="nr-field">', unsafe_allow_html=True)
-            st.number_input(
-                "",
-                value=float(
-                    st.session_state.get("inputs_cover_side_local", default_side_cover)
-                ),
-                step=1.0,
-                key="inputs_cover_side_local",
-                label_visibility="collapsed",
-                help="Clear side cover to longitudinal reinforcement used in the visuals.",
-            )
-            st.markdown("</div>", unsafe_allow_html=True)
 
         st.subheader("Shear reinforcement")
         number_row(
@@ -669,15 +655,31 @@ def render_inputs():
             help_text="Centre-to-centre spacing of shear ligatures along the span.",
         )
 
-    # right column: top reo + crack control
-    with crack_col:
-        st.subheader("Top Reinforcement")
+        st.subheader("Ducts / Prestress voids")
         number_row(
-            "Number of top bars",
-            "inputs_nb_top",
-            1,
+            "Number of ducts crossing web",
+            "inputs_n_ducts",
+            1.0,
             sync_callbacks,
-            help_text="Number of compression-face bars at the top of the section.",
+            help_text="Total number of ducts crossing the web in the shear zone.",
+        )
+        number_row(
+            "Duct diameter (mm)",
+            "inputs_duct_dia",
+            1.0,
+            sync_callbacks,
+            help_text="Nominal diameter of each duct.",
+        )
+
+    # right column: top reo + crack + time-dependent
+    with crack_col:
+        st.subheader("Top Reinforcement (primary)")
+        number_row(
+            "Top bars or spacing (≤30 = bars, ≥30 = mm)",
+            "inputs_top_entry",
+            1.0,
+            sync_callbacks,
+            help_text="Enter a number of bars (≤30) or a spacing in mm (≥30).",
         )
         number_row(
             "Top bar diameter db,top (mm)",
@@ -693,23 +695,14 @@ def render_inputs():
             sync_callbacks,
             help_text="Vertical gap between top rows if two layers are used.",
         )
-        number_row(
-            "Top cover (mm)",
-            "inputs_cover_top",
-            5.0,
-            sync_callbacks,
-            help_text="Clear cover to the top bars.",
-        )
 
         st.subheader("Crack Control Inputs")
 
-        # Exposure class – same size & alignment as others
         options = ["A1", "A2", "B1", "B2", "C1", "C2"]
         current = get_param("exposure_class", "B1")
         if current not in options:
             current = "B1"
 
-        # NOTE: column split [1.3, 1] to match number_row label/input ratio
         exp_label_col, exp_select_col = st.columns([1.3, 1])
         with exp_label_col:
             st.markdown("Exposure class")
@@ -742,6 +735,36 @@ def render_inputs():
             5.0,
             sync_callbacks,
             help_text="Centre-to-centre spacing of bottom bars used in crack-width check.",
+        )
+
+        st.subheader("Time-dependent inputs")
+        number_row(
+            "Creep time after loading t (days)",
+            "inputs_t_creep",
+            1.0,
+            sync_callbacks,
+            help_text="Time after loading used for creep coefficient φ_cc,t.",
+        )
+        number_row(
+            "Age at loading τ (days)",
+            "inputs_age_at_loading",
+            1.0,
+            sync_callbacks,
+            help_text="Concrete age at application of sustained load.",
+        )
+        number_row(
+            "Sustained stress ratio σ₀ / f'c,mi",
+            "inputs_stress_ratio",
+            0.01,
+            sync_callbacks,
+            help_text="Ratio of sustained stress to mean in-situ strength.",
+        )
+        number_row(
+            "Shrinkage time since drying t (days)",
+            "inputs_t_shrink",
+            1.0,
+            sync_callbacks,
+            help_text="Duration of drying used in shrinkage calculation.",
         )
 
     # ---------- now recompute design results with the latest inputs ----------
