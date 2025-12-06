@@ -475,6 +475,21 @@ def render_inputs():
     sync_callbacks = get_sync_callbacks()
     apply_global_widget_css()
 
+    # Optional: give all Plotly charts a subtle border (incl. 3D beam)
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stPlotlyChart"] {
+            border: 1px solid #dddddd;
+            border-radius: 8px;
+            padding: 0.5rem;
+            background-color: #fafafa;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     summary_container = st.container()
 
     st.markdown("---")
@@ -619,13 +634,12 @@ def render_inputs():
     st.markdown("---")
 
     # ============================
-    # 2. SECOND ROW – Reo details only
+    # 2. SECOND ROW – Reo details + Shear reo
     # ============================
     col_bot_reo, col_top_reo = st.columns(2)
 
     with col_bot_reo:
         st.subheader("Bottom Reinforcement (primary)")
-
         number_row(
             "Bottom bars or spacing (≤30 = bars, ≥30 = mm)",
             "inputs_bot_entry",
@@ -650,9 +664,33 @@ def render_inputs():
             help_text="Vertical gap between bottom rows if two layers are used.",
         )
 
+        st.subheader("Shear reinforcement")
+        number_row(
+            "Lig diameter (mm)",
+            "inputs_lig_d",
+            1.0,
+            sync_callbacks,
+            help_text="Nominal diameter of shear ligatures.",
+        )
+
+        number_row(
+            "Lig legs",
+            "inputs_lig_legs",
+            1,
+            sync_callbacks,
+            help_text="Number of legs in each ligature crossing the web.",
+        )
+
+        number_row(
+            "Stirrup spacing s_lig (mm)",
+            "inputs_s_lig",
+            10.0,
+            sync_callbacks,
+            help_text="Centre-to-centre spacing of shear ligatures along the span.",
+        )
+
     with col_top_reo:
         st.subheader("Top Reinforcement (primary)")
-
         number_row(
             "Top bars or spacing (≤30 = bars, ≥30 = mm)",
             "inputs_top_entry",
@@ -691,40 +729,13 @@ def render_inputs():
     st.markdown("---")
 
     # ============================
-    # 4. FOURTH ROW – Rest of inputs (Shear/Ducts | Crack/Time)
+    # 4. FOURTH ROW – Rest of inputs (Ducts | Crack/Time)
     # ============================
-    col_shear, col_rest = st.columns(2)
+    col_ducts, col_rest = st.columns(2)
 
-    # --- Shear + ducts ---
-    with col_shear:
-        st.subheader("Shear reinforcement")
-
-        number_row(
-            "Lig diameter (mm)",
-            "inputs_lig_d",
-            1.0,
-            sync_callbacks,
-            help_text="Nominal diameter of shear ligatures.",
-        )
-
-        number_row(
-            "Lig legs",
-            "inputs_lig_legs",
-            1,
-            sync_callbacks,
-            help_text="Number of legs in each ligature crossing the web.",
-        )
-
-        number_row(
-            "Stirrup spacing s_lig (mm)",
-            "inputs_s_lig",
-            10.0,
-            sync_callbacks,
-            help_text="Centre-to-centre spacing of shear ligatures along the span.",
-        )
-
+    # --- Ducts only (shear reo moved up) ---
+    with col_ducts:
         st.subheader("Ducts / Prestress voids")
-
         number_row(
             "Number of ducts crossing web",
             "inputs_n_ducts",
@@ -822,7 +833,7 @@ def render_inputs():
         )
 
     # ============================
-    # 4. Recompute + Summary (unchanged)
+    # 5. Recompute + Summary (unchanged from before)
     # ============================
     _compute_bending_capacity()
 
