@@ -169,9 +169,10 @@ def plot_load_diagram_plotly(case, L, params):
                 x=xi,
                 y=0.45,
                 ax=xi,
-                ay=0.1,
+                ay=0.25,
                 showarrow=True,
                 arrowhead=2,
+                arrowwidth=1.5,
             )
         fig.add_annotation(
             x=L / 2,
@@ -200,15 +201,16 @@ def plot_load_diagram_plotly(case, L, params):
 
     elif case == "Simple beam – point load at distance a from left":
         P = params["P"]
-        a = params["a"]
+        a = params.get("a", L / 3)
         a = max(0.0, min(a, L))
         fig.add_annotation(
             x=a,
             y=0.45,
             ax=a,
-            ay=0.1,
+            ay=0.35,
             showarrow=True,
             arrowhead=2,
+            arrowwidth=2,
         )
         fig.add_annotation(
             x=a,
@@ -223,9 +225,10 @@ def plot_load_diagram_plotly(case, L, params):
             x=L,
             y=0.45,
             ax=L,
-            ay=0.1,
+            ay=0.35,
             showarrow=True,
             arrowhead=2,
+            arrowwidth=2,
         )
         fig.add_annotation(
             x=L,
@@ -236,15 +239,16 @@ def plot_load_diagram_plotly(case, L, params):
 
     elif case == "Cantilever – point load at distance a from fixed end":
         P = params["P"]
-        a = params["a_cant"]
+        a = params.get("a_cant", L / 2)
         a = max(0.0, min(a, L))
         fig.add_annotation(
             x=a,
             y=0.45,
             ax=a,
-            ay=0.1,
+            ay=0.35,
             showarrow=True,
             arrowhead=2,
+            arrowwidth=2,
         )
         fig.add_annotation(
             x=a,
@@ -274,9 +278,10 @@ def plot_load_diagram_plotly(case, L, params):
                 x=xi,
                 y=0.45,
                 ax=xi,
-                ay=0.1,
+                ay=0.25,
                 showarrow=True,
                 arrowhead=2,
+                arrowwidth=1.5,
             )
         fig.add_annotation(
             x=L / 2,
@@ -308,9 +313,10 @@ def plot_load_diagram_plotly(case, L, params):
                 x=xi,
                 y=0.45,
                 ax=xi,
-                ay=0.1,
+                ay=0.25,
                 showarrow=True,
                 arrowhead=2,
+                arrowwidth=1.5,
             )
         fig.add_annotation(
             x=a / 2,
@@ -328,9 +334,10 @@ def plot_load_diagram_plotly(case, L, params):
             x=L_total,
             y=0.45,
             ax=L_total,
-            ay=0.1,
+            ay=0.35,
             showarrow=True,
             arrowhead=2,
+            arrowwidth=2,
         )
         fig.add_annotation(
             x=L_total,
@@ -956,7 +963,7 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
 
     elif case == "Simple beam – point load at distance a from left":
         P = params["P"]
-        a = float(params["a"])
+        a = float(params.get("a", L / 3))  # Default to L/3 if not set
         a = max(0.0, min(a, L))
         b = L - a
         R1 = P * b / L
