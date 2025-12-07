@@ -230,7 +230,31 @@ def _compute_bending_capacity():
     Mu_util = Mu_star / phi_Mu_cap if phi_Mu_cap > 0 else float("inf")
     ku = c / d if d not in (None, 0) else float("nan")
 
-    update_results(phi_Mu_cap=phi_Mu_cap, Mu_utilisation=Mu_util)
+    # --------------------------------------------------
+    # Minimum strength + ductility values
+    # (for Inputs page summary table)
+    # --------------------------------------------------
+    
+    # 1) Minimum steel area As_min_req (already calculated as As_min)
+    As_min_req = As_min if not (isinstance(As_min, float) and math.isnan(As_min)) else None
+    
+    # 2) Minimum moment Mx_min_req = 1.2 * Mcr (Tab 2 rule)
+    Mx_min_req = None
+    if Mcr is not None and not (isinstance(Mcr, float) and math.isnan(Mcr)):
+        Mx_min_req = 1.2 * Mcr
+    
+    # 3) Neutral axis ratio + limit
+    k_u = ku if not (isinstance(ku, float) and math.isnan(ku)) else None
+    k_u_lim = 0.36  # Teaching limit (AS 3600 limit for ductile design)
+
+    update_results(
+        phi_Mu_cap=phi_Mu_cap,
+        Mu_utilisation=Mu_util,
+        As_min_req=As_min_req,
+        Mx_min_req=Mx_min_req,
+        k_u=k_u,
+        k_u_lim=k_u_lim,
+    )
 
     return {
         "phi_Mu_cap": phi_Mu_cap,
