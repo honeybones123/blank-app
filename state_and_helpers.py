@@ -74,12 +74,15 @@ SHARED_DEFAULTS = {
     "phi_torsion": 0.75,
 
     # Actions
-    "Mu_star": 500.0,  # kNm (controlling moment) - final chosen value
-    "Mu_star_kNm": 500.0,  # kNm (alternative naming for compatibility)
-    "Vu_star": 300.0,  # kN - final chosen value
-    "Vu_star_kN": 300.0,  # kN (alternative naming for compatibility)
-    "Mu_star_manual": 0.0,  # kNm - manual input value (preserved separately)
-    "Vu_star_manual": 0.0,  # kN - manual input value (preserved separately)
+    "Mu_star": 500.0,        # kNm (final chosen value used by design pages)
+    "Mu_star_kNm": 500.0,    # kNm (alternative naming for compatibility)
+    "Vu_star": 300.0,        # kN (final chosen value used by design pages)
+    "Vu_star_kN": 300.0,     # kN (alternative naming for compatibility)
+
+    # Manual copies – start equal to the same seeds so manual mode
+    # behaves identically until the user edits the inputs.
+    "Mu_star_manual": 500.0,  # kNm
+    "Vu_star_manual": 300.0,  # kN
     "Tu_star": 0.0,    # kNm
     "P_star": 0.0,     # kN (prestress or axial in bending/shear)
     "N_star": 0.0,     # kN (additional axial)
