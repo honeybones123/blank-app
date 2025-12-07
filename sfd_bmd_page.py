@@ -184,19 +184,24 @@ def plot_load_diagram_plotly(case, L, params):
     elif case == "Simple beam – point load at centre":
         P = params["P"]
         a = L / 2
+        # Arrow points downward: (x, y) is arrow tip at beam, (ax, ay) is arrow start above
         fig.add_annotation(
             x=a,
-            y=0.45,
+            y=0,
             ax=a,
-            ay=0.1,
+            ay=0.5,
             showarrow=True,
             arrowhead=2,
+            arrowwidth=3,
+            arrowsize=2,
+            arrowcolor="black",
         )
         fig.add_annotation(
             x=a,
-            y=0.55,
+            y=0.6,
             text=f"P = {P:.2f} kN",
             showarrow=False,
+            font=dict(size=12),
         )
 
     elif case == "Simple beam – point load at distance a from left":
@@ -207,40 +212,46 @@ def plot_load_diagram_plotly(case, L, params):
         else:
             a = float(a_val)
         a = max(0.0, min(a, L))
+        # Arrow points downward: (x, y) is arrow tip at beam, (ax, ay) is arrow start above
         fig.add_annotation(
             x=a,
-            y=0.45,
+            y=0,
             ax=a,
-            ay=0.8,
+            ay=0.5,
             showarrow=True,
             arrowhead=2,
-            arrowwidth=2,
-            arrowsize=1.5,
+            arrowwidth=3,
+            arrowsize=2,
+            arrowcolor="black",
         )
         fig.add_annotation(
             x=a,
-            y=0.55,
+            y=0.6,
             text=f"P = {P:.2f} kN",
             showarrow=False,
+            font=dict(size=12),
         )
 
     elif case == "Cantilever – point load at free end":
         P = params["P"]
+        # Arrow points downward: (x, y) is arrow tip at beam, (ax, ay) is arrow start above
         fig.add_annotation(
             x=L,
             y=0,
             ax=L,
-            ay=0.45,
+            ay=0.5,
             showarrow=True,
             arrowhead=2,
-            arrowwidth=2,
-            arrowsize=1.5,
+            arrowwidth=3,
+            arrowsize=2,
+            arrowcolor="black",
         )
         fig.add_annotation(
             x=L,
-            y=0.55,
+            y=0.6,
             text=f"P = {P:.2f} kN",
             showarrow=False,
+            font=dict(size=12),
         )
 
     elif case == "Cantilever – point load at distance a from fixed end":
@@ -251,21 +262,24 @@ def plot_load_diagram_plotly(case, L, params):
         else:
             a = float(a_val)
         a = max(0.0, min(a, L))
+        # Arrow points downward: (x, y) is arrow tip at beam, (ax, ay) is arrow start above
         fig.add_annotation(
             x=a,
             y=0,
             ax=a,
-            ay=0.45,
+            ay=0.5,
             showarrow=True,
             arrowhead=2,
-            arrowwidth=2,
-            arrowsize=1.5,
+            arrowwidth=3,
+            arrowsize=2,
+            arrowcolor="black",
         )
         fig.add_annotation(
             x=a,
-            y=0.55,
+            y=0.6,
             text=f"P = {P:.2f} kN",
             showarrow=False,
+            font=dict(size=12),
         )
 
     elif case == "Cantilever – UDL over entire span":
@@ -341,21 +355,24 @@ def plot_load_diagram_plotly(case, L, params):
         L_main = params.get("L_main", L)
         a_over = params.get("a_overhang", 0.0)
         L_total = L_main + a_over
+        # Arrow points downward: (x, y) is arrow tip at beam, (ax, ay) is arrow start above
         fig.add_annotation(
             x=L_total,
             y=0,
             ax=L_total,
-            ay=0.45,
+            ay=0.5,
             showarrow=True,
             arrowhead=2,
-            arrowwidth=2,
-            arrowsize=1.5,
+            arrowwidth=3,
+            arrowsize=2,
+            arrowcolor="black",
         )
         fig.add_annotation(
             x=L_total,
-            y=0.55,
+            y=0.6,
             text=f"P = {P:.2f} kN",
             showarrow=False,
+            font=dict(size=12),
         )
 
     fig.update_xaxes(range=[-0.2, L + 0.2], visible=False)
@@ -724,13 +741,21 @@ def render_sfd_bmd_page():
         key="load_case",
     )
 
-    # -------- span from Inputs page --------
-    L = _span_from_inputs(10.0)  # fallback 10 m if Inputs hasn't run yet
-
-    st.markdown(
-        f"**Span for SFD/BMD:** `L = {L:.3g} m` "
-        "(read from **Inputs** page; not editable here)."
+    # -------- span as editable widget --------
+    L_seed = get_param("span_L_m", 6.0)
+    L_seed = max(0.1, L_seed)  # Ensure it meets min_value
+    
+    L = st.number_input(
+        "Span L (m)",
+        min_value=0.1,
+        value=L_seed,
+        step=0.5,
+        key="load_L",
+        on_change=sync_callbacks.get("load_L", lambda: None),
     )
+    
+    # Update session state
+    update_results(span_L_m=float(L))
 
     # Conditional loads based on load case type
     params: dict = {}
