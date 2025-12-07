@@ -52,20 +52,58 @@ st.markdown(
 st.markdown(
     """
 <style>
-/* Make <summary> look like a normal row and hide the default arrow */
+/* Remove gaps around <details> blocks and their summary */
+.summary-details {
+  margin: 0;
+  padding: 0;
+}
 .summary-details summary {
   list-style: none;
   cursor: pointer;
+  margin: 0;
+  padding: 0;
 }
 .summary-details summary::-webkit-details-marker {
   display: none;
 }
 
+/* Fake "row" + "cells" using divs so the whole row is clickable */
+.summary-row {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.summary-row-inner {
+  display: table-row;
+}
+.summary-cell {
+  display: table-cell;
+  padding: 4px 6px;
+  font-size: 0.9rem;
+  text-align: right;
+  vertical-align: middle;
+}
+.summary-cell.check {
+  text-align: left;
+}
+
 /* Box for the drop-down detail table */
 .summary-detail-wrapper {
+  margin: 0;
   padding: 0.35rem 0.5rem 0.6rem 0.5rem;
   background-color: #fafafa;
   border-top: 1px solid #e0e0e0;
+}
+
+/* Ensure the outer summary table has no row gaps */
+.summary-table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+.summary-table td,
+.summary-table th {
+  padding: 4px 6px;
 }
 </style>
 """,
@@ -1279,110 +1317,105 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
     # ---------- Main summary table with embedded dropdowns ----------
     summary_table_html = f"""\
 <div style="border: 1px solid #cccccc; border-radius: 8px; padding: 0.5rem 0.75rem; margin-bottom: 1rem; max-width: 900px;">
-<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+<table class="summary-table" style="width: 100%; font-size: 0.9rem;">
 <thead>
 <tr style="background-color: #f5f5f5;">
-  <th style="text-align:left; padding: 4px 6px;">Check</th>
-  <th style="text-align:right; padding: 4px 6px;">Demand</th>
-  <th style="text-align:right; padding: 4px 6px;">Capacity</th>
-  <th style="text-align:right; padding: 4px 6px;">Utilisation</th>
-  <th style="text-align:center; padding: 4px 6px;">Status</th>
+<th style="text-align:left;">Check</th>
+<th style="text-align:right;">Demand</th>
+<th style="text-align:right;">Capacity</th>
+<th style="text-align:right;">Utilisation</th>
+<th style="text-align:center;">Status</th>
 </tr>
 </thead>
 <tbody>
 
-<!-- BENDING ROW -->
 <tr>
-  <td colspan="5" style="padding:0; border:0;">
-    <details class="summary-details">
-      <summary>
-        <table style="width:100%; border-collapse:collapse;">
-          <tr style="background-color: {bending_colour};">
-            <td style="padding: 4px 6px;"><strong>Bending</strong></td>
-            <td style="text-align:right; padding: 4px 6px;">{bending_demand}</td>
-            <td style="text-align:right; padding: 4px 6px;">{bending_cap}</td>
-            <td style="text-align:right; padding: 4px 6px;">{bending_util_str}</td>
-            <td style="text-align:center; padding: 4px 6px;"><strong>{bending_status}</strong></td>
-          </tr>
-        </table>
-      </summary>
-      <div class="summary-detail-wrapper">
-        {bending_detail_html}
-      </div>
-    </details>
-  </td>
+<td colspan="5" style="padding:0; border:0;">
+<details class="summary-details">
+<summary>
+<div class="summary-row" style="background-color: {bending_colour};">
+  <div class="summary-row-inner">
+    <div class="summary-cell check"><strong>Bending</strong></div>
+    <div class="summary-cell">{bending_demand}</div>
+    <div class="summary-cell">{bending_cap}</div>
+    <div class="summary-cell">{bending_util_str}</div>
+    <div class="summary-cell" style="text-align:center;"><strong>{bending_status}</strong></div>
+  </div>
+</div>
+</summary>
+<div class="summary-detail-wrapper">
+{bending_detail_html}
+</div>
+</details>
+</td>
 </tr>
 
-<!-- SHEAR ROW -->
 <tr>
-  <td colspan="5" style="padding:0; border:0;">
-    <details class="summary-details">
-      <summary>
-        <table style="width:100%; border-collapse:collapse;">
-          <tr style="background-color: {shear_colour};">
-            <td style="padding: 4px 6px;"><strong>Shear</strong></td>
-            <td style="text-align:right; padding: 4px 6px;">{shear_demand}</td>
-            <td style="text-align:right; padding: 4px 6px;">{shear_cap}</td>
-            <td style="text-align:right; padding: 4px 6px;">{shear_util_str}</td>
-            <td style="text-align:center; padding: 4px 6px;"><strong>{shear_status}</strong></td>
-          </tr>
-        </table>
-      </summary>
-      <div class="summary-detail-wrapper">
-        {shear_detail_html}
-      </div>
-    </details>
-  </td>
+<td colspan="5" style="padding:0; border:0;">
+<details class="summary-details">
+<summary>
+<div class="summary-row" style="background-color: {shear_colour};">
+  <div class="summary-row-inner">
+    <div class="summary-cell check"><strong>Shear</strong></div>
+    <div class="summary-cell">{shear_demand}</div>
+    <div class="summary-cell">{shear_cap}</div>
+    <div class="summary-cell">{shear_util_str}</div>
+    <div class="summary-cell" style="text-align:center;"><strong>{shear_status}</strong></div>
+  </div>
+</div>
+</summary>
+<div class="summary-detail-wrapper">
+{shear_detail_html}
+</div>
+</details>
+</td>
 </tr>
 
-<!-- CRACK CONTROL ROW -->
 <tr>
-  <td colspan="5" style="padding:0; border:0;">
-    <details class="summary-details">
-      <summary>
-        <table style="width:100%; border-collapse:collapse;">
-          <tr style="background-color: {crack_colour};">
-            <td style="padding: 4px 6px;"><strong>Crack control</strong></td>
-            <td style="text-align:right; padding: 4px 6px;">{crack_demand}</td>
-            <td style="text-align:right; padding: 4px 6px;">{crack_cap}</td>
-            <td style="text-align:right; padding: 4px 6px;">{crack_util_str}</td>
-            <td style="text-align:center; padding: 4px 6px;"><strong>{crack_status}</strong></td>
-          </tr>
-        </table>
-      </summary>
-      <div class="summary-detail-wrapper">
-        {crack_detail_html}
-      </div>
-    </details>
-  </td>
+<td colspan="5" style="padding:0; border:0;">
+<details class="summary-details">
+<summary>
+<div class="summary-row" style="background-color: {crack_colour};">
+  <div class="summary-row-inner">
+    <div class="summary-cell check"><strong>Crack control</strong></div>
+    <div class="summary-cell">{crack_demand}</div>
+    <div class="summary-cell">{crack_cap}</div>
+    <div class="summary-cell">{crack_util_str}</div>
+    <div class="summary-cell" style="text-align:center;"><strong>{crack_status}</strong></div>
+  </div>
+</div>
+</summary>
+<div class="summary-detail-wrapper">
+{crack_detail_html}
+</div>
+</details>
+</td>
 </tr>
 
-<!-- DEFLECTION ROW -->
 <tr>
-  <td colspan="5" style="padding:0; border:0;">
-    <details class="summary-details">
-      <summary>
-        <table style="width:100%; border-collapse:collapse;">
-          <tr style="background-color: {defl_colour};">
-            <td style="padding: 4px 6px;"><strong>Deflection</strong></td>
-            <td style="text-align:right; padding: 4px 6px;">{defl_demand}</td>
-            <td style="text-align:right; padding: 4px 6px;">{defl_cap}</td>
-            <td style="text-align:right; padding: 4px 6px;">{defl_util_str}</td>
-            <td style="text-align:center; padding: 4px 6px;"><strong>{defl_status}</strong></td>
-          </tr>
-        </table>
-      </summary>
-      <div class="summary-detail-wrapper">
-        {defl_detail_html}
-      </div>
-    </details>
-  </td>
+<td colspan="5" style="padding:0; border:0;">
+<details class="summary-details">
+<summary>
+<div class="summary-row" style="background-color: {defl_colour};">
+  <div class="summary-row-inner">
+    <div class="summary-cell check"><strong>Deflection</strong></div>
+    <div class="summary-cell">{defl_demand}</div>
+    <div class="summary-cell">{defl_cap}</div>
+    <div class="summary-cell">{defl_util_str}</div>
+    <div class="summary-cell" style="text-align:center;"><strong>{defl_status}</strong></div>
+  </div>
+</div>
+</summary>
+<div class="summary-detail-wrapper">
+{defl_detail_html}
+</div>
+</details>
+</td>
 </tr>
 
 </tbody>
 </table>
-</div>
-"""
+</div>"""
 
     with summary_container:
 
