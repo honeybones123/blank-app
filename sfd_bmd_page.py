@@ -201,16 +201,21 @@ def plot_load_diagram_plotly(case, L, params):
 
     elif case == "Simple beam – point load at distance a from left":
         P = params["P"]
-        a = params.get("a", L / 3)
+        a_val = params.get("a")
+        if a_val is None:
+            a = L / 3
+        else:
+            a = float(a_val)
         a = max(0.0, min(a, L))
         fig.add_annotation(
             x=a,
             y=0.45,
             ax=a,
-            ay=0.35,
+            ay=0.8,
             showarrow=True,
             arrowhead=2,
             arrowwidth=2,
+            arrowsize=1.5,
         )
         fig.add_annotation(
             x=a,
@@ -223,12 +228,13 @@ def plot_load_diagram_plotly(case, L, params):
         P = params["P"]
         fig.add_annotation(
             x=L,
-            y=0.45,
+            y=0,
             ax=L,
-            ay=0.35,
+            ay=0.45,
             showarrow=True,
             arrowhead=2,
             arrowwidth=2,
+            arrowsize=1.5,
         )
         fig.add_annotation(
             x=L,
@@ -239,16 +245,21 @@ def plot_load_diagram_plotly(case, L, params):
 
     elif case == "Cantilever – point load at distance a from fixed end":
         P = params["P"]
-        a = params.get("a_cant", L / 2)
+        a_val = params.get("a_cant")
+        if a_val is None:
+            a = L / 2
+        else:
+            a = float(a_val)
         a = max(0.0, min(a, L))
         fig.add_annotation(
             x=a,
-            y=0.45,
+            y=0,
             ax=a,
-            ay=0.35,
+            ay=0.45,
             showarrow=True,
             arrowhead=2,
             arrowwidth=2,
+            arrowsize=1.5,
         )
         fig.add_annotation(
             x=a,
@@ -332,12 +343,13 @@ def plot_load_diagram_plotly(case, L, params):
         L_total = L_main + a_over
         fig.add_annotation(
             x=L_total,
-            y=0.45,
+            y=0,
             ax=L_total,
-            ay=0.35,
+            ay=0.45,
             showarrow=True,
             arrowhead=2,
             arrowwidth=2,
+            arrowsize=1.5,
         )
         fig.add_annotation(
             x=L_total,
@@ -963,7 +975,11 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
 
     elif case == "Simple beam – point load at distance a from left":
         P = params["P"]
-        a = float(params.get("a", L / 3))  # Default to L/3 if not set
+        a_val = params.get("a")
+        if a_val is None:
+            a = L / 3
+        else:
+            a = float(a_val)
         a = max(0.0, min(a, L))
         b = L - a
         R1 = P * b / L
@@ -1143,7 +1159,11 @@ so numerically \\(R_1 = R_2 = {R1:.3g}\\,\\text{{kN}}\\).
 
     elif case == "Simple beam – point load at distance a from left":
         P = params["P"]
-        a_val = params["a"]
+        a_val = params.get("a")
+        if a_val is None:
+            a_val = L / 3
+        else:
+            a_val = float(a_val)
         R1 = results_local.get("R1", 0.0)
         R2 = results_local.get("R2", 0.0)
         step2_md = f"""
@@ -1358,7 +1378,11 @@ with \\(R_1 = P/2 = {R1:.3g}\\,\\text{{kN}}\\).
 
     elif case == "Simple beam – point load at distance a from left":
         P = params["P"]
-        a_val = params["a"]
+        a_val = params.get("a")
+        if a_val is None:
+            a_val = L / 3
+        else:
+            a_val = float(a_val)
         R1 = results_local.get("R1", 0.0)
         step3_md = f"""
 **Step 3 – Shear function \\(V(x)\\)**
@@ -1479,7 +1503,11 @@ with \\(R_1 = P/2\\), so \\(M_{{\\max}} = PL/4 = {M_max:.3g}\\,\\text{{kNm}}\\) 
 
     elif case == "Simple beam – point load at distance a from left":
         P = params["P"]
-        a_val = params["a"]
+        a_val = params.get("a")
+        if a_val is None:
+            a_val = L / 3
+        else:
+            a_val = float(a_val)
         R1 = results_local.get("R1", 0.0)
         M_max = R1 * a_val
         step4_md = f"""
