@@ -1,1077 +1,1195 @@
-# sfd_bmd_page.py
-# ==========================================
-# SFD & BMD teaching page for beam app
-# ==========================================
-
+# deflection_page.py
+import math
 import numpy as np
-import matplotlib.pyplot as plt
+import pandas as pd
 import streamlit as st
+import matplotlib.pyplot as plt
 
-from state_and_helpers import get_sync_callbacks, get_param, update_results
-from widgets_helpers import (
-    apply_global_widget_css,
-    apply_calcbox_css,
-    number_row,
-    calcbox,
+from state_and_helpers import (
+    get_param,
+    get_sync_callbacks,
+    update_results,  # kept for contract / future use
 )
+from widgets_helpers import apply_global_widget_css, number_row
 
 
-# ---------------------------------------------------
-# Helper: draw support symbols
-# ---------------------------------------------------
-def draw_support(ax, x_pos, kind="pinned", size=0.18):
+# ------------------------------------------------------------
+#  Shared helpers
+# ------------------------------------------------------------
+def _seed_from_param(name: str, fallback: float) -> float:
+    """Read numeric from shared state with get_param(name), with fallback."""
+    try:
+        v = get_param(name)
+    except TypeError:
+        v = None
+
+    try:
+        if v is None:
+            return float(fallback)
+        v = float(v)
+        if math.isnan(v):
+            return float(fallback)
+        return v
+    except Exception:
+        return float(fallback)
+
+
+def _inject_calcbox_css():
+    """Style markdown blockquotes as blue calc boxes – same feel as shear page."""
+    st.markdown(
+        """
+<style>
+blockquote {
+  border-left: 4px solid #1f77b4 !important;
+  background-color: rgba(31, 119, 180, 0.08) !important;
+  padding: 0.75rem 1rem !important;
+  margin: 0.5rem 0 0.75rem 0 !important;
+  border-radius: 0 0.35rem 0.35rem 0 !important;
+  color: #1a1a1a !important;
+  opacity: 1 !important;
+  font-size: 0.9rem !important;
+  line-height: 1.35 !important;
+}
+blockquote * {
+  color: #1a1a1a !important;
+  opacity: 1 !important;
+}
+blockquote p {
+  margin-bottom: 0.5rem !important;
+}
+blockquote p:last-child {
+  margin-bottom: 0 !important;
+}
+</style>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+def calcbox(md: str):
     """
-    Draws a support symbol at x_pos on the x-axis.
-    kind: "pinned", "roller", "fixed"
-    Designed so the triangle POINTS UP to the beam (beam is along y = 0).
+    Render a highlighted calculation box with LaTeX-enabled markdown inside.
+
+    - Converts \[ \] → $$ $$ for display math
+    - Converts \( \) → $ $ for inline math
+    - Wraps everything in a markdown blockquote (>) so CSS turns it blue
     """
-    y_beam = 0.0
-    apex_y = y_beam - 0.01          # just under the beam line
-    base_y = apex_y - size          # bottom of triangle
-
-    if kind in ("pinned", "roller"):
-        half_base = size * 0.8
-
-        # upright triangle (point up touching the beam underside)
-        ax.plot(
-            [x_pos - half_base, x_pos, x_pos + half_base, x_pos - half_base],
-            [base_y, apex_y, base_y, base_y],
-            "k", linewidth=1.5
-        )
-
-        # hinge dot right at the contact
-        ax.plot(x_pos, apex_y, "ko", markersize=3)
-
-        if kind == "roller":
-            # roller circle below the triangle
-            roller_y = base_y - size * 0.4
-            ax.plot(x_pos, roller_y, "ko", markersize=4)
-
-    elif kind == "fixed":
-        # thick vertical wall at x_pos
-        wall_height = size * 3
-        ax.plot(
-            [x_pos, x_pos],
-            [y_beam - wall_height, y_beam + wall_height],
-            "k",
-            linewidth=4
-        )
-        # hatching into wall (left side)
-        n_hatch = 5
-        for i in range(n_hatch):
-            yy = y_beam - wall_height + i * (2 * wall_height / max(n_hatch - 1, 1))
-            ax.plot(
-                [x_pos - size * 0.7, x_pos],
-                [yy - size * 0.4, yy],
-                "k",
-                linewidth=1
-            )
+    converted = md.replace("\\[", "$$").replace("\\]", "$$")
+    converted = converted.replace("\\(", "$").replace("\\)", "$")
+    lines = converted.strip().split("\n")
+    blockquote = "\n".join("> " + line for line in lines)
+    st.markdown(blockquote)
 
 
-# ---------------------------------------------------
-# Helper: plot load diagram
-# ---------------------------------------------------
-def plot_load_diagram(case, L, params):
+# ------------------------------------------------------------
+#  Deflection helper: map load case → closed-form δ formula
+# ------------------------------------------------------------
+def _deflection_from_sfd_case(
+    case: str,
+    L: float,
+    w_eff: float | None,
+    P_sls: float | None,
+    E: float,
+    I: float,
+):
     """
-    Draw the qualitative load diagram (supports + loads).
-    L is the total beam length shown along the x-axis.
+    Returns (delta_max, latex_formula, location_text) for classic SLS load cases.
+
+    Assumes:
+      - L in your length unit
+      - w_eff in force/length
+      - P_sls in force
+      - E, I consistent with your deflection units
     """
-    fig, ax = plt.subplots(figsize=(6, 2.5))
+    delta_max = None
+    formula = r"\text{No closed-form deflection linked for this case yet.}"
+    location = "—"
 
-    # Draw the beam line
-    ax.plot([0, L], [0, 0], "k", linewidth=2)
-
-    # ---- Supports / fixed ends ----
-    if case.startswith("Simple beam"):
-        # pinned supports at 0 and L
-        draw_support(ax, 0.0, kind="pinned")
-        draw_support(ax, L, kind="pinned")
-
-    elif case.startswith("Cantilever"):
-        # fixed at left, free at right
-        draw_support(ax, 0.0, kind="fixed")
-
-    elif case == "Overhanging beam – right overhang with point load at free end":
-        L_main = params.get("L_main", L)
-        draw_support(ax, 0.0, kind="pinned")
-        draw_support(ax, L_main, kind="pinned")
-        # right end (L_main + a_over) is free (no symbol)
-
-    # ---- Loads ----
-    if case == "Simple beam – UDL over entire span":
-        w = params["w"]
-        ax.fill_between([0, L], [0.3, 0.3], [0, 0], alpha=0.3)
-        n_arrows = 7
-        xs = np.linspace(0.1 * L, 0.9 * L, n_arrows)
-        for xi in xs:
-            ax.arrow(
-                xi, 0.4, 0, -0.25,
-                head_width=0.08, head_length=0.05,
-                length_includes_head=True
-            )
-        ax.text(L * 0.5, 0.45, f"w = {w:.2f} kN/m", ha="center", va="bottom")
-
-    elif case == "Simple beam – partial UDL from left (length a)":
-        w = params["w"]
-        a = params["a_udl"]
-        a = max(0.0, min(a, L))
-        ax.fill_between([0, a], [0.3, 0.3], [0, 0], alpha=0.3)
-        xs = np.linspace(0.1 * a, 0.9 * a, 5)
-        for xi in xs:
-            ax.arrow(
-                xi, 0.4, 0, -0.25,
-                head_width=0.08, head_length=0.05,
-                length_includes_head=True
-            )
-        ax.text(a / 2, 0.45, f"w = {w:.2f} kN/m", ha="center", va="bottom")
-        ax.annotate(
-            "", xy=(0, -0.2), xytext=(a, -0.2),
-            arrowprops=dict(arrowstyle="<->")
+    # 1. Simple beam – UDL over entire span
+    if case == "Simple beam – UDL over entire span" and w_eff is not None:
+        # δ_max = 5 w L^4 / (384 E I) at midspan
+        delta_max = 5.0 * w_eff * L**4 / (384.0 * E * I)
+        formula = (
+            r"\delta_{\max} = \frac{5 w L^4}{384 E I}"
+            r"\quad\text{(simply supported, full UDL, midspan)}"
         )
-        ax.text(a / 2, -0.25, "a", ha="center", va="top")
-        ax.annotate(
-            "", xy=(a, -0.2), xytext=(L, -0.2),
-            arrowprops=dict(arrowstyle="<->")
-        )
-        ax.text((a + L) / 2, -0.25, "L - a", ha="center", va="top")
+        location = "At midspan (x = L/2)"
 
-    elif case == "Simple beam – point load at centre":
-        P = params["P"]
-        a = L / 2
-        ax.arrow(
-            a, 0.4, 0, -0.35,
-            head_width=0.08, head_length=0.05,
-            length_includes_head=True
+    # 2. Simple beam – point load at centre
+    elif case == "Simple beam – point load at centre" and P_sls is not None:
+        # δ_max = P L^3 / (48 E I)
+        delta_max = P_sls * L**3 / (48.0 * E * I)
+        formula = (
+            r"\delta_{\max} = \frac{P L^3}{48 E I}"
+            r"\quad\text{(simply supported, centre point load)}"
         )
-        ax.text(a, 0.45, f"P = {P:.2f} kN", ha="center", va="bottom")
-        ax.annotate(
-            "", xy=(0, -0.2), xytext=(a, -0.2),
-            arrowprops=dict(arrowstyle="<->")
-        )
-        ax.text(a / 2, -0.25, "L/2", ha="center", va="top")
-        ax.annotate(
-            "", xy=(a, -0.2), xytext=(L, -0.2),
-            arrowprops=dict(arrowstyle="<->")
-        )
-        ax.text((a + L) / 2, -0.25, "L/2", ha="center", va="top")
+        location = "At midspan (x = L/2)"
 
-    elif case == "Simple beam – point load at distance a from left":
-        P = params["P"]
-        a = params["a"]
-        a = max(0.0, min(a, L))
-        ax.arrow(
-            a, 0.4, 0, -0.35,
-            head_width=0.08, head_length=0.05,
-            length_includes_head=True
+    # 3. Cantilever – point load at free end
+    elif case == "Cantilever – point load at free end" and P_sls is not None:
+        # δ_max = P L^3 / (3 E I)
+        delta_max = P_sls * L**3 / (3.0 * E * I)
+        formula = (
+            r"\delta_{\max} = \frac{P L^3}{3 E I}"
+            r"\quad\text{(cantilever, end point load)}"
         )
-        ax.text(a, 0.45, f"P = {P:.2f} kN", ha="center", va="bottom")
-        ax.annotate(
-            "", xy=(0, -0.2), xytext=(a, -0.2),
-            arrowprops=dict(arrowstyle="<->")
-        )
-        ax.text(a / 2, -0.25, "a", ha="center", va="top")
-        ax.annotate(
-            "", xy=(a, -0.2), xytext=(L, -0.2),
-            arrowprops=dict(arrowstyle="<->")
-        )
-        ax.text((a + L) / 2, -0.25, "b = L - a", ha="center", va="top")
+        location = "At free end (x = L)"
 
-    elif case == "Cantilever – point load at free end":
-        P = params["P"]
-        ax.arrow(
-            L, 0.4, 0, -0.35,
-            head_width=0.08, head_length=0.05,
-            length_includes_head=True
+    # 4. Cantilever – UDL over entire span
+    elif case == "Cantilever – UDL over entire span" and w_eff is not None:
+        # δ_max = w L^4 / (8 E I)
+        delta_max = w_eff * L**4 / (8.0 * E * I)
+        formula = (
+            r"\delta_{\max} = \frac{w L^4}{8 E I}"
+            r"\quad\text{(cantilever, full UDL)}"
         )
-        ax.text(L, 0.45, f"P = {P:.2f} kN", ha="center", va="bottom")
-        ax.annotate(
-            "", xy=(0, -0.2), xytext=(L, -0.2),
-            arrowprops=dict(arrowstyle="<->")
-        )
-        ax.text(L / 2, -0.25, "L", ha="center", va="top")
+        location = "At free end (x = L)"
 
-    elif case == "Cantilever – point load at distance a from fixed end":
-        P = params["P"]
-        a = params["a_cant"]
-        a = max(0.0, min(a, L))
-        ax.arrow(
-            a, 0.4, 0, -0.35,
-            head_width=0.08, head_length=0.05,
-            length_includes_head=True
-        )
-        ax.text(a, 0.45, f"P = {P:.2f} kN", ha="center", va="bottom")
-        ax.annotate(
-            "", xy=(0, -0.2), xytext=(a, -0.2),
-            arrowprops=dict(arrowstyle="<->")
-        )
-        ax.text(a / 2, -0.25, "a", ha="center", va="top")
-        ax.annotate(
-            "", xy=(a, -0.2), xytext=(L, -0.2),
-            arrowprops=dict(arrowstyle="<->")
-        )
-        ax.text((a + L) / 2, -0.25, "L - a", ha="center", va="top")
+    # Other cases (partial UDL, eccentric point load, overhang etc.) can be added later.
 
-    elif case == "Cantilever – UDL over entire span":
-        w = params["w"]
-        ax.fill_between([0, L], [0.3, 0.3], [0, 0], alpha=0.3)
-        n_arrows = 7
-        xs = np.linspace(0.1 * L, 0.9 * L, n_arrows)
-        for xi in xs:
-            ax.arrow(
-                xi, 0.4, 0, -0.25,
-                head_width=0.08, head_length=0.05,
-                length_includes_head=True
-            )
-        ax.text(L * 0.5, 0.45, f"w = {w:.2f} kN/m", ha="center", va="bottom")
-        ax.annotate(
-            "", xy=(0, -0.2), xytext=(L, -0.2),
-            arrowprops=dict(arrowstyle="<->")
-        )
-        ax.text(L / 2, -0.25, "L", ha="center", va="top")
-
-    elif case == "Overhanging beam – right overhang with point load at free end":
-        P = params["P"]
-        L_main = params["L_main"]
-        a_over = params["a_overhang"]
-        L_total = L_main + a_over
-        ax.arrow(
-            L_total, 0.4, 0, -0.35,
-            head_width=0.08, head_length=0.05,
-            length_includes_head=True
-        )
-        ax.text(L_total, 0.45, f"P = {P:.2f} kN", ha="center", va="bottom")
-        ax.annotate(
-            "", xy=(0, -0.2), xytext=(L_main, -0.2),
-            arrowprops=dict(arrowstyle="<->")
-        )
-        ax.text(L_main / 2, -0.25, "L", ha="center", va="top")
-        ax.annotate(
-            "", xy=(L_main, -0.2), xytext=(L_total, -0.2),
-            arrowprops=dict(arrowstyle="<->")
-        )
-        ax.text(L_main + a_over / 2, -0.25, "a", ha="center", va="top")
-
-    ax.set_xlim(-0.3, L + 0.3)
-    ax.set_ylim(-0.9, 0.9)
-    ax.axis("off")
-    return fig
+    return delta_max, formula, location
 
 
-# ---------------------------------------------------
-# Helper: plot SFD and BMD
-# ---------------------------------------------------
-def plot_sfd_bmd(x, V, M):
-    # SFD
-    fig_sfd, ax_sfd = plt.subplots(figsize=(6, 3))
-    ax_sfd.axhline(0, color="k", linewidth=0.8)
-    ax_sfd.plot(x, V, linewidth=2)
-    ax_sfd.set_xlabel("x (m)")
-    ax_sfd.set_ylabel("V (kN)")
-    ax_sfd.set_title("Shear Force Diagram (SFD)")
-    ax_sfd.grid(True, alpha=0.3)
-
-    # BMD
-    fig_bmd, ax_bmd = plt.subplots(figsize=(6, 3))
-    ax_bmd.axhline(0, color="k", linewidth=0.8)
-    ax_bmd.plot(x, M, linewidth=2)
-    ax_bmd.set_xlabel("x (m)")
-    ax_bmd.set_ylabel("M (kNm)")
-    ax_bmd.set_title("Bending Moment Diagram (BMD)")
-    ax_bmd.grid(True, alpha=0.3)
-
-    return fig_sfd, fig_bmd
-
-
-# ---------------------------------------------------
-# Helper: derivation text inside expander
-# ---------------------------------------------------
-def render_derivation(case, L, params, results):
+# ------------------------------------------------------------
+#  Core deflection helpers (AS 3600:2018 Cl. 8.5)
+# ------------------------------------------------------------
+def calc_ief_simplified(fc, beff, bw, d, Ast):
     """
-    Writes full equilibrium derivation for each case.
-    Uses st.latex and st.markdown.
+    AS 3600:2018 Cl. 8.5.3.1(2),(3) simplified Ief for reinforced members.
     """
-    with st.expander("Show full equilibrium derivation (reactions, V(x), M(x))"):
-        st.markdown("### Step 1 – Support conditions")
+    beff = max(beff, 1.0)
+    bw = max(bw, 1.0)
+    d = max(d, 1.0)
+    fc = max(fc, 1.0)
 
-        if case.startswith("Simple beam"):
-            st.markdown("- Left support: **pinned**  \n- Right support: **pinned**")
-        elif case.startswith("Cantilever"):
-            st.markdown("- Left support: **fixed**  \n- Right end: **free**")
-        elif case == "Overhanging beam – right overhang with point load at free end":
-            st.markdown(
-                "- Left support A: **pinned**  \n"
-                "- Right support B: **pinned** (internal)  \n"
-                "- Right overhang end: **free**"
-            )
+    beta = beff / bw
+    p = Ast / (beff * d) if beff * d > 0 else 0.0  # reinforcement ratio
+    p_lim = 0.001 * (fc ** (1.0 / 3.0)) / (beta ** (2.0 / 3.0))
 
-        st.markdown("---")
-        st.markdown("### Step 2 – Reaction forces")
+    if p >= p_lim:
+        # Eqn (8.5.3.1(2)) type
+        k1 = (5.0 - 0.04 * fc) * p + 0.002
+        ief = k1 * beff * (d ** 3)
+        ief_max = (0.1 / (beta ** (2.0 / 3.0))) * beff * (d ** 3)
+    else:
+        # Eqn (8.5.3.1(3)) type
+        k1 = (0.055 * (fc ** (1.0 / 3.0)) / (beta ** (2.0 / 3.0))) - 50.0 * p
+        ief = k1 * beff * (d ** 3)
+        ief_max = (0.06 / (beta ** (2.0 / 3.0))) * beff * (d ** 3)
 
-        if case == "Simple beam – UDL over entire span":
-            w = params["w"]
-            R = results.get("R", w * L / 2.0)
-            st.latex(r"\Sigma M_A = 0: \quad R_2 L - wL \cdot \frac{L}{2} = 0")
-            st.latex(r"R_2 = \frac{wL}{2}")
-            st.latex(r"\Sigma V = 0: \quad R_1 + R_2 - wL = 0")
-            st.latex(r"R_1 = \frac{wL}{2}")
-            st.markdown(f"Numerically, R₁ = R₂ = `{R:.3g}` kN")
-
-        elif case == "Simple beam – partial UDL from left (length a)":
-            w = params["w"]
-            a = params["a_udl"]
-            a = max(0.0, min(a, L))
-            R1 = results_local.get("R1", 0.0)
-            R2 = results_local.get("R2", 0.0)
-            st.latex(r"w \text{ over } 0 \le x \le a,\quad 0 \le a \le L")
-            st.latex(r"\Sigma M_A = 0: \quad R_2 L - w a \cdot \frac{a}{2} = 0")
-            st.latex(r"R_2 = \dfrac{w a^2}{2L}")
-            st.latex(r"\Sigma V = 0: \quad R_1 + R_2 - w a = 0")
-            st.latex(r"R_1 = w a - \dfrac{w a^2}{2L}")
-            st.markdown(
-                f"With L = `{L:.3g}` m, a = `{a:.3g}` m, w = `{w:.3g}` kN/m:"
-            )
-            st.markdown(f"- R₁ = `{R1:.3g}` kN  \n- R₂ = `{R2:.3g}` kN")
-
-        elif case == "Simple beam – point load at centre":
-            P = params["P"]
-            R1 = results["R1"]
-            st.latex(r"a = \frac{L}{2}")
-            st.latex(r"\Sigma M_A = 0: \quad R_2 L - P \cdot \frac{L}{2} = 0")
-            st.latex(r"R_2 = \frac{P}{2}")
-            st.latex(r"\Sigma V = 0: \quad R_1 + R_2 - P = 0")
-            st.latex(r"R_1 = \frac{P}{2}")
-            st.markdown(f"With P = `{P:.3g}` kN: R₁ = R₂ = `{R1:.3g}` kN")
-
-        elif case == "Simple beam – point load at distance a from left":
-            P = params["P"]
-            a = float(params["a"])
-            b = L - a
-            R1 = results_local.get("R1", 0.0)
-            R2 = results_local.get("R2", 0.0)
-            st.latex(r"a = a,\quad b = L-a")
-            st.latex(r"\Sigma M_A = 0: \quad R_2 L - P a = 0")
-            st.latex(r"R_2 = \dfrac{Pa}{L}")
-            st.latex(r"\Sigma V = 0: \quad R_1 + R_2 - P = 0")
-            st.latex(r"R_1 = \dfrac{Pb}{L}")
-            st.markdown(
-                f"With L = `{L:.3g}` m, a = `{a:.3g}` m, b = `{b:.3g}` m, P = `{P:.3g}` kN:"
-            )
-            st.markdown(f"- R₁ = `{R1:.3g}` kN  \n- R₂ = `{R2:.3g}` kN")
-
-        elif case == "Cantilever – point load at free end":
-            P = params["P"]
-            st.latex(r"\Sigma V = 0: \quad V_{\text{fixed}} - P = 0")
-            st.latex(r"V_{\text{fixed}} = P")
-            st.latex(r"\Sigma M_{\text{fixed}} = 0: \quad M_{\text{fixed}} - P L = 0")
-            st.latex(r"M_{\text{fixed}} = P L")
-            st.markdown(
-                f"At the fixed support, shear = `{P:.3g}` kN (up), "
-                f"hogging moment = `{P*L:.3g}` kNm."
-            )
-
-        elif case == "Cantilever – point load at distance a from fixed end":
-            P = params["P"]
-            a = params["a_cant"]
-            a = max(0.0, min(a, L))
-            st.latex(r"\Sigma V = 0: \quad V_{\text{fixed}} - P = 0")
-            st.latex(r"V_{\text{fixed}} = P")
-            st.latex(r"\Sigma M_{\text{fixed}} = 0: \quad M_{\text{fixed}} - P a = 0")
-            st.latex(r"M_{\text{fixed}} = P a")
-            st.markdown(
-                f"At the fixed support, shear = `{P:.3g}` kN (up), "
-                f"hogging moment = `{P*a:.3g}` kNm."
-            )
-
-        elif case == "Cantilever – UDL over entire span":
-            w = params["w"]
-            st.latex(r"\Sigma V = 0: \quad V_{\text{fixed}} - wL = 0")
-            st.latex(r"V_{\text{fixed}} = wL")
-            st.latex(
-                r"\Sigma M_{\text{fixed}} = 0: \quad "
-                r"M_{\text{fixed}} - wL \cdot \frac{L}{2} = 0"
-            )
-            st.latex(r"M_{\text{fixed}} = \frac{wL^2}{2}")
-            st.markdown(
-                f"At the fixed support, shear = `{w*L:.3g}` kN (up), "
-                f"hogging moment = `{0.5*w*L**2:.3g}` kNm."
-            )
-
-        elif case == "Overhanging beam – right overhang with point load at free end":
-            P = params["P"]
-            L_main = params["L_main"]
-            a_over = params["a_overhang"]
-            RA = results_local.get("RA", 0.0)
-            RB = results_local.get("RB", 0.0)
-            st.latex(r"L = \text{distance between supports}, \quad a = \text{overhang}")
-            st.latex(r"\Sigma M_A = 0: \quad R_B L - P(L+a) = 0")
-            st.latex(r"R_B = \dfrac{P(L+a)}{L}")
-            st.latex(r"\Sigma V = 0: \quad R_A + R_B - P = 0")
-            st.latex(r"R_A = P - R_B = -\dfrac{Pa}{L}")
-            st.markdown(
-                f"With L = `{L_main:.3g}` m, a = `{a_over:.3g}` m, P = `{P:.3g}` kN:"
-            )
-            st.markdown(f"- R_A = `{RA:.3g}` kN (down)  \n- R_B = `{RB:.3g}` kN (up)")
-
-        st.markdown("---")
-        st.markdown("### Step 3 – Shear function \(V(x)\)")
-
-        if case == "Simple beam – UDL over entire span":
-            st.latex(
-                r"V(x) = R_1 - wx = \frac{wL}{2} - wx,\quad 0 \le x \le L"
-            )
-
-        elif case == "Simple beam – partial UDL from left (length a)":
-            st.latex(
-                r"V(x) = \begin{cases}"
-                r"R_1 - w x & 0 \le x \le a \\"
-                r"R_1 - w a & a \le x \le L"
-                r"\end{cases}"
-            )
-
-        elif case == "Simple beam – point load at centre":
-            st.latex(
-                r"a = \frac{L}{2}"
-            )
-            st.latex(
-                r"V(x) = \begin{cases}"
-                r"R_1 & 0 \le x < a \\"
-                r"R_1 - P & a < x \le L"
-                r"\end{cases}"
-            )
-
-        elif case == "Simple beam – point load at distance a from left":
-            st.latex(
-                r"V(x) = \begin{cases}"
-                r"R_1 & 0 \le x < a \\"
-                r"R_1 - P & a < x \le L"
-                r"\end{cases}"
-            )
-
-        elif case == "Cantilever – point load at free end":
-            st.latex(
-                r"V(x) = -P,\quad 0 \le x \le L"
-            )
-
-        elif case == "Cantilever – point load at distance a from fixed end":
-            st.latex(
-                r"V(x) = \begin{cases}"
-                r"-P & 0 \le x \le a \\"
-                r"0 & a \le x \le L"
-                r"\end{cases}"
-            )
-
-        elif case == "Cantilever – UDL over entire span":
-            st.latex(
-                r"V(x) = -w(L - x),\quad 0 \le x \le L"
-            )
-
-        elif case == "Overhanging beam – right overhang with point load at free end":
-            st.latex(
-                r"V(x) = \begin{cases}"
-                r"R_A & 0 \le x < L \\"
-                r"R_A + R_B & L < x \le L+a"
-                r"\end{cases}"
-            )
-
-        st.markdown("---")
-        st.markdown("### Step 4 – Moment function \(M(x)\)")
-
-        if case == "Simple beam – UDL over entire span":
-            st.latex(
-                r"M(x) = R_1 x - \frac{w x^2}{2},\quad 0 \le x \le L"
-            )
-            st.latex(
-                r"M_{\max} = \frac{wL^2}{8} \text{ at } x = \frac{L}{2}"
-            )
-
-        elif case == "Simple beam – partial UDL from left (length a)":
-            st.latex(
-                r"M(x) = \begin{cases}"
-                r"R_1 x - \dfrac{w x^2}{2} & 0 \le x \le a \\[6pt]"
-                r"R_1 x - w a\left(x - \dfrac{a}{2}\right) & a \le x \le L"
-                r"\end{cases}"
-            )
-
-        elif case == "Simple beam – point load at centre":
-            st.latex(
-                r"M(x) = \begin{cases}"
-                r"R_1 x & 0 \le x \le a \\"
-                r"R_1 x - P(x-a) & a \le x \le L"
-                r"\end{cases}"
-            )
-            st.latex(
-                r"M_{\max} = \frac{PL}{4} \text{ at } x = \frac{L}{2}"
-            )
-
-        elif case == "Simple beam – point load at distance a from left":
-            st.latex(
-                r"M(x) = \begin{cases}"
-                r"R_1 x & 0 \le x \le a \\"
-                r"R_1 x - P(x-a) & a \le x \le L"
-                r"\end{cases}"
-            )
-            st.latex(
-                r"M_{\max} = R_1 a = \dfrac{Pab}{L} \text{ at } x = a"
-            )
-
-        elif case == "Cantilever – point load at free end":
-            st.latex(
-                r"M(x) = -P(L-x),\quad 0 \le x \le L"
-            )
-            st.latex(r"M_{\max} = PL \text{ (hogging at fixed end)}")
-
-        elif case == "Cantilever – point load at distance a from fixed end":
-            st.latex(
-                r"M(x) = \begin{cases}"
-                r"-P(a-x) & 0 \le x \le a \\"
-                r"0 & a \le x \le L"
-                r"\end{cases}"
-            )
-            st.latex(r"M_{\max} = P a \text{ at the fixed end}")
-
-        elif case == "Cantilever – UDL over entire span":
-            st.latex(
-                r"M(x) = -\frac{w}{2}(L-x)^2,\quad 0 \le x \le L"
-            )
-            st.latex(r"M_{\max} = \frac{wL^2}{2} \text{ (hogging at fixed end)}")
-
-        elif case == "Overhanging beam – right overhang with point load at free end":
-            st.latex(
-                r"M(x) = \begin{cases}"
-                r"R_A x & 0 \le x \le L \\"
-                r"R_A x + R_B(x-L) & L \le x \le L+a"
-                r"\end{cases}"
-            )
-            st.latex(
-                r"M_B = R_A L = -Pa \text{ (hogging at support B)}"
-            )
+    ief = min(ief, ief_max)
+    return max(ief, 0.0), beta, p, p_lim, max(ief_max, 0.0), max(k1, 0.0)
 
 
-# ---------------------------------------------------
-# MAIN PAGE RENDER FUNCTION
-# ---------------------------------------------------
-def render_sfd_bmd_page():
+def calc_deflection_as3600(L_m, Ec, Ief, g_kNm, q_kNm, psi_s, support_type, Ast, Asc):
+    """Return dict with short-term, long-term components and total deflection (mm)."""
+    L_mm = L_m * 1000.0
+    L4 = L_mm ** 4
+    Ief = max(Ief, 1.0)
+    Ec = max(Ec, 1.0)
+
+    k2_map = {
+        "Simply supported": 5.0 / 384.0,
+        "Continuous – end span": 2.4 / 384.0,
+        "Continuous – interior span": 1.5 / 384.0,
+    }
+    k2 = k2_map[support_type]
+
+    # kN/m → N/mm (1 kN/m = 1 N/mm numerically)
+    w_total = g_kNm + q_kNm
+    w_sust = g_kNm + psi_s * q_kNm
+
+    delta_short_total = k2 * w_total * L4 / (Ec * Ief)
+    delta_short_sust = k2 * w_sust * L4 / (Ec * Ief)
+
+    ratio_Asc_Ast = (Asc / Ast) if Ast > 0 else 0.0
+    kcs = 2.0 - 1.2 * ratio_Asc_Ast
+    kcs = max(kcs, 0.8)
+
+    delta_long_add = kcs * delta_short_sust
+    delta_total = delta_short_total + delta_long_add
+
+    return dict(
+        L_mm=L_mm,
+        k2=k2,
+        w_total=w_total,
+        w_sust=w_sust,
+        delta_short_total=delta_short_total,
+        delta_short_sust=delta_short_sust,
+        kcs=kcs,
+        delta_long_add=delta_long_add,
+        delta_total=delta_total,
+    )
+
+
+def calc_span_depth_limit(ief, beff, bw, d, fc, Ec, Fdef_kNm, support_type, defl_limit_ratio):
     """
-    Standalone SFD/BMD teaching page in the beam app.
-
-    - Same visual style as other pages (title, blurb, summary placeholder)
-    - No sidebar, no set_page_config
-    - Publishes span + |M|max + |V|max to results:
-          sfd_case
-          sfd_span_L_m
-          sfd_Mmax_abs_kNm
-          sfd_Vmax_abs_kN
+    Deemed-to-conform span/depth ratio from AS 3600:2018 Cl. 8.5.4.
+    Returns (L_over_d_limit, k1, k2).
     """
+    beff = max(beff, 1.0)
+    bw = max(bw, 1.0)
+    d = max(d, 1.0)
+    Ec = max(Ec, 1.0)
+    ief = max(ief, 1.0)
 
+    k1 = ief / (beff * (d ** 3))
+
+    k2_map = {
+        "Simply supported": 5.0 / 384.0,
+        "Continuous – end span": 2.4 / 384.0,
+        "Continuous – interior span": 1.5 / 384.0,
+    }
+    k2 = k2_map[support_type]
+
+    delta_over_L = 1.0 / defl_limit_ratio if defl_limit_ratio > 0 else 0.0
+    Fdef = Fdef_kNm
+
+    if Fdef <= 0 or delta_over_L <= 0:
+        return None, k1, k2
+
+    inside = (k1 * delta_over_L * beff * Ec) / (k2 * Fdef)
+    if inside <= 0:
+        return None, k1, k2
+
+    L_over_d_limit = inside ** (1.0 / 3.0)
+    return L_over_d_limit, k1, k2
+
+
+def format_L_over_delta(delta_mm, L_mm):
+    if delta_mm <= 0:
+        return "–"
+    ratio = L_mm / delta_mm
+    if ratio <= 0:
+        return "–"
+    return f"L/{ratio:,.0f}"
+
+
+# ------------------------------------------------------------
+#  MAIN RENDER FUNCTION
+# ------------------------------------------------------------
+def render_deflection():
+    """Deflection page – short-term, long-term, span/depth to AS 3600:2018 Cl. 8.5."""
     apply_global_widget_css()
-    apply_calcbox_css()
-    sync_callbacks = get_sync_callbacks()
+    _inject_calcbox_css()
+    sync_callbacks = get_sync_callbacks()  # not used yet but kept for contract
 
-    st.title("Shear & Moment Diagrams (Design / Teaching)")
-
-    summary_placeholder = st.empty()
-
-    # =========================================================
-    # BEAM LOADING CONDITION (single source of truth)
-    # =========================================================
-    st.markdown("### Beam loading condition (single source of truth)")
-
-    load_case = st.selectbox(
-        "Loading condition",
-        [
-            "Simple beam – UDL over entire span",
-            "Simple beam – partial UDL from left (length a)",
-            "Simple beam – point load at centre",
-            "Simple beam – point load at distance a from left",
-            "Cantilever – point load at free end",
-            "Cantilever – point load at distance a from fixed end",
-            "Cantilever – UDL over entire span",
-            "Overhanging beam – right overhang with point load at free end",
-        ],
-        key="load_case",
-    )
-
-    L = st.number_input(
-        "Span L (m)",
-        min_value=0.1,
-        value=6.0,
-        step=0.5,
-        key="load_L",
-        on_change=sync_callbacks.get("load_L", lambda: None),
-    )
-
-    # Conditional loads based on load case type
-    params: dict = {}
-    results_local: dict = {}
-    a = None
-
-    # UDL-type cases
-    if load_case in [
-        "Simple beam – UDL over entire span",
-        "Simple beam – partial UDL from left (length a)",
-        "Cantilever – UDL over entire span",
-    ]:
-        g = st.number_input(
-            "Dead UDL g (kN/m)",
-            min_value=0.0,
-            value=8.0,
-            step=0.5,
-            key="load_g_udl",
-            on_change=sync_callbacks.get("load_g_udl", lambda: None),
-        )
-        q = st.number_input(
-            "Live UDL q (kN/m)",
-            min_value=0.0,
-            value=4.0,
-            step=0.5,
-            key="load_q_udl",
-            on_change=sync_callbacks.get("load_q_udl", lambda: None),
-        )
-        psi_s = st.number_input(
-            "Sustained factor ψ_s",
-            min_value=0.0,
-            value=0.4,
-            step=0.05,
-            key="load_psi_udl",
-            on_change=sync_callbacks.get("load_psi_udl", lambda: None),
-        )
-
-        # Read synced values
-        g_shared = get_param("g_udl_kNm_per_m", g)
-        q_shared = get_param("q_udl_kNm_per_m", q)
-        psi_shared = get_param("psi_udl", psi_s)
-
-        # SLS + ULS equivalents
-        w_sls = g_shared + psi_shared * q_shared  # for deflection and SLS diagrams
-        gamma_g = 1.2
-        gamma_q = 1.5
-        w_uls = gamma_g * g_shared + gamma_q * q_shared  # for ULS design M*, V*
-
-        # Store for SFD/BMD computation
-        params["w"] = w_sls  # Use SLS for diagrams
-
-        # Optional: partial UDL length
-        if load_case == "Simple beam – partial UDL from left (length a)":
-            params["a_udl"] = st.number_input(
-                "UDL length a from left (m)",
-                min_value=0.0,
-                value=L / 2,
-                step=0.1,
-                key="sfd_a_udl",
-            )
-
-        update_results(
-            span_L_m=float(L),
-            g_udl_kNm_per_m=float(g_shared),
-            q_udl_kNm_per_m=float(q_shared),
-            psi_udl=float(psi_shared),
-            w_sls_kNm_per_m=float(w_sls),
-            w_uls_kNm_per_m=float(w_uls),
-        )
-
-    # Point-load cases
-    elif load_case in [
-        "Simple beam – point load at centre",
-        "Simple beam – point load at distance a from left",
-        "Cantilever – point load at free end",
-        "Cantilever – point load at distance a from fixed end",
-        "Overhanging beam – right overhang with point load at free end",
-    ]:
-        G_point = st.number_input(
-            "Dead point load G (kN)",
-            min_value=0.0,
-            value=50.0,
-            step=5.0,
-            key="load_G_point",
-            on_change=sync_callbacks.get("load_G_point", lambda: None),
-        )
-        Q_point = st.number_input(
-            "Live point load Q (kN)",
-            min_value=0.0,
-            value=30.0,
-            step=5.0,
-            key="load_Q_point",
-            on_change=sync_callbacks.get("load_Q_point", lambda: None),
-        )
-        psi_s = st.number_input(
-            "Sustained factor ψ_s for point load",
-            min_value=0.0,
-            value=0.4,
-            step=0.05,
-            key="load_psi_point",
-            on_change=sync_callbacks.get("load_psi_point", lambda: None),
-        )
-
-        # Read synced values
-        G_shared = get_param("G_point_kN", G_point)
-        Q_shared = get_param("Q_point_kN", Q_point)
-        psi_shared = get_param("psi_point", psi_s)
-
-        # SLS + ULS equivalents
-        P_sls = G_shared + psi_shared * Q_shared
-        gamma_g = 1.2
-        gamma_q = 1.5
-        P_uls = gamma_g * G_shared + gamma_q * Q_shared
-
-        # Store for SFD/BMD computation
-        params["P"] = P_sls  # Use SLS for diagrams
-
-        # Optional eccentricity
-        if load_case == "Simple beam – point load at distance a from left":
-            a = st.number_input(
-                "Distance a from left support (m)",
-                min_value=0.0,
-                value=L / 3,
-                step=0.1,
-                key="load_a_point",
-                on_change=sync_callbacks.get("load_a_point", lambda: None),
-            )
-            a_shared = get_param("a_m", a)
-            params["a"] = a_shared
-        elif load_case == "Cantilever – point load at distance a from fixed end":
-            a = st.number_input(
-                "Distance a from fixed end (m)",
-                min_value=0.0,
-                value=L / 2,
-                step=0.1,
-                key="sfd_a_cant",
-            )
-            params["a_cant"] = a
-        elif load_case == "Overhanging beam – right overhang with point load at free end":
-            L_main = st.number_input(
-                "Span between supports L (m)",
-                min_value=0.1,
-                value=4.0,
-                step=0.5,
-                key="sfd_L_main",
-            )
-            a_over = st.number_input(
-                "Overhang length a (m)",
-                min_value=0.0,
-                value=2.0,
-                step=0.5,
-                key="sfd_a_overhang",
-            )
-            params["L_main"] = L_main
-            params["a_overhang"] = a_over
-
-        update_results(
-            span_L_m=float(L),
-            G_point_kN=float(G_shared),
-            Q_point_kN=float(Q_shared),
-            psi_point=float(psi_shared),
-            P_sls_kN=float(P_sls),
-            P_uls_kN=float(P_uls),
-            a_m=float(a) if a is not None else None,
-        )
-
-    st.markdown("---")
+    st.title("Beam Deflection – AS 3600:2018 Clause 8.5")
 
     st.markdown(
         """
-This page is a **teaching module** for classic statically determinate beams.
-It generates the **load diagram**, **shear force diagram (SFD)** and
-**bending moment diagram (BMD)** with full equilibrium derivation.
+This page checks **reinforced concrete beam deflections** to AS 3600:2018:
 
-**Sign convention (for diagrams):**
-
-- Shear \(V(x)\): **upward positive**
-
-- Bending moment \(M(x)\): **sagging positive**  
-
-  (cantilever hogging appears negative)
-"""
+- Short-term deflection (Cl. 8.5.3.1)  
+- Long-term deflection using **kₛₛ** (Cl. 8.5.3.2)  
+- Deemed-to-conform **span-to-depth ratio** (Cl. 8.5.4)  
+- **Simplified effective stiffness** \(I_{ef}\) for reinforced members
+        """
     )
 
-    # ---------------------------------------------------
-    # Layout: Inputs vs key formulas
-    # ---------------------------------------------------
-    col_inputs, col_formulas = st.columns([1.3, 1.0])
+    # Reserve space for the top summary table
+    summary_placeholder = st.empty()
 
-    # Use load_case for computation (rename for compatibility with existing code)
-    case = load_case
+    # ---------- Actions from Inputs page ----------
+    action_source = get_param("actions_source", "Manual design actions (inputs below)")
+    Mu_star = get_param("Mu_star", 0.0)
+    Vu_star = get_param("Vu_star", 0.0)
 
-    # Local results dict for reactions (used in derivation)
-    results_local: dict = {}
+    # ---------- Unified loading from SFD/BMD page ----------
+    load_case = st.session_state.get("load_case", None)
+    L_sfd = get_param("span_L_m", None)  # span in m
+    
+    # Get SLS loads (either UDL or point load depending on case)
+    w_sls = get_param("w_sls_kNm_per_m", None)  # SLS UDL if applicable
+    P_sls = get_param("P_sls_kN", None)  # SLS point load if applicable
+    a = get_param("a_m", None)  # Distance a for point loads
+    
+    # For display in calcbox
+    g = get_param("g_udl_kNm_per_m", 0.0)
+    q = get_param("q_udl_kNm_per_m", 0.0)
+    psi_s = get_param("psi_udl", 0.4)
+    G_point = get_param("G_point_kN", 0.0)
+    Q_point = get_param("Q_point_kN", 0.0)
+    
+    # Determine effective load for deflection
+    w_eff = w_sls if w_sls is not None else None
 
-    # ---------------------------------------------------
-    # Compute V(x) and M(x) (same logic as your original)
-    # ---------------------------------------------------
-    x = None
-    V = None
-    M = None
-    beam_length = L
+    st.markdown("### Design inputs")
 
-    if case == "Simple beam – UDL over entire span":
-        w = params["w"]
-        x = np.linspace(0, L, 400)
-        R = w * L / 2.0
-        V = R - w * x
-        M = R * x - 0.5 * w * x**2
-        results_local["R"] = R
+    # ---------------- Geometry / materials / loads ----------------
+    col_geom, col_mat, col_load = st.columns(3)
 
-    elif case == "Simple beam – partial UDL from left (length a)":
-        w = params["w"]
-        a = params["a_udl"]
-        a = max(0.0, min(a, L))
-        x = np.linspace(0, L, 400)
-        R2 = w * a**2 / (2 * L)
-        R1 = w * a - R2
-        V = np.zeros_like(x)
-        M = np.zeros_like(x)
-        for i, xi in enumerate(x):
-            if xi <= a:
-                V[i] = R1 - w * xi
-                M[i] = R1 * xi - 0.5 * w * xi**2
-            else:
-                V[i] = R1 - w * a
-                M[i] = R1 * xi - w * a * (xi - a / 2)
-        results_local["R1"] = R1
-        results_local["R2"] = R2
-
-    elif case == "Simple beam – point load at centre":
-        P = params["P"]
-        a = L / 2.0
-        R1 = R2 = P / 2.0
-        x = np.linspace(0, L, 400)
-        V = np.zeros_like(x)
-        M = np.zeros_like(x)
-        for i, xi in enumerate(x):
-            if xi < a:
-                V[i] = R1
-                M[i] = R1 * xi
-            else:
-                V[i] = R1 - P
-                M[i] = R1 * xi - P * (xi - a)
-        results_local["R1"] = R1
-        results_local["R2"] = R2
-
-    elif case == "Simple beam – point load at distance a from left":
-        P = params["P"]
-        a = float(params["a"])
-        a = max(0.0, min(a, L))
-        b = L - a
-        R1 = P * b / L
-        R2 = P * a / L
-        x = np.linspace(0, L, 400)
-        V = np.zeros_like(x)
-        M = np.zeros_like(x)
-        for i, xi in enumerate(x):
-            if xi < a:
-                V[i] = R1
-                M[i] = R1 * xi
-            else:
-                V[i] = R1 - P
-                M[i] = R1 * xi - P * (xi - a)
-        results_local["R1"] = R1
-        results_local["R2"] = R2
-
-    elif case == "Cantilever – point load at free end":
-        P = params["P"]
-        x = np.linspace(0, L, 400)
-        V = -P * np.ones_like(x)
-        M = -P * (L - x)
-
-    elif case == "Cantilever – point load at distance a from fixed end":
-        P = params["P"]
-        a = params["a_cant"]
-        a = max(0.0, min(a, L))
-        x = np.linspace(0, L, 400)
-        V = np.zeros_like(x)
-        M = np.zeros_like(x)
-        for i, xi in enumerate(x):
-            if xi <= a:
-                V[i] = -P
-                M[i] = -P * (a - xi)
-            else:
-                V[i] = 0.0
-                M[i] = 0.0
-
-    elif case == "Cantilever – UDL over entire span":
-        w = params["w"]
-        x = np.linspace(0, L, 400)
-        V = -w * (L - x)
-        M = -0.5 * w * (L - x) ** 2
-
-    elif case == "Overhanging beam – right overhang with point load at free end":
-        P = params["P"]
-        L_main = params["L_main"]
-        a_over = params["a_overhang"]
-        L_total = L_main + a_over
-        RA = -P * a_over / L_main
-        RB = P * (L_main + a_over) / L_main
-        x = np.linspace(0, L_total, 400)
-        V = np.zeros_like(x)
-        M = np.zeros_like(x)
-        for i, xi in enumerate(x):
-            if xi <= L_main:
-                V[i] = RA
-                M[i] = RA * xi
-            else:
-                V[i] = RA + RB
-                M[i] = RA * xi + RB * (xi - L_main)
-        beam_length = L_total
-        results_local["RA"] = RA
-        results_local["RB"] = RB
-
-    # Global maxima (absolute)
-    M_max_abs = float(np.max(np.abs(M))) if M is not None else 0.0
-    V_max_abs = float(np.max(np.abs(V))) if V is not None else 0.0
-
-    # ---------------------------------------------------
-    # Key formulas + publish to results
-    # ---------------------------------------------------
-    with col_formulas:
-        st.markdown("#### Key formulas")
-
-        if case == "Simple beam – UDL over entire span":
-            st.latex(r"R_1 = R_2 = \frac{wL}{2}")
-            st.latex(r"V(x) = R_1 - wx")
-            st.latex(r"M(x) = R_1 x - \frac{w x^2}{2}")
-
-        elif case == "Simple beam – partial UDL from left (length a)":
-            st.latex(r"R_2 = \dfrac{w a^2}{2L}, \quad R_1 = w a - R_2")
-            st.latex(
-                r"V(x) = \begin{cases}"
-                r"R_1 - w x & 0 \le x \le a \\"
-                r"R_1 - w a & a \le x \le L"
-                r"\end{cases}"
-            )
-            st.latex(
-                r"M(x) = \begin{cases}"
-                r"R_1 x - \dfrac{w x^2}{2} & 0 \le x \le a \\[6pt]"
-                r"R_1 x - w a\left(x - \dfrac{a}{2}\right) & a \le x \le L"
-                r"\end{cases}"
-            )
-
-        elif case == "Simple beam – point load at centre":
-            st.latex(r"a = \frac{L}{2}, \quad R_1 = R_2 = \frac{P}{2}")
-            st.latex(
-                r"V(x) = \begin{cases}"
-                r"R_1 & 0 \le x < a \\"
-                r"R_1 - P & a < x \le L"
-                r"\end{cases}"
-            )
-            st.latex(
-                r"M(x) = \begin{cases}"
-                r"R_1 x & 0 \le x \le a \\"
-                r"R_1 x - P(x-a) & a \le x \le L"
-                r"\end{cases}"
-            )
-
-        elif case == "Simple beam – point load at distance a from left":
-            st.latex(r"b = L-a,\quad R_1 = \frac{Pb}{L},\; R_2 = \frac{Pa}{L}")
-            st.latex(
-                r"V(x) = \begin{cases}"
-                r"R_1 & 0 \le x < a \\"
-                r"R_1 - P & a < x \le L"
-                r"\end{cases}"
-            )
-            st.latex(
-                r"M(x) = \begin{cases}"
-                r"R_1 x & 0 \le x \le a \\"
-                r"R_1 x - P(x-a) & a \le x \le L"
-                r"\end{cases}"
-            )
-
-        elif case == "Cantilever – point load at free end":
-            st.latex(r"V(x) = -P,\quad 0 \le x \le L")
-            st.latex(r"M(x) = -P(L-x)")
-
-        elif case == "Cantilever – point load at distance a from fixed end":
-            st.latex(
-                r"V(x) = \begin{cases}"
-                r"-P & 0 \le x \le a \\"
-                r"0 & a \le x \le L"
-                r"\end{cases}"
-            )
-            st.latex(
-                r"M(x) = \begin{cases}"
-                r"-P(a-x) & 0 \le x \le a \\"
-                r"0 & a \le x \le L"
-                r"\end{cases}"
-            )
-
-        elif case == "Cantilever – UDL over entire span":
-            st.latex(r"V(x) = -w(L-x),\quad 0 \le x \le L")
-            st.latex(r"M(x) = -\frac{w}{2}(L-x)^2")
-
-        elif case == "Overhanging beam – right overhang with point load at free end":
-            st.latex(r"\text{Span between supports} = L,\quad \text{overhang} = a")
-            st.latex(r"R_A = -\frac{Pa}{L},\quad R_B = \frac{P(L+a)}{L}")
-            st.latex(
-                r"V(x) = \begin{cases}"
-                r"R_A & 0 \le x < L \\"
-                r"R_A + R_B & L < x \le L+a"
-                r"\end{cases}"
-            )
-            st.latex(
-                r"M(x) = \begin{cases}"
-                r"R_A x & 0 \le x \le L \\"
-                r"R_A x + R_B(x-L) & L \le x \le L+a"
-                r"\end{cases}"
-            )
-
-        # 4-step calc box, same style as other pages
-        calcbox(
-            f"""
-**Step 2 – SFD/BMD at SLS**
-
-- Case: `{case}`  
-
-- Span: `L = {L:.3g}` m  
-
-From the SLS loads (g, q, ψ_s on this page) and/or P (SLS):
-
-- Maximum absolute shear: `|V|_max ≈ {V_max_abs:.3g}` kN  
-
-- Maximum absolute moment: `|M|_max ≈ {M_max_abs:.3g}` kNm  
-
-These SLS diagrams are used directly for **deflection**, and can be
-scaled to ULS in the **Inputs** page when you choose to.
-"""
+    with col_geom:
+        L_seed_mm = _seed_from_param("L", 6000.0)
+        L_eff = st.number_input(
+            "Effective span Lₑf (m)",
+            value=L_seed_mm / 1000.0,
+            step=0.1,
+            key="defl_L_eff",
         )
 
-        # Push SFD/BMD results into shared state
-        # Note: load_case is a widget key, so we don't update it here - other pages can read it directly
-        P_sls = params.get("P")  # point load if any
-        update_results(
-            sfd_Msls_max_kNm=float(M_max_abs),
-            sfd_Vsls_max_kN=float(V_max_abs),
+        support_type = st.selectbox(
+            "Support condition (k₂)",
+            ["Simply supported", "Continuous – end span", "Continuous – interior span"],
+            index=0,
+            key="defl_support_type",
         )
 
-    # Top summary bar (like other pages)
-    summary_placeholder.info(
-        f"SFD/BMD SLS: case = {case}, L = {L:.3g} m, "
-        f"|V|_max ≈ {V_max_abs:.3g} kN, |M|_max ≈ {M_max_abs:.3g} kNm."
-    )
+        bw_seed = _seed_from_param("b", 300.0)
+        bw = st.number_input(
+            "Web / stem width b_w (mm)",
+            value=bw_seed,
+            step=10.0,
+            key="defl_bw",
+        )
 
-    # ---------------------------------------------------
-    # Load diagram + derivation
-    # ---------------------------------------------------
-    st.markdown("---")
-    col_load, col_deriv = st.columns([1.2, 1.0])
+        beff = st.number_input(
+            "Effective flange width bₑf (mm)",
+            value=bw_seed,
+            step=10.0,
+            key="defl_beff",
+        )
+
+        d_seed = _seed_from_param("d", 550.0)
+        d = st.number_input(
+            "Effective depth d (mm)",
+            value=d_seed,
+            step=10.0,
+            key="defl_d",
+        )
+
+    with col_mat:
+        fc_seed = _seed_from_param("fc", 32.0)
+        fc = st.number_input(
+            "Concrete strength f'c (MPa)",
+            value=fc_seed,
+            step=1.0,
+            key="defl_fc",
+        )
+
+        Ec_seed = _seed_from_param("Ec", 28000.0)
+        Ec = st.number_input(
+            "Eceff (MPa)",
+            value=Ec_seed,
+            step=500.0,
+            key="defl_Ec",
+        )
+
+        Ast_seed = _seed_from_param("Ast_bot", 2010.0)
+        Ast = st.number_input(
+            "Tension reinforcement area A_st (mm²)",
+            value=Ast_seed,
+            step=10.0,
+            key="defl_Ast",
+        )
+
+        Asc = st.number_input(
+            "Compression reinforcement A_sc (mm²)",
+            value=0.0,
+            step=10.0,
+            key="defl_Asc",
+        )
 
     with col_load:
-        st.subheader("Load diagram (with support types)")
-        fig_load = plot_load_diagram(case, beam_length, params)
-        st.pyplot(fig_load)
+        st.markdown("**Service loads (per metre of span)**")
 
-    with col_deriv:
-        render_derivation(case, L, params, results_local)
+        defl_limit_ratio = st.number_input(
+            "Deflection limit L/Δ (e.g. 250)",
+            value=250.0,
+            step=10.0,
+            key="defl_limit_ratio",
+        )
+        Fdef_kNm = st.number_input(
+            "F_d,ef for span-depth check (kN/m)",
+            value=12.0,
+            step=0.5,
+            help="Effective design load per unit length for Cl. 8.5.4",
+            key="defl_Fdef",
+        )
 
-    # ---------------------------------------------------
-    # Show SFD & BMD
-    # ---------------------------------------------------
-    st.markdown("---")
-    st.subheader("Shear force and bending moment diagrams")
+    # --------------------------------------------------------
+    # Compute Ief early for closed-form deflection formulas
+    # --------------------------------------------------------
+    # Use simplified Ief by default for the calcbox (detailed calc is in Ief tab)
+    use_simplified_ief_early = st.session_state.get("defl_use_simplified_ief", True)
+    try:
+        if use_simplified_ief_early:
+            Ief_early, _, _, _, _, _ = calc_ief_simplified(
+                fc=fc,
+                beff=beff,
+                bw=bw,
+                d=d,
+                Ast=Ast,
+            )
+        else:
+            Ief_early = st.session_state.get("defl_Ief_user", 1.0e11)
+    except Exception:
+        # Fallback if computation fails
+        Ief_early = 1.0e11
 
-    fig_sfd, fig_bmd = plot_sfd_bmd(x, V, M)
-    col_sfd, col_bmd = st.columns(2)
+    # ---------- Stiffness for deflection (from other pages) ----------
+    E_defl = Ec  # Use Ec from inputs (MPa)
+    I_defl = Ief_early  # Use Ief computed above (mm⁴)
 
-    with col_sfd:
-        st.pyplot(fig_sfd)
+    # For now, if they're missing, we skip δ calc
+    delta_max = None
+    formula_latex = None
+    delta_loc = None
 
-    with col_bmd:
-        st.pyplot(fig_bmd)
+    if (
+        load_case is not None
+        and L_sfd is not None
+        and E_defl is not None
+        and I_defl is not None
+        and L_sfd > 0
+        and E_defl > 0
+        and I_defl > 0
+    ):
+        delta_max, formula_latex, delta_loc = _deflection_from_sfd_case(
+            case=load_case,
+            L=float(L_sfd),
+            w_eff=w_eff,
+            P_sls=P_sls,
+            E=float(E_defl),
+            I=float(I_defl),
+        )
 
+    # ---------- User limit L/Δ ----------
+    L_over_limit = defl_limit_ratio  # Already defined above
+
+    # Simple limit in same units as L (assumes δ is in same units as L)
+    delta_limit = None
+    if L_sfd is not None and L_over_limit > 0:
+        delta_limit = L_sfd / L_over_limit
+
+    # Utilisation ratio
+    utilisation = None
+    if delta_max is not None and delta_limit not in (None, 0):
+        utilisation = abs(delta_max) / delta_limit
+
+    delta_text = f"`{delta_max:.3g}`" if delta_max is not None else "`—`"
+    delta_limit_text = f"`{delta_limit:.3g}`" if delta_limit is not None else "`—`"
+    util_text = f"`{utilisation:.3g}`" if utilisation is not None else "`—`"
+
+    # ---------- 4-STEP CALCBOX ----------
+    calcbox(
+        f"""
+**Step 1 – Adopt design actions**
+
+- Source: `{action_source}`
+- Bending moment M*: `{Mu_star:.3g}` kNm  
+- Shear force V*: `{Vu_star:.3g}` kN  
+
+These come from the **Inputs** page toggle:
+manual M*, V* or scaled SFD/BMD SLS diagrams.
+
+---
+
+**Step 2 – Service load for deflection (from SFD/BMD page)**
+
+"""
+    )
+    
+    # Show appropriate load info based on case type
+    if w_sls is not None:
+        calcbox(
+            f"""
+- Dead UDL: `g = {g:.3g}` kN/m  
+- Live UDL: `q = {q:.3g}` kN/m  
+- Sustained factor: `ψ_s = {psi_s:.3g}`  
+
+Effective SLS UDL:  
+
+\\[
+w_{{\\text{{sls}}}} = g + ψ_s q = {w_sls:.3g}\\;\\text{{kN/m}}
+\\]
+"""
+        )
+    elif P_sls is not None:
+        # Get point load psi_s
+        psi_s_point = get_param("psi_point", 0.4)
+        calcbox(
+            f"""
+- Dead point load: `G = {G_point:.3g}` kN  
+- Live point load: `Q = {Q_point:.3g}` kN  
+- Sustained factor: `ψ_s = {psi_s_point:.3g}`  
+
+Effective SLS point load:  
+
+\\[
+P_{{\\text{{sls}}}} = G + ψ_s Q = {P_sls:.3g}\\;\\text{{kN}}
+\\]
+"""
+        )
+    else:
+        calcbox(
+            """
+- No load defined yet. Please set up loading on the **SFD/BMD** page.
+"""
+        )
+    
+    calcbox(
+        f"""
+**Step 3 – Closed-form deflection formula**
+
+- Load case used for deflection: `{load_case or "—"}`  
+- Span for deflection: `L = {(L_sfd or 0.0):.3g}` (same units as δ)  
+
+"""
+    )
+
+    if formula_latex is not None:
+        st.latex(formula_latex)
+    else:
+        st.info(
+            "No closed-form deflection formula is currently linked for this SFD case "
+            "or stiffness values are missing."
+        )
+
+    calcbox(
+        f"""
+**Step 4 – Maximum deflection and SLS check**
+
+- Computed maximum deflection: {delta_text}  
+
+  (location: {delta_loc or "—"})  
+
+- SLS limit: `L/Δ = {L_over_limit:.0f}` → allowable deflection ≈ {delta_limit_text}  
+
+- Utilisation ratio (δ / δ_limit): {util_text}
+
+
+
+(Ensure units of δ and L are consistent in your stiffness setup.)
+"""
+    )
+
+    # ---------- Top summary ----------
+    summary_placeholder.info(
+        f"Deflection: case = {load_case or '—'}, L = {(L_sfd or 0.0):.3g}, "
+        f"δ_max ≈ {delta_text}, limit ≈ {delta_limit_text}, util ≈ {util_text}."
+    )
+
+    # --------------------------------------------------------
+    # Tabs in agreed order (Ief, short-term, long-term, span/depth, flow, shape)
+    # --------------------------------------------------------
+    tab_ief, tab_short, tab_long, tab_span, tab_flow, tab_shape = st.tabs(
+        [
+            "Iₑf details",
+            "Short-term deflection",
+            "Long-term deflection",
+            "Span/depth check",
+            "Flow chart",
+            "Deflected shape",
+        ]
+    )
+
+    # We will compute Ief inside the Ief tab, then reuse for summary + other tabs.
+    ief_data = {}
+
+    # ---------- TAB 1: Ief details + input choice ----------
+    with tab_ief:
+        st.subheader("Effective stiffness (Iₑf) – input choice")
+
+        use_simplified_ief = st.checkbox(
+            "Use simplified reinforced-member Iₑf (AS 3600 Cl. 8.5.3.1(2),(3))",
+            value=True,
+            key="defl_use_simplified_ief",
+        )
+
+        if use_simplified_ief:
+            Ief, beta, p, p_lim, Ief_max, k1_from_ief = calc_ief_simplified(
+                fc=fc,
+                beff=beff,
+                bw=bw,
+                d=d,
+                Ast=Ast,
+            )
+        else:
+            Ief = st.number_input(
+                "User-specified Iₑf (mm⁴)",
+                value=1.0e11,
+                step=1.0e10,
+                format="%.3e",
+                key="defl_Ief_user",
+            )
+            beta = beff / bw if bw > 0 else 1.0
+            p = Ast / (beff * d) if beff * d > 0 else 0.0
+            p_lim = 0.0
+            Ief_max = Ief
+            k1_from_ief = Ief / (beff * (d ** 3))
+
+        # store for use outside the tab
+        ief_data.update(
+            dict(
+                Ief=Ief,
+                beta=beta,
+                p=p,
+                p_lim=p_lim,
+                Ief_max=Ief_max,
+                k1_from_ief=k1_from_ief,
+            )
+        )
+
+        text = rf"""
+**Purpose**
+
+Compute the effective second moment of area $I_{{ef}}$ for a reinforced concrete member
+using the simplified expressions in AS 3600:2018 Cl. 8.5.3.1(2) and (3). This cracked
+stiffness is then used in all deflection checks.
+
+**Inputs**
+
+- Concrete strength: $f'_c = {fc:.1f}\,\text{{MPa}}$
+- Web / stem width: $b_w = {bw:.1f}\,\text{{mm}}$
+- Effective flange width: $b_{{ef}} = {beff:.1f}\,\text{{mm}}$
+- Effective depth: $d = {d:.1f}\,\text{{mm}}$
+- Tension steel area: $A_{{st}} = {Ast:.1f}\,\text{{mm}}^2$
+
+Derived section parameters:
+
+- Width ratio: $\beta = \dfrac{{b_{{ef}}}}{{b_w}} = {beta:.3f}$
+- Reinforcement ratio: $p = \dfrac{{A_{{st}}}}{{b_{{ef}} d}} = {p:.5f}$
+- Limit ratio: $p_{{lim}} = {p_lim:.5f}$
+
+**Formula**
+
+For reinforced members (AS 3600:2018 Cl. 8.5.3.1):
+
+If $p \ge p_{{lim}}$:
+
+\[
+I_{{ef}} = \left[(5 - 0.04 f'_c)\, p + 0.002 \right]\, b_{{ef}} d^3
+\]
+
+If $p < p_{{lim}}$:
+
+\[
+I_{{ef}} = \left[0.055 (f'_c)^{{1/3}} / \beta^{{2/3}} - 50 p \right]\, b_{{ef}} d^3
+\]
+
+Capped by:
+
+\[
+I_{{ef}} \le I_{{ef,max}} = {Ief_max:,.3e}\,\text{{mm}}^4
+\]
+
+and
+
+\[
+k_1 = \dfrac{{I_{{ef}}}}{{b_{{ef}} d^3}}
+\]
+
+**Substitution**
+
+Using the current inputs:
+
+- Computed $I_{{ef}} \approx {Ief:,.3e}\,\text{{mm}}^4$
+- $I_{{ef,max}} = {Ief_max:,.3e}\,\text{{mm}}^4$
+- $k_1 = \dfrac{{I_{{ef}}}}{{b_{{ef}} d^3}} \approx {k1_from_ief:.5f}$
+
+**Result**
+
+- $I_{{ef}} = {Ief:,.3e}\,\text{{mm}}^4$
+- $k_1 = {k1_from_ief:.5f}$
+- (cap) $I_{{ef,max}} = {Ief_max:,.3e}\,\text{{mm}}^4$
+
+_Ref: AS 3600:2018 Cl. 8.5.3.1(2) & (3) – simplified $I_{{ef}}$ for reinforced members._
+"""
+        calcbox(text)
+
+    # pull back out (defensive defaults in case tab didn't run for some reason)
+    Ief = ief_data.get("Ief", 1.0e11)
+    beta = ief_data.get("beta", beff / bw if bw > 0 else 1.0)
+    p = ief_data.get("p", Ast / (beff * d) if beff * d > 0 else 0.0)
+    p_lim = ief_data.get("p_lim", 0.0)
+    Ief_max = ief_data.get("Ief_max", Ief)
+    k1_from_ief = ief_data.get("k1_from_ief", Ief / (beff * (d ** 3)))
+
+    # --------------------------------------------------------
+    # Main deflection calculations
+    # --------------------------------------------------------
+    results = calc_deflection_as3600(
+        L_m=L_eff,
+        Ec=Ec,
+        Ief=Ief,
+        g_kNm=g,
+        q_kNm=q,
+        psi_s=psi_s,
+        support_type=support_type,
+        Ast=Ast,
+        Asc=Asc,
+    )
+
+    L_mm = results["L_mm"]
+    delta_short_total = results["delta_short_total"]
+    delta_short_sust = results["delta_short_sust"]
+    delta_long_add = results["delta_long_add"]
+    delta_total = results["delta_total"]
+    kcs = results["kcs"]
+
+    L_over_delta_short = format_L_over_delta(delta_short_total, L_mm)
+    L_over_delta_long_add = format_L_over_delta(delta_long_add, L_mm)
+    L_over_delta_total = format_L_over_delta(delta_total, L_mm)
+
+    L_over_d = (L_mm / d) if d > 0 else 0.0
+    L_over_d_limit, k1_span, k2_span = calc_span_depth_limit(
+        ief=Ief,
+        beff=beff,
+        bw=bw,
+        d=d,
+        fc=fc,
+        Ec=Ec,
+        Fdef_kNm=Fdef_kNm,
+        support_type=support_type,
+        defl_limit_ratio=defl_limit_ratio,
+    )
+
+    # --------------------------------------------------------
+    # TOP SUMMARY TABLE (bending-style rows)
+    # --------------------------------------------------------
+    with summary_placeholder.container():
+        st.markdown("## Summary")
+
+        limit_delta_mm = L_mm / defl_limit_ratio if defl_limit_ratio > 0 else None
+        rows = []
+
+        # 1) Short-term total
+        if limit_delta_mm and limit_delta_mm > 0:
+            util_short = delta_short_total / limit_delta_mm
+            status_short = "OK" if util_short <= 1.0 else "NG"
+            limit_str = f"{limit_delta_mm:.2f} mm (L/{defl_limit_ratio:.0f})"
+        else:
+            util_short = None
+            status_short = "—"
+            limit_str = "—"
+
+        rows.append(
+            dict(
+                Check="Short-term deflection (total load)",
+                Value=f"{delta_short_total:.2f} mm ({L_over_delta_short})",
+                Limit=limit_str,
+                Utilisation=f"{util_short:.2f}" if util_short is not None else "—",
+                Status=status_short,
+            )
+        )
+
+        # 2) Long-term additional
+        if limit_delta_mm and limit_delta_mm > 0:
+            util_long = delta_long_add / limit_delta_mm
+            status_long = "OK" if util_long <= 1.0 else "NG"
+        else:
+            util_long = None
+            status_long = "—"
+
+        rows.append(
+            dict(
+                Check="Additional long-term deflection",
+                Value=f"{delta_long_add:.2f} mm ({L_over_delta_long_add})",
+                Limit=limit_str,
+                Utilisation=f"{util_long:.2f}" if util_long is not None else "—",
+                Status=status_long,
+            )
+        )
+
+        # 3) Total
+        if limit_delta_mm and limit_delta_mm > 0:
+            util_total = delta_total / limit_delta_mm
+            status_total = "OK" if util_total <= 1.0 else "NG"
+        else:
+            util_total = None
+            status_total = "—"
+
+        rows.append(
+            dict(
+                Check="Total deflection (short + long-term)",
+                Value=f"{delta_total:.2f} mm ({L_over_delta_total})",
+                Limit=limit_str,
+                Utilisation=f"{util_total:.2f}" if util_total is not None else "—",
+                Status=status_total,
+            )
+        )
+
+        # 4) Span/depth
+        if L_over_d_limit is not None and L_over_d_limit > 0:
+            util_span = L_over_d / L_over_d_limit
+            status_span = "OK" if util_span <= 1.0 else "NG"
+            limit_span_str = f"{L_over_d_limit:.1f}"
+        else:
+            util_span = None
+            status_span = "—"
+            limit_span_str = "—"
+
+        rows.append(
+            dict(
+                Check="Span-to-depth ratio Lₑf/d",
+                Value=f"{L_over_d:.1f}",
+                Limit=limit_span_str,
+                Utilisation=f"{util_span:.2f}" if util_span is not None else "—",
+                Status=status_span,
+            )
+        )
+
+        summary_df = pd.DataFrame(rows)
+
+        def _highlight_status(row):
+            status = row.get("Status", "")
+            if status == "OK":
+                color = "#d9ead3"
+            elif status == "NG":
+                color = "#f4cccc"
+            else:
+                color = ""
+            return [f"background-color: {color}"] * len(row)
+
+        styled = summary_df.style.apply(_highlight_status, axis=1)
+        st.dataframe(styled, use_container_width=True)
+        st.markdown("---")
+
+    # --------------------------------------------------------
+    # Remaining tabs use already-computed results
+    # --------------------------------------------------------
+
+    # TAB 2: Short-term
+    with tab_short:
+        st.subheader("Short-term deflection – AS 3600 Cl. 8.5.3.1")
+
+        w_total = results["w_total"]
+        k2 = results["k2"]
+
+        text = rf"""
+**Purpose**
+
+Determine the **short-term midspan deflection** under **total service load**
+$w = g + q$ using the effective stiffness $I_{{ef}}$ from the Iₑf tab
+(AS 3600 Cl. 8.5.3.1).
+
+**Inputs**
+
+- Effective span: $L_{{eff}} = {L_mm:.0f}\,\text{{mm}}$
+- Total service load: $w = g + q = {w_total:.2f}\,\text{{kN/m}}$
+- Deflection constant (support condition): $k_2 = {k2:.5f}$
+- Effective modulus: $E_{{c,eff}} = {Ec:.0f}\,\text{{MPa}}$
+- Effective second moment: $I_{{ef}} = {Ief:,.3e}\,\text{{mm}}^4$
+
+**Formula**
+
+Short-term deflection due to total service load:
+
+\[
+\delta_{{st,total}} = k_2 \dfrac{{w\, L_{{eff}}^4}}{{E_{{c,eff}}\, I_{{ef}}}}
+\]
+
+**Substitution**
+
+\[
+\delta_{{st,total}}
+= ({k2:.5f}) \times ({w_total:.2f})\,
+  \dfrac{{({L_mm:.0f})^4}}{{({Ec:.0f}) \times ({Ief:,.3e})}}
+\approx {delta_short_total:.2f}\,\text{{mm}}
+\]
+
+**Result**
+
+- Short-term deflection (total load):  
+  $\delta_{{st,total}} \approx {delta_short_total:.2f}\,\text{{mm}}$
+- Deflection ratio:  
+  $L/\delta_{{st,total}} \approx {L_over_delta_short}$
+
+_Ref: AS 3600:2018 Cl. 8.5.3.1 – deflection using effective stiffness $I_{{ef}}$._
+"""
+        calcbox(text)
+
+    # TAB 3: Long-term
+    with tab_long:
+        st.subheader("Long-term deflection – AS 3600 Cl. 8.5.3.2")
+
+        w_sust = results["w_sust"]
+        k2 = results["k2"]
+        ratio_Asc_Ast = (Asc / Ast) if Ast > 0 else 0.0
+
+        text = rf"""
+**Purpose**
+
+Determine the **additional long-term deflection** due to sustained loading
+(creep + shrinkage) and the resulting **total deflection** to AS 3600 Cl. 8.5.3.2.
+
+**Inputs**
+
+- Sustained load:
+  \[
+  w_{{sust}} = g + \psi_s q = {w_sust:.2f}\,\text{{kN/m}}
+  \]
+- Sustained factor: $\psi_s = {psi_s:.2f}$
+- Tension steel: $A_{{st}} = {Ast:.0f}\,\text{{mm}}^2$
+- Compression steel: $A_{{sc}} = {Asc:.0f}\,\text{{mm}}^2$
+- Steel ratio:
+  \[
+  \dfrac{{A_{{sc}}}}{{A_{{st}}}} = {ratio_Asc_Ast:.3f}
+  \]
+- Creep/shrinkage multiplier: $k_{{cs}} = {kcs:.2f}$
+- Other parameters as per short-term:
+  $k_2 = {k2:.5f},\ L_{{eff}} = {L_mm:.0f}\,\text{{mm}},\
+   E_{{c,eff}} = {Ec:.0f}\,\text{{MPa}},\
+   I_{{ef}} = {Ief:,.3e}\,\text{{mm}}^4$
+
+**Formula**
+
+Short-term deflection due to **sustained load only**:
+
+\[
+\delta_{{st,sust}} = k_2 \dfrac{{w_{{sust}} L_{{eff}}^4}}{{E_{{c,eff}} I_{{ef}}}}
+\]
+
+Creep/shrinkage multiplier:
+
+\[
+k_{{cs}} = \max\left[ 2 - 1.2 \left(\dfrac{{A_{{sc}}}}{{A_{{st}}}}\right),\, 0.8 \right]
+\]
+
+Additional long-term deflection:
+
+\[
+\delta_{{LT,add}} = k_{{cs}} \,\delta_{{st,sust}}
+\]
+
+Total deflection:
+
+\[
+\delta_{{total}} = \delta_{{st,total}} + \delta_{{LT,add}}
+\]
+
+**Substitution**
+
+Short-term sustained:
+
+\[
+\delta_{{st,sust}}
+= ({k2:.5f}) \times ({w_sust:.2f})\,
+  \dfrac{{({L_mm:.0f})^4}}{{({Ec:.0f}) \times ({Ief:,.3e})}}
+\approx {delta_short_sust:.2f}\,\text{{mm}}
+\]
+
+Additional long-term:
+
+\[
+\delta_{{LT,add}} = k_{{cs}} \,\delta_{{st,sust}}
+= ({kcs:.2f}) \times ({delta_short_sust:.2f})
+\approx {delta_long_add:.2f}\,\text{{mm}}
+\]
+
+Total:
+
+\[
+\delta_{{total}} = \delta_{{st,total}} + \delta_{{LT,add}}
+= {delta_short_total:.2f} + {delta_long_add:.2f}
+\approx {delta_total:.2f}\,\text{{mm}}
+\]
+
+**Result**
+
+- Short-term sustained:  
+  $\delta_{{st,sust}} \approx {delta_short_sust:.2f}\,\text{{mm}}$
+- Additional long-term:  
+  $\delta_{{LT,add}} \approx {delta_long_add:.2f}\,\text{{mm}}$  
+  (ratio $\approx {L_over_delta_long_add}$)
+- Total deflection:  
+  $\delta_{{total}} \approx {delta_total:.2f}\,\text{{mm}}$  
+  (ratio $\approx {L_over_delta_total}$)
+
+_Ref: AS 3600:2018 Cl. 8.5.3.2 – long-term deflection using $k_{{cs}}$ and sustained loads._
+"""
+        calcbox(text)
+
+    # TAB 4: Span/depth deemed-to-conform
+    with tab_span:
+        st.subheader("Deemed-to-conform span-to-depth ratio – AS 3600 Cl. 8.5.4")
+
+        span_text = rf"""
+**Purpose**
+
+Check whether the **span-to-depth ratio** $L_{{ef}}/d$ satisfies the
+**deemed-to-conform** limit given in AS 3600:2018 Cl. 8.5.4, using the previously
+calculated $I_{{ef}}$ (via $k_1$).
+
+**Inputs**
+
+- Effective span: $L_{{ef}} = {L_mm:.0f}\,\text{{mm}}$
+- Effective depth: $d = {d:.1f}\,\text{{mm}}$  
+  ⇒ current ratio:
+  \[
+  \dfrac{{L_{{ef}}}}{{d}} = {L_over_d:.1f}
+  \]
+- Stiffness factor from Iₑf tab: $k_1 = {k1_span:.5f}$
+- Deflection constant (support type): $k_2 = {k2_span:.5f}$
+- Deflection limit:
+  \[
+  \left(\dfrac{{\Delta}}{{L_{{ef}}}}\right)_{{limit}} = \dfrac{{1}}{{{defl_limit_ratio:.0f}}}
+  \]
+- Effective design load: $F_{{d,ef}} = {Fdef_kNm:.2f}\,\text{{kN/m}}$
+- Effective modulus: $E_{{c,eff}} = {Ec:.0f}\,\text{{MPa}}$
+- Effective flange width: $b_{{ef}} = {beff:.1f}\,\text{{mm}}$
+
+**Formula**
+
+Deemed-to-conform span-to-depth limit:
+
+\[
+\frac{{L_{{ef}}}}{{d}} \le
+\left[
+\dfrac{{k_1 \, (\Delta/L_{{ef}}) \, b_{{ef}} E_{{c,eff}}}}{{k_2 F_{{d,ef}}}}
+\right]^{{1/3}}
+\]
+
+**Substitution**
+"""
+
+        if L_over_d_limit is not None:
+            span_text += rf"""
+
+Right-hand-side limit:
+
+\[
+\left(\frac{{L_{{ef}}}}{{d}}\right)_{{limit}}
+=
+\left[
+\dfrac{{({k1_span:.5f}) \times (1/{defl_limit_ratio:.0f}) \times ({beff:.1f}) \times ({Ec:.0f})}}
+      {{({k2_span:.5f}) \times ({Fdef_kNm:.2f})}}
+\right]^{{1/3}}
+\approx {L_over_d_limit:.1f}
+\]
+
+**Result**
+
+- Allowed ratio:
+  \[
+  \dfrac{{L_{{ef}}}}{{d}} \le {L_over_d_limit:.1f}
+  \]
+- Actual ratio:
+  \[
+  \dfrac{{L_{{ef}}}}{{d}} = {L_over_d:.1f}
+  \]
+
+Conclusion: **{"✅ OK – deemed to conform" if L_over_d <= L_over_d_limit else "❌ NG – exceeds deemed limit"}**
+"""
+        else:
+            span_text += r"""
+
+No limit could be computed because \(F_{d,ef} \le 0\).
+
+**Result**
+
+- Span/depth deemed-to-conform check not applicable for the current inputs.
+"""
+
+        span_text += r"""
+
+_Ref: AS 3600:2018 Cl. 8.5.4 – deemed-to-conform span-to-depth limits._
+"""
+        calcbox(span_text)
+
+    # TAB 5: Flow chart
+    with tab_flow:
+        st.subheader("Flow chart – Deflection check to AS 3600")
+
+        st.markdown(
+            """
+### Step 1 – Define section, materials & loads
+- Geometry: \(L_{ef}, b_w, b_{ef}, d\)  
+- Materials: \(f'_c, E_{c,eff}, A_{st}, A_{sc}\)  
+- Loads: \(g, q, \\psi_s, F_{d,ef}\), deflection limit \(L/Δ\)
+
+---
+
+### Step 2 – Effective stiffness Iₑf (Cl. 8.5.3.1)
+
+1. Compute  
+   - \(\\beta = b_{ef} / b_w\)  
+   - \(p = A_{st} / (b_{ef} d)\)  
+   - \(p_{lim}\) from AS 3600  
+
+2. Use appropriate simplified expression to obtain \(I_{ef}\)  
+3. Cap at \(I_{ef,max}\) as per AS 3600  
+
+---
+
+### Step 3 – Short-term deflection (Cl. 8.5.3.1)
+
+1. Select \(k_2\) from support type  
+2. Compute total service load \(w = g + q\)  
+3. Evaluate  
+
+   \\[
+   \\delta_{st,total} = k_2 \\dfrac{w L_{eff}^4}{E_{c,eff} I_{ef}}
+   \\]
+
+---
+
+### Step 4 – Long-term deflection (Cl. 8.5.3.2)
+
+1. Sustained load  
+   \\(w_{sust} = g + \\psi_s q\\)  
+
+2. Short-term deflection from sustained load  
+
+   \\[
+   \\delta_{st,sust} = k_2 \\dfrac{w_{sust} L_{eff}^4}{E_{c,eff} I_{ef}}
+   \\]
+
+3. Creep/shrinkage multiplier  
+
+   \\[
+   k_{cs} = \\max[2 - 1.2(A_{sc}/A_{st}), 0.8]
+   \\]
+
+4. Additional long-term deflection  
+
+   \\[
+   \\delta_{LT,add} = k_{cs} \\delta_{st,sust}
+   \\]
+
+5. Total deflection  
+
+   \\[
+   \\delta_{total} = \\delta_{st,total} + \\delta_{LT,add}
+   \\]
+
+---
+
+### Step 5 – Serviceability checks
+
+1. Compare total deflection to limit:
+
+   \\[
+   \\delta_{total} \\le \\dfrac{L_{eff}}{(L/\\Delta)_{limit}}
+   \\]
+
+2. Optionally check deemed-to-conform span-depth ratio:
+
+   \\[
+   \\frac{L_{ef}}{d} \\le
+   \\left[
+   \\dfrac{k_1 (\\Delta/L_{ef}) b_{ef} E_{c,eff}}{k_2 F_{d,ef}}
+   \\right]^{1/3}
+   \\]
+
+3. Report **utilisation** and whether the span is **deemed to conform**.
+        """
+        )
+
+    # TAB 6: Deflected shape
+    with tab_shape:
+        st.subheader("Deflected Shape (Illustrative – scaled to δ_total)")
+
+        x = np.linspace(0.0, L_mm, 200)
+        xi = x / L_mm
+        y_long = -delta_total * 4.0 * xi * (1.0 - xi)
+
+        fig, ax = plt.subplots()
+        ax.plot(x, y_long)
+        ax.set_xlabel("Span position x (mm)")
+        ax.set_ylabel("Deflection (mm)")
+        ax.axhline(0.0, linewidth=0.8)
+        ax.grid(True)
+
+        st.pyplot(fig)
