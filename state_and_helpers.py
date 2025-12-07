@@ -360,6 +360,11 @@ TAB_KEYS = {
 
     "crack_cover_bot": "cover_bot",
     "crack_cover_top": "cover_top",
+    
+    # ----------------- SFD/BMD PAGE (SLS loads) -----------------
+    "sfd_sls_g_kNm_per_m": "sls_g_kNm_per_m",
+    "sfd_sls_q_kNm_per_m": "sls_q_kNm_per_m",
+    "sfd_sls_psi_s": "sls_psi_s",
 }
 
 # ============================================
