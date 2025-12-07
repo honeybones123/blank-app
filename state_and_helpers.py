@@ -172,7 +172,7 @@ SHARED_DEFAULTS = {
     
     # Unified beam loading (single source of truth on SFD/BMD page)
     # Note: load_case is a widget key (st.selectbox), so it's managed by Streamlit, not stored here
-    "span_L_m": 0.0,  # Span length (m)
+    "span_L_m": 6.0,  # Span length (m) - default must be >= 0.1 for widget constraint
     
     # UDL loads
     "g_udl_kNm_per_m": 8.0,  # Dead UDL (kN/m)
