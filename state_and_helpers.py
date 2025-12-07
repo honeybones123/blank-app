@@ -175,6 +175,8 @@ SHARED_DEFAULTS = {
     "sfd_span_L_m": 0.0,  # Span length (m)
     "sfd_Mmax_abs_kNm": 0.0,  # Maximum absolute bending moment (kNm)
     "sfd_Vmax_abs_kN": 0.0,  # Maximum absolute shear force (kN)
+    "sfd_w_kNm_per_m": None,  # UDL intensity (kN/m) if applicable
+    "sfd_P_kN": None,  # Point load (kN) if applicable
 }
 
 # Explicit set of result keys (for RULE 4 checks)
