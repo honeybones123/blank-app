@@ -75,7 +75,9 @@ SHARED_DEFAULTS = {
 
     # Actions
     "Mu_star": 500.0,  # kNm (controlling moment)
+    "Mu_star_kNm": 500.0,  # kNm (alternative naming for compatibility)
     "Vu_star": 300.0,  # kN
+    "Vu_star_kN": 300.0,  # kN (alternative naming for compatibility)
     "Tu_star": 0.0,    # kNm
     "P_star": 0.0,     # kN (prestress or axial in bending/shear)
     "N_star": 0.0,     # kN (additional axial)
