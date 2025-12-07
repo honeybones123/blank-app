@@ -48,6 +48,49 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# CSS for clickable summary table rows
+st.markdown(
+    """
+<style>
+/* Make <summary> look like a normal row and hide the default arrow */
+.summary-details summary {
+  list-style: none;
+  cursor: pointer;
+}
+.summary-details summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Fake "row" + "cells" using divs so the whole row is clickable */
+.summary-row {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+}
+.summary-row-inner {
+  display: table-row;
+}
+.summary-cell {
+  display: table-cell;
+  padding: 4px 6px;
+  font-size: 0.9rem;
+  text-align: right;
+}
+.summary-cell.check {
+  text-align: left;
+}
+
+/* Box for the drop-down detail table */
+.summary-detail-wrapper {
+  padding: 0.35rem 0.5rem 0.6rem 0.5rem;
+  background-color: #fafafa;
+  border-top: 1px solid #e0e0e0;
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
 
 # ------------------------------------------------------------
 #  SHARED HELPERS FOR BAR & LEG LAYOUT
@@ -1066,7 +1109,7 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
 
     defl_status, defl_colour = _status_and_colour(defl_util, defl_limit > 0)
 
-    # ---------- Bending detail numbers for expander ----------
+    # ---------- Bending detail numbers ----------
     Ast_bot = get_param("Ast_bot", 0.0)
 
     As_min_req = get_param("As_min_req", None)   # from bending page Tab 2 (if available)
@@ -1100,50 +1143,259 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
 
     )
 
-    # ---------- Main summary table (unchanged) ----------
-    summary_table_html = f"""
+    # Preformatted strings (for cleaner HTML)
+    As_min_str = f"{As_min_req:.1f}" if As_min_req not in (None, 0) else "—"
+    As_util_str = f"{As_util:.3f}" if As_util is not None else "—"
+    Mx_min_str = f"{Mx_min_req:.2f}" if Mx_min_req not in (None, 0) else "—"
+    Mx_min_util_str = f"{Mx_min_util:.3f}" if Mx_min_util is not None else "—"
+    k_u_str = f"{k_u:.3f}" if k_u is not None else "—"
+    k_u_lim_str = f"{k_u_lim:.3f}" if k_u_lim is not None else "—"
+    k_u_util_str = f"{k_u_util:.3f}" if k_u_util is not None else "—"
+
+    # Crack detail helper
+    sigma_sr = get_param("sigma_sr", 0.0)
+    sigma_allow = get_param("sigma_allow_table", 0.0)
+    if sigma_allow > 0:
+        sigma_util = sigma_sr / sigma_allow
+    else:
+        sigma_util = None
+    sigma_status, sigma_colour = _status_and_colour(
+
+        sigma_util, sigma_allow > 0
+
+    )
+    sigma_util_str = f"{sigma_util:.3f}" if sigma_util is not None else "—"
+
+    # ---------- Detail HTML blocks (NO leading spaces) ----------
+    bending_detail_html = f"""\
+<div style="max-width: 900px;">
+<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+<thead>
+<tr style="background-color: #f5f5f5;">
+<th style="text-align:left; padding: 4px 6px;">Check</th>
+<th style="text-align:right; padding: 4px 6px;">Value</th>
+<th style="text-align:right; padding: 4px 6px;">Limit</th>
+<th style="text-align:right; padding: 4px 6px;">Utilisation</th>
+<th style="text-align:center; padding: 4px 6px;">Status</th>
+</tr>
+</thead>
+<tbody>
+<tr style="background-color: {As_colour};">
+<td style="padding: 4px 6px;"><strong>Steel area A<sub>st,bot</sub></strong></td>
+<td style="text-align:right; padding: 4px 6px;">{Ast_bot:.1f} mm²</td>
+<td style="text-align:right; padding: 4px 6px;">A<sub>s,min</sub> = {As_min_str} mm²</td>
+<td style="text-align:right; padding: 4px 6px;">{As_util_str}</td>
+<td style="text-align:center; padding: 4px 6px;">{As_status}</td>
+</tr>
+<tr style="background-color: {bending_colour};">
+<td style="padding: 4px 6px;"><strong>Flexural capacity</strong></td>
+<td style="text-align:right; padding: 4px 6px;">ϕM<sub>u,cap</sub> = {phi_Mu_cap:.2f} kNm</td>
+<td style="text-align:right; padding: 4px 6px;">M* = {Mu_star:.2f} kNm</td>
+<td style="text-align:right; padding: 4px 6px;">{bending_util_str}</td>
+<td style="text-align:center; padding: 4px 6px;">{bending_status}</td>
+</tr>
+<tr style="background-color: {Mx_min_colour};">
+<td style="padding: 4px 6px;"><strong>Minimum strength (Tab 2)</strong></td>
+<td style="text-align:right; padding: 4px 6px;">ϕM<sub>u,cap</sub> = {phi_Mu_cap:.2f} kNm</td>
+<td style="text-align:right; padding: 4px 6px;">M<sub>x,min</sub> = {Mx_min_str} kNm</td>
+<td style="text-align:right; padding: 4px 6px;">{Mx_min_util_str}</td>
+<td style="text-align:center; padding: 4px 6px;">{Mx_min_status}</td>
+</tr>
+<tr style="background-color: {k_u_colour};">
+<td style="padding: 4px 6px;"><strong>Neutral axis ratio k<sub>u</sub></strong></td>
+<td style="text-align:right; padding: 4px 6px;">{k_u_str}</td>
+<td style="text-align:right; padding: 4px 6px;">AS 3600 limit ≤ {k_u_lim_str}</td>
+<td style="text-align:right; padding: 4px 6px;">{k_u_util_str}</td>
+<td style="text-align:center; padding: 4px 6px;">{k_u_status}</td>
+</tr>
+</tbody>
+</table>
+</div>
+"""
+
+    shear_detail_html = f"""\
+<div style="max-width: 900px;">
+<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+<thead>
+<tr style="background-color: #f5f5f5;">
+<th style="text-align:left; padding: 4px 6px;">Check</th>
+<th style="text-align:right; padding: 4px 6px;">Value</th>
+<th style="text-align:right; padding: 4px 6px;">Limit</th>
+<th style="text-align:right; padding: 4px 6px;">Utilisation</th>
+<th style="text-align:center; padding: 4px 6px;">Status</th>
+</tr>
+</thead>
+<tbody>
+<tr style="background-color: {shear_colour};">
+<td style="padding: 4px 6px;"><strong>Shear capacity</strong></td>
+<td style="text-align:right; padding: 4px 6px;">ϕV<sub>u,cap</sub> = {phi_Vu_cap:.2f} kN</td>
+<td style="text-align:right; padding: 4px 6px;">V* = {Vu_star:.2f} kN</td>
+<td style="text-align:right; padding: 4px 6px;">{shear_util_str}</td>
+<td style="text-align:center; padding: 4px 6px;">{shear_status}</td>
+</tr>
+</tbody>
+</table>
+</div>
+"""
+
+    crack_detail_html = f"""\
+<div style="max-width: 900px;">
+<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+<thead>
+<tr style="background-color: #f5f5f5;">
+<th style="text-align:left; padding: 4px 6px;">Check</th>
+<th style="text-align:right; padding: 4px 6px;">Value</th>
+<th style="text-align:right; padding: 4px 6px;">Limit</th>
+<th style="text-align:right; padding: 4px 6px;">Utilisation</th>
+<th style="text-align:center; padding: 4px 6px;">Status</th>
+</tr>
+</thead>
+<tbody>
+<tr style="background-color: {sigma_colour};">
+<td style="padding: 4px 6px;"><strong>Steel stress σ<sub>sr</sub></strong></td>
+<td style="text-align:right; padding: 4px 6px;">{sigma_sr:.1f} MPa</td>
+<td style="text-align:right; padding: 4px 6px;">σ<sub>allow</sub> = {sigma_allow:.1f} MPa</td>
+<td style="text-align:right; padding: 4px 6px;">{sigma_util_str}</td>
+<td style="text-align:center; padding: 4px 6px;">{sigma_status}</td>
+</tr>
+<tr style="background-color: {crack_colour};">
+<td style="padding: 4px 6px;"><strong>Crack width</strong></td>
+<td style="text-align:right; padding: 4px 6px;">w<sub>calc</sub> = {crack_demand}</td>
+<td style="text-align:right; padding: 4px 6px;">w<sub>lim</sub> = {crack_cap}</td>
+<td style="text-align:right; padding: 4px 6px;">{crack_util_str}</td>
+<td style="text-align:center; padding: 4px 6px;">{crack_status}</td>
+</tr>
+</tbody>
+</table>
+</div>
+"""
+
+    defl_detail_html = f"""\
+<div style="max-width: 900px;">
+<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+<thead>
+<tr style="background-color: #f5f5f5;">
+<th style="text-align:left; padding: 4px 6px;">Check</th>
+<th style="text-align:right; padding: 4px 6px;">Value</th>
+<th style="text-align:right; padding: 4px 6px;">Limit</th>
+<th style="text-align:right; padding: 4px 6px;">Utilisation</th>
+<th style="text-align:center; padding: 4px 6px;">Status</th>
+</tr>
+</thead>
+<tbody>
+<tr style="background-color: {defl_colour};">
+<td style="padding: 4px 6px;"><strong>Total long-term deflection</strong></td>
+<td style="text-align:right; padding: 4px 6px;">δ<sub>total</sub> = {delta_total:.2f} mm</td>
+<td style="text-align:right; padding: 4px 6px;">δ<sub>lim</sub> = {defl_cap}</td>
+<td style="text-align:right; padding: 4px 6px;">{defl_util_str}</td>
+<td style="text-align:center; padding: 4px 6px;">{defl_status}</td>
+</tr>
+</tbody>
+</table>
+</div>
+"""
+
+    # ---------- Main summary table with embedded dropdowns ----------
+    summary_table_html = f"""\
 <div style="border: 1px solid #cccccc; border-radius: 8px; padding: 0.5rem 0.75rem; margin-bottom: 1rem; max-width: 900px;">
-  <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
-    <thead>
-      <tr style="background-color: #f5f5f5;">
-        <th style="text-align:left; padding: 4px 6px;">Check</th>
-        <th style="text-align:right; padding: 4px 6px;">Demand</th>
-        <th style="text-align:right; padding: 4px 6px;">Capacity</th>
-        <th style="text-align:right; padding: 4px 6px;">Utilisation</th>
-        <th style="text-align:center; padding: 4px 6px;">Status</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr style="background-color: {bending_colour};">
-        <td style="padding: 4px 6px;"><strong>Bending</strong></td>
-        <td style="text-align:right; padding: 4px 6px;">{bending_demand}</td>
-        <td style="text-align:right; padding: 4px 6px;">{bending_cap}</td>
-        <td style="text-align:right; padding: 4px 6px;">{bending_util_str}</td>
-        <td style="text-align:center; padding: 4px 6px;"><strong>{bending_status}</strong></td>
-      </tr>
-      <tr style="background-color: {shear_colour};">
-        <td style="padding: 4px 6px;"><strong>Shear</strong></td>
-        <td style="text-align:right; padding: 4px 6px;">{shear_demand}</td>
-        <td style="text-align:right; padding: 4px 6px;">{shear_cap}</td>
-        <td style="text-align:right; padding: 4px 6px;">{shear_util_str}</td>
-        <td style="text-align:center; padding: 4px 6px;"><strong>{shear_status}</strong></td>
-      </tr>
-      <tr style="background-color: {crack_colour};">
-        <td style="padding: 4px 6px;"><strong>Crack control</strong></td>
-        <td style="text-align:right; padding: 4px 6px;">{crack_demand}</td>
-        <td style="text-align:right; padding: 4px 6px;">{crack_cap}</td>
-        <td style="text-align:right; padding: 4px 6px;">{crack_util_str}</td>
-        <td style="text-align:center; padding: 4px 6px;"><strong>{crack_status}</strong></td>
-      </tr>
-      <tr style="background-color: {defl_colour};">
-        <td style="padding: 4px 6px;"><strong>Deflection</strong></td>
-        <td style="text-align:right; padding: 4px 6px;">{defl_demand}</td>
-        <td style="text-align:right; padding: 4px 6px;">{defl_cap}</td>
-        <td style="text-align:right; padding: 4px 6px;">{defl_util_str}</td>
-        <td style="text-align:center; padding: 4px 6px;"><strong>{defl_status}</strong></td>
-      </tr>
-    </tbody>
-  </table>
+<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+<thead>
+<tr style="background-color: #f5f5f5;">
+<th style="text-align:left; padding: 4px 6px;">Check</th>
+<th style="text-align:right; padding: 4px 6px;">Demand</th>
+<th style="text-align:right; padding: 4px 6px;">Capacity</th>
+<th style="text-align:right; padding: 4px 6px;">Utilisation</th>
+<th style="text-align:center; padding: 4px 6px;">Status</th>
+</tr>
+</thead>
+<tbody>
+
+<tr>
+<td colspan="5" style="padding:0; border:0;">
+<details class="summary-details">
+<summary>
+<div class="summary-row" style="background-color: {bending_colour};">
+  <div class="summary-row-inner">
+    <div class="summary-cell check"><strong>Bending</strong></div>
+    <div class="summary-cell">{bending_demand}</div>
+    <div class="summary-cell">{bending_cap}</div>
+    <div class="summary-cell">{bending_util_str}</div>
+    <div class="summary-cell" style="text-align:center;"><strong>{bending_status}</strong></div>
+  </div>
+</div>
+</summary>
+<div class="summary-detail-wrapper">
+{bending_detail_html}
+</div>
+</details>
+</td>
+</tr>
+
+<tr>
+<td colspan="5" style="padding:0; border:0;">
+<details class="summary-details">
+<summary>
+<div class="summary-row" style="background-color: {shear_colour};">
+  <div class="summary-row-inner">
+    <div class="summary-cell check"><strong>Shear</strong></div>
+    <div class="summary-cell">{shear_demand}</div>
+    <div class="summary-cell">{shear_cap}</div>
+    <div class="summary-cell">{shear_util_str}</div>
+    <div class="summary-cell" style="text-align:center;"><strong>{shear_status}</strong></div>
+  </div>
+</div>
+</summary>
+<div class="summary-detail-wrapper">
+{shear_detail_html}
+</div>
+</details>
+</td>
+</tr>
+
+<tr>
+<td colspan="5" style="padding:0; border:0;">
+<details class="summary-details">
+<summary>
+<div class="summary-row" style="background-color: {crack_colour};">
+  <div class="summary-row-inner">
+    <div class="summary-cell check"><strong>Crack control</strong></div>
+    <div class="summary-cell">{crack_demand}</div>
+    <div class="summary-cell">{crack_cap}</div>
+    <div class="summary-cell">{crack_util_str}</div>
+    <div class="summary-cell" style="text-align:center;"><strong>{crack_status}</strong></div>
+  </div>
+</div>
+</summary>
+<div class="summary-detail-wrapper">
+{crack_detail_html}
+</div>
+</details>
+</td>
+</tr>
+
+<tr>
+<td colspan="5" style="padding:0; border:0;">
+<details class="summary-details">
+<summary>
+<div class="summary-row" style="background-color: {defl_colour};">
+  <div class="summary-row-inner">
+    <div class="summary-cell check"><strong>Deflection</strong></div>
+    <div class="summary-cell">{defl_demand}</div>
+    <div class="summary-cell">{defl_cap}</div>
+    <div class="summary-cell">{defl_util_str}</div>
+    <div class="summary-cell" style="text-align:center;"><strong>{defl_status}</strong></div>
+  </div>
+</div>
+</summary>
+<div class="summary-detail-wrapper">
+{defl_detail_html}
+</div>
+</details>
+</td>
+</tr>
+
+</tbody>
+</table>
 </div>
 """
 
@@ -1158,98 +1410,6 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
             st.markdown("### Summary (read-only from design pages)")
 
             st.markdown(summary_table_html, unsafe_allow_html=True)
-
-            # BENDING – detailed AS 3600 checks (click to expand)
-
-            with st.expander("Bending – detailed AS 3600 checks"):
-
-                bending_detail_html = f"""
-
-<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
-
-  <thead>
-
-    <tr style="background-color: #f5f5f5;">
-
-      <th style="text-align:left; padding: 4px 6px;">Check</th>
-
-      <th style="text-align:right; padding: 4px 6px;">Value</th>
-
-      <th style="text-align:right; padding: 4px 6px;">Limit</th>
-
-      <th style="text-align:right; padding: 4px 6px;">Utilisation</th>
-
-      <th style="text-align:center; padding: 4px 6px;">Status</th>
-
-    </tr>
-
-  </thead>
-
-  <tbody>
-
-    <tr style="background-color: {As_colour};">
-
-      <td style="padding: 4px 6px;"><strong>Steel area A<sub>st,bot</sub></strong></td>
-
-      <td style="text-align:right; padding: 4px 6px;">{Ast_bot:.1f} mm²</td>
-
-      <td style="text-align:right; padding: 4px 6px;">A<sub>s,min</sub> = {As_min_req if As_min_req not in (None, 0) else "—"} mm²</td>
-
-      <td style="text-align:right; padding: 4px 6px;">{f"{As_util:.3f}" if As_util is not None else "—"}</td>
-
-      <td style="text-align:center; padding: 4px 6px;">{As_status}</td>
-
-    </tr>
-
-    <tr style="background-color: {bending_colour};">
-
-      <td style="padding: 4px 6px;"><strong>Flexural capacity</strong></td>
-
-      <td style="text-align:right; padding: 4px 6px;">ϕM<sub>u,cap</sub> = {phi_Mu_cap:.2f} kNm</td>
-
-      <td style="text-align:right; padding: 4px 6px;">M* = {Mu_star:.2f} kNm</td>
-
-      <td style="text-align:right; padding: 4px 6px;">{bending_util_str}</td>
-
-      <td style="text-align:center; padding: 4px 6px;">{bending_status}</td>
-
-    </tr>
-
-    <tr style="background-color: {Mx_min_colour};">
-
-      <td style="padding: 4px 6px;"><strong>Minimum strength (Tab 2)</strong></td>
-
-      <td style="text-align:right; padding: 4px 6px;">ϕM<sub>u,cap</sub> = {phi_Mu_cap:.2f} kNm</td>
-
-      <td style="text-align:right; padding: 4px 6px;">M<sub>x,min</sub> = {Mx_min_req if Mx_min_req not in (None, 0) else "—"} kNm</td>
-
-      <td style="text-align:right; padding: 4px 6px;">{f"{Mx_min_util:.3f}" if Mx_min_util is not None else "—"}</td>
-
-      <td style="text-align:center; padding: 4px 6px;">{Mx_min_status}</td>
-
-    </tr>
-
-    <tr style="background-color: {k_u_colour};">
-
-      <td style="padding: 4px 6px;"><strong>Neutral axis ratio k<sub>u</sub></strong></td>
-
-      <td style="text-align:right; padding: 4px 6px;">{f"{k_u:.3f}" if k_u is not None else "—"}</td>
-
-      <td style="text-align:right; padding: 4px 6px;">AS 3600 limit ≤ {f"{k_u_lim:.3f}" if k_u_lim is not None else "—"}</td>
-
-      <td style="text-align:right; padding: 4px 6px;">{f"{k_u_util:.3f}" if k_u_util is not None else "—"}</td>
-
-      <td style="text-align:center; padding: 4px 6px;">{k_u_status}</td>
-
-    </tr>
-
-  </tbody>
-
-</table>
-
-"""
-
-                st.markdown(bending_detail_html, unsafe_allow_html=True)
 
         with col_right:
             fig_sec = make_summary_cross_section_figure()
