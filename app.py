@@ -38,11 +38,11 @@ def main():
         "Inputs",
         "Bending",
         "Shear",
-        "Design",
         "Creep",
         "Shrinkage",
-        "Deflection",
         "Crack Control",
+        "Design",
+        "Deflection",
     ]
 
     tabs = st.tabs(tab_labels)
