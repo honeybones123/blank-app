@@ -6,6 +6,7 @@
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 import streamlit as st
 
 from state_and_helpers import get_sync_callbacks, get_param, update_results
@@ -94,213 +95,303 @@ def draw_support(ax, x_pos, kind="pinned", size=0.18):
 # ---------------------------------------------------
 # Helper: plot load diagram
 # ---------------------------------------------------
-def plot_load_diagram(case, L, params):
+def plot_load_diagram_plotly(case, L, params):
     """
-    Draw the qualitative load diagram (supports + loads).
-    L is the total beam length shown along the x-axis.
+    Plotly version of the qualitative load diagram.
+    Much simpler visually, but interactive.
     """
-    fig, ax = plt.subplots(figsize=(6, 2.5))
+    fig = go.Figure()
 
-    # Draw the beam line
-    ax.plot([0, L], [0, 0], "k", linewidth=2)
+    # Beam line
+    fig.add_trace(
+        go.Scatter(
+            x=[0, L],
+            y=[0, 0],
+            mode="lines",
+            line=dict(width=4),
+            showlegend=False,
+        )
+    )
 
-    # ---- Supports / fixed ends ----
+    # --- Supports ---
     if case.startswith("Simple beam"):
-        # pinned supports at 0 and L
-        draw_support(ax, 0.0, kind="pinned")
-        draw_support(ax, L, kind="pinned")
-
+        # pinned at 0 and L – use triangle marker just below beam
+        fig.add_trace(
+            go.Scatter(
+                x=[0, L],
+                y=[-0.1, -0.1],
+                mode="markers",
+                marker=dict(symbol="triangle-up", size=14),
+                showlegend=False,
+            )
+        )
     elif case.startswith("Cantilever"):
-        # fixed at left, free at right
-        draw_support(ax, 0.0, kind="fixed")
-
+        # fixed at left – represent as thick vertical line
+        fig.add_shape(
+            type="line",
+            x0=0,
+            x1=0,
+            y0=-0.4,
+            y1=0.4,
+            line=dict(width=8),
+        )
     elif case == "Overhanging beam – right overhang with point load at free end":
         L_main = params.get("L_main", L)
-        draw_support(ax, 0.0, kind="pinned")
-        draw_support(ax, L_main, kind="pinned")
-        # right end (L_main + a_over) is free (no symbol)
+        fig.add_trace(
+            go.Scatter(
+                x=[0, L_main],
+                y=[-0.1, -0.1],
+                mode="markers",
+                marker=dict(symbol="triangle-up", size=14),
+                showlegend=False,
+            )
+        )
 
-    # ---- Loads ----
+    # --- Loads ---
     if case == "Simple beam – UDL over entire span":
         w = params["w"]
-        ax.fill_between([0, L], [0.3, 0.3], [0, 0], alpha=0.3)
-        n_arrows = 7
-        xs = np.linspace(0.1 * L, 0.9 * L, n_arrows)
-        for xi in xs:
-            ax.arrow(
-                xi, 0.4, 0, -0.25,
-                head_width=0.08, head_length=0.05,
-                length_includes_head=True
+        xs = [0, L]
+        ys = [0.4, 0.4]
+        fig.add_trace(
+            go.Scatter(
+                x=xs,
+                y=ys,
+                mode="lines",
+                line=dict(width=0),
+                fill="tozeroy",
+                opacity=0.3,
+                showlegend=False,
             )
-        ax.text(L * 0.5, 0.45, f"w = {w:.2f} kN/m", ha="center", va="bottom")
-
-    elif case == "Simple beam – partial UDL from left (length a)":
-        w = params["w"]
-        a = params["a_udl"]
-        a = max(0.0, min(a, L))
-        ax.fill_between([0, a], [0.3, 0.3], [0, 0], alpha=0.3)
-        xs = np.linspace(0.1 * a, 0.9 * a, 5)
-        for xi in xs:
-            ax.arrow(
-                xi, 0.4, 0, -0.25,
-                head_width=0.08, head_length=0.05,
-                length_includes_head=True
+        )
+        # arrows
+        for xi in np.linspace(0.1 * L, 0.9 * L, 7):
+            fig.add_annotation(
+                x=xi,
+                y=0.45,
+                ax=xi,
+                ay=0.1,
+                showarrow=True,
+                arrowhead=2,
             )
-        ax.text(a / 2, 0.45, f"w = {w:.2f} kN/m", ha="center", va="bottom")
-        ax.annotate(
-            "", xy=(0, -0.2), xytext=(a, -0.2),
-            arrowprops=dict(arrowstyle="<->")
+        fig.add_annotation(
+            x=L / 2,
+            y=0.55,
+            text=f"w = {w:.2f} kN/m",
+            showarrow=False,
         )
-        ax.text(a / 2, -0.25, "a", ha="center", va="top")
-        ax.annotate(
-            "", xy=(a, -0.2), xytext=(L, -0.2),
-            arrowprops=dict(arrowstyle="<->")
-        )
-        ax.text((a + L) / 2, -0.25, "L - a", ha="center", va="top")
 
     elif case == "Simple beam – point load at centre":
         P = params["P"]
         a = L / 2
-        ax.arrow(
-            a, 0.4, 0, -0.35,
-            head_width=0.08, head_length=0.05,
-            length_includes_head=True
+        fig.add_annotation(
+            x=a,
+            y=0.45,
+            ax=a,
+            ay=0.1,
+            showarrow=True,
+            arrowhead=2,
         )
-        ax.text(a, 0.45, f"P = {P:.2f} kN", ha="center", va="bottom")
-        ax.annotate(
-            "", xy=(0, -0.2), xytext=(a, -0.2),
-            arrowprops=dict(arrowstyle="<->")
+        fig.add_annotation(
+            x=a,
+            y=0.55,
+            text=f"P = {P:.2f} kN",
+            showarrow=False,
         )
-        ax.text(a / 2, -0.25, "L/2", ha="center", va="top")
-        ax.annotate(
-            "", xy=(a, -0.2), xytext=(L, -0.2),
-            arrowprops=dict(arrowstyle="<->")
-        )
-        ax.text((a + L) / 2, -0.25, "L/2", ha="center", va="top")
 
     elif case == "Simple beam – point load at distance a from left":
         P = params["P"]
         a = params["a"]
         a = max(0.0, min(a, L))
-        ax.arrow(
-            a, 0.4, 0, -0.35,
-            head_width=0.08, head_length=0.05,
-            length_includes_head=True
+        fig.add_annotation(
+            x=a,
+            y=0.45,
+            ax=a,
+            ay=0.1,
+            showarrow=True,
+            arrowhead=2,
         )
-        ax.text(a, 0.45, f"P = {P:.2f} kN", ha="center", va="bottom")
-        ax.annotate(
-            "", xy=(0, -0.2), xytext=(a, -0.2),
-            arrowprops=dict(arrowstyle="<->")
+        fig.add_annotation(
+            x=a,
+            y=0.55,
+            text=f"P = {P:.2f} kN",
+            showarrow=False,
         )
-        ax.text(a / 2, -0.25, "a", ha="center", va="top")
-        ax.annotate(
-            "", xy=(a, -0.2), xytext=(L, -0.2),
-            arrowprops=dict(arrowstyle="<->")
-        )
-        ax.text((a + L) / 2, -0.25, "b = L - a", ha="center", va="top")
 
     elif case == "Cantilever – point load at free end":
         P = params["P"]
-        ax.arrow(
-            L, 0.4, 0, -0.35,
-            head_width=0.08, head_length=0.05,
-            length_includes_head=True
+        fig.add_annotation(
+            x=L,
+            y=0.45,
+            ax=L,
+            ay=0.1,
+            showarrow=True,
+            arrowhead=2,
         )
-        ax.text(L, 0.45, f"P = {P:.2f} kN", ha="center", va="bottom")
-        ax.annotate(
-            "", xy=(0, -0.2), xytext=(L, -0.2),
-            arrowprops=dict(arrowstyle="<->")
+        fig.add_annotation(
+            x=L,
+            y=0.55,
+            text=f"P = {P:.2f} kN",
+            showarrow=False,
         )
-        ax.text(L / 2, -0.25, "L", ha="center", va="top")
 
     elif case == "Cantilever – point load at distance a from fixed end":
         P = params["P"]
         a = params["a_cant"]
         a = max(0.0, min(a, L))
-        ax.arrow(
-            a, 0.4, 0, -0.35,
-            head_width=0.08, head_length=0.05,
-            length_includes_head=True
+        fig.add_annotation(
+            x=a,
+            y=0.45,
+            ax=a,
+            ay=0.1,
+            showarrow=True,
+            arrowhead=2,
         )
-        ax.text(a, 0.45, f"P = {P:.2f} kN", ha="center", va="bottom")
-        ax.annotate(
-            "", xy=(0, -0.2), xytext=(a, -0.2),
-            arrowprops=dict(arrowstyle="<->")
+        fig.add_annotation(
+            x=a,
+            y=0.55,
+            text=f"P = {P:.2f} kN",
+            showarrow=False,
         )
-        ax.text(a / 2, -0.25, "a", ha="center", va="top")
-        ax.annotate(
-            "", xy=(a, -0.2), xytext=(L, -0.2),
-            arrowprops=dict(arrowstyle="<->")
-        )
-        ax.text((a + L) / 2, -0.25, "L - a", ha="center", va="top")
 
     elif case == "Cantilever – UDL over entire span":
         w = params["w"]
-        ax.fill_between([0, L], [0.3, 0.3], [0, 0], alpha=0.3)
-        n_arrows = 7
-        xs = np.linspace(0.1 * L, 0.9 * L, n_arrows)
-        for xi in xs:
-            ax.arrow(
-                xi, 0.4, 0, -0.25,
-                head_width=0.08, head_length=0.05,
-                length_includes_head=True
+        xs = [0, L]
+        ys = [0.4, 0.4]
+        fig.add_trace(
+            go.Scatter(
+                x=xs,
+                y=ys,
+                mode="lines",
+                line=dict(width=0),
+                fill="tozeroy",
+                opacity=0.3,
+                showlegend=False,
             )
-        ax.text(L * 0.5, 0.45, f"w = {w:.2f} kN/m", ha="center", va="bottom")
-        ax.annotate(
-            "", xy=(0, -0.2), xytext=(L, -0.2),
-            arrowprops=dict(arrowstyle="<->")
         )
-        ax.text(L / 2, -0.25, "L", ha="center", va="top")
+        # arrows
+        for xi in np.linspace(0.1 * L, 0.9 * L, 7):
+            fig.add_annotation(
+                x=xi,
+                y=0.45,
+                ax=xi,
+                ay=0.1,
+                showarrow=True,
+                arrowhead=2,
+            )
+        fig.add_annotation(
+            x=L / 2,
+            y=0.55,
+            text=f"w = {w:.2f} kN/m",
+            showarrow=False,
+        )
+
+    elif case == "Simple beam – partial UDL from left (length a)":
+        w = params["w"]
+        a = params["a_udl"]
+        a = max(0.0, min(a, L))
+        xs = [0, a]
+        ys = [0.4, 0.4]
+        fig.add_trace(
+            go.Scatter(
+                x=xs,
+                y=ys,
+                mode="lines",
+                line=dict(width=0),
+                fill="tozeroy",
+                opacity=0.3,
+                showlegend=False,
+            )
+        )
+        # arrows
+        for xi in np.linspace(0.1 * a, 0.9 * a, 5):
+            fig.add_annotation(
+                x=xi,
+                y=0.45,
+                ax=xi,
+                ay=0.1,
+                showarrow=True,
+                arrowhead=2,
+            )
+        fig.add_annotation(
+            x=a / 2,
+            y=0.55,
+            text=f"w = {w:.2f} kN/m",
+            showarrow=False,
+        )
 
     elif case == "Overhanging beam – right overhang with point load at free end":
         P = params["P"]
-        L_main = params["L_main"]
-        a_over = params["a_overhang"]
+        L_main = params.get("L_main", L)
+        a_over = params.get("a_overhang", 0.0)
         L_total = L_main + a_over
-        ax.arrow(
-            L_total, 0.4, 0, -0.35,
-            head_width=0.08, head_length=0.05,
-            length_includes_head=True
+        fig.add_annotation(
+            x=L_total,
+            y=0.45,
+            ax=L_total,
+            ay=0.1,
+            showarrow=True,
+            arrowhead=2,
         )
-        ax.text(L_total, 0.45, f"P = {P:.2f} kN", ha="center", va="bottom")
-        ax.annotate(
-            "", xy=(0, -0.2), xytext=(L_main, -0.2),
-            arrowprops=dict(arrowstyle="<->")
+        fig.add_annotation(
+            x=L_total,
+            y=0.55,
+            text=f"P = {P:.2f} kN",
+            showarrow=False,
         )
-        ax.text(L_main / 2, -0.25, "L", ha="center", va="top")
-        ax.annotate(
-            "", xy=(L_main, -0.2), xytext=(L_total, -0.2),
-            arrowprops=dict(arrowstyle="<->")
-        )
-        ax.text(L_main + a_over / 2, -0.25, "a", ha="center", va="top")
 
-    ax.set_xlim(-0.3, L + 0.3)
-    ax.set_ylim(-0.9, 0.9)
-    ax.axis("off")
+    fig.update_xaxes(range=[-0.2, L + 0.2], visible=False)
+    fig.update_yaxes(range=[-0.7, 0.9], visible=False)
+
+    fig.update_layout(
+        height=220,
+        margin=dict(l=10, r=10, t=10, b=10),
+    )
     return fig
 
 
 # ---------------------------------------------------
-# Helper: plot SFD and BMD
+# Helper: plot SFD and BMD (Plotly version)
 # ---------------------------------------------------
-def plot_sfd_bmd(x, V, M):
-    # SFD
-    fig_sfd, ax_sfd = plt.subplots(figsize=(6, 3))
-    ax_sfd.axhline(0, color="k", linewidth=0.8)
-    ax_sfd.plot(x, V, linewidth=2)
-    ax_sfd.set_xlabel("x (m)")
-    ax_sfd.set_ylabel("V (kN)")
-    ax_sfd.set_title("Shear Force Diagram (SFD)")
-    ax_sfd.grid(True, alpha=0.3)
+def plot_sfd_bmd_plotly(x, V, M):
+    """Return Plotly figures for SFD and BMD."""
 
-    # BMD
-    fig_bmd, ax_bmd = plt.subplots(figsize=(6, 3))
-    ax_bmd.axhline(0, color="k", linewidth=0.8)
-    ax_bmd.plot(x, M, linewidth=2)
-    ax_bmd.set_xlabel("x (m)")
-    ax_bmd.set_ylabel("M (kNm)")
-    ax_bmd.set_title("Bending Moment Diagram (BMD)")
-    ax_bmd.grid(True, alpha=0.3)
+    # --- SFD ---
+    fig_sfd = go.Figure()
+    fig_sfd.add_trace(
+        go.Scatter(
+            x=x,
+            y=V,
+            mode="lines",
+            name="V(x)",
+        )
+    )
+    fig_sfd.add_hline(y=0, line_width=1, line_color="black")
+    fig_sfd.update_layout(
+        title="Shear Force Diagram (SFD)",
+        xaxis_title="x (m)",
+        yaxis_title="V (kN)",
+        margin=dict(l=40, r=20, t=40, b=40),
+        height=300,
+    )
+
+    # --- BMD ---
+    fig_bmd = go.Figure()
+    fig_bmd.add_trace(
+        go.Scatter(
+            x=x,
+            y=M,
+            mode="lines",
+            name="M(x)",
+        )
+    )
+    fig_bmd.add_hline(y=0, line_width=1, line_color="black")
+    fig_bmd.update_layout(
+        title="Bending Moment Diagram (BMD)",
+        xaxis_title="x (m)",
+        yaxis_title="M (kNm)",
+        margin=dict(l=40, r=20, t=40, b=40),
+        height=300,
+    )
 
     return fig_sfd, fig_bmd
 
@@ -941,8 +1032,8 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
     st.markdown("---")
     st.subheader("Load diagram (SLS loads)")
 
-    fig_load = plot_load_diagram(case, beam_length, params)
-    st.pyplot(fig_load)
+    fig_load = plot_load_diagram_plotly(case, beam_length, params)
+    st.plotly_chart(fig_load, use_container_width=True)
 
     # ---------------------------------------------------
     # Full equilibrium derivation – 4 blue calc boxes
@@ -1498,12 +1589,12 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
     st.markdown("---")
     st.subheader("Shear force and bending moment diagrams")
 
-    fig_sfd, fig_bmd = plot_sfd_bmd(x, V, M)
+    fig_sfd, fig_bmd = plot_sfd_bmd_plotly(x, V, M)
     col_sfd, col_bmd = st.columns(2)
 
     with col_sfd:
-        st.pyplot(fig_sfd)
+        st.plotly_chart(fig_sfd, use_container_width=True)
 
     with col_bmd:
-        st.pyplot(fig_bmd)
+        st.plotly_chart(fig_bmd, use_container_width=True)
 
