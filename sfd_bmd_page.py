@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import streamlit as st
 
-from state_and_helpers import get_sync_callbacks, update_results
+from state_and_helpers import get_sync_callbacks, get_param, update_results
 from widgets_helpers import (
     apply_global_widget_css,
     apply_calcbox_css,
@@ -579,34 +579,42 @@ def render_sfd_bmd_page():
         min_value=0.0,
         value=8.0,
         step=0.5,
-        key="sls_g_kNm_per_m",
+        key="sfd_sls_g_kNm_per_m",
+        on_change=sync_callbacks.get("sfd_sls_g_kNm_per_m", lambda: None),
     )
     q = st.number_input(
         "Live load q (kN/m)",
         min_value=0.0,
         value=4.0,
         step=0.5,
-        key="sls_q_kNm_per_m",
+        key="sfd_sls_q_kNm_per_m",
+        on_change=sync_callbacks.get("sfd_sls_q_kNm_per_m", lambda: None),
     )
     psi_s = st.number_input(
         "Sustained live-load factor ψ_s",
         min_value=0.0,
         value=0.4,
         step=0.05,
-        key="sls_psi_s",
+        key="sfd_sls_psi_s",
+        on_change=sync_callbacks.get("sfd_sls_psi_s", lambda: None),
     )
 
-    w_eff = g + psi_s * q   # SLS line load used for deflection
+    # Read the synced values from shared state (widgets sync via callbacks)
+    g_shared = get_param("sls_g_kNm_per_m", g)
+    q_shared = get_param("sls_q_kNm_per_m", q)
+    psi_s_shared = get_param("sls_psi_s", psi_s)
+    
+    w_eff = g_shared + psi_s_shared * q_shared   # SLS line load used for deflection
 
     calcbox(
         f"""
 **Step 1 – Service load for deflection (defined on this SFD/BMD page)**
 
-- Dead load: `g = {g:.3g}` kN/m  
+- Dead load: `g = {g_shared:.3g}` kN/m  
 
-- Live load: `q = {q:.3g}` kN/m  
+- Live load: `q = {q_shared:.3g}` kN/m  
 
-- Sustained factor: `ψ_s = {psi_s:.3g}`  
+- Sustained factor: `ψ_s = {psi_s_shared:.3g}`  
 
 Effective SLS load:  
 
@@ -616,10 +624,8 @@ w_\\text{{eff}} = g + ψ_s q = {w_eff:.3g} \\text{{ kN/m}}
 """
     )
 
+    # Only update computed value (w_eff), widget values are synced automatically via callbacks
     update_results(
-        sls_g_kNm_per_m=float(g),
-        sls_q_kNm_per_m=float(q),
-        sls_psi_s=float(psi_s),
         sls_w_eff_kNm_per_m=float(w_eff),
     )
 
