@@ -177,6 +177,11 @@ SHARED_DEFAULTS = {
     # Bending SLS → crack link (service steel stress)
     "sigma_s_sls": 200.0,
     
+    # Deflection results
+    "deflection_total_mm": 0.0,
+    "deflection_limit_mm": 0.0,
+    "deflection_utilisation": 0.0,
+    
     # Unified beam loading (single source of truth on SFD/BMD page)
     # Note: load_case is a widget key (st.selectbox), so it's managed by Streamlit, not stored here
     "span_L_m": 6.0,  # Span length (m) - default must be >= 0.1 for widget constraint
