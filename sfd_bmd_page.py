@@ -3,6 +3,7 @@
 # SFD & BMD teaching page for beam app
 # ==========================================
 
+import math
 import numpy as np
 import matplotlib.pyplot as plt
 import streamlit as st
@@ -14,6 +15,28 @@ from widgets_helpers import (
     number_row,
     calcbox,
 )
+
+
+# ---------------------------------------------------
+# Helper: get span from Inputs page
+# ---------------------------------------------------
+def _span_from_inputs(fallback: float = 6.0) -> float:
+    """Read span L from Inputs page; safe fallback if missing."""
+    try:
+        L_val = get_param("L")
+    except TypeError:
+        L_val = None
+
+    try:
+        if L_val is None:
+            return float(fallback)
+        L_val = float(L_val)
+        if math.isnan(L_val):
+            return float(fallback)
+        # L from Inputs is in mm, convert to m
+        return L_val / 1000.0
+    except Exception:
+        return float(fallback)
 
 
 # ---------------------------------------------------
@@ -591,17 +614,12 @@ def render_sfd_bmd_page():
         key="load_case",
     )
 
-    # Get L from shared state, ensuring it meets min_value constraint
-    L_seed = get_param("span_L_m", 6.0)
-    L_seed = max(0.1, L_seed)  # Ensure it meets min_value
-    
-    L = st.number_input(
-        "Span L (m)",
-        min_value=0.1,
-        value=L_seed,
-        step=0.5,
-        key="load_L",
-        on_change=sync_callbacks.get("load_L", lambda: None),
+    # -------- span from Inputs page --------
+    L = _span_from_inputs(10.0)  # fallback 10 m if Inputs hasn't run yet
+
+    st.markdown(
+        f"**Span for SFD/BMD:** `L = {L:.3g} m` "
+        "(read from **Inputs** page; not editable here)."
     )
 
     # Conditional loads based on load case type
@@ -742,13 +760,7 @@ def render_sfd_bmd_page():
             )
             params["a_cant"] = a
         elif load_case == "Overhanging beam – right overhang with point load at free end":
-            L_main = st.number_input(
-                "Span between supports L (m)",
-                min_value=0.1,
-                value=4.0,
-                step=0.5,
-                key="sfd_L_main",
-            )
+            L_main = L  # span between supports from Inputs
             a_over = st.number_input(
                 "Overhang length a (m)",
                 min_value=0.0,
@@ -787,13 +799,14 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
 """
     )
 
-    # ---------------------------------------------------
-    # Layout: Inputs vs key formulas
-    # ---------------------------------------------------
-    col_inputs, col_formulas = st.columns([1.3, 1.0])
-
     # Use load_case for computation (rename for compatibility with existing code)
     case = load_case
+    
+    # Determine beam_length for plotting
+    if case == "Overhanging beam – right overhang with point load at free end":
+        beam_length = params.get("L_main", L) + params.get("a_overhang", 0.0)
+    else:
+        beam_length = L
 
     # Local results dict for reactions (used in derivation)
     results_local: dict = {}
@@ -923,146 +936,561 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
     V_max_abs = float(np.max(np.abs(V))) if V is not None else 0.0
 
     # ---------------------------------------------------
-    # Key formulas + publish to results
+    # Load diagram – directly under inputs
     # ---------------------------------------------------
-    with col_formulas:
-        st.markdown("#### Key formulas")
+    st.markdown("---")
+    st.subheader("Load diagram (SLS loads)")
 
-        if case == "Simple beam – UDL over entire span":
-            st.latex(r"R_1 = R_2 = \frac{wL}{2}")
-            st.latex(r"V(x) = R_1 - wx")
-            st.latex(r"M(x) = R_1 x - \frac{w x^2}{2}")
+    fig_load = plot_load_diagram(case, beam_length, params)
+    st.pyplot(fig_load)
 
-        elif case == "Simple beam – partial UDL from left (length a)":
-            st.latex(r"R_2 = \dfrac{w a^2}{2L}, \quad R_1 = w a - R_2")
-            st.latex(
-                r"V(x) = \begin{cases}"
-                r"R_1 - w x & 0 \le x \le a \\"
-                r"R_1 - w a & a \le x \le L"
-                r"\end{cases}"
-            )
-            st.latex(
-                r"M(x) = \begin{cases}"
-                r"R_1 x - \dfrac{w x^2}{2} & 0 \le x \le a \\[6pt]"
-                r"R_1 x - w a\left(x - \dfrac{a}{2}\right) & a \le x \le L"
-                r"\end{cases}"
-            )
+    # ---------------------------------------------------
+    # Full equilibrium derivation – 4 blue calc boxes
+    # ---------------------------------------------------
+    st.subheader("Equilibrium derivation (SLS)")
 
-        elif case == "Simple beam – point load at centre":
-            st.latex(r"a = \frac{L}{2}, \quad R_1 = R_2 = \frac{P}{2}")
-            st.latex(
-                r"V(x) = \begin{cases}"
-                r"R_1 & 0 \le x < a \\"
-                r"R_1 - P & a < x \le L"
-                r"\end{cases}"
-            )
-            st.latex(
-                r"M(x) = \begin{cases}"
-                r"R_1 x & 0 \le x \le a \\"
-                r"R_1 x - P(x-a) & a \le x \le L"
-                r"\end{cases}"
-            )
+    # STEP 1 – support conditions
+    step1_md = ""
 
-        elif case == "Simple beam – point load at distance a from left":
-            st.latex(r"b = L-a,\quad R_1 = \frac{Pb}{L},\; R_2 = \frac{Pa}{L}")
-            st.latex(
-                r"V(x) = \begin{cases}"
-                r"R_1 & 0 \le x < a \\"
-                r"R_1 - P & a < x \le L"
-                r"\end{cases}"
-            )
-            st.latex(
-                r"M(x) = \begin{cases}"
-                r"R_1 x & 0 \le x \le a \\"
-                r"R_1 x - P(x-a) & a \le x \le L"
-                r"\end{cases}"
-            )
+    if case.startswith("Simple beam"):
+        step1_md = """
+**Step 1 – Support conditions**
 
-        elif case == "Cantilever – point load at free end":
-            st.latex(r"V(x) = -P,\quad 0 \le x \le L")
-            st.latex(r"M(x) = -P(L-x)")
+- Left support: **pinned**  
 
-        elif case == "Cantilever – point load at distance a from fixed end":
-            st.latex(
-                r"V(x) = \begin{cases}"
-                r"-P & 0 \le x \le a \\"
-                r"0 & a \le x \le L"
-                r"\end{cases}"
-            )
-            st.latex(
-                r"M(x) = \begin{cases}"
-                r"-P(a-x) & 0 \le x \le a \\"
-                r"0 & a \le x \le L"
-                r"\end{cases}"
-            )
+- Right support: **pinned**  
 
-        elif case == "Cantilever – UDL over entire span":
-            st.latex(r"V(x) = -w(L-x),\quad 0 \le x \le L")
-            st.latex(r"M(x) = -\frac{w}{2}(L-x)^2")
-
-        elif case == "Overhanging beam – right overhang with point load at free end":
-            st.latex(r"\text{Span between supports} = L,\quad \text{overhang} = a")
-            st.latex(r"R_A = -\frac{Pa}{L},\quad R_B = \frac{P(L+a)}{L}")
-            st.latex(
-                r"V(x) = \begin{cases}"
-                r"R_A & 0 \le x < L \\"
-                r"R_A + R_B & L < x \le L+a"
-                r"\end{cases}"
-            )
-            st.latex(
-                r"M(x) = \begin{cases}"
-                r"R_A x & 0 \le x \le L \\"
-                r"R_A x + R_B(x-L) & L \le x \le L+a"
-                r"\end{cases}"
-            )
-
-        # 4-step calc box, same style as other pages
-        calcbox(
-            f"""
-**Step 2 – SFD/BMD at SLS**
-
-- Case: `{case}`  
-
-- Span: `L = {L:.3g}` m  
-
-From the SLS loads (g, q, ψ_s on this page) and/or P (SLS):
-
-- Maximum absolute shear: `|V|_max ≈ {V_max_abs:.3g}` kN  
-
-- Maximum absolute moment: `|M|_max ≈ {M_max_abs:.3g}` kNm  
-
-These SLS diagrams are used directly for **deflection**, and can be
-scaled to ULS in the **Inputs** page when you choose to.
+For a simply supported beam of span \\(L\\), the reactions act vertically at each support.
 """
-        )
+    elif case.startswith("Cantilever"):
+        step1_md = """
+**Step 1 – Support conditions**
 
-        # Push SFD/BMD results into shared state
-        # Note: load_case is a widget key, so we don't update it here - other pages can read it directly
-        P_sls = params.get("P")  # point load if any
-        update_results(
-            sfd_Msls_max_kNm=float(M_max_abs),
-            sfd_Vsls_max_kN=float(V_max_abs),
-        )
+- Left support: **fixed**  
+
+- Right end: **free**  
+
+A cantilever has a fixed end moment and shear at the support and zero reactions at the free end.
+"""
+    elif case == "Overhanging beam – right overhang with point load at free end":
+        L_main = params.get("L_main", L)
+        step1_md = f"""
+**Step 1 – Support conditions**
+
+- Support A (left): **pinned**  
+
+- Support B (internal): **pinned** at distance \\(L = {L_main:.3g}\\,\\text{{m}}\\) from A  
+
+- Right overhang end: **free** at \\(x = L + a\\)
+"""
+
+    calcbox(step1_md)
+
+    # STEP 2 – reactions (case-by-case)
+    step2_md = ""
+
+    if case == "Simple beam – UDL over entire span":
+        w = params["w"]
+        R = results_local.get("R", w * L / 2.0)
+        step2_md = f"""
+**Step 2 – Reactions from equilibrium**
+
+For a UDL \\(w\\) over \\(0 \\le x \\le L\\):  
+
+\\[
+\\sum M_A = 0: \\quad R_2 L - wL \\cdot \\frac{{L}}{{2}} = 0
+\\Rightarrow R_2 = \\frac{{wL}}{{2}}
+\\]
+
+\\[
+\\sum V = 0: \\quad R_1 + R_2 - wL = 0
+\\Rightarrow R_1 = \\frac{{wL}}{{2}}
+\\]
+
+For the selected data:
+
+- \\(w = {w:.3g}\\,\\text{{kN/m}}\\)  
+
+- \\(L = {L:.3g}\\,\\text{{m}}\\)  
+
+so numerically \\(R_1 = R_2 = \\dfrac{{wL}}{{2}} = {R:.3g}\\,\\text{{kN}}\\).
+"""
+
+    elif case == "Simple beam – point load at centre":
+        P = params["P"]
+        R1 = results_local.get("R1", P / 2.0)
+        step2_md = f"""
+**Step 2 – Reactions from equilibrium**
+
+Point load \\(P\\) at midspan \\(a = L/2\\):  
+
+\\[
+\\sum M_A = 0: \\quad R_2 L - P \\cdot \\frac{{L}}{{2}} = 0
+\\Rightarrow R_2 = \\frac{{P}}{{2}}
+\\]
+
+\\[
+\\sum V = 0: \\quad R_1 + R_2 - P = 0
+\\Rightarrow R_1 = \\frac{{P}}{{2}}
+\\]
+
+For the selected data:
+
+- \\(P = {P:.3g}\\,\\text{{kN}}\\)  
+
+- \\(L = {L:.3g}\\,\\text{{m}}\\)
+
+so numerically \\(R_1 = R_2 = {R1:.3g}\\,\\text{{kN}}\\).
+"""
+
+    elif case == "Simple beam – point load at distance a from left":
+        P = params["P"]
+        a_val = params["a"]
+        R1 = results_local.get("R1", 0.0)
+        R2 = results_local.get("R2", 0.0)
+        step2_md = f"""
+**Step 2 – Reactions from equilibrium**
+
+Point load \\(P\\) at distance \\(a\\) from left support:  
+
+\\[
+\\sum M_A = 0: \\quad R_2 L - P a = 0
+\\Rightarrow R_2 = \\frac{{Pa}}{{L}}
+\\]
+
+\\[
+\\sum V = 0: \\quad R_1 + R_2 - P = 0
+\\Rightarrow R_1 = \\frac{{Pb}}{{L}} = \\frac{{P(L-a)}}{{L}}
+\\]
+
+For the selected data:
+
+- \\(P = {P:.3g}\\,\\text{{kN}}\\)  
+
+- \\(L = {L:.3g}\\,\\text{{m}}\\)  
+
+- \\(a = {a_val:.3g}\\,\\text{{m}}\\)
+
+so numerically \\(R_1 = {R1:.3g}\\,\\text{{kN}}\\), \\(R_2 = {R2:.3g}\\,\\text{{kN}}\\).
+"""
+
+    elif case == "Simple beam – partial UDL from left (length a)":
+        w = params["w"]
+        a_udl = params["a_udl"]
+        R1 = results_local.get("R1", 0.0)
+        R2 = results_local.get("R2", 0.0)
+        step2_md = f"""
+**Step 2 – Reactions from equilibrium**
+
+Partial UDL \\(w\\) over length \\(a\\) from left:  
+
+\\[
+\\sum M_A = 0: \\quad R_2 L - w a \\cdot \\frac{{a}}{{2}} = 0
+\\Rightarrow R_2 = \\frac{{w a^2}}{{2L}}
+\\]
+
+\\[
+\\sum V = 0: \\quad R_1 + R_2 - w a = 0
+\\Rightarrow R_1 = w a - R_2
+\\]
+
+For the selected data:
+
+- \\(w = {w:.3g}\\,\\text{{kN/m}}\\)  
+
+- \\(L = {L:.3g}\\,\\text{{m}}\\)  
+
+- \\(a = {a_udl:.3g}\\,\\text{{m}}\\)
+
+so numerically \\(R_1 = {R1:.3g}\\,\\text{{kN}}\\), \\(R_2 = {R2:.3g}\\,\\text{{kN}}\\).
+"""
+
+    elif case == "Cantilever – point load at free end":
+        P = params["P"]
+        step2_md = f"""
+**Step 2 – Reactions from equilibrium**
+
+At the fixed support:  
+
+\\[
+\\sum V = 0: \\quad V_{{\\text{{fixed}}}} - P = 0
+\\Rightarrow V_{{\\text{{fixed}}}} = P
+\\]
+
+\\[
+\\sum M_{{\\text{{fixed}}}} = 0: \\quad M_{{\\text{{fixed}}}} - P L = 0
+\\Rightarrow M_{{\\text{{fixed}}}} = P L
+\\]
+
+For the selected data:
+
+- \\(P = {P:.3g}\\,\\text{{kN}}\\)  
+
+- \\(L = {L:.3g}\\,\\text{{m}}\\)
+
+so at the fixed support: shear = \\({P:.3g}\\,\\text{{kN}}\\) (up), hogging moment = \\({P*L:.3g}\\,\\text{{kNm}}\\).
+"""
+
+    elif case == "Cantilever – point load at distance a from fixed end":
+        P = params["P"]
+        a_cant = params["a_cant"]
+        step2_md = f"""
+**Step 2 – Reactions from equilibrium**
+
+At the fixed support:  
+
+\\[
+\\sum V = 0: \\quad V_{{\\text{{fixed}}}} - P = 0
+\\Rightarrow V_{{\\text{{fixed}}}} = P
+\\]
+
+\\[
+\\sum M_{{\\text{{fixed}}}} = 0: \\quad M_{{\\text{{fixed}}}} - P a = 0
+\\Rightarrow M_{{\\text{{fixed}}}} = P a
+\\]
+
+For the selected data:
+
+- \\(P = {P:.3g}\\,\\text{{kN}}\\)  
+
+- \\(L = {L:.3g}\\,\\text{{m}}\\)  
+
+- \\(a = {a_cant:.3g}\\,\\text{{m}}\\)
+
+so at the fixed support: shear = \\({P:.3g}\\,\\text{{kN}}\\) (up), hogging moment = \\({P*a_cant:.3g}\\,\\text{{kNm}}\\).
+"""
+
+    elif case == "Cantilever – UDL over entire span":
+        w = params["w"]
+        step2_md = f"""
+**Step 2 – Reactions from equilibrium**
+
+At the fixed support:  
+
+\\[
+\\sum V = 0: \\quad V_{{\\text{{fixed}}}} - wL = 0
+\\Rightarrow V_{{\\text{{fixed}}}} = wL
+\\]
+
+\\[
+\\sum M_{{\\text{{fixed}}}} = 0: \\quad M_{{\\text{{fixed}}}} - wL \\cdot \\frac{{L}}{{2}} = 0
+\\Rightarrow M_{{\\text{{fixed}}}} = \\frac{{wL^2}}{{2}}
+\\]
+
+For the selected data:
+
+- \\(w = {w:.3g}\\,\\text{{kN/m}}\\)  
+
+- \\(L = {L:.3g}\\,\\text{{m}}\\)
+
+so at the fixed support: shear = \\({w*L:.3g}\\,\\text{{kN}}\\) (up), hogging moment = \\({0.5*w*L**2:.3g}\\,\\text{{kNm}}\\).
+"""
+
+    elif case == "Overhanging beam – right overhang with point load at free end":
+        P = params["P"]
+        L_main = params.get("L_main", L)
+        a_over = params.get("a_overhang", 0.0)
+        RA = results_local.get("RA", 0.0)
+        RB = results_local.get("RB", 0.0)
+        step2_md = f"""
+**Step 2 – Reactions from equilibrium**
+
+\\[
+\\sum M_A = 0: \\quad R_B L - P(L+a) = 0
+\\Rightarrow R_B = \\frac{{P(L+a)}}{{L}}
+\\]
+
+\\[
+\\sum V = 0: \\quad R_A + R_B - P = 0
+\\Rightarrow R_A = P - R_B = -\\frac{{Pa}}{{L}}
+\\]
+
+For the selected data:
+
+- \\(P = {P:.3g}\\,\\text{{kN}}\\)  
+
+- \\(L = {L_main:.3g}\\,\\text{{m}}\\) (span between supports)
+
+- \\(a = {a_over:.3g}\\,\\text{{m}}\\) (overhang)
+
+so numerically \\(R_A = {RA:.3g}\\,\\text{{kN}}\\) (down), \\(R_B = {RB:.3g}\\,\\text{{kN}}\\) (up).
+"""
+
+    if step2_md:
+        calcbox(step2_md)
+
+    # STEP 3 – shear function V(x)
+    step3_md = ""
+
+    if case == "Simple beam – UDL over entire span":
+        w = params["w"]
+        R = results_local.get("R", w * L / 2.0)
+        step3_md = f"""
+**Step 3 – Shear function \\(V(x)\\)**
+
+Taking sections from the left:
+
+\\[
+V(x) = R_1 - wx = \\frac{{wL}}{{2}} - wx, \\quad 0 \\le x \\le L
+\\]
+
+The shear diagram is linear, crossing zero at midspan for symmetric loading.
+
+With \\(R_1 = {R:.3g}\\,\\text{{kN}}\\) and \\(w = {w:.3g}\\,\\text{{kN/m}}\\), the shear at \\(x = 0\\) is \\(V(0) = {R:.3g}\\,\\text{{kN}}\\).
+"""
+
+    elif case == "Simple beam – point load at centre":
+        P = params["P"]
+        R1 = results_local.get("R1", P / 2.0)
+        step3_md = f"""
+**Step 3 – Shear function \\(V(x)\\)**
+
+Let \\(a = L/2\\). For a centre point load:
+
+\\[
+V(x) = 
+\\begin{{cases}}
+R_1 & 0 \\le x < a\\\\
+R_1 - P & a < x \\le L
+\\end{{cases}}
+\\]
+
+with \\(R_1 = P/2 = {R1:.3g}\\,\\text{{kN}}\\).
+"""
+
+    elif case == "Simple beam – point load at distance a from left":
+        P = params["P"]
+        a_val = params["a"]
+        R1 = results_local.get("R1", 0.0)
+        step3_md = f"""
+**Step 3 – Shear function \\(V(x)\\)**
+
+\\[
+V(x) = 
+\\begin{{cases}}
+R_1 & 0 \\le x < a\\\\
+R_1 - P & a < x \\le L
+\\end{{cases}}
+\\]
+
+with \\(R_1 = {R1:.3g}\\,\\text{{kN}}\\) and \\(a = {a_val:.3g}\\,\\text{{m}}\\).
+"""
+
+    elif case == "Simple beam – partial UDL from left (length a)":
+        w = params["w"]
+        a_udl = params["a_udl"]
+        R1 = results_local.get("R1", 0.0)
+        step3_md = f"""
+**Step 3 – Shear function \\(V(x)\\)**
+
+\\[
+V(x) = 
+\\begin{{cases}}
+R_1 - w x & 0 \\le x \\le a\\\\
+R_1 - w a & a \\le x \\le L
+\\end{{cases}}
+\\]
+
+with \\(R_1 = {R1:.3g}\\,\\text{{kN}}\\), \\(w = {w:.3g}\\,\\text{{kN/m}}\\), and \\(a = {a_udl:.3g}\\,\\text{{m}}\\).
+"""
+
+    elif case == "Cantilever – point load at free end":
+        P = params["P"]
+        step3_md = f"""
+**Step 3 – Shear function \\(V(x)\\)**
+
+\\[
+V(x) = -P, \\quad 0 \\le x \\le L
+\\]
+
+The shear is constant (negative, indicating downward) along the entire length.
+"""
+
+    elif case == "Cantilever – point load at distance a from fixed end":
+        P = params["P"]
+        a_cant = params["a_cant"]
+        step3_md = f"""
+**Step 3 – Shear function \\(V(x)\\)**
+
+\\[
+V(x) = 
+\\begin{{cases}}
+-P & 0 \\le x \\le a\\\\
+0 & a \\le x \\le L
+\\end{{cases}}
+\\]
+
+The shear is constant (negative) from the fixed end to the load position, then zero beyond.
+"""
+
+    elif case == "Cantilever – UDL over entire span":
+        w = params["w"]
+        step3_md = f"""
+**Step 3 – Shear function \\(V(x)\\)**
+
+\\[
+V(x) = -w(L-x), \\quad 0 \\le x \\le L
+\\]
+
+The shear increases linearly from \\(-wL\\) at the fixed end to zero at the free end.
+"""
+
+    if step3_md:
+        calcbox(step3_md)
+
+    # STEP 4 – moment function M(x)
+    step4_md = ""
+
+    if case == "Simple beam – UDL over entire span":
+        w = params["w"]
+        R = results_local.get("R", w * L / 2.0)
+        M_max = w * L**2 / 8.0
+        step4_md = f"""
+**Step 4 – Moment function \\(M(x)\\)**
+
+Integrating the shear:
+
+\\[
+M(x) = R_1 x - \\frac{{w x^2}}{{2}},
+\\quad 0 \\le x \\le L
+\\]
+
+Maximum sagging moment occurs at midspan:
+
+\\[
+M_{{\\max}} = \\frac{{wL^2}}{{8}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ at }} x = \\frac{{L}}{{2}}
+\\]
+"""
+
+    elif case == "Simple beam – point load at centre":
+        P = params["P"]
+        M_max = P * L / 4.0
+        step4_md = f"""
+**Step 4 – Moment function \\(M(x)\\)**
+
+\\[
+M(x) = 
+\\begin{{cases}}
+R_1 x & 0 \\le x \\le a\\\\
+R_1 x - P(x-a) & a \\le x \\le L
+\\end{{cases}}
+\\]
+
+with \\(R_1 = P/2\\), so \\(M_{{\\max}} = PL/4 = {M_max:.3g}\\,\\text{{kNm}}\\) at midspan.
+"""
+
+    elif case == "Simple beam – point load at distance a from left":
+        P = params["P"]
+        a_val = params["a"]
+        R1 = results_local.get("R1", 0.0)
+        M_max = R1 * a_val
+        step4_md = f"""
+**Step 4 – Moment function \\(M(x)\\)**
+
+\\[
+M(x) = 
+\\begin{{cases}}
+R_1 x & 0 \\le x \\le a\\\\
+R_1 x - P(x-a) & a \\le x \\le L
+\\end{{cases}}
+\\]
+
+Maximum moment occurs at the load position:
+
+\\[
+M_{{\\max}} = R_1 a = {M_max:.3g}\\,\\text{{kNm}} \\text{{ at }} x = {a_val:.3g}\\,\\text{{m}}
+\\]
+"""
+
+    elif case == "Simple beam – partial UDL from left (length a)":
+        w = params["w"]
+        a_udl = params["a_udl"]
+        R1 = results_local.get("R1", 0.0)
+        step4_md = f"""
+**Step 4 – Moment function \\(M(x)\\)**
+
+\\[
+M(x) = 
+\\begin{{cases}}
+R_1 x - \\frac{{w x^2}}{{2}} & 0 \\le x \\le a\\\\
+R_1 x - w a \\left(x - \\frac{{a}}{{2}}\\right) & a \\le x \\le L
+\\end{{cases}}
+\\]
+
+Maximum moment occurs within the loaded region or at the end of the UDL.
+"""
+
+    elif case == "Cantilever – point load at free end":
+        P = params["P"]
+        M_max = P * L
+        step4_md = f"""
+**Step 4 – Moment function \\(M(x)\\)**
+
+\\[
+M(x) = -P(L-x), \\quad 0 \\le x \\le L
+\\]
+
+Maximum hogging moment occurs at the fixed end:
+
+\\[
+M_{{\\max}} = PL = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hogging at fixed end)}}
+\\]
+"""
+
+    elif case == "Cantilever – point load at distance a from fixed end":
+        P = params["P"]
+        a_cant = params["a_cant"]
+        M_max = P * a_cant
+        step4_md = f"""
+**Step 4 – Moment function \\(M(x)\\)**
+
+\\[
+M(x) = 
+\\begin{{cases}}
+-P(a-x) & 0 \\le x \\le a\\\\
+0 & a \\le x \\le L
+\\end{{cases}}
+\\]
+
+Maximum hogging moment occurs at the fixed end:
+
+\\[
+M_{{\\max}} = P a = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hogging at fixed end)}}
+\\]
+"""
+
+    elif case == "Cantilever – UDL over entire span":
+        w = params["w"]
+        M_max = w * L**2 / 2.0
+        step4_md = f"""
+**Step 4 – Moment function \\(M(x)\\)**
+
+\\[
+M(x) = -\\frac{{w}}{{2}}(L-x)^2, \\quad 0 \\le x \\le L
+\\]
+
+Maximum hogging moment occurs at the fixed end:
+
+\\[
+M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hogging at fixed end)}}
+\\]
+"""
+
+    if step4_md:
+        calcbox(step4_md)
+
+    # Push SFD/BMD results into shared state
+    update_results(
+        span_L_m=float(L),
+        sfd_Msls_max_kNm=float(M_max_abs),
+        sfd_Vsls_max_kN=float(V_max_abs),
+    )
 
     # Top summary bar (like other pages)
     summary_placeholder.info(
         f"SFD/BMD SLS: case = {case}, L = {L:.3g} m, "
         f"|V|_max ≈ {V_max_abs:.3g} kN, |M|_max ≈ {M_max_abs:.3g} kNm."
     )
-
-    # ---------------------------------------------------
-    # Load diagram + derivation
-    # ---------------------------------------------------
-    st.markdown("---")
-    col_load, col_deriv = st.columns([1.2, 1.0])
-
-    with col_load:
-        st.subheader("Load diagram (with support types)")
-        fig_load = plot_load_diagram(case, beam_length, params)
-        st.pyplot(fig_load)
-
-    with col_deriv:
-        render_derivation(case, L, params, results_local)
 
     # ---------------------------------------------------
     # Show SFD & BMD
