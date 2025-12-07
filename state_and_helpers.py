@@ -149,6 +149,12 @@ SHARED_DEFAULTS = {
     "Tu_utilisation": 0.0,
     "crack_width": 0.0,
     "crack_utilisation": 0.0,
+    
+    # Bending detail values (for Inputs page summary)
+    "As_min_req": None,  # Minimum required steel area (mm²)
+    "Mx_min_req": None,  # Minimum required moment = 1.2 * Mcr (kNm)
+    "k_u": None,         # Neutral axis ratio c/d
+    "k_u_lim": 0.36,     # AS 3600 limit for ductile design
 
     # Shrinkage results for reuse (e.g. crack width)
     "eps_cs_total": 0.0,          # total shrinkage strain (dimensionless)
