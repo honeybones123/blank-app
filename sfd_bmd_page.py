@@ -170,9 +170,14 @@ def plot_load_diagram_plotly(case, L, params):
                 y=0.45,
                 ax=xi,
                 ay=0.25,
+                xref="x",
+                yref="y",
+                axref="x",
+                ayref="y",
                 showarrow=True,
                 arrowhead=2,
                 arrowwidth=1.5,
+                arrowcolor="black",
             )
         fig.add_annotation(
             x=L / 2,
@@ -190,10 +195,14 @@ def plot_load_diagram_plotly(case, L, params):
             y=0,
             ax=a,
             ay=0.5,
+            xref="x",
+            yref="y",
+            axref="x",
+            ayref="y",
             showarrow=True,
             arrowhead=2,
-            arrowwidth=3,
-            arrowsize=2,
+            arrowwidth=2,
+            arrowsize=1.2,
             arrowcolor="black",
         )
         fig.add_annotation(
@@ -218,10 +227,14 @@ def plot_load_diagram_plotly(case, L, params):
             y=0,
             ax=a,
             ay=0.5,
+            xref="x",
+            yref="y",
+            axref="x",
+            ayref="y",
             showarrow=True,
             arrowhead=2,
-            arrowwidth=3,
-            arrowsize=2,
+            arrowwidth=2,
+            arrowsize=1.2,
             arrowcolor="black",
         )
         fig.add_annotation(
@@ -240,10 +253,14 @@ def plot_load_diagram_plotly(case, L, params):
             y=0,
             ax=L,
             ay=0.5,
+            xref="x",
+            yref="y",
+            axref="x",
+            ayref="y",
             showarrow=True,
             arrowhead=2,
-            arrowwidth=3,
-            arrowsize=2,
+            arrowwidth=2,
+            arrowsize=1.2,
             arrowcolor="black",
         )
         fig.add_annotation(
@@ -268,10 +285,14 @@ def plot_load_diagram_plotly(case, L, params):
             y=0,
             ax=a,
             ay=0.5,
+            xref="x",
+            yref="y",
+            axref="x",
+            ayref="y",
             showarrow=True,
             arrowhead=2,
-            arrowwidth=3,
-            arrowsize=2,
+            arrowwidth=2,
+            arrowsize=1.2,
             arrowcolor="black",
         )
         fig.add_annotation(
@@ -304,9 +325,14 @@ def plot_load_diagram_plotly(case, L, params):
                 y=0.45,
                 ax=xi,
                 ay=0.25,
+                xref="x",
+                yref="y",
+                axref="x",
+                ayref="y",
                 showarrow=True,
                 arrowhead=2,
                 arrowwidth=1.5,
+                arrowcolor="black",
             )
         fig.add_annotation(
             x=L / 2,
@@ -339,9 +365,14 @@ def plot_load_diagram_plotly(case, L, params):
                 y=0.45,
                 ax=xi,
                 ay=0.25,
+                xref="x",
+                yref="y",
+                axref="x",
+                ayref="y",
                 showarrow=True,
                 arrowhead=2,
                 arrowwidth=1.5,
+                arrowcolor="black",
             )
         fig.add_annotation(
             x=a / 2,
@@ -361,10 +392,14 @@ def plot_load_diagram_plotly(case, L, params):
             y=0,
             ax=L_total,
             ay=0.5,
+            xref="x",
+            yref="y",
+            axref="x",
+            ayref="y",
             showarrow=True,
             arrowhead=2,
-            arrowwidth=3,
-            arrowsize=2,
+            arrowwidth=2,
+            arrowsize=1.2,
             arrowcolor="black",
         )
         fig.add_annotation(
@@ -1631,10 +1666,13 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
         calcbox(step4_md)
 
     # Push SFD/BMD results into shared state
+    # (use key names expected by Inputs page)
     update_results(
-        span_L_m=float(L),
-        sfd_Msls_max_kNm=float(M_max_abs),
-        sfd_Vsls_max_kN=float(V_max_abs),
+        span_L_m=float(L),              # generic span
+        sfd_span_L_m=float(L),          # span as seen by SFD/deflection pages
+        sfd_case=case,                  # store current teaching case
+        sfd_Mmax_abs_kNm=float(M_max_abs),
+        sfd_Vmax_abs_kN=float(V_max_abs),
     )
 
     # Top summary bar (like other pages)
