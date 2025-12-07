@@ -980,9 +980,7 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
     wmax_char = get_param("wmax_char", 0.3)  # Default 0.3 mm if not set
     crack_util = w_calc / wmax_char if wmax_char > 0 else 0.0
 
-    # --- Deflection (from deflection.py or computed locally) ---
-    # Deflection page doesn't store results, so we compute consistently here
-    # using the same approach as deflection page would use
+    # --- Deflection (computed here, consistent with deflection page) ---
     L = get_param("L", 3000.0)  # mm
     b = get_param("b", 400.0)   # mm
     D = get_param("D", 600.0)   # mm
@@ -1016,17 +1014,10 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
     D_mm = max(1.0, D)
     L_mm = max(1.0, L)
 
-    # Gross moment of inertia (simplified - deflection page uses Ief)
+    # Gross moment of inertia (simplified)
     I_gross = b_mm * D_mm**3 / 12.0 if b_mm > 0 and D_mm > 0 else 1.0
 
-    # Short-term deflection (simplified simply supported UDL)
-    # Formula: δ = 5wL⁴/(384EI)
-    # Units: w in kN/m, L in m, E in MPa = N/mm², I in mm⁴, result in mm
-    # δ (mm) = 5 * w (kN/m) * 1000 (N/kN) * L⁴ (m⁴) / (384 * E (N/mm²) * I (mm⁴))
-    #        = 5 * w * 1000 * L⁴ / (384 * E * I) * (m⁴ / (mm² * mm⁴))
-    #        = 5 * w * 1000 * L⁴ / (384 * E * I) * (10¹² mm⁴ / (mm² * mm⁴))
-    #        = 5 * w * 1000 * L⁴ * 10¹² / (384 * E * I)
-    #        = 5 * w * L⁴ * 10¹⁵ / (384 * E * I)
+    # Short-term deflection (simply supported UDL)
     L_m = L_mm / 1000.0  # Convert to meters
     if Ec > 0 and I_gross > 0 and L_m > 0:
         delta_inst = 5.0 * w_total * (L_m ** 4) * 1e15 / (384.0 * Ec * I_gross)
@@ -1075,6 +1066,41 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
 
     defl_status, defl_colour = _status_and_colour(defl_util, defl_limit > 0)
 
+    # ---------- Bending detail numbers for expander ----------
+    Ast_bot = get_param("Ast_bot", 0.0)
+
+    As_min_req = get_param("As_min_req", None)   # from bending page Tab 2 (if available)
+    if As_min_req and As_min_req > 0:
+        As_util = Ast_bot / As_min_req
+    else:
+        As_util = None
+    As_status, As_colour = _status_and_colour(As_util, As_min_req not in (None, 0))
+
+    Mx_min_req = get_param("Mx_min_req", None)   # minimum required moment from Tab 2
+    if phi_Mu_cap > 0 and Mx_min_req and Mx_min_req > 0:
+        Mx_min_util = Mx_min_req / phi_Mu_cap
+    else:
+        Mx_min_util = None
+    Mx_min_status, Mx_min_colour = _status_and_colour(
+
+        Mx_min_util, phi_Mu_cap > 0 and Mx_min_req not in (None, 0)
+
+    )
+
+    k_u = get_param("k_u", None)
+
+    k_u_lim = get_param("k_u_lim", None)
+    if k_u_lim and k_u_lim > 0 and k_u is not None:
+        k_u_util = k_u / k_u_lim
+    else:
+        k_u_util = None
+    k_u_status, k_u_colour = _status_and_colour(
+
+        k_u_util, k_u is not None and k_u_lim not in (None, 0)
+
+    )
+
+    # ---------- Main summary table (unchanged) ----------
     summary_table_html = f"""
 <div style="border: 1px solid #cccccc; border-radius: 8px; padding: 0.5rem 0.75rem; margin-bottom: 1rem; max-width: 900px;">
   <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
@@ -1132,6 +1158,98 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
             st.markdown("### Summary (read-only from design pages)")
 
             st.markdown(summary_table_html, unsafe_allow_html=True)
+
+            # BENDING – detailed AS 3600 checks (click to expand)
+
+            with st.expander("Bending – detailed AS 3600 checks"):
+
+                bending_detail_html = f"""
+
+<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+
+  <thead>
+
+    <tr style="background-color: #f5f5f5;">
+
+      <th style="text-align:left; padding: 4px 6px;">Check</th>
+
+      <th style="text-align:right; padding: 4px 6px;">Value</th>
+
+      <th style="text-align:right; padding: 4px 6px;">Limit</th>
+
+      <th style="text-align:right; padding: 4px 6px;">Utilisation</th>
+
+      <th style="text-align:center; padding: 4px 6px;">Status</th>
+
+    </tr>
+
+  </thead>
+
+  <tbody>
+
+    <tr style="background-color: {As_colour};">
+
+      <td style="padding: 4px 6px;"><strong>Steel area A<sub>st,bot</sub></strong></td>
+
+      <td style="text-align:right; padding: 4px 6px;">{Ast_bot:.1f} mm²</td>
+
+      <td style="text-align:right; padding: 4px 6px;">A<sub>s,min</sub> = {As_min_req if As_min_req not in (None, 0) else "—"} mm²</td>
+
+      <td style="text-align:right; padding: 4px 6px;">{f"{As_util:.3f}" if As_util is not None else "—"}</td>
+
+      <td style="text-align:center; padding: 4px 6px;">{As_status}</td>
+
+    </tr>
+
+    <tr style="background-color: {bending_colour};">
+
+      <td style="padding: 4px 6px;"><strong>Flexural capacity</strong></td>
+
+      <td style="text-align:right; padding: 4px 6px;">ϕM<sub>u,cap</sub> = {phi_Mu_cap:.2f} kNm</td>
+
+      <td style="text-align:right; padding: 4px 6px;">M* = {Mu_star:.2f} kNm</td>
+
+      <td style="text-align:right; padding: 4px 6px;">{bending_util_str}</td>
+
+      <td style="text-align:center; padding: 4px 6px;">{bending_status}</td>
+
+    </tr>
+
+    <tr style="background-color: {Mx_min_colour};">
+
+      <td style="padding: 4px 6px;"><strong>Minimum strength (Tab 2)</strong></td>
+
+      <td style="text-align:right; padding: 4px 6px;">ϕM<sub>u,cap</sub> = {phi_Mu_cap:.2f} kNm</td>
+
+      <td style="text-align:right; padding: 4px 6px;">M<sub>x,min</sub> = {Mx_min_req if Mx_min_req not in (None, 0) else "—"} kNm</td>
+
+      <td style="text-align:right; padding: 4px 6px;">{f"{Mx_min_util:.3f}" if Mx_min_util is not None else "—"}</td>
+
+      <td style="text-align:center; padding: 4px 6px;">{Mx_min_status}</td>
+
+    </tr>
+
+    <tr style="background-color: {k_u_colour};">
+
+      <td style="padding: 4px 6px;"><strong>Neutral axis ratio k<sub>u</sub></strong></td>
+
+      <td style="text-align:right; padding: 4px 6px;">{f"{k_u:.3f}" if k_u is not None else "—"}</td>
+
+      <td style="text-align:right; padding: 4px 6px;">AS 3600 limit ≤ {f"{k_u_lim:.3f}" if k_u_lim is not None else "—"}</td>
+
+      <td style="text-align:right; padding: 4px 6px;">{f"{k_u_util:.3f}" if k_u_util is not None else "—"}</td>
+
+      <td style="text-align:center; padding: 4px 6px;">{k_u_status}</td>
+
+    </tr>
+
+  </tbody>
+
+</table>
+
+"""
+
+                st.markdown(bending_detail_html, unsafe_allow_html=True)
 
         with col_right:
             fig_sec = make_summary_cross_section_figure()
