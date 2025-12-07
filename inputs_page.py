@@ -13,9 +13,10 @@ from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_r
 
 # --- Pure compute functions from design core (no circular imports)
 from bending_core import _compute_bending_capacity
+from shear_core import _compute_shear_capacity
+from crack_core import _compute_crack_results
+from deflection_core import _compute_deflection_results
 from section_layout import compute_section_layout
-# from shear_page import _compute_shear_capacity       # TODO: add later
-# from crack_page import _compute_crack_results       # TODO: add later
 # from deflection import _compute_deflection_results  # TODO: add later
 
 
@@ -1014,11 +1015,13 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
     # ============================
     # 5. Recompute + Summary (read from all design pages)
     # ============================
-    # Recompute bending capacity (always needed for summary)
+    # Recompute ALL checks using current inputs (ensures consistent snapshot)
     _compute_bending_capacity()
+    _compute_shear_capacity()
+    _compute_crack_results()
+    _compute_deflection_results()
 
-    # Read all results from their respective design pages
-    # (These are computed and stored by each page when visited)
+    # Read all results (now freshly computed above)
     
     # --- Bending (from bending_core.py via _compute_bending_capacity) ---
     phi_Mu_cap = get_param("phi_Mu_cap", 0.0)
@@ -1034,59 +1037,10 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
     wmax_char = get_param("wmax_char", 0.3)  # Default 0.3 mm if not set
     crack_util = w_calc / wmax_char if wmax_char > 0 else 0.0
 
-    # --- Deflection (computed here, consistent with deflection page) ---
-    L = get_param("L", 3000.0)  # mm
-    b = get_param("b", 400.0)   # mm
-    D = get_param("D", 600.0)   # mm
-    Ec = get_param("Ec", 30000.0)  # MPa
-
-    # Read creep and shrinkage from their pages
-    phi_creep = st.session_state.get("creep_phi_design", None)
-    Ec_eff_design = st.session_state.get("Ec_eff_design", None)
-    eps_sh_micro = st.session_state.get("shrinkage_eps_design", None)
-
-    # Compute creep multiplier
-    if Ec_eff_design is not None and Ec_eff_design > 0:
-        k_creep = Ec / Ec_eff_design
-    elif phi_creep is not None and phi_creep > 0:
-        k_creep = 1.0 + phi_creep
-    else:
-        k_creep = 1.0
-
-    eps_sh = (eps_sh_micro or 0.0) / 1e6  # Convert microstrain to strain
-
-    # Simple deflection estimate (consistent with deflection page approach)
-    # Use Mu_star to estimate equivalent UDL for deflection
-    L_m = L / 1000.0  # Convert to meters
-    if L_m > 0:
-        # Estimate equivalent UDL from moment: M = wL²/8 => w = 8M/L²
-        w_total = 8.0 * Mu_star / (L_m ** 2)  # kN/m
-    else:
-        w_total = 0.0
-
-    b_mm = max(1.0, b)
-    D_mm = max(1.0, D)
-    L_mm = max(1.0, L)
-
-    # Gross moment of inertia (simplified)
-    I_gross = b_mm * D_mm**3 / 12.0 if b_mm > 0 and D_mm > 0 else 1.0
-
-    # Short-term deflection (simply supported UDL)
-    L_m = L_mm / 1000.0  # Convert to meters
-    if Ec > 0 and I_gross > 0 and L_m > 0:
-        delta_inst = 5.0 * w_total * (L_m ** 4) * 1e15 / (384.0 * Ec * I_gross)
-    else:
-        delta_inst = 0.0
-
-    # Long-term deflection (creep + shrinkage)
-    delta_creep = delta_inst * (k_creep - 1.0) if k_creep > 1.0 else 0.0
-    phi_sh = eps_sh / (0.7 * D_mm) if D_mm > 0 else 0.0
-    delta_sh = phi_sh * L_mm**2 / 8.0
-    delta_total = delta_inst + delta_creep + delta_sh
-
-    # Deflection limit (L/250 for beams)
-    defl_limit = L_mm / 250.0 if L_mm > 0 else 0.0
-    defl_util = delta_total / defl_limit if defl_limit > 0 else 0.0
+    # --- Deflection (from deflection_core.py via _compute_deflection_results) ---
+    delta_total = get_param("deflection_total_mm", 0.0)
+    defl_limit = get_param("deflection_limit_mm", 0.0)
+    defl_util = get_param("deflection_utilisation", 0.0)
 
     bending_demand = f"{Mu_star:.1f} kNm"
 
