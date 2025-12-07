@@ -145,6 +145,10 @@ SHARED_DEFAULTS = {
     "Mu_utilisation": 0.0,
     "phi_Vu_cap": 0.0,
     "Vu_utilisation": 0.0,
+    "Vu_max_kN": 0.0,  # Web crushing capacity (nominal, before phi)
+    "phi_Vu_max_kN": 0.0,  # Web crushing capacity (design, with phi)
+    "V_eq_kN": 0.0,  # Equivalent shear demand
+    "Vuc_utilisation": None,  # Web crushing utilisation
     "phi_Tu_cap": 0.0,
     "Tu_utilisation": 0.0,
     "crack_width": 0.0,
