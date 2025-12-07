@@ -567,9 +567,63 @@ def render_sfd_bmd_page():
     apply_calcbox_css()
     sync_callbacks = get_sync_callbacks()
 
-    st.title("Shear & Moment Diagrams (Teaching)")
+    st.title("Shear & Moment Diagrams (Design / Teaching)")
 
     summary_placeholder = st.empty()
+
+    # ---------- Service loads (ONLY place you enter these) ----------
+    st.markdown("### Service loads (per metre of span) – SLS")
+
+    g = st.number_input(
+        "Dead load g (kN/m)",
+        min_value=0.0,
+        value=8.0,
+        step=0.5,
+        key="sls_g_kNm_per_m",
+    )
+    q = st.number_input(
+        "Live load q (kN/m)",
+        min_value=0.0,
+        value=4.0,
+        step=0.5,
+        key="sls_q_kNm_per_m",
+    )
+    psi_s = st.number_input(
+        "Sustained live-load factor ψ_s",
+        min_value=0.0,
+        value=0.4,
+        step=0.05,
+        key="sls_psi_s",
+    )
+
+    w_eff = g + psi_s * q   # SLS line load used for deflection
+
+    calcbox(
+        f"""
+**Step 1 – Service load for deflection (defined on this SFD/BMD page)**
+
+- Dead load: `g = {g:.3g}` kN/m  
+
+- Live load: `q = {q:.3g}` kN/m  
+
+- Sustained factor: `ψ_s = {psi_s:.3g}`  
+
+Effective SLS load:  
+
+\\[
+w_\\text{{eff}} = g + ψ_s q = {w_eff:.3g} \\text{{ kN/m}}
+\\]
+"""
+    )
+
+    update_results(
+        sls_g_kNm_per_m=float(g),
+        sls_q_kNm_per_m=float(q),
+        sls_psi_s=float(psi_s),
+        sls_w_eff_kNm_per_m=float(w_eff),
+    )
+
+    st.markdown("---")
 
     st.markdown(
         """
@@ -633,17 +687,26 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
             )
 
         # Load inputs
-        if case in [
-            "Simple beam – UDL over entire span",
+        # UDL inputs:
+        # For global teaching consistency:
+        #  - full-span UDL cases use w_eff directly
+        #  - other UDL patterns (partial UDL, cantilever UDL) still use a slider
+        if case == "Simple beam – UDL over entire span":
+            params["w"] = w_eff
+            st.caption(f"Using SLS UDL from service loads: w = w_eff = {w_eff:.3g} kN/m")
+        elif case in [
             "Simple beam – partial UDL from left (length a)",
             "Cantilever – UDL over entire span",
         ]:
-            default_w = 20.0 if "Simple beam" in case else 10.0
             params["w"] = st.number_input(
                 "UDL w (kN/m)",
-                min_value=0.0, value=default_w, step=1.0, key="sfd_w"
+                min_value=0.0,
+                value=10.0,
+                step=1.0,
+                key="sfd_w",
             )
 
+        # Point load P (SLS)
         if case in [
             "Simple beam – point load at centre",
             "Simple beam – point load at distance a from left",
@@ -651,10 +714,12 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
             "Cantilever – point load at distance a from fixed end",
             "Overhanging beam – right overhang with point load at free end",
         ]:
-            default_P = 100.0 if "Simple beam" in case else 50.0
             params["P"] = st.number_input(
-                "Point load P (kN)",
-                min_value=0.0, value=default_P, step=5.0, key="sfd_P"
+                "Point load P (kN) – SLS",
+                min_value=0.0,
+                value=50.0,
+                step=5.0,
+                key="sfd_P_sls",
             )
 
         if case == "Simple beam – point load at distance a from left":
@@ -799,10 +864,6 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
     M_max_abs = float(np.max(np.abs(M))) if M is not None else 0.0
     V_max_abs = float(np.max(np.abs(V))) if V is not None else 0.0
 
-    # Extract w and P for deflection page
-    w_used = params.get("w")   # None if not a UDL case
-    P_used = params.get("P")   # None if not a point load case
-
     # ---------------------------------------------------
     # Key formulas + publish to results
     # ---------------------------------------------------
@@ -900,50 +961,38 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
         # 4-step calc box, same style as other pages
         calcbox(
             f"""
-**Step 1 – Beam & load selection**
+**Step 2 – SFD/BMD at SLS**
 
-- Loading case: `{case}`  
+- Case: `{case}`  
 
-- Span: `L = {L:.3g}` m
+- Span: `L = {L:.3g}` m  
 
-**Step 2 – Equilibrium & reactions**
+From the SLS loads (g, q, ψ_s on this page) and/or P (SLS):
 
-- Reactions determined from \\(\\Sigma V = 0\\) and \\(\\Sigma M = 0\\)  
+- Maximum absolute shear: `|V|_max ≈ {V_max_abs:.3g}` kN  
 
-- See derivation panel for full working.
+- Maximum absolute moment: `|M|_max ≈ {M_max_abs:.3g}` kNm  
 
-**Step 3 – Shear force diagram**
-
-- Shear function \\(V(x)\\) defined by sections  
-
-- Maximum absolute shear: `|V|_max ≈ {V_max_abs:.3g} kN`
-
-**Step 4 – Bending moment diagram**
-
-- Moment function \\(M(x)\\) obtained by integrating shear  
-
-- Maximum absolute moment: `|M|_max ≈ {M_max_abs:.3g} kNm`
-
-These `|V|_max` and `|M|_max` values can be used as design actions
-on the **Inputs** and **Deflection** pages when you select
-"Teaching SFD/BMD" as the action source.
+These SLS diagrams are used directly for **deflection**, and can be
+scaled to ULS in the **Inputs** page when you choose to.
 """
         )
 
         # Push into shared results so Inputs/Deflection pages can use them
         # Note: sfd_case is a widget key, so we don't update it here - other pages can read it directly
+        P_sls = params.get("P")  # point load if any
         update_results(
             sfd_span_L_m=float(L),
-            sfd_Mmax_abs_kNm=float(M_max_abs),
-            sfd_Vmax_abs_kN=float(V_max_abs),
-            sfd_w_kNm_per_m=float(w_used) if w_used is not None else None,
-            sfd_P_kN=float(P_used) if P_used is not None else None,
+            sfd_Msls_max_kNm=float(M_max_abs),
+            sfd_Vsls_max_kN=float(V_max_abs),
+            sfd_P_sls_kN=float(P_sls) if P_sls is not None else None,
+            # w_eff is already stored as sls_w_eff_kNm_per_m
         )
 
     # Top summary bar (like other pages)
     summary_placeholder.info(
-        f"SFD/BMD teaching beam: case = {case}, L = {L:.3g} m, "
-        f"|V|max ≈ {V_max_abs:.3g} kN, |M|max ≈ {M_max_abs:.3g} kNm."
+        f"SFD/BMD SLS: case = {case}, L = {L:.3g} m, "
+        f"|V|_max ≈ {V_max_abs:.3g} kN, |M|_max ≈ {M_max_abs:.3g} kNm."
     )
 
     # ---------------------------------------------------
