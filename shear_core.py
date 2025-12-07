@@ -364,10 +364,19 @@ def _compute_shear_capacity():
     # Calculate utilisation
     shear_util = results.V_eq / results.phi_Vu if results.phi_Vu > 0 else float("nan")
     
+    # Calculate crushing utilisation (web crushing check)
+    # Capacity is phi * Vu_max, demand is V_eq
+    phi_Vu_max = phi * results.Vu_max_kN
+    Vuc_util = results.V_eq / phi_Vu_max if phi_Vu_max > 0 else float("nan")
+    
     # Update session state
     update_results(
         phi_Vu_cap=results.phi_Vu,
         Vu_utilisation=shear_util if not math.isnan(shear_util) else 0.0,
+        Vu_max_kN=results.Vu_max_kN,
+        phi_Vu_max_kN=phi_Vu_max,
+        V_eq_kN=results.V_eq,
+        Vuc_utilisation=Vuc_util if not math.isnan(Vuc_util) else None,
     )
     
     return {
