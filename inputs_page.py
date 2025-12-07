@@ -72,6 +72,8 @@ st.markdown(
 .summary-table {
   border-collapse: collapse;
   border-spacing: 0;
+  table-layout: fixed;
+  width: 100%;
 }
 .summary-table td,
 .summary-table th {
@@ -81,15 +83,28 @@ st.markdown(
 
 /* Inner one-row table used in each clickable banner */
 .summary-summary-table {
-  width: 100%;
   border-collapse: collapse;
   border-spacing: 0;
+  table-layout: fixed;
+  width: 100%;
 }
 .summary-summary-table td {
   padding: 4px 6px;
   font-size: 0.9rem;
   vertical-align: middle;
 }
+
+/* Force SAME column widths for header and all banner rows */
+.summary-table th:nth-child(1),
+.summary-summary-table td:nth-child(1) { width: 30%; }  /* Check      */
+.summary-table th:nth-child(2),
+.summary-summary-table td:nth-child(2) { width: 20%; }  /* Demand     */
+.summary-table th:nth-child(3),
+.summary-summary-table td:nth-child(3) { width: 20%; }  /* Capacity   */
+.summary-table th:nth-child(4),
+.summary-summary-table td:nth-child(4) { width: 15%; }  /* Util       */
+.summary-table th:nth-child(5),
+.summary-summary-table td:nth-child(5) { width: 15%; }  /* Status     */
 
 /* Box for the drop-down detail table */
 .summary-detail-wrapper {
@@ -1045,9 +1060,18 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
     phi_Mu_cap = get_param("phi_Mu_cap", 0.0)
     Mu_util = get_param("Mu_utilisation", 0.0)
 
-    # --- Shear (from shear_page.py) ---
+    # --- Shear (from shear_core.py via _compute_shear_capacity) ---
     phi_Vu_cap = get_param("phi_Vu_cap", 0.0)
     Vu_util = get_param("Vu_utilisation", 0.0)
+    
+    # Concrete strut / crushing check (from shear_core.py)
+    phi_Vuc_cap = get_param("phi_Vu_max_kN", None)  # kN, capacity of compression strut
+    Vuc_util = get_param("Vuc_utilisation", None)  # utilisation for crushing
+    Vuc_cap_str = f"{phi_Vuc_cap:.2f} kN" if phi_Vuc_cap not in (None, 0) else "—"
+    Vuc_util_str = f"{Vuc_util:.3f}" if Vuc_util is not None else "—"
+    Vuc_status, Vuc_colour = _status_and_colour(
+        Vuc_util, Vuc_util is not None
+    )
 
     # --- Crack control (from crack_page.py) ---
     # Crack page stores w_calc and wmax_char, not crack_width
@@ -1196,13 +1220,23 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
 </tr>
 </thead>
 <tbody>
+
 <tr style="background-color: {shear_colour};">
-<td style="padding: 4px 6px;"><strong>Shear capacity</strong></td>
-<td style="text-align:right; padding: 4px 6px;">ϕV<sub>u,cap</sub> = {phi_Vu_cap:.2f} kN</td>
-<td style="text-align:right; padding: 4px 6px;">V* = {Vu_star:.2f} kN</td>
-<td style="text-align:right; padding: 4px 6px;">{shear_util_str}</td>
-<td style="text-align:center; padding: 4px 6px;">{shear_status}</td>
+  <td style="padding: 4px 6px;"><strong>Total shear capacity</strong></td>
+  <td style="text-align:right; padding: 4px 6px;">ϕV<sub>u,cap</sub> = {phi_Vu_cap:.2f} kN</td>
+  <td style="text-align:right; padding: 4px 6px;">V* = {Vu_star:.2f} kN</td>
+  <td style="text-align:right; padding: 4px 6px;">{shear_util_str}</td>
+  <td style="text-align:center; padding: 4px 6px;">{shear_status}</td>
 </tr>
+
+<tr style="background-color: {Vuc_colour};">
+  <td style="padding: 4px 6px;"><strong>Concrete strut crushing</strong></td>
+  <td style="text-align:right; padding: 4px 6px;">ϕV<sub>uc,cap</sub> = {Vuc_cap_str}</td>
+  <td style="text-align:right; padding: 4px 6px;">V* = {Vu_star:.2f} kN</td>
+  <td style="text-align:right; padding: 4px 6px;">{Vuc_util_str}</td>
+  <td style="text-align:center; padding: 4px 6px;">{Vuc_status}</td>
+</tr>
+
 </tbody>
 </table>
 </div>
