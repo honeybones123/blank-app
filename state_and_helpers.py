@@ -74,10 +74,12 @@ SHARED_DEFAULTS = {
     "phi_torsion": 0.75,
 
     # Actions
-    "Mu_star": 500.0,  # kNm (controlling moment)
+    "Mu_star": 500.0,  # kNm (controlling moment) - final chosen value
     "Mu_star_kNm": 500.0,  # kNm (alternative naming for compatibility)
-    "Vu_star": 300.0,  # kN
+    "Vu_star": 300.0,  # kN - final chosen value
     "Vu_star_kN": 300.0,  # kN (alternative naming for compatibility)
+    "Mu_star_manual": 0.0,  # kNm - manual input value (preserved separately)
+    "Vu_star_manual": 0.0,  # kN - manual input value (preserved separately)
     "Tu_star": 0.0,    # kNm
     "P_star": 0.0,     # kN (prestress or axial in bending/shear)
     "N_star": 0.0,     # kN (additional axial)
@@ -251,8 +253,8 @@ TAB_KEYS = {
     "inputs_Ec": "Ec",
     "inputs_Es": "Es",
 
-    "inputs_Mu_star": "Mu_star",
-    "inputs_Vu_star": "Vu_star",
+    "inputs_Mu_star": "Mu_star_manual",
+    "inputs_Vu_star": "Vu_star_manual",
     "inputs_Tu_star": "Tu_star",
     "inputs_P_star": "P_star",
     "inputs_N_star": "N_star",
