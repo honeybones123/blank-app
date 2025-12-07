@@ -885,8 +885,24 @@ def render_inputs():
     # 4. Determine final actions (manual vs teaching)
     # ============================
     # Read manual values (from Inputs widgets via TAB_KEYS)
-    Mu_manual = get_param("Mu_star_manual", 0.0)
-    Vu_manual = get_param("Vu_star_manual", 0.0)
+    Mu_manual_raw = get_param("Mu_star_manual", None)
+    Vu_manual_raw = get_param("Vu_star_manual", None)
+
+    # Fall back to the existing design values if the manual copies
+    # are still None/0.0 (e.g. old sessions or before first edit)
+    base_M = get_param("Mu_star", 0.0)
+    base_V = get_param("Vu_star", 0.0)
+
+    Mu_manual = (
+        Mu_manual_raw
+        if (Mu_manual_raw is not None and Mu_manual_raw != 0.0)
+        else base_M
+    )
+    Vu_manual = (
+        Vu_manual_raw
+        if (Vu_manual_raw is not None and Vu_manual_raw != 0.0)
+        else base_V
+    )
 
     # Decide if we can actually use teaching values
     use_sfd = (
@@ -901,8 +917,7 @@ def render_inputs():
         source_label = "Teaching SFD/BMD page (|M|max, |V|max)"
         extra_note = ""
     else:
-        # Fall back to manual (either because radio is on manual,
-        # or because teaching results don't exist yet)
+        # Either manual selected, or teaching has no results yet
         Mu_star = float(Mu_manual)
         Vu_star = float(Vu_manual)
         source_label = "Manual design actions (inputs below)"
@@ -912,7 +927,7 @@ def render_inputs():
             and (M_sfd is None or V_sfd is None)
         ):
             extra_note = (
-                " (Teaching SFD/BMD selected, but no teaching SFD/BMD "
+                " (Teaching SFD/BMD selected, but no SFD/BMD "
                 "results found yet – using manual actions until you "
                 "visit the SFD/BMD page.)"
             )
