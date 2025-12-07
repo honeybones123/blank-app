@@ -884,40 +884,60 @@ def render_inputs():
     # ============================
     # 4. Determine final actions (manual vs teaching)
     # ============================
-    # Read manual inputs
-    Mu_manual = get_param("Mu_star", 0.0)
-    Vu_manual = get_param("Vu_star", 0.0)
-    
-    # Determine which values to use
-    if action_source == "Teaching SFD/BMD page (|M|max, |V|max)":
-        # Prefer SFD/BMD values, fall back to manual if not available
-        Mu_star = M_sfd if M_sfd is not None else Mu_manual
-        Vu_star = V_sfd if V_sfd is not None else Vu_manual
+    # Read manual values (from Inputs widgets via TAB_KEYS)
+    Mu_manual = get_param("Mu_star_manual", 0.0)
+    Vu_manual = get_param("Vu_star_manual", 0.0)
+
+    # Decide if we can actually use teaching values
+    use_sfd = (
+        action_source == "Teaching SFD/BMD page (|M|max, |V|max)"
+        and M_sfd is not None
+        and V_sfd is not None
+    )
+
+    if use_sfd:
+        Mu_star = float(M_sfd)
+        Vu_star = float(V_sfd)
+        source_label = "Teaching SFD/BMD page (|M|max, |V|max)"
+        extra_note = ""
     else:
-        Mu_star = Mu_manual
-        Vu_star = Vu_manual
-    
+        # Fall back to manual (either because radio is on manual,
+        # or because teaching results don't exist yet)
+        Mu_star = float(Mu_manual)
+        Vu_star = float(Vu_manual)
+        source_label = "Manual design actions (inputs below)"
+        extra_note = ""
+        if (
+            action_source == "Teaching SFD/BMD page (|M|max, |V|max)"
+            and (M_sfd is None or V_sfd is None)
+        ):
+            extra_note = (
+                " (Teaching SFD/BMD selected, but no teaching SFD/BMD "
+                "results found yet – using manual actions until you "
+                "visit the SFD/BMD page.)"
+            )
+
     # Optional calcbox to explain what's happening
     calcbox(
         f"""
 **Design actions used in all downstream checks**
 
-- Source: `{action_source}`
+- Source: `{source_label}`{extra_note}
 
 - Bending moment M*: `{Mu_star:.3g}` kNm  
 
 - Shear force V*: `{Vu_star:.3g}` kN  
 
-If "Teaching SFD/BMD" is selected, these come from that page's
+If "Teaching SFD/BMD" is selected and results exist, these come from that page's
 `|M|_max` and `|V|_max` for the chosen load case and span.
 """
     )
-    
+
     # Push final chosen actions into results for all downstream pages
     update_results(
-        actions_source=action_source,       # so Bending/Shear/Deflection know the source
+        actions_source=source_label,
         Mu_star=float(Mu_star),
-        Mu_star_kNm=float(Mu_star),        # both naming styles, for safety
+        Mu_star_kNm=float(Mu_star),
         Vu_star=float(Vu_star),
         Vu_star_kN=float(Vu_star),
     )
