@@ -170,13 +170,18 @@ SHARED_DEFAULTS = {
     # Bending SLS → crack link (service steel stress)
     "sigma_s_sls": 200.0,
     
-    # SFD/BMD teaching page results
+    # SFD/BMD teaching page results (SLS)
     # Note: sfd_case is a widget key (st.selectbox), so it's managed by Streamlit, not stored here
     "sfd_span_L_m": 0.0,  # Span length (m)
-    "sfd_Mmax_abs_kNm": 0.0,  # Maximum absolute bending moment (kNm)
-    "sfd_Vmax_abs_kN": 0.0,  # Maximum absolute shear force (kN)
-    "sfd_w_kNm_per_m": None,  # UDL intensity (kN/m) if applicable
-    "sfd_P_kN": None,  # Point load (kN) if applicable
+    "sfd_Msls_max_kNm": 0.0,  # Maximum absolute bending moment at SLS (kNm)
+    "sfd_Vsls_max_kN": 0.0,  # Maximum absolute shear force at SLS (kN)
+    "sfd_P_sls_kN": None,  # Point load at SLS (kN) if applicable
+    
+    # SLS service loads (single source of truth on SFD/BMD page)
+    "sls_g_kNm_per_m": 8.0,  # Dead load (kN/m)
+    "sls_q_kNm_per_m": 4.0,  # Live load (kN/m)
+    "sls_psi_s": 0.4,  # Sustained live-load factor
+    "sls_w_eff_kNm_per_m": 9.6,  # Effective SLS load: g + psi_s * q (kN/m)
 }
 
 # Explicit set of result keys (for RULE 4 checks)
