@@ -1,6 +1,7 @@
 # shear_core.py
 from dataclasses import dataclass
 import math
+from state_and_helpers import get_param, update_results
 
 
 @dataclass
@@ -260,3 +261,98 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
         RHS=RHS,
         web_ok=web_ok,
     )
+
+
+# ------------------------------------------------------------
+#  CORE COMPUTE FUNCTION (reads from session state, no UI)
+# ------------------------------------------------------------
+def _compute_shear_capacity():
+    """
+    Compute shear capacity using current session state values.
+    Reads all inputs from get_param(), calls run_shear_calc(), and updates results.
+    No Streamlit UI - pure computation.
+    """
+    # Read geometry and materials
+    b = get_param("b", 300.0)
+    D = get_param("D", 600.0)
+    d = get_param("d", 560.0)
+    fc = get_param("fc", 32.0)
+    fsy = get_param("fsy", 500.0)
+    Ec = get_param("Ec", 30000.0)
+    Es = get_param("Es", 200000.0)
+    
+    # Read actions
+    M_star = get_param("Mu_star", 0.0)
+    V_star = get_param("Vu_star", 0.0)
+    T_star = get_param("Tu_star", 0.0)
+    N_star = get_param("N_star", 0.0)
+    P_v = get_param("P_star", 0.0)
+    
+    # Read reinforcement
+    lig_d = get_param("lig_d", 10.0)
+    legs = get_param("lig_legs", 2)
+    s_lig = get_param("s_lig", 200.0)
+    
+    # Default values for prestress/ducts (not commonly used)
+    A_st = get_param("Ast_bot", 0.0)
+    A_pt = 0.0
+    f_po = 0.0
+    A_ct = b * D / 2.0  # Approximate
+    d_g = 20.0  # Default aggregate size
+    sum_duct = get_param("n_ducts", 0) * get_param("duct_dia", 0.0) if get_param("n_ducts", 0) > 0 else 0.0
+    k_d = 0.0  # No ducts by default
+    
+    # Shear parameters
+    use_general_kv = True  # Use general method by default
+    phi = get_param("phi_shear", 0.75)  # Default shear phi
+    sigma_cp = 0.0  # No prestress compression by default
+    
+    # Build input object
+    inp = ShearInputs(
+        b=b,
+        D=D,
+        d=d,
+        fc=fc,
+        fsy=fsy,
+        Ec=Ec,
+        Es=Es,
+        M_star=M_star,
+        V_star=V_star,
+        T_star=T_star,
+        N_star=N_star,
+        P_v=P_v,
+        phi=phi,
+        sigma_cp=sigma_cp,
+        A_st=A_st,
+        A_pt=A_pt,
+        f_po=f_po,
+        A_ct=A_ct,
+        d_g=d_g,
+        lig_d=lig_d,
+        legs=legs,
+        s_lig=s_lig,
+        use_general_kv=use_general_kv,
+        sum_duct=sum_duct,
+        k_d=k_d,
+    )
+    
+    # Run calculation
+    results = run_shear_calc(inp)
+    
+    # Calculate utilisation
+    shear_util = results.V_eq / results.phi_Vu if results.phi_Vu > 0 else float("nan")
+    
+    # Update session state
+    update_results(
+        phi_Vu_cap=results.phi_Vu,
+        Vu_utilisation=shear_util if not math.isnan(shear_util) else 0.0,
+    )
+    
+    return {
+        "phi_Vu_cap": results.phi_Vu,
+        "Vu_utilisation": shear_util,
+        "V_eq": results.V_eq,
+        "Vuc_kN": results.Vuc_kN,
+        "Vus_kN": results.Vus_kN,
+        "shear_ok": results.shear_ok,
+    }
