@@ -192,8 +192,12 @@ SHARED_DEFAULTS = {
     "a_m": None,  # Distance a from left support for point loads (m)
     
     # SFD/BMD results (computed from SLS loads)
-    "sfd_Msls_max_kNm": 0.0,  # Maximum absolute bending moment at SLS (kNm)
-    "sfd_Vsls_max_kN": 0.0,  # Maximum absolute shear force at SLS (kN)
+    "sfd_Msls_max_kNm": 0.0,  # Maximum absolute bending moment at SLS (kNm) - legacy
+    "sfd_Vsls_max_kN": 0.0,  # Maximum absolute shear force at SLS (kN) - legacy
+    "sfd_span_L_m": 6.0,  # Span length for SFD/deflection pages (m)
+    "sfd_case": "Simple beam – UDL over entire span",  # Current teaching case
+    "sfd_Mmax_abs_kNm": 0.0,  # Maximum absolute bending moment at SLS (kNm) - for Inputs page
+    "sfd_Vmax_abs_kN": 0.0,  # Maximum absolute shear force at SLS (kN) - for Inputs page
 }
 
 # Explicit set of result keys (for RULE 4 checks)
