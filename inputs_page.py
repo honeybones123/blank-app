@@ -540,6 +540,24 @@ def make_beam_3d_figure():
 # ------------------------------------------------------------
 #  STATUS HELPER
 # ------------------------------------------------------------
+def _safe_ratio(num, den):
+    """
+    Return num/den, but:
+      - if den is 0, None or NaN -> return None (treated as 'Not calculated').
+    """
+    try:
+        if den is None:
+            return None
+        # protect against NaN
+        if isinstance(den, float) and math.isnan(den):
+            return None
+        if den == 0:
+            return None
+        return num / den
+    except Exception:
+        return None
+
+
 def _status_and_colour(util, cap_exists):
     if not cap_exists or util is None or math.isnan(util):
         return "Not calculated", "#e0e0e0"
@@ -1035,12 +1053,12 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
     # Crack page stores w_calc and wmax_char, not crack_width
     w_calc = get_param("w_calc", 0.0)
     wmax_char = get_param("wmax_char", 0.3)  # Default 0.3 mm if not set
-    crack_util = w_calc / wmax_char if wmax_char > 0 else 0.0
+    crack_util = _safe_ratio(w_calc, wmax_char)
 
     # --- Deflection (from deflection_core.py via _compute_deflection_results) ---
     delta_total = get_param("deflection_total_mm", 0.0)
     defl_limit = get_param("deflection_limit_mm", 0.0)
-    defl_util = get_param("deflection_utilisation", 0.0)
+    defl_util = get_param("deflection_utilisation", None)
 
     bending_demand = f"{Mu_star:.1f} kNm"
 
@@ -1062,72 +1080,59 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
 
     crack_cap = f"{wmax_char:.3f} mm" if wmax_char > 0 else "—"
 
-    crack_util_str = f"{crack_util:.2f}" if wmax_char > 0 and w_calc > 0 else "—"
+    crack_util_str = f"{crack_util:.2f}" if crack_util is not None else "—"
 
-    crack_status, crack_colour = _status_and_colour(crack_util, wmax_char > 0 and w_calc > 0)
+    crack_status, crack_colour = _status_and_colour(
+        crack_util, crack_util is not None
+    )
 
     defl_demand = f"{delta_total:.2f} mm"
 
     defl_cap = f"{defl_limit:.2f} mm" if defl_limit > 0 else "—"
 
-    defl_util_str = f"{defl_util:.2f}" if defl_limit > 0 else "—"
+    defl_util_str = f"{defl_util:.2f}" if defl_util is not None and defl_limit > 0 else "—"
 
-    defl_status, defl_colour = _status_and_colour(defl_util, defl_limit > 0)
+    defl_status, defl_colour = _status_and_colour(
+        defl_util, defl_util is not None and defl_limit > 0
+    )
 
     # ---------- Bending detail numbers ----------
     Ast_bot = get_param("Ast_bot", 0.0)
 
     As_min_req = get_param("As_min_req", None)   # from bending page Tab 2 (if available)
-    if As_min_req and As_min_req > 0:
-        As_util = Ast_bot / As_min_req
-    else:
-        As_util = None
-    As_status, As_colour = _status_and_colour(As_util, As_min_req not in (None, 0))
+    As_util = _safe_ratio(Ast_bot, As_min_req)
+    As_status, As_colour = _status_and_colour(
+        As_util, As_util is not None
+    )
 
     Mx_min_req = get_param("Mx_min_req", None)   # minimum required moment from Tab 2
-    if phi_Mu_cap > 0 and Mx_min_req and Mx_min_req > 0:
-        Mx_min_util = Mx_min_req / phi_Mu_cap
-    else:
-        Mx_min_util = None
+    Mx_min_util = _safe_ratio(Mx_min_req, phi_Mu_cap)
     Mx_min_status, Mx_min_colour = _status_and_colour(
-
-        Mx_min_util, phi_Mu_cap > 0 and Mx_min_req not in (None, 0)
-
+        Mx_min_util, Mx_min_util is not None
     )
 
     k_u = get_param("k_u", None)
-
     k_u_lim = get_param("k_u_lim", None)
-    if k_u_lim and k_u_lim > 0 and k_u is not None:
-        k_u_util = k_u / k_u_lim
-    else:
-        k_u_util = None
+    k_u_util = _safe_ratio(k_u, k_u_lim)
     k_u_status, k_u_colour = _status_and_colour(
-
-        k_u_util, k_u is not None and k_u_lim not in (None, 0)
-
+        k_u_util, k_u_util is not None
     )
 
     # Preformatted strings (for cleaner HTML)
-    As_min_str = f"{As_min_req:.1f}" if As_min_req not in (None, 0) else "—"
-    As_util_str = f"{As_util:.3f}" if As_util is not None else "—"
-    Mx_min_str = f"{Mx_min_req:.2f}" if Mx_min_req not in (None, 0) else "—"
-    Mx_min_util_str = f"{Mx_min_util:.3f}" if Mx_min_util is not None else "—"
-    k_u_str = f"{k_u:.3f}" if k_u is not None else "—"
-    k_u_lim_str = f"{k_u_lim:.3f}" if k_u_lim is not None else "—"
-    k_u_util_str = f"{k_u_util:.3f}" if k_u_util is not None else "—"
+    As_min_str       = f"{As_min_req:.1f}"  if As_min_req not in (None, 0) else "—"
+    As_util_str      = f"{As_util:.3f}"     if As_util is not None else "—"
+    Mx_min_str       = f"{Mx_min_req:.2f}"  if Mx_min_req not in (None, 0) else "—"
+    Mx_min_util_str  = f"{Mx_min_util:.3f}" if Mx_min_util is not None else "—"
+    k_u_str          = f"{k_u:.3f}"         if k_u is not None else "—"
+    k_u_lim_str      = f"{k_u_lim:.3f}"     if k_u_lim is not None else "—"
+    k_u_util_str     = f"{k_u_util:.3f}"    if k_u_util is not None else "—"
 
     # Crack detail helper
     sigma_sr = get_param("sigma_sr", 0.0)
     sigma_allow = get_param("sigma_allow_table", 0.0)
-    if sigma_allow > 0:
-        sigma_util = sigma_sr / sigma_allow
-    else:
-        sigma_util = None
+    sigma_util = _safe_ratio(sigma_sr, sigma_allow)
     sigma_status, sigma_colour = _status_and_colour(
-
-        sigma_util, sigma_allow > 0
-
+        sigma_util, sigma_util is not None
     )
     sigma_util_str = f"{sigma_util:.3f}" if sigma_util is not None else "—"
 
