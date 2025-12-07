@@ -799,6 +799,10 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
     M_max_abs = float(np.max(np.abs(M))) if M is not None else 0.0
     V_max_abs = float(np.max(np.abs(V))) if V is not None else 0.0
 
+    # Extract w and P for deflection page
+    w_used = params.get("w")   # None if not a UDL case
+    P_used = params.get("P")   # None if not a point load case
+
     # ---------------------------------------------------
     # Key formulas + publish to results
     # ---------------------------------------------------
@@ -932,6 +936,8 @@ on the **Inputs** and **Deflection** pages when you select
             sfd_span_L_m=float(L),
             sfd_Mmax_abs_kNm=float(M_max_abs),
             sfd_Vmax_abs_kN=float(V_max_abs),
+            sfd_w_kNm_per_m=float(w_used) if w_used is not None else None,
+            sfd_P_kN=float(P_used) if P_used is not None else None,
         )
 
     # Top summary bar (like other pages)
