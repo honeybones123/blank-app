@@ -295,16 +295,24 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     Mu_star = get_param("Mu_star", 0.0)
     Vu_star = get_param("Vu_star", 0.0)
 
-    # ---------- Service loads from SFD/BMD page ----------
-    g = get_param("sls_g_kNm_per_m", 8.0)
-    q = get_param("sls_q_kNm_per_m", 4.0)
-    psi_s = get_param("sls_psi_s", 0.4)
-    w_eff = get_param("sls_w_eff_kNm_per_m", g + psi_s * q)
-
-    # ---------- SFD/BMD case info for deflection ----------
-    case_sfd = st.session_state.get("sfd_case", None)
-    L_sfd = get_param("sfd_span_L_m", None)  # span in m
-    P_sls = get_param("sfd_P_sls_kN", None)  # SLS point load if any
+    # ---------- Unified loading from SFD/BMD page ----------
+    load_case = st.session_state.get("load_case", None)
+    L_sfd = get_param("span_L_m", None)  # span in m
+    
+    # Get SLS loads (either UDL or point load depending on case)
+    w_sls = get_param("w_sls_kNm_per_m", None)  # SLS UDL if applicable
+    P_sls = get_param("P_sls_kN", None)  # SLS point load if applicable
+    a = get_param("a_m", None)  # Distance a for point loads
+    
+    # For display in calcbox
+    g = get_param("g_udl_kNm_per_m", 0.0)
+    q = get_param("q_udl_kNm_per_m", 0.0)
+    psi_s = get_param("psi_udl", 0.4)
+    G_point = get_param("G_point_kN", 0.0)
+    Q_point = get_param("Q_point_kN", 0.0)
+    
+    # Determine effective load for deflection
+    w_eff = w_sls if w_sls is not None else None
 
     st.markdown("### Design inputs")
 
@@ -429,7 +437,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     delta_loc = None
 
     if (
-        case_sfd is not None
+        load_case is not None
         and L_sfd is not None
         and E_defl is not None
         and I_defl is not None
@@ -438,7 +446,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         and I_defl > 0
     ):
         delta_max, formula_latex, delta_loc = _deflection_from_sfd_case(
-            case=case_sfd,
+            case=load_case,
             L=float(L_sfd),
             w_eff=w_eff,
             P_sls=P_sls,
@@ -479,21 +487,52 @@ manual M*, V* or scaled SFD/BMD SLS diagrams.
 
 **Step 2 – Service load for deflection (from SFD/BMD page)**
 
-- Dead load: `g = {g:.3g}` kN/m  
-- Live load: `q = {q:.3g}` kN/m  
+"""
+    )
+    
+    # Show appropriate load info based on case type
+    if w_sls is not None:
+        calcbox(
+            f"""
+- Dead UDL: `g = {g:.3g}` kN/m  
+- Live UDL: `q = {q:.3g}` kN/m  
 - Sustained factor: `ψ_s = {psi_s:.3g}`  
 
 Effective SLS UDL:  
 
 \\[
-w_{{\\text{{eff}}}} = g + ψ_s q = {w_eff:.3g}\\;\\text{{kN/m}}
+w_{{\\text{{sls}}}} = g + ψ_s q = {w_sls:.3g}\\;\\text{{kN/m}}
 \\]
+"""
+        )
+    elif P_sls is not None:
+        # Get point load psi_s
+        psi_s_point = get_param("psi_point", 0.4)
+        calcbox(
+            f"""
+- Dead point load: `G = {G_point:.3g}` kN  
+- Live point load: `Q = {Q_point:.3g}` kN  
+- Sustained factor: `ψ_s = {psi_s_point:.3g}`  
 
----
+Effective SLS point load:  
 
+\\[
+P_{{\\text{{sls}}}} = G + ψ_s Q = {P_sls:.3g}\\;\\text{{kN}}
+\\]
+"""
+        )
+    else:
+        calcbox(
+            """
+- No load defined yet. Please set up loading on the **SFD/BMD** page.
+"""
+        )
+    
+    calcbox(
+        f"""
 **Step 3 – Closed-form deflection formula**
 
-- Load case used for deflection: `{case_sfd or "—"}`  
+- Load case used for deflection: `{load_case or "—"}`  
 - Span for deflection: `L = {(L_sfd or 0.0):.3g}` (same units as δ)  
 
 """
@@ -527,7 +566,7 @@ w_{{\\text{{eff}}}} = g + ψ_s q = {w_eff:.3g}\\;\\text{{kN/m}}
 
     # ---------- Top summary ----------
     summary_placeholder.info(
-        f"Deflection: case = {case_sfd or '—'}, L = {(L_sfd or 0.0):.3g}, "
+        f"Deflection: case = {load_case or '—'}, L = {(L_sfd or 0.0):.3g}, "
         f"δ_max ≈ {delta_text}, limit ≈ {delta_limit_text}, util ≈ {util_text}."
     )
 
