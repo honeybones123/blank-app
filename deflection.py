@@ -87,87 +87,65 @@ def calcbox(md: str):
 def _deflection_from_sfd_case(
     case: str,
     L: float,
-    w: float | None,
-    P: float | None,
+    w_eff: float | None,
+    P_sls: float | None,
     E: float,
     I: float,
 ):
     """
-    Return (delta_max, latex_formula, location_text) for classic load cases.
+    Returns (delta_max, latex_formula, location_text) for classic SLS load cases.
 
-    - case  : sfd_case string from SFD/BMD teaching page
-    - L     : span in meters
-    - w     : UDL intensity in kN/m (if relevant)
-    - P     : point load in kN (if relevant)
-    - E     : modulus in MPa (N/mm²)
-    - I     : second moment in mm⁴
-
-    Returns delta_max in mm.
-
-    If the case is not yet implemented, delta_max = None and the formula
-    string explains that it is not auto-calculated.
+    Assumes:
+      - L in your length unit
+      - w_eff in force/length
+      - P_sls in force
+      - E, I consistent with your deflection units
     """
     delta_max = None
     formula = r"\text{No closed-form deflection linked for this case yet.}"
     location = "—"
 
-    # Unit conversion: L in m, w in kN/m, P in kN, E in MPa, I in mm⁴
-    # Convert to consistent units: L_mm, w_Nmm, P_N, E_MPamm2, I_mm4
-    # Result δ in mm
-    L_mm = L * 1000.0  # L in mm
-    w_Nmm = w * 1000.0 if w is not None else None  # w in N/mm (1 kN/m = 1 N/mm)
-    P_N = P * 1000.0 if P is not None else None  # P in N
-    E_MPamm2 = E  # E in MPa = N/mm²
-
-    # --- 1. Simple beam – UDL over entire span ---
-    if case == "Simple beam – UDL over entire span" and w is not None:
-        # δ_max = 5 w L^4 / (384 E I), at midspan
-        # All in consistent units: w in N/mm, L in mm, E in N/mm², I in mm⁴, δ in mm
-        coeff = 5.0 / 384.0
-        delta_max = coeff * w_Nmm * (L_mm**4) / (E_MPamm2 * I)
+    # 1. Simple beam – UDL over entire span
+    if case == "Simple beam – UDL over entire span" and w_eff is not None:
+        # δ_max = 5 w L^4 / (384 E I) at midspan
+        delta_max = 5.0 * w_eff * L**4 / (384.0 * E * I)
         formula = (
             r"\delta_{\max} = \frac{5 w L^4}{384 E I}"
-            r"\quad\text{(simply supported, full UDL, at midspan)}"
+            r"\quad\text{(simply supported, full UDL, midspan)}"
         )
         location = "At midspan (x = L/2)"
 
-    # --- 2. Simple beam – point load at centre ---
-    elif case == "Simple beam – point load at centre" and P is not None:
-        # δ_max = P L^3 / (48 E I), at midspan
-        coeff = 1.0 / 48.0
-        delta_max = coeff * P_N * (L_mm**3) / (E_MPamm2 * I)
+    # 2. Simple beam – point load at centre
+    elif case == "Simple beam – point load at centre" and P_sls is not None:
+        # δ_max = P L^3 / (48 E I)
+        delta_max = P_sls * L**3 / (48.0 * E * I)
         formula = (
             r"\delta_{\max} = \frac{P L^3}{48 E I}"
             r"\quad\text{(simply supported, centre point load)}"
         )
         location = "At midspan (x = L/2)"
 
-    # --- 3. Cantilever – point load at free end ---
-    elif case == "Cantilever – point load at free end" and P is not None:
-        # δ_max = P L^3 / (3 E I), at the free end
-        coeff = 1.0 / 3.0
-        delta_max = coeff * P_N * (L_mm**3) / (E_MPamm2 * I)
+    # 3. Cantilever – point load at free end
+    elif case == "Cantilever – point load at free end" and P_sls is not None:
+        # δ_max = P L^3 / (3 E I)
+        delta_max = P_sls * L**3 / (3.0 * E * I)
         formula = (
             r"\delta_{\max} = \frac{P L^3}{3 E I}"
             r"\quad\text{(cantilever, end point load)}"
         )
         location = "At free end (x = L)"
 
-    # --- 4. Cantilever – UDL over entire span ---
-    elif case == "Cantilever – UDL over entire span" and w is not None:
-        # δ_max = w L^4 / (8 E I), at the free end
-        coeff = 1.0 / 8.0
-        delta_max = coeff * w_Nmm * (L_mm**4) / (E_MPamm2 * I)
+    # 4. Cantilever – UDL over entire span
+    elif case == "Cantilever – UDL over entire span" and w_eff is not None:
+        # δ_max = w L^4 / (8 E I)
+        delta_max = w_eff * L**4 / (8.0 * E * I)
         formula = (
             r"\delta_{\max} = \frac{w L^4}{8 E I}"
             r"\quad\text{(cantilever, full UDL)}"
         )
         location = "At free end (x = L)"
 
-    # You can add more closed-form cases later:
-    # - Simple beam – point load at distance a from left
-    # - Overhanging beam – point load at free end
-    # - Partial UDL, etc.
+    # Other cases (partial UDL, eccentric point load, overhang etc.) can be added later.
 
     return delta_max, formula, location
 
@@ -312,19 +290,21 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     # Reserve space for the top summary table
     summary_placeholder = st.empty()
 
-    # Get action source and values
-    # Read action_source from shared state (follows contract via TAB_KEYS)
+    # ---------- Actions from Inputs page ----------
     action_source = get_param("actions_source", "Manual design actions (inputs below)")
     Mu_star = get_param("Mu_star", 0.0)
     Vu_star = get_param("Vu_star", 0.0)
-    
-    # Teaching SFD/BMD info
+
+    # ---------- Service loads from SFD/BMD page ----------
+    g = get_param("sls_g_kNm_per_m", 8.0)
+    q = get_param("sls_q_kNm_per_m", 4.0)
+    psi_s = get_param("sls_psi_s", 0.4)
+    w_eff = get_param("sls_w_eff_kNm_per_m", g + psi_s * q)
+
+    # ---------- SFD/BMD case info for deflection ----------
     case_sfd = st.session_state.get("sfd_case", None)
-    L_sfd = get_param("sfd_span_L_m", None)
-    w_sfd = get_param("sfd_w_kNm_per_m", None)
-    P_sfd = get_param("sfd_P_kN", None)
-    M_sfd = get_param("sfd_Mmax_abs_kNm", None)
-    V_sfd = get_param("sfd_Vmax_abs_kN", None)
+    L_sfd = get_param("sfd_span_L_m", None)  # span in m
+    P_sls = get_param("sfd_P_sls_kN", None)  # SLS point load if any
 
     st.markdown("### Design inputs")
 
@@ -405,25 +385,6 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     with col_load:
         st.markdown("**Service loads (per metre of span)**")
 
-        g_kNm = st.number_input(
-            "Dead load g (kN/m)",
-            value=8.0,
-            step=0.5,
-            key="defl_g",
-        )
-        q_kNm = st.number_input(
-            "Live load q (kN/m)",
-            value=4.0,
-            step=0.5,
-            key="defl_q",
-        )
-        psi_s = st.number_input(
-            "Sustained live-load factor ψₛ",
-            value=0.4,
-            step=0.05,
-            min_value=0.0,
-            key="defl_psi_s",
-        )
         defl_limit_ratio = st.number_input(
             "Deflection limit L/Δ (e.g. 250)",
             value=250.0,
@@ -458,118 +419,116 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         # Fallback if computation fails
         Ief_early = 1.0e11
 
-    # --------------------------------------------------------
-    # Closed-form deflection from SFD teaching case
-    # --------------------------------------------------------
-    # Choose stiffness (E*I) for deflection
+    # ---------- Stiffness for deflection (from other pages) ----------
     E_defl = Ec  # Use Ec from inputs (MPa)
     I_defl = Ief_early  # Use Ief computed above (mm⁴)
 
-    # Convert units: L_sfd is in m, but formulas need consistent units
-    # For closed-form formulas: L in m, w in kN/m, P in kN, E in MPa, I in mm⁴
-    # Result delta_max will be in mm (since we're using mm⁴ for I)
-    if L_sfd is None or case_sfd is None:
-        delta_max, formula_latex, delta_loc = None, None, None
-    else:
-        # Convert I from mm⁴ to m⁴ for formula (or adjust formula coefficients)
-        # Actually, let's keep units consistent: L in m, w in kN/m, P in kN, E in MPa, I in mm⁴
-        # The formulas need: δ = coeff * load * L^n / (E * I)
-        # If E is in MPa and I is in mm⁴, we need to convert properly
-        # For δ in mm: if L is in m, w in kN/m, P in kN, E in MPa, I in mm⁴
-        # δ = (coeff * w * L^4) / (E * I) where:
-        #   - w in kN/m = 10^6 N/m
-        #   - L in m = 10^3 mm
-        #   - E in MPa = 10^6 Pa = 10^6 N/m²
-        #   - I in mm⁴ = 10^-12 m⁴
-        # Actually, let's use a simpler approach: convert everything to base units
-        # L_m = L_sfd (already in m)
-        # w_kNm = w_sfd (already in kN/m)
-        # P_kN = P_sfd (already in kN)
-        # E_MPa = E_defl (already in MPa)
-        # I_mm4 = I_defl (already in mm⁴)
-        # For δ in mm: δ = coeff * (w in kN/m) * (L in m)^4 / ((E in MPa) * (I in mm⁴))
-        # But we need to be careful with units. Let's convert:
-        # E in N/mm² = E_MPa (since 1 MPa = 1 N/mm²)
-        # I in mm⁴ = I_defl
-        # w in N/mm = w_kNm * 1000 (since 1 kN/m = 1 N/mm)
-        # L in mm = L_m * 1000
-        # δ = coeff * (w * 1000) * (L * 1000)^4 / (E * I)
-        #   = coeff * w * L^4 * 1000^5 / (E * I)
-        #   = coeff * w * L^4 * 10^15 / (E * I)
-        # Actually, let's use the simpler approach from the user's example:
-        # They assume consistent units, so let's just pass the values as-is
-        # and the formulas will work if we're consistent
-        
+    # For now, if they're missing, we skip δ calc
+    delta_max = None
+    formula_latex = None
+    delta_loc = None
+
+    if (
+        case_sfd is not None
+        and L_sfd is not None
+        and E_defl is not None
+        and I_defl is not None
+        and L_sfd > 0
+        and E_defl > 0
+        and I_defl > 0
+    ):
         delta_max, formula_latex, delta_loc = _deflection_from_sfd_case(
             case=case_sfd,
             L=float(L_sfd),
-            w=w_sfd,
-            P=P_sfd,
+            w_eff=w_eff,
+            P_sls=P_sls,
             E=float(E_defl),
             I=float(I_defl),
         )
 
-    # --------------------------------------------------------
-    # 4-step calcbox (top of page)
-    # --------------------------------------------------------
-    if delta_max is not None:
-        delta_text = f"`{delta_max:.3g}` mm"
-    else:
-        delta_text = "`—`"
+    # ---------- User limit L/Δ ----------
+    L_over_limit = defl_limit_ratio  # Already defined above
 
+    # Simple limit in same units as L (assumes δ is in same units as L)
+    delta_limit = None
+    if L_sfd is not None and L_over_limit > 0:
+        delta_limit = L_sfd / L_over_limit
+
+    # Utilisation ratio
+    utilisation = None
+    if delta_max is not None and delta_limit not in (None, 0):
+        utilisation = abs(delta_max) / delta_limit
+
+    delta_text = f"`{delta_max:.3g}`" if delta_max is not None else "`—`"
+    delta_limit_text = f"`{delta_limit:.3g}`" if delta_limit is not None else "`—`"
+    util_text = f"`{utilisation:.3g}`" if utilisation is not None else "`—`"
+
+    # ---------- 4-STEP CALCBOX ----------
     calcbox(
         f"""
 **Step 1 – Adopt design actions**
 
-- Source for M*, V*: `{action_source}`
-
+- Source: `{action_source}`
 - Bending moment M*: `{Mu_star:.3g}` kNm  
-
 - Shear force V*: `{Vu_star:.3g}` kN  
 
-If **Teaching SFD/BMD** is selected:
+These come from the **Inputs** page toggle:
+manual M*, V* or scaled SFD/BMD SLS diagrams.
 
-- Case: `{case_sfd or "—"}`  
+---
 
-- Span: `{(L_sfd or 0.0):.3g}` m  
+**Step 2 – Service load for deflection (from SFD/BMD page)**
 
-- |M|_max ≈ `{(M_sfd or 0.0):.3g}` kNm, |V|_max ≈ `{(V_sfd or 0.0):.3g}` kN
+- Dead load: `g = {g:.3g}` kN/m  
+- Live load: `q = {q:.3g}` kN/m  
+- Sustained factor: `ψ_s = {psi_s:.3g}`  
 
-**Step 2 – Section stiffness for deflection**
+Effective SLS UDL:  
 
-- Effective modulus: `E = {(E_defl or 0.0):.3g}` MPa  
+\\[
+w_{{\\text{{eff}}}} = g + ψ_s q = {w_eff:.3g}\\;\\text{{kN/m}}
+\\]
 
-- Effective second moment of area: `I = {(I_defl or 0.0):.3e}` mm⁴  
-
-These values come from the **Bending / Creep / Shrinkage** workflow.
+---
 
 **Step 3 – Closed-form deflection formula**
 
 - Load case used for deflection: `{case_sfd or "—"}`  
+- Span for deflection: `L = {(L_sfd or 0.0):.3g}` (same units as δ)  
+
 """
     )
 
-    # Show the actual LaTeX formula separately (if we have one)
     if formula_latex is not None:
         st.latex(formula_latex)
     else:
         st.info(
-            "No closed-form deflection formula is currently linked for this SFD case. "
-            "You can still use manual deflection checks."
+            "No closed-form deflection formula is currently linked for this SFD case "
+            "or stiffness values are missing."
         )
 
-    # Continue the 4-step box with Step 4:
     calcbox(
         f"""
 **Step 4 – Maximum deflection and SLS check**
 
-- Computed maximum deflection (from closed-form): {delta_text}  
+- Computed maximum deflection: {delta_text}  
 
-  (at: {delta_loc or "—"})
+  (location: {delta_loc or "—"})  
 
-You can now compare this against your SLS limit
-(e.g. `L/250`, `L/300` etc.) in the rest of this page.
+- SLS limit: `L/Δ = {L_over_limit:.0f}` → allowable deflection ≈ {delta_limit_text}  
+
+- Utilisation ratio (δ / δ_limit): {util_text}
+
+
+
+(Ensure units of δ and L are consistent in your stiffness setup.)
 """
+    )
+
+    # ---------- Top summary ----------
+    summary_placeholder.info(
+        f"Deflection: case = {case_sfd or '—'}, L = {(L_sfd or 0.0):.3g}, "
+        f"δ_max ≈ {delta_text}, limit ≈ {delta_limit_text}, util ≈ {util_text}."
     )
 
     # --------------------------------------------------------
@@ -715,8 +674,8 @@ _Ref: AS 3600:2018 Cl. 8.5.3.1(2) & (3) – simplified $I_{{ef}}$ for reinforced
         L_m=L_eff,
         Ec=Ec,
         Ief=Ief,
-        g_kNm=g_kNm,
-        q_kNm=q_kNm,
+        g_kNm=g,
+        q_kNm=q,
         psi_s=psi_s,
         support_type=support_type,
         Ast=Ast,
