@@ -309,7 +309,7 @@ def render_derivation(case, L, params, results):
 
         if case == "Simple beam – UDL over entire span":
             w = params["w"]
-            R = results["R"]
+            R = results.get("R", w * L / 2.0)
             st.latex(r"\Sigma M_A = 0: \quad R_2 L - wL \cdot \frac{L}{2} = 0")
             st.latex(r"R_2 = \frac{wL}{2}")
             st.latex(r"\Sigma V = 0: \quad R_1 + R_2 - wL = 0")
@@ -320,8 +320,8 @@ def render_derivation(case, L, params, results):
             w = params["w"]
             a = params["a_udl"]
             a = max(0.0, min(a, L))
-            R1 = results["R1"]
-            R2 = results["R2"]
+            R1 = results_local.get("R1", 0.0)
+            R2 = results_local.get("R2", 0.0)
             st.latex(r"w \text{ over } 0 \le x \le a,\quad 0 \le a \le L")
             st.latex(r"\Sigma M_A = 0: \quad R_2 L - w a \cdot \frac{a}{2} = 0")
             st.latex(r"R_2 = \dfrac{w a^2}{2L}")
@@ -346,8 +346,8 @@ def render_derivation(case, L, params, results):
             P = params["P"]
             a = float(params["a"])
             b = L - a
-            R1 = results["R1"]
-            R2 = results["R2"]
+            R1 = results_local.get("R1", 0.0)
+            R2 = results_local.get("R2", 0.0)
             st.latex(r"a = a,\quad b = L-a")
             st.latex(r"\Sigma M_A = 0: \quad R_2 L - P a = 0")
             st.latex(r"R_2 = \dfrac{Pa}{L}")
@@ -400,8 +400,8 @@ def render_derivation(case, L, params, results):
             P = params["P"]
             L_main = params["L_main"]
             a_over = params["a_overhang"]
-            RA = results["RA"]
-            RB = results["RB"]
+            RA = results_local.get("RA", 0.0)
+            RB = results_local.get("RB", 0.0)
             st.latex(r"L = \text{distance between supports}, \quad a = \text{overhang}")
             st.latex(r"\Sigma M_A = 0: \quad R_B L - P(L+a) = 0")
             st.latex(r"R_B = \dfrac{P(L+a)}{L}")
@@ -571,63 +571,199 @@ def render_sfd_bmd_page():
 
     summary_placeholder = st.empty()
 
-    # ---------- Service loads (ONLY place you enter these) ----------
-    st.markdown("### Service loads (per metre of span) – SLS")
+    # =========================================================
+    # BEAM LOADING CONDITION (single source of truth)
+    # =========================================================
+    st.markdown("### Beam loading condition (single source of truth)")
 
-    g = st.number_input(
-        "Dead load g (kN/m)",
-        min_value=0.0,
-        value=8.0,
+    load_case = st.selectbox(
+        "Loading condition",
+        [
+            "Simple beam – UDL over entire span",
+            "Simple beam – partial UDL from left (length a)",
+            "Simple beam – point load at centre",
+            "Simple beam – point load at distance a from left",
+            "Cantilever – point load at free end",
+            "Cantilever – point load at distance a from fixed end",
+            "Cantilever – UDL over entire span",
+            "Overhanging beam – right overhang with point load at free end",
+        ],
+        key="load_case",
+    )
+
+    L = st.number_input(
+        "Span L (m)",
+        min_value=0.1,
+        value=6.0,
         step=0.5,
-        key="sfd_sls_g_kNm_per_m",
-        on_change=sync_callbacks.get("sfd_sls_g_kNm_per_m", lambda: None),
-    )
-    q = st.number_input(
-        "Live load q (kN/m)",
-        min_value=0.0,
-        value=4.0,
-        step=0.5,
-        key="sfd_sls_q_kNm_per_m",
-        on_change=sync_callbacks.get("sfd_sls_q_kNm_per_m", lambda: None),
-    )
-    psi_s = st.number_input(
-        "Sustained live-load factor ψ_s",
-        min_value=0.0,
-        value=0.4,
-        step=0.05,
-        key="sfd_sls_psi_s",
-        on_change=sync_callbacks.get("sfd_sls_psi_s", lambda: None),
+        key="load_L",
+        on_change=sync_callbacks.get("load_L", lambda: None),
     )
 
-    # Read the synced values from shared state (widgets sync via callbacks)
-    g_shared = get_param("sls_g_kNm_per_m", g)
-    q_shared = get_param("sls_q_kNm_per_m", q)
-    psi_s_shared = get_param("sls_psi_s", psi_s)
-    
-    w_eff = g_shared + psi_s_shared * q_shared   # SLS line load used for deflection
+    # Conditional loads based on load case type
+    params: dict = {}
+    results_local: dict = {}
+    a = None
 
-    calcbox(
-        f"""
-**Step 1 – Service load for deflection (defined on this SFD/BMD page)**
+    # UDL-type cases
+    if load_case in [
+        "Simple beam – UDL over entire span",
+        "Simple beam – partial UDL from left (length a)",
+        "Cantilever – UDL over entire span",
+    ]:
+        g = st.number_input(
+            "Dead UDL g (kN/m)",
+            min_value=0.0,
+            value=8.0,
+            step=0.5,
+            key="load_g_udl",
+            on_change=sync_callbacks.get("load_g_udl", lambda: None),
+        )
+        q = st.number_input(
+            "Live UDL q (kN/m)",
+            min_value=0.0,
+            value=4.0,
+            step=0.5,
+            key="load_q_udl",
+            on_change=sync_callbacks.get("load_q_udl", lambda: None),
+        )
+        psi_s = st.number_input(
+            "Sustained factor ψ_s",
+            min_value=0.0,
+            value=0.4,
+            step=0.05,
+            key="load_psi_udl",
+            on_change=sync_callbacks.get("load_psi_udl", lambda: None),
+        )
 
-- Dead load: `g = {g_shared:.3g}` kN/m  
+        # Read synced values
+        g_shared = get_param("g_udl_kNm_per_m", g)
+        q_shared = get_param("q_udl_kNm_per_m", q)
+        psi_shared = get_param("psi_udl", psi_s)
 
-- Live load: `q = {q_shared:.3g}` kN/m  
+        # SLS + ULS equivalents
+        w_sls = g_shared + psi_shared * q_shared  # for deflection and SLS diagrams
+        gamma_g = 1.2
+        gamma_q = 1.5
+        w_uls = gamma_g * g_shared + gamma_q * q_shared  # for ULS design M*, V*
 
-- Sustained factor: `ψ_s = {psi_s_shared:.3g}`  
+        # Store for SFD/BMD computation
+        params["w"] = w_sls  # Use SLS for diagrams
 
-Effective SLS load:  
+        # Optional: partial UDL length
+        if load_case == "Simple beam – partial UDL from left (length a)":
+            params["a_udl"] = st.number_input(
+                "UDL length a from left (m)",
+                min_value=0.0,
+                value=L / 2,
+                step=0.1,
+                key="sfd_a_udl",
+            )
 
-\\[
-w_\\text{{eff}} = g + ψ_s q = {w_eff:.3g} \\text{{ kN/m}}
-\\]
-"""
-    )
+        update_results(
+            span_L_m=float(L),
+            g_udl_kNm_per_m=float(g_shared),
+            q_udl_kNm_per_m=float(q_shared),
+            psi_udl=float(psi_shared),
+            w_sls_kNm_per_m=float(w_sls),
+            w_uls_kNm_per_m=float(w_uls),
+        )
 
-    # Only update computed value (w_eff), widget values are synced automatically via callbacks
-    update_results(
-        sls_w_eff_kNm_per_m=float(w_eff),
-    )
+    # Point-load cases
+    elif load_case in [
+        "Simple beam – point load at centre",
+        "Simple beam – point load at distance a from left",
+        "Cantilever – point load at free end",
+        "Cantilever – point load at distance a from fixed end",
+        "Overhanging beam – right overhang with point load at free end",
+    ]:
+        G_point = st.number_input(
+            "Dead point load G (kN)",
+            min_value=0.0,
+            value=50.0,
+            step=5.0,
+            key="load_G_point",
+            on_change=sync_callbacks.get("load_G_point", lambda: None),
+        )
+        Q_point = st.number_input(
+            "Live point load Q (kN)",
+            min_value=0.0,
+            value=30.0,
+            step=5.0,
+            key="load_Q_point",
+            on_change=sync_callbacks.get("load_Q_point", lambda: None),
+        )
+        psi_s = st.number_input(
+            "Sustained factor ψ_s for point load",
+            min_value=0.0,
+            value=0.4,
+            step=0.05,
+            key="load_psi_point",
+            on_change=sync_callbacks.get("load_psi_point", lambda: None),
+        )
+
+        # Read synced values
+        G_shared = get_param("G_point_kN", G_point)
+        Q_shared = get_param("Q_point_kN", Q_point)
+        psi_shared = get_param("psi_point", psi_s)
+
+        # SLS + ULS equivalents
+        P_sls = G_shared + psi_shared * Q_shared
+        gamma_g = 1.2
+        gamma_q = 1.5
+        P_uls = gamma_g * G_shared + gamma_q * Q_shared
+
+        # Store for SFD/BMD computation
+        params["P"] = P_sls  # Use SLS for diagrams
+
+        # Optional eccentricity
+        if load_case == "Simple beam – point load at distance a from left":
+            a = st.number_input(
+                "Distance a from left support (m)",
+                min_value=0.0,
+                value=L / 3,
+                step=0.1,
+                key="load_a_point",
+                on_change=sync_callbacks.get("load_a_point", lambda: None),
+            )
+            a_shared = get_param("a_m", a)
+            params["a"] = a_shared
+        elif load_case == "Cantilever – point load at distance a from fixed end":
+            a = st.number_input(
+                "Distance a from fixed end (m)",
+                min_value=0.0,
+                value=L / 2,
+                step=0.1,
+                key="sfd_a_cant",
+            )
+            params["a_cant"] = a
+        elif load_case == "Overhanging beam – right overhang with point load at free end":
+            L_main = st.number_input(
+                "Span between supports L (m)",
+                min_value=0.1,
+                value=4.0,
+                step=0.5,
+                key="sfd_L_main",
+            )
+            a_over = st.number_input(
+                "Overhang length a (m)",
+                min_value=0.0,
+                value=2.0,
+                step=0.5,
+                key="sfd_a_overhang",
+            )
+            params["L_main"] = L_main
+            params["a_overhang"] = a_over
+
+        update_results(
+            span_L_m=float(L),
+            G_point_kN=float(G_shared),
+            Q_point_kN=float(Q_shared),
+            psi_point=float(psi_shared),
+            P_sls_kN=float(P_sls),
+            P_uls_kN=float(P_uls),
+            a_m=float(a) if a is not None else None,
+        )
 
     st.markdown("---")
 
@@ -652,99 +788,11 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
     # ---------------------------------------------------
     col_inputs, col_formulas = st.columns([1.3, 1.0])
 
-    with col_inputs:
-        st.markdown("#### Beam & loading")
+    # Use load_case for computation (rename for compatibility with existing code)
+    case = load_case
 
-        case = st.selectbox(
-            "Loading case",
-            [
-                "Simple beam – UDL over entire span",
-                "Simple beam – partial UDL from left (length a)",
-                "Simple beam – point load at centre",
-                "Simple beam – point load at distance a from left",
-                "Cantilever – point load at free end",
-                "Cantilever – point load at distance a from fixed end",
-                "Cantilever – UDL over entire span",
-                "Overhanging beam – right overhang with point load at free end",
-            ],
-            key="sfd_case",
-        )
-
-        params: dict = {}
-        results: dict = {}
-
-        # Length inputs
-        if case == "Overhanging beam – right overhang with point load at free end":
-            L_main = st.number_input(
-                "Span between supports L (m)",
-                min_value=0.1, value=4.0, step=0.5, key="sfd_L_main"
-            )
-            a_over = st.number_input(
-                "Overhang length a (m)",
-                min_value=0.0, value=2.0, step=0.5, key="sfd_a_overhang"
-            )
-            L = L_main + a_over  # total for plotting
-            params["L_main"] = L_main
-            params["a_overhang"] = a_over
-        else:
-            L = st.number_input(
-                "Span L (m)",
-                min_value=0.1, value=6.0, step=0.5, key="sfd_L"
-            )
-
-        # Load inputs
-        # UDL inputs:
-        # For global teaching consistency:
-        #  - full-span UDL cases use w_eff directly
-        #  - other UDL patterns (partial UDL, cantilever UDL) still use a slider
-        if case == "Simple beam – UDL over entire span":
-            params["w"] = w_eff
-            st.caption(f"Using SLS UDL from service loads: w = w_eff = {w_eff:.3g} kN/m")
-        elif case in [
-            "Simple beam – partial UDL from left (length a)",
-            "Cantilever – UDL over entire span",
-        ]:
-            params["w"] = st.number_input(
-                "UDL w (kN/m)",
-                min_value=0.0,
-                value=10.0,
-                step=1.0,
-                key="sfd_w",
-            )
-
-        # Point load P (SLS)
-        if case in [
-            "Simple beam – point load at centre",
-            "Simple beam – point load at distance a from left",
-            "Cantilever – point load at free end",
-            "Cantilever – point load at distance a from fixed end",
-            "Overhanging beam – right overhang with point load at free end",
-        ]:
-            params["P"] = st.number_input(
-                "Point load P (kN) – SLS",
-                min_value=0.0,
-                value=50.0,
-                step=5.0,
-                key="sfd_P_sls",
-            )
-
-        if case == "Simple beam – point load at distance a from left":
-            params["a"] = st.number_input(
-                "Distance a from left support (m)",
-                min_value=0.0, value=L / 3, step=0.1, key="sfd_a"
-            )
-
-        if case == "Simple beam – partial UDL from left (length a)":
-            params["a_udl"] = st.number_input(
-                "UDL length a from left (m)",
-                min_value=0.0, value=L / 2, step=0.1, key="sfd_a_udl"
-            )
-
-        if case == "Cantilever – point load at distance a from fixed end":
-            params["a_cant"] = st.number_input(
-                "Distance a from fixed end (m)",
-                min_value=0.0, value=L / 2, step=0.1, key="sfd_a_cant"
-            )
+    # Local results dict for reactions (used in derivation)
+    results_local: dict = {}
 
     # ---------------------------------------------------
     # Compute V(x) and M(x) (same logic as your original)
@@ -760,7 +808,7 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
         R = w * L / 2.0
         V = R - w * x
         M = R * x - 0.5 * w * x**2
-        results["R"] = R
+        results_local["R"] = R
 
     elif case == "Simple beam – partial UDL from left (length a)":
         w = params["w"]
@@ -778,8 +826,8 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
             else:
                 V[i] = R1 - w * a
                 M[i] = R1 * xi - w * a * (xi - a / 2)
-        results["R1"] = R1
-        results["R2"] = R2
+        results_local["R1"] = R1
+        results_local["R2"] = R2
 
     elif case == "Simple beam – point load at centre":
         P = params["P"]
@@ -795,8 +843,8 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
             else:
                 V[i] = R1 - P
                 M[i] = R1 * xi - P * (xi - a)
-        results["R1"] = R1
-        results["R2"] = R2
+        results_local["R1"] = R1
+        results_local["R2"] = R2
 
     elif case == "Simple beam – point load at distance a from left":
         P = params["P"]
@@ -815,8 +863,8 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
             else:
                 V[i] = R1 - P
                 M[i] = R1 * xi - P * (xi - a)
-        results["R1"] = R1
-        results["R2"] = R2
+        results_local["R1"] = R1
+        results_local["R2"] = R2
 
     elif case == "Cantilever – point load at free end":
         P = params["P"]
@@ -863,8 +911,8 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
                 V[i] = RA + RB
                 M[i] = RA * xi + RB * (xi - L_main)
         beam_length = L_total
-        results["RA"] = RA
-        results["RB"] = RB
+        results_local["RA"] = RA
+        results_local["RB"] = RB
 
     # Global maxima (absolute)
     M_max_abs = float(np.max(np.abs(M))) if M is not None else 0.0
@@ -984,15 +1032,12 @@ scaled to ULS in the **Inputs** page when you choose to.
 """
         )
 
-        # Push into shared results so Inputs/Deflection pages can use them
-        # Note: sfd_case is a widget key, so we don't update it here - other pages can read it directly
+        # Push SFD/BMD results into shared state
+        # Note: load_case is a widget key, so we don't update it here - other pages can read it directly
         P_sls = params.get("P")  # point load if any
         update_results(
-            sfd_span_L_m=float(L),
             sfd_Msls_max_kNm=float(M_max_abs),
             sfd_Vsls_max_kN=float(V_max_abs),
-            sfd_P_sls_kN=float(P_sls) if P_sls is not None else None,
-            # w_eff is already stored as sls_w_eff_kNm_per_m
         )
 
     # Top summary bar (like other pages)
@@ -1013,7 +1058,7 @@ scaled to ULS in the **Inputs** page when you choose to.
         st.pyplot(fig_load)
 
     with col_deriv:
-        render_derivation(case, L, params, results)
+        render_derivation(case, L, params, results_local)
 
     # ---------------------------------------------------
     # Show SFD & BMD
