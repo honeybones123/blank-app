@@ -913,11 +913,13 @@ If "Teaching SFD/BMD" is selected, these come from that page's
 """
     )
     
-    # Push final chosen actions into results (or wherever Bending/Shear/Deflection read)
-    # Note: actions_source is managed by the widget, so we don't update it here
+    # Push final chosen actions into results for all downstream pages
     update_results(
+        actions_source=action_source,       # so Bending/Shear/Deflection know the source
         Mu_star=float(Mu_star),
+        Mu_star_kNm=float(Mu_star),        # both naming styles, for safety
         Vu_star=float(Vu_star),
+        Vu_star_kN=float(Vu_star),
     )
 
     # ============================
