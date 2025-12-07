@@ -117,23 +117,34 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
     A_cp = b * D
     u_c = 2 * (b + D)
     Ao = 0.9 * A_cp
-    uh = 2 * ((b - cover_t) + (D - cover_t))
-    A_oh = (b - cover_t) * (D - cover_t)
+    uh = 2 * (max(b - cover_t, 0.0) + max(D - cover_t, 0.0))
+    A_oh = max(b - cover_t, 0.0) * max(D - cover_t, 0.0)
 
-    sqrt_fc = math.sqrt(fc)
-    denom = 0.33 * sqrt_fc
-    Tcr_Nmm = 0.33 * sqrt_fc * (A_cp**2) / u_c * math.sqrt(
-        1 + (sigma_cp / denom if denom > 0 else 0.0)
-    )
-    Tcr_kNm = Tcr_Nmm / 1e6
-    torsion_required_limit = 0.25 * phi * Tcr_kNm
-    torsion_required = T_star > torsion_required_limit
+    # Safety checks to prevent division by zero
+    if u_c <= 0 or A_cp <= 0:
+        # Return zero capacity if geometry is invalid
+        Tcr_kNm = 0.0
+        torsion_required = False
+        torsion_required_limit = 0.0
+        Vt_eq_kN = 0.0
+        V_eq = abs(V_star)
+    else:
+        sqrt_fc = math.sqrt(max(fc, 0.1))  # Prevent sqrt of negative
+        denom = 0.33 * sqrt_fc
+        Tcr_Nmm = 0.33 * sqrt_fc * (A_cp**2) / u_c * math.sqrt(
+            1 + (sigma_cp / denom if denom > 0 else 0.0)
+        )
+        Tcr_kNm = Tcr_Nmm / 1e6
+        torsion_required_limit = 0.25 * phi * Tcr_kNm
+        torsion_required = T_star > torsion_required_limit
 
-    # ---------------- Equivalent shear Veq* ----------------
-    T_star_Nmm = T_star * 1e6
-    torsion_eq_N = 0.9 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
-    Vt_eq_kN = torsion_eq_N / 1e3
-    V_eq = math.sqrt(V_star**2 + Vt_eq_kN**2)
+        # ---------------- Equivalent shear Veq* ----------------
+        T_star_Nmm = T_star * 1e6
+        Ao_safe = max(Ao, 1.0)  # Prevent division by zero
+        uh_safe = max(uh, 1.0)  # Prevent division by zero
+        torsion_eq_N = 0.9 * T_star_Nmm * uh_safe / (2.0 * Ao_safe)
+        Vt_eq_kN = torsion_eq_N / 1e3
+        V_eq = math.sqrt(V_star**2 + Vt_eq_kN**2)
 
     # ---------------- Shear reinforcement & effective section -----------
     Asv = legs * math.pi * lig_d**2 / 4.0
@@ -142,14 +153,22 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
     b_v = b - k_d * sum_duct
     d_v = max(0.72 * D, 0.9 * d)
 
+    # Safety check: prevent division by zero for spacing
+    s_safe = max(s, 1.0)  # Minimum 1mm spacing to prevent division by zero
+
     # ---------------- Longitudinal strain εx ----------------------------
     M_star_Nmm = abs(M_star) * 1e6
-    term_M = M_star_Nmm / (d_v or 1.0)
+    d_v_safe = max(d_v, 1.0)  # Prevent division by zero
+    term_M = M_star_Nmm / d_v_safe
 
     Vprime_kN = abs(V_star) - P_v
     Vprime_N = Vprime_kN * 1e3
 
-    torsion_N = 0.97 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
+    # Use safe values for torsion calculation
+    Ao_safe = max(Ao, 1.0)  # Prevent division by zero
+    uh_safe = max(uh, 1.0)  # Prevent division by zero
+    T_star_Nmm = T_star * 1e6
+    torsion_N = 0.97 * T_star_Nmm * uh_safe / (2.0 * Ao_safe)
     sqrt_inner = math.sqrt(Vprime_N**2 + torsion_N**2)
 
     N_star_N = 0.5 * N_star * 1e3
@@ -178,18 +197,18 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
         else:
             k_dg = 2.0
 
-        Asv_over_s = Asv / s
-        Asv_min_over_s = 0.08 * math.sqrt(fc) * b_v / (f_syv or 1.0)
+        Asv_over_s = Asv / s_safe
+        Asv_min_over_s = 0.08 * math.sqrt(max(fc, 0.1)) * b_v / (f_syv or 1.0)
 
         if Asv_over_s < Asv_min_over_s:
-            k_v = (0.4 / (1 + 1500 * eps_x)) * (1300 / (1000 + k_dg * d_v))
+            k_v = (0.4 / (1 + 1500 * eps_x)) * (1300 / (1000 + k_dg * d_v_safe))
         else:
             k_v = 0.4 / (1 + 1500 * eps_x)
 
         theta_v_deg = 29.0 + 7000.0 * eps_x
     else:
-        if Asv / s < 0.08 * math.sqrt(fc) * b_v / (f_syv or 1.0):
-            k_v = min(200.0 / (1000.0 + 1.3 * d_v), 0.10)
+        if Asv / s_safe < 0.08 * math.sqrt(max(fc, 0.1)) * b_v / (f_syv or 1.0):
+            k_v = min(200.0 / (1000.0 + 1.3 * d_v_safe), 0.10)
         else:
             k_v = 0.15
         theta_v_deg = 36.0
@@ -197,11 +216,11 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
     theta_v_rad = math.radians(theta_v_deg)
 
     # ---------------- Sectional shear -----------------------------------
-    sqrt_fc_limited = min(math.sqrt(fc), 8.0)
-    Vuc_N = k_v * b_v * d_v * sqrt_fc_limited
+    sqrt_fc_limited = min(math.sqrt(max(fc, 0.1)), 8.0)
+    Vuc_N = k_v * b_v * d_v_safe * sqrt_fc_limited
     Vuc_kN = Vuc_N / 1e3
 
-    Vus_N = (Asv * f_syv * d_v / s) * cot(theta_v_rad)
+    Vus_N = (Asv * f_syv * d_v_safe / s_safe) * cot(theta_v_rad)
     Vus_kN = Vus_N / 1e3
 
     Vu_total_kN = Vuc_kN + Vus_kN + P_v
@@ -220,12 +239,15 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
     Vu_max_kN = Vu_max_N / 1e3
 
     V_star_N = V_star * 1e3
-    term_V = V_star_N / (b_v * d_v or 1.0)
+    b_v_d_v_safe = max(b_v * d_v_safe, 1.0)  # Prevent division by zero
+    term_V = V_star_N / b_v_d_v_safe
     T_star_Nmm = T_star * 1e6
-    term_T = T_star_Nmm * uh / (1.7 * (A_oh**2 or 1.0))
+    A_oh_safe = max(abs(A_oh), 1.0)  # Prevent division by zero
+    uh_safe = max(uh, 1.0)  # Prevent division by zero
+    term_T = T_star_Nmm * uh_safe / (1.7 * (A_oh_safe**2))
 
     LHS = math.sqrt(term_V**2 + term_T**2)
-    RHS = phi * Vu_max_N / (b_v * d_v or 1.0)
+    RHS = phi * Vu_max_N / b_v_d_v_safe
     web_ok = LHS <= RHS
 
     return ShearResults(
