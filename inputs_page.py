@@ -334,8 +334,8 @@ def make_summary_cross_section_figure():
         range=[D * 1.02, -0.10 * D],
     )
     fig.update_layout(
-        width=230,              # slightly narrower
-        height=300,
+        width=345,
+        height=450,
         margin=dict(l=0, r=0, t=0, b=40),
         shapes=shapes,
         dragmode=False,
@@ -895,31 +895,48 @@ def render_inputs():
     st.markdown("---")
 
     # ============================
-    # 4. FOURTH ROW – Rest of inputs (Ducts | Crack/Time)
+    # 4. FOURTH ROW – Rest of inputs (Time | Crack/Ducts)
     # ============================
-    col_ducts, col_rest = st.columns(2)
+    col_time, col_right = st.columns(2)
 
-    # --- Ducts only (shear reo moved up) ---
-    with col_ducts:
-        st.subheader("Ducts / Prestress voids")
+    # --- Time-dependent inputs ---
+    with col_time:
+        st.subheader("Time-dependent inputs")
+
         number_row(
-            "Number of ducts crossing web",
-            "inputs_n_ducts",
+            "Creep time after loading t (days)",
+            "inputs_t_creep",
             1.0,
             sync_callbacks,
-            help_text="Total number of ducts crossing the web in the shear zone.",
+            help_text="Time after loading used for creep coefficient φ_cc,t.",
         )
 
         number_row(
-            "Duct diameter (mm)",
-            "inputs_duct_dia",
+            "Age at loading τ (days)",
+            "inputs_age_at_loading",
             1.0,
             sync_callbacks,
-            help_text="Nominal diameter of each duct.",
+            help_text="Concrete age at application of sustained load.",
         )
 
-    # --- Crack control + time-dependent ---
-    with col_rest:
+        number_row(
+            "Sustained stress ratio σ₀ / f'c,mi",
+            "inputs_stress_ratio",
+            0.01,
+            sync_callbacks,
+            help_text="Ratio of sustained stress to mean in-situ strength.",
+        )
+
+        number_row(
+            "Shrinkage time since drying t (days)",
+            "inputs_t_shrink",
+            1.0,
+            sync_callbacks,
+            help_text="Duration of drying used in shrinkage calculation.",
+        )
+
+    # --- Crack control + Ducts ---
+    with col_right:
         st.subheader("Crack Control Inputs")
 
         options = ["A1", "A2", "B1", "B2", "C1", "C2"]
@@ -964,38 +981,22 @@ def render_inputs():
             help_text="Centre-to-centre spacing of bottom bars used in crack-width check.",
         )
 
-        st.subheader("Time-dependent inputs")
+        st.subheader("Ducts / Prestress voids")
 
         number_row(
-            "Creep time after loading t (days)",
-            "inputs_t_creep",
+            "Number of ducts crossing web",
+            "inputs_n_ducts",
             1.0,
             sync_callbacks,
-            help_text="Time after loading used for creep coefficient φ_cc,t.",
+            help_text="Total number of ducts crossing the web in the shear zone.",
         )
 
         number_row(
-            "Age at loading τ (days)",
-            "inputs_age_at_loading",
+            "Duct diameter (mm)",
+            "inputs_duct_dia",
             1.0,
             sync_callbacks,
-            help_text="Concrete age at application of sustained load.",
-        )
-
-        number_row(
-            "Sustained stress ratio σ₀ / f'c,mi",
-            "inputs_stress_ratio",
-            0.01,
-            sync_callbacks,
-            help_text="Ratio of sustained stress to mean in-situ strength.",
-        )
-
-        number_row(
-            "Shrinkage time since drying t (days)",
-            "inputs_t_shrink",
-            1.0,
-            sync_callbacks,
-            help_text="Duration of drying used in shrinkage calculation.",
+            help_text="Nominal diameter of each duct.",
         )
 
     # ============================
@@ -1446,7 +1447,7 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
 
             components.html(
                 summary_table_html,
-                height=420,
+                height=280,   # was 420 – reduces the white gap
                 scrolling=False,
             )
 
