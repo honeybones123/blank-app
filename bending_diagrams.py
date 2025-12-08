@@ -85,17 +85,11 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     label_str = str(state_label or "ULS").strip()
     label_low = label_str.lower()
 
-    # True only for ULS state
-    # Explicitly check: must start with "uls" and NOT contain
-    # "sls" or "uncracked" or "parabolic"
-    is_uls = (
-        label_low.startswith("uls")
-        and "sls" not in label_low
-        and "uncracked" not in label_low
-        and "parabolic" not in label_low
-    )
-    # New: parabolic visual state
-    is_parabolic = "parabolic" in label_low
+    # ULS = any label starting with "uls"
+    is_uls = label_low.startswith("uls")
+
+    # Parabolic = ULS label that contains "parabolic"
+    is_parabolic = is_uls and ("parabolic" in label_low)
 
     # unpack bending state
     b = state_dict["b"]
@@ -190,14 +184,13 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
 
     # ----------------------------------------
     # Compression region in SECTION panel
-    #   ULS         → rectangular block to γ c
-    #   SLS/Uncr    → rectangular block to d_n
-    #   Parabolic   → also to d_n (we're just showing compression zone)
+    #   ULS Rectangular → block to γ c
+    #   ULS Parabolic   → block to d_n
+    #   SLS/Uncracked   → block to d_n
     # ----------------------------------------
-    if is_uls:
+    if is_uls and not is_parabolic:
         block_depth_sec = max(0.0, min(gamma * c, D))
     else:
-        # SLS, Uncracked, Parabolic all use d_n depth in SECTION panel
         block_depth_sec = max(0.0, min(c, D))
 
     fig.add_shape(
@@ -461,8 +454,8 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     # -----------------------------
     # Compression block in STRESS
     # -----------------------------
-    if is_uls:
-        # rectangular ULS block (unchanged)
+    if is_uls and not is_parabolic:
+        # ULS rectangular block
         block_top = 0.0
         block_bottom = gamma * c
         fig.add_shape(
@@ -478,7 +471,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         )
 
     elif is_parabolic:
-        # Parabolic block from top fibre down to d_n
+        # ULS Parabolic block from top fibre down to d_n
         block_top = 0.0
         block_bottom = c if c else 0.0
 
@@ -486,7 +479,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             n_pts = 60
             ys = np.linspace(block_top, block_bottom, n_pts)
 
-            # Dimensionless depth from NA (0 at NA, 1 at top fibre)
+            # Dimensionless depth from NA (0 at NA, 1 at top fibre):
             # z = 1 at top (y=0), z = 0 at neutral axis (y=c)
             z = 1.0 - ys / max(block_bottom, 1e-6)
 
@@ -519,7 +512,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             block_bottom = block_top
 
     else:
-        # TRIANGULAR SLS / UNCRACKED block (unchanged)
+        # TRIANGULAR SLS / UNCRACKED block
         block_top = 0.0
         block_bottom = c
         triangle_x = [x_axis, x_axis, x_block_right, x_axis]
@@ -602,11 +595,12 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         row=1,
         col=3,
     )
-    depth_label = (
-        f"γ dₙ = {gamma * c:.0f} mm"
-        if is_uls
-        else f"dₙ = {c:.0f} mm"
-    )
+
+    if is_uls and not is_parabolic:
+        depth_label = f"γ dₙ = {gamma * c:.0f} mm"
+    else:
+        depth_label = f"dₙ = {c:.0f} mm"
+
     fig.add_annotation(
         x=x_gc + 0.04,
         y=(block_top + block_bottom) / 2.0,
