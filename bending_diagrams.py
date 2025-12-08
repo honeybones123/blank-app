@@ -482,20 +482,26 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             n_pts = 60
             ys = np.linspace(block_top, block_bottom, n_pts)
 
-            # strain distribution: eps = eps_c at top, 0 at neutral axis
-            eps_profile = eps_c * (1.0 - ys / max(c, 1e-6))
+            # Dimensionless depth from NA (0 at NA, 1 at top fibre)
+            # z = 1 at top (y=0), z = 0 at neutral axis (y=c)
+            z = 1.0 - ys / max(block_bottom, 1e-6)
 
-            sigma_profile = [
-                _sigma_c_parabolic(eps_val, sigma_c) for eps_val in eps_profile
-            ]
+            # Textbook parabolic stress: 0 at NA, sigma_c at top
+            sigma_profile = sigma_c * (2.0 * z - z**2)
+            sigma_profile = np.clip(sigma_profile, 0.0, None)
+
             x_profile = [stress_to_x(s) for s in sigma_profile]
+
+            # Build a closed polygon that fills back to the vertical axis x_axis
+            polygon_x = [x_axis] + x_profile + [x_axis]
+            polygon_y = [block_top] + list(ys) + [block_bottom]
 
             fig.add_trace(
                 go.Scatter(
-                    x=x_profile,
-                    y=ys,
+                    x=polygon_x,
+                    y=polygon_y,
                     mode="lines",
-                    fill="tozerox",
+                    fill="toself",
                     fillcolor="rgba(255,200,200,0.3)",
                     line=dict(color="red", width=1.5),
                     hoverinfo="skip",
@@ -504,6 +510,9 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
                 row=1,
                 col=3,
             )
+        else:
+            block_bottom = block_top  # safe fallback
+
         else:
             block_bottom = block_top  # safe fallback
 
