@@ -53,12 +53,13 @@ def _build_beam_3d_figure(b, D, L, Mu_star, phi_Mu_cap, c, strain_state: str = "
     base_r = Mu_star / phi_Mu_cap if phi_Mu_cap > 0 else 0.0
     base_r = float(max(0.0, min(1.0, base_r)))
 
-    # scale by state
-    if strain_state == "ULS":
+    # scale by state (robust to extended labels like "ULS – Parabolic")
+    state_low = (strain_state or "").lower()
+    if state_low.startswith("uls"):
         r = base_r
-    elif strain_state == "SLS (cracked)":
+    elif state_low.startswith("sls"):
         r = 0.6 * base_r
-    else:  # "Uncracked"
+    else:  # "Uncracked" / anything else
         r = 0.0
 
     c0 = D / 2.0  # uncracked NA
@@ -430,7 +431,6 @@ def render_bending():
     )
 
     # SLS steel stress string (for summary table; matches Deflection / Crack pages).
-    # Canonical value is published by the SLS Tab 3 (outermost tension layer).
     fs_ser = get_param("sigma_s_sls", None)
     try:
         fs_ser_val = float(fs_ser) if fs_ser is not None else float("nan")
@@ -442,7 +442,7 @@ def render_bending():
     else:
         fs_ser_str = f"{fs_ser_val:.1f} MPa"
 
-    # Canonical bending state shared by 3D & 2D buttons
+    # Canonical bending state shared by 3D & bottom radios (ULS / SLS / Uncracked)
     state_options = ["ULS", "SLS (cracked)", "Uncracked"]
     canonical_state = st.session_state.get("bending_state", "ULS")
     if canonical_state not in state_options:
@@ -677,7 +677,6 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 "reduces tensile demand in the bottom reinforcement."
             ),
         )
-        # Strength reduction factor for bending (φ_bend) – use existing widget key 'bending_phi_b'
         number_row(
             "Bending strength factor ϕb",
             "bending_phi_b",
@@ -853,21 +852,45 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 
     st.markdown("### Section & stress–strain model")
 
-    # --- STATE RADIO ---
-    state_choice = st.radio(
+    # --- STATE RADIOS (main + ULS model) ---
+    main_state = st.radio(
         "State:",
-        ["ULS", "SLS (cracked)", "Uncracked", "Parabolic (non-linear)"],
-        key="bending_strain_state_local",
+        ["ULS", "SLS (cracked)", "Uncracked"],
+        key="bending_state_main",
         horizontal=True,
+        index=["ULS", "SLS (cracked)", "Uncracked"].index(canonical_state),
     )
 
-    # ... compute ss_state dict ...
-    ss_state = _stress_strain_state(state_choice)
+    uls_model = None
+    if main_state == "ULS":
+        uls_model = st.radio(
+            "ULS concrete model:",
+            ["Rectangular (AS 3600)", "Parabolic (non-linear)"],
+            key="bending_uls_model",
+            horizontal=True,
+        )
+
+    # Build label for diagram (rectangular vs parabolic is visual only)
+    if main_state == "ULS":
+        if uls_model and uls_model.startswith("Parabolic"):
+            diagram_state_label = "ULS – Parabolic"
+        else:
+            diagram_state_label = "ULS – Rectangular"
+    elif main_state.startswith("SLS"):
+        diagram_state_label = "SLS (cracked)"
+    else:
+        diagram_state_label = "Uncracked"
+
+    # Persist for diagram function if it falls back to session
+    st.session_state["bending_strain_state_local"] = diagram_state_label
+
+    # Underlying strain-state math uses only the main state
+    ss_state = _stress_strain_state(main_state)
 
     # --- 3-panel diagram ---
     fig_ss = _plot_stress_strain_profiles(
         ss_state,
-        state_label=state_choice,   # <<< IMPORTANT
+        state_label=diagram_state_label,
     )
     st.plotly_chart(fig_ss, use_container_width=True, config={"displayModeBar": False})
 
@@ -891,4 +914,3 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 # ============================
 if __name__ == "__main__":
     render_bending()
-
