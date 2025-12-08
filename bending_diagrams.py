@@ -28,6 +28,8 @@ ARROW_SCALE = 4    # small arrowheads for everything
 
 # ------------------------------------------------------------
 # Helper: parabolic concrete stress (for Parabolic view)
+# (kept for possible future use – current parabolic block
+#  uses a simple textbook 2z − z² profile directly)
 # ------------------------------------------------------------
 def _sigma_c_parabolic(eps, sigma_peak, eps0=0.002, eps_cu=0.003):
     """
@@ -82,8 +84,10 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     # Normalise for logic (robust to different display text)
     label_str = str(state_label or "ULS").strip()
     label_low = label_str.lower()
+
     # True only for ULS state
-    # Explicitly check: must start with "uls" and NOT contain "sls" or "uncracked" or "parabolic"
+    # Explicitly check: must start with "uls" and NOT contain
+    # "sls" or "uncracked" or "parabolic"
     is_uls = (
         label_low.startswith("uls")
         and "sls" not in label_low
@@ -510,37 +514,9 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
                 row=1,
                 col=3,
             )
-            
         else:
-            block_bottom = block_top  # safe fallback
-
-    else:
-        # TRIANGULAR SLS / UNCRACKED block (unchanged)
-        block_top = 0.0
-        block_bottom = c
-        triangle_x = [x_axis, x_axis, x_block_right, x_axis]
-        triangle_y = [block_bottom, block_top, block_top, block_bottom]
-        fig.add_trace(
-            go.Scatter(
-                x=triangle_x,
-                y=triangle_y,
-                mode="lines",
-                fill="toself",
-                fillcolor="rgba(255,200,200,0.3)",
-                line=dict(color="red", width=1.5),
-                hoverinfo="skip",
-                showlegend=False,
-            ),
-            row=1,
-            col=3,
-        )
-
-            
-        else:
-            block_bottom = block_top  # safe fallback
-
-        else:
-            block_bottom = block_top  # safe fallback
+            # Degenerate depth – nothing to draw
+            block_bottom = block_top
 
     else:
         # TRIANGULAR SLS / UNCRACKED block (unchanged)
