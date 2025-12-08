@@ -1,7 +1,9 @@
+
 import math
 import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 
 from state_and_helpers import (
     get_sync_callbacks,
@@ -49,69 +51,98 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# CSS for clickable summary table rows
+# CSS for clickable summary rows (details + CSS grid)
 st.markdown(
     """
 <style>
 /* Remove gaps around <details> blocks and their summary */
-.summary-details {
+.inputs-summary-details {
   margin: 0;
   padding: 0;
 }
-.summary-details summary {
-  list-style: none;
+
+/* Make summary a normal block container */
+.inputs-summary-details > summary {
   cursor: pointer;
   margin: 0;
   padding: 0;
+  display: block;
+  list-style: none;  /* for some browsers */
 }
-.summary-details summary::-webkit-details-marker {
+
+/* Hide the default arrow/marker in ALL browsers */
+.inputs-summary-details > summary::-webkit-details-marker {
   display: none;
 }
 
-/* Outer summary table (header + four checks) */
-.summary-table {
-  border-collapse: collapse;
-  border-spacing: 0;
-  table-layout: fixed;
-  width: 100%;
+.inputs-summary-details > summary::marker {
+  content: "";
+  display: none;
 }
-.summary-table td,
-.summary-table th {
-  padding: 4px 6px;
+
+/* Outer container */
+.inputs-summary-container {
+  border: 1px solid #cccccc;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem 0.4rem 0.75rem;
+  margin-bottom: 1rem;
+  max-width: 900px;
   font-size: 0.9rem;
 }
 
-/* Inner one-row table used in each clickable banner */
-.summary-summary-table {
-  border-collapse: collapse;
-  border-spacing: 0;
-  table-layout: fixed;
-  width: 100%;
-}
-.summary-summary-table td {
-  padding: 4px 6px;
-  font-size: 0.9rem;
-  vertical-align: middle;
+/* Shared 5-column grid for header + rows */
+.inputs-summary-grid {
+  display: grid;
+  grid-template-columns: 30% 20% 20% 15% 15%;
+  align-items: center;
 }
 
-/* Force SAME column widths for header and all banner rows */
-.summary-table th:nth-child(1),
-.summary-summary-table td:nth-child(1) { width: 30%; }  /* Check      */
-.summary-table th:nth-child(2),
-.summary-summary-table td:nth-child(2) { width: 20%; }  /* Demand     */
-.summary-table th:nth-child(3),
-.summary-summary-table td:nth-child(3) { width: 20%; }  /* Capacity   */
-.summary-table th:nth-child(4),
-.summary-summary-table td:nth-child(4) { width: 15%; }  /* Util       */
-.summary-table th:nth-child(5),
-.summary-summary-table td:nth-child(5) { width: 15%; }  /* Status     */
+/* Header row */
+.inputs-summary-header {
+  background-color: #f5f5f5;
+  font-weight: 600;
+  padding: 4px 6px;
+  border-bottom: 1px solid #e0e0e0;
+}
+.inputs-summary-header div {
+  padding: 4px 6px;
+}
+
+/* Banner rows (Bending/Shear/Crack/Deflection) */
+.inputs-summary-row {
+  padding: 4px 6px;
+}
+
+/* Children inside the row (now spans, not divs) */
+.inputs-summary-row > * {
+  padding: 4px 6px;
+}
+
+.inputs-summary-row .col-check {
+  text-align: left;
+}
+.inputs-summary-row .col-demand,
+.inputs-summary-row .col-cap,
+.inputs-summary-row .col-util {
+  text-align: right;
+}
+.inputs-summary-row .col-status {
+  text-align: center;
+  font-weight: 600;
+}
 
 /* Box for the drop-down detail table */
-.summary-detail-wrapper {
+.inputs-summary-detail-wrapper {
   margin: 0;
   padding: 0.35rem 0.5rem 0.6rem 0.5rem;
   background-color: #fafafa;
   border-top: 1px solid #e0e0e0;
+}
+
+/* Hide any escaped closing tags that Streamlit might render as inline code
+   inside this container (defensive only) */
+.inputs-summary-container code {
+  display: none !important;
 }
 </style>
 """,
@@ -863,8 +894,6 @@ def render_inputs():
 
     st.markdown("---")
 
-    st.markdown("---")
-
     # ============================
     # 4. FOURTH ROW – Rest of inputs (Ducts | Crack/Time)
     # ============================
@@ -1124,7 +1153,9 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
     Ast_bot = get_param("Ast_bot", 0.0)
 
     As_min_req = get_param("As_min_req", None)   # from bending page Tab 2 (if available)
-    As_util = _safe_ratio(Ast_bot, As_min_req)
+    
+    # Utilisation = required / provided  → FAIL if > 1
+    As_util = _safe_ratio(As_min_req, Ast_bot)
     As_status, As_colour = _status_and_colour(
         As_util, As_util is not None
     )
@@ -1161,18 +1192,7 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
     sigma_util_str = f"{sigma_util:.3f}" if sigma_util is not None else "—"
 
     # ---------- Detail HTML blocks (NO leading spaces) ----------
-    bending_detail_html = f"""\
-<div style="max-width: 900px;">
-<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
-<thead>
-<tr style="background-color: #f5f5f5;">
-<th style="text-align:left; padding: 4px 6px;">Check</th>
-<th style="text-align:right; padding: 4px 6px;">Value</th>
-<th style="text-align:right; padding: 4px 6px;">Limit</th>
-<th style="text-align:right; padding: 4px 6px;">Utilisation</th>
-<th style="text-align:center; padding: 4px 6px;">Status</th>
-</tr>
-</thead>
+    bending_detail_html = f"""<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem; max-width: 900px;">
 <tbody>
 <tr style="background-color: {As_colour};">
 <td style="padding: 4px 6px;"><strong>Steel area A<sub>st,bot</sub></strong></td>
@@ -1204,23 +1224,10 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
 </tr>
 </tbody>
 </table>
-</div>
 """
 
-    shear_detail_html = f"""\
-<div style="max-width: 900px;">
-<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
-<thead>
-<tr style="background-color: #f5f5f5;">
-<th style="text-align:left; padding: 4px 6px;">Check</th>
-<th style="text-align:right; padding: 4px 6px;">Value</th>
-<th style="text-align:right; padding: 4px 6px;">Limit</th>
-<th style="text-align:right; padding: 4px 6px;">Utilisation</th>
-<th style="text-align:center; padding: 4px 6px;">Status</th>
-</tr>
-</thead>
+    shear_detail_html = f"""<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem; max-width: 900px;">
 <tbody>
-
 <tr style="background-color: {shear_colour};">
   <td style="padding: 4px 6px;"><strong>Total shear capacity</strong></td>
   <td style="text-align:right; padding: 4px 6px;">ϕV<sub>u,cap</sub> = {phi_Vu_cap:.2f} kN</td>
@@ -1239,21 +1246,9 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
 
 </tbody>
 </table>
-</div>
 """
 
-    crack_detail_html = f"""\
-<div style="max-width: 900px;">
-<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
-<thead>
-<tr style="background-color: #f5f5f5;">
-<th style="text-align:left; padding: 4px 6px;">Check</th>
-<th style="text-align:right; padding: 4px 6px;">Value</th>
-<th style="text-align:right; padding: 4px 6px;">Limit</th>
-<th style="text-align:right; padding: 4px 6px;">Utilisation</th>
-<th style="text-align:center; padding: 4px 6px;">Status</th>
-</tr>
-</thead>
+    crack_detail_html = f"""<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem; max-width: 900px;">
 <tbody>
 <tr style="background-color: {sigma_colour};">
 <td style="padding: 4px 6px;"><strong>Steel stress σ<sub>sr</sub></strong></td>
@@ -1271,21 +1266,9 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
 </tr>
 </tbody>
 </table>
-</div>
 """
 
-    defl_detail_html = f"""\
-<div style="max-width: 900px;">
-<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
-<thead>
-<tr style="background-color: #f5f5f5;">
-<th style="text-align:left; padding: 4px 6px;">Check</th>
-<th style="text-align:right; padding: 4px 6px;">Value</th>
-<th style="text-align:right; padding: 4px 6px;">Limit</th>
-<th style="text-align:right; padding: 4px 6px;">Utilisation</th>
-<th style="text-align:center; padding: 4px 6px;">Status</th>
-</tr>
-</thead>
+    defl_detail_html = f"""<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem; max-width: 900px;">
 <tbody>
 <tr style="background-color: {defl_colour};">
 <td style="padding: 4px 6px;"><strong>Total long-term deflection</strong></td>
@@ -1296,146 +1279,189 @@ If "Teaching SFD/BMD" is selected and results exist, these come from that page's
 </tr>
 </tbody>
 </table>
+"""
+
+    # ---------- Main summary (header + collapsible rows using <details>) ----------
+    summary_table_html = f"""
+<style>
+/* All styling lives INSIDE the iframe now */
+
+/* Outer container */
+.inputs-summary-container {{
+  border: 1px solid #cccccc;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem 0.4rem 0.75rem;
+  margin-bottom: 1rem;
+  max-width: 900px;
+  font-size: 0.9rem;
+}}
+
+/* Shared 5-column grid for header + rows */
+.inputs-summary-grid {{
+  display: grid;
+  grid-template-columns: 30% 20% 20% 15% 15%;
+  align-items: center;
+}}
+
+/* Header row */
+.inputs-summary-header {{
+  background-color: #f5f5f5;
+  font-weight: 600;
+  padding: 4px 6px;
+  border-bottom: 1px solid #e0e0e0;
+}}
+.inputs-summary-header div {{
+  padding: 4px 6px;
+}}
+
+/* Banner rows (Bending/Shear/Crack/Deflection) */
+.inputs-summary-row {{
+  padding: 4px 6px;
+}}
+.inputs-summary-row > * {{
+  padding: 4px 6px;
+}}
+.inputs-summary-row .col-check {{ text-align: left; }}
+.inputs-summary-row .col-demand,
+.inputs-summary-row .col-cap,
+.inputs-summary-row .col-util {{ text-align: right; }}
+.inputs-summary-row .col-status {{
+  text-align: center;
+  font-weight: 600;
+}}
+
+/* details + summary reset */
+.inputs-summary-details {{
+  margin: 0;
+  padding: 0;
+  border: none;
+}}
+.inputs-summary-details > summary {{
+  cursor: pointer;
+  margin: 0;
+  padding: 0;
+  display: block;
+  list-style: none;
+}}
+.inputs-summary-details > summary::-webkit-details-marker {{
+  display: none;
+}}
+.inputs-summary-details > summary::marker {{
+  content: "";
+  display: none;
+}}
+
+/* Box for the drop-down detail table */
+.inputs-summary-detail-wrapper {{
+  margin: 0;
+  padding: 0.35rem 0.5rem 0.6rem 0.5rem;
+  background-color: #fafafa;
+  border-top: 1px solid #e0e0e0;
+}}
+
+/* Just in case anything renders as inline code inside */
+.inputs-summary-container code {{
+  display: none !important;
+}}
+</style>
+
+<div class="inputs-summary-container">
+
+  <!-- Header row -->
+  <div class="inputs-summary-grid inputs-summary-header">
+    <div>Check</div>
+    <div style="text-align:right;">Demand</div>
+    <div style="text-align:right;">Capacity</div>
+    <div style="text-align:right;">Utilisation</div>
+    <div style="text-align:center;">Status</div>
+  </div>
+
+  <!-- BENDING ---------------------------------------------------------->
+  <details class="inputs-summary-details" open>
+    <summary>
+      <div class="inputs-summary-grid inputs-summary-row" style="background-color: {bending_colour};">
+        <span class="col-check"><strong>Bending</strong></span>
+        <span class="col-demand">{bending_demand}</span>
+        <span class="col-cap">{bending_cap}</span>
+        <span class="col-util">{bending_util_str}</span>
+        <span class="col-status">{bending_status}</span>
+      </div>
+    </summary>
+    <div class="inputs-summary-detail-wrapper">{bending_detail_html}</div>
+  </details>
+
+  <!-- SHEAR ------------------------------------------------------------>
+  <details class="inputs-summary-details">
+    <summary>
+      <div class="inputs-summary-grid inputs-summary-row" style="background-color: {shear_colour};">
+        <span class="col-check"><strong>Shear</strong></span>
+        <span class="col-demand">{shear_demand}</span>
+        <span class="col-cap">{shear_cap}</span>
+        <span class="col-util">{shear_util_str}</span>
+        <span class="col-status">{shear_status}</span>
+      </div>
+    </summary>
+    <div class="inputs-summary-detail-wrapper">{shear_detail_html}</div>
+  </details>
+
+  <!-- CRACK CONTROL ---------------------------------------------------->
+  <details class="inputs-summary-details">
+    <summary>
+      <div class="inputs-summary-grid inputs-summary-row" style="background-color: {crack_colour};">
+        <span class="col-check"><strong>Crack control</strong></span>
+        <span class="col-demand">{crack_demand}</span>
+        <span class="col-cap">{crack_cap}</span>
+        <span class="col-util">{crack_util_str}</span>
+        <span class="col-status">{crack_status}</span>
+      </div>
+    </summary>
+    <div class="inputs-summary-detail-wrapper">{crack_detail_html}</div>
+  </details>
+
+  <!-- DEFLECTION ------------------------------------------------------->
+  <details class="inputs-summary-details">
+    <summary>
+      <div class="inputs-summary-grid inputs-summary-row" style="background-color: {defl_colour};">
+        <span class="col-check"><strong>Deflection</strong></span>
+        <span class="col-demand">{defl_demand}</span>
+        <span class="col-cap">{defl_cap}</span>
+        <span class="col-util">{defl_util_str}</span>
+        <span class="col-status">{defl_status}</span>
+      </div>
+    </summary>
+    <div class="inputs-summary-detail-wrapper">{defl_detail_html}</div>
+  </details>
+
 </div>
 """
 
-    # ---------- Main summary table with embedded dropdowns ----------
-    summary_table_html = f"""\
-<div style="border: 1px solid #cccccc; border-radius: 8px; padding: 0.5rem 0.75rem; margin-bottom: 1rem; max-width: 900px;">
-<table class="summary-table" style="width: 100%; font-size: 0.9rem;">
-<thead>
-<tr style="background-color: #f5f5f5;">
-  <th style="text-align:left;">Check</th>
-  <th style="text-align:right;">Demand</th>
-  <th style="text-align:right;">Capacity</th>
-  <th style="text-align:right;">Utilisation</th>
-  <th style="text-align:center;">Status</th>
-</tr>
-</thead>
-<tbody>
-
-<!-- BENDING ---------------------------------------------------------->
-<tr>
-  <td colspan="5" style="padding:0; border:0;">
-    <details class="summary-details">
-      <summary>
-        <table class="summary-summary-table">
-          <tr style="background-color: {bending_colour};">
-            <td style="text-align:left;"><strong>Bending</strong></td>
-            <td style="text-align:right;">{bending_demand}</td>
-            <td style="text-align:right;">{bending_cap}</td>
-            <td style="text-align:right;">{bending_util_str}</td>
-            <td style="text-align:center;"><strong>{bending_status}</strong></td>
-          </tr>
-        </table>
-      </summary>
-      <div class="summary-detail-wrapper">
-        {bending_detail_html}
-      </div>
-    </details>
-  </td>
-</tr>
-
-<!-- SHEAR ------------------------------------------------------------>
-<tr>
-  <td colspan="5" style="padding:0; border:0;">
-    <details class="summary-details">
-      <summary>
-        <table class="summary-summary-table">
-          <tr style="background-color: {shear_colour};">
-            <td style="text-align:left;"><strong>Shear</strong></td>
-            <td style="text-align:right;">{shear_demand}</td>
-            <td style="text-align:right;">{shear_cap}</td>
-            <td style="text-align:right;">{shear_util_str}</td>
-            <td style="text-align:center;"><strong>{shear_status}</strong></td>
-          </tr>
-        </table>
-      </summary>
-      <div class="summary-detail-wrapper">
-        {shear_detail_html}
-      </div>
-    </details>
-  </td>
-</tr>
-
-<!-- CRACK CONTROL ---------------------------------------------------->
-<tr>
-  <td colspan="5" style="padding:0; border:0;">
-    <details class="summary-details">
-      <summary>
-        <table class="summary-summary-table">
-          <tr style="background-color: {crack_colour};">
-            <td style="text-align:left;"><strong>Crack control</strong></td>
-            <td style="text-align:right;">{crack_demand}</td>
-            <td style="text-align:right;">{crack_cap}</td>
-            <td style="text-align:right;">{crack_util_str}</td>
-            <td style="text-align:center;"><strong>{crack_status}</strong></td>
-          </tr>
-        </table>
-      </summary>
-      <div class="summary-detail-wrapper">
-        {crack_detail_html}
-      </div>
-    </details>
-  </td>
-</tr>
-
-<!-- DEFLECTION ------------------------------------------------------->
-<tr>
-  <td colspan="5" style="padding:0; border:0;">
-    <details class="summary-details">
-      <summary>
-        <table class="summary-summary-table">
-          <tr style="background-color: {defl_colour};">
-            <td style="text-align:left;"><strong>Deflection</strong></td>
-            <td style="text-align:right;">{defl_demand}</td>
-            <td style="text-align:right;">{defl_cap}</td>
-            <td style="text-align:right;">{defl_util_str}</td>
-            <td style="text-align:center;"><strong>{defl_status}</strong></td>
-          </tr>
-        </table>
-      </summary>
-      <div class="summary-detail-wrapper">
-        {defl_detail_html}
-      </div>
-    </details>
-  </td>
-</tr>
-
-</tbody>
-</table>
-</div>"""
-
+    # Render the summary back at the very top (where summary_container was created)
     with summary_container:
 
         col_left, col_right = st.columns([2, 1])
 
         with col_left:
-
             st.title("Inputs")
-
             st.markdown("### Summary (read-only from design pages)")
 
-            st.markdown(summary_table_html, unsafe_allow_html=True)
+            components.html(
+                summary_table_html,
+                height=420,
+                scrolling=False,
+            )
 
         with col_right:
             fig_sec = make_summary_cross_section_figure()
-
-            # Create inner columns to horizontally centre the figure + label
             pad_left, centre, pad_right = st.columns([0.25, 0.5, 0.25])
-
             with centre:
-                # 2D figure, centred in this inner column
                 st.plotly_chart(
                     fig_sec,
                     use_container_width=False,
                     config={"displayModeBar": False},
                 )
-
-                # Label directly under the figure, centred
                 st.markdown(
                     """
-                    <div style="text-align:center; margin-top:0.1rem;">
+                    <div style="text-align:center; margin-top:0.25rem;">
                         <span style="font-weight:600; font-size:1.1rem;">Section A</span>
                     </div>
                     """,
