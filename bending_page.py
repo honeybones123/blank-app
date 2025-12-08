@@ -856,7 +856,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
     # --- STATE RADIO ---
     state_choice = st.radio(
         "State:",
-        ("ULS", "SLS (cracked)", "Uncracked"),
+        ["ULS", "SLS (cracked)", "Uncracked", "Parabolic (non-linear)"],
         key="bending_strain_state_local",
         horizontal=True,
     )
@@ -891,3 +891,4 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 # ============================
 if __name__ == "__main__":
     render_bending()
+
