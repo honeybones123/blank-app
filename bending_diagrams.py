@@ -510,6 +510,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
                 row=1,
                 col=3,
             )
+            
         else:
             block_bottom = block_top  # safe fallback
 
