@@ -474,7 +474,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         )
 
     elif is_parabolic:
-        # NEW: parabolic block from top fibre down to d_n
+        # Parabolic block from top fibre down to d_n
         block_top = 0.0
         block_bottom = c if c else 0.0
 
@@ -492,7 +492,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
 
             x_profile = [stress_to_x(s) for s in sigma_profile]
 
-            # Build a closed polygon that fills back to the vertical axis x_axis
+            # Closed polygon that fills back to the vertical axis x_axis
             polygon_x = [x_axis] + x_profile + [x_axis]
             polygon_y = [block_top] + list(ys) + [block_bottom]
 
@@ -510,6 +510,31 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
                 row=1,
                 col=3,
             )
+            
+        else:
+            block_bottom = block_top  # safe fallback
+
+    else:
+        # TRIANGULAR SLS / UNCRACKED block (unchanged)
+        block_top = 0.0
+        block_bottom = c
+        triangle_x = [x_axis, x_axis, x_block_right, x_axis]
+        triangle_y = [block_bottom, block_top, block_top, block_bottom]
+        fig.add_trace(
+            go.Scatter(
+                x=triangle_x,
+                y=triangle_y,
+                mode="lines",
+                fill="toself",
+                fillcolor="rgba(255,200,200,0.3)",
+                line=dict(color="red", width=1.5),
+                hoverinfo="skip",
+                showlegend=False,
+            ),
+            row=1,
+            col=3,
+        )
+
             
         else:
             block_bottom = block_top  # safe fallback
