@@ -26,6 +26,27 @@ FS_ANNOT  = 5      # small annotations
 ARROW_SCALE = 4    # small arrowheads for everything
 
 
+# ------------------------------------------------------------
+# Helper: parabolic concrete stress (for Parabolic view)
+# ------------------------------------------------------------
+def _sigma_c_parabolic(eps, sigma_peak, eps0=0.002, eps_cu=0.003):
+    """
+    Simple Hognestad-style parabolic + linear softening model.
+
+    eps        : compressive strain (>= 0, concrete)
+    sigma_peak : peak compressive stress used for this diagram (MPa)
+                 (we use alpha2 * f'c so the scale matches the ULS block)
+    """
+    if eps <= 0.0:
+        return 0.0
+    if eps <= eps0:
+        x = eps / eps0
+        return sigma_peak * (2.0 * x - x**2)
+    if eps <= eps_cu:
+        return sigma_peak * (eps_cu - eps) / (eps_cu - eps0)
+    return 0.0
+
+
 # ============================================================
 #  MAIN 3-PANEL SECTION / STRAIN / STRESS DIAGRAM
 # ============================================================
@@ -62,13 +83,15 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     label_str = str(state_label or "ULS").strip()
     label_low = label_str.lower()
     # True only for ULS state
-    # Explicitly check: must start with "uls" and NOT contain "sls" or "uncracked"
+    # Explicitly check: must start with "uls" and NOT contain "sls" or "uncracked" or "parabolic"
     is_uls = (
-        label_low.startswith("uls") 
-        and "sls" not in label_low 
+        label_low.startswith("uls")
+        and "sls" not in label_low
         and "uncracked" not in label_low
+        and "parabolic" not in label_low
     )
-    # For debugging: if state is SLS or Uncracked, is_uls should be False
+    # New: parabolic visual state
+    is_parabolic = "parabolic" in label_low
 
     # unpack bending state
     b = state_dict["b"]
@@ -163,13 +186,14 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
 
     # ----------------------------------------
     # Compression region in SECTION panel
-    #   ULS      → rectangular block to γ c
-    #   SLS/Uncr → rectangular block to d_n
-    #   (section view is area, not stress distribution)
+    #   ULS         → rectangular block to γ c
+    #   SLS/Uncr    → rectangular block to d_n
+    #   Parabolic   → also to d_n (we're just showing compression zone)
     # ----------------------------------------
     if is_uls:
         block_depth_sec = max(0.0, min(gamma * c, D))
     else:
+        # SLS, Uncracked, Parabolic all use d_n depth in SECTION panel
         block_depth_sec = max(0.0, min(c, D))
 
     fig.add_shape(
@@ -433,9 +457,8 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
     # -----------------------------
     # Compression block in STRESS
     # -----------------------------
-    # Initialize block_top and block_bottom based on state
     if is_uls:
-        # rectangular ULS block
+        # rectangular ULS block (unchanged)
         block_top = 0.0
         block_bottom = gamma * c
         fig.add_shape(
@@ -449,12 +472,45 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
             row=1,
             col=3,
         )
+
+    elif is_parabolic:
+        # NEW: parabolic block from top fibre down to d_n
+        block_top = 0.0
+        block_bottom = c if c else 0.0
+
+        if block_bottom > block_top:
+            n_pts = 60
+            ys = np.linspace(block_top, block_bottom, n_pts)
+
+            # strain distribution: eps = eps_c at top, 0 at neutral axis
+            eps_profile = eps_c * (1.0 - ys / max(c, 1e-6))
+
+            sigma_profile = [
+                _sigma_c_parabolic(eps_val, sigma_c) for eps_val in eps_profile
+            ]
+            x_profile = [stress_to_x(s) for s in sigma_profile]
+
+            fig.add_trace(
+                go.Scatter(
+                    x=x_profile,
+                    y=ys,
+                    mode="lines",
+                    fill="tozerox",
+                    fillcolor="rgba(255,200,200,0.3)",
+                    line=dict(color="red", width=1.5),
+                    hoverinfo="skip",
+                    showlegend=False,
+                ),
+                row=1,
+                col=3,
+            )
+        else:
+            block_bottom = block_top  # safe fallback
+
     else:
-        # TRIANGULAR SLS / UNCRACKED block
+        # TRIANGULAR SLS / UNCRACKED block (unchanged)
         block_top = 0.0
         block_bottom = c
-        # Draw triangle: form a right triangle from bottom-left, going clockwise
-        # Points: bottom-left -> top-left -> top-right -> back to bottom-left
         triangle_x = [x_axis, x_axis, x_block_right, x_axis]
         triangle_y = [block_bottom, block_top, block_top, block_bottom]
         fig.add_trace(
@@ -463,8 +519,8 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
                 y=triangle_y,
                 mode="lines",
                 fill="toself",
-                fillcolor="rgba(255,200,200,0.3)",  # Slightly more opaque for visibility
-                line=dict(color="red", width=1.5),  # Slightly thicker line
+                fillcolor="rgba(255,200,200,0.3)",
+                line=dict(color="red", width=1.5),
                 hoverinfo="skip",
                 showlegend=False,
             ),
@@ -484,7 +540,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None):
         col=3,
     )
 
-    # α2 f'c arrow + label
+    # α2 f'c arrow + label (still uses sigma_c as the reference)
     y_alpha = -0.07 * D
     fig.add_annotation(
         x=x_block_right,
@@ -1084,6 +1140,3 @@ def _make_sls_stress_block_figure(
     )
 
     return fig
-
-
-
