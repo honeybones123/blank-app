@@ -8,9 +8,83 @@ from state_and_helpers import (
     get_sync_callbacks,
     update_results,
 )
+from shear_diagrams import (
+    plot_shear_torsion_section_2d,
+    plot_shear_step1_theta_cracks_3d,
+    plot_shear_step3_section_params_plotly,
+    make_mcft_longitudinal_strain_profile_fig,
+)
+from shear_core import derive_eps_top_bot_for_step4_diagram
+from torsion_diagrams import plot_torsion_prism_3d
 
 # Shared helpers (same contract as Inputs/Bending)
 from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row
+
+
+# ------------------------------------------------------------
+#  Helper functions for diagrams
+# ------------------------------------------------------------
+
+def _safe_float(x, fallback):
+    try:
+        v = float(x)
+        if v != v:  # NaN
+            return float(fallback)
+        return v
+    except Exception:
+        return float(fallback)
+
+
+def build_reo_circles_from_state(b_mm: float, D_mm: float):
+    """
+    Returns list of circles for reo overlay:
+      [{"x":..,"y":..,"r":..}, ...]
+    If your key names differ, just map them here.
+    """
+    b = float(b_mm)
+    D = float(D_mm)
+
+    # --- CHANGE THESE KEY NAMES to match yours ---
+    n_bot  = int(_safe_float(get_param("nb_bot"), 4))
+    db_bot = _safe_float(get_param("db_bot"), 20.0)  # mm
+
+    n_top  = int(_safe_float(get_param("nb_top"), 2))
+    db_top = _safe_float(get_param("db_top"), 16.0)  # mm
+
+    cover_bot = _safe_float(get_param("cover_bot"), 40.0)   # mm
+    cover_top = _safe_float(get_param("cover_top"), 40.0)   # mm
+    stirrup_db = _safe_float(get_param("lig_d"), 10.0)  # mm
+
+    # Simple inside-face bar layout (teaching overlay)
+    # centres at cover + stirrup + bar/2
+    r_bot = db_bot / 2.0
+    r_top = db_top / 2.0
+
+    x_min_bot = cover_bot + stirrup_db + r_bot
+    x_max_bot = b - (cover_bot + stirrup_db + r_bot)
+    y_bot = cover_bot + stirrup_db + r_bot
+
+    x_min_top = cover_top + stirrup_db + r_top
+    x_max_top = b - (cover_top + stirrup_db + r_top)
+    y_top = D - (cover_top + stirrup_db + r_top)
+
+    circles = []
+
+    # bottom row
+    if n_bot <= 1:
+        circles.append({"x": b/2, "y": y_bot, "r": r_bot})
+    else:
+        xs = [x_min_bot + i*(x_max_bot - x_min_bot)/(n_bot - 1) for i in range(n_bot)]
+        circles += [{"x": x, "y": y_bot, "r": r_bot} for x in xs]
+
+    # top row
+    if n_top <= 1:
+        circles.append({"x": b/2, "y": y_top, "r": r_top})
+    else:
+        xs = [x_min_top + i*(x_max_top - x_min_top)/(n_top - 1) for i in range(n_top)]
+        circles += [{"x": x, "y": y_top, "r": r_top} for x in xs]
+
+    return circles
 
 
 # ------------------------------------------------------------
@@ -861,7 +935,7 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
 
 - The design shear check is taken at a distance **$d_v$ from the face of the support**.  
 
-- At this section we take the **design shear $V^*$**, ignoring any distributed load between the support and $d_v$.  
+- At this section we take the **design shear $V^{\ast}$**, ignoring any distributed load between the support and $d_v$.  
 
 - If significant concentrated loads fall inside this region, the behaviour is closer to a **strut-and-tie / deep beam** and a STM model is required.  
 
@@ -885,8 +959,9 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
     # 1. DESIGN INPUTS (shared + local)  — SAME WIDGET CONTRACT
     # =====================================================
     st.subheader("Design Inputs")
+    st.caption("Only user-controlled inputs are shown. All derived strain terms are handled internally.")
 
-    col_geom, col_actions, col_eps = st.columns(3)
+    col_geom, col_actions, col_params = st.columns([0.40, 0.35, 0.25], gap="large")
 
     # ---------- 1.1 Geometry & materials (shared) ----------
     with col_geom:
@@ -962,72 +1037,37 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
             help_text="Axial force at the section (+tension, −compression).",
         )
         number_row(
-            "Vertical prestress / axial P_v (kN)",
-            "shear_P_star",
-            get_param("P_star", 0.0),
-            sync_callbacks,
-            help_text="Prestress or vertical axial force assisting shear.",
-        )
-        number_row(
             "Torsion T* (kNm)",
             "shear_Tu_star",
             get_param("Tu_star", 0.0),
             sync_callbacks,
             help_text="Factored torsion at the section.",
         )
-
-        phi = st.number_input(
+        number_row(
             "φ – strength reduction for shear",
-            value=0.75,
-            min_value=0.5,
-            max_value=0.9,
-            step=0.05,
-        )
-        sigma_cp = st.number_input(
-            "σ_cp – average prestress (MPa)",
-            value=0.0,
-            help="Used in torsion cracking torque T_cr (AS 3600 Cl. 8.3.4).",
+            "shear_phi_shear",
+            get_param("phi_shear", 0.75),
+            sync_callbacks,
+            help_text="Strength reduction factor for shear (AS 3600).",
         )
 
-    # ---------- 1.3 εx helper inputs (local only) ----------
-    with col_eps:
-        st.markdown("### εₓ inputs (ULS flexural strain)")
+    # ---------- 1.3 Shear section parameters (third column) ----------
+    with col_params:
+        st.markdown("### Shear section parameters")
 
-        A_st = st.number_input(
-            "A_st (mm²) – non-prestressed tension steel",
-            value=float(4 * (math.pi * 20 ** 2 / 4)),
-        )
-        A_pt = st.number_input(
-            "A_pt (mm²) – prestressing steel",
-            value=0.0,
-        )
-        f_po = st.number_input(
-            "f_po (MPa) – effective tendon stress",
-            value=0.0,
-        )
-        A_ct = st.number_input(
-            "A_ct (mm²) – area of concrete in tension",
-            value=float((get_param("b", 300.0)) * (get_param("D", 600.0) / 2.0)),
-        )
-
-    # ---------- 1.4 Shear section inputs (for Step 3) ----------
-    st.markdown("### Shear section parameters")
-    col_shear1, col_shear2, col_shear3 = st.columns(3)
-
-    with col_shear1:
         d_g = st.number_input(
             "Maximum aggregate size d_g (mm)",
             value=20.0,
             min_value=5.0,
             max_value=40.0,
+            key="shear_d_g",
         )
         sum_duct = st.number_input(
             "Sum of duct diameters crossing web (mm)",
-            value=0.0,
+            value=get_param("sum_duct", 0.0),
             min_value=0.0,
+            key="shear_sum_duct",
         )
-
-    with col_shear2:
         kd_opt = st.selectbox(
             "k_d factor for prestressing ducts",
             (
@@ -1038,10 +1078,9 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
             ),
             index=0,
             format_func=lambda kv: kv[0],
+            key="shear_kd_opt",
         )
         k_d = kd_opt[1]
-
-    with col_shear3:
         method = st.radio(
             "k_v method",
             (
@@ -1049,6 +1088,7 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
                 "Simplified non-prestressed (Cl. 8.2.4.3)",
             ),
             index=0,
+            key="shear_kv_method",
         )
         use_general_kv = method.startswith("General")
 
@@ -1077,6 +1117,15 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
     lig_d = get_param("lig_d")
     legs = get_param("lig_legs")
     s_lig = get_param("s_lig")
+    
+    # Get local widget values for epsilon_x calculation
+    A_st = st.session_state.get("shear_A_st", float(4 * (math.pi * 20 ** 2 / 4)))
+    A_pt = st.session_state.get("shear_A_pt", 0.0)
+    f_po = st.session_state.get("shear_f_po", 0.0)
+    A_ct = st.session_state.get("shear_A_ct", float(b * D / 2.0) if b and D else 0.0)
+    d_g = st.session_state.get("shear_d_g", 20.0)
+    phi = get_param("phi_shear", 0.75)  # Now synced via shared state
+    sigma_cp = 0.0  # Prestress removed from UI, default to 0.0
 
     if not (b and D and d):
         st.error("Geometry (b, D, d) not fully defined – check Inputs / Bending tab.")
@@ -1087,69 +1136,55 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
     # =====================================================
     st.markdown("---")
 
-    col_main, col_side = st.columns([3, 2])
+    # Step 1 header with small info button
+    col_title, col_info = st.columns([0.92, 0.08], vertical_alignment="center")
+    
+    with col_title:
+        st.subheader("Step 1 — Shear cracking region")
+    
+    with col_info:
+        with st.popover("ℹ️", help="Step 1 help"):
+            st.markdown(r"""
+**What this diagram shows**
 
-    with col_main:
-        col_title, col_info = st.columns([1, 0.08])
+- Roof/face geometry used for the shear/torsion crack concept sketch.
 
-        with col_title:
-            st.markdown(
-                "### Step 1 – Does torsion crack the section? "
-                "(T_cr check, AS 3600 Cl. 8.3.4)"
-            )
+- θ is taken from shared state (crack_theta_deg).
+            """)
 
-        with col_info:
-            with st.popover("ℹ️", use_container_width=True):
-                st.markdown("### Step 1 – Shear + torsion cracking region")
-                st.markdown(
-                    r"""
-**Why we convert torsion into equivalent shear**
+    # Read θ from shared state (read-only, no widget)
+    theta_deg = float(get_param("crack_theta_deg", 45.0))
 
+    # Calculate Step 1 values
+    cover_t = 40.0  # assumed for closed stirrup centroid
+    A_cp = b * D
+    u_c = 2 * (b + D)
+    Ao = 0.9 * A_cp
 
+    # Closed stirrup path (reused in Step 2 & εx)
+    uh = 2 * ((b - cover_t) + (D - cover_t))
+    A_oh = (b - cover_t) * (D - cover_t)
 
-- Torsion produces **diagonal tension** in the beam web, similar to shear-induced diagonal cracking.  
+    sqrt_fc = math.sqrt(fc)
+    denom = 0.33 * sqrt_fc
+    Tcr_Nmm = 0.33 * sqrt_fc * (A_cp ** 2) / u_c * math.sqrt(
+        1 + (sigma_cp / denom if denom > 0 else 0.0)
+    )
+    Tcr_kNm = Tcr_Nmm / 1e6
 
-- Treating torsion as an **equivalent shear demand** is conservative and avoids separate iterative torsion–shear coupling.  
+    torsion_required_limit = 0.25 * phi * Tcr_kNm
+    torsion_required = T_star > torsion_required_limit
 
-- Using an equivalent shear \(V_{eq}^*\) means:
+    step1_req = ">" if torsion_required else "\\le"
+    step1_text = (
+        "required" if torsion_required else "not required (strength check only)"
+    )
 
-  - We track a **single internal force state** through all MCFT steps.  
+    # 2-column layout: calc left, diagram right (same as other steps)
+    col_left, col_right = st.columns([0.55, 0.45], gap="large")
 
-  - Longitudinal strain \( \varepsilon_x \) reflects the combined effect of **shear + torsion + axial**.  
-
-  - We don't under-predict crack width or over-predict concrete shear strength.
-
-
-
-This step tells you whether torsion must be treated as a **design action**, and if so, it will be rolled into \(V_{eq}^*\) in Step 2.
-
-"""
-                )
-
-        cover_t = 40.0  # assumed for closed stirrup centroid
-        A_cp = b * D
-        u_c = 2 * (b + D)
-        Ao = 0.9 * A_cp
-
-        # Closed stirrup path (reused in Step 2 & εx)
-        uh = 2 * ((b - cover_t) + (D - cover_t))
-        A_oh = (b - cover_t) * (D - cover_t)
-
-        sqrt_fc = math.sqrt(fc)
-        denom = 0.33 * sqrt_fc
-        Tcr_Nmm = 0.33 * sqrt_fc * (A_cp ** 2) / u_c * math.sqrt(
-            1 + (sigma_cp / denom if denom > 0 else 0.0)
-        )
-        Tcr_kNm = Tcr_Nmm / 1e6
-
-        torsion_required_limit = 0.25 * phi * Tcr_kNm
-        torsion_required = T_star > torsion_required_limit
-
-        step1_req = ">" if torsion_required else "\\le"
-        step1_text = (
-            "required" if torsion_required else "not required (strength check only)"
-        )
-
+    with col_left:
+        # Step 1 calc text / equations / bullets (left side)
         calcbox(
             f"""
 *Purpose: Determine if torsion design is required by checking if $T^* > 0.25 \\phi T_{{cr}}$.*
@@ -1182,9 +1217,23 @@ $$\\large T_{{cr}} = 0.33\\sqrt{{{fc:.1f}}} \\cdot \\frac{{{A_cp:.0f}^2}}{{{u_c:
 """
         )
 
-    with col_side:
-        _safe_step_diagram(1)
-        # theory for Step 1 is now only in the ℹ️ popover
+    with col_right:
+        # THE DIAGRAM ON THE RIGHT (centered)
+        L_mm = float(get_param("L", 3000.0))
+        b_mm = float(get_param("b", 400.0))
+        D_mm = float(get_param("D", 600.0))
+        
+        @st.cache_data(show_spinner=False)
+        def _cached_step1_fig(L_mm, b_mm, D_mm, theta_deg):
+            return plot_shear_step1_theta_cracks_3d(
+                L_mm=L_mm, b_mm=b_mm, D_mm=D_mm, theta_deg=theta_deg,
+                n_cracks=3, start_t_min=0.10, start_t_span=0.06,
+                crack_lw=4.0, show_cracks=True  # Always show cracks
+            )
+        
+        # Always show cracks and arrows
+        fig = _cached_step1_fig(L_mm, b_mm, D_mm, theta_deg)
+        st.pyplot(fig, use_container_width=True, clear_figure=True)
 
     # =====================================================
     # 3. STEP 2 — CONVERT TORSION INTO AN EQUIVALENT SHEAR V_eq*
@@ -1250,6 +1299,9 @@ so all subsequent steps use a **consistent combined shear demand**.
 
         # Convert torsion to Nmm (needed for εₓ and web-crushing even if torsion design not required)
         T_star_Nmm = T_star * 1e6
+        
+        # Get sum_duct for Step 2 calculations
+        sum_duct_step2 = st.session_state.get("shear_sum_duct", get_param("sum_duct", 0.0))
 
         if torsion_required:
             # --- Full equivalent shear including torsion ---
@@ -1328,16 +1380,49 @@ $$\\large V_{{eq}}^* = V^* = {V_eq:.1f}\\ \\text{{kN}}$$
             )
 
     with col_side:
-        _safe_step_diagram(2)
+        # Mode selector for diagram - now includes all three options
+        diagram_mode = st.radio(
+            "Stress flow mode:",
+            ["V+T (Combined)", "V (Shear only)", "T (Torsion only)"],
+            index=0,
+            key="shear_step2_diagram_mode",
+            horizontal=True,
+        )
+        
+        # Map radio selection to mode string
+        mode_map = {
+            "V+T (Combined)": "V+T",
+            "V (Shear only)": "V",
+            "T (Torsion only)": "T"
+        }
+        mode_short = mode_map[diagram_mode]
+        
+        # Get geometry from session state
+        b_mm = _safe_float(get_param("b"), 300.0)
+        D_mm = _safe_float(get_param("D"), 600.0)
+        
+        # Build reo circles from state
+        reo_circles = build_reo_circles_from_state(b_mm, D_mm)
+        
+        # Generate and display the shear+torsion section diagram
+        fig = plot_shear_torsion_section_2d(
+            b_mm=b_mm,
+            D_mm=D_mm,
+            mode=mode_short,
+            show_labels=True,
+            reo_circles=reo_circles,
+            reo_alpha=0.50,
+        )
+        st.pyplot(fig, use_container_width=True, clear_figure=True)
 
     # =====================================================
     # 4. STEP 3 — EFFECTIVE SECTION & SHEAR REINFORCEMENT
     # =====================================================
     st.markdown("---")
 
-    col_main, col_side = st.columns([3, 2])
+    col_calc, col_fig = st.columns([3, 2])
 
-    with col_main:
+    with col_calc:
         col_title, col_info = st.columns([1, 0.08])
 
         with col_title:
@@ -1386,21 +1471,28 @@ These parameters are the **geometry + steel inputs** that feed into:
                 )
 
         # Use values from session state / inputs section
-    lig_d = lig_d or 10.0
-    legs = legs or 2.0
-    s = s_lig or 200.0
+        lig_d = lig_d or 10.0
+        legs = legs or 2.0
+        s = s_lig or 200.0
 
-    Asv = legs * math.pi * lig_d ** 2 / 4.0
-    f_syv = fsy
+        # Get sum_duct from widget if available, otherwise from shared state
+        sum_duct_widget = st.session_state.get("shear_sum_duct", None)
+        if sum_duct_widget is not None:
+            sum_duct = sum_duct_widget
+        else:
+            sum_duct = get_param("sum_duct", 0.0)
 
-    b_v = b - k_d * sum_duct
-    d_v = max(0.72 * D, 0.9 * d)
+        Asv = legs * math.pi * lig_d ** 2 / 4.0
+        f_syv = fsy
 
-    dv_1 = 0.72 * D
-    dv_2 = 0.9 * d
+        b_v = b - k_d * sum_duct
+        d_v = max(0.72 * D, 0.9 * d)
 
-    calcbox(
-        f"""
+        dv_1 = 0.72 * D
+        dv_2 = 0.9 * d
+
+        calcbox(
+            f"""
 *Purpose: Calculate the shear-resisting section parameters $A_{{sv}}$, $b_v$ and $d_v$ for AS 3600 shear design.*
 
 **Inputs:**
@@ -1457,17 +1549,102 @@ $$\\large d_v = {_fmt(d_v)}\\ \\text{{mm}}$$
 """
         )
 
-    with col_side:
-        _safe_step_diagram(3)
+    with col_fig:
+        # Get section geometry (from shared)
+        b_mm = float(b)
+        D_mm = float(D)
+
+        # Get Step 3 computed shear parameters
+        bv_mm = float(b_v)
+        dv_mm = float(d_v)
+
+        # Optional if available
+        Asv_mm2 = float(Asv) if Asv else None
+        s_lig_mm = float(s) if s else None
+
+        # Get reo layout (same as bending page uses)
+        from section_layout import compute_section_layout_cached
+        cover_bot = float(get_param("cover_bot", 40.0) or 40.0)
+        cover_top = float(get_param("cover_top", 40.0) or 40.0)
+        cover_side = float(get_param("cover_side", min(cover_top, cover_bot)) or min(cover_top, cover_bot))
+        
+        nb_or_s_bot_1 = float(get_param("nb_or_s_bot_1", 4.0) or 4.0)
+        db_bot_1 = float(get_param("db_bot_1", 20.0) or 20.0)
+        nb_or_s_bot_2 = float(get_param("nb_or_s_bot_2", 0.0) or 0.0)
+        db_bot_2 = float(get_param("db_bot_2", 20.0) or 20.0)
+        nb_or_s_top_1 = float(get_param("nb_or_s_top_1", 2.0) or 2.0)
+        db_top_1 = float(get_param("db_top_1", 16.0) or 16.0)
+        nb_or_s_top_2 = float(get_param("nb_or_s_top_2", 0.0) or 0.0)
+        db_top_2 = float(get_param("db_top_2", 16.0) or 16.0)
+        rowgap_bot = float(get_param("rowgap_bot", 60.0) or 60.0)
+        rowgap_top = float(get_param("rowgap_top", 60.0) or 60.0)
+        
+        layout = compute_section_layout_cached(
+            b=b_mm, D=D_mm,
+            cover_bot=cover_bot, cover_top=cover_top, cover_side=cover_side,
+            nb_or_s_bot_1=nb_or_s_bot_1, db_bot_1=db_bot_1,
+            nb_or_s_bot_2=nb_or_s_bot_2, db_bot_2=db_bot_2,
+            nb_or_s_top_1=nb_or_s_top_1, db_top_1=db_top_1,
+            nb_or_s_top_2=nb_or_s_top_2, db_top_2=db_top_2,
+            rowgap_bot=rowgap_bot, rowgap_top=rowgap_top,
+        )
+        
+        # Convert reo_layout to reo_shapes format (bottom=red, top=blue)
+        reo_shapes = []
+        reo_layout = layout.get("reo_layout", {})
+        
+        # Bottom bars (red)
+        for layer_data in reo_layout.get("bottom", []):
+            for x_pos in layer_data.get("x", []):
+                reo_shapes.append({
+                    "x": float(x_pos),
+                    "y": float(layer_data["y"]),
+                    "r": float(layer_data["db"]) / 2.0,
+                    "fill": "rgba(220, 60, 60, 0.95)",   # bottom = red
+                    "line": "rgba(120, 20, 20, 1.0)",
+                })
+        
+        # Top bars (blue)
+        for layer_data in reo_layout.get("top", []):
+            for x_pos in layer_data.get("x", []):
+                reo_shapes.append({
+                    "x": float(x_pos),
+                    "y": float(layer_data["y"]),
+                    "r": float(layer_data["db"]) / 2.0,
+                    "fill": "rgba(60, 110, 220, 0.95)",  # top = blue
+                    "line": "rgba(20, 50, 120, 1.0)",
+                })
+
+        # Get ligature parameters for drawing stirrups
+        lig_d_val = float(lig_d) if lig_d else None
+        lig_legs_val = int(legs) if legs else None
+        
+        fig = plot_shear_step3_section_params_plotly(
+            b_mm=b_mm,
+            D_mm=D_mm,
+            bv_mm=bv_mm,
+            dv_mm=dv_mm,
+            Asv_mm2=Asv_mm2,
+            s_lig_mm=s_lig_mm,
+            reo_shapes=reo_shapes,
+            lig_d=lig_d_val,
+            lig_legs=lig_legs_val,
+            cover_bot=cover_bot,
+            cover_top=cover_top,
+            cover_side=cover_side,
+            height=850,  # 2.5x bigger (340 * 2.5 = 850)
+            label_pad=14,
+        )
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     # =====================================================
     # 5. STEP 4 — LONGITUDINAL STRAIN εx
     # =====================================================
     st.markdown("---")
 
-    col_main, col_side = st.columns([3, 2])
+    col_calc, col_fig = st.columns([0.62, 0.38], gap="large", vertical_alignment="top")
 
-    with col_main:
+    with col_calc:
         # Step 4 heading with info bubble
         col_title, col_info = st.columns([1, 0.08])
 
@@ -1476,6 +1653,7 @@ $$\\large d_v = {_fmt(d_v)}\\ \\text{{mm}}$$
                 "### Step 4 – Calculate longitudinal strain "
                 r"$\varepsilon_x$ for MCFT (Cl. 8.2.4.2.2)"
             )
+            st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
         with col_info:
             with st.popover("ℹ️", use_container_width=True):
@@ -1698,8 +1876,67 @@ This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative 
 """
         )
 
-    with col_side:
-        _safe_step_diagram(4)
+    with col_fig:
+        # Step 4 MCFT εx (AS3600 sign: +tension, -compression)
+        eps_x_mcft = eps_x  # Final Step 4 result (after AS3600 limits)
+        
+        # Pull ULS top/bot strains from bending page session state
+        # Bending stores eps_c (compression, negative) and eps_s (tension, positive) in AS3600 convention
+        eps_top_uls = None
+        eps_bot_uls = None
+        
+        # Top (compression fiber): try eps_c from bending state_dict
+        # The state_dict from _stress_strain_state has "eps_c" and "eps_s"
+        # We can also check session state directly
+        for key in ["eps_c"]:
+            val = st.session_state.get(key, None)
+            if val is not None:
+                try:
+                    eps_top_uls = float(val)
+                    break
+                except Exception:
+                    pass
+        
+        # Bottom (tension steel): try eps_s from bending state_dict
+        for key in ["eps_s"]:
+            val = st.session_state.get(key, None)
+            if val is not None:
+                try:
+                    eps_bot_uls = float(val)
+                    break
+                except Exception:
+                    pass
+        
+        # Fallback: if not found, try to get from bending state_dict via _stress_strain_state
+        if eps_top_uls is None or eps_bot_uls is None:
+            try:
+                from bending_core import _stress_strain_state
+                state_dict = _stress_strain_state("ULS")
+                if eps_top_uls is None and "eps_c" in state_dict:
+                    eps_top_uls = float(state_dict["eps_c"])
+                if eps_bot_uls is None and "eps_s" in state_dict:
+                    eps_bot_uls = float(state_dict["eps_s"])
+            except Exception:
+                pass
+        
+        # Final fallback: derive from eps_x_mcft if still not found
+        if eps_top_uls is None or eps_bot_uls is None:
+            eps_top_uls, eps_bot_uls = derive_eps_top_bot_for_step4_diagram(eps_x_mcft, delta=0.00035)
+        
+        # Ensure values are floats and in AS3600 convention (compression negative, tension positive)
+        eps_top_uls = float(eps_top_uls)
+        eps_bot_uls = float(eps_bot_uls)
+        
+        # Build and show strain profile figure
+        # Function expects AS3600 convention: compression negative, tension positive
+        fig_eps = make_mcft_longitudinal_strain_profile_fig(
+            eps_top_uls=eps_top_uls,
+            eps_x_mcft=eps_x_mcft,
+            eps_bot_uls=eps_bot_uls,
+            title="Longitudinal strain profile",
+            height=840,  # Doubled from 420
+        )
+        st.plotly_chart(fig_eps, use_container_width=True, config={"displayModeBar": False})
 
     # High-level MCFT / Vuc / kv insight tied to εx
     st.markdown("---")
