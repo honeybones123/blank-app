@@ -11,14 +11,26 @@ import streamlit.components.v1 as components
 import plotly.graph_objects as go
 
 from state_and_helpers import get_sync_callbacks, get_param, update_results
-from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row
+from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, show_reo_message
 from bending_core import _fmt, _compute_bending_capacity, _stress_strain_state
-from bending_diagrams import _plot_stress_strain_profiles
+from bending_diagrams import (
+    _plot_stress_strain_profiles,
+    _plot_material_stress_strain_curves,
+)
 from bending_tabs import render_uls_tab, render_min_strength_tab, render_sls_tab
 
 
-def _build_beam_3d_figure(b, D, L, Mu_star, phi_Mu_cap, c, strain_state: str = "ULS"):
+@st.cache_resource
+def _build_beam_3d_figure_pure(b, D, L, Mu_star, phi_Mu_cap, c, strain_state, 
+                                reo_layout, cover_bot, cover_top, 
+                                cover_side, rowgap_bot, rowgap_top, lig_d, lig_legs, s_lig):
     """
+    Pure function version of 3D beam figure generation.
+    All inputs must be passed as arguments (no get_param calls).
+    
+    Args:
+        reo_layout: Pre-computed reinforcement layout dict from compute_longitudinal_reo_layout()
+    
     3D visualisation:
       - Concrete prism
       - Longitudinal reo with consistent cover (matched to Inputs page intent)
@@ -70,31 +82,8 @@ def _build_beam_3d_figure(b, D, L, Mu_star, phi_Mu_cap, c, strain_state: str = "
         phi = r * phi_u
         c_now = (1.0 - r) * c0 + r * c
 
-    st.session_state["bending_phi_current"] = phi
-    st.session_state["bending_c_current"] = c_now
-
-    # ---------- Reo + lig data from session state ----------
-    nb_bot = int(get_param("nb_bot", 4) or 0)
-    db_bot = float(get_param("db_bot", 20.0) or 20.0)
-    nb_top = int(get_param("nb_top", 2) or 0)
-    db_top = float(get_param("db_top", 16.0) or 16.0)
-
-    cover_bot = float(get_param("cover_bot", 40.0) or 40.0)
-    cover_top = float(get_param("cover_top", 40.0) or 40.0)
-    cover_side = float(
-        st.session_state.get("inputs_cover_side_local", min(cover_top, cover_bot))
-    )
-
-    rowgap_bot = float(get_param("rowgap_bot", 60.0) or 60.0)
-    rowgap_top = float(get_param("rowgap_top", 60.0) or 60.0)
-
-    lig_d = float(get_param("lig_d", 10.0) or 10.0)
-    lig_legs_raw = get_param("lig_legs", 2)
-    try:
-        lig_legs = int(lig_legs_raw or 0)
-    except Exception:
-        lig_legs = 0
-    s_lig = float(get_param("s_lig", 200.0) or 200.0)
+    # Note: phi and c_now are calculated but not stored in session_state here
+    # (session_state modifications are done in the wrapper function)
 
     traces: list[go.BaseTraceType] = []
 
@@ -126,110 +115,53 @@ def _build_beam_3d_figure(b, D, L, Mu_star, phi_Mu_cap, c, strain_state: str = "
     )
 
     # =======================================================
-    #  Helpers for consistent cover
-    # =======================================================
-    max_bar_d = max(db_bot, db_top, lig_d, 0.0)
-    horiz_clear = 0.5 * max_bar_d  # clear from stirrup to bar centre
-
-    def _row_y_positions(nbars: int, bar_dia: float) -> list[float]:
-        """
-        Evenly space bars in a single row between stirrups with a fixed clear
-        distance horiz_clear from the stirrup legs.
-        """
-        if nbars <= 0 or bar_dia <= 0:
-            return []
-
-        # stirrup centre-lines
-        y_st_left = cover_side + 0.5 * lig_d
-        y_st_right = b - cover_side - 0.5 * lig_d
-
-        y_min = y_st_left + horiz_clear
-        y_max = y_st_right - horiz_clear
-
-        if y_max <= y_min:
-            mid = 0.5 * b
-            return [mid] * nbars
-
-        if nbars == 1:
-            return [0.5 * (y_min + y_max)]
-        return list(np.linspace(y_min, y_max, nbars))
-
-    def _layer_positions(
-        nbars: int, bar_dia: float, cover: float, rowgap: float, is_top: bool
-    ) -> list[tuple[float, float]]:
-        """
-        Up to 2 rows per layer.
-        rowgap is treated as a *clear* gap between rows.
-        """
-        if nbars <= 0 or bar_dia <= 0:
-            return []
-
-        max_per_row = 5
-        n_row1 = min(nbars, max_per_row)
-        n_row2 = nbars - n_row1
-
-        # Row depths – bar centres
-        if is_top:
-            z1 = cover + 0.5 * bar_dia
-            # second row below, with clear gap
-            z2 = z1 + (rowgap + bar_dia) if n_row2 > 0 else None
-        else:
-            z1 = D - (cover + 0.5 * bar_dia)
-            # second row above, with clear gap
-            z2 = z1 - (rowgap + bar_dia) if n_row2 > 0 else None
-
-        min_z = 0.5 * bar_dia + 5.0
-        max_z = D - 0.5 * bar_dia - 5.0
-
-        z1 = float(np.clip(z1, min_z, max_z))
-        if z2 is not None:
-            z2 = float(np.clip(z2, min_z, max_z))
-
-        ys1 = _row_y_positions(n_row1, bar_dia)
-        positions: list[tuple[float, float]] = [(y, z1) for y in ys1]
-
-        if n_row2 > 0 and z2 is not None:
-            ys2 = _row_y_positions(n_row2, bar_dia)
-            positions += [(y, z2) for y in ys2]
-
-        return positions
-
-    # =======================================================
-    #  Longitudinal bars (now with consistent covers)
+    #  Longitudinal bars - use provided reo_layout
     # =======================================================
     lw_base = 0.4
 
-    # Bottom layer – red
-    bot_positions = _layer_positions(nb_bot, db_bot, cover_bot, rowgap_bot, is_top=False)
-    line_w_bot = max(2.0, abs(db_bot) * lw_base)
-    for (yy, zz) in bot_positions:
-        traces.append(
-            go.Scatter3d(
-                x=[0, L],
-                y=[yy, yy],
-                z=[zz, zz],
-                mode="lines",
-                line=dict(width=line_w_bot, color="red"),
-                hoverinfo="skip",
-                showlegend=False,
+    # Bottom bars - draw each layer separately
+    # BOTTOM reinforcement is BLUE
+    for layer_data in reo_layout["bottom"]:
+        x_positions = layer_data["x"]
+        y_pos = layer_data["y"]  # This is the y coordinate in 2D (section view)
+        db = layer_data["db"]
+        # Convert 2D y to 3D z (y in 2D section = z in 3D beam)
+        z_pos = y_pos
+        line_w = max(2.0, abs(db) * lw_base)
+        for x_pos in x_positions:
+            traces.append(
+                go.Scatter3d(
+                    x=[0, L],
+                    y=[x_pos, x_pos],  # x in 2D section = y in 3D beam
+                    z=[z_pos, z_pos],
+                    mode="lines",
+                    line=dict(width=line_w, color="blue"),
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
             )
-        )
 
-    # Top layer – blue
-    top_positions = _layer_positions(nb_top, db_top, cover_top, rowgap_top, is_top=True)
-    line_w_top = max(2.0, abs(db_top) * lw_base)
-    for (yy, zz) in top_positions:
-        traces.append(
-            go.Scatter3d(
-                x=[0, L],
-                y=[yy, yy],
-                z=[zz, zz],
-                mode="lines",
-                line=dict(width=line_w_top, color="blue"),
-                hoverinfo="skip",
-                showlegend=False,
+    # Top bars - draw each layer separately
+    # TOP reinforcement is RED
+    for layer_data in reo_layout["top"]:
+        x_positions = layer_data["x"]
+        y_pos = layer_data["y"]  # This is the y coordinate in 2D (section view)
+        db = layer_data["db"]
+        # Convert 2D y to 3D z (y in 2D section = z in 3D beam)
+        z_pos = y_pos
+        line_w = max(2.0, abs(db) * lw_base)
+        for x_pos in x_positions:
+            traces.append(
+                go.Scatter3d(
+                    x=[0, L],
+                    y=[x_pos, x_pos],  # x in 2D section = y in 3D beam
+                    z=[z_pos, z_pos],
+                    mode="lines",
+                    line=dict(width=line_w, color="red"),
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
             )
-        )
 
     # =======================================================
     #  Stirrups – use same concrete covers as reo
@@ -307,6 +239,94 @@ def _build_beam_3d_figure(b, D, L, Mu_star, phi_Mu_cap, c, strain_state: str = "
     return fig
 
 
+def _build_beam_3d_figure(b, D, L, Mu_star, phi_Mu_cap, c, strain_state: str = "ULS", layout=None):
+    """
+    Wrapper function that reads from session state and calls the cached pure function.
+    
+    Args:
+        layout: Optional pre-computed section layout dict. If None, will compute from session state.
+    """
+    # If layout is provided, extract reo_layout from it
+    if layout is not None:
+        reo_layout = layout.get("reo_layout")
+        if reo_layout is None:
+            # Fallback to computing from session state
+            from section_layout import compute_longitudinal_reo_layout
+            cover_bot = float(get_param("cover_bot", 40.0) or 40.0)
+            cover_top = float(get_param("cover_top", 40.0) or 40.0)
+            cover_side = float(
+                get_param("cover_side", min(cover_top, cover_bot)) or min(cover_top, cover_bot)
+            )
+            nb_or_s_bot_1 = float(get_param("nb_or_s_bot_1", 4.0) or 4.0)
+            db_bot_1 = float(get_param("db_bot_1", 20.0) or 20.0)
+            nb_or_s_bot_2 = float(get_param("nb_or_s_bot_2", 0.0) or 0.0)
+            db_bot_2 = float(get_param("db_bot_2", 20.0) or 20.0)
+            nb_or_s_top_1 = float(get_param("nb_or_s_top_1", 2.0) or 2.0)
+            db_top_1 = float(get_param("db_top_1", 16.0) or 16.0)
+            nb_or_s_top_2 = float(get_param("nb_or_s_top_2", 0.0) or 0.0)
+            db_top_2 = float(get_param("db_top_2", 16.0) or 16.0)
+            rowgap_bot = float(get_param("rowgap_bot", 60.0) or 60.0)
+            rowgap_top = float(get_param("rowgap_top", 60.0) or 60.0)
+            reo_layout = compute_longitudinal_reo_layout(
+                b=b, D=D,
+                cover_bot=cover_bot, cover_top=cover_top, cover_side=cover_side,
+                nb_or_s_bot_1=nb_or_s_bot_1, db_bot_1=db_bot_1,
+                nb_or_s_bot_2=nb_or_s_bot_2, db_bot_2=db_bot_2,
+                nb_or_s_top_1=nb_or_s_top_1, db_top_1=db_top_1,
+                nb_or_s_top_2=nb_or_s_top_2, db_top_2=db_top_2,
+                rowgap_bot=rowgap_bot, rowgap_top=rowgap_top,
+            )
+    else:
+        # Compute from session state (backward compatibility)
+        from section_layout import compute_longitudinal_reo_layout
+        cover_bot = float(get_param("cover_bot", 40.0) or 40.0)
+        cover_top = float(get_param("cover_top", 40.0) or 40.0)
+        cover_side = float(
+            get_param("cover_side", min(cover_top, cover_bot)) or min(cover_top, cover_bot)
+        )
+        nb_or_s_bot_1 = float(get_param("nb_or_s_bot_1", 4.0) or 4.0)
+        db_bot_1 = float(get_param("db_bot_1", 20.0) or 20.0)
+        nb_or_s_bot_2 = float(get_param("nb_or_s_bot_2", 0.0) or 0.0)
+        db_bot_2 = float(get_param("db_bot_2", 20.0) or 20.0)
+        nb_or_s_top_1 = float(get_param("nb_or_s_top_1", 2.0) or 2.0)
+        db_top_1 = float(get_param("db_top_1", 16.0) or 16.0)
+        nb_or_s_top_2 = float(get_param("nb_or_s_top_2", 0.0) or 0.0)
+        db_top_2 = float(get_param("db_top_2", 16.0) or 16.0)
+        rowgap_bot = float(get_param("rowgap_bot", 60.0) or 60.0)
+        rowgap_top = float(get_param("rowgap_top", 60.0) or 60.0)
+        reo_layout = compute_longitudinal_reo_layout(
+            b=b, D=D,
+            cover_bot=cover_bot, cover_top=cover_top, cover_side=cover_side,
+            nb_or_s_bot_1=nb_or_s_bot_1, db_bot_1=db_bot_1,
+            nb_or_s_bot_2=nb_or_s_bot_2, db_bot_2=db_bot_2,
+            nb_or_s_top_1=nb_or_s_top_1, db_top_1=db_top_1,
+            nb_or_s_top_2=nb_or_s_top_2, db_top_2=db_top_2,
+            rowgap_bot=rowgap_bot, rowgap_top=rowgap_top,
+        )
+    
+    # Get other parameters needed for 3D model
+    cover_bot = float(get_param("cover_bot", 40.0) or 40.0)
+    cover_top = float(get_param("cover_top", 40.0) or 40.0)
+    cover_side = float(
+        get_param("cover_side", min(cover_top, cover_bot)) or min(cover_top, cover_bot)
+    )
+    rowgap_bot = float(get_param("rowgap_bot", 60.0) or 60.0)
+    rowgap_top = float(get_param("rowgap_top", 60.0) or 60.0)
+    lig_d = float(get_param("lig_d", 10.0) or 10.0)
+    lig_legs_raw = get_param("lig_legs", 2)
+    try:
+        lig_legs = int(lig_legs_raw or 0)
+    except Exception:
+        lig_legs = 0
+    s_lig = float(get_param("s_lig", 200.0) or 200.0)
+
+    return _build_beam_3d_figure_pure(
+        b, D, L, Mu_star, phi_Mu_cap, c, strain_state,
+        reo_layout, cover_bot, cover_top,
+        cover_side, rowgap_bot, rowgap_top, lig_d, lig_legs, s_lig
+    )
+
+
 def render_bending():
     sync_callbacks = get_sync_callbacks()
     apply_global_widget_css()
@@ -342,12 +362,64 @@ def render_bending():
             """
         )
 
+    # Sync Mu_star_manual to Mu_star (contract-compliant via update_results)
+    # Both widgets sync to Mu_star_manual, but _compute_bending_capacity() reads Mu_star
+    Mu_star_manual_val = get_param("Mu_star_manual")
+    if Mu_star_manual_val is not None:
+        update_results(Mu_star=float(Mu_star_manual_val), Mu_star_kNm=float(Mu_star_manual_val))
+
     # ---------------- Top result summary (+ shared 3D NA view data) ----------------
     top_results = _compute_bending_capacity()
     Ast = get_param("Ast_bot")
     Mu_star = get_param("Mu_star")
 
     phi_Mu_cap_top = top_results["phi_Mu_cap"]
+    
+    # ============================================================
+    # COMPUTE CACHED LAYOUT ONCE - reuse for all diagrams
+    # ============================================================
+    from section_layout import compute_section_layout_cached
+    
+    # Get all layout parameters
+    b_layout = float(get_param("b", 400.0) or 400.0)
+    D_layout = float(get_param("D", 600.0) or 600.0)
+    cover_bot_layout = float(get_param("cover_bot", 40.0) or 40.0)
+    cover_top_layout = float(get_param("cover_top", 40.0) or 40.0)
+    cover_side_layout = float(
+        st.session_state.get("inputs_cover_side_local", min(cover_top_layout, cover_bot_layout))
+    )
+    
+    nb_or_s_bot_1_layout = float(get_param("nb_or_s_bot_1", 4.0) or 4.0)
+    db_bot_1_layout = float(get_param("db_bot_1", 20.0) or 20.0)
+    nb_or_s_bot_2_layout = float(get_param("nb_or_s_bot_2", 0.0) or 0.0)
+    db_bot_2_layout = float(get_param("db_bot_2", 20.0) or 20.0)
+    
+    nb_or_s_top_1_layout = float(get_param("nb_or_s_top_1", 2.0) or 2.0)
+    db_top_1_layout = float(get_param("db_top_1", 16.0) or 16.0)
+    nb_or_s_top_2_layout = float(get_param("nb_or_s_top_2", 0.0) or 0.0)
+    db_top_2_layout = float(get_param("db_top_2", 16.0) or 16.0)
+    
+    rowgap_bot_layout = float(get_param("rowgap_bot", 60.0) or 60.0)
+    rowgap_top_layout = float(get_param("rowgap_top", 60.0) or 60.0)
+    
+    lig_legs_raw_layout = get_param("lig_legs", 2)
+    try:
+        lig_legs_layout = int(lig_legs_raw_layout or 0)
+    except Exception:
+        lig_legs_layout = 0
+    lig_d_layout = float(get_param("lig_d", 10.0) or 10.0)
+    
+    # Compute cached layout once
+    cached_layout = compute_section_layout_cached(
+        b=b_layout, D=D_layout,
+        cover_bot=cover_bot_layout, cover_top=cover_top_layout, cover_side=cover_side_layout,
+        nb_or_s_bot_1=nb_or_s_bot_1_layout, db_bot_1=db_bot_1_layout,
+        nb_or_s_bot_2=nb_or_s_bot_2_layout, db_bot_2=db_bot_2_layout,
+        nb_or_s_top_1=nb_or_s_top_1_layout, db_top_1=db_top_1_layout,
+        nb_or_s_top_2=nb_or_s_top_2_layout, db_top_2=db_top_2_layout,
+        rowgap_bot=rowgap_bot_layout, rowgap_top=rowgap_top_layout,
+        lig_legs=lig_legs_layout, lig_d=lig_d_layout,
+    )
     Mu_util_top = top_results["Mu_util"]
     ku_top = top_results["ku"]
     As_min_top = top_results["As_min"]
@@ -531,39 +603,39 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 
 - **Steel stress at serviceability**,  
   $ f_{s,\mathrm{ser}} = E_s\,\varepsilon_s $, used in crack-width and deflection checks.
-
-- **Strain-compatibility solution** for concrete and steel, showing ULS and SLS stress–strain states.
-
-- **Force equilibrium** between concrete compression and steel tension, using the AS 3600 $\alpha_2$–$\gamma$ rectangular stress block.
                 """
             )
 
         with top_right:
-            fig3d_top = _build_beam_3d_figure(
-                b=get_param("b"),
-                D=get_param("D"),
-                L=get_param("L"),
-                Mu_star=Mu_star,
-                phi_Mu_cap=phi_Mu_cap_top,
-                c=c_top,
-                strain_state=canonical_state,
-            )
-            if fig3d_top is not None:
-                st.plotly_chart(fig3d_top, use_container_width=True)
+            # --- Replace old 3D model with curved "2D-looking-3D" diagram ---
+            from curved_beam_diagram import render_curved_beam_fig
+            
+            # Get parameters (convert mm to meters for consistency with function)
+            L_m = float(get_param("L", 8000.0) or 8000.0) / 1000.0  # mm -> m
+            D_m = float(get_param("D", 600.0) or 600.0) / 1000.0    # mm -> m
+            b_m = float(get_param("b", 400.0) or 400.0) / 1000.0    # mm -> m
+            # Convert c_top from mm to m (ULS neutral axis depth)
+            if c_top is not None and not (isinstance(c_top, float) and math.isnan(c_top)):
+                dn_uls_m = float(c_top) / 1000.0  # mm -> m
+            else:
+                dn_uls_m = 0.21 * D_m  # fallback: 21% of depth (already in meters)
+            
+            # Draw figure with fixed curvature of 0.4
+            if D_m > 0 and L_m > 0 and dn_uls_m > 0:
+                fig_beam = render_curved_beam_fig(
+                    L=L_m,          # meters
+                    D=D_m,          # meters
+                    b=b_m,          # meters
+                    dn_uls=dn_uls_m,  # meters - ULS neutral axis depth only
+                    ts_centroid_y=None,  # leave None if you already compute Ts centroid elsewhere later
+                    curvature=0.4,  # fixed curvature
+                    title=None,
+                )
+                st.pyplot(fig_beam, clear_figure=True)
             else:
                 st.info(
-                    "3D beam view will appear once geometry and moment capacity are defined."
+                    "Curved beam view will appear once geometry and moment capacity are defined."
                 )
-
-            state_3d = st.radio(
-                "",
-                state_options,
-                horizontal=True,
-                key="bending_strain_state_3d",
-                index=state_options.index(canonical_state),
-            )
-            if state_3d != canonical_state:
-                canonical_state = state_3d
 
         # Summary table spans full width under the heading + 3D row (deflection-style)
         st.markdown("### Bending – Summary")
@@ -637,21 +709,42 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
     # ---------------- 3-column layout for Design Actions + Geometry + Materials ----------------
     col_actions, col_geom, col_mat = st.columns(3)
 
-    # Ensure bending widgets start from shared design actions
-    st.session_state["bending_Mu_star"] = get_param("Mu_star") or 0.0
-    st.session_state["bending_N_star"] = get_param("N_star") or 0.0
-    st.session_state["bending_P_star"] = get_param("P_star") or 0.0
-
-    sync = sync_callbacks
-
     with col_actions:
-        st.subheader("Design Actions for Bending")
+        # Heading row with info popover for source of design actions
+        col_title, col_info = st.columns([0.92, 0.08])
+        with col_title:
+            st.subheader("Design Actions for Bending")
+        with col_info:
+            with st.popover("ℹ️", help="Source of design actions (M*, V*)"):
+                # Initialize session state key if not present
+                if "bending_action_source" not in st.session_state:
+                    st.session_state["bending_action_source"] = "manual"
+                
+                action_source = st.radio(
+                    "Source of design actions (M, V):",
+                    ["Manual design actions (inputs below)", "Teaching SFD/BMD page"],
+                    index=0 if st.session_state["bending_action_source"] == "manual" else 1,
+                    key="bending_action_source_radio",
+                )
+                
+                # Update session state based on selection
+                if action_source == "Manual design actions (inputs below)":
+                    st.session_state["bending_action_source"] = "manual"
+                else:
+                    st.session_state["bending_action_source"] = "sfd_bmd"
+        
+        # Show caption with current selection
+        current_source = st.session_state.get("bending_action_source", "manual")
+        if current_source == "manual":
+            st.caption("Design actions: Manual")
+        else:
+            st.caption("Design actions: From SFD/BMD")
 
         number_row(
             "Design moment Mu* (kNm)",
             "bending_Mu_star",
             10.0,
-            sync,
+            sync_callbacks,
             help_text=(
                 "Factored design bending moment at the critical section. "
                 "Increasing Mu* increases bending demand and utilisation."
@@ -661,7 +754,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             "Axial force N* (kN)",
             "bending_N_star",
             50.0,
-            sync,
+            sync_callbacks,
             help_text=(
                 "Axial force acting with bending. Compression (negative in many "
                 "conventions) can reduce tension in the steel; tension increases demand."
@@ -671,7 +764,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             "Prestress force P* (kN)",
             "bending_P_star",
             50.0,
-            sync,
+            sync_callbacks,
             help_text=(
                 "Prestress / pre-compression in the section. Increasing P* typically "
                 "reduces tensile demand in the bottom reinforcement."
@@ -681,7 +774,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             "Bending strength factor ϕb",
             "bending_phi_b",
             0.01,
-            sync,
+            sync_callbacks,
             help_text=(
                 "Strength reduction factor for bending (AS 3600 ϕ-factor). "
                 "This multiplies the nominal capacity to give ϕM_u,cap."
@@ -694,7 +787,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             "Width b (mm)",
             "bending_b",
             10.0,
-            sync,
+            sync_callbacks,
             help_text=(
                 "Section width. Increasing b increases compression block area and "
                 "reduces required tensile steel for a given Mu*."
@@ -704,7 +797,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             "Depth D (mm)",
             "bending_D",
             10.0,
-            sync,
+            sync_callbacks,
             help_text=(
                 "Overall section depth. Larger D increases lever arm (d) and "
                 "typically increases bending capacity."
@@ -714,7 +807,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             "Span L (mm)",
             "bending_L",
             100.0,
-            sync,
+            sync_callbacks,
             help_text=(
                 "Member span. Used mainly for serviceability checks and linking to "
                 "deflection; not directly in φMu,cap here."
@@ -727,7 +820,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             "Concrete strength f'c (MPa)",
             "bending_fc",
             2.0,
-            sync,
+            sync_callbacks,
             help_text=(
                 "Concrete compressive strength. Higher f'c increases compression "
                 "capacity and may reduce required steel, but also changes ductility limits."
@@ -737,7 +830,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             "Steel yield fsy (MPa)",
             "bending_fsy",
             10.0,
-            sync,
+            sync_callbacks,
             help_text=(
                 "Yield strength of reinforcing steel. Higher fsy increases the "
                 "force carried by a given area of steel."
@@ -747,7 +840,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             "Ec (MPa)",
             "bending_Ec",
             1000.0,
-            sync,
+            sync_callbacks,
             help_text=(
                 "Short-term modulus of concrete. Mainly affects stiffness and "
                 "SLS behaviour rather than φMu,cap."
@@ -757,7 +850,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             "Es (MPa)",
             "bending_Es",
             10000.0,
-            sync,
+            sync_callbacks,
             help_text=(
                 "Steel modulus. Typically ~200,000 MPa; affects cracked-section "
                 "stiffness and strain calculations."
@@ -770,41 +863,76 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 
     with r1:
         st.subheader("Bottom Longitudinal Reinforcement")
+        
+        # Display messages for bottom reinforcement
+        if st.session_state.get("_reo_msg_bot_auto_layer2", False):
+            show_reo_message("auto_layer2", layer="Bottom Layer 1")
+            st.session_state["_reo_msg_bot_auto_layer2"] = False  # Clear after showing
+        
+        if st.session_state.get("_reo_msg_bot_layer2_overwritten", False):
+            show_reo_message("layer2_overwritten", layer="Bottom Layer 1")
+            st.session_state["_reo_msg_bot_layer2_overwritten"] = False  # Clear after showing
+        
+        if st.session_state.get("_reo_error_bot_1", False):
+            show_reo_message("layout_invalid", layer="Bottom Layer 1")
+            st.session_state["_reo_error_bot_1"] = False  # Clear after showing
+        
+        warning_bot_1 = st.session_state.get("_reo_warning_bot_1")
+        if warning_bot_1:
+            # Extract s_min if available
+            s_min_val = st.session_state.get("_reo_s_min_bot_1", 25.0)
+            show_reo_message("spacing_clamped", layer="Bottom Layer 1", s_min=s_min_val)
+            st.session_state["_reo_warning_bot_1"] = None  # Clear after showing
+            st.session_state["_reo_s_min_bot_1"] = None
+        
+        st.markdown("**Layer 1**")
         number_row(
-            "Number of bottom bars nb_bot",
-            "bending_nb_bot",
-            1,
-            sync,
-            help_text=(
-                "Number of tension bars at the bottom. Increasing nb_bot increases Ast,bot "
-                "and hence bending capacity."
-            ),
+            "Layer 1: bars or spacing (≤30 = bars, ≥30 = mm)",
+            "bending_nb_or_s_bot_1",
+            1.0,
+            sync_callbacks,
+            help_text="Enter a number of bars (≤30) or a spacing in mm (≥30).",
         )
+
         number_row(
-            "Bottom bar diameter db_bot (mm)",
-            "bending_db_bot",
-            2.0,
-            sync,
-            help_text=(
-                "Nominal diameter of bottom bars (e.g. N24 = 24 mm). Larger diameter "
-                "bars increase Ast,bot but may impact spacing and ductility."
-            ),
+            "Layer 1: bar diameter db,bot,1 (mm)",
+            "bending_db_bot_1",
+            1.0,
+            sync_callbacks,
+            help_text="Nominal diameter of bottom Layer 1 bars.",
         )
+        
+        st.markdown("**Layer 2**")
+        
+        number_row(
+            "Layer 2: bars or spacing (≤30 = bars, ≥30 = mm)",
+            "bending_nb_or_s_bot_2",
+            1.0,
+            sync_callbacks,
+            help_text="Enter a number of bars (≤30) or a spacing in mm (≥30). Auto-updated if Layer 1 doesn't fit.",
+        )
+
+        number_row(
+            "Layer 2: bar diameter db,bot,2 (mm)",
+            "bending_db_bot_2",
+            1.0,
+            sync_callbacks,
+            help_text="Nominal diameter of bottom Layer 2 bars.",
+        )
+
         number_row(
             "Bottom row gap (mm)",
             "bending_rowgap_bot",
             5.0,
-            sync,
-            help_text=(
-                "Vertical clear gap between bottom bar rows (if 2 rows are used). "
-                "This affects the centroid depth d of the tensile reinforcement."
-            ),
+            sync_callbacks,
+            help_text="Vertical gap between bottom rows if two layers are used.",
         )
+        
         number_row(
             "Bottom cover (mm)",
             "bending_cover_bot",
             5.0,
-            sync,
+            sync_callbacks,
             help_text=(
                 "Concrete cover to bottom reinforcement. Increasing cover reduces "
                 "effective depth d and reduces φMu,cap, but may be required for durability."
@@ -813,86 +941,162 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 
     with r2:
         st.subheader("Top Longitudinal Reinforcement")
+        
+        # Display messages for top reinforcement
+        if st.session_state.get("_reo_msg_top_auto_layer2", False):
+            show_reo_message("auto_layer2", layer="Top Layer 1")
+            st.session_state["_reo_msg_top_auto_layer2"] = False  # Clear after showing
+        
+        if st.session_state.get("_reo_msg_top_layer2_overwritten", False):
+            show_reo_message("layer2_overwritten", layer="Top Layer 1")
+            st.session_state["_reo_msg_top_layer2_overwritten"] = False  # Clear after showing
+        
+        if st.session_state.get("_reo_error_top_1", False):
+            show_reo_message("layout_invalid", layer="Top Layer 1")
+            st.session_state["_reo_error_top_1"] = False  # Clear after showing
+        
+        warning_top_1 = st.session_state.get("_reo_warning_top_1")
+        if warning_top_1:
+            # Extract s_min if available
+            s_min_val = st.session_state.get("_reo_s_min_top_1", 25.0)
+            show_reo_message("spacing_clamped", layer="Top Layer 1", s_min=s_min_val)
+            st.session_state["_reo_warning_top_1"] = None  # Clear after showing
+            st.session_state["_reo_s_min_top_1"] = None
+        
+        st.markdown("**Layer 1**")
         number_row(
-            "Number of top bars nb_top",
-            "bending_nb_top",
-            1,
-            sync,
-            help_text=(
-                "Number of top bars (compression or hanger steel). "
-                "Important for negative moment regions and detailing."
-            ),
+            "Layer 1: bars or spacing (≤30 = bars, ≥30 = mm)",
+            "bending_nb_or_s_top_1",
+            1.0,
+            sync_callbacks,
+            help_text="Enter a number of bars (≤30) or a spacing in mm (≥30).",
         )
+
         number_row(
-            "Top bar diameter db_top (mm)",
-            "bending_db_top",
-            2.0,
-            sync,
-            help_text="Nominal diameter of top bars (e.g. N16 = 16 mm).",
+            "Layer 1: bar diameter db,top,1 (mm)",
+            "bending_db_top_1",
+            1.0,
+            sync_callbacks,
+            help_text="Nominal diameter of top Layer 1 bars.",
         )
+        
+        st.markdown("**Layer 2**")
+        
+        number_row(
+            "Layer 2: bars or spacing (≤30 = bars, ≥30 = mm)",
+            "bending_nb_or_s_top_2",
+            1.0,
+            sync_callbacks,
+            help_text="Enter a number of bars (≤30) or a spacing in mm (≥30). Auto-updated if Layer 1 doesn't fit.",
+        )
+
+        number_row(
+            "Layer 2: bar diameter db,top,2 (mm)",
+            "bending_db_top_2",
+            1.0,
+            sync_callbacks,
+            help_text="Nominal diameter of top Layer 2 bars.",
+        )
+
         number_row(
             "Top row gap (mm)",
             "bending_rowgap_top",
             5.0,
-            sync,
-            help_text=(
-                "Vertical gap between top bar rows if more than one row is used."
-            ),
+            sync_callbacks,
+            help_text="Vertical gap between top rows if two layers are used.",
         )
+        
         number_row(
             "Top cover (mm)",
             "bending_cover_top",
             5.0,
-            sync,
+            sync_callbacks,
             help_text=(
                 "Concrete cover to top reinforcement. Affects effective depth to "
                 "compression reinforcement and durability."
             ),
         )
 
-    st.markdown("### Section & stress–strain model")
+    # --- GLOBAL CONCRETE STRESS MODEL (shared across all states) ---
+    # Initialize global state key if not present
+    if "concrete_stress_model" not in st.session_state:
+        st.session_state["concrete_stress_model"] = "rectangular"
+    
+    # Heading row with info popover
+    col_title, col_info = st.columns([0.95, 0.05])
+    with col_title:
+        st.markdown("### Section & stress–strain model")
+    with col_info:
+        with st.popover("ℹ️", help="Concrete stress model options"):
+            st.markdown("**Concrete stress model**")
+            use_parabolic = st.checkbox(
+                "Use parabolic (non-linear) stress block",
+                value=(st.session_state["concrete_stress_model"] == "parabolic"),
+                key="bending_parabolic_toggle",
+            )
+            if use_parabolic:
+                st.session_state["concrete_stress_model"] = "parabolic"
+            else:
+                st.session_state["concrete_stress_model"] = "rectangular"
+            
+            st.markdown("""
+            **Rectangular (AS 3600):** Standard simplified stress block used in AS 3600 design.
+            
+            **Parabolic (non-linear):** More accurate representation of concrete stress distribution, 
+            showing the non-linear relationship between strain and stress.
+            """)
+    
+    # Show the current model label (always visible)
+    current_model = st.session_state.get("concrete_stress_model", "rectangular")
+    if current_model == "parabolic":
+        model_display = "Parabolic (non-linear)"
+    else:
+        model_display = "Rectangular (AS 3600)"
+    st.markdown(f"**{model_display}**")
 
-    # --- STATE RADIOS (main + ULS model) ---
+    # --- STATE RADIO (ULS / SLS / Uncracked) ---
+    state_options = ["ULS", "SLS (cracked)", "Uncracked"]
     main_state = st.radio(
         "State:",
-        ["ULS", "SLS (cracked)", "Uncracked"],
+        state_options,
         key="bending_state_main",
         horizontal=True,
-        index=["ULS", "SLS (cracked)", "Uncracked"].index(canonical_state),
+        index=state_options.index(canonical_state),
     )
 
-    uls_model = None
+    # --- Build label for the 3-panel diagram using global concrete_stress_model ---
+    stress_model = st.session_state.get("concrete_stress_model", "rectangular")
+    
     if main_state == "ULS":
-        uls_model = st.radio(
-            "ULS concrete model:",
-            ["Rectangular (AS 3600)", "Parabolic (non-linear)"],
-            key="bending_uls_model",
-            horizontal=True,
-        )
-
-    # Build label for diagram (rectangular vs parabolic is visual only)
-    if main_state == "ULS":
-        if uls_model and uls_model.startswith("Parabolic"):
-            diagram_state_label = "ULS – Parabolic"
+        if stress_model == "parabolic":
+            diagram_state_label = "uls – parabolic"
         else:
-            diagram_state_label = "ULS – Rectangular"
+            diagram_state_label = "uls – rectangular"
     elif main_state.startswith("SLS"):
-        diagram_state_label = "SLS (cracked)"
-    else:
-        diagram_state_label = "Uncracked"
+        if stress_model == "parabolic":
+            diagram_state_label = "sls – parabolic"
+        else:
+            diagram_state_label = "sls – linear"
+    else:  # Uncracked
+        if stress_model == "parabolic":
+            diagram_state_label = "uncracked – parabolic"
+        else:
+            diagram_state_label = "uncracked – linear"
 
-    # Persist for diagram function if it falls back to session
+    # Persist for the diagram function
     st.session_state["bending_strain_state_local"] = diagram_state_label
 
-    # Underlying strain-state math uses only the main state
-    ss_state = _stress_strain_state(main_state)
+    # --- Placeholders so we can render *after* the tabs but keep them visually above ---
+    matcurves_placeholder = st.empty()
+    diagram_placeholder = st.empty()
 
-    # --- 3-panel diagram ---
-    fig_ss = _plot_stress_strain_profiles(
-        ss_state,
-        state_label=diagram_state_label,
-    )
-    st.plotly_chart(fig_ss, use_container_width=True, config={"displayModeBar": False})
+    # Underlying strain-state math uses the solver's labels
+    if main_state.startswith("ULS"):
+        state_for_math = "ULS"
+    elif main_state.startswith("SLS"):
+        state_for_math = "SLS"
+    else:
+        state_for_math = "Uncracked"
 
     # ---------------- Step-by-step tabs ----------------
     tab_uls, tab_min, tab_sls = st.tabs(
@@ -907,6 +1111,100 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 
     with tab_sls:
         render_sls_tab(top_results, b, D, d_eff, Ast_bot, Ec, Es, Mu_star)
+
+    # --------------------------------------------------
+    # Now build the 3-panel diagram, using the SLS results
+    # that render_sls_tab has just written into session_state.
+    # --------------------------------------------------
+    with diagram_placeholder.container():
+        ss_state = _stress_strain_state(state_for_math)
+        
+        # For SLS, add cracked-section neutral axis from the solve
+        if state_for_math == "SLS":
+            try:
+                dn_cracked = st.session_state.get("bending_sls_dn", None)
+                if dn_cracked is not None:
+                    # Build nested SLS structure with cracked NA
+                    ss_state["sls"] = {
+                        "dn_cracked": float(dn_cracked),
+                        "dn": float(dn_cracked),  # also set as dn for backward compatibility
+                        "eps_c_top": st.session_state.get("bending_sls_eps_top"),
+                        "eps_s_layers": [],  # will be populated if available
+                        "sig_s_layers": [],
+                        "y_layers": [],
+                    }
+            except Exception:
+                pass
+        
+        fig_ss = _plot_stress_strain_profiles(
+            ss_state,
+            state_label=diagram_state_label,
+            layout=cached_layout,  # Pass cached layout to avoid recomputation
+        )
+        st.plotly_chart(fig_ss, use_container_width=True, config={"displayModeBar": False})
+
+    # --------------------------------------------------
+    # Material stress–strain curves (concrete + steel),
+    # rendered *after* SLS tab but shown above it.
+    # --------------------------------------------------
+    with matcurves_placeholder.container():
+        with st.expander("ℹ️ Stress–strain model & material behaviour", expanded=False):
+            st.markdown(
+                f"""
+**Current state:** `{main_state}`  
+
+This diagram shows how **concrete** and **steel** share strain in a reinforced
+concrete section, and how we go from **strain → stress → force**:
+
+- In the **elastic range** we use **Hooke's law**  
+
+  - Steel:  $\\sigma_s = E_s \\, \\varepsilon_s$  
+
+  - Concrete (short-term):  $\\sigma_c = E_c \\, \\varepsilon_c$  
+
+- Once we know the **stress** we get the **resultant force** by  
+
+  $$F = \\sigma \\; A$$  
+
+  where $A$ is the relevant steel or concrete area (e.g. $A_{{st}}$ for tension bars,
+  $b \\times a$ for the ULS concrete block).
+
+- For **steel** we assume a **linear elastic** branch up to the yield stress
+  $f_{{sy}}$ (your session value, typically about 500 MPa), then a near-horizontal
+  plastic region with slight hardening and softening – similar to a test curve.
+
+- For **concrete in compression** we use a **non-linear parabolic** stress–strain curve.
+  At ULS we replace this with the **AS 3600 rectangular** $\\alpha_2$–$\\gamma$
+  stress block, chosen so it has the **same resultant force and lever arm** as
+  the underlying parabolic distribution.
+
+- At **SLS** and in the *uncracked* state we still assume a **linear strain profile**,
+  but with lower stresses (service-level actions). The vertical dotted lines on
+  the plots mark the **SLS** and **ULS** points for concrete and steel.
+
+**Sign convention note**
+
+- In the main section/strain diagrams on this page, **tension steel strains are negative**
+  (ε < 0) and compression is positive – this matches typical reinforced concrete
+  sign conventions.
+
+- In the **steel material curve below**, we instead plot the **magnitude**
+  $|\\varepsilon_s| \\ge 0$ on the x-axis. So any negative steel strains read from the
+  ULS/SLS diagrams have been converted to **positive values here**, but they still
+  represent the **tension capacity** of the steel.
+
+The difference between the concrete and steel curves – mainly their **slopes**
+($E_c$ vs $E_s$) – is what drives the different **forces** that develop at SLS and ULS
+for the same strain pattern.
+
+"""
+            )
+            fig_mat = _plot_material_stress_strain_curves()
+            st.plotly_chart(
+                fig_mat,
+                use_container_width=True,
+                config={"displayModeBar": False},
+            )
 
 
 # ============================
