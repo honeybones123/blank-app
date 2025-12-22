@@ -88,13 +88,36 @@ SHARED_DEFAULTS = {
     "N_star": 0.0,     # kN (additional axial)
     "actions_source": "Manual design actions (inputs below)",  # Source of design actions
 
-    # Longitudinal reinforcement
-    "nb_bot": 4,       # bottom bars
-    "db_bot": 20.0,    # mm
-    "nb_top": 2,       # top bars
-    "db_top": 16.0,    # mm
-    "rowgap_bot": 60.0,
-    "rowgap_top": 60.0,
+    # Longitudinal reinforcement - 2-layer system
+    # Bottom Layer 1
+    "nb_or_s_bot_1": 4.0,   # bars or spacing (≤30 = bars, ≥30 = spacing in mm)
+    "db_bot_1": 20.0,       # mm
+    # Bottom Layer 2
+    "nb_or_s_bot_2": 0.0,   # bars or spacing (≤30 = bars, ≥30 = spacing in mm)
+    "db_bot_2": 20.0,       # mm
+    "rowgap_bot": 60.0,     # vertical gap between bottom rows (mm)
+    
+    # Top Layer 1
+    "nb_or_s_top_1": 2.0,   # bars or spacing (≤30 = bars, ≥30 = spacing in mm)
+    "db_top_1": 16.0,       # mm
+    # Top Layer 2
+    "nb_or_s_top_2": 0.0,   # bars or spacing (≤30 = bars, ≥30 = spacing in mm)
+    "db_top_2": 16.0,       # mm
+    "rowgap_top": 60.0,     # vertical gap between top rows (mm)
+    
+    # Legacy parameters (derived from layers, kept for backward compatibility)
+    "nb_bot": 4,            # bottom bars (derived)
+    "db_bot": 20.0,         # mm (derived from layer 1)
+    "nb_top": 2,            # top bars (derived)
+    "db_top": 16.0,         # mm (derived from layer 1)
+    
+    # Legacy "bars or spacing" entries (kept for migration)
+    "bot_entry": 4.0,       # bottom layer: 4 bars by default (maps to nb_or_s_bot_1)
+    "top_entry": 2.0,       # top layer: 2 bars by default (maps to nb_or_s_top_1)
+    
+    # Optional derived spacing (you can store these here or in a derived dict)
+    "s_bot": 200.0,         # effective bottom spacing (mm)
+    "s_top": 200.0,         # effective top spacing (mm)
 
     # Cover (including side cover shared values)
     "cover_bot": 40.0,
@@ -102,14 +125,6 @@ SHARED_DEFAULTS = {
     "side_cover_bot": 40.0,
     "side_cover_top": 40.0,
     "cover_side": 40.0,  # Geometry – side cover (to centroid or clear, whichever convention you use)
-
-    # New "bars or spacing" entries (≤30 = bars, ≥30 = spacing in mm)
-    "bot_entry": 4.0,   # bottom layer: 4 bars by default
-    "top_entry": 2.0,   # top layer: 2 bars by default
-
-    # Optional derived spacing (you can store these here or in a derived dict)
-    "s_bot": 200.0,     # effective bottom spacing (mm)
-    "s_top": 200.0,     # effective top spacing (mm)
 
     # Duct inputs (prestress / voids)
     "n_ducts": 0.0,     # number of ducts crossing the web
@@ -133,6 +148,9 @@ SHARED_DEFAULTS = {
     # Crack control inputs
     "exposure_class": "B1",
     "s_bar_bot": 200.0,  # bottom bar spacing for crack calc (mm)
+    
+    # Crack / torsion sketch control
+    "crack_theta_deg": 45.0,  # physical crack angle (degrees)
 
     # Derived (will be recalculated; set initial values)
     "d": 600.0 - 40.0 - 20.0 / 2.0,
@@ -277,10 +295,6 @@ TAB_KEYS = {
     "inputs_P_star": "P_star",
     "inputs_N_star": "N_star",
 
-    "inputs_nb_bot": "nb_bot",
-    "inputs_db_bot": "db_bot",
-    "inputs_nb_top": "nb_top",
-    "inputs_db_top": "db_top",
     "inputs_rowgap_bot": "rowgap_bot",
     "inputs_rowgap_top": "rowgap_top",
 
@@ -290,12 +304,38 @@ TAB_KEYS = {
     "inputs_side_cover_top": "side_cover_top",
     "inputs_cover_side": "cover_side",  # Geometry – side cover (now a proper shared param)
 
-    # Reo: new bars/spacing entries instead of nb_* for the widgets
+    # Reo: 2-layer bars/spacing entries
+    "inputs_nb_or_s_bot_1": "nb_or_s_bot_1",
+    "inputs_db_bot_1": "db_bot_1",
+    "inputs_nb_or_s_bot_2": "nb_or_s_bot_2",
+    "inputs_db_bot_2": "db_bot_2",
+    "inputs_nb_or_s_top_1": "nb_or_s_top_1",
+    "inputs_db_top_1": "db_top_1",
+    "inputs_nb_or_s_top_2": "nb_or_s_top_2",
+    "inputs_db_top_2": "db_top_2",
+    # Bending page widgets - map to same shared parameters
+    "bending_nb_or_s_bot_1": "nb_or_s_bot_1",
+    "bending_db_bot_1": "db_bot_1",
+    "bending_nb_or_s_bot_2": "nb_or_s_bot_2",
+    "bending_db_bot_2": "db_bot_2",
+    "bending_nb_or_s_top_1": "nb_or_s_top_1",
+    "bending_db_top_1": "db_top_1",
+    "bending_nb_or_s_top_2": "nb_or_s_top_2",
+    "bending_db_top_2": "db_top_2",
+    "bending_rowgap_bot": "rowgap_bot",
+    "bending_rowgap_top": "rowgap_top",
+    "bending_cover_bot": "cover_bot",
+    "bending_cover_top": "cover_top",
+    
+    # Legacy entries (for backward compatibility during migration)
     "inputs_bot_entry": "bot_entry",
     "inputs_top_entry": "top_entry",
+    "inputs_nb_bot": "nb_bot",
+    "inputs_db_bot": "db_bot",
+    "inputs_nb_top": "nb_top",
+    "inputs_db_top": "db_top",
     # We still keep nb_bot, nb_top etc. as params used by other pages.
-    # They will be *derived* from bot_entry/top_entry in recalc_derived_values().
-    # No widget keys needed for nb_bot / nb_top.
+    # They will be *derived* from the 2-layer system in recalc_derived_values().
 
     "inputs_lig_d": "lig_d",
     "inputs_lig_legs": "lig_legs",
@@ -328,7 +368,7 @@ TAB_KEYS = {
     "bending_phi_b": "phi_bend",
     "bending_phi_bend": "phi_bend",
 
-    "bending_Mu_star": "Mu_star",
+    "bending_Mu_star": "Mu_star_manual",
     "bending_P_star": "P_star",
     "bending_N_star": "N_star",
 
@@ -360,6 +400,7 @@ TAB_KEYS = {
     "shear_N_star": "N_star",
 
     "shear_phi_v": "phi_shear",
+    "shear_phi_shear": "phi_shear",
     "shear_phi_t": "phi_torsion",
 
     "shear_nb_bot": "nb_bot",
@@ -373,6 +414,9 @@ TAB_KEYS = {
 
     "shear_cover_bot": "cover_bot",
     "shear_cover_top": "cover_top",
+
+    # ----------------- TORSION / SKETCH PAGE -----------------
+    "torsion_theta_deg": "crack_theta_deg",
 
     # ----------------- CRACK CONTROL PAGE -----------------
     "crack_b": "b",
@@ -530,12 +574,14 @@ def recalc_derived_values():
     Update derived geometry/reo values in session_state based on the
     current shared inputs (b, D, covers, bar sizes, etc.).
     RULE 3: This is the ONLY place derived values are written.
+    
+    Now handles 2-layer reinforcement system with auto-splitting.
     """
+    from section_layout import compute_bar_layout_pure
+    
     D = st.session_state["D"]
     cover_bot = st.session_state["cover_bot"]
     cover_top = st.session_state["cover_top"]
-    db_bot = st.session_state["db_bot"]
-    db_top = st.session_state["db_top"]
     
     # Get cover_side, with fallback to min of cover_top/cover_bot
     cover_side = st.session_state.get("cover_side", min(
@@ -543,28 +589,143 @@ def recalc_derived_values():
         st.session_state.get("cover_bot", 40.0),
     ))
 
-    # ---------- 3.1 Bars vs spacing for bottom + top ----------
     b = st.session_state.get("b", 0.0)
+    rowgap_bot = st.session_state.get("rowgap_bot", 60.0)
+    rowgap_top = st.session_state.get("rowgap_top", 60.0)
     
-    # Bottom layer
-    bot_entry = st.session_state.get("bot_entry", st.session_state.get("nb_bot", 0.0))
-    mode_bot, nb_bot_eff, s_bot_eff = _decode_bars_or_spacing(
-        bot_entry, b, cover_side, db_bot
+    # Minimum spacing (AS 3600 typical: max(bar_dia, 25mm) for clear spacing)
+    # We'll use a conservative default
+    s_min_default = 25.0  # mm minimum clear spacing
+    
+    # ---------- 3.1 Process 2-layer system for BOTTOM ----------
+    # Get Layer 1 values
+    nb_or_s_bot_1 = st.session_state.get("nb_or_s_bot_1", 4.0)
+    db_bot_1 = st.session_state.get("db_bot_1", 20.0)
+    
+    # Get Layer 2 values (may be auto-updated)
+    nb_or_s_bot_2 = st.session_state.get("nb_or_s_bot_2", 0.0)
+    db_bot_2 = st.session_state.get("db_bot_2", db_bot_1)  # Default to Layer 1 diameter
+    
+    # Compute layout for Layer 1
+    s_min_bot = max(db_bot_1, s_min_default)
+    layout_bot_1 = compute_bar_layout_pure(
+        b=b, cover_side=cover_side, nb_or_s=nb_or_s_bot_1,
+        db=db_bot_1, s_min=s_min_bot, rowgap=rowgap_bot
     )
-
-    # Top layer
-    top_entry = st.session_state.get("top_entry", st.session_state.get("nb_top", 0.0))
-    mode_top, nb_top_eff, s_top_eff = _decode_bars_or_spacing(
-        top_entry, b, cover_side, db_top
+    
+    # Auto-update Layer 2 if Layer 1 doesn't fit in single row
+    bot_layer2_was_auto = False
+    bot_layer2_was_manual = st.session_state.get("nb_or_s_bot_2", 0.0) > 0
+    
+    if layout_bot_1["auto_split"] and layout_bot_1["n_row2"] > 0:
+        # Layer 1 forced a split - auto-update Layer 2
+        n_spill = layout_bot_1["n_row2"]
+        # Check if Layer 2 was previously user-defined (non-zero before this update)
+        if bot_layer2_was_manual:
+            # Layer 2 was manually set, now being overwritten
+            st.session_state["_reo_msg_bot_layer2_overwritten"] = True
+        else:
+            # First time auto-creating Layer 2
+            st.session_state["_reo_msg_bot_auto_layer2"] = True
+        st.session_state["nb_or_s_bot_2"] = float(n_spill)
+        st.session_state["db_bot_2"] = db_bot_1
+        nb_or_s_bot_2 = float(n_spill)
+        db_bot_2 = db_bot_1
+        bot_layer2_was_auto = True
+    # Otherwise, Layer 2 remains as user-defined (or 0)
+    
+    # Track warnings from layout
+    if layout_bot_1.get("warning"):
+        st.session_state["_reo_warning_bot_1"] = layout_bot_1["warning"]
+    if layout_bot_1.get("warning") and "cannot fit" in layout_bot_1["warning"].lower():
+        st.session_state["_reo_error_bot_1"] = True
+    
+    # Compute layout for Layer 2 (if it has bars)
+    layout_bot_2 = None
+    if nb_or_s_bot_2 > 0:
+        s_min_bot_2 = max(db_bot_2, s_min_default)
+        layout_bot_2 = compute_bar_layout_pure(
+            b=b, cover_side=cover_side, nb_or_s=nb_or_s_bot_2,
+            db=db_bot_2, s_min=s_min_bot_2, rowgap=rowgap_bot
+        )
+    
+    # Total bottom bars = Layer 1 + Layer 2
+    n_bot_total = layout_bot_1["n_total"]
+    if layout_bot_2:
+        n_bot_total += layout_bot_2["n_total"]
+    
+    # ---------- 3.2 Process 2-layer system for TOP ----------
+    # Get Layer 1 values
+    nb_or_s_top_1 = st.session_state.get("nb_or_s_top_1", 2.0)
+    db_top_1 = st.session_state.get("db_top_1", 16.0)
+    
+    # Get Layer 2 values (may be auto-updated)
+    nb_or_s_top_2 = st.session_state.get("nb_or_s_top_2", 0.0)
+    db_top_2 = st.session_state.get("db_top_2", db_top_1)  # Default to Layer 1 diameter
+    
+    # Compute layout for Layer 1
+    s_min_top = max(db_top_1, s_min_default)
+    layout_top_1 = compute_bar_layout_pure(
+        b=b, cover_side=cover_side, nb_or_s=nb_or_s_top_1,
+        db=db_top_1, s_min=s_min_top, rowgap=rowgap_top
     )
-
-    # Write back "canonical" values that the rest of the app uses
-    nb_bot = nb_bot_eff
-    nb_top = nb_top_eff
-    st.session_state["nb_bot"] = nb_bot
-    st.session_state["nb_top"] = nb_top
-    st.session_state["s_bot"] = s_bot_eff
-    st.session_state["s_top"] = s_top_eff
+    
+    # Auto-update Layer 2 if Layer 1 doesn't fit in single row
+    top_layer2_was_auto = False
+    top_layer2_was_manual = st.session_state.get("nb_or_s_top_2", 0.0) > 0
+    
+    if layout_top_1["auto_split"] and layout_top_1["n_row2"] > 0:
+        # Layer 1 forced a split - auto-update Layer 2
+        n_spill = layout_top_1["n_row2"]
+        # Check if Layer 2 was previously user-defined (non-zero before this update)
+        if top_layer2_was_manual:
+            # Layer 2 was manually set, now being overwritten
+            st.session_state["_reo_msg_top_layer2_overwritten"] = True
+        else:
+            # First time auto-creating Layer 2
+            st.session_state["_reo_msg_top_auto_layer2"] = True
+        st.session_state["nb_or_s_top_2"] = float(n_spill)
+        st.session_state["db_top_2"] = db_top_1
+        nb_or_s_top_2 = float(n_spill)
+        db_top_2 = db_top_1
+        top_layer2_was_auto = True
+    # Otherwise, Layer 2 remains as user-defined (or 0)
+    
+    # Track warnings from layout
+    if layout_top_1.get("warning"):
+        if "cannot fit" in layout_top_1["warning"].lower() or "invalid" in layout_top_1["warning"].lower():
+            st.session_state["_reo_error_top_1"] = True
+        elif "spacing" in layout_top_1["warning"].lower():
+            st.session_state["_reo_warning_top_1"] = layout_top_1["warning"]
+            st.session_state["_reo_s_min_top_1"] = layout_top_1.get("s_min", s_min_top)
+    
+    # Compute layout for Layer 2 (if it has bars)
+    layout_top_2 = None
+    if nb_or_s_top_2 > 0:
+        s_min_top_2 = max(db_top_2, s_min_default)
+        layout_top_2 = compute_bar_layout_pure(
+            b=b, cover_side=cover_side, nb_or_s=nb_or_s_top_2,
+            db=db_top_2, s_min=s_min_top_2, rowgap=rowgap_top
+        )
+    
+    # Total top bars = Layer 1 + Layer 2
+    n_top_total = layout_top_1["n_total"]
+    if layout_top_2:
+        n_top_total += layout_top_2["n_total"]
+    
+    # ---------- 3.3 Write back legacy derived values (for backward compatibility) ----------
+    st.session_state["nb_bot"] = n_bot_total
+    st.session_state["nb_top"] = n_top_total
+    st.session_state["db_bot"] = db_bot_1  # Use Layer 1 diameter as primary
+    st.session_state["db_top"] = db_top_1  # Use Layer 1 diameter as primary
+    
+    # Legacy spacing values
+    st.session_state["s_bot"] = layout_bot_1.get("s_actual", 200.0)
+    st.session_state["s_top"] = layout_top_1.get("s_actual", 200.0)
+    
+    # Legacy bot_entry/top_entry for migration
+    st.session_state["bot_entry"] = nb_or_s_bot_1
+    st.session_state["top_entry"] = nb_or_s_top_1
 
     # Store modes in derived (if you have a derived dict, otherwise skip)
     # For now we'll skip since the current code doesn't use a separate derived dict
@@ -596,13 +757,21 @@ def recalc_derived_values():
     st.session_state["stress_ratio"] = stress_ratio
     st.session_state["t_shrink"] = t_shrink
 
-    # Effective depths
-    st.session_state["d"] = D - cover_bot - db_bot / 2.0
-    st.session_state["do"] = D - cover_top - db_top / 2.0
+    # Effective depths (to centroid of Layer 1 bars)
+    st.session_state["d"] = D - cover_bot - db_bot_1 / 2.0
+    st.session_state["do"] = D - cover_top - db_top_1 / 2.0
 
-    # Steel areas
-    st.session_state["Ast_bot"] = nb_bot * math.pi * db_bot**2 / 4.0
-    st.session_state["Ast_top"] = nb_top * math.pi * db_top**2 / 4.0
+    # Steel areas - sum both layers
+    Ast_bot_1 = layout_bot_1["n_total"] * math.pi * db_bot_1**2 / 4.0
+    Ast_bot_2 = layout_bot_2["n_total"] * math.pi * db_bot_2**2 / 4.0 if layout_bot_2 else 0.0
+    Ast_bot_total = Ast_bot_1 + Ast_bot_2
+    
+    Ast_top_1 = layout_top_1["n_total"] * math.pi * db_top_1**2 / 4.0
+    Ast_top_2 = layout_top_2["n_total"] * math.pi * db_top_2**2 / 4.0 if layout_top_2 else 0.0
+    Ast_top_total = Ast_top_1 + Ast_top_2
+    
+    st.session_state["Ast_bot"] = Ast_bot_total
+    st.session_state["Ast_top"] = Ast_top_total
 
 
 # ============================================
