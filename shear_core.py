@@ -85,6 +85,16 @@ def cot(rad: float) -> float:
     return 1.0 / math.tan(rad)
 
 
+def derive_eps_top_bot_for_step4_diagram(eps_x: float, delta: float = 0.00035):
+    """
+    Diagram-only helper.
+    Create a simple linear profile around eps_x so the user can visualize
+    top/mid/bottom strain points. Does NOT affect design calcs.
+    """
+    ex = float(eps_x)
+    return ex - float(delta), ex + float(delta)
+
+
 def run_shear_calc(inp: ShearInputs) -> ShearResults:
     b = inp.b
     D = inp.D
