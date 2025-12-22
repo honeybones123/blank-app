@@ -11,7 +11,7 @@ from state_and_helpers import (
     update_results,
 )
 
-from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, calcbox
+from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, calcbox, show_reo_message
 
 # --- Pure compute functions from design core (no circular imports)
 from bending_core import _compute_bending_capacity
@@ -219,18 +219,17 @@ def make_summary_cross_section_figure():
     Tiny 2D cross-section using Plotly (visual only).
     Concrete outline + lig cage + bottom/top bars.
 
-    NOW uses the shared compute_section_layout() helper so that
-    the mapping and bar positions are identical to the bending
-    stress-strain section diagram.
+    NOW uses compute_longitudinal_reo_layout() as single source of truth.
     """
+    from section_layout import compute_longitudinal_reo_layout
+    
     layout = compute_section_layout()
 
     b = layout["b"]
     D = layout["D"]
     cage = layout["cage"]
-    bot = layout["bot"]
-    top = layout["top"]
     lig = layout["lig"]
+    reo_layout = layout.get("reo_layout")  # Get 2-layer structure
 
     lig_d = lig["d"]
     lig_legs = lig["legs"]
@@ -252,67 +251,128 @@ def make_summary_cross_section_figure():
         )
     )
 
-    # ----- lig cage -----
-    cage_x0 = cage["x0"]
-    cage_x1 = cage["x1"]
-    cage_y0 = cage["y0"]
-    cage_y1 = cage["y1"]
-
-    shapes.append(
-        dict(
-            type="rect",
-            x0=cage_x0,
-            y0=cage_y0,
-            x1=cage_x1,
-            y1=cage_y1,
-            line=dict(width=lig_line_width, color="black"),
-            fillcolor="rgba(0,0,0,0)",
+    # ----- Shear reinforcement (stirrups/ties) - only draw when present -----
+    # Only draw shear reinforcement if it's actually specified
+    has_shear = lig_d > 0 and lig_legs >= 2
+    
+    if has_shear:
+        from section_layout import compute_shear_reo_layout_pure
+        
+        cover_bot = float(get_param("cover_bot", 40.0) or 40.0)
+        cover_top = float(get_param("cover_top", 40.0) or 40.0)
+        cover_side = float(
+            st.session_state.get("inputs_cover_side_local", min(cover_top, cover_bot))
         )
-    )
+        
+        shear_layout = compute_shear_reo_layout_pure(
+            b=b, D=D,
+            cover_bot=cover_bot, cover_top=cover_top, cover_side=cover_side,
+            lig_d=lig_d, lig_legs=lig_legs,
+        )
+        
+        # Draw cage outline (only when shear reo is present)
+        cage_shear = shear_layout.get("cage", cage)
+        shapes.append(
+            dict(
+                type="rect",
+                x0=cage_shear["x0"],
+                y0=cage_shear["y0"],
+                x1=cage_shear["x1"],
+                y1=cage_shear["y1"],
+                line=dict(width=lig_line_width, color="black"),
+                fillcolor="rgba(0,0,0,0)",
+            )
+        )
+        
+        # Draw stirrup legs in black
+        for stirrup in shear_layout.get("stirrups", []):
+            for leg in stirrup.get("legs", []):
+                shapes.append(
+                    dict(
+                        type="line",
+                        x0=leg["x1"],
+                        y0=leg["y1"],
+                        x1=leg["x2"],
+                        y1=leg["y2"],
+                        line=dict(width=lig_line_width * 0.8, color="black"),
+                    )
+                )
 
-    # internal legs (vertical ties)
-    if lig_d > 0 and lig_legs > 2:
-        for xt in lig["internal_x"]:
-            shapes.append(
-                dict(
-                    type="line",
-                    x0=xt,
-                    y0=cage_y0,
-                    x1=xt,
-                    y1=cage_y1,
-                    line=dict(width=lig_line_width * 0.8, color="black"),
+    # ----- bottom bars - use 2-layer structure -----
+    # BOTTOM reinforcement is BLUE
+    if reo_layout:
+        for layer_data in reo_layout["bottom"]:
+            x_positions = layer_data["x"]
+            y_pos = layer_data["y"]
+            db = layer_data["db"]
+            # Marker size based on bar diameter
+            marker_size = max(5, min(10, db * 0.35))
+            traces.append(
+                go.Scatter(
+                    x=x_positions,
+                    y=[y_pos] * len(x_positions),
+                    mode="markers",
+                    marker=dict(
+                        color="blue", size=marker_size, line=dict(width=0.7, color="black")
+                    ),
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
+            )
+    else:
+        # Fallback to legacy structure
+        bot = layout.get("bot", {})
+        if bot.get("x"):
+            traces.append(
+                go.Scatter(
+                    x=bot["x"],
+                    y=bot["y"],
+                    mode="markers",
+                    marker=dict(
+                        color="blue", size=7, line=dict(width=0.7, color="black")
+                    ),
+                    hoverinfo="skip",
+                    showlegend=False,
                 )
             )
 
-    # ----- bottom bars -----
-    if bot["x"]:
-        traces.append(
-            go.Scatter(
-                x=bot["x"],
-                y=bot["y"],
-                mode="markers",
-                marker=dict(
-                    color="red", size=7, line=dict(width=0.7, color="black")
-                ),
-                hoverinfo="skip",
-                showlegend=False,
+    # ----- top bars - use 2-layer structure -----
+    # TOP reinforcement is RED
+    if reo_layout:
+        for layer_data in reo_layout["top"]:
+            x_positions = layer_data["x"]
+            y_pos = layer_data["y"]
+            db = layer_data["db"]
+            # Marker size based on bar diameter
+            marker_size = max(5, min(10, db * 0.35))
+            traces.append(
+                go.Scatter(
+                    x=x_positions,
+                    y=[y_pos] * len(x_positions),
+                    mode="markers",
+                    marker=dict(
+                        color="red", size=marker_size, line=dict(width=0.7, color="black")
+                    ),
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
             )
-        )
-
-    # ----- top bars -----
-    if top["x"]:
-        traces.append(
-            go.Scatter(
-                x=top["x"],
-                y=top["y"],
-                mode="markers",
-                marker=dict(
-                    color="blue", size=7, line=dict(width=0.7, color="black")
-                ),
-                hoverinfo="skip",
-                showlegend=False,
+    else:
+        # Fallback to legacy structure
+        top = layout.get("top", {})
+        if top.get("x"):
+            traces.append(
+                go.Scatter(
+                    x=top["x"],
+                    y=top["y"],
+                    mode="markers",
+                    marker=dict(
+                        color="red", size=7, line=dict(width=0.7, color="black")
+                    ),
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
             )
-        )
 
     if not traces:
         traces.append(
@@ -349,6 +409,9 @@ def make_summary_cross_section_figure():
 # ------------------------------------------------------------
 def make_beam_3d_figure():
     # --- parameters from session state ---
+    # Use cached layout for performance
+    from section_layout import compute_section_layout_cached
+    
     b = float(get_param("b", 400.0) or 400.0)
     D = float(get_param("D", 600.0) or 600.0)
     L = float(get_param("L", 8000.0) or 8000.0)
@@ -422,70 +485,83 @@ def make_beam_3d_figure():
         )
     )
 
-    # ----- longitudinal bar positions -----
-    def _bar_positions_3d(nbars, bar_dia, cover, rowgap, is_top):
-        if nbars <= 0 or bar_dia <= 0:
-            return []
-
-        y_min = cover_side + horiz_clear
-        y_max = b - cover_side - horiz_clear
-        if y_max <= y_min:
-            mid = 0.5 * b
-            span = max(10.0, (b - 2 * cover_side) * 0.4)
-            y_min = mid - span / 2.0
-            y_max = mid + span / 2.0
-
-        if is_top:
-            z1 = cover + 0.5 * bar_dia
-            z2 = z1 + rowgap
-        else:
-            z1 = D - (cover + 0.5 * bar_dia)
-            z2 = z1 - rowgap
-
-        min_z = 0.5 * bar_dia + 5.0
-        max_z = D - 0.5 * bar_dia - 5.0
-        z1 = float(np.clip(z1, min_z, max_z))
-        z2 = float(np.clip(z2, min_z, max_z))
-
-        xs1, xs2 = _two_row_positions_width(nbars, bar_dia, y_min, y_max)
-        pos = [(yy, z1) for yy in xs1] + [(yy, z2) for yy in xs2]
-        return pos
-
-    # bottom bars
-    bot_positions = _bar_positions_3d(
-        nb_bot, db_bot, cover_bot, rowgap_bot, is_top=False
+    # ----- longitudinal bar positions - use cached layout function -----
+    # Get 2-layer parameters
+    nb_or_s_bot_1 = float(get_param("nb_or_s_bot_1", 4.0) or 4.0)
+    db_bot_1 = float(get_param("db_bot_1", 20.0) or 20.0)
+    nb_or_s_bot_2 = float(get_param("nb_or_s_bot_2", 0.0) or 0.0)
+    db_bot_2 = float(get_param("db_bot_2", 20.0) or 20.0)
+    
+    nb_or_s_top_1 = float(get_param("nb_or_s_top_1", 2.0) or 2.0)
+    db_top_1 = float(get_param("db_top_1", 16.0) or 16.0)
+    nb_or_s_top_2 = float(get_param("nb_or_s_top_2", 0.0) or 0.0)
+    db_top_2 = float(get_param("db_top_2", 16.0) or 16.0)
+    
+    rowgap_bot = float(get_param("rowgap_bot", 60.0) or 60.0)
+    rowgap_top = float(get_param("rowgap_top", 60.0) or 60.0)
+    
+    cover_bot = float(get_param("cover_bot", 40.0) or 40.0)
+    cover_top = float(get_param("cover_top", 40.0) or 40.0)
+    cover_side = float(
+        get_param("cover_side", min(cover_top, cover_bot)) or min(cover_top, cover_bot)
     )
-    line_w_bot = max(2.0, abs(db_bot) * 0.4)
-    for (yy, zz) in bot_positions:
-        traces.append(
-            go.Scatter3d(
-                x=[0, L],
-                y=[yy, yy],
-                z=[zz, zz],
-                mode="lines",
-                line=dict(width=line_w_bot, color="red"),
-                hoverinfo="skip",
-                showlegend=False,
-            )
-        )
-
-    # top bars
-    top_positions = _bar_positions_3d(
-        nb_top, db_top, cover_top, rowgap_top, is_top=True
+    
+    # Get layout from cached function
+    cached_layout = compute_section_layout_cached(
+        b=b, D=D,
+        cover_bot=cover_bot, cover_top=cover_top, cover_side=cover_side,
+        nb_or_s_bot_1=nb_or_s_bot_1, db_bot_1=db_bot_1,
+        nb_or_s_bot_2=nb_or_s_bot_2, db_bot_2=db_bot_2,
+        nb_or_s_top_1=nb_or_s_top_1, db_top_1=db_top_1,
+        nb_or_s_top_2=nb_or_s_top_2, db_top_2=db_top_2,
+        rowgap_bot=rowgap_bot, rowgap_top=rowgap_top,
+        lig_legs=lig_legs, lig_d=lig_d,
     )
-    line_w_top = max(2.0, abs(db_top) * 0.4)
-    for (yy, zz) in top_positions:
-        traces.append(
-            go.Scatter3d(
-                x=[0, L],
-                y=[yy, yy],
-                z=[zz, zz],
-                mode="lines",
-                line=dict(width=line_w_top, color="blue"),
-                hoverinfo="skip",
-                showlegend=False,
+    reo_layout = cached_layout.get("reo_layout")
+    
+    # Bottom bars - draw each layer separately
+    # BOTTOM reinforcement is BLUE
+    for layer_data in reo_layout["bottom"]:
+        x_positions = layer_data["x"]
+        y_pos = layer_data["y"]  # This is the y coordinate in 2D (section view)
+        db = layer_data["db"]
+        # Convert 2D y to 3D z (y in 2D section = z in 3D beam)
+        z_pos = y_pos
+        line_w = max(2.0, abs(db) * 0.4)
+        for x_pos in x_positions:
+            traces.append(
+                go.Scatter3d(
+                    x=[0, L],
+                    y=[x_pos, x_pos],  # x in 2D section = y in 3D beam
+                    z=[z_pos, z_pos],
+                    mode="lines",
+                    line=dict(width=line_w, color="blue"),
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
             )
-        )
+
+    # Top bars - draw each layer separately
+    # TOP reinforcement is RED
+    for layer_data in reo_layout["top"]:
+        x_positions = layer_data["x"]
+        y_pos = layer_data["y"]  # This is the y coordinate in 2D (section view)
+        db = layer_data["db"]
+        # Convert 2D y to 3D z (y in 2D section = z in 3D beam)
+        z_pos = y_pos
+        line_w = max(2.0, abs(db) * 0.4)
+        for x_pos in x_positions:
+            traces.append(
+                go.Scatter3d(
+                    x=[0, L],
+                    y=[x_pos, x_pos],  # x in 2D section = y in 3D beam
+                    z=[z_pos, z_pos],
+                    mode="lines",
+                    line=dict(width=line_w, color="red"),
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
+            )
 
     # ----- shear ligs -----
     def add_shear_hoop_at_x(x0):
@@ -627,37 +703,41 @@ def render_inputs():
     st.markdown("---")
 
     # ============================
-    # 0. ACTION SOURCE TOGGLE
-    # ============================
-    st.subheader("Source of design actions (M*, V*)")
-    
-    action_source = st.radio(
-        "Source of design actions (M*, V*)",
-        [
-            "Manual design actions (inputs below)",
-            "Teaching SFD/BMD page (|M|max, |V|max)",
-        ],
-        key="inputs_actions_source",
-        on_change=sync_callbacks["inputs_actions_source"],
-    )
-
-    # Teaching values from SFD/BMD page (stored directly in session_state, may be None first time)
-    M_sfd = get_param("sfd_Mmax_abs_kNm", None)
-    V_sfd = get_param("sfd_Vmax_abs_kN", None)
-    L_sfd = get_param("sfd_span_L_m", None)
-    # sfd_case is a widget key, read it directly from session_state
-    case_sfd = st.session_state.get("sfd_case", None)
-
-    st.markdown("---")
-
-    # ============================
     # 1. TOP ROW – Actions | Geometry | Materials
     # ============================
     col_actions, col_geom, col_mat = st.columns(3)
 
     # --- Design actions ---
     with col_actions:
-        st.subheader("Design Actions")
+        # Heading row with info popover for source of design actions
+        col_title, col_info = st.columns([0.92, 0.08])
+        with col_title:
+            st.subheader("Design Actions")
+        with col_info:
+            with st.popover("ℹ️", help="Source of design actions (M*, V*)"):
+                action_source = st.radio(
+                    "Source of design actions (M*, V*)",
+                    [
+                        "Manual design actions (inputs below)",
+                        "Teaching SFD/BMD page (|M|max, |V|max)",
+                    ],
+                    key="inputs_actions_source",
+                    on_change=sync_callbacks["inputs_actions_source"],
+                )
+        
+        # Show caption with current mode
+        current_source = st.session_state.get("inputs_actions_source", "Manual design actions (inputs below)")
+        if current_source == "Manual design actions (inputs below)":
+            st.caption("Design actions: Manual inputs")
+        else:
+            st.caption("Design actions: From SFD/BMD")
+        
+        # Teaching values from SFD/BMD page (stored directly in session_state, may be None first time)
+        M_sfd = get_param("sfd_Mmax_abs_kNm", None)
+        V_sfd = get_param("sfd_Vmax_abs_kN", None)
+        L_sfd = get_param("sfd_span_L_m", None)
+        # sfd_case is a widget key, read it directly from session_state
+        case_sfd = st.session_state.get("sfd_case", None)
 
         number_row(
             "Design moment Mu* (kNm)",
@@ -796,22 +876,40 @@ def render_inputs():
 
     # --- Bottom reo ---
     with col_bot_reo:
-        st.subheader("Bottom Reinforcement (primary)")
-
+        st.subheader("Bottom Longitudinal Reinforcement")
+        
+        st.markdown("**Layer 1**")
         number_row(
-            "Bottom bars or spacing (≤30 = bars, ≥30 = mm)",
-            "inputs_bot_entry",
+            "Layer 1: bars or spacing (≤30 = bars, ≥30 = mm)",
+            "inputs_nb_or_s_bot_1",
             1.0,
             sync_callbacks,
             help_text="Enter a number of bars (≤30) or a spacing in mm (≥30).",
         )
 
         number_row(
-            "Bottom bar diameter db,bot (mm)",
-            "inputs_db_bot",
+            "Layer 1: bar diameter db,bot,1 (mm)",
+            "inputs_db_bot_1",
             1.0,
             sync_callbacks,
-            help_text="Nominal diameter of bottom bars.",
+            help_text="Nominal diameter of bottom Layer 1 bars.",
+        )
+        
+        st.markdown("**Layer 2**")
+        number_row(
+            "Layer 2: bars or spacing (≤30 = bars, ≥30 = mm)",
+            "inputs_nb_or_s_bot_2",
+            1.0,
+            sync_callbacks,
+            help_text="Enter a number of bars (≤30) or a spacing in mm (≥30). Auto-updated if Layer 1 doesn't fit.",
+        )
+
+        number_row(
+            "Layer 2: bar diameter db,bot,2 (mm)",
+            "inputs_db_bot_2",
+            1.0,
+            sync_callbacks,
+            help_text="Nominal diameter of bottom Layer 2 bars.",
         )
 
         number_row(
@@ -824,22 +922,62 @@ def render_inputs():
 
     # --- Top reo ---
     with col_top_reo:
-        st.subheader("Top Reinforcement (primary)")
-
+        st.subheader("Top Longitudinal Reinforcement")
+        
+        # Display messages for top reinforcement
+        if st.session_state.get("_reo_msg_top_auto_layer2", False):
+            show_reo_message("auto_layer2", layer="Top Layer 1")
+            st.session_state["_reo_msg_top_auto_layer2"] = False  # Clear after showing
+        
+        if st.session_state.get("_reo_msg_top_layer2_overwritten", False):
+            show_reo_message("layer2_overwritten", layer="Top Layer 1")
+            st.session_state["_reo_msg_top_layer2_overwritten"] = False  # Clear after showing
+        
+        if st.session_state.get("_reo_error_top_1", False):
+            show_reo_message("layout_invalid", layer="Top Layer 1")
+            st.session_state["_reo_error_top_1"] = False  # Clear after showing
+        
+        warning_top_1 = st.session_state.get("_reo_warning_top_1")
+        if warning_top_1:
+            # Extract s_min if available
+            s_min_val = st.session_state.get("_reo_s_min_top_1", 25.0)
+            show_reo_message("spacing_clamped", layer="Top Layer 1", s_min=s_min_val)
+            st.session_state["_reo_warning_top_1"] = None  # Clear after showing
+            st.session_state["_reo_s_min_top_1"] = None
+        
+        st.markdown("**Layer 1**")
         number_row(
-            "Top bars or spacing (≤30 = bars, ≥30 = mm)",
-            "inputs_top_entry",
+            "Layer 1: bars or spacing (≤30 = bars, ≥30 = mm)",
+            "inputs_nb_or_s_top_1",
             1.0,
             sync_callbacks,
             help_text="Enter a number of bars (≤30) or a spacing in mm (≥30).",
         )
 
         number_row(
-            "Top bar diameter db,top (mm)",
-            "inputs_db_top",
+            "Layer 1: bar diameter db,top,1 (mm)",
+            "inputs_db_top_1",
             1.0,
             sync_callbacks,
-            help_text="Nominal diameter of top bars.",
+            help_text="Nominal diameter of top Layer 1 bars.",
+        )
+        
+        st.markdown("**Layer 2**")
+        
+        number_row(
+            "Layer 2: bars or spacing (≤30 = bars, ≥30 = mm)",
+            "inputs_nb_or_s_top_2",
+            1.0,
+            sync_callbacks,
+            help_text="Enter a number of bars (≤30) or a spacing in mm (≥30). Auto-updated if Layer 1 doesn't fit.",
+        )
+
+        number_row(
+            "Layer 2: bar diameter db,top,2 (mm)",
+            "inputs_db_top_2",
+            1.0,
+            sync_callbacks,
+            help_text="Nominal diameter of top Layer 2 bars.",
         )
 
         number_row(
