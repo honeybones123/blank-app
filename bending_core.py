@@ -1,5 +1,6 @@
 # bending_core.py
 import math
+import streamlit as st
 
 from state_and_helpers import (
     get_param,
@@ -79,6 +80,7 @@ def _layout_bars_in_rows(n_bars, b, cover, db, min_spacing, n_rows_max=2):
 def _effective_depth_centroid():
     """
     Return effective depth d to the CENTROID of bottom tensile reinforcement.
+    Wrapper that reads from session state and calls the pure function.
 
     Uses:
         b, D, nb_bot, db_bot, cover_bot, rowgap_bot
@@ -91,69 +93,21 @@ def _effective_depth_centroid():
     db_bot = get_param("db_bot")
     cover_bot = get_param("cover_bot")
     rowgap_bot = get_param("rowgap_bot")
-
-    if b in (None, 0) or D in (None, 0) or nb_bot in (None, 0) or db_bot in (None, 0) or cover_bot in (None, 0):
-        return None
-
-    nb_bot = int(nb_bot)
-    db_bot = float(db_bot)
-    cover_bot = float(cover_bot)
-    rowgap_bot = float(rowgap_bot) if rowgap_bot not in (None, 0) else 0.0
-
-    # Bottom row depth (to bar centre) from top fibre
-    d_row0 = D - cover_bot - db_bot / 2.0
-
-    # Horizontal layout (bars per row)
-    min_spacing_bot = 2.0 * db_bot
-    layout = _layout_bars_in_rows(
-        n_bars=nb_bot,
-        b=b,
-        cover=cover_bot,
-        db=db_bot,
-        min_spacing=min_spacing_bot,
-        n_rows_max=2,
-    )
-
-    if not layout:
-        return d_row0
-
-    # Vertical layout (row spacing)
-    row_pitch_bot = db_bot + rowgap_bot
-
-    y_positions = []
-    for _, row_idx in layout:
-        y_positions.append(d_row0 - row_idx * row_pitch_bot)
-
-    if not y_positions:
-        return d_row0
-
-    return sum(y_positions) / len(y_positions)
+    
+    return _effective_depth_centroid_pure(b, D, nb_bot, db_bot, cover_bot, rowgap_bot)
 
 
 # ------------------------------------------------------------
 #  BENDING CAPACITY CALC (α2–γ stress block, AS3600 Cl. 8.1.3)
 # ------------------------------------------------------------
-def _compute_bending_capacity():
+@st.cache_data
+def _compute_bending_capacity_pure(b, D, fc, fsy, Ast, Mu_star, phi, d_input, cover_bot, db_bot, nb_bot, rowgap_bot):
     """
-    Compute a simple φMu,cap using a rectangular stress block.
-
-    IMPORTANT:
-      • d is depth to CENTROID of tensile reo
-      • fctf, Mcr and As_min follow AS 3600-style expressions
+    Pure function version of bending capacity calculation.
+    All inputs must be passed as arguments (no get_param calls).
     """
-    # Shared parameters
-    b = get_param("b")
-    D = get_param("D")
-    fc = get_param("fc")
-    fsy = get_param("fsy")
-    Ast = get_param("Ast_bot")
-    Mu_star = get_param("Mu_star")
-
-    phi = get_param("phi_bend", 0.85)
-
     # Effective depth
-    d_centroid = _effective_depth_centroid()
-    d_input = get_param("d")
+    d_centroid = _effective_depth_centroid_pure(b, D, nb_bot, db_bot, cover_bot, rowgap_bot)
     d = d_centroid if d_centroid not in (None, 0) else d_input
 
     # Missing-info fallback
@@ -230,6 +184,105 @@ def _compute_bending_capacity():
     Mu_util = Mu_star / phi_Mu_cap if phi_Mu_cap > 0 else float("inf")
     ku = c / d if d not in (None, 0) else float("nan")
 
+    return {
+        "phi_Mu_cap": phi_Mu_cap,
+        "Mu_util": Mu_util,
+        "c": c,
+        "a": a,
+        "z": z,
+        "ku": ku,
+        "alpha2": alpha2,
+        "gamma": gamma,
+        "phi": phi,
+        "fctf": fctf,
+        "I_gross": I_gross,
+        "Z_gross": Z_gross,
+        "Mcr": Mcr,
+        "As_min": As_min,
+        "d": d,
+    }
+
+
+def _effective_depth_centroid_pure(b, D, nb_bot, db_bot, cover_bot, rowgap_bot):
+    """Pure function version of effective depth calculation."""
+    if b in (None, 0) or D in (None, 0) or nb_bot in (None, 0) or db_bot in (None, 0) or cover_bot in (None, 0):
+        return None
+
+    nb_bot = int(nb_bot)
+    db_bot = float(db_bot)
+    cover_bot = float(cover_bot)
+    rowgap_bot = float(rowgap_bot) if rowgap_bot not in (None, 0) else 0.0
+
+    # Bottom row depth (to bar centre) from top fibre
+    d_row0 = D - cover_bot - db_bot / 2.0
+
+    # Horizontal layout (bars per row)
+    min_spacing_bot = 2.0 * db_bot
+    layout = _layout_bars_in_rows(
+        n_bars=nb_bot,
+        b=b,
+        cover=cover_bot,
+        db=db_bot,
+        min_spacing=min_spacing_bot,
+        n_rows_max=2,
+    )
+
+    if not layout:
+        return d_row0
+
+    # Vertical layout (row spacing)
+    row_pitch_bot = db_bot + rowgap_bot
+
+    y_positions = []
+    for _, row_idx in layout:
+        y_positions.append(d_row0 - row_idx * row_pitch_bot)
+
+    if not y_positions:
+        return d_row0
+
+    return sum(y_positions) / len(y_positions)
+
+
+def _compute_bending_capacity():
+    """
+    Compute a simple φMu,cap using a rectangular stress block.
+    Wrapper that reads from session state and calls the cached pure function.
+
+    IMPORTANT:
+      • d is depth to CENTROID of tensile reo
+      • fctf, Mcr and As_min follow AS 3600-style expressions
+    """
+    # Shared parameters
+    b = get_param("b")
+    D = get_param("D")
+    fc = get_param("fc")
+    fsy = get_param("fsy")
+    Ast = get_param("Ast_bot")
+    Mu_star = get_param("Mu_star")
+
+    phi = get_param("phi_bend", 0.85)
+    
+    # Additional params for pure function
+    d_input = get_param("d")
+    cover_bot = get_param("cover_bot")
+    db_bot = get_param("db_bot")
+    nb_bot = get_param("nb_bot")
+    rowgap_bot = get_param("rowgap_bot")
+
+    # Call cached pure function
+    results = _compute_bending_capacity_pure(
+        b=b, D=D, fc=fc, fsy=fsy, Ast=Ast, Mu_star=Mu_star, phi=phi,
+        d_input=d_input, cover_bot=cover_bot, db_bot=db_bot,
+        nb_bot=nb_bot, rowgap_bot=rowgap_bot
+    )
+    
+    # Extract values for update_results
+    phi_Mu_cap = results["phi_Mu_cap"]
+    Mu_util = results["Mu_util"]
+    ku = results["ku"]
+    As_min = results["As_min"]
+    Mcr = results["Mcr"]
+
     # --------------------------------------------------
     # Minimum strength + ductility values
     # (for Inputs page summary table)
@@ -256,23 +309,7 @@ def _compute_bending_capacity():
         k_u_lim=k_u_lim,
     )
 
-    return {
-        "phi_Mu_cap": phi_Mu_cap,
-        "Mu_util": Mu_util,
-        "c": c,
-        "a": a,
-        "z": z,
-        "ku": ku,
-        "alpha2": alpha2,
-        "gamma": gamma,
-        "phi": phi,
-        "fctf": fctf,
-        "I_gross": I_gross,
-        "Z_gross": Z_gross,
-        "Mcr": Mcr,
-        "As_min": As_min,
-        "d": d,
-    }
+    return results
 
 
 # ============================
