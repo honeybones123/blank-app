@@ -56,12 +56,11 @@ def _make_sls_stress_block_figure_32(D_mm, d_mm, dn_mm, layers_tension):
     """
     Local SLS stress diagram used ONLY in 3.2.
 
-    Matches the style of the main SLS panel:
-    - triangular compression block
-    - α2 f'c width arrow on top
-    - internal compression arrows
-    - dashed NA, vertical d_n arrow + label
-    - one T arrow for each tension layer (T1, T2, ...)
+    - Triangular compression block
+    - α2 f'c width arrow well above the triangle
+    - Internal compression arrows kept inside the block
+    - Dashed NA, d_n arrow + label
+    - One T arrow for each tension layer (T1, T2, ...)
     """
 
     if D_mm <= 0 or math.isnan(D_mm):
@@ -69,11 +68,13 @@ def _make_sls_stress_block_figure_32(D_mm, d_mm, dn_mm, layers_tension):
     if dn_mm <= 0 or math.isnan(dn_mm):
         dn_mm = D_mm / 3.0
 
-    # Set some "stress axis" widths in arbitrary units
+    # Horizontal extents (arbitrary "stress" scale)
     x_comp_max = 1.0       # compression extent
-    x_T_max = 1.8          # tension arrow extent
-    margin_top = 0.3 * D_mm
-    margin_bot = 0.3 * D_mm
+    x_T_max = 1.8          # tension extent
+
+    # Margins so we have space above & below
+    margin_top = 0.45 * D_mm
+    margin_bot = 0.35 * D_mm
 
     y_min = -margin_top
     y_max = D_mm + margin_bot
@@ -89,7 +90,7 @@ def _make_sls_stress_block_figure_32(D_mm, d_mm, dn_mm, layers_tension):
     ax.fill(tri_x, tri_y, color="#ffcccc", alpha=0.7, zorder=1)
     ax.plot(tri_x + [tri_x[0]], tri_y + [tri_y[0]], color="red", linewidth=1.2, zorder=2)
 
-    # Dashed neutral axis at y = dn
+    # Dashed neutral axis at y = d_n
     ax.plot(
         [0, x_T_max],
         [dn_mm, dn_mm],
@@ -98,7 +99,7 @@ def _make_sls_stress_block_figure_32(D_mm, d_mm, dn_mm, layers_tension):
         color="black",
     )
 
-    # α2 f'c label and width arrow above triangle
+    # Ec * εc label and width arrow above triangle (SLS elastic block)
     y_alpha = -0.08 * D_mm
     ax.annotate(
         "",
@@ -106,26 +107,37 @@ def _make_sls_stress_block_figure_32(D_mm, d_mm, dn_mm, layers_tension):
         xytext=(x_comp_max, y_alpha),
         arrowprops=dict(arrowstyle="<->", color="red", linewidth=1.0),
     )
+
+    # Put the text clearly above the arrow (no line through it)
     ax.text(
         x_comp_max / 2.0,
-        y_alpha - 0.04 * D_mm,
-        r"$\alpha_2 f'_c$",
+        y_alpha - 0.12 * D_mm,   # higher above the arrow
+        r"$E_c \varepsilon_c$",
         color="red",
         ha="center",
-        va="top",
+        va="bottom",             # anchor from the bottom edge
         fontsize=9,
     )
 
-    # A few internal compression arrows (pointing left towards the axis)
-    for frac in [0.2, 0.5, 0.8]:
-        y_i = frac * dn_mm
-        ax.annotate(
-            "",
-            # arrow goes from right (xytext) to left (xy)
-            xy=(0.05 * x_comp_max, y_i),      # head (left)
-            xytext=(0.9 * x_comp_max, y_i),   # tail (right)
-            arrowprops=dict(arrowstyle="->", color="red", linewidth=0.8),
-        )
+    # Internal compression arrows – strictly inside the triangle
+    if dn_mm > 0:
+        for frac in [0.25, 0.50, 0.75]:
+            y_i = frac * dn_mm
+
+            # Triangle hypotenuse intersection at depth y_i:
+            # x_max = x_comp_max * (1 - y_i / dn_mm)
+            rel = max(0.0, min(1.0, y_i / dn_mm))
+            x_max = x_comp_max * (1.0 - rel)
+
+            x_head = 0.15 * x_max       # head near axis
+            x_tail = 0.85 * x_max       # tail near hypotenuse
+
+            ax.annotate(
+                "",
+                xy=(x_head, y_i),      # head (left, inside block)
+                xytext=(x_tail, y_i),  # tail (right, inside block)
+                arrowprops=dict(arrowstyle="->", color="red", linewidth=0.8),
+            )
 
     # d_n arrow + label to the right of the block
     x_dn = x_T_max * 0.9
@@ -145,16 +157,12 @@ def _make_sls_stress_block_figure_32(D_mm, d_mm, dn_mm, layers_tension):
         fontsize=9,
     )
 
-    # Tension arrows for each layer
+    # Tension arrows for each layer (T1, T2, ...)
     if layers_tension:
-        # sort by depth from top
         layers_sorted = sorted(layers_tension, key=lambda L: L["y"])
         for i, layer in enumerate(layers_sorted):
-            y_layer = layer["y"]
+            y_layer = max(0.0, min(D_mm, layer["y"]))
             name = layer["name"]
-
-            # Clamp y within [0, D_mm]
-            y_layer = max(0.0, min(D_mm, y_layer))
 
             ax.annotate(
                 "",
@@ -162,7 +170,6 @@ def _make_sls_stress_block_figure_32(D_mm, d_mm, dn_mm, layers_tension):
                 xytext=(0, y_layer),
                 arrowprops=dict(arrowstyle="->", color="tab:blue", linewidth=1.0),
             )
-            # Slight vertical offset per layer so labels don't collide
             ax.text(
                 x_T_max + 0.05 * x_T_max,
                 y_layer + (i * 0.04 * D_mm),
@@ -176,16 +183,16 @@ def _make_sls_stress_block_figure_32(D_mm, d_mm, dn_mm, layers_tension):
     # "Stress (MPa)" label at bottom
     ax.text(
         x_T_max / 2.0,
-        D_mm + 0.18 * D_mm,
+        D_mm + 0.20 * D_mm,
         "Stress (MPa)",
         ha="center",
         va="bottom",
         fontsize=9,
     )
 
-    # Style
-    ax.set_xlim(-0.2 * x_comp_max, x_T_max * 1.3)
-    ax.set_ylim(y_max, y_min)  # invert so top is visually "up"
+    # Axes styling
+    ax.set_xlim(-0.25 * x_comp_max, x_T_max * 1.3)
+    ax.set_ylim(y_max, y_min)  # invert so "top" is visually up
     ax.axis("off")
 
     return fig
@@ -280,7 +287,6 @@ $\\alpha_2 = {alpha2_uls:.3f}$, $\\gamma = {gamma_uls:.3f}$ (to be used in Secti
             )
 
         with col_fig_11:
-            # Variant "11": compact height to match this calc box.
             fig_uls_11 = _make_uls_stress_block_figure(
                 b_mm=b or 0.0,
                 D_mm=D or 0.0,
@@ -292,13 +298,13 @@ $\\alpha_2 = {alpha2_uls:.3f}$, $\\gamma = {gamma_uls:.3f}$ (to be used in Secti
                 fc=fc,
                 fsy=fsy,
                 show_lever_arm=False,
-                show_dn=False,          # no d_n for 1.1
-                show_alpha_label=True,  # α2 f'c width annotation
-                show_C=False,           # no C arrow in 1.1
+                show_dn=False,          # ignored for variant "11"
+                show_alpha_label=True,
+                show_C=False,
                 C_N=None,
-                variant="11",
+                variant="11",           # <— simple 1.1 diagram
             )
-            st.pyplot(fig_uls_11, use_container_width=False)
+            st.plotly_chart(fig_uls_11, use_container_width=False, config={"displayModeBar": False})
 
         st.markdown("---")
 
@@ -492,14 +498,78 @@ $ d_n = {dn:.1f}$ mm, $ a = {a_uls:.1f}$ mm.
                 C_N=None,
                 variant="13",
             )
-            st.pyplot(fig_uls_14, use_container_width=False)
+            st.plotly_chart(fig_uls_14, use_container_width=False, config={"displayModeBar": False})
 
         st.markdown("---")
 
         # --------------------------------------------------
         # 1.5 Neutral axis ratio k_u
         # --------------------------------------------------
-        st.subheader("1.5 Neutral axis ratio $k_u$")
+        col_ku_title, col_ku_info = st.columns([0.9, 0.1])
+
+        with col_ku_title:
+            st.subheader("1.5 Neutral axis ratio $k_u$")
+
+        with col_ku_info:
+            with st.popover("ℹ️", help="What does the neutral-axis ratio mean?"):
+                st.markdown(
+                    r"""
+### **Neutral-Axis Ratio \(k_u\) — Meaning & Importance**
+
+The ratio  
+
+\[
+
+k_u = \frac{d_n}{d}
+
+\]  
+
+describes **how deep the neutral axis is** relative to the effective depth.
+
+---
+
+#### **1. Indicator of section behaviour**
+
+- **Low \(k_u\)** → shallow neutral axis → large tension zone → *steel governs* → ductile.  
+
+- **High \(k_u\)** → deep neutral axis → large compression zone → *concrete governs* → brittle.
+
+---
+
+#### **2. Direct link to ductility**
+
+Because strain varies linearly:
+
+- Low \(k_u\)** → steel yields first → **ductile, predictable failure**  
+
+- High \(k_u\)** → concrete crushes first → **brittle failure**
+
+---
+
+#### **3. Why AS 3600 limits \(k_u\)**
+
+The code caps \(k_u\) to maintain:
+
+- warning deformation before failure  
+
+- energy absorption  
+
+- steel yielding rather than sudden concrete crushing  
+
+---
+
+#### **4. Quick performance indicator**
+
+A single value of \(k_u\) tells you:
+
+- the balance between steel & concrete  
+
+- whether the beam is under- or over-reinforced  
+
+- how reinforcement changes shift the NA
+
+"""
+                )
 
         ku = dn / d if d else float("nan")
 
@@ -611,7 +681,7 @@ Design bending capacity $\\phi M_{{u,cap}} = {phi_Mu_cap_uls:.2f}$ kNm.
                 C_N=C_N,
                 T_N=T,
             )
-            st.pyplot(fig_uls_16, use_container_width=False)
+            st.plotly_chart(fig_uls_16, use_container_width=False, config={"displayModeBar": False})
 
         st.markdown("---")
 
@@ -834,6 +904,9 @@ def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
       * Build one layer for each bottom bar ROW (T1, T2, ...)
       * Optionally one compression layer for top bars (C1)
     """
+    # Force unique chart key each run (kills any stale/cached render)
+    st.session_state["_diag_nonce"] = st.session_state.get("_diag_nonce", 0) + 1
+    
     st.header("3. SLS Bending – Cracked Section (Teaching Model)")
 
     if not (d and Ast and Ec and Es and b and D and Mu_star is not None):
@@ -930,7 +1003,66 @@ def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
     # --------------------------------------------------
     # 3.1 Modular ratio & transformed steel areas
     # --------------------------------------------------
-    st.subheader("3.1 Modular ratio $n = E_s / E_c$")
+    col_n_title, col_n_info = st.columns([0.9, 0.1])
+
+    with col_n_title:
+        st.subheader("3.1 Modular ratio $n = E_s / E_c$")
+
+    with col_n_info:
+        with st.popover("ℹ️", help="What does the modular ratio mean?"):
+            st.markdown(
+                r"""
+### **Modular Ratio \(n = E_s / E_c\) — What it Means**
+
+The modular ratio
+
+\[
+n = \frac{E_s}{E_c}
+\]
+
+compares **steel stiffness** to **concrete stiffness**.
+
+---
+
+#### 1. Converts steel into 'equivalent concrete'
+
+Because steel is much stiffer than concrete, one mm² of steel carries
+more force than one mm² of concrete at the same strain.
+
+Using \(n\):
+
+- Each steel area \(A_s\) is converted to an **equivalent concrete area** \(n A_s\).
+
+- This lets us do **cracked-section calculations** using a single material (concrete).
+
+---
+
+#### 2. Why it matters in SLS
+
+Once the section cracks, stiffness depends on:
+
+- how much steel you have,
+
+- how far that steel sits from the neutral axis,
+
+- and the **relative stiffness** \(E_s : E_c\).
+
+The modular ratio makes this balance explicit in the
+\(I_{cr}\), curvature and steel-stress calculations.
+
+---
+
+#### 3. Typical values
+
+For normal RC beams:
+
+- \(E_c \sim 25{,}000{-}35{,}000\) MPa  
+
+- \(E_s \sim 200{,}000\) MPa  
+
+so \(n\) is usually in the range **6–10**.
+"""
+            )
 
     calcbox(
         f"""
@@ -1067,53 +1199,221 @@ Modular ratio $n = {Es/Ec:.2f}$ (used to compute $nA_s$ in the table below).
     col_32_calc, col_32_fig = st.columns([2, 1])
 
     with col_32_calc:
+        # ---------------- 3.2 Neutral axis depth dn (cracked section) ----------------
+        # Build LaTeX summaries and substituted-equation terms
+        tension_summ_lines = []
+        tension_eq_terms = []
+        for idx, layer in enumerate(layers_tension, start=1):
+            As_i = layer["As"]
+            d_i = layer["y"]
+            nAs_i = n_sls * As_i
+            tension_summ_lines.append(
+                rf"d_{idx} = {d_i:.1f}\ \text{{mm}},\quad nA_{{s,{idx}}} = {nAs_i:.1f}\ \text{{mm}}^2"
+            )
+            tension_eq_terms.append(
+                rf"{nAs_i:.1f}\,({d_i:.1f} - d_n)"
+            )
+
+        tension_summ_tex = (
+            r" \\ ".join(tension_summ_lines)
+            if tension_summ_lines
+            else r"\text{(no tension layers)}"
+        )
+        tension_eq_tex = (
+            " + ".join(tension_eq_terms) if tension_eq_terms else "0"
+        )
+
+        comp_summ_tex = ""
+        comp_eq_tex = ""
+        if include_comp and comp_layer is not None:
+            As_c = comp_layer["As"]
+            d_sc = comp_layer["y"]
+            nAs_c = n_sls * As_c
+            comp_summ_tex = (
+                rf"d_{{s,c}} = {d_sc:.1f}\ \text{{mm}},\quad nA_{{s,c}} = {nAs_c:.1f}\ \text{{mm}}^2"
+            )
+            comp_eq_tex = rf"{nAs_c:.1f}\,(d_n - {d_sc:.1f})"
+
+        b_mm = float(b or 0.0)
+        dn_val = float(dn_sls)
+
+        # Build compression steel section separately (to avoid f-string backslash issue)
+        comp_section = ""
+        if comp_summ_tex:
+            comp_section = (
+                "Compression steel layer:\n\n"
+                "\\[\n\\begin{aligned}\n"
+                + comp_summ_tex
+                + "\n\\end{aligned}\n\\]\n"
+            )
+
         calcbox(
-            f"""
-*Purpose: Find the cracked-section neutral axis depth $d_n$ by enforcing equilibrium of transformed areas.*  
+            rf"""
+**Purpose:** Find the cracked-section neutral axis depth $d_n$ by enforcing
+equilibrium of **transformed areas** (tension steel vs concrete + compression steel).
 
-**Concept:**  
+**Concept:**
 
-Tension side:
+Tension side (transformed steel):
 
-$$
-T = \\sum n A_{{s,i}} (d_i - d_n)
-$$
+\[
+T = \sum n A_{{s,i}} (d_i - d_n)
+\]
 
 Concrete (and any compression steel) provide compression $C$ so that:
 
-$$
-\\frac{{b d_n^2}}{{2}} + \\sum n A_{{s,c}} (d_n - d_{{s,c}}) = \\sum n A_{{s,i}} (d_i - d_n)
-$$
+\[
+\frac{{b d_n^2}}{2} + \sum n A_{{s,c}} (d_n - d_{{s,c}})
+=
+\sum n A_{{s,i}} (d_i - d_n)
+\]
 
-This equation is solved numerically for $d_n$ using bisection on the current section.
+**Substitution (section data):**
 
----
+\[
+b = {b_mm:.0f}\ \text{{mm}}
+\]
+
+Tension steel layers:
+
+\[
+\begin{{aligned}}
+{tension_summ_tex}
+\end{{aligned}}
+\]
+
+{comp_section}**So that:**
+
+\[
+\frac{{{b_mm:.0f}\, d_n^2}}{2}
+{(" + " + comp_eq_tex) if comp_eq_tex else ""}
+=
+{tension_eq_tex}
+\]
+
+This equation is then solved **numerically** for $d_n$ on the current section
+(using a bisection root-finder).
 
 **Result (this section):**
 
-$$
-d_n = {dn_sls:.2f}\\ \\text{{mm}}
-$$
+\[
+d_n = {dn_val:.2f}\ \text{{mm}}
+\]
+
 """
         )
 
     with col_32_fig:
-        # Local, detailed SLS stress diagram (this does NOT touch the main SLS panel)
-        fig_sls = _make_sls_stress_block_figure_32(
+        # Build diagram from fresh calc values (not session_state)
+        # Compute preliminary kappa for strain distribution (needed for eps_top)
+        Icr_prelim = b * dn_sls**3 / 3.0
+        for layer in layers_tension:
+            As_i = layer["As"]
+            y_i = layer["y"]
+            if y_i >= dn_sls:
+                Icr_prelim += n_sls * As_i * (y_i - dn_sls) ** 2
+        if include_comp and comp_layer is not None:
+            As_c = comp_layer["As"]
+            y_c = comp_layer["y"]
+            if y_c < dn_sls:
+                Icr_prelim += n_sls * As_c * (dn_sls - y_c) ** 2
+        kappa_prelim = (Ms * 1e6) / (Ec * Icr_prelim) if Ec and Icr_prelim else 0.0
+        eps_top_prelim = kappa_prelim * (0.0 - dn_sls)  # eps_top = kappa * (0 - dn)
+        
+        # Compute eps_s_layers and sig_s_layers for each tension layer
+        eps_s_layers = []
+        sig_s_layers = []
+        y_layers = []
+        for layer in layers_tension:
+            eps_s_i = kappa_prelim * (layer["y"] - dn_sls)
+            sig_s_i = Es * eps_s_i  # MPa
+            eps_s_layers.append(eps_s_i)
+            sig_s_layers.append(sig_s_i)
+            y_layers.append(layer["y"])
+        
+        # Build state dict for 3-panel plot (if needed)
+        sls_state = {
+            "dn": dn_sls,
+            "eps_c_top": eps_top_prelim,
+            "eps_s_layers": eps_s_layers,
+            "sig_s_layers": sig_s_layers,
+            "y_layers": y_layers,
+        }
+        
+        # Use Plotly function that matches 3-panel diagram conventions
+        fig = _make_sls_stress_block_figure(
             D_mm=D or 0.0,
             d_mm=d,
             dn_mm=dn_sls,
-            layers_tension=layers_tension,
+            include_comp=(include_comp and comp_layer is not None),
+            d_comp_mm=comp_layer["y"] if (include_comp and comp_layer is not None) else None,
         )
-        st.pyplot(fig_sls, use_container_width=False)
-        plt.close(fig_sls)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key=f"sls_3_2_{st.session_state['_diag_nonce']}")
 
     st.markdown("---")
 
     # --------------------------------------------------
     # 3.3 Cracked moment of inertia I_cr (CALC BOX ONLY)
     # --------------------------------------------------
-    st.subheader("3.3 Cracked moment of inertia $I_{{cr}}$")
+    col_Icr_title, col_Icr_info = st.columns([0.9, 0.1])
+
+    with col_Icr_title:
+        st.subheader("3.3 Cracked moment of inertia $I_{{cr}}$")
+
+    with col_Icr_info:
+        with st.popover("ℹ️", help="What does the cracked inertia mean?"):
+            st.markdown(
+                r"""
+### **Cracked Moment of Inertia \(I_{cr}\) — Why It Drops**
+
+Before cracking, the section stiffness is based on **gross inertia** \(I_g\).  
+After cracking, tension concrete is ineffective, and steel + compression concrete
+carry most of the bending. The **effective stiffness** is then based on \(I_{cr}\).
+
+---
+
+#### 1. What \(I_{cr}\) represents
+
+\(I_{cr}\) is the moment of inertia of the **transformed cracked section**:
+
+- Concrete in compression  
+
+- Steel converted to \(n A_s\) and located at its bar depth  
+
+- Any compression steel included on the compression side  
+
+This captures the **real stiffness** of the cracked beam at SLS.
+
+---
+
+#### 2. Why \(I_{cr} < I_g\)
+
+Once concrete cracks in tension:
+
+- The *tension half* of the concrete stops contributing to stiffness  
+
+- The neutral axis shifts toward the compression side  
+
+- The effective area resisting bending shrinks  
+
+So \(I_{cr}\) is **smaller** than \(I_g\), which directly reduces \(EI\) and increases deflection.
+
+---
+
+#### 3. Why we care
+
+\(I_{cr}\) feeds into:
+
+- Curvature: \(\kappa = M_s / (E_c I_{cr})\)  
+
+- Short-term deflection  
+
+- Long-term creep and shrinkage checks (via effective \(I_{ef}\) later)
+
+If you increase tension steel or move it further from the NA, \(I_{cr}\) generally increases,
+and the beam becomes **stiffer in service**.
+"""
+            )
 
     # Classify compression / tension for Icr based on dn_sls
     I_conc = b * dn_sls**3 / 3.0
@@ -1175,10 +1475,75 @@ Cracked transformed inertia $I_{{cr}} = {Icr:,.2f}\\ \\text{{mm}}^4$.
     # --------------------------------------------------
     # 3.4 Curvature at service moment
     # --------------------------------------------------
-    st.subheader("3.4 Curvature at service moment")
+    col_kappa_title, col_kappa_info = st.columns([0.9, 0.1])
+
+    with col_kappa_title:
+        st.subheader("3.4 Curvature at service moment")
+
+    with col_kappa_info:
+        with st.popover("ℹ️", help="What does curvature represent?"):
+            st.markdown(
+                r"""
+### **Curvature \(\kappa\) — Link Between Moment and Deflection**
+
+Curvature
+
+\[
+\kappa = \frac{M_s}{E_c I_{cr}}
+\]
+
+measures **how tightly the beam is bending** at a given section.
+
+- Units are \(1/\text{length}\) (e.g. mm⁻¹).  
+
+- Large \(\kappa\) → sharper bending → larger rotations and deflections.
+
+---
+
+#### 1. Moment–curvature relationship
+
+For a linear elastic (or equivalent) section:
+
+- \(M_s\) controls **how hard you're bending the beam**  
+
+- \(E_c I_{cr}\) controls **how stiff the cracked section is**
+
+So \(\kappa\) is the natural "output" of combining **load effect** and **cracked stiffness**.
+
+---
+
+#### 2. Why it matters for deflection
+
+Deflection is basically the **integral of curvature** along the span.  
+
+- If \(\kappa(x)\) is small everywhere → small deflections  
+
+- If \(\kappa(x)\) is large in midspan → big sagging deflection
+
+This step gives a **local curvature** at the design section, which is then used (or
+combined with other sections) in deflection calculations.
+
+---
+
+#### 3. Sensitivity
+
+\(\kappa\) decreases (beam gets "flatter") if:
+
+- You increase \(I_{cr}\) (more/closer steel, bigger section, etc.)  
+
+- You reduce \(M_s\) (lighter loads, smaller span, etc.)
+"""
+            )
 
     Ms_Nmm = Ms * 1e6
     kappa = Ms_Nmm / (Ec * Icr) if Ec and Icr else 0.0
+
+    # --- Publish curvature + NA depth for diagrams (SLS) ---
+    try:
+        st.session_state["bending_sls_dn"] = float(dn_sls)
+        st.session_state["bending_sls_kappa"] = float(kappa)
+    except Exception:
+        pass
 
     calcbox(
         f"""
@@ -1216,7 +1581,66 @@ Curvature at service: $\\kappa = {kappa:.3e}\\ \\text{{mm}}^{{-1}}$.
     # --------------------------------------------------
     # 3.5 Strain distribution ε(y) = κ (y − d_n)
     # --------------------------------------------------
-    st.subheader("3.5 Strain distribution $\\varepsilon(y) = \\kappa (y - d_n)$")
+    col_eps_title, col_eps_info = st.columns([0.9, 0.1])
+
+    with col_eps_title:
+        st.subheader("3.5 Strain distribution $\\varepsilon(y) = \\kappa (y - d_n)$")
+
+    with col_eps_info:
+        with st.popover("ℹ️", help="What does the strain diagram show?"):
+            st.markdown(
+                r"""
+### **Strain Distribution — Plane Sections in Action**
+
+Once you know curvature \(\kappa\) and neutral axis depth \(d_n\), the strain at
+any depth \(y\) is:
+
+\[
+\varepsilon(y) = \kappa (y - d_n)
+\]
+
+This is the **plane-sections-remain-plane** assumption from basic RC theory.
+
+---
+
+#### 1. Linear strain profile
+
+Because the section is assumed to stay plane:
+
+- Strain varies **linearly** from the top fibre to the bottom fibre.  
+
+- The neutral axis is the point where \(\varepsilon = 0\).  
+
+- Above NA → compression strains; below NA → tension strains.
+
+---
+
+#### 2. Why this matters
+
+The strain diagram directly drives:
+
+- **Concrete stresses** (\(\sigma_c = E_c \varepsilon_c\) at SLS)  
+
+- **Steel stresses** (\(\sigma_s = E_s \varepsilon_s\))  
+
+- Crack-width and service-stress checks  
+
+So the table and graph in this step show **how the curvature is distributed**
+across fibres and steel layers.
+
+---
+
+#### 3. Consistency check
+
+If the plane-sections assumption holds:
+
+- The strain diagram is straight  
+
+- The steel strains and concrete strains are **compatible** at each depth  
+
+- Force equilibrium (from previous steps) and compatibility now line up.
+"""
+            )
 
     strain_points = [("Top fibre", 0.0)]
     for layer in layers_tension:
@@ -1313,23 +1737,42 @@ See table for $\\varepsilon(y)$ at the top fibre, each steel layer, and bottom f
 
     df_steel = pd.DataFrame(steel_rows)
 
+    # Example substitution for first tension layer (if available)
+    example_eps = ""
+    example_fs = ""
+    if steel_rows and len(steel_rows) > 0:
+        first_row = steel_rows[0]
+        example_eps = f"\\varepsilon_{{s,1}} = {first_row['ε_s']:.5f}"
+        example_fs = f"f_{{s,1}} = {first_row['f_s (MPa)']:.1f} \\text{{ MPa}}"
+    else:
+        example_eps = "\\varepsilon_{{s,1}} = \\kappa (d_1 - d_n)"
+        example_fs = "f_{{s,1}} = E_s \\varepsilon_{{s,1}}"
+
     calcbox(
         f"""
 *Purpose: Derive steel stresses at SLS for each reinforcement layer.*  
 
-**Formulae:**
+**Formula:**
 
-Steel strain in each layer is:
+- Hooke's law for each steel layer  
 
-$$
-\\varepsilon_{{s,i}} = \\kappa (d_i - d_n)
-$$
+  $f_{{s,i}} = E_s \\varepsilon_{{s,i}}$
 
-and the corresponding stress is:
+- Steel strain in each layer:  
 
-$$
-f_{{s,i}} = E_s\\, \\varepsilon_{{s,i}}
-$$
+  $\\varepsilon_{{s,i}} = \\kappa (d_i - d_n)$
+
+- Resultant tension:  
+
+  $T = \\sum n A_{{s,i}} f_{{s,i}}$
+
+**Substitution (bottom layer example):**
+
+$E_s = {Es:,.0f} \\text{{ MPa}},\\;
+{example_eps}$
+
+$\\Rightarrow
+{example_fs}$
 
 The table below lists $\\varepsilon_{{s,i}}$ and $f_{{s,i}}$ for each steel layer.
 
@@ -1343,12 +1786,39 @@ See table for layer-by-layer SLS steel strains and stresses.
     st.markdown("---")
 
     # --------------------------------------------------
+    # 3.6a Store cracked SLS state for diagrams (read-only)
+    # --------------------------------------------------
+    deepest = None
+    if steel_rows:
+        # outermost tension layer (deepest y with positive stress)
+        deepest = max(
+            (row for row in steel_rows if row["f_s (MPa)"] > 0.0),
+            key=lambda row: row["Depth y (mm)"],
+            default=None,
+        )
+
+    # Save cracked-section SLS geometry + steel state to session_state
+    # (no widgets touched – these are read-only “output” values)
+    st.session_state["bending_sls_dn"] = float(dn_sls)
+    st.session_state["bending_sls_kappa"] = float(kappa)
+
+    if deepest is not None:
+        st.session_state["bending_sls_y_tension_outer"] = float(
+            deepest["Depth y (mm)"]
+        )
+        st.session_state["bending_sls_eps_s_outer"] = float(deepest["ε_s"])
+        st.session_state["bending_sls_fs_outer"] = float(deepest["f_s (MPa)"])
+
+    # --------------------------------------------------
     # 3.7 Link to crack-width calculation
     # --------------------------------------------------
     st.subheader("3.7 SLS steel stress used in crack-width checks")
 
     # OUTERMOST tension layer (deepest y) with positive stress
     fs_tension = None
+    eps_s_control = None
+    y_control = None
+
     if steel_rows:
         deepest = max(
             (row for row in steel_rows if row["f_s (MPa)"] > 0.0),
@@ -1357,6 +1827,21 @@ See table for layer-by-layer SLS steel strains and stresses.
         )
         if deepest is not None:
             fs_tension = deepest["f_s (MPa)"]
+            eps_s_control = deepest["ε_s"]
+            y_control = deepest["Depth y (mm)"]
+
+    # Also compute top-fibre SLS strain from κ and d_n,sls
+    eps_top_sls = kappa * (0.0 - dn_sls)
+
+    # Publish SLS strain/position data for the main diagrams
+    try:
+        st.session_state["bending_sls_dn"] = float(dn_sls)
+        st.session_state["bending_sls_eps_top"] = float(eps_top_sls)
+        if eps_s_control is not None and y_control is not None:
+            st.session_state["bending_sls_eps_bot"] = float(eps_s_control)
+            st.session_state["bending_sls_y_bot"] = float(y_control)
+    except Exception:
+        pass
 
     if fs_tension is not None:
         calcbox(
