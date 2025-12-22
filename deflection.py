@@ -1,5 +1,4 @@
 # deflection_page.py
-
 import math
 import numpy as np
 import pandas as pd
@@ -80,6 +79,75 @@ def calcbox(md: str):
     lines = converted.strip().split("\n")
     blockquote = "\n".join("> " + line for line in lines)
     st.markdown(blockquote)
+
+
+# ------------------------------------------------------------
+#  Deflection helper: map load case → closed-form δ formula
+# ------------------------------------------------------------
+def _deflection_from_sfd_case(
+    case: str,
+    L: float,
+    w_eff: float | None,
+    P_sls: float | None,
+    E: float,
+    I: float,
+):
+    """
+    Returns (delta_max, latex_formula, location_text) for classic SLS load cases.
+
+    Assumes:
+      - L in your length unit
+      - w_eff in force/length
+      - P_sls in force
+      - E, I consistent with your deflection units
+    """
+    delta_max = None
+    formula = r"\text{No closed-form deflection linked for this case yet.}"
+    location = "—"
+
+    # 1. Simple beam – UDL over entire span
+    if case == "Simple beam – UDL over entire span" and w_eff is not None:
+        # δ_max = 5 w L^4 / (384 E I) at midspan
+        delta_max = 5.0 * w_eff * L**4 / (384.0 * E * I)
+        formula = (
+            r"\delta_{\max} = \frac{5 w L^4}{384 E I}"
+            r"\quad\text{(simply supported, full UDL, midspan)}"
+        )
+        location = "At midspan (x = L/2)"
+
+    # 2. Simple beam – point load at centre
+    elif case == "Simple beam – point load at centre" and P_sls is not None:
+        # δ_max = P L^3 / (48 E I)
+        delta_max = P_sls * L**3 / (48.0 * E * I)
+        formula = (
+            r"\delta_{\max} = \frac{P L^3}{48 E I}"
+            r"\quad\text{(simply supported, centre point load)}"
+        )
+        location = "At midspan (x = L/2)"
+
+    # 3. Cantilever – point load at free end
+    elif case == "Cantilever – point load at free end" and P_sls is not None:
+        # δ_max = P L^3 / (3 E I)
+        delta_max = P_sls * L**3 / (3.0 * E * I)
+        formula = (
+            r"\delta_{\max} = \frac{P L^3}{3 E I}"
+            r"\quad\text{(cantilever, end point load)}"
+        )
+        location = "At free end (x = L)"
+
+    # 4. Cantilever – UDL over entire span
+    elif case == "Cantilever – UDL over entire span" and w_eff is not None:
+        # δ_max = w L^4 / (8 E I)
+        delta_max = w_eff * L**4 / (8.0 * E * I)
+        formula = (
+            r"\delta_{\max} = \frac{w L^4}{8 E I}"
+            r"\quad\text{(cantilever, full UDL)}"
+        )
+        location = "At free end (x = L)"
+
+    # Other cases (partial UDL, eccentric point load, overhang etc.) can be added later.
+
+    return delta_max, formula, location
 
 
 # ------------------------------------------------------------
@@ -216,9 +284,6 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
 - Long-term deflection using **kₛₛ** (Cl. 8.5.3.2)  
 - Deemed-to-conform **span-to-depth ratio** (Cl. 8.5.4)  
 - **Simplified effective stiffness** \(I_{ef}\) for reinforced members
-
-Deflection is linked to the **Design / SFD-BMD** page – you must define a
-service load case there first.
         """
     )
 
@@ -233,36 +298,25 @@ service load case there first.
     # ---------- Unified loading from SFD/BMD page ----------
     load_case = st.session_state.get("load_case", None)
     L_sfd = get_param("span_L_m", None)  # span in m
-
+    
     # Get SLS loads (either UDL or point load depending on case)
     w_sls = get_param("w_sls_kNm_per_m", None)  # SLS UDL if applicable
     P_sls = get_param("P_sls_kN", None)  # SLS point load if applicable
-    a = get_param("a_m", None)  # distance a for point loads (if used)
-
-    # For display in calcbox (these come from Inputs / Design)
+    a = get_param("a_m", None)  # Distance a for point loads
+    
+    # For display in calcbox
     g = get_param("g_udl_kNm_per_m", 0.0)
     q = get_param("q_udl_kNm_per_m", 0.0)
     psi_s = get_param("psi_udl", 0.4)
     G_point = get_param("G_point_kN", 0.0)
     Q_point = get_param("Q_point_kN", 0.0)
-    psi_s_point = get_param("psi_point", 0.4)
+    
+    # Determine effective load for deflection
+    w_eff = w_sls if w_sls is not None else None
 
-    # ---- Require the Design / SFD tab to be used first ----
-    if load_case is None or (w_sls is None and P_sls is None):
-        st.warning(
-            "Deflection is driven by the **Design / SFD-BMD** load case.\n\n"
-            "- Go to the Design / SFD-BMD page\n"
-            "- Define an SLS load case (UDL or point load)\n"
-            "- Save / apply it so that `load_case` and SLS loads are stored\n\n"
-            "Once a load case is defined, return here to run the deflection checks."
-        )
-        return
-
-    # --------------------------------------------------------
-    # Design inputs (geometry / materials / loads)
-    # --------------------------------------------------------
     st.markdown("### Design inputs")
 
+    # ---------------- Geometry / materials / loads ----------------
     col_geom, col_mat, col_load = st.columns(3)
 
     with col_geom:
@@ -337,7 +391,7 @@ service load case there first.
         )
 
     with col_load:
-        st.markdown("**Serviceability limits / design load for span–depth**")
+        st.markdown("**Service loads (per metre of span)**")
 
         defl_limit_ratio = st.number_input(
             "Deflection limit L/Δ (e.g. 250)",
@@ -354,30 +408,306 @@ service load case there first.
         )
 
     # --------------------------------------------------------
-    # Effective stiffness Ief – single source of truth
-    # (choice driven by Ief tab via session_state keys)
+    # Compute Ief early for closed-form deflection formulas
     # --------------------------------------------------------
-    use_simplified_ief_state = st.session_state.get("defl_use_simplified_ief", True)
-    user_Ief_state = float(st.session_state.get("defl_Ief_user", 1.0e11))
+    # Use simplified Ief by default for the calcbox (detailed calc is in Ief tab)
+    use_simplified_ief_early = st.session_state.get("defl_use_simplified_ief", True)
+    try:
+        if use_simplified_ief_early:
+            Ief_early, _, _, _, _, _ = calc_ief_simplified(
+                fc=fc,
+                beff=beff,
+                bw=bw,
+                d=d,
+                Ast=Ast,
+            )
+        else:
+            Ief_early = st.session_state.get("defl_Ief_user", 1.0e11)
+    except Exception:
+        # Fallback if computation fails
+        Ief_early = 1.0e11
 
-    if use_simplified_ief_state:
-        Ief, beta, p, p_lim, Ief_max, k1_from_ief = calc_ief_simplified(
-            fc=fc,
-            beff=beff,
-            bw=bw,
-            d=d,
-            Ast=Ast,
+    # ---------- Stiffness for deflection (from other pages) ----------
+    E_defl = Ec  # Use Ec from inputs (MPa)
+    I_defl = Ief_early  # Use Ief computed above (mm⁴)
+
+    # For now, if they're missing, we skip δ calc
+    delta_max = None
+    formula_latex = None
+    delta_loc = None
+
+    if (
+        load_case is not None
+        and L_sfd is not None
+        and E_defl is not None
+        and I_defl is not None
+        and L_sfd > 0
+        and E_defl > 0
+        and I_defl > 0
+    ):
+        delta_max, formula_latex, delta_loc = _deflection_from_sfd_case(
+            case=load_case,
+            L=float(L_sfd),
+            w_eff=w_eff,
+            P_sls=P_sls,
+            E=float(E_defl),
+            I=float(I_defl),
+        )
+
+    # ---------- User limit L/Δ ----------
+    L_over_limit = defl_limit_ratio  # Already defined above
+
+    # Simple limit in same units as L (assumes δ is in same units as L)
+    delta_limit = None
+    if L_sfd is not None and L_over_limit > 0:
+        delta_limit = L_sfd / L_over_limit
+
+    # Utilisation ratio
+    utilisation = None
+    if delta_max is not None and delta_limit not in (None, 0):
+        utilisation = abs(delta_max) / delta_limit
+
+    delta_text = f"`{delta_max:.3g}`" if delta_max is not None else "`—`"
+    delta_limit_text = f"`{delta_limit:.3g}`" if delta_limit is not None else "`—`"
+    util_text = f"`{utilisation:.3g}`" if utilisation is not None else "`—`"
+
+    # ---------- 4-STEP CALCBOX ----------
+    calcbox(
+        f"""
+**Step 1 – Adopt design actions**
+
+- Source: `{action_source}`
+- Bending moment M*: `{Mu_star:.3g}` kNm  
+- Shear force V*: `{Vu_star:.3g}` kN  
+
+These come from the **Inputs** page toggle:
+manual M*, V* or scaled SFD/BMD SLS diagrams.
+
+---
+
+**Step 2 – Service load for deflection (from SFD/BMD page)**
+
+"""
+    )
+    
+    # Show appropriate load info based on case type
+    if w_sls is not None:
+        calcbox(
+            f"""
+- Dead UDL: `g = {g:.3g}` kN/m  
+- Live UDL: `q = {q:.3g}` kN/m  
+- Sustained factor: `ψ_s = {psi_s:.3g}`  
+
+Effective SLS UDL:  
+
+\\[
+w_{{\\text{{sls}}}} = g + ψ_s q = {w_sls:.3g}\\;\\text{{kN/m}}
+\\]
+"""
+        )
+    elif P_sls is not None:
+        # Get point load psi_s
+        psi_s_point = get_param("psi_point", 0.4)
+        calcbox(
+            f"""
+- Dead point load: `G = {G_point:.3g}` kN  
+- Live point load: `Q = {Q_point:.3g}` kN  
+- Sustained factor: `ψ_s = {psi_s_point:.3g}`  
+
+Effective SLS point load:  
+
+\\[
+P_{{\\text{{sls}}}} = G + ψ_s Q = {P_sls:.3g}\\;\\text{{kN}}
+\\]
+"""
         )
     else:
-        Ief = max(user_Ief_state, 1.0)
-        beta = beff / bw if bw > 0 else 1.0
-        p = Ast / (beff * d) if beff * d > 0 else 0.0
-        p_lim = 0.0
-        Ief_max = Ief
-        k1_from_ief = Ief / (beff * (d ** 3))
+        calcbox(
+            """
+- No load defined yet. Please set up loading on the **SFD/BMD** page.
+"""
+        )
+    
+    calcbox(
+        f"""
+**Step 3 – Closed-form deflection formula**
+
+- Load case used for deflection: `{load_case or "—"}`  
+- Span for deflection: `L = {(L_sfd or 0.0):.3g}` (same units as δ)  
+
+"""
+    )
+
+    if formula_latex is not None:
+        st.latex(formula_latex)
+    else:
+        st.info(
+            "No closed-form deflection formula is currently linked for this SFD case "
+            "or stiffness values are missing."
+        )
+
+    calcbox(
+        f"""
+**Step 4 – Maximum deflection and SLS check**
+
+- Computed maximum deflection: {delta_text}  
+
+  (location: {delta_loc or "—"})  
+
+- SLS limit: `L/Δ = {L_over_limit:.0f}` → allowable deflection ≈ {delta_limit_text}  
+
+- Utilisation ratio (δ / δ_limit): {util_text}
+
+
+
+(Ensure units of δ and L are consistent in your stiffness setup.)
+"""
+    )
+
+    # ---------- Top summary ----------
+    summary_placeholder.info(
+        f"Deflection: case = {load_case or '—'}, L = {(L_sfd or 0.0):.3g}, "
+        f"δ_max ≈ {delta_text}, limit ≈ {delta_limit_text}, util ≈ {util_text}."
+    )
 
     # --------------------------------------------------------
-    # Main deflection calculations (single engine)
+    # Tabs in agreed order (Ief, short-term, long-term, span/depth, flow, shape)
+    # --------------------------------------------------------
+    tab_ief, tab_short, tab_long, tab_span, tab_flow, tab_shape = st.tabs(
+        [
+            "Iₑf details",
+            "Short-term deflection",
+            "Long-term deflection",
+            "Span/depth check",
+            "Flow chart",
+            "Deflected shape",
+        ]
+    )
+
+    # We will compute Ief inside the Ief tab, then reuse for summary + other tabs.
+    ief_data = {}
+
+    # ---------- TAB 1: Ief details + input choice ----------
+    with tab_ief:
+        st.subheader("Effective stiffness (Iₑf) – input choice")
+
+        use_simplified_ief = st.checkbox(
+            "Use simplified reinforced-member Iₑf (AS 3600 Cl. 8.5.3.1(2),(3))",
+            value=True,
+            key="defl_use_simplified_ief",
+        )
+
+        if use_simplified_ief:
+            Ief, beta, p, p_lim, Ief_max, k1_from_ief = calc_ief_simplified(
+                fc=fc,
+                beff=beff,
+                bw=bw,
+                d=d,
+                Ast=Ast,
+            )
+        else:
+            Ief = st.number_input(
+                "User-specified Iₑf (mm⁴)",
+                value=1.0e11,
+                step=1.0e10,
+                format="%.3e",
+                key="defl_Ief_user",
+            )
+            beta = beff / bw if bw > 0 else 1.0
+            p = Ast / (beff * d) if beff * d > 0 else 0.0
+            p_lim = 0.0
+            Ief_max = Ief
+            k1_from_ief = Ief / (beff * (d ** 3))
+
+        # store for use outside the tab
+        ief_data.update(
+            dict(
+                Ief=Ief,
+                beta=beta,
+                p=p,
+                p_lim=p_lim,
+                Ief_max=Ief_max,
+                k1_from_ief=k1_from_ief,
+            )
+        )
+
+        text = rf"""
+**Purpose**
+
+Compute the effective second moment of area $I_{{ef}}$ for a reinforced concrete member
+using the simplified expressions in AS 3600:2018 Cl. 8.5.3.1(2) and (3). This cracked
+stiffness is then used in all deflection checks.
+
+**Inputs**
+
+- Concrete strength: $f'_c = {fc:.1f}\,\text{{MPa}}$
+- Web / stem width: $b_w = {bw:.1f}\,\text{{mm}}$
+- Effective flange width: $b_{{ef}} = {beff:.1f}\,\text{{mm}}$
+- Effective depth: $d = {d:.1f}\,\text{{mm}}$
+- Tension steel area: $A_{{st}} = {Ast:.1f}\,\text{{mm}}^2$
+
+Derived section parameters:
+
+- Width ratio: $\beta = \dfrac{{b_{{ef}}}}{{b_w}} = {beta:.3f}$
+- Reinforcement ratio: $p = \dfrac{{A_{{st}}}}{{b_{{ef}} d}} = {p:.5f}$
+- Limit ratio: $p_{{lim}} = {p_lim:.5f}$
+
+**Formula**
+
+For reinforced members (AS 3600:2018 Cl. 8.5.3.1):
+
+If $p \ge p_{{lim}}$:
+
+\[
+I_{{ef}} = \left[(5 - 0.04 f'_c)\, p + 0.002 \right]\, b_{{ef}} d^3
+\]
+
+If $p < p_{{lim}}$:
+
+\[
+I_{{ef}} = \left[0.055 (f'_c)^{{1/3}} / \beta^{{2/3}} - 50 p \right]\, b_{{ef}} d^3
+\]
+
+Capped by:
+
+\[
+I_{{ef}} \le I_{{ef,max}} = {Ief_max:,.3e}\,\text{{mm}}^4
+\]
+
+and
+
+\[
+k_1 = \dfrac{{I_{{ef}}}}{{b_{{ef}} d^3}}
+\]
+
+**Substitution**
+
+Using the current inputs:
+
+- Computed $I_{{ef}} \approx {Ief:,.3e}\,\text{{mm}}^4$
+- $I_{{ef,max}} = {Ief_max:,.3e}\,\text{{mm}}^4$
+- $k_1 = \dfrac{{I_{{ef}}}}{{b_{{ef}} d^3}} \approx {k1_from_ief:.5f}$
+
+**Result**
+
+- $I_{{ef}} = {Ief:,.3e}\,\text{{mm}}^4$
+- $k_1 = {k1_from_ief:.5f}$
+- (cap) $I_{{ef,max}} = {Ief_max:,.3e}\,\text{{mm}}^4$
+
+_Ref: AS 3600:2018 Cl. 8.5.3.1(2) & (3) – simplified $I_{{ef}}$ for reinforced members._
+"""
+        calcbox(text)
+
+    # pull back out (defensive defaults in case tab didn't run for some reason)
+    Ief = ief_data.get("Ief", 1.0e11)
+    beta = ief_data.get("beta", beff / bw if bw > 0 else 1.0)
+    p = ief_data.get("p", Ast / (beff * d) if beff * d > 0 else 0.0)
+    p_lim = ief_data.get("p_lim", 0.0)
+    Ief_max = ief_data.get("Ief_max", Ief)
+    k1_from_ief = ief_data.get("k1_from_ief", Ief / (beff * (d ** 3)))
+
+    # --------------------------------------------------------
+    # Main deflection calculations
     # --------------------------------------------------------
     results = calc_deflection_as3600(
         L_m=L_eff,
@@ -397,9 +727,6 @@ service load case there first.
     delta_long_add = results["delta_long_add"]
     delta_total = results["delta_total"]
     kcs = results["kcs"]
-    w_total = results["w_total"]
-    w_sust = results["w_sust"]
-    k2_main = results["k2"]
 
     L_over_delta_short = format_L_over_delta(delta_short_total, L_mm)
     L_over_delta_long_add = format_L_over_delta(delta_long_add, L_mm)
@@ -418,172 +745,24 @@ service load case there first.
         defl_limit_ratio=defl_limit_ratio,
     )
 
-    # Limiting deflection in mm for summary / Step 4
-    limit_delta_mm = L_mm / defl_limit_ratio if defl_limit_ratio > 0 else None
-
-    # --------------------------------------------------------
-    # 4-STEP CALC NARRATIVE (using single AS 3600 result)
-    # --------------------------------------------------------
-    # Step 1 – design actions
-    calcbox(
-        f"""
-**Step 1 – Adopt design actions**
-
-- Source: `{action_source}`
-- Bending moment M*: `{Mu_star:.3g}` kNm  
-- Shear force V*: `{Vu_star:.3g}` kN  
-
-These come from the **Inputs** / **Design** toggle: either manual M*, V* or
-scaled SFD/BMD diagrams.
-"""
-    )
-
-    # Step 2 – service load for deflection (from Design / SFD-BMD)
-    if w_sls is not None:
-        # UDL case
-        calcbox(
-            f"""
-**Step 2 – Service UDL for deflection**
-
-From the **Design / SFD-BMD** page:
-
-- Dead UDL: `g = {g:.3g}` kN/m  
-- Live UDL: `q = {q:.3g}` kN/m  
-- Sustained factor: `ψ_s = {psi_s:.3g}`  
-
-Effective SLS UDL used for deflection:
-
-\\[
-w_{{\\text{{sls}}}} = g + ψ_s q = {w_sls:.3g}\\;\\text{{kN/m}}
-\\]
-"""
-        )
-    elif P_sls is not None:
-        # Point load case – still report, even though AS 3600 engine uses g, q
-        calcbox(
-            f"""
-**Step 2 – Service point load for deflection**
-
-From the **Design / SFD-BMD** page:
-
-- Dead point load: `G = {G_point:.3g}` kN  
-- Live point load: `Q = {Q_point:.3g}` kN  
-- Sustained factor: `ψ_s = {psi_s_point:.3g}`  
-
-Effective SLS point load:
-
-\\[
-P_{{\\text{{sls}}}} = G + ψ_s Q = {P_sls:.3g}\\;\\text{{kN}}
-\\]
-
-(Current AS 3600 deflection engine uses an equivalent UDL from `g` and `q`.)
-"""
-        )
-    else:
-        # Shouldn't happen because of gate, but keep a safe message
-        calcbox(
-            """
-**Step 2 – Service load for deflection**
-
-No SLS load has been defined. Please set up an SLS load case on the
-**Design / SFD-BMD** page.
-"""
-        )
-
-    # Step 3 – short-term deflection formula (single engine)
-    calcbox(
-        f"""
-**Step 3 – Short-term deflection using Iₑf (AS 3600 Cl. 8.5.3.1)**
-
-Deflection constant from support type:
-
-- `k₂ = {k2_main:.5f}` for `{support_type}`  
-
-Total service UDL:
-
-- `w = g + q = {w_total:.3g}` kN/m  
-
-Effective stiffness from Iₑf:
-
-- \(E_{{c,eff}} = {Ec:.0f}\\,\\text{{MPa}}\)  
-- \(I_{{ef}} = {Ief:,.3e}\\,\\text{{mm}}^4\)  
-
-Short-term midspan deflection under total service load:
-
-\\[
-\\delta_{{st,total}}
-= k_2 \\dfrac{{w L_{{eff}}^4}}{{E_{{c,eff}} I_{{ef}}}}
-\\]
-
-With substitution:
-
-\\[
-\\delta_{{st,total}}
-\\approx {delta_short_total:.2f}\\,\\text{{mm}}
-\\]
-"""
-    )
-
-    # Step 4 – long-term + SLS check (single engine)
-    if limit_delta_mm and limit_delta_mm > 0:
-        util_total = delta_total / limit_delta_mm
-        util_text = f"`{util_total:.3g}`"
-        limit_text = f"`{limit_delta_mm:.3g}` mm (L/{defl_limit_ratio:.0f})"
-    else:
-        util_total = None
-        util_text = "`—`"
-        limit_text = "`—`"
-
-    calcbox(
-        f"""
-**Step 4 – Long-term deflection and SLS check (AS 3600 Cl. 8.5.3.2)**
-
-Additional long-term deflection due to sustained load:
-
-\\[
-\\delta_{{LT,add}} = k_{{cs}} \\delta_{{st,sust}}
-\\]
-
-Total deflection:
-
-\\[
-\\delta_{{total}} = \\delta_{{st,total}} + \\delta_{{LT,add}}
-\\approx {delta_total:.2f}\\,\\text{{mm}}
-\\]
-
-Serviceability limit:
-
-- User limit: `L/Δ = {defl_limit_ratio:.0f}`  
-- Allowable deflection ≈ {limit_text}  
-
-Utilisation:
-
-- \(\\delta_{{total}} / \\delta_{{limit}} \\approx {util_text}\)
-
-(Ensure units of δ and L are consistent in your stiffness setup.)
-"""
-    )
-
     # --------------------------------------------------------
     # TOP SUMMARY TABLE (bending-style rows)
     # --------------------------------------------------------
     with summary_placeholder.container():
         st.markdown("## Summary")
 
+        limit_delta_mm = L_mm / defl_limit_ratio if defl_limit_ratio > 0 else None
         rows = []
-
-        if limit_delta_mm and limit_delta_mm > 0:
-            limit_str = f"{limit_delta_mm:.2f} mm (L/{defl_limit_ratio:.0f})"
-        else:
-            limit_str = "—"
 
         # 1) Short-term total
         if limit_delta_mm and limit_delta_mm > 0:
             util_short = delta_short_total / limit_delta_mm
             status_short = "OK" if util_short <= 1.0 else "NG"
+            limit_str = f"{limit_delta_mm:.2f} mm (L/{defl_limit_ratio:.0f})"
         else:
             util_short = None
             status_short = "—"
+            limit_str = "—"
 
         rows.append(
             dict(
@@ -615,10 +794,10 @@ Utilisation:
 
         # 3) Total
         if limit_delta_mm and limit_delta_mm > 0:
-            util_total_summary = delta_total / limit_delta_mm
-            status_total = "OK" if util_total_summary <= 1.0 else "NG"
+            util_total = delta_total / limit_delta_mm
+            status_total = "OK" if util_total <= 1.0 else "NG"
         else:
-            util_total_summary = None
+            util_total = None
             status_total = "—"
 
         rows.append(
@@ -626,7 +805,7 @@ Utilisation:
                 Check="Total deflection (short + long-term)",
                 Value=f"{delta_total:.2f} mm ({L_over_delta_total})",
                 Limit=limit_str,
-                Utilisation=f"{util_total_summary:.2f}" if util_total_summary is not None else "—",
+                Utilisation=f"{util_total:.2f}" if util_total is not None else "—",
                 Status=status_total,
             )
         )
@@ -668,119 +847,15 @@ Utilisation:
         st.markdown("---")
 
     # --------------------------------------------------------
-    # Tabs in agreed order (Ief, short-term, long-term, span/depth, flow, shape)
+    # Remaining tabs use already-computed results
     # --------------------------------------------------------
-    tab_ief, tab_short, tab_long, tab_span, tab_flow, tab_shape = st.tabs(
-        [
-            "Iₑf details",
-            "Short-term deflection",
-            "Long-term deflection",
-            "Span/depth check",
-            "Flow chart",
-            "Deflected shape",
-        ]
-    )
-
-    # TAB 1: Ief details + input choice
-    with tab_ief:
-        st.subheader("Effective stiffness (Iₑf) – input choice")
-
-        use_simplified_ief = st.checkbox(
-            "Use simplified reinforced-member Iₑf (AS 3600 Cl. 8.5.3.1(2),(3))",
-            value=use_simplified_ief_state,
-            key="defl_use_simplified_ief",
-        )
-
-        if use_simplified_ief:
-            # Show the simplified result (already used in main calc)
-            Ief_tab = Ief
-            k1_from_ief_tab = k1_from_ief
-            Ief_max_tab = Ief_max
-        else:
-            Ief_tab = st.number_input(
-                "User-specified Iₑf (mm⁴)",
-                value=user_Ief_state,
-                step=1.0e10,
-                format="%.3e",
-                key="defl_Ief_user",
-            )
-            # Update local copies used in explanatory text
-            Ief_tab = max(Ief_tab, 1.0)
-            Ief_tab = float(Ief_tab)
-            Ief_max_tab = Ief_tab
-            k1_from_ief_tab = Ief_tab / (beff * (d ** 3))
-
-        text = rf"""
-**Purpose**
-
-Compute the effective second moment of area $I_{{ef}}$ for a reinforced concrete member
-using the simplified expressions in AS 3600:2018 Cl. 8.5.3.1(2) and (3). This cracked
-stiffness is then used in all deflection checks.
-
-**Inputs**
-
-- Concrete strength: $f'_c = {fc:.1f}\,\text{{MPa}}$
-- Web / stem width: $b_w = {bw:.1f}\,\text{{mm}}$
-- Effective flange width: $b_{{ef}} = {beff:.1f}\,\text{{mm}}$
-- Effective depth: $d = {d:.1f}\,\text{{mm}}$
-- Tension steel area: $A_{{st}} = {Ast:.1f}\,\text{{mm}}^2$
-
-Derived section parameters:
-
-- Width ratio: $\beta = \dfrac{{b_{{ef}}}}{{b_w}} = {beta:.3f}$
-- Reinforcement ratio: $p = \dfrac{{A_{{st}}}}{{b_{{ef}} d}} = {p:.5f}$
-- Limit ratio: $p_{{lim}} = {p_lim:.5f}$
-
-**Formula**
-
-For reinforced members (AS 3600:2018 Cl. 8.5.3.1):
-
-If $p \ge p_{{lim}}$:
-
-\\[
-I_{{ef}} = \left[(5 - 0.04 f'_c)\, p + 0.002 \right]\, b_{{ef}} d^3
-\\]
-
-If $p < p_{{lim}}$:
-
-\\[
-I_{{ef}} = \left[0.055 (f'_c)^{{1/3}} / \beta^{{2/3}} - 50 p \right]\, b_{{ef}} d^3
-\\]
-
-Capped by:
-
-\\[
-I_{{ef}} \le I_{{ef,max}}
-= {Ief_max_tab:,.3e}\,\text{{mm}}^4
-\\]
-
-and
-
-\\[
-k_1 = \dfrac{{I_{{ef}}}}{{b_{{ef}} d^3}}
-\\]
-
-**Substitution**
-
-Using the current inputs:
-
-- Computed $I_{{ef}} \approx {Ief_tab:,.3e}\,\text{{mm}}^4$
-- $I_{{ef,max}} = {Ief_max_tab:,.3e}\,\text{{mm}}^4$
-- $k_1 = \dfrac{{I_{{ef}}}}{{b_{{ef}} d^3}} \approx {k1_from_ief_tab:.5f}$
-
-**Result**
-
-- $I_{{ef}} = {Ief_tab:,.3e}\,\text{{mm}}^4$
-- $k_1 = {k1_from_ief_tab:.5f}$
-- (cap) $I_{{ef,max}} = {Ief_max_tab:,.3e}\,\text{{mm}}^4$
-
-_Ref: AS 3600:2018 Cl. 8.5.3.1(2) & (3) – simplified $I_{{ef}}$ for reinforced members._
-"""
-        calcbox(text)
 
     # TAB 2: Short-term
     with tab_short:
         st.subheader("Short-term deflection – AS 3600 Cl. 8.5.3.1")
+
+        w_total = results["w_total"]
+        k2 = results["k2"]
 
         text = rf"""
 **Purpose**
@@ -793,7 +868,7 @@ $w = g + q$ using the effective stiffness $I_{{ef}}$ from the Iₑf tab
 
 - Effective span: $L_{{eff}} = {L_mm:.0f}\,\text{{mm}}$
 - Total service load: $w = g + q = {w_total:.2f}\,\text{{kN/m}}$
-- Deflection constant (support condition): $k_2 = {k2_main:.5f}$
+- Deflection constant (support condition): $k_2 = {k2:.5f}$
 - Effective modulus: $E_{{c,eff}} = {Ec:.0f}\,\text{{MPa}}$
 - Effective second moment: $I_{{ef}} = {Ief:,.3e}\,\text{{mm}}^4$
 
@@ -801,25 +876,25 @@ $w = g + q$ using the effective stiffness $I_{{ef}}$ from the Iₑf tab
 
 Short-term deflection due to total service load:
 
-\\[
-\\delta_{{st,total}} = k_2 \\dfrac{{w\, L_{{eff}}^4}}{{E_{{c,eff}}\, I_{{ef}}}}
-\\]
+\[
+\delta_{{st,total}} = k_2 \dfrac{{w\, L_{{eff}}^4}}{{E_{{c,eff}}\, I_{{ef}}}}
+\]
 
 **Substitution**
 
-\\[
-\\delta_{{st,total}}
-= ({k2_main:.5f}) \times ({w_total:.2f})\,
-  \\dfrac{{({L_mm:.0f})^4}}{{({Ec:.0f}) \times ({Ief:,.3e})}}
-\\approx {delta_short_total:.2f}\,\text{{mm}}
-\\]
+\[
+\delta_{{st,total}}
+= ({k2:.5f}) \times ({w_total:.2f})\,
+  \dfrac{{({L_mm:.0f})^4}}{{({Ec:.0f}) \times ({Ief:,.3e})}}
+\approx {delta_short_total:.2f}\,\text{{mm}}
+\]
 
 **Result**
 
 - Short-term deflection (total load):  
-  $\\delta_{{st,total}} \approx {delta_short_total:.2f}\,\text{{mm}}$
+  $\delta_{{st,total}} \approx {delta_short_total:.2f}\,\text{{mm}}$
 - Deflection ratio:  
-  $L/\\delta_{{st,total}} \approx {L_over_delta_short}$
+  $L/\delta_{{st,total}} \approx {L_over_delta_short}$
 
 _Ref: AS 3600:2018 Cl. 8.5.3.1 – deflection using effective stiffness $I_{{ef}}$._
 """
@@ -829,6 +904,8 @@ _Ref: AS 3600:2018 Cl. 8.5.3.1 – deflection using effective stiffness $I_{{ef}
     with tab_long:
         st.subheader("Long-term deflection – AS 3600 Cl. 8.5.3.2")
 
+        w_sust = results["w_sust"]
+        k2 = results["k2"]
         ratio_Asc_Ast = (Asc / Ast) if Ast > 0 else 0.0
 
         text = rf"""
@@ -840,19 +917,19 @@ Determine the **additional long-term deflection** due to sustained loading
 **Inputs**
 
 - Sustained load:
-  \\[
-  w_{{sust}} = g + \\psi_s q = {w_sust:.2f}\,\text{{kN/m}}
-  \\]
-- Sustained factor: $\\psi_s = {psi_s:.2f}$
+  \[
+  w_{{sust}} = g + \psi_s q = {w_sust:.2f}\,\text{{kN/m}}
+  \]
+- Sustained factor: $\psi_s = {psi_s:.2f}$
 - Tension steel: $A_{{st}} = {Ast:.0f}\,\text{{mm}}^2$
 - Compression steel: $A_{{sc}} = {Asc:.0f}\,\text{{mm}}^2$
 - Steel ratio:
-  \\[
-  \\dfrac{{A_{{sc}}}}{{A_{{st}}}} = {ratio_Asc_Ast:.3f}
-  \\]
+  \[
+  \dfrac{{A_{{sc}}}}{{A_{{st}}}} = {ratio_Asc_Ast:.3f}
+  \]
 - Creep/shrinkage multiplier: $k_{{cs}} = {kcs:.2f}$
 - Other parameters as per short-term:
-  $k_2 = {k2_main:.5f},\ L_{{eff}} = {L_mm:.0f}\,\text{{mm}},\
+  $k_2 = {k2:.5f},\ L_{{eff}} = {L_mm:.0f}\,\text{{mm}},\
    E_{{c,eff}} = {Ec:.0f}\,\text{{MPa}},\
    I_{{ef}} = {Ief:,.3e}\,\text{{mm}}^4$
 
@@ -860,65 +937,65 @@ Determine the **additional long-term deflection** due to sustained loading
 
 Short-term deflection due to **sustained load only**:
 
-\\[
-\\delta_{{st,sust}} = k_2 \\dfrac{{w_{{sust}} L_{{eff}}^4}}{{E_{{c,eff}} I_{{ef}}}}
-\\]
+\[
+\delta_{{st,sust}} = k_2 \dfrac{{w_{{sust}} L_{{eff}}^4}}{{E_{{c,eff}} I_{{ef}}}}
+\]
 
 Creep/shrinkage multiplier:
 
-\\[
-k_{{cs}} = \\max\\left[ 2 - 1.2 \\left(\\dfrac{{A_{{sc}}}}{{A_{{st}}}}\\right),\, 0.8 \\right]
-\\]
+\[
+k_{{cs}} = \max\left[ 2 - 1.2 \left(\dfrac{{A_{{sc}}}}{{A_{{st}}}}\right),\, 0.8 \right]
+\]
 
 Additional long-term deflection:
 
-\\[
-\\delta_{{LT,add}} = k_{{cs}} \\,\\delta_{{st,sust}}
-\\]
+\[
+\delta_{{LT,add}} = k_{{cs}} \,\delta_{{st,sust}}
+\]
 
 Total deflection:
 
-\\[
-\\delta_{{total}} = \\delta_{{st,total}} + \\delta_{{LT,add}}
-\\]
+\[
+\delta_{{total}} = \delta_{{st,total}} + \delta_{{LT,add}}
+\]
 
 **Substitution**
 
 Short-term sustained:
 
-\\[
-\\delta_{{st,sust}}
-= ({k2_main:.5f}) \times ({w_sust:.2f})\,
-  \\dfrac{{({L_mm:.0f})^4}}{{({Ec:.0f}) \times ({Ief:,.3e})}}
-\\approx {delta_short_sust:.2f}\,\text{{mm}}
-\\]
+\[
+\delta_{{st,sust}}
+= ({k2:.5f}) \times ({w_sust:.2f})\,
+  \dfrac{{({L_mm:.0f})^4}}{{({Ec:.0f}) \times ({Ief:,.3e})}}
+\approx {delta_short_sust:.2f}\,\text{{mm}}
+\]
 
 Additional long-term:
 
-\\[
-\\delta_{{LT,add}} = k_{{cs}} \\,\\delta_{{st,sust}}
+\[
+\delta_{{LT,add}} = k_{{cs}} \,\delta_{{st,sust}}
 = ({kcs:.2f}) \times ({delta_short_sust:.2f})
-\\approx {delta_long_add:.2f}\,\text{{mm}}
-\\]
+\approx {delta_long_add:.2f}\,\text{{mm}}
+\]
 
 Total:
 
-\\[
-\\delta_{{total}} = \\delta_{{st,total}} + \\delta_{{LT,add}}
+\[
+\delta_{{total}} = \delta_{{st,total}} + \delta_{{LT,add}}
 = {delta_short_total:.2f} + {delta_long_add:.2f}
-\\approx {delta_total:.2f}\,\text{{mm}}
-\\]
+\approx {delta_total:.2f}\,\text{{mm}}
+\]
 
 **Result**
 
 - Short-term sustained:  
-  $\\delta_{{st,sust}} \approx {delta_short_sust:.2f}\,\text{{mm}}$
+  $\delta_{{st,sust}} \approx {delta_short_sust:.2f}\,\text{{mm}}$
 - Additional long-term:  
-  $\\delta_{{LT,add}} \approx {delta_long_add:.2f}\,\text{{mm}}$  
-  (ratio $\\approx {L_over_delta_long_add}$)
+  $\delta_{{LT,add}} \approx {delta_long_add:.2f}\,\text{{mm}}$  
+  (ratio $\approx {L_over_delta_long_add}$)
 - Total deflection:  
-  $\\delta_{{total}} \approx {delta_total:.2f}\,\text{{mm}}$  
-  (ratio $\\approx {L_over_delta_total}$)
+  $\delta_{{total}} \approx {delta_total:.2f}\,\text{{mm}}$  
+  (ratio $\approx {L_over_delta_total}$)
 
 _Ref: AS 3600:2018 Cl. 8.5.3.2 – long-term deflection using $k_{{cs}}$ and sustained loads._
 """
@@ -940,15 +1017,15 @@ calculated $I_{{ef}}$ (via $k_1$).
 - Effective span: $L_{{ef}} = {L_mm:.0f}\,\text{{mm}}$
 - Effective depth: $d = {d:.1f}\,\text{{mm}}$  
   ⇒ current ratio:
-  \\[
-  \\dfrac{{L_{{ef}}}}{{d}} = {L_over_d:.1f}
-  \\]
+  \[
+  \dfrac{{L_{{ef}}}}{{d}} = {L_over_d:.1f}
+  \]
 - Stiffness factor from Iₑf tab: $k_1 = {k1_span:.5f}$
 - Deflection constant (support type): $k_2 = {k2_span:.5f}$
 - Deflection limit:
-  \\[
-  \\left(\\dfrac{{\\Delta}}{{L_{{ef}}}}\\right)_{{limit}} = \\dfrac{{1}}{{{defl_limit_ratio:.0f}}}
-  \\]
+  \[
+  \left(\dfrac{{\Delta}}{{L_{{ef}}}}\right)_{{limit}} = \dfrac{{1}}{{{defl_limit_ratio:.0f}}}
+  \]
 - Effective design load: $F_{{d,ef}} = {Fdef_kNm:.2f}\,\text{{kN/m}}$
 - Effective modulus: $E_{{c,eff}} = {Ec:.0f}\,\text{{MPa}}$
 - Effective flange width: $b_{{ef}} = {beff:.1f}\,\text{{mm}}$
@@ -957,12 +1034,12 @@ calculated $I_{{ef}}$ (via $k_1$).
 
 Deemed-to-conform span-to-depth limit:
 
-\\[
-\\frac{{L_{{ef}}}}{{d}} \\le
-\\left[
-\\dfrac{{k_1 \\, (\\Delta/L_{{ef}}) \\, b_{{ef}} E_{{c,eff}}}}{{k_2 F_{{d,ef}}}}
-\\right]^{{1/3}}
-\\]
+\[
+\frac{{L_{{ef}}}}{{d}} \le
+\left[
+\dfrac{{k_1 \, (\Delta/L_{{ef}}) \, b_{{ef}} E_{{c,eff}}}}{{k_2 F_{{d,ef}}}}
+\right]^{{1/3}}
+\]
 
 **Substitution**
 """
@@ -972,26 +1049,26 @@ Deemed-to-conform span-to-depth limit:
 
 Right-hand-side limit:
 
-\\[
-\\left(\\frac{{L_{{ef}}}}{{d}}\\right)_{{limit}}
+\[
+\left(\frac{{L_{{ef}}}}{{d}}\right)_{{limit}}
 =
-\\left[
-\\dfrac{{({k1_span:.5f}) \\times (1/{defl_limit_ratio:.0f}) \\times ({beff:.1f}) \\times ({Ec:.0f})}}
-      {{({k2_span:.5f}) \\times ({Fdef_kNm:.2f})}}
-\\right]^{{1/3}}
-\\approx {L_over_d_limit:.1f}
-\\]
+\left[
+\dfrac{{({k1_span:.5f}) \times (1/{defl_limit_ratio:.0f}) \times ({beff:.1f}) \times ({Ec:.0f})}}
+      {{({k2_span:.5f}) \times ({Fdef_kNm:.2f})}}
+\right]^{{1/3}}
+\approx {L_over_d_limit:.1f}
+\]
 
 **Result**
 
 - Allowed ratio:
-  \\[
-  \\dfrac{{L_{{ef}}}}{{d}} \\le {L_over_d_limit:.1f}
-  \\]
+  \[
+  \dfrac{{L_{{ef}}}}{{d}} \le {L_over_d_limit:.1f}
+  \]
 - Actual ratio:
-  \\[
-  \\dfrac{{L_{{ef}}}}{{d}} = {L_over_d:.1f}
-  \\]
+  \[
+  \dfrac{{L_{{ef}}}}{{d}} = {L_over_d:.1f}
+  \]
 
 Conclusion: **{"✅ OK – deemed to conform" if L_over_d <= L_over_d_limit else "❌ NG – exceeds deemed limit"}**
 """
@@ -1020,8 +1097,7 @@ _Ref: AS 3600:2018 Cl. 8.5.4 – deemed-to-conform span-to-depth limits._
 ### Step 1 – Define section, materials & loads
 - Geometry: \(L_{ef}, b_w, b_{ef}, d\)  
 - Materials: \(f'_c, E_{c,eff}, A_{st}, A_{sc}\)  
-- Loads: \(g, q, \\psi_s, F_{d,ef}\), deflection limit \(L/Δ\)  
-- Define SLS load case on **Design / SFD-BMD** (UDL or point load)
+- Loads: \(g, q, \\psi_s, F_{d,ef}\), deflection limit \(L/Δ\)
 
 ---
 
@@ -1107,7 +1183,6 @@ _Ref: AS 3600:2018 Cl. 8.5.4 – deemed-to-conform span-to-depth limits._
 
         x = np.linspace(0.0, L_mm, 200)
         xi = x / L_mm
-        # Simple parabolic shape scaled to δ_total
         y_long = -delta_total * 4.0 * xi * (1.0 - xi)
 
         fig, ax = plt.subplots()
