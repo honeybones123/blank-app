@@ -10,7 +10,7 @@ from state_and_helpers import (
     get_sync_callbacks,
     update_results,  # kept for contract / future use
 )
-from widgets_helpers import apply_global_widget_css, number_row
+from widgets_helpers import apply_global_widget_css, number_row, calcbox, clickable_calcbox, render_step, apply_step_expander_css
 
 
 # ------------------------------------------------------------
@@ -66,19 +66,6 @@ blockquote p:last-child {
     )
 
 
-def calcbox(md: str):
-    """
-    Render a highlighted calculation box with LaTeX-enabled markdown inside.
-
-    - Converts \[ \] → $$ $$ for display math
-    - Converts \( \) → $ $ for inline math
-    - Wraps everything in a markdown blockquote (>) so CSS turns it blue
-    """
-    converted = md.replace("\\[", "$$").replace("\\]", "$$")
-    converted = converted.replace("\\(", "$").replace("\\)", "$")
-    lines = converted.strip().split("\n")
-    blockquote = "\n".join("> " + line for line in lines)
-    st.markdown(blockquote)
 
 
 # ------------------------------------------------------------
@@ -272,9 +259,13 @@ def render_deflection():
     """Deflection page – short-term, long-term, span/depth to AS 3600:2018 Cl. 8.5."""
     apply_global_widget_css()
     _inject_calcbox_css()
+    apply_step_expander_css()
     sync_callbacks = get_sync_callbacks()  # not used yet but kept for contract
 
     st.title("Beam Deflection – AS 3600:2018 Clause 8.5")
+    
+    # Summary mode toggle
+    summary_mode = st.checkbox("Summary mode (collapse all steps)", value=False, key="defl_summary_mode")
 
     st.markdown(
         """
@@ -403,7 +394,6 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
             "F_d,ef for span-depth check (kN/m)",
             value=12.0,
             step=0.5,
-            help="Effective design load per unit length for Cl. 8.5.4",
             key="defl_Fdef",
         )
 
@@ -546,8 +536,17 @@ P_{{\\text{{sls}}}} = G + ψ_s Q = {P_sls:.3g}\\;\\text{{kN}}
             "or stiffness values are missing."
         )
 
-    calcbox(
-        f"""
+    passes_defl = utilisation is not None and utilisation <= 1.0
+    defl_status = "pass" if passes_defl else "fail" if utilisation is not None else None
+    
+    def render_step4_body(show_box: bool = True):
+        """Body function for Step 4 - pass/fail check."""
+        # Step 4 summary and details
+        step4_summary = f"""**Step 4 – Maximum deflection and SLS check**
+<span style="color: #666; font-weight: 400;">Includes: Computed maximum deflection, SLS limit, and utilisation ratio</span>
+<span style="font-weight: 400;">Result: Utilisation = {util_text} → **{"PASS" if passes_defl else "FAIL" if utilisation is not None else "—"}**</span>"""
+        
+        step4_details = f"""
 **Step 4 – Maximum deflection and SLS check**
 
 - Computed maximum deflection: {delta_text}  
@@ -556,12 +555,31 @@ P_{{\\text{{sls}}}} = G + ψ_s Q = {P_sls:.3g}\\;\\text{{kN}}
 
 - SLS limit: `L/Δ = {L_over_limit:.0f}` → allowable deflection ≈ {delta_limit_text}  
 
-- Utilisation ratio (δ / δ_limit): {util_text}
+- Utilisation ratio (δ / δ_limit): {util_text} → {"✓ PASS" if passes_defl else "✗ FAIL" if utilisation is not None else "—"}
 
 
 
 (Ensure units of δ and L are consistent in your stiffness setup.)
 """
+        
+        if show_box:
+            clickable_calcbox(
+                uid="deflection_step4",
+                status=defl_status,
+                summary_html=step4_summary,
+                details_html=step4_details,
+                height=380
+            )
+        else:
+            # In summary-expand mode: show full step-by-step text only (no duplicate summary card)
+            calcbox(step4_details)
+    
+    render_step(
+        step_id="defl_step4",
+        title="Step 4 – Maximum deflection and SLS check",
+        summary_md=f"Result: Utilisation = {util_text} → {'PASS' if passes_defl else 'FAIL' if utilisation is not None else '—'}",
+        body_fn=render_step4_body,
+        summary_mode=summary_mode,
     )
 
     # ---------- Top summary ----------
@@ -1086,7 +1104,27 @@ No limit could be computed because \(F_{d,ef} \le 0\).
 
 _Ref: AS 3600:2018 Cl. 8.5.4 – deemed-to-conform span-to-depth limits._
 """
-        calcbox(span_text)
+        # Determine pass/fail status for span/depth check
+        span_defl_status = None
+        if L_over_d_limit is not None and L_over_d_limit > 0 and L_over_d > 0:
+            span_passes = L_over_d <= L_over_d_limit
+            span_defl_status = "pass" if span_passes else "fail"
+        
+        # Span/depth check summary and details
+        # Note: LaTeX removed from summary (L_ef/d becomes plain text)
+        limit_text = f"{L_over_d_limit:.1f}" if L_over_d_limit is not None else "—"
+        result_text = f"L_ef/d = {L_over_d:.1f} vs limit = {limit_text} → {'PASS' if span_defl_status == 'pass' else 'FAIL' if span_defl_status == 'fail' else '—'}"
+        span_summary = f"""**Span/depth deemed-to-conform check**
+<span style="color: #666; font-weight: 400;">Includes: Deemed-to-conform span-to-depth ratio limit calculation</span>
+<span style="font-weight: 400;">Result: {result_text}</span>"""
+        
+        clickable_calcbox(
+            uid="deflection_span_depth_check",
+            status=span_defl_status,
+            summary_html=span_summary,
+            details_html=span_text,
+            height=600
+        )
 
     # TAB 5: Flow chart
     with tab_flow:

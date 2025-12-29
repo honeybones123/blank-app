@@ -1,4 +1,7 @@
 import streamlit as st
+import streamlit.components.v1 as components
+import re
+import html
 
 
 def apply_global_widget_css():
@@ -32,6 +35,72 @@ def apply_global_widget_css():
             height: 2rem !important;
             font-size: 0.9rem !important;
         }
+
+        /* Hover tooltip styles */
+        .sb-label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin: 0.25rem 0 0.25rem 0;
+        }
+        .sb-tooltip {
+            position: relative;
+            display: inline-block;
+        }
+        .sb-tooltip-bubble {
+            visibility: hidden;
+            opacity: 0;
+            width: 320px;
+            max-width: 60vw;
+            background: rgba(17,17,17,0.92);
+            color: #fff;
+            text-align: left;
+            border-radius: 8px;
+            padding: 10px 12px;
+            position: absolute;
+            z-index: 1000;
+            left: 0;
+            top: 125%;
+            transition: opacity 0.15s ease;
+            font-weight: 400;
+            font-size: 0.82rem;
+            line-height: 1.25rem;
+            white-space: pre-wrap;
+        }
+        .sb-tooltip:hover .sb-tooltip-bubble {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        /* --- Keep widgets from stretching across the page --- */
+        :root {
+            --sb-widget-max: 240px;   /* tweak 240–320 to taste */
+        }
+
+        /* Cap the container width of common widgets */
+        div[data-testid="stNumberInput"],
+        div[data-testid="stTextInput"],
+        div[data-testid="stSelectbox"],
+        div[data-testid="stMultiselect"],
+        div[data-testid="stDateInput"],
+        div[data-testid="stTimeInput"] {
+            max-width: var(--sb-widget-max) !important;
+        }
+
+        /* Important: don't force them to full width */
+        div[data-testid="stNumberInput"],
+        div[data-testid="stTextInput"],
+        div[data-testid="stSelectbox"],
+        div[data-testid="stMultiselect"],
+        div[data-testid="stDateInput"],
+        div[data-testid="stTimeInput"] {
+            width: auto !important;
+        }
+
+        /* Make the actual control fill the capped container (so it looks tidy) */
+        div[data-testid="stNumberInput"] input,
+        div[data-testid="stTextInput"] input {
+            width: 100% !important;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -54,226 +123,842 @@ blockquote {
   margin: 0.5rem 0 0.75rem 0 !important;
   border-radius: 0 6px 6px 0 !important;
   color: #1a1a1a !important;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.35;
 }
-blockquote p, blockquote * {
-  color: #1a1a1a !important;
+blockquote p, blockquote * { color: #1a1a1a !important; }
+
+/* Seamless calc system styles */
+.calc-details {
+  margin: 1rem 0;
+}
+
+.calc-details summary {
+  cursor: pointer;
+  padding: 0.5rem;
+  font-weight: 600;
+  border-left: 4px solid #1f77b4;
+  background-color: rgba(31, 119, 180, 0.08);
+  border-radius: 0 4px 4px 0;
+}
+
+.calc-body {
+  margin-top: 0.5rem;
+  padding-left: 1rem;
+}
+
+.calc-inner {
+  padding: 0.75rem;
+}
+
+.calc-inner.flash {
+  animation: flash-highlight 1.2s ease-out;
+}
+
+@keyframes flash-highlight {
+  0% { background-color: rgba(255, 255, 0, 0.3); }
+  100% { background-color: transparent; }
+}
+
+.row-link {
+  cursor: pointer;
+  text-decoration: underline;
+  color: #1f77b4;
+}
+
+.row-link:hover {
+  color: #155a8a;
 }
 </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def apply_step_expander_css():
+    """Apply CSS to make collapsed step expanders tightly stacked."""
+    st.markdown(
+        """
+<style>
+/* Reduce expander header padding/margins for compact collapsed steps */
+div[data-testid="stExpander"] {
+    margin-top: 0.25rem !important;
+    margin-bottom: 0.25rem !important;
+}
+
+div[data-testid="stExpander"] > details {
+    margin-top: 0.25rem !important;
+    margin-bottom: 0.25rem !important;
+}
+
+div[data-testid="stExpander"] > details > summary {
+    padding-top: 0.4rem !important;
+    padding-bottom: 0.4rem !important;
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+    margin-bottom: 0 !important;
+}
+
+/* Reduce default gap between expanders */
+div[data-testid="stExpander"] + div[data-testid="stExpander"] {
+    margin-top: 0.1rem !important;
+}
+</style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def apply_step_summary_expander_css():
+    """Apply CSS to make expander header look like calcbox in summary mode."""
+    st.markdown(
+        """
+<style>
+/* Hide the default expander arrow */
+div[data-testid="stExpander"] details summary svg {
+  display: none !important;
+}
+
+/* Tight spacing between steps */
+div[data-testid="stExpander"] { margin: 0 !important; }
+div[data-testid="stExpander"] details { margin: 0 !important; }
+
+/* Make expander header look like your calcbox summary */
+div[data-testid="stExpander"] details summary {
+  border-left: 4px solid #1f77b4 !important;
+  background: rgba(31,119,180,0.08) !important;
+  margin: 0 !important;
+  padding: 0.03rem 0.40rem !important;
+  border-radius: 0 6px 6px 0 !important;
+  color: #222 !important;
+  cursor: pointer !important;
+  list-style: none !important;
+}
+div[data-testid="stExpander"] details > div { padding-top: 0.02rem !important; }
+
+/* Tight vertical spacing between summary cards */
+div.element-container:has(div[data-testid="stExpander"]) {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+/* Colour the expander summary based on marker INSIDE the expander */
+div[data-testid="stExpander"] details:has(span.step-pass) > summary {
+  border-left-color: #28a745 !important;
+  background: rgba(40,167,69,0.10) !important;
+}
+
+div[data-testid="stExpander"] details:has(span.step-fail) > summary {
+  border-left-color: #dc3545 !important;
+  background: rgba(220,53,69,0.10) !important;
+}
+
+div[data-testid="stExpander"] details:has(span.step-neutral) > summary {
+  border-left-color: #1f77b4 !important;
+  background: rgba(31,119,180,0.08) !important;
+}
+</style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def status_to_class(status=None):
+    """Convert status to CSS class name. Supports both 'pass/fail' and 'OK/Check/NG' formats, plus True/False."""
+    if status is None:
+        return "step-neutral"
+    
+    # Handle boolean values
+    if status is True:
+        return "step-pass"
+    if status is False:
+        return "step-fail"
+    
+    # Normalize to lowercase for comparison
+    status_lower = str(status).lower() if status else None
+    
+    # Map both formats to CSS classes
+    if status_lower in ("pass", "ok"):
+        return "step-pass"
+    elif status_lower in ("fail", "check", "ng"):
+        return "step-fail"
+    else:
+        return "step-neutral"
+
+
+def step_expander_calcbox(
+    uid: str,
+    summary_line: str,
+    details_md: str,
+    status=None,
+    diagram_fn=None,
+    content_before=None,
+    content_after=None,
+    expanded=None,
+    jump_uid=None,
+):
+    """
+    Render a step as an expandable card with summary header.
+    """
+    apply_step_summary_expander_css()
+
+    # Anchor for scrolling with deterministic marker
+    st.markdown(f"<div id='calc_{uid}'></div>", unsafe_allow_html=True)
+    # marker that JS uses to find the next expander
+    st.markdown(f"<div data-calc-uid='{uid}'></div>", unsafe_allow_html=True)
+
+    # Auto-expand when step_open_{uid} is set (from jump_nav or manual toggle)
+    # Allow explicit expanded parameter to override
+    if expanded is not None:
+        is_expanded = expanded
+    else:
+        is_expanded = st.session_state.get(f"step_open_{uid}", False)
+
+    status_class = status_to_class(status)
+
+    info_tip = ""
+    if content_before:
+        info_tip = " ℹ️"
+
+    formatted_summary = summary_line.replace(" | ", "  \n", 1)
+    label = f"{formatted_summary}{info_tip}".strip()
+
+    with st.expander(label, expanded=is_expanded):
+        # Inner target for flash highlight
+        st.markdown(f"<div id='inner_{uid}'>", unsafe_allow_html=True)
+        st.markdown(f"<span class='{status_class}'></span>", unsafe_allow_html=True)
+
+        if content_before:
+            content_before()
+
+        if diagram_fn:
+            col_calc, col_fig = st.columns([2.0, 1.0], gap="large")
+            with col_calc:
+                calcbox(details_md, status=status, uid=f"{uid}__details")
+            with col_fig:
+                pad, plot = st.columns([0.10, 0.90], gap="small")
+                with plot:
+                    diagram_fn()
+        else:
+            calcbox(details_md, status=status, uid=f"{uid}__details")
+        
+        if content_after:
+            content_after()
+        
+        # Close inner div for flash highlight
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
+def apply_step_summary_card_css():
+    """Apply CSS for summary mode step cards."""
+    st.markdown(
+        """
+<style>
+/* Summary card button should look like a calcbox */
+div[data-testid="stButton"] > button.step-summary-card {
+  width: 100% !important;
+  text-align: left !important;
+  border: none !important;
+  background: transparent !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.step-card {
+  border-left: 4px solid #1f77b4;
+  background: rgba(31,119,180,0.08);
+  padding: 0.55rem 0.8rem;
+  margin: 0.12rem 0 0.28rem 0;
+  border-radius: 0 6px 6px 0;
+  color: #1a1a1a;
+}
+
+.step-card.pass { border-left-color: #28a745; background: rgba(40,167,69,0.10); }
+
+.step-card.fail { border-left-color: #dc3545; background: rgba(220,53,69,0.10); }
+
+.step-card .title { font-weight: 600; margin-bottom: 2px; }
+
+.step-card .sub   { font-size: 13px; color: rgba(50,50,50,0.85); }
+
+.step-card .result{ font-size: 13px; margin-top: 2px; }
+
+.step-card .chev {
+  float: right;
+  opacity: 0.75;
+  font-size: 14px;
+  margin-top: -2px;
+}
+
+/* kill extra gap under buttons */
+div[data-testid="stButton"] { margin: 0.05rem 0 !important; }
+</style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def label_with_hover(label: str, hover_md: str | None = None, *, required: bool = False):
+    """
+    Render a label with optional hover tooltip.
+    - No visible icon.
+    - Tooltip appears when user hovers the label text.
+    """
+    label_txt = html.escape(label + (" *" if required else ""))
+    if not hover_md:
+        st.markdown(f"<div class='sb-label'>{label_txt}</div>", unsafe_allow_html=True)
+        return
+
+    tip = html.escape(hover_md)
+    st.markdown(
+        f"""
+<div class="sb-label sb-tooltip">
+  <span class="sb-tooltip-target">{label_txt}</span>
+  <span class="sb-tooltip-bubble">{tip}</span>
+</div>
 """,
         unsafe_allow_html=True,
     )
 
 
-def calcbox(md: str):
-    """
-    Render a blue calculation box with proper LaTeX support.
-    """
-    # Convert \[...\] to $$...$$ for display math
-    converted = md.replace("\\[", "$$").replace("\\]", "$$")
-    # Convert \(...\) to $...$ for inline math  
-    converted = converted.replace("\\(", "$").replace("\\)", "$")
-    
-    # Convert to blockquote format - prefix each line with >
-    lines = converted.strip().split("\n")
-    blockquote = "\n".join("> " + line for line in lines)
-    st.markdown(blockquote)
-
-
-
-def number_row(label, key, step, sync_callbacks, *, width_ratio=(1.5, 1), help_text=None):
-    """
-    Renders: [ label ]  [ number input ]
-    in a single row.
-
-    - label: text on the left (Markdown)
-    - key: widget key (must exist in TAB_KEYS)
-    - step: number_input step
-    - sync_callbacks: dict from get_sync_callbacks()
-    - help_text: optional tooltip (shows as ? icon)
-    """
-    col_label, col_widget = st.columns(width_ratio)
-
-    with col_label:
-        st.markdown(label)
-
-    with col_widget:
-        st.number_input(
-            "",
+def number_row(label: str, key: str, default: float, sync_callbacks=None, help_text: str | None = None, required: bool = False):
+    """Create a number input row with label and optional hover tooltip."""
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        label_with_hover(label, help_text, required=required)
+    with col2:
+        # Get the callback for this specific key if sync_callbacks is provided
+        on_change_callback = None
+        if sync_callbacks and isinstance(sync_callbacks, dict) and key in sync_callbacks:
+            on_change_callback = sync_callbacks[key]
+        
+        value = st.number_input(
+            label="",
             key=key,
-            step=step,
+            value=float(default),
+            step=1.0,
+            format="%.1f",
             label_visibility="collapsed",
-            on_change=sync_callbacks[key],
-            help=help_text,
+            on_change=on_change_callback,
         )
+    return value
 
 
-# ============================================================
-# UNIVERSAL REINFORCEMENT MESSAGES
-# ============================================================
+def show_reo_message(msg_key: str, layer: str = ""):
+    """Show a reinforcement message based on session state key."""
+    messages = {
+        "auto_layer2": f"💡 **Auto-placed {layer}**: The second layer was automatically added to meet spacing requirements.",
+        "layer2_overwritten": f"⚠️ **{layer} overwritten**: You manually changed the second layer, so auto-placement is disabled.",
+    }
+    msg = messages.get(msg_key, "")
+    if msg:
+        st.info(msg)
 
-def show_reo_message(
-    message_type: str,
-    *,
-    layer: str = "Layer 1",
-    s_min: float = None,
-    show_extended: bool = False,
-    **kwargs
-):
+
+def calcbox(md: str, status: str | None = None, uid: str | None = None):
     """
-    Display standardized reinforcement layout messages across all pages.
+    Render a status-aware calculation box with LaTeX support.
     
     Args:
-        message_type: One of:
-            - "auto_layer2": Auto-layout triggered (Layer 1 doesn't fit → Layer 2 formed)
-            - "layer2_overwritten": Layer 2 auto-updated due to Layer 1 changes
-            - "spacing_clamped": Spacing was increased to meet minimum
-            - "layout_invalid": Layout cannot fit even with multiple rows
-            - "layer2_inactive": Layer 2 is empty (user cleared it)
-            - "tight_spacing": Spacing barely meets minimum (teaching hint)
-        layer: Which layer the message refers to ("Layer 1", "Layer 2", "Bottom Layer 1", etc.)
-        s_min: Minimum spacing value (for spacing_clamped message)
-        show_extended: If True, show extended message in expander/popover
-        **kwargs: Additional parameters for message formatting
-    
-    Returns:
-        None (displays message directly)
+        md: Markdown content (with LaTeX using \[ \] or \( \))
+        status: "pass" (green), "fail" (red), or None (blue)
+        uid: Unique identifier for CSS scoping (auto-generated if None)
     """
-    import streamlit as st
+    # Generate unique ID if not provided
+    if uid is None:
+        if "_cb_i" not in st.session_state:
+            st.session_state["_cb_i"] = 0
+        st.session_state["_cb_i"] += 1
+        uid = f"cb_{st.session_state['_cb_i']}"
     
-    messages = {
-        "auto_layer2": {
-            "level": "info",
-            "widget": lambda layer_val: (
-                f"**Auto layout:** Not all {layer_val} bars fit in a single row with minimum spacing. "
-                f"Extra bars have been automatically moved to Layer 2."
-            ),
-            "extended": {
-                "title": "Automatic Second Layer Created",
-                "body": lambda layer_val: (
-                    f"{layer_val} cannot fit across the beam width while maintaining the minimum clear spacing. "
-                    f"The app has automatically placed the overflow bars into Layer 2.\n\n"
-                    f"You may edit Layer 2 manually, but if {layer_val} changes in a way that forces "
-                    f"another auto-layout, Layer 2 will be updated again."
-                ),
-            },
-        },
-        "layer2_overwritten": {
-            "level": "info",
-            "widget": lambda layer_val: (
-                f"**Layer 2 has been updated automatically** based on the overflow from {layer_val}. "
-                f"Your manual edits may be overwritten if {layer_val} reshuffles again."
-            ),
-            "extended": {
-                "title": "Layer 2 Auto-Updated",
-                "body": lambda layer_val: (
-                    f"Changes to {layer_val} caused a new automatic layout. "
-                    f"Layer 2 has been regenerated so the reinforcement remains physically consistent "
-                    f"with minimum spacing rules and beam width."
-                ),
-            },
-        },
-        "spacing_clamped": {
-            "level": "warning",
-            "widget": lambda s_min_val: (
-                f"**Adjusted spacing:** Entered spacing is less than the minimum allowed. "
-                f"Using {s_min_val:.1f} mm for layout and calculations."
-            ),
-            "extended": {
-                "title": "Minimum Spacing Applied",
-                "body": lambda s_min_val: (
-                    f"The entered spacing is smaller than the minimum clear spacing permitted by the "
-                    f"bar diameter, cover and detailing rules.\n\n"
-                    f"The app has increased the spacing to {s_min_val:.1f} mm to maintain a valid layout."
-                ),
-            },
-        },
-        "layout_invalid": {
-            "level": "error",
-            "widget": (
-                f"**Invalid layout:** Reinforcement cannot fit within the beam width with minimum "
-                f"spacing, even with multiple rows. Reduce bar size/count or increase beam width."
-            ),
-            "extended": {
-                "title": "Reinforcement Layout Invalid",
-                "body": (
-                    f"The requested bars cannot be arranged within the available beam width while "
-                    f"respecting minimum clear spacing and concrete cover.\n\n"
-                    f"**Solutions:**\n"
-                    f"- Increase beam width\n"
-                    f"- Use fewer bars\n"
-                    f"- Select smaller bar diameters\n\n"
-                    f"Diagrams and calculations are not representative until the layout is valid."
-                ),
-            },
-        },
-        "layer2_inactive": {
-            "level": "info",
-            "widget": lambda layer_val: (
-                f"**Layer 2 inactive:** No bars specified. Only {layer_val} contributes to reinforcement."
-            ),
-            "extended": None,
-        },
-        "tight_spacing": {
-            "level": "info",
-            "widget": (
-                f"**Bars fit with spacing just above the minimum.** Check congestion and detailing."
-            ),
-            "extended": None,
-        },
-    }
-    
-    if message_type not in messages:
-        st.warning(f"Unknown message type: {message_type}")
-        return
-    
-    msg_config = messages[message_type]
-    level = msg_config["level"]
-    widget_text_raw = msg_config["widget"]
-    extended = msg_config.get("extended")
-    
-    # Handle widget text - may be a string or a callable (for messages that need parameters)
-    if callable(widget_text_raw):
-        # For spacing_clamped, we need s_min
-        if message_type == "spacing_clamped":
-            if s_min is None:
-                s_min = 25.0  # Default fallback
-            widget_text = widget_text_raw(s_min)
-        # For messages that need layer, pass layer parameter
-        elif message_type in ["auto_layer2", "layer2_overwritten", "layer2_inactive"]:
-            widget_text = widget_text_raw(layer)
+    # --- normalise status so calcbox accepts the same labels as the step summaries ---
+    if isinstance(status, bool):
+        status = "pass" if status else "fail"
+    elif isinstance(status, str):
+        s = status.strip().lower()
+        if s in ("pass", "ok", "✅", "true"):
+            status = "pass"
+        elif s in ("fail", "check", "ng", "❌", "false"):
+            status = "fail"
         else:
-            widget_text = widget_text_raw()
-    else:
-        widget_text = widget_text_raw
+            status = None
     
-    # Display widget-level message
-    if level == "info":
-        st.info(widget_text)
-    elif level == "warning":
-        st.warning(widget_text)
-    elif level == "error":
-        st.error(widget_text)
-    else:
-        st.markdown(widget_text)
+    # Convert LaTeX markers: \[ \] → $$ $$, \( \) → $ $
+    md_converted = md
+    md_converted = re.sub(r'\\\[', '$$', md_converted)
+    md_converted = re.sub(r'\\\]', '$$', md_converted)
+    md_converted = re.sub(r'\\\(', '$', md_converted)
+    md_converted = re.sub(r'\\\)', '$', md_converted)
     
-    # Display extended message if requested and available
-    if show_extended and extended:
-        title = extended.get("title", "Details")
-        body_raw = extended.get("body")
-        
-        # Handle body - may be a string or a callable
-        if callable(body_raw):
-            if message_type == "spacing_clamped":
-                if s_min is None:
-                    s_min = 25.0  # Default fallback
-                body = body_raw(s_min)
-            elif message_type in ["auto_layer2", "layer2_overwritten"]:
-                body = body_raw(layer)
+    # If md already contains blockquote formatting, keep it.
+    # Otherwise, convert it to a blockquote.
+    lines = md_converted.splitlines()
+    already_blockquote = any(l.lstrip().startswith(">") for l in lines)
+    
+    if already_blockquote:
+        blockquote_md = md_converted
+    else:
+        blockquote_md = "\n".join([f"> {l}" if l.strip() else ">" for l in lines])
+    
+    # Inject scoped CSS for status
+    if status == "pass":
+        border_color = "#28a745"
+        bg_color = "rgba(40, 167, 69, 0.1)"
+    elif status == "fail":
+        border_color = "#dc3545"
+        bg_color = "rgba(220, 53, 69, 0.1)"
+    else:
+        border_color = "#1f77b4"
+        bg_color = "rgba(31, 119, 180, 0.08)"
+    
+    css = f"""
+<style>
+/* Style the blockquote that lives in the same element-container as our marker span */
+div.element-container:has(span#{uid}) blockquote {{
+  border-left: 4px solid {border_color} !important;
+  background-color: {bg_color} !important;
+  padding: 0.75rem 1rem !important;
+  border-radius: 10px !important;
+}}
+</style>
+"""
+    
+    st.markdown(css, unsafe_allow_html=True)
+    
+    # Marker + markdown MUST be in the same st.markdown call
+    st.markdown(f"<span id='{uid}'></span>\n\n{blockquote_md}", unsafe_allow_html=True)
+
+
+def clickable_calcbox(
+    *,
+    uid: str,
+    status: str | None = None,
+    summary_html: str,
+    details_html: str,
+    height: int = 520,
+):
+    """
+    Render a clickable, expandable calculation box with MathJax support.
+    
+    Args:
+        uid: Unique identifier for this calcbox
+        status: "pass" (green), "fail" (red), or None (blue)
+        summary_html: HTML for the collapsed summary (no LaTeX)
+        details_html: Markdown/HTML for expanded details (with LaTeX)
+        height: Expanded height in pixels (default 520)
+    """
+    # Determine colors based on status
+    if status == "pass":
+        border_color = "#28a745"
+        bg_color = "rgba(40, 167, 69, 0.1)"
+        css_class = "calcbox-pass"
+    elif status == "fail":
+        border_color = "#dc3545"
+        bg_color = "rgba(220, 53, 69, 0.1)"
+        css_class = "calcbox-fail"
+    else:
+        border_color = "#1f77b4"
+        bg_color = "rgba(31, 119, 180, 0.08)"
+        css_class = "calcbox-neutral"
+    
+    # Parse summary to extract title, includes, result
+    # Remove markdown bold, LaTeX, HTML tags
+    summary_clean = summary_html
+    summary_clean = re.sub(r'\*\*(.+?)\*\*', r'\1', summary_clean)
+    summary_clean = re.sub(r'\$.*?\$', '', summary_clean)
+    summary_clean = re.sub(r'<[^>]+>', '', summary_clean)
+    
+    # Extract title (first line, bold)
+    lines = summary_html.split('\n')
+    title_text = ""
+    includes_text = ""
+    result_text = ""
+    
+    for line in lines:
+        line_clean = re.sub(r'<[^>]+>', '', line)
+        if "Step" in line_clean or "**Step" in line:
+            title_text = re.sub(r'\*\*(.+?)\*\*', r'\1', line_clean).strip()
+        elif "Includes:" in line_clean or "includes:" in line_clean.lower():
+            includes_text = line_clean.replace("Includes:", "").replace("includes:", "").strip()
+        elif "Result:" in line_clean or "result:" in line_clean.lower():
+            result_text = line_clean.replace("Result:", "").replace("result:", "").strip()
+    
+    # Fallback parsing if structured format not found
+    if not title_text:
+        title_text = lines[0] if lines else "Calculation"
+        title_text = re.sub(r'\*\*(.+?)\*\*', r'\1', title_text)
+        title_text = re.sub(r'<[^>]+>', '', title_text).strip()
+    
+    if not includes_text and len(lines) > 1:
+        includes_text = lines[1] if len(lines) > 1 else ""
+        includes_text = re.sub(r'<[^>]+>', '', includes_text).strip()
+    
+    if not result_text and len(lines) > 2:
+        result_text = lines[2] if len(lines) > 2 else ""
+        result_text = re.sub(r'<[^>]+>', '', result_text).strip()
+    
+    # Convert details_html markdown to HTML
+    details_formatted = details_html
+    # Convert LaTeX markers: \[ \] → $$ $$, \( \) → $ $
+    details_formatted = re.sub(r'\\\[', '$$', details_formatted)
+    details_formatted = re.sub(r'\\\]', '$$', details_formatted)
+    details_formatted = re.sub(r'\\\(', '$', details_formatted)
+    details_formatted = re.sub(r'\\\)', '$', details_formatted)
+    
+    # Convert markdown to HTML for details
+    details_html_content = details_formatted
+    # Convert **bold** to <strong>
+    details_html_content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', details_html_content)
+    # Convert *italic* to <em>
+    details_html_content = re.sub(r'(?<!\*)\*(?!\*)([^*\n]+?)(?<!\*)\*(?!\*)', r'<em>\1</em>', details_html_content)
+    # Convert headers
+    details_html_content = re.sub(r'^### (.+)$', r'<h4>\1</h4>', details_html_content, flags=re.MULTILINE)
+    details_html_content = re.sub(r'^## (.+)$', r'<h3>\1</h3>', details_html_content, flags=re.MULTILINE)
+    details_html_content = re.sub(r'^# (.+)$', r'<h3>\1</h3>', details_html_content, flags=re.MULTILINE)
+    # Convert horizontal rules
+    details_html_content = re.sub(r'^---$', r'<hr>', details_html_content, flags=re.MULTILINE)
+    # Convert bullet points
+    lines = details_html_content.split('\n')
+    in_list = False
+    result_lines = []
+    for line in lines:
+        if line.strip().startswith('- '):
+            if not in_list:
+                result_lines.append('<ul>')
+                in_list = True
+            result_lines.append(f'<li>{line.strip()[2:]}</li>')
+        else:
+            if in_list:
+                result_lines.append('</ul>')
+                in_list = False
+            if line.strip():
+                # Preserve lines with LaTeX delimiters as-is
+                if '$$' in line or '\\[' in line or '\\]' in line or '\\(' in line or '\\)' in line:
+                    result_lines.append(line)
+                elif line.strip().startswith('<'):
+                    result_lines.append(line)
+                else:
+                    result_lines.append(f'<p>{line}</p>')
             else:
-                body = body_raw()
+                result_lines.append('<br>')
+    if in_list:
+        result_lines.append('</ul>')
+    details_html_content = '\n'.join(result_lines)
+    
+    # Build vertical summary
+    summary_vertical = f"""
+    <div class="sum-title">{title_text}</div>
+    <div class="sum-includes">Includes: {includes_text}</div>
+    <div class="sum-result">Result: {result_text}</div>
+    <div class="chev">▸</div>
+    """
+    
+    expanded_height = height
+    
+    # CSS
+    css = f"""
+    <style>
+    body {{
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        font-size: 14px;
+        line-height: 1.25;
+        color: #222;
+    }}
+    body, details, summary {{
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        font-size: 14px;
+        line-height: 1.25;
+        color: #222;
+    }}
+    b, strong, .sum-title {{
+        font-weight: 600;
+    }}
+    html, body {{
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+    }}
+    #wrap-{uid} {{
+        height: auto;
+        overflow: hidden;
+    }}
+    .{css_class} {{
+        border-left: 4px solid {border_color} !important;
+        background-color: {bg_color} !important;
+        padding: 0.50rem 0.70rem !important;
+        margin: 0.12rem 0 0.35rem 0 !important;
+        border-radius: 0 6px 6px 0 !important;
+        color: #222 !important;
+    }}
+    
+    .{css_class} details {{
+        border: none !important;
+        background: transparent !important;
+        margin: 0.12rem 0 0.35rem 0 !important;
+        padding: 0.50rem 0.70rem !important;
+    }}
+    
+    .{css_class} summary {{
+        cursor: pointer !important;
+        list-style: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }}
+    
+    .{css_class} summary::-webkit-details-marker {{
+        display: none !important;
+    }}
+    
+    .{css_class} .sum-title {{
+        font-weight: 600;
+        margin-bottom: 2px;
+    }}
+    
+    .{css_class} .sum-includes {{
+        font-size: 13px;
+        color: rgba(50, 50, 50, 0.85);
+        margin-bottom: 2px;
+    }}
+    
+    .{css_class} .sum-result {{
+        font-size: 13px;
+    }}
+    
+    .{css_class} .chev {{
+        float: right;
+        font-size: 14px;
+        opacity: 0.75;
+        margin-top: -2px;
+        transition: transform 0.2s ease;
+    }}
+    
+    .{css_class} details[open] .chev {{
+        transform: rotate(90deg);
+    }}
+    
+    .{css_class} .details-body {{
+        display: none;
+    }}
+    
+    .{css_class} details[open] .details-body {{
+        display: block;
+    }}
+    
+    .{css_class} .details-content {{
+        margin-top: 0.45rem;
+        padding-top: 0.35rem;
+        border-top: 1px solid rgba(0, 0, 0, 0.12);
+        max-height: calc({expanded_height}px - 110px);
+        overflow-y: auto;
+        padding-right: 6px;
+    }}
+    
+    .{css_class} .details-content p {{
+        color: #222 !important;
+        margin: 0.15rem 0 !important;
+    }}
+    
+    .{css_class} .details-content ul {{
+        margin: 0.15rem 0 0.25rem 1.1rem !important;
+    }}
+    
+    .{css_class} .details-content li {{
+        margin: 0.10rem 0 !important;
+    }}
+    
+    .{css_class} .details-content br {{
+        line-height: 1.05;
+    }}
+    
+    .{css_class} .details-content * {{
+        color: #222 !important;
+    }}
+    
+    .{css_class} .details-content p:first-child {{
+        margin-top: 0 !important;
+    }}
+    
+    .{css_class} .details-content p:last-child {{
+        margin-bottom: 0 !important;
+    }}
+    
+    .{css_class} .details-content mjx-container[jax="CHTML"][display="true"] {{
+        margin: 0.25rem 0 !important;
+    }}
+    
+    .{css_class} .details-content mjx-container {{
+        font-size: 1.0em !important;
+    }}
+    </style>
+    """
+    
+    # Full HTML with MathJax
+    full_html = f"""
+    {css}
+    <script>
+      window.MathJax = {{
+        tex: {{
+          inlineMath: [['$', '$'], ['\\(', '\\)']],
+          displayMath: [['$$','$$'], ['\\[','\\]']],
+          processEscapes: true
+        }},
+        chtml: {{
+          linebreaks: {{ automatic: false }}
+        }},
+        options: {{
+          skipHtmlTags: ['script','noscript','style','textarea','pre','code']
+        }}
+      }};
+    </script>
+    <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+    <div id="wrap-{uid}">
+        <div class="{css_class}">
+            <details id="cb-{uid}">
+                <summary>{summary_vertical}</summary>
+                <div class="details-body">
+                    <div class="details-content" id="details-{uid}">
+                        <div class="mj-target" id="mj_target__{uid}">
+                            {details_html_content}
+                        </div>
+                    </div>
+                </div>
+            </details>
+        </div>
+    </div>
+    <script>
+    const UID = '{uid}';
+    
+    function typeset(uid) {{
+        if (!(window.MathJax && MathJax.typesetPromise)) return;
+        const el = document.getElementById('mj_target__' + uid);
+        if (!el) return;
+        return MathJax.typesetPromise([el]);
+    }}
+    
+    const wrap = document.getElementById('wrap-{uid}');
+    const d = document.getElementById('cb-{uid}');
+    const EXP = {expanded_height};
+    
+    function setCollapsed() {{
+        const summary = d.querySelector('summary');
+        const h = summary.getBoundingClientRect().height + 8;
+        wrap.style.height = h + 'px';
+        document.body.style.height = h + 'px';
+    }}
+    
+    function setExpanded() {{
+        wrap.style.height = EXP + 'px';
+        document.body.style.height = EXP + 'px';
+    }}
+    
+    function syncChevronAndHeights() {{
+        if (d.open) {{
+            setExpanded();
+        }} else {{
+            setCollapsed();
+        }}
+        const chev = d.querySelector('.chev');
+        if (chev) chev.textContent = d.open ? '▾' : '▸';
+    }}
+    
+    d.addEventListener('toggle', function() {{
+        syncChevronAndHeights();
+        // Notify parent window of expansion state (for diagram visibility)
+        if (window.parent && window.parent !== window) {{
+            window.parent.postMessage({{
+                type: 'calcbox_toggle',
+                uid: UID,
+                open: d.open
+            }}, '*');
+        }}
+        if (d.open) {{
+            requestAnimationFrame(function() {{
+                setTimeout(function() {{
+                    typeset(UID);
+                }}, 80);
+            }});
+        }}
+    }});
+    
+    window.addEventListener('load', function() {{
+        syncChevronAndHeights();
+        setTimeout(function() {{
+            typeset(UID);
+        }}, 80);
+    }});
+    
+    window.addEventListener('resize', function() {{
+        if (!d.open) setCollapsed();
+    }});
+    
+    // MutationObserver for dynamic content changes
+    let t = null;
+    const mjTarget = document.getElementById('mj_target__' + UID);
+    if (mjTarget) {{
+        const obs = new MutationObserver(function() {{
+            if (!d.open) return;
+            clearTimeout(t);
+            t = setTimeout(function() {{
+                typeset(UID);
+            }}, 120);
+        }});
+        obs.observe(mjTarget, {{ childList: true, subtree: true }});
+    }}
+    </script>
+    """
+    
+    components.html(full_html, height=expanded_height, scrolling=False)
+
+
+# ============================================================
+#  STEP EXPANDER HELPER - Single source of truth
+# ============================================================
+def render_step(step_id: str, title: str, summary_md: str, body_fn: callable, status=None, summary_mode: bool = False):
+    """Render a step as an expandable card with summary header."""
+    # Apply CSS for expander styling
+    apply_step_summary_expander_css()
+    
+    # Determine status class using the helper
+    status_class = status_to_class(status)
+    
+    with st.expander(f"**{title}**  \n{summary_md}", expanded=not summary_mode):
+        # Marker span inside expander for CSS targeting
+        st.markdown(f"<span class='{status_class}'></span>", unsafe_allow_html=True)
+        body_fn()
+
+
+def render_jumpable_step(
+    *,
+    uid: str,
+    title: str,
+    summary_md: str,
+    body_fn: callable,
+    expanded: bool,
+    status=None,
+):
+    """
+    Exactly like render_step(), but:
+      - injects an anchor div id="calc_<uid>"
+      - allows expanded control from ?jump=<uid>
+      - flashes when expanded
+    """
+    # Apply CSS for expander styling
+    apply_step_summary_expander_css()
+    
+    # Determine status class using the helper
+    status_class = status_to_class(status)
+    
+    # anchor for scroll
+    st.markdown(f"<div id='calc_{uid}'></div>", unsafe_allow_html=True)
+
+    with st.expander(f"**{title}**  \n{summary_md}", expanded=expanded):
+        # Marker span inside expander for CSS targeting
+        st.markdown(f"<span class='{status_class}'></span>", unsafe_allow_html=True)
+        if expanded:
+            st.markdown("<div class='flash'>", unsafe_allow_html=True)
+            body_fn()
+            st.markdown("</div>", unsafe_allow_html=True)
         else:
-            body = body_raw
-        
-        if body:
-            with st.expander(f"ℹ️ {title}", expanded=False):
-                st.markdown(body)
+            body_fn()

@@ -11,7 +11,7 @@ from state_and_helpers import (
     update_results,
 )
 
-from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, calcbox, show_reo_message
+from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, calcbox, show_reo_message, label_with_hover
 
 # --- Pure compute functions from design core (no circular imports)
 from bending_core import _compute_bending_capacity
@@ -878,7 +878,6 @@ def render_inputs():
     with col_bot_reo:
         st.subheader("Bottom Longitudinal Reinforcement")
         
-        st.markdown("**Layer 1**")
         number_row(
             "Layer 1: bars or spacing (≤30 = bars, ≥30 = mm)",
             "inputs_nb_or_s_bot_1",
@@ -895,7 +894,6 @@ def render_inputs():
             help_text="Nominal diameter of bottom Layer 1 bars.",
         )
         
-        st.markdown("**Layer 2**")
         number_row(
             "Layer 2: bars or spacing (≤30 = bars, ≥30 = mm)",
             "inputs_nb_or_s_bot_2",
@@ -945,7 +943,6 @@ def render_inputs():
             st.session_state["_reo_warning_top_1"] = None  # Clear after showing
             st.session_state["_reo_s_min_top_1"] = None
         
-        st.markdown("**Layer 1**")
         number_row(
             "Layer 1: bars or spacing (≤30 = bars, ≥30 = mm)",
             "inputs_nb_or_s_top_1",
@@ -961,8 +958,6 @@ def render_inputs():
             sync_callbacks,
             help_text="Nominal diameter of top Layer 1 bars.",
         )
-        
-        st.markdown("**Layer 2**")
         
         number_row(
             "Layer 2: bars or spacing (≤30 = bars, ≥30 = mm)",
@@ -1084,12 +1079,10 @@ def render_inputs():
         if current not in options:
             current = "B1"
 
-        exp_label_col, exp_select_col = st.columns([1.5, 1])
-
-        with exp_label_col:
-            st.markdown("Exposure class")
-
-        with exp_select_col:
+        col_exp_label, col_exp_input = st.columns([1, 2])
+        with col_exp_label:
+            label_with_hover("Exposure class", "Exposure classification to AS 3600 – controls allowable crack width.")
+        with col_exp_input:
             if "inputs_exposure_class" in st.session_state:
                 st.selectbox(
                     "",
@@ -1097,9 +1090,7 @@ def render_inputs():
                     key="inputs_exposure_class",
                     on_change=sync_callbacks["inputs_exposure_class"],
                     label_visibility="collapsed",
-                    help="Exposure classification to AS 3600 – controls allowable crack width.",
                 )
-
             else:
                 st.selectbox(
                     "",
@@ -1108,7 +1099,6 @@ def render_inputs():
                     index=options.index(current),
                     on_change=sync_callbacks["inputs_exposure_class"],
                     label_visibility="collapsed",
-                    help="Exposure classification to AS 3600 – controls allowable crack width.",
                 )
 
         number_row(
@@ -1188,21 +1178,6 @@ def render_inputs():
                 "visit the SFD/BMD page.)"
             )
 
-    # Optional calcbox to explain what's happening
-    calcbox(
-        f"""
-**Design actions used in all downstream checks**
-
-- Source: `{source_label}`{extra_note}
-
-- Bending moment M*: `{Mu_star:.3g}` kNm  
-
-- Shear force V*: `{Vu_star:.3g}` kN  
-
-If "Teaching SFD/BMD" is selected and results exist, these come from that page's
-`|M|_max` and `|V|_max` for the chosen load case and span.
-"""
-    )
 
     # Push final chosen actions into results for all downstream pages
     update_results(

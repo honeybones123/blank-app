@@ -148,7 +148,7 @@ SHARED_DEFAULTS = {
     # Crack control inputs
     "exposure_class": "B1",
     "s_bar_bot": 200.0,  # bottom bar spacing for crack calc (mm)
-    
+
     # Crack / torsion sketch control
     "crack_theta_deg": 45.0,  # physical crack angle (degrees)
 

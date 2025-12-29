@@ -12,7 +12,7 @@ from state_and_helpers import (
     get_sync_callbacks,
     update_results,  # kept for contract
 )
-from widgets_helpers import apply_global_widget_css, number_row
+from widgets_helpers import apply_global_widget_css, number_row, calcbox
 
 
 # ------------------------------------------------------------
@@ -68,19 +68,6 @@ blockquote p:last-child {
     )
 
 
-def calcbox(md: str):
-    r"""
-    Render a highlighted calculation box with LaTeX-enabled markdown inside.
-
-    - Converts \[ \] → $$ $$ for display math
-    - Converts \( \) → $ $ for inline math
-    - Wraps everything in a markdown blockquote (>) so CSS turns it blue
-    """
-    converted = md.replace("\\[", "$$").replace("\\]", "$$")
-    converted = converted.replace("\\(", "$").replace("\\)", "$")
-    lines = converted.strip().split("\n")
-    blockquote = "\n".join("> " + line for line in lines)
-    st.markdown(blockquote)
 
 
 # ------------------------------------------------------------

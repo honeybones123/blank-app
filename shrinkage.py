@@ -13,7 +13,7 @@ from state_and_helpers import (
     get_sync_callbacks,
     update_results,  # kept for contract
 )
-from widgets_helpers import apply_global_widget_css, number_row
+from widgets_helpers import apply_global_widget_css, number_row, calcbox, clickable_calcbox
 
 
 # ------------------------------------------------------------
@@ -69,19 +69,6 @@ blockquote p:last-child {
     )
 
 
-def calcbox(md: str):
-    """
-    Render a highlighted calculation box with LaTeX-enabled markdown inside.
-
-    - Converts \[ \] → $$ $$ for display math
-    - Converts \( \) → $ $ for inline math
-    - Wraps everything in a markdown blockquote (>) so CSS turns it blue
-    """
-    converted = md.replace("\\[", "$$").replace("\\]", "$$")
-    converted = converted.replace("\\(", "$").replace("\\)", "$")
-    lines = converted.strip().split("\n")
-    blockquote = "\n".join("> " + line for line in lines)
-    st.markdown(blockquote)
 
 
 # ------------------------------------------------------------
@@ -385,8 +372,12 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
     with tab_geom:
         st.subheader("Notional thickness tₕ – AS 3600 (2Aᵍ / uₑ)")
 
-        calcbox(
-            rf"""
+        # Notional thickness summary and details
+        th_summary = rf"""**Notional thickness $t_h$**
+<span style="color: #666; font-weight: 400;">Includes: Notional thickness calculation for creep and shrinkage</span>
+<span style="font-weight: 400;">Result: $t_h = {th_table:d}$ mm (adopted from calculated {th_raw:.1f} mm)</span>"""
+        
+        th_details = rf"""
 **Purpose**
 
 Determine the **notional thickness** $t_h$ used in AS 3600 for **creep and shrinkage**.
@@ -429,6 +420,13 @@ t_{{h,\text{{table}}}} = {th_table:d}\,\text{{mm}} \quad (\text{{nearest of 50, 
 _Ref: AS 3600:2018 definition of notional thickness \(t_h = 2 A_g/u_e\);
 Fig. 3.1.7.2 and Table 3.1.7.2._
 """
+        
+        clickable_calcbox(
+            uid="shrinkage_th",
+            status=None,
+            summary_html=th_summary,
+            details_html=th_details,
+            height=480
         )
 
     # ---------- Tab 2: Autogenous shrinkage ----------
@@ -440,8 +438,12 @@ Fig. 3.1.7.2 and Table 3.1.7.2._
         else:
             eps_cse_final = eps_cse
 
-        calcbox(
-            rf"""
+        # Autogenous shrinkage summary and details
+        auto_summary = rf"""**Autogenous shrinkage $\varepsilon_{{cse}}$**
+<span style="color: #666; font-weight: 400;">Includes: Autogenous (chemical) shrinkage strain calculation</span>
+<span style="font-weight: 400;">Result: $\varepsilon_{{cse}} = {eps_cse*1e6:.1f} \times 10^{{-6}}$ (≈ {eps_cse*1e6:.1f} microstrain)</span>"""
+        
+        auto_details = rf"""
 **Purpose**
 
 Estimate the **autogenous (chemical) shrinkage** strain $\varepsilon_{{cse}}$,
@@ -495,6 +497,13 @@ Using $f'_c = {fc:.1f}$ MPa and $t = {t_days:.0f}$ days:
 
 _Ref: AS 3600:2018 Cl. 3.1.7.2(2),(3)._ 
 """
+        
+        clickable_calcbox(
+            uid="shrinkage_autogenous",
+            status=None,
+            summary_html=auto_summary,
+            details_html=auto_details,
+            height=520
         )
 
     # ---------- Tab 3: Drying shrinkage ----------
@@ -502,8 +511,12 @@ _Ref: AS 3600:2018 Cl. 3.1.7.2(2),(3)._
         st.subheader("Drying shrinkage ε_csd – AS 3600 Cl. 3.1.7.2(4),(5)")
         env_short = _ENV_LABELS[env_option]
 
-        calcbox(
-            rf"""
+        # Drying shrinkage summary and details
+        dry_summary = rf"""**Drying shrinkage $\varepsilon_{{csd}}$**
+<span style="color: #666; font-weight: 400;">Includes: Drying shrinkage strain calculation with time development</span>
+<span style="font-weight: 400;">Result: $\varepsilon_{{csd}} = {eps_csd_t*1e6:.1f} \times 10^{{-6}}$ (≈ {eps_csd_t*1e6:.1f} microstrain)</span>"""
+        
+        dry_details = rf"""
 **Purpose**
 
 Estimate the **drying shrinkage** strain $\varepsilon_{{csd}}(t)$, which develops
@@ -559,14 +572,25 @@ Drying shrinkage at time $t$:
 
 _Ref: AS 3600:2018 Cl. 3.1.7.2(4),(5); Fig. 3.1.7.2 and Table 3.1.7.2._
 """
+        
+        clickable_calcbox(
+            uid="shrinkage_drying",
+            status=None,
+            summary_html=dry_summary,
+            details_html=dry_details,
+            height=580
         )
 
     # ---------- Tab 4: Total shrinkage ----------
     with tab_total:
         st.subheader("Total shrinkage ε_cs = ε_cse + ε_csd")
 
-        calcbox(
-            rf"""
+        # Total shrinkage summary and details
+        total_summary = rf"""**Total shrinkage $\varepsilon_{{cs}}$**
+<span style="color: #666; font-weight: 400;">Includes: Combination of autogenous and drying shrinkage components</span>
+<span style="font-weight: 400;">Result: $\varepsilon_{{cs}} = {eps_cs_total*1e6:.1f} \times 10^{{-6}}$ (≈ {eps_cs_total*1e6:.1f} microstrain)</span>"""
+        
+        total_details = rf"""
 **Purpose**
 
 Combine **autogenous** and **drying** shrinkage to obtain the **total design
@@ -612,6 +636,13 @@ shrinkage strain**:
 
 _Ref: AS 3600:2018 Cl. 3.1.7 – total shrinkage._ 
 """
+        
+        clickable_calcbox(
+            uid="shrinkage_total",
+            status=None,
+            summary_html=total_summary,
+            details_html=total_details,
+            height=420
         )
 
     # ---------- Tab 5: Flow chart / references ----------

@@ -1,6 +1,7 @@
 # shear_steps.py
 import streamlit as st
 from shear_core import ShearResults
+from widgets_helpers import calcbox
 
 
 def _inject_calcbox_css():
@@ -24,21 +25,14 @@ def _inject_calcbox_css():
     )
 
 
-def calcbox(md: str):
-    box_html = f"""
-<div class="calcbox-wrapper">
-  <div class="calcbox-inner">
-{md}
-  </div>
-</div>
-"""
-    st.markdown(box_html, unsafe_allow_html=True)
 
 
 # ---------------- Step 1 – torsion cracking ----------------
 def render_step_1(results: ShearResults, T_star: float, phi: float):
     step1_req = ">" if results.torsion_required else "\\le"
     step1_text = "required" if results.torsion_required else "not required (strength check only)"
+    # Green if torsion NOT required (T* <= 0.25φTcr), red if required (T* > 0.25φTcr)
+    torsion_status = "pass" if not results.torsion_required else "fail"
 
     md = (
         "**Step 1 – Does torsion crack the section? (AS 3600 Cl. 8.3.4)**  \n\n"
@@ -55,7 +49,7 @@ def render_step_1(results: ShearResults, T_star: float, phi: float):
         f"$0.25 φ T_{{cr}} = {results.torsion_required_limit:,.1f}\\ \\text{{kNm}}$  \n\n"
         f"**Conclusion:** torsion design is **{step1_text}**.\n"
     )
-    calcbox(md)
+    calcbox(md, status=torsion_status, uid="shear_step1_torsion")
 
 
 # ---------------- Step 2 – equivalent shear ----------------
@@ -123,6 +117,7 @@ def render_step_5(results: ShearResults):
 # ---------------- Step 6 – sectional shear -----------------
 def render_step_6(results: ShearResults, V_eq: float):
     status = ":green[OK]" if results.shear_ok else ":red[NOT OK]"
+    shear_status = "pass" if results.shear_ok else "fail"
     md = (
         "**Step 6 – Calculate concrete + steel shear strength and check "
         "(AS 3600 Cl. 8.2.3 & 8.2.4)**  \n\n"
@@ -138,12 +133,13 @@ def render_step_6(results: ShearResults, V_eq: float):
         f"- $V_{{eq}}^* = {V_eq:.1f}\\ \\text{{kN}}$  \n\n"
         f"**Sectional shear check:** {status}.\n"
     )
-    calcbox(md)
+    calcbox(md, status=shear_status, uid="shear_step6_capacity")
 
 
 # ---------------- Step 7 – web crushing --------------------
 def render_step_7(results: ShearResults):
     status = ":green[OK]" if results.web_ok else ":red[NOT OK]"
+    web_status = "pass" if results.web_ok else "fail"
     md = (
         "**Step 7 – Check web-crushing strength (AS 3600 Cl. 8.2.6)**  \n\n"
         "Web-crushing shear capacity:  \n\n"
@@ -154,4 +150,4 @@ def render_step_7(results: ShearResults):
         f"- RHS $= {results.RHS:,.1f}$  \n\n"
         f"**Web-crushing check:** {status}.\n"
     )
-    calcbox(md)
+    calcbox(md, status=web_status, uid="shear_step7_web_crushing")

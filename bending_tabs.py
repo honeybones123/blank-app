@@ -11,11 +11,13 @@ from bending_diagrams import (
 )
 from bending_core import _fmt, _layout_bars_in_rows
 from state_and_helpers import update_results
+from widgets_helpers import calcbox, clickable_calcbox, render_step, render_jumpable_step, apply_step_expander_css, step_expander_calcbox
 
 
 # ============================================================
 #  LOCAL HELPER – CALCBOX WITH LATEX SUPPORT
 # ============================================================
+# Keeping _inject_calcbox_css for backward compatibility if needed elsewhere
 def _inject_calcbox_css():
     """Inject CSS for blue blockquote styling."""
     st.markdown(
@@ -36,17 +38,6 @@ blockquote p, blockquote * { color: #1a1a1a !important; }
     )
 
 
-def calcbox(md: str):
-    """Render a blue calculation box with proper LaTeX support."""
-    # Convert \[...\] to $$...$$ for display math
-    converted = md.replace("\\[", "$$").replace("\\]", "$$")
-    # Convert \(...\) to $...$ for inline math
-    converted = converted.replace("\\(", "$").replace("\\)", "$")
-    
-    # Convert to blockquote format
-    lines = converted.strip().split("\n")
-    blockquote = "\n".join("> " + line for line in lines)
-    st.markdown(blockquote)
 
 
 # ============================================================
@@ -201,18 +192,22 @@ def _make_sls_stress_block_figure_32(D_mm, d_mm, dn_mm, layers_tension):
 # ============================================================
 #  TAB 1 – ULS (UNCHANGED LOGIC, TIDIED CALC BOXES)
 # ============================================================
-def render_uls_tab(top_results, b, D, fc, fsy, Ast, d):
+def render_uls_tab(top_results, b, D, fc, fsy, Ast, d, summary_mode: bool = False, jump_uid: str | None = None):
+    """ULS step-by-step (summary_mode parameter ignored, kept for compatibility)."""
     """
     Tab 1 – ULS step-by-step.
+    
+    Args:
+        summary_mode: If True, all steps are collapsed (expanded=False)
+        jump_uid: Deprecated - kept for compatibility, not used anymore
     """
     phi_Mu_cap = top_results["phi_Mu_cap"]
     phi = top_results["phi"]
 
-    st.subheader("ULS Calculation (step-by-step)")
+    # Apply CSS for compact collapsed steps
+    apply_step_expander_css()
 
     if phi_Mu_cap > 0 and d and Ast:
-        # 1. Ultimate Limit State
-        st.header("1. Ultimate Limit State (ULS)")
 
         # Stress-block factors
         alpha2_raw_uls = 0.85 - 0.0015 * fc
@@ -235,12 +230,8 @@ def render_uls_tab(top_results, b, D, fc, fsy, Ast, d):
         # --------------------------------------------------
         # 1.1 Stress-block parameters (α2 and γ)
         # --------------------------------------------------
-        st.subheader("1.1 Stress-block parameters (α₂ and γ)")
-        col_calc_11, col_fig_11 = st.columns([2, 1])
-
-        with col_calc_11:
-            calcbox(
-                f"""
+        # Section 1.1 details
+        section11_details = f"""
 *Purpose: Determine the ULS rectangular stress-block factors $\\alpha_2$ and $\\gamma$ for the given concrete strength.*  
 
 **Inputs:**  
@@ -284,9 +275,8 @@ $$
 **Result:**  
 $\\alpha_2 = {alpha2_uls:.3f}$, $\\gamma = {gamma_uls:.3f}$ (to be used in Sections 1.2–1.6).
 """
-            )
-
-        with col_fig_11:
+        
+        def diagram_1_1():
             fig_uls_11 = _make_uls_stress_block_figure(
                 b_mm=b or 0.0,
                 D_mm=D or 0.0,
@@ -298,24 +288,29 @@ $\\alpha_2 = {alpha2_uls:.3f}$, $\\gamma = {gamma_uls:.3f}$ (to be used in Secti
                 fc=fc,
                 fsy=fsy,
                 show_lever_arm=False,
-                show_dn=False,          # ignored for variant "11"
+                show_dn=False,
                 show_alpha_label=True,
                 show_C=False,
                 C_N=None,
-                variant="11",           # <— simple 1.1 diagram
+                variant="11",
             )
-            st.plotly_chart(fig_uls_11, use_container_width=False, config={"displayModeBar": False})
+            st.plotly_chart(fig_uls_11, use_container_width=True, config={"displayModeBar": False})
 
-        st.markdown("---")
+        step_expander_calcbox(
+            uid="bending_uls_1_1",
+            summary_line=f"1.1 Stress-block parameters (α₂ and γ) | Result: α₂ = {alpha2_uls:.3f}, γ = {gamma_uls:.3f}",
+            details_md=section11_details,
+            status=None,
+            diagram_fn=diagram_1_1,
+        )
+
 
         # --------------------------------------------------
         # 1.2 Concrete compressive force C  (NO DIAGRAM)
         # --------------------------------------------------
-        st.subheader("1.2 Concrete compressive force $C$")
         C_kN = C_N / 1000.0 if C_N is not None else float("nan")
-
-        calcbox(
-            f"""
+        
+        section12_details = f"""
 *Purpose: Calculate the resultant concrete compressive force $C$ at ULS.*  
 
 **Inputs:**  
@@ -354,17 +349,19 @@ $$
 **Result:**  
 Concrete compression resultant $C \\approx {C_kN:.1f}$ kN acting at the centroid of the compression block.
 """
+        
+        step_expander_calcbox(
+            uid="bending_uls_1_2",
+            summary_line=f"1.2 Concrete compressive force $C$ | Result: C = {C_kN:.1f} kN",
+            details_md=section12_details,
+            status=None,
         )
 
-        st.markdown("---")
 
         # --------------------------------------------------
         # 1.3 Steel area and steel tension force T (NO DIAGRAM)
         # --------------------------------------------------
-        st.subheader("1.3 Steel area and tension force $T$")
-
-        calcbox(
-            f"""
+        section13_details = f"""
 *Purpose: Relate the provided tensile reinforcement area to the tension force $T$ at ULS.*  
 
 **Inputs:**  
@@ -403,20 +400,19 @@ $$
 **Result:**  
 Tension force at ULS: $T \\approx {T/1000.0:.1f}$ kN.
 """
+        
+        step_expander_calcbox(
+            uid="bending_uls_1_3",
+            summary_line=f"1.3 Steel area and tension force $T$ | Result: T = {T/1000.0:.1f} kN",
+            details_md=section13_details,
+            status=None,
         )
 
-        st.markdown("---")
 
         # --------------------------------------------------
         # 1.4 Neutral axis depth d_n and block depth a
         # --------------------------------------------------
-        st.subheader("1.4 Neutral axis depth $d_n$ and block depth $a$")
-
-        col_calc_14, col_fig_14 = st.columns([2, 1])
-
-        with col_calc_14:
-            calcbox(
-                f"""
+        section14_details = f"""
 *Purpose: Determine the neutral axis depth $d_n$ and corresponding block depth $a$ from force equilibrium.*  
 
 **Inputs:**  
@@ -477,10 +473,8 @@ $$
 **Result:**  
 $ d_n = {dn:.1f}$ mm, $ a = {a_uls:.1f}$ mm.
 """
-            )
-
-        with col_fig_14:
-            # Variant "13": taller – matches this calc box.
+        
+        def diagram_1_4():
             fig_uls_14 = _make_uls_stress_block_figure(
                 b_mm=b or 0.0,
                 D_mm=D or 0.0,
@@ -491,29 +485,40 @@ $ d_n = {dn:.1f}$ mm, $ a = {a_uls:.1f}$ mm.
                 gamma=gamma_uls,
                 fc=fc,
                 fsy=fsy,
-                show_lever_arm=True,     # show z
-                show_dn=True,            # show d_n
-                show_alpha_label=True,   # α2 f'c + width arrow
+                show_lever_arm=True,
+                show_dn=True,
+                show_alpha_label=True,
                 show_C=False,
                 C_N=None,
                 variant="13",
             )
-            st.plotly_chart(fig_uls_14, use_container_width=False, config={"displayModeBar": False})
+            st.plotly_chart(fig_uls_14, use_container_width=True, config={"displayModeBar": False})
 
-        st.markdown("---")
+        step_expander_calcbox(
+            uid="bending_uls_1_4",
+            summary_line=f"1.4 Neutral axis depth $d_n$ and block depth $a$ | Result: d_n = {dn:.1f} mm, a = {a_uls:.1f} mm",
+            details_md=section14_details,
+            status=None,
+            diagram_fn=diagram_1_4,
+        )
+
 
         # --------------------------------------------------
         # 1.5 Neutral axis ratio k_u
         # --------------------------------------------------
-        col_ku_title, col_ku_info = st.columns([0.9, 0.1])
-
-        with col_ku_title:
-            st.subheader("1.5 Neutral axis ratio $k_u$")
-
-        with col_ku_info:
-            with st.popover("ℹ️", help="What does the neutral-axis ratio mean?"):
-                st.markdown(
-                    r"""
+        ku = dn / d if d else float("nan")
+        ku_lim = 0.36  # Teaching limit (AS 3600 limit for ductile design)
+        ku_ok = (0.0 < ku <= ku_lim) if not math.isnan(ku) else None
+        ku_status = "pass" if ku_ok is True else "fail" if ku_ok is False else None
+        
+        def content_1_5():
+            col_ku_title, col_ku_info = st.columns([0.9, 0.1])
+            with col_ku_title:
+                st.markdown("**Info:**")
+            with col_ku_info:
+                with st.popover("ℹ️", help="What does the neutral-axis ratio mean?"):
+                    st.markdown(
+                        r"""
 ### **Neutral-Axis Ratio \(k_u\) — Meaning & Importance**
 
 The ratio  
@@ -569,18 +574,16 @@ A single value of \(k_u\) tells you:
 - how reinforcement changes shift the NA
 
 """
-                )
+                    )
 
-        ku = dn / d if d else float("nan")
-
-        calcbox(
-            f"""
-*Purpose: Express the neutral axis depth as a non-dimensional ratio $k_u$.*  
+        section15_details = f"""
+*Purpose: Express the neutral axis depth as a non-dimensional ratio $k_u$ and check ductility limit.*  
 
 **Inputs:**  
 
 - Neutral axis depth: $d_n = {dn:.1f}$ mm  
 - Effective depth: $d = {d:.1f}$ mm  
+- Ductility limit: $k_{{u,lim}} = {ku_lim:.2f}$ (AS 3600)
 
 ---
 
@@ -601,23 +604,26 @@ $$
 
 ---
 
+**Check:**  
+$k_u = {ku:.3f} \\le {ku_lim:.2f}$ → {"✓ PASS" if ku_ok else "✗ FAIL" if ku_ok is False else "—"}
+
 **Result:**  
 Neutral axis ratio $k_u = {ku:.3f}$.
 """
+        
+        step_expander_calcbox(
+            uid="bending_uls_1_5",
+            summary_line=f"1.5 Neutral axis ratio $k_u$ | Result: k_u = {ku:.3f} vs k_{{u,lim}} = {ku_lim:.2f} → {'PASS' if ku_ok else 'FAIL' if ku_ok is False else '—'}",
+            details_md=section15_details,
+            status=ku_status,
+            content_before=content_1_5,
         )
 
-        st.markdown("---")
 
         # --------------------------------------------------
         # 1.6 Lever arm z and moment capacity (+ force model)
         # --------------------------------------------------
-        st.subheader("1.6 Lever arm $z$ and moment capacity")
-
-        col_calc_16, col_fig_16 = st.columns([2, 1])
-
-        with col_calc_16:
-            calcbox(
-                f"""
+        section16_details = f"""
 *Purpose: Compute the internal lever arm $z$, nominal moment $M_u$ and design moment $\\phi M_{{u,cap}}$.*  
 
 **Inputs:**  
@@ -671,9 +677,8 @@ $$
 **Result:**  
 Design bending capacity $\\phi M_{{u,cap}} = {phi_Mu_cap_uls:.2f}$ kNm.
 """
-            )
-
-        with col_fig_16:
+        
+        def diagram_1_6():
             fig_uls_16 = _make_uls_force_model_figure(
                 D_mm=D or 0.0,
                 d_mm=d,
@@ -681,9 +686,63 @@ Design bending capacity $\\phi M_{{u,cap}} = {phi_Mu_cap_uls:.2f}$ kNm.
                 C_N=C_N,
                 T_N=T,
             )
-            st.plotly_chart(fig_uls_16, use_container_width=False, config={"displayModeBar": False})
+            st.plotly_chart(fig_uls_16, use_container_width=True, config={"displayModeBar": False})
 
-        st.markdown("---")
+        step_expander_calcbox(
+            uid="bending_uls_1_6",
+            summary_line=f"1.6 Lever arm $z$ and moment capacity | Result: φM_{{u,cap}} = {phi_Mu_cap_uls:.2f} kNm",
+            details_md=section16_details,
+            status=None,
+            diagram_fn=diagram_1_6,
+        )
+
+
+        # --------------------------------------------------
+        # 1.7 Flexural capacity check (Mu* ≤ φMu,cap)
+        # --------------------------------------------------
+        from state_and_helpers import get_param
+        Mu_star = get_param("Mu_star", 0.0)
+        if Mu_star is not None and phi_Mu_cap_uls > 0:
+            Mu_ok = Mu_star <= phi_Mu_cap_uls
+            Mu_status = "pass" if Mu_ok is True else "fail" if Mu_ok is False else None
+            
+            section17_details = f"""
+*Purpose: Verify that the design moment does not exceed the design capacity.*  
+
+**Inputs:**  
+
+- Design moment: $M_u^* = {Mu_star:.2f}$ kNm  
+- Design capacity: $\\phi M_{{u,cap}} = {phi_Mu_cap_uls:.2f}$ kNm  
+
+---
+
+**Check:**  
+
+$$
+M_u^* \\le \\phi M_{{u,cap}}
+$$
+
+**Substitution:**
+
+$$
+{Mu_star:.2f} \\le {phi_Mu_cap_uls:.2f} \\quad \\Rightarrow \\quad \\text{{{"✓ PASS" if Mu_ok else "✗ FAIL"}}}
+$$
+
+**Utilisation:**  
+$\\text{{Utilisation}} = \\frac{{M_u^*}}{{\\phi M_{{u,cap}}}} = \\frac{{{Mu_star:.2f}}}{{{phi_Mu_cap_uls:.2f}}} = {Mu_star/phi_Mu_cap_uls:.3f}$
+
+---
+
+**Result:**  
+{"Design moment is within capacity." if Mu_ok else "Design moment exceeds capacity — increase reinforcement or section size."}
+"""
+            
+            step_expander_calcbox(
+                uid="bending_uls_1_7",
+                summary_line=f"1.7 Flexural capacity check | Result: M_u* = {Mu_star:.2f} kNm vs φM_{{u,cap}} = {phi_Mu_cap_uls:.2f} kNm → {'PASS' if Mu_ok else 'FAIL'}",
+                details_md=section17_details,
+                status=Mu_status,
+            )
 
     else:
         st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
@@ -692,9 +751,14 @@ Design bending capacity $\\phi M_{{u,cap}} = {phi_Mu_cap_uls:.2f}$ kNm.
 # ============================================================
 #  TAB 2 – Minimum Strength (UNCHANGED LOGIC, TIDIED TEXT)
 # ============================================================
-def render_min_strength_tab(top_results, b, D, fc, fsy, Ast):
+def render_min_strength_tab(top_results, b, D, fc, fsy, Ast, summary_mode: bool = False, jump_uid: str | None = None):
+    """Minimum strength requirements (summary_mode parameter ignored, kept for compatibility)."""
     """
     Tab 2 – Minimum strength requirements.
+    
+    Args:
+        summary_mode: If True, all steps are collapsed (expanded=False)
+        jump_uid: Deprecated - kept for compatibility, not used anymore
     """
     fctf = top_results["fctf"]
     Z_gross = top_results["Z_gross"]
@@ -711,12 +775,11 @@ def render_min_strength_tab(top_results, b, D, fc, fsy, Ast):
     )
     Ast_min_as = As_min
 
-    st.header("2. Minimum strength requirements (AS 3600)")
+    # Apply CSS for compact collapsed steps
+    apply_step_expander_css()
 
     # 2.1 f_ct,f
-    st.subheader("2.1 Concrete flexural tensile strength $f_{{ct,f}}$")
-    calcbox(
-        f"""
+    section21_details = f"""
 *Purpose: Estimate the concrete flexural tensile strength $f_{{ct,f}}$.*  
 
 **Inputs:**  
@@ -743,13 +806,16 @@ $$
 **Result:**  
 $f_{{ct,f}} \\approx {fctf_as:.3f}$ MPa.
 """
+    
+    step_expander_calcbox(
+        uid="bending_min_2_1",
+        summary_line=f"2.1 Concrete flexural tensile strength $f_{{ct,f}}$ | Result: f_{{ct,f}} = {fctf_as:.3f} MPa",
+        details_md=section21_details,
+        status=None,
     )
-    st.markdown("---")
 
     # 2.2 Z_g
-    st.subheader("2.2 Gross section modulus $Z_g$")
-    calcbox(
-        f"""
+    section22_details = f"""
 *Purpose: Calculate the gross section modulus $Z_g$ of the rectangular section.*  
 
 **Inputs:**  
@@ -777,13 +843,16 @@ $$
 **Result:**  
 $Z_g = {Zg:,.3e}\\ \\text{{mm}}^3$.
 """
+    
+    step_expander_calcbox(
+        uid="bending_min_2_2",
+        summary_line=f"2.2 Gross section modulus $Z_g$ | Result: Z_g = {Zg:,.3e} mm³",
+        details_md=section22_details,
+        status=None,
     )
-    st.markdown("---")
 
     # 2.3 M_cr
-    st.subheader("2.3 Cracking moment $M_{{cr}}$")
-    calcbox(
-        f"""
+    section23_details = f"""
 *Purpose: Determine the cracking moment $M_{{cr}}$ for the section.*  
 
 **Inputs:**  
@@ -811,18 +880,26 @@ $$
 **Result:**  
 $M_{{cr}} \\approx {Mcr_as:.2f}$ kNm.
 """
+    
+    step_expander_calcbox(
+        uid="bending_min_2_3",
+        summary_line=f"2.3 Cracking moment $M_{{cr}}$ | Result: M_{{cr}} = {Mcr_as:.2f} kNm",
+        details_md=section23_details,
+        status=None,
     )
-    st.markdown("---")
 
-    # 2.4 Minimum required capacity (1.2 Mcr)
-    st.subheader("2.4 Minimum required design capacity $(M_{{u,cap}})_{{min}}$")
-    calcbox(
-        f"""
+    # 2.4 Minimum required capacity (1.2 Mcr) - PASS/FAIL
+    phi_Mu_cap = top_results.get("phi_Mu_cap", 0.0)
+    Mu_min_ok = phi_Mu_cap >= Mu_min_as if (phi_Mu_cap > 0 and Mu_min_as > 0) else None
+    Mu_min_status = "pass" if Mu_min_ok is True else "fail" if Mu_min_ok is False else None
+    
+    section24_details = f"""
 *Purpose: Check the minimum required design capacity relative to cracking moment.*  
 
 **Inputs:**  
 
 - $M_{{cr}} = {Mcr_as:.2f}$ kNm  
+- $\\phi M_{{u,cap}} = {phi_Mu_cap:.2f}$ kNm
 
 ---
 
@@ -842,17 +919,26 @@ $$
 
 ---
 
+**Check:**  
+$\\phi M_{{u,cap}} = {phi_Mu_cap:.2f} \\ge {Mu_min_as:.2f} = (M_{{u,cap}})_{{min}}$ → {"✓ PASS" if Mu_min_ok else "✗ FAIL" if Mu_min_ok is False else "—"}
+
 **Result:**  
 Minimum required design capacity $(M_{{u,cap}})_{{min}} = {Mu_min_as:.2f}$ kNm.
 """
+    
+    step_expander_calcbox(
+        uid="bending_min_2_4",
+        summary_line=f"2.4 Minimum required design capacity $(M_{{u,cap}})_{{min}}$ | Result: φM_{{u,cap}} = {phi_Mu_cap:.2f} kNm vs (M_{{u,cap}})_{{min}} = {Mu_min_as:.2f} kNm → {'PASS' if Mu_min_ok else 'FAIL' if Mu_min_ok is False else '—'}",
+        details_md=section24_details,
+        status=Mu_min_status,
     )
-    st.markdown("---")
 
-    # 2.5 Minimum tensile reinforcement
-    st.subheader("2.5 Minimum tensile reinforcement $A_{{st,min}}$")
-    calcbox(
-        f"""
-*Purpose: Calculate minimum tensile reinforcement according to AS 3600 style rules.*  
+    # 2.5 Minimum tensile reinforcement - PASS/FAIL
+    As_ok = Ast >= Ast_min_as if (Ast is not None and Ast_min_as is not None and not math.isnan(Ast_min_as)) else None
+    As_status = "pass" if As_ok is True else "fail" if As_ok is False else None
+    
+    section25_details = f"""
+*Purpose: Calculate minimum tensile reinforcement according to AS 3600 style rules and check provided area.*  
 
 **Inputs:**  
 
@@ -860,6 +946,7 @@ Minimum required design capacity $(M_{{u,cap}})_{{min}} = {Mu_min_as:.2f}$ kNm.
 - $f_{{sy}} = {fsy:.1f}$ MPa  
 - $b = {b:.1f}$ mm  
 - Effective depth $d = {top_results['d']:.1f}$ mm  
+- Provided area: $A_{{st}} = {Ast:.1f}$ mm²
 
 ---
 
@@ -881,19 +968,32 @@ $$
 
 ---
 
+**Check:**  
+$A_{{st}} = {Ast:.1f} \\ge {Ast_min_as:.1f} = A_{{st,min}}$ → {"✓ PASS" if As_ok else "✗ FAIL" if As_ok is False else "—"}
+
 **Result:**  
 Minimum tensile steel area $A_{{st,min}} = {Ast_min_as:.1f}$ mm².
 """
+    
+    step_expander_calcbox(
+        uid="bending_min_2_5",
+        summary_line=f"2.5 Minimum tensile reinforcement $A_{{st,min}}$ | Result: A_{{st}} = {Ast:.1f} mm² vs A_{{st,min}} = {Ast_min_as:.1f} mm² → {'PASS' if As_ok else 'FAIL' if As_ok is False else '—'}",
+        details_md=section25_details,
+        status=As_status,
     )
-    st.markdown("---")
 
 
 # ============================================================
 #  TAB 3 – SLS (UPDATED WITH LAYERS + COMP STEEL)
 # ============================================================
-def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
+def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star, summary_mode: bool = False, jump_uid: str | None = None):
+    """SLS cracked-section (summary_mode parameter ignored, kept for compatibility)."""
     """
     Tab 3 – SLS cracked-section teaching model.
+    
+    Args:
+        summary_mode: If True, all steps are collapsed (expanded=False)
+        jump_uid: Deprecated - kept for compatibility, not used anymore
 
     IMPORTANT:
     - For BENDING capacity we can combine bottom bars to one layer.
@@ -907,7 +1007,8 @@ def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
     # Force unique chart key each run (kills any stale/cached render)
     st.session_state["_diag_nonce"] = st.session_state.get("_diag_nonce", 0) + 1
     
-    st.header("3. SLS Bending – Cracked Section (Teaching Model)")
+    # Apply CSS for compact collapsed steps
+    apply_step_expander_css()
 
     if not (d and Ast and Ec and Es and b and D and Mu_star is not None):
         st.info("Not enough information to run SLS cracked-section example.")
@@ -1003,15 +1104,14 @@ def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star):
     # --------------------------------------------------
     # 3.1 Modular ratio & transformed steel areas
     # --------------------------------------------------
-    col_n_title, col_n_info = st.columns([0.9, 0.1])
-
-    with col_n_title:
-        st.subheader("3.1 Modular ratio $n = E_s / E_c$")
-
-    with col_n_info:
-        with st.popover("ℹ️", help="What does the modular ratio mean?"):
-            st.markdown(
-                r"""
+    def content_3_1():
+        col_n_title, col_n_info = st.columns([0.9, 0.1])
+        with col_n_title:
+            st.markdown("**Info:**")
+        with col_n_info:
+            with st.popover("ℹ️", help="What does the modular ratio mean?"):
+                st.markdown(
+                    r"""
 ### **Modular Ratio \(n = E_s / E_c\) — What it Means**
 
 The modular ratio
@@ -1062,10 +1162,9 @@ For normal RC beams:
 
 so \(n\) is usually in the range **6–10**.
 """
-            )
+                )
 
-    calcbox(
-        f"""
+    section31_details = f"""
 *Purpose: Compute the modular ratio and transformed steel areas for each layer.*  
 
 **Inputs:**  
@@ -1095,42 +1194,47 @@ The transformed area of each steel layer is $n A_s$.
 **Result:**  
 Modular ratio $n = {Es/Ec:.2f}$ (used to compute $nA_s$ in the table below).
 """
+    
+    def _sls_3_1_table():
+        st.markdown("##### Transformed steel areas")
+        layer_rows = []
+        for layer in layers_tension:
+            As_i = layer["As"]
+            layer_rows.append(
+                {
+                    "Layer": layer["name"],
+                    "Description": layer["label"],
+                    "Depth y (mm)": layer["y"],
+                    "A_s (mm²)": As_i,
+                    "n A_s (mm²)": n_sls * As_i,
+                }
+            )
+        if include_comp and comp_layer is not None:
+            As_c = comp_layer["As"]
+            layer_rows.append(
+                {
+                    "Layer": comp_layer["name"],
+                    "Description": comp_layer["label"],
+                    "Depth y (mm)": comp_layer["y"],
+                    "A_s (mm²)": As_c,
+                    "n A_s (mm²)": n_sls * As_c,
+                }
+            )
+        st.table(pd.DataFrame(layer_rows))
+    
+    step_expander_calcbox(
+        uid="bending_sls_3_1",
+        summary_line=f"3.1 Modular ratio $n = E_s / E_c$ | Result: n = {Es/Ec:.2f}",
+        details_md=section31_details,
+        status=None,
+        content_before=content_3_1,
+        diagram_fn=None,
+        content_after=_sls_3_1_table,
     )
-
-    # Table of steel layers (transformed areas)
-    layer_rows = []
-    for layer in layers_tension:
-        As_i = layer["As"]
-        layer_rows.append(
-            {
-                "Layer": layer["name"],
-                "Description": layer["label"],
-                "Depth y (mm)": layer["y"],
-                "A_s (mm²)": As_i,
-                "n A_s (mm²)": n_sls * As_i,
-            }
-        )
-
-    if include_comp and comp_layer is not None:
-        As_c = comp_layer["As"]
-        layer_rows.append(
-            {
-                "Layer": comp_layer["name"],
-                "Description": comp_layer["label"],
-                "Depth y (mm)": comp_layer["y"],
-                "A_s (mm²)": As_c,
-                "n A_s (mm²)": n_sls * As_c,
-            }
-        )
-
-    st.table(pd.DataFrame(layer_rows))
-    st.markdown("---")
 
     # --------------------------------------------------
     # 3.2 Neutral axis depth d_n (cracked section) + SLS stress figure
     # --------------------------------------------------
-    st.subheader("3.2 Neutral axis depth $d_n$ (cracked section)")
-
     def equilibrium_residual(dn: float) -> float:
         """C(dn) - T(dn) = 0 for cracked section."""
         # Concrete compression resultant
@@ -1196,59 +1300,54 @@ Modular ratio $n = {Es/Ec:.2f}$ (used to compute $nA_s$ in the table below).
         if math.isnan(dn_sls):
             dn_sls = D / 3.0
 
-    col_32_calc, col_32_fig = st.columns([2, 1])
-
-    with col_32_calc:
-        # ---------------- 3.2 Neutral axis depth dn (cracked section) ----------------
-        # Build LaTeX summaries and substituted-equation terms
-        tension_summ_lines = []
-        tension_eq_terms = []
-        for idx, layer in enumerate(layers_tension, start=1):
-            As_i = layer["As"]
-            d_i = layer["y"]
-            nAs_i = n_sls * As_i
-            tension_summ_lines.append(
-                rf"d_{idx} = {d_i:.1f}\ \text{{mm}},\quad nA_{{s,{idx}}} = {nAs_i:.1f}\ \text{{mm}}^2"
-            )
-            tension_eq_terms.append(
-                rf"{nAs_i:.1f}\,({d_i:.1f} - d_n)"
-            )
-
-        tension_summ_tex = (
-            r" \\ ".join(tension_summ_lines)
-            if tension_summ_lines
-            else r"\text{(no tension layers)}"
+    # Build LaTeX summaries and substituted-equation terms for step 3.2
+    tension_summ_lines = []
+    tension_eq_terms = []
+    for idx, layer in enumerate(layers_tension, start=1):
+        As_i = layer["As"]
+        d_i = layer["y"]
+        nAs_i = n_sls * As_i
+        tension_summ_lines.append(
+            rf"d_{idx} = {d_i:.1f}\ \text{{mm}},\quad nA_{{s,{idx}}} = {nAs_i:.1f}\ \text{{mm}}^2"
         )
-        tension_eq_tex = (
-            " + ".join(tension_eq_terms) if tension_eq_terms else "0"
+        tension_eq_terms.append(
+            rf"{nAs_i:.1f}\,({d_i:.1f} - d_n)"
         )
 
-        comp_summ_tex = ""
-        comp_eq_tex = ""
-        if include_comp and comp_layer is not None:
-            As_c = comp_layer["As"]
-            d_sc = comp_layer["y"]
-            nAs_c = n_sls * As_c
-            comp_summ_tex = (
-                rf"d_{{s,c}} = {d_sc:.1f}\ \text{{mm}},\quad nA_{{s,c}} = {nAs_c:.1f}\ \text{{mm}}^2"
-            )
-            comp_eq_tex = rf"{nAs_c:.1f}\,(d_n - {d_sc:.1f})"
+    tension_summ_tex = (
+        r" \\ ".join(tension_summ_lines)
+        if tension_summ_lines
+        else r"\text{(no tension layers)}"
+    )
+    tension_eq_tex = (
+        " + ".join(tension_eq_terms) if tension_eq_terms else "0"
+    )
 
-        b_mm = float(b or 0.0)
-        dn_val = float(dn_sls)
+    comp_summ_tex = ""
+    comp_eq_tex = ""
+    if include_comp and comp_layer is not None:
+        As_c = comp_layer["As"]
+        d_sc = comp_layer["y"]
+        nAs_c = n_sls * As_c
+        comp_summ_tex = (
+            rf"d_{{s,c}} = {d_sc:.1f}\ \text{{mm}},\quad nA_{{s,c}} = {nAs_c:.1f}\ \text{{mm}}^2"
+        )
+        comp_eq_tex = rf"{nAs_c:.1f}\,(d_n - {d_sc:.1f})"
 
-        # Build compression steel section separately (to avoid f-string backslash issue)
-        comp_section = ""
-        if comp_summ_tex:
-            comp_section = (
-                "Compression steel layer:\n\n"
-                "\\[\n\\begin{aligned}\n"
-                + comp_summ_tex
-                + "\n\\end{aligned}\n\\]\n"
-            )
+    b_mm = float(b or 0.0)
+    dn_val = float(dn_sls)
 
-        calcbox(
-            rf"""
+    # Build compression steel section separately (to avoid f-string backslash issue)
+    comp_section = ""
+    if comp_summ_tex:
+        comp_section = (
+            "Compression steel layer:\n\n"
+            "\\[\n\\begin{aligned}\n"
+            + comp_summ_tex
+            + "\n\\end{aligned}\n\\]\n"
+        )
+
+    section32_details = rf"""
 **Purpose:** Find the cracked-section neutral axis depth $d_n$ by enforcing
 equilibrium of **transformed areas** (tension steel vs concrete + compression steel).
 
@@ -1299,11 +1398,9 @@ This equation is then solved **numerically** for $d_n$ on the current section
 \[
 d_n = {dn_val:.2f}\ \text{{mm}}
 \]
-
 """
-        )
-
-    with col_32_fig:
+    
+    def diagram_3_2():
         # Build diagram from fresh calc values (not session_state)
         # Compute preliminary kappa for strain distribution (needed for eps_top)
         Icr_prelim = b * dn_sls**3 / 3.0
@@ -1349,72 +1446,18 @@ d_n = {dn_val:.2f}\ \text{{mm}}
             d_comp_mm=comp_layer["y"] if (include_comp and comp_layer is not None) else None,
         )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key=f"sls_3_2_{st.session_state['_diag_nonce']}")
-
-    st.markdown("---")
+    
+    step_expander_calcbox(
+        uid="bending_sls_3_2",
+        summary_line=f"3.2 Neutral axis depth $d_n$ (cracked section) | Result: d_n = {dn_sls:.1f} mm",
+        details_md=section32_details,
+        status=None,
+        diagram_fn=diagram_3_2,
+    )
 
     # --------------------------------------------------
     # 3.3 Cracked moment of inertia I_cr (CALC BOX ONLY)
     # --------------------------------------------------
-    col_Icr_title, col_Icr_info = st.columns([0.9, 0.1])
-
-    with col_Icr_title:
-        st.subheader("3.3 Cracked moment of inertia $I_{{cr}}$")
-
-    with col_Icr_info:
-        with st.popover("ℹ️", help="What does the cracked inertia mean?"):
-            st.markdown(
-                r"""
-### **Cracked Moment of Inertia \(I_{cr}\) — Why It Drops**
-
-Before cracking, the section stiffness is based on **gross inertia** \(I_g\).  
-After cracking, tension concrete is ineffective, and steel + compression concrete
-carry most of the bending. The **effective stiffness** is then based on \(I_{cr}\).
-
----
-
-#### 1. What \(I_{cr}\) represents
-
-\(I_{cr}\) is the moment of inertia of the **transformed cracked section**:
-
-- Concrete in compression  
-
-- Steel converted to \(n A_s\) and located at its bar depth  
-
-- Any compression steel included on the compression side  
-
-This captures the **real stiffness** of the cracked beam at SLS.
-
----
-
-#### 2. Why \(I_{cr} < I_g\)
-
-Once concrete cracks in tension:
-
-- The *tension half* of the concrete stops contributing to stiffness  
-
-- The neutral axis shifts toward the compression side  
-
-- The effective area resisting bending shrinks  
-
-So \(I_{cr}\) is **smaller** than \(I_g\), which directly reduces \(EI\) and increases deflection.
-
----
-
-#### 3. Why we care
-
-\(I_{cr}\) feeds into:
-
-- Curvature: \(\kappa = M_s / (E_c I_{cr})\)  
-
-- Short-term deflection  
-
-- Long-term creep and shrinkage checks (via effective \(I_{ef}\) later)
-
-If you increase tension steel or move it further from the NA, \(I_{cr}\) generally increases,
-and the beam becomes **stiffer in service**.
-"""
-            )
-
     # Classify compression / tension for Icr based on dn_sls
     I_conc = b * dn_sls**3 / 3.0
     I_t = 0.0
@@ -1438,8 +1481,7 @@ and the beam becomes **stiffer in service**.
 
     Icr = I_conc + I_t + I_c
 
-    calcbox(
-        f"""
+    section33_details = f"""
 *Purpose: Compute the cracked transformed moment of inertia $I_{{cr}}$ about the neutral axis.*  
 
 **Formula:**
@@ -1468,73 +1510,19 @@ $$
 **Result:**  
 Cracked transformed inertia $I_{{cr}} = {Icr:,.2f}\\ \\text{{mm}}^4$.
 """
+
+    step_expander_calcbox(
+        uid="bending_sls_3_3",
+        summary_line=f"3.3 Cracked moment of inertia $I_{{cr}}$ | Result: I_cr = {Icr:,.2f} mm⁴",
+        details_md=section33_details,
+        status=None,
+        diagram_fn=None,
     )
 
-    st.markdown("---")
 
     # --------------------------------------------------
     # 3.4 Curvature at service moment
     # --------------------------------------------------
-    col_kappa_title, col_kappa_info = st.columns([0.9, 0.1])
-
-    with col_kappa_title:
-        st.subheader("3.4 Curvature at service moment")
-
-    with col_kappa_info:
-        with st.popover("ℹ️", help="What does curvature represent?"):
-            st.markdown(
-                r"""
-### **Curvature \(\kappa\) — Link Between Moment and Deflection**
-
-Curvature
-
-\[
-\kappa = \frac{M_s}{E_c I_{cr}}
-\]
-
-measures **how tightly the beam is bending** at a given section.
-
-- Units are \(1/\text{length}\) (e.g. mm⁻¹).  
-
-- Large \(\kappa\) → sharper bending → larger rotations and deflections.
-
----
-
-#### 1. Moment–curvature relationship
-
-For a linear elastic (or equivalent) section:
-
-- \(M_s\) controls **how hard you're bending the beam**  
-
-- \(E_c I_{cr}\) controls **how stiff the cracked section is**
-
-So \(\kappa\) is the natural "output" of combining **load effect** and **cracked stiffness**.
-
----
-
-#### 2. Why it matters for deflection
-
-Deflection is basically the **integral of curvature** along the span.  
-
-- If \(\kappa(x)\) is small everywhere → small deflections  
-
-- If \(\kappa(x)\) is large in midspan → big sagging deflection
-
-This step gives a **local curvature** at the design section, which is then used (or
-combined with other sections) in deflection calculations.
-
----
-
-#### 3. Sensitivity
-
-\(\kappa\) decreases (beam gets "flatter") if:
-
-- You increase \(I_{cr}\) (more/closer steel, bigger section, etc.)  
-
-- You reduce \(M_s\) (lighter loads, smaller span, etc.)
-"""
-            )
-
     Ms_Nmm = Ms * 1e6
     kappa = Ms_Nmm / (Ec * Icr) if Ec and Icr else 0.0
 
@@ -1545,8 +1533,7 @@ combined with other sections) in deflection calculations.
     except Exception:
         pass
 
-    calcbox(
-        f"""
+    section34_details = f"""
 *Purpose: Evaluate curvature at the service moment using the cracked-section stiffness.*  
 
 **Inputs:**  
@@ -1575,73 +1562,18 @@ $$
 **Result:**  
 Curvature at service: $\\kappa = {kappa:.3e}\\ \\text{{mm}}^{{-1}}$.
 """
+
+    step_expander_calcbox(
+        uid="bending_sls_3_4",
+        summary_line=f"3.4 Curvature at service moment | Result: κ = {kappa:.3e} mm⁻¹",
+        details_md=section34_details,
+        status=None,
+        diagram_fn=None,
     )
-    st.markdown("---")
 
     # --------------------------------------------------
     # 3.5 Strain distribution ε(y) = κ (y − d_n)
     # --------------------------------------------------
-    col_eps_title, col_eps_info = st.columns([0.9, 0.1])
-
-    with col_eps_title:
-        st.subheader("3.5 Strain distribution $\\varepsilon(y) = \\kappa (y - d_n)$")
-
-    with col_eps_info:
-        with st.popover("ℹ️", help="What does the strain diagram show?"):
-            st.markdown(
-                r"""
-### **Strain Distribution — Plane Sections in Action**
-
-Once you know curvature \(\kappa\) and neutral axis depth \(d_n\), the strain at
-any depth \(y\) is:
-
-\[
-\varepsilon(y) = \kappa (y - d_n)
-\]
-
-This is the **plane-sections-remain-plane** assumption from basic RC theory.
-
----
-
-#### 1. Linear strain profile
-
-Because the section is assumed to stay plane:
-
-- Strain varies **linearly** from the top fibre to the bottom fibre.  
-
-- The neutral axis is the point where \(\varepsilon = 0\).  
-
-- Above NA → compression strains; below NA → tension strains.
-
----
-
-#### 2. Why this matters
-
-The strain diagram directly drives:
-
-- **Concrete stresses** (\(\sigma_c = E_c \varepsilon_c\) at SLS)  
-
-- **Steel stresses** (\(\sigma_s = E_s \varepsilon_s\))  
-
-- Crack-width and service-stress checks  
-
-So the table and graph in this step show **how the curvature is distributed**
-across fibres and steel layers.
-
----
-
-#### 3. Consistency check
-
-If the plane-sections assumption holds:
-
-- The strain diagram is straight  
-
-- The steel strains and concrete strains are **compatible** at each depth  
-
-- Force equilibrium (from previous steps) and compatibility now line up.
-"""
-            )
-
     strain_points = [("Top fibre", 0.0)]
     for layer in layers_tension:
         strain_points.append((layer["label"], layer["y"]))
@@ -1656,11 +1588,17 @@ If the plane-sections assumption holds:
 
     df_eps = pd.DataFrame(strain_rows)
 
-    col_sls_calc, col_sls_fig = st.columns([2, 1])
-
-    with col_sls_calc:
-        calcbox(
-            f"""
+    # Find max strain for summary line
+    if strain_rows:
+        max_strain_abs = max([abs(row["ε"]) for row in strain_rows])
+        max_strain_row = next((row for row in strain_rows if abs(row["ε"]) == max_strain_abs), None)
+        max_strain_label = max_strain_row["Layer"] if max_strain_row else ""
+        max_strain_val = max_strain_row["ε"] if max_strain_row else 0.0
+    else:
+        max_strain_label = ""
+        max_strain_val = 0.0
+    
+    section35_details = f"""
 *Purpose: Compute the linear strain distribution at SLS for key depths.*  
 
 **Formula:**
@@ -1681,10 +1619,8 @@ For key layers (including each steel layer), the table lists:
 **Result:**  
 See table for $\\varepsilon(y)$ at the top fibre, each steel layer, and bottom fibre.
 """
-        )
-        st.table(df_eps)
 
-    with col_sls_fig:
+    def _sls_3_5_diagram():
         fig_eps, ax_eps = plt.subplots()
         ys = [row["Depth y (mm)"] for row in strain_rows]
         eps_vals = [row["ε"] for row in strain_rows]
@@ -1697,13 +1633,24 @@ See table for $\\varepsilon(y)$ at the top fibre, each steel layer, and bottom f
         ax_eps.grid(True, linewidth=0.3)
         st.pyplot(fig_eps, use_container_width=True)
         plt.close(fig_eps)
+    
+    def _sls_3_5_table():
+        st.markdown("##### Strain distribution results")
+        st.table(df_eps)
 
-    st.markdown("---")
+    step_expander_calcbox(
+        uid="bending_sls_3_5",
+        summary_line=f"3.5 Strain distribution ε(y) = κ(y − d_n) | Max strain: {max_strain_label} = {max_strain_val:.5f}",
+        details_md=section35_details,
+        status=None,
+        diagram_fn=_sls_3_5_diagram,
+        content_after=_sls_3_5_table,
+    )
+
 
     # --------------------------------------------------
     # 3.6 Steel stresses at SLS (each layer)
     # --------------------------------------------------
-    st.subheader("3.6 Steel stresses at SLS")
 
     steel_rows = []
 
@@ -1748,8 +1695,12 @@ See table for $\\varepsilon(y)$ at the top fibre, each steel layer, and bottom f
         example_eps = "\\varepsilon_{{s,1}} = \\kappa (d_1 - d_n)"
         example_fs = "f_{{s,1}} = E_s \\varepsilon_{{s,1}}"
 
-    calcbox(
-        f"""
+    # Find max steel stress for summary line
+    max_fs = max([row["f_s (MPa)"] for row in steel_rows], default=0.0) if steel_rows else 0.0
+    max_fs_row = next((row for row in steel_rows if row["f_s (MPa)"] == max_fs), None) if steel_rows else None
+    max_fs_label = max_fs_row["Layer"] if max_fs_row else ""
+    
+    section36_details = f"""
 *Purpose: Derive steel stresses at SLS for each reinforcement layer.*  
 
 **Formula:**
@@ -1781,9 +1732,18 @@ The table below lists $\\varepsilon_{{s,i}}$ and $f_{{s,i}}$ for each steel laye
 **Result:**  
 See table for layer-by-layer SLS steel strains and stresses.
 """
+    def _sls_3_6_table():
+        st.markdown("##### Steel stress results")
+        st.table(df_steel)
+
+    step_expander_calcbox(
+        uid="bending_sls_3_6",
+        summary_line=f"3.6 Steel stresses at SLS (each layer) | Max stress: {max_fs_label} = {max_fs:.1f} MPa",
+        details_md=section36_details,
+        status=None,
+        diagram_fn=None,
+        content_after=_sls_3_6_table,
     )
-    st.table(df_steel)
-    st.markdown("---")
 
     # --------------------------------------------------
     # 3.6a Store cracked SLS state for diagrams (read-only)
@@ -1812,7 +1772,6 @@ See table for layer-by-layer SLS steel strains and stresses.
     # --------------------------------------------------
     # 3.7 Link to crack-width calculation
     # --------------------------------------------------
-    st.subheader("3.7 SLS steel stress used in crack-width checks")
 
     # OUTERMOST tension layer (deepest y) with positive stress
     fs_tension = None
@@ -1844,8 +1803,7 @@ See table for layer-by-layer SLS steel strains and stresses.
         pass
 
     if fs_tension is not None:
-        calcbox(
-            f"""
+        section37_details = f"""
 *Purpose: Identify the controlling SLS steel stress for use in crack-width checks.*  
 
 The **critical tension steel stress** at SLS is taken as the stress in the
@@ -1862,7 +1820,14 @@ $$
 **Result:**  
 Use $f_{{s,ser}} \\approx {fs_tension:.1f}$ MPa in crack-width calculations on the Crack Width tab.
 """
+        step_expander_calcbox(
+            uid="bending_sls_3_7",
+            summary_line=f"3.7 Link to crack-width calculation | f_s,ser ≈ {fs_tension:.1f} MPa",
+            details_md=section37_details,
+            status=None,
+            diagram_fn=None,
         )
+        
         # Publish for Crack Width page – service tensile steel stress at SLS
         update_results(sigma_s_sls=float(fs_tension))
     else:

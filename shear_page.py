@@ -18,7 +18,9 @@ from shear_core import derive_eps_top_bot_for_step4_diagram
 from torsion_diagrams import plot_torsion_prism_3d
 
 # Shared helpers (same contract as Inputs/Bending)
-from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row
+from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, calcbox, clickable_calcbox, render_step, apply_step_summary_expander_css
+from step_ui import init_step_ui_state, render_expandable_step
+from summary_table_ui import render_clickable_summary_table
 
 
 # ------------------------------------------------------------
@@ -98,7 +100,7 @@ STEP_DIAGRAMS = {
     4: ("shear_step4_epsx.png", "Step 4 – longitudinal strain $\\varepsilon_x$"),
     5: ("shear_step5_kv_theta.png", "Step 5 – $k_v$ and $\\theta_v$"),
     6: ("shear_step6_Vuc_Vus.png", "Step 6 – $V_{uc}$ and $V_s$"),
-    7: ("shear_step7_Vumax.png", "Step 7 – web-crushing limit $V_{u,\\max}$"),
+    7: ("shear_step7_Vumax.png", "Step 9 – web-crushing limit $V_{u,\\max}$"),
     8: ("shear_step8_lig_spacing.png", "Step 8 – ligature spacing and detailing"),
 }
 
@@ -109,6 +111,38 @@ def _safe_step_diagram(step_no: int):
     if not fname:
         return
     path = os.path.join("assets", fname)
+    
+    # Special handling for Step 5: two-column layout with theta.png on the right
+    if step_no == 5:
+        col_left, col_right = st.columns([1, 1])
+        with col_left:
+            if os.path.exists(path):
+                st.image(path, caption=caption, use_container_width=True)
+            else:
+                st.info(f"💡 Add diagram for Step {step_no} at `{path}`.")
+        with col_right:
+            theta_path = os.path.join("assets", "theta.png")
+            if os.path.exists(theta_path):
+                st.image(theta_path, caption="Strut angle $\\theta_v$", use_container_width=True)
+            else:
+                st.info(f"💡 Add theta diagram at `{theta_path}`.")
+        return
+    
+    # Special handling for Step 9 (step_no == 7 in dict): stack two images vertically
+    if step_no == 7:  # This is Step 9 in the display
+        if os.path.exists(path):
+            st.image(path, caption=caption, use_container_width=True)
+        else:
+            st.info(f"💡 Add diagram for Step 9 at `{path}`.")
+        # Add second image below
+        vumax2_path = os.path.join("assets", "shear_step7_Vumax2.png")
+        if os.path.exists(vumax2_path):
+            st.image(vumax2_path, caption="Strut-and-tie / concrete compression strut behaviour in deep beams", use_container_width=True)
+        else:
+            st.info(f"💡 Add Step 9 second diagram at `{vumax2_path}`.")
+        return
+    
+    # Default: single image
     if os.path.exists(path):
         st.image(path, caption=caption, use_container_width=True)
     else:
@@ -122,7 +156,7 @@ def _safe_step_diagram(step_no: int):
 def render_shear_step_insight(step_no: int):
     """Render the theory/insight text for a given shear step inside an expander."""
     if step_no == 1:
-        st.markdown("### Step 1 – Shear + torsion cracking region")
+        st.markdown("### Check 1 – Shear + torsion cracking region")
         st.markdown(
             r"""
 **Why we convert torsion into equivalent shear**
@@ -149,7 +183,7 @@ This step sets up a **consistent load model** that will be used for all subseque
         )
 
     elif step_no == 2:
-        st.markdown("### Step 2 – Critical section at $d_v$")
+        st.markdown("### Check 2 – Critical section at $d_v$")
         st.markdown(
             r"""
 **Why shear is checked at $d_v$**
@@ -178,7 +212,7 @@ This step identifies **where** to apply the MCFT shear model in the member.
         )
 
     elif step_no == 3:
-        st.markdown("### Step 3 – Equivalent shear $V_{eq}^*$")
+        st.markdown("### Check 3 – Equivalent shear $V_{eq}^*$")
         st.markdown(
             r"""
 **Why we use $V_{eq}^*$ instead of $V^*$**
@@ -205,7 +239,7 @@ This step ensures that all later calculations (εₓ, $k_v$, $\theta_v$, $V_{uc}
         )
 
     elif step_no == 4:
-        st.markdown("### Step 4 – Longitudinal strain $\varepsilon_x$")
+        st.markdown("### Check 4 – Longitudinal strain $\varepsilon_x$")
         st.markdown(
             r"""
 **Why $\varepsilon_x$ controls concrete shear strength**
@@ -256,7 +290,7 @@ $\varepsilon_x \rightarrow$ crack width $\rightarrow k_v \rightarrow V_{uc} \rig
         )
 
     elif step_no == 5:
-        st.markdown("### Step 5 – $k_v$ and $\theta_v$")
+        st.markdown("### Check 5 – $k_v$ and $\theta_v$")
         st.markdown(
             r"""
 **What $k_v$ represents**
@@ -327,7 +361,7 @@ This step converts the strain state into the **geometry and efficiency** of the 
         )
 
     elif step_no == 6:
-        st.markdown("### Step 6 – Concrete shear $V_{uc}$ and steel shear $V_s$")
+        st.markdown("### Check 6 – Concrete shear $V_{uc}$ and steel shear $V_s$")
         st.markdown(
             r"""
 **Concrete contribution $V_{uc}$**
@@ -398,7 +432,7 @@ This step combines $V_{uc}$ and $V_s$ to give the **total shear resistance** at 
         )
 
     elif step_no == 7:
-        st.markdown("### Step 7 – Web-crushing limit $V_{u,\\max}$")
+        st.markdown("### Check 9 – Web-crushing limit $V_{u,\\max}$")
         st.markdown(
             r"""
 **Why $V_{u,\\max}$ is needed**
@@ -437,7 +471,7 @@ This step ensures the design remains within the **concrete web strength** envelo
         )
 
     elif step_no == 8:
-        st.markdown("### Step 8 – Ligature spacing and detailing")
+        st.markdown("### Check 8 – Ligature spacing and detailing")
         st.markdown(
             r"""
 **Why ligature spacing rules exist**
@@ -486,37 +520,9 @@ def _fmt(val, decimals=1):
         return "—"
 
 
-def _inject_calcbox_css():
-    """Inject CSS for blue blockquote styling."""
-    st.markdown(
-        """
-<style>
-blockquote {
-  border-left: 4px solid #1f77b4 !important;
-  background-color: rgba(31, 119, 180, 0.08) !important;
-  padding: 0.75rem 1rem !important;
-  margin: 0.5rem 0 0.75rem 0 !important;
-  border-radius: 0 6px 6px 0 !important;
-  color: #1a1a1a !important;
-}
-blockquote p, blockquote * { color: #1a1a1a !important; }
-</style>
-""",
-        unsafe_allow_html=True,
-    )
+# _inject_calcbox_css() removed - use apply_calcbox_css() from widgets_helpers instead
 
 
-def calcbox(md: str):
-    """Render a blue calculation box with proper LaTeX support."""
-    # Convert \[...\] to $$...$$ for display math
-    converted = md.replace("\\[", "$$").replace("\\]", "$$")
-    # Convert \(...\) to $...$ for inline math
-    converted = converted.replace("\\(", "$").replace("\\)", "$")
-    
-    # Convert to blockquote format
-    lines = converted.strip().split("\n")
-    blockquote = "\n".join("> " + line for line in lines)
-    st.markdown(blockquote)
 
 
 # ------------------------------------------------------------
@@ -854,7 +860,11 @@ def render_shear_steel_and_spacing_block():
 # ------------------------------------------------------------
 def render_shear():
     apply_global_widget_css()
-    _inject_calcbox_css()
+    apply_calcbox_css()
+    apply_step_summary_expander_css()
+    
+    # Initialize step UI state (always-summary mode - no checkbox)
+    init_step_ui_state("shear")
 
     st.title("Shear & Torsion")
 
@@ -866,23 +876,16 @@ def render_shear():
     with col_left:
         st.markdown(
             r"""
-This page evaluates **design shear**, **shear reinforcement**, and **torsion resistance**
-for reinforced concrete beams in accordance with **AS 3600:2018**, using the full MCFT-based 
-shear method.
+This page computes **ultimate shear and torsion capacity** outputs in accordance with **AS 3600:2018** using the MCFT-based shear method, and reports the governing utilisation checks.
 
-- Concrete shear strength $V_c$ (Cl. 8.2.7)  
+- **Design shear capacity**  
+  $ \phi V_{uc} = \phi(V_c + V_s) $, used for the governing shear strength check.
 
-- Shear reinforcement contribution $V_s$ (Cl. 8.2.8)  
+- **Concrete shear contribution (MCFT)**  
+  $ V_c = k_v \cdot b_v \cdot d_v \cdot \sqrt{f'_c} $, depends on $\varepsilon_x$ and $\theta_v$.
 
-- Design shear capacity $\phi V_{uc} = \phi (V_c + V_s)$  
-
-- Shear stress $\tau_v = V^*/(b_w d_v)$ and web-crushing checks  
-
-- Torsional cracking, torsional reinforcement, and design torsion capacity (Cl. 8.3.6–8.3.7)  
-
-- Interaction of shear and torsion where applicable  
-
-Results are expressed in kN and MPa, and directly feed into deflection, crack-width, and interaction checks.
+- **Torsion and interaction (when applicable)**  
+  $ V_{eq}^* = \sqrt{(V^*)^2 + V_{t,eq}^2} $, used for combined shear–torsion checks.
         """
         )
 
@@ -952,8 +955,8 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
 """
                 )
 
-    # Summary table placeholder – appears directly under the blurb
-    summary_placeholder = st.empty()
+    # Top summary table placeholder (for clickable summary table)
+    top_summary_placeholder = st.empty()
 
     # =====================================================
     # 1. DESIGN INPUTS (shared + local)  — SAME WIDGET CONTRACT
@@ -961,7 +964,7 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
     st.subheader("Design Inputs")
     st.caption("Only user-controlled inputs are shown. All derived strain terms are handled internally.")
 
-    col_geom, col_actions, col_params = st.columns([0.40, 0.35, 0.25], gap="large")
+    col_geom, col_actions, col_params = st.columns(3, gap="large")
 
     # ---------- 1.1 Geometry & materials (shared) ----------
     with col_geom:
@@ -1055,19 +1058,37 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
     with col_params:
         st.markdown("### Shear section parameters")
 
-        d_g = st.number_input(
+        number_row(
             "Maximum aggregate size d_g (mm)",
-            value=20.0,
-            min_value=5.0,
-            max_value=40.0,
-            key="shear_d_g",
+            "shear_d_g",
+            20.0,
+            sync_callbacks,
+            help_text="Maximum aggregate size for k_v calculation.",
         )
-        sum_duct = st.number_input(
-            "Sum of duct diameters crossing web (mm)",
-            value=get_param("sum_duct", 0.0),
-            min_value=0.0,
-            key="shear_sum_duct",
+        
+        number_row(
+            "Number of ducts crossing web",
+            "shear_n_ducts",
+            0.0,
+            sync_callbacks,
+            help_text="Number of prestressing ducts crossing the web.",
         )
+        
+        number_row(
+            "Duct diameter (mm)",
+            "shear_duct_dia",
+            0.0,
+            sync_callbacks,
+            help_text="Diameter of each prestressing duct.",
+        )
+        
+        # Compute sum_duct internally from the two inputs
+        n_ducts = get_param("shear_n_ducts", 0.0) or 0.0
+        duct_dia = get_param("shear_duct_dia", 0.0) or 0.0
+        sum_duct = n_ducts * duct_dia
+        # Store computed value in session state for use in calculations
+        st.session_state["shear_sum_duct"] = sum_duct
+        
         kd_opt = st.selectbox(
             "k_d factor for prestressing ducts",
             (
@@ -1123,7 +1144,7 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
     A_pt = st.session_state.get("shear_A_pt", 0.0)
     f_po = st.session_state.get("shear_f_po", 0.0)
     A_ct = st.session_state.get("shear_A_ct", float(b * D / 2.0) if b and D else 0.0)
-    d_g = st.session_state.get("shear_d_g", 20.0)
+    d_g = get_param("shear_d_g", 20.0)
     phi = get_param("phi_shear", 0.75)  # Now synced via shared state
     sigma_cp = 0.0  # Prestress removed from UI, default to 0.0
 
@@ -1135,22 +1156,6 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
     # 2. STEP 1 — TORSION CRACKING CHECK (T_cr)
     # =====================================================
     st.markdown("---")
-
-    # Step 1 header with small info button
-    col_title, col_info = st.columns([0.92, 0.08], vertical_alignment="center")
-    
-    with col_title:
-        st.subheader("Step 1 — Shear cracking region")
-    
-    with col_info:
-        with st.popover("ℹ️", help="Step 1 help"):
-            st.markdown(r"""
-**What this diagram shows**
-
-- Roof/face geometry used for the shear/torsion crack concept sketch.
-
-- θ is taken from shared state (crack_theta_deg).
-            """)
 
     # Read θ from shared state (read-only, no widget)
     theta_deg = float(get_param("crack_theta_deg", 45.0))
@@ -1179,14 +1184,11 @@ Results are expressed in kN and MPa, and directly feed into deflection, crack-wi
     step1_text = (
         "required" if torsion_required else "not required (strength check only)"
     )
-
-    # 2-column layout: calc left, diagram right (same as other steps)
-    col_left, col_right = st.columns([0.55, 0.45], gap="large")
-
-    with col_left:
-        # Step 1 calc text / equations / bullets (left side)
-        calcbox(
-            f"""
+    torsion_status = "pass" if not torsion_required else "fail"
+    
+    # Check 1 converted to use render_expandable_step (always-summary mode)
+    # Build calc markdown from the existing details
+    check1_calc_md = f"""
 *Purpose: Determine if torsion design is required by checking if $T^* > 0.25 \\phi T_{{cr}}$.*
 
 **Inputs:**
@@ -1215,102 +1217,88 @@ $$\\large T_{{cr}} = 0.33\\sqrt{{{fc:.1f}}} \\cdot \\frac{{{A_cp:.0f}^2}}{{{u_c:
 - Condition: $T^* {step1_req} 0.25 \\phi T_{{cr}}$  
 - **Conclusion: torsion design is {step1_text}.**
 """
-        )
-
-    with col_right:
-        # THE DIAGRAM ON THE RIGHT (centered)
-        L_mm = float(get_param("L", 3000.0))
-        b_mm = float(get_param("b", 400.0))
-        D_mm = float(get_param("D", 600.0))
-        
-        @st.cache_data(show_spinner=False)
-        def _cached_step1_fig(L_mm, b_mm, D_mm, theta_deg):
-            return plot_shear_step1_theta_cracks_3d(
-                L_mm=L_mm, b_mm=b_mm, D_mm=D_mm, theta_deg=theta_deg,
-                n_cracks=3, start_t_min=0.10, start_t_span=0.06,
-                crack_lw=4.0, show_cracks=True  # Always show cracks
-            )
-        
-        # Always show cracks and arrows
-        fig = _cached_step1_fig(L_mm, b_mm, D_mm, theta_deg)
-        st.pyplot(fig, use_container_width=True, clear_figure=True)
-
-    # =====================================================
-    # 3. STEP 2 — CONVERT TORSION INTO AN EQUIVALENT SHEAR V_eq*
-    # =====================================================
-    st.markdown("---")
-
-    col_main, col_side = st.columns([3, 2])
-
-    with col_main:
-        col_title, col_info = st.columns([1, 0.08])
-
-        with col_title:
-            st.markdown(
-                "### Step 2 – Convert torsion into an equivalent shear "
-                "$V_{eq}^*$ (AS 3600 Cl. 8.2.3)"
-            )
-
-        with col_info:
-            with st.popover("ℹ️", use_container_width=True):
-                st.markdown("### Step 2 – Critical section and equivalent shear")
-                st.markdown(
-                    r"""
-**Why shear is checked at \(d_v\)**
-
-
-
-- Tests show that **peak diagonal cracking** and shear demand occur about **one effective depth \(d_v\)** from the support.  
-
-- Around this section:
-
-  - Flexural cracks rotate into steeper **diagonal shear cracks**.  
-
-  - **Aggregate interlock** begins to reduce.  
-
-  - **Concrete compression struts** form between load and support.  
-
-
-
-AS 3600 therefore takes the design shear at a distance **\(d_v\)** from the support.
-
-
-
-**Why we use \(V_{eq}^*\) instead of \(V^*\)**
-
-
-
-- MCFT works off a **single set of internal forces** to define the strain state.  
-
-- Shear, torsion and axial force all influence the **longitudinal strain \(\varepsilon_x\)**.  
-
-- Converting torsion into an equivalent shear \(V_{t,eq}\) and combining it with \(V^*\) gives:
-
-
-
-  $$V_{eq}^* = \sqrt{(V^*)^2 + V_{t,eq}^2}$$  
-
-
-
-so all subsequent steps use a **consistent combined shear demand**.
-
-"""
+            
+    # Diagram render function
+    def check1_diagram_fn():
+            L_mm = float(get_param("L", 3000.0))
+            b_mm = float(get_param("b", 400.0))
+            D_mm = float(get_param("D", 600.0))
+            
+            @st.cache_data(show_spinner=False)
+            def _cached_step1_fig(L_mm, b_mm, D_mm, theta_deg):
+                return plot_shear_step1_theta_cracks_3d(
+                    L_mm=L_mm, b_mm=b_mm, D_mm=D_mm, theta_deg=theta_deg,
+                    n_cracks=3, start_t_min=0.10, start_t_span=0.06,
+                crack_lw=4.0, show_cracks=True
                 )
+            
+            fig = _cached_step1_fig(L_mm, b_mm, D_mm, theta_deg)
+            st.pyplot(fig, use_container_width=True, clear_figure=True)
+    
+    # Info render function (popover)
+    def check1_info_fn():
+        col_info_header, _ = st.columns([0.1, 0.9])
+        with col_info_header:
+            with st.popover("ℹ️", help="Torsion cracking (what this check means)"):
+                st.markdown(r"""
+### Torsion cracking behaviour
 
-        # Convert torsion to Nmm (needed for εₓ and web-crushing even if torsion design not required)
-        T_star_Nmm = T_star * 1e6
-        
-        # Get sum_duct for Step 2 calculations
-        sum_duct_step2 = st.session_state.get("shear_sum_duct", get_param("sum_duct", 0.0))
+**What torsion cracking means**
 
-        if torsion_required:
-            # --- Full equivalent shear including torsion ---
-            torsion_eq_N = 0.9 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
-            torsion_eq_kN = torsion_eq_N / 1e3
-            V_eq = math.sqrt(V_star ** 2 + torsion_eq_kN ** 2)
+Torsion cracking occurs when the applied torsional moment exceeds the concrete's cracking resistance, causing diagonal cracking around the section perimeter.  
 
-            calcbox(
-            f"""
+Before cracking, torsion is resisted mainly by the concrete acting elastically. After cracking, resistance shifts to a **space-truss mechanism** (diagonal compression struts + transverse reinforcement).
+
+**Why the 0.25·φ·Tcr threshold is used**
+
+AS 3600 uses **0.25·φ·Tcr** to distinguish between:
+
+- **uncracked torsion** (elastic concrete behaviour), and
+
+- **cracked torsion** (truss action governs).
+
+Below this limit, torsion does not significantly change member behaviour and detailed torsion design is not required.
+
+**Key takeaway**
+
+This step only decides whether torsion is **cracked** or **uncracked**.  
+
+After this, torsion is treated as a known condition and is not re-explained.
+                """)
+    
+    # Build summary line
+    check1_summary = f"Check 1 — Torsion cracking check | Result: Torsion design is {'NOT REQUIRED' if not torsion_required else 'REQUIRED'}"
+    
+    # Convert status
+    status_kind = "pass" if not torsion_required else "fail"
+    
+    render_expandable_step(
+        page_key="shear",
+        step_id="shear_check1",
+        title="Check 1 — Torsion cracking check",
+        summary_md=check1_summary,
+        status_kind=status_kind,
+        calc_md=check1_calc_md,
+        diagram_render_fn=check1_diagram_fn,
+        info_render_fn=check1_info_fn,
+        anchor_id="torsion_considered",
+    )
+
+    # =====================================================
+    # Check 2 — CONVERT TORSION INTO AN EQUIVALENT SHEAR V_eq*
+    # =====================================================
+    # Convert torsion to Nmm (needed for εₓ and web-crushing even if torsion design not required)
+    T_star_Nmm = T_star * 1e6
+    
+    # Get sum_duct for Check 2 calculations
+    sum_duct_step2 = st.session_state.get("shear_sum_duct", get_param("sum_duct", 0.0))
+
+    if torsion_required:
+        # --- Full equivalent shear including torsion ---
+        torsion_eq_N = 0.9 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
+        torsion_eq_kN = torsion_eq_N / 1e3
+        V_eq = math.sqrt(V_star ** 2 + torsion_eq_kN ** 2)
+        check2_calc_md = f"""
 *Purpose: Convert torsion into an equivalent shear force for combined shear + torsion design.*
 
 **Inputs:**
@@ -1338,23 +1326,19 @@ $$\\large V_{{eq}}^* = \\sqrt{{({V_star:.1f})^2 + ({torsion_eq_kN:.1f})^2}} = {V
 **Result:**
 
 - Torsion is included as an equivalent shear.  
-- **$V_{{eq}}^* = {V_eq:.1f}$ kN** is used in Steps 4–7.
+- **$V_{{eq}}^* = {V_eq:.1f}$ kN**
 """
-            )
-
-        else:
-            # --- No torsion design: equivalent shear = shear only ---
-            torsion_eq_kN = 0.0
-            V_eq = V_star
-
-            calcbox(
-            f"""
+    else:
+        # --- No torsion design: equivalent shear = shear only ---
+        torsion_eq_kN = 0.0
+        V_eq = V_star
+        check2_calc_md = f"""
 *Purpose: Convert torsion into an equivalent shear force (if required).*
 
 **Inputs:**
 
 - Shear demand: $V^* = {V_star:.1f}$ kN  
-- Torsion: $T^* = {T_star:.1f}$ kNm (from Step 1, torsion design is not required)  
+- Torsion: $T^* = {T_star:.1f}$ kNm (from Check 1, torsion design is not required)  
 
 ---
 
@@ -1375,17 +1359,17 @@ $$\\large V_{{eq}}^* = V^* = {V_eq:.1f}\\ \\text{{kN}}$$
 **Result:**
 
 - Torsion is not treated as a design action.  
-- **$V_{{eq}}^* = {V_eq:.1f}$ kN** is used in Steps 4–7.
+- **$V_{{eq}}^* = {V_eq:.1f}$ kN**
 """
-            )
-
-    with col_side:
+            
+    # Diagram render function
+    def check2_diagram_fn():
         # Mode selector for diagram - now includes all three options
         diagram_mode = st.radio(
             "Stress flow mode:",
             ["V+T (Combined)", "V (Shear only)", "T (Torsion only)"],
             index=0,
-            key="shear_step2_diagram_mode",
+            key="shear_check2_diagram_mode",
             horizontal=True,
         )
         
@@ -1415,84 +1399,77 @@ $$\\large V_{{eq}}^* = V^* = {V_eq:.1f}\\ \\text{{kN}}$$
         )
         st.pyplot(fig, use_container_width=True, clear_figure=True)
 
+    # Info render function (popover)
+    def check2_info_fn():
+        col_info_header, _ = st.columns([0.1, 0.9])
+        with col_info_header:
+            with st.popover("ℹ️", help="Equivalent shear (combined demand)"):
+                st.markdown(r"""
+### Combined shear demand (Veq*)
+
+**Why torsion is converted to an equivalent shear**
+
+When the section is cracked, torsion introduces longitudinal force components that interact with shear behaviour.  
+
+A practical way to capture this is to convert torsion into a **shear-equivalent demand**.
+
+**Vector combination (one idea)**
+
+The combined demand is taken as a vector sum of:
+
+- the applied shear V*, and
+
+- the torsion-equivalent shear component.
+
+This reflects simultaneous actions acting through different internal force components.
+
+**Why it is conservative**
+
+Vector combination slightly overestimates the combined effect when one action dominates.  
+
+This conservatism is intentional and consistent with simplified design assumptions.
+                """)
+    
+    # Build summary line
+    check2_summary = f"Check 2 — Equivalent shear $V_{{eq}}^*$ | Result: $V_{{eq}}^* = {V_eq:.1f}$ kN"
+    
+    render_expandable_step(
+        page_key="shear",
+        step_id="shear_check2",
+        title="Check 2 — Equivalent shear $V_{eq}^*$",
+        summary_md=check2_summary,
+        status_kind=None,
+        calc_md=check2_calc_md,
+        diagram_render_fn=check2_diagram_fn,
+        info_render_fn=check2_info_fn,
+        anchor_id="veq",
+    )
+
     # =====================================================
-    # 4. STEP 3 — EFFECTIVE SECTION & SHEAR REINFORCEMENT
+    # Check 3 — EFFECTIVE SECTION & SHEAR REINFORCEMENT
     # =====================================================
-    st.markdown("---")
+    # Use values from session state / inputs section
+    lig_d = lig_d or 10.0
+    legs = legs or 2.0
+    s = s_lig or 200.0
 
-    col_calc, col_fig = st.columns([3, 2])
+    # Get sum_duct from widget if available, otherwise from shared state
+    sum_duct_widget = st.session_state.get("shear_sum_duct", None)
+    if sum_duct_widget is not None:
+        sum_duct = sum_duct_widget
+    else:
+        sum_duct = get_param("sum_duct", 0.0)
 
-    with col_calc:
-        col_title, col_info = st.columns([1, 0.08])
+    Asv = legs * math.pi * lig_d ** 2 / 4.0
+    f_syv = fsy
 
-        with col_title:
-            st.markdown("### Step 3 – Determine shear-resisting section (b_v, d_v, ligs)")
+    b_v = b - k_d * sum_duct
+    d_v = max(0.72 * D, 0.9 * d)
 
-        with col_info:
-            with st.popover("ℹ️", use_container_width=True):
-                st.markdown("### Step 3 – What this step is doing")
-                st.markdown(
-                    r"""
-**Why we compute \(b_v\), \(d_v\) and \(A_{sv}\)**
+    dv_1 = 0.72 * D
+    dv_2 = 0.9 * d
 
-
-
-- \(b_v\) is the **effective web width** after accounting for ducts in the web.  
-
-- \(d_v\) is the **effective shear depth**, taken as:
-
-
-
-  $$d_v = \max(0.72D,\ 0.9d)$$  
-
-
-
-to reflect where diagonal cracking and compression struts develop.  
-
-- \(A_{sv}\) and \(s\) define how much **shear reinforcement** crosses potential cracks:
-
-
-
-  $$A_{sv} = n_{\text{legs}} \frac{\pi d_{lig}^2}{4}$$  
-
-
-
-These parameters are the **geometry + steel inputs** that feed into:
-
-
-
-- the strain calculation in Step 4,  
-
-- the concrete shear contribution \(V_{uc}\) in Step 6, and  
-
-- the steel contribution \(V_s\) in Step 6.
-
-"""
-                )
-
-        # Use values from session state / inputs section
-        lig_d = lig_d or 10.0
-        legs = legs or 2.0
-        s = s_lig or 200.0
-
-        # Get sum_duct from widget if available, otherwise from shared state
-        sum_duct_widget = st.session_state.get("shear_sum_duct", None)
-        if sum_duct_widget is not None:
-            sum_duct = sum_duct_widget
-        else:
-            sum_duct = get_param("sum_duct", 0.0)
-
-        Asv = legs * math.pi * lig_d ** 2 / 4.0
-        f_syv = fsy
-
-        b_v = b - k_d * sum_duct
-        d_v = max(0.72 * D, 0.9 * d)
-
-        dv_1 = 0.72 * D
-        dv_2 = 0.9 * d
-
-        calcbox(
-            f"""
+    check3_calc_md = f"""
 *Purpose: Calculate the shear-resisting section parameters $A_{{sv}}$, $b_v$ and $d_v$ for AS 3600 shear design.*
 
 **Inputs:**
@@ -1544,17 +1521,15 @@ $$\\large d_v = {_fmt(d_v)}\\ \\text{{mm}}$$
 
 - $A_{{sv}} = {_fmt(Asv)}$ mm² with stirrups at $s_{{lig}} = {_fmt(s)}$ mm  
 - $b_v = {_fmt(b_v)}$ mm, $d_v = {_fmt(d_v)}$ mm  
-
-*(These values are used in Step 4.)*
 """
-        )
-
-    with col_fig:
+        
+    # Diagram render function
+    def check3_diagram_fn():
         # Get section geometry (from shared)
         b_mm = float(b)
         D_mm = float(D)
 
-        # Get Step 3 computed shear parameters
+        # Get Check 3 computed shear parameters
         bv_mm = float(b_v)
         dv_mm = float(d_v)
 
@@ -1637,174 +1612,97 @@ $$\\large d_v = {_fmt(d_v)}\\ \\text{{mm}}$$
         )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-    # =====================================================
-    # 5. STEP 4 — LONGITUDINAL STRAIN εx
-    # =====================================================
+    # Info render function (popover)
+    def check3_info_fn():
+        col_info_header, _ = st.columns([0.1, 0.9])
+        with col_info_header:
+            with st.popover("ℹ️", help="Effective shear geometry (bv, dv)"):
+                st.markdown(r"""
+### Effective shear geometry
+
+**bv (effective web width)**
+
+bv is the web width available to resist shear.  
+
+It excludes regions that do not participate effectively in shear transfer (e.g., ducts/voids).
+
+**dv (effective shear depth)**
+
+dv is the effective depth used for shear force transfer through the web.  
+
+It reflects the shear force path, not just reinforcement location.
+
+**Why dv ≠ flexural depth d**
+
+d is defined by tension reinforcement location (flexure).  
+
+dv is defined by shear transfer geometry (shear). They represent different mechanisms.
+                """)
+    
+    # Build summary line
+    check3_summary = f"Check 3 — Shear-resisting section ($b_v$, $d_v$, ligs) | Result: $A_{{sv}} = {_fmt(Asv)}$ mm², $b_v = {_fmt(b_v)}$ mm, $d_v = {_fmt(d_v)}$ mm"
+    
+    render_expandable_step(
+        page_key="shear",
+        step_id="shear_check3",
+        title="Check 3 — Shear-resisting section (b_v, d_v, ligs)",
+        summary_md=check3_summary,
+        status_kind=None,
+        calc_md=check3_calc_md,
+        diagram_render_fn=check3_diagram_fn,
+        info_render_fn=check3_info_fn,
+    )
+
+    # High-level MCFT / Vuc / kv insight tied to εx (moved from after Check 4)
     st.markdown("---")
+    render_shear_mcft_block()
 
-    col_calc, col_fig = st.columns([0.62, 0.38], gap="large", vertical_alignment="top")
+    # =====================================================
+    # Check 4 — LONGITUDINAL STRAIN εx
+    # =====================================================
+    # Compute εx terms (numerical)
+    M_star_Nmm = abs(M_star) * 1e6
+    term_M = M_star_Nmm / (d_v or 1.0)
 
-    with col_calc:
-        # Step 4 heading with info bubble
-        col_title, col_info = st.columns([1, 0.08])
+    # Shear + torsion term for Eq. (1)
+    Vprime_kN = abs(V_star) - P_v
+    Vprime_N = Vprime_kN * 1e3
 
-        with col_title:
-            st.markdown(
-                "### Step 4 – Calculate longitudinal strain "
-                r"$\varepsilon_x$ for MCFT (Cl. 8.2.4.2.2)"
-            )
-            st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+    torsion_N = 0.97 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
+    sqrt_inner = math.sqrt(Vprime_N ** 2 + torsion_N ** 2)
 
-        with col_info:
-            with st.popover("ℹ️", use_container_width=True):
-                st.markdown("### Understanding the Longitudinal Strain Equations")
+    # Axial / prestress
+    N_star_N = 0.5 * N_star * 1e3
+    A_pt_fpo_N = A_pt * f_po
 
-                st.markdown(
-                    r"""
-**Where is εₓ measured?**
+    # Common numerator for Eq. (1)
+    numerator_1 = term_M + sqrt_inner + N_star_N - A_pt_fpo_N
 
-- εₓ is the **longitudinal strain at the mid-depth** of the cross-section at the shear-critical location.  
-- The sign of εₓ tells us whether the concrete at **mid-depth** is in:
-  - **Tension** → cracking → reduced shear resistance  
-  - **Slight compression** → concrete still helps → increased shear resistance  
-"""
-                )
+    Ep = 195000.0  # tendon modulus, MPa
+    denom1 = 2.0 * (Es * A_st + Ep * A_pt)
+    eps_x_1 = numerator_1 / denom1 if denom1 > 0 else 0.0
 
-                st.markdown("---")
-                st.markdown("### **Equation (1) – mid-depth in tension (εₓ ≥ 0)**")
+    # For Eq. (2) we use |V*| (no torsion term in numerator; torsion is still handled via V_eq)
+    V_abs_N = abs(V_star) * 1e3
+    numerator_2 = term_M + V_abs_N - P_v * 1e3 + N_star_N - A_pt_fpo_N
+    denom2 = 2.0 * (Es * A_st + Ep * A_pt + Ec * A_ct)
+    eps_x_2 = numerator_2 / denom2 if denom2 > 0 else 0.0
 
-                st.markdown(
-                    r"""
-**Use when:**  
-- The calculated εₓ is **zero or positive**.  
-- Mid-depth is in **tension**, so concrete is cracked and does not contribute.  
-- Only **steel stiffness** is included in the denominator.
-"""
-                )
+    # Choose governing εx according to AS 3600
+    if eps_x_1 >= 0:
+        eps_x_raw = eps_x_1
+        eq_used = "Equation (1) – mid-depth in tension"
+    else:
+        eps_x_raw = eps_x_2
+        eq_used = "Equation (2) – mid-depth in slight compression"
 
-                st.latex(
-                    r"""
-\varepsilon_x =
-\frac{
-\dfrac{|M^*|}{d_v} +
-\sqrt{
-(|V^*| - P_v)^2 +
-\left(
-    \dfrac{0.97\,T^*\,u_h}{2A_o}
-\right)^2
-}
-+ 0.5N^* - A_{pt}f_{po}
-}
-{
-2(E_s A_{st} + E_p A_{pt})
-}
-\quad\text{(AS 3600 8.2.4.2.2(1))}
-"""
-                )
+    # Apply code limits
+    eps_x = max(-0.0002, min(eps_x_raw, 0.003))
 
-                st.markdown("---")
-                st.markdown("### **Equation (2) – mid-depth in slight compression (εₓ < 0)**")
-
-                st.markdown(
-                    r"""
-**Use when:**  
-- The εₓ from Equation (1) comes out **negative**.  
-- Mid-depth is in **slight compression**, meaning the concrete **still carries compressive stress**.  
-- The concrete term $E_c A_{ct}$ is added to the denominator.
-"""
-                )
-
-                st.latex(
-                    r"""
-\varepsilon_x =
-\frac{
-\dfrac{|M^*|}{d_v} +
-|V^*| - P_v +
-0.5N^* - A_{pt}f_{po}
-}
-{
-2(E_s A_{st} + E_p A_{pt} + E_c A_{ct})
-}
-\quad\text{(AS 3600 8.2.4.2.2(2))}
-"""
-                )
-
-                st.markdown(
-                    r"""
-**Code limits:**  
-
-- For the tension case (Eq. 1):  $\varepsilon_x \le 3.0\times10^{-3}$  
-- For the compression case (Eq. 2):  $-2.0\times10^{-4} \le \varepsilon_x \le 0$
-"""
-                )
-
-                st.markdown("---")
-
-                st.markdown(
-                    r"""
-### **How the app uses these equations**
-
-1. Compute εₓ using **Equation (1)**.  
-2. If εₓ is **negative**, recompute using **Equation (2)**.  
-3. Apply AS 3600 limits:  
-   $$-2.0\times10^{-4} \le \varepsilon_x \le 3.0\times10^{-3}$$
-4. Use the resulting εₓ to compute $k_v$ in Step 5.
-"""
-                )
-
-        # ------------------------------
-        #  Compute εx terms (numerical)
-        # ------------------------------
-        M_star_Nmm = abs(M_star) * 1e6
-        term_M = M_star_Nmm / (d_v or 1.0)
-
-        # Shear + torsion term for Eq. (1)
-        Vprime_kN = abs(V_star) - P_v
-        Vprime_N = Vprime_kN * 1e3
-
-        torsion_N = 0.97 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
-        sqrt_inner = math.sqrt(Vprime_N ** 2 + torsion_N ** 2)
-
-        # Axial / prestress
-        N_star_N = 0.5 * N_star * 1e3
-        A_pt_fpo_N = A_pt * f_po
-
-        # Common numerator for Eq. (1)
-        numerator_1 = term_M + sqrt_inner + N_star_N - A_pt_fpo_N
-
-        Ep = 195000.0  # tendon modulus, MPa
-        denom1 = 2.0 * (Es * A_st + Ep * A_pt)
-        eps_x_1 = numerator_1 / denom1 if denom1 > 0 else 0.0
-
-        # For Eq. (2) we use |V*| (no torsion term in numerator; torsion is still handled via V_eq)
-        V_abs_N = abs(V_star) * 1e3
-        numerator_2 = term_M + V_abs_N - P_v * 1e3 + N_star_N - A_pt_fpo_N
-        denom2 = 2.0 * (Es * A_st + Ep * A_pt + Ec * A_ct)
-        eps_x_2 = numerator_2 / denom2 if denom2 > 0 else 0.0
-
-        # Choose governing εx according to AS 3600
-        if eps_x_1 >= 0:
-            eps_x_raw = eps_x_1
-            eq_used = "Equation (1) – mid-depth in tension"
-        else:
-            eps_x_raw = eps_x_2
-            eq_used = "Equation (2) – mid-depth in slight compression"
-
-        # Apply code limits
-        eps_x = max(-0.0002, min(eps_x_raw, 0.003))
-
-        sign_note = (
-            " (mid-depth in **tension**, εₓ ≥ 0)"
-            if eps_x >= 0
-            else " (mid-depth in **slight compression**, εₓ < 0)"
-        )
-
-        # ------------------------------
-        #  Calc box with full Equation + substitution
-        # ------------------------------
-        eq2_note = ""
-        if eps_x_1 < 0:
-            eq2_note = f"""
+    # Build calc markdown
+    eq2_note = ""
+    if eps_x_1 < 0:
+        eq2_note = f"""
 **Since the strain from Equation (1) is negative**  
 $\\varepsilon_{{x,1}} = {eps_x_1:.5f} < 0$, mid-depth is in slight compression.  
 AS 3600 allows εₓ to be taken as 0 or recalculated with **Equation (2)** including the concrete stiffness term:
@@ -1816,8 +1714,7 @@ Substituting the derived numerator and denominator:
 $$\\large \\varepsilon_{{x,2}} = \\frac{{{numerator_2:,.0f}}}{{{denom2:,.0f}}} = {eps_x_2:.5f}$$
 """
 
-        calcbox(
-            f"""
+    check4_calc_md = f"""
 *Purpose: Calculate the longitudinal strain $\\varepsilon_x$ at mid-depth for use in the MCFT shear model.*
 
 **Inputs:**
@@ -1872,22 +1769,70 @@ $$\\large \\varepsilon_{{x,1}} = \\frac{{{numerator_1:,.0f}}}{{{denom1:,.0f}}} =
 
 $$\\large \\varepsilon_x = {eps_x:.5f}$$
 
-This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative (slight compression at mid-depth)"}** and is used in **Step 5** to compute $k_v$ and $\\theta_v$.
+This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative (slight compression at mid-depth)"}**.
 """
-        )
+        
+    # Diagram render function
+    def check4_diagram_fn():
+        # Diagram with info popover (second info button)
+        col_diag_title, col_diag_info = st.columns([1, 0.08])
+        with col_diag_title:
+            st.markdown("**Longitudinal strain profile**")
+        with col_diag_info:
+            with st.popover("ℹ️", help="Derivation of εx (conceptual)"):
+                st.markdown(r"""
+### Derivation of longitudinal strain εx
 
-    with col_fig:
-        # Step 4 MCFT εx (AS3600 sign: +tension, -compression)
-        eps_x_mcft = eps_x  # Final Step 4 result (after AS3600 limits)
+**Strain basis**
+
+Hooke's Law links stress and strain:
+
+\[
+\varepsilon = \frac{\sigma}{E}
+\]
+
+The longitudinal strain corresponds to the average longitudinal force in the member divided by the effective longitudinal stiffness.
+
+**Resolving internal forces**
+
+At a cracked section under M*, V*, and N*, the tensile chord force can be expressed as:
+
+\[
+T = \frac{M^*}{d_v} + 0.5N + 0.5V\cot\theta
+\]
+
+- \(M^*/d_v\): tension force from flexure  
+
+- \(0.5N\): axial force contribution  
+
+- \(0.5V\cot\theta\): longitudinal component of the diagonal compression strut
+
+**AS 3600 (CSA 2004) simplification**
+
+CSA 2004 (adopted in AS 3600) simplifies by taking:
+
+\[
+0.5\cot\theta \approx 1.0
+\]
+
+This is conservative and removes θ-dependency so εx can be evaluated without iteration.
+
+**Diagram placeholders**
+
+- [Diagram A] Internal force resolution (M–V–N)  
+
+- [Diagram B] Compression strut angle θ and longitudinal component  
+
+- [Diagram C] Strain profile through depth (top / mid / bottom)
+                """)
+        
+        # Check 4 MCFT εx (AS3600 sign: +tension, -compression)
+        eps_x_mcft = eps_x  # Final Check 4 result (after AS3600 limits)
         
         # Pull ULS top/bot strains from bending page session state
-        # Bending stores eps_c (compression, negative) and eps_s (tension, positive) in AS3600 convention
         eps_top_uls = None
         eps_bot_uls = None
         
-        # Top (compression fiber): try eps_c from bending state_dict
-        # The state_dict from _stress_strain_state has "eps_c" and "eps_s"
-        # We can also check session state directly
         for key in ["eps_c"]:
             val = st.session_state.get(key, None)
             if val is not None:
@@ -1897,7 +1842,6 @@ This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative 
                 except Exception:
                     pass
         
-        # Bottom (tension steel): try eps_s from bending state_dict
         for key in ["eps_s"]:
             val = st.session_state.get(key, None)
             if val is not None:
@@ -1907,7 +1851,6 @@ This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative 
                 except Exception:
                     pass
         
-        # Fallback: if not found, try to get from bending state_dict via _stress_strain_state
         if eps_top_uls is None or eps_bot_uls is None:
             try:
                 from bending_core import _stress_strain_state
@@ -1919,152 +1862,128 @@ This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative 
             except Exception:
                 pass
         
-        # Final fallback: derive from eps_x_mcft if still not found
         if eps_top_uls is None or eps_bot_uls is None:
             eps_top_uls, eps_bot_uls = derive_eps_top_bot_for_step4_diagram(eps_x_mcft, delta=0.00035)
         
-        # Ensure values are floats and in AS3600 convention (compression negative, tension positive)
         eps_top_uls = float(eps_top_uls)
         eps_bot_uls = float(eps_bot_uls)
         
-        # Build and show strain profile figure
-        # Function expects AS3600 convention: compression negative, tension positive
         fig_eps = make_mcft_longitudinal_strain_profile_fig(
             eps_top_uls=eps_top_uls,
             eps_x_mcft=eps_x_mcft,
             eps_bot_uls=eps_bot_uls,
             title="Longitudinal strain profile",
-            height=840,  # Doubled from 420
+            height=840,
         )
         st.plotly_chart(fig_eps, use_container_width=True, config={"displayModeBar": False})
 
-    # High-level MCFT / Vuc / kv insight tied to εx
-    st.markdown("---")
-    render_shear_mcft_block()
+    # Info render function (popover)
+    def check4_info_fn():
+        col_info_header, _ = st.columns([0.1, 0.9])
+        with col_info_header:
+            with st.popover("ℹ️", help="Longitudinal strain εx (MCFT behaviour anchor)"):
+                st.markdown(r"""
+### Longitudinal strain εx (MCFT behaviour)
 
-    # =====================================================
-    # 6. STEP 5 — k_v AND θ_v
-    # =====================================================
-    st.markdown("---")
+**What MCFT is**
 
-    col_main, col_side = st.columns([3, 2])
+The Modified Compression Field Theory (MCFT) models shear transfer in cracked reinforced concrete using:
 
-    with col_main:
-        col_title, col_info = st.columns([1, 0.08])
+- diagonal compression struts,
 
-        with col_title:
-            st.markdown("### Step 5 – Get MCFT shear parameters: $k_v$ and $\\theta_v$")
+- cracked concrete shear transfer mechanisms, and
 
-        with col_info:
-            with st.popover("ℹ️", use_container_width=True):
-                st.markdown("### Step 5 – What $k_v$ and $\\theta_v$ mean")
+- reinforcement interaction.
+
+AS 3600 adopts a simplified MCFT form so key parameters can be obtained without iteration.
+
+**Why strain governs shear behaviour**
+
+As longitudinal strain increases, cracking and deformation increase, which changes:
+
+- the diagonal crack angle, and
+
+- the effectiveness of concrete in shear transfer.
+
+**Why εx is evaluated at mid-depth**
+
+Mid-depth is representative of the cracked web region where shear transfer is governed.  
+
+εx here acts as a practical "behaviour indicator" for the shear model.
+
+**Sign convention**
+
+Compression strains are negative, tension strains are positive (consistent with bending strain convention).
+                """)
+
                 st.markdown(
                     r"""
-**What \(k_v\) represents**
+### **How the app uses these equations**
 
-
-
-- \(k_v\) is a **concrete shear-transfer efficiency factor** in MCFT.  
-
-- It wraps up:
-
-  - Residual concrete shear across cracks,  
-
-  - **Aggregate interlock**,  
-
-  - **Dowel action** from longitudinal bars,  
-
-  - Friction along the crack faces.  
-
-
-
-- For members with at least minimum shear reinforcement:
-
-
-
-  $$k_v = \frac{0.4}{1 + 1500\varepsilon_x}$$  
-
-
-
-- With less than minimum shear reinforcement, extra modifiers account for **member depth** and **crack spacing**.
-
-
-
-As \( \varepsilon_x \) increases, cracks widen and **\(k_v\)** drops, reducing the concrete contribution \(V_{uc}\).
-
-
-
-**What \(\\theta_v\) represents**
-
-
-
-- \(\\theta_v\) is the **angle of the diagonal compression strut** in the web.  
-
-- AS 3600 uses:
-
-
-
-  $$\\theta_v = 29^\circ + 7000\varepsilon_x$$  
-
-
-
-  with limits of **15°–50°**.  
-
-
-
-- Higher \(\\varepsilon_x\) → flatter stress field → **larger \(\\theta_v\)**.  
-
-
-
-Both \(k_v\) and \(\\theta_v\) control:
-
-
-
-- Concrete shear strength \(V_{uc}\), and  
-
-- Steel shear contribution \(V_s\) through \( \cot\\theta_v \).
-
+1. Compute εₓ using **Equation (1)**.  
+2. If εₓ is **negative**, recompute using **Equation (2)**.  
+3. Apply AS 3600 limits:  
+   $$-2.0\times10^{-4} \le \varepsilon_x \le 3.0\times10^{-3}$$
+4. Use the resulting εₓ to compute $k_v$ in Check 5.
 """
                 )
+    
+    # Build summary line
+    check4_summary = f"Check 4 — Longitudinal strain $\\varepsilon_x$ | Result: $\\varepsilon_x = {eps_x:.5f}$ ({eq_used.split('–')[0].strip()})"
+    
+    render_expandable_step(
+        page_key="shear",
+        step_id="shear_check4",
+        title="Check 4 — Longitudinal strain $\\varepsilon_x$",
+        summary_md=check4_summary,
+        status_kind=None,
+        calc_md=check4_calc_md,
+        diagram_render_fn=check4_diagram_fn,
+        info_render_fn=check4_info_fn,
+        anchor_id="mcft_state",
+    )
 
-        if use_general_kv:
-            if fc <= 65:
-                k_dg = 32.0 / (16.0 + d_g)
-                k_dg = max(k_dg, 0.8)
-                if d_g >= 16:
-                    k_dg = max(k_dg, 1.0)
-            else:
-                k_dg = 2.0
-
-            Asv_over_s = Asv / s
-            Asv_min_over_s = 0.08 * math.sqrt(fc) * b_v / (f_syv or 1.0)
-
-            if Asv_over_s < Asv_min_over_s:
-                k_v = (0.4 / (1 + 1500 * eps_x)) * (1300 / (1000 + k_dg * d_v))
-                kv_case = "general MCFT with **low stirrup ratio** ($A_{sv}/s < (A_{sv}/s)_{min}$)"
-            else:
-                k_v = 0.4 / (1 + 1500 * eps_x)
-                kv_case = "general MCFT with **adequate stirrup ratio**"
-
-            theta_v_deg = 29.0 + 7000.0 * eps_x
-
+    # =====================================================
+    # Check 5 — k_v AND θ_v
+    # =====================================================
+    if use_general_kv:
+        if fc <= 65:
+            k_dg = 32.0 / (16.0 + d_g)
+            k_dg = max(k_dg, 0.8)
+            if d_g >= 16:
+                k_dg = max(k_dg, 1.0)
         else:
-            if Asv / s < 0.08 * math.sqrt(fc) * b_v / (f_syv or 1.0):
-                k_v = min(200.0 / (1000.0 + 1.3 * d_v), 0.10)
-                kv_case = "simplified non-prestressed – **low stirrup ratio**"
-            else:
-                k_v = 0.15
-                kv_case = "simplified non-prestressed – **minimum stirrups provided**"
-            theta_v_deg = 36.0
+            k_dg = 2.0
 
-        theta_v_rad = math.radians(theta_v_deg)
-
-        # For the summary text inside the calcbox
         Asv_over_s = Asv / s
         Asv_min_over_s = 0.08 * math.sqrt(fc) * b_v / (f_syv or 1.0)
-        k_dg_display = locals().get("k_dg", float("nan"))
 
-        if use_general_kv:
+        if Asv_over_s < Asv_min_over_s:
+            k_v = (0.4 / (1 + 1500 * eps_x)) * (1300 / (1000 + k_dg * d_v))
+            kv_case = "general MCFT with **low stirrup ratio** ($A_{sv}/s < (A_{sv}/s)_{min}$)"
+        else:
+            k_v = 0.4 / (1 + 1500 * eps_x)
+            kv_case = "general MCFT with **adequate stirrup ratio**"
+
+        theta_v_deg = 29.0 + 7000.0 * eps_x
+
+    else:
+        if Asv / s < 0.08 * math.sqrt(fc) * b_v / (f_syv or 1.0):
+            k_v = min(200.0 / (1000.0 + 1.3 * d_v), 0.10)
+            kv_case = "simplified non-prestressed – **low stirrup ratio**"
+        else:
+            k_v = 0.15
+            kv_case = "simplified non-prestressed – **minimum stirrups provided**"
+        theta_v_deg = 36.0
+
+    theta_v_rad = math.radians(theta_v_deg)
+
+    # For the summary text inside the calcbox
+    Asv_over_s = Asv / s
+    Asv_min_over_s = 0.08 * math.sqrt(fc) * b_v / (f_syv or 1.0)
+    k_dg_display = locals().get("k_dg", float("nan"))
+
+    if use_general_kv:
             kv_formula_block = f"""
 **General MCFT form (AS 3600 Cl. 8.2.4.2):**
 
@@ -2095,8 +2014,8 @@ Strut angle (MCFT):
 
 $$\\theta_v = 29 + 7000\\varepsilon_x = {theta_v_deg:.1f}°$$
 """
-        else:
-            kv_formula_block = f"""
+    else:
+        kv_formula_block = f"""
 **Simplified non-prestressed form (AS 3600 Cl. 8.2.4.3):**
 
 If $A_{{sv}}/s < (A_{{sv}}/s)_{{min}}$:
@@ -2111,7 +2030,7 @@ Strut angle is taken as:
 
 $$\\theta_v = 36°$$
 """
-        kv_sub_block = f"""
+    kv_sub_block = f"""
 **Current case:** {kv_case}  
 
 - $d_v = {d_v:.1f}$ mm  
@@ -2125,8 +2044,7 @@ Hence:
 $$k_v = {k_v:.3f}, \\quad \\theta_v = {theta_v_deg:.1f}°$$
 """
 
-        calcbox(
-            f"""
+    check5_calc_md = f"""
 *Purpose: Determine the shear parameters $k_v$ and $\\theta_v$ for use in $V_{{uc}}$ and web-crushing checks.*
 
 **Inputs:**
@@ -2151,71 +2069,65 @@ $$k_v = {k_v:.3f}, \\quad \\theta_v = {theta_v_deg:.1f}°$$
 - $\\theta_v = {theta_v_deg:.1f}°$
 
 """
-        )
+        
+    # Diagram render function
+    def check5_diagram_fn():
+        # Theta diagram on the right
+        theta_path = os.path.join("assets", "theta.png")
+        if os.path.exists(theta_path):
+            st.image(theta_path, caption="Strut angle $\\theta_v$", use_container_width=True)
+        else:
+            st.info(f"💡 Add theta diagram at `{theta_path}`.")
+
+    # Info render function (popover)
+    def check5_info_fn():
+        col_info_header, _ = st.columns([0.1, 0.9])
+        with col_info_header:
+            with st.popover("ℹ️", help="MCFT parameters (what kv and θv represent)"):
+                st.markdown(r"""
+### MCFT parameters
+
+**kv (concrete effectiveness factor)**
+
+kv represents the effectiveness of cracked concrete in resisting shear.  
+
+Lower kv generally means more cracking/deformation and less concrete shear contribution.
+
+**θv (crack angle)**
+
+θv is the average diagonal crack angle in the web.  
+
+It influences how shear is resolved into diagonal compression and stirrup tension.
+
+These are treated as model parameters obtained directly from AS 3600 relationships.
+                """)
+    
+    # Build summary line
+    check5_summary = f"Check 5 — MCFT parameters ($k_v$ and $\\theta_v$) | Result: $k_v = {k_v:.3f}$, $\\theta_v = {theta_v_deg:.1f}°$"
+    
+    render_expandable_step(
+        page_key="shear",
+        step_id="shear_check5",
+        title="Check 5 — MCFT parameters (k_v and θ_v)",
+        summary_md=check5_summary,
+        status_kind=None,
+        calc_md=check5_calc_md,
+        diagram_render_fn=check5_diagram_fn,
+        info_render_fn=check5_info_fn,
+    )
 
     # =====================================================
-    # 7. STEP 6 — CONCRETE SHEAR CONTRIBUTION V_uc ONLY
+    # Check 6 — CONCRETE SHEAR CONTRIBUTION V_uc ONLY
     # =====================================================
-    st.markdown("---")
+    # Concrete contribution only
+    sqrt_fc_limited = min(math.sqrt(fc), 8.0)
+    Vuc_N = k_v * b_v * d_v * sqrt_fc_limited
+    Vuc_kN = Vuc_N / 1e3
 
-    col_main, col_side = st.columns([3, 2])
-
-    with col_main:
-        col_title, col_info = st.columns([1, 0.08])
-
-        with col_title:
-            st.markdown("### Step 6 – Concrete shear strength $V_{uc}$")
-
-        with col_info:
-            with st.popover("ℹ️", use_container_width=True):
-                st.markdown("### Step 6 – Concrete contribution $V_{uc}$")
-                st.markdown(
-                    r"""
-- In the MCFT model used by AS 3600, concrete shear strength at the critical section is
-
-
-
-  $$V_{uc} = k_v b_v d_v \sqrt{f'_c}$$  
-
-
-
-- The factor $k_v$ depends mainly on **longitudinal strain** $\varepsilon_x$ and crack spacing:  
-
-  higher tensile strain → wider cracks → **smaller $k_v$** → smaller $V_{uc}$.
-
-
-
-- $V_{uc}$ represents the combined effect of:  
-
-
-
-  - residual shear across cracks,  
-
-  - **aggregate interlock**, and  
-
-  - **dowel action** from longitudinal bars.
-
-
-
-This step isolates the **concrete-only** contribution before we add the stirrup shear $V_s$.
-
-"""
-                )
-
-        # Concrete contribution only
-        sqrt_fc_limited = min(math.sqrt(fc), 8.0)
-        Vuc_N = k_v * b_v * d_v * sqrt_fc_limited
-        Vuc_kN = Vuc_N / 1e3
-
-        calcbox(
-            f"""
+    check6_calc_md = f"""
 *Purpose: Calculate the concrete shear strength $V_{{uc}}$ at the critical section.*  
 
-
-
 **Inputs:**  
-
-
 
 - $k_v = {k_v:.3f}$  
 
@@ -2223,119 +2135,82 @@ This step isolates the **concrete-only** contribution before we add the stirrup 
 
 - $f'_c = {fc:.1f}$ MPa (limited $\\sqrt{{f'_c}} = {sqrt_fc_limited:.3f}$ MPa)  
 
-
-
 ---
-
-
 
 **Formula (AS 3600 Cl. 8.2.4.1):**  
 
-
-
 $$V_{{uc}} = k_v b_v d_v \\sqrt{{f'_c}}$$  
-
-
 
 **Substitution:**  
 
-
-
 $$V_{{uc}} = {k_v:.3f} \\times {b_v:.1f} \\times {d_v:.1f} \\times {sqrt_fc_limited:.3f} = {Vuc_kN:,.1f}\\,\\text{{kN}}$$  
-
-
 
 ---
 
-
-
 **Result:**  
-
-
 
 - **Concrete shear strength:** $V_{{uc}} = {Vuc_kN:,.1f}$ kN  
 
 *(Steel contribution $V_s$ is added in the next step.)*
 
 """
-        )
-
-    with col_side:
+    
+    # Diagram render function
+    def check6_diagram_fn():
         _safe_step_diagram(6)
-
-    # =====================================================
-    # 8. STEP 7 — STEEL SHEAR CONTRIBUTION V_s
-    # =====================================================
-    st.markdown("---")
-
-    col_main, col_side = st.columns([3, 2])
-
-    with col_main:
-        col_title, col_info = st.columns([1, 0.08])
-
-        with col_title:
-            st.markdown("### Step 7 – Steel shear strength $V_s$")
-
-        with col_info:
+    
+    # Info render function (popover)
+    def check6_info_fn():
+        col_info_header, _ = st.columns([0.1, 0.9])
+        with col_info_header:
             with st.popover("ℹ️", use_container_width=True):
-                st.markdown("### Step 7 – How stirrups contribute $V_s$")
-                calcbox(
+                st.markdown("### Check 6 – Concrete contribution $V_{uc}$")
+                st.markdown(
                     r"""
-**Steel contribution $V_s$**
+- In the MCFT model used by AS 3600, concrete shear strength at the critical section is
 
+  $$V_{uc} = k_v b_v d_v \sqrt{f'_c}$$  
 
+- The factor $k_v$ depends mainly on **longitudinal strain** $\varepsilon_x$ and crack spacing:  
 
+  higher tensile strain → wider cracks → **smaller $k_v$** → smaller $V_{uc}$.
 
+- $V_{uc}$ represents the combined effect of:  
 
+  - residual shear across cracks,  
 
+  - **aggregate interlock**, and  
 
-- Vertical or inclined shear ligatures cross the **inclined crack length**  
+  - **dowel action** from longitudinal bars.
 
-
-
-  $$\ell_{cr} \approx d_v \cot\theta_v$$  
-
-
-
-
-
-
-
-- Within a spacing $s$, the amount of steel crossing the crack is  
-
-
-
-  $$n = \frac{d_v \cot\theta_v}{s}$$  
-
-
-
-
-
-
-
-- The shear carried by stirrups is  
-
-
-
-  $$V_s = V_{us} = \frac{A_{sv} f_{sy,v} d_v}{s}\,\cot\theta_v$$  
-
-
-
-
-
-
-
-- Shear steel **raises total shear capacity**, but more importantly it provides **ductility** and helps control crack widths after concrete has cracked.
-
+This step isolates the **concrete-only** contribution before we add the stirrup shear $V_s$.
 """
                 )
+    
+    # Build summary line
+    check6_summary = f"Check 6 — Concrete shear strength $V_{{uc}}$ | Result: $V_{{uc}} = {Vuc_kN:,.1f}$ kN"
+    
+    render_expandable_step(
+        page_key="shear",
+        step_id="shear_check6",
+        title="Check 6 — Concrete shear strength V_uc",
+        summary_md=check6_summary,
+        status_kind=None,
+        calc_md=check6_calc_md,
+        diagram_render_fn=check6_diagram_fn,
+        info_render_fn=check6_info_fn,
+        anchor_id="vc",
+    )
 
-        # Steel contribution only
-        Vus_N = (Asv * f_syv * d_v / s) * cot(theta_v_rad)
-        Vus_kN = Vus_N / 1e3
+    # =====================================================
+    # Check 7 — STEEL SHEAR CONTRIBUTION V_s
+    # =====================================================
+    # Steel contribution only
+    Vus_N = (Asv * f_syv * d_v / s) * cot(theta_v_rad)
+    Vus_kN = Vus_N / 1e3
 
-        calcbox(
-            f"""
+    # Step 7 details
+    step7_details = f"""
 *Purpose: Calculate the shear strength provided by ligatures $V_s$.*  
 
 
@@ -2382,75 +2257,70 @@ $$V_{{us}} = \\left(\\frac{{{Asv:.1f} \\times {f_syv:.1f} \\times {d_v:.1f}}}{{{
 
 - **Steel shear strength:** $V_s = V_{{us}} = {Vus_kN:,.1f}$ kN  
 
-*(Concrete shear $V_{{uc}}$ was found in Step 6.)*
+*(Concrete shear $V_{{uc}}$ was found in Check 6.)*
 
 """
-        )
-
-    with col_side:
+    
+    check7_calc_md = step7_details
+    
+    # Diagram render function
+    def check7_diagram_fn():
         # Move the steel ligature diagram here
         _safe_image(
             "assets/shear_ligatures_and_crack.png",
             caption="Shear ligatures crossing a diagonal crack over $d_v \\cot\\theta_v$.",
         )
 
-    # =====================================================
-    # 9. STEP 8 — COMBINED SHEAR STRENGTH AND SECTIONAL CHECK
-    # =====================================================
-    st.markdown("---")
-
-    col_main, col_side = st.columns([3, 2])
-
-    with col_main:
-        col_title, col_info = st.columns([1, 0.08])
-
-        with col_title:
-            st.markdown(
-                "### Step 8 – Combine $V_{uc}$ and $V_s$ and compare with $V_{eq}^*$"
-            )
-
-        with col_info:
+    # Info render function (popover)
+    def check7_info_fn():
+        col_info_header, _ = st.columns([0.1, 0.9])
+        with col_info_header:
             with st.popover("ℹ️", use_container_width=True):
-                st.markdown("### Step 8 – Sectional shear check")
-                st.markdown(
+                st.markdown("### Check 7 – How stirrups contribute $V_s$")
+                calcbox(
                     r"""
-This step adds:
+**Steel contribution $V_s$**
 
+- Vertical or inclined shear ligatures cross the **inclined crack length**  
 
+  $$\ell_{cr} \approx d_v \cot\theta_v$$  
 
-- **Concrete shear strength** $V_{uc}$ (Step 6), and  
+- Within a spacing $s$, the amount of steel crossing the crack is  
 
-- **Steel shear strength** $V_s$ (Step 7), plus any **axial/prestress $P_v$**  
+  $$n = \frac{d_v \cot\theta_v}{s}$$  
 
+- The shear carried by stirrups is  
 
+  $$V_s = V_{us} = \frac{A_{sv} f_{sy,v} d_v}{s}\,\cot\theta_v$$  
 
-to give the total shear resistance:
-
-
-
-$$V_u = V_{uc} + V_s + P_v$$  
-
-
-
-Then we check the design strength:
-
-
-
-$$\phi V_u \ge V_{eq}^*$$  
-
-
-
-If this inequality is satisfied, the **sectional shear capacity** is adequate before web crushing is checked in the next step.
-
+- Shear steel **raises total shear capacity**, but more importantly it provides **ductility** and helps control crack widths after concrete has cracked.
 """
                 )
+    
+    # Build summary line
+    check7_summary = f"Check 7 — Steel shear strength $V_s$ | Result: $V_s = V_{{us}} = {Vus_kN:,.1f}$ kN"
+    
+    render_expandable_step(
+        page_key="shear",
+        step_id="shear_check7",
+        title="Check 7 — Steel shear strength V_s",
+        summary_md=check7_summary,
+        status_kind=None,
+        calc_md=check7_calc_md,
+        diagram_render_fn=check7_diagram_fn,
+        info_render_fn=check7_info_fn,
+        anchor_id="vs",
+    )
 
-        Vu_total_kN = Vuc_kN + Vus_kN + P_v
-        phi_Vu = phi * Vu_total_kN
-        shear_ok = phi_Vu >= V_eq
+    # =====================================================
+    # Check 8 — COMBINED SHEAR STRENGTH AND SECTIONAL CHECK
+    # =====================================================
+    Vu_total_kN = Vuc_kN + Vus_kN + P_v
+    phi_Vu = phi * Vu_total_kN
+    shear_ok = phi_Vu >= V_eq
+    shear_status = "pass" if shear_ok else "fail"
 
-        calcbox(
-            f"""
+    check8_calc_md = f"""
 *Purpose: Combine concrete and steel contributions and check $\phi V_u$ against $V_{{eq}}^*$.*  
 
 
@@ -2459,9 +2329,9 @@ If this inequality is satisfied, the **sectional shear capacity** is adequate be
 
 
 
-- $V_{{uc}} = {Vuc_kN:,.1f}$ kN (from Step 6)  
+- $V_{{uc}} = {Vuc_kN:,.1f}$ kN (from Check 6)  
 
-- $V_s = {Vus_kN:,.1f}$ kN (from Step 7)  
+- $V_s = {Vus_kN:,.1f}$ kN (from Check 7)  
 
 - $P_v = {P_v:.1f}$ kN  
 
@@ -2508,88 +2378,88 @@ $$\\phi V_u = {phi:.2f} \\times {Vu_total_kN:,.1f} = {phi_Vu:,.1f}\\,\\text{{kN}
 - Here: {phi_Vu:,.1f} kN vs {V_eq:.1f} kN → **{"OK" if shear_ok else "NOT OK"}**
 
 """
-        )
-
-    with col_side:
+        
+    # Diagram render function
+    def check8_diagram_fn():
         _safe_step_diagram(6)  # or a new combined diagram if you add one later
 
+    # Info render function (popover)
+    def check8_info_fn():
+        col_info_header, _ = st.columns([0.1, 0.9])
+        with col_info_header:
+            with st.popover("ℹ️", help="Sectional shear capacity (Vu components)"):
+                st.markdown(r"""
+### Sectional shear capacity
+
+**Concrete contribution (Vuc)**
+
+Vuc is the concrete web contribution to shear resistance (as modified by kv and section geometry).
+
+**Steel contribution (Vus)**
+
+Vus is the stirrup contribution: shear reinforcement crossing diagonal cracks resists shear through tension.
+
+**Why they add**
+
+Concrete and stirrups act together, so the sectional capacity is taken as:
+
+\[
+V_u = V_{uc} + V_{us} + P_v
+\]
+
+and the design capacity is \( \phi V_u \).
+
+This popover is intentionally capacity-only (no MCFT theory here).
+                """)
+    
+    # Build summary line
+    pass_fail = "PASS" if shear_ok else "FAIL"
+    check8_summary = f"Check 8 — Sectional shear capacity check | Result: $\\phi V_u = {phi_Vu:,.1f}$ kN vs $V_{{eq}}^* = {V_eq:.1f}$ kN → **{pass_fail}**"
+    
+    render_expandable_step(
+        page_key="shear",
+        step_id="shear_check8",
+        title="Check 8 — Sectional shear capacity",
+        summary_md=check8_summary,
+        status_kind=shear_status,
+        calc_md=check8_calc_md,
+        diagram_render_fn=check8_diagram_fn,
+        info_render_fn=check8_info_fn,
+    )
+
     # =====================================================
-    # 10. STEP 9 — WEB CRUSHING CHECK
+    # Check 9 — WEB CRUSHING CHECK
     # =====================================================
-    st.markdown("---")
+    theta_1_deg = 90.0
+    theta_1_rad = math.radians(theta_1_deg)
+    cot_theta_v = cot(theta_v_rad)
+    cot_theta_1 = cot(theta_1_rad)
 
-    col_main, col_side = st.columns([3, 2])
+    Vu_max_N = (
+        0.55
+        * fc
+        * b_v
+        * d_v
+        * (cot_theta_v + cot_theta_1)
+        / (1 + cot_theta_v ** 2)
+        + P_v * 1e3
+    )
+    Vu_max_kN = Vu_max_N / 1e3
 
-    with col_main:
-        col_title, col_info = st.columns([1, 0.08])
+    V_star_N = V_star * 1e3
+    term_V = V_star_N / (b_v * d_v or 1.0)
+    term_T = T_star_Nmm * uh / (1.7 * (A_oh ** 2 or 1.0))
 
-        with col_title:
-            st.markdown("### Step 9 – Check web-crushing strength (AS 3600 Cl. 8.2.6)")
+    LHS = math.sqrt(term_V ** 2 + term_T ** 2)
+    RHS = phi * Vu_max_N / (b_v * d_v or 1.0)
 
-        with col_info:
-            with st.popover("ℹ️", use_container_width=True):
-                st.markdown("### Step 9 – Web-crushing limit \(V_{u,\max}\)")
-                st.markdown(
-                    r"""
-**Why we check web crushing**
+    web_ok = LHS <= RHS
+    web_status = "pass" if web_ok else "fail"
 
+    if not web_ok:
+        st.error("Web-crushing limit exceeded – revise section/ligs.")
 
-
-- Even with a lot of shear reinforcement, the concrete web can only carry a finite **compression strut force**.  
-
-- Once the diagonal concrete strut reaches its **crushing limit**, the failure is **sudden and brittle**.  
-
-
-
-AS 3600 caps the design shear by a web-crushing limit:
-
-
-
-$$V_{u,\max} = 0.55\, f'_c b_v d_v \frac{\cot\\theta_v + \cot\\theta_1}{1 + \cot^2\\theta_v} + P_v$$  
-
-
-
-- If the combined shear + torsion demand exceeds this, **increasing stirrups does not help**.  
-
-- You need to **change the geometry** (web thickness, depth, load position) or reduce the demand.
-
-
-
-This step ensures the design stays within the **concrete web strength envelope**, not just the stirrup capacity.
-
-"""
-                )
-
-        theta_1_deg = 90.0
-        theta_1_rad = math.radians(theta_1_deg)
-        cot_theta_v = cot(theta_v_rad)
-        cot_theta_1 = cot(theta_1_rad)
-
-        Vu_max_N = (
-            0.55
-            * fc
-            * b_v
-            * d_v
-            * (cot_theta_v + cot_theta_1)
-            / (1 + cot_theta_v ** 2)
-            + P_v * 1e3
-        )
-        Vu_max_kN = Vu_max_N / 1e3
-
-        V_star_N = V_star * 1e3
-        term_V = V_star_N / (b_v * d_v or 1.0)
-        term_T = T_star_Nmm * uh / (1.7 * (A_oh ** 2 or 1.0))
-
-        LHS = math.sqrt(term_V ** 2 + term_T ** 2)
-        RHS = phi * Vu_max_N / (b_v * d_v or 1.0)
-
-        web_ok = LHS <= RHS
-
-        if not web_ok:
-            st.error("Web-crushing limit exceeded – revise section/ligs.")
-
-        calcbox(
-        f"""
+    check9_calc_md = f"""
 *Purpose: Check that combined shear + torsion does not exceed the web-crushing limit (Cl. 8.2.6).*  
 
 **Inputs:**  
@@ -2637,17 +2507,54 @@ $$\\large \\text{{Capacity}} = \\frac{{{phi:.2f} \\times {Vu_max_kN:,.1f}}}{{{b_
 - Requirement: Demand $\\le$ Capacity  
 - Here: {LHS:,.1f} vs {RHS:,.1f} → **{"OK" if web_ok else "NOT OK"}**
 """
-        )
-
-    with col_side:
+        
+    # Diagram render function
+    def check9_diagram_fn():
         _safe_step_diagram(7)
 
-    # Steel contribution + lig spacing / detailing insights
-    st.markdown("---")
-    render_shear_steel_and_spacing_block()
+    # Info render function (popover)
+    def check9_info_fn():
+        col_info_header, _ = st.columns([0.1, 0.9])
+        with col_info_header:
+            with st.popover("ℹ️", help="Web crushing (strut failure cap)"):
+                st.markdown(r"""
+### Web crushing (strut failure limit)
+
+**What web crushing is**
+
+Web crushing is failure of the diagonal concrete compression struts in a cracked web under high shear.
+
+**Why it is independent of stirrups**
+
+Once the compression struts reach their crushing capacity, adding more shear reinforcement cannot prevent failure.  
+
+The limit is governed by concrete compressive capacity.
+
+**Why it caps shear capacity**
+
+This check provides an upper bound on shear resistance to prevent brittle compression failures.  
+
+Regardless of reinforcement, design shear capacity cannot exceed this limit.
+                """)
+    
+    # Build summary line
+    web_pass_fail = "PASS" if web_ok else "FAIL"
+    check9_summary = f"Check 9 — Web-crushing strength check | Result: Demand {LHS:,.1f} vs Capacity {RHS:,.1f} → **{web_pass_fail}**"
+    
+    render_expandable_step(
+        page_key="shear",
+        step_id="shear_check9",
+        title="Check 9 — Web-crushing strength",
+        summary_md=check9_summary,
+        status_kind=web_status,
+        calc_md=check9_calc_md,
+        diagram_render_fn=check9_diagram_fn,
+        info_render_fn=check9_info_fn,
+        anchor_id="vu_max",
+    )
 
     # =======================================================
-    # 9. SUMMARY BANNER + PUSH RESULTS
+    # SUMMARY TABLE (rendered here after all key values are calculated)
     # =======================================================
     torsion_label = (
         "Yes (T* > 0.25 φT_cr)" if torsion_required else "No (strength check)"
@@ -2655,7 +2562,7 @@ $$\\large \\text{{Capacity}} = \\frac{{{phi:.2f} \\times {Vu_max_kN:,.1f}}}{{{b_
 
     shear_util = V_eq / phi_Vu if phi_Vu > 0 else float("nan")
 
-    # Deflection-style summary table
+    # Deflection-style summary table data
     rows_summary = [
         {
             "Check": "Torsion considered?",
@@ -2701,19 +2608,300 @@ $$\\large \\text{{Capacity}} = \\frac{{{phi:.2f} \\times {Vu_max_kN:,.1f}}}{{{b_
         },
     ]
 
-    summary_df = pd.DataFrame(rows_summary)
+    # Map summary rows -> step UIDs and anchor IDs
+    check_to_uid = {
+        "Torsion considered?": "shear_check1",
+        "Equivalent design shear V_eq*": "shear_check2",
+        "Concrete contribution V_c": "shear_check6",
+        "Shear reinforcement V_s": "shear_check7",
+        "Web-crushing capacity V_u,max": "shear_check9",
+        "εₓ, k_v, θ_v": "shear_check4",
+    }
+    
+    check_to_anchor = {
+        "Torsion considered?": "torsion_considered",
+        "Equivalent design shear V_eq*": "veq",
+        "Concrete contribution V_c": "vc",
+        "Shear reinforcement V_s": "vs",
+        "Web-crushing capacity V_u,max": "vu_max",
+        "εₓ, k_v, θ_v": "mcft_state",
+    }
 
-    def _highlight_status(row):
-        status = row.get("Status", "")
-        if status == "OK":
-            color = "#d9ead3"
-        elif status in ("NG", "Check"):
-            color = "#f4cccc"
-        else:
-            color = ""
-        return [f"background-color: {color}"] * len(row)
+    # Build ROWS list for render_clickable_summary_table
+    ROWS = []
+    for row in rows_summary:
+        check = row["Check"]
+        uid = check_to_uid.get(check)
+        anchor_id = check_to_anchor.get(check)
+        if uid:  # Only include rows that have a matching calc step
+            # Determine ok status for styling (True=pass/green, False=fail/red, None=neutral)
+            status_str = row.get("Status", "")
+            ok = None
+            if status_str == "OK":
+                ok = True
+            elif status_str in ("NG", "Check", "FAIL"):
+                ok = False
+            
+            ROWS.append({
+                "uid": uid,
+                "title": check,
+                "value": row.get("Value", ""),
+                "limit": row.get("Limit", ""),
+                "util": row.get("Utilisation", ""),
+                "status": status_str,
+                "ok": ok,
+                "tab": "",  # No tabs on shear page
+                "is_primary": (check == "Equivalent design shear V_eq*"),
+                "anchor_id": anchor_id,  # Custom anchor ID for scrolling
+            })
+    
+    # Sort ROWS so primary check is first
+    priority = {
+        "Equivalent design shear V_eq*": 0,
+        "Torsion considered?": 1,
+        "Concrete contribution V_c": 2,
+        "Shear reinforcement V_s": 3,
+        "Web-crushing capacity V_u,max": 4,
+        "εₓ, k_v, θ_v": 5,
+    }
+    ROWS.sort(key=lambda r: priority.get(r["title"], 99))
 
-    styled_summary = summary_df.style.apply(_highlight_status, axis=1)
+    # Render clickable summary table at the top (using placeholder created early)
+    with top_summary_placeholder.container():
+        st.subheader("Shear – Summary")
+        clicked_uid = render_clickable_summary_table(ROWS, key="shear_summary")
+        
+        # Handle clicked row - expand the step
+        if clicked_uid:
+            # Set the step to open
+            open_key = f"step_open_{clicked_uid}"
+            st.session_state[open_key] = True
+        
+        st.divider()
+
+    # =====================================================
+    # Check 10 — MINIMUM SHEAR REINFORCEMENT CHECK
+    # =====================================================
+    # Calculate minimum shear reinforcement
+    Asv_over_s = Asv / s if s > 0 else 0.0
+    Asv_min_over_s = 0.08 * math.sqrt(fc) * b_v / (f_syv or 1.0)
+    min_shear_ok = Asv_over_s >= Asv_min_over_s
+    min_shear_status = "pass" if min_shear_ok else "fail"
+
+    check10_calc_md = f"""
+*Purpose: Check that provided shear reinforcement meets minimum requirements (AS 3600 Cl. 8.2.5).*
+
+**Inputs:**
+
+- Provided: $A_{{sv}} = {Asv:.1f}$ mm², spacing $s = {s:.1f}$ mm  
+- Concrete: $f'_c = {fc:.1f}$ MPa  
+- Geometry: $b_v = {b_v:.1f}$ mm  
+- Steel: $f_{{sy,v}} = {f_syv:.1f}$ MPa  
+
+---
+
+**Provided reinforcement rate:**
+
+$$\\frac{{A_{{sv}}}}{{s}} = \\frac{{{Asv:.1f}}}{{{s:.1f}}} = {Asv_over_s:.3f}\\ \\text{{mm}}^2/\\text{{mm}}$$
+
+**Minimum required (AS 3600 Cl. 8.2.5):**
+
+$$\\left(\\frac{{A_{{sv}}}}{{s}}\\right)_{{min}} = 0.08\\sqrt{{f'_c}} \\cdot \\frac{{b_v}}{{f_{{sy,v}}}} = 0.08\\sqrt{{{fc:.1f}}} \\cdot \\frac{{{b_v:.1f}}}{{{f_syv:.1f}}} = {Asv_min_over_s:.3f}\\ \\text{{mm}}^2/\\text{{mm}}$$
+
+---
+
+**Check:**
+
+- Requirement: $A_{{sv}}/s \\ge (A_{{sv}}/s)_{{min}}$  
+- Here: {Asv_over_s:.3f} vs {Asv_min_over_s:.3f} → **{"OK" if min_shear_ok else "NOT OK"}**
+"""
+        
+    # Diagram render function
+    def check10_diagram_fn():
+        _safe_step_diagram(8)  # Step 8 diagram (ligature spacing)
+    
+    # Info render function (popover)
+    def check10_info_fn():
+        col_info_header, _ = st.columns([0.1, 0.9])
+        with col_info_header:
+            with st.popover("ℹ️", help="Minimum shear reinforcement (ductility)"):
+                st.markdown(r"""
+### Minimum shear reinforcement
+
+**Why minimum stirrups are required**
+
+Even if calculated shear demand is low, minimum transverse reinforcement is required to:
+
+- control crack development,
+
+- provide ductility and robustness, and
+
+- ensure a reliable shear mechanism after cracking.
+
+**What this check is doing**
+
+This compares the provided reinforcement rate \(A_{sv}/s\) against the minimum required by AS 3600 for the given section and material properties.
+
+If the provided rate is below minimum, shear behaviour assumptions become unreliable and detailing must be increased.
+                """)
+    
+    # Build summary line
+    min_pass_fail = "PASS" if min_shear_ok else "FAIL"
+    check10_summary = f"Check 10 — Minimum shear reinforcement check | Result: $A_{{sv}}/s = {Asv_over_s:.3f}$ vs $(A_{{sv}}/s)_{{min}} = {Asv_min_over_s:.3f}$ → **{min_pass_fail}**"
+    
+    render_expandable_step(
+        page_key="shear",
+        step_id="shear_check10",
+        title="Check 10 — Minimum shear reinforcement",
+        summary_md=check10_summary,
+        status_kind=min_shear_status,
+        calc_md=check10_calc_md,
+        diagram_render_fn=check10_diagram_fn,
+        info_render_fn=check10_info_fn,
+    )
+
+    # =====================================================
+    # Check 11 — DETAILING AND DEEP BEAM NOTE
+    # =====================================================
+    check11_calc_md = f"""
+*Purpose: Provide guidance on ligature spacing, detailing requirements, and when strut-and-tie analysis is needed.*
+
+**Ligature spacing and detailing along the span (AS 3600 Cl. 8.2.5.1):**
+
+- Where the required shear reinforcement **$A_{{sv}}/s$ varies** along the member, the code assumes a **linear variation** over each segment.  
+- Detailing should follow the **recommended patterns** (e.g. Figure C8.2.5.1), so that provided $A_{{sv}}/s$ ≥ required $A_{{sv}}/s$ in the **critical region**.  
+- Proper spacing is essential because shear failure due to **yielding of ligatures** tends to occur in a **localized zone** near peak shear.  
+- The goal is to avoid "gaps" in shear resistance where the **provided envelope drops below the required line**.
+
+**Detailing requirements:**
+
+- Stirrups must be properly anchored (AS 3600 Cl. 8.2.5)  
+- Maximum spacing: $s \\le \\min(0.75D, 500\\ \\text{{mm}})$  
+- Minimum spacing: sufficient for concrete placement and consolidation  
+
+**When to use strut-and-tie model:**
+
+- Deep beams (span/depth < 2.5)  
+- Disturbed regions (loads within $d_v$ of support)  
+- Significant point loads near supports  
+- Complex geometry or loading patterns  
+
+**Note:** This step is informational. Detailed strut-and-tie analysis should be performed separately when required.
+"""
+    
+    # Diagram render function
+    def check11_diagram_fn():
+        # Ligature spacing diagram (moved from standalone section after Check 9)
+        col_left, col_center, col_right = st.columns([1, 6, 1])
+        with col_center:
+            _safe_image(
+                "assets/shear_lig_spacing_code_diagram.png",
+                caption="Example of varying Asv/s along the span (AS 3600 Fig. C8.2.5.1).",
+            )
+    
+    # Info render function (popover)
+    def check11_info_fn():
+        col_info_header, _ = st.columns([0.1, 0.9])
+        with col_info_header:
+            with st.popover("ℹ️", help="Detailing + when strut-and-tie governs"):
+                st.markdown(r"""
+### Detailing and deep-beam behaviour
+
+**Why detailing matters**
+
+Shear capacity equations assume:
+
+- reinforcement is properly anchored,
+
+- cracks are intercepted by stirrups,
+
+- spacing is not excessive, and
+
+- the shear-resisting zone is well confined.
+
+**When to consider strut-and-tie**
+
+For short shear spans (deep beams / disturbed regions), the stress field is not beam-like.  
+
+In these cases, a strut-and-tie model may govern and web crushing / strut behaviour becomes critical.
+
+**Placeholders for diagrams**
+
+- [Diagram] θ definition / crack angle  
+
+- [Diagram] Strut-and-tie behaviour in deep beams  
+
+- [Diagram] Web crushing mechanism
+                """)
+
+    # Build summary line
+    check11_summary = "Check 11 — Detailing and deep-beam considerations | Informational guidance (no pass/fail check)"
+    
+    render_expandable_step(
+        page_key="shear",
+        step_id="shear_check11",
+        title="Check 11 — Detailing and deep-beam considerations",
+        summary_md=check11_summary,
+        status_kind=None,
+        calc_md=check11_calc_md,
+        diagram_render_fn=check11_diagram_fn,
+        info_render_fn=check11_info_fn,
+    )
+
+    # =======================================================
+    # 9. SUMMARY TABLE + PUSH RESULTS
+    # =======================================================
+    torsion_label = (
+        "Yes (T* > 0.25 φT_cr)" if torsion_required else "No (strength check)"
+    )
+
+    shear_util = V_eq / phi_Vu if phi_Vu > 0 else float("nan")
+
+    # Summary table data for clickable summary table
+    rows_summary = [
+        {
+            "Check": "Torsion considered?",
+            "Value": torsion_label,
+            "Limit": "",
+            "Utilisation": "—",
+            "Status": "—",
+        },
+        {
+            "Check": "Equivalent design shear V_eq*",
+            "Value": f"{V_eq:.1f} kN",
+            "Limit": f"φV_u,cap = {phi_Vu:.1f} kN",
+            "Utilisation": f"{shear_util:.2f}" if phi_Vu > 0 else "—",
+            "Status": "OK" if shear_ok else "NG",
+        },
+        {
+            "Check": "Concrete contribution V_c",
+            "Value": f"{Vuc_kN:,.1f} kN",
+            "Limit": "",
+            "Utilisation": "—",
+            "Status": "—",
+        },
+        {
+            "Check": "Shear reinforcement V_s",
+            "Value": f"{Vus_kN:,.1f} kN",
+            "Limit": "",
+            "Utilisation": "—",
+            "Status": "—",
+        },
+        {
+            "Check": "Web-crushing capacity V_u,max",
+            "Value": f"{Vu_max_kN:,.1f} kN",
+            "Limit": "Demand ≤ Capacity",
+            "Utilisation": "—",
+            "Status": "OK" if web_ok else "NG",
+        },
+        {
+            "Check": "εₓ, k_v, θ_v",
+            "Value": f"εₓ = {eps_x:.5f},  k_v = {k_v:.3f},  θ_v = {theta_v_deg:.1f}°",
+            "Limit": "",
+            "Utilisation": "—",
+            "Status": "—",
+        },
+    ]
 
     # Publish key shear results for Inputs summary
     update_results(
@@ -2721,10 +2909,77 @@ $$\\large \\text{{Capacity}} = \\frac{{{phi:.2f} \\times {Vu_max_kN:,.1f}}}{{{b_
         Vu_utilisation=shear_util if not math.isnan(shear_util) else 0.0,
     )
 
-    with summary_placeholder.container():
-        st.markdown("### Shear / Torsion – Summary")
-        st.dataframe(styled_summary, use_container_width=True, hide_index=True)
-        st.markdown("---")
+    # Map summary rows -> step UIDs and anchor IDs
+    check_to_uid = {
+        "Torsion considered?": "shear_check1",
+        "Equivalent design shear V_eq*": "shear_check2",
+        "Concrete contribution V_c": "shear_check6",
+        "Shear reinforcement V_s": "shear_check7",
+        "Web-crushing capacity V_u,max": "shear_check9",
+        "εₓ, k_v, θ_v": "shear_check4",
+    }
+    
+    check_to_anchor = {
+        "Torsion considered?": "torsion_considered",
+        "Equivalent design shear V_eq*": "veq",
+        "Concrete contribution V_c": "vc",
+        "Shear reinforcement V_s": "vs",
+        "Web-crushing capacity V_u,max": "vu_max",
+        "εₓ, k_v, θ_v": "mcft_state",
+    }
+
+    # Build ROWS list for render_clickable_summary_table
+    ROWS = []
+    for row in rows_summary:
+        check = row["Check"]
+        uid = check_to_uid.get(check)
+        anchor_id = check_to_anchor.get(check)
+        if uid:  # Only include rows that have a matching calc step
+            # Determine ok status for styling (True=pass/green, False=fail/red, None=neutral)
+            status_str = row.get("Status", "")
+            ok = None
+            if status_str == "OK":
+                ok = True
+            elif status_str in ("NG", "Check", "FAIL"):
+                ok = False
+            
+            ROWS.append({
+                "uid": uid,
+                "title": check,
+                "value": row.get("Value", ""),
+                "limit": row.get("Limit", ""),
+                "util": row.get("Utilisation", ""),
+                "status": status_str,
+                "ok": ok,
+                "tab": "",  # No tabs on shear page
+                "is_primary": (check == "Equivalent design shear V_eq*"),
+                "anchor_id": anchor_id,  # Custom anchor ID for scrolling
+            })
+    
+    # Sort ROWS so primary check is first
+    priority = {
+        "Equivalent design shear V_eq*": 0,
+        "Torsion considered?": 1,
+        "Concrete contribution V_c": 2,
+        "Shear reinforcement V_s": 3,
+        "Web-crushing capacity V_u,max": 4,
+        "εₓ, k_v, θ_v": 5,
+    }
+    ROWS.sort(key=lambda r: priority.get(r["title"], 99))
+
+    # Render clickable summary table at the top (using placeholder created early)
+    # Note: This renders at the end but the placeholder was created at the top
+    with top_summary_placeholder.container():
+        st.subheader("Shear – Summary")
+        clicked_uid = render_clickable_summary_table(ROWS, key="shear_summary")
+        
+        # Handle clicked row - expand the step
+        if clicked_uid:
+            # Set the step to open
+            open_key = f"step_open_{clicked_uid}"
+            st.session_state[open_key] = True
+        
+        st.divider()
 
 
 if __name__ == "__main__":

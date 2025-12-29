@@ -11,13 +11,19 @@ import streamlit.components.v1 as components
 import plotly.graph_objects as go
 
 from state_and_helpers import get_sync_callbacks, get_param, update_results
-from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, show_reo_message
+from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, show_reo_message, apply_step_expander_css, apply_step_summary_expander_css
 from bending_core import _fmt, _compute_bending_capacity, _stress_strain_state
 from bending_diagrams import (
     _plot_stress_strain_profiles,
     _plot_material_stress_strain_curves,
 )
 from bending_tabs import render_uls_tab, render_min_strength_tab, render_sls_tab
+from ui_seamless_steps import (
+    inject_seamless_steps_css,
+    render_clickable_summary_table,
+    bind_summary_clicks,
+    step_card,
+)
 
 
 @st.cache_resource
@@ -331,6 +337,52 @@ def render_bending():
     sync_callbacks = get_sync_callbacks()
     apply_global_widget_css()
     apply_calcbox_css()
+    
+    # Inject seamless steps CSS (for summary table + calc details)
+    inject_seamless_steps_css()
+    
+    # Remove green background from inline math/LaTeX
+    st.markdown(
+        """
+<style>
+/* Remove green background from math/LaTeX elements */
+.katex,
+.katex-html,
+span.katex,
+span.katex-display,
+.katex-display {
+    background-color: transparent !important;
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+}
+/* Remove code styling from code elements that are parents of katex (math rendering) */
+code .katex,
+p code .katex {
+    background-color: transparent !important;
+}
+/* Make code elements containing math look like normal text, not code */
+.stMarkdown p code {
+    background-color: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    font-family: inherit !important;
+    font-size: inherit !important;
+    color: inherit !important;
+}
+</style>
+""",
+        unsafe_allow_html=True,
+    )
+    
+    # Debug helpers (temporary - remove after verification)
+    with st.sidebar:
+        st.write("**Debug:**")
+        st.write("jump_to:", st.session_state.get("jump_to"))
+        open_steps = {k: v for k, v in st.session_state.items() if k.startswith("step_open_") and v}
+        if open_steps:
+            st.write("open steps:", open_steps)
 
     # Container so title + summary + 3D sit at the very top (like Inputs page)
     top_container = st.container()
@@ -461,14 +513,10 @@ def render_bending():
         Mu_min_ok = phi_Mu_cap_top >= Mu_min_top
         Mu_min_util = Mu_min_top / phi_Mu_cap_top
 
-    ku_ok = None
-    if ku_top is not None and not math.isnan(ku_top):
-        ku_ok = (0.0 < ku_top <= 0.36)  # teaching limit
-
     As_status, As_colour = _status_colour(As_ok)
     Mu_status, Mu_colour = _status_colour(Mu_ok)
     Mu_min_status, Mu_min_colour = _status_colour(Mu_min_ok)
-    ku_status, ku_colour = _status_colour(ku_ok)
+    # ku_ok is defined later and used directly in the summary row (not via _status_colour)
 
     Ast_str = f"{Ast:.1f} mm²" if Ast not in (None, float("nan")) else "—"
     As_min_str = (
@@ -492,7 +540,11 @@ def render_bending():
     )
     Mu_min_util_str = f"{Mu_min_util:.3f}" if Mu_min_util is not None else "—"
 
-    ku_str = f"{ku_top:.3f}" if ku_top is not None and not math.isnan(ku_top) else "—"
+    # kᵤ utilisation and status (for summary table)
+    ku_lim = 0.36
+    ku_val = ku_top if (ku_top is not None and not math.isnan(ku_top)) else None
+    ku_ok = (ku_val is not None) and (ku_val <= ku_lim)
+    
     c_str = (
         f"{c_top:.2f} mm" if c_top is not None and not math.isnan(c_top) else "—"
     )
@@ -544,11 +596,11 @@ def render_bending():
             "Status": Mu_min_status,
         },
         {
-            "Check": "Neutral axis ratio k\u2091",
-            "Value": f"k\u2091 = {ku_str}",
-            "Limit": "AS 3600 limit ≤ 0.36",
-            "Utilisation": "—",
-            "Status": ku_status,
+            "Check": "Neutral axis ratio kᵤ",
+            "Value": f"{ku_val:.3f}" if ku_val is not None else "—",
+            "Limit": f"{ku_lim:.2f}",
+            "Utilisation": f"{(ku_val/ku_lim):.3f}" if ku_val is not None else "—",
+            "Status": "OK" if ku_ok else "Check",
         },
         {
             "Check": "SLS steel stress f\u209b,ser",
@@ -610,36 +662,105 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             # --- Replace old 3D model with curved "2D-looking-3D" diagram ---
             from curved_beam_diagram import render_curved_beam_fig
             
-            # Get parameters (convert mm to meters for consistency with function)
-            L_m = float(get_param("L", 8000.0) or 8000.0) / 1000.0  # mm -> m
-            D_m = float(get_param("D", 600.0) or 600.0) / 1000.0    # mm -> m
-            b_m = float(get_param("b", 400.0) or 400.0) / 1000.0    # mm -> m
-            # Convert c_top from mm to m (ULS neutral axis depth)
-            if c_top is not None and not (isinstance(c_top, float) and math.isnan(c_top)):
-                dn_uls_m = float(c_top) / 1000.0  # mm -> m
-            else:
-                dn_uls_m = 0.21 * D_m  # fallback: 21% of depth (already in meters)
-            
-            # Draw figure with fixed curvature of 0.4
-            if D_m > 0 and L_m > 0 and dn_uls_m > 0:
-                fig_beam = render_curved_beam_fig(
-                    L=L_m,          # meters
-                    D=D_m,          # meters
-                    b=b_m,          # meters
-                    dn_uls=dn_uls_m,  # meters - ULS neutral axis depth only
-                    ts_centroid_y=None,  # leave None if you already compute Ts centroid elsewhere later
-                    curvature=0.4,  # fixed curvature
-                    title=None,
-                )
-                st.pyplot(fig_beam, clear_figure=True)
-            else:
-                st.info(
-                    "Curved beam view will appear once geometry and moment capacity are defined."
-                )
+            try:
+                # Get parameters (convert mm to meters for consistency with function)
+                L_m = float(get_param("L", 8000.0) or 8000.0) / 1000.0  # mm -> m
+                D_m = float(get_param("D", 600.0) or 600.0) / 1000.0    # mm -> m
+                b_m = float(get_param("b", 400.0) or 400.0) / 1000.0    # mm -> m
+                # Convert c_top from mm to m (ULS neutral axis depth)
+                if c_top is not None and not (isinstance(c_top, float) and math.isnan(c_top)):
+                    dn_uls_m = float(c_top) / 1000.0  # mm -> m
+                else:
+                    dn_uls_m = 0.21 * D_m  # fallback: 21% of depth (already in meters)
+                
+                # Draw figure with fixed curvature of 0.4
+                if D_m > 0 and L_m > 0 and dn_uls_m > 0:
+                    fig_beam = render_curved_beam_fig(
+                        L=L_m,          # meters
+                        D=D_m,          # meters
+                        b=b_m,          # meters
+                        dn_uls=dn_uls_m,  # meters - ULS neutral axis depth only
+                        ts_centroid_y=None,  # leave None if you already compute Ts centroid elsewhere later
+                        curvature=0.4,  # fixed curvature
+                        title=None,
+                    )
+                    st.pyplot(fig_beam, clear_figure=True)
+                else:
+                    st.info(
+                        "Curved beam view will appear once geometry and moment capacity are defined."
+                    )
+            except Exception as e:
+                st.warning("3D view failed to render (browser/graphics). Try refreshing the page.")
 
         # Summary table spans full width under the heading + 3D row (deflection-style)
-        st.markdown("### Bending – Summary")
-        st.dataframe(styled_summary, use_container_width=True, hide_index=True)
+        st.subheader("Bending – Summary")
+
+        # Map summary rows -> REAL calc step UIDs in bending_tabs.py
+        check_to_uid = {
+            "Steel area Ast,bot": "bending_min_2_5",
+            "Flexural capacity": "bending_uls_1_7",
+            "Minimum strength": "bending_min_2_4",
+            "Neutral axis ratio kᵤ": "bending_uls_1_5",
+            "SLS steel stress fₛ,ser": "bending_sls_3_1",
+        }
+        
+        # Map checks to their tabs
+        check_to_tab = {
+            "Steel area Ast,bot": "Minimum strength checks",
+            "Flexural capacity": "ULS Checks",
+            "Minimum strength": "Minimum strength checks",
+            "Neutral axis ratio kᵤ": "ULS Checks",
+            "SLS steel stress fₛ,ser": "SLS Checks",
+        }
+
+        # Build ROWS list for render_clickable_summary_table (only include rows with UIDs)
+        # Format matches test app: check, value, limit, util, status, ok, uid, tab
+        ROWS = []
+        for row in rows_summary:
+            check = row["Check"]
+            uid = check_to_uid.get(check)
+            tab = check_to_tab.get(check)
+            if uid:  # Only include rows that have a matching calc step
+                # Determine ok status for styling (True=pass/green, False=fail/red, None=neutral)
+                status_str = row.get("Status", "")
+                ok = None
+                if status_str == "OK":
+                    ok = True
+                elif status_str == "Check" or status_str == "FAIL":
+                    ok = False
+                
+                ROWS.append({
+                    "uid": uid,
+                    "title": check,  # or "check" - both work
+                    "value": row.get("Value", ""),
+                    "limit": row.get("Limit", ""),
+                    "util": row.get("Utilisation", ""),
+                    "status": status_str,
+                    "ok": ok,
+                    "tab": tab,
+                    "is_primary": (check == "Flexural capacity"),
+                })
+        
+        # Sort ROWS so Flexural capacity is first
+        priority = {
+            "Flexural capacity": 0,
+            "Steel area Ast,bot": 1,
+            "Minimum strength": 2,
+            "Neutral axis ratio kᵤ": 3,
+            "SLS steel stress fₛ,ser": 4,
+        }
+        ROWS.sort(key=lambda r: priority.get(r["title"], 99))
+
+        # Render summary table using shared helper
+        render_clickable_summary_table(ROWS, key_prefix="bend_summary")
+        
+        # Bind JavaScript for opening expanders and scrolling
+        bind_summary_clicks()
+
+        st.divider()
+
+    # Persist canonical bending state for the rest of the page (and next rerun)
+    st.session_state["bending_state"] = canonical_state
 
     # Persist canonical bending state for the rest of the page (and next rerun)
     st.session_state["bending_state"] = canonical_state
@@ -885,7 +1006,6 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             st.session_state["_reo_warning_bot_1"] = None  # Clear after showing
             st.session_state["_reo_s_min_bot_1"] = None
         
-        st.markdown("**Layer 1**")
         number_row(
             "Layer 1: bars or spacing (≤30 = bars, ≥30 = mm)",
             "bending_nb_or_s_bot_1",
@@ -901,8 +1021,6 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             sync_callbacks,
             help_text="Nominal diameter of bottom Layer 1 bars.",
         )
-        
-        st.markdown("**Layer 2**")
         
         number_row(
             "Layer 2: bars or spacing (≤30 = bars, ≥30 = mm)",
@@ -963,7 +1081,6 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             st.session_state["_reo_warning_top_1"] = None  # Clear after showing
             st.session_state["_reo_s_min_top_1"] = None
         
-        st.markdown("**Layer 1**")
         number_row(
             "Layer 1: bars or spacing (≤30 = bars, ≥30 = mm)",
             "bending_nb_or_s_top_1",
@@ -979,8 +1096,6 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             sync_callbacks,
             help_text="Nominal diameter of top Layer 1 bars.",
         )
-        
-        st.markdown("**Layer 2**")
         
         number_row(
             "Layer 2: bars or spacing (≤30 = bars, ≥30 = mm)",
@@ -1099,18 +1214,31 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         state_for_math = "Uncracked"
 
     # ---------------- Step-by-step tabs ----------------
-    tab_uls, tab_min, tab_sls = st.tabs(
-        ["ULS step-by-step", "Section 2 – Minimum strength", "SLS step-by-step"]
+    apply_step_summary_expander_css()
+    
+    tab = st.radio(
+        "Mode",
+        ["ULS Checks", "SLS Checks", "Minimum strength checks"],
+        horizontal=True,
+        key="bending_tab",
+        label_visibility="collapsed",
     )
-
-    with tab_uls:
-        render_uls_tab(top_results, b, D, fc, fsy, Ast_bot, d_eff)
-
-    with tab_min:
-        render_min_strength_tab(top_results, b, D, fc, fsy, Ast_bot)
-
-    with tab_sls:
-        render_sls_tab(top_results, b, D, d_eff, Ast_bot, Ec, Es, Mu_star)
+    
+    if tab == "ULS Checks":
+        render_uls_tab(
+            top_results, b, D, fc, fsy, Ast_bot, d_eff,
+            summary_mode=False,  # no longer used
+        )
+    elif tab == "SLS Checks":
+        render_sls_tab(
+            top_results, b, D, d_eff, Ast_bot, Ec, Es, Mu_star,
+            summary_mode=False,
+        )
+    else:
+        render_min_strength_tab(
+            top_results, b, D, fc, fsy, Ast_bot,
+            summary_mode=False,
+        )
 
     # --------------------------------------------------
     # Now build the 3-panel diagram, using the SLS results
@@ -1141,7 +1269,10 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             state_label=diagram_state_label,
             layout=cached_layout,  # Pass cached layout to avoid recomputation
         )
-        st.plotly_chart(fig_ss, use_container_width=True, config={"displayModeBar": False})
+        try:
+            st.plotly_chart(fig_ss, use_container_width=True, config={"displayModeBar": False})
+        except Exception as e:
+            st.warning("3D view failed to render (browser/graphics). Try disabling 3D view or refreshing the page.")
 
     # --------------------------------------------------
     # Material stress–strain curves (concrete + steel),
@@ -1200,11 +1331,22 @@ for the same strain pattern.
 """
             )
             fig_mat = _plot_material_stress_strain_curves()
-            st.plotly_chart(
-                fig_mat,
-                use_container_width=True,
-                config={"displayModeBar": False},
-            )
+            try:
+                st.plotly_chart(
+                    fig_mat,
+                    use_container_width=True,
+                    config={"displayModeBar": False},
+                )
+            except Exception as e:
+                st.warning("Material curves view failed to render (browser/graphics). Try refreshing the page.")
+    
+    # Debug helpers (temporary - remove after verification)
+    with st.sidebar:
+        st.write("**Debug:**")
+        st.write("jump_to:", st.session_state.get("jump_to"))
+        open_steps = {k: v for k, v in st.session_state.items() if k.startswith("step_open_")}
+        if open_steps:
+            st.write("open:", open_steps)
 
 
 # ============================

@@ -12,7 +12,7 @@ from state_and_helpers import (
     get_sync_callbacks,
     update_results,  # kept for contract
 )
-from widgets_helpers import apply_global_widget_css, number_row
+from widgets_helpers import apply_global_widget_css, number_row, calcbox, clickable_calcbox, render_step, apply_step_expander_css
 
 
 # ------------------------------------------------------------
@@ -88,19 +88,6 @@ blockquote p:last-child {
     )
 
 
-def calcbox(md: str):
-    r"""
-    Render a highlighted calculation box with LaTeX-enabled markdown inside.
-
-    - Converts \[ \] → $$ $$ for display math
-    - Converts \( \) → $ $ for inline math
-    - Wraps everything in a markdown blockquote (>) so CSS turns it blue
-    """
-    converted = md.replace("\\[", "$$").replace("\\]", "$$")
-    converted = converted.replace("\\(", "$").replace("\\)", "$")
-    lines = converted.strip().split("\n")
-    blockquote = "\n".join("> " + line for line in lines)
-    st.markdown(blockquote)
 
 
 # ------------------------------------------------------------
@@ -202,12 +189,16 @@ def calc_sr_max(c_mm: float, db_mm: float, rho_eff: float, k1: float, k2: float)
 def render_crack():
     apply_global_widget_css()
     _inject_calcbox_css()
+    apply_step_expander_css()
     get_sync_callbacks()  # keeps contract with Inputs page
 
     # --------------------------------------------------------
     # Page title
     # --------------------------------------------------------
     st.title("Crack width – AS 3600:2018 Clause 8.6.2")
+    
+    # Summary mode toggle
+    summary_mode = st.checkbox("Summary mode (collapse all steps)", value=False, key="crack_summary_mode")
 
     # --------------------------------------------------------
     # Page description (directly under title)
@@ -516,10 +507,14 @@ The aim is to verify that cracking is **controlled** so that durability and appe
 
     # ---------- Tab 1: Table method ----------
     with tab_table:
-        st.subheader("Crack control **without** direct calculation of crack widths – Cl. 8.6.2.2")
-
-        calcbox(
-            rf"""
+        def render_crack_table_body(show_box: bool = True):
+            """Body function for table method step."""
+            # Table method summary and details
+            table_summary = rf"""**Table method – Maximum steel stress check**
+<span style="color: #666; font-weight: 400;">Includes: Steel stress limit from AS 3600 tables and 0.8f<sub>sy</sub> limit</span>
+<span style="font-weight: 400;">Result: $\sigma_{{sr}} = {sigma_sr:.1f}$ MPa vs $\sigma_{{\text{{allow}}}} = {sigma_allow_table:.1f}$ MPa (utilisation = {utilisation_table:.2f}) → **{"PASS" if passes_table else "FAIL"}**</span>"""
+            
+            table_details = rf"""
 **Concept**
 
 Instead of calculating a crack width directly, Clause 8.6.2.2 limits the **steel stress**
@@ -575,14 +570,38 @@ Overall allowable steel stress:
 \text{{{"PASS" if passes_table else "FAIL"}}}
 \]
 """
+        
+            if show_box:
+                clickable_calcbox(
+                    uid="crack_table_check",
+                    status="pass" if passes_table else "fail",
+                    summary_html=table_summary,
+                    details_html=table_details,
+                    height=580
+                )
+            else:
+                # In summary-expand mode: show full step-by-step text only (no duplicate summary card)
+                calcbox(table_details)
+        
+        render_step(
+            step_id="cr_table",
+            title="Crack control **without** direct calculation of crack widths – Cl. 8.6.2.2",
+            summary_md=f"Result: σ_sr = {sigma_sr:.1f} MPa vs σ_allow = {sigma_allow_table:.1f} MPa → {'PASS' if passes_table else 'FAIL'}",
+            body_fn=render_crack_table_body,
+            status="pass" if passes_table else "fail",
+            summary_mode=summary_mode,
         )
 
     # ---------- Tab 2: Direct calculation ----------
     with tab_calc:
-        st.subheader("Crack control **by calculation of crack widths** – Cl. 8.6.2.3")
-
-        calcbox(
-            rf"""
+        def render_crack_direct_body(show_box: bool = True):
+            """Body function for direct calculation step."""
+            # Direct crack width summary and details
+            width_summary = rf"""**Direct calculation – Crack width check**
+<span style="color: #666; font-weight: 400;">Includes: Effective reinforcement ratio, mean strain difference, crack spacing, and calculated crack width</span>
+<span style="font-weight: 400;">Result: $w = {w_calc:.3f}$ mm vs $w'_{{\max}} = {wmax_choice:.1f}$ mm (utilisation = {utilisation_w:.2f}) → **{"PASS" if passes_w else "FAIL"}**</span>"""
+            
+            width_details = rf"""
 **Concept**
 
 The calculated maximum crack width is:
@@ -670,6 +689,26 @@ w'_{{\max}} = {wmax_choice:.1f}\,\text{{mm}}, \quad
 \Rightarrow\ \text{{{"PASS" if passes_w else "FAIL"}}}
 \]
 """
+        
+            if show_box:
+                clickable_calcbox(
+                    uid="crack_width_check",
+                    status="pass" if passes_w else "fail",
+                    summary_html=width_summary,
+                    details_html=width_details,
+                    height=720
+                )
+            else:
+                # In summary-expand mode: show full step-by-step text only (no duplicate summary card)
+                calcbox(width_details)
+        
+        render_step(
+            step_id="cr_direct",
+            title="Crack control **by calculation of crack widths** – Cl. 8.6.2.3",
+            summary_md=f"Result: w = {w_calc:.3f} mm vs w'_max = {wmax_choice:.1f} mm → {'PASS' if passes_w else 'FAIL'}",
+            body_fn=render_crack_direct_body,
+            status="pass" if passes_w else "fail",
+            summary_mode=summary_mode,
         )
 
     # ---------- Tab 3: Workflow ----------
