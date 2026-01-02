@@ -62,8 +62,14 @@ def render_clickable_summary_table(rows, key="summary"):
   position: relative;
 }
 
+/* Default neutral background (matches calcbox blue) - only for rows without pass/fail/warn classes */
+.summary-table tbody tr:not(.pass):not(.fail):not(.warn) td {
+  background: rgba(31, 119, 180, 0.08);
+}
+
 tr.pass td { background: rgba(0,128,0,0.12); }
 tr.fail td { background: rgba(255,0,0,0.12); }
+tr.warn td { background: rgba(255,193,7,0.15); }
 
 tr.primary td {
   font-weight: 700;

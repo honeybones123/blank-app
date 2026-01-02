@@ -48,55 +48,30 @@ def scroll_to_jump_after_render(offset_px: int = 96, duration_ms: int = 850):
     components.html(
         f"""
 <script>
-(function() {{
+(function () {{
   const targetId = "calc_{uid}";
-  const startT = Date.now();
-  const maxMs = 2500;
-  const offset = {int(offset_px)};
-  const duration = {int(duration_ms)};
+  let attempts = 0;
 
-  function easeInOutCubic(t) {{
-    return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3)/2;
-  }}
-
-  function animatedScrollTo(targetY) {{
-    const doc = window.parent;
-    const startY = doc.scrollY || doc.pageYOffset;
-    const delta = targetY - startY;
-    const t0 = performance.now();
-
-    function step(now) {{
-      const t = Math.min(1, (now - t0) / duration);
-      const y = startY + delta * easeInOutCubic(t);
-      doc.scrollTo(0, y);
-      if (t < 1) requestAnimationFrame(step);
-    }}
-    requestAnimationFrame(step);
-  }}
+  // 🔹 1) optimistic scroll (immediate)
+  window.parent.scrollTo({{ top: 0, behavior: "auto" }});
 
   function tryScroll() {{
-    const doc = window.parent.document;
-    const el = doc.getElementById(targetId);
+    const el = window.parent.document.getElementById(targetId);
     if (el) {{
-      const rect = el.getBoundingClientRect();
-      const absoluteY = (window.parent.scrollY || window.parent.pageYOffset) + rect.top - offset;
-
-      // Run scroll a tiny bit later to let expand/collapse finish
-      setTimeout(() => {{
-        animatedScrollTo(absoluteY);
-        el.classList.add("flash-target");
-        setTimeout(() => el.classList.remove("flash-target"), 1200);
-      }}, 90);
-
-      return;
-    }}
-
-    if (Date.now() - startT < maxMs) {{
-      setTimeout(tryScroll, 80);
+      el.scrollIntoView({{ behavior: "smooth", block: "start" }});
+      el.style.transition = "background-color 0.4s ease";
+      el.style.backgroundColor = "rgba(255,230,150,0.5)";
+      setTimeout(() => el.style.backgroundColor = "", 700);
+    }} else if (attempts < 25) {{
+      attempts += 1;
+      // Faster polling: 20ms for first 15 attempts, then 30ms for remaining
+      const delay = attempts <= 15 ? 20 : 30;
+      setTimeout(tryScroll, delay);
     }}
   }}
 
-  setTimeout(tryScroll, 120);
+  // Start immediately, no initial delay
+  tryScroll();
 }})();
 </script>
 """,

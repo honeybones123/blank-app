@@ -18,7 +18,7 @@ from shear_core import derive_eps_top_bot_for_step4_diagram
 from torsion_diagrams import plot_torsion_prism_3d
 
 # Shared helpers (same contract as Inputs/Bending)
-from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, calcbox, clickable_calcbox, render_step, apply_step_summary_expander_css
+from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, calcbox, clickable_calcbox, render_step, apply_step_summary_expander_css, info_i_button, page_divider
 from step_ui import init_step_ui_state, render_expandable_step
 from summary_table_ui import render_clickable_summary_table
 
@@ -564,7 +564,7 @@ def render_shear_intro_block():
 
         # Info button attached to the diagram
         with info_col:
-            with st.popover("ℹ️", use_container_width=True):
+            with info_i_button(use_container_width=True):
                 calcbox(
                     r"""
 **What is shear in a beam?**
@@ -625,7 +625,7 @@ def render_shear_behaviour_block():
 
         # Info button with BOTH behaviour + transfer explanation
         with info_col:
-            with st.popover("ℹ️", use_container_width=True):
+            with info_i_button(use_container_width=True):
                 st.markdown("#### Flexural vs deep-beam behaviour")
                 calcbox(
                     r"""
@@ -723,7 +723,7 @@ def render_shear_mcft_block():
 
         # Info button
         with info_col:
-            with st.popover("ℹ️", use_container_width=True):
+            with info_i_button(use_container_width=True):
                 calcbox(
                     r"""
 **Concrete contribution $V_{uc}$ in AS 3600**
@@ -859,6 +859,10 @@ def render_shear_steel_and_spacing_block():
 #  MAIN PAGE RENDER FUNCTION
 # ------------------------------------------------------------
 def render_shear():
+    # Handle cross-page navigation from Inputs page
+    from jump_nav import get_jump_uid
+    get_jump_uid()
+    
     apply_global_widget_css()
     apply_calcbox_css()
     apply_step_summary_expander_css()
@@ -905,7 +909,7 @@ This page computes **ultimate shear and torsion capacity** outputs in accordance
 
         with info_col:
             # ℹ️ popover attached to the drawing
-            with st.popover("ℹ️", use_container_width=True):
+            with info_i_button(use_container_width=True):
                 calcbox(
                     r"""
 **What is shear in a beam?**
@@ -1114,7 +1118,7 @@ This page computes **ultimate shear and torsion capacity** outputs in accordance
         use_general_kv = method.startswith("General")
 
     # --- Conceptual behaviour + shear transfer (flexural vs deep) ---
-    st.markdown("---")
+    page_divider()
     render_shear_behaviour_block()
 
     # -------------------------------------------------
@@ -1155,7 +1159,7 @@ This page computes **ultimate shear and torsion capacity** outputs in accordance
     # =====================================================
     # 2. STEP 1 — TORSION CRACKING CHECK (T_cr)
     # =====================================================
-    st.markdown("---")
+    page_divider()
 
     # Read θ from shared state (read-only, no widget)
     theta_deg = float(get_param("crack_theta_deg", 45.0))
@@ -1239,7 +1243,7 @@ $$\\large T_{{cr}} = 0.33\\sqrt{{{fc:.1f}}} \\cdot \\frac{{{A_cp:.0f}^2}}{{{u_c:
     def check1_info_fn():
         col_info_header, _ = st.columns([0.1, 0.9])
         with col_info_header:
-            with st.popover("ℹ️", help="Torsion cracking (what this check means)"):
+            with info_i_button(help_text="Torsion cracking (what this check means)"):
                 st.markdown(r"""
 ### Torsion cracking behaviour
 
@@ -1403,7 +1407,7 @@ $$\\large V_{{eq}}^* = V^* = {V_eq:.1f}\\ \\text{{kN}}$$
     def check2_info_fn():
         col_info_header, _ = st.columns([0.1, 0.9])
         with col_info_header:
-            with st.popover("ℹ️", help="Equivalent shear (combined demand)"):
+            with info_i_button(help_text="Equivalent shear (combined demand)"):
                 st.markdown(r"""
 ### Combined shear demand (Veq*)
 
@@ -1616,7 +1620,7 @@ $$\\large d_v = {_fmt(d_v)}\\ \\text{{mm}}$$
     def check3_info_fn():
         col_info_header, _ = st.columns([0.1, 0.9])
         with col_info_header:
-            with st.popover("ℹ️", help="Effective shear geometry (bv, dv)"):
+            with info_i_button(help_text="Effective shear geometry (bv, dv)"):
                 st.markdown(r"""
 ### Effective shear geometry
 
@@ -1654,7 +1658,7 @@ dv is defined by shear transfer geometry (shear). They represent different mecha
     )
 
     # High-level MCFT / Vuc / kv insight tied to εx (moved from after Check 4)
-    st.markdown("---")
+    page_divider()
     render_shear_mcft_block()
 
     # =====================================================
@@ -1779,7 +1783,7 @@ This value is **{"positive (tension at mid-depth)" if eps_x >= 0 else "negative 
         with col_diag_title:
             st.markdown("**Longitudinal strain profile**")
         with col_diag_info:
-            with st.popover("ℹ️", help="Derivation of εx (conceptual)"):
+            with info_i_button(help_text="Derivation of εx (conceptual)"):
                 st.markdown(r"""
 ### Derivation of longitudinal strain εx
 
@@ -1881,7 +1885,7 @@ This is conservative and removes θ-dependency so εx can be evaluated without i
     def check4_info_fn():
         col_info_header, _ = st.columns([0.1, 0.9])
         with col_info_header:
-            with st.popover("ℹ️", help="Longitudinal strain εx (MCFT behaviour anchor)"):
+            with info_i_button(help_text="Longitudinal strain εx (MCFT behaviour anchor)"):
                 st.markdown(r"""
 ### Longitudinal strain εx (MCFT behaviour)
 
@@ -2083,7 +2087,7 @@ $$k_v = {k_v:.3f}, \\quad \\theta_v = {theta_v_deg:.1f}°$$
     def check5_info_fn():
         col_info_header, _ = st.columns([0.1, 0.9])
         with col_info_header:
-            with st.popover("ℹ️", help="MCFT parameters (what kv and θv represent)"):
+            with info_i_button(help_text="MCFT parameters (what kv and θv represent)"):
                 st.markdown(r"""
 ### MCFT parameters
 
@@ -2163,7 +2167,7 @@ $$V_{{uc}} = {k_v:.3f} \\times {b_v:.1f} \\times {d_v:.1f} \\times {sqrt_fc_limi
     def check6_info_fn():
         col_info_header, _ = st.columns([0.1, 0.9])
         with col_info_header:
-            with st.popover("ℹ️", use_container_width=True):
+            with info_i_button(use_container_width=True):
                 st.markdown("### Check 6 – Concrete contribution $V_{uc}$")
                 st.markdown(
                     r"""
@@ -2275,7 +2279,7 @@ $$V_{{us}} = \\left(\\frac{{{Asv:.1f} \\times {f_syv:.1f} \\times {d_v:.1f}}}{{{
     def check7_info_fn():
         col_info_header, _ = st.columns([0.1, 0.9])
         with col_info_header:
-            with st.popover("ℹ️", use_container_width=True):
+            with info_i_button(use_container_width=True):
                 st.markdown("### Check 7 – How stirrups contribute $V_s$")
                 calcbox(
                     r"""
@@ -2387,7 +2391,7 @@ $$\\phi V_u = {phi:.2f} \\times {Vu_total_kN:,.1f} = {phi_Vu:,.1f}\\,\\text{{kN}
     def check8_info_fn():
         col_info_header, _ = st.columns([0.1, 0.9])
         with col_info_header:
-            with st.popover("ℹ️", help="Sectional shear capacity (Vu components)"):
+            with info_i_button(help_text="Sectional shear capacity (Vu components)"):
                 st.markdown(r"""
 ### Sectional shear capacity
 
@@ -2516,7 +2520,7 @@ $$\\large \\text{{Capacity}} = \\frac{{{phi:.2f} \\times {Vu_max_kN:,.1f}}}{{{b_
     def check9_info_fn():
         col_info_header, _ = st.columns([0.1, 0.9])
         with col_info_header:
-            with st.popover("ℹ️", help="Web crushing (strut failure cap)"):
+            with info_i_button(help_text="Web crushing (strut failure cap)"):
                 st.markdown(r"""
 ### Web crushing (strut failure limit)
 
@@ -2677,7 +2681,7 @@ Regardless of reinforcement, design shear capacity cannot exceed this limit.
             open_key = f"step_open_{clicked_uid}"
             st.session_state[open_key] = True
         
-        st.divider()
+        page_divider()
 
     # =====================================================
     # Check 10 — MINIMUM SHEAR REINFORCEMENT CHECK
@@ -2724,7 +2728,7 @@ $$\\left(\\frac{{A_{{sv}}}}{{s}}\\right)_{{min}} = 0.08\\sqrt{{f'_c}} \\cdot \\f
     def check10_info_fn():
         col_info_header, _ = st.columns([0.1, 0.9])
         with col_info_header:
-            with st.popover("ℹ️", help="Minimum shear reinforcement (ductility)"):
+            with info_i_button(help_text="Minimum shear reinforcement (ductility)"):
                 st.markdown(r"""
 ### Minimum shear reinforcement
 
@@ -2803,7 +2807,7 @@ If the provided rate is below minimum, shear behaviour assumptions become unreli
     def check11_info_fn():
         col_info_header, _ = st.columns([0.1, 0.9])
         with col_info_header:
-            with st.popover("ℹ️", help="Detailing + when strut-and-tie governs"):
+            with info_i_button(help_text="Detailing + when strut-and-tie governs"):
                 st.markdown(r"""
 ### Detailing and deep-beam behaviour
 
@@ -2979,7 +2983,11 @@ In these cases, a strut-and-tie model may govern and web crushing / strut behavi
             open_key = f"step_open_{clicked_uid}"
             st.session_state[open_key] = True
         
-        st.divider()
+        page_divider()
+    
+    # Handle scroll after all content is rendered (for cross-page navigation from Inputs)
+    from jump_nav import scroll_to_jump_after_render
+    scroll_to_jump_after_render()
 
 
 if __name__ == "__main__":

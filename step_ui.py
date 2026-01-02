@@ -92,8 +92,13 @@ def render_expandable_step(
     if info_render_fn:
         info_tip = " ℹ️"
     
-    # Format summary line (replace " | " with line break if present, matching step_expander_calcbox)
-    formatted_summary = summary_md.replace(" | ", "  \n", 1)
+    # Format summary line - support both string and list/tuple for 2-line summaries
+    if isinstance(summary_md, (list, tuple)):
+        # Multiple lines: join with line breaks
+        formatted_summary = "  \n".join(str(line) for line in summary_md)
+    else:
+        # Single string: replace " | " with line break if present (backward compatible)
+        formatted_summary = summary_md.replace(" | ", "  \n", 1)
     label = f"{formatted_summary}{info_tip}".strip()
     
     with st.expander(label, expanded=is_expanded_state):

@@ -13,7 +13,11 @@ from state_and_helpers import (
     get_sync_callbacks,
     update_results,  # kept for contract
 )
-from widgets_helpers import apply_global_widget_css, number_row, calcbox, clickable_calcbox
+from widgets_helpers import apply_global_widget_css, number_row, calcbox, page_divider
+from step_ui import render_expandable_step
+from summary_table_ui import render_clickable_summary_table
+from ui_seamless_steps import bind_summary_clicks, inject_seamless_steps_css
+from jump_nav import scroll_to_jump_after_render
 
 
 # ------------------------------------------------------------
@@ -181,6 +185,7 @@ def calc_eps_cse(fc: float, t_days: float) -> float:
 def render_shrinkage():
     apply_global_widget_css()
     _inject_calcbox_css()
+    inject_seamless_steps_css()  # For summary table + scroll functionality
     get_sync_callbacks()  # maintains contract with Inputs page
 
     # --------------------------------------------------------
@@ -222,61 +227,91 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
         b_seed = _seed_from_param("b", 300.0)
         D_seed = _seed_from_param("D", 600.0)
 
-        b = st.number_input(
-            "Section width b (mm)",
-            value=b_seed,
-            step=10.0,
-            key="sh_b",
-        )
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.markdown("<div class='sb-label'>Section width b (mm)</div>", unsafe_allow_html=True)
+        with col2:
+            b = st.number_input(
+                "",
+                value=b_seed,
+                step=10.0,
+                key="sh_b",
+                label_visibility="collapsed",
+            )
 
-        D = st.number_input(
-            "Overall depth D (mm)",
-            value=D_seed,
-            step=10.0,
-            key="sh_D",
-        )
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.markdown("<div class='sb-label'>Overall depth D (mm)</div>", unsafe_allow_html=True)
+        with col2:
+            D = st.number_input(
+                "",
+                value=D_seed,
+                step=10.0,
+                key="sh_D",
+                label_visibility="collapsed",
+            )
 
-        faces_option = st.selectbox(
-            "Member / faces exposed",
-            [
-                "Slab – one face exposed",
-                "Slab – two faces exposed",
-                "Beam – three faces exposed",
-                "Column – four faces exposed",
-            ],
-            index=1,
-            key="sh_faces",
-        )
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.markdown("<div class='sb-label'>Member / faces exposed</div>", unsafe_allow_html=True)
+        with col2:
+            faces_option = st.selectbox(
+                "",
+                [
+                    "Slab – one face exposed",
+                    "Slab – two faces exposed",
+                    "Beam – three faces exposed",
+                    "Column – four faces exposed",
+                ],
+                index=1,
+                key="sh_faces",
+                label_visibility="collapsed",
+            )
 
     with col_env:
         fc_seed = _seed_from_param("fc", 32.0)
 
-        fc = st.number_input(
-            "Concrete strength f'c (MPa)",
-            value=fc_seed,
-            step=1.0,
-            key="sh_fc",
-        )
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.markdown("<div class='sb-label'>Concrete strength f'c (MPa)</div>", unsafe_allow_html=True)
+        with col2:
+            fc = st.number_input(
+                "",
+                value=fc_seed,
+                step=1.0,
+                key="sh_fc",
+                label_visibility="collapsed",
+            )
 
-        env_option = st.selectbox(
-            "Shrinkage environment (Table 3.1.7.2)",
-            [
-                "Arid environment",
-                "Interior environment",
-                "Temperate inland environment",
-                "Tropical / near-coastal / coastal environment",
-            ],
-            index=2,
-            key="sh_env",
-        )
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.markdown("<div class='sb-label'>Shrinkage environment (Table 3.1.7.2)</div>", unsafe_allow_html=True)
+        with col2:
+            env_option = st.selectbox(
+                "",
+                [
+                    "Arid environment",
+                    "Interior environment",
+                    "Temperate inland environment",
+                    "Tropical / near-coastal / coastal environment",
+                ],
+                index=2,
+                key="sh_env",
+                label_visibility="collapsed",
+            )
 
-        t_days = st.number_input(
-            "Time since commencement of drying t (days)",
-            value=365.0,
-            step=10.0,
-            min_value=1.0,
-            key="sh_t_days",
-        )
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.markdown("<div class='sb-label'>Time since commencement of drying t (days)</div>", unsafe_allow_html=True)
+        with col2:
+            t_days = st.number_input(
+                "",
+                value=365.0,
+                step=10.0,
+                min_value=1.0,
+                key="sh_t_days",
+                label_visibility="collapsed",
+            )
 
     # --------------------------------------------------------
     # Derived geometry: Ag, ue, th
@@ -321,39 +356,54 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
     )
 
     # --------------------------------------------------------
-    # TOP SUMMARY TABLE (similar style to deflection)
+    # TOP SUMMARY TABLE (clickable, like bending/shear)
     # --------------------------------------------------------
     with summary_placeholder.container():
-        st.markdown("## Summary")
-
-        rows = [
+        st.markdown("## Shrinkage — Summary")
+        
+        # Build ROWS for clickable summary table
+        ROWS = [
             {
-                "Component": "Autogenous shrinkage ε_cse",
-                "Strain (×10⁻⁶)": f"{eps_cse*1e6:.1f}",
-                "Comment": "Cl. 3.1.7.2(2),(3) – chemical/autogenous",
+                "uid": "shrinkage_autogenous",
+                "title": "Autogenous shrinkage ε_cse",
+                "value": f"{eps_cse*1e6:.1f} µε",
+                "limit": "—",
+                "util": "—",
+                "status": "—",
+                "ok": None,
+                "tab": "Autogenous shrinkage ε_cse",
             },
             {
-                "Component": "Drying shrinkage ε_csd",
-                "Strain (×10⁻⁶)": f"{eps_csd_t*1e6:.1f}",
-                "Comment": "k₁ · ε*csd – Table 3.1.7.2 & Fig. 3.1.7.2",
+                "uid": "shrinkage_drying",
+                "title": "Drying shrinkage ε_csd",
+                "value": f"{eps_csd_t*1e6:.1f} µε",
+                "limit": "—",
+                "util": "—",
+                "status": "—",
+                "ok": None,
+                "tab": "Drying shrinkage ε_csd",
             },
             {
-                "Component": "Total shrinkage ε_cs",
-                "Strain (×10⁻⁶)": f"{eps_cs_total*1e6:.1f}",
-                "Comment": "ε_cse + ε_csd (design total)",
+                "uid": "shrinkage_total",
+                "title": "Total shrinkage ε_cs",
+                "value": f"{eps_cs_total*1e6:.1f} µε",
+                "limit": "—",
+                "util": "—",
+                "status": "—",
+                "ok": None,
+                "tab": "Total shrinkage ε_cs",
             },
         ]
-
-        summary_df = pd.DataFrame(rows)
-
-        def _highlight_total(row):
-            if "Total" in str(row.get("Component", "")):
-                return ["background-color: #d9ead3"] * len(row)
-            return [""] * len(row)
-
-        styled = summary_df.style.apply(_highlight_total, axis=1)
-        st.dataframe(styled, use_container_width=True, hide_index=True)
-        st.markdown("---")
+        
+        clicked_uid = render_clickable_summary_table(ROWS, key="shrinkage_summary")
+        
+        # Handle clicked row - set state for expanding step
+        if clicked_uid:
+            # Set step_open_{step_id} to True (matches render_expandable_step pattern)
+            st.session_state[f"step_open_{clicked_uid}"] = True
+            st.session_state["shrinkage_pending_scroll_uid"] = clicked_uid
+        
+        page_divider()
 
     # --------------------------------------------------------
     # Tabs (5): geometry, autogenous, drying, total, flow chart
@@ -372,12 +422,8 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
     with tab_geom:
         st.subheader("Notional thickness tₕ – AS 3600 (2Aᵍ / uₑ)")
 
-        # Notional thickness summary and details
-        th_summary = rf"""**Notional thickness $t_h$**
-<span style="color: #666; font-weight: 400;">Includes: Notional thickness calculation for creep and shrinkage</span>
-<span style="font-weight: 400;">Result: $t_h = {th_table:d}$ mm (adopted from calculated {th_raw:.1f} mm)</span>"""
-        
-        th_details = rf"""
+        def render_th():
+            return rf"""
 **Purpose**
 
 Determine the **notional thickness** $t_h$ used in AS 3600 for **creep and shrinkage**.
@@ -421,12 +467,16 @@ _Ref: AS 3600:2018 definition of notional thickness \(t_h = 2 A_g/u_e\);
 Fig. 3.1.7.2 and Table 3.1.7.2._
 """
         
-        clickable_calcbox(
-            uid="shrinkage_th",
-            status=None,
-            summary_html=th_summary,
-            details_html=th_details,
-            height=480
+        render_expandable_step(
+            page_key="shrinkage",
+            step_id="shrinkage_th",
+            title="Notional thickness t_h",
+            summary_md=[
+                rf"Result: $t_h = {th_table:d}$ mm (adopted from calculated {th_raw:.1f} mm)",
+                "Notional thickness calculation for creep and shrinkage"
+            ],
+            status_kind=None,
+            calc_md=render_th(),
         )
 
     # ---------- Tab 2: Autogenous shrinkage ----------
@@ -438,12 +488,8 @@ Fig. 3.1.7.2 and Table 3.1.7.2._
         else:
             eps_cse_final = eps_cse
 
-        # Autogenous shrinkage summary and details
-        auto_summary = rf"""**Autogenous shrinkage $\varepsilon_{{cse}}$**
-<span style="color: #666; font-weight: 400;">Includes: Autogenous (chemical) shrinkage strain calculation</span>
-<span style="font-weight: 400;">Result: $\varepsilon_{{cse}} = {eps_cse*1e6:.1f} \times 10^{{-6}}$ (≈ {eps_cse*1e6:.1f} microstrain)</span>"""
-        
-        auto_details = rf"""
+        def render_autogenous():
+            return rf"""
 **Purpose**
 
 Estimate the **autogenous (chemical) shrinkage** strain $\varepsilon_{{cse}}$,
@@ -498,12 +544,16 @@ Using $f'_c = {fc:.1f}$ MPa and $t = {t_days:.0f}$ days:
 _Ref: AS 3600:2018 Cl. 3.1.7.2(2),(3)._ 
 """
         
-        clickable_calcbox(
-            uid="shrinkage_autogenous",
-            status=None,
-            summary_html=auto_summary,
-            details_html=auto_details,
-            height=520
+        render_expandable_step(
+            page_key="shrinkage",
+            step_id="shrinkage_autogenous",
+            title="Autogenous shrinkage ε_cse",
+            summary_md=[
+                rf"Result: $\varepsilon_{{cse}} = {eps_cse*1e6:.1f}$ με",
+                "Autogenous (chemical) shrinkage strain calculation"
+            ],
+            status_kind=None,
+            calc_md=render_autogenous(),
         )
 
     # ---------- Tab 3: Drying shrinkage ----------
@@ -511,12 +561,8 @@ _Ref: AS 3600:2018 Cl. 3.1.7.2(2),(3)._
         st.subheader("Drying shrinkage ε_csd – AS 3600 Cl. 3.1.7.2(4),(5)")
         env_short = _ENV_LABELS[env_option]
 
-        # Drying shrinkage summary and details
-        dry_summary = rf"""**Drying shrinkage $\varepsilon_{{csd}}$**
-<span style="color: #666; font-weight: 400;">Includes: Drying shrinkage strain calculation with time development</span>
-<span style="font-weight: 400;">Result: $\varepsilon_{{csd}} = {eps_csd_t*1e6:.1f} \times 10^{{-6}}$ (≈ {eps_csd_t*1e6:.1f} microstrain)</span>"""
-        
-        dry_details = rf"""
+        def render_drying():
+            return rf"""
 **Purpose**
 
 Estimate the **drying shrinkage** strain $\varepsilon_{{csd}}(t)$, which develops
@@ -573,24 +619,24 @@ Drying shrinkage at time $t$:
 _Ref: AS 3600:2018 Cl. 3.1.7.2(4),(5); Fig. 3.1.7.2 and Table 3.1.7.2._
 """
         
-        clickable_calcbox(
-            uid="shrinkage_drying",
-            status=None,
-            summary_html=dry_summary,
-            details_html=dry_details,
-            height=580
+        render_expandable_step(
+            page_key="shrinkage",
+            step_id="shrinkage_drying",
+            title="Drying shrinkage ε_csd",
+            summary_md=[
+                rf"Result: $\varepsilon_{{csd}} = {eps_csd_t*1e6:.1f}$ με",
+                "Drying shrinkage strain calculation with time development"
+            ],
+            status_kind=None,
+            calc_md=render_drying(),
         )
 
     # ---------- Tab 4: Total shrinkage ----------
     with tab_total:
         st.subheader("Total shrinkage ε_cs = ε_cse + ε_csd")
 
-        # Total shrinkage summary and details
-        total_summary = rf"""**Total shrinkage $\varepsilon_{{cs}}$**
-<span style="color: #666; font-weight: 400;">Includes: Combination of autogenous and drying shrinkage components</span>
-<span style="font-weight: 400;">Result: $\varepsilon_{{cs}} = {eps_cs_total*1e6:.1f} \times 10^{{-6}}$ (≈ {eps_cs_total*1e6:.1f} microstrain)</span>"""
-        
-        total_details = rf"""
+        def render_total():
+            return rf"""
 **Purpose**
 
 Combine **autogenous** and **drying** shrinkage to obtain the **total design
@@ -637,12 +683,16 @@ shrinkage strain**:
 _Ref: AS 3600:2018 Cl. 3.1.7 – total shrinkage._ 
 """
         
-        clickable_calcbox(
-            uid="shrinkage_total",
-            status=None,
-            summary_html=total_summary,
-            details_html=total_details,
-            height=420
+        render_expandable_step(
+            page_key="shrinkage",
+            step_id="shrinkage_total",
+            title="Total shrinkage ε_cs",
+            summary_md=[
+                rf"Result: $\varepsilon_{{cs}} = {eps_cs_total*1e6:.1f}$ με",
+                "Combination of autogenous and drying shrinkage components"
+            ],
+            status_kind=None,
+            calc_md=render_total(),
         )
 
     # ---------- Tab 5: Flow chart / references ----------
@@ -695,10 +745,15 @@ _Ref: AS 3600:2018 Cl. 3.1.7 – total shrinkage._
   **serviceability** checks.
 """
         )
-
-
-
-
-
+    
+    # Handle pending scroll after all tabs have rendered (like bending)
+    # This ensures all anchors exist before scrolling
+    pending_scroll_uid = st.session_state.get("shrinkage_pending_scroll_uid")
+    if pending_scroll_uid:
+        st.session_state["jump_to"] = pending_scroll_uid
+        scroll_to_jump_after_render()
+        st.session_state["shrinkage_pending_scroll_uid"] = None
+    
+    bind_summary_clicks()
 
 

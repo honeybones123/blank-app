@@ -50,6 +50,22 @@ import streamlit as st
 #  If any of these rules are broken, _validate_contract() will raise.
 #
 # ============================================================
+#
+#  PAGE FILE RULES (copy this banner to the top of every page file)
+#  ============================================================
+#  Every page render function MUST:
+#  1) Call init_shared_session_state() as the FIRST line
+#  2) Never write directly to shared keys (b, D, fc, etc.)
+#  3) Only update shared keys via sync callbacks
+#  4) Never clear query params globally
+#
+#  Example:
+#      def render_mypage():
+#          init_shared_session_state()  # MUST be first
+#          sync_callbacks = get_sync_callbacks()
+#          # ... rest of page code ...
+#
+# ============================================================
 
 
 # ============================================
@@ -441,6 +457,14 @@ TAB_KEYS = {
     "crack_cover_bot": "cover_bot",
     "crack_cover_top": "cover_top",
     
+    # Crack page 2-layer bottom reinforcement (same pattern as inputs/bending)
+    "crk_nb_or_s_bot_1": "nb_or_s_bot_1",
+    "crk_db_bot_1": "db_bot_1",
+    "crk_nb_or_s_bot_2": "nb_or_s_bot_2",
+    "crk_db_bot_2": "db_bot_2",
+    "crk_rowgap_bot": "rowgap_bot",
+    "crk_cover_bot": "cover_bot",
+    
     # ----------------- SFD/BMD PAGE (Unified loading) -----------------
     "load_L": "span_L_m",
     "load_g_udl": "g_udl_kNm_per_m",
@@ -501,18 +525,94 @@ def init_shared_session_state():
     """
     Initialise all shared keys and tab-widget keys in st.session_state.
     This must be called before any page renders widgets.
+    
+    IMPORTANT: This function only sets defaults when keys are missing.
+    It NEVER overwrites existing user values.
+    
+    Global init-once guard: If already initialized, return early to prevent
+    any re-initialization that could interfere with user values.
     """
-    # 1) Shared values
+    # Global init-once guard: if already initialized, return immediately
+    # This prevents any re-initialization that could interfere with user values
+    if st.session_state.get("_shared_state_initialized", False):
+        return
+    
+    # 1) Shared values - only set if missing (never overwrite)
     for key, val in SHARED_DEFAULTS.items():
-        st.session_state.setdefault(key, val)
+        if key not in st.session_state:
+            st.session_state[key] = val
 
-    # 2) Tab-local widget copies – start equal to the shared value
+    # 2) Tab-local widget copies – start equal to the shared value (only if missing)
+    # CRITICAL: Only initialize widget keys if they don't exist (never overwrite user values)
     for widget_key, shared_key in TAB_KEYS.items():
-        if shared_key in st.session_state:
-            st.session_state.setdefault(widget_key, st.session_state[shared_key])
+        # Only set widget key if it doesn't exist AND shared key exists
+        if widget_key not in st.session_state and shared_key in st.session_state:
+            st.session_state[widget_key] = st.session_state[shared_key]
+    
+    # Guardrail: if any page overwrote shared inputs with snippet/demo defaults,
+    # restore the last known good values instead of letting the app collapse.
+    if _is_snippet_defaults_state(st.session_state):
+        _restore_last_good_inputs()
+    else:
+        _snapshot_last_good_inputs()
+    
+    # Mark as initialized (prevents any future re-initialization)
+    st.session_state["_shared_state_initialized"] = True
+    st.session_state["_shared_inited"] = True  # Keep legacy flag for compatibility
 
-    # 3) Ensure derived values are up to date
-    recalc_derived_values()
+
+def sync_shared_from_widgets_once_per_run():
+    """
+    App-level sync: Copy widget values to shared keys (one-way: widget → shared).
+    
+    This ensures that when you navigate away from a page, the widget values
+    (which persist in session_state) are copied to shared keys so other
+    pages see consistent values.
+    
+    CRITICAL: Only syncs when widget key exists AND shared key is missing.
+    This prevents defaults from overwriting user values.
+    
+    Rules:
+    - Only syncs INPUT parameters (those in SHARED_DEFAULTS that have widget mappings)
+    - Never touches derived values (d, Ast_bot, etc.) - those are handled by recalc_derived_values()
+    - Never touches result values (phi_Mu_cap, etc.)
+    - Only copies if widget key exists AND shared key is missing
+    - Never creates new keys beyond SHARED_DEFAULTS
+    - Never modifies widget keys
+    - Never overwrites existing shared key values (to prevent defaults from overwriting user inputs)
+    """
+    # Only sync input parameters (not derived, not results)
+    # We identify inputs by checking if they're in SHARED_DEFAULTS and have widget mappings
+    input_keys = set(SHARED_DEFAULTS.keys())
+    
+    # Exclude derived values (these are recalculated, not synced from widgets)
+    derived_keys = {
+        "d", "do", "Ast_bot", "Ast_top", "nb_bot", "nb_top", "db_bot", "db_top",
+        "s_bot", "s_top", "bot_entry", "top_entry",
+        "sum_duct", "A_duct_total",
+    }
+    
+    # Exclude result values (these are computed, not synced from widgets)
+    result_keys = RESULT_KEYS
+    
+    # Only sync input keys (not derived, not results)
+    syncable_keys = input_keys - derived_keys - result_keys
+    
+    # For each widget → shared mapping, sync ONLY if shared key is missing
+    for widget_key, shared_key in TAB_KEYS.items():
+        # Only sync if this shared key is an input parameter
+        if shared_key not in syncable_keys:
+            continue
+        
+        # Only sync if widget key exists in session_state
+        if widget_key not in st.session_state:
+            continue
+        
+        # CRITICAL: Only copy if shared key is missing (never overwrite existing values)
+        # This prevents widget defaults from overwriting user-set shared values
+        if shared_key not in st.session_state:
+            widget_value = st.session_state[widget_key]
+            st.session_state[shared_key] = widget_value
 
 
 def _decode_bars_or_spacing(entry, b, cover_side, bar_dia):
@@ -857,3 +957,90 @@ def get_param(name: str, default=None):
     if name in st.session_state:
         return st.session_state[name]
     return SHARED_DEFAULTS.get(name, default)
+
+
+def _critical_input_keys():
+    """List of critical input keys that must never be overwritten with snippet defaults."""
+    return [
+        "b", "D", "L",
+        "fc", "fsy", "Ec", "Es",
+        "Mu_star_manual", "Vu_star_manual", "Tu_star",
+        "P_star", "N_star",
+        "cover_bot", "cover_top", "cover_side",
+    ]
+
+
+def _is_snippet_defaults_state(ss) -> bool:
+    """
+    Detect the exact bogus 'snippet defaults' state we keep seeing.
+    We use BOTH a signature match and a sanity-range check.
+    """
+    def f(k, d=0.0):
+        try:
+            return float(ss.get(k, d))
+        except Exception:
+            return d
+
+    b  = f("b")
+    D  = f("D")
+    L  = f("L")
+    fc = f("fc")
+    fsy = f("fsy")
+    Ec = f("Ec")
+    Es = f("Es")
+
+    # Exact signature (from your screenshot)
+    signature = (
+        abs(b - 10.0) < 1e-9 and
+        abs(D - 10.0) < 1e-9 and
+        abs(L - 100.0) < 1e-9 and
+        abs(fc - 2.0) < 1e-9 and
+        abs(fsy - 10.0) < 1e-9 and
+        abs(Ec - 1000.0) < 1e-9 and
+        abs(Es - 10000.0) < 1e-9
+    )
+
+    # Sanity check for mm/MPa typical ranges (detect impossible values)
+    # Values that are too small to be realistic engineering inputs
+    impossible = (b < 50) or (D < 50) or (L < 200) or (fc < 10) or (fsy < 200) or (Ec < 10000) or (Es < 100000)
+
+    # Return True if we match the exact signature OR if values are impossibly small
+    return signature or impossible
+
+
+def _snapshot_last_good_inputs():
+    """Snapshot current input values as 'last good' state."""
+    snap = {k: st.session_state.get(k) for k in _critical_input_keys()}
+    st.session_state["_last_good_inputs"] = snap
+
+
+def _restore_last_good_inputs():
+    """Restore shared and widget keys from last known good snapshot."""
+    snap = st.session_state.get("_last_good_inputs")
+    if not isinstance(snap, dict):
+        return
+
+    # Restore shared keys
+    for k, v in snap.items():
+        if v is not None:
+            st.session_state[k] = v
+
+    # Restore ALL widget keys mapped to these shared keys
+    for widget_key, shared_key in TAB_KEYS.items():
+        if shared_key in snap and snap[shared_key] is not None:
+            st.session_state[widget_key] = snap[shared_key]
+
+
+# ============================================
+# REGRESSION TRIPWIRE
+# ============================================
+
+def assert_shared_state_alive():
+    """
+    Regression tripwire: checks that critical shared state keys exist.
+    If this fails, shared state was lost (bug detection).
+    Call this after routing in app.py to catch state loss immediately.
+    """
+    required = ["b", "D", "L", "fc", "fsy", "Ec", "Es"]
+    if any(k not in st.session_state for k in required):
+        st.error("Shared session state was lost. This is a bug.")

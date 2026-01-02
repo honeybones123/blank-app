@@ -10,7 +10,7 @@ from state_and_helpers import (
     get_sync_callbacks,
     update_results,  # kept for contract / future use
 )
-from widgets_helpers import apply_global_widget_css, number_row, calcbox, clickable_calcbox, render_step, apply_step_expander_css
+from widgets_helpers import apply_global_widget_css, number_row, calcbox, clickable_calcbox, render_step, apply_step_expander_css, page_divider
 
 
 # ------------------------------------------------------------
@@ -257,6 +257,10 @@ def format_L_over_delta(delta_mm, L_mm):
 # ------------------------------------------------------------
 def render_deflection():
     """Deflection page – short-term, long-term, span/depth to AS 3600:2018 Cl. 8.5."""
+    # Handle cross-page navigation from Inputs page
+    from jump_nav import get_jump_uid
+    get_jump_uid()
+    
     apply_global_widget_css()
     _inject_calcbox_css()
     apply_step_expander_css()
@@ -862,7 +866,7 @@ _Ref: AS 3600:2018 Cl. 8.5.3.1(2) & (3) – simplified $I_{{ef}}$ for reinforced
 
         styled = summary_df.style.apply(_highlight_status, axis=1)
         st.dataframe(styled, use_container_width=True)
-        st.markdown("---")
+        page_divider()
 
     # --------------------------------------------------------
     # Remaining tabs use already-computed results
@@ -1231,3 +1235,7 @@ _Ref: AS 3600:2018 Cl. 8.5.4 – deemed-to-conform span-to-depth limits._
         ax.grid(True)
 
         st.pyplot(fig)
+    
+    # Handle scroll after all content is rendered (for cross-page navigation from Inputs)
+    from jump_nav import scroll_to_jump_after_render
+    scroll_to_jump_after_render()

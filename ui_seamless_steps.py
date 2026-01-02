@@ -86,8 +86,14 @@ def render_clickable_summary_table(rows, key_prefix="summary"):
   position: relative;
 }
 
+/* Default neutral background (matches calcbox blue) - only for rows without pass/fail/warn classes */
+.summary-table tbody tr:not(.pass):not(.fail):not(.warn) td {
+  background: rgba(31, 119, 180, 0.08);
+}
+
 tr.pass td { background: rgba(0,128,0,0.12); }
 tr.fail td { background: rgba(255,0,0,0.12); }
+tr.warn td { background: rgba(255,193,7,0.15); }
 
 tr.primary td {
   font-weight: 700;
@@ -219,15 +225,30 @@ def bind_summary_clicks():
   function switchToTab(tabName) {
     if (!tabName) return Promise.resolve();
     
-    // Find radio buttons (Streamlit radio for tabs)
+    // Try to find Streamlit tabs (rendered as buttons with data-baseweb="tab")
+    const tabButtons = doc.querySelectorAll('button[data-baseweb="tab"]');
+    for (const button of tabButtons) {
+      const buttonText = button.textContent.trim();
+      if (buttonText === tabName) {
+        // Check if tab is already selected (has aria-selected="true")
+        if (button.getAttribute('aria-selected') !== 'true') {
+          console.log("Switching to tab:", tabName);
+          button.click();
+          // Wait a bit for tab to switch
+          return new Promise(resolve => setTimeout(resolve, 300));
+        }
+        return Promise.resolve();
+      }
+    }
+    
+    // Fallback: try to find radio buttons (for backward compatibility)
     const radios = doc.querySelectorAll('input[type="radio"]');
     for (const radio of radios) {
       const label = radio.closest('label') || radio.parentElement?.querySelector('label');
       if (label && label.textContent.trim() === tabName) {
         if (!radio.checked) {
-          console.log("Switching to tab:", tabName);
+          console.log("Switching to tab (radio):", tabName);
           radio.click();
-          // Wait a bit for tab to switch
           return new Promise(resolve => setTimeout(resolve, 300));
         }
         return Promise.resolve();
@@ -238,6 +259,13 @@ def bind_summary_clicks():
 
   function findExpanderForUid(uid) {
     console.log("=== Finding expander for uid:", uid, "===");
+    
+    // First, try to find custom details element from clickable_calcbox (id="cb-{uid}")
+    const customDetails = doc.getElementById(`cb-${uid}`);
+    if (customDetails) {
+      console.log("Found custom details element for uid:", uid);
+      return customDetails;
+    }
     
     // Find the marker
     const marker = doc.querySelector(`[data-calc-uid="${uid}"]`);

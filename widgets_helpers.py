@@ -3,6 +3,8 @@ import streamlit.components.v1 as components
 import re
 import html
 
+from state_and_helpers import TAB_KEYS
+
 
 def apply_global_widget_css():
     """Global styling for every page (remove +/- etc.)."""
@@ -100,6 +102,40 @@ def apply_global_widget_css():
         div[data-testid="stNumberInput"] input,
         div[data-testid="stTextInput"] input {
             width: 100% !important;
+        }
+
+        /* Info button styling - small blue "i" icon (no arrow, no emoji) */
+        /* Target buttons inside popover containers (info buttons) */
+        div[data-testid="stPopover"] button[kind="secondary"],
+        div[data-testid="stPopover"] button[data-testid="baseButton-secondary"] {
+            background-color: transparent !important;
+            border: none !important;
+            padding: 0 2px !important;
+            margin: 0 !important;
+            font-size: 0.85rem !important;
+            color: #1f77b4 !important;
+            font-weight: 400 !important;
+            min-width: auto !important;
+            width: auto !important;
+            height: auto !important;
+            line-height: 1.2 !important;
+            cursor: pointer !important;
+            box-shadow: none !important;
+        }
+        div[data-testid="stPopover"] button[kind="secondary"]:hover,
+        div[data-testid="stPopover"] button[data-testid="baseButton-secondary"]:hover {
+            color: #155a8a !important;
+            background-color: transparent !important;
+        }
+        /* Remove any caret/arrow from popover buttons */
+        div[data-testid="stPopover"] button::after,
+        div[data-testid="stPopover"] button::before {
+            display: none !important;
+        }
+        /* Ensure popover trigger buttons are small and inline */
+        div[data-testid="stPopover"] {
+            display: inline-block !important;
+            vertical-align: middle !important;
         }
         </style>
         """,
@@ -433,10 +469,17 @@ def number_row(label: str, key: str, default: float, sync_callbacks=None, help_t
         if sync_callbacks and isinstance(sync_callbacks, dict) and key in sync_callbacks:
             on_change_callback = sync_callbacks[key]
         
+        # If this widget key maps to a shared key, prefer the shared value when widget key is missing
+        shared_key = TAB_KEYS.get(key)
+        if shared_key is not None:
+            effective_default = st.session_state.get(shared_key, default)
+        else:
+            effective_default = default
+        
         value = st.number_input(
             label="",
             key=key,
-            value=float(default),
+            value=float(st.session_state.get(key, effective_default)),
             step=1.0,
             format="%.1f",
             label_visibility="collapsed",
@@ -445,15 +488,69 @@ def number_row(label: str, key: str, default: float, sync_callbacks=None, help_t
     return value
 
 
-def show_reo_message(msg_key: str, layer: str = ""):
+def show_reo_message(msg_key: str, layer: str = "", s_min: float = None):
     """Show a reinforcement message based on session state key."""
-    messages = {
-        "auto_layer2": f"💡 **Auto-placed {layer}**: The second layer was automatically added to meet spacing requirements.",
-        "layer2_overwritten": f"⚠️ **{layer} overwritten**: You manually changed the second layer, so auto-placement is disabled.",
-    }
-    msg = messages.get(msg_key, "")
+    if msg_key == "spacing_clamped":
+        s_min_val = s_min if s_min is not None else 25.0
+        msg = f"⚠️ **{layer} spacing clamped**: Minimum spacing of {s_min_val:.1f} mm applied to meet code requirements."
+    else:
+        messages = {
+            "auto_layer2": f"💡 **Auto-placed {layer}**: The second layer was automatically added to meet spacing requirements.",
+            "layer2_overwritten": f"⚠️ **{layer} overwritten**: You manually changed the second layer, so auto-placement is disabled.",
+        }
+        msg = messages.get(msg_key, "")
+    
     if msg:
         st.info(msg)
+
+
+def info_i_button(content=None, help_text=None, key=None, use_container_width=False):
+    """
+    Render a small blue "i" icon info button that opens a popover.
+    
+    Args:
+        content: Callable function that renders content inside the popover, or None if using help_text
+        help_text: Optional help text (alternative to content function)
+        key: Optional unique key for the popover (not supported by st.popover, ignored)
+        use_container_width: Whether to use container width (for content function)
+    
+    Returns:
+        The popover context manager
+    """
+    # Use "i" as the trigger text (lowercase i, no emoji, no arrow)
+    trigger_text = "i"
+    
+    # Create popover with appropriate parameters
+    # Note: st.popover() doesn't support 'key' parameter, so we ignore it
+    if help_text:
+        return st.popover(trigger_text, help=help_text)
+    else:
+        kwargs = {}
+        if use_container_width:
+            kwargs["use_container_width"] = use_container_width
+        return st.popover(trigger_text, **kwargs)
+
+
+def page_divider():
+    """
+    Render a consistent page divider between major sections.
+    
+    Use page_divider() for all section breaks. Do not insert raw dividers elsewhere.
+    This ensures consistent spacing and visual rhythm across all pages.
+    
+    Allowed locations:
+    - Between major page sections (Summary → Steps, Inputs → Results)
+    - Between top-level headings (st.header / page sections)
+    - Between major design check blocks
+    
+    Not allowed:
+    - Between individual widgets
+    - Between rows in a column
+    - Inside expandable steps
+    - Inside calc boxes
+    - Before or after info popovers
+    """
+    st.divider()
 
 
 def calcbox(md: str, status: str | None = None, uid: str | None = None):
@@ -952,6 +1049,8 @@ def render_jumpable_step(
     
     # anchor for scroll
     st.markdown(f"<div id='calc_{uid}'></div>", unsafe_allow_html=True)
+    # marker that JS uses to find the next expander
+    st.markdown(f"<div data-calc-uid='{uid}'></div>", unsafe_allow_html=True)
 
     with st.expander(f"**{title}**  \n{summary_md}", expanded=expanded):
         # Marker span inside expander for CSS targeting

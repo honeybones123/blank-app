@@ -15,7 +15,11 @@ from widgets_helpers import (
     apply_calcbox_css,
     number_row,
     calcbox,
+    page_divider,
+    step_expander_calcbox,
+    apply_step_summary_expander_css,
 )
+from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks
 
 
 # ---------------------------------------------------
@@ -489,7 +493,6 @@ def render_derivation(case, L, params, results):
                 "- Right overhang end: **free**"
             )
 
-        st.markdown("---")
         st.markdown("### Step 2 – Reaction forces")
 
         if case == "Simple beam – UDL over entire span":
@@ -597,7 +600,6 @@ def render_derivation(case, L, params, results):
             )
             st.markdown(f"- R_A = `{RA:.3g}` kN (down)  \n- R_B = `{RB:.3g}` kN (up)")
 
-        st.markdown("---")
         st.markdown("### Step 3 – Shear function \(V(x)\)")
 
         if case == "Simple beam – UDL over entire span":
@@ -658,7 +660,6 @@ def render_derivation(case, L, params, results):
                 r"\end{cases}"
             )
 
-        st.markdown("---")
         st.markdown("### Step 4 – Moment function \(M(x)\)")
 
         if case == "Simple beam – UDL over entire span":
@@ -748,9 +749,21 @@ def render_sfd_bmd_page():
           sfd_Vmax_abs_kN
     """
 
+    # Handle cross-page navigation from Inputs page
+    from jump_nav import get_jump_uid
+    get_jump_uid()
+
     apply_global_widget_css()
     apply_calcbox_css()
     sync_callbacks = get_sync_callbacks()
+
+    # Define stable UIDs for each calc box (step)
+    EQ_SLS_UID = {
+        "step1": "eq_sls_step1_support",
+        "step2": "eq_sls_step2_reactions",
+        "step3": "eq_sls_step3_shear_vx",
+        "step4": "eq_sls_step4_moment_mx",
+    }
 
     st.title("Shear & Moment Diagrams (Design / Teaching)")
 
@@ -951,7 +964,7 @@ def render_sfd_bmd_page():
             a_m=float(a) if a is not None else None,
         )
 
-    st.markdown("---")
+    page_divider()
 
     st.markdown(
         """
@@ -1110,9 +1123,57 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
     V_max_abs = float(np.max(np.abs(V))) if V is not None else 0.0
 
     # ---------------------------------------------------
+    # Build summary rows and render clickable summary table
+    # ---------------------------------------------------
+    # Determine support type for summary
+    support_type = "—"
+    if case.startswith("Simple beam"):
+        support_type = "Pinned–Pinned"
+    elif case.startswith("Cantilever"):
+        support_type = "Fixed–Free"
+    elif case == "Overhanging beam – right overhang with point load at free end":
+        support_type = "Pinned–Pinned (overhang)"
+
+    # Build summary rows for clickable table
+    rows_summary = [
+        {"Check": "Support conditions", "Value": support_type, "Status": "OK"},
+        {"Check": "Reactions", "Value": "Derived", "Status": "OK"},
+        {"Check": "Shear derivation", "Value": f"|V|_max = {V_max_abs:.2f} kN", "Status": "OK"},
+        {"Check": "Moment derivation", "Value": f"|M|_max = {M_max_abs:.2f} kNm", "Status": "OK"},
+    ]
+
+    check_to_uid = {
+        "Support conditions": EQ_SLS_UID["step1"],
+        "Reactions": EQ_SLS_UID["step2"],
+        "Shear derivation": EQ_SLS_UID["step3"],
+        "Moment derivation": EQ_SLS_UID["step4"],
+    }
+
+    ROWS = []
+    for r in rows_summary:
+        status_str = r.get("Status", "")
+        ok = True if status_str == "OK" else (False if status_str in ("Fail", "NG", "Not OK") else None)
+
+        ROWS.append({
+            "title": r["Check"],
+            "value": r.get("Value", "—"),
+            "limit": r.get("Limit", ""),
+            "util": r.get("Utilisation", "—"),
+            "status": status_str,
+            "ok": ok,
+            "uid": check_to_uid[r["Check"]],
+            "tab": "SLS",
+        })
+
+    # Render clickable summary table
+    with summary_placeholder.container():
+        st.markdown("## Summary")
+        render_clickable_summary_table(ROWS, key_prefix="design_summary")
+
+    # ---------------------------------------------------
     # Load diagram – directly under inputs
     # ---------------------------------------------------
-    st.markdown("---")
+    page_divider()
     st.subheader("Load diagram (SLS loads)")
 
     fig_load = plot_load_diagram_plotly(case, beam_length, params)
@@ -1123,42 +1184,68 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
     # ---------------------------------------------------
     st.subheader("Equilibrium derivation (SLS)")
 
-    # STEP 1 – support conditions
+    # STEP 1 – Support conditions (expandable)
     step1_md = ""
-
+    step1_summary = ""
+    
     if case.startswith("Simple beam"):
-        step1_md = """
-**Step 1 – Support conditions**
-
-- Left support: **pinned**  
-
-- Right support: **pinned**  
-
-For a simply supported beam of span \\(L\\), the reactions act vertically at each support.
+        step1_summary = f"Step 1 – Support conditions | Simply supported (pinned–pinned) beam of span $L = {L:.1f}$ m → vertical reactions at supports"
+        step1_md = f"""
+**1) Inputs**  \n
+- Left support: pinned  \n
+- Right support: pinned  \n
+- Span: $L = {L:.3g}\\, \\text{{m}}$  \n\n
+**2) Governing equations**  \n
+- $\\sum V = 0$  \n
+- $\\sum M = 0$  \n\n
+**3) Substitute / derive**  \n
+- For a simply supported beam, reactions act vertically at each support.  \n\n
+**4) Result**  \n
+- Proceed to solve for $R_A$ and $R_B$ from equilibrium.
 """
     elif case.startswith("Cantilever"):
-        step1_md = """
-**Step 1 – Support conditions**
-
-- Left support: **fixed**  
-
-- Right end: **free**  
-
-A cantilever has a fixed end moment and shear at the support and zero reactions at the free end.
+        step1_summary = f"Step 1 – Support conditions | Cantilever (fixed–free) beam of span $L = {L:.1f}$ m → fixed end moment and shear at support, zero reactions at free end"
+        step1_md = f"""
+**1) Inputs**  \n
+- Left support: fixed  \n
+- Right end: free  \n
+- Span: $L = {L:.3g}\\, \\text{{m}}$  \n\n
+**2) Governing equations**  \n
+- $\\sum V = 0$  \n
+- $\\sum M = 0$  \n\n
+**3) Substitute / derive**  \n
+- A cantilever has a fixed end moment and shear at the support and zero reactions at the free end.  \n\n
+**4) Result**  \n
+- Proceed to solve for reactions at the fixed end.
 """
     elif case == "Overhanging beam – right overhang with point load at free end":
         L_main = params.get("L_main", L)
+        step1_summary = f"Step 1 – Support conditions | Overhanging beam with pinned supports (span $L = {L_main:.1f}$ m) and free overhang end → reactions at pinned supports"
         step1_md = f"""
-**Step 1 – Support conditions**
-
-- Support A (left): **pinned**  
-
-- Support B (internal): **pinned** at distance \\(L = {L_main:.3g}\\,\\text{{m}}\\) from A  
-
-- Right overhang end: **free** at \\(x = L + a\\)
+**1) Inputs**  \n
+- Support A (left): pinned  \n
+- Support B (internal): pinned at distance $L = {L_main:.3g}\\, \\text{{m}}$ from A  \n
+- Right overhang end: free at $x = L + a$  \n\n
+**2) Governing equations**  \n
+- $\\sum V = 0$  \n
+- $\\sum M = 0$  \n\n
+**3) Substitute / derive**  \n
+- Reactions act at the pinned supports.  \n\n
+**4) Result**  \n
+- Proceed to solve for $R_A$ and $R_B$ from equilibrium.
 """
-
-    calcbox(step1_md)
+    else:
+        step1_md = ""
+        step1_summary = ""
+    
+    if step1_md and step1_summary:
+        step1_uid = EQ_SLS_UID["step1"]
+        step_expander_calcbox(
+            uid=step1_uid,
+            summary_line=step1_summary,
+            details_md=step1_md,
+            status=None,
+        )
 
     # STEP 2 – reactions (case-by-case)
     step2_md = ""
@@ -1166,55 +1253,46 @@ A cantilever has a fixed end moment and shear at the support and zero reactions 
     if case == "Simple beam – UDL over entire span":
         w = params["w"]
         R = results_local.get("R", w * L / 2.0)
+        wL_val = w * L
+        
+        step2_summary = f"Step 2 – Reactions from equilibrium | Use $\\sum V=0$ and $\\sum M=0$: $R_1 = R_2 = {R:.1f}$ kN"
         step2_md = f"""
-**Step 2 – Reactions from equilibrium**
-
-For a UDL \\(w\\) over \\(0 \\le x \\le L\\):  
-
-\\[
-\\sum M_A = 0: \\quad R_2 L - wL \\cdot \\frac{{L}}{{2}} = 0
-\\Rightarrow R_2 = \\frac{{wL}}{{2}}
-\\]
-
-\\[
-\\sum V = 0: \\quad R_1 + R_2 - wL = 0
-\\Rightarrow R_1 = \\frac{{wL}}{{2}}
-\\]
-
-For the selected data:
-
-- \\(w = {w:.3g}\\,\\text{{kN/m}}\\)  
-
-- \\(L = {L:.3g}\\,\\text{{m}}\\)  
-
-so numerically \\(R_1 = R_2 = \\dfrac{{wL}}{{2}} = {R:.3g}\\,\\text{{kN}}\\).
+**1) Inputs**  \n
+- UDL: $w = {w:.3g}\\, \\text{{kN/m}}$  \n
+- Span: $L = {L:.3g}\\, \\text{{m}}$  \n
+- Total load: $wL = {wL_val:.3g}\\, \\text{{kN}}$  \n\n
+**2) Governing equations**  \n
+- $\\sum V = 0: \\quad R_1 + R_2 - wL = 0$  \n
+- $\\sum M_A = 0: \\quad R_2 L - wL \\cdot \\frac{{L}}{{2}} = 0$  \n\n
+**3) Substitute / derive**  \n
+From moment equilibrium about A:  \n
+$$R_2 = \\frac{{wL}}{{2}} = \\frac{{{w:.3g} \\times {L:.3g}}}{{2}} = \\frac{{{wL_val:.3g}}}{{2}} = {R:.3g}\\, \\text{{kN}}$$  \n
+Substituting into vertical equilibrium:  \n
+$$R_1 = wL - R_2 = {wL_val:.3g} - {R:.3g} = {R:.3g}\\, \\text{{kN}}$$  \n\n
+**4) Result**  \n
+$R_1 = R_2 = {R:.3g}\\, \\text{{kN}}$ (both reactions equal for symmetric loading).
 """
 
     elif case == "Simple beam – point load at centre":
         P = params["P"]
         R1 = results_local.get("R1", P / 2.0)
+        
+        step2_summary = f"Step 2 – Reactions from equilibrium | Point load $P = {P:.1f}$ kN at midspan: $R_1 = R_2 = {R1:.1f}$ kN"
         step2_md = f"""
-**Step 2 – Reactions from equilibrium**
-
-Point load \\(P\\) at midspan \\(a = L/2\\):  
-
-\\[
-\\sum M_A = 0: \\quad R_2 L - P \\cdot \\frac{{L}}{{2}} = 0
-\\Rightarrow R_2 = \\frac{{P}}{{2}}
-\\]
-
-\\[
-\\sum V = 0: \\quad R_1 + R_2 - P = 0
-\\Rightarrow R_1 = \\frac{{P}}{{2}}
-\\]
-
-For the selected data:
-
-- \\(P = {P:.3g}\\,\\text{{kN}}\\)  
-
-- \\(L = {L:.3g}\\,\\text{{m}}\\)
-
-so numerically \\(R_1 = R_2 = {R1:.3g}\\,\\text{{kN}}\\).
+**1) Inputs**  \n
+- Point load: $P = {P:.3g}\\, \\text{{kN}}$  \n
+- Span: $L = {L:.3g}\\, \\text{{m}}$  \n
+- Load position: $a = L/2 = {L/2:.3g}\\, \\text{{m}}$ (midspan)  \n\n
+**2) Governing equations**  \n
+- $\\sum V = 0: \\quad R_1 + R_2 - P = 0$  \n
+- $\\sum M_A = 0: \\quad R_2 L - P \\cdot \\frac{{L}}{{2}} = 0$  \n\n
+**3) Substitute / derive**  \n
+From moment equilibrium about A:  \n
+$$R_2 = \\frac{{P}}{{2}} = \\frac{{{P:.3g}}}{{2}} = {R1:.3g}\\, \\text{{kN}}$$  \n
+Substituting into vertical equilibrium:  \n
+$$R_1 = P - R_2 = {P:.3g} - {R1:.3g} = {R1:.3g}\\, \\text{{kN}}$$  \n\n
+**4) Result**  \n
+$R_1 = R_2 = {R1:.3g}\\, \\text{{kN}}$ (equal reactions for symmetric loading).
 """
 
     elif case == "Simple beam – point load at distance a from left":
@@ -1224,178 +1302,187 @@ so numerically \\(R_1 = R_2 = {R1:.3g}\\,\\text{{kN}}\\).
             a_val = L / 3
         else:
             a_val = float(a_val)
-        R1 = results_local.get("R1", 0.0)
-        R2 = results_local.get("R2", 0.0)
+        R1 = results_local.get("R1", P * (L - a_val) / L)
+        R2 = results_local.get("R2", P * a_val / L)
+        b_val = L - a_val
+        
+        step2_summary = f"Step 2 – Reactions from equilibrium | Point load $P = {P:.1f}$ kN at $a = {a_val:.1f}$ m: $R_1 = {R1:.1f}$ kN, $R_2 = {R2:.1f}$ kN"
         step2_md = f"""
-**Step 2 – Reactions from equilibrium**
-
-Point load \\(P\\) at distance \\(a\\) from left support:  
-
-\\[
-\\sum M_A = 0: \\quad R_2 L - P a = 0
-\\Rightarrow R_2 = \\frac{{Pa}}{{L}}
-\\]
-
-\\[
-\\sum V = 0: \\quad R_1 + R_2 - P = 0
-\\Rightarrow R_1 = \\frac{{Pb}}{{L}} = \\frac{{P(L-a)}}{{L}}
-\\]
-
-For the selected data:
-
-- \\(P = {P:.3g}\\,\\text{{kN}}\\)  
-
-- \\(L = {L:.3g}\\,\\text{{m}}\\)  
-
-- \\(a = {a_val:.3g}\\,\\text{{m}}\\)
-
-so numerically \\(R_1 = {R1:.3g}\\,\\text{{kN}}\\), \\(R_2 = {R2:.3g}\\,\\text{{kN}}\\).
+**1) Inputs**  \n
+- Point load: $P = {P:.3g}\\, \\text{{kN}}$  \n
+- Span: $L = {L:.3g}\\, \\text{{m}}$  \n
+- Distance from left: $a = {a_val:.3g}\\, \\text{{m}}$  \n
+- Distance from right: $b = L - a = {b_val:.3g}\\, \\text{{m}}$  \n\n
+**2) Governing equations**  \n
+- $\\sum V = 0: \\quad R_1 + R_2 - P = 0$  \n
+- $\\sum M_A = 0: \\quad R_2 L - P a = 0$  \n\n
+**3) Substitute / derive**  \n
+From moment equilibrium about A:  \n
+$$R_2 = \\frac{{Pa}}{{L}} = \\frac{{{P:.3g} \\times {a_val:.3g}}}{{{L:.3g}}} = \\frac{{{P*a_val:.3g}}}{{{L:.3g}}} = {R2:.3g}\\, \\text{{kN}}$$  \n
+Substituting into vertical equilibrium:  \n
+$$R_1 = P - R_2 = {P:.3g} - {R2:.3g} = {R1:.3g}\\, \\text{{kN}}$$  \n
+Alternatively: $R_1 = \\frac{{Pb}}{{L}} = \\frac{{{P:.3g} \\times {b_val:.3g}}}{{{L:.3g}}} = {R1:.3g}\\, \\text{{kN}}$  \n\n
+**4) Result**  \n
+$R_1 = {R1:.3g}\\, \\text{{kN}}$, $R_2 = {R2:.3g}\\, \\text{{kN}}$.
 """
 
     elif case == "Simple beam – partial UDL from left (length a)":
         w = params["w"]
         a_udl = params["a_udl"]
-        R1 = results_local.get("R1", 0.0)
-        R2 = results_local.get("R2", 0.0)
+        wa_val = w * a_udl
+        R2 = results_local.get("R2", w * a_udl**2 / (2 * L))
+        R1 = results_local.get("R1", wa_val - R2)
+        
+        step2_summary = f"Step 2 – Reactions from equilibrium | Partial UDL $w = {w:.1f}$ kN/m over $a = {a_udl:.1f}$ m: $R_1 = {R1:.1f}$ kN, $R_2 = {R2:.1f}$ kN"
         step2_md = f"""
-**Step 2 – Reactions from equilibrium**
-
-Partial UDL \\(w\\) over length \\(a\\) from left:  
-
-\\[
-\\sum M_A = 0: \\quad R_2 L - w a \\cdot \\frac{{a}}{{2}} = 0
-\\Rightarrow R_2 = \\frac{{w a^2}}{{2L}}
-\\]
-
-\\[
-\\sum V = 0: \\quad R_1 + R_2 - w a = 0
-\\Rightarrow R_1 = w a - R_2
-\\]
-
-For the selected data:
-
-- \\(w = {w:.3g}\\,\\text{{kN/m}}\\)  
-
-- \\(L = {L:.3g}\\,\\text{{m}}\\)  
-
-- \\(a = {a_udl:.3g}\\,\\text{{m}}\\)
-
-so numerically \\(R_1 = {R1:.3g}\\,\\text{{kN}}\\), \\(R_2 = {R2:.3g}\\,\\text{{kN}}\\).
+**1) Inputs**  \n
+- UDL: $w = {w:.3g}\\, \\text{{kN/m}}$  \n
+- Span: $L = {L:.3g}\\, \\text{{m}}$  \n
+- UDL length: $a = {a_udl:.3g}\\, \\text{{m}}$  \n
+- Total partial load: $wa = {wa_val:.3g}\\, \\text{{kN}}$  \n\n
+**2) Governing equations**  \n
+- $\\sum V = 0: \\quad R_1 + R_2 - wa = 0$  \n
+- $\\sum M_A = 0: \\quad R_2 L - wa \\cdot \\frac{{a}}{{2}} = 0$  \n\n
+**3) Substitute / derive**  \n
+From moment equilibrium about A:  \n
+$$R_2 = \\frac{{wa^2}}{{2L}} = \\frac{{{w:.3g} \\times {a_udl:.3g}^2}}{{2 \\times {L:.3g}}} = \\frac{{{w*a_udl**2:.3g}}}{{{2*L:.3g}}} = {R2:.3g}\\, \\text{{kN}}$$  \n
+Substituting into vertical equilibrium:  \n
+$$R_1 = wa - R_2 = {wa_val:.3g} - {R2:.3g} = {R1:.3g}\\, \\text{{kN}}$$  \n\n
+**4) Result**  \n
+$R_1 = {R1:.3g}\\, \\text{{kN}}$, $R_2 = {R2:.3g}\\, \\text{{kN}}$.
 """
 
     elif case == "Cantilever – point load at free end":
         P = params["P"]
+        V_fixed = P
+        M_fixed = P * L
+        
+        step2_summary = f"Step 2 – Reactions from equilibrium | Point load $P = {P:.1f}$ kN at free end: $V = {V_fixed:.1f}$ kN, $M = {M_fixed:.1f}$ kNm (hogging)"
         step2_md = f"""
-**Step 2 – Reactions from equilibrium**
-
-At the fixed support:  
-
-\\[
-\\sum V = 0: \\quad V_{{\\text{{fixed}}}} - P = 0
-\\Rightarrow V_{{\\text{{fixed}}}} = P
-\\]
-
-\\[
-\\sum M_{{\\text{{fixed}}}} = 0: \\quad M_{{\\text{{fixed}}}} - P L = 0
-\\Rightarrow M_{{\\text{{fixed}}}} = P L
-\\]
-
-For the selected data:
-
-- \\(P = {P:.3g}\\,\\text{{kN}}\\)  
-
-- \\(L = {L:.3g}\\,\\text{{m}}\\)
-
-so at the fixed support: shear = \\({P:.3g}\\,\\text{{kN}}\\) (up), hogging moment = \\({P*L:.3g}\\,\\text{{kNm}}\\).
+**1) Inputs**  \n
+- Point load: $P = {P:.3g}\\, \\text{{kN}}$  \n
+- Span: $L = {L:.3g}\\, \\text{{m}}$  \n\n
+**2) Governing equations**  \n
+- $\\sum V = 0: \\quad V_{{\\text{{fixed}}}} - P = 0$  \n
+- $\\sum M_{{\\text{{fixed}}}} = 0: \\quad M_{{\\text{{fixed}}}} - P L = 0$  \n\n
+**3) Substitute / derive**  \n
+From vertical equilibrium:  \n
+$$V_{{\\text{{fixed}}}} = P = {P:.3g}\\, \\text{{kN}}$$  \n
+From moment equilibrium:  \n
+$$M_{{\\text{{fixed}}}} = P L = {P:.3g} \\times {L:.3g} = {M_fixed:.3g}\\, \\text{{kNm}}$$  \n\n
+**4) Result**  \n
+At the fixed support: shear = $V = {V_fixed:.3g}\\, \\text{{kN}}$ (upward), hogging moment = $M = {M_fixed:.3g}\\, \\text{{kNm}}$.
 """
 
     elif case == "Cantilever – point load at distance a from fixed end":
         P = params["P"]
         a_cant = params["a_cant"]
+        V_fixed = P
+        M_fixed = P * a_cant
+        
+        step2_summary = f"Step 2 – Reactions from equilibrium | Point load $P = {P:.1f}$ kN at $a = {a_cant:.1f}$ m: $V = {V_fixed:.1f}$ kN, $M = {M_fixed:.1f}$ kNm (hogging)"
         step2_md = f"""
-**Step 2 – Reactions from equilibrium**
-
-At the fixed support:  
-
-\\[
-\\sum V = 0: \\quad V_{{\\text{{fixed}}}} - P = 0
-\\Rightarrow V_{{\\text{{fixed}}}} = P
-\\]
-
-\\[
-\\sum M_{{\\text{{fixed}}}} = 0: \\quad M_{{\\text{{fixed}}}} - P a = 0
-\\Rightarrow M_{{\\text{{fixed}}}} = P a
-\\]
-
-For the selected data:
-
-- \\(P = {P:.3g}\\,\\text{{kN}}\\)  
-
-- \\(L = {L:.3g}\\,\\text{{m}}\\)  
-
-- \\(a = {a_cant:.3g}\\,\\text{{m}}\\)
-
-so at the fixed support: shear = \\({P:.3g}\\,\\text{{kN}}\\) (up), hogging moment = \\({P*a_cant:.3g}\\,\\text{{kNm}}\\).
+**1) Inputs**  \n
+- Point load: $P = {P:.3g}\\, \\text{{kN}}$  \n
+- Span: $L = {L:.3g}\\, \\text{{m}}$  \n
+- Distance from fixed end: $a = {a_cant:.3g}\\, \\text{{m}}$  \n\n
+**2) Governing equations**  \n
+- $\\sum V = 0: \\quad V_{{\\text{{fixed}}}} - P = 0$  \n
+- $\\sum M_{{\\text{{fixed}}}} = 0: \\quad M_{{\\text{{fixed}}}} - P a = 0$  \n\n
+**3) Substitute / derive**  \n
+From vertical equilibrium:  \n
+$$V_{{\\text{{fixed}}}} = P = {P:.3g}\\, \\text{{kN}}$$  \n
+From moment equilibrium:  \n
+$$M_{{\\text{{fixed}}}} = P a = {P:.3g} \\times {a_cant:.3g} = {M_fixed:.3g}\\, \\text{{kNm}}$$  \n\n
+**4) Result**  \n
+At the fixed support: shear = $V = {V_fixed:.3g}\\, \\text{{kN}}$ (upward), hogging moment = $M = {M_fixed:.3g}\\, \\text{{kNm}}$.
 """
 
     elif case == "Cantilever – UDL over entire span":
         w = params["w"]
+        wL_val = w * L
+        V_fixed = wL_val
+        M_fixed = w * L**2 / 2.0
+        
+        step2_summary = f"Step 2 – Reactions from equilibrium | UDL $w = {w:.1f}$ kN/m over $L = {L:.1f}$ m: $V = {V_fixed:.1f}$ kN, $M = {M_fixed:.1f}$ kNm (hogging)"
         step2_md = f"""
-**Step 2 – Reactions from equilibrium**
-
-At the fixed support:  
-
-\\[
-\\sum V = 0: \\quad V_{{\\text{{fixed}}}} - wL = 0
-\\Rightarrow V_{{\\text{{fixed}}}} = wL
-\\]
-
-\\[
-\\sum M_{{\\text{{fixed}}}} = 0: \\quad M_{{\\text{{fixed}}}} - wL \\cdot \\frac{{L}}{{2}} = 0
-\\Rightarrow M_{{\\text{{fixed}}}} = \\frac{{wL^2}}{{2}}
-\\]
-
-For the selected data:
-
-- \\(w = {w:.3g}\\,\\text{{kN/m}}\\)  
-
-- \\(L = {L:.3g}\\,\\text{{m}}\\)
-
-so at the fixed support: shear = \\({w*L:.3g}\\,\\text{{kN}}\\) (up), hogging moment = \\({0.5*w*L**2:.3g}\\,\\text{{kNm}}\\).
+**1) Inputs**  \n
+- UDL: $w = {w:.3g}\\, \\text{{kN/m}}$  \n
+- Span: $L = {L:.3g}\\, \\text{{m}}$  \n
+- Total load: $wL = {wL_val:.3g}\\, \\text{{kN}}$  \n\n
+**2) Governing equations**  \n
+- $\\sum V = 0: \\quad V_{{\\text{{fixed}}}} - wL = 0$  \n
+- $\\sum M_{{\\text{{fixed}}}} = 0: \\quad M_{{\\text{{fixed}}}} - wL \\cdot \\frac{{L}}{{2}} = 0$  \n\n
+**3) Substitute / derive**  \n
+From vertical equilibrium:  \n
+$$V_{{\\text{{fixed}}}} = wL = {w:.3g} \\times {L:.3g} = {V_fixed:.3g}\\, \\text{{kN}}$$  \n
+From moment equilibrium:  \n
+$$M_{{\\text{{fixed}}}} = \\frac{{wL^2}}{{2}} = \\frac{{{w:.3g} \\times {L:.3g}^2}}{{2}} = \\frac{{{w*L**2:.3g}}}{{2}} = {M_fixed:.3g}\\, \\text{{kNm}}$$  \n\n
+**4) Result**  \n
+At the fixed support: shear = $V = {V_fixed:.3g}\\, \\text{{kN}}$ (upward), hogging moment = $M = {M_fixed:.3g}\\, \\text{{kNm}}$.
 """
 
     elif case == "Overhanging beam – right overhang with point load at free end":
         P = params["P"]
         L_main = params.get("L_main", L)
         a_over = params.get("a_overhang", 0.0)
-        RA = results_local.get("RA", 0.0)
-        RB = results_local.get("RB", 0.0)
+        RA = results_local.get("RA", -P * a_over / L_main)
+        RB = results_local.get("RB", P * (L_main + a_over) / L_main)
+        L_plus_a = L_main + a_over
+        
+        step2_summary = f"Step 2 – Reactions from equilibrium | Point load $P = {P:.1f}$ kN on overhang: $R_A = {RA:.1f}$ kN, $R_B = {RB:.1f}$ kN"
         step2_md = f"""
-**Step 2 – Reactions from equilibrium**
-
-\\[
-\\sum M_A = 0: \\quad R_B L - P(L+a) = 0
-\\Rightarrow R_B = \\frac{{P(L+a)}}{{L}}
-\\]
-
-\\[
-\\sum V = 0: \\quad R_A + R_B - P = 0
-\\Rightarrow R_A = P - R_B = -\\frac{{Pa}}{{L}}
-\\]
-
-For the selected data:
-
-- \\(P = {P:.3g}\\,\\text{{kN}}\\)  
-
-- \\(L = {L_main:.3g}\\,\\text{{m}}\\) (span between supports)
-
-- \\(a = {a_over:.3g}\\,\\text{{m}}\\) (overhang)
-
-so numerically \\(R_A = {RA:.3g}\\,\\text{{kN}}\\) (down), \\(R_B = {RB:.3g}\\,\\text{{kN}}\\) (up).
+**1) Inputs**  \n
+- Point load: $P = {P:.3g}\\, \\text{{kN}}$  \n
+- Span between supports: $L = {L_main:.3g}\\, \\text{{m}}$  \n
+- Overhang length: $a = {a_over:.3g}\\, \\text{{m}}$  \n
+- Total distance: $L + a = {L_plus_a:.3g}\\, \\text{{m}}$  \n\n
+**2) Governing equations**  \n
+- $\\sum V = 0: \\quad R_A + R_B - P = 0$  \n
+- $\\sum M_A = 0: \\quad R_B L - P(L+a) = 0$  \n\n
+**3) Substitute / derive**  \n
+From moment equilibrium about A:  \n
+$$R_B = \\frac{{P(L+a)}}{{L}} = \\frac{{{P:.3g} \\times {L_plus_a:.3g}}}{{{L_main:.3g}}} = \\frac{{{P*L_plus_a:.3g}}}{{{L_main:.3g}}} = {RB:.3g}\\, \\text{{kN}}$$  \n
+Substituting into vertical equilibrium:  \n
+$$R_A = P - R_B = {P:.3g} - {RB:.3g} = {RA:.3g}\\, \\text{{kN}}$$  \n
+Note: $R_A$ is negative (downward) when the overhang load creates upward reaction at B.  \n\n
+**4) Result**  \n
+$R_A = {RA:.3g}\\, \\text{{kN}}$ (downward), $R_B = {RB:.3g}\\, \\text{{kN}}$ (upward).
 """
 
-    if step2_md:
-        calcbox(step2_md)
+    # STEP 2 – Reactions (expandable)
+    step2_summary_exists = False
+    try:
+        _ = step2_summary
+        step2_summary_exists = True
+    except NameError:
+        pass
+    
+    if step2_md and step2_summary_exists:
+        step2_uid = EQ_SLS_UID["step2"]
+        # Remove any summary line from details if present
+        step2_details = step2_md
+        if "*Two-line summary:*" in step2_details or "**Step 2 – Reactions from equilibrium**" in step2_details.split("\n")[0]:
+            lines = step2_details.split("\n")
+            new_lines = []
+            skip_next = False
+            for i, line in enumerate(lines):
+                if "*Two-line summary:*" in line or (i == 0 and "**Step 2" in line):
+                    skip_next = True
+                    continue
+                if skip_next and line.strip() == "":
+                    skip_next = False
+                    continue
+                if not skip_next:
+                    new_lines.append(line)
+            step2_details = "\n".join(new_lines).strip()
+        
+        step_expander_calcbox(
+            uid=step2_uid,
+            summary_line=step2_summary,
+            details_md=step2_details,
+            status=None,
+        )
 
     # STEP 3 – shear function V(x)
     step3_md = ""
@@ -1403,18 +1490,26 @@ so numerically \\(R_A = {RA:.3g}\\,\\text{{kN}}\\) (down), \\(R_B = {RB:.3g}\\,\
     if case == "Simple beam – UDL over entire span":
         w = params["w"]
         R = results_local.get("R", w * L / 2.0)
+        V_at_0 = R
+        V_at_L = -R
+        
+        step3_summary = f"Step 3 – Shear function $V(x)$ | UDL $w = {w:.1f}$ kN/m: $V(0) = {V_at_0:.1f}$ kN, $V(L) = {V_at_L:.1f}$ kN, zero at midspan"
         step3_md = f"""
-**Step 3 – Shear function \\(V(x)\\)**
-
-Taking sections from the left:
-
-\\[
-V(x) = R_1 - wx = \\frac{{wL}}{{2}} - wx, \\quad 0 \\le x \\le L
-\\]
-
-The shear diagram is linear, crossing zero at midspan for symmetric loading.
-
-With \\(R_1 = {R:.3g}\\,\\text{{kN}}\\) and \\(w = {w:.3g}\\,\\text{{kN/m}}\\), the shear at \\(x = 0\\) is \\(V(0) = {R:.3g}\\,\\text{{kN}}\\).
+**1) Inputs**  \n
+- Reactions: $R_1 = R_2 = {R:.3g}\\, \\text{{kN}}$  \n
+- UDL: $w = {w:.3g}\\, \\text{{kN/m}}$  \n
+- Span: $L = {L:.3g}\\, \\text{{m}}$  \n\n
+**2) Governing equations**  \n
+- $\\frac{{\\mathrm{{d}}V}}{{\\mathrm{{d}}x}} = -w(x)$  \n
+- For UDL: $V(x) = R_1 - wx$  \n\n
+**3) Substitute / derive**  \n
+Taking sections from the left:  \n
+$$V(x) = R_1 - wx = {R:.3g} - {w:.3g} x, \\quad 0 \\le x \\le L$$  \n
+At $x = 0$: $V(0) = {R:.3g} - 0 = {V_at_0:.3g}\\, \\text{{kN}}$  \n
+At $x = L$: $V(L) = {R:.3g} - {w:.3g} \\times {L:.3g} = {R:.3g} - {w*L:.3g} = {V_at_L:.3g}\\, \\text{{kN}}$  \n
+Zero crossing at: $x = \\frac{{R_1}}{{w}} = \\frac{{{R:.3g}}}{{{w:.3g}}} = {R/w:.3g}\\, \\text{{m}}$ (midspan)  \n\n
+**4) Result**  \n
+$V(x) = {R:.3g} - {w:.3g}x$ for $0 \\le x \\le L$. Linear diagram crossing zero at midspan.
 """
 
     elif case == "Simple beam – point load at centre":
@@ -1517,8 +1612,41 @@ V(x) = -w(L-x), \\quad 0 \\le x \\le L
 The shear increases linearly from \\(-wL\\) at the fixed end to zero at the free end.
 """
 
-    if step3_md:
-        calcbox(step3_md)
+    # STEP 3 – Shear function (expandable)
+    step3_summary_exists = False
+    try:
+        _ = step3_summary
+        step3_summary_exists = True
+    except NameError:
+        # Fallback summary if not set
+        step3_summary = "Step 3 – Shear function $V(x)$ | Build $V(x)$ from left to right using sign convention and loading"
+        step3_summary_exists = True
+    
+    if step3_md and step3_summary_exists:
+        step3_uid = EQ_SLS_UID["step3"]
+        # Remove any summary line from details if present
+        step3_details = step3_md
+        if "*Two-line summary:*" in step3_details or "**Step 3 – Shear function" in step3_details.split("\n")[0]:
+            lines = step3_details.split("\n")
+            new_lines = []
+            skip_next = False
+            for i, line in enumerate(lines):
+                if "*Two-line summary:*" in line or (i == 0 and "**Step 3" in line):
+                    skip_next = True
+                    continue
+                if skip_next and line.strip() == "":
+                    skip_next = False
+                    continue
+                if not skip_next:
+                    new_lines.append(line)
+            step3_details = "\n".join(new_lines).strip()
+        
+        step_expander_calcbox(
+            uid=step3_uid,
+            summary_line=step3_summary,
+            details_md=step3_details,
+            status=None,
+        )
 
     # STEP 4 – moment function M(x)
     step4_md = ""
@@ -1662,8 +1790,41 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
 \\]
 """
 
-    if step4_md:
-        calcbox(step4_md)
+    # STEP 4 – Moment function (expandable)
+    step4_summary_exists = False
+    try:
+        _ = step4_summary
+        step4_summary_exists = True
+    except NameError:
+        # Fallback summary if not set
+        step4_summary = "Step 4 – Moment function $M(x)$ | Integrate shear to obtain $M(x)$ and apply boundary conditions"
+        step4_summary_exists = True
+    
+    if step4_md and step4_summary_exists:
+        step4_uid = EQ_SLS_UID["step4"]
+        # Remove any summary line from details if present
+        step4_details = step4_md
+        if "*Two-line summary:*" in step4_details or "**Step 4 – Moment function" in step4_details.split("\n")[0]:
+            lines = step4_details.split("\n")
+            new_lines = []
+            skip_next = False
+            for i, line in enumerate(lines):
+                if "*Two-line summary:*" in line or (i == 0 and "**Step 4" in line):
+                    skip_next = True
+                    continue
+                if skip_next and line.strip() == "":
+                    skip_next = False
+                    continue
+                if not skip_next:
+                    new_lines.append(line)
+            step4_details = "\n".join(new_lines).strip()
+        
+        step_expander_calcbox(
+            uid=step4_uid,
+            summary_line=step4_summary,
+            details_md=step4_details,
+            status=None,
+        )
 
     # Push SFD/BMD results into shared state
     # (use key names expected by Inputs page)
@@ -1675,16 +1836,10 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
         sfd_Vmax_abs_kN=float(V_max_abs),
     )
 
-    # Top summary bar (like other pages)
-    summary_placeholder.info(
-        f"SFD/BMD SLS: case = {case}, L = {L:.3g} m, "
-        f"|V|_max ≈ {V_max_abs:.3g} kN, |M|_max ≈ {M_max_abs:.3g} kNm."
-    )
-
     # ---------------------------------------------------
     # Show SFD & BMD
     # ---------------------------------------------------
-    st.markdown("---")
+    page_divider()
     st.subheader("Shear force and bending moment diagrams")
 
     fig_sfd, fig_bmd = plot_sfd_bmd_plotly(x, V, M)
@@ -1695,4 +1850,7 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
 
     with col_bmd:
         st.plotly_chart(fig_bmd, use_container_width=True)
+
+    # Bind JS click/scroll after all steps render
+    bind_summary_clicks()
 

@@ -11,7 +11,7 @@ from bending_diagrams import (
 )
 from bending_core import _fmt, _layout_bars_in_rows
 from state_and_helpers import update_results
-from widgets_helpers import calcbox, clickable_calcbox, render_step, render_jumpable_step, apply_step_expander_css, step_expander_calcbox
+from widgets_helpers import calcbox, clickable_calcbox, render_step, render_jumpable_step, apply_step_expander_css, step_expander_calcbox, info_i_button
 
 
 # ============================================================
@@ -516,7 +516,7 @@ $ d_n = {dn:.1f}$ mm, $ a = {a_uls:.1f}$ mm.
             with col_ku_title:
                 st.markdown("**Info:**")
             with col_ku_info:
-                with st.popover("ℹ️", help="What does the neutral-axis ratio mean?"):
+                with info_i_button(help_text="What does the neutral-axis ratio mean?"):
                     st.markdown(
                         r"""
 ### **Neutral-Axis Ratio \(k_u\) — Meaning & Importance**
@@ -1109,7 +1109,7 @@ def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star, summary_mode: boo
         with col_n_title:
             st.markdown("**Info:**")
         with col_n_info:
-            with st.popover("ℹ️", help="What does the modular ratio mean?"):
+            with info_i_button(help_text="What does the modular ratio mean?"):
                 st.markdown(
                     r"""
 ### **Modular Ratio \(n = E_s / E_c\) — What it Means**

@@ -10,8 +10,13 @@ import streamlit as st
 import streamlit.components.v1 as components
 import plotly.graph_objects as go
 
-from state_and_helpers import get_sync_callbacks, get_param, update_results
-from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, show_reo_message, apply_step_expander_css, apply_step_summary_expander_css
+from state_and_helpers import (
+    get_sync_callbacks,
+    get_param,
+    update_results,
+    init_shared_session_state,
+)
+from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, show_reo_message, apply_step_expander_css, apply_step_summary_expander_css, info_i_button, page_divider
 from bending_core import _fmt, _compute_bending_capacity, _stress_strain_state
 from bending_diagrams import (
     _plot_stress_strain_profiles,
@@ -334,6 +339,13 @@ def _build_beam_3d_figure(b, D, L, Mu_star, phi_Mu_cap, c, strain_state: str = "
 
 
 def render_bending():
+    # Initialize shared state (ensures all keys exist and prevents snippet defaults)
+    init_shared_session_state()
+    
+    # Handle cross-page navigation from Inputs page
+    from jump_nav import get_jump_uid
+    get_jump_uid()
+    
     sync_callbacks = get_sync_callbacks()
     apply_global_widget_css()
     apply_calcbox_css()
@@ -341,35 +353,26 @@ def render_bending():
     # Inject seamless steps CSS (for summary table + calc details)
     inject_seamless_steps_css()
     
-    # Remove green background from inline math/LaTeX
+    # Initialize page-local active mode state (UI-only, not in shared state)
+    if "bending_active_mode" not in st.session_state:
+        st.session_state["bending_active_mode"] = "ULS"
+    
+    # Remove green background from inline math (Streamlit wraps math in code tags)
+    # But preserve katex rendering by only targeting background, not font styling
     st.markdown(
         """
 <style>
-/* Remove green background from math/LaTeX elements */
-.katex,
-.katex-html,
-span.katex,
-span.katex-display,
-.katex-display {
-    background-color: transparent !important;
-    background: transparent !important;
-    border: none !important;
-    padding: 0 !important;
-    border-radius: 0 !important;
-}
-/* Remove code styling from code elements that are parents of katex (math rendering) */
-code .katex,
-p code .katex {
-    background-color: transparent !important;
-}
-/* Make code elements containing math look like normal text, not code */
+/* Remove green background from code elements in markdown paragraphs (these contain math) */
+/* But don't override font-family so katex can render properly */
 .stMarkdown p code {
     background-color: transparent !important;
     border: none !important;
     padding: 0 !important;
-    font-family: inherit !important;
-    font-size: inherit !important;
-    color: inherit !important;
+}
+/* Ensure katex elements render properly */
+.stMarkdown p code .katex,
+.stMarkdown p .katex {
+    font-family: KaTeX_Main, "Times New Roman", serif !important;
 }
 </style>
 """,
@@ -659,6 +662,9 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             )
 
         with top_right:
+            # Small spacer to nudge diagram down slightly
+            st.markdown("")
+            
             # --- Replace old 3D model with curved "2D-looking-3D" diagram ---
             from curved_beam_diagram import render_curved_beam_fig
             
@@ -752,12 +758,35 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         ROWS.sort(key=lambda r: priority.get(r["title"], 99))
 
         # Render summary table using shared helper
-        render_clickable_summary_table(ROWS, key_prefix="bend_summary")
+        clicked_uid = render_clickable_summary_table(ROWS, key_prefix="bend_summary")
+        
+        # Handle clicked summary row: set mode, expand step, set pending scroll
+        if clicked_uid:
+            # Map UID to mode
+            def uid_to_mode(uid):
+                """Map a step UID to its mode (ULS, SLS, or MIN)."""
+                if uid.startswith("bending_uls_"):
+                    return "ULS"
+                elif uid.startswith("bending_sls_"):
+                    return "SLS"
+                elif uid.startswith("bending_min_"):
+                    return "MIN"
+                else:
+                    return "ULS"  # Default to ULS for unknown UIDs
+            
+            # Set the active mode based on clicked UID
+            target_mode = uid_to_mode(clicked_uid)
+            st.session_state["bending_active_mode"] = target_mode
+            
+            # Expand the step that matches clicked_uid
+            open_key = f"step_open_{clicked_uid}"
+            st.session_state[open_key] = True
+            
+            # Set pending scroll (will be handled after content renders)
+            st.session_state["bending_pending_scroll_uid"] = clicked_uid
         
         # Bind JavaScript for opening expanders and scrolling
         bind_summary_clicks()
-
-        st.divider()
 
     # Persist canonical bending state for the rest of the page (and next rerun)
     st.session_state["bending_state"] = canonical_state
@@ -825,7 +854,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
     )
     Mu_nom_report = phi_Mu_cap / phi if phi and phi > 0 else float("nan")
 
-    st.markdown("---")
+    page_divider()
 
     # ---------------- 3-column layout for Design Actions + Geometry + Materials ----------------
     col_actions, col_geom, col_mat = st.columns(3)
@@ -836,7 +865,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         with col_title:
             st.subheader("Design Actions for Bending")
         with col_info:
-            with st.popover("ℹ️", help="Source of design actions (M*, V*)"):
+            with info_i_button(help_text="Source of design actions (M*, V*)"):
                 # Initialize session state key if not present
                 if "bending_action_source" not in st.session_state:
                     st.session_state["bending_action_source"] = "manual"
@@ -861,10 +890,16 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         else:
             st.caption("Design actions: From SFD/BMD")
 
+        # Get current values (widget key takes precedence if exists, otherwise use shared key)
+        Mu_star_val = float(st.session_state.get("bending_Mu_star", get_param("Mu_star_manual", 500.0)) or 500.0)
+        N_star_val = float(st.session_state.get("bending_N_star", get_param("N_star", 0.0)) or 0.0)
+        P_star_val = float(st.session_state.get("bending_P_star", get_param("P_star", 0.0)) or 0.0)
+        phi_b_val = float(st.session_state.get("bending_phi_b", get_param("phi_bend", 0.85)) or 0.85)
+        
         number_row(
             "Design moment Mu* (kNm)",
             "bending_Mu_star",
-            10.0,
+            Mu_star_val,
             sync_callbacks,
             help_text=(
                 "Factored design bending moment at the critical section. "
@@ -874,7 +909,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         number_row(
             "Axial force N* (kN)",
             "bending_N_star",
-            50.0,
+            N_star_val,
             sync_callbacks,
             help_text=(
                 "Axial force acting with bending. Compression (negative in many "
@@ -884,7 +919,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         number_row(
             "Prestress force P* (kN)",
             "bending_P_star",
-            50.0,
+            P_star_val,
             sync_callbacks,
             help_text=(
                 "Prestress / pre-compression in the section. Increasing P* typically "
@@ -894,7 +929,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         number_row(
             "Bending strength factor ϕb",
             "bending_phi_b",
-            0.01,
+            phi_b_val,
             sync_callbacks,
             help_text=(
                 "Strength reduction factor for bending (AS 3600 ϕ-factor). "
@@ -904,10 +939,15 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 
     with col_geom:
         st.subheader("Geometry")
+        # Get current values (widget key takes precedence if exists, otherwise use shared key)
+        b_val = float(st.session_state.get("bending_b", get_param("b", 400.0)) or 400.0)
+        D_val = float(st.session_state.get("bending_D", get_param("D", 600.0)) or 600.0)
+        L_val = float(st.session_state.get("bending_L", get_param("L", 3000.0)) or 3000.0)
+        
         number_row(
             "Width b (mm)",
             "bending_b",
-            10.0,
+            b_val,
             sync_callbacks,
             help_text=(
                 "Section width. Increasing b increases compression block area and "
@@ -917,7 +957,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         number_row(
             "Depth D (mm)",
             "bending_D",
-            10.0,
+            D_val,
             sync_callbacks,
             help_text=(
                 "Overall section depth. Larger D increases lever arm (d) and "
@@ -927,7 +967,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         number_row(
             "Span L (mm)",
             "bending_L",
-            100.0,
+            L_val,
             sync_callbacks,
             help_text=(
                 "Member span. Used mainly for serviceability checks and linking to "
@@ -937,10 +977,16 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 
     with col_mat:
         st.subheader("Materials")
+        # Get current values (widget key takes precedence if exists, otherwise use shared key)
+        fc_val = float(st.session_state.get("bending_fc", get_param("fc", 40.0)) or 40.0)
+        fsy_val = float(st.session_state.get("bending_fsy", get_param("fsy", 500.0)) or 500.0)
+        Ec_val = float(st.session_state.get("bending_Ec", get_param("Ec", 30000.0)) or 30000.0)
+        Es_val = float(st.session_state.get("bending_Es", get_param("Es", 200000.0)) or 200000.0)
+        
         number_row(
             "Concrete strength f'c (MPa)",
             "bending_fc",
-            2.0,
+            fc_val,
             sync_callbacks,
             help_text=(
                 "Concrete compressive strength. Higher f'c increases compression "
@@ -950,7 +996,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         number_row(
             "Steel yield fsy (MPa)",
             "bending_fsy",
-            10.0,
+            fsy_val,
             sync_callbacks,
             help_text=(
                 "Yield strength of reinforcing steel. Higher fsy increases the "
@@ -960,7 +1006,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         number_row(
             "Ec (MPa)",
             "bending_Ec",
-            1000.0,
+            Ec_val,
             sync_callbacks,
             help_text=(
                 "Short-term modulus of concrete. Mainly affects stiffness and "
@@ -970,7 +1016,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         number_row(
             "Es (MPa)",
             "bending_Es",
-            10000.0,
+            Es_val,
             sync_callbacks,
             help_text=(
                 "Steel modulus. Typically ~200,000 MPa; affects cracked-section "
@@ -978,159 +1024,190 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             ),
         )
 
-    st.markdown("---")
+    page_divider()
 
-    r1, r2 = st.columns(2)
+    # Center reinforcement inputs with equal spacers
+    spacer_left, content_col, spacer_right = st.columns([1, 8, 1], gap="medium")
+    
+    with content_col:
+        r1, r2 = st.columns(2, gap="large")
 
-    with r1:
-        st.subheader("Bottom Longitudinal Reinforcement")
+        # Render both headings first to ensure same baseline
+        with r1:
+            st.subheader("Bottom Longitudinal Reinforcement")
+        with r2:
+            st.subheader("Top Longitudinal Reinforcement")
         
-        # Display messages for bottom reinforcement
-        if st.session_state.get("_reo_msg_bot_auto_layer2", False):
-            show_reo_message("auto_layer2", layer="Bottom Layer 1")
-            st.session_state["_reo_msg_bot_auto_layer2"] = False  # Clear after showing
+        # Display messages for bottom reinforcement (in r1)
+        with r1:
+            if st.session_state.get("_reo_msg_bot_auto_layer2", False):
+                show_reo_message("auto_layer2", layer="Bottom Layer 1")
+                st.session_state["_reo_msg_bot_auto_layer2"] = False  # Clear after showing
+            
+            if st.session_state.get("_reo_msg_bot_layer2_overwritten", False):
+                show_reo_message("layer2_overwritten", layer="Bottom Layer 1")
+                st.session_state["_reo_msg_bot_layer2_overwritten"] = False  # Clear after showing
+            
+            if st.session_state.get("_reo_error_bot_1", False):
+                show_reo_message("layout_invalid", layer="Bottom Layer 1")
+                st.session_state["_reo_error_bot_1"] = False  # Clear after showing
+            
+            warning_bot_1 = st.session_state.get("_reo_warning_bot_1")
+            if warning_bot_1:
+                # Extract s_min if available
+                s_min_val = st.session_state.get("_reo_s_min_bot_1", 25.0)
+                show_reo_message("spacing_clamped", layer="Bottom Layer 1", s_min=s_min_val)
+                st.session_state["_reo_warning_bot_1"] = None  # Clear after showing
+                st.session_state["_reo_s_min_bot_1"] = None
         
-        if st.session_state.get("_reo_msg_bot_layer2_overwritten", False):
-            show_reo_message("layer2_overwritten", layer="Bottom Layer 1")
-            st.session_state["_reo_msg_bot_layer2_overwritten"] = False  # Clear after showing
+        # Display messages for top reinforcement (in r2)
+        with r2:
+            if st.session_state.get("_reo_msg_top_auto_layer2", False):
+                show_reo_message("auto_layer2", layer="Top Layer 1")
+                st.session_state["_reo_msg_top_auto_layer2"] = False  # Clear after showing
+            
+            if st.session_state.get("_reo_msg_top_layer2_overwritten", False):
+                show_reo_message("layer2_overwritten", layer="Top Layer 1")
+                st.session_state["_reo_msg_top_layer2_overwritten"] = False  # Clear after showing
+            
+            if st.session_state.get("_reo_error_top_1", False):
+                show_reo_message("layout_invalid", layer="Top Layer 1")
+                st.session_state["_reo_error_top_1"] = False  # Clear after showing
+            
+            warning_top_1 = st.session_state.get("_reo_warning_top_1")
+            if warning_top_1:
+                # Extract s_min if available
+                s_min_val = st.session_state.get("_reo_s_min_top_1", 25.0)
+                show_reo_message("spacing_clamped", layer="Top Layer 1", s_min=s_min_val)
+                st.session_state["_reo_warning_top_1"] = None  # Clear after showing
+                st.session_state["_reo_s_min_top_1"] = None
         
-        if st.session_state.get("_reo_error_bot_1", False):
-            show_reo_message("layout_invalid", layer="Bottom Layer 1")
-            st.session_state["_reo_error_bot_1"] = False  # Clear after showing
-        
-        warning_bot_1 = st.session_state.get("_reo_warning_bot_1")
-        if warning_bot_1:
-            # Extract s_min if available
-            s_min_val = st.session_state.get("_reo_s_min_bot_1", 25.0)
-            show_reo_message("spacing_clamped", layer="Bottom Layer 1", s_min=s_min_val)
-            st.session_state["_reo_warning_bot_1"] = None  # Clear after showing
-            st.session_state["_reo_s_min_bot_1"] = None
-        
-        number_row(
-            "Layer 1: bars or spacing (≤30 = bars, ≥30 = mm)",
-            "bending_nb_or_s_bot_1",
-            1.0,
-            sync_callbacks,
-            help_text="Enter a number of bars (≤30) or a spacing in mm (≥30).",
-        )
+        # Now render all number_row inputs in parallel to ensure alignment
+        # Get current values (widget key takes precedence if exists, otherwise use shared key)
+        with r1:
+            nb_or_s_bot_1_val = float(st.session_state.get("bending_nb_or_s_bot_1", get_param("nb_or_s_bot_1", 4.0)))
+            db_bot_1_val = float(st.session_state.get("bending_db_bot_1", get_param("db_bot_1", 20.0)))
+            nb_or_s_bot_2_val = float(st.session_state.get("bending_nb_or_s_bot_2", get_param("nb_or_s_bot_2", 0.0)))
+            db_bot_2_val = float(st.session_state.get("bending_db_bot_2", get_param("db_bot_2", 20.0)))
+            rowgap_bot_val = float(st.session_state.get("bending_rowgap_bot", get_param("rowgap_bot", 60.0)))
+            
+            number_row(
+                "Layer 1 bar spacing",
+                "bending_nb_or_s_bot_1",
+                nb_or_s_bot_1_val,
+                sync_callbacks,
+                help_text="Enter number of bars if value ≤ 30. Enter bar spacing (mm) if value ≥ 30.",
+            )
 
-        number_row(
-            "Layer 1: bar diameter db,bot,1 (mm)",
-            "bending_db_bot_1",
-            1.0,
-            sync_callbacks,
-            help_text="Nominal diameter of bottom Layer 1 bars.",
-        )
-        
-        number_row(
-            "Layer 2: bars or spacing (≤30 = bars, ≥30 = mm)",
-            "bending_nb_or_s_bot_2",
-            1.0,
-            sync_callbacks,
-            help_text="Enter a number of bars (≤30) or a spacing in mm (≥30). Auto-updated if Layer 1 doesn't fit.",
-        )
+            number_row(
+                "Layer 1 bar Ø (mm)",
+                "bending_db_bot_1",
+                db_bot_1_val,
+                sync_callbacks,
+                help_text="Nominal bar diameter for Layer 1 (mm).",
+            )
+            
+            number_row(
+                "Layer 2 bar spacing",
+                "bending_nb_or_s_bot_2",
+                nb_or_s_bot_2_val,
+                sync_callbacks,
+                help_text="Enter number of bars if value ≤ 30. Enter bar spacing (mm) if value ≥ 30.",
+            )
 
-        number_row(
-            "Layer 2: bar diameter db,bot,2 (mm)",
-            "bending_db_bot_2",
-            1.0,
-            sync_callbacks,
-            help_text="Nominal diameter of bottom Layer 2 bars.",
-        )
+            number_row(
+                "Layer 2 bar Ø (mm)",
+                "bending_db_bot_2",
+                db_bot_2_val,
+                sync_callbacks,
+                help_text="Nominal bar diameter for Layer 2 (mm).",
+            )
 
-        number_row(
-            "Bottom row gap (mm)",
-            "bending_rowgap_bot",
-            5.0,
-            sync_callbacks,
-            help_text="Vertical gap between bottom rows if two layers are used.",
-        )
-        
-        number_row(
-            "Bottom cover (mm)",
-            "bending_cover_bot",
-            5.0,
-            sync_callbacks,
-            help_text=(
-                "Concrete cover to bottom reinforcement. Increasing cover reduces "
-                "effective depth d and reduces φMu,cap, but may be required for durability."
-            ),
-        )
+            number_row(
+                "Row gap (mm)",
+                "bending_rowgap_bot",
+                rowgap_bot_val,
+                sync_callbacks,
+                help_text="Clear vertical gap between Layer 1 and Layer 2 (mm).",
+            )
+            
+            # Get current cover value (widget key takes precedence if exists, otherwise use shared key)
+            cover_bot_val = float(st.session_state.get("bending_cover_bot", get_param("cover_bot", 40.0)) or 40.0)
+            
+            number_row(
+                "Bottom cover (mm)",
+                "bending_cover_bot",
+                cover_bot_val,
+                sync_callbacks,
+                help_text=(
+                    "Concrete cover to bottom reinforcement. Increasing cover reduces "
+                    "effective depth d and reduces φMu,cap, but may be required for durability."
+                ),
+            )
 
-    with r2:
-        st.subheader("Top Longitudinal Reinforcement")
-        
-        # Display messages for top reinforcement
-        if st.session_state.get("_reo_msg_top_auto_layer2", False):
-            show_reo_message("auto_layer2", layer="Top Layer 1")
-            st.session_state["_reo_msg_top_auto_layer2"] = False  # Clear after showing
-        
-        if st.session_state.get("_reo_msg_top_layer2_overwritten", False):
-            show_reo_message("layer2_overwritten", layer="Top Layer 1")
-            st.session_state["_reo_msg_top_layer2_overwritten"] = False  # Clear after showing
-        
-        if st.session_state.get("_reo_error_top_1", False):
-            show_reo_message("layout_invalid", layer="Top Layer 1")
-            st.session_state["_reo_error_top_1"] = False  # Clear after showing
-        
-        warning_top_1 = st.session_state.get("_reo_warning_top_1")
-        if warning_top_1:
-            # Extract s_min if available
-            s_min_val = st.session_state.get("_reo_s_min_top_1", 25.0)
-            show_reo_message("spacing_clamped", layer="Top Layer 1", s_min=s_min_val)
-            st.session_state["_reo_warning_top_1"] = None  # Clear after showing
-            st.session_state["_reo_s_min_top_1"] = None
-        
-        number_row(
-            "Layer 1: bars or spacing (≤30 = bars, ≥30 = mm)",
-            "bending_nb_or_s_top_1",
-            1.0,
-            sync_callbacks,
-            help_text="Enter a number of bars (≤30) or a spacing in mm (≥30).",
-        )
+        with r2:
+            # Get current values (widget key takes precedence if exists, otherwise use shared key)
+            nb_or_s_top_1_val = float(st.session_state.get("bending_nb_or_s_top_1", get_param("nb_or_s_top_1", 2.0)))
+            db_top_1_val = float(st.session_state.get("bending_db_top_1", get_param("db_top_1", 16.0)))
+            nb_or_s_top_2_val = float(st.session_state.get("bending_nb_or_s_top_2", get_param("nb_or_s_top_2", 0.0)))
+            db_top_2_val = float(st.session_state.get("bending_db_top_2", get_param("db_top_2", 16.0)))
+            rowgap_top_val = float(st.session_state.get("bending_rowgap_top", get_param("rowgap_top", 60.0)))
+            
+            number_row(
+                "Layer 1 bar spacing",
+                "bending_nb_or_s_top_1",
+                nb_or_s_top_1_val,
+                sync_callbacks,
+                help_text="Enter number of bars if value ≤ 30. Enter bar spacing (mm) if value ≥ 30.",
+            )
 
-        number_row(
-            "Layer 1: bar diameter db,top,1 (mm)",
-            "bending_db_top_1",
-            1.0,
-            sync_callbacks,
-            help_text="Nominal diameter of top Layer 1 bars.",
-        )
-        
-        number_row(
-            "Layer 2: bars or spacing (≤30 = bars, ≥30 = mm)",
-            "bending_nb_or_s_top_2",
-            1.0,
-            sync_callbacks,
-            help_text="Enter a number of bars (≤30) or a spacing in mm (≥30). Auto-updated if Layer 1 doesn't fit.",
-        )
+            number_row(
+                "Layer 1 bar Ø (mm)",
+                "bending_db_top_1",
+                db_top_1_val,
+                sync_callbacks,
+                help_text="Nominal bar diameter for Layer 1 (mm).",
+            )
+            
+            number_row(
+                "Layer 2 bar spacing",
+                "bending_nb_or_s_top_2",
+                nb_or_s_top_2_val,
+                sync_callbacks,
+                help_text="Enter number of bars if value ≤ 30. Enter bar spacing (mm) if value ≥ 30.",
+            )
 
-        number_row(
-            "Layer 2: bar diameter db,top,2 (mm)",
-            "bending_db_top_2",
-            1.0,
-            sync_callbacks,
-            help_text="Nominal diameter of top Layer 2 bars.",
-        )
+            number_row(
+                "Layer 2 bar Ø (mm)",
+                "bending_db_top_2",
+                db_top_2_val,
+                sync_callbacks,
+                help_text="Nominal bar diameter for Layer 2 (mm).",
+            )
 
-        number_row(
-            "Top row gap (mm)",
-            "bending_rowgap_top",
-            5.0,
-            sync_callbacks,
-            help_text="Vertical gap between top rows if two layers are used.",
-        )
-        
-        number_row(
-            "Top cover (mm)",
-            "bending_cover_top",
-            5.0,
-            sync_callbacks,
-            help_text=(
-                "Concrete cover to top reinforcement. Affects effective depth to "
-                "compression reinforcement and durability."
-            ),
-        )
+            number_row(
+                "Row gap (mm)",
+                "bending_rowgap_top",
+                rowgap_top_val,
+                sync_callbacks,
+                help_text="Clear vertical gap between Layer 1 and Layer 2 (mm).",
+            )
+            
+            # Get current cover value (widget key takes precedence if exists, otherwise use shared key)
+            cover_top_val = float(st.session_state.get("bending_cover_top", get_param("cover_top", 40.0)) or 40.0)
+            
+            number_row(
+                "Top cover (mm)",
+                "bending_cover_top",
+                cover_top_val,
+                sync_callbacks,
+                help_text=(
+                    "Concrete cover to top reinforcement. Affects effective depth to "
+                    "compression reinforcement and durability."
+                ),
+            )
+
+    page_divider()
 
     # --- GLOBAL CONCRETE STRESS MODEL (shared across all states) ---
     # Initialize global state key if not present
@@ -1142,7 +1219,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
     with col_title:
         st.markdown("### Section & stress–strain model")
     with col_info:
-        with st.popover("ℹ️", help="Concrete stress model options"):
+        with info_i_button(help_text="Concrete stress model options"):
             st.markdown("**Concrete stress model**")
             use_parabolic = st.checkbox(
                 "Use parabolic (non-linear) stress block",
@@ -1216,29 +1293,49 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
     # ---------------- Step-by-step tabs ----------------
     apply_step_summary_expander_css()
     
-    tab = st.radio(
-        "Mode",
-        ["ULS Checks", "SLS Checks", "Minimum strength checks"],
-        horizontal=True,
-        key="bending_tab",
-        label_visibility="collapsed",
-    )
+    # Render tabs - always render all tabs with content
+    # This ensures anchors exist for scrolling regardless of which tab is visible
+    # Streamlit will handle tab switching, and JavaScript will switch to correct tab on summary clicks
+    tab1, tab2, tab3 = st.tabs(["ULS Checks", "SLS Checks", "Minimum strength checks"])
     
-    if tab == "ULS Checks":
+    # Always render all tabs with their content
+    # This ensures all anchors exist for scrolling
+    with tab1:
         render_uls_tab(
             top_results, b, D, fc, fsy, Ast_bot, d_eff,
             summary_mode=False,  # no longer used
         )
-    elif tab == "SLS Checks":
+    
+    with tab2:
         render_sls_tab(
             top_results, b, D, d_eff, Ast_bot, Ec, Es, Mu_star,
             summary_mode=False,
         )
-    else:
+    
+    with tab3:
         render_min_strength_tab(
             top_results, b, D, fc, fsy, Ast_bot,
             summary_mode=False,
         )
+    
+    # Get current active mode (set by summary table clicks or defaults to ULS)
+    # JavaScript will switch to the correct tab based on the tab name in the summary table click
+    # The active_mode is used to determine which tab should be shown programmatically
+    
+    # Handle pending scroll after content has rendered
+    pending_scroll_uid = st.session_state.get("bending_pending_scroll_uid")
+    if pending_scroll_uid:
+        # Import jump_nav functions
+        from jump_nav import scroll_to_jump_after_render
+        
+        # Set jump_to for scroll function
+        st.session_state["jump_to"] = pending_scroll_uid
+        
+        # Scroll after content has rendered
+        scroll_to_jump_after_render()
+        
+        # Clear pending scroll
+        del st.session_state["bending_pending_scroll_uid"]
 
     # --------------------------------------------------
     # Now build the 3-panel diagram, using the SLS results
@@ -1340,13 +1437,10 @@ for the same strain pattern.
             except Exception as e:
                 st.warning("Material curves view failed to render (browser/graphics). Try refreshing the page.")
     
-    # Debug helpers (temporary - remove after verification)
-    with st.sidebar:
-        st.write("**Debug:**")
-        st.write("jump_to:", st.session_state.get("jump_to"))
-        open_steps = {k: v for k, v in st.session_state.items() if k.startswith("step_open_")}
-        if open_steps:
-            st.write("open:", open_steps)
+    # Handle scroll after all content is rendered (for cross-page navigation from Inputs)
+    from jump_nav import scroll_to_jump_after_render
+    scroll_to_jump_after_render()
+    
 
 
 # ============================
