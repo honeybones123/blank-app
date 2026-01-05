@@ -240,6 +240,90 @@ def final_creep_coeff_table(fc: float, env_label: str, th_table: float) -> float
 
 
 # ------------------------------------------------------------
+#  COMPUTE FUNCTION (no UI rendering)
+# ------------------------------------------------------------
+def compute_creep_results(publish: bool = True) -> dict:
+    """
+    Compute creep results without UI rendering.
+    
+    Args:
+        publish: If True, update results via update_results(). Always True for now.
+    
+    Returns:
+        dict with computed results
+    """
+    # Read geometry from shared state
+    b = get_param("b", 300.0)
+    D = get_param("D", 600.0)
+    
+    # Read materials
+    fc = get_param("fc", 32.0)
+    Ec = get_param("Ec", 30000.0)
+    
+    # Read creep parameters (use defaults if not in shared state)
+    env_option = get_param("env_option", "Temperate inland environment")
+    t_creep = get_param("t_creep", 365.0)
+    age_at_loading = get_param("age_at_loading", 28.0)
+    stress_ratio = get_param("stress_ratio", 0.30)
+    
+    # Read faces option (default to beam)
+    faces_option = get_param("faces_option", "Beam – three faces exposed")
+    
+    # Calculate geometry
+    Ag = b * D  # mm²
+    
+    if faces_option == "Slab – one face exposed":
+        ue = b
+    elif faces_option == "Slab – two faces exposed":
+        ue = 2.0 * b
+    elif faces_option == "Beam – three faces exposed":
+        ue = b + 2.0 * D
+    else:  # "Column – four faces exposed"
+        ue = 2.0 * (b + D)
+    
+    th_raw = 2.0 * Ag / ue if ue > 0 else 0.0
+    th_table = _closest_th(th_raw)
+    
+    # Calculate creep coefficients
+    phi_cc_b = basic_creep_coeff(fc)
+    k2 = calc_k2_creep(t_creep, th_table)
+    k3 = calc_k3(age_at_loading)
+    k4 = calc_k4(env_option)
+    k5 = calc_k5(fc, th_table, k4)
+    k6 = calc_k6(stress_ratio)
+    
+    phi_cc_t = k2 * k3 * k4 * k5 * k6 * phi_cc_b
+    phi_cc_star_table = final_creep_coeff_table(fc, env_option, th_table)
+    
+    # Calculate strain
+    sigma0 = stress_ratio * fc  # MPa
+    eps_cc = phi_cc_t * sigma0 / Ec if Ec > 0 else 0.0  # dimensionless
+    eps_cc_micro = eps_cc * 1e6
+    
+    # Update results if publish=True
+    if publish:
+        update_results(
+            phi_cc_t=phi_cc_t,
+            phi_cc_star_table=phi_cc_star_table,
+            k2_creep=k2,
+            k3_creep=k3,
+            k4_creep=k4,
+            k5_creep=k5,
+            k6_creep=k6,
+        )
+    
+    # Build steps list (placeholder)
+    steps = ["(Detailed steps not available for this module yet)"]
+    
+    return {
+        "phi_cc_t": phi_cc_t,
+        "phi_cc_star_table": phi_cc_star_table,
+        "eps_cc_micro": eps_cc_micro,
+        "creep_steps": steps,
+    }
+
+
+# ------------------------------------------------------------
 #  MAIN RENDER FUNCTION
 # ------------------------------------------------------------
 def render_creep():

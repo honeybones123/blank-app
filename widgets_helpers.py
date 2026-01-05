@@ -476,10 +476,15 @@ def number_row(label: str, key: str, default: float, sync_callbacks=None, help_t
         else:
             effective_default = default
         
+        # Allow 0 as a valid value (especially for bar counts)
+        # For reinforcement bar counts, min_value should be 0
+        min_val = 0.0 if "nb_or_s" in key or "nb_" in key else None
+        
         value = st.number_input(
             label="",
             key=key,
             value=float(st.session_state.get(key, effective_default)),
+            min_value=min_val,
             step=1.0,
             format="%.1f",
             label_visibility="collapsed",

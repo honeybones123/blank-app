@@ -4,6 +4,7 @@
 # ============================
 
 import math
+import textwrap
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -31,10 +32,25 @@ from ui_seamless_steps import (
 )
 
 
-@st.cache_resource
-def _build_beam_3d_figure_pure(b, D, L, Mu_star, phi_Mu_cap, c, strain_state, 
+# Conditional caching: bypass in debug mode, cache in production
+def _get_build_beam_3d_figure_pure():
+    """Get the cached or uncached version of _build_beam_3d_figure_pure based on debug mode."""
+    try:
+        from src.debug.cache_control import cache_enabled
+        if cache_enabled():
+            # Caching enabled: use cache
+            return st.cache_resource(show_spinner=False)(_build_beam_3d_figure_pure_impl)
+        else:
+            # Cache bypass enabled: return unwrapped function
+            return _build_beam_3d_figure_pure_impl
+    except ImportError:
+        # Debug module not available: use cache
+        return st.cache_resource(show_spinner=False)(_build_beam_3d_figure_pure_impl)
+
+def _build_beam_3d_figure_pure_impl(b, D, L, Mu_star, phi_Mu_cap, c, strain_state, 
                                 reo_layout, cover_bot, cover_top, 
-                                cover_side, rowgap_bot, rowgap_top, lig_d, lig_legs, s_lig):
+                                cover_side, rowgap_bot, rowgap_top, lig_d, lig_legs, s_lig, 
+):
     """
     Pure function version of 3D beam figure generation.
     All inputs must be passed as arguments (no get_param calls).
@@ -257,85 +273,803 @@ def _build_beam_3d_figure(b, D, L, Mu_star, phi_Mu_cap, c, strain_state: str = "
     Args:
         layout: Optional pre-computed section layout dict. If None, will compute from session state.
     """
+    # Get all inputs from results (matches shear pattern)
+    results = st.session_state.get("results", {})
+    
+    # --- ARCHITECTURE LOCK: bending diagrams must use results (with fallback to shared) ---
+    # Note: Geometry values (b, D, d) are not in results - they're in shared state.
+    # The guard ensures results dict exists and diagrams use the fallback pattern correctly.
+    if st.session_state.get("_dev_mode", False):
+        if "results" not in st.session_state:
+            raise RuntimeError(
+                "[ARCHITECTURE VIOLATION] Bending diagrams require results dict to exist. "
+                "Call update_results() or run compute functions first."
+            )
+    
     # If layout is provided, extract reo_layout from it
     if layout is not None:
         reo_layout = layout.get("reo_layout")
         if reo_layout is None:
-            # Fallback to computing from session state
+            # Fallback to computing from session state using results
             from section_layout import compute_longitudinal_reo_layout
-            cover_bot = float(get_param("cover_bot", 40.0) or 40.0)
-            cover_top = float(get_param("cover_top", 40.0) or 40.0)
-            cover_side = float(
-                get_param("cover_side", min(cover_top, cover_bot)) or min(cover_top, cover_bot)
-            )
-            nb_or_s_bot_1 = float(get_param("nb_or_s_bot_1", 4.0) or 4.0)
-            db_bot_1 = float(get_param("db_bot_1", 20.0) or 20.0)
-            nb_or_s_bot_2 = float(get_param("nb_or_s_bot_2", 0.0) or 0.0)
-            db_bot_2 = float(get_param("db_bot_2", 20.0) or 20.0)
-            nb_or_s_top_1 = float(get_param("nb_or_s_top_1", 2.0) or 2.0)
-            db_top_1 = float(get_param("db_top_1", 16.0) or 16.0)
-            nb_or_s_top_2 = float(get_param("nb_or_s_top_2", 0.0) or 0.0)
-            db_top_2 = float(get_param("db_top_2", 16.0) or 16.0)
-            rowgap_bot = float(get_param("rowgap_bot", 60.0) or 60.0)
-            rowgap_top = float(get_param("rowgap_top", 60.0) or 60.0)
             reo_layout = compute_longitudinal_reo_layout(
-                b=b, D=D,
-                cover_bot=cover_bot, cover_top=cover_top, cover_side=cover_side,
-                nb_or_s_bot_1=nb_or_s_bot_1, db_bot_1=db_bot_1,
-                nb_or_s_bot_2=nb_or_s_bot_2, db_bot_2=db_bot_2,
-                nb_or_s_top_1=nb_or_s_top_1, db_top_1=db_top_1,
-                nb_or_s_top_2=nb_or_s_top_2, db_top_2=db_top_2,
-                rowgap_bot=rowgap_bot, rowgap_top=rowgap_top,
+                b=results.get("b", b), D=results.get("D", D),
+                cover_bot=results.get("cover_bot", 40.0), cover_top=results.get("cover_top", 40.0), cover_side=results.get("cover_side", 40.0),
+                nb_or_s_bot_1=results.get("nb_or_s_bot_1", 4.0), db_bot_1=results.get("db_bot_1", 20.0),
+                nb_or_s_bot_2=results.get("nb_or_s_bot_2", 0.0), db_bot_2=results.get("db_bot_2", 20.0),
+                nb_or_s_top_1=results.get("nb_or_s_top_1", 2.0), db_top_1=results.get("db_top_1", 16.0),
+                nb_or_s_top_2=results.get("nb_or_s_top_2", 0.0), db_top_2=results.get("db_top_2", 16.0),
+                rowgap_bot=results.get("rowgap_bot", 60.0), rowgap_top=results.get("rowgap_top", 60.0),
             )
     else:
-        # Compute from session state (backward compatibility)
+        # Compute from session state using results
         from section_layout import compute_longitudinal_reo_layout
-        cover_bot = float(get_param("cover_bot", 40.0) or 40.0)
-        cover_top = float(get_param("cover_top", 40.0) or 40.0)
-        cover_side = float(
-            get_param("cover_side", min(cover_top, cover_bot)) or min(cover_top, cover_bot)
-        )
-        nb_or_s_bot_1 = float(get_param("nb_or_s_bot_1", 4.0) or 4.0)
-        db_bot_1 = float(get_param("db_bot_1", 20.0) or 20.0)
-        nb_or_s_bot_2 = float(get_param("nb_or_s_bot_2", 0.0) or 0.0)
-        db_bot_2 = float(get_param("db_bot_2", 20.0) or 20.0)
-        nb_or_s_top_1 = float(get_param("nb_or_s_top_1", 2.0) or 2.0)
-        db_top_1 = float(get_param("db_top_1", 16.0) or 16.0)
-        nb_or_s_top_2 = float(get_param("nb_or_s_top_2", 0.0) or 0.0)
-        db_top_2 = float(get_param("db_top_2", 16.0) or 16.0)
-        rowgap_bot = float(get_param("rowgap_bot", 60.0) or 60.0)
-        rowgap_top = float(get_param("rowgap_top", 60.0) or 60.0)
         reo_layout = compute_longitudinal_reo_layout(
-            b=b, D=D,
-            cover_bot=cover_bot, cover_top=cover_top, cover_side=cover_side,
-            nb_or_s_bot_1=nb_or_s_bot_1, db_bot_1=db_bot_1,
-            nb_or_s_bot_2=nb_or_s_bot_2, db_bot_2=db_bot_2,
-            nb_or_s_top_1=nb_or_s_top_1, db_top_1=db_top_1,
-            nb_or_s_top_2=nb_or_s_top_2, db_top_2=db_top_2,
-            rowgap_bot=rowgap_bot, rowgap_top=rowgap_top,
+            b=results.get("b", b), D=results.get("D", D),
+            cover_bot=results.get("cover_bot", 40.0), cover_top=results.get("cover_top", 40.0), cover_side=results.get("cover_side", 40.0),
+            nb_or_s_bot_1=results.get("nb_or_s_bot_1", 4.0), db_bot_1=results.get("db_bot_1", 20.0),
+            nb_or_s_bot_2=results.get("nb_or_s_bot_2", 0.0), db_bot_2=results.get("db_bot_2", 20.0),
+            nb_or_s_top_1=results.get("nb_or_s_top_1", 2.0), db_top_1=results.get("db_top_1", 16.0),
+            nb_or_s_top_2=results.get("nb_or_s_top_2", 0.0), db_top_2=results.get("db_top_2", 16.0),
+            rowgap_bot=results.get("rowgap_bot", 60.0), rowgap_top=results.get("rowgap_top", 60.0),
         )
     
-    # Get other parameters needed for 3D model
-    cover_bot = float(get_param("cover_bot", 40.0) or 40.0)
-    cover_top = float(get_param("cover_top", 40.0) or 40.0)
-    cover_side = float(
-        get_param("cover_side", min(cover_top, cover_bot)) or min(cover_top, cover_bot)
-    )
-    rowgap_bot = float(get_param("rowgap_bot", 60.0) or 60.0)
-    rowgap_top = float(get_param("rowgap_top", 60.0) or 60.0)
-    lig_d = float(get_param("lig_d", 10.0) or 10.0)
-    lig_legs_raw = get_param("lig_legs", 2)
+    # Get ligature spacing from results
+    s_lig = results.get("s_lig", get_param("s_lig", 200.0))
+    s_lig = float(s_lig) if s_lig is not None else 200.0
+    
+    # Cache-busting for debug mode
+    debug_bust = None
     try:
-        lig_legs = int(lig_legs_raw or 0)
-    except Exception:
-        lig_legs = 0
-    s_lig = float(get_param("s_lig", 200.0) or 200.0)
+        from src.debug.debug_flags import is_debug_enabled
+        import hashlib
+        import json
+        if is_debug_enabled():
+            # Create a signature from all dimension inputs
+            dim_sig = {
+                "b": results.get("b", b),
+                "D": results.get("D", D),
+                "L": results.get("L", L),
+                "d": results.get("d", get_param("d", 560.0)),
+                "cover_bot": results.get("cover_bot", 40.0),
+                "cover_top": results.get("cover_top", 40.0),
+                "cover_side": results.get("cover_side", 40.0),
+            }
+            debug_bust = hashlib.sha1(json.dumps(dim_sig, sort_keys=True).encode()).hexdigest()[:8]
+    except ImportError:
+        pass
 
-    return _build_beam_3d_figure_pure(
+    # Get cached or uncached version based on debug mode
+    _build_fn = _get_build_beam_3d_figure_pure()
+    return _build_fn(
         b, D, L, Mu_star, phi_Mu_cap, c, strain_state,
-        reo_layout, cover_bot, cover_top,
-        cover_side, rowgap_bot, rowgap_top, lig_d, lig_legs, s_lig
+        reo_layout, results.get("cover_bot", 40.0), results.get("cover_top", 40.0),
+        results.get("cover_side", 40.0), results.get("rowgap_bot", 60.0), results.get("rowgap_top", 60.0), 
+        results.get("lig_d", 10.0), results.get("lig_legs", 2), s_lig, debug_bust=debug_bust
     )
+
+
+def build_bending_report(top_results: dict, params: dict) -> dict:
+    """
+    Build the bending report structure (tabs + calc boxes) from computed values.
+    
+    This function replicates the calc box structure from render_uls_tab, 
+    render_min_strength_tab, and render_sls_tab, but without UI rendering.
+    
+    Args:
+        top_results: Dict from _compute_bending_capacity() with all calculated values
+        params: Dict with inputs: b, D, fc, fsy, Ast, d, phi, Mu_star, Ec, Es, etc.
+    
+    Returns:
+        dict with module_title, summary, and tabs structure
+    """
+    from reporting.report_content import make_calc_box, make_tab, make_module_report
+    import math
+    
+    # Extract parameters
+    b = params.get("b", 400.0)
+    D = params.get("D", 600.0)
+    fc = params.get("fc", 32.0)
+    fsy = params.get("fsy", 500.0)
+    Ast = params.get("Ast", 0.0)
+    d = params.get("d", 560.0)
+    phi = params.get("phi", 0.85)
+    Mu_star = params.get("Mu_star", 0.0)
+    Ec = params.get("Ec", 30000.0)
+    Es = params.get("Es", 200000.0)
+    
+    # Extract results
+    phi_Mu_cap = top_results.get("phi_Mu_cap", 0.0)
+    Mu_util = top_results.get("Mu_util", 0.0)
+    
+    # Build summary
+    outcome = "PASS" if (Mu_util is not None and Mu_util <= 1.0) else "FAIL" if Mu_util is not None else "N/A"
+    summary = [
+        ("Demand", f"{Mu_star:.1f} kNm"),
+        ("Capacity", f"{phi_Mu_cap:.1f} kNm"),
+        ("Utilisation", f"{Mu_util:.2f}" if Mu_util is not None and not math.isnan(Mu_util) else "N/A"),
+        ("Outcome", outcome),
+    ]
+    
+    # ULS tab calculations (matching render_uls_tab logic)
+    uls_boxes = []
+    if phi_Mu_cap > 0 and d and Ast:
+        # Stress-block factors
+        alpha2_raw = 0.85 - 0.0015 * fc
+        gamma_raw = 0.97 - 0.0025 * fc
+        alpha2_uls = max(0.67, alpha2_raw)
+        gamma_uls = max(0.67, gamma_raw)
+        
+        # Pre-compute ULS internal forces / geometry
+        T = Ast * fsy  # N
+        denom_uls = alpha2_uls * fc * b * gamma_uls
+        dn = T / denom_uls if denom_uls > 0 else float("nan")
+        a_uls = gamma_uls * dn
+        z_uls = d - 0.5 * a_uls
+        Mu_nom_uls = T * z_uls / 1e6
+        phi_Mu_cap_uls = phi * Mu_nom_uls
+        C_N = alpha2_uls * fc * b * a_uls  # N
+        C_kN = C_N / 1000.0 if C_N is not None else float("nan")
+        T_kN = T / 1000.0
+        
+        # 1.1 Stress-block parameters
+        # Create diagram callable for box 1.1
+        def diagram_1_1_fn():
+            from bending_diagrams import _make_uls_stress_block_figure
+            return _make_uls_stress_block_figure(
+                b_mm=b or 0.0,
+                D_mm=D or 0.0,
+                d_mm=d,
+                dn_mm=dn,
+                a_mm=a_uls,
+                alpha2=alpha2_uls,
+                gamma=gamma_uls,
+                fc=fc,
+                fsy=fsy,
+                show_lever_arm=False,
+                show_dn=False,
+                show_alpha_label=True,
+                show_C=False,
+                C_N=None,
+                variant="11",
+            )
+        
+        uls_boxes.append(make_calc_box(
+            "1.1",
+            "Stress-block parameters (alpha2 and gamma)",
+            "info",
+            f"alpha2 = {alpha2_uls:.3f}, gamma = {gamma_uls:.3f}",
+            "AS 3600:2018 Cl. 8.1.3",
+            [
+                {"label": "Stress block factor alpha2", "eq": "alpha2 = 0.85 - 0.0015*f'c (>= 0.67)", "sub": f"= 0.85 - 0.0015*{fc:.1f} = {alpha2_uls:.3f}"},
+                {"label": "Stress block factor gamma", "eq": "gamma = 0.97 - 0.0025*f'c (>= 0.67)", "sub": f"= 0.97 - 0.0025*{fc:.1f} = {gamma_uls:.3f}"},
+            ],
+            diagram=diagram_1_1_fn,  # Store callable for later export
+        ))
+        
+        # 1.2 Concrete compressive force C
+        uls_boxes.append(make_calc_box(
+            "1.2",
+            "Concrete compressive force C",
+            "info",
+            f"C = {C_kN:.1f} kN",
+            "AS 3600:2018 Cl. 8.1.3",
+            [
+                {"label": "Compression force", "eq": "C = alpha2*f'c*b*a/1000", "sub": f"= {alpha2_uls:.3f}*{fc:.1f}*{b:.0f}*{a_uls:.1f}/1000 = {C_kN:.1f} kN"},
+            ],
+        ))
+        
+        # 1.3 Steel area and tension force T
+        uls_boxes.append(make_calc_box(
+            "1.3",
+            "Steel area and tension force T",
+            "info",
+            f"T = {T_kN:.1f} kN",
+            "AS 3600:2018 Cl. 8.1.3",
+            [
+                {"label": "Tension force", "eq": "T = Ast*fsy/1000", "sub": f"= {Ast:.0f}*{fsy:.0f}/1000 = {T_kN:.1f} kN"},
+            ],
+        ))
+        
+        # 1.4 Neutral axis depth d_n and block depth a
+        def diagram_1_4_fn():
+            from bending_diagrams import _make_uls_stress_block_figure
+            return _make_uls_stress_block_figure(
+                b_mm=b or 0.0,
+                D_mm=D or 0.0,
+                d_mm=d,
+                dn_mm=dn,
+                a_mm=a_uls,
+                alpha2=alpha2_uls,
+                gamma=gamma_uls,
+                fc=fc,
+                fsy=fsy,
+                show_lever_arm=False,
+                show_dn=True,
+                show_alpha_label=False,
+                show_C=True,
+                C_N=C_N,
+                variant="13",
+            )
+        
+        uls_boxes.append(make_calc_box(
+            "1.4",
+            "Neutral axis depth d_n and block depth a",
+            "info",
+            f"d_n = {dn:.1f} mm, a = {a_uls:.1f} mm",
+            "AS 3600:2018 Cl. 8.1.3",
+            [
+                {"label": "Equilibrium", "eq": "T = alpha2*f'c*b*gamma*c/1000", "sub": "Rearrange for c"},
+                {"label": "Neutral axis", "eq": "c = T*1000/(alpha2*f'c*b*gamma)", "sub": f"= {T_kN:.1f}*1000/({alpha2_uls:.3f}*{fc:.1f}*{b:.0f}*{gamma_uls:.3f}) = {dn:.1f} mm"},
+                {"label": "Block depth", "eq": "a = gamma*c", "sub": f"= {gamma_uls:.3f}*{dn:.1f} = {a_uls:.1f} mm"},
+            ],
+            diagram=diagram_1_4_fn,
+        ))
+        
+        # 1.5 Neutral axis ratio k_u
+        ku = dn / d if d else float("nan")
+        ku_lim = 0.36
+        ku_ok = (0.0 < ku <= ku_lim) if not math.isnan(ku) else None
+        ku_status = "pass" if ku_ok is True else "fail" if ku_ok is False else "info"
+        uls_boxes.append(make_calc_box(
+            "1.5",
+            "Neutral axis ratio k_u",
+            ku_status,
+            f"k_u = {ku:.3f} vs k_u,lim = {ku_lim:.2f} → {'PASS' if ku_ok else 'FAIL' if ku_ok is False else '—'}",
+            "AS 3600:2018 Cl. 8.1.3",
+            [
+                {"label": "Ratio", "eq": "k_u = c/d", "sub": f"= {dn:.1f}/{d:.1f} = {ku:.3f}"},
+            ],
+        ))
+        
+        # 1.6 Lever arm z and moment capacity
+        def diagram_1_6_fn():
+            from bending_diagrams import _make_uls_force_model_figure
+            from reporting.fig_export import call_with_supported_kwargs
+            # Use signature-safe call - function expects D_mm, d_mm, a_mm, C_N, T_N
+            return call_with_supported_kwargs(
+                _make_uls_force_model_figure,
+                D_mm=D or 0.0,
+                d_mm=d,
+                a_mm=a_uls,
+                C_N=C_N,
+                T_N=T,
+                # Also pass aliases in case function accepts different names
+                b_mm=b or 0.0,
+                b=b or 0.0,
+                dn_mm=dn,
+                z_mm=z_uls,
+                alpha2=alpha2_uls,
+                gamma=gamma_uls,
+                fc=fc,
+                fsy=fsy,
+            )
+        
+        uls_boxes.append(make_calc_box(
+            "1.6",
+            "Lever arm z and moment capacity",
+            "info",
+            f"phiM_u,cap = {phi_Mu_cap_uls:.2f} kNm",
+            "AS 3600:2018 Cl. 8.1.3, 2.2",
+            [
+                {"label": "Lever arm", "eq": "z = d - a/2", "sub": f"= {d:.1f} - {a_uls:.1f}/2 = {z_uls:.1f} mm"},
+                {"label": "Nominal", "eq": "M_u = T*z/1000/1000", "sub": f"= {T_kN:.1f}*{z_uls:.1f}/1000 = {Mu_nom_uls:.2f} kNm"},
+                {"label": "Design", "eq": "phiM_u = phi*M_u", "sub": f"= {phi:.2f}*{Mu_nom_uls:.2f} = {phi_Mu_cap_uls:.2f} kNm"},
+            ],
+            diagram=diagram_1_6_fn,
+        ))
+        
+        # 1.7 Flexural capacity check
+        Mu_ok = Mu_star <= phi_Mu_cap_uls if (Mu_star is not None and phi_Mu_cap_uls > 0) else None
+        Mu_status = "pass" if Mu_ok is True else "fail" if Mu_ok is False else "info"
+        Mu_util_val = Mu_star / phi_Mu_cap_uls if phi_Mu_cap_uls > 0 else float("nan")
+        uls_boxes.append(make_calc_box(
+            "1.7",
+            "Flexural capacity check",
+            Mu_status,
+            f"M_u* = {Mu_star:.2f} kNm vs phiM_u,cap = {phi_Mu_cap_uls:.2f} kNm → {'PASS' if Mu_ok else 'FAIL' if Mu_ok is False else 'N/A'}",
+            "AS 3600:2018 Cl. 2.2",
+            [
+                {"label": "Utilisation", "eq": "Util = M_u*/phiM_u,cap", "sub": f"= {Mu_star:.2f}/{phi_Mu_cap_uls:.2f} = {Mu_util_val:.2f}"},
+            ],
+        ))
+    
+    # Minimum strength tab (matching render_min_strength_tab logic)
+    min_boxes = []
+    if phi_Mu_cap > 0:
+        fctf = top_results.get("fctf", 0.0)
+        Z_gross = top_results.get("Z_gross", 0.0)
+        Mcr = top_results.get("Mcr", 0.0)
+        As_min = top_results.get("As_min", 0.0)
+        
+        fctf_as = fctf
+        Zg = Z_gross
+        Mcr_as = Mcr
+        Mu_min_as = 1.2 * Mcr_as if (Mcr_as is not None and not math.isnan(Mcr_as)) else float("nan")
+        Ast_min_as = As_min
+        
+        # 2.1 f_ct,f
+        min_boxes.append(make_calc_box(
+            "2.1",
+            "Concrete flexural tensile strength f_ct,f",
+            "info",
+            f"f_ct,f = {fctf_as:.3f} MPa",
+            "AS 3600:2018 (simplified)",
+            [
+                {"label": "Tensile strength", "eq": "f_ct,f = 0.6*sqrt(f'c)", "sub": f"= 0.6*sqrt({fc:.1f}) = {fctf_as:.3f} MPa"},
+            ],
+        ))
+        
+        # 2.2 Z_g
+        min_boxes.append(make_calc_box(
+            "2.2",
+            "Gross section modulus Z_g",
+            "info",
+            f"Z_g = {Zg:.3e} mm³",
+            "AS 3600:2018",
+            [
+                {"label": "Section modulus", "eq": "Z_g = b*D^2/6", "sub": f"= {b:.0f}*{D:.0f}^2/6 = {Zg:.3e} mm³"},
+            ],
+        ))
+        
+        # 2.3 M_cr
+        min_boxes.append(make_calc_box(
+            "2.3",
+            "Cracking moment M_cr",
+            "info",
+            f"M_cr = {Mcr_as:.2f} kNm",
+            "AS 3600:2018",
+            [
+                {"label": "Cracking moment", "eq": "M_cr = f_ct,f*Z_g/10^6", "sub": f"= {fctf_as:.3f}*{Zg:.3e}/10^6 = {Mcr_as:.2f} kNm"},
+            ],
+        ))
+        
+        # 2.4 Minimum required capacity
+        Mu_min_ok = phi_Mu_cap >= Mu_min_as if (phi_Mu_cap > 0 and Mu_min_as > 0) else None
+        Mu_min_status = "pass" if Mu_min_ok is True else "fail" if Mu_min_ok is False else "info"
+        min_boxes.append(make_calc_box(
+            "2.4",
+            "Minimum required design capacity (M_u,cap)_min",
+            Mu_min_status,
+            f"phiM_u,cap = {phi_Mu_cap:.2f} kNm vs (M_u,cap)_min = {Mu_min_as:.2f} kNm → {'PASS' if Mu_min_ok else 'FAIL' if Mu_min_ok is False else 'N/A'}",
+            "AS 3600:2018 (teaching)",
+            [
+                {"label": "Minimum capacity", "eq": "(M_u,cap)_min = 1.2*M_cr", "sub": f"= 1.2*{Mcr_as:.2f} = {Mu_min_as:.2f} kNm"},
+            ],
+        ))
+        
+        # 2.5 Minimum tensile reinforcement
+        As_ok = Ast >= Ast_min_as if (Ast is not None and Ast_min_as is not None and not math.isnan(Ast_min_as)) else None
+        As_status = "pass" if As_ok is True else "fail" if As_ok is False else "info"
+        min_boxes.append(make_calc_box(
+            "2.5",
+            "Minimum tensile reinforcement A_st,min",
+            As_status,
+            f"A_st = {Ast:.1f} mm² vs A_st,min = {Ast_min_as:.1f} mm² → {'PASS' if As_ok else 'FAIL' if As_ok is False else 'N/A'}",
+            "AS 3600:2018 (simplified)",
+            [
+                {"label": "Minimum steel", "eq": "A_st,min = 0.4*(f_ct,f/f_sy)*b*d", "sub": f"= 0.4*({fctf_as:.3f}/{fsy:.0f})*{b:.0f}*{d:.0f} = {Ast_min_as:.1f} mm²"},
+            ],
+        ))
+    
+    # SLS tab - read from session_state if available (computed by render_sls_tab)
+    sls_boxes = []
+    Ms = Mu_star  # service moment (kNm)
+    
+    # Try to read SLS values from session_state (if SLS tab has been run)
+    try:
+        dn_sls = st.session_state.get("bending_sls_dn", None)
+        kappa_sls = st.session_state.get("bending_sls_kappa", None)
+        eps_top_sls = st.session_state.get("bending_sls_eps_top", None)
+        fs_outer = st.session_state.get("bending_sls_fs_outer", None)
+    except Exception:
+        dn_sls = None
+        kappa_sls = None
+        eps_top_sls = None
+        fs_outer = None
+    
+    if dn_sls is not None and kappa_sls is not None and Ec > 0 and Es > 0 and b > 0 and Ast > 0 and d > 0:
+        # SLS values are available - build calc boxes
+        n_sls = Es / Ec if Ec > 0 else 0.0
+        
+        # 3.1 Modular ratio
+        sls_boxes.append(make_calc_box(
+            "3.1",
+            "Modular ratio n = E_s / E_c",
+            "info",
+            f"n = {n_sls:.2f}",
+            "AS 3600:2018 SLS",
+            [
+                {"label": "Modular ratio", "eq": "n = E_s / E_c", "sub": f"= {Es:.0f} / {Ec:.0f} = {n_sls:.2f}"},
+            ],
+        ))
+        
+        # 3.2 Neutral axis depth d_n
+        def diagram_3_2_fn():
+            from bending_diagrams import _make_sls_stress_block_figure
+            from reporting.fig_export import call_with_supported_kwargs
+            # Get bar layout info for diagram
+            nb_top = st.session_state.get("nb_top", 0) or 0
+            db_top = st.session_state.get("db_top", 0.0) or 0.0
+            cover_top = st.session_state.get("cover_top", 0.0) or 0.0
+            include_comp = (nb_top > 0)
+            d_comp = cover_top + db_top/2.0 if (nb_top > 0 and db_top > 0) else None
+            # Use signature-safe call
+            return call_with_supported_kwargs(
+                _make_sls_stress_block_figure,
+                D_mm=D or 0.0,
+                d_mm=d,
+                dn_mm=dn_sls,
+                include_comp=include_comp,
+                d_comp_mm=d_comp,
+                # Also pass aliases
+                D=D or 0.0,
+                d=d,
+                dn=dn_sls,
+            )
+        
+        sls_boxes.append(make_calc_box(
+            "3.2",
+            "Neutral axis depth d_n (cracked section)",
+            "info",
+            f"d_n = {dn_sls:.1f} mm",
+            "AS 3600:2018 SLS",
+            [
+                {"label": "Cracked section", "eq": "Equilibrium: C = T (transformed areas)", "sub": "Solved numerically"},
+                {"label": "Result", "eq": "d_n", "sub": f"= {dn_sls:.1f} mm"},
+            ],
+            diagram=diagram_3_2_fn,
+        ))
+        
+        # 3.3 Cracked moment of inertia I_cr
+        # Compute Icr from kappa (since kappa = Ms/(Ec*Icr), we have Icr = Ms/(Ec*kappa))
+        # This gives us the actual Icr used in the SLS tab (which includes full bar layout)
+        Ms_Nmm = Ms * 1e6
+        Icr = Ms_Nmm / (Ec * kappa_sls) if (Ec > 0 and kappa_sls != 0) else 0.0
+        
+        sls_boxes.append(make_calc_box(
+            "3.3",
+            "Cracked moment of inertia I_cr",
+            "info",
+            f"I_cr = {Icr:,.2f} mm⁴",
+            "AS 3600:2018 SLS",
+            [
+                {"label": "Formula", "eq": "I_cr = b*d_n^3/3 + Σ(n*A_s*(d_i - d_n)^2)", "sub": "Includes all steel layers"},
+                {"label": "Result", "eq": "I_cr", "sub": f"= {Icr:,.2f} mm⁴"},
+            ],
+        ))
+        
+        # 3.4 Curvature
+        sls_boxes.append(make_calc_box(
+            "3.4",
+            "Curvature at service moment",
+            "info",
+            f"κ = {kappa_sls:.3e} mm⁻¹",
+            "AS 3600:2018 SLS",
+            [
+                {"label": "Curvature", "eq": "κ = M_s / (E_c * I_cr)", "sub": f"= {Ms:.2f}*10^6 / ({Ec:.0f} * {Icr:,.2f}) = {kappa_sls:.3e} mm⁻¹"},
+            ],
+        ))
+        
+        # 3.5 Strain distribution (top fibre)
+        if eps_top_sls is not None:
+            sls_boxes.append(make_calc_box(
+                "3.5",
+                "Strain distribution ε(y) = κ(y − d_n)",
+                "info",
+                f"ε_top = {eps_top_sls:.5f}",
+                "AS 3600:2018 SLS",
+                [
+                    {"label": "Top fibre strain", "eq": "ε_top = κ*(0 - d_n)", "sub": f"= {kappa_sls:.3e}*({-dn_sls:.1f}) = {eps_top_sls:.5f}"},
+                ],
+            ))
+        else:
+            eps_top_computed = kappa_sls * (0.0 - dn_sls)
+            sls_boxes.append(make_calc_box(
+                "3.5",
+                "Strain distribution ε(y) = κ(y − d_n)",
+                "info",
+                f"ε_top = {eps_top_computed:.5f}",
+                "AS 3600:2018 SLS",
+                [
+                    {"label": "Top fibre strain", "eq": "ε_top = κ*(0 - d_n)", "sub": f"= {kappa_sls:.3e}*({-dn_sls:.1f}) = {eps_top_computed:.5f}"},
+                ],
+            ))
+        
+        # 3.6 Steel stresses (outermost tension layer if available)
+        if fs_outer is not None:
+            sls_boxes.append(make_calc_box(
+                "3.6",
+                "Steel stresses at SLS",
+                "info",
+                f"f_s,outer = {fs_outer:.1f} MPa",
+                "AS 3600:2018 SLS",
+                [
+                    {"label": "Outermost tension layer", "eq": "f_s = E_s * ε_s", "sub": f"= {fs_outer:.1f} MPa"},
+                ],
+            ))
+        else:
+            # Compute from curvature and depth
+            eps_s_computed = kappa_sls * (d - dn_sls)
+            fs_computed = Es * eps_s_computed
+            sls_boxes.append(make_calc_box(
+                "3.6",
+                "Steel stresses at SLS",
+                "info",
+                f"f_s ≈ {fs_computed:.1f} MPa",
+                "AS 3600:2018 SLS",
+                [
+                    {"label": "Steel strain", "eq": "ε_s = κ*(d - d_n)", "sub": f"= {kappa_sls:.3e}*({d:.1f} - {dn_sls:.1f}) = {eps_s_computed:.5f}"},
+                    {"label": "Steel stress", "eq": "f_s = E_s * ε_s", "sub": f"= {Es:.0f} * {eps_s_computed:.5f} = {fs_computed:.1f} MPa"},
+                ],
+            ))
+    else:
+        # SLS values not available - show warning box
+        sls_boxes.append(make_calc_box(
+            "SLS",
+            "SLS checks not available",
+            "warn",
+            "Run SLS checks (or Run all checks) before exporting.",
+            "",
+            [
+                {"label": "Note", "eq": "", "sub": "SLS cracked-section analysis requires running the SLS tab in the app."},
+            ],
+        ))
+    
+    # Build tabs
+    tabs = [
+        make_tab("ULS Checks", uls_boxes),
+        make_tab("SLS Checks", sls_boxes),
+        make_tab("Minimum strength checks", min_boxes),
+    ]
+    
+    # Build module report
+    report = make_module_report("Bending (ULS)", tabs)
+    report["summary"] = summary  # Add summary to report
+    return report
+
+
+def _compute_sls_bending_values():
+    """
+    Compute SLS bending values (cracked section analysis) without UI rendering.
+    This replicates the logic from render_sls_tab() but without Streamlit UI calls.
+    
+    Stores results in st.session_state under keys:
+    - bending_sls_dn: neutral axis depth (mm)
+    - bending_sls_kappa: curvature (mm^-1)
+    - bending_sls_eps_top: top fibre strain
+    - bending_sls_fs_outer: outermost tension layer stress (MPa)
+    - bending_sls_y_tension_outer: depth to outermost tension layer (mm)
+    - bending_sls_eps_s_outer: strain in outermost tension layer
+    """
+    import streamlit as st
+    import math
+    from state_and_helpers import get_param
+    
+    # Pull shared values for calculations (matches shear pattern)
+    inputs = _get_bending_inputs_from_shared_state()
+    b = inputs["b"]
+    D = inputs["D"]
+    d = inputs["d"]
+    Ast = inputs["Ast_bot"]
+    Ec = inputs["Ec"]
+    Es = inputs["Es"]
+    Mu_star = inputs["Mu_star"]
+    
+    # Bar layout
+    nb_bot = inputs["nb_bot"]
+    db_bot = inputs["db_bot"]
+    cover_bot = inputs["cover_bot"]
+    rowgap_bot = inputs["rowgap_bot"]
+    
+    nb_top = get_param("nb_top")
+    db_top = get_param("db_top")
+    cover_top = get_param("cover_top")
+    
+    if not (d and Ast and Ec and Es and b and D and Mu_star is not None):
+        return  # Not enough info
+    
+    Ms = Mu_star  # service moment (kNm)
+    
+    # Build steel layers (simplified - single layer for now)
+    layers_tension = []
+    if nb_bot > 0 and db_bot > 0 and cover_bot > 0:
+        As_bar_bot = math.pi * db_bot**2 / 4.0
+        r_bot = db_bot / 2.0
+        y_row0 = D - cover_bot - r_bot
+        # For simplicity, use single equivalent layer
+        layers_tension.append({
+            "name": "T1",
+            "label": "Bottom tension steel",
+            "y": d,
+            "As": Ast,
+        })
+    else:
+        layers_tension.append({
+            "name": "T1",
+            "label": "Bottom tension steel",
+            "y": d,
+            "As": Ast,
+        })
+    
+    # Compression layer (if present)
+    comp_layer = None
+    if nb_top > 0 and db_top > 0:
+        As_top = nb_top * math.pi * db_top**2 / 4.0
+        y_top = cover_top + db_top / 2.0
+        comp_layer = {
+            "name": "C1",
+            "label": "Top steel (compression layer)",
+            "y": y_top,
+            "As": As_top,
+        }
+    
+    # Modular ratio
+    n = Es / Ec if Ec > 0 else 0.0
+    
+    # Solve for neutral axis depth (simplified - use transformed area method)
+    # For single tension layer: n*As*(d - dn) = b*dn^2/2
+    # Rearranging: b*dn^2/2 + n*As*dn - n*As*d = 0
+    # Using quadratic formula
+    nAs = n * Ast
+    if nAs > 0 and b > 0:
+        # Quadratic: (b/2)*dn^2 + nAs*dn - nAs*d = 0
+        a_coeff = b / 2.0
+        b_coeff = nAs
+        c_coeff = -nAs * d
+        
+        discriminant = b_coeff**2 - 4 * a_coeff * c_coeff
+        if discriminant >= 0:
+            dn_sls = (-b_coeff + math.sqrt(discriminant)) / (2 * a_coeff)
+            dn_sls = max(1.0, min(dn_sls, D))  # Clamp
+        else:
+            dn_sls = d / 2.0  # Fallback
+    else:
+        dn_sls = d / 2.0  # Fallback
+    
+    # Cracked moment of inertia (simplified)
+    Icr = (b * dn_sls**3 / 3.0) + nAs * (d - dn_sls)**2
+    
+    # Curvature
+    Ms_Nmm = Ms * 1e6
+    kappa = Ms_Nmm / (Ec * Icr) if (Ec > 0 and Icr > 0) else 0.0
+    
+    # Top fibre strain
+    eps_top = kappa * (0.0 - dn_sls)
+    
+    # Outermost tension layer stress
+    deepest = max(layers_tension, key=lambda l: l["y"], default=None)
+    fs_outer = None
+    eps_s_outer = None
+    y_outer = None
+    
+    if deepest:
+        y_outer = deepest["y"]
+        eps_s_outer = kappa * (y_outer - dn_sls)
+        fs_outer = Es * eps_s_outer
+    
+    # Store in session state
+    try:
+        st.session_state["bending_sls_dn"] = float(dn_sls)
+        st.session_state["bending_sls_kappa"] = float(kappa)
+        st.session_state["bending_sls_eps_top"] = float(eps_top)
+        if fs_outer is not None:
+            st.session_state["bending_sls_fs_outer"] = float(fs_outer)
+        if eps_s_outer is not None:
+            st.session_state["bending_sls_eps_s_outer"] = float(eps_s_outer)
+        if y_outer is not None:
+            st.session_state["bending_sls_y_tension_outer"] = float(y_outer)
+    except Exception:
+        pass
+
+
+def compute_bending_results(publish: bool = True) -> dict:
+    """
+    Compute bending results without UI rendering.
+    Includes ULS, SLS, and minimum strength checks.
+    
+    Args:
+        publish: If True, update results via update_results(). Always True for now.
+    
+    Returns:
+        dict with computed results
+    """
+    import streamlit as st
+    from state_and_helpers import recalc_derived_values, get_param
+    recalc_derived_values()
+    
+    # Call existing compute function (which already calls update_results)
+    results = _compute_bending_capacity()
+    
+    # Compute SLS values (ensures they're available for report building)
+    _compute_sls_bending_values()
+    
+    # Pull shared values for calculations (matches shear pattern)
+    inputs = _get_bending_inputs_from_shared_state()
+    params = {
+        "b": inputs["b"],
+        "D": inputs["D"],
+        "fc": inputs["fc"],
+        "fsy": inputs["fsy"],
+        "Ast": inputs["Ast_bot"],
+        "d": inputs["d"],
+        "phi": inputs["phi"],
+        "Mu_star": inputs["Mu_star"],
+        "Ec": inputs["Ec"],
+        "Es": inputs["Es"],
+    }
+    
+    # Build and store report
+    report = build_bending_report(results, params)
+    
+    # Store report in results dict
+    if "results" not in st.session_state:
+        st.session_state["results"] = {}
+    st.session_state["results"]["bending_report"] = report
+    
+    return {
+        "phi_Mu_cap": results.get("phi_Mu_cap", 0.0),
+        "Mu_utilisation": results.get("Mu_util", 0.0),
+    }
+
+
+def _get_bending_inputs_from_shared_state():
+    """
+    Read all bending inputs from shared canonical keys only.
+    Matches shear's pattern: reads directly from shared state, no defaults, no fallbacks.
+    """
+    from state_and_helpers import get_param
+    
+    return {
+        "b": get_param("b"),
+        "D": get_param("D"),
+        "L": get_param("L"),
+        "d": get_param("d"),
+        "cover_bot": get_param("cover_bot"),
+        "cover_top": get_param("cover_top"),
+        "cover_side": get_param("cover_side"),
+        "fc": get_param("fc"),
+        "fsy": get_param("fsy"),
+        "Ec": get_param("Ec"),
+        "Es": get_param("Es"),
+        "phi": get_param("phi_bend"),
+        "Mu_star": get_param("Mu_star"),
+        "Ast_bot": get_param("Ast_bot"),
+        "nb_or_s_bot_1": get_param("nb_or_s_bot_1"),
+        "db_bot_1": get_param("db_bot_1"),
+        "nb_or_s_bot_2": get_param("nb_or_s_bot_2"),
+        "db_bot_2": get_param("db_bot_2"),
+        "nb_or_s_top_1": get_param("nb_or_s_top_1"),
+        "db_top_1": get_param("db_top_1"),
+        "nb_or_s_top_2": get_param("nb_or_s_top_2"),
+        "db_top_2": get_param("db_top_2"),
+        "rowgap_bot": get_param("rowgap_bot"),
+        "rowgap_top": get_param("rowgap_top"),
+        "lig_legs": get_param("lig_legs"),
+        "lig_d": get_param("lig_d"),
+        "s_lig": get_param("s_lig"),
+        "nb_bot": get_param("nb_bot"),
+        "db_bot": get_param("db_bot"),
+        "nb_top": get_param("nb_top"),
+        "db_top": get_param("db_top"),
+    }
+
+
+def make_bending_sig_from_shared_state() -> dict:
+    """
+    Build a complete signature dict from shared state for cache keys.
+    Includes all inputs that affect bending calculations and diagrams.
+    """
+    return _get_bending_inputs_from_shared_state()
+
+
+def get_bending_inputs_from_shared_state():
+    """
+    Read all bending inputs from shared canonical keys only.
+    Returns a dict with all dimensions and material properties.
+    Treats 0 as valid - only uses defaults if value is None.
+    """
+    return make_bending_sig_from_shared_state()
 
 
 def render_bending():
@@ -356,6 +1090,57 @@ def render_bending():
     # Initialize page-local active mode state (UI-only, not in shared state)
     if "bending_active_mode" not in st.session_state:
         st.session_state["bending_active_mode"] = "ULS"
+    
+    # Debug-only dimension triage panel
+    try:
+        from src.debug.debug_flags import is_debug_enabled
+        if is_debug_enabled():
+            with st.expander("🔧 DEBUG: Dimension Triage", expanded=False):
+                st.markdown("### Shared Canonical Keys")
+                shared_dims = {
+                    "b": st.session_state.get("b"),
+                    "D": st.session_state.get("D"),
+                    "L": st.session_state.get("L"),
+                    "d": st.session_state.get("d"),
+                    "cover_bot": st.session_state.get("cover_bot"),
+                    "cover_top": st.session_state.get("cover_top"),
+                    "cover_side": st.session_state.get("cover_side"),
+                }
+                st.json(shared_dims)
+                
+                st.markdown("### Widget Keys (if available)")
+                widget_dims = {}
+                from state_and_helpers import TAB_KEYS
+                for widget_key in ["bending_b", "bending_D", "bending_L", "inputs_b", "inputs_D", "inputs_L"]:
+                    if widget_key in st.session_state:
+                        shared_key = TAB_KEYS.get(widget_key, "N/A")
+                        widget_dims[f"{widget_key} → {shared_key}"] = st.session_state[widget_key]
+                if widget_dims:
+                    st.json(widget_dims)
+                else:
+                    st.write("No widget keys found")
+                
+                st.markdown("### Values Passed to Bending Core")
+                inputs = get_bending_inputs_from_shared_state()
+                st.json({
+                    "b": inputs["b"],
+                    "D": inputs["D"],
+                    "L": inputs["L"],
+                    "d": inputs["d"],
+                    "cover_bot": inputs["cover_bot"],
+                    "cover_top": inputs["cover_top"],
+                    "cover_side": inputs["cover_side"],
+                })
+                
+                st.markdown("### Key Audit (dimension-like keys)")
+                dim_like_keys = {}
+                for key in sorted(st.session_state.keys()):
+                    if any(term in key.lower() for term in ["b", "width", "d", "depth", "h", "cover", "dimension"]):
+                        dim_like_keys[key] = st.session_state[key]
+                if dim_like_keys:
+                    st.json(dim_like_keys)
+    except ImportError:
+        pass
     
     # Remove green background from inline math (Streamlit wraps math in code tags)
     # But preserve katex rendering by only targeting background, not font styling
@@ -435,46 +1220,43 @@ def render_bending():
     # ============================================================
     from section_layout import compute_section_layout_cached
     
-    # Get all layout parameters
-    b_layout = float(get_param("b", 400.0) or 400.0)
-    D_layout = float(get_param("D", 600.0) or 600.0)
-    cover_bot_layout = float(get_param("cover_bot", 40.0) or 40.0)
-    cover_top_layout = float(get_param("cover_top", 40.0) or 40.0)
-    cover_side_layout = float(
-        st.session_state.get("inputs_cover_side_local", min(cover_top_layout, cover_bot_layout))
-    )
+    # Get all inputs from results (matches shear pattern)
+    results = st.session_state.get("results", {})
     
-    nb_or_s_bot_1_layout = float(get_param("nb_or_s_bot_1", 4.0) or 4.0)
-    db_bot_1_layout = float(get_param("db_bot_1", 20.0) or 20.0)
-    nb_or_s_bot_2_layout = float(get_param("nb_or_s_bot_2", 0.0) or 0.0)
-    db_bot_2_layout = float(get_param("db_bot_2", 20.0) or 20.0)
+    # --- ARCHITECTURE LOCK: bending diagrams must use results (with fallback to shared) ---
+    # Note: Geometry values (b, D, d) are not in results - they're in shared state.
+    # The guard ensures results dict exists and diagrams use the fallback pattern correctly.
+    if st.session_state.get("_dev_mode", False):
+        if "results" not in st.session_state:
+            raise RuntimeError(
+                "[ARCHITECTURE VIOLATION] Bending diagrams require results dict to exist. "
+                "Call update_results() or run compute functions first."
+            )
     
-    nb_or_s_top_1_layout = float(get_param("nb_or_s_top_1", 2.0) or 2.0)
-    db_top_1_layout = float(get_param("db_top_1", 16.0) or 16.0)
-    nb_or_s_top_2_layout = float(get_param("nb_or_s_top_2", 0.0) or 0.0)
-    db_top_2_layout = float(get_param("db_top_2", 16.0) or 16.0)
+    # Filter signature to only include parameters that compute_section_layout_cached accepts
+    layout_sig = {
+        "b": results.get("b", get_param("b", 400.0)),
+        "D": results.get("D", get_param("D", 600.0)),
+        "cover_bot": results.get("cover_bot", get_param("cover_bot", 40.0)),
+        "cover_top": results.get("cover_top", get_param("cover_top", 40.0)),
+        "cover_side": results.get("cover_side", get_param("cover_side", 40.0)),
+        "nb_or_s_bot_1": results.get("nb_or_s_bot_1", get_param("nb_or_s_bot_1", 4.0)),
+        "db_bot_1": results.get("db_bot_1", get_param("db_bot_1", 20.0)),
+        "nb_or_s_bot_2": results.get("nb_or_s_bot_2", get_param("nb_or_s_bot_2", 0.0)),
+        "db_bot_2": results.get("db_bot_2", get_param("db_bot_2", 20.0)),
+        "nb_or_s_top_1": results.get("nb_or_s_top_1", get_param("nb_or_s_top_1", 2.0)),
+        "db_top_1": results.get("db_top_1", get_param("db_top_1", 16.0)),
+        "nb_or_s_top_2": results.get("nb_or_s_top_2", get_param("nb_or_s_top_2", 0.0)),
+        "db_top_2": results.get("db_top_2", get_param("db_top_2", 16.0)),
+        "rowgap_bot": results.get("rowgap_bot", get_param("rowgap_bot", 60.0)),
+        "rowgap_top": results.get("rowgap_top", get_param("rowgap_top", 60.0)),
+        "lig_legs": results.get("lig_legs", get_param("lig_legs", 2)),
+        "lig_d": results.get("lig_d", get_param("lig_d", 10.0)),
+    }
     
-    rowgap_bot_layout = float(get_param("rowgap_bot", 60.0) or 60.0)
-    rowgap_top_layout = float(get_param("rowgap_top", 60.0) or 60.0)
-    
-    lig_legs_raw_layout = get_param("lig_legs", 2)
-    try:
-        lig_legs_layout = int(lig_legs_raw_layout or 0)
-    except Exception:
-        lig_legs_layout = 0
-    lig_d_layout = float(get_param("lig_d", 10.0) or 10.0)
-    
-    # Compute cached layout once
-    cached_layout = compute_section_layout_cached(
-        b=b_layout, D=D_layout,
-        cover_bot=cover_bot_layout, cover_top=cover_top_layout, cover_side=cover_side_layout,
-        nb_or_s_bot_1=nb_or_s_bot_1_layout, db_bot_1=db_bot_1_layout,
-        nb_or_s_bot_2=nb_or_s_bot_2_layout, db_bot_2=db_bot_2_layout,
-        nb_or_s_top_1=nb_or_s_top_1_layout, db_top_1=db_top_1_layout,
-        nb_or_s_top_2=nb_or_s_top_2_layout, db_top_2=db_top_2_layout,
-        rowgap_bot=rowgap_bot_layout, rowgap_top=rowgap_top_layout,
-        lig_legs=lig_legs_layout, lig_d=lig_d_layout,
-    )
+    # Compute cached layout once using filtered signature
+    from section_layout import compute_section_layout_cached
+    cached_layout = compute_section_layout_cached(**layout_sig)
     Mu_util_top = top_results["Mu_util"]
     ku_top = top_results["ku"]
     As_min_top = top_results["As_min"]
@@ -648,18 +1430,21 @@ def render_bending():
 
         with top_left:
             st.title("Bending Capacity")
+
             st.markdown(
-                r"""
+                """
 This page computes **ultimate flexural capacity**, **strain compatibility**, and
 **service-stress outputs** in accordance with **AS 3600:2018 Clause 8**, including:
-
-- **Ultimate moment capacity**  
-  $ \phi M_{u,\mathrm{cap}} = \phi\,T\,(d - 0.5\,\gamma x_u) $ — Cl. 8.1.3
-
-- **Steel stress at serviceability**,  
-  $ f_{s,\mathrm{ser}} = E_s\,\varepsilon_s $, used in crack-width and deflection checks.
-                """
+"""
             )
+
+            st.markdown(r"""
+- **Ultimate moment capacity** (Cl. 8.1.3)  
+    $$\phi M_{u,\mathrm{cap}} = \phi\,T\,(d - 0.5\,\gamma x_u)$$
+
+- **Steel stress at serviceability**, used in crack-width and deflection checks.  
+    $$f_{s,\mathrm{ser}} = E_s\,\varepsilon_s$$
+""")
 
         with top_right:
             # Small spacer to nudge diagram down slightly
@@ -669,10 +1454,11 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             from curved_beam_diagram import render_curved_beam_fig
             
             try:
-                # Get parameters (convert mm to meters for consistency with function)
-                L_m = float(get_param("L", 8000.0) or 8000.0) / 1000.0  # mm -> m
-                D_m = float(get_param("D", 600.0) or 600.0) / 1000.0    # mm -> m
-                b_m = float(get_param("b", 400.0) or 400.0) / 1000.0    # mm -> m
+                # Get parameters from shared state (convert mm to meters for consistency with function)
+                inputs = get_bending_inputs_from_shared_state()
+                L_m = inputs["L"] / 1000.0  # mm -> m
+                D_m = inputs["D"] / 1000.0    # mm -> m
+                b_m = inputs["b"] / 1000.0    # mm -> m
                 # Convert c_top from mm to m (ULS neutral axis depth)
                 if c_top is not None and not (isinstance(c_top, float) and math.isnan(c_top)):
                     dn_uls_m = float(c_top) / 1000.0  # mm -> m
@@ -697,6 +1483,19 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     )
             except Exception as e:
                 st.warning("3D view failed to render (browser/graphics). Try refreshing the page.")
+            
+            # Debug readout (debug mode only)
+            try:
+                from src.debug.debug_flags import is_debug_enabled
+                if is_debug_enabled():
+                    st.caption("🔧 DEBUG: Top Layer 1 bars")
+                    st.write(f"Widget (inputs_nb_or_s_top_1): {st.session_state.get('inputs_nb_or_s_top_1', 'N/A')}")
+                    st.write(f"Shared (nb_or_s_top_1): {st.session_state.get('nb_or_s_top_1', 'N/A')}")
+                    st.write(f"Layout value used: {nb_or_s_top_1_layout}")
+                    st.write(f"Derived (nb_top): {st.session_state.get('nb_top', 'N/A')}")
+                    st.write(f"Derived (Ast_top): {st.session_state.get('Ast_top', 'N/A')}")
+            except ImportError:
+                pass
 
         # Summary table spans full width under the heading + 3D row (deflection-style)
         st.subheader("Bending – Summary")
@@ -1391,7 +2190,6 @@ concrete section, and how we go from **strain → stress → force**:
   - Concrete (short-term):  $\\sigma_c = E_c \\, \\varepsilon_c$  
 
 - Once we know the **stress** we get the **resultant force** by  
-
   $$F = \\sigma \\; A$$  
 
   where $A$ is the relevant steel or concrete area (e.g. $A_{{st}}$ for tension bars,

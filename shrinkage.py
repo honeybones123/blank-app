@@ -180,6 +180,78 @@ def calc_eps_cse(fc: float, t_days: float) -> float:
 
 
 # ------------------------------------------------------------
+#  COMPUTE FUNCTION (no UI rendering)
+# ------------------------------------------------------------
+def compute_shrinkage_results(publish: bool = True) -> dict:
+    """
+    Compute shrinkage results without UI rendering.
+    
+    Args:
+        publish: If True, update results via update_results(). Always True for now.
+    
+    Returns:
+        dict with computed results
+    """
+    # Read geometry from shared state
+    b = get_param("b", 300.0)
+    D = get_param("D", 600.0)
+    
+    # Read materials
+    fc = get_param("fc", 32.0)
+    
+    # Read shrinkage parameters (use defaults if not in shared state)
+    env_option = get_param("env_option", "Temperate inland environment")
+    t_days = get_param("t_shrink", 365.0)
+    
+    # Read faces option (default to beam)
+    faces_option = get_param("faces_option", "Beam – three faces exposed")
+    
+    # Calculate geometry
+    Ag = b * D  # mm²
+    
+    if faces_option == "Slab – one face exposed":
+        ue = b
+    elif faces_option == "Slab – two faces exposed":
+        ue = 2.0 * b
+    elif faces_option == "Beam – three faces exposed":
+        ue = b + 2.0 * D
+    else:  # "Column – four faces exposed"
+        ue = 2.0 * (b + D)
+    
+    th_raw = 2.0 * Ag / ue if ue > 0 else 0.0
+    th_table = _closest_th(th_raw)
+    
+    # Calculate shrinkage components
+    k1 = calc_k1_shrinkage(t_days, th_table)
+    eps_cse = calc_eps_cse(fc, t_days)
+    eps_csd_final = _shrinkage_eps_final(fc, env_option, th_table)
+    eps_csd_t = k1 * eps_csd_final
+    eps_cs_total = eps_cse + eps_csd_t
+    
+    # Update results if publish=True
+    if publish:
+        update_results(
+            eps_cs_total=eps_cs_total,
+            eps_cs_total_micro=eps_cs_total * 1e6,
+            eps_cse=eps_cse,
+            eps_csd_t=eps_csd_t,
+            th_shrinkage=th_table,
+            k1_shrinkage=k1,
+        )
+    
+    # Build steps list (placeholder)
+    steps = ["(Detailed steps not available for this module yet)"]
+    
+    return {
+        "eps_cs_total": eps_cs_total,
+        "eps_cs_total_micro": eps_cs_total * 1e6,
+        "eps_cse": eps_cse,
+        "eps_csd_t": eps_csd_t,
+        "shrinkage_steps": steps,
+    }
+
+
+# ------------------------------------------------------------
 #  MAIN RENDER FUNCTION
 # ------------------------------------------------------------
 def render_shrinkage():

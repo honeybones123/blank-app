@@ -673,39 +673,67 @@ def compute_section_layout() -> Dict[str, Any]:
     Wrapper that reads from session state and calls the pure function.
     For backward compatibility - new code should use compute_section_layout_cached().
     """
-    # Geometry
-    b = float(get_param("b", 400.0) or 400.0)
-    D = float(get_param("D", 600.0) or 600.0)
+    # Geometry - read from shared keys only
+    b_val = get_param("b")
+    b = float(b_val) if b_val is not None else 400.0
+    
+    D_val = get_param("D")
+    D = float(D_val) if D_val is not None else 600.0
 
     # Get 2-layer reinforcement parameters (same as 3D model)
-    nb_or_s_bot_1 = float(get_param("nb_or_s_bot_1", 4.0) or 4.0)
-    db_bot_1 = float(get_param("db_bot_1", 20.0) or 20.0)
-    nb_or_s_bot_2 = float(get_param("nb_or_s_bot_2", 0.0) or 0.0)
-    db_bot_2 = float(get_param("db_bot_2", 20.0) or 20.0)
+    # Treat 0 as valid - only use default if value is None
+    nb_or_s_bot_1_val = get_param("nb_or_s_bot_1")
+    nb_or_s_bot_1 = float(nb_or_s_bot_1_val) if nb_or_s_bot_1_val is not None else 4.0
     
-    nb_or_s_top_1 = float(get_param("nb_or_s_top_1", 2.0) or 2.0)
-    db_top_1 = float(get_param("db_top_1", 16.0) or 16.0)
-    nb_or_s_top_2 = float(get_param("nb_or_s_top_2", 0.0) or 0.0)
-    db_top_2 = float(get_param("db_top_2", 16.0) or 16.0)
+    db_bot_1_val = get_param("db_bot_1")
+    db_bot_1 = float(db_bot_1_val) if db_bot_1_val is not None else 20.0
+    
+    nb_or_s_bot_2_val = get_param("nb_or_s_bot_2")
+    nb_or_s_bot_2 = float(nb_or_s_bot_2_val) if nb_or_s_bot_2_val is not None else 0.0
+    
+    db_bot_2_val = get_param("db_bot_2")
+    db_bot_2 = float(db_bot_2_val) if db_bot_2_val is not None else 20.0
+    
+    nb_or_s_top_1_val = get_param("nb_or_s_top_1")
+    nb_or_s_top_1 = float(nb_or_s_top_1_val) if nb_or_s_top_1_val is not None else 2.0
+    
+    db_top_1_val = get_param("db_top_1")
+    db_top_1 = float(db_top_1_val) if db_top_1_val is not None else 16.0
+    
+    nb_or_s_top_2_val = get_param("nb_or_s_top_2")
+    nb_or_s_top_2 = float(nb_or_s_top_2_val) if nb_or_s_top_2_val is not None else 0.0
+    
+    db_top_2_val = get_param("db_top_2")
+    db_top_2 = float(db_top_2_val) if db_top_2_val is not None else 16.0
 
-    rowgap_bot = float(get_param("rowgap_bot", 60.0) or 60.0)
-    rowgap_top = float(get_param("rowgap_top", 60.0) or 60.0)
+    rowgap_bot_val = get_param("rowgap_bot")
+    rowgap_bot = float(rowgap_bot_val) if rowgap_bot_val is not None else 60.0
+    
+    rowgap_top_val = get_param("rowgap_top")
+    rowgap_top = float(rowgap_top_val) if rowgap_top_val is not None else 60.0
 
-    cover_bot = float(get_param("cover_bot", 40.0) or 40.0)
-    cover_top = float(get_param("cover_top", 40.0) or 40.0)
+    cover_bot_val = get_param("cover_bot")
+    cover_bot = float(cover_bot_val) if cover_bot_val is not None else 40.0
+    
+    cover_top_val = get_param("cover_top")
+    cover_top = float(cover_top_val) if cover_top_val is not None else 40.0
 
-    cover_side = float(
-        st.session_state.get("inputs_cover_side_local", min(cover_top, cover_bot))
-    )
+    # Use shared cover_side if available, otherwise min of top/bot
+    cover_side_val = get_param("cover_side")
+    if cover_side_val is not None:
+        cover_side = float(cover_side_val)
+    else:
+        cover_side = min(cover_top, cover_bot)
 
     # Shear reinforcement
-    lig_legs_raw = get_param("lig_legs", 2)
+    lig_legs_val = get_param("lig_legs")
     try:
-        lig_legs = int(lig_legs_raw or 0)
-    except Exception:
-        lig_legs = 0
+        lig_legs = int(lig_legs_val) if lig_legs_val is not None else 2
+    except (ValueError, TypeError):
+        lig_legs = 2
 
-    lig_d = float(get_param("lig_d", 10.0) or 10.0)
+    lig_d_val = get_param("lig_d")
+    lig_d = float(lig_d_val) if lig_d_val is not None else 10.0
 
     return compute_section_layout_pure(
         b=b, D=D,
@@ -719,8 +747,22 @@ def compute_section_layout() -> Dict[str, Any]:
     )
 
 
-@st.cache_data(show_spinner=False)
-def compute_section_layout_cached(
+# Conditional caching: bypass in debug mode, cache in production
+def _get_compute_section_layout_cached():
+    """Get the cached or uncached version based on debug mode."""
+    try:
+        from src.debug.debug_flags import is_debug_enabled
+        if is_debug_enabled():
+            # Debug mode: no caching
+            return _compute_section_layout_cached_impl
+        else:
+            # Production mode: use cache
+            return st.cache_data(show_spinner=False)(_compute_section_layout_cached_impl)
+    except ImportError:
+        # Debug module not available: use cache
+        return st.cache_data(show_spinner=False)(_compute_section_layout_cached_impl)
+
+def _compute_section_layout_cached_impl(
     b: float,
     D: float,
     cover_bot: float,
@@ -761,5 +803,10 @@ def compute_section_layout_cached(
     )
 
 
+# Public wrapper that uses conditional caching
+def compute_section_layout_cached(*args, **kwargs):
+    """Public wrapper for compute_section_layout_cached with conditional caching."""
+    _compute_fn = _get_compute_section_layout_cached()
+    return _compute_fn(*args, **kwargs)
 
 

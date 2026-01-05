@@ -290,6 +290,22 @@ RESULT_KEYS = {
     "sigma_s_sls",
 }
 
+# Explicit set of derived keys (for RULE 3 checks and debug guards)
+# These are keys written ONLY inside recalc_derived_values()
+DERIVED_KEYS = {
+    "d", "do",
+    "Ast_bot", "Ast_top",
+    "nb_bot", "nb_top",
+    "db_bot", "db_top",
+    "s_bot", "s_top",
+    "bot_entry", "top_entry",
+    "sum_duct", "A_duct_total",
+    "t_creep", "age_at_loading", "stress_ratio", "t_shrink",
+    # Layer 2 keys (may be auto-updated by recalc_derived_values)
+    "nb_or_s_bot_2", "db_bot_2",
+    "nb_or_s_top_2", "db_top_2",
+}
+
 # =====================================================
 # 2. MAPPING: widget keys → shared session_state keys
 # =====================================================
@@ -586,11 +602,8 @@ def sync_shared_from_widgets_once_per_run():
     input_keys = set(SHARED_DEFAULTS.keys())
     
     # Exclude derived values (these are recalculated, not synced from widgets)
-    derived_keys = {
-        "d", "do", "Ast_bot", "Ast_top", "nb_bot", "nb_top", "db_bot", "db_top",
-        "s_bot", "s_top", "bot_entry", "top_entry",
-        "sum_duct", "A_duct_total",
-    }
+    # Use DERIVED_KEYS constant for consistency (defined after RESULT_KEYS)
+    derived_keys = DERIVED_KEYS
     
     # Exclude result values (these are computed, not synced from widgets)
     result_keys = RESULT_KEYS
@@ -755,8 +768,9 @@ def recalc_derived_values():
         n_bot_total += layout_bot_2["n_total"]
     
     # ---------- 3.2 Process 2-layer system for TOP ----------
-    # Get Layer 1 values
-    nb_or_s_top_1 = st.session_state.get("nb_or_s_top_1", 2.0)
+    # Get Layer 1 values - treat 0 as valid (no falsy fallbacks)
+    nb_or_s_top_1_val = st.session_state.get("nb_or_s_top_1")
+    nb_or_s_top_1 = float(nb_or_s_top_1_val) if nb_or_s_top_1_val is not None else 2.0
     db_top_1 = st.session_state.get("db_top_1", 16.0)
     
     # Get Layer 2 values (may be auto-updated)
@@ -937,6 +951,21 @@ def update_results(**kwargs):
       - but do NOT require it to be in RESULT_KEYS (RESULT_KEYS is kept mainly
         for documentation and legacy checks).
     """
+    # Wrap with debug guard in debug mode
+    try:
+        from src.debug.state_debug import guard_session_writes, is_debug_enabled
+        if is_debug_enabled():
+            with guard_session_writes(allowed_keys=RESULT_KEYS, context="update_results"):
+                _update_results_impl(**kwargs)
+        else:
+            _update_results_impl(**kwargs)
+    except (ImportError, NameError):
+        # Debug module not available, use normal path
+        _update_results_impl(**kwargs)
+
+
+def _update_results_impl(**kwargs):
+    """Internal implementation of update_results (separated for debug guard wrapping)."""
     for key, value in kwargs.items():
         if key not in SHARED_DEFAULTS:
             raise KeyError(
@@ -944,11 +973,22 @@ def update_results(**kwargs):
                 f"Add it to SHARED_DEFAULTS before using update_results()."
             )
         st.session_state[key] = value
+    
+    # --- ARCHITECTURE LOCK: ensure results pipeline exists ---
+    _assert_results_pipeline()
 
 
 # ============================================
 # 6. SMALL HELPERS
 # ============================================
+
+def _assert_results_pipeline():
+    """Dev-only assertion: ensure results dict exists (initialize if needed)."""
+    if not st.session_state.get("_dev_mode", False):
+        return
+    # Initialize results dict if it doesn't exist
+    if "results" not in st.session_state:
+        st.session_state["results"] = {}
 
 def get_param(name: str, default=None):
     """

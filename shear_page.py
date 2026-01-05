@@ -856,6 +856,38 @@ def render_shear_steel_and_spacing_block():
 
 
 # ------------------------------------------------------------
+#  COMPUTE FUNCTION (no UI rendering)
+# ------------------------------------------------------------
+def compute_shear_results(publish: bool = True) -> dict:
+    """
+    Compute shear results without UI rendering.
+    
+    Args:
+        publish: If True, update results via update_results(). Always True for now.
+    
+    Returns:
+        dict with computed results
+    """
+    from state_and_helpers import recalc_derived_values
+    from shear_core import _compute_shear_capacity
+    
+    recalc_derived_values()
+    
+    # Call existing compute function (which already calls update_results)
+    results = _compute_shear_capacity()
+    
+    # Build steps list (placeholder for now - steps not stored separately)
+    steps = ["(Detailed steps not available for this module yet)"]
+    
+    return {
+        "phi_Vu_cap": results.get("phi_Vu_cap", 0.0),
+        "Vu_utilisation": results.get("Vu_utilisation", 0.0),
+        "V_eq": results.get("V_eq", 0.0),
+        "shear_steps": steps,
+    }
+
+
+# ------------------------------------------------------------
 #  MAIN PAGE RENDER FUNCTION
 # ------------------------------------------------------------
 def render_shear():
@@ -1228,15 +1260,31 @@ $$\\large T_{{cr}} = 0.33\\sqrt{{{fc:.1f}}} \\cdot \\frac{{{A_cp:.0f}^2}}{{{u_c:
             b_mm = float(get_param("b", 400.0))
             D_mm = float(get_param("D", 600.0))
             
-            @st.cache_data(show_spinner=False)
-            def _cached_step1_fig(L_mm, b_mm, D_mm, theta_deg):
+            # Get cached or uncached version based on debug mode
+            def _get_cached_step1_fig():
+                """Get the cached or uncached version based on debug mode."""
+                try:
+                    from src.debug.cache_control import cache_enabled
+                    if cache_enabled():
+                        # Caching enabled: use cache
+                        return st.cache_data(show_spinner=False)(_step1_fig_impl)
+                    else:
+                        # Cache bypass enabled: return unwrapped function
+                        return _step1_fig_impl
+                except ImportError:
+                    # Debug module not available: use cache
+                    return st.cache_data(show_spinner=False)(_step1_fig_impl)
+            
+            def _step1_fig_impl(L_mm, b_mm, D_mm, theta_deg):
+                """Pure function for step1 figure (cached in production)."""
                 return plot_shear_step1_theta_cracks_3d(
                     L_mm=L_mm, b_mm=b_mm, D_mm=D_mm, theta_deg=theta_deg,
                     n_cracks=3, start_t_min=0.10, start_t_span=0.06,
-                crack_lw=4.0, show_cracks=True
+                    crack_lw=4.0, show_cracks=True
                 )
             
-            fig = _cached_step1_fig(L_mm, b_mm, D_mm, theta_deg)
+            _cached_fn = _get_cached_step1_fig()
+            fig = _cached_fn(L_mm, b_mm, D_mm, theta_deg)
             st.pyplot(fig, use_container_width=True, clear_figure=True)
     
     # Info render function (popover)

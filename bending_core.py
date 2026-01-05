@@ -77,31 +77,33 @@ def _layout_bars_in_rows(n_bars, b, cover, db, min_spacing, n_rows_max=2):
 # ------------------------------------------------------------
 #  Helper – bottom tensile centroid depth
 # ------------------------------------------------------------
-def _effective_depth_centroid():
+def _effective_depth_centroid(b, D, nb_bot, db_bot, cover_bot, rowgap_bot):
     """
     Return effective depth d to the CENTROID of bottom tensile reinforcement.
-    Wrapper that reads from session state and calls the pure function.
-
-    Uses:
-        b, D, nb_bot, db_bot, cover_bot, rowgap_bot
-
-    If anything essential is missing, returns None and the caller can fall back.
+    Pure function wrapper - all inputs passed as arguments (matches shear pattern).
     """
-    b = get_param("b")
-    D = get_param("D")
-    nb_bot = get_param("nb_bot")
-    db_bot = get_param("db_bot")
-    cover_bot = get_param("cover_bot")
-    rowgap_bot = get_param("rowgap_bot")
-    
     return _effective_depth_centroid_pure(b, D, nb_bot, db_bot, cover_bot, rowgap_bot)
 
 
 # ------------------------------------------------------------
 #  BENDING CAPACITY CALC (α2–γ stress block, AS3600 Cl. 8.1.3)
 # ------------------------------------------------------------
-@st.cache_data
-def _compute_bending_capacity_pure(b, D, fc, fsy, Ast, Mu_star, phi, d_input, cover_bot, db_bot, nb_bot, rowgap_bot):
+# Conditional caching: bypass in debug mode, cache in production
+def _get_compute_bending_capacity_pure():
+    """Get the cached or uncached version based on debug mode."""
+    try:
+        from src.debug.cache_control import cache_enabled
+        if cache_enabled():
+            # Caching enabled: use cache
+            return st.cache_data(_compute_bending_capacity_pure_impl)
+        else:
+            # Cache bypass enabled: return unwrapped function
+            return _compute_bending_capacity_pure_impl
+    except ImportError:
+        # Debug module not available: use cache
+        return st.cache_data(_compute_bending_capacity_pure_impl)
+
+def _compute_bending_capacity_pure_impl(b, D, fc, fsy, Ast, Mu_star, phi, d_input, cover_bot, db_bot, nb_bot, rowgap_bot):
     """
     Pure function version of bending capacity calculation.
     All inputs must be passed as arguments (no get_param calls).
@@ -246,31 +248,29 @@ def _effective_depth_centroid_pure(b, D, nb_bot, db_bot, cover_bot, rowgap_bot):
 def _compute_bending_capacity():
     """
     Compute a simple φMu,cap using a rectangular stress block.
-    Wrapper that reads from session state and calls the cached pure function.
+    Reads from shared state and calls the cached pure function (matches shear pattern).
 
     IMPORTANT:
       • d is depth to CENTROID of tensile reo
       • fctf, Mcr and As_min follow AS 3600-style expressions
     """
-    # Shared parameters
+    # Pull shared values for calculations (matches shear pattern)
     b = get_param("b")
     D = get_param("D")
     fc = get_param("fc")
     fsy = get_param("fsy")
     Ast = get_param("Ast_bot")
     Mu_star = get_param("Mu_star")
-
-    phi = get_param("phi_bend", 0.85)
-    
-    # Additional params for pure function
+    phi = get_param("phi_bend")
     d_input = get_param("d")
     cover_bot = get_param("cover_bot")
     db_bot = get_param("db_bot")
     nb_bot = get_param("nb_bot")
     rowgap_bot = get_param("rowgap_bot")
 
-    # Call cached pure function
-    results = _compute_bending_capacity_pure(
+    # Call cached pure function (with debug bypass)
+    _compute_fn = _get_compute_bending_capacity_pure()
+    results = _compute_fn(
         b=b, D=D, fc=fc, fsy=fsy, Ast=Ast, Mu_star=Mu_star, phi=phi,
         d_input=d_input, cover_bot=cover_bot, db_bot=db_bot,
         nb_bot=nb_bot, rowgap_bot=rowgap_bot
@@ -342,10 +342,18 @@ def _stress_strain_state(state: str):
         Es = 200000.0
 
     # Effective depth to centroid of bottom steel
-    d = _effective_depth_centroid()
+    # Pull shared values for calculations (matches shear pattern)
+    b = get_param("b")
+    D = get_param("D")
+    nb_bot = get_param("nb_bot")
+    db_bot = get_param("db_bot")
+    cover_bot = get_param("cover_bot")
+    rowgap_bot = get_param("rowgap_bot")
+    
+    d = _effective_depth_centroid_pure(b, D, nb_bot, db_bot, cover_bot, rowgap_bot)
     if d in (None, 0):
-        cover_bot = get_param("cover_bot") or 40.0
-        db_bot = get_param("db_bot") or 24.0
+        cover_bot = cover_bot or 40.0
+        db_bot = db_bot or 24.0
         d = D - cover_bot - db_bot / 2.0
 
     # If As missing or zero, estimate from nb_bot & db_bot
