@@ -194,14 +194,24 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     with nav_container:
         st.markdown('<div id="page-nav-anchor"></div>', unsafe_allow_html=True)
 
-        selected_slug = st.radio(
-            "",
-            options=SLUGS,
-            horizontal=True,
-            key=NAV_KEY,
-            format_func=lambda s: PAGES[s][0],  # Display label but store slug
-            label_visibility="collapsed",
-        )
+        # Create columns for tabs and PDF button on same row
+        tab_col, btn_col = st.columns([0.82, 0.18], vertical_alignment="top")
+        
+        with tab_col:
+            selected_slug = st.radio(
+                "",
+                options=SLUGS,
+                horizontal=True,
+                key=NAV_KEY,
+                format_func=lambda s: PAGES[s][0],  # Display label but store slug
+                label_visibility="collapsed",
+            )
+        
+        with btn_col:
+            st.markdown("<div style='display:flex; justify-content:flex-end;'>", unsafe_allow_html=True)
+            from reporting.example_integration import render_pdf_button
+            render_pdf_button()
+            st.markdown("</div>", unsafe_allow_html=True)
 
     # --- 3) Sync URL ONLY if it differs (prevents "stuck on bending" loops)
     # ✅ If a jump is present, DO NOT touch query params at all.

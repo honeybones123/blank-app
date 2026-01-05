@@ -340,6 +340,19 @@ def make_summary_cross_section_figure():
         )
 
     fig = go.Figure(data=traces)
+    
+    # Add "Section A" annotation (fixed position below plot area)
+    fig.add_annotation(
+        text="<b>Section A</b>",
+        x=0.5,
+        y=-0.10,              # fixed below plot area
+        xref="paper",
+        yref="paper",
+        showarrow=False,
+        xanchor="center",
+        yanchor="top",
+    )
+    
     fig.update_xaxes(
         visible=False,
         constrain="domain",
@@ -349,16 +362,15 @@ def make_summary_cross_section_figure():
         visible=False,
         scaleanchor="x",
         scaleratio=1,
-        # Keep bottom of the *plot domain* anchored to the bottom of the figure
-        # when Plotly constrains the domain to preserve aspect ratio.
+        # Center the constrained domain (diagram sits between margins)
         constrain="domain",
-        constraintoward="bottom",
+        constraintoward="center",   # centers the plot domain vertically
         range=[D * 1.02, 0],
     )
     fig.update_layout(
         width=345,
         height=450,
-        margin=dict(l=0, r=0, t=0, b=40),
+        margin=dict(l=0, r=0, t=0, b=70),  # b must be big enough for the annotation
         shapes=shapes,
         dragmode=False,
         # no title – label is added in Streamlit below the figure
@@ -1725,14 +1737,6 @@ tr:hover .hint { opacity: 1; }
             )
 
         with col_right:
-            # PDF Report button - positioned top right above 2D graph
-            col_left_btn, col_right_btn = st.columns([1, 1])
-            with col_right_btn:
-                st.markdown("<div style='text-align: right; margin-bottom: 10px;'>", unsafe_allow_html=True)
-                from reporting.example_integration import render_pdf_button
-                render_pdf_button()
-                st.markdown("</div>", unsafe_allow_html=True)
-            
             fig_sec = make_summary_cross_section_figure()
             
             # Compute deterministic key for plotly chart (prevents DOM reuse)
@@ -1757,12 +1761,4 @@ tr:hover .hint { opacity: 1; }
                     key=f"inputs_2d_{diagram_sig}",
                     use_container_width=False,
                     config={"displayModeBar": False},
-                )
-                st.markdown(
-                    """
-                    <div style="text-align:center; margin-top:0.25rem;">
-                        <span style="font-weight:600; font-size:1.1rem;">Section A</span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
                 )
