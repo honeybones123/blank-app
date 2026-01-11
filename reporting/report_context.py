@@ -34,3 +34,6 @@ class ReportContext:
     checks: List[CheckResult]
     figure_exporters: Dict[str, Callable[[], Optional[str]]] = field(default_factory=dict)  # figure_id -> returns image path or None
 
+
+
+

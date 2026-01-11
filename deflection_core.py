@@ -16,6 +16,8 @@ def compute_deflection_results(publish: bool = True) -> dict:
     Reads all inputs from get_param(), performs calculations, and updates results.
     No Streamlit UI - pure computation.
     """
+    import streamlit as st
+    
     # Read geometry
     b = get_param("b", 400.0)
     D = get_param("D", 600.0)
@@ -31,8 +33,28 @@ def compute_deflection_results(publish: bool = True) -> dict:
     Asc = get_param("Ast_top", 0.0)
     d = get_param("d", 560.0)
     
+    # Defensive: ensure critical parameters are not None (use defaults if needed)
+    if b is None:
+        b = 400.0
+    if D is None:
+        D = 600.0
+    if L is None:
+        L = 8000.0
+        L_m = L / 1000.0
+    if fc is None:
+        fc = 32.0
+    if Ec is None:
+        Ec = 30000.0
+    if Ast is None:
+        Ast = 0.0
+    if Asc is None:
+        Asc = 0.0
+    if d is None:
+        d = 560.0
+    
     # Read loads from SFD/BMD page (unified loading system)
-    load_case = get_param("load_case", "Simple beam – UDL over entire span")
+    # Note: load_case is a widget key (st.selectbox), not a shared key
+    load_case = st.session_state.get("load_case", "Simple beam – UDL over entire span")
     
     # For UDL cases, read g and q directly
     g_udl = get_param("g_udl_kNm_per_m", None)
@@ -71,7 +93,22 @@ def compute_deflection_results(publish: bool = True) -> dict:
     defl_limit_ratio = get_param("defl_limit_ratio", 250.0)
     Fdef_kNm = get_param("defl_Fdef", 12.0)
     
+    # Defensive: ensure beff and bw are not None (fallback to b)
+    if beff is None:
+        beff = b
+    if bw is None:
+        bw = b
+    if L_eff is None:
+        L_eff = L_m
+    if support_type is None:
+        support_type = "Simply supported"
+    if defl_limit_ratio is None:
+        defl_limit_ratio = 250.0
+    if Fdef_kNm is None:
+        Fdef_kNm = 12.0
+    
     # Simplified section properties (for I_ef calculation)
+    # If beff/bw equal b, they're using the default (redundant check, but kept for clarity)
     if beff == b:  # If not explicitly set, use b
         beff = b
     if bw == b:  # If not explicitly set, use b

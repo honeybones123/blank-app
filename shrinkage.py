@@ -13,10 +13,9 @@ from state_and_helpers import (
     get_sync_callbacks,
     update_results,  # kept for contract
 )
-from widgets_helpers import apply_global_widget_css, number_row, calcbox, page_divider
+from widgets_helpers import apply_global_widget_css, number_row, calcbox, page_divider, v2_number_input, v2_selectbox, v2_checkbox, v2_radio
 from step_ui import render_expandable_step
-from summary_table_ui import render_clickable_summary_table
-from ui_seamless_steps import bind_summary_clicks, inject_seamless_steps_css
+from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks, inject_seamless_steps_css
 from jump_nav import scroll_to_jump_after_render
 
 
@@ -303,11 +302,11 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
         with col1:
             st.markdown("<div class='sb-label'>Section width b (mm)</div>", unsafe_allow_html=True)
         with col2:
-            b = st.number_input(
-                "",
-                value=b_seed,
-                step=10.0,
+            b = v2_number_input(
+                label="",
                 key="sh_b",
+                default=b_seed,
+                step=10.0,
                 label_visibility="collapsed",
             )
 
@@ -315,11 +314,11 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
         with col1:
             st.markdown("<div class='sb-label'>Overall depth D (mm)</div>", unsafe_allow_html=True)
         with col2:
-            D = st.number_input(
-                "",
-                value=D_seed,
-                step=10.0,
+            D = v2_number_input(
+                label="",
                 key="sh_D",
+                default=D_seed,
+                step=10.0,
                 label_visibility="collapsed",
             )
 
@@ -327,16 +326,16 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
         with col1:
             st.markdown("<div class='sb-label'>Member / faces exposed</div>", unsafe_allow_html=True)
         with col2:
-            faces_option = st.selectbox(
-                "",
-                [
+            faces_option = v2_selectbox(
+                label="",
+                key="sh_faces",
+                options=[
                     "Slab – one face exposed",
                     "Slab – two faces exposed",
                     "Beam – three faces exposed",
                     "Column – four faces exposed",
                 ],
-                index=1,
-                key="sh_faces",
+                default_index=1,
                 label_visibility="collapsed",
             )
 
@@ -347,11 +346,11 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
         with col1:
             st.markdown("<div class='sb-label'>Concrete strength f'c (MPa)</div>", unsafe_allow_html=True)
         with col2:
-            fc = st.number_input(
-                "",
-                value=fc_seed,
-                step=1.0,
+            fc = v2_number_input(
+                label="",
                 key="sh_fc",
+                default=fc_seed,
+                step=1.0,
                 label_visibility="collapsed",
             )
 
@@ -359,16 +358,16 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
         with col1:
             st.markdown("<div class='sb-label'>Shrinkage environment (Table 3.1.7.2)</div>", unsafe_allow_html=True)
         with col2:
-            env_option = st.selectbox(
-                "",
-                [
+            env_option = v2_selectbox(
+                label="",
+                key="sh_env",
+                options=[
                     "Arid environment",
                     "Interior environment",
                     "Temperate inland environment",
                     "Tropical / near-coastal / coastal environment",
                 ],
-                index=2,
-                key="sh_env",
+                default_index=2,
                 label_visibility="collapsed",
             )
 
@@ -376,12 +375,12 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
         with col1:
             st.markdown("<div class='sb-label'>Time since commencement of drying t (days)</div>", unsafe_allow_html=True)
         with col2:
-            t_days = st.number_input(
-                "",
-                value=365.0,
+            t_days = v2_number_input(
+                label="",
+                key="sh_t_days",
+                default=365.0,
                 step=10.0,
                 min_value=1.0,
-                key="sh_t_days",
                 label_visibility="collapsed",
             )
 
@@ -467,13 +466,8 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
             },
         ]
         
-        clicked_uid = render_clickable_summary_table(ROWS, key="shrinkage_summary")
-        
-        # Handle clicked row - set state for expanding step
-        if clicked_uid:
-            # Set step_open_{step_id} to True (matches render_expandable_step pattern)
-            st.session_state[f"step_open_{clicked_uid}"] = True
-            st.session_state["shrinkage_pending_scroll_uid"] = clicked_uid
+        render_clickable_summary_table(ROWS, key_prefix="shrinkage_summary")
+        bind_summary_clicks()
         
         page_divider()
 
@@ -818,14 +812,5 @@ _Ref: AS 3600:2018 Cl. 3.1.7 – total shrinkage._
 """
         )
     
-    # Handle pending scroll after all tabs have rendered (like bending)
-    # This ensures all anchors exist before scrolling
-    pending_scroll_uid = st.session_state.get("shrinkage_pending_scroll_uid")
-    if pending_scroll_uid:
-        st.session_state["jump_to"] = pending_scroll_uid
-        scroll_to_jump_after_render()
-        st.session_state["shrinkage_pending_scroll_uid"] = None
-    
-    bind_summary_clicks()
 
 

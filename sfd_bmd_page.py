@@ -18,8 +18,18 @@ from widgets_helpers import (
     page_divider,
     step_expander_calcbox,
     apply_step_summary_expander_css,
+    v2_number_input,
+    v2_selectbox,
+    v2_checkbox,
+    v2_radio,
 )
 from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks
+
+
+def _label_with_hover(label: str, help_text: str) -> None:
+    """Hover tooltip on the label text itself (no visible paragraph)."""
+    safe = (help_text or "").replace('"', "&quot;")
+    st.markdown(f'<span title="{safe}">{label}</span>', unsafe_allow_html=True)
 
 
 # ---------------------------------------------------
@@ -171,9 +181,9 @@ def plot_load_diagram_plotly(case, L, params):
         for xi in np.linspace(0.1 * L, 0.9 * L, 7):
             fig.add_annotation(
                 x=xi,
-                y=0.45,
+                y=0,
                 ax=xi,
-                ay=0.25,
+                ay=0.45,
                 xref="x",
                 yref="y",
                 axref="x",
@@ -326,9 +336,9 @@ def plot_load_diagram_plotly(case, L, params):
         for xi in np.linspace(0.1 * L, 0.9 * L, 7):
             fig.add_annotation(
                 x=xi,
-                y=0.45,
+                y=0,
                 ax=xi,
-                ay=0.25,
+                ay=0.45,
                 xref="x",
                 yref="y",
                 axref="x",
@@ -366,9 +376,9 @@ def plot_load_diagram_plotly(case, L, params):
         for xi in np.linspace(0.1 * a, 0.9 * a, 5):
             fig.add_annotation(
                 x=xi,
-                y=0.45,
+                y=0,
                 ax=xi,
-                ay=0.25,
+                ay=0.45,
                 xref="x",
                 yref="y",
                 axref="x",
@@ -755,6 +765,40 @@ def render_sfd_bmd_page():
 
     apply_global_widget_css()
     apply_calcbox_css()
+    
+    # Override global widget max-width so selectboxes can fill their column
+    st.markdown(
+        """
+        <style>
+        /* Override global widget max-width so selectboxes can fill their column */
+        body div[data-testid="stSelectbox"],
+        body div[data-testid="stSelectbox"] > div {
+            width: 100% !important;
+            max-width: none !important;
+        }
+
+        body div[data-testid="stSelectbox"] div[data-baseweb="select"] {
+            width: 100% !important;
+            max-width: none !important;
+        }
+
+        /* Let selected option text wrap instead of ellipsis */
+        body div[data-testid="stSelectbox"] div[data-baseweb="select"] span {
+            white-space: normal !important;
+            overflow: visible !important;
+            text-overflow: clip !important;
+            line-height: 1.2em !important;
+        }
+
+        /* Ensure nested elements also allow wrapping */
+        body div[data-testid="stSelectbox"] div[data-baseweb="select"] * {
+            white-space: normal !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    
     sync_callbacks = get_sync_callbacks()
 
     # Define stable UIDs for each calc box (step)
@@ -767,6 +811,22 @@ def render_sfd_bmd_page():
 
     st.title("Shear & Moment Diagrams (Design / Teaching)")
 
+    st.markdown(
+        """
+This page is a **teaching module** for classic statically determinate beams.
+It generates the **load diagram**, **shear force diagram (SFD)** and
+**bending moment diagram (BMD)** with full equilibrium derivation.
+
+**Sign convention (for diagrams):**
+
+- Shear \(V(x)\): **upward positive**
+
+- Bending moment \(M(x)\): **sagging positive**  
+
+  (cantilever hogging appears negative)
+"""
+    )
+
     summary_placeholder = st.empty()
 
     # =========================================================
@@ -774,33 +834,92 @@ def render_sfd_bmd_page():
     # =========================================================
     st.markdown("### Beam loading condition (single source of truth)")
 
-    load_case = st.selectbox(
-        "Loading condition",
-        [
-            "Simple beam – UDL over entire span",
-            "Simple beam – partial UDL from left (length a)",
-            "Simple beam – point load at centre",
-            "Simple beam – point load at distance a from left",
-            "Cantilever – point load at free end",
-            "Cantilever – point load at distance a from fixed end",
-            "Cantilever – UDL over entire span",
-            "Overhanging beam – right overhang with point load at free end",
-        ],
-        key="load_case",
-    )
+    # Standardized row grid widths (label col + input col)
+    ROW_COLS = [1.0, 3.0]
+    
+    # Force all inputs in the input column to start at the same left edge
+    st.markdown("""
+    <style>
+    /* Make every widget in the loading section fill its column starting at the same left edge */
+    .loading-grid [data-testid="stSelectbox"],
+    .loading-grid [data-testid="stSelectbox"] > div,
+    .loading-grid [data-testid="stSelectbox"] div[data-baseweb="select"],
+    .loading-grid [data-testid="stNumberInput"],
+    .loading-grid [data-testid="stNumberInput"] > div {
+      width: 100% !important;
+      max-width: 100% !important;
+      margin-left: 0 !important;
+    }
+
+    /* Cap loading selectbox size but keep left edge aligned */
+    .loading-grid .loading-select [data-testid="stSelectbox"],
+    .loading-grid .loading-select [data-testid="stSelectbox"] > div,
+    .loading-grid .loading-select div[data-baseweb="select"] {
+      width: 100% !important;
+      max-width: 620px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Wrap the entire loading section in a container
+    st.markdown("<div class='loading-grid'>", unsafe_allow_html=True)
+    
+    # Loading condition dropdown as a row (label left, widget right, hover help)
+    LOADING_OPTIONS = [
+        "Simple beam – UDL over entire span",
+        "Simple beam – partial UDL from left (length a)",
+        "Simple beam – point load at centre",
+        "Simple beam – point load at distance a from left",
+        "Cantilever – point load at free end",
+        "Cantilever – point load at distance a from fixed end",
+        "Cantilever – UDL over entire span",
+        "Overhanging beam – right overhang with point load at free end",
+    ]
+    
+    # Get current selection index
+    current_case = st.session_state.get("load_case", LOADING_OPTIONS[0])
+    loading_index = LOADING_OPTIONS.index(current_case) if current_case in LOADING_OPTIONS else 0
+    
+    # Loading condition row with standardized column ratio
+    c1, c2 = st.columns(ROW_COLS, vertical_alignment="center")
+    with c1:
+        _label_with_hover(
+            "Loading condition",
+            "Choose the beam support and load case used to derive reactions, SFD and BMD. "
+            "This is the single source of truth for bending and shear demand used elsewhere in the app."
+        )
+    with c2:
+        st.markdown("<div class='loading-select'>", unsafe_allow_html=True)
+        load_case = v2_selectbox(
+            label="__loading_condition_select__",
+            key="load_case",
+            options=LOADING_OPTIONS,
+            default_index=loading_index,
+            label_visibility="collapsed",
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
 
     # -------- span as editable widget --------
     L_seed = get_param("span_L_m", 6.0)
     L_seed = max(0.1, L_seed)  # Ensure it meets min_value
     
-    L = st.number_input(
-        "Span L (m)",
-        min_value=0.1,
-        value=L_seed,
-        step=0.5,
-        key="load_L",
-        on_change=sync_callbacks.get("load_L", lambda: None),
-    )
+    # Custom row for Span L (needs min_value=0.1, step=0.5) - aligned with other inputs
+    c1, c2 = st.columns(ROW_COLS, vertical_alignment="center")
+    with c1:
+        _label_with_hover(
+            "Span L (m)",
+            "Beam span used for reactions, SFD and BMD."
+        )
+    with c2:
+        L = v2_number_input(
+            label="",
+            key="load_L",
+            default=L_seed,
+            min_value=0.1,
+            step=0.5,
+            on_change=sync_callbacks.get("load_L", lambda: None),
+            label_visibility="collapsed",
+        )
     
     # Update session state
     update_results(span_L_m=float(L))
@@ -816,30 +935,59 @@ def render_sfd_bmd_page():
         "Simple beam – partial UDL from left (length a)",
         "Cantilever – UDL over entire span",
     ]:
-        g = st.number_input(
-            "Dead UDL g (kN/m)",
-            min_value=0.0,
-            value=8.0,
-            step=0.5,
-            key="load_g_udl",
-            on_change=sync_callbacks.get("load_g_udl", lambda: None),
-        )
-        q = st.number_input(
-            "Live UDL q (kN/m)",
-            min_value=0.0,
-            value=4.0,
-            step=0.5,
-            key="load_q_udl",
-            on_change=sync_callbacks.get("load_q_udl", lambda: None),
-        )
-        psi_s = st.number_input(
-            "Sustained factor ψ_s",
-            min_value=0.0,
-            value=0.4,
-            step=0.05,
-            key="load_psi_udl",
-            on_change=sync_callbacks.get("load_psi_udl", lambda: None),
-        )
+        # Dead UDL g row - using ROW_COLS for alignment
+        c1, c2 = st.columns(ROW_COLS, vertical_alignment="center")
+        with c1:
+            _label_with_hover(
+                "Dead UDL g (kN/m)",
+                "Permanent action line load used for SFD/BMD demand derivation."
+            )
+        with c2:
+            g = v2_number_input(
+                label="",
+                key="load_g_udl",
+                default=float(st.session_state.get("load_g_udl", get_param("g_udl_kNm_per_m", 8.0))),
+                step=1.0,
+                format="%.1f",
+                label_visibility="collapsed",
+                on_change=sync_callbacks.get("load_g_udl", lambda: None),
+            )
+        
+        # Live UDL q row - using ROW_COLS for alignment
+        c1, c2 = st.columns(ROW_COLS, vertical_alignment="center")
+        with c1:
+            _label_with_hover(
+                "Live UDL q (kN/m)",
+                "Imposed action line load used for SFD/BMD demand derivation."
+            )
+        with c2:
+            q = v2_number_input(
+                label="",
+                key="load_q_udl",
+                default=float(st.session_state.get("load_q_udl", get_param("q_udl_kNm_per_m", 4.0))),
+                step=1.0,
+                format="%.1f",
+                label_visibility="collapsed",
+                on_change=sync_callbacks.get("load_q_udl", lambda: None),
+            )
+        
+        # Sustained factor ψ_s row - using ROW_COLS for alignment
+        c1, c2 = st.columns(ROW_COLS, vertical_alignment="center")
+        with c1:
+            _label_with_hover(
+                "Sustained factor ψ_s",
+                "Portion of variable action treated as sustained for long-term effects (used by deflection/creep logic)."
+            )
+        with c2:
+            psi_s = v2_number_input(
+                label="",
+                key="load_psi_udl",
+                default=float(st.session_state.get("load_psi_udl", get_param("psi_udl", 0.4))),
+                step=0.05,
+                format="%.2f",
+                label_visibility="collapsed",
+                on_change=sync_callbacks.get("load_psi_udl", lambda: None),
+            )
 
         # Read synced values
         g_shared = get_param("g_udl_kNm_per_m", g)
@@ -857,12 +1005,12 @@ def render_sfd_bmd_page():
 
         # Optional: partial UDL length
         if load_case == "Simple beam – partial UDL from left (length a)":
-            params["a_udl"] = st.number_input(
-                "UDL length a from left (m)",
-                min_value=0.0,
-                value=L / 2,
-                step=0.1,
+            params["a_udl"] = v2_number_input(
+                label="UDL length a from left (m)",
                 key="sfd_a_udl",
+                default=L / 2,
+                min_value=0.0,
+                step=0.1,
             )
 
         update_results(
@@ -882,28 +1030,28 @@ def render_sfd_bmd_page():
         "Cantilever – point load at distance a from fixed end",
         "Overhanging beam – right overhang with point load at free end",
     ]:
-        G_point = st.number_input(
-            "Dead point load G (kN)",
-            min_value=0.0,
-            value=50.0,
-            step=5.0,
+        G_point = v2_number_input(
+            label="Dead point load G (kN)",
             key="load_G_point",
+            default=50.0,
+            min_value=0.0,
+            step=5.0,
             on_change=sync_callbacks.get("load_G_point", lambda: None),
         )
-        Q_point = st.number_input(
-            "Live point load Q (kN)",
-            min_value=0.0,
-            value=30.0,
-            step=5.0,
+        Q_point = v2_number_input(
+            label="Live point load Q (kN)",
             key="load_Q_point",
+            default=30.0,
+            min_value=0.0,
+            step=5.0,
             on_change=sync_callbacks.get("load_Q_point", lambda: None),
         )
-        psi_s = st.number_input(
-            "Sustained factor ψ_s for point load",
-            min_value=0.0,
-            value=0.4,
-            step=0.05,
+        psi_s = v2_number_input(
+            label="Sustained factor ψ_s for point load",
             key="load_psi_point",
+            default=0.4,
+            min_value=0.0,
+            step=0.05,
             on_change=sync_callbacks.get("load_psi_point", lambda: None),
         )
 
@@ -923,33 +1071,33 @@ def render_sfd_bmd_page():
 
         # Optional eccentricity
         if load_case == "Simple beam – point load at distance a from left":
-            a = st.number_input(
-                "Distance a from left support (m)",
-                min_value=0.0,
-                value=L / 3,
-                step=0.1,
+            a = v2_number_input(
+                label="Distance a from left support (m)",
                 key="load_a_point",
+                default=L / 3,
+                min_value=0.0,
+                step=0.1,
                 on_change=sync_callbacks.get("load_a_point", lambda: None),
             )
             a_shared = get_param("a_m", a)
             params["a"] = a_shared
         elif load_case == "Cantilever – point load at distance a from fixed end":
-            a = st.number_input(
-                "Distance a from fixed end (m)",
-                min_value=0.0,
-                value=L / 2,
-                step=0.1,
+            a = v2_number_input(
+                label="Distance a from fixed end (m)",
                 key="sfd_a_cant",
+                default=L / 2,
+                min_value=0.0,
+                step=0.1,
             )
             params["a_cant"] = a
         elif load_case == "Overhanging beam – right overhang with point load at free end":
             L_main = L  # span between supports from Inputs
-            a_over = st.number_input(
-                "Overhang length a (m)",
-                min_value=0.0,
-                value=2.0,
-                step=0.5,
+            a_over = v2_number_input(
+                label="Overhang length a (m)",
                 key="sfd_a_overhang",
+                default=2.0,
+                min_value=0.0,
+                step=0.5,
             )
             params["L_main"] = L_main
             params["a_overhang"] = a_over
@@ -964,23 +1112,8 @@ def render_sfd_bmd_page():
             a_m=float(a) if a is not None else None,
         )
 
-    page_divider()
-
-    st.markdown(
-        """
-This page is a **teaching module** for classic statically determinate beams.
-It generates the **load diagram**, **shear force diagram (SFD)** and
-**bending moment diagram (BMD)** with full equilibrium derivation.
-
-**Sign convention (for diagrams):**
-
-- Shear \(V(x)\): **upward positive**
-
-- Bending moment \(M(x)\): **sagging positive**  
-
-  (cantilever hogging appears negative)
-"""
-    )
+    # Close the loading-grid container
+    st.markdown("</div>", unsafe_allow_html=True)
 
     # Use load_case for computation (rename for compatibility with existing code)
     case = load_case
@@ -1134,12 +1267,25 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
     elif case == "Overhanging beam – right overhang with point load at free end":
         support_type = "Pinned–Pinned (overhang)"
 
+    # Get capacity values for limit display (reuse existing computed values)
+    phi_Mu_cap = get_param("phi_Mu_cap", None)
+    phi_Vu_cap = get_param("phi_Vu_cap", None)
+    
+    # Determine limit strings for derivation rows
+    shear_limit = "—"
+    if phi_Vu_cap is not None and not (isinstance(phi_Vu_cap, float) and math.isnan(phi_Vu_cap)) and phi_Vu_cap > 0:
+        shear_limit = f"φV_u,cap = {phi_Vu_cap:.1f} kN"
+    
+    moment_limit = "—"
+    if phi_Mu_cap is not None and not (isinstance(phi_Mu_cap, float) and math.isnan(phi_Mu_cap)) and phi_Mu_cap > 0:
+        moment_limit = f"φM_u = {phi_Mu_cap:.1f} kNm"
+
     # Build summary rows for clickable table
     rows_summary = [
-        {"Check": "Support conditions", "Value": support_type, "Status": "OK"},
-        {"Check": "Reactions", "Value": "Derived", "Status": "OK"},
-        {"Check": "Shear derivation", "Value": f"|V|_max = {V_max_abs:.2f} kN", "Status": "OK"},
-        {"Check": "Moment derivation", "Value": f"|M|_max = {M_max_abs:.2f} kNm", "Status": "OK"},
+        {"Check": "Support conditions", "Value": support_type, "Limit": "—", "Utilisation": "—", "Status": "OK"},
+        {"Check": "Reactions", "Value": "Derived", "Limit": "—", "Utilisation": "—", "Status": "OK"},
+        {"Check": "Shear derivation", "Value": f"|V|_max = {V_max_abs:.2f} kN", "Limit": shear_limit, "Utilisation": "—", "Status": "OK"},
+        {"Check": "Moment derivation", "Value": f"|M|_max = {M_max_abs:.2f} kNm", "Limit": moment_limit, "Utilisation": "—", "Status": "OK"},
     ]
 
     check_to_uid = {
@@ -1149,31 +1295,103 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
         "Moment derivation": EQ_SLS_UID["step4"],
     }
 
+    check_to_tab = {
+        "Support conditions": "SLS",
+        "Reactions": "SLS",
+        "Shear derivation": "SLS",
+        "Moment derivation": "SLS",
+    }
+
     ROWS = []
     for r in rows_summary:
+        check = r.get("Check", "")
+        limit = r.get("Limit", "—")
+        util_str = r.get("Utilisation", "—")
         status_str = r.get("Status", "")
-        ok = True if status_str == "OK" else (False if status_str in ("Fail", "NG", "Not OK") else None)
+        
+        # Explicitly set capacity limits for derivation rows (before styling logic)
+        if check == "Shear derivation":
+            limit = shear_limit
+            # Calculate utilisation: demand vs capacity
+            if phi_Vu_cap not in (0, None) and not (isinstance(phi_Vu_cap, float) and math.isnan(phi_Vu_cap)):
+                util_val = V_max_abs / phi_Vu_cap
+                util_str = str(round(util_val, 3)) if util_val is not None else "—"
+                status_str = "OK" if (util_val is not None and util_val <= 1.0) else "NG"
+                ok = True if status_str == "OK" else False
+            else:
+                util_str = "—"
+                status_str = "—"
+                ok = None
+        elif check == "Moment derivation":
+            limit = moment_limit
+            # Calculate utilisation: demand vs capacity
+            if phi_Mu_cap not in (0, None) and not (isinstance(phi_Mu_cap, float) and math.isnan(phi_Mu_cap)):
+                util_val = M_max_abs / phi_Mu_cap
+                util_str = str(round(util_val, 3)) if util_val is not None else "—"
+                status_str = "OK" if (util_val is not None and util_val <= 1.0) else "NG"
+                ok = True if status_str == "OK" else False
+            else:
+                util_str = "—"
+                status_str = "—"
+                ok = None
+        
+        # Determine if this is a check row (has numeric utilisation for pass/fail)
+        # A row is a check row only if it has a numeric utilisation (not just a limit)
+        is_check_row = util_str not in ("", "—", None)
+        
+        # Force derivation rows to be treated as check rows
+        if check in ("Shear derivation", "Moment derivation"):
+            is_check_row = True
+        
+        # Determine ok status for styling (True=pass/green, False=fail/red, None=neutral-blue)
+        if not is_check_row:
+            # No utilisation check → neutral blue styling
+            # Keep util as "—" but DO NOT touch limit (derivation rows can show limits)
+            util_str = "—"
+            ok = None
+        else:
+            # Has utilisation check → derive ok from status (if not already set above)
+            if ok is None:
+                if status_str == "OK":
+                    ok = True
+                elif status_str in ("NG", "Fail", "Not OK"):
+                    ok = False
+                else:
+                    # For rows with utilisation, derive status from util if status is not explicitly set
+                    if util_str != "—" and status_str == "":
+                        try:
+                            util_val = float(util_str)
+                            if not math.isnan(util_val):
+                                status_str = "OK" if util_val <= 1.0 else "NG"
+                                ok = True if util_val <= 1.0 else False
+                            else:
+                                ok = None
+                        except (ValueError, TypeError):
+                            ok = None
+                    else:
+                        ok = None
 
         ROWS.append({
-            "title": r["Check"],
+            "title": check,
             "value": r.get("Value", "—"),
-            "limit": r.get("Limit", ""),
-            "util": r.get("Utilisation", "—"),
+            "limit": limit,
+            "util": util_str,
             "status": status_str,
             "ok": ok,
-            "uid": check_to_uid[r["Check"]],
-            "tab": "SLS",
+            "uid": check_to_uid.get(check, ""),
+            "tab": check_to_tab.get(check, "SLS"),
         })
 
     # Render clickable summary table
     with summary_placeholder.container():
         st.markdown("## Summary")
         render_clickable_summary_table(ROWS, key_prefix="design_summary")
+    
+    page_divider()
 
     # ---------------------------------------------------
     # Load diagram – directly under inputs
     # ---------------------------------------------------
-    page_divider()
     st.subheader("Load diagram (SLS loads)")
 
     fig_load = plot_load_diagram_plotly(case, beam_length, params)

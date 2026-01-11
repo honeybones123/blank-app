@@ -12,9 +12,8 @@ from state_and_helpers import (
     get_sync_callbacks,
     update_results,  # kept for contract
 )
-from widgets_helpers import apply_global_widget_css, number_row, calcbox, info_i_button, page_divider
-from summary_table_ui import render_clickable_summary_table
-from ui_seamless_steps import bind_summary_clicks
+from widgets_helpers import apply_global_widget_css, number_row, calcbox, info_i_button, page_divider, v2_number_input, v2_selectbox, v2_checkbox, v2_radio
+from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks
 from jump_nav import scroll_to_jump_after_render
 from step_ui import render_expandable_step
 
@@ -374,11 +373,11 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
         with col1:
             st.markdown("<div class='sb-label'>Section width b (mm)</div>", unsafe_allow_html=True)
         with col2:
-            b = st.number_input(
-                "",
-                value=b_seed,
-                step=10.0,
+            b = v2_number_input(
+                label="",
                 key="cr_b",
+                default=b_seed,
+                step=10.0,
                 label_visibility="collapsed",
             )
 
@@ -386,11 +385,11 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
         with col1:
             st.markdown("<div class='sb-label'>Overall depth D (mm)</div>", unsafe_allow_html=True)
         with col2:
-            D = st.number_input(
-                "",
-                value=D_seed,
-                step=10.0,
+            D = v2_number_input(
+                label="",
                 key="cr_D",
+                default=D_seed,
+                step=10.0,
                 label_visibility="collapsed",
             )
 
@@ -398,16 +397,16 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
         with col1:
             st.markdown("<div class='sb-label'>Member / faces exposed</div>", unsafe_allow_html=True)
         with col2:
-            faces_option = st.selectbox(
-                "",
-                [
+            faces_option = v2_selectbox(
+                label="",
+                key="cr_faces",
+                options=[
                     "Slab – one face exposed",
                     "Slab – two faces exposed",
                     "Beam – three faces exposed",
                     "Column – four faces exposed",
                 ],
-                index=2,
-                key="cr_faces",
+                default_index=2,
                 label_visibility="collapsed",
             )
 
@@ -420,11 +419,11 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
         with col1:
             st.markdown("<div class='sb-label'>Concrete strength f'c (MPa)</div>", unsafe_allow_html=True)
         with col2:
-            fc = st.number_input(
-                "",
-                value=fc_seed,
-                step=1.0,
+            fc = v2_number_input(
+                label="",
                 key="cr_fc",
+                default=fc_seed,
+                step=1.0,
                 label_visibility="collapsed",
             )
 
@@ -432,11 +431,11 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
         with col1:
             st.markdown("<div class='sb-label'>Concrete modulus Ec (MPa)</div>", unsafe_allow_html=True)
         with col2:
-            Ec = st.number_input(
-                "",
-                value=Ec_seed,
-                step=1000.0,
+            Ec = v2_number_input(
+                label="",
                 key="cr_Ec",
+                default=Ec_seed,
+                step=1000.0,
                 label_visibility="collapsed",
             )
 
@@ -444,16 +443,16 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
         with col1:
             st.markdown("<div class='sb-label'>Creep environment (Tables 3.1.8.2 & 3.1.8.3)</div>", unsafe_allow_html=True)
         with col2:
-            env_option = st.selectbox(
-                "",
-                [
+            env_option = v2_selectbox(
+                label="",
+                key="cr_env",
+                options=[
                     "Arid environment",
                     "Interior environment",
                     "Temperate inland environment",
                     "Tropical / near-coastal / coastal environment",
                 ],
-                index=2,
-                key="cr_env",
+                default_index=2,
                 label_visibility="collapsed",
             )
 
@@ -463,12 +462,12 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
         with col1:
             st.markdown("<div class='sb-label'>Time after loading t (days)</div>", unsafe_allow_html=True)
         with col2:
-            t_creep = st.number_input(
-                "",
-                value=365.0,
+            t_creep = v2_number_input(
+                label="",
+                key="cr_t_creep",
+                default=365.0,
                 step=10.0,
                 min_value=1.0,
-                key="cr_t_creep",
                 label_visibility="collapsed",
             )
 
@@ -476,12 +475,12 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
         with col1:
             st.markdown("<div class='sb-label'>Age at loading τ (days)</div>", unsafe_allow_html=True)
         with col2:
-            age_at_loading = st.number_input(
-                "",
-                value=28.0,
+            age_at_loading = v2_number_input(
+                label="",
+                key="cr_tau",
+                default=28.0,
                 step=1.0,
                 min_value=1.0,
-                key="cr_tau",
                 label_visibility="collapsed",
             )
 
@@ -489,13 +488,13 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
         with col1:
             st.markdown("<div class='sb-label'>Sustained stress ratio σ₀ / f'c,mi</div>", unsafe_allow_html=True)
         with col2:
-            stress_ratio = st.number_input(
-                "",
-                value=0.30,
+            stress_ratio = v2_number_input(
+                label="",
+                key="cr_sigma_ratio",
+                default=0.30,
                 step=0.05,
                 min_value=0.0,
                 max_value=0.80,
-                key="cr_sigma_ratio",
                 label_visibility="collapsed",
             )
 
@@ -545,21 +544,15 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
     )
 
     sigma0 = stress_ratio * fc  # MPa (approx using f'c,mi ≈ f'c)
+    # Safety check: prevent division by zero if Ec is 0 (shouldn't happen, but protect against stale state)
+    if Ec == 0 or Ec is None:
+        Ec = 30000.0  # Default value from SHARED_DEFAULTS
     eps_cc = phi_cc_t * sigma0 / Ec  # dimensionless
     eps_cc_micro = eps_cc * 1e6
 
     # --------------------------------------------------------
     # Top-of-page clickable summary table (render in placeholder)
     # --------------------------------------------------------
-    def uid_to_tab_and_step(uid):
-        """Map summary row UID to target tab name and step UID."""
-        mapping = {
-            "creep_phi_cc_t": ("Creep coefficient ϕ_cc(t)", "creep_phi_cc_t"),
-            "creep_phi_cc_table": ("Creep coefficient ϕ_cc(t)", "creep_phi_cc_table"),
-            "creep_eps_cc": ("Creep strain ε_cc", "creep_eps_cc"),
-        }
-        return mapping.get(uid, (None, None))
-    
     with summary_placeholder.container():
         # Build ROWS for top summary table
         ROWS = [
@@ -597,19 +590,8 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
         
         # Render top summary table
         st.markdown("## Creep — Summary")
-        clicked_uid = render_clickable_summary_table(ROWS, key="creep_page_summary")
-        
-    # Handle clicked row - set state for expanding step (JavaScript will handle tab switching and scrolling)
-    if clicked_uid:
-        tab_name, step_uid = uid_to_tab_and_step(clicked_uid)
-        if tab_name and step_uid:
-            # Set step_open_{step_uid} to True (matches render_expandable_step pattern)
-            st.session_state[f"step_open_{step_uid}"] = True
-            # Set tab-local pending scroll state
-            if tab_name == "Creep coefficient ϕ_cc(t)":
-                st.session_state["creep_coeff_pending_scroll_uid"] = step_uid
-            elif tab_name == "Creep strain ε_cc":
-                st.session_state["creep_strain_pending_scroll_uid"] = step_uid
+        render_clickable_summary_table(ROWS, key_prefix="creep_page_summary")
+        bind_summary_clicks()
         
         page_divider()
 
@@ -1067,19 +1049,3 @@ _Ref: AS 3600:2018 Cl. 3.1.8.1._
             calc_md=render_eps_cc(),
         )
     
-    # Handle pending scroll after all tabs have rendered (like bending/shrinkage)
-    # This ensures all anchors exist before scrolling
-    # Check all tab-specific pending scroll UIDs
-    pending_scroll_uid = None
-    for tab_key in ["creep_geom_pending_scroll_uid", "creep_coeff_pending_scroll_uid", "creep_strain_pending_scroll_uid"]:
-        uid = st.session_state.get(tab_key)
-        if uid:
-            pending_scroll_uid = uid
-            st.session_state[tab_key] = None
-            break
-    
-    if pending_scroll_uid:
-        st.session_state["jump_to"] = pending_scroll_uid
-        scroll_to_jump_after_render()
-    
-    bind_summary_clicks()

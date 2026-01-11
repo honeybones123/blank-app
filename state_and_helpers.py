@@ -1,4 +1,7 @@
+import json
 import math
+import os
+import uuid
 import streamlit as st
 
 # ============================================================
@@ -71,6 +74,10 @@ import streamlit as st
 # ============================================
 # 1. SHARED DEFAULTS (session_state values)
 # ============================================
+
+def _coalesce_num(v, default: float) -> float:
+    """Return default only if v is None (preserves 0)."""
+    return default if v is None else float(v)
 
 SHARED_DEFAULTS = {
     # Geometry
@@ -226,6 +233,15 @@ SHARED_DEFAULTS = {
     "deflection_limit_mm": 0.0,
     "deflection_utilisation": 0.0,
     
+    # Deflection page inputs (never None — None causes Streamlit widget + calc crashes)
+    "defl_beff": 400.0,   # mm
+    "defl_bw": 400.0,     # mm
+    "defl_L_eff": 3.0,    # m  (default from L=3000mm)
+    "defl_support_type": "Simply supported",  # Support condition for k₂ coefficient
+    "defl_limit_ratio": 250.0,  # Deflection limit ratio (L/Δ, e.g. 250 for L/250)
+    "defl_Fdef": 12.0,  # Effective design load (kN/m) for span/depth check
+    "defl_use_simplified_ief": True,  # Use simplified I_ef calculation (checkbox)
+    
     # Unified beam loading (single source of truth on SFD/BMD page)
     # Note: load_case is a widget key (st.selectbox), so it's managed by Streamlit, not stored here
     "span_L_m": 6.0,  # Span length (m) - default must be >= 0.1 for widget constraint
@@ -243,7 +259,7 @@ SHARED_DEFAULTS = {
     "psi_point": 0.4,  # Sustained factor for point load
     "P_sls_kN": 62.0,  # SLS point load: G + psi_s * Q (kN)
     "P_uls_kN": 105.0,  # ULS point load: γ_G * G + γ_Q * Q (kN)
-    "a_m": None,  # Distance a from left support for point loads (m)
+    "a_m": 0.0,  # Distance a from left support for point loads (m)
     
     # SFD/BMD results (computed from SLS loads)
     "sfd_Msls_max_kNm": 0.0,  # Maximum absolute bending moment at SLS (kNm) - legacy
@@ -306,6 +322,70 @@ DERIVED_KEYS = {
     "nb_or_s_top_2", "db_top_2",
 }
 
+# Shared keys that should never be driven by stale widget zeros on navigation
+# Shared keys that should never be driven by stale widget zeros on navigation
+FORCE_HYDRATE_SHARED_KEYS = {
+    # Geometry
+    "b", "D", "L",
+
+    # Materials
+    "fc", "fsy", "Ec", "Es",
+
+    # Design actions (manual)
+    "Mu_star_manual", "Vu_star_manual", "Tu_star", "P_star", "N_star",
+
+    # Longitudinal reinforcement (layer 1 + layer 2 + spacing outputs)
+    "nb_or_s_bot_1", "db_bot_1", "nb_or_s_bot_2", "db_bot_2",
+    "nb_or_s_top_1", "db_top_1", "nb_or_s_top_2", "db_top_2",
+    "rowgap_bot", "rowgap_top",
+    "s_bot", "s_top",
+
+    # Cover (if any of these ever appear as 0, it breaks everything visually)
+    "cover_bot", "cover_top", "cover_side",
+    "side_cover_bot", "side_cover_top",
+
+    # Shear reinforcement
+    "lig_d", "lig_legs", "s_lig",
+}
+
+
+def validate_session_state_contract(context: str = "") -> None:
+    """
+    Debug-only validator for session-state contract.
+    Raises fast with a clear message (prevents silent drift).
+    Does not modify UI/diagrams.
+    """
+    import streamlit as st
+
+    missing_shared = [k for k in SHARED_DEFAULTS.keys() if k not in st.session_state]
+    if missing_shared:
+        raise RuntimeError(
+            f"[SessionStateContract] Missing shared keys ({context}): {missing_shared}"
+        )
+
+    # Ensure every widget key in TAB_KEYS exists (so sync can safely operate)
+    missing_widget_keys = []
+    for widget_key, shared_key in TAB_KEYS.items():
+        if widget_key not in st.session_state:
+            missing_widget_keys.append((widget_key, shared_key))
+
+    if missing_widget_keys:
+        # Keep message compact but actionable
+        preview = missing_widget_keys[:10]
+        raise RuntimeError(
+            "[SessionStateContract] Missing widget keys ({ctx}). "
+            "Example missing (widget_key, shared_key): {preview} "
+            "(first 10 shown; ensure init_shared_session_state initializes TAB_KEYS widget keys)."
+            .format(ctx=context, preview=preview)
+        )
+
+    # Optional: sanity check for None where defaults exist (None often causes cascades)
+    none_shared = [k for k, v in SHARED_DEFAULTS.items() if st.session_state.get(k) is None and v is not None]
+    if none_shared:
+        raise RuntimeError(
+            f"[SessionStateContract] Shared keys became None unexpectedly ({context}): {none_shared}"
+        )
+
 # =====================================================
 # 2. MAPPING: widget keys → shared session_state keys
 # =====================================================
@@ -326,6 +406,32 @@ TAB_KEYS = {
     "inputs_Tu_star": "Tu_star",
     "inputs_P_star": "P_star",
     "inputs_N_star": "N_star",
+
+    # ----------------- ACTIONS ALIASES (V* vs Vu*, T* vs Tu*) -----------------
+    # Treat any page's alternate naming as the same underlying shared parameters.
+    "inputs_V_star": "Vu_star_manual",
+    "shear_V_star": "Vu_star_manual",
+    "shear_Vu_star": "Vu_star_manual",
+    "actions_V_star": "Vu_star_manual",
+    "actions_Vu_star": "Vu_star_manual",
+
+    "inputs_T_star": "Tu_star",
+    "shear_T_star": "Tu_star",
+    "shear_Tu_star": "Tu_star",
+    "actions_T_star": "Tu_star",
+    "actions_Tu_star": "Tu_star",
+
+    "shear_N_star": "N_star",
+    "actions_N_star": "N_star",
+
+    "shear_P_star": "P_star",
+    "actions_P_star": "P_star",
+
+    # strength reduction factors commonly edited near action inputs
+    "shear_phi_shear": "phi_shear",
+    "actions_phi_shear": "phi_shear",
+    "shear_phi_torsion": "phi_torsion",
+    "actions_phi_torsion": "phi_torsion",
 
     "inputs_rowgap_bot": "rowgap_bot",
     "inputs_rowgap_top": "rowgap_top",
@@ -426,7 +532,7 @@ TAB_KEYS = {
     "shear_Ec": "Ec",
     "shear_Es": "Es",
 
-    "shear_Vu_star": "Vu_star",
+    "shear_Vu_star": "Vu_star_manual",
     "shear_Tu_star": "Tu_star",
     "shear_P_star": "P_star",
     "shear_N_star": "N_star",
@@ -460,7 +566,7 @@ TAB_KEYS = {
     "crack_Ec": "Ec",
     "crack_Es": "Es",
 
-    "crack_Mu_star": "Mu_star",
+    "crack_Mu_star": "Mu_star_manual",
 
     "crack_nb_bot": "nb_bot",
     "crack_db_bot": "db_bot",
@@ -490,7 +596,48 @@ TAB_KEYS = {
     "load_Q_point": "Q_point_kN",
     "load_psi_point": "psi_point",
     "load_a_point": "a_m",
+    
+    # ----------------- DEFLECTION PAGE -----------------
+    "defl_L_eff": "defl_L_eff",
+    "defl_bw": "defl_bw",
+    "defl_beff": "defl_beff",
+    "defl_support_type": "defl_support_type",
+    "defl_limit_ratio": "defl_limit_ratio",
+    "defl_Fdef": "defl_Fdef",
+    "defl_use_simplified_ief": "defl_use_simplified_ief",
+    
+    # Deflection page uses the same concrete props as global materials
+    "defl_fc": "fc",
+    "defl_Ec": "Ec",
 }
+
+# =========================
+# V2: Canonical key resolver
+# =========================
+
+CANONICAL_PREFIX = "inputs_"
+
+# Build: shared_key -> canonical widget key (prefer inputs_*)
+_SHARED_TO_CANONICAL_WIDGET: dict[str, str] = {}
+for wk, sk in TAB_KEYS.items():
+    if wk.startswith(CANONICAL_PREFIX):
+        _SHARED_TO_CANONICAL_WIDGET.setdefault(sk, wk)
+
+# Fallback: if a shared key has no inputs_* mapping, pick the first mapping (should be rare)
+for wk, sk in TAB_KEYS.items():
+    _SHARED_TO_CANONICAL_WIDGET.setdefault(sk, wk)
+
+# Build alias map: any non-canonical widget key that targets a shared key becomes an alias to the canonical key
+WIDGET_KEY_ALIASES: dict[str, str] = {}
+for wk, sk in TAB_KEYS.items():
+    canonical = _SHARED_TO_CANONICAL_WIDGET.get(sk, wk)
+    if wk != canonical:
+        WIDGET_KEY_ALIASES[wk] = canonical
+
+
+def resolve_widget_key(widget_key: str) -> str:
+    # Keep widget keys distinct across pages (contract rule).
+    return widget_key
 
 # ============================================
 # 2b. CONTRACT VALIDATION
@@ -537,6 +684,220 @@ _validate_contract()
 # 3. INITIALISATION + DERIVED UPDATES
 # ============================================
 
+@st.cache_resource
+def _persistent_store():
+    """
+    Server-process persistent dict, survives reruns and accidental session_state wipes.
+    Keyed by a stable client id we keep in query params.
+    """
+    return {}
+
+
+def get_client_id() -> str:
+    """
+    Stable per-browser identifier stored in query params (not session_state).
+    Prevents losing the key when session_state wipes.
+    """
+    import uuid
+    cid = st.query_params.get("cid")
+    if isinstance(cid, list):
+        cid = cid[0] if cid else None
+    if not cid:
+        cid = str(uuid.uuid4())
+        st.query_params["cid"] = cid
+    return cid
+
+
+def _get_disk_snapshot_path():
+    """Get the path to the disk snapshot file."""
+    repo_root = os.path.dirname(os.path.abspath(__file__))
+    snapshot_dir = os.path.join(repo_root, ".blank_app_state")
+    os.makedirs(snapshot_dir, exist_ok=True)
+    return os.path.join(snapshot_dir, "shared_snapshot.json")
+
+
+def _save_shared_to_disk():
+    """
+    Save the full shared dict to disk snapshot.
+    Called after every successful callback update of a shared key.
+    """
+    try:
+        snapshot_path = _get_disk_snapshot_path()
+        shared_dict = {}
+        for k in SHARED_DEFAULTS.keys():
+            if k in st.session_state:
+                shared_dict[k] = st.session_state[k]
+        
+        with open(snapshot_path, "w") as f:
+            json.dump(shared_dict, f, indent=2)
+    except Exception as e:
+        # Silently fail - disk persistence is best-effort
+        pass
+
+
+def _load_shared_from_disk():
+    """
+    Load shared dict from disk snapshot if available.
+    Returns True if loaded, False otherwise.
+    """
+    try:
+        snapshot_path = _get_disk_snapshot_path()
+        if not os.path.exists(snapshot_path):
+            return False
+        
+        with open(snapshot_path, "r") as f:
+            shared_dict = json.load(f)
+        
+        # Restore shared keys from disk snapshot
+        for k, v in shared_dict.items():
+            if k in SHARED_DEFAULTS:
+                st.session_state[k] = v
+        
+        return True
+    except Exception:
+        # Silently fail - disk persistence is best-effort
+        return False
+
+
+def persist_state_snapshot():
+    """
+    Persist ALL shared keys + ALL inputs_* widget keys + caches used for restores.
+    """
+    cid = get_client_id()
+    store = _persistent_store()
+
+    # Persist shared
+    shared = {}
+    for k in SHARED_DEFAULTS.keys():
+        if k in st.session_state:
+            shared[k] = st.session_state[k]
+
+    # Persist widget values that matter most (inputs_ + caches)
+    widgets = {}
+    for widget_key in TAB_KEYS.keys():
+        if widget_key.startswith("inputs_") and widget_key in st.session_state:
+            widgets[widget_key] = st.session_state[widget_key]
+
+        cached_key = f"_cached_{widget_key}"
+        if cached_key in st.session_state:
+            widgets[cached_key] = st.session_state[cached_key]
+
+    store[cid] = {"shared": shared, "widgets": widgets}
+    
+    # Also save to disk for durable persistence across session restarts
+    _save_shared_to_disk()
+
+
+def restore_state_snapshot_if_available(force: bool = False) -> bool:
+    """
+    If session_state wiped, restore from persisted snapshot.
+    Returns True if restored anything.
+    
+    Args:
+        force: If True, overwrite existing keys. If False, only restore missing keys.
+    """
+    cid = get_client_id()
+    store = _persistent_store()
+    snap = store.get(cid)
+    if not snap:
+        return False
+
+    restored_any = False
+
+    # Restore shared first
+    for k, v in snap.get("shared", {}).items():
+        if force or (k not in st.session_state):
+            st.session_state[k] = v
+            restored_any = True
+
+    # Restore inputs_ widgets and caches
+    for k, v in snap.get("widgets", {}).items():
+        if force or (k not in st.session_state):
+            st.session_state[k] = v
+            restored_any = True
+
+    return restored_any
+
+
+def begin_render_cycle():
+    """
+    MUST be called once per run (in app.py before rendering any page).
+    Ensures rendered widget gating is per-run, not cumulative across runs.
+    """
+    st.session_state["_rendered_widget_keys"] = set()
+
+
+def debug_log(tag: str, data: dict):
+    """Helper to write debug logs in consistent format."""
+    import json
+    log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+    try:
+        with open(log_path, "a") as f:
+            f.write(json.dumps({
+                "location": f"state_and_helpers.py:{tag}",
+                "message": tag,
+                "data": data,
+                "timestamp": __import__("time").time() * 1000,
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "watchdog"
+            }) + "\n")
+    except:
+        pass
+
+
+def log_shared_diff(tag: str):
+    """Log any changes to shared keys since last run."""
+    prev = st.session_state.get("_prev_shared_snapshot", {})
+    now = {k: st.session_state.get(k) for k in SHARED_DEFAULTS.keys()}
+
+    diffs = {}
+    for k, v in now.items():
+        if prev.get(k) != v:
+            diffs[k] = {"prev": prev.get(k), "now": v}
+
+    st.session_state["_prev_shared_snapshot"] = now
+
+    if diffs:
+        debug_log(tag, {"changed_shared": diffs})
+
+
+def _is_invalid_shared_value(val):
+    """Check if a shared value is invalid (None or 0)."""
+    return val is None or (isinstance(val, (int, float)) and val == 0)
+
+
+def repair_inputs_shared_from_widgets():
+    """
+    Contract-safe fallback:
+    If Inputs widget exists and shared is invalid (0/None),
+    copy widget → shared ONCE to repair poisoned shared state.
+    """
+    repaired = {}
+
+    for widget_key, shared_key in TAB_KEYS.items():
+        if not widget_key.startswith("inputs_"):
+            continue
+
+        if widget_key not in st.session_state:
+            continue
+
+        wval = st.session_state.get(widget_key, None)
+        sval = st.session_state.get(shared_key, None)
+
+        if _is_invalid_shared_value(sval) and wval not in (None, 0, 0.0, ""):
+            st.session_state[shared_key] = wval
+            repaired[shared_key] = {"from_widget": widget_key, "widget_value": wval}
+
+    if repaired:
+        debug_log("repair_inputs_shared_from_widgets", repaired)
+
+
+# REMOVED: force_inputs_to_shared_after_wipe()
+# This function was causing real inputs to be overwritten with 0s.
+# Shared state should only be updated via callbacks, not during init/wipe recovery.
+
+
 def init_shared_session_state():
     """
     Initialise all shared keys and tab-widget keys in st.session_state.
@@ -545,36 +906,422 @@ def init_shared_session_state():
     IMPORTANT: This function only sets defaults when keys are missing.
     It NEVER overwrites existing user values.
     
-    Global init-once guard: If already initialized, return early to prevent
-    any re-initialization that could interfere with user values.
+    Always backfills missing widget keys (even after initialization) to prevent
+    widgets from resetting when Streamlit drops widget state.
     """
-    # Global init-once guard: if already initialized, return immediately
-    # This prevents any re-initialization that could interfere with user values
-    if st.session_state.get("_shared_state_initialized", False):
-        return
+    # #region agent log
+    import json
+    import os
+    log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+    try:
+        with open(log_path, "a") as f:
+            f.write(json.dumps({"location": "state_and_helpers.py:590", "message": "init_shared_session_state ENTRY", "data": {"already_init": st.session_state.get("_shared_state_initialized", False)}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}) + "\n")
+    except: pass
+    # #endregion
     
-    # 1) Shared values - only set if missing (never overwrite)
+    # Watchdog: log shared key changes at entry
+    log_shared_diff("init_entry_shared_diff")
+    
+    already_initialized = st.session_state.get("_shared_state_initialized", False)
+    
+    # Detect wipe recovery mode
+    WIPED = not already_initialized
+    
+    if WIPED:
+        st.session_state["_wipe_recovery_mode"] = True
+        debug_log("WIPE_RECOVERY_MODE_ENABLED", {})
+    else:
+        st.session_state["_wipe_recovery_mode"] = False
+    
+    # Session wipe: restore FIRST (force overwrite), then seed anything still missing
+    restored = False
+    if not already_initialized:
+        # #region agent log - wipe detector
+        try:
+            with open(log_path, "a") as f:
+                f.write(json.dumps({
+                    "location": "state_and_helpers.py:init_shared_session_state",
+                    "message": "Detected missing _shared_initialized (session wipe). Will attempt restore.",
+                    "data": {"cid": get_client_id()},
+                    "timestamp": __import__("time").time() * 1000
+                }) + "\n")
+        except:
+            pass
+        # #endregion
+        
+        # FIRST: Try to restore from disk snapshot (durable persistence)
+        disk_restored = _load_shared_from_disk()
+        if disk_restored:
+            restored = True
+        
+        # THEN: Try in-memory snapshot restore (fallback)
+        if not restored:
+            restored = restore_state_snapshot_if_available(force=True)
+        
+        # After restoring, recompute the flag (it may have come back via snapshot)
+        already_initialized = st.session_state.get("_shared_state_initialized", False)
+
+        # If we restored shared keys, we can safely set initialized now
+        if restored and not already_initialized:
+            st.session_state["_shared_state_initialized"] = True
+            already_initialized = True
+    
+    # NOW seed defaults only for anything still missing (after restore)
     for key, val in SHARED_DEFAULTS.items():
         if key not in st.session_state:
             st.session_state[key] = val
-
-    # 2) Tab-local widget copies – start equal to the shared value (only if missing)
-    # CRITICAL: Only initialize widget keys if they don't exist (never overwrite user values)
-    for widget_key, shared_key in TAB_KEYS.items():
-        # Only set widget key if it doesn't exist AND shared key exists
-        if widget_key not in st.session_state and shared_key in st.session_state:
-            st.session_state[widget_key] = st.session_state[shared_key]
     
-    # Guardrail: if any page overwrote shared inputs with snippet/demo defaults,
-    # restore the last known good values instead of letting the app collapse.
-    if _is_snippet_defaults_state(st.session_state):
-        _restore_last_good_inputs()
-    else:
+    # Ensure sentinel exists once we have a valid state
+    if not st.session_state.get("_shared_state_initialized", False):
+        st.session_state["_shared_state_initialized"] = True
+    
+    # 1) Shared values: only set if missing (never overwrite)
+    # Only run once.
+    if not already_initialized:
+        for key, val in SHARED_DEFAULTS.items():
+            if key not in st.session_state:
+                st.session_state[key] = val
+
+    # 2) Tab-widget keys - ALWAYS ensure widget keys exist (only seed if missing).
+    # This prevents "Inputs resets when returning" if widget keys were dropped between pages.
+    # CRITICAL: Only restore widget keys if they are TRULY missing (not just None/0).
+    # If a widget key exists in session_state (even if value is 0), do NOT overwrite it.
+    restored_widgets = []
+    for widget_key, shared_key in TAB_KEYS.items():
+        widget_exists = widget_key in st.session_state
+        shared_exists = shared_key in st.session_state
+        widget_value = st.session_state.get(widget_key) if widget_exists else None
+        shared_value = st.session_state.get(shared_key) if shared_exists else None
+        
+        # #region agent log
+        try:
+            with open(log_path, "a") as f:
+                f.write(json.dumps({"location": "state_and_helpers.py:init_widget_check", "message": "Widget key check in init", "data": {"widget_key": widget_key, "shared_key": shared_key, "widget_exists": widget_exists, "widget_value": widget_value, "shared_exists": shared_exists, "shared_value": shared_value}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "H"}) + "\n")
+        except: pass
+        # #endregion
+        
+        # #region agent log
+        try:
+            with open(log_path, "a") as f:
+                f.write(json.dumps({"location": "state_and_helpers.py:624", "message": "Widget key check", "data": {"widget_key": widget_key, "shared_key": shared_key, "widget_exists": widget_exists, "shared_exists": shared_exists, "widget_value": widget_value, "shared_value": shared_value}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "E"}) + "\n")
+        except: pass
+        # #endregion
+        
+        # Check if widget key exists but differs from cache.
+        # IMPORTANT: if the widget exists, the widget value is authoritative (user input).
+        # Cache is ONLY used to restore if Streamlit dropped the widget key.
+        cached_key = f"_cached_{widget_key}"
+        widget_missing = (widget_key not in st.session_state) or (st.session_state.get(widget_key) is None)
+
+        # ONLY restore from cache if Streamlit dropped the widget key
+        # CRITICAL: Always prefer cache over shared state for inputs_* widgets
+        # Cache preserves the actual user input, while shared state might be stale
+        restored_value = None
+        if widget_missing and widget_key.startswith("inputs_") and cached_key in st.session_state:
+            cached_value = st.session_state[cached_key]
+            # Only restore from cache if cache value is not 0 (or if 0 is the default)
+            default_value = SHARED_DEFAULTS.get(shared_key, None)
+            cache_is_valid = (cached_value != 0) or (cached_value == 0 and default_value == 0)
+            
+            if cache_is_valid:
+                restored_value = cached_value
+                st.session_state[widget_key] = restored_value
+                st.session_state[cached_key] = restored_value
+                # #region agent log
+                try:
+                    with open(log_path, "a") as f:
+                        f.write(json.dumps({"location": "state_and_helpers.py:cache_restore", "message": "Restored from cache", "data": {"widget_key": widget_key, "shared_key": shared_key, "cached_value": cached_value, "default_value": default_value}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "I"}) + "\n")
+                except: pass
+                # #endregion
+            else:
+                # Cache is stale (0 when it shouldn't be) - skip cache restoration, fall through to other sources
+                # #region agent log
+                try:
+                    with open(log_path, "a") as f:
+                        f.write(json.dumps({"location": "state_and_helpers.py:cache_restore", "message": "Skipped stale cache (0 value)", "data": {"widget_key": widget_key, "shared_key": shared_key, "cached_value": cached_value, "default_value": default_value}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "I"}) + "\n")
+                except: pass
+                # #endregion
+
+        if widget_missing:
+            # When restoring widget keys, prefer inputs_* widget values if they exist
+            # (they're the primary source and more likely to be up-to-date)
+            # Check in this order:
+            # 1) Cached inputs_* widget value (preserved from last sync) - already handled above
+            # 2) Existing inputs_* widget in session_state (if not dropped)
+            # 3) Shared state value
+            # 4) Defaults
+            
+            # Skip cache restoration (already handled above), check for other sources
+            if restored_value is None:
+                # Check if there's an inputs_* widget for this shared key that still exists
+                inputs_widget_key = None
+                for wk, sk in TAB_KEYS.items():
+                    if sk == shared_key and wk.startswith("inputs_") and wk in st.session_state:
+                        inputs_widget_key = wk
+                        break
+                
+                if inputs_widget_key:
+                    # Prefer the inputs_* widget value (it's more authoritative)
+                    restored_value = st.session_state[inputs_widget_key]
+                    # #region agent log
+                    try:
+                        with open(log_path, "a") as f:
+                            f.write(json.dumps({"location": "state_and_helpers.py:restore", "message": "About to restore widget key from inputs", "data": {"widget_key": widget_key, "shared_key": shared_key, "restored_value": restored_value, "inputs_widget_key": inputs_widget_key, "widget_value_before": st.session_state.get(widget_key)}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "G"}) + "\n")
+                    except: pass
+                    # #endregion
+                    st.session_state[widget_key] = restored_value
+                    # Update the cache to keep it current with the actual inputs_* widget value
+                    cached_inputs_key = f"_cached_{inputs_widget_key}"
+                    st.session_state[cached_inputs_key] = restored_value
+                    # #region agent log
+                    try:
+                        with open(log_path, "a") as f:
+                            f.write(json.dumps({"location": "state_and_helpers.py:667", "message": "Restored from existing inputs widget", "data": {"widget_key": widget_key, "shared_key": shared_key, "restored_value": restored_value, "inputs_widget_key": inputs_widget_key, "cache_updated": st.session_state[cached_inputs_key], "widget_value_after": st.session_state.get(widget_key)}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "E"}) + "\n")
+                    except: pass
+                    # #endregion
+                elif shared_key in st.session_state:
+                    # Fall back to shared value if no inputs_* widget exists
+                    shared_value = st.session_state[shared_key]
+                    default_value = SHARED_DEFAULTS.get(shared_key, None)
+                    
+                    # CRITICAL FIX: Don't restore from shared state if shared is 0 and default is not 0
+                    # This prevents restoring widgets to 0 when shared state is stale/uninitialized
+                    # Only restore if:
+                    # 1) Shared value is not 0, OR
+                    # 2) Shared value is 0 AND default is also 0 (0 is legitimate)
+                    should_restore = (shared_value != 0) or (shared_value == 0 and default_value == 0)
+                    
+                    # #region agent log
+                    try:
+                        with open(log_path, "a") as f:
+                            f.write(json.dumps({"location": "state_and_helpers.py:restore", "message": "About to restore widget key from shared", "data": {"widget_key": widget_key, "shared_key": shared_key, "restored_value": shared_value, "default_value": default_value, "widget_value_before": st.session_state.get(widget_key), "should_restore": should_restore}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "G"}) + "\n")
+                    except: pass
+                    # #endregion
+                    
+                    if should_restore:
+                        restored_value = shared_value
+                        st.session_state[widget_key] = restored_value
+                    else:
+                        # Skip restoring from shared (stale 0 value) BUT DO NOT write None into the widget.
+                        # Instead fall back to the default value immediately.
+                        restored_value = SHARED_DEFAULTS.get(shared_key, None)
+
+                        # Only set if we actually have a default; otherwise leave missing
+                        if restored_value is not None:
+                            st.session_state[widget_key] = restored_value
+                        # #region agent log
+                        try:
+                            with open(log_path, "a") as f:
+                                f.write(json.dumps({"location": "state_and_helpers.py:restore", "message": "Skipped restoring from shared (stale 0 value)", "data": {"widget_key": widget_key, "shared_key": shared_key, "shared_value": shared_value, "default_value": default_value, "restored_value": restored_value}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "G"}) + "\n")
+                        except: pass
+                        # #endregion
+                else:
+                    # Final fallback to defaults
+                    restored_value = SHARED_DEFAULTS.get(shared_key, None)
+                    # #region agent log
+                    try:
+                        with open(log_path, "a") as f:
+                            f.write(json.dumps({"location": "state_and_helpers.py:restore", "message": "About to restore widget key from defaults", "data": {"widget_key": widget_key, "shared_key": shared_key, "restored_value": restored_value, "widget_value_before": st.session_state.get(widget_key)}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "G"}) + "\n")
+                    except: pass
+                    # #endregion
+                    st.session_state[widget_key] = restored_value
+            
+            # #region agent log
+            try:
+                with open(log_path, "a") as f:
+                    f.write(json.dumps({"location": "state_and_helpers.py:690", "message": "Widget key restored (final)", "data": {"widget_key": widget_key, "shared_key": shared_key, "restored_value": restored_value, "shared_exists": shared_exists, "shared_value_before": shared_value, "widget_value_after": st.session_state.get(widget_key)}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "E"}) + "\n")
+            except: pass
+            # #endregion
+            restored_widgets.append((widget_key, shared_key, restored_value))
+
+    # 3) Only run your "snippet defaults" guard / snapshot ONCE
+    if not already_initialized:
+        if _is_snippet_defaults_state(st.session_state):
+            _restore_last_good_inputs()
+        else:
+            _snapshot_last_good_inputs()
+
+        st.session_state["_shared_state_initialized"] = True
+        st.session_state["_shared_inited"] = True  # Keep legacy flag for compatibility
+    
+    # Keep global snapshot fresh on every run IF values look sane.
+    # (No overwrites when we're in a bogus defaults state.)
+    if not _is_snippet_defaults_state(st.session_state):
         _snapshot_last_good_inputs()
     
-    # Mark as initialized (prevents any future re-initialization)
-    st.session_state["_shared_state_initialized"] = True
-    st.session_state["_shared_inited"] = True  # Keep legacy flag for compatibility
+    # ============================
+    # SAFE HYDRATION (NO widget→shared here)
+    # ============================
+    # CRITICAL RULES:
+    # 1) Never write shared from widgets during init
+    #    - Shared can ONLY be changed by callbacks / explicit sync, not by navigation/init
+    #    - This prevents stale widget zeros from overwriting shared state on navigation
+    # 2) Only hydrate page widgets from shared (shared → widget)
+    #    - Non-inputs page widgets (bending_*, shear_*, etc.) are hydrated from shared
+    #    - This ensures page widgets start from correct shared values
+    # 3) Inputs page widgets still update shared via callbacks only
+    #    - inputs_* widgets update shared through on_change callbacks
+    #    - Never sync inputs_* → shared during init
+    
+    # Hydrate all NON-input widget copies from shared (so page navigation never seeds 0s into shared)
+    for widget_key, shared_key in TAB_KEYS.items():
+        if widget_key.startswith("inputs_"):
+            continue
+        if shared_key in st.session_state and widget_key in st.session_state:
+            st.session_state[widget_key] = st.session_state[shared_key]
+            # #region agent log
+            try:
+                with open(log_path, "a") as f:
+                    f.write(json.dumps({"location": "state_and_helpers.py:safe_hydrate", "message": "Hydrated page widget from shared", "data": {"widget_key": widget_key, "shared_key": shared_key, "value": st.session_state[shared_key]}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "P"}) + "\n")
+            except: pass
+            # #endregion
+    
+    # Keep inputs_* cache current, BUT do not poison it with stale navigation zeros.
+    # This cache is used for widget restoration, but we never sync inputs_* → shared during init.
+    for widget_key, shared_key in TAB_KEYS.items():
+        if widget_key.startswith("inputs_") and widget_key in st.session_state:
+            widget_val = st.session_state[widget_key]
+            cached_key = f"_cached_{widget_key}"
+
+            default_value = SHARED_DEFAULTS.get(shared_key, None)
+            shared_val = st.session_state.get(shared_key, None)
+
+            # Detect "stale zero" (navigation glitch) for keys we must never let go stale:
+            # - widget is 0
+            # - shared has a meaningful non-zero value
+            # - default is meaningful non-zero
+            # - key is protected (geometry/materials/actions)
+            is_stale_zero = (
+                (widget_val == 0 or widget_val == 0.0)
+                and (shared_key in FORCE_HYDRATE_SHARED_KEYS)
+                and (shared_val not in (None, 0, 0.0))
+                and (default_value not in (None, 0, 0.0))
+            )
+
+            if not is_stale_zero:
+                st.session_state[cached_key] = widget_val
+            # else: do NOT overwrite cache; keep the last known good value
+    
+    # #region agent log
+    try:
+        with open(log_path, "a") as f:
+            f.write(json.dumps({"location": "state_and_helpers.py:627", "message": "init_shared_session_state EXIT", "data": {"restored_count": len(restored_widgets), "sample_restored": restored_widgets[:5] if restored_widgets else []}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}) + "\n")
+    except: pass
+    # #endregion
+    
+    # Only attempt repair if we did NOT successfully restore from snapshot
+    # This prevents "repair" logic from stomping restored state
+    if not restored:
+        repair_inputs_shared_from_widgets()
+    
+    # Watchdog: log shared key changes at exit
+    log_shared_diff("init_exit_shared_diff")
+    
+    # Debug-only: validate contract after initialization
+    try:
+        from src.debug.state_debug import is_debug_enabled
+        if is_debug_enabled():
+            validate_session_state_contract(context="after init_shared_session_state")
+    except (ImportError, NameError):
+        # Debug module not available, skip validation
+        pass
+    
+    # Persist snapshot after init/restore so future wipes recover correctly
+    persist_state_snapshot()
+
+
+def hydrate_active_page_widgets_from_shared(active_slug: str) -> None:
+    """
+    Prevent stale page widget keys (often 0) from overwriting shared values on navigation.
+    Runs BEFORE rendering the active page so widgets start from shared values.
+    Only force-hydrates keys whose shared values should not be clobbered by zeros.
+    
+    CRITICAL: Also hydrates inputs_* widgets (they're global and should always be hydrated
+    from shared state to prevent stale zeros from syncing back into shared).
+    """
+    # #region agent log
+    import json
+    import os
+    log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+    try:
+        with open(log_path, "a") as f:
+            f.write(json.dumps({"location": "state_and_helpers.py:hydrate_entry", "message": "Hydrate function entry", "data": {"active_slug": active_slug}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "K"}) + "\n")
+    except: pass
+    # #endregion
+    
+    prefix = f"{active_slug}_"
+    hydrated_count = 0
+    
+    # CRITICAL: Always hydrate inputs_* widgets from shared state (they're global)
+    # This prevents stale inputs_* zeros from syncing back into shared state
+    for widget_key, shared_key in TAB_KEYS.items():
+        if not widget_key.startswith("inputs_"):
+            continue
+        if shared_key not in st.session_state:
+            continue
+        if shared_key not in FORCE_HYDRATE_SHARED_KEYS:
+            continue  # Only hydrate critical keys for inputs_*
+            
+        shared_val = st.session_state.get(shared_key)
+        widget_val = st.session_state.get(widget_key)
+        
+        is_stale_zero = (widget_val is None) or (widget_val == 0) or (widget_val == 0.0) or (widget_val == "")
+        shared_is_meaningful = shared_val not in (None, "", 0, 0.0)
+        
+        if is_stale_zero and shared_is_meaningful:
+            # #region agent log
+            try:
+                with open(log_path, "a") as f:
+                    f.write(json.dumps({"location": "state_and_helpers.py:hydrate", "message": "Force-hydrating inputs_* stale zero", "data": {"widget_key": widget_key, "shared_key": shared_key, "widget_val_before": widget_val, "shared_val": shared_val}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "K"}) + "\n")
+            except: pass
+            # #endregion
+            st.session_state[widget_key] = shared_val
+            hydrated_count += 1
+    
+    # Hydrate active page's widgets (e.g., bending_*, shear_*)
+    for widget_key, shared_key in TAB_KEYS.items():
+        if not widget_key.startswith(prefix):
+            continue
+        if shared_key not in st.session_state:
+            continue
+
+        shared_val = st.session_state.get(shared_key)
+
+        # Always seed missing widget keys
+        if widget_key not in st.session_state:
+            st.session_state[widget_key] = shared_val
+            hydrated_count += 1
+            # #region agent log
+            try:
+                with open(log_path, "a") as f:
+                    f.write(json.dumps({"location": "state_and_helpers.py:hydrate", "message": "Seeded missing widget key", "data": {"widget_key": widget_key, "shared_key": shared_key, "shared_val": shared_val}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "K"}) + "\n")
+            except: pass
+            # #endregion
+            continue
+
+        # Force-hydrate only for critical shared keys if widget is "stale zero"
+        if shared_key in FORCE_HYDRATE_SHARED_KEYS:
+            widget_val = st.session_state.get(widget_key)
+
+            is_stale_zero = (widget_val is None) or (widget_val == 0) or (widget_val == 0.0) or (widget_val == "")
+            shared_is_meaningful = shared_val not in (None, "", 0, 0.0)
+
+            if is_stale_zero and shared_is_meaningful:
+                # #region agent log
+                try:
+                    with open(log_path, "a") as f:
+                        f.write(json.dumps({"location": "state_and_helpers.py:hydrate", "message": "Force-hydrating stale zero", "data": {"widget_key": widget_key, "shared_key": shared_key, "widget_val_before": widget_val, "shared_val": shared_val}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "K"}) + "\n")
+                except: pass
+                # #endregion
+                st.session_state[widget_key] = shared_val
+                hydrated_count += 1
+    
+    # #region agent log
+    try:
+        with open(log_path, "a") as f:
+            f.write(json.dumps({"location": "state_and_helpers.py:hydrate_exit", "message": "Hydrate function exit", "data": {"active_slug": active_slug, "hydrated_count": hydrated_count}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "K"}) + "\n")
+    except: pass
+    # #endregion
 
 
 def sync_shared_from_widgets_once_per_run():
@@ -585,17 +1332,19 @@ def sync_shared_from_widgets_once_per_run():
     (which persist in session_state) are copied to shared keys so other
     pages see consistent values.
     
-    CRITICAL: Only syncs when widget key exists AND shared key is missing.
-    This prevents defaults from overwriting user values.
+    CRITICAL: Syncs when widget values differ from shared values (recently changed).
+    When multiple widgets map to the same shared key, prefers inputs_* widgets.
+    This prevents stale widgets from overwriting recently changed values.
     
-    Rules:
+    Rules (SESSION STATE CONTRACT COMPLIANT):
     - Only syncs INPUT parameters (those in SHARED_DEFAULTS that have widget mappings)
     - Never touches derived values (d, Ast_bot, etc.) - those are handled by recalc_derived_values()
     - Never touches result values (phi_Mu_cap, etc.)
-    - Only copies if widget key exists AND shared key is missing
+    - Only syncs if widget key exists and widget value differs from shared value
+    - When multiple widgets map to same shared key, prefers inputs_* widgets among differing ones
     - Never creates new keys beyond SHARED_DEFAULTS
     - Never modifies widget keys
-    - Never overwrites existing shared key values (to prevent defaults from overwriting user inputs)
+    - Only writes to shared keys defined in SHARED_DEFAULTS (RULE 1 compliant)
     """
     # Only sync input parameters (not derived, not results)
     # We identify inputs by checking if they're in SHARED_DEFAULTS and have widget mappings
@@ -611,21 +1360,279 @@ def sync_shared_from_widgets_once_per_run():
     # Only sync input keys (not derived, not results)
     syncable_keys = input_keys - derived_keys - result_keys
     
-    # For each widget → shared mapping, sync ONLY if shared key is missing
+    # Active page gating:
+    # - Always allow inputs_* (global)
+    # - Only allow the current active page prefix (e.g. bending_*) to sync shared keys
+    active_slug = st.session_state.get("_active_page_slug", "inputs")
+    active_prefix = f"{active_slug}_"
+    
+    # #region agent log
+    import json
+    import os
+    log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+    sync_operations = []
+    # #endregion
+    
+    # Shared keys that must NEVER be overwritten by other pages' defaults.
+    # Authority order for these: inputs_* first, then bending_*.
+    LOCKED_REO_SHARED_KEYS = {
+        "nb_or_s_bot_1", "db_bot_1", "nb_or_s_bot_2", "db_bot_2",
+        "nb_or_s_top_1", "db_top_1", "nb_or_s_top_2", "db_top_2",
+        "rowgap_bot", "rowgap_top",
+        "cover_bot", "cover_top",
+        # Shear reinforcement (locked to inputs_* only)
+        "lig_d", "lig_legs", "s_lig",
+    }
+    
+    # Shared keys that should NEVER be overwritten with 0 if they have meaningful values
+    # This prevents stale widget zeros from clobbering shared state
+    PROTECTED_FROM_ZERO_SHARED_KEYS = FORCE_HYDRATE_SHARED_KEYS
+    
+    # Group widgets by shared key to handle conflicts
+    # V2: Only canonical widget keys rendered THIS RUN are allowed to author shared keys
+    widgets_by_shared = {}
+
+    rendered = st.session_state.get("_rendered_widget_keys")
+    if not isinstance(rendered, set):
+        rendered = set()
+    
+    # #region agent log - Track sync entry
+    import json
+    import os
+    log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+    rendered_list = list(rendered) if isinstance(rendered, set) else []
+    sample_widgets = ["inputs_b", "inputs_D", "inputs_fc", "inputs_fsy", "bending_nb_or_s_bot_1", "shear_lig_d"]
+    widget_values_at_sync_start = {k: st.session_state.get(k) for k in sample_widgets if k in st.session_state}
+    try:
+        with open(log_path, "a") as f:
+            f.write(json.dumps({"location": "state_and_helpers.py:sync_entry", "message": "Sync function entry", "data": {"rendered_count": len(rendered_list), "rendered_sample": rendered_list[:10], "widget_values": widget_values_at_sync_start}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}) + "\n")
+    except: pass
+    # #endregion
+
     for widget_key, shared_key in TAB_KEYS.items():
-        # Only sync if this shared key is an input parameter
         if shared_key not in syncable_keys:
             continue
-        
-        # Only sync if widget key exists in session_state
-        if widget_key not in st.session_state:
+
+        # Only sync widgets that were rendered THIS RUN
+        if widget_key not in rendered:
+            # #region agent log
+            try:
+                with open(log_path, "a") as f:
+                    f.write(json.dumps({"location": "state_and_helpers.py:sync", "message": "Skipped non-rendered key", "data": {"widget_key": widget_key, "shared_key": shared_key, "rendered_keys_count": len(rendered)}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "C"}) + "\n")
+            except: pass
+            # #endregion
             continue
+
+        # REO LOCK: Only inputs_* is allowed to author reinforcement shared keys
+        if shared_key in LOCKED_REO_SHARED_KEYS and not widget_key.startswith("inputs_"):
+            # #region agent log
+            try:
+                with open(log_path, "a") as f:
+                    f.write(json.dumps({"location": "state_and_helpers.py:sync", "message": "Skipped non-inputs widget for locked reo key", "data": {"widget_key": widget_key, "shared_key": shared_key}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "R"}) + "\n")
+            except: pass
+            # #endregion
+            continue
+
+        widget_value = st.session_state.get(widget_key)
+        if widget_value is None:
+            # #region agent log
+            try:
+                with open(log_path, "a") as f:
+                    f.write(json.dumps({"location": "state_and_helpers.py:sync", "message": "Skipped missing key", "data": {"widget_key": widget_key, "shared_key": shared_key}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}) + "\n")
+            except: pass
+            # #endregion
+            continue
+
+        # #region agent log
+        try:
+            with open(log_path, "a") as f:
+                f.write(json.dumps({"location": "state_and_helpers.py:sync", "message": "Adding widget to sync", "data": {"widget_key": widget_key, "shared_key": shared_key, "widget_value": widget_value}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}) + "\n")
+        except: pass
+        # #endregion
+
+        widgets_by_shared.setdefault(shared_key, []).append((widget_key, widget_value))
+    
+    # For each shared key, sync the "most authoritative" widget value
+    # Priority: 
+    # 1) Widgets that differ from current shared value (recently changed)
+    # 2) Among differing widgets, prefer inputs_* widgets (they're the primary source)
+    # 3) If all widgets match shared value, no sync needed
+    for shared_key, widget_list in widgets_by_shared.items():
+        current_shared = st.session_state.get(shared_key)
         
-        # CRITICAL: Only copy if shared key is missing (never overwrite existing values)
-        # This prevents widget defaults from overwriting user-set shared values
-        if shared_key not in st.session_state:
-            widget_value = st.session_state[widget_key]
+        # #region agent log
+        try:
+            with open(log_path, "a") as f:
+                f.write(json.dumps({"location": "state_and_helpers.py:742", "message": "Processing shared key", "data": {"shared_key": shared_key, "current_shared": current_shared, "widget_list": widget_list}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "D"}) + "\n")
+        except: pass
+        # #endregion
+        
+        # Find widgets that differ from current shared value (these are "recently changed")
+        differing_widgets = [(wk, wv) for wk, wv in widget_list if current_shared != wv]
+        
+        # Note: Locked reo keys are already filtered earlier - only inputs_* widgets
+        # are allowed to sync for LOCKED_REO_SHARED_KEYS (see REO LOCK check above)
+        
+        # #region agent log
+        try:
+            with open(log_path, "a") as f:
+                f.write(json.dumps({"location": "state_and_helpers.py:750", "message": "Differing widgets found", "data": {"shared_key": shared_key, "differing_widgets": differing_widgets}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "D"}) + "\n")
+        except: pass
+        # #endregion
+        
+        if current_shared is None:
+            # Shared key missing - prefer inputs_* widget if available, otherwise use first
+            inputs_widgets = [(wk, wv) for wk, wv in widget_list if wk.startswith("inputs_")]
+            if inputs_widgets:
+                widget_key, widget_value = inputs_widgets[0]
+            else:
+                widget_key, widget_value = widget_list[0]
             st.session_state[shared_key] = widget_value
+            # #region agent log
+            try:
+                with open(log_path, "a") as f:
+                    f.write(json.dumps({"location": "state_and_helpers.py:sync", "message": "Initialized shared key", "data": {"widget_key": widget_key, "shared_key": shared_key, "value": widget_value}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}) + "\n")
+            except: pass
+            sync_operations.append((widget_key, shared_key, widget_value, "init", None))
+            # #endregion
+        elif differing_widgets:
+            # At least one widget differs - prefer inputs_* widgets among the differing ones
+            inputs_differing = [(wk, wv) for wk, wv in differing_widgets if wk.startswith("inputs_")]
+            
+            # CRITICAL: Prevent overwriting meaningful shared values with 0
+            # If shared key is protected and has a meaningful value, don't allow 0 to overwrite it
+            if shared_key in PROTECTED_FROM_ZERO_SHARED_KEYS:
+                shared_is_meaningful = current_shared not in (None, "", 0, 0.0)
+                if shared_is_meaningful:
+                    # Filter out widgets with value 0 - they're stale and shouldn't overwrite meaningful shared values
+                    filtered_differing = [(wk, wv) for wk, wv in differing_widgets 
+                                         if wv not in (None, "", 0, 0.0)]
+                    if filtered_differing:
+                        differing_widgets = filtered_differing
+                        # Recompute inputs_differing after filtering
+                        inputs_differing = [(wk, wv) for wk, wv in differing_widgets if wk.startswith("inputs_")]
+                        # #region agent log
+                        try:
+                            with open(log_path, "a") as f:
+                                f.write(json.dumps({"location": "state_and_helpers.py:protect_zero", "message": "Filtered out zero widgets from protected key", "data": {"shared_key": shared_key, "current_shared": current_shared, "filtered_count": len(filtered_differing), "original_count": len(differing_widgets)}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "L"}) + "\n")
+                        except: pass
+                        # #endregion
+                    else:
+                        # All widgets are 0 - skip sync to preserve meaningful shared value
+                        # #region agent log
+                        try:
+                            with open(log_path, "a") as f:
+                                f.write(json.dumps({"location": "state_and_helpers.py:protect_zero", "message": "Skipped sync - all widgets are zero for protected key", "data": {"shared_key": shared_key, "current_shared": current_shared}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "L"}) + "\n")
+                        except: pass
+                        # #endregion
+                        continue
+            
+            # Check if there's a cached inputs_* value for this shared key
+            # If so, only allow non-inputs_* widgets to sync if they match the cached value
+            # This prevents stale widgets from overwriting values set by inputs_* widgets
+            # IMPORTANT: Check cache even if inputs_* widget isn't in the current widget list
+            # (it might have been dropped by Streamlit)
+            cached_inputs_value = None
+            for wk, sk in TAB_KEYS.items():
+                if sk == shared_key and wk.startswith("inputs_"):
+                    cached_key = f"_cached_{wk}"
+                    if cached_key in st.session_state:
+                        cached_inputs_value = st.session_state[cached_key]
+                        # #region agent log
+                        try:
+                            with open(log_path, "a") as f:
+                                f.write(json.dumps({"location": "state_and_helpers.py:815", "message": "Found cached inputs value", "data": {"shared_key": shared_key, "cached_key": cached_key, "cached_value": cached_inputs_value}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "D"}) + "\n")
+                        except: pass
+                        # #endregion
+                        break
+            
+            # Filter out non-inputs_* widgets that would overwrite a cached inputs_* value
+            if cached_inputs_value is not None:
+                # Only allow non-inputs_* widgets to sync if they match the cached value
+                # This prevents stale widgets from overwriting the correct value
+                filtered_differing = [(wk, wv) for wk, wv in differing_widgets 
+                                     if wk.startswith("inputs_") or wv == cached_inputs_value]
+                if filtered_differing != differing_widgets:
+                    differing_widgets = filtered_differing
+                    # Recompute inputs_differing after filtering
+                    inputs_differing = [(wk, wv) for wk, wv in differing_widgets if wk.startswith("inputs_")]
+                    
+                    # #region agent log
+                    try:
+                        with open(log_path, "a") as f:
+                            f.write(json.dumps({"location": "state_and_helpers.py:825", "message": "Filtered out stale widgets", "data": {"shared_key": shared_key, "cached_value": cached_inputs_value, "filtered_count": len(filtered_differing), "original_count": len(differing_widgets)}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "D"}) + "\n")
+                    except: pass
+                    # #endregion
+            
+            # #region agent log
+            try:
+                with open(log_path, "a") as f:
+                    f.write(json.dumps({"location": "state_and_helpers.py:768", "message": "Selecting widget to sync", "data": {"shared_key": shared_key, "inputs_differing": inputs_differing, "all_differing": differing_widgets, "cached_inputs_value": cached_inputs_value}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "D"}) + "\n")
+            except: pass
+            # #endregion
+            
+            if inputs_differing:
+                widget_key, widget_value = inputs_differing[0]
+                # Cache inputs_* widget values so we can restore them later if Streamlit drops the widget key
+                if widget_key.startswith("inputs_"):
+                    st.session_state[f"_cached_{widget_key}"] = widget_value
+            elif differing_widgets:
+                widget_key, widget_value = differing_widgets[0]
+            else:
+                # All differing widgets were filtered out - skip sync
+                continue
+            old_shared_value = current_shared
+            # CRITICAL: Log when we're about to overwrite a meaningful shared value with 0
+            if old_shared_value not in (None, "", 0, 0.0) and widget_value in (0, 0.0) and shared_key in PROTECTED_FROM_ZERO_SHARED_KEYS:
+                # #region agent log
+                try:
+                    with open(log_path, "a") as f:
+                        f.write(json.dumps({"location": "state_and_helpers.py:sync_write", "message": "WARNING: About to overwrite meaningful shared with zero", "data": {"widget_key": widget_key, "shared_key": shared_key, "old_shared": old_shared_value, "new_widget_value": widget_value}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "O"}) + "\n")
+                except: pass
+                # #endregion
+            st.session_state[shared_key] = widget_value
+            
+            # #region agent log
+            try:
+                with open(log_path, "a") as f:
+                    f.write(json.dumps({"location": "state_and_helpers.py:sync", "message": "Wrote to shared key", "data": {"widget_key": widget_key, "shared_key": shared_key, "old_value": old_shared_value, "new_value": widget_value}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}) + "\n")
+            except: pass
+            # #endregion
+            
+            # --- MINIMAL FIX: If a bending_* reinforcement widget updates a shared key,
+            # also update the cached inputs_* value for the same shared key.
+            # Otherwise the cached inputs_* value blocks bending_* changes on the next navigation.
+            BENDING_REO_SHARED_KEYS = {
+                "nb_or_s_bot_1", "db_bot_1", "nb_or_s_bot_2", "db_bot_2",
+                "nb_or_s_top_1", "db_top_1", "nb_or_s_top_2", "db_top_2",
+                "rowgap_bot", "rowgap_top", "cover_bot", "cover_top",
+            }
+            
+            if widget_key.startswith("bending_") and shared_key in BENDING_REO_SHARED_KEYS:
+                for wk, sk in TAB_KEYS.items():
+                    if sk == shared_key and wk.startswith("inputs_"):
+                        st.session_state[f"_cached_{wk}"] = widget_value
+            
+            # #region agent log
+            sync_operations.append((widget_key, shared_key, widget_value, "update", old_shared_value))
+            # #endregion
+        # else: all widgets match shared value, no sync needed
+    
+    # #region agent log
+    if sync_operations:
+        try:
+            with open(log_path, "a") as f:
+                f.write(json.dumps({"location": "state_and_helpers.py:688", "message": "sync_shared_from_widgets sync operations", "data": {"sync_count": len(sync_operations), "sample_syncs": sync_operations[:5]}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "D"}) + "\n")
+        except: pass
+    
+    # Summary log - track widget values after sync completes
+    sample_widgets = ["inputs_b", "inputs_D", "inputs_fc", "inputs_fsy", "bending_nb_or_s_bot_1", "shear_lig_d"]
+    widget_values_at_sync_end = {k: st.session_state.get(k) for k in sample_widgets if k in st.session_state}
+    try:
+        with open(log_path, "a") as f:
+            f.write(json.dumps({"location": "state_and_helpers.py:sync_exit", "message": "Sync function exit", "data": {"widget_values": widget_values_at_sync_end, "sync_operations_count": len(sync_operations)}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}) + "\n")
+    except: pass
+    # #endregion
 
 
 def _decode_bars_or_spacing(entry, b, cover_side, bar_dia):
@@ -731,20 +1738,25 @@ def recalc_derived_values():
     bot_layer2_was_manual = st.session_state.get("nb_or_s_bot_2", 0.0) > 0
     
     if layout_bot_1["auto_split"] and layout_bot_1["n_row2"] > 0:
-        # Layer 1 forced a split - auto-update Layer 2
         n_spill = layout_bot_1["n_row2"]
-        # Check if Layer 2 was previously user-defined (non-zero before this update)
-        if bot_layer2_was_manual:
-            # Layer 2 was manually set, now being overwritten
+
+        bot_layer2_locked = st.session_state.get("_lock_reo_bot_layer2", False)
+
+        if bot_layer2_locked:
+            # User has explicitly controlled Layer 2 (including setting it to 0). Do not overwrite.
             st.session_state["_reo_msg_bot_layer2_overwritten"] = True
         else:
-            # First time auto-creating Layer 2
-            st.session_state["_reo_msg_bot_auto_layer2"] = True
-        st.session_state["nb_or_s_bot_2"] = float(n_spill)
-        st.session_state["db_bot_2"] = db_bot_1
-        nb_or_s_bot_2 = float(n_spill)
-        db_bot_2 = db_bot_1
-        bot_layer2_was_auto = True
+            # Layer 1 forced a split - auto-update Layer 2
+            if bot_layer2_was_manual:
+                st.session_state["_reo_msg_bot_layer2_overwritten"] = True
+            else:
+                st.session_state["_reo_msg_bot_auto_layer2"] = True
+
+            st.session_state["nb_or_s_bot_2"] = float(n_spill)
+            st.session_state["db_bot_2"] = db_bot_1
+            nb_or_s_bot_2 = float(n_spill)
+            db_bot_2 = db_bot_1
+            bot_layer2_was_auto = True
     # Otherwise, Layer 2 remains as user-defined (or 0)
     
     # Track warnings from layout
@@ -789,20 +1801,25 @@ def recalc_derived_values():
     top_layer2_was_manual = st.session_state.get("nb_or_s_top_2", 0.0) > 0
     
     if layout_top_1["auto_split"] and layout_top_1["n_row2"] > 0:
-        # Layer 1 forced a split - auto-update Layer 2
         n_spill = layout_top_1["n_row2"]
-        # Check if Layer 2 was previously user-defined (non-zero before this update)
-        if top_layer2_was_manual:
-            # Layer 2 was manually set, now being overwritten
+
+        top_layer2_locked = st.session_state.get("_lock_reo_top_layer2", False)
+
+        if top_layer2_locked:
+            # User has explicitly controlled Layer 2 (including setting it to 0). Do not overwrite.
             st.session_state["_reo_msg_top_layer2_overwritten"] = True
         else:
-            # First time auto-creating Layer 2
-            st.session_state["_reo_msg_top_auto_layer2"] = True
-        st.session_state["nb_or_s_top_2"] = float(n_spill)
-        st.session_state["db_top_2"] = db_top_1
-        nb_or_s_top_2 = float(n_spill)
-        db_top_2 = db_top_1
-        top_layer2_was_auto = True
+            # Layer 1 forced a split - auto-update Layer 2
+            if top_layer2_was_manual:
+                st.session_state["_reo_msg_top_layer2_overwritten"] = True
+            else:
+                st.session_state["_reo_msg_top_auto_layer2"] = True
+
+            st.session_state["nb_or_s_top_2"] = float(n_spill)
+            st.session_state["db_top_2"] = db_top_1
+            nb_or_s_top_2 = float(n_spill)
+            db_top_2 = db_top_1
+            top_layer2_was_auto = True
     # Otherwise, Layer 2 remains as user-defined (or 0)
     
     # Track warnings from layout
@@ -845,8 +1862,8 @@ def recalc_derived_values():
     # For now we'll skip since the current code doesn't use a separate derived dict
 
     # ---------- 3.2 Duct summary ----------
-    n_ducts = float(st.session_state.get("n_ducts", 0.0) or 0.0)
-    duct_dia = float(st.session_state.get("duct_dia", 0.0) or 0.0)
+    n_ducts = _coalesce_num(st.session_state.get("n_ducts", 0.0), 0.0)
+    duct_dia = _coalesce_num(st.session_state.get("duct_dia", 0.0), 0.0)
 
     if n_ducts > 0.0 and duct_dia > 0.0:
         sum_duct = n_ducts * duct_dia               # mm
@@ -861,10 +1878,10 @@ def recalc_derived_values():
     # ---------- 3.3 Time-dependent inputs ----------
     # For now we only normalise / store them; the creep/shrinkage pages
     # will pick them up via get_param().
-    t_creep = float(st.session_state.get("t_creep", 365.0) or 365.0)
-    age_at_loading = float(st.session_state.get("age_at_loading", 28.0) or 28.0)
-    stress_ratio = float(st.session_state.get("stress_ratio", 0.3) or 0.3)
-    t_shrink = float(st.session_state.get("t_shrink", 365.0) or 365.0)
+    t_creep = _coalesce_num(st.session_state.get("t_creep", 365.0), 365.0)
+    age_at_loading = _coalesce_num(st.session_state.get("age_at_loading", 28.0), 28.0)
+    stress_ratio = _coalesce_num(st.session_state.get("stress_ratio", 0.3), 0.3)
+    t_shrink = _coalesce_num(st.session_state.get("t_shrink", 365.0), 365.0)
 
     st.session_state["t_creep"] = t_creep
     st.session_state["age_at_loading"] = age_at_loading
@@ -903,6 +1920,29 @@ def _make_sync_callback(widget_key: str, shared_key: str):
     def _callback():
         # 1) widget → shared
         st.session_state[shared_key] = st.session_state[widget_key]
+        
+        # DURABLE PERSISTENCE: Save shared state to disk after every callback update
+        # This ensures state survives even if Streamlit session genuinely restarts
+        _save_shared_to_disk()
+        
+        # Cache inputs_* widget values immediately when user changes them
+        # AND also keep the "inputs_* cache" fresh even when the user edits the same
+        # shared value from other pages (bending_*, shear_*, etc.).
+        if widget_key.startswith("inputs_"):
+            st.session_state[f"_cached_{widget_key}"] = st.session_state[widget_key]
+
+        # NEW: mirror the latest shared value into ALL inputs_* caches for this shared_key.
+        # This prevents stale cached inputs values from re-seeding as 0 after page swaps.
+        for w_key, sh_key in TAB_KEYS.items():
+            if sh_key == shared_key and w_key.startswith("inputs_"):
+                st.session_state[f"_cached_{w_key}"] = st.session_state[shared_key]
+
+        # Mark Layer-2 reo inputs as user-controlled once the user touches them.
+        # This prevents recalc_derived_values() from auto-overwriting them later.
+        if shared_key in ("nb_or_s_bot_2", "db_bot_2"):
+            st.session_state["_lock_reo_bot_layer2"] = True
+        if shared_key in ("nb_or_s_top_2", "db_top_2"):
+            st.session_state["_lock_reo_top_layer2"] = True
 
         # 2) shared → all other widget copies
         for w_key, sh_key in TAB_KEYS.items():
@@ -932,6 +1972,16 @@ def get_sync_callbacks():
             w_key: _make_sync_callback(w_key, sh_key)
             for w_key, sh_key in TAB_KEYS.items()
         }
+    
+    # Debug-only: validate contract after building callbacks
+    try:
+        from src.debug.state_debug import is_debug_enabled
+        if is_debug_enabled():
+            validate_session_state_contract(context="inside get_sync_callbacks")
+    except (ImportError, NameError):
+        # Debug module not available, skip validation
+        pass
+    
     return _SYNC_CALLBACKS
 
 
@@ -955,7 +2005,7 @@ def update_results(**kwargs):
     try:
         from src.debug.state_debug import guard_session_writes, is_debug_enabled
         if is_debug_enabled():
-            with guard_session_writes(allowed_keys=RESULT_KEYS, context="update_results"):
+            with guard_session_writes(allowed_keys=set(SHARED_DEFAULTS.keys()), context="update_results"):
                 _update_results_impl(**kwargs)
         else:
             _update_results_impl(**kwargs)
@@ -993,10 +2043,20 @@ def _assert_results_pipeline():
 def get_param(name: str, default=None):
     """
     Safe accessor for shared parameters from session_state.
+    Treats None as "not set" and returns the default instead.
     """
     if name in st.session_state:
-        return st.session_state[name]
-    return SHARED_DEFAULTS.get(name, default)
+        value = st.session_state[name]
+        # Treat None as "not set" - return default instead
+        if value is not None:
+            return value
+    
+    # Key not in session_state, or value is None - check SHARED_DEFAULTS
+    shared_default = SHARED_DEFAULTS.get(name, default)
+    # If SHARED_DEFAULTS also has None, treat it as "not set" and use the provided default
+    if shared_default is not None:
+        return shared_default
+    return default
 
 
 def _critical_input_keys():
@@ -1004,9 +2064,23 @@ def _critical_input_keys():
     return [
         "b", "D", "L",
         "fc", "fsy", "Ec", "Es",
+
+        # Design actions (manual inputs)
+        "actions_source",
         "Mu_star_manual", "Vu_star_manual", "Tu_star",
         "P_star", "N_star",
+
+        # Covers / geometry-related
         "cover_bot", "cover_top", "cover_side",
+
+        # Shear reinforcement inputs
+        "lig_d", "lig_legs", "s_lig",
+
+        # Ducts / voids
+        "n_ducts", "duct_dia",
+
+        # Time-dependent inputs
+        "t_creep", "t_shrink",
     ]
 
 
@@ -1048,15 +2122,33 @@ def _is_snippet_defaults_state(ss) -> bool:
     return signature or impossible
 
 
+@st.cache_resource
+def _global_state_store() -> dict:
+    """
+    Server-side singleton store. Survives per-user session resets
+    as long as the server process stays alive.
+    """
+    return {}
+
+
 def _snapshot_last_good_inputs():
-    """Snapshot current input values as 'last good' state."""
+    """Snapshot current input values as 'last good' state (session + global store)."""
     snap = {k: st.session_state.get(k) for k in _critical_input_keys()}
     st.session_state["_last_good_inputs"] = snap
+    try:
+        _global_state_store()["last_good_inputs"] = snap
+    except Exception:
+        pass
 
 
 def _restore_last_good_inputs():
-    """Restore shared and widget keys from last known good snapshot."""
+    """Restore shared and widget keys from last known good snapshot (session or global store)."""
     snap = st.session_state.get("_last_good_inputs")
+    if not isinstance(snap, dict):
+        try:
+            snap = _global_state_store().get("last_good_inputs")
+        except Exception:
+            snap = None
     if not isinstance(snap, dict):
         return
 

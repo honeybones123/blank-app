@@ -3,7 +3,25 @@ import streamlit.components.v1 as components
 import re
 import html
 
-from state_and_helpers import TAB_KEYS
+from state_and_helpers import TAB_KEYS, resolve_widget_key
+
+
+def _register_rendered_key(key: str) -> None:
+    """V2: Register a widget key as rendered this run (prevents stale keys from syncing)."""
+    rendered = st.session_state.get("_rendered_widget_keys")
+    if not isinstance(rendered, set):
+        rendered = set()
+        st.session_state["_rendered_widget_keys"] = rendered
+    rendered.add(key)
+    # #region agent log
+    import json
+    import os
+    log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+    try:
+        with open(log_path, "a") as f:
+            f.write(json.dumps({"location": "widgets_helpers.py:_register_rendered_key", "message": "Registered rendered key", "data": {"key": key, "rendered_count": len(rendered)}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "C"}) + "\n")
+    except: pass
+    # #endregion
 
 
 def apply_global_widget_css():
@@ -459,37 +477,148 @@ def label_with_hover(label: str, hover_md: str | None = None, *, required: bool 
 
 
 def number_row(label: str, key: str, default: float, sync_callbacks=None, help_text: str | None = None, required: bool = False):
-    """Create a number input row with label and optional hover tooltip."""
+    """Create a number input row with label and optional hover tooltip (V2-safe)."""
     col1, col2 = st.columns([1, 2])
     with col1:
         label_with_hover(label, help_text, required=required)
+
     with col2:
-        # Get the callback for this specific key if sync_callbacks is provided
+        original_key = key
+        # DO NOT resolve/alias widget keys across pages (causes cross-page key collisions)
+        # Keep per-page keys stable and distinct.
+        _register_rendered_key(key)
+
+        # #region agent log
+        import json
+        import os
+        log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+        try:
+            with open(log_path, "a") as f:
+                f.write(json.dumps({"location": "widgets_helpers.py:number_row", "message": "Widget creation start", "data": {"original_key": original_key, "label": label, "default": default}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}) + "\n")
+        except: pass
+        # #endregion
+
+        # ---- callback lookup ----
         on_change_callback = None
-        if sync_callbacks and isinstance(sync_callbacks, dict) and key in sync_callbacks:
-            on_change_callback = sync_callbacks[key]
-        
-        # If this widget key maps to a shared key, prefer the shared value when widget key is missing
-        shared_key = TAB_KEYS.get(key)
-        if shared_key is not None:
-            effective_default = st.session_state.get(shared_key, default)
+        if sync_callbacks and isinstance(sync_callbacks, dict):
+            on_change_callback = sync_callbacks.get(original_key)
+
+        # #region agent log
+        try:
+            with open(log_path, "a") as f:
+                f.write(json.dumps({"location": "widgets_helpers.py:number_row", "message": "Callback lookup", "data": {"original_key": original_key, "callback_found": on_change_callback is not None, "has_sync_callbacks": sync_callbacks is not None}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "B"}) + "\n")
+        except: pass
+        # #endregion
+
+        # ---- shared-key lookup ----
+        shared_key = TAB_KEYS.get(original_key)
+
+        # Prefer shared value as the one-time seed default (if available and meaningful)
+        # CRITICAL: If shared state is 0 but default is meaningful, use default instead
+        # This prevents widgets from seeding to 0 when shared state is corrupted
+        if shared_key is not None and shared_key in st.session_state:
+            shared_val = st.session_state[shared_key]
+            # If shared is 0 but default is meaningful, use default (shared state is corrupted)
+            if (shared_val == 0 or shared_val == 0.0) and default not in (None, "", 0, 0.0):
+                from state_and_helpers import FORCE_HYDRATE_SHARED_KEYS
+                if shared_key in FORCE_HYDRATE_SHARED_KEYS:
+                    effective_default = default
+                    # Also fix shared state to default
+                    st.session_state[shared_key] = float(default)
+                    # #region agent log
+                    try:
+                        with open(log_path, "a") as f:
+                            f.write(json.dumps({"location": "widgets_helpers.py:number_row", "message": "Fixed corrupted shared state from default", "data": {"key": original_key, "shared_key": shared_key, "old_shared": shared_val, "new_shared": default}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "N"}) + "\n")
+                    except: pass
+                    # #endregion
+                else:
+                    effective_default = shared_val
+            else:
+                effective_default = shared_val
         else:
             effective_default = default
+
+        # #region agent log
+        try:
+            with open(log_path, "a") as f:
+                f.write(json.dumps({"location": "widgets_helpers.py:number_row", "message": "Shared key lookup", "data": {"original_key": original_key, "shared_key": shared_key, "shared_value": st.session_state.get(shared_key) if shared_key else None, "effective_default": effective_default, "key_in_session": original_key in st.session_state, "session_value": st.session_state.get(original_key)}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "C"}) + "\n")
+        except: pass
+        # #endregion
+
+        # Reinforcement bar counts etc. can be 0
+        min_val = 0.0 if ("nb_or_s" in original_key or "nb_" in original_key) else None
+
+        # ---- V2: seed ONCE only; never reseed from shared on reruns ----
+        # BUT: If widget exists with stale zero and shared/default has meaningful value, fix it
+        value_before_seed = st.session_state.get(original_key)
+        widget_is_stale_zero = (value_before_seed is None) or (value_before_seed == 0) or (value_before_seed == 0.0)
         
-        # Allow 0 as a valid value (especially for bar counts)
-        # For reinforcement bar counts, min_value should be 0
-        min_val = 0.0 if "nb_or_s" in key or "nb_" in key else None
+        # Check if shared OR default is meaningful (shared might be 0, but default might not be)
+        shared_is_meaningful = effective_default not in (None, "", 0, 0.0)
+        default_is_meaningful = default not in (None, "", 0, 0.0)
+        has_meaningful_value = shared_is_meaningful or default_is_meaningful
         
+        # CRITICAL: If widget is stale zero but shared/default is meaningful, fix the widget
+        # This handles the case where shared state was overwritten to 0 by another page
+        if original_key.startswith("inputs_") and widget_is_stale_zero and has_meaningful_value:
+            # Check if this is a protected key (geometry, materials, design actions)
+            from state_and_helpers import FORCE_HYDRATE_SHARED_KEYS
+            if shared_key and shared_key in FORCE_HYDRATE_SHARED_KEYS:
+                # Prefer shared value if meaningful, otherwise use default
+                fix_value = effective_default if shared_is_meaningful else default
+                st.session_state[original_key] = float(fix_value)
+                # Also fix shared state if it's 0 but default is meaningful
+                if not shared_is_meaningful and default_is_meaningful and shared_key:
+                    st.session_state[shared_key] = float(default)
+                # #region agent log
+                try:
+                    with open(log_path, "a") as f:
+                        f.write(json.dumps({"location": "widgets_helpers.py:number_row", "message": "Fixed stale zero widget", "data": {"key": original_key, "shared_key": shared_key, "old_value": value_before_seed, "new_value": fix_value, "fixed_shared": not shared_is_meaningful and default_is_meaningful}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "M"}) + "\n")
+                except: pass
+                # #endregion
+        
+        if original_key not in st.session_state:
+            try:
+                st.session_state[original_key] = float(effective_default)
+            except Exception:
+                st.session_state[original_key] = effective_default
+            # #region agent log
+            try:
+                with open(log_path, "a") as f:
+                    f.write(json.dumps({"location": "widgets_helpers.py:number_row", "message": "Seeded widget key", "data": {"key": original_key, "seeded_value": st.session_state[original_key], "effective_default": effective_default}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "D"}) + "\n")
+            except: pass
+            # #endregion
+        else:
+            # #region agent log
+            try:
+                with open(log_path, "a") as f:
+                    f.write(json.dumps({"location": "widgets_helpers.py:number_row", "message": "Widget key already exists", "data": {"key": original_key, "existing_value": st.session_state[original_key], "effective_default": effective_default}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "D"}) + "\n")
+            except: pass
+            # #endregion
+
+        # ---- V2: DO NOT pass value= every rerun (lets session_state persist) ----
+        # Safety net: never render a number input with a None session value
+        if original_key in st.session_state and st.session_state.get(original_key) is None:
+            st.session_state[original_key] = effective_default
+        
+        session_value_before_widget = st.session_state.get(original_key)
         value = st.number_input(
             label="",
-            key=key,
-            value=float(st.session_state.get(key, effective_default)),
+            key=original_key,
             min_value=min_val,
             step=1.0,
             format="%.1f",
             label_visibility="collapsed",
             on_change=on_change_callback,
         )
+        session_value_after_widget = st.session_state.get(original_key)
+
+        # #region agent log
+        try:
+            with open(log_path, "a") as f:
+                f.write(json.dumps({"location": "widgets_helpers.py:number_row", "message": "Widget created", "data": {"key": original_key, "returned_value": value, "session_value_before": session_value_before_widget, "session_value_after": session_value_after_widget, "value_changed": session_value_before_widget != session_value_after_widget}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}) + "\n")
+        except: pass
+        # #endregion
     return value
 
 
@@ -1066,3 +1195,94 @@ def render_jumpable_step(
             st.markdown("</div>", unsafe_allow_html=True)
         else:
             body_fn()
+
+
+# ============================================================
+#  V2-SAFE WIDGET WRAPPERS (seed once, never pass value=/index=)
+# ============================================================
+
+def v2_number_input(*, label, key, default, min_value=None, max_value=None, step=None,
+                    format=None, help=None, disabled=False, label_visibility="visible",
+                    on_change=None):
+    """V2-safe number_input: seed once, then never pass value= again."""
+    key = resolve_widget_key(key)
+    _register_rendered_key(key)
+    if key not in st.session_state:
+        st.session_state[key] = default
+    # Safety net: never render a number input with a None session value
+    if key in st.session_state and st.session_state.get(key) is None:
+        st.session_state[key] = default
+    return st.number_input(
+        label,
+        key=key,
+        min_value=min_value,
+        max_value=max_value,
+        step=step,
+        format=format,
+        help=help,
+        disabled=disabled,
+        label_visibility=label_visibility,
+        on_change=on_change,
+    )
+
+
+def v2_checkbox(*, label, key, default=False, help=None, disabled=False, label_visibility="visible",
+                on_change=None):
+    """V2-safe checkbox: seed once, then never pass value= again."""
+    key = resolve_widget_key(key)
+    _register_rendered_key(key)
+    if key not in st.session_state:
+        st.session_state[key] = bool(default)
+    return st.checkbox(
+        label,
+        key=key,
+        help=help,
+        disabled=disabled,
+        label_visibility=label_visibility,
+        on_change=on_change,
+    )
+
+
+def v2_selectbox(*, label, key, options, default_index=0, format_func=None,
+                 help=None, disabled=False, label_visibility="visible", on_change=None):
+    """V2-safe selectbox: seed once, then never pass index= again."""
+    key = resolve_widget_key(key)
+    _register_rendered_key(key)
+    if key not in st.session_state:
+        # seed with the option value itself (not index)
+        st.session_state[key] = options[default_index]
+    kwargs = {
+        "label": label,
+        "options": options,
+        "key": key,
+        "help": help,
+        "disabled": disabled,
+        "label_visibility": label_visibility,
+        "on_change": on_change,
+    }
+    if format_func is not None:
+        kwargs["format_func"] = format_func
+    return st.selectbox(**kwargs)
+
+
+def v2_radio(*, label, key, options, default_index=0, format_func=None,
+             help=None, disabled=False, horizontal=False, label_visibility="visible",
+             on_change=None):
+    """V2-safe radio: seed once, then never pass index= again."""
+    key = resolve_widget_key(key)
+    _register_rendered_key(key)
+    if key not in st.session_state:
+        st.session_state[key] = options[default_index]
+    kwargs = {
+        "label": label,
+        "options": options,
+        "key": key,
+        "help": help,
+        "disabled": disabled,
+        "horizontal": horizontal,
+        "label_visibility": label_visibility,
+        "on_change": on_change,
+    }
+    if format_func is not None:
+        kwargs["format_func"] = format_func
+    return st.radio(**kwargs)

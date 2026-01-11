@@ -32,6 +32,11 @@ from ui_seamless_steps import (
 )
 
 
+def _coalesce_num(v, default: float) -> float:
+    """Return default only if v is None (preserves 0)."""
+    return default if v is None else float(v)
+
+
 # Conditional caching: bypass in debug mode, cache in production
 def _get_build_beam_3d_figure_pure():
     """Get the cached or uncached version of _build_beam_3d_figure_pure based on debug mode."""
@@ -1506,7 +1511,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             "Flexural capacity": "bending_uls_1_7",
             "Minimum strength": "bending_min_2_4",
             "Neutral axis ratio kᵤ": "bending_uls_1_5",
-            "SLS steel stress fₛ,ser": "bending_sls_3_1",
+            "SLS steel stress fₛ,ser": "bending_sls_3_7",
         }
         
         # Map checks to their tabs
@@ -1690,10 +1695,10 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             st.caption("Design actions: From SFD/BMD")
 
         # Get current values (widget key takes precedence if exists, otherwise use shared key)
-        Mu_star_val = float(st.session_state.get("bending_Mu_star", get_param("Mu_star_manual", 500.0)) or 500.0)
-        N_star_val = float(st.session_state.get("bending_N_star", get_param("N_star", 0.0)) or 0.0)
-        P_star_val = float(st.session_state.get("bending_P_star", get_param("P_star", 0.0)) or 0.0)
-        phi_b_val = float(st.session_state.get("bending_phi_b", get_param("phi_bend", 0.85)) or 0.85)
+        Mu_star_val = _coalesce_num(st.session_state.get("bending_Mu_star", get_param("Mu_star_manual", 500.0)), 500.0)
+        N_star_val = _coalesce_num(st.session_state.get("bending_N_star", get_param("N_star", 0.0)), 0.0)
+        P_star_val = _coalesce_num(st.session_state.get("bending_P_star", get_param("P_star", 0.0)), 0.0)
+        phi_b_val = _coalesce_num(st.session_state.get("bending_phi_b", get_param("phi_bend", 0.85)), 0.85)
         
         number_row(
             "Design moment Mu* (kNm)",
@@ -1739,9 +1744,9 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
     with col_geom:
         st.subheader("Geometry")
         # Get current values (widget key takes precedence if exists, otherwise use shared key)
-        b_val = float(st.session_state.get("bending_b", get_param("b", 400.0)) or 400.0)
-        D_val = float(st.session_state.get("bending_D", get_param("D", 600.0)) or 600.0)
-        L_val = float(st.session_state.get("bending_L", get_param("L", 3000.0)) or 3000.0)
+        b_val = _coalesce_num(st.session_state.get("bending_b", get_param("b", 400.0)), 400.0)
+        D_val = _coalesce_num(st.session_state.get("bending_D", get_param("D", 600.0)), 600.0)
+        L_val = _coalesce_num(st.session_state.get("bending_L", get_param("L", 3000.0)), 3000.0)
         
         number_row(
             "Width b (mm)",
@@ -1777,10 +1782,10 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
     with col_mat:
         st.subheader("Materials")
         # Get current values (widget key takes precedence if exists, otherwise use shared key)
-        fc_val = float(st.session_state.get("bending_fc", get_param("fc", 40.0)) or 40.0)
-        fsy_val = float(st.session_state.get("bending_fsy", get_param("fsy", 500.0)) or 500.0)
-        Ec_val = float(st.session_state.get("bending_Ec", get_param("Ec", 30000.0)) or 30000.0)
-        Es_val = float(st.session_state.get("bending_Es", get_param("Es", 200000.0)) or 200000.0)
+        fc_val = _coalesce_num(st.session_state.get("bending_fc", get_param("fc", 40.0)), 40.0)
+        fsy_val = _coalesce_num(st.session_state.get("bending_fsy", get_param("fsy", 500.0)), 500.0)
+        Ec_val = _coalesce_num(st.session_state.get("bending_Ec", get_param("Ec", 30000.0)), 30000.0)
+        Es_val = _coalesce_num(st.session_state.get("bending_Es", get_param("Es", 200000.0)), 200000.0)
         
         number_row(
             "Concrete strength f'c (MPa)",
@@ -1931,7 +1936,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             )
             
             # Get current cover value (widget key takes precedence if exists, otherwise use shared key)
-            cover_bot_val = float(st.session_state.get("bending_cover_bot", get_param("cover_bot", 40.0)) or 40.0)
+            cover_bot_val = _coalesce_num(st.session_state.get("bending_cover_bot", get_param("cover_bot", 40.0)), 40.0)
             
             number_row(
                 "Bottom cover (mm)",
@@ -1993,7 +1998,10 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             )
             
             # Get current cover value (widget key takes precedence if exists, otherwise use shared key)
-            cover_top_val = float(st.session_state.get("bending_cover_top", get_param("cover_top", 40.0)) or 40.0)
+            cover_top_val = _coalesce_num(
+                st.session_state.get("bending_cover_top", get_param("cover_top", 40.0)),
+                40.0,
+            )
             
             number_row(
                 "Top cover (mm)",

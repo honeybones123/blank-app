@@ -2,9 +2,11 @@ import streamlit as st
 
 from state_and_helpers import (
     init_shared_session_state,
-    sync_shared_from_widgets_once_per_run,
     recalc_derived_values,
     assert_shared_state_alive,
+    hydrate_active_page_widgets_from_shared,
+    begin_render_cycle,
+    persist_state_snapshot,
 )
 
 # 🔁 Import modules, not individual functions
@@ -119,8 +121,45 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
 </style>
 """, unsafe_allow_html=True)
 
+    # Session restart banner (makes it obvious when debugging)
+    if "_app_boot_count" not in st.session_state:
+        st.session_state["_app_boot_count"] = 0
+    st.session_state["_app_boot_count"] += 1
+    
+    if st.session_state["_app_boot_count"] == 1:
+        st.warning("Session boot (fresh). If this appears mid-use, your session restarted.")
+    
     # Initialise shared state according to the contract
+    # This restores any dropped widget keys from cache or shared keys
     init_shared_session_state()
+    
+    # Log session wipe events with navigation context
+    if st.session_state.get("_wipe_recovery_mode"):
+        import json
+        log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+        # Get selected_slug after navigation is set up (will be computed later, but get what we can now)
+        nav_slug = st.session_state.get(NAV_KEY, st.query_params.get("page", "inputs"))
+        if isinstance(nav_slug, list):
+            nav_slug = nav_slug[0] if nav_slug else "inputs"
+        try:
+            with open(log_path, "a") as f:
+                f.write(json.dumps({
+                    "location": "app.py:WIPE_RECOVERY_RUN",
+                    "message": "WIPE_RECOVERY_RUN",
+                    "data": {
+                        "query_params": dict(st.query_params),
+                        "nav_page": nav_slug,
+                    },
+                    "timestamp": __import__("time").time() * 1000,
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "wipe_recovery"
+                }) + "\n")
+        except:
+            pass
+    
+    # Start render cycle - ensures rendered widget tracking is per-run
+    begin_render_cycle()
     
     # Debug mode toggle (only shown if env var is set)
     try:
@@ -158,22 +197,6 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         # Debug module not available, skip
         pass
     
-    # Sync widget values to shared keys (ensures shared state persists across page navigation)
-    sync_shared_from_widgets_once_per_run()
-    
-    # Recalculate derived values (d, Ast_bot, etc.) from current inputs
-    # Wrap with debug guard in debug mode
-    try:
-        from src.debug.state_debug import guard_session_writes, is_debug_enabled
-        from state_and_helpers import DERIVED_KEYS
-        if is_debug_enabled():
-            with guard_session_writes(allowed_keys=DERIVED_KEYS, context="recalc_derived_values"):
-                recalc_derived_values()
-        else:
-            recalc_derived_values()
-    except (ImportError, NameError):
-        # Debug module not available or DERIVED_KEYS not defined, use normal path
-        recalc_derived_values()
 
     # --- 1) Read URL param (page) and pre-set nav state BEFORE widget renders
     qp_page = st.query_params.get("page")
@@ -206,6 +229,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
                 format_func=lambda s: PAGES[s][0],  # Display label but store slug
                 label_visibility="collapsed",
             )
+            st.session_state["_active_page_slug"] = selected_slug
         
         with btn_col:
             st.markdown("<div style='display:flex; justify-content:flex-end;'>", unsafe_allow_html=True)
@@ -247,8 +271,78 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         # Debug module not available, skip
         pass
     
-    # --- 5) Render selected page
+    # #region agent log
+    import json
+    import os
+    log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+    try:
+        with open(log_path, "a") as f:
+            f.write(json.dumps({"location": "app.py:251", "message": "Rendering page", "data": {"selected_slug": selected_slug, "page_name": PAGES[selected_slug][0]}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "C"}) + "\n")
+    except: pass
+    # #endregion
+    
+    # Hydrate the active page's widget keys from shared BEFORE rendering,
+    # so stale zeros can't overwrite shared on navigation.
+    hydrate_active_page_widgets_from_shared(selected_slug)
+    
+    # Reset rendered widget keys before rendering page (only widgets rendered THIS RUN can sync)
+    # Note: begin_render_cycle() already called above, but ensure it's reset here too
+    begin_render_cycle()
+    
+    # #region agent log - Track widget values before page render
+    import json
+    import os
+    log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+    sample_widgets = ["inputs_b", "inputs_D", "inputs_fc", "inputs_fsy", "bending_nb_or_s_bot_1", "shear_lig_d"]
+    widget_values_before_render = {k: st.session_state.get(k) for k in sample_widgets if k in st.session_state}
+    try:
+        with open(log_path, "a") as f:
+            f.write(json.dumps({"location": "app.py:before_render", "message": "Widget values before page render", "data": {"selected_slug": selected_slug, "widget_values": widget_values_before_render}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "B"}) + "\n")
+    except: pass
+    # #endregion
+    
+    # --- 5) Render selected page (widgets register themselves during render)
     PAGES[selected_slug][1]()
+    
+    # Persist snapshot after page render so future wipes can recover
+    persist_state_snapshot()
+    
+    # #region agent log - Track widget values after page render
+    widget_values_after_render = {k: st.session_state.get(k) for k in sample_widgets if k in st.session_state}
+    rendered_set = st.session_state.get("_rendered_widget_keys", set())
+    rendered_list = list(rendered_set) if isinstance(rendered_set, set) else []
+    try:
+        with open(log_path, "a") as f:
+            f.write(json.dumps({"location": "app.py:after_render", "message": "Widget values after page render", "data": {"selected_slug": selected_slug, "widget_values": widget_values_after_render, "rendered_count": len(rendered_list), "rendered_sample": rendered_list[:10]}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "B"}) + "\n")
+    except: pass
+    # #endregion
+    
+    # IMPORTANT: Do NOT do app-level widget→shared syncing.
+    # Shared state must only update via on_change callbacks.
+    # App-level syncing can copy stale navigation zeros into shared and wipe inputs.
+    pass
+    
+    # #region agent log - Track widget values after sync
+    widget_values_after_sync = {k: st.session_state.get(k) for k in sample_widgets if k in st.session_state}
+    try:
+        with open(log_path, "a") as f:
+            f.write(json.dumps({"location": "app.py:after_sync", "message": "Widget values after sync", "data": {"selected_slug": selected_slug, "widget_values": widget_values_after_sync}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "B"}) + "\n")
+    except: pass
+    # #endregion
+    
+    # Recalculate derived values (d, Ast_bot, etc.) from current inputs
+    # Wrap with debug guard in debug mode
+    try:
+        from src.debug.state_debug import guard_session_writes, is_debug_enabled
+        from state_and_helpers import DERIVED_KEYS
+        if is_debug_enabled():
+            with guard_session_writes(allowed_keys=DERIVED_KEYS, context="recalc_derived_values"):
+                recalc_derived_values()
+        else:
+            recalc_derived_values()
+    except (ImportError, NameError):
+        # Debug module not available or DERIVED_KEYS not defined, use normal path
+        recalc_derived_values()
 
 
 if __name__ == "__main__":

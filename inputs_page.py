@@ -139,40 +139,8 @@ def make_summary_cross_section_figure():
     NOW uses compute_longitudinal_reo_layout() as single source of truth.
     """
     from section_layout import compute_longitudinal_reo_layout
-    from state_and_helpers import get_param
-    
-    # Debug-only triage: show canonical values before building figure
-    try:
-        from src.debug.debug_flags import is_debug_enabled
-        if is_debug_enabled():
-            st.caption("🔧 DEBUG: Inputs 2D plot inputs")
-            shared_top_l1_n = get_param("nb_or_s_top_1")
-            widget_top_l1_n = st.session_state.get("inputs_nb_or_s_top_1")
-            results_top_l1_n = st.session_state.get("results", {}).get("nb_or_s_top_1")
-            st.write({
-                "shared_nb_or_s_top_1": shared_top_l1_n,
-                "widget_inputs_nb_or_s_top_1": widget_top_l1_n,
-                "results_nb_or_s_top_1": results_top_l1_n,
-            })
-    except ImportError:
-        pass
     
     layout = compute_section_layout()
-    
-    # Debug: show what was passed to plot builder
-    try:
-        from src.debug.debug_flags import is_debug_enabled
-        if is_debug_enabled():
-            reo_layout = layout.get("reo_layout")
-            if reo_layout:
-                top_layers = reo_layout.get("top", [])
-                st.write(f"DEBUG: reo_layout['top'] has {len(top_layers)} layers")
-                for i, layer in enumerate(top_layers):
-                    st.write(f"  Layer {i}: {len(layer.get('x', []))} bars at y={layer.get('y', 'N/A')}")
-            else:
-                st.write("DEBUG: reo_layout is None or missing")
-    except ImportError:
-        pass
 
     b = layout["b"]
     D = layout["D"]
@@ -287,38 +255,33 @@ def make_summary_cross_section_figure():
 
     # ----- top bars - use 2-layer structure -----
     # TOP reinforcement is RED
-    # Only draw bars if reo_layout exists and has top layers with bars
     if reo_layout:
-        for layer_data in reo_layout.get("top", []):
-            x_positions = layer_data.get("x", [])
-            # Only add trace if there are actually bars (x_positions is not empty)
-            if x_positions and len(x_positions) > 0:
-                y_pos = layer_data.get("y", 0.0)
-                db = layer_data.get("db", 16.0)
-                # Marker size based on bar diameter
-                marker_size = max(5, min(10, db * 0.35))
-                traces.append(
-                    go.Scatter(
-                        x=x_positions,
-                        y=[y_pos] * len(x_positions),
-                        mode="markers",
-                        marker=dict(
-                            color="red", size=marker_size, line=dict(width=0.7, color="black")
-                        ),
-                        hoverinfo="skip",
-                        showlegend=False,
-                    )
-                )
-    else:
-        # Fallback to legacy structure (only if reo_layout is missing)
-        top = layout.get("top", {})
-        top_x = top.get("x", [])
-        # Only draw if there are actually bars
-        if top_x and len(top_x) > 0:
+        for layer_data in reo_layout["top"]:
+            x_positions = layer_data["x"]
+            y_pos = layer_data["y"]
+            db = layer_data["db"]
+            # Marker size based on bar diameter
+            marker_size = max(5, min(10, db * 0.35))
             traces.append(
                 go.Scatter(
-                    x=top_x,
-                    y=top.get("y", []),
+                    x=x_positions,
+                    y=[y_pos] * len(x_positions),
+                    mode="markers",
+                    marker=dict(
+                        color="red", size=marker_size, line=dict(width=0.7, color="black")
+                    ),
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
+            )
+    else:
+        # Fallback to legacy structure
+        top = layout.get("top", {})
+        if top.get("x"):
+            traces.append(
+                go.Scatter(
+                    x=top["x"],
+                    y=top["y"],
                     mode="markers",
                     marker=dict(
                         color="red", size=7, line=dict(width=0.7, color="black")
@@ -340,37 +303,17 @@ def make_summary_cross_section_figure():
         )
 
     fig = go.Figure(data=traces)
-    
-    # Add "Section A" annotation (fixed position below plot area)
-    fig.add_annotation(
-        text="<b>Section A</b>",
-        x=0.5,
-        y=-0.10,              # fixed below plot area
-        xref="paper",
-        yref="paper",
-        showarrow=False,
-        xanchor="center",
-        yanchor="top",
-    )
-    
-    fig.update_xaxes(
-        visible=False,
-        constrain="domain",
-        constraintoward="center",
-    )
+    fig.update_xaxes(visible=False)
     fig.update_yaxes(
         visible=False,
         scaleanchor="x",
         scaleratio=1,
-        # Center the constrained domain (diagram sits between margins)
-        constrain="domain",
-        constraintoward="center",   # centers the plot domain vertically
-        range=[D * 1.02, 0],
+        range=[D * 1.02, -0.10 * D],
     )
     fig.update_layout(
         width=345,
         height=450,
-        margin=dict(l=0, r=0, t=0, b=70),  # b must be big enough for the annotation
+        margin=dict(l=0, r=0, t=0, b=40),
         shapes=shapes,
         dragmode=False,
         # no title – label is added in Streamlit below the figure
@@ -466,13 +409,9 @@ def make_beam_3d_figure():
     nb_or_s_bot_2 = float(get_param("nb_or_s_bot_2", 0.0) or 0.0)
     db_bot_2 = float(get_param("db_bot_2", 20.0) or 20.0)
     
-    # Treat 0 as valid - only use default if value is None
-    nb_or_s_top_1_val = get_param("nb_or_s_top_1")
-    nb_or_s_top_1 = float(nb_or_s_top_1_val) if nb_or_s_top_1_val is not None else 2.0
-    db_top_1_val = get_param("db_top_1")
-    db_top_1 = float(db_top_1_val) if db_top_1_val is not None else 16.0
-    nb_or_s_top_2_val = get_param("nb_or_s_top_2")
-    nb_or_s_top_2 = float(nb_or_s_top_2_val) if nb_or_s_top_2_val is not None else 0.0
+    nb_or_s_top_1 = float(get_param("nb_or_s_top_1", 2.0) or 2.0)
+    db_top_1 = float(get_param("db_top_1", 16.0) or 16.0)
+    nb_or_s_top_2 = float(get_param("nb_or_s_top_2", 0.0) or 0.0)
     db_top_2 = float(get_param("db_top_2", 16.0) or 16.0)
     
     rowgap_bot = float(get_param("rowgap_bot", 60.0) or 60.0)
@@ -951,10 +890,7 @@ def render_inputs():
             st.session_state["_reo_s_min_top_1"] = None
         
         # Get current values (widget key takes precedence if exists, otherwise use shared key)
-        # Treat 0 as valid - only use default if value is None
-        nb_or_s_top_1_shared = get_param("nb_or_s_top_1")
-        nb_or_s_top_1_default = float(nb_or_s_top_1_shared) if nb_or_s_top_1_shared is not None else 2.0
-        nb_or_s_top_1_val = float(st.session_state.get("inputs_nb_or_s_top_1", nb_or_s_top_1_default))
+        nb_or_s_top_1_val = float(st.session_state.get("inputs_nb_or_s_top_1", get_param("nb_or_s_top_1", 2.0)))
         db_top_1_val = float(st.session_state.get("inputs_db_top_1", get_param("db_top_1", 16.0)))
         nb_or_s_top_2_val = float(st.session_state.get("inputs_nb_or_s_top_2", get_param("nb_or_s_top_2", 0.0)))
         db_top_2_val = float(st.session_state.get("inputs_db_top_2", get_param("db_top_2", 16.0)))
@@ -1738,27 +1674,18 @@ tr:hover .hint { opacity: 1; }
 
         with col_right:
             fig_sec = make_summary_cross_section_figure()
-            
-            # Compute deterministic key for plotly chart (prevents DOM reuse)
-            import hashlib
-            # json and get_param are already imported at the top of the file
-            sig_payload = {
-                "nb_or_s_top_1": get_param("nb_or_s_top_1"),
-                "nb_or_s_top_2": get_param("nb_or_s_top_2"),
-                "nb_or_s_bot_1": get_param("nb_or_s_bot_1"),
-                "nb_or_s_bot_2": get_param("nb_or_s_bot_2"),
-                "b": get_param("b"),
-                "D": get_param("D"),
-                "cover_bot": get_param("cover_bot"),
-                "cover_top": get_param("cover_top"),
-            }
-            diagram_sig = hashlib.sha1(json.dumps(sig_payload, sort_keys=True).encode()).hexdigest()[:10]
-            
             pad_left, centre, pad_right = st.columns([0.25, 0.5, 0.25])
             with centre:
                 st.plotly_chart(
                     fig_sec,
-                    key=f"inputs_2d_{diagram_sig}",
                     use_container_width=False,
                     config={"displayModeBar": False},
+                )
+                st.markdown(
+                    """
+                    <div style="text-align:center; margin-top:0.25rem;">
+                        <span style="font-weight:600; font-size:1.1rem;">Section A</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
