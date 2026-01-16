@@ -18,6 +18,7 @@ from state_and_helpers import (
 
 from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, select_row, calcbox, show_reo_message, label_with_hover, info_i_button, page_divider, seed_widget_from_shared
 from ui_seamless_steps import inject_seamless_steps_css, render_clickable_summary_table
+from deflection_checks_helpers import build_deflection_check_rows_from_state
 
 # --- Pure compute functions from design core (no circular imports)
 from bending_core import _compute_bending_capacity
@@ -1548,6 +1549,33 @@ def render_inputs():
     # THEN: crack + deflection
     _compute_crack_results()
     _compute_deflection_results()
+    # #region agent log
+    try:
+        import json
+        import os
+        import time
+        log_path = os.path.expanduser("~/Documents/blank_app_deflection_debug.log")
+        results = st.session_state.get("results", {})
+        params = results.get("_deflection_params", {})
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "location": "inputs_page.py:deflection_compute",
+                "message": "INPUTS_DEFLECTION_COMPUTE",
+                "data": {
+                    "has_results": bool(results),
+                    "has_deflection_params": "_deflection_params" in results,
+                    "delta_total": params.get("delta_total"),
+                    "defl_limit": params.get("defl_limit"),
+                    "defl_limit_ratio": params.get("defl_limit_ratio"),
+                },
+                "timestamp": int(time.time() * 1000),
+                "sessionId": "debug-session",
+                "runId": st.session_state.get("_boot_id", "run"),
+                "hypothesisId": "H1",
+            }) + "\n")
+    except Exception:
+        pass
+    # #endregion
     try:
         from state_and_helpers import write_final_session_state_check
         write_final_session_state_check("final_session_state_check.json")
@@ -1689,10 +1717,11 @@ def render_inputs():
     wmax_char = get_param("wmax_char", 0.3)
     crack_util = get_param("crack_utilisation", _safe_ratio(w_calc, wmax_char))
 
-    # --- Deflection (from deflection_core.py via _compute_deflection_results) ---
-    delta_total = get_param("deflection_total_mm", 0.0)
-    defl_limit = get_param("deflection_limit_mm", 0.0)
-    defl_util = get_param("deflection_utilisation", None)
+    # --- Deflection (shared helper: same logic as deflection page) ---
+    defl_pack = build_deflection_check_rows_from_state(st.session_state)
+    delta_total = float(defl_pack.get("summary_delta_total_mm") or 0.0)
+    defl_limit = float(defl_pack.get("summary_defl_limit_mm") or 0.0)
+    defl_util = defl_pack.get("summary_util_total")
 
     bending_demand = f"{Mu_star:.1f} kNm"
 
@@ -1726,8 +1755,19 @@ def render_inputs():
 
     defl_util_str = f"{defl_util:.2f}" if defl_util is not None and defl_limit > 0 else "—"
 
-    defl_status, defl_colour = _status_and_colour(
-        defl_util, defl_util is not None and defl_limit > 0
+    defl_status = (
+        "PASS"
+        if (defl_util is not None and defl_util <= 1.0)
+        else "FAIL"
+        if defl_util is not None
+        else "—"
+    )
+    defl_colour = (
+        "rgba(0,128,0,0.12)"
+        if defl_status == "PASS"
+        else "rgba(255,0,0,0.12)"
+        if defl_status == "FAIL"
+        else "rgba(31, 119, 180, 0.08)"
     )
 
     # ---------- Bending detail numbers ----------
@@ -1931,19 +1971,20 @@ def render_inputs():
         },
     ]
 
-    # Deflection rows
-    DEFLECTION_ROWS = [
-        {
-            "uid": "defl_total",
-            "title": "Total long-term deflection",
-            "value": f"δtotal = {delta_total:.2f} mm",
-            "limit": f"δlim = {defl_cap}",
-            "util": defl_util_str,
-            "status": defl_status,
-            "ok": _status_to_ok(defl_status),
+    # Deflection rows (use shared helper rows; no local pass/fail)
+    DEFLECTION_ROWS = []
+    for r in defl_pack.get("rows", []):
+        status = r.get("status", "—")
+        DEFLECTION_ROWS.append({
+            "uid": r.get("uid"),
+            "title": r.get("title"),
+            "value": r.get("value"),
+            "limit": r.get("limit"),
+            "util": r.get("util"),
+            "status": status,
+            "ok": True if status == "PASS" else False if status == "FAIL" else None,
             "route_page": "deflection",
-        },
-    ]
+        })
 
     # Render the summary back at the very top (where summary_container was created)
     with summary_container:
@@ -2069,6 +2110,30 @@ tr:hover .hint { opacity: 1; }
         bending_table_html = _generate_summary_table_html(BENDING_ROWS)
         shear_table_html = _generate_summary_table_html(SHEAR_ROWS)
         crack_table_html = _generate_summary_table_html(CRACK_ROWS)
+        # #region agent log
+        try:
+            import json
+            import os
+            import time
+            log_path = os.path.expanduser("~/Documents/blank_app_deflection_debug.log")
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "location": "inputs_page.py:deflection_summary",
+                    "message": "INPUTS_DEFLECTION_SUMMARY",
+                    "data": {
+                        "delta_total": delta_total,
+                        "defl_limit": defl_limit,
+                        "defl_util": defl_util,
+                        "rows_count": len(DEFLECTION_ROWS),
+                    },
+                    "timestamp": int(time.time() * 1000),
+                    "sessionId": "debug-session",
+                    "runId": st.session_state.get("_boot_id", "run"),
+                    "hypothesisId": "H2",
+                }) + "\n")
+        except Exception:
+            pass
+        # #endregion
         defl_table_html = _generate_summary_table_html(DEFLECTION_ROWS)
         
         # Bending
