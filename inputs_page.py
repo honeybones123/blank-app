@@ -303,6 +303,23 @@ def make_summary_cross_section_figure():
                 showlegend=False,
             )
         )
+    fig = go.Figure(data=traces)
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(
+        visible=False,
+        scaleanchor="x",
+        scaleratio=1,
+        range=[D * 1.02, -0.10 * D],
+    )
+    fig.update_layout(
+        width=345,
+        height=450,
+        margin=dict(l=0, r=0, t=0, b=40),
+        shapes=shapes,
+        dragmode=False,
+        # no title – label is added in Streamlit below the figure
+    )
+    return fig
 
 # -------------------------------------------------------------------
 # Backwards-compatible entrypoint expected by app.py
@@ -329,23 +346,6 @@ def render_inputs():
         "inputs_page.py: No Inputs renderer found. Expected one of: "
         "render_inputs_page(), render_page(), render(), page()."
     )
-    fig = go.Figure(data=traces)
-    fig.update_xaxes(visible=False)
-    fig.update_yaxes(
-        visible=False,
-        scaleanchor="x",
-        scaleratio=1,
-        range=[D * 1.02, -0.10 * D],
-    )
-    fig.update_layout(
-        width=345,
-        height=450,
-        margin=dict(l=0, r=0, t=0, b=40),
-        shapes=shapes,
-        dragmode=False,
-        # no title – label is added in Streamlit below the figure
-    )
-    return fig
 
 
 # ------------------------------------------------------------
@@ -966,12 +966,30 @@ def _render_materials_and_sectionA_2d(sync_callbacks):
             unsafe_allow_html=True,
         )
         # --- Section A figure (safe render) ---
+        _required = ["b", "D"]
+        _missing = [k for k in _required if not st.session_state.get(k)]
+        if _missing:
+            st.info("Section A diagram not available right now (inputs are still saved).")
+            return
+
         fig_sec = None
         try:
             fig_sec = make_summary_cross_section_figure()
+            if fig_sec is None:
+                raise ValueError("Section A diagram function returned None (fig is None)")
         except Exception as e:
             # Don't let the whole app die because a visual failed
             st.warning(f"Section A diagram failed to render: {e}")
+            import traceback
+            from pathlib import Path
+
+            log_dir = Path("Documents")
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_path = log_dir / "sectionA_diagram_error.log"
+            log_path.write_text(
+                f"{type(e).__name__}: {e}\n\n{traceback.format_exc()}",
+                encoding="utf-8"
+            )
 
         if fig_sec is None:
             # Graceful fallback: still keep the UI working
