@@ -1773,21 +1773,22 @@ See table for layer-by-layer SLS steel strains and stresses.
     # 3.7 Link to crack-width calculation
     # --------------------------------------------------
 
-    # OUTERMOST tension layer (deepest y) with positive stress
     fs_tension = None
     eps_s_control = None
     y_control = None
 
     if steel_rows:
+        # Pick the deepest steel row (outermost layer) and use ABS stress
+        # so we are robust to sign convention (tension may be negative).
         deepest = max(
-            (row for row in steel_rows if row["f_s (MPa)"] > 0.0),
-            key=lambda row: row["Depth y (mm)"],
+            steel_rows,
+            key=lambda row: float(row["Depth y (mm)"]),
             default=None,
         )
         if deepest is not None:
-            fs_tension = deepest["f_s (MPa)"]
-            eps_s_control = deepest["ε_s"]
-            y_control = deepest["Depth y (mm)"]
+            fs_tension = abs(float(deepest["f_s (MPa)"]))
+            eps_s_control = float(deepest["ε_s"])
+            y_control = float(deepest["Depth y (mm)"])
 
     # Also compute top-fibre SLS strain from κ and d_n,sls
     eps_top_sls = kappa * (0.0 - dn_sls)
@@ -1829,7 +1830,8 @@ Use $f_{{s,ser}} \\approx {fs_tension:.1f}$ MPa in crack-width calculations on t
         )
         
         # Publish for Crack Width page – service tensile steel stress at SLS
-        update_results(sigma_s_sls=float(fs_tension))
+        from bending_core import compute_sigma_s_sls_for_crack
+        compute_sigma_s_sls_for_crack(publish=True)
     else:
         st.info(
             "No tension layer found for crack-width link – check the SLS inputs."

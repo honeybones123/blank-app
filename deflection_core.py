@@ -54,7 +54,7 @@ def compute_deflection_results(publish: bool = True) -> dict:
     
     # Read loads from SFD/BMD page (unified loading system)
     # Note: load_case is a widget key (st.selectbox), not a shared key
-    load_case = st.session_state.get("load_case", "Simple beam – UDL over entire span")
+    load_case = get_param("sfd_case", "Simple beam – UDL over entire span")
     
     # For UDL cases, read g and q directly
     g_udl = get_param("g_udl_kNm_per_m", None)
@@ -164,13 +164,11 @@ def compute_deflection_results(publish: bool = True) -> dict:
         defl_limit_ratio=defl_limit_ratio,
     )
     
-    # Update session state (using keys expected by inputs_page)
-    # Note: deflection page may use different keys, but inputs_page reads these
-    update_results(
-        deflection_total_mm=delta_total,
-        deflection_limit_mm=defl_limit,
-        deflection_utilisation=defl_util,
-    )
+    out = {
+        "deflection_total_mm": delta_total,
+        "deflection_limit_mm": defl_limit,
+        "deflection_utilisation": defl_util,
+    }
     
     # Store detailed results for report building
     if publish:
@@ -222,13 +220,8 @@ def compute_deflection_results(publish: bool = True) -> dict:
         except Exception as e:
             st.session_state["results"]["deflection_report_error"] = str(e)
     
-    return {
-        "delta_total": delta_total,
-        "delta_short_total": delta_short_total,
-        "delta_long_add": delta_long_add,
-        "defl_limit": defl_limit,
-        "defl_util": defl_util,
-    }
+    update_results(**out)
+    return out
 
 
 def build_deflection_report(params: dict) -> dict:

@@ -266,7 +266,7 @@ def compute_creep_results(publish: bool = True) -> dict:
     stress_ratio = get_param("stress_ratio", 0.30)
     
     # Read faces option (default to beam)
-    faces_option = get_param("faces_option", "Beam – three faces exposed")
+    faces_option = get_param("member_faces_exposed", "Beam – three faces exposed")
     
     # Calculate geometry
     Ag = b * D  # mm²
@@ -328,12 +328,12 @@ def compute_creep_results(publish: bool = True) -> dict:
 def render_creep():
     apply_global_widget_css()
     _inject_calcbox_css()
-    get_sync_callbacks()  # keeps contract with Inputs page
+    sync_callbacks = get_sync_callbacks()  # keeps contract with Inputs page
 
     # --------------------------------------------------------
     # Page title
     # --------------------------------------------------------
-    st.title("Creep – AS 3600:2018 Clause 3.1.8")
+    st.title("Creep")
 
     # --------------------------------------------------------
     # Page description (directly under title)
@@ -366,94 +366,88 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
 
     # --- Geometry ---
     with col_geom:
-        b_seed = _seed_from_param("b", 300.0)
-        D_seed = _seed_from_param("D", 600.0)
+        b_val = float(st.session_state.get("inputs_b", get_param("b", 400.0)))
+        D_val = float(st.session_state.get("inputs_D", get_param("D", 600.0)))
 
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown("<div class='sb-label'>Section width b (mm)</div>", unsafe_allow_html=True)
-        with col2:
-            b = v2_number_input(
-                label="",
-                key="cr_b",
-                default=b_seed,
-                step=10.0,
-                label_visibility="collapsed",
-            )
+        number_row(
+            "Section width b (mm)",
+            "inputs_b",
+            b_val,
+            sync_callbacks,
+        )
 
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown("<div class='sb-label'>Overall depth D (mm)</div>", unsafe_allow_html=True)
-        with col2:
-            D = v2_number_input(
-                label="",
-                key="cr_D",
-                default=D_seed,
-                step=10.0,
-                label_visibility="collapsed",
-            )
+        number_row(
+            "Overall depth D (mm)",
+            "inputs_D",
+            D_val,
+            sync_callbacks,
+        )
+        b = float(get_param("b", b_val))
+        D = float(get_param("D", D_val))
 
         col1, col2 = st.columns([1, 2])
         with col1:
             st.markdown("<div class='sb-label'>Member / faces exposed</div>", unsafe_allow_html=True)
         with col2:
+            faces_options = [
+                "Slab – one face exposed",
+                "Slab – two faces exposed",
+                "Beam – three faces exposed",
+                "Column – four faces exposed",
+            ]
+            faces_current = get_param("member_faces_exposed", "Beam – three faces exposed")
+            if faces_current not in faces_options:
+                faces_current = "Beam – three faces exposed"
             faces_option = v2_selectbox(
                 label="",
                 key="cr_faces",
-                options=[
-                    "Slab – one face exposed",
-                    "Slab – two faces exposed",
-                    "Beam – three faces exposed",
-                    "Column – four faces exposed",
-                ],
-                default_index=2,
+                options=faces_options,
+                default_index=faces_options.index(faces_current),
                 label_visibility="collapsed",
+                on_change=sync_callbacks["cr_faces"],
             )
 
     # --- Environment & material ---
     with col_env:
-        fc_seed = _seed_from_param("fc", 32.0)
-        Ec_seed = _seed_from_param("Ec", 30000.0)
+        fc_val = float(st.session_state.get("inputs_fc", get_param("fc", 32.0)))
+        Ec_val = float(st.session_state.get("inputs_Ec", get_param("Ec", 30000.0)))
 
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown("<div class='sb-label'>Concrete strength f'c (MPa)</div>", unsafe_allow_html=True)
-        with col2:
-            fc = v2_number_input(
-                label="",
-                key="cr_fc",
-                default=fc_seed,
-                step=1.0,
-                label_visibility="collapsed",
-            )
+        number_row(
+            "Concrete strength f'c (MPa)",
+            "inputs_fc",
+            fc_val,
+            sync_callbacks,
+        )
 
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown("<div class='sb-label'>Concrete modulus Ec (MPa)</div>", unsafe_allow_html=True)
-        with col2:
-            Ec = v2_number_input(
-                label="",
-                key="cr_Ec",
-                default=Ec_seed,
-                step=1000.0,
-                label_visibility="collapsed",
-            )
+        number_row(
+            "Concrete modulus Ec (MPa)",
+            "inputs_Ec",
+            Ec_val,
+            sync_callbacks,
+        )
+        fc = float(get_param("fc", fc_val))
+        Ec = float(get_param("Ec", Ec_val))
 
         col1, col2 = st.columns([1, 2])
         with col1:
             st.markdown("<div class='sb-label'>Creep environment (Tables 3.1.8.2 & 3.1.8.3)</div>", unsafe_allow_html=True)
         with col2:
+            env_options = [
+                "Arid environment",
+                "Interior environment",
+                "Temperate inland environment",
+                "Tropical / near-coastal / coastal environment",
+            ]
+            env_current = get_param("env_option", "Temperate inland environment")
+            if env_current not in env_options:
+                env_current = "Temperate inland environment"
             env_option = v2_selectbox(
                 label="",
                 key="cr_env",
-                options=[
-                    "Arid environment",
-                    "Interior environment",
-                    "Temperate inland environment",
-                    "Tropical / near-coastal / coastal environment",
-                ],
-                default_index=2,
+                options=env_options,
+                default_index=env_options.index(env_current),
                 label_visibility="collapsed",
+                on_change=sync_callbacks["cr_env"],
             )
 
     # --- Loading data ---
@@ -464,11 +458,12 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
         with col2:
             t_creep = v2_number_input(
                 label="",
-                key="cr_t_creep",
-                default=365.0,
+                key="inputs_t_creep",
+                default=float(get_param("t_creep", 365.0)),
                 step=10.0,
                 min_value=1.0,
                 label_visibility="collapsed",
+                on_change=sync_callbacks["inputs_t_creep"],
             )
 
         col1, col2 = st.columns([1, 2])
@@ -477,11 +472,12 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
         with col2:
             age_at_loading = v2_number_input(
                 label="",
-                key="cr_tau",
-                default=28.0,
+                key="inputs_age_at_loading",
+                default=float(get_param("age_at_loading", 28.0)),
                 step=1.0,
                 min_value=1.0,
                 label_visibility="collapsed",
+                on_change=sync_callbacks["inputs_age_at_loading"],
             )
 
         col1, col2 = st.columns([1, 2])
@@ -490,12 +486,13 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
         with col2:
             stress_ratio = v2_number_input(
                 label="",
-                key="cr_sigma_ratio",
-                default=0.30,
+                key="inputs_stress_ratio",
+                default=float(get_param("stress_ratio", 0.30)),
                 step=0.05,
                 min_value=0.0,
                 max_value=0.80,
                 label_visibility="collapsed",
+                on_change=sync_callbacks["inputs_stress_ratio"],
             )
 
     # --------------------------------------------------------
@@ -589,7 +586,43 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
         ]
         
         # Render top summary table
-        st.markdown("## Creep — Summary")
+        # Header row with title and INFO button
+        h_left, h_right = st.columns([8, 1], vertical_alignment="center")
+        with h_left:
+            st.markdown("## Creep — Summary")
+        with h_right:
+            with st.popover("ℹ️ INFO"):
+                st.markdown("""
+**What creep is**  
+Concrete **creep** is the **time-dependent increase in strain under sustained stress**.  
+Even if the load stays constant, the deformation continues to grow with time.
+
+**What causes creep**  
+Creep is driven by time-dependent behaviour of the cement paste and microstructure, influenced by:
+- **Sustained stress level** (higher stress → more creep)
+- **Age at loading** (younger concrete → more creep)
+- **Moisture condition / environment** (drying increases creep; humidity matters)
+- **Member size / thickness** (drying gradients; effective thickness effects)
+- **Concrete strength and mix** (paste content, w/c ratio, aggregate stiffness, etc.)
+- **Temperature** (higher temperature generally accelerates creep)
+
+**How creep is measured / reported**  
+Creep is commonly expressed as a **creep coefficient**:  
+- **φ (phi)** = creep strain / initial elastic strain  
+It is **dimensionless**.
+
+Creep may also be reported as **creep strain**, typically in:
+- **microstrain (µε)**, where 1 µε = 1×10⁻⁶
+
+**Why it matters in design**  
+Creep affects:
+- **Long-term deflection** (serviceability)
+- **Cracking and curvature** in restrained members
+- **Prestress losses** (if applicable)
+- **Stress redistribution** between concrete and reinforcement over time
+""")
+        
+        st.markdown("")
         render_clickable_summary_table(ROWS, key_prefix="creep_page_summary")
         bind_summary_clicks()
         

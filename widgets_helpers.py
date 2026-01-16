@@ -3,11 +3,82 @@ import streamlit.components.v1 as components
 import re
 import html
 
-from state_and_helpers import TAB_KEYS, resolve_widget_key
+from state_and_helpers import TAB_KEYS, resolve_widget_key, NONZERO_REQUIRED_SHARED_KEYS, zero_allowed, _audit, mark_user_edit
+
+# Global rendered widget keys set (module-level)
+_RENDERED_WIDGET_KEYS: set[str] = set()
 
 
 def _register_rendered_key(key: str) -> None:
-    """V2: Register a widget key as rendered this run (prevents stale keys from syncing)."""
+    """Register a widget key as rendered this run."""
+    _RENDERED_WIDGET_KEYS.add(key)
+    # Also maintain session_state version for backward compatibility
+    rendered = st.session_state.get("_rendered_widget_keys")
+    if not isinstance(rendered, set):
+        rendered = set()
+        st.session_state["_rendered_widget_keys"] = rendered
+    rendered.add(key)
+
+
+def get_rendered_widget_keys() -> list[str]:
+    """Return keys rendered this run (sorted)."""
+    return sorted(_RENDERED_WIDGET_KEYS)
+
+
+def clear_rendered_widget_keys() -> None:
+    """Call at start of each page render."""
+    _RENDERED_WIDGET_KEYS.clear()
+    # Also clear session_state version for backward compatibility
+    if "_rendered_widget_keys" in st.session_state:
+        st.session_state["_rendered_widget_keys"] = set()
+
+
+def _wrap_user_edit(widget_key: str, cb):
+    """
+    Wrap a callback to mark the widget as user-edited ONLY when we're not
+    in hydration/restore/lock mode.
+
+    Streamlit can trigger on_change from programmatic widget updates
+    (e.g. hydrate_tab_widgets_from_shared). If we mark those as "user edits",
+    the sync gate can incorrectly allow widget→shared writes and clobber values.
+    """
+    def _wrapped():
+        if st.session_state.get("_sync_lock", False):
+            return
+        # Only block marking during ACTIVE lock/restore phases
+        # Do NOT block on _restored_from_snapshot (that flag means "this boot came from snapshot",
+        # not "we're currently restoring"). After restore completes, user edits should be allowed.
+        if (
+            st.session_state.get("_restore_guard_active", False)
+        ):
+            cb()
+            return
+
+        st.session_state["_last_user_widget_key"] = widget_key
+
+        # Also mark the shared key if we can resolve it
+        shared_key = TAB_KEYS.get(widget_key)
+        if shared_key:
+            mark_user_edit(widget_key, shared_key)
+
+        cb()
+
+    return _wrapped
+
+
+def seed_widget_from_shared(widget_key: str, shared_key: str, fallback_default):
+    """
+    Contract-safe: only seed widget state ONCE if the widget key is missing.
+    Never overwrites user edits during reruns.
+    """
+    if widget_key not in st.session_state:
+        st.session_state[widget_key] = st.session_state.get(shared_key, fallback_default)
+
+
+def _register_rendered_key(key: str) -> None:
+    """Register a widget key as rendered this run."""
+    _RENDERED_WIDGET_KEYS.add(key)
+    # Also maintain session_state version for backward compatibility
     rendered = st.session_state.get("_rendered_widget_keys")
     if not isinstance(rendered, set):
         rendered = set()
@@ -501,7 +572,10 @@ def number_row(label: str, key: str, default: float, sync_callbacks=None, help_t
         # ---- callback lookup ----
         on_change_callback = None
         if sync_callbacks and isinstance(sync_callbacks, dict):
-            on_change_callback = sync_callbacks.get(original_key)
+            raw_callback = sync_callbacks.get(original_key)
+            if raw_callback:
+                # Wrap callback to mark user edit before calling
+                on_change_callback = _wrap_user_edit(original_key, raw_callback)
 
         # #region agent log
         try:
@@ -519,16 +593,15 @@ def number_row(label: str, key: str, default: float, sync_callbacks=None, help_t
         if shared_key is not None and shared_key in st.session_state:
             shared_val = st.session_state[shared_key]
             # If shared is 0 but default is meaningful, use default (shared state is corrupted)
+            # BUT: Allow 0 for zero-allowed keys (like reo counts/spacing/diameters/legs)
             if (shared_val == 0 or shared_val == 0.0) and default not in (None, "", 0, 0.0):
-                from state_and_helpers import FORCE_HYDRATE_SHARED_KEYS
-                if shared_key in FORCE_HYDRATE_SHARED_KEYS:
+                protected = (shared_key in NONZERO_REQUIRED_SHARED_KEYS) and (not zero_allowed(shared_key))
+                if protected:
                     effective_default = default
-                    # Also fix shared state to default
-                    st.session_state[shared_key] = float(default)
                     # #region agent log
                     try:
                         with open(log_path, "a") as f:
-                            f.write(json.dumps({"location": "widgets_helpers.py:number_row", "message": "Fixed corrupted shared state from default", "data": {"key": original_key, "shared_key": shared_key, "old_shared": shared_val, "new_shared": default}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "N"}) + "\n")
+                            f.write(json.dumps({"location": "widgets_helpers.py:number_row", "message": "Detected corrupted shared state (no write)", "data": {"key": original_key, "shared_key": shared_key, "old_shared": shared_val, "suggested_default": default}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "N"}) + "\n")
                     except: pass
                     # #endregion
                 else:
@@ -545,8 +618,20 @@ def number_row(label: str, key: str, default: float, sync_callbacks=None, help_t
         except: pass
         # #endregion
 
-        # Reinforcement bar counts etc. can be 0
-        min_val = 0.0 if ("nb_or_s" in original_key or "nb_" in original_key) else None
+        # Determine min_value based on key type
+        min_val = None
+
+        # counts/spacing/detailing can be 0
+        if ("nb_or_s" in original_key) or original_key.startswith("inputs_nb_") or original_key.startswith("inputs_db_") or "rowgap" in original_key or "lig_" in original_key:
+            min_val = 0.0
+
+        # time-dependent inputs should never be 0
+        if original_key in ("inputs_t_creep", "inputs_t_shrink", "inputs_age_at_loading"):
+            min_val = 1.0
+
+        # stress ratio: allow 0 only if you truly want it; otherwise clamp to >0
+        if original_key == "inputs_stress_ratio":
+            min_val = 0.01
 
         # ---- V2: seed ONCE only; never reseed from shared on reruns ----
         # BUT: If widget exists with stale zero and shared/default has meaningful value, fix it
@@ -560,20 +645,24 @@ def number_row(label: str, key: str, default: float, sync_callbacks=None, help_t
         
         # CRITICAL: If widget is stale zero but shared/default is meaningful, fix the widget
         # This handles the case where shared state was overwritten to 0 by another page
+        # BUT: Allow 0 for allow-zero keys (like reo counts)
         if original_key.startswith("inputs_") and widget_is_stale_zero and has_meaningful_value:
             # Check if this is a protected key (geometry, materials, design actions)
-            from state_and_helpers import FORCE_HYDRATE_SHARED_KEYS
-            if shared_key and shared_key in FORCE_HYDRATE_SHARED_KEYS:
+            # BUT exclude allow-zero keys (where 0 is legitimate)
+            protected = (shared_key and (shared_key in NONZERO_REQUIRED_SHARED_KEYS) and (not zero_allowed(shared_key)))
+            if protected:
                 # Prefer shared value if meaningful, otherwise use default
                 fix_value = effective_default if shared_is_meaningful else default
+                cur = st.session_state.get(original_key)
                 st.session_state[original_key] = float(fix_value)
+                _audit("WIDGET_GUARD forced widget", shared_key, original_key, old=cur, new=fix_value)
                 # Also fix shared state if it's 0 but default is meaningful
                 if not shared_is_meaningful and default_is_meaningful and shared_key:
-                    st.session_state[shared_key] = float(default)
+                    old_shared = st.session_state.get(shared_key)
                 # #region agent log
                 try:
                     with open(log_path, "a") as f:
-                        f.write(json.dumps({"location": "widgets_helpers.py:number_row", "message": "Fixed stale zero widget", "data": {"key": original_key, "shared_key": shared_key, "old_value": value_before_seed, "new_value": fix_value, "fixed_shared": not shared_is_meaningful and default_is_meaningful}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "M"}) + "\n")
+                        f.write(json.dumps({"location": "widgets_helpers.py:number_row", "message": "Fixed stale zero widget", "data": {"key": original_key, "shared_key": shared_key, "old_value": value_before_seed, "new_value": fix_value, "would_fix_shared": not shared_is_meaningful and default_is_meaningful}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "M"}) + "\n")
                 except: pass
                 # #endregion
         
@@ -620,6 +709,55 @@ def number_row(label: str, key: str, default: float, sync_callbacks=None, help_t
         except: pass
         # #endregion
     return value
+
+
+def select_row(
+    label: str,
+    key: str,
+    options: list,
+    default,
+    sync_callbacks=None,
+    help_text: str | None = None,
+    required: bool = False,
+):
+    """
+    Selectbox row with label + hover help.
+    Contract-safe:
+      - seeds widget value ONCE only if key missing
+      - never overwrites user edits on reruns
+      - uses sync_callbacks + TAB_KEYS mapping like number_row
+    """
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        label_with_hover(label, help_text, required=required)
+
+    with col2:
+        original_key = key
+        _register_rendered_key(original_key)
+
+        # Seed ONCE only
+        if original_key not in st.session_state:
+            # Prefer shared if present, otherwise default
+            shared_key = TAB_KEYS.get(original_key)
+            candidate = st.session_state.get(shared_key, default) if shared_key else default
+
+            # Ensure candidate is one of the options; otherwise fallback safely
+            if candidate in options:
+                st.session_state[original_key] = candidate
+            else:
+                st.session_state[original_key] = default if default in options else options[0]
+
+        on_change = None
+        if sync_callbacks and isinstance(sync_callbacks, dict):
+            on_change = sync_callbacks.get(original_key)
+
+        st.selectbox(
+            "",
+            options=options,
+            key=original_key,
+            label_visibility="collapsed",
+            on_change=on_change,
+        )
 
 
 def show_reo_message(msg_key: str, layer: str = "", s_min: float = None):
@@ -1207,6 +1345,8 @@ def v2_number_input(*, label, key, default, min_value=None, max_value=None, step
     """V2-safe number_input: seed once, then never pass value= again."""
     key = resolve_widget_key(key)
     _register_rendered_key(key)
+    if on_change is not None:
+        on_change = _wrap_user_edit(key, on_change)
     if key not in st.session_state:
         st.session_state[key] = default
     # Safety net: never render a number input with a None session value
@@ -1231,6 +1371,8 @@ def v2_checkbox(*, label, key, default=False, help=None, disabled=False, label_v
     """V2-safe checkbox: seed once, then never pass value= again."""
     key = resolve_widget_key(key)
     _register_rendered_key(key)
+    if on_change is not None:
+        on_change = _wrap_user_edit(key, on_change)
     if key not in st.session_state:
         st.session_state[key] = bool(default)
     return st.checkbox(
@@ -1248,6 +1390,8 @@ def v2_selectbox(*, label, key, options, default_index=0, format_func=None,
     """V2-safe selectbox: seed once, then never pass index= again."""
     key = resolve_widget_key(key)
     _register_rendered_key(key)
+    if on_change is not None:
+        on_change = _wrap_user_edit(key, on_change)
     if key not in st.session_state:
         # seed with the option value itself (not index)
         st.session_state[key] = options[default_index]

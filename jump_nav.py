@@ -23,12 +23,8 @@ def get_jump_uid(param_name: str = "jump") -> str | None:
         try:
             del st.query_params[param_name]
         except Exception:
-            # fallback: rebuild params without jump
-            params = dict(st.query_params)
-            params.pop(param_name, None)
-            st.query_params.clear()
-            for k, v in params.items():
-                st.query_params[k] = v
+            # fallback: do not clear routing params in page code
+            pass
         
         return uid
     

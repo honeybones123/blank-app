@@ -17,7 +17,7 @@ from state_and_helpers import (
     update_results,
     init_shared_session_state,
 )
-from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, show_reo_message, apply_step_expander_css, apply_step_summary_expander_css, info_i_button, page_divider
+from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, select_row, show_reo_message, apply_step_expander_css, apply_step_summary_expander_css, info_i_button, page_divider
 from bending_core import _fmt, _compute_bending_capacity, _stress_strain_state
 from bending_diagrams import (
     _plot_stress_strain_profiles,
@@ -30,6 +30,12 @@ from ui_seamless_steps import (
     bind_summary_clicks,
     step_card,
 )
+
+# Safe option lists for reinforcement inputs
+REO_BAR_DIAS = [10, 12, 16, 20, 24, 28, 32, 36, 40]
+REO_COUNTS_0_12 = list(range(0, 13))
+REO_SPACINGS = [75, 100, 125, 150, 175, 200, 225, 250, 275, 300]
+REO_LAYOUT_MODE = ["Count", "Spacing"]
 
 
 def _coalesce_num(v, default: float) -> float:
@@ -846,6 +852,9 @@ def _compute_sls_bending_values():
     - bending_sls_fs_outer: outermost tension layer stress (MPa)
     - bending_sls_y_tension_outer: depth to outermost tension layer (mm)
     - bending_sls_eps_s_outer: strain in outermost tension layer
+    
+    Returns:
+        fs_outer: Outermost tension layer stress (MPa), or None if not computed
     """
     import streamlit as st
     import math
@@ -872,7 +881,7 @@ def _compute_sls_bending_values():
     cover_top = get_param("cover_top")
     
     if not (d and Ast and Ec and Es and b and D and Mu_star is not None):
-        return  # Not enough info
+        return None  # Not enough info
     
     Ms = Mu_star  # service moment (kNm)
     
@@ -964,8 +973,15 @@ def _compute_sls_bending_values():
             st.session_state["bending_sls_eps_s_outer"] = float(eps_s_outer)
         if y_outer is not None:
             st.session_state["bending_sls_y_tension_outer"] = float(y_outer)
+        
+        # Publish for other pages (crack/deflection)
+        if fs_outer is not None:
+            from state_and_helpers import update_results
+            update_results(sigma_s_sls=float(fs_outer), bending_sls_fs_outer=float(fs_outer))
+        return fs_outer
     except Exception:
         pass
+    return None
 
 
 def compute_bending_results(publish: bool = True) -> dict:
@@ -1078,8 +1094,11 @@ def get_bending_inputs_from_shared_state():
 
 
 def render_bending():
-    # Initialize shared state (ensures all keys exist and prevents snippet defaults)
-    init_shared_session_state()
+    # NOTE: init_shared_session_state() is called by app.py router before this function runs.
+    # Pages must NOT call init/hydrate themselves - the router owns the lifecycle.
+    
+    from state_and_helpers import _write_sync_trace_line
+    _write_sync_trace_line("\n=== PAGE RENDER: bending ===")
     
     # Handle cross-page navigation from Inputs page
     from jump_nav import get_jump_uid
@@ -1217,6 +1236,9 @@ def render_bending():
     top_results = _compute_bending_capacity()
     Ast = get_param("Ast_bot")
     Mu_star = get_param("Mu_star")
+    
+    # Compute SLS values BEFORE building summary (ensures sigma_s_sls is published)
+    fs_outer_sls = _compute_sls_bending_values()
 
     phi_Mu_cap_top = top_results["phi_Mu_cap"]
     
@@ -1344,17 +1366,26 @@ def render_bending():
         else "—"
     )
 
-    # SLS steel stress string (for summary table; matches Deflection / Crack pages).
-    fs_ser = get_param("sigma_s_sls", None)
-    try:
-        fs_ser_val = float(fs_ser) if fs_ser is not None else float("nan")
-    except Exception:
-        fs_ser_val = float("nan")
+    # SLS steel stress for summary (use local variable from computation, not session_state)
+    def _as_float_or_nan(v):
+        try:
+            if v is None:
+                return float("nan")
+            return float(v)
+        except Exception:
+            return float("nan")
 
-    if math.isnan(fs_ser_val):
-        fs_ser_str = "—"
-    else:
-        fs_ser_str = f"{fs_ser_val:.1f} MPa"
+    fs_val = _as_float_or_nan(fs_outer_sls)
+    
+    # Fallback to session_state if local computation didn't produce a value
+    if (math.isnan(fs_val)) or (abs(fs_val) < 1e-9):
+        fs_ser = st.session_state.get("sigma_s_sls", None)
+        fs_fallback = st.session_state.get("bending_sls_fs_outer", None)
+        fs_val = _as_float_or_nan(fs_ser)
+        if (math.isnan(fs_val)) or (abs(fs_val) < 1e-9):
+            fs_val = _as_float_or_nan(fs_fallback)
+
+    fs_ser_str = "—" if math.isnan(fs_val) else f"{fs_val:.1f} MPa"
 
     # Canonical bending state shared by 3D & bottom radios (ULS / SLS / Uncracked)
     state_options = ["ULS", "SLS (cracked)", "Uncracked"]
@@ -1886,46 +1917,89 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 st.session_state["_reo_warning_top_1"] = None  # Clear after showing
                 st.session_state["_reo_s_min_top_1"] = None
         
-        # Now render all number_row inputs in parallel to ensure alignment
-        # Get current values (widget key takes precedence if exists, otherwise use shared key)
+        # Now render all reo inputs in parallel to ensure alignment
         with r1:
-            nb_or_s_bot_1_val = float(st.session_state.get("bending_nb_or_s_bot_1", get_param("nb_or_s_bot_1", 4.0)))
-            db_bot_1_val = float(st.session_state.get("bending_db_bot_1", get_param("db_bot_1", 20.0)))
-            nb_or_s_bot_2_val = float(st.session_state.get("bending_nb_or_s_bot_2", get_param("nb_or_s_bot_2", 0.0)))
-            db_bot_2_val = float(st.session_state.get("bending_db_bot_2", get_param("db_bot_2", 20.0)))
-            rowgap_bot_val = float(st.session_state.get("bending_rowgap_bot", get_param("rowgap_bot", 60.0)))
-            
-            number_row(
-                "Layer 1 bar spacing",
-                "bending_nb_or_s_bot_1",
-                nb_or_s_bot_1_val,
+            # Layer 1 mode
+            select_row(
+                "Layer 1 layout mode",
+                "bending_bot1_layout_mode",
+                REO_LAYOUT_MODE,
+                "Count",
                 sync_callbacks,
-                help_text="Enter number of bars if value ≤ 30. Enter bar spacing (mm) if value ≥ 30.",
+                help_text="Count vs spacing.",
             )
 
-            number_row(
+            mode = st.session_state.get("bending_bot1_layout_mode", st.session_state.get("bot1_layout_mode", "Count"))
+
+            if mode == "Count":
+                select_row(
+                    "Layer 1 bars (count)",
+                    "bending_bot1_count",
+                    REO_COUNTS_0_12,
+                    4,
+                    sync_callbacks,
+                    help_text="0–12",
+                )
+            else:
+                select_row(
+                    "Layer 1 bar spacing (mm)",
+                    "bending_bot1_spacing",
+                    REO_SPACINGS,
+                    200,
+                    sync_callbacks,
+                    help_text="75–300",
+                )
+
+            select_row(
                 "Layer 1 bar Ø (mm)",
                 "bending_db_bot_1",
-                db_bot_1_val,
+                REO_BAR_DIAS,
+                20,
                 sync_callbacks,
                 help_text="Nominal bar diameter for Layer 1 (mm).",
             )
             
-            number_row(
-                "Layer 2 bar spacing",
-                "bending_nb_or_s_bot_2",
-                nb_or_s_bot_2_val,
+            # Layer 2 mode
+            select_row(
+                "Layer 2 layout mode",
+                "bending_bot2_layout_mode",
+                REO_LAYOUT_MODE,
+                "Count",
                 sync_callbacks,
-                help_text="Enter number of bars if value ≤ 30. Enter bar spacing (mm) if value ≥ 30.",
+                help_text="Count vs spacing.",
             )
 
-            number_row(
+            mode2 = st.session_state.get("bending_bot2_layout_mode", st.session_state.get("bot2_layout_mode", "Count"))
+
+            if mode2 == "Count":
+                select_row(
+                    "Layer 2 bars (count)",
+                    "bending_bot2_count",
+                    REO_COUNTS_0_12,
+                    0,
+                    sync_callbacks,
+                    help_text="0–12",
+                )
+            else:
+                select_row(
+                    "Layer 2 bar spacing (mm)",
+                    "bending_bot2_spacing",
+                    REO_SPACINGS,
+                    200,
+                    sync_callbacks,
+                    help_text="75–300",
+                )
+
+            select_row(
                 "Layer 2 bar Ø (mm)",
                 "bending_db_bot_2",
-                db_bot_2_val,
+                REO_BAR_DIAS,
+                20,
                 sync_callbacks,
                 help_text="Nominal bar diameter for Layer 2 (mm).",
             )
+            
+            rowgap_bot_val = float(st.session_state.get("bending_rowgap_bot", get_param("rowgap_bot", 60.0)))
 
             number_row(
                 "Row gap (mm)",
@@ -1950,44 +2024,87 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             )
 
         with r2:
-            # Get current values (widget key takes precedence if exists, otherwise use shared key)
-            nb_or_s_top_1_val = float(st.session_state.get("bending_nb_or_s_top_1", get_param("nb_or_s_top_1", 2.0)))
-            db_top_1_val = float(st.session_state.get("bending_db_top_1", get_param("db_top_1", 16.0)))
-            nb_or_s_top_2_val = float(st.session_state.get("bending_nb_or_s_top_2", get_param("nb_or_s_top_2", 0.0)))
-            db_top_2_val = float(st.session_state.get("bending_db_top_2", get_param("db_top_2", 16.0)))
-            rowgap_top_val = float(st.session_state.get("bending_rowgap_top", get_param("rowgap_top", 60.0)))
-            
-            number_row(
-                "Layer 1 bar spacing",
-                "bending_nb_or_s_top_1",
-                nb_or_s_top_1_val,
+            # Layer 1 mode
+            select_row(
+                "Layer 1 layout mode",
+                "bending_top1_layout_mode",
+                REO_LAYOUT_MODE,
+                "Count",
                 sync_callbacks,
-                help_text="Enter number of bars if value ≤ 30. Enter bar spacing (mm) if value ≥ 30.",
+                help_text="Count vs spacing.",
             )
 
-            number_row(
+            mode = st.session_state.get("bending_top1_layout_mode", st.session_state.get("top1_layout_mode", "Count"))
+
+            if mode == "Count":
+                select_row(
+                    "Layer 1 bars (count)",
+                    "bending_top1_count",
+                    REO_COUNTS_0_12,
+                    2,
+                    sync_callbacks,
+                    help_text="0–12",
+                )
+            else:
+                select_row(
+                    "Layer 1 bar spacing (mm)",
+                    "bending_top1_spacing",
+                    REO_SPACINGS,
+                    200,
+                    sync_callbacks,
+                    help_text="75–300",
+                )
+
+            select_row(
                 "Layer 1 bar Ø (mm)",
                 "bending_db_top_1",
-                db_top_1_val,
+                REO_BAR_DIAS,
+                16,
                 sync_callbacks,
                 help_text="Nominal bar diameter for Layer 1 (mm).",
             )
             
-            number_row(
-                "Layer 2 bar spacing",
-                "bending_nb_or_s_top_2",
-                nb_or_s_top_2_val,
+            # Layer 2 mode
+            select_row(
+                "Layer 2 layout mode",
+                "bending_top2_layout_mode",
+                REO_LAYOUT_MODE,
+                "Count",
                 sync_callbacks,
-                help_text="Enter number of bars if value ≤ 30. Enter bar spacing (mm) if value ≥ 30.",
+                help_text="Count vs spacing.",
             )
 
-            number_row(
+            mode2 = st.session_state.get("bending_top2_layout_mode", st.session_state.get("top2_layout_mode", "Count"))
+
+            if mode2 == "Count":
+                select_row(
+                    "Layer 2 bars (count)",
+                    "bending_top2_count",
+                    REO_COUNTS_0_12,
+                    0,
+                    sync_callbacks,
+                    help_text="0–12",
+                )
+            else:
+                select_row(
+                    "Layer 2 bar spacing (mm)",
+                    "bending_top2_spacing",
+                    REO_SPACINGS,
+                    200,
+                    sync_callbacks,
+                    help_text="75–300",
+                )
+            
+            select_row(
                 "Layer 2 bar Ø (mm)",
                 "bending_db_top_2",
-                db_top_2_val,
+                REO_BAR_DIAS,
+                16,
                 sync_callbacks,
                 help_text="Nominal bar diameter for Layer 2 (mm).",
             )
+            
+            rowgap_top_val = float(st.session_state.get("bending_rowgap_top", get_param("rowgap_top", 60.0)))
 
             number_row(
                 "Row gap (mm)",
@@ -2246,6 +2363,13 @@ for the same strain pattern.
     # Handle scroll after all content is rendered (for cross-page navigation from Inputs)
     from jump_nav import scroll_to_jump_after_render
     scroll_to_jump_after_render()
+    
+    # Debug: dump session state inventory
+    try:
+        from state_and_helpers import dump_session_state_inventory
+        dump_session_state_inventory("bending", sync_callbacks=sync_callbacks, out_dir=".")
+    except Exception:
+        pass
     
 
 

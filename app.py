@@ -3,11 +3,22 @@ import streamlit as st
 from state_and_helpers import (
     init_shared_session_state,
     recalc_derived_values,
+    update_results,
+    compute_all_results,
     assert_shared_state_alive,
     hydrate_active_page_widgets_from_shared,
     begin_render_cycle,
     persist_state_snapshot,
+    _shared_zero_tripwire,
+    SHARED_DEFAULTS,
+    DERIVED_KEYS,
+    RESULT_KEYS,
+    clear_user_edit_marker_each_run,
+    end_of_render_cleanup,
+    debug_tripwire_hook,
+    watch_shared_key_writes,
 )
+import time
 
 # 🔁 Import modules, not individual functions
 import inputs_page
@@ -129,38 +140,6 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     if st.session_state["_app_boot_count"] == 1:
         st.warning("Session boot (fresh). If this appears mid-use, your session restarted.")
     
-    # Initialise shared state according to the contract
-    # This restores any dropped widget keys from cache or shared keys
-    init_shared_session_state()
-    
-    # Log session wipe events with navigation context
-    if st.session_state.get("_wipe_recovery_mode"):
-        import json
-        log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
-        # Get selected_slug after navigation is set up (will be computed later, but get what we can now)
-        nav_slug = st.session_state.get(NAV_KEY, st.query_params.get("page", "inputs"))
-        if isinstance(nav_slug, list):
-            nav_slug = nav_slug[0] if nav_slug else "inputs"
-        try:
-            with open(log_path, "a") as f:
-                f.write(json.dumps({
-                    "location": "app.py:WIPE_RECOVERY_RUN",
-                    "message": "WIPE_RECOVERY_RUN",
-                    "data": {
-                        "query_params": dict(st.query_params),
-                        "nav_page": nav_slug,
-                    },
-                    "timestamp": __import__("time").time() * 1000,
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "wipe_recovery"
-                }) + "\n")
-        except:
-            pass
-    
-    # Start render cycle - ensures rendered widget tracking is per-run
-    begin_render_cycle()
-    
     # Debug mode toggle (only shown if env var is set)
     try:
         from src.debug.debug_flags import show_debug_toggle
@@ -252,6 +231,65 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         "- Creep & shrinkage feed Deflection / Crack via `st.session_state`"
     )
     
+    # DEBUG: Tripwire toggle (temporary - remove after fixing zero issue)
+    debug_tripwire = st.sidebar.checkbox("DEBUG: Tripwire", value=True)
+    if debug_tripwire:
+        tripwire_data = st.session_state.get("_tripwire_last", {})
+        st.sidebar.write("**Tripwire:**", tripwire_data)
+    
+    # DEBUG: Shared input mutations (show what changed and what was reverted)
+    if st.sidebar.checkbox("DEBUG: Shared input mutations", value=True):
+        changed = st.session_state.get("_debug_changed_shared_inputs", {})
+        if changed:
+            st.sidebar.write("**Changed shared inputs:**", changed)
+        reverted = st.session_state.get("_debug_reverted_shared_inputs")
+        if reverted:
+            st.sidebar.error("⚠️ Reverted illegal render-time shared writes")
+            st.sidebar.write(reverted)
+        
+        # Mass zeroing detector
+        zeroed_count = st.session_state.get("_debug_zeroed_shared_count", 0)
+        zeroed_sample = st.session_state.get("_debug_zeroed_shared_sample", [])
+        if zeroed_count > 0:
+            st.sidebar.error(f"⚠️ Mass zeroing detected: {zeroed_count} keys zeroed")
+            st.sidebar.write("**Zeroed keys (sample):**", zeroed_sample)
+    
+    # DEBUG: Shared write audit trail
+    if st.sidebar.checkbox("DEBUG: Shared write audit", value=False):
+        audit_tail = st.session_state.get("_shared_write_audit", [])
+        st.sidebar.write("**Shared write audit (last 20):**")
+        st.sidebar.write(audit_tail[-20:])
+    
+    # DEBUG: Last sync attempt (prove TAB_KEYS mismatch)
+    if st.sidebar.checkbox("DEBUG: Last sync attempt", value=False):
+        last_sync = st.session_state.get("_debug_last_sync")
+        if last_sync:
+            st.sidebar.write("**Last sync attempt:**")
+            st.sidebar.write(last_sync)
+            if not last_sync.get("widget_present", True):
+                st.sidebar.error("⚠️ Widget missing during sync!")
+    
+    # DEBUG: Boot status (prove snapshot restore works)
+    st.sidebar.markdown("### Boot Status")
+    boot_id = st.session_state.get("_boot_id", "N/A")
+    fresh_boot = st.session_state.get("_fresh_boot", False)
+    restored_from_snapshot = st.session_state.get("_restored_from_snapshot", False)
+    st.sidebar.write(f"**Boot ID:** `{boot_id[:8]}...`")
+    st.sidebar.write(f"**Fresh Boot:** {fresh_boot}")
+    st.sidebar.write(f"**Restored from Snapshot:** {restored_from_snapshot}")
+    if fresh_boot and restored_from_snapshot:
+        st.sidebar.success("✅ Snapshot restored on boot")
+    elif fresh_boot and not restored_from_snapshot:
+        st.sidebar.warning("⚠️ Fresh boot but no snapshot found")
+    
+    # DEBUG: Action keys verification (prove RESULT_KEYS contains action keys at runtime)
+    actions_keys_ok = st.session_state.get("_debug_actions_keys_in_RESULT_KEYS", None)
+    if actions_keys_ok is not None:
+        if actions_keys_ok:
+            st.sidebar.success("✅ Action keys in RESULT_KEYS")
+        else:
+            st.sidebar.error("❌ Action keys MISSING from RESULT_KEYS")
+    
     # Debug State Inspector panel (only shown if debug mode is enabled)
     try:
         from src.debug.debug_panel import render_state_inspector
@@ -260,7 +298,27 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         # Debug module not available, skip
         pass
 
-    # --- 4) Regression tripwire: verify shared state is alive
+    # ============================================================
+    # PHASE 1: ROUTER-OWNED LIFECYCLE (matches State Lab ordering)
+    # ============================================================
+    # Enforce exact render pipeline order:
+    # 1. init_shared_session_state()
+    # 2. set current slug into st.session_state["page_slug"]
+    # 3. hydrate_active_page_widgets_from_shared(selected_slug)
+    # 4. begin_render_cycle()
+    # 5. render page function
+    # 6. persist_state_snapshot()
+    # ============================================================
+    
+    # Step 1: Initialize shared state (restores any dropped widget keys from cache or shared keys)
+    # Note: migrate_time_defaults_once() is called inside init_shared_session_state() after snapshot restore
+    init_shared_session_state()
+    st.session_state["_debug_state_tripwire"] = True
+    # Startup probe removed: it was mutating shared state and causing widget resets.
+    # debug_tripwire_hook(tag="STARTUP_PROBE_READONLY", page="app_start")
+    watch_shared_key_writes(tag="AFTER_INIT", page="app_start")
+    
+    # --- 4) Regression tripwire: verify shared state is alive (AFTER init)
     assert_shared_state_alive()
     
     # Debug: run invariant checks
@@ -271,78 +329,155 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         # Debug module not available, skip
         pass
     
-    # #region agent log
-    import json
-    import os
-    log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+    # Force-hydrate time widgets from shared BEFORE any page widgets render
+    from state_and_helpers import force_hydrate_time_widgets_from_shared
+    st.session_state["_sync_lock"] = True
     try:
-        with open(log_path, "a") as f:
-            f.write(json.dumps({"location": "app.py:251", "message": "Rendering page", "data": {"selected_slug": selected_slug, "page_name": PAGES[selected_slug][0]}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "C"}) + "\n")
-    except: pass
-    # #endregion
+        force_hydrate_time_widgets_from_shared()
+    finally:
+        st.session_state["_sync_lock"] = False
     
-    # Hydrate the active page's widget keys from shared BEFORE rendering,
-    # so stale zeros can't overwrite shared on navigation.
-    hydrate_active_page_widgets_from_shared(selected_slug)
+    # Clear user edit markers at start of each rerun (prevents stale exemptions)
+    clear_user_edit_marker_each_run()
     
-    # Reset rendered widget keys before rendering page (only widgets rendered THIS RUN can sync)
-    # Note: begin_render_cycle() already called above, but ensure it's reset here too
+    
+    # Step 2: Set current slug into session state (for hydration and tracking)
+    st.session_state["page_slug"] = selected_slug
+    st.session_state["_active_page_slug"] = selected_slug  # Keep for backward compatibility
+    
+    if st.session_state.get("_debug_state_tripwire", False):
+        from state_and_helpers import _append_debug_log
+        _append_debug_log(f"RENDER boot={st.session_state.get('_boot_id')} page={selected_slug}")
+    
+    # ============================================================
+    # SHARED INPUT MUTATION GUARD (prevents pages from stomping shared inputs during render)
+    # ============================================================
+    # --- DEBUG/SAFETY: track shared INPUT mutations during render ---
+    shared_before = {k: st.session_state.get(k) for k in SHARED_DEFAULTS.keys()}
+    last_ts = float(st.session_state.get("_last_user_edit_ts") or 0.0)
+    last_shared = st.session_state.get("_last_user_shared_key")
+    recent_user_edit = (time.time() - last_ts) < 0.5
+    wipe_mode = bool(st.session_state.get("_wipe_recovery_mode"))
+    
+    prev = st.session_state.get("_prev_page_slug")
+    page_changed = (prev is not None and prev != selected_slug)
+    st.session_state["_prev_page_slug"] = selected_slug
+
+    # Hydrate BEFORE any widgets render (prevents stale widget keys from clobbering shared)
+    st.session_state["_sync_lock"] = True
+    try:
+        hydrate_active_page_widgets_from_shared(
+            selected_slug,
+            force_on_restore=True,
+            force_on_page_change=page_changed,
+        )
+    finally:
+        st.session_state["_sync_lock"] = False
+
+    # ============================================================
+    # GLOBAL COMPUTE PIPELINE (runs BEFORE page render)
+    # ============================================================
+    # Ensures diagrams + calc boxes are correct immediately, without visiting other pages.
+    if "_computed_once" not in st.session_state:
+        st.session_state["_computed_once"] = False
+
+    if st.session_state.get("_dirty") or not st.session_state["_computed_once"]:
+        st.session_state["_dirty"] = False
+        st.session_state["_computed_once"] = True
+        try:
+            compute_all_results()
+        except Exception:
+            # Never break UI due to compute; debug can inspect results keys
+            pass
+    
+    # Step 4: Begin render cycle (ensures rendered widget tracking is per-run)
+    from widgets_helpers import clear_rendered_widget_keys
+    clear_rendered_widget_keys()
     begin_render_cycle()
     
-    # #region agent log - Track widget values before page render
-    import json
-    import os
-    log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
-    sample_widgets = ["inputs_b", "inputs_D", "inputs_fc", "inputs_fsy", "bending_nb_or_s_bot_1", "shear_lig_d"]
-    widget_values_before_render = {k: st.session_state.get(k) for k in sample_widgets if k in st.session_state}
-    try:
-        with open(log_path, "a") as f:
-            f.write(json.dumps({"location": "app.py:before_render", "message": "Widget values before page render", "data": {"selected_slug": selected_slug, "widget_values": widget_values_before_render}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "B"}) + "\n")
-    except: pass
-    # #endregion
-    
-    # --- 5) Render selected page (widgets register themselves during render)
+    # Step 5: Render selected page (widgets register themselves during render)
+    # Pages must NOT call init_shared_session_state() or hydrate themselves
+    # (See state_and_helpers.py banner: "PAGE FILE RULES (router-owned lifecycle)")
     PAGES[selected_slug][1]()
-    
-    # Persist snapshot after page render so future wipes can recover
-    persist_state_snapshot()
-    
-    # #region agent log - Track widget values after page render
-    widget_values_after_render = {k: st.session_state.get(k) for k in sample_widgets if k in st.session_state}
-    rendered_set = st.session_state.get("_rendered_widget_keys", set())
-    rendered_list = list(rendered_set) if isinstance(rendered_set, set) else []
+    end_of_render_cleanup()
+    debug_tripwire_hook(tag="AFTER_PAGE_RENDER", page=selected_slug)
+    watch_shared_key_writes(tag="AFTER_PAGE_RENDER", page=selected_slug)
     try:
-        with open(log_path, "a") as f:
-            f.write(json.dumps({"location": "app.py:after_render", "message": "Widget values after page render", "data": {"selected_slug": selected_slug, "widget_values": widget_values_after_render, "rendered_count": len(rendered_list), "rendered_sample": rendered_list[:10]}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "B"}) + "\n")
-    except: pass
-    # #endregion
+        from state_and_helpers import write_final_session_state_check
+        write_final_session_state_check("final_session_state_check.json")
+    except Exception:
+        pass
+    
+    # Write widget contract audit to debug file automatically
+    try:
+        from state_and_helpers import write_widget_contract_audit_to_file, get_sync_callbacks
+        sync_callbacks = get_sync_callbacks()
+        audit_file = write_widget_contract_audit_to_file(sync_callbacks, filename=f"widget_contract_audit_{selected_slug}.txt")
+        # Store file path in session state for reference (optional)
+        st.session_state["_last_audit_file"] = audit_file
+    except Exception as e:
+        # Don't break the app if audit writing fails
+        pass
+    
+    # Immediately after render_fn(): detect shared-input changes
+    shared_after = {k: st.session_state.get(k) for k in SHARED_DEFAULTS.keys()}
+    
+    changed_shared = {
+        k: (shared_before.get(k), shared_after.get(k))
+        for k in SHARED_DEFAULTS.keys()
+        if shared_before.get(k) != shared_after.get(k)
+    }
+    
+    # Mass zeroing detector
+    zeroed = [
+        k for k, (old, new) in changed_shared.items()
+        if (old not in (0, 0.0, None, "")) and (new in (0, 0.0))
+    ]
+    st.session_state["_debug_zeroed_shared_count"] = len(zeroed)
+    st.session_state["_debug_zeroed_shared_sample"] = zeroed[:30]
+    
+    # Show what changed (debug)
+    st.session_state["_debug_changed_shared_inputs"] = changed_shared
+    
+    # Stricter guard: only allow shared-input changes if:
+    # - wipe recovery mode, OR
+    # - the change set is small (≤ 2 keys), AND
+    # - the changed key matches _last_user_shared_key, AND
+    # - it happened very recently (< 0.5s)
+    allowed_due_to_user = False
+    if recent_user_edit and last_shared:
+        # Allow only the shared key the user actually edited (plus maybe one derived "paired" input)
+        allowed_keys = {last_shared}
+        changed_keys = set(changed_shared.keys())
+        if changed_keys.issubset(allowed_keys) and len(changed_keys) <= 2:
+            allowed_due_to_user = True
+    
+    # Block illegal render-time writes to shared INPUTS
+    if changed_shared and (not wipe_mode) and (not allowed_due_to_user):
+        # revert the illegal changes
+        for k, (old, _new) in changed_shared.items():
+            st.session_state[k] = old
+        st.session_state["_debug_reverted_shared_inputs"] = changed_shared
+        st.session_state["_debug_last_revert_tag"] = f"REVERTED {len(changed_shared)} keys on {selected_slug}"
+        try:
+            from state_and_helpers import _write_sync_trace_line
+            _write_sync_trace_line(
+                f"ROUTER_REVERT page={selected_slug} keys={list(changed_shared.keys())[:20]} count={len(changed_shared)}"
+            )
+        except Exception:
+            pass
+    
+    # Tripwire: detect shared keys that got zeroed during render
+    _shared_zero_tripwire("AFTER render_fn")
+    
+    # Step 6: Persist snapshot after page render so future wipes can recover
+    persist_state_snapshot()
     
     # IMPORTANT: Do NOT do app-level widget→shared syncing.
     # Shared state must only update via on_change callbacks.
     # App-level syncing can copy stale navigation zeros into shared and wipe inputs.
-    pass
     
-    # #region agent log - Track widget values after sync
-    widget_values_after_sync = {k: st.session_state.get(k) for k in sample_widgets if k in st.session_state}
-    try:
-        with open(log_path, "a") as f:
-            f.write(json.dumps({"location": "app.py:after_sync", "message": "Widget values after sync", "data": {"selected_slug": selected_slug, "widget_values": widget_values_after_sync}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "B"}) + "\n")
-    except: pass
-    # #endregion
-    
-    # Recalculate derived values (d, Ast_bot, etc.) from current inputs
-    # Wrap with debug guard in debug mode
-    try:
-        from src.debug.state_debug import guard_session_writes, is_debug_enabled
-        from state_and_helpers import DERIVED_KEYS
-        if is_debug_enabled():
-            with guard_session_writes(allowed_keys=DERIVED_KEYS, context="recalc_derived_values"):
-                recalc_derived_values()
-        else:
-            recalc_derived_values()
-    except (ImportError, NameError):
-        # Debug module not available or DERIVED_KEYS not defined, use normal path
-        recalc_derived_values()
+    # NOTE: compute_all_results() already handles derived + results updates.
 
 
 if __name__ == "__main__":

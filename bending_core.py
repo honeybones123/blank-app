@@ -312,6 +312,30 @@ def _compute_bending_capacity():
     return results
 
 
+def compute_sigma_s_sls_for_crack(publish: bool = True) -> float:
+    """
+    Compute service tensile steel stress for crack checks and publish to results.
+    Must NOT depend on bending UI tabs.
+    """
+    fs_tension = None
+    try:
+        from bending_page import _compute_sls_bending_values
+        fs_tension = _compute_sls_bending_values()
+    except Exception:
+        fs_tension = None
+
+    if fs_tension is None:
+        try:
+            fs_tension = float(get_param("bending_sls_fs_outer", 0.0))
+        except Exception:
+            fs_tension = 0.0
+
+    fs_tension = 0.0 if fs_tension is None else float(fs_tension)
+    if publish:
+        update_results(sigma_s_sls=fs_tension, sigma_sr=fs_tension)
+    return fs_tension
+
+
 # ============================
 # STRESS–STRAIN STATE
 # ============================

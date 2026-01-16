@@ -15,7 +15,9 @@ st.title("UI Sandbox - Step Expander Test")
 apply_step_expander_css()
 
 # Summary mode toggle
-summary_mode = st.checkbox("Summary mode (collapse all steps)", value=False)
+summary_mode = st.checkbox(
+    "Summary mode (collapse all steps)", value=False, key="ui_sandbox__summary_mode"
+)
 
 st.markdown("---")
 

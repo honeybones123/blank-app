@@ -12,9 +12,11 @@ from state_and_helpers import (
     get_param,
     update_results,
     recalc_derived_values,
+    get_widget_key_for_shared,
+    TAB_KEYS,
 )
 
-from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, calcbox, show_reo_message, label_with_hover, info_i_button, page_divider
+from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, select_row, calcbox, show_reo_message, label_with_hover, info_i_button, page_divider, seed_widget_from_shared
 from ui_seamless_steps import inject_seamless_steps_css, render_clickable_summary_table
 
 # --- Pure compute functions from design core (no circular imports)
@@ -177,9 +179,8 @@ def make_summary_cross_section_figure():
         
         cover_bot = float(get_param("cover_bot", 40.0) or 40.0)
         cover_top = float(get_param("cover_top", 40.0) or 40.0)
-        cover_side = float(
-            st.session_state.get("inputs_cover_side_local", min(cover_top, cover_bot))
-        )
+        inputs_cover_side_local = min(cover_top, cover_bot)
+        cover_side = float(inputs_cover_side_local)
         
         shear_layout = compute_shear_reo_layout_pure(
             b=b, D=D,
@@ -302,6 +303,31 @@ def make_summary_cross_section_figure():
             )
         )
 
+# -------------------------------------------------------------------
+# Backwards-compatible entrypoint expected by app.py
+# Do not remove: app.py routes to inputs_page.render_inputs
+# -------------------------------------------------------------------
+def render_inputs():
+    """
+    Stable alias for the Inputs page renderer.
+
+    Some versions of app.py call inputs_page.render_inputs.
+    If the internal renderer is renamed, keep this alias so routing never breaks.
+    """
+    # Try common renderer names in order of preference
+    if "render_inputs_page" in globals():
+        return globals()["render_inputs_page"]()
+    if "render_page" in globals():
+        return globals()["render_page"]()
+    if "render" in globals():
+        return globals()["render"]()
+    if "page" in globals():
+        return globals()["page"]()
+
+    raise AttributeError(
+        "inputs_page.py: No Inputs renderer found. Expected one of: "
+        "render_inputs_page(), render_page(), render(), page()."
+    )
     fig = go.Figure(data=traces)
     fig.update_xaxes(visible=False)
     fig.update_yaxes(
@@ -404,24 +430,46 @@ def make_beam_3d_figure():
 
     # ----- longitudinal bar positions - use cached layout function -----
     # Get 2-layer parameters
-    nb_or_s_bot_1 = float(get_param("nb_or_s_bot_1", 4.0) or 4.0)
-    db_bot_1 = float(get_param("db_bot_1", 20.0) or 20.0)
-    nb_or_s_bot_2 = float(get_param("nb_or_s_bot_2", 0.0) or 0.0)
-    db_bot_2 = float(get_param("db_bot_2", 20.0) or 20.0)
+    # FIX: Use explicit None checks instead of truthiness (or) to preserve valid 0 values
+    nb_or_s_bot_1_val = get_param("nb_or_s_bot_1", 4.0)
+    nb_or_s_bot_1 = float(nb_or_s_bot_1_val) if nb_or_s_bot_1_val is not None else 4.0
     
-    nb_or_s_top_1 = float(get_param("nb_or_s_top_1", 2.0) or 2.0)
-    db_top_1 = float(get_param("db_top_1", 16.0) or 16.0)
-    nb_or_s_top_2 = float(get_param("nb_or_s_top_2", 0.0) or 0.0)
-    db_top_2 = float(get_param("db_top_2", 16.0) or 16.0)
+    db_bot_1_val = get_param("db_bot_1", 20.0)
+    db_bot_1 = float(db_bot_1_val) if db_bot_1_val is not None else 20.0
     
-    rowgap_bot = float(get_param("rowgap_bot", 60.0) or 60.0)
-    rowgap_top = float(get_param("rowgap_top", 60.0) or 60.0)
+    nb_or_s_bot_2_val = get_param("nb_or_s_bot_2", 0.0)
+    nb_or_s_bot_2 = float(nb_or_s_bot_2_val) if nb_or_s_bot_2_val is not None else 0.0
     
-    cover_bot = float(get_param("cover_bot", 40.0) or 40.0)
-    cover_top = float(get_param("cover_top", 40.0) or 40.0)
-    cover_side = float(
-        get_param("cover_side", min(cover_top, cover_bot)) or min(cover_top, cover_bot)
-    )
+    db_bot_2_val = get_param("db_bot_2", 20.0)
+    db_bot_2 = float(db_bot_2_val) if db_bot_2_val is not None else 20.0
+    
+    nb_or_s_top_1_val = get_param("nb_or_s_top_1", 2.0)
+    nb_or_s_top_1 = float(nb_or_s_top_1_val) if nb_or_s_top_1_val is not None else 2.0
+    
+    db_top_1_val = get_param("db_top_1", 16.0)
+    db_top_1 = float(db_top_1_val) if db_top_1_val is not None else 16.0
+    
+    nb_or_s_top_2_val = get_param("nb_or_s_top_2", 0.0)
+    nb_or_s_top_2 = float(nb_or_s_top_2_val) if nb_or_s_top_2_val is not None else 0.0
+    
+    db_top_2_val = get_param("db_top_2", 16.0)
+    db_top_2 = float(db_top_2_val) if db_top_2_val is not None else 16.0
+    
+    rowgap_bot_val = get_param("rowgap_bot", 60.0)
+    rowgap_bot = float(rowgap_bot_val) if rowgap_bot_val is not None else 60.0
+    
+    rowgap_top_val = get_param("rowgap_top", 60.0)
+    rowgap_top = float(rowgap_top_val) if rowgap_top_val is not None else 60.0
+    
+    cover_bot_val = get_param("cover_bot", 40.0)
+    cover_bot = float(cover_bot_val) if cover_bot_val is not None else 40.0
+    
+    cover_top_val = get_param("cover_top", 40.0)
+    cover_top = float(cover_top_val) if cover_top_val is not None else 40.0
+    
+    cover_side_default = min(cover_top, cover_bot)
+    cover_side_val = get_param("cover_side", cover_side_default)
+    cover_side = float(cover_side_val) if cover_side_val is not None else cover_side_default
     
     # Get layout from cached function
     cached_layout = compute_section_layout_cached(
@@ -606,10 +654,347 @@ def _status_and_colour(util, cap_exists):
 # ------------------------------------------------------------
 #  MAIN INPUT PAGE
 # ------------------------------------------------------------
-def render_inputs():
-    # MUST be first: guarantees shared keys exist and prevents fallback-default reseeding
-    init_shared_session_state()
+# Safe option lists for reinforcement inputs
+REO_BAR_DIAS = [10, 12, 16, 20, 24, 28, 32, 36, 40]
+REO_COUNTS_0_12 = list(range(0, 13))  # 0..12 inclusive
+REO_SPACINGS = [75, 100, 125, 150, 175, 200, 225, 250, 275, 300]
+REO_LAYOUT_MODE = ["Count", "Spacing"]
 
+K_D_OPTIONS = [
+    "None (no ducts in web)",
+    "Prestressing ducts present (apply k_d)",
+]
+
+K_V_METHOD_OPTIONS = [
+    "General εx-based (Cl. 8.2.4.2)",
+    "Simplified non-prestressed (Cl. 8.2.4.3)",
+]
+
+
+def _render_ducts_prestress_voids_inputs(sync_callbacks):
+    """Render Ducts / Prestress voids section widgets (UI-only, no logic changes)."""
+    st.subheader("Ducts / Prestress voids")
+
+    n_ducts_val = float(st.session_state.get("inputs_n_ducts", get_param("n_ducts", 0.0)))
+    duct_dia_val = float(st.session_state.get("inputs_duct_dia", get_param("duct_dia", 0.0)))
+
+    number_row(
+        "Number of ducts crossing web",
+        "inputs_n_ducts",
+        n_ducts_val,
+        sync_callbacks,
+        help_text="Number of ducts/voids crossing the web (set 0 for none).",
+    )
+
+    number_row(
+        "Duct diameter (mm)",
+        "inputs_duct_dia",
+        duct_dia_val,
+        sync_callbacks,
+        help_text="Nominal duct/void diameter (mm).",
+    )
+
+    # k_d dropdown
+    w_k_d_option = get_widget_key_for_shared("k_d_option", prefix="inputs_") or "inputs_k_d_option"
+    k_d_val = st.session_state.get("k_d_option", "None (no ducts in web)")
+    select_row(
+        "k_d factor for prestressing ducts",
+        w_k_d_option,
+        K_D_OPTIONS,
+        k_d_val,
+        sync_callbacks,
+        help_text="Select whether ducts are present in the web (affects k_d factor).",
+    )
+
+
+def _render_serviceability_shrinkage_inputs(sync_callbacks):
+    """Render Loading conditions section widgets (UI-only, no logic changes)."""
+    st.subheader("Loading conditions")
+    
+    # Support condition (k2) dropdown
+    support_options = ["Simply supported", "Continuous – end span", "Continuous – interior span"]
+    support_current = st.session_state.get("defl_support_type", "Simply supported")
+    if support_current not in support_options:
+        support_current = "Simply supported"
+    
+    w_support = get_widget_key_for_shared("defl_support_type", prefix="inputs_") or "inputs_defl_support_type"
+    select_row(
+        "Support condition (k₂)",
+        w_support,
+        support_options,
+        support_current,
+        sync_callbacks,
+        help_text="Support condition determines the deflection coefficient k₂ used in AS 3600 deflection calculations.",
+    )
+    
+    # Deflection limit L/Δ
+    w_defl_limit = get_widget_key_for_shared("defl_limit_ratio", prefix="inputs_") or "inputs_defl_limit_ratio"
+    defl_limit_val = float(st.session_state.get("defl_limit_ratio", 250.0))
+    number_row(
+        "Deflection limit L/Δ",
+        w_defl_limit,
+        defl_limit_val,
+        sync_callbacks,
+        help_text="Deflection limit ratio (e.g. 250 for L/250).",
+    )
+    
+    # Member / faces exposed dropdown
+    faces_options = [
+        "Slab – one face exposed",
+        "Slab – two faces exposed",
+        "Beam – three faces exposed",
+        "Column – four faces exposed",
+    ]
+    faces_current = st.session_state.get("member_faces_exposed", "Beam – three faces exposed")
+    if faces_current not in faces_options:
+        faces_current = "Beam – three faces exposed"
+    
+    w_faces = get_widget_key_for_shared("member_faces_exposed", prefix="inputs_") or "inputs_member_faces_exposed"
+    select_row(
+        "Member / faces exposed",
+        w_faces,
+        faces_options,
+        faces_current,
+        sync_callbacks,
+        help_text="Number of faces exposed to drying environment (affects shrinkage calculations).",
+    )
+    
+    # Shrinkage environment dropdown
+    env_options = [
+        "Arid environment",
+        "Interior environment",
+        "Temperate inland environment",
+        "Tropical / near-coastal / coastal environment",
+    ]
+    env_current = st.session_state.get("shrinkage_env", "Temperate inland environment")
+    if env_current not in env_options:
+        env_current = "Temperate inland environment"
+    
+    w_env = get_widget_key_for_shared("shrinkage_env", prefix="inputs_") or "inputs_shrinkage_env"
+    select_row(
+        "Shrinkage environment (Table 3.1.7.2)",
+        w_env,
+        env_options,
+        env_current,
+        sync_callbacks,
+        help_text="Shrinkage environment classification per AS 3600 Table 3.1.7.2.",
+    )
+
+
+def _render_materials_and_sectionA_2d(sync_callbacks):
+    """Render Materials section widgets and 2D Section A diagram (UI-only, no logic changes)."""
+    mat_col, sec2d_col = st.columns([1, 1], gap="large")
+    
+    with mat_col:
+        st.subheader("Materials")
+
+        # Get current values (widget takes precedence; else shared)
+        fc_val  = float(st.session_state.get("inputs_fc",  get_param("fc", 40.0)))
+        fsy_val = float(st.session_state.get("inputs_fsy", get_param("fsy", 500.0)))
+        Ec_val  = float(st.session_state.get("inputs_Ec",  get_param("Ec", 30000.0)))
+        Es_val  = float(st.session_state.get("inputs_Es",  get_param("Es", 200000.0)))
+
+        number_row(
+            "Concrete strength f'c (MPa)",
+            "inputs_fc",
+            fc_val,
+            sync_callbacks,
+            help_text="Characteristic compressive strength of concrete.",
+        )
+
+        number_row(
+            "Steel yield fsy (MPa)",
+            "inputs_fsy",
+            fsy_val,
+            sync_callbacks,
+            help_text="Yield strength of reinforcement.",
+        )
+
+        number_row(
+            "Ec (MPa)",
+            "inputs_Ec",
+            Ec_val,
+            sync_callbacks,
+            help_text="Elastic modulus of concrete.",
+        )
+
+        number_row(
+            "Es (MPa)",
+            "inputs_Es",
+            Es_val,
+            sync_callbacks,
+            help_text="Elastic modulus of reinforcing steel.",
+        )
+
+        # --- Creep & Shrinkage ---
+        st.subheader("Creep & Shrinkage")
+        
+        # Member / faces exposed dropdown
+        faces_options = [
+            "Slab – one face exposed",
+            "Slab – two faces exposed",
+            "Beam – three faces exposed",
+            "Column – four faces exposed",
+        ]
+        faces_current = st.session_state.get("member_faces_exposed", "Beam – three faces exposed")
+        if faces_current not in faces_options:
+            faces_current = "Beam – three faces exposed"
+        
+        w_faces = get_widget_key_for_shared("member_faces_exposed", prefix="inputs_") or "inputs_member_faces_exposed"
+        select_row(
+            "Member / faces exposed",
+            w_faces,
+            faces_options,
+            faces_current,
+            sync_callbacks,
+            help_text="Number of faces exposed to drying environment (affects shrinkage calculations).",
+        )
+        
+        # Shrinkage environment dropdown
+        env_options = [
+            "Arid environment",
+            "Interior environment",
+            "Temperate inland environment",
+            "Tropical / near-coastal / coastal environment",
+        ]
+        env_current = st.session_state.get("shrinkage_env", "Temperate inland environment")
+        if env_current not in env_options:
+            env_current = "Temperate inland environment"
+        
+        w_env = get_widget_key_for_shared("shrinkage_env", prefix="inputs_") or "inputs_shrinkage_env"
+        select_row(
+            "Shrinkage environment (Table 3.1.7.2)",
+            w_env,
+            env_options,
+            env_current,
+            sync_callbacks,
+            help_text="Shrinkage environment classification per AS 3600 Table 3.1.7.2.",
+        )
+        
+        # Creep environment dropdown
+        creep_env_options = [
+            "Arid environment",
+            "Interior environment",
+            "Temperate inland environment",
+            "Tropical / near-coastal / coastal environment",
+        ]
+        creep_env_current = st.session_state.get("env_option", "Temperate inland environment")
+        if creep_env_current not in creep_env_options:
+            creep_env_current = "Temperate inland environment"
+        
+        w_creep_env = get_widget_key_for_shared("env_option", prefix="inputs_") or "inputs_env_option"
+        select_row(
+            "Creep environment (Tables 3.1.8.2 & 3.1.8.3)",
+            w_creep_env,
+            creep_env_options,
+            creep_env_current,
+            sync_callbacks,
+            help_text="Creep environment classification per AS 3600 Tables 3.1.8.2 & 3.1.8.3.",
+        )
+
+        # Shrinkage time (days)
+        t_shrink_val = float(st.session_state.get("inputs_t_shrink", get_param("t_shrink", 365.0)))
+        number_row(
+            "Shrinkage time t (days)",
+            "inputs_t_shrink",
+            t_shrink_val,
+            sync_callbacks,
+            help_text="Time since commencement of drying (days).",
+        )
+
+        # Creep time (days)
+        t_creep_val = float(st.session_state.get("inputs_t_creep", get_param("t_creep", 365.0)))
+        number_row(
+            "Creep time t (days)",
+            "inputs_t_creep",
+            t_creep_val,
+            sync_callbacks,
+            help_text="Time after loading (days).",
+        )
+
+        # Age at loading (days)
+        tau_val = float(st.session_state.get("inputs_age_at_loading", get_param("age_at_loading", 28.0)))
+        number_row(
+            "Age at loading τ (days)",
+            "inputs_age_at_loading",
+            tau_val,
+            sync_callbacks,
+            help_text="Age of concrete at loading (days).",
+        )
+
+        # Stress ratio
+        stress_ratio_val = float(st.session_state.get("inputs_stress_ratio", get_param("stress_ratio", 0.30)))
+        number_row(
+            "Sustained stress ratio σ₀ / f'c,mi",
+            "inputs_stress_ratio",
+            stress_ratio_val,
+            sync_callbacks,
+            help_text="Sustained stress ratio for creep (dimensionless).",
+        )
+        
+        # Support condition (k2) dropdown
+        support_options = ["Simply supported", "Continuous – end span", "Continuous – interior span"]
+        support_current = st.session_state.get("defl_support_type", "Simply supported")
+        if support_current not in support_options:
+            support_current = "Simply supported"
+        
+        w_support = get_widget_key_for_shared("defl_support_type", prefix="inputs_") or "inputs_defl_support_type"
+        select_row(
+            "Support condition (k₂)",
+            w_support,
+            support_options,
+            support_current,
+            sync_callbacks,
+            help_text="Support condition determines the deflection coefficient k₂ used in AS 3600 deflection calculations.",
+        )
+        
+        # Deflection limit L/Δ
+        w_defl_limit = get_widget_key_for_shared("defl_limit_ratio", prefix="inputs_") or "inputs_defl_limit_ratio"
+        defl_limit_val = float(st.session_state.get("defl_limit_ratio", 250.0))
+        number_row(
+            "Deflection limit L/Δ",
+            w_defl_limit,
+            defl_limit_val,
+            sync_callbacks,
+            help_text="Deflection limit ratio (e.g. 250 for L/250).",
+        )
+    
+    with sec2d_col:
+        st.markdown(
+            "<div style='text-align:center; font-weight:700; font-size:22px; margin: 0 0 10px 0;'>Section A</div>",
+            unsafe_allow_html=True,
+        )
+        # --- Section A figure (safe render) ---
+        fig_sec = None
+        try:
+            fig_sec = make_summary_cross_section_figure()
+        except Exception as e:
+            # Don't let the whole app die because a visual failed
+            st.warning(f"Section A diagram failed to render: {e}")
+
+        if fig_sec is None:
+            # Graceful fallback: still keep the UI working
+            st.info("Section A diagram not available right now (inputs are still saved).")
+        else:
+            try:
+                fig_sec.update_layout(height=640)
+            except Exception:
+                # ultra-safe: even if fig is a dict-like, don't crash
+                pass
+            st.plotly_chart(
+                fig_sec,
+                use_container_width=True,
+                config={"displayModeBar": False},
+            )
+
+
+def render_inputs():
+    # NOTE: init_shared_session_state() is called by app.py router before this function runs.
+    # Pages must NOT call init/hydrate themselves - the router owns the lifecycle.
+    
+    from state_and_helpers import _write_sync_trace_line
+    _write_sync_trace_line("\n=== PAGE RENDER: inputs ===")
+    
     sync_callbacks = get_sync_callbacks()
     apply_global_widget_css()
     apply_calcbox_css()
@@ -619,13 +1004,13 @@ def render_inputs():
     page_divider()
 
     # ============================
-    # 1. MAIN BAND – Design Actions + Geometry/Materials | 3D Model
+    # 1. TOP ROW – Left stacked inputs | Right 3D model (wide)
     # ============================
-    main_left, main_right = st.columns([1.05, 1.70], gap="small")
+    left_inputs, right_3d = st.columns([1, 2], gap="large")
 
-    # --- Left column: Design Actions + Geometry and Materials ---
-    with main_left:
-        # Design Actions header row (icon sits at top-right of the header INSIDE left column)
+    with left_inputs:
+        # --- Design Actions (top of left column) ---
+        # Design Actions header row (icon sits at top-right of the header INSIDE middle column)
         hdr_l, hdr_r = st.columns([0.985, 0.015], gap="small", vertical_alignment="center")
         with hdr_l:
             st.markdown("## Design Actions")
@@ -659,8 +1044,13 @@ def render_inputs():
         # sfd_case is a widget key, read it directly from session_state
         case_sfd = st.session_state.get("sfd_case", None)
 
-        # Get current values (widget key takes precedence if exists, otherwise use shared key)
-        Mu_star_val = float(st.session_state.get("inputs_Mu_star", get_param("Mu_star_manual", 500.0)))
+        # Get current values using TAB_KEYS lookup (not hardcoded widget keys)
+        # This ensures the widget key matches the shared key mapping
+        mu_star_widget_key = get_widget_key_for_shared("Mu_star_manual", prefix="inputs_")
+        if mu_star_widget_key is None:
+            mu_star_widget_key = "inputs_Mu_star"  # Fallback if not found
+        
+        Mu_star_val = float(st.session_state.get(mu_star_widget_key, get_param("Mu_star_manual", 500.0)))
         P_star_val = float(st.session_state.get("inputs_P_star", get_param("P_star", 0.0)))
         Tu_star_val = float(st.session_state.get("inputs_Tu_star", get_param("Tu_star", 0.0)))
         Vu_star_val = float(st.session_state.get("inputs_Vu_star", get_param("Vu_star_manual", 300.0)))
@@ -668,7 +1058,7 @@ def render_inputs():
 
         number_row(
             "Design moment Mu* (kNm)",
-            "inputs_Mu_star",
+            mu_star_widget_key,
             Mu_star_val,
             sync_callbacks,
             help_text="Factored design bending moment at the critical section.",
@@ -706,18 +1096,14 @@ def render_inputs():
             help_text="Axial action at the section (+compression / −tension).",
         )
 
-        # Geometry and Materials
-        st.markdown("## Geometry and Materials")
+        # --- Geometry (below Design Actions) ---
+        st.markdown("## Geometry")
         
         # Get current values (widget key takes precedence if exists, otherwise use shared key)
         b_val = float(st.session_state.get("inputs_b", get_param("b", 400.0)))
         D_val = float(st.session_state.get("inputs_D", get_param("D", 600.0)))
         L_val = float(st.session_state.get("inputs_L", get_param("L", 3000.0)))
         cover_side_val = float(st.session_state.get("inputs_cover_side", get_param("cover_side", 40.0)))
-        fc_val = float(st.session_state.get("inputs_fc", get_param("fc", 40.0)))
-        fsy_val = float(st.session_state.get("inputs_fsy", get_param("fsy", 500.0)))
-        Ec_val = float(st.session_state.get("inputs_Ec", get_param("Ec", 30000.0)))
-        Es_val = float(st.session_state.get("inputs_Es", get_param("Es", 200000.0)))
         
         # Geometry widgets
         number_row(
@@ -752,41 +1138,7 @@ def render_inputs():
             help_text="Clear side cover to longitudinal reinforcement and ducts.",
         )
 
-        # Materials widgets
-        number_row(
-            "Concrete strength f'c (MPa)",
-            "inputs_fc",
-            fc_val,
-            sync_callbacks,
-            help_text="Characteristic compressive strength of concrete.",
-        )
-
-        number_row(
-            "Steel yield fsy (MPa)",
-            "inputs_fsy",
-            fsy_val,
-            sync_callbacks,
-            help_text="Yield stress of flexural reinforcement.",
-        )
-
-        number_row(
-            "Ec (MPa)",
-            "inputs_Ec",
-            Ec_val,
-            sync_callbacks,
-            help_text="Short-term modulus of elasticity of concrete.",
-        )
-
-        number_row(
-            "Es (MPa)",
-            "inputs_Es",
-            Es_val,
-            sync_callbacks,
-            help_text="Elastic modulus of reinforcing steel.",
-        )
-
-    # --- Right column: 3D Model (no heading, no border) ---
-    with main_right:
+    with right_3d:
         fig3d = make_beam_3d_figure()
         st.plotly_chart(
             fig3d,
@@ -797,51 +1149,96 @@ def render_inputs():
 
     page_divider()
 
-    # --- START LONGITUDINAL REINFORCEMENT SECTION ---
     # ============================
-    # 2. REINFORCEMENT SECTIONS – Bottom | Top | Shear
+    # 2. REINFORCEMENT SECTIONS – Bottom | Top | Shear (full-width)
     # ============================
-    col_bot_reo, col_top_reo, col_shear = st.columns(3)
+    col_bot_reo, col_top_reo, col_shear_reo = st.columns(3, gap="large")
 
     # --- Bottom reo ---
     with col_bot_reo:
         st.subheader("Bottom Longitudinal Reinforcement")
         
-        # Get current values (widget key takes precedence if exists, otherwise use shared key)
-        nb_or_s_bot_1_val = float(st.session_state.get("inputs_nb_or_s_bot_1", get_param("nb_or_s_bot_1", 4.0)))
-        db_bot_1_val = float(st.session_state.get("inputs_db_bot_1", get_param("db_bot_1", 20.0)))
-        nb_or_s_bot_2_val = float(st.session_state.get("inputs_nb_or_s_bot_2", get_param("nb_or_s_bot_2", 0.0)))
-        db_bot_2_val = float(st.session_state.get("inputs_db_bot_2", get_param("db_bot_2", 20.0)))
-        rowgap_bot_val = float(st.session_state.get("inputs_rowgap_bot", get_param("rowgap_bot", 60.0)))
-        
-        number_row(
-            "Layer 1 bar spacing",
-            "inputs_nb_or_s_bot_1",
-            nb_or_s_bot_1_val,
+        # Always seed from shared (single source of truth)
+        db_bot_1_val      = float(get_param("db_bot_1", 20.0))
+        db_bot_2_val      = float(get_param("db_bot_2", 20.0))
+        rowgap_bot_val    = float(get_param("rowgap_bot", 60.0))
+    
+        # Layer 1 mode
+        select_row(
+            "Layer 1 layout mode",
+            "inputs_bot1_layout_mode",
+            REO_LAYOUT_MODE,
+            st.session_state.get("bot1_layout_mode", "Count"),
             sync_callbacks,
-            help_text="Enter number of bars if value ≤ 30. Enter bar spacing (mm) if value ≥ 30.",
+            help_text="Choose whether Layer 1 is defined by bar count or bar spacing.",
         )
 
-        number_row(
+        mode = st.session_state.get("inputs_bot1_layout_mode", st.session_state.get("bot1_layout_mode", "Count"))
+
+        if mode == "Count":
+            select_row(
+            "Layer 1 bars (count)",
+            "inputs_bot1_count",
+            REO_COUNTS_0_12,
+            int(st.session_state.get("bot1_count", 4)),
+            sync_callbacks,
+            help_text="Number of bars in bottom Layer 1 (0–12).",
+            )
+        else:
+            select_row(
+            "Layer 1 bar spacing (mm)",
+            "inputs_bot1_spacing",
+            REO_SPACINGS,
+            int(st.session_state.get("bot1_spacing", 200)),
+            sync_callbacks,
+            help_text="Centre-to-centre spacing for bottom Layer 1 (mm).",
+            )
+
+        select_row(
             "Layer 1 bar Ø (mm)",
             "inputs_db_bot_1",
-            db_bot_1_val,
+            REO_BAR_DIAS,
+            int(db_bot_1_val),
             sync_callbacks,
             help_text="Nominal bar diameter for Layer 1 (mm).",
         )
-        
-        number_row(
-            "Layer 2 bar spacing",
-            "inputs_nb_or_s_bot_2",
-            nb_or_s_bot_2_val,
+    
+        # Layer 2 mode
+        select_row(
+            "Layer 2 layout mode",
+            "inputs_bot2_layout_mode",
+            REO_LAYOUT_MODE,
+            st.session_state.get("bot2_layout_mode", "Count"),
             sync_callbacks,
-            help_text="Enter number of bars if value ≤ 30. Enter bar spacing (mm) if value ≥ 30.",
+            help_text="Choose whether Layer 2 is defined by bar count or bar spacing.",
         )
 
-        number_row(
+        mode2 = st.session_state.get("inputs_bot2_layout_mode", st.session_state.get("bot2_layout_mode", "Count"))
+
+        if mode2 == "Count":
+            select_row(
+            "Layer 2 bars (count)",
+            "inputs_bot2_count",
+            REO_COUNTS_0_12,
+            int(st.session_state.get("bot2_count", 0)),
+            sync_callbacks,
+            help_text="Number of bars in bottom Layer 2 (0–12).",
+            )
+        else:
+            select_row(
+            "Layer 2 bar spacing (mm)",
+            "inputs_bot2_spacing",
+            REO_SPACINGS,
+            int(st.session_state.get("bot2_spacing", 200)),
+            sync_callbacks,
+            help_text="Centre-to-centre spacing for bottom Layer 2 (mm).",
+            )
+
+        select_row(
             "Layer 2 bar Ø (mm)",
             "inputs_db_bot_2",
-            db_bot_2_val,
+            REO_BAR_DIAS,
+            int(db_bot_2_val),
             sync_callbacks,
             help_text="Nominal bar diameter for Layer 2 (mm).",
         )
@@ -853,7 +1250,7 @@ def render_inputs():
             sync_callbacks,
             help_text="Clear vertical gap between Layer 1 and Layer 2 (mm).",
         )
-        
+    
         # Bottom cover widget (moved from Geometry section)
         cover_bot_val = float(st.session_state.get("inputs_cover_bot", get_param("cover_bot", 40.0)))
         number_row(
@@ -872,15 +1269,15 @@ def render_inputs():
         if st.session_state.get("_reo_msg_top_auto_layer2", False):
             show_reo_message("auto_layer2", layer="Top Layer 1")
             st.session_state["_reo_msg_top_auto_layer2"] = False  # Clear after showing
-        
+    
         if st.session_state.get("_reo_msg_top_layer2_overwritten", False):
             show_reo_message("layer2_overwritten", layer="Top Layer 1")
             st.session_state["_reo_msg_top_layer2_overwritten"] = False  # Clear after showing
-        
+    
         if st.session_state.get("_reo_error_top_1", False):
             show_reo_message("layout_invalid", layer="Top Layer 1")
             st.session_state["_reo_error_top_1"] = False  # Clear after showing
-        
+    
         warning_top_1 = st.session_state.get("_reo_warning_top_1")
         if warning_top_1:
             # Extract s_min if available
@@ -888,54 +1285,110 @@ def render_inputs():
             show_reo_message("spacing_clamped", layer="Top Layer 1", s_min=s_min_val)
             st.session_state["_reo_warning_top_1"] = None  # Clear after showing
             st.session_state["_reo_s_min_top_1"] = None
-        
-        # Get current values (widget key takes precedence if exists, otherwise use shared key)
-        nb_or_s_top_1_val = float(st.session_state.get("inputs_nb_or_s_top_1", get_param("nb_or_s_top_1", 2.0)))
-        db_top_1_val = float(st.session_state.get("inputs_db_top_1", get_param("db_top_1", 16.0)))
-        nb_or_s_top_2_val = float(st.session_state.get("inputs_nb_or_s_top_2", get_param("nb_or_s_top_2", 0.0)))
-        db_top_2_val = float(st.session_state.get("inputs_db_top_2", get_param("db_top_2", 16.0)))
-        rowgap_top_val = float(st.session_state.get("inputs_rowgap_top", get_param("rowgap_top", 60.0)))
-        
-        number_row(
-            "Layer 1 bar spacing",
-            "inputs_nb_or_s_top_1",
-            nb_or_s_top_1_val,
+    
+        # Get widget keys from TAB_KEYS (not hardcoded)
+        w_db_top_1 = get_widget_key_for_shared("db_top_1", prefix="inputs_") or "inputs_db_top_1"
+        w_db_top_2 = get_widget_key_for_shared("db_top_2", prefix="inputs_") or "inputs_db_top_2"
+        w_rowgap_top = get_widget_key_for_shared("rowgap_top", prefix="inputs_") or "inputs_rowgap_top"
+    
+        # Seed widget keys from shared state (only if missing)
+        seed_widget_from_shared(w_db_top_1, "db_top_1", 16.0)
+        seed_widget_from_shared(w_db_top_2, "db_top_2", 16.0)
+        seed_widget_from_shared(w_rowgap_top, "rowgap_top", 60.0)
+    
+        # Read widget state first (so user edits persist), fall back to shared defaults
+        db_top_1_val      = float(st.session_state.get(w_db_top_1,      st.session_state.get("db_top_1", 16.0)))
+        db_top_2_val      = float(st.session_state.get(w_db_top_2,      st.session_state.get("db_top_2", 16.0)))
+        rowgap_top_val    = float(st.session_state.get(w_rowgap_top,    st.session_state.get("rowgap_top", 60.0)))
+    
+        # Layer 1 mode
+        select_row(
+            "Layer 1 layout mode",
+            "inputs_top1_layout_mode",
+            REO_LAYOUT_MODE,
+            st.session_state.get("top1_layout_mode", "Count"),
             sync_callbacks,
-            help_text="Enter number of bars if value ≤ 30. Enter bar spacing (mm) if value ≥ 30.",
+            help_text="Choose whether Layer 1 is defined by bar count or bar spacing.",
         )
 
-        number_row(
+        mode = st.session_state.get("inputs_top1_layout_mode", st.session_state.get("top1_layout_mode", "Count"))
+
+        if mode == "Count":
+            select_row(
+            "Layer 1 bars (count)",
+            "inputs_top1_count",
+            REO_COUNTS_0_12,
+            int(st.session_state.get("top1_count", 2)),
+            sync_callbacks,
+            help_text="Number of bars in top Layer 1 (0–12).",
+            )
+        else:
+            select_row(
+            "Layer 1 bar spacing (mm)",
+            "inputs_top1_spacing",
+            REO_SPACINGS,
+            int(st.session_state.get("top1_spacing", 200)),
+            sync_callbacks,
+            help_text="Centre-to-centre spacing for top Layer 1 (mm).",
+            )
+
+        select_row(
             "Layer 1 bar Ø (mm)",
-            "inputs_db_top_1",
-            db_top_1_val,
+            w_db_top_1,
+            REO_BAR_DIAS,
+            int(db_top_1_val),
             sync_callbacks,
             help_text="Nominal bar diameter for Layer 1 (mm).",
         )
-        
-        number_row(
-            "Layer 2 bar spacing",
-            "inputs_nb_or_s_top_2",
-            nb_or_s_top_2_val,
+    
+        # Layer 2 mode
+        select_row(
+            "Layer 2 layout mode",
+            "inputs_top2_layout_mode",
+            REO_LAYOUT_MODE,
+            st.session_state.get("top2_layout_mode", "Count"),
             sync_callbacks,
-            help_text="Enter number of bars if value ≤ 30. Enter bar spacing (mm) if value ≥ 30.",
+            help_text="Choose whether Layer 2 is defined by bar count or bar spacing.",
         )
 
-        number_row(
+        mode2 = st.session_state.get("inputs_top2_layout_mode", st.session_state.get("top2_layout_mode", "Count"))
+
+        if mode2 == "Count":
+            select_row(
+            "Layer 2 bars (count)",
+            "inputs_top2_count",
+            REO_COUNTS_0_12,
+            int(st.session_state.get("top2_count", 0)),
+            sync_callbacks,
+            help_text="Number of bars in top Layer 2 (0–12).",
+            )
+        else:
+            select_row(
+            "Layer 2 bar spacing (mm)",
+            "inputs_top2_spacing",
+            REO_SPACINGS,
+            int(st.session_state.get("top2_spacing", 200)),
+            sync_callbacks,
+            help_text="Centre-to-centre spacing for top Layer 2 (mm).",
+            )
+
+        select_row(
             "Layer 2 bar Ø (mm)",
-            "inputs_db_top_2",
-            db_top_2_val,
+            w_db_top_2,
+            REO_BAR_DIAS,
+            int(db_top_2_val),
             sync_callbacks,
             help_text="Nominal bar diameter for Layer 2 (mm).",
         )
 
         number_row(
             "Row gap (mm)",
-            "inputs_rowgap_top",
+            w_rowgap_top,
             rowgap_top_val,
             sync_callbacks,
             help_text="Clear vertical gap between Layer 1 and Layer 2 (mm).",
         )
-        
+    
         # Top cover widget (moved from Geometry section)
         cover_top_val = float(st.session_state.get("inputs_cover_top", get_param("cover_top", 40.0)))
         number_row(
@@ -947,37 +1400,85 @@ def render_inputs():
         )
 
     # --- Shear reo (same row) ---
-    with col_shear:
-        st.subheader("Shear reinforcement")
+    with col_shear_reo:
+        # --- Shear section parameters ---
+        st.subheader("Shear section parameters")
 
-        # Get current values (widget key takes precedence if exists, otherwise use shared key)
-        lig_d_val = float(st.session_state.get("inputs_lig_d", get_param("lig_d", 10.0)))
-        lig_legs_val = float(st.session_state.get("inputs_lig_legs", get_param("lig_legs", 2)))
-        s_lig_val = float(st.session_state.get("inputs_s_lig", get_param("s_lig", 200.0)))
+        # Widget keys (resolved via TAB_KEYS)
+        w_d_g = get_widget_key_for_shared("d_g", prefix="inputs_") or "inputs_d_g"
+        w_k_v_method = get_widget_key_for_shared("k_v_method", prefix="inputs_") or "inputs_k_v_method"
+
+        # Read shared values (do NOT write shared keys)
+        d_g_val = float(st.session_state.get("d_g", 20.0))
+        k_v_val = st.session_state.get("k_v_method", "General εx-based (Cl. 8.2.4.2)")
 
         number_row(
-            "Link Ø (mm)",
-            "inputs_lig_d",
-            lig_d_val,
+            "Maximum aggregate size d_g (mm)",
+            w_d_g,
+            d_g_val,
             sync_callbacks,
-            help_text="Nominal diameter of shear links (mm).",
+            help_text="Maximum aggregate size used in shear provisions (mm).",
         )
 
-        number_row(
-            "No. of legs",
-            "inputs_lig_legs",
-            lig_legs_val,
+        # k_v method dropdown
+        select_row(
+            "k_v method",
+            w_k_v_method,
+            K_V_METHOD_OPTIONS,
+            k_v_val,
             sync_callbacks,
-            help_text="Number of legs per shear link.",
+            help_text="Select the k_v method for shear capacity (AS 3600 8.2.4.2 vs 8.2.4.3).",
+        )
+
+        st.subheader("Shear reinforcement")
+
+        # Get widget keys from TAB_KEYS (not hardcoded)
+        w_lig_d = get_widget_key_for_shared("lig_d", prefix="inputs_") or "inputs_lig_d"
+        w_lig_legs = get_widget_key_for_shared("lig_legs", prefix="inputs_") or "inputs_lig_legs"
+        w_s_lig = get_widget_key_for_shared("s_lig", prefix="inputs_") or "inputs_s_lig"
+    
+        # Seed widget keys from shared state (only if missing)
+        seed_widget_from_shared(w_lig_d, "lig_d", 10.0)
+        seed_widget_from_shared(w_lig_legs, "lig_legs", 2)
+        seed_widget_from_shared(w_s_lig, "s_lig", 200.0)
+    
+        # Read widget state first (so user edits persist), fall back to shared defaults
+        lig_d_val = float(st.session_state.get(w_lig_d, st.session_state.get("lig_d", 10.0)))
+        lig_legs_val = float(st.session_state.get(w_lig_legs, st.session_state.get("lig_legs", 2)))
+        s_lig_val = float(st.session_state.get(w_s_lig, st.session_state.get("s_lig", 200.0)))
+
+        select_row(
+            "Link Ø (mm)",
+            w_lig_d,
+            REO_BAR_DIAS,
+            int(lig_d_val),
+            sync_callbacks,
+            help_text="Nominal diameter of shear reinforcement links (mm).",
+        )
+
+        select_row(
+            "No. of legs",
+            w_lig_legs,
+            REO_COUNTS_0_12,
+            int(lig_legs_val),
+            sync_callbacks,
+            help_text="Number of legs per shear link (0–12).",
         )
 
         number_row(
             "Link spacing (mm)",
-            "inputs_s_lig",
+            w_s_lig,
             s_lig_val,
             sync_callbacks,
             help_text="Centre-to-centre spacing of shear links along the member (mm).",
         )
+
+    page_divider()
+
+    # ============================
+    # 3. Materials + 2D Section A (below Reo section)
+    # ============================
+    _render_materials_and_sectionA_2d(sync_callbacks)
 
     page_divider()
 
@@ -1018,7 +1519,6 @@ def render_inputs():
         Mu_star=float(Mu_star),
         Mu_star_kNm=float(Mu_star),
         Vu_star=float(Vu_star),
-        Vu_star_kN=float(Vu_star),
     )
     
     # Ensure derived values are up to date before computing results
@@ -1026,37 +1526,52 @@ def render_inputs():
     
     # Recompute ALL checks using current inputs
     _compute_bending_capacity()
+    from bending_page import _compute_sls_bending_values
+    _compute_sls_bending_values()
+    from bending_core import compute_sigma_s_sls_for_crack
+    compute_sigma_s_sls_for_crack(publish=True)
     _compute_shear_capacity()
+
+    # FIRST: creep + shrinkage (crack/deflection depend on these SLS effects)
+    try:
+        from creep import compute_creep_results
+        compute_creep_results(publish=True)
+    except Exception:
+        pass
+
+    try:
+        from shrinkage import compute_shrinkage_results
+        compute_shrinkage_results(publish=True)
+    except Exception:
+        pass
+
+    # THEN: crack + deflection
     _compute_crack_results()
     _compute_deflection_results()
+    try:
+        from state_and_helpers import write_final_session_state_check
+        write_final_session_state_check("final_session_state_check.json")
+    except Exception:
+        pass
+    
+    # Debug: dump session state inventory
+    try:
+        from state_and_helpers import dump_session_state_inventory
+        dump_session_state_inventory("inputs", sync_callbacks=sync_callbacks, out_dir=".")
+    except Exception:
+        pass
 
     # ============================
-    # 4. REST OF INPUTS (Ducts | Crack | Time)
+    # 2. ROW 2 – Ducts/Prestress | Crack control
     # ============================
-    ducts_col, crack_col, time_col = st.columns(3, gap="large")
+    row2_col1, row2_col2 = st.columns(2, gap="large")
 
-    # --- Ducts / Prestress voids ---
-    with ducts_col:
-        st.subheader("Ducts / Prestress voids")
+    # --- Column 1: Ducts / Prestress voids ---
+    with row2_col1:
+        _render_ducts_prestress_voids_inputs(sync_callbacks)
 
-        number_row(
-            "Number of ducts crossing web",
-            "inputs_n_ducts",
-            1.0,
-            sync_callbacks,
-            help_text="Total number of ducts crossing the web in the shear zone.",
-        )
-
-        number_row(
-            "Duct diameter (mm)",
-            "inputs_duct_dia",
-            1.0,
-            sync_callbacks,
-            help_text="Nominal diameter of each duct.",
-        )
-
-    # --- Crack Control Inputs ---
-    with crack_col:
+    # --- Column 2: Crack Control Inputs ---
+    with row2_col2:
         st.subheader("Crack Control Inputs")
 
         options = ["A1", "A2", "B1", "B2", "C1", "C2"]
@@ -1088,49 +1603,64 @@ def render_inputs():
                     label_visibility="collapsed",
                 )
 
+        # ----------------------------
+        # Crack criteria (shared inputs)
+        # ----------------------------
+        
+        # Resultant action / member type
+        member_options = ["Primarily flexure", "Primarily tension"]
+        member_current = st.session_state.get("crack_member_type", "Primarily flexure")
+
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            label_with_hover(
+                "Resultant action",
+                "Affects default k₂ assumption and crack model interpretation.",
+            )
+        with col2:
+            st.selectbox(
+                "",
+                options=member_options,
+                index=member_options.index(member_current) if member_current in member_options else 0,
+                key="inputs_crack_member_type",
+                on_change=sync_callbacks["inputs_crack_member_type"],
+                label_visibility="collapsed",
+            )
+
+        # k1 (bond coefficient)
+        k1_options = [0.8, 1.6]
+        k1_current = float(st.session_state.get("crack_k1", 0.8))
+
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            label_with_hover(
+                "k₁ (bond coefficient)",
+                "0.8 for deformed bars, 1.6 for plain bars.",
+            )
+        with col2:
+            st.selectbox(
+                "",
+                options=k1_options,
+                index=k1_options.index(k1_current) if k1_current in k1_options else 0,
+                format_func=lambda x: "Deformed bars (k₁ = 0.8)" if abs(x - 0.8) < 1e-9 else "Plain bars (k₁ = 1.6)",
+                key="inputs_crack_k1",
+                on_change=sync_callbacks["inputs_crack_k1"],
+                label_visibility="collapsed",
+            )
+
+        # k2 (strain distribution factor) – keep editable
+        # default follows member type but only as a seed (State-Lab handles persistence)
+        k2_seed = 0.5 if member_current == "Primarily flexure" else 1.0
         number_row(
-            "Bottom bar spacing for crack calc (mm)",
-            "inputs_s_bar_bot",
-            5.0,
+            "k₂ (strain distribution factor)",
+            "inputs_crack_k2",
+            float(st.session_state.get("crack_k2", k2_seed)),
             sync_callbacks,
-            help_text="Centre-to-centre spacing of bottom bars used in crack-width check.",
+            help_text="Default 0.5 for flexure, 1.0 for tension. Adjust only if using a different assumed strain distribution.",
         )
 
-    # --- Time-dependent inputs ---
-    with time_col:
-        st.subheader("Time-dependent inputs")
-
-        number_row(
-            "Creep time after loading t (days)",
-            "inputs_t_creep",
-            1.0,
-            sync_callbacks,
-            help_text="Time after loading used for creep coefficient φ_cc,t.",
-        )
-
-        number_row(
-            "Age at loading τ (days)",
-            "inputs_age_at_loading",
-            1.0,
-            sync_callbacks,
-            help_text="Concrete age at application of sustained load.",
-        )
-
-        number_row(
-            "Sustained stress ratio σ₀ / f'c,mi",
-            "inputs_stress_ratio",
-            0.01,
-            sync_callbacks,
-            help_text="Ratio of sustained stress to mean in-situ strength.",
-        )
-
-        number_row(
-            "Shrinkage time since drying t (days)",
-            "inputs_t_shrink",
-            1.0,
-            sync_callbacks,
-            help_text="Duration of drying used in shrinkage calculation.",
-        )
+        # Note: Ducts / Prestress voids section moved to 3-column inputs row (Column 1)
+        # Note: Serviceability + Shrinkage moved to Materials section (below Materials widgets)
 
     # ============================
     # 4. Rest of inputs (Time | Crack/Ducts) - actions and compute already done above before diagrams
@@ -1154,10 +1684,10 @@ def render_inputs():
     )
 
     # --- Crack control (from crack_page.py) ---
-    # Crack page stores w_calc and wmax_char, not crack_width
-    w_calc = get_param("w_calc", 0.0)
-    wmax_char = get_param("wmax_char", 0.3)  # Default 0.3 mm if not set
-    crack_util = _safe_ratio(w_calc, wmax_char)
+    # Crack control (from crack_page.py)
+    w_calc = get_param("crack_width", get_param("w_calc", 0.0))
+    wmax_char = get_param("wmax_char", 0.3)
+    crack_util = get_param("crack_utilisation", _safe_ratio(w_calc, wmax_char))
 
     # --- Deflection (from deflection_core.py via _compute_deflection_results) ---
     delta_total = get_param("deflection_total_mm", 0.0)
@@ -1417,19 +1947,15 @@ def render_inputs():
 
     # Render the summary back at the very top (where summary_container was created)
     with summary_container:
+        st.title("Inputs")
+        st.markdown("### Summary (click to expand)")
 
-        col_left, col_right = st.columns([2, 1])
+        # Inject CSS for seamless steps (summary table styling)
+        inject_seamless_steps_css()
 
-        with col_left:
-            st.title("Inputs")
-            st.markdown("### Summary (read-only from design pages)")
-
-            # Inject CSS for seamless steps (summary table styling)
-            inject_seamless_steps_css()
-
-            # Custom CSS for top-level expandable rows (matching old design)
-            # Includes summary table styling (same as render_clickable_summary_table)
-            st.markdown("""
+        # Custom CSS for top-level expandable rows (matching old design)
+        # Includes summary table styling (same as render_clickable_summary_table)
+        st.markdown("""
 <style>
 .inputs-top-level-row {
   border: 1px solid rgba(49,51,63,0.15);
@@ -1538,16 +2064,16 @@ tr:hover .hint { opacity: 1; }
 </style>
 """, unsafe_allow_html=True)
 
-            # Top-level expandable rows with summary results
-            # Generate table HTML strings
-            bending_table_html = _generate_summary_table_html(BENDING_ROWS)
-            shear_table_html = _generate_summary_table_html(SHEAR_ROWS)
-            crack_table_html = _generate_summary_table_html(CRACK_ROWS)
-            defl_table_html = _generate_summary_table_html(DEFLECTION_ROWS)
-            
-            # Bending
-            st.markdown(
-                f"""
+        # Top-level expandable rows with summary results
+        # Generate table HTML strings
+        bending_table_html = _generate_summary_table_html(BENDING_ROWS)
+        shear_table_html = _generate_summary_table_html(SHEAR_ROWS)
+        crack_table_html = _generate_summary_table_html(CRACK_ROWS)
+        defl_table_html = _generate_summary_table_html(DEFLECTION_ROWS)
+        
+        # Bending
+        st.markdown(
+            f"""
 <div class="inputs-top-level-row">
 <details open>
 <summary style="background-color: {bending_colour};">
@@ -1563,12 +2089,12 @@ tr:hover .hint { opacity: 1; }
   </details>
       </div>
 """,
-                unsafe_allow_html=True,
-            )
+        unsafe_allow_html=True,
+        )
 
-            # Shear
-            st.markdown(
-                f"""
+        # Shear
+        st.markdown(
+            f"""
 <div class="inputs-top-level-row">
 <details>
 <summary style="background-color: {shear_colour};">
@@ -1584,12 +2110,12 @@ tr:hover .hint { opacity: 1; }
   </details>
       </div>
 """,
-                unsafe_allow_html=True,
-            )
+        unsafe_allow_html=True,
+        )
 
-            # Crack
-            st.markdown(
-                f"""
+        # Crack
+        st.markdown(
+        f"""
 <div class="inputs-top-level-row">
 <details>
 <summary style="background-color: {crack_colour};">
@@ -1605,12 +2131,12 @@ tr:hover .hint { opacity: 1; }
   </details>
       </div>
 """,
-                unsafe_allow_html=True,
-            )
+        unsafe_allow_html=True,
+        )
 
-            # Deflection
-            st.markdown(
-                f"""
+        # Deflection
+        st.markdown(
+        f"""
 <div class="inputs-top-level-row">
 <details>
 <summary style="background-color: {defl_colour};">
@@ -1626,15 +2152,15 @@ tr:hover .hint { opacity: 1; }
   </details>
 </div>
 """,
-                unsafe_allow_html=True,
-            )
+        unsafe_allow_html=True,
+        )
 
-            # Add custom JavaScript to handle cross-page navigation from Inputs summary
-            all_inputs_rows = BENDING_ROWS + SHEAR_ROWS + CRACK_ROWS + DEFLECTION_ROWS
-            rows_json = json.dumps({r["uid"]: r["route_page"] for r in all_inputs_rows})
-            
-            components.html(
-                f"""
+        # Add custom JavaScript to handle cross-page navigation from Inputs summary
+        all_inputs_rows = BENDING_ROWS + SHEAR_ROWS + CRACK_ROWS + DEFLECTION_ROWS
+        rows_json = json.dumps({r["uid"]: r["route_page"] for r in all_inputs_rows})
+        
+        components.html(
+            f"""
 <script>
 (function () {{
   const doc = window.parent.document;
@@ -1669,23 +2195,6 @@ tr:hover .hint { opacity: 1; }
 }})();
 </script>
 """,
-                height=0,
-            )
+            height=0,
+        )
 
-        with col_right:
-            fig_sec = make_summary_cross_section_figure()
-            pad_left, centre, pad_right = st.columns([0.25, 0.5, 0.25])
-            with centre:
-                st.plotly_chart(
-                    fig_sec,
-                    use_container_width=False,
-                    config={"displayModeBar": False},
-                )
-                st.markdown(
-                    """
-                    <div style="text-align:center; margin-top:0.25rem;">
-                        <span style="font-weight:600; font-size:1.1rem;">Section A</span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )

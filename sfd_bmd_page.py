@@ -1102,6 +1102,8 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
             params["L_main"] = L_main
             params["a_overhang"] = a_over
 
+        # Note: a_m is a shared input (synced via widget callback), not a result
+        # The widget callback will sync load_a_point -> a_m automatically
         update_results(
             span_L_m=float(L),
             G_point_kN=float(G_shared),
@@ -1109,7 +1111,6 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
             psi_point=float(psi_shared),
             P_sls_kN=float(P_sls),
             P_uls_kN=float(P_uls),
-            a_m=float(a) if a is not None else None,
         )
 
     # Close the loading-grid container

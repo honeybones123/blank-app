@@ -290,8 +290,10 @@ def format_L_over_delta(delta_mm, L_mm):
 # ------------------------------------------------------------
 def render_deflection():
     """Deflection page – short-term, long-term, span/depth to AS 3600:2018 Cl. 8.5."""
-    # MUST be first: guarantees shared keys exist and prevents fallback-default reseeding
-    init_shared_session_state()
+    # NOTE: init_shared_session_state() is called by app.py router before this function runs.
+    
+    # Pages must NOT call init/hydrate themselves - the router owns the lifecycle.
+    
     sync_callbacks = get_sync_callbacks()
     
     # Handle cross-page navigation from Inputs page
@@ -343,8 +345,37 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     # Reserve space for the top summary table
     summary_placeholder = st.empty()
 
+    # --- Hydrate deflection page widget keys from shared (only if missing/None) ---
+    def _seed_widget_from_shared(widget_key: str, shared_key: str, fallback: float = 0.0):
+        if widget_key not in st.session_state or st.session_state[widget_key] is None:
+            v = get_param(shared_key, fallback)
+            try:
+                st.session_state[widget_key] = float(v) if v is not None else float(fallback)
+            except Exception:
+                st.session_state[widget_key] = float(fallback)
+
+    _seed_widget_from_shared("defl_b", "b", 0.0)
+    _seed_widget_from_shared("defl_D", "D", 0.0)
+    _seed_widget_from_shared("defl_fc", "fc", 0.0)
+    _seed_widget_from_shared("defl_Ec", "Ec", 0.0)
+    _seed_widget_from_shared("defl_support_type", "defl_support_type", 0.0)
+    _seed_widget_from_shared("defl_limit_ratio", "defl_limit_ratio", 250.0)
+
     # ---------- Actions from Inputs page ----------
     action_source = get_param("actions_source", "Manual design actions (inputs below)")
+    is_design_driven = "Teaching" in action_source or action_source == "Teaching SFD/BMD page (|M|max, |V|max)"
+    
+    # Get the appropriate M* and V* based on source
+    if is_design_driven:
+        # Use design-driven actions from SFD/BMD page
+        M_used = get_param("sfd_Mmax_abs_kNm", 0.0)
+        V_used = get_param("sfd_Vmax_abs_kN", 0.0)
+    else:
+        # Use manual actions
+        M_used = get_param("Mu_star_manual", 0.0)
+        V_used = get_param("Vu_star_manual", 0.0)
+    
+    # Also get the final chosen values (for display/other uses)
     Mu_star = get_param("Mu_star", 0.0)
     Vu_star = get_param("Vu_star", 0.0)
 
@@ -357,7 +388,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     P_sls = get_param("P_sls_kN", None)  # SLS point load if applicable
     a = get_param("a_m", None)  # Distance a for point loads
     
-    # For display in calcbox
+    # For display in calcbox (fallback values)
     g = get_param("g_udl_kNm_per_m", 0.0)
     q = get_param("q_udl_kNm_per_m", 0.0)
     psi_s = get_param("psi_udl", 0.4)
@@ -384,63 +415,69 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     with col_geom:
         st.markdown("### Geometry")
         L_seed_mm = _seed_from_param("L", 6000.0)
-        L_eff = _input_row(
-            "Effective span Lₑf (m)",
-            "Effective span length for deflection calculations.",
-            lambda: v2_number_input(
-                label="",
-                key="defl_L_eff",
-                default=L_seed_mm / 1000.0,
-                step=0.1,
-                label_visibility="collapsed",
-                on_change=sync_callbacks["defl_L_eff"],
-            ),
+        L_eff = st.session_state.get("defl_L_eff", L_seed_mm / 1000.0)
+        _render_readonly_value(
+            "Effective span Lₑf (calculated)",
+            float(L_eff) * 1000.0,
+            "mm",
+            "Derived from span L; not user-editable.",
         )
 
-        support_type = _input_row(
-            "Support condition (k₂)",
-            (
-                "Support condition determines the deflection coefficient k₂\n"
-                "used in AS 3600 deflection calculations.\n\n"
-                "k₂ is a code-defined coefficient that accounts for\n"
-                "restraint and load distribution effects.\n\n"
-                "It is not user-editable."
-            ),
-            lambda: v2_selectbox(
-                label="",
-                key="defl_support_type",
-                options=["Simply supported", "Continuous – end span", "Continuous – interior span"],
-                default_index=0,
-                label_visibility="collapsed",
-                on_change=sync_callbacks["defl_support_type"],
-            ),
-        )
-
-        bw_seed = _seed_from_param("b", 300.0)
-        bw = _input_row(
-            "Web / stem width b_w (mm)",
-            "Web or stem width of the section.",
+        b_seed = _seed_from_param("b", 300.0)
+        b = _input_row(
+            "Beam width b (mm)",
+            "Beam width of the section.",
             lambda: v2_number_input(
                 label="",
-                key="defl_bw",
-                default=bw_seed,
+                key="defl_b",
+                default=b_seed,
                 step=10.0,
                 label_visibility="collapsed",
-                on_change=sync_callbacks["defl_bw"],
+                on_change=sync_callbacks["defl_b"],
             ),
         )
 
-        beff = _input_row(
+        # Beam depth D (mm)
+        D_seed = _seed_from_param("D", 600.0)
+        D = _input_row(
+            "Beam depth D (mm)",
+            "Overall beam depth from compression face to soffit.",
+            lambda: v2_number_input(
+                label="",
+                key="defl_D",
+                default=D_seed,
+                step=10.0,
+                label_visibility="collapsed",
+                on_change=sync_callbacks.get("defl_D") or (lambda: None),  # Graceful fallback if not in TAB_KEYS
+            ),
+        )
+        # Ensure D is a float for calculations
+        if D is None:
+            D = D_seed
+        else:
+            D = float(D)
+
+        # Read-only: web width (derived from b)
+        bw = st.session_state.get("defl_bw", b)
+        _render_readonly_value(
+            "Web width b_w (derived from b) (mm)",
+            bw,
+            "mm",
+            "Derived from b; not user-editable.",
+        )
+
+        # Read-only: effective flange width (computed/derived)
+        # Read from widget state if available, else from shared state
+        beff_widget = st.session_state.get("defl_beff", None)
+        if beff_widget is not None:
+            beff = float(beff_widget)
+        else:
+            beff = _seed_from_param("defl_beff", b_seed)
+        _render_readonly_value(
             "Effective flange width bₑf (mm)",
+            beff,
+            "mm",
             "Effective flange width for deflection calculations.",
-            lambda: v2_number_input(
-                label="",
-                key="defl_beff",
-                default=bw_seed,
-                step=10.0,
-                label_visibility="collapsed",
-                on_change=sync_callbacks["defl_beff"],
-            ),
         )
 
         # Read-only: effective depth (linked from shared state)
@@ -506,6 +543,25 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     with col_loads:
         st.markdown("### Serviceability")
         
+        support_type = _input_row(
+            "Support condition (k₂)",
+            (
+                "Support condition determines the deflection coefficient k₂\n"
+                "used in AS 3600 deflection calculations.\n\n"
+                "k₂ is a code-defined coefficient that accounts for\n"
+                "restraint and load distribution effects.\n\n"
+                "It is not user-editable."
+            ),
+            lambda: v2_selectbox(
+                label="",
+                key="defl_support_type",
+                options=["Simply supported", "Continuous – end span", "Continuous – interior span"],
+                default_index=0,
+                label_visibility="collapsed",
+                on_change=sync_callbacks["defl_support_type"],
+            ),
+        )
+        
         defl_limit_ratio = _input_row(
             "Deflection limit L/Δ (e.g. 250)",
             "Maximum allowed deflection ratio (e.g., 250 for L/250 limit).",
@@ -519,22 +575,70 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
             ),
         )
         
-        Fdef_kNm = _input_row(
+        # Determine action source and compute fd_ef_used (same logic as in Effective design load tab)
+        actions_source = get_param("actions_source", "Manual design actions (inputs below)")
+        is_manual = actions_source == "Manual design actions (inputs below)"
+        is_design_driven = "Teaching" in actions_source or actions_source == "Teaching SFD/BMD page (|M|max, |V|max)"
+        
+        # Get the appropriate V* value based on source
+        V_kN = get_param("Vu_star", 0.0)
+        if V_kN is None:
+            V_kN = 0.0
+        
+        # Get span L (m) - prefer defl_L_eff, fallback to span_L_m
+        L_m_for_fd = get_param("defl_L_eff", 0.0)
+        if L_m_for_fd is None or L_m_for_fd <= 0:
+            L_m_for_fd = get_param("span_L_m", 0.0)
+            if L_m_for_fd is None:
+                L_m_for_fd = 0.0
+        
+        # Compute fd_ef_used from V* and L when we have valid inputs (either manual or design-driven)
+        fd_ef_used = None
+        value_source_text = ""
+        
+        if (is_manual or is_design_driven) and V_kN > 0 and L_m_for_fd > 0:
+            # Compute from V* and L based on support condition
+            if support_type == "Simply supported":
+                fd_ef_used = 2.0 * V_kN / L_m_for_fd
+            elif support_type == "Cantilever":
+                fd_ef_used = V_kN / L_m_for_fd
+            else:
+                # For other support types, use approximate formula
+                fd_ef_used = V_kN / L_m_for_fd if L_m_for_fd > 0 else None
+            
+            if fd_ef_used is not None and fd_ef_used > 0:
+                if is_manual:
+                    value_source_text = "Auto-calculated from manual V* and span L."
+                else:
+                    value_source_text = "Auto-calculated from Teaching SFD/BMD V* and span L."
+        
+        # Fallback to user-specified or computed value if not computed above
+        if fd_ef_used is None or fd_ef_used <= 0:
+            # Try to use pre-computed value if available (for manual mode)
+            fd_calc = get_param("fd_ef_calc_kNm", None)
+            if fd_calc is not None and fd_calc > 0:
+                fd_ef_used = fd_calc
+                value_source_text = "Auto-calculated from design shear V* and span L."
+            else:
+                # Fallback to user-specified default
+                fd_ef_used = get_param("defl_Fdef", 12.0)
+                value_source_text = "User specified."
+        
+        # Show as computed/read-only cell
+        _render_readonly_value(
             "Effective design load F_d,ef (kN/m)",
+            fd_ef_used,
+            "kN/m",
             (
                 "Effective design load for span-to-depth check only.\n\n"
                 "Used to determine the allowable L/d limit per AS 3600 Cl. 8.5.4.\n\n"
-                "Does NOT affect short- or long-term deflection calculations."
-            ),
-            lambda: v2_number_input(
-                label="",
-                key="defl_Fdef",
-                default=12.0,
-                step=0.5,
-                label_visibility="collapsed",
-                on_change=sync_callbacks["defl_Fdef"],
+                "Does NOT affect short- or long-term deflection calculations.\n\n"
+                + value_source_text
             ),
         )
+        
+        # Use the determined value for calculations
+        Fdef_kNm = fd_ef_used
 
     # --------------------------------------------------------
     # SINGLE COMPUTED VALUES BLOCK (compute once, use everywhere)
@@ -577,13 +681,60 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     if L_eff_m <= 0:
         L_eff_m = 0.1
 
+    # Compute w_used from M* or V* based on source and support condition
+    # This is the "source of truth" for total service load
+    w_used = None
+    if L_eff_m > 0:
+        if support_type == "Simply supported":
+            # For simply supported: M_max = wL^2/8, so w = 8M/L^2
+            # Or: V_max = wL/2, so w = 2V/L
+            # Prefer moment method if M > 0, otherwise use shear
+            if M_used is not None and M_used > 0:
+                w_used = 8.0 * M_used / (L_eff_m ** 2)
+            elif V_used is not None and V_used > 0:
+                w_used = 2.0 * V_used / L_eff_m
+        elif support_type == "Cantilever":
+            # For cantilever: M_max = wL^2/2, so w = 2M/L^2
+            # Or: V_max = wL, so w = V/L
+            if M_used is not None and M_used > 0:
+                w_used = 2.0 * M_used / (L_eff_m ** 2)
+            elif V_used is not None and V_used > 0:
+                w_used = V_used / L_eff_m
+        else:
+            # For continuous spans, use approximate: w = 2V/L (similar to simply supported)
+            if V_used is not None and V_used > 0:
+                w_used = 2.0 * V_used / L_eff_m
+            elif M_used is not None and M_used > 0:
+                # Approximate: assume similar to simply supported
+                w_used = 8.0 * M_used / (L_eff_m ** 2)
+    
+    # Fallback to g + q if w_used couldn't be computed
+    if w_used is None or w_used <= 0:
+        w_used = g + q
+    
+    # Split w_used into g and q for the function (maintains w_sust calculation)
+    # Assume all load is sustained (conservative) or use existing ratio
+    if w_used > 0:
+        # Use existing g/(g+q) ratio if available, otherwise treat all as sustained
+        if (g + q) > 0:
+            g_ratio = g / (g + q)
+            g_used = w_used * g_ratio
+            q_used = w_used * (1 - g_ratio)
+        else:
+            # All load treated as dead (sustained)
+            g_used = w_used
+            q_used = 0.0
+    else:
+        g_used = g
+        q_used = q
+
     # Main deflection calculations using Ief_selected
     results = calc_deflection_as3600(
         L_m=L_eff_m,
         Ec=Ec,
         Ief=Ief_selected,
-        g_kNm=g,
-        q_kNm=q,
+        g_kNm=g_used,
+        q_kNm=q_used,
         psi_s=psi_s,
         support_type=support_type,
         Ast=Ast,
@@ -602,7 +753,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     delta_long_add = results["delta_long_add"]
     delta_total = results["delta_total"]
     kcs = results["kcs"]
-    w_total = results["w_total"]
+    w_total = w_used  # Use computed w_used instead of g + q
     w_sust = results["w_sust"]
     k2 = results["k2"]
 
@@ -680,10 +831,11 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         # delta_max is now in mm
     
     # --------------------------------------------------------
-    # Tabs in agreed order (Ief, short-term, long-term, span/depth)
+    # Tabs in agreed order (Effective design load first, then Ief, short-term, long-term, span/depth)
     # --------------------------------------------------------
-    tab_ief, tab_short, tab_long, tab_span = st.tabs(
+    tab_effective_load, tab_ief, tab_short, tab_long, tab_span = st.tabs(
         [
+            "Effective design load",
             "Iₑf details",
             "Short-term deflection",
             "Long-term deflection",
@@ -952,11 +1104,15 @@ _Ref: AS 3600:2018 Cl. 8.5.3.1(2) & (3) – simplified $I_{{ef}}$ for reinforced
             f"Result: {'PASS' if short_status == 'pass' else 'FAIL' if short_status == 'fail' else '—'}"
         )
         
+        # Determine source label for display
+        source_label = "Teaching SFD/BMD page" if is_design_driven else "Manual design actions"
+        
         short_calc_md = rf"""
 *Purpose: Determine the short-term midspan deflection under total service load $w = g + q$ using the effective stiffness $I_{{ef}}$ from the Iₑf tab (AS 3600 Cl. 8.5.3.1).*
 
 **Inputs:**
 
+- Actions source: {source_label}
 - Effective span: $L_{{eff}} = {L_mm:.0f}\,\text{{mm}}$
 - Total service load: $w = g + q = {w_total:.2f}\,\text{{kN/m}}$
 - Deflection coefficient (support condition):  
@@ -1030,11 +1186,15 @@ _Ref: AS 3600:2018 Cl. 8.5.3.1 – deflection using effective stiffness $I_{{ef}
             f"Includes: Long-term deflection with $k_{{cs}}$; Result: {'PASS' if long_status == 'pass' else 'FAIL' if long_status == 'fail' else '—'}"
         )
         
+        # Determine source label for display
+        source_label = "Teaching SFD/BMD page" if is_design_driven else "Manual design actions"
+        
         long_calc_md = rf"""
 *Purpose: Determine the additional long-term deflection due to sustained loading (creep + shrinkage) and the resulting total deflection to AS 3600 Cl. 8.5.3.2.*
 
 **Inputs:**
 
+- Actions source: {source_label}
 - Sustained load:
   $$
   w_{{sust}} = g + \psi_s q = {w_sust:.2f}\,\text{{kN/m}}
@@ -1137,7 +1297,188 @@ _Ref: AS 3600:2018 Cl. 8.5.3.2 – long-term deflection using $k_{{cs}}$ and sus
             info_render_fn=None,
         )
 
-    # TAB 4: Span/depth deemed-to-conform
+    # TAB 1: Effective design load F_d,ef (moved to first tab)
+    with tab_effective_load:
+        st.subheader("Effective design load F_d,ef – AS 3600 Cl. 8.5.4")
+        
+        # Determine action source and whether design-driven
+        actions_source = get_param("actions_source", "Manual design actions (inputs below)")
+        is_manual = actions_source == "Manual design actions (inputs below)"
+        is_design_driven = "Teaching" in actions_source or actions_source == "Teaching SFD/BMD page (|M|max, |V|max)"
+        
+        # Get the appropriate V* value based on source
+        # Vu_star is the final chosen value (updated by inputs_page.py based on source)
+        V_kN = get_param("Vu_star", 0.0)
+        if V_kN is None:
+            V_kN = 0.0
+        
+        # Get span L (m) - prefer defl_L_eff, fallback to span_L_m
+        L_m = get_param("defl_L_eff", 0.0)
+        if L_m is None or L_m <= 0:
+            L_m = get_param("span_L_m", 0.0)
+            if L_m is None:
+                L_m = 0.0
+        
+        support_type_display = support_type
+        
+        # Compute fd_ef_used from V* and L when we have valid inputs (either manual or design-driven)
+        fd_ef_used = None
+        value_source = ""
+        
+        if (is_manual or is_design_driven) and V_kN > 0 and L_m > 0:
+            # Compute from V* and L based on support condition
+            if support_type == "Simply supported":
+                fd_ef_used = 2.0 * V_kN / L_m
+            elif support_type == "Cantilever":
+                fd_ef_used = V_kN / L_m
+            else:
+                # For other support types, use approximate formula
+                fd_ef_used = V_kN / L_m if L_m > 0 else None
+            
+            if fd_ef_used is not None:
+                if is_manual:
+                    value_source = "Auto-calculated from manual V* and L"
+                else:
+                    value_source = "Auto-calculated from Teaching SFD/BMD V* and L"
+        
+        # Fallback to user-specified or computed value if not computed above
+        if fd_ef_used is None or fd_ef_used <= 0:
+            # Try to use pre-computed value if available (for manual mode)
+            fd_calc = get_param("fd_ef_calc_kNm", None)
+            if fd_calc is not None and fd_calc > 0:
+                fd_ef_used = fd_calc
+                value_source = "Auto-calculated from V* and L"
+            else:
+                # Fallback to user-specified default
+                fd_ef_used = get_param("defl_Fdef", 12.0)
+                value_source = "User specified"
+        
+        # Determine loading condition description
+        if is_manual or is_design_driven:
+            if support_type == "Simply supported":
+                loading_condition = "Simply supported, UDL over full span"
+            elif support_type == "Cantilever":
+                loading_condition = "Cantilever, UDL over full span"
+            else:
+                loading_condition = f"{support_type}, UDL over full span"
+        else:
+            loading_condition = "User specified"
+        
+        # Build summary
+        fd_ef_summary = (
+            f"**Effective design load F_d,ef (Cl. 8.5.4)**  \n"
+            f"$F_{{d,ef}} = {fd_ef_used:.2f}\\,\\mathrm{{kN/m}}$ | "
+            f"Source: {value_source}"
+        )
+        
+        # Build calc content
+        if (is_manual or is_design_driven) and V_kN > 0 and L_m > 0:
+            # Show calculation steps
+            if support_type == "Simply supported":
+                equation_latex = r"V_{\max} = \frac{wL}{2} \quad \Rightarrow \quad w = \frac{2V_{\max}}{L}"
+                substitution_latex = rf"F_{{d,ef}} = \frac{{2 \times {V_kN:.1f}}}{{{L_m:.2f}}} = {fd_ef_used:.2f}\,\text{{kN/m}}"
+            elif support_type == "Cantilever":
+                equation_latex = r"V_{\max} = wL \quad \Rightarrow \quad w = \frac{V_{\max}}{L}"
+                substitution_latex = rf"F_{{d,ef}} = \frac{{{V_kN:.1f}}}{{{L_m:.2f}}} = {fd_ef_used:.2f}\,\text{{kN/m}}"
+            else:
+                # For other support types, show generic or fallback
+                equation_latex = r"w = \frac{V_{\max}}{L} \quad \text{(approximate)}"
+                substitution_latex = rf"F_{{d,ef}} = \frac{{{V_kN:.1f}}}{{{L_m:.2f}}} = {fd_ef_used:.2f}\,\text{{kN/m}} \quad \text{{(from design shear)}}"
+            
+            # Determine source label for display
+            source_label = "Manual inputs" if is_manual else "Teaching SFD/BMD"
+            
+            fd_ef_calc_md = rf"""
+*Purpose: Determine the equivalent uniform distributed load $F_{{d,ef}}$ used for span-to-depth ratio checks per AS 3600 Cl. 8.5.4. This value is reverse-engineered from the design shear force $V^*$ and span length $L$ based on the support condition and loading pattern.*
+
+**Step 1 – Inputs:**
+
+- Source: {source_label}
+- Design shear: $V^* = {V_kN:.1f}\,\text{{kN}}$
+- Effective span: $L = {L_m:.2f}\,\text{{m}}$
+- Support condition: {support_type_display}
+- Loading condition: {loading_condition}
+
+---
+
+**Step 2 – Model / equations:**
+
+For {loading_condition}:
+
+$$
+{equation_latex}
+$$
+
+---
+
+**Step 3 – Substitution:**
+
+$$
+{substitution_latex}
+$$
+
+---
+
+**Step 4 – Result:**
+
+- Effective design load:  
+  $F_{{d,ef}} = {fd_ef_used:.2f}\,\text{{kN/m}}$
+
+*Note: This equivalent UDL is used for serviceability deflection checks and span-to-depth ratio calculations per AS 3600 Cl. 8.5.4.*
+
+_Ref: AS 3600:2018 Cl. 8.5.4 – deemed-to-conform span-to-depth limits.*
+"""
+        else:
+            # User-specified mode - show simpler explanation
+            fd_ef_calc_md = rf"""
+*Purpose: The effective design load $F_{{d,ef}}$ is used for span-to-depth ratio checks per AS 3600 Cl. 8.5.4. This value represents an equivalent uniform distributed load used in serviceability calculations.*
+
+**Step 1 – Inputs:**
+
+- Effective design load: $F_{{d,ef}} = {fd_ef_used:.2f}\,\text{{kN/m}}$ (user specified)
+- Effective span: $L = {L_m:.2f}\,\text{{m}}$
+- Support condition: {support_type_display}
+
+---
+
+**Step 2 – Model / equations:**
+
+The effective design load is user-specified and represents an equivalent uniform distributed load for serviceability calculations.
+
+---
+
+**Step 3 – Substitution:**
+
+Using the specified value:
+
+$$
+F_{{d,ef}} = {fd_ef_used:.2f}\,\text{{kN/m}}
+$$
+
+---
+
+**Step 4 – Result:**
+
+- Effective design load:  
+  $F_{{d,ef}} = {fd_ef_used:.2f}\,\text{{kN/m}}$
+
+*Note: This value is used for span-to-depth ratio calculations per AS 3600 Cl. 8.5.4.*
+
+_Ref: AS 3600:2018 Cl. 8.5.4 – deemed-to-conform span-to-depth limits._
+"""
+        
+        render_expandable_step(
+            page_key="deflection",
+            step_id="defl_effective_load",
+            title="Effective design load F_d,ef (Cl. 8.5.4)",
+            summary_md=fd_ef_summary,
+            status_kind=None,
+            calc_md=fd_ef_calc_md,
+            diagram_render_fn=None,
+            info_render_fn=None,
+        )
+
+    # TAB 5: Span/depth deemed-to-conform
     with tab_span:
         st.subheader("Deemed-to-conform span-to-depth ratio – AS 3600 Cl. 8.5.4")
         

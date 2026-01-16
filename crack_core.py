@@ -35,18 +35,19 @@ def compute_crack_results(publish: bool = True) -> dict:
     
     # Read crack control settings
     exposure_class = get_param("exposure_class", "B1")
-    wmax_choice = st.session_state.get("crk_wmax", 0.3)  # From widget or default
-    member_type = st.session_state.get("crk_member_type", "Primarily flexure")
+    wmax_choice = get_param("wmax_char_limit", 0.3)
+    member_type = get_param("crack_member_type", "Primarily flexure")
     
     # Read linked SLS values
-    sigma_sr = get_param("sigma_s_sls", 200.0)
+    sigma_sr = get_param("sigma_sr", None)
+    if sigma_sr is None:
+        sigma_sr = get_param("bending_sls_fs_outer", 0.0)
     phi_ce = get_param("phi_cc_t", 2.0)
     eps_cs_micro = get_param("eps_cs_total_micro", 300.0)
     eps_cs = eps_cs_micro * 1e-6
     
     # k1 and k2 from widgets
-    k1_choice = st.session_state.get("crk_k1", ("Deformed bars (k₁ = 0.8)", 0.8))
-    k1 = k1_choice[1] if isinstance(k1_choice, tuple) else 0.8
+    k1 = get_param("crack_k1", 0.8)
     k2 = get_param("crk_k2", 0.5)
     
     # Effective area in tension
@@ -90,15 +91,16 @@ def compute_crack_results(publish: bool = True) -> dict:
     utilisation_w = w_calc / wmax_choice if wmax_choice > 0 else 0.0
     passes_w = utilisation_w <= 1.0
     
-    # Update session state
-    update_results(
-        sigma_sr=sigma_sr,
-        sigma_allow_table=sigma_allow_table,
-        w_calc=w_calc,
-        wmax_char=wmax_choice,
-        passes_table=passes_table,
-        passes_w=passes_w,
-    )
+    out = {
+        "sigma_sr": sigma_sr,
+        "sigma_allow_table": sigma_allow_table,
+        "w_calc": w_calc,
+        "wmax_char": wmax_choice,
+        "passes_table": passes_table,
+        "passes_w": passes_w,
+        "crack_width": w_calc,
+        "crack_utilisation": utilisation_w,
+    }
     
     # Build report if publishing
     if publish:
@@ -126,14 +128,8 @@ def compute_crack_results(publish: bool = True) -> dict:
                 st.session_state["results"] = {}
             st.session_state["results"]["crack_report_error"] = str(e)
     
-    return {
-        "sigma_sr": sigma_sr,
-        "sigma_allow_table": sigma_allow_table,
-        "w_calc": w_calc,
-        "wmax_char": wmax_choice,
-        "passes_table": passes_table,
-        "passes_w": passes_w,
-    }
+    update_results(**out)
+    return out
 
 
 def build_crack_report(params: dict) -> dict:

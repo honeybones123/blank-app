@@ -7,6 +7,7 @@ from state_and_helpers import (
     get_param,
     get_sync_callbacks,
     update_results,
+    get_widget_key_for_shared,
 )
 from shear_diagrams import (
     plot_shear_torsion_section_2d,
@@ -18,7 +19,7 @@ from shear_core import derive_eps_top_bot_for_step4_diagram
 from torsion_diagrams import plot_torsion_prism_3d
 
 # Shared helpers (same contract as Inputs/Bending)
-from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, calcbox, clickable_calcbox, render_step, apply_step_summary_expander_css, info_i_button, page_divider
+from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, select_row, calcbox, clickable_calcbox, render_step, apply_step_summary_expander_css, info_i_button, page_divider
 from step_ui import init_step_ui_state, render_expandable_step
 from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks
 
@@ -868,27 +869,251 @@ def compute_shear_results(publish: bool = True) -> dict:
     Compute shear results without UI rendering.
     
     Args:
-        publish: If True, update results via update_results(). Always True for now.
+        publish: If True, publish to results dict for report export.
     
     Returns:
         dict with computed results
     """
     from state_and_helpers import recalc_derived_values
-    from shear_core import _compute_shear_capacity
+    from shear_core import ShearInputs, run_shear_calc
     
     recalc_derived_values()
     
-    # Call existing compute function (which already calls update_results)
-    results = _compute_shear_capacity()
+    # --- Read inputs (shared state) ---
+    b = get_param("b", 300.0)
+    D = get_param("D", 600.0)
+    d = get_param("d", 560.0)
+    fc = get_param("fc", 32.0)
+    fsy = get_param("fsy", 500.0)
+    Ec = get_param("Ec", 30000.0)
+    Es = get_param("Es", 200000.0)
     
-    # Build steps list (placeholder for now - steps not stored separately)
-    steps = ["(Detailed steps not available for this module yet)"]
+    M_star = get_param("Mu_star", get_param("Mu_star_manual", 0.0))
+    Vu_star = get_param("Vu_star", get_param("Vu_star_manual", 0.0))
+    Tu_star = get_param("Tu_star", get_param("Tu_star_manual", 0.0))
+    N_star = get_param("N_star", 0.0)
+    P_v = get_param("P_star", 0.0)
+    
+    lig_d = get_param("lig_d", 10.0)
+    legs = get_param("lig_legs", 2)
+    s_lig = get_param("s_lig", 200.0)
+    
+    A_st = get_param("Ast_bot", 0.0)
+    A_pt = get_param("A_pt", 0.0)
+    f_po = get_param("f_po", 0.0)
+    A_ct = b * D / 2.0 if b and D else 0.0
+    
+    d_g = get_param("shear_d_g", get_param("d_g", 20.0))
+    phi = get_param("phi_shear", 0.75)
+    sigma_cp = get_param("sigma_cp", 0.0) or 0.0
+    
+    n_ducts = get_param("n_ducts", 0.0) or 0.0
+    duct_dia = get_param("duct_dia", 0.0) or 0.0
+    sum_duct = n_ducts * (duct_dia ** 2) * math.pi / 4.0
+    
+    kd_option = get_param("k_d_option", "None (no ducts in web)")
+    kd_map = {
+        "None (no ducts in web)": 0.0,
+        "0.5 – steel ducts, grouted": 0.5,
+        "0.8 – plastic ducts, grouted": 0.8,
+        "1.2 – ungrouted ducts": 1.2,
+    }
+    k_d = kd_map.get(kd_option, 0.0)
+    
+    kv_method = get_param("k_v_method", "General εₓ-based (Cl. 8.2.4.2)")
+    use_general_kv = str(kv_method).startswith("General")
+    
+    inp = ShearInputs(
+        b=b,
+        D=D,
+        d=d,
+        fc=fc,
+        fsy=fsy,
+        Ec=Ec,
+        Es=Es,
+        M_star=M_star,
+        V_star=Vu_star,
+        T_star=Tu_star,
+        N_star=N_star,
+        P_v=P_v,
+        phi=phi,
+        sigma_cp=sigma_cp,
+        A_st=A_st,
+        A_pt=A_pt,
+        f_po=f_po,
+        A_ct=A_ct,
+        d_g=d_g,
+        lig_d=lig_d,
+        legs=legs,
+        s_lig=s_lig,
+        use_general_kv=use_general_kv,
+        sum_duct=sum_duct,
+        k_d=k_d,
+    )
+    
+    results = run_shear_calc(inp)
+    
+    # Derived metrics
+    phi_Vu_cap = results.phi_Vu
+    util = results.V_eq / phi_Vu_cap if phi_Vu_cap > 0 else float("nan")
+    phi_Vu_max = phi * results.Vu_max_kN
+    Vuc_util = results.V_eq / phi_Vu_max if phi_Vu_max > 0 else float("nan")
+    
+    # Minimum shear reinforcement + spacing checks
+    Asv_over_s = results.Asv / s_lig if s_lig else 0.0
+    Asv_min_over_s = 0.08 * math.sqrt(fc) * results.b_v / (results.f_syv or 1.0)
+    min_shear_ok = Asv_over_s >= Asv_min_over_s
+    max_spacing = min(0.75 * D, 500.0) if D else 500.0
+    spacing_ok = s_lig <= max_spacing if s_lig else False
+    
+    # Summary for report
+    summary = [
+        ("Demand", f"{results.V_eq:.1f} kN"),
+        ("Capacity", f"{phi_Vu_cap:.1f} kN"),
+        ("Utilisation", f"{util:.2f}" if not math.isnan(util) else "—"),
+        ("Outcome", "PASS" if util <= 1.0 else "FAIL"),
+    ]
+    
+    boxes = []
+    
+    boxes.append({
+        "id": "1",
+        "title": "Actions",
+        "clause": "AS 3600:2018 Cl. 2.3",
+        "derivation": "<br/>".join([
+            f"V* = {Vu_star:.1f} kN",
+            f"T* = {Tu_star:.1f} kNm",
+            f"V_eq* = {results.V_eq:.1f} kN",
+        ]),
+        "result": "",
+        "status": None,
+        "diagram": None,
+    })
+    
+    boxes.append({
+        "id": "2",
+        "title": "Effective section + reinforcement",
+        "clause": "AS 3600:2018 Cl. 8.2.2",
+        "derivation": "<br/>".join([
+            f"b_v = {results.b_v:.0f} mm",
+            f"d_v = {results.d_v:.0f} mm",
+            f"A_sv = {results.Asv:.0f} mm²",
+            f"s = {s_lig:.0f} mm",
+        ]),
+        "result": "",
+        "status": None,
+        "diagram": None,
+    })
+    
+    boxes.append({
+        "id": "3",
+        "title": "MCFT parameters",
+        "clause": "AS 3600:2018 Cl. 8.2.4",
+        "derivation": "<br/>".join([
+            f"εx = {results.eps_x:.5f}",
+            f"k_v = {results.k_v:.3f}",
+            f"θ_v = {results.theta_v_deg:.1f}°",
+        ]),
+        "result": "",
+        "status": None,
+        "diagram": None,
+    })
+    
+    boxes.append({
+        "id": "4",
+        "title": "Concrete shear capacity",
+        "clause": "AS 3600:2018 Cl. 8.2.4.1",
+        "derivation": "<br/>".join([
+            f"b_v = {results.b_v:.0f} mm",
+            f"d_v = {results.d_v:.0f} mm",
+            f"V_uc = {results.Vuc_kN:.1f} kN",
+        ]),
+        "result": f"φV_uc = {(phi * results.Vuc_kN):.1f} kN",
+        "status": None,
+        "diagram": None,
+    })
+    
+    boxes.append({
+        "id": "5",
+        "title": "Shear reinforcement contribution",
+        "clause": "AS 3600:2018 Cl. 8.2.5",
+        "derivation": "<br/>".join([
+            f"A_sv = {results.Asv:.0f} mm²",
+            f"s = {s_lig:.0f} mm",
+            f"V_us = {results.Vus_kN:.1f} kN",
+        ]),
+        "result": f"φV_us = {(phi * results.Vus_kN):.1f} kN",
+        "status": None,
+        "diagram": None,
+    })
+    
+    boxes.append({
+        "id": "6",
+        "title": "Total shear capacity and utilisation",
+        "clause": "AS 3600:2018",
+        "derivation": "<br/>".join([
+            f"φV_u = {phi_Vu_cap:.1f} kN",
+            f"Util = V_eq*/(φV_u) = {util:.2f}" if not math.isnan(util) else "Util = —",
+        ]),
+        "result": "PASS" if util <= 1.0 else "FAIL",
+        "status": "pass" if util <= 1.0 else "fail",
+        "diagram": None,
+    })
+    
+    boxes.append({
+        "id": "7",
+        "title": "Web-crushing limit",
+        "clause": "AS 3600:2018 Cl. 8.2.6",
+        "derivation": "<br/>".join([
+            f"V_u,max = {results.Vu_max_kN:.1f} kN",
+            f"Demand = {results.LHS:.1f}",
+            f"Capacity = {results.RHS:.1f}",
+        ]),
+        "result": "PASS" if results.web_ok else "FAIL",
+        "status": "pass" if results.web_ok else "fail",
+        "diagram": None,
+    })
+    
+    boxes.append({
+        "id": "8",
+        "title": "Minimum shear reinforcement + spacing",
+        "clause": "AS 3600:2018 Cl. 8.2.5",
+        "derivation": "<br/>".join([
+            f"A_sv/s = {Asv_over_s:.3f} mm²/mm",
+            f"(A_sv/s)_min = {Asv_min_over_s:.3f} mm²/mm",
+            f"s_max = {max_spacing:.0f} mm",
+        ]),
+        "result": "PASS" if (min_shear_ok and spacing_ok) else "FAIL",
+        "status": "pass" if (min_shear_ok and spacing_ok) else "fail",
+        "diagram": None,
+    })
+    
+    shear_report = {
+        "module_title": "Shear (ULS)",
+        "summary": summary,
+        "tabs": [{"tab_title": "ULS Checks", "boxes": boxes}],
+    }
+    
+    if publish:
+        update_results(
+            phi_Vu_cap=phi_Vu_cap,
+            Vu_utilisation=util if not math.isnan(util) else 0.0,
+            Vu_max_kN=results.Vu_max_kN,
+            phi_Vu_max_kN=phi_Vu_max,
+            V_eq_kN=results.V_eq,
+            Vuc_utilisation=Vuc_util if not math.isnan(Vuc_util) else None,
+        )
+        
+        st.session_state.setdefault("results", {})
+        st.session_state["results"]["shear_report"] = shear_report
     
     return {
-        "phi_Vu_cap": results.get("phi_Vu_cap", 0.0),
-        "Vu_utilisation": results.get("Vu_utilisation", 0.0),
-        "V_eq": results.get("V_eq", 0.0),
-        "shear_steps": steps,
+        "phi_Vu_cap": phi_Vu_cap,
+        "Vu_utilisation": util,
+        "V_eq": results.V_eq,
+        "Vuc_kN": results.Vuc_kN,
+        "Vus_kN": results.Vus_kN,
+        "shear_report": shear_report,
     }
 
 
@@ -1005,11 +1230,11 @@ This page computes **ultimate shear and torsion capacity** outputs in accordance
     st.subheader("Design Inputs")
     st.caption("Only user-controlled inputs are shown. All derived strain terms are handled internally.")
 
-    col_geom, col_actions, col_params = st.columns(3, gap="large")
+    col_geom, col_mat, col_actions = st.columns(3, gap="large")
 
-    # ---------- 1.1 Geometry & materials (shared) ----------
+    # ---------- 1.1 Geometry (left column) ----------
     with col_geom:
-        st.markdown("### Geometry & materials")
+        st.header("Geometry")
 
         number_row(
             "Width b (mm)",
@@ -1032,6 +1257,10 @@ This page computes **ultimate shear and torsion capacity** outputs in accordance
             sync_callbacks,
             help_text="Clear span or design span for this section.",
         )
+
+    # ---------- 1.2 Materials (middle column) ----------
+    with col_mat:
+        st.header("Materials")
 
         number_row(
             "Concrete strength f'c (MPa)",
@@ -1062,9 +1291,9 @@ This page computes **ultimate shear and torsion capacity** outputs in accordance
             help_text="Modulus of non-prestressed reinforcement.",
         )
 
-    # ---------- 1.2 Shear & torsion actions (shared) ----------
+    # ---------- 1.3 Design action (right column) ----------
     with col_actions:
-        st.markdown("### Shear, axial & torsion actions")
+        st.header("Design action")
 
         number_row(
             "Design shear V* (kN)",
@@ -1095,17 +1324,55 @@ This page computes **ultimate shear and torsion capacity** outputs in accordance
             help_text="Strength reduction factor for shear (AS 3600).",
         )
 
-    # ---------- 1.3 Shear section parameters (third column) ----------
-    with col_params:
-        st.markdown("### Shear section parameters")
-
-        number_row(
-            "Maximum aggregate size d_g (mm)",
-            "shear_d_g",
-            20.0,
+    # ---------- Shear reinforcement section (below top row) ----------
+    # Create three equal-width columns: reo (left), ducts (middle), params (right)
+    reo_col, ducts_col, shear_params_col = st.columns(3, gap="large")
+    
+    with reo_col:
+        st.subheader("Shear reinforcement")
+        
+        # Widget keys (resolved via TAB_KEYS)
+        w_lig_d = get_widget_key_for_shared("lig_d", prefix="shear_") or "shear_lig_d"
+        w_lig_legs = get_widget_key_for_shared("lig_legs", prefix="shear_") or "shear_lig_legs"
+        w_s_lig = get_widget_key_for_shared("s_lig", prefix="shear_") or "shear_s_lig"
+        
+        # Read shared values (do NOT write shared keys)
+        lig_d_val = float(st.session_state.get("lig_d", 10.0))
+        lig_legs_val = float(st.session_state.get("lig_legs", 2))
+        s_lig_val = float(st.session_state.get("s_lig", 200.0))
+        
+        # Option lists for dropdowns
+        REO_BAR_DIAS = [10, 12, 16, 20, 24, 28, 32, 36, 40]
+        REO_COUNTS_0_12 = list(range(0, 13))  # 0..12 inclusive
+        
+        select_row(
+            "Link Ø (mm)",
+            w_lig_d,
+            REO_BAR_DIAS,
+            int(lig_d_val),
             sync_callbacks,
-            help_text="Maximum aggregate size for k_v calculation.",
+            help_text="Nominal diameter of shear links (mm).",
         )
+        
+        select_row(
+            "No. of legs",
+            w_lig_legs,
+            REO_COUNTS_0_12,
+            int(lig_legs_val),
+            sync_callbacks,
+            help_text="Number of legs per shear link.",
+        )
+        
+        number_row(
+            "Link spacing (mm)",
+            w_s_lig,
+            s_lig_val,
+            sync_callbacks,
+            help_text="Centre-to-centre spacing of shear links (mm).",
+        )
+
+    with ducts_col:
+        st.subheader("Ducts & prestress voids")
         
         number_row(
             "Number of ducts crossing web",
@@ -1134,28 +1401,74 @@ This page computes **ultimate shear and torsion capacity** outputs in accordance
         # Store computed value in session state for use in calculations
         st.session_state["shear_sum_duct"] = sum_duct
         
-        kd_opt = st.selectbox(
+        # k_d factor options (matching shared state format)
+        KD_OPTIONS = [
+            "None (no ducts in web)",
+            "0.5 – steel ducts, grouted",
+            "0.8 – plastic ducts, grouted",
+            "1.2 – ungrouted ducts",
+        ]
+        # Mapping from option string to numeric k_d value
+        KD_VALUE_MAP = {
+            "None (no ducts in web)": 0.0,
+            "0.5 – steel ducts, grouted": 0.5,
+            "0.8 – plastic ducts, grouted": 0.8,
+            "1.2 – ungrouted ducts": 1.2,
+        }
+        
+        # Get widget key for k_d_option
+        w_kd = get_widget_key_for_shared("k_d_option", prefix="shear_") or "shear_k_d_option"
+        kd_option_val = get_param("k_d_option", "None (no ducts in web)")
+        if kd_option_val not in KD_OPTIONS:
+            kd_option_val = "None (no ducts in web)"
+        
+        select_row(
             "k_d factor for prestressing ducts",
-            (
-                ("None (no ducts in web)", 0.0),
-                ("0.5 – steel ducts, grouted", 0.5),
-                ("0.8 – plastic ducts, grouted", 0.8),
-                ("1.2 – ungrouted ducts", 1.2),
-            ),
-            index=0,
-            format_func=lambda kv: kv[0],
-            key="shear_kd_opt",
+            w_kd,
+            KD_OPTIONS,
+            kd_option_val,
+            sync_callbacks,
+            help_text="k_d factor for prestressing ducts (AS 3600).",
         )
-        k_d = kd_opt[1]
-        method = st.radio(
+        
+        # Convert selected option to numeric k_d value for calculations
+        kd_option_selected = st.session_state.get(w_kd, kd_option_val)
+        k_d = KD_VALUE_MAP.get(kd_option_selected, 0.0)
+    
+    with shear_params_col:
+        st.subheader("Shear section parameters")
+        
+        number_row(
+            "Maximum aggregate size d_g (mm)",
+            "shear_d_g",
+            20.0,
+            sync_callbacks,
+            help_text="Maximum aggregate size for k_v calculation.",
+        )
+        
+        # k_v method options
+        KV_METHOD_OPTIONS = [
+            "General εₓ-based (Cl. 8.2.4.2)",
+            "Simplified non-prestressed (Cl. 8.2.4.3)",
+        ]
+        
+        # Get widget key for k_v_method
+        w_kv_method = get_widget_key_for_shared("k_v_method", prefix="shear_") or "shear_k_v_method"
+        kv_method_val = get_param("k_v_method", "General εₓ-based (Cl. 8.2.4.2)")
+        if kv_method_val not in KV_METHOD_OPTIONS:
+            kv_method_val = "General εₓ-based (Cl. 8.2.4.2)"
+        
+        select_row(
             "k_v method",
-            (
-                "General εₓ-based (Cl. 8.2.4.2)",
-                "Simplified non-prestressed (Cl. 8.2.4.3)",
-            ),
-            index=0,
-            key="shear_kv_method",
+            w_kv_method,
+            KV_METHOD_OPTIONS,
+            kv_method_val,
+            sync_callbacks,
+            help_text="Method for calculating k_v factor (AS 3600 Cl. 8.2.4.2 or 8.2.4.3).",
         )
+        
+        # Determine if general method is used
+        method = st.session_state.get(w_kv_method, kv_method_val)
         use_general_kv = method.startswith("General")
 
     # --- Conceptual behaviour + shear transfer (flexural vs deep) ---

@@ -199,11 +199,11 @@ def compute_shrinkage_results(publish: bool = True) -> dict:
     fc = get_param("fc", 32.0)
     
     # Read shrinkage parameters (use defaults if not in shared state)
-    env_option = get_param("env_option", "Temperate inland environment")
+    env_option = get_param("shrinkage_env", "Temperate inland environment")
     t_days = get_param("t_shrink", 365.0)
     
     # Read faces option (default to beam)
-    faces_option = get_param("faces_option", "Beam – three faces exposed")
+    faces_option = get_param("member_faces_exposed", "Beam – three faces exposed")
     
     # Calculate geometry
     Ag = b * D  # mm²
@@ -257,12 +257,12 @@ def render_shrinkage():
     apply_global_widget_css()
     _inject_calcbox_css()
     inject_seamless_steps_css()  # For summary table + scroll functionality
-    get_sync_callbacks()  # maintains contract with Inputs page
+    sync_callbacks = get_sync_callbacks()  # maintains contract with Inputs page
 
     # --------------------------------------------------------
     # Page title
     # --------------------------------------------------------
-    st.title("Shrinkage – AS 3600:2018 Clause 3.1.7")
+    st.title("Shrinkage")
 
     # --------------------------------------------------------
     # Page description (directly under title)
@@ -295,80 +295,78 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
     col_geom, col_env = st.columns(2)
 
     with col_geom:
-        b_seed = _seed_from_param("b", 300.0)
-        D_seed = _seed_from_param("D", 600.0)
+        b_val = float(st.session_state.get("inputs_b", get_param("b", 400.0)))
+        D_val = float(st.session_state.get("inputs_D", get_param("D", 600.0)))
 
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown("<div class='sb-label'>Section width b (mm)</div>", unsafe_allow_html=True)
-        with col2:
-            b = v2_number_input(
-                label="",
-                key="sh_b",
-                default=b_seed,
-                step=10.0,
-                label_visibility="collapsed",
-            )
+        number_row(
+            "Section width b (mm)",
+            "inputs_b",
+            b_val,
+            sync_callbacks,
+        )
 
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown("<div class='sb-label'>Overall depth D (mm)</div>", unsafe_allow_html=True)
-        with col2:
-            D = v2_number_input(
-                label="",
-                key="sh_D",
-                default=D_seed,
-                step=10.0,
-                label_visibility="collapsed",
-            )
+        number_row(
+            "Overall depth D (mm)",
+            "inputs_D",
+            D_val,
+            sync_callbacks,
+        )
+        b = float(get_param("b", b_val))
+        D = float(get_param("D", D_val))
 
         col1, col2 = st.columns([1, 2])
         with col1:
             st.markdown("<div class='sb-label'>Member / faces exposed</div>", unsafe_allow_html=True)
         with col2:
+            faces_options = [
+                "Slab – one face exposed",
+                "Slab – two faces exposed",
+                "Beam – three faces exposed",
+                "Column – four faces exposed",
+            ]
+            faces_current = get_param("member_faces_exposed", "Slab – one face exposed")
+            if faces_current not in faces_options:
+                faces_current = "Slab – one face exposed"
             faces_option = v2_selectbox(
                 label="",
                 key="sh_faces",
-                options=[
-                    "Slab – one face exposed",
-                    "Slab – two faces exposed",
-                    "Beam – three faces exposed",
-                    "Column – four faces exposed",
-                ],
-                default_index=1,
+                options=faces_options,
+                default_index=faces_options.index(faces_current),
                 label_visibility="collapsed",
+                on_change=sync_callbacks["sh_faces"],
             )
 
     with col_env:
-        fc_seed = _seed_from_param("fc", 32.0)
+        fc_val = float(st.session_state.get("inputs_fc", get_param("fc", 32.0)))
 
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown("<div class='sb-label'>Concrete strength f'c (MPa)</div>", unsafe_allow_html=True)
-        with col2:
-            fc = v2_number_input(
-                label="",
-                key="sh_fc",
-                default=fc_seed,
-                step=1.0,
-                label_visibility="collapsed",
-            )
+        number_row(
+            "Concrete strength f'c (MPa)",
+            "inputs_fc",
+            fc_val,
+            sync_callbacks,
+        )
+        fc = float(get_param("fc", fc_val))
 
         col1, col2 = st.columns([1, 2])
         with col1:
             st.markdown("<div class='sb-label'>Shrinkage environment (Table 3.1.7.2)</div>", unsafe_allow_html=True)
         with col2:
+            env_options = [
+                "Arid environment",
+                "Interior environment",
+                "Temperate inland environment",
+                "Tropical / near-coastal / coastal environment",
+            ]
+            env_current = get_param("shrinkage_env", "Arid environment")
+            if env_current not in env_options:
+                env_current = "Arid environment"
             env_option = v2_selectbox(
                 label="",
                 key="sh_env",
-                options=[
-                    "Arid environment",
-                    "Interior environment",
-                    "Temperate inland environment",
-                    "Tropical / near-coastal / coastal environment",
-                ],
-                default_index=2,
+                options=env_options,
+                default_index=env_options.index(env_current),
                 label_visibility="collapsed",
+                on_change=sync_callbacks["sh_env"],
             )
 
         col1, col2 = st.columns([1, 2])
@@ -377,11 +375,12 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
         with col2:
             t_days = v2_number_input(
                 label="",
-                key="sh_t_days",
-                default=365.0,
+                key="inputs_t_shrink",
+                default=float(get_param("t_shrink", 365.0)),
                 step=10.0,
                 min_value=1.0,
                 label_visibility="collapsed",
+                on_change=sync_callbacks["inputs_t_shrink"],
             )
 
     # --------------------------------------------------------
@@ -430,7 +429,32 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
     # TOP SUMMARY TABLE (clickable, like bending/shear)
     # --------------------------------------------------------
     with summary_placeholder.container():
-        st.markdown("## Shrinkage — Summary")
+        # Header row with title and INFO button
+        h_left, h_right = st.columns([8, 1], vertical_alignment="center")
+        with h_left:
+            st.markdown("## Summary")
+        with h_right:
+            with st.popover("ℹ️ INFO"):
+                st.markdown(
+                    """
+**What shrinkage is**  
+Concrete shrinkage is the time-dependent reduction in volume that occurs mainly due to **loss of moisture** (drying shrinkage) and ongoing hydration/chemical effects. It occurs even with no external load.
+
+**Why it matters in design**  
+Shrinkage can cause:
+- **Cracking** where restraint exists (reinforcement, supports, joints, composite action, etc.)
+- **Additional curvature and long-term deflection**
+- **Stress redistribution** in reinforcement where restrained
+- **Durability impacts** through crack control requirements
+
+**Units**  
+Shrinkage is a **strain** (dimensionless): ΔL/L  
+Commonly shown as **microstrain (µε)** where 1 µε = 1×10⁻⁶.
+
+**Effect on design**  
+Shrinkage is not a force (kN). It is a time-dependent strain that can cause deformation and cracking in restrained members.
+"""
+                )
         
         # Build ROWS for clickable summary table
         ROWS = [
@@ -474,13 +498,12 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
     # --------------------------------------------------------
     # Tabs (5): geometry, autogenous, drying, total, flow chart
     # --------------------------------------------------------
-    tab_geom, tab_auto, tab_dry, tab_total, tab_flow = st.tabs(
+    tab_geom, tab_auto, tab_dry, tab_total = st.tabs(
         [
             "Geometry & tₕ",
             "Autogenous shrinkage ε_cse",
             "Drying shrinkage ε_csd",
             "Total shrinkage ε_cs",
-            "Flow chart / references",
         ]
     )
 
@@ -761,56 +784,5 @@ _Ref: AS 3600:2018 Cl. 3.1.7 – total shrinkage._
             calc_md=render_total(),
         )
 
-    # ---------- Tab 5: Flow chart / references ----------
-    with tab_flow:
-        st.subheader("Shrinkage workflow – AS 3600:2018 Cl. 3.1.7")
-
-        st.markdown(
-            """
-### Step 1 – Geometry & exposure
-
-- Choose section dimensions \\(b, D\\)  
-- Select faces exposed → exposed perimeter \\(u_e\\)  
-- Compute gross area \\(A_g = bD\\) and notional thickness \\(t_h = 2 A_g / u_e\\)  
-- Snap \\(t_h\\) to **50, 100, 200 or 400 mm** for use with Fig. 3.1.7.2 and Table 3.1.7.2.
-
----
-
-### Step 2 – Environment & strength
-
-- Environment: arid / interior / temperate inland / tropical & coastal  
-- Concrete strength \\(f'_c\\)  
-- Time since commencement of drying \\(t\\).
-
----
-
-### Step 3 – Autogenous shrinkage \\(\\varepsilon_{cse}\\)
-
-- Compute final \\(\\varepsilon^*_{cse}\\) from \\(f'_c\\) (Cl. 3.1.7.2(3))  
-- Apply time function  
-  \\(\\varepsilon_{cse}(t) = \\varepsilon^*_{cse}(1 - e^{-0.04 t})\\).
-
----
-
-### Step 4 – Drying shrinkage \\(\\varepsilon_{csd}\\)
-
-1. From **Table 3.1.7.2**, obtain final drying strain \\(\\varepsilon^*_{csd}\\)  
-   for \\(f'_c\\), environment and \\(t_h\\).  
-2. Compute \\(k_1(t, t_h)\\) from **Fig. 3.1.7.2**.  
-3. Calculate drying shrinkage at time \\(t\\):  
-   \\[
-   \\varepsilon_{csd}(t) = k_1(t, t_h)\\, \\varepsilon^*_{csd}
-   \\]
-
----
-
-### Step 5 – Total shrinkage & use in design
-
-- Sum components: \\(\\varepsilon_{cs} = \\varepsilon_{cse} + \\varepsilon_{csd}\\).  
-- Use \\(\\varepsilon_{cs}\\) in **deflection**, **crack width** and other
-  **serviceability** checks.
-"""
-        )
-    
 
 
