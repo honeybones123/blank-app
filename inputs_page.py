@@ -17,14 +17,19 @@ from state_and_helpers import (
 )
 
 from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, select_row, calcbox, show_reo_message, label_with_hover, info_i_button, page_divider, seed_widget_from_shared
-from ui_seamless_steps import inject_seamless_steps_css, render_clickable_summary_table
+try:
+    from ui_seamless_steps import inject_seamless_steps_css, render_clickable_summary_table
+except Exception:
+    def inject_seamless_steps_css():
+        return None
+
+    def render_clickable_summary_table(*args, **kwargs):
+        return ""
 from deflection_checks_helpers import build_deflection_check_rows_from_state
 
 # --- Pure compute functions from design core (no circular imports)
-from bending_core import _compute_bending_capacity
-from shear_core import _compute_shear_capacity
-from crack_core import _compute_crack_results
-from deflection_core import _compute_deflection_results
+# NOTE: Heavy imports are deferred inside render_inputs() to avoid
+# startup timeouts on networked/OneDrive filesystems.
 from section_layout import compute_section_layout
 # from deflection import _compute_deflection_results  # TODO: add later
 
@@ -739,46 +744,49 @@ def _render_serviceability_shrinkage_inputs(sync_callbacks):
         help_text="Deflection limit ratio (e.g. 250 for L/250).",
     )
     
-    # Member / faces exposed dropdown
-    faces_options = [
-        "Slab – one face exposed",
-        "Slab – two faces exposed",
-        "Beam – three faces exposed",
-        "Column – four faces exposed",
-    ]
-    faces_current = st.session_state.get("member_faces_exposed", "Beam – three faces exposed")
-    if faces_current not in faces_options:
-        faces_current = "Beam – three faces exposed"
-    
-    w_faces = get_widget_key_for_shared("member_faces_exposed", prefix="inputs_") or "inputs_member_faces_exposed"
-    select_row(
-        "Member / faces exposed",
-        w_faces,
-        faces_options,
-        faces_current,
+
+def _render_time_dependent_inputs(sync_callbacks):
+    """Render time-dependent inputs (creep/shrinkage) widgets."""
+    st.subheader("Time-dependent inputs")
+
+    # Shrinkage time (days)
+    t_shrink_val = float(st.session_state.get("inputs_t_shrink", get_param("t_shrink", 365.0)))
+    number_row(
+        "Shrinkage time t (days)",
+        "inputs_t_shrink",
+        t_shrink_val,
         sync_callbacks,
-        help_text="Number of faces exposed to drying environment (affects shrinkage calculations).",
+        help_text="Time since commencement of drying (days).",
     )
-    
-    # Shrinkage environment dropdown
-    env_options = [
-        "Arid environment",
-        "Interior environment",
-        "Temperate inland environment",
-        "Tropical / near-coastal / coastal environment",
-    ]
-    env_current = st.session_state.get("shrinkage_env", "Temperate inland environment")
-    if env_current not in env_options:
-        env_current = "Temperate inland environment"
-    
-    w_env = get_widget_key_for_shared("shrinkage_env", prefix="inputs_") or "inputs_shrinkage_env"
-    select_row(
-        "Shrinkage environment (Table 3.1.7.2)",
-        w_env,
-        env_options,
-        env_current,
+
+    # Creep time (days)
+    t_creep_val = float(st.session_state.get("inputs_t_creep", get_param("t_creep", 365.0)))
+    number_row(
+        "Creep time t (days)",
+        "inputs_t_creep",
+        t_creep_val,
         sync_callbacks,
-        help_text="Shrinkage environment classification per AS 3600 Table 3.1.7.2.",
+        help_text="Time after loading (days).",
+    )
+
+    # Age at loading (days)
+    tau_val = float(st.session_state.get("inputs_age_at_loading", get_param("age_at_loading", 28.0)))
+    number_row(
+        "Age at loading τ (days)",
+        "inputs_age_at_loading",
+        tau_val,
+        sync_callbacks,
+        help_text="Age of concrete at loading (days).",
+    )
+
+    # Stress ratio
+    stress_ratio_val = float(st.session_state.get("inputs_stress_ratio", get_param("stress_ratio", 0.30)))
+    number_row(
+        "Sustained stress ratio σ₀ / f'c,mi",
+        "inputs_stress_ratio",
+        stress_ratio_val,
+        sync_callbacks,
+        help_text="Sustained stress ratio for creep (dimensionless).",
     )
 
 
@@ -827,8 +835,8 @@ def _render_materials_and_sectionA_2d(sync_callbacks):
             help_text="Elastic modulus of reinforcing steel.",
         )
 
-        # --- Creep & Shrinkage ---
-        st.subheader("Creep & Shrinkage")
+        # --- Support conditions ---
+        st.subheader("Support conditions")
         
         # Member / faces exposed dropdown
         faces_options = [
@@ -891,46 +899,6 @@ def _render_materials_and_sectionA_2d(sync_callbacks):
             creep_env_current,
             sync_callbacks,
             help_text="Creep environment classification per AS 3600 Tables 3.1.8.2 & 3.1.8.3.",
-        )
-
-        # Shrinkage time (days)
-        t_shrink_val = float(st.session_state.get("inputs_t_shrink", get_param("t_shrink", 365.0)))
-        number_row(
-            "Shrinkage time t (days)",
-            "inputs_t_shrink",
-            t_shrink_val,
-            sync_callbacks,
-            help_text="Time since commencement of drying (days).",
-        )
-
-        # Creep time (days)
-        t_creep_val = float(st.session_state.get("inputs_t_creep", get_param("t_creep", 365.0)))
-        number_row(
-            "Creep time t (days)",
-            "inputs_t_creep",
-            t_creep_val,
-            sync_callbacks,
-            help_text="Time after loading (days).",
-        )
-
-        # Age at loading (days)
-        tau_val = float(st.session_state.get("inputs_age_at_loading", get_param("age_at_loading", 28.0)))
-        number_row(
-            "Age at loading τ (days)",
-            "inputs_age_at_loading",
-            tau_val,
-            sync_callbacks,
-            help_text="Age of concrete at loading (days).",
-        )
-
-        # Stress ratio
-        stress_ratio_val = float(st.session_state.get("inputs_stress_ratio", get_param("stress_ratio", 0.30)))
-        number_row(
-            "Sustained stress ratio σ₀ / f'c,mi",
-            "inputs_stress_ratio",
-            stress_ratio_val,
-            sync_callbacks,
-            help_text="Sustained stress ratio for creep (dimensionless).",
         )
         
         # Support condition (k2) dropdown
@@ -1013,6 +981,12 @@ def render_inputs():
     
     from state_and_helpers import _write_sync_trace_line
     _write_sync_trace_line("\n=== PAGE RENDER: inputs ===")
+
+    # Defer heavy imports until runtime to avoid OneDrive filesystem timeouts
+    from bending_core import _compute_bending_capacity
+    from shear_core import _compute_shear_capacity
+    from crack_core import _compute_crack_results
+    from deflection_core import _compute_deflection_results
     
     sync_callbacks = get_sync_callbacks()
     apply_global_widget_css()
@@ -1513,12 +1487,38 @@ def render_inputs():
     Mu_manual_raw = get_param("Mu_star_manual", None)
     Vu_manual_raw = get_param("Vu_star_manual", None)
     
-    # Fall back to existing design values if manual copies are None/0.0
+    # Fall back to existing design values only if manual copies are None
     base_M = get_param("Mu_star", 0.0)
     base_V = get_param("Vu_star", 0.0)
     
-    Mu_manual = Mu_manual_raw if (Mu_manual_raw is not None and Mu_manual_raw != 0.0) else base_M
-    Vu_manual = Vu_manual_raw if (Vu_manual_raw is not None and Vu_manual_raw != 0.0) else base_V
+    Mu_manual = Mu_manual_raw if (Mu_manual_raw is not None) else base_M
+    Vu_manual = Vu_manual_raw if (Vu_manual_raw is not None) else base_V
+    # #region agent log
+    try:
+        import json
+        import time
+        log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "location": "inputs_page.py:design_actions_fallback",
+                "message": "Design actions fallback evaluation",
+                "data": {
+                    "action_source": action_source,
+                    "Mu_manual_raw": Mu_manual_raw,
+                    "Vu_manual_raw": Vu_manual_raw,
+                    "base_M": base_M,
+                    "base_V": base_V,
+                    "Mu_manual": Mu_manual,
+                    "Vu_manual": Vu_manual,
+                },
+                "timestamp": int(time.time() * 1000),
+                "sessionId": "debug-session",
+                "runId": st.session_state.get("_boot_id", "run"),
+                "hypothesisId": "H1",
+            }) + "\n")
+    except Exception:
+        pass
+    # #endregion
     
     # Decide if we can use teaching values
     use_sfd = (action_source == "Teaching SFD/BMD page (|M|max, |V|max)" and M_sfd is not None and V_sfd is not None)
@@ -1531,6 +1531,32 @@ def render_inputs():
         Mu_star = float(Mu_manual)
         Vu_star = float(Vu_manual)
         source_label = "Manual design actions (inputs below)"
+    # #region agent log
+    try:
+        import json
+        import time
+        log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "location": "inputs_page.py:design_actions_selection",
+                "message": "Design actions selected for results",
+                "data": {
+                    "action_source": action_source,
+                    "use_sfd": use_sfd,
+                    "M_sfd": M_sfd,
+                    "V_sfd": V_sfd,
+                    "Mu_star": Mu_star,
+                    "Vu_star": Vu_star,
+                    "source_label": source_label,
+                },
+                "timestamp": int(time.time() * 1000),
+                "sessionId": "debug-session",
+                "runId": st.session_state.get("_boot_id", "run"),
+                "hypothesisId": "H1",
+            }) + "\n")
+    except Exception:
+        pass
+    # #endregion
     
     # Push final chosen actions into results
     update_results(
@@ -1608,16 +1634,18 @@ def render_inputs():
         pass
 
     # ============================
-    # 2. ROW 2 – Ducts/Prestress | Crack control
+    # 2. LOWER ROW – Time-dependent | Ducts / Prestress voids | Crack control
     # ============================
-    row2_col1, row2_col2 = st.columns(2, gap="large")
+    col_td, col_ducts, col_crack = st.columns([1, 1, 1], gap="large")
 
-    # --- Column 1: Ducts / Prestress voids ---
-    with row2_col1:
+    with col_td:
+        _render_time_dependent_inputs(sync_callbacks)
+
+    with col_ducts:
         _render_ducts_prestress_voids_inputs(sync_callbacks)
 
-    # --- Column 2: Crack Control Inputs ---
-    with row2_col2:
+    # --- Column 3: Crack Control Inputs ---
+    with col_crack:
         st.subheader("Crack Control Inputs")
 
         options = ["A1", "A2", "B1", "B2", "C1", "C2"]
@@ -1705,8 +1733,8 @@ def render_inputs():
             help_text="Default 0.5 for flexure, 1.0 for tension. Adjust only if using a different assumed strain distribution.",
         )
 
-        # Note: Ducts / Prestress voids section moved to 3-column inputs row (Column 1)
-        # Note: Serviceability + Shrinkage moved to Materials section (below Materials widgets)
+        # Note: Ducts / Prestress voids section moved alongside Crack control
+        # Note: Serviceability + Shrinkage split between Support conditions and Time-dependent inputs
 
     # ============================
     # 4. Rest of inputs (Time | Crack/Ducts) - actions and compute already done above before diagrams
@@ -2160,7 +2188,7 @@ tr:hover .hint { opacity: 1; }
 <div class="inputs-top-level-row">
 <details open>
 <summary style="background-color: {bending_colour};">
-  <span><strong>Bending</strong></span>
+  <span><strong>Bending — ULS check</strong></span>
   <span style="text-align:right;">{bending_demand}</span>
   <span style="text-align:right;">{bending_cap}</span>
   <span style="text-align:right;">{bending_util_str}</span>
@@ -2181,7 +2209,7 @@ tr:hover .hint { opacity: 1; }
 <div class="inputs-top-level-row">
 <details>
 <summary style="background-color: {shear_colour};">
-  <span><strong>Shear</strong></span>
+  <span><strong>Shear — ULS check</strong></span>
   <span style="text-align:right;">{shear_demand}</span>
   <span style="text-align:right;">{shear_cap}</span>
   <span style="text-align:right;">{shear_util_str}</span>
@@ -2202,7 +2230,7 @@ tr:hover .hint { opacity: 1; }
 <div class="inputs-top-level-row">
 <details>
 <summary style="background-color: {crack_colour};">
-  <span><strong>Crack control</strong></span>
+  <span><strong>Crack control — SLS check</strong></span>
   <span style="text-align:right;">{crack_demand}</span>
   <span style="text-align:right;">{crack_cap}</span>
   <span style="text-align:right;">{crack_util_str}</span>
@@ -2223,7 +2251,7 @@ tr:hover .hint { opacity: 1; }
 <div class="inputs-top-level-row">
 <details>
 <summary style="background-color: {defl_colour};">
-  <span><strong>Deflection</strong></span>
+  <span><strong>Deflection — SLS check</strong></span>
   <span style="text-align:right;">{defl_demand}</span>
   <span style="text-align:right;">{defl_cap}</span>
   <span style="text-align:right;">{defl_util_str}</span>

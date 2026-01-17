@@ -1,9 +1,11 @@
 # deflection_page.py
+import json
 import math
 import numpy as np
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
+from pathlib import Path
 
 from state_and_helpers import (
     init_shared_session_state,
@@ -26,6 +28,7 @@ from widgets_helpers import (
 )
 from step_ui import init_step_ui_state, render_expandable_step
 from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks
+from deflection_checks_helpers import build_deflection_check_rows_from_state
 
 
 # ------------------------------------------------------------
@@ -83,6 +86,81 @@ def _render_readonly_value(label: str, value, unit: str, help_text: str | None =
 """,
             unsafe_allow_html=True,
         )
+
+
+def _derive_equiv_udl_from_actions(M_kNm, V_kN, L_m, support_type):
+    """
+    Derive equivalent full-span UDL (kN/m) from M* and/or V*.
+    Accept zeros; only None is treated as missing.
+    """
+    note_parts = []
+    # Guard: L_m must be plausible (m, not mm)
+    if L_m is None:
+        return {"w_kN_per_m": None, "w_from_M": None, "w_from_V": None, "consistent": None, "note": "L_m missing"}
+    try:
+        L_m = float(L_m)
+    except Exception:
+        return {"w_kN_per_m": None, "w_from_M": None, "w_from_V": None, "consistent": None, "note": "L_m not numeric"}
+    if not math.isfinite(L_m):
+        return {"w_kN_per_m": None, "w_from_M": None, "w_from_V": None, "consistent": None, "note": "L_m not finite"}
+    if L_m > 50:
+        note_parts.append(f"WARNING: L_m={L_m} looks like mm, not m (expected ~0–50).")
+        # Do not auto-convert silently; return None so caller can fall back to g+q.
+        return {"w_kN_per_m": None, "w_from_M": None, "w_from_V": None, "consistent": None, "note": " ".join(note_parts)}
+    if L_m <= 0:
+        return {"w_kN_per_m": None, "w_from_M": None, "w_from_V": None, "consistent": None, "note": "L_m must be > 0"}
+
+    # ---- Coefficients by support type ----
+    support = (support_type or "").strip()
+    if support == "Cantilever":
+        aM, aV = 2.0, 1.0
+        # UDL consistency for cantilever: M ≈ V*L/2
+        cons_M = lambda V: (V * L_m / 2.0)
+    else:
+        # Treat simply supported + continuous using SS coefficients
+        aM, aV = 8.0, 2.0
+        # UDL consistency for simply supported: M ≈ V*L/4
+        cons_M = lambda V: (V * L_m / 4.0)
+
+    # ---- Accept zeros; only None is “missing” ----
+    wM = None
+    wV = None
+    if M_kNm is not None and math.isfinite(float(M_kNm)):
+        M_abs = abs(float(M_kNm))
+        wM = aM * M_abs / (L_m ** 2)
+    if V_kN is not None and math.isfinite(float(V_kN)):
+        V_abs = abs(float(V_kN))
+        wV = aV * V_abs / L_m
+
+    # ---- Combine / select ----
+    if wM is None and wV is None:
+        return {"w_kN_per_m": None, "w_from_M": None, "w_from_V": None, "consistent": None, "note": "No M or V provided"}
+    if wM is None:
+        return {"w_kN_per_m": wV, "w_from_M": None, "w_from_V": wV, "consistent": None, "note": "Derived from V only"}
+    if wV is None:
+        return {"w_kN_per_m": wM, "w_from_M": wM, "w_from_V": None, "consistent": None, "note": "Derived from M only"}
+
+    # Both exist: check consistency with UDL model
+    M_implied = cons_M(abs(float(V_kN)))
+    M_provided = abs(float(M_kNm))
+    if M_implied > 0:
+        ratio = M_provided / M_implied
+        consistent = (0.85 <= ratio <= 1.15)
+    else:
+        ratio = None
+        consistent = None
+
+    if ratio is not None:
+        note_parts.append(f"M/V UDL consistency ratio = {ratio:.2f} (≈1 means consistent full-span UDL).")
+
+    if consistent is True:
+        w = 0.5 * (wM + wV)
+        note_parts.append("M and V consistent → using average(wM, wV).")
+    else:
+        w = max(wM, wV)
+        note_parts.append("M and V not consistent with full-span UDL → using max(wM, wV) (conservative).")
+
+    return {"w_kN_per_m": w, "w_from_M": wM, "w_from_V": wV, "consistent": consistent, "note": " ".join(note_parts)}
 
 
 
@@ -681,36 +759,109 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     if L_eff_m <= 0:
         L_eff_m = 0.1
 
-    # Compute w_used from M* or V* based on source and support condition
-    # This is the "source of truth" for total service load
-    w_used = None
-    if L_eff_m > 0:
-        if support_type == "Simply supported":
-            # For simply supported: M_max = wL^2/8, so w = 8M/L^2
-            # Or: V_max = wL/2, so w = 2V/L
-            # Prefer moment method if M > 0, otherwise use shear
-            if M_used is not None and M_used > 0:
-                w_used = 8.0 * M_used / (L_eff_m ** 2)
-            elif V_used is not None and V_used > 0:
-                w_used = 2.0 * V_used / L_eff_m
-        elif support_type == "Cantilever":
-            # For cantilever: M_max = wL^2/2, so w = 2M/L^2
-            # Or: V_max = wL, so w = V/L
-            if M_used is not None and M_used > 0:
-                w_used = 2.0 * M_used / (L_eff_m ** 2)
-            elif V_used is not None and V_used > 0:
-                w_used = V_used / L_eff_m
-        else:
-            # For continuous spans, use approximate: w = 2V/L (similar to simply supported)
-            if V_used is not None and V_used > 0:
-                w_used = 2.0 * V_used / L_eff_m
-            elif M_used is not None and M_used > 0:
-                # Approximate: assume similar to simply supported
-                w_used = 8.0 * M_used / (L_eff_m ** 2)
-    
-    # Fallback to g + q if w_used couldn't be computed
-    if w_used is None or w_used <= 0:
-        w_used = g + q
+    # --- Equivalent UDL from actions (kN/m) ---
+    L_eff_m = float(L_eff_m) if L_eff_m is not None else None
+    # #region agent log
+    try:
+        log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "location": "deflection.py:udl_inputs",
+                "message": "Inputs for UDL derivation",
+                "data": {
+                    "M_used_kNm": M_used,
+                    "V_used_kN": V_used,
+                    "L_eff_m": L_eff_m,
+                    "support_type": support_type,
+                    "g_kN_per_m": g,
+                    "q_kN_per_m": q,
+                },
+                "timestamp": int(__import__("time").time() * 1000),
+                "sessionId": "debug-session",
+                "runId": st.session_state.get("_boot_id", "run"),
+                "hypothesisId": "H1",
+            }) + "\n")
+    except Exception:
+        pass
+    # #endregion
+    derived = _derive_equiv_udl_from_actions(
+        M_kNm=M_used,
+        V_kN=V_used,
+        L_m=L_eff_m,
+        support_type=support_type,
+    )
+    # #region agent log
+    try:
+        log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "location": "deflection.py:udl_derived",
+                "message": "Derived UDL from actions",
+                "data": {
+                    "w_from_M": derived.get("w_from_M"),
+                    "w_from_V": derived.get("w_from_V"),
+                    "w_kN_per_m": derived.get("w_kN_per_m"),
+                    "consistent": derived.get("consistent"),
+                    "note": derived.get("note"),
+                },
+                "timestamp": int(__import__("time").time() * 1000),
+                "sessionId": "debug-session",
+                "runId": st.session_state.get("_boot_id", "run"),
+                "hypothesisId": "H2",
+            }) + "\n")
+    except Exception:
+        pass
+    # #endregion
+    # Use derived w if available; otherwise fall back to g+q.
+    # IMPORTANT: do NOT treat zero as missing.
+    if derived["w_kN_per_m"] is not None:
+        w_used = derived["w_kN_per_m"]
+        w_source = "actions"
+    else:
+        w_used = (g + q) if (g is not None and q is not None) else 0.0
+        w_source = "g+q"
+    # #region agent log
+    try:
+        log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "location": "deflection.py:udl_selected",
+                "message": "Selected UDL for deflection",
+                "data": {
+                    "w_used_kN_per_m": w_used,
+                    "w_source": w_source,
+                },
+                "timestamp": int(__import__("time").time() * 1000),
+                "sessionId": "debug-session",
+                "runId": st.session_state.get("_boot_id", "run"),
+                "hypothesisId": "H3",
+            }) + "\n")
+    except Exception:
+        pass
+    # #endregion
+
+    # Visible debug log if something looks off
+    try:
+        Path("Documents").mkdir(parents=True, exist_ok=True)
+        (Path("Documents") / "deflection_action_udl_debug.json").write_text(
+            json.dumps(
+                {
+                    "M_used_kNm": M_used,
+                    "V_used_kN": V_used,
+                    "L_eff_m": L_eff_m,
+                    "support_type": support_type,
+                    "w_from_M_kN_per_m": derived.get("w_from_M"),
+                    "w_from_V_kN_per_m": derived.get("w_from_V"),
+                    "w_used_kN_per_m": w_used,
+                    "note": derived.get("note"),
+                },
+                indent=2,
+                default=str,
+            ),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
     
     # Split w_used into g and q for the function (maintains w_sust calculation)
     # Assume all load is sustained (conservative) or use existing ratio
@@ -756,6 +907,32 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     w_total = w_used  # Use computed w_used instead of g + q
     w_sust = results["w_sust"]
     k2 = results["k2"]
+    # #region agent log
+    try:
+        import json
+        import os
+        import time
+        log_path = os.path.expanduser("~/Documents/blank_app_deflection_debug.log")
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "location": "deflection.py:calc_results",
+                "message": "DEFLECTION_PAGE_RESULTS",
+                "data": {
+                    "delta_short_total": delta_short_total,
+                    "delta_long_add": delta_long_add,
+                    "delta_total": delta_total,
+                    "L_mm": L_mm,
+                    "defl_limit_ratio": defl_limit_ratio,
+                    "L_over_d": (L_mm / d) if d else None,
+                },
+                "timestamp": int(time.time() * 1000),
+                "sessionId": "debug-session",
+                "runId": st.session_state.get("_boot_id", "run"),
+                "hypothesisId": "H3",
+            }) + "\n")
+    except Exception:
+        pass
+    # #endregion
 
     # --------------------------------------------------------
     # Deflected Shape (moved up, right after inputs)
@@ -971,115 +1148,8 @@ _Ref: AS 3600:2018 Cl. 8.5.3.1(2) & (3) – simplified $I_{{ef}}$ for reinforced
     with summary_placeholder.container():
         st.markdown("## Summary")
 
-        limit_delta_mm = L_mm / defl_limit_ratio if defl_limit_ratio > 0 else None
-        
-        # Build summary rows in format expected by render_clickable_summary_table
-        ROWS = []
-        
-        # Map check names to step IDs (for clickable navigation)
-        check_to_step_id = {
-            "Short-term deflection (total load)": "defl_short",
-            "Additional long-term deflection": "defl_long",
-            "Total deflection (short + long-term)": "defl_long",
-            "Span-to-depth ratio Lₑf/d": "defl_span_depth",
-        }
-        
-        # 1) Short-term total
-        if limit_delta_mm and limit_delta_mm > 0:
-            util_short = delta_short_total / limit_delta_mm
-            status_short = "OK" if util_short <= 1.0 else "NG"
-            limit_str = f"{limit_delta_mm:.2f} mm (L/{defl_limit_ratio:.0f})"
-            ok_short = util_short <= 1.0 if util_short is not None else None
-        else:
-            util_short = None
-            status_short = "—"
-            limit_str = "—"
-            ok_short = None
-
-        ROWS.append({
-            "uid": check_to_step_id["Short-term deflection (total load)"],
-            "title": "Short-term deflection (total load)",
-            "value": f"{delta_short_total:.2f} mm ({L_over_delta_short})",
-            "limit": limit_str,
-            "util": f"{util_short:.2f}" if util_short is not None else "—",
-            "status": status_short,
-            "ok": ok_short,
-            "tab": "Short-term deflection",
-            "anchor_id": "defl_tab_short",
-            "is_primary": True,
-        })
-
-        # 2) Long-term additional
-        if limit_delta_mm and limit_delta_mm > 0:
-            util_long = delta_long_add / limit_delta_mm
-            status_long = "OK" if util_long <= 1.0 else "NG"
-            ok_long = util_long <= 1.0 if util_long is not None else None
-        else:
-            util_long = None
-            status_long = "—"
-            ok_long = None
-
-        ROWS.append({
-            "uid": check_to_step_id["Additional long-term deflection"],
-            "title": "Additional long-term deflection",
-            "value": f"{delta_long_add:.2f} mm ({L_over_delta_long_add})",
-            "limit": limit_str,
-            "util": f"{util_long:.2f}" if util_long is not None else "—",
-            "status": status_long,
-            "ok": ok_long,
-            "tab": "Long-term deflection",
-            "anchor_id": "defl_tab_long_add",
-            "is_primary": False,
-        })
-
-        # 3) Total
-        if limit_delta_mm and limit_delta_mm > 0:
-            util_total = delta_total / limit_delta_mm
-            status_total = "OK" if util_total <= 1.0 else "NG"
-            ok_total = util_total <= 1.0 if util_total is not None else None
-        else:
-            util_total = None
-            status_total = "—"
-            ok_total = None
-
-        ROWS.append({
-            "uid": check_to_step_id["Total deflection (short + long-term)"],
-            "title": "Total deflection (short + long-term)",
-            "value": f"{delta_total:.2f} mm ({L_over_delta_total})",
-            "limit": limit_str,
-            "util": f"{util_total:.2f}" if util_total is not None else "—",
-            "status": status_total,
-            "ok": ok_total,
-            "tab": "Long-term deflection",
-            "anchor_id": "defl_tab_long_total",
-            "is_primary": True,
-        })
-
-        # 4) Span/depth
-        if L_over_d_limit is not None and L_over_d_limit > 0:
-            util_span = L_over_d / L_over_d_limit
-            status_span = "OK" if util_span <= 1.0 else "NG"
-            limit_span_str = f"{L_over_d_limit:.1f}"
-            ok_span = util_span <= 1.0 if util_span is not None else None
-        else:
-            util_span = None
-            status_span = "—"
-            limit_span_str = "—"
-            ok_span = None
-
-        ROWS.append({
-            "uid": check_to_step_id["Span-to-depth ratio Lₑf/d"],
-            "title": "Span-to-depth ratio Lₑf/d",
-            "value": f"{L_over_d:.1f}",
-            "limit": limit_span_str,
-            "util": f"{util_span:.2f}" if util_span is not None else "—",
-            "status": status_span,
-            "ok": ok_span,
-            "tab": "Span/depth check",
-            "anchor_id": "defl_tab_span",
-            "is_primary": False,
-        })
-        
+        defl_pack = build_deflection_check_rows_from_state(st.session_state)
+        ROWS = defl_pack.get("rows", [])
         render_clickable_summary_table(ROWS, key_prefix="defl_summary")
         bind_summary_clicks()
         
@@ -1106,15 +1176,26 @@ _Ref: AS 3600:2018 Cl. 8.5.3.1(2) & (3) – simplified $I_{{ef}}$ for reinforced
         
         # Determine source label for display
         source_label = "Teaching SFD/BMD page" if is_design_driven else "Manual design actions"
+        w_from_M = derived.get("w_from_M") if isinstance(derived, dict) else None
+        w_from_V = derived.get("w_from_V") if isinstance(derived, dict) else None
+        if w_source == "actions" and derived.get("w_kN_per_m") is not None:
+            wM_str = f"{w_from_M:.2f}" if w_from_M is not None else "—"
+            wV_str = f"{w_from_V:.2f}" if w_from_V is not None else "—"
+            load_line = (
+                f"- Total service load: $w = {w_total:.2f}\\,\\text{{kN/m}}$ "
+                f"(from actions; $w_M={wM_str}$, $w_V={wV_str}$)"
+            )
+        else:
+            load_line = f"- Total service load: $w = g + q = {w_total:.2f}\\,\\text{{kN/m}}$"
         
         short_calc_md = rf"""
-*Purpose: Determine the short-term midspan deflection under total service load $w = g + q$ using the effective stiffness $I_{{ef}}$ from the Iₑf tab (AS 3600 Cl. 8.5.3.1).*
+*Purpose: Determine the short-term midspan deflection under total service load $w$ using the effective stiffness $I_{{ef}}$ from the Iₑf tab (AS 3600 Cl. 8.5.3.1).*
 
 **Inputs:**
 
 - Actions source: {source_label}
 - Effective span: $L_{{eff}} = {L_mm:.0f}\,\text{{mm}}$
-- Total service load: $w = g + q = {w_total:.2f}\,\text{{kN/m}}$
+{load_line}
 - Deflection coefficient (support condition):  
   $k_2 = {k2:.5f}$  
   *(Code-defined coefficient based on support condition per AS 3600 Cl. 8.5.3.1)*
