@@ -752,13 +752,43 @@ def select_row(
         if sync_callbacks and isinstance(sync_callbacks, dict):
             on_change = sync_callbacks.get(original_key)
 
+        # options may be list[str] or list of things; convert to list for membership checks
+        _opts = list(options)
+
+        # Pull current value from session_state if present
+        cur = st.session_state.get(original_key, default)
+
+        # If stored value isn't valid anymore, try to migrate or fall back safely
+        if cur not in _opts:
+            # Migration map for renamed options (add pairs as needed)
+            MIGRATIONS = {
+                "General εₓ-based (Cl. 8.2.4.2)": "General εx-based (Cl. 8.2.4.2)",
+            }
+            migrated = MIGRATIONS.get(cur)
+
+            if migrated in _opts:
+                st.session_state[original_key] = migrated
+            else:
+                # fallback to default if valid, else first option
+                if default in _opts:
+                    st.session_state[original_key] = default
+                else:
+                    st.session_state[original_key] = _opts[0]
+
         _safe_label = label if (label is not None and str(label).strip()) else "Select"
+        selectbox_kwargs = {
+            "label_visibility": "collapsed",
+            "on_change": on_change,
+        }
+        if isinstance(options, dict):
+            selectbox_kwargs["format_func"] = lambda k: options.get(k, str(k))
+
         st.selectbox(
             _safe_label,
-            options=options,
+            options=_opts,
             key=original_key,
-            label_visibility="collapsed",
-            on_change=on_change,
+            index=_opts.index(st.session_state[original_key]),
+            **selectbox_kwargs,
         )
 
 
