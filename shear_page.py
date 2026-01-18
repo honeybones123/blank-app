@@ -2121,7 +2121,7 @@ $$\\large d_v = {_fmt(d_v)}\\ \\text{{mm}}$$
                 height=850,  # 2.5x bigger (340 * 2.5 = 850)
                 label_pad=14,
             )
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
         # Info render function (popover)
         def check3_info_fn():
@@ -2352,7 +2352,7 @@ This is conservative and removes θ-dependency so εx can be evaluated without i
                 title="Longitudinal strain profile",
                 height=840,
             )
-            st.plotly_chart(fig_eps, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_eps, width="stretch", config={"displayModeBar": False})
 
         # Info render function (popover)
         def check4_info_fn():

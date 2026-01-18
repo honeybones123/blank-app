@@ -912,7 +912,7 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
         )
     with c2:
         L = v2_number_input(
-            label="",
+            label="Value",
             key="load_L",
             default=L_seed,
             min_value=0.1,
@@ -944,7 +944,7 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
             )
         with c2:
             g = v2_number_input(
-                label="",
+                label="Value",
                 key="load_g_udl",
                 default=float(st.session_state.get("load_g_udl", get_param("g_udl_kNm_per_m", 8.0))),
                 step=1.0,
@@ -962,7 +962,7 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
             )
         with c2:
             q = v2_number_input(
-                label="",
+                label="Value",
                 key="load_q_udl",
                 default=float(st.session_state.get("load_q_udl", get_param("q_udl_kNm_per_m", 4.0))),
                 step=1.0,
@@ -980,7 +980,7 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
             )
         with c2:
             psi_s = v2_number_input(
-                label="",
+                label="Value",
                 key="load_psi_udl",
                 default=float(st.session_state.get("load_psi_udl", get_param("psi_udl", 0.4))),
                 step=0.05,
@@ -1396,7 +1396,7 @@ It generates the **load diagram**, **shear force diagram (SFD)** and
     st.subheader("Load diagram (SLS loads)")
 
     fig_load = plot_load_diagram_plotly(case, beam_length, params)
-    st.plotly_chart(fig_load, use_container_width=True)
+    st.plotly_chart(fig_load, width="stretch")
 
     # ---------------------------------------------------
     # Full equilibrium derivation – 4 blue calc boxes
@@ -2065,10 +2065,10 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
     col_sfd, col_bmd = st.columns(2)
 
     with col_sfd:
-        st.plotly_chart(fig_sfd, use_container_width=True)
+        st.plotly_chart(fig_sfd, width="stretch")
 
     with col_bmd:
-        st.plotly_chart(fig_bmd, use_container_width=True)
+        st.plotly_chart(fig_bmd, width="stretch")
 
     # Bind JS click/scroll after all steps render
     bind_summary_clicks()

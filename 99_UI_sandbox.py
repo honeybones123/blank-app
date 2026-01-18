@@ -40,7 +40,7 @@ def render_step1_body():
         fig = go.Figure()
         fig.add_bar(x=['A', 'B', 'C'], y=[1, 3, 2])
         fig.update_layout(height=300, showlegend=False, margin=dict(l=0, r=0, t=0, b=0))
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 render_step(
     step_id="sandbox_step1",

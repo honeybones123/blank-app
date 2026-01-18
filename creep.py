@@ -399,7 +399,7 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
             if faces_current not in faces_options:
                 faces_current = "Beam – three faces exposed"
             faces_option = v2_selectbox(
-                label="",
+                label="Value",
                 key="cr_faces",
                 options=faces_options,
                 default_index=faces_options.index(faces_current),
@@ -442,7 +442,7 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
             if env_current not in env_options:
                 env_current = "Temperate inland environment"
             env_option = v2_selectbox(
-                label="",
+                label="Value",
                 key="cr_env",
                 options=env_options,
                 default_index=env_options.index(env_current),
@@ -457,7 +457,7 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
             st.markdown("<div class='sb-label'>Time after loading t (days)</div>", unsafe_allow_html=True)
         with col2:
             t_creep = v2_number_input(
-                label="",
+                label="Value",
                 key="inputs_t_creep",
                 default=float(get_param("t_creep", 365.0)),
                 step=10.0,
@@ -471,7 +471,7 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
             st.markdown("<div class='sb-label'>Age at loading τ (days)</div>", unsafe_allow_html=True)
         with col2:
             age_at_loading = v2_number_input(
-                label="",
+                label="Value",
                 key="inputs_age_at_loading",
                 default=float(get_param("age_at_loading", 28.0)),
                 step=1.0,
@@ -485,7 +485,7 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
             st.markdown("<div class='sb-label'>Sustained stress ratio σ₀ / f'c,mi</div>", unsafe_allow_html=True)
         with col2:
             stress_ratio = v2_number_input(
-                label="",
+                label="Value",
                 key="inputs_stress_ratio",
                 default=float(get_param("stress_ratio", 0.30)),
                 step=0.05,

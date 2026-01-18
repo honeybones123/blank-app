@@ -12,6 +12,9 @@ from state_and_helpers import (
     get_param,
     update_results,
     recalc_derived_values,
+    load_proxies_from_active_set,
+    save_proxies_to_active_set,
+    DEBUG_MODE,
     get_widget_key_for_shared,
     TAB_KEYS,
 )
@@ -970,7 +973,7 @@ def _render_materials_and_sectionA_2d(sync_callbacks):
                 pass
             st.plotly_chart(
                 fig_sec,
-                use_container_width=True,
+                width="stretch",
                 config={"displayModeBar": False},
             )
 
@@ -1029,6 +1032,44 @@ def render_inputs():
                     label_visibility="collapsed",
                 )
             st.markdown("</div>", unsafe_allow_html=True)
+
+        # --- Loads edit mode toggle (ULS/SLS) ---
+        prev_mode = st.session_state.get("loads_edit_mode", "ULS")
+
+        toggle_widget_key = get_widget_key_for_shared("loads_edit_toggle", prefix="inputs_") or "inputs_loads_edit_toggle"
+        edit_sls = st.toggle(
+            "Edit SLS loads",
+            key=toggle_widget_key,
+            help="Toggle which load set the widgets below are editing. ULS drives bending/shear; SLS drives crack/deflection.",
+        )
+
+        new_mode = "SLS" if edit_sls else "ULS"
+
+        # IMPORTANT: only run mode-change logic when the mode actually changes
+        if new_mode != prev_mode:
+            # 1) Force mode to OLD mode so save goes to the correct prefix
+            st.session_state["loads_edit_mode"] = prev_mode
+            save_proxies_to_active_set()
+
+            # 2) Flip mode
+            st.session_state["loads_edit_mode"] = new_mode
+
+            # 3) Load proxies from the NEW mode store
+            load_proxies_from_active_set()
+            st.session_state["inputs_load_Mstar_proxy"] = st.session_state.get("load_Mstar_proxy", 0.0)
+            st.session_state["inputs_load_Vstar_proxy"] = st.session_state.get("load_Vstar_proxy", 0.0)
+            st.session_state["inputs_load_Nstar_proxy"] = st.session_state.get("load_Nstar_proxy", 0.0)
+
+            # 4) Recompute once, rerun once
+            recalc_derived_values()
+            update_results()
+            st.rerun()
+        else:
+            # keep mode consistent on normal renders
+            st.session_state["loads_edit_mode"] = new_mode
+
+        st.caption(f"Currently editing: **{st.session_state['loads_edit_mode']}** loads")
+        # ----------------------------------------
         
         # Teaching values from SFD/BMD page (stored directly in session_state, may be None first time)
         M_sfd = get_param("sfd_Mmax_abs_kNm", None)
@@ -1039,19 +1080,25 @@ def render_inputs():
 
         # Get current values using TAB_KEYS lookup (not hardcoded widget keys)
         # This ensures the widget key matches the shared key mapping
-        mu_star_widget_key = get_widget_key_for_shared("Mu_star_manual", prefix="inputs_")
-        if mu_star_widget_key is None:
-            mu_star_widget_key = "inputs_Mu_star"  # Fallback if not found
+        m_proxy_widget_key = get_widget_key_for_shared("load_Mstar_proxy", prefix="inputs_")
+        if m_proxy_widget_key is None:
+            m_proxy_widget_key = "inputs_load_Mstar_proxy"
+        v_proxy_widget_key = get_widget_key_for_shared("load_Vstar_proxy", prefix="inputs_")
+        if v_proxy_widget_key is None:
+            v_proxy_widget_key = "inputs_load_Vstar_proxy"
+        n_proxy_widget_key = get_widget_key_for_shared("load_Nstar_proxy", prefix="inputs_")
+        if n_proxy_widget_key is None:
+            n_proxy_widget_key = "inputs_load_Nstar_proxy"
         
-        Mu_star_val = float(st.session_state.get(mu_star_widget_key, get_param("Mu_star_manual", 500.0)))
+        Mu_star_val = float(st.session_state.get(m_proxy_widget_key, get_param("load_Mstar_proxy", 500.0)))
         P_star_val = float(st.session_state.get("inputs_P_star", get_param("P_star", 0.0)))
         Tu_star_val = float(st.session_state.get("inputs_Tu_star", get_param("Tu_star", 0.0)))
-        Vu_star_val = float(st.session_state.get("inputs_Vu_star", get_param("Vu_star_manual", 300.0)))
-        N_star_val = float(st.session_state.get("inputs_N_star", get_param("N_star", 0.0)))
+        Vu_star_val = float(st.session_state.get(v_proxy_widget_key, get_param("load_Vstar_proxy", 300.0)))
+        N_star_val = float(st.session_state.get(n_proxy_widget_key, get_param("load_Nstar_proxy", 0.0)))
 
         number_row(
             "Design moment Mu* (kNm)",
-            mu_star_widget_key,
+            m_proxy_widget_key,
             Mu_star_val,
             sync_callbacks,
             help_text="Factored design bending moment at the critical section.",
@@ -1075,7 +1122,7 @@ def render_inputs():
 
         number_row(
             "Design shear Vu* (kN)",
-            "inputs_Vu_star",
+            v_proxy_widget_key,
             Vu_star_val,
             sync_callbacks,
             help_text="Factored design shear at the critical section.",
@@ -1083,7 +1130,7 @@ def render_inputs():
 
         number_row(
             "Axial force N* (kN)",
-            "inputs_N_star",
+            n_proxy_widget_key,
             N_star_val,
             sync_callbacks,
             help_text="Axial action at the section (+compression / −tension).",
@@ -1135,7 +1182,7 @@ def render_inputs():
         fig3d = make_beam_3d_figure()
         st.plotly_chart(
             fig3d,
-            use_container_width=True,
+            width="stretch",
             height=640,
             config={"displayModeBar": True}
         )
@@ -1483,9 +1530,9 @@ def render_inputs():
     M_sfd = get_param("sfd_Mmax_abs_kNm", None)
     V_sfd = get_param("sfd_Vmax_abs_kN", None)
     
-    # Read manual values (from Inputs widgets via TAB_KEYS)
-    Mu_manual_raw = get_param("Mu_star_manual", None)
-    Vu_manual_raw = get_param("Vu_star_manual", None)
+    # Read manual ULS values (from Inputs widgets via proxies)
+    Mu_manual_raw = get_param("uls_Mstar", None)
+    Vu_manual_raw = get_param("uls_Vstar", None)
     
     # Fall back to existing design values only if manual copies are None
     base_M = get_param("Mu_star", 0.0)
@@ -1494,30 +1541,30 @@ def render_inputs():
     Mu_manual = Mu_manual_raw if (Mu_manual_raw is not None) else base_M
     Vu_manual = Vu_manual_raw if (Vu_manual_raw is not None) else base_V
     # #region agent log
-    try:
-        import json
-        import time
-        log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps({
-                "location": "inputs_page.py:design_actions_fallback",
-                "message": "Design actions fallback evaluation",
-                "data": {
-                    "action_source": action_source,
-                    "Mu_manual_raw": Mu_manual_raw,
-                    "Vu_manual_raw": Vu_manual_raw,
-                    "base_M": base_M,
-                    "base_V": base_V,
-                    "Mu_manual": Mu_manual,
-                    "Vu_manual": Vu_manual,
-                },
-                "timestamp": int(time.time() * 1000),
-                "sessionId": "debug-session",
-                "runId": st.session_state.get("_boot_id", "run"),
-                "hypothesisId": "H1",
-            }) + "\n")
-    except Exception:
-        pass
+    if DEBUG_MODE:
+        try:
+            import time
+            log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "location": "inputs_page.py:design_actions_fallback",
+                    "message": "Design actions fallback evaluation",
+                    "data": {
+                        "action_source": action_source,
+                        "Mu_manual_raw": Mu_manual_raw,
+                        "Vu_manual_raw": Vu_manual_raw,
+                        "base_M": base_M,
+                        "base_V": base_V,
+                        "Mu_manual": Mu_manual,
+                        "Vu_manual": Vu_manual,
+                    },
+                    "timestamp": int(time.time() * 1000),
+                    "sessionId": "debug-session",
+                    "runId": st.session_state.get("_boot_id", "run"),
+                    "hypothesisId": "H1",
+                }) + "\n")
+        except Exception:
+            pass
     # #endregion
     
     # Decide if we can use teaching values
@@ -1532,30 +1579,30 @@ def render_inputs():
         Vu_star = float(Vu_manual)
         source_label = "Manual design actions (inputs below)"
     # #region agent log
-    try:
-        import json
-        import time
-        log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps({
-                "location": "inputs_page.py:design_actions_selection",
-                "message": "Design actions selected for results",
-                "data": {
-                    "action_source": action_source,
-                    "use_sfd": use_sfd,
-                    "M_sfd": M_sfd,
-                    "V_sfd": V_sfd,
-                    "Mu_star": Mu_star,
-                    "Vu_star": Vu_star,
-                    "source_label": source_label,
-                },
-                "timestamp": int(time.time() * 1000),
-                "sessionId": "debug-session",
-                "runId": st.session_state.get("_boot_id", "run"),
-                "hypothesisId": "H1",
-            }) + "\n")
-    except Exception:
-        pass
+    if DEBUG_MODE:
+        try:
+            import time
+            log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "location": "inputs_page.py:design_actions_selection",
+                    "message": "Design actions selected for results",
+                    "data": {
+                        "action_source": action_source,
+                        "use_sfd": use_sfd,
+                        "M_sfd": M_sfd,
+                        "V_sfd": V_sfd,
+                        "Mu_star": Mu_star,
+                        "Vu_star": Vu_star,
+                        "source_label": source_label,
+                    },
+                    "timestamp": int(time.time() * 1000),
+                    "sessionId": "debug-session",
+                    "runId": st.session_state.get("_boot_id", "run"),
+                    "hypothesisId": "H1",
+                }) + "\n")
+        except Exception:
+            pass
     # #endregion
     
     # Push final chosen actions into results
@@ -1594,44 +1641,46 @@ def render_inputs():
     _compute_crack_results()
     _compute_deflection_results()
     # #region agent log
-    try:
-        import json
-        import os
-        import time
-        log_path = os.path.expanduser("~/Documents/blank_app_deflection_debug.log")
-        results = st.session_state.get("results", {})
-        params = results.get("_deflection_params", {})
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps({
-                "location": "inputs_page.py:deflection_compute",
-                "message": "INPUTS_DEFLECTION_COMPUTE",
-                "data": {
-                    "has_results": bool(results),
-                    "has_deflection_params": "_deflection_params" in results,
-                    "delta_total": params.get("delta_total"),
-                    "defl_limit": params.get("defl_limit"),
-                    "defl_limit_ratio": params.get("defl_limit_ratio"),
-                },
-                "timestamp": int(time.time() * 1000),
-                "sessionId": "debug-session",
-                "runId": st.session_state.get("_boot_id", "run"),
-                "hypothesisId": "H1",
-            }) + "\n")
-    except Exception:
-        pass
+    if DEBUG_MODE:
+        try:
+            import os
+            import time
+            log_path = os.path.expanduser("~/Documents/blank_app_deflection_debug.log")
+            results = st.session_state.get("results", {})
+            params = results.get("_deflection_params", {})
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps({
+                    "location": "inputs_page.py:deflection_compute",
+                    "message": "INPUTS_DEFLECTION_COMPUTE",
+                    "data": {
+                        "has_results": bool(results),
+                        "has_deflection_params": "_deflection_params" in results,
+                        "delta_total": params.get("delta_total"),
+                        "defl_limit": params.get("defl_limit"),
+                        "defl_limit_ratio": params.get("defl_limit_ratio"),
+                    },
+                    "timestamp": int(time.time() * 1000),
+                    "sessionId": "debug-session",
+                    "runId": st.session_state.get("_boot_id", "run"),
+                    "hypothesisId": "H1",
+                }) + "\n")
+        except Exception:
+            pass
     # #endregion
-    try:
-        from state_and_helpers import write_final_session_state_check
-        write_final_session_state_check("final_session_state_check.json")
-    except Exception:
-        pass
+    if DEBUG_MODE:
+        try:
+            from state_and_helpers import write_final_session_state_check
+            write_final_session_state_check("final_session_state_check.json")
+        except Exception:
+            pass
     
     # Debug: dump session state inventory
-    try:
-        from state_and_helpers import dump_session_state_inventory
-        dump_session_state_inventory("inputs", sync_callbacks=sync_callbacks, out_dir=".")
-    except Exception:
-        pass
+    if DEBUG_MODE:
+        try:
+            from state_and_helpers import dump_session_state_inventory
+            dump_session_state_inventory("inputs", sync_callbacks=sync_callbacks, out_dir=".")
+        except Exception:
+            pass
 
     # ============================
     # 2. LOWER ROW – Time-dependent | Ducts / Prestress voids | Crack control
@@ -2157,28 +2206,28 @@ tr:hover .hint { opacity: 1; }
         shear_table_html = _generate_summary_table_html(SHEAR_ROWS)
         crack_table_html = _generate_summary_table_html(CRACK_ROWS)
         # #region agent log
-        try:
-            import json
-            import os
-            import time
-            log_path = os.path.expanduser("~/Documents/blank_app_deflection_debug.log")
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps({
-                    "location": "inputs_page.py:deflection_summary",
-                    "message": "INPUTS_DEFLECTION_SUMMARY",
-                    "data": {
-                        "delta_total": delta_total,
-                        "defl_limit": defl_limit,
-                        "defl_util": defl_util,
-                        "rows_count": len(DEFLECTION_ROWS),
-                    },
-                    "timestamp": int(time.time() * 1000),
-                    "sessionId": "debug-session",
-                    "runId": st.session_state.get("_boot_id", "run"),
-                    "hypothesisId": "H2",
-                }) + "\n")
-        except Exception:
-            pass
+        if DEBUG_MODE:
+            try:
+                import os
+                import time
+                log_path = os.path.expanduser("~/Documents/blank_app_deflection_debug.log")
+                with open(log_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps({
+                        "location": "inputs_page.py:deflection_summary",
+                        "message": "INPUTS_DEFLECTION_SUMMARY",
+                        "data": {
+                            "delta_total": delta_total,
+                            "defl_limit": defl_limit,
+                            "defl_util": defl_util,
+                            "rows_count": len(DEFLECTION_ROWS),
+                        },
+                        "timestamp": int(time.time() * 1000),
+                        "sessionId": "debug-session",
+                        "runId": st.session_state.get("_boot_id", "run"),
+                        "hypothesisId": "H2",
+                    }) + "\n")
+            except Exception:
+                pass
         # #endregion
         defl_table_html = _generate_summary_table_html(DEFLECTION_ROWS)
         

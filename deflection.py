@@ -443,19 +443,13 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     action_source = get_param("actions_source", "Manual design actions (inputs below)")
     is_design_driven = "Teaching" in action_source or action_source == "Teaching SFD/BMD page (|M|max, |V|max)"
     
-    # Get the appropriate M* and V* based on source
-    if is_design_driven:
-        # Use design-driven actions from SFD/BMD page
-        M_used = get_param("sfd_Mmax_abs_kNm", 0.0)
-        V_used = get_param("sfd_Vmax_abs_kN", 0.0)
-    else:
-        # Use manual actions
-        M_used = get_param("Mu_star_manual", 0.0)
-        V_used = get_param("Vu_star_manual", 0.0)
+    # Deflection always uses SLS actions (manual inputs)
+    M_used = get_param("sls_Mstar", 0.0)
+    V_used = get_param("sls_Vstar", 0.0)
     
-    # Also get the final chosen values (for display/other uses)
-    Mu_star = get_param("Mu_star", 0.0)
-    Vu_star = get_param("Vu_star", 0.0)
+    # Also get the final chosen values (SLS actions for display/other uses)
+    Mu_star = get_param("sls_Mstar", 0.0)
+    Vu_star = get_param("sls_Vstar", 0.0)
 
     # ---------- Unified loading from SFD/BMD page ----------
     load_case = st.session_state.get("load_case", None)
@@ -506,7 +500,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
             "Beam width b (mm)",
             "Beam width of the section.",
             lambda: v2_number_input(
-                label="",
+                label="Value",
                 key="defl_b",
                 default=b_seed,
                 step=10.0,
@@ -521,7 +515,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
             "Beam depth D (mm)",
             "Overall beam depth from compression face to soffit.",
             lambda: v2_number_input(
-                label="",
+                label="Value",
                 key="defl_D",
                 default=D_seed,
                 step=10.0,
@@ -576,7 +570,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
             "Concrete strength f'c (MPa)",
             "Concrete compressive strength.",
             lambda: v2_number_input(
-                label="",
+                label="Value",
                 key="defl_fc",
                 default=fc_seed,
                 step=1.0,
@@ -590,7 +584,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
             "Eceff (MPa)",
             "Effective concrete modulus for deflection calculations.",
             lambda: v2_number_input(
-                label="",
+                label="Value",
                 key="defl_Ec",
                 default=Ec_seed,
                 step=500.0,
@@ -631,7 +625,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
                 "It is not user-editable."
             ),
             lambda: v2_selectbox(
-                label="",
+                label="Value",
                 key="defl_support_type",
                 options=["Simply supported", "Continuous – end span", "Continuous – interior span"],
                 default_index=0,
@@ -644,7 +638,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
             "Deflection limit L/Δ (e.g. 250)",
             "Maximum allowed deflection ratio (e.g., 250 for L/250 limit).",
             lambda: v2_number_input(
-                label="",
+                label="Value",
                 key="defl_limit_ratio",
                 default=250.0,
                 step=10.0,

@@ -16,6 +16,8 @@ from state_and_helpers import (
     get_param,
     update_results,
     init_shared_session_state,
+    DEBUG_MODE,
+    debug_print,
 )
 from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, select_row, show_reo_message, apply_step_expander_css, apply_step_summary_expander_css, info_i_button, page_divider
 from bending_core import _fmt, _compute_bending_capacity, _stress_strain_state
@@ -385,7 +387,8 @@ def build_bending_report(top_results: dict, params: dict) -> dict:
     Ast = params.get("Ast", 0.0)
     d = params.get("d", 560.0)
     phi = params.get("phi", 0.85)
-    Mu_star = params.get("Mu_star", 0.0)
+    Mu_star = params.get("Mu_star_uls", params.get("Mu_star", 0.0))
+    Mu_star_sls = params.get("Mu_star_sls", None)
     Ec = params.get("Ec", 30000.0)
     Es = params.get("Es", 200000.0)
     
@@ -665,7 +668,12 @@ def build_bending_report(top_results: dict, params: dict) -> dict:
     
     # SLS tab - read from session_state if available (computed by render_sls_tab)
     sls_boxes = []
-    Ms = Mu_star  # service moment (kNm)
+    Ms = params.get("Mu_star_sls", Mu_star)  # service moment (kNm)
+    if Mu_star_sls is not None:
+        try:
+            debug_print(f"[BENDING_REPORT_ACTIONS] uls_M={Mu_star} sls_M={Mu_star_sls}")
+        except Exception:
+            pass
     
     # Try to read SLS values from session_state (if SLS tab has been run)
     try:
@@ -868,7 +876,7 @@ def _compute_sls_bending_values():
     Ast = inputs["Ast_bot"]
     Ec = inputs["Ec"]
     Es = inputs["Es"]
-    Mu_star = inputs["Mu_star"]
+    Mu_star = inputs["Mu_star_sls"]
     
     # Bar layout
     nb_bot = inputs["nb_bot"]
@@ -1015,7 +1023,8 @@ def compute_bending_results(publish: bool = True) -> dict:
         "Ast": inputs["Ast_bot"],
         "d": inputs["d"],
         "phi": inputs["phi"],
-        "Mu_star": inputs["Mu_star"],
+        "Mu_star_uls": inputs["Mu_star_uls"],
+        "Mu_star_sls": inputs["Mu_star_sls"],
         "Ec": inputs["Ec"],
         "Es": inputs["Es"],
     }
@@ -1054,7 +1063,8 @@ def _get_bending_inputs_from_shared_state():
         "Ec": get_param("Ec"),
         "Es": get_param("Es"),
         "phi": get_param("phi_bend"),
-        "Mu_star": get_param("Mu_star"),
+        "Mu_star_uls": get_param("Mu_star"),
+        "Mu_star_sls": get_param("sls_Mstar"),
         "Ast_bot": get_param("Ast_bot"),
         "nb_or_s_bot_1": get_param("nb_or_s_bot_1"),
         "db_bot_1": get_param("db_bot_1"),
@@ -1116,55 +1126,56 @@ def render_bending():
         st.session_state["bending_active_mode"] = "ULS"
     
     # Debug-only dimension triage panel
-    try:
-        from src.debug.debug_flags import is_debug_enabled
-        if is_debug_enabled():
-            with st.expander("🔧 DEBUG: Dimension Triage", expanded=False):
-                st.markdown("### Shared Canonical Keys")
-                shared_dims = {
-                    "b": st.session_state.get("b"),
-                    "D": st.session_state.get("D"),
-                    "L": st.session_state.get("L"),
-                    "d": st.session_state.get("d"),
-                    "cover_bot": st.session_state.get("cover_bot"),
-                    "cover_top": st.session_state.get("cover_top"),
-                    "cover_side": st.session_state.get("cover_side"),
-                }
-                st.json(shared_dims)
-                
-                st.markdown("### Widget Keys (if available)")
-                widget_dims = {}
-                from state_and_helpers import TAB_KEYS
-                for widget_key in ["bending_b", "bending_D", "bending_L", "inputs_b", "inputs_D", "inputs_L"]:
-                    if widget_key in st.session_state:
-                        shared_key = TAB_KEYS.get(widget_key, "N/A")
-                        widget_dims[f"{widget_key} → {shared_key}"] = st.session_state[widget_key]
-                if widget_dims:
-                    st.json(widget_dims)
-                else:
-                    st.write("No widget keys found")
-                
-                st.markdown("### Values Passed to Bending Core")
-                inputs = get_bending_inputs_from_shared_state()
-                st.json({
-                    "b": inputs["b"],
-                    "D": inputs["D"],
-                    "L": inputs["L"],
-                    "d": inputs["d"],
-                    "cover_bot": inputs["cover_bot"],
-                    "cover_top": inputs["cover_top"],
-                    "cover_side": inputs["cover_side"],
-                })
-                
-                st.markdown("### Key Audit (dimension-like keys)")
-                dim_like_keys = {}
-                for key in sorted(st.session_state.keys()):
-                    if any(term in key.lower() for term in ["b", "width", "d", "depth", "h", "cover", "dimension"]):
-                        dim_like_keys[key] = st.session_state[key]
-                if dim_like_keys:
-                    st.json(dim_like_keys)
-    except ImportError:
-        pass
+    if DEBUG_MODE:
+        try:
+            from src.debug.debug_flags import is_debug_enabled
+            if is_debug_enabled():
+                with st.expander("🔧 DEBUG: Dimension Triage", expanded=False):
+                    st.markdown("### Shared Canonical Keys")
+                    shared_dims = {
+                        "b": st.session_state.get("b"),
+                        "D": st.session_state.get("D"),
+                        "L": st.session_state.get("L"),
+                        "d": st.session_state.get("d"),
+                        "cover_bot": st.session_state.get("cover_bot"),
+                        "cover_top": st.session_state.get("cover_top"),
+                        "cover_side": st.session_state.get("cover_side"),
+                    }
+                    st.json(shared_dims)
+                    
+                    st.markdown("### Widget Keys (if available)")
+                    widget_dims = {}
+                    from state_and_helpers import TAB_KEYS
+                    for widget_key in ["bending_b", "bending_D", "bending_L", "inputs_b", "inputs_D", "inputs_L"]:
+                        if widget_key in st.session_state:
+                            shared_key = TAB_KEYS.get(widget_key, "N/A")
+                            widget_dims[f"{widget_key} → {shared_key}"] = st.session_state[widget_key]
+                    if widget_dims:
+                        st.json(widget_dims)
+                    else:
+                        st.write("No widget keys found")
+                    
+                    st.markdown("### Values Passed to Bending Core")
+                    inputs = get_bending_inputs_from_shared_state()
+                    st.json({
+                        "b": inputs["b"],
+                        "D": inputs["D"],
+                        "L": inputs["L"],
+                        "d": inputs["d"],
+                        "cover_bot": inputs["cover_bot"],
+                        "cover_top": inputs["cover_top"],
+                        "cover_side": inputs["cover_side"],
+                    })
+                    
+                    st.markdown("### Key Audit (dimension-like keys)")
+                    dim_like_keys = {}
+                    for key in sorted(st.session_state.keys()):
+                        if any(term in key.lower() for term in ["b", "width", "d", "depth", "h", "cover", "dimension"]):
+                            dim_like_keys[key] = st.session_state[key]
+                    if dim_like_keys:
+                        st.json(dim_like_keys)
+        except ImportError:
+            pass
     
     # Remove green background from inline math (Streamlit wraps math in code tags)
     # But preserve katex rendering by only targeting background, not font styling
@@ -1189,12 +1200,13 @@ def render_bending():
     )
     
     # Debug helpers (temporary - remove after verification)
-    with st.sidebar:
-        st.write("**Debug:**")
-        st.write("jump_to:", st.session_state.get("jump_to"))
-        open_steps = {k: v for k, v in st.session_state.items() if k.startswith("step_open_") and v}
-        if open_steps:
-            st.write("open steps:", open_steps)
+    if DEBUG_MODE:
+        with st.sidebar:
+            st.write("**Debug:**")
+            st.write("jump_to:", st.session_state.get("jump_to"))
+            open_steps = {k: v for k, v in st.session_state.items() if k.startswith("step_open_") and v}
+            if open_steps:
+                st.write("open steps:", open_steps)
 
     # Container so title + summary + 3D sit at the very top (like Inputs page)
     top_container = st.container()
@@ -1226,16 +1238,16 @@ def render_bending():
             """
         )
 
-    # Sync Mu_star_manual to Mu_star (contract-compliant via update_results)
-    # Both widgets sync to Mu_star_manual, but _compute_bending_capacity() reads Mu_star
-    Mu_star_manual_val = get_param("Mu_star_manual")
-    if Mu_star_manual_val is not None:
-        update_results(Mu_star=float(Mu_star_manual_val), Mu_star_kNm=float(Mu_star_manual_val))
+    # Sync ULS load to Mu_star (contract-compliant via update_results)
+    Mu_star_uls_val = get_param("uls_Mstar")
+    if Mu_star_uls_val is not None:
+        update_results(Mu_star=float(Mu_star_uls_val), Mu_star_kNm=float(Mu_star_uls_val))
 
     # ---------------- Top result summary (+ shared 3D NA view data) ----------------
     top_results = _compute_bending_capacity()
     Ast = get_param("Ast_bot")
     Mu_star = get_param("Mu_star")
+    Mu_star_sls = get_param("sls_Mstar", Mu_star)
     
     # Compute SLS values BEFORE building summary (ensures sigma_s_sls is published)
     fs_outer_sls = _compute_sls_bending_values()
@@ -1521,17 +1533,18 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 st.warning("3D view failed to render (browser/graphics). Try refreshing the page.")
             
             # Debug readout (debug mode only)
-            try:
-                from src.debug.debug_flags import is_debug_enabled
-                if is_debug_enabled():
-                    st.caption("🔧 DEBUG: Top Layer 1 bars")
-                    st.write(f"Widget (inputs_nb_or_s_top_1): {st.session_state.get('inputs_nb_or_s_top_1', 'N/A')}")
-                    st.write(f"Shared (nb_or_s_top_1): {st.session_state.get('nb_or_s_top_1', 'N/A')}")
-                    st.write(f"Layout value used: {nb_or_s_top_1_layout}")
-                    st.write(f"Derived (nb_top): {st.session_state.get('nb_top', 'N/A')}")
-                    st.write(f"Derived (Ast_top): {st.session_state.get('Ast_top', 'N/A')}")
-            except ImportError:
-                pass
+            if DEBUG_MODE:
+                try:
+                    from src.debug.debug_flags import is_debug_enabled
+                    if is_debug_enabled():
+                        st.caption("🔧 DEBUG: Top Layer 1 bars")
+                        st.write(f"Widget (inputs_nb_or_s_top_1): {st.session_state.get('inputs_nb_or_s_top_1', 'N/A')}")
+                        st.write(f"Shared (nb_or_s_top_1): {st.session_state.get('nb_or_s_top_1', 'N/A')}")
+                        st.write(f"Layout value used: {nb_or_s_top_1_layout}")
+                        st.write(f"Derived (nb_top): {st.session_state.get('nb_top', 'N/A')}")
+                        st.write(f"Derived (Ast_top): {st.session_state.get('Ast_top', 'N/A')}")
+                except ImportError:
+                    pass
 
         # Summary table spans full width under the heading + 3D row (deflection-style)
         st.subheader("Bending – Summary")
@@ -1726,7 +1739,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             st.caption("Design actions: From SFD/BMD")
 
         # Get current values (widget key takes precedence if exists, otherwise use shared key)
-        Mu_star_val = _coalesce_num(st.session_state.get("bending_Mu_star", get_param("Mu_star_manual", 500.0)), 500.0)
+        Mu_star_val = _coalesce_num(st.session_state.get("bending_Mu_star", get_param("uls_Mstar", 500.0)), 500.0)
         N_star_val = _coalesce_num(st.session_state.get("bending_N_star", get_param("N_star", 0.0)), 0.0)
         P_star_val = _coalesce_num(st.session_state.get("bending_P_star", get_param("P_star", 0.0)), 0.0)
         phi_b_val = _coalesce_num(st.session_state.get("bending_phi_b", get_param("phi_bend", 0.85)), 0.85)
@@ -2232,7 +2245,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
     
     with tab2:
         render_sls_tab(
-            top_results, b, D, d_eff, Ast_bot, Ec, Es, Mu_star,
+            top_results, b, D, d_eff, Ast_bot, Ec, Es, Mu_star_sls,
             summary_mode=False,
         )
     
@@ -2291,7 +2304,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             layout=cached_layout,  # Pass cached layout to avoid recomputation
         )
         try:
-            st.plotly_chart(fig_ss, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_ss, width="stretch", config={"displayModeBar": False})
         except Exception as e:
             st.warning("3D view failed to render (browser/graphics). Try disabling 3D view or refreshing the page.")
 
@@ -2354,7 +2367,7 @@ for the same strain pattern.
             try:
                 st.plotly_chart(
                     fig_mat,
-                    use_container_width=True,
+                    width="stretch",
                     config={"displayModeBar": False},
                 )
             except Exception as e:

@@ -328,7 +328,7 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
             if faces_current not in faces_options:
                 faces_current = "Slab – one face exposed"
             faces_option = v2_selectbox(
-                label="",
+                label="Value",
                 key="sh_faces",
                 options=faces_options,
                 default_index=faces_options.index(faces_current),
@@ -361,7 +361,7 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
             if env_current not in env_options:
                 env_current = "Arid environment"
             env_option = v2_selectbox(
-                label="",
+                label="Value",
                 key="sh_env",
                 options=env_options,
                 default_index=env_options.index(env_current),
@@ -374,7 +374,7 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
             st.markdown("<div class='sb-label'>Time since commencement of drying t (days)</div>", unsafe_allow_html=True)
         with col2:
             t_days = v2_number_input(
-                label="",
+                label="Value",
                 key="inputs_t_shrink",
                 default=float(get_param("t_shrink", 365.0)),
                 step=10.0,

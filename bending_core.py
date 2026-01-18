@@ -260,7 +260,10 @@ def _compute_bending_capacity():
     fc = get_param("fc")
     fsy = get_param("fsy")
     Ast = get_param("Ast_bot")
-    Mu_star = get_param("Mu_star")
+    actions_uls = st.session_state.get("actions_uls", {})
+    Mu_star = actions_uls.get("M") if isinstance(actions_uls, dict) else None
+    if Mu_star is None:
+        Mu_star = get_param("Mu_star")
     phi = get_param("phi_bend")
     d_input = get_param("d")
     cover_bot = get_param("cover_bot")

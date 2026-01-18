@@ -691,8 +691,9 @@ def number_row(label: str, key: str, default: float, sync_callbacks=None, help_t
             st.session_state[original_key] = effective_default
         
         session_value_before_widget = st.session_state.get(original_key)
+        _safe_label = label if (label is not None and str(label).strip()) else "Value"
         value = st.number_input(
-            label="",
+            _safe_label,
             key=original_key,
             min_value=min_val,
             step=1.0,
@@ -751,8 +752,9 @@ def select_row(
         if sync_callbacks and isinstance(sync_callbacks, dict):
             on_change = sync_callbacks.get(original_key)
 
+        _safe_label = label if (label is not None and str(label).strip()) else "Select"
         st.selectbox(
-            "",
+            _safe_label,
             options=options,
             key=original_key,
             label_visibility="collapsed",

@@ -16,6 +16,15 @@ import streamlit as st
 # Debug output directory (for sync trace files)
 DEBUG_OUT_DIR = Path(".")  # app root; same place your other audits are being written
 
+# Global debug toggle
+DEBUG_MODE = False  # set True only when debugging
+
+
+def debug_print(*args, **kwargs):
+    """Central debug logger. Use this instead of print()."""
+    if DEBUG_MODE:
+        print(*args, **kwargs)
+
 
 def _debug_docs_dir() -> str:
     """User Documents folder (macOS-friendly)."""
@@ -31,6 +40,8 @@ def _debug_snapshot_path() -> str:
 
 
 def _append_debug_log(line: str) -> None:
+    if not DEBUG_MODE:
+        return
     try:
         path = _debug_log_path()
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -165,6 +176,13 @@ ALLOWED_EXPLICIT_NONCONTRACT_KEYS = {
     "deflection_total_mm",
     "deflection_limit_mm",
     "deflection_utilisation",
+    # Load actions by module (derived wiring)
+    "actions_bending",
+    "actions_shear",
+    "actions_crack",
+    "actions_deflection",
+    "actions_uls",
+    "actions_sls",
     "crack_width",
     "crack_utilisation",
 }
@@ -358,12 +376,30 @@ SHARED_DEFAULTS = {
 
     # Manual copies – start equal to the same seeds so manual mode
     # behaves identically until the user edits the inputs.
-    "Mu_star_manual": 500.0,  # kNm
-    "Vu_star_manual": 300.0,  # kN
+    "Mu_star_manual": 500.0,  # kNm (legacy ULS manual)
+    "Vu_star_manual": 300.0,  # kN (legacy ULS manual)
     "Tu_star": 0.0,    # kNm
     "P_star": 0.0,     # kN (prestress or axial in bending/shear)
-    "N_star": 0.0,     # kN (additional axial)
+    "N_star": 0.0,     # kN (legacy ULS axial)
     "actions_source": "Manual design actions (inputs below)",  # Source of design actions
+
+    # --- Load inputs (store both ULS and SLS separately) ---
+    "uls_Mstar": 500.0,
+    "uls_Vstar": 300.0,
+    "uls_Nstar": 0.0,
+
+    "sls_Mstar": 500.0,
+    "sls_Vstar": 300.0,
+    "sls_Nstar": 0.0,
+
+    # Which set the Inputs-page load widgets are currently editing
+    "loads_edit_mode": "ULS",  # "ULS" or "SLS"
+    "loads_edit_toggle": False,  # False=ULS, True=SLS
+
+    # Proxies used ONLY by the widgets (never used by calculations)
+    "load_Mstar_proxy": 500.0,
+    "load_Vstar_proxy": 300.0,
+    "load_Nstar_proxy": 0.0,
 
     # Longitudinal reinforcement - 2-layer system
     # Bottom Layer 1
@@ -510,6 +546,41 @@ UI_STATE_DEFAULTS = {
     "_reo_warning_top_1": "",
     "_reo_s_min_top_1": "",
 }
+
+
+def _active_load_prefix() -> str:
+    mode = st.session_state.get("loads_edit_mode", "ULS")
+    return "uls" if mode == "ULS" else "sls"
+
+
+def load_proxies_from_active_set():
+    p = _active_load_prefix()
+    st.session_state["load_Nstar_proxy"] = float(st.session_state.get(f"{p}_Nstar", 0.0) or 0.0)
+    st.session_state["load_Vstar_proxy"] = float(st.session_state.get(f"{p}_Vstar", 0.0) or 0.0)
+    st.session_state["load_Mstar_proxy"] = float(st.session_state.get(f"{p}_Mstar", 0.0) or 0.0)
+
+
+def save_proxies_to_active_set():
+    p = _active_load_prefix()
+    other = "sls" if p == "uls" else "uls"
+    before_other = (
+        st.session_state.get(f"{other}_Nstar"),
+        st.session_state.get(f"{other}_Vstar"),
+        st.session_state.get(f"{other}_Mstar"),
+    )
+
+    st.session_state[f"{p}_Nstar"] = float(st.session_state.get("load_Nstar_proxy", 0.0) or 0.0)
+    st.session_state[f"{p}_Vstar"] = float(st.session_state.get("load_Vstar_proxy", 0.0) or 0.0)
+    st.session_state[f"{p}_Mstar"] = float(st.session_state.get("load_Mstar_proxy", 0.0) or 0.0)
+
+    after_other = (
+        st.session_state.get(f"{other}_Nstar"),
+        st.session_state.get(f"{other}_Vstar"),
+        st.session_state.get(f"{other}_Mstar"),
+    )
+
+    if before_other != after_other:
+        debug_print("[TRIPWIRE] Cross-write detected! save_proxies_to_active_set modified BOTH ULS and SLS.")
 
 
 def _allowed_shared_keys() -> set[str]:
@@ -727,6 +798,11 @@ RESULT_KEYS = {
     "deflection_total_mm",
     "deflection_limit_mm",
     "deflection_utilisation",
+    # Load actions by module (derived wiring)
+    "actions_bending",
+    "actions_shear",
+    "actions_crack",
+    "actions_deflection",
     # Other computed results
     "Vu_max_kN",
     "phi_Vu_max_kN",
@@ -778,6 +854,11 @@ RESULT_DEFAULTS.update({
     "Mu_star": 0.0,
     "Mu_star_kNm": 0.0,
     "Vu_star": 0.0,
+    # Load actions by module (derived wiring)
+    "actions_bending": {},
+    "actions_shear": {},
+    "actions_crack": {},
+    "actions_deflection": {},
     # SFD/BMD result keys
     "sfd_case": "",  # Current teaching case (string)
     "sfd_span_L_m": 0.0,  # Span length for SFD/deflection pages (m)
@@ -958,6 +1039,11 @@ TAB_KEYS = {
     "inputs_Tu_star": "Tu_star",
     "inputs_P_star": "P_star",
     "inputs_N_star": "N_star",
+    "inputs_load_Mstar_proxy": "load_Mstar_proxy",
+    "inputs_load_Vstar_proxy": "load_Vstar_proxy",
+    "inputs_load_Nstar_proxy": "load_Nstar_proxy",
+    "inputs_loads_edit_mode": "loads_edit_mode",
+    "inputs_loads_edit_toggle": "loads_edit_toggle",
 
     # ----------------- ACTIONS ALIASES (V* vs Vu*, T* vs Tu*) -----------------
     # Treat any page's alternate naming as the same underlying shared parameters.
@@ -1486,6 +1572,8 @@ def begin_render_cycle():
 
 def debug_log(tag: str, data: dict):
     """Helper to write debug logs in consistent format."""
+    if not DEBUG_MODE:
+        return
     import json
     log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
     try:
@@ -1661,6 +1749,9 @@ def init_shared_session_state():
     for key, val in SHARED_DEFAULTS.items():
         if key not in st.session_state:
             set_shared(key, val, source="seed_defaults")
+    
+    # Ensure load proxies match the active edit mode on init
+    load_proxies_from_active_set()
     
     # Seed UI-only defaults (not shared, not synced)
     for k, v in UI_STATE_DEFAULTS.items():
@@ -2598,6 +2689,79 @@ def recalc_derived_values():
     st.session_state["stress_ratio"] = stress_ratio
     st.session_state["t_shrink"] = t_shrink
 
+    # ---------- 3.3 Actions wiring (ULS vs SLS) ----------
+    actions_source = st.session_state.get("actions_source", "")
+    M_sfd = st.session_state.get("sfd_Mmax_abs_kNm", None)
+    V_sfd = st.session_state.get("sfd_Vmax_abs_kN", None)
+    use_sfd = (
+        actions_source == "Teaching SFD/BMD page (|M|max, |V|max)"
+        and M_sfd is not None
+        and V_sfd is not None
+    )
+    if use_sfd:
+        uls_M = float(M_sfd)
+        uls_V = float(V_sfd)
+    else:
+        uls_M = float(st.session_state.get("uls_Mstar", 0.0) or 0.0)
+        uls_V = float(st.session_state.get("uls_Vstar", 0.0) or 0.0)
+    uls_N = float(st.session_state.get("uls_Nstar", 0.0) or 0.0)
+
+    sls_M = float(st.session_state.get("sls_Mstar", 0.0) or 0.0)
+    sls_V = float(st.session_state.get("sls_Vstar", 0.0) or 0.0)
+    sls_N = float(st.session_state.get("sls_Nstar", 0.0) or 0.0)
+
+    actions_uls = {"N": uls_N, "V": uls_V, "M": uls_M}
+    actions_sls = {"N": sls_N, "V": sls_V, "M": sls_M}
+
+    st.session_state["actions_uls"] = dict(actions_uls)
+    st.session_state["actions_sls"] = dict(actions_sls)
+
+    # --- DEBUG: Confirm ULS/SLS separation ---
+    debug_print(
+        "[DEBUG ACTION KEYS] ULS:",
+        st.session_state.get("uls_Nstar"),
+        st.session_state.get("uls_Vstar"),
+        st.session_state.get("uls_Mstar"),
+    )
+
+    debug_print(
+        "[DEBUG ACTION KEYS] SLS:",
+        st.session_state.get("sls_Nstar"),
+        st.session_state.get("sls_Vstar"),
+        st.session_state.get("sls_Mstar"),
+    )
+
+    debug_print(
+        "[DEBUG ACTION IDS]",
+        "actions_uls id =", id(st.session_state.get("actions_uls")),
+        "| actions_sls id =", id(st.session_state.get("actions_sls")),
+    )
+    # ----------------------------------------
+
+    update_results(
+        actions_bending=actions_uls,
+        actions_shear=actions_uls,
+        actions_crack=actions_sls,
+        actions_deflection=actions_sls,
+    )
+
+    try:
+        debug_print("[ACTIONS IDS]", id(st.session_state["actions_uls"]), id(st.session_state["actions_sls"]))
+        if (
+            st.session_state.get("uls_Mstar") == st.session_state.get("sls_Mstar")
+            and (
+                st.session_state.get("uls_Nstar") != 0
+                or st.session_state.get("sls_Nstar") != 0
+                or st.session_state.get("uls_Vstar") != 0
+                or st.session_state.get("sls_Vstar") != 0
+                or st.session_state.get("uls_Mstar") != 0
+                or st.session_state.get("sls_Mstar") != 0
+            )
+        ):
+            debug_print("[WARN] ULS and SLS actions are identical. Check mapping if unexpected.")
+    except Exception:
+        pass
+
     # Effective depths (to centroid of Layer 1 bars)
     st.session_state["d"] = D - cover_bot - db_bot_1 / 2.0
     st.session_state["do"] = D - cover_top - db_top_1 / 2.0
@@ -2670,6 +2834,7 @@ def reset_results_state():
 PROTECTED_SHARED_KEYS = {
     "t_creep", "age_at_loading", "stress_ratio", "t_shrink",
     "actions_source",
+    "loads_edit_mode",
 }
 
 _SYNC_CALLBACKS = None  # module-global
@@ -2721,6 +2886,31 @@ def _make_sync_callback(widget_key: str, shared_key: str):
         # Read widget and shared values early for tracing
         widget_val = st.session_state.get(widget_key)
         shared_val = st.session_state.get(shared_key, None)
+        # #region agent log
+        if shared_key in ("Mu_star_manual", "Vu_star_manual"):
+            try:
+                import json
+                log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+                with open(log_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps({
+                        "location": "state_and_helpers.py:sync_callback_entry",
+                        "message": "Sync entry for manual actions",
+                        "data": {
+                            "widget_key": widget_key,
+                            "shared_key": shared_key,
+                            "widget_val": widget_val,
+                            "shared_val": shared_val,
+                            "last_user_widget": st.session_state.get("_last_user_widget_key"),
+                            "rendered": widget_key in st.session_state.get("_rendered_widget_keys", set()),
+                        },
+                        "timestamp": int(time.time() * 1000),
+                        "sessionId": "debug-session",
+                        "runId": st.session_state.get("_boot_id", "run"),
+                        "hypothesisId": "H2",
+                    }) + "\n")
+            except Exception:
+                pass
+        # #endregion
         
         # 0.5) RESTORE GUARD: briefly block widget→shared right after restore
         if st.session_state.get("_restored_from_snapshot") and st.session_state.get("_restore_guard_active"):
@@ -2791,9 +2981,35 @@ def _make_sync_callback(widget_key: str, shared_key: str):
             "lig_legs",
             # Prestressing ducts (0 = none)
             "n_ducts", "duct_dia",
+            # Manual design actions can be 0
+            "Mu_star_manual", "Vu_star_manual",
         }
         
         if widget_val == 0 and shared_val not in (None, 0) and shared_key not in ZERO_ALLOWED_SHARED_KEYS:
+            # #region agent log
+            if shared_key in ("Mu_star_manual", "Vu_star_manual"):
+                try:
+                    import json
+                    log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+                    with open(log_path, "a", encoding="utf-8") as f:
+                        f.write(json.dumps({
+                            "location": "state_and_helpers.py:sync_callback_guard",
+                            "message": "Blocked zero write to shared",
+                            "data": {
+                                "widget_key": widget_key,
+                                "shared_key": shared_key,
+                                "widget_val": widget_val,
+                                "shared_val": shared_val,
+                                "guard_list": list(ZERO_ALLOWED_SHARED_KEYS),
+                            },
+                            "timestamp": int(time.time() * 1000),
+                            "sessionId": "debug-session",
+                            "runId": st.session_state.get("_boot_id", "run"),
+                            "hypothesisId": "H2",
+                        }) + "\n")
+                except Exception:
+                    pass
+            # #endregion
             _sync_trace_file("return:widget_default_zero", widget_key, shared_key, widget_val, shared_val)
             return
 
@@ -2924,6 +3140,23 @@ def _make_sync_callback(widget_key: str, shared_key: str):
         set_shared(shared_key, widget_value, source=f"callback:{widget_key}")
         _audit("SYNC widget->shared", shared_key, widget_key, old=old_shared, new=widget_value)
         mark_dirty("widget_sync")
+
+        if shared_key in ("load_Mstar_proxy", "load_Vstar_proxy", "load_Nstar_proxy"):
+            save_proxies_to_active_set()
+        
+        if shared_key in ("Mu_star_manual", "Vu_star_manual", "N_star"):
+            if shared_key == "Mu_star_manual":
+                set_shared("uls_Mstar", float(widget_value or 0.0), source="uls_mirror")
+                if st.session_state.get("loads_edit_mode", "ULS") == "ULS":
+                    st.session_state["load_Mstar_proxy"] = float(widget_value or 0.0)
+            elif shared_key == "Vu_star_manual":
+                set_shared("uls_Vstar", float(widget_value or 0.0), source="uls_mirror")
+                if st.session_state.get("loads_edit_mode", "ULS") == "ULS":
+                    st.session_state["load_Vstar_proxy"] = float(widget_value or 0.0)
+            elif shared_key == "N_star":
+                set_shared("uls_Nstar", float(widget_value or 0.0), source="uls_mirror")
+                if st.session_state.get("loads_edit_mode", "ULS") == "ULS":
+                    st.session_state["load_Nstar_proxy"] = float(widget_value or 0.0)
         
         # Cache inputs_* widget values immediately when user changes them
         # AND also keep the "inputs_* cache" fresh even when the user edits the same
@@ -3418,6 +3651,8 @@ def dump_session_state_inventory(page_name: str, sync_callbacks: dict | None = N
 
 def _write_sync_trace_line(line: str, filename: str = "sync_callback_trace.txt") -> None:
     """Append one line to sync trace file (debug only)."""
+    if not DEBUG_MODE:
+        return
     try:
         path = DEBUG_OUT_DIR / filename
         with open(path, "a", encoding="utf-8") as f:
@@ -3434,6 +3669,8 @@ def _sync_trace_file(
     shared_val=None,
 ):
     """Debug-only: record why a sync callback returned or wrote."""
+    if not DEBUG_MODE:
+        return
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     try:
         widget_type = type(widget_val).__name__ if widget_val is not None else "None"

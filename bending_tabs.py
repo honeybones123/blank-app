@@ -294,7 +294,7 @@ $\\alpha_2 = {alpha2_uls:.3f}$, $\\gamma = {gamma_uls:.3f}$ (to be used in Secti
                 C_N=None,
                 variant="11",
             )
-            st.plotly_chart(fig_uls_11, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_uls_11, width="stretch", config={"displayModeBar": False})
 
         step_expander_calcbox(
             uid="bending_uls_1_1",
@@ -492,7 +492,7 @@ $ d_n = {dn:.1f}$ mm, $ a = {a_uls:.1f}$ mm.
                 C_N=None,
                 variant="13",
             )
-            st.plotly_chart(fig_uls_14, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_uls_14, width="stretch", config={"displayModeBar": False})
 
         step_expander_calcbox(
             uid="bending_uls_1_4",
@@ -686,7 +686,7 @@ Design bending capacity $\\phi M_{{u,cap}} = {phi_Mu_cap_uls:.2f}$ kNm.
                 C_N=C_N,
                 T_N=T,
             )
-            st.plotly_chart(fig_uls_16, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_uls_16, width="stretch", config={"displayModeBar": False})
 
         step_expander_calcbox(
             uid="bending_uls_1_6",
@@ -1445,7 +1445,7 @@ d_n = {dn_val:.2f}\ \text{{mm}}
             include_comp=(include_comp and comp_layer is not None),
             d_comp_mm=comp_layer["y"] if (include_comp and comp_layer is not None) else None,
         )
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key=f"sls_3_2_{st.session_state['_diag_nonce']}")
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=f"sls_3_2_{st.session_state['_diag_nonce']}")
     
     step_expander_calcbox(
         uid="bending_sls_3_2",
