@@ -713,13 +713,18 @@ def number_row(label: str, key: str, default: float, sync_callbacks=None, help_t
 
 
 def select_row(
-    label: str,
-    key: str,
-    options: list,
-    default,
+    label,
+    key,
+    options,
+    default=None,
     sync_callbacks=None,
     help_text: str | None = None,
     required: bool = False,
+    on_change=None,
+    args=None,
+    kwargs=None,
+    *,
+    use_columns: bool = True,
 ):
     """
     Selectbox row with label + hover help.
@@ -728,30 +733,25 @@ def select_row(
       - never overwrites user edits on reruns
       - uses sync_callbacks + TAB_KEYS mapping like number_row
     """
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        label_with_hover(label, help_text, required=required)
+    # Ensure args/kwargs are safe defaults
+    args = args or ()
+    kwargs = kwargs or {}
 
-    with col2:
-        original_key = key
-        _register_rendered_key(original_key)
+    _safe_label = str(label) if (label is not None and str(label).strip()) else "Select"
 
-        # Seed ONCE only
-        if original_key not in st.session_state:
-            # Prefer shared if present, otherwise default
-            shared_key = TAB_KEYS.get(original_key)
-            candidate = st.session_state.get(shared_key, default) if shared_key else default
+    original_key = key
+    _register_rendered_key(original_key)
 
-            # Ensure candidate is one of the options; otherwise fallback safely
-            if candidate in options:
-                st.session_state[original_key] = candidate
-            else:
-                st.session_state[original_key] = default if default in options else options[0]
+    # options may be list[str] or list of things; convert to list for membership checks
+    _opts = list(options) if not isinstance(options, dict) else list(options.keys())
 
-        on_change = None
-        if sync_callbacks and isinstance(sync_callbacks, dict):
-            on_change = sync_callbacks.get(original_key)
+    # Seed ONCE only
+    if original_key not in st.session_state:
+        # Prefer shared if present, otherwise default
+        shared_key = TAB_KEYS.get(original_key)
+        candidate = st.session_state.get(shared_key, default) if shared_key else default
 
+<<<<<<< Updated upstream
         # options may be list[str] or list of things; convert to list for membership checks
         _opts = list(options)
 
@@ -788,6 +788,68 @@ def select_row(
             options=_opts,
             key=original_key,
             index=_opts.index(st.session_state[original_key]),
+=======
+        # Ensure candidate is one of the options; otherwise fallback safely
+        if candidate in _opts:
+            st.session_state[original_key] = candidate
+        else:
+            st.session_state[original_key] = default if default in _opts else _opts[0]
+
+    on_change_final = on_change
+    if on_change_final is None and sync_callbacks and isinstance(sync_callbacks, dict):
+        on_change_final = sync_callbacks.get(original_key)
+
+    def _coerce_current_value():
+        cur = st.session_state.get(original_key, default)
+        if cur in _opts:
+            return cur
+
+        # Migration map for renamed options (add pairs as needed)
+        MIGRATIONS = {
+            "General εₓ-based (Cl. 8.2.4.2)": "General εx-based (Cl. 8.2.4.2)",
+        }
+        migrated = MIGRATIONS.get(cur)
+        if migrated in _opts:
+            st.session_state[original_key] = migrated
+            return migrated
+
+        fallback = default if default in _opts else _opts[0]
+        st.session_state[original_key] = fallback
+        return fallback
+
+    selectbox_kwargs = {
+        "help": help_text,
+        "on_change": on_change_final,
+        "args": args,
+        "kwargs": kwargs,
+    }
+    if isinstance(options, dict):
+        selectbox_kwargs["format_func"] = lambda k: options.get(k, str(k))
+
+    # ---- SAFE: allow disabling internal columns to avoid nesting errors ----
+    if use_columns:
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            label_with_hover(_safe_label, help_text, required=required)
+        with col2:
+            cur = _coerce_current_value()
+            return st.selectbox(
+                _safe_label,
+                options=_opts,
+                index=_opts.index(cur) if cur in _opts else 0,
+                key=original_key,
+                label_visibility="collapsed",
+                **selectbox_kwargs,
+            )
+    else:
+        cur = _coerce_current_value()
+        return st.selectbox(
+            _safe_label,
+            options=_opts,
+            index=_opts.index(cur),
+            key=original_key,
+            label_visibility="collapsed",
+>>>>>>> Stashed changes
             **selectbox_kwargs,
         )
 

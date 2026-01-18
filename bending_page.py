@@ -1940,6 +1940,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 "Count",
                 sync_callbacks,
                 help_text="Count vs spacing.",
+                use_columns=False,
             )
 
             mode = st.session_state.get("bending_bot1_layout_mode", st.session_state.get("bot1_layout_mode", "Count"))
@@ -1952,6 +1953,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     4,
                     sync_callbacks,
                     help_text="0–12",
+                    use_columns=False,
                 )
             else:
                 select_row(
@@ -1961,6 +1963,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     200,
                     sync_callbacks,
                     help_text="75–300",
+                    use_columns=False,
                 )
 
             select_row(
@@ -1970,6 +1973,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 20,
                 sync_callbacks,
                 help_text="Nominal bar diameter for Layer 1 (mm).",
+                use_columns=False,
             )
             
             # Layer 2 mode
@@ -1980,6 +1984,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 "Count",
                 sync_callbacks,
                 help_text="Count vs spacing.",
+                use_columns=False,
             )
 
             mode2 = st.session_state.get("bending_bot2_layout_mode", st.session_state.get("bot2_layout_mode", "Count"))
@@ -1992,6 +1997,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     0,
                     sync_callbacks,
                     help_text="0–12",
+                    use_columns=False,
                 )
             else:
                 select_row(
@@ -2001,6 +2007,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     200,
                     sync_callbacks,
                     help_text="75–300",
+                    use_columns=False,
                 )
 
             select_row(
@@ -2010,6 +2017,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 20,
                 sync_callbacks,
                 help_text="Nominal bar diameter for Layer 2 (mm).",
+                use_columns=False,
             )
             
             rowgap_bot_val = float(st.session_state.get("bending_rowgap_bot", get_param("rowgap_bot", 60.0)))
@@ -2045,6 +2053,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 "Count",
                 sync_callbacks,
                 help_text="Count vs spacing.",
+                use_columns=False,
             )
 
             mode = st.session_state.get("bending_top1_layout_mode", st.session_state.get("top1_layout_mode", "Count"))
@@ -2057,6 +2066,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     2,
                     sync_callbacks,
                     help_text="0–12",
+                    use_columns=False,
                 )
             else:
                 select_row(
@@ -2066,6 +2076,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     200,
                     sync_callbacks,
                     help_text="75–300",
+                    use_columns=False,
                 )
 
             select_row(
@@ -2075,6 +2086,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 16,
                 sync_callbacks,
                 help_text="Nominal bar diameter for Layer 1 (mm).",
+                use_columns=False,
             )
             
             # Layer 2 mode
@@ -2085,6 +2097,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 "Count",
                 sync_callbacks,
                 help_text="Count vs spacing.",
+                use_columns=False,
             )
 
             mode2 = st.session_state.get("bending_top2_layout_mode", st.session_state.get("top2_layout_mode", "Count"))
@@ -2097,6 +2110,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     0,
                     sync_callbacks,
                     help_text="0–12",
+                    use_columns=False,
                 )
             else:
                 select_row(
@@ -2106,6 +2120,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     200,
                     sync_callbacks,
                     help_text="75–300",
+                    use_columns=False,
                 )
             
             select_row(
@@ -2115,6 +2130,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 16,
                 sync_callbacks,
                 help_text="Nominal bar diameter for Layer 2 (mm).",
+                use_columns=False,
             )
             
             rowgap_top_val = float(st.session_state.get("bending_rowgap_top", get_param("rowgap_top", 60.0)))
