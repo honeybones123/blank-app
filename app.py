@@ -1,5 +1,11 @@
 import streamlit as st
 
+st.set_page_config(
+    page_title="Concrete Beam Design",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
 from state_and_helpers import (
     init_shared_session_state,
     recalc_derived_values,
@@ -74,12 +80,6 @@ def set_query_params_merge(**updates):
 def main():
     # --- ARCHITECTURE LOCK: dev mode flag ---
     st.session_state.setdefault("_dev_mode", True)
-    
-    st.set_page_config(
-        page_title="Concrete Beam Design",
-        layout="wide",
-        initial_sidebar_state="collapsed",
-    )
 
     # --- CSS styling for top navigation (make radio look like Streamlit tabs) ---
     st.markdown("""

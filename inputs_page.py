@@ -37,45 +37,44 @@ from section_layout import compute_section_layout
 # from deflection import _compute_deflection_results  # TODO: add later
 
 
-# ------------------------------------------------------------
-#  GLOBAL PAGE STYLING (margins + compact inputs)
-# ------------------------------------------------------------
-st.markdown(
-    """
-    <style>
-    .main .block-container {
-        padding-left: 3rem;
-        padding-right: 3rem;
-    }
+def apply_inputs_page_css():
+    # Global page styling (margins + compact inputs)
+    st.markdown(
+        """
+        <style>
+        .main .block-container {
+            padding-left: 3rem;
+            padding-right: 3rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Extra CSS so special widgets (side cover + exposure class)
+    # use the same effective width as the standard number_row inputs.
+    st.markdown(
+        """
+        <style>
+        .nr-field select,
+        .nr-field input {
+            width: 100% !important;
+        }
+
+        /* Remove any container framing around Plotly charts */
+        div[data-testid="stPlotlyChart"], 
+        div[data-testid="stPlotlyChart"] > div,
+        div[data-testid="stPlotlyChart"] > div > div {
+            border: none !important;
+            box-shadow: none !important;
+            outline: none !important;
+        }
     </style>
     """,
-    unsafe_allow_html=True,
-)
+        unsafe_allow_html=True,
+    )
 
-# Extra CSS so special widgets (side cover + exposure class)
-# use the same effective width as the standard number_row inputs.
-st.markdown(
-    """
-    <style>
-    .nr-field select,
-    .nr-field input {
-        width: 100% !important;
-    }
-    
-    /* Remove any container framing around Plotly charts */
-    div[data-testid="stPlotlyChart"], 
-    div[data-testid="stPlotlyChart"] > div,
-    div[data-testid="stPlotlyChart"] > div > div {
-        border: none !important;
-        box-shadow: none !important;
-        outline: none !important;
-    }
-</style>
-""",
-    unsafe_allow_html=True,
-)
-
-# CSS for seamless steps (summary table styling) is injected via inject_seamless_steps_css()
+    # CSS for seamless steps (summary table styling) is injected via inject_seamless_steps_css()
 
 
 # ------------------------------------------------------------
@@ -992,6 +991,7 @@ def render_inputs():
     from deflection_core import _compute_deflection_results
     
     sync_callbacks = get_sync_callbacks()
+    apply_inputs_page_css()
     apply_global_widget_css()
     apply_calcbox_css()
 

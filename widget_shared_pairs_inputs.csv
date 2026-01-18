@@ -1,0 +1,40 @@
+widget_key,widget_val,widget_type,shared_key,shared_val,shared_type
+inputs_D,500.0,float,D,500.0,float
+inputs_Ec,30000.0,float,Ec,30000.0,float
+inputs_Es,200000.0,float,Es,200000.0,float
+inputs_L,2000.0,float,L,2000.0,float
+inputs_P_star,3.0,float,P_star,3.0,float
+inputs_Tu_star,0.0,float,Tu_star,0.0,float
+inputs_b,300.0,float,b,300.0,float
+inputs_bot1_count,5,int,bot1_count,5,int
+inputs_bot1_layout_mode,Count,str,bot1_layout_mode,Count,str
+inputs_bot2_count,0,int,bot2_count,0,int
+inputs_bot2_layout_mode,Count,str,bot2_layout_mode,Count,str
+inputs_cover_bot,40.0,float,cover_bot,40.0,float
+inputs_cover_side,40.0,float,cover_side,40.0,float
+inputs_cover_top,40.0,float,cover_top,40.0,float
+inputs_d_g,20.0,float,d_g,20.0,float
+inputs_db_bot_1,20.0,float,db_bot_1,20.0,float
+inputs_db_bot_2,20.0,float,db_bot_2,20.0,float
+inputs_db_top_1,16.0,float,db_top_1,16.0,float
+inputs_db_top_2,16.0,float,db_top_2,16.0,float
+inputs_defl_limit_ratio,250.0,float,defl_limit_ratio,250.0,float
+inputs_defl_support_type,Continuous – end span,str,defl_support_type,Continuous – end span,str
+inputs_env_option,Arid environment,str,env_option,Arid environment,str
+inputs_fc,50.0,float,fc,50.0,float
+inputs_fsy,500.0,float,fsy,500.0,float
+inputs_k_v_method,General εₓ-based (Cl. 8.2.4.2),str,k_v_method,General εₓ-based (Cl. 8.2.4.2),str
+inputs_lig_d,10.0,float,lig_d,10.0,float
+inputs_lig_legs,1,int,lig_legs,1,int
+inputs_load_Mstar_proxy,100.0,float,load_Mstar_proxy,100.0,float
+inputs_load_Nstar_proxy,0.0,float,load_Nstar_proxy,0.0,float
+inputs_load_Vstar_proxy,300.0,float,load_Vstar_proxy,300.0,float
+inputs_member_faces_exposed,Slab – one face exposed,str,member_faces_exposed,Slab – one face exposed,str
+inputs_rowgap_bot,60.0,float,rowgap_bot,60.0,float
+inputs_rowgap_top,60.0,float,rowgap_top,60.0,float
+inputs_s_lig,200.0,float,s_lig,200.0,float
+inputs_shrinkage_env,Arid environment,str,shrinkage_env,Arid environment,str
+inputs_top1_count,2,int,top1_count,2,int
+inputs_top1_layout_mode,Count,str,top1_layout_mode,Count,str
+inputs_top2_count,0,int,top2_count,0,int
+inputs_top2_layout_mode,Count,str,top2_layout_mode,Count,str

@@ -7,19 +7,19 @@ import streamlit as st
 import plotly.graph_objects as go
 from widgets_helpers import render_step, apply_step_expander_css
 
-st.set_page_config(page_title="UI Sandbox", layout="wide")
 
-st.title("UI Sandbox - Step Expander Test")
+def main():
+    st.title("UI Sandbox - Step Expander Test")
 
-# Apply CSS for compact collapsed steps
-apply_step_expander_css()
+    # Apply CSS for compact collapsed steps
+    apply_step_expander_css()
 
-# Summary mode toggle
-summary_mode = st.checkbox(
-    "Summary mode (collapse all steps)", value=False, key="ui_sandbox__summary_mode"
-)
+    # Summary mode toggle
+    summary_mode = st.checkbox(
+        "Summary mode (collapse all steps)", value=False, key="ui_sandbox__summary_mode"
+    )
 
-st.markdown("---")
+    st.markdown("---")
 
 # Test step 1: With diagram
 def render_step1_body():
@@ -42,15 +42,15 @@ def render_step1_body():
         fig.update_layout(height=300, showlegend=False, margin=dict(l=0, r=0, t=0, b=0))
         st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
-render_step(
-    step_id="sandbox_step1",
-    title="Step 1.1 - Stress-block parameters (α₂ and γ)",
-    summary_md="Result: α₂ = 0.790, γ = 0.850",
-    body_fn=render_step1_body,
-    summary_mode=summary_mode,
-)
+    render_step(
+        step_id="sandbox_step1",
+        title="Step 1.1 - Stress-block parameters (α₂ and γ)",
+        summary_md="Result: α₂ = 0.790, γ = 0.850",
+        body_fn=render_step1_body,
+        summary_mode=summary_mode,
+    )
 
-st.markdown("---")
+    st.markdown("---")
 
 # Test step 2: Without diagram
 def render_step2_body():
@@ -63,11 +63,15 @@ def render_step2_body():
     Result: $C = 450.5$ kN
     """)
 
-render_step(
-    step_id="sandbox_step2",
-    title="Step 1.2 - Concrete compressive force C",
-    summary_md="Result: C = 450.5 kN",
-    body_fn=render_step2_body,
-    summary_mode=summary_mode,
-)
+    render_step(
+        step_id="sandbox_step2",
+        title="Step 1.2 - Concrete compressive force C",
+        summary_md="Result: C = 450.5 kN",
+        body_fn=render_step2_body,
+        summary_mode=summary_mode,
+    )
+
+
+if __name__ == "__main__":
+    main()
 
