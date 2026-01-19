@@ -39,6 +39,10 @@ from persistence.save_to_dashboard import (
 )
 from projects_store import create_project, update_project
 from auth_streamlit import get_user_id_from_token
+<<<<<<< HEAD
+=======
+from auth_bridge import ensure_logged_in_state
+>>>>>>> 35fca69 (Update app)
 
 # 🔁 Import modules, not individual functions
 import inputs_page
@@ -84,6 +88,13 @@ def set_query_params_merge(**updates):
 
 
 def _get_user_id() -> str:
+<<<<<<< HEAD
+=======
+    ensure_logged_in_state()
+    user = st.session_state.get("sb_user")
+    if user:
+        return user.id if hasattr(user, "id") else user.get("id", "")
+>>>>>>> 35fca69 (Update app)
     return get_user_id_from_token()
 
 
@@ -130,6 +141,7 @@ def _render_create_project_form(user_id: str, module: str):
 def main():
     # --- ARCHITECTURE LOCK: dev mode flag ---
     st.session_state.setdefault("_dev_mode", True)
+    ensure_logged_in_state()
 
     # --- CSS styling for top navigation (make radio look like Streamlit tabs) ---
     st.markdown("""
@@ -196,18 +208,19 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     project_id, token, module = get_context()
     user_id = _get_user_id()
 
-    header_left, header_right = st.columns([0.7, 0.3], vertical_alignment="center")
+    header_left, header_right = st.columns([0.65, 0.35], vertical_alignment="center")
 
     with header_left:
         st.title("Beam design")
 
     with header_right:
-        actions_left, actions_right = st.columns([1, 1.6], vertical_alignment="center")
+        actions_left, actions_right = st.columns([0.8, 2.2], vertical_alignment="center")
 
         with actions_left:
             if st.button("💾 Save", type="primary", use_container_width=True):
                 if not user_id:
                     st.error("You must be logged in to save projects.")
+                    st.stop()
                 else:
                     if project_id:
                         try:
