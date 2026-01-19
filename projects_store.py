@@ -29,7 +29,7 @@ def create_project(
             payload.get("module")
             or meta.get("module")
             or st.session_state.get("module")
-            or "Beam"
+            or "beam"
         )
 
     module_value = _resolve_project_module(payload=payload, meta=meta)
@@ -43,7 +43,7 @@ def create_project(
         "updated_at": _now_iso(),
     }
     # IMPORTANT: enforce module LAST so merges can't overwrite it to None
-    row["module"] = module_value
+    row["module"] = (module_value or "beam").strip().lower()
     print("SAVE projects.module =", row.get("module"))
 
     res = sb.table(table).insert(row).execute()
@@ -73,7 +73,7 @@ def update_project(
             payload.get("module")
             or meta.get("module")
             or st.session_state.get("module")
-            or "Beam"
+            or "beam"
         )
 
     module_value = _resolve_project_module(payload=payload, meta=meta)
@@ -86,7 +86,7 @@ def update_project(
     if meta is not None:
         patch["meta"] = meta
     # IMPORTANT: enforce module LAST so merges can't overwrite it to None
-    patch["module"] = module_value
+    patch["module"] = (module_value or "beam").strip().lower()
     print("SAVE projects.module =", patch.get("module"))
 
     res = (
