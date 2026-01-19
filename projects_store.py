@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from supabase_client import get_supabase, projects_table_name
+import streamlit as st
 
 
 def _now_iso() -> str:
@@ -18,6 +19,21 @@ def create_project(
     sb = get_supabase()
     table = projects_table_name()
 
+    # --- GUARANTEE projects.module is set (DB column is NOT NULL) ---
+    def _resolve_project_module(payload=None, meta=None):
+        payload = payload or {}
+        meta = meta or {}
+
+        # Prefer explicit module values, fall back to session_state, then Beam
+        return (
+            payload.get("module")
+            or meta.get("module")
+            or st.session_state.get("module")
+            or "Beam"
+        )
+
+    module_value = _resolve_project_module(payload=payload, meta=meta)
+
     row = {
         "user_id": user_id,
         "name": name,
@@ -26,6 +42,9 @@ def create_project(
         "created_at": _now_iso(),
         "updated_at": _now_iso(),
     }
+    # IMPORTANT: enforce module LAST so merges can't overwrite it to None
+    row["module"] = module_value
+    print("SAVE projects.module =", row.get("module"))
 
     res = sb.table(table).insert(row).execute()
     if not res.data:
@@ -44,6 +63,21 @@ def update_project(
     sb = get_supabase()
     table = projects_table_name()
 
+    # --- GUARANTEE projects.module is set (DB column is NOT NULL) ---
+    def _resolve_project_module(payload=None, meta=None):
+        payload = payload or {}
+        meta = meta or {}
+
+        # Prefer explicit module values, fall back to session_state, then Beam
+        return (
+            payload.get("module")
+            or meta.get("module")
+            or st.session_state.get("module")
+            or "Beam"
+        )
+
+    module_value = _resolve_project_module(payload=payload, meta=meta)
+
     patch = {"updated_at": _now_iso()}
     if name is not None:
         patch["name"] = name
@@ -51,6 +85,9 @@ def update_project(
         patch["payload"] = payload
     if meta is not None:
         patch["meta"] = meta
+    # IMPORTANT: enforce module LAST so merges can't overwrite it to None
+    patch["module"] = module_value
+    print("SAVE projects.module =", patch.get("module"))
 
     res = (
         sb.table(table)
