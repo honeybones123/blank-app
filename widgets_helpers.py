@@ -797,7 +797,6 @@ def select_row(
             return st.selectbox(
                 _safe_label,
                 options=_opts,
-                index=_opts.index(cur) if cur in _opts else 0,
                 key=original_key,
                 label_visibility="collapsed",
                 **selectbox_kwargs,
@@ -807,7 +806,6 @@ def select_row(
         return st.selectbox(
             _safe_label,
             options=_opts,
-            index=_opts.index(cur),
             key=original_key,
             label_visibility="collapsed",
             **selectbox_kwargs,
