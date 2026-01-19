@@ -37,7 +37,7 @@ from persistence.save_to_dashboard import (
     export_state_for_saving,
     redirect_parent_to_project,
 )
-from projects_store import create_project, update_project
+from projects_store import create_project, update_project, load_project
 from auth_streamlit import get_user_id_from_token
 from auth_bridge import ensure_logged_in_state
 
@@ -198,22 +198,9 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
 </style>
 """, unsafe_allow_html=True)
 
-    def _render_project_header():
+    def _render_project_header_compact():
         name = st.session_state.get("active_project_name") or "Unsaved / New project"
-        st.markdown(
-            f"""
-            <div style="padding: 10px 14px; border-radius: 10px;
-                        background: rgba(59, 130, 246, 0.08);
-                        border: 1px solid rgba(59, 130, 246, 0.25);
-                        margin-bottom: 10px;">
-                <div style="font-size: 13px; opacity: 0.8;">Current project</div>
-                <div style="font-size: 20px; font-weight: 700; line-height: 1.2;">
-                    {name}
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.caption(f"**Project:** {name}")
 
     # ------------------------------------------------------------
     # Header row: title (left) + Save button (right)
@@ -223,7 +210,19 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     if project_id:
         st.session_state["active_project_id"] = project_id
 
-    _render_project_header()
+    if project_id and user_id:
+        needs_name = not st.session_state.get("active_project_name")
+        loaded_for_id = st.session_state.get("_active_project_loaded_id")
+        if needs_name or loaded_for_id != project_id:
+            try:
+                project_row = load_project(project_id=project_id, user_id=user_id)
+                st.session_state["active_project_id"] = project_row.get("id") or project_id
+                st.session_state["active_project_name"] = project_row.get("name") or "Untitled project"
+                st.session_state["_active_project_loaded_id"] = project_row.get("id") or project_id
+            except Exception:
+                st.session_state["_active_project_loaded_id"] = project_id
+
+    _render_project_header_compact()
 
     header_left, header_right = st.columns([0.65, 0.35], vertical_alignment="center")
 
