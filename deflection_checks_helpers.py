@@ -64,15 +64,40 @@ def build_deflection_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str
             return "—"
         return "PASS" if util <= 1.0 else "FAIL"
 
+    def _ok_from_status(status: str):
+        if status == "PASS":
+            return True
+        if status == "FAIL":
+            return False
+        return None
+
+    status_short = _status(util_short)
+    status_long = _status(util_long)
+    status_total = _status(util_total)
+
     rows = [
+        {
+            "uid": "defl_long",
+            "title": "Total deflection (short + long-term)",
+            "value": f"δtotal = {delta_total:.2f} mm",
+            "limit": f"δlim = {defl_limit_mm:.2f} mm" if defl_limit_mm > 0 else "—",
+            "util": f"{util_total:.2f}" if util_total is not None else "—",
+            "status": status_total,
+            "ok": _ok_from_status(status_total),
+            "route_page": "deflection",
+            "tab": "Long-term deflection",
+            "is_primary": True,
+        },
         {
             "uid": "defl_short",
             "title": "Short-term deflection (total load)",
             "value": f"δshort = {delta_short_total:.2f} mm",
             "limit": f"δlim = {defl_limit_mm:.2f} mm" if defl_limit_mm > 0 else "—",
             "util": f"{util_short:.2f}" if util_short is not None else "—",
-            "status": _status(util_short),
+            "status": status_short,
+            "ok": _ok_from_status(status_short),
             "route_page": "deflection",
+            "tab": "Short-term deflection",
         },
         {
             "uid": "defl_long",
@@ -80,17 +105,10 @@ def build_deflection_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str
             "value": f"δlong = {delta_long_add:.2f} mm",
             "limit": f"δlim = {defl_limit_mm:.2f} mm" if defl_limit_mm > 0 else "—",
             "util": f"{util_long:.2f}" if util_long is not None else "—",
-            "status": _status(util_long),
+            "status": status_long,
+            "ok": _ok_from_status(status_long),
             "route_page": "deflection",
-        },
-        {
-            "uid": "defl_total",
-            "title": "Total deflection (short + long-term)",
-            "value": f"δtotal = {delta_total:.2f} mm",
-            "limit": f"δlim = {defl_limit_mm:.2f} mm" if defl_limit_mm > 0 else "—",
-            "util": f"{util_total:.2f}" if util_total is not None else "—",
-            "status": _status(util_total),
-            "route_page": "deflection",
+            "tab": "Long-term deflection",
         },
     ]
 

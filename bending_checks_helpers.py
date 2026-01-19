@@ -51,8 +51,15 @@ def build_bending_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str, A
     As_min = results.get("As_min", None)
     Mcr = results.get("Mcr", None)
 
+    def _status_from_util(u: float | None):
+        if u is None:
+            return "—"
+        if u <= 1.0:
+            return "NEAR LIMIT" if u >= 0.9 else "PASS"
+        return "FAIL"
+
     ok = (util <= 1.0) if phi_Mu > 0 else None
-    status = "PASS" if ok else "FAIL" if ok is False else "—"
+    status = _status_from_util(util) if phi_Mu > 0 else "—"
 
     rows = [
         {
@@ -77,6 +84,19 @@ def build_bending_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str, A
             "route_page": "bending",
         })
 
+    if (Mcr is not None) and (Mcr == Mcr) and phi_Mu > 0:
+        Mu_min = 1.2 * float(Mcr)
+        mu_min_util = (Mu_min / phi_Mu) if phi_Mu > 0 else None
+        rows.append({
+            "uid": "bend_min_strength",
+            "title": "Minimum required design capacity (Mu,cap)_min",
+            "value": f"φMu,cap = {phi_Mu:.1f} kNm",
+            "limit": f"(Mu,cap)_min = {Mu_min:.1f} kNm",
+            "util": f"{mu_min_util:.2f}" if mu_min_util is not None else "—",
+            "status": _status_from_util(mu_min_util),
+            "route_page": "bending",
+        })
+
     if (k_u is not None) and (k_u == k_u):
         ku_lim = 0.36
         rows.append({
@@ -86,6 +106,27 @@ def build_bending_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str, A
             "limit": f"k_u,lim = {ku_lim:.2f}",
             "util": f"{(float(k_u)/ku_lim):.2f}" if ku_lim else "—",
             "status": "PASS" if float(k_u) <= ku_lim else "FAIL",
+            "route_page": "bending",
+        })
+
+    fs_outer = st_state.get("bending_sls_fs_outer")
+    if fs_outer is None:
+        fs_outer = st_state.get("sigma_s_sls")
+    try:
+        fs_outer = float(fs_outer) if fs_outer is not None else None
+    except Exception:
+        fs_outer = None
+
+    fs_limit = (0.6 * fsy) if fsy > 0 else None
+    fs_util = (fs_outer / fs_limit) if (fs_outer is not None and fs_limit) else None
+    if fs_outer is not None and fs_limit:
+        rows.append({
+            "uid": "bend_sls_stress",
+            "title": "Steel stresses at SLS (each layer)",
+            "value": f"f_s,max = {fs_outer:.1f} MPa",
+            "limit": f"0.6 fsy = {fs_limit:.1f} MPa",
+            "util": f"{fs_util:.2f}" if fs_util is not None else "—",
+            "status": _status_from_util(fs_util),
             "route_page": "bending",
         })
 

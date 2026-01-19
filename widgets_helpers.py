@@ -547,11 +547,20 @@ def label_with_hover(label: str, hover_md: str | None = None, *, required: bool 
     )
 
 
+def _nonempty_label(label: str, fallback: str) -> str:
+    label = (label or "").strip()
+    return label if label else fallback
+
+
 def number_row(label: str, key: str, default: float, sync_callbacks=None, help_text: str | None = None, required: bool = False):
-    """Create a number input row with label and optional hover tooltip (V2-safe)."""
-    col1, col2 = st.columns([1, 2])
+    """Create a number input row with label on the left and widget on the right (V2-safe)."""
+    col1, col2 = st.columns([1, 2], gap="medium")
     with col1:
-        label_with_hover(label, help_text, required=required)
+        label_text = f"{label} *" if required else label
+        if help_text:
+            label_with_hover(label_text, help_text, required=False)
+        else:
+            st.markdown(f"**{label_text}**")
 
     with col2:
         original_key = key
@@ -691,7 +700,7 @@ def number_row(label: str, key: str, default: float, sync_callbacks=None, help_t
             st.session_state[original_key] = effective_default
         
         session_value_before_widget = st.session_state.get(original_key)
-        _safe_label = label if (label is not None and str(label).strip()) else "Value"
+        _safe_label = _nonempty_label(str(label), f"_{original_key}_label")
         value = st.number_input(
             _safe_label,
             key=original_key,
@@ -737,9 +746,8 @@ def select_row(
     args = args or ()
     kwargs = kwargs or {}
 
-    _safe_label = str(label) if (label is not None and str(label).strip()) else "Select"
-
     original_key = key
+    _safe_label = _nonempty_label(str(label), f"_{original_key}_label")
     _register_rendered_key(original_key)
 
     # options may be list[str] or list of things; convert to list for membership checks
@@ -788,21 +796,15 @@ def select_row(
         selectbox_kwargs["format_func"] = lambda k: options.get(k, str(k))
 
     # ---- SAFE: allow disabling internal columns to avoid nesting errors ----
-    if use_columns:
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            label_with_hover(_safe_label, help_text, required=required)
-        with col2:
-            cur = _coerce_current_value()
-            return st.selectbox(
-                _safe_label,
-                options=_opts,
-                key=original_key,
-                label_visibility="collapsed",
-                **selectbox_kwargs,
-            )
-    else:
-        cur = _coerce_current_value()
+    label_text = f"{_safe_label} *" if required else _safe_label
+    col1, col2 = st.columns([1, 2], gap="medium")
+    with col1:
+        if help_text:
+            label_with_hover(label_text, help_text, required=False)
+        else:
+            st.markdown(f"**{label_text}**")
+    with col2:
+        _ = _coerce_current_value()
         return st.selectbox(
             _safe_label,
             options=_opts,
@@ -1336,7 +1338,7 @@ def clickable_calcbox(
 # ============================================================
 #  STEP EXPANDER HELPER - Single source of truth
 # ============================================================
-def render_step(step_id: str, title: str, summary_md: str, body_fn: callable, status=None, summary_mode: bool = False):
+def render_step(step_id: str, title: str, summary_md: str, body_fn: callable, status=None, summary_mode: bool = True):
     """Render a step as an expandable card with summary header."""
     # Apply CSS for expander styling
     apply_step_summary_expander_css()

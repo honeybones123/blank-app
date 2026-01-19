@@ -1,5 +1,7 @@
 
 import json
+import os
+import time
 from datetime import datetime
 import math
 import numpy as np
@@ -18,9 +20,12 @@ from state_and_helpers import (
     DEBUG_MODE,
     get_widget_key_for_shared,
     TAB_KEYS,
+    hc_log,
+    hc_try,
 )
 
 from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, select_row, calcbox, show_reo_message, label_with_hover, info_i_button, page_divider, seed_widget_from_shared
+
 try:
     from ui_seamless_steps import inject_seamless_steps_css, render_clickable_summary_table
 except Exception:
@@ -78,7 +83,7 @@ def apply_inputs_page_css():
         unsafe_allow_html=True,
     )
 
-    # CSS for seamless steps (summary table styling) is injected via inject_seamless_steps_css()
+# CSS for seamless steps (summary table styling) is injected via inject_seamless_steps_css()
 
 
 # ------------------------------------------------------------
@@ -161,6 +166,40 @@ def _primary_row(rows):
         if r.get("is_primary"):
             return r
     return rows[0]
+
+
+def _pack_meta(name, pack):
+    rows = (pack or {}).get("rows") or []
+    return {
+        "rows_n": len(rows),
+        "uids": [r.get("uid") for r in rows][:30],
+        "statuses": [r.get("status") for r in rows][:30],
+    }
+
+
+def _normalise_row(r: dict, route_page: str) -> dict:
+    status = r.get("status", "—")
+    ok = r.get("ok", None)
+    if ok is None:
+        if status == "PASS":
+            ok = True
+        elif status == "FAIL":
+            ok = False
+        elif status in ("NEAR LIMIT", "WARN", "CHECK"):
+            ok = None
+
+    return {
+        "uid": r.get("uid", ""),
+        "title": r.get("title", ""),
+        "value": r.get("value", "—"),
+        "limit": r.get("limit", "—"),
+        "util": r.get("util", "—"),
+        "status": status,
+        "ok": ok,
+        "route_page": r.get("route_page", route_page),
+    }
+
+
 
 
 def _internal_leg_positions(y_min, y_max, n_legs):
@@ -624,17 +663,22 @@ def make_beam_3d_figure():
 
     fig = go.Figure(data=traces)
 
+    k = max(2.2, float(L) / 2000.0)
     fig.update_layout(
         autosize=True,
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
+        scene_camera=dict(
+            eye=dict(x=k, y=k, z=k * 0.6),
+            center=dict(x=0, y=0, z=0),
+            up=dict(x=0, y=0, z=1),
+        ),
         scene=dict(
             xaxis_title="Length (mm)",
             yaxis_title="Width (mm)",
             zaxis_title="Depth from top (mm)",
             zaxis=dict(autorange="reversed"),
             aspectmode="data",
-            camera=dict(eye=dict(x=1.2, y=1.6, z=0.6)),
             annotations=[
                 dict(
                     x=mid_x,
@@ -1002,14 +1046,18 @@ def _render_materials_and_sectionA_2d(sync_callbacks):
             st.info("Section A diagram not available right now (inputs are still saved).")
         else:
             try:
-                fig_sec.update_layout(height=640)
+                fig_sec.update_layout(
+                    autosize=True,
+                    height=620,
+                    margin=dict(l=10, r=10, t=10, b=10),
+                )
             except Exception:
                 # ultra-safe: even if fig is a dict-like, don't crash
                 pass
             st.plotly_chart(
                 fig_sec,
-                width="stretch",
-                config={"displayModeBar": False},
+                use_container_width=True,
+                config={"responsive": True, "displayModeBar": False},
             )
 
 
@@ -1746,7 +1794,7 @@ def render_inputs():
         with col_exp_input:
             if "inputs_exposure_class" in st.session_state:
                 st.selectbox(
-                    "",
+                    "Exposure class",
                     options,
                     key="inputs_exposure_class",
                     on_change=sync_callbacks["inputs_exposure_class"],
@@ -1754,7 +1802,7 @@ def render_inputs():
                 )
             else:
                 st.selectbox(
-                    "",
+                    "Exposure class",
                     options,
                     key="inputs_exposure_class",
                     index=options.index(current),
@@ -1778,7 +1826,7 @@ def render_inputs():
             )
         with col2:
             st.selectbox(
-                "",
+                "Resultant action",
                 options=member_options,
                 index=member_options.index(member_current) if member_current in member_options else 0,
                 key="inputs_crack_member_type",
@@ -1798,7 +1846,7 @@ def render_inputs():
             )
         with col2:
             st.selectbox(
-                "",
+                "k1",
                 options=k1_options,
                 index=k1_options.index(k1_current) if k1_current in k1_options else 0,
                 format_func=lambda x: "Deformed bars (k₁ = 0.8)" if abs(x - 0.8) < 1e-9 else "Plain bars (k₁ = 1.6)",
@@ -1826,31 +1874,85 @@ def render_inputs():
     # ============================
     
     # --- Auto-computed summary rows (deflection-style) ---
-    bend_pack = build_bending_check_rows_from_state(st.session_state)
-    shear_pack = build_shear_check_rows_from_state(st.session_state)
-    crack_pack = build_crack_check_rows_from_state(st.session_state)
-    defl_pack = build_deflection_check_rows_from_state(st.session_state)
+    bend_pack = hc_try("summary.build_bending_pack", lambda: build_bending_check_rows_from_state(st.session_state))
+    shear_pack = hc_try("summary.build_shear_pack", lambda: build_shear_check_rows_from_state(st.session_state))
+    crack_pack = hc_try("summary.build_crack_pack", lambda: build_crack_check_rows_from_state(st.session_state))
+    defl_pack = hc_try("summary.build_deflection_pack", lambda: build_deflection_check_rows_from_state(st.session_state))
 
-    BENDING_ROWS = bend_pack.get("rows") or []
-    SHEAR_ROWS = shear_pack.get("rows") or []
-    CRACK_ROWS = crack_pack.get("rows") or []
-    DEFLECTION_ROWS = []
-    for r in defl_pack.get("rows", []):
-        status = r.get("status", "—")
-        DEFLECTION_ROWS.append({
-            "uid": r.get("uid"),
-            "title": r.get("title"),
-            "value": r.get("value"),
-            "limit": r.get("limit"),
-            "util": r.get("util"),
-            "status": status,
-            "ok": True if status == "PASS" else False if status == "FAIL" else None,
+    hc_log(
+        "summary.pack_meta",
+        bending=_pack_meta("bending", bend_pack),
+        shear=_pack_meta("shear", shear_pack),
+        crack=_pack_meta("crack", crack_pack),
+        deflection=_pack_meta("deflection", defl_pack),
+    )
+
+    hc_log(
+        "state.snapshot",
+        keys_count=len(st.session_state.keys()),
+        has_actions_uls=isinstance(st.session_state.get("actions_uls"), dict),
+        sample_keys=sorted(list(st.session_state.keys()))[:120],
+    )
+
+    bend_err = bend_pack is None
+    shear_err = shear_pack is None
+    crack_err = crack_pack is None
+    defl_err = defl_pack is None
+
+    BENDING_ROWS = [_normalise_row(r, "bending") for r in (bend_pack or {}).get("rows") or []]
+    SHEAR_ROWS = [_normalise_row(r, "shear") for r in (shear_pack or {}).get("rows") or []]
+    CRACK_ROWS = [_normalise_row(r, "crack") for r in (crack_pack or {}).get("rows") or []]
+    if bend_err:
+        BENDING_ROWS = [{
+            "uid": "bend_error",
+            "title": "Bending checks failed (see debug log)",
+            "value": "—",
+            "limit": "—",
+            "util": "—",
+            "status": "—",
+            "route_page": "bending",
+        }]
+    if shear_err:
+        SHEAR_ROWS = [{
+            "uid": "shear_error",
+            "title": "Shear checks failed (see debug log)",
+            "value": "—",
+            "limit": "—",
+            "util": "—",
+            "status": "—",
+            "route_page": "shear",
+        }]
+    if crack_err:
+        CRACK_ROWS = [{
+            "uid": "crack_error",
+            "title": "Crack checks failed (see debug log)",
+            "value": "—",
+            "limit": "—",
+            "util": "—",
+            "status": "—",
+            "route_page": "crack",
+        }]
+
+    DEFLECTION_ROWS = [_normalise_row(r, "deflection") for r in (defl_pack or {}).get("rows") or []]
+
+    if defl_err:
+        DEFLECTION_ROWS = [{
+            "uid": "defl_error",
+            "title": "Deflection checks failed (see debug log)",
+            "value": "—",
+            "limit": "—",
+            "util": "—",
+            "status": "—",
             "route_page": "deflection",
-        })
-
-    delta_total = float(defl_pack.get("summary_delta_total_mm") or 0.0)
-    defl_limit = float(defl_pack.get("summary_defl_limit_mm") or 0.0)
-    defl_util = defl_pack.get("summary_util_total")
+        }]
+        delta_total = 0.0
+        defl_limit = 0.0
+        defl_util = None
+    else:
+        defl_summary = defl_pack or {}
+        delta_total = float(defl_summary.get("summary_delta_total_mm") or 0.0)
+        defl_limit = float(defl_summary.get("summary_defl_limit_mm") or 0.0)
+        defl_util = defl_summary.get("summary_util_total")
 
     bending_primary = _primary_row(BENDING_ROWS) or {}
     shear_primary = _primary_row(SHEAR_ROWS) or {}
@@ -1916,7 +2018,8 @@ def render_inputs():
             ok = r.get("ok")
             tab = r.get("tab", "")
             
-            cls = "pass" if ok is True else "fail" if ok is False else ""
+            status_norm = str(status).upper()
+            cls = "pass" if ok is True else "fail" if ok is False else "warn" if status_norm in ("NEAR LIMIT", "WARN", "CHECK") else ""
             primary = "primary" if r.get("is_primary") else ""
             row_class = f"{cls} {primary}".strip()
             
@@ -1942,14 +2045,24 @@ def render_inputs():
     bending_uid_map = {
         "Flexural strength": "bending_uls_1_7",
         "Minimum tensile steel": "bending_min_2_5",
+        "Minimum required design capacity (Mu,cap)_min": "bending_min_2_4",
         "Ductility (k_u limit)": "bending_uls_1_5",
+        "Steel stresses at SLS (each layer)": "bending_sls_3_6",
     }
     shear_uid_map = {
+        "Torsion cracking check": "shear_check1",
+        "Equivalent shear $V_{eq}^*$": "shear_check2",
+        "Longitudinal strain $\\varepsilon_x$": "shear_check4",
+        "MCFT parameters (k_v and θ_v)": "shear_check5",
+        "Concrete shear strength V_uc": "shear_check6",
+        "Steel shear strength V_s": "shear_check7",
         "Sectional shear capacity": "shear_check8",
-        "Web crushing check": "shear_check9",
+        "Web-crushing strength": "shear_check9",
     }
     crack_uid_map = {
-        "Crack width check": "crk_step_3",
+        "Governing outcome": "crk_step_4",
+        "Table method (Cl. 8.6.2.2)": "crk_step_2",
+        "Direct crack width (Cl. 8.6.2.3)": "crk_step_3",
     }
 
     for rows, route, uid_map in (
@@ -2111,9 +2224,9 @@ tr:hover .hint { opacity: 1; }
                         "location": "inputs_page.py:deflection_summary",
                         "message": "INPUTS_DEFLECTION_SUMMARY",
                         "data": {
-                            "delta_total": defl_summary.get("summary_delta_total_mm"),
-                            "defl_limit": defl_summary.get("summary_defl_limit_mm"),
-                            "defl_util": defl_summary.get("summary_util_total"),
+                                "delta_total": defl_summary.get("summary_delta_total_mm"),
+                                "defl_limit": defl_summary.get("summary_defl_limit_mm"),
+                                "defl_util": defl_summary.get("summary_util_total"),
                             "rows_count": len(DEFLECTION_ROWS),
                         },
                         "timestamp": int(time.time() * 1000),
@@ -2130,7 +2243,7 @@ tr:hover .hint { opacity: 1; }
         st.markdown(
             f"""
 <div class="inputs-top-level-row">
-<details open>
+<details>
 <summary style="background-color: {bending_colour};">
   <span><strong>Bending — ULS check</strong></span>
   <span style="text-align:right;">{bending_demand}</span>

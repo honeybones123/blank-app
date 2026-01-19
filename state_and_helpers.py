@@ -1,6 +1,9 @@
 import math
 import uuid
 import time
+import os
+import json
+import traceback
 import json
 import os
 import inspect
@@ -3222,6 +3225,31 @@ def get_sync_callbacks():
         pass
     
     return _SYNC_CALLBACKS
+
+
+# ============================================
+# Health check logger (debug file only)
+# ============================================
+
+_RUNTIME_DIR = os.path.expanduser("~/Documents/GitHub/.blank_app_runtime")
+os.makedirs(_RUNTIME_DIR, exist_ok=True)
+_DEBUG_PATH = os.path.join(_RUNTIME_DIR, "health_check.jsonl")
+
+
+def hc_log(tag: str, **data):
+    rec = {"t": time.time(), "tag": tag, **data}
+    with open(_DEBUG_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec) + "\n")
+
+
+def hc_try(tag: str, fn):
+    try:
+        out = fn()
+        hc_log(tag, ok=True)
+        return out
+    except Exception as e:
+        hc_log(tag, ok=False, err_type=type(e).__name__, err=str(e), trace=traceback.format_exc())
+        return None
 
 
 # ============================================

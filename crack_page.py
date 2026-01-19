@@ -771,14 +771,14 @@ This page checks **flexural crack control** for RC beams per AS 3600 using:
         for r in (crack_pack.get("rows") or []):
             status = r.get("status", "—")
             rows.append({
-                "uid": "crk_step_3",
+                "uid": r.get("uid", "crk_step_3"),
                 "title": r.get("title", ""),
                 "value": r.get("value", ""),
                 "limit": r.get("limit", ""),
                 "util": r.get("util", ""),
                 "status": status,
                 "ok": True if status == "PASS" else False if status == "FAIL" else None,
-                "is_primary": True,
+                "is_primary": r.get("title") == "Governing outcome",
             })
         update_results("crack", {"rows": rows})
         

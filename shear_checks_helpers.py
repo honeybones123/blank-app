@@ -68,18 +68,27 @@ def build_shear_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str, Any
 
     res = run_shear_calc(inp)
 
+    def _status_from_util(u: float | None):
+        if u is None:
+            return "—"
+        if u <= 1.0:
+            return "NEAR LIMIT" if u >= 0.9 else "PASS"
+        return "FAIL"
+
     util = (res.V_eq / res.phi_Vu) if res.phi_Vu > 0 else float("nan")
     ok = (util <= 1.0) if util == util else None
-    status = "PASS" if ok else "FAIL" if ok is False else "—"
+    status = _status_from_util(util) if ok is not None else "—"
 
     phi_Vu_max = phi * res.Vu_max_kN
     util_web = (res.V_eq / phi_Vu_max) if phi_Vu_max > 0 else float("nan")
     ok_web = (util_web <= 1.0) if util_web == util_web else None
-    status_web = "PASS" if ok_web else "FAIL" if ok_web is False else "—"
+    status_web = _status_from_util(util_web) if ok_web is not None else "—"
+
+    torsion_text = "NOT REQUIRED" if not res.torsion_required else "REQUIRED"
 
     rows = [
         {
-            "uid": "shear_capacity",
+            "uid": "shear_check8",
             "title": "Sectional shear capacity",
             "value": f"φVu = {res.phi_Vu:.1f} kN",
             "limit": f"V*eq = {res.V_eq:.1f} kN",
@@ -88,8 +97,62 @@ def build_shear_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str, Any
             "route_page": "shear",
         },
         {
-            "uid": "shear_web",
-            "title": "Web crushing check",
+            "uid": "shear_check1",
+            "title": "Torsion cracking check",
+            "value": f"Torsion design is {torsion_text}",
+            "limit": f"0.25 φ Tcr = {res.torsion_required_limit:.1f} kNm",
+            "util": "—",
+            "status": "PASS" if not res.torsion_required else "FAIL",
+            "route_page": "shear",
+        },
+        {
+            "uid": "shear_check2",
+            "title": "Equivalent shear $V_{eq}^*$",
+            "value": f"V*eq = {res.V_eq:.1f} kN",
+            "limit": "—",
+            "util": "—",
+            "status": "—",
+            "route_page": "shear",
+        },
+        {
+            "uid": "shear_check4",
+            "title": "Longitudinal strain $\\varepsilon_x$",
+            "value": f"εx = {res.eps_x:.5f}",
+            "limit": "—",
+            "util": "—",
+            "status": "—",
+            "route_page": "shear",
+        },
+        {
+            "uid": "shear_check5",
+            "title": "MCFT parameters (k_v and θ_v)",
+            "value": f"k_v = {res.k_v:.3f}, θ_v = {res.theta_v_deg:.1f}°",
+            "limit": "—",
+            "util": "—",
+            "status": "—",
+            "route_page": "shear",
+        },
+        {
+            "uid": "shear_check6",
+            "title": "Concrete shear strength V_uc",
+            "value": f"Vuc = {res.Vuc_kN:.1f} kN",
+            "limit": "—",
+            "util": "—",
+            "status": "—",
+            "route_page": "shear",
+        },
+        {
+            "uid": "shear_check7",
+            "title": "Steel shear strength V_s",
+            "value": f"Vs = Vus = {res.Vus_kN:.1f} kN",
+            "limit": "—",
+            "util": "—",
+            "status": "—",
+            "route_page": "shear",
+        },
+        {
+            "uid": "shear_check9",
+            "title": "Web-crushing strength",
             "value": f"φVu,max = {phi_Vu_max:.1f} kN",
             "limit": f"V*eq = {res.V_eq:.1f} kN",
             "util": f"{util_web:.2f}" if util_web == util_web else "—",

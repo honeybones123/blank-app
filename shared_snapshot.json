@@ -18,7 +18,7 @@
   "uls_Mstar": 100.0,
   "uls_Vstar": 300.0,
   "uls_Nstar": 10.0,
-  "sls_Mstar": 1.0,
+  "sls_Mstar": 150.0,
   "sls_Vstar": 1.0,
   "sls_Nstar": 0.0,
   "loads_edit_mode": "ULS",

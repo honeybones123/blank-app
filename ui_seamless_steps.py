@@ -147,7 +147,13 @@ tr:hover .hint { opacity: 1; }
         ok = r.get("ok")
         tab = r.get("tab", "")
         
-        cls = "pass" if ok is True else "fail" if ok is False else ""
+        status_norm = str(status).upper()
+        cls = (
+            "pass" if ok is True
+            else "fail" if ok is False
+            else "warn" if status_norm in ("NEAR LIMIT", "WARN", "CHECK")
+            else ""
+        )
         primary = "primary" if r.get("is_primary") else ""
         row_class = f"{cls} {primary}".strip()
         

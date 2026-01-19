@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-01-19 11:19:35",
+  "timestamp": "2026-01-19 17:32:52",
   "page": "bending",
-  "boot_id": "boot_1768781962",
+  "boot_id": "boot_1768803813",
   "fresh_boot": false,
   "restored_from_snapshot": true,
   "rendered_widget_count": 27,
-  "session_key_count": 507,
+  "session_key_count": 510,
   "missing_shared_for_rendered": [],
   "stray_session_keys": [
     "A_duct_total",
@@ -252,18 +252,18 @@
     },
     {
       "widget_key": "bending_N_star",
-      "widget_val": 0.0,
+      "widget_val": 10.0,
       "widget_type": "float",
       "shared_key": "N_star",
-      "shared_val": 0.0,
+      "shared_val": 10.0,
       "shared_type": "float"
     },
     {
       "widget_key": "bending_P_star",
-      "widget_val": 3.0,
+      "widget_val": 10.0,
       "widget_type": "float",
       "shared_key": "P_star",
-      "shared_val": 3.0,
+      "shared_val": 10.0,
       "shared_type": "float"
     },
     {

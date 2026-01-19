@@ -264,14 +264,19 @@ def _build_beam_3d_figure_pure_impl(b, D, L, Mu_star, phi_Mu_cap, c, strain_stat
     #  Layout
     # =======================================================
     fig = go.Figure(data=traces)
+    k = max(2.2, float(L) / 2000.0)
     fig.update_layout(
+        scene_camera=dict(
+            eye=dict(x=k, y=k, z=k * 0.6),
+            center=dict(x=0, y=0, z=0),
+            up=dict(x=0, y=0, z=1),
+        ),
         scene=dict(
             xaxis_title="Length (mm)",
             yaxis_title="Width (mm)",
             zaxis_title="Depth from top (mm)",
             zaxis=dict(autorange="reversed"),
             aspectmode="data",
-            camera=dict(eye=dict(x=1.45, y=1.35, z=0.95)),
         ),
         margin=dict(l=0, r=0, t=10, b=0),
         height=350,
@@ -1421,10 +1426,12 @@ def render_bending():
     summary_df = pd.DataFrame(rows_summary)
 
     def _highlight_status(row):
-        status = row.get("Status", "")
-        if status == "OK":
+        status = str(row.get("Status", "")).upper()
+        if status == "PASS":
             color = "#d9ead3"
-        elif status in ("Check", "NG"):
+        elif status == "NEAR LIMIT":
+            color = "#fff4c2"
+        elif status in ("FAIL", "NG", "CHECK"):
             color = "#f4cccc"
         else:
             color = ""
@@ -1513,14 +1520,18 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         check_to_uid = {
             "Flexural strength": "bending_uls_1_7",
             "Minimum tensile steel": "bending_min_2_5",
+            "Minimum required design capacity (Mu,cap)_min": "bending_min_2_4",
             "Ductility (k_u limit)": "bending_uls_1_5",
+            "Steel stresses at SLS (each layer)": "bending_sls_3_6",
         }
         
         # Map checks to their tabs
         check_to_tab = {
             "Flexural strength": "ULS Checks",
             "Minimum tensile steel": "Minimum strength checks",
+            "Minimum required design capacity (Mu,cap)_min": "Minimum strength checks",
             "Ductility (k_u limit)": "ULS Checks",
+            "Steel stresses at SLS (each layer)": "SLS Checks",
         }
 
         # Build ROWS list for render_clickable_summary_table (only include rows with UIDs)
@@ -1532,11 +1543,11 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             tab = check_to_tab.get(check)
             if uid:  # Only include rows that have a matching calc step
                 # Determine ok status for styling (True=pass/green, False=fail/red, None=neutral)
-                status_str = row.get("Status", "")
+                status_str = str(row.get("Status", "")).upper()
                 ok = None
-                if status_str == "OK":
+                if status_str == "PASS":
                     ok = True
-                elif status_str == "Check" or status_str == "FAIL":
+                elif status_str in ("FAIL", "NG", "CHECK"):
                     ok = False
                 
                 ROWS.append({

@@ -6,6 +6,12 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+from widgets_helpers import apply_global_widget_css, apply_calcbox_css
+from state_and_helpers import hc_try
+
+hc_try("css.apply_global_widget_css", apply_global_widget_css)
+hc_try("css.apply_calcbox_css", apply_calcbox_css)
+
 from state_and_helpers import (
     init_shared_session_state,
     recalc_derived_values,
@@ -298,7 +304,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         st.markdown('<div id="page-nav-anchor"></div>', unsafe_allow_html=True)
 
         selected_slug = st.radio(
-            "",
+            "Navigation",
             options=SLUGS,
             horizontal=True,
             key=NAV_KEY,

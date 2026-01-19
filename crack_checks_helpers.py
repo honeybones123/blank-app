@@ -9,28 +9,56 @@ def build_crack_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str, Any
 
     out = compute_crack_results(publish=False)
 
+    sigma_sr = float(out.get("sigma_sr", 0.0) or 0.0)
+    sigma_allow = float(out.get("sigma_allow_table", 0.0) or 0.0)
     w = float(out.get("w_calc", 0.0) or 0.0)
     wlim = float(out.get("wmax_char", 0.0) or 0.0)
-    util = float(out.get("crack_utilisation", 0.0) or 0.0)
+    util_table = (sigma_sr / sigma_allow) if sigma_allow > 0 else 0.0
+    util_w = float(out.get("crack_utilisation", 0.0) or 0.0)
 
-    ok = (util <= 1.0) if wlim > 0 else None
-    status = "PASS" if ok else "FAIL" if ok is False else "—"
+    passes_table = bool(out.get("passes_table", False))
+    passes_w = bool(out.get("passes_w", False))
+
+    def _status_from_util(u: float | None):
+        if u is None:
+            return "—"
+        if u <= 1.0:
+            return "NEAR LIMIT" if u >= 0.9 else "PASS"
+        return "FAIL"
 
     rows = [
         {
-            "uid": "crack_width",
-            "title": "Crack width check",
-            "value": f"w = {w:.3f} mm",
-            "limit": f"wmax = {wlim:.3f} mm" if wlim > 0 else "—",
-            "util": f"{util:.2f}" if wlim > 0 else "—",
-            "status": status,
+            "uid": "crk_step_4",
+            "title": "Governing outcome",
+            "value": "Both checks pass" if (passes_table and passes_w) else "One or more checks fail",
+            "limit": "Table stress + direct width",
+            "util": "—",
+            "status": "PASS" if (passes_table and passes_w) else "FAIL",
             "route_page": "crack",
-        }
+        },
+        {
+            "uid": "crk_step_2",
+            "title": "Table method (Cl. 8.6.2.2)",
+            "value": f"σ_sr = {sigma_sr:.1f} MPa",
+            "limit": f"σ_allow = {sigma_allow:.1f} MPa" if sigma_allow > 0 else "—",
+            "util": f"{util_table:.2f}" if sigma_allow > 0 else "—",
+            "status": _status_from_util(util_table) if sigma_allow > 0 else "—",
+            "route_page": "crack",
+        },
+        {
+            "uid": "crk_step_3",
+            "title": "Direct crack width (Cl. 8.6.2.3)",
+            "value": f"w = {w:.3f} mm",
+            "limit": f"w'max = {wlim:.3f} mm" if wlim > 0 else "—",
+            "util": f"{util_w:.2f}" if wlim > 0 else "—",
+            "status": _status_from_util(util_w) if wlim > 0 else "—",
+            "route_page": "crack",
+        },
     ]
 
     return {
         "summary_w_mm": w,
         "summary_wlim_mm": wlim,
-        "summary_util": util,
+        "summary_util": util_w,
         "rows": rows,
     }

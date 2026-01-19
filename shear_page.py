@@ -3156,14 +3156,26 @@ In these cases, a strut-and-tie model may govern and web crushing / strut behavi
 
     # Map summary rows -> step UIDs and anchor IDs
     check_to_uid = {
+        "Torsion cracking check": "shear_check1",
+        "Equivalent shear $V_{eq}^*$": "shear_check2",
+        "Longitudinal strain $\\varepsilon_x$": "shear_check4",
+        "MCFT parameters (k_v and θ_v)": "shear_check5",
+        "Concrete shear strength V_uc": "shear_check6",
+        "Steel shear strength V_s": "shear_check7",
         "Sectional shear capacity": "shear_check8",
-        "Web crushing check": "shear_check9",
+        "Web-crushing strength": "shear_check9",
     }
     
     # Map summary rows -> tab labels (for tab switching on click)
     check_to_tab = {
+        "Torsion cracking check": "Torsion + dimensions",
+        "Equivalent shear $V_{eq}^*$": "Torsion + dimensions",
+        "Longitudinal strain $\\varepsilon_x$": "MCFT and strength checks",
+        "MCFT parameters (k_v and θ_v)": "MCFT and strength checks",
+        "Concrete shear strength V_uc": "MCFT and strength checks",
+        "Steel shear strength V_s": "MCFT and strength checks",
         "Sectional shear capacity": "MCFT and strength checks",
-        "Web crushing check": "MCFT and strength checks",
+        "Web-crushing strength": "MCFT and strength checks",
     }
 
     # Build ROWS list for render_clickable_summary_table
@@ -3173,11 +3185,11 @@ In these cases, a strut-and-tie model may govern and web crushing / strut behavi
         uid = check_to_uid.get(check)
         if uid:  # Only include rows that have a matching calc step
             # Determine ok status for styling (True=pass/green, False=fail/red, None=neutral)
-            status_str = row.get("Status", "")
+            status_str = str(row.get("Status", "")).upper()
             ok = None
-            if status_str == "OK":
+            if status_str == "PASS":
                 ok = True
-            elif status_str in ("NG", "Check", "FAIL"):
+            elif status_str in ("FAIL", "NG", "CHECK"):
                 ok = False
             
             tab = check_to_tab.get(check, "")
@@ -3190,14 +3202,20 @@ In these cases, a strut-and-tie model may govern and web crushing / strut behavi
                 "status": status_str,
                 "ok": ok,
                 "tab": tab,
-                "is_primary": (check == "Sectional shear capacity (φV_u vs V_eq*)"),
+                "is_primary": (check == "Sectional shear capacity"),
                 "anchor_id": uid,  # always scroll to <div id="calc_{uid}">
             })
     
     # Sort ROWS so primary check is first
     priority = {
-        "Sectional shear capacity": 0,
-        "Web crushing check": 1,
+            "Sectional shear capacity": 0,
+            "Torsion cracking check": 1,
+            "Equivalent shear $V_{eq}^*$": 2,
+            "Longitudinal strain $\\varepsilon_x$": 3,
+            "MCFT parameters (k_v and θ_v)": 4,
+            "Concrete shear strength V_uc": 5,
+            "Steel shear strength V_s": 6,
+            "Web-crushing strength": 7,
     }
     ROWS.sort(key=lambda r: priority.get(r["title"], 99))
 
