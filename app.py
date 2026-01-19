@@ -39,10 +39,7 @@ from persistence.save_to_dashboard import (
 )
 from projects_store import create_project, update_project
 from auth_streamlit import get_user_id_from_token
-<<<<<<< HEAD
-=======
 from auth_bridge import ensure_logged_in_state
->>>>>>> 35fca69 (Update app)
 
 # 🔁 Import modules, not individual functions
 import inputs_page
@@ -88,13 +85,10 @@ def set_query_params_merge(**updates):
 
 
 def _get_user_id() -> str:
-<<<<<<< HEAD
-=======
     ensure_logged_in_state()
     user = st.session_state.get("sb_user")
     if user:
         return user.id if hasattr(user, "id") else user.get("id", "")
->>>>>>> 35fca69 (Update app)
     return get_user_id_from_token()
 
 
