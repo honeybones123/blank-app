@@ -1,8 +1,8 @@
-import os
 import json
-import requests
 import streamlit as st
 import streamlit.components.v1 as components
+
+from state_and_helpers import SHARED_DEFAULTS, DERIVED_KEYS, RESULT_KEYS
 
 
 def _qp(name: str) -> str:
@@ -29,48 +29,34 @@ def get_context():
     return project_id, token, module
 
 
-def next_base_url() -> str:
-    # Set this in your Streamlit env for prod; default works for local Next dev
-    return os.environ.get("NEXT_BASE_URL", "http://localhost:3000").rstrip("/")
-
-
 def export_state_for_saving() -> dict:
     """
-    Export ONLY JSON-serializable session_state keys.
-    Later you can tighten this to just SHARED_DEFAULTS + module inputs.
+    Export contract-safe session_state keys for saving.
     """
-    out = {}
-    for k, v in st.session_state.items():
-        if str(k).startswith("_"):  # skip internal app/router keys
-            continue
-        try:
-            json.dumps(v)
-            out[k] = v
-        except Exception:
-            pass
-    return out
+    def _safe_subset(keys):
+        out = {}
+        for k in keys:
+            v = st.session_state.get(k)
+            try:
+                json.dumps(v)
+                out[k] = v
+            except Exception:
+                pass
+        return out
 
+    results_dict = st.session_state.get("results", {})
+    try:
+        json.dumps(results_dict)
+    except Exception:
+        results_dict = {}
 
-def api_create_project(token: str, name: str, module: str) -> str:
-    r = requests.post(
-        f"{next_base_url()}/api/project/create",
-        json={"name": name, "module": module},
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=20,
-    )
-    r.raise_for_status()
-    return r.json()["projectId"]
-
-
-def api_save_state(token: str, project_id: str, state: dict, schema_version: int = 1):
-    r = requests.post(
-        f"{next_base_url()}/api/project/save",
-        json={"project": project_id, "state": state, "schema_version": schema_version},
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=20,
-    )
-    r.raise_for_status()
-    return r.json() if r.content else {}
+    return {
+        "version": "v1",
+        "shared": _safe_subset(SHARED_DEFAULTS.keys()),
+        "derived": _safe_subset(DERIVED_KEYS),
+        "results": _safe_subset(RESULT_KEYS),
+        "results_dict": results_dict,
+    }
 
 
 def redirect_parent_to_project(project_id: str):

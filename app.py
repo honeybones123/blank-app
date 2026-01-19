@@ -29,10 +29,9 @@ import time
 from persistence.save_to_dashboard import (
     get_context,
     export_state_for_saving,
-    api_create_project,
-    api_save_state,
     redirect_parent_to_project,
 )
+from projects_store import create_project, update_project
 
 # 🔁 Import modules, not individual functions
 import inputs_page
@@ -77,7 +76,17 @@ def set_query_params_merge(**updates):
             st.query_params[k] = v
 
 
-def _render_create_project_form(token, module):
+def _get_user_id() -> str:
+    user_id = st.session_state.get("user_id")
+    if user_id:
+        return user_id
+    user = st.session_state.get("user") or st.session_state.get("supabase_user")
+    if isinstance(user, dict) and user.get("id"):
+        return user.get("id")
+    return ""
+
+
+def _render_create_project_form(user_id: str, module: str):
     name = st.text_input(
         "Project name",
         placeholder="e.g. SRL East – RC Beam over Station Box",
@@ -90,16 +99,25 @@ def _render_create_project_form(token, module):
             st.rerun()
     with cB:
         if st.button("Create & Save", type="primary", use_container_width=True):
+            if not user_id:
+                st.error("You must be logged in to save projects.")
+                return
             if not name.strip():
                 st.error("Project name is required.")
             else:
                 try:
-                    new_id = api_create_project(token, name.strip(), module)
                     payload = export_state_for_saving()
-                    api_save_state(token, new_id, payload, schema_version=1)
+                    row = create_project(
+                        user_id=user_id,
+                        name=name.strip(),
+                        payload=payload,
+                        meta={"module": module},
+                    )
+                    new_id = row.get("id")
 
                     # Ensure future saves use this project and the parent URL has ?project=<id>
-                    redirect_parent_to_project(new_id)
+                    if new_id:
+                        redirect_parent_to_project(new_id)
 
                     st.session_state["_show_save_modal"] = False
                     st.toast("Project created and saved", icon="✅")
@@ -175,6 +193,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     # Header row: title (left) + Save button (right)
     # ------------------------------------------------------------
     project_id, token, module = get_context()
+    user_id = _get_user_id()
 
     header_left, header_right = st.columns([0.7, 0.3], vertical_alignment="center")
 
@@ -186,13 +205,18 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
 
         with actions_left:
             if st.button("💾 Save", type="primary", use_container_width=True):
-                if not token:
-                    st.error("Open this page from the website so your login token is available.")
+                if not user_id:
+                    st.error("You must be logged in to save projects.")
                 else:
                     if project_id:
                         try:
                             payload = export_state_for_saving()
-                            api_save_state(token, project_id, payload, schema_version=1)
+                            update_project(
+                                project_id=project_id,
+                                user_id=user_id,
+                                payload=payload,
+                                meta={"module": module},
+                            )
                             st.toast("Saved", icon="✅")
                         except Exception as e:
                             st.error(f"Save failed: {e}")
@@ -208,10 +232,10 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         # --- Create project UI (compatible with Streamlit versions without st.modal) ---
         if hasattr(st, "modal"):
             with st.modal("Create project to save"):
-                _render_create_project_form(token, module)
+                _render_create_project_form(user_id, module)
         else:
             with st.expander("Create project to save", expanded=True):
-                _render_create_project_form(token, module)
+                _render_create_project_form(user_id, module)
 
     # Session restart banner (debug only)
     if DEBUG_MODE:
