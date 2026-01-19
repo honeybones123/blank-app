@@ -215,7 +215,7 @@ def render_pdf_button():
     - Cleans up temp files
     """
     # Generate PDF button
-    if st.button("📄 Generate PDF Report", type="primary"):
+    if st.button("📄 Generate PDF Report", type="primary", use_container_width=True):
         # 1) Run all checks FIRST (and show spinner so user knows it's working)
         with st.spinner("Running all checks..."):
             try:

@@ -5,6 +5,10 @@ Builds professional PDF reports from extracted content.
 Uses reportlab for PDF generation.
 """
 
+import re
+
+import re
+
 try:
     from reportlab.lib.pagesizes import letter, A4
     from reportlab.lib import colors
@@ -195,6 +199,60 @@ STATUS_STYLES = {
     },
 }
 
+def _normalize_derivation_list(derivation):
+    if not derivation:
+        return []
+    if isinstance(derivation, str):
+        parts = re.split(r"<br\s*/?>|\n", derivation)
+        return [part.strip() for part in parts if part and part.strip()]
+    if isinstance(derivation, list):
+        return derivation
+    return [derivation]
+
+
+def _as_deriv_def(deriv):
+    if isinstance(deriv, dict):
+        return deriv
+    if isinstance(deriv, str):
+        return {"label": "", "eq": deriv, "sub": ""}
+    return {"label": "", "eq": str(deriv), "sub": ""}
+
+
+def _as_col_def(c):
+    # Allow simple string columns like "Value" as a shorthand
+    if isinstance(c, str):
+        return {"label": c, "key": c}
+    if isinstance(c, dict):
+        return c
+    raise TypeError(f"Invalid column definition type: {type(c)} -> {c!r}")
+
+
+def _as_cell_def(x):
+    if isinstance(x, str):
+        return {"text": x}
+    if isinstance(x, dict):
+        return x
+    return {"text": str(x)}
+
+
+def _normalize_derivation_list(derivation):
+    if not derivation:
+        return []
+    if isinstance(derivation, str):
+        parts = re.split(r"<br\s*/?>|\n", derivation)
+        return [part.strip() for part in parts if part and part.strip()]
+    if isinstance(derivation, list):
+        return derivation
+    return [derivation]
+
+
+def _as_deriv_def(deriv):
+    if isinstance(deriv, dict):
+        return deriv
+    if isinstance(deriv, str):
+        return {"label": "", "eq": deriv, "sub": ""}
+    return {"label": "", "eq": str(deriv), "sub": ""}
+
 
 def _render_box_with_optional_diagram(story, styles, box, available_width):
     """
@@ -283,10 +341,11 @@ def _render_box_with_optional_diagram(story, styles, box, available_width):
     if clause:
         left_flowables.append(Paragraph(f"<i>{clause}</i>", styles["StepClause"]))
     
-    for deriv in derivation:
-        label = deriv.get("label", "")
-        eq = deriv.get("eq", "")
-        sub = deriv.get("sub", "")
+    for deriv in _normalize_derivation_list(derivation):
+        d = _as_deriv_def(deriv)
+        label = d.get("label", "")
+        eq = d.get("eq", "")
+        sub = d.get("sub", "")
         
         if label:
             left_flowables.append(Paragraph(f"<b>{label}:</b>", styles["Normal"]))
