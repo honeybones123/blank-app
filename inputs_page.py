@@ -1,5 +1,6 @@
 
 import json
+from datetime import datetime
 import math
 import numpy as np
 import plotly.graph_objects as go
@@ -29,6 +30,9 @@ except Exception:
     def render_clickable_summary_table(*args, **kwargs):
         return ""
 from deflection_checks_helpers import build_deflection_check_rows_from_state
+from bending_checks_helpers import build_bending_check_rows_from_state
+from shear_checks_helpers import build_shear_check_rows_from_state
+from crack_checks_helpers import build_crack_check_rows_from_state
 
 # --- Pure compute functions from design core (no circular imports)
 # NOTE: Heavy imports are deferred inside render_inputs() to avoid
@@ -125,6 +129,38 @@ def _two_row_positions_width(n_bars, bar_dia, w_min, w_max):
         xs2 = np.linspace(w_min, w_max, n2)
 
     return xs1.tolist(), xs2.tolist()
+
+
+def _get_cached_results(bucket: str):
+    results = st.session_state.get("results", {})
+    return results.get(bucket)
+
+
+def _get_results_updated_at(bucket: str):
+    meta = st.session_state.get("results_meta", {})
+    return (meta.get(bucket) or {}).get("updated_at")
+
+
+def _overall_status_from_rows(rows):
+    if not rows:
+        return "—", "rgba(31, 119, 180, 0.08)"
+    statuses = [str(r.get("status", "")).upper() for r in rows]
+    if any("FAIL" in s or s == "NG" for s in statuses):
+        return "FAIL", "rgba(255,0,0,0.12)"
+    if any("WARN" in s or "NEAR LIMIT" in s or s == "CHECK" for s in statuses):
+        return "NEAR LIMIT", "rgba(255,193,7,0.15)"
+    if any("PASS" in s or s == "OK" for s in statuses):
+        return "PASS", "rgba(0,128,0,0.12)"
+    return "—", "rgba(31, 119, 180, 0.08)"
+
+
+def _primary_row(rows):
+    if not rows:
+        return None
+    for r in rows:
+        if r.get("is_primary"):
+            return r
+    return rows[0]
 
 
 def _internal_leg_positions(y_min, y_max, n_legs):
@@ -1789,123 +1825,57 @@ def render_inputs():
     # 4. Rest of inputs (Time | Crack/Ducts) - actions and compute already done above before diagrams
     # ============================
     
-    # --- Bending (from bending_core.py via _compute_bending_capacity) ---
-    phi_Mu_cap = get_param("phi_Mu_cap", 0.0)
-    Mu_util = get_param("Mu_utilisation", 0.0)
-
-    # --- Shear (from shear_core.py via _compute_shear_capacity) ---
-    phi_Vu_cap = get_param("phi_Vu_cap", 0.0)
-    Vu_util = get_param("Vu_utilisation", 0.0)
-    
-    # Concrete strut / crushing check (from shear_core.py)
-    phi_Vuc_cap = get_param("phi_Vu_max_kN", None)  # kN, capacity of compression strut
-    Vuc_util = get_param("Vuc_utilisation", None)  # utilisation for crushing
-    Vuc_cap_str = f"{phi_Vuc_cap:.2f} kN" if phi_Vuc_cap not in (None, 0) else "—"
-    Vuc_util_str = f"{Vuc_util:.3f}" if Vuc_util is not None else "—"
-    Vuc_status, Vuc_colour = _status_and_colour(
-        Vuc_util, Vuc_util is not None
-    )
-
-    # --- Crack control (from crack_page.py) ---
-    # Crack control (from crack_page.py)
-    w_calc = get_param("crack_width", get_param("w_calc", 0.0))
-    wmax_char = get_param("wmax_char", 0.3)
-    crack_util = get_param("crack_utilisation", _safe_ratio(w_calc, wmax_char))
-
-    # --- Deflection (shared helper: same logic as deflection page) ---
+    # --- Auto-computed summary rows (deflection-style) ---
+    bend_pack = build_bending_check_rows_from_state(st.session_state)
+    shear_pack = build_shear_check_rows_from_state(st.session_state)
+    crack_pack = build_crack_check_rows_from_state(st.session_state)
     defl_pack = build_deflection_check_rows_from_state(st.session_state)
+
+    BENDING_ROWS = bend_pack.get("rows") or []
+    SHEAR_ROWS = shear_pack.get("rows") or []
+    CRACK_ROWS = crack_pack.get("rows") or []
+    DEFLECTION_ROWS = []
+    for r in defl_pack.get("rows", []):
+        status = r.get("status", "—")
+        DEFLECTION_ROWS.append({
+            "uid": r.get("uid"),
+            "title": r.get("title"),
+            "value": r.get("value"),
+            "limit": r.get("limit"),
+            "util": r.get("util"),
+            "status": status,
+            "ok": True if status == "PASS" else False if status == "FAIL" else None,
+            "route_page": "deflection",
+        })
+
     delta_total = float(defl_pack.get("summary_delta_total_mm") or 0.0)
     defl_limit = float(defl_pack.get("summary_defl_limit_mm") or 0.0)
     defl_util = defl_pack.get("summary_util_total")
 
-    bending_demand = f"{Mu_star:.1f} kNm"
+    bending_primary = _primary_row(BENDING_ROWS) or {}
+    shear_primary = _primary_row(SHEAR_ROWS) or {}
+    crack_primary = _primary_row(CRACK_ROWS) or {}
+    defl_primary = _primary_row(DEFLECTION_ROWS) or {}
 
-    bending_cap = f"{phi_Mu_cap:.1f} kNm" if phi_Mu_cap > 0 else "—"
+    bending_demand = bending_primary.get("value", "—")
+    bending_cap = bending_primary.get("limit", "—")
+    bending_util_str = bending_primary.get("util", "—")
+    bending_status, bending_colour = _overall_status_from_rows(BENDING_ROWS)
 
-    bending_util_str = f"{Mu_util:.2f}" if phi_Mu_cap > 0 else "—"
+    shear_demand = shear_primary.get("value", "—")
+    shear_cap = shear_primary.get("limit", "—")
+    shear_util_str = shear_primary.get("util", "—")
+    shear_status, shear_colour = _overall_status_from_rows(SHEAR_ROWS)
 
-    bending_status, bending_colour = _status_and_colour(Mu_util, phi_Mu_cap > 0)
+    crack_demand = crack_primary.get("value", "—")
+    crack_cap = crack_primary.get("limit", "—")
+    crack_util_str = crack_primary.get("util", "—")
+    crack_status, crack_colour = _overall_status_from_rows(CRACK_ROWS)
 
-    shear_demand = f"{Vu_star:.1f} kN"
-
-    shear_cap = f"{phi_Vu_cap:.1f} kN" if phi_Vu_cap > 0 else "—"
-
-    shear_util_str = f"{Vu_util:.2f}" if phi_Vu_cap > 0 else "—"
-
-    shear_status, shear_colour = _status_and_colour(Vu_util, phi_Vu_cap > 0)
-
-    crack_demand = f"{w_calc:.3f} mm" if w_calc > 0 else "—"
-
-    crack_cap = f"{wmax_char:.3f} mm" if wmax_char > 0 else "—"
-
-    crack_util_str = f"{crack_util:.2f}" if crack_util is not None else "—"
-
-    crack_status, crack_colour = _status_and_colour(
-        crack_util, crack_util is not None
-    )
-
-    defl_demand = f"{delta_total:.2f} mm"
-
-    defl_cap = f"{defl_limit:.2f} mm" if defl_limit > 0 else "—"
-
-    defl_util_str = f"{defl_util:.2f}" if defl_util is not None and defl_limit > 0 else "—"
-
-    defl_status = (
-        "PASS"
-        if (defl_util is not None and defl_util <= 1.0)
-        else "FAIL"
-        if defl_util is not None
-        else "—"
-    )
-    defl_colour = (
-        "rgba(0,128,0,0.12)"
-        if defl_status == "PASS"
-        else "rgba(255,0,0,0.12)"
-        if defl_status == "FAIL"
-        else "rgba(31, 119, 180, 0.08)"
-    )
-
-    # ---------- Bending detail numbers ----------
-    Ast_bot = get_param("Ast_bot", 0.0)
-
-    As_min_req = get_param("As_min_req", None)   # from bending page Tab 2 (if available)
-    
-    # Utilisation = required / provided  → FAIL if > 1
-    As_util = _safe_ratio(As_min_req, Ast_bot)
-    As_status, As_colour = _status_and_colour(
-        As_util, As_util is not None
-    )
-
-    Mx_min_req = get_param("Mx_min_req", None)   # minimum required moment from Tab 2
-    Mx_min_util = _safe_ratio(Mx_min_req, phi_Mu_cap)
-    Mx_min_status, Mx_min_colour = _status_and_colour(
-        Mx_min_util, Mx_min_util is not None
-    )
-
-    k_u = get_param("k_u", None)
-    k_u_lim = get_param("k_u_lim", None)
-    k_u_util = _safe_ratio(k_u, k_u_lim)
-    k_u_status, k_u_colour = _status_and_colour(
-        k_u_util, k_u_util is not None
-    )
-
-    # Preformatted strings (for cleaner HTML)
-    As_min_str       = f"{As_min_req:.1f}"  if As_min_req not in (None, 0) else "—"
-    As_util_str      = f"{As_util:.3f}"     if As_util is not None else "—"
-    Mx_min_str       = f"{Mx_min_req:.2f}"  if Mx_min_req not in (None, 0) else "—"
-    Mx_min_util_str  = f"{Mx_min_util:.3f}" if Mx_min_util is not None else "—"
-    k_u_str          = f"{k_u:.3f}"         if k_u is not None else "—"
-    k_u_lim_str      = f"{k_u_lim:.3f}"     if k_u_lim is not None else "—"
-    k_u_util_str     = f"{k_u_util:.3f}"    if k_u_util is not None else "—"
-
-    # Crack detail helper
-    sigma_sr = get_param("sigma_sr", 0.0)
-    sigma_allow = get_param("sigma_allow_table", 0.0)
-    sigma_util = _safe_ratio(sigma_sr, sigma_allow)
-    sigma_status, sigma_colour = _status_and_colour(
-        sigma_util, sigma_util is not None
-    )
-    sigma_util_str = f"{sigma_util:.3f}" if sigma_util is not None else "—"
+    defl_demand = defl_primary.get("value", "—")
+    defl_cap = defl_primary.get("limit", "—")
+    defl_util_str = defl_primary.get("util", "—")
+    defl_status, defl_colour = _overall_status_from_rows(DEFLECTION_ROWS)
 
     # Helper function to convert status string to ok boolean for render_clickable_summary_table
     def _status_to_ok(status_str):
@@ -1968,118 +1938,33 @@ def render_inputs():
         html.append("</tbody></table></div>")
         return "".join(html)
 
-    # ---------- Build ROWS lists for each section (matching Bending format) ----------
-    
-    # Bending rows
-    BENDING_ROWS = [
-        {
-            "uid": "bending_min_2_5",
-            "title": "Steel area Ast,bot",
-            "value": f"{Ast_bot:.1f} mm²",
-            "limit": f"As,min = {As_min_str} mm²" if As_min_str != "—" else "—",
-            "util": As_util_str,
-            "status": As_status,
-            "ok": _status_to_ok(As_status),
-            "route_page": "bending",
-            "tab": "Minimum strength checks",
-        },
-        {
-            "uid": "bending_uls_1_7",
-            "title": "Flexural capacity",
-            "value": f"ϕMu,cap = {phi_Mu_cap:.2f} kNm",
-            "limit": f"M* = {Mu_star:.2f} kNm",
-            "util": bending_util_str,
-            "status": bending_status,
-            "ok": _status_to_ok(bending_status),
-            "route_page": "bending",
-            "tab": "ULS Checks",
-        },
-        {
-            "uid": "bending_min_2_4",
-            "title": "Minimum strength (Tab 2)",
-            "value": f"ϕMu,cap = {phi_Mu_cap:.2f} kNm",
-            "limit": f"Mx,min = {Mx_min_str} kNm" if Mx_min_str != "—" else "—",
-            "util": Mx_min_util_str,
-            "status": Mx_min_status,
-            "ok": _status_to_ok(Mx_min_status),
-            "route_page": "bending",
-            "tab": "Minimum strength checks",
-        },
-        {
-            "uid": "bending_uls_1_5",
-            "title": "Neutral axis ratio ku",
-            "value": k_u_str,
-            "limit": f"AS 3600 limit ≤ {k_u_lim_str}" if k_u_lim_str != "—" else "—",
-            "util": k_u_util_str,
-            "status": k_u_status,
-            "ok": _status_to_ok(k_u_status),
-            "route_page": "bending",
-            "tab": "ULS Checks",
-        },
-    ]
+    # Map helper titles to existing step UIDs for navigation
+    bending_uid_map = {
+        "Flexural strength": "bending_uls_1_7",
+        "Minimum tensile steel": "bending_min_2_5",
+        "Ductility (k_u limit)": "bending_uls_1_5",
+    }
+    shear_uid_map = {
+        "Sectional shear capacity": "shear_check8",
+        "Web crushing check": "shear_check9",
+    }
+    crack_uid_map = {
+        "Crack width check": "crk_step_3",
+    }
 
-    # Shear rows
-    SHEAR_ROWS = [
-        {
-            "uid": "shear_check8",
-            "title": "Total shear capacity",
-            "value": f"ϕVu,cap = {phi_Vu_cap:.2f} kN",
-            "limit": f"V* = {Vu_star:.2f} kN",
-            "util": shear_util_str,
-            "status": shear_status,
-            "ok": _status_to_ok(shear_status),
-            "route_page": "shear",
-        },
-        {
-            "uid": "shear_check9",
-            "title": "Concrete strut crushing",
-            "value": f"ϕVuc,cap = {Vuc_cap_str}",
-            "limit": f"V* = {Vu_star:.2f} kN",
-            "util": Vuc_util_str,
-            "status": Vuc_status,
-            "ok": _status_to_ok(Vuc_status),
-            "route_page": "shear",
-        },
-    ]
-
-    # Crack rows
-    CRACK_ROWS = [
-        {
-            "uid": "cr_table",
-            "title": "Steel stress σsr",
-            "value": f"{sigma_sr:.1f} MPa",
-            "limit": f"σallow = {sigma_allow:.1f} MPa",
-            "util": sigma_util_str,
-            "status": sigma_status,
-            "ok": _status_to_ok(sigma_status),
-            "route_page": "crack",
-        },
-        {
-            "uid": "cr_direct",
-            "title": "Crack width",
-            "value": f"wcalc = {crack_demand}",
-            "limit": f"wlim = {crack_cap}",
-            "util": crack_util_str,
-            "status": crack_status,
-            "ok": _status_to_ok(crack_status),
-            "route_page": "crack",
-        },
-    ]
-
-    # Deflection rows (use shared helper rows; no local pass/fail)
-    DEFLECTION_ROWS = []
-    for r in defl_pack.get("rows", []):
-        status = r.get("status", "—")
-        DEFLECTION_ROWS.append({
-            "uid": r.get("uid"),
-            "title": r.get("title"),
-            "value": r.get("value"),
-            "limit": r.get("limit"),
-            "util": r.get("util"),
-            "status": status,
-            "ok": True if status == "PASS" else False if status == "FAIL" else None,
-            "route_page": "deflection",
-        })
+    for rows, route, uid_map in (
+        (BENDING_ROWS, "bending", bending_uid_map),
+        (SHEAR_ROWS, "shear", shear_uid_map),
+        (CRACK_ROWS, "crack", crack_uid_map),
+        (DEFLECTION_ROWS, "deflection", {}),
+    ):
+        for r in rows:
+            if "ok" not in r:
+                status = r.get("status", "—")
+                r["ok"] = True if status == "PASS" else False if status in ("FAIL", "NG", "NEAR LIMIT") else None
+            r.setdefault("route_page", route)
+            if uid_map and r.get("title") in uid_map:
+                r["uid"] = uid_map.get(r.get("title"))
 
     # Render the summary back at the very top (where summary_container was created)
     with summary_container:
@@ -2088,6 +1973,15 @@ def render_inputs():
 
         # Inject CSS for seamless steps (summary table styling)
         inject_seamless_steps_css()
+
+        if not BENDING_ROWS:
+            st.info("Bending results not available yet. Check inputs or visit Bending page for details.")
+        if not SHEAR_ROWS:
+            st.info("Shear results not available yet. Check inputs or visit Shear page for details.")
+        if not CRACK_ROWS:
+            st.info("Crack results not available yet. Check inputs or visit Crack Control page for details.")
+        if not DEFLECTION_ROWS:
+            st.info("Deflection results not available yet. Check inputs or visit Deflection page for details.")
 
         # Custom CSS for top-level expandable rows (matching old design)
         # Includes summary table styling (same as render_clickable_summary_table)
@@ -2205,6 +2099,7 @@ tr:hover .hint { opacity: 1; }
         bending_table_html = _generate_summary_table_html(BENDING_ROWS)
         shear_table_html = _generate_summary_table_html(SHEAR_ROWS)
         crack_table_html = _generate_summary_table_html(CRACK_ROWS)
+        defl_summary = defl_pack or {}
         # #region agent log
         if DEBUG_MODE:
             try:
@@ -2216,9 +2111,9 @@ tr:hover .hint { opacity: 1; }
                         "location": "inputs_page.py:deflection_summary",
                         "message": "INPUTS_DEFLECTION_SUMMARY",
                         "data": {
-                            "delta_total": delta_total,
-                            "defl_limit": defl_limit,
-                            "defl_util": defl_util,
+                            "delta_total": defl_summary.get("summary_delta_total_mm"),
+                            "defl_limit": defl_summary.get("summary_defl_limit_mm"),
+                            "defl_util": defl_summary.get("summary_util_total"),
                             "rows_count": len(DEFLECTION_ROWS),
                         },
                         "timestamp": int(time.time() * 1000),

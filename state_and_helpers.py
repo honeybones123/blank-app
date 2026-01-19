@@ -1048,8 +1048,8 @@ TAB_KEYS = {
     # ----------------- ACTIONS ALIASES (V* vs Vu*, T* vs Tu*) -----------------
     # Treat any page's alternate naming as the same underlying shared parameters.
     "inputs_V_star": "Vu_star_manual",
-    "shear_V_star": "Vu_star_manual",
-    "shear_Vu_star": "Vu_star_manual",
+    "shear_V_star": "load_Vstar_proxy",
+    "shear_Vu_star": "load_Vstar_proxy",
     "actions_V_star": "Vu_star_manual",
     "actions_Vu_star": "Vu_star_manual",
 
@@ -1219,7 +1219,7 @@ TAB_KEYS = {
     "shear_Ec": "Ec",
     "shear_Es": "Es",
 
-    "shear_Vu_star": "Vu_star_manual",
+    "shear_Vu_star": "load_Vstar_proxy",
     "shear_Tu_star": "Tu_star",
     "shear_P_star": "P_star",
     "shear_N_star": "N_star",
@@ -1752,6 +1752,13 @@ def init_shared_session_state():
     
     # Ensure load proxies match the active edit mode on init
     load_proxies_from_active_set()
+
+    # --- Backward-compat alias: shear key rename ---
+    old_k = "Vu_star_manual"
+    new_k = "load_Vstar_proxy"
+    if old_k in st.session_state and new_k in st.session_state:
+        if st.session_state.get(new_k) in (None, 0, 0.0, "") and st.session_state.get(old_k) not in (None, ""):
+            st.session_state[new_k] = st.session_state[old_k]
     
     # Seed UI-only defaults (not shared, not synced)
     for k, v in UI_STATE_DEFAULTS.items():
@@ -3221,7 +3228,7 @@ def get_sync_callbacks():
 # 5. RESULT UPDATE HELPER (RULE 4)
 # ============================================
 
-def update_results(**kwargs):
+def update_results(*args, **kwargs):
     """
     Safely update result values (phi_Mu_cap, Mu_utilisation, shrinkage,
     creep, crack summaries, etc.).
@@ -3230,6 +3237,12 @@ def update_results(**kwargs):
     For updating shared inputs, use widget callbacks or direct session_state writes
     (inputs are managed via TAB_KEYS and sync callbacks).
     """
+    if args:
+        if len(args) != 2 or not isinstance(args[0], str) or not isinstance(args[1], dict):
+            raise TypeError("update_results(bucket: str, data: dict) expects (str, dict)")
+        _store_results_bucket(args[0], args[1])
+        return
+
     # Wrap with debug guard in debug mode
     try:
         from src.debug.state_debug import guard_session_writes, is_debug_enabled
@@ -3389,6 +3402,14 @@ def _assert_results_pipeline():
     # Initialize results dict if it doesn't exist
     if "results" not in st.session_state:
         st.session_state["results"] = {}
+
+
+def _store_results_bucket(bucket: str, data: dict) -> None:
+    """Store cached results and update metadata timestamp."""
+    st.session_state.setdefault("results", {})
+    st.session_state.setdefault("results_meta", {})
+    st.session_state["results"][bucket] = data
+    st.session_state["results_meta"][bucket] = {"updated_at": time.time()}
 
 def get_param(name: str, default=None):
     """

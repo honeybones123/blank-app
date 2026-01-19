@@ -15,6 +15,7 @@ from state_and_helpers import (
 )
 from widgets_helpers import apply_global_widget_css, number_row, calcbox, render_jumpable_step, apply_step_summary_expander_css, page_divider, show_reo_message, label_with_hover, select_row, seed_widget_from_shared
 from ui_seamless_steps import inject_seamless_steps_css, render_clickable_summary_table, bind_summary_clicks
+from crack_checks_helpers import build_crack_check_rows_from_state
 
 # Safe option lists for reinforcement inputs (same as inputs_page)
 REO_BAR_DIAS = [10, 12, 16, 20, 24, 28, 32, 36, 40]
@@ -765,48 +766,21 @@ This page checks **flexural crack control** for RC beams per AS 3600 using:
 """
                 )
 
-        rows = [
-            {
-                "uid": "crk_step_1",
-                "title": "Inputs & limits",
-                "value": f"w'max = {wmax_choice:.3f} mm",
-                "limit": f"Exposure/criteria",
-                "util": "",
-                "status": "",
-                "ok": None,
-                "is_primary": True,
-            },
-            {
-                "uid": "crk_step_2",
-                "title": "Table method — max steel stress σ_sr",
-                "value": f"{sigma_sr:.1f} MPa",
-                "limit": f"{sigma_allow_table:.1f} MPa",
-                "util": f"{utilisation_table:.2f}",
-                "status": "PASS" if passes_table else "FAIL",
-                "ok": passes_table,
-                "is_primary": True,
-            },
-            {
+        crack_pack = build_crack_check_rows_from_state(st.session_state)
+        rows = []
+        for r in (crack_pack.get("rows") or []):
+            status = r.get("status", "—")
+            rows.append({
                 "uid": "crk_step_3",
-                "title": "Direct crack width w",
-                "value": f"{w_calc:.3f} mm",
-                "limit": f"{wmax_choice:.3f} mm",
-                "util": f"{utilisation_w:.2f}",
-                "status": "PASS" if passes_w else "FAIL",
-                "ok": passes_w,
+                "title": r.get("title", ""),
+                "value": r.get("value", ""),
+                "limit": r.get("limit", ""),
+                "util": r.get("util", ""),
+                "status": status,
+                "ok": True if status == "PASS" else False if status == "FAIL" else None,
                 "is_primary": True,
-            },
-            {
-                "uid": "crk_step_4",
-                "title": "Governing result",
-                "value": "PASS" if (passes_table and passes_w) else "FAIL",
-                "limit": "All checks",
-                "util": "",
-                "status": "",
-                "ok": passes_table and passes_w,
-                "is_primary": True,
-            },
-        ]
+            })
+        update_results("crack", {"rows": rows})
         
         clicked_uid = render_clickable_summary_table(rows, key_prefix="crack_summary")
         

@@ -26,6 +26,7 @@ from bending_diagrams import (
     _plot_material_stress_strain_curves,
 )
 from bending_tabs import render_uls_tab, render_min_strength_tab, render_sls_tab
+from bending_checks_helpers import build_bending_check_rows_from_state
 from ui_seamless_steps import (
     inject_seamless_steps_css,
     render_clickable_summary_table,
@@ -1405,57 +1406,16 @@ def render_bending():
     if canonical_state not in state_options:
         canonical_state = "ULS"
 
-    # Summary rows in deflection-style format
+    bend_pack = build_bending_check_rows_from_state(st.session_state)
     rows_summary = [
         {
-            "Check": "Steel area Ast,bot",
-            "Value": Ast_str,
-            "Limit": f"As,min = {As_min_str}",
-            "Utilisation": "—",
-            "Status": As_status,
-        },
-        {
-            "Check": "Flexural capacity",
-            "Value": f"ϕM\u2093,cap = {phiMu_str}",
-            "Limit": f"M\u2093* = {Mu_star_str}",
-            "Utilisation": Mu_util_str,
-            "Status": Mu_status,
-        },
-        {
-            "Check": "Minimum strength",
-            "Value": f"ϕM\u2093,cap = {phiMu_str}",
-            "Limit": f"M\u2093,min = {Mu_min_str}",
-            "Utilisation": Mu_min_util_str,
-            "Status": Mu_min_status,
-        },
-        {
-            "Check": "Neutral axis ratio kᵤ",
-            "Value": f"{ku_val:.3f}" if ku_val is not None else "—",
-            "Limit": f"{ku_lim:.2f}",
-            "Utilisation": f"{(ku_val/ku_lim):.3f}" if ku_val is not None else "—",
-            "Status": "OK" if ku_ok else "Check",
-        },
-        {
-            "Check": "SLS steel stress f\u209b,ser",
-            "Value": fs_ser_str,
-            "Limit": "SLS (for crack/deflection)",
-            "Utilisation": "—",
-            "Status": "—",
-        },
-        {
-            "Check": "Neutral axis depth d\u2099",
-            "Value": f"d\u2099 = {c_str}",
-            "Limit": "",
-            "Utilisation": "—",
-            "Status": "—",
-        },
-        {
-            "Check": "Stress block depth a = γc",
-            "Value": f"a = {a_str}",
-            "Limit": "",
-            "Utilisation": "—",
-            "Status": "—",
-        },
+            "Check": r.get("title", ""),
+            "Value": r.get("value", ""),
+            "Limit": r.get("limit", ""),
+            "Utilisation": r.get("util", ""),
+            "Status": r.get("status", ""),
+        }
+        for r in (bend_pack.get("rows") or [])
     ]
 
     summary_df = pd.DataFrame(rows_summary)
@@ -1551,20 +1511,16 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 
         # Map summary rows -> REAL calc step UIDs in bending_tabs.py
         check_to_uid = {
-            "Steel area Ast,bot": "bending_min_2_5",
-            "Flexural capacity": "bending_uls_1_7",
-            "Minimum strength": "bending_min_2_4",
-            "Neutral axis ratio kᵤ": "bending_uls_1_5",
-            "SLS steel stress fₛ,ser": "bending_sls_3_7",
+            "Flexural strength": "bending_uls_1_7",
+            "Minimum tensile steel": "bending_min_2_5",
+            "Ductility (k_u limit)": "bending_uls_1_5",
         }
         
         # Map checks to their tabs
         check_to_tab = {
-            "Steel area Ast,bot": "Minimum strength checks",
-            "Flexural capacity": "ULS Checks",
-            "Minimum strength": "Minimum strength checks",
-            "Neutral axis ratio kᵤ": "ULS Checks",
-            "SLS steel stress fₛ,ser": "SLS Checks",
+            "Flexural strength": "ULS Checks",
+            "Minimum tensile steel": "Minimum strength checks",
+            "Ductility (k_u limit)": "ULS Checks",
         }
 
         # Build ROWS list for render_clickable_summary_table (only include rows with UIDs)
@@ -1597,13 +1553,13 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         
         # Sort ROWS so Flexural capacity is first
         priority = {
-            "Flexural capacity": 0,
-            "Steel area Ast,bot": 1,
-            "Minimum strength": 2,
-            "Neutral axis ratio kᵤ": 3,
-            "SLS steel stress fₛ,ser": 4,
+            "Flexural strength": 0,
+            "Minimum tensile steel": 1,
+            "Ductility (k_u limit)": 2,
         }
         ROWS.sort(key=lambda r: priority.get(r["title"], 99))
+
+        update_results("bending", {"rows": ROWS})
 
         # Render summary table using shared helper
         clicked_uid = render_clickable_summary_table(ROWS, key_prefix="bend_summary")

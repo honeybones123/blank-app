@@ -22,6 +22,7 @@ from torsion_diagrams import plot_torsion_prism_3d
 from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, select_row, calcbox, clickable_calcbox, render_step, apply_step_summary_expander_css, info_i_button, page_divider
 from step_ui import init_step_ui_state, render_expandable_step
 from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks
+from shear_checks_helpers import build_shear_check_rows_from_state
 
 
 def _coalesce_num(v, default: float) -> float:
@@ -1297,8 +1298,8 @@ This page computes **ultimate shear and torsion capacity** outputs in accordance
 
         number_row(
             "Design shear V* (kN)",
-            "shear_Vu_star",
-            get_param("Vu_star_manual", 300.0),
+            "inputs_load_Vstar_proxy",
+            get_param("load_Vstar_proxy", 300.0),
             sync_callbacks,
             help_text="Factored shear at the section.",
         )
@@ -1488,7 +1489,7 @@ This page computes **ultimate shear and torsion capacity** outputs in accordance
     Es = get_param("Es")
 
     M_star = get_param("Mu_star_manual") or 0.0
-    V_star = get_param("Vu_star_manual") or 0.0
+    V_star = get_param("load_Vstar_proxy") or 0.0
     T_star = get_param("Tu_star") or 0.0
     N_star = get_param("N_star") or 0.0
     P_v = get_param("P_star") or 0.0
@@ -3134,82 +3135,35 @@ In these cases, a strut-and-tie model may govern and web crushing / strut behavi
     # They are already computed in tab_dim (torsion_required, V_eq) and tab_reinf (phi_Vu, shear_ok)
     # We need to ensure these are available at module scope or recompute them here
     # For now, we'll use the values computed in the tabs (they should be in scope)
-    torsion_label = (
-        "Yes (T* > 0.25 φT_cr)" if torsion_required else "No (strength check)"
-    )
-
-    shear_util = V_eq / phi_Vu if phi_Vu > 0 else float("nan")
-
-    # Summary table data for clickable summary table
+    shear_pack = build_shear_check_rows_from_state(st.session_state)
     rows_summary = [
         {
-            "Check": "Torsion considered?",
-            "Value": torsion_label,
-            "Limit": "",
-            "Utilisation": "—",
-            "Status": "—",
-        },
-        {
-            "Check": "Sectional shear capacity (φV_u vs V_eq*)",
-            "Value": f"{V_eq:.1f} kN",
-            "Limit": f"φV_u,cap = {phi_Vu:.1f} kN",
-            "Utilisation": f"{shear_util:.2f}" if phi_Vu > 0 else "—",
-            "Status": "OK" if shear_ok else "NG",
-        },
-        {
-            "Check": "Concrete contribution V_c",
-            "Value": f"{Vuc_kN:,.1f} kN",
-            "Limit": "",
-            "Utilisation": "—",
-            "Status": "—",
-        },
-        {
-            "Check": "Shear reinforcement V_s",
-            "Value": f"{Vus_kN:,.1f} kN",
-            "Limit": "",
-            "Utilisation": "—",
-            "Status": "—",
-        },
-        {
-            "Check": "Web-crushing capacity V_u,max",
-            "Value": f"{Vu_max_kN:,.1f} kN",
-            "Limit": "Demand ≤ Capacity",
-            "Utilisation": "—",
-            "Status": "OK" if web_ok else "NG",
-        },
-        {
-            "Check": "εₓ, k_v, θ_v",
-            "Value": f"εₓ = {eps_x:.5f},  k_v = {k_v:.3f},  θ_v = {theta_v_deg:.1f}°",
-            "Limit": "",
-            "Utilisation": "—",
-            "Status": "—",
-        },
+            "Check": r.get("title", ""),
+            "Value": r.get("value", ""),
+            "Limit": r.get("limit", ""),
+            "Utilisation": r.get("util", ""),
+            "Status": r.get("status", ""),
+        }
+        for r in (shear_pack.get("rows") or [])
     ]
 
     # Publish key shear results for Inputs summary
+    shear_util = shear_pack.get("summary_util")
     update_results(
-        phi_Vu_cap=phi_Vu,
-        Vu_utilisation=shear_util if not math.isnan(shear_util) else 0.0,
+        phi_Vu_cap=float(shear_pack.get("summary_phiVu_kN") or 0.0),
+        Vu_utilisation=float(shear_util) if shear_util is not None and not math.isnan(shear_util) else 0.0,
     )
 
     # Map summary rows -> step UIDs and anchor IDs
     check_to_uid = {
-        "Torsion considered?": "shear_check1",
-        "Sectional shear capacity (φV_u vs V_eq*)": "shear_check8",
-        "Concrete contribution V_c": "shear_check6",
-        "Shear reinforcement V_s": "shear_check7",
-        "Web-crushing capacity V_u,max": "shear_check9",
-        "εₓ, k_v, θ_v": "shear_check4",
+        "Sectional shear capacity": "shear_check8",
+        "Web crushing check": "shear_check9",
     }
     
     # Map summary rows -> tab labels (for tab switching on click)
     check_to_tab = {
-        "Torsion considered?": "Torsion + dimensions",
-        "Sectional shear capacity (φV_u vs V_eq*)": "MCFT and strength checks",
-        "εₓ, k_v, θ_v": "MCFT and strength checks",
-        "Concrete contribution V_c": "MCFT and strength checks",
-        "Shear reinforcement V_s": "MCFT and strength checks",
-        "Web-crushing capacity V_u,max": "MCFT and strength checks",
+        "Sectional shear capacity": "MCFT and strength checks",
+        "Web crushing check": "MCFT and strength checks",
     }
 
     # Build ROWS list for render_clickable_summary_table
@@ -3242,14 +3196,12 @@ In these cases, a strut-and-tie model may govern and web crushing / strut behavi
     
     # Sort ROWS so primary check is first
     priority = {
-        "Sectional shear capacity (φV_u vs V_eq*)": 0,
-        "Torsion considered?": 1,
-        "Concrete contribution V_c": 2,
-        "Shear reinforcement V_s": 3,
-        "Web-crushing capacity V_u,max": 4,
-        "εₓ, k_v, θ_v": 5,
+        "Sectional shear capacity": 0,
+        "Web crushing check": 1,
     }
     ROWS.sort(key=lambda r: priority.get(r["title"], 99))
+
+    update_results("shear", {"rows": ROWS})
 
     # Render clickable summary table at the top (using placeholder created early)
     # Note: This renders at the end but the placeholder was created at the top

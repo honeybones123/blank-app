@@ -32,6 +32,7 @@ from persistence.save_to_dashboard import (
     redirect_parent_to_project,
 )
 from projects_store import create_project, update_project
+from auth_streamlit import get_user_id_from_token
 
 # 🔁 Import modules, not individual functions
 import inputs_page
@@ -77,13 +78,7 @@ def set_query_params_merge(**updates):
 
 
 def _get_user_id() -> str:
-    user_id = st.session_state.get("user_id")
-    if user_id:
-        return user_id
-    user = st.session_state.get("user") or st.session_state.get("supabase_user")
-    if isinstance(user, dict) and user.get("id"):
-        return user.get("id")
-    return ""
+    return get_user_id_from_token()
 
 
 def _render_create_project_form(user_id: str, module: str):

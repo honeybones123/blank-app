@@ -1144,6 +1144,7 @@ _Ref: AS 3600:2018 Cl. 8.5.3.1(2) & (3) – simplified $I_{{ef}}$ for reinforced
 
         defl_pack = build_deflection_check_rows_from_state(st.session_state)
         ROWS = defl_pack.get("rows", [])
+        update_results("deflection", {"rows": ROWS, "summary": defl_pack})
         render_clickable_summary_table(ROWS, key_prefix="defl_summary")
         bind_summary_clicks()
         
