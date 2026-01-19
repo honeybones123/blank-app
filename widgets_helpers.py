@@ -750,45 +750,6 @@ def select_row(
         # Prefer shared if present, otherwise default
         shared_key = TAB_KEYS.get(original_key)
         candidate = st.session_state.get(shared_key, default) if shared_key else default
-
-<<<<<<< Updated upstream
-        # options may be list[str] or list of things; convert to list for membership checks
-        _opts = list(options)
-
-        # Pull current value from session_state if present
-        cur = st.session_state.get(original_key, default)
-
-        # If stored value isn't valid anymore, try to migrate or fall back safely
-        if cur not in _opts:
-            # Migration map for renamed options (add pairs as needed)
-            MIGRATIONS = {
-                "General εₓ-based (Cl. 8.2.4.2)": "General εx-based (Cl. 8.2.4.2)",
-            }
-            migrated = MIGRATIONS.get(cur)
-
-            if migrated in _opts:
-                st.session_state[original_key] = migrated
-            else:
-                # fallback to default if valid, else first option
-                if default in _opts:
-                    st.session_state[original_key] = default
-                else:
-                    st.session_state[original_key] = _opts[0]
-
-        _safe_label = label if (label is not None and str(label).strip()) else "Select"
-        selectbox_kwargs = {
-            "label_visibility": "collapsed",
-            "on_change": on_change,
-        }
-        if isinstance(options, dict):
-            selectbox_kwargs["format_func"] = lambda k: options.get(k, str(k))
-
-        st.selectbox(
-            _safe_label,
-            options=_opts,
-            key=original_key,
-            index=_opts.index(st.session_state[original_key]),
-=======
         # Ensure candidate is one of the options; otherwise fallback safely
         if candidate in _opts:
             st.session_state[original_key] = candidate
@@ -849,7 +810,6 @@ def select_row(
             index=_opts.index(cur),
             key=original_key,
             label_visibility="collapsed",
->>>>>>> Stashed changes
             **selectbox_kwargs,
         )
 
