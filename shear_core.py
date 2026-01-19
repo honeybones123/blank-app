@@ -131,6 +131,7 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
     A_oh = max(b - cover_t, 0.0) * max(D - cover_t, 0.0)
 
     # Safety checks to prevent division by zero
+    T_used = T_star
     if u_c <= 0 or A_cp <= 0:
         # Return zero capacity if geometry is invalid
         Tcr_kNm = 0.0
@@ -138,6 +139,7 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
         torsion_required_limit = 0.0
         Vt_eq_kN = 0.0
         V_eq = abs(V_star)
+        T_used = 0.0
     else:
         sqrt_fc = math.sqrt(max(fc, 0.1))  # Prevent sqrt of negative
         denom = 0.33 * sqrt_fc
@@ -147,14 +149,16 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
         Tcr_kNm = Tcr_Nmm / 1e6
         torsion_required_limit = 0.25 * phi * Tcr_kNm
         torsion_required = T_star > torsion_required_limit
+        # If torsion design is NOT required, ignore torsion in subsequent strength checks
+        T_used = T_star if torsion_required else 0.0
 
         # ---------------- Equivalent shear Veq* ----------------
-        T_star_Nmm = T_star * 1e6
+        T_used_Nmm = T_used * 1e6
         Ao_safe = max(Ao, 1.0)  # Prevent division by zero
         uh_safe = max(uh, 1.0)  # Prevent division by zero
-        torsion_eq_N = 0.9 * T_star_Nmm * uh_safe / (2.0 * Ao_safe)
+        torsion_eq_N = 0.9 * T_used_Nmm * uh_safe / (2.0 * Ao_safe)
         Vt_eq_kN = torsion_eq_N / 1e3
-        V_eq = math.sqrt(V_star**2 + Vt_eq_kN**2)
+        V_eq = abs(V_star) if not torsion_required else math.sqrt(V_star**2 + Vt_eq_kN**2)
 
     # ---------------- Shear reinforcement & effective section -----------
     Asv = legs * math.pi * lig_d**2 / 4.0
@@ -177,8 +181,8 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
     # Use safe values for torsion calculation
     Ao_safe = max(Ao, 1.0)  # Prevent division by zero
     uh_safe = max(uh, 1.0)  # Prevent division by zero
-    T_star_Nmm = T_star * 1e6
-    torsion_N = 0.97 * T_star_Nmm * uh_safe / (2.0 * Ao_safe)
+    T_used_Nmm = T_used * 1e6
+    torsion_N = 0.97 * T_used_Nmm * uh_safe / (2.0 * Ao_safe)
     sqrt_inner = math.sqrt(Vprime_N**2 + torsion_N**2)
 
     N_star_N = 0.5 * N_star * 1e3
@@ -251,10 +255,10 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
     V_star_N = V_star * 1e3
     b_v_d_v_safe = max(b_v * d_v_safe, 1.0)  # Prevent division by zero
     term_V = V_star_N / b_v_d_v_safe
-    T_star_Nmm = T_star * 1e6
+    T_used_Nmm = T_used * 1e6
     A_oh_safe = max(abs(A_oh), 1.0)  # Prevent division by zero
     uh_safe = max(uh, 1.0)  # Prevent division by zero
-    term_T = T_star_Nmm * uh_safe / (1.7 * (A_oh_safe**2))
+    term_T = T_used_Nmm * uh_safe / (1.7 * (A_oh_safe**2))
 
     LHS = math.sqrt(term_V**2 + term_T**2)
     RHS = phi * Vu_max_N / b_v_d_v_safe

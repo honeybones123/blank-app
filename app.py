@@ -124,6 +124,8 @@ def _render_create_project_form(user_id: str, module: str):
                     # Ensure future saves use this project and the parent URL has ?project=<id>
                     if new_id:
                         redirect_parent_to_project(new_id)
+                        st.session_state["active_project_id"] = new_id
+                        st.session_state["active_project_name"] = name.strip()
 
                     st.session_state["_show_save_modal"] = False
                     st.toast("Project created and saved", icon="✅")
@@ -196,11 +198,32 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
 </style>
 """, unsafe_allow_html=True)
 
+    def _render_project_header():
+        name = st.session_state.get("active_project_name") or "Unsaved / New project"
+        st.markdown(
+            f"""
+            <div style="padding: 10px 14px; border-radius: 10px;
+                        background: rgba(59, 130, 246, 0.08);
+                        border: 1px solid rgba(59, 130, 246, 0.25);
+                        margin-bottom: 10px;">
+                <div style="font-size: 13px; opacity: 0.8;">Current project</div>
+                <div style="font-size: 20px; font-weight: 700; line-height: 1.2;">
+                    {name}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
     # ------------------------------------------------------------
     # Header row: title (left) + Save button (right)
     # ------------------------------------------------------------
     project_id, token, module = get_context()
     user_id = _get_user_id()
+    if project_id:
+        st.session_state["active_project_id"] = project_id
+
+    _render_project_header()
 
     header_left, header_right = st.columns([0.65, 0.35], vertical_alignment="center")
 

@@ -117,3 +117,43 @@ def load_project(*, project_id: str, user_id: str) -> Dict[str, Any]:
     if not res.data:
         raise RuntimeError(f"Supabase load failed: {getattr(res, 'error', None)}")
     return res.data
+
+
+def list_projects(*, user_id: str) -> list[Dict[str, Any]]:
+    sb = get_supabase()
+    table = projects_table_name()
+    res = (
+        sb.table(table)
+        .select("*")
+        .eq("user_id", user_id)
+        .is_("deleted_at", "null")
+        .order("updated_at", desc=True)
+        .execute()
+    )
+    if res.data is None:
+        raise RuntimeError(f"Supabase list failed: {getattr(res, 'error', None)}")
+    return res.data
+
+
+def rename_project(sb, project_id: str, user_id: str, new_name: str):
+    new_name = (new_name or "").strip()
+    if not new_name:
+        raise ValueError("Project name cannot be empty.")
+
+    # service-role can update without RLS; still scope to user_id as safety
+    return (
+        sb.table("projects")
+        .update({"name": new_name})
+        .eq("id", project_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+
+
+def delete_project(sb, project_id: str, user_id: str, soft: bool = True):
+    q = sb.table("projects").eq("id", project_id).eq("user_id", user_id)
+
+    if soft:
+        return q.update({"deleted_at": datetime.now(timezone.utc).isoformat()}).execute()
+    else:
+        return q.delete().execute()
