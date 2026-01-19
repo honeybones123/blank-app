@@ -77,6 +77,37 @@ def set_query_params_merge(**updates):
             st.query_params[k] = v
 
 
+def _render_create_project_form(token, module):
+    name = st.text_input(
+        "Project name",
+        placeholder="e.g. SRL East – RC Beam over Station Box",
+    )
+    st.caption("This creates a project so you can open it later from your dashboard.")
+    cA, cB = st.columns([1, 1])
+    with cA:
+        if st.button("Cancel", use_container_width=True):
+            st.session_state["_show_save_modal"] = False
+            st.rerun()
+    with cB:
+        if st.button("Create & Save", type="primary", use_container_width=True):
+            if not name.strip():
+                st.error("Project name is required.")
+            else:
+                try:
+                    new_id = api_create_project(token, name.strip(), module)
+                    payload = export_state_for_saving()
+                    api_save_state(token, new_id, payload, schema_version=1)
+
+                    # Ensure future saves use this project and the parent URL has ?project=<id>
+                    redirect_parent_to_project(new_id)
+
+                    st.session_state["_show_save_modal"] = False
+                    st.toast("Project created and saved", icon="✅")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Create/save failed: {e}")
+
+
 def main():
     # --- ARCHITECTURE LOCK: dev mode flag ---
     st.session_state.setdefault("_dev_mode", True)
@@ -174,35 +205,13 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
 
     # Modal for first-time save (no project id yet)
     if st.session_state.get("_show_save_modal", False):
-        with st.modal("Create project to save"):
-            name = st.text_input(
-                "Project name",
-                placeholder="e.g. SRL East – RC Beam over Station Box",
-            )
-            st.caption("This creates a project so you can open it later from your dashboard.")
-            cA, cB = st.columns([1, 1])
-            with cA:
-                if st.button("Cancel", use_container_width=True):
-                    st.session_state["_show_save_modal"] = False
-                    st.rerun()
-            with cB:
-                if st.button("Create & Save", type="primary", use_container_width=True):
-                    if not name.strip():
-                        st.error("Project name is required.")
-                    else:
-                        try:
-                            new_id = api_create_project(token, name.strip(), module)
-                            payload = export_state_for_saving()
-                            api_save_state(token, new_id, payload, schema_version=1)
-
-                            # Ensure future saves use this project and the parent URL has ?project=<id>
-                            redirect_parent_to_project(new_id)
-
-                            st.session_state["_show_save_modal"] = False
-                            st.toast("Project created and saved", icon="✅")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Create/save failed: {e}")
+        # --- Create project UI (compatible with Streamlit versions without st.modal) ---
+        if hasattr(st, "modal"):
+            with st.modal("Create project to save"):
+                _render_create_project_form(token, module)
+        else:
+            with st.expander("Create project to save", expanded=True):
+                _render_create_project_form(token, module)
 
     # Session restart banner (debug only)
     if DEBUG_MODE:
