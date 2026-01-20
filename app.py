@@ -230,7 +230,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         st.title("Beam design")
 
     with header_right:
-        actions_left, actions_right = st.columns([0.8, 2.2], vertical_alignment="center")
+        actions_left, actions_right = st.columns([0.8, 1.9], vertical_alignment="center")
 
         with actions_left:
             if st.button("💾 Save", type="primary", use_container_width=True):

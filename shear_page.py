@@ -20,7 +20,7 @@ from torsion_diagrams import plot_torsion_prism_3d
 
 # Shared helpers (same contract as Inputs/Bending)
 from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, select_row, calcbox, clickable_calcbox, render_step, apply_step_summary_expander_css, info_i_button, page_divider
-from step_ui import init_step_ui_state, render_expandable_step
+from step_ui import render_expandable_step
 from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks
 from shear_checks_helpers import build_shear_check_rows_from_state
 
@@ -1131,7 +1131,6 @@ def render_shear():
     apply_step_summary_expander_css()
     
     # Initialize step UI state (always-summary mode - no checkbox)
-    init_step_ui_state("shear")
 
     st.title("Shear & Torsion")
 
