@@ -1,6 +1,7 @@
 # shear_core.py
 from dataclasses import dataclass
 import math
+import streamlit as st
 from state_and_helpers import get_param, update_results
 
 
@@ -36,6 +37,8 @@ class ShearInputs:
 @dataclass
 class ShearResults:
     # torsion cracking
+    b_used: float
+    D_used: float
     A_cp: float
     u_c: float
     Ao: float
@@ -265,6 +268,8 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
     web_ok = LHS <= RHS
 
     return ShearResults(
+        b_used=b,
+        D_used=D,
         A_cp=A_cp,
         u_c=u_c,
         Ao=Ao,
@@ -343,6 +348,69 @@ def _compute_shear_capacity():
     phi = get_param("phi_shear", 0.75)  # Default shear phi
     sigma_cp = 0.0  # No prestress compression by default
     
+    # Build shape_name/dims/reo for diagrams (same logic as Inputs/Bending)
+    sec_shape = get_param("sec_shape", "RECT")
+    if sec_shape == "T":
+        shape_name = "T-Section"
+        dims = {
+            "bf": float(get_param("bf", 600.0)),
+            "tf": float(get_param("tf", 120.0)),
+            "bw": float(get_param("bw", 300.0)),
+            "D":  float(get_param("D", 600.0)),
+        }
+    elif sec_shape == "I":
+        shape_name = "I-Section"
+        dims = {
+            "bf": float(get_param("bf", 600.0)),
+            "tf": float(get_param("tf", 120.0)),
+            "tw": float(get_param("tw", 200.0)),
+            "D":  float(get_param("D", 600.0)),
+        }
+    else:
+        shape_name = "Rectangle (b × D)"
+        dims = {
+            "b": float(get_param("b", 300.0)),
+            "D": float(get_param("D", 600.0)),
+        }
+
+    cover_top = float(get_param("cover_top", 40.0))
+    cover_bot = float(get_param("cover_bot", 40.0))
+    cover_side = get_param("cover_side", None)
+    if cover_side is None:
+        cover_side = min(cover_top, cover_bot)
+    cover_side = float(cover_side)
+    s_min = float(get_param("s_min", 25.0))
+
+    reo = {
+        "cover_top": cover_top,
+        "cover_bot": cover_bot,
+        "cover_side": cover_side,
+        # Bottom
+        "bot1_layout_mode": st.session_state.get("inputs_bot1_layout_mode", st.session_state.get("bot1_layout_mode", "Count")),
+        "nb_or_s_bot_1": float(get_param("nb_or_s_bot_1", 4.0)),
+        "db_bot_1": float(get_param("db_bot_1", 20.0)),
+        "bot2_layout_mode": st.session_state.get("inputs_bot2_layout_mode", st.session_state.get("bot2_layout_mode", "Count")),
+        "nb_or_s_bot_2": float(get_param("nb_or_s_bot_2", 0.0)),
+        "db_bot_2": float(get_param("db_bot_2", 20.0)),
+        "rowgap_bot": float(get_param("rowgap_bot", 60.0)),
+        # Top
+        "top1_layout_mode": st.session_state.get("inputs_top1_layout_mode", st.session_state.get("top1_layout_mode", "Count")),
+        "nb_or_s_top_1": float(get_param("nb_or_s_top_1", 2.0)),
+        "db_top_1": float(get_param("db_top_1", 20.0)),
+        "top2_layout_mode": st.session_state.get("inputs_top2_layout_mode", st.session_state.get("top2_layout_mode", "Count")),
+        "nb_or_s_top_2": float(get_param("nb_or_s_top_2", 0.0)),
+        "db_top_2": float(get_param("db_top_2", 20.0)),
+        "rowgap_top": float(get_param("rowgap_top", 60.0)),
+        # Backwards-compatible totals
+        "nb_top": int(float(get_param("nb_or_s_top_1", 2.0)) + float(get_param("nb_or_s_top_2", 0.0))),
+        "db_top": float(get_param("db_top_1", 20.0)),
+        "nb_bot": int(float(get_param("nb_or_s_bot_1", 4.0)) + float(get_param("nb_or_s_bot_2", 0.0))),
+        "db_bot": float(get_param("db_bot_1", 20.0)),
+        "min_clear_spacing": s_min,
+        "lig_d": float(get_param("lig_d", 0.0)),
+        "lig_legs": int(get_param("lig_legs", 0)),
+    }
+
     # Build input object
     inp = ShearInputs(
         b=b,
@@ -383,6 +451,332 @@ def _compute_shear_capacity():
     phi_Vu_max = phi * results.Vu_max_kN
     Vuc_util = results.V_eq / phi_Vu_max if phi_Vu_max > 0 else float("nan")
     
+    # ------------------ Build detailed shear steps (for PDF) ------------------
+    shear_steps = [
+        {
+            "title": "Inputs & actions",
+            "clause": "AS 3600:2018 Cl. 8.2",
+            "formula": ["Given design inputs"],
+            "substitution": [
+                f"b = {inp.b:.0f} mm, D = {inp.D:.0f} mm, d = {inp.d:.0f} mm",
+                f"f'c = {inp.fc:.1f} MPa, f_sy = {inp.fsy:.0f} MPa",
+                f"M* = {inp.M_star:.1f} kNm, V* = {inp.V_star:.1f} kN, T* = {inp.T_star:.2f} kNm",
+                f"φ = {inp.phi:.2f}",
+            ],
+            "equations": [
+                f"b = {inp.b:.0f} mm, D = {inp.D:.0f} mm, d = {inp.d:.0f} mm",
+                f"f'c = {inp.fc:.1f} MPa, f_sy = {inp.fsy:.0f} MPa",
+                f"M* = {inp.M_star:.1f} kNm, V* = {inp.V_star:.1f} kN, T* = {inp.T_star:.2f} kNm",
+                f"φ = {inp.phi:.2f}",
+            ],
+            "result": f"V* = {inp.V_star:.1f} kN",
+            "notes": [],
+            "status": "info",
+            "diagram": None,
+        },
+        {
+            "title": "Torsion cracking check (screening)",
+            "clause": "AS 3600:2018 Cl. 8.2.1",
+            "formula": [
+                "T_cr = 0.33√f'c · A_cp²/u_c · √(1+σ_cp/(0.33√f'c))",
+                "T_req?  T* > 0.25φT_cr",
+            ],
+            "substitution": [
+                f"A_cp = b·D = {results.A_cp:.0f} mm²",
+                f"u_c = 2(b + D) = {results.u_c:.0f} mm",
+                f"T_cr = {results.Tcr_kNm:.2f} kNm",
+                f"T* ? 0.25φT_cr ⇒ {inp.T_star:.2f} ? {results.torsion_required_limit:.2f}",
+            ],
+            "equations": [
+                f"A_cp = b·D = {results.A_cp:.0f} mm²",
+                f"u_c = 2(b + D) = {results.u_c:.0f} mm",
+                f"T_cr = {results.Tcr_kNm:.2f} kNm",
+                f"T_req?  T* > 0.25φT_cr  ⇒  {inp.T_star:.2f} > {results.torsion_required_limit:.2f}",
+            ],
+            "result": f"Torsion required: {results.torsion_required}",
+            "notes": [f"Torsion required: {results.torsion_required}"],
+            "status": "info",
+            "diagram": None,
+        },
+        {
+            "title": "Equivalent shear",
+            "clause": "AS 3600:2018 Cl. 8.2.1",
+            "formula": [
+                "V_t,eq = 0.9·T*·u_h/(2A_o)",
+                "V_eq = √(V*² + V_t,eq²)",
+            ],
+            "substitution": [
+                f"V_t,eq = {results.Vt_eq_kN:.1f} kN",
+                f"V_eq = √(V*² + V_t,eq²) = {results.V_eq:.1f} kN",
+            ],
+            "equations": [
+                f"V_t,eq = {results.Vt_eq_kN:.1f} kN",
+                f"V_eq = √(V*² + V_t,eq²) = {results.V_eq:.1f} kN",
+            ],
+            "result": f"V_eq = {results.V_eq:.1f} kN",
+            "notes": [],
+            "status": "info",
+            "diagram": None,
+        },
+        {
+            "title": "Effective web section",
+            "clause": "AS 3600:2018 Cl. 8.2.4",
+            "formula": [
+                "b_v = b - k_d·Σduct",
+                "d_v = max(0.72D, 0.9d)",
+            ],
+            "substitution": [
+                f"b_v = {results.b_v:.1f} mm",
+                f"d_v = max(0.72D, 0.9d) = {results.d_v:.1f} mm",
+            ],
+            "equations": [
+                f"b_v = {results.b_v:.1f} mm",
+                f"d_v = max(0.72D, 0.9d) = {results.d_v:.1f} mm",
+            ],
+            "result": f"b_v={results.b_v:.1f} mm, d_v={results.d_v:.1f} mm",
+            "notes": [],
+            "status": "info",
+            "diagram": None,
+        },
+        {
+            "title": "Longitudinal strain εx",
+            "clause": "AS 3600:2018 Cl. 8.2.4",
+            "formula": [
+                "εx = (|M*|/d_v + √(V'² + T'²) + N* - A_pt f_po) / (2(EsAst + EpApt) ...)",
+            ],
+            "substitution": [
+                f"term_M = |M*|/d_v = {results.term_M:.3e}",
+                f"√(V'² + T'²) = {results.sqrt_inner:.3e}",
+                f"εx = {results.eps_x:.6f}",
+            ],
+            "equations": [
+                f"term_M = |M*|/d_v = {results.term_M:.3e}",
+                f"√(V'² + T'²) = {results.sqrt_inner:.3e}",
+                f"εx = {results.eps_x:.6f}",
+            ],
+            "result": f"εx = {results.eps_x:.6f}",
+            "notes": [],
+            "status": "info",
+            "diagram": None,
+        },
+        {
+            "title": "MCFT parameters (k_v, θ_v)",
+            "clause": "AS 3600:2018 Cl. 8.2.4",
+            "formula": [
+                "k_v = f(εx, d_v, aggregate size)",
+                "θ_v = f(εx)",
+            ],
+            "substitution": [
+                f"k_v = {results.k_v:.3f}",
+                f"θ_v = {results.theta_v_deg:.1f}°",
+            ],
+            "equations": [
+                f"k_v = {results.k_v:.3f}",
+                f"θ_v = {results.theta_v_deg:.1f}°",
+            ],
+            "result": f"k_v={results.k_v:.3f}, θ_v={results.theta_v_deg:.1f}°",
+            "notes": [],
+            "status": "info",
+            "diagram": None,
+        },
+        {
+            "title": "Concrete shear capacity V_uc",
+            "clause": "AS 3600:2018 Cl. 8.2.4.1",
+            "formula": [
+                "V_uc = k_v · b_v · d_v · min(√f'c, 8)",
+                "φV_uc = φ · V_uc",
+            ],
+            "substitution": [
+                f"= {results.k_v:.3f} · {results.b_v:.0f} · {results.d_v:.0f} · min(√{inp.fc:.1f}, 8)",
+                f"= {results.Vuc_kN:.1f} kN",
+            ],
+            "equations": [
+                f"V_uc = {results.Vuc_kN:.1f} kN",
+            ],
+            "result": f"V_uc = {results.Vuc_kN:.1f} kN",
+            "notes": [],
+            "status": "info",
+            "diagram": None,
+        },
+        {
+            "title": "Steel shear capacity V_us",
+            "clause": "AS 3600:2018 Cl. 8.2.7",
+            "formula": [
+                "V_us = (A_sv · f_syv · d_v / s) · cotθ_v",
+            ],
+            "substitution": [
+                f"= ({results.Asv:.1f} · {results.f_syv:.0f} · {results.d_v:.0f} / {inp.s_lig:.0f}) · cot{results.theta_v_deg:.1f}°",
+                f"= {results.Vus_kN:.1f} kN",
+            ],
+            "equations": [
+                f"V_us = {results.Vus_kN:.1f} kN",
+            ],
+            "result": f"V_us = {results.Vus_kN:.1f} kN",
+            "notes": [],
+            "status": "info",
+            "diagram": None,
+        },
+        {
+            "title": "Total shear capacity & utilisation",
+            "clause": "AS 3600:2018 Cl. 8.2",
+            "formula": [
+                "V_u = V_uc + V_us + P_v",
+                "φV_u = φ · V_u",
+                "Util = V_eq/(φV_u)",
+            ],
+            "substitution": [
+                f"V_u = {results.Vu_total_kN:.1f} kN",
+                f"φV_u = {results.phi_Vu:.1f} kN",
+                f"Util = {results.V_eq:.1f}/{results.phi_Vu:.1f} = "
+                f"{(results.V_eq/results.phi_Vu if results.phi_Vu>0 else 0):.2f}",
+            ],
+            "equations": [
+                f"V_u = V_uc + V_us + P_v = {results.Vu_total_kN:.1f} kN",
+                f"φV_u = {results.phi_Vu:.1f} kN",
+                f"Util = V_eq/(φV_u) = {results.V_eq:.1f}/{results.phi_Vu:.1f} = "
+                f"{(results.V_eq/results.phi_Vu if results.phi_Vu>0 else 0):.2f}",
+            ],
+            "result": f"φV_u = {results.phi_Vu:.1f} kN",
+            "notes": [("PASS" if results.shear_ok else "FAIL")],
+            "status": ("pass" if results.shear_ok else "fail"),
+            "diagram": None,
+        },
+        {
+            "title": "Web crushing check",
+            "clause": "AS 3600:2018 Cl. 8.2.5",
+            "formula": [
+                "V_u,max = 0.55 f'c b_v d_v (cotθ_v + cotθ_1) / (1 + cot²θ_v) + P_v",
+                "Check: LHS ≤ RHS",
+            ],
+            "substitution": [
+                f"V_u,max = {results.Vu_max_kN:.1f} kN",
+                f"LHS = {results.LHS:.3e}, RHS = {results.RHS:.3e}",
+            ],
+            "equations": [
+                f"V_u,max = {results.Vu_max_kN:.1f} kN",
+                f"LHS = {results.LHS:.3e}, RHS = {results.RHS:.3e}",
+            ],
+            "result": f"V_u,max = {results.Vu_max_kN:.1f} kN",
+            "notes": [("PASS" if results.web_ok else "FAIL")],
+            "status": ("pass" if results.web_ok else "fail"),
+            "diagram": None,
+        },
+    ]
+
+    # ------------------ Build bending-style shear_report (tabs/boxes/derivations + diagrams) ------------------
+    from reporting.report_content import make_calc_box, make_tab, make_module_report
+    from reporting.fig_export import export_box_diagram_png
+    try:
+        # package form
+        from reporting.fig_export import call_with_supported_kwargs
+    except Exception:
+        # local flat-file fallback
+        from fig_export import call_with_supported_kwargs
+    from shear_diagrams import (
+        plot_shear_torsion_section_2d,
+        plot_shear_step1_theta_cracks_3d,
+        make_mcft_longitudinal_strain_profile_fig,
+    )
+
+    eps_top, eps_bot = derive_eps_top_bot_for_step4_diagram(results.eps_x)
+
+    L_mm = float(get_param("L", 0.0))
+    if not L_mm or L_mm <= 0:
+        L_mm = float(get_param("span_L_m", 3.0)) * 1000.0
+
+    diag1 = export_box_diagram_png(
+        lambda: call_with_supported_kwargs(
+            plot_shear_step1_theta_cracks_3d,
+            L_mm=L_mm,
+            b_mm=inp.b,
+            D_mm=inp.D,
+            theta_deg=getattr(results, "theta_v_deg", 45.0),
+        ),
+        key="shear_1_torsion",
+        caption="Torsion cracking / diagonal crack field",
+        w_mm=65,
+        h_mm=40,
+    )
+    diag2 = export_box_diagram_png(
+        lambda: plot_shear_torsion_section_2d(
+            shape_name=shape_name,
+            dims=dims,
+            reo=reo,
+            show_labels=True,
+        ),
+        key="shear_2_section",
+        caption="Section + torsion/shear idealisation",
+        w_mm=65,
+        h_mm=40,
+    )
+    diag3 = export_box_diagram_png(
+        lambda: make_mcft_longitudinal_strain_profile_fig(eps_top, results.eps_x, eps_bot),
+        key="shear_4_epsx",
+        caption="MCFT longitudinal strain profile",
+        w_mm=65,
+        h_mm=40,
+    )
+
+    def _step_to_box(idx, s, diagram=None):
+        eqs = s.get("equations", []) or []
+        clause = s.get("clause", "")
+        status = s.get("status", None)
+        result_line = s.get("result") or (eqs[-1] if eqs else "")
+
+        deriv = []
+        formula = s.get("formula") or s.get("formula_lines") or []
+        subst = s.get("substitution") or s.get("sub_lines") or []
+        if isinstance(formula, str):
+            formula = [formula]
+        if isinstance(subst, str):
+            subst = [subst]
+
+        if formula:
+            deriv.append({"label": "Formula", "eq": "", "sub": ""})
+            for line in formula:
+                deriv.append({"label": "", "eq": line, "sub": ""})
+
+        if subst:
+            deriv.append({"label": "Substitution", "eq": "", "sub": ""})
+            for line in subst:
+                deriv.append({"label": "", "eq": line, "sub": ""})
+
+        for line in eqs:
+            deriv.append({"label": "", "eq": line, "sub": ""})
+
+        return make_calc_box(
+            id=f"1.{idx}",
+            title=s.get("title", f"Shear check {idx}"),
+            status=status,
+            result=result_line,
+            clause=clause,
+            derivation=deriv,
+            diagram=diagram,
+        )
+
+    if len(shear_steps) >= 2:
+        shear_steps[1]["diagram"] = diag1
+    if len(shear_steps) >= 4:
+        shear_steps[3]["diagram"] = diag2
+    if len(shear_steps) >= 5:
+        shear_steps[4]["diagram"] = diag3
+
+    boxes = []
+    for i, s in enumerate(shear_steps, start=1):
+        diagram = None
+        if i == 2:
+            diagram = diag1
+        elif i == 4:
+            diagram = diag2
+        elif i == 5:
+            diagram = diag3
+        boxes.append(_step_to_box(i, s, diagram=diagram))
+
+    shear_report = make_module_report(
+        module_title="Shear (ULS)",
+        tabs=[make_tab("ULS Checks", boxes)],
+    )
+
     # Update session state
     update_results(
         phi_Vu_cap=results.phi_Vu,
@@ -391,6 +785,8 @@ def _compute_shear_capacity():
         phi_Vu_max_kN=phi_Vu_max,
         V_eq_kN=results.V_eq,
         Vuc_utilisation=Vuc_util if not math.isnan(Vuc_util) else None,
+        shear_steps=shear_steps,
+        shear_report=shear_report,
     )
     
     return {

@@ -1,3 +1,8 @@
+import os, sys
+ROOT = os.path.dirname(os.path.abspath(__file__))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
 import streamlit as st
 
 st.set_page_config(
@@ -21,15 +26,12 @@ from state_and_helpers import (
     hydrate_active_page_widgets_from_shared,
     begin_render_cycle,
     persist_state_snapshot,
-    _shared_zero_tripwire,
     SHARED_DEFAULTS,
     DERIVED_KEYS,
     RESULT_KEYS,
+    tripwire_no_falsy_defaulting,
     clear_user_edit_marker_each_run,
     end_of_render_cleanup,
-    debug_tripwire_hook,
-    watch_shared_key_writes,
-    DEBUG_MODE,
 )
 import time
 from persistence.save_to_dashboard import (
@@ -230,32 +232,40 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         st.title("Beam design")
 
     with header_right:
-        actions_left, actions_right = st.columns([0.8, 1.9], vertical_alignment="center")
+        # --- Top right actions row (Save + Generate PDF on same level) ---
+        left, right = st.columns([1.0, 9.0], gap="large")
 
-        with actions_left:
-            if st.button("💾 Save", type="primary", use_container_width=True):
-                if not user_id:
-                    st.error("You must be logged in to save projects.")
-                    st.stop()
-                else:
-                    if project_id:
-                        try:
-                            payload = export_state_for_saving()
-                            update_project(
-                                project_id=project_id,
-                                user_id=user_id,
-                                payload=payload,
-                                meta={"module": module},
-                            )
-                            st.toast("Saved", icon="✅")
-                        except Exception as e:
-                            st.error(f"Save failed: {e}")
+        with right:
+            c_save, c_pdf = st.columns([3.5, 7.0], gap="small")
+
+            with c_save:
+                if st.button("💾 Save", type="primary", use_container_width=True):
+                    if not user_id:
+                        st.error("You must be logged in to save projects.")
+                        st.stop()
                     else:
-                        st.session_state["_show_save_modal"] = True
+                        if project_id:
+                            try:
+                                payload = export_state_for_saving()
+                                update_project(
+                                    project_id=project_id,
+                                    user_id=user_id,
+                                    payload=payload,
+                                    meta={"module": module},
+                                )
+                                st.toast("Saved", icon="✅")
+                            except Exception as e:
+                                st.error(f"Save failed: {e}")
+                        else:
+                            st.session_state["_show_save_modal"] = True
 
-        with actions_right:
-            from reporting.example_integration import render_pdf_button
-            render_pdf_button()
+            pdf_detail_level = "detailed" if st.session_state.get("pdf_detailed_toggle", True) else "summary"
+
+            with c_pdf:
+                from reporting.example_integration import render_pdf_button
+                render_pdf_button(detail_level=pdf_detail_level)
+
+            st.toggle("Detailed report", value=True, key="pdf_detailed_toggle")
 
     # Modal for first-time save (no project id yet)
     if st.session_state.get("_show_save_modal", False):
@@ -267,50 +277,6 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
             with st.expander("Create project to save", expanded=True):
                 _render_create_project_form(user_id, module)
 
-    # Session restart banner (debug only)
-    if DEBUG_MODE:
-        if "_app_boot_count" not in st.session_state:
-            st.session_state["_app_boot_count"] = 0
-        st.session_state["_app_boot_count"] += 1
-        
-        if st.session_state["_app_boot_count"] == 1:
-            st.warning("Session boot (fresh). If this appears mid-use, your session restarted.")
-        
-        # Debug mode toggle (only shown if env var is set)
-        try:
-            from src.debug.debug_flags import show_debug_toggle
-            show_debug_toggle()
-            
-            # Cache control (only shown when debug mode enabled)
-            from src.debug.cache_control import show_cache_control
-            show_cache_control()
-        except ImportError:
-            # Debug module not available, skip
-            pass
-        
-        # Debug checkpoints (track state changes)
-        try:
-            from src.debug.state_debug import snapshot_state, diff_snapshots, is_debug_enabled
-            from state_and_helpers import DERIVED_KEYS, RESULT_KEYS
-            if is_debug_enabled():
-                # Checkpoint: after init_shared_session_state
-                if "_debug_last_checkpoint" not in st.session_state:
-                    st.session_state["_debug_last_checkpoint"] = {}
-                checkpoint_keys = list(DERIVED_KEYS | RESULT_KEYS)[:20]  # Limit to first 20 keys
-                current_snapshot = snapshot_state("after_init", checkpoint_keys)
-                if st.session_state["_debug_last_checkpoint"]:
-                    diff = diff_snapshots(st.session_state["_debug_last_checkpoint"], current_snapshot)
-                    if diff:
-                        if "_debug_checkpoints" not in st.session_state:
-                            st.session_state["_debug_checkpoints"] = []
-                        st.session_state["_debug_checkpoints"].append({
-                            "label": "After init_shared_session_state",
-                            "diff": diff,
-                        })
-                st.session_state["_debug_last_checkpoint"] = current_snapshot
-        except (ImportError, NameError):
-            # Debug module not available, skip
-            pass
     
 
     # --- 1) Read URL param (page) and pre-set nav state BEFORE widget renders
@@ -349,81 +315,6 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
             set_query_params_merge(page=selected_slug)
             st.session_state[LAST_QP_KEY] = selected_slug
 
-    # Sidebar info (debug only)
-    if DEBUG_MODE:
-        st.sidebar.title("Session state")
-        st.sidebar.markdown(
-            "- Shared params via `init_shared_session_state()`\n"
-            "- Widgets use TAB_KEYS + sync callbacks\n"
-            "- Creep & shrinkage feed Deflection / Crack via `st.session_state`"
-        )
-        
-        # DEBUG: Tripwire toggle (temporary - remove after fixing zero issue)
-        debug_tripwire = st.sidebar.checkbox("DEBUG: Tripwire", value=True)
-        if debug_tripwire:
-            tripwire_data = st.session_state.get("_tripwire_last", {})
-            st.sidebar.write("**Tripwire:**", tripwire_data)
-        
-        # DEBUG: Shared input mutations (show what changed and what was reverted)
-        if st.sidebar.checkbox("DEBUG: Shared input mutations", value=True):
-            changed = st.session_state.get("_debug_changed_shared_inputs", {})
-            if changed:
-                st.sidebar.write("**Changed shared inputs:**", changed)
-            reverted = st.session_state.get("_debug_reverted_shared_inputs")
-            if reverted:
-                st.sidebar.error("⚠️ Reverted illegal render-time shared writes")
-                st.sidebar.write(reverted)
-            
-            # Mass zeroing detector
-            zeroed_count = st.session_state.get("_debug_zeroed_shared_count", 0)
-            zeroed_sample = st.session_state.get("_debug_zeroed_shared_sample", [])
-            if zeroed_count > 0:
-                st.sidebar.error(f"⚠️ Mass zeroing detected: {zeroed_count} keys zeroed")
-                st.sidebar.write("**Zeroed keys (sample):**", zeroed_sample)
-        
-        # DEBUG: Shared write audit trail
-        if st.sidebar.checkbox("DEBUG: Shared write audit", value=False):
-            audit_tail = st.session_state.get("_shared_write_audit", [])
-            st.sidebar.write("**Shared write audit (last 20):**")
-            st.sidebar.write(audit_tail[-20:])
-        
-        # DEBUG: Last sync attempt (prove TAB_KEYS mismatch)
-        if st.sidebar.checkbox("DEBUG: Last sync attempt", value=False):
-            last_sync = st.session_state.get("_debug_last_sync")
-            if last_sync:
-                st.sidebar.write("**Last sync attempt:**")
-                st.sidebar.write(last_sync)
-                if not last_sync.get("widget_present", True):
-                    st.sidebar.error("⚠️ Widget missing during sync!")
-        
-        # DEBUG: Boot status (prove snapshot restore works)
-        st.sidebar.markdown("### Boot Status")
-        boot_id = st.session_state.get("_boot_id", "N/A")
-        fresh_boot = st.session_state.get("_fresh_boot", False)
-        restored_from_snapshot = st.session_state.get("_restored_from_snapshot", False)
-        st.sidebar.write(f"**Boot ID:** `{boot_id[:8]}...`")
-        st.sidebar.write(f"**Fresh Boot:** {fresh_boot}")
-        st.sidebar.write(f"**Restored from Snapshot:** {restored_from_snapshot}")
-        if fresh_boot and restored_from_snapshot:
-            st.sidebar.success("✅ Snapshot restored on boot")
-        elif fresh_boot and not restored_from_snapshot:
-            st.sidebar.warning("⚠️ Fresh boot but no snapshot found")
-        
-        # DEBUG: Action keys verification (prove RESULT_KEYS contains action keys at runtime)
-        actions_keys_ok = st.session_state.get("_debug_actions_keys_in_RESULT_KEYS", None)
-        if actions_keys_ok is not None:
-            if actions_keys_ok:
-                st.sidebar.success("✅ Action keys in RESULT_KEYS")
-            else:
-                st.sidebar.error("❌ Action keys MISSING from RESULT_KEYS")
-        
-        # Debug State Inspector panel (only shown if debug mode is enabled)
-        try:
-            from src.debug.debug_panel import render_state_inspector
-            render_state_inspector()
-        except ImportError:
-            # Debug module not available, skip
-            pass
 
     # ============================================================
     # PHASE 1: ROUTER-OWNED LIFECYCLE (matches State Lab ordering)
@@ -440,23 +331,11 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     # Step 1: Initialize shared state (restores any dropped widget keys from cache or shared keys)
     # Note: migrate_time_defaults_once() is called inside init_shared_session_state() after snapshot restore
     init_shared_session_state()
-    st.session_state["_debug_state_tripwire"] = bool(DEBUG_MODE)
-    # Startup probe removed: it was mutating shared state and causing widget resets.
-    # debug_tripwire_hook(tag="STARTUP_PROBE_READONLY", page="app_start")
-    if DEBUG_MODE:
-        watch_shared_key_writes(tag="AFTER_INIT", page="app_start")
     
     # --- 4) Regression tripwire: verify shared state is alive (AFTER init)
     assert_shared_state_alive()
+    tripwire_no_falsy_defaulting()
     
-    # Debug: run invariant checks
-    if DEBUG_MODE:
-        try:
-            from src.debug.state_debug import assert_invariants
-            assert_invariants()
-        except ImportError:
-            # Debug module not available, skip
-            pass
     
     # Force-hydrate time widgets from shared BEFORE any page widgets render
     from state_and_helpers import force_hydrate_time_widgets_from_shared
@@ -474,9 +353,6 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     st.session_state["page_slug"] = selected_slug
     st.session_state["_active_page_slug"] = selected_slug  # Keep for backward compatibility
     
-    if DEBUG_MODE and st.session_state.get("_debug_state_tripwire", False):
-        from state_and_helpers import _append_debug_log
-        _append_debug_log(f"RENDER boot={st.session_state.get('_boot_id')} page={selected_slug}")
     
     # ============================================================
     # SHARED INPUT MUTATION GUARD (prevents pages from stomping shared inputs during render)
@@ -529,25 +405,6 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     # (See state_and_helpers.py banner: "PAGE FILE RULES (router-owned lifecycle)")
     PAGES[selected_slug][1]()
     end_of_render_cleanup()
-    if DEBUG_MODE:
-        debug_tripwire_hook(tag="AFTER_PAGE_RENDER", page=selected_slug)
-        watch_shared_key_writes(tag="AFTER_PAGE_RENDER", page=selected_slug)
-        try:
-            from state_and_helpers import write_final_session_state_check
-            write_final_session_state_check("final_session_state_check.json")
-        except Exception:
-            pass
-        
-        # Write widget contract audit to debug file automatically
-        try:
-            from state_and_helpers import write_widget_contract_audit_to_file, get_sync_callbacks
-            sync_callbacks = get_sync_callbacks()
-            audit_file = write_widget_contract_audit_to_file(sync_callbacks, filename=f"widget_contract_audit_{selected_slug}.txt")
-            # Store file path in session state for reference (optional)
-            st.session_state["_last_audit_file"] = audit_file
-        except Exception:
-            # Don't break the app if audit writing fails
-            pass
     
     # Immediately after render_fn(): detect shared-input changes
     shared_after = {k: st.session_state.get(k) for k in SHARED_DEFAULTS.keys()}
@@ -558,13 +415,6 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         if shared_before.get(k) != shared_after.get(k)
     }
     
-    # Mass zeroing detector
-    zeroed = [
-        k for k, (old, new) in changed_shared.items()
-        if (old not in (0, 0.0, None, "")) and (new in (0, 0.0))
-    ]
-    st.session_state["_debug_zeroed_shared_count"] = len(zeroed)
-    st.session_state["_debug_zeroed_shared_sample"] = zeroed[:30]
     
     # Show what changed (debug)
     st.session_state["_debug_changed_shared_inputs"] = changed_shared
@@ -598,8 +448,6 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
             pass
     
     # Tripwire: detect shared keys that got zeroed during render
-    if DEBUG_MODE:
-        _shared_zero_tripwire("AFTER render_fn")
     
     # Step 6: Persist snapshot after page render so future wipes can recover
     persist_state_snapshot()

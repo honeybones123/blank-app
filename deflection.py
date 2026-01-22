@@ -755,57 +755,12 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
 
     # --- Equivalent UDL from actions (kN/m) ---
     L_eff_m = float(L_eff_m) if L_eff_m is not None else None
-    # #region agent log
-    try:
-        log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps({
-                "location": "deflection.py:udl_inputs",
-                "message": "Inputs for UDL derivation",
-                "data": {
-                    "M_used_kNm": M_used,
-                    "V_used_kN": V_used,
-                    "L_eff_m": L_eff_m,
-                    "support_type": support_type,
-                    "g_kN_per_m": g,
-                    "q_kN_per_m": q,
-                },
-                "timestamp": int(__import__("time").time() * 1000),
-                "sessionId": "debug-session",
-                "runId": st.session_state.get("_boot_id", "run"),
-                "hypothesisId": "H1",
-            }) + "\n")
-    except Exception:
-        pass
-    # #endregion
     derived = _derive_equiv_udl_from_actions(
         M_kNm=M_used,
         V_kN=V_used,
         L_m=L_eff_m,
         support_type=support_type,
     )
-    # #region agent log
-    try:
-        log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps({
-                "location": "deflection.py:udl_derived",
-                "message": "Derived UDL from actions",
-                "data": {
-                    "w_from_M": derived.get("w_from_M"),
-                    "w_from_V": derived.get("w_from_V"),
-                    "w_kN_per_m": derived.get("w_kN_per_m"),
-                    "consistent": derived.get("consistent"),
-                    "note": derived.get("note"),
-                },
-                "timestamp": int(__import__("time").time() * 1000),
-                "sessionId": "debug-session",
-                "runId": st.session_state.get("_boot_id", "run"),
-                "hypothesisId": "H2",
-            }) + "\n")
-    except Exception:
-        pass
-    # #endregion
     # Use derived w if available; otherwise fall back to g+q.
     # IMPORTANT: do NOT treat zero as missing.
     if derived["w_kN_per_m"] is not None:
@@ -814,48 +769,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     else:
         w_used = (g + q) if (g is not None and q is not None) else 0.0
         w_source = "g+q"
-    # #region agent log
-    try:
-        log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps({
-                "location": "deflection.py:udl_selected",
-                "message": "Selected UDL for deflection",
-                "data": {
-                    "w_used_kN_per_m": w_used,
-                    "w_source": w_source,
-                },
-                "timestamp": int(__import__("time").time() * 1000),
-                "sessionId": "debug-session",
-                "runId": st.session_state.get("_boot_id", "run"),
-                "hypothesisId": "H3",
-            }) + "\n")
-    except Exception:
-        pass
-    # #endregion
 
-    # Visible debug log if something looks off
-    try:
-        Path("Documents").mkdir(parents=True, exist_ok=True)
-        (Path("Documents") / "deflection_action_udl_debug.json").write_text(
-            json.dumps(
-                {
-                    "M_used_kNm": M_used,
-                    "V_used_kN": V_used,
-                    "L_eff_m": L_eff_m,
-                    "support_type": support_type,
-                    "w_from_M_kN_per_m": derived.get("w_from_M"),
-                    "w_from_V_kN_per_m": derived.get("w_from_V"),
-                    "w_used_kN_per_m": w_used,
-                    "note": derived.get("note"),
-                },
-                indent=2,
-                default=str,
-            ),
-            encoding="utf-8",
-        )
-    except Exception:
-        pass
     
     # Split w_used into g and q for the function (maintains w_sust calculation)
     # Assume all load is sustained (conservative) or use existing ratio

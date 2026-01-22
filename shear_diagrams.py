@@ -12,6 +12,9 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+from section_props.plotly_section import make_sectionA_figure
+from section_props.plot import plot_shape, apply_section_axes
+
 
 def _arrow(ax, p0, p1, lw=2.0, ms=14, color="k"):
     ax.add_patch(
@@ -26,58 +29,103 @@ def _arrow(ax, p0, p1, lw=2.0, ms=14, color="k"):
 
 
 def plot_shear_torsion_section_2d(
-    b_mm: float,
-    D_mm: float,
-    mode: str = "V+T",                  # "V", "T", "V+T"
+    *,
+    shape_name: str,
+    dims: dict,
+    reo: dict,
+    mode: str = "V+T",  # "V", "T", "V+T"
     show_labels: bool = True,
-    reo_circles=None,                   # list of dicts: {"x":..,"y":..,"r":..}
-    reo_alpha: float = 0.50,            # 50% see-through
 ):
-    b = float(b_mm)
-    h = float(D_mm)
+    # ---------------------------------------------------------------------
+    # Base figure: use the SAME section engine as Inputs/Bending
+    # ---------------------------------------------------------------------
+    if shape_name.startswith("Rectangle"):
+        rect_reo = {
+            "cover_top": float(reo.get("cover_top", 40.0)),
+            "cover_bot": float(reo.get("cover_bot", 40.0)),
+            "cover_side": float(reo.get("cover_side", 40.0)),
+            "n_top": int(reo.get("nb_top", 0)),
+            "db_top": float(reo.get("db_top", 0.0)),
+            "n_bot": int(reo.get("nb_bot", 0)),
+            "db_bot": float(reo.get("db_bot", 0.0)),
+            "s_min": float(reo.get("min_clear_spacing", 20.0)),
+            "rowgap_top": float(reo.get("rowgap_top", 60.0)),
+            "rowgap_bot": float(reo.get("rowgap_bot", 60.0)),
+            "lig_d": float(reo.get("lig_d", 0.0)),
+            "lig_legs": int(reo.get("lig_legs", 0)),
+        }
+        fig = plot_shape(shape_name, dims, reo=rect_reo)
+    else:
+        fig = make_sectionA_figure(
+            shape_name=shape_name,
+            dims=dims,
+            reo=reo,
+            show_shear=True,
+        )
 
-    fig, ax = plt.subplots(figsize=(5.6, 5.6))
-    ax.add_patch(Rectangle((0, 0), b, h, fill=False, linewidth=2.2))
+    # Force consistent layout (schematic style)
+    fig.update_layout(
+        title=None,
+        showlegend=False,
+        margin=dict(l=5, r=5, t=20, b=5),
+    )
 
-    inset = max(min(0.12 * min(b, h), 0.25 * min(b, h)), 12.0)
+    # ---------------------------------------------------------------------
+    # Determine section bounds for arrow positioning
+    # ---------------------------------------------------------------------
+    D = float(dims.get("D", 0.0) or 0.0)
+
+    if shape_name.startswith("Rect"):
+        W = float(dims.get("b", 0.0) or 0.0)
+    else:
+        W = float(dims.get("bf", dims.get("b", 0.0)) or 0.0)
+
+    W = max(W, 1.0)
+    D = max(D, 1.0)
+
+    x_pad = 0.12 * W
+    y_pad = 0.12 * D
+
+    # helpers
+    def _arrow(x0, y0, x1, y1, color="black", width=2):
+        fig.add_annotation(
+            x=x1,
+            y=y1,
+            ax=x0,
+            ay=y0,
+            xref="x",
+            yref="y",
+            axref="x",
+            ayref="y",
+            showarrow=True,
+            arrowhead=2,
+            arrowsize=1.0,
+            arrowwidth=width,
+            arrowcolor=color,
+            text="",
+        )
+
+    inset = max(min(0.12 * min(W, D), 0.25 * min(W, D)), 12.0)
     xL = inset
-    xR = b - inset
-    yB = inset
-    yT = h - inset
-
-    # -------------------------
-    # REO overlay (draw FIRST so arrows sit on top)
-    # -------------------------
-    if reo_circles:
-        for c in reo_circles:
-            cx = float(c["x"])
-            cy = float(c["y"])
-            r  = float(c["r"])
-            ax.add_patch(
-                Circle(
-                    (cx, cy),
-                    r,
-                    facecolor="0.2",      # dark grey
-                    edgecolor="0.1",
-                    linewidth=1.0,
-                    alpha=reo_alpha,
-                )
-            )
+    xR = W - inset
+    yT = inset
+    yB = D - inset
 
     # -------------------------
     # SHEAR τv (RED) – vertical arrows inside
     # -------------------------
     if "V" in mode:
-        for y in [0.80*h, 0.55*h, 0.30*h]:
-            _arrow(ax, (xL, y), (xL, y - 0.15*h), color="red")
-            _arrow(ax, (xR, y), (xR, y - 0.15*h), color="red")
+        for y in [0.30 * D, 0.55 * D, 0.80 * D]:
+            _arrow(xL, y, xL, y + 0.15 * D, color="red", width=2)
+            _arrow(xR, y, xR, y + 0.15 * D, color="red", width=2)
 
         if show_labels:
-            ax.text(
-                b/2, h + 0.06*h,
-                r"$\tau_v$ (shear)",
-                ha="center", va="bottom",
-                fontsize=11, color="red"
+            fig.add_annotation(
+                x=W / 2,
+                y=-0.06 * D,
+                text="tau_v (shear)",
+                showarrow=False,
+                font=dict(size=11, color="red"),
             )
 
     # -------------------------
@@ -87,34 +135,59 @@ def plot_shear_torsion_section_2d(
     # -------------------------
     if "T" in mode:
         # Top edge: →
-        for x in [0.25*b, 0.50*b, 0.75*b]:
-            _arrow(ax, (x - 0.10*b, yT), (x + 0.10*b, yT), color="tab:blue")
+        for x in [0.25 * W, 0.50 * W, 0.75 * W]:
+            _arrow(x - 0.10 * W, yT, x + 0.10 * W, yT, color="rgb(31,119,180)", width=2)
 
         # Right edge: ↓ (ADDS)
-        for y in [0.25*h, 0.50*h, 0.75*h]:
-            _arrow(ax, (xR, y + 0.10*h), (xR, y - 0.10*h), color="tab:blue")
+        for y in [0.25 * D, 0.50 * D, 0.75 * D]:
+            _arrow(xR, y, xR, y + 0.10 * D, color="rgb(31,119,180)", width=2)
 
         # Bottom edge: ←
-        for x in [0.25*b, 0.50*b, 0.75*b]:
-            _arrow(ax, (x + 0.10*b, yB), (x - 0.10*b, yB), color="tab:blue")
+        for x in [0.25 * W, 0.50 * W, 0.75 * W]:
+            _arrow(x + 0.10 * W, yB, x - 0.10 * W, yB, color="rgb(31,119,180)", width=2)
 
         # Left edge: ↑ (OPPOSES)
-        for y in [0.25*h, 0.50*h, 0.75*h]:
-            _arrow(ax, (xL, y - 0.10*h), (xL, y + 0.10*h), color="tab:blue")
+        for y in [0.25 * D, 0.50 * D, 0.75 * D]:
+            _arrow(xL, y + 0.10 * D, xL, y - 0.10 * D, color="rgb(31,119,180)", width=2)
 
         if show_labels:
-            ax.text(
-                b/2, h + 0.12*h,
-                r"$\tau_T$ (torsion shear flow)",
-                ha="center", fontsize=9, color="tab:blue"
+            fig.add_annotation(
+                x=W / 2,
+                y=-0.12 * D,
+                text="tau_T (torsion shear flow)",
+                showarrow=False,
+                font=dict(size=9, color="rgb(31,119,180)"),
             )
-            ax.text(xL - 0.08*b, h/2, "opposes", rotation=90, ha="center", va="center", fontsize=8)
-            ax.text(xR + 0.08*b, h/2, "adds",    rotation=90, ha="center", va="center", fontsize=8)
+            fig.add_annotation(
+                x=-0.08 * W,
+                y=D / 2,
+                text="opposes",
+                showarrow=False,
+                textangle=90,
+                font=dict(size=8, color="rgb(51,51,51)"),
+            )
+            fig.add_annotation(
+                x=W + 0.08 * W,
+                y=D / 2,
+                text="adds",
+                showarrow=False,
+                textangle=90,
+                font=dict(size=8, color="rgb(51,51,51)"),
+            )
 
-    ax.set_aspect("equal")
-    ax.set_xlim(-0.18*b, b + 0.18*b)
-    ax.set_ylim(-0.18*h, h + 0.22*h)
-    ax.axis("off")
+    if show_labels:
+        fig.add_annotation(
+            x=W / 2,
+            y=D + 0.12 * D,
+            text="Section + reinforcement (schematic)",
+            showarrow=False,
+            font=dict(size=9, color="rgb(51,51,51)"),
+        )
+
+    # expand axes for labels/arrows (shared helper for consistency)
+    apply_section_axes(fig, W=W, D=D)
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(visible=False)
 
     return fig
 
@@ -138,6 +211,10 @@ def plot_shear_step3_section_params_plotly(
     cover_side: float | None = None,
     height: int = 850,  # 2.5x bigger (340 * 2.5 = 850)
     label_pad: int = 14,
+    # NEW (optional): shape-aware mode
+    shape_name: str | None = None,
+    dims: dict | None = None,
+    reo: dict | None = None,
 ):
     """
     Plotly section diagram styled like Bending page section panel,
@@ -147,6 +224,26 @@ def plot_shear_step3_section_params_plotly(
     D = float(D_mm)
     bv = float(bv_mm)
     dv = float(dv_mm)
+    shape_aware = bool(shape_name and dims and reo)
+
+    # ---------------------------------------
+    # Consistent plot frame so shapes scale similarly
+    # Use flange width for T/I, width b for rectangles
+    # ---------------------------------------
+    if shape_aware:
+        if str(shape_name).lower().startswith("rect"):
+            W = float(dims.get("b", b))
+        else:
+            W = float(dims.get("bf", b))
+    else:
+        W = float(b)
+
+    # Use real plotted width if shape-aware
+    if shape_name and dims and reo:
+        if str(shape_name).lower().startswith("rect"):
+            b = float(dims.get("b", b))
+        else:
+            b = float(dims.get("bf", b))
 
     # Basic guard
     bv = max(0.0, min(bv, b))
@@ -160,21 +257,52 @@ def plot_shear_step3_section_params_plotly(
     y_top = D
     y_dv = D - dv  # plot y origin at 0 bottom; so top is D
 
-    fig = go.Figure()
-
-    # --- Outer section rectangle ---
-    fig.add_shape(
-        type="rect",
-        x0=0, y0=0, x1=b, y1=D,
-        line=dict(width=2),
-        fillcolor="rgba(0,0,0,0)",
-    )
+    # ------------------------------------------------------------
+    # Base figure: if shape_name/dims/reo provided, draw real shape
+    # ------------------------------------------------------------
+    if shape_aware:
+        if str(shape_name).lower().startswith("rect"):
+            rect_reo = {
+                "cover_top": float(reo.get("cover_top", 40.0)),
+                "cover_bot": float(reo.get("cover_bot", 40.0)),
+                "cover_side": float(reo.get("cover_side", 40.0)),
+                "n_top": int(reo.get("nb_top", 0)),
+                "db_top": float(reo.get("db_top", 0.0)),
+                "n_bot": int(reo.get("nb_bot", 0)),
+                "db_bot": float(reo.get("db_bot", 0.0)),
+                "s_min": float(reo.get("min_clear_spacing", 20.0)),
+                "rowgap_top": float(reo.get("rowgap_top", 60.0)),
+                "rowgap_bot": float(reo.get("rowgap_bot", 60.0)),
+                "lig_d": float(reo.get("lig_d", 0.0)),
+                "lig_legs": int(reo.get("lig_legs", 0)),
+            }
+            fig = plot_shape(str(shape_name), dims, reo=rect_reo)
+        else:
+            fig = make_sectionA_figure(
+                shape_name=shape_name,
+                dims=dims,
+                reo=reo,
+                show_shear=True,
+            )
+        # Ensure section fill is visible (in case the base figure uses no fill)
+        for s in fig.layout.shapes or []:
+            if getattr(s, "type", None) == "path" and (not getattr(s, "fillcolor", None) or s.fillcolor == "rgba(0,0,0,0)"):
+                s.fillcolor = "rgba(220,220,220,0.35)"
+    else:
+        fig = go.Figure()
+        # fallback (old behaviour): rectangle only
+        fig.add_shape(
+            type="rect",
+            x0=0, y0=0, x1=b, y1=D,
+            line=dict(color="black", width=4),
+            fillcolor="rgba(245,245,245,1.0)",
+        )
 
     # ------------------------------------------------------------
     # Reo overlay (same look as bending: bottom=red, top=blue)
     # reo_shapes items: {"x":..,"y":..,"r":..,"fill":"rgba(...)","line":"rgba(...)"}
     # ------------------------------------------------------------
-    if reo_shapes:
+    if (not shape_aware) and reo_shapes:
         for s in reo_shapes:
             cx = float(s["x"])
             cy = float(s["y"])
@@ -192,23 +320,22 @@ def plot_shear_step3_section_params_plotly(
             )
 
     # --- bv highlight (two vertical lines + light fill) ---
-    fig.add_shape(type="line", x0=xL, y0=0, x1=xL, y1=D, line=dict(width=2, dash="dot"))
-    fig.add_shape(type="line", x0=xR, y0=0, x1=xR, y1=D, line=dict(width=2, dash="dot"))
-    fig.add_shape(
-        type="rect",
-        x0=xL, y0=0, x1=xR, y1=D,
-        line=dict(width=0),
-        fillcolor="rgba(0,0,0,0.04)",
-        layer="below",
-    )
+    if not shape_aware:
+        fig.add_shape(
+            type="rect",
+            x0=xL, y0=0, x1=xR, y1=D,
+            line=dict(width=0),
+            fillcolor="rgba(0,0,0,0.04)",
+            layer="below",
+        )
 
     # --- dv marker line (horizontal) ---
-    fig.add_shape(type="line", x0=0, y0=y_dv, x1=b, y1=y_dv, line=dict(width=2, dash="dash"))
+    fig.add_shape(type="line", x0=0, y0=y_dv, x1=b, y1=y_dv, line=dict(width=2))
 
     # ------------------------------------------------------------
     # Shear ligs (stirrups) - same as input page 2D model
     # ------------------------------------------------------------
-    if lig_d and lig_legs and cover_bot is not None and cover_top is not None and cover_side is not None:
+    if (not shape_aware) and lig_d and lig_legs and cover_bot is not None and cover_top is not None and cover_side is not None:
         from section_layout import compute_shear_reo_layout_pure
         
         shear_layout = compute_shear_reo_layout_pure(
@@ -232,15 +359,23 @@ def plot_shear_step3_section_params_plotly(
     BV_TEXT_Y = D + 0.12 * D
     BV_ARROW_Y = D + 0.04 * D
 
-    fig.add_annotation(
+    def _add_dim_label(x, y, text, angle_deg=0, xanchor="center", yanchor="middle"):
+        fig.add_annotation(
+            x=x,
+            y=y,
+            text=text,
+            showarrow=False,
+            textangle=angle_deg,
+            xanchor=xanchor,
+            yanchor=yanchor,
+            font=dict(size=18, color="rgb(120,120,140)"),
+        )
+
+    _add_dim_label(
         x=(xL + xR) / 2.0,
         y=BV_TEXT_Y,
         text=f"b<sub>v</sub> = {bv:.1f} mm",
-        showarrow=False,
-        font=dict(size=13),
-        bgcolor="rgba(255,255,255,0.7)",
-        xshift=0,
-        yshift=label_pad,
+        angle_deg=0,
     )
     # --- bv arrows: point to the two dotted bv boundary lines ---
     fig.add_annotation(
@@ -263,15 +398,13 @@ def plot_shear_step3_section_params_plotly(
     DV_ARROW_X = -0.06 * b
     DV_TEXT_Y = (y_top + y_dv) / 2.0
 
-    fig.add_annotation(
+    _add_dim_label(
         x=DV_TEXT_X,
         y=DV_TEXT_Y,
         text=f"d<sub>v</sub> = {dv:.1f} mm",
-        showarrow=False,
-        font=dict(size=13),
-        bgcolor="rgba(255,255,255,0.7)",
-        xshift=-label_pad - 4,  # Move text further left with padding
-        yshift=0,
+        angle_deg=-90,
+        xanchor="center",
+        yanchor="middle",
     )
     # --- dv arrows: point to top face and dv marker line (left side) ---
     fig.add_annotation(
@@ -304,8 +437,11 @@ def plot_shear_step3_section_params_plotly(
 
     # --- Layout: match Bending page "section panel" feel ---
     # Bigger section + less dead space, model shifted further right
-    fig.update_xaxes(visible=False, range=[-0.22 * b, 1.30 * b])
-    fig.update_yaxes(visible=False, range=[-0.06 * D, 1.24 * D], scaleanchor="x", scaleratio=1)
+    apply_section_axes(fig, W=W, D=D)
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(visible=False)
+    # Ensure consistent section coordinate system: y=0 at TOP, y increases downward
+    fig.update_yaxes(autorange=False)
 
     fig.update_layout(
         margin=dict(l=10, r=10, t=20, b=10),

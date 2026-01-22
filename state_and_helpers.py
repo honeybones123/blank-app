@@ -12,6 +12,29 @@ from pathlib import Path
 from datetime import datetime
 import streamlit as st
 
+# Shared-session helpers: treat only None/missing as missing (not falsy)
+_MISSING = object()
+
+def is_missing(v) -> bool:
+    # Only treat "not provided" as missing — NOT falsy values like 0, 0.0, "", False
+    return v is None or v is _MISSING
+
+def ss_get(key: str, default=_MISSING):
+    return st.session_state.get(key, default)
+
+# region agent log
+def _dbg_log(payload: dict) -> None:
+    try:
+        with open(
+            "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log",
+            "a",
+            encoding="utf-8",
+        ) as _f:
+            _f.write(json.dumps(payload) + "\n")
+    except Exception:
+        pass
+# endregion
+
 # ============================================================
 #  SESSION STATE CONTRACT  (READ THIS BEFORE EDITING ANYTHING)
 # ============================================================
@@ -25,8 +48,7 @@ DEBUG_MODE = False  # set True only when debugging
 
 def debug_print(*args, **kwargs):
     """Central debug logger. Use this instead of print()."""
-    if DEBUG_MODE:
-        print(*args, **kwargs)
+    return
 
 
 def _debug_docs_dir() -> str:
@@ -43,16 +65,7 @@ def _debug_snapshot_path() -> str:
 
 
 def _append_debug_log(line: str) -> None:
-    if not DEBUG_MODE:
-        return
-    try:
-        path = _debug_log_path()
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(f"[{ts}] {line}\n")
-    except Exception:
-        # Never break the app due to debug logging
-        pass
+    return
 
 
 def write_final_session_state_check(path: str = "final_session_state_check.json") -> str:
@@ -61,43 +74,7 @@ def write_final_session_state_check(path: str = "final_session_state_check.json"
     Never raises (fails silently but tries hard).
     Returns the output path (best effort).
     """
-    try:
-        out_path = os.path.join(os.path.expanduser("~"), "Documents", path)
-        ss = dict(st.session_state)
-
-        payload = {
-            "ts": time.time(),
-            "active_slug": ss.get("page_slug") or ss.get("_active_page_slug"),
-            "keys": sorted(list(ss.keys())),
-            "shared_subset": {k: ss.get(k) for k in [
-                "b", "D", "fc", "Ec", "L",
-                "t_creep", "age_at_loading", "stress_ratio", "t_shrink", "shrinkage_env",
-                "defl_limit_ratio", "defl_support_type", "defl_use_simplified_ief",
-                "sigma_sr",
-            ]},
-            "rendered_widget_keys": ss.get("_rendered_widget_keys", []),
-            "last_user_widget_key": ss.get("_last_user_widget_key"),
-            "last_user_shared_key": ss.get("_last_user_shared_key"),
-            "stray_prefixed_keys": [
-                str(k) for k in ss.keys()
-                if str(k).startswith(("defl_", "cr_", "sh_", "design_"))
-            ],
-            "blocked_sync_attempts": ss.get("_blocked_sync_attempts", [])[-50:],
-        }
-
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2, default=str)
-
-        return out_path
-    except Exception:
-        try:
-            tb = traceback.format_exc()
-            out_path = os.path.join(os.path.expanduser("~"), "Documents", "final_session_state_check.json")
-            with open(out_path, "w", encoding="utf-8") as f:
-                json.dump({"error": "write_final_session_state_check_failed", "traceback": tb}, f, indent=2)
-            return out_path
-        except Exception:
-            return ""
+    return ""
 
 
 def mark_dirty(reason: str = ""):
@@ -313,6 +290,43 @@ def safe_hydrate(widget_key: str, shared_key: str, value, *, force: bool = False
         hydrated_map[widget_key] = value
         return
 
+    # If shared has a meaningful action value but widget is stale zero/None, rehydrate.
+    action_keys = {
+        "Tu_star",
+        "Mu_star_manual",
+        "Vu_star_manual",
+        "N_star",
+        "P_star",
+        "load_Mstar_proxy",
+        "load_Vstar_proxy",
+        "load_Nstar_proxy",
+    }
+    if shared_key in action_keys:
+        cur = st.session_state.get(widget_key)
+        shared_val = st.session_state.get(shared_key)
+        if shared_val not in (None, "", 0, 0.0) and cur in (None, "", 0, 0.0):
+            st.session_state[widget_key] = shared_val
+            hydrated_map[widget_key] = shared_val
+            # region agent log
+            _dbg_log(
+                {
+                    "sessionId": "debug-session",
+                    "runId": "pre",
+                    "hypothesisId": "G",
+                    "location": "state_and_helpers.py:289",
+                    "message": "safe_hydrate rehydrated action widget from shared",
+                    "data": {
+                        "widget_key": widget_key,
+                        "shared_key": shared_key,
+                        "widget_before": cur,
+                        "shared_value": shared_val,
+                    },
+                    "timestamp": int(time.time() * 1000),
+                }
+            )
+            # endregion
+            return
+
     last_h = hydrated_map.get(widget_key, "__NOHYDRATE__")
     cur = st.session_state.get(widget_key)
     if last_h != "__NOHYDRATE__" and cur == last_h:
@@ -356,11 +370,52 @@ def _shared_zero_tripwire(tag: str, keys: list[str] | None = None):
             bad.append((k, v))
     st.session_state["_tripwire_last"] = {"tag": tag, "bad_count": len(bad), "sample": bad[:25]}
 
+
+def tripwire_no_falsy_defaulting():
+    """
+    Debug guard: catches the exact bug where a legitimate 0 gets overwritten.
+    Call this once per run after init/hydration.
+    """
+    watch = [
+        "nb_or_s_top_2",
+        "nb_or_s_bot_2",
+        "Tu_star",
+        "Vu_star_manual",
+        "Mu_star_manual",
+        "N_star",
+        "P_star",
+        "lig_legs",
+        "n_ducts",
+    ]
+    defaults = []
+    for k in watch:
+        if k in st.session_state and st.session_state[k] == 0:
+            default = SHARED_DEFAULTS.get(k, None)
+            defaults.append({"key": k, "default": default})
+    st.session_state["_tripwire_falsy_defaults"] = defaults
+
 SHARED_DEFAULTS = {
     # Geometry
     "b": 400.0,     # beam width (mm)
     "D": 600.0,     # overall depth (mm)
     "L": 3000.0,    # span/effective length (mm)
+    "sec_shape": "RECT",
+    "bf": 600.0,
+    "tf": 120.0,
+    "bw": 300.0,
+    "tw": 200.0,
+    "bf_bot": 600.0,
+    "tf_bot": 120.0,
+    # Derived geometry (shape-aware)
+    "A_g": 400.0 * 600.0,          # mm^2
+    "ybar_top_g": 300.0,           # mm
+    "Ixx_g": (400.0 * 600.0**3) / 12.0,  # mm^4
+    "Ztop_g": 0.0,                 # mm^3
+    "Zbot_g": 0.0,                 # mm^3
+    "b_web": 400.0,                # mm (RECT=b, T=bw, I=tw)
+    "b_crack": 400.0,              # mm (width used by crack calcs)
+    "A_ct_default": 400.0 * 600.0 / 2.0,  # mm^2 (for shear)
+    "defl_dims_user_override": False,
 
     # Materials
     "fc": 40.0,     # MPa
@@ -811,6 +866,9 @@ RESULT_KEYS = {
     "phi_Vu_max_kN",
     "V_eq_kN",
     "Vuc_utilisation",
+    # Shear report outputs (PDF)
+    "shear_steps",
+    "shear_report",
     # Selected / final design actions (chosen from manual or SFD/BMD page)
     "actions_source",
     "Mu_star",
@@ -852,6 +910,9 @@ RESULT_DEFAULTS.update({
     "passes_table": False,
     "passes_w": False,
     "Vuc_utilisation": None,  # Can be None
+    # Shear report outputs (PDF)
+    "shear_steps": [],
+    "shear_report": {},
     # Action result keys
     "actions_source": "",
     "Mu_star": 0.0,
@@ -1031,6 +1092,53 @@ TAB_KEYS = {
     "inputs_b": "b",
     "inputs_D": "D",
     "inputs_L": "L",
+    "inputs_sec_shape": "sec_shape",
+    "inputs_bf": "bf",
+    "inputs_tf": "tf",
+    "inputs_bw": "bw",
+    "inputs_tw": "tw",
+    "inputs_bf_bot": "bf_bot",
+    "inputs_tf_bot": "tf_bot",
+
+    # ----------------- BENDING PAGE -----------------
+    "bending_sec_shape": "sec_shape",
+    "bending_b": "b",
+    "bending_D": "D",
+    "bending_L": "L",
+    "bending_bf": "bf",
+    "bending_tf": "tf",
+    "bending_bw": "bw",
+    "bending_tw": "tw",
+
+    # ----------------- SHEAR PAGE -----------------
+    "shear_sec_shape": "sec_shape",
+    "shear_b": "b",
+    "shear_D": "D",
+    "shear_L": "L",
+    "shear_bf": "bf",
+    "shear_tf": "tf",
+    "shear_bw": "bw",
+    "shear_tw": "tw",
+
+    # ----------------- CRACK PAGE -----------------
+    "crack_sec_shape": "sec_shape",
+    "crack_b": "b",
+    "crack_D": "D",
+    "crack_L": "L",
+    "crack_bf": "bf",
+    "crack_tf": "tf",
+    "crack_bw": "bw",
+    "crack_tw": "tw",
+
+    # ----------------- DEFLECTION PAGE -----------------
+    "deflection_sec_shape": "sec_shape",
+    "deflection_b": "b",
+    "deflection_D": "D",
+    "deflection_L": "L",
+    "deflection_bf": "bf",
+    "deflection_tf": "tf",
+    "deflection_bw": "bw",
+    "deflection_tw": "tw",
 
     "inputs_fc": "fc",
     "inputs_fsy": "fsy",
@@ -1113,6 +1221,13 @@ TAB_KEYS = {
     "inputs_top2_count": "top2_count",
     "inputs_top2_spacing": "top2_spacing",
     # Bending page widgets - map to same shared parameters
+    "bending_sec_shape": "sec_shape",
+    "bending_bf": "bf",
+    "bending_tf": "tf",
+    "bending_bw": "bw",
+    "bending_tw": "tw",
+    "bending_bf_bot": "bf_bot",
+    "bending_tf_bot": "tf_bot",
     "bending_nb_or_s_bot_1": "nb_or_s_bot_1",
     "bending_db_bot_1": "db_bot_1",
     "bending_nb_or_s_bot_2": "nb_or_s_bot_2",
@@ -1575,23 +1690,7 @@ def begin_render_cycle():
 
 def debug_log(tag: str, data: dict):
     """Helper to write debug logs in consistent format."""
-    if not DEBUG_MODE:
-        return
-    import json
-    log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
-    try:
-        with open(log_path, "a") as f:
-            f.write(json.dumps({
-                "location": f"state_and_helpers.py:{tag}",
-                "message": tag,
-                "data": data,
-                "timestamp": __import__("time").time() * 1000,
-                "sessionId": "debug-session",
-                "runId": "run1",
-                "hypothesisId": "watchdog"
-            }) + "\n")
-    except:
-        pass
+    return
 
 
 def log_shared_diff(tag: str):
@@ -1750,7 +1849,8 @@ def init_shared_session_state():
     
     # NOW seed defaults only for anything still missing (after restore)
     for key, val in SHARED_DEFAULTS.items():
-        if key not in st.session_state:
+        v = ss_get(key)
+        if is_missing(v):
             set_shared(key, val, source="seed_defaults")
     
     # Ensure load proxies match the active edit mode on init
@@ -1789,7 +1889,8 @@ def init_shared_session_state():
     # Only run once.
     if not already_initialized:
         for key, val in SHARED_DEFAULTS.items():
-            if key not in st.session_state:
+            v = ss_get(key)
+            if is_missing(v):
                 set_shared(key, val, source="seed_defaults")
     
     # Seed result defaults (derived outputs). Do not overwrite if already present.
@@ -1821,9 +1922,17 @@ def init_shared_session_state():
         restored_value = None
         if widget_missing and widget_key.startswith("inputs_") and cached_key in st.session_state:
             cached_value = st.session_state[cached_key]
-            # Only restore from cache if cache value is not 0 (or if 0 is the default)
             default_value = SHARED_DEFAULTS.get(shared_key, None)
-            cache_is_valid = (cached_value != 0) or (cached_value == 0 and default_value == 0)
+
+            # 0 is a VALID user value for many keys (reo counts, legs, diameters, etc).
+            # Only treat cached 0 as "stale" for keys where 0 is NOT allowed.
+            cache_is_valid = (cached_value != 0) or (
+                cached_value == 0 and (
+                    default_value == 0 or zero_allowed(shared_key)
+                )
+            )
+            # DEBUG (temporary)
+            # st.write("CACHE RESTORE", widget_key, shared_key, cached_value, "valid=", cache_is_valid)
             
             if cache_is_valid:
                 restored_value = cached_value
@@ -1868,7 +1977,11 @@ def init_shared_session_state():
                     # Only restore if:
                     # 1) Shared value is not 0, OR
                     # 2) Shared value is 0 AND default is also 0 (0 is legitimate)
-                    should_restore = (shared_value != 0) or (shared_value == 0 and default_value == 0)
+                    should_restore = (shared_value != 0) or (
+                        shared_value == 0 and (
+                            default_value == 0 or zero_allowed(shared_key)
+                        )
+                    )
                     
                     
                     if should_restore:
@@ -2152,12 +2265,7 @@ def sync_shared_from_widgets_once_per_run():
     active_slug = st.session_state.get("_active_page_slug", "inputs")
     active_prefix = f"{active_slug}_"
     
-    # #region agent log
-    import json
-    import os
-    log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
     sync_operations = []
-    # #endregion
     
     # Shared keys that must NEVER be overwritten by other pages' defaults.
     # Authority order for these: inputs_* first, then bending_*.
@@ -2182,18 +2290,6 @@ def sync_shared_from_widgets_once_per_run():
     if not isinstance(rendered, set):
         rendered = set()
     
-    # #region agent log - Track sync entry
-    import json
-    import os
-    log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
-    rendered_list = list(rendered) if isinstance(rendered, set) else []
-    sample_widgets = ["inputs_b", "inputs_D", "inputs_fc", "inputs_fsy", "bending_nb_or_s_bot_1", "shear_lig_d"]
-    widget_values_at_sync_start = {k: st.session_state.get(k) for k in sample_widgets if k in st.session_state}
-    try:
-        with open(log_path, "a") as f:
-            f.write(json.dumps({"location": "state_and_helpers.py:sync_entry", "message": "Sync function entry", "data": {"rendered_count": len(rendered_list), "rendered_sample": rendered_list[:10], "widget_values": widget_values_at_sync_start}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}) + "\n")
-    except: pass
-    # #endregion
 
     for widget_key, shared_key in TAB_KEYS.items():
         if shared_key not in syncable_keys:
@@ -2513,12 +2609,77 @@ def recalc_derived_values():
     ))
 
     b = st.session_state.get("b", 0.0)
+    sec_shape = st.session_state.get("sec_shape", "RECT")
+    if sec_shape == "T":
+        st.session_state["b"] = float(st.session_state.get("bw", st.session_state.get("b", 400.0)))
+        b = st.session_state["b"]
+    elif sec_shape == "I":
+        st.session_state["b"] = float(st.session_state.get("tw", st.session_state.get("b", 400.0)))
+        b = st.session_state["b"]
     rowgap_bot = st.session_state.get("rowgap_bot", 60.0)
     rowgap_top = st.session_state.get("rowgap_top", 60.0)
+    # --- Shape-aware derived geometry (shared source of truth) ---
+    from section_props.shapes import compute_section_properties
 
-    # --- Derived geometry: bw is always derived from b ---
-    if b is not None:
-        st.session_state["defl_bw"] = b
+    bf = st.session_state.get("bf", 0.0)
+    tf = st.session_state.get("tf", 0.0)
+    bw = st.session_state.get("bw", 0.0)
+    tw = st.session_state.get("tw", 0.0)
+
+    def _dims_ok(vals):
+        try:
+            return all(float(v) > 0.0 for v in vals)
+        except Exception:
+            return False
+
+    shape_name = "Rectangle (b × D)"
+    dims = {"b": float(b), "D": float(D)}
+    if sec_shape == "T" and _dims_ok([bf, tf, bw, D]):
+        shape_name = "T-Section"
+        dims = {"bf": float(bf), "tf": float(tf), "bw": float(bw), "D": float(D)}
+    elif sec_shape == "I" and _dims_ok([bf, tf, tw, D]):
+        shape_name = "I-Section"
+        dims = {"bf": float(bf), "tf": float(tf), "tw": float(tw), "D": float(D)}
+
+    # Guard: if any required dims missing/0, fall back to rectangle approximation
+    if shape_name != "Rectangle (b × D)" and not _dims_ok(list(dims.values())):
+        shape_name = "Rectangle (b × D)"
+        dims = {"b": float(b), "D": float(D)}
+
+    try:
+        props = compute_section_properties(shape_name, dims)
+    except Exception:
+        props = compute_section_properties("Rectangle (b × D)", {"b": float(b), "D": float(D)})
+
+    A_g = float(props.get("A", 0.0))
+    ybar_top_g = float(props.get("ybar_top", 0.0))
+    Ixx_g = float(props.get("Ixx", 0.0))
+    Ztop_g = float(props.get("Ztop", 0.0))
+    Zbot_g = float(props.get("Zbot", 0.0))
+
+    if sec_shape == "T":
+        b_web = float(bw) if bw else float(b)
+        defl_beff = float(bf) if bf else float(b)
+    elif sec_shape == "I":
+        b_web = float(tw) if tw else float(b)
+        defl_beff = float(bf) if bf else float(b)
+    else:
+        b_web = float(b)
+        defl_beff = float(b)
+
+    st.session_state["A_g"] = A_g
+    st.session_state["ybar_top_g"] = ybar_top_g
+    st.session_state["Ixx_g"] = Ixx_g
+    st.session_state["Ztop_g"] = Ztop_g
+    st.session_state["Zbot_g"] = Zbot_g
+    st.session_state["b_web"] = b_web
+    st.session_state["b_crack"] = b_web
+    st.session_state["A_ct_default"] = 0.5 * A_g
+
+    defl_override = bool(st.session_state.get("defl_dims_user_override", False))
+    if not defl_override:
+        st.session_state["defl_bw"] = b_web
+        st.session_state["defl_beff"] = defl_beff
 
     # --- Derived: effective span for deflection ---
     L_val = st.session_state.get("L")
@@ -2826,6 +2987,16 @@ def recalc_derived_values():
         # Not in manual mode - clear computed value
         update_results(fd_ef_calc_kNm=0.0)
 
+    # --- Shape audit (debug snapshot, non-spammy) ---
+    st.session_state["_shape_audit"] = {
+        "sec_shape": st.session_state.get("sec_shape"),
+        "A_g": st.session_state.get("A_g"),
+        "Ixx_g": st.session_state.get("Ixx_g"),
+        "b_web": st.session_state.get("b_web"),
+        "defl_bw": st.session_state.get("defl_bw"),
+        "defl_beff": st.session_state.get("defl_beff"),
+    }
+
 
 def reset_results_state():
     """Reset derived outputs to defaults (safe, does not touch inputs)."""
@@ -2896,31 +3067,7 @@ def _make_sync_callback(widget_key: str, shared_key: str):
         # Read widget and shared values early for tracing
         widget_val = st.session_state.get(widget_key)
         shared_val = st.session_state.get(shared_key, None)
-        # #region agent log
-        if shared_key in ("Mu_star_manual", "Vu_star_manual"):
-            try:
-                import json
-                log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
-                with open(log_path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps({
-                        "location": "state_and_helpers.py:sync_callback_entry",
-                        "message": "Sync entry for manual actions",
-                        "data": {
-                            "widget_key": widget_key,
-                            "shared_key": shared_key,
-                            "widget_val": widget_val,
-                            "shared_val": shared_val,
-                            "last_user_widget": st.session_state.get("_last_user_widget_key"),
-                            "rendered": widget_key in st.session_state.get("_rendered_widget_keys", set()),
-                        },
-                        "timestamp": int(time.time() * 1000),
-                        "sessionId": "debug-session",
-                        "runId": st.session_state.get("_boot_id", "run"),
-                        "hypothesisId": "H2",
-                    }) + "\n")
-            except Exception:
-                pass
-        # #endregion
+        
         
         # 0.5) RESTORE GUARD: briefly block widget→shared right after restore
         if st.session_state.get("_restored_from_snapshot") and st.session_state.get("_restore_guard_active"):
@@ -2933,7 +3080,7 @@ def _make_sync_callback(widget_key: str, shared_key: str):
                 return
 
             # Block only during grace window
-            if (time.time() - float(ts)) < 0.75:
+            if (time.time() - float(ts)) < 0.20:
                 _sync_trace_file("return:restore_guard", widget_key, shared_key, widget_val, shared_val)
                 _sync_trace("restore_guard_active", widget_key, shared_key)
                 return
@@ -2982,46 +3129,13 @@ def _make_sync_callback(widget_key: str, shared_key: str):
             _sync_trace("no_change", widget_key, shared_key)
             return  # No change, skip sync
         
-        # --- Guard: prevent default zeros overwriting meaningful shared values ---
-        # IMPORTANT: for many design inputs, 0 is a valid user choice (e.g. 0 bars, 0 legs, 0 ducts)
-        ZERO_ALLOWED_SHARED_KEYS = {
-            # Reinforcement layer counts (0 = layer off)
-            "bot1_count", "bot2_count", "top1_count", "top2_count",
-            # Shear links (0 legs may be valid during setup)
-            "lig_legs",
-            # Prestressing ducts (0 = none)
-            "n_ducts", "duct_dia",
-            # Manual design actions can be 0
-            "Mu_star_manual", "Vu_star_manual",
-        }
-        
-        if widget_val == 0 and shared_val not in (None, 0) and shared_key not in ZERO_ALLOWED_SHARED_KEYS:
-            # #region agent log
-            if shared_key in ("Mu_star_manual", "Vu_star_manual"):
-                try:
-                    import json
-                    log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
-                    with open(log_path, "a", encoding="utf-8") as f:
-                        f.write(json.dumps({
-                            "location": "state_and_helpers.py:sync_callback_guard",
-                            "message": "Blocked zero write to shared",
-                            "data": {
-                                "widget_key": widget_key,
-                                "shared_key": shared_key,
-                                "widget_val": widget_val,
-                                "shared_val": shared_val,
-                                "guard_list": list(ZERO_ALLOWED_SHARED_KEYS),
-                            },
-                            "timestamp": int(time.time() * 1000),
-                            "sessionId": "debug-session",
-                            "runId": st.session_state.get("_boot_id", "run"),
-                            "hypothesisId": "H2",
-                        }) + "\n")
-                except Exception:
-                    pass
-            # #endregion
-            _sync_trace_file("return:widget_default_zero", widget_key, shared_key, widget_val, shared_val)
-            return
+        # NOTE:
+        # Do NOT block zero writes here.
+        # Your contract already prevents programmatic/hydration-driven writes via:
+        #   - _sync_lock (hydration/render)
+        #   - _last_user_widget_key gate (only the widget the user edited can push)
+        # Therefore, widget_val == 0 is a valid user state and must sync to shared,
+        # otherwise shared keeps old values and "rehydrates" them on rerun.
 
             # Time-dependent protection (1 default)
             if shared_key in {"t_creep", "age_at_loading", "t_shrink"}:
@@ -3147,6 +3261,25 @@ def _make_sync_callback(widget_key: str, shared_key: str):
         
         old_shared = current_shared
         _sync_trace_file("write:widget_to_shared", widget_key, shared_key, widget_value, old_shared)
+        # region agent log
+        if shared_key == "Tu_star":
+            _dbg_log(
+                {
+                    "sessionId": "debug-session",
+                    "runId": "pre",
+                    "hypothesisId": "A",
+                    "location": "state_and_helpers.py:3212",
+                    "message": "sync callback writes Tu_star",
+                    "data": {
+                        "widget_key": widget_key,
+                        "shared_key": shared_key,
+                        "widget_value": widget_value,
+                        "old_shared": old_shared,
+                    },
+                    "timestamp": int(time.time() * 1000),
+                }
+            )
+        # endregion
         set_shared(shared_key, widget_value, source=f"callback:{widget_key}")
         _audit("SYNC widget->shared", shared_key, widget_key, old=old_shared, new=widget_value)
         mark_dirty("widget_sync")
@@ -3378,7 +3511,7 @@ def _update_results_impl(**kwargs):
                 # Log the auto-registration
                 import json
                 import os
-                log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
+                log_path = os.devnull
                 try:
                     with open(log_path, "a") as f:
                         f.write(json.dumps({
@@ -3448,12 +3581,48 @@ def get_param(name: str, default=None):
         value = st.session_state[name]
         # Treat None as "not set" - return default instead
         if value is not None:
+            # region agent log
+            if name == "Tu_star":
+                _dbg_log(
+                    {
+                        "sessionId": "debug-session",
+                        "runId": "pre",
+                        "hypothesisId": "B",
+                        "location": "state_and_helpers.py:3499",
+                        "message": "get_param Tu_star from session_state",
+                        "data": {
+                            "name": name,
+                            "session_value": value,
+                            "default": default,
+                        },
+                        "timestamp": int(time.time() * 1000),
+                    }
+                )
+            # endregion
             return value
     
     # Key not in session_state, or value is None - check SHARED_DEFAULTS
     shared_default = SHARED_DEFAULTS.get(name, default)
     # If SHARED_DEFAULTS also has None, treat it as "not set" and use the provided default
     if shared_default is not None:
+        # region agent log
+        if name == "Tu_star":
+            _dbg_log(
+                {
+                    "sessionId": "debug-session",
+                    "runId": "pre",
+                    "hypothesisId": "B",
+                    "location": "state_and_helpers.py:3506",
+                    "message": "get_param Tu_star from shared default",
+                    "data": {
+                        "name": name,
+                        "shared_default": shared_default,
+                        "default": default,
+                    },
+                    "timestamp": int(time.time() * 1000),
+                }
+            )
+        # endregion
         return shared_default
     return default
 

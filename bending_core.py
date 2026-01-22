@@ -350,8 +350,8 @@ def _stress_strain_state(state: str):
     need to call get_param again.
     """
     # Try to use real values from the app; fall back to teaching defaults
-    b = get_param("b") or 300.0
-    D = get_param("D") or 600.0
+    b = get_param("b", 300.0)
+    D = get_param("D", 600.0)
     fc = get_param("fc")
     fsy = get_param("fsy")
     As = get_param("Ast_bot")
@@ -379,14 +379,16 @@ def _stress_strain_state(state: str):
     
     d = _effective_depth_centroid_pure(b, D, nb_bot, db_bot, cover_bot, rowgap_bot)
     if d in (None, 0):
-        cover_bot = cover_bot or 40.0
-        db_bot = db_bot or 24.0
+        if cover_bot is None:
+            cover_bot = 40.0
+        if db_bot is None:
+            db_bot = 24.0
         d = D - cover_bot - db_bot / 2.0
 
     # If As missing or zero, estimate from nb_bot & db_bot
     if As is None or As == 0:
-        nb_bot = get_param("nb_bot") or 3
-        db_bot = get_param("db_bot") or 24.0
+        nb_bot = get_param("nb_bot", 3)
+        db_bot = get_param("db_bot", 24.0)
         As = nb_bot * math.pi * db_bot**2 / 4.0
 
     # AS3600 α2–γ

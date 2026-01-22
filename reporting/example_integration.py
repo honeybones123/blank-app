@@ -203,7 +203,7 @@ def _get_results():
     return {}
 
 
-def render_pdf_button():
+def render_pdf_button(button_type: str = "primary", detail_level: str = "detailed"):
     """
     Render a PDF export button in the Design Actions section.
     
@@ -214,8 +214,10 @@ def render_pdf_button():
     - Shows download button
     - Cleans up temp files
     """
+    detail_level_key = "summary" if detail_level == "summary" else "detailed"
+
     # Generate PDF button
-    if st.button("📄 Generate PDF Report", type="primary", use_container_width=True):
+    if st.button("📄 Generate PDF Report", type=button_type, use_container_width=True):
         # 1) Run all checks FIRST (and show spinner so user knows it's working)
         with st.spinner("Running all checks..."):
             try:
@@ -238,8 +240,6 @@ def render_pdf_button():
                 + ", ".join(missing)
                 + ".\n\nThis means the runner did not publish *_report into results."
             )
-            st.write("DEBUG: available *_report keys:", [k for k in results.keys() if k.endswith("_report")])
-            st.write("DEBUG: available *_steps keys (legacy):", [k for k in results.keys() if k.endswith("_steps")])
             return
         
         # Warn if other modules haven't been migrated yet (but don't block)
@@ -313,13 +313,16 @@ def render_pdf_button():
                     inputs_sections=inputs_sections,
                     check_sections=check_sections,
                     temp_figures=temp_figures,
+                    detail_level=detail_level_key,
                 )
+                suffix = "SUMMARY" if detail_level_key == "summary" else "DETAILED"
+                filename = f"Beam_Design_Report_{suffix}.pdf"
                 
                 # Show download button
                 st.download_button(
                     label="📥 Download PDF Report",
                     data=pdf_bytes,
-                    file_name="beam_design_report.pdf",
+                    file_name=filename,
                     mime="application/pdf",
                 )
                 

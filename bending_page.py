@@ -16,7 +16,6 @@ from state_and_helpers import (
     get_param,
     update_results,
     init_shared_session_state,
-    DEBUG_MODE,
     debug_print,
 )
 from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, select_row, show_reo_message, apply_step_expander_css, apply_step_summary_expander_css, info_i_button, page_divider
@@ -1126,62 +1125,12 @@ def render_bending():
     
     # Inject seamless steps CSS (for summary table + calc details)
     inject_seamless_steps_css()
+
     
     # Initialize page-local active mode state (UI-only, not in shared state)
     if "bending_active_mode" not in st.session_state:
         st.session_state["bending_active_mode"] = "ULS"
     
-    # Debug-only dimension triage panel
-    if DEBUG_MODE:
-        try:
-            from src.debug.debug_flags import is_debug_enabled
-            if is_debug_enabled():
-                with st.expander("🔧 DEBUG: Dimension Triage", expanded=False):
-                    st.markdown("### Shared Canonical Keys")
-                    shared_dims = {
-                        "b": st.session_state.get("b"),
-                        "D": st.session_state.get("D"),
-                        "L": st.session_state.get("L"),
-                        "d": st.session_state.get("d"),
-                        "cover_bot": st.session_state.get("cover_bot"),
-                        "cover_top": st.session_state.get("cover_top"),
-                        "cover_side": st.session_state.get("cover_side"),
-                    }
-                    st.json(shared_dims)
-                    
-                    st.markdown("### Widget Keys (if available)")
-                    widget_dims = {}
-                    from state_and_helpers import TAB_KEYS
-                    for widget_key in ["bending_b", "bending_D", "bending_L", "inputs_b", "inputs_D", "inputs_L"]:
-                        if widget_key in st.session_state:
-                            shared_key = TAB_KEYS.get(widget_key, "N/A")
-                            widget_dims[f"{widget_key} → {shared_key}"] = st.session_state[widget_key]
-                    if widget_dims:
-                        st.json(widget_dims)
-                    else:
-                        st.write("No widget keys found")
-                    
-                    st.markdown("### Values Passed to Bending Core")
-                    inputs = get_bending_inputs_from_shared_state()
-                    st.json({
-                        "b": inputs["b"],
-                        "D": inputs["D"],
-                        "L": inputs["L"],
-                        "d": inputs["d"],
-                        "cover_bot": inputs["cover_bot"],
-                        "cover_top": inputs["cover_top"],
-                        "cover_side": inputs["cover_side"],
-                    })
-                    
-                    st.markdown("### Key Audit (dimension-like keys)")
-                    dim_like_keys = {}
-                    for key in sorted(st.session_state.keys()):
-                        if any(term in key.lower() for term in ["b", "width", "d", "depth", "h", "cover", "dimension"]):
-                            dim_like_keys[key] = st.session_state[key]
-                    if dim_like_keys:
-                        st.json(dim_like_keys)
-        except ImportError:
-            pass
     
     # Remove green background from inline math (Streamlit wraps math in code tags)
     # But preserve katex rendering by only targeting background, not font styling
@@ -1205,14 +1154,6 @@ def render_bending():
         unsafe_allow_html=True,
     )
     
-    # Debug helpers (temporary - remove after verification)
-    if DEBUG_MODE:
-        with st.sidebar:
-            st.write("**Debug:**")
-            st.write("jump_to:", st.session_state.get("jump_to"))
-            open_steps = {k: v for k, v in st.session_state.items() if k.startswith("step_open_") and v}
-            if open_steps:
-                st.write("open steps:", open_steps)
 
     # Container so title + summary + 3D sit at the very top (like Inputs page)
     top_container = st.container()
@@ -1499,19 +1440,6 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             except Exception as e:
                 st.warning("3D view failed to render (browser/graphics). Try refreshing the page.")
             
-            # Debug readout (debug mode only)
-            if DEBUG_MODE:
-                try:
-                    from src.debug.debug_flags import is_debug_enabled
-                    if is_debug_enabled():
-                        st.caption("🔧 DEBUG: Top Layer 1 bars")
-                        st.write(f"Widget (inputs_nb_or_s_top_1): {st.session_state.get('inputs_nb_or_s_top_1', 'N/A')}")
-                        st.write(f"Shared (nb_or_s_top_1): {st.session_state.get('nb_or_s_top_1', 'N/A')}")
-                        st.write(f"Layout value used: {nb_or_s_top_1_layout}")
-                        st.write(f"Derived (nb_top): {st.session_state.get('nb_top', 'N/A')}")
-                        st.write(f"Derived (Ast_top): {st.session_state.get('Ast_top', 'N/A')}")
-                except ImportError:
-                    pass
 
         # Summary table spans full width under the heading + 3D row (deflection-style)
         st.subheader("Bending – Summary")
@@ -1754,21 +1682,56 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
 
     with col_geom:
         st.subheader("Geometry")
+        shape_options = ["RECT", "T", "I"]
+        sec_shape_current = st.session_state.get("sec_shape", "RECT")
+        if sec_shape_current not in shape_options:
+            sec_shape_current = "RECT"
+
+        select_row(
+            "Section shape",
+            "bending_sec_shape",
+            shape_options,
+            sec_shape_current,
+            sync_callbacks,
+            help_text="Matches Inputs page. Controls which geometry fields are shown.",
+        )
+
         # Get current values (widget key takes precedence if exists, otherwise use shared key)
-        b_val = _coalesce_num(st.session_state.get("bending_b", get_param("b", 400.0)), 400.0)
         D_val = _coalesce_num(st.session_state.get("bending_D", get_param("D", 600.0)), 600.0)
         L_val = _coalesce_num(st.session_state.get("bending_L", get_param("L", 3000.0)), 3000.0)
         
-        number_row(
-            "Width b (mm)",
-            "bending_b",
-            b_val,
-            sync_callbacks,
-            help_text=(
-                "Section width. Increasing b increases compression block area and "
-                "reduces required tensile steel for a given Mu*."
-            ),
-        )
+        sec_shape = st.session_state.get("bending_sec_shape", st.session_state.get("sec_shape", "RECT"))
+
+        if sec_shape == "RECT":
+            b_val = _coalesce_num(st.session_state.get("bending_b", get_param("b", 400.0)), 400.0)
+            number_row(
+                "Width b (mm)",
+                "bending_b",
+                b_val,
+                sync_callbacks,
+                help_text=(
+                    "Section width. Increasing b increases compression block area and "
+                    "reduces required tensile steel for a given Mu*."
+                ),
+            )
+
+        elif sec_shape == "T":
+            bf_val = _coalesce_num(st.session_state.get("bending_bf", get_param("bf", 600.0)), 600.0)
+            tf_val = _coalesce_num(st.session_state.get("bending_tf", get_param("tf", 120.0)), 120.0)
+            bw_val = _coalesce_num(st.session_state.get("bending_bw", get_param("bw", 300.0)), 300.0)
+
+            number_row("Flange width bf (mm)", "bending_bf", bf_val, sync_callbacks)
+            number_row("Flange thickness tf (mm)", "bending_tf", tf_val, sync_callbacks)
+            number_row("Web width bw (mm)", "bending_bw", bw_val, sync_callbacks)
+
+        elif sec_shape == "I":
+            bf_val = _coalesce_num(st.session_state.get("bending_bf", get_param("bf", 600.0)), 600.0)
+            tf_val = _coalesce_num(st.session_state.get("bending_tf", get_param("tf", 120.0)), 120.0)
+            tw_val = _coalesce_num(st.session_state.get("bending_tw", get_param("tw", 200.0)), 200.0)
+
+            number_row("Top flange width bf (mm)", "bending_bf", bf_val, sync_callbacks)
+            number_row("Top flange thickness tf (mm)", "bending_tf", tf_val, sync_callbacks)
+            number_row("Web thickness tw (mm)", "bending_tw", tw_val, sync_callbacks)
         number_row(
             "Depth D (mm)",
             "bending_D",

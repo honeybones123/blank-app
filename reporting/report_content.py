@@ -43,6 +43,49 @@ def _safe_value(val, fmt="{:.2f}", default="N/A"):
         return default
 
 
+def steps_to_tabs_boxes(module_title: str, steps: list, default_tab: str):
+    boxes = []
+    for i, s in enumerate(steps, start=1):
+        deriv = []
+        formula = s.get("formula") or s.get("formula_lines") or []
+        subst = s.get("substitution") or s.get("sub_lines") or []
+        if isinstance(formula, str):
+            formula = [formula]
+        if isinstance(subst, str):
+            subst = [subst]
+
+        if formula:
+            deriv.append({"label": "Formula", "eq": "", "sub": ""})
+            for line in formula:
+                deriv.append({"label": "", "eq": line, "sub": ""})
+
+        if subst:
+            deriv.append({"label": "Substitution", "eq": "", "sub": ""})
+            for line in subst:
+                deriv.append({"label": "", "eq": line, "sub": ""})
+
+        eqs = s.get("equations", []) or []
+        for line in eqs:
+            deriv.append({"label": "", "eq": line, "sub": ""})
+
+        boxes.append({
+            "id": f"1.{i}",
+            "title": s.get("title", f"Check {i}"),
+            "clause": s.get("clause", ""),
+            "status": s.get("status", None),
+            "status_text": s.get("status_text", ""),
+            "result": s.get("result", ""),
+            "derivation": deriv,
+            "diagram": s.get("diagram", None),
+        })
+
+    return {
+        "module_title": module_title,
+        "title": module_title,
+        "tabs": [{"tab_title": default_tab, "boxes": boxes}],
+    }
+
+
 def make_calc_box(id, title, status, result, clause="", derivation=None, diagram=None):
     """
     Create a calc box data structure for PDF reporting.
@@ -618,10 +661,20 @@ def extract_inputs_sections():
             "Es": get_param("Es", 200000.0),
         },
         "reinforcement": {
-            "Ast_bot": get_param("Ast_bot", 0.0),
-            "Ast_top": get_param("Ast_top", 0.0),
+            # Flexural reo (bars)
+            "nb_bot": get_param("nb_bot", 0),
+            "db_bot": get_param("db_bot", 0.0),
+            "nb_top": get_param("nb_top", 0),
+            "db_top": get_param("db_top", 0.0),
+
+            # Covers
             "cover_bot": get_param("cover_bot", 30.0),
             "cover_top": get_param("cover_top", 30.0),
+
+            # Shear reo (links)
+            "lig_d": get_param("lig_d", 0.0),
+            "lig_legs": get_param("lig_legs", 0),
+            "s_lig": get_param("s_lig", 0.0),
         },
         "actions": {
             "Mu_star": get_param("Mu_star", 0.0),
@@ -718,37 +771,22 @@ def extract_check_sections(fig_paths=None):
             figs = [figs] if figs else []
         
         # Check for detailed report tree first (preferred)
-        report = _r(results, "shear_report")
-        if report and isinstance(report, dict) and report.get("tabs"):
-            # Use report tree structure
-            sections.append({
-                "title": report.get("module_title", "Shear (ULS)"),
-                "summary": report.get("summary", [
-                    ("Demand", f"{Vu_star:.1f} kN"),
-                    ("Capacity", f"{phi_Vu_cap:.1f} kN"),
-                    ("Utilisation", f"{Vu_util:.2f}" if Vu_util is not None else "N/A"),
-                    ("Outcome", outcome),
-                ]),
-                "tabs": report.get("tabs", []),
-                "figures": figs,
-            })
-        else:
-            # Fallback to steps (legacy)
-            steps = _r(results, "shear_steps") or _r(results, "uls_shear_steps")
-            if not steps or not isinstance(steps, list) or len(steps) == 0:
-                steps = []
-            
-            sections.append({
-                "title": "Shear (ULS)",
-                "summary": [
-                    ("Demand", f"{Vu_star:.1f} kN"),
-                    ("Capacity", f"{phi_Vu_cap:.1f} kN"),
-                    ("Utilisation", f"{Vu_util:.2f}" if Vu_util is not None else "N/A"),
-                    ("Outcome", outcome),
-                ],
-                "steps": steps,
-                "figures": figs,
-            })
+        shear_report = _r(results, "shear_report")
+        if not shear_report:
+            shear_report = steps_to_tabs_boxes(
+                module_title="Shear (ULS)",
+                steps=results.get("shear_steps", []),
+                default_tab="ULS Checks",
+            )
+        if shear_report and isinstance(shear_report, dict):
+            shear_report["summary"] = shear_report.get("summary", [
+                ("Demand", f"{Vu_star:.1f} kN"),
+                ("Capacity", f"{phi_Vu_cap:.1f} kN"),
+                ("Utilisation", f"{Vu_util:.2f}" if Vu_util is not None else "N/A"),
+                ("Outcome", outcome),
+            ])
+            shear_report["figures"] = figs
+            sections.append(shear_report)
     
     # --- Crack Control ---
     w_calc = get_param("w_calc", 0.0)
@@ -757,29 +795,57 @@ def extract_check_sections(fig_paths=None):
     
     if w_calc > 0 or wmax_char > 0:
         outcome = "PASS" if (crack_util is not None and crack_util <= 1.0) else "FAIL" if crack_util is not None else "N/A"
-        
-        # Try to get steps from results
-        steps = _r(results, "crack_steps") or _r(results, "sls_crack_steps")
-        if not steps or not isinstance(steps, list) or len(steps) == 0:
-            # Do not auto-generate steps - only show stored checks
-            steps = []
-        
-        # Get figures
+
         figs = fig_paths.get("crack", [])
         if not isinstance(figs, list):
             figs = [figs] if figs else []
-        
-        sections.append({
-            "title": "Crack Control",
-            "summary": [
-                ("Demand", f"{w_calc:.3f} mm" if w_calc > 0 else "N/A"),
-                ("Capacity", f"{wmax_char:.3f} mm" if wmax_char > 0 else "N/A"),
-                ("Utilisation", f"{crack_util:.2f}" if crack_util is not None else "N/A"),
-                ("Outcome", outcome),
-            ],
-            "steps": steps,
-            "figures": figs,
-        })
+
+        # Prefer structured report first
+        report = _r(results, "crack_report")
+        if report and isinstance(report, dict) and report.get("tabs"):
+            sections.append({
+                "title": report.get("module_title", "Crack Control"),
+                "summary": report.get("summary", [
+                    ("Demand", f"{w_calc:.3f} mm" if w_calc > 0 else "N/A"),
+                    ("Capacity", f"{wmax_char:.3f} mm" if wmax_char > 0 else "N/A"),
+                    ("Utilisation", f"{crack_util:.2f}" if crack_util is not None else "N/A"),
+                    ("Outcome", outcome),
+                ]),
+                "tabs": report.get("tabs", []),
+                "figures": figs,
+            })
+        else:
+            # fallback to steps (legacy)
+            steps = _r(results, "crack_steps") or _r(results, "sls_crack_steps")
+            if not steps or not isinstance(steps, list):
+                steps = []
+
+            if len(steps) == 0:
+                steps = _auto_steps_for_module(
+                    module="crack",
+                    summary={
+                        "demand": f"{w_calc:.3f} mm",
+                        "capacity": f"{wmax_char:.3f} mm",
+                        "utilisation": crack_util if crack_util is not None else "N/A",
+                        "outcome": outcome,
+                        "units": "mm",
+                    },
+                    inputs=st.session_state,
+                    results=results,
+                    detail_level="detailed",
+                )
+
+            sections.append({
+                "title": "Crack Control",
+                "summary": [
+                    ("Demand", f"{w_calc:.3f} mm" if w_calc > 0 else "N/A"),
+                    ("Capacity", f"{wmax_char:.3f} mm" if wmax_char > 0 else "N/A"),
+                    ("Utilisation", f"{crack_util:.2f}" if crack_util is not None else "N/A"),
+                    ("Outcome", outcome),
+                ],
+                "steps": steps,
+                "figures": figs,
+            })
     
     # --- Deflection ---
     delta_total = get_param("deflection_total_mm", 0.0)
@@ -788,28 +854,55 @@ def extract_check_sections(fig_paths=None):
     
     if defl_limit > 0:
         outcome = "PASS" if (defl_util is not None and defl_util <= 1.0) else "FAIL" if defl_util is not None else "N/A"
-        
-        # Try to get steps from results
-        steps = _r(results, "deflection_steps") or _r(results, "sls_defl_steps")
-        if not steps or not isinstance(steps, list) or len(steps) == 0:
-            # Do not auto-generate steps - only show stored checks
-            steps = []
-        
-        # Get figures
+
         figs = fig_paths.get("deflection", [])
         if not isinstance(figs, list):
             figs = [figs] if figs else []
-        
-        sections.append({
-            "title": "Deflection",
-            "summary": [
-                ("Demand", f"{delta_total:.2f} mm"),
-                ("Capacity", f"{defl_limit:.2f} mm"),
-                ("Utilisation", f"{defl_util:.2f}" if defl_util is not None else "N/A"),
-                ("Outcome", outcome),
-            ],
-            "steps": steps,
-            "figures": figs,
-        })
+
+        # Prefer structured report first
+        report = _r(results, "deflection_report")
+        if report and isinstance(report, dict) and report.get("tabs"):
+            sections.append({
+                "title": report.get("module_title", "Deflection"),
+                "summary": report.get("summary", [
+                    ("Demand", f"{delta_total:.2f} mm"),
+                    ("Capacity", f"{defl_limit:.2f} mm"),
+                    ("Utilisation", f"{defl_util:.2f}" if defl_util is not None else "N/A"),
+                    ("Outcome", outcome),
+                ]),
+                "tabs": report.get("tabs", []),
+                "figures": figs,
+            })
+        else:
+            steps = _r(results, "deflection_steps") or _r(results, "sls_defl_steps")
+            if not steps or not isinstance(steps, list):
+                steps = []
+
+            if len(steps) == 0:
+                steps = _auto_steps_for_module(
+                    module="deflection",
+                    summary={
+                        "demand": f"{delta_total:.2f} mm",
+                        "capacity": f"{defl_limit:.2f} mm",
+                        "utilisation": defl_util if defl_util is not None else "N/A",
+                        "outcome": outcome,
+                        "units": "mm",
+                    },
+                    inputs=st.session_state,
+                    results=results,
+                    detail_level="detailed",
+                )
+
+            sections.append({
+                "title": "Deflection",
+                "summary": [
+                    ("Demand", f"{delta_total:.2f} mm"),
+                    ("Capacity", f"{defl_limit:.2f} mm"),
+                    ("Utilisation", f"{defl_util:.2f}" if defl_util is not None else "N/A"),
+                    ("Outcome", outcome),
+                ],
+                "steps": steps,
+                "figures": figs,
+            })
     
     return sections

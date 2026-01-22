@@ -17,7 +17,6 @@ from state_and_helpers import (
     recalc_derived_values,
     load_proxies_from_active_set,
     save_proxies_to_active_set,
-    DEBUG_MODE,
     get_widget_key_for_shared,
     TAB_KEYS,
     hc_log,
@@ -43,6 +42,9 @@ from crack_checks_helpers import build_crack_check_rows_from_state
 # NOTE: Heavy imports are deferred inside render_inputs() to avoid
 # startup timeouts on networked/OneDrive filesystems.
 from section_layout import compute_section_layout
+from section_props.plotly_section import make_sectionA_figure
+from section_props.plotly_3d import make_section_3d_figure
+from section_props.reo_layout import compute_longitudinal_reo_layout_T_I
 # from deflection import _compute_deflection_results  # TODO: add later
 
 
@@ -214,193 +216,289 @@ def _internal_leg_positions(y_min, y_max, n_legs):
 
 
 # ------------------------------------------------------------
+#  SHAPE-AWARE OUTLINE + CLAMP HELPERS (Section A)
+# ------------------------------------------------------------
+def _get_sec_shape():
+    # Prefer shared value; fall back safely
+    s = st.session_state.get("sec_shape", "RECT")
+    if s not in ("RECT", "T", "I"):
+        s = "RECT"
+    return s
+
+
+def _get_outline_points_and_bbox():
+    """
+    Returns:
+      pts: list[(x, y)] closed polygon (y downwards)
+      b_box: overall width used for layout/axes (max width)
+      D: overall depth
+    """
+    sec_shape = _get_sec_shape()
+    D = float(get_param("D", 600.0))
+
+    if sec_shape == "RECT":
+        b = float(get_param("b", 400.0))
+        pts = [(0, 0), (b, 0), (b, D), (0, D), (0, 0)]
+        return pts, b, D
+
+    if sec_shape == "T":
+        bf = float(get_param("bf", 600.0))
+        tf = float(get_param("tf", 120.0))
+        bw = float(get_param("bw", 300.0))
+
+        # Sanity clamps
+        tf = max(1.0, min(tf, D))
+        bw = max(1.0, min(bw, bf))
+
+        x_web0 = 0.5 * (bf - bw)
+        x_web1 = x_web0 + bw
+
+        pts = [
+            (0, 0), (bf, 0), (bf, tf),
+            (x_web1, tf), (x_web1, D),
+            (x_web0, D), (x_web0, tf),
+            (0, tf),
+            (0, 0),
+        ]
+        return pts, bf, D
+
+    # sec_shape == "I"
+    bf = float(get_param("bf", 600.0))
+    tf = float(get_param("tf", 120.0))
+    tw = float(get_param("tw", 200.0))
+
+    tf = max(1.0, min(tf, 0.5 * D))
+    tw = max(1.0, min(tw, bf))
+
+    x_web0 = 0.5 * (bf - tw)
+    x_web1 = x_web0 + tw
+    y_bot_flange_top = D - tf
+
+    pts = [
+        (0, 0), (bf, 0), (bf, tf),
+        (x_web1, tf), (x_web1, y_bot_flange_top),
+        (bf, y_bot_flange_top), (bf, D),
+        (0, D), (0, y_bot_flange_top),
+        (x_web0, y_bot_flange_top), (x_web0, tf),
+        (0, tf),
+        (0, 0),
+    ]
+    return pts, bf, D
+
+
+def _xspan_at_y(pts, y):
+    """Return (xmin, xmax) of polygon intersection with horizontal line y."""
+    xs = []
+    for (x1, y1), (x2, y2) in zip(pts[:-1], pts[1:]):
+        # ignore horizontal edges
+        if y1 == y2:
+            continue
+        # check if y is within edge range (half-open to avoid double counts)
+        if (y1 <= y < y2) or (y2 <= y < y1):
+            t = (y - y1) / (y2 - y1)
+            x = x1 + t * (x2 - x1)
+            xs.append(x)
+    if len(xs) < 2:
+        return None
+    xs.sort()
+    return xs[0], xs[-1]
+
+
+def _clamp_bar_xs_to_outline(xs, y, pts, bar_d):
+    span = _xspan_at_y(pts, y)
+    if not span:
+        return xs
+    xmin, xmax = span
+    r = 0.5 * max(0.0, float(bar_d))
+    xmin += r
+    xmax -= r
+    if xmax <= xmin:
+        # too tight: collapse to centre
+        xc = 0.5 * (span[0] + span[1])
+        return [xc for _ in xs]
+    return [min(max(x, xmin), xmax) for x in xs]
+
+
+# ------------------------------------------------------------
+#  MINI 2D CROSS-SECTION LABELS (SECTION A)
+# ------------------------------------------------------------
+def _add_section_dimension_labels(fig, *, shape_name: str, dims: dict, reo: dict):
+    """
+    Adds engineering-style dimension labels with double-ended arrows to Plotly 2D section figure.
+    Coordinates are in mm, with y=0 at top and y increasing downward.
+    """
+    # NOTE: Plotly doesn't have "double arrow" lines as a primitive,
+    # so we draw the dimension line + small V-shaped arrowheads at BOTH ends.
+    import math
+
+    D = float(dims.get("D", 0.0) or 0.0)
+    bf = float(dims.get("bf", 0.0) or 0.0)
+    tf = float(dims.get("tf", 0.0) or 0.0)
+    bw = float(dims.get("bw", 0.0) or 0.0)
+    tw = float(dims.get("tw", 0.0) or 0.0)
+
+    cover_top = float(reo.get("cover_top", 0.0) or 0.0)
+    cover_bot = float(reo.get("cover_bot", 0.0) or 0.0)
+    cover_side = float(reo.get("cover_side", 0.0) or 0.0)
+
+    # scale for offsets and arrowheads
+    x_span = max(bf, bw, tw, 1.0)
+    x_off = 0.08 * x_span
+    y_off = 0.08 * max(D, 1.0)
+
+    ah = 0.025 * x_span          # arrowhead length
+    aw = 0.012 * max(D, 1.0)     # arrowhead width component
+
+    def _add_line(x0, y0, x1, y1):
+        fig.add_shape(type="line", x0=x0, y0=y0, x1=x1, y1=y1,
+                      line=dict(width=1, color="black"))
+
+    def _arrowhead_at_point(px, py, angle_rad):
+        """
+        Draws a small 'V' arrowhead centered at (px,py) pointing along angle_rad.
+        """
+        # two legs at +/- 25 degrees
+        for sgn in (-1, +1):
+            a = angle_rad + sgn * math.radians(25)
+            x1 = px - ah * math.cos(a)
+            y1 = py - ah * math.sin(a)
+            _add_line(px, py, x1, y1)
+
+    def add_dim_x(x0, x1, y, text):
+        # dimension line
+        _add_line(x0, y, x1, y)
+        # arrowheads (pointing inward)
+        _arrowhead_at_point(x0, y, 0.0)          # points to +x
+        _arrowhead_at_point(x1, y, math.pi)      # points to -x
+        # text
+        fig.add_annotation(
+            x=(x0 + x1) / 2.0,
+            y=y - 0.45 * y_off,
+            text=text,
+            showarrow=False,
+            font=dict(size=12, color="black"),
+        )
+
+    def add_dim_y(x, y0, y1, text):
+        # dimension line
+        _add_line(x, y0, x, y1)
+        # arrowheads (pointing inward)
+        _arrowhead_at_point(x, y0, math.pi/2)        # points down
+        _arrowhead_at_point(x, y1, -math.pi/2)       # points up
+        # text
+        fig.add_annotation(
+            x=x - 0.60 * x_off,
+            y=(y0 + y1) / 2.0,
+            text=text,
+            showarrow=False,
+            font=dict(size=12, color="black"),
+        )
+
+    # ----- Dimension labels per shape -----
+    if shape_name.startswith("T-Section"):
+        add_dim_x(0.0, bf, -y_off, f"bf = {bf:.0f} mm")
+        add_dim_y(-x_off, 0.0, D, f"D = {D:.0f} mm")
+        add_dim_y(bf + x_off, 0.0, tf, f"tf = {tf:.0f} mm")
+
+        if bw > 0:
+            x_web0 = (bf - bw) / 2.0
+            x_web1 = x_web0 + bw
+            add_dim_x(x_web0, x_web1, D + 0.75 * y_off, f"bw = {bw:.0f} mm")
+
+    elif shape_name.startswith("I-Section"):
+        add_dim_x(0.0, bf, -y_off, f"bf = {bf:.0f} mm")
+        add_dim_y(-x_off, 0.0, D, f"D = {D:.0f} mm")
+        add_dim_y(bf + x_off, 0.0, tf, f"tf = {tf:.0f} mm")
+
+        if tw > 0:
+            x_web0 = (bf - tw) / 2.0
+            x_web1 = x_web0 + tw
+            add_dim_x(x_web0, x_web1, D / 2.0, f"tw = {tw:.0f} mm")
+
+    else:
+        if D > 0:
+            add_dim_y(-x_off, 0.0, D, f"D = {D:.0f} mm")
+
+    # Covers note
+    fig.add_annotation(
+        x=0.5 * x_span,
+        y=D + 1.45 * y_off,
+        text=f"cover(top/bot/side) = {cover_top:.0f}/{cover_bot:.0f}/{cover_side:.0f} mm",
+        showarrow=False,
+        font=dict(size=12, color="black"),
+    )
+
+    return fig
+
+
+# ------------------------------------------------------------
 #  MINI 2D CROSS-SECTION  (SECTION A)
 # ------------------------------------------------------------
 def make_summary_cross_section_figure():
-    """
-    Tiny 2D cross-section using Plotly (visual only).
-    Concrete outline + lig cage + bottom/top bars.
+    import streamlit as st
+    from section_props.plot import plot_shape, apply_section_axes
+    from section_layout import compute_section_layout
 
-    NOW uses compute_longitudinal_reo_layout() as single source of truth.
-    """
-    from section_layout import compute_longitudinal_reo_layout
-    
     layout = compute_section_layout()
+    shape_name = str(layout.get("shape_name", "Rectangle (b × D)"))
+    shape_name = layout.get("shape_name", "Rectangle (b × D)")
+    dims = layout.get("dims", {})
+    reo = layout.get("reo", {})
 
-    b = layout["b"]
-    D = layout["D"]
-    cage = layout["cage"]
-    lig = layout["lig"]
-    reo_layout = layout.get("reo_layout")  # Get 2-layer structure
-
-    lig_d = lig["d"]
-    lig_legs = lig["legs"]
-    lig_line_width = max(1.0, min(4.0, abs(lig_d) / 3.0))
-
-    shapes = []
-    traces = []
-
-    # ----- outer concrete -----
-    shapes.append(
-        dict(
-            type="rect",
-            x0=0,
-            y0=0,
-            x1=b,
-            y1=D,
-            line=dict(width=1.2, color="black"),
-            fillcolor="rgba(0,0,0,0)",
-        )
-    )
-
-    # ----- Shear reinforcement (stirrups/ties) - only draw when present -----
-    # Only draw shear reinforcement if it's actually specified
-    has_shear = lig_d > 0 and lig_legs >= 2
-    
-    if has_shear:
-        from section_layout import compute_shear_reo_layout_pure
-        
-        cover_bot = float(get_param("cover_bot", 40.0) or 40.0)
-        cover_top = float(get_param("cover_top", 40.0) or 40.0)
-        inputs_cover_side_local = min(cover_top, cover_bot)
-        cover_side = float(inputs_cover_side_local)
-        
-        shear_layout = compute_shear_reo_layout_pure(
-            b=b, D=D,
-            cover_bot=cover_bot, cover_top=cover_top, cover_side=cover_side,
-            lig_d=lig_d, lig_legs=lig_legs,
-        )
-        
-        # Draw cage outline (only when shear reo is present)
-        cage_shear = shear_layout.get("cage", cage)
-        shapes.append(
-            dict(
-                type="rect",
-                x0=cage_shear["x0"],
-                y0=cage_shear["y0"],
-                x1=cage_shear["x1"],
-                y1=cage_shear["y1"],
-                line=dict(width=lig_line_width, color="black"),
-                fillcolor="rgba(0,0,0,0)",
+    if shape_name.startswith(("T-Section", "I-Section")):
+        try:
+            fig = make_sectionA_figure(
+                shape_name=shape_name,
+                dims=dims,
+                reo=reo,
+                show_shear=True,
             )
-        )
-        
-        # Draw stirrup legs in black
-        for stirrup in shear_layout.get("stirrups", []):
-            for leg in stirrup.get("legs", []):
-                shapes.append(
-                    dict(
-                        type="line",
-                        x0=leg["x1"],
-                        y0=leg["y1"],
-                        x1=leg["x2"],
-                        y1=leg["y2"],
-                        line=dict(width=lig_line_width * 0.8, color="black"),
-                    )
-                )
+            fig = _add_section_dimension_labels(fig, shape_name=shape_name, dims=dims, reo=reo)
+            W = float(dims.get("bf", dims.get("b", 0.0)) or 0.0)
+            D = float(dims.get("D", 0.0) or 0.0)
+            apply_section_axes(fig, W=W, D=D)
+            return fig
+        except ValueError as e:
+            st.error(f"Reinforcement layout failed: {e}")
+            reo_no_bars = dict(reo)
+            reo_no_bars.update({
+                "nb_top": 0,
+                "db_top": 0.0,
+                "nb_bot": 0,
+                "db_bot": 0.0,
+                "lig_d": 0.0,
+                "lig_legs": 0,
+            })
+            fig = make_sectionA_figure(
+                shape_name=shape_name,
+                dims=dims,
+                reo=reo_no_bars,
+                show_shear=True,
+            )
+            fig = _add_section_dimension_labels(fig, shape_name=shape_name, dims=dims, reo=reo_no_bars)
+            W = float(dims.get("bf", dims.get("b", 0.0)) or 0.0)
+            D = float(dims.get("D", 0.0) or 0.0)
+            apply_section_axes(fig, W=W, D=D)
+            return fig
 
-    # ----- bottom bars - use 2-layer structure -----
-    # BOTTOM reinforcement is BLUE
-    if reo_layout:
-        for layer_data in reo_layout["bottom"]:
-            x_positions = layer_data["x"]
-            y_pos = layer_data["y"]
-            db = layer_data["db"]
-            # Marker size based on bar diameter
-            marker_size = max(5, min(10, db * 0.35))
-            traces.append(
-                go.Scatter(
-                    x=x_positions,
-                    y=[y_pos] * len(x_positions),
-                    mode="markers",
-                    marker=dict(
-                        color="blue", size=marker_size, line=dict(width=0.7, color="black")
-                    ),
-                    hoverinfo="skip",
-                    showlegend=False,
-                )
-            )
-    else:
-        # Fallback to legacy structure
-        bot = layout.get("bot", {})
-        if bot.get("x"):
-            traces.append(
-                go.Scatter(
-                    x=bot["x"],
-                    y=bot["y"],
-                    mode="markers",
-                    marker=dict(
-                        color="blue", size=7, line=dict(width=0.7, color="black")
-                    ),
-                    hoverinfo="skip",
-                    showlegend=False,
-                )
-            )
-
-    # ----- top bars - use 2-layer structure -----
-    # TOP reinforcement is RED
-    if reo_layout:
-        for layer_data in reo_layout["top"]:
-            x_positions = layer_data["x"]
-            y_pos = layer_data["y"]
-            db = layer_data["db"]
-            # Marker size based on bar diameter
-            marker_size = max(5, min(10, db * 0.35))
-            traces.append(
-                go.Scatter(
-                    x=x_positions,
-                    y=[y_pos] * len(x_positions),
-                    mode="markers",
-                    marker=dict(
-                        color="red", size=marker_size, line=dict(width=0.7, color="black")
-                    ),
-                    hoverinfo="skip",
-                    showlegend=False,
-                )
-            )
-    else:
-        # Fallback to legacy structure
-        top = layout.get("top", {})
-        if top.get("x"):
-            traces.append(
-                go.Scatter(
-                    x=top["x"],
-                    y=top["y"],
-                    mode="markers",
-                    marker=dict(
-                        color="red", size=7, line=dict(width=0.7, color="black")
-                    ),
-                    hoverinfo="skip",
-                    showlegend=False,
-                )
-            )
-
-    if not traces:
-        traces.append(
-            go.Scatter(
-                x=[0],
-                y=[0],
-                mode="markers",
-                marker=dict(size=1, color="rgba(0,0,0,0)"),
-                showlegend=False,
-            )
-        )
-    fig = go.Figure(data=traces)
-    fig.update_xaxes(visible=False)
-    fig.update_yaxes(
-        visible=False,
-        scaleanchor="x",
-        scaleratio=1,
-        range=[D * 1.02, -0.10 * D],
-    )
-    fig.update_layout(
-        width=345,
-        height=450,
-        margin=dict(l=0, r=0, t=0, b=40),
-        shapes=shapes,
-        dragmode=False,
-        # no title – label is added in Streamlit below the figure
-    )
+    rect_reo = {
+        "cover_top": reo.get("cover_top", 40.0),
+        "cover_bot": reo.get("cover_bot", 40.0),
+        "cover_side": reo.get("cover_side", 40.0),
+        "n_top": reo.get("nb_top", 0),
+        "db_top": reo.get("db_top", 0.0),
+        "n_bot": reo.get("nb_bot", 0),
+        "db_bot": reo.get("db_bot", 0.0),
+        "lig_d": reo.get("lig_d", 0.0),
+        "lig_legs": reo.get("lig_legs", 0),
+        "s_min": reo.get("min_clear_spacing", 25.0),
+        "rowgap_top": reo.get("rowgap_top", 60.0),
+        "rowgap_bot": reo.get("rowgap_bot", 60.0),
+    }
+    fig = plot_shape("Rectangle (b × D)", dims, reo=rect_reo)
+    W = float(dims.get("b", 0.0) or 0.0)
+    D = float(dims.get("D", 0.0) or 0.0)
+    apply_section_axes(fig, W=W, D=D)
     return fig
 
 # -------------------------------------------------------------------
@@ -435,69 +533,104 @@ def render_inputs():
 # ------------------------------------------------------------
 def make_beam_3d_figure():
     # --- parameters from session state ---
-    # Use cached layout for performance
-    from section_layout import compute_section_layout_cached
+    from section_layout import compute_section_layout
     
-    b = float(get_param("b", 400.0) or 400.0)
-    D = float(get_param("D", 600.0) or 600.0)
-    L = float(get_param("L", 8000.0) or 8000.0)
+    layout = compute_section_layout()
+    shape_name = str(layout.get("shape_name", "Rectangle (b × D)"))
+    dims = layout.get("dims", {})
+    reo = layout.get("reo", {})
+    b = float(dims.get("b", get_param("b", 400.0)))
+    D = float(dims.get("D", get_param("D", 600.0)))
+    L = float(get_param("L", 8000.0))
 
-    nb_bot = int(get_param("nb_bot", 4) or 0)
-    db_bot = float(get_param("db_bot", 20.0) or 20.0)
+    cover_bot = float(reo.get("cover_bot", 40.0))
+    cover_top = float(reo.get("cover_top", 40.0))
+    cover_side = reo.get("cover_side")
+    if cover_side is None:
+        cover_side = min(cover_top, cover_bot)
+    cover_side = float(cover_side)
 
-    nb_top = int(get_param("nb_top", 2) or 0)
-    db_top = float(get_param("db_top", 16.0) or 16.0)
-
-    cover_bot = float(get_param("cover_bot", 40.0) or 40.0)
-    cover_top = float(get_param("cover_top", 40.0) or 40.0)
-
-    cover_side = float(
-        get_param("cover_side", min(cover_top, cover_bot)) or min(cover_top, cover_bot)
-    )
-
-    rowgap_bot = float(get_param("rowgap_bot", 60.0) or 60.0)
-    rowgap_top = float(get_param("rowgap_top", 60.0) or 60.0)
-
-    lig_d = float(get_param("lig_d", 10.0) or 10.0)
-    lig_legs_raw = get_param("lig_legs", 2)
-    try:
-        lig_legs = int(lig_legs_raw or 0)
-    except Exception:
-        lig_legs = 0
-    s_lig = float(get_param("s_lig", 200.0) or 200.0)
+    lig_d = float(st.session_state.get("inputs_lig_d", reo.get("lig_d", 0.0)) or 0.0)
+    lig_legs = int(st.session_state.get("inputs_lig_legs", reo.get("lig_legs", 0)) or 0)
+    s_lig = float(get_param("s_lig", 200.0))
 
     traces = []
 
-    max_bar_d = max(db_bot, db_top, 0.0)
-    horiz_clear = 0.5 * max_bar_d
+    # ----- section outline wireframe extruded along length -----
+    pts, b_box, D = _get_outline_points_and_bbox()
 
-    # ----- concrete beam -----
-    vx = np.array([0, L, L, 0, 0, L, L, 0])
-    vy = np.array([0, 0, b, b, 0, 0, b, b])
-    vz = np.array([0, 0, 0, 0, D, D, D, D])
+    # --- RECT concrete body (faint) so outline never "disappears" visually ---
+    # We only add this for RECT (T/I use other 3D viewer)
+    if shape_name.startswith("Rectangle"):
+        # Simple box mesh (x = length, y = width, z = depth from top)
+        x0, x1 = 0.0, float(L)
+        y0, y1 = 0.0, float(b_box)
+        z0, z1 = 0.0, float(D)
 
-    tri_i = [0, 0, 0, 4, 4, 1, 5, 2, 6, 3, 7, 6]
-    tri_j = [1, 2, 3, 5, 7, 5, 6, 6, 7, 7, 4, 2]
-    tri_k = [2, 3, 0, 6, 4, 2, 7, 3, 4, 0, 5, 1]
+        vx = np.array([x0, x1, x1, x0, x0, x1, x1, x0], dtype=float)
+        vy = np.array([y0, y0, y1, y1, y0, y0, y1, y1], dtype=float)
+        vz = np.array([z0, z0, z0, z0, z1, z1, z1, z1], dtype=float)
 
-    traces.append(
-        go.Mesh3d(
-            x=vx,
-            y=vy,
-            z=vz,
-            i=tri_i,
-            j=tri_j,
-            k=tri_k,
-            color="#cccccc",
-            opacity=0.25,
-            flatshading=True,
-            hoverinfo="skip",
+        # Triangulated faces
+        tri_i = [0, 0, 0, 4, 4, 1, 5, 2, 6, 3, 7, 6]
+        tri_j = [1, 2, 3, 5, 7, 5, 6, 6, 7, 7, 4, 2]
+        tri_k = [2, 3, 0, 6, 4, 2, 7, 3, 4, 0, 5, 1]
+
+        traces.append(
+            go.Mesh3d(
+                x=vx,
+                y=vy,
+                z=vz,
+                i=tri_i,
+                j=tri_j,
+                k=tri_k,
+                color="#cccccc",
+                opacity=0.18,
+                flatshading=True,
+                hoverinfo="skip",
+                showlegend=False,
+            )
         )
-    )
+
+    # Map 2D (x,y) -> 3D (y,z) because x in section = width (3D y), y in section = depth (3D z)
+    ys = [p[0] for p in pts]
+    zs = [p[1] for p in pts]
+
+    # outline at x=0 and x=L
+    traces.append(go.Scatter3d(
+        x=[0.0] * len(pts),
+        y=ys,
+        z=zs,
+        mode="lines",
+        line=dict(width=6, color="rgba(20,20,20,0.95)"),
+        hoverinfo="skip",
+        showlegend=False,
+    ))
+    traces.append(go.Scatter3d(
+        x=[L] * len(pts),
+        y=ys,
+        z=zs,
+        mode="lines",
+        line=dict(width=6, color="rgba(20,20,20,0.95)"),
+        hoverinfo="skip",
+        showlegend=False,
+    ))
+
+    # connect corresponding vertices to show extrusion
+    for i in range(len(pts) - 1):
+        traces.append(go.Scatter3d(
+            x=[0.0, L],
+            y=[ys[i], ys[i]],
+            z=[zs[i], zs[i]],
+            mode="lines",
+            line=dict(width=6, color="rgba(20,20,20,0.95)"),
+            hoverinfo="skip",
+            showlegend=False,
+        ))
 
     # ----- Section A plane at mid-span -----
     mid_x = 0.5 * L
-    Yg, Zg = np.meshgrid(np.linspace(0, b, 2), np.linspace(0, D, 2))
+    Yg, Zg = np.meshgrid(np.linspace(0, b_box, 2), np.linspace(0, D, 2))
     Xg = np.full_like(Yg, mid_x)
     traces.append(
         go.Surface(
@@ -511,61 +644,14 @@ def make_beam_3d_figure():
         )
     )
 
-    # ----- longitudinal bar positions - use cached layout function -----
-    # Get 2-layer parameters
-    # FIX: Use explicit None checks instead of truthiness (or) to preserve valid 0 values
-    nb_or_s_bot_1_val = get_param("nb_or_s_bot_1", 4.0)
-    nb_or_s_bot_1 = float(nb_or_s_bot_1_val) if nb_or_s_bot_1_val is not None else 4.0
-    
-    db_bot_1_val = get_param("db_bot_1", 20.0)
-    db_bot_1 = float(db_bot_1_val) if db_bot_1_val is not None else 20.0
-    
-    nb_or_s_bot_2_val = get_param("nb_or_s_bot_2", 0.0)
-    nb_or_s_bot_2 = float(nb_or_s_bot_2_val) if nb_or_s_bot_2_val is not None else 0.0
-    
-    db_bot_2_val = get_param("db_bot_2", 20.0)
-    db_bot_2 = float(db_bot_2_val) if db_bot_2_val is not None else 20.0
-    
-    nb_or_s_top_1_val = get_param("nb_or_s_top_1", 2.0)
-    nb_or_s_top_1 = float(nb_or_s_top_1_val) if nb_or_s_top_1_val is not None else 2.0
-    
-    db_top_1_val = get_param("db_top_1", 16.0)
-    db_top_1 = float(db_top_1_val) if db_top_1_val is not None else 16.0
-    
-    nb_or_s_top_2_val = get_param("nb_or_s_top_2", 0.0)
-    nb_or_s_top_2 = float(nb_or_s_top_2_val) if nb_or_s_top_2_val is not None else 0.0
-    
-    db_top_2_val = get_param("db_top_2", 16.0)
-    db_top_2 = float(db_top_2_val) if db_top_2_val is not None else 16.0
-    
-    rowgap_bot_val = get_param("rowgap_bot", 60.0)
-    rowgap_bot = float(rowgap_bot_val) if rowgap_bot_val is not None else 60.0
-    
-    rowgap_top_val = get_param("rowgap_top", 60.0)
-    rowgap_top = float(rowgap_top_val) if rowgap_top_val is not None else 60.0
-    
-    cover_bot_val = get_param("cover_bot", 40.0)
-    cover_bot = float(cover_bot_val) if cover_bot_val is not None else 40.0
-    
-    cover_top_val = get_param("cover_top", 40.0)
-    cover_top = float(cover_top_val) if cover_top_val is not None else 40.0
-    
-    cover_side_default = min(cover_top, cover_bot)
-    cover_side_val = get_param("cover_side", cover_side_default)
-    cover_side = float(cover_side_val) if cover_side_val is not None else cover_side_default
-    
-    # Get layout from cached function
-    cached_layout = compute_section_layout_cached(
-        b=b, D=D,
-        cover_bot=cover_bot, cover_top=cover_top, cover_side=cover_side,
-        nb_or_s_bot_1=nb_or_s_bot_1, db_bot_1=db_bot_1,
-        nb_or_s_bot_2=nb_or_s_bot_2, db_bot_2=db_bot_2,
-        nb_or_s_top_1=nb_or_s_top_1, db_top_1=db_top_1,
-        nb_or_s_top_2=nb_or_s_top_2, db_top_2=db_top_2,
-        rowgap_bot=rowgap_bot, rowgap_top=rowgap_top,
-        lig_legs=lig_legs, lig_d=lig_d,
-    )
-    reo_layout = cached_layout.get("reo_layout")
+    # ----- longitudinal bar positions - use canonical layout -----
+    reo_layout = layout.get("reo_layout") or {"bottom": [], "top": []}
+
+    max_bar_d = 0.0
+    for layer_list in (reo_layout.get("bottom", []), reo_layout.get("top", [])):
+        for layer_data in layer_list:
+            max_bar_d = max(max_bar_d, float(layer_data.get("db", 0.0)))
+    horiz_clear = 0.5 * max_bar_d
     
     # Bottom bars - draw each layer separately
     # BOTTOM reinforcement is BLUE
@@ -1016,8 +1102,16 @@ def _render_materials_and_sectionA_2d(sync_callbacks):
             unsafe_allow_html=True,
         )
         # --- Section A figure (safe render) ---
-        _required = ["b", "D"]
-        _missing = [k for k in _required if not st.session_state.get(k)]
+        sec_shape = st.session_state.get("sec_shape", "RECT")
+
+        if sec_shape == "RECT":
+            _required = ["b", "D"]
+        elif sec_shape == "T":
+            _required = ["bf", "tf", "bw", "D"]
+        else:  # "I"
+            _required = ["bf", "tf", "tw", "D"]
+
+        _missing = [k for k in _required if st.session_state.get(k) in (None, "", 0)]
         if _missing:
             st.info("Section A diagram not available right now (inputs are still saved).")
             return
@@ -1057,7 +1151,7 @@ def _render_materials_and_sectionA_2d(sync_callbacks):
             st.plotly_chart(
                 fig_sec,
                 use_container_width=True,
-                config={"responsive": True, "displayModeBar": False},
+                config={"displayModeBar": False},
             )
 
 
@@ -1080,6 +1174,7 @@ def render_inputs():
     apply_calcbox_css()
 
     summary_container = st.container()
+
 
     page_divider()
 
@@ -1222,21 +1317,57 @@ def render_inputs():
 
         # --- Geometry (below Design Actions) ---
         st.markdown("## Geometry")
-        
+
+        # ---- Shape selector (shared) ----
+        shape_options = ["RECT", "T", "I"]
+        sec_shape_current = st.session_state.get("sec_shape", "RECT")
+        if sec_shape_current not in shape_options:
+            sec_shape_current = "RECT"
+
+        select_row(
+            "Section shape",
+            "inputs_sec_shape",
+            shape_options,
+            sec_shape_current,
+            sync_callbacks,
+            help_text="Select section type. Geometry inputs below update based on this selection.",
+        )
+
         # Get current values (widget key takes precedence if exists, otherwise use shared key)
-        b_val = float(st.session_state.get("inputs_b", get_param("b", 400.0)))
         D_val = float(st.session_state.get("inputs_D", get_param("D", 600.0)))
         L_val = float(st.session_state.get("inputs_L", get_param("L", 3000.0)))
         cover_side_val = float(st.session_state.get("inputs_cover_side", get_param("cover_side", 40.0)))
         
-        # Geometry widgets
-        number_row(
-            "Width b (mm)",
-            "inputs_b",
-            b_val,
-            sync_callbacks,
-            help_text="Beam/web width.",
-        )
+        # Determine selected shape (prefer widget if present, else shared)
+        sec_shape = st.session_state.get("inputs_sec_shape", st.session_state.get("sec_shape", "RECT"))
+
+        if sec_shape == "RECT":
+            b_val = float(st.session_state.get("inputs_b", get_param("b", 400.0)))
+            number_row(
+                "Width b (mm)",
+                "inputs_b",
+                b_val,
+                sync_callbacks,
+                help_text="Rectangular section width.",
+            )
+
+        elif sec_shape == "T":
+            bf_val = float(st.session_state.get("inputs_bf", get_param("bf", 600.0)))
+            tf_val = float(st.session_state.get("inputs_tf", get_param("tf", 120.0)))
+            bw_val = float(st.session_state.get("inputs_bw", get_param("bw", 300.0)))
+
+            number_row("Flange width bf (mm)", "inputs_bf", bf_val, sync_callbacks)
+            number_row("Flange thickness tf (mm)", "inputs_tf", tf_val, sync_callbacks)
+            number_row("Web width bw (mm)", "inputs_bw", bw_val, sync_callbacks, help_text="Stem/web width for T section.")
+
+        elif sec_shape == "I":
+            bf_val = float(st.session_state.get("inputs_bf", get_param("bf", 600.0)))
+            tf_val = float(st.session_state.get("inputs_tf", get_param("tf", 120.0)))
+            tw_val = float(st.session_state.get("inputs_tw", get_param("tw", 200.0)))
+
+            number_row("Top flange width bf (mm)", "inputs_bf", bf_val, sync_callbacks)
+            number_row("Top flange thickness tf (mm)", "inputs_tf", tf_val, sync_callbacks)
+            number_row("Web thickness tw (mm)", "inputs_tw", tw_val, sync_callbacks)
 
         number_row(
             "Depth D (mm)",
@@ -1263,13 +1394,66 @@ def render_inputs():
         )
 
     with right_3d:
-        fig3d = make_beam_3d_figure()
-        st.plotly_chart(
-            fig3d,
-            width="stretch",
-            height=640,
-            config={"displayModeBar": True}
+        layout = compute_section_layout()
+        shape_name = layout.get("shape_name", "Rectangle (b × D)")
+        dims = layout.get("dims", {})
+        reo = dict(layout.get("reo", {}))
+        reo["lig_d"] = float(st.session_state.get("inputs_lig_d", reo.get("lig_d", 0.0)) or 0.0)
+        reo["lig_legs"] = int(st.session_state.get("inputs_lig_legs", reo.get("lig_legs", 0)) or 0)
+        reo_layout = layout.get("reo_layout", {})
+
+        st.markdown(
+            """
+            <style>
+            div[data-testid="stPlotlyChart"] {
+              border: 1px solid rgba(0,0,0,0.12);
+              border-radius: 8px;
+              background: #fff;
+              overflow: hidden;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
         )
+
+        if shape_name.startswith(("T-Section", "I-Section")):
+            reo_err = None
+            if not isinstance(reo_layout, dict):
+                reo_layout = {"top": [], "bottom": []}
+
+            fig3d = make_section_3d_figure(
+                shape_name=shape_name,
+                dims=dims,
+                reo_layout=reo_layout,
+                reo_inputs=reo,
+                show_shear=True,
+                L_vis=900.0,
+            )
+            # Slightly reduce 3D viewport height
+            BASE_H = 520
+            fig3d.update_layout(
+                height=int(BASE_H * 7 / 5),
+                margin=dict(l=10, r=10, t=10, b=10),
+            )
+            st.plotly_chart(
+                fig3d,
+                use_container_width=True,
+                config={"displayModeBar": False}
+            )
+        else:
+            fig3d = make_beam_3d_figure()
+            # Slightly reduce 3D viewport height
+            BASE_H = 640
+            fig3d.update_layout(
+                height=int(BASE_H * 7 / 5),
+                margin=dict(l=10, r=10, t=10, b=10),
+            )
+            st.plotly_chart(
+                fig3d,
+                width="stretch",
+                height=int(BASE_H * 7 / 5),
+                config={"displayModeBar": True}
+            )
 
     page_divider()
 
@@ -1388,11 +1572,27 @@ def render_inputs():
     # --- Top reo ---
     with col_top_reo:
         st.subheader("Top Longitudinal Reinforcement")
-        
-        # Display messages for top reinforcement
-        if st.session_state.get("_reo_msg_top_auto_layer2", False):
-            show_reo_message("auto_layer2", layer="Top Layer 1")
-            st.session_state["_reo_msg_top_auto_layer2"] = False  # Clear after showing
+
+        _layout_dbg = compute_section_layout()
+        top_rows = [
+            {"n_bars": len(r.get("x", []) or [])}
+            for r in _layout_dbg.get("reo_layout", {}).get("top", [])
+        ]
+        # --- Banner: only show if a 2nd top row was actually auto-created this run ---
+        auto_added_second_row = False
+        try:
+            if isinstance(top_rows, (list, tuple)):
+                auto_added_second_row = (len(top_rows) >= 2) and ((top_rows[1] or 0) > 0)
+        except Exception:
+            auto_added_second_row = False
+
+        # Prevent sticky banners across reruns
+        st.session_state["top_auto_msg"] = None
+        st.session_state["auto_top_layer1_added"] = auto_added_second_row
+
+        if auto_added_second_row:
+            st.info("💡 Auto-placed Top Layer 1: The second layer was automatically added to meet spacing requirements.")
+            st.session_state["_reo_msg_top_auto_layer2"] = False
     
         if st.session_state.get("_reo_msg_top_layer2_overwritten", False):
             show_reo_message("layer2_overwritten", layer="Top Layer 1")
@@ -1624,32 +1824,6 @@ def render_inputs():
     
     Mu_manual = Mu_manual_raw if (Mu_manual_raw is not None) else base_M
     Vu_manual = Vu_manual_raw if (Vu_manual_raw is not None) else base_V
-    # #region agent log
-    if DEBUG_MODE:
-        try:
-            import time
-            log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps({
-                    "location": "inputs_page.py:design_actions_fallback",
-                    "message": "Design actions fallback evaluation",
-                    "data": {
-                        "action_source": action_source,
-                        "Mu_manual_raw": Mu_manual_raw,
-                        "Vu_manual_raw": Vu_manual_raw,
-                        "base_M": base_M,
-                        "base_V": base_V,
-                        "Mu_manual": Mu_manual,
-                        "Vu_manual": Vu_manual,
-                    },
-                    "timestamp": int(time.time() * 1000),
-                    "sessionId": "debug-session",
-                    "runId": st.session_state.get("_boot_id", "run"),
-                    "hypothesisId": "H1",
-                }) + "\n")
-        except Exception:
-            pass
-    # #endregion
     
     # Decide if we can use teaching values
     use_sfd = (action_source == "Teaching SFD/BMD page (|M|max, |V|max)" and M_sfd is not None and V_sfd is not None)
@@ -1662,32 +1836,6 @@ def render_inputs():
         Mu_star = float(Mu_manual)
         Vu_star = float(Vu_manual)
         source_label = "Manual design actions (inputs below)"
-    # #region agent log
-    if DEBUG_MODE:
-        try:
-            import time
-            log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps({
-                    "location": "inputs_page.py:design_actions_selection",
-                    "message": "Design actions selected for results",
-                    "data": {
-                        "action_source": action_source,
-                        "use_sfd": use_sfd,
-                        "M_sfd": M_sfd,
-                        "V_sfd": V_sfd,
-                        "Mu_star": Mu_star,
-                        "Vu_star": Vu_star,
-                        "source_label": source_label,
-                    },
-                    "timestamp": int(time.time() * 1000),
-                    "sessionId": "debug-session",
-                    "runId": st.session_state.get("_boot_id", "run"),
-                    "hypothesisId": "H1",
-                }) + "\n")
-        except Exception:
-            pass
-    # #endregion
     
     # Push final chosen actions into results
     update_results(
@@ -1724,47 +1872,7 @@ def render_inputs():
     # THEN: crack + deflection
     _compute_crack_results()
     _compute_deflection_results()
-    # #region agent log
-    if DEBUG_MODE:
-        try:
-            import os
-            import time
-            log_path = os.path.expanduser("~/Documents/blank_app_deflection_debug.log")
-            results = st.session_state.get("results", {})
-            params = results.get("_deflection_params", {})
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps({
-                    "location": "inputs_page.py:deflection_compute",
-                    "message": "INPUTS_DEFLECTION_COMPUTE",
-                    "data": {
-                        "has_results": bool(results),
-                        "has_deflection_params": "_deflection_params" in results,
-                        "delta_total": params.get("delta_total"),
-                        "defl_limit": params.get("defl_limit"),
-                        "defl_limit_ratio": params.get("defl_limit_ratio"),
-                    },
-                    "timestamp": int(time.time() * 1000),
-                    "sessionId": "debug-session",
-                    "runId": st.session_state.get("_boot_id", "run"),
-                    "hypothesisId": "H1",
-                }) + "\n")
-        except Exception:
-            pass
-    # #endregion
-    if DEBUG_MODE:
-        try:
-            from state_and_helpers import write_final_session_state_check
-            write_final_session_state_check("final_session_state_check.json")
-        except Exception:
-            pass
     
-    # Debug: dump session state inventory
-    if DEBUG_MODE:
-        try:
-            from state_and_helpers import dump_session_state_inventory
-            dump_session_state_inventory("inputs", sync_callbacks=sync_callbacks, out_dir=".")
-        except Exception:
-            pass
 
     # ============================
     # 2. LOWER ROW – Time-dependent | Ducts / Prestress voids | Crack control
@@ -1905,7 +2013,7 @@ def render_inputs():
     if bend_err:
         BENDING_ROWS = [{
             "uid": "bend_error",
-            "title": "Bending checks failed (see debug log)",
+            "title": "Bending checks failed",
             "value": "—",
             "limit": "—",
             "util": "—",
@@ -1915,7 +2023,7 @@ def render_inputs():
     if shear_err:
         SHEAR_ROWS = [{
             "uid": "shear_error",
-            "title": "Shear checks failed (see debug log)",
+            "title": "Shear checks failed",
             "value": "—",
             "limit": "—",
             "util": "—",
@@ -1925,7 +2033,7 @@ def render_inputs():
     if crack_err:
         CRACK_ROWS = [{
             "uid": "crack_error",
-            "title": "Crack checks failed (see debug log)",
+            "title": "Crack checks failed",
             "value": "—",
             "limit": "—",
             "util": "—",
@@ -1938,7 +2046,7 @@ def render_inputs():
     if defl_err:
         DEFLECTION_ROWS = [{
             "uid": "defl_error",
-            "title": "Deflection checks failed (see debug log)",
+            "title": "Deflection checks failed",
             "value": "—",
             "limit": "—",
             "util": "—",
@@ -2213,30 +2321,6 @@ tr:hover .hint { opacity: 1; }
         shear_table_html = _generate_summary_table_html(SHEAR_ROWS)
         crack_table_html = _generate_summary_table_html(CRACK_ROWS)
         defl_summary = defl_pack or {}
-        # #region agent log
-        if DEBUG_MODE:
-            try:
-                import os
-                import time
-                log_path = os.path.expanduser("~/Documents/blank_app_deflection_debug.log")
-                with open(log_path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps({
-                        "location": "inputs_page.py:deflection_summary",
-                        "message": "INPUTS_DEFLECTION_SUMMARY",
-                        "data": {
-                                "delta_total": defl_summary.get("summary_delta_total_mm"),
-                                "defl_limit": defl_summary.get("summary_defl_limit_mm"),
-                                "defl_util": defl_summary.get("summary_util_total"),
-                            "rows_count": len(DEFLECTION_ROWS),
-                        },
-                        "timestamp": int(time.time() * 1000),
-                        "sessionId": "debug-session",
-                        "runId": st.session_state.get("_boot_id", "run"),
-                        "hypothesisId": "H2",
-                    }) + "\n")
-            except Exception:
-                pass
-        # #endregion
         defl_table_html = _generate_summary_table_html(DEFLECTION_ROWS)
         
         # Bending

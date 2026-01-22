@@ -5,6 +5,11 @@ import numpy as np
 import streamlit as st
 
 from state_and_helpers import get_param
+from section_props.reo_layout import (
+    compute_longitudinal_reo_layout_T_I,
+    flatten_reo_points as flatten_reo_points_T_I,
+)
+from section_props.shear_layout import compute_shear_reo_layout_T_I
 from typing import Dict, Any, List, Tuple, Optional
 
 
@@ -674,78 +679,184 @@ def compute_section_layout() -> Dict[str, Any]:
     Wrapper that reads from session state and calls the pure function.
     For backward compatibility - new code should use compute_section_layout_cached().
     """
-    # Geometry - read from shared keys only
-    b_val = get_param("b")
-    b = float(b_val) if b_val is not None else 400.0
-    
-    D_val = get_param("D")
-    D = float(D_val) if D_val is not None else 600.0
+    def _norm_shape_name(raw: str) -> str:
+        raw = (raw or "").strip()
+        lo = raw.lower()
+        if lo.startswith("t"):
+            return "T-Section"
+        if lo.startswith("i"):
+            return "I-Section"
+        if lo.startswith("rectangle") or lo.startswith("rect"):
+            return "Rectangle (b × D)"
+        return "Rectangle (b × D)"
 
-    # Get 2-layer reinforcement parameters (same as 3D model)
-    # Treat 0 as valid - only use default if value is None
-    nb_or_s_bot_1_val = get_param("nb_or_s_bot_1")
-    nb_or_s_bot_1 = float(nb_or_s_bot_1_val) if nb_or_s_bot_1_val is not None else 4.0
-    
-    db_bot_1_val = get_param("db_bot_1")
-    db_bot_1 = float(db_bot_1_val) if db_bot_1_val is not None else 20.0
-    
-    nb_or_s_bot_2_val = get_param("nb_or_s_bot_2")
-    nb_or_s_bot_2 = float(nb_or_s_bot_2_val) if nb_or_s_bot_2_val is not None else 0.0
-    
-    db_bot_2_val = get_param("db_bot_2")
-    db_bot_2 = float(db_bot_2_val) if db_bot_2_val is not None else 20.0
-    
-    nb_or_s_top_1_val = get_param("nb_or_s_top_1")
-    nb_or_s_top_1 = float(nb_or_s_top_1_val) if nb_or_s_top_1_val is not None else 2.0
-    
-    db_top_1_val = get_param("db_top_1")
-    db_top_1 = float(db_top_1_val) if db_top_1_val is not None else 16.0
-    
-    nb_or_s_top_2_val = get_param("nb_or_s_top_2")
-    nb_or_s_top_2 = float(nb_or_s_top_2_val) if nb_or_s_top_2_val is not None else 0.0
-    
-    db_top_2_val = get_param("db_top_2")
-    db_top_2 = float(db_top_2_val) if db_top_2_val is not None else 16.0
-
-    rowgap_bot_val = get_param("rowgap_bot")
-    rowgap_bot = float(rowgap_bot_val) if rowgap_bot_val is not None else 60.0
-    
-    rowgap_top_val = get_param("rowgap_top")
-    rowgap_top = float(rowgap_top_val) if rowgap_top_val is not None else 60.0
-
-    cover_bot_val = get_param("cover_bot")
-    cover_bot = float(cover_bot_val) if cover_bot_val is not None else 40.0
-    
-    cover_top_val = get_param("cover_top")
-    cover_top = float(cover_top_val) if cover_top_val is not None else 40.0
-
-    # Use shared cover_side if available, otherwise min of top/bot
-    cover_side_val = get_param("cover_side")
-    if cover_side_val is not None:
-        cover_side = float(cover_side_val)
-    else:
-        cover_side = min(cover_top, cover_bot)
-
-    # Shear reinforcement
-    lig_legs_val = get_param("lig_legs")
-    try:
-        lig_legs = int(lig_legs_val) if lig_legs_val is not None else 2
-    except (ValueError, TypeError):
-        lig_legs = 2
-
-    lig_d_val = get_param("lig_d")
-    lig_d = float(lig_d_val) if lig_d_val is not None else 10.0
-
-    return compute_section_layout_pure(
-        b=b, D=D,
-        cover_bot=cover_bot, cover_top=cover_top, cover_side=cover_side,
-        nb_or_s_bot_1=nb_or_s_bot_1, db_bot_1=db_bot_1,
-        nb_or_s_bot_2=nb_or_s_bot_2, db_bot_2=db_bot_2,
-        nb_or_s_top_1=nb_or_s_top_1, db_top_1=db_top_1,
-        nb_or_s_top_2=nb_or_s_top_2, db_top_2=db_top_2,
-        rowgap_bot=rowgap_bot, rowgap_top=rowgap_top,
-        lig_legs=lig_legs, lig_d=lig_d,
+    raw_shape = (
+        st.session_state.get("shape_name")
+        or st.session_state.get("sec_shape")
+        or st.session_state.get("section_shape")
+        or st.session_state.get("geometry_section_shape")
+        or get_param("sec_shape")
+        or "RECT"
     )
+    shape_name = _norm_shape_name(str(raw_shape))
+
+
+    D = float(get_param("D", 600.0))
+    if shape_name.startswith("T-Section"):
+        dims = {
+            "bf": float(get_param("bf", 600.0)),
+            "tf": float(get_param("tf", 120.0)),
+            "bw": float(get_param("bw", 300.0)),
+            "D": D,
+        }
+        b_env = dims["bf"]
+    elif shape_name.startswith("I-Section"):
+        dims = {
+            "bf": float(get_param("bf", 600.0)),
+            "tf": float(get_param("tf", 120.0)),
+            "tw": float(get_param("tw", 200.0)),
+            "D": D,
+        }
+        b_env = dims["bf"]
+    else:
+        dims = {
+            "b": float(get_param("b", 400.0)),
+            "D": D,
+        }
+        b_env = dims["b"]
+
+    cover_bot = float(get_param("cover_bot", 40.0))
+    cover_top = float(get_param("cover_top", 40.0))
+    cover_side = get_param("cover_side", None)
+    if cover_side is None:
+        cover_side = min(cover_top, cover_bot)
+    cover_side = float(cover_side)
+
+    rowgap_bot = float(get_param("rowgap_bot", 60.0))
+    rowgap_top = float(get_param("rowgap_top", 60.0))
+    min_clear = float(get_param("s_min", 25.0))
+
+    def _mode(prefix: str) -> str:
+        return str(st.session_state.get(f"inputs_{prefix}_layout_mode", st.session_state.get(f"{prefix}_layout_mode", "Count")))
+
+    def _nb_or_s(prefix: str, default_count: float, default_spacing: float) -> float:
+        if _mode(prefix) == "Count":
+            return float(st.session_state.get(f"{prefix}_count", default_count))
+        return float(st.session_state.get(f"{prefix}_spacing", default_spacing))
+
+    db_bot_1 = float(get_param("db_bot_1", 20.0))
+    db_bot_2 = float(get_param("db_bot_2", db_bot_1))
+    db_top_1 = float(get_param("db_top_1", 16.0))
+    db_top_2 = float(get_param("db_top_2", db_top_1))
+
+    reo = {
+        "cover_top": cover_top,
+        "cover_bot": cover_bot,
+        "cover_side": cover_side,
+        "rowgap_top": rowgap_top,
+        "rowgap_bot": rowgap_bot,
+        "min_clear_spacing": min_clear,
+        "top1_layout_mode": _mode("top1"),
+        "top2_layout_mode": _mode("top2"),
+        "bot1_layout_mode": _mode("bot1"),
+        "bot2_layout_mode": _mode("bot2"),
+        "nb_or_s_top_1": _nb_or_s("top1", 2.0, 200.0),
+        "nb_or_s_top_2": _nb_or_s("top2", 0.0, 200.0),
+        "nb_or_s_bot_1": _nb_or_s("bot1", 4.0, 200.0),
+        "nb_or_s_bot_2": _nb_or_s("bot2", 0.0, 200.0),
+        "db_top_1": db_top_1,
+        "db_top_2": db_top_2,
+        "db_bot_1": db_bot_1,
+        "db_bot_2": db_bot_2,
+        "nb_top": int(_nb_or_s("top1", 2.0, 200.0) + _nb_or_s("top2", 0.0, 200.0)) if _mode("top1") == "Count" else 0,
+        "db_top": db_top_1,
+        "nb_bot": int(_nb_or_s("bot1", 4.0, 200.0) + _nb_or_s("bot2", 0.0, 200.0)) if _mode("bot1") == "Count" else 0,
+        "db_bot": db_bot_1,
+        "lig_d": float(get_param("lig_d", 0.0)),
+        "lig_legs": int(get_param("lig_legs", 0)),
+    }
+
+    if shape_name.startswith(("T-Section", "I-Section")):
+        reo_err = None
+        try:
+            reo_layout = compute_longitudinal_reo_layout_T_I(
+                shape_name=shape_name,
+                dims=dims,
+                cover_side=cover_side,
+                cover_top=cover_top,
+                cover_bot=cover_bot,
+                min_clear_spacing=min_clear,
+                rowgap_top=rowgap_top,
+                rowgap_bot=rowgap_bot,
+                reo=reo,
+                max_rows=2,
+            )
+            reo_points = flatten_reo_points_T_I(reo_layout)
+        except ValueError as e:
+            reo_err = str(e)
+            reo_layout = {"top": [], "bottom": []}
+            reo_points = []
+
+        shear_layout = compute_shear_reo_layout_T_I(
+            shape_name=shape_name,
+            dims=dims,
+            cover_side=cover_side,
+            cover_top=cover_top,
+            cover_bot=cover_bot,
+            lig_d=float(reo.get("lig_d", 0.0)),
+            lig_legs=int(reo.get("lig_legs", 0)),
+        )
+        cage = shear_layout.get("cage", {})
+        lig = {"legs": int(reo.get("lig_legs", 0) or 0), "d": float(reo.get("lig_d", 0.0) or 0.0)}
+        return {
+            "shape_name": shape_name,
+            "dims": dims,
+            "reo": reo,
+            "reo_layout": reo_layout,
+            "reo_points": reo_points,
+            "reo_error": reo_err,
+            "b": b_env,
+            "D": D,
+            "cage": cage,
+            "lig": lig,
+        }
+
+    # Rectangle fallback (use existing pure layout)
+    layout = compute_section_layout_pure(
+        b=b_env, D=D,
+        cover_bot=cover_bot, cover_top=cover_top, cover_side=cover_side,
+        nb_or_s_bot_1=float(reo.get("nb_or_s_bot_1", 4.0)),
+        db_bot_1=db_bot_1,
+        nb_or_s_bot_2=float(reo.get("nb_or_s_bot_2", 0.0)),
+        db_bot_2=db_bot_2,
+        nb_or_s_top_1=float(reo.get("nb_or_s_top_1", 2.0)),
+        db_top_1=db_top_1,
+        nb_or_s_top_2=float(reo.get("nb_or_s_top_2", 0.0)),
+        db_top_2=db_top_2,
+        rowgap_bot=rowgap_bot, rowgap_top=rowgap_top,
+        lig_legs=int(reo.get("lig_legs", 0) or 0),
+        lig_d=float(reo.get("lig_d", 0.0) or 0.0),
+    )
+
+    def _flatten_rect(layout_reo: Dict[str, Any]) -> List[Dict[str, Any]]:
+        pts: List[Dict[str, Any]] = []
+        for layer_name in ("top", "bottom"):
+            for band in layout_reo.get(layer_name, []):
+                db = float(band.get("db", 0.0))
+                ys = band.get("y", [])
+                if isinstance(ys, (int, float)):
+                    ys = [ys] * len(band.get("x", []))
+                for x, y in zip(band.get("x", []), ys):
+                    pts.append({"x": float(x), "y": float(y), "db": db, "layer": layer_name})
+        return pts
+
+    layout.update({
+        "shape_name": shape_name,
+        "dims": dims,
+        "reo": reo,
+        "reo_points": _flatten_rect(layout.get("reo_layout", {})),
+    })
+    return layout
 
 
 # Conditional caching: bypass in debug mode, cache in production

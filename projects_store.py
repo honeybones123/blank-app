@@ -44,7 +44,6 @@ def create_project(
     }
     # IMPORTANT: enforce module LAST so merges can't overwrite it to None
     row["module"] = (module_value or "beam").strip().lower()
-    print("SAVE projects.module =", row.get("module"))
 
     res = sb.table(table).insert(row).execute()
     if not res.data:
@@ -87,7 +86,6 @@ def update_project(
         patch["meta"] = meta
     # IMPORTANT: enforce module LAST so merges can't overwrite it to None
     patch["module"] = (module_value or "beam").strip().lower()
-    print("SAVE projects.module =", patch.get("module"))
 
     res = (
         sb.table(table)

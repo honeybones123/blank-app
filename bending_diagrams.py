@@ -9,6 +9,8 @@ from plotly.subplots import make_subplots
 from state_and_helpers import get_param
 from bending_core import _layout_bars_in_rows, _stress_strain_state
 from section_layout import compute_section_layout
+from plotly_section import make_sectionA_figure
+from section_props.plot import apply_section_axes
 
 # ------------------------------------------------------------
 # Global styling constants
@@ -22,6 +24,89 @@ FS_LABEL  = 7      # axis labels / main text
 FS_ANNOT  = 5      # small annotations
 
 ARROW_SCALE = 4    # small arrowheads for everything
+
+def _inject_figure_into_subplot(parent_fig, child_fig, *, row: int, col: int, xref: str, yref: str):
+    """
+    Copy traces + shapes + annotations from child_fig into a subplot
+    of parent_fig (created by make_subplots).
+    """
+    # Traces
+    for tr in child_fig.data:
+        parent_fig.add_trace(tr, row=row, col=col)
+
+    # Shapes
+    if getattr(child_fig.layout, "shapes", None):
+        for sh in child_fig.layout.shapes:
+            shd = sh.to_plotly_json()
+            shd["xref"] = xref
+            shd["yref"] = yref
+            parent_fig.add_shape(shd, row=row, col=col)
+
+    # Annotations
+    if getattr(child_fig.layout, "annotations", None):
+        for ann in child_fig.layout.annotations:
+            ad = ann.to_plotly_json()
+            ad["xref"] = xref
+            ad["yref"] = yref
+            parent_fig.add_annotation(ad, row=row, col=col)
+
+
+def _norm_shape_name(s: str) -> str:
+    """Normalise shape names across the app so diagrams behave consistently."""
+    s = (s or "").strip()
+    lo = s.lower()
+
+    # Rect
+    if "rectangle" in lo or lo == "rect":
+        return "Rectangular"
+
+    # T / I
+    if lo in {"t", "t section", "t-section", "t beam"} or lo.startswith("t"):
+        return "T-Section"
+    if lo in {"i", "i section", "i-section", "i beam"} or lo.startswith("i"):
+        return "I-Section"
+
+    # Already normalised?
+    if "t-section" in lo:
+        return "T-Section"
+    if "i-section" in lo:
+        return "I-Section"
+    if "rectangular" in lo:
+        return "Rectangular"
+
+    # Fallback – return as-is
+    return s
+
+
+def _get_current_shape_from_session() -> str:
+    """Best-effort read of current shape selection from session state."""
+    import streamlit as st
+    raw = (
+        st.session_state.get("shape_name")
+        or st.session_state.get("sec_shape")
+        or st.session_state.get("section_shape")
+        or st.session_state.get("geometry_section_shape")
+        or "Rectangular"
+    )
+    return _norm_shape_name(str(raw))
+
+
+def _get_layers(reo_layout: dict, side: str):
+    if not reo_layout:
+        return []
+    keys = []
+    if side == "top":
+        keys = ["top", "top_flange", "top_web", "top_left", "top_right"]
+    else:
+        keys = ["bottom", "bottom_flange", "bottom_web", "bottom_left", "bottom_right"]
+
+    out = []
+    for k in keys:
+        v = reo_layout.get(k)
+        if not v:
+            continue
+        out += v if isinstance(v, list) else [v]
+    return out
 
 # ============================================================
 # Shared stress-panel geometry (USED BY 3-PANEL + STEP FIGS)
@@ -283,7 +368,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
     # - ULS: alpha2 * f'c
     # - SLS/Uncracked: Ec * eps_c (elastic top fibre)
     try:
-        Ec = float(get_param("Ec", 30000.0) or 30000.0)
+        Ec = float(get_param("Ec", 30000.0))
     except Exception:
         Ec = 30000.0
 
@@ -305,7 +390,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
 
     # Fixed reference stress so SLS/Uncracked don't blow up visually
     try:
-        fsy = float(get_param("fsy", 500.0) or 500.0)
+        fsy = float(get_param("fsy", 500.0))
     except Exception:
         fsy = 500.0
     stress_ref = max(alpha2 * fc, fsy, 1.0)
@@ -345,329 +430,398 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
         )
 
     # =====================================================
-    # 1) SECTION PANEL – use same layout as Inputs 2D
+    # 1) SECTION PANEL – Rect stays legacy, I/T uses mini-app
     # =====================================================
-    # Use provided layout or compute from session state (for backward compatibility)
+    from section_layout import compute_section_layout
+
+    current_shape = _get_current_shape_from_session()
+
+    # If caller didn't supply layout, compute it.
     if layout is None:
-        from section_layout import compute_section_layout
         layout = compute_section_layout()
-    
-    b = layout["b"]
-    D = layout["D"]
-    
-    # Lock panel x-ranges so blocks/labels don't get squeezed by autorange/aspect effects
-    fig.update_xaxes(range=[-0.05, b + 0.35 * b], row=1, col=1)  # section
-    fig.update_xaxes(range=[0.0, 1.0], row=1, col=2)             # strain (panel coords)
-    # Stress panel x-range will be set dynamically after computing x_T, x_block_right, x_gc
-    cage = layout["cage"]
-    reo_layout = layout.get("reo_layout")  # Get 2-layer structure
+    else:
+        # If caller supplied a stale layout (common), refresh it when shape changed.
+        layout_shape = _norm_shape_name(str(layout.get("shape_name", "")))
+        if layout_shape != current_shape:
+            layout = compute_section_layout()
 
-    # outer concrete
-    fig.add_shape(
-        type="rect",
-        x0=0,
-        y0=0,
-        x1=b,
-        y1=D,
-        line=dict(color="black", width=1.2),
-        fillcolor="rgba(0,0,0,0)",
-        row=1,
-        col=1,
-    )
+    # Determine shape
+    shape_name_str = _norm_shape_name(str(layout.get("shape_name", "Rectangular")))
+    is_T = shape_name_str == "T-Section"
+    is_I = shape_name_str == "I-Section"
 
-    # Shear reinforcement (stirrups/ties) - only draw when present
-    lig = layout.get("lig", {})
-    lig_d = lig.get("d", 0.0)
-    lig_legs = lig.get("legs", 2)
-    
-    # Only draw shear reinforcement if it's actually specified
-    has_shear = lig_d > 0 and lig_legs >= 2
-    
-    if has_shear:
-        # Compute shear reinforcement layout using values from layout dict
-        from section_layout import compute_shear_reo_layout_pure
+    if is_T or is_I:
+        # Build the exact mini-app figure
+        dims = dict(layout.get("dims", {}))
+        reo = dict(layout.get("reo", {}))
+        lig = layout.get("lig", {})
+
+        # Neutral axis depth for shading (use c as dn)
+        dn = float(state_dict.get("c", 0.0) or 0.0)
+
+        reo_err = None
+        try:
+            sec_fig = make_sectionA_figure(
+                shape_name=shape_name_str,
+                dims=dims,
+                reo=reo,
+                show_shear=bool(lig.get("d", 0.0) or 0.0),
+                dn=dn,
+                show_dn=True,
+            )
+            W = float(dims.get("bf", dims.get("b", 0.0)) or 0.0)
+            D = float(dims.get("D", 0.0) or 0.0)
+            apply_section_axes(sec_fig, W=W, D=D)
+        except ValueError as e:
+            reo_err = str(e)
+
+        if reo_err:
+            st.error(reo_err)
+            reo_no_bars = dict(reo)
+            reo_no_bars.update({
+                "nb_top": 0,
+                "db_top": 0.0,
+                "nb_bot": 0,
+                "db_bot": 0.0,
+                "lig_d": 0.0,
+                "lig_legs": 0,
+            })
+            sec_fig = make_sectionA_figure(
+                shape_name=shape_name_str,
+                dims=dims,
+                reo=reo_no_bars,
+                show_shear=False,
+                dn=dn,
+                show_dn=True,
+            )
+            W = float(dims.get("bf", dims.get("b", 0.0)) or 0.0)
+            D = float(dims.get("D", 0.0) or 0.0)
+            apply_section_axes(sec_fig, W=W, D=D)
+
+        _inject_figure_into_subplot(fig, sec_fig, row=1, col=1, xref="x1", yref="y1")
+
+        # Enforce 1:1 aspect like your current plots
+        fig.update_yaxes(scaleanchor="x", scaleratio=1, row=1, col=1)
+
+    else:
+        # ---- legacy rectangular section panel (keep EXACTLY as before) ----
+        b = layout["b"]
+        D = layout["D"]
         
-        # Extract cover values from cage position (layout already computed with correct covers)
-        cover_side_est = max(5.0, cage["x0"])  # approximate from cage
-        cover_top_est = max(5.0, cage["y0"])
-        cover_bot_est = max(5.0, D - cage["y1"])
-        
-        # Compute shear layout with same covers as used for cage
-        shear_layout = compute_shear_reo_layout_pure(
-            b=b, D=D,
-            cover_bot=cover_bot_est, cover_top=cover_top_est, cover_side=cover_side_est,
-            lig_d=lig_d, lig_legs=lig_legs,
-        )
-        
-        # Draw cage outline (only when shear reo is present)
-        cage_shear = shear_layout.get("cage", cage)
+        # Lock panel x-ranges so blocks/labels don't get squeezed by autorange/aspect effects
+        fig.update_xaxes(range=[-0.05, b + 0.35 * b], row=1, col=1)  # section
+        fig.update_xaxes(range=[0.0, 1.0], row=1, col=2)             # strain (panel coords)
+        # Stress panel x-range will be set dynamically after computing x_T, x_block_right, x_gc
+        cage = layout["cage"]
+        reo_layout = layout.get("reo_layout")  # Get 2-layer structure
+
+        # outer concrete
         fig.add_shape(
             type="rect",
-            x0=cage_shear["x0"],
-            y0=cage_shear["y0"],
-            x1=cage_shear["x1"],
-            y1=cage_shear["y1"],
-            line=dict(color="black", width=1.0),
+            x0=0,
+            y0=0,
+            x1=b,
+            y1=D,
+            line=dict(color="black", width=1.2),
             fillcolor="rgba(0,0,0,0)",
             row=1,
             col=1,
         )
+
+        # Shear reinforcement (stirrups/ties) - only draw when present
+        lig = layout.get("lig", {})
+        lig_d = lig.get("d", 0.0)
+        lig_legs = lig.get("legs", 2)
         
-        # Draw stirrup legs in black
-        lig_line_width = max(1.0, min(4.0, abs(lig_d) / 3.0))
-        for stirrup in shear_layout.get("stirrups", []):
-            for leg in stirrup.get("legs", []):
-                fig.add_shape(
-                    type="line",
-                    x0=leg["x1"],
-                    y0=leg["y1"],
-                    x1=leg["x2"],
-                    y1=leg["y2"],
-                    line=dict(color="black", width=lig_line_width),
+        # Only draw shear reinforcement if it's actually specified
+        has_shear = lig_d > 0 and lig_legs >= 2
+        
+        if has_shear:
+            # Compute shear reinforcement layout using values from layout dict
+            from section_layout import compute_shear_reo_layout_pure
+            
+            # Extract cover values from cage position (layout already computed with correct covers)
+            cover_side_est = max(5.0, cage["x0"])  # approximate from cage
+            cover_top_est = max(5.0, cage["y0"])
+            cover_bot_est = max(5.0, D - cage["y1"])
+            
+            # Compute shear layout with same covers as used for cage
+            shear_layout = compute_shear_reo_layout_pure(
+                b=b, D=D,
+                cover_bot=cover_bot_est, cover_top=cover_top_est, cover_side=cover_side_est,
+                lig_d=lig_d, lig_legs=lig_legs,
+            )
+            
+            # Draw cage outline (only when shear reo is present)
+            cage_shear = shear_layout.get("cage", cage)
+            fig.add_shape(
+                type="rect",
+                x0=cage_shear["x0"],
+                y0=cage_shear["y0"],
+                x1=cage_shear["x1"],
+                y1=cage_shear["y1"],
+                line=dict(color="black", width=1.0),
+                fillcolor="rgba(0,0,0,0)",
+                row=1,
+                col=1,
+            )
+            
+            # Draw stirrup legs in black
+            lig_line_width = max(1.0, min(4.0, abs(lig_d) / 3.0))
+            for stirrup in shear_layout.get("stirrups", []):
+                for leg in stirrup.get("legs", []):
+                    fig.add_shape(
+                        type="line",
+                        x0=leg["x1"],
+                        y0=leg["y1"],
+                        x1=leg["x2"],
+                        y1=leg["y2"],
+                        line=dict(color="black", width=lig_line_width),
+                        row=1,
+                        col=1,
+                    )
+
+        # ----------------------------------------
+        # Compression region in SECTION panel
+        #   ULS Rectangular → block to γ c
+        #   ULS Parabolic   → block to d_n
+        #   SLS/Uncracked   → block to d_n
+        # ----------------------------------------
+        if is_uls and not is_parabolic:
+            block_depth_sec = max(0.0, min(gamma * c, D))
+        else:
+            block_depth_sec = max(0.0, min(c, D))
+
+        fig.add_shape(
+            type="rect",
+            x0=0,
+            y0=0,
+            x1=b,
+            y1=block_depth_sec,
+            line=dict(color="red", width=1.0),
+            fillcolor="rgba(199,227,255,0.7)",
+            row=1,
+            col=1,
+        )
+
+        # bottom/top bars - prefer canonical reo_points
+        reo_points = layout.get("reo_points") or []
+        if reo_points:
+            for p in reo_points:
+                layer = p.get("layer")
+                color = "blue" if layer == "bottom" else ("red" if layer == "top" else None)
+                if not color:
+                    continue
+                db = float(p.get("db", 0.0))
+                marker_size = max(5, min(10, db * 0.35))
+                fig.add_trace(
+                    go.Scatter(
+                        x=[float(p["x"])],
+                        y=[float(p["y"])],
+                        mode="markers",
+                        marker=dict(
+                            color=color,
+                            size=marker_size,
+                            line=dict(width=0.7, color="black"),
+                        ),
+                        hoverinfo="skip",
+                        showlegend=False,
+                    ),
+                    row=1,
+                    col=1,
+                )
+        elif reo_layout:
+            # Fallback to legacy 2-layer structure
+            for layer_data in reo_layout["bottom"]:
+                x_positions = layer_data["x"]
+                y_pos = layer_data["y"]
+                db = layer_data["db"]
+                marker_size = max(5, min(10, db * 0.35))
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_positions,
+                        y=[y_pos] * len(x_positions),
+                        mode="markers",
+                        marker=dict(color="blue", size=marker_size, line=dict(width=0.7, color="black")),
+                        hoverinfo="skip",
+                        showlegend=False,
+                    ),
+                    row=1,
+                    col=1,
+                )
+            for layer_data in reo_layout["top"]:
+                x_positions = layer_data["x"]
+                y_pos = layer_data["y"]
+                db = layer_data["db"]
+                marker_size = max(5, min(10, db * 0.35))
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_positions,
+                        y=[y_pos] * len(x_positions),
+                        mode="markers",
+                        marker=dict(color="red", size=marker_size, line=dict(width=0.7, color="black")),
+                        hoverinfo="skip",
+                        showlegend=False,
+                    ),
+                    row=1,
+                    col=1,
+                )
+        else:
+            # Fallback to legacy flattened structure
+            bot = layout.get("bot", {})
+            if bot.get("x"):
+                fig.add_trace(
+                    go.Scatter(
+                        x=bot["x"],
+                        y=bot["y"],
+                        mode="markers",
+                        marker=dict(color="blue", size=7, line=dict(width=0.7, color="black")),
+                        hoverinfo="skip",
+                        showlegend=False,
+                    ),
+                    row=1,
+                    col=1,
+                )
+            top = layout.get("top", {})
+            if top.get("x"):
+                fig.add_trace(
+                    go.Scatter(
+                        x=top["x"],
+                        y=top["y"],
+                        mode="markers",
+                        marker=dict(color="red", size=7, line=dict(width=0.7, color="black")),
+                        hoverinfo="skip",
+                        showlegend=False,
+                    ),
                     row=1,
                     col=1,
                 )
 
-    # ----------------------------------------
-    # Compression region in SECTION panel
-    #   ULS Rectangular → block to γ c
-    #   ULS Parabolic   → block to d_n
-    #   SLS/Uncracked   → block to d_n
-    # ----------------------------------------
-    if is_uls and not is_parabolic:
-        block_depth_sec = max(0.0, min(gamma * c, D))
-    else:
-        block_depth_sec = max(0.0, min(c, D))
+        # ----------------------------------------
+        # Depth labels next to section: d and d_n
+        # ----------------------------------------
+        beam_right = b  # section goes from x = 0 → b
 
-    fig.add_shape(
-        type="rect",
-        x0=0,
-        y0=0,
-        x1=b,
-        y1=block_depth_sec,
-        line=dict(color="red", width=1.0),
-        fillcolor="rgba(199,227,255,0.7)",
-        row=1,
-        col=1,
-    )
-
-    # bottom bars - use 2-layer structure
-    # BOTTOM reinforcement is BLUE
-    if reo_layout:
-        for layer_data in reo_layout["bottom"]:
-            x_positions = layer_data["x"]
-            y_pos = layer_data["y"]
-            db = layer_data["db"]
-            # Marker size based on bar diameter
-            marker_size = max(5, min(10, db * 0.35))
-            fig.add_trace(
-                go.Scatter(
-                    x=x_positions,
-                    y=[y_pos] * len(x_positions),
-                    mode="markers",
-                    marker=dict(
-                        color="blue",
-                        size=marker_size,
-                        line=dict(width=0.7, color="black"),
-                    ),
-                    hoverinfo="skip",
-                    showlegend=False,
-                ),
+        # SECTION PANEL: Consistent margins for depth arrows and labels
+        margin_right_section = 0.20 * b
+        text_dx_section = 0.04 * b
+        
+        # position of d arrow (aligned with d_n arrow)
+        x_d = beam_right + margin_right_section
+        if d:
+            # double-ended depth arrow for d (two overlapping arrows)
+            # top → bottom
+            fig.add_annotation(
+                x=x_d,
+                y=d,
+                ax=x_d,
+                ay=0,
+                xref="x1",
+                yref="y1",
+                axref="x1",
+                ayref="y1",
+                text="",
+                showarrow=True,
+                arrowhead=3,
+                arrowsize=1.0,
+                arrowwidth=1.0,
+                arrowcolor="black",
                 row=1,
                 col=1,
             )
-    else:
-        # Fallback to legacy structure
-        bot = layout.get("bot", {})
-        if bot.get("x"):
-            fig.add_trace(
-                go.Scatter(
-                    x=bot["x"],
-                    y=bot["y"],
-                    mode="markers",
-                    marker=dict(
-                        color="blue",
-                        size=7,
-                        line=dict(width=0.7, color="black"),
-                    ),
-                    hoverinfo="skip",
-                    showlegend=False,
-                ),
+            # bottom → top
+            fig.add_annotation(
+                x=x_d,
+                y=0,
+                ax=x_d,
+                ay=d,
+                xref="x1",
+                yref="y1",
+                axref="x1",
+                ayref="y1",
+                text="",
+                showarrow=True,
+                arrowhead=3,
+                arrowsize=1.0,
+                arrowwidth=1.0,
+                arrowcolor="black",
+                row=1,
+                col=1,
+            )
+            # label for d (placed mid-depth)
+            fig.add_annotation(
+                x=x_d + text_dx_section,
+                y=d / 2.0,
+                text=f"d = {d:.0f} mm",
+                showarrow=False,
+                font=dict(size=9, color="black"),
+                xanchor="left",
                 row=1,
                 col=1,
             )
 
-    # top bars - use 2-layer structure
-    # TOP reinforcement is RED
-    if reo_layout:
-        for layer_data in reo_layout["top"]:
-            x_positions = layer_data["x"]
-            y_pos = layer_data["y"]
-            db = layer_data["db"]
-            # Marker size based on bar diameter
-            marker_size = max(5, min(10, db * 0.35))
-            fig.add_trace(
-                go.Scatter(
-                    x=x_positions,
-                    y=[y_pos] * len(x_positions),
-                    mode="markers",
-                    marker=dict(
-                        color="red",
-                        size=marker_size,
-                        line=dict(width=0.7, color="black"),
-                    ),
-                    hoverinfo="skip",
-                    showlegend=False,
-                ),
+        # position of d_n arrow (moved right to align with label, in red)
+        x_dn = beam_right + margin_right_section
+        x_dn_arrow = x_dn + 0.40 * b  # move arrows right to align with label
+        if c:
+            # double-ended depth arrow for d_n
+            # top → NA
+            fig.add_annotation(
+                x=x_dn_arrow,
+                y=c,
+                ax=x_dn_arrow,
+                ay=0,
+                xref="x1",
+                yref="y1",
+                axref="x1",
+                ayref="y1",
+                text="",
+                showarrow=True,
+                arrowhead=3,
+                arrowsize=1.0,
+                arrowwidth=1.0,
+                arrowcolor="red",
                 row=1,
                 col=1,
             )
-    else:
-        # Fallback to legacy structure
-        top = layout.get("top", {})
-        if top.get("x"):
-            fig.add_trace(
-                go.Scatter(
-                    x=top["x"],
-                    y=top["y"],
-                    mode="markers",
-                    marker=dict(
-                        color="red",
-                        size=7,
-                        line=dict(width=0.7, color="black"),
-                    ),
-                    hoverinfo="skip",
-                    showlegend=False,
-                ),
+            # NA → top
+            fig.add_annotation(
+                x=x_dn_arrow,
+                y=0,
+                ax=x_dn_arrow,
+                ay=c,
+                xref="x1",
+                yref="y1",
+                axref="x1",
+                ayref="y1",
+                text="",
+                showarrow=True,
+                arrowhead=3,
+                arrowsize=1.0,
+                arrowwidth=1.0,
+                arrowcolor="red",
+                row=1,
+                col=1,
+            )
+            # Move text to the right to avoid overlap with d = ... label
+            fig.add_annotation(
+                x=x_dn + text_dx_section + 0.40 * b,
+                y=c / 2.0,
+                text=f"dₙ = {c:.0f} mm",
+                showarrow=False,
+                font=dict(size=9, color="red"),
+                xanchor="left",
                 row=1,
                 col=1,
             )
 
-    # ----------------------------------------
-    # Depth labels next to section: d and d_n
-    # ----------------------------------------
-    beam_right = b  # section goes from x = 0 → b
-
-    # SECTION PANEL: Consistent margins for depth arrows and labels
-    margin_right_section = 0.20 * b
-    text_dx_section = 0.04 * b
-    
-    # position of d arrow (aligned with d_n arrow)
-    x_d = beam_right + margin_right_section
-    if d:
-        # double-ended depth arrow for d (two overlapping arrows)
-        # top → bottom
-        fig.add_annotation(
-            x=x_d,
-            y=d,
-            ax=x_d,
-            ay=0,
-            xref="x1",
-            yref="y1",
-            axref="x1",
-            ayref="y1",
-            text="",
-            showarrow=True,
-            arrowhead=3,
-            arrowsize=1.0,
-            arrowwidth=1.0,
-            arrowcolor="black",
+        # keep section 1:1 in x–y (width vs depth)
+        fig.update_yaxes(
+            scaleanchor="x",
+            scaleratio=1,
             row=1,
             col=1,
         )
-        # bottom → top
-        fig.add_annotation(
-            x=x_d,
-            y=0,
-            ax=x_d,
-            ay=d,
-            xref="x1",
-            yref="y1",
-            axref="x1",
-            ayref="y1",
-            text="",
-            showarrow=True,
-            arrowhead=3,
-            arrowsize=1.0,
-            arrowwidth=1.0,
-            arrowcolor="black",
-            row=1,
-            col=1,
-        )
-        # label for d (placed mid-depth)
-        fig.add_annotation(
-            x=x_d + text_dx_section,
-            y=d / 2.0,
-            text=f"d = {d:.0f} mm",
-            showarrow=False,
-            font=dict(size=9, color="black"),
-            xanchor="left",
-            row=1,
-            col=1,
-        )
-
-    # position of d_n arrow (moved right to align with label, in red)
-    x_dn = beam_right + margin_right_section
-    x_dn_arrow = x_dn + 0.40 * b  # move arrows right to align with label
-    if c:
-        # double-ended depth arrow for d_n
-        # top → NA
-        fig.add_annotation(
-            x=x_dn_arrow,
-            y=c,
-            ax=x_dn_arrow,
-            ay=0,
-            xref="x1",
-            yref="y1",
-            axref="x1",
-            ayref="y1",
-            text="",
-            showarrow=True,
-            arrowhead=3,
-            arrowsize=1.0,
-            arrowwidth=1.0,
-            arrowcolor="red",
-            row=1,
-            col=1,
-        )
-        # NA → top
-        fig.add_annotation(
-            x=x_dn_arrow,
-            y=0,
-            ax=x_dn_arrow,
-            ay=c,
-            xref="x1",
-            yref="y1",
-            axref="x1",
-            ayref="y1",
-            text="",
-            showarrow=True,
-            arrowhead=3,
-            arrowsize=1.0,
-            arrowwidth=1.0,
-            arrowcolor="red",
-            row=1,
-            col=1,
-        )
-        # Move text to the right to avoid overlap with d = ... label
-        fig.add_annotation(
-            x=x_dn + text_dx_section + 0.40 * b,
-            y=c / 2.0,
-            text=f"dₙ = {c:.0f} mm",
-            showarrow=False,
-            font=dict(size=9, color="red"),
-            xanchor="left",
-            row=1,
-            col=1,
-        )
-
-    # keep section 1:1 in x–y (width vs depth)
-    fig.update_yaxes(
-        scaleanchor="x",
-        scaleratio=1,
-        row=1,
-        col=1,
-    )
 
     # =====================================================
     # 2) STRAIN PANEL – **fixed sign convention**
@@ -708,7 +862,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
     # (so it matches Step 3.2)
     # ------------------------------------------------------------
     try:
-        Es = float(get_param("Es", 200000.0) or 200000.0)  # MPa
+        Es = float(get_param("Es", 200000.0))  # MPa
     except Exception:
         Es = 200000.0
 
@@ -800,8 +954,8 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
     
     if is_sls and eps_top_sls is not None and eps_bot_sls is not None and y_bot_sls is not None:
         # SLS: collect all tension layers from reo_layout
-        if reo_layout and isinstance(reo_layout, dict) and "bottom" in reo_layout:
-            for layer_data in reo_layout["bottom"]:
+        if reo_layout and isinstance(reo_layout, dict):
+            for layer_data in _get_layers(reo_layout, "bottom"):
                 try:
                     y_layer = float(layer_data["y"])
                     if y_layer > c + 1e-6:  # below NA (tension)
@@ -1341,10 +1495,10 @@ def _plot_material_stress_strain_curves():
     """
     # --------- Material properties from shared state (safe fallbacks) ----------
     try:
-        fc = float(get_param("fc", 40.0) or 40.0)          # MPa
-        fsy = float(get_param("fsy", 500.0) or 500.0)      # MPa
-        Ec = float(get_param("Ec", 30000.0) or 30000.0)    # MPa
-        Es = float(get_param("Es", 200000.0) or 200000.0)  # MPa
+        fc = float(get_param("fc", 40.0))          # MPa
+        fsy = float(get_param("fsy", 500.0))      # MPa
+        Ec = float(get_param("Ec", 30000.0))    # MPa
+        Es = float(get_param("Es", 200000.0))  # MPa
     except Exception:
         fc, fsy, Ec, Es = 40.0, 500.0, 30000.0, 200000.0
 
@@ -2137,8 +2291,8 @@ def _make_sls_stress_block_figure(
 
     # Material props (elastic SLS)
     try:
-        Ec = float(get_param("Ec", 30000.0) or 30000.0)  # MPa
-        Es = float(get_param("Es", 200000.0) or 200000.0)  # MPa
+        Ec = float(get_param("Ec", 30000.0))  # MPa
+        Es = float(get_param("Es", 200000.0))  # MPa
     except Exception:
         Ec, Es = 30000.0, 200000.0
 
@@ -2163,10 +2317,12 @@ def _make_sls_stress_block_figure(
     # -------------------------
     tension_layers = []  # list of (y, label, sigma_MPa)
 
-    if reo_layout and isinstance(reo_layout, dict) and "bottom" in reo_layout:
+    if reo_layout and isinstance(reo_layout, dict):
         # bottom layers are stored as a list of layer dicts, each with "y"
         ys = []
-        for layer in reo_layout["bottom"]:
+        bottom_layers = _get_layers(reo_layout, "bottom")
+
+        for layer in bottom_layers:
             try:
                 ys.append(float(layer["y"]))
             except Exception:

@@ -7,13 +7,12 @@ Uses reportlab for PDF generation.
 
 import re
 
-import re
-
 try:
     from reportlab.lib.pagesizes import letter, A4
     from reportlab.lib import colors
     from reportlab.lib.units import inch, mm
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image
+    from reportlab.platypus import BaseDocTemplate, PageTemplate, Frame, Table, TableStyle, Paragraph, Spacer, PageBreak, Image
+    from reportlab.platypus.tableofcontents import TableOfContents
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
     REPORTLAB_AVAILABLE = True
@@ -21,13 +20,16 @@ except ImportError:
     REPORTLAB_AVAILABLE = False
     # Define dummy values to avoid NameError if code tries to use them
     A4 = None
-    SimpleDocTemplate = None
+    BaseDocTemplate = None
+    PageTemplate = None
+    Frame = None
     Table = None
     TableStyle = None
     Paragraph = None
     Spacer = None
     PageBreak = None
     Image = None
+    TableOfContents = None
     colors = None
     inch = None
     mm = None
@@ -113,6 +115,34 @@ def draw_header_footer(canvas, doc, meta):
     )
     
     canvas.restoreState()
+
+
+class TOCDocTemplate(BaseDocTemplate):
+    """
+    DocTemplate that collects Heading2 flowables into a Table of Contents (with page numbers).
+    """
+    def __init__(self, *args, **kwargs):
+        self._meta = kwargs.pop("meta", {})
+        super().__init__(*args, **kwargs)
+
+    def afterFlowable(self, flowable):
+        try:
+            from reportlab.platypus.paragraph import Paragraph as RLParagraph
+        except Exception:
+            RLParagraph = None
+
+        if RLParagraph is None:
+            return
+
+        # Register headings for TOC
+        if isinstance(flowable, RLParagraph):
+            style_name = getattr(flowable.style, "name", "")
+            text = flowable.getPlainText()
+
+            if style_name in ("CustomHeading",):
+                key = re.sub(r"[^a-zA-Z0-9]+", "-", text).strip("-").lower()
+                self.canv.bookmarkPage(key)
+                self.notify("TOCEntry", (0, text, self.page, key))
 
 
 def _parse_step_string(step_str):
@@ -254,7 +284,7 @@ def _as_deriv_def(deriv):
     return {"label": "", "eq": str(deriv), "sub": ""}
 
 
-def _render_box_with_optional_diagram(story, styles, box, available_width):
+def _render_box_with_optional_diagram(story, styles, box, available_width, compact=False):
     """
     Render a calc box with optional right-side diagram.
     Includes color-coding based on status (PASS/FAIL/WARN/INFO).
@@ -280,6 +310,8 @@ def _render_box_with_optional_diagram(story, styles, box, available_width):
     clause = box.get("clause", "")
     derivation = box.get("derivation", [])
     diagram = box.get("diagram", None)
+    if compact:
+        diagram = None
     
     # Get status style (default to None if status is invalid)
     status_style = STATUS_STYLES.get(status, STATUS_STYLES[None])
@@ -338,29 +370,30 @@ def _render_box_with_optional_diagram(story, styles, box, available_width):
     if result:
         left_flowables.append(Paragraph(f"Result: {result}", styles["Normal"]))
     
-    if clause:
-        left_flowables.append(Paragraph(f"<i>{clause}</i>", styles["StepClause"]))
-    
-    for deriv in _normalize_derivation_list(derivation):
-        d = _as_deriv_def(deriv)
-        label = d.get("label", "")
-        eq = d.get("eq", "")
-        sub = d.get("sub", "")
+    if not compact:
+        if clause:
+            left_flowables.append(Paragraph(f"<i>{clause}</i>", styles["StepClause"]))
         
-        if label:
-            left_flowables.append(Paragraph(f"<b>{label}:</b>", styles["Normal"]))
-        if eq:
-            safe_eq = (str(eq)
-                      .replace("&", "&amp;")
-                      .replace("<", "&lt;")
-                      .replace(">", "&gt;"))
-            left_flowables.append(Paragraph(f"  {safe_eq}", styles["StepEq"]))
-        if sub:
-            safe_sub = (str(sub)
-                       .replace("&", "&amp;")
-                       .replace("<", "&lt;")
-                       .replace(">", "&gt;"))
-            left_flowables.append(Paragraph(f"  = {safe_sub}", styles["StepEq"]))
+        for deriv in _normalize_derivation_list(derivation):
+            d = _as_deriv_def(deriv)
+            label = d.get("label", "")
+            eq = d.get("eq", "")
+            sub = d.get("sub", "")
+            
+            if label:
+                left_flowables.append(Paragraph(f"<b>{label}:</b>", styles["Normal"]))
+            if eq:
+                safe_eq = (str(eq)
+                          .replace("&", "&amp;")
+                          .replace("<", "&lt;")
+                          .replace(">", "&gt;"))
+                left_flowables.append(Paragraph(f"  {safe_eq}", styles["StepEq"]))
+            if sub:
+                safe_sub = (str(sub)
+                           .replace("&", "&amp;")
+                           .replace("<", "&lt;")
+                           .replace(">", "&gt;"))
+                left_flowables.append(Paragraph(f"  = {safe_sub}", styles["StepEq"]))
     
     # Account for accent bar width first
     accent_width = 6  # 6 points wide
@@ -696,7 +729,7 @@ def _section_heading(title: str, subtitle: str | None, styles) -> list:
     return flowables
 
 
-def _render_tabs_and_boxes(story, styles, module_title, summary, tabs=None, groups=None):
+def _render_tabs_and_boxes(story, styles, module_title, summary, tabs=None, groups=None, detail_level="detailed"):
     """
     Render tabs and calc boxes structure (preferred format).
     
@@ -774,6 +807,9 @@ def _render_tabs_and_boxes(story, styles, module_title, summary, tabs=None, grou
         summary_table.setStyle(TableStyle(table_style))
         story.append(summary_table)
         story.append(Spacer(1, 8))
+        if detail_level == "detailed":
+            story.append(Spacer(1, 18))
+            story.append(PageBreak())
     
     # Calculate available width (A4 width - margins)
     page_width, page_height = A4
@@ -791,12 +827,7 @@ def _render_tabs_and_boxes(story, styles, module_title, summary, tabs=None, grou
             group_subtitle = group.get("group_subtitle", "")
             group_tabs = group.get("tabs", [])
             
-            # Insert page break before each major group (ULS, SLS, Minimum)
-            # But not if it's the very first content
-            if group_title in ("ULS Checks", "SLS Checks", "Minimum Requirements"):
-                if already_started_checks or group_idx > 0:
-                    story.append(PageBreak())
-                already_started_checks = True
+            already_started_checks = True
             
             # Add professional section heading
             heading_flowables = _section_heading(group_title, group_subtitle, styles)
@@ -805,10 +836,43 @@ def _render_tabs_and_boxes(story, styles, module_title, summary, tabs=None, grou
             # Render all tabs in this group
             for tab in group_tabs:
                 boxes = tab.get("boxes", [])
+                compact = (detail_level == "summary")
+
+                # --- Checks overview table (Summary mode) ---
+                if detail_level == "summary" and boxes:
+                    overview_data = [["Check", "Result", "Status"]]
+                    for b in boxes:
+                        title = b.get("title", "")
+                        res = b.get("result", "")
+                        status_text = (b.get("status_text") or "").upper()
+                        if not status_text:
+                            st = (b.get("status") or "").upper()
+                            status_text = st if st else ""
+                        overview_data.append([title, str(res), status_text])
+
+                    overview_table = Table(overview_data, colWidths=[3.4*inch, 2.0*inch, 0.8*inch])
+                    overview_table.setStyle(TableStyle([
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("FONTSIZE", (0, 0), (-1, 0), 9),
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d1d5db")),
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                        ("FONTSIZE", (0, 1), (-1, -1), 9),
+                    ]))
+                    story.append(Paragraph("Checks overview", styles["Heading3"]))
+                    story.append(Spacer(1, 4))
+                    story.append(overview_table)
+                    story.append(Spacer(1, 8))
                 
                 # Render each calc box
                 for box in boxes:
-                    box_flowable = _render_box_with_optional_diagram(story, styles, box, available_width)
+                    box_flowable = _render_box_with_optional_diagram(
+                        story,
+                        styles,
+                        box,
+                        available_width,
+                        compact=compact,
+                    )
                     story.append(box_flowable)
                     story.append(Spacer(1, 6))
             
@@ -833,20 +897,49 @@ def _render_tabs_and_boxes(story, styles, module_title, summary, tabs=None, grou
             section_info = section_headings.get(tab_title, (tab_title, None))
             section_title, section_subtitle = section_info
             
-            # Insert page break before each major section (ULS, SLS, Minimum)
-            # But not if it's the very first content
-            if tab_title in ("ULS Checks", "SLS Checks", "Minimum strength checks", "Minimum Requirements"):
-                if already_started_checks or tab_idx > 0:
-                    story.append(PageBreak())
-                already_started_checks = True
+            already_started_checks = True
             
             # Add professional section heading
             heading_flowables = _section_heading(section_title, section_subtitle, styles)
             story.extend(heading_flowables)
             
+            compact = (detail_level == "summary")
+
+            # --- Checks overview table (Summary mode) ---
+            if detail_level == "summary" and boxes:
+                overview_data = [["Check", "Result", "Status"]]
+                for b in boxes:
+                    title = b.get("title", "")
+                    res = b.get("result", "")
+                    status_text = (b.get("status_text") or "").upper()
+                    if not status_text:
+                        st = (b.get("status") or "").upper()
+                        status_text = st if st else ""
+                    overview_data.append([title, str(res), status_text])
+
+                overview_table = Table(overview_data, colWidths=[3.4*inch, 2.0*inch, 0.8*inch])
+                overview_table.setStyle(TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, 0), 9),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d1d5db")),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("FONTSIZE", (0, 1), (-1, -1), 9),
+                ]))
+                story.append(Paragraph("Checks overview", styles["Heading3"]))
+                story.append(Spacer(1, 4))
+                story.append(overview_table)
+                story.append(Spacer(1, 8))
+
             # Render each calc box
             for box in boxes:
-                box_flowable = _render_box_with_optional_diagram(story, styles, box, available_width)
+                box_flowable = _render_box_with_optional_diagram(
+                    story,
+                    styles,
+                    box,
+                    available_width,
+                    compact=compact,
+                )
                 story.append(box_flowable)
                 story.append(Spacer(1, 6))
             
@@ -854,68 +947,97 @@ def _render_tabs_and_boxes(story, styles, module_title, summary, tabs=None, grou
             story.append(Spacer(1, 8))
 
 
-def _render_steps(story, styles, steps):
+def steps_to_tabs_boxes(steps, tab_title="Checks", id_prefix=""):
     """
-    Render calculation steps in a structured format.
-    
-    Args:
-        story: List to append Paragraph/Spacer objects to
-        styles: Style sheet
-        steps: List of step strings or step dicts
+    Convert legacy steps (list of strings or dicts) into the same box structure
+    used by the modern report-tree renderer.
+
+    This lets old modules render with the same clean formatting as bending.
     """
+    boxes = []
     if not steps:
-        story.append(Paragraph("Checks:", styles["Heading3"]))
-        story.append(Paragraph("Checks not available for this module yet. Run the check module(s) or use 'Run all checks' before exporting.", styles["Normal"]))
-        story.append(Spacer(1, 6))
-        return
-    
-    story.append(Paragraph("Checks:", styles["Heading3"]))
-    story.append(Spacer(1, 4))
-    
+        return [{"tab_title": tab_title, "boxes": []}]
+
     for i, step in enumerate(steps, start=1):
-        # Handle both dict and string formats
+        # Accept dict format directly
         if isinstance(step, dict):
             title = step.get("title", f"Check {i}")
             clause = step.get("clause", "")
             equations = step.get("equations", []) or []
             notes = step.get("notes", []) or []
+            status = step.get("status", None)  # "pass"/"fail"/"warn"/"info"/None
+            result = step.get("result", "")
         else:
-            # Parse string format
             parsed = _parse_step_string(str(step))
-            title = parsed["title"] or f"Check {i}"
-            clause = parsed["clause"]
-            equations = parsed["equations"]
-            notes = parsed["notes"]
-        
-        # Check title
-        story.append(Paragraph(f"Check {i} — {title}", styles["StepTitle"]))
-        
-        # Clause line
-        if clause:
-            story.append(Paragraph(clause, styles["StepClause"]))
-        
-        # Equations: each on its own line, monospace
+            title = parsed.get("title", "") or f"Check {i}"
+            clause = parsed.get("clause", "")
+            equations = parsed.get("equations", []) or []
+            notes = parsed.get("notes", []) or []
+            status = None
+            result = ""
+
+        derivation = []
         for eq in equations:
-            # Escape HTML-sensitive characters
-            safe = (str(eq)
-                    .replace("&", "&amp;")
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;"))
-            story.append(Paragraph(safe, styles["StepEq"]))
-        
-        # Notes (optional)
+            derivation.append({"label": "", "eq": str(eq), "sub": ""})
         for n in notes:
-            safe_n = (str(n)
-                      .replace("&", "&amp;")
-                      .replace("<", "&lt;")
-                      .replace(">", "&gt;"))
-            story.append(Paragraph(f"• {safe_n}", styles["StepNote"]))
-        
-        # Spacer between steps
+            derivation.append({"label": "", "eq": f"• {str(n)}", "sub": ""})
+
+        box_id = f"{id_prefix}{i}"
+        boxes.append({
+            "id": str(box_id),
+            "title": str(title),
+            "status": status,
+            "status_text": (str(status).upper() if status else ""),
+            "result": str(result) if result else "",
+            "clause": str(clause) if clause else "",
+            "derivation": derivation,
+        })
+
+    return [{"tab_title": tab_title, "boxes": boxes}]
+
+
+def _render_steps(story, styles, steps, available_width):
+    """
+    Render legacy calculation steps using the SAME calc-box renderer as modern reports.
+    This instantly makes old modules look ~like bending without rewriting calcs.
+    """
+    if not steps:
+        story.append(Paragraph("Checks:", styles["Heading3"]))
+        story.append(Paragraph(
+            "Checks not available for this module yet. Run the check module(s) or use 'Run all checks' before exporting.",
+            styles["Normal"],
+        ))
         story.append(Spacer(1, 6))
+        return
+
+    # Convert legacy steps -> single tab with calc boxes
+    tabs = steps_to_tabs_boxes(steps, tab_title="Checks", id_prefix="")
+
+    # Render the boxes using the same renderer as bending
+    for tab in tabs:
+        tab_title = tab.get("tab_title", "")
+        if tab_title:
+            story.append(Paragraph(tab_title, styles["Heading3"]))
+            story.append(Spacer(1, 4))
+        for box in tab.get("boxes", []):
+            box_flowable = _render_box_with_optional_diagram(
+                story,
+                styles,
+                box,
+                available_width,
+                compact=False,
+            )
+            story.append(box_flowable)
+            story.append(Spacer(1, 6))
 
 
-def build_pdf_report(summary_rows, inputs_sections, check_sections, temp_figures=None):
+def build_pdf_report(
+    summary_rows,
+    inputs_sections,
+    check_sections,
+    temp_figures=None,
+    detail_level: str = "detailed",
+):
     """
     Build PDF report from extracted content.
     
@@ -924,6 +1046,7 @@ def build_pdf_report(summary_rows, inputs_sections, check_sections, temp_figures
         inputs_sections: Dict with geometry, materials, reinforcement, actions
         check_sections: List of dicts with check details (title, summary, steps, figures)
         temp_figures: List to append temp figure file paths (optional)
+        detail_level: "summary" or "detailed" report mode
     
     Returns:
         bytes: PDF file as bytes
@@ -941,7 +1064,8 @@ def build_pdf_report(summary_rows, inputs_sections, check_sections, temp_figures
         from reportlab.lib.pagesizes import A4
         from reportlab.lib import colors
         from reportlab.lib.units import inch, mm
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image
+        from reportlab.platypus import BaseDocTemplate, PageTemplate, Frame, Table, TableStyle, Paragraph, Spacer, PageBreak, Image
+        from reportlab.platypus.tableofcontents import TableOfContents
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     except ImportError as e:
         raise ImportError(
@@ -965,14 +1089,36 @@ def build_pdf_report(summary_rows, inputs_sections, check_sections, temp_figures
     }
     
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
+    page_width, page_height = A4
+    left_margin = 20 * mm
+    right_margin = 20 * mm
+    top_margin = 30 * mm
+    bottom_margin = 25 * mm
+
+    doc = TOCDocTemplate(
         buffer,
         pagesize=A4,
-        rightMargin=20 * mm,
-        leftMargin=20 * mm,
-        topMargin=30 * mm,
-        bottomMargin=25 * mm,
+        leftMargin=left_margin,
+        rightMargin=right_margin,
+        topMargin=top_margin,
+        bottomMargin=bottom_margin,
+        meta=meta,
     )
+
+    frame = Frame(
+        left_margin,
+        bottom_margin,
+        page_width - left_margin - right_margin,
+        page_height - top_margin - bottom_margin,
+        id="normal",
+    )
+
+    template = PageTemplate(
+        id="main",
+        frames=[frame],
+        onPage=lambda c, d: draw_header_footer(c, d, meta),
+    )
+    doc.addPageTemplates([template])
     story = []
     
     styles = getSampleStyleSheet()
@@ -1233,6 +1379,24 @@ def build_pdf_report(summary_rows, inputs_sections, check_sections, temp_figures
         notes_style
     ))
     
+    # --- Table of Contents ---
+    story.append(PageBreak())
+    story.append(Paragraph("Contents", heading_style))
+    story.append(Spacer(1, 0.15*inch))
+
+    toc = TableOfContents()
+    toc.levelStyles = [
+        ParagraphStyle(
+            name="TOCLevel0",
+            parent=styles["Normal"],
+            fontSize=10,
+            leftIndent=0,
+            firstLineIndent=0,
+            spaceBefore=4,
+            spaceAfter=2,
+        )
+    ]
+    story.append(toc)
     story.append(PageBreak())
     
     # Inputs Section
@@ -1298,100 +1462,153 @@ def build_pdf_report(summary_rows, inputs_sections, check_sections, temp_figures
                 story.append(mat_table)
                 story.append(Spacer(1, 0.15*inch))
         
-        # Reinforcement table
-        reo = inputs_sections.get("reinforcement", {})
+        # Reinforcement table (show bar labels + shear reo, not Ast area)
+        reo = inputs_sections.get("reinforcement", {}) or {}
+
+        def _reo_label(n, db):
+            try:
+                n_i = int(n) if n is not None else 0
+                db_i = int(round(float(db))) if db is not None else 0
+                if n_i <= 0 or db_i <= 0:
+                    return "—"
+                return f"{n_i}N{db_i}"
+            except Exception:
+                return "—"
+
+        def _lig_label(lig_d, legs, s):
+            try:
+                d_i = int(round(float(lig_d))) if lig_d is not None else 0
+                legs_i = int(legs) if legs is not None else 0
+                s_i = int(round(float(s))) if s is not None else 0
+                if d_i <= 0 or legs_i <= 0 or s_i <= 0:
+                    return "—"
+                return f"{legs_i}L{d_i}-{s_i}"
+            except Exception:
+                return "—"
+
         if reo:
-            reo_table_data = []
-            if "Ast_bot" in reo:
-                reo_table_data.append(["Bottom reinforcement (Ast,bot)", f"{reo.get('Ast_bot', 'N/A'):.0f} mm²"])
-            if "Ast_top" in reo:
-                reo_table_data.append(["Top reinforcement (Ast,top)", f"{reo.get('Ast_top', 'N/A'):.0f} mm²"])
-            if "cover_bot" in reo:
-                reo_table_data.append(["Bottom cover", f"{reo.get('cover_bot', 'N/A'):.0f} mm"])
-            if "cover_top" in reo:
-                reo_table_data.append(["Top cover", f"{reo.get('cover_top', 'N/A'):.0f} mm"])
-            
-            if reo_table_data:
-                reo_table = Table(reo_table_data, colWidths=[2.5*inch, 3*inch])
-                reo_table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f8f9fa')),
-                    ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-                    ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-                    ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                    ('LEFTPADDING', (0, 0), (-1, -1), 6),
-                    ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-                    ('TOPPADDING', (0, 0), (-1, -1), 4),
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-                ]))
-                story.append(Paragraph("<b>Reinforcement</b>", subheading_style))
-                story.append(reo_table)
-                story.append(Spacer(1, 0.15*inch))
+            nb_bot = reo.get("nb_bot", 0)
+            db_bot = reo.get("db_bot", 0.0)
+            nb_top = reo.get("nb_top", 0)
+            db_top = reo.get("db_top", 0.0)
+            cover_bot = reo.get("cover_bot", None)
+            cover_top = reo.get("cover_top", None)
+
+            lig_d = reo.get("lig_d", 0.0)
+            lig_legs = reo.get("lig_legs", 0)
+            s_lig = reo.get("s_lig", 0.0)
+
+            reo_table_data = [
+                ["Bottom reinforcement", _reo_label(nb_bot, db_bot)],
+                ["Top reinforcement", _reo_label(nb_top, db_top)],
+            ]
+
+            reo_table_data.append(["Shear reinforcement (links)", _lig_label(lig_d, lig_legs, s_lig)])
+
+            if cover_bot is not None:
+                reo_table_data.append(["Bottom cover", f"{float(cover_bot):.0f} mm"])
+            if cover_top is not None:
+                reo_table_data.append(["Top cover", f"{float(cover_top):.0f} mm"])
+
+            reo_table = Table(reo_table_data, colWidths=[2.5*inch, 3*inch])
+            reo_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f8f9fa')),
+                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 6),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+                ('TOPPADDING', (0, 0), (-1, -1), 4),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ]))
+            story.append(Paragraph("<b>Reinforcement</b>", subheading_style))
+            story.append(reo_table)
+            story.append(Spacer(1, 0.15*inch))
         
-        # Actions (if needed, can add as table too)
-        actions = inputs_sections.get("actions", {})
-        if actions and (actions.get("Mu_star") or actions.get("Vu_star")):
-            actions_table_data = []
-            if "Mu_star" in actions and actions.get("Mu_star"):
-                actions_table_data.append(["Bending moment (Mu*)", f"{actions.get('Mu_star', 'N/A'):.2f} kNm"])
-            if "Vu_star" in actions and actions.get("Vu_star"):
-                actions_table_data.append(["Shear force (Vu*)", f"{actions.get('Vu_star', 'N/A'):.2f} kN"])
-            
-            if actions_table_data:
-                actions_table = Table(actions_table_data, colWidths=[2.5*inch, 3*inch])
-                actions_table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f8f9fa')),
-                    ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-                    ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-                    ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                    ('LEFTPADDING', (0, 0), (-1, -1), 6),
-                    ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-                    ('TOPPADDING', (0, 0), (-1, -1), 4),
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-                ]))
-                story.append(Paragraph("<b>Design Actions</b>", subheading_style))
-                story.append(actions_table)
-                story.append(Spacer(1, 0.15*inch))
+        # Design Actions
+        actions = inputs_sections.get("actions", {}) or {}
+        actions_table_data = []
+
+        if "Mu_star" in actions:
+            actions_table_data.append(["Design moment (Mu*)", f"{actions.get('Mu_star', 0.0):.2f} kNm"])
+        if "Vu_star" in actions:
+            actions_table_data.append(["Design shear (Vu*)", f"{actions.get('Vu_star', 0.0):.2f} kN"])
+        if "Tu_star" in actions:
+            actions_table_data.append(["Design torsion (Tu*)", f"{actions.get('Tu_star', 0.0):.2f} kNm"])
+        if "P_star" in actions:
+            actions_table_data.append(["Applied prestress (P*)", f"{actions.get('P_star', 0.0):.2f} kN"])
+        if "N_star" in actions:
+            actions_table_data.append(["Axial force (N*)", f"{actions.get('N_star', 0.0):.2f} kN"])
+
+        if actions_table_data:
+            actions_table = Table(actions_table_data, colWidths=[2.5*inch, 3*inch])
+            actions_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f8f9fa')),
+                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 6),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+                ('TOPPADDING', (0, 0), (-1, -1), 4),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ]))
+            story.append(Paragraph("<b>Design Actions</b>", subheading_style))
+            story.append(actions_table)
+            story.append(Spacer(1, 0.15*inch))
         
-        # Figures section (section/reinforcement layout)
-        story.append(Paragraph("<b>Figures</b>", subheading_style))
-        story.append(Spacer(1, 0.1*inch))
-        
-        # Try to generate and export section/reinforcement figure
+        # ---------------- Inputs Figures (only if we successfully exported one) ----------------
+        exported_inputs_fig = None
+        exported_inputs_caption = None
+
         try:
             from inputs_page import make_summary_cross_section_figure
             import tempfile
-            
+            import os
+
             fig = make_summary_cross_section_figure()
-            if fig and hasattr(fig, 'write_image'):
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
+            if fig and hasattr(fig, "write_image"):
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
                     fig_path = tmp_file.name
                     if temp_figures is not None:
                         temp_figures.append(fig_path)
-                    # Export Plotly figure to PNG
-                    try:
-                        fig.write_image(fig_path, width=600, height=400, scale=2)
-                        if os.path.exists(fig_path):
-                            img = Image(fig_path, width=5*inch, height=3.33*inch)
-                            story.append(img)
-                            story.append(Paragraph("Cross-section and reinforcement layout", ParagraphStyle(
-                                'FigCaption',
-                                parent=styles['Normal'],
-                                fontSize=8,
-                                textColor=colors.grey,
-                                alignment=TA_CENTER,
-                                spaceBefore=2,
-                                spaceAfter=0.1*inch,
-                            )))
-                    except Exception:
-                        # Skip if export fails (kaleido might not be available)
-                        pass
+
+                # Export Plotly figure to PNG
+                try:
+                    fig.write_image(fig_path, width=700, height=450, scale=2)
+                    if os.path.exists(fig_path):
+                        exported_inputs_fig = fig_path
+                        exported_inputs_caption = "Cross-section and reinforcement layout"
+                except Exception:
+                    exported_inputs_fig = None
         except Exception:
-            # Skip if figure generation fails
-            pass
-        
-        story.append(PageBreak())
+            exported_inputs_fig = None
+
+        # If we actually have a figure, start a NEW page and show it
+        if exported_inputs_fig:
+            story.append(PageBreak())
+            story.append(Paragraph("Figures", heading_style))
+            story.append(Spacer(1, 0.1*inch))
+            img = Image(exported_inputs_fig, width=6.0*inch, height=3.86*inch)
+            story.append(img)
+            story.append(Spacer(1, 0.05*inch))
+            story.append(Paragraph(
+                exported_inputs_caption,
+                ParagraphStyle(
+                    "FigCaption",
+                    parent=styles["Normal"],
+                    fontSize=8,
+                    textColor=colors.grey,
+                    alignment=TA_CENTER,
+                    spaceBefore=2,
+                    spaceAfter=0.15*inch,
+                ),
+            ))
+
+        # Only page break after Inputs if there are checks to render
+        if check_sections:
+            story.append(PageBreak())
     
     # Design Checks Sections
     if check_sections:
@@ -1399,9 +1616,8 @@ def build_pdf_report(summary_rows, inputs_sections, check_sections, temp_figures
         story.append(Spacer(1, 0.1*inch))
         
         for check_idx, check in enumerate(check_sections):
-            # Add PageBreak before Shear section (but not before the first check)
-            check_title = check.get("title", "").lower()
-            if "shear" in check_title and check_idx > 0:
+            # Start each module on a new page (but do not create separate pages for ULS/SLS inside it)
+            if check_idx > 0:
                 story.append(PageBreak())
             
             # Check if this section has groups (unified), tabs (legacy), or steps (legacy fallback)
@@ -1413,14 +1629,30 @@ def build_pdf_report(summary_rows, inputs_sections, check_sections, temp_figures
                 # Use unified groups format (preferred)
                 module_title = check.get("title", "Check")
                 summary = check.get("summary", [])
-                _render_tabs_and_boxes(story, styles, module_title, summary, tabs=None, groups=groups)
+                _render_tabs_and_boxes(
+                    story,
+                    styles,
+                    module_title,
+                    summary,
+                    tabs=None,
+                    groups=groups,
+                    detail_level=detail_level,
+                )
             elif tabs:
                 # Use legacy tabs format
                 module_title = check.get("title", "Check")
                 summary = check.get("summary", [])
-                _render_tabs_and_boxes(story, styles, module_title, summary, tabs=tabs, groups=None)
+                _render_tabs_and_boxes(
+                    story,
+                    styles,
+                    module_title,
+                    summary,
+                    tabs=tabs,
+                    groups=None,
+                    detail_level=detail_level,
+                )
             else:
-                # Legacy: render steps
+                # Legacy: render steps (detailed only)
                 story.append(Paragraph(f"<b>{check.get('title', 'Check')}</b>", subheading_style))
                 
                 # Summary (2-line format)
@@ -1443,31 +1675,30 @@ def build_pdf_report(summary_rows, inputs_sections, check_sections, temp_figures
                 story.append(Spacer(1, 0.1*inch))
                 
                 # Steps
-                _render_steps(story, styles, steps)
+                if detail_level != "summary":
+                    _render_steps(story, styles, steps, available_width)
             
             # Figures (rendered for both tabs and steps)
             figures = check.get("figures", [])
             if figures:
+                story.append(PageBreak())
+                story.append(Paragraph("Figures", heading_style))
                 story.append(Spacer(1, 0.1*inch))
-                story.append(Paragraph("<b>Figures:</b>", styles['Normal']))
+
                 for fig_path in figures:
                     if fig_path and os.path.exists(fig_path):
                         try:
-                            img = Image(fig_path, width=5*inch, height=3*inch)
+                            img = Image(fig_path, width=6.0*inch, height=3.6*inch)
                             story.append(img)
-                            story.append(Spacer(1, 0.1*inch))
+                            story.append(Spacer(1, 0.15*inch))
                         except Exception:
                             # Skip figure if it can't be loaded
                             pass
             
             story.append(Spacer(1, 0.2*inch))
     
-    # Build PDF with header/footer on every page
-    doc.build(
-        story,
-        onFirstPage=lambda c, d: draw_header_footer(c, d, meta),
-        onLaterPages=lambda c, d: draw_header_footer(c, d, meta),
-    )
+    # Build PDF with header/footer on every page (handled by PageTemplate)
+    doc.multiBuild(story)
     
     # Get PDF bytes
     pdf_bytes = buffer.getvalue()

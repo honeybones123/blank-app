@@ -1,5 +1,7 @@
 import math
 import os
+import json
+import time
 import pandas as pd
 import streamlit as st
 
@@ -8,6 +10,7 @@ from state_and_helpers import (
     get_sync_callbacks,
     update_results,
     get_widget_key_for_shared,
+    TAB_KEYS,
 )
 from shear_diagrams import (
     plot_shear_torsion_section_2d,
@@ -23,6 +26,19 @@ from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_r
 from step_ui import render_expandable_step
 from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks
 from shear_checks_helpers import build_shear_check_rows_from_state
+
+# region agent log
+def _dbg_log(payload: dict) -> None:
+    try:
+        with open(
+            "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log",
+            "a",
+            encoding="utf-8",
+        ) as _f:
+            _f.write(json.dumps(payload) + "\n")
+    except Exception:
+        pass
+# endregion
 
 
 def _coalesce_num(v, default: float) -> float:
@@ -44,54 +60,293 @@ def _safe_float(x, fallback):
         return float(fallback)
 
 
-def build_reo_circles_from_state(b_mm: float, D_mm: float):
+def build_reo_circles_from_state(shape_code: str, dims: dict):
     """
     Returns list of circles for reo overlay:
       [{"x":..,"y":..,"r":..}, ...]
-    If your key names differ, just map them here.
+    Coordinates are in the same section coordinate system used elsewhere:
+      x in [0, W], y in [0, D] (y=0 at TOP)
     """
-    b = float(b_mm)
-    D = float(D_mm)
 
-    # --- CHANGE THESE KEY NAMES to match yours ---
-    n_bot  = int(_safe_float(get_param("nb_bot"), 4))
-    db_bot = _safe_float(get_param("db_bot"), 20.0)  # mm
+    def _count_from_spacing(width: float, db: float, s: float) -> int:
+        # centers must be >= db + s
+        c2c = db + s
+        if width <= db:
+            return 1
+        return max(1, int(math.floor((width - db) / c2c)) + 1)
 
-    n_top  = int(_safe_float(get_param("nb_top"), 2))
-    db_top = _safe_float(get_param("db_top"), 16.0)  # mm
+    def _xs_even(x0: float, x1: float, n: int):
+        if n <= 0:
+            return []
+        if n == 1:
+            return [(x0 + x1) / 2.0]
+        dx = (x1 - x0) / (n - 1)
+        return [x0 + i * dx for i in range(n)]
 
-    cover_bot = _safe_float(get_param("cover_bot"), 40.0)   # mm
-    cover_top = _safe_float(get_param("cover_top"), 40.0)   # mm
-    stirrup_db = _safe_float(get_param("lig_d"), 10.0)  # mm
+    def _split_flange_outstands(bf: float, web_w: float):
+        if web_w >= bf:
+            return None
+        xL_inner = (bf - web_w) / 2.0
+        xR_inner = xL_inner + web_w
+        return xL_inner, xR_inner
 
-    # Simple inside-face bar layout (teaching overlay)
-    # centres at cover + stirrup + bar/2
-    r_bot = db_bot / 2.0
-    r_top = db_top / 2.0
+    def _place_in_outstands(n: int, db: float, bf: float, web_w: float, cover_side: float, min_clear: float):
+        """
+        Places n bars in flange outstands only, with cover to:
+          - outer edge
+          - inner web face
+        Odd bar tries to go in web zone if it fits.
+        """
+        if n <= 0:
+            return []
 
-    x_min_bot = cover_bot + stirrup_db + r_bot
-    x_max_bot = b - (cover_bot + stirrup_db + r_bot)
-    y_bot = cover_bot + stirrup_db + r_bot
+        split = _split_flange_outstands(bf, web_w)
+        if split is None:
+            # treat like full-width rectangle
+            x0 = cover_side + db / 2
+            x1 = bf - cover_side - db / 2
+            return _xs_even(x0, x1, n)
 
-    x_min_top = cover_top + stirrup_db + r_top
-    x_max_top = b - (cover_top + stirrup_db + r_top)
-    y_top = D - (cover_top + stirrup_db + r_top)
+        xL_inner, xR_inner = split
+
+        # usable left outstand
+        L0 = cover_side + db / 2
+        L1 = xL_inner - cover_side - db / 2
+
+        # usable right outstand
+        R0 = xR_inner + cover_side + db / 2
+        R1 = bf - cover_side - db / 2
+
+        if L1 <= L0 or R1 <= R0:
+            raise ValueError(
+                f"No horizontal room in flange outstands after cover. bf={bf:.1f}, web_w={web_w:.1f}, "
+                f"cover_side={cover_side:.1f}, db={db:.1f}"
+            )
+
+        nL = n // 2
+        nR = n // 2
+        nC = 0
+
+        if n % 2 == 1:
+            # try center bar between inner faces
+            C0 = xL_inner + cover_side + db / 2
+            C1 = xR_inner - cover_side - db / 2
+            if C1 >= C0:
+                nC = 1
+            else:
+                nR += 1  # push extra to right if no web-zone room
+
+        xs = []
+        if nL > 0:
+            xs += _xs_even(L0, L1, nL)
+        if nC == 1:
+            xs += [bf / 2.0]
+        if nR > 0:
+            xs += _xs_even(R0, R1, nR)
+
+        return sorted(xs)
+
+    # -------------------------
+    # Read geometry
+    # -------------------------
+    shape_code = (shape_code or "RECT").upper()
+    D = float(dims.get("D", _safe_float(get_param("D"), 600.0)) or 600.0)
+
+    if shape_code == "RECT":
+        W = float(dims.get("b", _safe_float(get_param("b"), 300.0)) or 300.0)
+    else:
+        W = float(dims.get("bf", _safe_float(get_param("bf"), _safe_float(get_param("b"), 300.0))) or 300.0)
+
+    # T/I specifics
+    tf = float(dims.get("tf", _safe_float(get_param("tf"), 0.0)) or 0.0)
+    bw = float(dims.get("bw", _safe_float(get_param("bw"), 0.0)) or 0.0)
+    tw = float(dims.get("tw", _safe_float(get_param("tw"), bw)) or bw)
+
+    # Covers / spacing
+    cover_side = _safe_float(get_param("cover_side"), _safe_float(get_param("side_cover"), 25.0))
+    cover_top = _safe_float(get_param("cover_top"), _safe_float(get_param("top_cover"), 25.0))
+    cover_bot = _safe_float(get_param("cover_bot"), _safe_float(get_param("bottom_cover"), 25.0))
+    min_clear = _safe_float(get_param("min_clear_spacing"), 20.0)
+
+    # Row gaps (clear gap between bars)
+    rowgap_top = _safe_float(get_param("rowgap_top"), 20.0)
+    rowgap_bot = _safe_float(get_param("rowgap_bot"), 20.0)
+    rowgap_top = max(rowgap_top, min_clear)
+    rowgap_bot = max(rowgap_bot, min_clear)
+
+    # -------------------------
+    # Read reinforcement (prefer 2-layer keys; fallback to nb_top/nb_bot)
+    # -------------------------
+    top1_mode = str(get_param("top1_layout_mode", "Count"))
+    top2_mode = str(get_param("top2_layout_mode", "Count"))
+    bot1_mode = str(get_param("bot1_layout_mode", "Count"))
+    bot2_mode = str(get_param("bot2_layout_mode", "Count"))
+
+    nb_or_s_top_1 = _safe_float(get_param("nb_or_s_top_1"), _safe_float(get_param("nb_top"), 2))
+    nb_or_s_top_2 = _safe_float(get_param("nb_or_s_top_2"), 0.0)
+    db_top_1 = _safe_float(get_param("db_top_1"), _safe_float(get_param("db_top"), 16.0))
+    db_top_2 = _safe_float(get_param("db_top_2"), db_top_1)
+
+    nb_or_s_bot_1 = _safe_float(get_param("nb_or_s_bot_1"), _safe_float(get_param("nb_bot"), 4))
+    nb_or_s_bot_2 = _safe_float(get_param("nb_or_s_bot_2"), 0.0)
+    db_bot_1 = _safe_float(get_param("db_bot_1"), _safe_float(get_param("db_bot"), 20.0))
+    db_bot_2 = _safe_float(get_param("db_bot_2"), db_bot_1)
+
+    # resolve to counts
+    def _resolve_n(mode: str, nb_or_s: float, width: float, db: float) -> int:
+        if str(mode).lower().startswith("count"):
+            return int(nb_or_s)
+        # spacing mode
+        return _count_from_spacing(width, db, nb_or_s)
 
     circles = []
 
-    # bottom row
-    if n_bot <= 1:
-        circles.append({"x": b/2, "y": y_bot, "r": r_bot})
-    else:
-        xs = [x_min_bot + i*(x_max_bot - x_min_bot)/(n_bot - 1) for i in range(n_bot)]
-        circles += [{"x": x, "y": y_bot, "r": r_bot} for x in xs]
+    # -------------------------
+    # TOP layers
+    # -------------------------
+    if shape_code == "RECT":
+        width_top_1 = (W - 2 * cover_side - db_top_1)
+        n_top_1 = _resolve_n(top1_mode, nb_or_s_top_1, width_top_1, db_top_1)
+        n_top_2 = _resolve_n(top2_mode, nb_or_s_top_2, width_top_1, db_top_2)
+        x0_1 = cover_side + db_top_1 / 2
+        x1_1 = W - cover_side - db_top_1 / 2
+        y1 = cover_top + db_top_1 / 2
+        y2 = y1 + (db_top_1 / 2) + rowgap_top + (db_top_2 / 2)
 
-    # top row
-    if n_top <= 1:
-        circles.append({"x": b/2, "y": y_top, "r": r_top})
-    else:
-        xs = [x_min_top + i*(x_max_top - x_min_top)/(n_top - 1) for i in range(n_top)]
-        circles += [{"x": x, "y": y_top, "r": r_top} for x in xs]
+        if n_top_1 > 0:
+            xs = _xs_even(x0_1, x1_1, n_top_1)
+            circles += [{"x": x, "y": y1, "r": db_top_1 / 2} for x in xs]
+
+        if n_top_2 > 0:
+            x0_2 = cover_side + db_top_2 / 2
+            x1_2 = W - cover_side - db_top_2 / 2
+            xs = _xs_even(x0_2, x1_2, n_top_2)
+            circles += [{"x": x, "y": y2, "r": db_top_2 / 2} for x in xs]
+
+    elif shape_code == "T":
+        # top in flange outstands (web width = bw)
+        web_w = bw if bw > 0 else max(1.0, W / 3.0)
+        # use full flange width for count from spacing
+        width_top_1 = (W - 2 * cover_side - db_top_1)
+        n_top_1 = _resolve_n(top1_mode, nb_or_s_top_1, width_top_1, db_top_1)
+        n_top_2 = _resolve_n(top2_mode, nb_or_s_top_2, width_top_1, db_top_2)
+
+        y1 = cover_top + db_top_1 / 2
+        y2 = y1 + (db_top_1 / 2) + rowgap_top + (db_top_2 / 2)
+
+        # flange vertical fit for 2nd layer
+        if n_top_2 > 0 and tf > 0:
+            if y2 + db_top_2 / 2 > tf + 1e-9:
+                raise ValueError(
+                    f"Top flange too thin for 2 layers: tf={tf:.1f} needs cover_top+db1+rowgap+db2 <= tf "
+                    f"({cover_top:.1f}+{db_top_1:.1f}+{rowgap_top:.1f}+{db_top_2:.1f}="
+                    f"{(cover_top + db_top_1 + rowgap_top + db_top_2):.1f})"
+                )
+
+        if n_top_1 > 0:
+            xs = _place_in_outstands(n_top_1, db_top_1, W, web_w, cover_side, min_clear)
+            circles += [{"x": x, "y": y1, "r": db_top_1 / 2} for x in xs]
+        if n_top_2 > 0:
+            xs = _place_in_outstands(n_top_2, db_top_2, W, web_w, cover_side, min_clear)
+            circles += [{"x": x, "y": y2, "r": db_top_2 / 2} for x in xs]
+
+    elif shape_code == "I":
+        # top in flange outstands (web width = tw)
+        web_w = tw if tw > 0 else max(1.0, W / 3.0)
+        width_top_1 = (W - 2 * cover_side - db_top_1)
+        n_top_1 = _resolve_n(top1_mode, nb_or_s_top_1, width_top_1, db_top_1)
+        n_top_2 = _resolve_n(top2_mode, nb_or_s_top_2, width_top_1, db_top_2)
+
+        y1 = cover_top + db_top_1 / 2
+        y2 = y1 + (db_top_1 / 2) + rowgap_top + (db_top_2 / 2)
+
+        if n_top_2 > 0 and tf > 0:
+            if y2 + db_top_2 / 2 > tf + 1e-9:
+                raise ValueError(
+                    f"Top flange too thin for 2 layers: tf={tf:.1f} needs cover_top+db1+rowgap+db2 <= tf "
+                    f"({cover_top:.1f}+{db_top_1:.1f}+{rowgap_top:.1f}+{db_top_2:.1f}="
+                    f"{(cover_top + db_top_1 + rowgap_top + db_top_2):.1f})"
+                )
+
+        if n_top_1 > 0:
+            xs = _place_in_outstands(n_top_1, db_top_1, W, web_w, cover_side, min_clear)
+            circles += [{"x": x, "y": y1, "r": db_top_1 / 2} for x in xs]
+        if n_top_2 > 0:
+            xs = _place_in_outstands(n_top_2, db_top_2, W, web_w, cover_side, min_clear)
+            circles += [{"x": x, "y": y2, "r": db_top_2 / 2} for x in xs]
+
+    # -------------------------
+    # BOTTOM layers
+    # -------------------------
+    if shape_code == "RECT":
+        width_bot_1 = (W - 2 * cover_side - db_bot_1)
+        n_bot_1 = _resolve_n(bot1_mode, nb_or_s_bot_1, width_bot_1, db_bot_1)
+        n_bot_2 = _resolve_n(bot2_mode, nb_or_s_bot_2, width_bot_1, db_bot_2)
+
+        x0_1 = cover_side + db_bot_1 / 2
+        x1_1 = W - cover_side - db_bot_1 / 2
+        y1 = D - cover_bot - db_bot_1 / 2
+        y2 = y1 - (db_bot_1 / 2) - rowgap_bot - (db_bot_2 / 2)
+
+        if n_bot_1 > 0:
+            xs = _xs_even(x0_1, x1_1, n_bot_1)
+            circles += [{"x": x, "y": y1, "r": db_bot_1 / 2} for x in xs]
+        if n_bot_2 > 0:
+            x0_2 = cover_side + db_bot_2 / 2
+            x1_2 = W - cover_side - db_bot_2 / 2
+            xs = _xs_even(x0_2, x1_2, n_bot_2)
+            circles += [{"x": x, "y": y2, "r": db_bot_2 / 2} for x in xs]
+
+    elif shape_code == "T":
+        # bottom bars in WEB for T (width = bw)
+        web_w = bw if bw > 0 else max(1.0, W / 3.0)
+        x_web0 = (W - web_w) / 2.0
+        x_web1 = x_web0 + web_w
+
+        width_bot_1 = (web_w - 2 * cover_side - db_bot_1)
+        n_bot_1 = _resolve_n(bot1_mode, nb_or_s_bot_1, width_bot_1, db_bot_1)
+        n_bot_2 = _resolve_n(bot2_mode, nb_or_s_bot_2, width_bot_1, db_bot_2)
+
+        y1 = D - cover_bot - db_bot_1 / 2
+        y2 = y1 - (db_bot_1 / 2) - rowgap_bot - (db_bot_2 / 2)
+
+        if n_bot_1 > 0:
+            x0_1 = x_web0 + cover_side + db_bot_1 / 2
+            x1_1 = x_web1 - cover_side - db_bot_1 / 2
+            xs = _xs_even(x0_1, x1_1, n_bot_1)
+            circles += [{"x": x, "y": y1, "r": db_bot_1 / 2} for x in xs]
+        if n_bot_2 > 0:
+            x0_2 = x_web0 + cover_side + db_bot_2 / 2
+            x1_2 = x_web1 - cover_side - db_bot_2 / 2
+            xs = _xs_even(x0_2, x1_2, n_bot_2)
+            circles += [{"x": x, "y": y2, "r": db_bot_2 / 2} for x in xs]
+
+    elif shape_code == "I":
+        # bottom in bottom flange outstands (web width = tw)
+        web_w = tw if tw > 0 else max(1.0, W / 3.0)
+        width_bot_1 = (W - 2 * cover_side - db_bot_1)
+        n_bot_1 = _resolve_n(bot1_mode, nb_or_s_bot_1, width_bot_1, db_bot_1)
+        n_bot_2 = _resolve_n(bot2_mode, nb_or_s_bot_2, width_bot_1, db_bot_2)
+
+        y1 = D - cover_bot - db_bot_1 / 2
+        y2 = y1 - (db_bot_1 / 2) - rowgap_bot - (db_bot_2 / 2)
+
+        # flange vertical fit for 2nd bottom layer (assume same tf)
+        if n_bot_2 > 0 and tf > 0:
+            # bottom flange zone is y in [D-tf, D]
+            if (y2 - db_bot_2 / 2) < (D - tf) - 1e-9:
+                raise ValueError(
+                    f"Bottom flange too thin for 2 layers: tf={tf:.1f} needs cover_bot+db1+rowgap+db2 <= tf "
+                    f"({cover_bot:.1f}+{db_bot_1:.1f}+{rowgap_bot:.1f}+{db_bot_2:.1f}="
+                    f"{(cover_bot + db_bot_1 + rowgap_bot + db_bot_2):.1f})"
+                )
+
+        if n_bot_1 > 0:
+            xs = _place_in_outstands(n_bot_1, db_bot_1, W, web_w, cover_side, min_clear)
+            circles += [{"x": x, "y": y1, "r": db_bot_1 / 2} for x in xs]
+        if n_bot_2 > 0:
+            xs = _place_in_outstands(n_bot_2, db_bot_2, W, web_w, cover_side, min_clear)
+            circles += [{"x": x, "y": y2, "r": db_bot_2 / 2} for x in xs]
 
     return circles
 
@@ -879,6 +1134,24 @@ def compute_shear_results(publish: bool = True) -> dict:
     from shear_core import ShearInputs, run_shear_calc
     
     recalc_derived_values()
+
+    # region agent log
+    missing_widget_keys = [k for k in TAB_KEYS.keys() if k not in st.session_state]
+    _dbg_log(
+        {
+            "sessionId": "debug-session",
+            "runId": "pre",
+            "hypothesisId": "D",
+            "location": "shear_page.py:1139",
+            "message": "session_state widget inventory snapshot",
+            "data": {
+                "missing_widget_keys_count": len(missing_widget_keys),
+                "missing_widget_keys_sample": missing_widget_keys[:20],
+            },
+            "timestamp": int(time.time() * 1000),
+        }
+    )
+    # endregion
     
     # --- Read inputs (shared state) ---
     b = get_param("b", 300.0)
@@ -894,6 +1167,49 @@ def compute_shear_results(publish: bool = True) -> dict:
     Tu_star = get_param("Tu_star", get_param("Tu_star_manual", 0.0))
     N_star = get_param("N_star", 0.0)
     P_v = get_param("P_star", 0.0)
+    # region agent log
+    _dbg_log(
+        {
+            "sessionId": "debug-session",
+            "runId": "pre",
+            "hypothesisId": "E",
+            "location": "shear_page.py:1156",
+            "message": "design action keys snapshot",
+            "data": {
+                "Tu_star": Tu_star,
+                "Mu_star": M_star,
+                "Vu_star": Vu_star,
+                "Tu_star_state": st.session_state.get("Tu_star"),
+                "Mu_star_manual_state": st.session_state.get("Mu_star_manual"),
+                "Vu_star_manual_state": st.session_state.get("Vu_star_manual"),
+                "shear_Tu_star": st.session_state.get("shear_Tu_star"),
+                "inputs_Tu_star": st.session_state.get("inputs_Tu_star"),
+                "actions_Tu_star": st.session_state.get("actions_Tu_star"),
+                "load_Mstar_proxy": st.session_state.get("load_Mstar_proxy"),
+                "load_Vstar_proxy": st.session_state.get("load_Vstar_proxy"),
+            },
+            "timestamp": int(time.time() * 1000),
+        }
+    )
+    # endregion
+    # region agent log
+    _dbg_log(
+        {
+            "sessionId": "debug-session",
+            "runId": "pre",
+            "hypothesisId": "C",
+            "location": "shear_page.py:1136",
+            "message": "compute_shear_results Tu_star snapshot",
+            "data": {
+                "Tu_star": Tu_star,
+                "Tu_star_state": st.session_state.get("Tu_star"),
+                "shear_Tu_star": st.session_state.get("shear_Tu_star"),
+                "inputs_Tu_star": st.session_state.get("inputs_Tu_star"),
+            },
+            "timestamp": int(time.time() * 1000),
+        }
+    )
+    # endregion
     
     lig_d = get_param("lig_d", 10.0)
     legs = get_param("lig_legs", 2)
@@ -902,14 +1218,15 @@ def compute_shear_results(publish: bool = True) -> dict:
     A_st = get_param("Ast_bot", 0.0)
     A_pt = get_param("A_pt", 0.0)
     f_po = get_param("f_po", 0.0)
-    A_ct = b * D / 2.0 if b and D else 0.0
+    A_ct_default = get_param("A_ct_default", float(b * D / 2.0) if b and D else 0.0)
+    A_ct = get_param("shear_A_ct", A_ct_default)
     
     d_g = get_param("shear_d_g", get_param("d_g", 20.0))
     phi = get_param("phi_shear", 0.75)
-    sigma_cp = get_param("sigma_cp", 0.0) or 0.0
+    sigma_cp = float(get_param("sigma_cp", 0.0))
     
-    n_ducts = get_param("n_ducts", 0.0) or 0.0
-    duct_dia = get_param("duct_dia", 0.0) or 0.0
+    n_ducts = float(get_param("n_ducts", 0.0))
+    duct_dia = float(get_param("duct_dia", 0.0))
     sum_duct = n_ducts * (duct_dia ** 2) * math.pi / 4.0
     
     kd_option = get_param("k_d_option", "None (no ducts in web)")
@@ -1136,6 +1453,34 @@ def render_shear():
 
     sync_callbacks = get_sync_callbacks()
 
+    # region agent log
+    missing_widget_keys = [k for k in TAB_KEYS.keys() if k not in st.session_state]
+    _dbg_log(
+        {
+            "sessionId": "debug-session",
+            "runId": "pre",
+            "hypothesisId": "F",
+            "location": "shear_page.py:1460",
+            "message": "render_shear widget inventory + actions snapshot",
+            "data": {
+                "missing_widget_keys_count": len(missing_widget_keys),
+                "missing_widget_keys_sample": missing_widget_keys[:20],
+                "Tu_star_state": st.session_state.get("Tu_star"),
+                "Mu_star_manual_state": st.session_state.get("Mu_star_manual"),
+                "Vu_star_manual_state": st.session_state.get("Vu_star_manual"),
+                "shear_Tu_star": st.session_state.get("shear_Tu_star"),
+                "inputs_Tu_star": st.session_state.get("inputs_Tu_star"),
+                "actions_Tu_star": st.session_state.get("actions_Tu_star"),
+                "load_Mstar_proxy": st.session_state.get("load_Mstar_proxy"),
+                "load_Vstar_proxy": st.session_state.get("load_Vstar_proxy"),
+                "actions_source": st.session_state.get("actions_source"),
+            },
+            "timestamp": int(time.time() * 1000),
+        }
+    )
+    # endregion
+
+
     # --- Layout row: intro text (left) + dv diagram (right) ---
     col_left, col_right = st.columns([1, 1])  # 50/50 split
 
@@ -1236,24 +1581,63 @@ This page computes **ultimate shear and torsion capacity** outputs in accordance
     with col_geom:
         st.header("Geometry")
 
-        number_row(
-            "Width b (mm)",
-            "shear_b",
-            get_param("b", 300.0),
+        shape_options = ["RECT", "T", "I"]
+        sec_shape_current = st.session_state.get("sec_shape", "RECT")
+        if sec_shape_current not in shape_options:
+            sec_shape_current = "RECT"
+
+        select_row(
+            "Section shape",
+            "shear_sec_shape",
+            shape_options,
+            sec_shape_current,
             sync_callbacks,
-            help_text="Shared with Inputs tab.",
+            help_text="Matches Inputs page. Controls which geometry fields are shown.",
         )
+
+        # Get current values (widget key takes precedence if exists, otherwise use shared key)
+        D_val = _coalesce_num(st.session_state.get("shear_D", get_param("D", 600.0)), 600.0)
+        L_val = _coalesce_num(st.session_state.get("shear_L", get_param("L", 3000.0)), 3000.0)
+
+        sec_shape = st.session_state.get("shear_sec_shape", st.session_state.get("sec_shape", "RECT"))
+
+        if sec_shape == "RECT":
+            b_val = _coalesce_num(st.session_state.get("shear_b", get_param("b", 300.0)), 300.0)
+            number_row(
+                "Width b (mm)",
+                "shear_b",
+                b_val,
+                sync_callbacks,
+                help_text="Shared with Inputs tab.",
+            )
+        elif sec_shape == "T":
+            bf_val = _coalesce_num(st.session_state.get("shear_bf", get_param("bf", 600.0)), 600.0)
+            tf_val = _coalesce_num(st.session_state.get("shear_tf", get_param("tf", 120.0)), 120.0)
+            bw_val = _coalesce_num(st.session_state.get("shear_bw", get_param("bw", 300.0)), 300.0)
+
+            number_row("Flange width bf (mm)", "shear_bf", bf_val, sync_callbacks)
+            number_row("Flange thickness tf (mm)", "shear_tf", tf_val, sync_callbacks)
+            number_row("Web width bw (mm)", "shear_bw", bw_val, sync_callbacks)
+        elif sec_shape == "I":
+            bf_val = _coalesce_num(st.session_state.get("shear_bf", get_param("bf", 600.0)), 600.0)
+            tf_val = _coalesce_num(st.session_state.get("shear_tf", get_param("tf", 120.0)), 120.0)
+            tw_val = _coalesce_num(st.session_state.get("shear_tw", get_param("tw", 200.0)), 200.0)
+
+            number_row("Top flange width bf (mm)", "shear_bf", bf_val, sync_callbacks)
+            number_row("Top flange thickness tf (mm)", "shear_tf", tf_val, sync_callbacks)
+            number_row("Web thickness tw (mm)", "shear_tw", tw_val, sync_callbacks)
+
         number_row(
             "Depth D (mm)",
             "shear_D",
-            get_param("D", 600.0),
+            D_val,
             sync_callbacks,
             help_text="Overall section depth, shared with Inputs.",
         )
         number_row(
             "Span L (mm)",
             "shear_L",
-            get_param("L", 3000.0),
+            L_val,
             sync_callbacks,
             help_text="Clear span or design span for this section.",
         )
@@ -1487,11 +1871,11 @@ This page computes **ultimate shear and torsion capacity** outputs in accordance
     Ec = get_param("Ec")
     Es = get_param("Es")
 
-    M_star = get_param("Mu_star_manual") or 0.0
-    V_star = get_param("load_Vstar_proxy") or 0.0
-    T_star = get_param("Tu_star") or 0.0
-    N_star = get_param("N_star") or 0.0
-    P_v = get_param("P_star") or 0.0
+    M_star = _coalesce_num(get_param("Mu_star_manual"), 0.0)
+    V_star = _coalesce_num(get_param("load_Vstar_proxy"), 0.0)
+    T_star = _coalesce_num(get_param("Tu_star"), 0.0)
+    N_star = _coalesce_num(get_param("N_star"), 0.0)
+    P_v = _coalesce_num(get_param("P_star"), 0.0)
 
     lig_d = get_param("lig_d")
     legs = get_param("lig_legs")
@@ -1501,7 +1885,8 @@ This page computes **ultimate shear and torsion capacity** outputs in accordance
     A_st = st.session_state.get("shear_A_st", float(4 * (math.pi * 20 ** 2 / 4)))
     A_pt = st.session_state.get("shear_A_pt", 0.0)
     f_po = st.session_state.get("shear_f_po", 0.0)
-    A_ct = st.session_state.get("shear_A_ct", float(b * D / 2.0) if b and D else 0.0)
+    A_ct_default = get_param("A_ct_default", float(b * D / 2.0) if b and D else 0.0)
+    A_ct = st.session_state.get("shear_A_ct", A_ct_default)
     d_g = get_param("shear_d_g", 20.0)
     phi = get_param("phi_shear", 0.75)  # Now synced via shared state
     sigma_cp = 0.0  # Prestress removed from UI, default to 0.0
@@ -1516,25 +1901,51 @@ This page computes **ultimate shear and torsion capacity** outputs in accordance
     # Read θ from shared state (read-only, no widget)
     theta_deg = float(get_param("crack_theta_deg", 45.0))
 
-    # Calculate Step 1 values (torsion geometry)
-    cover_t = 40.0  # assumed for closed stirrup centroid
-    A_cp = b * D
-    u_c = 2 * (b + D)
-    Ao = 0.9 * A_cp
+    # Calculate Step 1 values (torsion geometry) — single source of truth (shear_core)
+    from shear_core import ShearInputs, run_shear_calc
 
-    # Closed stirrup path (reused in Step 2 & εx)
-    uh = 2 * ((b - cover_t) + (D - cover_t))
-    A_oh = (b - cover_t) * (D - cover_t)
+    sum_duct_core = st.session_state.get("shear_sum_duct", get_param("sum_duct", 0.0))
 
-    sqrt_fc = math.sqrt(fc)
-    denom = 0.33 * sqrt_fc
-    Tcr_Nmm = 0.33 * sqrt_fc * (A_cp ** 2) / u_c * math.sqrt(
-        1 + (sigma_cp / denom if denom > 0 else 0.0)
-    )
-    Tcr_kNm = Tcr_Nmm / 1e6
+    shear_results = run_shear_calc(ShearInputs(
+        b=b,
+        D=D,
+        d=d,
+        fc=fc,
+        fsy=fsy,
+        Ec=Ec,
+        Es=Es,
+        M_star=M_star,
+        V_star=V_star,
+        T_star=T_star,
+        N_star=N_star,
+        P_v=P_v,
+        phi=phi,
+        sigma_cp=sigma_cp,
+        A_st=A_st,
+        A_pt=A_pt,
+        f_po=f_po,
+        A_ct=A_ct,
+        d_g=d_g,
+        lig_d=lig_d,
+        legs=legs,
+        s_lig=s_lig,
+        use_general_kv=use_general_kv,
+        sum_duct=sum_duct_core,
+        k_d=k_d,
+    ))
 
-    torsion_required_limit = 0.25 * phi * Tcr_kNm
-    torsion_required = T_star > torsion_required_limit
+    # Pull torsion screening directly from shear_core results
+    torsion_required = bool(getattr(shear_results, "torsion_required", False))
+    torsion_required_limit = float(getattr(shear_results, "torsion_required_limit", 0.0) or 0.0)
+    Tcr_kNm = float(getattr(shear_results, "Tcr_kNm", 0.0) or 0.0)
+
+    b_used = float(getattr(shear_results, "b_used", _coalesce_num(get_param("b"), 0.0)))
+    D_used = float(getattr(shear_results, "D_used", _coalesce_num(get_param("D"), 0.0)))
+    A_cp = float(getattr(shear_results, "A_cp", b_used * D_used) or 0.0)
+    u_c = float(getattr(shear_results, "u_c", 2 * (b_used + D_used)) or 0.0)
+    Ao = float(getattr(shear_results, "Ao", 0.9 * A_cp) or 0.0)
+    uh = float(getattr(shear_results, "uh", 2 * (max(b_used - 40, 0) + max(D_used - 40, 0))) or 0.0)
+    A_oh = float(getattr(shear_results, "A_oh", max(b_used - 40, 0) * max(D_used - 40, 0)) or 0.0)
 
     step1_req = ">" if torsion_required else "\\le"
     step1_text = (
@@ -1718,8 +2129,8 @@ This page computes **ultimate shear and torsion capacity** outputs in accordance
 
 **Inputs:**
 
-- Section: $b = {b:.0f}$ mm, $D = {D:.0f}$ mm  
-- Derived: $A_{{cp}} = bD = {A_cp:.0f}$ mm², $u_c = 2(b + D) = {u_c:.0f}$ mm  
+- Section: $b = {b_used:.0f}$ mm, $D = {D_used:.0f}$ mm  
+- Derived: $A_{{cp}} = {A_cp:.0f}$ mm², $u_c = {u_c:.0f}$ mm  
 - Concrete: $f'_c = {fc:.1f}$ MPa, $\\sigma_{{cp}} = {sigma_cp:.2f}$ MPa  
 - Torsion geometry: $A_o = 0.9 A_{{cp}} = {Ao:.0f}$ mm², $u_h = {uh:.0f}$ mm  
 
@@ -1896,40 +2307,92 @@ $$\\large V_{{eq}}^* = V^* = {V_eq:.1f}\\ \\text{{kN}}$$
             
         # Diagram render function
         def check2_diagram_fn():
-            # Mode selector for diagram - now includes all three options
-            diagram_mode = st.radio(
-                "Stress flow mode:",
-                ["V+T (Combined)", "V (Shear only)", "T (Torsion only)"],
-                index=0,
-                key="shear_check2_diagram_mode",
-                horizontal=True,
+            # Mode selector for diagram - standalone buttons
+            st.markdown("**Stress flow mode:**")
+
+            OPTIONS = [
+                ("V+T (Combined)", "VT"),
+                ("V (Shear only)", "V"),
+                ("T (Torsion only)", "T"),
+            ]
+
+            key = "stress_flow_mode"
+            mode = st.session_state.get(key, "VT")
+            if mode not in {"VT", "V", "T"}:
+                mode = "VT"
+                st.session_state[key] = mode
+
+            st.markdown(
+                """
+                <style>
+                  div[data-testid="column"] > div:has(> div > button) button {
+                    width: 100%;
+                    border-radius: 10px;
+                    padding: 0.55rem 0.75rem;
+                    border: 1px solid rgba(49,51,63,0.2);
+                  }
+                </style>
+                """,
+                unsafe_allow_html=True,
             )
+
+            c1, c2, c3 = st.columns(3, gap="small")
+
+            def _mode_btn(col, label, value):
+                active = (st.session_state.get(key, "VT") == value)
+                with col:
+                    if st.button(
+                        label,
+                        key=f"btn_{key}_{value}",
+                        use_container_width=True,
+                        type="primary" if active else "secondary",
+                    ):
+                        st.session_state[key] = value
+
+            _mode_btn(c1, OPTIONS[0][0], OPTIONS[0][1])
+            _mode_btn(c2, OPTIONS[1][0], OPTIONS[1][1])
+            _mode_btn(c3, OPTIONS[2][0], OPTIONS[2][1])
+
+            mode = st.session_state.get(key, "VT")
+            mode_short = "V+T" if mode == "VT" else ("V" if mode == "V" else "T")
             
-            # Map radio selection to mode string
-            mode_map = {
-                "V+T (Combined)": "V+T",
-                "V (Shear only)": "V",
-                "T (Torsion only)": "T"
-            }
-            mode_short = mode_map[diagram_mode]
-            
-            # Get geometry from session state
-            b_mm = _safe_float(get_param("b"), 300.0)
-            D_mm = _safe_float(get_param("D"), 600.0)
-            
-            # Build reo circles from state
-            reo_circles = build_reo_circles_from_state(b_mm, D_mm)
-            
-            # Generate and display the shear+torsion section diagram
-            fig = plot_shear_torsion_section_2d(
-                b_mm=b_mm,
-                D_mm=D_mm,
-                mode=mode_short,
-                show_labels=True,
-                reo_circles=reo_circles,
-                reo_alpha=0.50,
-            )
-            st.pyplot(fig, use_container_width=True, clear_figure=True)
+            from section_layout import compute_section_layout
+            layout = compute_section_layout()
+            shape_name = layout.get("shape_name", "Rectangle (b × D)")
+            dims = layout.get("dims", {})
+            reo = layout.get("reo", {})
+
+            try:
+                fig = plot_shear_torsion_section_2d(
+                    shape_name=shape_name,
+                    dims=dims,
+                    reo=reo,
+                    mode=mode_short,
+                    show_labels=True,
+                )
+            except ValueError as e:
+                st.error(f"Reinforcement layout failed: {e}")
+                reo_no_bars = dict(reo)
+                reo_no_bars.update({
+                    "nb_top": 0,
+                    "db_top": 0.0,
+                    "nb_bot": 0,
+                    "db_bot": 0.0,
+                    "nb_or_s_top_1": 0.0,
+                    "nb_or_s_top_2": 0.0,
+                    "nb_or_s_bot_1": 0.0,
+                    "nb_or_s_bot_2": 0.0,
+                    "lig_d": 0.0,
+                    "lig_legs": 0,
+                })
+                fig = plot_shear_torsion_section_2d(
+                    shape_name=shape_name,
+                    dims=dims,
+                    reo=reo_no_bars,
+                    mode=mode_short,
+                    show_labels=True,
+                )
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
         # Info render function (popover)
         def check2_info_fn():
@@ -2048,79 +2511,72 @@ $$\\large d_v = {_fmt(d_v)}\\ \\text{{mm}}$$
             Asv_mm2 = float(Asv) if Asv else None
             s_lig_mm = float(s) if s else None
 
-            # Get reo layout (same as bending page uses)
-            from section_layout import compute_section_layout_cached
-            cover_bot = _coalesce_num(get_param("cover_bot", 40.0), 40.0)
-            cover_top = _coalesce_num(get_param("cover_top", 40.0), 40.0)
-            cover_side = float(get_param("cover_side", min(cover_top, cover_bot)) or min(cover_top, cover_bot))
-            
-            nb_or_s_bot_1 = _coalesce_num(get_param("nb_or_s_bot_1", 4.0), 4.0)
-            db_bot_1 = _coalesce_num(get_param("db_bot_1", 20.0), 20.0)
-            nb_or_s_bot_2 = _coalesce_num(get_param("nb_or_s_bot_2", 0.0), 0.0)
-            db_bot_2 = _coalesce_num(get_param("db_bot_2", 20.0), 20.0)
-            nb_or_s_top_1 = _coalesce_num(get_param("nb_or_s_top_1", 2.0), 2.0)
-            db_top_1 = _coalesce_num(get_param("db_top_1", 16.0), 16.0)
-            nb_or_s_top_2 = _coalesce_num(get_param("nb_or_s_top_2", 0.0), 0.0)
-            db_top_2 = _coalesce_num(get_param("db_top_2", 16.0), 16.0)
-            rowgap_bot = _coalesce_num(get_param("rowgap_bot", 60.0), 60.0)
-            rowgap_top = _coalesce_num(get_param("rowgap_top", 60.0), 60.0)
-            
-            layout = compute_section_layout_cached(
-                b=b_mm, D=D_mm,
-                cover_bot=cover_bot, cover_top=cover_top, cover_side=cover_side,
-                nb_or_s_bot_1=nb_or_s_bot_1, db_bot_1=db_bot_1,
-                nb_or_s_bot_2=nb_or_s_bot_2, db_bot_2=db_bot_2,
-                nb_or_s_top_1=nb_or_s_top_1, db_top_1=db_top_1,
-                nb_or_s_top_2=nb_or_s_top_2, db_top_2=db_top_2,
-                rowgap_bot=rowgap_bot, rowgap_top=rowgap_top,
-            )
-            
-            # Convert reo_layout to reo_shapes format (bottom=red, top=blue)
-            reo_shapes = []
-            reo_layout = layout.get("reo_layout", {})
-            
-            # Bottom bars (red)
-            for layer_data in reo_layout.get("bottom", []):
-                for x_pos in layer_data.get("x", []):
-                    reo_shapes.append({
-                        "x": float(x_pos),
-                        "y": float(layer_data["y"]),
-                        "r": float(layer_data["db"]) / 2.0,
-                        "fill": "rgba(220, 60, 60, 0.95)",   # bottom = red
-                        "line": "rgba(120, 20, 20, 1.0)",
-                    })
-            
-            # Top bars (blue)
-            for layer_data in reo_layout.get("top", []):
-                for x_pos in layer_data.get("x", []):
-                    reo_shapes.append({
-                        "x": float(x_pos),
-                        "y": float(layer_data["y"]),
-                        "r": float(layer_data["db"]) / 2.0,
-                        "fill": "rgba(60, 110, 220, 0.95)",  # top = blue
-                        "line": "rgba(20, 50, 120, 1.0)",
-                    })
+            from section_layout import compute_section_layout
+            layout = compute_section_layout()
+            shape_name = layout.get("shape_name", "Rectangle (b × D)")
+            dims = layout.get("dims", {})
+            reo = layout.get("reo", {})
+            b_plot = float(dims.get("bf", dims.get("b", b_mm)))
+            cover_bot = float(reo.get("cover_bot", 40.0))
+            cover_top = float(reo.get("cover_top", 40.0))
+            cover_side = float(reo.get("cover_side", min(cover_top, cover_bot)) or min(cover_top, cover_bot))
 
             # Get ligature parameters for drawing stirrups
             lig_d_val = float(lig_d) if lig_d else None
             lig_legs_val = int(legs) if legs else None
             
-            fig = plot_shear_step3_section_params_plotly(
-                b_mm=b_mm,
-                D_mm=D_mm,
-                bv_mm=bv_mm,
-                dv_mm=dv_mm,
-                Asv_mm2=Asv_mm2,
-                s_lig_mm=s_lig_mm,
-                reo_shapes=reo_shapes,
-                lig_d=lig_d_val,
-                lig_legs=lig_legs_val,
-                cover_bot=cover_bot,
-                cover_top=cover_top,
-                cover_side=cover_side,
-                height=850,  # 2.5x bigger (340 * 2.5 = 850)
-                label_pad=14,
-            )
+            try:
+                fig = plot_shear_step3_section_params_plotly(
+                    b_mm=b_plot,
+                    D_mm=D_mm,
+                    bv_mm=bv_mm,
+                    dv_mm=dv_mm,
+                    Asv_mm2=Asv_mm2,
+                    s_lig_mm=s_lig_mm,
+                    lig_d=lig_d_val,
+                    lig_legs=lig_legs_val,
+                    cover_bot=cover_bot,
+                    cover_top=cover_top,
+                    cover_side=cover_side,
+                    height=850,  # 2.5x bigger (340 * 2.5 = 850)
+                    label_pad=14,
+                    shape_name=shape_name,
+                    dims=dims,
+                    reo=reo,
+                )
+            except ValueError as e:
+                st.error(f"Reinforcement layout failed: {e}")
+                reo_no_bars = dict(reo)
+                reo_no_bars.update({
+                    "nb_top": 0,
+                    "db_top": 0.0,
+                    "nb_bot": 0,
+                    "db_bot": 0.0,
+                    "nb_or_s_top_1": 0.0,
+                    "nb_or_s_top_2": 0.0,
+                    "nb_or_s_bot_1": 0.0,
+                    "nb_or_s_bot_2": 0.0,
+                    "lig_d": 0.0,
+                    "lig_legs": 0,
+                })
+                fig = plot_shear_step3_section_params_plotly(
+                    b_mm=b_plot,
+                    D_mm=D_mm,
+                    bv_mm=bv_mm,
+                    dv_mm=dv_mm,
+                    Asv_mm2=Asv_mm2,
+                    s_lig_mm=s_lig_mm,
+                    lig_d=lig_d_val,
+                    lig_legs=lig_legs_val,
+                    cover_bot=cover_bot,
+                    cover_top=cover_top,
+                    cover_side=cover_side,
+                    height=850,  # 2.5x bigger (340 * 2.5 = 850)
+                    label_pad=14,
+                    shape_name=shape_name,
+                    dims=dims,
+                    reo=reo_no_bars,
+                )
             st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
         # Info render function (popover)

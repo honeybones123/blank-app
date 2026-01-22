@@ -1,0 +1,28 @@
+ValueError: Bottom flange too thin for 2 layers: tf=85.0 mm, needs cover_bot + db1 + rowgap + db2 <= tf (20.0+20.0+40.0+20.0 = 100.0).
+
+Traceback (most recent call last):
+  File "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/inputs_page.py", line 450, in make_summary_cross_section_figure
+    fig = make_sectionA_figure(
+          ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/section_props/plotly_section.py", line 157, in make_sectionA_figure
+    layout = compute_longitudinal_reo_layout(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/section_props/reo_layout.py", line 525, in compute_longitudinal_reo_layout_T_I
+    raise ValueError(
+ValueError: Bottom flange too thin for 2 layers: tf=85.0 mm, needs cover_bot + db1 + rowgap + db2 <= tf (20.0+20.0+40.0+20.0 = 100.0).
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/inputs_page.py", line 1084, in _render_materials_and_sectionA_2d
+    fig_sec = make_summary_cross_section_figure()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/inputs_page.py", line 472, in make_summary_cross_section_figure
+    fig = make_sectionA_figure(
+          ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/section_props/plotly_section.py", line 157, in make_sectionA_figure
+    layout = compute_longitudinal_reo_layout(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/section_props/reo_layout.py", line 525, in compute_longitudinal_reo_layout_T_I
+    raise ValueError(
+ValueError: Bottom flange too thin for 2 layers: tf=85.0 mm, needs cover_bot + db1 + rowgap + db2 <= tf (20.0+20.0+40.0+20.0 = 100.0).

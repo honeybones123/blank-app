@@ -20,7 +20,7 @@ def compute_crack_results(publish: bool = True) -> dict:
     import streamlit as st
     
     # Read geometry
-    b = get_param("b", 300.0)
+    b = get_param("b_crack", get_param("b", 300.0))
     D = get_param("D", 600.0)
     cover_bot = get_param("cover_bot", 40.0)
     db_bot = get_param("db_bot", 20.0)

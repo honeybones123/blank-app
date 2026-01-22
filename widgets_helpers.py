@@ -84,15 +84,6 @@ def _register_rendered_key(key: str) -> None:
         rendered = set()
         st.session_state["_rendered_widget_keys"] = rendered
     rendered.add(key)
-    # #region agent log
-    import json
-    import os
-    log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
-    try:
-        with open(log_path, "a") as f:
-            f.write(json.dumps({"location": "widgets_helpers.py:_register_rendered_key", "message": "Registered rendered key", "data": {"key": key, "rendered_count": len(rendered)}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "C"}) + "\n")
-    except: pass
-    # #endregion
 
 
 def apply_global_widget_css():
@@ -568,16 +559,6 @@ def number_row(label: str, key: str, default: float, sync_callbacks=None, help_t
         # Keep per-page keys stable and distinct.
         _register_rendered_key(key)
 
-        # #region agent log
-        import json
-        import os
-        log_path = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log"
-        try:
-            with open(log_path, "a") as f:
-                f.write(json.dumps({"location": "widgets_helpers.py:number_row", "message": "Widget creation start", "data": {"original_key": original_key, "label": label, "default": default}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "A"}) + "\n")
-        except: pass
-        # #endregion
-
         # ---- callback lookup ----
         on_change_callback = None
         if sync_callbacks and isinstance(sync_callbacks, dict):
@@ -586,12 +567,6 @@ def number_row(label: str, key: str, default: float, sync_callbacks=None, help_t
                 # Wrap callback to mark user edit before calling
                 on_change_callback = _wrap_user_edit(original_key, raw_callback)
 
-        # #region agent log
-        try:
-            with open(log_path, "a") as f:
-                f.write(json.dumps({"location": "widgets_helpers.py:number_row", "message": "Callback lookup", "data": {"original_key": original_key, "callback_found": on_change_callback is not None, "has_sync_callbacks": sync_callbacks is not None}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "B"}) + "\n")
-        except: pass
-        # #endregion
 
         # ---- shared-key lookup ----
         shared_key = TAB_KEYS.get(original_key)
@@ -645,7 +620,9 @@ def number_row(label: str, key: str, default: float, sync_callbacks=None, help_t
         # ---- V2: seed ONCE only; never reseed from shared on reruns ----
         # BUT: If widget exists with stale zero and shared/default has meaningful value, fix it
         value_before_seed = st.session_state.get(original_key)
-        widget_is_stale_zero = (value_before_seed is None) or (value_before_seed == 0) or (value_before_seed == 0.0)
+        widget_is_stale_zero = (value_before_seed is None) or (
+            (value_before_seed in (0, 0.0)) and (shared_key and not zero_allowed(shared_key))
+        )
         
         # Check if shared OR default is meaningful (shared might be 0, but default might not be)
         shared_is_meaningful = effective_default not in (None, "", 0, 0.0)
