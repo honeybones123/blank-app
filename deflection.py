@@ -712,6 +712,10 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         # Use the determined value for calculations
         Fdef_kNm = fd_ef_used
 
+    # Always refresh deflection results for summary/reporting.
+    from deflection_core import compute_deflection_results
+    compute_deflection_results(publish=True)
+
     # --------------------------------------------------------
     # SINGLE COMPUTED VALUES BLOCK (compute once, use everywhere)
     # --------------------------------------------------------

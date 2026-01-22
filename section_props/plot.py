@@ -185,5 +185,5 @@ def apply_section_axes(fig: go.Figure, *, W: float, D: float, pad_frac: float = 
     pad = pad_frac * W
     fig.update_xaxes(range=[-pad, W + pad])
     fig.update_yaxes(range=[D + 0.15 * D, -0.15 * D])
-    fig.update_xaxes(scaleanchor="y")
+    fig.update_yaxes(scaleanchor="x", scaleratio=1)
     return fig

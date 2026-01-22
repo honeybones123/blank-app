@@ -127,6 +127,31 @@ def _build_beam_3d_figure_pure_impl(b, D, L, Mu_star, phi_Mu_cap, c, strain_stat
 
     traces: list[go.BaseTraceType] = []
 
+    def _add_bar_cylinder(traces, x0, x1, y0, z0, db, color):
+        """Add a true-scale cylinder from x0->x1 with radius=db/2 in data units (mm)."""
+        r = float(db) / 2.0
+        if r <= 0:
+            return
+
+        n_theta = 18  # balance quality vs performance
+        theta = np.linspace(0, 2 * np.pi, n_theta)
+
+        # Surface grids (n_theta x 2)
+        X = np.column_stack([np.full(n_theta, x0), np.full(n_theta, x1)])
+        Y = np.column_stack([y0 + r * np.cos(theta), y0 + r * np.cos(theta)])
+        Z = np.column_stack([z0 + r * np.sin(theta), z0 + r * np.sin(theta)])
+
+        traces.append(
+            go.Surface(
+                x=X, y=Y, z=Z,
+                colorscale=[[0, color], [1, color]],
+                showscale=False,
+                opacity=1.0,
+                hoverinfo="skip",
+                name="Reo",
+            )
+        )
+
     # =======================================================
     #  Concrete prism
     # =======================================================
@@ -157,8 +182,6 @@ def _build_beam_3d_figure_pure_impl(b, D, L, Mu_star, phi_Mu_cap, c, strain_stat
     # =======================================================
     #  Longitudinal bars - use provided reo_layout
     # =======================================================
-    lw_base = 0.4
-
     # Bottom bars - draw each layer separately
     # BOTTOM reinforcement is BLUE
     for layer_data in reo_layout["bottom"]:
@@ -167,19 +190,8 @@ def _build_beam_3d_figure_pure_impl(b, D, L, Mu_star, phi_Mu_cap, c, strain_stat
         db = layer_data["db"]
         # Convert 2D y to 3D z (y in 2D section = z in 3D beam)
         z_pos = y_pos
-        line_w = max(2.0, abs(db) * lw_base)
         for x_pos in x_positions:
-            traces.append(
-                go.Scatter3d(
-                    x=[0, L],
-                    y=[x_pos, x_pos],  # x in 2D section = y in 3D beam
-                    z=[z_pos, z_pos],
-                    mode="lines",
-                    line=dict(width=line_w, color="blue"),
-                    hoverinfo="skip",
-                    showlegend=False,
-                )
-            )
+            _add_bar_cylinder(traces, 0.0, L, float(x_pos), float(z_pos), float(db), "#1f77b4")
 
     # Top bars - draw each layer separately
     # TOP reinforcement is RED
@@ -189,19 +201,8 @@ def _build_beam_3d_figure_pure_impl(b, D, L, Mu_star, phi_Mu_cap, c, strain_stat
         db = layer_data["db"]
         # Convert 2D y to 3D z (y in 2D section = z in 3D beam)
         z_pos = y_pos
-        line_w = max(2.0, abs(db) * lw_base)
         for x_pos in x_positions:
-            traces.append(
-                go.Scatter3d(
-                    x=[0, L],
-                    y=[x_pos, x_pos],  # x in 2D section = y in 3D beam
-                    z=[z_pos, z_pos],
-                    mode="lines",
-                    line=dict(width=line_w, color="red"),
-                    hoverinfo="skip",
-                    showlegend=False,
-                )
-            )
+            _add_bar_cylinder(traces, 0.0, L, float(x_pos), float(z_pos), float(db), "#d62728")
 
     # =======================================================
     #  Stirrups – use same concrete covers as reo
@@ -1633,17 +1634,26 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
         else:
             st.caption("Design actions: From SFD/BMD")
 
-        # Get current values (widget key takes precedence if exists, otherwise use shared key)
-        Mu_star_val = _coalesce_num(st.session_state.get("bending_Mu_star", get_param("uls_Mstar", 500.0)), 500.0)
+        # Contract: bending_Mu_star syncs to Mu_star_manual (shared input), NOT computed uls_Mstar (result)
+        Mu_star_val = _coalesce_num(
+            st.session_state.get("bending_Mu_star", get_param("Mu_star_manual", 500.0)),
+            500.0,
+        )
         N_star_val = _coalesce_num(st.session_state.get("bending_N_star", get_param("N_star", 0.0)), 0.0)
         P_star_val = _coalesce_num(st.session_state.get("bending_P_star", get_param("P_star", 0.0)), 0.0)
         phi_b_val = _coalesce_num(st.session_state.get("bending_phi_b", get_param("phi_bend", 0.85)), 0.85)
+
+        # If actions come from SFD/BMD, show computed Mu* separately but keep manual input stable
+        mu_from_sfd = get_param("uls_Mstar", None)
+        if current_source != "manual" and mu_from_sfd is not None:
+            st.caption(f"Using SFD/BMD actions: Mu* = {float(mu_from_sfd):.2f} kNm")
         
         number_row(
             "Design moment Mu* (kNm)",
             "bending_Mu_star",
             Mu_star_val,
             sync_callbacks,
+            disabled=(current_source != "manual"),
             help_text=(
                 "Factored design bending moment at the critical section. "
                 "Increasing Mu* increases bending demand and utilisation."

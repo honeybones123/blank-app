@@ -21,6 +21,31 @@ def _box_mesh(x0, x1, y0, y1, z0, z1):
     return vx, vy, vz, tri_i, tri_j, tri_k
 
 
+def _add_cylinder_surface(traces, x0, x1, y0, z0, db, color_hex):
+    """True-scale longitudinal bar as a cylinder surface (radius=db/2 in data units)."""
+    r = float(db) / 2.0
+    if r <= 0:
+        return
+
+    n_theta = 16  # performance/quality balance
+    theta = np.linspace(0.0, 2.0 * np.pi, n_theta)
+
+    X = np.column_stack([np.full(n_theta, float(x0)), np.full(n_theta, float(x1))])
+    Y = np.column_stack([float(y0) + r * np.cos(theta), float(y0) + r * np.cos(theta)])
+    Z = np.column_stack([float(z0) + r * np.sin(theta), float(z0) + r * np.sin(theta)])
+
+    traces.append(
+        go.Surface(
+            x=X, y=Y, z=Z,
+            colorscale=[[0, color_hex], [1, color_hex]],
+            showscale=False,
+            opacity=1.0,
+            hoverinfo="skip",
+            showlegend=False,
+        )
+    )
+
+
 def make_section_3d_figure(
     *,
     shape_name: str,
@@ -97,14 +122,90 @@ def make_section_3d_figure(
     else:
         raise ValueError("3D section viewer (Stage 1) supports T and I sections only.")
 
+    def _outline_points_T_I(shape_label, dims_map):
+        pts = []
+        if shape_label.startswith("T"):
+            bf = float(dims_map["bf"]); tf = float(dims_map["tf"]); bw = float(dims_map["bw"]); D = float(dims_map["D"])
+            x_web0 = (bf - bw) / 2.0
+            x_web1 = x_web0 + bw
+            pts = [
+                (0.0, 0.0),
+                (bf, 0.0),
+                (bf, tf),
+                (x_web1, tf),
+                (x_web1, D),
+                (x_web0, D),
+                (x_web0, tf),
+                (0.0, tf),
+                (0.0, 0.0),
+            ]
+        elif shape_label.startswith("I"):
+            bf = float(dims_map["bf"]); tf = float(dims_map["tf"]); tw = float(dims_map["tw"]); D = float(dims_map["D"])
+            x_web0 = (bf - tw) / 2.0
+            x_web1 = x_web0 + tw
+            pts = [
+                (0.0, 0.0),
+                (bf, 0.0),
+                (bf, tf),
+                (x_web1, tf),
+                (x_web1, D - tf),
+                (bf, D - tf),
+                (bf, D),
+                (0.0, D),
+                (0.0, D - tf),
+                (x_web0, D - tf),
+                (x_web0, tf),
+                (0.0, tf),
+                (0.0, 0.0),
+            ]
+        return pts
+
     # -------------------------
-    # Bars (extruded lines)
+    # Bars (extruded cylinders)
     # reo_layout format: {"top":[{"x":[...],"y":[...],"db":..}, ...], "bottom":[...]}
     # -------------------------
     traces = []
     traces.extend(meshes)
 
-    def add_bar_lines(layer_list, color: str):
+    # --- Wireframe outline like RECT viewer ---
+    pts2d = _outline_points_T_I(shape, dims)
+    ys = [p[0] for p in pts2d]  # section x -> 3D y
+    zs = [p[1] for p in pts2d]  # section y -> 3D z (depth from top)
+
+    wire_color = "rgba(20,20,20,0.95)"
+    wire_w = 6
+
+    # outline at x=0 and x=L_vis
+    traces.append(go.Scatter3d(
+        x=[0.0] * len(pts2d),
+        y=ys, z=zs,
+        mode="lines",
+        line=dict(width=wire_w, color=wire_color),
+        hoverinfo="skip",
+        showlegend=False,
+    ))
+    traces.append(go.Scatter3d(
+        x=[float(L_vis)] * len(pts2d),
+        y=ys, z=zs,
+        mode="lines",
+        line=dict(width=wire_w, color=wire_color),
+        hoverinfo="skip",
+        showlegend=False,
+    ))
+
+    # connect vertices along length
+    for i in range(len(pts2d) - 1):
+        traces.append(go.Scatter3d(
+            x=[0.0, float(L_vis)],
+            y=[ys[i], ys[i]],
+            z=[zs[i], zs[i]],
+            mode="lines",
+            line=dict(width=wire_w, color=wire_color),
+            hoverinfo="skip",
+            showlegend=False,
+        ))
+
+    def add_bar_cylinders(layer_list, color_hex: str):
         if not layer_list:
             return
         for layer in layer_list:
@@ -112,24 +213,21 @@ def make_section_3d_figure(
             y_list = layer.get("y") or []
             db = float(layer.get("db") or 0.0)
 
-            # we store y as a list in some layouts; accept scalar too
+            # layout sometimes stores y as [y]
             if isinstance(y_list, (list, tuple)) and len(y_list) > 0:
                 z_pos = float(y_list[0])
             else:
                 z_pos = float(y_list)
 
-            line_w = max(2.0, abs(db) * 0.4)
             for y_pos in xs:
-                traces.append(
-                    go.Scatter3d(
-                        x=[0.0, float(L_vis)],
-                        y=[float(y_pos), float(y_pos)],
-                        z=[z_pos, z_pos],
-                        mode="lines",
-                        line=dict(width=line_w, color=color),
-                        hoverinfo="skip",
-                        showlegend=False,
-                    )
+                _add_cylinder_surface(
+                    traces,
+                    0.0,
+                    float(L_vis),
+                    float(y_pos),
+                    z_pos,
+                    db,
+                    color_hex,
                 )
 
     if reo_layout:
@@ -154,8 +252,8 @@ def make_section_3d_figure(
         top_layers += _as_list(reo_layout.get("top_left"))
         top_layers += _as_list(reo_layout.get("top_right"))
 
-        add_bar_lines(bottom_layers, "blue")
-        add_bar_lines(top_layers, "red")
+        add_bar_cylinders(bottom_layers, "#1f77b4")
+        add_bar_cylinders(top_layers, "#d62728")
 
     # -------------------------
     # Shear cage (optional)

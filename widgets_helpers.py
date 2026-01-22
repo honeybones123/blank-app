@@ -1,4 +1,14 @@
 import streamlit as st
+import os
+import json
+from state_and_helpers import _debug_log_path
+
+# Debug log path used by optional widget debug blocks
+log_path = os.devnull
+try:
+    log_path = _debug_log_path()
+except Exception:
+    pass
 import streamlit.components.v1 as components
 import re
 import html
@@ -543,7 +553,15 @@ def _nonempty_label(label: str, fallback: str) -> str:
     return label if label else fallback
 
 
-def number_row(label: str, key: str, default: float, sync_callbacks=None, help_text: str | None = None, required: bool = False):
+def number_row(
+    label: str,
+    key: str,
+    default: float,
+    sync_callbacks=None,
+    help_text: str | None = None,
+    required: bool = False,
+    disabled: bool = False,
+):
     """Create a number input row with label on the left and widget on the right (V2-safe)."""
     col1, col2 = st.columns([1, 2], gap="medium")
     with col1:
@@ -686,6 +704,7 @@ def number_row(label: str, key: str, default: float, sync_callbacks=None, help_t
             format="%.1f",
             label_visibility="collapsed",
             on_change=on_change_callback,
+            disabled=disabled,
         )
         session_value_after_widget = st.session_state.get(original_key)
 

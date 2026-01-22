@@ -119,7 +119,7 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
     A_ct = inp.A_ct
     d_g = inp.d_g
     lig_d = inp.lig_d or 10.0
-    legs = inp.legs or 2.0
+    legs = 2.0 if inp.legs is None else float(inp.legs)
     s = inp.s_lig or 200.0
     use_general_kv = inp.use_general_kv
     sum_duct = inp.sum_duct
@@ -165,6 +165,8 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
 
     # ---------------- Shear reinforcement & effective section -----------
     Asv = legs * math.pi * lig_d**2 / 4.0
+    if legs == 0:
+        Asv = 0.0
     f_syv = fsy
 
     b_v = b - k_d * sum_duct
@@ -237,7 +239,7 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
     Vuc_N = k_v * b_v * d_v_safe * sqrt_fc_limited
     Vuc_kN = Vuc_N / 1e3
 
-    Vus_N = (Asv * f_syv * d_v_safe / s_safe) * cot(theta_v_rad)
+    Vus_N = 0.0 if legs == 0 else (Asv * f_syv * d_v_safe / s_safe) * cot(theta_v_rad)
     Vus_kN = Vus_N / 1e3
 
     Vu_total_kN = Vuc_kN + Vus_kN + P_v

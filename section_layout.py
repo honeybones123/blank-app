@@ -493,14 +493,20 @@ def compute_longitudinal_reo_layout(
     # Bottom Layer 1: y position from bottom cover
     y_bot_layer1 = D - (cover_bot + db_bot_1 / 2.0)
     
-    # Bottom Layer 2: y position with rowgap offset (above Layer 1)
-    y_bot_layer2 = y_bot_layer1 - rowgap_bot if layout_bot_2 else None
+    # Bottom Layer 2: clear rowgap between bar edges (above Layer 1)
+    if layout_bot_2:
+        y_bot_layer2 = y_bot_layer1 - (db_bot_1 / 2.0) - rowgap_bot - (db_bot_2 / 2.0)
+    else:
+        y_bot_layer2 = None
     
     # Top Layer 1: y position from top cover
     y_top_layer1 = cover_top + db_top_1 / 2.0
     
-    # Top Layer 2: y position with rowgap offset (below Layer 1)
-    y_top_layer2 = y_top_layer1 + rowgap_top if layout_top_2 else None
+    # Top Layer 2: clear rowgap between bar edges (below Layer 1)
+    if layout_top_2:
+        y_top_layer2 = y_top_layer1 + (db_top_1 / 2.0) + rowgap_top + (db_top_2 / 2.0)
+    else:
+        y_top_layer2 = None
     
     # Build bottom layers
     bottom_layers = []
@@ -544,6 +550,28 @@ def compute_longitudinal_reo_layout(
             "db": db_top_2,
         })
     
+    try:
+        import streamlit as st
+        if st.session_state.get("_debug_rows", False):
+            if layout_bot_2:
+                clear_gap_bot = (y_bot_layer1 - y_bot_layer2) - (db_bot_1 / 2.0) - (db_bot_2 / 2.0)
+                print(
+                    "ROW DEBUG bottom:",
+                    "db1", db_bot_1, "db2", db_bot_2,
+                    "y1", y_bot_layer1, "y2", y_bot_layer2,
+                    "clear_gap", clear_gap_bot,
+                )
+            if layout_top_2:
+                clear_gap_top = (y_top_layer2 - y_top_layer1) - (db_top_1 / 2.0) - (db_top_2 / 2.0)
+                print(
+                    "ROW DEBUG top:",
+                    "db1", db_top_1, "db2", db_top_2,
+                    "y1", y_top_layer1, "y2", y_top_layer2,
+                    "clear_gap", clear_gap_top,
+                )
+    except Exception:
+        pass
+
     return {
         "bottom": bottom_layers,
         "top": top_layers,

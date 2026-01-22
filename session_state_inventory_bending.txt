@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-01-22 12:19:06",
+  "timestamp": "2026-01-22 16:56:16",
   "page": "bending",
-  "boot_id": "boot_1769044286",
+  "boot_id": "boot_1769061366",
   "fresh_boot": false,
   "restored_from_snapshot": true,
-  "rendered_widget_count": 28,
-  "session_key_count": 574,
+  "rendered_widget_count": 30,
+  "session_key_count": 568,
   "missing_shared_for_rendered": [],
   "stray_session_keys": [
     "A_duct_total",
@@ -37,7 +37,7 @@
     "bending_action_source",
     "bending_action_source_radio",
     "bending_active_mode",
-    "bending_bf",
+    "bending_b",
     "bending_bf_bot",
     "bending_bot1_spacing",
     "bending_bot2_spacing",
@@ -65,11 +65,9 @@
     "bending_state",
     "bending_state_main",
     "bending_strain_state_local",
-    "bending_tf",
     "bending_tf_bot",
     "bending_top1_spacing",
     "bending_top2_spacing",
-    "bending_tw",
     "concrete_stress_model",
     "cr_env",
     "cr_faces",
@@ -126,6 +124,9 @@
     "deflection_total_mm",
     "deflection_tw",
     "deflection_utilisation",
+    "delta_long_add",
+    "delta_short_total",
+    "delta_total",
     "eps_cs_total",
     "eps_cs_total_micro",
     "eps_csd_t",
@@ -206,8 +207,7 @@
     "inputs_t_shrink",
     "inputs_tf",
     "inputs_tf_bot",
-    "inputs_top1_count",
-    "inputs_top1_layout_mode"
+    "inputs_top1_count"
   ],
   "pairs": [
     {
@@ -236,18 +236,18 @@
     },
     {
       "widget_key": "bending_L",
-      "widget_val": 1000.0,
+      "widget_val": 4000.0,
       "widget_type": "float",
       "shared_key": "L",
-      "shared_val": 1000.0,
+      "shared_val": 4000.0,
       "shared_type": "float"
     },
     {
       "widget_key": "bending_Mu_star",
-      "widget_val": 250.0,
+      "widget_val": 100.0,
       "widget_type": "float",
       "shared_key": "Mu_star_manual",
-      "shared_val": 250.0,
+      "shared_val": 100.0,
       "shared_type": "float"
     },
     {
@@ -267,19 +267,19 @@
       "shared_type": "float"
     },
     {
-      "widget_key": "bending_b",
-      "widget_val": 350.0,
+      "widget_key": "bending_bf",
+      "widget_val": 400.0,
       "widget_type": "float",
-      "shared_key": "b",
-      "shared_val": 350.0,
+      "shared_key": "bf",
+      "shared_val": 400.0,
       "shared_type": "float"
     },
     {
       "widget_key": "bending_bot1_count",
-      "widget_val": 3,
+      "widget_val": 1,
       "widget_type": "int",
       "shared_key": "bot1_count",
-      "shared_val": 3,
+      "shared_val": 1,
       "shared_type": "int"
     },
     {
@@ -292,10 +292,10 @@
     },
     {
       "widget_key": "bending_bot2_count",
-      "widget_val": 3,
+      "widget_val": 0,
       "widget_type": "int",
       "shared_key": "bot2_count",
-      "shared_val": 3,
+      "shared_val": 0,
       "shared_type": "int"
     },
     {
@@ -308,10 +308,10 @@
     },
     {
       "widget_key": "bending_cover_bot",
-      "widget_val": 15.0,
+      "widget_val": 30.0,
       "widget_type": "float",
       "shared_key": "cover_bot",
-      "shared_val": 15.0,
+      "shared_val": 30.0,
       "shared_type": "float"
     },
     {
@@ -324,35 +324,35 @@
     },
     {
       "widget_key": "bending_db_bot_1",
-      "widget_val": 40,
+      "widget_val": 12,
       "widget_type": "int",
       "shared_key": "db_bot_1",
-      "shared_val": 40,
+      "shared_val": 12,
       "shared_type": "int"
     },
     {
       "widget_key": "bending_db_bot_2",
-      "widget_val": 40,
+      "widget_val": 20,
       "widget_type": "int",
       "shared_key": "db_bot_2",
-      "shared_val": 40,
+      "shared_val": 20,
       "shared_type": "int"
     },
     {
       "widget_key": "bending_db_top_1",
-      "widget_val": 32,
+      "widget_val": 12,
       "widget_type": "int",
       "shared_key": "db_top_1",
-      "shared_val": 32,
+      "shared_val": 12,
       "shared_type": "int"
     },
     {
       "widget_key": "bending_db_top_2",
-      "widget_val": 16,
+      "widget_val": 32,
       "widget_type": "int",
       "shared_key": "db_top_2",
-      "shared_val": 16.0,
-      "shared_type": "float"
+      "shared_val": 32,
+      "shared_type": "int"
     },
     {
       "widget_key": "bending_fc",
@@ -396,18 +396,26 @@
     },
     {
       "widget_key": "bending_sec_shape",
-      "widget_val": "RECT",
+      "widget_val": "I",
       "widget_type": "str",
       "shared_key": "sec_shape",
-      "shared_val": "RECT",
+      "shared_val": "I",
       "shared_type": "str"
     },
     {
+      "widget_key": "bending_tf",
+      "widget_val": 100.0,
+      "widget_type": "float",
+      "shared_key": "tf",
+      "shared_val": 100.0,
+      "shared_type": "float"
+    },
+    {
       "widget_key": "bending_top1_count",
-      "widget_val": 4,
+      "widget_val": 1,
       "widget_type": "int",
       "shared_key": "top1_count",
-      "shared_val": 4,
+      "shared_val": 1,
       "shared_type": "int"
     },
     {
@@ -433,6 +441,14 @@
       "shared_key": "top2_layout_mode",
       "shared_val": "Count",
       "shared_type": "str"
+    },
+    {
+      "widget_key": "bending_tw",
+      "widget_val": 150.0,
+      "widget_type": "float",
+      "shared_key": "tw",
+      "shared_val": 150.0,
+      "shared_type": "float"
     }
   ]
 }

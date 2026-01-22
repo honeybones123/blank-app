@@ -436,7 +436,8 @@ def _add_section_dimension_labels(fig, *, shape_name: str, dims: dict, reo: dict
 # ------------------------------------------------------------
 def make_summary_cross_section_figure():
     import streamlit as st
-    from section_props.plot import plot_shape, apply_section_axes
+    import plotly.graph_objects as go
+    from section_props.plot import apply_section_axes
     from section_layout import compute_section_layout
 
     layout = compute_section_layout()
@@ -481,24 +482,50 @@ def make_summary_cross_section_figure():
             apply_section_axes(fig, W=W, D=D)
             return fig
 
-    rect_reo = {
-        "cover_top": reo.get("cover_top", 40.0),
-        "cover_bot": reo.get("cover_bot", 40.0),
-        "cover_side": reo.get("cover_side", 40.0),
-        "n_top": reo.get("nb_top", 0),
-        "db_top": reo.get("db_top", 0.0),
-        "n_bot": reo.get("nb_bot", 0),
-        "db_bot": reo.get("db_bot", 0.0),
-        "lig_d": reo.get("lig_d", 0.0),
-        "lig_legs": reo.get("lig_legs", 0),
-        "s_min": reo.get("min_clear_spacing", 25.0),
-        "rowgap_top": reo.get("rowgap_top", 60.0),
-        "rowgap_bot": reo.get("rowgap_bot", 60.0),
-    }
-    fig = plot_shape("Rectangle (b × D)", dims, reo=rect_reo)
-    W = float(dims.get("b", 0.0) or 0.0)
+    # --- Unified 2D reo: draw from canonical layout["reo_layout"] (same as 3D) ---
+    b = float(dims.get("b", 0.0) or 0.0)
     D = float(dims.get("D", 0.0) or 0.0)
-    apply_section_axes(fig, W=W, D=D)
+
+    fig = go.Figure()
+    fig.add_shape(
+        type="rect",
+        x0=0, y0=0, x1=b, y1=D,
+        line=dict(color="black", width=2),
+        fillcolor="rgba(0,0,0,0)",
+    )
+
+    reo_layout = layout.get("reo_layout") or {"bottom": [], "top": []}
+
+    # DEBUG (temporary): confirm 2D is using the same canonical reo_layout as 3D
+    if st.session_state.get("_debug_reo_layout", False):
+        st.write("2D RECT reo_layout:", reo_layout)
+
+    def _add_layer_circles(fig, layer, color):
+        xs = layer.get("x", []) or []
+        y = float(layer.get("y", 0.0) or 0.0)
+        db = float(layer.get("db", 0.0) or 0.0)
+        if (not xs) or (db <= 0):
+            return
+
+        r = db / 2.0
+        for x in xs:
+            x = float(x)
+            fig.add_shape(
+                type="circle",
+                x0=x - r, y0=y - r,
+                x1=x + r, y1=y + r,
+                line=dict(color="black", width=1),
+                fillcolor=color,
+                opacity=1.0,
+            )
+
+    for layer in (reo_layout.get("bottom") or []):
+        _add_layer_circles(fig, layer, "rgba(0,0,255,0.9)")
+
+    for layer in (reo_layout.get("top") or []):
+        _add_layer_circles(fig, layer, "rgba(255,0,0,0.9)")
+
+    apply_section_axes(fig, W=b, D=D)
     return fig
 
 # -------------------------------------------------------------------
@@ -536,6 +563,8 @@ def make_beam_3d_figure():
     from section_layout import compute_section_layout
     
     layout = compute_section_layout()
+    if st.session_state.get("_debug_reo_layout", False):
+        st.write("3D reo_layout:", (layout.get("reo_layout") if isinstance(layout, dict) else None))
     shape_name = str(layout.get("shape_name", "Rectangle (b × D)"))
     dims = layout.get("dims", {})
     reo = layout.get("reo", {})
@@ -647,6 +676,31 @@ def make_beam_3d_figure():
     # ----- longitudinal bar positions - use canonical layout -----
     reo_layout = layout.get("reo_layout") or {"bottom": [], "top": []}
 
+    def _add_bar_cylinder(traces, x0, x1, y0, z0, db, color):
+        """Add a true-scale cylinder from x0->x1 with radius=db/2 in data units (mm)."""
+        r = float(db) / 2.0
+        if r <= 0:
+            return
+
+        n_theta = 18  # balance quality vs performance
+        theta = np.linspace(0, 2 * np.pi, n_theta)
+
+        # Surface grids (n_theta x 2)
+        X = np.column_stack([np.full(n_theta, x0), np.full(n_theta, x1)])
+        Y = np.column_stack([y0 + r * np.cos(theta), y0 + r * np.cos(theta)])
+        Z = np.column_stack([z0 + r * np.sin(theta), z0 + r * np.sin(theta)])
+
+        traces.append(
+            go.Surface(
+                x=X, y=Y, z=Z,
+                colorscale=[[0, color], [1, color]],
+                showscale=False,
+                opacity=1.0,
+                hoverinfo="skip",
+                name="Reo",
+            )
+        )
+
     max_bar_d = 0.0
     for layer_list in (reo_layout.get("bottom", []), reo_layout.get("top", [])):
         for layer_data in layer_list:
@@ -661,19 +715,8 @@ def make_beam_3d_figure():
         db = layer_data["db"]
         # Convert 2D y to 3D z (y in 2D section = z in 3D beam)
         z_pos = y_pos
-        line_w = max(2.0, abs(db) * 0.4)
         for x_pos in x_positions:
-            traces.append(
-                go.Scatter3d(
-                    x=[0, L],
-                    y=[x_pos, x_pos],  # x in 2D section = y in 3D beam
-                    z=[z_pos, z_pos],
-                    mode="lines",
-                    line=dict(width=line_w, color="blue"),
-                    hoverinfo="skip",
-                    showlegend=False,
-                )
-            )
+            _add_bar_cylinder(traces, 0.0, L, float(x_pos), float(z_pos), float(db), "#1f77b4")
 
     # Top bars - draw each layer separately
     # TOP reinforcement is RED
@@ -683,19 +726,8 @@ def make_beam_3d_figure():
         db = layer_data["db"]
         # Convert 2D y to 3D z (y in 2D section = z in 3D beam)
         z_pos = y_pos
-        line_w = max(2.0, abs(db) * 0.4)
         for x_pos in x_positions:
-            traces.append(
-                go.Scatter3d(
-                    x=[0, L],
-                    y=[x_pos, x_pos],  # x in 2D section = y in 3D beam
-                    z=[z_pos, z_pos],
-                    mode="lines",
-                    line=dict(width=line_w, color="red"),
-                    hoverinfo="skip",
-                    showlegend=False,
-                )
-            )
+            _add_bar_cylinder(traces, 0.0, L, float(x_pos), float(z_pos), float(db), "#d62728")
 
     # ----- shear ligs -----
     def add_shear_hoop_at_x(x0):
@@ -1815,8 +1847,9 @@ def render_inputs():
     V_sfd = get_param("sfd_Vmax_abs_kN", None)
     
     # Read manual ULS values (from Inputs widgets via proxies)
-    Mu_manual_raw = get_param("uls_Mstar", None)
-    Vu_manual_raw = get_param("uls_Vstar", None)
+    # Manual actions must read from manual shared keys (contract-safe)
+    Mu_manual_raw = get_param("Mu_star_manual", None)
+    Vu_manual_raw = get_param("Vu_star_manual", None)
     
     # Fall back to existing design values only if manual copies are None
     base_M = get_param("Mu_star", 0.0)

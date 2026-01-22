@@ -1967,7 +1967,7 @@ This page computes **ultimate shear and torsion capacity** outputs in accordance
     
     # Check 3: Effective section parameters
     lig_d = lig_d or 10.0
-    legs = legs or 2.0
+    legs = 2.0 if legs is None else float(legs)
     s = s_lig or 200.0
     
     sum_duct_widget = st.session_state.get("shear_sum_duct", None)
@@ -1977,6 +1977,8 @@ This page computes **ultimate shear and torsion capacity** outputs in accordance
         sum_duct = get_param("sum_duct", 0.0)
     
     Asv = legs * math.pi * lig_d ** 2 / 4.0
+    if legs == 0:
+        Asv = 0.0
     f_syv = fsy
     
     b_v = b - k_d * sum_duct
@@ -2057,7 +2059,7 @@ This page computes **ultimate shear and torsion capacity** outputs in accordance
     Vuc_kN = Vuc_N / 1e3
     
     # Check 7: Steel shear contribution
-    Vus_N = (Asv * f_syv * d_v / s) * cot(theta_v_rad)
+    Vus_N = 0.0 if legs == 0 else (Asv * f_syv * d_v / s) * cot(theta_v_rad)
     Vus_kN = Vus_N / 1e3
     
     # Check 8: Combined shear strength
@@ -2607,7 +2609,10 @@ dv is defined by shear transfer geometry (shear). They represent different mecha
                 """)
         
         # Build summary line
-        check3_summary = f"Check 3 — Shear-resisting section ($b_v$, $d_v$, ligs) | Result: $A_{{sv}} = {_fmt(Asv)}$ mm², $b_v = {_fmt(b_v)}$ mm, $d_v = {_fmt(d_v)}$ mm"
+        if legs == 0:
+            check3_summary = f"Check 3 — Shear-resisting section ($b_v$, $d_v$, ligs) | Result: No shear reinforcement provided, $b_v = {_fmt(b_v)}$ mm, $d_v = {_fmt(d_v)}$ mm"
+        else:
+            check3_summary = f"Check 3 — Shear-resisting section ($b_v$, $d_v$, ligs) | Result: $A_{{sv}} = {_fmt(Asv)}$ mm², $b_v = {_fmt(b_v)}$ mm, $d_v = {_fmt(d_v)}$ mm"
         
         render_expandable_step(
             page_key="shear",

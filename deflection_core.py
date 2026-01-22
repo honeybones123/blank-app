@@ -168,6 +168,9 @@ def compute_deflection_results(publish: bool = True) -> dict:
         "deflection_total_mm": delta_total,
         "deflection_limit_mm": defl_limit,
         "deflection_utilisation": defl_util,
+        "delta_short_total": delta_short_total,
+        "delta_long_add": delta_long_add,
+        "delta_total": delta_total,
     }
     
     # Store detailed results for report building

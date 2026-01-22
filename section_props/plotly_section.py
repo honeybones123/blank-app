@@ -153,7 +153,7 @@ def make_sectionA_figure(
                 shapes.append(dict(type="line", x0=leg["x1"], y0=leg["y1"], x1=leg["x2"], y1=leg["y2"],
                                    line=dict(width=lig_line_width * 0.8, color="black")))
 
-    # ---- Longitudinal bars ----
+    # ---- Longitudinal bars (TO-SCALE: circles in data units mm) ----
     layout = compute_longitudinal_reo_layout(
         shape_name=shape_name,
         dims=dims,
@@ -167,27 +167,37 @@ def make_sectionA_figure(
         max_rows=2,
     )
 
-    # Marker sizing like your main app feel (stable)
-    def msize(db: float) -> float:
-        return max(5.0, min(10.0, float(db) * 0.35))
+    def _as_y_scalar(y_val):
+        # layout sometimes stores y as [y] list
+        if isinstance(y_val, (list, tuple)) and len(y_val) > 0:
+            return float(y_val[0])
+        return float(y_val)
 
-    # Bottom (blue)
-    for band in layout.get("bottom", []):
-        traces.append(go.Scatter(
-            x=band["x"], y=band["y"],
-            mode="markers",
-            marker=dict(color="blue", size=msize(band["db"]), line=dict(width=0.7, color="black")),
-            hoverinfo="skip", showlegend=False
-        ))
+    def _add_bar_circles(band, fill_rgba):
+        xs = band.get("x") or []
+        y = _as_y_scalar(band.get("y", 0.0))
+        db = float(band.get("db") or 0.0)
+        if db <= 0 or not xs:
+            return
+        r = db / 2.0
+        for x in xs:
+            x = float(x)
+            shapes.append(dict(
+                type="circle",
+                x0=x - r, y0=y - r,
+                x1=x + r, y1=y + r,
+                line=dict(width=1.0, color="black"),
+                fillcolor=fill_rgba,
+                opacity=1.0,
+            ))
 
-    # Top (red)
-    for band in layout.get("top", []):
-        traces.append(go.Scatter(
-            x=band["x"], y=band["y"],
-            mode="markers",
-            marker=dict(color="red", size=msize(band["db"]), line=dict(width=0.7, color="black")),
-            hoverinfo="skip", showlegend=False
-        ))
+    # Bottom bars (blue)
+    for band in layout.get("bottom", []) or []:
+        _add_bar_circles(band, "rgba(0,0,255,0.90)")
+
+    # Top bars (red)
+    for band in layout.get("top", []) or []:
+        _add_bar_circles(band, "rgba(255,0,0,0.90)")
 
     if not traces:
         traces.append(go.Scatter(x=[0], y=[0], mode="markers", marker=dict(size=1, color="rgba(0,0,0,0)")))

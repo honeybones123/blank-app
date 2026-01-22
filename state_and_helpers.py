@@ -59,6 +59,9 @@ def _debug_docs_dir() -> str:
 def _debug_log_path() -> str:
     return os.path.join(_debug_docs_dir(), "blank_app_state_tripwire.log")
 
+# Provide a module-level debug log path so any debug blocks can safely reference it
+log_path = _debug_log_path()
+
 
 def _debug_snapshot_path() -> str:
     return os.path.join(_debug_docs_dir(), "blank_app_shared_snapshot.json")
@@ -856,6 +859,9 @@ RESULT_KEYS = {
     "deflection_total_mm",
     "deflection_limit_mm",
     "deflection_utilisation",
+    "delta_short_total",
+    "delta_long_add",
+    "delta_total",
     # Load actions by module (derived wiring)
     "actions_bending",
     "actions_shear",
