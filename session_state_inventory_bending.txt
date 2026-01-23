@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-01-23 20:36:47",
+  "timestamp": "2026-01-23 21:17:34",
   "page": "bending",
-  "boot_id": "boot_1769160947",
+  "boot_id": "boot_1769163441",
   "fresh_boot": false,
   "restored_from_snapshot": true,
   "rendered_widget_count": 28,
-  "session_key_count": 569,
+  "session_key_count": 568,
   "missing_shared_for_rendered": [],
   "stray_session_keys": [
     "A_duct_total",

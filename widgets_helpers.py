@@ -561,6 +561,7 @@ def number_row(
     help_text: str | None = None,
     required: bool = False,
     disabled: bool = False,
+    step=None,
 ):
     """Create a number input row with label on the left and widget on the right (V2-safe)."""
     col1, col2 = st.columns([1, 2], gap="medium")
@@ -696,16 +697,19 @@ def number_row(
         
         session_value_before_widget = st.session_state.get(original_key)
         _safe_label = _nonempty_label(str(label), f"_{original_key}_label")
-        value = st.number_input(
-            _safe_label,
-            key=original_key,
+        ni_kwargs = dict(
+            value=st.session_state.get(original_key),
             min_value=min_val,
-            step=1.0,
             format="%.1f",
             label_visibility="collapsed",
             on_change=on_change_callback,
             disabled=disabled,
         )
+        if step is not None:
+            ni_kwargs["step"] = step
+        else:
+            ni_kwargs["step"] = 1.0
+        value = st.number_input(_safe_label, key=original_key, **ni_kwargs)
         session_value_after_widget = st.session_state.get(original_key)
 
         # #region agent log
