@@ -224,7 +224,23 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
                 st.session_state["_active_project_loaded_id"] = project_row.get("id") or project_id
                 try:
                     payload = project_row.get("payload") or {}
+                    # 🔒 Prevent snapshot restore from overwriting loaded project state
+                    from state_and_helpers import (
+                        DISABLE_SNAPSHOT_RESTORE_KEY,
+                        clear_cached_and_widget_restore_keys,
+                    )
+
+                    st.session_state[DISABLE_SNAPSHOT_RESTORE_KEY] = True
+                    clear_cached_and_widget_restore_keys()
+
                     apply_project_payload(payload)
+
+                    # After applying a project payload, snapshot is now “dirty” state.
+                    st.session_state["_dirty"] = True
+                    st.session_state["_dirty_reason"] = "Loaded project payload"
+                    # Recompute outputs from shared inputs (never trust saved results)
+                    recalc_derived_values()
+                    update_results()
                 except Exception:
                     pass
             except Exception:

@@ -1608,6 +1608,33 @@ def save_shared_snapshot(shared: dict):
         pass
 
 
+# --- Snapshot/load guards ---
+DISABLE_SNAPSHOT_RESTORE_KEY = "_disable_snapshot_restore"
+
+
+def clear_cached_and_widget_restore_keys() -> None:
+    """
+    Delete keys that commonly override freshly loaded project payloads.
+    We intentionally do NOT delete canonical shared keys here.
+    """
+    import streamlit as st
+
+    to_delete = []
+    for k in list(st.session_state.keys()):
+        if k.startswith("inputs_"):
+            to_delete.append(k)
+        elif k.startswith("_cached_"):
+            to_delete.append(k)
+        elif k in ("_snapshot_restore_complete",):
+            to_delete.append(k)
+
+    for k in to_delete:
+        try:
+            del st.session_state[k]
+        except Exception:
+            pass
+
+
 def persist_state_snapshot():
     """
     Persist ALL shared keys + ALL inputs_* widget keys + caches used for restores.
@@ -1626,17 +1653,8 @@ def persist_state_snapshot():
     cid = get_client_id()
     store = _persistent_store()
 
-    # Persist widget values that matter most (inputs_ + caches)
-    widgets = {}
-    for widget_key in TAB_KEYS.keys():
-        if widget_key.startswith("inputs_") and widget_key in st.session_state:
-            widgets[widget_key] = st.session_state[widget_key]
-
-        cached_key = f"_cached_{widget_key}"
-        if cached_key in st.session_state:
-            widgets[cached_key] = st.session_state[cached_key]
-
-    store[cid] = {"shared": shared, "widgets": widgets}
+    # Persist ONLY shared keys. Persisting widget keys causes loaded projects to be overwritten.
+    store[cid] = {"shared": shared, "widgets": {}}
 
 
 def restore_state_snapshot_if_available(force: bool = False) -> bool:
@@ -1647,6 +1665,9 @@ def restore_state_snapshot_if_available(force: bool = False) -> bool:
     Args:
         force: If True, overwrite existing keys. If False, only restore missing keys.
     """
+    # If a project payload was loaded this run, DO NOT restore cached snapshot/widgets over it.
+    if st.session_state.get(DISABLE_SNAPSHOT_RESTORE_KEY):
+        return False
     # Never overwrite live session state after user interaction
     if st.session_state.get("_user_has_edited_anything", False):
         return False
@@ -1680,12 +1701,6 @@ def restore_state_snapshot_if_available(force: bool = False) -> bool:
                     set_shared(k, v, source="restore_snapshot")
                     restored_any = True
 
-        # Restore inputs_ widgets and caches
-        for k, v in mem_snap.get("widgets", {}).items():
-            if force or (k not in st.session_state):
-                st.session_state[k] = v
-                restored_any = True
-    
     if restored_any:
         st.session_state["_snapshot_restore_complete"] = True
 

@@ -31,22 +31,20 @@ def get_context():
 
 def export_state_for_saving() -> dict:
     """
-    Export contract-safe session_state keys for saving.
+    Export ONLY canonical shared inputs.
+    Do NOT persist widget keys (inputs_*, bending_*, etc) or derived/results keys.
+    Those must be rehydrated/recomputed from shared inputs after load.
     """
-    def _safe_subset(keys):
-        out = {}
-        for k in keys:
-            v = st.session_state.get(k)
-            try:
-                json.dumps(v)
-                out[k] = v
-            except Exception:
-                pass
-        return out
+    import streamlit as st
+    from state_and_helpers import SHARED_DEFAULTS
+
+    shared = {}
+    for k, default_v in SHARED_DEFAULTS.items():
+        shared[k] = st.session_state.get(k, default_v)
 
     return {
         "schema_version": 1,
-        "shared": _safe_subset(SHARED_DEFAULTS.keys()),
+        "shared": shared,
     }
 
 
@@ -82,40 +80,27 @@ def _clear_non_shared_session_keys():
         del st.session_state[k]
 
 
-def apply_project_payload(payload: dict):
+def apply_project_payload(payload: dict) -> None:
     """
-    Apply a saved project payload to session state (shared keys only).
-    Wipes computed/results keys and recomputes derived/results.
+    Apply project payload into shared keys only.
+
+    Supports:
+    - New format: {"schema_version": 1, "shared": {...}}
+    - Legacy format: {<shared_key>: value, ...}
     """
-    from state_and_helpers import recalc_derived_values, update_results
+    import streamlit as st
+    from state_and_helpers import SHARED_DEFAULTS, set_shared
 
-    # 0) Ensure defaults exist so missing keys don't become None/0
-    for k, v in SHARED_DEFAULTS.items():
-        st.session_state.setdefault(k, v)
+    if not isinstance(payload, dict):
+        return
 
-    saved_shared = payload.get("shared", {}) if isinstance(payload, dict) else {}
+    src = payload.get("shared") if isinstance(payload.get("shared"), dict) else payload
 
-    # 1) Apply only known shared keys
-    for k, v in saved_shared.items():
-        if k in SHARED_DEFAULTS:
-            st.session_state[k] = v
-
-    # 2) Backfill any new shared keys (for old projects)
-    for k, v in SHARED_DEFAULTS.items():
-        st.session_state.setdefault(k, v)
-
-    # 3) Wipe computed/results/cache keys so old saves can’t override them
-    _clear_non_shared_session_keys()
-
-    # 4) Tripwire (temporary)
-    if "results" in st.session_state:
-        st.error("Tripwire: results key survived load - should have been wiped")
-
-    # 4) Recompute everything
-    recalc_derived_values()
-    update_results()
-
-    st.rerun()
+    for k, default_v in SHARED_DEFAULTS.items():
+        if k in src:
+            set_shared(k, src[k], source="project_load")
+        elif k not in st.session_state:
+            set_shared(k, default_v, source="project_load_default")
 
 
 def redirect_parent_to_project(project_id: str):

@@ -6,7 +6,7 @@ bending_L,1000.0,float,L,1000.0,float
 bending_Mu_star,100.0,float,Mu_star_manual,100.0,float
 bending_N_star,0.0,float,N_star,0.0,float
 bending_P_star,0.0,float,P_star,0.0,float
-bending_b,300.0,float,b,300.0,float
+bending_b,150.0,float,b,150.0,float
 bending_bot1_count,2,int,bot1_count,2,int
 bending_bot1_layout_mode,Count,str,bot1_layout_mode,Count,str
 bending_bot2_count,0,int,bot2_count,0,int

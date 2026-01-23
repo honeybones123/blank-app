@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-01-23 19:07:07",
+  "timestamp": "2026-01-23 20:36:47",
   "page": "bending",
-  "boot_id": "boot_1769153976",
+  "boot_id": "boot_1769160947",
   "fresh_boot": false,
   "restored_from_snapshot": true,
   "rendered_widget_count": 28,
-  "session_key_count": 576,
+  "session_key_count": 569,
   "missing_shared_for_rendered": [],
   "stray_session_keys": [
     "A_duct_total",
@@ -34,7 +34,6 @@
     "actions_shear",
     "actions_sls",
     "actions_uls",
-    "auto_top_layer1_added",
     "bending_action_source",
     "bending_action_source_radio",
     "bending_active_mode",
@@ -207,7 +206,8 @@
     "inputs_side_cover_top",
     "inputs_stress_ratio",
     "inputs_t_creep",
-    "inputs_t_shrink"
+    "inputs_t_shrink",
+    "inputs_tf"
   ],
   "pairs": [
     {
@@ -268,10 +268,10 @@
     },
     {
       "widget_key": "bending_b",
-      "widget_val": 300.0,
+      "widget_val": 150.0,
       "widget_type": "float",
       "shared_key": "b",
-      "shared_val": 300.0,
+      "shared_val": 150.0,
       "shared_type": "float"
     },
     {
