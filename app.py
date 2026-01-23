@@ -37,6 +37,7 @@ import time
 from persistence.save_to_dashboard import (
     get_context,
     export_state_for_saving,
+    apply_project_payload,
     redirect_parent_to_project,
 )
 from projects_store import create_project, update_project, load_project
@@ -221,6 +222,11 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
                 st.session_state["active_project_id"] = project_row.get("id") or project_id
                 st.session_state["active_project_name"] = project_row.get("name") or "Untitled project"
                 st.session_state["_active_project_loaded_id"] = project_row.get("id") or project_id
+                try:
+                    payload = project_row.get("payload") or {}
+                    apply_project_payload(payload)
+                except Exception:
+                    pass
             except Exception:
                 st.session_state["_active_project_loaded_id"] = project_id
 

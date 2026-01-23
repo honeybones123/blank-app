@@ -118,9 +118,9 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
     f_po = inp.f_po
     A_ct = inp.A_ct
     d_g = inp.d_g
-    lig_d = inp.lig_d or 10.0
+    lig_d = 10.0 if inp.lig_d is None else float(inp.lig_d)
     legs = 2.0 if inp.legs is None else float(inp.legs)
-    s = inp.s_lig or 200.0
+    s = 200.0 if inp.s_lig is None else float(inp.s_lig)
     use_general_kv = inp.use_general_kv
     sum_duct = inp.sum_duct
     k_d = inp.k_d

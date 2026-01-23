@@ -218,6 +218,16 @@ def render_pdf_button(button_type: str = "primary", detail_level: str = "detaile
 
     # Generate PDF button
     if st.button("📄 Generate PDF Report", type=button_type, use_container_width=True):
+        # Flush proxy widget keys (e.g. inputs_*) into shared keys before running checks / exporting
+        try:
+            from state_and_helpers import save_proxies_to_active_set, recalc_derived_values, update_results
+            save_proxies_to_active_set()
+            recalc_derived_values()
+            update_results()
+        except Exception:
+            # Don't block PDF if one helper isn't available; checks will still run
+            pass
+
         # 1) Run all checks FIRST (and show spinner so user knows it's working)
         with st.spinner("Running all checks..."):
             try:

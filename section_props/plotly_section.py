@@ -2,8 +2,9 @@ from __future__ import annotations
 from typing import Dict, Any
 import plotly.graph_objects as go
 
-from props import compute_gross_props
-from reo_layout import compute_longitudinal_reo_layout_T_I as compute_longitudinal_reo_layout, flatten_reo_points
+from section_props.props import compute_gross_props
+from section_props.shape_utils import normalise_shape_name
+from reo_layout import compute_longitudinal_reo_layout, flatten_reo_points
 from shear_layout import compute_shear_reo_layout_T_I
 from uls_flexure import stress_block_factors_AS3600, solve_dn_from_T_T_I, compression_resultant_T_I
 
@@ -17,7 +18,8 @@ def make_sectionA_figure(
     show_dn: bool = False,
     dn: float = 0.0,
 ) -> go.Figure:
-    props = compute_gross_props(shape_name, dims)
+    shape_key = normalise_shape_name(shape_name)
+    props = compute_gross_props(shape_key, dims)
     b = float(props["b_env"])
     D = float(props["D_env"])
 
@@ -39,7 +41,7 @@ def make_sectionA_figure(
         shapes.append(dict(type="path", path=d, line=dict(width=lw, color="black"), fillcolor="rgba(0,0,0,0)"))
 
     # ---- Outline ----
-    if shape_name.startswith("T-Section"):
+    if shape_key == "T":
         bf = float(dims["bf"]); tf = float(dims["tf"]); bw = float(dims["bw"])
         x_web0 = (bf - bw) / 2.0
         x_web1 = x_web0 + bw
@@ -56,7 +58,7 @@ def make_sectionA_figure(
         ]
         add_path(outline)
 
-    elif shape_name.startswith("I-Section"):
+    elif shape_key == "I":
         bf = float(dims["bf"]); tf = float(dims["tf"]); tw = float(dims["tw"])
         x_web0 = (bf - tw) / 2.0
         x_web1 = x_web0 + tw
@@ -101,9 +103,9 @@ def make_sectionA_figure(
 
         # If dn goes below flange, shade web portion (tf..dn) across bw/tw (centered)
         if dn_eff > tf:
-            if shape_name.startswith("T-Section"):
+            if shape_name == "T":
                 b_web = float(dims["bw"])
-            elif shape_name.startswith("I-Section"):
+            elif shape_name == "I":
                 b_web = float(dims["tw"])
             else:
                 b_web = bf  # safety fallback
@@ -135,37 +137,71 @@ def make_sectionA_figure(
     lig_line_width = max(1.0, min(4.0, abs(lig_d) / 3.0))
 
     if has_shear:
-        shear = compute_shear_reo_layout_T_I(
-            shape_name=shape_name,
+        is_rect = shape_key == "RECT"
+        is_ti = shape_key in ("T", "I")
+
+        if is_ti:
+            shear = compute_shear_reo_layout_T_I(
+                shape_name=shape_key,
+                dims=dims,
+                cover_side=float(reo["cover_side"]),
+                cover_top=float(reo["cover_top"]),
+                cover_bot=float(reo["cover_bot"]),
+                lig_d=lig_d,
+                lig_legs=lig_legs,
+            )
+            cage = shear.get("cage")
+            if cage:
+                shapes.append(dict(type="rect", x0=cage["x0"], y0=cage["y0"], x1=cage["x1"], y1=cage["y1"],
+                                   line=dict(width=lig_line_width, color="black"), fillcolor="rgba(0,0,0,0)"))
+            for stirrup in shear.get("stirrups", []):
+                for leg in stirrup.get("legs", []):
+                    shapes.append(dict(type="line", x0=leg["x1"], y0=leg["y1"], x1=leg["x2"], y1=leg["y2"],
+                                       line=dict(width=lig_line_width * 0.8, color="black")))
+        elif is_rect:
+            b = float(dims.get("b", 0.0) or 0.0)
+            D = float(dims.get("D", 0.0) or 0.0)
+
+            cover_side = float(reo.get("cover_side", 40.0) or 40.0)
+            cover_top = float(reo.get("cover_top", 40.0) or 40.0)
+            cover_bot = float(reo.get("cover_bot", 40.0) or 40.0)
+
+            if lig_d > 0 and lig_legs >= 2:
+                x0, x1 = cover_side, b - cover_side
+                y0, y1 = cover_top, D - cover_bot
+                if (x1 > x0) and (y1 > y0):
+                    shapes.append(dict(
+                        type="rect",
+                        x0=x0, y0=y0, x1=x1, y1=y1,
+                        line=dict(color="black", width=2),
+                        fillcolor="rgba(0,0,0,0)",
+                    ))
+                    if lig_legs > 2:
+                        span = x1 - x0
+                        for j in range(1, lig_legs - 1):
+                            x = x0 + span * j / (lig_legs - 1)
+                            shapes.append(dict(
+                                type="line",
+                                x0=x, y0=y0, x1=x, y1=y1,
+                                line=dict(color="black", width=2),
+                            ))
+
+    # ---- Longitudinal bars (TO-SCALE: circles in data units mm) ----
+    if shape_key in ("T", "I"):
+        layout = compute_longitudinal_reo_layout(
+            shape_name=shape_key,
             dims=dims,
             cover_side=float(reo["cover_side"]),
             cover_top=float(reo["cover_top"]),
             cover_bot=float(reo["cover_bot"]),
-            lig_d=lig_d,
-            lig_legs=lig_legs,
+            min_clear_spacing=float(reo["min_clear_spacing"]),
+            rowgap_top=float(reo["rowgap_top"]),
+            rowgap_bot=float(reo["rowgap_bot"]),
+            reo=reo,
+            max_rows=2,
         )
-        cage = shear.get("cage")
-        if cage:
-            shapes.append(dict(type="rect", x0=cage["x0"], y0=cage["y0"], x1=cage["x1"], y1=cage["y1"],
-                               line=dict(width=lig_line_width, color="black"), fillcolor="rgba(0,0,0,0)"))
-        for stirrup in shear.get("stirrups", []):
-            for leg in stirrup.get("legs", []):
-                shapes.append(dict(type="line", x0=leg["x1"], y0=leg["y1"], x1=leg["x2"], y1=leg["y2"],
-                                   line=dict(width=lig_line_width * 0.8, color="black")))
-
-    # ---- Longitudinal bars (TO-SCALE: circles in data units mm) ----
-    layout = compute_longitudinal_reo_layout(
-        shape_name=shape_name,
-        dims=dims,
-        cover_side=float(reo["cover_side"]),
-        cover_top=float(reo["cover_top"]),
-        cover_bot=float(reo["cover_bot"]),
-        min_clear_spacing=float(reo["min_clear_spacing"]),
-        rowgap_top=float(reo["rowgap_top"]),
-        rowgap_bot=float(reo["rowgap_bot"]),
-        reo=reo,
-        max_rows=2,
-    )
+    else:
+        layout = {"top": [], "bottom": []}
 
     def _as_y_scalar(y_val):
         # layout sometimes stores y as [y] list
@@ -232,7 +268,8 @@ def build_stage1_payload(
       - deflection page
       - report diagrams
     """
-    props = compute_gross_props(shape_name, dims)
+    shape_token = normalise_shape_name(shape_name)
+    props = compute_gross_props(shape_token, dims)
     b_env = float(props["b_env"])
     D_env = float(props["D_env"])
 
@@ -251,7 +288,7 @@ def build_stage1_payload(
 
     payload = {
         "section": {
-            "sec_shape_type": ("T" if shape_name.startswith("T-Section") else "I"),
+            "sec_shape_type": ("T" if shape_token == "T" else "I"),
             "sec_dims_mm": {k: float(v) for k, v in dims.items()},
             "sec_b_env_mm": b_env,
             "sec_D_env_mm": D_env,
@@ -292,7 +329,7 @@ def build_stage1_payload(
             "reo_points": flatten_reo_points(reo_layout),
         },
         "for_report_diagrams": {
-            "shape_name": shape_name,
+            "shape_name": shape_token,
             "dims_mm": {k: float(v) for k, v in dims.items()},
             "reo_inputs": {k: (float(v) if isinstance(v, (int, float)) else v) for k, v in reo.items()},
         },

@@ -3,6 +3,8 @@ from __future__ import annotations
 import math
 from typing import Dict, List, Any
 
+from section_props.shape_utils import normalise_shape_name
+
 
 def _x_positions_even(x_min: float, x_max: float, n: int) -> List[float]:
     if n <= 0:
@@ -565,3 +567,37 @@ def flatten_reo_points(reo_layout: Dict[str, List[Dict]]) -> List[Dict]:
             for x, y in zip(band["x"], band["y"]):
                 pts.append({"x": float(x), "y": float(y), "db": db, "layer": layer_name})
     return pts
+
+
+def compute_longitudinal_reo_layout(
+    *,
+    shape_name: str,
+    dims: Dict[str, float],
+    cover_side: float,
+    cover_top: float,
+    cover_bot: float,
+    min_clear_spacing: float,
+    rowgap_top: float,
+    rowgap_bot: float,
+    reo: Dict[str, Any],
+    max_rows: int = 2,
+) -> Dict[str, List[Dict]]:
+    shape_key = normalise_shape_name(shape_name)
+
+    if shape_key in ("T", "I"):
+        return compute_longitudinal_reo_layout_T_I(
+            shape_name="T-Section" if shape_key == "T" else "I-Section",
+            dims=dims,
+            cover_side=cover_side,
+            cover_top=cover_top,
+            cover_bot=cover_bot,
+            min_clear_spacing=min_clear_spacing,
+            rowgap_top=rowgap_top,
+            rowgap_bot=rowgap_bot,
+            reo=reo,
+            max_rows=max_rows,
+        )
+    if shape_key == "RECT":
+        raise ValueError("Longitudinal reo layout currently supports only T-Section and I-Section.")
+
+    raise ValueError(f"Unknown shape_name: {shape_name}")

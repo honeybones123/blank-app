@@ -1,6 +1,8 @@
 from __future__ import annotations
 from typing import Dict, List
 
+from section_props.shape_utils import normalise_shape_name
+
 
 def _internal_leg_positions(x0: float, x1: float, n_legs: int) -> List[float]:
     if n_legs <= 2:
@@ -17,7 +19,13 @@ def _web_zone(shape_name: str, dims: Dict[str, float]) -> Dict[str, float]:
       bf, D, x_web0, x_web1, b_web
     Web zone is centered within bf.
     """
-    bf = float(dims["bf"])
+    s = str(shape_name or "").lower()
+    if "rectangle" in s or s in ("rect", "rectangular", "rect (bxd)", "rect (b×d)", "rect (b x d)"):
+        b = float(dims.get("b", 0.0) or 0.0)
+        D = float(dims.get("D", 0.0) or 0.0)
+        return {"bf": b, "D": D, "x_web0": 0.0, "x_web1": b, "b_web": b}
+
+    bf = float(dims.get("bf", dims.get("b", 0.0)) or 0.0)
     D = float(dims["D"])
 
     if shape_name.startswith("T-Section"):
@@ -49,6 +57,12 @@ def compute_shear_reo_layout_T_I(
     Returns:
       {"cage": {"x0","y0","x1","y1"}, "stirrups":[{"legs":[{x1,y1,x2,y2},...]}]}
     """
+    shape_key = normalise_shape_name(shape_name)
+    if shape_key not in ("T", "I"):
+        raise ValueError("Shear layout only supported for T/I in Stage 1.")
+
+    shape_name = "T-Section" if shape_key == "T" else "I-Section"
+
     if lig_d <= 0 or lig_legs < 2:
         return {"cage": None, "stirrups": []}
 

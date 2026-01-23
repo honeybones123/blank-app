@@ -1,6 +1,8 @@
 from __future__ import annotations
 from typing import Dict
 
+from section_props.shape_utils import normalise_shape_name
+
 
 def compute_gross_props(shape_name: str, dims: Dict[str, float]) -> Dict[str, float]:
     """
@@ -8,7 +10,24 @@ def compute_gross_props(shape_name: str, dims: Dict[str, float]) -> Dict[str, fl
       A_g (mm^2), ybar_top_g (mm), Ixx_g (mm^4), Ztop_g (mm^3), Zbot_g (mm^3),
       plus envelope b_env, D_env
     """
-    if shape_name.startswith("T-Section"):
+    shape_key = normalise_shape_name(shape_name)
+
+    if shape_key == "RECT":
+        b = float(dims.get("b", 0.0) or 0.0)
+        D = float(dims.get("D", 0.0) or 0.0)
+        A = b * D
+        ybar = D / 2.0 if D else 0.0
+        Ixx = b * D**3 / 12.0 if D else 0.0
+        c_top = ybar
+        c_bot = D - ybar
+        return dict(
+            b_env=b, D_env=D, b_web=b,
+            A_g=A, ybar_top_g=ybar, Ixx_g=Ixx,
+            Ztop_g=Ixx / c_top if c_top else 0.0,
+            Zbot_g=Ixx / c_bot if c_bot else 0.0,
+        )
+
+    if shape_key == "T":
         bf = float(dims["bf"]); tf = float(dims["tf"]); bw = float(dims["bw"]); D = float(dims["D"])
         # Areas
         Af = bf * tf
@@ -32,7 +51,7 @@ def compute_gross_props(shape_name: str, dims: Dict[str, float]) -> Dict[str, fl
             Ztop_g=Ixx / c_top, Zbot_g=Ixx / c_bot
         )
 
-    if shape_name.startswith("I-Section"):
+    if shape_key == "I":
         bf = float(dims["bf"]); tf = float(dims["tf"]); tw = float(dims["tw"]); D = float(dims["D"])
         Af_top = bf * tf
         Af_bot = bf * tf

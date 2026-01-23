@@ -677,11 +677,27 @@ def extract_inputs_sections():
             "s_lig": get_param("s_lig", 0.0),
         },
         "actions": {
-            "Mu_star": get_param("Mu_star", 0.0),
-            "Vu_star": get_param("Vu_star", 0.0),
+            # Prefer active ULS/SLS set keys (uls_* / sls_*) since proxies write those.
+            # Fall back to shared/report keys if active-set values are not present.
+            "Mu_star": (
+                _ss(f'{"uls" if _ss("loads_edit_mode", "ULS") == "ULS" else "sls"}_Mstar', None)
+                if _ss(f'{"uls" if _ss("loads_edit_mode", "ULS") == "ULS" else "sls"}_Mstar', None) is not None
+                else get_param("Mu_star", 0.0)
+            ),
+            "Vu_star": (
+                _ss(f'{"uls" if _ss("loads_edit_mode", "ULS") == "ULS" else "sls"}_Vstar', None)
+                if _ss(f'{"uls" if _ss("loads_edit_mode", "ULS") == "ULS" else "sls"}_Vstar', None) is not None
+                else get_param("Vu_star", 0.0)
+            ),
+            "N_star": (
+                _ss(f'{"uls" if _ss("loads_edit_mode", "ULS") == "ULS" else "sls"}_Nstar', None)
+                if _ss(f'{"uls" if _ss("loads_edit_mode", "ULS") == "ULS" else "sls"}_Nstar', None) is not None
+                else get_param("N_star", 0.0)
+            ),
+
+            # These remain as shared keys (unless you also have ULS/SLS variants)
             "Tu_star": get_param("Tu_star", 0.0),
             "P_star": get_param("P_star", 0.0),
-            "N_star": get_param("N_star", 0.0),
         },
     }
     

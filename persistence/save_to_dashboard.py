@@ -2,7 +2,7 @@ import json
 import streamlit as st
 import streamlit.components.v1 as components
 
-from state_and_helpers import SHARED_DEFAULTS, DERIVED_KEYS, RESULT_KEYS
+from state_and_helpers import SHARED_DEFAULTS
 
 
 def _qp(name: str) -> str:
@@ -44,19 +44,78 @@ def export_state_for_saving() -> dict:
                 pass
         return out
 
-    results_dict = st.session_state.get("results", {})
-    try:
-        json.dumps(results_dict)
-    except Exception:
-        results_dict = {}
-
     return {
-        "version": "v1",
+        "schema_version": 1,
         "shared": _safe_subset(SHARED_DEFAULTS.keys()),
-        "derived": _safe_subset(DERIVED_KEYS),
-        "results": _safe_subset(RESULT_KEYS),
-        "results_dict": results_dict,
     }
+
+
+def _clear_non_shared_session_keys():
+    """
+    Remove all non-shared keys so old project payloads can't override
+    computed results/caches in the current version.
+    """
+    shared_keys = set(SHARED_DEFAULTS.keys())
+
+    # Allowlist keys you *never* want wiped (navigation, auth, etc.)
+    allow_prefixes = ("nav_", "auth_", "page_")
+    allow_keys = {
+        "page_slug",
+        "nav_page_slug",
+        "active_project_id",
+        "active_project_name",
+        "_active_project_loaded_id",
+        "_active_page_slug",
+        "sb_user",
+        "user_id",
+        "module",
+    }
+
+    for k in list(st.session_state.keys()):
+        if k in shared_keys:
+            continue
+        if k in allow_keys:
+            continue
+        if any(k.startswith(p) for p in allow_prefixes):
+            continue
+        # wipe everything else (results, derived, bending_*, shear_*, etc.)
+        del st.session_state[k]
+
+
+def apply_project_payload(payload: dict):
+    """
+    Apply a saved project payload to session state (shared keys only).
+    Wipes computed/results keys and recomputes derived/results.
+    """
+    from state_and_helpers import recalc_derived_values, update_results
+
+    # 0) Ensure defaults exist so missing keys don't become None/0
+    for k, v in SHARED_DEFAULTS.items():
+        st.session_state.setdefault(k, v)
+
+    saved_shared = payload.get("shared", {}) if isinstance(payload, dict) else {}
+
+    # 1) Apply only known shared keys
+    for k, v in saved_shared.items():
+        if k in SHARED_DEFAULTS:
+            st.session_state[k] = v
+
+    # 2) Backfill any new shared keys (for old projects)
+    for k, v in SHARED_DEFAULTS.items():
+        st.session_state.setdefault(k, v)
+
+    # 3) Wipe computed/results/cache keys so old saves can’t override them
+    _clear_non_shared_session_keys()
+
+    # 4) Tripwire (temporary)
+    if "results" in st.session_state:
+        st.error("Tripwire: results key survived load - should have been wiped")
+
+    # 4) Recompute everything
+    recalc_derived_values()
+    update_results()
+
+    st.rerun()
 
 
 def redirect_parent_to_project(project_id: str):

@@ -1966,9 +1966,9 @@ This page computes **ultimate shear and torsion capacity** outputs in accordance
         V_eq = V_star
     
     # Check 3: Effective section parameters
-    lig_d = lig_d or 10.0
+    lig_d = 10.0 if lig_d is None else float(lig_d)
     legs = 2.0 if legs is None else float(legs)
-    s = s_lig or 200.0
+    s = 200.0 if s_lig is None else float(s_lig)
     
     sum_duct_widget = st.session_state.get("shear_sum_duct", None)
     if sum_duct_widget is not None:

@@ -445,8 +445,11 @@ def make_summary_cross_section_figure():
     shape_name = layout.get("shape_name", "Rectangle (b × D)")
     dims = layout.get("dims", {})
     reo = layout.get("reo", {})
+    shape_key = str(shape_name).strip().lower()
+    is_ti = ("t-section" in shape_key) or ("i-section" in shape_key) or shape_key.startswith("t") or shape_key.startswith("i")
+    is_rect = ("rectangle" in shape_key) or (shape_key == "rect")
 
-    if shape_name.startswith(("T-Section", "I-Section")):
+    if is_ti:
         try:
             fig = make_sectionA_figure(
                 shape_name=shape_name,
@@ -455,12 +458,16 @@ def make_summary_cross_section_figure():
                 show_shear=True,
             )
             fig = _add_section_dimension_labels(fig, shape_name=shape_name, dims=dims, reo=reo)
+
             W = float(dims.get("bf", dims.get("b", 0.0)) or 0.0)
             D = float(dims.get("D", 0.0) or 0.0)
             apply_section_axes(fig, W=W, D=D)
             return fig
+
         except ValueError as e:
             st.error(f"Reinforcement layout failed: {e}")
+
+            # Fall back to diagram with ligs disabled (still shows section outline + dims)
             reo_no_bars = dict(reo)
             reo_no_bars.update({
                 "nb_top": 0,
@@ -470,6 +477,7 @@ def make_summary_cross_section_figure():
                 "lig_d": 0.0,
                 "lig_legs": 0,
             })
+
             fig = make_sectionA_figure(
                 shape_name=shape_name,
                 dims=dims,
@@ -477,10 +485,14 @@ def make_summary_cross_section_figure():
                 show_shear=True,
             )
             fig = _add_section_dimension_labels(fig, shape_name=shape_name, dims=dims, reo=reo_no_bars)
+
             W = float(dims.get("bf", dims.get("b", 0.0)) or 0.0)
             D = float(dims.get("D", 0.0) or 0.0)
             apply_section_axes(fig, W=W, D=D)
             return fig
+
+    if not is_rect:
+        return None
 
     # --- Unified 2D reo: draw from canonical layout["reo_layout"] (same as 3D) ---
     b = float(dims.get("b", 0.0) or 0.0)
@@ -495,10 +507,6 @@ def make_summary_cross_section_figure():
     )
 
     reo_layout = layout.get("reo_layout") or {"bottom": [], "top": []}
-
-    # DEBUG (temporary): confirm 2D is using the same canonical reo_layout as 3D
-    if st.session_state.get("_debug_reo_layout", False):
-        st.write("2D RECT reo_layout:", reo_layout)
 
     def _add_layer_circles(fig, layer, color):
         xs = layer.get("x", []) or []
@@ -524,6 +532,38 @@ def make_summary_cross_section_figure():
 
     for layer in (reo_layout.get("top") or []):
         _add_layer_circles(fig, layer, "rgba(255,0,0,0.9)")
+
+    lig_d = float(reo.get("lig_d", 0.0) or 0.0)
+    lig_legs = int(reo.get("lig_legs", 0) or 0)
+
+    if lig_d > 0 and lig_legs >= 2:
+        # covers (use whatever your reo dict uses; fall back to session state)
+        cover_side = float(reo.get("cover_side", st.session_state.get("cover_side", 40.0)) or 40.0)
+        cover_top = float(reo.get("cover_top", st.session_state.get("cover_top", 40.0)) or 40.0)
+        cover_bot = float(reo.get("cover_bot", st.session_state.get("cover_bot", 40.0)) or 40.0)
+
+        x0, x1 = cover_side, b - cover_side
+        y0, y1 = cover_top, D - cover_bot
+
+        if x1 > x0 and y1 > y0:
+            # closed stirrup outline
+            fig.add_shape(
+                type="rect",
+                x0=x0, y0=y0, x1=x1, y1=y1,
+                line=dict(color="black", width=2),
+                fillcolor="rgba(0,0,0,0)",
+            )
+
+            # internal legs if any
+            if lig_legs > 2:
+                span = x1 - x0
+                for j in range(1, lig_legs - 1):
+                    x = x0 + span * j / (lig_legs - 1)
+                    fig.add_shape(
+                        type="line",
+                        x0=x, y0=y0, x1=x, y1=y1,
+                        line=dict(color="black", width=2),
+                    )
 
     apply_section_axes(fig, W=b, D=D)
     return fig
@@ -980,12 +1020,14 @@ def _render_time_dependent_inputs(sync_callbacks):
     )
 
     # Stress ratio
-    stress_ratio_val = float(st.session_state.get("inputs_stress_ratio", get_param("stress_ratio", 0.30)))
+    w_stress_ratio = get_widget_key_for_shared("stress_ratio", prefix="inputs_") or "inputs_stress_ratio"
+    stress_ratio_val = float(st.session_state.get(w_stress_ratio, get_param("stress_ratio", 0.30)))
     number_row(
         "Sustained stress ratio σ₀ / f'c,mi",
-        "inputs_stress_ratio",
+        w_stress_ratio,
         stress_ratio_val,
         sync_callbacks,
+        step=0.01,
         help_text="Sustained stress ratio for creep (dimensionless).",
     )
 
@@ -1154,23 +1196,12 @@ def _render_materials_and_sectionA_2d(sync_callbacks):
             if fig_sec is None:
                 raise ValueError("Section A diagram function returned None (fig is None)")
         except Exception as e:
-            # Don't let the whole app die because a visual failed
-            st.warning(f"Section A diagram failed to render: {e}")
-            import traceback
-            from pathlib import Path
+            st.warning(f"Section A diagram failed: {e}")
+            with st.expander("Diagram debug details"):
+                st.exception(e)
+            return
 
-            log_dir = Path("Documents")
-            log_dir.mkdir(parents=True, exist_ok=True)
-            log_path = log_dir / "sectionA_diagram_error.log"
-            log_path.write_text(
-                f"{type(e).__name__}: {e}\n\n{traceback.format_exc()}",
-                encoding="utf-8"
-            )
-
-        if fig_sec is None:
-            # Graceful fallback: still keep the UI working
-            st.info("Section A diagram not available right now (inputs are still saved).")
-        else:
+        if fig_sec is not None:
             try:
                 fig_sec.update_layout(
                     autosize=True,

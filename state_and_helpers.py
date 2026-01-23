@@ -634,6 +634,12 @@ def save_proxies_to_active_set():
     st.session_state[f"{p}_Vstar"] = float(st.session_state.get("load_Vstar_proxy", 0.0) or 0.0)
     st.session_state[f"{p}_Mstar"] = float(st.session_state.get("load_Mstar_proxy", 0.0) or 0.0)
 
+    # Keep shared/report action keys in sync with the active load set
+    # (Report tables read Mu_star/Vu_star/N_star; widgets edit uls/sls *_Mstar keys)
+    st.session_state["N_star"] = st.session_state[f"{p}_Nstar"]
+    st.session_state["Vu_star"] = st.session_state[f"{p}_Vstar"]
+    st.session_state["Mu_star"] = st.session_state[f"{p}_Mstar"]
+
     after_other = (
         st.session_state.get(f"{other}_Nstar"),
         st.session_state.get(f"{other}_Vstar"),
@@ -3143,18 +3149,26 @@ def _make_sync_callback(widget_key: str, shared_key: str):
         # Therefore, widget_val == 0 is a valid user state and must sync to shared,
         # otherwise shared keeps old values and "rehydrates" them on rerun.
 
-            # Time-dependent protection (1 default)
-            if shared_key in {"t_creep", "age_at_loading", "t_shrink"}:
-                try:
-                    wv = float(widget_val)
-                    sv = float(shared_val)
-                except Exception:
-                    wv, sv = None, None
+        # Time-dependent protection (stale default guard)
+        if shared_key in {"t_creep", "age_at_loading", "t_shrink", "stress_ratio"}:
+            try:
+                wv = float(widget_val) if widget_val is not None else None
+                sv0 = st.session_state.get(shared_key)
+                sv = float(sv0) if sv0 is not None else None
+            except Exception:
+                wv, sv = None, None
 
+            if shared_key == "stress_ratio":
+                # If widget is at a nonsense default (0 / 0.01) but shared is meaningful, don't overwrite
+                if wv in (0.0, 0.01) and (sv is not None and sv not in (0.0, 0.01)):
+                    _sync_trace_file("return:stress_ratio_stale_guard", widget_key, shared_key, widget_val, shared_val)
+                    _sync_trace("stress_ratio_stale_guard", widget_key, shared_key)
+                    return
+            else:
                 # If widget is still at stale default 0/1 but shared is meaningful (>1), do not overwrite
                 if wv in (0.0, 1.0) and (sv is not None and sv not in (0.0, 1.0)):
-                    _sync_trace_file("return:time_default_stale", widget_key, shared_key, widget_val, shared_val)
-                    _sync_trace("time_default_stale", widget_key, shared_key)
+                    _sync_trace_file("return:time_stale_hard_guard", widget_key, shared_key, widget_val, shared_val)
+                    _sync_trace("time_stale_hard_guard", widget_key, shared_key)
                     return
         
         # 1) If the widget key isn't present, do NOT write anything.
