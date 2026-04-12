@@ -2,7 +2,14 @@ import json
 import streamlit as st
 import streamlit.components.v1 as components
 
-from state_and_helpers import SHARED_DEFAULTS
+from state_and_helpers import (
+    SHARED_DEFAULTS,
+    build_beam_project_payload,
+    load_beam_project_payload,
+    persist_active_beam_from_shared,
+    reset_beam_project_to_single_default_if_missing,
+    update_active_beam_summary_from_results,
+)
 
 
 def _qp(name: str) -> str:
@@ -38,13 +45,18 @@ def export_state_for_saving() -> dict:
     import streamlit as st
     from state_and_helpers import SHARED_DEFAULTS
 
+    # Explicit save must capture the latest active-beam inputs before building the project payload.
+    persist_active_beam_from_shared()
+    update_active_beam_summary_from_results()
+
     shared = {}
     for k, default_v in SHARED_DEFAULTS.items():
         shared[k] = st.session_state.get(k, default_v)
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "shared": shared,
+        "beam_project": build_beam_project_payload(),
     }
 
 
@@ -85,11 +97,18 @@ def apply_project_payload(payload: dict) -> None:
     Apply project payload into shared keys only.
 
     Supports:
-    - New format: {"schema_version": 1, "shared": {...}}
+    - New format: {"schema_version": 2, "shared": {...}, "beam_project": {...}}
+    - Old format: {"schema_version": 1, "shared": {...}}
     - Legacy format: {<shared_key>: value, ...}
     """
     import streamlit as st
-    from state_and_helpers import SHARED_DEFAULTS, set_shared
+    from state_and_helpers import (
+        SHARED_DEFAULTS,
+        WORKSPACE_IDENTITY_KEY,
+        WORKSPACE_ORIGIN_KEY,
+        WORKSPACE_ORIGIN_LOADED_FILE,
+        set_shared,
+    )
 
     if not isinstance(payload, dict):
         return
@@ -101,6 +120,15 @@ def apply_project_payload(payload: dict) -> None:
             set_shared(k, src[k], source="project_load")
         elif k not in st.session_state:
             set_shared(k, default_v, source="project_load_default")
+
+    beam_project_payload = payload.get("beam_project")
+    if isinstance(beam_project_payload, dict):
+        load_beam_project_payload(beam_project_payload)
+    else:
+        reset_beam_project_to_single_default_if_missing()
+
+    st.session_state.pop(WORKSPACE_IDENTITY_KEY, None)
+    st.session_state[WORKSPACE_ORIGIN_KEY] = WORKSPACE_ORIGIN_LOADED_FILE
 
 
 def redirect_parent_to_project(project_id: str):
