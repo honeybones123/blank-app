@@ -2,8 +2,11 @@
 # Core compute function for deflection (no Streamlit UI)
 
 import math
-from state_and_helpers import get_param, update_results
+from state_and_helpers import get_param, update_results, get_deflection_limit_ratio
 from deflection import (
+    _derive_equiv_udl_from_actions,
+    compute_and_store_multispan_deflection_metrics,
+    get_deflection_diagram_support_condition,
     calc_ief_simplified,
     calc_deflection_as3600,
     calc_span_depth_limit,
@@ -21,12 +24,13 @@ def compute_deflection_results(publish: bool = True) -> dict:
     # Read geometry
     b = get_param("b", 400.0)
     D = get_param("D", 600.0)
-    L = get_param("L", 8000.0)  # mm
+    L = get_param("L", 3000.0)  # mm
     L_m = L / 1000.0  # Convert to meters
     
     # Read materials
     fc = get_param("fc", 32.0)
-    Ec = get_param("Ec", 30000.0)
+    Ec_short = get_param("Ec", 30000.0)
+    Eceff = get_param("Eceff", Ec_short)
     
     # Read reinforcement
     Ast = get_param("Ast_bot", 0.0)
@@ -39,12 +43,14 @@ def compute_deflection_results(publish: bool = True) -> dict:
     if D is None:
         D = 600.0
     if L is None:
-        L = 8000.0
+        L = 3000.0
         L_m = L / 1000.0
     if fc is None:
         fc = 32.0
-    if Ec is None:
-        Ec = 30000.0
+    if Ec_short is None:
+        Ec_short = 30000.0
+    if Eceff is None:
+        Eceff = Ec_short
     if Ast is None:
         Ast = 0.0
     if Asc is None:
@@ -52,32 +58,13 @@ def compute_deflection_results(publish: bool = True) -> dict:
     if d is None:
         d = 560.0
     
-    # Read loads from SFD/BMD page (unified loading system)
+    # Read loads from shared state
     # Note: load_case is a widget key (st.selectbox), not a shared key
     load_case = get_param("sfd_case", "Simple beam – UDL over entire span")
-    
-    # For UDL cases, read g and q directly
     g_udl = get_param("g_udl_kNm_per_m", None)
     q_udl = get_param("q_udl_kNm_per_m", None)
-    
-    # For point load cases, convert to equivalent UDL
+    w_sls = get_param("w_sls_kNm_per_m", None)
     P_sls = get_param("P_sls_kN", None)
-    G_point = get_param("G_point_kN", None)
-    Q_point = get_param("Q_point_kN", None)
-    
-    if g_udl is not None and q_udl is not None:
-        # UDL case - use actual g and q
-        g_equiv = g_udl
-        q_equiv = q_udl
-    elif G_point is not None and Q_point is not None and L_m > 0:
-        # Point load case - convert to equivalent UDL
-        # M = PL/4 = wL²/8 => w = 2P/L
-        g_equiv = 2.0 * G_point / L_m if L_m > 0 else 0.0
-        q_equiv = 2.0 * Q_point / L_m if L_m > 0 else 0.0
-    else:
-        # Fallback defaults
-        g_equiv = 8.0
-        q_equiv = 4.0
     
     psi_s = get_param("psi_udl", 0.4)  # Sustained factor (for UDL cases)
     if psi_s is None:
@@ -89,8 +76,10 @@ def compute_deflection_results(publish: bool = True) -> dict:
     beff = get_param("defl_beff", b)  # Default to b if not set
     bw = get_param("defl_bw", b)  # Default to b if not set
     L_eff = get_param("defl_L_eff", L_m)  # Default to L_m if not set
-    support_type = get_param("defl_support_type", "Simply supported")
-    defl_limit_ratio = get_param("defl_limit_ratio", 250.0)
+    support_type = get_deflection_diagram_support_condition(st.session_state).get(
+        "support_type", "Simply supported"
+    )
+    defl_limit_ratio = get_deflection_limit_ratio(get_param("defl_limit_ratio", 250.0))
     Fdef_kNm = get_param("defl_Fdef", 12.0)
     
     # Defensive: ensure beff and bw are not None (fallback to b)
@@ -103,10 +92,56 @@ def compute_deflection_results(publish: bool = True) -> dict:
     if support_type is None:
         support_type = "Simply supported"
     if defl_limit_ratio is None:
-        defl_limit_ratio = 250.0
+        defl_limit_ratio = get_deflection_limit_ratio(250.0)
     if Fdef_kNm is None:
         Fdef_kNm = 12.0
-    
+
+    # Derive service load from SLS actions first, matching the Deflection page.
+    actions_source = get_param("actions_source", "Manual design actions (inputs below)")
+    sls_M_kNm = get_param("sls_Mstar", 0.0)
+    sls_V_kN = get_param("sls_Vstar", 0.0)
+
+    L_m_for_fd = get_param("defl_L_eff", L_m)
+    if L_m_for_fd is None or L_m_for_fd <= 0:
+        L_m_for_fd = get_param("span_L_m", L_m)
+    if L_m_for_fd is None:
+        L_m_for_fd = 0.0
+
+    fd_source_branch = "fallback"
+    fd_source_text = "Fallback value used because SLS derivation inputs were unavailable."
+    fd_formula_label = None
+    fd_V_used = None
+    fd_L_used = L_m_for_fd
+
+    derived = _derive_equiv_udl_from_actions(
+        M_kNm=sls_M_kNm,
+        V_kN=sls_V_kN,
+        L_m=L_m_for_fd,
+        support_type=support_type,
+    )
+    if derived["w_kN_per_m"] is not None:
+        w_used = float(derived["w_kN_per_m"])
+        fd_source_branch = "sls_actions"
+        fd_source_text = "Derived from SLS actions."
+    elif w_sls is not None:
+        w_used = float(w_sls)
+        fd_source_branch = "sls_udl"
+        fd_source_text = "Using stored SLS UDL."
+    else:
+        w_used = float((g_udl or 0.0) + (q_udl or 0.0))
+
+    if w_used > 0:
+        if g_udl is not None and q_udl is not None and (g_udl + q_udl) > 0:
+            g_ratio = float(g_udl) / float(g_udl + q_udl)
+            g_equiv = w_used * g_ratio
+            q_equiv = w_used * (1.0 - g_ratio)
+        else:
+            g_equiv = w_used
+            q_equiv = 0.0
+    else:
+        g_equiv = float(g_udl or 0.0)
+        q_equiv = float(q_udl or 0.0)
+
     # Simplified section properties (for I_ef calculation)
     # If beff/bw equal b, they're using the default (redundant check, but kept for clarity)
     if beff == b:  # If not explicitly set, use b
@@ -122,11 +157,45 @@ def compute_deflection_results(publish: bool = True) -> dict:
     p_lim = ief_data[3]
     Ief_max = ief_data[4]
     k1 = ief_data[5]
+
+    compute_and_store_multispan_deflection_metrics(
+        state=st.session_state,
+        Ec=float(Eceff),
+        Ief=float(Ief),
+        g_kNm=float(g_equiv),
+        q_kNm=float(q_equiv),
+        psi_s=float(psi_s),
+        defl_limit_ratio=float(defl_limit_ratio),
+        Ast=float(Ast),
+        Asc=float(Asc),
+    )
+    support_type = get_deflection_diagram_support_condition(st.session_state).get(
+        "support_type", support_type
+    )
+
+    # Derive F_d,ef after final support resolution so span/depth checks and report
+    # text stay aligned with governing support_type.
+    V_kN = sls_V_kN
+    if L_m_for_fd > 0 and V_kN is not None and V_kN > 0:
+        if support_type == "Simply supported":
+            Fdef_kNm = 2.0 * V_kN / L_m_for_fd
+            fd_formula_label = "2V/L"
+        elif support_type == "Cantilever":
+            Fdef_kNm = V_kN / L_m_for_fd
+            fd_formula_label = "V/L"
+        else:
+            Fdef_kNm = V_kN / L_m_for_fd
+            fd_formula_label = "V/L"
+
+        fd_V_used = V_kN
+        if fd_source_branch == "fallback":
+            fd_source_branch = "sls_actions"
+            fd_source_text = "Derived from SLS actions."
     
     # Calculate deflection
     results = calc_deflection_as3600(
         L_m=L_eff,
-        Ec=Ec,
+        Ec=Eceff,
         Ief=Ief,
         g_kNm=g_equiv,
         q_kNm=q_equiv,
@@ -158,7 +227,7 @@ def compute_deflection_results(publish: bool = True) -> dict:
         bw=bw,
         d=d,
         fc=fc,
-        Ec=Ec,
+        Ec=Eceff,
         Fdef_kNm=Fdef_kNm,
         support_type=support_type,
         defl_limit_ratio=defl_limit_ratio,
@@ -203,7 +272,9 @@ def compute_deflection_results(publish: bool = True) -> dict:
             "k1_span": k1_span,
             "k2_span": k2_span,
             "fc": fc,
-            "Ec": Ec,
+            "Ec": Eceff,
+            "Ec_short": Ec_short,
+            "phi_cc_t": get_param("phi_cc_t", 2.0),
             "beff": beff,
             "bw": bw,
             "d": d,
@@ -213,6 +284,11 @@ def compute_deflection_results(publish: bool = True) -> dict:
             "support_type": support_type,
             "defl_limit_ratio": defl_limit_ratio,
             "Fdef_kNm": Fdef_kNm,
+            "Fdef_source_branch": fd_source_branch,
+            "Fdef_source_text": fd_source_text,
+            "Fdef_V_used": fd_V_used,
+            "Fdef_L_used": fd_L_used,
+            "Fdef_formula": fd_formula_label,
             "ratio_Asc_Ast": (Asc / Ast) if Ast > 0 else 0.0,
         }
         
@@ -264,6 +340,8 @@ def build_deflection_report(params: dict) -> dict:
     k2_span = params.get("k2_span", 0.0)
     fc = params.get("fc", 32.0)
     Ec = params.get("Ec", 30000.0)
+    Ec_short = params.get("Ec_short", Ec)
+    phi_cc_t = params.get("phi_cc_t", 2.0)
     beff = params.get("beff", 400.0)
     bw = params.get("bw", 400.0)
     d = params.get("d", 560.0)
@@ -294,7 +372,7 @@ def build_deflection_report(params: dict) -> dict:
         "Effective stiffness I_ef",
         "info",
         f"I_ef = {Ief:.3e} mm^4",
-        "AS 3600:2018 Cl. 8.5.3.1",
+        "",
         [
             {"label": "Width ratio", "eq": "β = b_ef / b_w", "sub": f"= {beff:.1f} / {bw:.1f} = {beta:.3f}"},
             {"label": "Reinforcement ratio", "eq": "p = A_st / (b_ef * d)", "sub": f"= {Ast:.0f} / ({beff:.1f} * {d:.1f}) = {p:.5f}"},
@@ -312,10 +390,12 @@ def build_deflection_report(params: dict) -> dict:
         "Short-term deflection (total load)",
         status_short,
         f"δ_st,total = {delta_short_total:.2f} mm",
-        "AS 3600:2018 Cl. 8.5.3.1",
+        "",
         [
             {"label": "Total service load", "eq": "w = g + q", "sub": f"= {w_total:.2f} kN/m"},
             {"label": "Deflection constant", "eq": "k_2 (support type)", "sub": f"= {k2:.5f} ({support_type})"},
+            {"label": "Concrete modulus (derived)", "eq": "E_c = 4700*sqrt(f'_c)", "sub": f"= 4700*sqrt({fc:.1f}) = {Ec_short:.0f} MPa"},
+            {"label": "Effective modulus (derived)", "eq": "E_c,eff = E_c/(1+phi_cc(t))", "sub": f"= {Ec_short:.0f}/(1+{phi_cc_t:.2f}) = {Ec:.0f} MPa"},
             {"label": "Short-term deflection", "eq": "δ_st,total = k_2 * w * L_ef^4 / (E_c,eff * I_ef)", "sub": f"= {k2:.5f} * {w_total:.2f} * {L_mm:.0f}^4 / ({Ec:.0f} * {Ief:.3e}) = {delta_short_total:.2f} mm"},
         ],
     ))
@@ -327,11 +407,12 @@ def build_deflection_report(params: dict) -> dict:
         "Additional long-term deflection",
         status_long,
         f"δ_LT,add = {delta_long_add:.2f} mm",
-        "AS 3600:2018 Cl. 8.5.3.2",
+        "",
         [
             {"label": "Sustained load", "eq": "w_sust = g + ψ_s * q", "sub": f"= {w_sust:.2f} kN/m"},
             {"label": "Steel ratio", "eq": "A_sc / A_st", "sub": f"= {ratio_Asc_Ast:.3f}"},
             {"label": "Creep/shrinkage multiplier", "eq": "k_cs = max[2 - 1.2*(A_sc/A_st), 0.8]", "sub": f"= max[2 - 1.2*{ratio_Asc_Ast:.3f}, 0.8] = {kcs:.2f}"},
+            {"label": "Effective modulus (derived)", "eq": "E_c,eff = E_c/(1+phi_cc(t))", "sub": f"= {Ec_short:.0f}/(1+{phi_cc_t:.2f}) = {Ec:.0f} MPa"},
             {"label": "Short-term sustained", "eq": "δ_st,sust = k_2 * w_sust * L_ef^4 / (E_c,eff * I_ef)", "sub": f"= {k2:.5f} * {w_sust:.2f} * {L_mm:.0f}^4 / ({Ec:.0f} * {Ief:.3e}) = {delta_short_sust:.2f} mm"},
             {"label": "Additional long-term", "eq": "δ_LT,add = k_cs * δ_st,sust", "sub": f"= {kcs:.2f} * {delta_short_sust:.2f} = {delta_long_add:.2f} mm"},
         ],
@@ -344,7 +425,7 @@ def build_deflection_report(params: dict) -> dict:
         "Total deflection (short + long-term)",
         status_total,
         f"δ_total = {delta_total:.2f} mm",
-        "AS 3600:2018 Cl. 8.5.3.2",
+        "",
         [
             {"label": "Total deflection", "eq": "δ_total = δ_st,total + δ_LT,add", "sub": f"= {delta_short_total:.2f} + {delta_long_add:.2f} = {delta_total:.2f} mm"},
             {"label": "Deflection limit", "eq": "δ_limit = L_ef / (L/Δ)", "sub": f"= {L_mm:.0f} / {defl_limit_ratio:.0f} = {defl_limit:.2f} mm"},
@@ -362,7 +443,7 @@ def build_deflection_report(params: dict) -> dict:
             "Span-to-depth ratio L_ef/d",
             status_span,
             f"L_ef/d = {L_over_d:.1f} vs limit = {L_over_d_limit:.1f}",
-            "AS 3600:2018 Cl. 8.5.4",
+            "",
             [
                 {"label": "Stiffness factor", "eq": "k_1 = I_ef / (b_ef * d^3)", "sub": f"= {k1_span:.5f}"},
                 {"label": "Deflection limit", "eq": "Δ/L_ef = 1 / (L/Δ)", "sub": f"= 1 / {defl_limit_ratio:.0f}"},
@@ -374,7 +455,6 @@ def build_deflection_report(params: dict) -> dict:
     
     # Create SLS tab
     sls_tab = make_tab("SLS Checks", sls_boxes)
-    
     return {
         "module_title": "Deflection (SLS)",
         "summary": summary,

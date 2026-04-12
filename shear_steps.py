@@ -103,13 +103,22 @@ def render_step_4(results: ShearResults):
 # ---------------- Step 5 – MCFT parameters -----------------
 def render_step_5(results: ShearResults):
     md = (
-        "**Step 5 – Get MCFT shear parameters $k_v$ and $\\theta_v$ "
+        "**Step 5 – Compression field (MCFT: $k_v$ and $\\theta_v$) "
         "(AS 3600 Cl. 8.2.4)**  \n\n"
-        "From the longitudinal strain and detailing requirements:  \n\n"
-        f"- $k_v = {results.k_v:.3f}$  \n"
-        f"- $\\theta_v = {results.theta_v_deg:.1f}^\\circ$  \n\n"
-        "These parameters control the concrete shear contribution $V_{uc}$ "
-        "and the effectiveness of shear reinforcement $V_{us}$.\n"
+        "**1. Determine governing expression**  \n\n"
+        "Adequate stirrup ratio -> general MCFT formulation applies.  \n\n"
+        "**2. Calculate concrete effectiveness factor $k_v$**  \n\n"
+        f"$k_v = \\dfrac{{0.4}}{{1 + 1500\\varepsilon_x}}$  \n\n"
+        f"$= \\dfrac{{0.4}}{{1 + 1500 \\times {results.eps_x:.5f}}}$  \n\n"
+        f"$= {results.k_v:.3f}$  \n\n"
+        "**3. Determine compression field angle $\\theta_v$**  \n\n"
+        "From MCFT empirical relationship:  \n\n"
+        "$\\theta_v = 29^\\circ + 7000\\,\\varepsilon_x$  \n\n"
+        f"$= 29 + 7000 \\times {results.eps_x:.5f}$  \n\n"
+        f"$= {results.theta_v_deg:.1f}^\\circ$  \n\n"
+        "**Interpretation:**  \n"
+        "$\\theta_v$ defines the angle of the concrete compression struts "
+        "used in both the shear model and strut-and-tie visualisation.\n"
     )
     calcbox(md)
 

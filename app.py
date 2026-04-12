@@ -3,6 +3,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+import importlib
 import streamlit as st
 
 st.set_page_config(
@@ -11,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-from widgets_helpers import apply_global_widget_css, apply_calcbox_css
+from widgets_helpers import apply_global_widget_css, apply_calcbox_css, info_i_button
 from state_and_helpers import hc_try
 
 hc_try("css.apply_global_widget_css", apply_global_widget_css)
@@ -19,6 +20,9 @@ hc_try("css.apply_calcbox_css", apply_calcbox_css)
 
 from state_and_helpers import (
     init_shared_session_state,
+    derive_design_actions,
+    load_active_beam_into_shared,
+    load_proxies_from_active_set,
     recalc_derived_values,
     update_results,
     compute_all_results,
@@ -27,6 +31,7 @@ from state_and_helpers import (
     begin_render_cycle,
     persist_state_snapshot,
     SHARED_DEFAULTS,
+    TAB_KEYS,
     DERIVED_KEYS,
     RESULT_KEYS,
     tripwire_no_falsy_defaulting,
@@ -41,7 +46,6 @@ from persistence.save_to_dashboard import (
     redirect_parent_to_project,
 )
 from projects_store import create_project, update_project, load_project
-from auth_streamlit import get_user_id_from_token
 from auth_bridge import ensure_logged_in_state
 
 # 🔁 Import modules, not individual functions
@@ -54,16 +58,30 @@ import deflection
 import crack_page
 import sfd_bmd_page
 
+
+def _render_deflection_page():
+    renderer = getattr(deflection, "render_deflection", None)
+    if callable(renderer):
+        return renderer()
+
+    # Hot-reload can occasionally leave a stale partial module object around.
+    refreshed_module = importlib.reload(deflection)
+    refreshed_renderer = getattr(refreshed_module, "render_deflection", None)
+    if callable(refreshed_renderer):
+        return refreshed_renderer()
+
+    raise AttributeError("module 'deflection' has no attribute 'render_deflection'")
+
 # ---- page registry ----
 PAGES = {
     "inputs": ("Inputs", inputs_page.render_inputs),
+    "design": ("Design", sfd_bmd_page.render_sfd_bmd_page),
     "bending": ("Bending", bending_page.render_bending),
     "shear": ("Shear", shear_page.render_shear),
     "creep": ("Creep", creep.render_creep),
     "shrinkage": ("Shrinkage", shrinkage.render_shrinkage),
     "crack": ("Crack Control", crack_page.render_crack_control),
-    "design": ("Design", sfd_bmd_page.render_sfd_bmd_page),
-    "deflection": ("Deflection", deflection.render_deflection),
+    "deflection": ("Deflection", _render_deflection_page),
 }
 
 SLUGS = list(PAGES.keys())
@@ -92,6 +110,10 @@ def _get_user_id() -> str:
     user = st.session_state.get("sb_user")
     if user:
         return user.id if hasattr(user, "id") else user.get("id", "")
+    try:
+        from auth_streamlit import get_user_id_from_token
+    except Exception:
+        return ""
     return get_user_id_from_token()
 
 
@@ -155,8 +177,8 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"]{
   align-items:center !important;
   gap:18px !important;
   border-bottom: 1px solid rgba(49,51,63,0.20) !important;
-  padding-bottom: 6px !important;
-  margin-bottom: 1rem !important;
+  padding-bottom: 4px !important;
+  margin-bottom: 0.15rem !important;
 }
 
 /* tab label */
@@ -258,7 +280,15 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         left, right = st.columns([1.0, 9.0], gap="large")
 
         with right:
-            c_save, c_pdf = st.columns([3.5, 7.0], gap="small")
+            st.session_state.setdefault("report_mode", "standard")
+            report_mode = str(st.session_state.get("report_mode", "standard")).strip().lower()
+            if report_mode not in {"standard", "detailed"}:
+                report_mode = "standard"
+                st.session_state["report_mode"] = report_mode
+
+            # Equal width for Save and PDF; trailing spacer keeps both slightly narrower
+            # than filling the full row (same share as the original Save-only column).
+            c_save, c_pdf, c_pdf_opts, _ = st.columns([3.0, 3.0, 0.6, 2.8], gap="small")
 
             with c_save:
                 if st.button("💾 Save", type="primary", use_container_width=True):
@@ -281,13 +311,38 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
                         else:
                             st.session_state["_show_save_modal"] = True
 
-            pdf_detail_level = "detailed" if st.session_state.get("pdf_detailed_toggle", True) else "summary"
-
             with c_pdf:
                 from reporting.example_integration import render_pdf_button
-                render_pdf_button(detail_level=pdf_detail_level)
+                render_pdf_button(detail_level=report_mode)
 
-            st.toggle("Detailed report", value=True, key="pdf_detailed_toggle")
+            with c_pdf_opts:
+                with info_i_button(help_text="Report options") if hasattr(st, "popover") else st.expander("i", expanded=False):
+                    st.selectbox(
+                        "Report mode",
+                        options=["standard", "detailed"],
+                        key="report_mode",
+                        format_func=lambda mode: "Standard Report" if mode == "standard" else "Detailed Report",
+                    )
+                    st.text_input(
+                        "Company name (optional)",
+                        key="report_company_name",
+                        placeholder="Your company name",
+                    )
+                    report_logo = st.file_uploader(
+                        "Upload company logo (optional)",
+                        type=["png", "jpg", "jpeg"],
+                        key="report_company_logo_upload",
+                        help="Used for the current report session only. Not saved to the project.",
+                    )
+                    if report_logo is not None:
+                        st.session_state["report_company_logo_bytes"] = report_logo.getvalue()
+                        st.session_state["report_company_logo_name"] = report_logo.name
+                        st.session_state["report_company_logo_type"] = report_logo.type
+                        st.image(report_logo, width=120)
+                    else:
+                        st.session_state["report_company_logo_bytes"] = None
+                        st.session_state["report_company_logo_name"] = None
+                        st.session_state["report_company_logo_type"] = None
 
     # Modal for first-time save (no project id yet)
     if st.session_state.get("_show_save_modal", False):
@@ -306,10 +361,17 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     if isinstance(qp_page, list):
         qp_page = qp_page[0] if qp_page else None
 
-    # ✅ Only adopt URL -> nav when the URL page actually changes
-    if qp_page in PAGES and st.session_state.get(LAST_QP_KEY) != qp_page:
-        st.session_state[NAV_KEY] = qp_page
-        st.session_state[LAST_QP_KEY] = qp_page
+    # ✅ Adopt URL -> nav when the URL page slug changed since last sync, OR when
+    # ?jump= is present and nav still disagrees (summary link landed while radio lagged).
+    # Never adopt on nav_slug != qp_page alone: after a tab change the widget updates
+    # before step 3 rewrites ?page=, and we'd overwrite the new selection with the old URL.
+    if qp_page in PAGES:
+        last_seen = st.session_state.get(LAST_QP_KEY)
+        nav_slug = st.session_state.get(NAV_KEY)
+        jump_pending = "jump" in st.query_params
+        if last_seen != qp_page or (jump_pending and nav_slug != qp_page):
+            st.session_state[NAV_KEY] = qp_page
+            st.session_state[LAST_QP_KEY] = qp_page
 
     # ✅ If no valid page in URL, still ensure defaults exist
     if NAV_KEY not in st.session_state:
@@ -337,7 +399,6 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
             set_query_params_merge(page=selected_slug)
             st.session_state[LAST_QP_KEY] = selected_slug
 
-
     # ============================================================
     # PHASE 1: ROUTER-OWNED LIFECYCLE (matches State Lab ordering)
     # ============================================================
@@ -349,10 +410,14 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     # 5. render page function
     # 6. persist_state_snapshot()
     # ============================================================
-    
+
     # Step 1: Initialize shared state (restores any dropped widget keys from cache or shared keys)
     # Note: migrate_time_defaults_once() is called inside init_shared_session_state() after snapshot restore
     init_shared_session_state()
+    # Apply stored active-beam params into shared before design resolution and widget hydration.
+    load_active_beam_into_shared()
+    load_proxies_from_active_set()
+    derive_design_actions()
     
     # --- 4) Regression tripwire: verify shared state is alive (AFTER init)
     assert_shared_state_alive()
@@ -416,7 +481,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         except Exception:
             # Never break UI due to compute; debug can inspect results keys
             pass
-    
+
     # Step 4: Begin render cycle (ensures rendered widget tracking is per-run)
     from widgets_helpers import clear_rendered_widget_keys
     clear_rendered_widget_keys()
@@ -427,6 +492,22 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     # (See state_and_helpers.py banner: "PAGE FILE RULES (router-owned lifecycle)")
     PAGES[selected_slug][1]()
     end_of_render_cleanup()
+
+    # Debug guard: verify design-mode actions stay in sync with SFD/BMD outputs
+    if st.session_state.get("actions_mode", "manual") == "design":
+        sfd_M = st.session_state.get("sfd_Mmax_abs_kNm")
+        sfd_V = st.session_state.get("sfd_Vmax_abs_kN")
+        mu = st.session_state.get("Mu_star")
+        mu_kNm = st.session_state.get("Mu_star_kNm")
+        vu = st.session_state.get("Vu_star")
+        mismatch = {}
+        if sfd_M is not None and mu is not None and abs(float(mu) - float(sfd_M)) > 1e-6:
+            mismatch["Mu_star"] = {"expected": sfd_M, "actual": mu}
+        if sfd_M is not None and mu_kNm is not None and abs(float(mu_kNm) - float(sfd_M)) > 1e-6:
+            mismatch["Mu_star_kNm"] = {"expected": sfd_M, "actual": mu_kNm}
+        if sfd_V is not None and vu is not None and abs(float(vu) - float(sfd_V)) > 1e-6:
+            mismatch["Vu_star"] = {"expected": sfd_V, "actual": vu}
+        st.session_state["_debug_design_actions_mismatch"] = mismatch
     
     # Immediately after render_fn(): detect shared-input changes
     shared_after = {k: st.session_state.get(k) for k in SHARED_DEFAULTS.keys()}
@@ -436,8 +517,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         for k in SHARED_DEFAULTS.keys()
         if shared_before.get(k) != shared_after.get(k)
     }
-    
-    
+
     # Show what changed (debug)
     st.session_state["_debug_changed_shared_inputs"] = changed_shared
     
@@ -455,9 +535,14 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
             allowed_due_to_user = True
     
     # Block illegal render-time writes to shared INPUTS
-    if changed_shared and (not wipe_mode) and (not allowed_due_to_user):
+    _shared_input_guard_reverted = bool(
+        changed_shared and (not wipe_mode) and (not allowed_due_to_user)
+    )
+    if _shared_input_guard_reverted:
         # revert the illegal changes
         for k, (old, _new) in changed_shared.items():
+            if k in TAB_KEYS:
+                continue
             st.session_state[k] = old
         st.session_state["_debug_reverted_shared_inputs"] = changed_shared
         st.session_state["_debug_last_revert_tag"] = f"REVERTED {len(changed_shared)} keys on {selected_slug}"
@@ -468,11 +553,11 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
             )
         except Exception:
             pass
-    
+
     # Tripwire: detect shared keys that got zeroed during render
-    
+
     # Step 6: Persist snapshot after page render so future wipes can recover
-    persist_state_snapshot()
+    persist_state_snapshot(reset_manual_action_touch_latch=True)
 
     
     # IMPORTANT: Do NOT do app-level widget→shared syncing.

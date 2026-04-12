@@ -10,7 +10,7 @@ from bending_diagrams import (
     _make_sls_stress_block_figure,  # still used elsewhere, untouched
 )
 from bending_core import _fmt, _layout_bars_in_rows
-from state_and_helpers import update_results
+from state_and_helpers import get_param, update_results
 from widgets_helpers import calcbox, clickable_calcbox, render_step, render_jumpable_step, apply_step_expander_css, step_expander_calcbox, info_i_button
 
 
@@ -192,7 +192,19 @@ def _make_sls_stress_block_figure_32(D_mm, d_mm, dn_mm, layers_tension):
 # ============================================================
 #  TAB 1 – ULS (UNCHANGED LOGIC, TIDIED CALC BOXES)
 # ============================================================
-def render_uls_tab(top_results, b, D, fc, fsy, Ast, d, summary_mode: bool = False, jump_uid: str | None = None):
+def render_uls_tab(
+    top_results,
+    b,
+    D,
+    fc,
+    fsy,
+    Ast,
+    d,
+    summary_mode: bool = False,
+    jump_uid: str | None = None,
+    Mu_star_override: float | None = None,
+    moment_sign: str = "positive",
+):
     """ULS step-by-step (summary_mode parameter ignored, kept for compatibility)."""
     """
     Tab 1 – ULS step-by-step.
@@ -201,8 +213,12 @@ def render_uls_tab(top_results, b, D, fc, fsy, Ast, d, summary_mode: bool = Fals
         summary_mode: If True, all steps are collapsed (expanded=False)
         jump_uid: Deprecated - kept for compatibility, not used anymore
     """
+    from bending_layer_semantics import resolve_bending_faces
+
     phi_Mu_cap = top_results["phi_Mu_cap"]
     phi = top_results["phi"]
+    moment_sign = str(moment_sign or "positive").strip().lower()
+    tensile_steel_face, _, _ = resolve_bending_faces(moment_sign)
 
     # Apply CSS for compact collapsed steps
     apply_step_expander_css()
@@ -293,6 +309,7 @@ $\\alpha_2 = {alpha2_uls:.3f}$, $\\gamma = {gamma_uls:.3f}$ (to be used in Secti
                 show_C=False,
                 C_N=None,
                 variant="11",
+                moment_sign=moment_sign,
             )
             st.plotly_chart(fig_uls_11, width="stretch", config={"displayModeBar": False})
 
@@ -373,7 +390,7 @@ Concrete compression resultant $C \\approx {C_kN:.1f}$ kN acting at the centroid
 
 **Formula:**
 
-From the section inputs, the total area of bottom tensile steel is:
+From the section inputs, the total area of {tensile_steel_face} tensile steel is:
 
 $$
 A_{{st}} = {Ast:.1f}\\ \\text{{mm}}^2
@@ -491,6 +508,7 @@ $ d_n = {dn:.1f}$ mm, $ a = {a_uls:.1f}$ mm.
                 show_C=False,
                 C_N=None,
                 variant="13",
+                moment_sign=moment_sign,
             )
             st.plotly_chart(fig_uls_14, width="stretch", config={"displayModeBar": False})
 
@@ -502,6 +520,142 @@ $ d_n = {dn:.1f}$ mm, $ a = {a_uls:.1f}$ mm.
             diagram_fn=diagram_1_4,
         )
 
+        # --------------------------------------------------
+        # 1.4A Strain compatibility (εcu and εs)
+        # --------------------------------------------------
+        eps_cu_uls = 0.003
+        try:
+            Es_card = float(get_param("Es", 200000.0) or 200000.0)
+        except Exception:
+            Es_card = 200000.0
+        eps_sy = fsy / Es_card if Es_card > 1e-9 else float("nan")
+        if dn and dn > 1e-9 and not math.isnan(dn):
+            eps_s_tension = eps_cu_uls * (d - dn) / dn
+        else:
+            eps_s_tension = float("nan")
+        eps_s_yield_ok = (
+            (not math.isnan(eps_s_tension))
+            and (not math.isnan(eps_sy))
+            and (eps_s_tension >= eps_sy)
+        )
+
+        try:
+            nb_top_14a = int(float(get_param("nb_top", 0) or 0))
+        except (TypeError, ValueError):
+            nb_top_14a = 0
+        try:
+            cover_top_14a = float(get_param("cover_top", 40.0) or 40.0)
+            db_top_14a = float(get_param("db_top", 16.0) or 16.0)
+        except Exception:
+            cover_top_14a, db_top_14a = 40.0, 16.0
+        d_prime_mm = cover_top_14a + 0.5 * db_top_14a
+        show_eps_sc = (
+            nb_top_14a > 0
+            and moment_sign == "positive"
+            and dn > 1e-9
+            and d_prime_mm < dn - 1e-6
+            and not math.isnan(dn)
+        )
+        eps_sc_comp = (
+            eps_cu_uls * (dn - d_prime_mm) / dn if show_eps_sc else float("nan")
+        )
+
+        section14a_step2_extra = ""
+        section14a_step3_extra = ""
+        if show_eps_sc and not math.isnan(eps_sc_comp):
+            section14a_step2_extra = """
+
+At the depth $d'$ to the centroid of **compression** reinforcement (linear profile from the compression fibre to the neutral axis):
+
+$$
+\\varepsilon_{{sc}} = \\varepsilon_{{cu}} \\, \\frac{{d_n - d'}}{{d_n}}
+$$
+"""
+            section14a_step3_extra = f"""
+
+Compression steel strain (same triangle):
+
+$$
+\\varepsilon_{{sc}} = {eps_cu_uls:.3f} \\times \\frac{{{dn:.1f} - {d_prime_mm:.1f}}}{{{dn:.1f}}}
+= {eps_sc_comp:.5f}
+$$
+"""
+
+        yield_compare_md = ""
+        if not math.isnan(eps_sy) and not math.isnan(eps_s_tension):
+            yield_compare_md = f"""
+
+**Yield reference (same $f_{{sy}}$ and $E_s$ as elsewhere on this page):**
+
+$$
+\\varepsilon_{{sy}} = \\frac{{f_{{sy}}}}{{E_s}}
+              = \\frac{{{fsy:.1f}}}{{{Es_card:.0f}}}
+              = {eps_sy:.5f}
+$$
+
+At ULS, $\\varepsilon_s = {eps_s_tension:.5f}$ so $\\varepsilon_s \\ge \\varepsilon_{{sy}}$ is **{"true (tension steel has reached or exceeded yield strain)" if eps_s_yield_ok else "false (strain below yield strain at this idealised compatibility level)"}**.
+"""
+
+        sub_tail = (
+            f"= {eps_s_tension:.5f}"
+            if not math.isnan(eps_s_tension)
+            else "= \\text{—}"
+        )
+        result_eps_tex = (
+            f"{eps_s_tension:.5f}"
+            if not math.isnan(eps_s_tension)
+            else r"\text{—}"
+        )
+
+        section14a_details = (
+            f"""
+*Purpose: Once $d_n$ is known from equilibrium (Check 1.4), define the **ULS strain diagram** used in the bending strain profile: ultimate compression strain at the extreme concrete fibre, linear variation through the depth, and tensile strain $\\varepsilon_s$ at the centroid of the tensile reinforcement (depth $d$).*  
+
+**Setup:**  
+
+- Assumed ultimate compressive strain at the extreme compression fibre: $\\varepsilon_{{cu}} = 0.003$ (AS 3600).  
+- Plane sections remain plane → strain varies **linearly** from the neutral axis (zero strain) to the fibres above and below.  
+- Effective depth to tensile steel centroid: $d = {d:.1f}$ mm.  
+- Neutral axis depth from the **compression face** (same $d_n$ as Check 1.4): $d_n = {dn:.1f}$ mm.  
+
+---
+
+**Formula (tensile steel strain):**
+
+$$
+\\varepsilon_s = \\varepsilon_{{cu}} \\, \\frac{{d - d_n}}{{d_n}}
+$$
+{section14a_step2_extra}
+---
+
+**Substitution:**
+
+$$
+\\varepsilon_s = {eps_cu_uls:.3f} \\times \\frac{{{d:.1f} - {dn:.1f}}}{{{dn:.1f}}}
+{sub_tail}
+$$
+"""
+            + section14a_step3_extra
+            + f"""
+
+---
+
+**Result:**  
+Tensile reinforcement strain at ULS from strain compatibility: **$\\varepsilon_s = {result_eps_tex}$** — this is the steel strain implied by the same $d_n$ and $\\varepsilon_{{cu}}$ as the strain panel (extreme fibre $\\varepsilon_{{cu}}$, steel level $\\varepsilon_s$)."""
+            + yield_compare_md
+        )
+
+        step_expander_calcbox(
+            uid="bending_uls_1_4a",
+            summary_line=(
+                f"1.4A Strain compatibility ($\\varepsilon_{{cu}}$ and $\\varepsilon_s$) | Result: "
+                f"$\\varepsilon_s = {eps_s_tension:.5f}$"
+                if not math.isnan(eps_s_tension)
+                else "1.4A Strain compatibility ($\\varepsilon_{{cu}}$ and $\\varepsilon_s$) | Result: —"
+            ),
+            details_md=section14a_details,
+            status=None,
+        )
 
         # --------------------------------------------------
         # 1.5 Neutral axis ratio k_u
@@ -685,6 +839,8 @@ Design bending capacity $\\phi M_{{u,cap}} = {phi_Mu_cap_uls:.2f}$ kNm.
                 a_mm=a_uls,
                 C_N=C_N,
                 T_N=T,
+                moment_sign=moment_sign,
+                dn_mm=dn,
             )
             st.plotly_chart(fig_uls_16, width="stretch", config={"displayModeBar": False})
 
@@ -700,8 +856,7 @@ Design bending capacity $\\phi M_{{u,cap}} = {phi_Mu_cap_uls:.2f}$ kNm.
         # --------------------------------------------------
         # 1.7 Flexural capacity check (Mu* ≤ φMu,cap)
         # --------------------------------------------------
-        from state_and_helpers import get_param
-        Mu_star = get_param("Mu_star", 0.0)
+        Mu_star = float(Mu_star_override) if Mu_star_override is not None else get_param("Mu_star", 0.0)
         if Mu_star is not None and phi_Mu_cap_uls > 0:
             Mu_ok = Mu_star <= phi_Mu_cap_uls
             Mu_status = "pass" if Mu_ok is True else "fail" if Mu_ok is False else None
@@ -986,7 +1141,19 @@ Minimum tensile steel area $A_{{st,min}} = {Ast_min_as:.1f}$ mm².
 # ============================================================
 #  TAB 3 – SLS (UPDATED WITH LAYERS + COMP STEEL)
 # ============================================================
-def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star, summary_mode: bool = False, jump_uid: str | None = None):
+def render_sls_tab(
+    top_results,
+    b,
+    D,
+    d,
+    Ast,
+    Ec,
+    Es,
+    Mu_star,
+    summary_mode: bool = False,
+    jump_uid: str | None = None,
+    moment_sign: str = "positive",
+):
     """SLS cracked-section (summary_mode parameter ignored, kept for compatibility)."""
     """
     Tab 3 – SLS cracked-section teaching model.
@@ -1010,11 +1177,22 @@ def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star, summary_mode: boo
     # Apply CSS for compact collapsed steps
     apply_step_expander_css()
 
-    if not (d and Ast and Ec and Es and b and D and Mu_star is not None):
+    from bending_layer_semantics import resolve_bending_faces
+    from state_and_helpers import get_param
+
+    moment_sign = str(moment_sign or "positive").strip().lower()
+    _, _, hogging_sls = resolve_bending_faces(moment_sign)
+    try:
+        st.session_state["bending_sls_hogging"] = bool(hogging_sls)
+    except Exception:
+        pass
+
+    Ms_service = float(get_param("bending_sls_Ms_used", get_param("sls_Mstar", 0.0)) or 0.0)
+    if not (d and Ast and Ec and Es and b and D and Ms_service is not None):
         st.info("Not enough information to run SLS cracked-section example.")
         return
 
-    Ms = Mu_star  # service moment (kNm)
+    Ms = Ms_service  # service moment (kNm)
 
     # --------------------------------------------------
     #  Read bar layout info from session_state
@@ -1027,14 +1205,42 @@ def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star, summary_mode: boo
     nb_top = st.session_state.get("nb_top", 0) or 0
     db_top = st.session_state.get("db_top", 0.0) or 0.0
     cover_top = st.session_state.get("cover_top", 0.0) or 0.0
+    rowgap_top = float(st.session_state.get("rowgap_top", 0.0) or 0.0)
 
     # --------------------------------------------------
     #  Build STEEL LAYERS
     # --------------------------------------------------
     layers_tension: list[dict] = []
 
-    # --- Bottom tension layers (T1, T2, ...) ---
-    if nb_bot > 0 and db_bot > 0 and cover_bot > 0:
+    # --- Hogging: top tension layers ---
+    if hogging_sls and nb_top > 0 and db_top > 0 and cover_top > 0:
+        min_spacing_top = 2 * db_top
+        layout_top = _layout_bars_in_rows(
+            nb_top, b, cover_top, db_top, min_spacing_top, 3
+        )
+        row_counts_top: dict[int, int] = {}
+        for _, row_idx in layout_top:
+            row_counts_top[row_idx] = row_counts_top.get(row_idx, 0) + 1
+        As_bar_top = math.pi * db_top**2 / 4.0
+        r_top = db_top / 2.0
+        y_row0_top = cover_top + r_top
+        for row_idx in sorted(row_counts_top.keys()):
+            n_row = row_counts_top[row_idx]
+            if n_row <= 0:
+                continue
+            As_row = n_row * As_bar_top
+            y_row = y_row0_top + row_idx * (db_top + rowgap_top)
+            layers_tension.append(
+                {
+                    "name": f"T{row_idx + 1}",
+                    "label": f"Top tension steel (row {row_idx + 1})",
+                    "y": y_row,
+                    "As": As_row,
+                }
+            )
+
+    # --- Bottom tension layers (T1, T2, ...) — sagging ---
+    if (not hogging_sls) and nb_bot > 0 and db_bot > 0 and cover_bot > 0:
         # Same helper as section diagram → rows of bars
         min_spacing_bot = 2 * db_bot
         layout_bot = _layout_bars_in_rows(
@@ -1070,27 +1276,49 @@ def render_sls_tab(top_results, b, D, d, Ast, Ec, Es, Mu_star, summary_mode: boo
         layers_tension = [
             {
                 "name": "T1",
-                "label": "Bottom tension steel",
+                "label": (
+                    "Top tension steel"
+                    if hogging_sls
+                    else "Bottom tension steel"
+                ),
                 "y": d,
                 "As": Ast,
             }
         ]
 
-    # --- Top compression layer (C1), if present ---
-    As_top = (
-        nb_top * math.pi * db_top**2 / 4.0 if nb_top and db_top else 0.0
-    )
-    y_top = cover_top + db_top / 2.0 if db_top else 0.0
-    comp_layer = (
-        {
-            "name": "C1",
-            "label": "Top steel (compression layer)",
-            "y": y_top,
-            "As": As_top,
-        }
-        if As_top > 0 and 0.0 < y_top < D
-        else None
-    )
+    # --- Compression layer on opposite face (optional) ---
+    if hogging_sls:
+        As_bot_comp = (
+            nb_bot * math.pi * db_bot**2 / 4.0 if nb_bot and db_bot else 0.0
+        )
+        y_bot_comp = (
+            D - cover_bot - db_bot / 2.0 if db_bot and cover_bot else 0.0
+        )
+        comp_layer = (
+            {
+                "name": "C1",
+                "label": "Bottom steel (compression layer)",
+                "y": y_bot_comp,
+                "As": As_bot_comp,
+            }
+            if As_bot_comp > 0 and 0.0 < y_bot_comp < D
+            else None
+        )
+    else:
+        As_top = (
+            nb_top * math.pi * db_top**2 / 4.0 if nb_top and db_top else 0.0
+        )
+        y_top = cover_top + db_top / 2.0 if db_top else 0.0
+        comp_layer = (
+            {
+                "name": "C1",
+                "label": "Top steel (compression layer)",
+                "y": y_top,
+                "As": As_top,
+            }
+            if As_top > 0 and 0.0 < y_top < D
+            else None
+        )
 
     include_comp = st.checkbox(
         "Include compression steel in cracked-section analysis",
@@ -1171,6 +1399,10 @@ so \(n\) is usually in the range **6–10**.
 
 - $E_s = {Es:.0f}$ MPa  
 - $E_c = {Ec:.0f}$ MPa  
+- Concrete modulus derivation:  
+  $$
+  E_c = 4700\sqrt{{f'_c}}
+  $$
 
 ---
 
@@ -1194,7 +1426,6 @@ The transformed area of each steel layer is $n A_s$.
 **Result:**  
 Modular ratio $n = {Es/Ec:.2f}$ (used to compute $nA_s$ in the table below).
 """
-    
     def _sls_3_1_table():
         st.markdown("##### Transformed steel areas")
         layer_rows = []
@@ -1236,24 +1467,37 @@ Modular ratio $n = {Es/Ec:.2f}$ (used to compute $nA_s$ in the table below).
     # 3.2 Neutral axis depth d_n (cracked section) + SLS stress figure
     # --------------------------------------------------
     def equilibrium_residual(dn: float) -> float:
-        """C(dn) - T(dn) = 0 for cracked section."""
-        # Concrete compression resultant
+        """C(dn) - T(dn) = 0; dn = neutral axis depth measured from the top fibre."""
+        Dv = float(D)
+        if hogging_sls:
+            Hc = max(0.0, Dv - float(dn))
+            C_conc = 0.5 * b * Hc**2
+            T_steel = 0.0
+            for layer in layers_tension:
+                As_i = layer["As"]
+                y_i = layer["y"]
+                if y_i < dn:
+                    T_steel += n_sls * As_i * (dn - y_i)
+                else:
+                    C_conc += n_sls * As_i * (y_i - dn)
+            if include_comp and comp_layer is not None:
+                As_c = comp_layer["As"]
+                y_c = comp_layer["y"]
+                if y_c > dn:
+                    C_conc += n_sls * As_c * (y_c - dn)
+                else:
+                    T_steel += n_sls * As_c * (dn - y_c)
+            return C_conc - T_steel
+
         C_conc = 0.5 * b * dn**2
-
-        # Steel contributions (transformed)
         T_steel = 0.0
-
-        # tension layers
         for layer in layers_tension:
             As_i = layer["As"]
             y_i = layer["y"]
             if y_i > dn:
                 T_steel += n_sls * As_i * (y_i - dn)
             else:
-                # if a "tension" layer ends up above NA, treat as compression
                 C_conc += n_sls * As_i * (dn - y_i)
-
-        # optional compression layer
         if include_comp and comp_layer is not None:
             As_c = comp_layer["As"]
             y_c = comp_layer["y"]
@@ -1261,7 +1505,6 @@ Modular ratio $n = {Es/Ec:.2f}$ (used to compute $nA_s$ in the table below).
                 C_conc += n_sls * As_c * (dn - y_c)
             else:
                 T_steel += n_sls * As_c * (y_c - dn)
-
         return C_conc - T_steel
 
     # Simple bisection between near-top and near-bottom
@@ -1403,17 +1646,28 @@ d_n = {dn_val:.2f}\ \text{{mm}}
     def diagram_3_2():
         # Build diagram from fresh calc values (not session_state)
         # Compute preliminary kappa for strain distribution (needed for eps_top)
-        Icr_prelim = b * dn_sls**3 / 3.0
+        if hogging_sls:
+            Hp = max(0.0, float(D) - float(dn_sls))
+            Icr_prelim = b * Hp**3 / 3.0
+        else:
+            Icr_prelim = b * dn_sls**3 / 3.0
         for layer in layers_tension:
             As_i = layer["As"]
             y_i = layer["y"]
-            if y_i >= dn_sls:
+            if (hogging_sls and y_i < dn_sls) or ((not hogging_sls) and y_i >= dn_sls):
                 Icr_prelim += n_sls * As_i * (y_i - dn_sls) ** 2
         if include_comp and comp_layer is not None:
             As_c = comp_layer["As"]
             y_c = comp_layer["y"]
-            if y_c < dn_sls:
+            if hogging_sls:
+                if y_c > dn_sls:
+                    Icr_prelim += n_sls * As_c * (y_c - dn_sls) ** 2
+                else:
+                    Icr_prelim += n_sls * As_c * (dn_sls - y_c) ** 2
+            elif y_c < dn_sls:
                 Icr_prelim += n_sls * As_c * (dn_sls - y_c) ** 2
+            else:
+                Icr_prelim += n_sls * As_c * (y_c - dn_sls) ** 2
         kappa_prelim = (Ms * 1e6) / (Ec * Icr_prelim) if Ec and Icr_prelim else 0.0
         eps_top_prelim = kappa_prelim * (0.0 - dn_sls)  # eps_top = kappa * (0 - dn)
         
@@ -1444,6 +1698,7 @@ d_n = {dn_val:.2f}\ \text{{mm}}
             dn_mm=dn_sls,
             include_comp=(include_comp and comp_layer is not None),
             d_comp_mm=comp_layer["y"] if (include_comp and comp_layer is not None) else None,
+            moment_sign="negative" if hogging_sls else "positive",
         )
         st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=f"sls_3_2_{st.session_state['_diag_nonce']}")
     
@@ -1459,14 +1714,23 @@ d_n = {dn_val:.2f}\ \text{{mm}}
     # 3.3 Cracked moment of inertia I_cr (CALC BOX ONLY)
     # --------------------------------------------------
     # Classify compression / tension for Icr based on dn_sls
-    I_conc = b * dn_sls**3 / 3.0
+    if hogging_sls:
+        Hc_i = max(0.0, float(D) - float(dn_sls))
+        I_conc = b * Hc_i**3 / 3.0
+    else:
+        I_conc = b * dn_sls**3 / 3.0
     I_t = 0.0
     I_c = 0.0
 
     for layer in layers_tension:
         As_i = layer["As"]
         y_i = layer["y"]
-        if y_i >= dn_sls:
+        if hogging_sls:
+            if y_i < dn_sls:
+                I_t += n_sls * As_i * (dn_sls - y_i) ** 2
+            else:
+                I_c += n_sls * As_i * (y_i - dn_sls) ** 2
+        elif y_i >= dn_sls:
             I_t += n_sls * As_i * (y_i - dn_sls) ** 2
         else:
             I_c += n_sls * As_i * (dn_sls - y_i) ** 2
@@ -1474,7 +1738,12 @@ d_n = {dn_val:.2f}\ \text{{mm}}
     if include_comp and comp_layer is not None:
         As_c = comp_layer["As"]
         y_c = comp_layer["y"]
-        if y_c < dn_sls:
+        if hogging_sls:
+            if y_c > dn_sls:
+                I_c += n_sls * As_c * (y_c - dn_sls) ** 2
+            else:
+                I_t += n_sls * As_c * (dn_sls - y_c) ** 2
+        elif y_c < dn_sls:
             I_c += n_sls * As_c * (dn_sls - y_c) ** 2
         else:
             I_t += n_sls * As_c * (y_c - dn_sls) ** 2
@@ -1530,6 +1799,10 @@ Cracked transformed inertia $I_{{cr}} = {Icr:,.2f}\\ \\text{{mm}}^4$.
     try:
         st.session_state["bending_sls_dn"] = float(dn_sls)
         st.session_state["bending_sls_kappa"] = float(kappa)
+        update_results(
+            bending_sls_dn=float(dn_sls),
+            bending_sls_kappa=float(kappa),
+        )
     except Exception:
         pass
 
@@ -1750,12 +2023,13 @@ See table for layer-by-layer SLS steel strains and stresses.
     # --------------------------------------------------
     deepest = None
     if steel_rows:
-        # outermost tension layer (deepest y with positive stress)
-        deepest = max(
-            (row for row in steel_rows if row["f_s (MPa)"] > 0.0),
-            key=lambda row: row["Depth y (mm)"],
-            default=None,
-        )
+        pos_steel = [row for row in steel_rows if row["f_s (MPa)"] > 0.0]
+        if pos_steel:
+            deepest = (
+                min(pos_steel, key=lambda row: row["Depth y (mm)"])
+                if hogging_sls
+                else max(pos_steel, key=lambda row: row["Depth y (mm)"])
+            )
 
     # Save cracked-section SLS geometry + steel state to session_state
     # (no widgets touched – these are read-only “output” values)
@@ -1763,11 +2037,18 @@ See table for layer-by-layer SLS steel strains and stresses.
     st.session_state["bending_sls_kappa"] = float(kappa)
 
     if deepest is not None:
+        eps_outer = float(deepest["ε_s"])
+        fs_outer = float(Es * eps_outer)
         st.session_state["bending_sls_y_tension_outer"] = float(
             deepest["Depth y (mm)"]
         )
-        st.session_state["bending_sls_eps_s_outer"] = float(deepest["ε_s"])
-        st.session_state["bending_sls_fs_outer"] = float(deepest["f_s (MPa)"])
+        st.session_state["bending_sls_eps_s_outer"] = float(eps_outer)
+        st.session_state["bending_sls_fs_outer"] = float(fs_outer)
+        update_results(
+            bending_sls_y_tension_outer=float(deepest["Depth y (mm)"]),
+            bending_sls_eps_s_outer=float(eps_outer),
+            bending_sls_fs_outer=float(fs_outer),
+        )
 
     # --------------------------------------------------
     # 3.7 Link to crack-width calculation
@@ -1778,12 +2059,10 @@ See table for layer-by-layer SLS steel strains and stresses.
     y_control = None
 
     if steel_rows:
-        # Pick the deepest steel row (outermost layer) and use ABS stress
-        # so we are robust to sign convention (tension may be negative).
-        deepest = max(
-            steel_rows,
-            key=lambda row: float(row["Depth y (mm)"]),
-            default=None,
+        deepest = (
+            min(steel_rows, key=lambda row: float(row["Depth y (mm)"]))
+            if hogging_sls
+            else max(steel_rows, key=lambda row: float(row["Depth y (mm)"]))
         )
         if deepest is not None:
             fs_tension = abs(float(deepest["f_s (MPa)"]))

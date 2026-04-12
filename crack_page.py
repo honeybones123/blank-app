@@ -13,9 +13,28 @@ from state_and_helpers import (
     get_widget_key_for_shared,
     TAB_KEYS,
 )
-from widgets_helpers import apply_global_widget_css, number_row, calcbox, render_jumpable_step, apply_step_summary_expander_css, page_divider, show_reo_message, label_with_hover, select_row, seed_widget_from_shared
+from widgets_helpers import (
+    apply_global_widget_css,
+    apply_result_page_css,
+    number_row,
+    calcbox,
+    render_jumpable_step,
+    apply_step_summary_expander_css,
+    page_divider,
+    show_reo_message,
+    label_with_hover,
+    select_row,
+    seed_widget_from_shared,
+    render_page_explainer_expander,
+    render_section_title,
+    render_result_page_title,
+    render_longitudinal_reo_rows,
+    info_i_button,
+    render_longitudinal_reo_row_config_controls,
+    main_longitudinal_reo_pair_labels,
+)
 from ui_seamless_steps import inject_seamless_steps_css, render_clickable_summary_table, bind_summary_clicks
-from crack_checks_helpers import build_crack_check_rows_from_state
+from crack_checks_helpers import build_crack_check_rows_from_state, pick_governing_check_row
 
 # Safe option lists for reinforcement inputs (same as inputs_page)
 REO_BAR_DIAS = [10, 12, 16, 20, 24, 28, 32, 36, 40]
@@ -88,44 +107,7 @@ def _get_bottom_spacing():
 
 def _col_heading(text: str):
     """Consistent column heading style."""
-    st.markdown(f"### {text}")
-    st.markdown("<div style='height: 0.25rem;'></div>", unsafe_allow_html=True)
-
-
-def _render_readonly_value(label: str, value, unit: str, help_text: str | None = None):
-    """
-    Render a read-only value with label and optional help text.
-    Uses the same styling as other read-only inputs.
-    """
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        label_with_hover(label, help_text)
-    with col2:
-        if value is None:
-            display_value = "—"
-            color_style = "color: #999;"
-        else:
-            if isinstance(value, float):
-                if unit == "mm":
-                    display_value = f"{value:.0f} {unit}"
-                elif unit == "mm²":
-                    display_value = f"{value:.0f} {unit}"
-                elif unit == "MPa":
-                    display_value = f"{value:.2f} {unit}"
-                else:
-                    display_value = f"{value:.1f} {unit}"
-            else:
-                display_value = f"{value} {unit}" if unit else str(value)
-            color_style = ""
-        
-        st.markdown(
-            f"""
-<div class="readonly-param" style="padding: 0.5rem 0.75rem; margin: 0;">
-  <div class="readonly-param-value" style="font-size: 1rem; margin: 0; {color_style}">{display_value}</div>
-</div>
-""",
-            unsafe_allow_html=True,
-        )
+    render_section_title(text)
 
 
 def _inject_calcbox_css():
@@ -285,6 +267,7 @@ def render_crack():
     get_jump_uid()
     
     apply_global_widget_css()
+    apply_result_page_css()
     _inject_calcbox_css()
     apply_step_summary_expander_css()
     inject_seamless_steps_css()
@@ -293,27 +276,25 @@ def render_crack():
     # --------------------------------------------------------
     # Page title
     # --------------------------------------------------------
-    st.title("Crack width – AS 3600:2018")
-
-    # --------------------------------------------------------
-    # Page description (directly under title)
-    # --------------------------------------------------------
-    st.markdown(
-        """
+    def _render_crack_explainer() -> None:
+        st.markdown(
+            """
 This page checks flexural crack control in reinforced concrete beams in accordance with **AS 3600:2018 Clause 8.6.2**, using:
 
 - **Table method (no direct crack width)** — limiting steel stress from Tables 8.6.2.2(A)–(B)
 - **Direct crack-width calculation** — per Clause 8.6.2.3:
 """
-    )
-    
-    st.latex(r"w = s_{r,\max}\left(\varepsilon_{sm}-\varepsilon_{cm}\right)\le w'_{\max}")
-    
-    st.markdown(
-        """
+        )
+        
+        st.latex(r"w = s_{r,\max}\left(\varepsilon_{sm}-\varepsilon_{cm}\right)\le w'_{\max}")
+        
+        st.markdown(
+            """
 The aim is to verify that cracking is **controlled** so that durability and appearance are not impaired.
 """
-    )
+        )
+
+    render_result_page_title("Crack width – AS 3600:2018")
 
     # --------------------------------------------------------
     # Reserve space for top summary (will be filled after calculations)
@@ -334,7 +315,6 @@ The aim is to verify that cracking is **controlled** so that durability and appe
         
         # Materials first
         fc_seed = _seed_from_param("fc", 32.0)
-        Ec_seed = _seed_from_param("Ec", 30000.0)
 
         fc = number_row(
             "Concrete strength f'c (MPa)",
@@ -343,20 +323,8 @@ The aim is to verify that cracking is **controlled** so that durability and appe
             sync_callbacks,
             help_text="Characteristic compressive strength of concrete at 28 days.",
         )
-        Ec = number_row(
-            "Concrete modulus E_c (MPa)",
-            "crack_Ec",
-            Ec_seed,
-            sync_callbacks,
-            help_text="Elastic modulus of concrete (E_c), typically calculated from f'c per AS 3600.",
-        )
-        Es = number_row(
-            "Steel modulus E_s (MPa)",
-            "crack_Es",
-            200000.0,
-            sync_callbacks,
-            help_text="Elastic modulus of reinforcing steel (E_s), typically 200,000 MPa for standard reinforcement.",
-        )
+        Ec = float(get_param("Ec", 30000.0) or 30000.0)
+        Es = float(get_param("Es", 200000.0) or 200000.0)
         
         # Then Geometry
         b_seed = _seed_from_param("b", 300.0)
@@ -385,119 +353,39 @@ The aim is to verify that cracking is **controlled** so that durability and appe
             help_text="Clear concrete cover to the centroid of the bottom tensile reinforcement layer.",
         )
 
-    # --- Bottom Longitudinal Reinforcement ---
+    # --- Bottom (web) longitudinal reinforcement ---
     with top_c2:
-        _col_heading("Bottom longitudinal reinforcement")
-        
-        # Always seed from shared (single source of truth)
-        db_bot_1_val = float(get_param("db_bot_1", 20.0))
-        db_bot_2_val = float(get_param("db_bot_2", 20.0))
-        rowgap_bot_val = float(get_param("rowgap_bot", 60.0))
-    
-        # Layer 1 mode
-        w_bot1_layout_mode = get_widget_key_for_shared("bot1_layout_mode", prefix="crack_") or "crack_bot1_layout_mode"
-        seed_widget_from_shared(w_bot1_layout_mode, "bot1_layout_mode", "Count")
-        select_row(
-            "Layer 1 layout mode",
-            w_bot1_layout_mode,
-            REO_LAYOUT_MODE,
-            st.session_state.get("bot1_layout_mode", "Count"),
-            sync_callbacks,
-            help_text="Choose whether Layer 1 is defined by bar count or bar spacing.",
-        )
-
-        mode = st.session_state.get(w_bot1_layout_mode, st.session_state.get("bot1_layout_mode", "Count"))
-
-        if mode == "Count":
-            w_bot1_count = get_widget_key_for_shared("bot1_count", prefix="crack_") or "crack_bot1_count"
-            seed_widget_from_shared(w_bot1_count, "bot1_count", 4)
-            select_row(
-                "Layer 1 bars (count)",
-                w_bot1_count,
-                REO_COUNTS_0_12,
-                int(st.session_state.get("bot1_count", 4)),
-                sync_callbacks,
-                help_text="Number of bars in bottom Layer 1 (0–12).",
-            )
-        else:
-            w_bot1_spacing = get_widget_key_for_shared("bot1_spacing", prefix="crack_") or "crack_bot1_spacing"
-            seed_widget_from_shared(w_bot1_spacing, "bot1_spacing", 200)
-            select_row(
-                "Layer 1 bar spacing (mm)",
-                w_bot1_spacing,
-                REO_SPACINGS,
-                int(st.session_state.get("bot1_spacing", 200)),
-                sync_callbacks,
-                help_text="Centre-to-centre spacing for bottom Layer 1 (mm).",
-            )
-
-        w_db_bot_1 = get_widget_key_for_shared("db_bot_1", prefix="crack_") or "crack_db_bot_1"
-        seed_widget_from_shared(w_db_bot_1, "db_bot_1", 20.0)
-        select_row(
-            "Layer 1 bar Ø (mm)",
-            w_db_bot_1,
-            REO_BAR_DIAS,
-            int(db_bot_1_val),
-            sync_callbacks,
-            help_text="Nominal bar diameter for Layer 1 (mm).",
-        )
-    
-        # Layer 2 mode
-        w_bot2_layout_mode = get_widget_key_for_shared("bot2_layout_mode", prefix="crack_") or "crack_bot2_layout_mode"
-        seed_widget_from_shared(w_bot2_layout_mode, "bot2_layout_mode", "Count")
-        select_row(
-            "Layer 2 layout mode",
-            w_bot2_layout_mode,
-            REO_LAYOUT_MODE,
-            st.session_state.get("bot2_layout_mode", "Count"),
-            sync_callbacks,
-            help_text="Choose whether Layer 2 is defined by bar count or bar spacing.",
-        )
-
-        mode2 = st.session_state.get(w_bot2_layout_mode, st.session_state.get("bot2_layout_mode", "Count"))
-
-        if mode2 == "Count":
-            w_bot2_count = get_widget_key_for_shared("bot2_count", prefix="crack_") or "crack_bot2_count"
-            seed_widget_from_shared(w_bot2_count, "bot2_count", 0)
-            select_row(
-                "Layer 2 bars (count)",
-                w_bot2_count,
-                REO_COUNTS_0_12,
-                int(st.session_state.get("bot2_count", 0)),
-                sync_callbacks,
-                help_text="Number of bars in bottom Layer 2 (0–12).",
-            )
-        else:
-            w_bot2_spacing = get_widget_key_for_shared("bot2_spacing", prefix="crack_") or "crack_bot2_spacing"
-            seed_widget_from_shared(w_bot2_spacing, "bot2_spacing", 200)
-            select_row(
-                "Layer 2 bar spacing (mm)",
-                w_bot2_spacing,
-                REO_SPACINGS,
-                int(st.session_state.get("bot2_spacing", 200)),
-                sync_callbacks,
-                help_text="Centre-to-centre spacing for bottom Layer 2 (mm).",
-            )
-
-        w_db_bot_2 = get_widget_key_for_shared("db_bot_2", prefix="crack_") or "crack_db_bot_2"
-        seed_widget_from_shared(w_db_bot_2, "db_bot_2", 20.0)
-        select_row(
-            "Layer 2 bar Ø (mm)",
-            w_db_bot_2,
-            REO_BAR_DIAS,
-            int(db_bot_2_val),
-            sync_callbacks,
-            help_text="Nominal bar diameter for Layer 2 (mm).",
-        )
-
+        _cr_sec_shape_ui = str(get_param("sec_shape", "RECT") or "RECT")
+        _cr_bot_heading, _ = main_longitudinal_reo_pair_labels(_cr_sec_shape_ui, variant="sentence_lower")
         w_rowgap_bot = get_widget_key_for_shared("rowgap_bot", prefix="crack_") or "crack_rowgap_bot"
         seed_widget_from_shared(w_rowgap_bot, "rowgap_bot", 60.0)
-        number_row(
-            "Row gap (mm)",
-            w_rowgap_bot,
-            rowgap_bot_val,
-            sync_callbacks,
-            help_text="Clear vertical gap between Layer 1 and Layer 2 (mm).",
+        rowgap_bot_val = float(st.session_state.get(w_rowgap_bot, get_param("rowgap_bot", 60.0)))
+
+        _crack_bot_title_col, _crack_bot_info_col = st.columns([0.92, 0.08], vertical_alignment="center")
+        with _crack_bot_title_col:
+            _col_heading(_cr_bot_heading.title())
+        with _crack_bot_info_col:
+            with info_i_button(help_text="Row count and vertical gap between reinforcement layers."):
+                render_longitudinal_reo_row_config_controls(
+                    page_prefix="crack",
+                    section="bot",
+                    sync_callbacks=sync_callbacks,
+                    rowgap_widget_key=w_rowgap_bot,
+                    rowgap_default=rowgap_bot_val,
+                    rowgap_help_text="Clear vertical gap between reinforcement rows (mm).",
+                    sec_shape=_cr_sec_shape_ui,
+                )
+
+        render_longitudinal_reo_rows(
+            page_prefix="crack",
+            section="bot",
+            sync_callbacks=sync_callbacks,
+            layout_modes=REO_LAYOUT_MODE,
+            count_options=REO_COUNTS_0_12,
+            spacing_options=REO_SPACINGS,
+            dia_options=REO_BAR_DIAS,
+            single_column=True,
+            sec_shape=_cr_sec_shape_ui,
         )
 
     # --- Crack Criteria ---
@@ -567,121 +455,55 @@ The aim is to verify that cracking is **controlled** so that durability and appe
             help_text="Strain distribution factor used in crack spacing/width model. Default 0.5 for typical RC flexural members; adjust only if using a different assumed strain distribution per your chosen method.",
         )
 
-    # Bottom row: 2 columns
-    st.markdown("<div style='height: 0.75rem;'></div>", unsafe_allow_html=True)
-    
-    bot_c1, bot_c2 = st.columns(2, gap="large")
-    
-    # --- Computed (read-only) ---
-    with bot_c1:
-        _col_heading("Computed (read-only)")
-        
-        # Get computed values (these are derived from the widgets above)
-        Ast = _seed_from_param("Ast_bot", 3 * math.pi * 20.0**2 / 4.0)
-        db = _get_bottom_bar_diameter()
-        spacing = _get_bottom_spacing()
-        nb_bot = _get_bottom_bar_count()
-        fct_default = 0.6 * math.sqrt(max(get_param("fc", 32.0), 1.0))
-        fct_eff = float(fct_default)
-        
-        _render_readonly_value(
-            "Area of tensile steel A_s,t (mm²)",
-            Ast,
-            "mm²",
-            help_text="Total area of bottom tensile reinforcement, computed from bar layout.",
-        )
-        
-        if spacing is not None:
-            _render_readonly_value(
-                "Row spacing s_r (mm)",
-                spacing,
-                "mm",
-                help_text="Calculated centre-to-centre spacing of bottom reinforcement bars from layout.",
-            )
-        else:
-            _render_readonly_value(
-                "Row spacing s_r (mm)",
-                None,
-                "",
-                help_text="Calculated centre-to-centre spacing of bottom reinforcement bars from layout.",
-            )
-        
-        _render_readonly_value(
-            "Effective mean tensile strength f_ct,eff (MPa)",
-            fct_eff,
-            "MPa",
-            help_text="Effective mean axial tensile strength of concrete (f_ct,eff), calculated as 0.6√f'c.",
-        )
-        
-        # Use spacing = 200.0 as fallback if not available (for calculations)
-        if spacing is None:
-            spacing = 200.0
-    
-    # --- Linked SLS inputs (read-only) ---
-    with bot_c2:
-        _col_heading("Linked SLS inputs (read-only)")
-        
-        # σ_sr from bending page (SLS steel stress)
-        # Contract-safe: if missing, trigger bending compute (publishes via update_results only)
-        results = st.session_state.get("results", {})
-        sigma_sr_raw = results.get("sigma_s_sls", st.session_state.get("sigma_s_sls", None))
+    # --------------------------------------------------------
+    # Adopted values for crack checks (derived / linked; sources in calc steps below)
+    # --------------------------------------------------------
+    Ast = _seed_from_param("Ast_bot", 3 * math.pi * 20.0**2 / 4.0)
+    db = _get_bottom_bar_diameter()
+    spacing = _get_bottom_spacing()
+    fct_default = 0.6 * math.sqrt(max(get_param("fc", 40.0), 1.0))
+    fct_eff = float(fct_default)
 
-        # Only auto-compute if value is missing/None (0 is a valid value!)
-        if sigma_sr_raw is None:
-            try:
-                from bending_page import compute_bending_results
-                compute_bending_results(publish=True)   # publishes sigma_s_sls via update_results
-            except Exception:
-                pass
+    if spacing is None:
+        spacing = 200.0
 
-        sigma_sr = float(results.get("sigma_s_sls", st.session_state.get("sigma_s_sls", 0.0)))
+    # σ_sr from bending page (SLS steel stress)
+    # Contract-safe: if missing, trigger bending compute (publishes via update_results only)
+    results = st.session_state.get("results", {})
+    sec_shape = str(get_param("sec_shape", "RECT") or "RECT")
+    # T/I crack checks should use canonical resolved active-bar outputs from crack_core.
+    if sec_shape in ("T", "I"):
+        Ast = float(st.session_state.get("crack_Ast_active_mm2", Ast) or Ast)
+        dias = list(st.session_state.get("crack_active_bar_dias", []) or [])
+        db = float(max(dias) if dias else db or 0.0)
+        spacing_vals = list(st.session_state.get("crack_active_bar_spacing_mm", []) or [])
+        if spacing_vals:
+            spacing = float(sum(float(v) for v in spacing_vals) / max(len(spacing_vals), 1))
+        b = float(st.session_state.get("crack_tension_width_mm", b) or b)
+        tension_face = str(st.session_state.get("crack_tension_face", "bottom") or "bottom")
+        c = float(get_param("cover_top" if tension_face == "top" else "cover_bot", c) or c)
 
-        # Optional: warning only if still missing after attempted compute
-        if results.get("sigma_s_sls", st.session_state.get("sigma_s_sls", None)) is None:
-            st.warning(
-                "Crack page could not auto-load SLS steel stress (sigma_s_sls). "
-                "Check bending compute pipeline (compute_bending_results / update_results)."
-            )
+    sigma_sr_raw = results.get("sigma_s_sls", st.session_state.get("sigma_s_sls", None))
 
-        st.markdown(
-            f"""
-<div class="readonly-param">
-  <div class="readonly-param-title">Steel stress at SLS σ_sr</div>
-  <div class="readonly-param-value">{sigma_sr:.1f} MPa</div>
-  <div class="readonly-param-source">Source: Bending page (SLS steel stress)</div>
-</div>
-""",
-            unsafe_allow_html=True,
+    if sigma_sr_raw is None:
+        try:
+            from bending_page import compute_bending_results
+
+            compute_bending_results(publish=True)  # publishes sigma_s_sls via update_results
+        except Exception:
+            pass
+
+    sigma_sr = float(results.get("sigma_s_sls", st.session_state.get("sigma_s_sls", 0.0)))
+
+    if results.get("sigma_s_sls", st.session_state.get("sigma_s_sls", None)) is None:
+        st.warning(
+            "Crack page could not auto-load SLS steel stress (sigma_s_sls). "
+            "Check bending compute pipeline (compute_bending_results / update_results)."
         )
 
-        # φ_ce from creep page (read directly from results, not via get_param)
-        phi_ce = float(st.session_state.get("phi_cc_t") or 0.0)
-
-        st.markdown(
-            f"""
-<div class="readonly-param">
-  <div class="readonly-param-title">Creep coefficient φ_ce</div>
-  <div class="readonly-param-value">{phi_ce:.2f}</div>
-  <div class="readonly-param-source">Source: Creep page (φ_cc(t))</div>
-</div>
-""",
-            unsafe_allow_html=True,
-        )
-
-        # ε_cs from shrinkage page (read directly from results, not via get_param)
-        eps_cs_micro = float(st.session_state.get("eps_cs_total_micro") or 0.0)
-        eps_cs = eps_cs_micro * 1e-6
-
-        st.markdown(
-            f"""
-<div class="readonly-param">
-  <div class="readonly-param-title">Shrinkage strain ε_cs</div>
-  <div class="readonly-param-value">{eps_cs_micro:.1f} μɛ</div>
-  <div class="readonly-param-source">Source: Shrinkage page (ε_cs,total)</div>
-</div>
-""",
-            unsafe_allow_html=True,
-        )
+    phi_ce = float(st.session_state.get("phi_cc_t") or 0.0)
+    eps_cs_micro = float(st.session_state.get("eps_cs_total_micro") or 0.0)
+    eps_cs = eps_cs_micro * 1e-6
 
     # --------------------------------------------------------
     # Effective area in tension and ρ_eff
@@ -723,9 +545,7 @@ The aim is to verify that cracking is **controlled** so that durability and appe
     # --------------------------------------------------------
     # 8.6.2.3 – Direct crack width calculation
     # --------------------------------------------------------
-    # fct_eff is already computed and displayed in the Computed column section above
-    # k1 and k2 are already defined in the Criteria column section above
-    # Modular ratio for effective stiffness
+    # fct_eff, k1, k2 adopted above; modular ratio for effective stiffness
     ne = (1.0 + phi_ce) * Es / Ec if Ec > 0 else 0.0
 
     eps_diff = calc_eps_diff(
@@ -746,10 +566,8 @@ The aim is to verify that cracking is **controlled** so that durability and appe
     # TOP SUMMARY TABLE
     # --------------------------------------------------------
     with summary_placeholder.container():
-        # Header row with title and INFO button
-        sum_left, sum_right = st.columns([8, 1], vertical_alignment="center")
-        with sum_left:
-            st.markdown("## Summary")
+        # Keep only the info control; the page title already provides the heading.
+        _, sum_right = st.columns([8, 1], vertical_alignment="center")
         with sum_right:
             with st.popover("ℹ️ INFO"):
                 st.markdown(
@@ -770,16 +588,29 @@ This page checks **flexural crack control** for RC beams per AS 3600 using:
         rows = []
         for r in (crack_pack.get("rows") or []):
             status = r.get("status", "—")
+            is_info = bool(r.get("is_informational", False))
+            stu = str(status).upper()
+            if is_info or stu == "INFO":
+                ok = None
+            else:
+                ok = True if status == "PASS" else False if status == "FAIL" else None
             rows.append({
                 "uid": r.get("uid", "crk_step_3"),
                 "title": r.get("title", ""),
+                "capacity": r.get("capacity", r.get("value", "")),
+                "action": r.get("action", r.get("limit", "")),
                 "value": r.get("value", ""),
                 "limit": r.get("limit", ""),
                 "util": r.get("util", ""),
                 "status": status,
-                "ok": True if status == "PASS" else False if status == "FAIL" else None,
-                "is_primary": r.get("title") == "Governing outcome",
+                "ok": ok,
+                "is_informational": is_info,
+                "is_primary": False,
             })
+        gov = pick_governing_check_row(rows)
+        gov_uid = (gov or {}).get("uid")
+        for r in rows:
+            r["is_primary"] = bool(gov_uid and r.get("uid") == gov_uid)
         update_results("crack", {"rows": rows})
         
         clicked_uid = render_clickable_summary_table(rows, key_prefix="crack_summary")
@@ -796,7 +627,7 @@ This page checks **flexural crack control** for RC beams per AS 3600 using:
     # --------------------------------------------------------
     page_divider()
     
-    st.markdown("## Crack Checks")
+    render_section_title("Crack Checks")
     
     # Check 1 — Inputs & limits
     limits_md = rf"""
@@ -854,10 +685,10 @@ Under direct loading, \(\sigma_{{sr,1}} \le 0.8 f_{{sy}}\).
 
 **Current input**
 
-- Bar diameter: \(d_b = {db:.1f}\,\text{{mm}}\)  
-- Spacing: \(s = {spacing:.0f}\,\text{{mm}}\)  
+- Bar diameter: \(d_b = {db:.1f}\,\text{{mm}}\) — *Derived on Crack page from reinforcement layout (bar diameter).*
+- Spacing: \(s = {spacing:.0f}\,\text{{mm}}\) — *Derived on Crack page from reinforcement layout (row spacing \(s_r\)).*
 - Crack width limit: \(w'_{{\max}} = {wmax_choice:.1f}\,\text{{mm}}\)  
-- SLS steel stress: \(\sigma_{{sr}} = {sigma_sr:.1f}\,\text{{MPa}}\)  
+- SLS steel stress: \(\sigma_{{sr}} = {sigma_sr:.1f}\,\text{{MPa}}\) — *Source: Bending page (SLS steel stress).*
 - Yield strength: \(f_{{sy}} \approx {fsy:.0f}\,\text{{MPa}}\)
 
 **From tables**
@@ -895,7 +726,7 @@ Overall allowable steel stress:
     
     render_jumpable_step(
         uid="crk_step_2",
-        title="Check 2 — Table method (Cl. 8.6.2.2)",
+        title="Check 2 — Table method",
         summary_md=f"σ_sr = {sigma_sr:.1f} MPa vs {sigma_allow_table:.1f} MPa → {'PASS' if passes_table else 'FAIL'}",
         body_fn=step_2_body,
         expanded=bool(st.session_state.get("step_open_crk_step_2", False)),
@@ -919,6 +750,8 @@ A_{{c,\text{{eff}}}} \approx {Aceff:.0f}\,\text{{mm}}^2
 = \frac{{{Ast:.0f}}}{{{Aceff:.0f}}}
 \approx {rho_eff:.4f}
 \]
+
+*Source: \(A_{{s,t}} = {Ast:.0f}\,\text{{mm}}^2\) — resolved from active tension reinforcement geometry.*
 """
 
     step2_eps_md = rf"""
@@ -936,11 +769,12 @@ From Cl. 8.6.2.3(2):
 
 With:
 
-- \(f_{{ct,\text{{eff}}}} = {fct_eff:.2f}\,\text{{MPa}}\)  
+- \(\sigma_{{sr}} = {sigma_sr:.1f}\,\text{{MPa}}\) — *Source: Bending page (SLS steel stress).*
+- \(f_{{ct,\text{{eff}}}} = {fct_eff:.2f}\,\text{{MPa}}\) — *Source: \(0.6\sqrt{{f'c}}\) from concrete strength used for crack control.*
 - \(E_s = {Es:.0f}\,\text{{MPa}},\ E_c = {Ec:.0f}\,\text{{MPa}}\)  
-- \(\varphi_{{ce}} = {phi_ce:.2f}\)  
+- \(\varphi_{{ce}} = {phi_ce:.2f}\) — *Source: Creep page (\(\varphi_{{cc}}(t)\)).*
 - \(n_e = (1 + \varphi_{{ce}}) E_s/E_c \approx {ne:.2f}\)  
-- \(\varepsilon_{{cs}} \approx {eps_cs_micro:.1f}\times 10^{{-6}}\)
+- \(\varepsilon_{{cs}} \approx {eps_cs_micro:.1f}\times 10^{{-6}}\) — *Source: Shrinkage page (\(\varepsilon_{{cs,total}}\)).*
 
 This gives:
 
@@ -958,7 +792,7 @@ s_{{r,\max}} = 3.4 c + 0.3 k_1 k_2 \frac{{d_b}}{{\rho_{{\text{{eff}}}}}}
 
 Using:
 
-- \(c = {c:.1f}\,\text{{mm}},\ d_b = {db:.1f}\,\text{{mm}}\)  
+- \(c = {c:.1f}\,\text{{mm}},\ d_b = {db:.1f}\,\text{{mm}}\) — *\(d_b\) from Crack page reinforcement layout.*
 - \(k_1 = {k1:.2f},\ k_2 = {k2:.2f}\)
 
 \[
@@ -975,7 +809,7 @@ w = s_{{r,\max}}(\varepsilon_{{sm}} - \varepsilon_{{cm}})
 \approx {w_calc:.3f}\,\text{{mm}}
 \]
 
-Limit:
+Calculated capacity (allowable crack width):
 
 \[
 w'_{{\max}} = {wmax_choice:.1f}\,\text{{mm}}, \quad
@@ -991,7 +825,7 @@ w'_{{\max}} = {wmax_choice:.1f}\,\text{{mm}}, \quad
     
     render_jumpable_step(
         uid="crk_step_3",
-        title="Check 3 — Direct crack width (Cl. 8.6.2.3)",
+        title="Check 3 — Direct crack width",
         summary_md=f"w = {w_calc:.3f} mm ≤ {wmax_choice:.3f} mm → {'PASS' if passes_w else 'FAIL'}",
         body_fn=step_3_body,
         expanded=bool(st.session_state.get("step_open_crk_step_3", False)),
@@ -1004,9 +838,9 @@ w'_{{\max}} = {wmax_choice:.1f}\,\text{{mm}}, \quad
 
 Both checks must pass for crack control to be satisfied:
 
-1. **Table method (Cl. 8.6.2.2)**: \(\sigma_{{sr}} = {sigma_sr:.1f}\,\text{{MPa}} \le {sigma_allow_table:.1f}\,\text{{MPa}}\) → **{"PASS" if passes_table else "FAIL"}**
+1. **Table method**: \(\sigma_{{sr}} = {sigma_sr:.1f}\,\text{{MPa}} \le {sigma_allow_table:.1f}\,\text{{MPa}}\) → **{"PASS" if passes_table else "FAIL"}**
 
-2. **Direct calculation (Cl. 8.6.2.3)**: \(w = {w_calc:.3f}\,\text{{mm}} \le {wmax_choice:.1f}\,\text{{mm}}\) → **{"PASS" if passes_w else "FAIL"}**
+2. **Direct calculation**: \(w = {w_calc:.3f}\,\text{{mm}} \le {wmax_choice:.1f}\,\text{{mm}}\) → **{"PASS" if passes_w else "FAIL"}**
 
 **Overall result**: **{"PASS" if (passes_table and passes_w) else "FAIL"}**
 

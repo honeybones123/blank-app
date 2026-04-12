@@ -26,7 +26,7 @@ inputs_fsy,500.0,float,fsy,500.0,float
 inputs_k_v_method,General εₓ-based (Cl. 8.2.4.2),str,k_v_method,General εₓ-based (Cl. 8.2.4.2),str
 inputs_lig_d,10.0,float,lig_d,10.0,float
 inputs_lig_legs,1,int,lig_legs,1,int
-inputs_load_Mstar_proxy,100.0,float,load_Mstar_proxy,100.0,float
+inputs_load_Mstar_proxy,0.0,float,load_Mstar_proxy,0.0,float
 inputs_load_Nstar_proxy,0.0,float,load_Nstar_proxy,0.0,float
 inputs_load_Vstar_proxy,300.0,float,load_Vstar_proxy,300.0,float
 inputs_member_faces_exposed,Slab – one face exposed,str,member_faces_exposed,Slab – one face exposed,str

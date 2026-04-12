@@ -3,6 +3,7 @@ import uuid
 import time
 import os
 import json
+import copy
 import traceback
 import json
 import os
@@ -33,6 +34,11 @@ def _dbg_log(payload: dict) -> None:
             _f.write(json.dumps(payload) + "\n")
     except Exception:
         pass
+# endregion
+
+# region agent log
+def _agent_dbg_log(message: str, data: dict, *, run_id: str, hypothesis_id: str) -> None:
+    return
 # endregion
 
 # ============================================================
@@ -69,6 +75,21 @@ def _debug_snapshot_path() -> str:
 
 def _append_debug_log(line: str) -> None:
     return
+
+
+def _write_debug_ndjson_line(payload: dict) -> None:
+    """
+    Best-effort debug writer used by temporary beam-manager trace points.
+    Never raises so debug instrumentation cannot break the app.
+    """
+    try:
+        runtime_dir = os.path.expanduser("~/Documents/GitHub/.blank_app_runtime")
+        os.makedirs(runtime_dir, exist_ok=True)
+        debug_path = os.path.join(runtime_dir, "beam_manager_debug.ndjson")
+        with open(debug_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, default=str) + "\n")
+    except Exception:
+        pass
 
 
 def write_final_session_state_check(path: str = "final_session_state_check.json") -> str:
@@ -153,6 +174,15 @@ ALLOWED_EXPLICIT_NONCONTRACT_KEYS = {
     "results",
     "passes_table",
     "passes_w",
+    "crack_tension_face",
+    "crack_active_bar_count",
+    "crack_active_bar_dias",
+    "crack_active_bar_spacing_mm",
+    "crack_tension_width_mm",
+    "crack_Ast_active_mm2",
+    "crack_flange_participation_used",
+    "crack_web_participation_used",
+    "crack_detailing_warning",
     "phi_Mu_cap",
     "phi_Vu_cap",
     "phi_Tu_cap",
@@ -250,6 +280,181 @@ ALLOWED_EXPLICIT_NONCONTRACT_KEYS = {
 # 1. SHARED DEFAULTS (session_state values)
 # ============================================
 
+LONGITUDINAL_REO_MAX_ROWS = 4
+
+
+def _longitudinal_row_key(section: str, row_index: int, field: str) -> str:
+    return f"{section}_row_{row_index}_{field}"
+
+
+def _build_longitudinal_row_defaults(section: str) -> dict:
+    # Row-1 baseline matches NEW_BEAM_STARTER_DEFAULTS (3N10 bot, 2N10 top).
+    default_bars = 2 if section == "top" else 3
+    default_dia = 10.0
+    defaults = {
+        f"{section}_row_count": 1,
+    }
+    for row_index in range(1, LONGITUDINAL_REO_MAX_ROWS + 1):
+        defaults[_longitudinal_row_key(section, row_index, "mode")] = "Count"
+        defaults[_longitudinal_row_key(section, row_index, "bars")] = default_bars if row_index == 1 else 0
+        defaults[_longitudinal_row_key(section, row_index, "spacing")] = 200
+        defaults[_longitudinal_row_key(section, row_index, "dia")] = default_dia
+    return defaults
+
+
+def _longitudinal_row_param_keys(section: str) -> list[str]:
+    keys = [f"{section}_row_count"]
+    for row_index in range(1, LONGITUDINAL_REO_MAX_ROWS + 1):
+        keys.extend([
+            _longitudinal_row_key(section, row_index, "mode"),
+            _longitudinal_row_key(section, row_index, "bars"),
+            _longitudinal_row_key(section, row_index, "spacing"),
+            _longitudinal_row_key(section, row_index, "dia"),
+        ])
+    return keys
+
+
+def _longitudinal_row_tab_keys(page_prefix: str, section: str) -> dict:
+    mappings = {
+        f"{page_prefix}_{section}_row_count": f"{section}_row_count",
+    }
+    for row_index in range(1, LONGITUDINAL_REO_MAX_ROWS + 1):
+        for field in ("mode", "bars", "spacing", "dia"):
+            mappings[f"{page_prefix}_{section}_row_{row_index}_{field}"] = _longitudinal_row_key(section, row_index, field)
+    return mappings
+
+
+def _safe_int(value, default: int = 0) -> int:
+    try:
+        return int(float(value))
+    except Exception:
+        return int(default)
+
+
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return float(default)
+
+
+def _build_longitudinal_row_updates_from_legacy(source: dict | None) -> dict:
+    source = source if isinstance(source, dict) else {}
+    updates: dict[str, object] = {}
+    for section in ("top", "bot"):
+        legacy_prefix = "top" if section == "top" else "bot"
+        default_bars = 2 if section == "top" else 4
+        default_dia = 16.0 if section == "top" else 20.0
+        active_row_count = 1
+        for row_index in range(1, LONGITUDINAL_REO_MAX_ROWS + 1):
+            mode_key = _longitudinal_row_key(section, row_index, "mode")
+            bars_key = _longitudinal_row_key(section, row_index, "bars")
+            spacing_key = _longitudinal_row_key(section, row_index, "spacing")
+            dia_key = _longitudinal_row_key(section, row_index, "dia")
+            if row_index <= 2:
+                legacy_mode_key = f"{legacy_prefix}{row_index}_layout_mode"
+                legacy_count_key = f"{legacy_prefix}{row_index}_count"
+                legacy_spacing_key = f"{legacy_prefix}{row_index}_spacing"
+                legacy_nb_or_s_key = f"nb_or_s_{legacy_prefix}_{row_index}"
+                legacy_dia_key = f"db_{legacy_prefix}_{row_index}"
+                mode = str(source.get(legacy_mode_key, "Count") or "Count")
+                legacy_nb_or_s = _safe_float(source.get(legacy_nb_or_s_key, 0.0), 0.0)
+                bars = _safe_int(
+                    source.get(legacy_count_key, legacy_nb_or_s if mode == "Count" else (default_bars if row_index == 1 else 0)),
+                    default_bars if row_index == 1 else 0,
+                )
+                spacing = _safe_int(
+                    source.get(legacy_spacing_key, legacy_nb_or_s if mode == "Spacing" and legacy_nb_or_s > 0.0 else 200),
+                    200,
+                )
+                dia = _safe_float(source.get(legacy_dia_key, default_dia), default_dia)
+                is_active = bars > 0 or (mode == "Spacing" and legacy_nb_or_s > 0.0)
+                if row_index == 1 or is_active:
+                    active_row_count = max(active_row_count, row_index)
+            else:
+                mode = "Count"
+                bars = 0
+                spacing = 200
+                dia = default_dia
+            updates[mode_key] = mode
+            updates[bars_key] = bars
+            updates[spacing_key] = spacing
+            updates[dia_key] = dia
+        updates[f"{section}_row_count"] = active_row_count
+    return updates
+
+
+def _snapshot_uses_row_model(source: dict | None) -> bool:
+    source = source if isinstance(source, dict) else {}
+    return any(key in source for key in ("top_row_count", "bot_row_count"))
+
+
+def migrate_longitudinal_reo_snapshot(snapshot: dict | None) -> dict:
+    snapshot = copy.deepcopy(snapshot if isinstance(snapshot, dict) else {})
+    if _snapshot_uses_row_model(snapshot):
+        return snapshot
+    snapshot.update(_build_longitudinal_row_updates_from_legacy(snapshot))
+    return snapshot
+
+
+def _sync_longitudinal_row_model_from_legacy_state() -> None:
+    updates = _build_longitudinal_row_updates_from_legacy(st.session_state)
+    for key, value in updates.items():
+        if key not in st.session_state or st.session_state.get(key) is None:
+            st.session_state[key] = value
+
+
+def get_longitudinal_row_inputs(section: str, source: dict | None = None) -> list[dict]:
+    source = source if isinstance(source, dict) else st.session_state
+    section = "top" if section == "top" else "bot"
+    default_bars = 2 if section == "top" else 4
+    default_dia = 16.0 if section == "top" else 20.0
+    row_count = max(1, min(LONGITUDINAL_REO_MAX_ROWS, _safe_int(source.get(f"{section}_row_count", 1), 1)))
+    rows: list[dict] = []
+    for row_index in range(1, LONGITUDINAL_REO_MAX_ROWS + 1):
+        mode = str(source.get(_longitudinal_row_key(section, row_index, "mode"), "Count") or "Count")
+        if mode not in ("Count", "Spacing"):
+            mode = "Count"
+        bars = max(0, _safe_int(source.get(_longitudinal_row_key(section, row_index, "bars"), default_bars if row_index == 1 else 0), default_bars if row_index == 1 else 0))
+        spacing = max(0.0, _safe_float(source.get(_longitudinal_row_key(section, row_index, "spacing"), 200.0), 200.0))
+        dia = max(0.0, _safe_float(source.get(_longitudinal_row_key(section, row_index, "dia"), default_dia), default_dia))
+        visible = row_index <= row_count
+        active = visible and dia > 0.0 and ((mode == "Count" and bars > 0) or (mode == "Spacing" and spacing > 0.0))
+        rows.append({
+            "row_index": row_index,
+            "mode": mode,
+            "bars": bars,
+            "spacing": spacing,
+            "dia": dia,
+            "nb_or_s": float(spacing if mode == "Spacing" else bars),
+            "visible": visible,
+            "active": active,
+        })
+    return rows
+
+
+def summarize_longitudinal_rows(section: str, source: dict | None = None) -> str:
+    rows = [row for row in get_longitudinal_row_inputs(section, source=source) if row.get("active")]
+    if not rows:
+        return "-"
+
+    def _row_text(row: dict, multi_row: bool) -> str:
+        dia = int(round(float(row.get("dia", 0.0) or 0.0)))
+        if dia <= 0:
+            return ""
+        prefix = f"R{int(row.get('row_index', 1))}: " if multi_row else ""
+        if row.get("mode") == "Spacing":
+            spacing = int(round(float(row.get("spacing", 0.0) or 0.0)))
+            return f"{prefix}N{dia} @ {spacing}"
+        bars = int(round(float(row.get("bars", 0) or 0)))
+        if bars <= 0:
+            return ""
+        return f"{prefix}{bars}N{dia}"
+
+    parts = [_row_text(row, multi_row=len(rows) > 1) for row in rows]
+    parts = [part for part in parts if part]
+    return "; ".join(parts) if parts else "-"
+
 def _audit(event: str, shared_key: str, widget_key: str = "", old=None, new=None, extra: dict | None = None):
     """Tiny audit trail for state writes (debug only)."""
     rec = {
@@ -271,6 +476,68 @@ def _audit(event: str, shared_key: str, widget_key: str = "", old=None, new=None
 def _coalesce_num(v, default: float) -> float:
     """Return default only if v is None (preserves 0)."""
     return default if v is None else float(v)
+
+
+# Manual design-action keys: 0 is a valid user value, but a *stale* widget 0 (navigation,
+# duplicate page widgets) must not overwrite cache, hydration, or snapshots while shared
+# remains non-zero. Legitimate 0 stays valid once shared has been updated (shared 0).
+MANUAL_DESIGN_ACTION_STALE_ZERO_GUARD_KEYS: frozenset[str] = frozenset(
+    {
+        "uls_Mstar",
+        "uls_Vstar",
+        "uls_Nstar",
+        "uls_Mstar_pos_manual",
+        "uls_Mstar_neg_manual",
+        "sls_Mstar",
+        "sls_Vstar",
+        "sls_Nstar",
+        "sls_Mstar_pos_manual",
+        "sls_Mstar_neg_manual",
+        "Mu_star_manual",
+        "Mu_star_pos_manual",
+        "Mu_star_neg_manual",
+    }
+)
+
+
+def _is_zero_like(v) -> bool:
+    if v is None or v == "":
+        return True
+    try:
+        return float(v) == 0.0
+    except (TypeError, ValueError):
+        return False
+
+
+def _float_nonzero(v) -> bool:
+    if v is None or v == "":
+        return False
+    try:
+        return float(v) != 0.0
+    except (TypeError, ValueError):
+        return v not in (0, 0.0, False)
+
+
+def _manual_action_stale_widget_zero(*, widget_val, shared_val, shared_key: str) -> bool:
+    if shared_key not in MANUAL_DESIGN_ACTION_STALE_ZERO_GUARD_KEYS:
+        return False
+    if not _is_zero_like(widget_val):
+        return False
+    return _float_nonzero(shared_val)
+
+
+def _set_shared_is_user_intent_source(source: object) -> bool:
+    """True when set_shared was triggered by widget callback / sync (not seed/restore/merge)."""
+    if not isinstance(source, str):
+        return False
+    if source in ("seed_defaults", "restore_snapshot", "wipe_recovery", "beam_project_hydrate", "uls_mirror"):
+        return False
+    if source.startswith("persist_snapshot_merge"):
+        return False
+    if source.startswith("callback:"):
+        return True
+    return source in ("sync_update", "sync_init", "design_action_widget_sync")
+
 
 def _get_hydrated_map() -> dict:
     m = st.session_state.get("_hydrated_from_shared_map")
@@ -296,14 +563,14 @@ def safe_hydrate(widget_key: str, shared_key: str, value, *, force: bool = False
     # If shared has a meaningful action value but widget is stale zero/None, rehydrate.
     action_keys = {
         "Tu_star",
-        "Mu_star_manual",
-        "Vu_star_manual",
         "N_star",
         "P_star",
         "load_Mstar_proxy",
+        "load_Mstar_pos_proxy",
+        "load_Mstar_neg_proxy",
         "load_Vstar_proxy",
         "load_Nstar_proxy",
-    }
+    } | set(MANUAL_DESIGN_ACTION_STALE_ZERO_GUARD_KEYS)
     if shared_key in action_keys:
         cur = st.session_state.get(widget_key)
         shared_val = st.session_state.get(shared_key)
@@ -383,8 +650,8 @@ def tripwire_no_falsy_defaulting():
         "nb_or_s_top_2",
         "nb_or_s_bot_2",
         "Tu_star",
-        "Vu_star_manual",
-        "Mu_star_manual",
+        "uls_Vstar",
+        "uls_Mstar",
         "N_star",
         "P_star",
         "lig_legs",
@@ -398,10 +665,10 @@ def tripwire_no_falsy_defaulting():
     st.session_state["_tripwire_falsy_defaults"] = defaults
 
 SHARED_DEFAULTS = {
-    # Geometry
-    "b": 400.0,     # beam width (mm)
-    "D": 600.0,     # overall depth (mm)
-    "L": 3000.0,    # span/effective length (mm)
+    # Geometry — baseline matches NEW_BEAM_STARTER_DEFAULTS (seed / resumed session).
+    "b": 250.0,     # beam width (mm)
+    "D": 300.0,     # overall depth (mm)
+    "L": 2000.0,    # span/effective length (mm)
     "sec_shape": "RECT",
     "bf": 600.0,
     "tf": 120.0,
@@ -409,85 +676,191 @@ SHARED_DEFAULTS = {
     "tw": 200.0,
     "bf_bot": 600.0,
     "tf_bot": 120.0,
-    # Derived geometry (shape-aware)
-    "A_g": 400.0 * 600.0,          # mm^2
-    "ybar_top_g": 300.0,           # mm
-    "Ixx_g": (400.0 * 600.0**3) / 12.0,  # mm^4
+    # Derived geometry (shape-aware) — RECT b×D consistent with b, D above
+    "A_g": 250.0 * 300.0,          # mm^2
+    "ybar_top_g": 150.0,           # mm (D/2 for symmetric RECT)
+    "Ixx_g": (250.0 * 300.0**3) / 12.0,  # mm^4
     "Ztop_g": 0.0,                 # mm^3
     "Zbot_g": 0.0,                 # mm^3
-    "b_web": 400.0,                # mm (RECT=b, T=bw, I=tw)
-    "b_crack": 400.0,              # mm (width used by crack calcs)
-    "A_ct_default": 400.0 * 600.0 / 2.0,  # mm^2 (for shear)
+    "b_web": 250.0,                # mm (RECT=b, T=bw, I=tw)
+    "b_crack": 250.0,              # mm (width used by crack calcs)
+    "A_ct_default": 250.0 * 300.0 / 2.0,  # mm^2 (for shear)
+    "sustained_Mstar_kNm": 0.0,           # governing sustained SLS moment magnitude
+    "sustained_sigma_cs_mpa": 0.0,        # sustained concrete compressive stress
+    "sustained_section_modulus_mm3": 0.0, # section modulus used for sigma_cs
+    "sustained_compression_fibre": "top", # top for sagging, bottom for hogging
     "defl_dims_user_override": False,
+    "inputs_detailed_mode": False,
+    "auto_geometry": False,
+    "auto_bottom_reo": False,
+    "auto_shear": False,
+    "fast_mode_show_3d": False,
+    "design_optimisation_goal": "balanced",
+    "optimisation_lock_geometry": False,
 
     # Materials
     "fc": 40.0,     # MPa
     "fsy": 500.0,   # MPa
-    "Ec": 30000.0,  # MPa
+    "Ec": 30000.0,  # MPa (derived from fc in recalc_derived_values)
+    "Eceff": 10000.0,  # MPa (derived from Ec and phi_cc_t in recalc_derived_values)
     "Es": 200000.0, # MPa
     "phi_bend": 0.85,  # ← strength reduction factor for bending
 
     # Shear & torsion strength reduction factors
     "phi_shear": 0.75,
     "phi_torsion": 0.75,
+    # 3-zone shear layout (Check 10): enable/disable; results in shear_zone_results via update_results only
+    "shear_zone_enabled": True,
+    # Optional auto-design of shear links (Check 10); trial sizes never written to lig_d/legs inputs
+    "shear_auto_design": False,
+    # Tracks whether reinforcement values were most recently applied by auto design.
+    "auto_design_active": False,
+    # Optional detailing optimisation: relax spacing while keeping envelope utilisation >= 1.0
+    "shear_optimize_reinforcement": False,
+    # Check 10 published outputs (shear_zone_results, shear_design_status, auto-selection floats) live in
+    # RESULT_KEYS / RESULT_DEFAULTS and are written only via update_results() — not listed here as shared inputs.
 
     # Actions (manual inputs - these are the user-controlled shared inputs)
     # NOTE: Mu_star/Mu_star_kNm/Vu_star are RESULTS (computed outputs), not shared inputs.
     # They are written by update_results() and should NOT be in SHARED_DEFAULTS.
 
-    # Manual copies – start equal to the same seeds so manual mode
-    # behaves identically until the user edits the inputs.
-    "Mu_star_manual": 500.0,  # kNm (legacy ULS manual)
-    "Vu_star_manual": 300.0,  # kN (legacy ULS manual)
     "Tu_star": 0.0,    # kNm
     "P_star": 0.0,     # kN (prestress or axial in bending/shear)
     "N_star": 0.0,     # kN (legacy ULS axial)
     "actions_source": "Manual design actions (inputs below)",  # Source of design actions
+    "actions_mode": "manual",
+    "design_beam_system_mode": "Single span",
+    "design_support_condition": "Simply supported",
+    "design_support_type_1": "Pinned",
+    "design_support_type_2": "Pinned",
+    "design_support_type_3": "Pinned",
+    "design_support_type_4": "Pinned",
+    "design_support_type_5": "Pinned",
+    "design_support_type_6": "Pinned",
+    "design_span_count": 2.0,
+    "design_span_len_1": 4.0,
+    "design_span_len_2": 4.0,
+    "design_span_len_3": 4.0,
+    "design_span_len_4": 4.0,
+    "design_span_len_5": 4.0,
+    "design_ms_point_count": 2.0,
+    "design_ms_udl_count": 1.0,
+    "design_ms_G_1": 30.0,
+    "design_ms_G_2": 30.0,
+    "design_ms_G_3": 30.0,
+    "design_ms_G_4": 30.0,
+    "design_ms_G_5": 30.0,
+    "design_ms_G_6": 30.0,
+    "design_ms_G_7": 30.0,
+    "design_ms_G_8": 30.0,
+    "design_ms_Q_1": 20.0,
+    "design_ms_Q_2": 20.0,
+    "design_ms_Q_3": 20.0,
+    "design_ms_Q_4": 20.0,
+    "design_ms_Q_5": 20.0,
+    "design_ms_Q_6": 20.0,
+    "design_ms_Q_7": 20.0,
+    "design_ms_Q_8": 20.0,
+    "design_ms_x_1": 1.0,
+    "design_ms_x_2": 2.0,
+    "design_ms_x_3": 3.0,
+    "design_ms_x_4": 4.0,
+    "design_ms_x_5": 5.0,
+    "design_ms_x_6": 6.0,
+    "design_ms_x_7": 7.0,
+    "design_ms_x_8": 8.0,
+    "design_ms_g_1": 5.0,
+    "design_ms_g_2": 5.0,
+    "design_ms_g_3": 5.0,
+    "design_ms_g_4": 5.0,
+    "design_ms_g_5": 5.0,
+    "design_ms_g_6": 5.0,
+    "design_ms_g_7": 5.0,
+    "design_ms_g_8": 5.0,
+    "design_ms_q_1": 3.0,
+    "design_ms_q_2": 3.0,
+    "design_ms_q_3": 3.0,
+    "design_ms_q_4": 3.0,
+    "design_ms_q_5": 3.0,
+    "design_ms_q_6": 3.0,
+    "design_ms_q_7": 3.0,
+    "design_ms_q_8": 3.0,
+    "design_ms_x0_1": 0.0,
+    "design_ms_x0_2": 0.0,
+    "design_ms_x0_3": 0.0,
+    "design_ms_x0_4": 0.0,
+    "design_ms_x0_5": 0.0,
+    "design_ms_x0_6": 0.0,
+    "design_ms_x0_7": 0.0,
+    "design_ms_x0_8": 0.0,
+    "design_ms_x1_1": 3.0,
+    "design_ms_x1_2": 3.0,
+    "design_ms_x1_3": 3.0,
+    "design_ms_x1_4": 3.0,
+    "design_ms_x1_5": 3.0,
+    "design_ms_x1_6": 3.0,
+    "design_ms_x1_7": 3.0,
+    "design_ms_x1_8": 3.0,
 
     # --- Load inputs (store both ULS and SLS separately) ---
-    "uls_Mstar": 500.0,
-    "uls_Vstar": 300.0,
+    "uls_Mstar": 0.0,
+    "uls_Mstar_pos_manual": 0.0,
+    "uls_Mstar_neg_manual": 0.0,
+    "uls_Vstar": 0.0,
     "uls_Nstar": 0.0,
 
-    "sls_Mstar": 500.0,
-    "sls_Vstar": 300.0,
+    "sls_Mstar": 0.0,
+    "sls_Mstar_pos_manual": 0.0,
+    "sls_Mstar_neg_manual": 0.0,
+    "sls_Vstar": 0.0,
     "sls_Nstar": 0.0,
+    # Canonical signed manual moment pair (ULS)
+    "Mu_star_manual": 0.0,  # legacy single signed manual moment
+    "Mu_star_pos_manual": 0.0,
+    "Mu_star_neg_manual": 0.0,
 
     # Which set the Inputs-page load widgets are currently editing
     "loads_edit_mode": "ULS",  # "ULS" or "SLS"
     "loads_edit_toggle": False,  # False=ULS, True=SLS
+    "design_actions_source": "max",  # "max" or "section"
+    "section_cursor_x_m": 0.0,
+    "design_section_x_m": 0.0,
+    "design_section_committed": False,
+
 
     # Proxies used ONLY by the widgets (never used by calculations)
-    "load_Mstar_proxy": 500.0,
-    "load_Vstar_proxy": 300.0,
+    "load_Mstar_proxy": 0.0,
+    "load_Mstar_pos_proxy": 0.0,
+    "load_Mstar_neg_proxy": 0.0,
+    "load_Vstar_proxy": 0.0,
     "load_Nstar_proxy": 0.0,
 
-    # Longitudinal reinforcement - 2-layer system
+    # Longitudinal reinforcement - 2-layer system (aligned with new-beam starter)
     # Bottom Layer 1
-    "nb_or_s_bot_1": 4.0,   # bars or spacing (≤30 = bars, ≥30 = spacing in mm)
-    "db_bot_1": 20.0,       # mm
+    "nb_or_s_bot_1": 3.0,   # bars or spacing (≤30 = bars, ≥30 = spacing in mm)
+    "db_bot_1": 10.0,       # mm
     # Bottom Layer 2
     "nb_or_s_bot_2": 0.0,   # bars or spacing (≤30 = bars, ≥30 = spacing in mm)
-    "db_bot_2": 20.0,       # mm
+    "db_bot_2": 10.0,       # mm
     "rowgap_bot": 60.0,     # vertical gap between bottom rows (mm)
     
     # Top Layer 1
     "nb_or_s_top_1": 2.0,   # bars or spacing (≤30 = bars, ≥30 = spacing in mm)
-    "db_top_1": 16.0,       # mm
+    "db_top_1": 10.0,       # mm
     # Top Layer 2
     "nb_or_s_top_2": 0.0,   # bars or spacing (≤30 = bars, ≥30 = spacing in mm)
-    "db_top_2": 16.0,       # mm
+    "db_top_2": 10.0,       # mm
     "rowgap_top": 60.0,     # vertical gap between top rows (mm)
     
     # Legacy parameters (derived from layers, kept for backward compatibility)
-    "nb_bot": 4,            # bottom bars (derived)
-    "db_bot": 20.0,         # mm (derived from layer 1)
+    "nb_bot": 3,            # bottom bars (derived)
+    "db_bot": 10.0,         # mm (derived from layer 1)
     "nb_top": 2,            # top bars (derived)
-    "db_top": 16.0,         # mm (derived from layer 1)
+    "db_top": 10.0,         # mm (derived from layer 1)
     
     # Legacy "bars or spacing" entries (kept for migration)
-    "bot_entry": 4.0,       # bottom layer: 4 bars by default (maps to nb_or_s_bot_1)
-    "top_entry": 2.0,       # top layer: 2 bars by default (maps to nb_or_s_top_1)
+    "bot_entry": 3.0,       # bottom layer: bar count (maps to nb_or_s_bot_1)
+    "top_entry": 2.0,       # top layer: bar count (maps to nb_or_s_top_1)
     
     # Optional derived spacing (you can store these here or in a derived dict)
     "s_bot": 200.0,         # effective bottom spacing (mm)
@@ -512,12 +885,12 @@ SHARED_DEFAULTS = {
     # --- Time-dependent inputs (realistic defaults) ---
     "t_creep": 365,          # days after loading
     "age_at_loading": 28,    # days
-    "stress_ratio": 0.20,    # σo / f'c,mi
+    "stress_ratio": 0.0,     # Derived sustained stress ratio: sigma_cs / f'c
     "t_shrink": 365,         # days since drying
 
     # Bottom layer 1 (explicit layout mode)
     "bot1_layout_mode": "Count",
-    "bot1_count": 4,
+    "bot1_count": 3,
     "bot1_spacing": 200,
 
     # Bottom layer 2 (explicit layout mode)
@@ -535,9 +908,48 @@ SHARED_DEFAULTS = {
     "top2_count": 0,
     "top2_spacing": 200,
 
-    # Shear reinforcement
+    # T/I explicit flange longitudinal reinforcement groups
+    "top_flange_reo_enabled": False,
+    "bot_flange_reo_enabled": False,
+    "top_flange_mirror_lr": True,
+    "bot_flange_mirror_lr": True,
+    "top_flange_left_count": 0,
+    "top_flange_left_dia": 16.0,
+    "top_flange_left_rows": 1,
+    "top_flange_left_row_spacing": 60.0,
+    "top_flange_left_clear_spacing_mode": "count",
+    "top_flange_right_count": 0,
+    "top_flange_right_dia": 16.0,
+    "top_flange_right_rows": 1,
+    "top_flange_right_row_spacing": 60.0,
+    "top_flange_right_clear_spacing_mode": "count",
+    "bot_flange_left_count": 0,
+    "bot_flange_left_dia": 20.0,
+    "bot_flange_left_rows": 1,
+    "bot_flange_left_row_spacing": 60.0,
+    "bot_flange_left_clear_spacing_mode": "count",
+    "bot_flange_right_count": 0,
+    "bot_flange_right_dia": 20.0,
+    "bot_flange_right_rows": 1,
+    "bot_flange_right_row_spacing": 60.0,
+    "bot_flange_right_clear_spacing_mode": "count",
+    # Optional flange transverse detailing/distribution reinforcement (not primary shear links)
+    "top_flange_transverse_enabled": False,
+    "bot_flange_transverse_enabled": False,
+    "top_flange_transverse_dia": 10.0,
+    "bot_flange_transverse_dia": 10.0,
+    "top_flange_transverse_spacing": 200.0,
+    "bot_flange_transverse_spacing": 200.0,
+    "top_flange_transverse_legs": 2,
+    "bot_flange_transverse_legs": 2,
+
+    # Canonical dynamic longitudinal reinforcement rows
+    **_build_longitudinal_row_defaults("bot"),
+    **_build_longitudinal_row_defaults("top"),
+
+    # Shear reinforcement (starter: no shear reo — legs = 0)
     "lig_d": 10.0,     # lig/stirrup diameter (mm)
-    "lig_legs": 2,     # legs per stirrup
+    "lig_legs": 2,     # legs per stirrup (minimum 2 for shear links; <2 treated as no shear reo in calcs)
     "s_lig": 200.0,    # spacing (mm)
 
     # Crack control inputs
@@ -553,16 +965,29 @@ SHARED_DEFAULTS = {
     # Crack / torsion sketch control
     "crack_theta_deg": 45.0,  # physical crack angle (degrees)
 
-    # Derived (will be recalculated; set initial values)
-    "d": 600.0 - 40.0 - 20.0 / 2.0,
-    "do": 600.0 - 40.0 - 16.0 / 2.0,
-    "Ast_bot": 4 * math.pi * 20.0**2 / 4.0,
-    "Ast_top": 2 * math.pi * 16.0**2 / 4.0,
+    # Derived (will be recalculated; set initial values) — RECT 250×300, 3N10 bot / 2N10 top
+    "d": 300.0 - 40.0 - 10.0 / 2.0,
+    "do": 300.0 - 40.0 - 10.0 / 2.0,
+    "Ast_bot": 3 * math.pi * 10.0**2 / 4.0,
+    "Ast_top": 2 * math.pi * 10.0**2 / 4.0,
+    "bot_rows_resolved": [],
+    "top_rows_resolved": [],
+    "bot_bar_coords": [],
+    "top_bar_coords": [],
+    "resolved_longitudinal_bars": [],
+    "resolved_longitudinal_warnings": [],
+    # Compatibility summaries derived from canonical resolved_longitudinal_bars
+    "Ast_top_web": 0.0,
+    "Ast_top_flange": 0.0,
+    "Ast_bottom_web": 0.0,
+    "Ast_bottom_flange": 0.0,
+    "total_bot_bars": 3,
+    "total_top_bars": 2,
 
     # Deflection page inputs (never None — None causes Streamlit widget + calc crashes)
-    "defl_beff": 400.0,   # mm
-    "defl_bw": 400.0,     # mm (derived from b; no direct widget)
-    "defl_L_eff": 3.0,    # m  (default from L=3000mm)
+    "defl_beff": 250.0,   # mm
+    "defl_bw": 250.0,     # mm (derived from b; no direct widget)
+    "defl_L_eff": 2.0,    # m  (default from L=2000mm)
     "defl_support_type": "Simply supported",  # Support condition for k₂ coefficient
     "defl_limit_ratio": 250.0,  # Deflection limit ratio (L/Δ, e.g. 250 for L/250)
     "defl_Fdef": 12.0,  # Effective design load (kN/m) for span/depth check
@@ -593,6 +1018,9 @@ SHARED_DEFAULTS = {
     "P_sls_kN": 62.0,  # SLS point load: G + psi_s * Q (kN)
     "P_uls_kN": 105.0,  # ULS point load: γ_G * G + γ_Q * Q (kN)
     "a_m": 0.0,  # Distance a from left support for point loads (m) - user input, 0 is valid
+    "a_udl_m": 0.0,  # Partial UDL length a (m)
+    "a_cant_m": 0.0,  # Cantilever point load distance a (m)
+    "a_overhang_m": 0.0,  # Overhang length a (m)
     
     # SFD/BMD inputs (kept as inputs, not results)
     "sfd_span_L_m": 6.0,  # Span length for SFD/deflection pages (m)
@@ -606,7 +1034,1243 @@ UI_STATE_DEFAULTS = {
     "_reo_error_top_1": "",
     "_reo_warning_top_1": "",
     "_reo_s_min_top_1": "",
+    "bending_detail_view": "positive",
 }
+
+# When True, Inputs page must not apply the one-time new-module starter payload.
+# Set after explicit beam/project actions so starter never clobbers loaded beams.
+BEAM_MODULE_STARTER_SEED_DONE_KEY = "_beam_module_starter_seed_done"
+BEAM_STARTER_META_SENTINEL_KEY = "starter_seed_applied"
+
+# Dedicated template for brand-new beams/modules.
+# This is intentionally separate from SHARED_DEFAULTS.
+# Only canonical shared input keys belong here (no derived/result keys).
+NEW_BEAM_STARTER_DEFAULTS = {
+    # Geometry
+    "sec_shape": "RECT",
+    "b": 250.0,
+    "D": 300.0,
+    "L": 2000.0,
+    "cover_side": 40.0,
+    # Bottom longitudinal reinforcement
+    "bot1_layout_mode": "Count",
+    "bot1_count": 3,
+    "db_bot_1": 10,
+    "cover_bot": 40.0,
+    # Top longitudinal reinforcement
+    "top1_layout_mode": "Count",
+    "top1_count": 2,
+    "db_top_1": 10,
+    "cover_top": 40.0,
+    # Shear reinforcement
+    "lig_d": 10,
+    "lig_legs": 2,
+    "s_lig": 200.0,
+    # Support / serviceability
+    "member_faces_exposed": "Slab – one face exposed",
+    "shrinkage_env": "Arid environment",
+    "env_option": "Arid environment",
+    "defl_support_type": "Simply supported",
+    "defl_limit_ratio": 250,
+    # Materials
+    "fsy": 500.0,
+    "fc": 40.0,
+    # Shear section parameters
+    "d_g": 20.0,
+    "k_v_method": "General εx-based (Cl. 8.2.4.2)",
+    # Time-dependent inputs
+    "t_shrink": 365.0,
+    "t_creep": 365.0,
+    "age_at_loading": 28.0,
+    # Ducts / prestress voids
+    "n_ducts": 0.0,
+    "duct_dia": 0.0,
+    "k_d_option": "None (no ducts in web)",
+    # Crack control inputs
+    "exposure_class": "B1",
+    "crack_member_type": "Primarily flexure",
+    "crack_k1": 0.8,
+    "crack_k2": 0.5,
+    # Design actions (manual/shared source of truth) - NEW beams must start at zero
+    "actions_source": "Manual design actions (inputs below)",
+    "actions_mode": "manual",
+    "loads_edit_mode": "ULS",
+    "loads_edit_toggle": False,
+    "design_actions_source": "max",
+    "design_section_x_m": 0.0,
+    "section_cursor_x_m": 0.0,
+    "design_section_committed": False,
+    "Tu_star": 0.0,
+    "P_star": 0.0,
+    "N_star": 0.0,
+    "uls_Mstar": 0.0,
+    "uls_Mstar_pos_manual": 0.0,
+    "uls_Mstar_neg_manual": 0.0,
+    "uls_Vstar": 0.0,
+    "uls_Nstar": 0.0,
+    "sls_Mstar": 0.0,
+    "sls_Mstar_pos_manual": 0.0,
+    "sls_Mstar_neg_manual": 0.0,
+    "sls_Vstar": 0.0,
+    "sls_Nstar": 0.0,
+    "Mu_star_manual": 0.0,
+    "Mu_star_pos_manual": 0.0,
+    "Mu_star_neg_manual": 0.0,
+    "load_Mstar_proxy": 0.0,
+    "load_Mstar_pos_proxy": 0.0,
+    "load_Mstar_neg_proxy": 0.0,
+    "load_Vstar_proxy": 0.0,
+    "load_Nstar_proxy": 0.0,
+}
+
+NEW_BEAM_ACTION_SHARED_KEYS = {
+    "actions_source",
+    "actions_mode",
+    "loads_edit_mode",
+    "loads_edit_toggle",
+    "design_actions_source",
+    "design_section_x_m",
+    "section_cursor_x_m",
+    "design_section_committed",
+    "Tu_star",
+    "P_star",
+    "N_star",
+    "uls_Mstar",
+    "uls_Mstar_pos_manual",
+    "uls_Mstar_neg_manual",
+    "uls_Vstar",
+    "uls_Nstar",
+    "sls_Mstar",
+    "sls_Mstar_pos_manual",
+    "sls_Mstar_neg_manual",
+    "sls_Vstar",
+    "sls_Nstar",
+    "Mu_star_manual",
+    "Mu_star_pos_manual",
+    "Mu_star_neg_manual",
+    "load_Mstar_proxy",
+    "load_Mstar_pos_proxy",
+    "load_Mstar_neg_proxy",
+    "load_Vstar_proxy",
+    "load_Nstar_proxy",
+}
+
+# Workspace / file origin (explicit product rule: new vs loaded vs session resume)
+WORKSPACE_ORIGIN_KEY = "_workspace_origin"
+WORKSPACE_ORIGIN_NEW_FILE = "new_file"
+WORKSPACE_ORIGIN_LOADED_FILE = "loaded_file"
+WORKSPACE_ORIGIN_RESUMED_SESSION = "resumed_session"
+# Opaque id for new_file workspaces; loaded/resumed identities are computed in get_workspace_identity_for_persist().
+WORKSPACE_IDENTITY_KEY = "_workspace_identity"
+SNAPSHOT_FILE_SCHEMA_V2 = 2
+
+BEAM_PROJECT_SESSION_KEYS = {
+    "beam_project_enabled",
+    "beam_project_show_manager",
+    "beam_records",
+    "beam_order",
+    "active_beam_id",
+    "beam_last_hydrated_id",
+    "beam_manager_initialized",
+}
+ALLOWED_EXPLICIT_NONCONTRACT_KEYS |= BEAM_PROJECT_SESSION_KEYS
+ALLOWED_EXPLICIT_NONCONTRACT_KEYS |= {WORKSPACE_ORIGIN_KEY, WORKSPACE_IDENTITY_KEY}
+
+BEAM_STATUS_PASS = "PASS"
+BEAM_STATUS_FAIL = "FAIL"
+BEAM_STATUS_WARN = "WARN"
+BEAM_STATUS_NOT_RUN = "NOT_RUN"
+
+# Canonical Stage 1 beam snapshot: shared input keys only.
+BEAM_PROJECT_PARAM_KEYS = [
+    # Geometry
+    "b",
+    "D",
+    "L",
+    "sec_shape",
+    "bf",
+    "tf",
+    "bw",
+    "tw",
+    "bf_bot",
+    "tf_bot",
+    # Materials / design factors
+    "fc",
+    "fsy",
+    "Ec",
+    "Es",
+    "phi_bend",
+    "phi_shear",
+    "phi_torsion",
+    # Active-beam actions / load intent
+    "Tu_star",
+    "P_star",
+    "N_star",
+    "actions_source",
+    "actions_mode",
+    "uls_Mstar",
+    "uls_Mstar_pos_manual",
+    "uls_Mstar_neg_manual",
+    "uls_Vstar",
+    "uls_Nstar",
+    "sls_Mstar",
+    "sls_Mstar_pos_manual",
+    "sls_Mstar_neg_manual",
+    "sls_Vstar",
+    "sls_Nstar",
+    "Mu_star_manual",
+    "Mu_star_pos_manual",
+    "Mu_star_neg_manual",
+    "design_actions_source",
+    "inputs_detailed_mode",
+    "auto_geometry",
+    "auto_bottom_reo",
+    "auto_shear",
+    "fast_mode_show_3d",
+    # Reinforcement / cover
+    "nb_or_s_bot_1",
+    "db_bot_1",
+    "nb_or_s_bot_2",
+    "db_bot_2",
+    "rowgap_bot",
+    "nb_or_s_top_1",
+    "db_top_1",
+    "nb_or_s_top_2",
+    "db_top_2",
+    "rowgap_top",
+    "cover_bot",
+    "cover_top",
+    "side_cover_bot",
+    "side_cover_top",
+    "cover_side",
+    "bot1_layout_mode",
+    "bot1_count",
+    "bot1_spacing",
+    "bot2_layout_mode",
+    "bot2_count",
+    "bot2_spacing",
+    "top1_layout_mode",
+    "top1_count",
+    "top1_spacing",
+    "top2_layout_mode",
+    "top2_count",
+    "top2_spacing",
+    "top_flange_reo_enabled",
+    "bot_flange_reo_enabled",
+    "top_flange_mirror_lr",
+    "bot_flange_mirror_lr",
+    "top_flange_left_count",
+    "top_flange_left_dia",
+    "top_flange_left_rows",
+    "top_flange_left_row_spacing",
+    "top_flange_left_clear_spacing_mode",
+    "top_flange_right_count",
+    "top_flange_right_dia",
+    "top_flange_right_rows",
+    "top_flange_right_row_spacing",
+    "top_flange_right_clear_spacing_mode",
+    "bot_flange_left_count",
+    "bot_flange_left_dia",
+    "bot_flange_left_rows",
+    "bot_flange_left_row_spacing",
+    "bot_flange_left_clear_spacing_mode",
+    "bot_flange_right_count",
+    "bot_flange_right_dia",
+    "bot_flange_right_rows",
+    "bot_flange_right_row_spacing",
+    "bot_flange_right_clear_spacing_mode",
+    "top_flange_transverse_enabled",
+    "bot_flange_transverse_enabled",
+    "top_flange_transverse_dia",
+    "bot_flange_transverse_dia",
+    "top_flange_transverse_spacing",
+    "bot_flange_transverse_spacing",
+    "top_flange_transverse_legs",
+    "bot_flange_transverse_legs",
+    *_longitudinal_row_param_keys("bot"),
+    *_longitudinal_row_param_keys("top"),
+    "lig_d",
+    "lig_legs",
+    "s_lig",
+    # Ducts / shear / crack / deflection inputs
+    "n_ducts",
+    "duct_dia",
+    "d_g",
+    "k_d_option",
+    "k_v_method",
+    "exposure_class",
+    "wmax_char_limit",
+    "crack_member_type",
+    "crack_k1",
+    "crack_k2",
+    "crack_theta_deg",
+    "defl_beff",
+    "defl_support_type",
+    "defl_limit_ratio",
+    "defl_Fdef",
+    "defl_use_simplified_ief",
+    "member_faces_exposed",
+    "shrinkage_env",
+    "env_option",
+    "t_creep",
+    "age_at_loading",
+    "t_shrink",
+    # SFD/BMD beam-definition inputs
+    "span_L_m",
+    "g_udl_kNm_per_m",
+    "q_udl_kNm_per_m",
+    "psi_udl",
+    "G_point_kN",
+    "Q_point_kN",
+    "psi_point",
+    "a_m",
+    "a_udl_m",
+    "a_cant_m",
+    "a_overhang_m",
+    "sfd_span_L_m",
+    "sfd_case",
+]
+
+
+def _beam_project_now() -> str:
+    return datetime.utcnow().isoformat(timespec="seconds")
+
+
+def _safe_summary_float(value):
+    try:
+        out = float(value)
+    except Exception:
+        return None
+    if math.isnan(out) or math.isinf(out):
+        return None
+    return out
+
+
+def make_not_run_beam_summary() -> dict:
+    return {
+        "overall_status": BEAM_STATUS_NOT_RUN,
+        "strength_status": BEAM_STATUS_NOT_RUN,
+        "detailing_status": BEAM_STATUS_NOT_RUN,
+        "bending_status": BEAM_STATUS_NOT_RUN,
+        "shear_status": BEAM_STATUS_NOT_RUN,
+        "crack_status": BEAM_STATUS_NOT_RUN,
+        "deflection_status": BEAM_STATUS_NOT_RUN,
+        "last_checked_at": None,
+        "Mu_star": None,
+        "phi_Mu_cap": None,
+        "Mu_utilisation": None,
+        "Vu_star": None,
+        "phi_Vu_cap": None,
+        "Vu_utilisation": None,
+        "crack_utilisation": None,
+        "deflection_utilisation": None,
+    }
+
+
+def normalize_beam_status(raw_status=None, *, utilisation=None, pass_flag=None) -> str:
+    if isinstance(pass_flag, bool):
+        if not pass_flag:
+            return BEAM_STATUS_FAIL
+        util = _safe_summary_float(utilisation)
+        if util is not None and util >= 0.9:
+            return BEAM_STATUS_WARN
+        return BEAM_STATUS_PASS
+
+    text = str(raw_status or "").strip().upper()
+    if text == "INFO":
+        return BEAM_STATUS_NOT_RUN
+    if text in {BEAM_STATUS_PASS, BEAM_STATUS_FAIL, BEAM_STATUS_WARN, BEAM_STATUS_NOT_RUN}:
+        return text
+    if ("FAIL" in text) or (text == "NG"):
+        return BEAM_STATUS_FAIL
+    if ("WARN" in text) or ("NEAR LIMIT" in text) or (text == "CHECK"):
+        return BEAM_STATUS_WARN
+    if ("PASS" in text) or (text == "OK"):
+        util = _safe_summary_float(utilisation)
+        if util is not None and util >= 0.9:
+            return BEAM_STATUS_WARN
+        return BEAM_STATUS_PASS
+
+    util = _safe_summary_float(utilisation)
+    if util is None:
+        return BEAM_STATUS_NOT_RUN
+    if util > 1.0:
+        return BEAM_STATUS_FAIL
+    if util >= 0.9:
+        return BEAM_STATUS_WARN
+    if util >= 0.0:
+        return BEAM_STATUS_PASS
+    return BEAM_STATUS_NOT_RUN
+
+
+def get_beam_overall_status(summary) -> str:
+    summary = summary if isinstance(summary, dict) else {}
+    strength_status = normalize_beam_status(summary.get("strength_status"))
+    detailing_status = normalize_beam_status(summary.get("detailing_status"))
+    if strength_status != BEAM_STATUS_NOT_RUN or detailing_status != BEAM_STATUS_NOT_RUN:
+        if strength_status == BEAM_STATUS_FAIL:
+            return BEAM_STATUS_FAIL
+        if strength_status == BEAM_STATUS_WARN:
+            return BEAM_STATUS_WARN
+        if detailing_status in {BEAM_STATUS_FAIL, BEAM_STATUS_WARN}:
+            return BEAM_STATUS_WARN
+        if strength_status == BEAM_STATUS_PASS:
+            return BEAM_STATUS_PASS
+
+    statuses = [
+        normalize_beam_status(summary.get("bending_status")),
+        normalize_beam_status(summary.get("shear_status")),
+        normalize_beam_status(summary.get("crack_status")),
+        normalize_beam_status(summary.get("deflection_status")),
+    ]
+    if not statuses or all(status == BEAM_STATUS_NOT_RUN for status in statuses):
+        return BEAM_STATUS_NOT_RUN
+    if any(status == BEAM_STATUS_FAIL for status in statuses):
+        return BEAM_STATUS_FAIL
+    if any(status == BEAM_STATUS_WARN for status in statuses):
+        return BEAM_STATUS_WARN
+    if any(status == BEAM_STATUS_NOT_RUN for status in statuses):
+        return BEAM_STATUS_NOT_RUN
+    return BEAM_STATUS_PASS
+
+
+def _sanitize_beam_summary(summary) -> dict:
+    cleaned = make_not_run_beam_summary()
+    if not isinstance(summary, dict):
+        return cleaned
+
+    cleaned["overall_status"] = normalize_beam_status(summary.get("overall_status"))
+    cleaned["strength_status"] = normalize_beam_status(summary.get("strength_status"))
+    cleaned["detailing_status"] = normalize_beam_status(summary.get("detailing_status"))
+    cleaned["bending_status"] = normalize_beam_status(summary.get("bending_status"))
+    cleaned["shear_status"] = normalize_beam_status(summary.get("shear_status"))
+    cleaned["crack_status"] = normalize_beam_status(summary.get("crack_status"))
+    cleaned["deflection_status"] = normalize_beam_status(summary.get("deflection_status"))
+    cleaned["overall_status"] = get_beam_overall_status(cleaned)
+    cleaned["last_checked_at"] = summary.get("last_checked_at")
+    for key in (
+        "Mu_star",
+        "phi_Mu_cap",
+        "Mu_utilisation",
+        "Vu_star",
+        "phi_Vu_cap",
+        "Vu_utilisation",
+        "crack_utilisation",
+        "deflection_utilisation",
+    ):
+        cleaned[key] = _safe_summary_float(summary.get(key))
+    return cleaned
+
+
+def _rollup_statuses(statuses: list[str]) -> str:
+    normalized = [normalize_beam_status(status) for status in (statuses or [])]
+    normalized = [status for status in normalized if status != BEAM_STATUS_NOT_RUN]
+    if not normalized:
+        return BEAM_STATUS_NOT_RUN
+    if any(status == BEAM_STATUS_FAIL for status in normalized):
+        return BEAM_STATUS_FAIL
+    if any(status == BEAM_STATUS_WARN for status in normalized):
+        return BEAM_STATUS_WARN
+    return BEAM_STATUS_PASS
+
+
+def classify_beam_check_rows(
+    bending_rows: list[dict] | None = None,
+    shear_rows: list[dict] | None = None,
+    crack_rows: list[dict] | None = None,
+    deflection_rows: list[dict] | None = None,
+) -> dict:
+    """
+    Separate primary strength outcomes from detailing/code-compliance outcomes.
+    This keeps summary status conservative: detailing failures downgrade overall PASS to WARN.
+    """
+    bending_rows = bending_rows or []
+    shear_rows = shear_rows or []
+    crack_rows = crack_rows or []
+    deflection_rows = deflection_rows or []
+
+    strength_statuses = []
+    detailing_statuses = []
+    notes = []
+
+    bending_strength_titles = {
+        "Flexural strength capacity",
+        "Positive bending",
+        "Negative bending",
+    }
+    bending_detail_titles = {
+        "Minimum tensile reinforcement",
+        "Minimum design capacity requirement",
+        "Ductility limit",
+    }
+    shear_strength_titles = {
+        "Sectional shear capacity",
+        "Web-crushing strength",
+    }
+
+    def _add_status(rows, *, strength_titles=None, detail_titles=None, default_to_strength=False):
+        for row in rows:
+            if (row or {}).get("is_informational"):
+                continue
+            title = str((row or {}).get("title") or "")
+            status = normalize_beam_status((row or {}).get("status"))
+            if status == BEAM_STATUS_NOT_RUN:
+                continue
+            if strength_titles and title in strength_titles:
+                strength_statuses.append(status)
+            elif detail_titles and title in detail_titles:
+                detailing_statuses.append(status)
+                if status in {BEAM_STATUS_FAIL, BEAM_STATUS_WARN}:
+                    notes.append(f"{title}: {status}")
+            elif default_to_strength:
+                strength_statuses.append(status)
+            else:
+                detailing_statuses.append(status)
+                if status in {BEAM_STATUS_FAIL, BEAM_STATUS_WARN}:
+                    notes.append(f"{title}: {status}")
+
+    _add_status(bending_rows, strength_titles=bending_strength_titles, detail_titles=bending_detail_titles)
+    _add_status(shear_rows, strength_titles=shear_strength_titles, default_to_strength=False)
+    _add_status(crack_rows, default_to_strength=True)
+    _add_status(deflection_rows, default_to_strength=True)
+
+    strength_status = _rollup_statuses(strength_statuses)
+    detailing_status = _rollup_statuses(detailing_statuses)
+    overall_status = get_beam_overall_status(
+        {
+            "strength_status": strength_status,
+            "detailing_status": detailing_status,
+        }
+    )
+    return {
+        "strength_status": strength_status,
+        "detailing_status": detailing_status,
+        "overall_status": overall_status,
+        "notes": notes,
+    }
+
+
+def _sanitize_beam_record(beam_id: str, record) -> dict:
+    record = record if isinstance(record, dict) else {}
+    params_in = record.get("params") if isinstance(record.get("params"), dict) else {}
+    params = {
+        key: copy.deepcopy(params_in.get(key, SHARED_DEFAULTS.get(key)))
+        for key in BEAM_PROJECT_PARAM_KEYS
+    }
+    meta = copy.deepcopy(record.get("meta")) if isinstance(record.get("meta"), dict) else {}
+    beam_label = str(record.get("beam_label") or beam_id).strip() or beam_id
+    return {
+        "beam_id": beam_id,
+        "beam_label": beam_label,
+        "params": params,
+        "meta": meta,
+        "summary": _sanitize_beam_summary(record.get("summary")),
+    }
+
+
+def validate_beam_project_payload(payload) -> dict:
+    issues = []
+    payload = payload if isinstance(payload, dict) else {}
+    beam_records = payload.get("beam_records")
+    beam_order = payload.get("beam_order")
+    active_beam_id = payload.get("active_beam_id")
+
+    if not isinstance(beam_records, dict):
+        issues.append("beam_records_missing_or_invalid")
+        beam_records = {}
+    if not isinstance(beam_order, list):
+        issues.append("beam_order_missing_or_invalid")
+        beam_order = []
+    if active_beam_id is not None and active_beam_id not in beam_records:
+        issues.append("active_beam_id_invalid")
+
+    for beam_id in beam_order:
+        if beam_id not in beam_records:
+            issues.append(f"beam_order_missing_record:{beam_id}")
+
+    for beam_id, record in beam_records.items():
+        if not isinstance(record, dict):
+            issues.append(f"beam_record_invalid:{beam_id}")
+            continue
+        if not isinstance(record.get("params"), dict):
+            issues.append(f"beam_params_invalid:{beam_id}")
+
+    return {
+        "valid": len(issues) == 0,
+        "issues": issues,
+    }
+
+
+def repair_beam_project_payload(payload) -> dict:
+    payload = payload if isinstance(payload, dict) else {}
+    raw_records = payload.get("beam_records") if isinstance(payload.get("beam_records"), dict) else {}
+
+    repaired_records = {}
+    for candidate_id, record in raw_records.items():
+        beam_id = str((record or {}).get("beam_id") or candidate_id).strip() or str(candidate_id)
+        repaired_records[beam_id] = _sanitize_beam_record(beam_id, record)
+
+    raw_order = payload.get("beam_order") if isinstance(payload.get("beam_order"), list) else []
+    repaired_order = []
+    for beam_id in raw_order:
+        if beam_id in repaired_records and beam_id not in repaired_order:
+            repaired_order.append(beam_id)
+    for beam_id in repaired_records.keys():
+        if beam_id not in repaired_order:
+            repaired_order.append(beam_id)
+
+    active_beam_id = payload.get("active_beam_id")
+    if active_beam_id not in repaired_records:
+        active_beam_id = repaired_order[0] if repaired_order else None
+
+    return {
+        "beam_order": repaired_order,
+        "active_beam_id": active_beam_id,
+        "beam_records": repaired_records,
+    }
+
+
+def build_beam_project_payload() -> dict:
+    """Return the canonical serializable multi-beam project payload."""
+    ensure_beam_project_initialized()
+    payload = repair_beam_project_payload(
+        {
+            "beam_order": copy.deepcopy(st.session_state.get("beam_order") or []),
+            "active_beam_id": st.session_state.get("active_beam_id"),
+            "beam_records": copy.deepcopy(st.session_state.get("beam_records") or {}),
+        }
+    )
+    return payload
+
+
+def reset_beam_project_to_single_default_if_missing() -> dict:
+    """
+    Legacy/backward-compatible fallback: build a one-beam project from current shared state.
+    Call this after shared inputs have been loaded when no beam-project payload exists.
+    """
+    st.session_state["beam_project_enabled"] = True
+    st.session_state["beam_project_show_manager"] = False
+    st.session_state["beam_records"] = {}
+    st.session_state["beam_order"] = []
+    st.session_state["active_beam_id"] = None
+    st.session_state["beam_last_hydrated_id"] = None
+    st.session_state["beam_manager_initialized"] = False
+    ensure_beam_project_initialized()
+    persist_active_beam_from_shared()
+    return build_beam_project_payload()
+
+
+def load_beam_project_payload(payload) -> dict:
+    """
+    Restore the stored beam project structure, then hydrate only the active beam into shared state.
+    Repairs partial payloads conservatively instead of failing hard.
+    """
+    repaired = repair_beam_project_payload(payload)
+    if not repaired.get("beam_records"):
+        return reset_beam_project_to_single_default_if_missing()
+
+    st.session_state["beam_project_enabled"] = True
+    st.session_state["beam_project_show_manager"] = False
+    st.session_state["beam_records"] = copy.deepcopy(repaired["beam_records"])
+    st.session_state["beam_order"] = list(repaired["beam_order"])
+    st.session_state["active_beam_id"] = repaired["active_beam_id"]
+    st.session_state["beam_last_hydrated_id"] = None
+    st.session_state["beam_manager_initialized"] = True
+
+    load_active_beam_into_shared(force=True)
+    st.session_state[BEAM_MODULE_STARTER_SEED_DONE_KEY] = True
+    return repaired
+
+
+def build_beam_schedule_rows() -> list[dict]:
+    """
+    Report/export-ready beam schedule rows built from stored params + cached summaries only.
+    No beam recalculation happens here.
+    """
+    payload = build_beam_project_payload()
+    rows = []
+    for beam_id in payload["beam_order"]:
+        record = payload["beam_records"].get(beam_id, {})
+        params = migrate_longitudinal_reo_snapshot(record.get("params", {}))
+        summary = _sanitize_beam_summary(record.get("summary"))
+        rows.append(
+            {
+                "active": beam_id == payload.get("active_beam_id"),
+                "beam_id": beam_id,
+                "beam_label": record.get("beam_label", beam_id),
+                "sec_shape": params.get("sec_shape"),
+                "b": params.get("b"),
+                "bf": params.get("bf"),
+                "tf": params.get("tf"),
+                "bw": params.get("bw"),
+                "tw": params.get("tw"),
+                "D": params.get("D"),
+                "L": params.get("L"),
+                "cover_top": params.get("cover_top"),
+                "cover_bot": params.get("cover_bot"),
+                "cover_side": params.get("cover_side"),
+                "fc": params.get("fc"),
+                "fsy": params.get("fsy"),
+                "bot_rows": get_longitudinal_row_inputs("bot", source=params),
+                "top_rows": get_longitudinal_row_inputs("top", source=params),
+                "bottom_reo": summarize_longitudinal_rows("bot", source=params),
+                "top_reo": summarize_longitudinal_rows("top", source=params),
+                "bot1_count": params.get("bot1_count"),
+                "db_bot_1": params.get("db_bot_1"),
+                "top1_count": params.get("top1_count"),
+                "db_top_1": params.get("db_top_1"),
+                "lig_d": params.get("lig_d"),
+                "lig_legs": params.get("lig_legs"),
+                "s_lig": params.get("s_lig"),
+                "overall_status": summary.get("overall_status", BEAM_STATUS_NOT_RUN),
+                "strength_status": summary.get("strength_status", BEAM_STATUS_NOT_RUN),
+                "detailing_status": summary.get("detailing_status", BEAM_STATUS_NOT_RUN),
+                "bending_status": summary.get("bending_status", BEAM_STATUS_NOT_RUN),
+                "shear_status": summary.get("shear_status", BEAM_STATUS_NOT_RUN),
+                "crack_status": summary.get("crack_status", BEAM_STATUS_NOT_RUN),
+                "deflection_status": summary.get("deflection_status", BEAM_STATUS_NOT_RUN),
+                "last_checked_at": summary.get("last_checked_at"),
+            }
+        )
+    return rows
+
+
+def get_active_beam_record() -> dict | None:
+    """Return the sanitized stored record for the current active beam."""
+    payload = build_beam_project_payload()
+    active_beam_id = payload.get("active_beam_id")
+    if not active_beam_id:
+        return None
+    record = payload["beam_records"].get(active_beam_id)
+    return copy.deepcopy(record) if isinstance(record, dict) else None
+
+
+def get_active_beam_summary() -> dict:
+    record = get_active_beam_record()
+    return _sanitize_beam_summary((record or {}).get("summary"))
+
+
+def _beam_records_dict() -> dict:
+    records = st.session_state.get("beam_records")
+    if not isinstance(records, dict):
+        records = {}
+        st.session_state["beam_records"] = records
+    return records
+
+
+def _beam_order_list() -> list[str]:
+    order = st.session_state.get("beam_order")
+    if not isinstance(order, list):
+        order = []
+        st.session_state["beam_order"] = order
+    return order
+
+
+def _next_beam_index() -> int:
+    existing_ids = list(_beam_records_dict().keys()) + list(_beam_order_list())
+    next_idx = 1
+    for beam_id in existing_ids:
+        if not isinstance(beam_id, str) or not beam_id.startswith("beam_"):
+            continue
+        try:
+            next_idx = max(next_idx, int(beam_id.split("_")[-1]) + 1)
+        except Exception:
+            continue
+    return next_idx
+
+
+def _make_unique_beam_id() -> str:
+    records = _beam_records_dict()
+    while True:
+        beam_id = f"beam_{_next_beam_index()}"
+        if beam_id not in records:
+            return beam_id
+
+
+def _make_unique_beam_label(base_label: str) -> str:
+    labels = {
+        str((record or {}).get("beam_label") or "").strip()
+        for record in _beam_records_dict().values()
+    }
+    if base_label not in labels:
+        return base_label
+
+    i = 2
+    while True:
+        candidate = f"{base_label} {i}"
+        if candidate not in labels:
+            return candidate
+        i += 1
+
+
+def get_beam_project_param_snapshot() -> dict:
+    """Capture only the canonical active-beam shared inputs."""
+    _sync_longitudinal_row_model_from_legacy_state()
+    snapshot = {}
+    for key in BEAM_PROJECT_PARAM_KEYS:
+        snapshot[key] = copy.deepcopy(st.session_state.get(key, SHARED_DEFAULTS.get(key)))
+    return snapshot
+
+
+def apply_beam_project_param_snapshot(snapshot) -> None:
+    """Apply a stored beam snapshot back into shared state."""
+    snapshot = migrate_longitudinal_reo_snapshot(snapshot)
+    for key in BEAM_PROJECT_PARAM_KEYS:
+        value = copy.deepcopy(snapshot.get(key, SHARED_DEFAULTS.get(key)))
+        set_shared(key, value, source="beam_project_hydrate")
+
+    # Load proxies are widget-only views of the active ULS/SLS set.
+    load_proxies_from_active_set()
+    recalc_derived_values()
+
+
+def make_default_beam_record(beam_id, beam_label=None) -> dict:
+    label = beam_label or f"Beam {_next_beam_index()}"
+    now = _beam_project_now()
+    return {
+        "beam_id": beam_id,
+        "beam_label": label,
+        "params": get_beam_project_param_snapshot(),
+        "meta": {
+            "created_at": now,
+            "updated_at": now,
+        },
+        "summary": make_not_run_beam_summary(),
+    }
+
+
+def _build_new_beam_starter_param_snapshot() -> dict:
+    """Build a full canonical params snapshot for a brand-new beam."""
+    snapshot: dict[str, object] = {}
+    for key in BEAM_PROJECT_PARAM_KEYS:
+        if key in NEW_BEAM_STARTER_DEFAULTS:
+            snapshot[key] = copy.deepcopy(NEW_BEAM_STARTER_DEFAULTS[key])
+        else:
+            snapshot[key] = copy.deepcopy(SHARED_DEFAULTS.get(key))
+    return migrate_longitudinal_reo_snapshot(snapshot)
+
+
+def _apply_new_beam_starter_defaults_to_shared() -> None:
+    """Seed shared state with NEW_BEAM_STARTER_DEFAULTS only."""
+    for key, value in NEW_BEAM_STARTER_DEFAULTS.items():
+        set_shared(str(key), copy.deepcopy(value), source="new_beam_starter_seed")
+
+    # Keep widgets/caches for starter-controlled keys in sync on the next hydrate.
+    hydrated_map = st.session_state.get("_hydrated_from_shared_map")
+    for shared_key in NEW_BEAM_STARTER_DEFAULTS.keys():
+        for widget_key, mapped_shared_key in TAB_KEYS.items():
+            if mapped_shared_key != shared_key:
+                continue
+            # For action keys, clear all mapped page widget keys to prevent stale bleed.
+            # For non-action keys, keep cleanup narrow to canonical Inputs widgets.
+            if (shared_key not in NEW_BEAM_ACTION_SHARED_KEYS) and (not widget_key.startswith("inputs_")):
+                continue
+            st.session_state.pop(widget_key, None)
+            st.session_state.pop(f"_cached_{widget_key}", None)
+            if isinstance(hydrated_map, dict):
+                hydrated_map.pop(widget_key, None)
+
+    st.session_state["_force_inputs_widget_reseed_once"] = True
+
+
+def ensure_beam_project_initialized():
+    """Ensure the Stage 1 beam-project session structure exists exactly once."""
+    defaults = {
+        "beam_project_enabled": True,
+        "beam_project_show_manager": False,
+        "beam_records": {},
+        "beam_order": [],
+        "active_beam_id": None,
+        "beam_last_hydrated_id": None,
+        "beam_manager_initialized": False,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = copy.deepcopy(value)
+
+    records = _beam_records_dict()
+    for beam_id, record in list(records.items()):
+        if not isinstance(record, dict):
+            records[beam_id] = make_default_beam_record(beam_id)
+            continue
+        if not isinstance(record.get("summary"), dict):
+            record["summary"] = make_not_run_beam_summary()
+    order = [beam_id for beam_id in _beam_order_list() if beam_id in records]
+    if len(order) != len(_beam_order_list()):
+        st.session_state["beam_order"] = order
+
+    if not order and records:
+        st.session_state["beam_order"] = list(records.keys())
+        order = st.session_state["beam_order"]
+
+    if not order:
+        first_beam_id = _make_unique_beam_id()
+        first_record = make_default_beam_record(
+            first_beam_id,
+            beam_label=_make_unique_beam_label("Beam 1"),
+        )
+        records[first_beam_id] = first_record
+        st.session_state["beam_order"] = [first_beam_id]
+        st.session_state["active_beam_id"] = first_beam_id
+        st.session_state["beam_last_hydrated_id"] = None
+
+    active_beam_id = st.session_state.get("active_beam_id")
+    if active_beam_id not in records:
+        st.session_state["active_beam_id"] = st.session_state["beam_order"][0]
+        st.session_state["beam_last_hydrated_id"] = None
+
+    st.session_state["beam_project_enabled"] = True
+    st.session_state["beam_manager_initialized"] = True
+    return st.session_state["active_beam_id"]
+
+
+def persist_active_beam_from_shared():
+    """Persist the live shared active-beam inputs back into its stored record."""
+    ensure_beam_project_initialized()
+    active_beam_id = st.session_state.get("active_beam_id")
+    if not active_beam_id:
+        return None
+
+    records = _beam_records_dict()
+    record = records.get(active_beam_id)
+    if not isinstance(record, dict):
+        record = make_default_beam_record(active_beam_id)
+
+    record["beam_id"] = active_beam_id
+    record["beam_label"] = str(record.get("beam_label") or active_beam_id)
+    record["params"] = get_beam_project_param_snapshot()
+    meta = record.get("meta") if isinstance(record.get("meta"), dict) else {}
+    meta["updated_at"] = _beam_project_now()
+    record["meta"] = meta
+    if not isinstance(record.get("summary"), dict):
+        record["summary"] = make_not_run_beam_summary()
+    records[active_beam_id] = record
+    return record
+
+
+def load_active_beam_into_shared(force=False):
+    """
+    Hydrate the selected stored beam into shared state once per explicit beam load.
+    The guard prevents stored data from overwriting live shared state on every rerun.
+    """
+    ensure_beam_project_initialized()
+    active_beam_id = st.session_state.get("active_beam_id")
+    if not active_beam_id:
+        return False
+
+    if (not force) and st.session_state.get("beam_last_hydrated_id") == active_beam_id:
+        return False
+
+    record = _beam_records_dict().get(active_beam_id)
+    if not isinstance(record, dict):
+        return False
+
+    apply_beam_project_param_snapshot(record.get("params") or {})
+    st.session_state["beam_last_hydrated_id"] = active_beam_id
+    # One-shot: force tab widgets to match shared after beam record applied (any page).
+    st.session_state["_force_hydrate_widgets_after_beam_load"] = True
+    return True
+
+
+def set_active_beam(beam_id):
+    """
+    Auto-save the current active beam before switching, then hydrate the next one.
+    This is an internal beam-manager persistence step only, not the explicit project save.
+    """
+    _write_debug_ndjson_line(
+        {
+            "id": f"log_{int(time.time() * 1000)}_H22",
+            "timestamp": int(time.time() * 1000),
+            "location": "state_and_helpers.py:set_active_beam:entry",
+            "message": "Entered set_active_beam",
+            "data": {
+                "requested_beam_id": str(beam_id or ""),
+                "current_beam_id": str(st.session_state.get("active_beam_id") or ""),
+                "selector_state": str(st.session_state.get("beam_manager_active_selector") or ""),
+                "beam_order": [str(item) for item in st.session_state.get("beam_order", [])],
+            },
+            "runId": "auto_design_debug",
+            "hypothesisId": "H22",
+        }
+    )
+    ensure_beam_project_initialized()
+    records = _beam_records_dict()
+    if beam_id not in records:
+        return False
+
+    current_beam_id = st.session_state.get("active_beam_id")
+    if beam_id == current_beam_id:
+        return False
+
+    if current_beam_id in records:
+        persist_active_beam_from_shared()
+    st.session_state["active_beam_id"] = beam_id
+    st.session_state["beam_last_hydrated_id"] = None
+    load_active_beam_into_shared(force=True)
+    st.session_state[BEAM_MODULE_STARTER_SEED_DONE_KEY] = True
+    _write_debug_ndjson_line(
+        {
+            "id": f"log_{int(time.time() * 1000)}_H22",
+            "timestamp": int(time.time() * 1000),
+            "location": "state_and_helpers.py:set_active_beam:exit",
+            "message": "Completed set_active_beam",
+            "data": {
+                "active_beam_id": str(st.session_state.get("active_beam_id") or ""),
+                "beam_last_hydrated_id": str(st.session_state.get("beam_last_hydrated_id") or ""),
+                "selector_state": str(st.session_state.get("beam_manager_active_selector") or ""),
+            },
+            "runId": "auto_design_debug",
+            "hypothesisId": "H22",
+        }
+    )
+    return True
+
+
+def add_new_beam_record():
+    """Add a brand-new beam seeded from NEW_BEAM_STARTER_DEFAULTS."""
+    ensure_beam_project_initialized()
+    persist_active_beam_from_shared()
+
+    beam_id = _make_unique_beam_id()
+    beam_label = _make_unique_beam_label(f"Beam {_next_beam_index()}")
+    record = make_default_beam_record(beam_id, beam_label=beam_label)
+    record["params"] = _build_new_beam_starter_param_snapshot()
+    meta = record.get("meta") if isinstance(record.get("meta"), dict) else {}
+    meta[BEAM_STARTER_META_SENTINEL_KEY] = True
+    meta["starter_seeded_at"] = _beam_project_now()
+    record["meta"] = meta
+    record["summary"] = make_not_run_beam_summary()
+
+    records = _beam_records_dict()
+    records[beam_id] = record
+    _beam_order_list().append(beam_id)
+    set_active_beam(beam_id)
+    _apply_new_beam_starter_defaults_to_shared()
+    recalc_derived_values()
+    update_results()
+    persist_active_beam_from_shared()
+    st.session_state[WORKSPACE_ORIGIN_KEY] = WORKSPACE_ORIGIN_NEW_FILE
+    st.session_state[WORKSPACE_IDENTITY_KEY] = uuid.uuid4().hex
+    st.session_state["_new_beam_created_this_run"] = True
+    return beam_id
+
+
+def reset_app_to_clean_starter_workspace() -> None:
+    """
+    Explicit "new clean workspace": one brand-new beam from NEW_BEAM_STARTER_DEFAULTS,
+    all canonical design actions zeroed, file + in-memory snapshots replaced so cold
+    reopen does not rehydrate stale actions.
+
+    Does not clone the previous beam. Duplicate / project load / Add beam are unchanged.
+    """
+    st.session_state[DISABLE_SNAPSHOT_RESTORE_KEY] = True
+
+    for key in (
+        "_snapshot_restore_complete",
+        "_restored_from_snapshot",
+        "_restore_guard_active",
+        "_restore_guard_ts",
+    ):
+        st.session_state.pop(key, None)
+
+    st.session_state.pop("jump_to", None)
+    clear_cached_and_widget_restore_keys()
+
+    hm = st.session_state.get("_hydrated_from_shared_map")
+    if isinstance(hm, dict):
+        hm.clear()
+
+    # Replace beam project with exactly one new beam (starter params — not a clone).
+    st.session_state["beam_records"] = {}
+    st.session_state["beam_order"] = []
+    st.session_state["active_beam_id"] = None
+    st.session_state["beam_last_hydrated_id"] = None
+    st.session_state["beam_manager_initialized"] = False
+
+    beam_id = _make_unique_beam_id()
+    beam_label = _make_unique_beam_label("Beam 1")
+    record = make_default_beam_record(beam_id, beam_label=beam_label)
+    record["params"] = _build_new_beam_starter_param_snapshot()
+    meta = record.get("meta") if isinstance(record.get("meta"), dict) else {}
+    meta[BEAM_STARTER_META_SENTINEL_KEY] = True
+    meta["starter_seeded_at"] = _beam_project_now()
+    record["meta"] = meta
+    record["summary"] = make_not_run_beam_summary()
+
+    records = _beam_records_dict()
+    records[beam_id] = record
+    st.session_state["beam_order"] = [beam_id]
+    st.session_state["active_beam_id"] = beam_id
+    st.session_state["beam_manager_initialized"] = True
+
+    # Full starter snapshot into shared (all BEAM_PROJECT_PARAM_KEYS + canonical zeros for actions)
+    apply_beam_project_param_snapshot(record["params"])
+    # Clear mapped widget keys / caches so Inputs does not show pre-reset values
+    _apply_new_beam_starter_defaults_to_shared()
+
+    st.session_state[BEAM_MODULE_STARTER_SEED_DONE_KEY] = True
+    st.session_state["_user_has_edited_anything"] = False
+    st.session_state["beam_last_hydrated_id"] = beam_id
+    st.session_state[WORKSPACE_ORIGIN_KEY] = WORKSPACE_ORIGIN_NEW_FILE
+    st.session_state[WORKSPACE_IDENTITY_KEY] = uuid.uuid4().hex
+
+    reset_results_state()
+    recalc_derived_values()
+    update_results()
+    persist_active_beam_from_shared()
+
+    shared_out: dict = {}
+    for k in SHARED_DEFAULTS.keys():
+        if k in st.session_state:
+            shared_out[k] = st.session_state[k]
+    save_shared_snapshot(shared_out, workspace_origin=WORKSPACE_ORIGIN_NEW_FILE)
+    cid = get_client_id()
+    _persistent_store()[cid] = {
+        "shared": shared_out,
+        "widgets": {},
+        "workspace_origin": WORKSPACE_ORIGIN_NEW_FILE,
+        "workspace_identity": get_workspace_identity_for_persist(),
+    }
+
+    st.session_state[DISABLE_SNAPSHOT_RESTORE_KEY] = False
+    st.rerun()
+
+
+def duplicate_active_beam_record():
+    """Duplicate the current active beam into a new stored beam."""
+    ensure_beam_project_initialized()
+    persist_active_beam_from_shared()
+
+    active_beam_id = st.session_state.get("active_beam_id")
+    active_record = _beam_records_dict().get(active_beam_id, {})
+    base_label = str(active_record.get("beam_label") or "Beam").strip() or "Beam"
+
+    beam_id = _make_unique_beam_id()
+    beam_label = _make_unique_beam_label(f"{base_label} Copy")
+    record = make_default_beam_record(beam_id, beam_label=beam_label)
+    record["params"] = copy.deepcopy((active_record or {}).get("params") or get_beam_project_param_snapshot())
+    # Duplicates start as unverified until this beam becomes the active checked beam.
+    record["summary"] = make_not_run_beam_summary()
+
+    records = _beam_records_dict()
+    records[beam_id] = record
+    _beam_order_list().append(beam_id)
+    set_active_beam(beam_id)
+    return beam_id
+
+
+def delete_beam_record(beam_id):
+    """Delete a stored beam without ever leaving the project empty."""
+    ensure_beam_project_initialized()
+    order = _beam_order_list()
+    if beam_id not in _beam_records_dict() or len(order) <= 1:
+        return False
+
+    records = _beam_records_dict()
+    was_active = beam_id == st.session_state.get("active_beam_id")
+
+    records.pop(beam_id, None)
+    st.session_state["beam_order"] = [item for item in order if item != beam_id]
+
+    if not was_active:
+        return True
+
+    fallback_beam_id = st.session_state["beam_order"][0]
+    st.session_state["active_beam_id"] = fallback_beam_id
+    st.session_state["beam_last_hydrated_id"] = None
+    load_active_beam_into_shared(force=True)
+    st.session_state[BEAM_MODULE_STARTER_SEED_DONE_KEY] = True
+    return True
+
+
+def update_active_beam_summary_from_results(
+    *,
+    bending_rows: list[dict] | None = None,
+    shear_rows: list[dict] | None = None,
+    crack_rows: list[dict] | None = None,
+    deflection_rows: list[dict] | None = None,
+):
+    """
+    Cache a lightweight summary for the active beam using already-available result keys.
+    Never computes other beams, and falls back to NOT_RUN when results are not trustworthy yet.
+    """
+    ensure_beam_project_initialized()
+    active_beam_id = st.session_state.get("active_beam_id")
+    records = _beam_records_dict()
+    if active_beam_id not in records:
+        return None
+
+    record = records[active_beam_id]
+    if st.session_state.get("_dirty", False):
+        # Save/load may call this before the active beam's latest edits have been recomputed.
+        existing_summary = record.get("summary")
+        return existing_summary if isinstance(existing_summary, dict) else make_not_run_beam_summary()
+
+    summary = make_not_run_beam_summary()
+
+    phi_Mu_cap = _safe_summary_float(st.session_state.get("phi_Mu_cap"))
+    Mu_utilisation = _safe_summary_float(st.session_state.get("Mu_utilisation"))
+    phi_Vu_cap = _safe_summary_float(st.session_state.get("phi_Vu_cap"))
+    Vu_utilisation = _safe_summary_float(st.session_state.get("Vu_utilisation"))
+    crack_utilisation = _safe_summary_float(st.session_state.get("crack_utilisation"))
+    deflection_utilisation = _safe_summary_float(st.session_state.get("deflection_utilisation"))
+    sigma_allow_table = _safe_summary_float(st.session_state.get("sigma_allow_table"))
+    wmax_char = _safe_summary_float(st.session_state.get("wmax_char"))
+    deflection_limit_mm = _safe_summary_float(st.session_state.get("deflection_limit_mm"))
+
+    if (phi_Mu_cap is not None and phi_Mu_cap > 0.0) or (Mu_utilisation is not None and Mu_utilisation > 0.0):
+        summary["bending_status"] = normalize_beam_status(utilisation=Mu_utilisation)
+
+    if (phi_Vu_cap is not None and phi_Vu_cap > 0.0) or (Vu_utilisation is not None and Vu_utilisation > 0.0):
+        summary["shear_status"] = normalize_beam_status(utilisation=Vu_utilisation)
+
+    if ((sigma_allow_table is not None and sigma_allow_table > 0.0) or (wmax_char is not None and wmax_char > 0.0)):
+        crack_pass = None
+        if "passes_table" in st.session_state and "passes_w" in st.session_state:
+            crack_pass = bool(st.session_state.get("passes_table")) and bool(st.session_state.get("passes_w"))
+        summary["crack_status"] = normalize_beam_status(utilisation=crack_utilisation, pass_flag=crack_pass)
+
+    if (deflection_limit_mm is not None and deflection_limit_mm > 0.0):
+        summary["deflection_status"] = normalize_beam_status(utilisation=deflection_utilisation)
+
+    if any(rows is not None for rows in (bending_rows, shear_rows, crack_rows, deflection_rows)):
+        classified = classify_beam_check_rows(
+            bending_rows=bending_rows,
+            shear_rows=shear_rows,
+            crack_rows=crack_rows,
+            deflection_rows=deflection_rows,
+        )
+        summary["strength_status"] = classified["strength_status"]
+        summary["detailing_status"] = classified["detailing_status"]
+        summary["overall_status"] = classified["overall_status"]
+    else:
+        existing_summary = _sanitize_beam_summary(record.get("summary"))
+        summary["strength_status"] = existing_summary.get("strength_status", BEAM_STATUS_NOT_RUN)
+        summary["detailing_status"] = existing_summary.get("detailing_status", BEAM_STATUS_NOT_RUN)
+        summary["overall_status"] = get_beam_overall_status(summary)
+
+    actions = resolve_design_actions()
+    summary["last_checked_at"] = _beam_project_now()
+    summary["Mu_star"] = _safe_summary_float(actions.get("Mu"))
+    summary["phi_Mu_cap"] = phi_Mu_cap
+    summary["Mu_utilisation"] = Mu_utilisation
+    summary["Vu_star"] = _safe_summary_float(actions.get("Vu"))
+    summary["phi_Vu_cap"] = phi_Vu_cap
+    summary["Vu_utilisation"] = Vu_utilisation
+    summary["crack_utilisation"] = crack_utilisation
+    summary["deflection_utilisation"] = deflection_utilisation
+
+    if summary["overall_status"] == BEAM_STATUS_NOT_RUN:
+        # Keep the existing cached summary if current results are still not trustworthy.
+        existing_summary = record.get("summary")
+        return existing_summary if isinstance(existing_summary, dict) else summary
+
+    record["summary"] = summary
+    meta = record.get("meta") if isinstance(record.get("meta"), dict) else {}
+    meta["summary_updated_at"] = summary["last_checked_at"]
+    record["meta"] = meta
+    records[active_beam_id] = record
+    return summary
 
 
 def _active_load_prefix() -> str:
@@ -614,14 +2278,259 @@ def _active_load_prefix() -> str:
     return "uls" if mode == "ULS" else "sls"
 
 
+def is_design_governing() -> bool:
+    return st.session_state.get("actions_mode", "manual") == "design"
+
+
+DEFLECTION_LIMIT_OPTIONS = {
+    "L/150": 150,
+    "L/180": 180,
+    "L/250": 250,
+    "L/300": 300,
+    "L/350": 350,
+    "L/500": 500,
+}
+DEFLECTION_LIMIT_DEFAULT_LABEL = "L/250"
+DEFLECTION_LIMIT_DEFAULT_RATIO = DEFLECTION_LIMIT_OPTIONS[DEFLECTION_LIMIT_DEFAULT_LABEL]
+
+# Shared help for deflection limit L/Δ widgets (Inputs, Deflection, etc.); AS/NZS 1170.0 App. C framing.
+DEFLECTION_LIMIT_HELP_TEXT = (
+    "Select the serviceability deflection limit required for the member and project. "
+    "AS/NZS 1170.0 Appendix C provides general guidance on deformation and deflection limits, "
+    "but it does not prescribe one universal fixed limit for every case. "
+    "The adopted limit should reflect the governing serviceability requirement and may depend on "
+    "the relevant material code, project specification, finishes, partitions, glazing, "
+    "appearance criteria, client requirements, and engineering judgement."
+)
+
+
+def get_deflection_limit_ratio(value) -> int:
+    """Canonical deflection limit ratio (fallback to default when invalid/unsupported)."""
+    try:
+        ratio = int(round(float(value)))
+    except Exception:
+        return int(DEFLECTION_LIMIT_DEFAULT_RATIO)
+    if ratio in DEFLECTION_LIMIT_OPTIONS.values():
+        return ratio
+    return int(DEFLECTION_LIMIT_DEFAULT_RATIO)
+
+
+def get_deflection_limit_label_from_ratio(value) -> str:
+    ratio = get_deflection_limit_ratio(value)
+    for label, r in DEFLECTION_LIMIT_OPTIONS.items():
+        if int(r) == int(ratio):
+            return label
+    return DEFLECTION_LIMIT_DEFAULT_LABEL
+
+
+def get_deflection_limit_ratio_from_label(label: str) -> int:
+    return int(DEFLECTION_LIMIT_OPTIONS.get(label, DEFLECTION_LIMIT_DEFAULT_RATIO))
+
+
+def derive_concrete_modulus_from_fc(fc_mpa: float) -> float:
+    """
+    Canonical concrete elastic modulus used by this app.
+    Uses the existing project convention Ec = 4700 * sqrt(fc) (MPa).
+    """
+    fc_safe = max(0.0, float(fc_mpa or 0.0))
+    return float(4700.0 * math.sqrt(fc_safe))
+
+
+def derive_effective_concrete_modulus(Ec_mpa: float, phi_cc_t: float) -> float:
+    """
+    Long-term effective modulus used in deflection/crack stiffness context.
+    Consistent with n_e = (1 + phi_cc_t) * Es / Ec  => Eceff = Ec / (1 + phi_cc_t).
+    """
+    Ec_safe = max(1e-9, float(Ec_mpa or 0.0))
+    phi_safe = max(0.0, float(phi_cc_t or 0.0))
+    return float(Ec_safe / (1.0 + phi_safe))
+
+
+def derive_sustained_stress_ratio(
+    *,
+    fc_mpa: float,
+    sls_m_pos_kNm: float,
+    sls_m_neg_kNm: float,
+    z_top_mm3: float,
+    z_bot_mm3: float,
+) -> dict:
+    """
+    Derive sustained concrete stress ratio from the governing sustained SLS moment.
+    sigma_cs = M_sust / Z_comp (MPa), stress_ratio = sigma_cs / f'c.
+    """
+    fc_safe = max(0.0, float(fc_mpa or 0.0))
+    m_pos = max(0.0, float(sls_m_pos_kNm or 0.0))
+    m_neg = max(0.0, float(sls_m_neg_kNm or 0.0))
+    use_sagging = m_pos >= m_neg
+    m_sust = m_pos if use_sagging else m_neg
+    z_comp = float((z_top_mm3 if use_sagging else z_bot_mm3) or 0.0)
+    sigma_cs = (m_sust * 1.0e6 / z_comp) if (m_sust > 0.0 and z_comp > 0.0) else 0.0
+    ratio = (sigma_cs / fc_safe) if fc_safe > 0.0 else 0.0
+    return {
+        "stress_ratio": float(max(0.0, ratio)),
+        "sigma_cs_mpa": float(max(0.0, sigma_cs)),
+        "M_sust_kNm": float(max(0.0, m_sust)),
+        "Z_comp_mm3": float(max(0.0, z_comp)),
+        "compression_fibre": "top" if use_sagging else "bottom",
+    }
+
+
+def resolve_design_actions(state: dict | None = None) -> dict:
+    source_state = state if isinstance(state, dict) else st.session_state
+    actions_source = str(source_state.get("actions_source") or "")
+    actions_mode = str(source_state.get("actions_mode") or "")
+    if (
+        str(source_state.get("actions_mode") or "").strip().lower() == "manual"
+        or str(source_state.get("actions_source") or "").strip() == "Manual design actions (inputs below)"
+    ):
+        Mu_signed_fallback = float(source_state.get("uls_Mstar", 0.0) or 0.0)
+        Mu_pos = float(source_state.get("uls_Mstar_pos_manual", source_state.get("Mu_star_pos_manual", max(0.0, Mu_signed_fallback))) or 0.0)
+        Mu_neg = float(source_state.get("uls_Mstar_neg_manual", source_state.get("Mu_star_neg_manual", max(0.0, -Mu_signed_fallback))) or 0.0)
+        Mu_pos = max(0.0, Mu_pos)
+        Mu_neg = max(0.0, Mu_neg)
+        Mu_signed = Mu_pos - Mu_neg
+        Mu = float(max(Mu_pos, Mu_neg))
+        Vu = float(source_state.get("uls_Vstar", 0.0) or 0.0)
+        Nu = float(source_state.get("uls_Nstar", 0.0) or 0.0)
+        SLS_M_signed_fallback = float(source_state.get("sls_Mstar", 0.0) or 0.0)
+        SLS_M_pos = float(source_state.get("sls_Mstar_pos_manual", max(0.0, SLS_M_signed_fallback)) or 0.0)
+        SLS_M_neg = float(source_state.get("sls_Mstar_neg_manual", max(0.0, -SLS_M_signed_fallback)) or 0.0)
+        SLS_M_pos = max(0.0, SLS_M_pos)
+        SLS_M_neg = max(0.0, SLS_M_neg)
+        SLS_M_signed = SLS_M_pos - SLS_M_neg
+        SLS_M = float(max(SLS_M_pos, SLS_M_neg))
+        SLS_V = float(source_state.get("sls_Vstar", 0.0) or 0.0)
+        assert abs(Vu - float(source_state.get("uls_Vstar", 0.0) or 0.0)) < 1e-9
+        assert abs(Nu - float(source_state.get("uls_Nstar", 0.0) or 0.0)) < 1e-9
+
+        return {
+            "Mu": Mu,
+            "Mu_signed": Mu_signed,
+            "Mu_pos": Mu_pos,
+            "Mu_neg": Mu_neg,
+            "has_sagging_case": Mu_pos > 1e-9,
+            "has_hogging_case": Mu_neg > 1e-9,
+            "Vu": Vu,
+            "Nu": Nu,
+            "SLS_M": SLS_M,
+            "SLS_M_signed": SLS_M_signed,
+            "SLS_M_pos": SLS_M_pos,
+            "SLS_M_neg": SLS_M_neg,
+            "SLS_V": SLS_V,
+            "Tu": float(source_state.get("Tu_star", 0.0) or 0.0),
+            "Pu": float(source_state.get("P_star", 0.0) or 0.0),
+            "source": "manual_uls",
+            "actions_source": str(source_state.get("actions_source") or ""),
+            "actions_mode": str(source_state.get("actions_mode") or ""),
+            "signature": (
+                Mu,
+                Vu,
+                Nu,
+                SLS_M,
+                SLS_V,
+                "manual_uls",
+                str(source_state.get("actions_source") or ""),
+                str(source_state.get("actions_mode") or ""),
+            ),
+        }
+
+    design_source = str(source_state.get("design_actions_source") or "max")
+    if design_source == "section":
+        Mu_signed = float(
+            source_state.get(
+                "design_M_uls_kNm_signed",
+                source_state.get("design_M_uls_kNm", source_state.get("Mu_star", 0.0)),
+            )
+            or 0.0
+        )
+        Mu_pos = max(0.0, Mu_signed)
+        Mu_neg = max(0.0, -Mu_signed)
+        Mu = float(max(Mu_pos, Mu_neg))
+        Vu = float(source_state.get("design_V_uls_kN", source_state.get("Vu_star", 0.0)) or 0.0)
+        SLS_M_signed = float(
+            source_state.get(
+                "design_M_sls_kNm_signed",
+                source_state.get("design_M_sls_kNm", source_state.get("sls_Mstar", 0.0)),
+            )
+            or 0.0
+        )
+        SLS_M_pos = max(0.0, SLS_M_signed)
+        SLS_M_neg = max(0.0, -SLS_M_signed)
+        SLS_M = float(max(SLS_M_pos, SLS_M_neg))
+        SLS_V = float(source_state.get("design_V_sls_kN", source_state.get("sls_Vstar", 0.0)) or 0.0)
+    else:
+        Mu = float(source_state.get("sfd_Mmax_abs_kNm", source_state.get("Mu_star", 0.0)) or 0.0)
+        Mu_pos = float(source_state.get("M_pos_max_uls_kNm", 0.0) or 0.0)
+        Mu_neg = float(abs(min(0.0, float(source_state.get("M_neg_min_uls_kNm", 0.0) or 0.0))))
+        Mu_signed = float(Mu_pos) if Mu_pos >= Mu_neg else -float(Mu_neg)
+        Vu = float(source_state.get("sfd_Vmax_abs_kN", source_state.get("Vu_star", 0.0)) or 0.0)
+        SLS_M = float(source_state.get("sfd_Msls_max_kNm", source_state.get("sls_Mstar", 0.0)) or 0.0)
+        SLS_M_pos = float(source_state.get("M_pos_max_sls_kNm", 0.0) or 0.0)
+        SLS_M_neg = float(abs(min(0.0, float(source_state.get("M_neg_min_sls_kNm", 0.0) or 0.0))))
+        SLS_M_signed = float(SLS_M_pos) if SLS_M_pos >= SLS_M_neg else -float(SLS_M_neg)
+        SLS_V = float(source_state.get("sfd_Vsls_max_kN", source_state.get("sls_Vstar", 0.0)) or 0.0)
+    Nu = float(source_state.get("Nu_star", source_state.get("N_star", source_state.get("uls_Nstar", 0.0))) or 0.0)
+
+    actions = {
+        "Mu": float(Mu),
+        "Mu_signed": float(Mu_signed),
+        "Mu_pos": float(Mu_pos),
+        "Mu_neg": float(Mu_neg),
+        "has_sagging_case": float(Mu_pos) > 1e-9,
+        "has_hogging_case": float(Mu_neg) > 1e-9,
+        "Vu": float(Vu),
+        "Nu": float(Nu),
+        "SLS_M": float(SLS_M),
+        "SLS_M_signed": float(SLS_M_signed),
+        "SLS_M_pos": float(SLS_M_pos),
+        "SLS_M_neg": float(SLS_M_neg),
+        "SLS_V": float(SLS_V),
+        "Tu": float(source_state.get("Tu_star", 0.0) or 0.0),
+        "Pu": float(source_state.get("P_star", 0.0) or 0.0),
+        "source": "design",
+        "actions_source": actions_source,
+        "actions_mode": actions_mode,
+    }
+    actions["signature"] = (
+        actions["Mu"],
+        actions["Vu"],
+        actions["Nu"],
+        actions["SLS_M"],
+        actions["SLS_V"],
+        actions["source"],
+        actions["actions_source"],
+        actions["actions_mode"],
+    )
+    return actions
+
+
 def load_proxies_from_active_set():
+    actions_mode = get_param("actions_mode", "manual")
+    design_mode = actions_mode == "design"
+    # When design actions drive the app we must NOT restore manual proxies
+    if design_mode:
+        return
     p = _active_load_prefix()
+    signed_m = float(st.session_state.get(f"{p}_Mstar", 0.0) or 0.0)
+    m_pos = float(st.session_state.get(f"{p}_Mstar_pos_manual", max(0.0, signed_m)) or 0.0)
+    m_neg = float(st.session_state.get(f"{p}_Mstar_neg_manual", max(0.0, -signed_m)) or 0.0)
     st.session_state["load_Nstar_proxy"] = float(st.session_state.get(f"{p}_Nstar", 0.0) or 0.0)
     st.session_state["load_Vstar_proxy"] = float(st.session_state.get(f"{p}_Vstar", 0.0) or 0.0)
-    st.session_state["load_Mstar_proxy"] = float(st.session_state.get(f"{p}_Mstar", 0.0) or 0.0)
+    st.session_state["load_Mstar_pos_proxy"] = float(max(0.0, m_pos))
+    st.session_state["load_Mstar_neg_proxy"] = float(max(0.0, m_neg))
+    # Legacy compatibility proxy (signed)
+    st.session_state["load_Mstar_proxy"] = float(m_pos - m_neg)
+    if p == "uls":
+        st.session_state["Mu_star_pos_manual"] = float(max(0.0, m_pos))
+        st.session_state["Mu_star_neg_manual"] = float(max(0.0, m_neg))
+        st.session_state["Mu_star_manual"] = float(m_pos - m_neg)
 
 
 def save_proxies_to_active_set():
+    actions_mode = get_param("actions_mode", "manual")
+    design_mode = actions_mode == "design"
+    if design_mode:
+        return
     p = _active_load_prefix()
     other = "sls" if p == "uls" else "uls"
     before_other = (
@@ -632,7 +2541,17 @@ def save_proxies_to_active_set():
 
     st.session_state[f"{p}_Nstar"] = float(st.session_state.get("load_Nstar_proxy", 0.0) or 0.0)
     st.session_state[f"{p}_Vstar"] = float(st.session_state.get("load_Vstar_proxy", 0.0) or 0.0)
-    st.session_state[f"{p}_Mstar"] = float(st.session_state.get("load_Mstar_proxy", 0.0) or 0.0)
+    m_pos = float(st.session_state.get("load_Mstar_pos_proxy", max(0.0, st.session_state.get("load_Mstar_proxy", 0.0) or 0.0)) or 0.0)
+    m_neg = float(st.session_state.get("load_Mstar_neg_proxy", max(0.0, -(st.session_state.get("load_Mstar_proxy", 0.0) or 0.0))) or 0.0)
+    st.session_state[f"{p}_Mstar_pos_manual"] = float(max(0.0, m_pos))
+    st.session_state[f"{p}_Mstar_neg_manual"] = float(max(0.0, m_neg))
+    st.session_state[f"{p}_Mstar"] = float(max(0.0, m_pos) - max(0.0, m_neg))
+    # Legacy compatibility proxy (signed)
+    st.session_state["load_Mstar_proxy"] = float(st.session_state[f"{p}_Mstar"])
+    if p == "uls":
+        st.session_state["Mu_star_pos_manual"] = float(st.session_state[f"{p}_Mstar_pos_manual"])
+        st.session_state["Mu_star_neg_manual"] = float(st.session_state[f"{p}_Mstar_neg_manual"])
+        st.session_state["Mu_star_manual"] = float(st.session_state[f"{p}_Mstar"])
 
     # Keep shared/report action keys in sync with the active load set
     # (Report tables read Mu_star/Vu_star/N_star; widgets edit uls/sls *_Mstar keys)
@@ -648,6 +2567,73 @@ def save_proxies_to_active_set():
 
     if before_other != after_other:
         debug_print("[TRIPWIRE] Cross-write detected! save_proxies_to_active_set modified BOTH ULS and SLS.")
+
+
+def derive_design_actions():
+    """
+    Single source of truth for Mu*, Vu*, N*.
+
+    Called every render cycle.
+    """
+    _raw_mode = st.session_state.get("actions_mode", "manual")
+    actions_mode = str(_raw_mode or "manual").strip().lower()
+    if actions_mode not in ("manual", "design"):
+        actions_mode = "manual"
+    if actions_mode == "design":
+        source = st.session_state.get("design_actions_source", "max")
+        if source == "section":
+            uls_M_signed = float(
+                st.session_state.get(
+                    "design_M_uls_kNm_signed",
+                    st.session_state.get("design_M_uls_kNm", 0.0),
+                )
+                or 0.0
+            )
+            uls_pos = max(0.0, uls_M_signed)
+            uls_neg = max(0.0, -uls_M_signed)
+            uls_V = float(st.session_state.get("design_V_uls_kN", 0.0) or 0.0)
+            sls_M_signed = float(
+                st.session_state.get(
+                    "design_M_sls_kNm_signed",
+                    st.session_state.get("design_M_sls_kNm", 0.0),
+                )
+                or 0.0
+            )
+            sls_pos = max(0.0, sls_M_signed)
+            sls_neg = max(0.0, -sls_M_signed)
+            sls_V = float(st.session_state.get("design_V_sls_kN", 0.0) or 0.0)
+        else:
+            uls_pos = float(st.session_state.get("M_pos_max_uls_kNm", 0.0) or 0.0)
+            uls_neg = float(abs(min(0.0, float(st.session_state.get("M_neg_min_uls_kNm", 0.0) or 0.0))))
+            uls_M_signed = uls_pos if uls_pos >= uls_neg else -uls_neg
+            uls_V = float(st.session_state.get("sfd_Vmax_abs_kN", 0.0) or 0.0)
+            sls_pos = float(st.session_state.get("M_pos_max_sls_kNm", 0.0) or 0.0)
+            sls_neg = float(abs(min(0.0, float(st.session_state.get("M_neg_min_sls_kNm", 0.0) or 0.0))))
+            sls_M_signed = sls_pos if sls_pos >= sls_neg else -sls_neg
+            sls_V = float(st.session_state.get("sfd_Vsls_max_kN", 0.0) or 0.0)
+        # Design page currently has no separate axial derivation by limit state.
+        shared_N = float(st.session_state.get("N_star", 0.0) or 0.0)
+
+        st.session_state["uls_Mstar"] = float(uls_M_signed)
+        st.session_state["uls_Mstar_pos_manual"] = float(max(0.0, uls_pos))
+        st.session_state["uls_Mstar_neg_manual"] = float(max(0.0, uls_neg))
+        st.session_state["uls_Vstar"] = uls_V
+        st.session_state["uls_Nstar"] = shared_N
+        st.session_state["sls_Mstar"] = float(sls_M_signed)
+        st.session_state["sls_Mstar_pos_manual"] = float(max(0.0, sls_pos))
+        st.session_state["sls_Mstar_neg_manual"] = float(max(0.0, sls_neg))
+        st.session_state["sls_Vstar"] = sls_V
+        st.session_state["sls_Nstar"] = shared_N
+
+    actions = resolve_design_actions()
+    st.session_state["Mu_star_manual"] = float(st.session_state.get("uls_Mstar", 0.0) or 0.0)
+    st.session_state["Mu_star_pos_manual"] = float(st.session_state.get("uls_Mstar_pos_manual", max(0.0, st.session_state.get("uls_Mstar", 0.0) or 0.0)) or 0.0)
+    st.session_state["Mu_star_neg_manual"] = float(st.session_state.get("uls_Mstar_neg_manual", max(0.0, -(st.session_state.get("uls_Mstar", 0.0) or 0.0))) or 0.0)
+    st.session_state["Mu_star"] = float(actions["Mu"])
+    st.session_state["Mu_star_kNm"] = float(actions["Mu"])
+    st.session_state["Mu_star_kNm_signed"] = float(actions.get("Mu_signed", actions["Mu"]))
+    st.session_state["Vu_star"] = float(actions["Vu"])
+    st.session_state["N_star"] = float(actions["Nu"])
 
 
 def _allowed_shared_keys() -> set[str]:
@@ -840,13 +2826,42 @@ RESULT_KEYS = {
     "wmax_char",
     "passes_table",
     "passes_w",
+    # Crack control (active tension reinforcement participation)
+    "crack_tension_face",
+    "crack_active_bar_count",
+    "crack_active_bar_dias",
+    "crack_active_bar_spacing_mm",
+    "crack_tension_width_mm",
+    "crack_Ast_active_mm2",
+    "crack_flange_participation_used",
+    "crack_web_participation_used",
+    "crack_detailing_warning",
     # Bending SLS → crack link
     "sigma_s_sls",
+    "bending_sls_y_tension_outer",
+    "bending_sls_eps_s_outer",
+    "bending_sls_fs_outer",
+    "bending_has_positive_case",
+    "bending_has_negative_case",
     # SFD/BMD computed results
     "sfd_Msls_max_kNm",
     "sfd_Vsls_max_kN",
     "sfd_Mmax_abs_kNm",
     "sfd_Vmax_abs_kN",
+    "preview_M_uls_kNm",
+    "preview_V_uls_kN",
+    "preview_M_sls_kNm",
+    "preview_V_sls_kN",
+    "design_M_uls_kNm",
+    "design_M_uls_kNm_signed",
+    "design_V_uls_kN",
+    "design_M_sls_kNm",
+    "design_M_sls_kNm_signed",
+    "design_V_sls_kN",
+    "M_pos_max_uls_kNm",
+    "M_neg_min_uls_kNm",
+    "M_pos_max_sls_kNm",
+    "M_neg_min_sls_kNm",
     "sfd_span_L_m",  # Span length for SFD/deflection pages (m)
     "sfd_case",  # Current teaching case (string)
     # SFD/BMD loading results (computed from UDL inputs)
@@ -878,14 +2893,78 @@ RESULT_KEYS = {
     "phi_Vu_max_kN",
     "V_eq_kN",
     "Vuc_utilisation",
+    "shear_longitudinal_tension_increment",
+    "shear_Ast_required_tension_envelope",
+    "shear_Ast_available_anchored_active",
+    "shear_Ast_available_anchored_web",
+    "shear_Ast_available_anchored_flange",
+    "shear_flange_bars_participating",
+    "shear_longitudinal_detailing_ok",
+    # Optional flange transverse detailing/distribution reporting
+    "flange_transverse_reo_present_top",
+    "flange_transverse_reo_present_bottom",
+    "flange_transverse_spacing_top",
+    "flange_transverse_spacing_bottom",
+    "flange_transverse_detailing_note",
+    "active_tension_face",
+    "active_tension_Ast_mm2",
+    "active_tension_width_mm",
+    "active_tension_flange_participating",
+    "active_tension_warning",
     # Shear report outputs (PDF)
     "shear_steps",
     "shear_report",
+    "shear_zone_results",
+    "shear_design_status",
+    "shear_design_error",
+    "shear_auto_selected_lig_d_mm",
+    "shear_auto_selected_legs",
+    "shear_x",
+    "shear_V",
+    "shear_V_signed",
+    "V_max",
+    "req_asv_s",
+    "prov_asv_s",
+    "shear_util_min",
+    "shear_util_x",
+    "shear_envelope_status",
+    "support_type",
+    "critical_shear_x",
+    "critical_shear_V",
+    "shear_k_v",
+    "shear_theta_v_deg",
+    "shear_theta_v_rad",
+    "shear_Vuc_kN",
+    "shear_Vus_kN",
+    "shear_Vu_total_kN",
+    "shear_spacing_end_mm",
+    "shear_spacing_mid_mm",
+    "shear_spacing_governing",
+    "shear_spacing_profile_min",
+    "shear_spacing_profile_max",
+    "shear_s_end",
+    "shear_s_mid",
+    "shear_mid_spacing_calc_mm",
+    "shear_mid_spacing_mode",
+    "V_mid_kN",
     # Selected / final design actions (chosen from manual or SFD/BMD page)
     "actions_source",
     "Mu_star",
     "Mu_star_kNm",
+    "Mu_star_kNm_signed",
     "Vu_star",
+    "phi_Mu_pos_kNm",
+    "phi_Mu_neg_kNm",
+    "Mu_nom_pos_kNm",
+    "Mu_nom_neg_kNm",
+    "bending_util_pos",
+    "bending_util_neg",
+    "bending_status_pos",
+    "bending_status_neg",
+    "bending_has_sagging_case",
+    "bending_has_hogging_case",
+    "bending_governing_case",
+    "bending_util_governing",
     # Bending min requirements / neutral axis checks
     "Mx_min_req",
     "As_min_req",
@@ -898,6 +2977,9 @@ RESULT_KEYS = {
     "span_L_m",
     # Deflection: computed effective design load (from V, L, support type)
     "fd_ef_calc_kNm",
+    # Inputs-page assistant outputs
+    "auto_design_steps",
+    "auto_design_status",
 }
 
 # ---- REQUIRED RESULT KEYS (actions selection) ----
@@ -921,14 +3003,62 @@ RESULT_DEFAULTS = {k: 0.0 for k in RESULT_KEYS}
 RESULT_DEFAULTS.update({
     "passes_table": False,
     "passes_w": False,
+    "crack_tension_face": "",
+    "crack_active_bar_count": 0.0,
+    "crack_active_bar_dias": [],
+    "crack_active_bar_spacing_mm": [],
+    "crack_tension_width_mm": 0.0,
+    "crack_Ast_active_mm2": 0.0,
+    "crack_flange_participation_used": False,
+    "crack_web_participation_used": False,
+    "crack_detailing_warning": "",
     "Vuc_utilisation": None,  # Can be None
+    "shear_longitudinal_tension_increment": 0.0,
+    "shear_Ast_required_tension_envelope": 0.0,
+    "shear_Ast_available_anchored_active": 0.0,
+    "shear_Ast_available_anchored_web": 0.0,
+    "shear_Ast_available_anchored_flange": 0.0,
+    "shear_flange_bars_participating": False,
+    "shear_longitudinal_detailing_ok": False,
+    "flange_transverse_reo_present_top": False,
+    "flange_transverse_reo_present_bottom": False,
+    "flange_transverse_spacing_top": 0.0,
+    "flange_transverse_spacing_bottom": 0.0,
+    "flange_transverse_detailing_note": "",
+    "active_tension_face": "",
+    "active_tension_Ast_mm2": 0.0,
+    "active_tension_width_mm": 0.0,
+    "active_tension_flange_participating": False,
+    "active_tension_warning": "",
     # Shear report outputs (PDF)
     "shear_steps": [],
     "shear_report": {},
+    "shear_zone_results": None,
+    "shear_design_status": None,
+    "shear_design_error": None,
+    "shear_auto_selected_lig_d_mm": None,
+    "shear_auto_selected_legs": None,
+    "shear_x": [],
+    "shear_V": [],
+    "shear_V_signed": [],
+    "V_max": 0.0,
+    "req_asv_s": [],
+    "prov_asv_s": [],
+    "shear_util_min": None,
+    "shear_util_x": None,
+    "shear_envelope_status": None,
+    "support_type": None,
+    "critical_shear_x": None,
+    "critical_shear_V": None,
+    "shear_spacing_governing": None,
+    "shear_spacing_profile_min": 0.0,
+    "shear_spacing_profile_max": 0.0,
+    "shear_mid_spacing_mode": "",
     # Action result keys
     "actions_source": "",
     "Mu_star": 0.0,
     "Mu_star_kNm": 0.0,
+    "Mu_star_kNm_signed": 0.0,
     "Vu_star": 0.0,
     # Load actions by module (derived wiring)
     "actions_bending": {},
@@ -938,6 +3068,34 @@ RESULT_DEFAULTS.update({
     # SFD/BMD result keys
     "sfd_case": "",  # Current teaching case (string)
     "sfd_span_L_m": 0.0,  # Span length for SFD/deflection pages (m)
+    "preview_M_uls_kNm": 0.0,
+    "preview_V_uls_kN": 0.0,
+    "preview_M_sls_kNm": 0.0,
+    "preview_V_sls_kN": 0.0,
+    "design_M_uls_kNm": 0.0,
+    "design_M_uls_kNm_signed": 0.0,
+    "design_V_uls_kN": 0.0,
+    "design_M_sls_kNm": 0.0,
+    "design_M_sls_kNm_signed": 0.0,
+    "design_V_sls_kN": 0.0,
+    "M_pos_max_uls_kNm": 0.0,
+    "M_neg_min_uls_kNm": 0.0,
+    "M_pos_max_sls_kNm": 0.0,
+    "M_neg_min_sls_kNm": 0.0,
+    "phi_Mu_pos_kNm": 0.0,
+    "phi_Mu_neg_kNm": 0.0,
+    "Mu_nom_pos_kNm": 0.0,
+    "Mu_nom_neg_kNm": 0.0,
+    "bending_util_pos": 0.0,
+    "bending_util_neg": 0.0,
+    "bending_status_pos": "",
+    "bending_status_neg": "",
+    "bending_has_sagging_case": False,
+    "bending_has_hogging_case": False,
+    "bending_has_positive_case": False,
+    "bending_has_negative_case": False,
+    "bending_governing_case": "",
+    "bending_util_governing": 0.0,
     # Bending min requirements / neutral axis checks
     "Mx_min_req": 0.0,
     "As_min_req": 0.0,
@@ -950,6 +3108,9 @@ RESULT_DEFAULTS.update({
     "span_L_m": 0.0,
     # Deflection: computed effective design load
     "fd_ef_calc_kNm": 0.0,
+    # Inputs-page assistant outputs
+    "auto_design_steps": [],
+    "auto_design_status": "",
 })
 
 # Explicit set of derived keys (for RULE 3 checks and debug guards)
@@ -960,8 +3121,16 @@ DERIVED_KEYS = {
     "nb_bot", "nb_top",
     "db_bot", "db_top",
     "s_bot", "s_top",
+    "bot_rows_resolved", "top_rows_resolved",
+    "bot_bar_coords", "top_bar_coords",
+    "resolved_longitudinal_bars", "resolved_longitudinal_warnings",
+    "Ast_top_web", "Ast_top_flange", "Ast_bottom_web", "Ast_bottom_flange",
+    "total_bot_bars", "total_top_bars",
     "bot_entry", "top_entry",
     "t_creep", "age_at_loading", "stress_ratio", "t_shrink",
+    "sustained_Mstar_kNm", "sustained_sigma_cs_mpa",
+    "sustained_section_modulus_mm3", "sustained_compression_fibre",
+    "Ec", "Eceff",
     # Layer 2 keys (may be auto-updated by recalc_derived_values)
     "nb_or_s_bot_2", "db_bot_2",
     "nb_or_s_top_2", "db_top_2",
@@ -988,6 +3157,8 @@ NONZERO_REQUIRED_SHARED_KEYS = {
     "s_lig",
     "rowgap_bot",
     "rowgap_top",
+    "top_row_count",
+    "bot_row_count",
 
     # Time inputs (must not be clobbered to 0)
     "t_creep",
@@ -1006,13 +3177,35 @@ ZERO_ALLOWED_SHARED_KEYS = {
     # Explicit layout-mode count inputs (0 is valid = layer disabled)
     "bot1_count", "bot2_count",
     "top1_count", "top2_count",
-    # Manual design actions can be legitimately 0
+    "top_flange_left_count", "top_flange_right_count",
+    "bot_flange_left_count", "bot_flange_right_count",
+    # ULS design actions can be legitimately 0
+    "uls_Mstar",
+    "uls_Mstar_pos_manual",
+    "uls_Mstar_neg_manual",
+    "uls_Vstar",
+    "uls_Nstar",
+    "sls_Mstar",
+    "sls_Mstar_pos_manual",
+    "sls_Mstar_neg_manual",
+    "sls_Vstar",
+    "sls_Nstar",
     "Mu_star_manual",
-    "Vu_star_manual",
+    "Mu_star_pos_manual",
+    "Mu_star_neg_manual",
+    # Manual action proxies can also legitimately be 0
+    "load_Mstar_proxy",
+    "load_Mstar_pos_proxy",
+    "load_Mstar_neg_proxy",
+    "load_Vstar_proxy",
+    "load_Nstar_proxy",
 }
 
 def zero_allowed(shared_key: str) -> bool:
     """Keys where 0 is a legitimate user value (e.g. no layer, no shear links)."""
+    if shared_key in {"top_row_count", "bot_row_count"}:
+        return False
+
     # Explicit allow-list
     if shared_key in ZERO_ALLOWED_SHARED_KEYS:
         return True
@@ -1111,6 +3304,13 @@ TAB_KEYS = {
     "inputs_tw": "tw",
     "inputs_bf_bot": "bf_bot",
     "inputs_tf_bot": "tf_bot",
+    "inputs_detailed_mode_toggle": "inputs_detailed_mode",
+    "inputs_auto_geometry_toggle": "auto_geometry",
+    "inputs_auto_bottom_reo_toggle": "auto_bottom_reo",
+    "inputs_auto_shear_toggle": "auto_shear",
+    "inputs_fast_mode_show_3d_toggle": "fast_mode_show_3d",
+    "inputs_design_optimisation_goal": "design_optimisation_goal",
+    "inputs_optimisation_lock_geometry": "optimisation_lock_geometry",
 
     # ----------------- BENDING PAGE -----------------
     "bending_sec_shape": "sec_shape",
@@ -1154,27 +3354,30 @@ TAB_KEYS = {
 
     "inputs_fc": "fc",
     "inputs_fsy": "fsy",
-    "inputs_Ec": "Ec",
-    "inputs_Es": "Es",
 
-    "inputs_Mu_star": "Mu_star_manual",
-    "inputs_Vu_star": "Vu_star_manual",
+    "inputs_Mu_star": "uls_Mstar",
+    "inputs_Mu_star_pos_manual": "Mu_star_pos_manual",
+    "inputs_Mu_star_neg_manual": "Mu_star_neg_manual",
+    "inputs_Vu_star": "uls_Vstar",
     "inputs_Tu_star": "Tu_star",
     "inputs_P_star": "P_star",
-    "inputs_N_star": "N_star",
+    "inputs_N_star": "uls_Nstar",
     "inputs_load_Mstar_proxy": "load_Mstar_proxy",
+    "inputs_load_Mstar_pos_proxy": "load_Mstar_pos_proxy",
+    "inputs_load_Mstar_neg_proxy": "load_Mstar_neg_proxy",
     "inputs_load_Vstar_proxy": "load_Vstar_proxy",
     "inputs_load_Nstar_proxy": "load_Nstar_proxy",
     "inputs_loads_edit_mode": "loads_edit_mode",
     "inputs_loads_edit_toggle": "loads_edit_toggle",
+    "design_loads_edit_toggle": "loads_edit_toggle",
 
     # ----------------- ACTIONS ALIASES (V* vs Vu*, T* vs Tu*) -----------------
     # Treat any page's alternate naming as the same underlying shared parameters.
-    "inputs_V_star": "Vu_star_manual",
-    "shear_V_star": "load_Vstar_proxy",
-    "shear_Vu_star": "load_Vstar_proxy",
-    "actions_V_star": "Vu_star_manual",
-    "actions_Vu_star": "Vu_star_manual",
+    "inputs_V_star": "uls_Vstar",
+    "shear_V_star": "uls_Vstar",
+    "shear_Vu_star": "uls_Vstar",
+    "actions_V_star": "uls_Vstar",
+    "actions_Vu_star": "uls_Vstar",
 
     "inputs_T_star": "Tu_star",
     "shear_T_star": "Tu_star",
@@ -1232,6 +3435,40 @@ TAB_KEYS = {
     "inputs_top2_layout_mode": "top2_layout_mode",
     "inputs_top2_count": "top2_count",
     "inputs_top2_spacing": "top2_spacing",
+    "inputs_top_flange_reo_enabled": "top_flange_reo_enabled",
+    "inputs_bot_flange_reo_enabled": "bot_flange_reo_enabled",
+    "inputs_top_flange_mirror_lr": "top_flange_mirror_lr",
+    "inputs_bot_flange_mirror_lr": "bot_flange_mirror_lr",
+    "inputs_top_flange_left_count": "top_flange_left_count",
+    "inputs_top_flange_left_dia": "top_flange_left_dia",
+    "inputs_top_flange_left_rows": "top_flange_left_rows",
+    "inputs_top_flange_left_row_spacing": "top_flange_left_row_spacing",
+    "inputs_top_flange_left_clear_spacing_mode": "top_flange_left_clear_spacing_mode",
+    "inputs_top_flange_right_count": "top_flange_right_count",
+    "inputs_top_flange_right_dia": "top_flange_right_dia",
+    "inputs_top_flange_right_rows": "top_flange_right_rows",
+    "inputs_top_flange_right_row_spacing": "top_flange_right_row_spacing",
+    "inputs_top_flange_right_clear_spacing_mode": "top_flange_right_clear_spacing_mode",
+    "inputs_bot_flange_left_count": "bot_flange_left_count",
+    "inputs_bot_flange_left_dia": "bot_flange_left_dia",
+    "inputs_bot_flange_left_rows": "bot_flange_left_rows",
+    "inputs_bot_flange_left_row_spacing": "bot_flange_left_row_spacing",
+    "inputs_bot_flange_left_clear_spacing_mode": "bot_flange_left_clear_spacing_mode",
+    "inputs_bot_flange_right_count": "bot_flange_right_count",
+    "inputs_bot_flange_right_dia": "bot_flange_right_dia",
+    "inputs_bot_flange_right_rows": "bot_flange_right_rows",
+    "inputs_bot_flange_right_row_spacing": "bot_flange_right_row_spacing",
+    "inputs_bot_flange_right_clear_spacing_mode": "bot_flange_right_clear_spacing_mode",
+    "inputs_top_flange_transverse_enabled": "top_flange_transverse_enabled",
+    "inputs_bot_flange_transverse_enabled": "bot_flange_transverse_enabled",
+    "inputs_top_flange_transverse_dia": "top_flange_transverse_dia",
+    "inputs_bot_flange_transverse_dia": "bot_flange_transverse_dia",
+    "inputs_top_flange_transverse_spacing": "top_flange_transverse_spacing",
+    "inputs_bot_flange_transverse_spacing": "bot_flange_transverse_spacing",
+    "inputs_top_flange_transverse_legs": "top_flange_transverse_legs",
+    "inputs_bot_flange_transverse_legs": "bot_flange_transverse_legs",
+    **_longitudinal_row_tab_keys("inputs", "bot"),
+    **_longitudinal_row_tab_keys("inputs", "top"),
     # Bending page widgets - map to same shared parameters
     "bending_sec_shape": "sec_shape",
     "bending_bf": "bf",
@@ -1290,7 +3527,6 @@ TAB_KEYS = {
     # Time-dependent inputs
     "inputs_t_creep": "t_creep",
     "inputs_age_at_loading": "age_at_loading",
-    "inputs_stress_ratio": "stress_ratio",
     "inputs_t_shrink": "t_shrink",
 
     # ----------------- BENDING PAGE -----------------
@@ -1300,13 +3536,13 @@ TAB_KEYS = {
 
     "bending_fc": "fc",
     "bending_fsy": "fsy",
-    "bending_Ec": "Ec",
-    "bending_Es": "Es",
     # Legacy key plus new explicit bending phi widget
     "bending_phi_b": "phi_bend",
     "bending_phi_bend": "phi_bend",
 
-    "bending_Mu_star": "Mu_star_manual",
+    "bending_Mu_star": "uls_Mstar",
+    "bending_Mu_star_pos_manual": "Mu_star_pos_manual",
+    "bending_Mu_star_neg_manual": "Mu_star_neg_manual",
     "bending_P_star": "P_star",
     "bending_N_star": "N_star",
 
@@ -1338,6 +3574,36 @@ TAB_KEYS = {
     "bending_top2_layout_mode": "top2_layout_mode",
     "bending_top2_count": "top2_count",
     "bending_top2_spacing": "top2_spacing",
+    "bending_top_flange_reo_enabled": "top_flange_reo_enabled",
+    "bending_bot_flange_reo_enabled": "bot_flange_reo_enabled",
+    "bending_top_flange_mirror_lr": "top_flange_mirror_lr",
+    "bending_bot_flange_mirror_lr": "bot_flange_mirror_lr",
+    "bending_top_flange_left_count": "top_flange_left_count",
+    "bending_top_flange_left_dia": "top_flange_left_dia",
+    "bending_top_flange_left_rows": "top_flange_left_rows",
+    "bending_top_flange_left_row_spacing": "top_flange_left_row_spacing",
+    "bending_top_flange_right_count": "top_flange_right_count",
+    "bending_top_flange_right_dia": "top_flange_right_dia",
+    "bending_top_flange_right_rows": "top_flange_right_rows",
+    "bending_top_flange_right_row_spacing": "top_flange_right_row_spacing",
+    "bending_bot_flange_left_count": "bot_flange_left_count",
+    "bending_bot_flange_left_dia": "bot_flange_left_dia",
+    "bending_bot_flange_left_rows": "bot_flange_left_rows",
+    "bending_bot_flange_left_row_spacing": "bot_flange_left_row_spacing",
+    "bending_bot_flange_right_count": "bot_flange_right_count",
+    "bending_bot_flange_right_dia": "bot_flange_right_dia",
+    "bending_bot_flange_right_rows": "bot_flange_right_rows",
+    "bending_bot_flange_right_row_spacing": "bot_flange_right_row_spacing",
+    "bending_top_flange_transverse_enabled": "top_flange_transverse_enabled",
+    "bending_bot_flange_transverse_enabled": "bot_flange_transverse_enabled",
+    "bending_top_flange_transverse_dia": "top_flange_transverse_dia",
+    "bending_bot_flange_transverse_dia": "bot_flange_transverse_dia",
+    "bending_top_flange_transverse_spacing": "top_flange_transverse_spacing",
+    "bending_bot_flange_transverse_spacing": "bot_flange_transverse_spacing",
+    "bending_top_flange_transverse_legs": "top_flange_transverse_legs",
+    "bending_bot_flange_transverse_legs": "bot_flange_transverse_legs",
+    **_longitudinal_row_tab_keys("bending", "bot"),
+    **_longitudinal_row_tab_keys("bending", "top"),
 
     # ----------------- SHEAR PAGE -----------------
     "shear_b": "b",
@@ -1346,13 +3612,12 @@ TAB_KEYS = {
 
     "shear_fc": "fc",
     "shear_fsy": "fsy",
-    "shear_Ec": "Ec",
-    "shear_Es": "Es",
 
-    "shear_Vu_star": "load_Vstar_proxy",
+    "shear_Vu_star": "uls_Vstar",
     "shear_Tu_star": "Tu_star",
     "shear_P_star": "P_star",
     "shear_N_star": "N_star",
+    "shear_defl_support_type": "defl_support_type",
 
     "shear_phi_v": "phi_shear",
     "shear_phi_shear": "phi_shear",
@@ -1366,7 +3631,10 @@ TAB_KEYS = {
     "shear_lig_d": "lig_d",
     "shear_lig_legs": "lig_legs",
     "shear_s_lig": "s_lig",
-    
+    "shear_auto_design_toggle": "shear_auto_design",
+    "shear_auto_design_mode_toggle": "shear_auto_design",
+    "shear_optimize_reinforcement_toggle": "shear_optimize_reinforcement",
+
     # Shear section parameters
     "shear_d_g": "d_g",
     "shear_n_ducts": "n_ducts",
@@ -1376,6 +3644,18 @@ TAB_KEYS = {
 
     "shear_cover_bot": "cover_bot",
     "shear_cover_top": "cover_top",
+    "shear_top_flange_reo_enabled": "top_flange_reo_enabled",
+    "shear_bot_flange_reo_enabled": "bot_flange_reo_enabled",
+    "shear_top_flange_transverse_enabled": "top_flange_transverse_enabled",
+    "shear_bot_flange_transverse_enabled": "bot_flange_transverse_enabled",
+    "shear_top_flange_transverse_dia": "top_flange_transverse_dia",
+    "shear_bot_flange_transverse_dia": "bot_flange_transverse_dia",
+    "shear_top_flange_transverse_spacing": "top_flange_transverse_spacing",
+    "shear_bot_flange_transverse_spacing": "bot_flange_transverse_spacing",
+    "shear_top_flange_transverse_legs": "top_flange_transverse_legs",
+    "shear_bot_flange_transverse_legs": "bot_flange_transverse_legs",
+    **_longitudinal_row_tab_keys("shear", "bot"),
+    **_longitudinal_row_tab_keys("shear", "top"),
 
     # ----------------- TORSION / SKETCH PAGE -----------------
     "torsion_theta_deg": "crack_theta_deg",
@@ -1387,10 +3667,8 @@ TAB_KEYS = {
 
     "crack_fc": "fc",
     "crack_fsy": "fsy",
-    "crack_Ec": "Ec",
-    "crack_Es": "Es",
 
-    "crack_Mu_star": "Mu_star_manual",
+    "crack_Mu_star": "uls_Mstar",
 
     "crack_nb_bot": "nb_bot",
     "crack_db_bot": "db_bot",
@@ -1423,6 +3701,18 @@ TAB_KEYS = {
     "crack_bot2_layout_mode": "bot2_layout_mode",
     "crack_bot2_count": "bot2_count",
     "crack_bot2_spacing": "bot2_spacing",
+    "crack_top_flange_reo_enabled": "top_flange_reo_enabled",
+    "crack_bot_flange_reo_enabled": "bot_flange_reo_enabled",
+    "crack_top_flange_transverse_enabled": "top_flange_transverse_enabled",
+    "crack_bot_flange_transverse_enabled": "bot_flange_transverse_enabled",
+    "crack_top_flange_transverse_dia": "top_flange_transverse_dia",
+    "crack_bot_flange_transverse_dia": "bot_flange_transverse_dia",
+    "crack_top_flange_transverse_spacing": "top_flange_transverse_spacing",
+    "crack_bot_flange_transverse_spacing": "bot_flange_transverse_spacing",
+    "crack_top_flange_transverse_legs": "top_flange_transverse_legs",
+    "crack_bot_flange_transverse_legs": "bot_flange_transverse_legs",
+    **_longitudinal_row_tab_keys("crack", "bot"),
+    **_longitudinal_row_tab_keys("crack", "top"),
     
     # ----------------- SFD/BMD PAGE (Unified loading) -----------------
     "load_L": "span_L_m",
@@ -1430,23 +3720,137 @@ TAB_KEYS = {
     "load_q_udl": "q_udl_kNm_per_m",
     "load_psi_udl": "psi_udl",
     "load_case": "sfd_case",
+    "sfd_beam_system_mode": "design_beam_system_mode",
+    "sfd_support_condition": "design_support_condition",
     "load_G_point": "G_point_kN",
     "load_Q_point": "Q_point_kN",
     "load_psi_point": "psi_point",
     "load_a_point": "a_m",
+    # SFD/BMD widget keys used on the Design page
+    "sfd_L_m": "span_L_m",
+    "sfd_a_udl": "a_udl_m",
+    "sfd_a_cant": "a_cant_m",
+    "sfd_a_overhang": "a_overhang_m",
+    "sfd_support_type_1": "design_support_type_1",
+    "sfd_support_type_2": "design_support_type_2",
+    "sfd_support_type_3": "design_support_type_3",
+    "sfd_support_type_4": "design_support_type_4",
+    "sfd_support_type_5": "design_support_type_5",
+    "sfd_support_type_6": "design_support_type_6",
+    "sfd_span_count": "design_span_count",
+    "sfd_span_len_1": "design_span_len_1",
+    "sfd_span_len_2": "design_span_len_2",
+    "sfd_span_len_3": "design_span_len_3",
+    "sfd_span_len_4": "design_span_len_4",
+    "sfd_span_len_5": "design_span_len_5",
+    "sfd_ms_point_count": "design_ms_point_count",
+    "sfd_ms_udl_count": "design_ms_udl_count",
+    "load_ms_G_1": "design_ms_G_1",
+    "load_ms_G_2": "design_ms_G_2",
+    "load_ms_G_3": "design_ms_G_3",
+    "load_ms_G_4": "design_ms_G_4",
+    "load_ms_G_5": "design_ms_G_5",
+    "load_ms_G_6": "design_ms_G_6",
+    "load_ms_G_7": "design_ms_G_7",
+    "load_ms_G_8": "design_ms_G_8",
+    "load_ms_Q_1": "design_ms_Q_1",
+    "load_ms_Q_2": "design_ms_Q_2",
+    "load_ms_Q_3": "design_ms_Q_3",
+    "load_ms_Q_4": "design_ms_Q_4",
+    "load_ms_Q_5": "design_ms_Q_5",
+    "load_ms_Q_6": "design_ms_Q_6",
+    "load_ms_Q_7": "design_ms_Q_7",
+    "load_ms_Q_8": "design_ms_Q_8",
+    "load_ms_x_1": "design_ms_x_1",
+    "load_ms_x_2": "design_ms_x_2",
+    "load_ms_x_3": "design_ms_x_3",
+    "load_ms_x_4": "design_ms_x_4",
+    "load_ms_x_5": "design_ms_x_5",
+    "load_ms_x_6": "design_ms_x_6",
+    "load_ms_x_7": "design_ms_x_7",
+    "load_ms_x_8": "design_ms_x_8",
+    "load_ms_g_1": "design_ms_g_1",
+    "load_ms_g_2": "design_ms_g_2",
+    "load_ms_g_3": "design_ms_g_3",
+    "load_ms_g_4": "design_ms_g_4",
+    "load_ms_g_5": "design_ms_g_5",
+    "load_ms_g_6": "design_ms_g_6",
+    "load_ms_g_7": "design_ms_g_7",
+    "load_ms_g_8": "design_ms_g_8",
+    "load_ms_q_1": "design_ms_q_1",
+    "load_ms_q_2": "design_ms_q_2",
+    "load_ms_q_3": "design_ms_q_3",
+    "load_ms_q_4": "design_ms_q_4",
+    "load_ms_q_5": "design_ms_q_5",
+    "load_ms_q_6": "design_ms_q_6",
+    "load_ms_q_7": "design_ms_q_7",
+    "load_ms_q_8": "design_ms_q_8",
+    "load_ms_x0_1": "design_ms_x0_1",
+    "load_ms_x0_2": "design_ms_x0_2",
+    "load_ms_x0_3": "design_ms_x0_3",
+    "load_ms_x0_4": "design_ms_x0_4",
+    "load_ms_x0_5": "design_ms_x0_5",
+    "load_ms_x0_6": "design_ms_x0_6",
+    "load_ms_x0_7": "design_ms_x0_7",
+    "load_ms_x0_8": "design_ms_x0_8",
+    "load_ms_x1_1": "design_ms_x1_1",
+    "load_ms_x1_2": "design_ms_x1_2",
+    "load_ms_x1_3": "design_ms_x1_3",
+    "load_ms_x1_4": "design_ms_x1_4",
+    "load_ms_x1_5": "design_ms_x1_5",
+    "load_ms_x1_6": "design_ms_x1_6",
+    "load_ms_x1_7": "design_ms_x1_7",
+    "load_ms_x1_8": "design_ms_x1_8",
+    "design_actions_source_selector": "design_actions_source",
+    "design_section_x_slider": "section_cursor_x_m",
+    "design_section_x_input": "section_cursor_x_m",
     
     # ----------------- DEFLECTION PAGE -----------------
     "defl_beff": "defl_beff",
     "defl_b": "b",
     "defl_D": "D",
+    "defl_L": "L",
     "defl_support_type": "defl_support_type",
+    "defl_defl_support_type": "defl_support_type",
     "defl_limit_ratio": "defl_limit_ratio",
+    "defl_defl_limit_ratio": "defl_limit_ratio",
     "defl_Fdef": "defl_Fdef",
     "defl_use_simplified_ief": "defl_use_simplified_ief",
     
     # Deflection page uses the same concrete props as global materials
     "defl_fc": "fc",
-    "defl_Ec": "Ec",
+
+    # Deflection page reinforcement (linked to shared layer-1 inputs)
+    "defl_bot1_layout_mode": "bot1_layout_mode",
+    "defl_bot1_count": "bot1_count",
+    "defl_bot1_spacing": "bot1_spacing",
+    "defl_db_bot_1": "db_bot_1",
+    "defl_bot2_layout_mode": "bot2_layout_mode",
+    "defl_bot2_count": "bot2_count",
+    "defl_bot2_spacing": "bot2_spacing",
+    "defl_db_bot_2": "db_bot_2",
+    "defl_top1_layout_mode": "top1_layout_mode",
+    "defl_top1_count": "top1_count",
+    "defl_top1_spacing": "top1_spacing",
+    "defl_db_top_1": "db_top_1",
+    "defl_top2_layout_mode": "top2_layout_mode",
+    "defl_top2_count": "top2_count",
+    "defl_top2_spacing": "top2_spacing",
+    "defl_db_top_2": "db_top_2",
+    "defl_rowgap_bot": "rowgap_bot",
+    "defl_rowgap_top": "rowgap_top",
+    "defl_top_flange_reo_enabled": "top_flange_reo_enabled",
+    "defl_bot_flange_reo_enabled": "bot_flange_reo_enabled",
+    "defl_top_flange_transverse_enabled": "top_flange_transverse_enabled",
+    "defl_bot_flange_transverse_enabled": "bot_flange_transverse_enabled",
+    "defl_top_flange_transverse_dia": "top_flange_transverse_dia",
+    "defl_bot_flange_transverse_dia": "bot_flange_transverse_dia",
+    "defl_top_flange_transverse_spacing": "top_flange_transverse_spacing",
+    "defl_bot_flange_transverse_spacing": "bot_flange_transverse_spacing",
+    "defl_top_flange_transverse_legs": "top_flange_transverse_legs",
+    "defl_bot_flange_transverse_legs": "bot_flange_transverse_legs",
+    **_longitudinal_row_tab_keys("defl", "bot"),
+    **_longitudinal_row_tab_keys("defl", "top"),
     
     # ----------------- INPUTS PAGE: Serviceability + Shrinkage -----------------
     "inputs_defl_support_type": "defl_support_type",
@@ -1465,7 +3869,6 @@ TAB_KEYS = {
     "cr_env": "env_option",
     "cr_t_creep": "t_creep",
     "cr_tau": "age_at_loading",
-    "cr_sigma_ratio": "stress_ratio",
 }
 
 # Page-level TAB_KEYS mapping (derived from TAB_KEYS; does NOT change the contract)
@@ -1473,7 +3876,9 @@ TAB_KEYS_BY_PAGE = {
     "creep": {sk: wk for wk, sk in TAB_KEYS.items() if wk.startswith("cr_")},
     "shrinkage": {sk: wk for wk, sk in TAB_KEYS.items() if wk.startswith("sh_")},
     "deflection": {sk: wk for wk, sk in TAB_KEYS.items() if wk.startswith("defl_")},
-    "design": {sk: wk for wk, sk in TAB_KEYS.items() if wk.startswith("load_")},
+    "design": {
+        **{sk: wk for wk, sk in TAB_KEYS.items() if wk.startswith("load_") or wk.startswith("sfd_") or wk.startswith("design_")},
+    },
 }
 
 # =========================
@@ -1588,24 +3993,211 @@ def get_client_id() -> str:
 SNAPSHOT_PATH = os.path.join(os.path.dirname(__file__), "shared_snapshot.json")
 
 
-def load_shared_snapshot() -> dict:
-    """Load shared inputs snapshot from JSON file."""
+def _read_snapshot_file_raw() -> dict:
     if not os.path.exists(SNAPSHOT_PATH):
         return {}
     try:
-        with open(SNAPSHOT_PATH, "r") as f:
+        with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
             return json.load(f) or {}
     except Exception:
         return {}
 
 
-def save_shared_snapshot(shared: dict):
-    """Save shared inputs snapshot to JSON file."""
+def load_workspace_origin_from_snapshot_file() -> str | None:
+    """Return persisted workspace origin from snapshot file (v2 only)."""
+    raw = _read_snapshot_file_raw()
+    if not isinstance(raw, dict):
+        return None
+    if raw.get("schema") == SNAPSHOT_FILE_SCHEMA_V2:
+        o = raw.get("workspace_origin")
+        if o in (
+            WORKSPACE_ORIGIN_NEW_FILE,
+            WORKSPACE_ORIGIN_LOADED_FILE,
+            WORKSPACE_ORIGIN_RESUMED_SESSION,
+        ):
+            return str(o)
+    return None
+
+
+def load_workspace_identity_from_snapshot_file() -> str | None:
+    """Return persisted workspace identity string from snapshot file (v2 only)."""
+    raw = _read_snapshot_file_raw()
+    if not isinstance(raw, dict) or raw.get("schema") != SNAPSHOT_FILE_SCHEMA_V2:
+        return None
+    w = raw.get("workspace_identity")
+    if isinstance(w, str) and w.strip():
+        return w.strip()
+    return None
+
+
+def _read_snapshot_workspace_meta_from_file() -> tuple[str | None, str | None]:
+    """v2 snapshot only: (workspace_origin, workspace_identity). Legacy returns (None, None)."""
+    raw = _read_snapshot_file_raw()
+    if not isinstance(raw, dict) or raw.get("schema") != SNAPSHOT_FILE_SCHEMA_V2:
+        return (None, None)
+    o = raw.get("workspace_origin")
+    oo = (
+        str(o)
+        if o
+        in (
+            WORKSPACE_ORIGIN_NEW_FILE,
+            WORKSPACE_ORIGIN_LOADED_FILE,
+            WORKSPACE_ORIGIN_RESUMED_SESSION,
+        )
+        else None
+    )
+    w = raw.get("workspace_identity")
+    wid = w.strip() if isinstance(w, str) and w.strip() else None
+    return (oo, wid)
+
+
+def _resumed_session_restore_identity_compatible(snapshot_identity: str) -> bool:
+    """
+    Cold resume: snapshot id rs:<cid>:<beam> matches this browser and session has not
+    pinned a different beam yet (beam init runs after init_shared_session_state).
+    """
+    if get_workspace_origin() != WORKSPACE_ORIGIN_RESUMED_SESSION:
+        return False
+    parts = snapshot_identity.split(":", 2)
+    if len(parts) != 3 or parts[0] != "rs":
+        return False
+    scid, sbid = parts[1], parts[2]
+    if scid != get_client_id():
+        return False
+    if sbid in ("", "none"):
+        return False
+    cur_bid = st.session_state.get("active_beam_id")
+    if cur_bid is not None and str(cur_bid) != sbid:
+        return False
+    return True
+
+
+def workspace_snapshot_restore_allowed(
+    *,
+    snapshot_origin: str | None,
+    snapshot_identity: str | None,
+) -> bool:
+    """
+    Whether copying snapshot/shared into session is allowed for the current workspace.
+    Does not adopt unrelated file/mem state over new_file, loaded_file, or mismatched resume.
+
+    resumed_session: requires v2 snapshot with both workspace_origin=resumed_session and a
+    non-empty workspace_identity (legacy flat / unlabeled v2 is skipped; next persist rewrites
+    the file with full v2 metadata).
+    """
+    cur = get_workspace_origin()
+    if cur == WORKSPACE_ORIGIN_NEW_FILE:
+        return False
+    if cur == WORKSPACE_ORIGIN_LOADED_FILE:
+        if snapshot_origin != WORKSPACE_ORIGIN_LOADED_FILE:
+            return False
+        if not snapshot_identity:
+            return False
+        return snapshot_identity == get_workspace_identity_for_persist()
+    # resumed_session (default origin): no unlabeled / legacy restore
+    if snapshot_origin != WORKSPACE_ORIGIN_RESUMED_SESSION:
+        return False
+    if not snapshot_identity:
+        return False
+    if snapshot_identity == get_workspace_identity_for_persist():
+        return True
+    return _resumed_session_restore_identity_compatible(snapshot_identity)
+
+
+def load_shared_snapshot() -> dict:
+    """Load shared inputs snapshot from JSON file (legacy flat or schema v2)."""
+    raw = _read_snapshot_file_raw()
+    if not isinstance(raw, dict):
+        return {}
+    if raw.get("schema") == SNAPSHOT_FILE_SCHEMA_V2 and isinstance(raw.get("shared"), dict):
+        return migrate_longitudinal_reo_snapshot(raw["shared"])
+    # Legacy: entire JSON object is the shared map
+    if "schema" not in raw and "shared" not in raw:
+        return migrate_longitudinal_reo_snapshot(raw)
+    return {}
+
+
+def save_shared_snapshot(
+    shared: dict,
+    *,
+    workspace_origin: str | None = None,
+    workspace_identity: str | None = None,
+) -> None:
+    """
+    Save shared inputs + workspace origin to JSON file.
+    v2 format prevents stale snapshot merges from hiding which file mode is active.
+    """
+    origin = workspace_origin or st.session_state.get(WORKSPACE_ORIGIN_KEY) or WORKSPACE_ORIGIN_RESUMED_SESSION
+    if origin not in (
+        WORKSPACE_ORIGIN_NEW_FILE,
+        WORKSPACE_ORIGIN_LOADED_FILE,
+        WORKSPACE_ORIGIN_RESUMED_SESSION,
+    ):
+        origin = WORKSPACE_ORIGIN_RESUMED_SESSION
+    identity = workspace_identity if workspace_identity is not None else get_workspace_identity_for_persist()
+    payload = {
+        "schema": SNAPSHOT_FILE_SCHEMA_V2,
+        "workspace_origin": origin,
+        "workspace_identity": identity,
+        "shared": shared,
+    }
     try:
-        with open(SNAPSHOT_PATH, "w") as f:
-            json.dump(shared, f, indent=2)
+        with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
     except Exception:
         pass
+
+
+def get_workspace_origin() -> str:
+    """Current explicit workspace origin; defaults to resumed_session."""
+    v = st.session_state.get(WORKSPACE_ORIGIN_KEY)
+    if v in (
+        WORKSPACE_ORIGIN_NEW_FILE,
+        WORKSPACE_ORIGIN_LOADED_FILE,
+        WORKSPACE_ORIGIN_RESUMED_SESSION,
+    ):
+        return str(v)
+    return WORKSPACE_ORIGIN_RESUMED_SESSION
+
+
+def get_workspace_identity_for_persist() -> str:
+    """
+    Stable string written to shared_snapshot.json for same-workspace checks.
+    new_file: opaque uuid in session (set on reset / new beam).
+    loaded_file: project id + active beam id.
+    resumed_session: client id + active beam id (no cross-beam / cross-tab revive via persist merge).
+    """
+    origin = get_workspace_origin()
+    bid = str(st.session_state.get("active_beam_id") or "none")
+    if origin == WORKSPACE_ORIGIN_NEW_FILE:
+        wid = st.session_state.get(WORKSPACE_IDENTITY_KEY)
+        if not wid:
+            wid = uuid.uuid4().hex
+            st.session_state[WORKSPACE_IDENTITY_KEY] = wid
+        return str(wid)
+    if origin == WORKSPACE_ORIGIN_LOADED_FILE:
+        pid = str(st.session_state.get("active_project_id") or "none")
+        return f"ld:{pid}:{bid}"
+    cid = get_client_id()
+    return f"rs:{cid}:{bid}"
+
+
+def snapshot_manual_action_prev_merge_allowed() -> bool:
+    """
+    Stale-snapshot merge (revive nonzero actions when shared reads as zero) is only
+    allowed for a continued session workspace — never for new_file or loaded_file.
+    """
+    return get_workspace_origin() == WORKSPACE_ORIGIN_RESUMED_SESSION
+
+
+def snapshot_manual_action_prev_merge_identity_aligned() -> bool:
+    """Persist-time stale-action merge only when the on-disk snapshot is for this same workspace."""
+    if not snapshot_manual_action_prev_merge_allowed():
+        return False
+    prev_id = load_workspace_identity_from_snapshot_file()
+    if not prev_id:
+        return False
+    return prev_id == get_workspace_identity_for_persist()
 
 
 # --- Snapshot/load guards ---
@@ -1623,6 +4215,8 @@ def clear_cached_and_widget_restore_keys() -> None:
     for k in list(st.session_state.keys()):
         if k.startswith("inputs_"):
             to_delete.append(k)
+        elif k.startswith("beam_manager_"):
+            to_delete.append(k)
         elif k.startswith("_cached_"):
             to_delete.append(k)
         elif k in ("_snapshot_restore_complete",):
@@ -1635,26 +4229,63 @@ def clear_cached_and_widget_restore_keys() -> None:
             pass
 
 
-def persist_state_snapshot():
+def persist_state_snapshot(*, reset_manual_action_touch_latch: bool = False):
     """
     Persist ALL shared keys + ALL inputs_* widget keys + caches used for restores.
     Uses file-based snapshot (survives server restarts).
+
+    On the final persist each Streamlit run, pass ``reset_manual_action_touch_latch=True``
+    so the next run can use ``_shared_keys_touched_this_run`` only for merges within
+    the same run (callbacks execute before the script body).
     """
+    _sync_longitudinal_row_model_from_legacy_state()
+    prev = load_shared_snapshot()
+    if not isinstance(prev, dict):
+        prev = {}
+    touched = st.session_state.get("_shared_keys_touched_this_run")
+    if not isinstance(touched, set):
+        touched = set()
     # Persist shared inputs only (not results, not derived)
-    shared = {}
+    shared: dict = {}
     for k in SHARED_DEFAULTS.keys():
-        if k in st.session_state:
-            shared[k] = st.session_state[k]
-    
+        if k not in st.session_state:
+            continue
+        v = st.session_state[k]
+        if k in MANUAL_DESIGN_ACTION_STALE_ZERO_GUARD_KEYS and snapshot_manual_action_prev_merge_identity_aligned():
+            pv = prev.get(k)
+            if (
+                _is_zero_like(v)
+                and _float_nonzero(pv)
+                and k not in touched
+            ):
+                try:
+                    pv_coerced = float(pv)
+                except (TypeError, ValueError):
+                    pv_coerced = pv
+                try:
+                    set_shared(k, pv_coerced, source="persist_snapshot_merge")
+                except Exception:
+                    pass
+                v = st.session_state[k]
+        shared[k] = v
+
     # Save to file (survives server restarts)
-    save_shared_snapshot(shared)
+    save_shared_snapshot(shared, workspace_origin=get_workspace_origin())
+
+    if reset_manual_action_touch_latch:
+        st.session_state["_shared_keys_touched_this_run"] = set()
     
     # Also persist to in-memory store (for backward compatibility)
     cid = get_client_id()
     store = _persistent_store()
 
     # Persist ONLY shared keys. Persisting widget keys causes loaded projects to be overwritten.
-    store[cid] = {"shared": shared, "widgets": {}}
+    store[cid] = {
+        "shared": shared,
+        "widgets": {},
+        "workspace_origin": get_workspace_origin(),
+        "workspace_identity": get_workspace_identity_for_persist(),
+    }
 
 
 def restore_state_snapshot_if_available(force: bool = False) -> bool:
@@ -1665,6 +4296,10 @@ def restore_state_snapshot_if_available(force: bool = False) -> bool:
     Args:
         force: If True, overwrite existing keys. If False, only restore missing keys.
     """
+    SNAPSHOT_RESTORE_EXCLUDE = {
+        "actions_source",
+        "actions_mode",
+    }
     # If a project payload was loaded this run, DO NOT restore cached snapshot/widgets over it.
     if st.session_state.get(DISABLE_SNAPSHOT_RESTORE_KEY):
         return False
@@ -1677,13 +4312,24 @@ def restore_state_snapshot_if_available(force: bool = False) -> bool:
         return False
     
     # Try file-based snapshot first (survives server restarts)
-    snap = load_shared_snapshot()
+    snap = migrate_longitudinal_reo_snapshot(load_shared_snapshot())
     restored_any = False
-    
-    if snap:
+    file_oo, file_wid = _read_snapshot_workspace_meta_from_file()
+    file_restore_ok = workspace_snapshot_restore_allowed(
+        snapshot_origin=file_oo, snapshot_identity=file_wid
+    )
+
+    if snap and file_restore_ok:
         # Restore shared inputs from file snapshot
         for k in SHARED_DEFAULTS.keys():
             if k in snap:
+                if k in SNAPSHOT_RESTORE_EXCLUDE:
+                    continue
+                if k in MANUAL_DESIGN_ACTION_STALE_ZERO_GUARD_KEYS:
+                    if _is_zero_like(snap[k]) and k in st.session_state and _float_nonzero(
+                        st.session_state.get(k)
+                    ):
+                        continue
                 if force or (k not in st.session_state):
                     set_shared(k, snap[k], source="restore_snapshot")
                     restored_any = True
@@ -1691,15 +4337,48 @@ def restore_state_snapshot_if_available(force: bool = False) -> bool:
     # Also try in-memory store (for backward compatibility)
     cid = get_client_id()
     store = _persistent_store()
-    mem_snap = store.get(cid)
+    mem_snap = copy.deepcopy(store.get(cid))
+    if isinstance(mem_snap, dict) and isinstance(mem_snap.get("shared"), dict):
+        mem_snap["shared"] = migrate_longitudinal_reo_snapshot(mem_snap.get("shared"))
     
-    if mem_snap and not restored_any:
+    mem_oo = mem_snap.get("workspace_origin") if isinstance(mem_snap, dict) else None
+    mem_wid = mem_snap.get("workspace_identity") if isinstance(mem_snap, dict) else None
+    if not isinstance(mem_oo, str) or mem_oo not in (
+        WORKSPACE_ORIGIN_NEW_FILE,
+        WORKSPACE_ORIGIN_LOADED_FILE,
+        WORKSPACE_ORIGIN_RESUMED_SESSION,
+    ):
+        mem_oo = None
+    if isinstance(mem_wid, str) and not mem_wid.strip():
+        mem_wid = None
+    elif not isinstance(mem_wid, str):
+        mem_wid = None
+    mem_restore_ok = workspace_snapshot_restore_allowed(
+        snapshot_origin=mem_oo,
+        snapshot_identity=mem_wid,
+    )
+
+    if mem_snap and not restored_any and mem_restore_ok:
         # Restore shared first
         for k, v in mem_snap.get("shared", {}).items():
             if k in SHARED_DEFAULTS:  # Only restore shared inputs
+                if k in SNAPSHOT_RESTORE_EXCLUDE:
+                    continue
+                if k in MANUAL_DESIGN_ACTION_STALE_ZERO_GUARD_KEYS:
+                    if _is_zero_like(v) and k in st.session_state and _float_nonzero(
+                        st.session_state.get(k)
+                    ):
+                        continue
                 if force or (k not in st.session_state):
                     set_shared(k, v, source="restore_snapshot")
                     restored_any = True
+        mo = mem_snap.get("workspace_origin")
+        if mo in (
+            WORKSPACE_ORIGIN_NEW_FILE,
+            WORKSPACE_ORIGIN_LOADED_FILE,
+            WORKSPACE_ORIGIN_RESUMED_SESSION,
+        ):
+            st.session_state[WORKSPACE_ORIGIN_KEY] = str(mo)
 
     if restored_any:
         st.session_state["_snapshot_restore_complete"] = True
@@ -1713,6 +4392,57 @@ def begin_render_cycle():
     Ensures rendered widget gating is per-run, not cumulative across runs.
     """
     st.session_state["_rendered_widget_keys"] = set()
+    diag_log_widget_vs_shared_high_risk("begin_render_cycle")
+
+
+def diag_log_widget_vs_shared_high_risk(tag: str = "render") -> None:
+    """
+    TODO(remove): Dev-only compare canonical shared keys vs page widget keys for drift.
+    Enable with st.session_state['_dev_mode'] and st.session_state['_widget_hydration_diag'] = True.
+    """
+    if not bool(st.session_state.get("_dev_mode")):
+        return
+    if not bool(st.session_state.get("_widget_hydration_diag")):
+        return
+    loads = str(st.session_state.get("loads_edit_mode", "ULS") or "ULS").upper()
+    prefix = "sls" if loads == "SLS" else "uls"
+    pairs = [
+        ("inputs_fc", "fc"),
+        ("inputs_fsy", "fsy"),
+        ("inputs_D", "D"),
+        ("inputs_L", "L"),
+        ("inputs_b", "b"),
+        ("inputs_top1_count", "top1_count"),
+        ("inputs_bot1_count", "bot1_count"),
+        ("bending_fc", "fc"),
+        ("bending_fsy", "fsy"),
+        ("shear_b", "b"),
+        ("shear_fc", "fc"),
+        ("crack_fc", "fc"),
+        (f"inputs_load_Mstar_pos_proxy", f"{prefix}_Mstar_pos_manual"),
+        (f"inputs_load_Mstar_neg_proxy", f"{prefix}_Mstar_neg_manual"),
+        ("inputs_load_Vstar_proxy", f"{prefix}_Vstar"),
+    ]
+    rows = []
+    for wk, sk in pairs:
+        rows.append(
+            {
+                "widget_key": wk,
+                "shared_key": sk,
+                "widget": st.session_state.get(wk),
+                "shared": st.session_state.get(sk),
+                "match": st.session_state.get(wk) == st.session_state.get(sk),
+            }
+        )
+    try:
+        hc_log(
+            f"[widget_shared_diag:{tag}]",
+            loads_edit_mode=loads,
+            actions_mode=st.session_state.get("actions_mode"),
+            rows=rows,
+        )
+    except Exception:
+        pass
 
 
 def debug_log(tag: str, data: dict):
@@ -1796,7 +4526,7 @@ def init_shared_session_state():
     # Debug boot id: helps detect when the whole session got rebuilt
     if st.session_state.get("_boot_id") is None:
         st.session_state["_boot_id"] = f"boot_{int(time.time())}"
-    
+
     # Watchdog: log shared key changes at entry
     log_shared_diff("init_entry_shared_diff")
     
@@ -1821,29 +4551,49 @@ def init_shared_session_state():
     # Never overwrite live session state after user interaction
     restored = False
     restored_from_snapshot = False
-    
+
+    # Cold server session: recover explicit workspace origin from disk before snapshot merge
+    if st.session_state.get("_fresh_boot", False) and WORKSPACE_ORIGIN_KEY not in st.session_state:
+        fo = load_workspace_origin_from_snapshot_file()
+        if fo:
+            st.session_state[WORKSPACE_ORIGIN_KEY] = fo
+
     if not st.session_state.get("_user_has_edited_anything", False):
         # On fresh boot, restore snapshot BEFORE seeding defaults
         if st.session_state.get("_fresh_boot", False):
             # Prevent repeated restore loops
             if not st.session_state.get("_snapshot_restore_complete", False):
-                snap = load_shared_snapshot()
-                if snap:
-                    # Restore only known shared input keys
-                    for k in SHARED_DEFAULTS.keys():
-                        if k in snap:
-                            set_shared(k, snap[k], source="wipe_recovery")
-                            restored_from_snapshot = True
-                    restored = restored_from_snapshot
-                st.session_state["_restored_from_snapshot"] = restored_from_snapshot
-                st.session_state["_snapshot_restore_complete"] = restored_from_snapshot
-                # Set restore guard flags to prevent callbacks from overwriting restored values
-                if restored_from_snapshot:
-                    st.session_state["_restore_guard_active"] = True
-                    st.session_state["_restore_guard_ts"] = time.time()
-                    # After snapshot restore, force one deterministic derived-values pass
-                    # This ensures derived values (d, Ast_bot, etc.) are recalculated from restored inputs
-                    recalc_derived_values()
+                # Project load sets DISABLE_SNAPSHOT_RESTORE_KEY: do not merge stale file snapshot
+                # over the payload already applied in app.main().
+                if st.session_state.get(DISABLE_SNAPSHOT_RESTORE_KEY):
+                    st.session_state["_snapshot_restore_complete"] = True
+                else:
+                    snap = migrate_longitudinal_reo_snapshot(load_shared_snapshot())
+                    f_oo, f_wid = _read_snapshot_workspace_meta_from_file()
+                    file_ok = workspace_snapshot_restore_allowed(
+                        snapshot_origin=f_oo, snapshot_identity=f_wid
+                    )
+                    if snap and file_ok:
+                        # Restore only known shared input keys
+                        for k in SHARED_DEFAULTS.keys():
+                            if k in snap:
+                                if k in MANUAL_DESIGN_ACTION_STALE_ZERO_GUARD_KEYS:
+                                    if _is_zero_like(snap[k]) and k in st.session_state and _float_nonzero(
+                                        st.session_state.get(k)
+                                    ):
+                                        continue
+                                set_shared(k, snap[k], source="wipe_recovery")
+                                restored_from_snapshot = True
+                        restored = restored_from_snapshot
+                    st.session_state["_restored_from_snapshot"] = restored_from_snapshot
+                    st.session_state["_snapshot_restore_complete"] = restored_from_snapshot
+                    # Set restore guard flags to prevent callbacks from overwriting restored values
+                    if restored_from_snapshot:
+                        st.session_state["_restore_guard_active"] = True
+                        st.session_state["_restore_guard_ts"] = time.time()
+                        # After snapshot restore, force one deterministic derived-values pass
+                        # This ensures derived values (d, Ast_bot, etc.) are recalculated from restored inputs
+                        recalc_derived_values()
     # Session wipe: restore FIRST (force overwrite), then seed anything still missing
     # Skip if we already restored from file snapshot on fresh boot
     # Also skip if user has interacted (never overwrite after user edits)
@@ -1879,21 +4629,20 @@ def init_shared_session_state():
         v = ss_get(key)
         if is_missing(v):
             set_shared(key, val, source="seed_defaults")
+    _sync_longitudinal_row_model_from_legacy_state()
     
     # Ensure load proxies match the active edit mode on init
-    load_proxies_from_active_set()
+    actions_mode = st.session_state.get("actions_mode", "manual")
+    is_design_driven = actions_mode == "design"
+    if not is_design_driven:
+        load_proxies_from_active_set()
 
-    # --- Backward-compat alias: shear key rename ---
-    old_k = "Vu_star_manual"
-    new_k = "load_Vstar_proxy"
-    if old_k in st.session_state and new_k in st.session_state:
-        if st.session_state.get(new_k) in (None, 0, 0.0, "") and st.session_state.get(old_k) not in (None, ""):
-            st.session_state[new_k] = st.session_state[old_k]
-    
     # Seed UI-only defaults (not shared, not synced)
     for k, v in UI_STATE_DEFAULTS.items():
         if k not in st.session_state:
             st.session_state[k] = v
+
+    st.session_state.setdefault(WORKSPACE_ORIGIN_KEY, WORKSPACE_ORIGIN_RESUMED_SESSION)
     
     # Debug: confirm shared keys are fully present after init
     if st.session_state.get("_debug_state_tripwire", False):
@@ -1952,10 +4701,18 @@ def init_shared_session_state():
             default_value = SHARED_DEFAULTS.get(shared_key, None)
 
             # 0 is a VALID user value for many keys (reo counts, legs, diameters, etc).
-            # Only treat cached 0 as "stale" for keys where 0 is NOT allowed.
-            cache_is_valid = (cached_value != 0) or (
-                cached_value == 0 and (
-                    default_value == 0 or zero_allowed(shared_key)
+            # Only treat cached 0 as "stale" for keys where 0 is NOT allowed — OR for
+            # manual design actions when shared is still non-zero (navigation duplicate).
+            manual_stale_cache = _manual_action_stale_widget_zero(
+                widget_val=cached_value,
+                shared_val=st.session_state.get(shared_key),
+                shared_key=shared_key,
+            )
+            cache_is_valid = (not manual_stale_cache) and (
+                (cached_value != 0)
+                or (
+                    cached_value == 0
+                    and (default_value == 0 or zero_allowed(shared_key))
                 )
             )
             # DEBUG (temporary)
@@ -1990,6 +4747,12 @@ def init_shared_session_state():
                 if inputs_widget_key:
                     # Prefer the inputs_* widget value (it's more authoritative)
                     restored_value = st.session_state[inputs_widget_key]
+                    if _manual_action_stale_widget_zero(
+                        widget_val=restored_value,
+                        shared_val=st.session_state.get(shared_key),
+                        shared_key=shared_key,
+                    ):
+                        restored_value = st.session_state.get(shared_key)
                     st.session_state[widget_key] = restored_value
                     # Update the cache to keep it current with the actual inputs_* widget value
                     cached_inputs_key = f"_cached_{inputs_widget_key}"
@@ -2086,8 +4849,13 @@ def init_shared_session_state():
             # - shared has a meaningful non-zero value
             # - default is meaningful non-zero
             # - key is protected (geometry/materials/actions)
-            # BUT: skip zero-allowed keys (where 0 is legitimate)
-            is_stale_zero = (
+            # OR: manual design-action keys (0 allowed, but widget 0 while shared != 0 is stale)
+            manual_nav_stale = _manual_action_stale_widget_zero(
+                widget_val=widget_val,
+                shared_val=shared_val,
+                shared_key=shared_key,
+            )
+            is_stale_zero = manual_nav_stale or (
                 (widget_val == 0 or widget_val == 0.0)
                 and (shared_key in NONZERO_REQUIRED_SHARED_KEYS)
                 and (not zero_allowed(shared_key))
@@ -2173,7 +4941,6 @@ def force_hydrate_time_widgets_from_shared():
         ("inputs_t_creep", "t_creep"),
         ("inputs_age_at_loading", "age_at_loading"),
         ("inputs_t_shrink", "t_shrink"),
-        ("inputs_stress_ratio", "stress_ratio"),
     ]
 
     for widget_key, shared_key in pairs:
@@ -2191,15 +4958,9 @@ def force_hydrate_time_widgets_from_shared():
         except Exception:
             wvf = None
 
-        # Only force-hydrate if:
-        # - shared is meaningful (>1 for time keys; stress_ratio >0)
-        # - widget is missing OR still at stale default 0/1
-        if shared_key in {"t_creep", "age_at_loading", "t_shrink"}:
-            if svf is not None and svf > 1 and (wvf is None or wvf in (0.0, 1.0)):
-                st.session_state[widget_key] = svf
-        elif shared_key == "stress_ratio":
-            if svf is not None and svf > 0 and (wvf is None or wvf in (0.0, 0.01)):
-                st.session_state[widget_key] = svf
+        # Only force-hydrate if shared is meaningful (>1) and widget is stale (missing/0/1).
+        if svf is not None and svf > 1 and (wvf is None or wvf in (0.0, 1.0)):
+            st.session_state[widget_key] = svf
 
 
 def hydrate_active_page_widgets_from_shared(
@@ -2232,20 +4993,159 @@ def hydrate_active_page_widgets_from_shared(
         if wk.startswith("inputs_"):
             wmap.setdefault(wk, sk)
 
+    force_inputs_reseed = False
+    if active_slug == "inputs" and bool(st.session_state.get("_force_inputs_widget_reseed_once")):
+        force_inputs_reseed = True
+        st.session_state["_force_inputs_widget_reseed_once"] = False
+        if bool(st.session_state.get("_dev_mode")):
+            hc_log("[hydrate] consumed _force_inputs_widget_reseed_once", active_slug=active_slug, force_inputs_reseed=True)
+
     if not wmap:
         return
     _write_sync_trace_line(f"HYDRATE_ACTIVE_PAGE slug={active_slug} keys={len(wmap)}")
 
+    beam_just_loaded = bool(st.session_state.pop("_force_hydrate_widgets_after_beam_load", False))
+    in_restore_hydrate_window = bool(
+        force_on_restore and st.session_state.get("_restore_guard_active")
+    )
+
     # Seed only missing widget keys for this page
     hydrated_count = 0
     for widget_key, shared_key in wmap.items():
+        if widget_key in {
+            "inputs_load_Mstar_proxy",
+            "inputs_load_Mstar_pos_proxy",
+            "inputs_load_Mstar_neg_proxy",
+            "inputs_load_Vstar_proxy",
+            "inputs_load_Nstar_proxy",
+            "inputs_Tu_star",
+            "inputs_P_star",
+        }:
+            continue
+        # Design page: span widget hydrates from canonical L (mm), not span_L_m.
+        # Keep the same sticky behavior as safe_hydrate(): seed only if missing,
+        # or force on page change.
+        if active_slug == "design" and widget_key == "sfd_L_m":
+            force = bool(force_on_page_change) or beam_just_loaded or in_restore_hydrate_window
+            L_seed_m = max(
+                0.1,
+                float(st.session_state.get("L", 3000.0)) / 1000.0,
+            )
+            safe_hydrate(widget_key, "L", L_seed_m, force=force)
+            if widget_key in st.session_state:
+                hydrated_count += 1
+            continue
         if shared_key not in st.session_state:
             continue
+        widget_before = st.session_state.get(widget_key)
         force = bool(force_on_page_change)
+        if active_slug == "inputs" and widget_key.startswith("inputs_") and force_inputs_reseed:
+            force = True
+        if shared_key == "s_lig" and widget_key in {"inputs_s_lig", "shear_s_lig"}:
+            # region agent log
+            _agent_dbg_log(
+                "hydrate spacing widget pre-safe_hydrate",
+                {
+                    "active_slug": active_slug,
+                    "widget_key": widget_key,
+                    "shared_key": shared_key,
+                    "widget_before": widget_before,
+                    "shared_before": st.session_state.get(shared_key),
+                    "force": bool(force),
+                    "force_on_page_change": bool(force_on_page_change),
+                    "force_inputs_reseed": bool(force_inputs_reseed),
+                },
+                run_id="pre-fix",
+                hypothesis_id="K",
+            )
+            # endregion
+        if shared_key.startswith("design_support_type_") and widget_key.startswith("sfd_support_type_"):
+            # region agent log
+            _agent_dbg_log(
+                "hydrate support widget pre-safe_hydrate",
+                {
+                    "active_slug": active_slug,
+                    "widget_key": widget_key,
+                    "shared_key": shared_key,
+                    "widget_before": widget_before,
+                    "shared_before": st.session_state.get(shared_key),
+                    "force": bool(force),
+                    "force_on_page_change": bool(force_on_page_change),
+                },
+                run_id="pre-fix",
+                hypothesis_id="H12_H13_H14",
+            )
+            # endregion
         safe_hydrate(widget_key, shared_key, st.session_state.get(shared_key), force=force)
+        if shared_key == "s_lig" and widget_key in {"inputs_s_lig", "shear_s_lig"}:
+            # region agent log
+            _agent_dbg_log(
+                "hydrate spacing widget post-safe_hydrate",
+                {
+                    "active_slug": active_slug,
+                    "widget_key": widget_key,
+                    "widget_after": st.session_state.get(widget_key),
+                    "shared_after": st.session_state.get(shared_key),
+                    "force": bool(force),
+                },
+                run_id="pre-fix",
+                hypothesis_id="K",
+            )
+            # endregion
+        if shared_key.startswith("design_support_type_") and widget_key.startswith("sfd_support_type_"):
+            # region agent log
+            _agent_dbg_log(
+                "hydrate support widget post-safe_hydrate",
+                {
+                    "active_slug": active_slug,
+                    "widget_key": widget_key,
+                    "shared_key": shared_key,
+                    "widget_after": st.session_state.get(widget_key),
+                    "shared_after": st.session_state.get(shared_key),
+                    "force": bool(force),
+                },
+                run_id="pre-fix",
+                hypothesis_id="H12_H13_H14",
+            )
+            # endregion
+        if bool(st.session_state.get("_dev_mode")) and widget_key in {
+            "inputs_bot_row_1_dia",
+            "inputs_bot_row_1_bars",
+            "inputs_bot_row_1_mode",
+            "inputs_bot_row_1_spacing",
+            "inputs_bot_row_count",
+            "inputs_bot1_count",
+            "inputs_top_row_1_dia",
+        }:
+            hc_log(
+                f"[hydrate] {widget_key} <- {shared_key}",
+                shared_before=st.session_state.get(shared_key),
+                widget_before=widget_before,
+                widget_after=st.session_state.get(widget_key),
+                force=force,
+            )
         if widget_key in st.session_state:
             hydrated_count += 1
-    
+
+    if bool(st.session_state.get("_dev_mode")) and force_inputs_reseed:
+        tracked_pairs = [
+            ("inputs_bot_row_1_dia", "bot_row_1_dia"),
+            ("inputs_bot_row_1_bars", "bot_row_1_bars"),
+            ("inputs_bot_row_count", "bot_row_count"),
+            ("inputs_bot1_count", "bot1_count"),
+        ]
+        mismatches = []
+        for widget_key, shared_key in tracked_pairs:
+            if st.session_state.get(widget_key) != st.session_state.get(shared_key):
+                mismatches.append({
+                    "widget_key": widget_key,
+                    "shared_key": shared_key,
+                    "widget_value": st.session_state.get(widget_key),
+                    "shared_value": st.session_state.get(shared_key),
+                })
+        if mismatches:
+            hc_log("[hydrate] forced inputs reseed mismatch", mismatches=mismatches)
+
     # Tripwire: detect shared keys that got zeroed during hydrate
     _shared_zero_tripwire("AFTER hydrate_active_page_widgets_from_shared")
 
@@ -2321,6 +5221,25 @@ def sync_shared_from_widgets_once_per_run():
     for widget_key, shared_key in TAB_KEYS.items():
         if shared_key not in syncable_keys:
             continue
+        if (
+            st.session_state.get("auto_design_active", False)
+            and shared_key in {"lig_d", "lig_legs", "s_lig"}
+        ):
+            # Prevent same-run widget backflow from clobbering auto-designed values.
+            # region agent log
+            _agent_dbg_log(
+                "sync skipped for auto-design-protected key",
+                {
+                    "widget_key": widget_key,
+                    "shared_key": shared_key,
+                    "widget_value": st.session_state.get(widget_key),
+                    "shared_value": st.session_state.get(shared_key),
+                },
+                run_id="pre-fix",
+                hypothesis_id="D",
+            )
+            # endregion
+            continue
 
         # Only sync widgets that were rendered THIS RUN
         if widget_key not in rendered:
@@ -2368,7 +5287,7 @@ def sync_shared_from_widgets_once_per_run():
     # 3) If all widgets match shared value, no sync needed
     for shared_key, widget_list in widgets_by_shared.items():
         current_shared = st.session_state.get(shared_key)
-        
+
         # #region agent log
         try:
             with open(log_path, "a") as f:
@@ -2610,8 +5529,21 @@ def recalc_derived_values():
     
     Now handles 2-layer reinforcement system with auto-splitting.
     """
-    from section_layout import compute_bar_layout_pure
+    from section_layout import compute_bar_layout_pure, compute_section_layout
+    _sync_longitudinal_row_model_from_legacy_state()
     
+    # Keep legacy layer keys mirrored from the canonical row model for compatibility.
+    for section, legacy_prefix, default_dia in (("bot", "bot", 20.0), ("top", "top", 16.0)):
+        for row_index in (1, 2):
+            row_mode_key = f"{section}_row_{row_index}_mode"
+            row_bars_key = f"{section}_row_{row_index}_bars"
+            row_spacing_key = f"{section}_row_{row_index}_spacing"
+            row_dia_key = f"{section}_row_{row_index}_dia"
+            st.session_state[f"{legacy_prefix}{row_index}_layout_mode"] = st.session_state.get(row_mode_key, "Count")
+            st.session_state[f"{legacy_prefix}{row_index}_count"] = int(st.session_state.get(row_bars_key, 0) or 0)
+            st.session_state[f"{legacy_prefix}{row_index}_spacing"] = float(st.session_state.get(row_spacing_key, 200.0) or 200.0)
+            st.session_state[f"db_{legacy_prefix}_{row_index}"] = float(st.session_state.get(row_dia_key, default_dia) or default_dia)
+
     # Bridge explicit layout mode inputs back to legacy nb_or_s_* keys
     def _mode_value(mode_key, count_key, spacing_key, fallback):
         mode = st.session_state.get(mode_key, "Count")
@@ -2620,11 +5552,28 @@ def recalc_derived_values():
         return float(st.session_state.get(count_key, fallback))
     
     # Bridge into legacy nb_or_s_* keys used elsewhere
-    st.session_state["nb_or_s_bot_1"] = _mode_value("bot1_layout_mode", "bot1_count", "bot1_spacing", 4)
-    st.session_state["nb_or_s_bot_2"] = _mode_value("bot2_layout_mode", "bot2_count", "bot2_spacing", 0)
-    st.session_state["nb_or_s_top_1"] = _mode_value("top1_layout_mode", "top1_count", "top1_spacing", 2)
-    st.session_state["nb_or_s_top_2"] = _mode_value("top2_layout_mode", "top2_count", "top2_spacing", 0)
+    st.session_state["nb_or_s_bot_1"] = _mode_value("bot_row_1_mode", "bot_row_1_bars", "bot_row_1_spacing", 4)
+    st.session_state["nb_or_s_bot_2"] = _mode_value("bot_row_2_mode", "bot_row_2_bars", "bot_row_2_spacing", 0)
+    st.session_state["nb_or_s_top_1"] = _mode_value("top_row_1_mode", "top_row_1_bars", "top_row_1_spacing", 2)
+    st.session_state["nb_or_s_top_2"] = _mode_value("top_row_2_mode", "top_row_2_bars", "top_row_2_spacing", 0)
     
+    # Canonical material derivations/defaults.
+    fc_val = float(st.session_state.get("fc", 40.0) or 40.0)
+    Ec_derived = derive_concrete_modulus_from_fc(fc_val)
+    phi_cc_t = float(st.session_state.get("phi_cc_t", 2.0) or 0.0)
+    Eceff_derived = derive_effective_concrete_modulus(Ec_derived, phi_cc_t)
+    # Steel modulus is treated as an internal default (not user-editable).
+    st.session_state["Es"] = 200000.0
+    st.session_state["Ec"] = float(Ec_derived)
+    st.session_state["Eceff"] = float(Eceff_derived)
+
+    # Retire legacy editable modulus widget keys so they cannot override derived/default values.
+    for _legacy_modulus_widget in (
+        "inputs_Ec", "bending_Ec", "shear_Ec", "crack_Ec", "defl_Ec",
+        "inputs_Es", "bending_Es", "shear_Es", "crack_Es",
+        "inputs_stress_ratio", "cr_sigma_ratio",
+    ):
+        st.session_state.pop(_legacy_modulus_widget, None)
     D = st.session_state["D"]
     cover_bot = st.session_state["cover_bot"]
     cover_top = st.session_state["cover_top"]
@@ -2875,37 +5824,49 @@ def recalc_derived_values():
     update_results(sum_duct=sum_duct, A_duct_total=A_duct_total)
 
     # ---------- 3.3 Time-dependent inputs ----------
-    # For now we only normalise / store them; the creep/shrinkage pages
-    # will pick them up via get_param().
     t_creep = _coalesce_num(st.session_state.get("t_creep", 365.0), 365.0)
     age_at_loading = _coalesce_num(st.session_state.get("age_at_loading", 28.0), 28.0)
-    stress_ratio = _coalesce_num(st.session_state.get("stress_ratio", 0.3), 0.3)
     t_shrink = _coalesce_num(st.session_state.get("t_shrink", 365.0), 365.0)
 
     st.session_state["t_creep"] = t_creep
     st.session_state["age_at_loading"] = age_at_loading
-    st.session_state["stress_ratio"] = stress_ratio
     st.session_state["t_shrink"] = t_shrink
 
-    # ---------- 3.3 Actions wiring (ULS vs SLS) ----------
-    actions_source = st.session_state.get("actions_source", "")
-    M_sfd = st.session_state.get("sfd_Mmax_abs_kNm", None)
-    V_sfd = st.session_state.get("sfd_Vmax_abs_kN", None)
-    use_sfd = (
-        actions_source == "Teaching SFD/BMD page (|M|max, |V|max)"
-        and M_sfd is not None
-        and V_sfd is not None
-    )
-    if use_sfd:
-        uls_M = float(M_sfd)
-        uls_V = float(V_sfd)
-    else:
-        uls_M = float(st.session_state.get("uls_Mstar", 0.0) or 0.0)
-        uls_V = float(st.session_state.get("uls_Vstar", 0.0) or 0.0)
-    uls_N = float(st.session_state.get("uls_Nstar", 0.0) or 0.0)
+    # ---------- 3.3 Signed manual moment bridge ----------
+    for prefix in ("uls", "sls"):
+        signed_key = f"{prefix}_Mstar"
+        pos_key = f"{prefix}_Mstar_pos_manual"
+        neg_key = f"{prefix}_Mstar_neg_manual"
+        signed_val = float(st.session_state.get(signed_key, 0.0) or 0.0)
+        pos_val = float(st.session_state.get(pos_key, max(0.0, signed_val)) or 0.0)
+        neg_val = float(st.session_state.get(neg_key, max(0.0, -signed_val)) or 0.0)
+        pos_val = max(0.0, pos_val)
+        neg_val = max(0.0, neg_val)
+        # Aggregated widgets (e.g. inputs_Mu_star / bending_Mu_star → uls_Mstar) set net M* via
+        # set_shared while pos/neg manual keys can still be 0. Without this, pos/neg collapse net to 0.
+        if pos_val == 0.0 and neg_val == 0.0 and abs(signed_val) > 0.0:
+            pos_val = max(0.0, signed_val)
+            neg_val = max(0.0, -signed_val)
+        st.session_state[pos_key] = pos_val
+        st.session_state[neg_key] = neg_val
+        st.session_state[signed_key] = float(pos_val - neg_val)
 
-    sls_M = float(st.session_state.get("sls_Mstar", 0.0) or 0.0)
-    sls_V = float(st.session_state.get("sls_Vstar", 0.0) or 0.0)
+    st.session_state["Mu_star_pos_manual"] = float(st.session_state.get("uls_Mstar_pos_manual", 0.0) or 0.0)
+    st.session_state["Mu_star_neg_manual"] = float(st.session_state.get("uls_Mstar_neg_manual", 0.0) or 0.0)
+    st.session_state["Mu_star_manual"] = float(
+        (st.session_state.get("Mu_star_pos_manual", 0.0) or 0.0)
+        - (st.session_state.get("Mu_star_neg_manual", 0.0) or 0.0)
+    )
+
+    # ---------- 3.4 Actions wiring (ULS vs SLS) ----------
+    actions = resolve_design_actions()
+    actions_source = st.session_state.get("actions_source", "")
+    uls_M = float(actions["Mu"])
+    uls_V = float(actions["Vu"])
+    uls_N = float(actions["Nu"])
+
+    sls_M = float(actions["SLS_M"])
+    sls_V = float(actions["SLS_V"])
     sls_N = float(st.session_state.get("sls_Nstar", 0.0) or 0.0)
 
     actions_uls = {"N": uls_N, "V": uls_V, "M": uls_M}
@@ -2913,6 +5874,19 @@ def recalc_derived_values():
 
     st.session_state["actions_uls"] = dict(actions_uls)
     st.session_state["actions_sls"] = dict(actions_sls)
+
+    sustained = derive_sustained_stress_ratio(
+        fc_mpa=float(st.session_state.get("fc", 0.0) or 0.0),
+        sls_m_pos_kNm=float(actions.get("SLS_M_pos", 0.0) or 0.0),
+        sls_m_neg_kNm=float(actions.get("SLS_M_neg", 0.0) or 0.0),
+        z_top_mm3=float(st.session_state.get("Ztop_g", 0.0) or 0.0),
+        z_bot_mm3=float(st.session_state.get("Zbot_g", 0.0) or 0.0),
+    )
+    st.session_state["sustained_Mstar_kNm"] = sustained["M_sust_kNm"]
+    st.session_state["sustained_sigma_cs_mpa"] = sustained["sigma_cs_mpa"]
+    st.session_state["sustained_section_modulus_mm3"] = sustained["Z_comp_mm3"]
+    st.session_state["sustained_compression_fibre"] = sustained["compression_fibre"]
+    st.session_state["stress_ratio"] = sustained["stress_ratio"]
 
     # --- DEBUG: Confirm ULS/SLS separation ---
     debug_print(
@@ -2975,14 +5949,178 @@ def recalc_derived_values():
     
     st.session_state["Ast_bot"] = Ast_bot_total
     st.session_state["Ast_top"] = Ast_top_total
-    
+
+    # Row-model derived outputs override the legacy 2-layer summary values so
+    # downstream consumers can transition gradually without losing compatibility.
+    section_layout = compute_section_layout()
+    reo_layout = section_layout.get("reo_layout", {}) if isinstance(section_layout, dict) else {}
+    try:
+        from section_props.reo_layout import (
+            resolve_longitudinal_bars_from_layout,
+            analyze_resolved_longitudinal_bars,
+            resolve_active_tension_reinforcement,
+        )
+        resolved_longitudinal_bars = resolve_longitudinal_bars_from_layout(
+            shape_name=str(section_layout.get("shape_name", st.session_state.get("sec_shape", "RECT"))),
+            dims=dict(section_layout.get("dims", {}) or {}),
+            reo_layout=reo_layout if isinstance(reo_layout, dict) else {},
+        )
+    except Exception:
+        resolved_longitudinal_bars = []
+        analyze_resolved_longitudinal_bars = None
+        resolve_active_tension_reinforcement = None
+    resolved_longitudinal_warnings = []
+    if isinstance(reo_layout, dict):
+        resolved_longitudinal_warnings = list(reo_layout.get("warnings", []) or [])
+
+    def _row_y_value(layer_data):
+        y_val = layer_data.get("y", 0.0)
+        if isinstance(y_val, (list, tuple)):
+            return float(y_val[0]) if y_val else 0.0
+        return float(y_val or 0.0)
+
+    def _resolved_rows(layer_name: str) -> list[dict]:
+        rows = []
+        for idx, layer_data in enumerate(reo_layout.get(layer_name, []) or [], start=1):
+            xs = [float(x) for x in (layer_data.get("x") or [])]
+            db = float(layer_data.get("db", 0.0) or 0.0)
+            y = _row_y_value(layer_data)
+            spacing_actual = float(layer_data.get("spacing_actual", 0.0) or 0.0)
+            row_index = int(layer_data.get("row_index", idx) or idx)
+            rows.append({
+                "active": len(xs) > 0 and db > 0.0,
+                "row_index": row_index,
+                "mode": layer_data.get("mode", "Count"),
+                "dia": db,
+                "bar_count_resolved": len(xs),
+                "spacing_resolved": spacing_actual,
+                "x_positions": xs,
+                "y_position": y,
+                "steel_area_row": float(layer_data.get("steel_area", len(xs) * math.pi * db**2 / 4.0) or 0.0),
+                "fit_ok": bool(layer_data.get("fit_ok", True)),
+                "warning": layer_data.get("warning"),
+            })
+        return rows
+
+    bot_rows_resolved = _resolved_rows("bottom")
+    top_rows_resolved = _resolved_rows("top")
+    bot_bar_coords = [
+        {"x": x, "y": row["y_position"], "db": row["dia"], "row_index": row["row_index"]}
+        for row in bot_rows_resolved
+        for x in row["x_positions"]
+    ]
+    top_bar_coords = [
+        {"x": x, "y": row["y_position"], "db": row["dia"], "row_index": row["row_index"]}
+        for row in top_rows_resolved
+        for x in row["x_positions"]
+    ]
+
+    total_bot_bars = sum(row["bar_count_resolved"] for row in bot_rows_resolved)
+    total_top_bars = sum(row["bar_count_resolved"] for row in top_rows_resolved)
+    primary_bot_row = next((row for row in bot_rows_resolved if row["active"]), None)
+    primary_top_row = next((row for row in top_rows_resolved if row["active"]), None)
+
+    st.session_state["bot_rows_resolved"] = bot_rows_resolved
+    st.session_state["top_rows_resolved"] = top_rows_resolved
+    st.session_state["bot_bar_coords"] = bot_bar_coords
+    st.session_state["top_bar_coords"] = top_bar_coords
+    st.session_state["resolved_longitudinal_bars"] = resolved_longitudinal_bars
+    st.session_state["resolved_longitudinal_warnings"] = resolved_longitudinal_warnings
+    st.session_state["total_bot_bars"] = total_bot_bars
+    st.session_state["total_top_bars"] = total_top_bars
+    st.session_state["nb_bot"] = total_bot_bars
+    st.session_state["nb_top"] = total_top_bars
+    st.session_state["db_bot"] = float(primary_bot_row["dia"]) if primary_bot_row else 0.0
+    st.session_state["db_top"] = float(primary_top_row["dia"]) if primary_top_row else 0.0
+    st.session_state["s_bot"] = float(primary_bot_row["spacing_resolved"]) if primary_bot_row else 0.0
+    st.session_state["s_top"] = float(primary_top_row["spacing_resolved"]) if primary_top_row else 0.0
+    st.session_state["bot_entry"] = float(primary_bot_row["bar_count_resolved"]) if primary_bot_row and primary_bot_row.get("mode") == "Count" else float(primary_bot_row["spacing_resolved"]) if primary_bot_row else 0.0
+    st.session_state["top_entry"] = float(primary_top_row["bar_count_resolved"]) if primary_top_row and primary_top_row.get("mode") == "Count" else float(primary_top_row["spacing_resolved"]) if primary_top_row else 0.0
+    st.session_state["d"] = float(primary_bot_row["y_position"]) if primary_bot_row else D
+    st.session_state["do"] = D - float(primary_top_row["y_position"]) if primary_top_row else D
+    # Canonical reinforcement summaries must come from resolved_longitudinal_bars.
+    # NOTE: Ast_top/Ast_bot are compatibility summaries only; zone-aware checks must
+    # consume resolved_longitudinal_bars (crack/shear active participation helpers).
+    top_bars = [bar for bar in resolved_longitudinal_bars if str(bar.get("face")) == "top"]
+    bottom_bars = [bar for bar in resolved_longitudinal_bars if str(bar.get("face")) == "bottom"]
+    top_web_bars = [bar for bar in top_bars if "web" in str(bar.get("zone", ""))]
+    top_flange_bars = [bar for bar in top_bars if "flange" in str(bar.get("zone", ""))]
+    bottom_web_bars = [bar for bar in bottom_bars if "web" in str(bar.get("zone", ""))]
+    bottom_flange_bars = [bar for bar in bottom_bars if "flange" in str(bar.get("zone", ""))]
+
+    st.session_state["Ast_top_web"] = float(sum(float(bar.get("area_mm2", 0.0) or 0.0) for bar in top_web_bars))
+    st.session_state["Ast_top_flange"] = float(sum(float(bar.get("area_mm2", 0.0) or 0.0) for bar in top_flange_bars))
+    st.session_state["Ast_bottom_web"] = float(sum(float(bar.get("area_mm2", 0.0) or 0.0) for bar in bottom_web_bars))
+    st.session_state["Ast_bottom_flange"] = float(sum(float(bar.get("area_mm2", 0.0) or 0.0) for bar in bottom_flange_bars))
+    st.session_state["Ast_top"] = float(st.session_state["Ast_top_web"] + st.session_state["Ast_top_flange"])
+    st.session_state["Ast_bot"] = float(st.session_state["Ast_bottom_web"] + st.session_state["Ast_bottom_flange"])
+
+    # Keep legacy representative diameters based on resolved bars (compatibility only).
+    st.session_state["db_top"] = max((float(bar.get("dia_mm", 0.0) or 0.0) for bar in top_bars), default=0.0)
+    st.session_state["db_bot"] = max((float(bar.get("dia_mm", 0.0) or 0.0) for bar in bottom_bars), default=0.0)
+
+    def _avg_spacing(bars_list: list[dict]) -> float:
+        xs = sorted(float(bar.get("x_mm", 0.0) or 0.0) for bar in bars_list)
+        if len(xs) < 2:
+            return 0.0
+        vals = [xs[i + 1] - xs[i] for i in range(len(xs) - 1)]
+        return float(sum(vals) / len(vals)) if vals else 0.0
+
+    st.session_state["s_top"] = _avg_spacing(top_bars)
+    st.session_state["s_bot"] = _avg_spacing(bottom_bars)
+
+    if st.session_state.get("_dev_mode", False):
+        shape_for_diag = str(section_layout.get("shape_name", st.session_state.get("sec_shape", "RECT")))
+        dims_for_diag = dict(section_layout.get("dims", {}) or {})
+        diag = {
+            "section_shape": shape_for_diag,
+            "resolved_bar_count": len(resolved_longitudinal_bars),
+            "Ast_top_web": st.session_state["Ast_top_web"],
+            "Ast_top_flange": st.session_state["Ast_top_flange"],
+            "Ast_bottom_web": st.session_state["Ast_bottom_web"],
+            "Ast_bottom_flange": st.session_state["Ast_bottom_flange"],
+        }
+        if analyze_resolved_longitudinal_bars is not None:
+            bar_diag = analyze_resolved_longitudinal_bars(
+                shape_name=shape_for_diag,
+                dims=dims_for_diag,
+                bars=resolved_longitudinal_bars,
+            )
+            diag["bar_diagnostics"] = bar_diag
+            if bar_diag.get("warnings"):
+                resolved_longitudinal_warnings.extend(list(bar_diag.get("warnings") or []))
+        try:
+            actions_now = resolve_design_actions()
+            sign = "negative" if float(actions_now.get("Mu_signed", 0.0) or 0.0) < 0.0 else "positive"
+            if resolve_active_tension_reinforcement is not None:
+                active = resolve_active_tension_reinforcement(
+                    dims_for_diag,
+                    resolved_longitudinal_bars,
+                    sign,
+                )
+                active_ids = [str(b.get("id")) for b in (active.get("active_bars") or [])]
+                active_web_ast = float(sum(float(b.get("area_mm2", 0.0) or 0.0) for b in (active.get("active_web_bars") or [])))
+                active_flange_ast = float(sum(float(b.get("area_mm2", 0.0) or 0.0) for b in (active.get("active_flange_bars") or [])))
+                diag["crack_active_selection"] = {
+                    "moment_sign": sign,
+                    "tension_face": active.get("tension_face"),
+                    "active_ids": active_ids,
+                    "active_web_ast_mm2": active_web_ast,
+                    "active_flange_ast_mm2": active_flange_ast,
+                }
+                diag["shear_active_selection"] = {
+                    "available_active_ids": active_ids,
+                    "available_web_ast_mm2": active_web_ast,
+                    "available_flange_ast_mm2": active_flange_ast,
+                }
+        except Exception:
+            pass
+        st.session_state["_debug_reo_resolution"] = diag
     # ---------- 3.4 Compute effective design load F_d,ef from V, L, support type (Manual inputs only) ----------
     actions_source = st.session_state.get("actions_source", "")
     if actions_source == "Manual design actions (inputs below)":
         # Get design shear V (kN)
-        V_kN = st.session_state.get("Vu_star", 0.0)
-        if V_kN is None:
-            V_kN = 0.0
+        V_kN = float(resolve_design_actions().get("Vu", 0.0) or 0.0)
         
         # Get span L (m) - prefer defl_L_eff, fallback to span_L_m
         L_m = st.session_state.get("defl_L_eff", 0.0)
@@ -2991,9 +6129,10 @@ def recalc_derived_values():
             if L_m is None:
                 L_m = 0.0
         
-        # Get support type
-        support_type = st.session_state.get("defl_support_type", "Simply supported")
-        
+        from deflection import get_resolved_deflection_support_type
+
+        support_type = get_resolved_deflection_support_type(st.session_state)
+
         # Compute equivalent UDL w (kN/m) based on support type
         w_kNm = None
         if L_m > 0 and V_kN > 0:
@@ -3003,7 +6142,9 @@ def recalc_derived_values():
             elif support_type == "Cantilever":
                 # For cantilever with UDL: V_max = wL, so w = V/L
                 w_kNm = V_kN / L_m
-            # For other support types, keep as None (not yet implemented)
+            else:
+                # Continuous / fixed-ended / interior: use V/L approximation (matches deflection_core F_d,ef path)
+                w_kNm = V_kN / L_m
         
         # Store computed value (use update_results to maintain contract)
         if w_kNm is not None:
@@ -3013,6 +6154,18 @@ def recalc_derived_values():
     else:
         # Not in manual mode - clear computed value
         update_results(fd_ef_calc_kNm=0.0)
+
+    # Sectional shear adequacy from last published results (same rule as Check 10 / shear_core: φVu ≥ V*eq).
+    # Layout + shear_design_status are pushed via update_results() from shear_core._compute_shear_capacity().
+    shear_ok = None
+    try:
+        _veq = float(st.session_state.get("V_eq_kN", 0.0) or 0.0)
+        _pvu = float(st.session_state.get("phi_Vu_cap", 0.0) or 0.0)
+        if _veq > 0:
+            shear_ok = bool(_pvu + 1e-9 >= _veq)
+    except Exception:
+        shear_ok = None
+    _ = shear_ok  # mirrors φVu ≥ V*eq; authoritative status for UI is shear_design_status via update_results
 
     # --- Shape audit (debug snapshot, non-spammy) ---
     st.session_state["_shape_audit"] = {
@@ -3040,7 +6193,7 @@ def reset_results_state():
 # Shared keys that must remain Inputs-owned (avoid accidental overwrite during restore)
 # Keep this list SMALL (only mode selectors / time-dependent inputs).
 PROTECTED_SHARED_KEYS = {
-    "t_creep", "age_at_loading", "stress_ratio", "t_shrink",
+    "t_creep", "age_at_loading", "t_shrink",
     "actions_source",
     "loads_edit_mode",
 }
@@ -3057,6 +6210,22 @@ def _make_sync_callback(widget_key: str, shared_key: str):
     _this_file = os.path.basename(__file__)
     
     def _callback():
+        if shared_key.startswith("design_support_type_") and widget_key.startswith("sfd_support_type_"):
+            # region agent log
+            _agent_dbg_log(
+                "support sync callback entered",
+                {
+                    "widget_key": widget_key,
+                    "shared_key": shared_key,
+                    "widget_val_initial": st.session_state.get(widget_key),
+                    "shared_val_initial": st.session_state.get(shared_key),
+                    "last_user_widget_key": st.session_state.get("_last_user_widget_key"),
+                    "sync_lock": st.session_state.get("_sync_lock", False),
+                },
+                run_id="pre-fix",
+                hypothesis_id="H12_H13",
+            )
+            # endregion
         # 0) SYNC LOCK: Do not push widget → shared during hydration / render
         if st.session_state.get("_sync_lock", False):
             try:
@@ -3094,6 +6263,22 @@ def _make_sync_callback(widget_key: str, shared_key: str):
         # Read widget and shared values early for tracing
         widget_val = st.session_state.get(widget_key)
         shared_val = st.session_state.get(shared_key, None)
+        if widget_key == "shear_auto_design_toggle":
+            # region agent log
+            _agent_dbg_log(
+                "shear_auto_design callback entered",
+                {
+                    "widget_key": widget_key,
+                    "widget_val_initial": widget_val,
+                    "shared_key": shared_key,
+                    "shared_val_initial": shared_val,
+                    "last_user_widget_key": st.session_state.get("_last_user_widget_key"),
+                    "sync_lock": st.session_state.get("_sync_lock", False),
+                },
+                run_id="pre-fix",
+                hypothesis_id="G",
+            )
+            # endregion
         
         
         # 0.5) RESTORE GUARD: briefly block widget→shared right after restore
@@ -3122,11 +6307,104 @@ def _make_sync_callback(widget_key: str, shared_key: str):
             # Never push to shared.
             _sync_trace_file("return:not_last_user_widget", widget_key, shared_key, widget_val, shared_val)
             _sync_trace("not_user_edit", widget_key, shared_key)
+            if widget_key == "shear_auto_design_toggle":
+                # region agent log
+                _agent_dbg_log(
+                    "shear_auto_design callback blocked by last-widget gate",
+                    {
+                        "widget_key": widget_key,
+                        "last_user_widget_key": last_widget,
+                        "widget_val": widget_val,
+                        "shared_val": shared_val,
+                    },
+                    run_id="pre-fix",
+                    hypothesis_id="G",
+                )
+                # endregion
             return
+        if shared_key.startswith("design_support_type_") and widget_key.startswith("sfd_support_type_"):
+            # region agent log
+            _agent_dbg_log(
+                "support sync callback passed ownership gate",
+                {
+                    "widget_key": widget_key,
+                    "shared_key": shared_key,
+                    "last_user_widget_key": last_widget,
+                    "widget_val": widget_val,
+                    "shared_val": shared_val,
+                },
+                run_id="pre-fix",
+                hypothesis_id="H13",
+            )
+            # endregion
+
+        if shared_key in {"lig_d", "lig_legs", "s_lig"}:
+            # region agent log
+            _agent_dbg_log(
+                "reinforcement callback ownership gate",
+                {
+                    "widget_key": widget_key,
+                    "shared_key": shared_key,
+                    "last_user_widget_key": last_widget,
+                    "auto_design_active": st.session_state.get("auto_design_active", False),
+                    "applying_auto_design": st.session_state.get("_applying_auto_design", False),
+                    "widget_val": widget_val,
+                    "shared_val": shared_val,
+                },
+                run_id="pre-fix",
+                hypothesis_id="S1",
+            )
+            # endregion
+            # Manual user edits disable auto-design ownership of reinforcement inputs.
+            if st.session_state.get("_applying_auto_design", False):
+                pass
+            elif last_widget == widget_key:
+                set_shared("auto_design_active", False, source=f"manual_override:{widget_key}")
+                # region agent log
+                _agent_dbg_log(
+                    "manual reinforcement edit disabled auto_design_active",
+                    {
+                        "widget_key": widget_key,
+                        "shared_key": shared_key,
+                        "auto_design_active_after": st.session_state.get("auto_design_active", False),
+                    },
+                    run_id="pre-fix",
+                    hypothesis_id="S2",
+                )
+                # endregion
+            elif st.session_state.get("auto_design_active", False):
+                # region agent log
+                _agent_dbg_log(
+                    "reinforcement callback blocked by auto-design ownership",
+                    {
+                        "widget_key": widget_key,
+                        "shared_key": shared_key,
+                        "last_user_widget_key": last_widget,
+                        "auto_design_active": st.session_state.get("auto_design_active", False),
+                    },
+                    run_id="pre-fix",
+                    hypothesis_id="S3",
+                )
+                # endregion
+                # Ignore non-user callback churn while auto design is active.
+                return
         
         # Guard B: Only sync if widget was rendered this run
         rendered = st.session_state.get("_rendered_widget_keys", set())
         if widget_key not in rendered:
+            if widget_key == "shear_auto_design_toggle":
+                # region agent log
+                _agent_dbg_log(
+                    "shear_auto_design callback blocked by rendered-key gate",
+                    {
+                        "widget_key": widget_key,
+                        "rendered_count": len(rendered) if isinstance(rendered, set) else None,
+                        "rendered_has_widget": widget_key in rendered if isinstance(rendered, set) else False,
+                    },
+                    run_id="pre-fix",
+                    hypothesis_id="H",
+                )
+                # endregion
             _sync_trace_file("return:widget_not_rendered", widget_key, shared_key, widget_val, shared_val)
             _sync_trace("widget_not_rendered", widget_key, shared_key)
             return
@@ -3143,6 +6421,15 @@ def _make_sync_callback(widget_key: str, shared_key: str):
             "lig_d", "lig_legs",
             "top1_count", "top2_count", "bot1_count", "bot2_count",
             "top1_spacing", "top2_spacing", "bot1_spacing", "bot2_spacing",
+            "top_flange_left_count", "top_flange_right_count",
+            "bot_flange_left_count", "bot_flange_right_count",
+            "top_flange_left_dia", "top_flange_right_dia",
+            "bot_flange_left_dia", "bot_flange_right_dia",
+            "top_flange_left_rows", "top_flange_right_rows",
+            "bot_flange_left_rows", "bot_flange_right_rows",
+            "top_flange_transverse_dia", "bot_flange_transverse_dia",
+            "top_flange_transverse_spacing", "bot_flange_transverse_spacing",
+            "top_flange_transverse_legs", "bot_flange_transverse_legs",
         }
         
         if shared_key in INT_SHARED_KEYS and widget_val is not None:
@@ -3152,6 +6439,18 @@ def _make_sync_callback(widget_key: str, shared_key: str):
                 pass
         
         if widget_val == shared_val:
+            if widget_key == "shear_auto_design_toggle":
+                # region agent log
+                _agent_dbg_log(
+                    "shear_auto_design callback exited no-change",
+                    {
+                        "widget_val": widget_val,
+                        "shared_val": shared_val,
+                    },
+                    run_id="pre-fix",
+                    hypothesis_id="I",
+                )
+                # endregion
             _sync_trace_file("return:widget_equals_shared", widget_key, shared_key, widget_val, shared_val)
             _sync_trace("no_change", widget_key, shared_key)
             return  # No change, skip sync
@@ -3165,7 +6464,7 @@ def _make_sync_callback(widget_key: str, shared_key: str):
         # otherwise shared keeps old values and "rehydrates" them on rerun.
 
         # Time-dependent protection (stale default guard)
-        if shared_key in {"t_creep", "age_at_loading", "t_shrink", "stress_ratio"}:
+        if shared_key in {"t_creep", "age_at_loading", "t_shrink"}:
             try:
                 wv = float(widget_val) if widget_val is not None else None
                 sv0 = st.session_state.get(shared_key)
@@ -3173,18 +6472,11 @@ def _make_sync_callback(widget_key: str, shared_key: str):
             except Exception:
                 wv, sv = None, None
 
-            if shared_key == "stress_ratio":
-                # If widget is at a nonsense default (0 / 0.01) but shared is meaningful, don't overwrite
-                if wv in (0.0, 0.01) and (sv is not None and sv not in (0.0, 0.01)):
-                    _sync_trace_file("return:stress_ratio_stale_guard", widget_key, shared_key, widget_val, shared_val)
-                    _sync_trace("stress_ratio_stale_guard", widget_key, shared_key)
-                    return
-            else:
-                # If widget is still at stale default 0/1 but shared is meaningful (>1), do not overwrite
-                if wv in (0.0, 1.0) and (sv is not None and sv not in (0.0, 1.0)):
-                    _sync_trace_file("return:time_stale_hard_guard", widget_key, shared_key, widget_val, shared_val)
-                    _sync_trace("time_stale_hard_guard", widget_key, shared_key)
-                    return
+            # If widget is still at stale default 0/1 but shared is meaningful (>1), do not overwrite
+            if wv in (0.0, 1.0) and (sv is not None and sv not in (0.0, 1.0)):
+                _sync_trace_file("return:time_stale_hard_guard", widget_key, shared_key, widget_val, shared_val)
+                _sync_trace("time_stale_hard_guard", widget_key, shared_key)
+                return
         
         # 1) If the widget key isn't present, do NOT write anything.
         if widget_key not in st.session_state:
@@ -3223,6 +6515,9 @@ def _make_sync_callback(widget_key: str, shared_key: str):
             "lig_d", "lig_legs",
             "top1_count", "top2_count", "bot1_count", "bot2_count",
             "top1_spacing", "top2_spacing", "bot1_spacing", "bot2_spacing",
+            "top_flange_transverse_dia", "bot_flange_transverse_dia",
+            "top_flange_transverse_spacing", "bot_flange_transverse_spacing",
+            "top_flange_transverse_legs", "bot_flange_transverse_legs",
         }
         
         if shared_key in INT_SHARED_KEYS and widget_val is not None:
@@ -3245,7 +6540,7 @@ def _make_sync_callback(widget_key: str, shared_key: str):
         # 3) widget → shared
         widget_value = widget_val
         current_shared = st.session_state.get(shared_key)
-        
+
         # ---- HARD GUARD: time inputs must not be clobbered by stale widget defaults ----
         if shared_key in {"t_creep", "age_at_loading", "t_shrink"}:
             try:
@@ -3255,8 +6550,9 @@ def _make_sync_callback(widget_key: str, shared_key: str):
             except Exception:
                 wv, sv = None, None
 
-            # If widget is still at 0/1 but shared is meaningful (>1), do not overwrite shared
-            if wv in (0.0, 1.0) and (sv is not None and sv not in (0.0, 1.0)):
+            # If widget is still at 0/1 but shared is meaningful (>1), do not overwrite shared.
+            # Exclude keys where zero is a legitimate engineering input.
+            if (not zero_allowed(shared_key)) and wv in (0.0, 1.0) and (sv is not None and sv not in (0.0, 1.0)):
                 _sync_trace_file("return:time_stale_hard_guard", widget_key, shared_key, widget_value, current_shared)
                 _audit("sync_callback_blocked", shared_key, widget_key, old=current_shared, new=widget_value, extra={"where": "sync_callback"})
                 return
@@ -3316,25 +6612,94 @@ def _make_sync_callback(widget_key: str, shared_key: str):
             )
         # endregion
         set_shared(shared_key, widget_value, source=f"callback:{widget_key}")
+        # Keep every TAB_KEYS alias for link spacing aligned when the user edits from one page only.
+        # (set_shared updates `s_lig`; sibling keys like `inputs_s_lig` are otherwise stale until Inputs renders.)
+        if shared_key == "s_lig":
+            _rendered_wk = st.session_state.get("_rendered_widget_keys", set())
+            if not isinstance(_rendered_wk, set):
+                _rendered_wk = set()
+            for _alias_wk, _alias_sk in TAB_KEYS.items():
+                if _alias_sk != "s_lig" or _alias_wk == widget_key:
+                    continue
+                if _alias_wk in _rendered_wk:
+                    continue
+                try:
+                    st.session_state[_alias_wk] = float(widget_value)
+                except (TypeError, ValueError):
+                    st.session_state[_alias_wk] = widget_value
+                if str(_alias_wk).startswith("inputs_"):
+                    st.session_state[f"_cached_{_alias_wk}"] = st.session_state[_alias_wk]
+        if shared_key.startswith("design_support_type_") and widget_key.startswith("sfd_support_type_"):
+            # region agent log
+            _agent_dbg_log(
+                "support sync callback wrote shared",
+                {
+                    "widget_key": widget_key,
+                    "shared_key": shared_key,
+                    "widget_value": widget_value,
+                    "old_shared": old_shared,
+                    "new_shared": st.session_state.get(shared_key),
+                },
+                run_id="pre-fix",
+                hypothesis_id="H12_H13_H14",
+            )
+            # endregion
+        if widget_key == "shear_auto_design_toggle":
+            # region agent log
+            _agent_dbg_log(
+                "shear_auto_design callback wrote shared",
+                {
+                    "widget_value_written": widget_value,
+                    "shared_value_after": st.session_state.get(shared_key),
+                },
+                run_id="pre-fix",
+                hypothesis_id="G",
+            )
+            # endregion
+            set_shared(
+                "auto_design_active",
+                bool(widget_value),
+                source="callback:shear_auto_design_toggle",
+            )
+            # region agent log
+            _agent_dbg_log(
+                "shear_auto_design toggled auto_design_active",
+                {
+                    "toggle_value": bool(widget_value),
+                    "auto_design_active_after": st.session_state.get("auto_design_active"),
+                },
+                run_id="post-fix",
+                hypothesis_id="R",
+            )
+            # endregion
+            if bool(widget_value):
+                # Ensure spacing widgets reflect shared spacing when auto-design toggle is enabled.
+                _s_shared = st.session_state.get("s_lig")
+                for _wk, _sk in TAB_KEYS.items():
+                    if _sk == "s_lig":
+                        st.session_state[_wk] = _s_shared
+                # region agent log
+                _agent_dbg_log(
+                    "auto-design toggle forced spacing widget sync",
+                    {
+                        "shared_s_lig": _s_shared,
+                        "inputs_s_lig": st.session_state.get("inputs_s_lig"),
+                        "shear_s_lig": st.session_state.get("shear_s_lig"),
+                    },
+                    run_id="post-fix",
+                    hypothesis_id="J",
+                )
+                # endregion
         _audit("SYNC widget->shared", shared_key, widget_key, old=old_shared, new=widget_value)
         mark_dirty("widget_sync")
 
-        if shared_key in ("load_Mstar_proxy", "load_Vstar_proxy", "load_Nstar_proxy"):
+        if shared_key in ("load_Mstar_proxy", "load_Mstar_pos_proxy", "load_Mstar_neg_proxy", "load_Vstar_proxy", "load_Nstar_proxy"):
             save_proxies_to_active_set()
         
-        if shared_key in ("Mu_star_manual", "Vu_star_manual", "N_star"):
-            if shared_key == "Mu_star_manual":
-                set_shared("uls_Mstar", float(widget_value or 0.0), source="uls_mirror")
-                if st.session_state.get("loads_edit_mode", "ULS") == "ULS":
-                    st.session_state["load_Mstar_proxy"] = float(widget_value or 0.0)
-            elif shared_key == "Vu_star_manual":
-                set_shared("uls_Vstar", float(widget_value or 0.0), source="uls_mirror")
-                if st.session_state.get("loads_edit_mode", "ULS") == "ULS":
-                    st.session_state["load_Vstar_proxy"] = float(widget_value or 0.0)
-            elif shared_key == "N_star":
-                set_shared("uls_Nstar", float(widget_value or 0.0), source="uls_mirror")
-                if st.session_state.get("loads_edit_mode", "ULS") == "ULS":
-                    st.session_state["load_Nstar_proxy"] = float(widget_value or 0.0)
+        if shared_key == "N_star":
+            set_shared("uls_Nstar", float(widget_value or 0.0), source="uls_mirror")
+            if st.session_state.get("loads_edit_mode", "ULS") == "ULS":
+                st.session_state["load_Nstar_proxy"] = float(widget_value or 0.0)
         
         # Cache inputs_* widget values immediately when user changes them
         # AND also keep the "inputs_* cache" fresh even when the user edits the same
@@ -3393,6 +6758,83 @@ def get_sync_callbacks():
         pass
     
     return _SYNC_CALLBACKS
+
+
+def apply_auto_design_results(results_dict: dict) -> None:
+    """
+    Apply auto-designed reinforcement to shared state and mirror to mapped widgets.
+    Shared state remains the single source of truth.
+    """
+    if not isinstance(results_dict, dict):
+        return
+
+    rendered_widget_keys = st.session_state.get("_rendered_widget_keys", set())
+    if not isinstance(rendered_widget_keys, set):
+        rendered_widget_keys = set()
+    updates: dict[str, object] = {}
+    for key, value in results_dict.items():
+        if key in SHARED_DEFAULTS:
+            set_shared(key, value, source="auto_design_apply")
+            updates[key] = value
+
+    # region agent log
+    _agent_dbg_log(
+        "apply_auto_design_results shared updates",
+        {
+            "requested_updates": dict(results_dict),
+            "applied_updates": dict(updates),
+            "auto_design_active_before": st.session_state.get("auto_design_active"),
+        },
+        run_id="pre-fix",
+        hypothesis_id="C",
+    )
+    # endregion
+
+    if not updates:
+        return
+
+    set_shared("auto_design_active", True, source="auto_design_apply")
+    st.session_state["_applying_auto_design"] = True
+    deferred_widget_update = False
+    try:
+        # Only mirror into non-rendered widget keys. Rendered widgets must wait until the next rerun.
+        for widget_key, shared_key in TAB_KEYS.items():
+            if shared_key in updates:
+                next_value = updates[shared_key]
+                if widget_key in rendered_widget_keys:
+                    if st.session_state.get(widget_key) != next_value:
+                        deferred_widget_update = True
+                        if widget_key.startswith("inputs_"):
+                            st.session_state["_force_inputs_widget_reseed_once"] = True
+                    continue
+                st.session_state[widget_key] = next_value
+                if widget_key.startswith("inputs_"):
+                    st.session_state[f"_cached_{widget_key}"] = next_value
+
+        recalc_derived_values()
+        update_results()
+        # If rendered spacing widgets could not be mirrored, force another compute pass next rerun.
+        if deferred_widget_update:
+            mark_dirty("auto_design_apply")
+        # region agent log
+        _agent_dbg_log(
+            "apply_auto_design_results post-hydrate snapshot",
+            {
+                "shared_s_lig": st.session_state.get("s_lig"),
+                "shared_lig_legs": st.session_state.get("lig_legs"),
+                "widget_inputs_s_lig": st.session_state.get("inputs_s_lig"),
+                "widget_shear_s_lig": st.session_state.get("shear_s_lig"),
+                "auto_design_active_after": st.session_state.get("auto_design_active"),
+            },
+            run_id="pre-fix",
+            hypothesis_id="C",
+        )
+        # endregion
+    finally:
+        st.session_state["_applying_auto_design"] = False
+
+    if deferred_widget_update:
+        st.rerun()
 
 
 # ============================================
@@ -3475,8 +6917,26 @@ def compute_all_results() -> None:
     try:
         from shear_core import _compute_shear_capacity
         _compute_shear_capacity()
-    except Exception:
-        pass
+    except Exception as exc:
+        try:
+            _existing_zone_payload = st.session_state.get("shear_zone_results")
+            update_results(
+                shear_zone_results=_existing_zone_payload,
+                shear_design_status="INVALID",
+                shear_design_error=str(exc),
+                shear_x=st.session_state.get("shear_x", []),
+                shear_V=st.session_state.get("shear_V", []),
+                V_max=st.session_state.get("V_max", 0.0),
+                req_asv_s=st.session_state.get("req_asv_s", []),
+                prov_asv_s=st.session_state.get("prov_asv_s", []),
+                shear_util_min=st.session_state.get("shear_util_min", None),
+                shear_util_x=st.session_state.get("shear_util_x", None),
+                shear_envelope_status=st.session_state.get("shear_envelope_status", "FAIL"),
+                shear_auto_selected_lig_d_mm=None,
+                shear_auto_selected_legs=None,
+            )
+        except Exception:
+            pass
 
     # SLS steel stress feeding crack/deflection
     # (Currently lives in bending_page; keep it here to avoid waiting for Bending page)
@@ -3670,7 +7130,7 @@ def _critical_input_keys():
 
         # Design actions (manual inputs)
         "actions_source",
-        "Mu_star_manual", "Vu_star_manual", "Tu_star",
+        "uls_Mstar", "uls_Vstar", "Tu_star",
         "P_star", "N_star",
 
         # Covers / geometry-related
@@ -4053,7 +7513,6 @@ def migrate_time_defaults_once():
     DEFAULTS = {
         "t_creep": 365.0,         # days after loading
         "age_at_loading": 28.0,   # days (28-day strength basis)
-        "stress_ratio": 0.30,     # sustained stress ratio (typical service range)
         "t_shrink": 365.0,        # days since drying
     }
 
@@ -4062,13 +7521,11 @@ def migrate_time_defaults_once():
         # Inputs page (legacy)
         "inputs_t_creep": "t_creep",
         "inputs_age_at_loading": "age_at_loading",
-        "inputs_stress_ratio": "stress_ratio",
         "inputs_t_shrink": "t_shrink",
 
         # Creep page widgets
         "cr_t_creep": "t_creep",
         "cr_tau": "age_at_loading",
-        "cr_sigma_ratio": "stress_ratio",
 
         # Shrinkage page widget
         "sh_t_days": "t_shrink",
@@ -4154,6 +7611,12 @@ def set_shared(key: str, value, *, source: str = "") -> None:
 
     # Write the value
     st.session_state[key] = value
+    if _set_shared_is_user_intent_source(source):
+        tk = st.session_state.setdefault("_shared_keys_touched_this_run", set())
+        if not isinstance(tk, set):
+            tk = set()
+            st.session_state["_shared_keys_touched_this_run"] = tk
+        tk.add(key)
     st.session_state["_dirty"] = True
     st.session_state["_last_user_shared_key"] = key
     ts_now = time.time()

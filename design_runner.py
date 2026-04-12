@@ -7,7 +7,16 @@ in session state without rendering any UI.
 """
 
 import streamlit as st
-from state_and_helpers import init_shared_session_state, update_results, get_param
+from state_and_helpers import LONGITUDINAL_REO_MAX_ROWS, init_shared_session_state, update_results, get_param
+
+
+def _longitudinal_row_fingerprint_keys() -> list[str]:
+    keys = ["bot_row_count", "top_row_count", "rowgap_bot", "rowgap_top"]
+    for section in ("bot", "top"):
+        for row_index in range(1, LONGITUDINAL_REO_MAX_ROWS + 1):
+            for field in ("mode", "bars", "spacing", "dia"):
+                keys.append(f"{section}_row_{row_index}_{field}")
+    return keys
 
 
 def _inputs_fingerprint():
@@ -19,12 +28,10 @@ def _inputs_fingerprint():
         "b", "D", "L", "fc", "fsy", "Es", "Ec",
         "Mu_star", "Vu_star", "Tu_star",
         "cover_bot", "cover_top", "cover_side",
-        "nb_or_s_bot_1", "db_bot_1", "nb_or_s_bot_2", "db_bot_2",
-        "nb_or_s_top_1", "db_top_1", "nb_or_s_top_2", "db_top_2",
         "s_lig", "lig_d", "lig_legs",
         "exposure_class", "env_option", "t_creep", "age_at_loading", "stress_ratio",
         "t_shrink", "RH", "Ac", "u_e",
-    ]
+    ] + _longitudinal_row_fingerprint_keys()
     vals = []
     for k in keys:
         try:

@@ -12,7 +12,6 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-import strain_display
 from bending_layer_semantics import resolve_bending_layer_geometry
 from section_layout import compute_shear_reo_layout_pure
 from section_props.plotly_section import make_sectionA_figure
@@ -70,10 +69,9 @@ def plot_shear_torsion_section_2d(
             tension_face=tension_face,
         )
 
-    # Force consistent layout (schematic style).
-    # Use title text="" (not None): empty {} in figure JSON makes Streamlit show the word "undefined".
+    # Force consistent layout (schematic style)
     fig.update_layout(
-        title=dict(text=""),
+        title=None,
         showlegend=False,
         margin=dict(l=5, r=5, t=20, b=5),
     )
@@ -474,622 +472,23 @@ def plot_shear_step3_section_params_plotly(
     return fig
 
 
-# Check 4 longitudinal diagram: fixed symmetric x-range so the internal beam face (x = 0) is
-# identical in stress–strain and force-resolution modes (same scale, margins, extents).
-MCFT_CHECK4_FACE_X_HALF = 1.15
-# Extra y-axis extent (fraction of depth) so the shared beam-face line is not clipped at plot edges.
-MCFT_CHECK4_Y_PAD = 0.045
-# Pull display x toward the beam face (x=0) for the MCFT point/tick/labels only — not a calc change.
-MCFT_CHECK4_EPSX_VISUAL_INWARD = 0.40
-# Small compression cue at top (display x < 0); tension at bottom (x > 0). Keeps a shallow C→T line through x_vis.
-MCFT_CHECK4_SCHEMATIC_TREND_COMP_TOP = 0.10
-# Short horizontal stub at top fibre: strain magnitude as fraction of emax (display x, compression left).
-MCFT_CHECK4_TOP_COMP_CUE_FRAC = 0.22
-# Layout: shift Check 4 diagram down slightly (strain + force modes); extra band for force column headings.
-MCFT_CHECK4_TOP_MARGIN_SHIFT_PX = 44
-MCFT_CHECK4_TOP_MARGIN_FORCE_HEADINGS_PX = 92
-# Force-resolution only: extra normalized depth above y=0 so the sketch sits lower; headings stay in top margin.
-MCFT_CHECK4_FORCE_DIAGRAM_AXIS_TOP_GAP = 0.11
-
-
-def _mcft_schematic_strain_trend_endpoints(x_vis: float) -> tuple[float, float]:
-    """
-    Indicative strain trend (display x): conventional sketch — compression left of the beam face at top,
-    tension right at bottom, single crossing of x=0. Straight line through (x_vis, y_mid) at y=0.5
-    so (x_top + x_bot) / 2 = x_vis. Teaching only — not from analysis.
-    """
-    m = MCFT_CHECK4_SCHEMATIC_TREND_COMP_TOP
-    if x_vis < 0.0:
-        m = max(m, -2.0 * x_vis + 0.05)
-    x_top = -m
-    x_bot = 2.0 * x_vis + m
-    return x_top, x_bot
-
-
-def _compute_mcft_strain_symmetric_half_range_eps_x(eps_x_mcft: float) -> float:
-    """Half-width in strain units for symmetric framing (MCFT εx only; no flexural top/bot labels)."""
-    emax = max(abs(eps_x_mcft), 1e-6)
-    label_offset = 0.05 * emax
-    left_extents: list[float] = []
-    right_extents: list[float] = []
-    if eps_x_mcft < 0.0:
-        left_extents.append(abs(eps_x_mcft) + label_offset)
-    elif eps_x_mcft > 0.0:
-        right_extents.append(eps_x_mcft + label_offset)
-    if eps_x_mcft < 0.0:
-        label_x_mid = eps_x_mcft - label_offset
-    else:
-        label_x_mid = eps_x_mcft + label_offset
-    callout_x = label_x_mid + (0.12 * emax if eps_x_mcft >= 0.0 else -0.12 * emax)
-    if callout_x < 0.0:
-        left_extents.append(abs(callout_x))
-    else:
-        right_extents.append(callout_x)
-    L = max(left_extents) if left_extents else 0.0
-    R = max(right_extents) if right_extents else 0.0
-    half_core = max(L, R)
-    if half_core < 1e-6:
-        half_core = 1e-4
-    span_sym = 2.0 * half_core
-    pad = 0.20 * span_sym
-    half_range = half_core + pad
-    if half_range < 1e-4:
-        half_range = 1e-4
-    return half_range
-
-
-def _add_mcft_shared_beam_face(fig: go.Figure, y_top: float, y_bot: float) -> None:
-    """Single shared internal web face at x = 0 (same geometry in both Check 4 modes)."""
-    fig.add_shape(
-        type="line",
-        x0=0,
-        x1=0,
-        y0=y_top,
-        y1=y_bot,
-        line=dict(width=4, color="black"),
-        layer="below",
-    )
-
-
-def _apply_mcft_check4_layout(
-    fig: go.Figure,
-    height: int,
-    y_top: float,
-    y_bot: float,
-    *,
-    extra_top_margin: int = 0,
-    extend_y_top_norm: float = 0.0,
-) -> None:
-    """Identical frame for strain and force-resolution views (face registers at x = 0).
-
-    extend_y_top_norm: extra headroom in normalized depth above y_top (force mode only), lowers sketch in the axes.
-    """
-    pad = MCFT_CHECK4_Y_PAD
-    # Widen plot bounds in y only; beam face stays y_top..y_bot in data space (unchanged geometry).
-    _y_top_axis = y_top - pad - max(0.0, float(extend_y_top_norm))
-    y_axis_range = [y_bot + pad, _y_top_axis]
-    fig.update_layout(
-        width=640,
-        height=int(height),
-        margin=dict(t=16 + int(extra_top_margin), b=40, l=60, r=20),
-        xaxis=dict(
-            visible=False,
-            range=[-MCFT_CHECK4_FACE_X_HALF, MCFT_CHECK4_FACE_X_HALF],
-            fixedrange=True,
-            zeroline=False,
-            showgrid=False,
-        ),
-        yaxis=dict(
-            visible=False,
-            showticklabels=False,
-            showgrid=False,
-            autorange=False,
-            range=y_axis_range,
-            zeroline=False,
-        ),
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        showlegend=False,
-    )
-
-
-def _mcft_bending_zone_mid_depths(
-    eps_top_uls: float,
-    eps_bot_uls: float,
-    *,
-    y_top: float = 0.0,
-    y_bot: float = 1.0,
-) -> tuple[float, float]:
-    """
-    Mid-depth of compression and tension zones from ULS linear strains (same NA as strain diagram).
-    y is normalized depth: 0 = top, 1 = bottom (bending page convention).
-    """
-    eps_diff = eps_bot_uls - eps_top_uls
-    if abs(eps_diff) < 1e-9:
-        return 0.5 * (y_top + y_bot), 0.5 * (y_top + y_bot)
-
-    y_na = y_top + (y_bot - y_top) * (0.0 - eps_top_uls) / eps_diff
-    y_na = max(y_top, min(y_bot, y_na))
-
-    if eps_top_uls < 0.0 and eps_bot_uls > 0.0:
-        # Sagging: compression above NA, tension below
-        y_mid_comp = 0.5 * (y_top + y_na)
-        y_mid_ten = 0.5 * (y_na + y_bot)
-        return y_mid_comp, y_mid_ten
-    if eps_top_uls > 0.0 and eps_bot_uls < 0.0:
-        # Hogging: tension above NA, compression below
-        y_mid_ten = 0.5 * (y_top + y_na)
-        y_mid_comp = 0.5 * (y_na + y_bot)
-        return y_mid_comp, y_mid_ten
-    # Same sign (no NA in section): schematic placement
-    if eps_top_uls < 0.0:
-        return 0.5 * (y_top + y_bot), 0.85 * y_bot + 0.15 * y_top
-    return 0.15 * y_bot + 0.85 * y_top, 0.5 * (y_top + y_bot)
-
-
-def _mcft_force_resultant_depths_norm(
-    *,
-    D_mm: float,
-    c_mm: float,
-    gamma: float,
-    tension_steel_y_from_top_mm: float,
-    moment_sign: str,
-    y_top: float = 0.0,
-    y_bot: float = 1.0,
-) -> tuple[float, float] | None:
-    """
-    Normalized depths (0 = top, 1 = bottom) for illustrative C and T on the Check 4 force diagram.
-
-    C: centroid of the equivalent rectangular compression block (mid-depth of the block), using
-    block depth a = gamma * c with c measured from the compression face (same convention as
-    bending_core._stress_strain_state ULS).
-
-    T: depth to the tensile steel centroid from the top fibre (d_plot from _stress_strain_state).
-
-    Returns None if geometry is unusable; caller should fall back to _mcft_bending_zone_mid_depths.
-    """
-    D = float(D_mm)
-    if D <= 1e-6:
-        return None
-    c = max(0.0, float(c_mm))
-    g = float(gamma)
-    if g <= 1e-9:
-        return None
-    a = min(g * c, D - 1e-6)
-    if a <= 1e-6:
-        return None
-
-    sign = str(moment_sign or "positive").strip().lower()
-    hogging = sign in ("negative", "hogging")
-
-    if not hogging:
-        y_c = 0.5 * a / D
-    else:
-        y_c = 1.0 - 0.5 * a / D
-
-    y_t = float(tension_steel_y_from_top_mm) / D
-    y_t = max(y_top, min(y_bot, y_t))
-
-    margin = 0.018
-    y_c = max(y_top + margin, min(y_bot - margin, y_c))
-    y_t = max(y_top + margin, min(y_bot - margin, y_t))
-    return y_c, y_t
-
-
-def _add_mcft_force_resolution_overlay(
-    fig: go.Figure,
-    *,
-    y_mid_compression: float,
-    y_mid_tension: float,
-    theta_deg: float | None = None,
-) -> None:
-    """
-    Illustrative internal forces on the shared ε=0 beam face (Check 4).
-    Mixed coordinates: schematic x in [-1, 1] for C/T; legacy 0–10 sketch mapping for other cues.
-    Depth y in [0, 1] (0 = top).
-
-    Diagonal compression strut plus flange C/T resultants; N*, V*, M* cues on the left.
-    Adds paper-space column headings (section actions vs internal resolution); does not move force geometry.
-    """
-    ox = lambda v: (float(v) - 5.0) / 5.0
-    oy = lambda v: 1.0 - (float(v) / 10.0)
-    y_to_legacy_y = lambda y_norm: 10.0 * (1.0 - float(y_norm))
-
-    lo_y = min(y_mid_compression, y_mid_tension)
-    hi_y = max(y_mid_compression, y_mid_tension)
-    mid_y = 0.5 * (lo_y + hi_y)
-    # Same depth as strut head / internal face (y_head) — legacy sketch y for N* / V* alignment.
-    _legacy_y_face_mid = y_to_legacy_y(mid_y)
-
-    def _ann_arrow(
-        ax0: float,
-        ay0: float,
-        x0: float,
-        y0: float,
-        *,
-        color: str = "rgba(45,45,45,0.88)",
-        width: float = 1.35,
-        xref: str = "x",
-        yref: str = "y",
-    ) -> None:
-        fig.add_annotation(
-            x=x0,
-            y=y0,
-            ax=ax0,
-            ay=ay0,
-            xref=xref,
-            yref=yref,
-            axref=xref,
-            ayref=yref,
-            text="",
-            showarrow=True,
-            arrowhead=2,
-            arrowsize=0.65,
-            arrowwidth=width,
-            arrowcolor=color,
-            standoff=0,
-            startstandoff=0,
-        )
-
-    def _ann_arrow_legacy(
-        ax0: float,
-        ay0: float,
-        x0: float,
-        y0: float,
-        *,
-        color: str = "rgba(45,45,45,0.88)",
-        width: float = 1.35,
-    ) -> None:
-        _ann_arrow(ox(ax0), oy(ay0), ox(x0), oy(y0), color=color, width=width)
-
-    y_face_hi = lo_y + 0.04
-    y_face_lo = hi_y - 0.04
-    if y_face_hi >= y_face_lo:
-        y_face_hi, y_face_lo = mid_y - 0.18, mid_y + 0.18
-    # N* — horizontal axial left of V*, toward the face (same height as red V_eq cue on the right)
-    _n_tail_x, _n_head_x = 1.05, 2.18
-    _ann_arrow_legacy(_n_tail_x, _legacy_y_face_mid, _n_head_x, _legacy_y_face_mid)
-    fig.add_annotation(
-        x=ox(0.5 * (_n_tail_x + _n_head_x)),
-        y=oy(_legacy_y_face_mid + 0.06),
-        text="N*",
-        showarrow=False,
-        yanchor="bottom",
-        font=dict(size=11, color="rgba(35,35,35,0.92)"),
-    )
-
-    # M* — semicircular internal couple (left of N* / V*; CCW with C into face, T outward at tension level)
-    r_m = max(0.085, 0.5 * (hi_y - lo_y))
-    xc_m = -0.58
-    mid_m = mid_y
-    moment_arc_x: list[float] = []
-    moment_arc_y: list[float] = []
-    # Sweep 3π/2 → π/2: arc runs compression level → bulge left → tension level (counterclockwise couple).
-    for i in range(33):
-        t = 1.5 * math.pi - math.pi * (i / 32.0)
-        moment_arc_x.append(xc_m + r_m * math.cos(t))
-        moment_arc_y.append(mid_m + r_m * math.sin(t))
-    fig.add_trace(
-        go.Scatter(
-            x=moment_arc_x,
-            y=moment_arc_y,
-            mode="lines",
-            line=dict(color="rgba(45,45,45,0.9)", width=1.85),
-            hoverinfo="skip",
-            showlegend=False,
-        )
-    )
-    fig.add_annotation(
-        x=max(-0.92, xc_m - r_m - 0.06),
-        y=mid_m,
-        xref="x",
-        yref="y",
-        text="M*",
-        showarrow=False,
-        font=dict(size=11, color="rgba(35,35,35,0.92)"),
-    )
-
-    # V* geometry (norm x/y) — defined before strut so the diagonal can be shifted to intersect the vertical V*.
-    _half_y_v = 0.058
-    _vstar_leg_x = 3.12
-    _vstar_xn = ox(_vstar_leg_x)
-    _vstar_y_axis = mid_y - 0.048
-
-    # Diagonal compression strut: top-right near C → face at mid-depth at MCFT θ (inward; not toward T).
-    _th = float(theta_deg) if theta_deg is not None else 36.0
-    _th = max(1.0, min(89.0, _th))
-    theta_r = math.radians(_th)
-    y_t = float(y_mid_tension)
-    y_c = float(y_mid_compression)
-    tan_t = math.tan(theta_r)
-    if abs(tan_t) < 1e-5:
-        tan_t = 1e-5
-
-    x_head, y_head = 0.0, float(mid_y)
-    if y_c < y_t:
-        y_tail = float(y_c)
-        d_run = max(y_head - y_tail, 1e-6)
-        x_tail = d_run / tan_t
-        if x_tail > 0.92:
-            x_tail = 0.92
-            y_tail = y_head - x_tail * tan_t
-        if y_tail > y_c:
-            y_tail = float(y_c)
-            x_tail = max((y_head - y_tail) / tan_t, 1e-6)
-    else:
-        y_tail = float(y_c)
-        d_run = max(y_tail - y_head, 1e-6)
-        x_tail = d_run / tan_t
-        if x_tail > 0.92:
-            x_tail = 0.92
-            y_tail = y_head + x_tail * tan_t
-        if y_tail < y_c:
-            y_tail = float(y_c)
-            x_tail = max((y_tail - y_head) / tan_t, 1e-6)
-
-    _strut_len_scale = 0.24
-    x_tail = x_head + _strut_len_scale * (x_tail - x_head)
-    y_tail = y_head + _strut_len_scale * (y_tail - y_head)
-
-    _strut_h_cc_shift = 0.042
-    x_head = x_head + _strut_h_cc_shift
-    x_tail = x_tail + _strut_h_cc_shift
-    # Slide strut: inboard end on V* — diagonal crosses shear.
-    _dx_strut_to_vstar = _vstar_xn - x_head
-    x_head_strut = x_head + _dx_strut_to_vstar
-    x_tail_strut = x_tail + _dx_strut_to_vstar
-
-    # θ label: mid-depth of beam (mid_y); x kept near diagonal strut.
-    _xm_strut = 0.5 * (x_tail_strut + x_head_strut)
-    _tsx = x_head_strut - x_tail_strut
-    _tsy = y_head - y_tail
-    _tsl = math.hypot(_tsx, _tsy) or 1.0
-    _tnx = _tsy / _tsl
-    _ax_ang = _xm_strut + 0.10 * _tnx + 0.004
-    _ay_ang = float(mid_y) - 0.012
-    _ax_ang = max(-0.90, min(0.92, _ax_ang))
-    _ay_ang = max(0.04, min(0.96, _ay_ang))
-
-    # Diagonal strut: dark translucent line.
-    _strut_diag_line = "rgba(28,28,28,0.30)"
-
-    fig.add_annotation(
-        x=x_head_strut,
-        y=y_head,
-        ax=x_tail_strut,
-        ay=y_tail,
-        xref="x",
-        yref="y",
-        axref="x",
-        ayref="y",
-        text="",
-        showarrow=True,
-        arrowhead=2,
-        arrowsize=0.72,
-        arrowwidth=1.55,
-        arrowcolor=_strut_diag_line,
-        standoff=0,
-        startstandoff=0,
-    )
-
-    # MCFT θ — dotted segment just under label (trace drawn first so text stays on top).
-    _theta_dot_y = _ay_ang + 0.019
-    fig.add_trace(
-        go.Scatter(
-            x=[_ax_ang - 0.195, _ax_ang + 0.058],
-            y=[_theta_dot_y, _theta_dot_y],
-            mode="lines",
-            line=dict(color="rgba(55,55,55,0.82)", width=1.1, dash="dot"),
-            showlegend=False,
-            hoverinfo="skip",
-        )
-    )
-    fig.add_annotation(
-        x=_ax_ang,
-        y=_ay_ang,
-        xref="x",
-        yref="y",
-        text=f"θ = {_th:.1f}°",
-        showarrow=False,
-        xanchor="center",
-        yanchor="middle",
-        font=dict(size=9, color="rgba(55,55,55,0.92)"),
-    )
-
-    # C — horizontal into the face at compression resultant (stress-block centroid when section data supplied)
-    _ann_arrow(
-        0.88,
-        y_mid_compression,
-        0.06,
-        y_mid_compression,
-        color="rgba(180,55,55,0.88)",
-        width=1.25,
-    )
-    fig.add_annotation(
-        x=0.16,
-        y=y_mid_compression + 0.07,
-        xref="x",
-        yref="y",
-        text="C = −|M*/d_v| + 0.5N* + 0.5V_eq·cot θ",
-        showarrow=False,
-        xanchor="left",
-        yanchor="middle",
-        font=dict(size=10, color="rgba(180,55,55,0.82)"),
-        bgcolor="rgba(255,255,255,0.68)",
-    )
-
-    # V* — vertical shear (x/y defined above with strut so they intersect).
-    _ann_arrow(
-        _vstar_xn,
-        _vstar_y_axis - _half_y_v,
-        _vstar_xn,
-        _vstar_y_axis + _half_y_v,
-        color="rgba(45,45,45,0.88)",
-        width=1.35,
-    )
-    fig.add_annotation(
-        x=min(0.92, _vstar_xn + 0.012),
-        y=mid_y - 0.082,
-        xref="x",
-        yref="y",
-        text="V*",
-        showarrow=False,
-        xanchor="left",
-        yanchor="middle",
-        font=dict(size=11, color="rgba(35,35,35,0.92)"),
-    )
-
-    # T — horizontal outward at tensile steel centroid (when section data supplied)
-    _ann_arrow(
-        0.06,
-        y_mid_tension,
-        0.88,
-        y_mid_tension,
-        color="rgba(30,90,180,0.88)",
-        width=1.25,
-    )
-    fig.add_annotation(
-        x=0.16,
-        y=y_mid_tension + 0.075,
-        xref="x",
-        yref="y",
-        text="T = |M*/d_v| + 0.5N* + 0.5V_eq·cot θ",
-        showarrow=False,
-        xanchor="left",
-        yanchor="middle",
-        font=dict(size=10, color="rgba(30,90,180,0.82)"),
-        bgcolor="rgba(255,255,255,0.68)",
-    )
-
-    # Tangential arrowhead at the arc start (lo_y chord end); flipped to point opposite to CCW sweep.
-    if len(moment_arc_x) >= 2:
-        xe, ye = moment_arc_x[0], moment_arc_y[0]
-        xp, yp = moment_arc_x[1], moment_arc_y[1]
-        tx, ty = xp - xe, yp - ye
-        tlen = math.hypot(tx, ty) or 1.0
-        tx, ty = tx / tlen, ty / tlen
-        ah = 0.038
-        fig.add_annotation(
-            x=xe,
-            y=ye,
-            ax=xe + ah * tx,
-            ay=ye + ah * ty,
-            xref="x",
-            yref="y",
-            axref="x",
-            ayref="y",
-            text="",
-            showarrow=True,
-            arrowhead=2,
-            arrowsize=0.75,
-            arrowwidth=1.65,
-            arrowcolor="rgba(45,45,45,0.92)",
-            standoff=0,
-            startstandoff=0,
-        )
-
-    # Mid-depth note: two lines, left edge just right of the vertical face (C/T arrows at x ≈ 0.06).
-    fig.add_annotation(
-        xref="x",
-        yref="y",
-        x=0.10,
-        y=mid_y,
-        xanchor="left",
-        yanchor="middle",
-        text="Axial, moment and shear effects are resolved into flange forces<br>shared between the top and bottom flanges.",
-        showarrow=False,
-        font=dict(size=8, color="rgba(95,95,95,0.92)"),
-    )
-
-    # Column headings (paper coords — no change to data positions of forces / strut / arcs)
-    _hdr_title = "rgba(35,35,35,0.96)"
-    _hdr_sub = "rgba(105,105,105,0.95)"
-    # Plotly: positive yshift moves the annotation up (toward the top of the figure).
-    _hdr_y_title_px = 6
-    _hdr_y_sub_px = -14
-    fig.add_annotation(
-        xref="paper",
-        yref="paper",
-        x=0.30,
-        y=1.0,
-        xanchor="center",
-        yanchor="top",
-        yshift=_hdr_y_title_px,
-        text="<b>Section actions</b>",
-        showarrow=False,
-        font=dict(size=12, color=_hdr_title),
-    )
-    fig.add_annotation(
-        xref="paper",
-        yref="paper",
-        x=0.30,
-        y=1.0,
-        xanchor="center",
-        yanchor="top",
-        yshift=_hdr_y_sub_px,
-        text="Design actions at the section",
-        showarrow=False,
-        font=dict(size=9, color=_hdr_sub),
-    )
-    fig.add_annotation(
-        xref="paper",
-        yref="paper",
-        x=0.74,
-        y=1.0,
-        xanchor="center",
-        yanchor="top",
-        yshift=_hdr_y_title_px,
-        text="<b>Internal force resolution</b>",
-        showarrow=False,
-        font=dict(size=12, color=_hdr_title),
-    )
-    fig.add_annotation(
-        xref="paper",
-        yref="paper",
-        x=0.74,
-        y=1.0,
-        xanchor="center",
-        yanchor="top",
-        yshift=_hdr_y_sub_px,
-        text="Equivalent internal resisting forces<br>on the beam face",
-        showarrow=False,
-        font=dict(size=9, color=_hdr_sub),
-    )
-
-
 def make_mcft_longitudinal_strain_profile_fig(
     eps_top_uls: float,
     eps_x_mcft: float,
     eps_bot_uls: float,
     title: str = "Longitudinal strain profile",
     height: int = 430,
-    *,
-    force_resolution: bool = False,
-    force_section_D_mm: float | None = None,
-    force_section_c_mm: float | None = None,
-    force_section_gamma: float | None = None,
-    force_tension_steel_y_from_top_mm: float | None = None,
-    force_moment_sign: str = "positive",
-    force_theta_deg: float | None = None,
 ):
     """
-    Check 4 MCFT longitudinal strain: mid-depth ε_x at the internal beam face (primary); short red stub
-    at top (compression), horizontal cue at bottom from the face to the grey dashed trend endpoint (intersection),
-    mid-depth tick for ε_x; optional faint grey dashed indicative trend. Same shared beam face as the
-    force-resolution toggle.
-
-    AS 3600 sign convention: ε < 0 = compression (red, left of face), ε > 0 = tension (blue, right).
-
+    Bending-style strain profile diagram for Step 4 MCFT.
+    Shows ULS linear strain distribution from top to bottom, with MCFT ε_x at mid-depth.
+    
+    AS 3600 sign convention: ε < 0 = compression (red), ε > 0 = tension (blue).
+    
     Args:
-        eps_top_uls: Fallback for force diagram C/T depths when section geometry kwargs are omitted.
-        eps_x_mcft: Governing longitudinal strain from MCFT (AS 3600 Cl. 8.2.4.2.2).
-        eps_bot_uls: Fallback for force diagram C/T depths when section geometry kwargs are omitted.
-        force_resolution: If True, show illustrative internal forces on the same ε=0 beam face.
-        force_section_D_mm, force_section_c_mm, force_section_gamma, force_tension_steel_y_from_top_mm,
-        force_moment_sign: Optional section data (same convention as bending_core._stress_strain_state ULS)
-            so C is drawn at the rectangular stress-block centroid and T at the tensile steel centroid.
-            If any required piece is missing, C/T fall back to mid-depths from eps_top_uls / eps_bot_uls.
-        force_theta_deg: Strut angle θ (degrees) for the red diagonal strut; defaults in the overlay if omitted.
+        eps_top_uls: Top fiber strain from ULS bending (compression, negative)
+        eps_x_mcft: Mid-depth strain from MCFT (AS 3600 Cl. 8.2.4.2.2)
+        eps_bot_uls: Bottom fiber strain from ULS bending (tension, positive)
     """
     def _safe(v):
         try:
@@ -1110,167 +509,222 @@ def make_mcft_longitudinal_strain_profile_fig(
 
     fig = go.Figure()
 
-    _add_mcft_shared_beam_face(fig, y_top, y_bot)
-
-    if force_resolution:
-        y_mid_comp, y_mid_ten = _mcft_bending_zone_mid_depths(
-            eps_top_uls,
-            eps_bot_uls,
-            y_top=y_top,
-            y_bot=y_bot,
-        )
-        try:
-            Df = float(force_section_D_mm) if force_section_D_mm is not None else None
-            cf = float(force_section_c_mm) if force_section_c_mm is not None else None
-            gf = float(force_section_gamma) if force_section_gamma is not None else None
-            d_steel = (
-                float(force_tension_steel_y_from_top_mm)
-                if force_tension_steel_y_from_top_mm is not None
-                else None
-            )
-            if Df is not None and cf is not None and gf is not None and d_steel is not None:
-                res = _mcft_force_resultant_depths_norm(
-                    D_mm=Df,
-                    c_mm=cf,
-                    gamma=gf,
-                    tension_steel_y_from_top_mm=d_steel,
-                    moment_sign=force_moment_sign,
-                    y_top=y_top,
-                    y_bot=y_bot,
-                )
-                if res is not None:
-                    y_mid_comp, y_mid_ten = res
-        except Exception:
-            pass
-        _add_mcft_force_resolution_overlay(
-            fig,
-            y_mid_compression=y_mid_comp,
-            y_mid_tension=y_mid_ten,
-            theta_deg=force_theta_deg,
-        )
-    else:
-        half_range_eps = _compute_mcft_strain_symmetric_half_range_eps_x(eps_x_mcft)
-        sx_scale = MCFT_CHECK4_FACE_X_HALF / half_range_eps
-
-        def sx(eps: float) -> float:
-            return float(eps) * sx_scale
-
-        emax_temp = max(abs(eps_x_mcft), 1e-6)
-        color_mid_tick = "red" if eps_x_mcft < 0 else "blue"
-        vis_scale = 1.0 - MCFT_CHECK4_EPSX_VISUAL_INWARD
-        x_vis = sx(eps_x_mcft) * vis_scale
-
-        # Indicative strain trend (teaching only): compression above / tension below ε=0, through (x_vis, y_mid).
-        _x_trend_top, _x_trend_bot = _mcft_schematic_strain_trend_endpoints(x_vis)
-        fig.add_trace(
-            go.Scatter(
-                x=[_x_trend_top, _x_trend_bot],
-                y=[y_top, y_bot],
-                mode="lines",
-                line=dict(
-                    width=0.85,
-                    color="rgba(120,120,120,0.32)",
-                    dash="dash",
-                ),
-                hoverinfo="skip",
-                showlegend=False,
-            )
-        )
-
-        # Reference cue: compression at top fibre (short stub left of beam face — not a full profile).
-        x_top_comp = sx(-MCFT_CHECK4_TOP_COMP_CUE_FRAC * emax_temp) * vis_scale
-        x_top_comp = max(x_top_comp, -0.88 * MCFT_CHECK4_FACE_X_HALF)
-        fig.add_shape(
-            type="line",
-            x0=0,
-            y0=y_top,
-            x1=x_top_comp,
-            y1=y_top,
-            line=dict(width=1.35, color="rgba(200,50,50,0.9)"),
-            layer="below",
-        )
-
-        # Bottom fibre cue: beam face → same x as dashed schematic at y_bot (intersects the dashed line).
-        x_end_bot = float(_x_trend_bot)
-        bot_cue_color = (
-            "rgba(30,100,200,0.55)"
-            if x_end_bot > 1e-9
-            else ("rgba(200,50,50,0.9)" if x_end_bot < -1e-9 else "rgba(90,90,90,0.75)")
-        )
-        if abs(x_end_bot) > 1e-9:
-            _bot_cue_width = 1.0 if x_end_bot > 1e-9 else 1.35
-            fig.add_shape(
-                type="line",
-                x0=0,
-                y0=y_bot,
-                x1=x_end_bot,
-                y1=y_bot,
-                line=dict(width=_bot_cue_width, color=bot_cue_color),
-                layer="above",
-            )
-
-        # Mid-depth: strain level used for MCFT (beam face → ε_x); matches point colour (blue tension / red compression).
-        fig.add_shape(
-            type="line",
-            x0=0,
-            y0=y_mid,
-            x1=x_vis,
-            y1=y_mid,
-            line=dict(
-                color=color_mid_tick,
-                width=1.55,
-            ),
-            layer="below",
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=[x_vis],
-                y=[y_mid],
-                mode="markers",
-                marker=dict(size=20, color=color_mid_tick, line=dict(width=2.4, color="black")),
-                hoverinfo="skip",
-                showlegend=False,
-            )
-        )
-
-        emax = max(abs(eps_x_mcft), 1e-6)
-        label_offset = 0.05 * emax
-        if eps_x_mcft < 0.0:
-            label_x_mid = eps_x_mcft - label_offset
-            xanchor_mid = "right"
-            state_mid = "(compression)"
-        else:
-            label_x_mid = eps_x_mcft + label_offset
-            xanchor_mid = "left"
-            state_mid = "(tension)"
-        fig.add_annotation(
-            x=sx(label_x_mid) * vis_scale + 0.11,
-            y=y_mid + 0.06 * (y_bot - y_top),
-            text=f"ε<sub>x</sub> = {eps_x_mcft:.5f}<br><span style='font-size:11px'>mid-depth (MCFT)</span><br><span style='font-size:10px'>{state_mid}</span>",
-            showarrow=False,
-            font=dict(size=12, color=color_mid_tick),
-            xanchor=xanchor_mid,
-            yshift=0,
-            bgcolor="rgba(255,255,255,0.85)",
-        )
-        fig.add_annotation(
-            x=0.0,
-            y=y_bot + 0.028 * (y_bot - y_top),
-            text="Indicative strain trend only — not a calculated full-depth strain profile.",
-            showarrow=False,
-            font=dict(size=9, color="rgba(95,95,95,0.98)"),
-            xanchor="center",
-        )
-
-    _apply_mcft_check4_layout(
-        fig,
-        height,
-        y_top,
-        y_bot,
-        extra_top_margin=MCFT_CHECK4_TOP_MARGIN_SHIFT_PX
-        + (MCFT_CHECK4_TOP_MARGIN_FORCE_HEADINGS_PX if force_resolution else 0),
-        extend_y_top_norm=MCFT_CHECK4_FORCE_DIAGRAM_AXIS_TOP_GAP if force_resolution else 0.0,
+    # Vertical ε=0 axis line (explicitly at x=0)
+    # Ends exactly at top and bottom horizontal strain lines
+    fig.add_shape(
+        type="line",
+        x0=0, x1=0,
+        y0=y_top, y1=y_bot,  # Starts at top strain line, ends at bottom strain line
+        line=dict(width=4, color="black"),
+        layer="below",
     )
+
+    # Compute neutral axis depth where ε=0 (ULS linear profile)
+    # y_NA = y_top + (y_bot - y_top) * (0 - eps_top) / (eps_bot - eps_top)
+    eps_diff = eps_bot_uls - eps_top_uls
+    if abs(eps_diff) > 1e-9:
+        y_na = y_top + (y_bot - y_top) * (0.0 - eps_top_uls) / eps_diff
+        y_na = max(y_top, min(y_bot, y_na))  # Clamp to valid range (y_top=0.0, y_bot=1.0)
+    else:
+        y_na = None  # No crossing if strains are equal
+
+    # Draw ULS strain profile line: ONLY from top to bottom (two points)
+    fig.add_trace(go.Scatter(
+        x=[eps_top_uls, eps_bot_uls],
+        y=[y_top, y_bot],
+        mode="lines",
+        line=dict(width=3, color="black"),
+        hoverinfo="skip",
+        showlegend=False,
+    ))
+
+    # Highlight the MCFT evaluation band around mid-depth.
+    fig.add_hrect(
+        y0=y_mid - 0.05 * (y_bot - y_top),
+        y1=y_mid + 0.05 * (y_bot - y_top),
+        fillcolor="blue",
+        opacity=0.05,
+        line_width=0,
+        layer="below",
+    )
+
+    # Plot MCFT ε_x at mid-depth as a dominant marker.
+    color_mid = "red" if eps_x_mcft < 0 else "blue"
+    fig.add_trace(go.Scatter(
+        x=[eps_x_mcft],
+        y=[y_mid],
+        mode="markers",
+        marker=dict(size=20, color=color_mid, line=dict(width=2.4, color="black")),
+        hoverinfo="skip",
+        showlegend=False,
+    ))
+
+    # Dashed horizontal line at mid-depth (MCFT reference depth)
+    emax_temp = max(abs(eps_top_uls), abs(eps_x_mcft), abs(eps_bot_uls), 1e-6)
+    fig.add_shape(
+        type="line",
+        x0=-0.5 * emax_temp, y0=y_mid, x1=0.5 * emax_temp, y1=y_mid,
+        line=dict(width=2, color="rgba(0,90,200,0.65)", dash="dash"),
+        layer="below",
+    )
+
+    # Neutral axis marker and label (if it exists within the section)
+    if y_na is not None and y_top <= y_na <= y_bot:
+        fig.add_hline(y=y_na, line_width=2, line_dash="dash", line_color="black")
+        # NA marker at (x=0, y=y_na)
+        fig.add_trace(go.Scatter(
+            x=[0.0],
+            y=[y_na],
+            mode="markers",
+            marker=dict(size=10, color="black", symbol="diamond"),
+            hoverinfo="skip",
+            showlegend=False,
+        ))
+        # NA label
+        fig.add_annotation(
+            x=0.0, y=y_na,
+            text="Neutral axis (ε = 0)",
+            showarrow=False,
+            font=dict(size=10, color="rgba(70,70,90,0.8)"),
+            xanchor="left",
+            xshift=10,
+            yshift=-14,
+            bgcolor="rgba(255,255,255,0.8)",
+        )
+
+    # Horizontal depth guides from ε=0 axis to each strain value
+    # Color rules: red if compression (ε < 0), blue if tension (ε > 0)
+    # Top tick: always red (compression in ULS sagging)
+    color_top = "red"
+    fig.add_shape(
+        type="line",
+        x0=0, y0=y_top, x1=eps_top_uls, y1=y_top,
+        line=dict(color=color_top, width=2.0),
+    )
+    
+    # Mid-depth tick: red if compression, blue if tension
+    color_mid_tick = "red" if eps_x_mcft < 0 else "blue"
+    fig.add_shape(
+        type="line",
+        x0=0, y0=y_mid, x1=eps_x_mcft, y1=y_mid,
+        line=dict(color=color_mid_tick, width=2.0),
+    )
+    
+    # Bottom tick: always blue (tension in ULS sagging)
+    color_bot = "blue"
+    fig.add_shape(
+        type="line",
+        x0=0, y0=y_bot, x1=eps_bot_uls, y1=y_bot,
+        line=dict(color=color_bot, width=2.0),
+    )
+
+    # Labels with increased spacing
+    emax = max(abs(eps_top_uls), abs(eps_x_mcft), abs(eps_bot_uls), 1e-6)
+    label_offset = 0.05 * emax  # Increased from 0.02
+
+    # Top strain label (compression, negative) - red
+    if eps_top_uls < 0.0:  # compression (negative) - to the left
+        label_x_top = eps_top_uls - label_offset
+        xanchor_top = "right"
+        state_top = "(compression)"
+    else:  # tension (positive) - to the right
+        label_x_top = eps_top_uls + label_offset
+        xanchor_top = "left"
+        state_top = "(tension)"
+    fig.add_annotation(
+        x=label_x_top, y=y_top,
+        text=f"ε<sub>top</sub> = {eps_top_uls:.5f}<br><span style='font-size:10px'>{state_top}</span>",
+        showarrow=False,
+        font=dict(size=12, color=color_top),
+        xanchor=xanchor_top,
+        yshift=-14,  # Increased spacing
+        bgcolor="rgba(255,255,255,0.85)",  # Increased opacity
+    )
+
+    # Mid-depth strain label (MCFT governing value)
+    if eps_x_mcft < 0.0:  # compression (negative) - to the left
+        label_x_mid = eps_x_mcft - label_offset
+        xanchor_mid = "right"
+        state_mid = "(compression)"
+    else:  # tension (positive) - to the right
+        label_x_mid = eps_x_mcft + label_offset
+        xanchor_mid = "left"
+        state_mid = "(tension)"
+    fig.add_annotation(
+        x=label_x_mid, y=y_mid,
+        text=f"ε<sub>x</sub> = {eps_x_mcft:.5f}<br><span style='font-size:11px'>mid-depth (MCFT)</span><br><span style='font-size:10px'>{state_mid}</span>",
+        showarrow=False,
+        font=dict(size=12, color=color_mid_tick),
+        xanchor=xanchor_mid,
+        yshift=0,
+        bgcolor="rgba(255,255,255,0.85)",  # Increased opacity
+    )
+    fig.add_annotation(
+        x=label_x_mid + (0.12 * emax if eps_x_mcft >= 0.0 else -0.12 * emax),
+        y=y_mid - 0.12 * (y_bot - y_top),
+        text="Drives crack angle θ (MCFT)",
+        showarrow=True,
+        arrowhead=2,
+        arrowsize=0.8,
+        arrowwidth=1.3,
+        arrowcolor="rgba(0,90,200,0.72)",
+        ax=eps_x_mcft,
+        ay=y_mid,
+        axref="x",
+        ayref="y",
+        font=dict(size=11, color="rgba(0,90,200,0.86)"),
+        bgcolor="rgba(255,255,255,0.78)",
+    )
+
+    # Bottom strain label (tension, positive) - blue
+    if eps_bot_uls < 0.0:  # compression (negative) - to the left
+        label_x_bot = eps_bot_uls - label_offset
+        xanchor_bot = "right"
+        state_bot = "(compression)"
+    else:  # tension (positive) - to the right
+        label_x_bot = eps_bot_uls + label_offset
+        xanchor_bot = "left"
+        state_bot = "(tension)"
+    fig.add_annotation(
+        x=label_x_bot, y=y_bot,
+        text=f"ε<sub>bot</sub> = {eps_bot_uls:.5f}<br><span style='font-size:10px'>{state_bot}</span>",
+        showarrow=False,
+        font=dict(size=12, color=color_bot),
+        xanchor=xanchor_bot,
+        yshift=14,  # Increased spacing
+        bgcolor="rgba(255,255,255,0.85)",  # Increased opacity
+    )
+
+    # Axis framing: ensure x=0 is always visible and centered
+    # Include space for labels (especially compression labels that extend left)
+    # label_offset is already calculated above (line ~464)
+    xmin = min(eps_top_uls, eps_bot_uls, eps_x_mcft, 0.0) - label_offset  # Extra space for left-side labels
+    xmax = max(eps_top_uls, eps_bot_uls, eps_x_mcft, 0.0) + label_offset  # Extra space for right-side labels
+    span = xmax - xmin
+    if span < 1e-6:
+        span = 1e-4  # Force minimum span if all values are tiny
+    pad = 0.20 * span  # 20% padding
+
+    fig.update_layout(
+        width=640,  # Reduced by 0.8 (800 * 0.8 = 640)
+        height=430,
+        margin=dict(t=16, b=40, l=60, r=20),
+        xaxis=dict(
+            visible=False,
+            range=[xmin - pad, xmax + pad],
+        ),
+        yaxis=dict(
+            visible=False,
+            showticklabels=False,
+            showgrid=False,
+            autorange=False,
+            range=[y_bot, y_top],
+        ),
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        showlegend=False,
+    )
+
     return fig
 
 
@@ -1350,14 +804,12 @@ def plot_shear_step4_middepth_strain_diagram(
     half_w = 0.35
     eps_max = max(abs(epsx), 1e-4) * 1.3
 
-    def strain_to_x(eps_display: float) -> float:
-        """Map display ε (compression < 0 left, tension > 0 right) → panel x."""
-        return strain_display.strain_display_to_panel_x(
-            eps_display,
-            panel_x_center=panel_x_center,
-            half_w=half_w,
-            eps_scale_max=eps_max,
-        )
+    def strain_to_x(eps_true: float) -> float:
+        """Map signed ε → x position. Centre = 0, right = compression (ε > 0), left = tension (ε < 0)."""
+        if eps_true >= 0.0:
+            return panel_x_center + (abs(eps_true) / eps_max) * half_w
+        else:
+            return panel_x_center - (abs(eps_true) / eps_max) * half_w
 
     x_mid = panel_x_center  # neutral axis (ε = 0)
     x_epsx = strain_to_x(epsx)
@@ -1405,27 +857,30 @@ def plot_shear_step4_middepth_strain_diagram(
     )
 
     # Mid-depth horizontal line and label (ε_x) - the key value
-    tick_color = "blue" if epsx >= 0.0 else "red"
     fig.add_shape(
         type="line",
         x0=panel_x_center,
         y0=y_mid,
         x1=x_epsx,
         y1=y_mid,
-        line=dict(color=tick_color, width=2.0),
+        line=dict(color="red", width=2.0),
         row=1, col=2,
     )
-
-    label_x, xanchor = strain_display.strain_label_anchor_display(
-        epsx, x_epsx, offset=0.02
-    )
-
+    
+    # Label for ε_x
+    if epsx >= 0.0:  # tension (to the left)
+        label_x = x_epsx - 0.02
+        xanchor = "right"
+    else:  # compression (to the right)
+        label_x = x_epsx + 0.02
+        xanchor = "left"
+    
     fig.add_annotation(
         x=label_x,
         y=y_mid,
         text=rf"$\varepsilon_x$ = {epsx:.5f}<br><span style='font-size:11px'>{strain_state}</span>",
         showarrow=False,
-        font=dict(size=12, color=tick_color),
+        font=dict(size=12, color="red"),
         yshift=0,
         xanchor=xanchor,
         row=1, col=2,
@@ -1467,7 +922,9 @@ def plot_step4_mcft_strain_diagram(
     title: str = "Longitudinal strain profile",
 ):
     """
-    Longitudinal strain profile for Step 4 MCFT (display convention: compression ε < 0 left, tension ε > 0 right).
+    Bending-style strain profile diagram for Step 4 MCFT.
+    Uses bending-page sign convention: compression positive (right), tension negative (left).
+    Shows linear strain distribution from top to bottom with ε_x highlighted at mid-depth.
     """
     D = float(D_mm)
     e_mid = float(eps_mid)
@@ -1500,21 +957,26 @@ def plot_step4_mcft_strain_diagram(
         showlegend=False,
     ))
 
-    # Horizontal lines from zero axis to strain values (display AS 3600 sense)
+    # Horizontal lines from zero axis to strain values (like bending page)
+    # Color based on sign: red if compression (>=0), blue if tension (<0)
     emax = max(abs(e_top), abs(e_mid), abs(e_bot), 1e-6)
     offset = 0.02 * emax
-
+    
     # Top strain horizontal line and label
-    color_top = strain_display.strain_color_display(e_top)
+    color_top = "red" if e_top >= 0 else "blue"
     fig.add_shape(
         type="line",
         x0=0, y0=y_top, x1=e_top, y1=y_top,
         line=dict(color=color_top, width=2.0),
     )
-    label_x_top, xanchor_top = strain_display.strain_label_anchor_display(
-        e_top, e_top, offset=offset
-    )
-    state_top = "(compression)" if e_top < 0.0 else "(tension)"
+    if e_top >= 0.0:  # compression (to the right)
+        label_x_top = e_top + offset
+        xanchor_top = "left"
+        state_top = "(compression)"
+    else:  # tension (to the left)
+        label_x_top = e_top - offset
+        xanchor_top = "right"
+        state_top = "(tension)"
     fig.add_annotation(
         x=label_x_top, y=y_top,
         text=f"ε<sub>top</sub> = {e_top:.5f}<br><span style='font-size:10px'>{state_top}</span>",
@@ -1526,16 +988,20 @@ def plot_step4_mcft_strain_diagram(
     )
     
     # Mid-depth strain horizontal line and label (ε_x) - highlighted
-    color_mid = strain_display.strain_color_display(e_mid)
+    color_mid = "red" if e_mid >= 0 else "blue"
     fig.add_shape(
         type="line",
         x0=0, y0=y_mid, x1=e_mid, y1=y_mid,
         line=dict(color=color_mid, width=2.0),
     )
-    label_x_mid, xanchor_mid = strain_display.strain_label_anchor_display(
-        e_mid, e_mid, offset=offset
-    )
-    state_mid = "(compression)" if e_mid < 0.0 else "(tension)"
+    if e_mid >= 0.0:  # compression (to the right)
+        label_x_mid = e_mid + offset
+        xanchor_mid = "left"
+        state_mid = "(compression)"
+    else:  # tension (to the left)
+        label_x_mid = e_mid - offset
+        xanchor_mid = "right"
+        state_mid = "(tension)"
     fig.add_annotation(
         x=label_x_mid, y=y_mid,
         text=f"ε<sub>x</sub> = {e_mid:.5f}<br><span style='font-size:11px'>mid-depth (MCFT)</span><br><span style='font-size:10px'>{state_mid}</span>",
@@ -1547,16 +1013,20 @@ def plot_step4_mcft_strain_diagram(
     )
     
     # Bottom strain horizontal line and label
-    color_bot = strain_display.strain_color_display(e_bot)
+    color_bot = "red" if e_bot >= 0 else "blue"
     fig.add_shape(
         type="line",
         x0=0, y0=y_bot, x1=e_bot, y1=y_bot,
         line=dict(color=color_bot, width=2.0),
     )
-    label_x_bot, xanchor_bot = strain_display.strain_label_anchor_display(
-        e_bot, e_bot, offset=offset
-    )
-    state_bot = "(compression)" if e_bot < 0.0 else "(tension)"
+    if e_bot >= 0.0:  # compression (to the right)
+        label_x_bot = e_bot + offset
+        xanchor_bot = "left"
+        state_bot = "(compression)"
+    else:  # tension (to the left)
+        label_x_bot = e_bot - offset
+        xanchor_bot = "right"
+        state_bot = "(tension)"
     fig.add_annotation(
         x=label_x_bot, y=y_bot,
         text=f"ε<sub>bot</sub> = {e_bot:.5f}<br><span style='font-size:10px'>{state_bot}</span>",
@@ -1626,8 +1096,9 @@ def make_step4_longitudinal_strain_diagram(
     height_px: int = 540,
 ):
     """
-    Step 4 diagram: longitudinal strain profile for MCFT.
-    Display: compression ε < 0 left, tension ε > 0 right (same as bending strain panel).
+    Step 4 diagram: longitudinal strain profile for MCFT (bending-style).
+    Shows eps_top, eps_x(mid-depth), eps_bot on a linear profile.
+    Styling matches bending page strain panel (big, clean, red top/blue bottom, horizontal ticks).
     """
     # Guardrails
     def _safe(v):
@@ -1670,60 +1141,71 @@ def make_step4_longitudinal_strain_diagram(
         showlegend=False,
     ))
 
-    lo = 0.02 * max(abs(eps_top), abs(eps_x), abs(eps_bot), 1e-6)
-    color_top = strain_display.strain_color_display(eps_top)
-    color_mid = strain_display.strain_color_display(eps_x)
-    color_bot = strain_display.strain_color_display(eps_bot)
-
-    # Horizontal "ticks" from zero axis to each strain value (display convention)
+    # Horizontal "ticks" from zero axis to each strain value (like bending)
+    # Top strain horizontal line (red)
     fig.add_shape(
         type="line",
         x0=0, y0=y_top, x1=eps_top, y1=y_top,
-        line=dict(color=color_top, width=2.0),
+        line=dict(color="red", width=2.0),
     )
+    # Mid-depth strain horizontal line (red)
     fig.add_shape(
         type="line",
         x0=0, y0=y_mid, x1=eps_x, y1=y_mid,
-        line=dict(color=color_mid, width=2.0),
+        line=dict(color="red", width=2.0),
     )
+    # Bottom strain horizontal line (blue)
     fig.add_shape(
         type="line",
         x0=0, y0=y_bot, x1=eps_bot, y1=y_bot,
-        line=dict(color=color_bot, width=2.0),
+        line=dict(color="blue", width=2.0),
     )
 
-    label_x_top, xanchor_top = strain_display.strain_label_anchor_display(
-        eps_top, eps_top, offset=lo
-    )
+    # Labels (use plain text, not raw LaTeX strings)
+    # Top strain label (red)
+    if eps_top >= 0.0:  # compression (to the right)
+        label_x_top = eps_top + 0.02 * max(abs(eps_top), abs(eps_x), abs(eps_bot), 1e-6)
+        xanchor_top = "left"
+    else:  # tension (to the left)
+        label_x_top = eps_top - 0.02 * max(abs(eps_top), abs(eps_x), abs(eps_bot), 1e-6)
+        xanchor_top = "right"
     fig.add_annotation(
         x=label_x_top, y=y_top,
         text=f"ε<sub>top</sub> = {eps_top:.5f}",
         showarrow=False,
-        font=dict(size=12, color=color_top),
+        font=dict(size=12, color="red"),
         xanchor=xanchor_top,
         yshift=-10,
     )
 
-    label_x_mid, xanchor_mid = strain_display.strain_label_anchor_display(
-        eps_x, eps_x, offset=lo
-    )
+    # Mid-depth strain label (red, highlighted)
+    if eps_x >= 0.0:  # compression (to the right)
+        label_x_mid = eps_x + 0.02 * max(abs(eps_top), abs(eps_x), abs(eps_bot), 1e-6)
+        xanchor_mid = "left"
+    else:  # tension (to the left)
+        label_x_mid = eps_x - 0.02 * max(abs(eps_top), abs(eps_x), abs(eps_bot), 1e-6)
+        xanchor_mid = "right"
     fig.add_annotation(
         x=label_x_mid, y=y_mid,
         text=f"ε<sub>x</sub> = {eps_x:.5f}<br><span style='font-size:11px'>mid-depth (MCFT)</span>",
         showarrow=False,
-        font=dict(size=12, color=color_mid),
+        font=dict(size=12, color="red"),
         xanchor=xanchor_mid,
         yshift=0,
     )
 
-    label_x_bot, xanchor_bot = strain_display.strain_label_anchor_display(
-        eps_bot, eps_bot, offset=lo
-    )
+    # Bottom strain label (blue)
+    if eps_bot >= 0.0:  # compression (to the right)
+        label_x_bot = eps_bot + 0.02 * max(abs(eps_top), abs(eps_x), abs(eps_bot), 1e-6)
+        xanchor_bot = "left"
+    else:  # tension (to the left)
+        label_x_bot = eps_bot - 0.02 * max(abs(eps_top), abs(eps_x), abs(eps_bot), 1e-6)
+        xanchor_bot = "right"
     fig.add_annotation(
         x=label_x_bot, y=y_bot,
         text=f"ε<sub>bot</sub> = {eps_bot:.5f}",
         showarrow=False,
-        font=dict(size=12, color=color_bot),
+        font=dict(size=12, color="blue"),
         xanchor=xanchor_bot,
         yshift=10,
     )
@@ -2874,6 +2356,14 @@ def _torsion_theta_marker_on_bottom_edge(
 
     ang0 = ang_edge
     r_arc = min(B, D) * (0.078 if subdued else 0.09)
+    arc_x: list[float] = []
+    arc_y: list[float] = []
+    for i in range(33):
+        t = i / 32.0
+        ang = ang0 + t * d_ang
+        arc_x.append(float(v0[0]) + r_arc * math.cos(ang))
+        arc_y.append(float(v0[1]) + r_arc * math.sin(ang))
+
     bis = ang0 + 0.5 * d_ang
     off = r_arc * (1.36 if subdued else 1.42)
     lx = float(v0[0]) + off * math.cos(bis)
@@ -2886,14 +2376,51 @@ def _torsion_theta_marker_on_bottom_edge(
     # Slight push toward +u (to the right in the figure).
     nudge_u = min(B, D) * (0.032 if subdued else 0.038)
     lx += nudge_u
-    # θ label: farther right and lower (projection coords: +x right, −y down).
-    _scale = min(B, D)
-    lx += _scale * (0.118 if subdued else 0.136)
-    ly -= _scale * (0.088 if subdued else 0.104)
 
+    # Keep crack tick on the half-line opposite θ (same infinite crack, other direction).
+    dx_c = float(vc[0]) - float(v0[0])
+    dy_c = float(vc[1]) - float(v0[1])
+    wt_x, wt_y = lx - float(v0[0]), ly - float(v0[1])
+    if dx_c * wt_x + dy_c * wt_y > 0.0:
+        vc_draw = (float(v0[0]) - dx_c, float(v0[1]) - dy_c)
+    else:
+        vc_draw = (float(vc[0]), float(vc[1]))
+
+    lw_ref = 1.15 if subdued else 1.55
+    lw_cr = 1.25 if subdued else 1.75
+    lw_arc = 1.35 if subdued else 1.85
+    col_ref = "rgba(70,70,70,0.75)" if subdued else "rgba(45,45,45,0.88)"
+    col_dark = "rgba(55,55,55,0.82)" if subdued else "rgba(12,12,12,0.96)"
     tf = 15 if subdued else 20
-    # θ only: no arc, edge ray, or crack tick (avoids stray segments at the beam corner).
+    # θ as a data trace (not layout annotation): survives Streamlit/Plotly clipping better.
     traces = [
+        go.Scatter(
+            x=[float(v0[0]), float(va[0])],
+            y=[float(v0[1]), float(va[1])],
+            mode="lines",
+            line=dict(width=lw_ref, color=col_ref, dash="dot"),
+            hoverinfo="skip",
+            showlegend=False,
+            cliponaxis=False,
+        ),
+        go.Scatter(
+            x=[float(v0[0]), vc_draw[0]],
+            y=[float(v0[1]), vc_draw[1]],
+            mode="lines",
+            line=dict(width=lw_cr, color=col_dark),
+            hoverinfo="skip",
+            showlegend=False,
+            cliponaxis=False,
+        ),
+        go.Scatter(
+            x=arc_x,
+            y=arc_y,
+            mode="lines",
+            line=dict(width=lw_arc, color=col_dark),
+            hoverinfo="skip",
+            showlegend=False,
+            cliponaxis=False,
+        ),
         go.Scatter(
             x=[lx],
             y=[ly],
@@ -3341,28 +2868,6 @@ def _check6_stirrup_xs_mm(*, L_seg_mm: float, s_mm: float, max_lines: int = 14) 
     return xs
 
 
-def _check6_crack_ray_hits_vertical_stirrup(
-    xd: float,
-    x0: float,
-    y0: float,
-    ux: float,
-    uy: float,
-    y_stirr_bot: float,
-    y_stirr_top: float,
-    t_max: float,
-) -> bool:
-    """True if the crack ray from (x0,y0) with unit-ish (ux,uy) crosses x=xd within stirrup height."""
-    if abs(ux) < 1e-9:
-        return False
-    t = (float(xd) - float(x0)) / float(ux)
-    if t < -1e-5 or t > float(t_max) + 1e-4:
-        return False
-    yi = float(y0) + t * float(uy)
-    y_lo = min(float(y_stirr_bot), float(y_stirr_top))
-    y_hi = max(float(y_stirr_bot), float(y_stirr_top))
-    return y_lo - 1e-3 <= yi <= y_hi + 1e-3
-
-
 def _check6_shear_cage_y_range_mm(
     *,
     layout: dict | None,
@@ -3678,7 +3183,6 @@ def _check6_crack_bezier_setup(
     *,
     tension_face: str,
     D_mm: float,
-    bulge_scale: float = 1.0,
 ) -> tuple[
     float,
     float,
@@ -3693,27 +3197,31 @@ def _check6_crack_bezier_setup(
     float,
 ] | None:
     """
-    Cubic geometry for the crack **mean line**: same toe/tip anchors as the θ_v chord, with a mild
-    arch toward compression. The jagged black crack and the smooth backbone for the green offset
-    both sample this curve; ``bulge_scale`` scales the arch (historical default ≈1.28 → ~0.155 arch).
+    Chord + cubic controls for the crack backbone. Returns
+    (xa, ya, cx1, cy1, cx2, cy2, xb, yb, nx, ny, L) or None if degenerate.
     """
-    bs = max(0.55, min(2.2, float(bulge_scale)))
-    arch_scale = 0.155 * (bs / 1.28)
-    arch_scale = max(0.075, min(0.215, float(arch_scale)))
-    geom = _check6_arched_transfer_bezier_geom(
-        float(xa),
-        float(ya),
-        float(xb),
-        float(yb),
-        tension_face=str(tension_face),
-        D_mm=float(D_mm),
-        arch_scale=arch_scale,
-    )
-    if geom is None:
-        return _check6_collinear_bezier_geom_from_chord(
-            float(xa), float(ya), float(xb), float(yb)
-        )
-    return geom
+    xa, ya, xb, yb = float(xa), float(ya), float(xb), float(yb)
+    dx = xb - xa
+    dy = yb - ya
+    L = math.hypot(dx, dy)
+    if L < 1e-6:
+        return None
+    D = max(float(D_mm), 1.0)
+    ux, uy = dx / L, dy / L
+    nx, ny = -uy, ux
+    bulge = 0.30 * min(L, 0.50 * D)
+    if str(tension_face) == "bottom":
+        ox = nx * bulge * 0.52
+        oy = ny * bulge * 0.52 + bulge * 0.68
+    else:
+        ox = nx * bulge * 0.52
+        oy = ny * bulge * 0.52 - bulge * 0.68
+    t1, t2 = 1.0 / 3.0, 2.0 / 3.0
+    cx1 = xa + t1 * dx + 0.62 * ox
+    cy1 = ya + t1 * dy + 0.62 * oy
+    cx2 = xa + t2 * dx + 0.98 * ox
+    cy2 = ya + t2 * dy + 0.98 * oy
+    return (xa, ya, cx1, cy1, cx2, cy2, xb, yb, nx, ny, L)
 
 
 def _check6_bezier_der_at_t(
@@ -3748,243 +3256,6 @@ def _check6_bezier_unit_tangents_at_ends(
     return _unit(0.0), _unit(1.0)
 
 
-def _check6_unit_toe_to_tip_crack(
-    *,
-    support_side: str,
-    tension_face: str,
-    theta_v_rad: float,
-) -> tuple[float, float]:
-    """
-    Unit vector **toe → crack tip** with **θ_v** = angle from **horizontal** (into-span, +x display)
-    to the crack, CCW positive. Matches ``cot θ_v`` shear-steel geometry (mean line, not strut normal).
-
-    Bottom tension: ``(|cos θ|, |sin θ|)`` with into-span horizontal sign; top tension: downward legs.
-    """
-    th = max(math.radians(1.0), min(theta_v_rad, math.radians(89.0)))
-    cx, sy = math.cos(th), math.sin(th)
-    sn = str(support_side or "left").strip().lower()
-    tf = str(tension_face or "bottom").strip().lower()
-    if tf == "bottom":
-        if sn == "right":
-            return -cx, sy
-        if sn == "internal":
-            return -cx, sy
-        return cx, sy
-    if sn == "right":
-        return -cx, -sy
-    if sn == "internal":
-        return -cx, -sy
-    return cx, -sy
-
-
-def _check6_collinear_bezier_geom_from_chord(
-    xa: float,
-    ya: float,
-    xb: float,
-    yb: float,
-) -> tuple[float, float, float, float, float, float, float, float, float, float, float] | None:
-    """Cubic control points on the chord so Bézier derivatives match the straight θ crack."""
-    xa, ya, xb, yb = float(xa), float(ya), float(xb), float(yb)
-    dx, dy = xb - xa, yb - ya
-    L = math.hypot(dx, dy)
-    if L < 1e-9:
-        return None
-    t1, t2 = 1.0 / 3.0, 2.0 / 3.0
-    nx, ny = -dy / L, dx / L
-    cx1 = xa + t1 * dx
-    cy1 = ya + t1 * dy
-    cx2 = xa + t2 * dx
-    cy2 = ya + t2 * dy
-    return (xa, ya, cx1, cy1, cx2, cy2, xb, yb, nx, ny, L)
-
-
-def _check6_arched_transfer_bezier_geom(
-    xa: float,
-    ya: float,
-    xb: float,
-    yb: float,
-    *,
-    tension_face: str,
-    D_mm: float,
-    arch_scale: float = 0.050,
-) -> tuple[float, float, float, float, float, float, float, float, float, float, float] | None:
-    """
-    Mild cubic arch between endpoints (same tangents as gentle transfer curve).
-    Bow lifts slightly toward the compression zone for bottom tension (readable, compact).
-    """
-    xa, ya, xb, yb = float(xa), float(ya), float(xb), float(yb)
-    dx, dy = xb - xa, yb - ya
-    L = math.hypot(dx, dy)
-    if L < 1e-9:
-        return None
-    D = max(float(D_mm), 1.0)
-    nx, ny = -dy / L, dx / L
-    bulge = float(arch_scale) * min(L, 0.85 * D)
-    if str(tension_face).strip().lower() == "bottom":
-        if ny < 0:
-            nx, ny = -nx, -ny
-    else:
-        if ny > 0:
-            nx, ny = -nx, -ny
-    ox, oy = nx * bulge, ny * bulge
-    t1, t2 = 1.0 / 3.0, 2.0 / 3.0
-    cx1 = xa + t1 * dx + ox
-    cy1 = ya + t1 * dy + oy
-    cx2 = xa + t2 * dx + ox
-    cy2 = ya + t2 * dy + oy
-    return (xa, ya, cx1, cy1, cx2, cy2, xb, yb, nx, ny, L)
-
-
-def _check6_soft_jagged_on_bezier(
-    geom: tuple[float, ...],
-    *,
-    D_mm: float,
-    n: int = 44,
-) -> list[tuple[float, float]]:
-    """Jagged crack with smooth cubic centerline (same jitter style as straight chord)."""
-    if geom is None or len(geom) < 11:
-        return []
-    xa, ya, cx1, cy1, cx2, cy2, xb, yb, _, _, L = geom[:11]
-    L = max(float(L), 1e-9)
-    D = max(float(D_mm), 1.0)
-    arch_len = float(
-        math.hypot(xb - xa, yb - ya) + 0.35 * math.hypot(cx2 - cx1, cy2 - cy1)
-    )
-
-    def _bez(t: float) -> tuple[float, float]:
-        u = 1.0 - t
-        uu, tt = u * u, t * t
-        b0, b1, b2, b3 = u * uu, 3.0 * uu * t, 3.0 * u * tt, t * tt
-        return (
-            b0 * xa + b1 * cx1 + b2 * cx2 + b3 * xb,
-            b0 * ya + b1 * cy1 + b2 * cy2 + b3 * yb,
-        )
-
-    def _dbez(t: float) -> tuple[float, float]:
-        u = 1.0 - t
-        ddx = 3.0 * u * u * (cx1 - xa) + 6.0 * u * t * (cx2 - cx1) + 3.0 * t * t * (xb - cx2)
-        ddy = 3.0 * u * u * (cy1 - ya) + 6.0 * u * t * (cy2 - cy1) + 3.0 * t * t * (yb - cy2)
-        return ddx, ddy
-
-    jag_amp = max(3.2, 0.035 * min(arch_len, 0.52 * D))
-    jag_amp = min(jag_amp, 0.060 * D)
-    salt = 0.0017 * (xa + 2.3 * ya + 1.1 * xb + yb)
-    out: list[tuple[float, float]] = []
-    nn = max(12, int(n))
-    for i in range(nn + 1):
-        t = i / nn
-        bx, by = _bez(t)
-        ddx, ddy = _dbez(t)
-        tlen = math.hypot(ddx, ddy)
-        if tlen < 1e-9:
-            px, py = 0.0, 1.0
-        else:
-            px, py = -ddy / tlen, ddx / tlen
-        taper = math.sin(math.pi * t) ** 0.82
-        if i == 0 or i == nn:
-            off = 0.0
-        else:
-            j = float(i)
-            wobble = math.sin(15.2 * j + salt) * math.cos(7.1 * j + 0.41 * salt)
-            wobble += 0.45 * math.sin(27.0 * j * j / (nn + 1.0) + 1.3 * salt)
-            wobble += 0.28 * math.sin(31.0 * j + 0.9 * salt)
-            off = jag_amp * taper * max(-1.0, min(1.0, wobble))
-        bx += off * px
-        by += off * py
-        out.append((bx, by))
-    return out
-
-
-def _check6_bezier_to_smooth_path_svg(
-    geom: tuple[float, ...],
-    *,
-    n: int = 56,
-) -> str:
-    """Dense polyline approximating the cubic (for mean green / smooth crack paths)."""
-    if geom is None or len(geom) < 8:
-        return ""
-    xa, ya, cx1, cy1, cx2, cy2, xb, yb = geom[:8]
-
-    def _bez(t: float) -> tuple[float, float]:
-        u = 1.0 - t
-        uu, tt = u * u, t * t
-        b0, b1, b2, b3 = u * uu, 3.0 * uu * t, 3.0 * u * tt, t * tt
-        return (
-            b0 * xa + b1 * cx1 + b2 * cx2 + b3 * xb,
-            b0 * ya + b1 * cy1 + b2 * cy2 + b3 * yb,
-        )
-
-    nn = max(16, int(n))
-    parts: list[str] = []
-    for i in range(nn + 1):
-        bx, by = _bez(i / nn)
-        parts.append(f"{'M' if i == 0 else 'L'} {bx:.4f},{by:.4f}")
-    return " ".join(parts)
-
-
-def _check6_smooth_bezier_polyline_list(
-    geom: tuple[float, ...],
-    *,
-    n: int = 72,
-) -> list[tuple[float, float]]:
-    if geom is None or len(geom) < 8:
-        return []
-    xa, ya, cx1, cy1, cx2, cy2, xb, yb = geom[:8]
-
-    def _bez(t: float) -> tuple[float, float]:
-        u = 1.0 - t
-        uu, tt = u * u, t * t
-        b0, b1, b2, b3 = u * uu, 3.0 * uu * t, 3.0 * u * tt, t * tt
-        return (
-            b0 * xa + b1 * cx1 + b2 * cx2 + b3 * xb,
-            b0 * ya + b1 * cy1 + b2 * cy2 + b3 * yb,
-        )
-
-    nn = max(16, int(n))
-    return [_bez(i / nn) for i in range(nn + 1)]
-
-
-def _check6_soft_jagged_chord(
-    xa: float,
-    ya: float,
-    xb: float,
-    yb: float,
-    *,
-    D_mm: float,
-    jag_scale: float = 0.78,
-) -> list[tuple[float, float]]:
-    """Straight crack chord with mild jagged styling (centered on θ_v mean line)."""
-    xa, ya, xb, yb = float(xa), float(ya), float(xb), float(yb)
-    dx, dy = xb - xa, yb - ya
-    L = math.hypot(dx, dy)
-    if L < 1e-6:
-        return []
-    nx, ny = -dy / L, dx / L
-    D = max(float(D_mm), 1.0)
-    n = 40
-    jag_amp = max(2.8, 0.030 * min(L, 0.52 * D)) * float(jag_scale)
-    jag_amp = min(jag_amp, 0.052 * D)
-    salt = 0.0017 * (xa + 2.3 * ya + 1.1 * xb + yb)
-    out: list[tuple[float, float]] = []
-    for i in range(n + 1):
-        t = i / n
-        bx = xa + t * dx
-        by = ya + t * dy
-        taper = math.sin(math.pi * t) ** 0.82
-        if i == 0 or i == n:
-            off = 0.0
-        else:
-            j = float(i)
-            wobble = math.sin(15.2 * j + salt) * math.cos(7.1 * j + 0.41 * salt)
-            wobble += 0.45 * math.sin(27.0 * j * j / (n + 1.0) + 1.3 * salt)
-            wobble += 0.28 * math.sin(31.0 * j + 0.9 * salt)
-            off = jag_amp * taper * max(-1.0, min(1.0, wobble))
-        bx += off * nx
-        by += off * ny
-        out.append((bx, by))
-    return out
-
-
 def _check6_soft_crack_polyline(
     xa: float,
     ya: float,
@@ -3993,14 +3264,12 @@ def _check6_soft_crack_polyline(
     *,
     tension_face: str,
     D_mm: float,
-    bulge_scale: float = 1.0,
-    jag_scale: float = 1.0,
 ) -> list[tuple[float, float]]:
     """
     Same geometry as the black crack: Bézier + jagged samples. Empty if degenerate chord.
     """
     geom = _check6_crack_bezier_setup(
-        xa, ya, xb, yb, tension_face=tension_face, D_mm=D_mm, bulge_scale=bulge_scale
+        xa, ya, xb, yb, tension_face=tension_face, D_mm=D_mm
     )
     if geom is None:
         return []
@@ -4023,10 +3292,8 @@ def _check6_soft_crack_polyline(
         return ddx, ddy
 
     n = 40
-    js = max(0.0, float(jag_scale))
-    jag_amp = max(3.5, 0.038 * min(L, 0.52 * D)) * js
-    jag_amp *= max(0.72, min(1.45, float(bulge_scale)))
-    jag_amp = min(jag_amp, 0.065 * D * js)
+    jag_amp = max(3.5, 0.038 * min(L, 0.52 * D))
+    jag_amp = min(jag_amp, 0.065 * D)
     salt = 0.0017 * (xa + 2.3 * ya + 1.1 * xb + yb)
     out: list[tuple[float, float]] = []
     for i in range(n + 1):
@@ -4062,11 +3329,10 @@ def _check6_smooth_crack_polyline(
     tension_face: str,
     D_mm: float,
     n: int = 64,
-    bulge_scale: float = 1.0,
 ) -> list[tuple[float, float]]:
-    """Same Bézier backbone as the black crack, sampled smoothly (no perpendicular jag)."""
+    """Same backbone as the crack, sampled smoothly (no perpendicular jag)."""
     geom = _check6_crack_bezier_setup(
-        xa, ya, xb, yb, tension_face=tension_face, D_mm=D_mm, bulge_scale=bulge_scale
+        xa, ya, xb, yb, tension_face=tension_face, D_mm=D_mm
     )
     if geom is None:
         return []
@@ -4116,269 +3382,6 @@ def _check6_polyline_to_path_svg(pts: list[tuple[float, float]]) -> str:
     for i, (bx, by) in enumerate(pts):
         parts.append(f"{'M' if i == 0 else 'L'} {bx:.4f},{by:.4f}")
     return " ".join(parts)
-
-
-def _check6_scaled_rgba_alpha(color: str, alpha_scale: float) -> str:
-    """Match ``shear_visuals._scaled_rgba_alpha`` for MCFT flow pulse styling."""
-    if not color.startswith("rgba(") or not color.endswith(")"):
-        return color
-    parts = [part.strip() for part in color[5:-1].split(",")]
-    if len(parts) != 4:
-        return color
-    try:
-        alpha = float(parts[3])
-    except ValueError:
-        return color
-    scaled_alpha = max(0.0, min(1.0, alpha * alpha_scale))
-    return f"rgba({parts[0]},{parts[1]},{parts[2]},{scaled_alpha:.3f})"
-
-
-def _check6_append_points_min_sep(
-    acc: list[tuple[float, float]],
-    pts: list[tuple[float, float]],
-    *,
-    min_sep: float = 0.18,
-) -> None:
-    for px, py in pts:
-        if not acc:
-            acc.append((float(px), float(py)))
-            continue
-        lx, ly = acc[-1]
-        if math.hypot(float(px) - lx, float(py) - ly) >= float(min_sep):
-            acc.append((float(px), float(py)))
-
-
-def _check6_linear_sample(
-    x0: float, y0: float, x1: float, y1: float, *, n: int
-) -> list[tuple[float, float]]:
-    n = max(2, int(n))
-    out: list[tuple[float, float]] = []
-    for i in range(n):
-        t = i / (n - 1) if n > 1 else 0.0
-        out.append((x0 + t * (x1 - x0), y0 + t * (y1 - y0)))
-    return out
-
-
-def _check6_tie_x_toward_support(
-    *,
-    tie_xa: float,
-    tie_xb: float,
-    support_face_x: float,
-) -> float:
-    ta, tb = (tie_xa, tie_xb) if tie_xa <= tie_xb else (tie_xb, tie_xa)
-    return ta if abs(ta - support_face_x) <= abs(tb - support_face_x) else tb
-
-
-def _check6_build_shear_transfer_flow_combined_pts(
-    *,
-    cx_c: float,
-    y_c_top: float,
-    y_c_bottom: float,
-    mean_green_pts: list[tuple[float, float]],
-    y_steel: float,
-    tie_xa: float,
-    tie_xb: float,
-    support_face_x: float,
-    D: float,
-    L_seg: float,
-) -> tuple[list[tuple[float, float]], tuple[int, int]]:
-    """
-    One polyline: top of C → down C → crack tip on green path → along green toward Ast →
-    along tie toward the support (matches Check 5 load-transfer read).
-
-    Returns ``(points, (end_red_incl, end_green_incl))`` where inclusive indices mark the last
-    vertex of the red (vertical C), green (bridge + transfer + drop to Ast), and blue is the remainder.
-    """
-    if len(mean_green_pts) < 2:
-        return [], (0, 0)
-    D = max(float(D), 1.0)
-    Ls = max(float(L_seg), 1.0)
-    gtip = mean_green_pts[-1]
-    gtoe = mean_green_pts[0]
-    acc: list[tuple[float, float]] = []
-    n_vert = max(10, min(48, int(abs(y_c_top - y_c_bottom) / max(0.012 * D, 4.0)) + 4))
-    _check6_append_points_min_sep(
-        acc, _check6_linear_sample(cx_c, y_c_top, cx_c, y_c_bottom, n=n_vert)
-    )
-    end_red = max(0, len(acc) - 1)
-    bridge_n = max(
-        2,
-        min(
-            16,
-            int(
-                math.hypot(float(gtip[0]) - cx_c, float(gtip[1]) - y_c_bottom)
-                / max(0.015 * Ls, 5.0)
-            )
-            + 2,
-        ),
-    )
-    _check6_append_points_min_sep(
-        acc,
-        _check6_linear_sample(cx_c, y_c_bottom, float(gtip[0]), float(gtip[1]), n=bridge_n),
-    )
-    for k in range(len(mean_green_pts) - 1, -1, -1):
-        _check6_append_points_min_sep(acc, [mean_green_pts[k]])
-    gx0, gy0 = float(gtoe[0]), float(gtoe[1])
-    if abs(gy0 - float(y_steel)) > 0.8:
-        _check6_append_points_min_sep(
-            acc, _check6_linear_sample(gx0, gy0, gx0, float(y_steel), n=4)
-        )
-    end_green = max(end_red, len(acc) - 1)
-    x_tie_goal = _check6_tie_x_toward_support(
-        tie_xa=float(tie_xa),
-        tie_xb=float(tie_xb),
-        support_face_x=float(support_face_x),
-    )
-    t_lo, t_hi = (tie_xa, tie_xb) if tie_xa <= tie_xb else (tie_xb, tie_xa)
-    x_on = min(max(gx0, t_lo), t_hi)
-    n_tie = max(
-        6,
-        min(
-            40,
-            int(abs(x_on - x_tie_goal) / max(0.018 * Ls, 6.0)) + 4,
-        ),
-    )
-    _check6_append_points_min_sep(
-        acc,
-        _check6_linear_sample(x_on, float(y_steel), x_tie_goal, float(y_steel), n=n_tie),
-    )
-    return acc, (end_red, end_green)
-
-
-def _check6_add_mcft_style_flow_pulse(
-    fig: go.Figure,
-    pts: list[tuple[float, float]],
-    *,
-    color: str = "rgba(46,125,50,0.95)",
-    reverse_along_path: bool = True,
-    flow_segment_ends: tuple[int, int] | None = None,
-    flow_arrowhead: bool = False,
-    flow_colors_rgb: tuple[str, str, str] = ("#c41e3a", "#2e7d32", "#1565c0"),
-    line_shape: str = "spline",
-) -> None:
-    """
-    Dashed path + sliding ``meta.animate_flow`` window (same pattern as MCFT principal-stress
-    diagrams). Default ``line_shape="spline"`` smooths along the polyline; use ``"linear"`` when
-    the path mixes straight legs (e.g. vertical **C** + diagonal bridge) so Plotly does not bow the
-    bridge segment to meet the next curve.
-    """
-    if len(pts) < 3:
-        return
-    ls = str(line_shape or "spline").strip().lower()
-    use_spline = ls == "spline"
-    xs = [float(p[0]) for p in pts]
-    ys = [float(p[1]) for p in pts]
-    line_kw: dict = dict(
-        color=_check6_scaled_rgba_alpha(color, 0.95),
-        width=3.2,
-        dash="12px,10px",
-    )
-    if use_spline:
-        line_kw["shape"] = "spline"
-        line_kw["smoothing"] = 0.64
-    else:
-        line_kw["shape"] = "linear"
-    fig.add_trace(
-        go.Scatter(
-            x=xs,
-            y=ys,
-            mode="lines",
-            line=line_kw,
-            opacity=0.96,
-            hoverinfo="skip",
-            showlegend=False,
-        )
-    )
-    path_pts = list(reversed(pts)) if reverse_along_path else list(pts)
-    if len(path_pts) < 5:
-        return
-    window = max(3, min(7, max(4, len(path_pts) // 2)))
-    fx = [float(p[0]) for p in path_pts]
-    fy = [float(p[1]) for p in path_pts]
-    npath = len(fx)
-    cr, cg, cb = flow_colors_rgb
-    er, eg = -1, max(0, npath - 1)
-    if flow_segment_ends is not None:
-        er0, eg0 = int(flow_segment_ends[0]), int(flow_segment_ends[1])
-        if reverse_along_path:
-            er = max(0, npath - 1 - eg0)
-            eg = max(0, npath - 1 - er0)
-        else:
-            er, eg = er0, eg0
-    pulse_meta: dict = {
-        "animate_flow": True,
-        "flow_x": fx,
-        "flow_y": fy,
-        "window": window,
-        "step": 1,
-    }
-    if flow_arrowhead:
-        pulse_meta["flow_end_red"] = er
-        pulse_meta["flow_end_green"] = eg
-        pulse_meta["flow_color_red"] = cr
-        pulse_meta["flow_color_green"] = cg
-        pulse_meta["flow_color_blue"] = cb
-    line_trace_index = len(fig.data)
-    pulse_line_kw: dict = dict(
-        color=_check6_scaled_rgba_alpha(color, 1.0),
-        width=3.8,
-    )
-    if use_spline:
-        pulse_line_kw["shape"] = "spline"
-        pulse_line_kw["smoothing"] = 0.64
-    else:
-        pulse_line_kw["shape"] = "linear"
-    fig.add_trace(
-        go.Scatter(
-            x=fx[:window],
-            y=fy[:window],
-            mode="lines",
-            line=pulse_line_kw,
-            opacity=0.98,
-            hoverinfo="skip",
-            showlegend=False,
-            meta=pulse_meta,
-        )
-    )
-    if flow_arrowhead and len(fx) >= 2:
-        lead = min(max(window - 1, 0), npath - 1)
-        lx0 = max(0, lead - 1)
-        dx = float(fx[lead] - fx[lx0]) if lead > lx0 else float(fx[min(1, npath - 1)] - fx[0])
-        dy = float(fy[lead] - fy[lx0]) if lead > lx0 else float(fy[min(1, npath - 1)] - fy[0])
-        if abs(dx) + abs(dy) < 1e-9 and lead < npath - 1:
-            dx = float(fx[lead + 1] - fx[lead])
-            dy = float(fy[lead + 1] - fy[lead])
-        ang0 = math.degrees(math.atan2(dy, dx)) - 90.0
-        col0 = cg
-        if flow_segment_ends is not None:
-            if er >= 0 and lead <= er:
-                col0 = cr
-            elif lead <= eg:
-                col0 = cg
-            else:
-                col0 = cb
-        if col0 == cb:
-            ang0 += 180.0
-        fig.add_trace(
-            go.Scatter(
-                x=[fx[lead]],
-                y=[fy[lead]],
-                mode="markers",
-                marker=dict(
-                    symbol="triangle-up",
-                    size=9,
-                    angle=ang0,
-                    color=col0,
-                    line=dict(width=0.5, color="rgba(255,255,255,0.92)"),
-                ),
-                hoverinfo="skip",
-                showlegend=False,
-                meta={
-                    "animate_flow_arrow": True,
-                    "flow_follow_line_index": line_trace_index,
-                },
-            )
-        )
 
 
 def _check6_trim_polyline_at_ast_elevation(
@@ -4452,7 +3455,7 @@ def _check6_add_green_ccw_flow_on_polyline(
     bezier_n_orig: int | None = None,
     y_ast_clip: float | None = None,
     ast_clip_tension_face: str | None = None,
-) -> None:
+) -> list[tuple[float, float]]:
     """
     Smooth crack backbone offset by a constant perpendicular distance (same side as +x) so the
     green–crack gap reads even top vs bottom; clamped inside the beam. If needed, drops points from
@@ -4462,7 +3465,7 @@ def _check6_add_green_ccw_flow_on_polyline(
     and arrows on the compression side of the blue Ast (offset can otherwise cross y_steel).
     """
     if len(pts) < 4:
-        return
+        return []
     Ls = max(float(L_seg_mm), 1.0)
     D = max(float(D_mm), 1.0)
     x_m = max(0.018 * Ls, 0.022 * D, 12.0)
@@ -4472,7 +3475,7 @@ def _check6_add_green_ccw_flow_on_polyline(
     y_lo_b = float(y_bot) + y_m
     y_hi_b = float(y_top) - y_m
     if x_hi_b <= x_lo_b or y_hi_b <= y_lo_b:
-        return
+        return []
 
     y_ast = float(y_ast_clip) if y_ast_clip is not None else None
     ast_tf = str(ast_clip_tension_face or "").strip().lower()
@@ -4524,7 +3527,7 @@ def _check6_add_green_ccw_flow_on_polyline(
     pts_work = list(pts)
     while True:
         if len(pts_work) < 4:
-            return
+            return []
         gap_try = _max_feasible_gap(pts_work)
         if gap_try >= gap_min or len(pts_work) == 4:
             break
@@ -4588,7 +3591,7 @@ def _check6_add_green_ccw_flow_on_polyline(
             shifted, y_ast=y_ast, tension_face=ast_tf
         )
         if len(shifted_t) < 2:
-            return
+            return []
         shifted = shifted_t
 
     path_g = _check6_polyline_to_path_svg(shifted)
@@ -4640,43 +3643,13 @@ def _check6_add_green_ccw_flow_on_polyline(
             arrowcolor=green,
         )
 
-    i_start = 2
-    if n > i_start + 1:
-        px, py = shifted[i_start]
-        qx, qy = shifted[i_start + 1]
-        rx, ry = shifted[i_start - 1]
-        tx, ty = qx - rx, qy - ry
-        tlen = math.hypot(tx, ty)
-        if tlen >= 1e-9:
-            tx, ty = tx / tlen, ty / tlen
-            x_tip = min(max(px - tx * half, x_lo_arr), x_hi_arr)
-            y_tip = min(max(py - ty * half, y_lo_arr), y_hi_arr)
-            x_tail = min(max(px + tx * half, x_lo_arr), x_hi_arr)
-            y_tail = min(max(py + ty * half, y_lo_arr), y_hi_arr)
-            fig.add_annotation(
-                x=x_tip,
-                y=y_tip,
-                ax=x_tail,
-                ay=y_tail,
-                xref="x",
-                yref="y",
-                axref="x",
-                ayref="y",
-                text="",
-                showarrow=True,
-                arrowhead=2,
-                arrowsize=0.78,
-                arrowwidth=1.85,
-                arrowcolor=green,
-            )
-
     # Three black arrows: normal to the path, along the green offset direction (into the web /
     # away from the crack); anchor shifted slightly along that normal so they clear the green stroke.
     lo_i, hi_i = 2, n - 3
     if n >= 4 and hi_i >= lo_i:
-        black_half = max(0.034 * D, 15.0)
+        black_half = max(0.030 * D, 13.0)
         seen_bi: set[int] = set()
-        for frac in (0.30, 0.5, 0.8):
+        for frac in (0.2, 0.5, 0.8):
             bi = lo_i + int(round((hi_i - lo_i) * frac))
             bi = min(max(bi, lo_i), hi_i)
             if bi in seen_bi:
@@ -4702,7 +3675,7 @@ def _check6_add_green_ccw_flow_on_polyline(
                     continue
                 ox, oy = -crx / tl2, -cry / tl2
             bx, by = -ox, -oy
-            sep_mm = max(0.038 * D, 15.0)
+            sep_mm = max(0.030 * D, 11.5)
             cx = px + ox * sep_mm
             cy = py + oy * sep_mm
             x_tip = min(max(cx - bx * black_half, x_lo_arr), x_hi_arr)
@@ -4726,211 +3699,152 @@ def _check6_add_green_ccw_flow_on_polyline(
                 arrowcolor="#111111",
             )
 
-
-def _check6_polyline_unit_tangent(
-    pts: list[tuple[float, float]], i: int
-) -> tuple[float, float]:
-    n = len(pts)
-    if n < 2:
-        return (1.0, 0.0)
-    if i <= 0:
-        dx = float(pts[1][0]) - float(pts[0][0])
-        dy = float(pts[1][1]) - float(pts[0][1])
-    elif i >= n - 1:
-        dx = float(pts[n - 1][0]) - float(pts[n - 2][0])
-        dy = float(pts[n - 1][1]) - float(pts[n - 2][1])
-    else:
-        dx = float(pts[i + 1][0]) - float(pts[i - 1][0])
-        dy = float(pts[i + 1][1]) - float(pts[i - 1][1])
-    ln = math.hypot(dx, dy)
-    if ln < 1e-12:
-        return (1.0, 0.0)
-    return dx / ln, dy / ln
+    return shifted
 
 
-def _check6_unit_normal_from_tangent_toward_compression(
-    tx: float, ty: float, compression_face: str
-) -> tuple[float, float]:
-    n0x, n0y = -float(ty), float(tx)
-    refy = 1.0 if str(compression_face).strip().lower() == "top" else -1.0
-    if n0y * refy < 0.0:
-        n0x, n0y = -n0x, -n0y
-    return n0x, n0y
-
-
-def _check6_polyline_offset_toward_compression(
-    pts: list[tuple[float, float]],
-    *,
-    gap_mm: float,
-    compression_face: str,
-    D_mm: float,
-    L_seg_mm: float,
-    y_bot: float,
-    y_top: float,
-    normal_sign: float = 1.0,
-) -> list[tuple[float, float]]:
-    if len(pts) < 2 or float(gap_mm) <= 0:
-        return []
-    Ls = max(float(L_seg_mm), 1.0)
-    D = max(float(D_mm), 1.0)
-    x_m = max(0.018 * Ls, 0.022 * D, 12.0)
-    y_m = max(0.014 * D, 8.0)
-    x_lo, x_hi = x_m, Ls - x_m
-    y_lo, y_hi = float(y_bot) + y_m, float(y_top) - y_m
-    if x_hi <= x_lo or y_hi <= y_lo:
-        return []
-    g = float(gap_mm)
-    sgn = float(normal_sign)
-    out: list[tuple[float, float]] = []
-    n = len(pts)
-    for i in range(n):
-        tx, ty = _check6_polyline_unit_tangent(pts, i)
-        nx, ny = _check6_unit_normal_from_tangent_toward_compression(
-            tx, ty, compression_face
-        )
-        x = float(pts[i][0]) + g * nx * sgn
-        y = float(pts[i][1]) + g * ny * sgn
-        x = min(max(x, x_lo), x_hi)
-        y = min(max(y, y_lo), y_hi)
-        out.append((x, y))
-    return out
-
-
-def _check6_add_green_black_flow_arrows_on_polyline(
+def _check6_add_support_region_theta_marker(
     fig: go.Figure,
-    pts: list[tuple[float, float]],
+    shifted_green: list[tuple[float, float]],
     *,
-    D_mm: float,
-    L_seg_mm: float,
-    y_bot: float,
-    y_top: float,
-    green: str = "#2e7d32",
-    show_green_tangent_arrows: bool = True,
+    y_bot_beam: float,
+    y_top_beam: float,
+    tension_face: str,
+    side_n: str,
+    support_X: float,
+    L_seg: float,
+    L_d_core: float,
+    D: float,
+    y_steel: float,
+    ast_lbl_x: float,
 ) -> None:
-    """Green arrows along local tangent (toward toe); black perpendicular, open end left of green, head right (L→R)."""
-    if len(pts) < 5:
+    """θ between the green strut/crack direction and the beam fibre (horizontal reference)."""
+    if len(shifted_green) < 2:
         return
-    Ls = max(float(L_seg_mm), 1.0)
-    D = max(float(D_mm), 1.0)
-    x_m = max(0.018 * Ls, 0.022 * D, 12.0)
-    y_m = max(0.014 * D, 8.0)
-    x_lo_arr = x_m
-    x_hi_arr = Ls - x_m
-    y_lo_arr = float(y_bot) + y_m
-    y_hi_arr = float(y_top) - y_m
-    if x_hi_arr <= x_lo_arr or y_hi_arr <= y_lo_arr:
+    tf = str(tension_face or "bottom").strip().lower()
+    L_rem = max(float(L_seg) - float(L_d_core), 0.08 * float(L_seg))
+    if side_n == "right":
+        x_f_reg = float(L_seg) - (float(L_d_core) + 0.50 * L_rem)
+    elif side_n == "internal":
+        x_f_reg = max(0.06 * float(L_seg), float(support_X) * 0.42)
+    else:
+        x_f_reg = float(L_d_core) + 0.50 * L_rem
+    span_dx = float(x_f_reg) - float(support_X)
+    if abs(span_dx) < 1e-6:
+        span_dx = 1.0
+    uh_x = span_dx / abs(span_dx)
+    uh_y = 0.0
+
+    p0 = (float(shifted_green[0][0]), float(shifted_green[0][1]))
+    p1 = (float(shifted_green[1][0]), float(shifted_green[1][1]))
+    gx = p1[0] - p0[0]
+    gy = p1[1] - p0[1]
+    gl = math.hypot(gx, gy)
+    if gl < 1e-9:
         return
+    ugx, ugy = gx / gl, gy / gl
 
-    half = max(0.024 * D, 10.0)
-    n_pts = len(pts)
-    if show_green_tangent_arrows:
-        n_arrows = 8
-        step = max(1, (n_pts - 4) // max(n_arrows, 1))
-        arrow_indices = list(range(2, n_pts - 2, step))
-        if arrow_indices:
-            arrow_indices.pop(0)
-        for i in arrow_indices:
-            if i <= 0 or i >= n_pts - 1:
-                continue
-            px, py = pts[i]
-            tx, ty = _check6_polyline_unit_tangent(pts, i)
-            if math.hypot(tx, ty) < 1e-12:
-                continue
-            gx_tip = min(max(px - tx * half, x_lo_arr), x_hi_arr)
-            gy_tip = min(max(py - ty * half, y_lo_arr), y_hi_arr)
-            gx_tail = min(max(px + tx * half, x_lo_arr), x_hi_arr)
-            gy_tail = min(max(py + ty * half, y_lo_arr), y_hi_arr)
-            fig.add_annotation(
-                x=gx_tip,
-                y=gy_tip,
-                ax=gx_tail,
-                ay=gy_tail,
-                xref="x",
-                yref="y",
-                axref="x",
-                ayref="y",
-                text="",
-                showarrow=True,
-                arrowhead=2,
-                arrowsize=0.78,
-                arrowwidth=1.85,
-                arrowcolor=green,
-            )
+    y_eps = max(0.014 * D, 6.0)
+    if tf == "bottom":
+        y_target = float(y_bot_beam) + y_eps
+        if abs(ugy) < 1e-9:
+            return
+        t_v = (p0[1] - y_target) / ugy
+    else:
+        y_target = float(y_top_beam) - y_eps
+        if abs(ugy) < 1e-9:
+            return
+        t_v = (y_target - p0[1]) / (-ugy)
 
-        i_start = 2
-        if n_pts > i_start + 1:
-            px, py = pts[i_start]
-            tx, ty = _check6_polyline_unit_tangent(pts, i_start)
-            if math.hypot(tx, ty) >= 1e-12:
-                gx_tip = min(max(px - tx * half, x_lo_arr), x_hi_arr)
-                gy_tip = min(max(py - ty * half, y_lo_arr), y_hi_arr)
-                gx_tail = min(max(px + tx * half, x_lo_arr), x_hi_arr)
-                gy_tail = min(max(py + ty * half, y_lo_arr), y_hi_arr)
-                fig.add_annotation(
-                    x=gx_tip,
-                    y=gy_tip,
-                    ax=gx_tail,
-                    ay=gy_tail,
-                    xref="x",
-                    yref="y",
-                    axref="x",
-                    ayref="y",
-                    text="",
-                    showarrow=True,
-                    arrowhead=2,
-                    arrowsize=0.78,
-                    arrowwidth=1.85,
-                    arrowcolor=green,
-                )
+    if t_v > 0.0 and math.isfinite(t_v):
+        x_v = p0[0] - t_v * ugx
+        y_v = y_target
+    else:
+        x_v = p0[0]
+        y_v = y_target
 
-    lo_i, hi_i = 2, n_pts - 3
-    if hi_i >= lo_i:
-        sep_tail = max(0.052 * D, 20.0)
-        sep_head = max(0.041 * D, 16.0)
-        gap_from_green = max(0.034 * D, 15.0)
-        # Parallel offset (+n_r): arrow line does not pass through the green polyline (clear gap).
-        seen_bi: set[int] = set()
-        for frac in (0.30, 0.5, 0.8):
-            bi = lo_i + int(round((hi_i - lo_i) * frac))
-            bi = min(max(bi, lo_i), hi_i)
-            if bi in seen_bi:
-                continue
-            seen_bi.add(bi)
-            px, py = pts[bi]
-            tx, ty = _check6_polyline_unit_tangent(pts, bi)
-            if math.hypot(tx, ty) < 1e-12:
-                continue
-            # Right-hand normal to forward tangent (toe → tip): tail on +n_r, head on −n_r.
-            rx, ry = float(ty), -float(tx)
-            rlen = math.hypot(rx, ry)
-            if rlen < 1e-12:
-                continue
-            rx, ry = rx / rlen, ry / rlen
-            tail_x = px + (sep_tail + gap_from_green) * rx
-            tail_y = py + (sep_tail + gap_from_green) * ry
-            head_x = px + (gap_from_green - sep_head) * rx
-            head_y = py + (gap_from_green - sep_head) * ry
-            tail_x = min(max(tail_x, x_lo_arr), x_hi_arr)
-            tail_y = min(max(tail_y, y_lo_arr), y_hi_arr)
-            head_x = min(max(head_x, x_lo_arr), x_hi_arr)
-            head_y = min(max(head_y, y_lo_arr), y_hi_arr)
-            # Plotly: arrow from (ax,ay) to (x,y); arrowhead at (x,y). Open end left, head right of green.
-            fig.add_annotation(
-                x=tail_x,
-                y=tail_y,
-                ax=head_x,
-                ay=head_y,
-                xref="x",
-                yref="y",
-                axref="x",
-                ayref="y",
-                text="",
-                showarrow=True,
-                arrowhead=2,
-                arrowsize=0.72,
-                arrowwidth=1.9,
-                arrowcolor="#111111",
-            )
+    tri_hw = max(0.03 * float(L_seg), 90.0) * 0.68
+    margin_x = max(0.035 * float(L_seg), 0.04 * D, 18.0)
+    x_v = min(max(x_v, margin_x), float(L_seg) - margin_x)
+    pad_sup = tri_hw * 1.25 + max(0.012 * float(L_seg), 8.0)
+    if abs(x_v - float(support_X)) < pad_sup:
+        x_v = float(support_X) + math.copysign(pad_sup, span_dx)
+    x_v = min(max(x_v, margin_x), float(L_seg) - margin_x)
+
+    ang_h = math.atan2(uh_y, uh_x)
+    ang_g = math.atan2(ugy, ugx)
+    d_ang = ang_g - ang_h
+    while d_ang <= -math.pi:
+        d_ang += 2 * math.pi
+    while d_ang > math.pi:
+        d_ang -= 2 * math.pi
+    if abs(d_ang) > 0.5 * math.pi + 1e-6:
+        d_ang = math.copysign(math.pi - abs(d_ang), d_ang)
+    cross_z = math.cos(ang_h) * math.sin(ang_g) - math.sin(ang_h) * math.cos(ang_g)
+    if abs(d_ang) < 0.035:
+        d_ang = math.copysign(max(0.12, math.radians(14)), cross_z if abs(cross_z) > 1e-9 else 1.0)
+
+    r_arc = max(0.032 * D, 11.0)
+    ang0 = ang_h
+    n_pts = 19
+    arc_x: list[float] = []
+    arc_y: list[float] = []
+    for i in range(n_pts):
+        tt = i / (n_pts - 1)
+        ang = ang0 + tt * d_ang
+        arc_x.append(x_v + r_arc * math.cos(ang))
+        arc_y.append(y_v + r_arc * math.sin(ang))
+
+    arc_col = "rgba(46,125,50,0.38)"
+    fig.add_trace(
+        go.Scatter(
+            x=arc_x,
+            y=arc_y,
+            mode="lines",
+            line=dict(color=arc_col, width=1.05),
+            hoverinfo="skip",
+            showlegend=False,
+        )
+    )
+
+    bis = ang0 + 0.5 * d_ang
+    off = r_arc * 1.42
+    lx = x_v + off * math.cos(bis)
+    ly = y_v + off * math.sin(bis)
+    # Nudge inward (into concrete) slightly so θ clears the outer fibre.
+    if tf == "bottom":
+        ly = max(ly, float(y_bot_beam) + y_eps + 0.22 * r_arc)
+    else:
+        ly = min(ly, float(y_top_beam) - y_eps - 0.22 * r_arc)
+
+    ast_y_off = 0.05 * D if tf == "bottom" else -0.05 * D
+    ast_lbl_y = float(y_steel) + ast_y_off
+    for _ in range(4):
+        if (lx - float(ast_lbl_x)) ** 2 + (ly - ast_lbl_y) ** 2 < (0.11 * D) ** 2:
+            off *= 1.22
+            lx = x_v + off * math.cos(bis)
+            ly = y_v + off * math.sin(bis)
+            if tf == "bottom":
+                ly = max(ly, float(y_bot_beam) + y_eps + 0.22 * r_arc)
+            else:
+                ly = min(ly, float(y_top_beam) - y_eps - 0.22 * r_arc)
+        else:
+            break
+
+    # Slight shift along horizontal away from D-region labels (soffit text uses y_reg_lbl < y_bot).
+    lx = lx + math.copysign(min(0.018 * float(L_seg), 0.024 * D), span_dx)
+
+    label_font = dict(size=10, color="#2e7d32", family="Arial, sans-serif")
+    fig.add_annotation(
+        x=lx,
+        y=ly,
+        text="θ",
+        showarrow=False,
+        font=label_font,
+        xref="x",
+        yref="y",
+        xanchor="center",
+        yanchor="middle",
+    )
 
 
 def _check6_shear_ligatures_active(
@@ -4944,516 +3858,6 @@ def _check6_shear_ligatures_active(
     if asv_mm2 is not None and float(asv_mm2) <= 1e-6:
         return False
     return True
-
-
-def _check6_add_mcft_mechanism_labels(
-    fig: go.Figure,
-    *,
-    D: float,
-    L_seg: float,
-    L_d_core: float,
-    crack_pts: list[tuple[float, float]],
-    mean_green_pts: list[tuple[float, float]],
-    theta_lbl_x: float,
-    theta_lbl_y: float,
-    cx_c: float,
-    y_c_top: float,
-    y_c_bot: float,
-    y_steel: float,
-    ast_lbl_x: float,
-    ast_arrow_x0: float,
-    ast_arrow_x1: float,
-    tension_face: str,
-    side_n: str,
-    y_bot_beam: float,
-    y_top_beam: float,
-    y_stirr_bot: float,
-    y_stirr_top: float,
-    stirrup_xds: list[float],
-    show_region_labels: bool,
-    support_X: float,
-    x_disp,
-) -> None:
-    """
-    Check 5 only: V_cr / V_ca / V_cc / V_d beside crack, green strut, compression block, and tie.
-    Positions are nudged to reduce overlap with linework and each other (no geometry changes).
-    """
-    if len(crack_pts) < 3 or len(mean_green_pts) < 2:
-        return
-    Df = max(float(D), 1.0)
-    Ls = max(float(L_seg), 1.0)
-    tf = str(tension_face).strip().lower()
-    sn = str(side_n).strip().lower()
-
-    t_samp = 0.46
-    nc, ng = len(crack_pts), len(mean_green_pts)
-    ic = min(max(int(round(t_samp * (nc - 1))), 1), nc - 2)
-    ig = min(max(int(round(t_samp * (ng - 1))), 1), ng - 2)
-    crx, cry = float(crack_pts[ic][0]), float(crack_pts[ic][1])
-    gpx, gpy = float(mean_green_pts[ig][0]), float(mean_green_pts[ig][1])
-    dgx, dgy = gpx - crx, gpy - cry
-    glen = math.hypot(dgx, dgy)
-    if glen < 1e-6:
-        return
-    ux, uy = dgx / glen, dgy / glen
-    off_cr = max(0.026 * Df, 16.0)
-    off_ca = max(0.028 * Df, 17.0)
-    vcr_x, vcr_y = crx - ux * off_cr, cry - uy * off_cr
-    vca_x, vca_y = gpx + ux * off_ca, gpy + uy * off_ca
-
-    # V_cc: compression-side block (top fibre for sagging, bottom for hogging)
-    c_hw = max(0.028 * Df, 11.0)
-    if tf == "bottom":
-        y_cc = float(y_c_top) - max(0.022 * Df, 10.0)
-        vcc_y = min(max(y_cc, float(y_c_bot) + c_hw), float(y_c_top) - 0.012 * Df)
-    else:
-        y_cc = float(y_c_bot) + max(0.022 * Df, 10.0)
-        vcc_y = min(max(y_cc, float(y_c_bot) + 0.012 * Df), float(y_c_top) - c_hw)
-    if sn == "right":
-        vcc_x = float(cx_c) - max(0.055 * Df, 22.0)
-        vcc_ax = "right"
-    elif sn == "internal":
-        vcc_x = float(cx_c) - max(0.048 * Df, 20.0)
-        vcc_ax = "right"
-    else:
-        vcc_x = float(cx_c) + max(0.055 * Df, 22.0)
-        vcc_ax = "left"
-
-    # V_d: beside blue Ast / crack crossing — offset up and to the span-ward side in x
-    ys = float(y_steel)
-    ast_lo = min(float(ast_arrow_x0), float(ast_arrow_x1))
-    ast_hi = max(float(ast_arrow_x0), float(ast_arrow_x1))
-    crack_cross: list[tuple[float, float]] = []
-    for k in range(len(crack_pts) - 1):
-        x0, y0 = float(crack_pts[k][0]), float(crack_pts[k][1])
-        x1, y1 = float(crack_pts[k + 1][0]), float(crack_pts[k + 1][1])
-        if abs(y1 - y0) < 1e-9:
-            continue
-        y_lo, y_hi = (y0, y1) if y0 <= y1 else (y1, y0)
-        if y_lo - 1e-6 <= ys <= y_hi + 1e-6:
-            t = (ys - y0) / (y1 - y0)
-            if -1e-5 <= t <= 1.0 + 1e-5:
-                xi = x0 + t * (x1 - x0)
-                crack_cross.append((xi, ys))
-    if crack_cross:
-        in_ast = [
-            p
-            for p in crack_cross
-            if ast_lo - 0.12 * Ls <= p[0] <= ast_hi + 0.12 * Ls
-        ]
-        pool = in_ast if in_ast else crack_cross
-        if sn == "right":
-            ix, iy = min(pool, key=lambda p: p[0])
-        else:
-            ix, iy = max(pool, key=lambda p: p[0])
-    else:
-        ast_mid = 0.5 * (ast_lo + ast_hi)
-        ix, iy = ast_mid, ys
-        best_d = 1e18
-        best_xy = (ix, iy)
-        for k in range(len(crack_pts) - 1):
-            x0, y0 = float(crack_pts[k][0]), float(crack_pts[k][1])
-            x1, y1 = float(crack_pts[k + 1][0]), float(crack_pts[k + 1][1])
-            abx, aby = x1 - x0, y1 - y0
-            al = abx * abx + aby * aby
-            if al < 1e-18:
-                continue
-            t = max(0.0, min(1.0, ((ast_mid - x0) * abx + (ys - y0) * aby) / al))
-            qx, qy = x0 + t * abx, y0 + t * aby
-            d = math.hypot(ast_mid - qx, ys - qy)
-            if d < best_d:
-                best_d = d
-                best_xy = (qx, qy)
-        ix, iy = best_xy
-    step_x = max(0.030 * Df, 16.0)
-    step_y = max(0.032 * Df, 17.0)
-    dir_x = -1.0 if sn == "right" else 1.0
-    vd_x = ix + dir_x * step_x
-    vd_y = iy + step_y
-    vd_yanchor = "bottom"
-    vd_xanchor = "left" if dir_x > 0 else "right"
-    vd_x = min(max(vd_x, 0.05 * Ls), Ls - 0.05 * Ls)
-    vd_y = min(max(vd_y, float(y_bot_beam) + 0.04 * Df), float(y_top_beam) - 0.04 * Df)
-
-    # Region label apertures (below soffit)
-    reg_y: float | None = None
-    reg_x1: float | None = None
-    reg_x2: float | None = None
-    if show_region_labels:
-        reg_y = float(y_bot_beam) - max(0.056 * Df, 28.0)
-        L_rem = max(L_seg - L_d_core, 0.08 * L_seg)
-        if sn == "right":
-            reg_x1 = float(x_disp(0.52 * L_d_core))
-            reg_x2 = float(x_disp(L_d_core + 0.50 * L_rem))
-        elif sn == "internal":
-            reg_x1 = float(support_X) + 0.42 * min(
-                L_d_core, max(L_seg - support_X, 1.0) * 0.92
-            )
-            reg_x2 = max(0.06 * L_seg, support_X * 0.42)
-        else:
-            reg_x1 = float(x_disp(0.48 * L_d_core))
-            reg_x2 = float(x_disp(L_d_core + 0.50 * L_rem))
-
-    min_l = max(0.048 * Df, 26.0)
-    pts: list[list[float]] = [
-        [vcr_x, vcr_y],
-        [vca_x, vca_y],
-        [vcc_x, vcc_y],
-        [vd_x, vd_y],
-    ]
-
-    def _too_close_stirrup(px: float, py: float) -> bool:
-        ys_lo = min(float(y_stirr_bot), float(y_stirr_top))
-        ys_hi = max(float(y_stirr_bot), float(y_stirr_top))
-        vm = max(0.02 * Df, 6.0)
-        for xv in stirrup_xds:
-            if abs(float(px) - float(xv)) < max(0.018 * Df, 7.0):
-                if ys_lo - vm <= py <= ys_hi + vm:
-                    return True
-        return False
-
-    def _dist_to_seg(
-        px: float, py: float, ax: float, ay: float, bx: float, by: float
-    ) -> float:
-        abx, aby = bx - ax, by - ay
-        t = ((px - ax) * abx + (py - ay) * aby) / max(abx * abx + aby * aby, 1e-12)
-        t = max(0.0, min(1.0, t))
-        qx, qy = ax + t * abx, ay + t * aby
-        return math.hypot(px - qx, py - qy)
-
-    def _min_dist_polyline(px: float, py: float, poly: list[tuple[float, float]]) -> float:
-        m = 1e18
-        for k in range(len(poly) - 1):
-            m = min(
-                m,
-                _dist_to_seg(
-                    px,
-                    py,
-                    float(poly[k][0]),
-                    float(poly[k][1]),
-                    float(poly[k + 1][0]),
-                    float(poly[k + 1][1]),
-                ),
-            )
-        return m
-
-    def _repel_from_features(
-        px: float, py: float, *, vd_label: bool = False
-    ) -> tuple[float, float]:
-        x, y = float(px), float(py)
-        # Theta label
-        dth = math.hypot(x - float(theta_lbl_x), y - float(theta_lbl_y))
-        if dth < max(0.10 * Df, 36.0):
-            s = max(0.10 * Df, 36.0) - dth + 4.0
-            if dth > 1e-6:
-                x += s * (x - theta_lbl_x) / dth
-                y += s * (y - theta_lbl_y) / dth
-            else:
-                x += s
-        # Vertical compression resultant
-        if abs(x - float(cx_c)) < max(0.032 * Df, 14.0):
-            if float(y_c_bot) - 0.02 * Df <= y <= float(y_c_top) + 0.02 * Df:
-                step = max(0.042 * Df, 18.0)
-                x += step if x >= float(cx_c) else -step
-        # Ast horizontal bar (keep V_d readable beside crack–Ast crossing)
-        if not vd_label and abs(y - float(y_steel)) < max(0.022 * Df, 10.0):
-            lo, hi = (
-                (min(ast_arrow_x0, ast_arrow_x1), max(ast_arrow_x0, ast_arrow_x1))
-                if ast_arrow_x0 <= ast_arrow_x1
-                else (min(ast_arrow_x1, ast_arrow_x0), max(ast_arrow_x1, ast_arrow_x0))
-            )
-            if lo - 0.03 * Ls <= x <= hi + 0.03 * Ls:
-                y += max(0.034 * Df, 14.0) if y >= float(y_steel) else -max(0.034 * Df, 14.0)
-        # Crack / green polylines
-        if not vd_label:
-            if _min_dist_polyline(x, y, crack_pts) < max(0.018 * Df, 9.0):
-                x -= ux * max(0.022 * Df, 10.0)
-                y -= uy * max(0.022 * Df, 10.0)
-            if _min_dist_polyline(x, y, mean_green_pts) < max(0.018 * Df, 9.0):
-                x += ux * max(0.022 * Df, 10.0)
-                y += uy * max(0.022 * Df, 10.0)
-        if _too_close_stirrup(x, y):
-            x += max(0.035 * Df, 14.0) * (1.0 if x < 0.5 * Ls else -1.0)
-        if reg_y is not None and reg_x1 is not None and reg_x2 is not None:
-            if abs(y - reg_y) < max(0.05 * Df, 22.0):
-                rx_lo = min(reg_x1, reg_x2) - 0.06 * Ls
-                rx_hi = max(reg_x1, reg_x2) + 0.06 * Ls
-                if rx_lo <= x <= rx_hi:
-                    y = reg_y + max(0.08 * Df, 30.0)
-        x = min(max(x, 0.04 * Ls), Ls - 0.04 * Ls)
-        y = min(max(y, float(y_bot_beam) + 0.03 * Df), float(y_top_beam) - 0.03 * Df)
-        return x, y
-
-    for _ in range(14):
-        for i in range(len(pts)):
-            pts[i][0], pts[i][1] = _repel_from_features(
-                pts[i][0], pts[i][1], vd_label=(i == 3)
-            )
-        moved = False
-        for i in range(len(pts)):
-            for j in range(i + 1, len(pts)):
-                dx = pts[j][0] - pts[i][0]
-                dy = pts[j][1] - pts[i][1]
-                d = math.hypot(dx, dy)
-                if d < min_l and d > 1e-9:
-                    push = 0.52 * (min_l - d)
-                    fx, fy = dx / d, dy / d
-                    pts[i][0] -= fx * push
-                    pts[i][1] -= fy * push
-                    pts[j][0] += fx * push
-                    pts[j][1] += fy * push
-                    moved = True
-        if not moved:
-            break
-        for i in range(len(pts)):
-            pts[i][0], pts[i][1] = _repel_from_features(
-                pts[i][0], pts[i][1], vd_label=(i == 3)
-            )
-
-    halo = dict(
-        bgcolor="rgba(255,255,255,0.90)",
-        borderpad=3,
-        bordercolor="rgba(255,255,255,0)",
-    )
-    col_cr = "rgba(38,40,44,0.96)"
-    col_ca = "#1b5e20"
-    col_cc = "#c41e3a"
-    col_vd = "#1565c0"
-
-    fig.add_annotation(
-        x=pts[0][0],
-        y=pts[0][1],
-        text="<i>V</i><sub>cr</sub>",
-        showarrow=False,
-        font=dict(size=10, color=col_cr),
-        xref="x",
-        yref="y",
-        xanchor="center",
-        yanchor="middle",
-        **halo,
-    )
-    fig.add_annotation(
-        x=pts[1][0],
-        y=pts[1][1],
-        text="<i>V</i><sub>ca</sub>",
-        showarrow=False,
-        font=dict(size=10, color=col_ca),
-        xref="x",
-        yref="y",
-        xanchor="center",
-        yanchor="middle",
-        **halo,
-    )
-    fig.add_annotation(
-        x=pts[2][0],
-        y=pts[2][1],
-        text="<i>V</i><sub>cc</sub>",
-        showarrow=False,
-        font=dict(size=10, color=col_cc),
-        xref="x",
-        yref="y",
-        xanchor=vcc_ax,
-        yanchor="middle",
-        **halo,
-    )
-    fig.add_annotation(
-        x=pts[3][0],
-        y=pts[3][1],
-        text="<i>V</i><sub>d</sub>",
-        showarrow=False,
-        font=dict(size=10, color=col_vd),
-        xref="x",
-        yref="y",
-        xanchor=vd_xanchor,
-        yanchor=vd_yanchor,
-        **halo,
-    )
-
-
-def _check6_add_web_crushing_stm_overlay(
-    fig: go.Figure,
-    *,
-    D: float,
-    L_seg: float,
-    support_face_x: float,
-    x_toe: float,
-    y_toe: float,
-    y_steel: float,
-    y_top_beam: float,
-    y_bot_beam: float,
-    tension_face: str,
-    side_n: str,
-    theta_v_deg: float,
-    pad_x_toe: float,
-) -> None:
-    """
-    D-region strut-and-tie sketch for web-crushing: red diagonal strut at governing **θ_v**
-    (same convention as ``_check6_unit_toe_to_tip_crack`` / MCFT crack), tie cue at Ast,
-    d_v bracket, and V_u,max label.
-    """
-    Df = max(float(D), 1.0)
-    Ls = max(float(L_seg), 1.0)
-    pad = max(float(pad_x_toe), 6.0)
-    tf = str(tension_face).strip().lower()
-    sn = str(side_n or "left").strip().lower()
-    if tf == "bottom":
-        y_comp = float(y_top_beam) - max(0.042 * Df, 13.0)
-    else:
-        y_comp = float(y_bot_beam) + max(0.042 * Df, 13.0)
-
-    lo = min(float(support_face_x), float(x_toe))
-    hi = max(float(support_face_x), float(x_toe))
-    tie_inset = max(0.026 * Ls, 11.0)
-    x_tie0 = lo + tie_inset
-    x_tie1 = hi - tie_inset
-    if x_tie1 <= x_tie0 + 2.0:
-        x_tie0, x_tie1 = lo, hi
-
-    x_strut_bot = min(max(float(support_face_x), x_tie0), x_tie1)
-
-    x0, y0 = float(x_strut_bot), float(y_steel)
-    y_lo = float(y_bot_beam) + 0.018 * Df
-    y_hi = float(y_top_beam) - 0.018 * Df
-
-    th = math.radians(max(1.0, min(float(theta_v_deg), 89.0)))
-    uxn, uyn = _check6_unit_toe_to_tip_crack(
-        support_side=sn,
-        tension_face=tf,
-        theta_v_rad=th,
-    )
-    uln = math.hypot(uxn, uyn)
-    if uln > 1e-9:
-        uxn, uyn = uxn / uln, uyn / uln
-    # Half-line from tie toward compression (same θ; flip 180° if needed).
-    if (float(y_comp) - y0) * uyn < 0:
-        uxn, uyn = -uxn, -uyn
-
-    # End on compression band so strut lies exactly at θ_v (slope dy/dx = uyn/uxn).
-    if abs(uyn) > 1e-6:
-        t_ray = (float(y_comp) - y0) / uyn
-        x1 = x0 + uxn * t_ray
-        y1 = float(y_comp)
-    elif abs(uxn) > 1e-6:
-        t_ray = max(0.2 * Ls, 40.0)
-        x1 = x0 + uxn * t_ray
-        y1 = y0
-    else:
-        x1, y1 = x0 + 0.25 * Ls, y_comp
-
-    def _clip_preserving_slope() -> None:
-        nonlocal x1, y1
-        if x1 < pad or x1 > Ls - pad:
-            x1 = min(max(x1, pad), Ls - pad)
-            if abs(uxn) > 1e-6:
-                y1 = y0 + (uyn / uxn) * (x1 - x0)
-        if y1 < y_lo or y1 > y_hi:
-            y1 = min(max(y1, y_lo), y_hi)
-            if abs(uyn) > 1e-6:
-                x1 = x0 + (uxn / uyn) * (y1 - y0)
-
-    _clip_preserving_slope()
-    _clip_preserving_slope()
-
-    c_red = "#c41e3a"
-    ast_blue = "#1565c0"
-    teach_col = "rgba(55,71,79,0.78)"
-
-    fig.add_trace(
-        go.Scatter(
-            x=[x0, x1],
-            y=[y0, y1],
-            mode="lines",
-            line=dict(color=c_red, width=3.6),
-            hoverinfo="skip",
-            showlegend=False,
-        )
-    )
-
-    xm, ym = 0.5 * (x0 + x1), 0.5 * (y0 + y1)
-    # θ label: just above the blue Ast line (y_steel); x biased left (support-ward).
-    theta_x = 0.58 * float(x0) + 0.42 * float(x_toe)
-    theta_x -= max(0.030 * Ls, 20.0)
-    theta_x = min(max(theta_x, pad + max(0.02 * Ls, 10.0)), Ls - pad - max(0.02 * Ls, 10.0))
-    if tf == "bottom":
-        theta_y = float(y_steel) + max(0.007 * Df, 5.0)
-        theta_yanchor = "bottom"
-    else:
-        theta_y = float(y_steel) - max(0.007 * Df, 5.0)
-        theta_yanchor = "top"
-    span_sign = 1.0 if uxn >= 0.0 else -1.0
-    theta_xanchor = "right" if span_sign > 0 else "left"
-    fig.add_annotation(
-        x=theta_x,
-        y=theta_y,
-        text=f"θ = {float(theta_v_deg):.1f}°",
-        showarrow=False,
-        font=dict(size=8, color="rgba(31,42,68,0.90)"),
-        xref="x",
-        yref="y",
-        xanchor=theta_xanchor,
-        yanchor=theta_yanchor,
-    )
-    fig.add_annotation(
-        x=xm - 0.012 * Ls * uxn,
-        y=ym - 0.020 * Df * abs(uyn) - 0.012 * Df,
-        text="<i>Diagonal compression strut</i>",
-        showarrow=False,
-        font=dict(size=8, color="rgba(196,30,58,0.92)"),
-        xref="x",
-        yref="y",
-    )
-    # Tie (Ast): span-ward of θ (same text row); anchors keep a gap for left vs right support.
-    tie_ast_x = float(theta_x) + span_sign * max(0.048 * Ls, 36.0)
-    tie_ast_x = min(max(tie_ast_x, pad + max(0.015 * Ls, 10.0)), Ls - pad - max(0.015 * Ls, 10.0))
-    tie_xanchor = "left" if span_sign > 0 else "right"
-    fig.add_annotation(
-        x=tie_ast_x,
-        y=theta_y,
-        text="<i>Tie (</i><b>Ast</b><i>)</i>",
-        showarrow=False,
-        font=dict(size=8, color=ast_blue),
-        xref="x",
-        yref="y",
-        xanchor=tie_xanchor,
-        yanchor=theta_yanchor,
-    )
-
-    x_dv = float(x_toe) - max(0.016 * Ls, 9.0)
-    x_dv = max(pad, min(x_dv, Ls - pad))
-    y_lo_dv = min(float(y_steel), float(y_comp))
-    y_hi_dv = max(float(y_steel), float(y_comp))
-    if y_hi_dv - y_lo_dv > max(0.05 * Df, 14.0):
-        fig.add_shape(
-            type="line",
-            x0=x_dv,
-            y0=y_lo_dv,
-            x1=x_dv,
-            y1=y_hi_dv,
-            line=dict(color=teach_col, width=1.25, dash="dot"),
-        )
-        fig.add_annotation(
-            x=x_dv - max(0.014 * Ls, 8.0),
-            y=0.5 * (y_lo_dv + y_hi_dv),
-            text="<i>d<sub>v</sub></i>",
-            showarrow=False,
-            font=dict(size=8, color=teach_col),
-            xref="x",
-            yref="y",
-            xanchor="right",
-            yanchor="middle",
-        )
-
-    fig.add_annotation(
-        x=0.5 * (lo + hi),
-        y=float(y_bot_beam) - max(0.048 * Df, 24.0),
-        text="<i>V</i><sub>u,max</sub> web-crushing limit",
-        showarrow=False,
-        font=dict(size=9, color="rgba(31,42,68,0.88)"),
-        xref="x",
-        yref="y",
-        xanchor="center",
-        yanchor="top",
-    )
 
 
 def build_shear_check6_support_transfer_diagram(
@@ -5471,66 +3875,25 @@ def build_shear_check6_support_transfer_diagram(
     height: int = 320,
     fc_mpa: float | None = None,
     fsy_mpa: float | None = None,
-    theta_v_deg: float | None = None,
-    d_v_mm: float | None = None,
-    show_mean_crack_guideline: bool = True,
-    show_mean_green_flow_pulse: bool = True,
-    show_mean_green_flow_arrows: bool = True,
-    show_green_strut_flow: bool = False,
-    show_compression_resultant: bool = True,
-    show_shear_teaching_overlay: bool = False,
-    show_region_labels: bool = True,
-    show_mcft_mechanism_labels: bool = False,
-    crack_bulge_scale: float = 1.28,
-    crack_jag_scale: float = 0.88,
-    web_crushing_stm: bool = False,
 ) -> go.Figure:
     """
     Local support-region schematic: ~1.5d–2d D-region from the critical support plus ~0.5d–1.0d
-    into the adjacent shear span. L_d_core is unchanged from the band formulas; the flexural-shear
-    run uses the same nominal L_span_extra scaled by flex_leg_scale (no cap that re-balances D vs flex).
-    x_fs = distance from the governing support face into the span (mm);
+    into the adjacent shear span. x_fs = distance from the governing support face into the span (mm);
     display X places the support on the window boundary (left end → X=0, right end → X=L_seg).
-
-    Optional display variants (Check 5 vs Check 7): omit mean crack guideline, strut-flow overlay,
-    compression ``C``, green/black load-path arrows (``show_mean_green_flow_arrows``), and teaching
-    geometry via the ``show_*`` flags. Check 5 defaults omit the
-    grey ``d_v`` / ``d_v cot θ_v`` teaching overlay; Step 7 passes ``show_shear_teaching_overlay=True``
-    for that construction only. When the mean crack guideline is enabled, the green path is a
-    parallel offset (normal to the path) of the crack’s smooth arched Bézier centreline (same
-    backbone as the black crack, without jag). With ``show_mean_green_flow_pulse`` and
-    ``show_compression_resultant``, the pulse follows one
-    continuous path: top of **C** → down **C** → green transfer curve (tip to Ast) → **Ast** tie
-    toward the support (same MCFT dashed + sliding-window animation). Otherwise the pulse is green-only
-    or hidden when the pulse flag is off (solid green + optional tangent arrows). Black normal arrows
-    are unchanged. The θ marker at the
-    toe shows the angle from the bottom beam edge to the *drawn* crack tangent (not the nominal MCFT
-    input). All stirrups render as one dark grey.
-
-    ``show_mcft_mechanism_labels`` (Check 5): adds italic subscript labels ``V_cr``, ``V_ca``,
-    ``V_cc``, ``V_d`` beside the crack, green strut, compression block, and tie; geometry unchanged.
-
-    ``web_crushing_stm`` (Check 9): same beam/support/inset/stirrups/Ast as Checks 5/7, but omits the
-    MCFT crack/green path and draws a D-region strut-and-tie overlay (red strut, tie at Ast) for the
-    web-crushing schematic.
     """
     fig = go.Figure()
-    mean_green_for_flow: list[tuple[float, float]] = []
-    flow_c_cx: float | None = None
-    flow_c_y_top: float | None = None
-    flow_c_y_bot: float | None = None
     shape_kind, dims = _check6_shape_kind_and_dims(layout)
     D = max(float(D_mm), 1.0)
     d_use = max(float(d_mm), 0.01 * D)
-    d_v_use = float(d_v_mm) if d_v_mm is not None else d_use
-    d_v_use = max(d_v_use, 0.05 * D, 1.0)
     L_d_core = max(1.5 * d_use, min(2.0 * d_use, 0.52 * D))
     L_span_extra = max(0.5 * d_use, min(1.0 * d_use, 0.30 * D))
-    # D-depth stays per formulas; flexural-shear leg lengthened by a fixed factor (no L_seg squeeze).
-    flex_leg_scale = 2.75
-    L_raw = float(L_d_core) + float(L_span_extra) * flex_leg_scale
-    L_seg_cap = max(4.25 * d_use, 1.22 * D, L_raw)
-    L_seg = max(2.0 * d_use, min(L_raw, L_seg_cap))
+    L_raw = L_d_core + L_span_extra
+    L_seg = max(2.0 * d_use, min(L_raw, min(3.0 * d_use, 0.80 * D)))
+    if L_seg < L_raw - 1e-6:
+        short = L_raw - L_seg
+        L_span_extra = max(L_span_extra - short, 0.35 * d_use)
+        L_d_core = max(L_seg - L_span_extra, 1.2 * d_use)
+        L_span_extra = L_seg - L_d_core
 
     inset_pts_uv, width_sec = _check6_section_inset_polygon_uv(shape_kind, dims)
     width_sec = max(float(width_sec), 1.0)
@@ -5596,33 +3959,15 @@ def build_shear_check6_support_transfer_diagram(
         support_X = 0.0
         inset_on_right = True
 
-    yt = _check6_y_display(D, 0.0)
-    yb = _check6_y_display(D, D)
-    y_top_beam, y_bot_beam = yt, yb
-
-    # Flexural-shear fill: vertical leading edge at crack toe x (same x as crack origin below).
-    pad_x_toe = max(0.012 * L_seg, 0.04 * d_use, 8.0)
-    margin_y = max(0.006 * D, 1.5)
-    x_fs_boundary = float(L_d_core)
-    if str(tension_face).strip().lower() == "bottom":
-        y_toe = float(y_bot_beam) + margin_y
-    else:
-        y_toe = float(y_top_beam) - margin_y
-    if side_n == "internal":
-        x_toe = float(support_X) - x_fs_boundary
-    else:
-        x_toe = float(x_disp(x_fs_boundary))
-    x_toe = min(max(x_toe, pad_x_toe), float(L_seg) - pad_x_toe)
-
     if inset_on_right:
-        flex_x0 = float(x_toe)
-        flex_span = max(float(L_seg) - flex_x0, max(0.02 * float(L_seg), 1.0))
+        inset_x0 = L_seg - grey_span_mm
+        inset_x1 = L_seg
     else:
-        flex_x0 = 0.0
-        flex_span = float(grey_span_mm)
+        inset_x0 = 0.0
+        inset_x1 = grey_span_mm
 
     def xf_sect(u: float) -> float:
-        return flex_x0 + (float(u) / width_sec) * flex_span
+        return inset_x0 + (float(u) / width_sec) * grey_span_mm
 
     def add_path_raw(path: str, *, width: float = 2, color: str = "#1f2a44", fill: str = "rgba(0,0,0,0)"):
         fig.add_shape(
@@ -5649,6 +3994,8 @@ def build_shear_check6_support_transfer_diagram(
         fill="rgba(31,42,68,0.10)",
     )
 
+    yt = _check6_y_display(D, 0.0)
+    yb = _check6_y_display(D, D)
     beam_outline = "#1f2a44"
     add_path_raw(
         path_from_points_disp([(0.0, yt), (L_seg, yt), (L_seg, yb), (0.0, yb)], close=True),
@@ -5689,6 +4036,8 @@ def build_shear_check6_support_transfer_diagram(
             line=dict(color="rgba(31,42,68,0.35)", width=1, dash="dot"),
         )
 
+    y_top_beam = yt
+    y_bot_beam = yb
     cage_y0, cage_y1 = _check6_shear_cage_y_range_mm(
         layout=layout,
         shape_kind=shape_kind,
@@ -5700,10 +4049,23 @@ def build_shear_check6_support_transfer_diagram(
     )
     y_stirr_top = _check6_y_display(D, cage_y0)
     y_stirr_bot = _check6_y_display(D, cage_y1)
-    stirrup_color = "rgba(52,52,56,0.92)"
+    stirrup_color = "rgba(105,105,110,0.88)"
     draw_stirrups = _check6_shear_ligatures_active(
         s_mm=float(s_lig_mm), lig_legs=int(lig_legs), asv_mm2=asv_mm2
     )
+    if draw_stirrups:
+        for xs_fs in _check6_stirrup_xs_mm(
+            L_seg_mm=L_seg, s_mm=float(s_lig_mm), max_lines=18
+        ):
+            xd = x_disp(xs_fs)
+            fig.add_shape(
+                type="line",
+                x0=xd,
+                y0=y_stirr_bot,
+                x1=xd,
+                y1=y_stirr_top,
+                line=dict(color=stirrup_color, width=1.35),
+            )
 
     ast_blue = "#1565c0"
     tie_x0_fs = max(0.06 * L_seg, 0.05 * d_use)
@@ -5717,7 +4079,16 @@ def build_shear_check6_support_transfer_diagram(
         line=dict(color=ast_blue, width=3),
     )
 
-    # ULS d_n for NA / small C marker only (crack does not terminate at C or the support face).
+    ast_inset_fs = max(0.07 * L_seg, 0.06 * d_use, 22.0)
+    if side_n == "right":
+        ast_lbl_x = x_disp(L_seg - ast_inset_fs)
+    elif side_n == "internal":
+        ast_lbl_x = x_disp(-min(0.13 * L_seg, 0.42 * L_seg))
+    else:
+        ast_lbl_x = x_disp(ast_inset_fs)
+
+    # ULS d_n (bending tab 1.4) → NA depth; vertical C at NA; soft cubic crack from tension at
+    # x_lo to (x_hi, y_crack_end) on the tension side of the NA.
     b_mm = float(dims.get("b", width_sec))
     Ast_t = _check6_tension_ast_mm2(layout, tension_face)
     dn_mm: float
@@ -5741,292 +4112,63 @@ def build_shear_check6_support_transfer_diagram(
     dn_mm = max(1.0, min(float(D) - 1.0, float(dn_mm)))
     v_na = _check6_v_na_from_dn_mm(D=D, dn_mm=dn_mm, compression_face=compression_face)
     c_y_line = _check6_y_display(D, v_na)
-    delta_cz = max(0.012 * D, 3.0)
-
-    if side_n == "right":
-        support_face_x = float(L_seg)
-    elif side_n == "internal":
-        support_face_x = float(support_X)
-    else:
-        support_face_x = 0.0
-
-    # x_toe / y_toe: same as above (crack origin at D-region boundary).
-
-    theta_use_deg = float(theta_v_deg) if theta_v_deg is not None else 36.0
-    theta_use_rad = math.radians(max(1.0, min(theta_use_deg, 89.0)))
-    ux, uy = _check6_unit_toe_to_tip_crack(
-        support_side=side_n,
-        tension_face=tension_face,
-        theta_v_rad=theta_use_rad,
-    )
-
+    delta_c = max(0.002 * D, 0.5)
     if compression_face == "top":
-        y_tip_tgt = min(
-            y_top_beam - 0.035 * D,
-            c_y_line + 1.35 * max(delta_cz, 0.01 * D),
-        )
+        y_crack_end = c_y_line - delta_c
     else:
-        y_tip_tgt = max(
-            y_bot_beam + 0.035 * D,
-            c_y_line - 1.35 * max(delta_cz, 0.01 * D),
-        )
-    y_tip_tgt = min(
-        max(y_tip_tgt, y_bot_beam + 0.04 * D),
-        y_top_beam - 0.04 * D,
+        y_crack_end = c_y_line + delta_c
+    y_crack_end = min(max(y_crack_end, y_bot_beam + 0.02 * D), y_top_beam - 0.02 * D)
+
+    x_lo = min(float(inset_x0), float(inset_x1))
+    x_hi = max(float(inset_x0), float(inset_x1))
+    if tension_face == "bottom":
+        y_lo_pt = y_steel - 0.012 * D
+    else:
+        y_lo_pt = y_steel + 0.012 * D
+    crack_geom = _check6_crack_bezier_setup(
+        x_lo,
+        y_lo_pt,
+        x_hi,
+        y_crack_end,
+        tension_face=tension_face,
+        D_mm=D,
     )
-
-    if abs(uy) > 1e-6:
-        t_geom = (float(y_tip_tgt) - float(y_toe)) / uy
-        x_tip = float(x_toe) + t_geom * ux
-        y_tip = float(y_toe) + t_geom * uy
-    else:
-        x_tip = float(x_toe) + 0.45 * float(L_seg) * (1.0 if ux > 0 else -1.0)
-        y_tip = float(y_tip_tgt)
-
-    pad_span = max(0.035 * L_seg, 0.05 * d_use, 8.0)
-    if side_n == "left":
-        x_tip = min(max(x_tip, x_toe + pad_span), L_seg - pad_span)
-    elif side_n == "right":
-        x_tip = max(min(x_tip, x_toe - pad_span), pad_span)
-    else:
-        if ux < -1e-9:
-            x_tip = max(pad_span, min(x_tip, x_toe - pad_span))
-        else:
-            x_tip = min(L_seg - pad_span, max(x_tip, x_toe + pad_span))
-
-    if abs(ux) > 1e-9:
-        y_tip = float(y_toe) + (float(x_tip) - float(x_toe)) / ux * uy
-        y_tip = min(max(y_tip, y_bot_beam + 0.02 * D), y_top_beam - 0.02 * D)
-
-    x_toe = float(x_toe)
-    y_toe = float(y_toe)
-    x_tip = float(x_tip)
-    y_tip = float(y_tip)
-
-    uln = math.hypot(ux, uy)
-    if uln > 1e-9:
-        ux, uy = ux / uln, uy / uln
-
-    web_stm = bool(web_crushing_stm)
-    if web_stm:
-        show_mean_crack_guideline = False
-        show_mean_green_flow_pulse = False
-        show_mean_green_flow_arrows = False
-        show_green_strut_flow = False
-        show_compression_resultant = False
-        show_shear_teaching_overlay = False
-        show_mcft_mechanism_labels = False
-        show_region_labels = False
-
-    crack_geom = None
-    crack_pts: list[tuple[float, float]] = []
-    if not web_stm:
-        crack_geom = _check6_crack_bezier_setup(
-            x_toe,
-            y_toe,
-            x_tip,
-            y_tip,
-            tension_face=tension_face,
-            D_mm=D,
-            bulge_scale=float(crack_bulge_scale),
+    wall_x_for_green = float(L_seg) if inset_on_right else 0.0
+    wall_at_green_start = abs(wall_x_for_green - float(x_lo)) <= abs(
+        wall_x_for_green - float(x_hi)
+    ) + 1e-9
+    crack_pts = _check6_soft_crack_polyline(
+        x_lo,
+        y_lo_pt,
+        x_hi,
+        y_crack_end,
+        tension_face=tension_face,
+        D_mm=D,
+    )
+    crack_d = _check6_polyline_to_path_svg(crack_pts)
+    if crack_d:
+        fig.add_shape(
+            type="path",
+            path=crack_d,
+            line=dict(color="#111111", width=2),
         )
-        if crack_geom is None:
-            crack_geom = _check6_collinear_bezier_geom_from_chord(
-                x_toe, y_toe, x_tip, y_tip
-            )
-
-        crack_pts = _check6_soft_crack_polyline(
-            x_toe,
-            y_toe,
-            x_tip,
-            y_tip,
-            tension_face=tension_face,
-            D_mm=D,
-            bulge_scale=float(crack_bulge_scale),
-            jag_scale=float(crack_jag_scale),
-        )
-    # θ arc/label: governing θ_v from check (toe→tip unit vector), not the jagged polyline.
-    theta_lbl_x = float(x_toe)
-    theta_lbl_y = float(y_toe)
-    if not web_stm:
-        tdx, tdy = float(ux), float(uy)
-        if str(tension_face).strip().lower() == "bottom":
-            if side_n == "right":
-                edx, edy = -1.0, 0.0
-            elif side_n == "internal" and float(ux) < -1e-9:
-                edx, edy = -1.0, 0.0
-            else:
-                edx, edy = 1.0, 0.0
-        else:
-            if side_n == "right":
-                edx, edy = -1.0, 0.0
-            elif side_n == "internal" and float(ux) < -1e-9:
-                edx, edy = -1.0, 0.0
-            else:
-                edx, edy = 1.0, 0.0
-        a_edge = math.atan2(edy, edx)
-        a_tan = math.atan2(tdy, tdx)
-        da = (a_tan - a_edge + math.pi) % (2 * math.pi) - math.pi
-        if da > math.pi / 2:
-            da -= 2 * math.pi
-        elif da < -math.pi / 2:
-            da += 2 * math.pi
-        a_arc0 = a_edge
-        a_arc1 = a_edge + da
-        r_arc = max(0.036 * D, 0.026 * L_seg, 12.0)
-        n_theta = 10
-        arc_pts_theta: list[tuple[float, float]] = []
-        for i in range(n_theta + 1):
-            tt = i / n_theta
-            aa = a_arc0 + tt * (a_arc1 - a_arc0)
-            arc_pts_theta.append(
-                (x_toe + r_arc * math.cos(aa), y_toe + r_arc * math.sin(aa))
-            )
-        arc_path = _check6_polyline_to_path_svg(arc_pts_theta)
-        if arc_path:
-            fig.add_shape(
-                type="path",
-                path=arc_path,
-                line=dict(color="rgba(46,105,65,0.58)", width=1.35),
-            )
-        am = a_arc0 + 0.34 * (a_arc1 - a_arc0)
-        r_lbl = r_arc * 1.45
-        theta_shift_x = max(0.058 * D, 40.0)
-        theta_lbl_x = x_toe + r_lbl * math.cos(am) + theta_shift_x
-        theta_lbl_y = y_toe + r_lbl * math.sin(am)
-        theta_lbl_x = min(float(theta_lbl_x), float(L_seg) - max(0.018 * L_seg, 10.0))
-        fig.add_annotation(
-            x=theta_lbl_x,
-            y=theta_lbl_y,
-            text=f"θ = {float(theta_use_deg):.1f}°",
-            showarrow=False,
-            font=dict(size=8, color="rgba(20,70,35,0.92)"),
-            xref="x",
-            yref="y",
-        )
-
-    if not web_stm:
-        crack_d = _check6_polyline_to_path_svg(crack_pts)
-        if crack_d:
-            fig.add_shape(
-                type="path",
-                path=crack_d,
-                line=dict(color="#111111", width=2),
-            )
-
-    t_ray = math.hypot(x_tip - x_toe, y_tip - y_toe)
-    stirrup_xs_hit: list[float] = []
-    stirrup_xd_list: list[float] = []
-    if draw_stirrups:
-        for xs_fs in _check6_stirrup_xs_mm(
-            L_seg_mm=float(L_seg), s_mm=float(s_lig_mm), max_lines=28
-        ):
-            xd = x_disp(xs_fs)
-            stirrup_xd_list.append(float(xd))
-            if show_shear_teaching_overlay:
-                hit = _check6_crack_ray_hits_vertical_stirrup(
-                    xd,
-                    x_toe,
-                    y_toe,
-                    ux,
-                    uy,
-                    y_stirr_bot,
-                    y_stirr_top,
-                    t_ray,
-                )
-                if hit:
-                    stirrup_xs_hit.append(xd)
-            fig.add_shape(
-                type="line",
-                x0=xd,
-                y0=y_stirr_bot,
-                x1=xd,
-                y1=y_stirr_top,
-                line=dict(color=stirrup_color, width=1.25),
-            )
-
-    if show_mean_crack_guideline:
-        smooth_backbone = _check6_smooth_crack_polyline(
-            x_toe,
-            y_toe,
-            x_tip,
-            y_tip,
-            tension_face=tension_face,
-            D_mm=D,
-            n=80,
-            bulge_scale=float(crack_bulge_scale),
-        )
-        mean_green_offset_pts = []
-        if smooth_backbone:
-            ggap = max(0.026 * D, 17.0, 0.0095 * float(L_seg))
-            mean_green_offset_pts = _check6_polyline_offset_toward_compression(
-                smooth_backbone,
-                gap_mm=ggap,
-                compression_face=compression_face,
-                D_mm=D,
-                L_seg_mm=float(L_seg),
-                y_bot=y_bot_beam,
-                y_top=y_top_beam,
-                normal_sign=-1.0,
-            )
-        if len(mean_green_offset_pts) >= 2:
-            mean_tr, _, _ = _check6_trim_polyline_at_ast_elevation(
-                mean_green_offset_pts,
-                y_ast=float(y_steel),
-                tension_face=tension_face,
-            )
-            if len(mean_tr) >= 2:
-                mean_green_offset_pts = mean_tr
-        if len(mean_green_offset_pts) >= 2:
-            mean_green_for_flow = list(mean_green_offset_pts)
-            use_pulse = bool(show_mean_green_flow_pulse)
-            if not use_pulse:
-                pg_mean = _check6_polyline_to_path_svg(mean_green_offset_pts)
-                if pg_mean:
-                    fig.add_shape(
-                        type="path",
-                        path=pg_mean,
-                        line=dict(
-                            color="#2e7d32",
-                            width=2.1,
-                            dash="12px,10px",
-                        ),
-                    )
-            if (
-                bool(show_mean_green_flow_arrows)
-                and len(mean_green_offset_pts) >= 5
-            ):
-                _check6_add_green_black_flow_arrows_on_polyline(
-                    fig,
-                    mean_green_offset_pts,
-                    D_mm=D,
-                    L_seg_mm=float(L_seg),
-                    y_bot=y_bot_beam,
-                    y_top=y_top_beam,
-                    show_green_tangent_arrows=not use_pulse,
-                )
-
-    if not web_stm:
-        green_pts = [
-            (
-                x_toe + (x_tip - x_toe) * (i / 72.0),
-                y_toe + (y_tip - y_toe) * (i / 72.0),
-            )
-            for i in range(73)
-        ]
-        green_pts, green_t0, green_n = _check6_trim_polyline_at_ast_elevation(
-            green_pts, y_ast=y_steel, tension_face=tension_face
-        )
-    else:
-        green_pts = []
-        green_t0, green_n = 0.0, 1.0
-    green_shift = max(0.088 * D, 58.0)
-    if (
-        show_green_strut_flow
-        and len(green_pts) >= 4
-        and crack_geom is not None
-    ):
-        _check6_add_green_ccw_flow_on_polyline(
+    green_pts = _check6_smooth_crack_polyline(
+        x_lo,
+        y_lo_pt,
+        x_hi,
+        y_crack_end,
+        tension_face=tension_face,
+        D_mm=D,
+        n=72,
+    )
+    green_pts, green_t0, green_n = _check6_trim_polyline_at_ast_elevation(
+        green_pts, y_ast=y_steel, tension_face=tension_face
+    )
+    green_shift = max(0.048 * D, 32.0)
+    green_line = "#2e7d32"
+    shifted_green: list[tuple[float, float]] = []
+    if len(green_pts) >= 4:
+        shifted_green = _check6_add_green_ccw_flow_on_polyline(
             fig,
             green_pts,
             x_shift_mm=green_shift,
@@ -6034,83 +4176,30 @@ def build_shear_check6_support_transfer_diagram(
             L_seg_mm=float(L_seg),
             y_bot=y_bot_beam,
             y_top=y_top_beam,
+            green=green_line,
             crack_bezier_geom=crack_geom,
-            wall_x_mm=None,
-            wall_at_start=False,
+            wall_x_mm=wall_x_for_green if crack_geom is not None else None,
+            wall_at_start=wall_at_green_start if crack_geom is not None else False,
             suppress_wall_extension_at_tension=True,
             bezier_t_index_offset=green_t0,
             bezier_n_orig=green_n,
             y_ast_clip=float(y_steel),
             ast_clip_tension_face=tension_face,
         )
-
-    teach_col = "rgba(55,71,79,0.85)"
-    if (
-        show_shear_teaching_overlay
-        and draw_stirrups
-        and str(tension_face).strip().lower() == "bottom"
-        and math.tan(theta_use_rad) > 1e-6
-    ):
-        cot_t = 1.0 / math.tan(theta_use_rad)
-        k_fit = 1.0
-        horiz_need = float(d_v_use) * cot_t
-        if horiz_need > 0.46 * float(L_seg):
-            k_fit = (0.46 * float(L_seg)) / horiz_need
-        dvv = float(d_v_use) * k_fit
-        horiz_run_mm = dvv * cot_t
-        xh_dir = 1.0 if ux >= 0.0 else -1.0
-        beam_h = abs(y_bot_beam - y_top_beam)
-        sign_up = -1.0 if y_top_beam < y_toe else 1.0
-        step_v = min((dvv / D) * beam_h, abs(y_toe - y_top_beam) * 0.88)
-        x_v1, y_v1 = x_toe, y_toe + sign_up * step_v
-        x_h1, y_h1 = x_v1 + xh_dir * horiz_run_mm, y_v1
-        fig.add_shape(
-            type="line",
-            x0=x_toe,
-            y0=y_toe,
-            x1=x_v1,
-            y1=y_v1,
-            line=dict(color=teach_col, width=1.25, dash="dot"),
-        )
-        fig.add_shape(
-            type="line",
-            x0=x_v1,
-            y0=y_v1,
-            x1=x_h1,
-            y1=y_h1,
-            line=dict(color=teach_col, width=1.25, dash="dot"),
-        )
-        fig.add_annotation(
-            x=0.5 * (x_toe + x_v1) - 0.018 * D,
-            y=0.5 * (y_toe + y_v1),
-            text="<i>d<sub>v</sub></i>",
-            showarrow=False,
-            font=dict(size=8, color=teach_col),
-        )
-        fig.add_annotation(
-            x=0.5 * (x_v1 + x_h1),
-            y=y_v1 + (0.022 * D if sign_up < 0 else -0.022 * D),
-            text="<i>d<sub>v</sub> cot θ<sub>v</sub></i>",
-            showarrow=False,
-            font=dict(size=8, color=teach_col),
-        )
-        n_pred = float(d_v_use) * cot_t / max(float(s_lig_mm), 1.0)
-        n_hit = len(stirrup_xs_hit)
-        n_line = (
-            f"<i>n</i> ≈ <i>d<sub>v</sub> cot θ<sub>v</sub> / s</i> "
-            f"≈ {n_pred:.1f} stirrup sets &nbsp;|&nbsp; crossed: {n_hit}"
-        )
-        fig.add_annotation(
-            x=0.5 * (x_toe + x_tip),
-            y=float(y_bot_beam) - max(0.044 * D, 22.0),
-            text=n_line + "<br><span style=\"font-size:8px\">"
-            "<i>V</i><sub>s</sub> ∝ <i>A</i><sub>sv</sub> <i>f</i><sub>sy</sub> "
-            "(<i>d</i><sub>v</sub> cot θ<sub>v</sub> / <i>s</i>) — schematic</span>",
-            showarrow=False,
-            font=dict(size=9, color="rgba(31,42,68,0.80)"),
-            xanchor="center",
-            yanchor="top",
-            align="center",
+    if shifted_green:
+        _check6_add_support_region_theta_marker(
+            fig,
+            shifted_green,
+            y_bot_beam=y_bot_beam,
+            y_top_beam=y_top_beam,
+            tension_face=tension_face,
+            side_n=side_n,
+            support_X=support_X,
+            L_seg=float(L_seg),
+            L_d_core=L_d_core,
+            D=D,
+            y_steel=float(y_steel),
+            ast_lbl_x=float(ast_lbl_x),
         )
 
     sup_kind_raw = str(support_draw_kind or "pinned")
@@ -6122,105 +4211,47 @@ def build_shear_check6_support_transfer_diagram(
         kind=sup_kind_raw,
         L_seg_mm=float(L_seg),
     )
-    # Compression C: starts at top fibre (sagging) or bottom fibre (hogging); lower/upper end ties to crack tip
-    # where possible; span-ward x from crack tip.
+    # Compression C: vertical strut to the right of the beam, from extreme compression fibre to NA.
     c_red = "#c41e3a"
-    c_span_x = max(0.024 * L_seg, 13.0)
-    min_c_depth = max(0.040 * D, 14.0)
-    min_gap = max(0.018 * D, 8.0)
-    y_tip_f = float(y_tip)
-    if show_compression_resultant:
-        if tension_face == "bottom":
-            y_c_top = y_top_beam - max(0.015 * D, 5.0)
-            if y_c_top - y_tip_f >= min_gap:
-                y_c_bot = max(y_bot_beam + 0.02 * D, y_tip_f)
-            else:
-                y_c_bot = y_c_top - min_c_depth
-                y_c_bot = max(y_bot_beam + 0.02 * D, y_c_bot)
-            if side_n == "right":
-                cx_c = max(pad_x_toe, float(x_tip) - c_span_x)
-                c_lbl_x = cx_c - 0.078 * D
-                c_xanchor = "right"
-            elif side_n == "internal":
-                cx_c = max(pad_x_toe, float(x_tip) - 0.68 * c_span_x)
-                c_lbl_x = cx_c - 0.078 * D
-                c_xanchor = "right"
-            else:
-                cx_c = min(float(L_seg) - pad_x_toe, float(x_tip) + c_span_x)
-                c_lbl_x = cx_c - 0.078 * D
-                c_xanchor = "right"
-        else:
-            y_c_bot = y_bot_beam + max(0.015 * D, 5.0)
-            y_c_top = max(y_c_bot + min_gap, y_tip_f)
-            y_c_top = min(y_c_top, y_top_beam - max(0.015 * D, 5.0))
-            if y_c_top - y_c_bot < min_c_depth:
-                y_c_top = y_c_bot + min_c_depth
-                y_c_top = min(y_c_top, y_top_beam - max(0.012 * D, 4.0))
-            if side_n == "right":
-                cx_c = max(pad_x_toe, float(x_tip) - c_span_x)
-                c_lbl_x = cx_c - 0.078 * D
-                c_xanchor = "right"
-            elif side_n == "internal":
-                cx_c = max(pad_x_toe, float(x_tip) - 0.68 * c_span_x)
-                c_lbl_x = cx_c - 0.078 * D
-                c_xanchor = "right"
-            else:
-                cx_c = min(float(L_seg) - pad_x_toe, float(x_tip) + c_span_x)
-                c_lbl_x = cx_c - 0.078 * D
-                c_xanchor = "right"
-        if y_c_bot >= y_c_top - 1e-6:
-            y_c_bot = min(y_c_top - min_c_depth, y_c_top - 0.015 * D)
-            y_c_bot = max(y_bot_beam + 0.02 * D, y_c_bot)
-        flow_c_cx = float(cx_c)
-        flow_c_y_top = float(y_c_top)
-        flow_c_y_bot = float(y_c_bot)
-        fig.add_shape(
-            type="line",
-            x0=cx_c,
-            y0=y_c_bot,
-            x1=cx_c,
-            y1=y_c_top,
-            line=dict(color=c_red, width=2.2),
-        )
+    c_gap_x = max(0.026 * D, 14.0)
+    c_x_right = float(L_seg) + c_gap_x
+    if tension_face == "bottom":
+        y_c_hi = y_top_beam
+        y_c_lo = c_y_line
+    else:
+        y_c_hi = c_y_line
+        y_c_lo = y_bot_beam
+    if y_c_lo > y_c_hi:
+        y_c_hi, y_c_lo = y_c_lo, y_c_hi
+    y_c_span = float(y_c_hi) - float(y_c_lo)
+    if y_c_span > 1e-3:
+        c_arrow_x = c_x_right + max(0.012 * D, 5.0)
+        ay_c = float(y_c_hi) - 0.02 * y_c_span
+        y_c_tip = float(y_c_lo) + 0.02 * y_c_span
         fig.add_annotation(
-            x=c_lbl_x,
-            y=0.5 * (y_c_top + y_c_bot),
-            text="<b>C</b>",
-            showarrow=False,
-            font=dict(size=11, color=c_red),
-            xanchor=c_xanchor,
+            x=c_arrow_x,
+            y=y_c_tip,
+            ax=c_arrow_x,
+            ay=ay_c,
+            xref="x",
+            yref="y",
+            axref="x",
+            ayref="y",
+            text="",
+            showarrow=True,
+            arrowhead=2,
+            arrowsize=0.95,
+            arrowwidth=2.5,
+            arrowcolor=c_red,
         )
-        # Horizontal compression-direction cue (+x), upper part of the compression block
-        _cz_top = float(y_c_top)
-        _cz_bot = float(y_c_bot)
-        _arr_y = _cz_top - max(0.026 * D, 10.0)
-        _arr_y = min(
-            max(_arr_y, _cz_bot + max(0.016 * D, 6.0)),
-            _cz_top - max(0.006 * D, 2.5),
-        )
-        _arr_len = max(0.11 * L_seg, 0.21 * D, 38.0)
-        _x_head = min(
-            float(L_seg) - max(0.055 * L_seg, pad_x_toe),
-            max(float(cx_c) + 0.14 * L_seg, 0.24 * L_seg),
-        )
-        _x_tail = max(float(pad_x_toe), _x_head - _arr_len)
-        if _x_head > _x_tail + 1.0:
-            fig.add_annotation(
-                x=_x_head,
-                y=_arr_y,
-                ax=_x_tail,
-                ay=_arr_y,
-                xref="x",
-                yref="y",
-                axref="x",
-                ayref="y",
-                text="",
-                showarrow=True,
-                arrowhead=2,
-                arrowsize=1.05,
-                arrowwidth=2.8,
-                arrowcolor=c_red,
-            )
+    fig.add_annotation(
+        x=c_x_right + 0.030 * D,
+        y=0.5 * (y_c_hi + y_c_lo),
+        text="<b>C</b>",
+        showarrow=False,
+        font=dict(size=12, color=c_red),
+        xanchor="left",
+    )
     fig.add_annotation(
         x=x_disp(min(0.20 * L_d_core, 0.14 * L_seg)),
         y=y_steel,
@@ -6237,173 +4268,52 @@ def build_shear_check6_support_transfer_diagram(
         arrowwidth=2.5,
         arrowcolor=ast_blue,
     )
-    ast_inset_fs = max(0.07 * L_seg, 0.06 * d_use, 22.0)
+    fig.add_annotation(
+        x=ast_lbl_x,
+        y=y_steel + (0.05 * D if tension_face == "bottom" else -0.05 * D),
+        text="<b>Ast</b>",
+        showarrow=False,
+        font=dict(size=13, color=ast_blue),
+        xanchor="left",
+    )
+
+    # Region labels along / just below the beam soffit (no support reaction arrow — avoids squashed look).
+    y_reg_lbl = y_bot_beam - 0.028 * D
+    reg_font = dict(size=10, color="rgba(31,42,68,0.88)")
+    L_rem = max(L_seg - L_d_core, 0.08 * L_seg)
     if side_n == "right":
-        ast_lbl_x = x_disp(L_seg - ast_inset_fs)
+        x_d_reg = x_disp(0.52 * L_d_core)
+        x_f_reg = x_disp(L_d_core + 0.50 * L_rem)
     elif side_n == "internal":
-        ast_lbl_x = x_disp(-min(0.13 * L_seg, 0.42 * L_seg))
+        x_d_reg = support_X + 0.42 * min(L_d_core, max(L_seg - support_X, 1.0) * 0.92)
+        x_f_reg = max(0.06 * L_seg, support_X * 0.42)
     else:
-        ast_lbl_x = x_disp(ast_inset_fs)
-    if not web_stm:
-        fig.add_annotation(
-            x=ast_lbl_x,
-            y=y_steel + (0.05 * D if tension_face == "bottom" else -0.05 * D),
-            text="<b>Ast</b>",
-            showarrow=False,
-            font=dict(size=13, color=ast_blue),
-            xanchor="left",
-        )
-
-    if web_stm:
-        _check6_add_web_crushing_stm_overlay(
-            fig,
-            D=D,
-            L_seg=float(L_seg),
-            support_face_x=float(support_face_x),
-            x_toe=float(x_toe),
-            y_toe=float(y_toe),
-            y_steel=float(y_steel),
-            y_top_beam=float(y_top_beam),
-            y_bot_beam=float(y_bot_beam),
-            tension_face=str(tension_face),
-            side_n=str(side_n),
-            theta_v_deg=float(theta_use_deg),
-            pad_x_toe=float(pad_x_toe),
-        )
-
-    if (
-        show_mean_crack_guideline
-        and bool(show_mean_green_flow_pulse)
-        and len(mean_green_for_flow) >= 2
-    ):
-        if (
-            show_compression_resultant
-            and flow_c_cx is not None
-            and flow_c_y_top is not None
-            and flow_c_y_bot is not None
-        ):
-            flow_combined, flow_seg = _check6_build_shear_transfer_flow_combined_pts(
-                cx_c=float(flow_c_cx),
-                y_c_top=float(flow_c_y_top),
-                y_c_bottom=float(flow_c_y_bot),
-                mean_green_pts=mean_green_for_flow,
-                y_steel=float(y_steel),
-                tie_xa=float(x_disp(tie_x0_fs)),
-                tie_xb=float(x_disp(tie_x1_fs)),
-                support_face_x=float(support_face_x),
-                D=float(D),
-                L_seg=float(L_seg),
-            )
-            if len(flow_combined) >= 3:
-                _check6_add_mcft_style_flow_pulse(
-                    fig,
-                    flow_combined,
-                    color="rgba(46,125,50,0.95)",
-                    reverse_along_path=False,
-                    flow_segment_ends=flow_seg,
-                    flow_arrowhead=True,
-                    line_shape="linear",
-                )
-        else:
-            _check6_add_mcft_style_flow_pulse(
-                fig,
-                mean_green_for_flow,
-                color="rgba(46,125,50,0.95)",
-                reverse_along_path=True,
-                flow_arrowhead=True,
-            )
-
-    # Region labels below the beam soffit (display y < y_bot_beam; y increases upward).
-    if show_region_labels:
-        y_reg_lbl = float(y_bot_beam) - max(0.056 * D, 28.0)
-        reg_font = dict(size=10, color="rgba(31,42,68,0.88)")
-        L_rem = max(L_seg - L_d_core, 0.08 * L_seg)
-        if side_n == "right":
-            x_d_reg = x_disp(0.52 * L_d_core)
-            x_f_reg = x_disp(L_d_core + 0.50 * L_rem)
-        elif side_n == "internal":
-            x_d_reg = support_X + 0.42 * min(L_d_core, max(L_seg - support_X, 1.0) * 0.92)
-            x_f_reg = max(0.06 * L_seg, support_X * 0.42)
-        else:
-            x_d_reg = x_disp(0.48 * L_d_core)
-            x_f_reg = x_disp(L_d_core + 0.50 * L_rem)
-        fig.add_annotation(
-            x=x_d_reg,
-            y=y_reg_lbl,
-            text="D-region",
-            showarrow=False,
-            font=reg_font,
-            xanchor="center",
-            yanchor="top",
-        )
-        fig.add_annotation(
-            x=x_f_reg,
-            y=y_reg_lbl,
-            text="Flexural shear<br>region",
-            showarrow=False,
-            font=reg_font,
-            xanchor="center",
-            yanchor="top",
-        )
-
-    if (
-        bool(show_mcft_mechanism_labels)
-        and bool(show_compression_resultant)
-        and bool(show_mean_crack_guideline)
-        and len(mean_green_for_flow) >= 2
-        and len(crack_pts) >= 3
-        and flow_c_cx is not None
-        and flow_c_y_top is not None
-        and flow_c_y_bot is not None
-    ):
-        _check6_add_mcft_mechanism_labels(
-            fig,
-            D=float(D),
-            L_seg=float(L_seg),
-            L_d_core=float(L_d_core),
-            crack_pts=crack_pts,
-            mean_green_pts=list(mean_green_for_flow),
-            theta_lbl_x=float(theta_lbl_x),
-            theta_lbl_y=float(theta_lbl_y),
-            cx_c=float(flow_c_cx),
-            y_c_top=float(flow_c_y_top),
-            y_c_bot=float(flow_c_y_bot),
-            y_steel=float(y_steel),
-            ast_lbl_x=float(ast_lbl_x),
-            ast_arrow_x0=float(x_disp(min(0.20 * L_d_core, 0.14 * L_seg))),
-            ast_arrow_x1=float(x_disp(min(0.88 * L_seg, L_seg - 0.06 * d_use))),
-            tension_face=str(tension_face),
-            side_n=str(side_n),
-            y_bot_beam=float(y_bot_beam),
-            y_top_beam=float(y_top_beam),
-            y_stirr_bot=float(y_stirr_bot),
-            y_stirr_top=float(y_stirr_top),
-            stirrup_xds=stirrup_xd_list,
-            show_region_labels=bool(show_region_labels),
-            support_X=float(support_X),
-            x_disp=x_disp,
-        )
+        x_d_reg = x_disp(0.48 * L_d_core)
+        x_f_reg = x_disp(L_d_core + 0.50 * L_rem)
+    fig.add_annotation(
+        x=x_d_reg,
+        y=y_reg_lbl,
+        text="D-region",
+        showarrow=False,
+        font=reg_font,
+        xanchor="center",
+        yanchor="top",
+    )
+    fig.add_annotation(
+        x=x_f_reg,
+        y=y_reg_lbl,
+        text="Flexural shear<br>region",
+        showarrow=False,
+        font=reg_font,
+        xanchor="center",
+        yanchor="top",
+    )
 
     ymin = y_ground - 0.14 * D
     ymax = y_top_beam + 0.22 * D
     xpad = 0.06 * (L_seg + 0.12 * D)
-    xmin_plot = min(-0.10 * D, x_toe - 0.10 * D)
-    if show_compression_resultant and side_n != "right":
-        xmin_plot = min(xmin_plot, float(c_lbl_x) - 0.06 * D)
-    if web_stm:
-        flow_pad = max(0.18 * D, 0.06 * float(L_seg))
-    else:
-        flow_pad = (
-            max(float(green_shift), 0.22 * D)
-            if (show_green_strut_flow or show_mean_crack_guideline)
-            else max(0.18 * D, 0.06 * float(L_seg))
-        )
-    xmax_plot = L_seg + flow_pad + 0.16 * D
-    if side_n == "right":
-        if show_compression_resultant:
-            xmax_plot = max(xmax_plot, float(c_lbl_x) + 0.12 * D, x_tip + 0.10 * D)
-        else:
-            xmax_plot = max(xmax_plot, x_tip + 0.10 * D)
+    xmin_plot = -0.10 * D
+    xmax_plot = L_seg + max(float(c_gap_x), float(green_shift)) + 0.28 * D
     xpad_right = xpad + 0.038 * D
     fig.update_xaxes(
         visible=False,

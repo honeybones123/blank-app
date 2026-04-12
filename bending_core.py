@@ -2,8 +2,10 @@
 import math
 import streamlit as st
 
+from bending_layer_semantics import resolve_bending_faces
 from state_and_helpers import (
     get_param,
+    resolve_design_actions,
     update_results,
 )
 
@@ -21,6 +23,28 @@ def _fmt(val, pattern="{:.2f}"):
         return pattern.format(val)
     except Exception:
         return "—"
+
+
+def hogging_tension_effective_depth_mm(D: float, do_mm: float) -> float:
+    """
+    Hogging effective depth d: distance from the bottom compression fibre to the
+    centroid of top tension steel.
+
+    ``recalc_derived_values`` stores ``do = D - y_top`` (y measured from the top
+    of the member), i.e. that same lever-arm depth.
+
+    Legacy sessions may have ``do`` as y-from-top (small). If ``do`` is a large
+    fraction of D, treat it as effective depth; otherwise use ``D - do``.
+    """
+    df = float(D or 0.0)
+    do_v = float(do_mm or 0.0)
+    if df <= 0.0:
+        return max(0.0, do_v)
+    if do_v <= 0.0:
+        return 0.0
+    if do_v >= 0.35 * df:
+        return do_v
+    return max(0.0, df - do_v)
 
 
 # ------------------------------------------------------------
@@ -245,6 +269,95 @@ def _effective_depth_centroid_pure(b, D, nb_bot, db_bot, cover_bot, rowgap_bot):
     return sum(y_positions) / len(y_positions)
 
 
+def solve_bending_capacity(moment_sign: str, M_star_kNm: float, inputs: dict) -> dict:
+    """Solve signed flexural capacity for sagging/hogging demand."""
+    from bending_layer_semantics import resolve_bending_faces
+
+    sign = str(moment_sign or "positive").strip().lower()
+    if sign not in {"positive", "negative"}:
+        sign = "positive"
+
+    tension_face, compression_face, _is_hog = resolve_bending_faces(sign)
+
+    b = float(inputs.get("b", 0.0) or 0.0)
+    D = float(inputs.get("D", 0.0) or 0.0)
+    fc = float(inputs.get("fc", 0.0) or 0.0)
+    fsy = float(inputs.get("fsy", 0.0) or 0.0)
+    phi = float(inputs.get("phi_bend", 0.85) or 0.85)
+
+    if tension_face == "bottom":
+        Ast = float(inputs.get("Ast_bot", 0.0) or 0.0)
+        d_mm = float(inputs.get("d", 0.0) or 0.0)
+        tension_steel_label = "Bottom reinforcement"
+    else:
+        Ast = float(inputs.get("Ast_top", 0.0) or 0.0)
+        do_mm = float(inputs.get("do", 0.0) or 0.0)
+        d_mm = hogging_tension_effective_depth_mm(D, do_mm)
+        tension_steel_label = "Top reinforcement"
+
+    alpha2_raw = 0.85 - 0.0015 * fc
+    gamma_raw = 0.97 - 0.0025 * fc
+    alpha2 = max(0.67, alpha2_raw)
+    gamma = max(0.67, gamma_raw)
+
+    if min(b, D, fc, fsy, phi, Ast, d_mm) <= 0.0:
+        return {
+            "moment_sign": sign,
+            "M_star_kNm": float(max(0.0, M_star_kNm)),
+            "phi_Mu_kNm": 0.0,
+            "Mu_nom_kNm": 0.0,
+            "util": 0.0 if float(max(0.0, M_star_kNm)) <= 0.0 else float("inf"),
+            "status": "—",
+            "dn_mm": float("nan"),
+            "ku": float("nan"),
+            "phi": phi,
+            "tension_face": tension_face,
+            "compression_face": compression_face,
+            "tension_steel_label": tension_steel_label,
+            "alpha2": alpha2,
+            "gamma": gamma,
+            "d_mm": d_mm,
+            "Ast_tension_mm2": Ast,
+        }
+
+    T = Ast * fsy
+    denom = alpha2 * fc * b * gamma
+    c = T / denom if denom > 0 else float("nan")
+    a = gamma * c if c == c else float("nan")
+    z = d_mm - 0.5 * a if a == a else float("nan")
+    Mu_nom = T * z / 1e6 if z == z else 0.0
+    phi_Mu = phi * Mu_nom
+    M_star = float(max(0.0, M_star_kNm))
+    util = M_star / phi_Mu if phi_Mu > 0 else (0.0 if M_star <= 0 else float("inf"))
+    ku = c / d_mm if d_mm > 0 else float("nan")
+
+    if M_star <= 1e-9:
+        status = "INFO"
+    elif util <= 1.0:
+        status = "NEAR LIMIT" if util >= 0.9 else "PASS"
+    else:
+        status = "FAIL"
+
+    return {
+        "moment_sign": sign,
+        "M_star_kNm": M_star,
+        "phi_Mu_kNm": float(phi_Mu),
+        "Mu_nom_kNm": float(Mu_nom),
+        "util": float(util),
+        "status": status,
+        "dn_mm": float(c),
+        "ku": float(ku),
+        "phi": float(phi),
+        "tension_face": tension_face,
+        "compression_face": compression_face,
+        "tension_steel_label": tension_steel_label,
+        "alpha2": float(alpha2),
+        "gamma": float(gamma),
+        "d_mm": float(d_mm),
+        "Ast_tension_mm2": float(Ast),
+    }
+
+
 def _compute_bending_capacity():
     """
     Compute a simple φMu,cap using a rectangular stress block.
@@ -259,11 +372,6 @@ def _compute_bending_capacity():
     D = get_param("D")
     fc = get_param("fc")
     fsy = get_param("fsy")
-    Ast = get_param("Ast_bot")
-    actions_uls = st.session_state.get("actions_uls", {})
-    Mu_star = actions_uls.get("M") if isinstance(actions_uls, dict) else None
-    if Mu_star is None:
-        Mu_star = get_param("Mu_star")
     phi = get_param("phi_bend")
     d_input = get_param("d")
     cover_bot = get_param("cover_bot")
@@ -273,8 +381,10 @@ def _compute_bending_capacity():
 
     # Call cached pure function (with debug bypass)
     _compute_fn = _get_compute_bending_capacity_pure()
+    actions = resolve_design_actions()
+    Mu_star = float(actions.get("Mu", get_param("Mu_star") or 0.0) or 0.0)
     results = _compute_fn(
-        b=b, D=D, fc=fc, fsy=fsy, Ast=Ast, Mu_star=Mu_star, phi=phi,
+        b=b, D=D, fc=fc, fsy=fsy, Ast=get_param("Ast_bot"), Mu_star=Mu_star, phi=phi,
         d_input=d_input, cover_bot=cover_bot, db_bot=db_bot,
         nb_bot=nb_bot, rowgap_bot=rowgap_bot
     )
@@ -303,9 +413,59 @@ def _compute_bending_capacity():
     k_u = ku if not (isinstance(ku, float) and math.isnan(ku)) else None
     k_u_lim = 0.36  # Teaching limit (AS 3600 limit for ductile design)
 
+    has_sagging_case = bool(actions.get("has_sagging_case", False))
+    has_hogging_case = bool(actions.get("has_hogging_case", False))
+    inputs = {
+        "b": b,
+        "D": D,
+        "fc": fc,
+        "fsy": fsy,
+        "phi_bend": phi,
+        "Ast_bot": get_param("Ast_bot"),
+        "Ast_top": get_param("Ast_top"),
+        "d": get_param("d"),
+        "do": get_param("do"),
+    }
+    bending_pos = solve_bending_capacity("positive", float(actions.get("Mu_pos", 0.0) or 0.0), inputs)
+    bending_neg = solve_bending_capacity("negative", float(actions.get("Mu_neg", 0.0) or 0.0), inputs)
+
+    active_utils = []
+    if has_sagging_case:
+        active_utils.append(("Positive bending", float(bending_pos.get("util", 0.0) or 0.0)))
+    if has_hogging_case:
+        active_utils.append(("Negative bending", float(bending_neg.get("util", 0.0) or 0.0)))
+    if active_utils:
+        governing_case, governing_util = max(active_utils, key=lambda x: x[1])
+    else:
+        governing_case, governing_util = "", 0.0
+
+    if governing_case == "Negative bending":
+        phi_mu_compat = float(bending_neg.get("phi_Mu_kNm", 0.0) or 0.0)
+        mu_util_compat = float(bending_neg.get("util", 0.0) or 0.0)
+    elif governing_case == "Positive bending":
+        phi_mu_compat = float(bending_pos.get("phi_Mu_kNm", 0.0) or 0.0)
+        mu_util_compat = float(bending_pos.get("util", 0.0) or 0.0)
+    else:
+        phi_mu_compat = float(bending_pos.get("phi_Mu_kNm", phi_Mu_cap) or 0.0)
+        mu_util_compat = 0.0
+
     update_results(
-        phi_Mu_cap=phi_Mu_cap,
-        Mu_utilisation=Mu_util,
+        phi_Mu_cap=phi_mu_compat,
+        Mu_utilisation=mu_util_compat,
+        phi_Mu_pos_kNm=float(bending_pos.get("phi_Mu_kNm", 0.0) or 0.0),
+        phi_Mu_neg_kNm=float(bending_neg.get("phi_Mu_kNm", 0.0) or 0.0),
+        Mu_nom_pos_kNm=float(bending_pos.get("Mu_nom_kNm", 0.0) or 0.0),
+        Mu_nom_neg_kNm=float(bending_neg.get("Mu_nom_kNm", 0.0) or 0.0),
+        bending_util_pos=float(bending_pos.get("util", 0.0) or 0.0),
+        bending_util_neg=float(bending_neg.get("util", 0.0) or 0.0),
+        bending_status_pos=str(bending_pos.get("status", "")),
+        bending_status_neg=str(bending_neg.get("status", "")),
+        bending_has_sagging_case=bool(has_sagging_case),
+        bending_has_hogging_case=bool(has_hogging_case),
+        bending_has_positive_case=bool(has_sagging_case),
+        bending_has_negative_case=bool(has_hogging_case),
+        bending_governing_case=str(governing_case or ""),
+        bending_util_governing=float(governing_util),
         As_min_req=As_min_req,
         Mx_min_req=Mx_min_req,
         k_u=k_u,
@@ -342,15 +502,19 @@ def compute_sigma_s_sls_for_crack(publish: bool = True) -> float:
 # ============================
 # STRESS–STRAIN STATE
 # ============================
-def _stress_strain_state(state: str):
+def _stress_strain_state(state: str, moment_sign: str = "positive"):
     """
     Compute neutral axis and strain/stress info for the demo diagram.
     Uses real shared parameters where possible, but returns a complete
     dict with geometry and materials so the plotting helper doesn't
     need to call get_param again.
+
+    moment_sign:
+      - "positive" (sagging): bottom tension steel, compression at top; c is NA depth from top.
+      - "negative" (hogging): top tension steel, compression at bottom; c is NA depth from bottom.
     """
     # Try to use real values from the app; fall back to teaching defaults
-    b = get_param("b", 300.0)
+    b = get_param("b", 400.0)
     D = get_param("D", 600.0)
     fc = get_param("fc")
     fsy = get_param("fsy")
@@ -391,6 +555,30 @@ def _stress_strain_state(state: str):
         db_bot = get_param("db_bot", 24.0)
         As = nb_bot * math.pi * db_bot**2 / 4.0
 
+    _, _, is_hogging = resolve_bending_faces(moment_sign)
+    # d_plot = tension steel centroid y measured from top; d_f = depth compression face → tension steel
+    d_plot = float(d)
+    d_f = float(d)
+    if is_hogging:
+        As = get_param("Ast_top")
+        do_mm = float(get_param("do") or 0.0)
+        Df = float(D or 0.0)
+        cover_top = get_param("cover_top")
+        db_top = get_param("db_top")
+        nb_top = get_param("nb_top")
+        d_f = hogging_tension_effective_depth_mm(Df, do_mm)
+        if d_f <= 1e-6 and Df > 0:
+            ct = cover_top if cover_top is not None else 40.0
+            dt = db_top if db_top is not None else 16.0
+            d_plot = ct + dt / 2.0
+            d_f = max(0.0, Df - d_plot)
+        else:
+            d_plot = max(0.0, Df - d_f)
+        if As is None or As == 0:
+            nb_t = int(nb_top) if nb_top is not None else 2
+            db_t = float(db_top) if db_top is not None else 16.0
+            As = nb_t * math.pi * db_t**2 / 4.0
+
     # AS3600 α2–γ
     alpha2_raw = 0.85 - 0.0015 * fc
     gamma_raw = 0.97 - 0.0025 * fc
@@ -413,18 +601,18 @@ def _stress_strain_state(state: str):
         c = min(max(c, 1.0), D - 1.0)
 
         eps_c = -eps_cu_uls
-        eps_s = -eps_c * (d - c) / c
+        eps_s = -eps_c * (d_f - c) / c
         fs_t = fsy  # tension steel at approx. yield
 
         return dict(
-            b=b, D=D, d=d, c=c,
+            b=b, D=D, d=d_plot, c=c,
             eps_c=eps_c, eps_s=eps_s,
             gamma=gamma, fs_t=fs_t,
             fc=fc, fsy=fsy, alpha2=alpha2,
         )
 
     # ----- SLS cracked state -----
-    if state == "SLS (cracked)":
+    if state in ("SLS", "SLS (cracked)"):
         n = Es / Ec if Ec not in (None, 0) else 0.0
 
         if n == 0.0 or As in (None, 0) or b in (None, 0):
@@ -432,7 +620,7 @@ def _stress_strain_state(state: str):
         else:
             a_quad = 0.5 * b
             b_coef = n * As
-            c_coef = -n * As * d
+            c_coef = -n * As * d_f
 
             if a_quad == 0:
                 c = D / 2.0
@@ -449,11 +637,11 @@ def _stress_strain_state(state: str):
         c = min(max(c, 1.0), D - 1.0)
 
         eps_c = -eps_c_sls
-        eps_s = -eps_c * (d - c) / c
+        eps_s = -eps_c * (d_f - c) / c
         fs_t = Es * eps_s
 
         return dict(
-            b=b, D=D, d=d, c=c,
+            b=b, D=D, d=d_plot, c=c,
             eps_c=eps_c, eps_s=eps_s,
             gamma=gamma, fs_t=fs_t,
             fc=fc, fsy=fsy, alpha2=alpha2,
@@ -462,11 +650,11 @@ def _stress_strain_state(state: str):
     # ----- Uncracked state -----
     c = D / 2.0
     eps_c = -eps_ext_unc
-    eps_s = eps_ext_unc * (d - c) / c
+    eps_s = eps_ext_unc * (d_f - c) / c
     fs_t = Ec * abs(eps_s)
 
     return dict(
-        b=b, D=D, d=d, c=c,
+        b=b, D=D, d=d_plot, c=c,
         eps_c=eps_c, eps_s=eps_s,
         gamma=1.0, fs_t=fs_t,
         fc=fc, fsy=fsy, alpha2=alpha2,

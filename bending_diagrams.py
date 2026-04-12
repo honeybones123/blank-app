@@ -1,13 +1,20 @@
 # bending_diagrams.py
 import math
+import os
 import numpy as np
 import streamlit as st
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+import logging
+
 from state_and_helpers import get_param
+import strain_display
 from bending_core import _layout_bars_in_rows, _stress_strain_state
+
+logger = logging.getLogger(__name__)
+from bending_layer_semantics import resolve_bending_faces, resolve_bending_layer_geometry
 from section_layout import compute_section_layout
 from plotly_section import make_sectionA_figure
 from section_props.plot import apply_section_axes
@@ -96,9 +103,25 @@ def _get_layers(reo_layout: dict, side: str):
         return []
     keys = []
     if side == "top":
-        keys = ["top", "top_flange", "top_web", "top_left", "top_right"]
+        keys = [
+            "top",
+            "top_flange",
+            "top_web",
+            "top_left",
+            "top_right",
+            "top_flange_left",
+            "top_flange_right",
+        ]
     else:
-        keys = ["bottom", "bottom_flange", "bottom_web", "bottom_left", "bottom_right"]
+        keys = [
+            "bottom",
+            "bottom_flange",
+            "bottom_web",
+            "bottom_left",
+            "bottom_right",
+            "bottom_flange_left",
+            "bottom_flange_right",
+        ]
 
     out = []
     for k in keys:
@@ -107,6 +130,7 @@ def _get_layers(reo_layout: dict, side: str):
             continue
         out += v if isinstance(v, list) else [v]
     return out
+
 
 # ============================================================
 # Shared stress-panel geometry (USED BY 3-PANEL + STEP FIGS)
@@ -251,7 +275,9 @@ def _sigma_c_parabolic(eps, sigma_peak, eps0=0.002, eps_cu=0.003):
 # ============================================================
 #  MAIN 3-PANEL SECTION / STRAIN / STRESS DIAGRAM
 # ============================================================
-def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
+def _plot_stress_strain_profiles(
+    state_dict, state_label=None, layout=None, moment_sign: str = "positive"
+):
     """
     Three-panel Plotly figure:
         - Section (left)
@@ -262,6 +288,9 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
         state_dict: State dictionary with strain/stress values
         state_label: Optional explicit state label
         layout: Optional pre-computed section layout dict. If None, will compute from session state.
+        moment_sign: "positive" (sagging) or "negative" (hogging). All section/strain/stress emphasis
+            follows this only — not |M| or bending_sls_hogging. Internally mapped to tension_face
+            bottom vs top for bar highlights, compression blocks, and SLS strain/stress orientation.
     """
     # ------------------------------------
     # Decide which "state" we're in:
@@ -314,36 +343,55 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
     fc = state_dict["fc"]
     alpha2 = state_dict["alpha2"]
 
+    # Layout + canonical tension/compression geometry (bending_layer_semantics — single source of truth).
+    current_shape = _get_current_shape_from_session()
+    lay = layout
+    if lay is None:
+        lay = compute_section_layout()
+    else:
+        layout_shape = _norm_shape_name(str(lay.get("shape_name", "")))
+        if layout_shape != current_shape:
+            lay = compute_section_layout()
+    layout = lay
+
+    geom_bundle = resolve_bending_layer_geometry(
+        layout,
+        moment_sign=moment_sign,
+        D=float(D),
+        fallback_y_tension=float(d),
+    )
+    tension_face = str(geom_bundle["tension_face"])
+    plot_neg = bool(geom_bundle["plot_neg"])
+    y_tension_geom = float(geom_bundle["y_tension_centroid"])
+    geom_d_mm = float(geom_bundle["d_value"])
+    reo_layout = layout.get("reo_layout")
+
     # ------------------------------------------
-    # SLS override: use exact values from SLS tab
-    # (bending_sls_dn, bending_sls_eps_top, bending_sls_eps_bot, bending_sls_y_bot)
+    # SLS override: NA + published strains (tension steel y comes from geom, above)
     # ------------------------------------------
     eps_top_sls = None
     eps_bot_sls = None
-    y_bot_sls = None
-    y_s = d  # Default to d, will be overridden for SLS in strain panel
-    
+
     if is_sls:
-        # Override neutral axis depth from SLS tab
         dn_sls = st.session_state.get("bending_sls_dn", None)
         if dn_sls is not None:
             try:
                 c = float(dn_sls)
             except Exception:
                 pass
-        
-        # Get exact strains and steel depth from SLS tab (solver sign convention:
-        # compression negative, tension positive)
+
         eps_top_sls = st.session_state.get("bending_sls_eps_top", None)
         eps_bot_sls = st.session_state.get("bending_sls_eps_bot", None)
-        y_bot_sls = st.session_state.get("bending_sls_y_bot", None)
-        
-        # Override y_s for SLS if available
-        if y_bot_sls is not None:
-            try:
-                y_s = float(y_bot_sls)
-            except Exception:
-                pass
+
+    cf = float(c or 0.0)
+    Df = float(D or 0.0)
+    # SLS cracked NA depth from the solver is always measured from the top fibre.
+    if is_sls:
+        y_na_plot = max(0.0, min(cf, Df))
+    elif plot_neg:
+        y_na_plot = max(0.0, min(Df - cf, Df))
+    else:
+        y_na_plot = max(0.0, min(cf, Df))
 
     # -----------------------------
     # Concrete + steel stress scales
@@ -372,10 +420,17 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
     except Exception:
         Ec = 30000.0
 
-    # best-available compression strain for scaling (compression plotted as +)
-    if is_sls and (eps_top_sls is not None):
+    # best-available compression strain magnitude for panel scaling (internal ε_c > 0 at fibre)
+    if is_sls and plot_neg:
         try:
-            eps_c_for_scale = abs(float(eps_top_sls))  # solver may store compression as negative
+            kappa_s = float(st.session_state.get("bending_sls_kappa", 0) or 0)
+            dn_s = float(st.session_state.get("bending_sls_dn", cf) or cf)
+            eps_c_for_scale = abs(kappa_s * (Df - dn_s))
+        except Exception:
+            eps_c_for_scale = abs(float(eps_c_raw))
+    elif is_sls and (eps_top_sls is not None):
+        try:
+            eps_c_for_scale = abs(float(eps_top_sls))
         except Exception:
             eps_c_for_scale = abs(float(eps_c_raw))
     else:
@@ -408,8 +463,10 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
     )
 
     # consistent y-range across panels (0 at top, D at bottom)
-    # Give extra headroom so the top-band label at -0.12D is visible
-    y_range = [D * 1.05, -0.18 * D]
+    # Sagging: headroom above y=0 for compression stress-band labels.
+    # Hogging: footroom below y=D so the compression-band labels sit outside the section.
+    y_span_bottom = D * (1.12 if plot_neg else 1.05)
+    y_range = [y_span_bottom, -0.18 * D]
 
     # hide all axes, no grid / ticks
     for i in range(1, 4):
@@ -431,19 +488,8 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
 
     # =====================================================
     # 1) SECTION PANEL – Rect stays legacy, I/T uses mini-app
+    # (layout resolved earlier for geom_bundle / reo_layout)
     # =====================================================
-    from section_layout import compute_section_layout
-
-    current_shape = _get_current_shape_from_session()
-
-    # If caller didn't supply layout, compute it.
-    if layout is None:
-        layout = compute_section_layout()
-    else:
-        # If caller supplied a stale layout (common), refresh it when shape changed.
-        layout_shape = _norm_shape_name(str(layout.get("shape_name", "")))
-        if layout_shape != current_shape:
-            layout = compute_section_layout()
 
     # Determine shape
     shape_name_str = _norm_shape_name(str(layout.get("shape_name", "Rectangular")))
@@ -468,6 +514,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
                 show_shear=bool(lig.get("d", 0.0) or 0.0),
                 dn=dn,
                 show_dn=True,
+                tension_face=tension_face,
             )
             W = float(dims.get("bf", dims.get("b", 0.0)) or 0.0)
             D = float(dims.get("D", 0.0) or 0.0)
@@ -493,6 +540,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
                 show_shear=False,
                 dn=dn,
                 show_dn=True,
+                tension_face=tension_face,
             )
             W = float(dims.get("bf", dims.get("b", 0.0)) or 0.0)
             D = float(dims.get("D", 0.0) or 0.0)
@@ -513,7 +561,6 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
         fig.update_xaxes(range=[0.0, 1.0], row=1, col=2)             # strain (panel coords)
         # Stress panel x-range will be set dynamically after computing x_T, x_block_right, x_gc
         cage = layout["cage"]
-        reo_layout = layout.get("reo_layout")  # Get 2-layer structure
 
         # outer concrete
         fig.add_shape(
@@ -539,6 +586,15 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
         if has_shear:
             # Compute shear reinforcement layout using values from layout dict
             from section_layout import compute_shear_reo_layout_pure
+            reo_points = []
+            for layer_name in ("bottom", "top"):
+                for layer_data in reo_layout.get(layer_name, []) if isinstance(reo_layout, dict) else []:
+                    db = float(layer_data.get("db", 0.0) or 0.0)
+                    ys = layer_data.get("y", [])
+                    if isinstance(ys, (int, float)):
+                        ys = [ys] * len(layer_data.get("x", []))
+                    for x, y in zip(layer_data.get("x", []), ys):
+                        reo_points.append({"x": float(x), "y": float(y), "db": db, "layer": layer_name})
             
             # Extract cover values from cage position (layout already computed with correct covers)
             cover_side_est = max(5.0, cage["x0"])  # approximate from cage
@@ -550,6 +606,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
                 b=b, D=D,
                 cover_bot=cover_bot_est, cover_top=cover_top_est, cover_side=cover_side_est,
                 lig_d=lig_d, lig_legs=lig_legs,
+                reo_points=reo_points,
             )
             
             # Draw cage outline (only when shear reo is present)
@@ -587,17 +644,27 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
         #   ULS Parabolic   → block to d_n
         #   SLS/Uncracked   → block to d_n
         # ----------------------------------------
-        if is_uls and not is_parabolic:
-            block_depth_sec = max(0.0, min(gamma * c, D))
+        if plot_neg:
+            if is_sls:
+                blk_sec = max(0.0, Df - y_na_plot)
+            elif is_uls and not is_parabolic:
+                blk_sec = max(0.0, min(gamma * cf, Df))
+            else:
+                blk_sec = max(0.0, min(cf, Df))
+            comp_y0, comp_y1 = Df - blk_sec, Df
         else:
-            block_depth_sec = max(0.0, min(c, D))
+            if is_uls and not is_parabolic:
+                blk_sec = max(0.0, min(gamma * cf, Df))
+            else:
+                blk_sec = max(0.0, min(cf, Df))
+            comp_y0, comp_y1 = 0.0, blk_sec
 
         fig.add_shape(
             type="rect",
             x0=0,
-            y0=0,
+            y0=comp_y0,
             x1=b,
-            y1=block_depth_sec,
+            y1=comp_y1,
             line=dict(color="red", width=1.0),
             fillcolor="rgba(199,227,255,0.7)",
             row=1,
@@ -609,11 +676,14 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
         if reo_points:
             for p in reo_points:
                 layer = p.get("layer")
-                color = "blue" if layer == "bottom" else ("red" if layer == "top" else None)
-                if not color:
+                tens_active = (layer == "bottom" and tension_face == "bottom") or (
+                    layer == "top" and tension_face == "top"
+                )
+                if layer not in ("bottom", "top"):
                     continue
+                color = "blue" if tens_active else "#888888"
                 db = float(p.get("db", 0.0))
-                marker_size = max(5, min(10, db * 0.35))
+                marker_size = max(6, min(12, db * 0.45)) if tens_active else max(4, min(8, db * 0.3))
                 fig.add_trace(
                     go.Scatter(
                         x=[float(p["x"])],
@@ -631,18 +701,25 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
                     col=1,
                 )
         elif reo_layout:
-            # Fallback to legacy 2-layer structure
+            # Fallback to legacy 2-layer structure (match tension_face like reo_points path)
             for layer_data in reo_layout["bottom"]:
                 x_positions = layer_data["x"]
                 y_pos = layer_data["y"]
                 db = layer_data["db"]
-                marker_size = max(5, min(10, db * 0.35))
+                tens_active = tension_face == "bottom"
+                marker_size = (
+                    max(6, min(12, db * 0.45)) if tens_active else max(4, min(8, db * 0.3))
+                )
                 fig.add_trace(
                     go.Scatter(
                         x=x_positions,
                         y=[y_pos] * len(x_positions),
                         mode="markers",
-                        marker=dict(color="blue", size=marker_size, line=dict(width=0.7, color="black")),
+                        marker=dict(
+                            color="blue" if tens_active else "#888888",
+                            size=marker_size,
+                            line=dict(width=0.7, color="black"),
+                        ),
                         hoverinfo="skip",
                         showlegend=False,
                     ),
@@ -653,13 +730,20 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
                 x_positions = layer_data["x"]
                 y_pos = layer_data["y"]
                 db = layer_data["db"]
-                marker_size = max(5, min(10, db * 0.35))
+                tens_active = tension_face == "top"
+                marker_size = (
+                    max(6, min(12, db * 0.45)) if tens_active else max(4, min(8, db * 0.3))
+                )
                 fig.add_trace(
                     go.Scatter(
                         x=x_positions,
                         y=[y_pos] * len(x_positions),
                         mode="markers",
-                        marker=dict(color="red", size=marker_size, line=dict(width=0.7, color="black")),
+                        marker=dict(
+                            color="blue" if tens_active else "#888888",
+                            size=marker_size,
+                            line=dict(width=0.7, color="black"),
+                        ),
                         hoverinfo="skip",
                         showlegend=False,
                     ),
@@ -670,12 +754,17 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
             # Fallback to legacy flattened structure
             bot = layout.get("bot", {})
             if bot.get("x"):
+                ta = tension_face == "bottom"
                 fig.add_trace(
                     go.Scatter(
                         x=bot["x"],
                         y=bot["y"],
                         mode="markers",
-                        marker=dict(color="blue", size=7, line=dict(width=0.7, color="black")),
+                        marker=dict(
+                            color="blue" if ta else "#888888",
+                            size=9 if ta else 6,
+                            line=dict(width=0.7, color="black"),
+                        ),
                         hoverinfo="skip",
                         showlegend=False,
                     ),
@@ -684,12 +773,17 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
                 )
             top = layout.get("top", {})
             if top.get("x"):
+                ta = tension_face == "top"
                 fig.add_trace(
                     go.Scatter(
                         x=top["x"],
                         y=top["y"],
                         mode="markers",
-                        marker=dict(color="red", size=7, line=dict(width=0.7, color="black")),
+                        marker=dict(
+                            color="blue" if ta else "#888888",
+                            size=9 if ta else 6,
+                            line=dict(width=0.7, color="black"),
+                        ),
                         hoverinfo="skip",
                         showlegend=False,
                     ),
@@ -706,14 +800,14 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
         margin_right_section = 0.20 * b
         text_dx_section = 0.04 * b
         
-        # position of d arrow (aligned with d_n arrow)
+        # position of d arrow (aligned with d_n arrow) — depth to tension layer from compression face
         x_d = beam_right + margin_right_section
-        if d:
-            # double-ended depth arrow for d (two overlapping arrows)
-            # top → bottom
+        y_t_plot = float(y_tension_geom or 0.0)
+        if y_t_plot > 1e-6 and not plot_neg:
+            # Sagging: compression face y=0 → tension steel at y_tension_geom
             fig.add_annotation(
                 x=x_d,
-                y=d,
+                y=y_t_plot,
                 ax=x_d,
                 ay=0,
                 xref="x1",
@@ -729,12 +823,11 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
                 row=1,
                 col=1,
             )
-            # bottom → top
             fig.add_annotation(
                 x=x_d,
                 y=0,
                 ax=x_d,
-                ay=d,
+                ay=y_t_plot,
                 xref="x1",
                 yref="y1",
                 axref="x1",
@@ -748,11 +841,58 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
                 row=1,
                 col=1,
             )
-            # label for d (placed mid-depth)
             fig.add_annotation(
                 x=x_d + text_dx_section,
-                y=d / 2.0,
-                text=f"d = {d:.0f} mm",
+                y=y_t_plot / 2.0,
+                text=f"d = {geom_d_mm:.0f} mm",
+                showarrow=False,
+                font=dict(size=9, color="black"),
+                xanchor="left",
+                row=1,
+                col=1,
+            )
+        elif y_t_plot > 1e-6 and plot_neg:
+            # Hogging: compression face y=D → top tension steel at y_tension_geom
+            fig.add_annotation(
+                x=x_d,
+                y=Df,
+                ax=x_d,
+                ay=y_t_plot,
+                xref="x1",
+                yref="y1",
+                axref="x1",
+                ayref="y1",
+                text="",
+                showarrow=True,
+                arrowhead=3,
+                arrowsize=1.0,
+                arrowwidth=1.0,
+                arrowcolor="black",
+                row=1,
+                col=1,
+            )
+            fig.add_annotation(
+                x=x_d,
+                y=y_t_plot,
+                ax=x_d,
+                ay=Df,
+                xref="x1",
+                yref="y1",
+                axref="x1",
+                ayref="y1",
+                text="",
+                showarrow=True,
+                arrowhead=3,
+                arrowsize=1.0,
+                arrowwidth=1.0,
+                arrowcolor="black",
+                row=1,
+                col=1,
+            )
+            fig.add_annotation(
+                x=x_d + text_dx_section,
+                y=(y_t_plot + Df) / 2.0,
+                text=f"d = {geom_d_mm:.0f} mm",
                 showarrow=False,
                 font=dict(size=9, color="black"),
                 xanchor="left",
@@ -763,12 +903,10 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
         # position of d_n arrow (moved right to align with label, in red)
         x_dn = beam_right + margin_right_section
         x_dn_arrow = x_dn + 0.40 * b  # move arrows right to align with label
-        if c:
-            # double-ended depth arrow for d_n
-            # top → NA
+        if cf and not plot_neg:
             fig.add_annotation(
                 x=x_dn_arrow,
-                y=c,
+                y=y_na_plot,
                 ax=x_dn_arrow,
                 ay=0,
                 xref="x1",
@@ -784,12 +922,11 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
                 row=1,
                 col=1,
             )
-            # NA → top
             fig.add_annotation(
                 x=x_dn_arrow,
                 y=0,
                 ax=x_dn_arrow,
-                ay=c,
+                ay=y_na_plot,
                 xref="x1",
                 yref="y1",
                 axref="x1",
@@ -803,11 +940,57 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
                 row=1,
                 col=1,
             )
-            # Move text to the right to avoid overlap with d = ... label
             fig.add_annotation(
                 x=x_dn + text_dx_section + 0.40 * b,
-                y=c / 2.0,
-                text=f"dₙ = {c:.0f} mm",
+                y=y_na_plot / 2.0,
+                text=f"dₙ = {cf:.0f} mm",
+                showarrow=False,
+                font=dict(size=9, color="red"),
+                xanchor="left",
+                row=1,
+                col=1,
+            )
+        elif cf and plot_neg:
+            fig.add_annotation(
+                x=x_dn_arrow,
+                y=Df,
+                ax=x_dn_arrow,
+                ay=y_na_plot,
+                xref="x1",
+                yref="y1",
+                axref="x1",
+                ayref="y1",
+                text="",
+                showarrow=True,
+                arrowhead=3,
+                arrowsize=1.0,
+                arrowwidth=1.0,
+                arrowcolor="red",
+                row=1,
+                col=1,
+            )
+            fig.add_annotation(
+                x=x_dn_arrow,
+                y=y_na_plot,
+                ax=x_dn_arrow,
+                ay=Df,
+                xref="x1",
+                yref="y1",
+                axref="x1",
+                ayref="y1",
+                text="",
+                showarrow=True,
+                arrowhead=3,
+                arrowsize=1.0,
+                arrowwidth=1.0,
+                arrowcolor="red",
+                row=1,
+                col=1,
+            )
+            fig.add_annotation(
+                x=x_dn + text_dx_section + 0.40 * b,
+                y=(Df + y_na_plot) / 2.0,
+                text=f"dₙ = {cf:.0f} mm",
                 showarrow=False,
                 font=dict(size=9, color="red"),
                 xanchor="left",
@@ -829,33 +1012,112 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
     panel_x_center = 0.5
     half_w = 0.35
 
-    if is_sls and eps_top_sls is not None and eps_bot_sls is not None and y_bot_sls is not None:
-        # Solver uses compression negative, tension positive.
-        # For the diagram we flip so compression > 0, tension < 0.
-        eps_c_true = -float(eps_top_sls)   # top fibre (compression) → positive
-        eps_s_true = -float(eps_bot_sls)   # bottom tension steel → negative
-        y_s = float(y_bot_sls)
+    sls_strain_path = "n/a"
+
+    if is_sls and plot_neg:
+        try:
+            kappa = float(st.session_state.get("bending_sls_kappa", 0.0) or 0.0)
+            dn_s = float(st.session_state.get("bending_sls_dn", y_na_plot) or y_na_plot)
+            eps_comp = kappa * (float(Df) - dn_s)
+            eps_ten_raw = st.session_state.get("bending_sls_eps_bot", None)
+            if eps_ten_raw is None:
+                eps_ten_raw = st.session_state.get("bending_sls_eps_s_outer", None)
+            if eps_ten_raw is None and abs(kappa) > 1e-20:
+                eps_ten = kappa * (float(y_tension_geom) - dn_s)
+            else:
+                eps_ten = float(eps_ten_raw or 0.0)
+            eps_c_true = -float(eps_comp)
+            eps_s_true = -float(eps_ten)
+            sls_strain_path = "hogging_kappa_session"
+        except Exception:
+            sls_strain_path = "hogging_exception_fallback"
+            eps_c_true = -float(eps_c_raw)
+            eps_s_true = -float(state_dict.get("eps_s", 0.0))
+            logger.warning(
+                "SLS (cracked) hogging strain: exception building κ-line; using state_dict fallback",
+                exc_info=True,
+            )
+    elif is_sls and (not plot_neg):
+        # Cracked SLS sagging: same physics as SLS tab ε(y)=κ(y−d_n). Prefer session keys from
+        # render_sls_tab / _compute_sls_bending_values; derive from κ + d_n + tension centroid if needed.
+        eps_top_disp = None
+        if eps_top_sls is not None:
+            try:
+                eps_top_disp = float(eps_top_sls)
+            except Exception:
+                eps_top_disp = None
+
+        eps_steel_disp = None
+        if eps_bot_sls is not None:
+            try:
+                eps_steel_disp = float(eps_bot_sls)
+            except Exception:
+                eps_steel_disp = None
+        if eps_steel_disp is None:
+            try:
+                eo = st.session_state.get("bending_sls_eps_s_outer", None)
+                if eo is not None:
+                    eps_steel_disp = float(eo)
+            except Exception:
+                pass
+
+        try:
+            kappa_rb = float(st.session_state.get("bending_sls_kappa", 0.0) or 0.0)
+        except Exception:
+            kappa_rb = 0.0
+        dn_rb = float(y_na_plot)
+
+        if eps_top_disp is None and abs(kappa_rb) > 1e-20:
+            eps_top_disp = kappa_rb * (0.0 - dn_rb)
+        if eps_steel_disp is None and abs(kappa_rb) > 1e-20:
+            ys = float(y_tension_geom)
+            eps_steel_disp = kappa_rb * (ys - dn_rb)
+
+        if eps_top_disp is not None and eps_steel_disp is not None:
+            eps_c_true = -float(eps_top_disp)
+            eps_s_true = -float(eps_steel_disp)
+            sls_strain_path = "sagging_cracked_resolved"
+        else:
+            sls_strain_path = "sagging_cracked_missing"
+            logger.warning(
+                "SLS (cracked) sagging strain: could not resolve top/steel strains "
+                "(eps_top_sls=%r, eps_bot/outer=%r, kappa=%r, dn_mm=%r, y_tension_geom=%r); "
+                "using state_dict fallback (strain line may match ULS or look degenerate).",
+                eps_top_sls,
+                eps_steel_disp,
+                kappa_rb,
+                dn_rb,
+                float(y_tension_geom),
+            )
+            eps_c_true = -float(eps_c_raw)
+            eps_s_true = -float(state_dict.get("eps_s", 0.0))
     else:
         # ULS / Uncracked: use state_dict values with same flip
         eps_s_source = state_dict.get("eps_s", 0.0)
 
-        for key in [
-            "eps_s_sls_bot",
-            "eps_s_sls_bottom",
-            "eps_s_bottom_sls",
-        ]:
-            try:
-                val = st.session_state.get(key, None)
-            except Exception:
-                val = None
-            if val is not None:
-                eps_s_source = float(val)
-                break
+        # Bottom-named SLS session keys refer to sagging bottom steel — do not use in hogging view.
+        if not plot_neg:
+            for key in [
+                "eps_s_sls_bot",
+                "eps_s_sls_bottom",
+                "eps_s_bottom_sls",
+            ]:
+                try:
+                    val = st.session_state.get(key, None)
+                except Exception:
+                    val = None
+                if val is not None:
+                    eps_s_source = float(val)
+                    break
 
-        # Flip so compression > 0, tension < 0
         eps_c_true = -float(eps_c_raw)
         eps_s_true = -float(eps_s_source)
-        y_s = float(d)
+        sls_strain_path = "uls_or_uncracked"
+
+    # Tension steel y for strain line, ε profile, and stress arrow — from section reo, not stale keys.
+    y_s = float(y_tension_geom)
+    # Extreme compression fibre in section coordinates (y=0 top, y=D bottom).
+    y_cf_strain = 0.0 if not plot_neg else float(Df)
 
     # ------------------------------------------------------------
     # Multi-layer steel stresses for the 3-panel STRESS diagram
@@ -866,49 +1128,100 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
     except Exception:
         Es = 200000.0
 
-    def _eps_at_depth(y_layer: float) -> float:
+    def _linear_strain_at_depth(y_layer: float) -> float:
         """
-        Return signed strain at depth y_layer (same sign convention as eps_*_true):
-          compression > 0, tension < 0
-        Uses the two-segment linear strain profile:
-          (0, eps_c_true) -> (c, 0) -> (y_s, eps_s_true)
+        Single plane-sections line: ε = 0 at neutral axis, ε = ε_c at extreme compression fibre.
+
+        Sagging: compression at top (y=0), ε(y) = ε_c * (1 - y / y_na).
+        Hogging: compression at bottom (y=D), ε(y) = ε_c * (y - y_na) / (D - y_na).
+
+        Internal convention: compression ε > 0, tension ε < 0 (plane-sections algebra).
+        User-facing strain panel maps to display ε via strain_display (compression < 0 left, tension > 0 right).
+
+        If NA is degenerate, fall back to a straight chord from fibre to tension steel using
+        published ε_c and ε_s so the segment stays one line.
         """
-        y_layer = float(y_layer)
+        yq = float(y_layer)
+        y_na = float(y_na_plot)
+        y_comp = float(y_cf_strain)
+        y_st = float(y_s)
+        ec = float(eps_c_true)
+        es = float(eps_s_true)
 
-        if c <= 1e-9:
-            # degenerate, just scale to bottom point
-            if y_s <= 1e-9:
-                return eps_s_true
-            return eps_s_true * (y_layer / y_s)
-
-        if y_layer <= c:
-            # top segment (compression zone)
-            return eps_c_true * (1.0 - y_layer / c)
-
-        # bottom segment (tension zone)
-        denom = (y_s - c)
-        if abs(denom) <= 1e-9:
-            return eps_s_true
-        return eps_s_true * ((y_layer - c) / denom)
-
-    # Magnitudes and scaling
-    eps_c_mag = abs(eps_c_true)
-    eps_s_mag = abs(eps_s_true)
-    eps_max = max(eps_c_mag, eps_s_mag, 1e-4) * 1.3
-
-    def strain_to_x(eps_true: float) -> float:
-        """
-        Map signed ε → x position.
-        Centre = 0, right = compression (ε > 0), left = tension (ε < 0).
-        """
-        if eps_true >= 0.0:
-            return panel_x_center + (abs(eps_true) / eps_max) * half_w
+        if not plot_neg:
+            if y_na > 1e-9 and abs(y_na - y_comp) > 1e-9:
+                return ec * (1.0 - yq / y_na)
         else:
-            return panel_x_center - (abs(eps_true) / eps_max) * half_w
+            denom_fb = float(Df) - y_na
+            if denom_fb > 1e-9:
+                return ec * (yq - y_na) / denom_fb
 
-    x_c = strain_to_x(eps_c_true)
-    x_s = strain_to_x(eps_s_true)
-    x_mid = panel_x_center  # neutral axis (ε = 0)
+        d_chord = y_st - y_comp
+        if abs(d_chord) < 1e-9:
+            return es
+        return ec + (es - ec) * (yq - y_comp) / d_chord
+
+    def _eps_at_depth(y_layer: float) -> float:
+        """Alias: strain at any fibre on the same compatibility line."""
+        return _linear_strain_at_depth(y_layer)
+
+    # STRAIN PANEL: collect tension steel layers first so scaling includes every plotted ε.
+    steel_layers: list[tuple[float, float]] = []  # (y, eps_value)
+
+    if is_sls and reo_layout and isinstance(reo_layout, dict):
+        want_multi = plot_neg or (
+            (not plot_neg) and sls_strain_path == "sagging_cracked_resolved"
+        )
+        if want_multi:
+            for layer_data in _get_layers(reo_layout, tension_face):
+                try:
+                    y_layer = float(layer_data["y"])
+                    on_tension_side = (
+                        tension_face == "bottom" and y_layer > y_na_plot + 1e-6
+                    ) or (tension_face == "top" and y_layer < y_na_plot - 1e-6)
+                    if on_tension_side:
+                        steel_layers.append((y_layer, _linear_strain_at_depth(y_layer)))
+                except Exception:
+                    pass
+    if not steel_layers:
+        steel_layers = [(y_s, _linear_strain_at_depth(y_s))]
+
+    eps_cf_plot = _linear_strain_at_depth(y_cf_strain)
+    eps_st_plot = _linear_strain_at_depth(y_s)
+
+    _diag = os.environ.get("BENDING_SLS_STRAIN_DIAG", "").strip().lower()
+    if _diag in ("1", "true", "yes", "on"):
+        print(
+            "[bending 3-panel strain]",
+            {
+                "state_label": state_label,
+                "is_sls": is_sls,
+                "plot_neg_hogging": plot_neg,
+                "sls_strain_path": sls_strain_path,
+                "y_na_plot_mm": float(y_na_plot),
+                "eps_c_true_internal": float(eps_c_true),
+                "eps_s_true_internal": float(eps_s_true),
+                "eps_cf_plot_internal": float(eps_cf_plot),
+                "eps_st_plot_internal": float(eps_st_plot),
+            },
+            flush=True,
+        )
+
+    eps_mag_candidates = [abs(eps_c_true), abs(eps_cf_plot), 1e-4]
+    for _yl, eps_l in steel_layers:
+        eps_mag_candidates.append(abs(eps_l))
+    eps_mag_candidates.append(abs(eps_st_plot))
+    eps_max = max(eps_mag_candidates) * 1.3
+
+    def strain_to_x(eps_internal: float) -> float:
+        """Map internal panel ε → x position using user-facing display convention (see strain_display)."""
+        eps_disp = strain_display.bending_internal_strain_to_display(eps_internal)
+        return strain_display.strain_display_to_panel_x(
+            eps_disp,
+            panel_x_center=panel_x_center,
+            half_w=half_w,
+            eps_scale_max=eps_max,
+        )
 
     # vertical depth line at ε = 0 (concrete depth axis)
     fig.add_shape(
@@ -922,11 +1235,11 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
         col=2,
     )
 
-    # strain line (top → NA → steel)
+    # Strain profile: one straight segment (compression fibre → tension steel) on the same line.
     fig.add_trace(
         go.Scatter(
-            x=[x_c, x_mid, x_s],
-            y=[0, c, y_s],
+            x=[strain_to_x(eps_cf_plot), strain_to_x(eps_st_plot)],
+            y=[y_cf_strain, y_s],
             mode="lines",
             line=dict(color="black", width=1.0),
             hoverinfo="skip",
@@ -936,64 +1249,38 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
         col=2,
     )
 
-    # neutral axis (dashed)
+    # neutral axis (dashed) — ε = 0 crossing of the same line, not a bend in the polyline
     fig.add_shape(
         type="line",
         x0=panel_x_center - 0.5,
-        y0=c,
+        y0=y_na_plot,
         x1=panel_x_center + 0.5,
-        y1=c,
+        y1=y_na_plot,
         line=dict(color="black", width=0.7, dash="dash"),
         row=1,
         col=2,
     )
 
-    # STRAIN PANEL: Horizontal value lines with labels (not on diagonal)
-    # Collect steel layers for multi-layer display (SLS/cracked) or single (ULS)
-    steel_layers = []  # list of (y, eps_value)
-    
-    if is_sls and eps_top_sls is not None and eps_bot_sls is not None and y_bot_sls is not None:
-        # SLS: collect all tension layers from reo_layout
-        if reo_layout and isinstance(reo_layout, dict):
-            for layer_data in _get_layers(reo_layout, "bottom"):
-                try:
-                    y_layer = float(layer_data["y"])
-                    if y_layer > c + 1e-6:  # below NA (tension)
-                        eps_layer = _eps_at_depth(y_layer)
-                        steel_layers.append((y_layer, eps_layer))
-                except Exception:
-                    pass
-        # Fallback: use single layer
-        if not steel_layers:
-            steel_layers = [(y_s, eps_s_true)]
-    else:
-        # ULS/Uncracked: single steel reference (resultant level)
-        steel_layers = [(y_s, eps_s_true)]
-    
-    # Top fibre horizontal line and label (ε_c)
-    # Line from zero-strain axis to strain value
-    x_c_end = strain_to_x(eps_c_true)
+    # Horizontal value lines with labels (anchors on the compatibility line)
+    x_c_end = strain_to_x(eps_cf_plot)
     fig.add_shape(
         type="line",
         x0=panel_x_center,
-        y0=0,
+        y0=y_cf_strain,
         x1=x_c_end,
-        y1=0,
+        y1=y_cf_strain,
         line=dict(color="red", width=1.5),
         row=1,
         col=2,
     )
-    # Label just beyond line end (right if compression, left if tension) with small yshift
-    if eps_c_true >= 0.0:  # compression (to the right)
-        label_x = x_c_end + 0.02
-        xanchor = "left"
-    else:  # tension (to the left)
-        label_x = x_c_end - 0.02
-        xanchor = "right"
+    eps_cf_disp = strain_display.bending_internal_strain_to_display(eps_cf_plot)
+    label_x, xanchor = strain_display.strain_label_anchor_display(
+        eps_cf_disp, x_c_end, offset=0.02
+    )
     fig.add_annotation(
         x=label_x,
-        y=0,
-        text=f"ε_c = {eps_c_true:.4f}",
+        y=y_cf_strain,
+        text=f"ε_c = {eps_cf_disp:.4f}",
         showarrow=False,
         font=dict(size=9, color="red"),
         yshift=-8,  # pixels up
@@ -1016,17 +1303,14 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
             row=1,
             col=2,
         )
-        # Label just past line end with yshift=+10 (down) so it's clear of diagonal
-        if eps_layer >= 0.0:  # compression (to the right)
-            label_x = x_s_end + 0.02
-            xanchor = "left"
-        else:  # tension (to the left)
-            label_x = x_s_end - 0.02
-            xanchor = "right"
+        eps_s_disp = strain_display.bending_internal_strain_to_display(eps_layer)
+        label_x, xanchor = strain_display.strain_label_anchor_display(
+            eps_s_disp, x_s_end, offset=0.02
+        )
         fig.add_annotation(
             x=label_x,
             y=y_layer,
-            text=f"ε_s = {eps_layer:.4f}",
+            text=f"ε_s = {eps_s_disp:.4f}",
             showarrow=False,
             font=dict(size=9, color="blue"),
             yshift=10,  # pixels down
@@ -1037,7 +1321,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
 
     # (optional but nice) clarify sign convention for this panel
     fig.update_xaxes(
-        title_text="Strain ε (tension ε < 0, compression ε > 0)",
+        title_text="Strain ε (compression ε < 0 left, tension ε > 0 right)",
         row=1,
         col=2,
         visible=False,
@@ -1154,7 +1438,7 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
         x_T = x_T_max
     else:
         # ULS/Uncracked: single resultant arrow
-        y_steel = y_s if (is_sls and y_bot_sls is not None) else d
+        y_steel = float(y_s)
         fig.add_annotation(
             x=x_T,
             y=y_steel,
@@ -1187,16 +1471,27 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
     # -----------------------------
     # Compression block in STRESS
     # -----------------------------
+    def _stress_compression_span():
+        if is_sls and plot_neg:
+            h = max(0.0, Df - y_na_plot)
+        elif is_sls:
+            h = max(0.0, min(cf, Df))
+        elif is_uls and not is_parabolic:
+            h = max(0.0, min(gamma * cf, Df))
+        else:
+            h = max(0.0, min(cf, Df))
+        if not plot_neg:
+            return 0.0, h
+        return Df - h, Df
+
     if is_uls and not is_parabolic:
-        # ULS rectangular block
-        block_top = 0.0
-        block_bottom = gamma * c
+        block_top, block_bottom = _stress_compression_span()
         fig.add_shape(
             type="rect",
             x0=x_axis,
-            y0=block_top,
+            y0=min(block_top, block_bottom),
             x1=x_block_right,
-            y1=block_bottom,
+            y1=max(block_top, block_bottom),
             line=dict(color="red", width=1.0),
             fillcolor="rgba(255,200,200,0.2)",
             row=1,
@@ -1204,18 +1499,18 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
         )
 
     elif is_parabolic:
-        # Parabolic block from top fibre down to d_n
-        block_top = 0.0
-        block_bottom = c if c else 0.0
+        block_top, block_bottom = _stress_compression_span()
+        if block_bottom < block_top:
+            block_top, block_bottom = block_bottom, block_top
 
-        if block_bottom > block_top:
+        if abs(block_bottom - block_top) > 1e-9:
             n_pts = 60
             ys = np.linspace(block_top, block_bottom, n_pts)
 
-            # Dimensionless depth from NA (0 at NA, 1 at top fibre):
-            z = 1.0 - ys / max(block_bottom, 1e-6)
+            span_blk = max(block_bottom - block_top, 1e-6)
+            z = (block_bottom - ys) / span_blk
 
-            # Simple parabolic profile: 0 at NA, σ_c at top (shape only)
+            # Simple parabolic profile: 0 at NA, σ_c at compression fibre (shape only)
             sigma_profile = (2.0 * z - z**2)
             sigma_profile = np.clip(sigma_profile, 0.0, None)
 
@@ -1246,8 +1541,9 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
 
     else:
         # TRIANGULAR SLS / UNCRACKED block
-        block_top = 0.0
-        block_bottom = c
+        block_top, block_bottom = _stress_compression_span()
+        if block_bottom < block_top:
+            block_top, block_bottom = block_bottom, block_top
         triangle_x = [x_axis, x_axis, x_block_right, x_axis]
         triangle_y = [block_bottom, block_top, block_top, block_bottom]
         fig.add_trace(
@@ -1269,28 +1565,33 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
     fig.add_shape(
         type="line",
         x0=x_axis - 0.05,
-        y0=c,
+        y0=y_na_plot,
         x1=x_axis + usable_width + 0.05,
-        y1=c,
+        y1=y_na_plot,
         line=dict(color="black", width=0.7, dash="dash"),
         row=1,
         col=3,
     )
 
     # -------------------------------------------------
-    # Top-band width arrow + depth arrow – ALL states
+    # Width arrow + label for concrete compression stress
+    # Sagging: band above the section (compression at top). Hogging: band below (compression at bottom).
     # -------------------------------------------------
-    top_band_arrow_y = -0.06 * D
-    top_band_label_y = -0.12 * D
+    if plot_neg:
+        comp_band_arrow_y = D + 0.06 * D
+        comp_band_label_y = D + 0.11 * D
+    else:
+        comp_band_arrow_y = -0.06 * D
+        comp_band_label_y = -0.12 * D
 
     label_text = label_text_top
 
     # width arrow – double-ended via two arrows
     fig.add_annotation(
         x=x_block_right,
-        y=top_band_arrow_y,
+        y=comp_band_arrow_y,
         ax=x_axis,
-        ay=top_band_arrow_y,
+        ay=comp_band_arrow_y,
         xref="x3",
         yref="y3",
         axref="x3",
@@ -1306,9 +1607,9 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
     )
     fig.add_annotation(
         x=x_axis,
-        y=top_band_arrow_y,
+        y=comp_band_arrow_y,
         ax=x_block_right,
-        ay=top_band_arrow_y,
+        ay=comp_band_arrow_y,
         xref="x3",
         yref="y3",
         axref="x3",
@@ -1323,10 +1624,10 @@ def _plot_stress_strain_profiles(state_dict, state_label=None, layout=None):
         col=3,
     )
 
-    # label centred above the arrow
+    # label centred on the compression side of the section
     fig.add_annotation(
         x=(x_axis + x_block_right) / 2.0,
-        y=top_band_label_y,
+        y=comp_band_label_y,
         text=label_text,
         showarrow=False,
         font=dict(size=9, color="red"),
@@ -1701,7 +2002,7 @@ def _plot_material_stress_strain_curves():
     )
 
     fig.update_xaxes(
-        title_text="Strain ε (compression > 0)",
+        title_text="Strain ε (concrete law: compression as +ε on axis)",
         row=1,
         col=1,
         zeroline=True,
@@ -1805,6 +2106,55 @@ def _plot_material_stress_strain_curves():
 
 
 # ============================================================
+#  ULS step diagrams (1.1, 1.4, 1.6) — shared sagging / hogging layout
+# ============================================================
+def _uls_step_section_layout(
+    *,
+    D_mm: float,
+    D_disp: float,
+    d_mm: float,
+    dn_mm: float,
+    a_mm: float,
+    moment_sign: str = "positive",
+) -> dict[str, float | bool]:
+    """
+    Vertical layout for ULS calc-box figures. Display y: 0 = top of member, D_disp = bottom.
+
+    Sagging: compression block at top, NA and steel positions measured from top.
+    Hogging: compression block at bottom, NA and steel from top as y = D − (depth from comp. face).
+    """
+    _, _, hogging = resolve_bending_faces(moment_sign)
+    Df = max(float(D_mm), 1e-6)
+    scale = float(D_disp) / Df
+    d_disp = float(d_mm) * scale
+    dn_disp = float(dn_mm) * scale if dn_mm == dn_mm else 0.0
+    a_disp = float(a_mm) * scale if a_mm == a_mm else 0.0
+    if not hogging:
+        y_block_top = 0.0
+        y_block_bot = a_disp
+        y_na = dn_disp
+        y_steel = d_disp
+    else:
+        y_block_bot = float(D_disp)
+        y_block_top = float(D_disp) - a_disp
+        y_na = float(D_disp) - dn_disp
+        y_steel = float(D_disp) - d_disp
+    y_C_centroid = 0.5 * (y_block_top + y_block_bot)
+    return {
+        "hogging": hogging,
+        "scale": scale,
+        "d_disp": d_disp,
+        "dn_disp": dn_disp,
+        "a_disp": a_disp,
+        "y_block_top": y_block_top,
+        "y_block_bot": y_block_bot,
+        "y_na": y_na,
+        "y_steel": y_steel,
+        "y_C_centroid": y_C_centroid,
+    }
+
+
+# ============================================================
 #  ULS STRESS BLOCK FIGURE (1.1 / 1.3 VARIANTS)
 # ============================================================
 #  ULS STRESS BLOCK FIGURE (1.1 / 1.4 VARIANTS)
@@ -1825,6 +2175,7 @@ def _make_uls_stress_block_figure(
     show_C: bool = False,
     C_N: float | None = None,
     variant: str = "11",
+    moment_sign: str = "positive",
 ):
     """
     ORIGINAL hand-drawn-style ULS stress block using Plotly.
@@ -1851,10 +2202,21 @@ def _make_uls_stress_block_figure(
 
     # Normalised depth (keep your existing behaviour)
     D_disp = 300.0
-    scale = D_disp / float(D_mm)
-    a_disp = a_mm * scale
-    dn_disp = dn_mm * scale
-    d_disp = d_mm * scale
+    lay = _uls_step_section_layout(
+        D_mm=float(D_mm),
+        D_disp=D_disp,
+        d_mm=float(d_mm),
+        dn_mm=float(dn_mm),
+        a_mm=float(a_mm),
+        moment_sign=moment_sign,
+    )
+    a_disp = float(lay["a_disp"])
+    dn_disp = float(lay["dn_disp"])
+    d_disp = float(lay["d_disp"])
+    block_top = float(lay["y_block_top"])
+    block_bottom = float(lay["y_block_bot"])
+    y_na = float(lay["y_na"])
+    y_steel = float(lay["y_steel"])
 
     sigma_c = float(alpha2) * float(fc)     # α2 f'c
     sigma_s = float(abs(fsy))               # show T at fsy for the step figs
@@ -1868,9 +2230,6 @@ def _make_uls_stress_block_figure(
     # IMPORTANT: x is normalised (0..1) in this figure, so margins must be panel-units (NOT mm)
     margin_right_stress = 0.06
     text_dx_stress = 0.03
-
-    block_top = 0.0
-    block_bottom = a_disp
 
     fig = go.Figure()
 
@@ -1888,16 +2247,17 @@ def _make_uls_stress_block_figure(
     fig.add_shape(
         type="rect",
         x0=x_axis,
-        y0=block_top,
+        y0=min(block_top, block_bottom),
         x1=x_block_right,
-        y1=block_bottom,
+        y1=max(block_top, block_bottom),
         line=dict(color="red", width=2),
         fillcolor="rgba(255, 200, 200, 0.12)",
     )
 
     # Internal compression arrows (kept inside)
-    block_h = max(block_bottom - block_top, 1.0)
-    ys = np.linspace(block_top + 0.2 * block_h, block_bottom - 0.2 * block_h, 3)
+    block_h = max(abs(block_bottom - block_top), 1.0)
+    lo_y, hi_y = (block_top, block_bottom) if block_bottom >= block_top else (block_bottom, block_top)
+    ys = np.linspace(lo_y + 0.2 * block_h, hi_y - 0.2 * block_h, 3)
     for yy in ys:
         fig.add_annotation(
             x=x_axis + 0.15 * (x_block_right - x_axis),
@@ -1990,7 +2350,7 @@ def _make_uls_stress_block_figure(
     )
     fig.add_annotation(
         x=x_a + text_dx_stress,
-        y=0.5 * (block_top + block_bottom),
+        y=0.5 * (lo_y + hi_y),
         text=f"a = γ dₙ = {a_mm:.1f} mm",
         showarrow=False,
         xanchor="left",
@@ -2000,41 +2360,69 @@ def _make_uls_stress_block_figure(
     # Extra features for variant "13"
     if variant == "13":
         if show_dn and dn_mm is not None and not math.isnan(dn_mm):
-            fig.add_shape(type="line", x0=x_axis - 0.05, y0=dn_disp, x1=x_axis + STRESS_USABLE_W + 0.05, y1=dn_disp,
-                          line=dict(color="blue", width=1, dash="dash"))
+            fig.add_shape(
+                type="line",
+                x0=x_axis - 0.05,
+                y0=y_na,
+                x1=x_axis + STRESS_USABLE_W + 0.05,
+                y1=y_na,
+                line=dict(color="blue", width=1, dash="dash"),
+            )
             fig.add_annotation(
-                x=x_axis + STRESS_USABLE_W + 0.06, y=dn_disp,
+                x=x_axis + STRESS_USABLE_W + 0.06,
+                y=y_na,
                 text=f"dₙ = {dn_mm:.1f} mm",
                 showarrow=False,
                 xanchor="left",
                 font=dict(size=11, color="blue"),
             )
 
-        # Tension arrow at depth d (steel to-scale)
+        # Tension arrow at active tension steel depth (to-scale for this branch)
         fig.add_annotation(
-            x=x_T, y=d_disp, ax=x_axis, ay=d_disp,
-            xref="x", yref="y", axref="x", ayref="y",
-            showarrow=True, arrowhead=3, arrowwidth=1.5, arrowcolor="blue",
+            x=x_T,
+            y=y_steel,
+            ax=x_axis,
+            ay=y_steel,
+            xref="x",
+            yref="y",
+            axref="x",
+            ayref="y",
+            showarrow=True,
+            arrowhead=3,
+            arrowwidth=1.5,
+            arrowcolor="blue",
         )
         fig.add_annotation(
-            x=x_T + 0.04, y=d_disp,
+            x=x_T + 0.04,
+            y=y_steel,
             text=f"T ({sigma_s:.0f} MPa)",
-            showarrow=False, xanchor="left",
+            showarrow=False,
+            xanchor="left",
             font=dict(size=11, color="blue"),
         )
 
-    # Variant "11": show T line near bottom (still to-scale)
+    # Variant "11": stress-block intro + T at actual tension steel level for this case
     if variant == "11":
-        y_T = D_disp * 0.80
         fig.add_annotation(
-            x=x_T, y=y_T, ax=x_axis, ay=y_T,
-            xref="x", yref="y", axref="x", ayref="y",
-            showarrow=True, arrowhead=3, arrowwidth=1.5, arrowcolor="blue",
+            x=x_T,
+            y=y_steel,
+            ax=x_axis,
+            ay=y_steel,
+            xref="x",
+            yref="y",
+            axref="x",
+            ayref="y",
+            showarrow=True,
+            arrowhead=3,
+            arrowwidth=1.5,
+            arrowcolor="blue",
         )
         fig.add_annotation(
-            x=x_T + 0.04, y=y_T,
+            x=x_T + 0.04,
+            y=y_steel,
             text=f"T ({sigma_s:.0f} MPa)",
-            showarrow=False, xanchor="left",
+            showarrow=False,
+            xanchor="left",
             font=dict(size=11, color="blue"),
         )
 
@@ -2067,12 +2455,15 @@ def _make_uls_force_model_figure(
     a_mm: float,
     C_N: float | None = None,
     T_N: float | None = None,
+    moment_sign: str = "positive",
+    dn_mm: float | None = None,
 ):
     """
     Simple C–T–z force model using Plotly (Step 1.6).
 
     Uses the same normalised depth as the ULS stress-block figures so
     the model is the same visual size and sits centrally in the calc box.
+    Sagging: C at top block centroid, T at bottom steel. Hogging: mirrored.
     """
     vals = [D_mm, d_mm, a_mm]
     if any(v is None or (isinstance(v, float) and math.isnan(v)) for v in vals):
@@ -2087,10 +2478,21 @@ def _make_uls_force_model_figure(
 
     # Normalised depth to match stress-block figure (bigger: 1.5×)
     D_disp = 300.0
-    scale = D_disp / float(D_mm)
-
-    a_disp = a_mm * scale
-    d_disp = d_mm * scale
+    # y_C / y_T only need a and d; dn is unused here but kept for API parity with stress-block calls.
+    if dn_mm is not None and dn_mm == dn_mm and not math.isnan(float(dn_mm)):
+        dn_use = float(dn_mm)
+    else:
+        dn_use = float(d_mm)
+    lay = _uls_step_section_layout(
+        D_mm=float(D_mm),
+        D_disp=D_disp,
+        d_mm=float(d_mm),
+        dn_mm=dn_use,
+        a_mm=float(a_mm),
+        moment_sign=moment_sign,
+    )
+    y_C = float(lay["y_C_centroid"])
+    y_T = float(lay["y_steel"])
 
     # Physical lever arm for label
     z_mm = d_mm - 0.5 * a_mm
@@ -2109,8 +2511,7 @@ def _make_uls_force_model_figure(
         line=dict(color="black", width=2),
     )
 
-    # Compression C at a/2
-    y_C = 0.5 * a_disp
+    # Compression C at centroid of rectangular stress block (branch-aware)
     x_C_tail = x_axis + ARROW_OFFSET
     x_C_head = x_axis
     fig.add_annotation(
@@ -2139,8 +2540,7 @@ def _make_uls_force_model_figure(
         font=dict(size=11, color="red"),
     )
 
-    # Tension T at depth d
-    y_T = d_disp
+    # Tension T at active tension steel level (branch-aware)
     x_T_head = x_axis + ARROW_OFFSET
     x_T_tail = x_axis
     fig.add_annotation(
@@ -2241,6 +2641,7 @@ def _make_sls_stress_block_figure(
     dn_mm: float,
     include_comp: bool = False,
     d_comp_mm: float | None = None,
+    moment_sign: str = "positive",
 ):
     """
     SLS stress-block figure for Step 3.2 (cracked section), rebuilt to MATCH the
@@ -2251,6 +2652,9 @@ def _make_sls_stress_block_figure(
     - Same right-side depth arrow spacing concept
     - Triangular compression block to d_n
     - Multiple tension layers shown automatically (T1, T2, ...) with stress in MPa
+
+    moment_sign must match the active bending tab (positive = sagging, negative = hogging)
+    so compression block and tension steel layers swap consistently with the main diagrams.
 
     Uses session_state:
       bending_sls_dn, bending_sls_eps_top, bending_sls_eps_bot, bending_sls_y_bot
@@ -2270,6 +2674,8 @@ def _make_sls_stress_block_figure(
 
     if not D or D <= 0:
         D = 600.0
+
+    D_draw = float(D)
 
     # -------------------------
     # Pull SLS state (preferred)
@@ -2296,21 +2702,38 @@ def _make_sls_stress_block_figure(
     except Exception:
         Ec, Es = 30000.0, 200000.0
 
-    # Top concrete stress at SLS (elastic)
-    # solver uses compression negative -> use magnitude
+    tension_face, _, is_hogging = resolve_bending_faces(moment_sign)
+
     try:
-        eps_top = float(eps_top_sls) if eps_top_sls is not None else -0.0002
+        kappa = float(st.session_state.get("bending_sls_kappa", 0) or 0)
     except Exception:
-        eps_top = -0.0002
+        kappa = 0.0
 
-    sigma_c_top = Ec * abs(eps_top)  # MPa
+    # Concrete stress scale at the extreme compression fibre (elastic SLS)
+    if is_hogging:
+        try:
+            eps_extreme = kappa * (float(D) - float(c))
+        except Exception:
+            eps_extreme = 0.0
+        if abs(eps_extreme) < 1e-12:
+            try:
+                eps_extreme = float(eps_top_sls) if eps_top_sls is not None else -0.0002
+            except Exception:
+                eps_extreme = -0.0002
+        sigma_c_top = Ec * abs(float(eps_extreme))
 
-    # -------------------------
-    # Helper: strain at depth y
-    # -------------------------
-    # linear strain: ε(y) = ε_top * (1 - y/c), with ε(c)=0
-    def eps_at_y(y: float) -> float:
-        return eps_top * (1.0 - float(y) / float(c))
+        def eps_at_y(y: float) -> float:
+            return kappa * (float(y) - float(c))
+    else:
+        try:
+            eps_top = float(eps_top_sls) if eps_top_sls is not None else -0.0002
+        except Exception:
+            eps_top = -0.0002
+
+        sigma_c_top = Ec * abs(eps_top)  # MPa
+
+        def eps_at_y(y: float) -> float:
+            return eps_top * (1.0 - float(y) / float(c))
 
     # -------------------------
     # Collect tension layers
@@ -2318,31 +2741,27 @@ def _make_sls_stress_block_figure(
     tension_layers = []  # list of (y, label, sigma_MPa)
 
     if reo_layout and isinstance(reo_layout, dict):
-        # bottom layers are stored as a list of layer dicts, each with "y"
         ys = []
-        bottom_layers = _get_layers(reo_layout, "bottom")
-
-        for layer in bottom_layers:
+        for layer in _get_layers(reo_layout, tension_face):
             try:
                 ys.append(float(layer["y"]))
             except Exception:
                 pass
-
-        # tension layers = below NA
-        ys_t = [y for y in ys if y > c + 1e-6]
-        # order: deepest first -> T1 at bottom like your screenshot
-        ys_t.sort(reverse=True)
-
+        if tension_face == "bottom":
+            ys_t = [y for y in ys if y > c + 1e-6]
+            ys_t.sort(reverse=True)
+        else:
+            ys_t = [y for y in ys if y < c - 1e-6]
+            ys_t.sort()
         for i, y in enumerate(ys_t, start=1):
-            sig = Es * eps_at_y(y)  # MPa (tension should be +)
+            sig = Es * eps_at_y(y)
             tension_layers.append((y, f"T{i}", float(sig)))
 
     else:
-        # fallback: just one layer at d_mm (old behaviour)
         try:
             y = float(d_mm)
         except Exception:
-            y = float(D * 0.9)
+            y = float(D * 0.9) if tension_face == "bottom" else float(D * 0.1)
         sig = Es * eps_at_y(y)
         tension_layers.append((y, "T1", float(sig)))
 
@@ -2360,8 +2779,10 @@ def _make_sls_stress_block_figure(
     # Match the SAME coordinate system + scaling as the 3-panel stress diagram
     # (so Step-by-step figures look identical)
     # ------------------------------------------------------------
-    base_span = max(D_mm, d_mm, dn_mm, d_comp_mm or 0.0)
+    base_span = max(D_mm, d_mm, dn_mm, d_comp_mm or 0.0, D_draw)
     D_ref = base_span * 1.05
+    if is_hogging:
+        D_ref = max(D_ref, D_draw + 0.18 * max(D_ref, 1.0))
 
     # Match ULS/3-panel stress layout geometry (not the old hand-sketch one)
     x_axis = 70.0
@@ -2417,9 +2838,9 @@ def _make_sls_stress_block_figure(
         line=dict(color="black", width=1, dash="dash"),
     )
 
-    # triangular compression block (TOP -> d_n)
+    # triangular compression block (sagging: top → d_n; hogging: d_n → bottom)
     tri_x = [x_axis, x_axis, x_block_right, x_axis]
-    tri_y = [c, 0.0, 0.0, c]
+    tri_y = [c, D_draw, D_draw, c] if is_hogging else [c, 0.0, 0.0, c]
     fig.add_trace(
         go.Scatter(
             x=tri_x,
@@ -2434,10 +2855,15 @@ def _make_sls_stress_block_figure(
     )
 
     # internal compression arrows inside triangle
-    if c > 0:
+    span_comp = max((D_draw - c) if is_hogging else c, 1e-9)
+    if span_comp > 1e-6:
         for frac in [0.25, 0.5, 0.75]:
-            y_mid = frac * c
-            rel = max(0.0, min(1.0, y_mid / c))
+            if is_hogging:
+                y_mid = c + frac * span_comp
+                rel = (y_mid - c) / span_comp
+            else:
+                y_mid = frac * c
+                rel = max(0.0, min(1.0, y_mid / c)) if c > 1e-9 else 0.0
             x_max = x_axis + (1.0 - rel) * (x_block_right - x_axis)
             x_tail = x_axis + 0.20 * (x_max - x_axis)
             x_head = x_axis + 0.75 * (x_max - x_axis)
@@ -2458,15 +2884,19 @@ def _make_sls_stress_block_figure(
                 arrowcolor="red",
             )
 
-    # top width arrow + label (MATCH main 3-panel placement)
-    top_band_arrow_y = -0.06 * D_ref
-    top_band_label_y = -0.12 * D_ref
+    # width arrow + label for concrete stress (above section for sagging, below for hogging)
+    if is_hogging:
+        band_arrow_y = D_draw + 0.06 * D_ref
+        band_label_y = D_draw + 0.12 * D_ref
+    else:
+        band_arrow_y = -0.06 * D_ref
+        band_label_y = -0.12 * D_ref
 
     fig.add_annotation(
         x=x_block_right,
-        y=top_band_arrow_y,
+        y=band_arrow_y,
         ax=x_axis,
-        ay=top_band_arrow_y,
+        ay=band_arrow_y,
         xref="x",
         yref="y",
         axref="x",
@@ -2479,9 +2909,9 @@ def _make_sls_stress_block_figure(
     )
     fig.add_annotation(
         x=x_axis,
-        y=top_band_arrow_y,
+        y=band_arrow_y,
         ax=x_block_right,
-        ay=top_band_arrow_y,
+        ay=band_arrow_y,
         xref="x",
         yref="y",
         axref="x",
@@ -2495,7 +2925,7 @@ def _make_sls_stress_block_figure(
 
     fig.add_annotation(
         x=(x_axis + x_block_right) / 2.0,
-        y=top_band_label_y,
+        y=band_label_y,
         text=f"E_c ε_c = {sigma_c_top:.0f} MPa",
         showarrow=False,
         font=dict(size=11, color="red"),
@@ -2504,49 +2934,89 @@ def _make_sls_stress_block_figure(
 
     # right-side depth arrow + label (d_n)
     x_dn = x_block_right + 10.0
-    fig.add_annotation(
-        x=x_dn,
-        y=c,
-        ax=x_dn,
-        ay=0.0,
-        xref="x",
-        yref="y",
-        axref="x",
-        ayref="y",
-        text="",
-        showarrow=True,
-        arrowhead=2,
-        arrowwidth=1.0,
-        arrowcolor="red",
-    )
-    fig.add_annotation(
-        x=x_dn,
-        y=0.0,
-        ax=x_dn,
-        ay=c,
-        xref="x",
-        yref="y",
-        axref="x",
-        ayref="y",
-        text="",
-        showarrow=True,
-        arrowhead=2,
-        arrowwidth=1.0,
-        arrowcolor="red",
-    )
-    fig.add_annotation(
-        x=x_dn + 4.0,
-        y=0.5 * c,
-        text=f"dₙ = {c:.0f} mm",
-        showarrow=False,
-        font=dict(size=12, color="red"),
-        xanchor="left",
-    )
+    if is_hogging:
+        fig.add_annotation(
+            x=x_dn,
+            y=c,
+            ax=x_dn,
+            ay=D_draw,
+            xref="x",
+            yref="y",
+            axref="x",
+            ayref="y",
+            text="",
+            showarrow=True,
+            arrowhead=2,
+            arrowwidth=1.0,
+            arrowcolor="red",
+        )
+        fig.add_annotation(
+            x=x_dn,
+            y=D_draw,
+            ax=x_dn,
+            ay=c,
+            xref="x",
+            yref="y",
+            axref="x",
+            ayref="y",
+            text="",
+            showarrow=True,
+            arrowhead=2,
+            arrowwidth=1.0,
+            arrowcolor="red",
+        )
+        fig.add_annotation(
+            x=x_dn + 4.0,
+            y=0.5 * (c + D_draw),
+            text=f"dₙ = {c:.0f} mm",
+            showarrow=False,
+            font=dict(size=12, color="red"),
+            xanchor="left",
+        )
+    else:
+        fig.add_annotation(
+            x=x_dn,
+            y=c,
+            ax=x_dn,
+            ay=0.0,
+            xref="x",
+            yref="y",
+            axref="x",
+            ayref="y",
+            text="",
+            showarrow=True,
+            arrowhead=2,
+            arrowwidth=1.0,
+            arrowcolor="red",
+        )
+        fig.add_annotation(
+            x=x_dn,
+            y=0.0,
+            ax=x_dn,
+            ay=c,
+            xref="x",
+            yref="y",
+            axref="x",
+            ayref="y",
+            text="",
+            showarrow=True,
+            arrowhead=2,
+            arrowwidth=1.0,
+            arrowcolor="red",
+        )
+        fig.add_annotation(
+            x=x_dn + 4.0,
+            y=0.5 * c,
+            text=f"dₙ = {c:.0f} mm",
+            showarrow=False,
+            font=dict(size=12, color="red"),
+            xanchor="left",
+        )
 
     # steel tension arrows (multiple layers)
     for (y, lab, sig) in tension_layers:
-        sig_t = max(0.0, float(sig))  # tension only for arrow length
-        x_t = stress_to_x(abs(sig_t))
+        sig_t = abs(float(sig))
+        x_t = stress_to_x(sig_t)
 
         fig.add_annotation(
             x=x_t,

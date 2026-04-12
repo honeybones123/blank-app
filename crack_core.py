@@ -2,7 +2,7 @@
 # Core compute function for crack control (no Streamlit UI)
 
 import math
-from state_and_helpers import get_param, update_results
+from state_and_helpers import get_param, update_results, resolve_design_actions
 from crack_page import (
     table_sigma_max_A,
     table_sigma_max_B,
@@ -50,10 +50,90 @@ def compute_crack_results(publish: bool = True) -> dict:
     k1 = get_param("crack_k1", 0.8)
     k2 = get_param("crk_k2", 0.5)
     
+    # Resolve active tension reinforcement from canonical geometry (T/I aware).
+    sec_shape = str(get_param("sec_shape", "RECT") or "RECT")
+    active_tension_warning = ""
+    crack_tension_face = "bottom"
+    crack_active_bar_count = 0
+    crack_active_bar_dias = []
+    crack_active_bar_spacing_mm = []
+    crack_tension_width_mm = float(b)
+    crack_Ast_active_mm2 = float(Ast)
+    crack_flange_participation_used = False
+    crack_web_participation_used = True
+    actions = resolve_design_actions()
+    sls_m_signed = float(actions.get("SLS_M_signed", actions.get("Mu_signed", 0.0)) or 0.0)
+    moment_sign = "negative" if sls_m_signed < 0.0 else "positive"
+    if sec_shape in ("T", "I"):
+        try:
+            from section_layout import compute_section_layout
+            from section_props.reo_layout import (
+                resolve_longitudinal_bars_from_layout,
+                resolve_active_tension_reinforcement,
+                resolve_crack_tension_width,
+            )
+
+            layout = compute_section_layout()
+            shape_name = str(layout.get("shape_name", sec_shape))
+            dims = dict(layout.get("dims", {}) or {})
+            # Canonical reinforcement source of truth: recalc_derived_values publishes
+            # resolved_longitudinal_bars; only fall back to local resolve if missing.
+            bars = list(st.session_state.get("resolved_longitudinal_bars", []) or [])
+            if not bars:
+                reo_layout = dict(layout.get("reo_layout", {}) or {})
+                bars = resolve_longitudinal_bars_from_layout(
+                    shape_name=shape_name,
+                    dims=dims,
+                    reo_layout=reo_layout,
+                )
+            active = resolve_active_tension_reinforcement(
+                dims,
+                bars,
+                moment_sign,
+            )
+            crack_width = resolve_crack_tension_width(
+                sec_shape,
+                dims,
+                moment_sign,
+                active.get("active_bars", []),
+            )
+            crack_tension_face = str(active.get("tension_face", "bottom"))
+            crack_active_bar_count = int(len(active.get("active_bars", [])))
+            crack_active_bar_dias = sorted({int(round(float(bar.get("dia_mm", 0.0)))) for bar in active.get("active_bars", []) if float(bar.get("dia_mm", 0.0) or 0.0) > 0.0})
+            crack_active_bar_spacing_mm = list((active.get("bar_spacing_summary") or {}).get("values_mm", []))
+            crack_tension_width_mm = float(crack_width.get("crack_tension_width_mm", b) or b)
+            crack_Ast_active_mm2 = float(active.get("Ast_active_mm2", 0.0) or 0.0)
+            crack_flange_participation_used = bool(crack_width.get("crack_flange_participation_used", False))
+            crack_web_participation_used = bool(crack_width.get("crack_web_participation_used", False))
+            if (
+                sec_shape in ("T", "I")
+                and crack_tension_face == "top"
+                and float(dims.get("bf", 0.0) or 0.0) > 1.6 * max(float(dims.get("bw", dims.get("tw", 0.0)) or 0.0), 1.0)
+                and not crack_flange_participation_used
+            ):
+                active_tension_warning = (
+                    "Top tension reinforcement is concentrated in the web. For wide flanges under hogging, "
+                    "distributed flange bars may be required for realistic crack control and detailing."
+                )
+            Ast = crack_Ast_active_mm2
+            b = crack_tension_width_mm if crack_tension_width_mm > 0 else b
+            if active.get("active_bars"):
+                if crack_tension_face == "bottom":
+                    c = min(max(0.0, D - (float(bar["y_mm"]) + float(bar["dia_mm"]) / 2.0)) for bar in active["active_bars"])
+                else:
+                    c = min(max(0.0, float(bar["y_mm"]) - float(bar["dia_mm"]) / 2.0) for bar in active["active_bars"])
+                db = max(float(bar["dia_mm"]) for bar in active["active_bars"])
+                if crack_active_bar_spacing_mm:
+                    s_bar_bot = sum(crack_active_bar_spacing_mm) / len(crack_active_bar_spacing_mm)
+                else:
+                    s_bar_bot = max(float(b), 1.0)
+        except Exception:
+            pass
+
     # Effective area in tension
-    c = cover_bot
-    db = db_bot
-    d_eff = D - c - db / 2.0
+    c = max(float(cover_bot if crack_tension_face == "bottom" else get_param("cover_top", cover_bot)), 1.0) if sec_shape == "RECT" else max(float(locals().get("c", cover_bot)), 1.0)
+    db = float(locals().get("db", db_bot) or db_bot)
+    d_eff = D - c - db / 2.0 if crack_tension_face == "bottom" else c + db / 2.0
     height_eff = min(2.5 * c, max(D - d_eff, 0.0), D / 2.0)
     Aceff = b * max(height_eff, 1.0)
     rho_eff = Ast / Aceff if Aceff > 0 else 0.0
@@ -100,6 +180,20 @@ def compute_crack_results(publish: bool = True) -> dict:
         "passes_w": passes_w,
         "crack_width": w_calc,
         "crack_utilisation": utilisation_w,
+        "crack_tension_face": crack_tension_face,
+        "crack_active_bar_count": float(crack_active_bar_count),
+        "crack_active_bar_dias": crack_active_bar_dias,
+        "crack_active_bar_spacing_mm": crack_active_bar_spacing_mm,
+        "crack_tension_width_mm": float(crack_tension_width_mm),
+        "crack_Ast_active_mm2": float(crack_Ast_active_mm2),
+        "crack_flange_participation_used": bool(crack_flange_participation_used),
+        "crack_web_participation_used": bool(crack_web_participation_used),
+        "crack_detailing_warning": active_tension_warning,
+        "active_tension_face": crack_tension_face,
+        "active_tension_Ast_mm2": float(crack_Ast_active_mm2),
+        "active_tension_width_mm": float(crack_tension_width_mm),
+        "active_tension_flange_participating": bool(crack_flange_participation_used),
+        "active_tension_warning": active_tension_warning,
     }
     
     # Build report if publishing
@@ -170,6 +264,7 @@ def build_crack_report(params: dict) -> dict:
     Es = params.get("Es", 200000.0)
     Ec = params.get("Ec", 30000.0)
     phi_ce = params.get("phi_ce", 2.0)
+    Eceff = (Ec / (1.0 + phi_ce)) if (Ec and (1.0 + phi_ce) > 0.0) else 0.0
     eps_cs_micro = params.get("eps_cs", 0.0) * 1e6
     sigma_table_A = params.get("sigma_table_A", 0.0)
     sigma_table_B = params.get("sigma_table_B", 0.0)
@@ -196,7 +291,7 @@ def build_crack_report(params: dict) -> dict:
         "Inputs & crack limits",
         "info",
         f"w'_max = {wmax_choice:.3f} mm, {member_type}",
-        "AS 3600:2018 Cl. 8.6.2",
+        "",
         [
             {"label": "Crack width limit", "eq": "w'_max", "sub": f"= {wmax_choice:.3f} mm"},
             {"label": "Member type", "eq": "Resultant action", "sub": f"= {member_type}"},
@@ -209,7 +304,7 @@ def build_crack_report(params: dict) -> dict:
         "Table method — max steel stress σ_sr",
         "pass" if passes_table else "fail",
         f"σ_sr = {sigma_sr:.1f} MPa vs {sigma_allow_table:.1f} MPa",
-        "AS 3600:2018 Cl. 8.6.2.2",
+        "",
         [
             {"label": "Table 8.6.2.2(A)", "eq": "σ_max,A = f(d_b, w'_max)", "sub": f"= {sigma_table_A:.1f} MPa"},
             {"label": "Table 8.6.2.2(B)", "eq": "σ_max,B = f(s, w'_max)", "sub": f"= {sigma_table_B:.1f} MPa"},
@@ -227,7 +322,7 @@ def build_crack_report(params: dict) -> dict:
         "Effective reinforcement ratio ρ_eff",
         "info",
         f"ρ_eff = {rho_eff:.4f}",
-        "AS 3600:2018 Cl. 8.6.2.3",
+        "",
         [
             {"label": "Effective area", "eq": "A_c,eff = b*h_eff", "sub": f"= {Aceff:.0f} mm^2"},
             {"label": "Reinforcement ratio", "eq": "ρ_eff = A_s,t / A_c,eff", "sub": f"= {Ast:.0f} / {Aceff:.0f} = {rho_eff:.4f}"},
@@ -240,9 +335,11 @@ def build_crack_report(params: dict) -> dict:
         "Difference in mean strain ε_sm - ε_cm",
         "info",
         f"ε_sm - ε_cm = {eps_diff:.3e}",
-        "AS 3600:2018 Cl. 8.6.2.3(2)",
+        "",
         [
             {"label": "Effective tensile strength", "eq": "f_ct,eff = 0.6*sqrt(f'c)", "sub": f"= {fct_eff:.2f} MPa"},
+            {"label": "Concrete modulus (derived)", "eq": "E_c = 4700*sqrt(f'_c)", "sub": f"= 4700*sqrt({fc:.1f}) = {Ec:.0f} MPa"},
+            {"label": "Effective modulus (derived)", "eq": "E_c,eff = E_c/(1+φ_ce)", "sub": f"= {Ec:.0f}/(1+{phi_ce:.2f}) = {Eceff:.0f} MPa"},
             {"label": "Modular ratio", "eq": "n_e = (1 + φ_ce)*E_s/E_c", "sub": f"= (1 + {phi_ce:.2f})*{Es:.0f}/{Ec:.0f} = {ne:.2f}"},
             {"label": "Strain difference", "eq": "ε_sm - ε_cm = σ_sr/E_s - 0.6*f_ct,eff/(E_s*ρ_eff)*(1+n_e*ρ_eff) + ε_cs", "sub": f"= {eps_diff:.3e}"},
         ],
@@ -254,7 +351,7 @@ def build_crack_report(params: dict) -> dict:
         "Maximum crack spacing s_r,max",
         "info",
         f"s_r,max = {sr_max:.1f} mm",
-        "AS 3600:2018 Cl. 8.6.2.3(1)",
+        "",
         [
             {"label": "Crack spacing", "eq": "s_r,max = 3.4*c + 0.3*k_1*k_2*d_b/ρ_eff", "sub": f"= 3.4*{c:.1f} + 0.3*{k1:.2f}*{k2:.2f}*{db:.1f}/{rho_eff:.4f} = {sr_max:.1f} mm"},
         ],
@@ -266,7 +363,7 @@ def build_crack_report(params: dict) -> dict:
         "Direct crack width w",
         "pass" if passes_w else "fail",
         f"w = {w_calc:.3f} mm",
-        "AS 3600:2018 Cl. 8.6.2.3",
+        "",
         [
             {"label": "Crack width", "eq": "w = s_r,max*(ε_sm - ε_cm)", "sub": f"= {sr_max:.1f}*{eps_diff:.3e} = {w_calc:.3f} mm"},
             {"label": "Check", "eq": "w <= w'_max", "sub": f"{w_calc:.3f} <= {wmax_choice:.3f} = {passes_w}"},
@@ -276,7 +373,6 @@ def build_crack_report(params: dict) -> dict:
     
     # Create SLS tab
     sls_tab = make_tab("SLS Checks", sls_boxes)
-    
     return {
         "module_title": "Crack Control (SLS)",
         "summary": summary,

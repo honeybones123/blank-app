@@ -12,10 +12,25 @@ from state_and_helpers import (
     get_sync_callbacks,
     update_results,  # kept for contract
 )
-from widgets_helpers import apply_global_widget_css, number_row, calcbox, info_i_button, page_divider, v2_number_input, v2_selectbox, v2_checkbox, v2_radio
+from widgets_helpers import (
+    apply_global_widget_css,
+    apply_result_page_css,
+    number_row,
+    info_i_button,
+    v2_number_input,
+    v2_selectbox,
+    v2_checkbox,
+    v2_radio,
+    render_page_explainer_expander,
+    render_result_page_title,
+    render_section_title,
+    page_divider,
+)
+from engineering_check_ui import PARAMETRIC_RESULT_COLUMNS, sync_legacy_value_limit
 from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks
 from jump_nav import scroll_to_jump_after_render
 from step_ui import render_expandable_step
+from shear_visuals import build_creep_schematic_plotly
 
 
 # ------------------------------------------------------------
@@ -63,6 +78,19 @@ blockquote p {
   margin-bottom: 0.5rem !important;
 }
 blockquote p:last-child {
+  margin-bottom: 0 !important;
+}
+/* Tight stack: calc section heading → expandable step */
+p.calc-section-heading-tight {
+  margin: 0.35rem 0 0 0 !important;
+  font-weight: 600 !important;
+  font-size: 1rem !important;
+  line-height: 1.25 !important;
+}
+div[data-testid="stMarkdownContainer"]:has(p.calc-section-heading-tight) {
+  margin-bottom: 0 !important;
+}
+div.element-container:has(div[data-testid="stMarkdownContainer"]:has(p.calc-section-heading-tight)) {
   margin-bottom: 0 !important;
 }
 </style>
@@ -263,7 +291,8 @@ def compute_creep_results(publish: bool = True) -> dict:
     env_option = get_param("env_option", "Temperate inland environment")
     t_creep = get_param("t_creep", 365.0)
     age_at_loading = get_param("age_at_loading", 28.0)
-    stress_ratio = get_param("stress_ratio", 0.30)
+    stress_ratio = get_param("stress_ratio", 0.0)
+    sigma0 = get_param("sustained_sigma_cs_mpa", None)
     
     # Read faces option (default to beam)
     faces_option = get_param("member_faces_exposed", "Beam – three faces exposed")
@@ -294,8 +323,9 @@ def compute_creep_results(publish: bool = True) -> dict:
     phi_cc_t = k2 * k3 * k4 * k5 * k6 * phi_cc_b
     phi_cc_star_table = final_creep_coeff_table(fc, env_option, th_table)
     
-    # Calculate strain
-    sigma0 = stress_ratio * fc  # MPa
+    # Calculate strain (stress ratio is derived from sustained action and section modulus)
+    if sigma0 is None:
+        sigma0 = stress_ratio * fc
     eps_cc = phi_cc_t * sigma0 / Ec if Ec > 0 else 0.0  # dimensionless
     eps_cc_micro = eps_cc * 1e6
     
@@ -327,19 +357,16 @@ def compute_creep_results(publish: bool = True) -> dict:
 # ------------------------------------------------------------
 def render_creep():
     apply_global_widget_css()
+    apply_result_page_css()
     _inject_calcbox_css()
     sync_callbacks = get_sync_callbacks()  # keeps contract with Inputs page
 
     # --------------------------------------------------------
     # Page title
     # --------------------------------------------------------
-    st.title("Creep")
-
-    # --------------------------------------------------------
-    # Page description (directly under title)
-    # --------------------------------------------------------
-    st.markdown(
-        r"""
+    def _render_creep_explainer() -> None:
+        st.markdown(
+            r"""
 This page computes **concrete creep coefficient** and **creep strain** in accordance with  
 **AS 3600:2018 Clause 3.1.8**, including:
 
@@ -350,7 +377,9 @@ This page computes **concrete creep coefficient** and **creep strain** in accord
 
 Creep coefficients are dimensionless; creep strains are reported in microstrain ($\times 10^{-6}$).
 """
-    )
+        )
+
+    render_result_page_title("Creep")
 
     # --------------------------------------------------------
     # Reserve space for top summary table (will be filled after calculations)
@@ -358,14 +387,11 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
     summary_placeholder = st.empty()
     
     # --------------------------------------------------------
-    # Geometry, exposure & loading
-    # --------------------------------------------------------
-    st.markdown("### Geometry, exposure & loading")
-
     col_geom, col_env, col_load = st.columns(3)
 
     # --- Geometry ---
     with col_geom:
+        st.markdown("**Geometry / member**")
         b_val = float(st.session_state.get("inputs_b", get_param("b", 400.0)))
         D_val = float(st.session_state.get("inputs_D", get_param("D", 600.0)))
 
@@ -409,8 +435,9 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
 
     # --- Environment & material ---
     with col_env:
+        st.markdown("**Material / environment**")
         fc_val = float(st.session_state.get("inputs_fc", get_param("fc", 32.0)))
-        Ec_val = float(st.session_state.get("inputs_Ec", get_param("Ec", 30000.0)))
+        Ec_val = float(get_param("Ec", 30000.0) or 30000.0)
 
         number_row(
             "Concrete strength f'c (MPa)",
@@ -419,12 +446,6 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
             sync_callbacks,
         )
 
-        number_row(
-            "Concrete modulus Ec (MPa)",
-            "inputs_Ec",
-            Ec_val,
-            sync_callbacks,
-        )
         fc = float(get_param("fc", fc_val))
         Ec = float(get_param("Ec", Ec_val))
 
@@ -452,6 +473,7 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
 
     # --- Loading data ---
     with col_load:
+        st.markdown("**Time / loading**")
         col1, col2 = st.columns([1, 2])
         with col1:
             st.markdown("<div class='sb-label'>Time after loading t (days)</div>", unsafe_allow_html=True)
@@ -480,20 +502,8 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
                 on_change=sync_callbacks["inputs_age_at_loading"],
             )
 
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.markdown("<div class='sb-label'>Sustained stress ratio σ₀ / f'c,mi</div>", unsafe_allow_html=True)
-        with col2:
-            stress_ratio = v2_number_input(
-                label="Value",
-                key="inputs_stress_ratio",
-                default=float(get_param("stress_ratio", 0.30)),
-                step=0.05,
-                min_value=0.0,
-                max_value=0.80,
-                label_visibility="collapsed",
-                on_change=sync_callbacks["inputs_stress_ratio"],
-            )
+
+    page_divider()
 
     # --------------------------------------------------------
     # Derived geometry: Ag, u_e, t_h
@@ -516,6 +526,12 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
     # --------------------------------------------------------
     # Creep coefficients & strain
     # --------------------------------------------------------
+    stress_ratio = float(get_param("stress_ratio", 0.0) or 0.0)
+    sustained_mstar = float(get_param("sustained_Mstar_kNm", 0.0) or 0.0)
+    sustained_sigma_cs = float(get_param("sustained_sigma_cs_mpa", 0.0) or 0.0)
+    sustained_z = float(get_param("sustained_section_modulus_mm3", 0.0) or 0.0)
+    sustained_fibre = str(get_param("sustained_compression_fibre", "top") or "top")
+
     phi_cc_b = basic_creep_coeff(fc)
     k2 = calc_k2_creep(t_creep, th_table)
     k3 = calc_k3(age_at_loading)
@@ -540,7 +556,7 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
         k6_creep=k6,
     )
 
-    sigma0 = stress_ratio * fc  # MPa (approx using f'c,mi ≈ f'c)
+    sigma0 = sustained_sigma_cs if sustained_sigma_cs > 0 else (stress_ratio * fc)
     # Safety check: prevent division by zero if Ec is 0 (shouldn't happen, but protect against stale state)
     if Ec == 0 or Ec is None:
         Ec = 30000.0  # Default value from SHARED_DEFAULTS
@@ -553,102 +569,90 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
     with summary_placeholder.container():
         # Build ROWS for top summary table
         ROWS = [
-            {
+            sync_legacy_value_limit({
                 "uid": "creep_phi_cc_t",
                 "title": "Design creep coefficient ϕ_cc(t)",
-                "value": f"ϕ_cc(t) = {phi_cc_t:.2f}",
-                "limit": "—",
+                "capacity": f"ϕ_cc(t) = {phi_cc_t:.2f}",
+                "action": "—",
                 "util": "—",
                 "status": "—",
                 "ok": None,
                 "tab": "Creep coefficient ϕ_cc(t)",
-            },
-            {
+            }),
+            sync_legacy_value_limit({
                 "uid": "creep_phi_cc_table",
                 "title": "Final creep coefficient ϕ*cc (30y, table)",
-                "value": f"ϕ*cc,table = {phi_cc_star_table:.2f}",
-                "limit": "—",
+                "capacity": f"ϕ*cc,table = {phi_cc_star_table:.2f}",
+                "action": "—",
                 "util": "—",
                 "status": "—",
                 "ok": None,
                 "tab": "Creep coefficient ϕ_cc(t)",
-            },
-            {
+            }),
+            sync_legacy_value_limit({
                 "uid": "creep_eps_cc",
                 "title": "Creep strain ε_cc(t)",
-                "value": f"ε_cc = {eps_cc_micro:.1f} µε",
-                "limit": "—",
+                "capacity": f"ε_cc = {eps_cc_micro:.1f} µε",
+                "action": "—",
                 "util": "—",
                 "status": "—",
                 "ok": None,
                 "tab": "Creep strain ε_cc",
-            },
+            }),
         ]
-        
-        # Render top summary table
-        # Header row with title and INFO button
-        h_left, h_right = st.columns([8, 1], vertical_alignment="center")
-        with h_left:
-            st.markdown("## Creep — Summary")
-        with h_right:
-            with st.popover("ℹ️ INFO"):
-                st.markdown("""
-**What creep is**  
-Concrete **creep** is the **time-dependent increase in strain under sustained stress**.  
-Even if the load stays constant, the deformation continues to grow with time.
 
-**What causes creep**  
-Creep is driven by time-dependent behaviour of the cement paste and microstructure, influenced by:
-- **Sustained stress level** (higher stress → more creep)
-- **Age at loading** (younger concrete → more creep)
-- **Moisture condition / environment** (drying increases creep; humidity matters)
-- **Member size / thickness** (drying gradients; effective thickness effects)
-- **Concrete strength and mix** (paste content, w/c ratio, aggregate stiffness, etc.)
-- **Temperature** (higher temperature generally accelerates creep)
-
-**How creep is measured / reported**  
-Creep is commonly expressed as a **creep coefficient**:  
-- **φ (phi)** = creep strain / initial elastic strain  
-It is **dimensionless**.
-
-Creep may also be reported as **creep strain**, typically in:
-- **microstrain (µε)**, where 1 µε = 1×10⁻⁶
-
-**Why it matters in design**  
-Creep affects:
-- **Long-term deflection** (serviceability)
-- **Cracking and curvature** in restrained members
-- **Prestress losses** (if applicable)
-- **Stress redistribution** between concrete and reinforcement over time
-""")
-        
-        st.markdown("")
-        render_clickable_summary_table(ROWS, key_prefix="creep_page_summary")
+        render_page_explainer_expander(_render_creep_explainer)
+        render_clickable_summary_table(
+            ROWS, key_prefix="creep_page_summary", columns=PARAMETRIC_RESULT_COLUMNS
+        )
         bind_summary_clicks()
-        
+        page_divider()
+
+        st.markdown("**Concrete creep under sustained load**")
+        fig_creep_schematic = build_creep_schematic_plotly()
+        _creep_l, _creep_c, _creep_r = st.columns([1, 8, 1])
+        with _creep_c:
+            st.plotly_chart(
+                fig_creep_schematic,
+                use_container_width=True,
+                config={
+                    "displayModeBar": False,
+                    "staticPlot": True,
+                },
+            )
         page_divider()
 
     # --------------------------------------------------------
-    # Tabs: geometry, coefficient, strain
+    # Calculation sections — three tabs (t_h + k₂ merged; ϕ_cc; ε_cc)
     # --------------------------------------------------------
-    tab_geom, tab_coeff, tab_strain = st.tabs(
+    render_section_title("Creep checks")
+
+    st.markdown(
+        """
+<style>
+/* Tighten gap between tab labels and first calc card (creep page only) */
+div[data-testid="stTabs"] [data-baseweb="tab-panel"] {
+  padding-top: 0.35rem !important;
+}
+</style>
+""",
+        unsafe_allow_html=True,
+    )
+
+    tab_th_k2, tab_phi, tab_eps = st.tabs(
         [
-            "Geometry & tₕ",
+            "Notional thickness t_h and k₂",
             "Creep coefficient ϕ_cc(t)",
             "Creep strain ε_cc",
         ]
     )
 
-    # ---------- Tab 1: Geometry & t_h / k2 ----------
-    with tab_geom:
-        st.subheader("Notional thickness tₕ & k₂ – AS 3600 (2Aᵍ / uₑ, Fig. 3.1.8.3)")
-        
-        # Calculate alpha2 for display in k2 calc box
-        alpha2 = 1.0 + 1.12 * math.exp(-0.008 * th_table)
-        
-        # Step 1: Notional thickness t_h (raw)
-        def render_th_raw():
-            return f"""
+    # Calculate alpha2 for display in k2 calc box
+    alpha2 = 1.0 + 1.12 * math.exp(-0.008 * th_table)
+
+    # Step 1: Notional thickness t_h (raw)
+    def render_th_raw():
+        return f"""
 **Summary**
 
 | Quantity | Value |
@@ -686,22 +690,10 @@ t_h = {th_raw:.1f} mm
 
 _Ref: AS 3600:2018 definition of notional thickness (t_h = 2 A_g/u_e)._
 """
-        
-        render_expandable_step(
-            page_key="creep_geom",
-            step_id="creep_th_raw",
-            title="Notional thickness t_h (raw)",
-            summary_md=[
-                f"Result: t_h = {th_raw:.1f} mm",
-                "Determine notional thickness from section geometry and exposed perimeter"
-            ],
-            status_kind=None,
-            calc_md=render_th_raw(),
-        )
 
-        # Step 2: Adopted thickness for AS figure/table
-        def render_th_table():
-            return f"""
+    # Step 2: Adopted thickness for AS figure/table
+    def render_th_table():
+        return f"""
 **Summary**
 
 | Quantity | Value |
@@ -734,22 +726,10 @@ Adopted notional thickness: t_h,AS = {th_table:d} mm
 
 _Ref: AS 3600:2018 Fig. 3.1.8.3 and Table 3.1.8.3 use discrete thickness values._
 """
-        
-        render_expandable_step(
-            page_key="creep_geom",
-            step_id="creep_th_table",
-            title="Adopted thickness for AS figure/table",
-            summary_md=[
-                f"Adopted: t_h,AS = {th_table:d} mm",
-                "Map raw notional thickness to discrete AS curve thickness"
-            ],
-            status_kind=None,
-            calc_md=render_th_table(),
-        )
 
-        # Step 3: Time-development factor k2
-        def render_k2():
-            return f"""
+    # Step 3: Time-development factor k2
+    def render_k2():
+        return f"""
 **Summary**
 
 | Quantity | Value |
@@ -792,26 +772,45 @@ k₂ = {k2:.3f}
 
 _Ref: AS 3600:2018 Cl. 3.1.8.3 and Fig. 3.1.8.3._
 """
-        
+
+    with tab_th_k2:
+        render_expandable_step(
+            page_key="creep_geom",
+            step_id="creep_th_raw",
+            title="Notional thickness t_h (raw)",
+            summary_md=[
+                "Check 1.1 — Determine notional thickness from section geometry and exposed perimeter",
+                f"Result: t_h = {th_raw:.1f} mm",
+            ],
+            status_kind=None,
+            calc_md=render_th_raw(),
+        )
+        render_expandable_step(
+            page_key="creep_geom",
+            step_id="creep_th_table",
+            title="Adopted thickness for AS figure/table",
+            summary_md=[
+                "Check 1.2 — Map raw notional thickness to discrete AS curve thickness",
+                f"Adopted: t_h,AS = {th_table:d} mm",
+            ],
+            status_kind=None,
+            calc_md=render_th_table(),
+        )
         render_expandable_step(
             page_key="creep_geom",
             step_id="creep_k2",
             title="Time-development factor k₂",
             summary_md=[
+                "Check 1.3 — Compute k₂ as a function of time and adopted notional thickness",
                 f"Result: k₂ = {k2:.3f}",
-                "Compute k₂ as a function of time and adopted notional thickness"
             ],
             status_kind=None,
             calc_md=render_k2(),
         )
 
-    # ---------- Tab 2: Creep coefficient ----------
-    with tab_coeff:
-        st.subheader("Design creep coefficient ϕ_cc(t) – AS 3600 Cl. 3.1.8.3")
-        
-        # Step 1: Creep coefficient at time t
-        def render_phi_cc_t():
-            return rf"""
+    # Step 1: Creep coefficient at time t
+    def render_phi_cc_t():
+        return rf"""
 **Summary**
 
 | Quantity | Value |
@@ -839,7 +838,11 @@ Compute the **design creep coefficient** at time $t$:
 - Age at loading: $\tau = {age_at_loading:.0f}\,\text{{days}}$  
 - Time after loading: $t = {t_creep:.0f}\,\text{{days}}$  
 - Notional thickness for tables: $t_h = {th_table:d}\,\text{{mm}}$  
-- Sustained stress ratio: $\sigma_0/f'_{{c,mi}} = {stress_ratio:.2f}$  
+- Governing sustained SLS moment: $M_{{sust}} = {sustained_mstar:.2f}\,\text{{kNm}}$  
+- Concrete compression fibre: {sustained_fibre}  
+- Section modulus at compression fibre: $Z_{{comp}} = {sustained_z:.2e}\,\text{{mm}}^3$  
+- Sustained concrete stress: $\sigma_{{cs}} = {sigma0:.2f}\,\text{{MPa}}$  
+- Sustained stress ratio (derived): $\sigma_{{cs}}/f'_{{c}} = {stress_ratio:.3f}$  
 
 **Basic creep coefficient** (Table 3.1.8.2)
 
@@ -874,10 +877,10 @@ Design creep coefficient at $t = {t_creep:.0f}$ days:
 
 _Ref: AS 3600:2018 Cl. 3.1.8.3; Tables 3.1.8.2 & 3.1.8.3; Fig. 3.1.8.3._
 """
-        
-        def phi_cc_t_info_fn():
-            with info_i_button(help_text="Factor explanations"):
-                st.markdown(rf"""
+    
+    def phi_cc_t_info_fn():
+        with info_i_button(help_text="Factor explanations"):
+            st.markdown(rf"""
 **Factor explanations:**
 
 • **k₄ (environment factor):** Comes from selected environment class per AS 3600 tables. Not user-entered directly.
@@ -888,23 +891,10 @@ _Ref: AS 3600:2018 Cl. 3.1.8.3; Tables 3.1.8.2 & 3.1.8.3; Fig. 3.1.8.3._
 
 *These are code-defined modifiers derived from other inputs.*
 """)
-        
-        render_expandable_step(
-            page_key="creep_coeff",
-            step_id="creep_phi_cc_t",
-            title="Creep coefficient at time t",
-            summary_md=[
-                rf"Result: $\varphi_{{cc}}(t) = {phi_cc_t:.2f}$ at $t = {t_creep:.0f}$ days",
-                "Compute design creep coefficient from basic coefficient and factors"
-            ],
-            status_kind=None,
-            calc_md=render_phi_cc_t(),
-            info_render_fn=phi_cc_t_info_fn,
-        )
 
-        # Step 2: Long-term tabulated creep coefficient (30 years)
-        def render_phi_cc_table():
-            return rf"""
+    # Step 2: Long-term tabulated creep coefficient (30 years)
+    def render_phi_cc_table():
+        return rf"""
 **Summary**
 
 | Quantity | Value |
@@ -933,104 +923,136 @@ from Table 3.1.8.3 is:
 
 _Ref: AS 3600:2018 Table 3.1.8.3._
 """
-        
+
+    with tab_phi:
+        render_expandable_step(
+            page_key="creep_coeff",
+            step_id="creep_phi_cc_t",
+            title="Creep coefficient at time t",
+            summary_md=[
+                "Check 2 — Compute design creep coefficient from basic coefficient and factors",
+                rf"Result: $\varphi_{{cc}}(t) = {phi_cc_t:.2f}$ at $t = {t_creep:.0f}$ days",
+            ],
+            status_kind=None,
+            calc_md=render_phi_cc_t(),
+            info_render_fn=phi_cc_t_info_fn,
+        )
         render_expandable_step(
             page_key="creep_coeff",
             step_id="creep_phi_cc_table",
             title="Long-term tabulated creep coefficient (30 years)",
             summary_md=[
+                "Check 3 — AS table provides long-term value for comparison",
                 rf"Table value (30 years): $\varphi^*_{{cc,\text{{table}}}} = {phi_cc_star_table:.2f}$",
-                "AS table provides long-term value for comparison"
             ],
             status_kind=None,
             calc_md=render_phi_cc_table(),
         )
 
-    # ---------- Tab 3: Creep strain ----------
-    with tab_strain:
-        st.subheader("Creep strain ε_cc – AS 3600 Cl. 3.1.8.1")
-
-        # Step 1: Sustained stress at loading σ₀
-        def render_sigma0():
-            return rf"""
+    # Step 1: Sustained stress at loading σ₀
+    def render_sigma0():
+        return rf"""
 **Summary**
 
 | Quantity | Value |
 |----------|-------|
-| Stress ratio σ₀/f'c,mi | {stress_ratio:.2f} |
-| Design strength f'c,mi ≈ f'c | {fc:.1f} MPa |
-| **Sustained stress σ₀** | **{sigma0:.2f} MPa** |
+| Governing sustained SLS moment M_sust | {sustained_mstar:.2f} kNm |
+| Compression fibre | {sustained_fibre} |
+| Section modulus at compression fibre Z_comp | {sustained_z:.2e} mm³ |
+| **Sustained concrete stress σ_cs** | **{sigma0:.2f} MPa** |
 
 **Purpose**
 
-Convert sustained stress ratio into sustained compressive stress $\sigma_0$.
+Derive sustained concrete compressive stress from the governing sustained SLS action and section response.
 
 **Inputs**
 
-- Stress ratio: $\sigma_0 / f'_{{c,mi}} = {stress_ratio:.2f}$
-- Approximate design strength at loading: $f'_{{c,mi}} \approx f'_c = {fc:.1f}\,\text{{MPa}}$
+- Governing sustained SLS moment: $M_{{sust}} = {sustained_mstar:.2f}\,\text{{kNm}}$
+- Compression fibre section modulus: $Z_{{comp}} = {sustained_z:.2e}\,\text{{mm}}^3$
 
 **Calculation**
 
 \[
-\sigma_0 = \frac{{\sigma_0}}{{f'_{{c,mi}}}} \times f'_{{c,mi}}
+\sigma_{{cs}} = \frac{{M_{{sust}} \times 10^6}}{{Z_{{comp}}}}
 \]
 
 **Substitution**
 
 \[
-\sigma_0 = {stress_ratio:.2f} \times {fc:.1f} \approx {sigma0:.2f}\,\text{{MPa}}
+\sigma_{{cs}} = \frac{{{sustained_mstar:.2f}\times 10^6}}{{{sustained_z:.2e}}} \approx {sigma0:.2f}\,\text{{MPa}}
 \]
 
 **Result**
 
 \[
-\sigma_0 = {sigma0:.2f}\,\text{{MPa}}
+\sigma_{{cs}} = {sigma0:.2f}\,\text{{MPa}}
 \]
 
 _Ref: AS 3600:2018 Cl. 3.1.8.1._
 """
-        
-        def sigma0_info_fn():
-            with info_i_button(help_text="Design strength at loading (f'c,mi)"):
-                st.markdown(rf"""
+    
+    def sigma0_info_fn():
+        with info_i_button(help_text="Design strength at loading (f'c,mi)"):
+            st.markdown(rf"""
 **Design strength at loading ($f'_{{c,mi}}$):**
 
 $f'_{{c,mi}}$ represents the concrete compressive strength at the time of loading. In this calculation, it is approximated as $f'_c$ (the 28-day design strength) for simplicity. This approximation is reasonable when loading occurs near 28 days or when precise loading age data is not available.
 
-The sustained stress $\sigma_0$ is derived from the stress ratio and $f'_{{c,mi}}$ using: $\sigma_0 = (\sigma_0 / f'_{{c,mi}}) \times f'_{{c,mi}}$.
+In this app flow, sustained stress is derived from sustained action and section response:
+$\sigma_{{cs}} = M_{{sust}}/Z_{{comp}}$, then the stress ratio is obtained from $\sigma_{{cs}}/f'_c$.
 
 *Note: Compression is taken as positive magnitude in this calculation.*
 """)
-        
-        render_expandable_step(
-            page_key="creep_strain",
-            step_id="creep_sigma0",
-            title="Sustained stress at loading σ₀",
-            summary_md=[
-                rf"Result: $\sigma_0 = {sigma0:.2f}$ MPa",
-                "Convert sustained stress ratio into sustained compressive stress"
-            ],
-            status_kind=None,
-            calc_md=render_sigma0(),
-            info_render_fn=sigma0_info_fn,
-        )
 
-        # Step 2: Creep strain ε_cc from creep coefficient
-        def render_eps_cc():
-            return rf"""
+    # Step 2: Sustained stress ratio (derived)
+    def render_stress_ratio():
+        return rf"""
+**Summary**
+
+| Quantity | Value |
+|----------|-------|
+| Sustained concrete stress σ_cs | {sigma0:.2f} MPa |
+| Concrete strength f'c | {fc:.1f} MPa |
+| **Sustained stress ratio (derived)** | **{stress_ratio:.3f}** |
+
+**Purpose**
+
+Express sustained compressive stress as a ratio of concrete strength for use in the k₆ non-linear creep factor.
+
+**Calculation**
+
+\[
+\text{{stress\_ratio}} = \frac{{\sigma_{{cs}}}}{{f'_c}}
+\]
+
+**Substitution**
+
+\[
+\text{{stress\_ratio}} = \frac{{{sigma0:.2f}}}{{{fc:.1f}}} = {stress_ratio:.3f}
+\]
+
+**Result**
+
+\[
+\text{{stress\_ratio}} = {stress_ratio:.3f}
+\]
+"""
+
+    # Step 3: Creep strain ε_cc from creep coefficient
+    def render_eps_cc():
+        return rf"""
 **Summary**
 
 | Quantity | Value |
 |----------|-------|
 | Design creep coefficient φ_cc(t) | {phi_cc_t:.2f} |
-| Sustained stress σ₀ | {sigma0:.2f} MPa |
+| Sustained stress σ_cs | {sigma0:.2f} MPa |
 | Modulus of elasticity E_c | {Ec:.0f} MPa |
 | **Creep strain ε_cc** | **{eps_cc_micro:.1f} με** |
 
 **Purpose**
 
-Convert creep coefficient $\varphi_{{cc}}(t)$ to creep strain under sustained stress $\sigma_0$.
+Convert creep coefficient $\varphi_{{cc}}(t)$ to creep strain under sustained stress $\sigma_{{cs}}$.
 
 **Inputs**
 
@@ -1038,13 +1060,13 @@ Convert creep coefficient $\varphi_{{cc}}(t)$ to creep strain under sustained st
   \[
   \varphi_{{cc}}(t) \approx {phi_cc_t:.2f}
   \]
-- Sustained stress: $\sigma_0 = {sigma0:.2f}\,\text{{MPa}}$ (from previous step)
+- Sustained stress: $\sigma_{{cs}} = {sigma0:.2f}\,\text{{MPa}}$ (from previous step)
 - Modulus of elasticity: $E_c = {Ec:.0f}\,\text{{MPa}}$
 
 **Calculation**
 
 \[
-\varepsilon_{{cc}} = \varphi_{{cc}}(t)\, \frac{{\sigma_0}}{{E_c}}
+\varepsilon_{{cc}} = \varphi_{{cc}}(t)\, \frac{{\sigma_{{cs}}}}{{E_c}}
 \]
 
 **Substitution**
@@ -1069,16 +1091,42 @@ Expressed in microstrain:
 
 _Ref: AS 3600:2018 Cl. 3.1.8.1._
 """
-        
+
+    with tab_eps:
+        render_expandable_step(
+            page_key="creep_strain",
+            step_id="creep_sigma0",
+            title="Sustained stress at loading σ₀",
+            summary_md=[
+                "Check 4.1 — Derive sustained concrete compressive stress from sustained action and section modulus",
+                rf"Result: $\sigma_{{cs}} = {sigma0:.2f}$ MPa",
+            ],
+            status_kind=None,
+            calc_md=render_sigma0(),
+            info_render_fn=sigma0_info_fn,
+        )
+        render_expandable_step(
+            page_key="creep_strain",
+            step_id="creep_stress_ratio",
+            title="Sustained stress ratio (derived)",
+            summary_md=[
+                "Check 4.2 — Derive sustained stress ratio from sustained stress and concrete strength",
+                rf"Result: stress_ratio = {stress_ratio:.3f}",
+            ],
+            status_kind=None,
+            calc_md=render_stress_ratio(),
+        )
         render_expandable_step(
             page_key="creep_strain",
             step_id="creep_eps_cc",
             title="Creep strain ε_cc at time t",
             summary_md=[
+                "Check 4.3 — Convert creep coefficient to creep strain under sustained stress",
                 rf"Result: $\varepsilon_{{cc}} = {eps_cc_micro:.1f}$ με",
-                "Convert creep coefficient to creep strain under sustained stress"
             ],
             status_kind=None,
             calc_md=render_eps_cc(),
         )
-    
+
+    scroll_to_jump_after_render()
+

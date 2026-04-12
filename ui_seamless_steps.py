@@ -1,5 +1,12 @@
+import html as html_stdlib
 import streamlit as st
 import streamlit.components.v1 as components
+
+from engineering_check_ui import (
+    ENGINEERING_CHECK_COLUMNS,
+    resolve_jump_target_id,
+    summary_cell_display,
+)
 
 
 def inject_seamless_steps_css():
@@ -54,7 +61,7 @@ div[data-testid="stExpander"] .stAlert {
     )
 
 
-def render_clickable_summary_table(rows, key_prefix="summary"):
+def render_clickable_summary_table(rows, key_prefix="summary", columns=None):
     """
     Render summary table matching the test app style.
     Uses HTML table with clickable row links.
@@ -119,17 +126,22 @@ tr:hover .hint { opacity: 1; }
 </style>
 """, unsafe_allow_html=True)
 
-    # Build HTML table exactly like test app
-    html = ['<div class="summary-wrap"><table class="summary-table">']
-    html.append(
-        """
+    # Build HTML table exactly like test app (avoid name "html" — shadows stdlib html module)
+    html_parts = ['<div class="summary-wrap"><table class="summary-table">']
+    if columns is None:
+        columns = list(ENGINEERING_CHECK_COLUMNS)
+
+    header_cells = []
+    for col in columns:
+        width = col.get("width")
+        width_attr = f' style="width:{width}"' if width else ""
+        header_cells.append(f"<th{width_attr}>{col.get('label','')}</th>")
+
+    html_parts.append(
+        f"""
 <thead>
 <tr>
-  <th style="width:34%">Check</th>
-  <th style="width:22%">Value</th>
-  <th style="width:26%">Limit</th>
-  <th style="width:8%">Util</th>
-  <th style="width:10%">Status</th>
+  {''.join(header_cells)}
 </tr>
 </thead>
 <tbody>
@@ -138,42 +150,59 @@ tr:hover .hint { opacity: 1; }
 
     for r in rows:
         uid = r["uid"]
+        jump_id = resolve_jump_target_id(r)
         # Support both "title" and "check" for the check name
         check = r.get("title") or r.get("check", uid)
-        value = r.get("value", "")
-        limit = r.get("limit", "")
-        util = r.get("util", "")
-        status = r.get("status", "")
         ok = r.get("ok")
         tab = r.get("tab", "")
+        status = r.get("status", "")
         
         status_norm = str(status).upper()
-        cls = (
-            "pass" if ok is True
-            else "fail" if ok is False
-            else "warn" if status_norm in ("NEAR LIMIT", "WARN", "CHECK")
-            else ""
-        )
+        if r.get("is_informational") or status_norm == "INFO":
+            cls = ""
+        else:
+            cls = (
+                "pass" if ok is True
+                else "fail" if ok is False
+                else "warn" if status_norm in ("NEAR LIMIT", "WARN", "CHECK")
+                else ""
+            )
         primary = "primary" if r.get("is_primary") else ""
         row_class = f"{cls} {primary}".strip()
         
-        html.append(
+        cells = []
+        for i, col in enumerate(columns):
+            key = col.get("key")
+            if i == 0:
+                text = r.get(key)
+                if text is None and key in ("title", "check"):
+                    text = check
+                elif text is None:
+                    text = check
+                cell = f"""
+  <td>
+    {text} <span class="hint">↳ jump to calc</span>
+    <a class="row-link" href="#" data-uid="{html_stdlib.escape(str(uid), quote=True)}" data-jump-target="{html_stdlib.escape(str(jump_id), quote=True)}" data-tab="{html_stdlib.escape(str(tab), quote=True)}"></a>
+  </td>
+"""
+            else:
+                if key in ("capacity", "action", "calculated", "requirement"):
+                    val = summary_cell_display(r, key)
+                else:
+                    val = r.get(key, "")
+                cell = f"  <td>{val}</td>"
+            cells.append(cell)
+
+        html_parts.append(
             f"""
 <tr class="{row_class}" data-tab="{tab}">
-  <td>
-    {check} <span class="hint">↳ jump to calc</span>
-    <a class="row-link" href="#" data-uid="{uid}" data-tab="{tab}"></a>
-  </td>
-  <td>{value}</td>
-  <td>{limit}</td>
-  <td>{util}</td>
-  <td>{status}</td>
+{''.join(cells)}
 </tr>
 """
         )
 
-    html.append("</tbody></table></div>")
-    st.markdown("".join(html), unsafe_allow_html=True)
+    html_parts.append("</tbody></table></div>")
+    st.markdown("".join(html_parts), unsafe_allow_html=True)
 
 
 def bind_summary_clicks():
@@ -415,8 +444,8 @@ def bind_summary_clicks():
     setTimeout(() => inner.classList.remove("flash-target"), 1200);
   }
 
-  async function openAndScroll(uid, tabName) {
-    console.log("=== openAndScroll: uid=", uid, "tab=", tabName, "===");
+  async function openAndScroll(jumpId, tabName) {
+    console.log("=== openAndScroll: jumpId=", jumpId, "tab=", tabName, "===");
     
     // Step 1: Switch tab if needed
     if (tabName) {
@@ -426,9 +455,9 @@ def bind_summary_clicks():
     }
     
     // Step 2: Find anchor (for scrolling)
-    const anchor = doc.getElementById("calc_" + uid);
+    const anchor = doc.getElementById("calc_" + jumpId);
     if (!anchor) {
-      console.error("Anchor not found for uid:", uid);
+      console.error("Anchor not found for jumpId:", jumpId);
       return;
     }
     console.log("Found anchor:", anchor);
@@ -436,7 +465,7 @@ def bind_summary_clicks():
     // Step 3: Find expander (with retries)
     let details = null;
     for (let attempt = 0; attempt < 5; attempt++) {
-      details = findExpanderForUid(uid);
+      details = findExpanderForUid(jumpId);
       if (details) {
         console.log("✓ Found expander on attempt", attempt + 1);
         break;
@@ -468,7 +497,7 @@ def bind_summary_clicks():
     
     // Step 6: Flash after delay
     setTimeout(() => {
-      flash(uid);
+      flash(jumpId);
     }, 400);
   }
 
@@ -482,13 +511,15 @@ def bind_summary_clicks():
       }
       a.dataset.bound = "1";
       const uid = a.dataset.uid;
+      const jumpId = (a.dataset.jumpTarget || "").trim() || uid;
       const tab = a.dataset.tab || "";
-      console.log(`Binding link ${index}: uid=${uid}, tab=${tab}`);
+      console.log(`Binding link ${index}: uid=${uid}, jumpId=${jumpId}, tab=${tab}`);
 
       a.addEventListener("click", async (e) => {
         e.preventDefault();
         e.stopPropagation();
         const clickedUid = a.dataset.uid;
+        const clickedJump = (a.dataset.jumpTarget || "").trim() || clickedUid;
         const clickedTab = a.dataset.tab || "";
         
         if (!clickedUid) {
@@ -496,8 +527,8 @@ def bind_summary_clicks():
           return;
         }
         
-        console.log("=== Row clicked: uid=", clickedUid, "tab=", clickedTab, "===");
-        await openAndScroll(clickedUid, clickedTab);
+        console.log("=== Row clicked: uid=", clickedUid, "jumpId=", clickedJump, "tab=", clickedTab, "===");
+        await openAndScroll(clickedJump, clickedTab);
       });
     });
   }

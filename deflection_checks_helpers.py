@@ -1,6 +1,19 @@
-from typing import Dict, Any
+from typing import Any, Dict
 
-from state_and_helpers import get_param
+from engineering_check_ui import sync_legacy_value_limit
+from state_and_helpers import (
+    get_param,
+    get_deflection_limit_ratio,
+    get_deflection_limit_label_from_ratio,
+)
+
+
+def _format_deflection_allowable_limit_mm(defl_limit_mm: float, defl_limit_ratio: float) -> str:
+    ratio = get_deflection_limit_ratio(defl_limit_ratio)
+    ratio_label = get_deflection_limit_label_from_ratio(ratio)
+    if defl_limit_mm and defl_limit_mm > 0:
+        return f"δlim = {defl_limit_mm:.2f} mm ({ratio_label})"
+    return "—"
 
 
 def build_deflection_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str, Any]:
@@ -12,6 +25,7 @@ def build_deflection_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str
       - summary_util_total
       - rows: list[dict] for summary/check tables
     """
+    from deflection import get_resolved_deflection_support_type
 
     # -------- Read computed outputs first (preferred path) ----------
     delta_short_total = get_param("delta_short_total", None)
@@ -25,10 +39,16 @@ def build_deflection_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str
     g_kNm = float(get_param("g_udl_kNm_per_m", get_param("g_kNm", get_param("g_line_kNm", 0.0))) or 0.0)
     q_kNm = float(get_param("q_udl_kNm_per_m", get_param("q_kNm", get_param("q_line_kNm", 0.0))) or 0.0)
 
-    defl_limit_ratio = float(get_param("defl_limit_ratio", st_state.get("defl_limit_ratio", 250.0)) or 250.0)
-    support_type = get_param("defl_support_type", get_param("support_type", "Simply supported"))
+    defl_limit_ratio = float(get_deflection_limit_ratio(get_param("defl_limit_ratio", st_state.get("defl_limit_ratio", 250.0))))
+    support_type = get_resolved_deflection_support_type(st_state)
 
-    Ec = float(get_param("Ec", get_param("E_c", st_state.get("Ec", st_state.get("E_c", 0.0)))) or 0.0)
+    Ec = float(
+        get_param(
+            "Eceff",
+            get_param("Ec", get_param("E_c", st_state.get("Eceff", st_state.get("Ec", st_state.get("E_c", 0.0))))),
+        )
+        or 0.0
+    )
 
     Ief = float(
         get_param("Ief_selected",
@@ -49,14 +69,31 @@ def build_deflection_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str
         or delta_total is None
         or defl_limit_mm is None
     ):
-        from deflection import calc_deflection_as3600
+        from deflection import calc_deflection_as3600, _derive_equiv_udl_from_actions
+
+        sls_Mstar = get_param("sls_Mstar", None)
+        sls_Vstar = get_param("sls_Vstar", None)
+        derived = _derive_equiv_udl_from_actions(
+            M_kNm=sls_Mstar,
+            V_kN=sls_Vstar,
+            L_m=L_m,
+            support_type=support_type,
+        )
+        w_used = derived["w_kN_per_m"] if derived["w_kN_per_m"] is not None else (g_kNm + q_kNm)
+        if w_used > 0 and (g_kNm + q_kNm) > 0:
+            g_ratio = g_kNm / (g_kNm + q_kNm)
+            g_used = w_used * g_ratio
+            q_used = w_used * (1.0 - g_ratio)
+        else:
+            g_used = w_used
+            q_used = 0.0 if w_used > 0 else q_kNm
 
         results = calc_deflection_as3600(
             L_m=L_m,
             Ec=Ec,
             Ief=Ief,
-            g_kNm=g_kNm,
-            q_kNm=q_kNm,
+            g_kNm=g_used,
+            q_kNm=q_used,
             psi_s=psi_s,
             support_type=support_type,
             Ast=Ast,
@@ -95,41 +132,55 @@ def build_deflection_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str
     status_long = _status(util_long)
     status_total = _status(util_total)
 
+    lim_txt = _format_deflection_allowable_limit_mm(float(defl_limit_mm or 0.0), defl_limit_ratio)
+
+    def _row(*, uid, title, tab, delta_label, delta_val, util, status, is_primary=False):
+        calc = f"{delta_label} = {delta_val:.2f} mm"
+        r = {
+            "uid": uid,
+            "title": title,
+            "calculated": calc,
+            "requirement": lim_txt,
+            "capacity": calc,
+            "action": lim_txt,
+            "util": f"{util:.2f}" if util is not None else "—",
+            "status": status,
+            "ok": _ok_from_status(status),
+            "route_page": "deflection",
+            "tab": tab,
+            "is_primary": is_primary,
+        }
+        return sync_legacy_value_limit(r)
+
     rows = [
-        {
-            "uid": "defl_long",
-            "title": "Total deflection (short + long-term)",
-            "value": f"δtotal = {delta_total:.2f} mm",
-            "limit": f"δlim = {defl_limit_mm:.2f} mm" if defl_limit_mm > 0 else "—",
-            "util": f"{util_total:.2f}" if util_total is not None else "—",
-            "status": status_total,
-            "ok": _ok_from_status(status_total),
-            "route_page": "deflection",
-            "tab": "Long-term deflection",
-            "is_primary": True,
-        },
-        {
-            "uid": "defl_short",
-            "title": "Short-term deflection (total load)",
-            "value": f"δshort = {delta_short_total:.2f} mm",
-            "limit": f"δlim = {defl_limit_mm:.2f} mm" if defl_limit_mm > 0 else "—",
-            "util": f"{util_short:.2f}" if util_short is not None else "—",
-            "status": status_short,
-            "ok": _ok_from_status(status_short),
-            "route_page": "deflection",
-            "tab": "Short-term deflection",
-        },
-        {
-            "uid": "defl_long",
-            "title": "Additional long-term deflection",
-            "value": f"δlong = {delta_long_add:.2f} mm",
-            "limit": f"δlim = {defl_limit_mm:.2f} mm" if defl_limit_mm > 0 else "—",
-            "util": f"{util_long:.2f}" if util_long is not None else "—",
-            "status": status_long,
-            "ok": _ok_from_status(status_long),
-            "route_page": "deflection",
-            "tab": "Long-term deflection",
-        },
+        _row(
+            uid="defl_total",
+            title="Total deflection (short + long-term)",
+            tab="Long-term deflection",
+            delta_label="δtotal",
+            delta_val=float(delta_total or 0.0),
+            util=util_total,
+            status=status_total,
+            is_primary=True,
+        ),
+        _row(
+            uid="defl_short",
+            title="Short-term deflection (total load)",
+            tab="Short-term deflection",
+            delta_label="δshort",
+            delta_val=float(delta_short_total or 0.0),
+            util=util_short,
+            status=status_short,
+        ),
+        _row(
+            uid="defl_long_add",
+            title="Additional long-term deflection",
+            tab="Long-term deflection",
+            delta_label="δlong",
+            delta_val=float(delta_long_add or 0.0),
+            util=util_long,
+            status=status_long,
+        ),
     ]
 
     return {

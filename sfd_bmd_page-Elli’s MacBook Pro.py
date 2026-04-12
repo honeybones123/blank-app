@@ -4,9 +4,6 @@
 # ==========================================
 
 import math
-import json
-import time
-from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
@@ -38,7 +35,6 @@ from widgets_helpers import (
     _wrap_user_edit,
     info_i_button,
 )
-from engineering_check_ui import DESIGN_ACTION_SUMMARY_COLUMNS, sync_legacy_value_limit
 from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks
 
 from beam_analysis import (
@@ -48,23 +44,6 @@ from beam_analysis import (
     solve_single_span_beam,
     solve_beam_model,
 )
-
-
-def _agent_debug_log(message: str, data: dict, *, run_id: str, hypothesis_id: str, location: str) -> None:
-    try:
-        payload = {
-            "sessionId": "b9a7cf",
-            "runId": run_id,
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": int(time.time() * 1000),
-        }
-        with (Path(__file__).resolve().with_name("debug-b9a7cf.log")).open("a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, ensure_ascii=True) + "\n")
-    except Exception:
-        pass
 
 
 def _label_with_hover(label: str, help_text: str) -> None:
@@ -109,16 +88,10 @@ def _defl_support_type_from_selection(load_case: str, support_condition: str | N
         return "Simply supported"
     if cond == "Fixed–Free" or case_text.startswith("Cantilever"):
         return "Cantilever"
-    if cond == "Simply supported":
-        return "Simply supported"
     if cond == "Pinned–Pinned":
-        return "Pinned–Pinned"
-    if cond == "Fixed–Fixed":
+        return "Simply supported"
+    if cond in {"Fixed–Pinned", "Pinned–Fixed", "Fixed–Fixed"}:
         return "Fixed-ended"
-    if cond == "Fixed–Pinned":
-        return "Fixed–Pinned"
-    if cond == "Pinned–Fixed":
-        return "Pinned–Fixed"
     return _support_type_from_load_case(load_case)
 
 
@@ -166,298 +139,6 @@ def _format_support_restraints(metadata: dict) -> str:
     )
 
 
-def _clean_sfd_deriv_lines(items) -> list[str]:
-    out: list[str] = []
-    for item in items:
-        if item is None or item == "":
-            continue
-        if isinstance(item, (list, tuple)):
-            out.extend(_clean_sfd_deriv_lines(item))
-        else:
-            out.append(str(item))
-    return out
-
-
-def _get_beam_analysis_case_label(case: str, support_condition_active: str) -> str:
-    sc = (support_condition_active or "").strip().replace("-", "–")
-    if case == "Multi-span continuous beam":
-        return "Multi-span continuous beam (numerical beam model)"
-    if case == "Overhanging beam – right overhang with point load at free end":
-        return "Overhanging beam — pinned supports with right overhang"
-    if case.startswith("Cantilever"):
-        return "Cantilever (fixed–free)"
-    if case.startswith("Simple beam"):
-        if sc in {"Fixed–Pinned", "Pinned–Fixed", "Fixed–Fixed"}:
-            return f"Single span — {sc} (statically indeterminate; numerical beam solver)"
-        if sc == "Simply supported":
-            return "Simply supported (pin + roller)"
-        if sc == "Pinned–Pinned":
-            return "Pinned–pinned (double pin)"
-        if sc == "":
-            return "Simply supported (pin + roller)"
-        return f"Single span — {sc}"
-    return sc or "Beam model"
-
-
-def _is_closed_form_sfd_case(case: str, fixed_end_indeterminate: bool) -> bool:
-    if case == "Multi-span continuous beam":
-        return False
-    if case.startswith("Simple beam") and fixed_end_indeterminate:
-        return False
-    return True
-
-
-def _build_solver_explanation_lines(*, kind: str, design_actions_source: str) -> list[str]:
-    lines = [
-        "The beam model is formed from the span, support conditions, and applied design loads.",
-        "The solver applies the selected boundary conditions and solves for the restrained response that satisfies equilibrium and compatibility.",
-    ]
-    if kind == "shear":
-        lines.append(
-            "The beam model is analysed numerically using the selected support conditions and applied loads."
-        )
-        lines.append(
-            "The solver enforces equilibrium together with the support restraints to recover the internal shear response along the span."
-        )
-        lines.append(
-            "Once the beam response is solved, the internal shear force $V(x)$ is recovered along the span."
-        )
-    else:
-        lines.append(
-            "The beam model is analysed numerically using the selected support conditions and applied loads."
-        )
-        lines.append(
-            "The solved beam response is used to recover the bending moment distribution $M(x)$ along the span."
-        )
-    if design_actions_source == "section":
-        lines.append(
-            "The design action is then taken at the committed design section location rather than from the global maximum along the span."
-        )
-    else:
-        if kind == "shear":
-            lines.append(
-                "The governing design shear is taken from the solved SFD as the maximum absolute value along the span."
-            )
-        else:
-            lines.append(
-                "The governing design moment is taken from the solved BMD as the maximum absolute value along the span."
-            )
-    return lines
-
-
-def _strip_sfd_step4_title_line(md: str) -> str:
-    m = (md or "").strip()
-    if m.startswith("**Step 4"):
-        nl = m.find("\n")
-        if nl != -1:
-            m = m[nl + 1 :].lstrip()
-    return m
-
-
-def _strip_leading_load_intro(md: str, load_intro: str) -> str:
-    if load_intro and md.startswith(load_intro):
-        return md[len(load_intro) :].lstrip()
-    return md
-
-
-def _governing_shear_star_value(
-    *,
-    active_mode: str,
-    design_actions_source: str,
-    section_committed: bool,
-    V_array,
-) -> float:
-    if design_actions_source == "section" and section_committed:
-        key = "design_V_uls_kN" if active_mode == "ULS" else "design_V_sls_kN"
-        return float(get_param(key, 0.0) or 0.0)
-    if V_array is not None and len(V_array):
-        return float(np.max(np.abs(V_array)))
-    return 0.0
-
-
-def _governing_moment_star_value(
-    *,
-    active_mode: str,
-    design_actions_source: str,
-    section_committed: bool,
-    M_array,
-) -> float:
-    if design_actions_source == "section" and section_committed:
-        key = "design_M_uls_kNm" if active_mode == "ULS" else "design_M_sls_kNm"
-        return abs(float(get_param(key, 0.0) or 0.0))
-    if M_array is not None and len(M_array):
-        return float(np.max(np.abs(M_array)))
-    return 0.0
-
-
-def _format_sfd_shear_derivation_panel_md(
-    *,
-    load_intro: str,
-    active_mode: str,
-    case: str,
-    support_condition_active: str,
-    fixed_end_indeterminate: bool,
-    span_m: float,
-    design_actions_source: str,
-    section_committed: bool,
-    design_x_m: float,
-    V_array,
-    case_specific_md: str,
-) -> str:
-    is_cf = _is_closed_form_sfd_case(case, fixed_end_indeterminate)
-    support_line = _get_beam_analysis_case_label(case, support_condition_active)
-    inner = _strip_leading_load_intro((case_specific_md or "").strip(), load_intro)
-
-    parts: list[str] = []
-    parts.append(
-        "**Purpose**  \n"
-        "Determine the beam shear response along the span and extract the governing design shear for the active load case."
-    )
-    parts.append(
-        "**1) Inputs / model**  \n"
-        f"- Support condition: {support_line}  \n"
-        f"- Span (analysis length): $L = {float(span_m):.3g}\\,\\mathrm{{m}}$  \n"
-        f"- Beam response uses the resolved {active_mode} combined loading from Step 0."
-    )
-    parts.append("**2) Governing relation / solver statement**  \n")
-    if is_cf:
-        parts.append(
-            "For this idealisation, $V(x)$ is obtained from conventional section equilibrium (free-body cuts to the left or right of the section) using the support actions from Step 2 "
-            "and the applied load pattern. Piecewise closed-form expressions are stated below where they apply."
-        )
-    else:
-        parts.append(
-            "The internal shear distribution $V(x)$ is obtained from the numerical beam model: form the element system, impose the selected supports and applied loads, "
-            "then recover internal shears along the member axis from the solved displacements and end forces."
-        )
-        for line in _build_solver_explanation_lines(kind="shear", design_actions_source=design_actions_source):
-            parts.append(f"- {line}")
-
-    parts.append("**3) Response along the span**  \n")
-    if inner:
-        parts.append(inner)
-    else:
-        parts.append(
-            "Shear ordinates follow the solved SFD for the active load case (see diagram above), consistent with Step 2 reactions and the load model."
-        )
-
-    parts.append("**4) Design-action extraction**  \n")
-    if design_actions_source == "section":
-        parts.append("For design-section mode:")
-        parts.append(r"$$V^* = \left|V(x_{\mathrm{design}})\right|$$")
-        x_show = (
-            float(design_x_m)
-            if section_committed
-            else float(get_param("section_cursor_x_m", design_x_m) or 0.0)
-        )
-        parts.append(f"with $x_{{\\mathrm{{design}}}} = {x_show:.3f}\\,\\mathrm{{m}}$.")
-    else:
-        parts.append("For governing maxima along the span:")
-        parts.append(r"$$V^* = \max_x \left|V(x)\right|$$")
-
-    v_star = _governing_shear_star_value(
-        active_mode=active_mode,
-        design_actions_source=design_actions_source,
-        section_committed=section_committed,
-        V_array=V_array,
-    )
-    vp = float(np.max(V_array)) if V_array is not None and len(V_array) else None
-    vn = float(np.min(V_array)) if V_array is not None and len(V_array) else None
-    res_lines = _clean_sfd_deriv_lines(
-        [
-            f"- $V_{{\\max,+}} = {vp:.3g}\\,\\mathrm{{kN}}$" if vp is not None else None,
-            f"- $V_{{\\max,-}} = {vn:.3g}\\,\\mathrm{{kN}}$" if vn is not None else None,
-            f"- Governing design shear ({active_mode}): $V^* = {v_star:.3g}\\,\\mathrm{{kN}}$",
-        ]
-    )
-    parts.append("**5) Published extremes and governing value**  \n" + "\n".join(res_lines))
-    return "\n\n".join(parts)
-
-
-def _format_sfd_moment_derivation_panel_md(
-    *,
-    load_intro: str,
-    active_mode: str,
-    case: str,
-    support_condition_active: str,
-    fixed_end_indeterminate: bool,
-    span_m: float,
-    design_actions_source: str,
-    section_committed: bool,
-    design_x_m: float,
-    M_array,
-    case_specific_md: str,
-) -> str:
-    is_cf = _is_closed_form_sfd_case(case, fixed_end_indeterminate)
-    support_line = _get_beam_analysis_case_label(case, support_condition_active)
-    inner = _strip_sfd_step4_title_line(case_specific_md or "")
-    inner = _strip_leading_load_intro(inner.strip(), load_intro)
-
-    parts: list[str] = []
-    parts.append(
-        "**Purpose**  \n"
-        "Determine the beam bending-moment response along the span and extract the governing design moment for the active load case."
-    )
-    parts.append(
-        "**1) Inputs / model**  \n"
-        f"- Support condition: {support_line}  \n"
-        f"- Span (analysis length): $L = {float(span_m):.3g}\\,\\mathrm{{m}}$  \n"
-        f"- Beam response uses the resolved {active_mode} combined loading from Step 0."
-    )
-    parts.append("**2) Governing relation / solver statement**  \n")
-    if is_cf:
-        parts.append(
-            "For this idealisation, $M(x)$ follows from integrating shear (where continuous), direct equilibrium of free bodies, or known closed-form beam expressions "
-            "for the selected load case. Piecewise expressions below are consistent with the sign convention used in the diagrams."
-        )
-    else:
-        parts.append(
-            "The bending moment distribution $M(x)$ is recovered from the numerical beam solution (internal forces / element end actions) after imposing supports and loads."
-        )
-        for line in _build_solver_explanation_lines(kind="moment", design_actions_source=design_actions_source):
-            parts.append(f"- {line}")
-
-    parts.append("**3) Response along the span**  \n")
-    if inner:
-        parts.append(inner)
-    else:
-        parts.append(
-            "Moment ordinates follow the solved BMD for the active load case (see diagram above), consistent with the shear diagram and support fixity."
-        )
-
-    parts.append("**4) Design-action extraction**  \n")
-    if design_actions_source == "section":
-        parts.append("For design-section mode:")
-        parts.append(r"$$M^* = \left|M(x_{\mathrm{design}})\right|$$")
-        x_show = (
-            float(design_x_m)
-            if section_committed
-            else float(get_param("section_cursor_x_m", design_x_m) or 0.0)
-        )
-        parts.append(f"with $x_{{\\mathrm{{design}}}} = {x_show:.3f}\\,\\mathrm{{m}}$.")
-    else:
-        parts.append("For governing maxima along the span:")
-        parts.append(r"$$M^* = \max_x \left|M(x)\right|$$")
-
-    m_star = _governing_moment_star_value(
-        active_mode=active_mode,
-        design_actions_source=design_actions_source,
-        section_committed=section_committed,
-        M_array=M_array,
-    )
-    mp = float(np.max(M_array)) if M_array is not None and len(M_array) else None
-    mn = float(np.min(M_array)) if M_array is not None and len(M_array) else None
-    res_lines = _clean_sfd_deriv_lines(
-        [
-            f"- $M_{{\\max,+}} = {mp:.3g}\\,\\mathrm{{kNm}}$" if mp is not None else None,
-            f"- $M_{{\\max,-}} = {mn:.3g}\\,\\mathrm{{kNm}}$" if mn is not None else None,
-            f"- Governing design moment magnitude ({active_mode}): $M^* = {m_star:.3g}\\,\\mathrm{{kNm}}$",
-        ]
-    )
-    parts.append("**5) Published extremes and governing value**  \n" + "\n".join(res_lines))
-    return "\n\n".join(parts)
-
-
 def render_inline_number_row(
     label: str,
     key: str,
@@ -498,25 +179,8 @@ def render_inline_number_row(
 
     with col_input:
         _register_rendered_key(key)
-
-        def _clamp_widget_num(v, lo, hi):
-            try:
-                v = float(v)
-            except (TypeError, ValueError):
-                v = 0.0 if lo is None else float(lo)
-            if lo is not None:
-                v = max(float(lo), v)
-            if hi is not None:
-                v = min(float(hi), v)
-            return v
-
         if key not in st.session_state:
-            st.session_state[key] = _clamp_widget_num(value, min_value, max_value)
-        else:
-            st.session_state[key] = _clamp_widget_num(
-                st.session_state[key], min_value, max_value
-            )
-
+            st.session_state[key] = value
         on_change_callback = on_change
         if on_change_callback is None and sync_callbacks and isinstance(sync_callbacks, dict):
             on_change_callback = sync_callbacks.get(key)
@@ -578,7 +242,7 @@ def render_inline_select_row(
             on_change_callback = _wrap_user_edit(key, on_change_callback)
         current_value = st.session_state.get(key, options[index])
         current_index = options.index(current_value) if current_value in options else index
-        value = st.selectbox(
+        return st.selectbox(
             label="",
             key=key,
             options=options,
@@ -588,23 +252,6 @@ def render_inline_select_row(
             label_visibility="collapsed",
             on_change=on_change_callback,
         )
-        if str(key).startswith("sfd_support_type_"):
-            # region agent log
-            _agent_debug_log(
-                "support_selector_render",
-                {
-                    "key": key,
-                    "options": [str(v) for v in options],
-                    "session_value": st.session_state.get(key),
-                    "returned_value": value,
-                    "current_index": current_index,
-                },
-                run_id="pre-fix",
-                hypothesis_id="H10_H11",
-                location="sfd_bmd_page.py:581",
-            )
-            # endregion
-        return value
 
 
 # ---------------------------------------------------
@@ -700,32 +347,15 @@ def plot_load_diagram_plotly(
         and len(support_positions_plot) >= 2
         and len(support_positions_plot) == len(support_types_plot)
     )
-    # region agent log
-    _agent_debug_log(
-        "plot_load_support_state",
-        {
-            "case": case,
-            "support_condition": str(support_condition or ""),
-            "support_positions": [float(v) for v in support_positions_plot],
-            "support_types": [str(v) for v in support_types_plot],
-            "generic_multi_span": generic_multi_span,
-        },
-        run_id="pre-fix",
-        hypothesis_id="H6_H7",
-        location="sfd_bmd_page.py:681",
-    )
-    # endregion
 
     # --- Supports ---
     if generic_multi_span:
         pinned_x = []
-        fixed_x = []
         for sx, stype in zip(support_positions_plot, support_types_plot):
             t = str(stype or "").strip().lower()
             if t in {"pinned", "roller"}:
                 pinned_x.append(float(sx))
             elif t == "fixed":
-                fixed_x.append(float(sx))
                 fig.add_shape(
                     type="line",
                     x0=float(sx),
@@ -744,18 +374,6 @@ def plot_load_diagram_plotly(
                     showlegend=False,
                 )
             )
-        # region agent log
-        _agent_debug_log(
-            "plot_load_supports_rendered",
-            {
-                "pinned_x": pinned_x,
-                "fixed_x": fixed_x,
-            },
-            run_id="pre-fix",
-            hypothesis_id="H6_H7",
-            location="sfd_bmd_page.py:714",
-        )
-        # endregion
     elif case == "Overhanging beam – right overhang with point load at free end":
         L_main = params.get("L_main", L)
         fig.add_trace(
@@ -770,38 +388,9 @@ def plot_load_diagram_plotly(
     else:
         cond = str(support_condition or "").strip().replace("-", "–")
         if not cond:
-            cond = "Fixed–Free" if case.startswith("Cantilever") else "Simply supported"
+            cond = "Fixed–Free" if case.startswith("Cantilever") else "Pinned–Pinned"
 
-        if cond == "Simply supported":
-            fig.add_trace(
-                go.Scatter(
-                    x=[0.0, float(L)],
-                    y=[-0.1, -0.1],
-                    mode="markers",
-                    marker=dict(symbol="triangle-up", size=14),
-                    showlegend=False,
-                )
-            )
-            fig.add_trace(
-                go.Scatter(
-                    x=[float(L)],
-                    y=[-0.24],
-                    mode="markers",
-                    marker=dict(symbol="circle", size=9, color="rgba(35,35,35,0.85)", line=dict(width=1, color="rgba(35,35,35,1)")),
-                    showlegend=False,
-                )
-            )
-        elif cond == "Pinned–Pinned":
-            fig.add_trace(
-                go.Scatter(
-                    x=[0.0, float(L)],
-                    y=[-0.1, -0.1],
-                    mode="markers",
-                    marker=dict(symbol="triangle-up", size=14),
-                    showlegend=False,
-                )
-            )
-        elif cond in {"Pinned–Fixed", "Fixed–Pinned"}:
+        if cond in {"Pinned–Pinned", "Pinned–Fixed", "Fixed–Pinned"}:
             pinned_x = []
             if cond.startswith("Pinned"):
                 pinned_x.append(0.0)
@@ -1248,7 +837,6 @@ def plot_sfd_bmd_plotly(
     case: str | None = None,
     L: float | None = None,
     support_positions: list[float] | None = None,
-    support_types: list[str] | None = None,
     preview_x_m: float | None = None,
     design_x_m: float | None = None,
     preview_V: float | None = None,
@@ -1268,8 +856,6 @@ def plot_sfd_bmd_plotly(
     x_plot = x.tolist() if hasattr(x, "tolist") else list(x) if x is not None else []
     V_plot = V.tolist() if hasattr(V, "tolist") else list(V) if V is not None else []
     M_plot = M.tolist() if hasattr(M, "tolist") else list(M) if M is not None else []
-    support_positions_plot = [float(v) for v in (support_positions or [])]
-    support_types_plot = list(support_types or [])
 
     # --- SFD ---
     fig_sfd = go.Figure()
@@ -1285,90 +871,8 @@ def plot_sfd_bmd_plotly(
         )
     )
     fig_sfd.add_hline(y=0, line_width=2, line_color="rgba(0,0,0,0.20)")
-    for x_support in support_positions_plot:
+    for x_support in support_positions:
         fig_sfd.add_vline(x=x_support, line_width=1, line_color="rgba(0,0,0,0.12)")
-    design_mode_active = bool(is_design_governing())
-    support_type = str(get_param("support_type", "simply_supported") or "simply_supported").strip().lower()
-    d_v_mm = float(get_param("d_v", 0.0) or 0.0)
-    zone_limit_m = 1.5 * d_v_mm / 1000.0
-    # region agent log
-    _agent_debug_log(
-        "plot_sfd_state",
-        {
-            "design_mode_active": design_mode_active,
-            "support_type_state": support_type,
-            "support_positions": support_positions_plot,
-            "support_types": support_types_plot,
-            "L": float(L) if L is not None else None,
-            "d_v_mm": d_v_mm,
-            "zone_limit_m": zone_limit_m,
-            "critical_shear_x_state": get_param("critical_shear_x", None),
-            "critical_shear_V_state": get_param("critical_shear_V", None),
-            "shear_spacing_end_mm": get_param("shear_spacing_end_mm", None),
-            "shear_spacing_mid_mm": get_param("shear_spacing_mid_mm", None),
-        },
-        run_id="pre-fix",
-        hypothesis_id="H1_H2_H5",
-        location="sfd_bmd_page.py:1230",
-    )
-    # endregion
-    if design_mode_active and L is not None and zone_limit_m > 0.0:
-        fig_sfd.add_vrect(
-            x0=0.0,
-            x1=min(zone_limit_m, float(L)),
-            fillcolor="red",
-            opacity=0.05,
-            line_width=0,
-        )
-        if support_type != "cantilever":
-            fig_sfd.add_vrect(
-                x0=max(0.0, float(L) - zone_limit_m),
-                x1=float(L),
-                fillcolor="red",
-                opacity=0.05,
-                line_width=0,
-            )
-    if design_mode_active and L is not None:
-        if support_positions_plot:
-            support_symbols = []
-            for idx, sx in enumerate(support_positions_plot):
-                stype = str(support_types_plot[idx] if idx < len(support_types_plot) else "").strip().lower()
-                symbol = "⏊" if stype == "fixed" else "▲"
-                support_symbols.append({"x": float(sx), "type": stype, "symbol": symbol})
-                fig_sfd.add_annotation(
-                    x=float(sx),
-                    y=0.0,
-                    text=symbol,
-                    showarrow=False,
-                    yshift=-20,
-                )
-            # region agent log
-            _agent_debug_log(
-                "plot_sfd_supports_rendered",
-                {
-                    "support_symbols": support_symbols,
-                },
-                run_id="pre-fix",
-                hypothesis_id="H7",
-                location="sfd_bmd_page.py:1300",
-            )
-            # endregion
-        else:
-            fig_sfd.add_annotation(
-                x=0.0,
-                y=0.0,
-                text="▲" if support_type != "cantilever" else "⏊",
-                showarrow=False,
-                yshift=-20,
-            )
-            if support_type == "simply_supported":
-                fig_sfd.add_annotation(
-                    x=float(L),
-                    y=0.0,
-                    text="▲",
-                    showarrow=False,
-                    yshift=-20,
-                )
     if design_x_m is not None:
         fig_sfd.add_vline(x=float(design_x_m), line_width=2, line_dash="dash", line_color="green")
     if preview_x_m is not None:
@@ -1383,110 +887,6 @@ def plot_sfd_bmd_plotly(
                 showlegend=False,
             )
         )
-    x_crit = get_param("critical_shear_x")
-    V_crit = get_param("critical_shear_V")
-    s_end = get_param("shear_spacing_end_mm")
-    s_mid = get_param("shear_spacing_mid_mm")
-    if design_mode_active and x_crit is not None and V_crit is not None:
-        x_crit_f = float(x_crit)
-        V_crit_f = float(V_crit)
-        fig_sfd.add_trace(
-            go.Scatter(
-                x=[x_crit_f],
-                y=[V_crit_f],
-                mode="markers+text",
-                text=[f"V* = {abs(V_crit_f):.1f} kN"],
-                textposition="top center",
-                marker=dict(size=10, color="rgba(31, 119, 180, 0.95)"),
-                name="Critical shear",
-                showlegend=False,
-                cliponaxis=False,
-            )
-        )
-        nearest_support_idx = None
-        nearest_support_dist = None
-        if support_positions_plot:
-            nearest_support_idx = int(np.argmin([abs(x_crit_f - sx) for sx in support_positions_plot]))
-            nearest_support_dist = abs(x_crit_f - support_positions_plot[nearest_support_idx])
-        in_end_zone = bool(
-            zone_limit_m > 0.0
-            and nearest_support_dist is not None
-            and nearest_support_dist <= zone_limit_m + 1e-9
-        )
-        if zone_limit_m <= 0.0 and nearest_support_dist is not None and nearest_support_dist <= 1e-6:
-            in_end_zone = True
-        s_used = s_end if in_end_zone else s_mid
-        if in_end_zone and nearest_support_idx is not None:
-            if support_positions_plot and len(support_positions_plot) >= 2:
-                if nearest_support_idx == 0:
-                    label = "Support 1 / Span 1"
-                elif nearest_support_idx == len(support_positions_plot) - 1:
-                    label = (
-                        f"Support {nearest_support_idx + 1} / "
-                        f"Span {len(support_positions_plot) - 1}"
-                    )
-                else:
-                    label = (
-                        f"Support {nearest_support_idx + 1} / "
-                        f"Spans {nearest_support_idx}-{nearest_support_idx + 1}"
-                    )
-            else:
-                label = f"Support {nearest_support_idx + 1}"
-        elif support_positions_plot and len(support_positions_plot) >= 2:
-            span_label = "Beam"
-            for i in range(len(support_positions_plot) - 1):
-                x0 = support_positions_plot[i]
-                x1 = support_positions_plot[i + 1]
-                if x0 - 1e-9 <= x_crit_f <= x1 + 1e-9:
-                    span_label = f"Span {i + 1}"
-                    break
-            label = span_label
-        else:
-            label = "Midspan"
-        if s_used is not None:
-            annotation_text = f"{label}: s = {int(float(s_used))} mm"
-            # region agent log
-            _agent_debug_log(
-                "critical_spacing_annotation_added",
-                {
-                    "x_crit": x_crit_f,
-                    "V_crit": V_crit_f,
-                    "nearest_support_idx": nearest_support_idx,
-                    "nearest_support_dist": nearest_support_dist,
-                    "in_end_zone": in_end_zone,
-                    "label": label,
-                    "annotation_text": annotation_text,
-                    "s_used": float(s_used),
-                },
-                run_id="pre-fix",
-                hypothesis_id="H5",
-                location="sfd_bmd_page.py:1325",
-            )
-            # endregion
-            fig_sfd.add_annotation(
-                x=x_crit_f,
-                y=V_crit_f,
-                text=annotation_text,
-                showarrow=True,
-                arrowhead=2,
-                yshift=40,
-            )
-    else:
-        # region agent log
-        _agent_debug_log(
-            "critical_annotation_skipped",
-            {
-                "design_mode_active": design_mode_active,
-                "x_crit": x_crit,
-                "V_crit": V_crit,
-                "s_end": s_end,
-                "s_mid": s_mid,
-            },
-            run_id="pre-fix",
-            hypothesis_id="H1_H2_H4_H5",
-            location="sfd_bmd_page.py:1339",
-        )
-        # endregion
     x_pad = max(float(L or 0.0) * 0.08, 0.12) if L is not None else 0.12
     fig_sfd.update_layout(
         title_text="",
@@ -1708,7 +1108,7 @@ def _compute_diagram_arrays(case_name: str, span_L: float, p: dict):
         }
         return x, V, M, beam_length, results_local
 
-    support_condition = str(params.get("support_condition", "Simply supported")).replace("-", "–")
+    support_condition = str(params.get("support_condition", "Pinned–Pinned")).replace("-", "–")
     fixed_end_conditions = {"Fixed–Pinned", "Pinned–Fixed", "Fixed–Fixed"}
     is_overhang = case_name == "Overhanging beam – right overhang with point load at free end"
     is_cantilever = case_name.startswith("Cantilever")
@@ -2155,49 +1555,6 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         )
 
     render_result_page_title("Beam Actions & Diagrams (SFD / BMD)")
-
-    # App-wide design-action source (same canonical keys as Inputs page)
-    _LEGACY_ACTIONS_MANUAL = "Manual design actions (inputs below)"
-    _LEGACY_ACTIONS_DESIGN = "Teaching SFD/BMD page (|M|max, |V|max)"
-
-    def _norm_actions_source_label(raw) -> str:
-        s = str(raw or _LEGACY_ACTIONS_MANUAL)
-        if s == "Manual design actions":
-            return _LEGACY_ACTIONS_MANUAL
-        if s == "Calculated design actions (from SFD/BMD)":
-            return _LEGACY_ACTIONS_DESIGN
-        return s
-
-    _src_canon = _norm_actions_source_label(st.session_state.get("actions_source", _LEGACY_ACTIONS_MANUAL))
-    _wk_sfd_actions = "inputs_use_calculated_actions"
-    _beam_page_selected = _src_canon == _LEGACY_ACTIONS_DESIGN
-    if _wk_sfd_actions not in st.session_state:
-        st.session_state[_wk_sfd_actions] = _beam_page_selected
-
-    st.caption("Design-action source (synced with **Inputs → Design Actions**)")
-    _use_beam_page = st.toggle(
-        "Use design actions from this page (Beam Actions & Diagrams)",
-        key=_wk_sfd_actions,
-        help=(
-            "When enabled, ULS/SLS demands follow this beam model and stay linked to the same toggle on the Inputs page. "
-            "When disabled, demands follow manual actions entered on Inputs."
-        ),
-    )
-    _mapped_src = _LEGACY_ACTIONS_DESIGN if _use_beam_page else _LEGACY_ACTIONS_MANUAL
-    _mapped_mode = "design" if _use_beam_page else "manual"
-    if (
-        _norm_actions_source_label(st.session_state.get("actions_source")) != _mapped_src
-        or str(st.session_state.get("actions_mode", "manual") or "manual") != _mapped_mode
-    ):
-        st.session_state["actions_source"] = _mapped_src
-        st.session_state["actions_mode"] = _mapped_mode
-        try:
-            set_shared("actions_source", _mapped_src, source="sfd_bmd:actions_toggle")
-            set_shared("actions_mode", _mapped_mode, source="sfd_bmd:actions_toggle")
-        except Exception:
-            pass
-        st.rerun()
-
     summary_placeholder = st.empty()
     st.divider()
     # =========================================================
@@ -2248,13 +1605,13 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
     
     # Wrap the entire loading section in a container
     st.markdown("<div class='loading-grid'>", unsafe_allow_html=True)
-
+    
     beam_system_mode = render_inline_select_row(
         "Beam system mode",
         key="sfd_beam_system_mode",
         options=["Single span", "Multi-span"],
         index=0,
-        sync_callbacks=sync_callbacks,
+        sync_callbacks=None,
         help_text="Choose single-span legacy workflow or multi-span continuous beam workflow.",
     )
 
@@ -2300,7 +1657,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         )
         is_overhang_case = load_case == "Overhanging beam – right overhang with point load at free end"
         is_cantilever_case = load_case.startswith("Cantilever")
-        support_condition = "Simply supported"
+        support_condition = "Pinned–Pinned"
         if not is_overhang_case:
             if is_cantilever_case:
                 if st.session_state.get("sfd_support_condition") != "Fixed–Free":
@@ -2310,18 +1667,12 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                     key="sfd_support_condition",
                     options=["Fixed–Free"],
                     index=0,
-                    sync_callbacks=sync_callbacks,
+                    sync_callbacks=None,
                     disabled=True,
                     help_text="Cantilever load families are analysed as fixed at left and free at right.",
                 )
             else:
-                support_opts = [
-                    "Simply supported",
-                    "Pinned–Pinned",
-                    "Fixed–Pinned",
-                    "Pinned–Fixed",
-                    "Fixed–Fixed",
-                ]
+                support_opts = ["Pinned–Pinned", "Fixed–Pinned", "Pinned–Fixed", "Fixed–Fixed"]
                 if st.session_state.get("sfd_support_condition") not in support_opts:
                     st.session_state["sfd_support_condition"] = support_opts[0]
                 current_support = str(st.session_state.get("sfd_support_condition", support_opts[0]) or support_opts[0])
@@ -2331,25 +1682,29 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                     key="sfd_support_condition",
                     options=support_opts,
                     index=support_opts.index(default_support),
-                    sync_callbacks=sync_callbacks,
+                    sync_callbacks=None,
                     help_text="Support condition used for the single-span beam analysis model.",
                 )
 
-    design_governing = is_design_governing()
-    if design_governing:
-        # Do not write defl_support_type directly from this page.
-        # Deflection/Inputs resolve support from design model fields
-        # (sfd_beam_system_mode, sfd_case, sfd_support_condition, spans/supports).
-        # Direct writes here were causing router reverts and snap-back loops.
-        pass
-    else:
-        pass
+    if is_design_governing():
+        if beam_system_mode == "Multi-span":
+            set_shared(
+                "defl_support_type",
+                "Continuous beam",
+                source="sfd_bmd_page:beam_system_mode",
+            )
+        else:
+            set_shared(
+                "defl_support_type",
+                _defl_support_type_from_selection(load_case, support_condition),
+                source="sfd_bmd_page:support_condition",
+            )
 
     node_positions_multi: list[float] | None = None
     support_types_multi: list[str] | None = None
     if beam_system_mode == "Single span":
         # -------- span as editable widget (canonical L in mm) --------
-        L_seed = max(0.1, float(get_param("L", 3000.0)) / 1000.0)
+        L_seed = max(0.1, float(get_param("L", 6000.0)) / 1000.0)
         L = render_inline_number_row(
             "Span L (m)",
             key="sfd_L_m",
@@ -2377,7 +1732,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                 max_value=5.0,
                 step=1.0,
                 format="%.0f",
-                sync_callbacks=sync_callbacks,
+                sync_callbacks=None,
             )
         )
         span_lengths: list[float] = []
@@ -2390,7 +1745,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                     min_value=0.2,
                     step=0.1,
                     format="%.2f",
-                    sync_callbacks=sync_callbacks,
+                    sync_callbacks=None,
                 )
             )
             span_lengths.append(max(0.2, len_i))
@@ -2418,25 +1773,9 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                     key=key,
                     options=opts,
                     index=opts.index(cur),
-                    sync_callbacks=sync_callbacks,
+                    sync_callbacks=None,
                 )
             )
-        # region agent log
-        _agent_debug_log(
-            "support_types_multi_built",
-            {
-                "n_spans": int(n_spans),
-                "support_types_multi": [str(v) for v in support_types_multi],
-                "session_values": {
-                    f"sfd_support_type_{i}": st.session_state.get(f"sfd_support_type_{i}")
-                    for i in range(1, n_spans + 2)
-                },
-            },
-            run_id="pre-fix",
-            hypothesis_id="H10_H11",
-            location="sfd_bmd_page.py:2393",
-        )
-        # endregion
 
     # Track load combos for later selection
     w_sls = None
@@ -2465,18 +1804,6 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         params["node_positions_m"] = list(node_positions_multi or [0.0, float(L)])
         params["support_types"] = list(support_types_multi or ["Pinned", "Pinned"])
         params["support_positions"] = list(params["node_positions_m"])
-        # region agent log
-        _agent_debug_log(
-            "support_types_params_assigned",
-            {
-                "node_positions_m": [float(v) for v in params["node_positions_m"]],
-                "support_types": [str(v) for v in params["support_types"]],
-            },
-            run_id="pre-fix",
-            hypothesis_id="H10_H11",
-            location="sfd_bmd_page.py:2431",
-        )
-        # endregion
 
         psi_point = float(
             render_inline_number_row(
@@ -2518,7 +1845,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                 max_value=8.0,
                 step=1.0,
                 format="%.0f",
-                sync_callbacks=sync_callbacks,
+                sync_callbacks=None,
             )
         )
         ms_rows = []
@@ -2531,7 +1858,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                     min_value=0.0,
                     step=5.0,
                     format="%.2f",
-                    sync_callbacks=sync_callbacks,
+                    sync_callbacks=None,
                 )
             )
             q_i = float(
@@ -2542,7 +1869,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                     min_value=0.0,
                     step=5.0,
                     format="%.2f",
-                    sync_callbacks=sync_callbacks,
+                    sync_callbacks=None,
                 )
             )
             x_i_raw = float(
@@ -2554,7 +1881,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                     max_value=float(L),
                     step=0.1,
                     format="%.2f",
-                    sync_callbacks=sync_callbacks,
+                    sync_callbacks=None,
                 )
             )
             x_i = _clamp_x(x_i_raw, float(L))
@@ -2581,7 +1908,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                 max_value=8.0,
                 step=1.0,
                 format="%.0f",
-                sync_callbacks=sync_callbacks,
+                sync_callbacks=None,
             )
         )
         ms_udl_rows = []
@@ -2594,7 +1921,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                     min_value=0.0,
                     step=0.5,
                     format="%.2f",
-                    sync_callbacks=sync_callbacks,
+                    sync_callbacks=None,
                 )
             )
             q_i = float(
@@ -2605,7 +1932,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                     min_value=0.0,
                     step=0.5,
                     format="%.2f",
-                    sync_callbacks=sync_callbacks,
+                    sync_callbacks=None,
                 )
             )
             x0_raw = float(
@@ -2617,7 +1944,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                     max_value=float(L),
                     step=0.1,
                     format="%.2f",
-                    sync_callbacks=sync_callbacks,
+                    sync_callbacks=None,
                 )
             )
             x1_raw = float(
@@ -2629,7 +1956,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                     max_value=float(L),
                     step=0.1,
                     format="%.2f",
-                    sync_callbacks=sync_callbacks,
+                    sync_callbacks=None,
                 )
             )
             x0 = _clamp_x(min(x0_raw, x1_raw), float(L))
@@ -3043,49 +2370,8 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
     M_uls = float(np.max(np.abs(M_uls_vals))) if M_uls_vals is not None else 0.0
     V_sls = float(np.max(np.abs(V_sls_vals))) if V_sls_vals is not None else 0.0
     M_sls = float(np.max(np.abs(M_sls_vals))) if M_sls_vals is not None else 0.0
-    M_pos_max_uls = float(max(0.0, float(np.max(M_uls_vals)))) if M_uls_vals is not None else 0.0
-    M_neg_min_uls = float(min(0.0, float(np.min(M_uls_vals)))) if M_uls_vals is not None else 0.0
-    M_pos_max_sls = float(max(0.0, float(np.max(M_sls_vals)))) if M_sls_vals is not None else 0.0
-    M_neg_min_sls = float(min(0.0, float(np.min(M_sls_vals)))) if M_sls_vals is not None else 0.0
     M_max_abs = float(np.max(np.abs(M))) if M is not None else 0.0
     V_max_abs = float(np.max(np.abs(V))) if V is not None else 0.0
-    if V_uls_vals is not None and len(V_uls_vals) and x_uls is not None and len(x_uls):
-        _crit_idx = int(np.argmax(np.abs(V_uls_vals)))
-        x_crit = float(x_uls[_crit_idx])
-        V_crit = float(V_uls_vals[_crit_idx])
-    else:
-        x_crit = None
-        V_crit = None
-    support_type_resolved = _defl_support_type_from_selection(case, str(params.get("support_condition", "") or ""))
-    support_type_key = "cantilever" if support_type_resolved == "Cantilever" else "simply_supported"
-    # region agent log
-    _agent_debug_log(
-        "publish_sfd_metadata",
-        {
-            "case": case,
-            "active_mode": active_mode,
-            "design_actions_source": design_actions_source,
-            "support_condition_param": str(params.get("support_condition", "") or ""),
-            "support_type_resolved": support_type_resolved,
-            "support_type_key": support_type_key,
-            "x_uls_len": len(x_uls) if x_uls is not None else 0,
-            "V_uls_len": len(V_uls_vals) if V_uls_vals is not None else 0,
-            "x_crit": x_crit,
-            "V_crit": V_crit,
-        },
-        run_id="pre-fix",
-        hypothesis_id="H1_H3_H4",
-        location="sfd_bmd_page.py:2788",
-    )
-    # endregion
-    update_results(
-        shear_x=[float(v) for v in (x_uls.tolist() if hasattr(x_uls, "tolist") else list(x_uls))],
-        shear_V=[float(abs(v)) for v in (V_uls_vals.tolist() if hasattr(V_uls_vals, "tolist") else list(V_uls_vals))],
-        shear_V_signed=[float(v) for v in (V_uls_vals.tolist() if hasattr(V_uls_vals, "tolist") else list(V_uls_vals))],
-        support_type=support_type_key,
-        critical_shear_x=x_crit,
-        critical_shear_V=V_crit,
-    )
 
     preview_x_m = None
     preview_V_active = None
@@ -3110,10 +2396,8 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         set_shared("design_section_committed", True, source="callback:use_design_section_btn")
         update_results(
             design_M_uls_kNm=float(st.session_state.get("preview_M_uls_kNm", 0.0) or 0.0),
-            design_M_uls_kNm_signed=float(st.session_state.get("preview_M_uls_kNm", 0.0) or 0.0),
             design_V_uls_kN=float(st.session_state.get("preview_V_uls_kN", 0.0) or 0.0),
             design_M_sls_kNm=float(st.session_state.get("preview_M_sls_kNm", 0.0) or 0.0),
-            design_M_sls_kNm_signed=float(st.session_state.get("preview_M_sls_kNm", 0.0) or 0.0),
             design_V_sls_kN=float(st.session_state.get("preview_V_sls_kN", 0.0) or 0.0),
         )
         st.session_state["_design_section_commit_msg"] = f"Design actions set from x = {x_commit:.3f} m"
@@ -3190,12 +2474,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
     if case == "Overhanging beam – right overhang with point load at free end":
         support_type = "Pinned–Pinned (overhang)"
     else:
-        support_type = str(
-            params.get(
-                "support_condition",
-                support_condition if "support_condition" in locals() else "Simply supported",
-            )
-        )
+        support_type = str(params.get("support_condition", support_condition if "support_condition" in locals() else "Pinned–Pinned"))
 
     # Get capacity values for limit display (reuse existing computed values)
     phi_Mu_cap = get_param("phi_Mu_cap", None)
@@ -3210,12 +2489,12 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
     if phi_Mu_cap is not None and not (isinstance(phi_Mu_cap, float) and math.isnan(phi_Mu_cap)) and phi_Mu_cap > 0:
         moment_limit = f"φM_u = {phi_Mu_cap:.1f} kNm"
 
-    # Build summary rows for clickable table (capacity = reference strength; action = derived demand)
+    # Build summary rows for clickable table
     rows_summary = [
-        {"Check": "Support conditions", "capacity": support_type, "action": "—", "Utilisation": "—", "Status": "OK"},
-        {"Check": "Reactions", "capacity": "Derived from model", "action": "—", "Utilisation": "—", "Status": "OK"},
-        {"Check": "Shear derivation", "capacity": shear_limit, "action": f"|V|_max = {V_max_abs:.2f} kN", "Utilisation": "—", "Status": "OK"},
-        {"Check": "Moment derivation", "capacity": moment_limit, "action": f"|M|_max = {M_max_abs:.2f} kNm", "Utilisation": "—", "Status": "OK"},
+        {"Check": "Support conditions", "Value": support_type, "Limit": "—", "Utilisation": "—", "Status": "OK"},
+        {"Check": "Reactions", "Value": "Derived", "Limit": "—", "Utilisation": "—", "Status": "OK"},
+        {"Check": "Shear derivation", "Value": f"|V|_max = {V_max_abs:.2f} kN", "Limit": shear_limit, "Utilisation": "—", "Status": "OK"},
+        {"Check": "Moment derivation", "Value": f"|M|_max = {M_max_abs:.2f} kNm", "Limit": moment_limit, "Utilisation": "—", "Status": "OK"},
     ]
 
     support_condition_summary = str(params.get("support_condition", "")).replace("-", "–")
@@ -3243,15 +2522,14 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
     ROWS = []
     for r in rows_summary:
         check = r.get("Check", "")
-        cap_cell = r.get("capacity", r.get("Value", "—"))
-        act_cell = r.get("action", r.get("Limit", "—"))
+        limit = r.get("Limit", "—")
         util_str = r.get("Utilisation", "—")
         status_str = r.get("Status", "")
         
-        # Explicitly set capacity + demand for derivation rows (util = demand / capacity)
+        # Explicitly set capacity limits for derivation rows (before styling logic)
         if check == "Shear derivation":
-            cap_cell = shear_limit
-            act_cell = f"|V|_max = {V_max_abs:.2f} kN"
+            limit = shear_limit
+            # Calculate utilisation: demand vs capacity
             if phi_Vu_cap not in (0, None) and not (isinstance(phi_Vu_cap, float) and math.isnan(phi_Vu_cap)):
                 util_val = V_max_abs / phi_Vu_cap
                 util_str = str(round(util_val, 3)) if util_val is not None else "—"
@@ -3262,8 +2540,8 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                 status_str = "—"
                 ok = None
         elif check == "Moment derivation":
-            cap_cell = moment_limit
-            act_cell = f"|M|_max = {M_max_abs:.2f} kNm"
+            limit = moment_limit
+            # Calculate utilisation: demand vs capacity
             if phi_Mu_cap not in (0, None) and not (isinstance(phi_Mu_cap, float) and math.isnan(phi_Mu_cap)):
                 util_val = M_max_abs / phi_Mu_cap
                 util_str = str(round(util_val, 3)) if util_val is not None else "—"
@@ -3285,6 +2563,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         # Determine ok status for styling (True=pass/green, False=fail/red, None=neutral-blue)
         if not is_check_row:
             # No utilisation check → neutral blue styling
+            # Keep util as "—" but DO NOT touch limit (derivation rows can show limits)
             util_str = "—"
             ok = None
         else:
@@ -3309,20 +2588,16 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                     else:
                         ok = None
 
-        ROWS.append(
-            sync_legacy_value_limit(
-                {
-                    "title": check,
-                    "capacity": cap_cell,
-                    "action": act_cell,
-                    "util": util_str,
-                    "status": status_str,
-                    "ok": ok,
-                    "uid": check_to_uid.get(check, ""),
-                    "tab": check_to_tab.get(check, "SLS"),
-                }
-            )
-        )
+        ROWS.append({
+            "title": check,
+            "value": r.get("Value", "—"),
+            "limit": limit,
+            "util": util_str,
+            "status": status_str,
+            "ok": ok,
+            "uid": check_to_uid.get(check, ""),
+            "tab": check_to_tab.get(check, "SLS"),
+        })
 
     # Render design actions summary table (SLS + ULS + strength/utilisation)
     with summary_placeholder.container():
@@ -3351,55 +2626,17 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
             and bool(get_param("design_section_committed", False))
         )
         summary_V_uls = float(get_param("design_V_uls_kN", 0.0) or 0.0) if use_committed_section_actions else float(V_uls)
+        summary_M_uls = float(get_param("design_M_uls_kNm", 0.0) or 0.0) if use_committed_section_actions else float(M_uls)
         summary_V_sls = float(get_param("design_V_sls_kN", 0.0) or 0.0) if use_committed_section_actions else float(V_sls)
-
-        if use_committed_section_actions:
-            M_uls_signed = float(
-                get_param("design_M_uls_kNm_signed", get_param("design_M_uls_kNm", 0.0)) or 0.0
-            )
-            M_sls_signed = float(
-                get_param("design_M_sls_kNm_signed", get_param("design_M_sls_kNm", 0.0)) or 0.0
-            )
-            sag_M_uls = max(0.0, M_uls_signed)
-            sag_M_sls = max(0.0, M_sls_signed)
-            hog_M_uls = abs(min(0.0, M_uls_signed))
-            hog_M_sls = abs(min(0.0, M_sls_signed))
-            M_neg_min_uls_for_rule = M_uls_signed
-        else:
-            sag_M_uls = float(M_pos_max_uls)
-            sag_M_sls = float(M_pos_max_sls)
-            hog_M_uls = abs(float(M_neg_min_uls))
-            hog_M_sls = abs(float(M_neg_min_sls))
-            M_neg_min_uls_for_rule = float(M_neg_min_uls)
+        summary_M_sls = float(get_param("design_M_sls_kNm", 0.0) or 0.0) if use_committed_section_actions else float(M_sls)
 
         shear_strength = None if phi_Vu_cap is None else float(phi_Vu_cap)
+        moment_strength = None if phi_Mu_cap is None else float(phi_Mu_cap)
         shear_util, shear_status, shear_ok = _util_status(summary_V_uls, shear_strength)
-
-        phi_mu_pos_cap = get_param("phi_Mu_pos_kNm", None)
-        phi_mu_neg_cap = get_param("phi_Mu_neg_kNm", None)
-        if phi_mu_pos_cap is None or (isinstance(phi_mu_pos_cap, float) and math.isnan(phi_mu_pos_cap)):
-            phi_mu_pos_cap = None
-        else:
-            phi_mu_pos_cap = float(phi_mu_pos_cap)
-        if phi_mu_neg_cap is None or (isinstance(phi_mu_neg_cap, float) and math.isnan(phi_mu_neg_cap)):
-            phi_mu_neg_cap = None
-        else:
-            phi_mu_neg_cap = float(phi_mu_neg_cap)
-        if phi_mu_pos_cap is None or phi_mu_pos_cap <= 0:
-            _fb = None if phi_Mu_cap is None else float(phi_Mu_cap)
-            phi_mu_pos_cap = _fb if _fb is not None and _fb > 0 else None
-        if phi_mu_neg_cap is None or phi_mu_neg_cap <= 0:
-            phi_mu_neg_cap = None
-
-        has_sagging_case = max(sag_M_uls, sag_M_sls) > 1e-9
-        has_hogging_case = M_neg_min_uls_for_rule is not None and float(M_neg_min_uls_for_rule) < -1e-9
-
-        sag_util, sag_status, sag_ok = _util_status(sag_M_uls, phi_mu_pos_cap)
-        hog_util, hog_status, hog_ok = _util_status(hog_M_uls, phi_mu_neg_cap)
-
+        moment_util, moment_status, moment_ok = _util_status(summary_M_uls, moment_strength)
         summary_rows = [
             {
-                "name": "Shear V",
+                "action": "Shear V",
                 "sls": f"{summary_V_sls:.2f} kN",
                 "uls": f"{summary_V_uls:.2f} kN",
                 "strength": _strength_display(shear_strength, "kN"),
@@ -3409,39 +2646,29 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                 "tab": "SLS",
                 "ok": shear_ok,
             },
+            {
+                "action": "Moment M",
+                "sls": f"{summary_M_sls:.2f} kNm",
+                "uls": f"{summary_M_uls:.2f} kNm",
+                "strength": _strength_display(moment_strength, "kNm"),
+                "util": moment_util,
+                "status": moment_status,
+                "uid": EQ_SLS_UID["step4"],
+                "tab": "SLS",
+                "ok": moment_ok,
+            },
         ]
-        if has_sagging_case:
-            summary_rows.append(
-                {
-                    "name": "Sagging moment M+",
-                    "sls": f"{sag_M_sls:.2f} kNm",
-                    "uls": f"{sag_M_uls:.2f} kNm",
-                    "strength": _strength_display(phi_mu_pos_cap, "kNm"),
-                    "util": sag_util,
-                    "status": sag_status,
-                    "uid": EQ_SLS_UID["step4"],
-                    "tab": "SLS",
-                    "ok": sag_ok,
-                }
-            )
-        if has_hogging_case:
-            summary_rows.append(
-                {
-                    "name": "Hogging moment M−",
-                    "sls": f"{hog_M_sls:.2f} kNm",
-                    "uls": f"{hog_M_uls:.2f} kNm",
-                    "strength": _strength_display(phi_mu_neg_cap, "kNm"),
-                    "util": hog_util,
-                    "status": hog_status,
-                    "uid": EQ_SLS_UID["step4"],
-                    "tab": "SLS",
-                    "ok": hog_ok,
-                }
-            )
         render_clickable_summary_table(
             summary_rows,
             key_prefix="design_actions_summary",
-            columns=DESIGN_ACTION_SUMMARY_COLUMNS,
+            columns=[
+                {"label": "Action", "key": "action", "width": "26%"},
+                {"label": "SLS", "key": "sls", "width": "14%"},
+                {"label": "ULS", "key": "uls", "width": "14%"},
+                {"label": "Strength", "key": "strength", "width": "18%"},
+                {"label": "Util", "key": "util", "width": "10%"},
+                {"label": "Status", "key": "status", "width": "18%"},
+            ],
         )
 
     st.markdown('<div id="shear-analysis-section"></div>', unsafe_allow_html=True)
@@ -3498,14 +2725,13 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         case=case,
         L=beam_length,
         support_positions=support_positions,
-        support_types=results_local.get("support_types") if isinstance(results_local, dict) else None,
         preview_x_m=preview_x_m,
         design_x_m=committed_x_m,
         preview_V=preview_V_active,
         preview_M=preview_M_active,
     )
 
-    use_plotly_event_component = design_actions_source == "section"
+    use_plotly_event_component = design_actions_source != "section"
 
     # ===== STACKED DIAGRAM LAYOUT =====
     render_section_title(f"Load diagram ({active_mode} loads)")
@@ -3528,24 +2754,6 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
 
     render_section_title("Shear Force Diagram (SFD)")
     st.caption("Shear V(x)")
-    # region agent log
-    _agent_debug_log(
-        "sfd_render_handoff",
-        {
-            "use_plotly_event_component": bool(use_plotly_event_component),
-            "trace_count": len(fig_sfd.data) if getattr(fig_sfd, "data", None) is not None else None,
-            "annotation_count": len(fig_sfd.layout.annotations) if getattr(fig_sfd.layout, "annotations", None) is not None else 0,
-            "annotation_texts": [
-                str(a.text)
-                for a in list(fig_sfd.layout.annotations or [])[:8]
-                if getattr(a, "text", None) is not None
-            ],
-        },
-        run_id="pre-fix",
-        hypothesis_id="H15_H16_H17",
-        location="sfd_bmd_page.py:3530",
-    )
-    # endregion
     if use_plotly_event_component:
         sfd_click = plotly_events(
             fig_sfd,
@@ -3714,7 +2922,6 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
             summary_line=step0_summary,
             details_md=step0_md,
             status=None,
-            accent="load",
         )
 
     # STEP 1 – Support conditions (expandable)
@@ -3762,31 +2969,17 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
 - Use solver output reactions/end moments for SFD and BMD construction.
 """
     elif case.startswith("Simple beam"):
-        if support_condition_active == "Simply supported":
-            step1_summary = (
-                f"Step 1 – Support conditions | Simply supported (pin + roller) beam of span $L = {L:.1f}$ m"
-            )
-            left_txt, right_txt = "pinned", "roller"
-        elif support_condition_active == "Pinned–Pinned":
-            step1_summary = (
-                f"Step 1 – Support conditions | Pinned–pinned (double pin) beam of span $L = {L:.1f}$ m"
-            )
-            left_txt, right_txt = "pinned", "pinned"
-        else:
-            step1_summary = (
-                f"Step 1 – Support conditions | Determinate single-span beam ($L = {L:.1f}$ m)"
-            )
-            left_txt, right_txt = "pinned", "pinned"
+        step1_summary = f"Step 1 – Support conditions | Simply supported (pinned–pinned) beam of span $L = {L:.1f}$ m → vertical reactions at supports"
         step1_md = f"""
 **1) Inputs**  \n
-- Left support: {left_txt}  \n
-- Right support: {right_txt}  \n
+- Left support: pinned  \n
+- Right support: pinned  \n
 - Span: $L = {L:.3g}\\, \\text{{m}}$  \n\n
 **2) Governing equations**  \n
 - $\\sum V = 0$  \n
 - $\\sum M = 0$  \n\n
 **3) Substitute / derive**  \n
-- Vertical reactions at each support (standard simply supported idealisation for internal actions).  \n\n
+- For a simply supported beam, reactions act vertically at each support.  \n\n
 **4) Result**  \n
 - Proceed to solve for $R_A$ and $R_B$ from equilibrium.
 """
@@ -3832,7 +3025,6 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
             summary_line=step1_summary,
             details_md=step1_md,
             status=None,
-            accent="support",
         )
 
     solver_case = (
@@ -3871,7 +3063,6 @@ x = [{node_text}]\\,\\text{{m}}, \\qquad L_e = [{span_text}]\\,\\text{{m}}
             summary_line=step2a_summary,
             details_md=step2a_md,
             status=None,
-            accent="fe",
         )
 
         ex_le = float(element_lengths[0]) if element_lengths else float(L)
@@ -3897,7 +3088,6 @@ L_e^{{(example)}} = {ex_le:.3g}\\,\\text{{m}}
             summary_line=step2b_summary,
             details_md=step2b_md,
             status=None,
-            accent="fe",
         )
 
         gF = list(solver_md.get("global_F", solver_md.get("global_F_preview", [])) or [])
@@ -3915,7 +3105,6 @@ Applied loads are converted to equivalent nodal actions and assembled.
             summary_line=step2c_summary,
             details_md=step2c_md,
             status=None,
-            accent="fe",
         )
 
         rK = solver_md.get("reduced_K", solver_md.get("reduced_K_preview", [])) or []
@@ -3944,7 +3133,6 @@ K u = F, \\qquad K_r u_r = F_r
             summary_line=step2d_summary,
             details_md=step2d_md,
             status=None,
-            accent="fe",
         )
 
         ru = list(solver_md.get("reduced_u", solver_md.get("reduced_u_preview", [])) or [])
@@ -3959,7 +3147,6 @@ These solved DOFs are used to recover support actions and element-end forces.
             summary_line=step2e_summary,
             details_md=step2e_md,
             status=None,
-            accent="fe",
         )
 
         reactions_solver = dict(results_local.get("reactions", {}))
@@ -3993,7 +3180,6 @@ Recovered support actions define the final SFD/BMD response.
             summary_line=step2f_summary,
             details_md=step2f_md,
             status=None,
-            accent="fe",
         )
 
     # STEP 2 – reactions (case-by-case)
@@ -4301,33 +3487,48 @@ $R_A = {RA:.3g}\\, \\text{{kN}}$ (downward), $R_B = {RB:.3g}\\, \\text{{kN}}$ (u
             summary_line=step2_summary,
             details_md=step2_details,
             status=None,
-            accent="reaction",
         )
 
     # STEP 3 – shear function V(x)
     step3_md = ""
 
     if case == "Multi-span continuous beam":
-        step3_summary = (
-            "Step 3 – Shear function $V(x)$ | Build $V(x)$ from solved reactions and applied loads"
-        )
-        step3_md = """
-\\[
-V(x) = V_{\\mathrm{solver}}(x)
+        V_pos_max = float(np.max(V)) if V is not None and len(V) else 0.0
+        V_neg_min = float(np.min(V)) if V is not None and len(V) else 0.0
+        step3_summary = "Step 3 – Shear function $V(x)$ | Build the SFD from the recovered support actions and applied loads"
+        step3_md = f"""
+{load_intro}\\[
+V(x) = V_{{\\mathrm{{solver}}}}(x)
 \\]
 
-Internal shears are recovered at the same stations as the plotted SFD from the multi-span numerical beam solution.
+For the continuous beam, shear is built from recovered support actions and applied load resultants along the global beam axis.
+
+\\[
+V_{{\\max,+}} = {V_pos_max:.3g}\\,\\text{{kN}}, \\qquad
+V_{{\\max,-}} = {V_neg_min:.3g}\\,\\text{{kN}}
+\\]
+
+The governing design shear is taken directly from the plotted SFD.
 """
     elif case.startswith("Simple beam") and fixed_end_indeterminate:
+        V_pos_max = float(np.max(V)) if V is not None and len(V) else 0.0
+        V_neg_min = float(np.min(V)) if V is not None and len(V) else 0.0
         step3_summary = (
             "Step 3 – Shear function $V(x)$ | Build $V(x)$ from solved reactions and applied loads"
         )
         step3_md = f"""
-\\[
+{load_intro}\\[
 V(x) = V_{{\\mathrm{{solver}}}}(x)
 \\]
 
-For the {support_condition_active.lower()} indeterminate support layout, $V(x)$ is **not** a single textbook closed form for arbitrary loads; ordinates come from the numerical beam solver and match the SFD plot.
+For the {support_condition_active.lower()} case, the shear diagram is obtained numerically from the solved beam response.
+
+\\[
+V_{{\\max,+}} = {V_pos_max:.3g}\\,\\text{{kN}}, \\qquad
+V_{{\\max,-}} = {V_neg_min:.3g}\\,\\text{{kN}}
+\\]
+
+The governing design shear is taken directly from the plotted SFD.
 """
     elif case == "Simple beam – UDL over entire span":
         w = params.get("w", 0.0)
@@ -4484,65 +3685,83 @@ The shear increases linearly from \\(-wL\\) at the fixed end to zero at the free
 """
 
     # STEP 3 – Shear function (expandable)
-    _vm_section_committed = bool(get_param("design_section_committed", False))
-    _vm_design_x_m = float(get_param("design_section_x_m", 0.0) or 0.0)
     step3_summary_exists = False
     try:
         _ = step3_summary
         step3_summary_exists = True
     except NameError:
-        step3_summary = (
-            "Step 3 – Shear function $V(x)$ | Build $V(x)$ from solved reactions and applied loads"
-        )
+        # Fallback summary if not set
+        step3_summary = "Step 3 – Shear function $V(x)$ | Build $V(x)$ from left to right using sign convention and loading"
         step3_summary_exists = True
-
-    if step3_summary_exists:
+    
+    if step3_md and step3_summary_exists:
         step3_uid = EQ_SLS_UID["step3"]
-        step3_details = _format_sfd_shear_derivation_panel_md(
-            load_intro=load_intro,
-            active_mode=active_mode,
-            case=case,
-            support_condition_active=support_condition_active,
-            fixed_end_indeterminate=fixed_end_indeterminate,
-            span_m=float(beam_length),
-            design_actions_source=design_actions_source,
-            section_committed=_vm_section_committed,
-            design_x_m=_vm_design_x_m,
-            V_array=V,
-            case_specific_md=step3_md or "",
-        )
+        # Remove any summary line from details if present
+        step3_details = step3_md
+        if "*Two-line summary:*" in step3_details or "**Step 3 – Shear function" in step3_details.split("\n")[0]:
+            lines = step3_details.split("\n")
+            new_lines = []
+            skip_next = False
+            for i, line in enumerate(lines):
+                if "*Two-line summary:*" in line or (i == 0 and "**Step 3" in line):
+                    skip_next = True
+                    continue
+                if skip_next and line.strip() == "":
+                    skip_next = False
+                    continue
+                if not skip_next:
+                    new_lines.append(line)
+            step3_details = "\n".join(new_lines).strip()
+        
         step_expander_calcbox(
             uid=step3_uid,
             summary_line=step3_summary,
             details_md=step3_details,
             status=None,
-            accent="shear",
         )
 
     # STEP 4 – moment function M(x)
     step4_md = ""
 
     if case == "Multi-span continuous beam":
-        step4_summary = (
-            "Step 4 – Moment function $M(x)$ | Recover $M(x)$ from the solved beam response"
-        )
-        step4_md = """
-\\[
-M(x) = M_{\\mathrm{solver}}(x)
-\\]
-
-Internal bending moments are recovered at the same stations as the plotted BMD from the multi-span numerical beam solution.
-"""
-    elif case.startswith("Simple beam") and fixed_end_indeterminate:
-        step4_summary = (
-            "Step 4 – Moment function $M(x)$ | Recover $M(x)$ from the solved beam response"
-        )
+        M_pos_max = float(np.max(M)) if M is not None and len(M) else 0.0
+        M_neg_min = float(np.min(M)) if M is not None and len(M) else 0.0
+        step4_summary = "Step 4 – Moment function $M(x)$ | Build the BMD from the solved element end forces and beam response"
         step4_md = f"""
-\\[
+**Step 4 – Moment function \\(M(x)\\)**
+{load_intro}\\[
 M(x) = M_{{\\mathrm{{solver}}}}(x)
 \\]
 
-For the {support_condition_active.lower()} indeterminate layout, $M(x)$ is obtained from the numerical beam solution (not a single closed-form expression for arbitrary loads); ordinates match the BMD plot.
+For the continuous beam, bending moment is recovered from the solved element/end actions and section equilibrium.
+
+\\[
+M_{{\\max,+}} = {M_pos_max:.3g}\\,\\text{{kNm}}, \\qquad
+M_{{\\max,-}} = {M_neg_min:.3g}\\,\\text{{kNm}}
+\\]
+
+The governing design moment is taken directly from the plotted BMD.
+"""
+    elif case.startswith("Simple beam") and fixed_end_indeterminate:
+        M_pos_max = float(np.max(M)) if M is not None and len(M) else 0.0
+        M_neg_min = float(np.min(M)) if M is not None and len(M) else 0.0
+        step4_summary = (
+            "Step 4 – Moment function $M(x)$ | Integrate the solved beam response to obtain $M(x)$"
+        )
+        step4_md = f"""
+**Step 4 – Moment function \\(M(x)\\)**
+{load_intro}\\[
+M(x) = M_{{\\mathrm{{solver}}}}(x)
+\\]
+
+For the {support_condition_active.lower()} case, the bending moment diagram is obtained numerically from the beam-analysis solver.
+
+\\[
+M_{{\\max,+}} = {M_pos_max:.3g}\\,\\text{{kNm}}, \\qquad
+M_{{\\max,-}} = {M_neg_min:.3g}\\,\\text{{kNm}}
+\\]
+
+The governing design moment is taken directly from the plotted BMD.
 """
     elif case == "Simple beam – UDL over entire span":
         w = params.get("w", 0.0)
@@ -4724,32 +3943,34 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
         _ = step4_summary
         step4_summary_exists = True
     except NameError:
-        step4_summary = (
-            "Step 4 – Moment function $M(x)$ | Recover $M(x)$ from the solved beam response"
-        )
+        # Fallback summary if not set
+        step4_summary = "Step 4 – Moment function $M(x)$ | Integrate shear to obtain $M(x)$ and apply boundary conditions"
         step4_summary_exists = True
-
-    if step4_summary_exists:
+    
+    if step4_md and step4_summary_exists:
         step4_uid = EQ_SLS_UID["step4"]
-        step4_details = _format_sfd_moment_derivation_panel_md(
-            load_intro=load_intro,
-            active_mode=active_mode,
-            case=case,
-            support_condition_active=support_condition_active,
-            fixed_end_indeterminate=fixed_end_indeterminate,
-            span_m=float(beam_length),
-            design_actions_source=design_actions_source,
-            section_committed=_vm_section_committed,
-            design_x_m=_vm_design_x_m,
-            M_array=M,
-            case_specific_md=step4_md or "",
-        )
+        # Remove any summary line from details if present
+        step4_details = step4_md
+        if "*Two-line summary:*" in step4_details or "**Step 4 – Moment function" in step4_details.split("\n")[0]:
+            lines = step4_details.split("\n")
+            new_lines = []
+            skip_next = False
+            for i, line in enumerate(lines):
+                if "*Two-line summary:*" in line or (i == 0 and "**Step 4" in line):
+                    skip_next = True
+                    continue
+                if skip_next and line.strip() == "":
+                    skip_next = False
+                    continue
+                if not skip_next:
+                    new_lines.append(line)
+            step4_details = "\n".join(new_lines).strip()
+        
         step_expander_calcbox(
             uid=step4_uid,
             summary_line=step4_summary,
             details_md=step4_details,
             status=None,
-            accent="moment",
         )
 
     # Push SFD/BMD results into shared state
@@ -4760,17 +3981,6 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
         sfd_Vsls_max_kN=float(V_sls),
         sfd_Mmax_abs_kNm=float(M_uls),
         sfd_Vmax_abs_kN=float(V_uls),
-        M_pos_max_uls_kNm=float(M_pos_max_uls),
-        M_neg_min_uls_kNm=float(M_neg_min_uls),
-        M_pos_max_sls_kNm=float(M_pos_max_sls),
-        M_neg_min_sls_kNm=float(M_neg_min_sls),
-        shear_x=[float(v) for v in (x_uls.tolist() if hasattr(x_uls, "tolist") else list(x_uls))],
-        shear_V=[float(abs(v)) for v in (V_uls_vals.tolist() if hasattr(V_uls_vals, "tolist") else list(V_uls_vals))],
-        shear_V_signed=[float(v) for v in (V_uls_vals.tolist() if hasattr(V_uls_vals, "tolist") else list(V_uls_vals))],
-        support_type=support_type_key,
-        critical_shear_x=x_crit,
-        critical_shear_V=V_crit,
-        V_max=float(np.max(np.abs(V_uls_vals))) if V_uls_vals is not None and len(V_uls_vals) else 0.0,
     )
 
     # Bind JS click/scroll after all steps render

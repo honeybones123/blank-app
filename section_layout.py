@@ -4,7 +4,7 @@ import math
 import numpy as np
 import streamlit as st
 
-from state_and_helpers import get_param
+from state_and_helpers import get_param, get_longitudinal_row_inputs
 from section_props.reo_layout import (
     compute_longitudinal_reo_layout_T_I,
     flatten_reo_points as flatten_reo_points_T_I,
@@ -60,6 +60,52 @@ def _internal_leg_positions(y_min, y_max, n_legs):
     return [y_min + span * j / (n_legs - 1) for j in range(1, n_legs - 1)]
 
 
+def _flatten_reo_points_for_shear(reo_points: Optional[List[Dict[str, Any]]]) -> List[Dict[str, float]]:
+    pts: List[Dict[str, float]] = []
+    if not reo_points:
+        return pts
+    for pt in reo_points:
+        try:
+            db = float(pt.get("db", 0.0) or 0.0)
+            x = float(pt.get("x", 0.0) or 0.0)
+            y = float(pt.get("y", 0.0) or 0.0)
+        except Exception:
+            continue
+        if db <= 0:
+            continue
+        pts.append({"x": x, "y": y, "db": db})
+    return pts
+
+
+def _cage_bounds_from_reo_points(
+    reo_points: Optional[List[Dict[str, Any]]],
+    *,
+    default_x0: float,
+    default_x1: float,
+    default_y0: float,
+    default_y1: float,
+    clamp_x0: float,
+    clamp_x1: float,
+    clamp_y0: float,
+    clamp_y1: float,
+    visual_clearance: float,
+) -> tuple[float, float, float, float]:
+    pts = _flatten_reo_points_for_shear(reo_points)
+    if not pts:
+        return default_x0, default_x1, default_y0, default_y1
+
+    min_x = min(pt["x"] - pt["db"] / 2.0 for pt in pts) - visual_clearance
+    max_x = max(pt["x"] + pt["db"] / 2.0 for pt in pts) + visual_clearance
+    min_y = min(pt["y"] - pt["db"] / 2.0 for pt in pts) - visual_clearance
+    max_y = max(pt["y"] + pt["db"] / 2.0 for pt in pts) + visual_clearance
+
+    x0 = max(clamp_x0, min(default_x0, min_x))
+    x1 = min(clamp_x1, max(default_x1, max_x))
+    y0 = max(clamp_y0, min(default_y0, min_y))
+    y1 = min(clamp_y1, max(default_y1, max_y))
+    return x0, x1, y0, y1
+
+
 def compute_shear_reo_layout_pure(
     b: float,
     D: float,
@@ -68,6 +114,7 @@ def compute_shear_reo_layout_pure(
     cover_side: float,
     lig_d: float,
     lig_legs: int,
+    reo_points: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     PURE FUNCTION: Compute shear reinforcement (stirrup/tie) layout for 2D section view.
@@ -100,11 +147,23 @@ def compute_shear_reo_layout_pure(
             }
         }
     """
-    # Compute cage boundaries (same as in compute_section_layout_pure)
-    cage_x0 = max(cover_side, 5.0)
-    cage_x1 = min(b - cover_side, b - 5.0)
-    cage_y0 = max(cover_top, 5.0)
-    cage_y1 = min(D - cover_bot, D - 5.0)
+    visual_clearance = 0.0
+    default_x0 = max(cover_side - visual_clearance, 5.0)
+    default_x1 = min(b - cover_side + visual_clearance, b - 5.0)
+    default_y0 = max(cover_top - visual_clearance, 5.0)
+    default_y1 = min(D - cover_bot + visual_clearance, D - 5.0)
+    cage_x0, cage_x1, cage_y0, cage_y1 = _cage_bounds_from_reo_points(
+        reo_points,
+        default_x0=default_x0,
+        default_x1=default_x1,
+        default_y0=default_y0,
+        default_y1=default_y1,
+        clamp_x0=5.0,
+        clamp_x1=b - 5.0,
+        clamp_y0=5.0,
+        clamp_y1=D - 5.0,
+        visual_clearance=visual_clearance,
+    )
     
     # If no valid stirrups, return empty structure
     if lig_d <= 0 or lig_legs < 2 or cage_x1 <= cage_x0 or cage_y1 <= cage_y0:
@@ -407,6 +466,119 @@ def compute_bar_layout_pure(
         }
 
 
+def _legacy_rows_from_inputs(
+    *,
+    section: str,
+    rows: Optional[List[Dict[str, Any]]] = None,
+    layer_1_value: float,
+    layer_1_dia: float,
+    layer_2_value: float,
+    layer_2_dia: float,
+) -> List[Dict[str, Any]]:
+    if rows is not None:
+        return [dict(row) for row in rows]
+    prefix = "top" if section == "top" else "bot"
+    defaults = [
+        (1, layer_1_value, layer_1_dia, 2 if section == "top" else 4),
+        (2, layer_2_value, layer_2_dia, 0),
+    ]
+    output: List[Dict[str, Any]] = []
+    for row_index, nb_or_s, dia, default_bars in defaults:
+        mode = "Spacing" if float(nb_or_s or 0.0) >= 30.0 else "Count"
+        bars = int(round(float(nb_or_s or 0.0))) if mode == "Count" else default_bars
+        spacing = float(nb_or_s or 200.0) if mode == "Spacing" else 200.0
+        active = dia > 0.0 and ((mode == "Count" and bars > 0) or (mode == "Spacing" and spacing > 0.0))
+        output.append({
+            "row_index": row_index,
+            "mode": mode,
+            "bars": max(0, bars),
+            "spacing": spacing,
+            "dia": float(dia or 0.0),
+            "nb_or_s": float(nb_or_s or 0.0),
+            "visible": True,
+            "active": active,
+        })
+    return output
+
+
+def _count_from_spacing(width: float, dia: float, spacing: float) -> int:
+    """
+    Number of bars whose centres can be placed along a span ``width`` (mm) at
+    nominal centre-to-centre spacing ``spacing`` (mm). Mirrors the spacing branch
+    of ``compute_bar_layout_pure`` (trim if the last centre would lie past the span).
+
+    ``dia`` is retained for API compatibility with ``_resolve_row_count``; spacing
+    is interpreted as c/c pitch (same as the layout engine when nb_or_s ≥ 30).
+    """
+    _ = dia  # c/c layout uses pitch directly; bar diameter enforced elsewhere
+    if width <= 0.0 or spacing <= 0.0:
+        return 0
+    s_used = float(spacing)
+    n_fit = int(width / s_used) + 1
+    n_fit = max(1, n_fit)
+    if n_fit == 1:
+        return 1
+    x_start = 0.0
+    x_end = width
+    x_positions = [x_start + i * s_used for i in range(n_fit)]
+    while len(x_positions) > 1 and x_positions[-1] > x_end + 1e-9:
+        x_positions.pop()
+    return len(x_positions)
+
+
+def _resolve_row_count(mode: str, width: float, dia: float, value: float) -> int:
+    if value <= 0.0 or dia <= 0.0 or width <= 0.0:
+        return 0
+    if mode == "Spacing":
+        return _count_from_spacing(width, dia, value)
+    return max(0, int(round(value)))
+
+
+def _row_x_positions(x0: float, x1: float, n: int) -> list[float]:
+    if n <= 0:
+        return []
+    if n == 1:
+        return [(x0 + x1) / 2.0]
+    dx = (x1 - x0) / (n - 1)
+    return [x0 + i * dx for i in range(n)]
+
+
+def _resolve_single_row_band(
+    *,
+    x0: float,
+    x1: float,
+    y: float,
+    mode: str,
+    value: float,
+    dia: float,
+    min_clear: float,
+    row_index: int,
+    section: str,
+) -> Dict[str, Any]:
+    width = x1 - x0
+    n_bars = _resolve_row_count(mode, width, dia, value)
+    xs = _row_x_positions(x0, x1, n_bars)
+    warning = None
+    if len(xs) > 1:
+        clear = min((b - a) - dia for a, b in zip(xs[:-1], xs[1:]))
+        if clear < min_clear - 1e-9:
+            warning = f"{section.title()} row {row_index} clear spacing {clear:.1f} mm < minimum {min_clear:.1f} mm"
+    spacing_actual = 0.0 if len(xs) <= 1 else (xs[1] - xs[0])
+    return {
+        "x": xs,
+        "y": y,
+        "db": dia,
+        "row_index": row_index,
+        "bar_count": len(xs),
+        "spacing_actual": spacing_actual,
+        "steel_area": len(xs) * math.pi * dia**2 / 4.0,
+        "mode": mode,
+        "fit_ok": warning is None,
+        "warning": warning,
+        "section": section,
+    }
+
+
 def compute_longitudinal_reo_layout(
     b: float,
     D: float,
@@ -424,6 +596,8 @@ def compute_longitudinal_reo_layout(
     rowgap_bot: float,
     rowgap_top: float,
     s_min: float = 25.0,
+    bottom_rows: Optional[List[Dict[str, Any]]] = None,
+    top_rows: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     CENTRAL FUNCTION: Compute all longitudinal reinforcement bar positions.
@@ -461,120 +635,87 @@ def compute_longitudinal_reo_layout(
             ],
         }
     """
-    # Compute layout for each layer independently
-    s_min_bot_1 = max(db_bot_1, s_min)
-    layout_bot_1 = compute_bar_layout_pure(
-        b=b, cover_side=cover_side, nb_or_s=nb_or_s_bot_1,
-        db=db_bot_1, s_min=s_min_bot_1, rowgap=rowgap_bot
+    bottom_rows = _legacy_rows_from_inputs(
+        section="bot",
+        rows=bottom_rows,
+        layer_1_value=nb_or_s_bot_1,
+        layer_1_dia=db_bot_1,
+        layer_2_value=nb_or_s_bot_2,
+        layer_2_dia=db_bot_2,
     )
-    
-    layout_bot_2 = None
-    if nb_or_s_bot_2 > 0:
-        s_min_bot_2 = max(db_bot_2, s_min)
-        layout_bot_2 = compute_bar_layout_pure(
-            b=b, cover_side=cover_side, nb_or_s=nb_or_s_bot_2,
-            db=db_bot_2, s_min=s_min_bot_2, rowgap=rowgap_bot
-        )
-    
-    s_min_top_1 = max(db_top_1, s_min)
-    layout_top_1 = compute_bar_layout_pure(
-        b=b, cover_side=cover_side, nb_or_s=nb_or_s_top_1,
-        db=db_top_1, s_min=s_min_top_1, rowgap=rowgap_top
+    top_rows = _legacy_rows_from_inputs(
+        section="top",
+        rows=top_rows,
+        layer_1_value=nb_or_s_top_1,
+        layer_1_dia=db_top_1,
+        layer_2_value=nb_or_s_top_2,
+        layer_2_dia=db_top_2,
     )
-    
-    layout_top_2 = None
-    if nb_or_s_top_2 > 0:
-        s_min_top_2 = max(db_top_2, s_min)
-        layout_top_2 = compute_bar_layout_pure(
-            b=b, cover_side=cover_side, nb_or_s=nb_or_s_top_2,
-            db=db_top_2, s_min=s_min_top_2, rowgap=rowgap_top
+
+    bottom_layers: List[Dict[str, Any]] = []
+    top_layers: List[Dict[str, Any]] = []
+    warnings: List[str] = []
+
+    prev_y = None
+    prev_dia = None
+    for row in [row for row in bottom_rows if row.get("active")]:
+        dia = float(row.get("dia", 0.0) or 0.0)
+        if dia <= 0.0:
+            continue
+        y = D - cover_bot - dia / 2.0 if prev_y is None else prev_y - prev_dia / 2.0 - rowgap_bot - dia / 2.0
+        band = _resolve_single_row_band(
+            x0=cover_side + dia / 2.0,
+            x1=b - cover_side - dia / 2.0,
+            y=y,
+            mode=str(row.get("mode", "Count")),
+            value=float(row.get("nb_or_s", 0.0) or 0.0),
+            dia=dia,
+            min_clear=max(dia, s_min),
+            row_index=int(row.get("row_index", 1) or 1),
+            section="bottom",
         )
-    
-    # Bottom Layer 1: y position from bottom cover
-    y_bot_layer1 = D - (cover_bot + db_bot_1 / 2.0)
-    
-    # Bottom Layer 2: clear rowgap between bar edges (above Layer 1)
-    if layout_bot_2:
-        y_bot_layer2 = y_bot_layer1 - (db_bot_1 / 2.0) - rowgap_bot - (db_bot_2 / 2.0)
-    else:
-        y_bot_layer2 = None
-    
-    # Top Layer 1: y position from top cover
-    y_top_layer1 = cover_top + db_top_1 / 2.0
-    
-    # Top Layer 2: clear rowgap between bar edges (below Layer 1)
-    if layout_top_2:
-        y_top_layer2 = y_top_layer1 + (db_top_1 / 2.0) + rowgap_top + (db_top_2 / 2.0)
-    else:
-        y_top_layer2 = None
-    
-    # Build bottom layers
-    bottom_layers = []
-    
-    # Bottom Layer 1 - use row 1 positions only (Layer 1 is always in its own row)
-    if layout_bot_1["n_row1"] > 0:
-        bottom_layers.append({
-            "layer": 1,
-            "x": layout_bot_1["x_positions_row1"],
-            "y": y_bot_layer1,
-            "db": db_bot_1,
-        })
-    
-    # Bottom Layer 2 - separate row
-    if layout_bot_2 and layout_bot_2["n_row1"] > 0:
-        bottom_layers.append({
-            "layer": 2,
-            "x": layout_bot_2["x_positions_row1"],
-            "y": y_bot_layer2,
-            "db": db_bot_2,
-        })
-    
-    # Build top layers
-    top_layers = []
-    
-    # Top Layer 1 - use row 1 positions only
-    if layout_top_1["n_row1"] > 0:
-        top_layers.append({
-            "layer": 1,
-            "x": layout_top_1["x_positions_row1"],
-            "y": y_top_layer1,
-            "db": db_top_1,
-        })
-    
-    # Top Layer 2 - separate row
-    if layout_top_2 and layout_top_2["n_row1"] > 0:
-        top_layers.append({
-            "layer": 2,
-            "x": layout_top_2["x_positions_row1"],
-            "y": y_top_layer2,
-            "db": db_top_2,
-        })
-    
-    try:
-        import streamlit as st
-        if st.session_state.get("_debug_rows", False):
-            if layout_bot_2:
-                clear_gap_bot = (y_bot_layer1 - y_bot_layer2) - (db_bot_1 / 2.0) - (db_bot_2 / 2.0)
-                print(
-                    "ROW DEBUG bottom:",
-                    "db1", db_bot_1, "db2", db_bot_2,
-                    "y1", y_bot_layer1, "y2", y_bot_layer2,
-                    "clear_gap", clear_gap_bot,
-                )
-            if layout_top_2:
-                clear_gap_top = (y_top_layer2 - y_top_layer1) - (db_top_1 / 2.0) - (db_top_2 / 2.0)
-                print(
-                    "ROW DEBUG top:",
-                    "db1", db_top_1, "db2", db_top_2,
-                    "y1", y_top_layer1, "y2", y_top_layer2,
-                    "clear_gap", clear_gap_top,
-                )
-    except Exception:
-        pass
+        if y - dia / 2.0 < 0.0:
+            band["fit_ok"] = False
+            band["warning"] = f"Bottom row {band['row_index']} does not fit within available depth."
+        band["layer"] = band["row_index"]
+        if band.get("warning"):
+            warnings.append(str(band["warning"]))
+        bottom_layers.append(band)
+        prev_y = y
+        prev_dia = dia
+
+    prev_y = None
+    prev_dia = None
+    for row in [row for row in top_rows if row.get("active")]:
+        dia = float(row.get("dia", 0.0) or 0.0)
+        if dia <= 0.0:
+            continue
+        y = cover_top + dia / 2.0 if prev_y is None else prev_y + prev_dia / 2.0 + rowgap_top + dia / 2.0
+        band = _resolve_single_row_band(
+            x0=cover_side + dia / 2.0,
+            x1=b - cover_side - dia / 2.0,
+            y=y,
+            mode=str(row.get("mode", "Count")),
+            value=float(row.get("nb_or_s", 0.0) or 0.0),
+            dia=dia,
+            min_clear=max(dia, s_min),
+            row_index=int(row.get("row_index", 1) or 1),
+            section="top",
+        )
+        if y + dia / 2.0 > D:
+            band["fit_ok"] = False
+            band["warning"] = f"Top row {band['row_index']} does not fit within available depth."
+        band["layer"] = band["row_index"]
+        if band.get("warning"):
+            warnings.append(str(band["warning"]))
+        top_layers.append(band)
+        prev_y = y
+        prev_dia = dia
 
     return {
         "bottom": bottom_layers,
         "top": top_layers,
+        "warnings": warnings,
     }
 
 
@@ -596,6 +737,8 @@ def compute_section_layout_pure(
     rowgap_top: float,
     lig_legs: int = 2,
     lig_d: float = 10.0,
+    bottom_rows: Optional[List[Dict[str, Any]]] = None,
+    top_rows: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     PURE FUNCTION: Compute a canonical 2D cross-section layout (geometry + bar positions)
@@ -646,6 +789,8 @@ def compute_section_layout_pure(
         nb_or_s_top_1=nb_or_s_top_1, db_top_1=db_top_1,
         nb_or_s_top_2=nb_or_s_top_2, db_top_2=db_top_2,
         rowgap_bot=rowgap_bot, rowgap_top=rowgap_top,
+        bottom_rows=bottom_rows,
+        top_rows=top_rows,
     )
     
     # Flatten bottom layers into single lists (for backward compatibility)
@@ -664,8 +809,12 @@ def compute_section_layout_pure(
         top_x.extend(layer_data["x"])
         top_y.extend([layer_data["y"]] * len(layer_data["x"]))
 
-    # Max longitudinal bar dia (for bar → lig clearance)
-    max_bar_d = max(db_bot_1, db_bot_2, db_top_1, db_top_2, 0.0)
+    # Max longitudinal bar dia (for bar -> lig clearance)
+    max_bar_d = max(
+        [0.0]
+        + [float(layer_data.get("db", 0.0) or 0.0) for layer_data in reo_layout.get("bottom", [])]
+        + [float(layer_data.get("db", 0.0) or 0.0) for layer_data in reo_layout.get("top", [])]
+    )
     horiz_clear = 0.5 * max_bar_d
 
     # ---- concrete outline is implicitly 0..b, 0..D ----
@@ -763,6 +912,8 @@ def compute_section_layout() -> Dict[str, Any]:
     rowgap_bot = float(get_param("rowgap_bot", 60.0))
     rowgap_top = float(get_param("rowgap_top", 60.0))
     min_clear = float(get_param("s_min", 25.0))
+    top_rows = get_longitudinal_row_inputs("top")
+    bottom_rows = get_longitudinal_row_inputs("bot")
 
     def _mode(prefix: str) -> str:
         return str(st.session_state.get(f"inputs_{prefix}_layout_mode", st.session_state.get(f"{prefix}_layout_mode", "Count")))
@@ -800,8 +951,42 @@ def compute_section_layout() -> Dict[str, Any]:
         "db_top": db_top_1,
         "nb_bot": int(_nb_or_s("bot1", 4.0, 200.0) + _nb_or_s("bot2", 0.0, 200.0)) if _mode("bot1") == "Count" else 0,
         "db_bot": db_bot_1,
+        "top_rows": top_rows,
+        "bottom_rows": bottom_rows,
         "lig_d": float(get_param("lig_d", 0.0)),
         "lig_legs": int(get_param("lig_legs", 0)),
+        "top_flange_reo_enabled": bool(get_param("top_flange_reo_enabled", False)),
+        "bot_flange_reo_enabled": bool(get_param("bot_flange_reo_enabled", False)),
+        "top_flange_mirror_lr": bool(get_param("top_flange_mirror_lr", True)),
+        "bot_flange_mirror_lr": bool(get_param("bot_flange_mirror_lr", True)),
+        "top_flange_left_count": int(get_param("top_flange_left_count", 0) or 0),
+        "top_flange_left_dia": float(get_param("top_flange_left_dia", 16.0)),
+        "top_flange_left_rows": int(get_param("top_flange_left_rows", 1) or 1),
+        "top_flange_left_row_spacing": float(get_param("top_flange_left_row_spacing", rowgap_top)),
+        "top_flange_left_clear_spacing_mode": str(get_param("top_flange_left_clear_spacing_mode", "count") or "count"),
+        "top_flange_right_count": int(get_param("top_flange_right_count", 0) or 0),
+        "top_flange_right_dia": float(get_param("top_flange_right_dia", 16.0)),
+        "top_flange_right_rows": int(get_param("top_flange_right_rows", 1) or 1),
+        "top_flange_right_row_spacing": float(get_param("top_flange_right_row_spacing", rowgap_top)),
+        "top_flange_right_clear_spacing_mode": str(get_param("top_flange_right_clear_spacing_mode", "count") or "count"),
+        "bot_flange_left_count": int(get_param("bot_flange_left_count", 0) or 0),
+        "bot_flange_left_dia": float(get_param("bot_flange_left_dia", 20.0)),
+        "bot_flange_left_rows": int(get_param("bot_flange_left_rows", 1) or 1),
+        "bot_flange_left_row_spacing": float(get_param("bot_flange_left_row_spacing", rowgap_bot)),
+        "bot_flange_left_clear_spacing_mode": str(get_param("bot_flange_left_clear_spacing_mode", "count") or "count"),
+        "bot_flange_right_count": int(get_param("bot_flange_right_count", 0) or 0),
+        "bot_flange_right_dia": float(get_param("bot_flange_right_dia", 20.0)),
+        "bot_flange_right_rows": int(get_param("bot_flange_right_rows", 1) or 1),
+        "bot_flange_right_row_spacing": float(get_param("bot_flange_right_row_spacing", rowgap_bot)),
+        "bot_flange_right_clear_spacing_mode": str(get_param("bot_flange_right_clear_spacing_mode", "count") or "count"),
+        "top_flange_transverse_enabled": bool(get_param("top_flange_transverse_enabled", False)),
+        "bot_flange_transverse_enabled": bool(get_param("bot_flange_transverse_enabled", False)),
+        "top_flange_transverse_dia": float(get_param("top_flange_transverse_dia", 10.0) or 10.0),
+        "bot_flange_transverse_dia": float(get_param("bot_flange_transverse_dia", 10.0) or 10.0),
+        "top_flange_transverse_spacing": float(get_param("top_flange_transverse_spacing", 200.0) or 200.0),
+        "bot_flange_transverse_spacing": float(get_param("bot_flange_transverse_spacing", 200.0) or 200.0),
+        "top_flange_transverse_legs": int(get_param("top_flange_transverse_legs", 2) or 2),
+        "bot_flange_transverse_legs": int(get_param("bot_flange_transverse_legs", 2) or 2),
     }
 
     if shape_name.startswith(("T-Section", "I-Section")):
@@ -817,7 +1002,11 @@ def compute_section_layout() -> Dict[str, Any]:
                 rowgap_top=rowgap_top,
                 rowgap_bot=rowgap_bot,
                 reo=reo,
-                max_rows=2,
+                max_rows=max(
+                    len([row for row in top_rows if row.get("active")]),
+                    len([row for row in bottom_rows if row.get("active")]),
+                    1,
+                ),
             )
             reo_points = flatten_reo_points_T_I(reo_layout)
         except ValueError as e:
@@ -833,6 +1022,7 @@ def compute_section_layout() -> Dict[str, Any]:
             cover_bot=cover_bot,
             lig_d=float(reo.get("lig_d", 0.0)),
             lig_legs=int(reo.get("lig_legs", 0)),
+            reo_points=reo_points,
         )
         cage = shear_layout.get("cage", {})
         lig = {"legs": int(reo.get("lig_legs", 0) or 0), "d": float(reo.get("lig_d", 0.0) or 0.0)}
@@ -864,6 +1054,8 @@ def compute_section_layout() -> Dict[str, Any]:
         rowgap_bot=rowgap_bot, rowgap_top=rowgap_top,
         lig_legs=int(reo.get("lig_legs", 0) or 0),
         lig_d=float(reo.get("lig_d", 0.0) or 0.0),
+        bottom_rows=bottom_rows,
+        top_rows=top_rows,
     )
 
     def _flatten_rect(layout_reo: Dict[str, Any]) -> List[Dict[str, Any]]:

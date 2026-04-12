@@ -3,6 +3,7 @@ pandas
 numpy
 matplotlib
 plotly>=5.18,<6
+streamlit-plotly-events
 kaleido==0.2.1
 reportlab
 supabase>=2.6.0

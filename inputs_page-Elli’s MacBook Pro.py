@@ -1,17 +1,19 @@
 
 import json
+import os
 import html
-from urllib.parse import urlencode
 import inspect
+import time
 from datetime import datetime
 import math
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-import time
+import streamlit.components.v1 as components
 
 from state_and_helpers import (
+    BEAM_MODULE_STARTER_SEED_DONE_KEY,
     BEAM_STATUS_FAIL,
     BEAM_STATUS_NOT_RUN,
     BEAM_STATUS_PASS,
@@ -26,7 +28,6 @@ from state_and_helpers import (
     delete_beam_record,
     make_not_run_beam_summary,
     persist_active_beam_from_shared,
-    reset_app_to_clean_starter_workspace,
     update_active_beam_summary_from_results,
     hydrate_active_page_widgets_from_shared,
     init_shared_session_state,
@@ -46,31 +47,9 @@ from state_and_helpers import (
     TAB_KEYS,
     hc_log,
     hc_try,
-    DEFLECTION_LIMIT_OPTIONS,
-    DEFLECTION_LIMIT_HELP_TEXT,
-    get_deflection_limit_ratio,
-    get_deflection_limit_label_from_ratio,
 )
 
-from widgets_helpers import (
-    apply_global_widget_css,
-    apply_calcbox_css,
-    number_row,
-    select_row,
-    calcbox,
-    show_reo_message,
-    label_with_hover,
-    info_i_button,
-    page_divider,
-    seed_widget_from_shared,
-    _register_rendered_key,
-    v2_radio,
-    render_longitudinal_reo_rows,
-    render_longitudinal_reo_row_config_controls,
-    main_longitudinal_reo_pair_labels,
-    main_longitudinal_reo_change_line_prefixes,
-    normalized_sec_shape_ui,
-)
+from widgets_helpers import apply_global_widget_css, apply_calcbox_css, number_row, select_row, calcbox, show_reo_message, label_with_hover, info_i_button, page_divider, seed_widget_from_shared, _register_rendered_key, v2_radio, render_longitudinal_reo_rows
 
 try:
     from ui_seamless_steps import inject_seamless_steps_css, render_clickable_summary_table
@@ -83,13 +62,7 @@ except Exception:
 from deflection_checks_helpers import build_deflection_check_rows_from_state
 from bending_checks_helpers import build_bending_check_rows_from_state
 from shear_checks_helpers import build_shear_check_rows_from_state
-from crack_checks_helpers import build_crack_check_rows_from_state, pick_governing_check_row
-from engineering_check_ui import (
-    BENDING_ROW_UID_TO_TAB,
-    SHEAR_ROW_UID_TO_TAB,
-    resolve_jump_target_id,
-    summary_cell_display,
-)
+from crack_checks_helpers import build_crack_check_rows_from_state
 from report_helpers import (
     build_beam_schedule_export_rows,
     format_report_status_badge,
@@ -102,12 +75,7 @@ from report_helpers import (
 from section_layout import compute_section_layout
 from section_props.plotly_section import make_sectionA_figure
 from section_props.plotly_3d import make_section_3d_figure
-from section_props.reo_layout import (
-    compute_longitudinal_reo_layout_T_I,
-    dev_warnings_bars_outside_concrete,
-    resolve_longitudinal_bars_from_layout,
-)
-from section_props.shape_utils import normalise_shape_name
+from section_props.reo_layout import compute_longitudinal_reo_layout_T_I
 # from deflection import _compute_deflection_results  # TODO: add later
 
 _AGENT_DEBUG_LOG_PATH = "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/complete-app/.cursor/debug.log"
@@ -143,45 +111,12 @@ DESIGN_GUIDE_LAST_APPLY_ROUTE_KEY = "_design_guide_last_apply_route"
 DESIGN_GUIDE_GUIDANCE_CACHE_FP_KEY = "_design_guide_cached_fingerprint"
 DESIGN_GUIDE_GUIDANCE_CACHE_ITEMS_KEY = "_design_guide_cached_items"
 DESIGN_GUIDE_GUIDANCE_CACHE_DEBUG_KEY = "_design_guide_cached_debug"
-DESIGN_GUIDE_NEEDS_REFRESH_KEY = "_design_guide_needs_refresh"
-DESIGN_GUIDE_PANEL_BASELINE_FP_KEY = "_design_guide_panel_baseline_fingerprint"
-
-
-def _clear_design_guide_transient_ui_state(
-    *,
-    clear_history: bool = False,
-    preserve_apply_banner: bool = False,
-) -> None:
-    transient_keys = [
-        DESIGN_GUIDE_APPLY_BANNER_META_KEY,
-        DESIGN_GUIDE_GUIDANCE_CACHE_FP_KEY,
-        DESIGN_GUIDE_GUIDANCE_CACHE_ITEMS_KEY,
-        DESIGN_GUIDE_GUIDANCE_CACHE_DEBUG_KEY,
-        DESIGN_GUIDE_PENDING_STEP_CTX_KEY,
-    ]
-    if not preserve_apply_banner:
-        transient_keys.append(DESIGN_GUIDE_APPLY_BANNER_KEY)
-    for key in transient_keys:
-        st.session_state.pop(key, None)
-
-    st.session_state.pop(DESIGN_GUIDE_DEBUG_BUNDLE_KEY, None)
-    st.session_state.pop(DESIGN_GUIDE_RECO_TRACE_KEY, None)
-    st.session_state.pop(DESIGN_GUIDE_RANK_TRACE_KEY, None)
-
-    if clear_history:
-        st.session_state.pop(DESIGN_GUIDE_STEP_HISTORY_KEY, None)
-        st.session_state.pop(DESIGN_GUIDE_FIRST_TARGET_BAND_STEP_KEY, None)
-        st.session_state.pop(DESIGN_GUIDE_HISTORY_ANCHOR_KEY, None)
-
-
-def _mark_design_guide_dirty() -> None:
-    """Inputs changed vs last rendered guide; clear stale cards/cache (not beam state)."""
-    st.session_state[DESIGN_GUIDE_NEEDS_REFRESH_KEY] = True
-    _clear_design_guide_transient_ui_state(clear_history=False, preserve_apply_banner=False)
 
 
 def _clear_design_guide_guidance_render_cache() -> None:
-    _clear_design_guide_transient_ui_state(clear_history=False, preserve_apply_banner=False)
+    st.session_state.pop(DESIGN_GUIDE_GUIDANCE_CACHE_FP_KEY, None)
+    st.session_state.pop(DESIGN_GUIDE_GUIDANCE_CACHE_ITEMS_KEY, None)
+    st.session_state.pop(DESIGN_GUIDE_GUIDANCE_CACHE_DEBUG_KEY, None)
 
 
 def _get_cached_design_guide_guidance(
@@ -233,6 +168,34 @@ def _design_guide_cache_fingerprint(state: dict) -> tuple:
         float(state.get("s_lig", 0.0) or 0.0),
         tuple(_resolve_design_actions_from_state(state).get("signature", ())),
     )
+
+
+def _agent_debug_ndjson_1eb89f(
+    *,
+    location: str,
+    message: str,
+    data: dict,
+    hypothesis_id: str = "",
+) -> None:
+    # region agent log
+    try:
+        _p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug-1eb89f.log")
+        _line = json.dumps(
+            {
+                "sessionId": "1eb89f",
+                "timestamp": int(time.time() * 1000),
+                "location": location,
+                "message": message,
+                "data": data,
+                "hypothesisId": hypothesis_id,
+            },
+            default=str,
+        ) + "\n"
+        with open(_p, "a", encoding="utf-8") as _f:
+            _f.write(_line)
+    except Exception:
+        pass
+    # endregion
 
 
 _COMPOUND_GEOMETRY_UPDATE_KEYS = frozenset(
@@ -473,9 +436,6 @@ def _render_design_guide_debug_sidebar() -> None:
         return
     st.sidebar.divider()
     st.sidebar.caption("Design Guide Debug")
-    if st.sidebar.button("Clear design guide UI state", key="_dg_debug_clear_transient_ui"):
-        _clear_design_guide_transient_ui_state(clear_history=False, preserve_apply_banner=False)
-        st.rerun()
     bundle = st.session_state.get(DESIGN_GUIDE_DEBUG_BUNDLE_KEY) or {}
     trace = st.session_state.get(DESIGN_GUIDE_RECO_TRACE_KEY) or []
 
@@ -541,9 +501,19 @@ def _agent_debug_log(message: str, data: dict | None = None, *, location: str, h
     except Exception:
         pass
 
-
 def apply_inputs_page_css():
-    # Main block padding is applied app-wide via apply_global_widget_css() in app.py.
+    # Global page styling (margins + compact inputs)
+    st.markdown(
+        """
+        <style>
+        .main .block-container {
+            padding-left: 3rem;
+            padding-right: 3rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
     # Extra CSS so special widgets (side cover + exposure class)
     # use the same effective width as the standard number_row inputs.
@@ -1257,19 +1227,7 @@ def _get_results_updated_at(bucket: str):
 def _overall_status_from_rows(rows):
     if not rows:
         return "—", "rgba(31, 119, 180, 0.08)"
-    filtered = []
-    for r in rows:
-        if not isinstance(r, dict):
-            continue
-        if r.get("is_informational"):
-            continue
-        stt = str(r.get("status", "")).upper()
-        if stt == "INFO":
-            continue
-        filtered.append(r)
-    if not filtered:
-        return "—", "rgba(31, 119, 180, 0.08)"
-    statuses = [str(r.get("status", "")).upper() for r in filtered]
+    statuses = [str(r.get("status", "")).upper() for r in rows]
     if any("FAIL" in s or s == "NG" for s in statuses):
         return "FAIL", "rgba(255,0,0,0.12)"
     if any("WARN" in s or "NEAR LIMIT" in s or s == "CHECK" for s in statuses):
@@ -1299,11 +1257,8 @@ def _pack_meta(name, pack):
 
 def _normalise_row(r: dict, route_page: str) -> dict:
     status = r.get("status", "—")
-    is_informational = bool(r.get("is_informational", False))
     ok = r.get("ok", None)
-    if is_informational or str(status).upper() == "INFO":
-        ok = None
-    elif ok is None:
+    if ok is None:
         if status == "PASS":
             ok = True
         elif status == "FAIL":
@@ -1311,38 +1266,15 @@ def _normalise_row(r: dict, route_page: str) -> dict:
         elif status in ("NEAR LIMIT", "WARN", "CHECK"):
             ok = None
 
-    cap = r.get("capacity")
-    act = r.get("action")
-    calc = r.get("calculated")
-    req = r.get("requirement")
-    val = r.get("value", "—")
-    lim = r.get("limit", "—")
-    if cap is None or str(cap).strip() == "":
-        cap = calc if calc is not None and str(calc).strip() != "" else val
-    if act is None or str(act).strip() == "":
-        act = req if req is not None and str(req).strip() != "" else lim
-    if calc is None or str(calc).strip() == "":
-        calc = cap
-    if req is None or str(req).strip() == "":
-        req = act
-
     return {
         "uid": r.get("uid", ""),
         "title": r.get("title", ""),
-        "row_type": r.get("row_type", ""),
-        "calculated": calc,
-        "requirement": req,
-        "capacity": cap,
-        "action": act,
-        "value": val,
-        "limit": lim,
-        "util": r.get("util") if r.get("util") is not None else "—",
+        "value": r.get("value", "—"),
+        "limit": r.get("limit", "—"),
+        "util": r.get("util", "—"),
         "status": status,
         "ok": ok,
-        "is_informational": is_informational,
-        "is_primary": bool(r.get("is_primary", False)),
         "route_page": r.get("route_page", route_page),
-        "tab": r.get("tab", ""),
     }
 
 
@@ -1466,51 +1398,6 @@ def _clamp_bar_xs_to_outline(xs, y, pts, bar_d):
 # ------------------------------------------------------------
 #  MINI 2D CROSS-SECTION LABELS (SECTION A)
 # ------------------------------------------------------------
-def _section_dim_scale_mm(dims: dict) -> tuple[float, float, float, float, float, float, float, float, float, float]:
-    """
-    Shared geometry for section dimension overlays (mm).
-    Returns (D, bf, tf, bw, tw, x_span, x_off, y_off, ah, aw).
-    Keep in sync with _ti_annotation_bounds_for_model_mm.
-    """
-    D = float(dims.get("D", 0.0) or 0.0)
-    bf = float(dims.get("bf", 0.0) or 0.0)
-    tf = float(dims.get("tf", 0.0) or 0.0)
-    bw = float(dims.get("bw", 0.0) or 0.0)
-    tw = float(dims.get("tw", 0.0) or 0.0)
-    b = float(dims.get("b", 0.0) or 0.0)
-    x_span = max(bf, bw, tw, b, 1.0)
-    x_off = 0.08 * x_span
-    y_off = 0.08 * max(D, 1.0)
-    ah = 0.025 * x_span
-    aw = 0.012 * max(D, 1.0)
-    return D, bf, tf, bw, tw, x_span, x_off, y_off, ah, aw
-
-
-def _ti_annotation_bounds_for_model_mm(shape_name: str, dims: dict) -> tuple[float, float, float, float] | None:
-    """
-    Axis-data bounds (mm) that contain T/I dimension lines, arrowheads, and typical label positions.
-    None if this shape does not use the T/I dimension overlay.
-    """
-    sn = str(shape_name or "")
-    if not (sn.startswith("T-Section") or sn.startswith("I-Section")):
-        return None
-    D, bf, _tf, bw, tw, x_span, x_off, y_off, ah, _aw = _section_dim_scale_mm(dims)
-    # Slack for ~12pt annotations and arrowhead extent beyond extension points
-    txt = max(12.0, 0.022 * max(x_span, D, 1.0))
-    xmin = min(0.0, -1.60 * x_off - ah - txt)
-    xmax = max(bf, bf + x_off + ah + txt)
-    ymin = min(0.0, -1.45 * y_off - txt)
-    ymax = max(D, D + 1.45 * y_off + txt)
-    if sn.startswith("T-Section") and bw > 0:
-        x_web1 = (bf - bw) / 2.0 + bw
-        xmax = max(xmax, x_web1 + txt)
-        ymax = max(ymax, D + 0.75 * y_off + txt)
-    if sn.startswith("I-Section") and tw > 0:
-        x_web1 = (bf - tw) / 2.0 + tw
-        xmax = max(xmax, x_web1 + txt)
-    return xmin, xmax, ymin, ymax
-
-
 def _add_section_dimension_labels(fig, *, shape_name: str, dims: dict, reo: dict):
     """
     Adds engineering-style dimension labels with double-ended arrows to Plotly 2D section figure.
@@ -1520,11 +1407,23 @@ def _add_section_dimension_labels(fig, *, shape_name: str, dims: dict, reo: dict
     # so we draw the dimension line + small V-shaped arrowheads at BOTH ends.
     import math
 
-    D, bf, tf, bw, tw, x_span, x_off, y_off, ah, aw = _section_dim_scale_mm(dims)
+    D = float(dims.get("D", 0.0) or 0.0)
+    bf = float(dims.get("bf", 0.0) or 0.0)
+    tf = float(dims.get("tf", 0.0) or 0.0)
+    bw = float(dims.get("bw", 0.0) or 0.0)
+    tw = float(dims.get("tw", 0.0) or 0.0)
 
     cover_top = float(reo.get("cover_top", 0.0) or 0.0)
     cover_bot = float(reo.get("cover_bot", 0.0) or 0.0)
     cover_side = float(reo.get("cover_side", 0.0) or 0.0)
+
+    # scale for offsets and arrowheads
+    x_span = max(bf, bw, tw, 1.0)
+    x_off = 0.08 * x_span
+    y_off = 0.08 * max(D, 1.0)
+
+    ah = 0.025 * x_span          # arrowhead length
+    aw = 0.012 * max(D, 1.0)     # arrowhead width component
 
     def _add_line(x0, y0, x1, y1):
         fig.add_shape(type="line", x0=x0, y0=y0, x1=x1, y1=y1,
@@ -1626,50 +1525,22 @@ def make_summary_cross_section_figure():
     is_ti = ("t-section" in shape_key) or ("i-section" in shape_key) or shape_key.startswith("t") or shape_key.startswith("i")
     is_rect = ("rectangle" in shape_key) or (shape_key == "rect")
 
-    def _finalize_section_figure(
-        fig,
-        width_mm: float,
-        depth_mm: float,
-        *,
-        shape_name: str | None = None,
-        dims: dict | None = None,
-    ):
-        """
-        Set axis limits with padding. For T/I, union section [0,W]×[0,D] with dimension annotation
-        extents so arrows and labels are not clipped; then add a small margin (5–8% typical).
-        """
+    def _finalize_section_figure(fig, width_mm: float, depth_mm: float):
         fig.update_layout(
             autosize=True,
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
-            margin=dict(l=14, r=14, t=14, b=14),
+            margin=dict(l=10, r=10, t=10, b=10),
         )
-        gx0, gx1 = 0.0, float(width_mm)
-        gy0, gy1 = 0.0, float(depth_mm)
-        ext = None
-        if shape_name is not None and dims is not None:
-            ext = _ti_annotation_bounds_for_model_mm(str(shape_name), dims)
-        if ext is not None:
-            ex0, ex1, ey0, ey1 = ext
-            gx0 = min(gx0, ex0)
-            gx1 = max(gx1, ex1)
-            gy0 = min(gy0, ey0)
-            gy1 = max(gy1, ey1)
-        span_x = max(gx1 - gx0, 1e-6)
-        span_y = max(gy1 - gy0, 1e-6)
-        if ext is not None:
-            pad_x = max(0.05 * span_x, 0.03 * max(width_mm, 1.0), 16.0)
-            pad_y = max(0.08 * span_y, 0.05 * max(depth_mm, 1.0), 20.0)
-        else:
-            pad_x = max(25.0, 0.08 * max(width_mm, 1.0))
-            pad_y = max(25.0, 0.08 * max(depth_mm, 1.0))
+        pad_x = max(25.0, 0.08 * max(width_mm, 1.0))
+        pad_y = max(25.0, 0.08 * max(depth_mm, 1.0))
         fig.update_xaxes(
-            range=[gx0 - pad_x, gx1 + pad_x],
+            range=[-pad_x, width_mm + pad_x],
             showgrid=False,
             zeroline=False,
         )
         fig.update_yaxes(
-            range=[gy1 + pad_y, gy0 - pad_y],
+            range=[depth_mm + pad_y, -pad_y],
             showgrid=False,
             zeroline=False,
             scaleanchor="x",
@@ -1684,13 +1555,13 @@ def make_summary_cross_section_figure():
                 dims=dims,
                 reo=reo,
                 show_shear=True,
-                tension_face=st.session_state.get("active_tension_face"),
             )
             fig = _add_section_dimension_labels(fig, shape_name=shape_name, dims=dims, reo=reo)
 
             W = float(dims.get("bf", dims.get("b", 0.0)) or 0.0)
             D = float(dims.get("D", 0.0) or 0.0)
-            return _finalize_section_figure(fig, W, D, shape_name=shape_name, dims=dims)
+            apply_section_axes(fig, W=W, D=D)
+            return _finalize_section_figure(fig, W, D)
 
         except ValueError as e:
             st.error(f"Reinforcement layout failed: {e}")
@@ -1711,13 +1582,13 @@ def make_summary_cross_section_figure():
                 dims=dims,
                 reo=reo_no_bars,
                 show_shear=True,
-                tension_face=st.session_state.get("active_tension_face"),
             )
             fig = _add_section_dimension_labels(fig, shape_name=shape_name, dims=dims, reo=reo_no_bars)
 
             W = float(dims.get("bf", dims.get("b", 0.0)) or 0.0)
             D = float(dims.get("D", 0.0) or 0.0)
-            return _finalize_section_figure(fig, W, D, shape_name=shape_name, dims=dims)
+            apply_section_axes(fig, W=W, D=D)
+            return _finalize_section_figure(fig, W, D)
 
     if not is_rect:
         return None
@@ -1838,7 +1709,7 @@ def make_beam_3d_figure():
     reo = layout.get("reo", {})
     b = float(dims.get("b", get_param("b", 400.0)))
     D = float(dims.get("D", get_param("D", 600.0)))
-    L = float(get_param("L", 3000.0))
+    L = float(get_param("L", 8000.0))
     L_plot = max(min(L, 3000.0), 400.0)
 
     cover_bot = float(reo.get("cover_bot", 40.0))
@@ -1955,86 +1826,40 @@ def make_beam_3d_figure():
             )
         )
 
-    def _iter_band_xy(layer_data):
-        """Yield (section_x, section_y, db) per bar; supports scalar or per-bar y lists."""
-        xs = layer_data.get("x") or []
-        y_raw = layer_data.get("y")
-        db = float(layer_data.get("db", 0.0) or 0.0)
-        if not xs or db <= 0.0:
-            return
-        if isinstance(y_raw, (int, float)):
-            yf = float(y_raw)
-            for xp in xs:
-                yield float(xp), yf, db
-            return
-        ys = list(y_raw)
-        if len(ys) == len(xs):
-            for xp, yp in zip(xs, ys):
-                yield float(xp), float(yp), db
-        elif len(ys) == 1:
-            yf = float(ys[0])
-            for xp in xs:
-                yield float(xp), yf, db
-        else:
-            n = min(len(xs), len(ys))
-            for i in range(n):
-                yield float(xs[i]), float(ys[i]), db
-
     max_bar_d = 0.0
     for layer_list in (reo_layout.get("bottom", []), reo_layout.get("top", [])):
         for layer_data in layer_list:
             max_bar_d = max(max_bar_d, float(layer_data.get("db", 0.0)))
     horiz_clear = 0.5 * max_bar_d
     reo_points_3d = []
+    
+    # Bottom bars - draw each layer separately
+    # BOTTOM reinforcement is BLUE
+    for layer_data in reo_layout["bottom"]:
+        x_positions = layer_data["x"]
+        y_pos = layer_data["y"]  # This is the y coordinate in 2D (section view)
+        db = layer_data["db"]
+        # Convert 2D y to 3D z (y in 2D section = z in 3D beam)
+        z_pos = y_pos
+        for x_pos in x_positions:
+            reo_points_3d.append({"x": float(x_pos), "y": float(z_pos), "db": float(db)})
+            _add_bar_cylinder(traces, 0.0, L_plot, float(x_pos), float(z_pos), float(db), "#1f77b4")
 
-    shape_key = normalise_shape_name(shape_name)
-    if shape_key in ("T", "I"):
-        resolved = resolve_longitudinal_bars_from_layout(
-            shape_name=shape_name,
-            dims=dims,
-            reo_layout=reo_layout,
-        )
-        if st.session_state.get("_debug_reo_layout", False):
-            for msg in dev_warnings_bars_outside_concrete(resolved, shape_name, dims):
-                st.warning(msg)
-        for bar in resolved:
-            x_pos = float(bar.get("x_mm", 0.0) or 0.0)
-            z_pos = float(bar.get("y_mm", 0.0) or 0.0)
-            db = float(bar.get("dia_mm", 0.0) or 0.0)
-            face = str(bar.get("face") or "bottom")
-            color = "#d62728" if face == "top" else "#1f77b4"
-            reo_points_3d.append({"x": x_pos, "y": z_pos, "db": db})
-            _add_bar_cylinder(traces, 0.0, L_plot, x_pos, z_pos, db, color)
-    else:
-        # Rectangle: legacy top/bottom bands (zip x/y for multi-row layouts).
-        for layer_data in reo_layout.get("bottom", []):
-            for x_pos, z_pos, db in _iter_band_xy(layer_data):
-                reo_points_3d.append({"x": x_pos, "y": z_pos, "db": db})
-                _add_bar_cylinder(traces, 0.0, L_plot, x_pos, z_pos, db, "#1f77b4")
-        for layer_data in reo_layout.get("top", []):
-            for x_pos, z_pos, db in _iter_band_xy(layer_data):
-                reo_points_3d.append({"x": x_pos, "y": z_pos, "db": db})
-                _add_bar_cylinder(traces, 0.0, L_plot, x_pos, z_pos, db, "#d62728")
+    # Top bars - draw each layer separately
+    # TOP reinforcement is RED
+    for layer_data in reo_layout["top"]:
+        x_positions = layer_data["x"]
+        y_pos = layer_data["y"]  # This is the y coordinate in 2D (section view)
+        db = layer_data["db"]
+        # Convert 2D y to 3D z (y in 2D section = z in 3D beam)
+        z_pos = y_pos
+        for x_pos in x_positions:
+            reo_points_3d.append({"x": float(x_pos), "y": float(z_pos), "db": float(db)})
+            _add_bar_cylinder(traces, 0.0, L_plot, float(x_pos), float(z_pos), float(db), "#d62728")
 
     # ----- shear ligs -----
     def add_shear_hoop_at_x(x0):
-        # Same shear cage as 2D / compute_shear_reo_layout_T_I (web-only for T/I). Do not
-        # expand stirrups to min/max of all longitudinal bars (flange bars would span void).
-        _cage_lc = layout.get("cage") or {}
-        _ok_cage = (
-            _cage_lc.get("x0") is not None
-            and _cage_lc.get("x1") is not None
-            and _cage_lc.get("y0") is not None
-            and _cage_lc.get("y1") is not None
-            and float(_cage_lc["x1"]) > float(_cage_lc["x0"])
-            and float(_cage_lc["y1"]) > float(_cage_lc["y0"])
-        )
-        if _ok_cage:
-            y_left = float(_cage_lc["x0"])
-            y_right = float(_cage_lc["x1"])
-            z_top = float(_cage_lc["y0"])
-            z_bot = float(_cage_lc["y1"])
-        elif reo_points_3d:
+        if reo_points_3d:
             y_left = min(pt["x"] - pt["db"] / 2.0 for pt in reo_points_3d)
             y_right = max(pt["x"] + pt["db"] / 2.0 for pt in reo_points_3d)
             z_top = min(pt["y"] - pt["db"] / 2.0 for pt in reo_points_3d)
@@ -2048,7 +1873,7 @@ def make_beam_3d_figure():
         min_z = 5.0
         max_z = D - 5.0
         min_y = 5.0
-        max_y = float(b_box) - 5.0
+        max_y = b - 5.0
         y_left = float(np.clip(y_left, min_y, max_y))
         y_right = float(np.clip(y_right, min_y, max_y))
         z_top_c = float(np.clip(z_top, min_z, max_z))
@@ -2350,52 +2175,22 @@ def _render_ducts_prestress_voids_inputs(sync_callbacks):
     )
 
 
-def _caption_inputs_deflection_limit_ratio() -> None:
-    """Show active L/Δ ratio and implied δlim next to Inputs deflection limit control."""
-    L_mm = float(get_param("L", 3000.0) or 3000.0)
-    r = float(get_deflection_limit_ratio(get_param("defl_limit_ratio", 250.0)))
-    limit_label = get_deflection_limit_label_from_ratio(r)
-    if r <= 0:
-        st.caption("Serviceability deflection limit ratio: —")
-        return
-    lim_mm = L_mm / r
-    st.caption(
-        f"Serviceability deflection limit ratio: **{limit_label}** → δlim ≈ {lim_mm:.2f} mm (L = {L_mm:.0f} mm)."
-    )
-
-
-def _resolve_inputs_support_and_deflection_defaults() -> dict:
-    """Single owner for support/deflection defaults in Inputs page render."""
-    from deflection import get_deflection_diagram_support_condition, _deflection_support_options_for_value
-
-    support_resolution = get_deflection_diagram_support_condition(st.session_state)
-    support_current = support_resolution["support_type"]
-    support_options = _deflection_support_options_for_value(support_current)
-    defl_limit_val = get_deflection_limit_ratio(st.session_state.get("defl_limit_ratio", 250.0))
-    defl_limit_options_by_ratio = {int(v): str(k) for k, v in DEFLECTION_LIMIT_OPTIONS.items()}
-    return {
-        "support_current": support_current,
-        "support_options": support_options,
-        "defl_limit_val": defl_limit_val,
-        "defl_limit_options_by_ratio": defl_limit_options_by_ratio,
-    }
-
-
 def _render_serviceability_shrinkage_inputs(sync_callbacks):
     """Render Loading conditions section widgets (UI-only, no logic changes)."""
     st.subheader("Loading conditions")
     design_controls = is_design_governing()
     
-    # Support condition (k2) dropdown — resolved label matches deflection calcs / design auto-derive
-    support_bundle = _resolve_inputs_support_and_deflection_defaults()
-    support_current = support_bundle["support_current"]
-    support_options = support_bundle["support_options"]
+    # Support condition (k2) dropdown
+    support_options = ["Simply supported", "Continuous – end span", "Continuous – interior span", "Cantilever"]
+    support_current = get_param("defl_support_type", "Simply supported")
+    if support_current not in support_options:
+        support_current = "Simply supported"
+    
     w_support = get_widget_key_for_shared("defl_support_type", prefix="inputs_") or "inputs_defl_support_type"
+    if st.session_state.get(w_support) != support_current:
+        st.session_state[w_support] = support_current
     if design_controls:
-        st.info(
-            "🔒 Support condition (k₂) is **auto-derived** from the Design / SFD model "
-            "(matches deflection calculations)."
-        )
+        st.info("🔒 Support condition is controlled by the Design page. Edit it there.")
     select_row(
         "Support condition (k₂)",
         w_support,
@@ -2408,18 +2203,15 @@ def _render_serviceability_shrinkage_inputs(sync_callbacks):
     
     # Deflection limit L/Δ
     w_defl_limit = get_widget_key_for_shared("defl_limit_ratio", prefix="inputs_") or "inputs_defl_limit_ratio"
-    defl_limit_val = support_bundle["defl_limit_val"]
-    defl_limit_options_by_ratio = support_bundle["defl_limit_options_by_ratio"]
-    select_row(
+    defl_limit_val = float(st.session_state.get("defl_limit_ratio", 250.0))
+    number_row(
         "Deflection limit L/Δ",
         w_defl_limit,
-        defl_limit_options_by_ratio,
         defl_limit_val,
         sync_callbacks,
-        help_text=DEFLECTION_LIMIT_HELP_TEXT,
+        help_text="Deflection limit ratio (e.g. 250 for L/250).",
     )
-    _caption_inputs_deflection_limit_ratio()
-
+    
 
 def _render_time_dependent_inputs(sync_callbacks):
     """Render time-dependent inputs (creep/shrinkage) widgets."""
@@ -2455,11 +2247,65 @@ def _render_time_dependent_inputs(sync_callbacks):
         help_text="Age of concrete at loading (days).",
     )
 
+    # Stress ratio
+    w_stress_ratio = get_widget_key_for_shared("stress_ratio", prefix="inputs_") or "inputs_stress_ratio"
+    stress_ratio_val = float(st.session_state.get(w_stress_ratio, get_param("stress_ratio", 0.30)))
+    number_row(
+        "Sustained stress ratio σ₀ / f'c,mi",
+        w_stress_ratio,
+        stress_ratio_val,
+        sync_callbacks,
+        step=0.01,
+        help_text="Sustained stress ratio for creep (dimensionless).",
+    )
+
+
 def _render_materials_and_sectionA_2d(sync_callbacks):
-    """Support conditions, materials (f'c/fsy), shear section params, then 3D diagram (detailed mode)."""
+    """Render Materials section widgets and 2D Section A diagram (UI-only, no logic changes)."""
     mat_col, sec2d_col = st.columns([1.15, 1.85], gap="large")
     
     with mat_col:
+        st.subheader("Materials")
+
+        # Get current values (widget takes precedence; else shared)
+        fc_val  = float(st.session_state.get("inputs_fc",  get_param("fc", 40.0)))
+        fsy_val = float(st.session_state.get("inputs_fsy", get_param("fsy", 500.0)))
+        Ec_val  = float(st.session_state.get("inputs_Ec",  get_param("Ec", 30000.0)))
+        Es_val  = float(st.session_state.get("inputs_Es",  get_param("Es", 200000.0)))
+
+        number_row(
+            "Concrete strength f'c (MPa)",
+            "inputs_fc",
+            fc_val,
+            sync_callbacks,
+            help_text="Characteristic compressive strength of concrete.",
+        )
+
+        number_row(
+            "Steel yield fsy (MPa)",
+            "inputs_fsy",
+            fsy_val,
+            sync_callbacks,
+            help_text="Yield strength of reinforcement.",
+        )
+
+        number_row(
+            "Ec (MPa)",
+            "inputs_Ec",
+            Ec_val,
+            sync_callbacks,
+            help_text="Elastic modulus of concrete.",
+        )
+
+        number_row(
+            "Es (MPa)",
+            "inputs_Es",
+            Es_val,
+            sync_callbacks,
+            help_text="Elastic modulus of reinforcing steel.",
+        )
+
+        # --- Support conditions ---
         st.subheader("Support conditions")
         
         # Member / faces exposed dropdown
@@ -2526,16 +2372,17 @@ def _render_materials_and_sectionA_2d(sync_callbacks):
         )
         
         # Support condition (k2) dropdown
+        support_options = ["Simply supported", "Continuous – end span", "Continuous – interior span", "Cantilever"]
         design_controls = is_design_governing()
-        support_bundle = _resolve_inputs_support_and_deflection_defaults()
-        support_current = support_bundle["support_current"]
-        support_options = support_bundle["support_options"]
+        support_current = get_param("defl_support_type", "Simply supported")
+        if support_current not in support_options:
+            support_current = "Simply supported"
+        
         w_support = get_widget_key_for_shared("defl_support_type", prefix="inputs_") or "inputs_defl_support_type"
+        if st.session_state.get(w_support) != support_current:
+            st.session_state[w_support] = support_current
         if design_controls:
-            st.info(
-                "🔒 Support condition (k₂) is **auto-derived** from the Design / SFD model "
-                "(matches deflection calculations)."
-            )
+            st.info("🔒 Support condition is controlled by the Design page. Edit it there.")
         select_row(
             "Support condition (k₂)",
             w_support,
@@ -2548,63 +2395,13 @@ def _render_materials_and_sectionA_2d(sync_callbacks):
         
         # Deflection limit L/Δ
         w_defl_limit = get_widget_key_for_shared("defl_limit_ratio", prefix="inputs_") or "inputs_defl_limit_ratio"
-        defl_limit_val = support_bundle["defl_limit_val"]
-        defl_limit_options_by_ratio = support_bundle["defl_limit_options_by_ratio"]
-        select_row(
+        defl_limit_val = float(st.session_state.get("defl_limit_ratio", 250.0))
+        number_row(
             "Deflection limit L/Δ",
             w_defl_limit,
-            defl_limit_options_by_ratio,
             defl_limit_val,
             sync_callbacks,
-            help_text=DEFLECTION_LIMIT_HELP_TEXT,
-        )
-        _caption_inputs_deflection_limit_ratio()
-
-        st.markdown("")
-        st.subheader("Materials")
-        w_fsy = get_widget_key_for_shared("fsy", prefix="inputs_") or "inputs_fsy"
-        w_fc = get_widget_key_for_shared("fc", prefix="inputs_") or "inputs_fc"
-        fsy_val = float(st.session_state.get(w_fsy, get_param("fsy", 500.0)))
-        fc_val = float(st.session_state.get(w_fc, get_param("fc", 40.0)))
-        number_row(
-            "Steel MPa",
-            w_fsy,
-            fsy_val,
-            sync_callbacks,
-            help_text="Yield strength of reinforcement (fsy).",
-        )
-        number_row(
-            "Concrete MPa",
-            w_fc,
-            fc_val,
-            sync_callbacks,
-            help_text="Characteristic compressive strength of concrete (f'c).",
-        )
-
-        st.markdown("")
-        st.subheader("Shear section parameters")
-
-        w_d_g = get_widget_key_for_shared("d_g", prefix="inputs_") or "inputs_d_g"
-        w_k_v_method = get_widget_key_for_shared("k_v_method", prefix="inputs_") or "inputs_k_v_method"
-
-        d_g_val = float(st.session_state.get("d_g", 20.0))
-        k_v_val = st.session_state.get("k_v_method", "General εx-based (Cl. 8.2.4.2)")
-
-        number_row(
-            "Maximum aggregate size d_g (mm)",
-            w_d_g,
-            d_g_val,
-            sync_callbacks,
-            help_text="Maximum aggregate size used in shear provisions (mm).",
-        )
-
-        select_row(
-            "k_v method",
-            w_k_v_method,
-            K_V_METHOD_OPTIONS,
-            k_v_val,
-            sync_callbacks,
-            help_text="Select the k_v method for shear capacity (AS 3600 8.2.4.2 vs 8.2.4.3).",
+            help_text="Deflection limit ratio (e.g. 250 for L/250).",
         )
     
     with sec2d_col:
@@ -2984,12 +2781,11 @@ def _sync_auto_design_invalidation(state: dict | None = None) -> None:
 
 
 def _should_run_auto_design() -> bool:
-    should_run = bool(
+    return bool(
         st.session_state.get("_auto_design_requested", False)
         or st.session_state.get("_force_auto_redesign", False)
         or st.session_state.get("_auto_design_invalidated", False)
     )
-    return should_run
 
 
 def _guidance_state_snapshot(state: dict | None = None) -> dict:
@@ -3077,13 +2873,12 @@ def _guidance_apply_change_lines(before: dict, after: dict) -> list[str]:
         pass
     bl = _bottom_reo_state_label(before)
     al = _bottom_reo_state_label(after)
-    bot_phrase, top_phrase = main_longitudinal_reo_change_line_prefixes(after)
     if bl != al:
-        lines.append(f"{bot_phrase}: {bl} → {al}")
+        lines.append(f"Bottom reo: {bl} → {al}")
     tl_b = _top_reo_state_label(before)
     tl_a = _top_reo_state_label(after)
     if tl_b != tl_a:
-        lines.append(f"{top_phrase}: {tl_b} → {tl_a}")
+        lines.append(f"Top reo: {tl_b} → {tl_a}")
     bf = _guidance_shear_links_banner_fragment(before)
     af = _guidance_shear_links_banner_fragment(after)
     if bf != af:
@@ -4386,38 +4181,6 @@ def _state_with_resolved_design_actions(state: dict, actions: dict | None = None
     resolved["Vu_star"] = float(actions.get("Vu", _float_from_state(resolved, "Vu_star", 0.0)) or 0.0)
     resolved["N_star"] = float(actions.get("Nu", _float_from_state(resolved, "N_star", 0.0)) or 0.0)
     resolved["sls_Mstar"] = float(actions.get("SLS_M", _float_from_state(resolved, "sls_Mstar", 0.0)) or 0.0)
-    resolved["uls_Mstar_pos_manual"] = float(
-        _float_from_state(
-            resolved,
-            "uls_Mstar_pos_manual",
-            max(0.0, _float_from_state(resolved, "uls_Mstar", 0.0)),
-        )
-        or 0.0
-    )
-    resolved["uls_Mstar_neg_manual"] = float(
-        _float_from_state(
-            resolved,
-            "uls_Mstar_neg_manual",
-            max(0.0, -_float_from_state(resolved, "uls_Mstar", 0.0)),
-        )
-        or 0.0
-    )
-    resolved["sls_Mstar_pos_manual"] = float(
-        _float_from_state(
-            resolved,
-            "sls_Mstar_pos_manual",
-            max(0.0, _float_from_state(resolved, "sls_Mstar", 0.0)),
-        )
-        or 0.0
-    )
-    resolved["sls_Mstar_neg_manual"] = float(
-        _float_from_state(
-            resolved,
-            "sls_Mstar_neg_manual",
-            max(0.0, -_float_from_state(resolved, "sls_Mstar", 0.0)),
-        )
-        or 0.0
-    )
     resolved["sls_Vstar"] = float(actions.get("SLS_V", _float_from_state(resolved, "sls_Vstar", 0.0)) or 0.0)
     resolved["Tu_star"] = float(actions.get("Tu", _float_from_state(resolved, "Tu_star", 0.0)) or 0.0)
     resolved["P_star"] = float(actions.get("Pu", _float_from_state(resolved, "P_star", 0.0)) or 0.0)
@@ -4444,19 +4207,11 @@ def _build_design_actions_context(state: dict) -> dict:
 def _design_action_widget_specs(selected_prefix: str) -> list[dict]:
     return [
         {
-            "label": "Positive design moment Mu*+ (kNm)",
-            "widget_key": "inputs_load_Mstar_pos_proxy",
-            "shared_key": f"{selected_prefix}_Mstar_pos_manual",
-            "proxy_key": "load_Mstar_pos_proxy",
-            "help_text": "Sagging bending demand magnitude (top in compression, bottom in tension).",
-            "disabled_in_design_mode": True,
-        },
-        {
-            "label": "Negative design moment Mu*- (kNm)",
-            "widget_key": "inputs_load_Mstar_neg_proxy",
-            "shared_key": f"{selected_prefix}_Mstar_neg_manual",
-            "proxy_key": "load_Mstar_neg_proxy",
-            "help_text": "Hogging bending demand magnitude (top in tension, bottom in compression). Enter as positive.",
+            "label": "Design moment Mu* (kNm)",
+            "widget_key": "inputs_load_Mstar_proxy",
+            "shared_key": f"{selected_prefix}_Mstar",
+            "proxy_key": "load_Mstar_proxy",
+            "help_text": "Factored design bending moment at the critical section.",
             "disabled_in_design_mode": True,
         },
         {
@@ -4499,25 +4254,12 @@ def _sync_design_action_widget_to_shared(widget_key: str, shared_key: str, proxy
     if value is None:
         return
     numeric_value = float(value or 0.0)
-    if shared_key.endswith("_Mstar_pos_manual") or shared_key.endswith("_Mstar_neg_manual"):
-        numeric_value = max(0.0, numeric_value)
     mark_user_edit(widget_key, shared_key)
     set_shared(shared_key, numeric_value, source="design_action_widget_sync")
     if proxy_key:
         set_shared(proxy_key, numeric_value, source="design_action_widget_sync")
-    if shared_key.endswith("_Mstar_pos_manual") or shared_key.endswith("_Mstar_neg_manual"):
-        prefix = "uls" if shared_key.startswith("uls_") else "sls"
-        pos = float(get_param(f"{prefix}_Mstar_pos_manual", 0.0) or 0.0)
-        neg = float(get_param(f"{prefix}_Mstar_neg_manual", 0.0) or 0.0)
-        set_shared(f"{prefix}_Mstar", float(pos - neg), source="design_action_widget_sync")
-        if prefix == "uls":
-            set_shared("Mu_star_pos_manual", float(pos), source="design_action_widget_sync")
-            set_shared("Mu_star_neg_manual", float(neg), source="design_action_widget_sync")
-            set_shared("Mu_star_manual", float(pos - neg), source="design_action_widget_sync")
-            set_shared("load_Mstar_proxy", float(pos - neg), source="design_action_widget_sync")
     if shared_key in {"uls_Nstar", "sls_Nstar"}:
         set_shared("N_star", numeric_value, source="design_action_widget_sync")
-    _mark_design_guide_dirty()
     _sync_auto_design_invalidation(_shared_state_snapshot())
     if DEBUG_DESIGN_GUIDANCE_PROBE:
         _debug_check_design_action_consistency(_shared_state_snapshot())
@@ -4544,8 +4286,6 @@ def _commit_design_action_widgets_to_shared(selected_prefix: str) -> None:
 
 def _mirror_design_action_proxies_from_shared(selected_prefix: str) -> None:
     proxy_pairs = (
-        ("load_Mstar_pos_proxy", f"{selected_prefix}_Mstar_pos_manual"),
-        ("load_Mstar_neg_proxy", f"{selected_prefix}_Mstar_neg_manual"),
         ("load_Mstar_proxy", f"{selected_prefix}_Mstar"),
         ("load_Vstar_proxy", f"{selected_prefix}_Vstar"),
         ("load_Nstar_proxy", f"{selected_prefix}_Nstar"),
@@ -4565,47 +4305,14 @@ def _hydrate_design_action_widgets_from_shared(selected_prefix: str, *, force: b
         ),
     )
     should_hydrate = force or design_controls or st.session_state.get("_design_action_widget_signature") != signature
-    # Snapshot widget keys before sync (for dev-only hydration trace).
-    _dbg_w_pos = st.session_state.get("inputs_load_Mstar_pos_proxy")
-    _dbg_w_neg = st.session_state.get("inputs_load_Mstar_neg_proxy")
-    _dbg_w_signed = st.session_state.get("inputs_load_Mstar_proxy")
     for spec in specs:
         widget_key = str(spec["widget_key"])
         shared_key = str(spec["shared_key"])
         if should_hydrate or widget_key not in st.session_state:
             shared_value = float(get_param(shared_key, 0.0) or 0.0)
-            old_widget_value = st.session_state.get(widget_key)
-            if old_widget_value != shared_value:
+            if st.session_state.get(widget_key) != shared_value:
                 st.session_state[widget_key] = shared_value
     st.session_state["_design_action_widget_signature"] = signature
-
-    # TODO(remove): temporary hydration trace for design-action ghost values (canonical vs widget).
-    if bool(st.session_state.get("_dev_mode")):
-        try:
-            hc_log(
-                "[design_action_hydrate]",
-                selected_prefix=selected_prefix,
-                actions_mode=st.session_state.get("actions_mode"),
-                design_controls=bool(design_controls),
-                should_hydrate=bool(should_hydrate),
-                canonical_pos=float(
-                    get_param(f"{selected_prefix}_Mstar_pos_manual", 0.0) or 0.0
-                ),
-                canonical_neg=float(
-                    get_param(f"{selected_prefix}_Mstar_neg_manual", 0.0) or 0.0
-                ),
-                canonical_signed=float(
-                    get_param(f"{selected_prefix}_Mstar", 0.0) or 0.0
-                ),
-                widget_pos_before=_dbg_w_pos,
-                widget_neg_before=_dbg_w_neg,
-                widget_signed_before=_dbg_w_signed,
-                widget_pos_after_render=st.session_state.get("inputs_load_Mstar_pos_proxy"),
-                widget_neg_after_render=st.session_state.get("inputs_load_Mstar_neg_proxy"),
-                widget_signed_after_render=st.session_state.get("inputs_load_Mstar_proxy"),
-            )
-        except Exception:
-            pass
 
 
 def _render_design_action_number_row(
@@ -4642,12 +4349,9 @@ def _debug_check_design_action_consistency(state: dict) -> None:
         return
     actions = _resolve_design_actions_from_state(state)
     payload = {
-        "widget_M_pos": st.session_state.get("inputs_load_Mstar_pos_proxy"),
-        "widget_M_neg": st.session_state.get("inputs_load_Mstar_neg_proxy"),
+        "widget_M": st.session_state.get("inputs_load_Mstar_proxy"),
         "widget_V": st.session_state.get("inputs_load_Vstar_proxy"),
         "shared_uls_M": st.session_state.get("uls_Mstar"),
-        "shared_uls_M_pos": st.session_state.get("uls_Mstar_pos_manual"),
-        "shared_uls_M_neg": st.session_state.get("uls_Mstar_neg_manual"),
         "shared_uls_V": st.session_state.get("uls_Vstar"),
         "resolved_M": actions.get("Mu"),
         "resolved_V": actions.get("Vu"),
@@ -5017,12 +4721,7 @@ def _evaluate_crack_with_state(state: dict, *, bottom_updates: dict | None = Non
 
 
 def _evaluate_deflection_with_state(state: dict, *, bottom_updates: dict | None = None) -> dict | None:
-    from deflection import (
-        _derive_equiv_udl_from_actions,
-        calc_ief_simplified,
-        calc_deflection_as3600,
-        get_resolved_deflection_support_type,
-    )
+    from deflection import _derive_equiv_udl_from_actions, calc_ief_simplified, calc_deflection_as3600
 
     bottom_state = _effective_bottom_design_state(state, bottom_updates)
     b = _design_width_value(state)
@@ -5040,8 +4739,12 @@ def _evaluate_deflection_with_state(state: dict, *, bottom_updates: dict | None 
     w_sls = _float_from_state(state, "w_sls_kNm_per_m", 0.0)
     sls_Mstar = state.get("sls_Mstar")
     sls_Vstar = state.get("sls_Vstar")
-    # Support resolution uses live session (SFD / actions_mode), not the local candidate dict.
-    support_type = get_resolved_deflection_support_type(st.session_state)
+    support_type = str(state.get("defl_support_type") or state.get("support_type") or "Simply supported")
+    sfd_case = str(state.get("sfd_case") or "")
+    if sfd_case.startswith("Cantilever"):
+        support_type = "Cantilever"
+    elif sfd_case.startswith("Simple beam") or sfd_case.startswith("Overhanging beam"):
+        support_type = "Simply supported"
 
     L_m = _float_from_state(state, "defl_L_eff", 0.0)
     if L_m <= 0.0:
@@ -5105,7 +4808,7 @@ def _evaluate_deflection_with_state(state: dict, *, bottom_updates: dict | None 
             "summary_defl_limit_mm": float(defl_limit),
             "summary_util_total": None if util is None else float(util),
             "rows": [{
-                "uid": "defl_total",
+                "uid": "defl_long",
                 "title": "Total deflection (short + long-term)",
                 "value": f"δtotal = {float(results.get('delta_total', 0.0) or 0.0):.2f} mm",
                 "limit": f"δlim = {float(defl_limit):.2f} mm" if defl_limit > 0.0 else "—",
@@ -7515,63 +7218,6 @@ def _generate_shear_candidates(state: dict, mode_config: dict) -> list[dict]:
     return candidates
 
 
-def _shear_governing_fallback_resolved_candidate(state: dict, mode_cfg: dict) -> dict | None:
-    """
-    When bounded geometry+bottom one-click finds nothing but shear governs, pick the best
-    compliant option from the same shear enumeration used elsewhere so the guide can show
-    apply_resolved_candidate + post-apply util (not only reduce_link_spacing steps).
-    """
-    if not isinstance(state, dict):
-        return None
-    evaluated_list = _generate_shear_candidates(state, mode_cfg)
-    compliant = [c for c in evaluated_list if isinstance(c, dict) and bool(c.get("is_compliant"))]
-    if not compliant:
-        return None
-
-    def _rank(c: dict) -> tuple[float, float]:
-        try:
-            wu = float(c.get("worst_util", 999.0) or 999.0)
-        except (TypeError, ValueError):
-            wu = 999.0
-        su_raw = ((c.get("overview") or {}).get("utils") or {}).get("shear")
-        try:
-            su = float(su_raw) if su_raw is not None else wu
-        except (TypeError, ValueError):
-            su = wu
-        return (wu, su)
-
-    best = sorted(compliant, key=_rank)[0]
-    merged_updates = dict(best.get("updates") or {})
-    if not merged_updates:
-        return None
-    _annotate_candidate_target_band_metrics(best, mode_cfg)
-    resolved = dict(best)
-    post_util = best.get("candidate_post_util", best.get("worst_util"))
-    try:
-        post_util = float(post_util) if post_util is not None else None
-    except (TypeError, ValueError):
-        post_util = None
-    tmin = float(mode_cfg.get("target_util_min", EFFICIENCY_TARGET_UTIL_MIN) or EFFICIENCY_TARGET_UTIL_MIN)
-    tmax = float(mode_cfg.get("target_util_max", EFFICIENCY_TARGET_UTIL_MAX) or EFFICIENCY_TARGET_UTIL_MAX)
-    reaches_band = bool(post_util is not None and tmin <= post_util <= tmax)
-    resolved["candidate_reaches_target_band"] = reaches_band
-    resolved["reaches_target_band"] = reaches_band
-    resolved["updates"] = merged_updates
-    resolved["action_type"] = "apply_resolved_candidate"
-    resolved["guidance_change_lines"] = _guidance_change_lines_for_updates(state, merged_updates)
-    subfamilies = _compound_subfamilies_from_updates(merged_updates)
-    resolved["subfamilies"] = list(subfamilies)
-    resolved["recommendation_family_tag"] = _family_tag_from_compound_updates(merged_updates, state)
-    title, _, _ = _compound_guidance_title_reasoning_why(
-        state,
-        merged_updates,
-        subfamilies,
-        strengthening=True,
-    )
-    resolved["label"] = str(title or best.get("label") or "Apply shear reinforcement upgrade")
-    return resolved
-
-
 def _best_bottom_candidate_for_state(state: dict, mode_config: dict) -> dict | None:
     candidates = _generate_bottom_reo_candidates(state, mode_config)
     return _select_best_auto_design_candidate(candidates, mode_config, _evaluate_auto_design_candidate(state, source="seed"))
@@ -8138,11 +7784,6 @@ def _render_guidance_secondary_items(
             continue
         badge_label = _guidance_card_label(item)
         item_bucket = item["bucket"] if idx == 0 and start_index == 0 else ("warn" if item["bucket"] == "fail" else item["bucket"])
-        if idx == 0 and start_index == 0 and item_bucket == "fail":
-            util_v = _parse_util_value(item.get("util"))
-            if util_v is not None and util_v <= 1.0:
-                # Display-only: recommendation card at/under 100% shows close/warn styling.
-                item_bucket = "warn"
         is_static = not item.get("action_type")
         before_after = item.get("guidance_before_after") or _guidance_before_after_text(item, guidance_disp_state)
         use_success_style = (
@@ -10874,7 +10515,6 @@ def _commit_auto_design_candidate_to_shared(candidate: dict) -> dict:
     candidate_state = dict(candidate.get("state") or {})
     if not candidate_state:
         return {}
-    pre_commit_state = _shared_state_snapshot()
 
     tracked_keys = [
         "b", "bw", "D", "tw", "bf", "tf", "bf_bot", "tf_bot",
@@ -11045,17 +10685,9 @@ def _store_cached_recommendation(cache_name: str, state: dict, recommendation) -
     }
 
 
-def _invalidate_design_guide_caches(
-    *,
-    reason: str,
-    updated_keys: list[str] | None = None,
-    preserve_apply_banner: bool = False,
-) -> list[str]:
+def _invalidate_design_guide_caches(*, reason: str, updated_keys: list[str] | None = None) -> list[str]:
     removed: list[str] = []
-    _clear_design_guide_transient_ui_state(
-        clear_history=False,
-        preserve_apply_banner=preserve_apply_banner,
-    )
+    _clear_design_guide_guidance_render_cache()
     for session_key in list(st.session_state.keys()):
         if str(session_key).startswith("_recommendation_cache_"):
             removed.append(str(session_key))
@@ -11181,12 +10813,15 @@ def _apply_shared_updates(updates: dict, *, source: str, rerun: bool = True, foc
         updates=updates,
     )
     _set_shared_updates(updates, source=source)
+    _invalidate_design_guide_caches(reason=source, updated_keys=list(updates.keys()))
     recalc_derived_values()
     compute_all_results()
     if source != "fast_mode:auto_design_to_pass":
         update_results(auto_design_steps=[], auto_design_status="")
     if str(source).startswith("guidance:"):
         _clear_legacy_auto_design_request_flags()
+    _debug_log_design_guide_consistency(source=source, applied_candidate=applied_candidate)
+    if str(source).startswith("guidance:"):
         _finalize_design_guide_apply_step_history(
             prior_state=prior_state,
             source=source,
@@ -11194,16 +10829,6 @@ def _apply_shared_updates(updates: dict, *, source: str, rerun: bool = True, foc
         )
         _store_design_guide_apply_banner_payload(prior_state, _shared_state_snapshot())
         _record_design_guide_auto_geometry_applied(prior_state, updates)
-        st.session_state[DESIGN_GUIDE_PANEL_BASELINE_FP_KEY] = _design_guide_cache_fingerprint(
-            _shared_state_snapshot(),
-        )
-        st.session_state.pop(DESIGN_GUIDE_NEEDS_REFRESH_KEY, None)
-    _debug_log_design_guide_consistency(source=source, applied_candidate=applied_candidate)
-    _invalidate_design_guide_caches(
-        reason=source,
-        updated_keys=list(updates.keys()),
-        preserve_apply_banner=bool(str(source).startswith("guidance:")),
-    )
     _queue_inputs_refresh(source, list(updates.keys()), focus_section=focus_section)
     if rerun:
         st.rerun()
@@ -11683,6 +11308,11 @@ def _apply_resolved_candidate_payload(payload: dict) -> bool:
 
     _set_shared_updates(updates, source="guidance:apply_resolved_candidate")
 
+    _invalidate_design_guide_caches(
+        reason="guidance:apply_resolved_candidate",
+        updated_keys=list(updates.keys()),
+    )
+
     try:
         recalc_derived_values()
     except Exception:
@@ -11757,20 +11387,15 @@ def _apply_resolved_candidate_payload(payload: dict) -> bool:
         _record_design_guide_auto_geometry_applied(prior_state, updates)
     except Exception:
         pass
-    st.session_state[DESIGN_GUIDE_PANEL_BASELINE_FP_KEY] = _design_guide_cache_fingerprint(
-        _shared_state_snapshot(),
-    )
-    st.session_state.pop(DESIGN_GUIDE_NEEDS_REFRESH_KEY, None)
-    _invalidate_design_guide_caches(
-        reason="guidance:apply_resolved_candidate",
-        updated_keys=list(updates.keys()),
-        preserve_apply_banner=True,
-    )
     _queue_inputs_refresh(
         "guidance:apply_resolved_candidate",
         list(updates.keys()),
         focus_section="model",
     )
+    st.session_state.pop(DESIGN_GUIDE_DEBUG_BUNDLE_KEY, None)
+    st.session_state.pop(DESIGN_GUIDE_RECO_TRACE_KEY, None)
+    st.session_state.pop(DESIGN_GUIDE_RANK_TRACE_KEY, None)
+    _clear_design_guide_guidance_render_cache()
 
     try:
         st.rerun()
@@ -13803,6 +13428,7 @@ def _solve_reo_for_geometry(
         gen_started = time.perf_counter()
         arrangements = _generate_local_bottom_arrangements(geometry_state, mode_config, band=band, context=context)
         metrics["candidate_generation_ms"] = float(metrics.get("candidate_generation_ms", 0.0) or 0.0) + ((time.perf_counter() - gen_started) * 1000.0)
+
         bottom_candidates: list[dict] = []
         for arrangement in arrangements:
             if metrics.get("cap_hit"):
@@ -14606,6 +14232,7 @@ def run_progressive_auto_design(*, max_steps: int = AUTO_DESIGN_MAX_HOPS_TO_PASS
                 location="inputs_page.py:auto_design_commit",
                 hypothesis_id="H111",
             )
+
     if final_candidate and final_candidate.get("is_compliant") and outcome != "max_steps":
         outcome = "pass"
         if not refinement_stop_reason and solve_stop_reason not in (
@@ -14780,7 +14407,6 @@ def _render_recommendation_section_header(
     help_text: str,
     level: str,
     render_popover_content,
-    render_popover_always=None,
 ) -> None:
     title_col, info_col = st.columns([0.92, 0.08], vertical_alignment="center")
     with title_col:
@@ -14790,9 +14416,6 @@ def _render_recommendation_section_header(
             st.subheader(title)
     with info_col:
         with info_i_button(help_text=help_text):
-            if render_popover_always is not None:
-                render_popover_always()
-                st.divider()
             load_key = f"_load_recommendation_popover_{title.lower().replace(' ', '_')}"
             load_pressed = st.button(
                 "Load recommendation tools",
@@ -14999,7 +14622,14 @@ def _render_shear_recommendation_panel(*, button_key: str, source: str, compact:
 
 def _render_fast_materials_expander(sync_callbacks: dict) -> None:
     with st.expander("Materials (usually unchanged)", expanded=False):
-        st.caption("Material stiffness properties are handled internally and shown in calculation steps where used.")
+        fc_val = float(st.session_state.get("inputs_fc", get_param("fc", 40.0)))
+        fsy_val = float(st.session_state.get("inputs_fsy", get_param("fsy", 500.0)))
+        Ec_val = float(st.session_state.get("inputs_Ec", get_param("Ec", 30000.0)))
+        Es_val = float(st.session_state.get("inputs_Es", get_param("Es", 200000.0)))
+        number_row("Concrete strength f'c (MPa)", "inputs_fc", fc_val, sync_callbacks, help_text="Characteristic compressive strength of concrete.")
+        number_row("Steel yield fsy (MPa)", "inputs_fsy", fsy_val, sync_callbacks, help_text="Yield strength of reinforcement.")
+        number_row("Ec (MPa)", "inputs_Ec", Ec_val, sync_callbacks, help_text="Elastic modulus of concrete.")
+        number_row("Es (MPa)", "inputs_Es", Es_val, sync_callbacks, help_text="Elastic modulus of reinforcing steel.")
 
 
 def _parse_util_value(value) -> float | None:
@@ -18174,7 +17804,7 @@ def _compute_design_guidance_items(
     # an actionable strengthen path. Skip the full search for in-band / passive outcomes
     # (handled later without this solver).
     run_bounded_one_click_solver = (
-        bool(overview.get("any_fail"))
+        (not bool(overview.get("all_key_pass")))
         and bool(critical)
     )
     try:
@@ -18185,16 +17815,35 @@ def _compute_design_guidance_items(
             )
     except Exception:
         resolved_one_click_candidate = None
-    if (
-        resolved_one_click_candidate is None
-        and run_bounded_one_click_solver
-        and str(governing_action or "") == "shear"
-    ):
-        resolved_one_click_candidate = _shear_governing_fallback_resolved_candidate(guidance_state, mode_config)
     one_click_solver_trace = dict((st.session_state.get(DESIGN_GUIDE_RANK_TRACE_KEY) or {}).get("one_click_solver") or {})
     if full_dbg:
         debug_sink["one_click_solver"] = one_click_solver_trace
+    # region agent log
+    _agent_debug_ndjson_1eb89f(
+        location="inputs_page.py:_compute_design_guidance_items:post_bounded_solver",
+        message="post_solver_snapshot",
+        data={
+            "governing_action": str(governing_action or ""),
+            "all_key_pass": bool(overview.get("all_key_pass")),
+            "worst_util": overview.get("worst_util"),
+            "run_bounded": bool(run_bounded_one_click_solver),
+            "has_bounded_resolved": isinstance(resolved_one_click_candidate, dict),
+            "critical_keys": [str(x.get("check_key") or "") for x in critical],
+            "governing_in_critical": bool(governing_item_is_critical),
+            "explored": one_click_solver_trace.get("explored_candidates"),
+        },
+        hypothesis_id="H1,H2",
+    )
+    # endregion
     if isinstance(resolved_one_click_candidate, dict):
+        # region agent log
+        _agent_debug_ndjson_1eb89f(
+            location="inputs_page.py:_compute_design_guidance_items",
+            message="return_branch",
+            data={"branch": "bounded_solved_resolved"},
+            hypothesis_id="H2",
+        )
+        # endregion
         primary = _guidance_item_from_resolved_candidate(
             resolved_one_click_candidate,
             state=guidance_state,
@@ -18285,6 +17934,27 @@ def _compute_design_guidance_items(
             primary_hint=primary_critical,
             debug_extra=one_click_probe,
         )
+    # region agent log
+    _agent_debug_ndjson_1eb89f(
+        location="inputs_page.py:_compute_design_guidance_items:pre_surface_gates",
+        message="one_click_vs_compound_gate",
+        data={
+            "governing_action": str(governing_action or ""),
+            "one_click_item_is_none": one_click_critical_item is None,
+            "one_click_action_type": str((one_click_critical_item or {}).get("action_type") or "")
+            if one_click_critical_item
+            else "",
+            "out_of_band_live": bool(out_of_band_live),
+            "target_band_eps_passed": bool(target_band_with_eps_passed),
+            "critical_nonempty": bool(critical),
+            "gate_surface_obb_crit": bool(
+                one_click_critical_item is not None and out_of_band_live and bool(critical),
+            ),
+            "will_compound_next": bool(critical and governing_item_is_critical),
+        },
+        hypothesis_id="H3,H4",
+    )
+    # endregion
     if min_dbg:
         debug_sink["one_click_critical_candidate_exists"] = bool(one_click_probe.get("one_click_critical_candidate_exists"))
         debug_sink["one_click_critical_candidate_label"] = one_click_probe.get("one_click_critical_candidate_label")
@@ -18342,6 +18012,18 @@ def _compute_design_guidance_items(
         return [one_click_critical_item]
     if critical and governing_item_is_critical:
         primary = primary_critical or critical[0]
+        # region agent log
+        _agent_debug_ndjson_1eb89f(
+            location="inputs_page.py:_compute_design_guidance_items",
+            message="return_branch",
+            data={
+                "branch": "compound_critical_path",
+                "primary_check_key": str(primary.get("check_key") or ""),
+                "primary_action_type": str(primary.get("action_type") or ""),
+            },
+            hypothesis_id="H3,H4",
+        )
+        # endregion
         action_type = str(primary.get("action_type") or "")
         guidance_branch = f"critical_{action_type}" if action_type else "critical_items"
         _log_guidance_branch_governing_mismatch(
@@ -18555,6 +18237,15 @@ def _render_fast_design_guidance_panel(
     if inputs_render_audit is not None:
         inputs_render_audit["design_guide_rendered"] = "yes"
     banner_generic_only = bool(st.session_state.pop("_design_guide_banner_generic_only", False))
+    guide_head = st.columns([1, 0.08], vertical_alignment="top")
+    with guide_head[1]:
+        with info_i_button(
+            help_text=(
+                "Choose the preferred optimisation goal for design guidance and "
+                "auto-design recommendations."
+            )
+        ):
+            _render_design_optimisation_inputs(sync_callbacks)
     _sync_auto_design_mode_tracking(_shared_state_snapshot())
     st.markdown("### Design Guide")
     current_state = _shared_state_snapshot()
@@ -18565,19 +18256,6 @@ def _render_fast_design_guidance_panel(
     else:
         st.session_state.pop(DESIGN_GUIDE_RECO_TRACE_KEY, None)
         st.session_state.pop(DESIGN_GUIDE_RANK_TRACE_KEY, None)
-
-    if not st.session_state.get(DESIGN_GUIDE_NEEDS_REFRESH_KEY):
-        baseline_fp = st.session_state.get(DESIGN_GUIDE_PANEL_BASELINE_FP_KEY)
-        if baseline_fp is not None and fingerprint != baseline_fp:
-            _mark_design_guide_dirty()
-
-    if st.session_state.get(DESIGN_GUIDE_NEEDS_REFRESH_KEY):
-        st.info("Design guide needs refresh.")
-        if st.button("Update design guide", key="_design_guide_needs_refresh_ack"):
-            st.session_state[DESIGN_GUIDE_PANEL_BASELINE_FP_KEY] = fingerprint
-            st.session_state.pop(DESIGN_GUIDE_NEEDS_REFRESH_KEY, None)
-            st.rerun()
-        return
 
     guidance_started_at = time.perf_counter()
     guidance_items: list[dict] = []
@@ -18590,10 +18268,6 @@ def _render_fast_design_guidance_panel(
         guidance_debug = dict(cached_debug or {})
         guidance_cache_hit = True
     else:
-        _clear_design_guide_transient_ui_state(
-            clear_history=False,
-            preserve_apply_banner=True,
-        )
         guidance_debug = {}
         guidance_items = _compute_design_guidance_items(
             current_state,
@@ -18816,8 +18490,58 @@ def _render_fast_design_guidance_panel(
     if fast_focus_section == "model":
         _render_design_guide_post_apply_banner(fast_focus_section)
 
-    st.session_state[DESIGN_GUIDE_PANEL_BASELINE_FP_KEY] = fingerprint
-    st.session_state.pop(DESIGN_GUIDE_NEEDS_REFRESH_KEY, None)
+
+def _apply_new_beam_module_starter_to_shared() -> None:
+    """
+    Canonical shared-state template for a brand-new beam module (200×300, 3N12 bottom, zero actions).
+    Only keys in SHARED_DEFAULTS — use set_shared throughout.
+    """
+    starter: dict[str, object] = {
+        "b": 200.0,
+        "D": 300.0,
+        "sec_shape": "RECT",
+        "Tu_star": 0.0,
+        "P_star": 0.0,
+        "N_star": 0.0,
+        "actions_source": "Manual design actions (inputs below)",
+        "actions_mode": "manual",
+        "uls_Mstar": 0.0,
+        "uls_Vstar": 0.0,
+        "uls_Nstar": 0.0,
+        "sls_Mstar": 0.0,
+        "sls_Vstar": 0.0,
+        "sls_Nstar": 0.0,
+        "loads_edit_mode": "ULS",
+        "loads_edit_toggle": False,
+        "load_Mstar_proxy": 0.0,
+        "load_Vstar_proxy": 0.0,
+        "load_Nstar_proxy": 0.0,
+        # Bottom: 3×N12 (canonical row model + legacy layer keys)
+        "bot_row_count": 1,
+        "bot_row_1_mode": "Count",
+        "bot_row_1_bars": 3,
+        "bot_row_1_spacing": 200.0,
+        "bot_row_1_dia": 12,
+        "bot_row_2_mode": "Count",
+        "bot_row_2_bars": 0,
+        "bot_row_2_spacing": 200.0,
+        "bot_row_2_dia": 12,
+        "bot1_layout_mode": "Count",
+        "bot1_count": 3,
+        "bot1_spacing": 200,
+        "bot2_layout_mode": "Count",
+        "bot2_count": 0,
+        "bot2_spacing": 200,
+        "db_bot_1": 12.0,
+        "db_bot_2": 12.0,
+        "nb_or_s_bot_1": 3.0,
+        "nb_or_s_bot_2": 0.0,
+    }
+    for key, value in starter.items():
+        set_shared(str(key), value, source="beam_module_starter_seed")
+    load_proxies_from_active_set()
+    recalc_derived_values()
+    derive_design_actions()
 
 
 def render_inputs():
@@ -18851,10 +18575,11 @@ def render_inputs():
         st.session_state["_beam_skip_auto_persist_once"] = False
 
     # Startup precedence: (1) stored active beam hydrate (2) pending apply refresh
-    # (3) ordinary rerun only. New-beam starter seeding is handled in state_and_helpers.add_new_beam_record().
+    # (3) one-time new-module starter (4) ordinary rerun — no starter reapply.
     inputs_startup_debug: dict[str, object] = {
         "explicit_beam_hydrate": False,
         "pending_refresh_happened": False,
+        "starter_seed_ran": False,
         "ordinary_rerun_only": True,
     }
 
@@ -18869,6 +18594,20 @@ def render_inputs():
         inputs_startup_debug["pending_refresh_happened"] = True
         inputs_startup_debug["ordinary_rerun_only"] = False
         hydrate_active_page_widgets_from_shared("inputs", force_on_page_change=True)
+
+    starter_eligible = (
+        not bool(st.session_state.get(BEAM_MODULE_STARTER_SEED_DONE_KEY))
+        and not pending_refresh
+    )
+    if starter_eligible:
+        _apply_new_beam_module_starter_to_shared()
+        persist_active_beam_from_shared()
+        st.session_state["beam_last_hydrated_id"] = st.session_state.get("active_beam_id")
+        st.session_state["_force_inputs_widget_reseed_once"] = True
+        hydrate_active_page_widgets_from_shared("inputs", force_on_page_change=True)
+        st.session_state[BEAM_MODULE_STARTER_SEED_DONE_KEY] = True
+        inputs_startup_debug["starter_seed_ran"] = True
+        inputs_startup_debug["ordinary_rerun_only"] = False
 
     _agent_debug_log(
         "Inputs beam-module startup trace",
@@ -18942,8 +18681,8 @@ def render_inputs():
         active_beam_id = beam_order[0]
 
     st.markdown("##### Batch design")
-    beam_selector_col, add_beam_col, dup_beam_col, del_beam_col, reset_workspace_col, manager_toggle_col = st.columns(
-        [2.9, 0.9, 1.05, 0.9, 1.35, 1.25],
+    beam_selector_col, add_beam_col, dup_beam_col, del_beam_col, manager_toggle_col = st.columns(
+        [3.2, 0.95, 1.15, 0.95, 1.4],
         gap="small",
     )
 
@@ -19013,19 +18752,6 @@ def render_inputs():
             delete_beam_record(active_beam_id)
             hydrate_active_page_widgets_from_shared("inputs", force_on_page_change=True)
             st.rerun()
-
-    with reset_workspace_col:
-        st.markdown("<div style='height: 1.55rem;'></div>", unsafe_allow_html=True)
-        if st.button(
-            "Reset workspace",
-            key="beam_manager_reset_workspace",
-            use_container_width=True,
-            help=(
-                "New clean workspace: one starter beam, all design actions set to zero, "
-                "and saved session snapshot cleared so values are not restored from disk."
-            ),
-        ):
-            reset_app_to_clean_starter_workspace()
 
     with manager_toggle_col:
         st.markdown("<div style='height: 1.55rem;'></div>", unsafe_allow_html=True)
@@ -19138,30 +18864,17 @@ def render_inputs():
 
     page_divider()
 
-    top_dm_l, top_dm_r = st.columns([8, 1], gap="small", vertical_alignment="top")
-    with top_dm_l:
-        seed_widget_from_shared("inputs_detailed_mode_toggle", "inputs_detailed_mode", False)
-        inputs_detailed_mode = v2_radio(
-            label="Design mode",
-            key="inputs_detailed_mode_toggle",
-            options=[False, True],
-            default_index=1 if bool(_shared_state_snapshot().get("inputs_detailed_mode", False)) else 0,
-            format_func=lambda value: "Detailed" if value else "Fast",
-            horizontal=True,
-            help="Choose between the streamlined fast workflow and the full detailed design workspace.",
-            on_change=sync_callbacks.get("inputs_detailed_mode_toggle"),
-        )
-    with top_dm_r:
-        _pad_i, _info_i = st.columns([0.2, 0.8], gap="small")
-        with _info_i:
-            with info_i_button(
-                help_text=(
-                    "Design mode: Fast streamlines inputs; Detailed opens the full workspace. "
-                    "Use the controls below to set the optimisation goal for design guidance and "
-                    "auto-design recommendations."
-                )
-            ):
-                _render_design_optimisation_inputs(sync_callbacks)
+    seed_widget_from_shared("inputs_detailed_mode_toggle", "inputs_detailed_mode", False)
+    inputs_detailed_mode = v2_radio(
+        label="Design mode",
+        key="inputs_detailed_mode_toggle",
+        options=[False, True],
+        default_index=1 if bool(_shared_state_snapshot().get("inputs_detailed_mode", False)) else 0,
+        format_func=lambda value: "Detailed" if value else "Fast",
+        horizontal=True,
+        help="Choose between the streamlined fast workflow and the full detailed design workspace.",
+        on_change=sync_callbacks.get("inputs_detailed_mode_toggle"),
+    )
 
     # ============================
     # 1. Top section layout
@@ -19210,19 +18923,6 @@ def render_inputs():
             current_actions_source = legacy_design
 
         design_actions_toggle_default = (current_actions_source == legacy_design)
-        # Align with canonical actions_source when it changes on another page (e.g. SFD/BMD toggle).
-        _itk_calculated = "inputs_use_calculated_actions"
-        _itk_calculated_intent = "_inputs_use_calculated_actions_user_intent"
-        user_intent_pending = bool(st.session_state.get(_itk_calculated_intent, False))
-        if (
-            (not user_intent_pending)
-            and _itk_calculated in st.session_state
-            and bool(st.session_state[_itk_calculated]) != bool(
-            design_actions_toggle_default
-            )
-        ):
-            st.session_state[_itk_calculated] = bool(design_actions_toggle_default)
-            st.rerun()
         with info_col:
             with info_i_button(
                 help_text="Explain where design demand comes from and control whether loads are manual or linked to the Design page."
@@ -19237,14 +18937,10 @@ def render_inputs():
                 st.markdown("**What to avoid**")
                 st.markdown("- Do not compare a ULS strength result against an SLS load view by mistake.")
                 st.divider()
-                def _on_inputs_use_calculated_actions_change() -> None:
-                    st.session_state[_itk_calculated_intent] = True
-
                 use_calculated_actions = st.toggle(
                     "Use calculated design actions",
                     value=design_actions_toggle_default,
                     key="inputs_use_calculated_actions",
-                    on_change=_on_inputs_use_calculated_actions_change,
                     help=(
                         "When enabled, the design actions below are taken from the "
                         "Design / SFD-BMD page and become read-only."
@@ -19323,9 +19019,6 @@ def render_inputs():
             st.rerun()
         else:
             st.session_state["loads_edit_mode"] = new_mode
-
-        if user_intent_pending:
-            st.session_state[_itk_calculated_intent] = False
 
         design_controls = is_design_governing()
         if design_controls:
@@ -19467,43 +19160,25 @@ def render_inputs():
         hypothesis_id="H18",
     )
     # endregion
-    # Three columns: bottom reo | top reo | shear + materials (full width).
-    col_bot_reo, col_top_reo, col_shear_mat = st.columns(3, gap="large")
-    _sec_shape_reo_ui = st.session_state.get(
-        "inputs_sec_shape", st.session_state.get("sec_shape", "RECT")
-    )
-    _is_ti_reo_ui = normalized_sec_shape_ui(_sec_shape_reo_ui) in ("T", "I")
-    _bot_hdr, _top_hdr = main_longitudinal_reo_pair_labels(
-        _sec_shape_reo_ui, variant="inputs_compact" if not inputs_detailed_mode else "inputs_detailed"
-    )
+    if inputs_detailed_mode:
+        col_bot_reo, col_top_reo, col_shear_reo = st.columns(3, gap="large")
+    else:
+        col_bot_reo, col_shear_reo = st.columns([1.0, 1.5], gap="medium")
+        col_top_reo = None
 
-    # --- Bottom reo (web for T/I) ---
+    # --- Bottom reo ---
     with col_bot_reo:
-        w_rowgap_bot = get_widget_key_for_shared("rowgap_bot", prefix="inputs_") or "inputs_rowgap_bot"
-        seed_widget_from_shared(w_rowgap_bot, "rowgap_bot", 60.0)
-        rowgap_bot_val = float(st.session_state.get(w_rowgap_bot, get_param("rowgap_bot", 60.0)))
-
         _render_recommendation_section_header(
-            _bot_hdr,
+            "Bottom reo" if not inputs_detailed_mode else "Bottom Longitudinal Reinforcement",
             help_text=(
-                "Show the current bottom (web) reinforcement recommendation, the optimisation goal, "
-                "the predicted impact, and apply the suggested arrangement. "
-                "For T and I sections this is web steel, not flange bars."
+                "Show the current bottom-reinforcement recommendation, the optimisation goal, "
+                "the predicted impact, and apply the suggested arrangement."
             ),
             level="subheader",
             render_popover_content=lambda: _render_bottom_recommendation_panel(
                 button_key="inputs_apply_bottom_recommendation",
                 source="fast_mode:bottom_recommendation" if not inputs_detailed_mode else "detailed_mode:bottom_recommendation",
                 compact=not inputs_detailed_mode,
-            ),
-            render_popover_always=lambda: render_longitudinal_reo_row_config_controls(
-                page_prefix="inputs",
-                section="bot",
-                sync_callbacks=sync_callbacks,
-                rowgap_widget_key=w_rowgap_bot,
-                rowgap_default=rowgap_bot_val,
-                rowgap_help_text="Clear vertical gap between Layer 1 and Layer 2 (mm).",
-                sec_shape=_sec_shape_reo_ui,
             ),
         )
         if bool(st.session_state.get("_dev_mode")):
@@ -19526,6 +19201,7 @@ def render_inputs():
                 location="inputs_page.py:render_inputs:before_bottom_reo_rows",
                 hypothesis_id="H_BOT_REO_WIDGET_ALIGN",
             )
+        rowgap_bot_val = float(get_param("rowgap_bot", 60.0))
         render_longitudinal_reo_rows(
             page_prefix="inputs",
             section="bot",
@@ -19535,79 +19211,92 @@ def render_inputs():
             spacing_options=REO_SPACINGS,
             dia_options=REO_BAR_DIAS,
             single_column=True,
-            sec_shape=_sec_shape_reo_ui,
         )
 
+        number_row(
+            "Row gap (mm)",
+            "inputs_rowgap_bot",
+            rowgap_bot_val,
+            sync_callbacks,
+            help_text="Clear vertical gap between Layer 1 and Layer 2 (mm).",
+        )
+    
+        # Bottom cover widget (moved from Geometry section)
         cover_bot_val = float(st.session_state.get("inputs_cover_bot", get_param("cover_bot", 40.0)))
         number_row(
             "Bottom cover (mm)",
             "inputs_cover_bot",
             cover_bot_val,
             sync_callbacks,
-            help_text=(
-                "Clear cover to the bottom web bars. "
-                "For T/I sections, flange bottom cover is set with bottom flange reinforcement."
-                if _is_ti_reo_ui
-                else "Clear cover to the bottom bars."
-            ),
+            help_text="Clear cover to the bottom bars.",
         )
+    # --- Top reo ---
+    if col_top_reo is not None:
+        with col_top_reo:
+            st.subheader("Top reinforcement" if not inputs_detailed_mode else "Top Longitudinal Reinforcement")
 
-    # --- Top reo (web for T/I) ---
-    with col_top_reo:
-        w_rowgap_top = get_widget_key_for_shared("rowgap_top", prefix="inputs_") or "inputs_rowgap_top"
-        seed_widget_from_shared(w_rowgap_top, "rowgap_top", 60.0)
-        rowgap_top_val = float(st.session_state.get(w_rowgap_top, st.session_state.get("rowgap_top", 60.0)))
-
-        _render_recommendation_section_header(
-            _top_hdr,
-            help_text=(
-                "Top web longitudinal reinforcement for hogging, load reversal, or compression-side layers "
-                "(T/I: stem/web steel, not flange bars). Uses the same row layout model as bottom reinforcement."
-            ),
-            level="subheader",
-            render_popover_content=lambda: (
-                st.markdown(
-                    "Edit top web bars directly here; values stay in sync with bending, section, and crack checks. "
-                    "There is no separate automated top-reo suggestion on this page yet."
-                )
-            ),
-            render_popover_always=lambda: render_longitudinal_reo_row_config_controls(
+            w_rowgap_top = get_widget_key_for_shared("rowgap_top", prefix="inputs_") or "inputs_rowgap_top"
+            seed_widget_from_shared(w_rowgap_top, "rowgap_top", 60.0)
+            rowgap_top_val = float(st.session_state.get(w_rowgap_top, st.session_state.get("rowgap_top", 60.0)))
+            render_longitudinal_reo_rows(
                 page_prefix="inputs",
                 section="top",
                 sync_callbacks=sync_callbacks,
-                rowgap_widget_key=w_rowgap_top,
-                rowgap_default=rowgap_top_val,
-                rowgap_help_text="Clear vertical gap between Layer 1 and Layer 2 (mm).",
-                sec_shape=_sec_shape_reo_ui,
-            ),
-        )
-        render_longitudinal_reo_rows(
-            page_prefix="inputs",
-            section="top",
-            sync_callbacks=sync_callbacks,
-            layout_modes=REO_LAYOUT_MODE,
-            count_options=REO_COUNTS_0_12,
-            spacing_options=REO_SPACINGS,
-            dia_options=REO_BAR_DIAS,
-            single_column=True,
-            sec_shape=_sec_shape_reo_ui,
-        )
+                layout_modes=REO_LAYOUT_MODE,
+                count_options=REO_COUNTS_0_12,
+                spacing_options=REO_SPACINGS,
+                dia_options=REO_BAR_DIAS,
+            )
 
-        cover_top_val = float(st.session_state.get("inputs_cover_top", get_param("cover_top", 40.0)))
-        number_row(
-            "Top cover (mm)",
-            "inputs_cover_top",
-            cover_top_val,
-            sync_callbacks,
-            help_text=(
-                "Clear cover to the top web bars. For T/I sections, flange top cover is set with flange reinforcement."
-                if _is_ti_reo_ui
-                else "Clear cover to the top bars."
-            ),
-        )
+            number_row(
+                "Row gap (mm)",
+                w_rowgap_top,
+                rowgap_top_val,
+                sync_callbacks,
+                help_text="Clear vertical gap between Layer 1 and Layer 2 (mm).",
+            )
+        
+            cover_top_val = float(st.session_state.get("inputs_cover_top", get_param("cover_top", 40.0)))
+            number_row(
+                "Top cover (mm)",
+                "inputs_cover_top",
+                cover_top_val,
+                sync_callbacks,
+                help_text="Clear cover to the top bars.",
+            )
 
-    # --- Shear + Materials (third column) ---
-    with col_shear_mat:
+    # --- Shear reo (same row) ---
+    with col_shear_reo:
+        if inputs_detailed_mode:
+            # --- Shear section parameters ---
+            st.subheader("Shear section parameters")
+
+            # Widget keys (resolved via TAB_KEYS)
+            w_d_g = get_widget_key_for_shared("d_g", prefix="inputs_") or "inputs_d_g"
+            w_k_v_method = get_widget_key_for_shared("k_v_method", prefix="inputs_") or "inputs_k_v_method"
+
+            # Read shared values (do NOT write shared keys)
+            d_g_val = float(st.session_state.get("d_g", 20.0))
+            k_v_val = st.session_state.get("k_v_method", "General εx-based (Cl. 8.2.4.2)")
+
+            number_row(
+                "Maximum aggregate size d_g (mm)",
+                w_d_g,
+                d_g_val,
+                sync_callbacks,
+                help_text="Maximum aggregate size used in shear provisions (mm).",
+            )
+
+            # k_v method dropdown
+            select_row(
+                "k_v method",
+                w_k_v_method,
+                K_V_METHOD_OPTIONS,
+                k_v_val,
+                sync_callbacks,
+                help_text="Select the k_v method for shear capacity (AS 3600 8.2.4.2 vs 8.2.4.3).",
+            )
+
         if not inputs_detailed_mode and fast_focus_section == "shear":
             _render_fast_next_hint("Next step: confirm or auto-design the shear reinforcement below.")
         _render_recommendation_section_header(
@@ -19678,10 +19367,10 @@ def render_inputs():
         select_row(
             "No. of legs",
             w_lig_legs,
-            list(range(2, 13)),
+            REO_COUNTS_0_12,
             int(lig_legs_val),
             sync_callbacks,
-            help_text="Number of legs per shear link (minimum 2 for shear reinforcement).",
+            help_text="Number of legs per shear link (0–12).",
         )
         number_row(
             "Link spacing (mm)",
@@ -19690,131 +19379,10 @@ def render_inputs():
             sync_callbacks,
             help_text="Centre-to-centre spacing of shear links along the member (mm).",
         )
-
-        if not inputs_detailed_mode:
-            st.markdown("")
-            st.subheader("Materials")
-            w_fsy = get_widget_key_for_shared("fsy", prefix="inputs_") or "inputs_fsy"
-            w_fc = get_widget_key_for_shared("fc", prefix="inputs_") or "inputs_fc"
-            fsy_val = float(st.session_state.get(w_fsy, get_param("fsy", 500.0)))
-            fc_val = float(st.session_state.get(w_fc, get_param("fc", 40.0)))
-            number_row(
-                "Steel MPa",
-                w_fsy,
-                fsy_val,
-                sync_callbacks,
-                help_text="Yield strength of reinforcement (fsy).",
-            )
-            number_row(
-                "Concrete MPa",
-                w_fc,
-                fc_val,
-                sync_callbacks,
-                help_text="Characteristic compressive strength of concrete (f'c).",
-            )
-
-    sec_shape_for_flange = str(st.session_state.get("sec_shape", get_param("sec_shape", "RECT")) or "RECT")
-    if sec_shape_for_flange in ("T", "I"):
-        st.markdown("### Flange reinforcement")
-        st.caption("Only used for T and I sections. Flange groups are resolved into real bar coordinates for crack/shear participation.")
-        flange_col_a, flange_col_b = st.columns(2, gap="large")
-        with flange_col_a:
-            select_row(
-                "Enable top flange bars",
-                "inputs_top_flange_reo_enabled",
-                [False, True],
-                bool(st.session_state.get("top_flange_reo_enabled", False)),
-                sync_callbacks,
-                help_text="Enable explicit top flange reinforcement groups.",
-            )
-            select_row(
-                "Mirror top left/right",
-                "inputs_top_flange_mirror_lr",
-                [True, False],
-                bool(st.session_state.get("top_flange_mirror_lr", True)),
-                sync_callbacks,
-                help_text="When enabled, the right-side top flange group mirrors the left-side values.",
-            )
-            number_row("Top flange left bars", "inputs_top_flange_left_count", float(st.session_state.get("top_flange_left_count", 0) or 0), sync_callbacks, help_text="Total bars in top-left flange group.")
-            select_row("Top flange left dia (mm)", "inputs_top_flange_left_dia", REO_BAR_DIAS, int(st.session_state.get("top_flange_left_dia", 16) or 16), sync_callbacks)
-            number_row("Top flange left rows", "inputs_top_flange_left_rows", float(st.session_state.get("top_flange_left_rows", 1) or 1), sync_callbacks)
-            number_row("Top flange left row spacing (mm)", "inputs_top_flange_left_row_spacing", float(st.session_state.get("top_flange_left_row_spacing", 60.0) or 60.0), sync_callbacks)
-            select_row(
-                "Top flange left clear spacing mode",
-                "inputs_top_flange_left_clear_spacing_mode",
-                ["count", "spacing"],
-                str(st.session_state.get("top_flange_left_clear_spacing_mode", "count") or "count"),
-                sync_callbacks,
-            )
-            if not bool(st.session_state.get("top_flange_mirror_lr", True)):
-                number_row("Top flange right bars", "inputs_top_flange_right_count", float(st.session_state.get("top_flange_right_count", 0) or 0), sync_callbacks)
-                select_row("Top flange right dia (mm)", "inputs_top_flange_right_dia", REO_BAR_DIAS, int(st.session_state.get("top_flange_right_dia", 16) or 16), sync_callbacks)
-                number_row("Top flange right rows", "inputs_top_flange_right_rows", float(st.session_state.get("top_flange_right_rows", 1) or 1), sync_callbacks)
-                number_row("Top flange right row spacing (mm)", "inputs_top_flange_right_row_spacing", float(st.session_state.get("top_flange_right_row_spacing", 60.0) or 60.0), sync_callbacks)
-                select_row(
-                    "Top flange right clear spacing mode",
-                    "inputs_top_flange_right_clear_spacing_mode",
-                    ["count", "spacing"],
-                    str(st.session_state.get("top_flange_right_clear_spacing_mode", "count") or "count"),
-                    sync_callbacks,
-                )
-        with flange_col_b:
-            select_row(
-                "Enable bottom flange bars",
-                "inputs_bot_flange_reo_enabled",
-                [False, True],
-                bool(st.session_state.get("bot_flange_reo_enabled", False)),
-                sync_callbacks,
-                help_text="Enable explicit bottom flange reinforcement groups (I-sections only; ignored for T bottom flange).",
-            )
-            select_row(
-                "Mirror bottom left/right",
-                "inputs_bot_flange_mirror_lr",
-                [True, False],
-                bool(st.session_state.get("bot_flange_mirror_lr", True)),
-                sync_callbacks,
-                help_text="When enabled, the right-side bottom flange group mirrors the left-side values.",
-            )
-            number_row("Bottom flange left bars", "inputs_bot_flange_left_count", float(st.session_state.get("bot_flange_left_count", 0) or 0), sync_callbacks)
-            select_row("Bottom flange left dia (mm)", "inputs_bot_flange_left_dia", REO_BAR_DIAS, int(st.session_state.get("bot_flange_left_dia", 20) or 20), sync_callbacks)
-            number_row("Bottom flange left rows", "inputs_bot_flange_left_rows", float(st.session_state.get("bot_flange_left_rows", 1) or 1), sync_callbacks)
-            number_row("Bottom flange left row spacing (mm)", "inputs_bot_flange_left_row_spacing", float(st.session_state.get("bot_flange_left_row_spacing", 60.0) or 60.0), sync_callbacks)
-            select_row(
-                "Bottom flange left clear spacing mode",
-                "inputs_bot_flange_left_clear_spacing_mode",
-                ["count", "spacing"],
-                str(st.session_state.get("bot_flange_left_clear_spacing_mode", "count") or "count"),
-                sync_callbacks,
-            )
-            if not bool(st.session_state.get("bot_flange_mirror_lr", True)):
-                number_row("Bottom flange right bars", "inputs_bot_flange_right_count", float(st.session_state.get("bot_flange_right_count", 0) or 0), sync_callbacks)
-                select_row("Bottom flange right dia (mm)", "inputs_bot_flange_right_dia", REO_BAR_DIAS, int(st.session_state.get("bot_flange_right_dia", 20) or 20), sync_callbacks)
-                number_row("Bottom flange right rows", "inputs_bot_flange_right_rows", float(st.session_state.get("bot_flange_right_rows", 1) or 1), sync_callbacks)
-                number_row("Bottom flange right row spacing (mm)", "inputs_bot_flange_right_row_spacing", float(st.session_state.get("bot_flange_right_row_spacing", 60.0) or 60.0), sync_callbacks)
-                select_row(
-                    "Bottom flange right clear spacing mode",
-                    "inputs_bot_flange_right_clear_spacing_mode",
-                    ["count", "spacing"],
-                    str(st.session_state.get("bot_flange_right_clear_spacing_mode", "count") or "count"),
-                    sync_callbacks,
-                )
-        st.markdown("#### Flange transverse detailing (optional)")
-        st.caption("Detailing/distribution reinforcement in flange regions only. Not used in primary web shear capacity.")
-        tr_col1, tr_col2 = st.columns(2, gap="large")
-        with tr_col1:
-            select_row("Enable top flange transverse", "inputs_top_flange_transverse_enabled", [False, True], bool(st.session_state.get("top_flange_transverse_enabled", False)), sync_callbacks)
-            select_row("Top flange transverse dia (mm)", "inputs_top_flange_transverse_dia", REO_BAR_DIAS, int(st.session_state.get("top_flange_transverse_dia", 10) or 10), sync_callbacks)
-            number_row("Top flange transverse spacing (mm)", "inputs_top_flange_transverse_spacing", float(st.session_state.get("top_flange_transverse_spacing", 200.0) or 200.0), sync_callbacks)
-            number_row("Top flange transverse legs", "inputs_top_flange_transverse_legs", float(st.session_state.get("top_flange_transverse_legs", 2) or 2), sync_callbacks)
-        with tr_col2:
-            select_row("Enable bottom flange transverse", "inputs_bot_flange_transverse_enabled", [False, True], bool(st.session_state.get("bot_flange_transverse_enabled", False)), sync_callbacks)
-            select_row("Bottom flange transverse dia (mm)", "inputs_bot_flange_transverse_dia", REO_BAR_DIAS, int(st.session_state.get("bot_flange_transverse_dia", 10) or 10), sync_callbacks)
-            number_row("Bottom flange transverse spacing (mm)", "inputs_bot_flange_transverse_spacing", float(st.session_state.get("bot_flange_transverse_spacing", 200.0) or 200.0), sync_callbacks)
-            number_row("Bottom flange transverse legs", "inputs_bot_flange_transverse_legs", float(st.session_state.get("bot_flange_transverse_legs", 2) or 2), sync_callbacks)
     page_divider()
 
     # ============================
-    # 3. Support / materials / shear params + 3D diagram (below Reo section; detailed only)
+    # 3. Materials + 3D diagram (below Reo section)
     # ============================
     if inputs_detailed_mode:
         _render_materials_and_sectionA_2d(sync_callbacks)
@@ -20054,16 +19622,7 @@ def render_inputs():
     defl_err = defl_pack is None
 
     BENDING_ROWS = [_normalise_row(r, "bending") for r in (bend_pack or {}).get("rows") or []]
-    _sp = shear_pack or {}
-    _shear_summary_src = _sp.get("summary_rows")
-    _shear_mcft_src = _sp.get("mcft_detail_rows")
-    if _shear_summary_src is not None and _shear_mcft_src is not None:
-        _shear_display_list = list(_shear_summary_src)
-        if st.session_state.get("show_mcft_breakdown", False):
-            _shear_display_list.extend(_shear_mcft_src)
-        SHEAR_ROWS = [_normalise_row(r, "shear") for r in _shear_display_list]
-    else:
-        SHEAR_ROWS = [_normalise_row(r, "shear") for r in _sp.get("rows") or []]
+    SHEAR_ROWS = [_normalise_row(r, "shear") for r in (shear_pack or {}).get("rows") or []]
     CRACK_ROWS = [_normalise_row(r, "crack") for r in (crack_pack or {}).get("rows") or []]
     if bend_err:
         BENDING_ROWS = [{
@@ -20119,29 +19678,26 @@ def render_inputs():
 
     bending_primary = _primary_row(BENDING_ROWS) or {}
     shear_primary = _primary_row(SHEAR_ROWS) or {}
-    crack_primary = pick_governing_check_row(CRACK_ROWS) or next(
-        (r for r in CRACK_ROWS if not r.get("is_informational")),
-        {},
-    ) or {}
+    crack_primary = _primary_row(CRACK_ROWS) or {}
     defl_primary = _primary_row(DEFLECTION_ROWS) or {}
 
-    bending_cap = bending_primary.get("capacity") or bending_primary.get("value", "—")
-    bending_demand = bending_primary.get("action") or bending_primary.get("limit", "—")
+    bending_demand = bending_primary.get("value", "—")
+    bending_cap = bending_primary.get("limit", "—")
     bending_util_str = bending_primary.get("util", "—")
     bending_status, bending_colour = _overall_status_from_rows(BENDING_ROWS)
 
-    shear_cap = shear_primary.get("capacity") or shear_primary.get("value", "—")
-    shear_demand = shear_primary.get("action") or shear_primary.get("limit", "—")
+    shear_demand = shear_primary.get("value", "—")
+    shear_cap = shear_primary.get("limit", "—")
     shear_util_str = shear_primary.get("util", "—")
     shear_status, shear_colour = _overall_status_from_rows(SHEAR_ROWS)
 
-    crack_cap = crack_primary.get("capacity") or crack_primary.get("value", "—")
-    crack_demand = crack_primary.get("action") or crack_primary.get("limit", "—")
+    crack_demand = crack_primary.get("value", "—")
+    crack_cap = crack_primary.get("limit", "—")
     crack_util_str = crack_primary.get("util", "—")
     crack_status, crack_colour = _overall_status_from_rows(CRACK_ROWS)
 
-    defl_cap = defl_primary.get("capacity") or defl_primary.get("value", "—")
-    defl_demand = defl_primary.get("action") or defl_primary.get("limit", "—")
+    defl_demand = defl_primary.get("value", "—")
+    defl_cap = defl_primary.get("limit", "—")
     defl_util_str = defl_primary.get("util", "—")
     defl_status, defl_colour = _overall_status_from_rows(DEFLECTION_ROWS)
     _summary_state = _shared_state_snapshot()
@@ -20168,16 +19724,16 @@ def render_inputs():
     # Helper function to generate summary table HTML as string (for embedding in details)
     def _generate_summary_table_html(rows):
         """Generate the summary table HTML as a string (same format as render_clickable_summary_table)"""
-        html_parts = ['<div class="summary-wrap"><table class="summary-table">']
-        html_parts.append(
+        html = ['<div class="summary-wrap"><table class="summary-table">']
+        html.append(
             """
 <thead>
 <tr>
-  <th style="width:30%">Check</th>
-  <th style="width:24%">Calculated capacity</th>
-  <th style="width:24%">Applied design action</th>
+  <th style="width:34%">Check</th>
+  <th style="width:22%">Value</th>
+  <th style="width:26%">Limit</th>
   <th style="width:8%">Util</th>
-  <th style="width:14%">Status</th>
+  <th style="width:10%">Status</th>
 </tr>
 </thead>
 <tbody>
@@ -20187,41 +19743,24 @@ def render_inputs():
         for r in rows:
             uid = r["uid"]
             check = r.get("title") or r.get("check", uid)
-            value = summary_cell_display(r, "capacity")
-            limit = summary_cell_display(r, "action")
+            value = r.get("value", "")
+            limit = r.get("limit", "")
             util = r.get("util", "")
             status = r.get("status", "")
             ok = r.get("ok")
             tab = r.get("tab", "")
             
             status_norm = str(status).upper()
-            if r.get("is_informational") or status_norm == "INFO":
-                cls = ""
-            else:
-                cls = (
-                    "pass" if ok is True
-                    else "fail" if ok is False
-                    else "warn" if status_norm in ("NEAR LIMIT", "WARN", "CHECK")
-                    else ""
-                )
+            cls = "pass" if ok is True else "fail" if ok is False else "warn" if status_norm in ("NEAR LIMIT", "WARN", "CHECK") else ""
             primary = "primary" if r.get("is_primary") else ""
             row_class = f"{cls} {primary}".strip()
             
-            jt = resolve_jump_target_id(r)
-            route_pg = (r.get("route_page") or "").strip()
-            jump_qp = str(jt).strip() if jt is not None else ""
-            if not jump_qp:
-                jump_qp = str(uid)
-            _qp = {"page": route_pg, "jump": jump_qp}
-            if str(uid) and str(uid) != jump_qp:
-                _qp["jump_row"] = str(uid)
-            nav_href = "?" + urlencode(_qp) if route_pg else "#"
-            html_parts.append(
+            html.append(
                 f"""
-<tr class="{row_class}" data-tab="{html.escape(str(tab), quote=True)}">
+<tr class="{row_class}" data-tab="{tab}">
   <td>
     {check} <span class="hint">↳ jump to calc</span>
-    <a class="row-link" href="{html.escape(nav_href, quote=True)}" data-uid="{html.escape(str(uid), quote=True)}" data-jump-target="{html.escape(str(jt), quote=True)}" data-tab="{html.escape(str(tab), quote=True)}"></a>
+    <a class="row-link" href="#" data-uid="{uid}" data-tab="{tab}"></a>
   </td>
   <td>{value}</td>
   <td>{limit}</td>
@@ -20231,28 +19770,46 @@ def render_inputs():
 """
             )
         
-        html_parts.append("</tbody></table></div>")
-        return "".join(html_parts)
+        html.append("</tbody></table></div>")
+        return "".join(html)
 
-    for rows, route in (
-        (BENDING_ROWS, "bending"),
-        (SHEAR_ROWS, "shear"),
-        (CRACK_ROWS, "crack"),
-        (DEFLECTION_ROWS, "deflection"),
+    # Map helper titles to existing step UIDs for navigation
+    bending_uid_map = {
+        "Flexural strength capacity": "bending_uls_1_7",
+        "Minimum tensile reinforcement": "bending_min_2_5",
+        "Minimum design capacity requirement": "bending_min_2_4",
+        "Ductility limit": "bending_uls_1_5",
+        "Steel stress at serviceability": "bending_sls_3_6",
+    }
+    shear_uid_map = {
+        "Torsion cracking check": "shear_check1",
+        "Equivalent design shear": "shear_check2",
+        "Longitudinal strain": "shear_check4",
+        "Shear model parameters": "shear_check5",
+        "Concrete shear strength": "shear_check6",
+        "Steel shear strength": "shear_check7",
+        "Sectional shear capacity": "shear_check8",
+        "Web-crushing strength": "shear_check9",
+    }
+    crack_uid_map = {
+        "Governing outcome": "crk_step_4",
+        "Table-based crack control check": "crk_step_2",
+        "Direct crack width check": "crk_step_3",
+    }
+
+    for rows, route, uid_map in (
+        (BENDING_ROWS, "bending", bending_uid_map),
+        (SHEAR_ROWS, "shear", shear_uid_map),
+        (CRACK_ROWS, "crack", crack_uid_map),
+        (DEFLECTION_ROWS, "deflection", {}),
     ):
         for r in rows:
-            if r.get("is_informational") or str(r.get("status", "")).upper() == "INFO":
-                r["ok"] = None
-            elif "ok" not in r:
+            if "ok" not in r:
                 status = r.get("status", "—")
                 r["ok"] = True if status == "PASS" else False if status in ("FAIL", "NG", "NEAR LIMIT") else None
             r.setdefault("route_page", route)
-            uid = str(r.get("uid") or "")
-            if not r.get("tab"):
-                if route == "bending" and uid in BENDING_ROW_UID_TO_TAB:
-                    r["tab"] = BENDING_ROW_UID_TO_TAB[uid]
-                elif route == "shear" and uid in SHEAR_ROW_UID_TO_TAB:
-                    r["tab"] = SHEAR_ROW_UID_TO_TAB[uid]
+            if uid_map and r.get("title") in uid_map:
+                r["uid"] = uid_map.get(r.get("title"))
 
     if not skip_active_beam_record_write:
         update_active_beam_summary_from_results(
@@ -20409,8 +19966,8 @@ tr:hover .hint { opacity: 1; }
 <details>
 <summary style="background-color: {bending_colour};">
   <span><strong>Bending — ULS check</strong></span>
-  <span style="text-align:right;"><span style="font-size:0.78rem;opacity:0.72;display:block;">Calculated capacity</span>{bending_cap}</span>
-  <span style="text-align:right;"><span style="font-size:0.78rem;opacity:0.72;display:block;">Applied design action</span>{bending_demand}</span>
+  <span style="text-align:right;">{bending_demand}</span>
+  <span style="text-align:right;">{bending_cap}</span>
   <span style="text-align:right;">{bending_util_str}</span>
   <span style="text-align:center;">{bending_status}</span>
     </summary>
@@ -20430,8 +19987,8 @@ tr:hover .hint { opacity: 1; }
 <details>
 <summary style="background-color: {shear_colour};">
   <span><strong>Shear — ULS check</strong></span>
-  <span style="text-align:right;"><span style="font-size:0.78rem;opacity:0.72;display:block;">Calculated capacity</span>{shear_cap}</span>
-  <span style="text-align:right;"><span style="font-size:0.78rem;opacity:0.72;display:block;">Applied design action</span>{shear_demand}</span>
+  <span style="text-align:right;">{shear_demand}</span>
+  <span style="text-align:right;">{shear_cap}</span>
   <span style="text-align:right;">{shear_util_str}</span>
   <span style="text-align:center;">{shear_status}</span>
     </summary>
@@ -20451,8 +20008,8 @@ tr:hover .hint { opacity: 1; }
 <details>
 <summary style="background-color: {crack_colour};">
   <span><strong>Crack control — SLS check</strong></span>
-  <span style="text-align:right;"><span style="font-size:0.78rem;opacity:0.72;display:block;">Calculated capacity</span>{crack_cap}</span>
-  <span style="text-align:right;"><span style="font-size:0.78rem;opacity:0.72;display:block;">Applied design action</span>{crack_demand}</span>
+  <span style="text-align:right;">{crack_demand}</span>
+  <span style="text-align:right;">{crack_cap}</span>
   <span style="text-align:right;">{crack_util_str}</span>
   <span style="text-align:center;">{crack_status}</span>
     </summary>
@@ -20472,8 +20029,8 @@ tr:hover .hint { opacity: 1; }
 <details>
 <summary style="background-color: {defl_colour};">
   <span><strong>Deflection — SLS check</strong></span>
-  <span style="text-align:right;"><span style="font-size:0.78rem;opacity:0.72;display:block;">Calculated capacity</span>{defl_cap}</span>
-  <span style="text-align:right;"><span style="font-size:0.78rem;opacity:0.72;display:block;">Applied design action</span>{defl_demand}</span>
+  <span style="text-align:right;">{defl_demand}</span>
+  <span style="text-align:right;">{defl_cap}</span>
   <span style="text-align:right;">{defl_util_str}</span>
   <span style="text-align:center;">{defl_status}</span>
     </summary>
@@ -20486,6 +20043,48 @@ tr:hover .hint { opacity: 1; }
         unsafe_allow_html=True,
         )
 
+        # Add custom JavaScript to handle cross-page navigation from Inputs summary
+        all_inputs_rows = BENDING_ROWS + SHEAR_ROWS + CRACK_ROWS + DEFLECTION_ROWS
+        rows_json = json.dumps({r["uid"]: r["route_page"] for r in all_inputs_rows})
+        
+        components.html(
+            f"""
+<script>
+(function () {{
+  const doc = window.parent.document;
+  const routeMap = {rows_json};
+  
+  function bindInputsNavigation() {{
+    const links = doc.querySelectorAll(".row-link[data-uid]");
+    links.forEach((a) => {{
+      if (a.dataset.inputsBound === "1") return;
+      a.dataset.inputsBound = "1";
+      
+      const uid = a.dataset.uid;
+      const routePage = routeMap[uid];
+      
+      if (!routePage) return;  // Skip if no route page mapping
+      
+      a.addEventListener("click", (e) => {{
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const url = new URL(window.parent.location.href);
+        url.searchParams.set("page", routePage);
+        url.searchParams.set("jump", uid);
+        window.parent.location.assign(url.toString());
+      }}, true);
+    }});
+  }}
+  
+  bindInputsNavigation();
+  setTimeout(bindInputsNavigation, 300);
+  setTimeout(bindInputsNavigation, 1000);
+}})();
+</script>
+""",
+            height=0,
+        )
         page_divider()
 
     if bool(st.session_state.get("_dev_mode")):

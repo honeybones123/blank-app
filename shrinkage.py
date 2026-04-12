@@ -13,10 +13,12 @@ from state_and_helpers import (
     get_sync_callbacks,
     update_results,  # kept for contract
 )
-from widgets_helpers import apply_global_widget_css, number_row, calcbox, page_divider, v2_number_input, v2_selectbox, v2_checkbox, v2_radio
+from widgets_helpers import apply_global_widget_css, apply_result_page_css, number_row, v2_number_input, v2_selectbox, v2_checkbox, v2_radio, render_page_explainer_expander, render_result_page_title, render_section_title, page_divider
 from step_ui import render_expandable_step
+from engineering_check_ui import PARAMETRIC_RESULT_COLUMNS, sync_legacy_value_limit
 from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks, inject_seamless_steps_css
 from jump_nav import scroll_to_jump_after_render
+from shear_visuals import build_shrinkage_schematic_plotly
 
 
 # ------------------------------------------------------------
@@ -64,6 +66,19 @@ blockquote p {
   margin-bottom: 0.5rem !important;
 }
 blockquote p:last-child {
+  margin-bottom: 0 !important;
+}
+/* Tight stack: calc section heading → expandable step */
+p.calc-section-heading-tight {
+  margin: 0.35rem 0 0 0 !important;
+  font-weight: 600 !important;
+  font-size: 1rem !important;
+  line-height: 1.25 !important;
+}
+div[data-testid="stMarkdownContainer"]:has(p.calc-section-heading-tight) {
+  margin-bottom: 0 !important;
+}
+div.element-container:has(div[data-testid="stMarkdownContainer"]:has(p.calc-section-heading-tight)) {
   margin-bottom: 0 !important;
 }
 </style>
@@ -255,6 +270,7 @@ def compute_shrinkage_results(publish: bool = True) -> dict:
 # ------------------------------------------------------------
 def render_shrinkage():
     apply_global_widget_css()
+    apply_result_page_css()
     _inject_calcbox_css()
     inject_seamless_steps_css()  # For summary table + scroll functionality
     sync_callbacks = get_sync_callbacks()  # maintains contract with Inputs page
@@ -262,14 +278,9 @@ def render_shrinkage():
     # --------------------------------------------------------
     # Page title
     # --------------------------------------------------------
-    st.title("Shrinkage")
-
-    # --------------------------------------------------------
-    # Page description (directly under title)
-    #   → all bullets are single-line with inline LaTeX ($...$)
-    # --------------------------------------------------------
-    st.markdown(
-        r"""
+    def _render_shrinkage_explainer() -> None:
+        st.markdown(
+            r"""
 This page computes **concrete shrinkage strain** in accordance with  
 **AS 3600:2018 Clause 3.1.7**, consisting of:
 
@@ -280,7 +291,9 @@ This page computes **concrete shrinkage strain** in accordance with
 
 All strains are reported in units of microstrain ($\times 10^{-6}$).
 """
-    )
+        )
+
+    render_result_page_title("Shrinkage")
 
     # --------------------------------------------------------
     # Reserve space for the top summary table
@@ -288,13 +301,10 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
     summary_placeholder = st.empty()
 
     # --------------------------------------------------------
-    # Geometry & Exposure
-    # --------------------------------------------------------
-    st.markdown("### Geometry & exposure")
-
-    col_geom, col_env = st.columns(2)
+    col_geom, col_env, col_time = st.columns(3)
 
     with col_geom:
+        st.markdown("**Geometry / member**")
         b_val = float(st.session_state.get("inputs_b", get_param("b", 400.0)))
         D_val = float(st.session_state.get("inputs_D", get_param("D", 600.0)))
 
@@ -337,6 +347,7 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
             )
 
     with col_env:
+        st.markdown("**Material / environment**")
         fc_val = float(st.session_state.get("inputs_fc", get_param("fc", 32.0)))
 
         number_row(
@@ -369,6 +380,8 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
                 on_change=sync_callbacks["sh_env"],
             )
 
+    with col_time:
+        st.markdown("**Time / drying**")
         col1, col2 = st.columns([1, 2])
         with col1:
             st.markdown("<div class='sb-label'>Time since commencement of drying t (days)</div>", unsafe_allow_html=True)
@@ -382,6 +395,8 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
                 label_visibility="collapsed",
                 on_change=sync_callbacks["inputs_t_shrink"],
             )
+
+    page_divider()
 
     # --------------------------------------------------------
     # Derived geometry: Ag, ue, th
@@ -429,10 +444,8 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
     # TOP SUMMARY TABLE (clickable, like bending/shear)
     # --------------------------------------------------------
     with summary_placeholder.container():
-        # Header row with title and INFO button
-        h_left, h_right = st.columns([8, 1], vertical_alignment="center")
-        with h_left:
-            st.markdown("## Summary")
+        # Keep only the info control; the page title already provides the heading.
+        _, h_right = st.columns([8, 1], vertical_alignment="center")
         with h_right:
             with st.popover("ℹ️ INFO"):
                 st.markdown(
@@ -458,61 +471,65 @@ Shrinkage is not a force (kN). It is a time-dependent strain that can cause defo
         
         # Build ROWS for clickable summary table
         ROWS = [
-            {
+            sync_legacy_value_limit({
                 "uid": "shrinkage_autogenous",
                 "title": "Autogenous shrinkage ε_cse",
-                "value": f"{eps_cse*1e6:.1f} µε",
-                "limit": "—",
+                "capacity": f"{eps_cse*1e6:.1f} µε",
+                "action": "—",
                 "util": "—",
                 "status": "—",
                 "ok": None,
                 "tab": "Autogenous shrinkage ε_cse",
-            },
-            {
+            }),
+            sync_legacy_value_limit({
                 "uid": "shrinkage_drying",
                 "title": "Drying shrinkage ε_csd",
-                "value": f"{eps_csd_t*1e6:.1f} µε",
-                "limit": "—",
+                "capacity": f"{eps_csd_t*1e6:.1f} µε",
+                "action": "—",
                 "util": "—",
                 "status": "—",
                 "ok": None,
                 "tab": "Drying shrinkage ε_csd",
-            },
-            {
+            }),
+            sync_legacy_value_limit({
                 "uid": "shrinkage_total",
                 "title": "Total shrinkage ε_cs",
-                "value": f"{eps_cs_total*1e6:.1f} µε",
-                "limit": "—",
+                "capacity": f"{eps_cs_total*1e6:.1f} µε",
+                "action": "—",
                 "util": "—",
                 "status": "—",
                 "ok": None,
                 "tab": "Total shrinkage ε_cs",
-            },
+            }),
         ]
-        
-        render_clickable_summary_table(ROWS, key_prefix="shrinkage_summary")
+
+        render_clickable_summary_table(
+            ROWS, key_prefix="shrinkage_summary", columns=PARAMETRIC_RESULT_COLUMNS
+        )
         bind_summary_clicks()
-        
+        page_divider()
+
+        st.markdown("**Shrinkage strain schematic**")
+        fig_shrink_schematic = build_shrinkage_schematic_plotly()
+        _sl, _sc, _sr = st.columns([1, 8, 1])
+        with _sc:
+            st.plotly_chart(
+                fig_shrink_schematic,
+                use_container_width=True,
+                config={
+                    "displayModeBar": False,
+                    "staticPlot": True,
+                },
+            )
         page_divider()
 
     # --------------------------------------------------------
-    # Tabs (5): geometry, autogenous, drying, total, flow chart
+    # Stacked calculation sections
     # --------------------------------------------------------
-    tab_geom, tab_auto, tab_dry, tab_total = st.tabs(
-        [
-            "Geometry & tₕ",
-            "Autogenous shrinkage ε_cse",
-            "Drying shrinkage ε_csd",
-            "Total shrinkage ε_cs",
-        ]
-    )
+    render_section_title("Shrinkage checks")
 
-    # ---------- Tab 1: Geometry & t_h ----------
-    with tab_geom:
-        st.subheader("Notional thickness tₕ – AS 3600 (2Aᵍ / uₑ)")
-
-        def render_th():
-            return rf"""
+    def render_th():
+        return rf"""
 **Purpose**
 
 Determine the **notional thickness** $t_h$ used in AS 3600 for **creep and shrinkage**.
@@ -556,29 +573,25 @@ _Ref: AS 3600:2018 definition of notional thickness \(t_h = 2 A_g/u_e\);
 Fig. 3.1.7.2 and Table 3.1.7.2._
 """
         
-        render_expandable_step(
-            page_key="shrinkage",
-            step_id="shrinkage_th",
-            title="Notional thickness t_h",
-            summary_md=[
-                rf"Result: $t_h = {th_table:d}$ mm (adopted from calculated {th_raw:.1f} mm)",
-                "Notional thickness calculation for creep and shrinkage"
-            ],
-            status_kind=None,
-            calc_md=render_th(),
-        )
+    render_expandable_step(
+        page_key="shrinkage",
+        step_id="shrinkage_th",
+        title="Notional thickness t_h",
+        summary_md=[
+            "Check 1 — Notional thickness calculation for creep and shrinkage",
+            rf"Result: $t_h = {th_table:d}$ mm (adopted from calculated {th_raw:.1f} mm)",
+        ],
+        status_kind=None,
+        calc_md=render_th(),
+    )
 
-    # ---------- Tab 2: Autogenous shrinkage ----------
-    with tab_auto:
-        st.subheader("Autogenous shrinkage ε_cse – AS 3600 Cl. 3.1.7.2(2),(3)")
+    if t_days > 0:
+        eps_cse_final = eps_cse / (1.0 - math.exp(-0.04 * t_days))
+    else:
+        eps_cse_final = eps_cse
 
-        if t_days > 0:
-            eps_cse_final = eps_cse / (1.0 - math.exp(-0.04 * t_days))
-        else:
-            eps_cse_final = eps_cse
-
-        def render_autogenous():
-            return rf"""
+    def render_autogenous():
+        return rf"""
 **Purpose**
 
 Estimate the **autogenous (chemical) shrinkage** strain $\varepsilon_{{cse}}$,
@@ -633,25 +646,22 @@ Using $f'_c = {fc:.1f}$ MPa and $t = {t_days:.0f}$ days:
 _Ref: AS 3600:2018 Cl. 3.1.7.2(2),(3)._ 
 """
         
-        render_expandable_step(
-            page_key="shrinkage",
-            step_id="shrinkage_autogenous",
-            title="Autogenous shrinkage ε_cse",
-            summary_md=[
-                rf"Result: $\varepsilon_{{cse}} = {eps_cse*1e6:.1f}$ με",
-                "Autogenous (chemical) shrinkage strain calculation"
-            ],
-            status_kind=None,
-            calc_md=render_autogenous(),
-        )
+    render_expandable_step(
+        page_key="shrinkage",
+        step_id="shrinkage_autogenous",
+        title="Autogenous shrinkage ε_cse",
+        summary_md=[
+            "Check 2 — Autogenous (chemical) shrinkage strain calculation",
+            rf"Result: $\varepsilon_{{cse}} = {eps_cse*1e6:.1f}$ με",
+        ],
+        status_kind=None,
+        calc_md=render_autogenous(),
+    )
 
-    # ---------- Tab 3: Drying shrinkage ----------
-    with tab_dry:
-        st.subheader("Drying shrinkage ε_csd – AS 3600 Cl. 3.1.7.2(4),(5)")
-        env_short = _ENV_LABELS[env_option]
+    env_short = _ENV_LABELS[env_option]
 
-        def render_drying():
-            return rf"""
+    def render_drying():
+        return rf"""
 **Purpose**
 
 Estimate the **drying shrinkage** strain $\varepsilon_{{csd}}(t)$, which develops
@@ -708,24 +718,20 @@ Drying shrinkage at time $t$:
 _Ref: AS 3600:2018 Cl. 3.1.7.2(4),(5); Fig. 3.1.7.2 and Table 3.1.7.2._
 """
         
-        render_expandable_step(
-            page_key="shrinkage",
-            step_id="shrinkage_drying",
-            title="Drying shrinkage ε_csd",
-            summary_md=[
-                rf"Result: $\varepsilon_{{csd}} = {eps_csd_t*1e6:.1f}$ με",
-                "Drying shrinkage strain calculation with time development"
-            ],
-            status_kind=None,
-            calc_md=render_drying(),
-        )
+    render_expandable_step(
+        page_key="shrinkage",
+        step_id="shrinkage_drying",
+        title="Drying shrinkage ε_csd",
+        summary_md=[
+            "Check 3 — Drying shrinkage strain calculation with time development",
+            rf"Result: $\varepsilon_{{csd}} = {eps_csd_t*1e6:.1f}$ με",
+        ],
+        status_kind=None,
+        calc_md=render_drying(),
+    )
 
-    # ---------- Tab 4: Total shrinkage ----------
-    with tab_total:
-        st.subheader("Total shrinkage ε_cs = ε_cse + ε_csd")
-
-        def render_total():
-            return rf"""
+    def render_total():
+        return rf"""
 **Purpose**
 
 Combine **autogenous** and **drying** shrinkage to obtain the **total design
@@ -772,17 +778,16 @@ shrinkage strain**:
 _Ref: AS 3600:2018 Cl. 3.1.7 – total shrinkage._ 
 """
         
-        render_expandable_step(
-            page_key="shrinkage",
-            step_id="shrinkage_total",
-            title="Total shrinkage ε_cs",
-            summary_md=[
-                rf"Result: $\varepsilon_{{cs}} = {eps_cs_total*1e6:.1f}$ με",
-                "Combination of autogenous and drying shrinkage components"
-            ],
-            status_kind=None,
-            calc_md=render_total(),
-        )
+    render_expandable_step(
+        page_key="shrinkage",
+        step_id="shrinkage_total",
+        title="Total shrinkage ε_cs",
+        summary_md=[
+            "Check 4 — Combination of autogenous and drying shrinkage components",
+            rf"Result: $\varepsilon_{{cs}} = {eps_cs_total*1e6:.1f}$ με",
+        ],
+        status_kind=None,
+        calc_md=render_total(),
+    )
 
-
-
+    scroll_to_jump_after_render()
