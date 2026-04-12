@@ -69,7 +69,11 @@ def plot_shape(shape_name: str, dims: Dict[str, float], reo: Optional[Dict[str, 
 
     # ---- reo overlay using same 2-layer structure as app ----
     if reo and b and D and not (shape_name.startswith("Circle") or shape_name.startswith("Hollow Circle")):
-        from .section_layout import compute_longitudinal_reo_layout
+        try:
+            from .section_layout import compute_longitudinal_reo_layout
+        except ImportError:
+            # Fallback to the app-level helper if package resolution is partial during export startup.
+            from section_layout import compute_longitudinal_reo_layout
 
         layout = compute_longitudinal_reo_layout(
             b=b, D=D,
@@ -84,6 +88,15 @@ def plot_shape(shape_name: str, dims: Dict[str, float], reo: Optional[Dict[str, 
             rowgap_top=float(reo.get("rowgap_top", 60.0)),
             rowgap_bot=float(reo.get("rowgap_bot", 60.0)),
         )
+        reo_points = []
+        for layer_name in ("top", "bottom"):
+            for layer in layout.get(layer_name, []):
+                db = float(layer.get("db", 0.0) or 0.0)
+                ys = layer.get("y", [])
+                if isinstance(ys, (int, float)):
+                    ys = [ys] * len(layer.get("x", []))
+                for x, y in zip(layer.get("x", []), ys):
+                    reo_points.append({"x": float(x), "y": float(y), "db": db, "layer": layer_name})
 
         # ----- Shear reinforcement (stirrups/ties) - only draw when present -----
         lig_d = float(reo.get("lig_d", 0.0))
@@ -93,7 +106,10 @@ def plot_shape(shape_name: str, dims: Dict[str, float], reo: Optional[Dict[str, 
         has_shear = lig_d > 0 and lig_legs >= 2
 
         if has_shear:
-            from .section_layout import compute_shear_reo_layout_pure
+            try:
+                from .section_layout import compute_shear_reo_layout_pure
+            except ImportError:
+                from section_layout import compute_shear_reo_layout_pure
 
             cover_top = float(reo.get("cover_top", reo.get("cover", 40.0)))
             cover_bot = float(reo.get("cover_bot", reo.get("cover", 40.0)))
@@ -103,6 +119,7 @@ def plot_shape(shape_name: str, dims: Dict[str, float], reo: Optional[Dict[str, 
                 b=b, D=D,
                 cover_bot=cover_bot, cover_top=cover_top, cover_side=cover_side,
                 lig_d=lig_d, lig_legs=lig_legs,
+                reo_points=reo_points,
             )
 
             cage_shear = shear_layout.get("cage")

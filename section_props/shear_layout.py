@@ -13,6 +13,23 @@ def _internal_leg_positions(x0: float, x1: float, n_legs: int) -> List[float]:
     return [x0 + span * j / (n_legs - 1) for j in range(1, n_legs - 1)]
 
 
+def _flatten_reo_points_for_shear(reo_points: List[Dict] | None) -> List[Dict[str, float]]:
+    pts: List[Dict[str, float]] = []
+    if not reo_points:
+        return pts
+    for pt in reo_points:
+        try:
+            db = float(pt.get("db", 0.0) or 0.0)
+            x = float(pt.get("x", 0.0) or 0.0)
+            y = float(pt.get("y", 0.0) or 0.0)
+        except Exception:
+            continue
+        if db <= 0:
+            continue
+        pts.append({"x": x, "y": y, "db": db})
+    return pts
+
+
 def _web_zone(shape_name: str, dims: Dict[str, float]) -> Dict[str, float]:
     """
     Returns:
@@ -49,6 +66,7 @@ def compute_shear_reo_layout_T_I(
     cover_bot: float,
     lig_d: float,
     lig_legs: int,
+    reo_points: List[Dict] | None = None,
 ) -> Dict:
     """
     IMPORTANT: Cage + legs are constrained to the WEB ZONE so they cannot exit
@@ -71,13 +89,27 @@ def compute_shear_reo_layout_T_I(
     x_web1 = wz["x_web1"]
     D = wz["D"]
 
-    r = lig_d / 2.0
+    visual_clearance = 0.0
+    default_x0 = max(x_web0 + cover_side - visual_clearance, x_web0 + 5.0)
+    default_x1 = min(x_web1 - cover_side + visual_clearance, x_web1 - 5.0)
+    default_y0 = max(cover_top - visual_clearance, 5.0)
+    default_y1 = min(D - cover_bot + visual_clearance, D - 5.0)
 
-    # Cage rectangle inside WEB zone, inset by cover + link radius
-    x0 = x_web0 + cover_side + r
-    x1 = x_web1 - cover_side - r
-    y0 = cover_top + r
-    y1 = D - cover_bot - r
+    pts = [
+        pt for pt in _flatten_reo_points_for_shear(reo_points)
+        if x_web0 - 1e-9 <= pt["x"] <= x_web1 + 1e-9
+    ]
+    if pts:
+        min_x = min(pt["x"] - pt["db"] / 2.0 for pt in pts) - visual_clearance
+        max_x = max(pt["x"] + pt["db"] / 2.0 for pt in pts) + visual_clearance
+        min_y = min(pt["y"] - pt["db"] / 2.0 for pt in pts) - visual_clearance
+        max_y = max(pt["y"] + pt["db"] / 2.0 for pt in pts) + visual_clearance
+        x0 = max(x_web0 + 5.0, min(default_x0, min_x))
+        x1 = min(x_web1 - 5.0, max(default_x1, max_x))
+        y0 = max(5.0, min(default_y0, min_y))
+        y1 = min(D - 5.0, max(default_y1, max_y))
+    else:
+        x0, x1, y0, y1 = default_x0, default_x1, default_y0, default_y1
 
     # Guard: if covers too large, don't draw outside — just skip shear drawing
     if x1 <= x0 or y1 <= y0:

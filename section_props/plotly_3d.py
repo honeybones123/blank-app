@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
 import numpy as np
 import plotly.graph_objects as go
 
+from .reo_layout import dev_warnings_bars_outside_concrete, resolve_longitudinal_bars_from_layout
 from .shear_layout import compute_shear_reo_layout_T_I
+
+_log = logging.getLogger(__name__)
 
 
 def _box_mesh(x0, x1, y0, y1, z0, z1):
@@ -44,6 +48,45 @@ def _add_cylinder_surface(traces, x0, x1, y0, z0, db, color_hex):
             showlegend=False,
         )
     )
+
+
+def _beamwise_stirrup_x_positions(L_vis: float, s_eff: float) -> list[float]:
+    """Stirrup / tie station positions along beam axis (0 .. L_vis), capped for performance."""
+    x_positions = [0.0]
+    x = float(s_eff)
+    while x < float(L_vis) - 1e-6:
+        x_positions.append(float(x))
+        x += float(s_eff)
+    if float(L_vis) not in x_positions:
+        x_positions.append(float(L_vis))
+    max_frames = 250
+    if len(x_positions) > max_frames:
+        step = max(1, len(x_positions) // max_frames)
+        x_positions = x_positions[::step]
+        if x_positions[-1] != float(L_vis):
+            x_positions.append(float(L_vis))
+    return x_positions
+
+
+def _outer_cage_from_reo_points(reo_points, *, b_env: float, D_env: float):
+    if not reo_points:
+        return None
+
+    try:
+        min_y = min(float(pt["x"]) - float(pt["db"]) / 2.0 for pt in reo_points)
+        max_y = max(float(pt["x"]) + float(pt["db"]) / 2.0 for pt in reo_points)
+        min_z = min(float(pt["y"]) - float(pt["db"]) / 2.0 for pt in reo_points)
+        max_z = max(float(pt["y"]) + float(pt["db"]) / 2.0 for pt in reo_points)
+    except Exception:
+        return None
+
+    y0 = max(5.0, min_y)
+    y1 = min(float(b_env) - 5.0, max_y)
+    z0 = max(5.0, min_z)
+    z1 = min(float(D_env) - 5.0, max_z)
+    if y1 <= y0 or z1 <= z0:
+        return None
+    return {"x0": y0, "x1": y1, "y0": z0, "y1": z1}
 
 
 def make_section_3d_figure(
@@ -205,55 +248,35 @@ def make_section_3d_figure(
             showlegend=False,
         ))
 
-    def add_bar_cylinders(layer_list, color_hex: str):
-        if not layer_list:
-            return
-        for layer in layer_list:
-            xs = layer.get("x") or []
-            y_list = layer.get("y") or []
-            db = float(layer.get("db") or 0.0)
-
-            # layout sometimes stores y as [y]
-            if isinstance(y_list, (list, tuple)) and len(y_list) > 0:
-                z_pos = float(y_list[0])
-            else:
-                z_pos = float(y_list)
-
-            for y_pos in xs:
-                _add_cylinder_surface(
-                    traces,
-                    0.0,
-                    float(L_vis),
-                    float(y_pos),
-                    z_pos,
-                    db,
-                    color_hex,
-                )
-
+    # Longitudinal bars: one cylinder per resolved bar (same source as 2D section plots).
+    # Avoid merging duplicate top/bottom + top_web/bottom_web lists and wrong depth for each x.
+    reo_points: list[dict] = []
     if reo_layout:
-        # Be robust to both legacy ("top"/"bottom") and newer grouped keys.
-        bottom_layers = []
-        top_layers = []
-
-        def _as_list(x):
-            if not x:
-                return []
-            return x if isinstance(x, list) else [x]
-
-        bottom_layers += _as_list(reo_layout.get("bottom"))
-        bottom_layers += _as_list(reo_layout.get("bottom_flange"))
-        bottom_layers += _as_list(reo_layout.get("bottom_web"))
-        bottom_layers += _as_list(reo_layout.get("bottom_left"))
-        bottom_layers += _as_list(reo_layout.get("bottom_right"))
-
-        top_layers += _as_list(reo_layout.get("top"))
-        top_layers += _as_list(reo_layout.get("top_flange"))
-        top_layers += _as_list(reo_layout.get("top_web"))
-        top_layers += _as_list(reo_layout.get("top_left"))
-        top_layers += _as_list(reo_layout.get("top_right"))
-
-        add_bar_cylinders(bottom_layers, "#1f77b4")
-        add_bar_cylinders(top_layers, "#d62728")
+        resolved = resolve_longitudinal_bars_from_layout(
+            shape_name=shape,
+            dims=dims,
+            reo_layout=reo_layout,
+        )
+        for msg in dev_warnings_bars_outside_concrete(resolved, shape, dims):
+            _log.warning(msg)
+        for bar in resolved:
+            face = str(bar.get("face") or "bottom")
+            color = "#d62728" if face == "top" else "#1f77b4"
+            _add_cylinder_surface(
+                traces,
+                0.0,
+                float(L_vis),
+                float(bar.get("x_mm", 0.0) or 0.0),
+                float(bar.get("y_mm", 0.0) or 0.0),
+                float(bar.get("dia_mm", 0.0) or 0.0),
+                color,
+            )
+            reo_points.append({
+                "x": float(bar.get("x_mm", 0.0) or 0.0),
+                "y": float(bar.get("y_mm", 0.0) or 0.0),
+                "db": float(bar.get("dia_mm", 0.0) or 0.0),
+                "layer": "top" if face == "top" else "bottom",
+            })
 
     # -------------------------
     # Shear cage (optional)
@@ -272,13 +295,19 @@ def make_section_3d_figure(
                 cover_bot=float(reo_inputs.get("cover_bot", 0.0)),
                 lig_d=lig_d,
                 lig_legs=lig_legs,
+                reo_points=reo_points,
             )
-            cage = shear.get("cage")
+            outer_cage = _outer_cage_from_reo_points(reo_points, b_env=b_env, D_env=D_env)
+            shear_cage_only = shear.get("cage")
+            # Match 2D: web-constrained shear cage from compute_shear_reo_layout_T_I, not full
+            # longitudinal-bar envelope (which spans bf and draws links through flange void).
+            cage = shear_cage_only or outer_cage
             legs = []
             for stirrup in shear.get("stirrups", []):
                 legs.extend(stirrup.get("legs", []))
 
-            line_w = max(2.0, abs(lig_d) * 0.35)
+            line_w = max(2.5, abs(lig_d) * 0.42)
+            x_positions = _beamwise_stirrup_x_positions(L_vis, s_eff)
 
             if cage:
                 y0 = float(cage["x0"])
@@ -303,21 +332,6 @@ def make_section_3d_figure(
                 # Stirrup frames along beam length
                 frame_y = [y0, y1, y1, y0, y0]
                 frame_z = [z0, z0, z1, z1, z0]
-                x_positions = [0.0]
-                x = s_eff
-                while x < float(L_vis) - 1e-6:
-                    x_positions.append(float(x))
-                    x += s_eff
-                if float(L_vis) not in x_positions:
-                    x_positions.append(float(L_vis))
-
-                # Safety cap
-                MAX_FRAMES = 250
-                if len(x_positions) > MAX_FRAMES:
-                    step = max(1, len(x_positions) // MAX_FRAMES)
-                    x_positions = x_positions[::step]
-                    if x_positions[-1] != float(L_vis):
-                        x_positions.append(float(L_vis))
 
                 for x_pos in x_positions:
                     traces.append(
@@ -326,7 +340,7 @@ def make_section_3d_figure(
                             y=frame_y,
                             z=frame_z,
                             mode="lines",
-                            line=dict(width=max(1.5, line_w * 0.8), color="black"),
+                            line=dict(width=max(1.5, line_w * 0.85), color="black"),
                             hoverinfo="skip",
                             showlegend=False,
                         )
@@ -349,6 +363,71 @@ def make_section_3d_figure(
                             showlegend=False,
                         )
                     )
+
+    # Flange transverse detailing (same geometry as 2D make_sectionA_figure); not tied to show_shear.
+    if reo_inputs is not None and len(shape) > 0 and shape[0] in ("T", "I"):
+        try:
+            from .plotly_section import _build_flange_transverse_reo_geometry
+            from .shape_utils import normalise_shape_name as _nsk_fl
+
+            _skf = _nsk_fl(shape)
+            if _skf in ("T", "I"):
+                _rlay = reo_layout if isinstance(reo_layout, dict) else {}
+                _resolved_fl = resolve_longitudinal_bars_from_layout(
+                    shape_name=shape,
+                    dims=dims,
+                    reo_layout=_rlay,
+                )
+                _fl_shapes, _ = _build_flange_transverse_reo_geometry(
+                    shape_key=_skf,
+                    dims=dims,
+                    reo=reo_inputs,
+                    resolved_longitudinal_bars=_resolved_fl,
+                )
+                _tf_mm = float(dims.get("tf", 0.0) or 0.0)
+                _d_mm = float(dims.get("D", 0.0) or 0.0)
+                _top_sp = max(
+                    40.0,
+                    float(reo_inputs.get("top_flange_transverse_spacing", 200.0) or 200.0),
+                )
+                _bot_sp = max(
+                    40.0,
+                    float(reo_inputs.get("bot_flange_transverse_spacing", 200.0) or 200.0),
+                )
+                for _fs in _fl_shapes:
+                    if str(_fs.get("type")) != "rect":
+                        continue
+                    xa = float(_fs["x0"])
+                    ya = float(_fs["y0"])
+                    xb = float(_fs["x1"])
+                    yb = float(_fs["y1"])
+                    y_lo, y_hi = min(ya, yb), max(ya, yb)
+                    if y_hi <= _tf_mm + 1.0:
+                        s_sp = _top_sp
+                    elif y_lo >= _d_mm - _tf_mm - 1.0:
+                        s_sp = _bot_sp
+                    else:
+                        s_sp = _top_sp
+                    lw_ft = max(
+                        1.5,
+                        float((_fs.get("line") or {}).get("width", 1.2) or 1.2) * 1.25,
+                    )
+                    fr_y = [xa, xb, xb, xa, xa]
+                    fr_z = [ya, ya, yb, yb, ya]
+                    for _x_pos in _beamwise_stirrup_x_positions(L_vis, s_sp):
+                        traces.append(
+                            go.Scatter3d(
+                                x=[_x_pos] * 5,
+                                y=fr_y,
+                                z=fr_z,
+                                mode="lines",
+                                line=dict(width=lw_ft, color="rgba(35,35,35,0.92)"),
+                                hoverinfo="skip",
+                                showlegend=False,
+                            )
+                        )
+        except Exception:
+            pass
 
     fig = go.Figure(data=traces)
 

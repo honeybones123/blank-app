@@ -6,14 +6,11 @@ with the app's session state to generate professional PDF reports.
 """
 
 import streamlit as st
-import tempfile
 import os
-from pathlib import Path
 
-from reporting.report_content import (
-    extract_summary_rows,
-    extract_inputs_sections,
-    extract_check_sections,
+from report_helpers import (
+    build_active_beam_report_data_from_state,
+    build_active_beam_report_pdf,
 )
 # Note: build_pdf_report is imported lazily inside render_pdf_button() to avoid import errors
 
@@ -203,7 +200,7 @@ def _get_results():
     return {}
 
 
-def render_pdf_button(button_type: str = "primary", detail_level: str = "detailed"):
+def render_pdf_button(button_type: str = "primary", detail_level: str = "standard"):
     """
     Render a PDF export button in the Design Actions section.
     
@@ -214,10 +211,10 @@ def render_pdf_button(button_type: str = "primary", detail_level: str = "detaile
     - Shows download button
     - Cleans up temp files
     """
-    detail_level_key = "summary" if detail_level == "summary" else "detailed"
+    detail_level_key = "detailed" if str(detail_level).strip().lower() == "detailed" else "standard"
 
-    # Generate PDF button
-    if st.button("📄 Generate PDF Report", type=button_type, use_container_width=True):
+    # PDF export button
+    if st.button("📄 PDF Report", type=button_type, use_container_width=True):
         # Flush proxy widget keys (e.g. inputs_*) into shared keys before running checks / exporting
         try:
             from state_and_helpers import save_proxies_to_active_set, recalc_derived_values, update_results
@@ -237,100 +234,19 @@ def render_pdf_button(button_type: str = "primary", detail_level: str = "detaile
                 st.error(f"Could not run all checks before export: {run_err}")
                 return
         
-        # 2) HARD VERIFY reports exist (otherwise the PDF will be empty anyway)
-        results = st.session_state.get("results", {})
-        
-        # Check for implemented reports (only bending is fully implemented with report tree)
-        required_reports = ["bending_report"]
-        missing = [k for k in required_reports if not results.get(k)]
-        
-        if missing:
-            st.error(
-                "PDF export blocked: reports were not generated for: "
-                + ", ".join(missing)
-                + ".\n\nThis means the runner did not publish *_report into results."
-            )
-            return
-        
-        # Warn if other modules haven't been migrated yet (but don't block)
-        optional_reports = ["shear_report", "crack_report", "deflection_report"]
-        missing_optional = [k for k in optional_reports if not results.get(k)]
-        if missing_optional:
-            # Check if legacy steps exist as fallback
-            legacy_fallback = {}
-            for report_key in missing_optional:
-                module_name = report_key.replace("_report", "")
-                steps_key = f"{module_name}_steps"
-                if results.get(steps_key):
-                    legacy_fallback[report_key] = steps_key
-            
-            if legacy_fallback:
-                st.info(
-                    f"Note: {', '.join(legacy_fallback.keys())} not yet migrated to report tree format. "
-                    f"Using legacy {', '.join(legacy_fallback.values())} format for PDF."
-                )
-        
-        # 3) Export diagrams and attach to report structure
-        try:
-            from reporting.fig_export import export_box_diagram_png
-            export_report_diagrams(results)
-        except Exception as export_err:
-            st.warning(f"Could not export diagrams: {export_err}. PDF will be generated without diagrams.")
-        
-        # 4) Now build the PDF
+        # 2) Build the new active-beam report PDF directly from the Stage 5 report structure.
         with st.spinner("Generating PDF report..."):
             try:
-                # Check if reportlab is available and import build_pdf_report
-                try:
-                    from reporting.report_builder import build_pdf_report
-                except ImportError as import_err:
-                    st.error(
-                        "PDF generation requires reportlab. Please install it with: "
-                        "`pip install reportlab`"
-                    )
-                    st.code("pip install reportlab", language="bash")
-                    return
-                
-                # Extract report content from session state
-                summary_rows = extract_summary_rows()
-                inputs_sections = extract_inputs_sections()
-                
-                # Prepare figure paths dict (currently empty, can be populated with exported figures)
-                fig_paths = {
-                    "bending": [],
-                    "shear": [],
-                    "crack": [],
-                    "deflection": [],
-                    "section": None,
-                }
-                
-                # Extract check sections with figure paths
-                check_sections = extract_check_sections(fig_paths=fig_paths)
-                
-                # Build PDF
-                temp_figures = []  # List to track temp figure files
-                
-                # Collect all figure paths for cleanup
-                for check in check_sections:
-                    figs = check.get("figures", [])
-                    if isinstance(figs, list):
-                        temp_figures.extend([f for f in figs if f])
-                    elif figs:
-                        temp_figures.append(figs)
-                
-                pdf_bytes = build_pdf_report(
-                    summary_rows=summary_rows,
-                    inputs_sections=inputs_sections,
-                    check_sections=check_sections,
-                    temp_figures=temp_figures,
-                    detail_level=detail_level_key,
-                )
-                suffix = "SUMMARY" if detail_level_key == "summary" else "DETAILED"
-                filename = f"Beam_Design_Report_{suffix}.pdf"
+                report_data = build_active_beam_report_data_from_state(report_mode=detail_level_key)
+                pdf_bytes = build_active_beam_report_pdf(report_data)
+                suffix = "STANDARD" if detail_level_key == "standard" else "DETAILED"
+                beam_name = str((report_data.get("beam_info") or {}).get("display_name") or "Beam").replace(" ", "_")
+                revision = str((report_data.get("metadata") or {}).get("revision_label") or "Rev_1").replace(" ", "_")
+                filename = f"{beam_name}_Beam_Design_Report_{suffix}_{revision}.pdf"
                 
                 # Show download button
                 st.download_button(
-                    label="📥 Download PDF Report",
+                    label="📥 Download PDF",
                     data=pdf_bytes,
                     file_name=filename,
                     mime="application/pdf",
@@ -344,12 +260,4 @@ def render_pdf_button(button_type: str = "primary", detail_level: str = "detaile
             except Exception as e:
                 st.error(f"Error generating PDF: {str(e)}")
                 st.exception(e)
-            finally:
-                # Cleanup temp figure files
-                for fig_path in temp_figures:
-                    try:
-                        if os.path.exists(fig_path):
-                            os.remove(fig_path)
-                    except Exception:
-                        pass  # Ignore cleanup errors
 

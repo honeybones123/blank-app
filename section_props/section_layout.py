@@ -110,6 +110,23 @@ def _internal_leg_positions(x_min: float, x_max: float, n_legs: int):
     return [x_min + span * j / (n_legs - 1) for j in range(1, n_legs - 1)]
 
 
+def _flatten_reo_points_for_shear(reo_points: list[dict] | None) -> list[dict[str, float]]:
+    pts: list[dict[str, float]] = []
+    if not reo_points:
+        return pts
+    for pt in reo_points:
+        try:
+            db = float(pt.get("db", 0.0) or 0.0)
+            x = float(pt.get("x", 0.0) or 0.0)
+            y = float(pt.get("y", 0.0) or 0.0)
+        except Exception:
+            continue
+        if db <= 0:
+            continue
+        pts.append({"x": x, "y": y, "db": db})
+    return pts
+
+
 def compute_shear_reo_layout_pure(
     *,
     b: float,
@@ -119,6 +136,7 @@ def compute_shear_reo_layout_pure(
     cover_side: float,
     lig_d: float,
     lig_legs: int,
+    reo_points: list[dict] | None = None,
 ):
     """
     Pure shear layout used for Plotly drawing.
@@ -139,13 +157,24 @@ def compute_shear_reo_layout_pure(
     if lig_d <= 0 or lig_legs < 2:
         return {"cage": None, "stirrups": []}
 
-    r = lig_d / 2.0
+    visual_clearance = 0.0
+    default_x0 = max(cover_side - visual_clearance, 5.0)
+    default_x1 = min(b - cover_side + visual_clearance, b - 5.0)
+    default_y0 = max(cover_top - visual_clearance, 5.0)
+    default_y1 = min(D - cover_bot + visual_clearance, D - 5.0)
 
-    # Cage rectangle (located inside cover, offset by link radius)
-    x0 = cover_side + r
-    x1 = b - cover_side - r
-    y0 = cover_top + r
-    y1 = D - cover_bot - r
+    pts = _flatten_reo_points_for_shear(reo_points)
+    if pts:
+        min_x = min(pt["x"] - pt["db"] / 2.0 for pt in pts) - visual_clearance
+        max_x = max(pt["x"] + pt["db"] / 2.0 for pt in pts) + visual_clearance
+        min_y = min(pt["y"] - pt["db"] / 2.0 for pt in pts) - visual_clearance
+        max_y = max(pt["y"] + pt["db"] / 2.0 for pt in pts) + visual_clearance
+        x0 = max(5.0, min(default_x0, min_x))
+        x1 = min(b - 5.0, max(default_x1, max_x))
+        y0 = max(5.0, min(default_y0, min_y))
+        y1 = min(D - 5.0, max(default_y1, max_y))
+    else:
+        x0, x1, y0, y1 = default_x0, default_x1, default_y0, default_y1
 
     # Guard (don’t draw garbage)
     if x1 <= x0 or y1 <= y0:

@@ -7,7 +7,13 @@ All functions are read-only and use get_param() to access shared keys.
 
 import streamlit as st
 import math
-from state_and_helpers import get_param
+from state_and_helpers import (
+    get_longitudinal_row_inputs,
+    get_param,
+    resolve_design_actions,
+    get_deflection_limit_ratio,
+    get_deflection_limit_label_from_ratio,
+)
 
 
 def _ss(key, default=""):
@@ -35,6 +41,33 @@ def _safe_value(val, fmt="{:.2f}", default="N/A"):
     """Safely format a value, returning default if invalid."""
     if val is None:
         return default
+
+
+def _longitudinal_row_label(row: dict) -> str | None:
+    if not isinstance(row, dict) or not row.get("active"):
+        return None
+    dia = int(round(float(row.get("dia", 0.0) or 0.0)))
+    if dia <= 0:
+        return None
+    mode = str(row.get("mode", "Count") or "Count")
+    if mode == "Spacing":
+        spacing = int(round(float(row.get("spacing", 0.0) or 0.0)))
+        return f"N{dia} @ {spacing}" if spacing > 0 else None
+    bars = int(row.get("bars", 0) or 0)
+    return f"{bars}N{dia}" if bars > 0 else None
+
+
+def _longitudinal_rows_summary(section: str) -> str:
+    labels = []
+    for row in get_longitudinal_row_inputs(section, source=st.session_state):
+        label = _longitudinal_row_label(row)
+        if label:
+            labels.append((int(row.get("row_index", 0) or 0), label))
+    if not labels:
+        return "—"
+    if len(labels) == 1:
+        return labels[0][1]
+    return ", ".join(f"R{row_index}: {label}" for row_index, label in labels)
     try:
         if isinstance(val, float) and math.isnan(val):
             return default
@@ -184,7 +217,7 @@ def _auto_steps_for_module(module, summary, inputs, results, detail_level="detai
     
     if module == "bending":
         # Read all available values
-        Mu_star = get_param("Mu_star", 0.0)
+        Mu_star = resolve_design_actions().get("Mu", 0.0)
         phi_Mu_cap = get_param("phi_Mu_cap", 0.0)
         Mu_util = get_param("Mu_utilisation", None)
         phi = get_param("phi_bend", 0.85)
@@ -277,7 +310,7 @@ def _auto_steps_for_module(module, summary, inputs, results, detail_level="detai
         ]
     
     elif module == "shear":
-        Vu_star = get_param("Vu_star", 0.0)
+        Vu_star = resolve_design_actions().get("Vu", 0.0)
         phi_Vu_cap = get_param("phi_Vu_cap", 0.0)
         Vu_util = get_param("Vu_utilisation", None)
         phi = get_param("phi_shear", 0.75)
@@ -441,7 +474,11 @@ def _auto_steps_for_module(module, summary, inputs, results, detail_level="detai
         fc = get_param("fc", 32.0)
         t_creep = get_param("t_creep", 365.0)
         age_at_loading = get_param("age_at_loading", 28.0)
-        stress_ratio = get_param("stress_ratio", 0.3)
+        stress_ratio = get_param("stress_ratio", 0.0)
+        sustained_mstar = get_param("sustained_Mstar_kNm", 0.0)
+        sigma_cs = get_param("sustained_sigma_cs_mpa", stress_ratio * fc)
+        z_comp = get_param("sustained_section_modulus_mm3", 0.0)
+        comp_fibre = get_param("sustained_compression_fibre", "top")
         Ec = get_param("Ec", 30000.0)
         b = get_param("b", 300.0)
         D = get_param("D", 600.0)
@@ -468,6 +505,14 @@ def _auto_steps_for_module(module, summary, inputs, results, detail_level="detai
             
             f"High-strength factor k5 — AS 3600:2018 Cl. 3.1.8.3\n"
             f"k5 = {k5:.2f}",
+
+            f"Sustained concrete stress derivation (app sustained-action path)\n"
+            f"Governing sustained SLS moment M_sust = {sustained_mstar:.2f} kNm ({comp_fibre} compression)\n"
+            f"Section modulus at compression fibre Z_comp = {z_comp:.2e} mm³\n"
+            f"σcs = M_sust×10⁶ / Z_comp = {sigma_cs:.2f} MPa",
+
+            f"Sustained stress ratio (derived)\n"
+            f"stress_ratio = σcs / f'c = {sigma_cs:.2f} / {fc:.1f} = {stress_ratio:.3f}",
             
             f"Non-linear creep factor k6 — AS 3600:2018 Cl. 3.1.8.3\n"
             f"k6 = {k6:.2f}",
@@ -515,8 +560,18 @@ def _auto_steps_for_module(module, summary, inputs, results, detail_level="detai
         delta_total = get_param("deflection_total_mm", 0.0)
         defl_limit = get_param("deflection_limit_mm", 0.0)
         defl_util = get_param("deflection_utilisation", None)
-        L = get_param("L", 8000.0)
+        L = get_param("L", 3000.0)
         L_m = L / 1000.0
+        fc = get_param("fc", 40.0)
+        Ec = get_param("Ec", 30000.0)
+        phi_cc_t = get_param("phi_cc_t", 2.0)
+        Eceff = get_param("Eceff", Ec)
+        stress_ratio = get_param("stress_ratio", 0.0)
+        sustained_mstar = get_param("sustained_Mstar_kNm", 0.0)
+        sustained_sigma_cs = get_param("sustained_sigma_cs_mpa", 0.0)
+        sustained_z = get_param("sustained_section_modulus_mm3", 0.0)
+        defl_limit_ratio = get_deflection_limit_ratio(get_param("defl_limit_ratio", 250.0))
+        defl_limit_label = get_deflection_limit_label_from_ratio(defl_limit_ratio)
         
         steps = [
             f"Span length — AS 3600:2018 Cl. 8.5\n"
@@ -527,6 +582,16 @@ def _auto_steps_for_module(module, summary, inputs, results, detail_level="detai
             
             f"Effective moment of inertia Ief — AS 3600:2018 Cl. 8.5.3\n"
             f"Ief calculated from section properties and reinforcement",
+
+            f"Concrete modulus Ec (derived)\n"
+            f"Ec = 4700 × √f'c = 4700 × √{fc:.1f} = {Ec:.0f} MPa",
+
+            f"Sustained concrete stress and ratio (derived)\n"
+            f"σcs = M_sust×10⁶/Z_comp = {sustained_mstar:.2f}×10⁶/{sustained_z:.2e} = {sustained_sigma_cs:.2f} MPa\n"
+            f"stress_ratio = σcs/f'c = {sustained_sigma_cs:.2f}/{fc:.1f} = {stress_ratio:.3f}",
+
+            f"Effective modulus Eceff (derived)\n"
+            f"Eceff = Ec / (1 + φcc(t)) = {Ec:.0f} / (1 + {phi_cc_t:.2f}) = {Eceff:.0f} MPa",
             
             f"Short-term deflection Δshort — AS 3600:2018 Cl. 8.5\n"
             f"Δshort from elastic analysis using Ief",
@@ -542,8 +607,8 @@ def _auto_steps_for_module(module, summary, inputs, results, detail_level="detai
             f"Δtotal = {delta_total:.2f} mm",
             
             f"Deflection limit — AS 3600:2018 Cl. 2.3.2\n"
-            f"Δlimit = L/250\n"
-            f"Δlimit = {L:.0f}/250 = {defl_limit:.2f} mm",
+            f"Adopted limit = {defl_limit_label}\n"
+            f"Δlimit = {L:.0f}/{defl_limit_ratio:.0f} = {defl_limit:.2f} mm",
             
             f"SLS check — AS 3600:2018 Cl. 8.5\n"
             f"Util = Δtotal / Δlimit\n"
@@ -575,8 +640,10 @@ def extract_summary_rows():
     """
     rows = []
     
+    actions = resolve_design_actions()
+
     # --- Bending ---
-    Mu_star = get_param("Mu_star", 0.0)
+    Mu_star = actions.get("Mu", 0.0)
     phi_Mu_cap = get_param("phi_Mu_cap", 0.0)
     Mu_util = get_param("Mu_utilisation", None)
     
@@ -591,7 +658,7 @@ def extract_summary_rows():
         })
     
     # --- Shear ---
-    Vu_star = get_param("Vu_star", 0.0)
+    Vu_star = actions.get("Vu", 0.0)
     phi_Vu_cap = get_param("phi_Vu_cap", 0.0)
     Vu_util = get_param("Vu_utilisation", None)
     
@@ -658,6 +725,7 @@ def extract_inputs_sections():
             "fc": get_param("fc", 40.0),
             "fsy": get_param("fsy", 500.0),
             "Ec": get_param("Ec", 30000.0),
+            "Eceff": get_param("Eceff", get_param("Ec", 30000.0)),
             "Es": get_param("Es", 200000.0),
         },
         "reinforcement": {
@@ -666,6 +734,8 @@ def extract_inputs_sections():
             "db_bot": get_param("db_bot", 0.0),
             "nb_top": get_param("nb_top", 0),
             "db_top": get_param("db_top", 0.0),
+            "bottom_layout_label": _longitudinal_rows_summary("bot"),
+            "top_layout_label": _longitudinal_rows_summary("top"),
 
             # Covers
             "cover_bot": get_param("cover_bot", 30.0),
@@ -679,21 +749,9 @@ def extract_inputs_sections():
         "actions": {
             # Prefer active ULS/SLS set keys (uls_* / sls_*) since proxies write those.
             # Fall back to shared/report keys if active-set values are not present.
-            "Mu_star": (
-                _ss(f'{"uls" if _ss("loads_edit_mode", "ULS") == "ULS" else "sls"}_Mstar', None)
-                if _ss(f'{"uls" if _ss("loads_edit_mode", "ULS") == "ULS" else "sls"}_Mstar', None) is not None
-                else get_param("Mu_star", 0.0)
-            ),
-            "Vu_star": (
-                _ss(f'{"uls" if _ss("loads_edit_mode", "ULS") == "ULS" else "sls"}_Vstar', None)
-                if _ss(f'{"uls" if _ss("loads_edit_mode", "ULS") == "ULS" else "sls"}_Vstar', None) is not None
-                else get_param("Vu_star", 0.0)
-            ),
-            "N_star": (
-                _ss(f'{"uls" if _ss("loads_edit_mode", "ULS") == "ULS" else "sls"}_Nstar', None)
-                if _ss(f'{"uls" if _ss("loads_edit_mode", "ULS") == "ULS" else "sls"}_Nstar', None) is not None
-                else get_param("N_star", 0.0)
-            ),
+            "Mu_star": resolve_design_actions().get("Mu", 0.0),
+            "Vu_star": resolve_design_actions().get("Vu", 0.0),
+            "N_star": resolve_design_actions().get("Nu", 0.0),
 
             # These remain as shared keys (unless you also have ULS/SLS variants)
             "Tu_star": get_param("Tu_star", 0.0),
@@ -727,8 +785,10 @@ def extract_check_sections(fig_paths=None):
     
     sections = []
     
+    actions = resolve_design_actions()
+
     # --- Bending ---
-    Mu_star = get_param("Mu_star", 0.0)
+    Mu_star = actions.get("Mu", 0.0)
     phi_Mu_cap = get_param("phi_Mu_cap", 0.0)
     Mu_util = get_param("Mu_utilisation", None)
     
@@ -774,7 +834,7 @@ def extract_check_sections(fig_paths=None):
             })
     
     # --- Shear ---
-    Vu_star = get_param("Vu_star", 0.0)
+    Vu_star = actions.get("Vu", 0.0)
     phi_Vu_cap = get_param("phi_Vu_cap", 0.0)
     Vu_util = get_param("Vu_utilisation", None)
     

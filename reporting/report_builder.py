@@ -5,7 +5,24 @@ Builds professional PDF reports from extracted content.
 Uses reportlab for PDF generation.
 """
 
+import logging
 import re
+
+_logger = logging.getLogger(__name__)
+
+# Set True temporarily to log PageBreak count inside the Deflection check story (expect 0 between calc cards).
+_DEBUG_REPORT_DEFLECTION_PAGE_BREAKS = False
+
+
+def _count_page_breaks_in_flowables(flowables) -> int:
+    """Count top-level PageBreak flowables (for PDF debug)."""
+    if not flowables:
+        return 0
+    try:
+        from reportlab.platypus import PageBreak as _PageBreak
+    except Exception:
+        return 0
+    return sum(1 for f in flowables if isinstance(f, _PageBreak))
 
 try:
     from reportlab.lib.pagesizes import letter, A4
@@ -808,8 +825,9 @@ def _render_tabs_and_boxes(story, styles, module_title, summary, tabs=None, grou
         story.append(summary_table)
         story.append(Spacer(1, 8))
         if detail_level == "detailed":
-            story.append(Spacer(1, 18))
-            story.append(PageBreak())
+            # Vertical gap only — do not force a new page here; the Design Checks loop
+            # already starts each module on a new page when needed (check_idx > 0).
+            story.append(Spacer(1, 10))
     
     # Calculate available width (A4 width - margins)
     page_width, page_height = A4
@@ -1441,9 +1459,11 @@ def build_pdf_report(
             if "fsy" in mat:
                 mat_table_data.append(["Steel yield strength (fsy)", f"{mat.get('fsy', 'N/A'):.0f} MPa"])
             if "Ec" in mat:
-                mat_table_data.append(["Concrete modulus (Ec)", f"{mat.get('Ec', 'N/A'):.0f} MPa"])
+                mat_table_data.append(["Concrete modulus (Ec, derived)", f"{mat.get('Ec', 'N/A'):.0f} MPa"])
+            if "Eceff" in mat:
+                mat_table_data.append(["Effective modulus (Eceff, derived)", f"{mat.get('Eceff', 'N/A'):.0f} MPa"])
             if "Es" in mat:
-                mat_table_data.append(["Steel modulus (Es)", f"{mat.get('Es', 'N/A'):.0f} MPa"])
+                mat_table_data.append(["Steel modulus (Es, internal default)", f"{mat.get('Es', 'N/A'):.0f} MPa"])
             
             if mat_table_data:
                 mat_table = Table(mat_table_data, colWidths=[2.5*inch, 3*inch])
@@ -1498,9 +1518,12 @@ def build_pdf_report(
             lig_legs = reo.get("lig_legs", 0)
             s_lig = reo.get("s_lig", 0.0)
 
+            bottom_layout_label = reo.get("bottom_layout_label") or _reo_label(nb_bot, db_bot)
+            top_layout_label = reo.get("top_layout_label") or _reo_label(nb_top, db_top)
+
             reo_table_data = [
-                ["Bottom reinforcement", _reo_label(nb_bot, db_bot)],
-                ["Top reinforcement", _reo_label(nb_top, db_top)],
+                ["Bottom reinforcement", bottom_layout_label],
+                ["Top reinforcement", top_layout_label],
             ]
 
             reo_table_data.append(["Shear reinforcement (links)", _lig_label(lig_d, lig_legs, s_lig)])
@@ -1624,6 +1647,10 @@ def build_pdf_report(
             groups = check.get("groups")
             tabs = check.get("tabs", [])
             steps = check.get("steps", [])
+            check_title = str(check.get("title", ""))
+            _defl_debug_m0 = None
+            if _DEBUG_REPORT_DEFLECTION_PAGE_BREAKS and "Deflection" in check_title:
+                _defl_debug_m0 = len(story)
             
             if groups:
                 # Use unified groups format (preferred)
@@ -1677,6 +1704,17 @@ def build_pdf_report(
                 # Steps
                 if detail_level != "summary":
                     _render_steps(story, styles, steps, available_width)
+            
+            if (
+                _DEBUG_REPORT_DEFLECTION_PAGE_BREAKS
+                and _defl_debug_m0 is not None
+                and "Deflection" in check_title
+            ):
+                _pb_body = _count_page_breaks_in_flowables(story[_defl_debug_m0 : len(story)])
+                _logger.info(
+                    "report_builder: deflection check body PageBreak count=%s (expect 0 before figures)",
+                    _pb_body,
+                )
             
             # Figures (rendered for both tabs and steps)
             figures = check.get("figures", [])

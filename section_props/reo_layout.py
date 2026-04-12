@@ -76,11 +76,15 @@ def _merge_reo_layers(layout: dict) -> dict:
 
     # new detailed keys (if present)
     top += _as_list(layout.get("top_flange"))
+    top += _as_list(layout.get("top_flange_left"))
+    top += _as_list(layout.get("top_flange_right"))
     top += _as_list(layout.get("top_web"))
     top += _as_list(layout.get("top_left"))
     top += _as_list(layout.get("top_right"))
 
     bottom += _as_list(layout.get("bottom_flange"))
+    bottom += _as_list(layout.get("bottom_flange_left"))
+    bottom += _as_list(layout.get("bottom_flange_right"))
     bottom += _as_list(layout.get("bottom_web"))
     bottom += _as_list(layout.get("bottom_left"))
     bottom += _as_list(layout.get("bottom_right"))
@@ -89,6 +93,100 @@ def _merge_reo_layers(layout: dict) -> dict:
     layout["top"] = top
     layout["bottom"] = bottom
     return layout
+
+
+def _bars_per_row(total: int, rows: int) -> list[int]:
+    total_i = max(0, int(total or 0))
+    rows_i = max(1, int(rows or 1))
+    base = total_i // rows_i
+    rem = total_i % rows_i
+    return [base + (1 if i < rem else 0) for i in range(rows_i)]
+
+
+def _extract_group_rows(reo: Dict[str, Any], *, prefix: str) -> dict:
+    return {
+        "enabled": bool(reo.get(f"{prefix}_enabled", False)),
+        "count": max(0, int(float(reo.get(f"{prefix}_count", 0) or 0))),
+        "dia": float(reo.get(f"{prefix}_dia", 0.0) or 0.0),
+        "rows": max(1, int(float(reo.get(f"{prefix}_rows", 1) or 1))),
+        "row_spacing": float(reo.get(f"{prefix}_row_spacing", 60.0) or 60.0),
+        "clear_spacing_mode": str(reo.get(f"{prefix}_clear_spacing_mode", "count") or "count"),
+    }
+
+
+def _safe_row_x_positions(
+    *,
+    x0: float,
+    x1: float,
+    n: int,
+    db: float,
+    min_clear_spacing: float,
+) -> tuple[list[float], int, str | None]:
+    if n <= 0:
+        return [], 0, None
+    if x1 <= x0 or db <= 0.0:
+        return [], 0, "No usable flange width after covers."
+
+    n_try = int(n)
+    while n_try > 0:
+        xs = _row_x_positions(x0, x1, n_try)
+        try:
+            _check_row_clear(xs, db, min_clear_spacing)
+            warn = None
+            if n_try < n:
+                warn = f"Requested {n} bars in row but only {n_try} fit after clear-spacing checks."
+            return xs, n_try, warn
+        except ValueError:
+            n_try -= 1
+
+    return [], 0, f"Requested {n} bars in row but no bar fits after clear-spacing checks."
+
+
+def _build_flange_group_bands(
+    *,
+    face: str,
+    zone: str,
+    x0: float,
+    x1: float,
+    y_start: float,
+    y_step: float,
+    count: int,
+    dia: float,
+    rows: int,
+    min_clear_spacing: float,
+    source_group: str,
+    warnings: list[str],
+) -> list[dict]:
+    if count <= 0 or dia <= 0.0:
+        return []
+    bars_by_row = _bars_per_row(count, rows)
+    bands: list[dict] = []
+    for idx, row_count in enumerate(bars_by_row, start=1):
+        if row_count <= 0:
+            continue
+        y = y_start + (idx - 1) * y_step
+        xs, placed, warn = _safe_row_x_positions(
+            x0=x0,
+            x1=x1,
+            n=row_count,
+            db=dia,
+            min_clear_spacing=min_clear_spacing,
+        )
+        if warn:
+            warnings.append(f"{source_group} row {idx}: {warn}")
+        if placed <= 0:
+            continue
+        bands.append({
+            "x": xs,
+            "y": [y] * len(xs),
+            "db": dia,
+            "row_index": idx,
+            "face": face,
+            "zone": zone,
+            "source_group": source_group,
+            "anchored": True,
+        })
+    return bands
 
 
 def _split_flange_outstands(*, bf: float, web_w: float):
@@ -330,231 +428,351 @@ def compute_longitudinal_reo_layout_T_I(
     """
     shape = shape_name
 
-    # --- Read 2-layer inputs (Count or Spacing) ---
-    top1_mode = str(reo.get("top1_layout_mode", "Count"))
-    top2_mode = str(reo.get("top2_layout_mode", "Count"))
-    bot1_mode = str(reo.get("bot1_layout_mode", "Count"))
-    bot2_mode = str(reo.get("bot2_layout_mode", "Count"))
+    def _legacy_rows(section_key: str) -> List[Dict[str, Any]]:
+        section_defaults = ("top", 16.0) if section_key == "top" else ("bot", 20.0)
+        prefix, default_dia = section_defaults
+        rows = reo.get(f"{section_key}_rows")
+        if isinstance(rows, list):
+            out = [dict(row) for row in rows]
+        else:
+            out = []
+            for row_index in range(1, max_rows + 1):
+                if row_index > 2:
+                    break
+                mode = str(reo.get(f"{prefix}{row_index}_layout_mode", "Count") or "Count")
+                nb_or_s = float(reo.get(f"nb_or_s_{prefix}_{row_index}", 0.0) or 0.0)
+                bars = int(nb_or_s) if mode == "Count" else 0
+                spacing = nb_or_s if mode == "Spacing" else 200.0
+                dia = float(reo.get(f"db_{prefix}_{row_index}", default_dia) or default_dia)
+                out.append({
+                    "row_index": row_index,
+                    "mode": mode,
+                    "nb_or_s": nb_or_s,
+                    "bars": bars,
+                    "spacing": spacing,
+                    "dia": dia,
+                    "active": dia > 0.0 and ((mode == "Count" and bars > 0) or (mode == "Spacing" and spacing > 0.0)),
+                })
+        return [row for row in out if row.get("active")][:max_rows]
 
-    nb_or_s_top_1 = float(reo.get("nb_or_s_top_1", 0.0) or 0.0)
-    nb_or_s_top_2 = float(reo.get("nb_or_s_top_2", 0.0) or 0.0)
-    db_top_1 = float(reo.get("db_top_1", reo.get("db_top", 20.0)) or 20.0)
-    db_top_2 = float(reo.get("db_top_2", db_top_1) or db_top_1)
+    def _row_count(row: Dict[str, Any], width: float) -> int:
+        dia = float(row.get("dia", 0.0) or 0.0)
+        value = float(row.get("nb_or_s", row.get("spacing" if row.get("mode") == "Spacing" else "bars", 0.0)) or 0.0)
+        if dia <= 0.0 or value <= 0.0 or width <= 0.0:
+            return 0
+        if str(row.get("mode", "Count")) == "Spacing":
+            return _count_from_spacing(width, dia, value)
+        return max(0, int(round(value)))
 
-    nb_or_s_bot_1 = float(reo.get("nb_or_s_bot_1", 0.0) or 0.0)
-    nb_or_s_bot_2 = float(reo.get("nb_or_s_bot_2", 0.0) or 0.0)
-    db_bot_1 = float(reo.get("db_bot_1", reo.get("db_bot", 20.0)) or 20.0)
-    db_bot_2 = float(reo.get("db_bot_2", db_bot_1) or db_bot_1)
-
-    rowgap_top = float(reo.get("rowgap_top", rowgap_top) or rowgap_top)
-    rowgap_bot = float(reo.get("rowgap_bot", rowgap_bot) or rowgap_bot)
-
-    # enforce minimum clear vertical gap between layers (clear gap, not c/c)
-    rowgap_top = max(rowgap_top, min_clear_spacing)
-    rowgap_bot = max(rowgap_bot, min_clear_spacing)
-
-    if max_rows < 2:
-        nb_or_s_top_2 = 0.0
-        nb_or_s_bot_2 = 0.0
+    rowgap_top = max(float(reo.get("rowgap_top", rowgap_top) or rowgap_top), min_clear_spacing)
+    rowgap_bot = max(float(reo.get("rowgap_bot", rowgap_bot) or rowgap_bot), min_clear_spacing)
+    top_rows = _legacy_rows("top")
+    bottom_rows = _legacy_rows("bottom")
+    warnings: list[str] = []
 
     if shape.startswith("T-Section"):
         bf = float(dims["bf"]); tf = float(dims["tf"]); bw = float(dims["bw"]); D = float(dims["D"])
-
-        # --- Top bars IN FLANGE ---
-        x0_t = cover_side + db_top_1 / 2.0
-        x1_t = bf - cover_side - db_top_1 / 2.0
-        width_top = x1_t - x0_t
-        if width_top <= 0:
-            raise ValueError("Top bars: no horizontal room after covers")
-
-        if top1_mode == "Count":
-            n_top_1 = int(nb_or_s_top_1)
-        else:
-            n_top_1 = 0 if nb_or_s_top_1 <= 0 else _count_from_spacing(width_top, db_top_1, nb_or_s_top_1)
-        if top2_mode == "Count":
-            n_top_2 = int(nb_or_s_top_2)
-        else:
-            n_top_2 = 0 if nb_or_s_top_2 <= 0 else _count_from_spacing(width_top, db_top_2, nb_or_s_top_2)
-
-        # Row 1 center
-        y_top_1 = cover_top + db_top_1 / 2.0
-        # Row 2 center (rowgap is clear gap between bars)
-        y_top_2 = y_top_1 + (db_top_1 / 2.0) + rowgap_top + (db_top_2 / 2.0)
-
-        # flange vertical fit checks
-        if n_top_2 > 0 and (y_top_2 + db_top_2 / 2.0 > tf + 1e-9):
-            raise ValueError(
-                f"Top flange too thin for 2 layers: tf={tf:.1f} mm, "
-                f"needs cover_top + db1 + rowgap + db2 <= tf "
-                f"({cover_top:.1f}+{db_top_1:.1f}+{rowgap_top:.1f}+{db_top_2:.1f} = "
-                f"{(cover_top+db_top_1+rowgap_top+db_top_2):.1f})."
-            )
-
-        top: List[Dict] = []
-        if n_top_1 > 0:
-            # top flange outstands based on bw (web width for T)
-            xs = _place_in_outstands(
-                n=n_top_1,
-                db=db_top_1,
-                bf=bf,
-                web_w=bw,
-                cover_side=cover_side,
-                min_clear_spacing=min_clear_spacing,
-            )
-            top.append({"x": xs, "y": [y_top_1]*len(xs), "db": db_top_1})
-
-        if n_top_2 > 0:
-            xs = _place_in_outstands(
-                n=n_top_2,
-                db=db_top_2,
-                bf=bf,
-                web_w=bw,
-                cover_side=cover_side,
-                min_clear_spacing=min_clear_spacing,
-            )
-            top.append({"x": xs, "y": [y_top_2]*len(xs), "db": db_top_2})
-
-        # --- Bottom bars in WEB (T section) ---
         x_web0 = (bf - bw) / 2.0
         x_web1 = x_web0 + bw
 
-        x0_b1 = x_web0 + cover_side + db_bot_1 / 2.0
-        x1_b1 = x_web1 - cover_side - db_bot_1 / 2.0
-        width_bot = x1_b1 - x0_b1
-        if width_bot <= 0:
-            raise ValueError("Bottom bars: no horizontal room after covers")
+        top_web: List[Dict] = []
+        prev_y = None
+        prev_dia = None
+        for row in top_rows:
+            dia = float(row.get("dia", 0.0) or 0.0)
+            y = cover_top + dia / 2.0 if prev_y is None else prev_y + prev_dia / 2.0 + rowgap_top + dia / 2.0
+            if y + dia / 2.0 > tf + 1e-9:
+                warnings.append(f"Top web row {int(row.get('row_index', 1))} does not fit within flange thickness; row ignored.")
+                continue
+            # Web longitudinal bars must remain inside the web band.
+            x0_t = x_web0 + cover_side + dia / 2.0
+            x1_t = x_web1 - cover_side - dia / 2.0
+            width_top = x1_t - x0_t
+            if width_top <= 0:
+                warnings.append("Top web bars: no horizontal room after covers.")
+                continue
+            n_top = _row_count(row, width_top)
+            xs = _row_x_positions(x0_t, x1_t, n_top)
+            try:
+                _check_row_clear(xs, dia, min_clear_spacing)
+            except ValueError as exc:
+                warnings.append(f"Top web row {int(row.get('row_index', 1))}: {exc}")
+                xs = []
+            top_web.append({
+                "x": xs,
+                "y": [y] * len(xs),
+                "db": dia,
+                "row_index": int(row.get("row_index", 1)),
+                "face": "top",
+                "zone": "web",
+                "source_group": f"top_web_row_{int(row.get('row_index', 1))}",
+                "anchored": True,
+            })
+            prev_y = y
+            prev_dia = dia
 
-        if bot1_mode == "Count":
-            n_bot_1 = int(nb_or_s_bot_1)
-        else:
-            n_bot_1 = 0 if nb_or_s_bot_1 <= 0 else _count_from_spacing(width_bot, db_bot_1, nb_or_s_bot_1)
-        if bot2_mode == "Count":
-            n_bot_2 = int(nb_or_s_bot_2)
-        else:
-            n_bot_2 = 0 if nb_or_s_bot_2 <= 0 else _count_from_spacing(width_bot, db_bot_2, nb_or_s_bot_2)
+        bottom_web: List[Dict] = []
+        prev_y = None
+        prev_dia = None
+        for row in bottom_rows:
+            dia = float(row.get("dia", 0.0) or 0.0)
+            y = D - cover_bot - dia / 2.0 if prev_y is None else prev_y - prev_dia / 2.0 - rowgap_bot - dia / 2.0
+            if y - dia / 2.0 < tf - 1e-9:
+                warnings.append(f"Bottom web row {int(row.get('row_index', 1))} does not fit within available web depth; row ignored.")
+                continue
+            x0_b = x_web0 + cover_side + dia / 2.0
+            x1_b = x_web1 - cover_side - dia / 2.0
+            width_bot = x1_b - x0_b
+            if width_bot <= 0:
+                warnings.append("Bottom web bars: no horizontal room after covers.")
+                continue
+            n_bot = _row_count(row, width_bot)
+            xs = _row_x_positions(x0_b, x1_b, n_bot)
+            try:
+                _check_row_clear(xs, dia, min_clear_spacing)
+            except ValueError as exc:
+                warnings.append(f"Bottom web row {int(row.get('row_index', 1))}: {exc}")
+                xs = []
+            bottom_web.append({
+                "x": xs,
+                "y": [y] * len(xs),
+                "db": dia,
+                "row_index": int(row.get("row_index", 1)),
+                "face": "bottom",
+                "zone": "web",
+                "source_group": f"bottom_web_row_{int(row.get('row_index', 1))}",
+                "anchored": True,
+            })
+            prev_y = y
+            prev_dia = dia
 
-        y_bot_1 = D - cover_bot - db_bot_1 / 2.0
-        y_bot_2 = y_bot_1 - (db_bot_1 / 2.0) - rowgap_bot - (db_bot_2 / 2.0)
+        xL_inner = (bf - bw) / 2.0
+        xR_inner = xL_inner + bw
+        top_flange_enabled = bool(reo.get("top_flange_reo_enabled", False))
+        bot_flange_enabled = bool(reo.get("bot_flange_reo_enabled", False))
+        top_mirror = bool(reo.get("top_flange_mirror_lr", True))
+        bot_mirror = bool(reo.get("bot_flange_mirror_lr", True))
 
-        bottom: List[Dict] = []
-        if n_bot_1 > 0:
-            xs = _row_x_positions(x0_b1, x1_b1, n_bot_1)
-            _check_row_clear(xs, db_bot_1, min_clear_spacing)
-            bottom.append({"x": xs, "y": [y_bot_1]*len(xs), "db": db_bot_1})
+        top_left = _extract_group_rows(reo, prefix="top_flange_left")
+        top_right = _extract_group_rows(reo, prefix="top_flange_right")
+        if top_mirror:
+            top_right = dict(top_left)
+        bot_left = _extract_group_rows(reo, prefix="bot_flange_left")
+        bot_right = _extract_group_rows(reo, prefix="bot_flange_right")
+        if bot_mirror:
+            bot_right = dict(bot_left)
 
-        if n_bot_2 > 0:
-            x0_b2 = x_web0 + cover_side + db_bot_2 / 2.0
-            x1_b2 = x_web1 - cover_side - db_bot_2 / 2.0
-            xs = _row_x_positions(x0_b2, x1_b2, n_bot_2)
-            _check_row_clear(xs, db_bot_2, min_clear_spacing)
-            bottom.append({"x": xs, "y": [y_bot_2]*len(xs), "db": db_bot_2})
+        top_flange_left = []
+        top_flange_right = []
+        if top_flange_enabled:
+            top_flange_left = _build_flange_group_bands(
+                face="top",
+                zone="flange_left",
+                x0=cover_side + max(top_left["dia"], 0.0) / 2.0,
+                x1=xL_inner - cover_side - max(top_left["dia"], 0.0) / 2.0,
+                y_start=cover_top + max(top_left["dia"], 0.0) / 2.0,
+                y_step=max(top_left["row_spacing"], top_left["dia"] + min_clear_spacing),
+                count=top_left["count"],
+                dia=top_left["dia"],
+                rows=top_left["rows"],
+                min_clear_spacing=min_clear_spacing,
+                source_group="top_flange_left",
+                warnings=warnings,
+            )
+            top_flange_right = _build_flange_group_bands(
+                face="top",
+                zone="flange_right",
+                x0=xR_inner + cover_side + max(top_right["dia"], 0.0) / 2.0,
+                x1=bf - cover_side - max(top_right["dia"], 0.0) / 2.0,
+                y_start=cover_top + max(top_right["dia"], 0.0) / 2.0,
+                y_step=max(top_right["row_spacing"], top_right["dia"] + min_clear_spacing),
+                count=top_right["count"],
+                dia=top_right["dia"],
+                rows=top_right["rows"],
+                min_clear_spacing=min_clear_spacing,
+                source_group="top_flange_right",
+                warnings=warnings,
+            )
 
-        return _merge_reo_layers({"top": top, "bottom": bottom})
+        bottom_flange_left: list[dict] = []
+        bottom_flange_right: list[dict] = []
+        if bot_flange_enabled:
+            warnings.append("Bottom flange groups were enabled for a T-section; T-sections have no bottom flange, so these groups are ignored.")
+
+        out = _merge_reo_layers({
+            "top_web": top_web,
+            "bottom_web": bottom_web,
+            "top_flange_left": top_flange_left,
+            "top_flange_right": top_flange_right,
+            "bottom_flange_left": bottom_flange_left,
+            "bottom_flange_right": bottom_flange_right,
+        })
+        out["warnings"] = warnings
+        return out
 
     if shape.startswith("I-Section"):
         bf = float(dims["bf"]); tf = float(dims["tf"]); tw = float(dims["tw"]); D = float(dims["D"])
 
-        # --- Top bars in top flange width bf ---
-        x0_t = cover_side + db_top_1 / 2.0
-        x1_t = bf - cover_side - db_top_1 / 2.0
-        width_top = x1_t - x0_t
-        if width_top <= 0:
-            raise ValueError("Top bars: no horizontal room after covers")
+        top_web: List[Dict] = []
+        prev_y = None
+        prev_dia = None
+        for row in top_rows:
+            dia = float(row.get("dia", 0.0) or 0.0)
+            y = cover_top + dia / 2.0 if prev_y is None else prev_y + prev_dia / 2.0 + rowgap_top + dia / 2.0
+            if y + dia / 2.0 > tf + 1e-9:
+                warnings.append(f"Top web row {int(row.get('row_index', 1))} does not fit within top flange; row ignored.")
+                continue
+            x0_t = ((bf - tw) / 2.0) + cover_side + dia / 2.0
+            x1_t = ((bf + tw) / 2.0) - cover_side - dia / 2.0
+            width_top = x1_t - x0_t
+            if width_top <= 0:
+                warnings.append("Top web bars: no horizontal room after covers.")
+                continue
+            n_top = _row_count(row, width_top)
+            xs = _row_x_positions(x0_t, x1_t, n_top)
+            try:
+                _check_row_clear(xs, dia, min_clear_spacing)
+            except ValueError as exc:
+                warnings.append(f"Top web row {int(row.get('row_index', 1))}: {exc}")
+                xs = []
+            top_web.append({
+                "x": xs,
+                "y": [y] * len(xs),
+                "db": dia,
+                "row_index": int(row.get("row_index", 1)),
+                "face": "top",
+                "zone": "web",
+                "source_group": f"top_web_row_{int(row.get('row_index', 1))}",
+                "anchored": True,
+            })
+            prev_y = y
+            prev_dia = dia
 
-        if top1_mode == "Count":
-            n_top_1 = int(nb_or_s_top_1)
-        else:
-            n_top_1 = 0 if nb_or_s_top_1 <= 0 else _count_from_spacing(width_top, db_top_1, nb_or_s_top_1)
-        if top2_mode == "Count":
-            n_top_2 = int(nb_or_s_top_2)
-        else:
-            n_top_2 = 0 if nb_or_s_top_2 <= 0 else _count_from_spacing(width_top, db_top_2, nb_or_s_top_2)
+        bottom_web: List[Dict] = []
+        prev_y = None
+        prev_dia = None
+        for row in bottom_rows:
+            dia = float(row.get("dia", 0.0) or 0.0)
+            y = D - cover_bot - dia / 2.0 if prev_y is None else prev_y - prev_dia / 2.0 - rowgap_bot - dia / 2.0
+            if y - dia / 2.0 < (D - tf) - 1e-9:
+                warnings.append(f"Bottom web row {int(row.get('row_index', 1))} does not fit within bottom flange; row ignored.")
+                continue
+            x0_b = ((bf - tw) / 2.0) + cover_side + dia / 2.0
+            x1_b = ((bf + tw) / 2.0) - cover_side - dia / 2.0
+            width_bot = x1_b - x0_b
+            if width_bot <= 0:
+                warnings.append("Bottom web bars: no horizontal room after covers.")
+                continue
+            n_bot = _row_count(row, width_bot)
+            xs = _row_x_positions(x0_b, x1_b, n_bot)
+            try:
+                _check_row_clear(xs, dia, min_clear_spacing)
+            except ValueError as exc:
+                warnings.append(f"Bottom web row {int(row.get('row_index', 1))}: {exc}")
+                xs = []
+            bottom_web.append({
+                "x": xs,
+                "y": [y] * len(xs),
+                "db": dia,
+                "row_index": int(row.get("row_index", 1)),
+                "face": "bottom",
+                "zone": "web",
+                "source_group": f"bottom_web_row_{int(row.get('row_index', 1))}",
+                "anchored": True,
+            })
+            prev_y = y
+            prev_dia = dia
 
-        y_top_1 = cover_top + db_top_1 / 2.0
-        y_top_2 = y_top_1 + (db_top_1 / 2.0) + rowgap_top + (db_top_2 / 2.0)
+        xL_inner = (bf - tw) / 2.0
+        xR_inner = xL_inner + tw
+        top_flange_enabled = bool(reo.get("top_flange_reo_enabled", False))
+        bot_flange_enabled = bool(reo.get("bot_flange_reo_enabled", False))
+        top_mirror = bool(reo.get("top_flange_mirror_lr", True))
+        bot_mirror = bool(reo.get("bot_flange_mirror_lr", True))
 
-        if n_top_2 > 0 and (y_top_2 + db_top_2 / 2.0 > tf + 1e-9):
-            raise ValueError(
-                f"Top flange too thin for 2 layers: tf={tf:.1f} mm, "
-                f"needs cover_top + db1 + rowgap + db2 <= tf "
-                f"({cover_top:.1f}+{db_top_1:.1f}+{rowgap_top:.1f}+{db_top_2:.1f} = "
-                f"{(cover_top+db_top_1+rowgap_top+db_top_2):.1f})."
-            )
+        top_left = _extract_group_rows(reo, prefix="top_flange_left")
+        top_right = _extract_group_rows(reo, prefix="top_flange_right")
+        if top_mirror:
+            top_right = dict(top_left)
+        bot_left = _extract_group_rows(reo, prefix="bot_flange_left")
+        bot_right = _extract_group_rows(reo, prefix="bot_flange_right")
+        if bot_mirror:
+            bot_right = dict(bot_left)
 
-        top: List[Dict] = []
-        if n_top_1 > 0:
-            xs = _place_in_outstands(
-                n=n_top_1,
-                db=db_top_1,
-                bf=bf,
-                web_w=tw,
-                cover_side=cover_side,
+        top_flange_left: list[dict] = []
+        top_flange_right: list[dict] = []
+        if top_flange_enabled:
+            top_flange_left = _build_flange_group_bands(
+                face="top",
+                zone="flange_left",
+                x0=cover_side + max(top_left["dia"], 0.0) / 2.0,
+                x1=xL_inner - cover_side - max(top_left["dia"], 0.0) / 2.0,
+                y_start=cover_top + max(top_left["dia"], 0.0) / 2.0,
+                y_step=max(top_left["row_spacing"], top_left["dia"] + min_clear_spacing),
+                count=top_left["count"],
+                dia=top_left["dia"],
+                rows=top_left["rows"],
                 min_clear_spacing=min_clear_spacing,
+                source_group="top_flange_left",
+                warnings=warnings,
             )
-            top.append({"x": xs, "y": [y_top_1]*len(xs), "db": db_top_1})
-
-        if n_top_2 > 0:
-            xs = _place_in_outstands(
-                n=n_top_2,
-                db=db_top_2,
-                bf=bf,
-                web_w=tw,
-                cover_side=cover_side,
+            top_flange_right = _build_flange_group_bands(
+                face="top",
+                zone="flange_right",
+                x0=xR_inner + cover_side + max(top_right["dia"], 0.0) / 2.0,
+                x1=bf - cover_side - max(top_right["dia"], 0.0) / 2.0,
+                y_start=cover_top + max(top_right["dia"], 0.0) / 2.0,
+                y_step=max(top_right["row_spacing"], top_right["dia"] + min_clear_spacing),
+                count=top_right["count"],
+                dia=top_right["dia"],
+                rows=top_right["rows"],
                 min_clear_spacing=min_clear_spacing,
-            )
-            top.append({"x": xs, "y": [y_top_2]*len(xs), "db": db_top_2})
-
-        # --- Bottom bars in bottom flange width bf ---
-        x0_b1 = cover_side + db_bot_1 / 2.0
-        x1_b1 = bf - cover_side - db_bot_1 / 2.0
-        width_bot = x1_b1 - x0_b1
-        if width_bot <= 0:
-            raise ValueError("Bottom bars: no horizontal room after covers")
-
-        if bot1_mode == "Count":
-            n_bot_1 = int(nb_or_s_bot_1)
-        else:
-            n_bot_1 = 0 if nb_or_s_bot_1 <= 0 else _count_from_spacing(width_bot, db_bot_1, nb_or_s_bot_1)
-        if bot2_mode == "Count":
-            n_bot_2 = int(nb_or_s_bot_2)
-        else:
-            n_bot_2 = 0 if nb_or_s_bot_2 <= 0 else _count_from_spacing(width_bot, db_bot_2, nb_or_s_bot_2)
-
-        y_bot_1 = D - cover_bot - db_bot_1 / 2.0
-        y_bot_2 = y_bot_1 - (db_bot_1 / 2.0) - rowgap_bot - (db_bot_2 / 2.0)
-
-        if n_bot_2 > 0 and (y_bot_2 - db_bot_2 / 2.0 < (D - tf) - 1e-9):
-            raise ValueError(
-                f"Bottom flange too thin for 2 layers: tf={tf:.1f} mm, "
-                f"needs cover_bot + db1 + rowgap + db2 <= tf "
-                f"({cover_bot:.1f}+{db_bot_1:.1f}+{rowgap_bot:.1f}+{db_bot_2:.1f} = "
-                f"{(cover_bot+db_bot_1+rowgap_bot+db_bot_2):.1f})."
+                source_group="top_flange_right",
+                warnings=warnings,
             )
 
-        bottom: List[Dict] = []
-        if n_bot_1 > 0:
-            xs = _place_in_outstands(
-                n=n_bot_1,
-                db=db_bot_1,
-                bf=bf,
-                web_w=tw,
-                cover_side=cover_side,
+        bottom_flange_left: list[dict] = []
+        bottom_flange_right: list[dict] = []
+        if bot_flange_enabled:
+            bottom_flange_left = _build_flange_group_bands(
+                face="bottom",
+                zone="flange_left",
+                x0=cover_side + max(bot_left["dia"], 0.0) / 2.0,
+                x1=xL_inner - cover_side - max(bot_left["dia"], 0.0) / 2.0,
+                y_start=D - cover_bot - max(bot_left["dia"], 0.0) / 2.0,
+                y_step=-max(bot_left["row_spacing"], bot_left["dia"] + min_clear_spacing),
+                count=bot_left["count"],
+                dia=bot_left["dia"],
+                rows=bot_left["rows"],
                 min_clear_spacing=min_clear_spacing,
+                source_group="bottom_flange_left",
+                warnings=warnings,
             )
-            bottom.append({"x": xs, "y": [y_bot_1]*len(xs), "db": db_bot_1})
-
-        if n_bot_2 > 0:
-            xs = _place_in_outstands(
-                n=n_bot_2,
-                db=db_bot_2,
-                bf=bf,
-                web_w=tw,
-                cover_side=cover_side,
+            bottom_flange_right = _build_flange_group_bands(
+                face="bottom",
+                zone="flange_right",
+                x0=xR_inner + cover_side + max(bot_right["dia"], 0.0) / 2.0,
+                x1=bf - cover_side - max(bot_right["dia"], 0.0) / 2.0,
+                y_start=D - cover_bot - max(bot_right["dia"], 0.0) / 2.0,
+                y_step=-max(bot_right["row_spacing"], bot_right["dia"] + min_clear_spacing),
+                count=bot_right["count"],
+                dia=bot_right["dia"],
+                rows=bot_right["rows"],
                 min_clear_spacing=min_clear_spacing,
+                source_group="bottom_flange_right",
+                warnings=warnings,
             )
-            bottom.append({"x": xs, "y": [y_bot_2]*len(xs), "db": db_bot_2})
 
-        return _merge_reo_layers({"top": top, "bottom": bottom})
+        out = _merge_reo_layers({
+            "top_web": top_web,
+            "bottom_web": bottom_web,
+            "top_flange_left": top_flange_left,
+            "top_flange_right": top_flange_right,
+            "bottom_flange_left": bottom_flange_left,
+            "bottom_flange_right": bottom_flange_right,
+        })
+        out["warnings"] = warnings
+        return out
 
     raise ValueError("Longitudinal reo layout currently supports only T-Section and I-Section.")
 
@@ -567,6 +785,338 @@ def flatten_reo_points(reo_layout: Dict[str, List[Dict]]) -> List[Dict]:
             for x, y in zip(band["x"], band["y"]):
                 pts.append({"x": float(x), "y": float(y), "db": db, "layer": layer_name})
     return pts
+
+
+def resolve_longitudinal_bars_from_layout(
+    *,
+    shape_name: str,
+    dims: Dict[str, float],
+    reo_layout: Dict[str, List[Dict]],
+) -> List[Dict[str, Any]]:
+    bars: List[Dict[str, Any]] = []
+    shape_key = normalise_shape_name(shape_name)
+    detailed_layer_keys = (
+        "top_web",
+        "bottom_web",
+        "top_flange_left",
+        "top_flange_right",
+        "bottom_flange_left",
+        "bottom_flange_right",
+    )
+    has_detailed = any(reo_layout.get(key) for key in detailed_layer_keys)
+    if shape_key in ("T", "I") and has_detailed:
+        # Canonical T/I path: consume detailed groups only to avoid double-counting.
+        layer_keys = detailed_layer_keys
+    else:
+        # RECT / legacy fallback
+        layer_keys = (
+            "top",
+            "bottom",
+            "top_web",
+            "bottom_web",
+            "top_flange",
+            "bottom_flange",
+            "top_flange_left",
+            "top_flange_right",
+            "bottom_flange_left",
+            "bottom_flange_right",
+        )
+    seen_physical: set[tuple[Any, ...]] = set()
+    bar_idx = 1
+    for layer_name in layer_keys:
+        for band in (reo_layout.get(layer_name) or []):
+            xs = [float(x) for x in (band.get("x") or [])]
+            ys = band.get("y") or []
+            if isinstance(ys, (int, float)):
+                ys = [float(ys)] * len(xs)
+            dia = float(band.get("db", 0.0) or 0.0)
+            if dia <= 0.0:
+                continue
+            face = str(band.get("face") or ("top" if "top" in layer_name else "bottom"))
+            zone = str(
+                band.get("zone")
+                or (
+                    "web"
+                    if "web" in layer_name
+                    else ("flange_left" if "left" in layer_name else ("flange_right" if "right" in layer_name else "web"))
+                )
+            )
+            source_group = str(band.get("source_group") or layer_name)
+            anchored = bool(band.get("anchored", True))
+            for x, y in zip(xs, ys):
+                key = (
+                    face,
+                    zone,
+                    round(float(x), 6),
+                    round(float(y), 6),
+                    round(float(dia), 6),
+                    source_group,
+                )
+                if key in seen_physical:
+                    continue
+                seen_physical.add(key)
+                bars.append({
+                    "id": f"bar_{bar_idx}",
+                    "face": face,
+                    "zone": zone,
+                    "x_mm": float(x),
+                    "y_mm": float(y),
+                    "dia_mm": dia,
+                    "area_mm2": math.pi * dia ** 2 / 4.0,
+                    "anchored": anchored,
+                    "source_group": source_group,
+                })
+                bar_idx += 1
+    return bars
+
+
+def point_in_concrete_mm(
+    x_mm: float,
+    y_mm: float,
+    *,
+    shape_key: str,
+    dims: Dict[str, float],
+) -> bool:
+    """
+    True if (x_mm, y_mm) lies in cast concrete for T or I (section coords:
+    x = width 0..bf, y = depth from top 0..D). Used for dev checks on resolved bars.
+    """
+    x = float(x_mm)
+    y = float(y_mm)
+    if shape_key == "T":
+        bf = float(dims.get("bf", 0.0) or 0.0)
+        tf = float(dims.get("tf", 0.0) or 0.0)
+        bw = float(dims.get("bw", 0.0) or 0.0)
+        D = float(dims.get("D", 0.0) or 0.0)
+        if bf <= 0.0 or D <= 0.0:
+            return False
+        x0w = (bf - bw) / 2.0
+        x1w = x0w + bw
+        if x < -1e-6 or x > bf + 1e-6 or y < -1e-6 or y > D + 1e-6:
+            return False
+        if y <= tf + 1e-9:
+            return True
+        return x0w - 1e-9 <= x <= x1w + 1e-9
+    if shape_key == "I":
+        bf = float(dims.get("bf", 0.0) or 0.0)
+        tf = float(dims.get("tf", 0.0) or 0.0)
+        tw = float(dims.get("tw", 0.0) or 0.0)
+        D = float(dims.get("D", 0.0) or 0.0)
+        if bf <= 0.0 or D <= 0.0:
+            return False
+        x0w = (bf - tw) / 2.0
+        x1w = x0w + tw
+        if x < -1e-6 or x > bf + 1e-6 or y < -1e-6 or y > D + 1e-6:
+            return False
+        if y <= tf + 1e-9:
+            return True
+        if y >= D - tf - 1e-9:
+            return True
+        return x0w - 1e-9 <= x <= x1w + 1e-9
+    b = float(dims.get("b", dims.get("bf", 0.0)) or 0.0)
+    D = float(dims.get("D", 0.0) or 0.0)
+    return -1e-6 <= x <= b + 1e-6 and -1e-6 <= y <= D + 1e-6
+
+
+def dev_warnings_bars_outside_concrete(
+    bars: List[Dict[str, Any]],
+    shape_name: str,
+    dims: Dict[str, float],
+) -> List[str]:
+    """Emit one warning string per resolved bar whose center lies outside concrete (void)."""
+    key = normalise_shape_name(shape_name)
+    if key not in ("T", "I"):
+        return []
+    msgs: List[str] = []
+    for bar in bars:
+        x = float(bar.get("x_mm", 0.0) or 0.0)
+        y = float(bar.get("y_mm", 0.0) or 0.0)
+        if not point_in_concrete_mm(x, y, shape_key=key, dims=dims):
+            bid = str(bar.get("id", ""))
+            msgs.append(
+                f"Reo 3D/dev: bar {bid} center ({x:.1f}, {y:.1f}) mm is outside concrete (void) "
+                f"for {shape_name}."
+            )
+    return msgs
+
+
+def resolve_active_tension_reinforcement(
+    section_geom: Dict[str, Any],
+    resolved_longitudinal_bars: List[Dict[str, Any]],
+    moment_sign: str,
+    neutral_axis_data: Dict[str, Any] | None = None,
+) -> dict:
+    sign = str(moment_sign or "positive").strip().lower()
+    tension_face = "top" if (sign.startswith("neg") or "hog" in sign) else "bottom"
+    active_bars = [bar for bar in resolved_longitudinal_bars if str(bar.get("face")) == tension_face]
+    active_web_bars = [bar for bar in active_bars if "web" in str(bar.get("zone", ""))]
+    active_flange_bars = [bar for bar in active_bars if "flange" in str(bar.get("zone", ""))]
+
+    if active_bars:
+        x_min = min(float(bar["x_mm"]) - float(bar["dia_mm"]) / 2.0 for bar in active_bars)
+        x_max = max(float(bar["x_mm"]) + float(bar["dia_mm"]) / 2.0 for bar in active_bars)
+        y_min = min(float(bar["y_mm"]) - float(bar["dia_mm"]) / 2.0 for bar in active_bars)
+        y_max = max(float(bar["y_mm"]) + float(bar["dia_mm"]) / 2.0 for bar in active_bars)
+    else:
+        x_min = x_max = y_min = y_max = 0.0
+
+    x_sorted = sorted(float(bar["x_mm"]) for bar in active_bars)
+    spacing = [x_sorted[i + 1] - x_sorted[i] for i in range(len(x_sorted) - 1)]
+    spacing_summary = {
+        "count": len(spacing),
+        "min_mm": min(spacing) if spacing else 0.0,
+        "max_mm": max(spacing) if spacing else 0.0,
+        "avg_mm": (sum(spacing) / len(spacing)) if spacing else 0.0,
+        "values_mm": spacing,
+    }
+    ast_active = sum(float(bar.get("area_mm2", 0.0) or 0.0) for bar in active_bars)
+    neutral_axis_data = neutral_axis_data or {}
+    return {
+        "tension_face": tension_face,
+        "active_bars": active_bars,
+        "active_web_bars": active_web_bars,
+        "active_flange_bars": active_flange_bars,
+        "tension_zone_width_mm": max(0.0, x_max - x_min),
+        "tension_zone_bounds": {"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max},
+        "Ast_active_mm2": ast_active,
+        "bar_spacing_summary": spacing_summary,
+        "outermost_active_bar_positions": {"left_x_mm": x_min, "right_x_mm": x_max},
+        "neutral_axis_data": neutral_axis_data,
+    }
+
+
+def resolve_crack_tension_width(
+    section_shape: str,
+    section_geom: Dict[str, Any],
+    moment_sign: str,
+    active_bars: List[Dict[str, Any]],
+) -> dict:
+    shape = normalise_shape_name(section_shape)
+    sign = str(moment_sign or "positive").strip().lower()
+    top_tension = sign.startswith("neg") or "hog" in sign
+    has_flange = any("flange" in str(bar.get("zone", "")) for bar in active_bars)
+    has_web = any("web" in str(bar.get("zone", "")) for bar in active_bars)
+
+    if shape == "RECT":
+        width_default = float(section_geom.get("b", 0.0) or section_geom.get("bf", 0.0) or 0.0)
+    elif shape == "T":
+        if top_tension:
+            width_default = float(section_geom.get("bf", 0.0) or section_geom.get("b", 0.0) or 0.0)
+        else:
+            width_default = float(section_geom.get("bw", section_geom.get("b_web", section_geom.get("b", 0.0))) or 0.0)
+    else:
+        width_default = float(section_geom.get("bf", section_geom.get("b", 0.0)) or 0.0)
+
+    if not active_bars:
+        return {
+            "crack_tension_width_mm": width_default,
+            "crack_flange_participation_used": False,
+            "crack_web_participation_used": False,
+            "crack_tension_zone_bounds": {"x_min": 0.0, "x_max": width_default},
+        }
+
+    x_min = min(float(bar["x_mm"]) - float(bar["dia_mm"]) / 2.0 for bar in active_bars)
+    x_max = max(float(bar["x_mm"]) + float(bar["dia_mm"]) / 2.0 for bar in active_bars)
+    spread = max(0.0, x_max - x_min)
+
+    if shape == "T" and not top_tension:
+        width_eff = min(width_default, spread if spread > 0.0 else width_default)
+    elif shape == "T" and top_tension:
+        bw = float(section_geom.get("bw", section_geom.get("b_web", 0.0)) or 0.0)
+        if has_flange:
+            width_eff = min(width_default, max(bw, spread))
+        else:
+            width_eff = bw if bw > 0.0 else min(width_default, spread if spread > 0.0 else width_default)
+    elif shape == "I":
+        tw = float(section_geom.get("tw", section_geom.get("b_web", 0.0)) or 0.0)
+        if has_flange:
+            width_eff = min(width_default, max(tw, spread))
+        else:
+            width_eff = tw if tw > 0.0 else min(width_default, spread if spread > 0.0 else width_default)
+    else:
+        width_eff = min(width_default, spread if spread > 0.0 else width_default)
+
+    return {
+        "crack_tension_width_mm": max(0.0, width_eff),
+        "crack_flange_participation_used": bool(has_flange),
+        "crack_web_participation_used": bool(has_web),
+        "crack_tension_zone_bounds": {"x_min": x_min, "x_max": x_max},
+    }
+
+
+def analyze_resolved_longitudinal_bars(
+    *,
+    shape_name: str,
+    dims: Dict[str, float],
+    bars: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Developer diagnostics for resolved longitudinal bars."""
+    shape_key = normalise_shape_name(shape_name)
+    warnings: list[str] = []
+    duplicates: list[str] = []
+    out_of_bounds: list[str] = []
+    zone_mismatch: list[str] = []
+
+    # section envelope
+    if shape_key in ("T", "I"):
+        W = float(dims.get("bf", dims.get("b", 0.0)) or 0.0)
+    else:
+        W = float(dims.get("b", dims.get("bf", 0.0)) or 0.0)
+    D = float(dims.get("D", 0.0) or 0.0)
+
+    # zone bands (for T/I)
+    x_web0 = x_web1 = None
+    if shape_key == "T":
+        bf = float(dims.get("bf", 0.0) or 0.0)
+        bw = float(dims.get("bw", 0.0) or 0.0)
+        x_web0 = (bf - bw) / 2.0
+        x_web1 = x_web0 + bw
+    elif shape_key == "I":
+        bf = float(dims.get("bf", 0.0) or 0.0)
+        tw = float(dims.get("tw", 0.0) or 0.0)
+        x_web0 = (bf - tw) / 2.0
+        x_web1 = x_web0 + tw
+
+    seen: set[tuple[Any, ...]] = set()
+    for bar in bars:
+        bar_id = str(bar.get("id", ""))
+        x = float(bar.get("x_mm", 0.0) or 0.0)
+        y = float(bar.get("y_mm", 0.0) or 0.0)
+        d = float(bar.get("dia_mm", 0.0) or 0.0)
+        zone = str(bar.get("zone", ""))
+        src = str(bar.get("source_group", ""))
+        face = str(bar.get("face", ""))
+        dup_key = (face, zone, round(x, 6), round(y, 6), round(d, 6), src)
+        if dup_key in seen:
+            duplicates.append(bar_id)
+        seen.add(dup_key)
+
+        # out-of-bounds envelope check
+        if x - d / 2.0 < -1e-6 or x + d / 2.0 > W + 1e-6 or y - d / 2.0 < -1e-6 or y + d / 2.0 > D + 1e-6:
+            out_of_bounds.append(bar_id)
+
+        # zone-band sanity for T/I
+        if x_web0 is not None and x_web1 is not None:
+            if zone == "web" and not (x_web0 - 1e-6 <= x <= x_web1 + 1e-6):
+                zone_mismatch.append(bar_id)
+            if zone == "flange_left" and not (x < x_web0 - 1e-6):
+                zone_mismatch.append(bar_id)
+            if zone == "flange_right" and not (x > x_web1 + 1e-6):
+                zone_mismatch.append(bar_id)
+
+    if duplicates:
+        warnings.append(f"Duplicate resolved longitudinal bars detected: {len(duplicates)}")
+    if out_of_bounds:
+        warnings.append(f"Resolved longitudinal bars outside section bounds: {len(out_of_bounds)}")
+    if zone_mismatch:
+        warnings.append(f"Resolved longitudinal bars with zone/placement mismatch: {len(zone_mismatch)}")
+
+    return {
+        "warnings": warnings,
+        "duplicates": duplicates,
+        "out_of_bounds": out_of_bounds,
+        "zone_mismatch": zone_mismatch,
+    }
 
 
 def compute_longitudinal_reo_layout(
