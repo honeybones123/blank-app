@@ -2230,7 +2230,9 @@ In short:
         with col_title:
             render_section_title("Design Actions")
         with col_info:
-            with info_i_button(help_text="Source of design actions (V*, N*, T*)"):
+            with info_i_button(
+                help_text="Source of design actions (V*, N*, T*, P*) and optional display of prestress input.",
+            ):
                 st.markdown("Source: Inputs page selection", unsafe_allow_html=True)
                 edit_sls = st.toggle(
                     "View SLS loads",
@@ -2246,6 +2248,14 @@ In short:
                 else:
                     st.caption("Design actions: From SFD/BMD")
                 st.caption(f"Currently {action_verb_preview}: **{selected_mode_preview}** loads")
+
+                if "shear_include_prestress_effects_ui" not in st.session_state:
+                    st.session_state["shear_include_prestress_effects_ui"] = False
+                st.toggle(
+                    "Include prestress effects",
+                    key="shear_include_prestress_effects_ui",
+                    help="Show the P* input in Design Actions. Stored P* is unchanged; this only controls visibility.",
+                )
 
         new_mode = "SLS" if edit_sls else "ULS"
 
@@ -2303,6 +2313,16 @@ In short:
         Mu_star_pos_val = max(0.0, _coalesce_num(display_Mu_pos, 0.0))
         Mu_star_neg_val = max(0.0, _coalesce_num(display_Mu_neg, 0.0))
         P_star_val = _coalesce_num(display_P, 0.0)
+        moment_signed_selected = float(get_param(f"{selected_prefix}_Mstar", 0.0) or 0.0)
+        bending_detail_view = str(st.session_state.get("bending_detail_view", "positive") or "positive").strip().lower()
+        support_current_text = str(support_current or "").strip().lower()
+        show_mu_negative = (
+            ("continuous" in support_current_text)
+            or ("interior" in support_current_text)
+            or (moment_signed_selected < 0.0)
+            or (bending_detail_view == "negative")
+        )
+        include_prestress_effects_ui = bool(st.session_state.get("shear_include_prestress_effects_ui", False))
 
         number_row(
             "Design shear V* (kN)",
@@ -2339,26 +2359,28 @@ In short:
                 "(positive bending: top compression, bottom tension)."
             ),
         )
-        number_row(
-            "Negative design moment Mu*- (kNm)",
-            m_neg_proxy_widget_key,
-            Mu_star_neg_val,
-            sync_callbacks,
-            disabled=is_design_driven,
-            help_text=(
-                "Hogging bending demand magnitude. Enter as a positive number for top tension / bottom compression."
-            ),
-        )
-        number_row(
-            "Prestress force P* (kN)",
-            "shear_P_star",
-            P_star_val,
-            sync_callbacks,
-            disabled=is_design_driven,
-            help_text=(
-                "Prestress / effective prestress force in the section (kN). Affects longitudinal strain εₓ in shear."
-            ),
-        )
+        if show_mu_negative:
+            number_row(
+                "Negative design moment Mu*- (kNm)",
+                m_neg_proxy_widget_key,
+                Mu_star_neg_val,
+                sync_callbacks,
+                disabled=is_design_driven,
+                help_text=(
+                    "Hogging bending demand magnitude. Enter as a positive number for top tension / bottom compression."
+                ),
+            )
+        if include_prestress_effects_ui:
+            number_row(
+                "Prestress force P* (kN)",
+                "shear_P_star",
+                P_star_val,
+                sync_callbacks,
+                disabled=is_design_driven,
+                help_text=(
+                    "Prestress / effective prestress force in the section (kN). Affects longitudinal strain εₓ in shear."
+                ),
+            )
 
         number_row(
             "φ – strength reduction for shear",
@@ -2841,8 +2863,6 @@ In short:
     # TAB 1: Torsion + dimensions
     # =====================================================
     with tab1:
-        st.caption("Torsion cracking check, equivalent shear, and effective section parameters (bv, dv).")
-        
         # =====================================================
         # Check 1 — TORSION CRACKING CHECK (T_cr)
         # =====================================================
@@ -3442,33 +3462,26 @@ div[data-testid="stElementContainer"]:has(div.mcft-compact-block) {
     padding-top: 0 !important;
     padding-bottom: 0 !important;
 }
-/* One markdown block: caption-styled subhead + anchor (avoids extra st.caption container gap) */
-p.mcft-tab2-subhead {
-    margin: 0 !important;
-    padding: 0 !important;
-    line-height: 1.15 !important;
-    font-size: 0.875rem !important;
-    color: rgba(49, 51, 63, 0.65) !important;
-}
-div[data-testid="stElementContainer"]:has(p.mcft-tab2-subhead) {
+/* Anchor-only block before MCFT diagram (spacing for following popover row) */
+div[data-testid="stElementContainer"]:has(#mcft-before-display-popover) {
     margin-top: 0 !important;
     margin-bottom: -0.35rem !important;
     padding-top: 0 !important;
     padding-bottom: 0 !important;
 }
-div[data-testid="stElementContainer"]:has(p.mcft-tab2-subhead)
+div[data-testid="stElementContainer"]:has(#mcft-before-display-popover)
     + div[data-testid="stElementContainer"] {
     margin-top: -1.75rem !important;
     margin-bottom: 0 !important;
     padding-top: 0 !important;
     padding-bottom: 0 !important;
 }
-div[data-testid="stElementContainer"]:has(p.mcft-tab2-subhead)
+div[data-testid="stElementContainer"]:has(#mcft-before-display-popover)
     + div[data-testid="stElementContainer"] [data-testid="stPopover"] {
     margin: 0 !important;
     padding: 0 !important;
 }
-div[data-testid="stElementContainer"]:has(p.mcft-tab2-subhead)
+div[data-testid="stElementContainer"]:has(#mcft-before-display-popover)
     + div[data-testid="stElementContainer"] button {
     margin: 0 !important;
     padding-top: 0 !important;
@@ -3515,10 +3528,9 @@ div[data-testid="stElementContainer"]:has(#shear-plot-wrap-shear_behaviour_mcft_
         )
         _render_principal_stress_directions_explainer()
         st.markdown('<div class="mcft-compact-block">', unsafe_allow_html=True)
-        # Subhead + popover anchor in one block (removes extra vertical gap vs separate st.caption + markdown).
+        # Popover anchor (no visible subhead; layout CSS targets #mcft-before-display-popover).
         st.markdown(
             """
-<p class="mcft-tab2-subhead">Longitudinal strain, MCFT parameters, concrete and steel contributions, combined capacity, and web crushing.</p>
 <div id="mcft-before-display-popover" style="height:0;line-height:0;font-size:0;margin:0;padding:0;" aria-hidden="true"></div>
 """,
             unsafe_allow_html=True,

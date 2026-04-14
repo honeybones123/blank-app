@@ -449,6 +449,21 @@ def _compute_bending_capacity():
         phi_mu_compat = float(bending_pos.get("phi_Mu_kNm", phi_Mu_cap) or 0.0)
         mu_util_compat = 0.0
 
+    uls_c_mm: float | None = None
+    uls_gamma: float | None = None
+    try:
+        _c_p = bending_pos.get("dn_mm")
+        _g_p = bending_pos.get("gamma")
+        if _c_p is not None and _g_p is not None:
+            _c_f = float(_c_p)
+            _g_f = float(_g_p)
+            if math.isfinite(_c_f) and math.isfinite(_g_f) and _c_f > 0.0 and _g_f > 0.0:
+                uls_c_mm = _c_f
+                uls_gamma = _g_f
+    except (TypeError, ValueError):
+        uls_c_mm = None
+        uls_gamma = None
+
     update_results(
         phi_Mu_cap=phi_mu_compat,
         Mu_utilisation=mu_util_compat,
@@ -470,6 +485,8 @@ def _compute_bending_capacity():
         Mx_min_req=Mx_min_req,
         k_u=k_u,
         k_u_lim=k_u_lim,
+        bending_uls_c_pos_mm=float(uls_c_mm) if uls_c_mm is not None else 0.0,
+        bending_uls_gamma_pos=float(uls_gamma) if uls_gamma is not None else 0.0,
     )
 
     return results

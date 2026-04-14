@@ -233,7 +233,7 @@ def compute_deflection_results(publish: bool = True) -> dict:
         defl_limit_ratio=defl_limit_ratio,
     )
     
-    out = {
+    out_update = {
         "deflection_total_mm": delta_total,
         "deflection_limit_mm": defl_limit,
         "deflection_utilisation": defl_util,
@@ -241,7 +241,9 @@ def compute_deflection_results(publish: bool = True) -> dict:
         "delta_long_add": delta_long_add,
         "delta_total": delta_total,
     }
-    
+    # Extra keys for callers (e.g. Crack header diagram) — not RESULT_KEYS
+    out = {**out_update, "L_mm": L_mm, "support_type": support_type}
+
     # Store detailed results for report building
     if publish:
         import streamlit as st
@@ -299,7 +301,7 @@ def compute_deflection_results(publish: bool = True) -> dict:
         except Exception as e:
             st.session_state["results"]["deflection_report_error"] = str(e)
     
-    update_results(**out)
+    update_results(**out_update)
     return out
 
 

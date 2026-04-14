@@ -659,6 +659,91 @@ def draw_support(ax, x_pos, kind="pinned", size=0.18):
             )
 
 
+def _add_plotly_support_markers_aligned(
+    fig: go.Figure,
+    *,
+    support_positions_plot: list[float],
+    support_types_plot: list[str],
+    y_min: float,
+    y_max: float,
+    L: float | None,
+    support_type_fallback: str,
+) -> None:
+    """
+    Support symbols in **data coordinates** at the foot of the diagram so they line up
+    in x with the load diagram and stay aligned when V/M scales change.
+    """
+    span = max(float(y_max) - float(y_min), 1e-9)
+    y_tri = float(y_min) + 0.040 * span
+    y_roller = float(y_min) + 0.018 * span
+    y_wall_lo = float(y_min) + 0.012 * span
+    y_wall_hi = float(y_min) + 0.24 * span
+    tri_marker = dict(symbol="triangle-up", size=14, color="rgba(35,35,35,0.9)", line=dict(width=1, color="rgba(35,35,35,1)"))
+
+    positions = [float(v) for v in support_positions_plot]
+    types_list = [str(t or "") for t in (support_types_plot or [])]
+
+    if not positions and L is not None:
+        fb = str(support_type_fallback or "simply_supported").strip().lower()
+        Lf = float(L)
+        if fb == "cantilever":
+            positions = [0.0]
+            types_list = ["fixed"]
+        elif fb == "simply_supported":
+            positions = [0.0, Lf]
+            types_list = ["pinned", "roller"]
+        else:
+            positions = [0.0, Lf]
+            types_list = ["pinned", "pinned"]
+
+    if not positions:
+        return
+
+    pinned_x: list[float] = []
+    roller_x: list[float] = []
+    fixed_x: list[float] = []
+
+    for idx, sx in enumerate(positions):
+        stype = str(types_list[idx] if idx < len(types_list) else "").strip().lower()
+        if stype == "fixed":
+            fixed_x.append(float(sx))
+        elif stype == "roller":
+            roller_x.append(float(sx))
+            pinned_x.append(float(sx))
+        else:
+            pinned_x.append(float(sx))
+
+    if pinned_x:
+        fig.add_trace(
+            go.Scatter(
+                x=pinned_x,
+                y=[y_tri] * len(pinned_x),
+                mode="markers",
+                marker=tri_marker,
+                showlegend=False,
+            )
+        )
+    for sx in roller_x:
+        fig.add_trace(
+            go.Scatter(
+                x=[sx],
+                y=[y_roller],
+                mode="markers",
+                marker=dict(symbol="circle", size=9, color="rgba(35,35,35,0.85)", line=dict(width=1, color="rgba(35,35,35,1)")),
+                showlegend=False,
+            )
+        )
+    for sx in fixed_x:
+        fig.add_shape(
+            type="line",
+            x0=float(sx),
+            x1=float(sx),
+            y0=y_wall_lo,
+            y1=y_wall_hi,
+            line=dict(width=8, color="rgba(35,35,35,1)"),
+        )
+
+
 # ---------------------------------------------------
 # Helper: plot load diagram
 # ---------------------------------------------------
@@ -1241,7 +1326,7 @@ def plot_load_diagram_plotly(
 # ---------------------------------------------------
 # Helper: plot SFD and BMD (Plotly version)
 # ---------------------------------------------------
-def plot_sfd_bmd_plotly(
+def _prepare_sfd_bmd_plot_state(
     x,
     V,
     M,
@@ -1253,23 +1338,61 @@ def plot_sfd_bmd_plotly(
     design_x_m: float | None = None,
     preview_V: float | None = None,
     preview_M: float | None = None,
-):
-    """Return Plotly figures for SFD and BMD."""
+) -> dict:
+    """Shared numeric layout for SFD/BMD figures (supports, pads, series)."""
     if L is None and x is not None and len(x) > 0:
         L = float(x[-1])
-    if support_positions is None:
-        support_positions = []
-        if case and L is not None:
-            if case.startswith("Simple beam"):
-                support_positions = [0.0, L]
-            elif case.startswith("Cantilever"):
-                support_positions = [0.0]
+    sp_raw: list[float] = [] if support_positions is None else [float(v) for v in support_positions]
+    if not sp_raw and case and L is not None:
+        if str(case).startswith("Simple beam"):
+            sp_raw = [0.0, float(L)]
+        elif str(case).startswith("Cantilever"):
+            sp_raw = [0.0]
+    support_positions_plot = [float(v) for v in sp_raw]
+    support_types_plot = list(support_types or [])
 
     x_plot = x.tolist() if hasattr(x, "tolist") else list(x) if x is not None else []
     V_plot = V.tolist() if hasattr(V, "tolist") else list(V) if V is not None else []
     M_plot = M.tolist() if hasattr(M, "tolist") else list(M) if M is not None else []
-    support_positions_plot = [float(v) for v in (support_positions or [])]
-    support_types_plot = list(support_types or [])
+    x_pad = max(float(L or 0.0) * 0.08, 0.12) if L is not None else 0.12
+    support_type = str(get_param("support_type", "simply_supported") or "simply_supported").strip().lower()
+    design_mode_active = bool(is_design_governing())
+    d_v_mm = float(get_param("d_v", 0.0) or 0.0)
+    zone_limit_m = 1.5 * d_v_mm / 1000.0
+    return {
+        "L": L,
+        "case": case,
+        "x_plot": x_plot,
+        "V_plot": V_plot,
+        "M_plot": M_plot,
+        "support_positions_plot": support_positions_plot,
+        "support_types_plot": support_types_plot,
+        "preview_x_m": preview_x_m,
+        "design_x_m": design_x_m,
+        "preview_V": preview_V,
+        "preview_M": preview_M,
+        "x_pad": x_pad,
+        "support_type": support_type,
+        "design_mode_active": design_mode_active,
+        "zone_limit_m": zone_limit_m,
+        "d_v_mm": d_v_mm,
+    }
+
+
+def _figure_sfd_from_state(st: dict) -> go.Figure:
+    x_plot = st["x_plot"]
+    V_plot = st["V_plot"]
+    support_positions_plot = st["support_positions_plot"]
+    support_types_plot = st["support_types_plot"]
+    L = st["L"]
+    preview_x_m = st["preview_x_m"]
+    design_x_m = st["design_x_m"]
+    preview_V = st["preview_V"]
+    x_pad = st["x_pad"]
+    support_type = st["support_type"]
+    design_mode_active = st["design_mode_active"]
+    zone_limit_m = st["zone_limit_m"]
+    d_v_mm = st["d_v_mm"]
 
     # --- SFD ---
     fig_sfd = go.Figure()
@@ -1287,10 +1410,6 @@ def plot_sfd_bmd_plotly(
     fig_sfd.add_hline(y=0, line_width=2, line_color="rgba(0,0,0,0.20)")
     for x_support in support_positions_plot:
         fig_sfd.add_vline(x=x_support, line_width=1, line_color="rgba(0,0,0,0.12)")
-    design_mode_active = bool(is_design_governing())
-    support_type = str(get_param("support_type", "simply_supported") or "simply_supported").strip().lower()
-    d_v_mm = float(get_param("d_v", 0.0) or 0.0)
-    zone_limit_m = 1.5 * d_v_mm / 1000.0
     # region agent log
     _agent_debug_log(
         "plot_sfd_state",
@@ -1328,47 +1447,19 @@ def plot_sfd_bmd_plotly(
                 opacity=0.05,
                 line_width=0,
             )
-    if design_mode_active and L is not None:
-        if support_positions_plot:
-            support_symbols = []
-            for idx, sx in enumerate(support_positions_plot):
-                stype = str(support_types_plot[idx] if idx < len(support_types_plot) else "").strip().lower()
-                symbol = "⏊" if stype == "fixed" else "▲"
-                support_symbols.append({"x": float(sx), "type": stype, "symbol": symbol})
-                fig_sfd.add_annotation(
-                    x=float(sx),
-                    y=0.0,
-                    text=symbol,
-                    showarrow=False,
-                    yshift=-20,
-                )
-            # region agent log
-            _agent_debug_log(
-                "plot_sfd_supports_rendered",
-                {
-                    "support_symbols": support_symbols,
-                },
-                run_id="pre-fix",
-                hypothesis_id="H7",
-                location="sfd_bmd_page.py:1300",
-            )
-            # endregion
-        else:
-            fig_sfd.add_annotation(
-                x=0.0,
-                y=0.0,
-                text="▲" if support_type != "cantilever" else "⏊",
-                showarrow=False,
-                yshift=-20,
-            )
-            if support_type == "simply_supported":
-                fig_sfd.add_annotation(
-                    x=float(L),
-                    y=0.0,
-                    text="▲",
-                    showarrow=False,
-                    yshift=-20,
-                )
+    if design_mode_active and L is not None and support_positions_plot:
+        support_symbols = []
+        for idx, sx in enumerate(support_positions_plot):
+            stype = str(support_types_plot[idx] if idx < len(support_types_plot) else "").strip().lower()
+            symbol = "⏊" if stype == "fixed" else "▲"
+            support_symbols.append({"x": float(sx), "type": stype, "symbol": symbol})
+        _agent_debug_log(
+            "plot_sfd_supports_rendered",
+            {"support_symbols": support_symbols},
+            run_id="pre-fix",
+            hypothesis_id="H7",
+            location="sfd_bmd_page.py:plot_sfd_supports_meta",
+        )
     if design_x_m is not None:
         fig_sfd.add_vline(x=float(design_x_m), line_width=2, line_dash="dash", line_color="green")
     if preview_x_m is not None:
@@ -1487,7 +1578,6 @@ def plot_sfd_bmd_plotly(
             location="sfd_bmd_page.py:1339",
         )
         # endregion
-    x_pad = max(float(L or 0.0) * 0.08, 0.12) if L is not None else 0.12
     fig_sfd.update_layout(
         title_text="",
         yaxis_title="",
@@ -1503,27 +1593,61 @@ def plot_sfd_bmd_plotly(
         V_abs = max(abs(V_min), abs(V_max), 1e-6)
         V_pad = max(0.15 * V_abs, 1e-6)
         sfd_y_range = [V_min - V_pad, V_max + V_pad]
+    if sfd_y_range is None:
+        sfd_y_range = [-1.0, 1.0]
     fig_sfd.update_yaxes(
         showgrid=True,
         gridcolor="rgba(0,0,0,0.08)",
         range=sfd_y_range,
     )
+    _add_plotly_support_markers_aligned(
+        fig_sfd,
+        support_positions_plot=support_positions_plot,
+        support_types_plot=support_types_plot,
+        y_min=float(sfd_y_range[0]),
+        y_max=float(sfd_y_range[1]),
+        L=L,
+        support_type_fallback=support_type,
+    )
+    return fig_sfd
 
-    # --- BMD ---
+
+def _figure_bmd_from_state(st: dict, *, show_m_peak: bool = False) -> go.Figure:
+    x_plot = st["x_plot"]
+    M_plot = st["M_plot"]
+    support_positions_plot = st["support_positions_plot"]
+    support_types_plot = st["support_types_plot"]
+    L = st["L"]
+    preview_x_m = st["preview_x_m"]
+    design_x_m = st["design_x_m"]
+    preview_M = st["preview_M"]
+    x_pad = st["x_pad"]
+    support_type = st["support_type"]
+
+    # --- BMD (ordinate = −M: hogging above baseline) ---
+    M_arr = np.asarray(M_plot, dtype=float) if M_plot else np.array([], dtype=float)
+    M_disp = (-M_arr).tolist() if M_plot else []
+    custom_m = M_arr.tolist() if M_plot else []
+    bmd_line_kw: dict = {}
+    if custom_m and len(custom_m) == len(x_plot):
+        bmd_line_kw["customdata"] = np.asarray(custom_m, dtype=float)
+        bmd_line_kw["hovertemplate"] = "x = %{x:.3f} m<br>M = %{customdata:.3f} kNm<extra></extra>"
+
     fig_bmd = go.Figure()
     fig_bmd.add_trace(
         go.Scatter(
             x=x_plot,
-            y=M_plot,
+            y=M_disp,
             mode="lines",
             name="M(x)",
             showlegend=False,
             fill="tozeroy",
             fillcolor="rgba(31, 119, 180, 0.15)",
+            **bmd_line_kw,
         )
     )
     fig_bmd.add_hline(y=0, line_width=2, line_color="rgba(0,0,0,0.20)")
-    for x_support in support_positions:
+    for x_support in support_positions_plot:
         fig_bmd.add_vline(x=x_support, line_width=1, line_color="rgba(0,0,0,0.12)")
     if design_x_m is not None:
         fig_bmd.add_vline(x=float(design_x_m), line_width=2, line_dash="dash", line_color="green")
@@ -1533,35 +1657,42 @@ def plot_sfd_bmd_plotly(
         fig_bmd.add_trace(
             go.Scatter(
                 x=[float(preview_x_m)],
-                y=[float(preview_M)],
+                y=[-float(preview_M)],
                 mode="markers",
                 marker=dict(size=8, color="rgba(214, 39, 40, 0.95)"),
                 showlegend=False,
+                customdata=[float(preview_M)],
+                hovertemplate="x = %{x:.3f} m<br>M = %{customdata:.3f} kNm<extra></extra>",
             )
         )
-    if x_plot and M_plot and len(x_plot) == len(M_plot):
+    if show_m_peak and x_plot and M_plot and len(x_plot) == len(M_plot):
         idx_peak = int(np.argmax(np.abs(M_plot)))
         x_peak = float(x_plot[idx_peak])
         M_peak = float(M_plot[idx_peak])
+        y_peak = -M_peak
         fig_bmd.add_trace(
             go.Scatter(
                 x=[x_peak],
-                y=[M_peak],
+                y=[y_peak],
                 mode="markers+text",
-                marker=dict(size=6, color="rgba(31, 119, 180, 0.85)"),
-                text=[f"{M_peak:.2f} kNm"],
+                marker=dict(size=8, color="rgba(31, 119, 180, 0.9)"),
+                text=[f"|M|max = {abs(M_peak):.2f} kNm"],
                 textposition="top center",
                 cliponaxis=False,
                 showlegend=False,
+                customdata=[M_peak],
+                hovertemplate="x = %{x:.3f} m<br>M = %{customdata:.3f} kNm<extra></extra>",
             )
         )
     bmd_y_range = None
     if M_plot:
-        M_min = float(np.min(M_plot))
-        M_max = float(np.max(M_plot))
-        M_abs = max(abs(M_min), abs(M_max), 1e-6)
-        M_pad = max(0.15 * M_abs, 1e-6)
-        bmd_y_range = [M_min - M_pad, M_max + M_pad]
+        M_disp_min = float(np.min(M_disp))
+        M_disp_max = float(np.max(M_disp))
+        M_disp_abs = max(abs(M_disp_min), abs(M_disp_max), 1e-6)
+        M_pad = max(0.15 * M_disp_abs, 1e-6)
+        bmd_y_range = [M_disp_min - M_pad, M_disp_max + M_pad]
+    if bmd_y_range is None:
+        bmd_y_range = [-1.0, 1.0]
 
     fig_bmd.update_layout(
         title_text="",
@@ -1576,8 +1707,52 @@ def plot_sfd_bmd_plotly(
         gridcolor="rgba(0,0,0,0.08)",
         range=bmd_y_range,
     )
+    _add_plotly_support_markers_aligned(
+        fig_bmd,
+        support_positions_plot=support_positions_plot,
+        support_types_plot=support_types_plot,
+        y_min=float(bmd_y_range[0]),
+        y_max=float(bmd_y_range[1]),
+        L=L,
+        support_type_fallback=support_type,
+    )
+    return fig_bmd
 
-    return fig_sfd, fig_bmd
+
+def plot_sfd_bmd_plotly(
+    x,
+    V,
+    M,
+    case: str | None = None,
+    L: float | None = None,
+    support_positions: list[float] | None = None,
+    support_types: list[str] | None = None,
+    preview_x_m: float | None = None,
+    design_x_m: float | None = None,
+    preview_V: float | None = None,
+    preview_M: float | None = None,
+    *,
+    show_m_peak: bool = False,
+):
+    """Return Plotly figures for SFD and BMD.
+
+    BMD ordinates use the structural convention **ordinate = −M** so hogging (M < 0)
+    appears above the baseline; hover still reports the true M value.
+    """
+    st = _prepare_sfd_bmd_plot_state(
+        x,
+        V,
+        M,
+        case=case,
+        L=L,
+        support_positions=support_positions,
+        support_types=support_types,
+        preview_x_m=preview_x_m,
+        design_x_m=design_x_m,
+        preview_V=preview_V,
+        preview_M=preview_M,
+    )
+    return _figure_sfd_from_state(st), _figure_bmd_from_state(st, show_m_peak=show_m_peak)
 
 
 def plot_section_locator_plotly(
@@ -1675,6 +1850,46 @@ def _interp_at_x(x_vals, y_vals, x_m: float) -> float:
         return 0.0
     x_eval = _clamp_x(x_m, float(x_vals[-1]))
     return float(np.interp(x_eval, x_vals, y_vals))
+
+
+def diagram_cache_fingerprint(
+    case: str,
+    L_uls: float,
+    p_uls: dict,
+    L_sls: float,
+    p_sls: dict,
+) -> str:
+    """Stable hash of beam case + ULS/SLS load/support inputs (invalidates crack moment cache)."""
+    import hashlib
+    import json
+
+    def _pack(L: float, p: dict) -> dict:
+        p = dict(p or {})
+        keys = (
+            "support_condition",
+            "beam_system_mode",
+            "node_positions_m",
+            "support_types",
+            "w",
+            "P",
+            "point_loads",
+            "udl_loads",
+            "L_main",
+            "a_overhang",
+            "a",
+            "a_udl",
+            "a_cant",
+        )
+        return {"L": round(float(L), 9), **{k: p.get(k) for k in keys}}
+
+    blob = {
+        "case": str(case),
+        "uls": _pack(L_uls, p_uls),
+        "sls": _pack(L_sls, p_sls),
+    }
+    return hashlib.sha256(
+        json.dumps(blob, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()[:48]
 
 
 def _compute_diagram_arrays(case_name: str, span_L: float, p: dict):
@@ -3078,13 +3293,38 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         location="sfd_bmd_page.py:2788",
     )
     # endregion
-    update_results(
-        shear_x=[float(v) for v in (x_uls.tolist() if hasattr(x_uls, "tolist") else list(x_uls))],
-        shear_V=[float(abs(v)) for v in (V_uls_vals.tolist() if hasattr(V_uls_vals, "tolist") else list(V_uls_vals))],
-        shear_V_signed=[float(v) for v in (V_uls_vals.tolist() if hasattr(V_uls_vals, "tolist") else list(V_uls_vals))],
-        support_type=support_type_key,
-        critical_shear_x=x_crit,
-        critical_shear_V=V_crit,
+    x_uls_list = [float(v) for v in (x_uls.tolist() if hasattr(x_uls, "tolist") else list(x_uls))]
+    xu = np.asarray(x_uls_list, dtype=float)
+    Mu = np.asarray(
+        M_uls_vals.tolist() if hasattr(M_uls_vals, "tolist") else list(M_uls_vals or []),
+        dtype=float,
+    )
+    xs = np.asarray(x_sls.tolist() if hasattr(x_sls, "tolist") else list(x_sls or []), dtype=float)
+    Ms = np.asarray(
+        M_sls_vals.tolist() if hasattr(M_sls_vals, "tolist") else list(M_sls_vals or []),
+        dtype=float,
+    )
+    if xu.size >= 2 and Mu.size == xu.size and Ms.size == xs.size:
+        if xs.shape == xu.shape and float(np.max(np.abs(xs - xu))) <= 1e-6 * max(1.0, float(xu[-1])):
+            M_sls_on_xu = Ms
+        else:
+            M_sls_on_xu = np.interp(xu, xs, Ms, left=float(Ms[0]), right=float(Ms[-1]))
+    else:
+        M_sls_on_xu = np.array([], dtype=float)
+
+    sup_pos = [float(v) for v in (results_local_uls.get("support_positions") or [])]
+    sup_types = [str(v) for v in (results_local_uls.get("support_types") or [])]
+    if not sup_types and len(sup_pos) >= 2:
+        sup_types = ["Pinned", "Roller"]
+    elif not sup_types and len(sup_pos) == 1:
+        sup_types = ["Fixed"]
+
+    _fp = diagram_cache_fingerprint(
+        str(case),
+        float(beam_length_uls),
+        dict(params_uls or {}),
+        float(beam_length_sls),
+        dict(params_sls or {}),
     )
 
     preview_x_m = None
@@ -3491,7 +3731,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
             support_positions = [0.0]
         else:
             support_positions = [0.0, float(beam_length)]
-    fig_sfd, fig_bmd = plot_sfd_bmd_plotly(
+    sfd_bmd_plot_st = _prepare_sfd_bmd_plot_state(
         x,
         V,
         M,
@@ -3504,6 +3744,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         preview_V=preview_V_active,
         preview_M=preview_M_active,
     )
+    fig_sfd = _figure_sfd_from_state(sfd_bmd_plot_st)
 
     use_plotly_event_component = design_actions_source == "section"
 
@@ -3563,8 +3804,18 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
     st.markdown("<div style='height:2px'></div>", unsafe_allow_html=True)
 
     st.markdown('<div id="moment-analysis-section"></div>', unsafe_allow_html=True)
-    render_section_title("Bending Moment Diagram (BMD)")
-    st.caption("Moment M(x)")
+    bmd_head_l, bmd_head_r = st.columns([3, 2], gap="small")
+    with bmd_head_l:
+        render_section_title("Bending Moment Diagram (BMD)")
+    with bmd_head_r:
+        show_m_peak_marker = v2_checkbox(
+            label="Show |M|max",
+            key="sfd_bmd_show_m_peak_marker",
+            default=False,
+            help="Marker at the station of maximum |M| along the span.",
+        )
+    fig_bmd = _figure_bmd_from_state(sfd_bmd_plot_st, show_m_peak=bool(show_m_peak_marker))
+    st.caption("Moment M(x); hogging (M < 0) is drawn above the baseline (ordinate −M).")
     if use_plotly_event_component:
         bmd_click = plotly_events(
             fig_bmd,
@@ -4764,9 +5015,16 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
         M_neg_min_uls_kNm=float(M_neg_min_uls),
         M_pos_max_sls_kNm=float(M_pos_max_sls),
         M_neg_min_sls_kNm=float(M_neg_min_sls),
-        shear_x=[float(v) for v in (x_uls.tolist() if hasattr(x_uls, "tolist") else list(x_uls))],
+        shear_x=x_uls_list,
         shear_V=[float(abs(v)) for v in (V_uls_vals.tolist() if hasattr(V_uls_vals, "tolist") else list(V_uls_vals))],
         shear_V_signed=[float(v) for v in (V_uls_vals.tolist() if hasattr(V_uls_vals, "tolist") else list(V_uls_vals))],
+        shear_M_uls_kNm=[float(v) for v in Mu.tolist()],
+        shear_M_sls_kNm=[float(v) for v in M_sls_on_xu.tolist()] if M_sls_on_xu.size == xu.size else [],
+        moment_x=x_uls_list,
+        moment_values=[float(v) for v in M_sls_on_xu.tolist()] if M_sls_on_xu.size == xu.size else [],
+        crack_bmd_cache_fingerprint=_fp,
+        bmd_support_positions_m=sup_pos,
+        bmd_support_types=sup_types,
         support_type=support_type_key,
         critical_shear_x=x_crit,
         critical_shear_V=V_crit,

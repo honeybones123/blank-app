@@ -1475,6 +1475,15 @@ def _compute_shear_capacity():
                 V_mid_kN=float((_failed_payload or {}).get("V_mid_kN", 0.0) or 0.0),
                 shear_auto_selected_lig_d_mm=None,
                 shear_auto_selected_legs=None,
+                shear_M_uls_kNm=list(st.session_state.get("shear_M_uls_kNm") or []),
+                shear_M_sls_kNm=list(st.session_state.get("shear_M_sls_kNm") or []),
+                moment_x=list(st.session_state.get("moment_x") or st.session_state.get("shear_x") or []),
+                moment_values=list(
+                    st.session_state.get("moment_values") or st.session_state.get("shear_M_sls_kNm") or []
+                ),
+                crack_bmd_cache_fingerprint=str(st.session_state.get("crack_bmd_cache_fingerprint") or ""),
+                bmd_support_positions_m=list(st.session_state.get("bmd_support_positions_m") or []),
+                bmd_support_types=list(st.session_state.get("bmd_support_types") or []),
             )
             # region agent log
             _dbg_log(
@@ -1916,6 +1925,30 @@ def _compute_shear_capacity():
     )
     # endregion
 
+    def _resample_y_on_new_x(old_x: list[float], old_y: list[float], new_x: list[float]) -> list[float]:
+        if len(old_x) < 2 or len(new_x) < 2 or len(old_y) != len(old_x):
+            return list(old_y)
+        if len(old_x) == len(new_x) and max(abs(old_x[i] - new_x[i]) for i in range(len(old_x))) < 1e-9:
+            return list(old_y)
+        try:
+            return [
+                float(v)
+                for v in np.interp(
+                    np.asarray(new_x, dtype=float),
+                    np.asarray(old_x, dtype=float),
+                    np.asarray(old_y, dtype=float),
+                ).tolist()
+            ]
+        except Exception:
+            return list(old_y)
+
+    _sx_new = [float(v) for v in ((shear_zone_payload or {}).get("shear_x", []) or [])]
+    _sx_prev = [float(v) for v in (st.session_state.get("shear_x", []) or [])]
+    _m_sls_prev = [float(v) for v in (st.session_state.get("shear_M_sls_kNm") or [])]
+    _m_uls_prev = [float(v) for v in (st.session_state.get("shear_M_uls_kNm") or [])]
+    _m_sls_resampled = _resample_y_on_new_x(_sx_prev, _m_sls_prev, _sx_new)
+    _m_uls_resampled = _resample_y_on_new_x(_sx_prev, _m_uls_prev, _sx_new)
+
     # Update session state
     update_results(
         phi_Vu_cap=results.phi_Vu,
@@ -1972,6 +2005,13 @@ def _compute_shear_capacity():
         shear_design_status=shear_design_status_out,
         shear_auto_selected_lig_d_mm=sel_lig_d_mm,
         shear_auto_selected_legs=sel_legs_f,
+        shear_M_uls_kNm=_m_uls_resampled,
+        shear_M_sls_kNm=_m_sls_resampled,
+        moment_x=_sx_new,
+        moment_values=_m_sls_resampled,
+        crack_bmd_cache_fingerprint=str(st.session_state.get("crack_bmd_cache_fingerprint") or ""),
+        bmd_support_positions_m=list(st.session_state.get("bmd_support_positions_m") or []),
+        bmd_support_types=list(st.session_state.get("bmd_support_types") or []),
     )
     # region agent log
     _dbg_log(

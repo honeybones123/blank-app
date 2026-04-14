@@ -3,6 +3,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+import copy
 import importlib
 import streamlit as st
 
@@ -21,6 +22,7 @@ hc_try("css.apply_calcbox_css", apply_calcbox_css)
 from state_and_helpers import (
     init_shared_session_state,
     derive_design_actions,
+    resolve_design_actions,
     load_active_beam_into_shared,
     load_proxies_from_active_set,
     recalc_derived_values,
@@ -469,17 +471,47 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     # ============================================================
     # GLOBAL COMPUTE PIPELINE (runs BEFORE page render)
     # ============================================================
-    # Ensures diagrams + calc boxes are correct immediately, without visiting other pages.
+    # Widget sync callbacks set inputs_dirty; beam load also sets it. Recompute once per
+    # dirty cycle here so passive page loads skip structural recomputation.
     if "_computed_once" not in st.session_state:
         st.session_state["_computed_once"] = False
 
-    if st.session_state.get("_dirty") or not st.session_state["_computed_once"]:
+    if "inputs_dirty" not in st.session_state:
+        st.session_state["inputs_dirty"] = True
+
+    def _run_structural_recompute_and_cache() -> None:
+        actions = resolve_design_actions(st.session_state)
+        update_results(
+            actions_source=str(actions.get("actions_source") or ""),
+            Mu_star=float(actions["Mu"]),
+            Mu_star_kNm=float(actions["Mu"]),
+            Vu_star=float(actions["Vu"]),
+        )
+        compute_all_results()
+        try:
+            from bending_core import compute_sigma_s_sls_for_crack
+
+            compute_sigma_s_sls_for_crack(publish=True)
+        except Exception:
+            pass
+        st.session_state["cached_results"] = copy.deepcopy(st.session_state.get("results"))
+
+    if st.session_state.get("inputs_dirty"):
+        st.caption("Updating results…")
+        try:
+            _run_structural_recompute_and_cache()
+        except Exception:
+            pass
+        finally:
+            st.session_state["inputs_dirty"] = False
+        st.session_state["_computed_once"] = True
+        st.session_state["_dirty"] = False
+    elif st.session_state.get("_dirty") or not st.session_state["_computed_once"]:
         st.session_state["_dirty"] = False
         st.session_state["_computed_once"] = True
         try:
-            compute_all_results()
+            _run_structural_recompute_and_cache()
         except Exception:
-            # Never break UI due to compute; debug can inspect results keys
             pass
 
     # Step 4: Begin render cycle (ensures rendered widget tracking is per-run)

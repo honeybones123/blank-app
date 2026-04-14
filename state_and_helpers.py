@@ -961,6 +961,7 @@ SHARED_DEFAULTS = {
     "crack_member_type": "Primarily flexure",
     "crack_k1": 0.8,                        # deformed bars
     "crack_k2": 0.5,                        # default for flexure
+    "crack_diagram_panel": "Crack Diagram",  # Crack page diagram view (shared with TAB_KEYS)
 
     # Crack / torsion sketch control
     "crack_theta_deg": 45.0,  # physical crack angle (degrees)
@@ -1091,6 +1092,7 @@ NEW_BEAM_STARTER_DEFAULTS = {
     "crack_member_type": "Primarily flexure",
     "crack_k1": 0.8,
     "crack_k2": 0.5,
+    "crack_diagram_panel": "Crack Diagram",
     # Design actions (manual/shared source of truth) - NEW beams must start at zero
     "actions_source": "Manual design actions (inputs below)",
     "actions_mode": "manual",
@@ -1303,6 +1305,7 @@ BEAM_PROJECT_PARAM_KEYS = [
     "crack_member_type",
     "crack_k1",
     "crack_k2",
+    "crack_diagram_panel",
     "crack_theta_deg",
     "defl_beff",
     "defl_support_type",
@@ -1969,6 +1972,7 @@ def load_active_beam_into_shared(force=False):
     st.session_state["beam_last_hydrated_id"] = active_beam_id
     # One-shot: force tab widgets to match shared after beam record applied (any page).
     st.session_state["_force_hydrate_widgets_after_beam_load"] = True
+    st.session_state["inputs_dirty"] = True
     return True
 
 
@@ -2118,6 +2122,8 @@ def reset_app_to_clean_starter_workspace() -> None:
     recalc_derived_values()
     update_results()
     persist_active_beam_from_shared()
+    st.session_state["cached_results"] = copy.deepcopy(st.session_state.get("results"))
+    st.session_state["inputs_dirty"] = False
 
     shared_out: dict = {}
     for k in SHARED_DEFAULTS.keys():
@@ -2803,6 +2809,7 @@ RESULT_KEYS = {
     "phi_Tu_cap",
     "Tu_utilisation",
     "crack_width",
+    "crack_sr_max_mm",
     "crack_utilisation",
     # Shrinkage
     "eps_cs_total",
@@ -2838,6 +2845,7 @@ RESULT_KEYS = {
     "crack_detailing_warning",
     # Bending SLS → crack link
     "sigma_s_sls",
+    "bending_sls_dn_mm",
     "bending_sls_y_tension_outer",
     "bending_sls_eps_s_outer",
     "bending_sls_fs_outer",
@@ -2922,6 +2930,13 @@ RESULT_KEYS = {
     "shear_x",
     "shear_V",
     "shear_V_signed",
+    "shear_M_uls_kNm",
+    "shear_M_sls_kNm",
+    "moment_x",
+    "moment_values",
+    "crack_bmd_cache_fingerprint",
+    "bmd_support_positions_m",
+    "bmd_support_types",
     "V_max",
     "req_asv_s",
     "prov_asv_s",
@@ -2965,6 +2980,9 @@ RESULT_KEYS = {
     "bending_has_hogging_case",
     "bending_governing_case",
     "bending_util_governing",
+    # ULS stress block (positive / sagging) for diagrams — c = neutral axis depth, γ = block factor
+    "bending_uls_c_pos_mm",
+    "bending_uls_gamma_pos",
     # Bending min requirements / neutral axis checks
     "Mx_min_req",
     "As_min_req",
@@ -3041,6 +3059,13 @@ RESULT_DEFAULTS.update({
     "shear_x": [],
     "shear_V": [],
     "shear_V_signed": [],
+    "shear_M_uls_kNm": [],
+    "shear_M_sls_kNm": [],
+    "moment_x": [],
+    "moment_values": [],
+    "crack_bmd_cache_fingerprint": "",
+    "bmd_support_positions_m": [],
+    "bmd_support_types": [],
     "V_max": 0.0,
     "req_asv_s": [],
     "prov_asv_s": [],
@@ -3683,6 +3708,7 @@ TAB_KEYS = {
     "crack_member_type": "crack_member_type",
     "crack_k1": "crack_k1",
     "crack_k2": "crack_k2",
+    "crack_diagram_view": "crack_diagram_panel",
 
     "crack_cover_bot": "cover_bot",
     "crack_cover_top": "cover_top",
@@ -6691,7 +6717,7 @@ def _make_sync_callback(widget_key: str, shared_key: str):
                 )
                 # endregion
         _audit("SYNC widget->shared", shared_key, widget_key, old=old_shared, new=widget_value)
-        mark_dirty("widget_sync")
+        st.session_state["inputs_dirty"] = True
 
         if shared_key in ("load_Mstar_proxy", "load_Mstar_pos_proxy", "load_Mstar_neg_proxy", "load_Vstar_proxy", "load_Nstar_proxy"):
             save_proxies_to_active_set()
@@ -6724,8 +6750,7 @@ def _make_sync_callback(widget_key: str, shared_key: str):
         # Other pages will pick up the shared value via hydrate_active_page_widgets_from_shared()
         # when they render. This prevents callback cascades and phantom zeros.
 
-        # 2) Update derived values whenever anything changes
-        recalc_derived_values()
+        # Derived values and structural results refresh in app.py when inputs_dirty is cleared.
 
     return _callback
 
@@ -6813,9 +6838,10 @@ def apply_auto_design_results(results_dict: dict) -> None:
 
         recalc_derived_values()
         update_results()
-        # If rendered spacing widgets could not be mirrored, force another compute pass next rerun.
+        st.session_state["cached_results"] = copy.deepcopy(st.session_state.get("results"))
+        # If rendered spacing widgets could not be mirrored, defer full structural recompute to next run.
         if deferred_widget_update:
-            mark_dirty("auto_design_apply")
+            st.session_state["inputs_dirty"] = True
         # region agent log
         _agent_dbg_log(
             "apply_auto_design_results post-hydrate snapshot",
@@ -6906,6 +6932,14 @@ def compute_all_results() -> None:
     # 1) Derived values (d, Ast, layouts, etc.)
     recalc_derived_values()
 
+    # Beam M(x) / SFD arrays for Crack + design mode (headless; matches Beam Actions page)
+    try:
+        from beam_diagram_publish import publish_beam_diagram_arrays_from_session_state
+
+        publish_beam_diagram_arrays_from_session_state()
+    except Exception:
+        pass
+
     # 2) Core checks (ULS/SLS)
     # Prefer design-core modules (no UI / no render side-effects)
     try:
@@ -6934,6 +6968,15 @@ def compute_all_results() -> None:
                 shear_envelope_status=st.session_state.get("shear_envelope_status", "FAIL"),
                 shear_auto_selected_lig_d_mm=None,
                 shear_auto_selected_legs=None,
+                shear_M_uls_kNm=list(st.session_state.get("shear_M_uls_kNm") or []),
+                shear_M_sls_kNm=list(st.session_state.get("shear_M_sls_kNm") or []),
+                moment_x=list(st.session_state.get("moment_x") or st.session_state.get("shear_x") or []),
+                moment_values=list(
+                    st.session_state.get("moment_values") or st.session_state.get("shear_M_sls_kNm") or []
+                ),
+                crack_bmd_cache_fingerprint=str(st.session_state.get("crack_bmd_cache_fingerprint") or ""),
+                bmd_support_positions_m=list(st.session_state.get("bmd_support_positions_m") or []),
+                bmd_support_types=list(st.session_state.get("bmd_support_types") or []),
             )
         except Exception:
             pass

@@ -1058,7 +1058,12 @@ def _compute_sls_bending_values():
         # Publish for other pages (crack/deflection)
         if fs_outer is not None:
             from state_and_helpers import update_results
-            update_results(sigma_s_sls=float(fs_outer), bending_sls_fs_outer=float(fs_outer))
+
+            update_results(
+                sigma_s_sls=float(fs_outer),
+                bending_sls_fs_outer=float(fs_outer),
+                bending_sls_dn_mm=float(dn_sls),
+            )
         return fs_outer
     except Exception:
         pass

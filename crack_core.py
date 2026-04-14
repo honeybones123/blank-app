@@ -48,7 +48,7 @@ def compute_crack_results(publish: bool = True) -> dict:
     
     # k1 and k2 from widgets
     k1 = get_param("crack_k1", 0.8)
-    k2 = get_param("crk_k2", 0.5)
+    k2 = get_param("crack_k2", get_param("crk_k2", 0.5))
     
     # Resolve active tension reinforcement from canonical geometry (T/I aware).
     sec_shape = str(get_param("sec_shape", "RECT") or "RECT")
@@ -179,6 +179,7 @@ def compute_crack_results(publish: bool = True) -> dict:
         "passes_table": passes_table,
         "passes_w": passes_w,
         "crack_width": w_calc,
+        "crack_sr_max_mm": float(sr_max),
         "crack_utilisation": utilisation_w,
         "crack_tension_face": crack_tension_face,
         "crack_active_bar_count": float(crack_active_bar_count),

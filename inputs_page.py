@@ -1,6 +1,8 @@
 
+import copy
 import json
 import html
+import os
 from urllib.parse import urlencode
 import inspect
 from datetime import datetime
@@ -10,6 +12,44 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 import time
+
+_INPUTS_DEBUG_AUDIT = os.environ.get("INPUTS_DEBUG_AUDIT", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def log_debug(message, value=None):
+    print(f"[INPUTS DEBUG] {message}: {value}")
+
+
+def _inputs_audit_snapshot_state():
+    """Best-effort snapshot of session state for diff (may skip unpickleable values)."""
+    out: dict[str, object] = {}
+    for k in list(st.session_state.keys()):
+        try:
+            out[k] = copy.deepcopy(st.session_state.get(k))
+        except Exception:
+            try:
+                out[k] = st.session_state.get(k)
+            except Exception:
+                out[k] = "<unreadable>"
+    return out
+
+
+def _wrap_inputs_sync_callbacks(raw: dict, log_debug_fn) -> dict:
+    def sync_callback_wrapper(fn, name):
+        def wrapper():
+            log_debug_fn(f"SYNC CALLBACK TRIGGERED - {name}")
+            before = dict(st.session_state)
+            fn()
+            for k in before:
+                if before.get(k) != st.session_state.get(k):
+                    log_debug_fn(
+                        f"SYNC CHANGE - {k}",
+                        f"{before.get(k)} -> {st.session_state.get(k)}",
+                    )
+        return wrapper
+
+    return {k: sync_callback_wrapper(v, k) for k, v in raw.items()}
+
 
 from state_and_helpers import (
     BEAM_STATUS_FAIL,
@@ -51,6 +91,11 @@ from state_and_helpers import (
     get_deflection_limit_ratio,
     get_deflection_limit_label_from_ratio,
 )
+
+# Inputs page: shared_key -> inputs_* widget key (same role as TAB_KEYS['inputs'] in audit spec)
+INPUTS_PAGE_TAB_KEYS = {sk: wk for wk, sk in TAB_KEYS.items() if str(wk).startswith("inputs_")}
+
+RESULT_CACHE_KEY = "cached_results"
 
 from widgets_helpers import (
     apply_global_widget_css,
@@ -95,6 +140,7 @@ from report_helpers import (
     format_report_status_badge,
     format_report_status_label,
 )
+
 
 # --- Pure compute functions from design core (no circular imports)
 # NOTE: Heavy imports are deferred inside render_inputs() to avoid
@@ -562,6 +608,20 @@ def apply_inputs_page_css():
             border: none !important;
             box-shadow: none !important;
             outline: none !important;
+        }
+        .inputs-page-main-diagram-wrap {
+            margin: 0;
+            padding: 0;
+        }
+        /* Main inputs diagram: cap height to reduce overflow (complements reduced Plotly layout height) */
+        .inputs-page-main-diagram-wrap div[data-testid="stPlotlyChart"] {
+            max-height: min(52vh, 560px);
+        }
+        @media print {
+          .inputs-diagram-materials-group {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
         }
         .fast-start-here {
             background: rgba(30, 41, 59, 0.12);
@@ -1642,7 +1702,7 @@ def make_summary_cross_section_figure():
             autosize=True,
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
-            margin=dict(l=14, r=14, t=14, b=14),
+            margin=dict(l=6, r=6, t=6, b=6),
         )
         gx0, gx1 = 0.0, float(width_mm)
         gy0, gy1 = 0.0, float(depth_mm)
@@ -2127,7 +2187,7 @@ def make_beam_3d_figure():
                 showticklabels=False,
             ),
         ),
-        margin=dict(l=20, r=20, t=20, b=20),
+        margin=dict(l=8, r=8, t=8, b=8),
         showlegend=False,
     )
     
@@ -2455,8 +2515,33 @@ def _render_time_dependent_inputs(sync_callbacks):
         help_text="Age of concrete at loading (days).",
     )
 
+
+def _render_inputs_materials_subsection(sync_callbacks: dict, *, show_heading: bool = True) -> None:
+    """Steel/concrete material inputs (widget keys unchanged)."""
+    if show_heading:
+        st.subheader("Materials")
+    w_fsy = get_widget_key_for_shared("fsy", prefix="inputs_") or "inputs_fsy"
+    w_fc = get_widget_key_for_shared("fc", prefix="inputs_") or "inputs_fc"
+    fsy_val = float(st.session_state.get(w_fsy, get_param("fsy", 500.0)))
+    fc_val = float(st.session_state.get(w_fc, get_param("fc", 40.0)))
+    number_row(
+        "Steel MPa",
+        w_fsy,
+        fsy_val,
+        sync_callbacks,
+        help_text="Yield strength of reinforcement (fsy).",
+    )
+    number_row(
+        "Concrete MPa",
+        w_fc,
+        fc_val,
+        sync_callbacks,
+        help_text="Characteristic compressive strength of concrete (f'c).",
+    )
+
+
 def _render_materials_and_sectionA_2d(sync_callbacks):
-    """Support conditions, materials (f'c/fsy), shear section params, then 3D diagram (detailed mode)."""
+    """Support conditions, shear section params, then 3D diagram (detailed mode). Materials render under main diagram."""
     mat_col, sec2d_col = st.columns([1.15, 1.85], gap="large")
     
     with mat_col:
@@ -2561,27 +2646,6 @@ def _render_materials_and_sectionA_2d(sync_callbacks):
         _caption_inputs_deflection_limit_ratio()
 
         st.markdown("")
-        st.subheader("Materials")
-        w_fsy = get_widget_key_for_shared("fsy", prefix="inputs_") or "inputs_fsy"
-        w_fc = get_widget_key_for_shared("fc", prefix="inputs_") or "inputs_fc"
-        fsy_val = float(st.session_state.get(w_fsy, get_param("fsy", 500.0)))
-        fc_val = float(st.session_state.get(w_fc, get_param("fc", 40.0)))
-        number_row(
-            "Steel MPa",
-            w_fsy,
-            fsy_val,
-            sync_callbacks,
-            help_text="Yield strength of reinforcement (fsy).",
-        )
-        number_row(
-            "Concrete MPa",
-            w_fc,
-            fc_val,
-            sync_callbacks,
-            help_text="Characteristic compressive strength of concrete (f'c).",
-        )
-
-        st.markdown("")
         st.subheader("Shear section parameters")
 
         w_d_g = get_widget_key_for_shared("d_g", prefix="inputs_") or "inputs_d_g"
@@ -2652,18 +2716,21 @@ def _render_section_2d_diagram_block(*, compact: bool = False):
 
     if fig_sec is not None:
         try:
+            # ~12% shorter than legacy 540/620 to limit vertical overflow
             fig_sec.update_layout(
                 autosize=True,
-                height=540 if compact else 620,
-                margin=dict(l=10, r=10, t=10, b=10),
+                height=(475 if compact else 545),
+                margin=dict(l=4, r=4, t=4, b=4),
             )
         except Exception:
             pass
+        st.markdown('<div class="inputs-page-main-diagram-wrap">', unsafe_allow_html=True)
         st.plotly_chart(
             fig_sec,
             use_container_width=True,
             config={"displayModeBar": False},
         )
+        st.markdown("</div>", unsafe_allow_html=True)
         # region agent log
         _agent_debug_log(
             "Completed 2D diagram render",
@@ -2728,14 +2795,16 @@ def _render_3d_diagram_block(*, compact: bool = False):
         )
         BASE_H = 360 if compact else 420
         fig3d.update_layout(
-            height=int(BASE_H * 7 / 5),
-            margin=dict(l=10, r=10, t=10, b=10),
+            height=int(int(BASE_H * 7 / 5) * 0.88),
+            margin=dict(l=4, r=4, t=4, b=4),
         )
+        st.markdown('<div class="inputs-page-main-diagram-wrap">', unsafe_allow_html=True)
         st.plotly_chart(
             fig3d,
             use_container_width=True,
             config={"displayModeBar": False}
         )
+        st.markdown("</div>", unsafe_allow_html=True)
         # region agent log
         _agent_debug_log(
             "Completed 3D diagram render",
@@ -2751,16 +2820,19 @@ def _render_3d_diagram_block(*, compact: bool = False):
     else:
         fig3d = make_beam_3d_figure()
         BASE_H = 410 if compact else 480
+        _h3d = int(int(BASE_H * 7 / 5) * 0.88)
         fig3d.update_layout(
-            height=int(BASE_H * 7 / 5),
-            margin=dict(l=10, r=10, t=10, b=10),
+            height=_h3d,
+            margin=dict(l=4, r=4, t=4, b=4),
         )
+        st.markdown('<div class="inputs-page-main-diagram-wrap">', unsafe_allow_html=True)
         st.plotly_chart(
             fig3d,
             width="stretch",
-            height=int(BASE_H * 7 / 5),
+            height=_h3d,
             config={"displayModeBar": True}
         )
+        st.markdown("</div>", unsafe_allow_html=True)
         # region agent log
         _agent_debug_log(
             "Completed 3D diagram render",
@@ -18823,7 +18895,13 @@ def _render_fast_design_guidance_panel(
 def render_inputs():
     # NOTE: init_shared_session_state() is called by app.py router before this function runs.
     # Pages must NOT call init/hydrate themselves - the router owns the lifecycle.
-    
+    if _INPUTS_DEBUG_AUDIT:
+        log_debug("---- INPUTS PAGE LOAD START ----")
+        for key in SHARED_DEFAULTS.keys():
+            log_debug(f"SHARED INIT - {key}", st.session_state.get(key))
+        for shared_key, tab_key in INPUTS_PAGE_TAB_KEYS.items():
+            log_debug(f"TAB INIT - {shared_key} <- {tab_key}", st.session_state.get(tab_key))
+
     from state_and_helpers import _write_sync_trace_line
     _write_sync_trace_line("\n=== PAGE RENDER: inputs ===")
     render_started_at = time.perf_counter()
@@ -18839,12 +18917,6 @@ def render_inputs():
         hypothesis_id="H18",
     )
     # endregion
-
-    # Defer heavy imports until runtime to avoid OneDrive filesystem timeouts
-    from bending_core import _compute_bending_capacity
-    from shear_core import _compute_shear_capacity
-    from crack_core import _compute_crack_results
-    from deflection_core import _compute_deflection_results
 
     ensure_beam_project_initialized()
     if st.session_state.get("_beam_skip_auto_persist_once") is None:
@@ -18879,13 +18951,24 @@ def render_inputs():
 
     corrected_invalid_shear_state = _normalise_invalid_shear_state_in_shared(source="render_inputs:pre_render")
     fast_focus_section = st.session_state.pop("_fast_mode_focus_section", None)
-    
-    sync_callbacks = get_sync_callbacks()
+
+    raw_sync_callbacks = get_sync_callbacks()
+    sync_callbacks = (
+        _wrap_inputs_sync_callbacks(raw_sync_callbacks, log_debug)
+        if _INPUTS_DEBUG_AUDIT
+        else raw_sync_callbacks
+    )
+
+    if "inputs_dirty" not in st.session_state:
+        st.session_state["inputs_dirty"] = True
+
     inputs_render_audit = _fresh_inputs_render_audit()
     st.session_state["_inputs_render_audit_live"] = inputs_render_audit
     apply_inputs_page_css()
     apply_global_widget_css()
     apply_calcbox_css()
+
+    before_state = _inputs_audit_snapshot_state() if _INPUTS_DEBUG_AUDIT else None
 
     st.sidebar.toggle(
         "Design Guide Debug",
@@ -19239,6 +19322,7 @@ def render_inputs():
                 st.divider()
                 def _on_inputs_use_calculated_actions_change() -> None:
                     st.session_state[_itk_calculated_intent] = True
+                    st.session_state["inputs_dirty"] = True
 
                 use_calculated_actions = st.toggle(
                     "Use calculated design actions",
@@ -19295,6 +19379,7 @@ def render_inputs():
                 hypothesis_id="H19",
             )
             # endregion
+            st.session_state["inputs_dirty"] = True
             st.rerun()
 
         prev_mode = st.session_state.get("loads_edit_mode", "ULS")
@@ -19318,8 +19403,7 @@ def render_inputs():
             st.session_state["loads_edit_mode"] = new_mode
             _mirror_design_action_proxies_from_shared("sls" if str(new_mode).upper() == "SLS" else "uls")
             st.session_state["_force_design_action_widget_hydrate"] = True
-            recalc_derived_values()
-            update_results()
+            st.session_state["inputs_dirty"] = True
             st.rerun()
         else:
             st.session_state["loads_edit_mode"] = new_mode
@@ -19341,9 +19425,14 @@ def render_inputs():
         )
 
         for spec in _design_action_widget_specs(selected_prefix):
+            shared_key = str(spec.get("shared_key", ""))
+            if not inputs_detailed_mode and (
+                shared_key == "P_star" or shared_key.endswith("_Mstar_neg_manual")
+            ):
+                continue
             callback = _make_design_action_widget_callback(
                 str(spec["widget_key"]),
-                str(spec["shared_key"]),
+                shared_key,
                 spec.get("proxy_key"),
             )
             _render_design_action_number_row(
@@ -19357,9 +19446,9 @@ def render_inputs():
         _debug_check_design_action_consistency(_shared_state_snapshot())
 
     with geometry_slot:
-        # --- Geometry ---
+        # --- Geometry (+ materials in fast mode) ---
         _render_recommendation_section_header(
-            "Geometry",
+            "Geometry & Materials" if not inputs_detailed_mode else "Geometry",
             help_text=(
                 "Show the current geometry recommendation, the optimisation goal, "
                 "the predicted impact, and apply the suggested geometry."
@@ -19435,22 +19524,34 @@ def render_inputs():
             help_text="Clear span used for deflection checks.",
         )
 
-        number_row(
-            "Side cover (mm)",
-            "inputs_cover_side",
-            cover_side_val,
-            sync_callbacks,
-            help_text="Clear side cover to longitudinal reinforcement and ducts.",
-        )
+        if inputs_detailed_mode:
+            number_row(
+                "Side cover (mm)",
+                "inputs_cover_side",
+                cover_side_val,
+                sync_callbacks,
+                help_text="Clear side cover to longitudinal reinforcement and ducts.",
+            )
+        if not inputs_detailed_mode:
+            _render_inputs_materials_subsection(sync_callbacks, show_heading=False)
     if inputs_detailed_mode and right_diagram is not None:
         with right_diagram:
-            _render_section_2d_diagram_block()
+            with st.container():
+                st.markdown('<div class="inputs-diagram-materials-group">', unsafe_allow_html=True)
+                _render_section_2d_diagram_block()
+                st.markdown('<div style="margin-bottom: 0.35rem;"></div>', unsafe_allow_html=True)
+                st.markdown('<div style="margin-top: 0.35rem;"></div>', unsafe_allow_html=True)
+                _render_inputs_materials_subsection(sync_callbacks)
+                st.markdown("</div>", unsafe_allow_html=True)
 
     if inputs_detailed_mode:
         page_divider()
     else:
         with model_slot:
-            _render_fast_model_block(sync_callbacks)
+            with st.container():
+                st.markdown('<div class="inputs-diagram-materials-group">', unsafe_allow_html=True)
+                _render_fast_model_block(sync_callbacks)
+                st.markdown("</div>", unsafe_allow_html=True)
         page_divider()
 
     # ============================
@@ -19467,7 +19568,7 @@ def render_inputs():
         hypothesis_id="H18",
     )
     # endregion
-    # Three columns: bottom reo | top reo | shear + materials (full width).
+    # Three columns: bottom reo | top reo | shear (materials sit under main diagram).
     col_bot_reo, col_top_reo, col_shear_mat = st.columns(3, gap="large")
     _sec_shape_reo_ui = st.session_state.get(
         "inputs_sec_shape", st.session_state.get("sec_shape", "RECT")
@@ -19691,28 +19792,6 @@ def render_inputs():
             help_text="Centre-to-centre spacing of shear links along the member (mm).",
         )
 
-        if not inputs_detailed_mode:
-            st.markdown("")
-            st.subheader("Materials")
-            w_fsy = get_widget_key_for_shared("fsy", prefix="inputs_") or "inputs_fsy"
-            w_fc = get_widget_key_for_shared("fc", prefix="inputs_") or "inputs_fc"
-            fsy_val = float(st.session_state.get(w_fsy, get_param("fsy", 500.0)))
-            fc_val = float(st.session_state.get(w_fc, get_param("fc", 40.0)))
-            number_row(
-                "Steel MPa",
-                w_fsy,
-                fsy_val,
-                sync_callbacks,
-                help_text="Yield strength of reinforcement (fsy).",
-            )
-            number_row(
-                "Concrete MPa",
-                w_fc,
-                fc_val,
-                sync_callbacks,
-                help_text="Characteristic compressive strength of concrete (f'c).",
-            )
-
     sec_shape_for_flange = str(st.session_state.get("sec_shape", get_param("sec_shape", "RECT")) or "RECT")
     if sec_shape_for_flange in ("T", "I"):
         st.markdown("### Flange reinforcement")
@@ -19820,84 +19899,8 @@ def render_inputs():
         _render_materials_and_sectionA_2d(sync_callbacks)
         page_divider()
 
-    # ============================
-    # Compute results BEFORE rendering diagrams (diagrams depend on computed values)
-    # ============================
-    # Publish the currently selected editable action set for page-level summaries
-    # without feeding resolved calc values back into widget-owned state.
-    actions = resolve_design_actions(st.session_state)
-    Mu_star = float(actions["Mu"])
-    Vu_star = float(actions["Vu"])
-    source_label = str(actions.get("actions_source") or "")
-    
-    # Push final chosen actions into results
-    update_results(
-        actions_source=source_label,
-        Mu_star=float(Mu_star),
-        Mu_star_kNm=float(Mu_star),
-        Vu_star=float(Vu_star),
-    )
-    
-    # Ensure derived values are up to date before computing results
-    compute_block_started_at = time.perf_counter()
-    compute_stage_ms: dict[str, float] = {}
-    stage_started_at = time.perf_counter()
-    recalc_derived_values()
-    compute_stage_ms["recalc_derived_values"] = (time.perf_counter() - stage_started_at) * 1000
-    
-    # Recompute ALL checks using current inputs
-    stage_started_at = time.perf_counter()
-    _compute_bending_capacity()
-    compute_stage_ms["compute_bending_capacity"] = (time.perf_counter() - stage_started_at) * 1000
-    from bending_page import _compute_sls_bending_values
-    stage_started_at = time.perf_counter()
-    _compute_sls_bending_values()
-    compute_stage_ms["compute_sls_bending_values"] = (time.perf_counter() - stage_started_at) * 1000
-    from bending_core import compute_sigma_s_sls_for_crack
-    stage_started_at = time.perf_counter()
-    compute_sigma_s_sls_for_crack(publish=True)
-    compute_stage_ms["compute_sigma_s_sls_for_crack"] = (time.perf_counter() - stage_started_at) * 1000
-    stage_started_at = time.perf_counter()
-    _compute_shear_capacity()
-    compute_stage_ms["compute_shear_capacity"] = (time.perf_counter() - stage_started_at) * 1000
-
-    # FIRST: creep + shrinkage (crack/deflection depend on these SLS effects)
-    try:
-        from creep import compute_creep_results
-        stage_started_at = time.perf_counter()
-        compute_creep_results(publish=True)
-        compute_stage_ms["compute_creep_results"] = (time.perf_counter() - stage_started_at) * 1000
-    except Exception:
-        pass
-
-    try:
-        from shrinkage import compute_shrinkage_results
-        stage_started_at = time.perf_counter()
-        compute_shrinkage_results(publish=True)
-        compute_stage_ms["compute_shrinkage_results"] = (time.perf_counter() - stage_started_at) * 1000
-    except Exception:
-        pass
-
-    # THEN: crack + deflection
-    stage_started_at = time.perf_counter()
-    _compute_crack_results()
-    compute_stage_ms["compute_crack_results"] = (time.perf_counter() - stage_started_at) * 1000
-    stage_started_at = time.perf_counter()
-    _compute_deflection_results()
-    compute_stage_ms["compute_deflection_results"] = (time.perf_counter() - stage_started_at) * 1000
-    # region agent log
-    _agent_debug_log(
-        "Completed inputs compute block",
-        {
-            "inputs_detailed_mode": bool(inputs_detailed_mode),
-            "stage_durations_ms": {key: round(value, 1) for key, value in compute_stage_ms.items()},
-            "total_ms": round((time.perf_counter() - compute_block_started_at) * 1000, 1),
-        },
-        location="inputs_page.py:render_inputs:compute_block",
-        hypothesis_id="H23",
-    )
-    # endregion
-    
+    # Structural recomputation (recalc_derived_values, update_results, compute_*) runs in app.py
+    # when inputs_dirty is set by sync callbacks or beam load, then cached_results is refreshed.
 
     # ============================
     # 2. LOWER ROW – Time-dependent | Ducts / Prestress voids | Crack control
@@ -20004,7 +20007,7 @@ def render_inputs():
             # Note: Serviceability + Shrinkage split between Support conditions and Time-dependent inputs
 
     # ============================
-    # 4. Rest of inputs (Time | Crack/Ducts) - actions and compute already done above before diagrams
+    # 4. Rest of inputs (Time | Crack/Ducts) — compute owned by app.py when inputs_dirty
     # ============================
     skip_active_beam_record_write = bool(st.session_state.get("_beam_skip_auto_persist_once", False))
     if skip_active_beam_record_write:
@@ -20262,10 +20265,7 @@ def render_inputs():
             deflection_rows=DEFLECTION_ROWS,
         )
 
-    # Render the summary back at the very top (where summary_container was created)
-    with summary_container:
-        st.title("Inputs")
-
+    def _render_inputs_summary_expanders_and_tables() -> None:
         # Inject CSS for seamless steps (summary table styling)
         inject_seamless_steps_css()
 
@@ -20488,6 +20488,19 @@ tr:hover .hint { opacity: 1; }
 
         page_divider()
 
+    def render_summary_table(results):
+        _ = results
+        _render_inputs_summary_expanders_and_tables()
+
+    # Render the summary back at the very top (where summary_container was created)
+    with summary_container:
+        st.title("Inputs")
+        results = st.session_state.get(RESULT_CACHE_KEY)
+        if results is None:
+            st.info("Enter design actions to generate results")
+        else:
+            render_summary_table(results)
+
     if bool(st.session_state.get("_dev_mode")):
         _agent_debug_log(
             "Inputs dev render audit (end of render_inputs)",
@@ -20503,6 +20516,24 @@ tr:hover .hint { opacity: 1; }
             location="inputs_page.py:render_inputs:dev_render_audit_end",
             hypothesis_id="H_INPUTS_DEV_RENDER_AUDIT",
         )
+
+    if _INPUTS_DEBUG_AUDIT and before_state is not None:
+        after_widgets_state = st.session_state
+        for key in before_state:
+            if before_state[key] != after_widgets_state.get(key):
+                log_debug(
+                    f"STATE CHANGED DURING RENDER - {key}",
+                    f"{before_state[key]} -> {after_widgets_state.get(key)}",
+                )
+        tab_keys = list(INPUTS_PAGE_TAB_KEYS.values())
+        for key in SHARED_DEFAULTS.keys():
+            if key not in tab_keys:
+                if before_state.get(key) != after_widgets_state.get(key):
+                    log_debug(
+                        f"WARNING: DIRECT SHARED WRITE - {key}",
+                        f"{before_state.get(key)} -> {after_widgets_state.get(key)}",
+                    )
+        log_debug("---- INPUTS PAGE LOAD END ----")
 
     _render_design_guide_debug_sidebar()
 

@@ -36,6 +36,8 @@ _DEFAULT_LOADING_CASE = "Simple beam – UDL over entire span"
 _FIELD_TOP_PAD = 0.012
 _FIELD_BOT_PAD = 0.012
 _FIELD_SPLINE_SMOOTHING = 0.65
+# Primary plotly blue used across the app (widgets_helpers calcbox / default plotly accent).
+_SHRINKAGE_EVAPORATION_BLUE = "#1f77b4"
 
 
 def _dbg_log(message: str, data: dict[str, Any], *, hypothesis_id: str, run_id: str = "ss_psf_debug") -> None:
@@ -1319,8 +1321,10 @@ def _build_side_view_tension_reo(fig: go.Figure, model: dict[str, Any]) -> None:
     beam_depth_m = model["D_m"]
     bottom_base_y = 0.11 * beam_depth_m
     top_base_y = 0.89 * beam_depth_m
-    x_start = _side_view_display_x(0.05 * model["total_length_m"], model)
-    x_end = _side_view_display_x(0.95 * model["total_length_m"], model)
+    total_L = max(_safe_float(model.get("total_length_m", 0.0), 0.0), 1e-9)
+    # Full beam span (display coordinates; respects side_view_display break mapping).
+    x_start = _side_view_display_x(0.0, model)
+    x_end = _side_view_display_x(total_L, model)
 
     for idx, layer in enumerate(bottom_layers[:2]):
         db = max(_safe_float(layer.get("db", 20.0), 20.0), 10.0)
@@ -4727,7 +4731,7 @@ def build_shrinkage_schematic_plotly(width_px: int = 1100, height_px: int = 420)
             arrowhead=3,
             arrowsize=1.0,
             arrowwidth=1.8,
-            arrowcolor="black",
+            arrowcolor=_SHRINKAGE_EVAPORATION_BLUE,
         )
 
     # ------------------------------------------------------------------
@@ -4769,7 +4773,7 @@ def build_shrinkage_schematic_plotly(width_px: int = 1100, height_px: int = 420)
         x=12.0, y=24.7,
         text="<b>Water loss through<br>evaporation</b>",
         showarrow=False,
-        font=dict(size=18, color="black"),
+        font=dict(size=18, color=_SHRINKAGE_EVAPORATION_BLUE),
         align="left",
     )
 

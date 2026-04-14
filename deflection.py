@@ -815,6 +815,43 @@ def _add_deflection_supports_plotly(
         _pinned(float(L_mm), roller=True)
 
 
+def deflected_longitudinal_profile_mm(
+    L_mm: float,
+    support_type: str | None,
+    delta_total: float,
+    n_pts: int = 200,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Spanwise mesh and longitudinal deflection w (mm, negative sag), using the same
+    normalised curvature template as the Deflection page diagram.
+    """
+    L_mm = float(L_mm)
+    if L_mm <= 0.0 or not math.isfinite(L_mm):
+        return np.array([0.0], dtype=float), np.array([0.0], dtype=float)
+    delta_total = float(delta_total)
+    if not math.isfinite(delta_total):
+        delta_total = 0.0
+    n_pts = max(2, int(n_pts))
+    x = np.linspace(0.0, L_mm, n_pts)
+    xi = x / L_mm
+    shape_kind = _support_props(support_type).get(
+        "diagram", "simply_supported_udl"
+    )
+    if shape_kind == "cantilever_udl":
+        shape = xi**2 * (3.0 - 2.0 * xi)
+    elif shape_kind in (
+        "continuous_span_udl",
+        "fixed_fixed_udl",
+        "fixed_pinned_udl",
+    ):
+        shape = (4.0 * xi * (1.0 - xi)) ** 2
+    else:
+        shape = 4.0 * xi * (1.0 - xi)
+    shape = shape / max(float(np.max(shape)), 1.0)
+    y_long = -delta_total * shape
+    return x, y_long
+
+
 def build_deflected_beam_plotly(
     x_mm,
     w_mm,
@@ -823,6 +860,12 @@ def build_deflected_beam_plotly(
     support_type: str | None = None,
     continuous_end_side: str | None = None,
     support_pair: tuple[str, str] | None = None,
+    *,
+    undeformed_fillcolor: str | None = None,
+    undeformed_line: dict | None = None,
+    deflected_fillcolor: str | None = None,
+    deflected_line: dict | None = None,
+    show_legend: bool = True,
 ) -> go.Figure:
     """
     Illustrative deflected beam: undeformed and deflected rectangular bodies with vertical exaggeration.
@@ -881,6 +924,27 @@ def build_deflected_beam_plotly(
 
     sf_display = f"{scale_factor:g}"
 
+    _u_fill = (
+        undeformed_fillcolor
+        if undeformed_fillcolor is not None
+        else "rgba(210,210,210,0.22)"
+    )
+    _u_line = (
+        undeformed_line
+        if undeformed_line is not None
+        else dict(color="rgba(140,140,140,0.95)", width=1.5, dash="dash")
+    )
+    _d_fill = (
+        deflected_fillcolor
+        if deflected_fillcolor is not None
+        else "rgba(31,119,180,0.30)"
+    )
+    _d_line = (
+        deflected_line
+        if deflected_line is not None
+        else dict(color="rgba(31,119,180,1.0)", width=2)
+    )
+
     fig = go.Figure()
 
     fig.add_trace(
@@ -889,8 +953,8 @@ def build_deflected_beam_plotly(
             y=y_undeformed_poly,
             fill="toself",
             mode="lines",
-            line=dict(color="rgba(140,140,140,0.95)", width=1.5, dash="dash"),
-            fillcolor="rgba(210,210,210,0.22)",
+            line=_u_line,
+            fillcolor=_u_fill,
             name="Undeformed beam",
             hoverinfo="skip",
             legendgroup="u",
@@ -902,8 +966,8 @@ def build_deflected_beam_plotly(
             y=y_deformed_poly,
             fill="toself",
             mode="lines",
-            line=dict(color="rgba(31,119,180,1.0)", width=2),
-            fillcolor="rgba(31,119,180,0.30)",
+            line=_d_line,
+            fillcolor=_d_fill,
             name="Deflected beam",
             hoverinfo="skip",
             legendgroup="d",
@@ -982,6 +1046,7 @@ def build_deflected_beam_plotly(
         paper_bgcolor="white",
         height=420,
         margin=dict(l=64, r=48, t=72, b=56),
+        showlegend=show_legend,
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -2108,23 +2173,9 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         if delta_total is None:
             st.info("Provide inputs to view deflected shape.")
         else:
-            x = np.linspace(0.0, L_mm, 200)
-            xi = x / L_mm
-            shape_kind = _support_props(support_type).get(
-                "diagram", "simply_supported_udl"
+            x, y_long = deflected_longitudinal_profile_mm(
+                L_mm, support_type, float(delta_total), n_pts=200
             )
-            if shape_kind == "cantilever_udl":
-                shape = xi**2 * (3.0 - 2.0 * xi)
-            elif shape_kind in (
-                "continuous_span_udl",
-                "fixed_fixed_udl",
-                "fixed_pinned_udl",
-            ):
-                shape = (4.0 * xi * (1.0 - xi)) ** 2
-            else:
-                shape = 4.0 * xi * (1.0 - xi)
-            shape = shape / max(np.max(shape), 1.0)
-            y_long = -delta_total * shape
 
             D_mm = float(D) if D is not None else 600.0
             beam_fig = build_deflected_beam_plotly(

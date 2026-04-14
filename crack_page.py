@@ -4,6 +4,7 @@
 # ============================
 
 import math
+
 import streamlit as st
 
 from state_and_helpers import (
@@ -35,6 +36,11 @@ from widgets_helpers import (
 )
 from ui_seamless_steps import inject_seamless_steps_css, render_clickable_summary_table, bind_summary_clicks
 from crack_checks_helpers import build_crack_check_rows_from_state, pick_governing_check_row
+from crack_side_view_diagram import (
+    _resolve_crack_diagram_window,
+    render_crack_moment_tab_plotly,
+    render_crack_side_view_diagram,
+)
 
 # Safe option lists for reinforcement inputs (same as inputs_page)
 REO_BAR_DIAS = [10, 12, 16, 20, 24, 28, 32, 36, 40]
@@ -291,15 +297,21 @@ This page checks flexural crack control in reinforced concrete beams in accordan
         st.markdown(
             """
 The aim is to verify that cracking is **controlled** so that durability and appearance are not impaired.
+
+You can:
+
+- **See behaviour (cracks)** in the side-view diagram once results are available
+- **Inspect cause (moment)** in the moment diagram—SLS bending moment, using the same cached data as Beam Actions when that page has been run
 """
         )
 
     render_result_page_title("Crack width – AS 3600:2018")
 
     # --------------------------------------------------------
-    # Reserve space for top summary (will be filled after calculations)
+    # Reserve space for top summary then diagram (filled after calculations)
     # --------------------------------------------------------
     summary_placeholder = st.empty()
+    diagram_placeholder = st.empty()
 
     # --------------------------------------------------------
     # Inputs
@@ -566,23 +578,8 @@ The aim is to verify that cracking is **controlled** so that durability and appe
     # TOP SUMMARY TABLE
     # --------------------------------------------------------
     with summary_placeholder.container():
-        # Keep only the info control; the page title already provides the heading.
-        _, sum_right = st.columns([8, 1], vertical_alignment="center")
-        with sum_right:
-            with st.popover("ℹ️ INFO"):
-                st.markdown(
-                    """
-**What this page checks**  
-This page checks **flexural crack control** for RC beams per AS 3600 using:
-- A **table stress limit** method (Cl. 8.6.2.2 / Tables 8.6.2.2(A)–(B))
-- A **direct crack-width** calculation (Cl. 8.6.2.3)
-
-**How to interpret results**  
-- The **table method** limits steel stress at SLS.
-- The **direct check** compares calculated crack width **w** against the allowable limit **w′max**.
-- The governing outcome should reflect your selected compliance rule (e.g., both checks pass).
-"""
-                )
+        # Same top-of-summary pattern as creep.py: explainer row, then table.
+        render_page_explainer_expander(_render_crack_explainer)
 
         crack_pack = build_crack_check_rows_from_state(st.session_state)
         rows = []
@@ -621,6 +618,53 @@ This page checks **flexural crack control** for RC beams per AS 3600 using:
             st.session_state[open_key] = True
         
         bind_summary_clicks()
+
+    with diagram_placeholder.container():
+        st.markdown(
+            """
+<style>
+div[data-testid="stVerticalBlock"]:has(#crack-diagram-module) [data-testid="stRadio"] {
+    margin-top: 0.15rem !important;
+    margin-bottom: 0.4rem !important;
+}
+div[data-testid="stVerticalBlock"]:has(#crack-diagram-module) [data-testid="stPlotlyChart"] {
+    margin-bottom: 0.1rem !important;
+}
+</style>
+<div id="crack-diagram-module" style="height:0;width:0;overflow:hidden;" aria-hidden="true"></div>
+""",
+            unsafe_allow_html=True,
+        )
+        seed_widget_from_shared("crack_diagram_view", "crack_diagram_panel", "Crack Diagram")
+        _gov_col, _spacer = st.columns([2.2, 3.0])
+        with _gov_col:
+            if bool(_resolve_crack_diagram_window(st.session_state).get("multi")):
+                st.markdown(
+                    '<p style="margin:0 0 0.35rem 0;font-size:0.82rem;color:#6b7280;">'
+                    "Displaying governing span"
+                    "</p>",
+                    unsafe_allow_html=True,
+                )
+        st.radio(
+            "Diagram view",
+            options=["Crack Diagram", "Moment Diagram"],
+            horizontal=True,
+            key="crack_diagram_view",
+            on_change=sync_callbacks["crack_diagram_view"],
+            label_visibility="collapsed",
+        )
+        panel = str(st.session_state.get("crack_diagram_view", "Crack Diagram") or "Crack Diagram")
+        if panel == "Moment Diagram":
+            render_crack_moment_tab_plotly()
+        else:
+            render_crack_side_view_diagram(
+                st.session_state,
+                crack_metrics={
+                    "sr_max_mm": float(sr_max),
+                    "w_calc_mm": float(w_calc),
+                    "wmax_mm": float(wmax_choice),
+                },
+            )
 
     # --------------------------------------------------------
     # Steps: 4-step format matching bending/shear
@@ -873,6 +917,7 @@ Both the table method and direct calculation checks must pass for the crack cont
 
         # ALSO publish standardized dashboard keys (already in RESULT_KEYS)
         crack_width=w_calc,
+        crack_sr_max_mm=float(sr_max),
         crack_utilisation=utilisation_w,
     )
     
