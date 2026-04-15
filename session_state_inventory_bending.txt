@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-04-14 17:09:26",
+  "timestamp": "2026-04-15 10:48:47",
   "page": "bending",
-  "boot_id": "boot_1776147959",
+  "boot_id": "boot_1776207036",
   "fresh_boot": false,
   "restored_from_snapshot": true,
-  "rendered_widget_count": 26,
-  "session_key_count": 1343,
+  "rendered_widget_count": 23,
+  "session_key_count": 1353,
   "missing_shared_for_rendered": [],
   "stray_session_keys": [
     "A_duct_total",
@@ -85,6 +85,9 @@
     "bending_bot_flange_transverse_legs",
     "bending_bot_flange_transverse_spacing",
     "bending_bot_row_1_spacing",
+    "bending_bot_row_2_bars",
+    "bending_bot_row_2_dia",
+    "bending_bot_row_2_mode",
     "bending_bot_row_2_spacing",
     "bending_bot_row_3_bars",
     "bending_bot_row_3_dia",
@@ -204,18 +207,15 @@
     "crack_bot_flange_transverse_spacing",
     "crack_bot_row_1_bars",
     "crack_bot_row_1_dia",
-    "crack_bot_row_1_mode",
-    "crack_bot_row_1_spacing",
-    "crack_bot_row_2_bars",
-    "crack_bot_row_2_dia"
+    "crack_bot_row_1_mode"
   ],
   "pairs": [
     {
       "widget_key": "bending_D",
-      "widget_val": 450.0,
+      "widget_val": 300.0,
       "widget_type": "float",
       "shared_key": "D",
-      "shared_val": 450.0,
+      "shared_val": 300.0,
       "shared_type": "float"
     },
     {
@@ -236,27 +236,27 @@
     },
     {
       "widget_key": "bending_b",
-      "widget_val": 350.0,
+      "widget_val": 250.0,
       "widget_type": "float",
       "shared_key": "b",
-      "shared_val": 350.0,
+      "shared_val": 250.0,
       "shared_type": "float"
     },
     {
       "widget_key": "bending_bot_row_1_bars",
-      "widget_val": 4,
+      "widget_val": 3,
       "widget_type": "int",
       "shared_key": "bot_row_1_bars",
-      "shared_val": 4,
+      "shared_val": 3,
       "shared_type": "int"
     },
     {
       "widget_key": "bending_bot_row_1_dia",
-      "widget_val": 28,
+      "widget_val": 10,
       "widget_type": "int",
       "shared_key": "bot_row_1_dia",
-      "shared_val": 28,
-      "shared_type": "int"
+      "shared_val": 10.0,
+      "shared_type": "float"
     },
     {
       "widget_key": "bending_bot_row_1_mode",
@@ -267,35 +267,11 @@
       "shared_type": "str"
     },
     {
-      "widget_key": "bending_bot_row_2_bars",
-      "widget_val": 0,
-      "widget_type": "int",
-      "shared_key": "bot_row_2_bars",
-      "shared_val": 0,
-      "shared_type": "int"
-    },
-    {
-      "widget_key": "bending_bot_row_2_dia",
-      "widget_val": 28,
-      "widget_type": "int",
-      "shared_key": "bot_row_2_dia",
-      "shared_val": 28,
-      "shared_type": "int"
-    },
-    {
-      "widget_key": "bending_bot_row_2_mode",
-      "widget_val": "Count",
-      "widget_type": "str",
-      "shared_key": "bot_row_2_mode",
-      "shared_val": "Count",
-      "shared_type": "str"
-    },
-    {
       "widget_key": "bending_bot_row_count",
-      "widget_val": 2,
+      "widget_val": 1,
       "widget_type": "int",
       "shared_key": "bot_row_count",
-      "shared_val": 2,
+      "shared_val": 1,
       "shared_type": "int"
     },
     {
@@ -396,7 +372,7 @@
     },
     {
       "widget_key": "inputs_load_Mstar_neg_proxy",
-      "widget_val": 7.79995,
+      "widget_val": 0.0,
       "widget_type": "float",
       "shared_key": "load_Mstar_neg_proxy",
       "shared_val": 0.0,
@@ -404,7 +380,7 @@
     },
     {
       "widget_key": "inputs_load_Mstar_pos_proxy",
-      "widget_val": 4.387491,
+      "widget_val": 0.0,
       "widget_type": "float",
       "shared_key": "load_Mstar_pos_proxy",
       "shared_val": 0.0,

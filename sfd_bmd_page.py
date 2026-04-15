@@ -4581,12 +4581,43 @@ V(x) = V_{{\\mathrm{{solver}}}}(x)
 For the {support_condition_active.lower()} indeterminate support layout, $V(x)$ is **not** a single textbook closed form for arbitrary loads; ordinates come from the numerical beam solver and match the SFD plot.
 """
     elif case == "Simple beam – UDL over entire span":
-        w = params.get("w", 0.0)
-        R = results_local.get("R", w * L / 2.0)
+        w = float(params.get("w", 0.0) or 0.0)
+        R = float(results_local.get("R", w * L / 2.0))
         V_at_0 = R
         V_at_L = -R
-        
-        step3_summary = f"Step 3 – Shear function $V(x)$ | UDL $w = {w:.1f}$ kN/m: $V(0) = {V_at_0:.1f}$ kN, $V(L) = {V_at_L:.1f}$ kN, zero at midspan"
+        if abs(w) < 1e-9:
+            x_zero_crossing = None
+        else:
+            x_zero_crossing = R / w
+
+        if x_zero_crossing is not None:
+            zero_crossing_md = (
+                f"Zero crossing at: $x = \\frac{{R_1}}{{w}} = \\frac{{{R:.3g}}}{{{w:.3g}}} = "
+                f"{x_zero_crossing:.3g}\\, \\text{{m}}$ (midspan)  \n\n"
+            )
+            step3_summary = (
+                f"Step 3 – Shear function $V(x)$ | UDL $w = {w:.1f}$ kN/m: "
+                f"$V(0) = {V_at_0:.1f}$ kN, $V(L) = {V_at_L:.1f}$ kN, zero at midspan"
+            )
+            result_shear_md = (
+                f"$V(x) = {R:.3g} - {w:.3g}x$ for $0 \\le x \\le L$. "
+                f"Linear diagram crossing zero at midspan."
+            )
+        else:
+            zero_crossing_md = (
+                "**No zero crossing** ($w \\approx 0$): with no distributed load, "
+                "$V(x)=R_1$ is **constant**, $M(x)$ is **linear**, and there is no parabolic "
+                "shear contribution from a UDL.  \n\n"
+                "*No distributed load $\\rightarrow$ no parabolic shear diagram.*  \n\n"
+            )
+            step3_summary = (
+                f"Step 3 – Shear function $V(x)$ | $w \\approx 0$: "
+                f"$V(0) = {V_at_0:.1f}$ kN, $V(L) = {V_at_L:.1f}$ kN (constant shear)"
+            )
+            result_shear_md = (
+                f"$V(x) = {R:.3g}$ for $0 \\le x \\le L$ (constant shear; $w \\approx 0$)."
+            )
+
         step3_md = f"""
 {load_intro}**1) Inputs**  \n
 - Reactions: $R_1 = R_2 = {R:.3g}\\, \\text{{kN}}$  \n
@@ -4600,9 +4631,8 @@ Taking sections from the left:  \n
 $$V(x) = R_1 - wx = {R:.3g} - {w:.3g} x, \\quad 0 \\le x \\le L$$  \n
 At $x = 0$: $V(0) = {R:.3g} - 0 = {V_at_0:.3g}\\, \\text{{kN}}$  \n
 At $x = L$: $V(L) = {R:.3g} - {w:.3g} \\times {L:.3g} = {R:.3g} - {w*L:.3g} = {V_at_L:.3g}\\, \\text{{kN}}$  \n
-Zero crossing at: $x = \\frac{{R_1}}{{w}} = \\frac{{{R:.3g}}}{{{w:.3g}}} = {R/w:.3g}\\, \\text{{m}}$ (midspan)  \n\n
-**4) Result**  \n
-$V(x) = {R:.3g} - {w:.3g}x$ for $0 \\le x \\le L$. Linear diagram crossing zero at midspan.
+{zero_crossing_md}**4) Result**  \n
+{result_shear_md}
 """
 
     elif case == "Simple beam – point load at centre":
