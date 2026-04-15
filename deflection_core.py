@@ -10,6 +10,7 @@ from deflection import (
     calc_ief_simplified,
     calc_deflection_as3600,
     calc_span_depth_limit,
+    resolve_deflection_equiv_loads_from_inputs,
 )
 
 
@@ -120,27 +121,21 @@ def compute_deflection_results(publish: bool = True) -> dict:
         support_type=support_type,
     )
     if derived["w_kN_per_m"] is not None:
-        w_used = float(derived["w_kN_per_m"])
         fd_source_branch = "sls_actions"
         fd_source_text = "Derived from SLS actions."
     elif w_sls is not None:
-        w_used = float(w_sls)
         fd_source_branch = "sls_udl"
         fd_source_text = "Using stored SLS UDL."
     else:
-        w_used = float((g_udl or 0.0) + (q_udl or 0.0))
+        fd_source_branch = "fallback"
+        fd_source_text = "Fallback value used because SLS derivation inputs were unavailable."
 
-    if w_used > 0:
-        if g_udl is not None and q_udl is not None and (g_udl + q_udl) > 0:
-            g_ratio = float(g_udl) / float(g_udl + q_udl)
-            g_equiv = w_used * g_ratio
-            q_equiv = w_used * (1.0 - g_ratio)
-        else:
-            g_equiv = w_used
-            q_equiv = 0.0
-    else:
-        g_equiv = float(g_udl or 0.0)
-        q_equiv = float(q_udl or 0.0)
+    g_equiv, q_equiv = resolve_deflection_equiv_loads_from_inputs(
+        derived=derived,
+        w_sls=w_sls,
+        g_udl=g_udl,
+        q_udl=q_udl,
+    )
 
     # Simplified section properties (for I_ef calculation)
     # If beff/bw equal b, they're using the default (redundant check, but kept for clarity)
@@ -192,7 +187,7 @@ def compute_deflection_results(publish: bool = True) -> dict:
             fd_source_branch = "sls_actions"
             fd_source_text = "Derived from SLS actions."
     
-    # Calculate deflection
+    # Calculate deflection (g_equiv + q_equiv == 0 ⇒ δ_total = 0; no implicit default UDLs)
     results = calc_deflection_as3600(
         L_m=L_eff,
         Ec=Eceff,

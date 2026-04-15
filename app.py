@@ -91,6 +91,8 @@ LABELS = [PAGES[s][0] for s in SLUGS]
 
 NAV_KEY = "nav_page_slug"  # stores the slug, e.g. "shear"
 LAST_QP_KEY = "last_qp_page_seen"   # local-only UI state
+# Set from pages rendered after the top nav radio; consumed at start of main() before that widget.
+PENDING_NAV_PAGE_SLUG_KEY = "_pending_nav_page_slug"
 
 
 def set_query_params_merge(**updates):
@@ -357,6 +359,16 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
                 _render_create_project_form(user_id, module)
 
     
+
+    # --- 0) Deferred top-level nav (e.g. Inputs landing) — must run before NAV_KEY st.radio.
+    pending_nav_slug = st.session_state.pop(PENDING_NAV_PAGE_SLUG_KEY, None)
+    if isinstance(pending_nav_slug, str) and pending_nav_slug in PAGES:
+        st.session_state[NAV_KEY] = pending_nav_slug
+        st.session_state[LAST_QP_KEY] = pending_nav_slug
+        try:
+            st.query_params["page"] = pending_nav_slug
+        except Exception:
+            pass
 
     # --- 1) Read URL param (page) and pre-set nav state BEFORE widget renders
     qp_page = st.query_params.get("page")

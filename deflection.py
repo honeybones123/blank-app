@@ -1275,6 +1275,79 @@ def _derive_equiv_udl_from_actions(M_kNm, V_kN, L_m, support_type):
     }
 
 
+def has_udl_line_loads(g_udl: float | None, q_udl: float | None) -> bool:
+    """True when explicit dead + live line UDLs (kN/m) sum to a positive value."""
+    return float(g_udl or 0.0) + float(q_udl or 0.0) > 0.0
+
+
+def resolve_deflection_equiv_loads_from_inputs(
+    *,
+    derived: dict,
+    w_sls: float | None,
+    g_udl: float | None,
+    q_udl: float | None,
+) -> tuple[float, float]:
+    """
+    Map SLS-derived / stored UDL inputs to (g_equiv, q_equiv) for calc_deflection_as3600.
+
+    ``derived`` must be the dict from ``_derive_equiv_udl_from_actions`` for the same inputs.
+    """
+    if derived["w_kN_per_m"] is not None:
+        w_used = float(derived["w_kN_per_m"])
+    elif w_sls is not None:
+        w_used = float(w_sls)
+    else:
+        w_used = float((g_udl or 0.0) + (q_udl or 0.0))
+
+    if w_used > 0:
+        if g_udl is not None and q_udl is not None and (float(g_udl) + float(q_udl)) > 0:
+            g_ratio = float(g_udl) / float(float(g_udl) + float(q_udl))
+            g_equiv = w_used * g_ratio
+            q_equiv = w_used * (1.0 - g_ratio)
+        else:
+            g_equiv = w_used
+            q_equiv = 0.0
+    else:
+        g_equiv = float(g_udl or 0.0)
+        q_equiv = float(q_udl or 0.0)
+    return g_equiv, q_equiv
+
+
+def deflection_has_service_load_for_calc() -> bool:
+    """
+    True when the resolved service UDL model has positive total load (g_equiv + q_equiv),
+    matching ``compute_deflection_results`` / the Deflection page.
+    """
+    g_udl = get_param("g_udl_kNm_per_m", None)
+    q_udl = get_param("q_udl_kNm_per_m", None)
+    w_sls = get_param("w_sls_kNm_per_m", None)
+    sls_M_kNm = get_param("sls_Mstar", 0.0)
+    sls_V_kN = get_param("sls_Vstar", 0.0)
+    L = get_param("L", 3000.0)
+    L_m = float(L or 0.0) / 1000.0
+    L_m_for_fd = get_param("defl_L_eff", L_m)
+    if L_m_for_fd is None or L_m_for_fd <= 0:
+        L_m_for_fd = get_param("span_L_m", L_m)
+    if L_m_for_fd is None:
+        L_m_for_fd = 0.0
+    support_type = get_deflection_diagram_support_condition(st.session_state).get(
+        "support_type", "Simply supported"
+    )
+    derived = _derive_equiv_udl_from_actions(
+        M_kNm=sls_M_kNm,
+        V_kN=sls_V_kN,
+        L_m=float(L_m_for_fd),
+        support_type=str(support_type),
+    )
+    g_eq, q_eq = resolve_deflection_equiv_loads_from_inputs(
+        derived=derived,
+        w_sls=w_sls,
+        g_udl=g_udl,
+        q_udl=q_udl,
+    )
+    return (float(g_eq) + float(q_eq)) > 1e-12
+
+
 # ------------------------------------------------------------
 #  Deflection helper: map load case → closed-form δ formula
 # ------------------------------------------------------------
@@ -1545,6 +1618,9 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         )
 
     render_result_page_title("Beam Deflection")
+
+    if not deflection_has_service_load_for_calc():
+        st.info("No loads applied — deflection not calculated")
 
     # Reserve space for the top summary table
     summary_placeholder = st.empty()

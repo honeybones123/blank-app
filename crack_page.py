@@ -41,6 +41,7 @@ from crack_side_view_diagram import (
     render_crack_moment_tab_plotly,
     render_crack_side_view_diagram,
 )
+from deflection import deflection_has_service_load_for_calc
 
 # Safe option lists for reinforcement inputs (same as inputs_page)
 REO_BAR_DIAS = [10, 12, 16, 20, 24, 28, 32, 36, 40]
@@ -306,6 +307,9 @@ You can:
         )
 
     render_result_page_title("Crack width – AS 3600:2018")
+
+    if not deflection_has_service_load_for_calc():
+        st.info("No loads applied — deflection not calculated")
 
     # --------------------------------------------------------
     # Reserve space for top summary then diagram (filled after calculations)

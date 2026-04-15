@@ -151,8 +151,8 @@ def publish_beam_diagram_arrays_from_session_state() -> None:
             "Simple beam – partial UDL from left (length a)",
             "Cantilever – UDL over entire span",
         ):
-            g = float(get_param("g_udl_kNm_per_m", 8.0) or 0.0)
-            q = float(get_param("q_udl_kNm_per_m", 4.0) or 0.0)
+            g = float(get_param("g_udl_kNm_per_m", 0.0) or 0.0)
+            q = float(get_param("q_udl_kNm_per_m", 0.0) or 0.0)
             psi_shared = float(get_param("psi_udl", 0.4) or 0.4)
             w_sls = g + psi_shared * q
             w_uls = gamma_g * g + gamma_q * q

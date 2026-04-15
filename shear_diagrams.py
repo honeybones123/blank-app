@@ -3085,8 +3085,8 @@ def _check6_build_sfd_params_uls(state: dict) -> tuple[str, float, dict] | None:
         except Exception:
             wu = None
         if wu is None or wu <= 0:
-            g = float(get_param("g_udl_kNm_per_m", 8.0) or 8.0)
-            q = float(get_param("q_udl_kNm_per_m", 4.0) or 4.0)
+            g = float(get_param("g_udl_kNm_per_m", 0.0) or 0.0)
+            q = float(get_param("q_udl_kNm_per_m", 0.0) or 0.0)
             wu = gamma_g * g + gamma_q * q
         params["w"] = max(float(wu), 1e-6)
         if case == "Simple beam – partial UDL from left (length a)":
@@ -3139,7 +3139,9 @@ def _check6_build_sfd_params_uls(state: dict) -> tuple[str, float, dict] | None:
     elif case in ("Simple beam – multiple point loads", "Cantilever – multiple point loads"):
         return None
     else:
-        params.setdefault("w", max(1e-6, gamma_g * 8.0 + gamma_q * 4.0))
+        _g = float(get_param("g_udl_kNm_per_m", 0.0) or 0.0)
+        _q = float(get_param("q_udl_kNm_per_m", 0.0) or 0.0)
+        params.setdefault("w", max(1e-6, gamma_g * _g + gamma_q * _q))
 
     return case, L_m, params
 

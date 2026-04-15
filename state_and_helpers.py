@@ -1005,12 +1005,12 @@ SHARED_DEFAULTS = {
     # Note: load_case is a widget key (st.selectbox), so it's managed by Streamlit, not stored here
     "span_L_m": 6.0,  # Span length (m) - default must be >= 0.1 for widget constraint
     
-    # UDL loads
-    "g_udl_kNm_per_m": 8.0,  # Dead UDL (kN/m)
-    "q_udl_kNm_per_m": 4.0,  # Live UDL (kN/m)
+    # UDL loads (defaults zero — no implicit service loads until the user or SFD sets them)
+    "g_udl_kNm_per_m": 0.0,  # Dead UDL (kN/m)
+    "q_udl_kNm_per_m": 0.0,  # Live UDL (kN/m)
     "psi_udl": 0.4,  # Sustained factor for UDL
-    "w_sls_kNm_per_m": 9.6,  # SLS UDL: g + psi_s * q (kN/m)
-    "w_uls_kNm_per_m": 13.2,  # ULS UDL: γ_G * g + γ_Q * q (kN/m)
+    "w_sls_kNm_per_m": 0.0,  # SLS UDL (kN/m); align with g+q / teaching page when used
+    "w_uls_kNm_per_m": 0.0,  # ULS UDL (kN/m)
     
     # Point loads
     "G_point_kN": 50.0,  # Dead point load (kN)

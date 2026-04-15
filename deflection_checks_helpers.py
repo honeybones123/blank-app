@@ -36,8 +36,11 @@ def build_deflection_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str
 
     # -------- Read only inputs (fallback for recompute) ----------
     L_m = float(get_param("span_L_m", get_param("L_m", st_state.get("span_L_m", st_state.get("L_m", 0.0)))) or 0.0)
-    g_kNm = float(get_param("g_udl_kNm_per_m", get_param("g_kNm", get_param("g_line_kNm", 0.0))) or 0.0)
-    q_kNm = float(get_param("q_udl_kNm_per_m", get_param("q_kNm", get_param("q_line_kNm", 0.0))) or 0.0)
+    g_udl_raw = get_param("g_udl_kNm_per_m", get_param("g_kNm", get_param("g_line_kNm", 0.0)))
+    q_udl_raw = get_param("q_udl_kNm_per_m", get_param("q_kNm", get_param("q_line_kNm", 0.0)))
+    g_kNm = float(g_udl_raw or 0.0)
+    q_kNm = float(q_udl_raw or 0.0)
+    w_sls_fb = get_param("w_sls_kNm_per_m", None)
 
     defl_limit_ratio = float(get_deflection_limit_ratio(get_param("defl_limit_ratio", st_state.get("defl_limit_ratio", 250.0))))
     support_type = get_resolved_deflection_support_type(st_state)
@@ -69,7 +72,11 @@ def build_deflection_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str
         or delta_total is None
         or defl_limit_mm is None
     ):
-        from deflection import calc_deflection_as3600, _derive_equiv_udl_from_actions
+        from deflection import (
+            calc_deflection_as3600,
+            _derive_equiv_udl_from_actions,
+            resolve_deflection_equiv_loads_from_inputs,
+        )
 
         sls_Mstar = get_param("sls_Mstar", None)
         sls_Vstar = get_param("sls_Vstar", None)
@@ -79,30 +86,33 @@ def build_deflection_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str
             L_m=L_m,
             support_type=support_type,
         )
-        w_used = derived["w_kN_per_m"] if derived["w_kN_per_m"] is not None else (g_kNm + q_kNm)
-        if w_used > 0 and (g_kNm + q_kNm) > 0:
-            g_ratio = g_kNm / (g_kNm + q_kNm)
-            g_used = w_used * g_ratio
-            q_used = w_used * (1.0 - g_ratio)
-        else:
-            g_used = w_used
-            q_used = 0.0 if w_used > 0 else q_kNm
-
-        results = calc_deflection_as3600(
-            L_m=L_m,
-            Ec=Ec,
-            Ief=Ief,
-            g_kNm=g_used,
-            q_kNm=q_used,
-            psi_s=psi_s,
-            support_type=support_type,
-            Ast=Ast,
-            Asc=Asc,
+        g_used, q_used = resolve_deflection_equiv_loads_from_inputs(
+            derived=derived,
+            w_sls=w_sls_fb,
+            g_udl=g_udl_raw,
+            q_udl=q_udl_raw,
         )
 
-        delta_short_total = float(results.get("delta_short_total", 0.0) or 0.0)
-        delta_long_add = float(results.get("delta_long_add", 0.0) or 0.0)
-        delta_total = float(results.get("delta_total", delta_short_total + delta_long_add) or 0.0)
+        if (float(g_used) + float(q_used)) <= 1e-12:
+            delta_short_total = 0.0
+            delta_long_add = 0.0
+            delta_total = 0.0
+        else:
+            results = calc_deflection_as3600(
+                L_m=L_m,
+                Ec=Ec,
+                Ief=Ief,
+                g_kNm=g_used,
+                q_kNm=q_used,
+                psi_s=psi_s,
+                support_type=support_type,
+                Ast=Ast,
+                Asc=Asc,
+            )
+
+            delta_short_total = float(results.get("delta_short_total", 0.0) or 0.0)
+            delta_long_add = float(results.get("delta_long_add", 0.0) or 0.0)
+            delta_total = float(results.get("delta_total", delta_short_total + delta_long_add) or 0.0)
 
         if defl_limit_mm is None or defl_limit_mm <= 0:
             L_mm = L_m * 1000.0

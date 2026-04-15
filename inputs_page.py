@@ -97,6 +97,143 @@ INPUTS_PAGE_TAB_KEYS = {sk: wk for wk, sk in TAB_KEYS.items() if str(wk).startsw
 
 RESULT_CACHE_KEY = "cached_results"
 
+# Landing card (empty dashboard) — scroll handoff for "Go to Design Inputs"
+_INPUTS_SCROLL_DESIGN_ACTIONS_FLAG = "_inputs_pending_scroll_design_actions"
+# Must match app.PENDING_NAV_PAGE_SLUG_KEY (inputs_page cannot import app — circular).
+_INPUTS_PENDING_NAV_PAGE_SLUG_KEY = "_pending_nav_page_slug"
+_INPUTS_DESIGN_ACTIONS_ANCHOR_ID = "inputs_design_actions_anchor"
+
+
+def inputs_show_landing_dashboard() -> bool:
+    """
+    True when there are no ULS design actions and no line UDL loads (g+q).
+    Design mode (Fast vs Detailed) does not hide the card.
+    Uses existing session / shared state via get_param (no new state keys for detection).
+    """
+    M_u = float(get_param("uls_Mstar", 0.0) or 0.0)
+    V_u = float(get_param("uls_Vstar", 0.0) or 0.0)
+    sigma_raw = get_param("sigma_sr", None)
+    if sigma_raw is None:
+        sigma_raw = get_param("sigma_s_sls", 0.0)
+    sigma_sr = float(sigma_raw or 0.0)
+    g_udl = float(get_param("g_udl_kNm_per_m", 0.0) or 0.0)
+    q_udl = float(get_param("q_udl_kNm_per_m", 0.0) or 0.0)
+
+    no_design_actions = abs(M_u) < 1e-15 and abs(V_u) < 1e-15 and abs(sigma_sr) < 1e-15
+    no_loads = abs(g_udl) < 1e-15 and abs(q_udl) < 1e-15
+    return bool(no_design_actions and no_loads)
+
+
+def render_inputs_landing_card(*, sync_callbacks: dict | None = None) -> None:
+    """Centered welcome card when no design actions or loads (Fast mode only)."""
+    if sync_callbacks is None:
+        raw = get_sync_callbacks()
+        sync_callbacks = (
+            _wrap_inputs_sync_callbacks(raw, log_debug)
+            if _INPUTS_DEBUG_AUDIT
+            else raw
+        )
+    st.markdown(
+        """
+<style>
+.inputs-landing-wrap {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+  margin: 0.5rem 0 1.25rem 0;
+  padding: 1.35rem 1.25rem 1.45rem 1.25rem;
+  border-radius: 12px;
+  background: linear-gradient(165deg, rgba(31,119,180,0.06) 0%, rgba(49,51,63,0.04) 100%);
+  border: 1px solid rgba(49,51,63,0.08);
+  box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+}
+.inputs-landing-wrap h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.35rem;
+  font-weight: 650;
+  color: rgba(49,51,63,0.95);
+}
+.inputs-landing-wrap p.lead {
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  line-height: 1.45;
+  color: rgba(49,51,63,0.78);
+}
+.inputs-landing-options {
+  margin: 0.75rem 0 0.35rem 0;
+  padding-left: 1.1rem;
+  color: rgba(49,51,63,0.82);
+  font-size: 0.95rem;
+}
+.inputs-landing-options li { margin: 0.35rem 0; }
+</style>
+""",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        """
+<div class="inputs-landing-wrap">
+  <h3>Start Your Design</h3>
+  <p class="lead">This tool requires design actions or applied loads to begin.</p>
+  <p style="margin:0 0 0.25rem 0;font-weight:600;font-size:0.92rem;color:rgba(49,51,63,0.72);">You can:</p>
+  <ul class="inputs-landing-options">
+    <li>Enter design actions (M*, V*, σ)</li>
+    <li>Use the Design Mode to generate loads automatically</li>
+  </ul>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+    b1, b2 = st.columns(2, gap="small")
+    with b1:
+        if st.button("Go to Design Inputs", key="inputs_landing_go_design_inputs", use_container_width=True):
+            st.session_state[_INPUTS_SCROLL_DESIGN_ACTIONS_FLAG] = True
+            st.rerun()
+    with b2:
+        if st.button("Open Design Mode", key="inputs_landing_open_detailed", use_container_width=True):
+            # Nav only (Fast stays default): do not set inputs_detailed_mode / toggle here.
+            st.session_state[_INPUTS_PENDING_NAV_PAGE_SLUG_KEY] = "design"
+            st.rerun()
+
+
+def _inputs_inject_scroll_to_design_actions() -> None:
+    """Scroll main view to the Design Actions anchor (one-shot)."""
+    if not st.session_state.pop(_INPUTS_SCROLL_DESIGN_ACTIONS_FLAG, False):
+        return
+    import json
+    import streamlit.components.v1 as components
+
+    aid = json.dumps(_INPUTS_DESIGN_ACTIONS_ANCHOR_ID)
+    components.html(
+        f"""
+<script>
+(function() {{
+  const doc = window.parent.document;
+  const id = {aid};
+  let tries = 0;
+  function tick() {{
+    const el = doc.getElementById(id);
+    if (el) {{
+      try {{ el.scrollIntoView({{ behavior: "smooth", block: "start" }}); }} catch (e) {{}}
+      return;
+    }}
+    tries += 1;
+    if (tries < 80) setTimeout(tick, 50);
+  }}
+  setTimeout(tick, 120);
+}})();
+</script>
+""",
+        height=0,
+    )
+
+
+def render_landing_card(*, sync_callbacks: dict | None = None) -> None:
+    """Landing card entrypoint; pass ``sync_callbacks`` from ``render_inputs`` when available."""
+    render_inputs_landing_card(sync_callbacks=sync_callbacks)
+
+
 from widgets_helpers import (
     apply_global_widget_css,
     apply_calcbox_css,
@@ -19273,6 +19410,10 @@ def render_inputs():
         right_diagram = None
 
     with actions_slot:
+        st.markdown(
+            f'<div id="{_INPUTS_DESIGN_ACTIONS_ANCHOR_ID}" style="height:0;margin:0;padding:0;"></div>',
+            unsafe_allow_html=True,
+        )
         # --- Design Actions ---
         title_col, info_col = st.columns([20, 1], gap="small")
         with title_col:
@@ -20495,11 +20636,13 @@ tr:hover .hint { opacity: 1; }
     # Render the summary back at the very top (where summary_container was created)
     with summary_container:
         st.title("Inputs")
-        results = st.session_state.get(RESULT_CACHE_KEY)
-        if results is None:
-            st.info("Enter design actions to generate results")
+        show_landing = inputs_show_landing_dashboard()
+        if show_landing:
+            render_landing_card(sync_callbacks=sync_callbacks)
         else:
-            render_summary_table(results)
+            render_summary_table(st.session_state.get(RESULT_CACHE_KEY))
+
+    _inputs_inject_scroll_to_design_actions()
 
     if bool(st.session_state.get("_dev_mode")):
         _agent_debug_log(

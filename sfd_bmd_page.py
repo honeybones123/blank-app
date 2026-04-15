@@ -2898,7 +2898,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         g = render_inline_number_row(
             "Dead UDL g (kN/m)",
             key="load_g_udl",
-            value=float(st.session_state.get("load_g_udl", get_param("g_udl_kNm_per_m", 8.0))),
+            value=float(st.session_state.get("load_g_udl", get_param("g_udl_kNm_per_m", 0.0))),
             min_value=0.0,
             step=1.0,
             format="%.1f",
@@ -2909,7 +2909,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         q = render_inline_number_row(
             "Live UDL q (kN/m)",
             key="load_q_udl",
-            value=float(st.session_state.get("load_q_udl", get_param("q_udl_kNm_per_m", 4.0))),
+            value=float(st.session_state.get("load_q_udl", get_param("q_udl_kNm_per_m", 0.0))),
             min_value=0.0,
             step=1.0,
             format="%.1f",
