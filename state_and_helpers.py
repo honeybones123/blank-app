@@ -3,12 +3,14 @@ import uuid
 import time
 import os
 import json
+import hashlib
 import copy
 import traceback
 import json
 import os
 import inspect
 import traceback
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
 import streamlit as st
@@ -23,27 +25,25 @@ def is_missing(v) -> bool:
 def ss_get(key: str, default=_MISSING):
     return st.session_state.get(key, default)
 
-# region agent log
-def _dbg_log(payload: dict) -> None:
-    try:
-        with open(
-            "/Users/jonathonleggo/Library/CloudStorage/OneDrive-Personal/Documents/GitHub/blank-app/.cursor/debug.log",
-            "a",
-            encoding="utf-8",
-        ) as _f:
-            _f.write(json.dumps(payload) + "\n")
-    except Exception:
-        pass
-# endregion
 
-# region agent log
-def _agent_dbg_log(message: str, data: dict, *, run_id: str, hypothesis_id: str) -> None:
-    return
-# endregion
 
 # ============================================================
 #  SESSION STATE CONTRACT  (READ THIS BEFORE EDITING ANYTHING)
 # ============================================================
+
+# ------------------------------------------------------------
+# SHEAR SPACING CONTRACT (canonical s_lig vs mirrors vs derived)
+# ------------------------------------------------------------
+SHEAR_SPACING_CONTRACT_DOC = """
+SHEAR SPACING CONTRACT
+
+- s_lig is the canonical user-provided shear link spacing in shared state.
+- inputs_s_lig and shear_s_lig are page-local widget mirrors only.
+- Off-page widget mirrors may lag until hydration and must not be treated as canonical truth.
+- effective/governing spacing used in checks is derived only.
+- Derived spacing must never overwrite s_lig during normal compute.
+- Contracts should hard-fail only when the active page widget disagrees with shared state.
+"""
 
 # Debug output directory (for sync trace files)
 DEBUG_OUT_DIR = Path(".")  # app root; same place your other audits are being written
@@ -67,6 +67,428 @@ def _debug_log_path() -> str:
 
 # Provide a module-level debug log path so any debug blocks can safely reference it
 log_path = _debug_log_path()
+
+
+_SPEED_PROFILE_ENV = "AUTO_DESIGN_SPEED_PROFILE"
+_SPEED_PROFILE_STATS_KEY = "_speed_profile_stats"
+_SPEED_PROFILE_LAST_RUN_KEY = "_speed_profile_last_run"
+_RERUN_PURE_CACHE_KEY = "_rerun_pure_cache"
+_UX_LATENCY_PROBE_KEY = "_ux_latency_probe"
+_UX_LATENCY_PROBE_ENV = "CODEX_BROWSER_TEST_MODE"
+_RENDER_TIMING_EVENTS_KEY = "_render_timing_events"
+_RENDER_TIMING_STATE_KEY = "_render_timing_state"
+_RENDER_TIMING_TRACE_PATH_KEY = "_render_timing_trace_path"
+_RENDER_TIMING_ENV = "CODEX_RENDER_TIMING_TRACE"
+
+
+def speed_profile_enabled() -> bool:
+    return os.environ.get(_SPEED_PROFILE_ENV, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def ux_latency_probe_enabled() -> bool:
+    raw = os.environ.get(_UX_LATENCY_PROBE_ENV, "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+def _ux_fingerprint_key(fingerprint) -> str:
+    if fingerprint is None:
+        return ""
+    try:
+        return json.dumps(fingerprint, sort_keys=True, default=str)
+    except Exception:
+        return repr(fingerprint)
+
+
+def ux_probe_begin_rerun(*, page_slug: str | None = None) -> None:
+    if not ux_latency_probe_enabled():
+        return
+    prev = dict(st.session_state.get(_UX_LATENCY_PROBE_KEY) or {})
+    rerun_seq = int(prev.get("rerun_seq") or 0) + 1
+    st.session_state[_UX_LATENCY_PROBE_KEY] = {
+        "rerun_seq": rerun_seq,
+        "rerun_started_ms": int(time.time() * 1000),
+        "page_slug": page_slug,
+        "counts": {},
+    }
+
+
+def ux_probe_set_page_slug(page_slug: str | None) -> None:
+    if not ux_latency_probe_enabled():
+        return
+    probe = dict(st.session_state.get(_UX_LATENCY_PROBE_KEY) or {})
+    if not probe:
+        ux_probe_begin_rerun(page_slug=page_slug)
+        return
+    probe["page_slug"] = page_slug
+    st.session_state[_UX_LATENCY_PROBE_KEY] = probe
+
+
+def ux_probe_record(name: str, *, fingerprint=None, cache_hit: bool | None = None, meta: dict | None = None) -> None:
+    if not ux_latency_probe_enabled():
+        return
+    key = str(name or "").strip()
+    if not key:
+        return
+    probe = dict(st.session_state.get(_UX_LATENCY_PROBE_KEY) or {})
+    if not probe:
+        ux_probe_begin_rerun()
+        probe = dict(st.session_state.get(_UX_LATENCY_PROBE_KEY) or {})
+    counts = dict(probe.get("counts") or {})
+    entry = dict(counts.get(key) or {})
+    entry["count"] = int(entry.get("count") or 0) + 1
+    if cache_hit is True:
+        entry["cache_hit_count"] = int(entry.get("cache_hit_count") or 0) + 1
+    fps = dict(entry.get("fingerprints") or {})
+    fp_key = _ux_fingerprint_key(fingerprint)
+    if fp_key:
+        fp_entry = dict(fps.get(fp_key) or {})
+        fp_entry["count"] = int(fp_entry.get("count") or 0) + 1
+        if cache_hit is True:
+            fp_entry["cache_hit_count"] = int(fp_entry.get("cache_hit_count") or 0) + 1
+        if meta:
+            try:
+                elapsed_ms = float(dict(meta).get("elapsed_ms") or 0.0)
+            except Exception:
+                elapsed_ms = 0.0
+            if elapsed_ms > 0.0:
+                fp_entry["total_ms"] = float(fp_entry.get("total_ms") or 0.0) + elapsed_ms
+                fp_entry["worst_ms"] = max(float(fp_entry.get("worst_ms") or 0.0), elapsed_ms)
+            fp_entry["last_meta"] = dict(meta)
+        fps[fp_key] = fp_entry
+    if meta:
+        entry["last_meta"] = dict(meta)
+        try:
+            elapsed_ms = float(dict(meta).get("elapsed_ms") or 0.0)
+        except Exception:
+            elapsed_ms = 0.0
+        if elapsed_ms > 0.0:
+            entry["total_ms"] = float(entry.get("total_ms") or 0.0) + elapsed_ms
+            entry["worst_ms"] = max(float(entry.get("worst_ms") or 0.0), elapsed_ms)
+    entry["fingerprints"] = fps
+    counts[key] = entry
+    probe["counts"] = counts
+    events = list(probe.get("recent_events") or [])
+    event_payload = {
+        "timestamp_ms": int(time.time() * 1000),
+        "name": key,
+        "cache_hit": cache_hit,
+        "fingerprint_sha1": (
+            hashlib.sha1(str(fp_key).encode("utf-8", errors="replace")).hexdigest()[:16]
+            if fp_key else None
+        ),
+        "meta": dict(meta or {}),
+    }
+    events.append(event_payload)
+    probe["recent_events"] = events[-200:]
+    st.session_state[_UX_LATENCY_PROBE_KEY] = probe
+
+
+def get_ux_latency_probe_summary() -> dict:
+    probe = dict(st.session_state.get(_UX_LATENCY_PROBE_KEY) or {})
+    counts_out = {}
+    for name, payload in dict(probe.get("counts") or {}).items():
+        fp_payload = dict(payload.get("fingerprints") or {})
+        fp_counts = [int(dict(v or {}).get("count") or 0) for v in fp_payload.values()]
+        duplicate_count = sum(max(0, c - 1) for c in fp_counts)
+        top_fingerprints = []
+        for fp_key, fp_value in fp_payload.items():
+            fp_dict = dict(fp_value or {})
+            count = int(fp_dict.get("count") or 0)
+            total_ms = float(fp_dict.get("total_ms") or 0.0)
+            duplicate_eval_count = max(0, count - 1)
+            top_fingerprints.append(
+                {
+                    "fingerprint_sha1": hashlib.sha1(str(fp_key).encode("utf-8", errors="replace")).hexdigest()[:16],
+                    "count": count,
+                    "cache_hit_count": int(fp_dict.get("cache_hit_count") or 0),
+                    "duplicate_count": duplicate_eval_count,
+                    "total_ms": round(total_ms, 3),
+                    "avg_ms": round(total_ms / count, 3) if count else 0.0,
+                    "worst_ms": round(float(fp_dict.get("worst_ms") or 0.0), 3),
+                    "last_meta": dict(fp_dict.get("last_meta") or {}),
+                }
+            )
+        top_fingerprints.sort(
+            key=lambda item: (
+                -int(item.get("duplicate_count") or 0),
+                -int(item.get("count") or 0),
+                -float(item.get("total_ms") or 0.0),
+            )
+        )
+        total_ms = float(payload.get("total_ms") or 0.0)
+        counts_out[name] = {
+            "count": int(payload.get("count") or 0),
+            "cache_hit_count": int(payload.get("cache_hit_count") or 0),
+            "unique_fingerprint_count": len(fp_payload),
+            "duplicate_count": duplicate_count,
+            "total_ms": round(total_ms, 3),
+            "avg_ms": round(total_ms / int(payload.get("count") or 1), 3) if int(payload.get("count") or 0) else 0.0,
+            "worst_ms": round(float(payload.get("worst_ms") or 0.0), 3),
+            "top_repeated_fingerprints": top_fingerprints[:10],
+            "last_meta": dict(payload.get("last_meta") or {}),
+        }
+    return {
+        "enabled": ux_latency_probe_enabled(),
+        "rerun_seq": probe.get("rerun_seq"),
+        "rerun_started_ms": probe.get("rerun_started_ms"),
+        "page_slug": probe.get("page_slug"),
+        "counts": counts_out,
+        "recent_events": list(probe.get("recent_events") or [])[-80:],
+    }
+
+
+def render_timing_trace_enabled() -> bool:
+    return (
+        os.environ.get(_RENDER_TIMING_ENV, "").strip().lower() in ("1", "true", "yes", "on")
+        or os.environ.get("CODEX_BROWSER_TEST_MODE", "").strip().lower() in ("1", "true", "yes", "on")
+    )
+
+
+def _render_timing_trace_path() -> str | None:
+    if not render_timing_trace_enabled():
+        return None
+    try:
+        path = st.session_state.get(_RENDER_TIMING_TRACE_PATH_KEY)
+        if not path:
+            os.makedirs(os.path.join("artifacts", "performance"), exist_ok=True)
+            stamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+            path = os.path.join("artifacts", "performance", f"product_render_timing_{stamp}.jsonl")
+            st.session_state[_RENDER_TIMING_TRACE_PATH_KEY] = path
+        return str(path)
+    except Exception:
+        return None
+
+
+def render_timing_begin_rerun(**meta) -> None:
+    now_perf = time.perf_counter()
+    rerun_seq = int(st.session_state.get("_render_timing_rerun_seq") or 0) + 1
+    st.session_state["_render_timing_rerun_seq"] = rerun_seq
+    st.session_state[_RENDER_TIMING_STATE_KEY] = {
+        "rerun_seq": rerun_seq,
+        "started_perf": now_perf,
+        "last_perf": now_perf,
+        "started_at_ms": int(time.time() * 1000),
+        "meta": dict(meta or {}),
+    }
+    st.session_state[_RENDER_TIMING_EVENTS_KEY] = []
+    render_timing_mark("render.rerun_start", **meta)
+
+
+def render_timing_mark(name: str, **meta) -> None:
+    label = str(name or "").strip()
+    if not label:
+        return
+    try:
+        state = dict(st.session_state.get(_RENDER_TIMING_STATE_KEY) or {})
+        if not state:
+            now_perf = time.perf_counter()
+            state = {
+                "rerun_seq": int(st.session_state.get("_render_timing_rerun_seq") or 0),
+                "started_perf": now_perf,
+                "last_perf": now_perf,
+                "started_at_ms": int(time.time() * 1000),
+                "meta": {},
+            }
+        now_perf = time.perf_counter()
+        started_perf = float(state.get("started_perf") or now_perf)
+        last_perf = float(state.get("last_perf") or started_perf)
+        elapsed_ms = (now_perf - started_perf) * 1000.0
+        delta_ms = (now_perf - last_perf) * 1000.0
+        state["last_perf"] = now_perf
+        st.session_state[_RENDER_TIMING_STATE_KEY] = state
+        event = {
+            "timestamp_ms": int(time.time() * 1000),
+            "rerun_seq": state.get("rerun_seq"),
+            "name": label,
+            "elapsed_ms": round(elapsed_ms, 3),
+            "delta_ms": round(delta_ms, 3),
+            "page_slug": st.session_state.get("page_slug") or st.session_state.get("_active_page_slug"),
+            "meta": dict(meta or {}),
+        }
+        events = list(st.session_state.get(_RENDER_TIMING_EVENTS_KEY) or [])
+        events.append(event)
+        st.session_state[_RENDER_TIMING_EVENTS_KEY] = events[-300:]
+        path = _render_timing_trace_path()
+        if path:
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(event, default=str) + "\n")
+    except Exception:
+        pass
+
+
+def get_render_timing_summary(*, long_block_threshold_ms: float = 1000.0) -> dict:
+    state = dict(st.session_state.get(_RENDER_TIMING_STATE_KEY) or {})
+    events = list(st.session_state.get(_RENDER_TIMING_EVENTS_KEY) or [])
+    threshold = max(0.0, float(long_block_threshold_ms or 0.0))
+    long_blocks = [
+        dict(event)
+        for event in events
+        if float(dict(event).get("delta_ms") or 0.0) >= threshold
+    ]
+    first_input_index = None
+    for idx, event in enumerate(events):
+        if str(dict(event).get("name") or "").startswith("inputs_page.first_visible_input."):
+            first_input_index = idx
+            break
+    before_first_input_long_blocks = []
+    if first_input_index is not None:
+        before_first_input_long_blocks = [
+            dict(event)
+            for event in events[: first_input_index + 1]
+            if float(dict(event).get("delta_ms") or 0.0) >= threshold
+        ]
+    return {
+        "enabled": render_timing_trace_enabled(),
+        "rerun_seq": state.get("rerun_seq"),
+        "started_at_ms": state.get("started_at_ms"),
+        "trace_path": st.session_state.get(_RENDER_TIMING_TRACE_PATH_KEY),
+        "event_count": len(events),
+        "events": events[-120:],
+        "long_block_threshold_ms": threshold,
+        "long_blocks": long_blocks[-40:],
+        "before_first_visible_input_long_blocks": before_first_input_long_blocks[-20:],
+    }
+
+
+def _speed_profile_update_bucket(bucket: dict, elapsed_ms: float, category: str) -> dict:
+    out = dict(bucket or {})
+    out["category"] = str(out.get("category") or category or "compute")
+    out["count"] = int(out.get("count") or 0) + 1
+    out["total_ms"] = float(out.get("total_ms") or 0.0) + float(elapsed_ms)
+    out["worst_ms"] = max(float(out.get("worst_ms") or 0.0), float(elapsed_ms))
+    return out
+
+
+def reset_speed_profile_last_run() -> None:
+    if not speed_profile_enabled():
+        return
+    st.session_state[_SPEED_PROFILE_LAST_RUN_KEY] = {
+        "started_at_ms": int(time.time() * 1000),
+        "sections": {},
+    }
+
+
+def speed_profile_record(name: str, elapsed_ms: float, category: str = "compute") -> None:
+    if not speed_profile_enabled():
+        return
+    section = str(name or "").strip()
+    if not section:
+        return
+    elapsed = max(0.0, float(elapsed_ms or 0.0))
+    stats = dict(st.session_state.get(_SPEED_PROFILE_STATS_KEY) or {})
+    stats[section] = _speed_profile_update_bucket(stats.get(section) or {}, elapsed, category)
+    st.session_state[_SPEED_PROFILE_STATS_KEY] = stats
+
+    last_run = dict(st.session_state.get(_SPEED_PROFILE_LAST_RUN_KEY) or {})
+    last_sections = dict(last_run.get("sections") or {})
+    last_sections[section] = _speed_profile_update_bucket(last_sections.get(section) or {}, elapsed, category)
+    last_run["sections"] = last_sections
+    st.session_state[_SPEED_PROFILE_LAST_RUN_KEY] = last_run
+
+
+@contextmanager
+def speed_profile_section(name: str, category: str = "compute"):
+    if not speed_profile_enabled():
+        yield
+        return
+    t0 = time.perf_counter()
+    try:
+        yield
+    finally:
+        speed_profile_record(name, (time.perf_counter() - t0) * 1000.0, category=category)
+
+
+def speed_profiled(name: str, category: str = "compute"):
+    def _decorator(fn):
+        def _wrapped(*args, **kwargs):
+            with speed_profile_section(name, category=category):
+                return fn(*args, **kwargs)
+        _wrapped.__name__ = getattr(fn, "__name__", "_wrapped")
+        _wrapped.__doc__ = getattr(fn, "__doc__", None)
+        _wrapped.__qualname__ = getattr(fn, "__qualname__", _wrapped.__name__)
+        return _wrapped
+    return _decorator
+
+
+def get_speed_profile_summary(*, top_n: int | None = None) -> dict:
+    stats = dict(st.session_state.get(_SPEED_PROFILE_STATS_KEY) or {})
+    sections = []
+    for name, payload in stats.items():
+        total_ms = float(payload.get("total_ms") or 0.0)
+        count = int(payload.get("count") or 0)
+        sections.append(
+            {
+                "name": name,
+                "category": str(payload.get("category") or "compute"),
+                "count": count,
+                "total_ms": round(total_ms, 3),
+                "avg_ms": round(total_ms / count, 3) if count else 0.0,
+                "worst_ms": round(float(payload.get("worst_ms") or 0.0), 3),
+            }
+        )
+    sections.sort(key=lambda item: (-float(item.get("total_ms") or 0.0), -float(item.get("worst_ms") or 0.0), item.get("name") or ""))
+    if top_n is not None:
+        sections = sections[: max(0, int(top_n))]
+
+    last_run = dict(st.session_state.get(_SPEED_PROFILE_LAST_RUN_KEY) or {})
+    last_sections_out = []
+    for name, payload in dict(last_run.get("sections") or {}).items():
+        total_ms = float(payload.get("total_ms") or 0.0)
+        count = int(payload.get("count") or 0)
+        last_sections_out.append(
+            {
+                "name": name,
+                "category": str(payload.get("category") or "compute"),
+                "count": count,
+                "total_ms": round(total_ms, 3),
+                "avg_ms": round(total_ms / count, 3) if count else 0.0,
+                "worst_ms": round(float(payload.get("worst_ms") or 0.0), 3),
+            }
+        )
+    last_sections_out.sort(key=lambda item: (-float(item.get("total_ms") or 0.0), -float(item.get("worst_ms") or 0.0), item.get("name") or ""))
+
+    return {
+        "enabled": speed_profile_enabled(),
+        "sections": sections,
+        "last_run_started_at_ms": last_run.get("started_at_ms"),
+        "last_run_sections": last_sections_out,
+    }
+
+
+def reset_rerun_pure_caches() -> None:
+    st.session_state[_RERUN_PURE_CACHE_KEY] = {}
+
+
+def _rerun_cache_namespace(namespace: str) -> dict:
+    cache = dict(st.session_state.get(_RERUN_PURE_CACHE_KEY) or {})
+    scoped = dict(cache.get(namespace) or {})
+    cache[namespace] = scoped
+    st.session_state[_RERUN_PURE_CACHE_KEY] = cache
+    return scoped
+
+
+def get_rerun_pure_cache(namespace: str, fingerprint) -> object | None:
+    scoped = _rerun_cache_namespace(namespace)
+    return copy.deepcopy(scoped.get(fingerprint))
+
+
+def set_rerun_pure_cache(namespace: str, fingerprint, value) -> None:
+    cache = dict(st.session_state.get(_RERUN_PURE_CACHE_KEY) or {})
+    scoped = dict(cache.get(namespace) or {})
+    scoped[fingerprint] = copy.deepcopy(value)
+    cache[namespace] = scoped
+    st.session_state[_RERUN_PURE_CACHE_KEY] = cache
+
+
+def stable_fingerprint_for_payload(payload: dict | None) -> tuple:
+    serialised: list[tuple[str, str]] = []
+    for key, value in sorted(dict(payload or {}).items(), key=lambda item: str(item[0])):
+        try:
+            encoded = json.dumps(value, sort_keys=True, default=str)
+        except Exception:
+            encoded = repr(value)
+        serialised.append((str(key), encoded))
+    return tuple(serialised)
 
 
 def _debug_snapshot_path() -> str:
@@ -455,6 +877,100 @@ def summarize_longitudinal_rows(section: str, source: dict | None = None) -> str
     parts = [part for part in parts if part]
     return "; ".join(parts) if parts else "-"
 
+
+def build_legacy_longitudinal_mirrors_from_rows(source: dict | None = None) -> dict:
+    """
+    Derive legacy longitudinal reinforcement mirrors from the row-model only.
+
+    This is one-way compatibility state for older summary/bending/guidance paths:
+    row-model fields are authoritative; stale legacy ``bot1_count`` / ``Ast_bot``-style
+    fields are never pushed back into the row model.
+    """
+    src = source if isinstance(source, dict) else st.session_state
+    bot_rows_all = get_longitudinal_row_inputs("bot", source=src)
+    top_rows_all = get_longitudinal_row_inputs("top", source=src)
+    bot_rows = [row for row in bot_rows_all if row.get("active")]
+    top_rows = [row for row in top_rows_all if row.get("active")]
+
+    def _row_at(rows: list[dict], idx: int) -> dict | None:
+        return rows[idx] if idx < len(rows) else None
+
+    def _bars(row: dict | None) -> int:
+        if not row or not row.get("active"):
+            return 0
+        return max(0, _safe_int((row or {}).get("bars"), 0))
+
+    def _dia(row: dict | None) -> float:
+        if not row or not row.get("active"):
+            return 0.0
+        return max(0.0, _safe_float((row or {}).get("dia"), 0.0))
+
+    def _spacing(row: dict | None) -> float:
+        if not row or not row.get("active"):
+            return 0.0
+        return max(0.0, _safe_float((row or {}).get("spacing"), 0.0))
+
+    def _entry(row: dict | None) -> float:
+        if not row or not row.get("active"):
+            return 0.0
+        if str((row or {}).get("mode", "Count") or "Count") == "Spacing":
+            return _spacing(row)
+        return float(_bars(row))
+
+    def _area(rows: list[dict]) -> float:
+        total = 0.0
+        for row in rows:
+            total += float(_bars(row)) * math.pi * float(_dia(row)) ** 2 / 4.0
+        return float(total)
+
+    bot_1 = _row_at(bot_rows, 0)
+    bot_2 = _row_at(bot_rows, 1)
+    top_1 = _row_at(top_rows, 0)
+    top_2 = _row_at(top_rows, 1)
+
+    mirrors = {
+        "bot1_count": _bars(bot_1),
+        "bot2_count": _bars(bot_2),
+        "top1_count": _bars(top_1),
+        "top2_count": _bars(top_2),
+        "nb_bot": int(sum(_bars(row) for row in bot_rows)),
+        "nb_top": int(sum(_bars(row) for row in top_rows)),
+        "db_bot_1": _dia(bot_1),
+        "db_bot_2": _dia(bot_2),
+        "db_top_1": _dia(top_1),
+        "db_top_2": _dia(top_2),
+        "db_bot": _dia(bot_1),
+        "db_top": _dia(top_1),
+        "bot_entry": _entry(bot_1),
+        "top_entry": _entry(top_1),
+        "s_bot": _spacing(bot_1),
+        "s_top": _spacing(top_1),
+        "total_bot_bars": int(sum(_bars(row) for row in bot_rows)),
+        "total_top_bars": int(sum(_bars(row) for row in top_rows)),
+        "Ast_bot": _area(bot_rows),
+        "Ast_top": _area(top_rows),
+    }
+
+    def _differs(key: str, value) -> bool:
+        cur = src.get(key)
+        if isinstance(value, float):
+            try:
+                return abs(float(cur) - float(value)) > 1e-6
+            except (TypeError, ValueError):
+                return cur != value
+        return cur != value
+
+    mirrors["longitudinal_reo_truth_source"] = "row_model"
+    mirrors["row_model_legacy_sync_applied"] = True
+    mirrors["row_model_legacy_sync_diff_keys"] = [
+        str(key) for key, value in mirrors.items() if key not in {
+            "longitudinal_reo_truth_source",
+            "row_model_legacy_sync_applied",
+            "row_model_legacy_sync_diff_keys",
+        } and _differs(key, value)
+    ]
+    return mirrors
+
 def _audit(event: str, shared_key: str, widget_key: str = "", old=None, new=None, extra: dict | None = None):
     """Tiny audit trail for state writes (debug only)."""
     rec = {
@@ -577,24 +1093,6 @@ def safe_hydrate(widget_key: str, shared_key: str, value, *, force: bool = False
         if shared_val not in (None, "", 0, 0.0) and cur in (None, "", 0, 0.0):
             st.session_state[widget_key] = shared_val
             hydrated_map[widget_key] = shared_val
-            # region agent log
-            _dbg_log(
-                {
-                    "sessionId": "debug-session",
-                    "runId": "pre",
-                    "hypothesisId": "G",
-                    "location": "state_and_helpers.py:289",
-                    "message": "safe_hydrate rehydrated action widget from shared",
-                    "data": {
-                        "widget_key": widget_key,
-                        "shared_key": shared_key,
-                        "widget_before": cur,
-                        "shared_value": shared_val,
-                    },
-                    "timestamp": int(time.time() * 1000),
-                }
-            )
-            # endregion
             return
 
     last_h = hydrated_map.get(widget_key, "__NOHYDRATE__")
@@ -947,9 +1445,9 @@ SHARED_DEFAULTS = {
     **_build_longitudinal_row_defaults("bot"),
     **_build_longitudinal_row_defaults("top"),
 
-    # Shear reinforcement (starter: no shear reo — legs = 0)
-    "lig_d": 10.0,     # lig/stirrup diameter (mm)
-    "lig_legs": 2,     # legs per stirrup (minimum 2 for shear links; <2 treated as no shear reo in calcs)
+    # Shear reinforcement (starter: no shear reo)
+    "lig_d": 0.0,      # lig/stirrup diameter (mm)
+    "lig_legs": 0,     # legs per stirrup (<2 treated as no shear reo in calcs)
     "s_lig": 200.0,    # spacing (mm)
 
     # Crack control inputs
@@ -1063,9 +1561,9 @@ NEW_BEAM_STARTER_DEFAULTS = {
     "top1_count": 2,
     "db_top_1": 10,
     "cover_top": 40.0,
-    # Shear reinforcement
-    "lig_d": 10,
-    "lig_legs": 2,
+    # Shear reinforcement (brand-new beam starts with no ligs)
+    "lig_d": 0,
+    "lig_legs": 0,
     "s_lig": 200.0,
     # Support / serviceability
     "member_faces_exposed": "Slab – one face exposed",
@@ -1415,7 +1913,9 @@ def get_beam_overall_status(summary) -> str:
             return BEAM_STATUS_FAIL
         if strength_status == BEAM_STATUS_WARN:
             return BEAM_STATUS_WARN
-        if detailing_status in {BEAM_STATUS_FAIL, BEAM_STATUS_WARN}:
+        if detailing_status == BEAM_STATUS_FAIL:
+            return BEAM_STATUS_FAIL
+        if detailing_status == BEAM_STATUS_WARN:
             return BEAM_STATUS_WARN
         if strength_status == BEAM_STATUS_PASS:
             return BEAM_STATUS_PASS
@@ -1495,6 +1995,11 @@ def classify_beam_check_rows(
     strength_statuses = []
     detailing_statuses = []
     notes = []
+    saw_bending_strength_row = False
+    saw_ductility_row = False
+    ductility_status_missing_or_not_run = False
+    saw_shear_strength_row = False
+    shear_status_missing_or_not_run = False
 
     bending_strength_titles = {
         "Flexural strength capacity",
@@ -1512,11 +2017,23 @@ def classify_beam_check_rows(
     }
 
     def _add_status(rows, *, strength_titles=None, detail_titles=None, default_to_strength=False):
+        nonlocal saw_bending_strength_row, saw_ductility_row, ductility_status_missing_or_not_run
+        nonlocal saw_shear_strength_row, shear_status_missing_or_not_run
         for row in rows:
             if (row or {}).get("is_informational"):
                 continue
             title = str((row or {}).get("title") or "")
             status = normalize_beam_status((row or {}).get("status"))
+            if strength_titles and title in strength_titles and title in bending_strength_titles:
+                saw_bending_strength_row = True
+            if strength_titles and title in strength_titles and title in shear_strength_titles:
+                saw_shear_strength_row = True
+                if status == BEAM_STATUS_NOT_RUN:
+                    shear_status_missing_or_not_run = True
+            if title == "Ductility limit":
+                saw_ductility_row = True
+                if status == BEAM_STATUS_NOT_RUN:
+                    ductility_status_missing_or_not_run = True
             if status == BEAM_STATUS_NOT_RUN:
                 continue
             if strength_titles and title in strength_titles:
@@ -1536,6 +2053,13 @@ def classify_beam_check_rows(
     _add_status(shear_rows, strength_titles=shear_strength_titles, default_to_strength=False)
     _add_status(crack_rows, default_to_strength=True)
     _add_status(deflection_rows, default_to_strength=True)
+
+    if saw_bending_strength_row and (not saw_ductility_row or ductility_status_missing_or_not_run):
+        detailing_statuses.append(BEAM_STATUS_WARN)
+        notes.append("Ductility limit: NOT_RUN")
+    if saw_shear_strength_row and shear_status_missing_or_not_run:
+        detailing_statuses.append(BEAM_STATUS_WARN)
+        notes.append("Sectional shear capacity: NOT_RUN")
 
     strength_status = _rollup_statuses(strength_statuses)
     detailing_status = _rollup_statuses(detailing_statuses)
@@ -1973,6 +2497,7 @@ def load_active_beam_into_shared(force=False):
     # One-shot: force tab widgets to match shared after beam record applied (any page).
     st.session_state["_force_hydrate_widgets_after_beam_load"] = True
     st.session_state["inputs_dirty"] = True
+    st.session_state["_inputs_dirty"] = True
     return True
 
 
@@ -2465,14 +2990,50 @@ def resolve_design_actions(state: dict | None = None) -> dict:
         SLS_M = float(max(SLS_M_pos, SLS_M_neg))
         SLS_V = float(source_state.get("design_V_sls_kN", source_state.get("sls_Vstar", 0.0)) or 0.0)
     else:
-        Mu = float(source_state.get("sfd_Mmax_abs_kNm", source_state.get("Mu_star", 0.0)) or 0.0)
-        Mu_pos = float(source_state.get("M_pos_max_uls_kNm", 0.0) or 0.0)
-        Mu_neg = float(abs(min(0.0, float(source_state.get("M_neg_min_uls_kNm", 0.0) or 0.0))))
+        Mu_pos = float(
+            source_state.get(
+                "M_pos_max_uls_kNm",
+                source_state.get("uls_Mstar_pos_manual", source_state.get("Mu_star_pos_manual", 0.0)),
+            )
+            or 0.0
+        )
+        Mu_neg = float(
+            abs(
+                min(
+                    0.0,
+                    float(
+                        source_state.get(
+                            "M_neg_min_uls_kNm",
+                            -float(
+                                source_state.get(
+                                    "uls_Mstar_neg_manual",
+                                    source_state.get("Mu_star_neg_manual", 0.0),
+                                )
+                                or 0.0
+                            ),
+                        )
+                        or 0.0
+                    ),
+                )
+            )
+        )
+        if abs(Mu_pos) <= 1e-9 and abs(Mu_neg) <= 1e-9:
+            Mu_pos = float(source_state.get("uls_Mstar_pos_manual", source_state.get("Mu_star_pos_manual", 0.0)) or 0.0)
+            Mu_neg = float(source_state.get("uls_Mstar_neg_manual", source_state.get("Mu_star_neg_manual", 0.0)) or 0.0)
+        Mu_abs_raw = source_state.get("sfd_Mmax_abs_kNm", None)
+        Mu_from_extremes = float(max(Mu_pos, Mu_neg))
+        Mu = float(Mu_abs_raw if Mu_abs_raw not in (None, "") else source_state.get("Mu_star", 0.0) or 0.0)
+        if abs(Mu) <= 1e-9 and Mu_from_extremes > 1e-9:
+            Mu = Mu_from_extremes
         Mu_signed = float(Mu_pos) if Mu_pos >= Mu_neg else -float(Mu_neg)
         Vu = float(source_state.get("sfd_Vmax_abs_kN", source_state.get("Vu_star", 0.0)) or 0.0)
-        SLS_M = float(source_state.get("sfd_Msls_max_kNm", source_state.get("sls_Mstar", 0.0)) or 0.0)
         SLS_M_pos = float(source_state.get("M_pos_max_sls_kNm", 0.0) or 0.0)
         SLS_M_neg = float(abs(min(0.0, float(source_state.get("M_neg_min_sls_kNm", 0.0) or 0.0))))
+        SLS_M_abs_raw = source_state.get("sfd_Msls_max_kNm", None)
+        SLS_M_from_extremes = float(max(SLS_M_pos, SLS_M_neg))
+        SLS_M = float(SLS_M_abs_raw if SLS_M_abs_raw not in (None, "") else source_state.get("sls_Mstar", 0.0) or 0.0)
+        if abs(SLS_M) <= 1e-9 and SLS_M_from_extremes > 1e-9:
+            SLS_M = SLS_M_from_extremes
         SLS_M_signed = float(SLS_M_pos) if SLS_M_pos >= SLS_M_neg else -float(SLS_M_neg)
         SLS_V = float(source_state.get("sfd_Vsls_max_kN", source_state.get("sls_Vstar", 0.0)) or 0.0)
     Nu = float(source_state.get("Nu_star", source_state.get("N_star", source_state.get("uls_Nstar", 0.0))) or 0.0)
@@ -2511,25 +3072,26 @@ def resolve_design_actions(state: dict | None = None) -> dict:
 
 
 def load_proxies_from_active_set():
-    actions_mode = get_param("actions_mode", "manual")
-    design_mode = actions_mode == "design"
-    # When design actions drive the app we must NOT restore manual proxies
-    if design_mode:
-        return
-    p = _active_load_prefix()
-    signed_m = float(st.session_state.get(f"{p}_Mstar", 0.0) or 0.0)
-    m_pos = float(st.session_state.get(f"{p}_Mstar_pos_manual", max(0.0, signed_m)) or 0.0)
-    m_neg = float(st.session_state.get(f"{p}_Mstar_neg_manual", max(0.0, -signed_m)) or 0.0)
-    st.session_state["load_Nstar_proxy"] = float(st.session_state.get(f"{p}_Nstar", 0.0) or 0.0)
-    st.session_state["load_Vstar_proxy"] = float(st.session_state.get(f"{p}_Vstar", 0.0) or 0.0)
-    st.session_state["load_Mstar_pos_proxy"] = float(max(0.0, m_pos))
-    st.session_state["load_Mstar_neg_proxy"] = float(max(0.0, m_neg))
-    # Legacy compatibility proxy (signed)
-    st.session_state["load_Mstar_proxy"] = float(m_pos - m_neg)
-    if p == "uls":
-        st.session_state["Mu_star_pos_manual"] = float(max(0.0, m_pos))
-        st.session_state["Mu_star_neg_manual"] = float(max(0.0, m_neg))
-        st.session_state["Mu_star_manual"] = float(m_pos - m_neg)
+    with speed_profile_section("shared_state_hydration.load_proxies_from_active_set", category="state_mutation"):
+        actions_mode = get_param("actions_mode", "manual")
+        design_mode = actions_mode == "design"
+        # When design actions drive the app we must NOT restore manual proxies
+        if design_mode:
+            return
+        p = _active_load_prefix()
+        signed_m = float(st.session_state.get(f"{p}_Mstar", 0.0) or 0.0)
+        m_pos = float(st.session_state.get(f"{p}_Mstar_pos_manual", max(0.0, signed_m)) or 0.0)
+        m_neg = float(st.session_state.get(f"{p}_Mstar_neg_manual", max(0.0, -signed_m)) or 0.0)
+        st.session_state["load_Nstar_proxy"] = float(st.session_state.get(f"{p}_Nstar", 0.0) or 0.0)
+        st.session_state["load_Vstar_proxy"] = float(st.session_state.get(f"{p}_Vstar", 0.0) or 0.0)
+        st.session_state["load_Mstar_pos_proxy"] = float(max(0.0, m_pos))
+        st.session_state["load_Mstar_neg_proxy"] = float(max(0.0, m_neg))
+        # Legacy compatibility proxy (signed)
+        st.session_state["load_Mstar_proxy"] = float(m_pos - m_neg)
+        if p == "uls":
+            st.session_state["Mu_star_pos_manual"] = float(max(0.0, m_pos))
+            st.session_state["Mu_star_neg_manual"] = float(max(0.0, m_neg))
+            st.session_state["Mu_star_manual"] = float(m_pos - m_neg)
 
 
 def save_proxies_to_active_set():
@@ -2581,65 +3143,94 @@ def derive_design_actions():
 
     Called every render cycle.
     """
-    _raw_mode = st.session_state.get("actions_mode", "manual")
-    actions_mode = str(_raw_mode or "manual").strip().lower()
-    if actions_mode not in ("manual", "design"):
-        actions_mode = "manual"
-    if actions_mode == "design":
-        source = st.session_state.get("design_actions_source", "max")
-        if source == "section":
-            uls_M_signed = float(
-                st.session_state.get(
-                    "design_M_uls_kNm_signed",
-                    st.session_state.get("design_M_uls_kNm", 0.0),
+    with speed_profile_section("shared_state_hydration.derive_design_actions", category="state_mutation"):
+        _raw_mode = st.session_state.get("actions_mode", "manual")
+        actions_mode = str(_raw_mode or "manual").strip().lower()
+        if actions_mode not in ("manual", "design"):
+            actions_mode = "manual"
+        if actions_mode == "design":
+            source = st.session_state.get("design_actions_source", "max")
+            if source == "section":
+                uls_M_signed = float(
+                    st.session_state.get(
+                        "design_M_uls_kNm_signed",
+                        st.session_state.get("design_M_uls_kNm", 0.0),
+                    )
+                    or 0.0
                 )
-                or 0.0
-            )
-            uls_pos = max(0.0, uls_M_signed)
-            uls_neg = max(0.0, -uls_M_signed)
-            uls_V = float(st.session_state.get("design_V_uls_kN", 0.0) or 0.0)
-            sls_M_signed = float(
-                st.session_state.get(
-                    "design_M_sls_kNm_signed",
-                    st.session_state.get("design_M_sls_kNm", 0.0),
+                uls_pos = max(0.0, uls_M_signed)
+                uls_neg = max(0.0, -uls_M_signed)
+                uls_V = float(st.session_state.get("design_V_uls_kN", 0.0) or 0.0)
+                sls_M_signed = float(
+                    st.session_state.get(
+                        "design_M_sls_kNm_signed",
+                        st.session_state.get("design_M_sls_kNm", 0.0),
+                    )
+                    or 0.0
                 )
-                or 0.0
-            )
-            sls_pos = max(0.0, sls_M_signed)
-            sls_neg = max(0.0, -sls_M_signed)
-            sls_V = float(st.session_state.get("design_V_sls_kN", 0.0) or 0.0)
-        else:
-            uls_pos = float(st.session_state.get("M_pos_max_uls_kNm", 0.0) or 0.0)
-            uls_neg = float(abs(min(0.0, float(st.session_state.get("M_neg_min_uls_kNm", 0.0) or 0.0))))
-            uls_M_signed = uls_pos if uls_pos >= uls_neg else -uls_neg
-            uls_V = float(st.session_state.get("sfd_Vmax_abs_kN", 0.0) or 0.0)
-            sls_pos = float(st.session_state.get("M_pos_max_sls_kNm", 0.0) or 0.0)
-            sls_neg = float(abs(min(0.0, float(st.session_state.get("M_neg_min_sls_kNm", 0.0) or 0.0))))
-            sls_M_signed = sls_pos if sls_pos >= sls_neg else -sls_neg
-            sls_V = float(st.session_state.get("sfd_Vsls_max_kN", 0.0) or 0.0)
-        # Design page currently has no separate axial derivation by limit state.
-        shared_N = float(st.session_state.get("N_star", 0.0) or 0.0)
+                sls_pos = max(0.0, sls_M_signed)
+                sls_neg = max(0.0, -sls_M_signed)
+                sls_V = float(st.session_state.get("design_V_sls_kN", 0.0) or 0.0)
+            else:
+                uls_pos = float(
+                    st.session_state.get(
+                        "M_pos_max_uls_kNm",
+                        st.session_state.get("uls_Mstar_pos_manual", st.session_state.get("Mu_star_pos_manual", 0.0)),
+                    )
+                    or 0.0
+                )
+                uls_neg = float(
+                    abs(
+                        min(
+                            0.0,
+                            float(
+                                st.session_state.get(
+                                    "M_neg_min_uls_kNm",
+                                    -float(
+                                        st.session_state.get(
+                                            "uls_Mstar_neg_manual",
+                                            st.session_state.get("Mu_star_neg_manual", 0.0),
+                                        )
+                                        or 0.0
+                                    ),
+                                )
+                                or 0.0
+                            ),
+                        )
+                    )
+                )
+                if abs(uls_pos) <= 1e-9 and abs(uls_neg) <= 1e-9:
+                    uls_pos = float(st.session_state.get("uls_Mstar_pos_manual", st.session_state.get("Mu_star_pos_manual", 0.0)) or 0.0)
+                    uls_neg = float(st.session_state.get("uls_Mstar_neg_manual", st.session_state.get("Mu_star_neg_manual", 0.0)) or 0.0)
+                uls_M_signed = uls_pos if uls_pos >= uls_neg else -uls_neg
+                uls_V = float(st.session_state.get("sfd_Vmax_abs_kN", 0.0) or 0.0)
+                sls_pos = float(st.session_state.get("M_pos_max_sls_kNm", 0.0) or 0.0)
+                sls_neg = float(abs(min(0.0, float(st.session_state.get("M_neg_min_sls_kNm", 0.0) or 0.0))))
+                sls_M_signed = sls_pos if sls_pos >= sls_neg else -sls_neg
+                sls_V = float(st.session_state.get("sfd_Vsls_max_kN", 0.0) or 0.0)
+            # Design page currently has no separate axial derivation by limit state.
+            shared_N = float(st.session_state.get("N_star", 0.0) or 0.0)
 
-        st.session_state["uls_Mstar"] = float(uls_M_signed)
-        st.session_state["uls_Mstar_pos_manual"] = float(max(0.0, uls_pos))
-        st.session_state["uls_Mstar_neg_manual"] = float(max(0.0, uls_neg))
-        st.session_state["uls_Vstar"] = uls_V
-        st.session_state["uls_Nstar"] = shared_N
-        st.session_state["sls_Mstar"] = float(sls_M_signed)
-        st.session_state["sls_Mstar_pos_manual"] = float(max(0.0, sls_pos))
-        st.session_state["sls_Mstar_neg_manual"] = float(max(0.0, sls_neg))
-        st.session_state["sls_Vstar"] = sls_V
-        st.session_state["sls_Nstar"] = shared_N
+            st.session_state["uls_Mstar"] = float(uls_M_signed)
+            st.session_state["uls_Mstar_pos_manual"] = float(max(0.0, uls_pos))
+            st.session_state["uls_Mstar_neg_manual"] = float(max(0.0, uls_neg))
+            st.session_state["uls_Vstar"] = uls_V
+            st.session_state["uls_Nstar"] = shared_N
+            st.session_state["sls_Mstar"] = float(sls_M_signed)
+            st.session_state["sls_Mstar_pos_manual"] = float(max(0.0, sls_pos))
+            st.session_state["sls_Mstar_neg_manual"] = float(max(0.0, sls_neg))
+            st.session_state["sls_Vstar"] = sls_V
+            st.session_state["sls_Nstar"] = shared_N
 
-    actions = resolve_design_actions()
-    st.session_state["Mu_star_manual"] = float(st.session_state.get("uls_Mstar", 0.0) or 0.0)
-    st.session_state["Mu_star_pos_manual"] = float(st.session_state.get("uls_Mstar_pos_manual", max(0.0, st.session_state.get("uls_Mstar", 0.0) or 0.0)) or 0.0)
-    st.session_state["Mu_star_neg_manual"] = float(st.session_state.get("uls_Mstar_neg_manual", max(0.0, -(st.session_state.get("uls_Mstar", 0.0) or 0.0))) or 0.0)
-    st.session_state["Mu_star"] = float(actions["Mu"])
-    st.session_state["Mu_star_kNm"] = float(actions["Mu"])
-    st.session_state["Mu_star_kNm_signed"] = float(actions.get("Mu_signed", actions["Mu"]))
-    st.session_state["Vu_star"] = float(actions["Vu"])
-    st.session_state["N_star"] = float(actions["Nu"])
+        actions = resolve_design_actions()
+        st.session_state["Mu_star_manual"] = float(st.session_state.get("uls_Mstar", 0.0) or 0.0)
+        st.session_state["Mu_star_pos_manual"] = float(st.session_state.get("uls_Mstar_pos_manual", max(0.0, st.session_state.get("uls_Mstar", 0.0) or 0.0)) or 0.0)
+        st.session_state["Mu_star_neg_manual"] = float(st.session_state.get("uls_Mstar_neg_manual", max(0.0, -(st.session_state.get("uls_Mstar", 0.0) or 0.0))) or 0.0)
+        st.session_state["Mu_star"] = float(actions["Mu"])
+        st.session_state["Mu_star_kNm"] = float(actions["Mu"])
+        st.session_state["Mu_star_kNm_signed"] = float(actions.get("Mu_signed", actions["Mu"]))
+        st.session_state["Vu_star"] = float(actions["Vu"])
+        st.session_state["N_star"] = float(actions["Nu"])
 
 
 def _allowed_shared_keys() -> set[str]:
@@ -2954,6 +3545,53 @@ RESULT_KEYS = {
     "shear_Vu_total_kN",
     "shear_spacing_end_mm",
     "shear_spacing_mid_mm",
+    # Provided link spacing (user input) vs governing envelope — see shear_core / update_results
+    "shear_provided_input_spacing_mm",
+    "shear_input_spacing_mm",
+    "shear_sectional_check_spacing_mm",
+    "shear_required_spacing_mm",
+    "shear_effective_spacing_mm",
+    "shear_governing_spacing_source",
+    "canonical_shear_status",
+    "canonical_shear_ok",
+    "canonical_shear_util",
+    "canonical_shear_reason",
+    "canonical_shear_source",
+    "canonical_shear_effective_spacing_mm",
+    "canonical_shear_required_spacing_mm",
+    "canonical_shear_provided_spacing_mm",
+    "canonical_shear_spacing_override_active",
+    "canonical_shear_spacing_override_reason",
+    "shear_governing_check_name",
+    "shear_governing_demand_kN",
+    "shear_governing_capacity_kN",
+    "shear_governing_util",
+    "shear_governing_status",
+    "shear_governing_reason",
+    "shear_governing_source",
+    "shear_truth_status",
+    "shear_truth_reason",
+    "shear_truth_inconsistent_status_override",
+    "shear_truth_util_governing",
+    "shear_truth_web_util_governing",
+    "shear_truth_util_source",
+    "shear_truth_web_util_source",
+    "shear_truth_governing_check_name",
+    "shear_truth_governing_reason",
+    "shear_truth_governing_source",
+    "shear_util_governing",
+    "final_shear_status_source",
+    "final_shear_truth_resolved",
+    "final_shear_truth_failure_reason",
+    "published_result_spacing_mm",
+    "published_result_spacing_meaning",
+    "final_shear_spacing_reason",
+    "final_shear_publication_path",
+    "final_shear_truth_bundle_complete",
+    "summary_shear_truth_consume_reason",
+    "shear_truth_contradiction_detected",
+    "shear_truth_contradiction_reason",
+    "shear_debug_s_eff_mm",
     "shear_spacing_governing",
     "shear_spacing_profile_min",
     "shear_spacing_profile_max",
@@ -3076,6 +3714,52 @@ RESULT_DEFAULTS.update({
     "critical_shear_x": None,
     "critical_shear_V": None,
     "shear_spacing_governing": None,
+    "shear_provided_input_spacing_mm": 0.0,
+    "shear_input_spacing_mm": 0.0,
+    "shear_sectional_check_spacing_mm": 0.0,
+    "shear_required_spacing_mm": None,
+    "shear_effective_spacing_mm": None,
+    "shear_governing_spacing_source": "",
+    "canonical_shear_status": None,
+    "canonical_shear_ok": False,
+    "canonical_shear_util": None,
+    "canonical_shear_reason": "",
+    "canonical_shear_source": "",
+    "canonical_shear_effective_spacing_mm": None,
+    "canonical_shear_required_spacing_mm": None,
+    "canonical_shear_provided_spacing_mm": None,
+    "canonical_shear_spacing_override_active": False,
+    "canonical_shear_spacing_override_reason": "",
+    "shear_governing_check_name": "",
+    "shear_governing_demand_kN": None,
+    "shear_governing_capacity_kN": None,
+    "shear_governing_util": None,
+    "shear_governing_status": None,
+    "shear_governing_reason": "",
+    "shear_governing_source": "",
+    "shear_truth_status": None,
+    "shear_truth_reason": "",
+    "shear_truth_inconsistent_status_override": None,
+    "shear_truth_util_governing": None,
+    "shear_truth_web_util_governing": None,
+    "shear_truth_util_source": "",
+    "shear_truth_web_util_source": "",
+    "shear_truth_governing_check_name": "",
+    "shear_truth_governing_reason": "",
+    "shear_truth_governing_source": "",
+    "shear_util_governing": None,
+    "final_shear_status_source": "",
+    "final_shear_truth_resolved": False,
+    "final_shear_truth_failure_reason": None,
+    "published_result_spacing_mm": None,
+    "published_result_spacing_meaning": "",
+    "final_shear_spacing_reason": "",
+    "final_shear_publication_path": "",
+    "final_shear_truth_bundle_complete": False,
+    "summary_shear_truth_consume_reason": "",
+    "shear_truth_contradiction_detected": False,
+    "shear_truth_contradiction_reason": "",
+    "shear_debug_s_eff_mm": None,
     "shear_spacing_profile_min": 0.0,
     "shear_spacing_profile_max": 0.0,
     "shear_mid_spacing_mode": "",
@@ -5006,7 +5690,14 @@ def hydrate_active_page_widgets_from_shared(
         active_slug: Page slug (e.g., "bending", "crack", "inputs")
         force_on_restore: If True and snapshot was restored, force-overwrite stale widget values (0/1)
     """
-    
+    if str(active_slug) == "inputs":
+        try:
+            st.session_state["_contract_inputs_hydrate_invocations"] = int(
+                st.session_state.get("_contract_inputs_hydrate_invocations", 0),
+            ) + 1
+        except Exception:
+            pass
+
     page_map = TAB_KEYS_BY_PAGE.get(active_slug)
     if page_map:
         wmap = {wk: sk for sk, wk in page_map.items()}
@@ -5023,6 +5714,16 @@ def hydrate_active_page_widgets_from_shared(
     if active_slug == "inputs" and bool(st.session_state.get("_force_inputs_widget_reseed_once")):
         force_inputs_reseed = True
         st.session_state["_force_inputs_widget_reseed_once"] = False
+        try:
+            import session_state_final_log as _ssl
+
+            _ssl.append_session_state_final_log(
+                "force_inputs_widget_reseed_cleared",
+                {"hydration_layer": "router_or_hydrate", "active_slug": active_slug},
+            )
+            _ssl.ssl_increment("force_inputs_widget_reseed_cleared_count", 1)
+        except Exception:
+            pass
         if bool(st.session_state.get("_dev_mode")):
             hc_log("[hydrate] consumed _force_inputs_widget_reseed_once", active_slug=active_slug, force_inputs_reseed=True)
 
@@ -5037,16 +5738,22 @@ def hydrate_active_page_widgets_from_shared(
 
     # Seed only missing widget keys for this page
     hydrated_count = 0
+    live_action_widget_keys = {
+        "inputs_load_Mstar_proxy",
+        "inputs_load_Mstar_pos_proxy",
+        "inputs_load_Mstar_neg_proxy",
+        "inputs_load_Vstar_proxy",
+        "inputs_load_Nstar_proxy",
+        "inputs_Tu_star",
+        "inputs_P_star",
+    }
     for widget_key, shared_key in wmap.items():
-        if widget_key in {
-            "inputs_load_Mstar_proxy",
-            "inputs_load_Mstar_pos_proxy",
-            "inputs_load_Mstar_neg_proxy",
-            "inputs_load_Vstar_proxy",
-            "inputs_load_Nstar_proxy",
-            "inputs_Tu_star",
-            "inputs_P_star",
-        }:
+        if widget_key in live_action_widget_keys and not (
+            force_inputs_reseed
+            or beam_just_loaded
+            or in_restore_hydrate_window
+            or bool(force_on_page_change)
+        ):
             continue
         # Design page: span widget hydrates from canonical L (mm), not span_L_m.
         # Keep the same sticky behavior as safe_hydrate(): seed only if missing,
@@ -5064,76 +5771,10 @@ def hydrate_active_page_widgets_from_shared(
         if shared_key not in st.session_state:
             continue
         widget_before = st.session_state.get(widget_key)
-        force = bool(force_on_page_change)
+        force = bool(force_on_page_change) or beam_just_loaded or in_restore_hydrate_window
         if active_slug == "inputs" and widget_key.startswith("inputs_") and force_inputs_reseed:
             force = True
-        if shared_key == "s_lig" and widget_key in {"inputs_s_lig", "shear_s_lig"}:
-            # region agent log
-            _agent_dbg_log(
-                "hydrate spacing widget pre-safe_hydrate",
-                {
-                    "active_slug": active_slug,
-                    "widget_key": widget_key,
-                    "shared_key": shared_key,
-                    "widget_before": widget_before,
-                    "shared_before": st.session_state.get(shared_key),
-                    "force": bool(force),
-                    "force_on_page_change": bool(force_on_page_change),
-                    "force_inputs_reseed": bool(force_inputs_reseed),
-                },
-                run_id="pre-fix",
-                hypothesis_id="K",
-            )
-            # endregion
-        if shared_key.startswith("design_support_type_") and widget_key.startswith("sfd_support_type_"):
-            # region agent log
-            _agent_dbg_log(
-                "hydrate support widget pre-safe_hydrate",
-                {
-                    "active_slug": active_slug,
-                    "widget_key": widget_key,
-                    "shared_key": shared_key,
-                    "widget_before": widget_before,
-                    "shared_before": st.session_state.get(shared_key),
-                    "force": bool(force),
-                    "force_on_page_change": bool(force_on_page_change),
-                },
-                run_id="pre-fix",
-                hypothesis_id="H12_H13_H14",
-            )
-            # endregion
         safe_hydrate(widget_key, shared_key, st.session_state.get(shared_key), force=force)
-        if shared_key == "s_lig" and widget_key in {"inputs_s_lig", "shear_s_lig"}:
-            # region agent log
-            _agent_dbg_log(
-                "hydrate spacing widget post-safe_hydrate",
-                {
-                    "active_slug": active_slug,
-                    "widget_key": widget_key,
-                    "widget_after": st.session_state.get(widget_key),
-                    "shared_after": st.session_state.get(shared_key),
-                    "force": bool(force),
-                },
-                run_id="pre-fix",
-                hypothesis_id="K",
-            )
-            # endregion
-        if shared_key.startswith("design_support_type_") and widget_key.startswith("sfd_support_type_"):
-            # region agent log
-            _agent_dbg_log(
-                "hydrate support widget post-safe_hydrate",
-                {
-                    "active_slug": active_slug,
-                    "widget_key": widget_key,
-                    "shared_key": shared_key,
-                    "widget_after": st.session_state.get(widget_key),
-                    "shared_after": st.session_state.get(shared_key),
-                    "force": bool(force),
-                },
-                run_id="pre-fix",
-                hypothesis_id="H12_H13_H14",
-            )
-            # endregion
         if bool(st.session_state.get("_dev_mode")) and widget_key in {
             "inputs_bot_row_1_dia",
             "inputs_bot_row_1_bars",
@@ -5219,6 +5860,28 @@ def sync_shared_from_widgets_once_per_run():
     active_prefix = f"{active_slug}_"
     
     sync_operations = []
+    try:
+        skip_shear_widget_backflow_runs = int(st.session_state.get("_skip_shear_widget_backflow_runs", 0) or 0)
+    except Exception:
+        skip_shear_widget_backflow_runs = 0
+    pending_refresh = st.session_state.get("_pending_inputs_apply_refresh")
+    pending_design_guide_shear_refresh = False
+    if isinstance(pending_refresh, dict):
+        pending_refresh_source = str(pending_refresh.get("source") or "")
+        pending_refresh_keys = {
+            str(key)
+            for key in (pending_refresh.get("keys") or [])
+            if str(key)
+        }
+        pending_design_guide_shear_refresh = bool(
+            pending_refresh_source == "guidance:apply_resolved_candidate"
+            and pending_refresh_keys.intersection({"lig_d", "lig_legs", "s_lig"})
+        )
+    skip_shear_widget_backflow_once = bool(
+        st.session_state.get("_skip_shear_widget_backflow_once")
+        or skip_shear_widget_backflow_runs > 0
+        or pending_design_guide_shear_refresh
+    )
     
     # Shared keys that must NEVER be overwritten by other pages' defaults.
     # Authority order for these: inputs_* first, then bending_*.
@@ -5248,23 +5911,13 @@ def sync_shared_from_widgets_once_per_run():
         if shared_key not in syncable_keys:
             continue
         if (
-            st.session_state.get("auto_design_active", False)
+            (
+                st.session_state.get("auto_design_active", False)
+                or skip_shear_widget_backflow_once
+            )
             and shared_key in {"lig_d", "lig_legs", "s_lig"}
         ):
             # Prevent same-run widget backflow from clobbering auto-designed values.
-            # region agent log
-            _agent_dbg_log(
-                "sync skipped for auto-design-protected key",
-                {
-                    "widget_key": widget_key,
-                    "shared_key": shared_key,
-                    "widget_value": st.session_state.get(widget_key),
-                    "shared_value": st.session_state.get(shared_key),
-                },
-                run_id="pre-fix",
-                hypothesis_id="D",
-            )
-            # endregion
             continue
 
         # Only sync widgets that were rendered THIS RUN
@@ -5491,6 +6144,13 @@ def sync_shared_from_widgets_once_per_run():
             f.write(json.dumps({"location": "state_and_helpers.py:sync_exit", "message": "Sync function exit", "data": {"widget_values": widget_values_at_sync_end, "sync_operations_count": len(sync_operations)}, "timestamp": __import__("time").time() * 1000, "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}) + "\n")
     except: pass
     # #endregion
+    if skip_shear_widget_backflow_once:
+        st.session_state.pop("_skip_shear_widget_backflow_once", None)
+        if skip_shear_widget_backflow_runs > 0:
+            st.session_state["_skip_shear_widget_backflow_runs"] = max(
+                0,
+                skip_shear_widget_backflow_runs - 1,
+            )
 
 
 def _decode_bars_or_spacing(entry, b, cover_side, bar_dia):
@@ -5545,6 +6205,24 @@ def _decode_bars_or_spacing(entry, b, cover_side, bar_dia):
     n = max(1, n)
 
     return "S", n, s_target
+
+
+def effective_depth_with_links_mm(
+    D_mm: float,
+    cover_to_ligs_mm: float,
+    lig_diameter_mm: float,
+    bar_diameter_mm: float,
+) -> float:
+    """
+    Canonical effective depth for bottom tension steel.
+
+    d = D - (cover_to_ligs + lig_diameter + 0.5 * bar_diameter)
+    """
+    Df = float(D_mm or 0.0)
+    cover_f = float(cover_to_ligs_mm or 0.0)
+    lig_f = float(lig_diameter_mm or 0.0)
+    bar_f = float(bar_diameter_mm or 0.0)
+    return max(0.0, Df - (cover_f + lig_f + 0.5 * bar_f))
 
 
 def recalc_derived_values():
@@ -5960,8 +6638,14 @@ def recalc_derived_values():
     except Exception:
         pass
 
-    # Effective depths (to centroid of Layer 1 bars)
-    st.session_state["d"] = D - cover_bot - db_bot_1 / 2.0
+    # Effective depths (canonical d includes cover-to-links + link dia + half bar dia)
+    lig_d_for_d = float(st.session_state.get("lig_d", 0.0) or 0.0)
+    st.session_state["d"] = effective_depth_with_links_mm(
+        D_mm=D,
+        cover_to_ligs_mm=cover_bot,
+        lig_diameter_mm=lig_d_for_d,
+        bar_diameter_mm=db_bot_1,
+    )
     st.session_state["do"] = D - cover_top - db_top_1 / 2.0
 
     # Steel areas - sum both layers
@@ -6062,8 +6746,28 @@ def recalc_derived_values():
     st.session_state["s_top"] = float(primary_top_row["spacing_resolved"]) if primary_top_row else 0.0
     st.session_state["bot_entry"] = float(primary_bot_row["bar_count_resolved"]) if primary_bot_row and primary_bot_row.get("mode") == "Count" else float(primary_bot_row["spacing_resolved"]) if primary_bot_row else 0.0
     st.session_state["top_entry"] = float(primary_top_row["bar_count_resolved"]) if primary_top_row and primary_top_row.get("mode") == "Count" else float(primary_top_row["spacing_resolved"]) if primary_top_row else 0.0
-    st.session_state["d"] = float(primary_bot_row["y_position"]) if primary_bot_row else D
+    lig_d_for_d = float(st.session_state.get("lig_d", 0.0) or 0.0)
+    primary_bar_dia = (
+        float(primary_bot_row["dia"])
+        if primary_bot_row
+        else float(st.session_state.get("db_bot_1", 0.0) or 0.0)
+    )
+    st.session_state["d"] = effective_depth_with_links_mm(
+        D_mm=D,
+        cover_to_ligs_mm=cover_bot,
+        lig_diameter_mm=lig_d_for_d,
+        bar_diameter_mm=primary_bar_dia,
+    )
     st.session_state["do"] = D - float(primary_top_row["y_position"]) if primary_top_row else D
+    if st.session_state.get("_dev_mode", False):
+        st.session_state["_debug_d_consistency"] = {
+            "formula": "d = D - (cover_to_ligs + lig_diameter + 0.5 * bar_diameter)",
+            "D_mm": float(D),
+            "cover_to_ligs_mm": float(cover_bot),
+            "lig_diameter_mm": float(lig_d_for_d),
+            "bar_diameter_mm": float(primary_bar_dia),
+            "ui_display_d_mm": float(st.session_state.get("d", 0.0) or 0.0),
+        }
     # Canonical reinforcement summaries must come from resolved_longitudinal_bars.
     # NOTE: Ast_top/Ast_bot are compatibility summaries only; zone-aware checks must
     # consume resolved_longitudinal_bars (crack/shear active participation helpers).
@@ -6227,530 +6931,25 @@ PROTECTED_SHARED_KEYS = {
 _SYNC_CALLBACKS = None  # module-global
 
 
-def _make_sync_callback(widget_key: str, shared_key: str):
-    """
-    Callback: widget → shared → all other widgets for that shared key.
-    Also updates derived values (RULE 3).
-    """
-    # Capture filename for audit trail
-    _this_file = os.path.basename(__file__)
-    
+def _compose_sync_callback(widget_key: str, shared_key: str):
+    assign_callback = _make_sync_callback(widget_key, shared_key)
+
     def _callback():
-        if shared_key.startswith("design_support_type_") and widget_key.startswith("sfd_support_type_"):
-            # region agent log
-            _agent_dbg_log(
-                "support sync callback entered",
-                {
-                    "widget_key": widget_key,
-                    "shared_key": shared_key,
-                    "widget_val_initial": st.session_state.get(widget_key),
-                    "shared_val_initial": st.session_state.get(shared_key),
-                    "last_user_widget_key": st.session_state.get("_last_user_widget_key"),
-                    "sync_lock": st.session_state.get("_sync_lock", False),
-                },
-                run_id="pre-fix",
-                hypothesis_id="H12_H13",
-            )
-            # endregion
-        # 0) SYNC LOCK: Do not push widget → shared during hydration / render
-        if st.session_state.get("_sync_lock", False):
-            try:
-                _write_sync_trace_line(
-                    f"BLOCKED callback (sync_lock) widget={widget_key} -> shared={shared_key}"
-                )
-            except Exception:
-                pass
-            _sync_trace_file("return:sync_locked", widget_key, shared_key, None, None)
-            _sync_trace("sync_locked", widget_key, shared_key)
-            return
+        mark_user_edit(widget_key, shared_key)
+        assign_callback()
 
-        # Safety check: validate shared_key exists in TAB_KEYS (should never fail, but catch programming errors)
+    return _callback
+
+
+def _make_sync_callback(widget_key: str, shared_key: str):
+    """Minimal callback: widget key writes directly to shared key."""
+
+    def _callback():
         if shared_key is None:
-            _sync_trace_file("return:no_tab_keys_mapping", widget_key, None, None, None)
             return
-
-        # Guard: only allow sync from known TAB_KEYS widget keys
-        if widget_key not in TAB_KEYS:
-            try:
-                blocked = st.session_state.get("_blocked_sync_attempts", [])
-                blocked.append({
-                    "widget_key": widget_key,
-                    "shared_key": shared_key,
-                    "page": st.session_state.get("page_slug"),
-                    "ts": time.time(),
-                    "reason": "widget_key_not_allowed",
-                })
-                st.session_state["_blocked_sync_attempts"] = blocked[-100:]
-            except Exception:
-                pass
-            _sync_trace_file("return:widget_key_not_allowed", widget_key, shared_key, None, None)
-            return
-        
-        # Read widget and shared values early for tracing
-        widget_val = st.session_state.get(widget_key)
-        shared_val = st.session_state.get(shared_key, None)
-        if widget_key == "shear_auto_design_toggle":
-            # region agent log
-            _agent_dbg_log(
-                "shear_auto_design callback entered",
-                {
-                    "widget_key": widget_key,
-                    "widget_val_initial": widget_val,
-                    "shared_key": shared_key,
-                    "shared_val_initial": shared_val,
-                    "last_user_widget_key": st.session_state.get("_last_user_widget_key"),
-                    "sync_lock": st.session_state.get("_sync_lock", False),
-                },
-                run_id="pre-fix",
-                hypothesis_id="G",
-            )
-            # endregion
-        
-        
-        # 0.5) RESTORE GUARD: briefly block widget→shared right after restore
-        if st.session_state.get("_restored_from_snapshot") and st.session_state.get("_restore_guard_active"):
-            ts = st.session_state.get("_restore_guard_ts")
-            # If no timestamp, set one now (first hit)
-            if ts is None:
-                st.session_state["_restore_guard_ts"] = time.time()
-                _sync_trace_file("return:restore_guard", widget_key, shared_key, widget_val, shared_val)
-                _sync_trace("restore_guard_active", widget_key, shared_key)
-                return
-
-            # Block only during grace window
-            if (time.time() - float(ts)) < 0.20:
-                _sync_trace_file("return:restore_guard", widget_key, shared_key, widget_val, shared_val)
-                _sync_trace("restore_guard_active", widget_key, shared_key)
-                return
-
-            # Grace window passed → permanently release guard
-            st.session_state["_restore_guard_active"] = False
-        
-        # --- hard gate: only accept callback if user actually edited this widget ---
-        last_widget = st.session_state.get("_last_user_widget_key")
-        if last_widget is not None and last_widget != widget_key:
-            # This callback was triggered by programmatic widget key reset / rerender.
-            # Never push to shared.
-            _sync_trace_file("return:not_last_user_widget", widget_key, shared_key, widget_val, shared_val)
-            _sync_trace("not_user_edit", widget_key, shared_key)
-            if widget_key == "shear_auto_design_toggle":
-                # region agent log
-                _agent_dbg_log(
-                    "shear_auto_design callback blocked by last-widget gate",
-                    {
-                        "widget_key": widget_key,
-                        "last_user_widget_key": last_widget,
-                        "widget_val": widget_val,
-                        "shared_val": shared_val,
-                    },
-                    run_id="pre-fix",
-                    hypothesis_id="G",
-                )
-                # endregion
-            return
-        if shared_key.startswith("design_support_type_") and widget_key.startswith("sfd_support_type_"):
-            # region agent log
-            _agent_dbg_log(
-                "support sync callback passed ownership gate",
-                {
-                    "widget_key": widget_key,
-                    "shared_key": shared_key,
-                    "last_user_widget_key": last_widget,
-                    "widget_val": widget_val,
-                    "shared_val": shared_val,
-                },
-                run_id="pre-fix",
-                hypothesis_id="H13",
-            )
-            # endregion
-
-        if shared_key in {"lig_d", "lig_legs", "s_lig"}:
-            # region agent log
-            _agent_dbg_log(
-                "reinforcement callback ownership gate",
-                {
-                    "widget_key": widget_key,
-                    "shared_key": shared_key,
-                    "last_user_widget_key": last_widget,
-                    "auto_design_active": st.session_state.get("auto_design_active", False),
-                    "applying_auto_design": st.session_state.get("_applying_auto_design", False),
-                    "widget_val": widget_val,
-                    "shared_val": shared_val,
-                },
-                run_id="pre-fix",
-                hypothesis_id="S1",
-            )
-            # endregion
-            # Manual user edits disable auto-design ownership of reinforcement inputs.
-            if st.session_state.get("_applying_auto_design", False):
-                pass
-            elif last_widget == widget_key:
-                set_shared("auto_design_active", False, source=f"manual_override:{widget_key}")
-                # region agent log
-                _agent_dbg_log(
-                    "manual reinforcement edit disabled auto_design_active",
-                    {
-                        "widget_key": widget_key,
-                        "shared_key": shared_key,
-                        "auto_design_active_after": st.session_state.get("auto_design_active", False),
-                    },
-                    run_id="pre-fix",
-                    hypothesis_id="S2",
-                )
-                # endregion
-            elif st.session_state.get("auto_design_active", False):
-                # region agent log
-                _agent_dbg_log(
-                    "reinforcement callback blocked by auto-design ownership",
-                    {
-                        "widget_key": widget_key,
-                        "shared_key": shared_key,
-                        "last_user_widget_key": last_widget,
-                        "auto_design_active": st.session_state.get("auto_design_active", False),
-                    },
-                    run_id="pre-fix",
-                    hypothesis_id="S3",
-                )
-                # endregion
-                # Ignore non-user callback churn while auto design is active.
-                return
-        
-        # Guard B: Only sync if widget was rendered this run
-        rendered = st.session_state.get("_rendered_widget_keys", set())
-        if widget_key not in rendered:
-            if widget_key == "shear_auto_design_toggle":
-                # region agent log
-                _agent_dbg_log(
-                    "shear_auto_design callback blocked by rendered-key gate",
-                    {
-                        "widget_key": widget_key,
-                        "rendered_count": len(rendered) if isinstance(rendered, set) else None,
-                        "rendered_has_widget": widget_key in rendered if isinstance(rendered, set) else False,
-                    },
-                    run_id="pre-fix",
-                    hypothesis_id="H",
-                )
-                # endregion
-            _sync_trace_file("return:widget_not_rendered", widget_key, shared_key, widget_val, shared_val)
-            _sync_trace("widget_not_rendered", widget_key, shared_key)
-            return
-        
-        # Guard B: Only sync if widget value differs from shared value (prevents spam)
-        if widget_val is None:
-            _sync_trace_file("return:widget_val_none", widget_key, shared_key, widget_val, shared_val)
-            _sync_trace("widget_val_is_none", widget_key, shared_key)
-            return
-        
-        # Normalize types for common int-like reo inputs (prevents float/int mismatch noise)
-        INT_SHARED_KEYS = {
-            "db_bot_1", "db_bot_2", "db_top_1", "db_top_2",
-            "lig_d", "lig_legs",
-            "top1_count", "top2_count", "bot1_count", "bot2_count",
-            "top1_spacing", "top2_spacing", "bot1_spacing", "bot2_spacing",
-            "top_flange_left_count", "top_flange_right_count",
-            "bot_flange_left_count", "bot_flange_right_count",
-            "top_flange_left_dia", "top_flange_right_dia",
-            "bot_flange_left_dia", "bot_flange_right_dia",
-            "top_flange_left_rows", "top_flange_right_rows",
-            "bot_flange_left_rows", "bot_flange_right_rows",
-            "top_flange_transverse_dia", "bot_flange_transverse_dia",
-            "top_flange_transverse_spacing", "bot_flange_transverse_spacing",
-            "top_flange_transverse_legs", "bot_flange_transverse_legs",
-        }
-        
-        if shared_key in INT_SHARED_KEYS and widget_val is not None:
-            try:
-                widget_val = int(widget_val)
-            except Exception:
-                pass
-        
-        if widget_val == shared_val:
-            if widget_key == "shear_auto_design_toggle":
-                # region agent log
-                _agent_dbg_log(
-                    "shear_auto_design callback exited no-change",
-                    {
-                        "widget_val": widget_val,
-                        "shared_val": shared_val,
-                    },
-                    run_id="pre-fix",
-                    hypothesis_id="I",
-                )
-                # endregion
-            _sync_trace_file("return:widget_equals_shared", widget_key, shared_key, widget_val, shared_val)
-            _sync_trace("no_change", widget_key, shared_key)
-            return  # No change, skip sync
-        
-        # NOTE:
-        # Do NOT block zero writes here.
-        # Your contract already prevents programmatic/hydration-driven writes via:
-        #   - _sync_lock (hydration/render)
-        #   - _last_user_widget_key gate (only the widget the user edited can push)
-        # Therefore, widget_val == 0 is a valid user state and must sync to shared,
-        # otherwise shared keeps old values and "rehydrates" them on rerun.
-
-        # Time-dependent protection (stale default guard)
-        if shared_key in {"t_creep", "age_at_loading", "t_shrink"}:
-            try:
-                wv = float(widget_val) if widget_val is not None else None
-                sv0 = st.session_state.get(shared_key)
-                sv = float(sv0) if sv0 is not None else None
-            except Exception:
-                wv, sv = None, None
-
-            # If widget is still at stale default 0/1 but shared is meaningful (>1), do not overwrite
-            if wv in (0.0, 1.0) and (sv is not None and sv not in (0.0, 1.0)):
-                _sync_trace_file("return:time_stale_hard_guard", widget_key, shared_key, widget_val, shared_val)
-                _sync_trace("time_stale_hard_guard", widget_key, shared_key)
-                return
-        
-        # 1) If the widget key isn't present, do NOT write anything.
         if widget_key not in st.session_state:
-            _sync_trace_file("return:widget_key_missing", widget_key, shared_key, None, shared_val)
-            # Audit why we skipped (optional)
-            tail = st.session_state.get("_shared_write_audit", [])
-            frame = inspect.currentframe()
-            lineno = frame.f_lineno if frame else 0
-            tail.append({
-                "t": round(time.time(), 3),
-                "key": shared_key,
-                "val": "<SKIPPED: widget missing>",
-                "source": "sync_callback_skip",
-                "where": f"{_this_file}:{lineno} _callback",
-                "widget_key": widget_key,
-            })
-            st.session_state["_shared_write_audit"] = tail[-50:]
-            
-            # Debug: store sync attempt info
-            st.session_state["_debug_last_sync"] = {
-                "shared_key": shared_key,
-                "widget_key": widget_key,
-                "widget_present": False,
-                "widget_val": None,
-            }
             return
-        
-        # 2) Read the widget value as-is (do not coerce falsy to 0)
-        widget_val = st.session_state[widget_key]
-        # Update shared_val now that we have the actual widget value
-        shared_val = st.session_state.get(shared_key, None)
-        
-        # Normalize types for common int-like reo inputs (prevents float/int mismatch noise)
-        INT_SHARED_KEYS = {
-            "db_bot_1", "db_bot_2", "db_top_1", "db_top_2",
-            "lig_d", "lig_legs",
-            "top1_count", "top2_count", "bot1_count", "bot2_count",
-            "top1_spacing", "top2_spacing", "bot1_spacing", "bot2_spacing",
-            "top_flange_transverse_dia", "bot_flange_transverse_dia",
-            "top_flange_transverse_spacing", "bot_flange_transverse_spacing",
-            "top_flange_transverse_legs", "bot_flange_transverse_legs",
-        }
-        
-        if shared_key in INT_SHARED_KEYS and widget_val is not None:
-            try:
-                widget_val = int(widget_val)
-            except Exception:
-                pass
-        
-        # Debug: store sync attempt info
-        st.session_state["_debug_last_sync"] = {
-            "shared_key": shared_key,
-            "widget_key": widget_key,
-            "widget_present": True,
-            "widget_val": widget_val,
-        }
-        
-        # NOTE: User edit marker is set by widget wrapper, not here
-        # (prevents callbacks from marking themselves as user edits)
-        
-        # 3) widget → shared
-        widget_value = widget_val
-        current_shared = st.session_state.get(shared_key)
-
-        # ---- HARD GUARD: time inputs must not be clobbered by stale widget defaults ----
-        if shared_key in {"t_creep", "age_at_loading", "t_shrink"}:
-            try:
-                wv = float(widget_value) if widget_value is not None else None
-                sv0 = st.session_state.get(shared_key)
-                sv = float(sv0) if sv0 is not None else None
-            except Exception:
-                wv, sv = None, None
-
-            # If widget is still at 0/1 but shared is meaningful (>1), do not overwrite shared.
-            # Exclude keys where zero is a legitimate engineering input.
-            if (not zero_allowed(shared_key)) and wv in (0.0, 1.0) and (sv is not None and sv not in (0.0, 1.0)):
-                _sync_trace_file("return:time_stale_hard_guard", widget_key, shared_key, widget_value, current_shared)
-                _audit("sync_callback_blocked", shared_key, widget_key, old=current_shared, new=widget_value, extra={"where": "sync_callback"})
-                return
-        
-        # Block overwrite-to-zero for protected keys (but allow 0 for zero-allowed keys)
-        protected = (shared_key in NONZERO_REQUIRED_SHARED_KEYS) and (not zero_allowed(shared_key))
-        if protected:
-            shared_is_meaningful = current_shared not in (None, "", 0, 0.0)
-            widget_is_zero = widget_value in (None, "", 0, 0.0)
-            if shared_is_meaningful and widget_is_zero:
-                # Block: don't overwrite meaningful shared value with zero
-                _sync_trace_file("return:protected_from_zero", widget_key, shared_key, widget_value, current_shared)
-                _audit("SYNC BLOCKED zero", shared_key, widget_key, old=current_shared, new=widget_value, extra={"reason": "protected_from_zero"})
-                return
-        
-        # Always allow core geometry/material keys to be edited from any page
-        ALWAYS_EDITABLE_SHARED_KEYS = {"b", "bw", "D", "fc", "fsy", "L", "cover_top", "cover_bot"}
-        if shared_key not in ALWAYS_EDITABLE_SHARED_KEYS:
-            # Prevent non-input pages from clobbering protected shared inputs
-            if shared_key in PROTECTED_SHARED_KEYS and not str(widget_key).startswith("inputs_"):
-                _sync_trace_file("return:protected_shared_key", widget_key, shared_key, widget_value, current_shared)
-                return
-
-        TIME_STALE_KEYS = {"t_creep", "age_at_loading", "t_shrink"}
-
-        # If we restored from snapshot, never let a stale widget value (1) overwrite a meaningful shared value
-        if st.session_state.get("_restored_from_snapshot", False) and shared_key in TIME_STALE_KEYS:
-            try:
-                current_shared = st.session_state.get(shared_key)
-                wv = widget_value
-                if (wv == 1 or wv == 1.0) and (current_shared not in (None, 0, 0.0, 1, 1.0, "")):
-                    _sync_trace_file("return:restore_stale_time", widget_key, shared_key, widget_value, current_shared)
-                    _audit("SYNC blocked stale time overwrite", shared_key, widget_key, old=current_shared, new=wv)
-                return
-            except Exception:
-                pass
-        
-        old_shared = current_shared
-        _sync_trace_file("write:widget_to_shared", widget_key, shared_key, widget_value, old_shared)
-        # region agent log
-        if shared_key == "Tu_star":
-            _dbg_log(
-                {
-                    "sessionId": "debug-session",
-                    "runId": "pre",
-                    "hypothesisId": "A",
-                    "location": "state_and_helpers.py:3212",
-                    "message": "sync callback writes Tu_star",
-                    "data": {
-                        "widget_key": widget_key,
-                        "shared_key": shared_key,
-                        "widget_value": widget_value,
-                        "old_shared": old_shared,
-                    },
-                    "timestamp": int(time.time() * 1000),
-                }
-            )
-        # endregion
-        set_shared(shared_key, widget_value, source=f"callback:{widget_key}")
-        # Keep every TAB_KEYS alias for link spacing aligned when the user edits from one page only.
-        # (set_shared updates `s_lig`; sibling keys like `inputs_s_lig` are otherwise stale until Inputs renders.)
-        if shared_key == "s_lig":
-            _rendered_wk = st.session_state.get("_rendered_widget_keys", set())
-            if not isinstance(_rendered_wk, set):
-                _rendered_wk = set()
-            for _alias_wk, _alias_sk in TAB_KEYS.items():
-                if _alias_sk != "s_lig" or _alias_wk == widget_key:
-                    continue
-                if _alias_wk in _rendered_wk:
-                    continue
-                try:
-                    st.session_state[_alias_wk] = float(widget_value)
-                except (TypeError, ValueError):
-                    st.session_state[_alias_wk] = widget_value
-                if str(_alias_wk).startswith("inputs_"):
-                    st.session_state[f"_cached_{_alias_wk}"] = st.session_state[_alias_wk]
-        if shared_key.startswith("design_support_type_") and widget_key.startswith("sfd_support_type_"):
-            # region agent log
-            _agent_dbg_log(
-                "support sync callback wrote shared",
-                {
-                    "widget_key": widget_key,
-                    "shared_key": shared_key,
-                    "widget_value": widget_value,
-                    "old_shared": old_shared,
-                    "new_shared": st.session_state.get(shared_key),
-                },
-                run_id="pre-fix",
-                hypothesis_id="H12_H13_H14",
-            )
-            # endregion
-        if widget_key == "shear_auto_design_toggle":
-            # region agent log
-            _agent_dbg_log(
-                "shear_auto_design callback wrote shared",
-                {
-                    "widget_value_written": widget_value,
-                    "shared_value_after": st.session_state.get(shared_key),
-                },
-                run_id="pre-fix",
-                hypothesis_id="G",
-            )
-            # endregion
-            set_shared(
-                "auto_design_active",
-                bool(widget_value),
-                source="callback:shear_auto_design_toggle",
-            )
-            # region agent log
-            _agent_dbg_log(
-                "shear_auto_design toggled auto_design_active",
-                {
-                    "toggle_value": bool(widget_value),
-                    "auto_design_active_after": st.session_state.get("auto_design_active"),
-                },
-                run_id="post-fix",
-                hypothesis_id="R",
-            )
-            # endregion
-            if bool(widget_value):
-                # Ensure spacing widgets reflect shared spacing when auto-design toggle is enabled.
-                _s_shared = st.session_state.get("s_lig")
-                for _wk, _sk in TAB_KEYS.items():
-                    if _sk == "s_lig":
-                        st.session_state[_wk] = _s_shared
-                # region agent log
-                _agent_dbg_log(
-                    "auto-design toggle forced spacing widget sync",
-                    {
-                        "shared_s_lig": _s_shared,
-                        "inputs_s_lig": st.session_state.get("inputs_s_lig"),
-                        "shear_s_lig": st.session_state.get("shear_s_lig"),
-                    },
-                    run_id="post-fix",
-                    hypothesis_id="J",
-                )
-                # endregion
-        _audit("SYNC widget->shared", shared_key, widget_key, old=old_shared, new=widget_value)
-        st.session_state["inputs_dirty"] = True
-
-        if shared_key in ("load_Mstar_proxy", "load_Mstar_pos_proxy", "load_Mstar_neg_proxy", "load_Vstar_proxy", "load_Nstar_proxy"):
-            save_proxies_to_active_set()
-        
-        if shared_key == "N_star":
-            set_shared("uls_Nstar", float(widget_value or 0.0), source="uls_mirror")
-            if st.session_state.get("loads_edit_mode", "ULS") == "ULS":
-                st.session_state["load_Nstar_proxy"] = float(widget_value or 0.0)
-        
-        # Cache inputs_* widget values immediately when user changes them
-        # AND also keep the "inputs_* cache" fresh even when the user edits the same
-        # shared value from other pages (bending_*, shear_*, etc.).
-        if widget_key.startswith("inputs_"):
-            st.session_state[f"_cached_{widget_key}"] = st.session_state[widget_key]
-
-        # NEW: mirror the latest shared value into ALL inputs_* caches for this shared_key.
-        # This prevents stale cached inputs values from re-seeding as 0 after page swaps.
-        for w_key, sh_key in TAB_KEYS.items():
-            if sh_key == shared_key and w_key.startswith("inputs_"):
-                st.session_state[f"_cached_{w_key}"] = st.session_state[shared_key]
-
-        # Mark Layer-2 reo inputs as user-controlled once the user touches them.
-        # This prevents recalc_derived_values() from auto-overwriting them later.
-        if shared_key in ("nb_or_s_bot_2", "db_bot_2"):
-            st.session_state["_lock_reo_bot_layer2"] = True
-        if shared_key in ("nb_or_s_top_2", "db_top_2"):
-            st.session_state["_lock_reo_top_layer2"] = True
-
-        # NOTE: We do NOT mirror shared → all other widget copies here.
-        # Other pages will pick up the shared value via hydrate_active_page_widgets_from_shared()
-        # when they render. This prevents callback cascades and phantom zeros.
-
-        # Derived values and structural results refresh in app.py when inputs_dirty is cleared.
+        st.session_state[shared_key] = st.session_state[widget_key]
 
     return _callback
 
@@ -6769,7 +6968,7 @@ def get_sync_callbacks():
         or any(w_key not in _SYNC_CALLBACKS for w_key in TAB_KEYS.keys())
     ):
         _SYNC_CALLBACKS = {
-            w_key: _make_sync_callback(w_key, sh_key)
+            w_key: _compose_sync_callback(w_key, sh_key)
             for w_key, sh_key in TAB_KEYS.items()
         }
     
@@ -6783,6 +6982,90 @@ def get_sync_callbacks():
         pass
     
     return _SYNC_CALLBACKS
+
+
+def finalize_auto_design_publish(
+    *,
+    updated_keys: list[str],
+    source: str,
+    focus_section: str | None = None,
+    set_run_design_clicked: bool = True,
+) -> dict:
+    """
+    Central post-commit publication for already-applied shared updates.
+
+    Shared writes must already be done before this helper is called.
+    This helper owns:
+    - summary/cache invalidation
+    - pending Inputs refresh queue
+    - one-shot shear widget reseed flag
+    - dirty flags
+    - standard auto-design invalidation markers
+    - optional run_design_clicked
+    """
+    keys = sorted([str(k) for k in (updated_keys or []) if str(k)])
+    shear_keys_updated = [k for k in keys if k in {"lig_d", "lig_legs", "s_lig"}]
+
+    if shear_keys_updated:
+        st.session_state["_force_inputs_shear_widget_reseed_once"] = True
+
+    _invalidate_inputs_summary_packs(
+        source=str(source or ""),
+        updated_keys=keys,
+    )
+    _queue_inputs_refresh_from_auto_design(
+        source=str(source or ""),
+        updated_keys=keys,
+    )
+    active_beam_id = st.session_state.get("active_beam_id")
+    if active_beam_id:
+        # The shared state has just been committed for this active beam. Keep
+        # the normal beam-hydration guard from replaying the pre-commit record
+        # over the freshly applied values on the immediate rerun.
+        st.session_state["beam_last_hydrated_id"] = active_beam_id
+
+    if focus_section:
+        st.session_state["_fast_mode_focus_section"] = str(focus_section)
+
+    st.session_state["inputs_dirty"] = True
+    st.session_state["_inputs_dirty"] = True
+    if set_run_design_clicked:
+        st.session_state["run_design_clicked"] = True
+
+    st.session_state["_force_auto_redesign"] = False
+    st.session_state["_auto_design_invalidated"] = True
+    st.session_state.pop("_auto_design_last_fingerprint", None)
+
+    payload = {
+        "source": str(source or ""),
+        "updated_keys": keys,
+        "shear_keys_updated": list(shear_keys_updated),
+        "pending_inputs_apply_refresh": dict(st.session_state.get("_pending_inputs_apply_refresh") or {}),
+        "inputs_summary_cache_invalidated": bool(st.session_state.get("_inputs_summary_cache_invalidated")),
+        "inputs_summary_cache_invalidated_source": st.session_state.get("_inputs_summary_cache_invalidated_source"),
+        "force_inputs_widget_reseed_once": bool(st.session_state.get("_force_inputs_widget_reseed_once")),
+        "force_inputs_shear_widget_reseed_once": bool(st.session_state.get("_force_inputs_shear_widget_reseed_once")),
+        "fast_mode_focus_section": st.session_state.get("_fast_mode_focus_section"),
+        "active_beam_id": active_beam_id,
+        "beam_last_hydrated_id": st.session_state.get("beam_last_hydrated_id"),
+        "run_design_clicked": bool(st.session_state.get("run_design_clicked")),
+        "shared_shear": {
+            "s_lig": st.session_state.get("s_lig"),
+            "lig_d": st.session_state.get("lig_d"),
+            "lig_legs": st.session_state.get("lig_legs"),
+        },
+    }
+    st.session_state["_finalize_auto_design_publish_latest"] = dict(payload)
+
+    try:
+        import session_state_final_log as _ssl
+
+        _ssl.append_session_state_final_log("finalize_auto_design_publish", payload)
+        _ssl.ssl_increment("finalize_auto_design_publish_count", 1)
+    except Exception:
+        pass
+
+    return payload
 
 
 def apply_auto_design_results(results_dict: dict) -> None:
@@ -6802,18 +7085,6 @@ def apply_auto_design_results(results_dict: dict) -> None:
             set_shared(key, value, source="auto_design_apply")
             updates[key] = value
 
-    # region agent log
-    _agent_dbg_log(
-        "apply_auto_design_results shared updates",
-        {
-            "requested_updates": dict(results_dict),
-            "applied_updates": dict(updates),
-            "auto_design_active_before": st.session_state.get("auto_design_active"),
-        },
-        run_id="pre-fix",
-        hypothesis_id="C",
-    )
-    # endregion
 
     if not updates:
         return
@@ -6836,31 +7107,95 @@ def apply_auto_design_results(results_dict: dict) -> None:
                 if widget_key.startswith("inputs_"):
                     st.session_state[f"_cached_{widget_key}"] = next_value
 
-        recalc_derived_values()
-        update_results()
-        st.session_state["cached_results"] = copy.deepcopy(st.session_state.get("results"))
-        # If rendered spacing widgets could not be mirrored, defer full structural recompute to next run.
-        if deferred_widget_update:
-            st.session_state["inputs_dirty"] = True
-        # region agent log
-        _agent_dbg_log(
-            "apply_auto_design_results post-hydrate snapshot",
-            {
-                "shared_s_lig": st.session_state.get("s_lig"),
-                "shared_lig_legs": st.session_state.get("lig_legs"),
-                "widget_inputs_s_lig": st.session_state.get("inputs_s_lig"),
-                "widget_shear_s_lig": st.session_state.get("shear_s_lig"),
-                "auto_design_active_after": st.session_state.get("auto_design_active"),
-            },
-            run_id="pre-fix",
-            hypothesis_id="C",
+        publish_payload = finalize_auto_design_publish(
+            updated_keys=sorted(list(updates.keys())),
+            source="auto_design_apply",
+            focus_section="shear" if any(k in {"lig_d", "lig_legs", "s_lig"} for k in updates.keys()) else None,
+            set_run_design_clicked=True,
         )
-        # endregion
+        st.session_state["_auto_design_apply_debug"] = {
+            "applied_updates": dict(updates),
+            "publish_payload": dict(publish_payload),
+            "shared_shear_after_apply": {
+                "s_lig": st.session_state.get("s_lig"),
+                "lig_d": st.session_state.get("lig_d"),
+                "lig_legs": st.session_state.get("lig_legs"),
+            },
+            "widget_shear_after_apply": {
+                "inputs_s_lig": st.session_state.get("inputs_s_lig"),
+                "inputs_lig_d": st.session_state.get("inputs_lig_d"),
+                "inputs_lig_legs": st.session_state.get("inputs_lig_legs"),
+            },
+        }
     finally:
         st.session_state["_applying_auto_design"] = False
 
     if deferred_widget_update:
+        try:
+            import session_state_final_log as _ssl
+
+            _ssl.append_session_state_final_log(
+                "auto_design_apply_triggered_rerun",
+                {"source": "apply_auto_design_results", "deferred_widget_update": True},
+            )
+            _ssl.ssl_record_rerun_trigger("auto_design_apply_triggered_rerun")
+        except Exception:
+            pass
         st.rerun()
+
+
+def _invalidate_inputs_summary_packs(*, source: str, updated_keys: list[str] | None = None) -> None:
+    payload = {
+        "source": str(source or ""),
+        "updated_keys": list(updated_keys or []),
+    }
+    for key in (
+        "_bend_pack",
+        "_shear_pack",
+        "_crack_pack",
+        "_defl_pack",
+        "_summary_cache_version",
+        "_summary_cache_action_fp",
+    ):
+        st.session_state.pop(key, None)
+    st.session_state["_inputs_summary_cache_invalidated"] = True
+    st.session_state["_inputs_summary_cache_invalidated_source"] = payload["source"]
+    st.session_state["_inputs_summary_cache_invalidated_keys"] = payload["updated_keys"]
+
+    try:
+        import session_state_final_log as _ssl
+
+        _ssl.append_session_state_final_log(
+            "invalidate_inputs_summary_packs",
+            payload,
+        )
+        _ssl.ssl_increment("invalidate_inputs_summary_packs_count", 1)
+    except Exception:
+        pass
+
+
+def _queue_inputs_refresh_from_auto_design(*, source: str, updated_keys: list[str]) -> None:
+    st.session_state.pop("_force_inputs_widget_reseed_once", None)
+    st.session_state["_pending_inputs_apply_refresh"] = {
+        "source": str(source or "auto_design_apply"),
+        "keys": list(updated_keys or []),
+    }
+    if any(k in {"lig_d", "lig_legs", "s_lig"} for k in (updated_keys or [])):
+        st.session_state["_fast_mode_focus_section"] = "shear"
+
+    try:
+        import session_state_final_log as _ssl
+
+        _ssl.append_session_state_final_log(
+            "queue_inputs_refresh_from_auto_design",
+            {
+                "source": str(source or "auto_design_apply"),
+                "keys": list(updated_keys or []),
+            },
+        )
+        _ssl.ssl_increment("queue_inputs_refresh_from_auto_design_count", 1)
+    except Exception:
+        pass
 
 
 # ============================================
@@ -6929,91 +7264,586 @@ def compute_all_results() -> None:
     - Derived values ONLY updated via recalc_derived_values()
     - Results ONLY published via update_results() (called inside core compute fns)
     """
-    # 1) Derived values (d, Ast, layouts, etc.)
-    recalc_derived_values()
-
-    # Beam M(x) / SFD arrays for Crack + design mode (headless; matches Beam Actions page)
-    try:
-        from beam_diagram_publish import publish_beam_diagram_arrays_from_session_state
-
-        publish_beam_diagram_arrays_from_session_state()
-    except Exception:
-        pass
-
-    # 2) Core checks (ULS/SLS)
-    # Prefer design-core modules (no UI / no render side-effects)
-    try:
-        from bending_core import _compute_bending_capacity
-        _compute_bending_capacity()
-    except Exception:
-        pass
-
-    try:
-        from shear_core import _compute_shear_capacity
-        _compute_shear_capacity()
-    except Exception as exc:
-        try:
-            _existing_zone_payload = st.session_state.get("shear_zone_results")
-            update_results(
-                shear_zone_results=_existing_zone_payload,
-                shear_design_status="INVALID",
-                shear_design_error=str(exc),
-                shear_x=st.session_state.get("shear_x", []),
-                shear_V=st.session_state.get("shear_V", []),
-                V_max=st.session_state.get("V_max", 0.0),
-                req_asv_s=st.session_state.get("req_asv_s", []),
-                prov_asv_s=st.session_state.get("prov_asv_s", []),
-                shear_util_min=st.session_state.get("shear_util_min", None),
-                shear_util_x=st.session_state.get("shear_util_x", None),
-                shear_envelope_status=st.session_state.get("shear_envelope_status", "FAIL"),
-                shear_auto_selected_lig_d_mm=None,
-                shear_auto_selected_legs=None,
-                shear_M_uls_kNm=list(st.session_state.get("shear_M_uls_kNm") or []),
-                shear_M_sls_kNm=list(st.session_state.get("shear_M_sls_kNm") or []),
-                moment_x=list(st.session_state.get("moment_x") or st.session_state.get("shear_x") or []),
-                moment_values=list(
-                    st.session_state.get("moment_values") or st.session_state.get("shear_M_sls_kNm") or []
-                ),
-                crack_bmd_cache_fingerprint=str(st.session_state.get("crack_bmd_cache_fingerprint") or ""),
-                bmd_support_positions_m=list(st.session_state.get("bmd_support_positions_m") or []),
-                bmd_support_types=list(st.session_state.get("bmd_support_types") or []),
+    with speed_profile_section("derived_result_computation.compute_all_results", category="compute"):
+        _section_t0 = time.perf_counter()
+        compute_fp_payload = {
+            **_shared_state_payload(),
+            "actions_mode": st.session_state.get("actions_mode"),
+            "actions_source": st.session_state.get("actions_source"),
+            "design_actions_source": st.session_state.get("design_actions_source"),
+            "load_Mstar_proxy": st.session_state.get("load_Mstar_proxy"),
+            "load_Mstar_pos_proxy": st.session_state.get("load_Mstar_pos_proxy"),
+            "load_Mstar_neg_proxy": st.session_state.get("load_Mstar_neg_proxy"),
+            "load_Vstar_proxy": st.session_state.get("load_Vstar_proxy"),
+            "Mu_star": st.session_state.get("Mu_star"),
+            "Vu_star": st.session_state.get("Vu_star"),
+            "N_star": st.session_state.get("N_star"),
+        }
+        compute_fp = stable_fingerprint_for_payload(compute_fp_payload)
+        speed_profile_record(
+            "derived_result_computation.compute_all_results.fingerprint_build",
+            (time.perf_counter() - _section_t0) * 1000.0,
+            category="compute",
+        )
+        _section_t0 = time.perf_counter()
+        cached_bundle = get_rerun_pure_cache("compute_all_results_bundle", compute_fp)
+        if isinstance(cached_bundle, dict):
+            for k, v in dict(cached_bundle.get("derived", {}) or {}).items():
+                st.session_state[k] = copy.deepcopy(v)
+            for k, v in dict(cached_bundle.get("results", {}) or {}).items():
+                st.session_state[k] = copy.deepcopy(v)
+            for k, v in dict(cached_bundle.get("debug", {}) or {}).items():
+                st.session_state[k] = copy.deepcopy(v)
+            speed_profile_record(
+                "derived_result_computation.compute_all_results.cache_hit",
+                0.0,
+                category="compute",
             )
+            return
+        speed_profile_record(
+            "derived_result_computation.compute_all_results.cache_lookup",
+            (time.perf_counter() - _section_t0) * 1000.0,
+            category="compute",
+        )
+
+        # 1) Derived values (d, Ast, layouts, etc.)
+        with speed_profile_section("derived_result_computation.recalc_derived_values", category="compute"):
+            recalc_derived_values()
+
+        # Beam M(x) / SFD arrays for Crack + design mode (headless; matches Beam Actions page)
+        try:
+            from beam_diagram_publish import publish_beam_diagram_arrays_from_session_state
+
+            with speed_profile_section("derived_result_computation.publish_beam_diagram_arrays", category="compute"):
+                publish_beam_diagram_arrays_from_session_state()
         except Exception:
             pass
 
-    # SLS steel stress feeding crack/deflection
-    # (Currently lives in bending_page; keep it here to avoid waiting for Bending page)
-    try:
-        from bending_page import _compute_sls_bending_values
-        _compute_sls_bending_values()
-    except Exception:
-        pass
+        # 2) Core checks (ULS/SLS)
+        # Prefer design-core modules (no UI / no render side-effects)
+        try:
+            from bending_core import _compute_bending_capacity
+            with speed_profile_section("derived_result_computation.bending_capacity", category="compute"):
+                _compute_bending_capacity()
+        except Exception:
+            pass
 
-    # Time-dependent inputs feeding crack/deflection
-    try:
-        from creep import compute_creep_results
-        compute_creep_results(publish=True)
-    except Exception:
-        pass
+        try:
+            from shear_core import _compute_shear_capacity
+            with speed_profile_section("derived_result_computation.shear_capacity", category="compute"):
+                _compute_shear_capacity()
+        except Exception as exc:
+            try:
+                from shear_checks_helpers import resolve_shear_spacing_truth
+                from shear_core import _normalise_final_shear_publication
 
-    try:
-        from shrinkage import compute_shrinkage_results
-        compute_shrinkage_results(publish=True)
-    except Exception:
-        pass
+                _existing_zone_payload = st.session_state.get("shear_zone_results")
+                try:
+                    _sip = float(st.session_state.get("s_lig") or 200.0)
+                except (TypeError, ValueError):
+                    _sip = 200.0
+                _fail_s_end = (
+                    float((_existing_zone_payload or {}).get("shear_spacing_end_mm", 0.0) or 0.0)
+                    if isinstance(_existing_zone_payload, dict)
+                    else None
+                )
+                _fail_req_mm = (
+                    float(_fail_s_end) if _fail_s_end is not None and float(_fail_s_end) > 0.0 else None
+                )
+                _fail_eff_mm = float(_sip)
+                _fail_truth = resolve_shear_spacing_truth(
+                    provided_spacing_mm=float(_sip),
+                    required_spacing_mm=_fail_req_mm,
+                    effective_spacing_mm=_fail_eff_mm,
+                )
+                _gov_outer = str(_fail_truth.get("governing_spacing_source") or "")
+                _nf_outer = _normalise_final_shear_publication(
+                    shear_design_status_out="INVALID",
+                    final_shear_status_source="canonical_skipped_global_shear_compute_error",
+                    final_shear_truth_resolved=False,
+                    final_shear_truth_failure_reason="global_shear_compute_error",
+                    shear_util_governing_out=None,
+                    canonical_pub=None,
+                    zone_payload=_existing_zone_payload if isinstance(_existing_zone_payload, dict) else None,
+                    session_state=st.session_state,
+                    provided_mm=float(_sip),
+                    required_mm=_fail_req_mm,
+                    effective_mm=_fail_eff_mm,
+                    governing_spacing_source=_gov_outer,
+                )
+                _outer_spacing_reason = str(_nf_outer.get("final_shear_spacing_reason") or "").strip()
+                if not _outer_spacing_reason:
+                    _outer_spacing_reason = (
+                        "Global compute_all_results shear failure; spacing uses best-available session inputs."
+                    )
+                _outer_spacing_reason = (
+                    f"{_outer_spacing_reason} Publication path: global_outer_invalid (_compute_shear_capacity exception)."
+                )
+                _nf_outer = {**_nf_outer, "final_shear_spacing_reason": _outer_spacing_reason}
+                if isinstance(_existing_zone_payload, dict):
+                    _existing_zone_payload = {
+                        **_existing_zone_payload,
+                        "final_shear_publication_path": "global_outer_invalid",
+                        "final_shear_status_source": _nf_outer["final_shear_status_source"],
+                        "final_shear_truth_resolved": _nf_outer["final_shear_truth_resolved"],
+                        "final_shear_truth_failure_reason": _nf_outer["final_shear_truth_failure_reason"],
+                        "published_result_spacing_mm": _nf_outer["published_result_spacing_mm"],
+                        "published_result_spacing_meaning": _nf_outer["published_result_spacing_meaning"],
+                        "final_shear_spacing_reason": _nf_outer["final_shear_spacing_reason"],
+                    }
+                _phi_cap = float(st.session_state.get("phi_Vu_cap") or 0.0)
+                _veq = float(st.session_state.get("V_eq_kN") or st.session_state.get("V_eq") or 0.0)
+                _vu_util = (_veq / _phi_cap) if _phi_cap > 0.0 else float("nan")
 
-    # Crack + deflection (depend on sigma_s_sls / creep / shrinkage)
-    try:
-        from crack_core import _compute_crack_results
-        _compute_crack_results()
-    except Exception:
-        pass
+                update_results(
+                    phi_Vu_cap=_phi_cap,
+                    Vu_utilisation=_vu_util if not math.isnan(_vu_util) else 0.0,
+                    phi_Vu_max_kN=float(st.session_state.get("phi_Vu_max_kN") or 0.0),
+                    V_eq_kN=_veq,
+                    shear_zone_results=_existing_zone_payload,
+                    shear_design_status=_nf_outer["shear_design_status_out"],
+                    shear_design_error=str(exc),
+                    shear_x=st.session_state.get("shear_x", []),
+                    shear_V=st.session_state.get("shear_V", []),
+                    V_max=st.session_state.get("V_max", 0.0),
+                    req_asv_s=st.session_state.get("req_asv_s", []),
+                    prov_asv_s=st.session_state.get("prov_asv_s", []),
+                    shear_util_min=st.session_state.get("shear_util_min", None),
+                    shear_util_x=st.session_state.get("shear_util_x", None),
+                    shear_envelope_status=st.session_state.get("shear_envelope_status", "FAIL"),
+                    shear_k_v=float(st.session_state.get("shear_k_v") or 0.0),
+                    shear_theta_v_deg=float(st.session_state.get("shear_theta_v_deg") or 0.0),
+                    shear_theta_v_rad=float(st.session_state.get("shear_theta_v_rad") or 0.0),
+                    shear_Vuc_kN=float(st.session_state.get("shear_Vuc_kN") or 0.0),
+                    shear_Vus_kN=float(st.session_state.get("shear_Vus_kN") or 0.0),
+                    shear_Vu_total_kN=float(st.session_state.get("shear_Vu_total_kN") or 0.0),
+                    shear_spacing_end_mm=float(st.session_state.get("shear_spacing_end_mm") or 0.0),
+                    shear_spacing_mid_mm=float(st.session_state.get("shear_spacing_mid_mm") or 0.0),
+                    shear_s_end=float(st.session_state.get("shear_s_end") or 0.0),
+                    shear_s_mid=float(st.session_state.get("shear_s_mid") or 0.0),
+                    shear_mid_spacing_calc_mm=float(st.session_state.get("shear_mid_spacing_calc_mm") or 0.0),
+                    shear_mid_spacing_mode=str(st.session_state.get("shear_mid_spacing_mode") or ""),
+                    V_mid_kN=float(st.session_state.get("V_mid_kN") or 0.0),
+                    shear_provided_input_spacing_mm=float(_sip),
+                    shear_input_spacing_mm=float(_sip),
+                    shear_sectional_check_spacing_mm=float(_sip),
+                    shear_required_spacing_mm=_fail_req_mm,
+                    shear_effective_spacing_mm=_fail_eff_mm,
+                    shear_debug_s_eff_mm=_fail_s_end,
+                    shear_governing_spacing_source=str(_fail_truth.get("governing_spacing_source") or ""),
+                    shear_truth_status=None,
+                    shear_truth_reason=f"global_outer_failure: {str(exc)[:400]}",
+                    shear_truth_inconsistent_status_override=None,
+                    shear_truth_util_governing=None,
+                    shear_truth_web_util_governing=None,
+                    shear_util_governing=None,
+                    final_shear_status_source=_nf_outer["final_shear_status_source"],
+                    final_shear_truth_resolved=_nf_outer["final_shear_truth_resolved"],
+                    final_shear_truth_failure_reason=_nf_outer["final_shear_truth_failure_reason"],
+                    published_result_spacing_mm=_nf_outer["published_result_spacing_mm"],
+                    published_result_spacing_meaning=_nf_outer["published_result_spacing_meaning"],
+                    final_shear_spacing_reason=_nf_outer["final_shear_spacing_reason"],
+                    final_shear_publication_path="global_outer_invalid",
+                    final_shear_truth_bundle_complete=True,
+                    summary_shear_truth_consume_reason="explicit_final_truth_bundle",
+                    shear_auto_selected_lig_d_mm=None,
+                    shear_auto_selected_legs=None,
+                    shear_M_uls_kNm=list(st.session_state.get("shear_M_uls_kNm") or []),
+                    shear_M_sls_kNm=list(st.session_state.get("shear_M_sls_kNm") or []),
+                    moment_x=list(st.session_state.get("moment_x") or st.session_state.get("shear_x") or []),
+                    moment_values=list(
+                        st.session_state.get("moment_values") or st.session_state.get("shear_M_sls_kNm") or []
+                    ),
+                    crack_bmd_cache_fingerprint=str(st.session_state.get("crack_bmd_cache_fingerprint") or ""),
+                    bmd_support_positions_m=list(st.session_state.get("bmd_support_positions_m") or []),
+                    bmd_support_types=list(st.session_state.get("bmd_support_types") or []),
+                )
+                with speed_profile_section("derived_result_computation.final_normalized_shear_truth", category="compute"):
+                    publish_normalized_final_shear_truth_to_session(
+                        source="compute_all_results:global_outer_invalid",
+                    )
+            except Exception:
+                pass
 
-    try:
-        from deflection_core import _compute_deflection_results
-        _compute_deflection_results()
-    except Exception:
-        pass
+        # SLS steel stress feeding crack/deflection
+        # (Currently lives in bending_page; keep it here to avoid waiting for Bending page)
+        try:
+            from bending_page import _compute_sls_bending_values
+            with speed_profile_section("derived_result_computation.sls_bending_values", category="compute"):
+                _compute_sls_bending_values()
+        except Exception:
+            pass
+
+        # Time-dependent inputs feeding crack/deflection
+        try:
+            from creep import compute_creep_results
+            with speed_profile_section("derived_result_computation.creep_results", category="compute"):
+                compute_creep_results(publish=True)
+        except Exception:
+            pass
+
+        try:
+            from shrinkage import compute_shrinkage_results
+            with speed_profile_section("derived_result_computation.shrinkage_results", category="compute"):
+                compute_shrinkage_results(publish=True)
+        except Exception:
+            pass
+
+        # Crack + deflection (depend on sigma_s_sls / creep / shrinkage)
+        try:
+            from crack_core import _compute_crack_results
+            with speed_profile_section("derived_result_computation.crack_results", category="compute"):
+                _compute_crack_results()
+        except Exception:
+            pass
+
+        try:
+            from deflection_core import _compute_deflection_results
+            with speed_profile_section("derived_result_computation.deflection_results", category="compute"):
+                _compute_deflection_results()
+        except Exception:
+            pass
+
+        try:
+            with speed_profile_section("derived_result_computation.finalize_normalized_shear_truth", category="compute"):
+                publish_normalized_final_shear_truth_to_session(source="compute_all_results:finalize")
+        except Exception:
+            pass
+        _section_t0 = time.perf_counter()
+        set_rerun_pure_cache(
+            "compute_all_results_bundle",
+            compute_fp,
+            {
+                "derived": {k: st.session_state.get(k) for k in DERIVED_KEYS},
+                "results": {k: st.session_state.get(k) for k in RESULT_KEYS},
+                "debug": {
+                    "_final_shear_truth_normalized_source": st.session_state.get("_final_shear_truth_normalized_source"),
+                    "_final_shear_truth_normalized_latest": st.session_state.get("_final_shear_truth_normalized_latest"),
+                },
+            },
+        )
+        speed_profile_record(
+            "derived_result_computation.compute_all_results.summary_bundle_build_and_cache_store",
+            (time.perf_counter() - _section_t0) * 1000.0,
+            category="compute",
+        )
+
+
+def normalize_final_published_shear_truth(state: dict | None) -> dict:
+    def _valid_float(*values):
+        for value in values:
+            try:
+                out = float(value)
+            except (TypeError, ValueError):
+                continue
+            if math.isnan(out) or math.isinf(out):
+                continue
+            return out
+        return None
+
+    def _valid_spacing(*values):
+        for value in values:
+            out = _valid_float(value)
+            if out is None:
+                continue
+            if out <= 0.0:
+                continue
+            return out
+        return None
+
+    def _first_positive_float(*values):
+        for value in values:
+            out = _valid_float(value)
+            if out is None:
+                continue
+            if out <= 0.0:
+                continue
+            return out
+        return None
+
+    s = dict(state or {})
+    sip = _valid_float(
+        s.get("s_lig"),
+        s.get("shear_input_spacing_mm"),
+        s.get("shear_provided_input_spacing_mm"),
+        0.0,
+    )
+    req = _valid_spacing(s.get("shear_required_spacing_mm"))
+    eff = _valid_spacing(s.get("shear_effective_spacing_mm"))
+    design_status = str(s.get("shear_design_status") or "").strip().upper()
+    env_status = str(s.get("shear_envelope_status") or "").strip().upper()
+    summary_governing_status = str(s.get("summary_governing_status") or "").strip().upper()
+    summary_governing_check_name = str(s.get("summary_governing_check_name") or "").strip()
+    summary_governing_reason = str(s.get("summary_governing_reason") or "").strip()
+    summary_governing_source = str(s.get("summary_governing_source") or "").strip()
+    summary_selection_origin = str(s.get("summary_governing_selection_origin") or "").strip()
+    final_resolved_existing = s.get("final_shear_truth_resolved")
+    fail_reason_existing = str(s.get("final_shear_truth_failure_reason") or "").strip()
+    gov_source = str(s.get("shear_governing_spacing_source") or "").strip()
+    truth_reason_existing = str(s.get("shear_truth_reason") or "").strip()
+    util_governing = None
+    util_source = "missing"
+    canonical_governing_status = str(s.get("shear_governing_status") or s.get("canonical_shear_status") or "").strip().upper()
+    canonical_governing_check_name = str(s.get("shear_governing_check_name") or "").strip()
+    canonical_governing_reason = str(s.get("shear_governing_reason") or s.get("canonical_shear_reason") or "").strip()
+    canonical_governing_source = str(s.get("shear_governing_source") or s.get("canonical_shear_source") or "").strip()
+    canonical_governing_util = _valid_float(s.get("shear_governing_util"), s.get("canonical_shear_util"))
+    canonical_spacing_override_active = bool(s.get("canonical_shear_spacing_override_active"))
+    canonical_spacing_override_reason = str(s.get("canonical_shear_spacing_override_reason") or "").strip()
+    summary_governing_util = _valid_float(s.get("summary_governing_util"))
+    _truth_util_existing = _valid_float(s.get("shear_truth_util_governing"))
+    _governing_util_existing = _valid_float(s.get("shear_util_governing"))
+    _envelope_min_existing = _valid_float(s.get("shear_util_min"))
+    if canonical_governing_util is not None:
+        util_governing = canonical_governing_util
+        util_source = "explicit_canonical_published_governing_util"
+    elif summary_governing_util is not None:
+        util_governing = summary_governing_util
+        util_source = "explicit_summary_governing_util"
+    elif _truth_util_existing is not None:
+        util_governing = _truth_util_existing
+        util_source = "existing_truth"
+    elif _governing_util_existing is not None:
+        util_governing = _governing_util_existing
+        util_source = "existing_governing"
+    elif _envelope_min_existing is not None:
+        util_governing = _envelope_min_existing
+        util_source = "existing_envelope_min"
+
+    _truth_web_util_existing = _valid_float(s.get("shear_truth_web_util_governing"))
+    _legacy_web_util_existing = _valid_float(s.get("Vuc_utilisation"))
+    web_util = _truth_web_util_existing
+    web_util_source = "existing_truth" if _truth_web_util_existing is not None else "missing"
+    if web_util is None and _legacy_web_util_existing is not None:
+        web_util = _legacy_web_util_existing
+        web_util_source = "existing_governing"
+
+    summary_governing_demand = _first_positive_float(s.get("summary_governing_demand_kN"))
+    summary_governing_capacity = _first_positive_float(s.get("summary_governing_capacity_kN"))
+    canonical_governing_demand = _first_positive_float(s.get("shear_governing_demand_kN"))
+    canonical_governing_capacity = _first_positive_float(s.get("shear_governing_capacity_kN"))
+    action_v = _first_positive_float(
+        canonical_governing_demand,
+        summary_governing_demand,
+        s.get("summary_governing_demand_kN"),
+        s.get("V_eq_kN"),
+        s.get("Vu_star"),
+        s.get("uls_Vstar"),
+        s.get("load_Vstar_proxy"),
+    )
+    cap_v = _first_positive_float(
+        canonical_governing_capacity,
+        summary_governing_capacity,
+        s.get("summary_governing_capacity_kN"),
+        s.get("shear_Vu_total_kN"),
+        s.get("phi_Vu_cap"),
+        s.get("phi_Vu_max_kN"),
+    )
+    if util_governing is None and action_v is not None and cap_v is not None and cap_v > 0.0:
+        util_governing = float(action_v) / float(cap_v)
+        util_source = "computed_from_action_capacity"
+
+    web_cap = _first_positive_float(
+        s.get("phi_Vu_max_kN"),
+        s.get("phiVu_max"),
+        s.get("phi_vu_max"),
+    )
+    if web_util is None and action_v is not None and web_cap is not None and web_cap > 0.0:
+        web_util = float(action_v) / float(web_cap)
+        web_util_source = "computed_from_action_web_capacity"
+    result_spacing = _valid_spacing(s.get("published_result_spacing_mm"))
+    result_spacing_meaning = str(s.get("published_result_spacing_meaning") or "").strip()
+    sectional_spacing = _valid_spacing(
+        s.get("shear_sectional_check_spacing_mm"),
+        eff,
+        sip,
+    )
+    provided_spacing = _valid_spacing(
+        s.get("shear_provided_input_spacing_mm"),
+        s.get("shear_input_spacing_mm"),
+        s.get("s_lig"),
+        sip,
+    )
+    input_spacing = _valid_spacing(
+        s.get("shear_input_spacing_mm"),
+        s.get("shear_provided_input_spacing_mm"),
+        s.get("s_lig"),
+        sip,
+    )
+    sectional_action_v = _first_positive_float(
+        s.get("V_eq_kN"),
+        s.get("Vu_star"),
+        s.get("uls_Vstar"),
+        s.get("load_Vstar_proxy"),
+    )
+    sectional_cap_v = _first_positive_float(
+        s.get("shear_Vu_total_kN"),
+        s.get("phi_Vu_cap"),
+        s.get("summary_governing_capacity_kN"),
+    )
+
+    published_result_spacing_mm = _valid_spacing(result_spacing, eff, provided_spacing, input_spacing)
+    published_result_spacing_meaning = (
+        result_spacing_meaning
+        or (
+            "effective_spacing_used_in_final_check"
+            if _valid_spacing(eff) is not None
+            else "provided_input_spacing"
+        )
+    )
+    governing_spacing_source = gov_source or published_result_spacing_meaning
+
+    governing_required_vu_alignment = False
+
+    final_shear_spacing_reason_existing = str(s.get("final_shear_spacing_reason") or "").strip()
+    final_shear_publication_path_existing = str(s.get("final_shear_publication_path") or "").strip()
+
+    chosen_status = ""
+    chosen_reason = ""
+    chosen_source = ""
+    chosen_check_name = ""
+    if canonical_governing_status in {"PASS", "FAIL", "INVALID"} or canonical_governing_util is not None:
+        chosen_status = canonical_governing_status
+        chosen_reason = canonical_governing_reason
+        chosen_source = canonical_governing_source or util_source
+        chosen_check_name = canonical_governing_check_name
+    elif summary_governing_status in {"PASS", "FAIL", "INVALID"} or summary_governing_util is not None:
+        chosen_status = summary_governing_status
+        chosen_reason = summary_governing_reason
+        chosen_source = summary_governing_source or util_source
+        chosen_check_name = summary_governing_check_name
+    else:
+        chosen_status = design_status or env_status
+        chosen_reason = truth_reason_existing or fail_reason_existing
+        chosen_source = util_source
+        chosen_check_name = summary_governing_check_name or canonical_governing_check_name
+
+    explicit_invalid_override = (
+        design_status == "INVALID"
+        or chosen_status == "INVALID"
+    )
+    if canonical_spacing_override_active and canonical_spacing_override_reason:
+        chosen_reason = (
+            f"{chosen_reason}; {canonical_spacing_override_reason}"
+            if chosen_reason and canonical_spacing_override_reason not in chosen_reason
+            else (chosen_reason or canonical_spacing_override_reason)
+        )
+    explicit_failure_override = bool(
+        not explicit_invalid_override
+        and (
+            canonical_spacing_override_active
+            or (
+                util_governing is not None
+                and util_governing <= 1.0 + 1e-9
+                and chosen_status == "FAIL"
+                and not (canonical_governing_util is not None or summary_governing_util is not None)
+                and bool(fail_reason_existing)
+            )
+        )
+    )
+
+    if explicit_invalid_override:
+        shear_truth_status = "INVALID"
+        final_shear_truth_resolved = False
+        final_shear_truth_failure_reason = fail_reason_existing or "invalid_shear_state"
+        final_shear_status_source = chosen_source or "normalized_from_current_state"
+        final_shear_spacing_reason = final_shear_spacing_reason_existing or "invalid_final_truth"
+        final_shear_publication_path = final_shear_publication_path_existing or "normalized_invalid"
+        shear_truth_reason = (
+            chosen_reason
+            or truth_reason_existing
+            or final_shear_truth_failure_reason
+        )
+    elif util_governing is not None and util_governing > 1.0 + 1e-9:
+        shear_truth_status = "FAIL"
+        final_shear_truth_resolved = True
+        final_shear_truth_failure_reason = ""
+        final_shear_status_source = chosen_source or "normalized_from_util"
+        final_shear_spacing_reason = final_shear_spacing_reason_existing or "fail_final_truth"
+        final_shear_publication_path = final_shear_publication_path_existing or "normalized_fail"
+        shear_truth_reason = (
+            chosen_reason
+            or truth_reason_existing
+            or "governing_shear_util_exceeds_unity"
+        )
+    elif util_governing is not None and util_governing <= 1.0 + 1e-9 and not explicit_failure_override:
+        shear_truth_status = "PASS"
+        final_shear_truth_resolved = True
+        final_shear_truth_failure_reason = ""
+        final_shear_status_source = chosen_source or "normalized_from_util"
+        final_shear_spacing_reason = final_shear_spacing_reason_existing or "pass_final_truth"
+        final_shear_publication_path = final_shear_publication_path_existing or "normalized_pass"
+        shear_truth_reason = chosen_reason or truth_reason_existing or "pass_final_truth"
+    elif chosen_status == "FAIL" or design_status == "FAIL" or env_status == "FAIL" or bool(fail_reason_existing):
+        shear_truth_status = "FAIL"
+        final_shear_truth_resolved = False
+        final_shear_truth_failure_reason = (
+            canonical_spacing_override_reason
+            or fail_reason_existing
+            or "normalized_fail_from_current_state"
+        )
+        final_shear_status_source = chosen_source or "normalized_from_current_state"
+        final_shear_spacing_reason = final_shear_spacing_reason_existing or "fail_final_truth"
+        final_shear_publication_path = final_shear_publication_path_existing or "normalized_fail"
+        shear_truth_reason = chosen_reason or truth_reason_existing or final_shear_truth_failure_reason
+    else:
+        shear_truth_status = "FAIL"
+        final_shear_truth_resolved = False
+        final_shear_truth_failure_reason = fail_reason_existing or "missing_normalized_shear_truth"
+        final_shear_status_source = chosen_source or "normalized_fallback"
+        final_shear_spacing_reason = final_shear_spacing_reason_existing or "fail_final_truth"
+        final_shear_publication_path = "normalized_fallback"
+        shear_truth_reason = chosen_reason or truth_reason_existing or final_shear_truth_failure_reason
+
+    return {
+        "shear_truth_status": shear_truth_status,
+        "shear_truth_reason": shear_truth_reason,
+        "shear_truth_util_governing": util_governing,
+        "shear_truth_web_util_governing": web_util,
+        "shear_truth_util_source": util_source,
+        "shear_truth_web_util_source": web_util_source,
+        "shear_truth_governing_check_name": chosen_check_name or summary_governing_check_name or canonical_governing_check_name,
+        "shear_truth_governing_reason": chosen_reason or shear_truth_reason,
+        "shear_truth_governing_source": chosen_source or util_source,
+        "shear_util_governing": util_governing,
+        "final_shear_status_source": final_shear_status_source,
+        "final_shear_truth_resolved": bool(final_shear_truth_resolved),
+        "final_shear_truth_failure_reason": final_shear_truth_failure_reason,
+        "final_shear_spacing_reason": final_shear_spacing_reason,
+        "final_shear_publication_path": final_shear_publication_path,
+        "final_shear_truth_bundle_complete": True,
+        "shear_required_spacing_mm": req,
+        "shear_effective_spacing_mm": eff,
+        "shear_governing_spacing_source": governing_spacing_source,
+        "published_result_spacing_mm": published_result_spacing_mm,
+        "published_result_spacing_meaning": published_result_spacing_meaning,
+        "shear_provided_input_spacing_mm": provided_spacing,
+        "shear_input_spacing_mm": input_spacing,
+        "shear_sectional_check_spacing_mm": sectional_spacing,
+        "shear_truth_canonical_source_used": chosen_source or util_source,
+        "shear_truth_canonical_util_used": util_governing,
+        "shear_truth_canonical_status_used": shear_truth_status,
+        "shear_truth_canonical_reason_used": chosen_reason or shear_truth_reason,
+        "shear_truth_spacing_override_active": bool(canonical_spacing_override_active),
+        "shear_truth_spacing_override_reason": canonical_spacing_override_reason,
+        "shear_truth_summary_selection_origin": summary_selection_origin,
+        "shear_governing_check_name": chosen_check_name or summary_governing_check_name or canonical_governing_check_name,
+        "shear_governing_demand_kN": action_v,
+        "shear_governing_capacity_kN": cap_v,
+        "shear_governing_util": util_governing,
+        "shear_governing_status": shear_truth_status,
+        "shear_governing_reason": chosen_reason or shear_truth_reason,
+        "shear_governing_source": chosen_source or util_source,
+    }
+
+
+def publish_normalized_final_shear_truth_to_session(*, source: str) -> dict:
+    bundle = normalize_final_published_shear_truth(dict(st.session_state))
+    for key, value in bundle.items():
+        st.session_state[key] = value
+    st.session_state["_final_shear_truth_normalized_source"] = source
+    st.session_state["_final_shear_truth_normalized_latest"] = dict(bundle)
+    return bundle
 
 
 def _update_results_impl(**kwargs):
@@ -7119,48 +7949,12 @@ def get_param(name: str, default=None):
         value = st.session_state[name]
         # Treat None as "not set" - return default instead
         if value is not None:
-            # region agent log
-            if name == "Tu_star":
-                _dbg_log(
-                    {
-                        "sessionId": "debug-session",
-                        "runId": "pre",
-                        "hypothesisId": "B",
-                        "location": "state_and_helpers.py:3499",
-                        "message": "get_param Tu_star from session_state",
-                        "data": {
-                            "name": name,
-                            "session_value": value,
-                            "default": default,
-                        },
-                        "timestamp": int(time.time() * 1000),
-                    }
-                )
-            # endregion
             return value
     
     # Key not in session_state, or value is None - check SHARED_DEFAULTS
     shared_default = SHARED_DEFAULTS.get(name, default)
     # If SHARED_DEFAULTS also has None, treat it as "not set" and use the provided default
     if shared_default is not None:
-        # region agent log
-        if name == "Tu_star":
-            _dbg_log(
-                {
-                    "sessionId": "debug-session",
-                    "runId": "pre",
-                    "hypothesisId": "B",
-                    "location": "state_and_helpers.py:3506",
-                    "message": "get_param Tu_star from shared default",
-                    "data": {
-                        "name": name,
-                        "shared_default": shared_default,
-                        "default": default,
-                    },
-                    "timestamp": int(time.time() * 1000),
-                }
-            )
-        # endregion
         return shared_default
     return default
 
@@ -7282,14 +8076,9 @@ def is_sync_locked() -> bool:
 # AUDIT TRAIL FOR SHARED INPUT WRITES
 # ============================================
 
-def mark_user_edit(widget_key: str, shared_key: str | None = None):
-    """Mark that a user edited a widget (for mutation guard exemption)."""
-    st.session_state["_last_user_edit_ts"] = time.time()
-    st.session_state["_last_user_widget_key"] = widget_key
-    # Latch: once user edits anything, never restore snapshot over live state again
+def mark_user_edit(*args, **kwargs):
+    st.session_state["_inputs_dirty"] = True
     st.session_state["_user_has_edited_anything"] = True
-    if shared_key:
-        st.session_state["_last_user_shared_key"] = shared_key
 
 
 def clear_user_edit_marker_each_run():
@@ -7726,3 +8515,253 @@ def assert_shared_state_alive():
     required = ["b", "D", "L", "fc", "fsy", "Ec", "Es"]
     if any(k not in st.session_state for k in required):
         st.error("Shared session state was lost. This is a bug.")
+
+
+# ============================================
+# RUNTIME CONTRACTS (dev-mode assertions; fail fast on violations)
+# ============================================
+
+def canonical_s_lig_raw(state: dict):
+    """Canonical shared s_lig if explicitly present and numeric; else None (not defaulted)."""
+    if "s_lig" not in state:
+        return None
+    v = state.get("s_lig")
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except Exception:
+        return None
+
+
+def get_canonical_s_lig(state: dict) -> float:
+    """Canonical user-provided shear link spacing: shared state key s_lig only, with starter default if absent."""
+    r = canonical_s_lig_raw(state)
+    if r is None:
+        return float(SHARED_DEFAULTS.get("s_lig", 200.0))
+    return float(r)
+
+
+def get_active_s_lig_widget_value(state: dict) -> tuple:
+    """
+    Page-local mirror for the active tab only.
+
+    Returns (widget_key, value) or (None, None) when the active page has no s_lig mirror.
+    """
+    slug = str(state.get("page_slug") or "")
+    if slug == "inputs":
+        key = "inputs_s_lig"
+    elif slug == "shear":
+        key = "shear_s_lig"
+    else:
+        return (None, None)
+    v = state.get(key)
+    if v is None:
+        return (key, None)
+    try:
+        return (key, float(v))
+    except Exception:
+        return (key, None)
+
+
+def _shear_maybe_dev_note_inactive_mirror_stale(state: dict) -> None:
+    """Dev/debug only: log when the off-page mirror is stale but contract intentionally does not fail."""
+    if not (state.get("_dev_mode") or DEBUG_MODE):
+        return
+    slug = str(state.get("page_slug") or "")
+    if slug not in ("inputs", "shear"):
+        return
+    tol = 0.51
+    raw = canonical_s_lig_raw(state)
+    if raw is None:
+        return
+    canon = float(raw)
+    _ak, active_val = get_active_s_lig_widget_value(state)
+    if active_val is None or abs(active_val - canon) > tol:
+        return
+    try:
+        if slug == "inputs":
+            if "shear_s_lig" not in state:
+                return
+            w_sh = state.get("shear_s_lig")
+            if w_sh is None:
+                return
+            w_sh = float(w_sh)
+            if abs(w_sh - canon) <= tol:
+                return
+            hc_log(
+                "shear_contract_inactive_mirror_stale",
+                message="SHEAR CONTRACT NOTE: inactive widget mirror stale; no fail",
+                active_page_slug=slug,
+                inactive_mirror_key="shear_s_lig",
+                inactive_mirror_value=w_sh,
+                canonical_shared_s_lig=canon,
+            )
+        else:
+            if "inputs_s_lig" not in state:
+                return
+            w_in = state.get("inputs_s_lig")
+            if w_in is None:
+                return
+            w_in = float(w_in)
+            if abs(w_in - canon) <= tol:
+                return
+            hc_log(
+                "shear_contract_inactive_mirror_stale",
+                message="SHEAR CONTRACT NOTE: inactive widget mirror stale; no fail",
+                active_page_slug=slug,
+                inactive_mirror_key="inputs_s_lig",
+                inactive_mirror_value=w_in,
+                canonical_shared_s_lig=canon,
+            )
+    except Exception:
+        pass
+
+
+def _s_lig_shared_write_source_is_allowed(source: str) -> bool:
+    """Allow-list for audited set_shared('s_lig', ...) sources (user/mirror/hydrate paths only)."""
+    s = str(source or "")
+    if s == "":
+        return True
+    if s.startswith("callback:"):
+        return True
+    if s.startswith("sync_"):
+        return True
+    if s.startswith("app:"):
+        return True
+    if ":shear_shared_normalise" in s:
+        return True
+    if s.startswith("guidance:"):
+        return True
+    allowed_exact = {
+        "auto_design_apply",
+        "auto_design_commit",
+        "beam_project_hydrate",
+        "persist_snapshot_merge",
+        "restore_snapshot",
+        "wipe_recovery",
+        "seed_defaults",
+        "project_load",
+        "project_load_default",
+        "new_beam_starter_seed",
+        "design_action_widget_sync",
+        "design_action_proxy_mirror",
+    }
+    if s in allowed_exact:
+        return True
+    return False
+
+
+def _contract_assert_shear_spacing_truth_model(state: dict) -> None:
+    """
+    Narrow invariant: shared s_lig may differ from derived/effective/governing spacings (expected).
+    set_shared('s_lig', ...) must only occur via allow-listed sources — never an implicit derived publish.
+    """
+    audit = state.get("_shared_write_audit")
+    if not isinstance(audit, (list, tuple)):
+        return
+    for row in audit:
+        if not isinstance(row, dict):
+            continue
+        if row.get("key") != "s_lig":
+            continue
+        src = str(row.get("source") or "")
+        if _s_lig_shared_write_source_is_allowed(src):
+            continue
+        raise AssertionError(
+            "SHEAR SPACING TRUTH MODEL VIOLATION: s_lig write with disallowed audited source "
+            f"(source={src!r}). Derived/effective spacing must not silently become canonical s_lig."
+        )
+
+
+def _contract_assert_shear_truth(state: dict) -> None:
+    """
+    CONTRACT: Shear spacing (see SHEAR_SPACING_CONTRACT_DOC).
+
+    Hard-fail only when canonical shared s_lig is missing/invalid where required, the *active*
+    page mirror disagrees with shared s_lig, or audited writes violate the spacing truth model.
+    Inactive tab mirrors may lag — optional dev note only.
+    """
+    slug = str(state.get("page_slug") or "")
+    if slug not in ("inputs", "shear"):
+        return
+
+    tol = 1e-6
+    raw = canonical_s_lig_raw(state)
+    if raw is None:
+        raise AssertionError(
+            "SHEAR CONTRACT VIOLATION: canonical shared s_lig missing or non-numeric "
+            f"(active_page_slug={slug!r}, inputs_s_lig={state.get('inputs_s_lig')!r}, "
+            f"shear_s_lig={state.get('shear_s_lig')!r}, enforced=comparison:shared_s_lig_required)"
+        )
+
+    canon = float(raw)
+    active_key, active_val = get_active_s_lig_widget_value(state)
+    w_in = state.get("inputs_s_lig")
+    w_sh = state.get("shear_s_lig")
+
+    if active_val is not None and abs(active_val - canon) > tol:
+        raise AssertionError(
+            "SHEAR CONTRACT VIOLATION: active page widget mirror disagrees with canonical shared s_lig "
+            f"(active_page_slug={slug!r}, canonical_shared_s_lig={canon}, inputs_s_lig={w_in!r}, "
+            f"shear_s_lig={w_sh!r}, enforced=comparison:active_"
+            f"{active_key or 'unknown'}_vs_shared_s_lig)"
+        )
+
+    _shear_maybe_dev_note_inactive_mirror_stale(state)
+
+
+def _contract_no_compute_writes(context: str) -> None:
+    """
+    CONTRACT: Layer 2 / Layer 3 must not write to shared session state during pure compute.
+
+    Hook for future integration with write guards or debug tripwires.
+    Call sites may pass context in {"shear_compute", "bending_compute", "guidance_compute", ...}.
+    """
+    # Extend: integrate with guard_session_writes / NDJSON audit if needed.
+    _ = context
+
+
+def _contract_single_hydration_pass(state: dict) -> None:
+    """
+    CONTRACT: Inputs page hydration must stay bounded per script run.
+
+    Router performs primary hydration; render_inputs may run additional forced hydrates
+    (beam load, pending refresh). Counter reset each run in app.py; threshold is configurable.
+    """
+    if state.get("_inputs_multiple_hydration_detected"):
+        raise AssertionError(
+            "HYDRATION CONTRACT VIOLATION: Multiple uncontrolled hydrations detected "
+            "(_inputs_multiple_hydration_detected is set)",
+        )
+    n = int(state.get("_contract_inputs_hydrate_invocations") or 0)
+    mx = int(state.get("_contract_max_inputs_hydrations_per_run") or 8)
+    if n > mx:
+        raise AssertionError(
+            f"HYDRATION CONTRACT VIOLATION: inputs hydrations in run ({n}) exceeds max ({mx}). "
+            "Router + forced paths should stay within budget; raise _contract_max_inputs_hydrations_per_run if intentional.",
+        )
+
+
+def _contract_single_recommendation_engine(state: dict) -> None:
+    """
+    CONTRACT: Flagged bypass of the unified Recommendation Engine entry (dev tripwire).
+
+    Set _direct_auto_design_solver_called only when instrumentation detects a forbidden path;
+    legitimate handle_auto_design UI may use a separate logging flag — do not set this unless violating policy.
+    """
+    if state.get("_direct_auto_design_solver_called"):
+        raise AssertionError(
+            "ENGINE CONTRACT VIOLATION: Direct solver call bypassed Recommendation Engine "
+            "(_direct_auto_design_solver_called is set)",
+        )
+
+
+def _contract_session_integrity(state: dict) -> None:
+    """
+    MASTER CONTRACT CHECK (dev mode). Raises AssertionError on violation.
+    """
+    _contract_assert_shear_spacing_truth_model(state)
+    _contract_assert_shear_truth(state)
+    _contract_single_hydration_pass(state)
+    _contract_single_recommendation_engine(state)

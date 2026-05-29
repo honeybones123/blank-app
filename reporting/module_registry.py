@@ -88,6 +88,12 @@ def ensure_shear_run(session_state: dict, results: dict) -> None:
 def get_shear_schema(session_state: dict, results: dict) -> Optional[Dict[str, Any]]:
     """Get shear report schema (ULS only typically)."""
     shear_report = results.get("shear_report")
+    if not (isinstance(shear_report, dict) and shear_report.get("tabs")):
+        try:
+            from shear_core import ensure_shear_report_built
+            shear_report = ensure_shear_report_built(session_state, results)
+        except Exception:
+            shear_report = results.get("shear_report")
     if isinstance(shear_report, dict) and shear_report.get("tabs"):
         # Convert to unified schema
         tabs = shear_report.get("tabs", [])
@@ -283,4 +289,3 @@ def get_all_module_schemas() -> List[Dict[str, Any]]:
             pass
     
     return schemas
-

@@ -5,10 +5,10 @@ from engineering_check_ui import finalize_bending_check_row
 from state_and_helpers import resolve_design_actions
 
 
-def build_bending_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str, Any]:
+def compute_bending_capacity_from_state(st_state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Pure read-only helper.
-    Uses bending_core's pure capacity calc so Inputs + Bending page always match.
+    Single-source bending capacity calculation from an explicit state dict.
+    Returns both legacy and signed moment branch results.
     """
     b = float(st_state.get("b") or 0.0)
     D = float(st_state.get("D") or 0.0)
@@ -34,7 +34,7 @@ def build_bending_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str, A
     has_hogging_case = bool(actions.get("has_hogging_case", False))
 
     # Keep legacy min-strength checks tied to sagging branch for backward compatibility.
-    results = _compute_bending_capacity_pure_impl(
+    legacy_results = _compute_bending_capacity_pure_impl(
         b=b,
         D=D,
         fc=fc,
@@ -49,47 +49,19 @@ def build_bending_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str, A
         rowgap_bot=rowgap_bot,
     )
 
-    bend_pos = solve_bending_capacity(
-        "positive",
-        Mu_pos_star,
-        {
-            "b": b,
-            "D": D,
-            "fc": fc,
-            "fsy": fsy,
-            "phi_bend": phi,
-            "Ast_bot": Ast_bot,
-            "d": d_pos,
-            "Ast_top": Ast_top,
-            "do": do_mm,
-        },
-    )
-    bend_neg = solve_bending_capacity(
-        "negative",
-        Mu_neg_star,
-        {
-            "b": b,
-            "D": D,
-            "fc": fc,
-            "fsy": fsy,
-            "phi_bend": phi,
-            "Ast_bot": Ast_bot,
-            "d": d_pos,
-            "Ast_top": Ast_top,
-            "do": do_mm,
-        },
-    )
-
-    k_u = results.get("ku", None)
-    As_min = results.get("As_min", None)
-    Mcr = results.get("Mcr", None)
-
-    def _status_from_util(u: float | None):
-        if u is None:
-            return "—"
-        if u <= 1.0:
-            return "NEAR LIMIT" if u >= 0.9 else "PASS"
-        return "FAIL"
+    section_inputs = {
+        "b": b,
+        "D": D,
+        "fc": fc,
+        "fsy": fsy,
+        "phi_bend": phi,
+        "Ast_bot": Ast_bot,
+        "d": d_pos,
+        "Ast_top": Ast_top,
+        "do": do_mm,
+    }
+    bend_pos = solve_bending_capacity("positive", Mu_pos_star, section_inputs)
+    bend_neg = solve_bending_capacity("negative", Mu_neg_star, section_inputs)
 
     active_utils: list[tuple[str, float]] = []
     if has_sagging_case:
@@ -106,7 +78,55 @@ def build_bending_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str, A
     elif governing_case == "Positive bending":
         phi_mu_governing = float(bend_pos.get("phi_Mu_kNm", 0.0) or 0.0)
     else:
-        phi_mu_governing = float(st_state.get("phi_Mu_cap", 0.0) or 0.0)
+        phi_mu_governing = float(legacy_results.get("phi_Mu_cap", 0.0) or 0.0)
+
+    return {
+        "actions": actions,
+        "Mu_star": Mu_star,
+        "Mu_pos_star": Mu_pos_star,
+        "Mu_neg_star": Mu_neg_star,
+        "has_sagging_case": has_sagging_case,
+        "has_hogging_case": has_hogging_case,
+        "legacy": legacy_results,
+        "bending_pos": bend_pos,
+        "bending_neg": bend_neg,
+        "governing_case": governing_case,
+        "governing_util": float(util),
+        "governing_phi_mu_kNm": float(phi_mu_governing),
+        "Ast_bot": Ast_bot,
+    }
+
+
+def build_bending_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Pure read-only helper.
+    Uses bending_core's pure capacity calc so Inputs + Bending page always match.
+    """
+    cap = compute_bending_capacity_from_state(st_state)
+    actions = dict(cap.get("actions") or {})
+    Mu_star = float(cap.get("Mu_star", 0.0) or 0.0)
+    Mu_pos_star = float(cap.get("Mu_pos_star", 0.0) or 0.0)
+    Mu_neg_star = float(cap.get("Mu_neg_star", 0.0) or 0.0)
+    has_sagging_case = bool(cap.get("has_sagging_case"))
+    has_hogging_case = bool(cap.get("has_hogging_case"))
+    bend_pos = dict(cap.get("bending_pos") or {})
+    bend_neg = dict(cap.get("bending_neg") or {})
+    results = dict(cap.get("legacy") or {})
+    governing_case = str(cap.get("governing_case") or "")
+    util = float(cap.get("governing_util", 0.0) or 0.0)
+    phi_mu_governing = float(cap.get("governing_phi_mu_kNm", 0.0) or 0.0)
+    Ast_bot = float(cap.get("Ast_bot", 0.0) or 0.0)
+
+    k_u = results.get("ku", None)
+    As_min = results.get("As_min", None)
+    Mcr = results.get("Mcr", None)
+
+    def _status_from_util(u: float | None):
+        if u is None:
+            return "—"
+        if u <= 1.0:
+            return "NEAR LIMIT" if u >= 0.9 else "PASS"
+        return "FAIL"
 
     rows: list[dict[str, Any]] = []
 

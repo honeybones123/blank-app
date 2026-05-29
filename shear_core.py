@@ -1,41 +1,181 @@
 # shear_core.py
 from dataclasses import dataclass, replace
+from typing import Any, Mapping
 import math
 import json
 import time
 import os
 import streamlit as st
 import numpy as np
+from shear_checks_helpers import compute_canonical_shear_truth, resolve_shear_spacing_truth
 from state_and_helpers import (
     get_longitudinal_row_inputs,
     get_param,
     resolve_design_actions,
-    apply_auto_design_results,
+    speed_profile_record,
+    speed_profile_section,
     update_results,
 )
-
-# region agent log
-_DEBUG_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug-b9a7cf.log")
-
-
-def _dbg_log(message: str, data: dict, *, run_id: str, hypothesis_id: str) -> None:
-    try:
-        rec = {
-            "sessionId": "b9a7cf",
-            "runId": run_id,
-            "hypothesisId": hypothesis_id,
-            "location": "shear_core.py",
-            "message": message,
-            "data": data,
-            "timestamp": int(time.time() * 1000),
-        }
-        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as _f:
-            _f.write(json.dumps(rec, default=str) + "\n")
-    except Exception:
-        pass
+try:
+    from shear_visuals import _dbg_log  # type: ignore
+except Exception:
+    def _dbg_log(message: str, data: dict[str, Any], *, hypothesis_id: str, run_id: str = "ss_psf_debug") -> None:
+        return None
 
 
-# endregion
+SHEAR_TRUTH_EPS = 1e-9
+
+
+def _resolve_canonical_shear_truth(
+    *,
+    sectional_ok: bool | None,
+    envelope_ok: bool | None,
+    governing_util: float | None,
+    governing_reason: str,
+    governing_source: str,
+    s_eff_mm: float | None,
+    s_req_mm: float | None,
+    provided_spacing_mm: float | None,
+) -> dict:
+    def _safe_float(value: Any) -> float | None:
+        try:
+            if value is None:
+                return None
+            out = float(value)
+        except (TypeError, ValueError):
+            return None
+        if math.isnan(out) or math.isinf(out):
+            return None
+        return out
+
+    util_f = _safe_float(governing_util)
+    eff_f = _safe_float(s_eff_mm)
+    req_f = _safe_float(s_req_mm)
+    prov_f = _safe_float(provided_spacing_mm)
+
+    if util_f is not None:
+        canonical_status = "PASS" if util_f <= 1.0 + SHEAR_TRUTH_EPS else "FAIL"
+        canonical_reason = str(governing_reason or "").strip() or (
+            "governing_shear_util_within_unity"
+            if canonical_status == "PASS"
+            else "governing_shear_util_exceeds_unity"
+        )
+        canonical_resolved = True
+    else:
+        canonical_status = "FAIL"
+        canonical_reason = str(governing_reason or "").strip() or (
+            "missing_governing_shear_util"
+            if sectional_ok is not True or envelope_ok is not True
+            else "unresolved_governing_shear_truth"
+        )
+        canonical_resolved = False
+
+    canonical_source = str(governing_source or "").strip() or "unresolved_governing_shear_truth"
+
+    return {
+        "canonical_shear_status": canonical_status,
+        "canonical_shear_ok": canonical_status == "PASS",
+        "canonical_shear_util": util_f,
+        "canonical_shear_reason": canonical_reason,
+        "canonical_shear_source": canonical_source,
+        "canonical_shear_resolved": canonical_resolved,
+        "canonical_shear_effective_spacing_mm": eff_f,
+        "canonical_shear_required_spacing_mm": req_f,
+        "canonical_shear_provided_spacing_mm": prov_f,
+    }
+
+
+def _normalise_final_shear_publication(
+    *,
+    shear_design_status_out: str | None,
+    final_shear_status_source: str,
+    final_shear_truth_resolved: bool,
+    final_shear_truth_failure_reason: str | None,
+    shear_util_governing_out: float | None,
+    canonical_pub: Any,
+    zone_payload: dict[str, Any] | None,
+    session_state: Mapping[str, Any],
+    provided_mm: float,
+    required_mm: float | None,
+    effective_mm: float,
+    governing_spacing_source: str,
+) -> dict[str, Any]:
+    """
+    Last publication normaliser before update_results: skip-path truth labels, source-aware
+    published_result_spacing_mm, explicit spacing reason, and no-false-PASS clamp.
+    """
+    _out_st = shear_design_status_out
+    _src = final_shear_status_source
+    _res = final_shear_truth_resolved
+    _fail = final_shear_truth_failure_reason
+    _ugu = shear_util_governing_out
+    _gov = str(governing_spacing_source or "").strip().lower()
+    _tol_sp = 0.51
+
+    if _src == "sectional_zone_or_invalid_skip":
+        _res = False
+        if str(_out_st or "").strip().upper() == "INVALID":
+            _src = "canonical_skipped_invalid_design_state"
+            _fail = "invalid_shear_design_state_before_canonical"
+        elif _out_st == "no_reo":
+            _src = "canonical_skipped_no_reo"
+            _fail = "ligatures_not_modeled_no_reo"
+        else:
+            _src = "canonical_skipped_insufficient_ligatures"
+            _fail = "ligatures_below_canonical_publication_threshold"
+        if str(_out_st or "").strip().upper() == "PASS":
+            _out_st = "FAIL"
+            _fail = (
+                f"{_fail};sectional_pass_downgraded_without_canonical_truth"
+                if _fail
+                else "sectional_pass_downgraded_without_canonical_truth"
+            )
+
+    # Product rule: when a valid end/support-zone required spacing exists,
+    # final shear publication should use that spacing as the Vu/check spacing.
+    # Midspan spacing remains separate detailing output in the zone payload.
+    if required_mm is not None and float(required_mm) > 0.0:
+        _gov = "required"
+        _pr_mm = float(required_mm)
+        _meaning = "governing_required"
+    elif _gov == "required":
+        if required_mm is not None and float(required_mm) > 0.0:
+            _pr_mm: float | None = float(required_mm)
+        else:
+            _pr_mm = float(effective_mm)
+        _meaning = "governing_required"
+    elif _gov == "provided":
+        _pr_mm = float(provided_mm)
+        _meaning = "provided"
+    else:
+        _pr_mm = float(effective_mm)
+        _meaning = "effective_check"
+
+    if _gov == "required" and required_mm is not None and abs(float(required_mm) - float(provided_mm)) > _tol_sp:
+        _fsr = (
+            "published_result_spacing_mm is governing required/envelope spacing (source-aware); "
+            "provided input remains in shared_s_lig and shear_provided_input_spacing_mm (not overwritten)."
+        )
+    elif _gov == "provided":
+        _fsr = (
+            "published_result_spacing_mm matches provided input; governing_spacing_source is 'provided'."
+        )
+    else:
+        _fsr = (
+            "published_result_spacing_mm follows effective/check spacing; "
+            "governing_spacing_source is indeterminate or mixed — see shear_governing_spacing_source."
+        )
+
+    return {
+        "shear_design_status_out": _out_st,
+        "final_shear_status_source": _src,
+        "final_shear_truth_resolved": _res,
+        "final_shear_truth_failure_reason": _fail,
+        "published_result_spacing_mm": _pr_mm,
+        "published_result_spacing_meaning": _meaning,
+        "final_shear_spacing_reason": _fsr,
+    }
+
 
 @dataclass
 class ShearInputs:
@@ -123,7 +263,8 @@ class ShearLayoutError(ValueError):
 
 
 def cot(rad: float) -> float:
-    return 1.0 / math.tan(rad)
+    with speed_profile_section("derived_result_computation.shear_capacity.subfunction.cot", category="compute"):
+        return 1.0 / math.tan(rad)
 
 
 def required_asv_per_s(V, phi, Vuc, fy, dv, *, cot_theta_v: float = 1.0):
@@ -132,13 +273,17 @@ def required_asv_per_s(V, phi, Vuc, fy, dv, *, cot_theta_v: float = 1.0):
     Inputs V and Vuc in kN; fy in MPa; dv in mm.
     Matches sectional V_us = (A_sv/s)·f_yv·d_v·cot(θ_v) (AS 3600 truss analogy).
     """
-    V_arr = np.asarray(V, dtype=float)
-    phi_safe = max(float(phi or 0.0), 1e-9)
-    fy_safe = max(float(fy or 0.0), 1e-9)
-    dv_safe = max(float(dv or 0.0), 1e-9)
-    cot_safe = max(float(cot_theta_v or 0.0), 1e-9)
-    Vus_req_kN = np.maximum(V_arr - phi_safe * float(Vuc or 0.0), 0.0) / phi_safe
-    return (Vus_req_kN * 1000.0) / (fy_safe * dv_safe * cot_safe)
+    with speed_profile_section(
+        "derived_result_computation.shear_capacity.subfunction.required_asv_per_s",
+        category="compute",
+    ):
+        V_arr = np.asarray(V, dtype=float)
+        phi_safe = max(float(phi or 0.0), 1e-9)
+        fy_safe = max(float(fy or 0.0), 1e-9)
+        dv_safe = max(float(dv or 0.0), 1e-9)
+        cot_safe = max(float(cot_theta_v or 0.0), 1e-9)
+        Vus_req_kN = np.maximum(V_arr - phi_safe * float(Vuc or 0.0), 0.0) / phi_safe
+        return (Vus_req_kN * 1000.0) / (fy_safe * dv_safe * cot_safe)
 
 
 def spacing_from_demand(
@@ -155,27 +300,31 @@ def spacing_from_demand(
     increment_mm: float = 10.0,
 ) -> float:
     """Demand-based spacing from local V(x), clamped to code/practical limits."""
-    s_max_mm = min(0.75 * max(float(D_mm), 1e-9), 500.0)
-    phi_safe = max(float(phi or 0.0), 1e-9)
-    cot_safe = max(float(cot_theta_v or 0.0), 1e-9)
-    Vus_req_kN = max(float(Vi_kN) - phi_safe * float(Vuc_kN or 0.0), 0.0) / phi_safe
-    if Vus_req_kN <= 1e-12:
-        return float(s_max_mm)
-    asv_s_req = (Vus_req_kN * 1000.0) / max(
-        float(fy_mpa or 0.0) * float(dv_mm or 0.0) * cot_safe, 1e-9
-    )
-    s_raw = float(Asv_mm2) / max(asv_s_req, 1e-12)
-    s = min(s_raw, s_max_mm)
-    s = max(s, float(s_min_mm))
-    inc = max(float(increment_mm), 1.0)
-    # round down to stay conservative
-    s = max(float(s_min_mm), min(s_max_mm, math.floor(s / inc + 1e-9) * inc))
-    # final detailing round (5 mm increments)
-    s = math.floor(s / 5.0) * 5.0
-    # enforce limits again
-    s = min(s, s_max_mm)
-    s = max(s, float(s_min_mm))
-    return float(s)
+    with speed_profile_section(
+        "derived_result_computation.shear_capacity.subfunction.spacing_from_demand",
+        category="compute",
+    ):
+        s_max_mm = min(0.75 * max(float(D_mm), 1e-9), 500.0)
+        phi_safe = max(float(phi or 0.0), 1e-9)
+        cot_safe = max(float(cot_theta_v or 0.0), 1e-9)
+        Vus_req_kN = max(float(Vi_kN) - phi_safe * float(Vuc_kN or 0.0), 0.0) / phi_safe
+        if Vus_req_kN <= 1e-12:
+            return float(s_max_mm)
+        asv_s_req = (Vus_req_kN * 1000.0) / max(
+            float(fy_mpa or 0.0) * float(dv_mm or 0.0) * cot_safe, 1e-9
+        )
+        s_raw = float(Asv_mm2) / max(asv_s_req, 1e-12)
+        s = min(s_raw, s_max_mm)
+        s = max(s, float(s_min_mm))
+        inc = max(float(increment_mm), 1.0)
+        # round down to stay conservative
+        s = max(float(s_min_mm), min(s_max_mm, math.floor(s / inc + 1e-9) * inc))
+        # final detailing round (5 mm increments)
+        s = math.floor(s / 5.0) * 5.0
+        # enforce limits again
+        s = min(s, s_max_mm)
+        s = max(s, float(s_min_mm))
+        return float(s)
 
 
 def compute_midspan_spacing_result(
@@ -195,22 +344,26 @@ def compute_midspan_spacing_result(
     Required midspan spacing from shear demand at x = L/2 (same physics as spacing_from_demand).
     Returns (s_mm, mode) where mode is max_spacing or shear_demand.
     """
-    phi_safe = max(float(phi), 1e-9)
-    Vus_req_kN = max(float(V_mid_kN) - phi_safe * float(Vuc_kN), 0.0) / phi_safe
-    mode = "max_spacing" if Vus_req_kN <= 1e-9 else "shear_demand"
-    s_mm = spacing_from_demand(
-        float(V_mid_kN),
-        float(phi),
-        float(Vuc_kN),
-        float(fy_mpa),
-        float(dv_mm),
-        float(Asv_mm2),
-        float(D_mm),
-        float(s_min_mm),
-        cot_theta_v=float(cot_theta_v),
-        increment_mm=float(increment_mm),
-    )
-    return float(s_mm), str(mode)
+    with speed_profile_section(
+        "derived_result_computation.shear_capacity.subfunction.compute_midspan_spacing_result",
+        category="compute",
+    ):
+        phi_safe = max(float(phi), 1e-9)
+        Vus_req_kN = max(float(V_mid_kN) - phi_safe * float(Vuc_kN), 0.0) / phi_safe
+        mode = "max_spacing" if Vus_req_kN <= 1e-9 else "shear_demand"
+        s_mm = spacing_from_demand(
+            float(V_mid_kN),
+            float(phi),
+            float(Vuc_kN),
+            float(fy_mpa),
+            float(dv_mm),
+            float(Asv_mm2),
+            float(D_mm),
+            float(s_min_mm),
+            cot_theta_v=float(cot_theta_v),
+            increment_mm=float(increment_mm),
+        )
+        return float(s_mm), str(mode)
 
 
 def derive_eps_top_bot_for_step4_diagram(eps_x: float, delta: float = 0.00035):
@@ -223,7 +376,188 @@ def derive_eps_top_bot_for_step4_diagram(eps_x: float, delta: float = 0.00035):
     return ex - float(delta), ex + float(delta)
 
 
+def ensure_shear_report_built(
+    session_state: Mapping[str, Any] | None = None,
+    results: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Lazily build the detailed shear report tree only when a report/detail consumer
+    asks for it. This keeps diagrams out of the hot engineering compute path.
+    """
+    _lazy_total_t0 = time.perf_counter()
+    state = session_state if session_state is not None else st.session_state
+    results_dict = results if isinstance(results, dict) else None
+    if results_dict is None:
+        raw_results = state.get("results", {})
+        results_dict = raw_results if isinstance(raw_results, dict) else {}
+
+    existing = results_dict.get("shear_report")
+    if isinstance(existing, dict) and existing.get("tabs"):
+        return existing
+
+    shear_steps = list(results_dict.get("shear_steps", []) or state.get("shear_steps", []) or [])
+    if not shear_steps:
+        return {}
+
+    _section_t0 = time.perf_counter()
+    from reporting.report_content import steps_to_tabs_boxes
+    from reporting.fig_export import export_box_diagram_png
+    try:
+        from reporting.fig_export import call_with_supported_kwargs
+    except Exception:
+        from fig_export import call_with_supported_kwargs
+    from shear_diagrams import (
+        plot_shear_torsion_section_2d,
+        plot_shear_step1_theta_cracks_3d,
+        make_mcft_longitudinal_strain_profile_fig,
+    )
+    speed_profile_record(
+        "shear_report_lazy.imports",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="render",
+    )
+
+    _section_t0 = time.perf_counter()
+    steps_with_diagrams = [dict(step or {}) for step in shear_steps]
+    try:
+        from section_layout import compute_section_layout
+        layout = compute_section_layout()
+        dims = dict(layout.get("dims", {}) or {})
+        shape_name = str(layout.get("shape_name", state.get("sec_shape", "RECT")))
+        reo = list(state.get("resolved_longitudinal_bars", []) or [])
+    except Exception:
+        dims = {}
+        shape_name = str(state.get("sec_shape", "RECT"))
+        reo = []
+
+    try:
+        actions = resolve_design_actions()
+        mu_signed = float(actions.get("Mu_signed", 0.0) or 0.0)
+    except Exception:
+        mu_signed = 0.0
+    active_tension_face = "top" if mu_signed < 0.0 else "bottom"
+
+    try:
+        theta_deg = float(results_dict.get("shear_theta_v_deg", state.get("shear_theta_v_deg", 45.0)) or 45.0)
+    except (TypeError, ValueError):
+        theta_deg = 45.0
+    try:
+        eps_x = float(results_dict.get("shear_eps_x", state.get("shear_eps_x", 0.0)) or 0.0)
+    except (TypeError, ValueError):
+        eps_x = 0.0
+    try:
+        L_mm = float(state.get("L") or 0.0)
+    except (TypeError, ValueError):
+        L_mm = 0.0
+    eps_top, eps_bot = derive_eps_top_bot_for_step4_diagram(eps_x)
+
+    diag1 = export_box_diagram_png(
+        lambda: call_with_supported_kwargs(
+            plot_shear_step1_theta_cracks_3d,
+            L_mm=L_mm,
+            b_mm=float(state.get("b") or 0.0),
+            D_mm=float(state.get("D") or 0.0),
+            theta_deg=theta_deg,
+        ),
+        key="shear_1_torsion",
+        caption="Torsion cracking / diagonal crack field",
+        w_mm=65,
+        h_mm=40,
+    )
+    diag2 = export_box_diagram_png(
+        lambda: plot_shear_torsion_section_2d(
+            shape_name=shape_name,
+            dims=dims,
+            reo=reo,
+            show_labels=True,
+            tension_face=active_tension_face,
+        ),
+        key="shear_2_section",
+        caption="Section + torsion/shear idealisation",
+        w_mm=65,
+        h_mm=40,
+    )
+    diag3 = export_box_diagram_png(
+        lambda: make_mcft_longitudinal_strain_profile_fig(eps_top, eps_x, eps_bot),
+        key="shear_4_epsx",
+        caption="MCFT longitudinal strain profile",
+        w_mm=65,
+        h_mm=40,
+    )
+    if len(steps_with_diagrams) >= 2:
+        steps_with_diagrams[1]["diagram"] = diag1
+    if len(steps_with_diagrams) >= 4:
+        steps_with_diagrams[3]["diagram"] = diag2
+    if len(steps_with_diagrams) >= 5:
+        steps_with_diagrams[4]["diagram"] = diag3
+    speed_profile_record(
+        "shear_report_lazy.diagrams",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="render",
+    )
+
+    _section_t0 = time.perf_counter()
+    shear_report = steps_to_tabs_boxes(
+        module_title="Shear (ULS)",
+        steps=steps_with_diagrams,
+        default_tab="ULS Checks",
+    )
+    try:
+        actions = resolve_design_actions()
+        vu_star = float(actions.get("Vu", 0.0) or 0.0)
+    except Exception:
+        vu_star = 0.0
+    try:
+        phi_vu_cap = float(results_dict.get("phi_Vu_cap", state.get("phi_Vu_cap", 0.0)) or 0.0)
+    except (TypeError, ValueError):
+        phi_vu_cap = 0.0
+    try:
+        vu_util = results_dict.get("Vu_utilisation", state.get("Vu_utilisation"))
+        vu_util = float(vu_util) if vu_util is not None else None
+    except (TypeError, ValueError):
+        vu_util = None
+    outcome = (
+        "PASS" if (vu_util is not None and vu_util <= 1.0) else
+        "FAIL" if vu_util is not None else
+        "N/A"
+    )
+    shear_report["summary"] = shear_report.get("summary", [
+        ("Demand", f"{vu_star:.1f} kN"),
+        ("Capacity", f"{phi_vu_cap:.1f} kN"),
+        ("Utilisation", f"{vu_util:.2f}" if vu_util is not None else "N/A"),
+        ("Outcome", outcome),
+    ])
+    speed_profile_record(
+        "shear_report_lazy.build_tabs",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="render",
+    )
+
+    try:
+        results_dict["shear_report"] = shear_report
+    except Exception:
+        pass
+    try:
+        state["shear_report"] = shear_report
+    except Exception:
+        pass
+    try:
+        session_results = state.get("results", {})
+        if isinstance(session_results, dict):
+            session_results["shear_report"] = shear_report
+    except Exception:
+        pass
+
+    speed_profile_record(
+        "shear_report_lazy.total",
+        (time.perf_counter() - _lazy_total_t0) * 1000.0,
+        category="render",
+    )
+    return shear_report
+
+
 def run_shear_calc(inp: ShearInputs) -> ShearResults:
+    _run_shear_calc_t0 = time.perf_counter()
     b = inp.b
     D = inp.D
     d = inp.d
@@ -252,14 +586,21 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
     k_d = inp.k_d
 
     # ---------------- Torsion geometry & cracking torque ----------------
+    _section_t0 = time.perf_counter()
     cover_t = 40.0
     A_cp = b * D
     u_c = 2 * (b + D)
     Ao = 0.9 * A_cp
     uh = 2 * (max(b - cover_t, 0.0) + max(D - cover_t, 0.0))
     A_oh = max(b - cover_t, 0.0) * max(D - cover_t, 0.0)
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.run_shear_calc.geometry_torsion_setup",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
+    )
 
     # Safety checks to prevent division by zero
+    _section_t0 = time.perf_counter()
     T_used = T_star
     if u_c <= 0 or A_cp <= 0:
         # Return zero capacity if geometry is invalid
@@ -288,8 +629,14 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
         torsion_eq_N = 0.9 * T_used_Nmm * uh_safe / (2.0 * Ao_safe)
         Vt_eq_kN = torsion_eq_N / 1e3
         V_eq = abs(V_star) if not torsion_required else math.sqrt(V_star**2 + Vt_eq_kN**2)
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.run_shear_calc.torsion_and_equivalent_shear",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
+    )
 
     # ---------------- Shear reinforcement & effective section -----------
+    _section_t0 = time.perf_counter()
     Asv = legs_eff * math.pi * lig_d**2 / 4.0
     if legs_eff <= 0:
         Asv = 0.0
@@ -300,8 +647,14 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
 
     # Safety check: prevent division by zero for spacing
     s_safe = max(s, 1.0)  # Minimum 1mm spacing to prevent division by zero
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.run_shear_calc.reinforcement_and_section_resolution",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
+    )
 
     # ---------------- Longitudinal strain εx ----------------------------
+    _section_t0 = time.perf_counter()
     M_star_Nmm = abs(M_star) * 1e6
     d_v_safe = max(d_v, 1.0)  # Prevent division by zero
     term_M = M_star_Nmm / d_v_safe
@@ -331,8 +684,14 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
         eps_x = max(-0.0002, min(eps_x, 0.0))
     else:
         eps_x = max(0.0, min(eps_x_1, 0.003))
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.run_shear_calc.longitudinal_strain",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
+    )
 
     # ---------------- k_v and θ_v ---------------------------------------
+    _section_t0 = time.perf_counter()
     if use_general_kv:
         if fc <= 65:
             k_dg = 32.0 / (16.0 + d_g)
@@ -359,8 +718,14 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
         theta_v_deg = 36.0
 
     theta_v_rad = math.radians(theta_v_deg)
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.run_shear_calc.mcft_parameters",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
+    )
 
     # ---------------- Sectional shear -----------------------------------
+    _section_t0 = time.perf_counter()
     sqrt_fc_limited = min(math.sqrt(max(fc, 0.1)), 8.0)
     Vuc_N = k_v * b_v * d_v_safe * sqrt_fc_limited
     Vuc_kN = Vuc_N / 1e3
@@ -371,8 +736,14 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
     Vu_total_kN = Vuc_kN + Vus_kN + P_v
     phi_Vu = phi * Vu_total_kN
     shear_ok = phi_Vu >= V_eq
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.run_shear_calc.sectional_shear",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
+    )
 
     # ---------------- Web crushing --------------------------------------
+    _section_t0 = time.perf_counter()
     theta_1_deg = 90.0
     theta_1_rad = math.radians(theta_1_deg)
     cot_theta_v = cot(theta_v_rad)
@@ -394,8 +765,14 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
     LHS = math.sqrt(term_V**2 + term_T**2)
     RHS = phi * Vu_max_N / b_v_d_v_safe
     web_ok = LHS <= RHS
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.run_shear_calc.web_crushing",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
+    )
 
-    return ShearResults(
+    _section_t0 = time.perf_counter()
+    _out = ShearResults(
         b_used=b,
         D_used=D,
         A_cp=A_cp,
@@ -430,6 +807,17 @@ def run_shear_calc(inp: ShearInputs) -> ShearResults:
         RHS=RHS,
         web_ok=web_ok,
     )
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.run_shear_calc.build_results",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
+    )
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.run_shear_calc",
+        (time.perf_counter() - _run_shear_calc_t0) * 1000.0,
+        category="compute",
+    )
+    return _out
 
 
 def compute_shear_zones(
@@ -451,6 +839,7 @@ def compute_shear_zones(
 
     Uses V_eq, V_uc, θ_v, d_v, f_syv from the sectional shear model (unchanged).
     """
+    _compute_shear_zones_t0 = time.perf_counter()
     design_governing = str(get_param("actions_mode", "manual") or "manual").strip().lower() == "design"
     L = float(L_mm)
     if L <= 1.0:
@@ -459,6 +848,7 @@ def compute_shear_zones(
     n = 51
     x = np.linspace(0.0, L_m, n)
 
+    _section_t0 = time.perf_counter()
     if design_governing:
         shear_x_raw = np.asarray(get_param("shear_x") or [], dtype=float)
         shear_V_raw = np.asarray(get_param("shear_V") or [], dtype=float)
@@ -474,9 +864,21 @@ def compute_shear_zones(
         # peak shear at supports, reducing linearly to zero at midspan.
         shear_V = V_star * (2.0 * np.abs(x - L_m / 2.0) / max(L_m, 1e-9))
         shear_V = np.maximum(shear_V, 0.0)
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.compute_shear_zones.shear_distribution",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
+    )
 
+    _section_t0 = time.perf_counter()
     from shear_zone_spacing import asv_min_over_s_mm, code_s_max_mm, practical_s_min_mm
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.compute_shear_zones.spacing_helpers_import",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
+    )
 
+    _section_t0 = time.perf_counter()
     d_v = float(results.d_v)
     d_eff = float(d_mm)
     b_v = float(results.b_v)
@@ -486,16 +888,28 @@ def compute_shear_zones(
     V_eq = float(results.V_eq)
     Vuc = float(results.Vuc_kN)
     theta_v_rad = float(results.theta_v_rad)
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.compute_shear_zones.layout_resolution",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
+    )
 
     if d_v <= 1.0:
         raise ValueError("Shear design requires valid geometry (L and d_v) for detailing")
 
+    _section_t0 = time.perf_counter()
     cot_t = cot(theta_v_rad)
     if cot_t <= 1e-12:
         cot_t = 1.0
 
     asv_min = asv_min_over_s_mm(fc, b_v, f_syv)
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.compute_shear_zones.material_and_theta",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
+    )
 
+    _section_t0 = time.perf_counter()
     legs_i_raw = int(legs) if abs(float(legs) - round(float(legs))) < 0.01 else int(round(float(legs)))
     use_notional = bool(legs_i_raw <= 0 or Asv <= 1e-6)
     if use_notional:
@@ -506,10 +920,21 @@ def compute_shear_zones(
         lig_disp = max(float(lig_d_mm), 1.0)
         legs_disp = max(legs_i_raw, 1)
         asv_for_spacing = float(Asv)
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.compute_shear_zones.reinforcement_layout_basis",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
+    )
 
+    _section_t0 = time.perf_counter()
     s_max = code_s_max_mm(d_eff)
     s_min_prac = practical_s_min_mm(lig_disp)
     inc = max(float(spacing_increment_mm), 1.0)
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.compute_shear_zones.spacing_limits",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
+    )
 
     if len(shear_x) != len(shear_V) or len(shear_x) < 2:
         raise ValueError(
@@ -520,6 +945,7 @@ def compute_shear_zones(
     if not np.all(np.isfinite(shear_x)) or not np.all(np.isfinite(shear_V)):
         raise ValueError("Shear distribution V(x) contains non-finite values")
 
+    _section_t0 = time.perf_counter()
     _mid_idx = int(len(shear_V) // 2) if shear_V.size else 0
     V_mid_kN = float(shear_V[_mid_idx]) if shear_V.size else 0.0
     shear_mid_spacing_calc_mm, shear_mid_spacing_mode = compute_midspan_spacing_result(
@@ -534,30 +960,25 @@ def compute_shear_zones(
         cot_theta_v=float(cot_t),
         increment_mm=float(inc),
     )
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.compute_shear_zones.midspan_spacing",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
+    )
 
+    _section_t0 = time.perf_counter()
     req_asv_s = np.maximum(
         required_asv_per_s(shear_V, inp.phi, Vuc, f_syv, d_v, cot_theta_v=cot_t),
         asv_min,
     )
     asv_over_s_req = float(np.max(req_asv_s)) if req_asv_s.size else float(asv_min)
-    # region agent log
-    _dbg_log(
-        "envelope formula snapshot",
-        {
-            "phi": float(inp.phi),
-            "Vuc_kN": float(Vuc),
-            "f_syv": float(f_syv),
-            "d_v": float(d_v),
-            "theta_v_deg": float(results.theta_v_deg),
-            "cot_theta_v": float(cot_t),
-            "req_asv_s_support": float(req_asv_s[0]) if req_asv_s.size else None,
-            "req_asv_s_mid": float(req_asv_s[len(req_asv_s) // 2]) if req_asv_s.size else None,
-            "prov_asv_s_at_input": float(asv_for_spacing / max(float(inp.s_lig), 1e-9)),
-        },
-        run_id="pre-fix",
-        hypothesis_id="FORM_B",
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.compute_shear_zones.required_profile",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
     )
-    # endregion
+
+    _section_t0 = time.perf_counter()
     spacing_profile = np.array(
         [
             spacing_from_demand(
@@ -576,22 +997,11 @@ def compute_shear_zones(
         ],
         dtype=float,
     )
-    # region agent log
-    _dbg_log(
-        "spacing profile after demand+limits",
-        {
-            "profile_min": float(np.min(spacing_profile)) if spacing_profile.size else None,
-            "profile_p10": float(np.percentile(spacing_profile, 10.0)) if spacing_profile.size else None,
-            "profile_p50": float(np.percentile(spacing_profile, 50.0)) if spacing_profile.size else None,
-            "profile_p90": float(np.percentile(spacing_profile, 90.0)) if spacing_profile.size else None,
-            "profile_max": float(np.max(spacing_profile)) if spacing_profile.size else None,
-            "v_max": float(np.max(shear_V)) if shear_V.size else None,
-            "phi_vuc": float(inp.phi) * float(Vuc),
-        },
-        run_id="pre-fix",
-        hypothesis_id="A",
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.compute_shear_zones.spacing_profile_loop",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
     )
-    # endregion
 
     z1_end = min(1.5 * d_v, L)
     z2_end = min(0.5 * L, L)
@@ -607,6 +1017,7 @@ def compute_shear_zones(
         )
 
     # Auto-correction: tighten spacing until compliant OR all locations reach minimum spacing.
+    _section_t0 = time.perf_counter()
     prov_asv_s = asv_for_spacing / np.maximum(spacing_profile, 1e-9)
     while True:
         util0 = np.where(req_asv_s > 1e-12, prov_asv_s / req_asv_s, 1e9)
@@ -628,6 +1039,11 @@ def compute_shear_zones(
         np.floor(spacing_profile / 5.0 + 1e-9) * 5.0,
         s_min_prac,
         s_max,
+    )
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.compute_shear_zones.autocorrection_loop",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
     )
     # --- Determine governing behaviour ---
     s_max = min(0.75 * float(d_eff), 500.0)
@@ -667,20 +1083,6 @@ def compute_shear_zones(
         mid_mask = ~end_mask
     s_end = float(np.min(spacing_profile[end_mask])) if np.any(end_mask) else float(np.min(spacing_profile))
     s_mid = float(np.min(spacing_profile[mid_mask])) if np.any(mid_mask) else float(s_end)
-    # region agent log
-    _dbg_log(
-        "two-zone spacing computed",
-        {
-            "s_end": float(s_end),
-            "s_mid": float(s_mid),
-            "shared_s_lig_at_compute": st.session_state.get("s_lig"),
-            "spacing_profile_min": float(np.min(spacing_profile)) if spacing_profile.size else None,
-            "spacing_profile_max": float(np.max(spacing_profile)) if spacing_profile.size else None,
-        },
-        run_id="pre-fix",
-        hypothesis_id="ALIGN_A",
-    )
-    # endregion
 
     _FILL_RED = "rgba(255,0,0,0.15)"
     _FILL_ORANGE = "rgba(255,165,0,0.15)"
@@ -720,31 +1122,11 @@ def compute_shear_zones(
     prov_asv_s = np.array([asv_for_spacing / max(_spacing_at_x_mm(xm), 1e-9) for xm in shear_x_mm], dtype=float)
     util = np.where(req_asv_s > 1e-12, prov_asv_s / req_asv_s, 1e9)
     asv_over_s_provided = float(np.min(prov_asv_s)) if prov_asv_s.size else 0.0
-    # region agent log
-    _dbg_log(
-        "final segment spacing before summary",
-        {
-            "segment_count": len(strip_segments),
-            "segments": [
-                {
-                    "zone": str(seg.get("zone")),
-                    "x0_mm": float(seg.get("x0_mm", 0.0) or 0.0),
-                    "x1_mm": float(seg.get("x1_mm", 0.0) or 0.0),
-                    "spacing_mm": float(seg.get("spacing_mm", 0.0) or 0.0),
-                }
-                for seg in strip_segments
-            ],
-            "min_util": float(np.min(util)) if util.size else None,
-        },
-        run_id="pre-fix",
-        hypothesis_id="D",
-    )
-    # endregion
 
     min_index = int(np.argmin(util)) if util.size else 0
     min_util = float(util[min_index]) if util.size else float("inf")
     x_crit = float(shear_x[min_index]) if shear_x.size else 0.0
-    envelope_status = "PASS" if min_util >= 1.0 else "FAIL"
+    envelope_status = "PASS" if min_util <= 1.0 + SHEAR_TRUTH_EPS else "FAIL"
     if envelope_status == "FAIL":
         warnings.append("Envelope non-compliance detected: provided A_sv/s is below required at one or more locations.")
 
@@ -755,19 +1137,28 @@ def compute_shear_zones(
     bar_only = f"N{dia_i}"
     bar_label_legs = f"{bar_only} ({legs_disp}-leg)"
 
+    s_in = float(inp.s_lig)
     if is_cantilever:
         summary_lines = [
-            f"Support zone (0–1.5$d$): {bar_label_legs} @ {s_end:.0f} mm",
-            f"Mid span: {bar_only} @ {s_mid:.0f} mm",
+            f"Provided spacing (input, $s_{{lig}}$): {s_in:.0f} mm",
+            f"Required spacing (end zone, demand/code layout): {s_end:.0f} mm",
+            f"Support zone (0–1.5$d$) — layout: {bar_label_legs} @ {s_end:.0f} mm",
+            f"Mid span — layout: {bar_only} @ {s_mid:.0f} mm",
         ]
     else:
         summary_lines = [
-            f"End zone (0–1.5$d$): {bar_label_legs} @ {s_end:.0f} mm",
-            f"Mid span: {bar_only} @ {s_mid:.0f} mm",
-            f"End zone (mirror): {bar_only} @ {s_end:.0f} mm",
+            f"Provided spacing (input, $s_{{lig}}$): {s_in:.0f} mm",
+            f"Required spacing (end zone, demand/code layout): {s_end:.0f} mm",
+            f"End zone (0–1.5$d$) — layout: {bar_label_legs} @ {s_end:.0f} mm",
+            f"Mid span — layout: {bar_only} @ {s_mid:.0f} mm",
+            f"End zone (mirror) — layout: {bar_only} @ {s_end:.0f} mm",
         ]
 
-    summary_lines.append(f"Envelope check: {envelope_status} (worst {min_util:.2f} @ x={x_crit:.2f} m)")
+    summary_lines.append(
+        f"Envelope check: {envelope_status} (worst util {min_util:.2f} @ x={x_crit:.2f} m) — "
+        "effective spacing used in the sectional φV_u check is published separately after auto/apply rules."
+    )
+    _section_t0 = time.perf_counter()
     payload = {
         "beam_length_mm": L,
         "d_mm": d_eff,
@@ -812,12 +1203,20 @@ def compute_shear_zones(
         "shear_s_mid": float(s_mid),
         "shear_mid_spacing_calc_mm": float(shear_mid_spacing_calc_mm),
         "shear_mid_spacing_mode": str(shear_mid_spacing_mode),
+        "provided_input_spacing_mm": float(s_in),
+        "provided_spacing_mm": float(s_in),
+        "required_spacing_mm": float(s_end),
         "V_mid_kN": float(V_mid_kN),
         "strip_segments_mm": strip_segments,
         "zones": zones_m,
         "summary_lines": summary_lines,
         "warnings": list(dict.fromkeys(warnings)),
     }
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.compute_shear_zones.payload_build",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
+    )
     if envelope_status != "PASS":
         spacing_at_crit = float(_spacing_at_x_mm(x_crit * 1000.0))
         req_crit = float(req_asv_s[min_index]) if req_asv_s.size else 0.0
@@ -827,6 +1226,11 @@ def compute_shear_zones(
             suggestions.append("Increase number of ligature legs or bar size")
         else:
             suggestions.append("Reduce spacing near critical region")
+        speed_profile_record(
+            "derived_result_computation.shear_capacity.compute_shear_zones",
+            (time.perf_counter() - _compute_shear_zones_t0) * 1000.0,
+            category="compute",
+        )
         raise ShearLayoutError(
             "Shear design FAILED.\n"
             f"Min utilisation: {min_util:.2f} at x={x_crit:.2f} m\n"
@@ -836,7 +1240,11 @@ def compute_shear_zones(
             f"Suggested fix: {', '.join(suggestions)}",
             payload=payload,
         )
-
+    speed_profile_record(
+        "derived_result_computation.shear_capacity.compute_shear_zones",
+        (time.perf_counter() - _compute_shear_zones_t0) * 1000.0,
+        category="compute",
+    )
     return payload
 
 
@@ -865,22 +1273,6 @@ def build_shear_zone_layout_strip_figure(
     is_cantilever = bool(payload.get("is_cantilever", False))
     support_positions_mm = [float(v) for v in (payload.get("support_positions_mm") or [])]
     support_types = [str(v) for v in (payload.get("support_types") or [])]
-    # region agent log
-    _dbg_log(
-        "shear strip figure payload",
-        {
-            "payload_keys": sorted(str(k) for k in payload.keys()),
-            "segment_count": len(segs),
-            "beam_length_mm": L_mm,
-            "support_type": support_type,
-            "is_cantilever": is_cantilever,
-            "support_positions_mm": support_positions_mm,
-            "support_types": support_types,
-        },
-        run_id="pre-fix",
-        hypothesis_id="H18_H19",
-    )
-    # endregion
     if L_mm <= 0.0 and segs:
         L_mm = max(float(s.get("x1_mm", 0.0) or 0.0) for s in segs)
     L_m = max(L_mm / 1000.0, 1e-9)
@@ -910,7 +1302,7 @@ def build_shear_zone_layout_strip_figure(
         fig.update_xaxes(title_text="Distance along member (m)", range=[0.0, max(L_m, 1e-6)])
         fig.update_yaxes(visible=False, range=[-0.05 * beam_depth_m, y1 + 0.2 * beam_depth_m])
         fig.update_layout(
-            title=title or "Shear reinforcement layout (3 zones)",
+            title=title or "Shear layout (required zone spacings from envelope / Check 10)",
             margin=dict(l=40, r=20, t=50, b=48),
             height=140,
             showlegend=False,
@@ -947,7 +1339,7 @@ def build_shear_zone_layout_strip_figure(
         fig.add_annotation(
             x=xm,
             y=y1 + 0.05 * beam_depth_m,
-            text=f"@{sm:.0f}",
+            text=f"req. @{sm:.0f} mm",
             showarrow=False,
             font=dict(size=10, color="rgba(45,45,45,0.92)"),
         )
@@ -1031,16 +1423,6 @@ def build_shear_zone_layout_strip_figure(
             showarrow=False,
             font=dict(size=14, color="rgba(35,35,35,0.95)"),
         )
-    # region agent log
-    _dbg_log(
-        "shear strip figure supports rendered",
-        {
-            "rendered_supports": rendered_supports,
-        },
-        run_id="pre-fix",
-        hypothesis_id="H19",
-    )
-    # endregion
     fig.update_xaxes(title_text="Distance along member (m)", range=[0.0, max(L_m, 1e-6)])
     fig.update_yaxes(visible=False, range=[-0.18 * beam_depth_m, y1 + 0.22 * beam_depth_m])
     fig.update_layout(
@@ -1061,7 +1443,9 @@ def _compute_shear_capacity():
     Reads all inputs from get_param(), calls run_shear_calc(), and updates results.
     No Streamlit UI - pure computation.
     """
+    _compute_shear_capacity_t0 = time.perf_counter()
     # Read geometry and materials
+    _section_t0 = time.perf_counter()
     b = get_param("b", 300.0)
     D = get_param("D", 600.0)
     d = get_param("d", 560.0)
@@ -1095,6 +1479,11 @@ def _compute_shear_capacity():
     use_general_kv = True  # Use general method by default
     phi = get_param("phi_shear", 0.75)  # Default shear phi
     sigma_cp = 0.0  # No prestress compression by default
+    speed_profile_record(
+        "derived_result_computation.shear_capacity._compute_shear_capacity.read_session_inputs",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="state_mutation",
+    )
     
     # Build shape_name/dims/reo for diagrams (same logic as Inputs/Bending)
     sec_shape = get_param("sec_shape", "RECT")
@@ -1202,6 +1591,7 @@ def _compute_shear_capacity():
     flange_transverse_spacing_top = float(get_param("top_flange_transverse_spacing", 0.0) or 0.0)
     flange_transverse_spacing_bottom = float(get_param("bot_flange_transverse_spacing", 0.0) or 0.0)
 
+    _section_t0 = time.perf_counter()
     try:
         from section_layout import compute_section_layout
         from section_props.reo_layout import (
@@ -1278,8 +1668,14 @@ def _compute_shear_capacity():
             )
     except Exception:
         pass
+    speed_profile_record(
+        "derived_result_computation.shear_capacity._compute_shear_capacity.resolve_layout_reinforcement",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
+    )
 
     # Build input object
+    _section_t0 = time.perf_counter()
     inp = ShearInputs(
         b=b,
         D=D,
@@ -1307,26 +1703,20 @@ def _compute_shear_capacity():
         sum_duct=sum_duct,
         k_d=k_d,
     )
+    speed_profile_record(
+        "derived_result_computation.shear_capacity._compute_shear_capacity.build_input_object",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
+    )
     
     # Run calculation (session inputs — governs Checks 5–9 and published φVu, etc.)
+    _section_t0 = time.perf_counter()
     results = run_shear_calc(inp)
-    # region agent log
-    _dbg_log(
-        "sectional shear snapshot",
-        {
-            "phi_Vu": float(results.phi_Vu),
-            "V_eq": float(results.V_eq),
-            "Vuc_kN": float(results.Vuc_kN),
-            "Vus_kN": float(results.Vus_kN),
-            "Asv": float(results.Asv),
-            "d_v": float(results.d_v),
-            "theta_v_deg": float(results.theta_v_deg),
-            "s_lig": float(inp.s_lig),
-        },
-        run_id="pre-fix",
-        hypothesis_id="FORM_A",
+    speed_profile_record(
+        "derived_result_computation.shear_capacity._compute_shear_capacity.run_shear_calc_session",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
     )
-    # endregion
 
     L_mm = float(get_param("L", 0.0))
     if not L_mm or L_mm <= 0:
@@ -1338,23 +1728,6 @@ def _compute_shear_capacity():
     shear_ok_sectional = bool(float(results.phi_Vu) + 1e-9 >= float(results.V_eq))
     auto_mode = bool(get_param("shear_auto_design", False))
     auto_design_active = bool(get_param("auto_design_active", False))
-    # region agent log
-    _dbg_log(
-        "auto-design gate state",
-        {
-            "auto_mode": bool(auto_mode),
-            "auto_design_active": bool(auto_design_active),
-            "shear_ok_sectional": bool(shear_ok_sectional),
-            "shared_s_lig": float(s_lig),
-            "shared_lig_legs": float(legs),
-            "shared_lig_d": float(lig_d),
-            "widget_inputs_s_lig": st.session_state.get("inputs_s_lig"),
-            "widget_shear_s_lig": st.session_state.get("shear_s_lig"),
-        },
-        run_id="pre-fix",
-        hypothesis_id="A",
-    )
-    # endregion
 
     zone_results = results
     zone_inp = inp
@@ -1375,6 +1748,7 @@ def _compute_shear_capacity():
 
     shear_zone_payload: dict | None = None
     shear_design_status_out: str | None = None
+    _section_t0 = time.perf_counter()
     try:
         from deflection import get_deflection_diagram_support_condition
 
@@ -1382,21 +1756,6 @@ def _compute_shear_capacity():
             get_deflection_diagram_support_condition(st.session_state).get("support_type", "") or ""
         )
         _is_cantilever = "cantilever" in _sup_lbl.lower()
-        # region agent log
-        _dbg_log(
-            "about to call compute_shear_zones",
-            {
-                "L_mm": float(L_mm),
-                "d_mm": float(d),
-                "is_cantilever": bool(_is_cantilever),
-                "zone_lig_d": float(zone_lig_d),
-                "zone_legs": int(max(int(zone_legs), 0)),
-                "shear_design_status_pre": shear_design_status,
-            },
-            run_id="pre-fix",
-            hypothesis_id="N",
-        )
-        # endregion
         shear_zone_payload = compute_shear_zones(
             L_mm=L_mm,
             d_mm=float(d),
@@ -1406,18 +1765,6 @@ def _compute_shear_capacity():
             lig_d_mm=float(zone_lig_d),
             legs=max(int(zone_legs), 0),
         )
-        # region agent log
-        _dbg_log(
-            "compute_shear_zones returned payload",
-            {
-                "payload_is_dict": isinstance(shear_zone_payload, dict),
-                "segment_count": len(list((shear_zone_payload or {}).get("strip_segments_mm") or [])),
-                "envelope_status": (shear_zone_payload or {}).get("shear_envelope_status"),
-            },
-            run_id="pre-fix",
-            hypothesis_id="N",
-        )
-        # endregion
         if shear_zone_payload and extra_zone_warnings:
             _w = list(shear_zone_payload.get("warnings") or [])
             _w.extend(extra_zone_warnings)
@@ -1429,37 +1776,106 @@ def _compute_shear_capacity():
                 "Shear V(x) is required for zoned shear design. Run SFD/BMD or enable synthetic distribution."
             ) from _zone_exc
         else:
-            _failed_payload = getattr(_zone_exc, "payload", None)
-            # region agent log
-            _dbg_log(
-                "compute_shear_zones raised exception",
-                {
-                    "error": str(_zone_exc),
-                    "shear_design_status_pre": shear_design_status,
-                    "payload_present": isinstance(_failed_payload, dict),
-                },
-                run_id="pre-fix",
-                hypothesis_id="N",
-            )
-            # endregion
-            _phi_vu_current = float(results.phi_Vu or 0.0)
-            _vu_util_current = (float(results.V_eq) / _phi_vu_current) if _phi_vu_current > 0.0 else float("nan")
-            _phi_vu_max_current = float(inp.phi) * float(results.Vu_max_kN or 0.0)
-            update_results(
+            _zone_eq_kN = float(results.V_eq or 0.0)
+            if isinstance(_zone_exc, ShearLayoutError) and _zone_eq_kN <= 1e-9:
+                shear_zone_payload = {}
+                shear_design_status_out = "PASS" if shear_ok_sectional else shear_design_status
+                shear_design_status = shear_design_status_out
+                _zone_exc = None
+            else:
+                _failed_payload = getattr(_zone_exc, "payload", None)
+                _phi_vu_current = float(results.phi_Vu or 0.0)
+                _vu_util_current = (float(results.V_eq) / _phi_vu_current) if _phi_vu_current > 0.0 else float("nan")
+                _phi_vu_max_current = float(inp.phi) * float(results.Vu_max_kN or 0.0)
+                _fail_s_end = (
+                    float((_failed_payload or {}).get("shear_spacing_end_mm", 0.0) or 0.0)
+                    if isinstance(_failed_payload, dict)
+                    else None
+                )
+                _fail_req_mm = (
+                    float(_fail_s_end) if _fail_s_end is not None and float(_fail_s_end) > 0.0 else None
+                )
+                _fail_eff_mm = float(inp.s_lig)
+                _fail_truth = resolve_shear_spacing_truth(
+                    provided_spacing_mm=float(inp.s_lig),
+                    required_spacing_mm=_fail_req_mm,
+                    effective_spacing_mm=_fail_eff_mm,
+                )
+                if isinstance(_failed_payload, dict):
+                    _failed_payload = {
+                        **_failed_payload,
+                        "provided_spacing_mm": float(inp.s_lig),
+                        "required_spacing_mm": _fail_req_mm,
+                        "effective_spacing_mm": _fail_eff_mm,
+                        "governing_spacing_source": str(_fail_truth.get("governing_spacing_source") or ""),
+                    }
+                _gov_fail = str(_fail_truth.get("governing_spacing_source") or "")
+                _fail_governing_util = None if math.isnan(_vu_util_current) else _vu_util_current
+                _fail_canonical = _resolve_canonical_shear_truth(
+                    sectional_ok=bool(getattr(results, "shear_ok", False)),
+                    envelope_ok=False,
+                    governing_util=_fail_governing_util,
+                    governing_reason=f"zone_failure: {str(_zone_exc)[:400]}",
+                    governing_source="zone_compute_error",
+                    s_eff_mm=_fail_eff_mm,
+                    s_req_mm=_fail_req_mm,
+                    provided_spacing_mm=float(inp.s_lig),
+                )
+                _fail_contradiction_detected = False
+                _fail_contradiction_reason = ""
+                if _fail_governing_util is not None and float(_fail_governing_util) <= 1.0 + SHEAR_TRUTH_EPS:
+                    _fail_contradiction_detected = True
+                    _fail_contradiction_reason = "published_fail_with_governing_util_lte_1"
+                _nf_zone = _normalise_final_shear_publication(
+                    shear_design_status_out=str(_fail_canonical.get("canonical_shear_status") or "FAIL"),
+                    final_shear_status_source="canonical_skipped_zone_compute_error",
+                    final_shear_truth_resolved=False,
+                    final_shear_truth_failure_reason="zone_compute_error",
+                    shear_util_governing_out=_fail_governing_util,
+                    canonical_pub=None,
+                    zone_payload=_failed_payload if isinstance(_failed_payload, dict) else None,
+                    session_state=st.session_state,
+                    provided_mm=float(inp.s_lig),
+                    required_mm=_fail_req_mm,
+                    effective_mm=_fail_eff_mm,
+                    governing_spacing_source=_gov_fail,
+                )
+                _zone_spacing_reason = str(_nf_zone.get("final_shear_spacing_reason") or "").strip()
+                if not _zone_spacing_reason:
+                    _zone_spacing_reason = (
+                        "Zone compute failure path; spacing uses best-available sectional input and any partial envelope data."
+                    )
+                _zone_spacing_reason = (
+                    f"{_zone_spacing_reason} Publication path: zone_failure_invalid (compute_shear_zones exception)."
+                )
+                _nf_zone = {**_nf_zone, "final_shear_spacing_reason": _zone_spacing_reason}
+                if isinstance(_failed_payload, dict):
+                    _failed_payload = {
+                        **_failed_payload,
+                        "final_shear_publication_path": "zone_failure_invalid",
+                        "final_shear_status_source": _nf_zone["final_shear_status_source"],
+                        "final_shear_truth_resolved": _nf_zone["final_shear_truth_resolved"],
+                        "final_shear_truth_failure_reason": _nf_zone["final_shear_truth_failure_reason"],
+                        "published_result_spacing_mm": _nf_zone["published_result_spacing_mm"],
+                        "published_result_spacing_meaning": _nf_zone["published_result_spacing_meaning"],
+                        "final_shear_spacing_reason": _nf_zone["final_shear_spacing_reason"],
+                    }
+                update_results(
                 phi_Vu_cap=_phi_vu_current,
                 Vu_utilisation=_vu_util_current if not math.isnan(_vu_util_current) else 0.0,
                 phi_Vu_max_kN=_phi_vu_max_current,
+                V_eq_kN=float(results.V_eq or 0.0),
                 shear_zone_results=_failed_payload,
-                shear_design_status="INVALID",
+                shear_design_status=_nf_zone["shear_design_status_out"],
                 shear_design_error=str(_zone_exc),
                 shear_x=(_failed_payload or {}).get("shear_x", []),
                 shear_V=(_failed_payload or {}).get("shear_V", []),
                 V_max=float((_failed_payload or {}).get("V_max", 0.0) or 0.0),
                 req_asv_s=(_failed_payload or {}).get("req_asv_s", []),
                 prov_asv_s=(_failed_payload or {}).get("prov_asv_s", []),
-                shear_util_min=(_failed_payload or {}).get("shear_util_min", None),
+                shear_util_min=_fail_canonical.get("canonical_shear_util"),
                 shear_util_x=(_failed_payload or {}).get("shear_util_x", None),
-                shear_envelope_status=(_failed_payload or {}).get("shear_envelope_status", "FAIL"),
+                shear_envelope_status=_fail_canonical.get("canonical_shear_status"),
                 shear_k_v=float(results.k_v or 0.0),
                 shear_theta_v_deg=float(results.theta_v_deg or 0.0),
                 shear_theta_v_rad=float(results.theta_v_rad or 0.0),
@@ -1473,6 +1889,51 @@ def _compute_shear_capacity():
                 shear_mid_spacing_calc_mm=float((_failed_payload or {}).get("shear_mid_spacing_calc_mm", 0.0) or 0.0),
                 shear_mid_spacing_mode=str((_failed_payload or {}).get("shear_mid_spacing_mode") or ""),
                 V_mid_kN=float((_failed_payload or {}).get("V_mid_kN", 0.0) or 0.0),
+                shear_provided_input_spacing_mm=float(inp.s_lig),
+                shear_input_spacing_mm=float(inp.s_lig),
+                shear_sectional_check_spacing_mm=float(inp.s_lig),
+                shear_required_spacing_mm=_fail_req_mm,
+                shear_effective_spacing_mm=_fail_eff_mm,
+                shear_debug_s_eff_mm=_fail_s_end,
+                shear_governing_spacing_source=str(_fail_truth.get("governing_spacing_source") or ""),
+                canonical_shear_status=_fail_canonical.get("canonical_shear_status"),
+                canonical_shear_ok=bool(_fail_canonical.get("canonical_shear_ok")),
+                canonical_shear_util=_fail_canonical.get("canonical_shear_util"),
+                canonical_shear_reason=_fail_canonical.get("canonical_shear_reason"),
+                canonical_shear_source=_fail_canonical.get("canonical_shear_source"),
+                canonical_shear_effective_spacing_mm=_fail_canonical.get("canonical_shear_effective_spacing_mm"),
+                canonical_shear_required_spacing_mm=_fail_canonical.get("canonical_shear_required_spacing_mm"),
+                canonical_shear_provided_spacing_mm=_fail_canonical.get("canonical_shear_provided_spacing_mm"),
+                canonical_shear_spacing_override_active=bool(
+                    _fail_canonical.get("canonical_shear_spacing_override_active")
+                ),
+                canonical_shear_spacing_override_reason=str(
+                    _fail_canonical.get("canonical_shear_spacing_override_reason") or ""
+                ),
+                shear_governing_check_name="Zone compute error",
+                shear_governing_demand_kN=float(results.V_eq or 0.0),
+                shear_governing_capacity_kN=float(results.phi_Vu or 0.0),
+                shear_governing_util=_fail_canonical.get("canonical_shear_util"),
+                shear_governing_status=_fail_canonical.get("canonical_shear_status"),
+                shear_governing_reason=_fail_canonical.get("canonical_shear_reason"),
+                shear_governing_source=_fail_canonical.get("canonical_shear_source"),
+                shear_truth_status=_fail_canonical.get("canonical_shear_status"),
+                shear_truth_reason=f"zone_failure: {str(_zone_exc)[:400]}",
+                shear_truth_inconsistent_status_override=None,
+                shear_truth_util_governing=_fail_canonical.get("canonical_shear_util"),
+                shear_truth_web_util_governing=None,
+                shear_util_governing=_fail_canonical.get("canonical_shear_util"),
+                final_shear_status_source=_nf_zone["final_shear_status_source"],
+                final_shear_truth_resolved=_nf_zone["final_shear_truth_resolved"],
+                final_shear_truth_failure_reason=_nf_zone["final_shear_truth_failure_reason"],
+                published_result_spacing_mm=_nf_zone["published_result_spacing_mm"],
+                published_result_spacing_meaning=_nf_zone["published_result_spacing_meaning"],
+                final_shear_spacing_reason=_nf_zone["final_shear_spacing_reason"],
+                final_shear_publication_path="zone_failure_invalid",
+                final_shear_truth_bundle_complete=True,
+                summary_shear_truth_consume_reason="explicit_final_truth_bundle",
+                shear_truth_contradiction_detected=_fail_contradiction_detected,
+                shear_truth_contradiction_reason=_fail_contradiction_reason,
                 shear_auto_selected_lig_d_mm=None,
                 shear_auto_selected_legs=None,
                 shear_M_uls_kNm=list(st.session_state.get("shear_M_uls_kNm") or []),
@@ -1484,92 +1945,43 @@ def _compute_shear_capacity():
                 crack_bmd_cache_fingerprint=str(st.session_state.get("crack_bmd_cache_fingerprint") or ""),
                 bmd_support_positions_m=list(st.session_state.get("bmd_support_positions_m") or []),
                 bmd_support_types=list(st.session_state.get("bmd_support_types") or []),
-            )
-            # region agent log
-            _dbg_log(
-                "failure path published canonical shear state",
-                {
-                    "phi_Vu_cap": _phi_vu_current,
-                    "Vu_utilisation": _vu_util_current if not math.isnan(_vu_util_current) else None,
-                    "phi_Vu_max_kN": _phi_vu_max_current,
-                    "shear_k_v": float(results.k_v or 0.0),
-                    "shear_theta_v_deg": float(results.theta_v_deg or 0.0),
-                    "shear_Vuc_kN": float(results.Vuc_kN or 0.0),
-                    "shear_Vus_kN": float(results.Vus_kN or 0.0),
-                },
-                run_id="post-fix",
-                hypothesis_id="UI_FIX2",
-            )
-            # endregion
-            if "V(x)" in str(_zone_exc):
-                raise ValueError("Shear design requires valid V(x) from SFD") from _zone_exc
-            raise ValueError(str(_zone_exc)) from _zone_exc
+                )
+                if isinstance(_zone_exc, ShearLayoutError):
+                    shear_zone_payload = _failed_payload if isinstance(_failed_payload, dict) else {}
+                    shear_design_status_out = str(_nf_zone.get("shear_design_status_out") or "FAIL")
+                    shear_design_status = shear_design_status_out
+                elif "V(x)" in str(_zone_exc):
+                    raise ValueError("Shear design requires valid V(x) from SFD") from _zone_exc
+                else:
+                    raise ValueError(str(_zone_exc)) from _zone_exc
+    speed_profile_record(
+        "derived_result_computation.shear_capacity._compute_shear_capacity.compute_shear_zones_and_zone_publish",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
+    )
 
-    # Align sectional Vus check with detailed spacing by using the end-zone spacing.
+    # Align sectional Vus check with detailed spacing by using the end-zone governing spacing.
+    # Shared/widget s_lig remains the user-provided input; we do not write envelope spacing back.
+    _section_t0 = time.perf_counter()
     _s_eff_mm = None
     if isinstance(shear_zone_payload, dict):
         _s_eff_mm = float(shear_zone_payload.get("shear_spacing_end_mm", 0.0) or 0.0)
-    # Only adopt layout end-zone spacing for sectional φV_u / session s_lig when "Apply auto spacing" is on.
+    # When "Apply auto spacing" is on, re-run the sectional check using governing end-zone spacing only
+    # (in-memory); canonical s_lig in session is unchanged.
     if auto_mode and _s_eff_mm is not None and _s_eff_mm > 0.0:
         try:
             results = run_shear_calc(replace(inp, s_lig=float(_s_eff_mm)))
-            apply_auto_design_results({"s_lig": float(_s_eff_mm)})
         except Exception as _realign_exc:
-            # region agent log
-            _dbg_log(
-                "run_shear_calc realign failed",
-                {"error": str(_realign_exc), "s_eff_mm": float(_s_eff_mm)},
-                run_id="pre-fix",
-                hypothesis_id="H3",
-            )
-            # endregion
             pass
-    # region agent log
-    _dbg_log(
-        "spacing alignment after writeback",
-        {
-            "auto_mode": bool(auto_mode),
-            "effective_spacing_mm": float(_s_eff_mm) if _s_eff_mm is not None else None,
-            "payload_s_end": float((shear_zone_payload or {}).get("shear_spacing_end_mm", 0.0) or 0.0),
-            "payload_s_mid": float((shear_zone_payload or {}).get("shear_spacing_mid_mm", 0.0) or 0.0),
-            "inp_s_lig": float(inp.s_lig),
-            "shared_s_lig_after": st.session_state.get("s_lig"),
-            "widget_inputs_s_lig_after": st.session_state.get("inputs_s_lig"),
-            "widget_shear_s_lig_after": st.session_state.get("shear_s_lig"),
-        },
-        run_id="pre-fix",
-        hypothesis_id="ALIGN_B",
-    )
-    # endregion
-    if shear_design_status_out == "AUTO-DESIGNED":
-        # region agent log
-        _dbg_log(
-            "auto-designed spacing candidates",
-            {
-                "input_s_lig_mm": float(inp.s_lig),
-                "effective_layout_spacing_mm": float(_s_eff_mm) if _s_eff_mm is not None else None,
-                "shared_s_lig_now": st.session_state.get("s_lig"),
-                "widget_inputs_s_lig_now": st.session_state.get("inputs_s_lig"),
-                "widget_shear_s_lig_now": st.session_state.get("shear_s_lig"),
-            },
-            run_id="pre-fix",
-            hypothesis_id="L",
-        )
-        # endregion
-
-    # After zoned layout + optional s_lig realignment, align published status with final sectional φV_u check.
-    if (
-        shear_design_status_out is not None
-        and str(shear_design_status_out).strip().upper() != "INVALID"
-        and _legs_i >= 2
-        and shear_design_status_out != "no_reo"
-    ):
-        shear_design_status_out = "PASS" if results.shear_ok else "FAIL"
-
-    _s_used_for_vus = (
-        float(_s_eff_mm)
-        if auto_mode and _s_eff_mm is not None and _s_eff_mm > 0.0
-        else float(inp.s_lig)
+    # Product rule: sectional shear capacity is always checked against the
+    # provided spacing input. Zone/end required spacing remains available as
+    # detailing/report context only; it must not replace the provided spacing
+    # in the φVu calculation.
+    _s_used_for_vus = float(inp.s_lig)
+    speed_profile_record(
+        "derived_result_computation.shear_capacity._compute_shear_capacity.auto_spacing_realign",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
     )
 
     # Calculate utilisation
@@ -1581,6 +1993,7 @@ def _compute_shear_capacity():
     Vuc_util = results.V_eq / phi_Vu_max if phi_Vu_max > 0 else float("nan")
     
     # ------------------ Build detailed shear steps (for PDF) ------------------
+    _section_t0 = time.perf_counter()
     shear_steps = [
         {
             "title": "Inputs & actions",
@@ -1734,6 +2147,8 @@ def _compute_shear_capacity():
                 "V_us = (A_sv · f_syv · d_v / s) · cotθ_v",
             ],
             "substitution": [
+                f"Effective spacing s in V_us = {_s_used_for_vus:.0f} mm "
+                f"(provided input s_lig = {float(inp.s_lig):.0f} mm)",
                 f"= ({results.Asv:.1f} · {results.f_syv:.0f} · {results.d_v:.0f} / {_s_used_for_vus:.0f}) · cot{results.theta_v_deg:.1f}°",
                 f"= {results.Vus_kN:.1f} kN",
             ],
@@ -1791,139 +2206,16 @@ def _compute_shear_capacity():
             "diagram": None,
         },
     ]
-
-    # ------------------ Build bending-style shear_report (tabs/boxes/derivations + diagrams) ------------------
-    from reporting.report_content import make_calc_box, make_tab, make_module_report
-    from reporting.fig_export import export_box_diagram_png
-    try:
-        # package form
-        from reporting.fig_export import call_with_supported_kwargs
-    except Exception:
-        # local flat-file fallback
-        from fig_export import call_with_supported_kwargs
-    from shear_diagrams import (
-        plot_shear_torsion_section_2d,
-        plot_shear_step1_theta_cracks_3d,
-        make_mcft_longitudinal_strain_profile_fig,
+    speed_profile_record(
+        "derived_result_computation.shear_capacity._compute_shear_capacity.build_shear_steps",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
     )
 
-    eps_top, eps_bot = derive_eps_top_bot_for_step4_diagram(results.eps_x)
+    # Keep the engineering steps payload, but lazily build the heavy diagram/report
+    # tree only when a report/detail consumer explicitly asks for it.
+    shear_report = {}
 
-    diag1 = export_box_diagram_png(
-        lambda: call_with_supported_kwargs(
-            plot_shear_step1_theta_cracks_3d,
-            L_mm=L_mm,
-            b_mm=inp.b,
-            D_mm=inp.D,
-            theta_deg=getattr(results, "theta_v_deg", 45.0),
-        ),
-        key="shear_1_torsion",
-        caption="Torsion cracking / diagonal crack field",
-        w_mm=65,
-        h_mm=40,
-    )
-    diag2 = export_box_diagram_png(
-        lambda: plot_shear_torsion_section_2d(
-            shape_name=shape_name,
-            dims=dims,
-            reo=reo,
-            show_labels=True,
-            tension_face=active_tension_face,
-        ),
-        key="shear_2_section",
-        caption="Section + torsion/shear idealisation",
-        w_mm=65,
-        h_mm=40,
-    )
-    diag3 = export_box_diagram_png(
-        lambda: make_mcft_longitudinal_strain_profile_fig(eps_top, results.eps_x, eps_bot),
-        key="shear_4_epsx",
-        caption="MCFT longitudinal strain profile",
-        w_mm=65,
-        h_mm=40,
-    )
-
-    def _step_to_box(idx, s, diagram=None):
-        eqs = s.get("equations", []) or []
-        clause = s.get("clause", "")
-        status = s.get("status", None)
-        result_line = s.get("result") or (eqs[-1] if eqs else "")
-
-        deriv = []
-        formula = s.get("formula") or s.get("formula_lines") or []
-        subst = s.get("substitution") or s.get("sub_lines") or []
-        if isinstance(formula, str):
-            formula = [formula]
-        if isinstance(subst, str):
-            subst = [subst]
-
-        if formula:
-            deriv.append({"label": "Formula", "eq": "", "sub": ""})
-            for line in formula:
-                deriv.append({"label": "", "eq": line, "sub": ""})
-
-        if subst:
-            deriv.append({"label": "Substitution", "eq": "", "sub": ""})
-            for line in subst:
-                deriv.append({"label": "", "eq": line, "sub": ""})
-
-        for line in eqs:
-            deriv.append({"label": "", "eq": line, "sub": ""})
-
-        return make_calc_box(
-            id=f"1.{idx}",
-            title=s.get("title", f"Shear check {idx}"),
-            status=status,
-            result=result_line,
-            clause=clause,
-            derivation=deriv,
-            diagram=diagram,
-        )
-
-    if len(shear_steps) >= 2:
-        shear_steps[1]["diagram"] = diag1
-    if len(shear_steps) >= 4:
-        shear_steps[3]["diagram"] = diag2
-    if len(shear_steps) >= 5:
-        shear_steps[4]["diagram"] = diag3
-
-    boxes = []
-    for i, s in enumerate(shear_steps, start=1):
-        diagram = None
-        if i == 2:
-            diagram = diag1
-        elif i == 4:
-            diagram = diag2
-        elif i == 5:
-            diagram = diag3
-        boxes.append(_step_to_box(i, s, diagram=diagram))
-
-    shear_report = make_module_report(
-        module_title="Shear (ULS)",
-        tabs=[make_tab("ULS Checks", boxes)],
-    )
-
-    # region agent log
-    _payload = shear_zone_payload if isinstance(shear_zone_payload, dict) else {}
-    _dbg_log(
-        "STAT_SYNC pre update_results",
-        {
-            "shear_design_status_out": shear_design_status_out,
-            "results_shear_ok": bool(getattr(results, "shear_ok", False)),
-            "results_web_ok": bool(getattr(results, "web_ok", False)),
-            "phi_Vu": float(getattr(results, "phi_Vu", 0.0) or 0.0),
-            "V_eq": float(getattr(results, "V_eq", 0.0) or 0.0),
-            "V_star_inp": float(getattr(inp, "V_star", 0.0) or 0.0),
-            "V_max_payload": float((_payload or {}).get("V_max", 0.0) or 0.0),
-            "shear_envelope_status": (_payload or {}).get("shear_envelope_status"),
-            "shear_util_min": (_payload or {}).get("shear_util_min"),
-            "s_eff_mm": float(_s_eff_mm) if _s_eff_mm is not None else None,
-            "cot_theta_v": float(cot(float(getattr(results, "theta_v_rad", 0.0) or 0.0))),
-        },
-        run_id="verify",
-        hypothesis_id="H1",
-    )
-    # endregion
 
     def _resample_y_on_new_x(old_x: list[float], old_y: list[float], new_x: list[float]) -> list[float]:
         if len(old_x) < 2 or len(new_x) < 2 or len(old_y) != len(old_x):
@@ -1949,7 +2241,217 @@ def _compute_shear_capacity():
     _m_sls_resampled = _resample_y_on_new_x(_sx_prev, _m_sls_prev, _sx_new)
     _m_uls_resampled = _resample_y_on_new_x(_sx_prev, _m_uls_prev, _sx_new)
 
-    # Update session state
+    # Update session state — final published shear status/spacing truth from canonical contract
+    _prov_in = float(inp.s_lig)
+    _required_mm = float(_s_eff_mm) if _s_eff_mm is not None and float(_s_eff_mm) > 0.0 else None
+    _effective_mm = float(_s_used_for_vus)
+    _spacing_truth = resolve_shear_spacing_truth(
+        provided_spacing_mm=_prov_in,
+        required_spacing_mm=_required_mm,
+        effective_spacing_mm=_effective_mm,
+    )
+    _gov_src = str(_spacing_truth.get("governing_spacing_source") or "")
+
+    _section_t0 = time.perf_counter()
+    _canonical_pub: dict | None = None
+    _canonical_truth_payload = _resolve_canonical_shear_truth(
+        sectional_ok=bool(getattr(results, "shear_ok", False)),
+        envelope_ok=None,
+        governing_util=None,
+        governing_reason="canonical_truth_not_computed",
+        governing_source="pre_publish_default",
+        s_eff_mm=_effective_mm,
+        s_req_mm=_required_mm,
+        provided_spacing_mm=_prov_in,
+    )
+    _final_shear_status_source = "sectional_zone_or_invalid_skip"
+    _final_shear_truth_resolved = False
+    _final_shear_truth_failure_reason: str | None = None
+    _shear_util_governing_out: float | None = None
+
+    if shear_design_status_out == "AUTO-DESIGNED":
+        _final_shear_status_source = "auto_designed_reserved"
+        _final_shear_truth_resolved = False
+        _final_shear_truth_failure_reason = "canonical_skipped_auto_designed_reserved"
+    elif (
+        shear_design_status_out is not None
+        and str(shear_design_status_out).strip().upper() != "INVALID"
+        and shear_design_status_out != "no_reo"
+        and _legs_i >= 2
+    ):
+        try:
+            _canonical_pub = compute_canonical_shear_truth(
+                dict(st.session_state),
+                zone_payload=shear_zone_payload if isinstance(shear_zone_payload, dict) else None,
+                provided_spacing_mm=_prov_in,
+                required_spacing_mm=_required_mm,
+                effective_spacing_mm=_effective_mm,
+            )
+            _spacing_truth = dict(_canonical_pub.get("shear_spacing_truth") or _spacing_truth)
+            _gov_src = str(_spacing_truth.get("governing_spacing_source") or _gov_src)
+            _truth_st = str(_canonical_pub.get("shear_truth_status") or "").strip()
+            try:
+                _ur_g = _canonical_pub.get("shear_governing_util")
+                if _ur_g is None:
+                    _ur_g = _canonical_pub.get("shear_util_governing")
+                _fv_g = float(_ur_g) if _ur_g is not None else float("nan")
+                _shear_util_governing_out = (
+                    None if (math.isnan(_fv_g) or math.isinf(_fv_g)) else float(_fv_g)
+                )
+            except (TypeError, ValueError):
+                _shear_util_governing_out = None
+
+            _canonical_truth_payload = _resolve_canonical_shear_truth(
+                sectional_ok=bool(getattr(results, "shear_ok", False)),
+                envelope_ok=(str((shear_zone_payload or {}).get("shear_envelope_status") or "").strip().upper() == "PASS"),
+                governing_util=_shear_util_governing_out,
+                governing_reason=str(
+                    _canonical_pub.get("shear_governing_reason")
+                    or _canonical_pub.get("shear_truth_reason")
+                    or ""
+                ),
+                governing_source=str(
+                    _canonical_pub.get("shear_governing_source")
+                    or _canonical_pub.get("shear_truth_governing_source")
+                    or _truth_st
+                    or "canonical_shear_truth"
+                ),
+                s_eff_mm=_effective_mm,
+                s_req_mm=_required_mm,
+                provided_spacing_mm=_prov_in,
+            )
+            shear_design_status_out = str(_canonical_truth_payload.get("canonical_shear_status") or "FAIL")
+            _final_shear_status_source = str(
+                _canonical_truth_payload.get("canonical_shear_source") or "canonical_shear_truth"
+            )
+            _final_shear_truth_resolved = bool(
+                _canonical_truth_payload.get("canonical_shear_resolved")
+            )
+            _final_shear_truth_failure_reason = (
+                None if _final_shear_truth_resolved else str(_canonical_truth_payload.get("canonical_shear_reason") or "canonical_truth_unresolved_status")
+            )
+        except Exception:
+            _canonical_pub = None
+            _shear_util_governing_out = None
+            _canonical_truth_payload = _resolve_canonical_shear_truth(
+                sectional_ok=bool(getattr(results, "shear_ok", False)),
+                envelope_ok=(str((shear_zone_payload or {}).get("shear_envelope_status") or "").strip().upper() == "PASS"),
+                governing_util=None,
+                governing_reason="canonical_truth_exception",
+                governing_source="canonical_shear_truth_error_nonpass_fallback",
+                s_eff_mm=_effective_mm,
+                s_req_mm=_required_mm,
+                provided_spacing_mm=_prov_in,
+            )
+            _final_shear_status_source = "canonical_shear_truth_error_nonpass_fallback"
+            shear_design_status_out = "FAIL"
+            _final_shear_truth_failure_reason = "canonical_truth_exception"
+            _final_shear_truth_resolved = False
+
+    _nf = _normalise_final_shear_publication(
+        shear_design_status_out=shear_design_status_out,
+        final_shear_status_source=_final_shear_status_source,
+        final_shear_truth_resolved=_final_shear_truth_resolved,
+        final_shear_truth_failure_reason=_final_shear_truth_failure_reason,
+        shear_util_governing_out=_shear_util_governing_out,
+        canonical_pub=_canonical_pub,
+        zone_payload=shear_zone_payload if isinstance(shear_zone_payload, dict) else None,
+        session_state=st.session_state,
+        provided_mm=_prov_in,
+        required_mm=_required_mm,
+        effective_mm=_effective_mm,
+        governing_spacing_source=_gov_src,
+    )
+    speed_profile_record(
+        "derived_result_computation.shear_capacity._compute_shear_capacity.canonical_truth_and_publication_normalization",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="compute",
+    )
+    shear_design_status_out = _nf["shear_design_status_out"]
+    _final_shear_status_source = _nf["final_shear_status_source"]
+    _final_shear_truth_resolved = _nf["final_shear_truth_resolved"]
+    _final_shear_truth_failure_reason = _nf["final_shear_truth_failure_reason"]
+    _published_result_spacing_mm = _nf["published_result_spacing_mm"]
+    _published_result_spacing_meaning = _nf["published_result_spacing_meaning"]
+    _final_shear_spacing_reason = _nf["final_shear_spacing_reason"]
+    _canonical_shear_status = str(_canonical_truth_payload.get("canonical_shear_status") or shear_design_status_out or "FAIL")
+    _canonical_shear_util = _canonical_truth_payload.get("canonical_shear_util")
+    _canonical_shear_reason = str(_canonical_truth_payload.get("canonical_shear_reason") or _final_shear_truth_failure_reason or "")
+    _canonical_shear_source = str(_canonical_truth_payload.get("canonical_shear_source") or _final_shear_status_source or "")
+    _shear_governing_check_name = str((_canonical_pub or {}).get("shear_governing_check_name") or "")
+    _shear_governing_demand_kN = (_canonical_pub or {}).get("shear_governing_demand_kN")
+    _shear_governing_capacity_kN = (_canonical_pub or {}).get("shear_governing_capacity_kN")
+    _shear_governing_status = str((_canonical_pub or {}).get("shear_governing_status") or _canonical_shear_status or "")
+    _shear_governing_reason = str((_canonical_pub or {}).get("shear_governing_reason") or _canonical_shear_reason or "")
+    _shear_governing_source = str((_canonical_pub or {}).get("shear_governing_source") or _canonical_shear_source or "")
+    _shear_governing_util = (_canonical_pub or {}).get("shear_governing_util")
+    if _shear_governing_util is None:
+        _shear_governing_util = _canonical_shear_util
+    _canonical_shear_spacing_override_active = bool(
+        (_canonical_pub or {}).get("canonical_shear_spacing_override_active")
+    )
+    _canonical_shear_spacing_override_reason = str(
+        (_canonical_pub or {}).get("canonical_shear_spacing_override_reason") or ""
+    )
+    _shear_truth_contradiction_detected = False
+    _shear_truth_contradiction_reason = ""
+    try:
+        if _canonical_shear_util is not None:
+            if _canonical_shear_status == "PASS" and float(_canonical_shear_util) > 1.0 + SHEAR_TRUTH_EPS:
+                _shear_truth_contradiction_detected = True
+                _shear_truth_contradiction_reason = "published_pass_with_governing_util_gt_1"
+            elif _canonical_shear_status == "FAIL" and float(_canonical_shear_util) <= 1.0 + SHEAR_TRUTH_EPS:
+                _shear_truth_contradiction_detected = True
+                _shear_truth_contradiction_reason = "published_fail_with_governing_util_lte_1"
+    except (TypeError, ValueError):
+        pass
+
+    if isinstance(shear_zone_payload, dict):
+        _zp_merge = {
+            **shear_zone_payload,
+            "raw_shear_envelope_status": shear_zone_payload.get("shear_envelope_status"),
+            "raw_shear_util_min": shear_zone_payload.get("shear_util_min"),
+            "provided_spacing_mm": _prov_in,
+            "required_spacing_mm": _required_mm,
+            "effective_spacing_mm": _effective_mm,
+            "governing_spacing_source": _gov_src,
+            "final_shear_status_source": _final_shear_status_source,
+            "final_shear_truth_resolved": _final_shear_truth_resolved,
+            "final_shear_truth_failure_reason": _final_shear_truth_failure_reason,
+            "published_result_spacing_mm": _published_result_spacing_mm,
+            "published_result_spacing_meaning": _published_result_spacing_meaning,
+            "final_shear_spacing_reason": _final_shear_spacing_reason,
+            "canonical_shear_status": _canonical_shear_status,
+            "canonical_shear_util": _canonical_shear_util,
+            "canonical_shear_reason": _canonical_shear_reason,
+            "canonical_shear_source": _canonical_shear_source,
+            "canonical_shear_spacing_override_active": _canonical_shear_spacing_override_active,
+            "canonical_shear_spacing_override_reason": _canonical_shear_spacing_override_reason,
+            "shear_governing_check_name": _shear_governing_check_name,
+            "shear_governing_demand_kN": _shear_governing_demand_kN,
+            "shear_governing_capacity_kN": _shear_governing_capacity_kN,
+            "shear_governing_util": _shear_governing_util,
+            "shear_governing_status": _shear_governing_status,
+            "shear_governing_reason": _shear_governing_reason,
+            "shear_governing_source": _shear_governing_source,
+        }
+        if _canonical_pub:
+            _zp_merge.update(
+                {
+                    "shear_truth_status": _canonical_pub.get("shear_truth_status"),
+                    "shear_truth_reason": _canonical_pub.get("shear_truth_reason"),
+                    "shear_truth_inconsistent_status_override": _canonical_pub.get(
+                        "shear_truth_inconsistent_status_override"
+                    ),
+                    "shear_truth_util_governing": _canonical_pub.get("shear_util_governing"),
+                    "shear_truth_web_util_governing": _canonical_pub.get("web_util_governing"),
+                    "shear_util_governing": _shear_util_governing_out,
+                },
+            )
+        elif _shear_util_governing_out is not None:
+            _zp_merge["shear_util_governing"] = _shear_util_governing_out
+        shear_zone_payload = _zp_merge
+    _section_t0 = time.perf_counter()
     update_results(
         phi_Vu_cap=results.phi_Vu,
         Vu_utilisation=shear_util if not math.isnan(shear_util) else 0.0,
@@ -1983,9 +2485,9 @@ def _compute_shear_capacity():
         V_max=float((shear_zone_payload or {}).get("V_max", 0.0) or 0.0),
         req_asv_s=(shear_zone_payload or {}).get("req_asv_s", []),
         prov_asv_s=(shear_zone_payload or {}).get("prov_asv_s", []),
-        shear_util_min=(shear_zone_payload or {}).get("shear_util_min", None),
+        shear_util_min=_canonical_shear_util,
         shear_util_x=(shear_zone_payload or {}).get("shear_util_x", None),
-        shear_envelope_status=(shear_zone_payload or {}).get("shear_envelope_status", None),
+        shear_envelope_status=_canonical_shear_status,
         shear_k_v=float(results.k_v),
         shear_theta_v_deg=float(results.theta_v_deg),
         shear_theta_v_rad=float(results.theta_v_rad),
@@ -2002,7 +2504,49 @@ def _compute_shear_capacity():
         shear_mid_spacing_calc_mm=float((shear_zone_payload or {}).get("shear_mid_spacing_calc_mm", 0.0) or 0.0),
         shear_mid_spacing_mode=str((shear_zone_payload or {}).get("shear_mid_spacing_mode") or ""),
         V_mid_kN=float((shear_zone_payload or {}).get("V_mid_kN", 0.0) or 0.0),
+        shear_provided_input_spacing_mm=_prov_in,
+        shear_input_spacing_mm=_prov_in,
+        shear_sectional_check_spacing_mm=_effective_mm,
+        shear_required_spacing_mm=_required_mm,
+        shear_effective_spacing_mm=_effective_mm,
+        shear_debug_s_eff_mm=float(_s_eff_mm) if _s_eff_mm is not None else _effective_mm,
+        shear_governing_spacing_source=_gov_src,
+        canonical_shear_status=_canonical_shear_status,
+        canonical_shear_ok=bool(_canonical_truth_payload.get("canonical_shear_ok")),
+        canonical_shear_util=_canonical_shear_util,
+        canonical_shear_reason=_canonical_shear_reason,
+        canonical_shear_source=_canonical_shear_source,
+        canonical_shear_effective_spacing_mm=_canonical_truth_payload.get("canonical_shear_effective_spacing_mm"),
+        canonical_shear_required_spacing_mm=_canonical_truth_payload.get("canonical_shear_required_spacing_mm"),
+        canonical_shear_provided_spacing_mm=_canonical_truth_payload.get("canonical_shear_provided_spacing_mm"),
+        canonical_shear_spacing_override_active=_canonical_shear_spacing_override_active,
+        canonical_shear_spacing_override_reason=_canonical_shear_spacing_override_reason,
+        shear_governing_check_name=_shear_governing_check_name,
+        shear_governing_demand_kN=_shear_governing_demand_kN,
+        shear_governing_capacity_kN=_shear_governing_capacity_kN,
+        shear_governing_util=_shear_governing_util,
+        shear_governing_status=_shear_governing_status,
+        shear_governing_reason=_shear_governing_reason,
+        shear_governing_source=_shear_governing_source,
         shear_design_status=shear_design_status_out,
+        shear_truth_status=(_canonical_pub or {}).get("shear_truth_status"),
+        shear_truth_reason=(_canonical_pub or {}).get("shear_truth_reason"),
+        shear_truth_inconsistent_status_override=(_canonical_pub or {}).get(
+            "shear_truth_inconsistent_status_override"
+        ),
+        shear_truth_util_governing=(_canonical_pub or {}).get("shear_util_governing"),
+        shear_truth_web_util_governing=(_canonical_pub or {}).get("web_util_governing"),
+        shear_util_governing=_shear_util_governing_out,
+        final_shear_status_source=_final_shear_status_source,
+        final_shear_truth_resolved=_final_shear_truth_resolved,
+        final_shear_truth_failure_reason=_final_shear_truth_failure_reason,
+        published_result_spacing_mm=_published_result_spacing_mm,
+        published_result_spacing_meaning=_published_result_spacing_meaning,
+        final_shear_spacing_reason=_final_shear_spacing_reason,
+        final_shear_truth_bundle_complete=True,
+        summary_shear_truth_consume_reason="explicit_final_truth_bundle",
+        shear_truth_contradiction_detected=_shear_truth_contradiction_detected,
+        shear_truth_contradiction_reason=_shear_truth_contradiction_reason,
         shear_auto_selected_lig_d_mm=sel_lig_d_mm,
         shear_auto_selected_legs=sel_legs_f,
         shear_M_uls_kNm=_m_uls_resampled,
@@ -2013,36 +2557,17 @@ def _compute_shear_capacity():
         bmd_support_positions_m=list(st.session_state.get("bmd_support_positions_m") or []),
         bmd_support_types=list(st.session_state.get("bmd_support_types") or []),
     )
-    # region agent log
-    _dbg_log(
-        "results published alignment snapshot",
-        {
-            "result_s_end": st.session_state.get("shear_spacing_end_mm"),
-            "result_s_mid": st.session_state.get("shear_spacing_mid_mm"),
-            "result_util": st.session_state.get("shear_util_min"),
-            "result_env": st.session_state.get("shear_envelope_status"),
-            "shared_s_lig_final": st.session_state.get("s_lig"),
-        },
-        run_id="pre-fix",
-        hypothesis_id="ALIGN_C",
+    speed_profile_record(
+        "derived_result_computation.shear_capacity._compute_shear_capacity.update_results",
+        (time.perf_counter() - _section_t0) * 1000.0,
+        category="state_mutation",
     )
-    # endregion
+    speed_profile_record(
+        "derived_result_computation.shear_capacity._compute_shear_capacity.total",
+        (time.perf_counter() - _compute_shear_capacity_t0) * 1000.0,
+        category="compute",
+    )
 
-    # region agent log
-    _dbg_log(
-        "compute exits with reinforcement state",
-        {
-            "shared_s_lig": st.session_state.get("s_lig"),
-            "shared_lig_legs": st.session_state.get("lig_legs"),
-            "widget_inputs_s_lig": st.session_state.get("inputs_s_lig"),
-            "widget_shear_s_lig": st.session_state.get("shear_s_lig"),
-            "shear_design_status": shear_design_status_out,
-            "auto_design_active": st.session_state.get("auto_design_active"),
-        },
-        run_id="pre-fix",
-        hypothesis_id="E",
-    )
-    # endregion
 
     return {
         "phi_Vu_cap": results.phi_Vu,

@@ -41,6 +41,19 @@ def build_deflection_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str
     g_kNm = float(g_udl_raw or 0.0)
     q_kNm = float(q_udl_raw or 0.0)
     w_sls_fb = get_param("w_sls_kNm_per_m", None)
+    sls_Mstar = get_param("sls_Mstar", None)
+    sls_Vstar = get_param("sls_Vstar", None)
+
+    def _has_nonzero_load(value: Any) -> bool:
+        try:
+            return abs(float(value or 0.0)) > 1e-12
+        except Exception:
+            return False
+
+    has_service_load = any(
+        _has_nonzero_load(value)
+        for value in (g_udl_raw, q_udl_raw, w_sls_fb, sls_Mstar, sls_Vstar)
+    )
 
     defl_limit_ratio = float(get_deflection_limit_ratio(get_param("defl_limit_ratio", st_state.get("defl_limit_ratio", 250.0))))
     support_type = get_resolved_deflection_support_type(st_state)
@@ -78,8 +91,6 @@ def build_deflection_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str
             resolve_deflection_equiv_loads_from_inputs,
         )
 
-        sls_Mstar = get_param("sls_Mstar", None)
-        sls_Vstar = get_param("sls_Vstar", None)
         derived = _derive_equiv_udl_from_actions(
             M_kNm=sls_Mstar,
             V_kN=sls_Vstar,
@@ -141,6 +152,13 @@ def build_deflection_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str
     status_short = _status(util_short)
     status_long = _status(util_long)
     status_total = _status(util_total)
+    if not has_service_load:
+        util_short = None
+        util_long = None
+        util_total = None
+        status_short = "NOT RUN"
+        status_long = "NOT RUN"
+        status_total = "NOT RUN"
 
     lim_txt = _format_deflection_allowable_limit_mm(float(defl_limit_mm or 0.0), defl_limit_ratio)
 

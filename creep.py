@@ -30,7 +30,7 @@ from engineering_check_ui import PARAMETRIC_RESULT_COLUMNS, sync_legacy_value_li
 from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks
 from jump_nav import scroll_to_jump_after_render
 from step_ui import render_expandable_step
-from shear_visuals import build_creep_schematic_plotly
+from bending_side_view_diagram import build_creep_side_view_figures
 
 
 # ------------------------------------------------------------
@@ -376,6 +376,10 @@ This page computes **concrete creep coefficient** and **creep strain** in accord
 - **Creep strain** at time $t$, $\varepsilon_{cc} = \varphi_{cc}(t)\, \sigma_0 / E_c$ — Cl. 3.1.8.1
 
 Creep coefficients are dimensionless; creep strains are reported in microstrain ($\times 10^{-6}$).
+
+Concrete creep is the gradual increase in strain and deflection under sustained loading. The applied sustained load is unchanged, but concrete compression strain grows with time, increasing curvature and long-term deflection.
+
+The immediate tab shows the beam in its cracked short-term state. The long-term tab shows the additional deflection caused by creep, with $\delta_{creep}$ representing the increase from immediate to long-term deflection.
 """
         )
 
@@ -609,17 +613,35 @@ Creep coefficients are dimensionless; creep strains are reported in microstrain 
         page_divider()
 
         st.markdown("**Concrete creep under sustained load**")
-        fig_creep_schematic = build_creep_schematic_plotly()
-        _creep_l, _creep_c, _creep_r = st.columns([1, 8, 1])
-        with _creep_c:
-            st.plotly_chart(
-                fig_creep_schematic,
-                use_container_width=True,
-                config={
-                    "displayModeBar": False,
-                    "staticPlot": True,
-                },
-            )
+        fig_creep_immediate, fig_creep_long_term, _creep_meta = build_creep_side_view_figures(
+            st.session_state,
+            phi_cc_t=phi_cc_t,
+        )
+        tab_creep_immediate, tab_creep_long_term = st.tabs(
+            ["Immediate / cracked state", "After creep / long-term"]
+        )
+        with tab_creep_immediate:
+            _creep_l, _creep_c, _creep_r = st.columns([1, 8, 1])
+            with _creep_c:
+                st.plotly_chart(
+                    fig_creep_immediate,
+                    use_container_width=True,
+                    config={
+                        "displayModeBar": False,
+                        "staticPlot": True,
+                    },
+                )
+        with tab_creep_long_term:
+            _creep_l, _creep_c, _creep_r = st.columns([1, 8, 1])
+            with _creep_c:
+                st.plotly_chart(
+                    fig_creep_long_term,
+                    use_container_width=True,
+                    config={
+                        "displayModeBar": False,
+                        "staticPlot": True,
+                    },
+                )
         page_divider()
 
     # --------------------------------------------------------
@@ -1129,4 +1151,3 @@ _Ref: AS 3600:2018 Cl. 3.1.8.1._
         )
 
     scroll_to_jump_after_render()
-

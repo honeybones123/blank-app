@@ -4,7 +4,6 @@
 # ==========================================
 
 import math
-import json
 import time
 from pathlib import Path
 import numpy as np
@@ -588,22 +587,6 @@ def render_inline_select_row(
             label_visibility="collapsed",
             on_change=on_change_callback,
         )
-        if str(key).startswith("sfd_support_type_"):
-            # region agent log
-            _agent_debug_log(
-                "support_selector_render",
-                {
-                    "key": key,
-                    "options": [str(v) for v in options],
-                    "session_value": st.session_state.get(key),
-                    "returned_value": value,
-                    "current_index": current_index,
-                },
-                run_id="pre-fix",
-                hypothesis_id="H10_H11",
-                location="sfd_bmd_page.py:581",
-            )
-            # endregion
         return value
 
 
@@ -785,21 +768,6 @@ def plot_load_diagram_plotly(
         and len(support_positions_plot) >= 2
         and len(support_positions_plot) == len(support_types_plot)
     )
-    # region agent log
-    _agent_debug_log(
-        "plot_load_support_state",
-        {
-            "case": case,
-            "support_condition": str(support_condition or ""),
-            "support_positions": [float(v) for v in support_positions_plot],
-            "support_types": [str(v) for v in support_types_plot],
-            "generic_multi_span": generic_multi_span,
-        },
-        run_id="pre-fix",
-        hypothesis_id="H6_H7",
-        location="sfd_bmd_page.py:681",
-    )
-    # endregion
 
     # --- Supports ---
     if generic_multi_span:
@@ -829,18 +797,6 @@ def plot_load_diagram_plotly(
                     showlegend=False,
                 )
             )
-        # region agent log
-        _agent_debug_log(
-            "plot_load_supports_rendered",
-            {
-                "pinned_x": pinned_x,
-                "fixed_x": fixed_x,
-            },
-            run_id="pre-fix",
-            hypothesis_id="H6_H7",
-            location="sfd_bmd_page.py:714",
-        )
-        # endregion
     elif case == "Overhanging beam – right overhang with point load at free end":
         L_main = params.get("L_main", L)
         fig.add_trace(
@@ -1410,27 +1366,6 @@ def _figure_sfd_from_state(st: dict) -> go.Figure:
     fig_sfd.add_hline(y=0, line_width=2, line_color="rgba(0,0,0,0.20)")
     for x_support in support_positions_plot:
         fig_sfd.add_vline(x=x_support, line_width=1, line_color="rgba(0,0,0,0.12)")
-    # region agent log
-    _agent_debug_log(
-        "plot_sfd_state",
-        {
-            "design_mode_active": design_mode_active,
-            "support_type_state": support_type,
-            "support_positions": support_positions_plot,
-            "support_types": support_types_plot,
-            "L": float(L) if L is not None else None,
-            "d_v_mm": d_v_mm,
-            "zone_limit_m": zone_limit_m,
-            "critical_shear_x_state": get_param("critical_shear_x", None),
-            "critical_shear_V_state": get_param("critical_shear_V", None),
-            "shear_spacing_end_mm": get_param("shear_spacing_end_mm", None),
-            "shear_spacing_mid_mm": get_param("shear_spacing_mid_mm", None),
-        },
-        run_id="pre-fix",
-        hypothesis_id="H1_H2_H5",
-        location="sfd_bmd_page.py:1230",
-    )
-    # endregion
     if design_mode_active and L is not None and zone_limit_m > 0.0:
         fig_sfd.add_vrect(
             x0=0.0,
@@ -1535,25 +1470,7 @@ def _figure_sfd_from_state(st: dict) -> go.Figure:
         else:
             label = "Midspan"
         if s_used is not None:
-            annotation_text = f"{label}: s = {int(float(s_used))} mm"
-            # region agent log
-            _agent_debug_log(
-                "critical_spacing_annotation_added",
-                {
-                    "x_crit": x_crit_f,
-                    "V_crit": V_crit_f,
-                    "nearest_support_idx": nearest_support_idx,
-                    "nearest_support_dist": nearest_support_dist,
-                    "in_end_zone": in_end_zone,
-                    "label": label,
-                    "annotation_text": annotation_text,
-                    "s_used": float(s_used),
-                },
-                run_id="pre-fix",
-                hypothesis_id="H5",
-                location="sfd_bmd_page.py:1325",
-            )
-            # endregion
+            annotation_text = f"{label}: governing s = {int(float(s_used))} mm"
             fig_sfd.add_annotation(
                 x=x_crit_f,
                 y=V_crit_f,
@@ -1562,22 +1479,6 @@ def _figure_sfd_from_state(st: dict) -> go.Figure:
                 arrowhead=2,
                 yshift=40,
             )
-    else:
-        # region agent log
-        _agent_debug_log(
-            "critical_annotation_skipped",
-            {
-                "design_mode_active": design_mode_active,
-                "x_crit": x_crit,
-                "V_crit": V_crit,
-                "s_end": s_end,
-                "s_mid": s_mid,
-            },
-            run_id="pre-fix",
-            hypothesis_id="H1_H2_H4_H5",
-            location="sfd_bmd_page.py:1339",
-        )
-        # endregion
     fig_sfd.update_layout(
         title_text="",
         yaxis_title="",
@@ -2636,22 +2537,6 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                     sync_callbacks=sync_callbacks,
                 )
             )
-        # region agent log
-        _agent_debug_log(
-            "support_types_multi_built",
-            {
-                "n_spans": int(n_spans),
-                "support_types_multi": [str(v) for v in support_types_multi],
-                "session_values": {
-                    f"sfd_support_type_{i}": st.session_state.get(f"sfd_support_type_{i}")
-                    for i in range(1, n_spans + 2)
-                },
-            },
-            run_id="pre-fix",
-            hypothesis_id="H10_H11",
-            location="sfd_bmd_page.py:2393",
-        )
-        # endregion
 
     # Track load combos for later selection
     w_sls = None
@@ -2680,18 +2565,6 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         params["node_positions_m"] = list(node_positions_multi or [0.0, float(L)])
         params["support_types"] = list(support_types_multi or ["Pinned", "Pinned"])
         params["support_positions"] = list(params["node_positions_m"])
-        # region agent log
-        _agent_debug_log(
-            "support_types_params_assigned",
-            {
-                "node_positions_m": [float(v) for v in params["node_positions_m"]],
-                "support_types": [str(v) for v in params["support_types"]],
-            },
-            run_id="pre-fix",
-            hypothesis_id="H10_H11",
-            location="sfd_bmd_page.py:2431",
-        )
-        # endregion
 
         psi_point = float(
             render_inline_number_row(
@@ -3273,26 +3146,6 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         V_crit = None
     support_type_resolved = _defl_support_type_from_selection(case, str(params.get("support_condition", "") or ""))
     support_type_key = "cantilever" if support_type_resolved == "Cantilever" else "simply_supported"
-    # region agent log
-    _agent_debug_log(
-        "publish_sfd_metadata",
-        {
-            "case": case,
-            "active_mode": active_mode,
-            "design_actions_source": design_actions_source,
-            "support_condition_param": str(params.get("support_condition", "") or ""),
-            "support_type_resolved": support_type_resolved,
-            "support_type_key": support_type_key,
-            "x_uls_len": len(x_uls) if x_uls is not None else 0,
-            "V_uls_len": len(V_uls_vals) if V_uls_vals is not None else 0,
-            "x_crit": x_crit,
-            "V_crit": V_crit,
-        },
-        run_id="pre-fix",
-        hypothesis_id="H1_H3_H4",
-        location="sfd_bmd_page.py:2788",
-    )
-    # endregion
     x_uls_list = [float(v) for v in (x_uls.tolist() if hasattr(x_uls, "tolist") else list(x_uls))]
     xu = np.asarray(x_uls_list, dtype=float)
     Mu = np.asarray(
@@ -3769,24 +3622,6 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
 
     render_section_title("Shear Force Diagram (SFD)")
     st.caption("Shear V(x)")
-    # region agent log
-    _agent_debug_log(
-        "sfd_render_handoff",
-        {
-            "use_plotly_event_component": bool(use_plotly_event_component),
-            "trace_count": len(fig_sfd.data) if getattr(fig_sfd, "data", None) is not None else None,
-            "annotation_count": len(fig_sfd.layout.annotations) if getattr(fig_sfd.layout, "annotations", None) is not None else 0,
-            "annotation_texts": [
-                str(a.text)
-                for a in list(fig_sfd.layout.annotations or [])[:8]
-                if getattr(a, "text", None) is not None
-            ],
-        },
-        run_id="pre-fix",
-        hypothesis_id="H15_H16_H17",
-        location="sfd_bmd_page.py:3530",
-    )
-    # endregion
     if use_plotly_event_component:
         sfd_click = plotly_events(
             fig_sfd,

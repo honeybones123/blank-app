@@ -8,3 +8,4 @@ kaleido==0.2.1
 reportlab
 supabase>=2.6.0
 python-dotenv>=1.0.1
+playwright>=1.54,<2

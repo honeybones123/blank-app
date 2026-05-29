@@ -4,6 +4,7 @@ import streamlit as st
 
 from bending_layer_semantics import resolve_bending_faces
 from state_and_helpers import (
+    effective_depth_with_links_mm,
     get_param,
     resolve_design_actions,
     update_results,
@@ -231,42 +232,16 @@ def _compute_bending_capacity_pure_impl(b, D, fc, fsy, Ast, Mu_star, phi, d_inpu
 
 def _effective_depth_centroid_pure(b, D, nb_bot, db_bot, cover_bot, rowgap_bot):
     """Pure function version of effective depth calculation."""
-    if b in (None, 0) or D in (None, 0) or nb_bot in (None, 0) or db_bot in (None, 0) or cover_bot in (None, 0):
+    if D in (None, 0) or db_bot in (None, 0) or cover_bot in (None, 0):
         return None
-
-    nb_bot = int(nb_bot)
-    db_bot = float(db_bot)
-    cover_bot = float(cover_bot)
-    rowgap_bot = float(rowgap_bot) if rowgap_bot not in (None, 0) else 0.0
-
-    # Bottom row depth (to bar centre) from top fibre
-    d_row0 = D - cover_bot - db_bot / 2.0
-
-    # Horizontal layout (bars per row)
-    min_spacing_bot = 2.0 * db_bot
-    layout = _layout_bars_in_rows(
-        n_bars=nb_bot,
-        b=b,
-        cover=cover_bot,
-        db=db_bot,
-        min_spacing=min_spacing_bot,
-        n_rows_max=2,
+    lig_diameter_mm = float(get_param("lig_d", 0.0) or 0.0)
+    bar_diameter_mm = float(db_bot or 0.0)
+    return effective_depth_with_links_mm(
+        D_mm=float(D or 0.0),
+        cover_to_ligs_mm=float(cover_bot or 0.0),
+        lig_diameter_mm=lig_diameter_mm,
+        bar_diameter_mm=bar_diameter_mm,
     )
-
-    if not layout:
-        return d_row0
-
-    # Vertical layout (row spacing)
-    row_pitch_bot = db_bot + rowgap_bot
-
-    y_positions = []
-    for _, row_idx in layout:
-        y_positions.append(d_row0 - row_idx * row_pitch_bot)
-
-    if not y_positions:
-        return d_row0
-
-    return sum(y_positions) / len(y_positions)
 
 
 def solve_bending_capacity(moment_sign: str, M_star_kNm: float, inputs: dict) -> dict:
@@ -388,6 +363,10 @@ def _compute_bending_capacity():
         d_input=d_input, cover_bot=cover_bot, db_bot=db_bot,
         nb_bot=nb_bot, rowgap_bot=rowgap_bot
     )
+    if st.session_state.get("_dev_mode", False):
+        dbg = dict(st.session_state.get("_debug_d_consistency", {}))
+        dbg["calc_engine_d_mm"] = float(results.get("d", d_input) or 0.0)
+        st.session_state["_debug_d_consistency"] = dbg
     
     # Extract values for update_results
     phi_Mu_cap = results["phi_Mu_cap"]
@@ -564,7 +543,13 @@ def _stress_strain_state(state: str, moment_sign: str = "positive"):
             cover_bot = 40.0
         if db_bot is None:
             db_bot = 24.0
-        d = D - cover_bot - db_bot / 2.0
+        lig_diameter_mm = float(get_param("lig_d", 0.0) or 0.0)
+        d = effective_depth_with_links_mm(
+            D_mm=D,
+            cover_to_ligs_mm=cover_bot,
+            lig_diameter_mm=lig_diameter_mm,
+            bar_diameter_mm=db_bot,
+        )
 
     # If As missing or zero, estimate from nb_bot & db_bot
     if As is None or As == 0:

@@ -6,11 +6,19 @@ This file centralises layout only. Do not embed design logic or page-specific th
 Coloring, status mapping, and calcbox formatting should use existing shared helpers from widgets_helpers.
 """
 import streamlit as st
+import re
 from widgets_helpers import (
     apply_step_summary_expander_css,
     calcbox,
     status_to_class,
 )
+
+
+def _has_non_empty_card_text(value) -> bool:
+    text = re.sub(r"<[^>]+>", " ", str(value or ""))
+    text = re.sub(r"[*_`$\\{}]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return len(text) >= 3
 
 
 def init_step_ui_state(page_key: str):
@@ -83,6 +91,17 @@ def render_expandable_step(
             with placing the diagram in the right-hand column; use with diagram_above_calc=False or True
             (inside layout uses vertical stack without re-drawing the diagram).
     """
+    has_any_content = bool(
+        _has_non_empty_card_text(title)
+        or _has_non_empty_card_text(summary_md)
+        or _has_non_empty_card_text(calc_md)
+        or calc_render_fn
+        or diagram_render_fn
+        or table_render_fn
+        or info_render_fn
+    )
+    if not has_any_content:
+        return
     apply_step_summary_expander_css()
     # Anchors in one block (avoids an extra element-container / vertical gap before the expander)
     st.markdown(
@@ -126,6 +145,8 @@ def render_expandable_step(
             formatted_summary = f"{_bold_first_summary_line(first)}  \n{rest}"
         else:
             formatted_summary = _bold_first_summary_line(single)
+    if not _has_non_empty_card_text(formatted_summary):
+        formatted_summary = _bold_first_summary_line(title or "Calculation details")
     label = f"{formatted_summary}{info_tip}".strip()
 
     if diagram_outside_expander and diagram_render_fn:
@@ -211,4 +232,3 @@ def render_expandable_step(
         
         # Close inner div for flash highlight
         st.markdown("</div>", unsafe_allow_html=True)
-

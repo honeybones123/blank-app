@@ -45,9 +45,6 @@ from shear_checks_helpers import (
     build_shear_check_rows_from_state,
 )
 
-def _agent_dbg_log(message: str, data: dict, *, run_id: str, hypothesis_id: str) -> None:
-    return
-
 
 def _support_pair_from_resolved_support_type(support_type: str | None) -> tuple[str, str] | None:
     raw_label = str(support_type or "").strip()
@@ -85,8 +82,8 @@ SHEAR_VISUAL_CONFIG = {
     "responsive": True,
 }
 
-# Shear link legs: minimum 2 for valid closed links (matches shear_core.run_shear_calc).
-REO_SHEAR_LEGS_OPTIONS = list(range(2, 13))
+# Shear link legs: 0 means no links; active closed links start at 2 legs.
+REO_SHEAR_LEGS_OPTIONS = [0] + list(range(2, 13))
 
 
 def _standardise_shear_visual_layout(fig, *, title_pad_t: int = 28):
@@ -204,10 +201,12 @@ def _render_shear_side_view():
     # follow Check 10 whenever layout data exists — not only when this fails.
     shear_fails = _phi_vu > 0.0 and _v_eq > _phi_vu + 1e-9
     st.caption(
-        "Side view uses Check 10 zoned spacings when a layout exists. "
-        "φV_u < V*_eq: title shows required zoned reinforcement; otherwise provided layout."
+        "Side view: when Check 10 layout exists, stirrups follow required zone spacings from the envelope; "
+        "otherwise at provided spacing (input s_lig). φV_u uses effective spacing from results (provided or "
+        "required when “Apply auto spacing” is on)."
         if shear_fails
-        else "Side view uses Check 10 zoned spacings when a layout exists; otherwise uniform spacing from link inputs (φV_u ≥ V*_eq)."
+        else "Side view: required zone spacings from Check 10 when available; otherwise provided spacing (s_lig). "
+        "φV_u check uses effective spacing (provided unless auto spacing applies envelope spacing)."
     )
     fig = build_shear_side_view_figure(shear_fails=shear_fails)
     _render_centered_shear_plotly(
@@ -1848,23 +1847,6 @@ def compute_shear_results(publish: bool = True) -> dict:
     util = results.V_eq / phi_Vu_cap if phi_Vu_cap > 0 else float("nan")
     phi_Vu_max = phi * results.Vu_max_kN
     Vuc_util = results.V_eq / phi_Vu_max if phi_Vu_max > 0 else float("nan")
-    # region agent log
-    _agent_dbg_log(
-        "design widget shear snapshot",
-        {
-            "results_phi_Vu": float(results.phi_Vu),
-            "results_V_eq": float(results.V_eq),
-            "results_Vus_kN": float(results.Vus_kN),
-            "results_theta_v_deg": float(results.theta_v_deg),
-            "live_s_lig": float(s_lig) if s_lig is not None else None,
-            "state_phi_Vu_cap": get_param("phi_Vu_cap", None),
-            "state_Vu_star": get_param("Vu_star", None),
-            "state_s_lig": get_param("s_lig", None),
-        },
-        run_id="pre-fix",
-        hypothesis_id="UI_A",
-    )
-    # endregion
     
     # Minimum shear reinforcement + spacing checks
     Asv_over_s = results.Asv / s_lig if s_lig else 0.0
@@ -1905,7 +1887,7 @@ def compute_shear_results(publish: bool = True) -> dict:
             f"b_v = {results.b_v:.0f} mm",
             f"d_v = {results.d_v:.0f} mm",
             f"A_sv = {results.Asv:.0f} mm²",
-            f"s = {s_lig:.0f} mm",
+            f"Provided link spacing s = {s_lig:.0f} mm",
         ]),
         "result": "",
         "status": None,
@@ -1946,7 +1928,7 @@ def compute_shear_results(publish: bool = True) -> dict:
         "clause": "AS 3600:2018 Cl. 8.2.5",
         "derivation": "<br/>".join([
             f"A_sv = {results.Asv:.0f} mm²",
-            f"s = {s_lig:.0f} mm",
+            f"Provided link spacing s = {s_lig:.0f} mm",
             f"V_us = {results.Vus_kN:.1f} kN",
         ]),
         "result": f"φV_us = {(phi * results.Vus_kN):.1f} kN",
@@ -2030,6 +2012,9 @@ def compute_shear_results(publish: bool = True) -> dict:
 def render_shear():
     # Handle cross-page navigation from Inputs page
     from jump_nav import JUMP_NAV_TAB_KEY, get_jump_uid
+
+    st.session_state["shear_page_auto_spacing_ui_removed"] = True
+    st.session_state["shear_page_spacing_mode"] = "manual_provided_only"
 
     get_jump_uid()
     _jt = st.session_state.get("jump_to")
@@ -2217,442 +2202,466 @@ In short:
     if st.session_state.get(support_widget_key) != support_current:
         st.session_state[support_widget_key] = support_current
 
-    col_actions, col_geom, col_mat = st.columns([1, 1, 1], gap="large")
-
-    # ---------- 1.1 Design Actions (left column) ----------
-    with col_actions:
-        prev_mode = st.session_state.get("loads_edit_mode", "ULS")
-        selected_mode = st.session_state.get("loads_edit_mode", "ULS")
-        selected_prefix = "sls" if selected_mode == "SLS" else "uls"
-        toggle_widget_key = get_widget_key_for_shared("loads_edit_toggle", prefix="inputs_") or "inputs_loads_edit_toggle"
-
-        col_title, col_info = st.columns([0.92, 0.08], gap="small")
-        with col_title:
-            render_section_title("Design Actions")
-        with col_info:
-            with info_i_button(
-                help_text="Source of design actions (V*, N*, T*, P*) and optional display of prestress input.",
-            ):
-                st.markdown("Source: Inputs page selection", unsafe_allow_html=True)
-                edit_sls = st.toggle(
-                    "View SLS loads",
-                    key=toggle_widget_key,
-                    help="Toggle which load set is shown below. ULS drives bending/shear; SLS drives crack/deflection.",
-                )
-
-                selected_mode_preview = "SLS" if edit_sls else "ULS"
-                action_verb_preview = "viewing" if is_design_driven else "editing"
-
-                if not is_design_driven:
-                    st.caption("Design actions: Manual")
-                else:
-                    st.caption("Design actions: From SFD/BMD")
-                st.caption(f"Currently {action_verb_preview}: **{selected_mode_preview}** loads")
-
-                if "shear_include_prestress_effects_ui" not in st.session_state:
-                    st.session_state["shear_include_prestress_effects_ui"] = False
-                st.toggle(
-                    "Include prestress effects",
-                    key="shear_include_prestress_effects_ui",
-                    help="Show the P* input in Design Actions. Stored P* is unchanged; this only controls visibility.",
-                )
-
-        new_mode = "SLS" if edit_sls else "ULS"
-
-        if new_mode != prev_mode:
-            st.session_state["loads_edit_mode"] = prev_mode
-            save_proxies_to_active_set()
-            st.session_state["loads_edit_mode"] = new_mode
-            load_proxies_from_active_set()
-            st.session_state["inputs_load_Vstar_proxy"] = st.session_state.get("load_Vstar_proxy", 0.0)
-            st.session_state["inputs_load_Nstar_proxy"] = st.session_state.get("load_Nstar_proxy", 0.0)
-            st.session_state["inputs_load_Mstar_pos_proxy"] = st.session_state.get("load_Mstar_pos_proxy", 0.0)
-            st.session_state["inputs_load_Mstar_neg_proxy"] = st.session_state.get("load_Mstar_neg_proxy", 0.0)
-            recalc_derived_values()
-            update_results()
-            st.rerun()
-        else:
-            st.session_state["loads_edit_mode"] = new_mode
-        selected_mode = st.session_state.get("loads_edit_mode", "ULS")
-        selected_prefix = "sls" if selected_mode == "SLS" else "uls"
-
-        if is_design_driven:
-            st.info("Design actions are currently driven by the Design / Teaching page and are read-only here.")
-
-        display_V = float(get_param(f"{selected_prefix}_Vstar", 0.0) or 0.0)
-        display_N = float(get_param(f"{selected_prefix}_Nstar", 0.0) or 0.0)
-        display_T = float(get_param("Tu_star", 0.0) or 0.0)
-        n_proxy_widget_key = get_widget_key_for_shared("load_Nstar_proxy", prefix="inputs_") or "inputs_load_Nstar_proxy"
-        m_pos_proxy_widget_key = get_widget_key_for_shared("load_Mstar_pos_proxy", prefix="inputs_") or "inputs_load_Mstar_pos_proxy"
-        m_neg_proxy_widget_key = get_widget_key_for_shared("load_Mstar_neg_proxy", prefix="inputs_") or "inputs_load_Mstar_neg_proxy"
-
-        display_Mu_pos = get_param(
-            f"{selected_prefix}_Mstar_pos_manual",
-            max(0.0, get_param(f"{selected_prefix}_Mstar", 0.0)),
-        )
-        display_Mu_neg = get_param(
-            f"{selected_prefix}_Mstar_neg_manual",
-            max(0.0, -get_param(f"{selected_prefix}_Mstar", 0.0)),
-        )
-        display_P = get_param("P_star", 0.0)
-
-        if design_controls:
-            if st.session_state.get("inputs_load_Vstar_proxy") != display_V:
-                st.session_state["inputs_load_Vstar_proxy"] = display_V
-            if st.session_state.get(n_proxy_widget_key) != display_N:
-                st.session_state[n_proxy_widget_key] = display_N
-            if st.session_state.get("shear_Tu_star") != display_T:
-                st.session_state["shear_Tu_star"] = display_T
-            if st.session_state.get(m_pos_proxy_widget_key) != display_Mu_pos:
-                st.session_state[m_pos_proxy_widget_key] = display_Mu_pos
-            if st.session_state.get(m_neg_proxy_widget_key) != display_Mu_neg:
-                st.session_state[m_neg_proxy_widget_key] = display_Mu_neg
-            if st.session_state.get("shear_P_star") != display_P:
-                st.session_state["shear_P_star"] = display_P
-
-        Mu_star_pos_val = max(0.0, _coalesce_num(display_Mu_pos, 0.0))
-        Mu_star_neg_val = max(0.0, _coalesce_num(display_Mu_neg, 0.0))
-        P_star_val = _coalesce_num(display_P, 0.0)
-        moment_signed_selected = float(get_param(f"{selected_prefix}_Mstar", 0.0) or 0.0)
-        bending_detail_view = str(st.session_state.get("bending_detail_view", "positive") or "positive").strip().lower()
-        support_current_text = str(support_current or "").strip().lower()
-        show_mu_negative = (
-            ("continuous" in support_current_text)
-            or ("interior" in support_current_text)
-            or (moment_signed_selected < 0.0)
-            or (bending_detail_view == "negative")
-        )
-        include_prestress_effects_ui = bool(st.session_state.get("shear_include_prestress_effects_ui", False))
-
-        number_row(
-            "Design shear V* (kN)",
-            "inputs_load_Vstar_proxy",
-            float(display_V),
-            sync_callbacks,
-            disabled=is_design_driven,
-            help_text="Factored shear at the section.",
-        )
-        number_row(
-            "Axial force N* (kN, +tension)",
-            n_proxy_widget_key,
-            float(display_N),
-            sync_callbacks,
-            disabled=is_design_driven,
-            help_text="Axial force at the section (+tension, −compression).",
-        )
-        number_row(
-            "Torsion T* (kNm)",
-            "shear_Tu_star",
-            float(display_T),
-            sync_callbacks,
-            disabled=is_design_driven,
-            help_text="Factored torsion at the section.",
-        )
-        number_row(
-            "Positive design moment Mu*+ (kNm)",
-            m_pos_proxy_widget_key,
-            Mu_star_pos_val,
-            sync_callbacks,
-            disabled=is_design_driven,
-            help_text=(
-                "Sagging bending demand magnitude. Used with shear for εₓ in the general MCFT route "
-                "(positive bending: top compression, bottom tension)."
-            ),
-        )
-        if show_mu_negative:
-            number_row(
-                "Negative design moment Mu*- (kNm)",
-                m_neg_proxy_widget_key,
-                Mu_star_neg_val,
-                sync_callbacks,
-                disabled=is_design_driven,
-                help_text=(
-                    "Hogging bending demand magnitude. Enter as a positive number for top tension / bottom compression."
-                ),
-            )
-        if include_prestress_effects_ui:
-            number_row(
-                "Prestress force P* (kN)",
-                "shear_P_star",
-                P_star_val,
-                sync_callbacks,
-                disabled=is_design_driven,
-                help_text=(
-                    "Prestress / effective prestress force in the section (kN). Affects longitudinal strain εₓ in shear."
-                ),
-            )
-
-        number_row(
-            "φ – strength reduction for shear",
-            "shear_phi_shear",
-            get_param("phi_shear", 0.75),
-            sync_callbacks,
-            help_text="Strength reduction factor for shear (AS 3600).",
-        )
-
-    # ---------- 1.2 Geometry (middle column) ----------
-    with col_geom:
-        render_section_title("Geometry & loading conditions")
-
-        shape_options = ["RECT", "T", "I"]
-        sec_shape_current = st.session_state.get("sec_shape", "RECT")
-        if sec_shape_current not in shape_options:
-            sec_shape_current = "RECT"
-
-        select_row(
-            "Section shape",
-            "shear_sec_shape",
-            shape_options,
-            sec_shape_current,
-            sync_callbacks,
-            help_text="Matches Inputs page. Controls which geometry fields are shown.",
-        )
-
-        # Get current values (widget key takes precedence if exists, otherwise use shared key)
-        D_val = _coalesce_num(st.session_state.get("shear_D", get_param("D", 600.0)), 600.0)
-        L_val = _coalesce_num(st.session_state.get("shear_L", get_param("L", 3000.0)), 3000.0)
-
-        sec_shape = st.session_state.get("shear_sec_shape", st.session_state.get("sec_shape", "RECT"))
-
-        if sec_shape == "RECT":
-            b_val = _coalesce_num(st.session_state.get("shear_b", get_param("b", 400.0)), 400.0)
-            number_row(
-                "Width b (mm)",
-                "shear_b",
-                b_val,
-                sync_callbacks,
-                help_text="Shared with Inputs tab.",
-            )
-        elif sec_shape == "T":
-            bf_val = _coalesce_num(st.session_state.get("shear_bf", get_param("bf", 600.0)), 600.0)
-            tf_val = _coalesce_num(st.session_state.get("shear_tf", get_param("tf", 120.0)), 120.0)
-            bw_val = _coalesce_num(st.session_state.get("shear_bw", get_param("bw", 300.0)), 300.0)
-
-            number_row("Flange width bf (mm)", "shear_bf", bf_val, sync_callbacks)
-            number_row("Flange thickness tf (mm)", "shear_tf", tf_val, sync_callbacks)
-            number_row("Web width bw (mm)", "shear_bw", bw_val, sync_callbacks)
-        elif sec_shape == "I":
-            bf_val = _coalesce_num(st.session_state.get("shear_bf", get_param("bf", 600.0)), 600.0)
-            tf_val = _coalesce_num(st.session_state.get("shear_tf", get_param("tf", 120.0)), 120.0)
-            tw_val = _coalesce_num(st.session_state.get("shear_tw", get_param("tw", 200.0)), 200.0)
-
-            number_row("Top flange width bf (mm)", "shear_bf", bf_val, sync_callbacks)
-            number_row("Top flange thickness tf (mm)", "shear_tf", tf_val, sync_callbacks)
-            number_row("Web thickness tw (mm)", "shear_tw", tw_val, sync_callbacks)
-
-        number_row(
-            "Depth D (mm)",
-            "shear_D",
-            D_val,
-            sync_callbacks,
-            help_text="Overall section depth, shared with Inputs.",
-        )
-        number_row(
-            "Span L (mm)",
-            "shear_L",
-            L_val,
-            sync_callbacks,
-            help_text="Clear span or design span for this section.",
-        )
-
-        if design_controls:
-            st.info("🔒 Support condition is controlled by the Design page. Edit it there.")
-        select_row(
-            "Support condition (k₂)",
-            support_widget_key,
-            support_options,
-            support_current,
-            sync_callbacks,
-            help_text=support_help_text,
-            disabled=design_controls,
-        )
-
-    # ---------- 1.3 Materials (right column) ----------
-    with col_mat:
-        render_section_title("Materials")
-
-        number_row(
-            "Concrete strength f'c (MPa)",
-            "shear_fc",
-            get_param("fc", 40.0),
-            sync_callbacks,
-            help_text="Concrete compressive strength (AS 3600).",
-        )
-        number_row(
-            "Steel yield f_sy (MPa)",
-            "shear_fsy",
-            get_param("fsy", 500.0),
-            sync_callbacks,
-            help_text="Yield stress of longitudinal & shear reinforcement.",
-        )
-
-    page_divider()
-
-    col_actions, col_geom, col_mat = st.columns([1, 1, 1], gap="large")
-
-    with col_actions:
-        _auto_spacing_mode = bool(get_param("shear_auto_design", False))
-        render_section_title("Shear reinforcement")
-        st.caption("Check 10 controls automatic spacing updates.")
-        
-        # Widget keys (resolved via TAB_KEYS)
-        w_lig_d = get_widget_key_for_shared("lig_d", prefix="shear_") or "shear_lig_d"
-        w_lig_legs = get_widget_key_for_shared("lig_legs", prefix="shear_") or "shear_lig_legs"
-        w_s_lig = get_widget_key_for_shared("s_lig", prefix="shear_") or "shear_s_lig"
-        
-        # Read shared values (do NOT write shared keys)
-        lig_d_val = float(st.session_state.get("lig_d", 10.0))
-        lig_legs_val = float(st.session_state.get("lig_legs", 2))
-        canonical_s = float(st.session_state.get("s_lig", 200.0) or 200.0)
-        # Locked link widget must show canonical spacing after auto-apply (widget key may lag shared s_lig).
-        if _auto_spacing_mode:
-            if st.session_state.get(w_s_lig) != canonical_s:
-                st.session_state[w_s_lig] = float(canonical_s)
-            s_lig_val = float(canonical_s)
-        else:
-            s_lig_val = float(st.session_state.get(w_s_lig, canonical_s) or canonical_s)
-        
-        # Option lists for dropdowns
-        REO_BAR_DIAS = [10, 12, 16, 20, 24, 28, 32, 36, 40]
-        
-        select_row(
-            "Link Ø (mm)",
-            w_lig_d,
-            REO_BAR_DIAS,
-            int(lig_d_val),
-            sync_callbacks,
-            help_text="Nominal diameter of shear links (mm).",
-        )
-        
-        select_row(
-            "No. of legs",
-            w_lig_legs,
-            REO_SHEAR_LEGS_OPTIONS,
-            int(lig_legs_val),
-            sync_callbacks,
-            help_text="Number of legs per shear link (minimum 2 for shear reinforcement).",
-        )
-        
-        number_row(
-            "Link spacing (mm)",
-            w_s_lig,
-            s_lig_val,
-            sync_callbacks,
-            help_text="Centre-to-centre spacing of shear links (mm).",
-            disabled=_auto_spacing_mode,
-        )
-        if _auto_spacing_mode:
-            st.caption("Link spacing is locked because auto-design spacing is active.")
-
-    with col_geom:
-        render_section_title("Ducts & prestress voids")
-        
-        number_row(
-            "Number of ducts crossing web",
-            "shear_n_ducts",
-            0.0,
-            sync_callbacks,
-            help_text="Number of prestressing ducts crossing the web.",
-        )
-        
-        number_row(
-            "Duct diameter (mm)",
-            "shear_duct_dia",
-            0.0,
-            sync_callbacks,
-            help_text="Diameter of each prestressing duct.",
-        )
-        
-        # Compute sum_duct internally from the two inputs
-        n_ducts = get_param("n_ducts", 0.0)
-        duct_dia = get_param("duct_dia", 0.0)
-
-        n_ducts = 0.0 if n_ducts is None else float(n_ducts)
-        duct_dia = 0.0 if duct_dia is None else float(duct_dia)
-
-        sum_duct = n_ducts * (duct_dia ** 2) * 3.14159 / 4.0
-        # Store computed value in session state for use in calculations
-        st.session_state["shear_sum_duct"] = sum_duct
-        
-        # k_d factor options (matching shared state format)
-        KD_OPTIONS = [
-            "None (no ducts in web)",
-            "0.5 – steel ducts, grouted",
-            "0.8 – plastic ducts, grouted",
-            "1.2 – ungrouted ducts",
-        ]
-        # Mapping from option string to numeric k_d value
-        KD_VALUE_MAP = {
-            "None (no ducts in web)": 0.0,
-            "0.5 – steel ducts, grouted": 0.5,
-            "0.8 – plastic ducts, grouted": 0.8,
-            "1.2 – ungrouted ducts": 1.2,
+    st.markdown(
+        """
+        <style>
+        .st-key-shear_input_scroll_outer {
+            display: block;
+            width: 100%;
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding-bottom: 0.6rem;
+            scrollbar-gutter: stable;
         }
-        
-        # Get widget key for k_d_option
-        w_kd = get_widget_key_for_shared("k_d_option", prefix="shear_") or "shear_k_d_option"
-        kd_option_val = get_param("k_d_option", "None (no ducts in web)")
-        if kd_option_val not in KD_OPTIONS:
-            kd_option_val = "None (no ducts in web)"
-        
-        select_row(
-            "k_d factor for prestressing ducts",
-            w_kd,
-            KD_OPTIONS,
-            kd_option_val,
-            sync_callbacks,
-            help_text="k_d factor for prestressing ducts (AS 3600).",
-        )
-        
-        # Convert selected option to numeric k_d value for calculations
-        kd_option_selected = st.session_state.get(w_kd, kd_option_val)
-        k_d = KD_VALUE_MAP.get(kd_option_selected, 0.0)
-    
-    with col_mat:
-        render_section_title("Shear section parameters")
-        
-        number_row(
-            "Maximum aggregate size d_g (mm)",
-            "shear_d_g",
-            20.0,
-            sync_callbacks,
-            help_text="Maximum aggregate size for k_v calculation.",
-        )
-        
-        # k_v method options
-        KV_METHOD_OPTIONS = [
-            "General εₓ-based (Cl. 8.2.4.2)",
-            "Simplified non-prestressed (Cl. 8.2.4.3)",
-        ]
-        
-        # Get widget key for k_v_method
-        w_kv_method = get_widget_key_for_shared("k_v_method", prefix="shear_") or "shear_k_v_method"
-        kv_method_val = get_param("k_v_method", "General εₓ-based (Cl. 8.2.4.2)")
-        if kv_method_val not in KV_METHOD_OPTIONS:
-            kv_method_val = "General εₓ-based (Cl. 8.2.4.2)"
-        
-        select_row(
-            "k_v method",
-            w_kv_method,
-            KV_METHOD_OPTIONS,
-            kv_method_val,
-            sync_callbacks,
-            help_text=(
-                "Simplified (Cl. 8.2.4.3) vs general εx-based (Cl. 8.2.4.2). "
-                "Open the page ℹ️ INFO expander for when to use each and why."
-            ),
-        )
-        st.markdown(
-            '<p style="margin:0.25rem 0 0.55rem 0;font-size:0.875rem;color:rgba(49,51,63,0.72);line-height:1.35;">'
-            "<strong>Simplified:</strong> default for typical beams where AS 3600 simplified conditions are met. "
-            "<strong>General:</strong> when those limits are not met, or for a more detailed action-sensitive check."
-            "</p>",
-            unsafe_allow_html=True,
-        )
+        .st-key-shear_input_scroll_inner {
+            width: 1440px !important;
+            min-width: 1440px !important;
+            max-width: 1440px !important;
+        }
+        .st-key-shear_input_scroll_outer::-webkit-scrollbar {
+            height: 10px;
+        }
+        .st-key-shear_input_scroll_outer::-webkit-scrollbar-track {
+            background: rgba(49, 51, 63, 0.08);
+            border-radius: 999px;
+        }
+        .st-key-shear_input_scroll_outer::-webkit-scrollbar-thumb {
+            background: rgba(49, 51, 63, 0.28);
+            border-radius: 999px;
+        }
+        .st-key-shear_input_scroll_outer::-webkit-scrollbar-thumb:hover {
+            background: rgba(49, 51, 63, 0.4);
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-        # Determine if general method is used
-        method = st.session_state.get(w_kv_method, kv_method_val)
-        use_general_kv = method.startswith("General")
+    with st.container(key="shear_input_scroll_outer"):
+        with st.container(key="shear_input_scroll_inner", width=1440):
+            col_actions, col_geom_mat, col_shear_reo, col_shear_params = st.columns([1, 1, 1, 1], gap="large")
+        
+            # ---------- 1.1 Design Actions (left column) ----------
+            with col_actions:
+                prev_mode = st.session_state.get("loads_edit_mode", "ULS")
+                selected_mode = st.session_state.get("loads_edit_mode", "ULS")
+                selected_prefix = "sls" if selected_mode == "SLS" else "uls"
+                toggle_widget_key = get_widget_key_for_shared("loads_edit_toggle", prefix="inputs_") or "inputs_loads_edit_toggle"
+        
+                col_title, col_info = st.columns([0.92, 0.08], gap="small")
+                with col_title:
+                    render_section_title("Design Actions")
+                with col_info:
+                    with info_i_button(
+                        help_text="Source of design actions (V*, N*, T*, P*) and optional display of prestress input.",
+                    ):
+                        st.markdown("Source: Inputs page selection", unsafe_allow_html=True)
+                        edit_sls = st.toggle(
+                            "View SLS loads",
+                            key=toggle_widget_key,
+                            help="Toggle which load set is shown below. ULS drives bending/shear; SLS drives crack/deflection.",
+                        )
+        
+                        selected_mode_preview = "SLS" if edit_sls else "ULS"
+                        action_verb_preview = "viewing" if is_design_driven else "editing"
+        
+                        if not is_design_driven:
+                            st.caption("Design actions: Manual")
+                        else:
+                            st.caption("Design actions: From SFD/BMD")
+                        st.caption(f"Currently {action_verb_preview}: **{selected_mode_preview}** loads")
+        
+                        if "shear_include_prestress_effects_ui" not in st.session_state:
+                            st.session_state["shear_include_prestress_effects_ui"] = False
+                        st.toggle(
+                            "Include prestress effects",
+                            key="shear_include_prestress_effects_ui",
+                            help="Show the P* input in Design Actions. Stored P* is unchanged; this only controls visibility.",
+                        )
+        
+                new_mode = "SLS" if edit_sls else "ULS"
+        
+                if new_mode != prev_mode:
+                    st.session_state["loads_edit_mode"] = prev_mode
+                    save_proxies_to_active_set()
+                    st.session_state["loads_edit_mode"] = new_mode
+                    load_proxies_from_active_set()
+                    st.session_state["inputs_load_Vstar_proxy"] = st.session_state.get("load_Vstar_proxy", 0.0)
+                    st.session_state["inputs_load_Nstar_proxy"] = st.session_state.get("load_Nstar_proxy", 0.0)
+                    st.session_state["inputs_load_Mstar_pos_proxy"] = st.session_state.get("load_Mstar_pos_proxy", 0.0)
+                    st.session_state["inputs_load_Mstar_neg_proxy"] = st.session_state.get("load_Mstar_neg_proxy", 0.0)
+                    recalc_derived_values()
+                    update_results()
+                    st.rerun()
+                else:
+                    st.session_state["loads_edit_mode"] = new_mode
+                selected_mode = st.session_state.get("loads_edit_mode", "ULS")
+                selected_prefix = "sls" if selected_mode == "SLS" else "uls"
+        
+                if is_design_driven:
+                    st.info("Design actions are currently driven by the Design / Teaching page and are read-only here.")
+        
+                display_V = float(get_param(f"{selected_prefix}_Vstar", 0.0) or 0.0)
+                display_N = float(get_param(f"{selected_prefix}_Nstar", 0.0) or 0.0)
+                display_T = float(get_param("Tu_star", 0.0) or 0.0)
+                n_proxy_widget_key = get_widget_key_for_shared("load_Nstar_proxy", prefix="inputs_") or "inputs_load_Nstar_proxy"
+                m_pos_proxy_widget_key = get_widget_key_for_shared("load_Mstar_pos_proxy", prefix="inputs_") or "inputs_load_Mstar_pos_proxy"
+                m_neg_proxy_widget_key = get_widget_key_for_shared("load_Mstar_neg_proxy", prefix="inputs_") or "inputs_load_Mstar_neg_proxy"
+        
+                display_Mu_pos = get_param(
+                    f"{selected_prefix}_Mstar_pos_manual",
+                    max(0.0, get_param(f"{selected_prefix}_Mstar", 0.0)),
+                )
+                display_Mu_neg = get_param(
+                    f"{selected_prefix}_Mstar_neg_manual",
+                    max(0.0, -get_param(f"{selected_prefix}_Mstar", 0.0)),
+                )
+                display_P = get_param("P_star", 0.0)
+        
+                if design_controls:
+                    if st.session_state.get("inputs_load_Vstar_proxy") != display_V:
+                        st.session_state["inputs_load_Vstar_proxy"] = display_V
+                    if st.session_state.get(n_proxy_widget_key) != display_N:
+                        st.session_state[n_proxy_widget_key] = display_N
+                    if st.session_state.get("shear_Tu_star") != display_T:
+                        st.session_state["shear_Tu_star"] = display_T
+                    if st.session_state.get(m_pos_proxy_widget_key) != display_Mu_pos:
+                        st.session_state[m_pos_proxy_widget_key] = display_Mu_pos
+                    if st.session_state.get(m_neg_proxy_widget_key) != display_Mu_neg:
+                        st.session_state[m_neg_proxy_widget_key] = display_Mu_neg
+                    if st.session_state.get("shear_P_star") != display_P:
+                        st.session_state["shear_P_star"] = display_P
+        
+                Mu_star_pos_val = max(0.0, _coalesce_num(display_Mu_pos, 0.0))
+                Mu_star_neg_val = max(0.0, _coalesce_num(display_Mu_neg, 0.0))
+                P_star_val = _coalesce_num(display_P, 0.0)
+                moment_signed_selected = float(get_param(f"{selected_prefix}_Mstar", 0.0) or 0.0)
+                bending_detail_view = str(st.session_state.get("bending_detail_view", "positive") or "positive").strip().lower()
+                support_current_text = str(support_current or "").strip().lower()
+                show_mu_negative = (
+                    ("continuous" in support_current_text)
+                    or ("interior" in support_current_text)
+                    or (moment_signed_selected < 0.0)
+                    or (bending_detail_view == "negative")
+                )
+                include_prestress_effects_ui = bool(st.session_state.get("shear_include_prestress_effects_ui", False))
+        
+                number_row(
+                    "Design shear V* (kN)",
+                    "inputs_load_Vstar_proxy",
+                    float(display_V),
+                    sync_callbacks,
+                    disabled=is_design_driven,
+                    help_text="Factored shear at the section.",
+                )
+                number_row(
+                    "Axial force N* (kN, +tension)",
+                    n_proxy_widget_key,
+                    float(display_N),
+                    sync_callbacks,
+                    disabled=is_design_driven,
+                    help_text="Axial force at the section (+tension, −compression).",
+                )
+                number_row(
+                    "Torsion T* (kNm)",
+                    "shear_Tu_star",
+                    float(display_T),
+                    sync_callbacks,
+                    disabled=is_design_driven,
+                    help_text="Factored torsion at the section.",
+                )
+                number_row(
+                    "Positive design moment Mu*+ (kNm)",
+                    m_pos_proxy_widget_key,
+                    Mu_star_pos_val,
+                    sync_callbacks,
+                    disabled=is_design_driven,
+                    help_text=(
+                        "Sagging bending demand magnitude. Used with shear for εₓ in the general MCFT route "
+                        "(positive bending: top compression, bottom tension)."
+                    ),
+                )
+                if show_mu_negative:
+                    number_row(
+                        "Negative design moment Mu*- (kNm)",
+                        m_neg_proxy_widget_key,
+                        Mu_star_neg_val,
+                        sync_callbacks,
+                        disabled=is_design_driven,
+                        help_text=(
+                            "Hogging bending demand magnitude. Enter as a positive number for top tension / bottom compression."
+                        ),
+                    )
+                if include_prestress_effects_ui:
+                    number_row(
+                        "Prestress force P* (kN)",
+                        "shear_P_star",
+                        P_star_val,
+                        sync_callbacks,
+                        disabled=is_design_driven,
+                        help_text=(
+                            "Prestress / effective prestress force in the section (kN). Affects longitudinal strain εₓ in shear."
+                        ),
+                    )
+        
+                number_row(
+                    "φ – strength reduction for shear",
+                    "shear_phi_shear",
+                    get_param("phi_shear", 0.75),
+                    sync_callbacks,
+                    help_text="Strength reduction factor for shear (AS 3600).",
+                )
+        
+            # ---------- 1.2 Geometry (middle column) ----------
+            with col_geom_mat:
+                render_section_title("Geometry, materials & loading conditions")
+        
+                shape_options = ["RECT", "T", "I"]
+                sec_shape_current = st.session_state.get("sec_shape", "RECT")
+                if sec_shape_current not in shape_options:
+                    sec_shape_current = "RECT"
+        
+                select_row(
+                    "Section shape",
+                    "shear_sec_shape",
+                    shape_options,
+                    sec_shape_current,
+                    sync_callbacks,
+                    help_text="Matches Inputs page. Controls which geometry fields are shown.",
+                )
+        
+                # Get current values (widget key takes precedence if exists, otherwise use shared key)
+                D_val = _coalesce_num(st.session_state.get("shear_D", get_param("D", 600.0)), 600.0)
+                L_val = _coalesce_num(st.session_state.get("shear_L", get_param("L", 3000.0)), 3000.0)
+        
+                sec_shape = st.session_state.get("shear_sec_shape", st.session_state.get("sec_shape", "RECT"))
+        
+                if sec_shape == "RECT":
+                    b_val = _coalesce_num(st.session_state.get("shear_b", get_param("b", 400.0)), 400.0)
+                    number_row(
+                        "Width b (mm)",
+                        "shear_b",
+                        b_val,
+                        sync_callbacks,
+                        help_text="Shared with Inputs tab.",
+                    )
+                elif sec_shape == "T":
+                    bf_val = _coalesce_num(st.session_state.get("shear_bf", get_param("bf", 600.0)), 600.0)
+                    tf_val = _coalesce_num(st.session_state.get("shear_tf", get_param("tf", 120.0)), 120.0)
+                    bw_val = _coalesce_num(st.session_state.get("shear_bw", get_param("bw", 300.0)), 300.0)
+        
+                    number_row("Flange width bf (mm)", "shear_bf", bf_val, sync_callbacks)
+                    number_row("Flange thickness tf (mm)", "shear_tf", tf_val, sync_callbacks)
+                    number_row("Web width bw (mm)", "shear_bw", bw_val, sync_callbacks)
+                elif sec_shape == "I":
+                    bf_val = _coalesce_num(st.session_state.get("shear_bf", get_param("bf", 600.0)), 600.0)
+                    tf_val = _coalesce_num(st.session_state.get("shear_tf", get_param("tf", 120.0)), 120.0)
+                    tw_val = _coalesce_num(st.session_state.get("shear_tw", get_param("tw", 200.0)), 200.0)
+        
+                    number_row("Top flange width bf (mm)", "shear_bf", bf_val, sync_callbacks)
+                    number_row("Top flange thickness tf (mm)", "shear_tf", tf_val, sync_callbacks)
+                    number_row("Web thickness tw (mm)", "shear_tw", tw_val, sync_callbacks)
+        
+                number_row(
+                    "Depth D (mm)",
+                    "shear_D",
+                    D_val,
+                    sync_callbacks,
+                    help_text="Overall section depth, shared with Inputs.",
+                )
+                number_row(
+                    "Span L (mm)",
+                    "shear_L",
+                    L_val,
+                    sync_callbacks,
+                    help_text="Clear span or design span for this section.",
+                )
+        
+                if design_controls:
+                    st.info("🔒 Support condition is controlled by the Design page. Edit it there.")
+                select_row(
+                    "Support condition (k₂)",
+                    support_widget_key,
+                    support_options,
+                    support_current,
+                    sync_callbacks,
+                    help_text=support_help_text,
+                    disabled=design_controls,
+                )
+        
+            # ---------- 1.3 Materials (right column) ----------
+            with col_geom_mat:
+                number_row(
+                    "Concrete strength f'c (MPa)",
+                    "shear_fc",
+                    get_param("fc", 40.0),
+                    sync_callbacks,
+                    help_text="Concrete compressive strength (AS 3600).",
+                )
+                number_row(
+                    "Steel yield f_sy (MPa)",
+                    "shear_fsy",
+                    get_param("fsy", 500.0),
+                    sync_callbacks,
+                    help_text="Yield stress of longitudinal & shear reinforcement.",
+                )
+        
+        
+        
+            with col_shear_reo:
+                _auto_spacing_mode = bool(get_param("shear_auto_design", False))
+                render_section_title("Shear reinforcement & section parameters")
+                
+                # Widget keys (resolved via TAB_KEYS)
+                w_lig_d = get_widget_key_for_shared("lig_d", prefix="shear_") or "shear_lig_d"
+                w_lig_legs = get_widget_key_for_shared("lig_legs", prefix="shear_") or "shear_lig_legs"
+                w_s_lig = get_widget_key_for_shared("s_lig", prefix="shear_") or "shear_s_lig"
+                
+                # Read shared values (do NOT write shared keys)
+                lig_d_val = float(st.session_state.get("lig_d", 10.0))
+                lig_legs_val = float(st.session_state.get("lig_legs", 2))
+                canonical_s = float(st.session_state.get("s_lig", 200.0) or 200.0)
+                # Keep shear link widget aligned with shared provided spacing (canonical user input; not envelope spacing).
+                if _auto_spacing_mode:
+                    if st.session_state.get(w_s_lig) != canonical_s:
+                        st.session_state[w_s_lig] = float(canonical_s)
+                    s_lig_val = float(canonical_s)
+                else:
+                    s_lig_val = float(st.session_state.get(w_s_lig, canonical_s) or canonical_s)
+                
+                # Option lists for dropdowns
+                REO_BAR_DIAS = [10, 12, 16, 20, 24, 28, 32, 36, 40]
+                
+                select_row(
+                    "Link Ø (mm)",
+                    w_lig_d,
+                    REO_BAR_DIAS,
+                    int(lig_d_val),
+                    sync_callbacks,
+                    help_text="Nominal diameter of shear links (mm).",
+                )
+                
+                select_row(
+                    "No. of legs",
+                    w_lig_legs,
+                    REO_SHEAR_LEGS_OPTIONS,
+                    int(lig_legs_val),
+                    sync_callbacks,
+                    help_text="Number of legs per shear link. Use 0 for no links; 2 or more for active shear reinforcement.",
+                )
+                
+                number_row(
+                    "Provided link spacing (mm)",
+                    w_s_lig,
+                    s_lig_val,
+                    sync_callbacks,
+                    help_text="Centre-to-centre spacing of shear links you provide (mm). Envelope-governed spacings for checks appear under Check 10.",
+                    disabled=False,
+                )
+        
+            with col_shear_params:
+                render_section_title("Ducts & prestress voids")
+                
+                number_row(
+                    "Number of ducts crossing web",
+                    "shear_n_ducts",
+                    0.0,
+                    sync_callbacks,
+                    help_text="Number of prestressing ducts crossing the web.",
+                )
+                
+                number_row(
+                    "Duct diameter (mm)",
+                    "shear_duct_dia",
+                    0.0,
+                    sync_callbacks,
+                    help_text="Diameter of each prestressing duct.",
+                )
+                
+                # Compute sum_duct internally from the two inputs
+                n_ducts = get_param("n_ducts", 0.0)
+                duct_dia = get_param("duct_dia", 0.0)
+        
+                n_ducts = 0.0 if n_ducts is None else float(n_ducts)
+                duct_dia = 0.0 if duct_dia is None else float(duct_dia)
+        
+                sum_duct = n_ducts * (duct_dia ** 2) * 3.14159 / 4.0
+                # Store computed value in session state for use in calculations
+                st.session_state["shear_sum_duct"] = sum_duct
+                
+                # k_d factor options (matching shared state format)
+                KD_OPTIONS = [
+                    "None (no ducts in web)",
+                    "0.5 – steel ducts, grouted",
+                    "0.8 – plastic ducts, grouted",
+                    "1.2 – ungrouted ducts",
+                ]
+                # Mapping from option string to numeric k_d value
+                KD_VALUE_MAP = {
+                    "None (no ducts in web)": 0.0,
+                    "0.5 – steel ducts, grouted": 0.5,
+                    "0.8 – plastic ducts, grouted": 0.8,
+                    "1.2 – ungrouted ducts": 1.2,
+                }
+                
+                # Get widget key for k_d_option
+                w_kd = get_widget_key_for_shared("k_d_option", prefix="shear_") or "shear_k_d_option"
+                kd_option_val = get_param("k_d_option", "None (no ducts in web)")
+                if kd_option_val not in KD_OPTIONS:
+                    kd_option_val = "None (no ducts in web)"
+                
+                select_row(
+                    "k_d factor for prestressing ducts",
+                    w_kd,
+                    KD_OPTIONS,
+                    kd_option_val,
+                    sync_callbacks,
+                    help_text="k_d factor for prestressing ducts (AS 3600).",
+                )
+                
+                # Convert selected option to numeric k_d value for calculations
+                kd_option_selected = st.session_state.get(w_kd, kd_option_val)
+                k_d = KD_VALUE_MAP.get(kd_option_selected, 0.0)
+            
+            with col_shear_reo:
+                number_row(
+                    "Maximum aggregate size d_g (mm)",
+                    "shear_d_g",
+                    20.0,
+                    sync_callbacks,
+                    help_text="Maximum aggregate size for k_v calculation.",
+                )
+                
+                # k_v method options
+                KV_METHOD_OPTIONS = [
+                    "General εₓ-based (Cl. 8.2.4.2)",
+                    "Simplified non-prestressed (Cl. 8.2.4.3)",
+                ]
+                
+                # Get widget key for k_v_method
+                w_kv_method = get_widget_key_for_shared("k_v_method", prefix="shear_") or "shear_k_v_method"
+                kv_method_val = get_param("k_v_method", "General εₓ-based (Cl. 8.2.4.2)")
+                if kv_method_val not in KV_METHOD_OPTIONS:
+                    kv_method_val = "General εₓ-based (Cl. 8.2.4.2)"
+                
+                select_row(
+                    "k_v method",
+                    w_kv_method,
+                    KV_METHOD_OPTIONS,
+                    kv_method_val,
+                    sync_callbacks,
+                    help_text=(
+                        "Simplified (Cl. 8.2.4.3) vs general εx-based (Cl. 8.2.4.2). "
+                        "Open the page ℹ️ INFO expander for when to use each and why."
+                    ),
+                )
+        
+                # Determine if general method is used
+                method = st.session_state.get(w_kv_method, kv_method_val)
+                use_general_kv = method.startswith("General")
+        
+    page_divider()
 
     # -------------------------------------------------
     # Pull shared values for calculations
@@ -3987,7 +3996,7 @@ This gives **{stirrup_ratio_case}**, so the governing branch is: **{kv_case}**.
         check5_inputs_cell = (
             f"- Concrete: $f'_c = {fc:.1f}$ MPa<br>"
             f"- Geometry: $b_v = {b_v:.1f}$ mm, $d_v = {d_v:.1f}$ mm, $d_g = {d_g:.1f}$ mm<br>"
-            f"- Transverse steel: $A_{{sv}} = {Asv:.1f}$ mm², spacing $s = {s:.1f}$ mm, "
+            f"- Transverse steel: $A_{{sv}} = {Asv:.1f}$ mm², provided spacing $s_{{lig}} = {s:.1f}$ mm, "
             f"$f_{{sy,v}} = {f_syv:.1f}$ MPa<br>"
             f"{_check5_agg_line}"
             f"{_check5_strain_line}"
@@ -4208,7 +4217,7 @@ This step gives the concrete contribution only. The steel contribution $V_s$ is 
 
 
 
-- $A_{{sv}} = {Asv:.1f}$ mm², spacing $s = {s:.1f}$ mm  
+- $A_{{sv}} = {Asv:.1f}$ mm², provided spacing $s_{{lig}} = {s:.1f}$ mm  
 
 - $f_{{sy,v}} = {f_syv:.1f}$ MPa  
 
@@ -4638,7 +4647,7 @@ $s \\le \\min(0.75D, 500\\ \\mathrm{{mm}})$
 
 **Calculated midspan spacing (demand-based):** $s_{{\\mathrm{{mid,calc}}}} = {int(round(_s_mid_calc_z10))}$ mm  
 
-**Shown / applied spacing:** $s = {int(round(_s_mid_used_z10))}$ mm ({'auto (calculated)' if _apply_auto_z10 else 'manual link spacing'})
+**Shown spacing ({'governing envelope' if _apply_auto_z10 else 'provided input'}):** $s = {int(round(_s_mid_used_z10))}$ mm
 """
             else:
                 _midspan_derivation_md = f"""
@@ -4661,7 +4670,7 @@ $$s = \\frac{{A_{{sv}}}}{{(A_{{sv}}/s)_{{\\mathrm{{req}}}}}}$$
 
 **Calculated midspan spacing (demand-based):** $s_{{\\mathrm{{mid,calc}}}} = {int(round(_s_mid_calc_z10))}$ mm  
 
-**Shown / applied spacing:** $s = {int(round(_s_mid_used_z10))}$ mm ({'auto (calculated)' if _apply_auto_z10 else 'manual link spacing'})
+**Shown spacing ({'governing envelope' if _apply_auto_z10 else 'provided input'}):** $s = {int(round(_s_mid_used_z10))}$ mm
 """
 
         _as3600_intent_md = """
@@ -4694,18 +4703,6 @@ $= {Asv_min_over_s_check11:.3f}\\ \\mathrm{{mm^2/mm}}$
 
         def check10_layout_diagram_fn():
             check10_layout_info_fn()
-            _sync_cb = get_sync_callbacks()
-            _toggle_key = "shear_auto_design_toggle"
-            _register_rendered_key(_toggle_key)
-            st.toggle(
-                "Apply auto spacing",
-                key=_toggle_key,
-                on_change=_wrap_user_edit(_toggle_key, _sync_cb[_toggle_key]),
-                help=(
-                    "When enabled, Check 10 calculated end and midspan spacings are used for diagrams and summaries; "
-                    "the end-zone value is also written back to the shared link spacing."
-                ),
-            )
             zones = get_param("shear_zone_results", None)
             status = get_param("shear_design_status", None)
             status_error = get_param("shear_design_error", None)
@@ -4741,14 +4738,38 @@ $= {Asv_min_over_s_check11:.3f}\\ \\mathrm{{mm^2/mm}}$
             elif status == "no_reo":
                 st.error("Shear check: FAIL (util = 0.00)")
 
+            _gov_lbl = str(get_param("shear_governing_spacing_source", "") or "").strip().lower()
+            _gov_disp = (
+                "Provided spacing"
+                if _gov_lbl == "provided"
+                else ("Required spacing" if _gov_lbl == "required" else "—")
+            )
+            _s_req_pub = get_param("shear_required_spacing_mm", None)
+            _s_eff_pub = get_param("shear_effective_spacing_mm", None)
+            _req_disp = (
+                f"{float(_s_req_pub):.0f}"
+                if _s_req_pub is not None
+                else f"{int(round(s_end))}"
+            )
+            _eff_disp = (
+                f"{float(_s_eff_pub):.0f}"
+                if _s_eff_pub is not None
+                else f"{int(round(float(_s_end_used_z10)))}"
+            )
             st.markdown(
                 f"""
-**Shear reinforcement spacing**
+**Required spacing (end zone, envelope / Check 10):** **{_req_disp} mm** (midspan layout **@ {int(round(s_mid))} mm**)
 
-- End zone (0–1.5dᵥ): **@ {int(round(s_end))} mm**
-- Midspan: **@ {int(round(s_mid))} mm**
+**Provided spacing (input, s_lig):** **{int(round(float(_s_in_z10)))} mm**
+
+**Effective spacing used in φV_u check:** **{_eff_disp} mm** · **Governing source:** {_gov_disp}
 """
             )
+            if abs(float(s_end) - float(_s_in_z10)) > 5.0:
+                st.caption(
+                    "Required envelope spacing can differ from provided s_lig when demand or code limits govern — "
+                    "expected; shared s_lig is not overwritten."
+                )
             no_variation = abs(float(s_end) - float(s_mid)) < 5.0
             D_mm = float(get_param("D", 0.0) or 0.0)
             s_max_code = min(0.75 * D_mm, 500.0) if D_mm > 0.0 else 500.0
@@ -4758,13 +4779,15 @@ $= {Asv_min_over_s_check11:.3f}\\ \\mathrm{{mm^2/mm}}$
                     "Concrete alone is sufficient (V* < φVuc), so reinforcement spacing is governed by the maximum allowable spacing "
                     f"(s ≤ {int(s_max_code)} mm)."
                 )
-                st.caption(f"Uniform spacing = {int(round(s_end))} mm (maximum spacing governs)")
+                st.caption(f"Uniform governing spacing = {int(round(s_end))} mm (maximum spacing governs)")
             else:
                 st.info(
                     "Spacing varies along the span because shear demand is higher near the support. "
                     "Tighter spacing is required in the support zone, reducing toward midspan as shear decreases."
                 )
-                st.caption(f"Spacing varies from {int(round(s_end))} mm (support) to {int(round(s_mid))} mm (midspan)")
+                st.caption(
+                    f"Governing spacing varies from {int(round(s_end))} mm (support) to {int(round(s_mid))} mm (midspan)"
+                )
 
         def check10_layout_info_fn():
             col_info_header, _ = st.columns([0.1, 0.9])
@@ -4866,38 +4889,6 @@ Spacing is varied along the span based on shear demand and checked against minim
     summary_util = (shear_results.V_eq / shear_results.phi_Vu) if shear_results.phi_Vu > 0 else float("nan")
     summary_phi_vu_max = phi * shear_results.Vu_max_kN
     summary_web_util = (shear_results.V_eq / summary_phi_vu_max) if summary_phi_vu_max > 0 else float("nan")
-    # region agent log
-    _agent_dbg_log(
-        "summary table shear snapshot",
-        {
-            "shear_results_phi_Vu": float(shear_results.phi_Vu),
-            "shear_results_V_eq": float(shear_results.V_eq),
-            "shear_results_Vus_kN": float(shear_results.Vus_kN),
-            "shear_results_theta_v_deg": float(shear_results.theta_v_deg),
-            "summary_util": float(summary_util) if not math.isnan(summary_util) else None,
-            "state_phi_Vu_cap": get_param("phi_Vu_cap", None),
-            "state_shear_envelope_status": get_param("shear_envelope_status", None),
-            "state_s_lig": get_param("s_lig", None),
-        },
-        run_id="pre-fix",
-        hypothesis_id="UI_B",
-    )
-    # endregion
-    # region agent log
-    _agent_dbg_log(
-        "check11 basis snapshot",
-        {
-            "Asv_over_s_check11": Asv_over_s_check11,
-            "Asv_min_over_s_check11": Asv_min_over_s_check11,
-            "min_shear_ok": min_shear_ok,
-            "min_shear_status": min_shear_status,
-            "state_shear_design_status": get_param("shear_design_status", None),
-            "state_shear_envelope_status": get_param("shear_envelope_status", None),
-        },
-        run_id="pre-fix",
-        hypothesis_id="CHK11",
-    )
-    # endregion
 
     summary_overrides = {
         "Sectional shear capacity": {

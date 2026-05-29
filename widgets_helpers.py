@@ -38,6 +38,63 @@ def get_rendered_widget_keys() -> list[str]:
 def clear_rendered_widget_keys() -> None:
     """Call at start of each page render."""
     _RENDERED_WIDGET_KEYS.clear()
+
+
+def _browser_recipe_value_matches(left, right) -> bool:
+    try:
+        return abs(float(left) - float(right)) <= 1e-9
+    except (TypeError, ValueError):
+        return left == right
+
+
+def _browser_recipe_forced_selectbox_value(widget_key: str, options: list) -> object | None:
+    """Return a dev/test recipe value that should initialise this selectbox."""
+    if os.environ.get("CODEX_BROWSER_TEST_MODE", "").strip().lower() not in {"1", "true", "yes", "on"}:
+        return None
+    ss = st.session_state
+    applied_state = ss.get("_browser_recipe_applied_state")
+    if not isinstance(applied_state, dict) or not applied_state:
+        return None
+    if (
+        ss.get("pending_recommendation_applied_id")
+        or ss.get("_inputs_action_apply_recommendation")
+        or ss.get("_inputs_action_run_auto_design")
+        or ss.get("_design_guide_last_apply_route")
+    ):
+        return None
+    shared_key = TAB_KEYS.get(widget_key)
+    if not shared_key or shared_key not in applied_state:
+        return None
+    expected = applied_state.get(shared_key)
+    if isinstance(expected, (dict, list, tuple, set)):
+        return None
+    if not any(_browser_recipe_value_matches(expected, option) for option in options):
+        return None
+    canonical_expected = next(
+        (option for option in options if _browser_recipe_value_matches(expected, option)),
+        expected,
+    )
+    before = ss.get(widget_key)
+    ss.pop(f"_cached_{widget_key}", None)
+    ss.pop(widget_key, None)
+    hydrated_map = ss.get("_hydrated_from_shared_map")
+    if isinstance(hydrated_map, dict):
+        hydrated_map.pop(widget_key, None)
+    audit = dict(ss.get("_browser_recipe_widget_pre_select_reseed_audit") or {})
+    changes = dict(audit.get("changed") or {})
+    changes[widget_key] = {
+        "before": before,
+        "after": canonical_expected,
+        "shared_key": shared_key,
+        "reset_before_widget": True,
+    }
+    audit.update({
+        "applied": True,
+        "recipe": ss.get("_browser_recipe_applied_name"),
+        "changed": changes,
+    })
+    ss["_browser_recipe_widget_pre_select_reseed_audit"] = audit
+    return canonical_expected
     # Also clear session_state version for backward compatibility
     if "_rendered_widget_keys" in st.session_state:
         st.session_state["_rendered_widget_keys"] = set()
@@ -641,6 +698,13 @@ def status_to_class(status=None):
         return "step-neutral"
 
 
+def _has_non_empty_card_text(value) -> bool:
+    text = re.sub(r"<[^>]+>", " ", str(value or ""))
+    text = re.sub(r"[*_`$\\{}]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return len(text) >= 3
+
+
 def step_expander_calcbox(
     uid: str,
     summary_line: str,
@@ -704,6 +768,17 @@ def step_expander_calcbox(
     else:
         formatted_summary = _bold_first_summary_line(summary_line_norm)
     label = f"{formatted_summary}{info_tip}".strip()
+    has_body_content = bool(
+        _has_non_empty_card_text(details_md)
+        or diagram_fn
+        or content_before
+        or content_after
+    )
+    if not _has_non_empty_card_text(label):
+        if has_body_content:
+            label = "**Calculation details**"
+        else:
+            return
 
     with st.expander(label, expanded=is_expanded):
         # Inner target for flash highlight
@@ -1036,6 +1111,12 @@ def select_row(
 
     # options may be list[str] or list of things; convert to list for membership checks
     _opts = list(options) if not isinstance(options, dict) else list(options.keys())
+    forced_browser_recipe_value = _browser_recipe_forced_selectbox_value(original_key, _opts)
+    forced_browser_recipe_index = (
+        _opts.index(forced_browser_recipe_value)
+        if forced_browser_recipe_value is not None and forced_browser_recipe_value in _opts
+        else None
+    )
 
     # Seed ONCE only
     if original_key not in st.session_state:
@@ -1090,7 +1171,10 @@ def select_row(
             else:
                 st.markdown(f"**{label_text}**")
         with col2:
-            _ = _coerce_current_value()
+            if forced_browser_recipe_index is None:
+                _ = _coerce_current_value()
+            else:
+                selectbox_kwargs["index"] = forced_browser_recipe_index
             return st.selectbox(
                 _safe_label,
                 options=_opts,
@@ -1103,7 +1187,10 @@ def select_row(
         label_with_hover(label_text, help_text, required=False)
     else:
         st.markdown(f"**{label_text}**")
-    _ = _coerce_current_value()
+    if forced_browser_recipe_index is None:
+        _ = _coerce_current_value()
+    else:
+        selectbox_kwargs["index"] = forced_browser_recipe_index
     return st.selectbox(
         _safe_label,
         options=_opts,
@@ -1873,6 +1960,8 @@ def clickable_calcbox(
 # ============================================================
 def render_step(step_id: str, title: str, summary_md: str, body_fn: callable, status=None, summary_mode: bool = True):
     """Render a step as an expandable card with summary header."""
+    if not (_has_non_empty_card_text(title) or _has_non_empty_card_text(summary_md)):
+        return
     # Apply CSS for expander styling
     apply_step_summary_expander_css()
     
@@ -1900,6 +1989,8 @@ def render_jumpable_step(
       - allows expanded control from ?jump=<uid>
       - flashes when expanded
     """
+    if not (_has_non_empty_card_text(title) or _has_non_empty_card_text(summary_md)):
+        return
     # Apply CSS for expander styling
     apply_step_summary_expander_css()
     

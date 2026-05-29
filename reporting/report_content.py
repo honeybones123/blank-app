@@ -228,6 +228,7 @@ def _auto_steps_for_module(module, summary, inputs, results, detail_level="detai
         b = get_param("b", 300.0)
         D = get_param("D", 600.0)
         cover_bot = get_param("cover_bot", 40.0)
+        lig_d = get_param("lig_d", 10.0)
         db_bot = get_param("db_bot", 20.0)
         nb_bot = get_param("nb_bot", 4)
         
@@ -266,8 +267,8 @@ def _auto_steps_for_module(module, summary, inputs, results, detail_level="detai
             f"Ast = {nb_bot:.0f} × (π × {db_bot:.0f}²/4) = {Ast_calc:.0f} mm²",
             
             f"Effective depth d — AS 3600:2018 Cl. 8.1.3\n"
-            f"d = D - cover - db/2\n"
-            f"d = {D:.0f} - {cover_bot:.0f} - {db_bot:.0f}/2 = {d:.0f} mm",
+            f"d = D - (cover_to_ligs + lig_diameter + 0.5*bar_diameter)\n"
+            f"d = {D:.0f} - ({cover_bot:.0f} + {lig_d:.0f} + 0.5×{db_bot:.0f}) = {d:.0f} mm",
             
             f"Stress block factors — AS 3600:2018 Cl. 8.1.3\n"
             f"α₂ = 0.85 - 0.0015×f'c = 0.85 - 0.0015×{fc:.1f} = {alpha2:.3f}\n"
@@ -848,6 +849,12 @@ def extract_check_sections(fig_paths=None):
         
         # Check for detailed report tree first (preferred)
         shear_report = _r(results, "shear_report")
+        if not shear_report:
+            try:
+                from shear_core import ensure_shear_report_built
+                shear_report = ensure_shear_report_built(st.session_state, results)
+            except Exception:
+                shear_report = _r(results, "shear_report")
         if not shear_report:
             shear_report = steps_to_tabs_boxes(
                 module_title="Shear (ULS)",

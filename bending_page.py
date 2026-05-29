@@ -53,6 +53,7 @@ from bending_diagrams import (
     _plot_stress_strain_profiles,
     _plot_material_stress_strain_curves,
 )
+from bending_side_view_diagram import render_bending_side_view_diagram
 from bending_tabs import render_uls_tab, render_min_strength_tab, render_sls_tab
 from bending_checks_helpers import build_bending_check_rows_from_state
 from engineering_check_ui import (
@@ -1188,6 +1189,10 @@ def render_bending():
     
     from state_and_helpers import _write_sync_trace_line
     _write_sync_trace_line("\n=== PAGE RENDER: bending ===")
+    # Widget callbacks update the live row-model keys before this rerun. Recompute
+    # derived summaries here so the top summary and diagrams use the current reo layout
+    # even when the global structural recompute is not running.
+    recalc_derived_values()
     
     # Handle cross-page navigation from Inputs page
     from jump_nav import JUMP_NAV_TAB_KEY, get_jump_uid
@@ -1352,23 +1357,23 @@ def render_bending():
     
     # Filter signature to only include parameters that compute_section_layout_cached accepts
     layout_sig = {
-        "b": results.get("b", get_param("b", 400.0)),
-        "D": results.get("D", get_param("D", 600.0)),
-        "cover_bot": results.get("cover_bot", get_param("cover_bot", 40.0)),
-        "cover_top": results.get("cover_top", get_param("cover_top", 40.0)),
-        "cover_side": results.get("cover_side", get_param("cover_side", 40.0)),
-        "nb_or_s_bot_1": results.get("nb_or_s_bot_1", get_param("nb_or_s_bot_1", 4.0)),
-        "db_bot_1": results.get("db_bot_1", get_param("db_bot_1", 20.0)),
-        "nb_or_s_bot_2": results.get("nb_or_s_bot_2", get_param("nb_or_s_bot_2", 0.0)),
-        "db_bot_2": results.get("db_bot_2", get_param("db_bot_2", 20.0)),
-        "nb_or_s_top_1": results.get("nb_or_s_top_1", get_param("nb_or_s_top_1", 2.0)),
-        "db_top_1": results.get("db_top_1", get_param("db_top_1", 16.0)),
-        "nb_or_s_top_2": results.get("nb_or_s_top_2", get_param("nb_or_s_top_2", 0.0)),
-        "db_top_2": results.get("db_top_2", get_param("db_top_2", 16.0)),
-        "rowgap_bot": results.get("rowgap_bot", get_param("rowgap_bot", 60.0)),
-        "rowgap_top": results.get("rowgap_top", get_param("rowgap_top", 60.0)),
-        "lig_legs": results.get("lig_legs", get_param("lig_legs", 2)),
-        "lig_d": results.get("lig_d", get_param("lig_d", 10.0)),
+        "b": get_param("b", results.get("b", 400.0)),
+        "D": get_param("D", results.get("D", 600.0)),
+        "cover_bot": get_param("cover_bot", results.get("cover_bot", 40.0)),
+        "cover_top": get_param("cover_top", results.get("cover_top", 40.0)),
+        "cover_side": get_param("cover_side", results.get("cover_side", 40.0)),
+        "nb_or_s_bot_1": get_param("nb_or_s_bot_1", results.get("nb_or_s_bot_1", 4.0)),
+        "db_bot_1": get_param("db_bot_1", results.get("db_bot_1", 20.0)),
+        "nb_or_s_bot_2": get_param("nb_or_s_bot_2", results.get("nb_or_s_bot_2", 0.0)),
+        "db_bot_2": get_param("db_bot_2", results.get("db_bot_2", 20.0)),
+        "nb_or_s_top_1": get_param("nb_or_s_top_1", results.get("nb_or_s_top_1", 2.0)),
+        "db_top_1": get_param("db_top_1", results.get("db_top_1", 16.0)),
+        "nb_or_s_top_2": get_param("nb_or_s_top_2", results.get("nb_or_s_top_2", 0.0)),
+        "db_top_2": get_param("db_top_2", results.get("db_top_2", 16.0)),
+        "rowgap_bot": get_param("rowgap_bot", results.get("rowgap_bot", 60.0)),
+        "rowgap_top": get_param("rowgap_top", results.get("rowgap_top", 60.0)),
+        "lig_legs": get_param("lig_legs", results.get("lig_legs", 2)),
+        "lig_d": get_param("lig_d", results.get("lig_d", 10.0)),
     }
     
     # Compute cached layout once using filtered signature
@@ -1851,256 +1856,287 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
     with inputs_placeholder.container():
         page_divider()
 
-        # ---------------- 3-column layout for Design Actions + Geometry + Materials ----------------
-        col_actions, col_geom, col_mat = st.columns([1, 1, 1], gap="large")
+        st.markdown(
+            """
+            <style>
+            .st-key-bending_input_scroll_outer {
+                display: block;
+                width: 100%;
+                max-width: 100%;
+                overflow-x: auto;
+                overflow-y: hidden;
+                padding-bottom: 0.6rem;
+                scrollbar-gutter: stable;
+            }
+            .st-key-bending_input_scroll_inner {
+                width: 1440px !important;
+                min-width: 1440px !important;
+                max-width: 1440px !important;
+            }
+            .st-key-bending_input_scroll_outer::-webkit-scrollbar {
+                height: 10px;
+            }
+            .st-key-bending_input_scroll_outer::-webkit-scrollbar-track {
+                background: rgba(49, 51, 63, 0.08);
+                border-radius: 999px;
+            }
+            .st-key-bending_input_scroll_outer::-webkit-scrollbar-thumb {
+                background: rgba(49, 51, 63, 0.28);
+                border-radius: 999px;
+            }
+            .st-key-bending_input_scroll_outer::-webkit-scrollbar-thumb:hover {
+                background: rgba(49, 51, 63, 0.4);
+            }
+            .input-subsection-gap {
+                height: 0.35rem;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+        with st.container(key="bending_input_scroll_outer"):
+            with st.container(key="bending_input_scroll_inner", width=1440):
 
-        with col_actions:
-            actions_mode = get_param("actions_mode", "manual")
-            is_design_driven = actions_mode == "design"
-            prev_mode = st.session_state.get("loads_edit_mode", "ULS")
-            toggle_widget_key = get_widget_key_for_shared("loads_edit_toggle", prefix="inputs_") or "inputs_loads_edit_toggle"
-
-            # Heading row with info popover for source of design actions
-            col_title, col_info = st.columns([0.92, 0.08], gap="small")
-            with col_title:
-                render_section_title("Design Actions")
-            with col_info:
-                with info_i_button(help_text="Source of design actions (M*, V*)"):
-                    st.markdown("Source: Inputs page selection", unsafe_allow_html=True)
-                    edit_sls = st.toggle(
-                        "View SLS loads",
-                        key=toggle_widget_key,
-                        help="Toggle which load set is shown below. ULS drives bending/shear; SLS drives crack/deflection.",
-                    )
-
-                    selected_mode_preview = "SLS" if edit_sls else "ULS"
-                    action_verb_preview = "viewing" if is_design_driven else "editing"
-
-                    if not is_design_driven:
-                        st.caption("Design actions: Manual")
+                # ---------------- Single horizontal input band ----------------
+                col_actions, col_geom_mat, col_bend_bot, col_bend_top = st.columns([1, 1, 1, 1], gap="large")
+        
+                with col_actions:
+                    actions_mode = get_param("actions_mode", "manual")
+                    is_design_driven = actions_mode == "design"
+                    prev_mode = st.session_state.get("loads_edit_mode", "ULS")
+                    toggle_widget_key = get_widget_key_for_shared("loads_edit_toggle", prefix="inputs_") or "inputs_loads_edit_toggle"
+        
+                    # Heading row with info popover for source of design actions
+                    col_title, col_info = st.columns([0.92, 0.08], gap="small")
+                    with col_title:
+                        render_section_title("Design Actions")
+                    with col_info:
+                        with info_i_button(help_text="Source of design actions (M*, V*)"):
+                            st.markdown("Source: Inputs page selection", unsafe_allow_html=True)
+                            edit_sls = st.toggle(
+                                "View SLS loads",
+                                key=toggle_widget_key,
+                                help="Toggle which load set is shown below. ULS drives bending/shear; SLS drives crack/deflection.",
+                            )
+        
+                            selected_mode_preview = "SLS" if edit_sls else "ULS"
+                            action_verb_preview = "viewing" if is_design_driven else "editing"
+        
+                            if not is_design_driven:
+                                st.caption("Design actions: Manual")
+                            else:
+                                st.caption("Design actions: From SFD/BMD")
+                            st.caption(f"Currently {action_verb_preview}: **{selected_mode_preview}** loads")
+        
+                    new_mode = "SLS" if edit_sls else "ULS"
+        
+                    if new_mode != prev_mode:
+                        st.session_state["loads_edit_mode"] = prev_mode
+                        save_proxies_to_active_set()
+                        st.session_state["loads_edit_mode"] = new_mode
+                        load_proxies_from_active_set()
+                        st.session_state["inputs_load_Mstar_pos_proxy"] = st.session_state.get("load_Mstar_pos_proxy", 0.0)
+                        st.session_state["inputs_load_Mstar_neg_proxy"] = st.session_state.get("load_Mstar_neg_proxy", 0.0)
+                        st.session_state["inputs_load_Nstar_proxy"] = st.session_state.get("load_Nstar_proxy", 0.0)
+                        recalc_derived_values()
+                        update_results()
+                        st.rerun()
                     else:
-                        st.caption("Design actions: From SFD/BMD")
-                    st.caption(f"Currently {action_verb_preview}: **{selected_mode_preview}** loads")
-
-            new_mode = "SLS" if edit_sls else "ULS"
-
-            if new_mode != prev_mode:
-                st.session_state["loads_edit_mode"] = prev_mode
-                save_proxies_to_active_set()
-                st.session_state["loads_edit_mode"] = new_mode
-                load_proxies_from_active_set()
-                st.session_state["inputs_load_Mstar_pos_proxy"] = st.session_state.get("load_Mstar_pos_proxy", 0.0)
-                st.session_state["inputs_load_Mstar_neg_proxy"] = st.session_state.get("load_Mstar_neg_proxy", 0.0)
-                st.session_state["inputs_load_Nstar_proxy"] = st.session_state.get("load_Nstar_proxy", 0.0)
-                recalc_derived_values()
-                update_results()
-                st.rerun()
-            else:
-                st.session_state["loads_edit_mode"] = new_mode
-            selected_mode = st.session_state.get("loads_edit_mode", "ULS")
-            selected_prefix = "sls" if selected_mode == "SLS" else "uls"
-
-            if is_design_driven:
-                st.info("Design actions are currently driven by the Design / Teaching page and are read-only here.")
-
-            m_pos_proxy_widget_key = get_widget_key_for_shared("load_Mstar_pos_proxy", prefix="inputs_") or "inputs_load_Mstar_pos_proxy"
-            m_neg_proxy_widget_key = get_widget_key_for_shared("load_Mstar_neg_proxy", prefix="inputs_") or "inputs_load_Mstar_neg_proxy"
-            n_proxy_widget_key = get_widget_key_for_shared("load_Nstar_proxy", prefix="inputs_") or "inputs_load_Nstar_proxy"
-
-            display_Mu_pos = get_param(f"{selected_prefix}_Mstar_pos_manual", max(0.0, get_param(f"{selected_prefix}_Mstar", 0.0)))
-            display_Mu_neg = get_param(f"{selected_prefix}_Mstar_neg_manual", max(0.0, -get_param(f"{selected_prefix}_Mstar", 0.0)))
-            display_N = get_param(f"{selected_prefix}_Nstar", 0.0)
-            display_P = get_param("P_star", 0.0)
-
-            if is_design_driven:
-                if st.session_state.get(m_pos_proxy_widget_key) != display_Mu_pos:
-                    st.session_state[m_pos_proxy_widget_key] = display_Mu_pos
-                if st.session_state.get(m_neg_proxy_widget_key) != display_Mu_neg:
-                    st.session_state[m_neg_proxy_widget_key] = display_Mu_neg
-                if st.session_state.get(n_proxy_widget_key) != display_N:
-                    st.session_state[n_proxy_widget_key] = display_N
-                if st.session_state.get("bending_P_star") != display_P:
-                    st.session_state["bending_P_star"] = display_P
-
-            Mu_star_pos_val = max(0.0, _coalesce_num(display_Mu_pos, 0.0))
-            Mu_star_neg_val = max(0.0, _coalesce_num(display_Mu_neg, 0.0))
-            N_star_val = _coalesce_num(display_N, 0.0)
-            P_star_val = _coalesce_num(display_P, 0.0)
-            phi_b_val = _coalesce_num(st.session_state.get("bending_phi_b", get_param("phi_bend", 0.85)), 0.85)
-
-            number_row(
-                "Positive design moment Mu*+ (kNm)",
-                m_pos_proxy_widget_key,
-                Mu_star_pos_val,
-                sync_callbacks,
-                disabled=is_design_driven,
-                help_text=(
-                    "Sagging bending demand magnitude. Positive bending corresponds to top compression and bottom tension."
-                ),
-            )
-            number_row(
-                "Negative design moment Mu*- (kNm)",
-                m_neg_proxy_widget_key,
-                Mu_star_neg_val,
-                sync_callbacks,
-                disabled=is_design_driven,
-                help_text=(
-                    "Hogging bending demand magnitude. Enter as positive magnitude for top tension / bottom compression."
-                ),
-            )
-            number_row(
-                "Axial force N* (kN)",
-                n_proxy_widget_key,
-                N_star_val,
-                sync_callbacks,
-                disabled=is_design_driven,
-                help_text=(
-                    "Axial force acting with bending. Compression (negative in many "
-                    "conventions) can reduce tension in the steel; tension increases demand."
-                ),
-            )
-            number_row(
-                "Prestress force P* (kN)",
-                "bending_P_star",
-                P_star_val,
-                sync_callbacks,
-                disabled=is_design_driven,
-                help_text=(
-                    "Prestress / pre-compression in the section. Increasing P* typically "
-                    "reduces tensile demand in the bottom reinforcement."
-                ),
-            )
-            number_row(
-                "Bending strength factor ϕb",
-                "bending_phi_b",
-                phi_b_val,
-                sync_callbacks,
-                help_text=(
-                    "Strength reduction factor for bending (AS 3600 ϕ-factor). "
-                    "This multiplies the nominal capacity to give ϕM_u,cap."
-                ),
-            )
-
-        with col_geom:
-            render_section_title("Geometry")
-            shape_options = ["RECT", "T", "I"]
-            sec_shape_current = st.session_state.get("sec_shape", "RECT")
-            if sec_shape_current not in shape_options:
-                sec_shape_current = "RECT"
-
-            select_row(
-                "Section shape",
-                "bending_sec_shape",
-                shape_options,
-                sec_shape_current,
-                sync_callbacks,
-                help_text="Matches Inputs page. Controls which geometry fields are shown.",
-            )
-
-            # Get current values (widget key takes precedence if exists, otherwise use shared key)
-            D_val = _coalesce_num(st.session_state.get("bending_D", get_param("D", 600.0)), 600.0)
-            L_val = _coalesce_num(st.session_state.get("bending_L", get_param("L", 3000.0)), 3000.0)
-            
-            sec_shape = st.session_state.get("bending_sec_shape", st.session_state.get("sec_shape", "RECT"))
-
-            if sec_shape == "RECT":
-                b_val = _coalesce_num(st.session_state.get("bending_b", get_param("b", 400.0)), 400.0)
-                number_row(
-                    "Width b (mm)",
-                    "bending_b",
-                    b_val,
-                    sync_callbacks,
-                    help_text=(
-                        "Section width. Increasing b increases compression block area and "
-                        "reduces required tensile steel for a given Mu*."
-                    ),
+                        st.session_state["loads_edit_mode"] = new_mode
+                    selected_mode = st.session_state.get("loads_edit_mode", "ULS")
+                    selected_prefix = "sls" if selected_mode == "SLS" else "uls"
+        
+                    if is_design_driven:
+                        st.info("Design actions are currently driven by the Design / Teaching page and are read-only here.")
+        
+                    m_pos_proxy_widget_key = get_widget_key_for_shared("load_Mstar_pos_proxy", prefix="inputs_") or "inputs_load_Mstar_pos_proxy"
+                    m_neg_proxy_widget_key = get_widget_key_for_shared("load_Mstar_neg_proxy", prefix="inputs_") or "inputs_load_Mstar_neg_proxy"
+                    n_proxy_widget_key = get_widget_key_for_shared("load_Nstar_proxy", prefix="inputs_") or "inputs_load_Nstar_proxy"
+        
+                    display_Mu_pos = get_param(f"{selected_prefix}_Mstar_pos_manual", max(0.0, get_param(f"{selected_prefix}_Mstar", 0.0)))
+                    display_Mu_neg = get_param(f"{selected_prefix}_Mstar_neg_manual", max(0.0, -get_param(f"{selected_prefix}_Mstar", 0.0)))
+                    display_N = get_param(f"{selected_prefix}_Nstar", 0.0)
+                    display_P = get_param("P_star", 0.0)
+        
+                    if is_design_driven:
+                        if st.session_state.get(m_pos_proxy_widget_key) != display_Mu_pos:
+                            st.session_state[m_pos_proxy_widget_key] = display_Mu_pos
+                        if st.session_state.get(m_neg_proxy_widget_key) != display_Mu_neg:
+                            st.session_state[m_neg_proxy_widget_key] = display_Mu_neg
+                        if st.session_state.get(n_proxy_widget_key) != display_N:
+                            st.session_state[n_proxy_widget_key] = display_N
+                        if st.session_state.get("bending_P_star") != display_P:
+                            st.session_state["bending_P_star"] = display_P
+        
+                    Mu_star_pos_val = max(0.0, _coalesce_num(display_Mu_pos, 0.0))
+                    Mu_star_neg_val = max(0.0, _coalesce_num(display_Mu_neg, 0.0))
+                    N_star_val = _coalesce_num(display_N, 0.0)
+                    P_star_val = _coalesce_num(display_P, 0.0)
+                    phi_b_val = _coalesce_num(st.session_state.get("bending_phi_b", get_param("phi_bend", 0.85)), 0.85)
+        
+                    number_row(
+                        "Positive design moment Mu*+ (kNm)",
+                        m_pos_proxy_widget_key,
+                        Mu_star_pos_val,
+                        sync_callbacks,
+                        disabled=is_design_driven,
+                        help_text=(
+                            "Sagging bending demand magnitude. Positive bending corresponds to top compression and bottom tension."
+                        ),
+                    )
+                    number_row(
+                        "Negative design moment Mu*- (kNm)",
+                        m_neg_proxy_widget_key,
+                        Mu_star_neg_val,
+                        sync_callbacks,
+                        disabled=is_design_driven,
+                        help_text=(
+                            "Hogging bending demand magnitude. Enter as positive magnitude for top tension / bottom compression."
+                        ),
+                    )
+                    number_row(
+                        "Axial force N* (kN)",
+                        n_proxy_widget_key,
+                        N_star_val,
+                        sync_callbacks,
+                        disabled=is_design_driven,
+                        help_text=(
+                            "Axial force acting with bending. Compression (negative in many "
+                            "conventions) can reduce tension in the steel; tension increases demand."
+                        ),
+                    )
+                    number_row(
+                        "Prestress force P* (kN)",
+                        "bending_P_star",
+                        P_star_val,
+                        sync_callbacks,
+                        disabled=is_design_driven,
+                        help_text=(
+                            "Prestress / pre-compression in the section. Increasing P* typically "
+                            "reduces tensile demand in the bottom reinforcement."
+                        ),
+                    )
+                    number_row(
+                        "Bending strength factor ϕb",
+                        "bending_phi_b",
+                        phi_b_val,
+                        sync_callbacks,
+                        help_text=(
+                            "Strength reduction factor for bending (AS 3600 ϕ-factor). "
+                            "This multiplies the nominal capacity to give ϕM_u,cap."
+                        ),
+                    )
+        
+                with col_geom_mat:
+                    render_section_title("Geometry & Materials")
+                    shape_options = ["RECT", "T", "I"]
+                    sec_shape_current = st.session_state.get("sec_shape", "RECT")
+                    if sec_shape_current not in shape_options:
+                        sec_shape_current = "RECT"
+        
+                    select_row(
+                        "Section shape",
+                        "bending_sec_shape",
+                        shape_options,
+                        sec_shape_current,
+                        sync_callbacks,
+                        help_text="Matches Inputs page. Controls which geometry fields are shown.",
+                    )
+        
+                    # Get current values (widget key takes precedence if exists, otherwise use shared key)
+                    D_val = _coalesce_num(st.session_state.get("bending_D", get_param("D", 600.0)), 600.0)
+                    L_val = _coalesce_num(st.session_state.get("bending_L", get_param("L", 3000.0)), 3000.0)
+                    
+                    sec_shape = st.session_state.get("bending_sec_shape", st.session_state.get("sec_shape", "RECT"))
+        
+                    if sec_shape == "RECT":
+                        b_val = _coalesce_num(st.session_state.get("bending_b", get_param("b", 400.0)), 400.0)
+                        number_row(
+                            "Width b (mm)",
+                            "bending_b",
+                            b_val,
+                            sync_callbacks,
+                            help_text=(
+                                "Section width. Increasing b increases compression block area and "
+                                "reduces required tensile steel for a given Mu*."
+                            ),
+                        )
+        
+                    elif sec_shape == "T":
+                        bf_val = _coalesce_num(st.session_state.get("bending_bf", get_param("bf", 600.0)), 600.0)
+                        tf_val = _coalesce_num(st.session_state.get("bending_tf", get_param("tf", 120.0)), 120.0)
+                        bw_val = _coalesce_num(st.session_state.get("bending_bw", get_param("bw", 300.0)), 300.0)
+        
+                        number_row("Flange width bf (mm)", "bending_bf", bf_val, sync_callbacks)
+                        number_row("Flange thickness tf (mm)", "bending_tf", tf_val, sync_callbacks)
+                        number_row("Web width bw (mm)", "bending_bw", bw_val, sync_callbacks)
+        
+                    elif sec_shape == "I":
+                        bf_val = _coalesce_num(st.session_state.get("bending_bf", get_param("bf", 600.0)), 600.0)
+                        tf_val = _coalesce_num(st.session_state.get("bending_tf", get_param("tf", 120.0)), 120.0)
+                        tw_val = _coalesce_num(st.session_state.get("bending_tw", get_param("tw", 200.0)), 200.0)
+        
+                        number_row("Top flange width bf (mm)", "bending_bf", bf_val, sync_callbacks)
+                        number_row("Top flange thickness tf (mm)", "bending_tf", tf_val, sync_callbacks)
+                        number_row("Web thickness tw (mm)", "bending_tw", tw_val, sync_callbacks)
+                    number_row(
+                        "Depth D (mm)",
+                        "bending_D",
+                        D_val,
+                        sync_callbacks,
+                        help_text=(
+                            "Overall section depth. Larger D increases lever arm (d) and "
+                            "typically increases bending capacity."
+                        ),
+                    )
+                    number_row(
+                        "Span L (mm)",
+                        "bending_L",
+                        L_val,
+                        sync_callbacks,
+                        help_text=(
+                            "Member span. Used mainly for serviceability checks and linking to "
+                            "deflection; not directly in φMu,cap here."
+                        ),
+                    )
+        
+                    st.markdown("<div class='input-subsection-gap'></div>", unsafe_allow_html=True)
+                    # Get current values (widget key takes precedence if exists, otherwise use shared key)
+                    fc_val = _coalesce_num(st.session_state.get("bending_fc", get_param("fc", 40.0)), 40.0)
+                    fsy_val = _coalesce_num(st.session_state.get("bending_fsy", get_param("fsy", 500.0)), 500.0)
+                    
+                    number_row(
+                        "Concrete strength f'c (MPa)",
+                        "bending_fc",
+                        fc_val,
+                        sync_callbacks,
+                        help_text=(
+                            "Concrete compressive strength. Higher f'c increases compression "
+                            "capacity and may reduce required steel, but also changes ductility limits."
+                        ),
+                    )
+                    number_row(
+                        "Steel yield fsy (MPa)",
+                        "bending_fsy",
+                        fsy_val,
+                        sync_callbacks,
+                        help_text=(
+                            "Yield strength of reinforcing steel. Higher fsy increases the "
+                            "force carried by a given area of steel."
+                        ),
+                    )
+        
+                _bend_sec_shape_ui = str(
+                    st.session_state.get("bending_sec_shape")
+                    or st.session_state.get("sec_shape")
+                    or get_param("sec_shape", "RECT")
+                    or "RECT"
                 )
-
-            elif sec_shape == "T":
-                bf_val = _coalesce_num(st.session_state.get("bending_bf", get_param("bf", 600.0)), 600.0)
-                tf_val = _coalesce_num(st.session_state.get("bending_tf", get_param("tf", 120.0)), 120.0)
-                bw_val = _coalesce_num(st.session_state.get("bending_bw", get_param("bw", 300.0)), 300.0)
-
-                number_row("Flange width bf (mm)", "bending_bf", bf_val, sync_callbacks)
-                number_row("Flange thickness tf (mm)", "bending_tf", tf_val, sync_callbacks)
-                number_row("Web width bw (mm)", "bending_bw", bw_val, sync_callbacks)
-
-            elif sec_shape == "I":
-                bf_val = _coalesce_num(st.session_state.get("bending_bf", get_param("bf", 600.0)), 600.0)
-                tf_val = _coalesce_num(st.session_state.get("bending_tf", get_param("tf", 120.0)), 120.0)
-                tw_val = _coalesce_num(st.session_state.get("bending_tw", get_param("tw", 200.0)), 200.0)
-
-                number_row("Top flange width bf (mm)", "bending_bf", bf_val, sync_callbacks)
-                number_row("Top flange thickness tf (mm)", "bending_tf", tf_val, sync_callbacks)
-                number_row("Web thickness tw (mm)", "bending_tw", tw_val, sync_callbacks)
-            number_row(
-                "Depth D (mm)",
-                "bending_D",
-                D_val,
-                sync_callbacks,
-                help_text=(
-                    "Overall section depth. Larger D increases lever arm (d) and "
-                    "typically increases bending capacity."
-                ),
-            )
-            number_row(
-                "Span L (mm)",
-                "bending_L",
-                L_val,
-                sync_callbacks,
-                help_text=(
-                    "Member span. Used mainly for serviceability checks and linking to "
-                    "deflection; not directly in φMu,cap here."
-                ),
-            )
-
-        with col_mat:
-            render_section_title("Materials")
-            # Get current values (widget key takes precedence if exists, otherwise use shared key)
-            fc_val = _coalesce_num(st.session_state.get("bending_fc", get_param("fc", 40.0)), 40.0)
-            fsy_val = _coalesce_num(st.session_state.get("bending_fsy", get_param("fsy", 500.0)), 500.0)
-            
-            number_row(
-                "Concrete strength f'c (MPa)",
-                "bending_fc",
-                fc_val,
-                sync_callbacks,
-                help_text=(
-                    "Concrete compressive strength. Higher f'c increases compression "
-                    "capacity and may reduce required steel, but also changes ductility limits."
-                ),
-            )
-            number_row(
-                "Steel yield fsy (MPa)",
-                "bending_fsy",
-                fsy_val,
-                sync_callbacks,
-                help_text=(
-                    "Yield strength of reinforcing steel. Higher fsy increases the "
-                    "force carried by a given area of steel."
-                ),
-            )
-
-        page_divider()
-
-        _bend_sec_shape_ui = str(
-            st.session_state.get("bending_sec_shape")
-            or st.session_state.get("sec_shape")
-            or get_param("sec_shape", "RECT")
-            or "RECT"
-        )
-        _bend_is_ti = normalized_sec_shape_ui(_bend_sec_shape_ui) in ("T", "I")
-        _bend_bot_title, _bend_top_title = main_longitudinal_reo_pair_labels(
-            _bend_sec_shape_ui, variant="bending"
-        )
-
-        with st.container():
-            st.markdown('<div class="compact-reo">', unsafe_allow_html=True)
-
-            _b_reo_outer_l, _b_reo_main, _b_reo_outer_r = st.columns([1.0, 2.8, 1.0], gap="small")
-            with _b_reo_main:
-                col_bend_bot, col_bend_top = st.columns(2, gap="large")
-
+                _bend_is_ti = normalized_sec_shape_ui(_bend_sec_shape_ui) in ("T", "I")
+                _bend_bot_title, _bend_top_title = main_longitudinal_reo_pair_labels(
+                    _bend_sec_shape_ui, variant="bending"
+                )
+        
                 with col_bend_bot:
                     _bend_bot_title_col, _bend_bot_info_col = st.columns([0.92, 0.08], vertical_alignment="center")
                     with _bend_bot_title_col:
@@ -2118,25 +2154,27 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                                 sec_shape=_bend_sec_shape_ui,
                             )
 
+                    st.markdown('<div class="compact-reo">', unsafe_allow_html=True)
+        
                     if st.session_state.get("_reo_msg_bot_auto_layer2", False):
                         show_reo_message("auto_layer2", layer="Bottom Layer 1")
                         st.session_state["_reo_msg_bot_auto_layer2"] = False
-
+        
                     if st.session_state.get("_reo_msg_bot_layer2_overwritten", False):
                         show_reo_message("layer2_overwritten", layer="Bottom Layer 1")
                         st.session_state["_reo_msg_bot_layer2_overwritten"] = False
-
+        
                     if st.session_state.get("_reo_error_bot_1", False):
                         show_reo_message("layout_invalid", layer="Bottom Layer 1")
                         st.session_state["_reo_error_bot_1"] = False
-
+        
                     warning_bot_1 = st.session_state.get("_reo_warning_bot_1")
                     if warning_bot_1:
                         s_min_val = st.session_state.get("_reo_s_min_bot_1", 25.0)
                         show_reo_message("spacing_clamped", layer="Bottom Layer 1", s_min=s_min_val)
                         st.session_state["_reo_warning_bot_1"] = None
                         st.session_state["_reo_s_min_bot_1"] = None
-
+        
                     render_longitudinal_reo_rows(
                         page_prefix="bending",
                         section="bot",
@@ -2148,9 +2186,9 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                         single_column=True,
                         sec_shape=_bend_sec_shape_ui,
                     )
-
+        
                     cover_bot_val = _coalesce_num(st.session_state.get("bending_cover_bot", get_param("cover_bot", 40.0)), 40.0)
-
+        
                     number_row(
                         "Bottom cover (mm)",
                         "bending_cover_bot",
@@ -2166,7 +2204,10 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                             )
                         ),
                     )
-
+        
+        
+                    st.markdown("</div>", unsafe_allow_html=True)
+        
                 with col_bend_top:
                     _bend_top_title_col, _bend_top_info_col = st.columns([0.92, 0.08], vertical_alignment="center")
                     with _bend_top_title_col:
@@ -2184,25 +2225,27 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                                 sec_shape=_bend_sec_shape_ui,
                             )
 
+                    st.markdown('<div class="compact-reo">', unsafe_allow_html=True)
+        
                     if st.session_state.get("_reo_msg_top_auto_layer2", False):
                         show_reo_message("auto_layer2", layer="Top Layer 1")
                         st.session_state["_reo_msg_top_auto_layer2"] = False
-
+        
                     if st.session_state.get("_reo_msg_top_layer2_overwritten", False):
                         show_reo_message("layer2_overwritten", layer="Top Layer 1")
                         st.session_state["_reo_msg_top_layer2_overwritten"] = False
-
+        
                     if st.session_state.get("_reo_error_top_1", False):
                         show_reo_message("layout_invalid", layer="Top Layer 1")
                         st.session_state["_reo_error_top_1"] = False
-
+        
                     warning_top_1 = st.session_state.get("_reo_warning_top_1")
                     if warning_top_1:
                         s_min_val = st.session_state.get("_reo_s_min_top_1", 25.0)
                         show_reo_message("spacing_clamped", layer="Top Layer 1", s_min=s_min_val)
                         st.session_state["_reo_warning_top_1"] = None
                         st.session_state["_reo_s_min_top_1"] = None
-
+        
                     render_longitudinal_reo_rows(
                         page_prefix="bending",
                         section="top",
@@ -2214,12 +2257,12 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                         single_column=True,
                         sec_shape=_bend_sec_shape_ui,
                     )
-
+        
                     cover_top_val = _coalesce_num(
                         st.session_state.get("bending_cover_top", get_param("cover_top", 40.0)),
                         40.0,
                     )
-
+        
                     number_row(
                         "Top cover (mm)",
                         "bending_cover_top",
@@ -2235,8 +2278,10 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                             )
                         ),
                     )
-
-            st.markdown("</div>", unsafe_allow_html=True)
+        
+        
+                    st.markdown("</div>", unsafe_allow_html=True)
+        page_divider()
 
     with diagram_section_placeholder.container():
         # --- GLOBAL CONCRETE STRESS MODEL (shared across all states) ---
@@ -2278,6 +2323,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                 horizontal=True,
                 index=state_options.index(canonical_state),
             )
+            st.session_state["bending_state"] = main_state
 
             # --- Build label for the 3-panel diagram using global concrete_stress_model ---
             stress_model = st.session_state.get("concrete_stress_model", "rectangular")
@@ -2455,10 +2501,66 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     layout=cached_layout,
                     moment_sign=st.session_state.get("bending_detail_view", "positive"),
                 )
-                try:
-                    st.plotly_chart(fig_ss, width="stretch", config={"displayModeBar": False})
-                except Exception as e:
-                    st.warning("3D view failed to render (browser/graphics). Try disabling 3D view or refreshing the page.")
+                if "bending_diagram_view" not in st.session_state:
+                    st.session_state["bending_diagram_view"] = "Section"
+                diagram_view = st.session_state.get("bending_diagram_view", "Section")
+                diagram_view = diagram_view if diagram_view in ("Section", "Side view") else "Section"
+                if diagram_view == "Section":
+                    try:
+                        reo_refresh_sig = (
+                            get_param("Ast_bot", 0.0),
+                            get_param("Ast_top", 0.0),
+                            get_param("nb_bot", 0),
+                            get_param("nb_top", 0),
+                            get_param("db_bot", 0.0),
+                            get_param("db_top", 0.0),
+                            get_param("d", 0.0),
+                            get_param("do", 0.0),
+                            get_param("bot_row_1_bars", 0),
+                            get_param("bot_row_1_dia", 0.0),
+                            get_param("bot_row_2_bars", 0),
+                            get_param("bot_row_2_dia", 0.0),
+                            get_param("top_row_1_bars", 0),
+                            get_param("top_row_1_dia", 0.0),
+                            get_param("top_row_2_bars", 0),
+                            get_param("top_row_2_dia", 0.0),
+                        )
+                        reo_refresh_key = "_".join(
+                            f"{float(v):.6g}" if isinstance(v, (int, float)) else str(v)
+                            for v in reo_refresh_sig
+                        )
+                        section_chart_key = (
+                            "bending_section_stress_strain_"
+                            f"{diagram_state_label}_"
+                            f"{st.session_state.get('bending_detail_view', 'positive')}_"
+                            f"{float(b):.6g}_{float(D):.6g}_{float(fc):.6g}_{float(fsy):.6g}_"
+                            f"{float(st.session_state.get('bending_sls_dn', 0.0) or 0.0):.6g}_"
+                            f"{float(st.session_state.get('bending_sls_eps_top', 0.0) or 0.0):.6g}_"
+                            f"{float(st.session_state.get('bending_sls_eps_bot', 0.0) or 0.0):.6g}_"
+                            f"{float(st.session_state.get('bending_sls_kappa', 0.0) or 0.0):.6g}_"
+                            f"{reo_refresh_key}"
+                        )
+                        st.plotly_chart(
+                            fig_ss,
+                            width="stretch",
+                            config={"displayModeBar": False},
+                            key=section_chart_key,
+                        )
+                    except Exception as e:
+                        st.warning("3D view failed to render (browser/graphics). Try disabling 3D view or refreshing the page.")
+                else:
+                    render_bending_side_view_diagram(
+                        st.session_state,
+                        stress_strain_fig=fig_ss,
+                    )
+                st.segmented_control(
+                    "Bending diagram view",
+                    options=["Section", "Side view"],
+                    default=diagram_view,
+                    key="bending_diagram_view",
+                    width="stretch",
+                    label_visibility="collapsed",
+                )
 
             # --------------------------------------------------
             # Material stress–strain curves (concrete + steel),

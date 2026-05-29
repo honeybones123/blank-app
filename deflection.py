@@ -72,29 +72,6 @@ SUPPORT_DEFLECTION_MAP = {
 _DEBUG_DEFLECTION_SUPPORT_RESOLUTION = False
 
 
-# region agent log
-def _dbg_defl_support_ndjson(data: dict) -> None:
-    """Append one NDJSON line to debug-55de1f.log (debug session 55de1f)."""
-    try:
-        import json
-        import os
-        import time
-
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug-55de1f.log")
-        row = {
-            "sessionId": "55de1f",
-            "runId": "defl_design_support",
-            "timestamp": int(time.time() * 1000),
-            "location": "deflection.py:get_deflection_diagram_support_condition",
-            **data,
-        }
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(row, default=str) + "\n")
-    except Exception:
-        pass
-
-
-# endregion
 
 # Standard dropdown order; design-resolved fixed/pinned variants are appended when active.
 DEFLECTION_SUPPORT_OPTIONS_BASE = [
@@ -587,41 +564,6 @@ def get_deflection_diagram_support_condition(state: dict | None = None) -> dict:
     support_type = _normalize_deflection_support_type(resolved)
     _sync_design_deflection_support_widgets(support_type)
 
-    # region agent log
-    if str(st.session_state.get("page_slug") or st.session_state.get("_active_page_slug") or "") == "deflection":
-        _dbg_defl_support_ndjson(
-            {
-                "hypothesisId": "H_defl_support",
-                "message": "support_resolution",
-                "data": {
-                    "fix_version": "distinct_fixed_pinned_k2+sketch+coalesce_v2",
-                    "state_is_plain_dict": isinstance(state, dict),
-                    "branch": _dbg_branch,
-                    "mode": mode,
-                    "beam_mode": beam_mode,
-                    "is_multi": bool(is_multi),
-                    "sfd_beam_system_mode": str(source.get("sfd_beam_system_mode", "")),
-                    "design_beam_system_mode": str(source.get("design_beam_system_mode", "")),
-                    "sfd_case_prefix": (str(source.get("sfd_case", "") or "")[:50]),
-                    "sfd_support_condition": repr(source.get("sfd_support_condition")),
-                    "design_support_condition": repr(source.get("design_support_condition")),
-                    "support_condition_coalesced": repr(
-                        source.get("design_support_condition")
-                        or source.get("sfd_support_condition")
-                    ),
-                    "sfd_vs_design_conflict": bool(
-                        source.get("sfd_support_condition") is not None
-                        and source.get("design_support_condition") is not None
-                        and str(source.get("sfd_support_condition")).strip()
-                        != str(source.get("design_support_condition")).strip()
-                    ),
-                    "derived": repr(_dbg_derived),
-                    "resolved_before_final_norm": repr(resolved),
-                    "support_type_out": support_type,
-                },
-            }
-        )
-    # endregion
 
     out = {
         "support_type": support_type,

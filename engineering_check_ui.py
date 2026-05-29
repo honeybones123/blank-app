@@ -19,7 +19,7 @@ ENGINEERING_CHECK_COLUMNS: list[dict[str, Any]] = [
     {"label": "Check", "key": "title", "width": "30%"},
     {"label": "Calculated capacity", "key": "capacity", "width": "24%"},
     {"label": "Applied design action", "key": "action", "width": "24%"},
-    {"label": "Util", "key": "util", "width": "8%"},
+    {"label": "Utilisation", "key": "util", "width": "8%"},
     {"label": "Status", "key": "status", "width": "14%"},
 ]
 
@@ -27,8 +27,8 @@ ENGINEERING_CHECK_COLUMNS: list[dict[str, Any]] = [
 DEFLECTION_CHECK_SUMMARY_COLUMNS: list[dict[str, Any]] = [
     {"label": "Check", "key": "title", "width": "26%"},
     {"label": "Calculated deflection", "key": "calculated", "width": "24%"},
-    {"label": "Allowable limit", "key": "requirement", "width": "26%"},
-    {"label": "Util", "key": "util", "width": "10%"},
+    {"label": "Design limit", "key": "requirement", "width": "26%"},
+    {"label": "Utilisation", "key": "util", "width": "10%"},
     {"label": "Status", "key": "status", "width": "14%"},
 ]
 
@@ -38,7 +38,7 @@ DESIGN_ACTION_SUMMARY_COLUMNS: list[dict[str, Any]] = [
     {"label": "SLS", "key": "sls", "width": "14%"},
     {"label": "ULS (design)", "key": "uls", "width": "14%"},
     {"label": "Calculated capacity (φ)", "key": "strength", "width": "22%"},
-    {"label": "Util", "key": "util", "width": "10%"},
+    {"label": "Utilisation", "key": "util", "width": "10%"},
     {"label": "Status", "key": "status", "width": "18%"},
 ]
 
@@ -47,7 +47,7 @@ PARAMETRIC_RESULT_COLUMNS: list[dict[str, Any]] = [
     {"label": "Check", "key": "title", "width": "30%"},
     {"label": "Result", "key": "capacity", "width": "28%"},
     {"label": "Notes", "key": "action", "width": "24%"},
-    {"label": "Util", "key": "util", "width": "8%"},
+    {"label": "Utilisation", "key": "util", "width": "8%"},
     {"label": "Status", "key": "status", "width": "10%"},
 ]
 
@@ -56,7 +56,7 @@ BENDING_DETAIL_CHECK_COLUMNS: list[dict[str, Any]] = [
     {"label": "Check", "key": "title", "width": "28%"},
     {"label": "Calculated value", "key": "calculated", "width": "24%"},
     {"label": "Requirement / reference", "key": "requirement", "width": "26%"},
-    {"label": "Util", "key": "util", "width": "8%"},
+    {"label": "Utilisation", "key": "util", "width": "8%"},
     {"label": "Status", "key": "status", "width": "14%"},
 ]
 

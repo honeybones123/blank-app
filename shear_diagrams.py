@@ -5555,8 +5555,9 @@ def build_shear_check6_support_transfer_diagram(
         cover_bot, cover_top, db_bot, db_top = 40.0, 40.0, 20.0, 16.0
 
     ms = str(moment_sign or "positive").strip().lower()
+    lig_d = float(reo.get("lig_d", 0.0) or 0.0)
     fallback_y = (
-        D - cover_bot - 0.5 * db_bot if ms != "negative" else cover_top + 0.5 * db_top
+        D - (cover_bot + lig_d + 0.5 * db_bot) if ms != "negative" else cover_top + 0.5 * db_top
     )
     layer_geom = resolve_bending_layer_geometry(
         layout,

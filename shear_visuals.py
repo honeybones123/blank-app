@@ -155,20 +155,6 @@ def _get_canonical_shear_visual_support_state(loading_state: dict[str, Any] | No
         canonical = "pinned_pinned"
     else:
         canonical = "simply_supported"
-    # region agent log
-    _dbg_log(
-        "shear visual support state",
-        {
-            "resolved_support_type": support_type,
-            "canonical_support_condition": canonical,
-            "support_pair": list(support_pair) if isinstance(support_pair, tuple) else None,
-            "controlling_span_idx": None if not isinstance(support_resolution, dict) else support_resolution.get("controlling_span_idx"),
-            "continuous_end_side": None if not isinstance(support_resolution, dict) else support_resolution.get("continuous_end_side"),
-        },
-        run_id="pre-fix",
-        hypothesis_id="V1",
-    )
-    # endregion
     return canonical
 
 
@@ -243,22 +229,6 @@ def _beam_model() -> dict[str, Any]:
     support_positions = [0.0, span_state["span_m"]]
     if support_condition == "cantilever":
         support_positions = [0.0]
-    # region agent log
-    _dbg_log(
-        "shear visual beam model",
-        {
-            "case": loading_state.get("case"),
-            "span_m": span_state.get("span_m"),
-            "total_length_m": span_state.get("total_length_m"),
-            "support_condition": support_condition,
-            "resolved_support_type": resolved_support_type,
-            "support_pair": list(support_pair) if isinstance(support_pair, tuple) else None,
-            "support_positions": support_positions,
-        },
-        run_id="pre-fix",
-        hypothesis_id="V2",
-    )
-    # endregion
 
     return {
         **loading_state,
@@ -786,36 +756,11 @@ def _build_side_view_support_shapes(fig: go.Figure, model: dict[str, Any]) -> No
     if model["support_condition"] == "cantilever":
         _add_side_view_fixed_support(fig, 0.0, max(display_length_m * 0.02, 0.05), beam_depth_m)
         rendered_supports.append({"kind": "fixed", "x": 0.0})
-        # region agent log
-        _dbg_log(
-            "shear visual side-view supports rendered",
-            {
-                "support_condition": model.get("support_condition"),
-                "support_positions": list(model.get("support_positions") or []),
-                "rendered_supports": rendered_supports,
-            },
-            run_id="pre-fix",
-            hypothesis_id="V3",
-        )
-        # endregion
         return
     xs = list(model["support_positions"])
     if isinstance(support_pair, tuple) and len(support_pair) == 2 and len(xs) >= 2:
         _draw_labelled_support(_side_view_display_x(xs[0], model), str(support_pair[0]), right_edge=False)
         _draw_labelled_support(_side_view_display_x(xs[-1], model), str(support_pair[1]), right_edge=True)
-        # region agent log
-        _dbg_log(
-            "shear visual side-view supports rendered",
-            {
-                "support_condition": model.get("support_condition"),
-                "support_pair": list(support_pair),
-                "support_positions": xs,
-                "rendered_supports": rendered_supports,
-            },
-            run_id="post-fix",
-            hypothesis_id="V3",
-        )
-        # endregion
         return
     if model["support_condition"] == "simply_supported" and len(xs) >= 2:
         _add_side_view_pinned_support(
@@ -826,38 +771,12 @@ def _build_side_view_support_shapes(fig: go.Figure, model: dict[str, Any]) -> No
             fig, _side_view_display_x(xs[-1], model), support_w, support_d, beam_depth_m, roller=True
         )
         rendered_supports.append({"kind": "roller", "x": xs[-1]})
-        # region agent log
-        _dbg_log(
-            "shear visual side-view supports rendered",
-            {
-                "support_condition": model.get("support_condition"),
-                "support_pair": list(support_pair) if isinstance(support_pair, tuple) else None,
-                "support_positions": xs,
-                "rendered_supports": rendered_supports,
-            },
-            run_id="pre-fix",
-            hypothesis_id="V3",
-        )
-        # endregion
         return
     for x_pos in xs:
         _add_side_view_pinned_support(
             fig, _side_view_display_x(x_pos, model), support_w, support_d, beam_depth_m, roller=False
         )
         rendered_supports.append({"kind": "pinned", "x": x_pos})
-    # region agent log
-    _dbg_log(
-        "shear visual side-view supports rendered",
-        {
-            "support_condition": model.get("support_condition"),
-            "support_pair": list(support_pair) if isinstance(support_pair, tuple) else None,
-            "support_positions": xs,
-            "rendered_supports": rendered_supports,
-        },
-        run_id="pre-fix",
-        hypothesis_id="V3",
-    )
-    # endregion
 
 
 def _add_side_view_udl(fig: go.Figure, x0: float, x1: float, *, beam_depth_m: float, y_top: float, label: str | None = None) -> None:
@@ -955,8 +874,8 @@ def _no_shear_steel_inputs() -> bool:
 
 def _shear_spacing_used_mm_pair(shear_zone_results: dict[str, Any] | None) -> tuple[float, float]:
     """
-    Mid / end spacing (mm) for diagrams: calculated envelope values when shear_auto_design is on,
-    else shared link spacing s_lig for both (manual).
+    Mid / end spacing (mm) for diagrams: governing envelope spacings when shear_auto_design is on,
+    else provided link spacing s_lig for both (manual).
     """
     apply_auto = bool(get_param("shear_auto_design", False))
     s_in = max(_safe_float(get_param("s_lig", 0.0), 0.0), 0.0)
@@ -1155,13 +1074,13 @@ def _build_stirrup_markers(fig: go.Figure, model: dict[str, Any], *, shear_fails
     zones_enabled = bool(get_param("shear_zone_enabled", True))
     show_zoned_mode = zones_enabled and has_zone_payload
     if shear_fails and not show_zoned_mode:
-        diagram_mode_label = "Required shear reinforcement (zoned layout unavailable)"
+        diagram_mode_label = "Shear links (required spacings unavailable — layout incomplete)"
     elif shear_fails and show_zoned_mode:
-        diagram_mode_label = "Required shear reinforcement (zoned)"
+        diagram_mode_label = "Shear links shown at required zone spacings (Check 10; capacity not satisfied)"
     elif show_zoned_mode:
-        diagram_mode_label = "Provided shear reinforcement (Check 10 layout)"
+        diagram_mode_label = "Shear links at required zone spacings (Check 10 envelope)"
     else:
-        diagram_mode_label = "Provided shear reinforcement"
+        diagram_mode_label = "Shear links at provided spacing (input s_lig)"
 
     beam_depth_m = model["D_m"]
     y0 = 0.10 * beam_depth_m
@@ -1214,7 +1133,9 @@ def _build_stirrup_markers(fig: go.Figure, model: dict[str, Any], *, shear_fails
             xmid_d = _side_view_display_x(xmid_r, work_model)
             sm_mm = int(round(max(float(z.get("spacing", 0.0) or 0.0), 0.0) * 1000.0))
             zlbl = str(z.get("label") or "").strip()
-            ann_txt = f"{zlbl} @ {sm_mm} mm" if zlbl else f"@ {sm_mm} mm"
+            ann_txt = (
+                f"{zlbl} — required {sm_mm} mm" if zlbl else f"Required spacing {sm_mm} mm"
+            )
             fig.add_annotation(
                 x=xmid_d,
                 y=beam_depth_m + 0.05 * beam_depth_m,
@@ -1258,7 +1179,14 @@ def _build_stirrup_markers(fig: go.Figure, model: dict[str, Any], *, shear_fails
                 y=[y_mid] * len(display_xs),
                 mode="markers",
                 marker=dict(size=10, opacity=0, color="rgba(0,0,0,0)"),
-                hovertext=[f"Spacing: {_spacing_mm_for_display_x(xd)} mm" for xd in display_xs],
+                hovertext=[
+                    (
+                        f"Required spacing (zone): {_spacing_mm_for_display_x(xd)} mm"
+                        if show_zoned_mode
+                        else f"Provided spacing: {_spacing_mm_for_display_x(xd)} mm"
+                    )
+                    for xd in display_xs
+                ],
                 hoverinfo="text",
                 showlegend=False,
             )
@@ -1272,7 +1200,7 @@ def _build_stirrup_markers(fig: go.Figure, model: dict[str, Any], *, shear_fails
                 font=dict(size=11, color="rgba(0,0,0,0.95)"),
             )
         else:
-            _sub = f"s = {model['spacing_mm']:.0f} mm"
+            _sub = f"Provided spacing = {model['spacing_mm']:.0f} mm"
             fig.add_annotation(
                 x=display_length_m / 2.0,
                 y=label_y,
@@ -3131,101 +3059,6 @@ def _render_principal_stress_ss_udl(fig: go.Figure, model: dict[str, Any]) -> No
     tension = _build_tensile_trajectories(geometry, count)
     compression = _build_compressive_trajectories(geometry, count)
 
-    # region agent log
-    _dbg_log(
-        "ss principal field inputs",
-        {
-            "case": model.get("case"),
-            "span_m": round(span_m, 4),
-            "beam_depth_m": round(beam_depth_m, 4),
-            "slenderness": round(geometry["slenderness"], 4),
-            "trajectory_count": count,
-            "left_deep_limit": round(geometry["left_deep_limit"], 4),
-            "right_deep_limit": round(geometry["right_deep_limit"], 4),
-            "flexural_width": round(geometry["flexural_width"], 4),
-            "half_widths": [round((curve[-1][0] - curve[0][0]) * 0.5, 4) for curve in tension],
-        },
-        hypothesis_id="H1",
-    )
-    _dbg_log(
-        "ss principal field compression summary",
-        {
-            "curves": [
-                {
-                    "idx": idx,
-                    "x0": round(curve[0][0], 4),
-                    "xmid": round(curve[len(curve) // 2][0], 4),
-                    "x1": round(curve[-1][0], 4),
-                    "y0": round(curve[0][1], 4),
-                    "ymid": round(curve[len(curve) // 2][1], 4),
-                    "y1": round(curve[-1][1], 4),
-                    "min_y": round(min(y for _, y in curve), 4),
-                    "max_y": round(max(y for _, y in curve), 4),
-                    "mid_relation": "mid_lower" if curve[len(curve) // 2][1] < curve[0][1] else "mid_higher",
-                }
-                for idx, curve in enumerate(compression)
-            ]
-        },
-        hypothesis_id="H2",
-    )
-    _dbg_log(
-        "ss principal field tension summary",
-        {
-            "curves": [
-                {
-                    "idx": idx,
-                    "x0": round(curve[0][0], 4),
-                    "xmid": round(curve[len(curve) // 2][0], 4),
-                    "x1": round(curve[-1][0], 4),
-                    "y0": round(curve[0][1], 4),
-                    "ymid": round(curve[len(curve) // 2][1], 4),
-                    "y1": round(curve[-1][1], 4),
-                    "min_y": round(min(y for _, y in curve), 4),
-                    "max_y": round(max(y for _, y in curve), 4),
-                    "mid_relation": "mid_lower" if curve[len(curve) // 2][1] < curve[0][1] else "mid_higher",
-                }
-                for idx, curve in enumerate(tension)
-            ]
-        },
-        hypothesis_id="H3",
-    )
-    _dbg_log(
-        "ss principal field mirror check",
-        {
-            "max_abs_mirror_error": round(
-                max(
-                    abs(cy - (beam_depth_m - ty))
-                    for ccurve, tcurve in zip(compression, tension)
-                    for (_, cy), (_, ty) in zip(ccurve, tcurve)
-                ),
-                8,
-            ),
-            "smoothing": 0.64,
-            "render_order": ["compression_red", "tension_blue"],
-        },
-        hypothesis_id="H4",
-    )
-    _dbg_log(
-        "ss principal field curvature sample",
-        {
-            "tension": [
-                {
-                    "idx": idx,
-                    "y_end": round(curve[0][1], 4),
-                    "y_q1": round(curve[len(curve) // 4][1], 4),
-                    "y_mid": round(curve[len(curve) // 2][1], 4),
-                    "q1_to_mid_ratio": round(
-                        abs(curve[len(curve) // 4][1] - curve[0][1])
-                        / max(abs(curve[len(curve) // 2][1] - curve[0][1]), 1e-9),
-                        4,
-                    ),
-                }
-                for idx, curve in enumerate(tension)
-            ]
-        },
-        hypothesis_id="H5",
-    )
-    # endregion
 
     _add_ordered_trajectory_family(
         fig,

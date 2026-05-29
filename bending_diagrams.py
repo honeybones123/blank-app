@@ -307,13 +307,13 @@ def _plot_stress_strain_profiles(
     except Exception:
         label_from_session = None
 
-    # IMPORTANT: strain state (ULS / SLS / Uncracked) comes from session.
-    # The function argument is only a fallback, so the concrete
-    # stress-model radio ("Rectangular", "Parabolic" etc.) can't override it.
-    if label_from_session:
-        state_label = label_from_session
-    elif label_from_call is not None:
+    # Prefer the explicit label from the current render path. The session value
+    # is only a compatibility fallback; otherwise the Plotly chart can lag one
+    # interaction behind the radio/toggle that triggered the rerun.
+    if label_from_call is not None:
         state_label = label_from_call
+    elif label_from_session:
+        state_label = label_from_session
     else:
         state_label = "ULS"
 
@@ -362,8 +362,16 @@ def _plot_stress_strain_profiles(
     )
     tension_face = str(geom_bundle["tension_face"])
     plot_neg = bool(geom_bundle["plot_neg"])
-    y_tension_geom = float(geom_bundle["y_tension_centroid"])
-    geom_d_mm = float(geom_bundle["d_value"])
+    geom_d_mm = float(get_param("d", geom_bundle["d_value"]) or geom_bundle["d_value"])
+    if plot_neg:
+        y_tension_geom = float(max(0.0, float(D) - geom_d_mm))
+    else:
+        y_tension_geom = float(geom_d_mm)
+    if st.session_state.get("_dev_mode", False):
+        dbg = dict(st.session_state.get("_debug_d_consistency", {}))
+        dbg["diagram_d_mm"] = float(geom_d_mm)
+        dbg["diagram_y_tension_mm"] = float(y_tension_geom)
+        st.session_state["_debug_d_consistency"] = dbg
     reo_layout = layout.get("reo_layout")
 
     # ------------------------------------------

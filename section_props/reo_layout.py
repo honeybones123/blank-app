@@ -115,31 +115,31 @@ def _extract_group_rows(reo: Dict[str, Any], *, prefix: str) -> dict:
 
 
 def _safe_row_x_positions(
-    *,
-    x0: float,
-    x1: float,
-    n: int,
-    db: float,
-    min_clear_spacing: float,
-) -> tuple[list[float], int, str | None]:
-    if n <= 0:
-        return [], 0, None
-    if x1 <= x0 or db <= 0.0:
-        return [], 0, "No usable flange width after covers."
+    n_bars,
+    b,
+    cover,
+    db,
+    s_min,
+):
+    x_left = cover + db / 2
+    x_right = b - cover - db / 2
 
-    n_try = int(n)
-    while n_try > 0:
-        xs = _row_x_positions(x0, x1, n_try)
-        try:
-            _check_row_clear(xs, db, min_clear_spacing)
-            warn = None
-            if n_try < n:
-                warn = f"Requested {n} bars in row but only {n_try} fit after clear-spacing checks."
-            return xs, n_try, warn
-        except ValueError:
-            n_try -= 1
+    if n_bars <= 0:
+        return []
 
-    return [], 0, f"Requested {n} bars in row but no bar fits after clear-spacing checks."
+    if n_bars == 1:
+        return [(x_left + x_right) / 2]
+
+    available = x_right - x_left
+    required = n_bars * db + (n_bars - 1) * s_min
+
+    if required > available:
+        raise ValueError(
+            f"Reo does not fit: bars={n_bars}, required={required:.1f}, available={available:.1f}"
+        )
+
+    spacing = available / (n_bars - 1)
+    return [x_left + i * spacing for i in range(n_bars)]
 
 
 def _build_flange_group_bands(
@@ -165,17 +165,19 @@ def _build_flange_group_bands(
         if row_count <= 0:
             continue
         y = y_start + (idx - 1) * y_step
-        xs, placed, warn = _safe_row_x_positions(
-            x0=x0,
-            x1=x1,
-            n=row_count,
-            db=dia,
-            min_clear_spacing=min_clear_spacing,
+        usable_width = max(float(x1 - x0), 0.0)
+        xs_local = _safe_row_x_positions(
+            row_count,
+            usable_width,
+            0.0,
+            dia,
+            min_clear_spacing,
         )
-        if warn:
-            warnings.append(f"{source_group} row {idx}: {warn}")
-        if placed <= 0:
-            continue
+        xs = [float(x0) + float(x) for x in xs_local]
+        if len(xs) != row_count:
+            raise ValueError(
+                f"Bar layout mismatch: expected {row_count}, got {len(xs)}"
+            )
         bands.append({
             "x": xs,
             "y": [y] * len(xs),
@@ -427,33 +429,32 @@ def compute_longitudinal_reo_layout_T_I(
     Coordinates: x in [0,bf], y in [0,D] (y positive downward).
     """
     shape = shape_name
+    from state_and_helpers import get_longitudinal_row_inputs
 
-    def _legacy_rows(section_key: str) -> List[Dict[str, Any]]:
-        section_defaults = ("top", 16.0) if section_key == "top" else ("bot", 20.0)
-        prefix, default_dia = section_defaults
-        rows = reo.get(f"{section_key}_rows")
-        if isinstance(rows, list):
-            out = [dict(row) for row in rows]
-        else:
-            out = []
-            for row_index in range(1, max_rows + 1):
-                if row_index > 2:
-                    break
-                mode = str(reo.get(f"{prefix}{row_index}_layout_mode", "Count") or "Count")
-                nb_or_s = float(reo.get(f"nb_or_s_{prefix}_{row_index}", 0.0) or 0.0)
-                bars = int(nb_or_s) if mode == "Count" else 0
-                spacing = nb_or_s if mode == "Spacing" else 200.0
-                dia = float(reo.get(f"db_{prefix}_{row_index}", default_dia) or default_dia)
-                out.append({
-                    "row_index": row_index,
-                    "mode": mode,
-                    "nb_or_s": nb_or_s,
-                    "bars": bars,
-                    "spacing": spacing,
-                    "dia": dia,
-                    "active": dia > 0.0 and ((mode == "Count" and bars > 0) or (mode == "Spacing" and spacing > 0.0)),
-                })
-        return [row for row in out if row.get("active")][:max_rows]
+    def _row_model_rows(section_key: str) -> List[Dict[str, Any]]:
+        rows = get_longitudinal_row_inputs(section_key, source=reo)
+        out: List[Dict[str, Any]] = []
+        for idx, row in enumerate(rows, start=1):
+            mode = str(row.get("mode", "Count") or "Count")
+            dia = float(row.get("dia", 0.0) or 0.0)
+            bars = max(0, int(float(row.get("bars", row.get("count", 0)) or 0)))
+            spacing = float(row.get("spacing", 0.0) or 0.0)
+            nb_or_s = float(bars if mode == "Count" else spacing)
+            active = bool(row.get("active", True)) and dia > 0.0 and (
+                (mode == "Count" and bars > 0) or (mode == "Spacing" and spacing > 0.0)
+            )
+            if not active:
+                continue
+            out.append({
+                "row_index": int(row.get("row_index", idx)),
+                "mode": mode,
+                "nb_or_s": nb_or_s,
+                "bars": bars,
+                "spacing": spacing,
+                "dia": dia,
+                "active": active,
+            })
+        return out[:max_rows]
 
     def _row_count(row: Dict[str, Any], width: float) -> int:
         dia = float(row.get("dia", 0.0) or 0.0)
@@ -466,8 +467,8 @@ def compute_longitudinal_reo_layout_T_I(
 
     rowgap_top = max(float(reo.get("rowgap_top", rowgap_top) or rowgap_top), min_clear_spacing)
     rowgap_bot = max(float(reo.get("rowgap_bot", rowgap_bot) or rowgap_bot), min_clear_spacing)
-    top_rows = _legacy_rows("top")
-    bottom_rows = _legacy_rows("bottom")
+    top_rows = _row_model_rows("top")
+    bottom_rows = _row_model_rows("bot")
     warnings: list[str] = []
 
     if shape.startswith("T-Section"):
@@ -492,12 +493,10 @@ def compute_longitudinal_reo_layout_T_I(
                 warnings.append("Top web bars: no horizontal room after covers.")
                 continue
             n_top = _row_count(row, width_top)
-            xs = _row_x_positions(x0_t, x1_t, n_top)
-            try:
-                _check_row_clear(xs, dia, min_clear_spacing)
-            except ValueError as exc:
-                warnings.append(f"Top web row {int(row.get('row_index', 1))}: {exc}")
-                xs = []
+            xs_local = _safe_row_x_positions(n_top, width_top, 0.0, dia, min_clear_spacing)
+            xs = [x0_t + x for x in xs_local]
+            if len(xs) != n_top:
+                raise ValueError(f"Bar layout mismatch: expected {n_top}, got {len(xs)}")
             top_web.append({
                 "x": xs,
                 "y": [y] * len(xs),
@@ -527,12 +526,10 @@ def compute_longitudinal_reo_layout_T_I(
                 warnings.append("Bottom web bars: no horizontal room after covers.")
                 continue
             n_bot = _row_count(row, width_bot)
-            xs = _row_x_positions(x0_b, x1_b, n_bot)
-            try:
-                _check_row_clear(xs, dia, min_clear_spacing)
-            except ValueError as exc:
-                warnings.append(f"Bottom web row {int(row.get('row_index', 1))}: {exc}")
-                xs = []
+            xs_local = _safe_row_x_positions(n_bot, width_bot, 0.0, dia, min_clear_spacing)
+            xs = [x0_b + x for x in xs_local]
+            if len(xs) != n_bot:
+                raise ValueError(f"Bar layout mismatch: expected {n_bot}, got {len(xs)}")
             bottom_web.append({
                 "x": xs,
                 "y": [y] * len(xs),
@@ -629,12 +626,10 @@ def compute_longitudinal_reo_layout_T_I(
                 warnings.append("Top web bars: no horizontal room after covers.")
                 continue
             n_top = _row_count(row, width_top)
-            xs = _row_x_positions(x0_t, x1_t, n_top)
-            try:
-                _check_row_clear(xs, dia, min_clear_spacing)
-            except ValueError as exc:
-                warnings.append(f"Top web row {int(row.get('row_index', 1))}: {exc}")
-                xs = []
+            xs_local = _safe_row_x_positions(n_top, width_top, 0.0, dia, min_clear_spacing)
+            xs = [x0_t + x for x in xs_local]
+            if len(xs) != n_top:
+                raise ValueError(f"Bar layout mismatch: expected {n_top}, got {len(xs)}")
             top_web.append({
                 "x": xs,
                 "y": [y] * len(xs),
@@ -664,12 +659,10 @@ def compute_longitudinal_reo_layout_T_I(
                 warnings.append("Bottom web bars: no horizontal room after covers.")
                 continue
             n_bot = _row_count(row, width_bot)
-            xs = _row_x_positions(x0_b, x1_b, n_bot)
-            try:
-                _check_row_clear(xs, dia, min_clear_spacing)
-            except ValueError as exc:
-                warnings.append(f"Bottom web row {int(row.get('row_index', 1))}: {exc}")
-                xs = []
+            xs_local = _safe_row_x_positions(n_bot, width_bot, 0.0, dia, min_clear_spacing)
+            xs = [x0_b + x for x in xs_local]
+            if len(xs) != n_bot:
+                raise ValueError(f"Bar layout mismatch: expected {n_bot}, got {len(xs)}")
             bottom_web.append({
                 "x": xs,
                 "y": [y] * len(xs),
@@ -867,6 +860,7 @@ def resolve_longitudinal_bars_from_layout(
                     "source_group": source_group,
                 })
                 bar_idx += 1
+    assert len(bars) > 0, "No bars resolved"
     return bars
 
 

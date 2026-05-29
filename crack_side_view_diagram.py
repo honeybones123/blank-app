@@ -1299,6 +1299,7 @@ def _add_flexural_cracks_straight(
     w_mm: float,
     wmax_mm: float | None = None,
     moment_series: tuple[np.ndarray, np.ndarray] | None = None,
+    height_scale: float = 1.0,
 ) -> float | None:
     """Fallback flexural cracks on undeformed geometry when deflection mesh is unavailable."""
     work = dict(model)
@@ -1322,6 +1323,7 @@ def _add_flexural_cracks_straight(
         for xm in stations
     ]
     m_effs = _smooth_1d_5pt(_smooth_1d_3pt(m_effs))
+    crack_height_scale = float(np.clip(height_scale, 1.0, 2.0))
     best_x: float | None = None
     best_h = -1.0
     for xm, m_eff in zip(stations, m_effs):
@@ -1334,6 +1336,8 @@ def _add_flexural_cracks_straight(
             w_mm=w_mm,
             m_pos_eff=m_eff,
         )
+        if crack_height_scale > 1.0:
+            y1 = min(0.92 * D_m, y0 + (y1 - y0) * crack_height_scale)
         h = float(y1 - y0)
         if h > best_h:
             best_h = h
@@ -1362,6 +1366,7 @@ def _add_flexural_cracks_on_deflected_shape(
     wmax_mm: float | None = None,
     model: Mapping[str, Any] | None = None,
     moment_series: tuple[np.ndarray, np.ndarray] | None = None,
+    height_scale: float = 1.0,
 ) -> float | None:
     """
     Tapered crack polygons in display x, shifted vertically by local w(x) (rigid with section).
@@ -1392,6 +1397,7 @@ def _add_flexural_cracks_on_deflected_shape(
             )
         )
     m_effs = _smooth_1d_5pt(_smooth_1d_3pt(m_effs))
+    crack_height_scale = float(np.clip(height_scale, 1.0, 2.0))
     best_x: float | None = None
     best_h = -1.0
     for xm, m_eff in zip(stations, m_effs):
@@ -1404,6 +1410,8 @@ def _add_flexural_cracks_on_deflected_shape(
             w_mm=w_mm,
             m_pos_eff=m_eff,
         )
+        if crack_height_scale > 1.0:
+            y1_und = min(0.92 * D_m, y0_und + (y1_und - y0_und) * crack_height_scale)
         h = float(y1_und - y0_und)
         if h > best_h:
             best_h = h
@@ -1806,21 +1814,6 @@ def render_crack_side_view_diagram(
 ) -> None:
     st.markdown("**Beam side view (flexural cracking)**")
     fig = build_crack_side_view_figure(state, crack_metrics=crack_metrics)
-    st.caption(
-        "Longitudinal reinforcement as bars in line (same convention as Shear → Side view). "
-        "Pale band inside the member: tension-side moment intensity (M⁺ / max|M|), aligned with crack zones. "
-        "Cracks: spacing biased toward peak |M|, snapped between bottom bars where layout is known; "
-        "width and taper reflect calculated w. "
-        "Beam is shown only in its deflected position, with the usual grey fill. Longitudinal reo and crack "
-        "lines follow the same rigid vertical translation w(x). Crack height scales with bending moment "
-        "and with w, with a minimum height, and is capped at the SLS neutral axis when d_n is available. "
-        "Minimum sag when delta is near zero keeps it visible. Crack width w and w'max are on the figure. "
-        "At midspan, **C** and **T** mark sketch internal resultants (**C** from ULS block (½γc) when published, else "
-        "two-thirds d_n from SLS; **T** at the outer bottom bar row from the reinforcement layout when ``y`` is "
-        "available, else published outer tension y or effective depth d). "
-        "Deflection magnitudes are not labelled or "
-        "shown on hover."
-    )
     _l, _c, _r = st.columns([0.06, 1.0, 0.06])
     with _c:
         st.plotly_chart(

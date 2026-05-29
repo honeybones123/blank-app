@@ -1,0 +1,4097 @@
+{
+  "case_index": 0,
+  "seed": 12345,
+  "initial_inputs": {
+    "case_index": 0,
+    "archetype": "bending_fail",
+    "recipe": "A_bending_under_only",
+    "mu": 639.81,
+    "vu": 65.61,
+    "section_shape": "T",
+    "geometry_lock": false,
+    "span_m": 8.66,
+    "b": 350,
+    "D": 500,
+    "fc": 50,
+    "fsy": 400,
+    "bottom_bar_count": 4,
+    "bottom_bar_dia": 12,
+    "top_bar_count": 3,
+    "top_bar_dia": 12,
+    "lig_d": 20,
+    "lig_legs": 4,
+    "s_lig": 125
+  },
+  "timeline": [
+    {
+      "case_index": 0,
+      "step_index": 3,
+      "step_type": "post_mutation",
+      "timestamp": "2026-05-07T10:49:07",
+      "input_values": {
+        "mu": 703.65,
+        "vu": 92.08,
+        "recipe": "A_bending_under_only"
+      },
+      "visible_summary": {
+        "raw_visible_text": "\"lig_d\": 0, \"lig_legs\": 0, \"s_lig\": 200.0}, \"stale_candidate_changed_keys\": []}, \"pending_recommendation_applied_id\": null, \"run_design_clicked\": false, \"inputs_action_apply_recommendation\": null, \"inputs_action_run_auto_design\": null}, \"design_guide_probe\": {\"needs_refresh\": null, \"panel_baseline_fingerprint\": [\"dg_cache_v2026_04_27_in_target_local_cleanup_all_families\", \"active_strength_repair_publication_v23\", \"balanced\", \"RECT\", 550.0, 500.0, 40.0, 500.0, 703.65, 92.08, 0.0, 0.0, 1, 7, 28.0, 0, 0.0, 0.0, 0, 200.0, [703.65, 92.08, 0.0, 0.0, 0.0, \"manual_uls\", \"Manual design actions (inputs below)\", \"manual\"]], \"debug_bundle\": {\"best_safe_blocker_rewrite_debug\": {\"title\": \"bending and shear repair blocked by detailing limits\", \"has_exact_blockers\": true, \"matched\": false}}, \"render_plan_debug\": {\"terminal_state\": null, \"terminal_state_source\": \"none\", \"current_fail_keys\": [\"bending\", \"shear\"], \"current_governing_util\": 1.3, \"target_band_lo\": 0.88, \"target_band_hi\": 0.95, \"render_primary_only\": true, \"reason\": \"primary_visible_card_only\", \"input_count\": 1, \"visible_count\": 1, \"banner_matches_current_render\": false, \"banner_reconciled\": \"no_banner_present\", \"post_apply_banner_rendered\": false}, \"guidance_branch\": null, \"terminal_state\": null, \"terminal_state_source\": null, \"efficiency_classification\": null, \"efficiency_very_low_demand\": null, \"efficiency_current_governing_util\": null, \"efficiency_current_governing_util_source\": null, \"overview_statuses\": {}, \"overview_utils\": {}, \"overview_any_fail\": null, \"overview_any_warn\": null, \"overview_all_key_pass\": null, \"overview_governing_util\": null, \"overview_governing_util_source\": null, \"overview_governing_check\": null, \"primary_card_title\": null, \"primary_card_intent\": null, \"primary_displayed_util\": null, \"primary_display_truth_source\": null, \"primary_target_low\": null, \"primary_target_high\": null, \"primary_preview_util\": null, \"primary_current_util\": null, \"primary_lands_in_target_band\": null, \"primary_allowed_blocker\": null, \"button_contract_enabled\": null, \"button_contract_updates\": {}, \"button_contract_preview_pass\": null, \"button_contract_blocking_reason\": null, \"candidate_search_evidence\": {}, \"design_guide_engine_decision_reason\": null, \"design_guide_engine_suppressed_count\": null, \"design_guide_engine_suppressed_reasons\": []}, \"speed_profile_probe\": {\"enabled\": false, \"sections\": [], \"last_run_started_at_ms\": null, \"last_run_sections\": []}, \"ux_latency_probe\": {\"enabled\": true, \"rerun_seq\": 8, \"rerun_started_ms\": 1778114943645, \"page_slug\": \"inputs\", \"counts\": {\"inputs_page.summary_state_build\": {\"count\": 8, \"cache_hit_count\": 0, \"unique_fingerprint_count\": 2, \"duplicate_count\": 6, \"last_meta\": {\"shared_only_mode\": false, \"overlay_count\": 0}}, \"browser_probe.summary_state_probe_build\": {\"count\": 2, \"cache_hit_count\": 0, \"unique_fingerprint_count\": 2, \"duplicate_count\": 0, \"last_meta\": {}}, \"inputs_page.summary_overview_build\": {\"count\": 68, \"cache_hit_count\": 57, \"unique_fingerprint_count\": 11, \"duplicate_count\": 57, \"last_meta\": {\"governing_check\": \"shear\", \"worst_util\": 1.3}}, \"browser_probe.summary_overview_probe_build\": {\"count\": 2, \"cache_hit_count\": 0, \"unique_fingerprint_count\": 1, \"duplicate_count\": 1, \"last_meta\": {}}, \"guidance_item_computation.compute_design_guidance_items\": {\"count\": 3, \"cache_hit_count\": 1, \"unique_fingerprint_count\": 2, \"duplicate_count\": 1, \"last_meta\": {\"request_kind\": \"design_guide\"}}, \"candidate_preview_evaluation.evaluate_candidate_full\": {\"count\": 25, \"cache_hit_count\": 2, \"unique_fingerprint_count\": 23, \"duplicate_count\": 2, \"last_meta\": {}}, \"browser_probe.guidance_probe_build\": {\"count\": 2, \"cache_hit_count\": 0, \"unique_fingerprint_count\": 1, \"duplicate_count\": 1, \"last_meta\": {}}, \"browser_probe.payload_json_build\": {\"count\": 1, \"cache_hit_count\": 0, \"unique_fingerprint_count\": 0, \"duplicate_count\": 0, \"last_meta\": {}}}}}\nInputs\nBending \u2014 ULS check\nCalculated capacity\n\u03c6Mu(+) = 703.4 kNm\nApplied design action\nMu*(+) = 703.6 kNm\n1.00\nFAIL\nShear \u2014 ULS check\nCalculated capacity\n\u03c6Vu = 70.6 kN\nApplied design action\nV*eq = 92.1 kN\n1.30\nFAIL\nCrack control \u2014 SLS check\nCalculated capacity\nw'max = 0.300 mm\nApplied design action\nw = 0.027 mm\n\u2014\n\u2014\nDeflection \u2014 SLS check\nCalculated capacity\n\u03b4total = 0.00 mm\nApplied design action\n\u03b4lim = 8.00 mm (L/250)\n\u2014\n\u2014\nBatch design\n\nActive beam\n\nBeam 1 (beam_1)\n\nAdd\n\nDuplicate\n\nDelete\n\nReset workspace\n\nShow Manager\n\nDesign mode\n\nFast\n\nDetailed\n\ni\n\nexpand_more\nDesign Guide\nBLOCKED\nBending and shear repair blocked by detailing limits\n(governing utilisation = 1.30)\nStatus\nBending repair blocked: Bending remains unresolved because the exhaustive active-failure one-click repair search found no executor-backed arrangement that passes all required checks while bending, shear fail. The recorded blocking proof says: Shear repair is blocked by shear/detailing limits. Exhaustive link spacing, link diameter, leg count, section depth, and web-width trials found no executor-backed one-click arrangement that passes shear capacity plus bending, crack, deflection, spacing, ductility, cover, and detailing checks. Shear repair blocked: Shear repair is blocked by shear/detailing limits. Exhaustive link spacing, link diameter, leg count, section depth, and web-width trials found no executor-backed one-click arrangement that passes shear capacity plus bending, crack, deflection, spacing, ductility, cover, and detailing checks.\nDesign Actions\n\ni\n\nexpand_more\nPositive design moment Mu*+ (kNm)\nDesign torsion Tu* (kNm)\nDesign shear Vu* (kN)\nAxial force N* (kN)\nGeometry & Materials\n\ni\n\nexpand_more\nSection shape\nRECT\nWidth b (mm)\nDepth D (mm)\nSpan L (mm)\nSteel MPa\nConcrete MPa\nModel\n\n3D model\n\n\u2212100\n0\n100\n200\n300\n400\n500\n600\n500\n400\n300\n200\n100\n0\nBottom reo\n\ni\n\nexpand_more\nRow 1\nLayout\nCount\nBars\n7\n\u00d8 (mm)\n28\nBottom cover (mm)\nTop reo\n\ni\n\nexpand_more\nRow 1\nLayout\nCount\nBars\n2\n\u00d8 (mm)\n10\nTop cover (mm)\nShear\n\ni\n\nexpand_more\nLink \u00d8 (mm)\n0 (off)\nNo. of legs\n0\nLink spacing (mm)\n\nInputs render: 831.8 ms",
+        "parse_failed": false,
+        "bending": {
+          "util": 1.0,
+          "status": "FAIL",
+          "raw": "Bending \u2014 ULS check\nCalculated capacity\n\u03c6Mu(+) = 703.4 kNm\nApplied design action\nMu*(+) = 703.6 kNm\n1.00\nFAIL"
+        },
+        "shear": {
+          "util": 1.3,
+          "status": "FAIL",
+          "raw": "Shear \u2014 ULS check\nCalculated capacity\n\u03c6Vu = 70.6 kN\nApplied design action\nV*eq = 92.1 kN\n1.30\nFAIL"
+        },
+        "crack": {
+          "util": null,
+          "status": null,
+          "raw": "Crack control \u2014 SLS check\nCalculated capacity\nw'max = 0.300 mm\nApplied design action\nw = 0.027 mm\n\u2014\n\u2014",
+          "util_support": 0.0,
+          "status_support": "PASS"
+        },
+        "deflection": {
+          "util": null,
+          "status": null,
+          "raw": "Deflection \u2014 SLS check\nCalculated capacity\n\u03b4total = 0.00 mm\nApplied design action\n\u03b4lim = 8.00 mm (L/250)\n\u2014\n\u2014",
+          "util_support": 0.0,
+          "status_support": "PASS"
+        },
+        "browser_overview_support": {
+          "utils": {
+            "bending": 1.000306203634067,
+            "shear": 1.3,
+            "crack": 0.0,
+            "deflection": 0.0
+          },
+          "statuses": {
+            "bending": "FAIL",
+            "shear": "FAIL",
+            "crack": "PASS",
+            "deflection": "PASS"
+          },
+          "worst_util": 1.3,
+          "governing_check": "shear",
+          "any_fail": true,
+          "all_key_pass": false
+        }
+      },
+      "visible_design_guide": {
+        "visible_card_count": 1,
+        "fast_guidance_item_count": 1,
+        "cards": [
+          {
+            "index": 0,
+            "text": "BLOCKED\nBending and shear repair blocked by detailing limits\n(governing utilisation = 1.30)",
+            "title": "BLOCKED",
+            "classes": "fast-guidance-item fail",
+            "status_label": ""
+          }
+        ],
+        "title": "BLOCKED",
+        "text": "BLOCKED\nBending and shear repair blocked by detailing limits\n(governing utilisation = 1.30)",
+        "family": "combined",
+        "status_label": "",
+        "classes": "fast-guidance-item fail",
+        "displayed_util": 1.3,
+        "cta_visible": false,
+        "cta_enabled": false,
+        "cta_label": null,
+        "preparing_visible": false,
+        "button_contract": {
+          "enabled": false,
+          "actionable": false,
+          "action_type": null,
+          "family": "combined",
+          "updates": {},
+          "preview_pass": false,
+          "expected_util": null,
+          "blocking_reason": "Bending repair blocked: Bending remains unresolved because the exhaustive active-failure one-click repair search found no executor-backed arrangement that passes all required checks while bending, shear fail. The recorded blocking proof says: Shear repair is blocked by shear/detailing limits. Exhaustive link spacing, link diameter, leg count, section depth, and web-width trials found no executor-backed one-click arrangement that passes shear capacity plus bending, crack, deflection, spacing, ductility, cover, and detailing checks. Shear repair blocked: Shear repair is blocked by shear/detailing limits. Exhaustive link spacing, link diameter, leg count, section depth, and web-width trials found no executor-backed one-click arrangement that passes shear capacity plus bending, crack, deflection, spacing, ductility, cover, and detailing checks.",
+          "source_candidate_id": null,
+          "candidate_id": null
+        },
+        "selected_action_updates": {},
+        "design_guide_primary_apply_payload": {},
+        "payload_binding_audit": {},
+        "proof_support": {
+          "primary_title": "Bending and shear repair blocked by detailing limits",
+          "primary_action_type": null,
+          "selected_action_type": null,
+          "selected_action_family": null,
+          "terminal_state": null,
+          "guidance_branch": "final_visible_active_strength_blocker",
+          "state_fingerprint": null,
+          "render_fingerprint": null,
+          "payload_binding_state_fingerprint": "(('D', '400.0'), ('actions_mode', '\"manual\"'), ('actions_source', '\"Manual design actions (inputs below)\"'), ('b', '350.0'), ('beam_type', 'null'), ('bot1_count', '4'), ('bot2_count', '0'), ('bot_row_1_bars', '4'), ('bot_row_1_dia', '16.0'), ('bot_row_2_bars', '0'), ('bot_row_2_dia', '0'), ('bot_row_count', '1'), ('cover_bot', '40.0'), ('cover_top', '40.0'), ('db_bot_1', '16.0'), ('db_bot_2', '0'), ('lig_d', '10'), ('lig_legs', '2'), ('s_lig', '150.0'), ('uls_Mstar', '639.81'), ('uls_Vstar', '65.61'))",
+          "payload_binding_render_fingerprint": "(('action_type', '\"apply_resolved_candidate\"'), ('candidate_id', '\"candidate_460\"'), ('family', '\"bending\"'), ('state_fingerprint', '\"((\\'D\\', \\'400.0\\'), (\\'actions_mode\\', \\'\\\\\"manual\\\\\"\\'), (\\'actions_source\\', \\'\\\\\"Manual design actions (inputs below)\\\\\"\\'), (\\'b\\', \\'350.0\\'), (\\'beam_type\\', \\'null\\'), (\\'bot1_count\\', \\'4\\'), (\\'bot2_count\\', \\'0\\'), (\\'bot_row_1_bars\\', \\'4\\'), (\\'bot_row_1_dia\\', \\'16.0\\'), (\\'bot_row_2_bars\\', \\'0\\'), (\\'bot_row_2_dia\\', \\'0\\'), (\\'bot_row_count\\', \\'1\\'), (\\'cover_bot\\', \\'40.0\\'), (\\'cover_top\\', \\'40.0\\'), (\\'db_bot_1\\', \\'16.0\\'), (\\'db_bot_2\\', \\'0\\'), (\\'lig_d\\', \\'10\\'), (\\'lig_legs\\', \\'2\\'), (\\'s_lig\\', \\'150.0\\'), (\\'uls_Mstar\\', \\'639.81\\'), (\\'uls_Vstar\\', \\'65.61\\'))\"'), ('updates', '{\"D\": 500.0, \"b\": 550.0, \"bot1_count\": 7, \"bot1_layout_mode\": \"Count\", \"bot2_count\": 0, \"bot2_layout_mode\": \"Count\", \"bot_row_1_bars\": 7, \"bot_row_1_dia\": 28, \"bot_row_1_mode\": \"Count\", \"bot_row_1_spacing\": 0.0, \"bot_row_2_bars\": 0, \"bot_row_2_dia\": 28, \"bot_row_2_mode\": \"Count\", \"bot_row_2_spacing\": 0.0, \"bot_row_count\": 1, \"db_bot_1\": 28, \"db_bot_2\": 28, \"lig_d\": 0, \"lig_legs\": 0, \"s_lig\": 200.0}'))"
+        }
+      },
+      "browser_state": {
+        "codex_browser_test_mode": true,
+        "browser_probe_phase": "post_page_render",
+        "target_band": {
+          "goal": "balanced",
+          "target_low": 0.88,
+          "target_high": 0.95,
+          "source": "canonical_config"
+        },
+        "browser_recipe": "A_bending_under_only",
+        "browser_recipe_kind": "case",
+        "browser_recipe_error": null,
+        "browser_recipe_applied_state": {
+          "design_optimisation_goal": "balanced",
+          "actions_mode": "manual",
+          "actions_source": "Manual design actions (inputs below)",
+          "design_actions_source": "max",
+          "sec_shape": "RECT",
+          "design_support_condition": "Simply supported",
+          "design_beam_system_mode": "Single span",
+          "span_L_m": 6.0,
+          "b": 300.0,
+          "bw": 300.0,
+          "D": 400.0,
+          "bf": 600.0,
+          "tf": 120.0,
+          "bf_bot": 600.0,
+          "tf_bot": 120.0,
+          "cover_top": 40.0,
+          "cover_bot": 40.0,
+          "cover_side": 40.0,
+          "rowgap_top": 60.0,
+          "rowgap_bot": 60.0,
+          "fc": 40.0,
+          "fsy": 500.0,
+          "phi_bend": 0.85,
+          "phi_shear": 0.75,
+          "top1_count": 2,
+          "db_top_1": 10.0,
+          "top2_count": 0,
+          "db_top_2": 0.0,
+          "top_row_count": 1,
+          "top_row_1_mode": "Count",
+          "top_row_1_bars": 2,
+          "top_row_1_spacing": 200.0,
+          "top_row_1_dia": 10.0,
+          "top_row_2_mode": "Count",
+          "top_row_2_bars": 0,
+          "top_row_2_spacing": 200.0,
+          "top_row_2_dia": 10.0,
+          "top1_layout_mode": "Count",
+          "top2_layout_mode": "Count",
+          "top1_spacing": 200.0,
+          "top2_spacing": 200.0,
+          "nb_top": 2,
+          "db_top": 10.0,
+          "top_entry": 2.0,
+          "s_top": 0.0,
+          "bot1_count": 4,
+          "db_bot_1": 16.0,
+          "bot2_count": 0,
+          "db_bot_2": 0.0,
+          "bot_row_count": 1,
+          "bot_row_1_mode": "Count",
+          "bot_row_1_bars": 4,
+          "bot_row_1_spacing": 200.0,
+          "bot_row_1_dia": 16.0,
+          "bot_row_2_mode": "Count",
+          "bot_row_2_bars": 0,
+          "bot_row_2_spacing": 200.0,
+          "bot_row_2_dia": 16.0,
+          "bot1_layout_mode": "Count",
+          "bot2_layout_mode": "Count",
+          "bot1_spacing": 200.0,
+          "bot2_spacing": 200.0,
+          "nb_bot": 4,
+          "db_bot": 16.0,
+          "bot_entry": 4.0,
+          "s_bot": 0.0,
+          "lig_d": 10,
+          "lig_legs": 2,
+          "s_lig": 150.0,
+          "shear_auto_design": false,
+          "shear_optimize_reinforcement": false,
+          "shear_zone_enabled": true,
+          "loads_edit_mode": "ULS",
+          "uls_Mstar": 300.0,
+          "load_Mstar_proxy": 300.0,
+          "load_Mstar_pos_proxy": 300.0,
+          "uls_Mstar_pos_manual": 300.0,
+          "uls_Mstar_neg_manual": 0.0,
+          "Mu_star_manual": 300.0,
+          "load_Mstar_neg_proxy": 0.0,
+          "uls_Vstar": 0.0,
+          "load_Vstar_proxy": 0.0,
+          "uls_Nstar": 0.0,
+          "load_Nstar_proxy": 0.0,
+          "N_star": 0.0,
+          "sls_Mstar": 0.0,
+          "sls_Vstar": 0.0,
+          "sls_Nstar": 0.0
+        },
+        "browser_shared_probe": {
+          "active_beam_id": "beam_1",
+          "beam_last_hydrated_id": "beam_1",
+          "b": 550.0,
+          "D": 500.0,
+          "fc": 40.0,
+          "bot1_count": 7,
+          "db_bot_1": 28.0,
+          "lig_d": 0,
+          "lig_legs": 0,
+          "s_lig": 200.0,
+          "actions_mode": "manual",
+          "actions_source": "Manual design actions (inputs below)",
+          "uls_Mstar": 703.65,
+          "uls_Mstar_pos_manual": 703.65,
+          "uls_Mstar_neg_manual": 0.0,
+          "uls_Vstar": 92.08,
+          "load_Mstar_proxy": 703.65,
+          "load_Mstar_pos_proxy": 703.65,
+          "load_Mstar_neg_proxy": 0.0,
+          "load_Vstar_proxy": 92.08,
+          "inputs_load_Mstar_pos_proxy": 703.65,
+          "inputs_load_Mstar_neg_proxy": 0.0,
+          "inputs_load_Vstar_proxy": 92.08
+        },
+        "browser_debug_probe": {
+          "debug_changed_shared_inputs": {
+            "A_g": [
+              120000.0,
+              275000.0
+            ],
+            "ybar_top_g": [
+              200.0,
+              250.0
+            ],
+            "Ixx_g": [
+              1600000000.0,
+              5729166666.666667
+            ],
+            "Ztop_g": [
+              8000000.0,
+              22916666.666666668
+            ],
+            "Zbot_g": [
+              8000000.0,
+              22916666.666666668
+            ],
+            "b_web": [
+              300.0,
+              550.0
+            ],
+            "b_crack": [
+              300.0,
+              550.0
+            ],
+            "A_ct_default": [
+              60000.0,
+              137500.0
+            ],
+            "sustained_section_modulus_mm3": [
+              8000000.0,
+              22916666.666666668
+            ],
+            "Eceff": [
+              29725.410005582766,
+              14767.595969758271
+            ],
+            "nb_or_s_bot_1": [
+              4.0,
+              7.0
+            ],
+            "d": [
+              342.0,
+              446.0
+            ],
+            "do": [
+              355.0,
+              455.0
+            ],
+            "bot_rows_resolved": [
+              [
+                {
+                  "active": true,
+                  "row_index": 1,
+                  "mode": "Count",
+                  "dia": 16.0,
+                  "bar_count_resolved": 4,
+                  "spacing_resolved": 68.0,
+                  "x_positions": [
+                    48.0,
+                    116.0,
+                    184.0,
+                    252.0
+                  ],
+                  "y_position": 352.0,
+                  "steel_area_row": 804.247719318987,
+                  "fit_ok": true,
+                  "warning": null
+                }
+              ],
+              [
+                {
+                  "active": true,
+                  "row_index": 1,
+                  "mode": "Count",
+                  "dia": 28.0,
+                  "bar_count_resolved": 7,
+                  "spacing_resolved": 73.66666666666667,
+                  "x_positions": [
+                    54.0,
+                    127.66666666666667,
+                    201.33333333333334,
+                    275.0,
+                    348.6666666666667,
+                    422.33333333333337,
+                    496.0
+                  ],
+                  "y_position": 446.0,
+                  "steel_area_row": 4310.2651207251965,
+                  "fit_ok": true,
+                  "warning": null
+                }
+              ]
+            ],
+            "top_rows_resolved": [
+              [
+                {
+                  "active": true,
+                  "row_index": 1,
+                  "mode": "Count",
+                  "dia": 10.0,
+                  "bar_count_resolved": 2,
+                  "spacing_resolved": 210.0,
+                  "x_positions": [
+                    45.0,
+                    255.0
+                  ],
+                  "y_position": 45.0,
+                  "steel_area_row": 157.07963267948966,
+                  "fit_ok": true,
+                  "warning": null
+                }
+              ],
+              [
+                {
+                  "active": true,
+                  "row_index": 1,
+                  "mode": "Count",
+                  "dia": 10.0,
+                  "bar_count_resolved": 2,
+                  "spacing_resolved": 460.0,
+                  "x_positions": [
+                    45.0,
+                    505.0
+                  ],
+                  "y_position": 45.0,
+                  "steel_area_row": 157.07963267948966,
+                  "fit_ok": true,
+                  "warning": null
+                }
+              ]
+            ],
+            "bot_bar_coords": [
+              [
+                {
+                  "x": 48.0,
+                  "y": 352.0,
+                  "db": 16.0,
+                  "row_index": 1
+                },
+                {
+                  "x": 116.0,
+                  "y": 352.0,
+                  "db": 16.0,
+                  "row_index": 1
+                },
+                {
+                  "x": 184.0,
+                  "y": 352.0,
+                  "db": 16.0,
+                  "row_index": 1
+                },
+                {
+                  "x": 252.0,
+                  "y": 352.0,
+                  "db": 16.0,
+                  "row_index": 1
+                }
+              ],
+              [
+                {
+                  "x": 54.0,
+                  "y": 446.0,
+                  "db": 28.0,
+                  "row_index": 1
+                },
+                {
+                  "x": 127.66666666666667,
+                  "y": 446.0,
+                  "db": 28.0,
+                  "row_index": 1
+                },
+                {
+                  "x": 201.33333333333334,
+                  "y": 446.0,
+                  "db": 28.0,
+                  "row_index": 1
+                },
+                {
+                  "x": 275.0,
+                  "y": 446.0,
+                  "db": 28.0,
+                  "row_index": 1
+                },
+                {
+                  "x": 348.6666666666667,
+                  "y": 446.0,
+                  "db": 28.0,
+                  "row_index": 1
+                },
+                {
+                  "x": 422.33333333333337,
+                  "y": 446.0,
+                  "db": 28.0,
+                  "row_index": 1
+                },
+                {
+                  "x": 496.0,
+                  "y": 446.0,
+                  "db": 28.0,
+                  "row_index": 1
+                }
+              ]
+            ],
+            "top_bar_coords": [
+              [
+                {
+                  "x": 45.0,
+                  "y": 45.0,
+                  "db": 10.0,
+                  "row_index": 1
+                },
+                {
+                  "x": 255.0,
+                  "y": 45.0,
+                  "db": 10.0,
+                  "row_index": 1
+                }
+              ],
+              [
+                {
+                  "x": 45.0,
+                  "y": 45.0,
+                  "db": 10.0,
+                  "row_index": 1
+                },
+                {
+                  "x": 505.0,
+                  "y": 45.0,
+                  "db": 10.0,
+                  "row_index": 1
+                }
+              ]
+            ],
+            "resolved_longitudinal_bars": [
+              [
+                {
+                  "id": "bar_1",
+                  "face": "top",
+                  "zone": "web",
+                  "x_mm": 45.0,
+                  "y_mm": 45.0,
+                  "dia_mm": 10.0,
+                  "area_mm2": 78.53981633974483,
+                  "anchored": true,
+                  "source_group": "top"
+                },
+                {
+                  "id": "bar_2",
+                  "face": "top",
+                  "zone": "web",
+                  "x_mm": 255.0,
+                  "y_mm": 45.0,
+                  "dia_mm": 10.0,
+                  "area_mm2": 78.53981633974483,
+                  "anchored": true,
+                  "source_group": "top"
+                },
+                {
+                  "id": "bar_3",
+                  "face": "bottom",
+                  "zone": "web",
+                  "x_mm": 48.0,
+                  "y_mm": 352.0,
+                  "dia_mm": 16.0,
+                  "area_mm2": 201.06192982974676,
+                  "anchored": true,
+                  "source_group": "bottom"
+                },
+                {
+                  "id": "bar_4",
+                  "face": "bottom",
+                  "zone": "web",
+                  "x_mm": 116.0,
+                  "y_mm": 352.0,
+                  "dia_mm": 16.0,
+                  "area_mm2": 201.06192982974676,
+                  "anchored": true,
+                  "source_group": "bottom"
+                },
+                {
+                  "id": "bar_5",
+                  "face": "bottom",
+                  "zone": "web",
+                  "x_mm": 184.0,
+                  "y_mm": 352.0,
+                  "dia_mm": 16.0,
+                  "area_mm2": 201.06192982974676,
+                  "anchored": true,
+                  "source_group": "bottom"
+                },
+                {
+                  "id": "bar_6",
+                  "face": "bottom",
+                  "zone": "web",
+                  "x_mm": 252.0,
+                  "y_mm": 352.0,
+                  "dia_mm": 16.0,
+                  "area_mm2": 201.06192982974676,
+                  "anchored": true,
+                  "source_group": "bottom"
+                }
+              ],
+              [
+                {
+                  "id": "bar_1",
+                  "face": "top",
+                  "zone": "web",
+                  "x_mm": 45.0,
+                  "y_mm": 45.0,
+                  "dia_mm": 10.0,
+                  "area_mm2": 78.53981633974483,
+                  "anchored": true,
+                  "source_group": "top"
+                },
+                {
+                  "id": "bar_2",
+                  "face": "top",
+                  "zone": "web",
+                  "x_mm": 505.0,
+                  "y_mm": 45.0,
+                  "dia_mm": 10.0,
+                  "area_mm2": 78.53981633974483,
+                  "anchored": true,
+                  "source_group": "top"
+                },
+                {
+                  "id": "bar_3",
+                  "face": "bottom",
+                  "zone": "web",
+                  "x_mm": 54.0,
+                  "y_mm": 446.0,
+                  "dia_mm": 28.0,
+                  "area_mm2": 615.7521601035994,
+                  "anchored": true,
+                  "source_group": "bottom"
+                },
+                {
+                  "id": "bar_4",
+                  "face": "bottom",
+                  "zone": "web",
+                  "x_mm": 127.66666666666667,
+                  "y_mm": 446.0,
+                  "dia_mm": 28.0,
+                  "area_mm2": 615.7521601035994,
+                  "anchored": true,
+                  "source_group": "bottom"
+                },
+                {
+                  "id": "bar_5",
+                  "face": "bottom",
+                  "zone": "web",
+                  "x_mm": 201.33333333333334,
+                  "y_mm": 446.0,
+                  "dia_mm": 28.0,
+                  "area_mm2": 615.7521601035994,
+                  "anchored": true,
+                  "source_group": "bottom"
+                },
+                {
+                  "id": "bar_6",
+                  "face": "bottom",
+                  "zone": "web",
+                  "x_mm": 275.0,
+                  "y_mm": 446.0,
+                  "dia_mm": 28.0,
+                  "area_mm2": 615.7521601035994,
+                  "anchored": true,
+                  "source_group": "bottom"
+                },
+                {
+                  "id": "bar_7",
+                  "face": "bottom",
+                  "zone": "web",
+                  "x_mm": 348.6666666666667,
+                  "y_mm": 446.0,
+                  "dia_mm": 28.0,
+                  "area_mm2": 615.7521601035994,
+                  "anchored": true,
+                  "source_group": "bottom"
+                },
+                {
+                  "id": "bar_8",
+                  "face": "bottom",
+                  "zone": "web",
+                  "x_mm": 422.33333333333337,
+                  "y_mm": 446.0,
+                  "dia_mm": 28.0,
+                  "area_mm2": 615.7521601035994,
+                  "anchored": true,
+                  "source_group": "bottom"
+                },
+                {
+                  "id": "bar_9",
+                  "face": "bottom",
+                  "zone": "web",
+                  "x_mm": 496.0,
+                  "y_mm": 446.0,
+                  "dia_mm": 28.0,
+                  "area_mm2": 615.7521601035994,
+                  "anchored": true,
+                  "source_group": "bottom"
+                }
+              ]
+            ],
+            "Ast_bottom_web": [
+              804.247719318987,
+              4310.265120725196
+            ],
+            "defl_beff": [
+              350.0,
+              550.0
+            ],
+            "defl_bw": [
+              300.0,
+              550.0
+            ]
+          },
+          "debug_reverted_shared_inputs": {
+            "A_g": [
+              120000.0,
+              140000.0
+            ],
+            "Ixx_g": [
+              1600000000.0,
+              1866666666.6666667
+            ],
+            "Ztop_g": [
+              8000000.0,
+              9333333.333333334
+            ],
+            "Zbot_g": [
+              8000000.0,
+              9333333.333333334
+            ],
+            "b_web": [
+              300.0,
+              350.0
+            ],
+            "b_crack": [
+              300.0,
+              350.0
+            ],
+            "A_ct_default": [
+              60000.0,
+              70000.0
+            ],
+            "sustained_section_modulus_mm3": [
+              8000000.0,
+              9333333.333333334
+            ],
+            "Eceff": [
+              29725.410005582766,
+              14767.595969758271
+            ],
+            "s_bot": [
+              68.0,
+              84.66666666666667
+            ],
+            "s_top": [
+              210.0,
+              260.0
+            ],
+            "bot_rows_resolved": [
+              [
+                {
+                  "active": true,
+                  "row_index": 1,
+                  "mode": "Count",
+                  "dia": 16.0,
+                  "bar_count_resolved": 4,
+                  "spacing_resolved": 68.0,
+                  "x_positions": [
+                    48.0,
+                    116.0,
+                    184.0,
+                    252.0
+                  ],
+                  "y_position": 352.0,
+                  "steel_area_row": 804.247719318987,
+                  "fit_ok": true,
+                  "warning": null
+                }
+              ],
+              [
+                {
+                  "active": true,
+                  "row_index": 1,
+                  "mode": "Count",
+                  "dia": 16.0,
+                  "bar_count_resolved": 4,
+                  "spacing_resolved": 84.66666666666669,
+                  "x_positions": [
+                    48.0,
+                    132.66666666666669,
+                    217.33333333333334,
+                    302.0
+                  ],
+                  "y_position": 352.0,
+                  "steel_area_row": 804.247719318987,
+                  "fit_ok": true,
+                  "warning": null
+                }
+              ]
+            ],
+            "top_rows_resolved": [
+              [
+                {
+                  "active": true,
+                  "row_index": 1,
+                  "mode": "Count",
+                  "dia": 10.0,
+                  "bar_count_resolved": 2,
+                  "spacing_resolved": 210.0,
+                  "x_positions": [
+                    45.0,
+                    255.0
+                  ],
+                  "y_position": 45.0,
+                  "steel_area_row": 157.07963267948966,
+                  "fit_ok": true,
+                  "warning": null
+                }
+              ],
+              [
+                {
+                  "active": true,
+                  "row_index": 1,
+                  "mode": "Count",
+                  "dia": 10.0,
+                  "bar_count_resolved": 2,
+                  "spacing_resolved": 260.0,
+                  "x_positions": [
+                    45.0,
+                    305.0
+                  ],
+                  "y_position": 45.0,
+                  "steel_area_row": 157.07963267948966,
+                  "fit_ok": true,
+                  "warning": null
+                }
+              ]
+            ],
+            "bot_bar_coords": [
+              [
+                {
+                  "x": 48.0,
+                  "y": 352.0,
+                  "db": 16.0,
+                  "row_index": 1
+                },
+                {
+                  "x": 116.0,
+                  "y": 352.0,
+                  "db": 16.0,
+                  "row_index": 1
+                },
+                {
+                  "x": 184.0,
+                  "y": 352.0,
+                  "db": 16.0,
+                  "row_index": 1
+                },
+                {
+                  "x": 252.0,
+                  "y": 352.0,
+                  "db": 16.0,
+                  "row_index": 1
+                }
+              ],
+              [
+                {
+                  "x": 48.0,
+                  "y": 352.0,
+                  "db": 16.0,
+                  "row_index": 1
+                },
+                {
+                  "x": 132.66666666666669,
+                  "y": 352.0,
+                  "db": 16.0,
+                  "row_index": 1
+                },
+                {
+                  "x": 217.33333333333334,
+                  "y": 352.0,
+                  "db": 16.0,
+                  "row_index": 1
+                },
+                {
+                  "x": 302.0,
+                  "y": 352.0,
+                  "db": 16.0,
+                  "row_index": 1
+                }
+              ]
+            ],
+            "top_bar_coords": [
+              [
+                {
+                  "x": 45.0,
+                  "y": 45.0,
+                  "db": 10.0,
+                  "row_index": 1
+                },
+                {
+                  "x": 255.0,
+                  "y": 45.0,
+                  "db": 10.0,
+                  "row_index": 1
+                }
+              ],
+              [
+                {
+                  "x": 45.0,
+                  "y": 45.0,
+                  "db": 10.0,
+                  "row_index": 1
+                },
+                {
+                  "x": 305.0,
+                  "y": 45.0,
+                  "db": 10.0,
+                  "row_index": 1
+                }
+              ]
+            ],
+            "resolved_longitudinal_bars": [
+              [
+                {
+                  "id": "bar_1",
+                  "face": "top",
+                  "zone": "web",
+                  "x_mm": 45.0,
+                  "y_mm": 45.0,
+                  "dia_mm": 10.0,
+                  "area_mm2": 78.53981633974483,
+                  "anchored": true,
+                  "source_group": "top"
+                },
+                {
+                  "id": "bar_2",
+                  "face": "top",
+                  "zone": "web",
+                  "x_mm": 255.0,
+                  "y_mm": 45.0,
+                  "dia_mm": 10.0,
+                  "area_mm2": 78.53981633974483,
+                  "anchored": true,
+                  "source_group": "top"
+                },
+                {
+                  "id": "bar_3",
+                  "face": "bottom",
+                  "zone": "web",
+                  "x_mm": 48.0,
+                  "y_mm": 352.0,
+                  "dia_mm": 16.0,
+                  "area_mm2": 201.06192982974676,
+                  "anchored": true,
+                  "source_group": "bottom"
+                },
+                {
+                  "id": "bar_4",
+                  "face": "bottom",
+                  "zone": "web",
+                  "x_mm": 116.0,
+                  "y_mm": 352.0,
+                  "dia_mm": 16.0,
+                  "area_mm2": 201.06192982974676,
+                  "anchored": true,
+                  "source_group": "bottom"
+                },
+                {
+                  "id": "bar_5",
+                  "face": "bottom",
+                  "zone": "web",
+                  "x_mm": 184.0,
+                  "y_mm": 352.0,
+                  "dia_mm": 16.0,
+                  "area_mm2": 201.06192982974676,
+                  "anchored": true,
+                  "source_group": "bottom"
+                },
+                {
+                  "id": "bar_6",
+                  "face": "bottom",
+                  "zone": "web",
+                  "x_mm": 252.0,
+                  "y_mm": 352.0,
+                  "dia_mm": 16.0,
+                  "area_mm2": 201.06192982974676,
+                  "anchored": true,
+                  "source_group": "bottom"
+                }
+              ],
+              [
+                {
+                  "id": "bar_1",
+                  "face": "top",
+                  "zone": "web",
+                  "x_mm": 45.0,
+                  "y_mm": 45.0,
+                  "dia_mm": 10.0,
+                  "area_mm2": 78.53981633974483,
+                  "anchored": true,
+                  "source_group": "top"
+                },
+                {
+                  "id": "bar_2",
+                  "face": "top",
+                  "zone": "web",
+                  "x_mm": 305.0,
+                  "y_mm": 45.0,
+                  "dia_mm": 10.0,
+                  "area_mm2": 78.53981633974483,
+                  "anchored": true,
+                  "source_group": "top"
+                },
+                {
+                  "id": "bar_3",
+                  "face": "bottom",
+                  "zone": "web",
+                  "x_mm": 48.0,
+                  "y_mm": 352.0,
+                  "dia_mm": 16.0,
+                  "area_mm2": 201.06192982974676,
+                  "anchored": true,
+                  "source_group": "bottom"
+                },
+                {
+                  "id": "bar_4",
+                  "face": "bottom",
+                  "zone": "web",
+                  "x_mm": 132.66666666666669,
+                  "y_mm": 352.0,
+                  "dia_mm": 16.0,
+                  "area_mm2": 201.06192982974676,
+                  "anchored": true,
+                  "source_group": "bottom"
+                },
+                {
+                  "id": "bar_5",
+                  "face": "bottom",
+                  "zone": "web",
+                  "x_mm": 217.33333333333334,
+                  "y_mm": 352.0,
+                  "dia_mm": 16.0,
+                  "area_mm2": 201.06192982974676,
+                  "anchored": true,
+                  "source_group": "bottom"
+                },
+                {
+                  "id": "bar_6",
+                  "face": "bottom",
+                  "zone": "web",
+                  "x_mm": 302.0,
+                  "y_mm": 352.0,
+                  "dia_mm": 16.0,
+                  "area_mm2": 201.06192982974676,
+                  "anchored": true,
+                  "source_group": "bottom"
+                }
+              ]
+            ],
+            "defl_bw": [
+              300.0,
+              350.0
+            ]
+          },
+          "debug_last_revert_tag": "REVERTED 17 keys on inputs",
+          "browser_router_probe": {
+            "after_init_shared": {
+              "label": "after_init_shared",
+              "active_beam_id": "beam_1",
+              "beam_last_hydrated_id": "beam_1",
+              "b": 550.0,
+              "D": 500.0,
+              "lig_d": 0,
+              "lig_legs": 0,
+              "s_lig": 200.0,
+              "actions_mode": "manual",
+              "actions_source": "Manual design actions (inputs below)",
+              "uls_Mstar": 703.65,
+              "uls_Mstar_pos_manual": 703.65,
+              "uls_Mstar_neg_manual": 0.0,
+              "uls_Vstar": 92.08,
+              "load_Mstar_proxy": 703.65,
+              "load_Mstar_pos_proxy": 703.65,
+              "load_Mstar_neg_proxy": 0.0,
+              "load_Vstar_proxy": 92.08,
+              "inputs_load_Mstar_pos_proxy": 703.65,
+              "inputs_load_Mstar_neg_proxy": 0.0,
+              "inputs_load_Vstar_proxy": 92.08
+            },
+            "after_load_active_beam": {
+              "label": "after_load_active_beam",
+              "active_beam_id": "beam_1",
+              "beam_last_hydrated_id": "beam_1",
+              "b": 550.0,
+              "D": 500.0,
+              "lig_d": 0,
+              "lig_legs": 0,
+              "s_lig": 200.0,
+              "actions_mode": "manual",
+              "actions_source": "Manual design actions (inputs below)",
+              "uls_Mstar": 703.65,
+              "uls_Mstar_pos_manual": 703.65,
+              "uls_Mstar_neg_manual": 0.0,
+              "uls_Vstar": 92.08,
+              "load_Mstar_proxy": 703.65,
+              "load_Mstar_pos_proxy": 703.65,
+              "load_Mstar_neg_proxy": 0.0,
+              "load_Vstar_proxy": 92.08,
+              "inputs_load_Mstar_pos_proxy": 703.65,
+              "inputs_load_Mstar_neg_proxy": 0.0,
+              "inputs_load_Vstar_proxy": 92.08,
+              "beam_hydrated": false
+            },
+            "after_browser_recipe": {
+              "label": "after_browser_recipe",
+              "active_beam_id": "beam_1",
+              "beam_last_hydrated_id": "beam_1",
+              "b": 550.0,
+              "D": 500.0,
+              "lig_d": 0,
+              "lig_legs": 0,
+              "s_lig": 200.0,
+              "actions_mode": "manual",
+              "actions_source": "Manual design actions (inputs below)",
+              "uls_Mstar": 703.65,
+              "uls_Mstar_pos_manual": 703.65,
+              "uls_Mstar_neg_manual": 0.0,
+              "uls_Vstar": 92.08,
+              "load_Mstar_proxy": 703.65,
+              "load_Mstar_pos_proxy": 703.65,
+              "load_Mstar_neg_proxy": 0.0,
+              "load_Vstar_proxy": 92.08,
+              "inputs_load_Mstar_pos_proxy": 703.65,
+              "inputs_load_Mstar_neg_proxy": 0.0,
+              "inputs_load_Vstar_proxy": 92.08,
+              "browser_recipe": "A_bending_under_only",
+              "browser_recipe_error": null
+            },
+            "after_load_proxies": {
+              "label": "after_load_proxies",
+              "active_beam_id": "beam_1",
+              "beam_last_hydrated_id": "beam_1",
+              "b": 550.0,
+              "D": 500.0,
+              "lig_d": 0,
+              "lig_legs": 0,
+              "s_lig": 200.0,
+              "actions_mode": "manual",
+              "actions_source": "Manual design actions (inputs below)",
+              "uls_Mstar": 703.65,
+              "uls_Mstar_pos_manual": 703.65,
+              "uls_Mstar_neg_manual": 0.0,
+              "uls_Vstar": 92.08,
+              "load_Mstar_proxy": 703.65,
+              "load_Mstar_pos_proxy": 703.65,
+              "load_Mstar_neg_proxy": 0.0,
+              "load_Vstar_proxy": 92.08,
+              "inputs_load_Mstar_pos_proxy": 703.65,
+              "inputs_load_Mstar_neg_proxy": 0.0,
+              "inputs_load_Vstar_proxy": 92.08
+            },
+            "after_derive_design_actions": {
+              "label": "after_derive_design_actions",
+              "active_beam_id": "beam_1",
+              "beam_last_hydrated_id": "beam_1",
+              "b": 550.0,
+              "D": 500.0,
+              "lig_d": 0,
+              "lig_legs": 0,
+              "s_lig": 200.0,
+              "actions_mode": "manual",
+              "actions_source": "Manual design actions (inputs below)",
+              "uls_Mstar": 703.65,
+              "uls_Mstar_pos_manual": 703.65,
+              "uls_Mstar_neg_manual": 0.0,
+              "uls_Vstar": 92.08,
+              "load_Mstar_proxy": 703.65,
+              "load_Mstar_pos_proxy": 703.65,
+              "load_Mstar_neg_proxy": 0.0,
+              "load_Vstar_proxy": 92.08,
+              "inputs_load_Mstar_pos_proxy": 703.65,
+              "inputs_load_Mstar_neg_proxy": 0.0,
+              "inputs_load_Vstar_proxy": 92.08
+            },
+            "after_browser_recipe_boot_compute": {
+              "label": "after_browser_recipe_boot_compute",
+              "active_beam_id": "beam_1",
+              "beam_last_hydrated_id": "beam_1",
+              "b": 550.0,
+              "D": 500.0,
+              "lig_d": 0,
+              "lig_legs": 0,
+              "s_lig": 200.0,
+              "actions_mode": "manual",
+              "actions_source": "Manual design actions (inputs below)",
+              "uls_Mstar": 703.65,
+              "uls_Mstar_pos_manual": 703.65,
+              "uls_Mstar_neg_manual": 0.0,
+              "uls_Vstar": 92.08,
+              "load_Mstar_proxy": 703.65,
+              "load_Mstar_pos_proxy": 703.65,
+              "load_Mstar_neg_proxy": 0.0,
+              "load_Vstar_proxy": 92.08,
+              "inputs_load_Mstar_pos_proxy": 703.65,
+              "inputs_load_Mstar_neg_proxy": 0.0,
+              "inputs_load_Vstar_proxy": 92.08
+            },
+            "after_router_hydrate": {
+              "label": "after_router_hydrate",
+              "active_beam_id": "beam_1",
+              "beam_last_hydrated_id": "beam_1",
+              "b": 550.0,
+              "D": 500.0,
+              "lig_d": 0,
+              "lig_legs": 0,
+              "s_lig": 200.0,
+              "actions_mode": "manual",
+              "actions_source": "Manual design actions (inputs below)",
+              "uls_Mstar": 703.65,
+              "uls_Mstar_pos_manual": 703.65,
+              "uls_Mstar_neg_manual": 0.0,
+              "uls_Vstar": 92.08,
+              "load_Mstar_proxy": 703.65,
+              "load_Mstar_pos_proxy": 703.65,
+              "load_Mstar_neg_proxy": 0.0,
+              "load_Vstar_proxy": 92.08,
+              "inputs_load_Mstar_pos_proxy": 703.65,
+              "inputs_load_Mstar_neg_proxy": 0.0,
+              "inputs_load_Vstar_proxy": 92.08,
+              "page_changed": false,
+              "pending_inputs_apply_refresh_present": true,
+              "force_inputs_widget_reseed_once": false
+            }
+          },
+          "browser_recipe_last_action": {
+            "action": "skip_already_applied",
+            "recipe": "A_bending_under_only",
+            "shared_shear": {
+              "lig_d": 0,
+              "lig_legs": 0,
+              "s_lig": 200.0
+            }
+          },
+          "allow_design_guide_apply_shared_keys_once": null,
+          "skip_shear_widget_backflow_once": true,
+          "skip_shear_widget_backflow_runs": 4,
+          "pending_inputs_apply_refresh": null,
+          "inputs_shear_truth_audit": {
+            "page_slug": "inputs",
+            "shared": {
+              "lig_d": 0,
+              "lig_legs": 0,
+              "s_lig": 200.0
+            },
+            "inputs_widgets": {
+              "inputs_lig_d": 0,
+              "inputs_lig_legs": 0,
+              "inputs_s_lig": 200.0
+            },
+            "shear_widgets": {
+              "shear_lig_d": 0,
+              "shear_lig_legs": 0,
+              "shear_s_lig": 200.0
+            },
+            "refresh_flags": {
+              "_pending_inputs_apply_refresh_present": true,
+              "_force_inputs_widget_reseed_once": false,
+              "_inputs_longitudinal_reo_force_refresh_processed_this_run": false,
+              "_inputs_shear_force_refresh_processed_this_run": false,
+              "_pending_shear_widget_seed_from_shared_present": true
+            },
+            "seed_request_reason": "render_inputs:corrected_invalid_shear_state",
+            "seed_consume_audit_present": true
+          },
+          "inputs_shear_seed_consume_audit": {
+            "consumed": true,
+            "reason": "render_inputs:corrected_invalid_shear_state",
+            "shared": {
+              "lig_d": 0,
+              "lig_legs": 0,
+              "s_lig": 200.0
+            },
+            "widget_keys_seeded": [
+              "inputs_lig_d",
+              "inputs_lig_legs",
+              "inputs_s_lig",
+              "shear_lig_d",
+              "shear_lig_legs",
+              "shear_s_lig"
+            ]
+          }
+        },
+        "active_beam_record_probe": {
+          "active_beam_id": "beam_1",
+          "beam_last_hydrated_id": "beam_1",
+          "b": 550.0,
+          "D": 500.0,
+          "bot1_count": 7,
+          "db_bot_1": 28.0,
+          "lig_d": 0,
+          "lig_legs": 0,
+          "s_lig": 200.0,
+          "uls_Mstar": 703.65,
+          "uls_Vstar": 92.08
+        },
+        "page_slug": "inputs",
+        "solver_result": null,
+        "one_click_feedback": null,
+        "auto_design_entry_probe_before_reconcile": null,
+        "auto_design_entry_probe_after_reconcile": null,
+        "auto_design_entry_probe_after_run": null,
+        "router_probe": {
+          "after_init_shared": {
+            "label": "after_init_shared",
+            "active_beam_id": "beam_1",
+            "beam_last_hydrated_id": "beam_1",
+            "b": 550.0,
+            "D": 500.0,
+            "lig_d": 0,
+            "lig_legs": 0,
+            "s_lig": 200.0,
+            "actions_mode": "manual",
+            "actions_source": "Manual design actions (inputs below)",
+            "uls_Mstar": 703.65,
+            "uls_Mstar_pos_manual": 703.65,
+            "uls_Mstar_neg_manual": 0.0,
+            "uls_Vstar": 92.08,
+            "load_Mstar_proxy": 703.65,
+            "load_Mstar_pos_proxy": 703.65,
+            "load_Mstar_neg_proxy": 0.0,
+            "load_Vstar_proxy": 92.08,
+            "inputs_load_Mstar_pos_proxy": 703.65,
+            "inputs_load_Mstar_neg_proxy": 0.0,
+            "inputs_load_Vstar_proxy": 92.08
+          },
+          "after_load_active_beam": {
+            "label": "after_load_active_beam",
+            "active_beam_id": "beam_1",
+            "beam_last_hydrated_id": "beam_1",
+            "b": 550.0,
+            "D": 500.0,
+            "lig_d": 0,
+            "lig_legs": 0,
+            "s_lig": 200.0,
+            "actions_mode": "manual",
+            "actions_source": "Manual design actions (inputs below)",
+            "uls_Mstar": 703.65,
+            "uls_Mstar_pos_manual": 703.65,
+            "uls_Mstar_neg_manual": 0.0,
+            "uls_Vstar": 92.08,
+            "load_Mstar_proxy": 703.65,
+            "load_Mstar_pos_proxy": 703.65,
+            "load_Mstar_neg_proxy": 0.0,
+            "load_Vstar_proxy": 92.08,
+            "inputs_load_Mstar_pos_proxy": 703.65,
+            "inputs_load_Mstar_neg_proxy": 0.0,
+            "inputs_load_Vstar_proxy": 92.08,
+            "beam_hydrated": false
+          },
+          "after_browser_recipe": {
+            "label": "after_browser_recipe",
+            "active_beam_id": "beam_1",
+            "beam_last_hydrated_id": "beam_1",
+            "b": 550.0,
+            "D": 500.0,
+            "lig_d": 0,
+            "lig_legs": 0,
+            "s_lig": 200.0,
+            "actions_mode": "manual",
+            "actions_source": "Manual design actions (inputs below)",
+            "uls_Mstar": 703.65,
+            "uls_Mstar_pos_manual": 703.65,
+            "uls_Mstar_neg_manual": 0.0,
+            "uls_Vstar": 92.08,
+            "load_Mstar_proxy": 703.65,
+            "load_Mstar_pos_proxy": 703.65,
+            "load_Mstar_neg_proxy": 0.0,
+            "load_Vstar_proxy": 92.08,
+            "inputs_load_Mstar_pos_proxy": 703.65,
+            "inputs_load_Mstar_neg_proxy": 0.0,
+            "inputs_load_Vstar_proxy": 92.08,
+            "browser_recipe": "A_bending_under_only",
+            "browser_recipe_error": null
+          },
+          "after_load_proxies": {
+            "label": "after_load_proxies",
+            "active_beam_id": "beam_1",
+            "beam_last_hydrated_id": "beam_1",
+            "b": 550.0,
+            "D": 500.0,
+            "lig_d": 0,
+            "lig_legs": 0,
+            "s_lig": 200.0,
+            "actions_mode": "manual",
+            "actions_source": "Manual design actions (inputs below)",
+            "uls_Mstar": 703.65,
+            "uls_Mstar_pos_manual": 703.65,
+            "uls_Mstar_neg_manual": 0.0,
+            "uls_Vstar": 92.08,
+            "load_Mstar_proxy": 703.65,
+            "load_Mstar_pos_proxy": 703.65,
+            "load_Mstar_neg_proxy": 0.0,
+            "load_Vstar_proxy": 92.08,
+            "inputs_load_Mstar_pos_proxy": 703.65,
+            "inputs_load_Mstar_neg_proxy": 0.0,
+            "inputs_load_Vstar_proxy": 92.08
+          },
+          "after_derive_design_actions": {
+            "label": "after_derive_design_actions",
+            "active_beam_id": "beam_1",
+            "beam_last_hydrated_id": "beam_1",
+            "b": 550.0,
+            "D": 500.0,
+            "lig_d": 0,
+            "lig_legs": 0,
+            "s_lig": 200.0,
+            "actions_mode": "manual",
+            "actions_source": "Manual design actions (inputs below)",
+            "uls_Mstar": 703.65,
+            "uls_Mstar_pos_manual": 703.65,
+            "uls_Mstar_neg_manual": 0.0,
+            "uls_Vstar": 92.08,
+            "load_Mstar_proxy": 703.65,
+            "load_Mstar_pos_proxy": 703.65,
+            "load_Mstar_neg_proxy": 0.0,
+            "load_Vstar_proxy": 92.08,
+            "inputs_load_Mstar_pos_proxy": 703.65,
+            "inputs_load_Mstar_neg_proxy": 0.0,
+            "inputs_load_Vstar_proxy": 92.08
+          },
+          "after_browser_recipe_boot_compute": {
+            "label": "after_browser_recipe_boot_compute",
+            "active_beam_id": "beam_1",
+            "beam_last_hydrated_id": "beam_1",
+            "b": 550.0,
+            "D": 500.0,
+            "lig_d": 0,
+            "lig_legs": 0,
+            "s_lig": 200.0,
+            "actions_mode": "manual",
+            "actions_source": "Manual design actions (inputs below)",
+            "uls_Mstar": 703.65,
+            "uls_Mstar_pos_manual": 703.65,
+            "uls_Mstar_neg_manual": 0.0,
+            "uls_Vstar": 92.08,
+            "load_Mstar_proxy": 703.65,
+            "load_Mstar_pos_proxy": 703.65,
+            "load_Mstar_neg_proxy": 0.0,
+            "load_Vstar_proxy": 92.08,
+            "inputs_load_Mstar_pos_proxy": 703.65,
+            "inputs_load_Mstar_neg_proxy": 0.0,
+            "inputs_load_Vstar_proxy": 92.08
+          },
+          "after_router_hydrate": {
+            "label": "after_router_hydrate",
+            "active_beam_id": "beam_1",
+            "beam_last_hydrated_id": "beam_1",
+            "b": 550.0,
+            "D": 500.0,
+            "lig_d": 0,
+            "lig_legs": 0,
+            "s_lig": 200.0,
+            "actions_mode": "manual",
+            "actions_source": "Manual design actions (inputs below)",
+            "uls_Mstar": 703.65,
+            "uls_Mstar_pos_manual": 703.65,
+            "uls_Mstar_neg_manual": 0.0,
+            "uls_Vstar": 92.08,
+            "load_Mstar_proxy": 703.65,
+            "load_Mstar_pos_proxy": 703.65,
+            "load_Mstar_neg_proxy": 0.0,
+            "load_Vstar_proxy": 92.08,
+            "inputs_load_Mstar_pos_proxy": 703.65,
+            "inputs_load_Mstar_neg_proxy": 0.0,
+            "inputs_load_Vstar_proxy": 92.08,
+            "page_changed": false,
+            "pending_inputs_apply_refresh_present": true,
+            "force_inputs_widget_reseed_once": false
+          }
+        },
+        "pending_recommendation_meta": {},
+        "design_guide_primary_apply_payload": {},
+        "design_guide_primary_payload_binding_audit": {
+          "visible_primary_candidate_id": null,
+          "button_contract_candidate_id": null,
+          "queued_apply_candidate_id": "candidate_460",
+          "applied_candidate_id": "candidate_460",
+          "visible_updates": {},
+          "button_contract_updates": {},
+          "queued_apply_updates": {
+            "b": 550.0,
+            "D": 500.0,
+            "bot1_layout_mode": "Count",
+            "bot1_count": 7,
+            "db_bot_1": 28,
+            "bot2_layout_mode": "Count",
+            "bot2_count": 0,
+            "db_bot_2": 28,
+            "bot_row_count": 1,
+            "bot_row_1_mode": "Count",
+            "bot_row_1_bars": 7,
+            "bot_row_1_spacing": 0.0,
+            "bot_row_1_dia": 28,
+            "bot_row_2_mode": "Count",
+            "bot_row_2_bars": 0,
+            "bot_row_2_spacing": 0.0,
+            "bot_row_2_dia": 28,
+            "lig_d": 0,
+            "lig_legs": 0,
+            "s_lig": 200.0
+          },
+          "applied_updates": {
+            "b": 550.0,
+            "D": 500.0,
+            "bot1_layout_mode": "Count",
+            "bot1_count": 7,
+            "db_bot_1": 28,
+            "bot2_layout_mode": "Count",
+            "bot2_count": 0,
+            "db_bot_2": 28,
+            "bot_row_count": 1,
+            "bot_row_1_mode": "Count",
+            "bot_row_1_bars": 7,
+            "bot_row_1_spacing": 0.0,
+            "bot_row_1_dia": 28,
+            "bot_row_2_mode": "Count",
+            "bot_row_2_bars": 0,
+            "bot_row_2_spacing": 0.0,
+            "bot_row_2_dia": 28,
+            "lig_d": 0,
+            "lig_legs": 0,
+            "s_lig": 200.0
+          },
+          "payload_binding_match": true,
+          "payload_update_match": true,
+          "stale_apply_payload_blocked": false,
+          "canonical_primary_payload_exists": false,
+          "legacy_fallback_used": false,
+          "render_fingerprint": "(('action_type', '\"apply_resolved_candidate\"'), ('candidate_id', '\"candidate_460\"'), ('family', '\"bending\"'), ('state_fingerprint', '\"((\\'D\\', \\'400.0\\'), (\\'actions_mode\\', \\'\\\\\"manual\\\\\"\\'), (\\'actions_source\\', \\'\\\\\"Manual design actions (inputs below)\\\\\"\\'), (\\'b\\', \\'350.0\\'), (\\'beam_type\\', \\'null\\'), (\\'bot1_count\\', \\'4\\'), (\\'bot2_count\\', \\'0\\'), (\\'bot_row_1_bars\\', \\'4\\'), (\\'bot_row_1_dia\\', \\'16.0\\'), (\\'bot_row_2_bars\\', \\'0\\'), (\\'bot_row_2_dia\\', \\'0\\'), (\\'bot_row_count\\', \\'1\\'), (\\'cover_bot\\', \\'40.0\\'), (\\'cover_top\\', \\'40.0\\'), (\\'db_bot_1\\', \\'16.0\\'), (\\'db_bot_2\\', \\'0\\'), (\\'lig_d\\', \\'10\\'), (\\'lig_legs\\', \\'2\\'), (\\'s_lig\\', \\'150.0\\'), (\\'uls_Mstar\\', \\'639.81\\'), (\\'uls_Vstar\\', \\'65.61\\'))\"'), ('updates', '{\"D\": 500.0, \"b\": 550.0, \"bot1_count\": 7, \"bot1_layout_mode\": \"Count\", \"bot2_count\": 0, \"bot2_layout_mode\": \"Count\", \"bot_row_1_bars\": 7, \"bot_row_1_dia\": 28, \"bot_row_1_mode\": \"Count\", \"bot_row_1_spacing\": 0.0, \"bot_row_2_bars\": 0, \"bot_row_2_dia\": 28, \"bot_row_2_mode\": \"Count\", \"bot_row_2_spacing\": 0.0, \"bot_row_count\": 1, \"db_bot_1\": 28, \"db_bot_2\": 28, \"lig_d\": 0, \"lig_legs\": 0, \"s_lig\": 200.0}'))",
+          "state_fingerprint": "(('D', '400.0'), ('actions_mode', '\"manual\"'), ('actions_source', '\"Manual design actions (inputs below)\"'), ('b', '350.0'), ('beam_type', 'null'), ('bot1_count', '4'), ('bot2_count', '0'), ('bot_row_1_bars', '4'), ('bot_row_1_dia', '16.0'), ('bot_row_2_bars', '0'), ('bot_row_2_dia', '0'), ('bot_row_count', '1'), ('cover_bot', '40.0'), ('cover_top', '40.0'), ('db_bot_1', '16.0'), ('db_bot_2', '0'), ('lig_d', '10'), ('lig_legs', '2'), ('s_lig', '150.0'), ('uls_Mstar', '639.81'), ('uls_Vstar', '65.61'))",
+          "applied_changed_keys": [
+            "D",
+            "b",
+            "bot1_count",
+            "bot_row_1_bars",
+            "bot_row_1_dia",
+            "bot_row_1_spacing",
+            "bot_row_2_dia",
+            "bot_row_2_spacing",
+            "db_bot_1",
+            "db_bot_2",
+            "lig_d",
+            "lig_legs",
+            "s_lig"
+          ],
+          "actual_changed_updates": {
+            "D": 500.0,
+            "b": 550.0,
+            "bot1_count": 7,
+            "bot_row_1_bars": 7,
+            "bot_row_1_dia": 28,
+            "bot_row_1_spacing": 0.0,
+            "bot_row_2_dia": 28,
+            "bot_row_2_spacing": 0.0,
+            "db_bot_1": 28,
+            "db_bot_2": 28,
+            "lig_d": 0,
+            "lig_legs": 0,
+            "s_lig": 200.0
+          },
+          "stale_candidate_changed_keys": []
+        },
+        "results_version": 5,
+        "summary_state_probe": {
+          "uls_Mstar": 703.65,
+          "uls_Mstar_pos_manual": 703.65,
+          "uls_Mstar_neg_manual": 0.0,
+          "uls_Vstar": 92.08,
+          "load_Mstar_proxy": 703.65,
+          "load_Mstar_pos_proxy": 703.65,
+          "load_Mstar_neg_proxy": 0.0,
+          "load_Vstar_proxy": 92.08,
+          "actions_mode": "manual",
+          "actions_source": "Manual design actions (inputs below)",
+          "b": 550.0,
+          "D": 500.0,
+          "bot1_count": 7,
+          "db_bot_1": 28.0,
+          "lig_d": 0,
+          "lig_legs": 0,
+          "s_lig": 200.0,
+          "_probe_error": null
+        },
+        "summary_overview_probe": {
+          "statuses": {
+            "bending": "FAIL",
+            "shear": "FAIL",
+            "crack": "PASS",
+            "deflection": "PASS"
+          },
+          "utils": {
+            "bending": 1.000306203634067,
+            "shear": 1.3,
+            "crack": 0.0,
+            "deflection": 0.0
+          },
+          "any_fail": true,
+          "any_warn": false,
+          "all_key_pass": false,
+          "worst_util": 1.3,
+          "governing_util": 1.3,
+          "governing_util_source": "shear:sectional_shear_capacity",
+          "governing_check": "shear",
+          "_probe_error": null
+        },
+        "guidance_compute_probe": {
+          "item_count": 1,
+          "primary_title": "Bending and shear repair blocked by detailing limits",
+          "primary_action_type": null,
+          "primary_status": "FAIL",
+          "primary_terminal_state": null,
+          "primary_guidance_intent": "specific_blocker",
+          "primary_display_truth": {
+            "displayed_util": 1.3,
+            "displayed_status": "FAIL",
+            "display_truth_source": "published_summary",
+            "target_low": 0.88,
+            "target_high": 0.95,
+            "displayed_within_target_band": false,
+            "source_summary_util": 1.3,
+            "source_candidate_util": null,
+            "source_post_commit_util": null
+          },
+          "display_truth": {
+            "displayed_util": 1.3,
+            "displayed_status": "FAIL",
+            "display_truth_source": "published_summary",
+            "target_low": 0.88,
+            "target_high": 0.95,
+            "displayed_within_target_band": false,
+            "source_summary_util": 1.3,
+            "source_candidate_util": null,
+            "source_post_commit_util": null
+          },
+          "displayed_util": 1.3,
+          "displayed_status": "FAIL",
+          "display_truth_source": "published_summary",
+          "target_low": 0.88,
+          "target_high": 0.95,
+          "target_band": {
+            "goal": "balanced",
+            "target_low": 0.88,
+            "target_high": 0.95,
+            "source": "canonical_config"
+          },
+          "primary_target_low": 0.88,
+          "primary_target_high": 0.95,
+          "primary_displayed_util": 1.3,
+          "primary_preview_util": null,
+          "primary_current_util": 1.3,
+          "primary_within_target_band": false,
+          "displayed_within_target_band": false,
+          "source_summary_util": 1.3,
+          "source_candidate_util": null,
+          "source_post_commit_util": null,
+          "primary_button_contract": {
+            "enabled": false,
+            "actionable": false,
+            "action_type": null,
+            "family": "combined",
+            "updates": {},
+            "preview_pass": false,
+            "expected_util": null,
+            "blocking_reason": "Bending repair blocked: Bending remains unresolved because the exhaustive active-failure one-click repair search found no executor-backed arrangement that passes all required checks while bending, shear fail. The recorded blocking proof says: Shear repair is blocked by shear/detailing limits. Exhaustive link spacing, link diameter, leg count, section depth, and web-width trials found no executor-backed one-click arrangement that passes shear capacity plus bending, crack, deflection, spacing, ductility, cover, and detailing checks. Shear repair blocked: Shear repair is blocked by shear/detailing limits. Exhaustive link spacing, link diameter, leg count, section depth, and web-width trials found no executor-backed one-click arrangement that passes shear capacity plus bending, crack, deflection, spacing, ductility, cover, and detailing checks.",
+            "source_candidate_id": null,
+            "candidate_id": null
+          },
+          "button_contract": {
+            "enabled": false,
+            "actionable": false,
+            "action_type": null,
+            "family": "combined",
+            "updates": {},
+            "preview_pass": false,
+            "expected_util": null,
+            "blocking_reason": "Bending repair blocked: Bending remains unresolved because the exhaustive active-failure one-click repair search found no executor-backed arrangement that passes all required checks while bending, shear fail. The recorded blocking proof says: Shear repair is blocked by shear/detailing limits. Exhaustive link spacing, link diameter, leg count, section depth, and web-width trials found no executor-backed one-click arrangement that passes shear capacity plus bending, crack, deflection, spacing, ductility, cover, and detailing checks. Shear repair blocked: Shear repair is blocked by shear/detailing limits. Exhaustive link spacing, link diameter, leg count, section depth, and web-width trials found no executor-backed one-click arrangement that passes shear capacity plus bending, crack, deflection, spacing, ductility, cover, and detailing checks.",
+            "source_candidate_id": null,
+            "candidate_id": null
+          },
+          "candidate_search_evidence": {
+            "candidate_search_exhaustive": true,
+            "search_scope": "design_guide_shear_cleanup_final_threshold_blocker",
+            "safe_executor_backed_candidates_count": 0,
+            "target_band_candidate_count": 0,
+            "one_click_target_reaching_candidate_exists": false,
+            "selected_rank": null,
+            "selected_candidate_id": null,
+            "selected_candidate_title": null,
+            "selected_candidate_util": null,
+            "selected_candidate_distance_to_band": null,
+            "selected_candidate_updates": {},
+            "closest_safe_candidate_id": null,
+            "closest_safe_candidate_title": null,
+            "closest_safe_candidate_util": null,
+            "closest_safe_candidate_distance_to_band": null,
+            "closest_safe_candidate_updates": {},
+            "best_target_band_candidate_id": null,
+            "best_target_band_candidate_title": null,
+            "best_target_band_candidate_util": null,
+            "best_target_band_candidate_updates": {},
+            "target_band_candidates": [],
+            "rejected_target_band_candidates": [],
+            "local_cleanup_search_ran": true,
+            "local_cleanup_search_exhaustive": true,
+            "outside_target_band_allowed": false,
+            "outside_target_band_allowed_reason": "No executor-backed one-click candidate reaches the final accepted-family shear threshold of 0.85 while preserving bending, shear, serviceability, spacing, ductility, cover, and detailing checks. Further shear cleanup is controlled by detailing/minimum-link limits or would leave the shear family below the final acceptance threshold.",
+            "outside_target_band_allowed_category": "shear_lock",
+            "exact_blockers_by_family": {
+              "bending": {
+                "family": "bending",
+                "source": "bending_active_failure_practical_ladder_exhausted",
+                "exact_blocker": true,
+                "current_util": 1.0003062036340673,
+                "threshold": 0.85,
+                "target_low": 0.88,
+                "target_high": 0.95,
+                "reason": "Bending repair is blocked by reinforcement, geometry, ductility, or detailing limits. Exhaustive bar count, bar diameter, section depth, and section width trials found no executor-backed one-click arrangement that passes bending capacity plus shear, crack, deflection, spacing, ductility, cover, and detailing checks.",
+                "active_failures": [
+                  "bending",
+                  "shear"
+                ],
+                "repair_search_ran": true,
+                "repair_search_exhaustive": true,
+                "local_cleanup_search_ran": true,
+                "local_cleanup_search_exhaustive": true,
+                "cleanup_search_ran": true,
+                "cleanup_search_exhaustive": true,
+                "candidate_search_exhaustive": true,
+                "safe_candidate_count": 0,
+                "executable_candidate_count": 0,
+                "executable_target_band_candidate_count": 0,
+                "safe_cleanup_count": 0,
+                "executable_cleanup_count": 0,
+                "attempted_candidate_count": 5,
+                "attempted_candidate_id": "bending_active_failure_practical_ladder_exhausted",
+                "attempted_updates": {
+                  "bot1_count": "increase bottom bar count trial",
+                  "db_bot_1": "increase bottom bar diameter trial",
+                  "bot2_count": "add secondary bottom layer trial",
+                  "D": "increase section depth trial",
+                  "b": "increase section width trial"
+                },
+                "failed_check_name": "bending capacity repair catalogue",
+                "failed_check_status": "FAIL",
+                "failed_check_util": 1.0003062036340673,
+                "failed_check_demand": "bending demand remains above checked capacity or serviceability limit",
+                "failed_check_capacity_or_limit": "bending capacity or serviceability limit",
+                "outside_target_band_allowed": false,
+                "outside_target_band_allowed_reason": "Bending repair is blocked by reinforcement, geometry, ductility, or detailing limits. Exhaustive bar count, bar diameter, section depth, and section width trials found no executor-backed one-click arrangement that passes bending capacity plus shear, crack, deflection, spacing, ductility, cover, and detailing checks.",
+                "outside_target_band_allowed_category": "bending_would_fail",
+                "one_click_target_reaching_candidate_exists": false
+              },
+              "shear": {
+                "family": "shear",
+                "current_util": null,
+                "threshold": 0.85,
+                "attempted_candidate_count": 1,
+                "best_rejected_candidate_id": "shear_cleanup_final_threshold_candidate",
+                "attempted_updates": {
+                  "lig_d": 10,
+                  "lig_legs": 2
+                },
+                "failed_check_name": "final accepted shear-family utilisation",
+                "failed_check_status": "BLOCKED",
+                "failed_check_util": 1.3033331840652385,
+                "failed_check_demand": "shear cleanup remains below final accepted-family threshold",
+                "failed_check_capacity_or_limit": 0.85,
+                "reason": "No executor-backed one-click shear cleanup reached the final accepted-family threshold of 0.85. The best safe shear reduction still leaves shear below the final threshold; further reduction is controlled by minimum/no-links detailing or would fail shear/detailing checks."
+              }
+            },
+            "local_cleanup_blocked_reasons_by_family": {
+              "shear": [
+                "No executor-backed one-click candidate reaches the final accepted-family shear threshold of 0.85 while preserving bending, shear, serviceability, spacing, ductility, cover, and detailing checks. Further shear cleanup is controlled by detailing/minimum-link limits or would leave the shear family below the final acceptance threshold."
+              ]
+            },
+            "local_cleanup_blocked_reasons": [
+              "No executor-backed one-click candidate reaches the final accepted-family shear threshold of 0.85 while preserving bending, shear, serviceability, spacing, ductility, cover, and detailing checks. Further shear cleanup is controlled by detailing/minimum-link limits or would leave the shear family below the final acceptance threshold."
+            ],
+            "active_fail_blocker_missing_family_proof_before_finalisation": [
+              "bending"
+            ],
+            "active_failures": [
+              "bending",
+              "shear"
+            ],
+            "repair_search_ran": true,
+            "repair_search_exhaustive": true,
+            "post_click_exact_blockers_by_family": {
+              "bending": {
+                "family": "bending",
+                "source": "bending_active_failure_practical_ladder_exhausted",
+                "exact_blocker": true,
+                "current_util": 1.0003062036340673,
+                "threshold": 0.85,
+                "target_low": 0.88,
+                "target_high": 0.95,
+                "reason": "Bending repair is blocked by reinforcement, geometry, ductility, or detailing limits. Exhaustive bar count, bar diameter, section depth, and section width trials found no executor-backed one-click arrangement that passes bending capacity plus shear, crack, deflection, spacing, ductility, cover, and detailing checks.",
+                "active_failures": [
+                  "bending",
+                  "shear"
+                ],
+                "repair_search_ran": true,
+                "repair_search_exhaustive": true,
+                "local_cleanup_search_ran": true,
+                "local_cleanup_search_exhaustive": true,
+                "cleanup_search_ran": true,
+                "cleanup_search_exhaustive": true,
+                "candidate_search_exhaustive": true,
+                "safe_candidate_count": 0,
+                "executable_candidate_count": 0,
+                "executable_target_band_candidate_count": 0,
+                "safe_cleanup_count": 0,
+                "executable_cleanup_count": 0,
+                "attempted_candidate_count": 5,
+                "attempted_candidate_id": "bending_active_failure_practical_ladder_exhausted",
+                "attempted_updates": {
+                  "bot1_count": "increase bottom bar count trial",
+                  "db_bot_1": "increase bottom bar diameter trial",
+                  "bot2_count": "add secondary bottom layer trial",
+                  "D": "increase section depth trial",
+                  "b": "increase section width trial"
+                },
+                "failed_check_name": "bending capacity repair catalogue",
+                "failed_check_status": "FAIL",
+                "failed_check_util": 1.0003062036340673,
+                "failed_check_demand": "bending demand remains above checked capacity or serviceability limit",
+                "failed_check_capacity_or_limit": "bending capacity or serviceability limit",
+                "outside_target_band_allowed": false,
+                "outside_target_band_allowed_reason": "Bending repair is blocked by reinforcement, geometry, ductility, or detailing limits. Exhaustive bar count, bar diameter, section depth, and section width trials found no executor-backed one-click arrangement that passes bending capacity plus shear, crack, deflection, spacing, ductility, cover, and detailing checks.",
+                "outside_target_band_allowed_category": "bending_would_fail",
+                "one_click_target_reaching_candidate_exists": false
+              },
+              "shear": {
+                "family": "shear",
+                "current_util": null,
+                "threshold": 0.85,
+                "attempted_candidate_count": 1,
+                "best_rejected_candidate_id": "shear_cleanup_final_threshold_candidate",
+                "attempted_updates": {
+                  "lig_d": 10,
+                  "lig_legs": 2
+                },
+                "failed_check_name": "final accepted shear-family utilisation",
+                "failed_check_status": "BLOCKED",
+                "failed_check_util": 1.3033331840652385,
+                "failed_check_demand": "shear cleanup remains below final accepted-family threshold",
+                "failed_check_capacity_or_limit": 0.85,
+                "reason": "No executor-backed one-click shear cleanup reached the final accepted-family threshold of 0.85. The best safe shear reduction still leaves shear below the final threshold; further reduction is controlled by minimum/no-links detailing or would fail shear/detailing checks."
+              }
+            },
+            "active_under_capacity_blocker": true,
+            "active_under_capacity_blocker_family": "shear",
+            "active_under_capacity_blocker_reason": "No executor-backed one-click candidate reaches the final accepted-family shear threshold of 0.85 while preserving bending, shear, serviceability, spacing, ductility, cover, and detailing checks. Further shear cleanup is controlled by detailing/minimum-link limits or would leave the shear family below the final acceptance threshold.",
+            "attempted_candidate_id": "shear_final_threshold_candidate",
+            "attempted_updates": {},
+            "failed_check_name": "final accepted shear-family utilisation",
+            "failed_check_status": "BLOCKED",
+            "failed_check_util": 1.3,
+            "failed_check_demand": "shear family final accepted utilisation",
+            "failed_check_capacity_or_limit": 0.85
+          },
+          "family_utils": {
+            "bending": 1.0003062036340673,
+            "shear": 1.3,
+            "crack": 0.0,
+            "deflection": 0.0
+          },
+          "materially_overprovided_families": [],
+          "excluded_families": {},
+          "post_click_excluded_families": {},
+          "governing_family": "shear",
+          "local_cleanup_search_ran": true,
+          "local_cleanup_search_exhaustive": true,
+          "safe_local_cleanup_count": 0,
+          "local_cleanup_candidate_inventory": [],
+          "local_cleanup_candidate_inventory_count": 0,
+          "candidate_inventory_count": 0,
+          "post_click_exact_blockers_by_family": {
+            "bending": {
+              "family": "bending",
+              "source": "bending_active_failure_practical_ladder_exhausted",
+              "exact_blocker": true,
+              "current_util": 1.0003062036340673,
+              "threshold": 0.85,
+              "target_low": 0.88,
+              "target_high": 0.95,
+              "reason": "Bending repair is blocked by reinforcement, geometry, ductility, or detailing limits. Exhaustive bar count, bar diameter, section depth, and section width trials found no executor-backed one-click arrangement that passes bending capacity plus shear, crack, deflection, spacing, ductility, cover, and detailing checks.",
+              "active_failures": [
+                "bending",
+                "shear"
+              ],
+              "repair_search_ran": true,
+              "repair_search_exhaustive": true,
+              "local_cleanup_search_ran": true,
+              "local_cleanup_search_exhaustive": true,
+              "cleanup_search_ran": true,
+              "cleanup_search_exhaustive": true,
+              "candidate_search_exhaustive": true,
+              "safe_candidate_count": 0,
+              "executable_candidate_count": 0,
+              "executable_target_band_candidate_count": 0,
+              "safe_cleanup_count": 0,
+              "executable_cleanup_count": 0,
+              "attempted_candidate_count": 5,
+              "attempted_candidate_id": "bending_active_failure_practical_ladder_exhausted",
+              "attempted_updates": {
+                "bot1_count": "increase bottom bar count trial",
+                "db_bot_1": "increase bottom bar diameter trial",
+                "bot2_count": "add secondary bottom layer trial",
+                "D": "increase section depth trial",
+                "b": "increase section width trial"
+              },
+              "failed_check_name": "bending capacity repair catalogue",
+              "failed_check_status": "FAIL",
+              "failed_check_util": 1.0003062036340673,
+              "failed_check_demand": "bending demand remains above checked capacity or serviceability limit",
+              "failed_check_capacity_or_limit": "bending capacity or serviceability limit",
+              "outside_target_band_allowed": false,
+              "outside_target_band_allowed_reason": "Bending repair is blocked by reinforcement, geometry, ductility, or detailing limits. Exhaustive bar count, bar diameter, section depth, and section width trials found no executor-backed one-click arrangement that passes bending capacity plus shear, crack, deflection, spacing, ductility, cover, and detailing checks.",
+              "outside_target_band_allowed_category": "bending_would_fail",
+              "one_click_target_reaching_candidate_exists": false
+            },
+            "shear": {
+              "family": "shear",
+              "current_util": null,
+              "threshold": 0.85,
+              "attempted_candidate_count": 1,
+              "best_rejected_candidate_id": "shear_cleanup_final_threshold_candidate",
+              "attempted_updates": {
+                "lig_d": 10,
+                "lig_legs": 2
+              },
+              "failed_check_name": "final accepted shear-family utilisation",
+              "failed_check_status": "BLOCKED",
+              "failed_check_util": 1.3033331840652385,
+              "failed_check_demand": "shear cleanup remains below final accepted-family threshold",
+              "failed_check_capacity_or_limit": 0.85,
+              "reason": "No executor-backed one-click shear cleanup reached the final accepted-family threshold of 0.85. The best safe shear reduction still leaves shear below the final threshold; further reduction is controlled by minimum/no-links detailing or would fail shear/detailing checks."
+            }
+          },
+          "exact_blockers_by_family": {
+            "bending": {
+              "family": "bending",
+              "source": "bending_active_failure_practical_ladder_exhausted",
+              "exact_blocker": true,
+              "current_util": 1.0003062036340673,
+              "threshold": 0.85,
+              "target_low": 0.88,
+              "target_high": 0.95,
+              "reason": "Bending repair is blocked by reinforcement, geometry, ductility, or detailing limits. Exhaustive bar count, bar diameter, section depth, and section width trials found no executor-backed one-click arrangement that passes bending capacity plus shear, crack, deflection, spacing, ductility, cover, and detailing checks.",
+              "active_failures": [
+                "bending",
+                "shear"
+              ],
+              "repair_search_ran": true,
+              "repair_search_exhaustive": true,
+              "local_cleanup_search_ran": true,
+              "local_cleanup_search_exhaustive": true,
+              "cleanup_search_ran": true,
+              "cleanup_search_exhaustive": true,
+              "candidate_search_exhaustive": true,
+              "safe_candidate_count": 0,
+              "executable_candidate_count": 0,
+              "executable_target_band_candidate_count": 0,
+              "safe_cleanup_count": 0,
+              "executable_cleanup_count": 0,
+              "attempted_candidate_count": 5,
+              "attempted_candidate_id": "bending_active_failure_practical_ladder_exhausted",
+              "attempted_updates": {
+                "bot1_count": "increase bottom bar count trial",
+                "db_bot_1": "increase bottom bar diameter trial",
+                "bot2_count": "add secondary bottom layer trial",
+                "D": "increase section depth trial",
+                "b": "increase section width trial"
+              },
+              "failed_check_name": "bending capacity repair catalogue",
+              "failed_check_status": "FAIL",
+              "failed_check_util": 1.0003062036340673,
+              "failed_check_demand": "bending demand remains above checked capacity or serviceability limit",
+              "failed_check_capacity_or_limit": "bending capacity or serviceability limit",
+              "outside_target_band_allowed": false,
+              "outside_target_band_allowed_reason": "Bending repair is blocked by reinforcement, geometry, ductility, or detailing limits. Exhaustive bar count, bar diameter, section depth, and section width trials found no executor-backed one-click arrangement that passes bending capacity plus shear, crack, deflection, spacing, ductility, cover, and detailing checks.",
+              "outside_target_band_allowed_category": "bending_would_fail",
+              "one_click_target_reaching_candidate_exists": false
+            },
+            "shear": {
+              "family": "shear",
+              "current_util": null,
+              "threshold": 0.85,
+              "attempted_candidate_count": 1,
+              "best_rejected_candidate_id": "shear_cleanup_final_threshold_candidate",
+              "attempted_updates": {
+                "lig_d": 10,
+                "lig_legs": 2
+              },
+              "failed_check_name": "final accepted shear-family utilisation",
+              "failed_check_status": "BLOCKED",
+              "failed_check_util": 1.3033331840652385,
+              "failed_check_demand": "shear cleanup remains below final accepted-family threshold",
+              "failed_check_capacity_or_limit": 0.85,
+              "reason": "No executor-backed one-click shear cleanup reached the final accepted-family threshold of 0.85. The best safe shear reduction still leaves shear below the final threshold; further reduction is controlled by minimum/no-links detailing or would fail shear/detailing checks."
+            }
+          },
+          "terminal_state_blocked_by_local_cleanup": false,
+          "user_visible_no_action_reason": null,
+          "stop_reason": null,
+          "primary_updates": {},
+          "guidance_branch": "final_visible_active_strength_blocker",
+          "selected_action_type": null,
+          "selected_title": "Bending and shear repair blocked by detailing limits",
+          "overview": {
+            "packs": {
+              "bending": {
+                "summary_phiMu_kNm": 703.4346057673853,
+                "summary_Mu_star_kNm": 703.65,
+                "summary_Ms_sls_kNm": 0.0,
+                "summary_util": 1.0003062036340673,
+                "summary_Mcr_kNm": 86.96263565463043,
+                "has_sagging_case": true,
+                "has_hogging_case": false,
+                "governing_case": "Positive bending",
+                "bending_pos": {
+                  "moment_sign": "positive",
+                  "M_star_kNm": 703.65,
+                  "phi_Mu_kNm": 703.4346057673853,
+                  "Mu_nom_kNm": 827.570124432218,
+                  "util": 1.0003062036340673,
+                  "status": "FAIL",
+                  "dn_mm": 142.52956631103248,
+                  "ku": 0.31957301863460197,
+                  "phi": 0.85,
+                  "tension_face": "bottom",
+                  "compression_face": "top",
+                  "tension_steel_label": "Bottom reinforcement",
+                  "alpha2": 0.79,
+                  "gamma": 0.87,
+                  "d_mm": 446.0,
+                  "Ast_tension_mm2": 4310.265120725196
+                },
+                "bending_neg": {
+                  "moment_sign": "negative",
+                  "M_star_kNm": 0.0,
+                  "phi_Mu_kNm": 30.22443313688542,
+                  "Mu_nom_kNm": 35.558156631629906,
+                  "util": 0.0,
+                  "status": "INFO",
+                  "dn_mm": 5.1942261775157625,
+                  "ku": 0.011415881708825851,
+                  "phi": 0.85,
+                  "tension_face": "top",
+                  "compression_face": "bottom",
+                  "tension_steel_label": "Top reinforcement",
+                  "alpha2": 0.79,
+                  "gamma": 0.87,
+                  "d_mm": 455.0,
+                  "Ast_tension_mm2": 157.07963267948966
+                },
+                "rows": [
+                  {
+                    "uid": "bend_strength_pos",
+                    "title": "Positive bending",
+                    "row_type": "capacity_action",
+                    "calculated": "\u03c6Mu(+) = 703.4 kNm",
+                    "requirement": "Mu*(+) = 703.6 kNm",
+                    "util": "1.00",
+                    "status": "FAIL",
+                    "route_page": "bending",
+                    "moment_sign": "positive",
+                    "capacity": "\u03c6Mu(+) = 703.4 kNm",
+                    "action": "Mu*(+) = 703.6 kNm",
+                    "value": "\u03c6Mu(+) = 703.4 kNm",
+                    "limit": "Mu*(+) = 703.6 kNm",
+                    "is_primary": true
+                  },
+                  {
+                    "uid": "bend_Asmin",
+                    "title": "Minimum tensile reinforcement",
+                    "row_type": "provided_required",
+                    "calculated": "As,provided = 4310 mm\u00b2",
+                    "requirement": "As,min = 745 mm\u00b2",
+                    "util": "0.17",
+                    "status": "PASS",
+                    "route_page": "bending",
+                    "capacity": "As,provided = 4310 mm\u00b2",
+                    "action": "As,min = 745 mm\u00b2",
+                    "value": "As,provided = 4310 mm\u00b2",
+                    "limit": "As,min = 745 mm\u00b2",
+                    "is_primary": false
+                  },
+                  {
+                    "uid": "bend_min_strength",
+                    "title": "Minimum design capacity requirement",
+                    "row_type": "provided_required",
+                    "calculated": "\u03c6Mu,cap = 703.4 kNm",
+                    "requirement": "(M_u,cap)_min = 104.4 kNm",
+                    "util": "0.15",
+                    "status": "PASS",
+                    "route_page": "bending",
+                    "capacity": "\u03c6Mu,cap = 703.4 kNm",
+                    "action": "(M_u,cap)_min = 104.4 kNm",
+                    "value": "\u03c6Mu,cap = 703.4 kNm",
+                    "limit": "(M_u,cap)_min = 104.4 kNm",
+                    "is_primary": false
+                  },
+                  {
+                    "uid": "bend_duct",
+                    "title": "Ductility limit",
+                    "row_type": "actual_limit",
+                    "calculated": "k_u = 0.320",
+                    "requirement": "k_u,lim = 0.36",
+                    "util": "0.89",
+                    "status": "PASS",
+                    "route_page": "bending",
+                    "capacity": "k_u = 0.320",
+                    "action": "k_u,lim = 0.36",
+                    "value": "k_u = 0.320",
+                    "limit": "k_u,lim = 0.36",
+                    "is_primary": false
+                  },
+                  {
+                    "uid": "bend_service_moment",
+                    "title": "Service bending moment",
+                    "row_type": "informational",
+                    "calculated": "M_s = 0.0 kNm",
+                    "requirement": "SLS design / manual actions",
+                    "util": "\u2014",
+                    "status": "INFO",
+                    "is_informational": true,
+                    "route_page": "bending",
+                    "capacity": "M_s = 0.0 kNm",
+                    "action": "SLS design / manual actions",
+                    "value": "M_s = 0.0 kNm",
+                    "limit": "SLS design / manual actions",
+                    "is_primary": false
+                  }
+                ],
+                "actions_used": {
+                  "Mu": 703.65,
+                  "Mu_signed": 703.65,
+                  "Mu_pos": 703.65,
+                  "Mu_neg": 0.0,
+                  "has_sagging_case": true,
+                  "has_hogging_case": false,
+                  "Vu": 92.08,
+                  "Nu": 0.0,
+                  "SLS_M": 0.0,
+                  "SLS_M_signed": 0.0,
+                  "SLS_M_pos": 0.0,
+                  "SLS_M_neg": 0.0,
+                  "SLS_V": 0.0,
+                  "Tu": 0.0,
+                  "Pu": 0.0,
+                  "source": "manual_uls",
+                  "actions_source": "Manual design actions (inputs below)",
+                  "actions_mode": "manual",
+                  "signature": [
+                    703.65,
+                    92.08,
+                    0.0,
+                    0.0,
+                    0.0,
+                    "manual_uls",
+                    "Manual design actions (inputs below)",
+                    "manual"
+                  ]
+                }
+              },
+              "shear": {
+                "summary_phiVu_kN": 70.6496244596431,
+                "summary_Veq_kN": 92.08,
+                "summary_Vstar_kN": 92.08,
+                "summary_util": 1.3033331840652385,
+                "summary_status": "FAIL",
+                "summary_capacity": "\u03c6Vgov = 70.6 kN",
+                "summary_demand": "V*eq = 92.1 kN",
+                "summary_reason": "sectional_shear_capacity_governs; governing_shear_util_exceeds_unity",
+                "summary_governing_check_name": "Sectional shear capacity",
+                "summary_governing_demand_kN": 92.08,
+                "summary_governing_capacity_kN": 70.6496244596431,
+                "summary_governing_util": 1.3033331840652385,
+                "summary_governing_status": "FAIL",
+                "summary_governing_reason": "sectional_shear_capacity_governs; governing_shear_util_exceeds_unity",
+                "summary_governing_source": "sectional_shear_capacity",
+                "summary_display_capacity": "\u03c6Vu = \u2014",
+                "summary_display_demand": "V*eq = \u2014",
+                "summary_display_capacity_label": "Calculated capacity",
+                "summary_display_demand_label": "Applied design action",
+                "summary_display_source": "sectional_required_shear",
+                "summary_governing_selection_origin": "explicit_canonical_published_truth",
+                "summary_governing_explicit_canonical_truth_present": true,
+                "rows": [
+                  {
+                    "uid": "shear_check8",
+                    "title": "Sectional shear capacity",
+                    "capacity": "\u03c6Vu = 70.6 kN",
+                    "action": "V*eq = 92.1 kN",
+                    "util": "1.30",
+                    "status": "FAIL",
+                    "route_page": "shear",
+                    "value": "\u03c6Vu = 70.6 kN",
+                    "limit": "V*eq = 92.1 kN"
+                  },
+                  {
+                    "uid": "shear_check1",
+                    "title": "Torsion cracking check",
+                    "capacity": "Reference: 0.25 \u03c6 T_cr = 14.1 kNm",
+                    "action": "Torsion design NOT REQUIRED",
+                    "util": "\u2014",
+                    "status": "INFO",
+                    "is_informational": true,
+                    "route_page": "shear",
+                    "value": "Reference: 0.25 \u03c6 T_cr = 14.1 kNm",
+                    "limit": "Torsion design NOT REQUIRED"
+                  },
+                  {
+                    "uid": "shear_check9",
+                    "title": "Web-crushing strength",
+                    "capacity": "\u03c6Vu,max = 1793.7 kN",
+                    "action": "V*eq = 92.1 kN",
+                    "util": "0.05",
+                    "status": "PASS",
+                    "route_page": "shear",
+                    "value": "\u03c6Vu,max = 1793.7 kN",
+                    "limit": "V*eq = 92.1 kN"
+                  },
+                  {
+                    "uid": "shear_check2",
+                    "title": "Equivalent design shear",
+                    "capacity": "\u2014",
+                    "action": "V*eq = 92.1 kN",
+                    "util": "\u2014",
+                    "status": "\u2014",
+                    "route_page": "shear",
+                    "value": "\u2014",
+                    "limit": "V*eq = 92.1 kN"
+                  },
+                  {
+                    "uid": "shear_check4",
+                    "title": "Longitudinal strain",
+                    "capacity": "\u2014",
+                    "action": "\u03b5x = 0.00300",
+                    "util": "\u2014",
+                    "status": "\u2014",
+                    "route_page": "shear",
+                    "value": "\u2014",
+                    "limit": "\u03b5x = 0.00300"
+                  },
+                  {
+                    "uid": "shear_check5",
+                    "title": "Shear model parameters",
+                    "capacity": "\u2014",
+                    "action": "k_v = 0.067, \u03b8_v = 50.0\u00b0",
+                    "util": "\u2014",
+                    "status": "\u2014",
+                    "route_page": "shear",
+                    "value": "\u2014",
+                    "limit": "k_v = 0.067, \u03b8_v = 50.0\u00b0"
+                  },
+                  {
+                    "uid": "shear_check6",
+                    "title": "Concrete shear strength",
+                    "capacity": "\u2014",
+                    "action": "Vuc = 94.2 kN",
+                    "util": "\u2014",
+                    "status": "\u2014",
+                    "route_page": "shear",
+                    "value": "\u2014",
+                    "limit": "Vuc = 94.2 kN"
+                  },
+                  {
+                    "uid": "shear_check7",
+                    "title": "Steel shear strength",
+                    "capacity": "\u2014",
+                    "action": "Vs = Vus = 0.0 kN",
+                    "util": "\u2014",
+                    "status": "\u2014",
+                    "route_page": "shear",
+                    "value": "\u2014",
+                    "limit": "Vs = Vus = 0.0 kN"
+                  }
+                ],
+                "summary_rows": [
+                  {
+                    "uid": "shear_check8",
+                    "title": "Sectional shear capacity",
+                    "capacity": "\u03c6Vu = 70.6 kN",
+                    "action": "V*eq = 92.1 kN",
+                    "util": "1.30",
+                    "status": "FAIL",
+                    "route_page": "shear",
+                    "value": "\u03c6Vu = 70.6 kN",
+                    "limit": "V*eq = 92.1 kN"
+                  },
+                  {
+                    "uid": "shear_check1",
+                    "title": "Torsion cracking check",
+                    "capacity": "Reference: 0.25 \u03c6 T_cr = 14.1 kNm",
+                    "action": "Torsion design NOT REQUIRED",
+                    "util": "\u2014",
+                    "status": "INFO",
+                    "is_informational": true,
+                    "route_page": "shear",
+                    "value": "Reference: 0.25 \u03c6 T_cr = 14.1 kNm",
+                    "limit": "Torsion design NOT REQUIRED"
+                  },
+                  {
+                    "uid": "shear_check9",
+                    "title": "Web-crushing strength",
+                    "capacity": "\u03c6Vu,max = 1793.7 kN",
+                    "action": "V*eq = 92.1 kN",
+                    "util": "0.05",
+                    "status": "PASS",
+                    "route_page": "shear",
+                    "value": "\u03c6Vu,max = 1793.7 kN",
+                    "limit": "V*eq = 92.1 kN"
+                  }
+                ],
+                "mcft_detail_rows": [
+                  {
+                    "uid": "shear_check2",
+                    "title": "Equivalent design shear",
+                    "capacity": "\u2014",
+                    "action": "V*eq = 92.1 kN",
+                    "util": "\u2014",
+                    "status": "\u2014",
+                    "route_page": "shear",
+                    "value": "\u2014",
+                    "limit": "V*eq = 92.1 kN"
+                  },
+                  {
+                    "uid": "shear_check4",
+                    "title": "Longitudinal strain",
+                    "capacity": "\u2014",
+                    "action": "\u03b5x = 0.00300",
+                    "util": "\u2014",
+                    "status": "\u2014",
+                    "route_page": "shear",
+                    "value": "\u2014",
+                    "limit": "\u03b5x = 0.00300"
+                  },
+                  {
+                    "uid": "shear_check5",
+                    "title": "Shear model parameters",
+                    "capacity": "\u2014",
+                    "action": "k_v = 0.067, \u03b8_v = 50.0\u00b0",
+                    "util": "\u2014",
+                    "status": "\u2014",
+                    "route_page": "shear",
+                    "value": "\u2014",
+                    "limit": "k_v = 0.067, \u03b8_v = 50.0\u00b0"
+                  },
+                  {
+                    "uid": "shear_check6",
+                    "title": "Concrete shear strength",
+                    "capacity": "\u2014",
+                    "action": "Vuc = 94.2 kN",
+                    "util": "\u2014",
+                    "status": "\u2014",
+                    "route_page": "shear",
+                    "value": "\u2014",
+                    "limit": "Vuc = 94.2 kN"
+                  },
+                  {
+                    "uid": "shear_check7",
+                    "title": "Steel shear strength",
+                    "capacity": "\u2014",
+                    "action": "Vs = Vus = 0.0 kN",
+                    "util": "\u2014",
+                    "status": "\u2014",
+                    "route_page": "shear",
+                    "value": "\u2014",
+                    "limit": "Vs = Vus = 0.0 kN"
+                  }
+                ],
+                "actions_used": {
+                  "Mu": 703.65,
+                  "Mu_signed": 703.65,
+                  "Mu_pos": 703.65,
+                  "Mu_neg": 0.0,
+                  "has_sagging_case": true,
+                  "has_hogging_case": false,
+                  "Vu": 92.08,
+                  "Nu": 0.0,
+                  "SLS_M": 0.0,
+                  "SLS_M_signed": 0.0,
+                  "SLS_M_pos": 0.0,
+                  "SLS_M_neg": 0.0,
+                  "SLS_V": 0.0,
+                  "Tu": 0.0,
+                  "Pu": 0.0,
+                  "source": "manual_uls",
+                  "actions_source": "Manual design actions (inputs below)",
+                  "actions_mode": "manual",
+                  "signature": [
+                    703.65,
+                    92.08,
+                    0.0,
+                    0.0,
+                    0.0,
+                    "manual_uls",
+                    "Manual design actions (inputs below)",
+                    "manual"
+                  ]
+                },
+                "shear_provided_spacing_mm": 200.0,
+                "shear_effective_spacing_mm": 200.0,
+                "shear_required_spacing_mm": null,
+                "shear_truth_status": "FAIL",
+                "shear_truth_reason": "sectional_shear_capacity_governs; governing_shear_util_exceeds_unity",
+                "shear_truth_inconsistent_status_override": null,
+                "final_shear_truth_bundle_complete": false,
+                "summary_shear_truth_consume_reason": "recomputed_local_bundle_missing_final_truth"
+              },
+              "crack": {
+                "summary_util": 0.0,
+                "rows": [
+                  {
+                    "uid": "crk_step_4",
+                    "title": "Governing outcome",
+                    "value": "Both checks pass",
+                    "limit": "Table stress + direct width",
+                    "util": "\u2014",
+                    "status": "PASS",
+                    "route_page": "crack"
+                  },
+                  {
+                    "uid": "crk_step_2",
+                    "title": "Table-based crack control check",
+                    "value": "\u03c3_sr = 0.0 MPa",
+                    "limit": "\u03c3_allow = 300.0 MPa",
+                    "util": "0.00",
+                    "status": "PASS",
+                    "route_page": "crack"
+                  },
+                  {
+                    "uid": "crk_step_3",
+                    "title": "Direct crack width check",
+                    "value": "w = 0.000 mm",
+                    "limit": "w'max = 0.300 mm",
+                    "util": "0.00",
+                    "status": "PASS",
+                    "route_page": "crack"
+                  }
+                ]
+              },
+              "deflection": {
+                "summary_delta_total_mm": 0.0,
+                "summary_defl_limit_mm": 8.0,
+                "summary_util_total": 0.0,
+                "rows": [
+                  {
+                    "uid": "defl_total",
+                    "title": "Total deflection (short + long-term)",
+                    "value": "\u03b4total = 0.00 mm",
+                    "limit": "\u03b4lim = 8.00 mm",
+                    "util": "0.00",
+                    "status": "PASS",
+                    "ok": true,
+                    "route_page": "deflection",
+                    "tab": "Long-term deflection",
+                    "is_primary": true
+                  }
+                ]
+              }
+            },
+            "statuses": {
+              "bending": "FAIL",
+              "shear": "FAIL",
+              "crack": "PASS",
+              "deflection": "PASS"
+            },
+            "utils": {
+              "bending": 1.0003062036340673,
+              "shear": 1.3,
+              "crack": 0.0,
+              "deflection": 0.0
+            },
+            "any_fail": true,
+            "any_warn": false,
+            "all_key_pass": false,
+            "worst_util": 1.3,
+            "governing_util": 1.3,
+            "governing_check": "shear",
+            "governing_util_source": "shear:sectional_shear_capacity",
+            "actions_used": {
+              "Mu": 703.65,
+              "Mu_signed": 703.65,
+              "Mu_pos": 703.65,
+              "Mu_neg": 0.0,
+              "has_sagging_case": true,
+              "has_hogging_case": false,
+              "Vu": 92.08,
+              "Nu": 0.0,
+              "SLS_M": 0.0,
+              "SLS_M_signed": 0.0,
+              "SLS_M_pos": 0.0,
+              "SLS_M_neg": 0.0,
+              "SLS_V": 0.0,
+              "Tu": 0.0,
+              "Pu": 0.0,
+              "source": "manual_uls",
+              "actions_source": "Manual design actions (inputs below)",
+              "actions_mode": "manual",
+              "signature": [
+                703.65,
+                92.08,
+                0.0,
+                0.0,
+                0.0,
+                "manual_uls",
+                "Manual design actions (inputs below)",
+                "manual"
+              ]
+            },
+            "overview_shear_governing_check_name": "Sectional shear capacity",
+            "overview_shear_governing_reason": "sectional_shear_capacity_governs; governing_shear_util_exceeds_unity",
+            "overview_shear_governing_source": "sectional_shear_capacity",
+            "overview_shear_truth_source": "shear_pack.summary_governing",
+            "overview_shear_selection_origin": "explicit_canonical_published_truth",
+            "stage3_shear_truth_debug": {
+              "shear_truth_status": null,
+              "shear_truth_reason": null,
+              "shear_truth_governing_check_name": null,
+              "shear_truth_governing_reason": null,
+              "shear_truth_governing_source": null,
+              "final_shear_status_source": null,
+              "final_shear_truth_resolved": null,
+              "final_shear_truth_failure_reason": null,
+              "final_shear_truth_bundle_complete": null,
+              "shear_provided_input_spacing_mm": null,
+              "shear_input_spacing_mm": null,
+              "shear_sectional_check_spacing_mm": null,
+              "shear_effective_spacing_mm": null,
+              "shear_required_spacing_mm": null,
+              "shear_governing_spacing_source": null,
+              "published_result_spacing_mm": null,
+              "published_result_spacing_meaning": null,
+              "design_guide_shear_truth_source": "final_published_shear_truth",
+              "final_shear_truth_normalized_source": null,
+              "final_shear_truth_normalized_latest": {}
+            },
+            "design_guide_shear_truth_source": "final_published_shear_truth",
+            "stage3_remaining_issue_class": null
+          },
+          "efficiency_tightening_state": {
+            "classification": "failing",
+            "very_low_demand": false,
+            "overview": {
+              "packs": {
+                "bending": {
+                  "summary_phiMu_kNm": 703.4346057673854,
+                  "summary_Mu_star_kNm": 703.65,
+                  "summary_Ms_sls_kNm": 0.0,
+                  "summary_util": 1.000306203634067,
+                  "summary_Mcr_kNm": 86.96263565463043,
+                  "has_sagging_case": true,
+                  "has_hogging_case": false,
+                  "governing_case": "Positive bending",
+                  "bending_pos": {
+                    "moment_sign": "positive",
+                    "M_star_kNm": 703.65,
+                    "phi_Mu_kNm": 703.4346057673854,
+                    "Mu_nom_kNm": 827.5701244322181,
+                    "util": 1.000306203634067,
+                    "status": "FAIL",
+                    "dn_mm": 142.5295663110325,
+                    "ku": 0.319573018634602,
+                    "phi": 0.85,
+                    "tension_face": "bottom",
+                    "compression_face": "top",
+                    "tension_steel_label": "Bottom reinforcement",
+                    "alpha2": 0.79,
+                    "gamma": 0.87,
+                    "d_mm": 446.0,
+                    "Ast_tension_mm2": 4310.2651207251965
+                  },
+                  "bending_neg": {
+                    "moment_sign": "negative",
+                    "M_star_kNm": 0.0,
+                    "phi_Mu_kNm": 30.22443313688542,
+                    "Mu_nom_kNm": 35.558156631629906,
+                    "util": 0.0,
+                    "status": "INFO",
+                    "dn_mm": 5.1942261775157625,
+                    "ku": 0.011415881708825851,
+                    "phi": 0.85,
+                    "tension_face": "top",
+                    "compression_face": "bottom",
+                    "tension_steel_label": "Top reinforcement",
+                    "alpha2": 0.79,
+                    "gamma": 0.87,
+                    "d_mm": 455.0,
+                    "Ast_tension_mm2": 157.07963267948966
+                  },
+                  "rows": [
+                    {
+                      "uid": "bend_strength_pos",
+                      "title": "Positive bending",
+                      "row_type": "capacity_action",
+                      "calculated": "\u03c6Mu(+) = 703.4 kNm",
+                      "requirement": "Mu*(+) = 703.6 kNm",
+                      "util": "1.00",
+                      "status": "FAIL",
+                      "route_page": "bending",
+                      "moment_sign": "positive",
+                      "capacity": "\u03c6Mu(+) = 703.4 kNm",
+                      "action": "Mu*(+) = 703.6 kNm",
+                      "value": "\u03c6Mu(+) = 703.4 kNm",
+                      "limit": "Mu*(+) = 703.6 kNm",
+                      "is_primary": true
+                    },
+                    {
+                      "uid": "bend_Asmin",
+                      "title": "Minimum tensile reinforcement",
+                      "row_type": "provided_required",
+                      "calculated": "As,provided = 4310 mm\u00b2",
+                      "requirement": "As,min = 745 mm\u00b2",
+                      "util": "0.17",
+                      "status": "PASS",
+                      "route_page": "bending",
+                      "capacity": "As,provided = 4310 mm\u00b2",
+                      "action": "As,min = 745 mm\u00b2",
+                      "value": "As,provided = 4310 mm\u00b2",
+                      "limit": "As,min = 745 mm\u00b2",
+                      "is_primary": false
+                    },
+                    {
+                      "uid": "bend_min_strength",
+                      "title": "Minimum design capacity requirement",
+                      "row_type": "provided_required",
+                      "calculated": "\u03c6Mu,cap = 703.4 kNm",
+                      "requirement": "(M_u,cap)_min = 104.4 kNm",
+                      "util": "0.15",
+                      "status": "PASS",
+                      "route_page": "bending",
+                      "capacity": "\u03c6Mu,cap = 703.4 kNm",
+                      "action": "(M_u,cap)_min = 104.4 kNm",
+                      "value": "\u03c6Mu,cap = 703.4 kNm",
+                      "limit": "(M_u,cap)_min = 104.4 kNm",
+                      "is_primary": false
+                    },
+                    {
+                      "uid": "bend_duct",
+                      "title": "Ductility limit",
+                      "row_type": "actual_limit",
+                      "calculated": "k_u = 0.320",
+                      "requirement": "k_u,lim = 0.36",
+                      "util": "0.89",
+                      "status": "PASS",
+                      "route_page": "bending",
+                      "capacity": "k_u = 0.320",
+                      "action": "k_u,lim = 0.36",
+                      "value": "k_u = 0.320",
+                      "limit": "k_u,lim = 0.36",
+                      "is_primary": false
+                    },
+                    {
+                      "uid": "bend_service_moment",
+                      "title": "Service bending moment",
+                      "row_type": "informational",
+                      "calculated": "M_s = 0.0 kNm",
+                      "requirement": "SLS design / manual actions",
+                      "util": "\u2014",
+                      "status": "INFO",
+                      "is_informational": true,
+                      "route_page": "bending",
+                      "capacity": "M_s = 0.0 kNm",
+                      "action": "SLS design / manual actions",
+                      "value": "M_s = 0.0 kNm",
+                      "limit": "SLS design / manual actions",
+                      "is_primary": false
+                    }
+                  ],
+                  "actions_used": {
+                    "Mu": 703.65,
+                    "Mu_signed": 703.65,
+                    "Mu_pos": 703.65,
+                    "Mu_neg": 0.0,
+                    "has_sagging_case": true,
+                    "has_hogging_case": false,
+                    "Vu": 92.08,
+                    "Nu": 0.0,
+                    "SLS_M": 0.0,
+                    "SLS_M_signed": 0.0,
+                    "SLS_M_pos": 0.0,
+                    "SLS_M_neg": 0.0,
+                    "SLS_V": 0.0,
+                    "Tu": 0.0,
+                    "Pu": 0.0,
+                    "source": "manual_uls",
+                    "actions_source": "Manual design actions (inputs below)",
+                    "actions_mode": "manual",
+                    "signature": [
+                      703.65,
+                      92.08,
+                      0.0,
+                      0.0,
+                      0.0,
+                      "manual_uls",
+                      "Manual design actions (inputs below)",
+                      "manual"
+                    ]
+                  }
+                },
+                "shear": {
+                  "summary_phiVu_kN": 70.6496244596431,
+                  "summary_Veq_kN": 92.08,
+                  "summary_Vstar_kN": 92.08,
+                  "summary_util": 1.3033331840652385,
+                  "summary_status": "FAIL",
+                  "summary_capacity": "\u03c6Vgov = 70.6 kN",
+                  "summary_demand": "V*eq = 92.1 kN",
+                  "summary_reason": "sectional_shear_capacity_governs; governing_shear_util_exceeds_unity",
+                  "summary_governing_check_name": "Sectional shear capacity",
+                  "summary_governing_demand_kN": 92.08,
+                  "summary_governing_capacity_kN": 70.6496244596431,
+                  "summary_governing_util": 1.3033331840652385,
+                  "summary_governing_status": "FAIL",
+                  "summary_governing_reason": "sectional_shear_capacity_governs; governing_shear_util_exceeds_unity",
+                  "summary_governing_source": "sectional_shear_capacity",
+                  "summary_display_capacity": "\u03c6Vu = \u2014",
+                  "summary_display_demand": "V*eq = \u2014",
+                  "summary_display_capacity_label": "Calculated capacity",
+                  "summary_display_demand_label": "Applied design action",
+                  "summary_display_source": "sectional_required_shear",
+                  "summary_governing_selection_origin": "explicit_canonical_published_truth",
+                  "summary_governing_explicit_canonical_truth_present": true,
+                  "rows": [
+                    {
+                      "uid": "shear_check8",
+                      "title": "Sectional shear capacity",
+                      "capacity": "\u03c6Vu = 70.6 kN",
+                      "action": "V*eq = 92.1 kN",
+                      "util": "1.30",
+                      "status": "FAIL",
+                      "route_page": "shear",
+                      "value": "\u03c6Vu = 70.6 kN",
+                      "limit": "V*eq = 92.1 kN"
+                    },
+                    {
+                      "uid": "shear_check1",
+                      "title": "Torsion cracking check",
+                      "capacity": "Reference: 0.25 \u03c6 T_cr = 14.1 kNm",
+                      "action": "Torsion design NOT REQUIRED",
+                      "util": "\u2014",
+                      "status": "INFO",
+                      "is_informational": true,
+                      "route_page": "shear",
+                      "value": "Reference: 0.25 \u03c6 T_cr = 14.1 kNm",
+                      "limit": "Torsion design NOT REQUIRED"
+                    },
+                    {
+                      "uid": "shear_check9",
+                      "title": "Web-crushing strength",
+                      "capacity": "\u03c6Vu,max = 1793.7 kN",
+                      "action": "V*eq = 92.1 kN",
+                      "util": "0.05",
+                      "status": "PASS",
+                      "route_page": "shear",
+                      "value": "\u03c6Vu,max = 1793.7 kN",
+                      "limit": "V*eq = 92.1 kN"
+                    },
+                    {
+                      "uid": "shear_check2",
+                      "title": "Equivalent design shear",
+                      "capacity": "\u2014",
+                      "action": "V*eq = 92.1 kN",
+                      "util": "\u2014",
+                      "status": "\u2014",
+                      "route_page": "shear",
+                      "value": "\u2014",
+                      "limit": "V*eq = 92.1 kN"
+                    },
+                    {
+                      "uid": "shear_check4",
+                      "title": "Longitudinal strain",
+                      "capacity": "\u2014",
+                      "action": "\u03b5x = 0.00300",
+                      "util": "\u2014",
+                      "status": "\u2014",
+                      "route_page": "shear",
+                      "value": "\u2014",
+                      "limit": "\u03b5x = 0.00300"
+                    },
+                    {
+                      "uid": "shear_check5",
+                      "title": "Shear model parameters",
+                      "capacity": "\u2014",
+                      "action": "k_v = 0.067, \u03b8_v = 50.0\u00b0",
+                      "util": "\u2014",
+                      "status": "\u2014",
+                      "route_page": "shear",
+                      "value": "\u2014",
+                      "limit": "k_v = 0.067, \u03b8_v = 50.0\u00b0"
+                    },
+                    {
+                      "uid": "shear_check6",
+                      "title": "Concrete shear strength",
+                      "capacity": "\u2014",
+                      "action": "Vuc = 94.2 kN",
+                      "util": "\u2014",
+                      "status": "\u2014",
+                      "route_page": "shear",
+                      "value": "\u2014",
+                      "limit": "Vuc = 94.2 kN"
+                    },
+                    {
+                      "uid": "shear_check7",
+                      "title": "Steel shear strength",
+                      "capacity": "\u2014",
+                      "action": "Vs = Vus = 0.0 kN",
+                      "util": "\u2014",
+                      "status": "\u2014",
+                      "route_page": "shear",
+                      "value": "\u2014",
+                      "limit": "Vs = Vus = 0.0 kN"
+                    }
+                  ],
+                  "summary_rows": [
+                    {
+                      "uid": "shear_check8",
+                      "title": "Sectional shear capacity",
+                      "capacity": "\u03c6Vu = 70.6 kN",
+                      "action": "V*eq = 92.1 kN",
+                      "util": "1.30",
+                      "status": "FAIL",
+                      "route_page": "shear",
+                      "value": "\u03c6Vu = 70.6 kN",
+                      "limit": "V*eq = 92.1 kN"
+                    },
+                    {
+                      "uid": "shear_check1",
+                      "title": "Torsion cracking check",
+                      "capacity": "Reference: 0.25 \u03c6 T_cr = 14.1 kNm",
+                      "action": "Torsion design NOT REQUIRED",
+                      "util": "\u2014",
+                      "status": "INFO",
+                      "is_informational": true,
+                      "route_page": "shear",
+                      "value": "Reference: 0.25 \u03c6 T_cr = 14.1 kNm",
+                      "limit": "Torsion design NOT REQUIRED"
+                    },
+                    {
+                      "uid": "shear_check9",
+                      "title": "Web-crushing strength",
+                      "capacity": "\u03c6Vu,max = 1793.7 kN",
+                      "action": "V*eq = 92.1 kN",
+                      "util": "0.05",
+                      "status": "PASS",
+                      "route_page": "shear",
+                      "value": "\u03c6Vu,max = 1793.7 kN",
+                      "limit": "V*eq = 92.1 kN"
+                    }
+                  ],
+                  "mcft_detail_rows": [
+                    {
+                      "uid": "shear_check2",
+                      "title": "Equivalent design shear",
+                      "capacity": "\u2014",
+                      "action": "V*eq = 92.1 kN",
+                      "util": "\u2014",
+                      "status": "\u2014",
+                      "route_page": "shear",
+                      "value": "\u2014",
+                      "limit": "V*eq = 92.1 kN"
+                    },
+                    {
+                      "uid": "shear_check4",
+                      "title": "Longitudinal strain",
+                      "capacity": "\u2014",
+                      "action": "\u03b5x = 0.00300",
+                      "util": "\u2014",
+                      "status": "\u2014",
+                      "route_page": "shear",
+                      "value": "\u2014",
+                      "limit": "\u03b5x = 0.00300"
+                    },
+                    {
+                      "uid": "shear_check5",
+                      "title": "Shear model parameters",
+                      "capacity": "\u2014",
+                      "action": "k_v = 0.067, \u03b8_v = 50.0\u00b0",
+                      "util": "\u2014",
+                      "status": "\u2014",
+                      "route_page": "shear",
+                      "value": "\u2014",
+                      "limit": "k_v = 0.067, \u03b8_v = 50.0\u00b0"
+                    },
+                    {
+                      "uid": "shear_check6",
+                      "title": "Concrete shear strength",
+                      "capacity": "\u2014",
+                      "action": "Vuc = 94.2 kN",
+                      "util": "\u2014",
+                      "status": "\u2014",
+                      "route_page": "shear",
+                      "value": "\u2014",
+                      "limit": "Vuc = 94.2 kN"
+                    },
+                    {
+                      "uid": "shear_check7",
+                      "title": "Steel shear strength",
+                      "capacity": "\u2014",
+                      "action": "Vs = Vus = 0.0 kN",
+                      "util": "\u2014",
+                      "status": "\u2014",
+                      "route_page": "shear",
+                      "value": "\u2014",
+                      "limit": "Vs = Vus = 0.0 kN"
+                    }
+                  ],
+                  "actions_used": {
+                    "Mu": 703.65,
+                    "Mu_signed": 703.65,
+                    "Mu_pos": 703.65,
+                    "Mu_neg": 0.0,
+                    "has_sagging_case": true,
+                    "has_hogging_case": false,
+                    "Vu": 92.08,
+                    "Nu": 0.0,
+                    "SLS_M": 0.0,
+                    "SLS_M_signed": 0.0,
+                    "SLS_M_pos": 0.0,
+                    "SLS_M_neg": 0.0,
+                    "SLS_V": 0.0,
+                    "Tu": 0.0,
+                    "Pu": 0.0,
+                    "source": "manual_uls",
+                    "actions_source": "Manual design actions (inputs below)",
+                    "actions_mode": "manual",
+                    "signature": [
+                      703.65,
+                      92.08,
+                      0.0,
+                      0.0,
+                      0.0,
+                      "manual_uls",
+                      "Manual design actions (inputs below)",
+                      "manual"
+                    ]
+                  },
+                  "shear_provided_spacing_mm": 200.0,
+                  "shear_effective_spacing_mm": 200.0,
+                  "shear_required_spacing_mm": null,
+                  "shear_truth_status": "FAIL",
+                  "shear_truth_reason": "sectional_shear_capacity_governs; governing_shear_util_exceeds_unity",
+                  "shear_truth_inconsistent_status_override": null,
+                  "final_shear_truth_bundle_complete": false,
+                  "summary_shear_truth_consume_reason": "recomputed_local_bundle_missing_final_truth"
+                },
+                "crack": {
+                  "summary_util": 0.0,
+                  "rows": [
+                    {
+                      "uid": "crk_step_4",
+                      "title": "Governing outcome",
+                      "value": "Both checks pass",
+                      "limit": "Table stress + direct width",
+                      "util": "\u2014",
+                      "status": "PASS",
+                      "route_page": "crack"
+                    },
+                    {
+                      "uid": "crk_step_2",
+                      "title": "Table-based crack control check",
+                      "value": "\u03c3_sr = 0.0 MPa",
+                      "limit": "\u03c3_allow = 300.0 MPa",
+                      "util": "0.00",
+                      "status": "PASS",
+                      "route_page": "crack"
+                    },
+                    {
+                      "uid": "crk_step_3",
+                      "title": "Direct crack width check",
+                      "value": "w = 0.000 mm",
+                      "limit": "w'max = 0.300 mm",
+                      "util": "0.00",
+                      "status": "PASS",
+                      "route_page": "crack"
+                    }
+                  ]
+                },
+                "deflection": {
+                  "summary_delta_total_mm": 0.0,
+                  "summary_defl_limit_mm": 8.0,
+                  "summary_util_total": 0.0,
+                  "rows": [
+                    {
+                      "uid": "defl_total",
+                      "title": "Total deflection (short + long-term)",
+                      "value": "\u03b4total = 0.00 mm",
+                      "limit": "\u03b4lim = 8.00 mm",
+                      "util": "0.00",
+                      "status": "PASS",
+                      "ok": true,
+                      "route_page": "deflection",
+                      "tab": "Long-term deflection",
+                      "is_primary": true
+                    }
+                  ]
+                }
+              },
+              "statuses": {
+                "bending": "FAIL",
+                "shear": "FAIL",
+                "crack": "PASS",
+                "deflection": "PASS"
+              },
+              "utils": {
+                "bending": 1.000306203634067,
+                "shear": 1.3033331840652385,
+                "crack": 0.0,
+                "deflection": 0.0
+              },
+              "any_fail": true,
+              "any_warn": false,
+              "all_key_pass": false,
+              "worst_util": 1.3,
+              "governing_util": 1.3,
+              "governing_check": "shear",
+              "governing_util_source": "shear:sectional_shear_capacity",
+              "actions_used": {
+                "Mu": 703.65,
+                "Mu_signed": 703.65,
+                "Mu_pos": 703.65,
+                "Mu_neg": 0.0,
+                "has_sagging_case": true,
+                "has_hogging_case": false,
+                "Vu": 92.08,
+                "Nu": 0.0,
+                "SLS_M": 0.0,
+                "SLS_M_signed": 0.0,
+                "SLS_M_pos": 0.0,
+                "SLS_M_neg": 0.0,
+                "SLS_V": 0.0,
+                "Tu": 0.0,
+                "Pu": 0.0,
+                "source": "manual_uls",
+                "actions_source": "Manual design actions (inputs below)",
+                "actions_mode": "manual",
+                "signature": [
+                  703.65,
+                  92.08,
+                  0.0,
+                  0.0,
+                  0.0,
+                  "manual_uls",
+                  "Manual design actions (inputs below)",
+                  "manual"
+                ]
+              },
+              "overview_shear_governing_check_name": "Sectional shear capacity",
+              "overview_shear_governing_reason": "sectional_shear_capacity_governs; governing_shear_util_exceeds_unity",
+              "overview_shear_governing_source": "sectional_shear_capacity",
+              "overview_shear_truth_source": "shear_pack.summary_governing",
+              "overview_shear_selection_origin": "explicit_canonical_published_truth",
+              "stage3_shear_truth_debug": {
+                "shear_truth_status": null,
+                "shear_truth_reason": null,
+                "shear_truth_governing_check_name": null,
+                "shear_truth_governing_reason": null,
+                "shear_truth_governing_source": null,
+                "final_shear_status_source": null,
+                "final_shear_truth_resolved": null,
+                "final_shear_truth_failure_reason": null,
+                "final_shear_truth_bundle_complete": null,
+                "shear_provided_input_spacing_mm": null,
+                "shear_input_spacing_mm": null,
+                "shear_sectional_check_spacing_mm": null,
+                "shear_effective_spacing_mm": null,
+                "shear_required_spacing_mm": null,
+                "shear_governing_spacing_source": null,
+                "published_result_spacing_mm": null,
+                "published_result_spacing_meaning": null,
+                "design_guide_shear_truth_source": "final_published_shear_truth",
+                "final_shear_truth_normalized_source": null,
+                "final_shear_truth_normalized_latest": {}
+              },
+              "design_guide_shear_truth_source": "final_published_shear_truth",
+              "stage3_remaining_issue_class": null,
+              "optimisation_shear_truth_status_used": "FAIL",
+              "optimisation_shear_truth_util_used": 1.3033331840652385,
+              "optimisation_shear_truth_reason_used": "sectional_shear_capacity_governs; governing_shear_util_exceeds_unity"
+            },
+            "conservative": false,
+            "efficiency_moves_ok": false,
+            "mode_tightening": null,
+            "bottom_tightening": null,
+            "shear_tightening": null,
+            "geometry_tightening": null,
+            "actions_used": {
+              "Mu": 703.65,
+              "Mu_signed": 703.65,
+              "Mu_pos": 703.65,
+              "Mu_neg": 0.0,
+              "has_sagging_case": true,
+              "has_hogging_case": false,
+              "Vu": 92.08,
+              "Nu": 0.0,
+              "SLS_M": 0.0,
+              "SLS_M_signed": 0.0,
+              "SLS_M_pos": 0.0,
+              "SLS_M_neg": 0.0,
+              "SLS_V": 0.0,
+              "Tu": 0.0,
+              "Pu": 0.0,
+              "source": "manual_uls",
+              "actions_source": "Manual design actions (inputs below)",
+              "actions_mode": "manual",
+              "signature": [
+                703.65,
+                92.08,
+                0.0,
+                0.0,
+                0.0,
+                "manual_uls",
+                "Manual design actions (inputs below)",
+                "manual"
+              ]
+            },
+            "shear_relevant": true,
+            "shear_cleanup_possible": true,
+            "shear_overdesign_cleanup_eligible": false,
+            "shear_overdesign_truth_util": null,
+            "shear_overdesign_truth_status": null,
+            "shear_overdesign_truth_governing_check": null,
+            "shear_cleanup_blocked_due_to_truth_near_limit": false,
+            "shear_inefficient": false,
+            "bending_inefficient": false,
+            "is_efficiency_reduction_mode": false,
+            "filter_growth_candidates": false,
+            "exhaustion_map": {
+              "shear_cleanup": {
+                "tried": true,
+                "accepted": true,
+                "rejected_reason": null
+              },
+              "bottom_reo_reduction": {
+                "tried": true,
+                "accepted": false,
+                "rejected_reason": "bending_not_inefficient_vs_guidance_threshold"
+              },
+              "depth_reduction": {
+                "tried": true,
+                "accepted": false,
+                "rejected_reason": "efficiency_branch_inactive"
+              },
+              "width_reduction": {
+                "tried": true,
+                "accepted": false,
+                "rejected_reason": "efficiency_branch_inactive"
+              }
+            },
+            "worst_util": 1.3,
+            "target_band_lo": 0.88,
+            "target_band_hi": 0.95,
+            "efficiency_default_band_used": true,
+            "efficiency_target_band_lo": 0.88,
+            "efficiency_target_band_hi": 0.95,
+            "optimisation_target_band_lo": 0.88,
+            "optimisation_target_band_hi": 0.95,
+            "optimisation_current_governing_util": 1.3,
+            "optimisation_current_governing_util_source": "shear:sectional_shear_capacity",
+            "optimisation_current_shear_util_source": "shear_pack.summary_governing_util",
+            "optimisation_current_bending_util_source": "overview.utils.bending",
+            "optimisation_reduction_mode_active": false,
+            "optimisation_safe_cleanup_mode_active": false,
+            "optimisation_cleanup_trigger_util": 0.88,
+            "optimisation_safe_cleanup_mode_reason": null,
+            "optimisation_cleanup_candidates_found_count": 0,
+            "optimisation_reduction_mode_reason": "inactive",
+            "strongly_underutilised": false,
+            "shear_tighten_suppressed_by_mode": false,
+            "shear_tighten_reserve_override_active": false,
+            "shear_tighten_reserve_predicate": {
+              "active_links": false,
+              "cleanup_possible": false,
+              "all_key_pass": false,
+              "no_any_fail": false,
+              "truth_status_pass": false,
+              "final_shear_truth_resolved": null,
+              "demand_non_negligible": true,
+              "low_demand_cleanup_allowed": false,
+              "shear_util": 1.3033331840652385,
+              "low_shear_util_cap": 0.2,
+              "low_shear_util": false,
+              "combined": false
+            },
+            "shear_overdesign_reserve_guidance_eligible": false,
+            "mode_guidance_return_blocked_for_shear_reserve": false,
+            "surfaced_shear_reserve_item": false,
+            "shear_link_state_mode": "inactive_canonical",
+            "shear_link_state_is_canonical": true,
+            "shear_no_links_truth_active": false,
+            "shear_active_links_truth_active": false,
+            "shear_spacing_candidate_seen": false,
+            "shear_spacing_candidate_dropped_reason": null,
+            "shear_spacing_candidate_materiality": "not_evaluated",
+            "shear_underdesign_activation_candidate_seen": false,
+            "shear_underdesign_activation_candidate_committed": false,
+            "shear_overdesign_remove_links_candidate_seen": false,
+            "shear_overdesign_remove_links_candidate_committed": false,
+            "shear_overdesign_spacing_candidate_committed": false,
+            "shear_overdesign_density_reduction_candidate_committed": false,
+            "shear_tightening_terminal_reason": "efficiency_branch_suppressed",
+            "shear_candidate_family_pure": null,
+            "shear_candidate_non_detailing_updates_detected": null,
+            "shear_candidate_rejected_reason": null,
+            "combined_underdesign_shear_truth_block_active": false,
+            "combined_underdesign_shear_truth_block_reason": null,
+            "combined_underdesign_shear_strengthening_suppressed": false,
+            "combined_underdesign_truth_gate_source": "combined_underdesign_shear_truth_gate",
+            "combined_underdesign_truth_gate_classification": "failing",
+            "combined_underdesign_truth_gate_all_key_pass": false,
+            "combined_underdesign_truth_gate_final_shear_truth_resolved": true
+          },
+          "guidance_intent_items": [
+            {
+              "index": 0,
+              "title": "Shear cleanup blocked by final efficiency threshold",
+              "check_key": "shear",
+              "action_type": null,
+              "guidance_intent": "specific_blocker",
+              "button_contract": {
+                "enabled": false,
+                "actionable": false,
+                "action_type": null,
+                "family": "shear",
+                "updates": {},
+                "preview_pass": false,
+                "expected_util": null,
+                "blocking_reason": "No executor-backed one-click candidate reaches the final accepted-family shear threshold of 0.85 while preserving bending, shear, serviceability, spacing, ductility, cover, and detailing checks. Further shear cleanup is controlled by detailing/minimum-link limits or would leave the shear family below the final acceptance threshold.",
+                "source_candidate_id": null,
+                "candidate_id": null
+              },
+              "displayed_util": 1.3,
+              "displayed_status": "BLOCKED",
+              "display_truth_source": "post_commit_truth",
+              "target_low": 0.88,
+              "target_high": 0.95,
+              "displayed_within_target_band": false,
+              "source_summary_util": 1.3,
+              "source_candidate_util": null,
+              "source_post_commit_util": 1.3
+            }
+          ],
+          "displayed_guidance_intent_items": [
+            {
+              "index": 0,
+              "title": "Shear cleanup blocked by final efficiency threshold",
+              "check_key": "shear",
+              "action_type": null,
+              "guidance_intent": "specific_blocker",
+              "button_contract": {
+                "enabled": false,
+                "actionable": false,
+                "action_type": null,
+                "family": "shear",
+                "updates": {},
+                "preview_pass": false,
+                "expected_util": null,
+                "blocking_reason": "No executor-backed one-click candidate reaches the final accepted-family shear threshold of 0.85 while preserving bending, shear, serviceability, spacing, ductility, cover, and detailing checks. Further shear cleanup is controlled by detailing/minimum-link limits or would leave the shear family below the final acceptance threshold.",
+                "source_candidate_id": null,
+                "candidate_id": null
+              },
+              "displayed_util": 1.3,
+              "displayed_status": "BLOCKED",
+              "display_truth_source": "post_commit_truth",
+              "target_low": 0.88,
+              "target_high": 0.95,
+              "displayed_within_target_band": false,
+              "source_summary_util": 1.3,
+              "source_candidate_util": null,
+              "source_post_commit_util": 1.3
+            }
+          ],
+          "primary_button_contract_debug": {
+            "enabled": false,
+            "actionable": false,
+            "action_type": null,
+            "family": "shear",
+            "updates": {},
+            "preview_pass": false,
+            "expected_util": null,
+            "blocking_reason": "No executor-backed one-click candidate reaches the final accepted-family shear threshold of 0.85 while preserving bending, shear, serviceability, spacing, ductility, cover, and detailing checks. Further shear cleanup is controlled by detailing/minimum-link limits or would leave the shear family below the final acceptance threshold.",
+            "source_candidate_id": null,
+            "candidate_id": null
+          },
+          "primary_display_truth_debug": {
+            "display_truth_source": "post_commit_truth",
+            "displayed_util": 1.3,
+            "displayed_status": "BLOCKED",
+            "target_low": null,
+            "target_high": null,
+            "displayed_within_target_band": false,
+            "source_summary_util": 1.3,
+            "source_candidate_util": null,
+            "source_post_commit_util": 1.3
+          },
+          "best_safe_blocker_rewrite_debug": {
+            "title": "bending and shear repair blocked by detailing limits",
+            "has_exact_blockers": true,
+            "matched": false
+          }
+        },
+        "post_cleanup_acceptance_probe": {
+          "enabled": false,
+          "stored_fp": "None",
+          "matches_current": true,
+          "last_apply_route": {
+            "apply_used_resolved_candidate_payload": true,
+            "apply_fell_back_to_generic_solver": false,
+            "apply_fallback_reason": null,
+            "apply_direct_resolved_candidate": true,
+            "resolved_candidate_label": "Bending capacity is low",
+            "resolved_candidate_action_type": "apply_resolved_candidate",
+            "resolved_candidate_family_tag": "bending",
+            "resolved_candidate_subfamilies": [],
+            "expected_post_util": 0.9338710811122117,
+            "one_click_candidate_available_at_step_start": true,
+            "one_click_candidate_label_at_step_start": "Bending capacity is low",
+            "post_apply_resolved_candidate_attempted": true,
+            "post_apply_resolved_candidate_label": "Bending capacity is low",
+            "post_apply_resolved_candidate_expected_util": 0.9338710811122117,
+            "active_repair_applied_residual_shear_cleanup_same_click": false,
+            "residual_shear_cleanup_evidence": {},
+            "queued_apply_updates": {
+              "b": 550.0,
+              "D": 500.0,
+              "bot1_layout_mode": "Count",
+              "bot1_count": 7,
+              "db_bot_1": 28,
+              "bot2_layout_mode": "Count",
+              "bot2_count": 0,
+              "db_bot_2": 28,
+              "bot_row_count": 1,
+              "bot_row_1_mode": "Count",
+              "bot_row_1_bars": 7,
+              "bot_row_1_spacing": 0.0,
+              "bot_row_1_dia": 28,
+              "bot_row_2_mode": "Count",
+              "bot_row_2_bars": 0,
+              "bot_row_2_spacing": 0.0,
+              "bot_row_2_dia": 28,
+              "lig_d": 0,
+              "lig_legs": 0,
+              "s_lig": 200.0
+            },
+            "queued_apply_candidate_id": "candidate_460",
+            "applied_candidate_id": "candidate_460",
+            "applied_updates": {
+              "b": 550.0,
+              "D": 500.0,
+              "bot1_layout_mode": "Count",
+              "bot1_count": 7,
+              "db_bot_1": 28,
+              "bot2_layout_mode": "Count",
+              "bot2_count": 0,
+              "db_bot_2": 28,
+              "bot_row_count": 1,
+              "bot_row_1_mode": "Count",
+              "bot_row_1_bars": 7,
+              "bot_row_1_spacing": 0.0,
+              "bot_row_1_dia": 28,
+              "bot_row_2_mode": "Count",
+              "bot_row_2_bars": 0,
+              "bot_row_2_spacing": 0.0,
+              "bot_row_2_dia": 28,
+              "lig_d": 0,
+              "lig_legs": 0,
+              "s_lig": 200.0
+            },
+            "applied_changed_keys": [
+              "D",
+              "b",
+              "bot1_count",
+              "bot_row_1_bars",
+              "bot_row_1_dia",
+              "bot_row_1_spacing",
+              "bot_row_2_dia",
+              "bot_row_2_spacing",
+              "db_bot_1",
+              "db_bot_2",
+              "lig_d",
+              "lig_legs",
+              "s_lig"
+            ],
+            "actual_changed_updates": {
+              "D": 500.0,
+              "b": 550.0,
+              "bot1_count": 7,
+              "bot_row_1_bars": 7,
+              "bot_row_1_dia": 28,
+              "bot_row_1_spacing": 0.0,
+              "bot_row_2_dia": 28,
+              "bot_row_2_spacing": 0.0,
+              "db_bot_1": 28,
+              "db_bot_2": 28,
+              "lig_d": 0,
+              "lig_legs": 0,
+              "s_lig": 200.0
+            },
+            "stale_candidate_changed_keys": [],
+            "payload_binding_match": true,
+            "payload_update_match": true,
+            "stale_apply_payload_blocked": false,
+            "legacy_fallback_used": false
+          },
+          "primary_payload_binding_audit": {
+            "visible_primary_candidate_id": null,
+            "button_contract_candidate_id": null,
+            "queued_apply_candidate_id": "candidate_460",
+            "applied_candidate_id": "candidate_460",
+            "visible_updates": {},
+            "button_contract_updates": {},
+            "queued_apply_updates": {
+              "b": 550.0,
+              "D": 500.0,
+              "bot1_layout_mode": "Count",
+              "bot1_count": 7,
+              "db_bot_1": 28,
+              "bot2_layout_mode": "Count",
+              "bot2_count": 0,
+              "db_bot_2": 28,
+              "bot_row_count": 1,
+              "bot_row_1_mode": "Count",
+              "bot_row_1_bars": 7,
+              "bot_row_1_spacing": 0.0,
+              "bot_row_1_dia": 28,
+              "bot_row_2_mode": "Count",
+              "bot_row_2_bars": 0,
+              "bot_row_2_spacing": 0.0,
+              "bot_row_2_dia": 28,
+              "lig_d": 0,
+              "lig_legs": 0,
+              "s_lig": 200.0
+            },
+            "applied_updates": {
+              "b": 550.0,
+              "D": 500.0,
+              "bot1_layout_mode": "Count",
+              "bot1_count": 7,
+              "db_bot_1": 28,
+              "bot2_layout_mode": "Count",
+              "bot2_count": 0,
+              "db_bot_2": 28,
+              "bot_row_count": 1,
+              "bot_row_1_mode": "Count",
+              "bot_row_1_bars": 7,
+              "bot_row_1_spacing": 0.0,
+              "bot_row_1_dia": 28,
+              "bot_row_2_mode": "Count",
+              "bot_row_2_bars": 0,
+              "bot_row_2_spacing": 0.0,
+              "bot_row_2_dia": 28,
+              "lig_d": 0,
+              "lig_legs": 0,
+              "s_lig": 200.0
+            },
+            "payload_binding_match": true,
+            "payload_update_match": true,
+            "stale_apply_payload_blocked": false,
+            "canonical_primary_payload_exists": false,
+            "legacy_fallback_used": false,
+            "render_fingerprint": "(('action_type', '\"apply_resolved_candidate\"'), ('candidate_id', '\"candidate_460\"'), ('family', '\"bending\"'), ('state_fingerprint', '\"((\\'D\\', \\'400.0\\'), (\\'actions_mode\\', \\'\\\\\"manual\\\\\"\\'), (\\'actions_source\\', \\'\\\\\"Manual design actions (inputs below)\\\\\"\\'), (\\'b\\', \\'350.0\\'), (\\'beam_type\\', \\'null\\'), (\\'bot1_count\\', \\'4\\'), (\\'bot2_count\\', \\'0\\'), (\\'bot_row_1_bars\\', \\'4\\'), (\\'bot_row_1_dia\\', \\'16.0\\'), (\\'bot_row_2_bars\\', \\'0\\'), (\\'bot_row_2_dia\\', \\'0\\'), (\\'bot_row_count\\', \\'1\\'), (\\'cover_bot\\', \\'40.0\\'), (\\'cover_top\\', \\'40.0\\'), (\\'db_bot_1\\', \\'16.0\\'), (\\'db_bot_2\\', \\'0\\'), (\\'lig_d\\', \\'10\\'), (\\'lig_legs\\', \\'2\\'), (\\'s_lig\\', \\'150.0\\'), (\\'uls_Mstar\\', \\'639.81\\'), (\\'uls_Vstar\\', \\'65.61\\'))\"'), ('updates', '{\"D\": 500.0, \"b\": 550.0, \"bot1_count\": 7, \"bot1_layout_mode\": \"Count\", \"bot2_count\": 0, \"bot2_layout_mode\": \"Count\", \"bot_row_1_bars\": 7, \"bot_row_1_dia\": 28, \"bot_row_1_mode\": \"Count\", \"bot_row_1_spacing\": 0.0, \"bot_row_2_bars\": 0, \"bot_row_2_dia\": 28, \"bot_row_2_mode\": \"Count\", \"bot_row_2_spacing\": 0.0, \"bot_row_count\": 1, \"db_bot_1\": 28, \"db_bot_2\": 28, \"lig_d\": 0, \"lig_legs\": 0, \"s_lig\": 200.0}'))",
+            "state_fingerprint": "(('D', '400.0'), ('actions_mode', '\"manual\"'), ('actions_source', '\"Manual design actions (inputs below)\"'), ('b', '350.0'), ('beam_type', 'null'), ('bot1_count', '4'), ('bot2_count', '0'), ('bot_row_1_bars', '4'), ('bot_row_1_dia', '16.0'), ('bot_row_2_bars', '0'), ('bot_row_2_dia', '0'), ('bot_row_count', '1'), ('cover_bot', '40.0'), ('cover_top', '40.0'), ('db_bot_1', '16.0'), ('db_bot_2', '0'), ('lig_d', '10'), ('lig_legs', '2'), ('s_lig', '150.0'), ('uls_Mstar', '639.81'), ('uls_Vstar', '65.61'))",
+            "applied_changed_keys": [
+              "D",
+              "b",
+              "bot1_count",
+              "bot_row_1_bars",
+              "bot_row_1_dia",
+              "bot_row_1_spacing",
+              "bot_row_2_dia",
+              "bot_row_2_spacing",
+              "db_bot_1",
+              "db_bot_2",
+              "lig_d",
+              "lig_legs",
+              "s_lig"
+            ],
+            "actual_changed_updates": {
+              "D": 500.0,
+              "b": 550.0,
+              "bot1_count": 7,
+              "bot_row_1_bars": 7,
+              "bot_row_1_dia": 28,
+              "bot_row_1_spacing": 0.0,
+              "bot_row_2_dia": 28,
+              "bot_row_2_spacing": 0.0,
+              "db_bot_1": 28,
+              "db_bot_2": 28,
+              "lig_d": 0,
+              "lig_legs": 0,
+              "s_lig": 200.0
+            },
+            "stale_candidate_changed_keys": []
+          },
+          "pending_recommendation_applied_id": null,
+          "run_design_clicked": false,
+          "inputs_action_apply_recommendation": null,
+          "inputs_action_run_auto_design": null
+        },
+        "design_guide_probe": {
+          "needs_refresh": null,
+          "panel_baseline_fingerprint": [
+            "dg_cache_v2026_04_27_in_target_local_cleanup_all_families",
+            "active_strength_repair_publication_v23",
+            "balanced",
+            "RECT",
+            550.0,
+            500.0,
+            40.0,
+            500.0,
+            703.65,
+            92.08,
+            0.0,
+            0.0,
+            1,
+            7,
+            28.0,
+            0,
+            0.0,
+            0.0,
+            0,
+            200.0,
+            [
+              703.65,
+              92.08,
+              0.0,
+              0.0,
+              0.0,
+              "manual_uls",
+              "Manual design actions (inputs below)",
+              "manual"
+            ]
+          ],
+          "debug_bundle": {
+            "best_safe_blocker_rewrite_debug": {
+              "title": "bending and shear repair blocked by detailing limits",
+              "has_exact_blockers": true,
+              "matched": false
+            }
+          },
+          "render_plan_debug": {
+            "terminal_state": null,
+            "terminal_state_source": "none",
+            "current_fail_keys": [
+              "bending",
+              "shear"
+            ],
+            "current_governing_util": 1.3,
+            "target_band_lo": 0.88,
+            "target_band_hi": 0.95,
+            "render_primary_only": true,
+            "reason": "primary_visible_card_only",
+            "input_count": 1,
+            "visible_count": 1,
+            "banner_matches_current_render": false,
+            "banner_reconciled": "no_banner_present",
+            "post_apply_banner_rendered": false
+          },
+          "guidance_branch": null,
+          "terminal_state": null,
+          "terminal_state_source": null,
+          "efficiency_classification": null,
+          "efficiency_very_low_demand": null,
+          "efficiency_current_governing_util": null,
+          "efficiency_current_governing_util_source": null,
+          "overview_statuses": {},
+          "overview_utils": {},
+          "overview_any_fail": null,
+          "overview_any_warn": null,
+          "overview_all_key_pass": null,
+          "overview_governing_util": null,
+          "overview_governing_util_source": null,
+          "overview_governing_check": null,
+          "primary_card_title": null,
+          "primary_card_intent": null,
+          "primary_displayed_util": null,
+          "primary_display_truth_source": null,
+          "primary_target_low": null,
+          "primary_target_high": null,
+          "primary_preview_util": null,
+          "primary_current_util": null,
+          "primary_lands_in_target_band": null,
+          "primary_allowed_blocker": null,
+          "button_contract_enabled": null,
+          "button_contract_updates": {},
+          "button_contract_preview_pass": null,
+          "button_contract_blocking_reason": null,
+          "candidate_search_evidence": {},
+          "design_guide_engine_decision_reason": null,
+          "design_guide_engine_suppressed_count": null,
+          "design_guide_engine_suppressed_reasons": []
+        },
+        "speed_profile_probe": {
+          "enabled": false,
+          "sections": [],
+          "last_run_started_at_ms": null,
+          "last_run_sections": []
+        },
+        "ux_latency_probe": {
+          "enabled": true,
+          "rerun_seq": 8,
+          "rerun_started_ms": 1778114943645,
+          "page_slug": "inputs",
+          "counts": {
+            "inputs_page.summary_state_build": {
+              "count": 8,
+              "cache_hit_count": 0,
+              "unique_fingerprint_count": 2,
+              "duplicate_count": 6,
+              "last_meta": {
+                "shared_only_mode": false,
+                "overlay_count": 0
+              }
+            },
+            "browser_probe.summary_state_probe_build": {
+              "count": 2,
+              "cache_hit_count": 0,
+              "unique_fingerprint_count": 2,
+              "duplicate_count": 0,
+              "last_meta": {}
+            },
+            "inputs_page.summary_overview_build": {
+              "count": 68,
+              "cache_hit_count": 57,
+              "unique_fingerprint_count": 11,
+              "duplicate_count": 57,
+              "last_meta": {
+                "governing_check": "shear",
+                "worst_util": 1.3
+              }
+            },
+            "browser_probe.summary_overview_probe_build": {
+              "count": 2,
+              "cache_hit_count": 0,
+              "unique_fingerprint_count": 1,
+              "duplicate_count": 1,
+              "last_meta": {}
+            },
+            "guidance_item_computation.compute_design_guidance_items": {
+              "count": 3,
+              "cache_hit_count": 1,
+              "unique_fingerprint_count": 2,
+              "duplicate_count": 1,
+              "last_meta": {
+                "request_kind": "design_guide"
+              }
+            },
+            "candidate_preview_evaluation.evaluate_candidate_full": {
+              "count": 25,
+              "cache_hit_count": 2,
+              "unique_fingerprint_count": 23,
+              "duplicate_count": 2,
+              "last_meta": {}
+            },
+            "browser_probe.guidance_probe_build": {
+              "count": 2,
+              "cache_hit_count": 0,
+              "unique_fingerprint_count": 1,
+              "duplicate_count": 1,
+              "last_meta": {}
+            },
+            "browser_probe.payload_json_build": {
+              "count": 1,
+              "cache_hit_count": 0,
+              "unique_fingerprint_count": 0,
+              "duplicate_count": 0,
+              "last_meta": {}
+            }
+          }
+        }
+      },
+      "payload_binding_audit": {},
+      "exact_blocker_evidence": {
+        "bending": {
+          "family": "bending",
+          "source": "bending_active_failure_practical_ladder_exhausted",
+          "exact_blocker": true,
+          "current_util": 1.0003062036340673,
+          "threshold": 0.85,
+          "target_low": 0.88,
+          "target_high": 0.95,
+          "reason": "Bending repair is blocked by reinforcement, geometry, ductility, or detailing limits. Exhaustive bar count, bar diameter, section depth, and section width trials found no executor-backed one-click arrangement that passes bending capacity plus shear, crack, deflection, spacing, ductility, cover, and detailing checks.",
+          "active_failures": [
+            "bending",
+            "shear"
+          ],
+          "repair_search_ran": true,
+          "repair_search_exhaustive": true,
+          "local_cleanup_search_ran": true,
+          "local_cleanup_search_exhaustive": true,
+          "cleanup_search_ran": true,
+          "cleanup_search_exhaustive": true,
+          "candidate_search_exhaustive": true,
+          "safe_candidate_count": 0,
+          "executable_candidate_count": 0,
+          "executable_target_band_candidate_count": 0,
+          "safe_cleanup_count": 0,
+          "executable_cleanup_count": 0,
+          "attempted_candidate_count": 5,
+          "attempted_candidate_id": "bending_active_failure_practical_ladder_exhausted",
+          "attempted_updates": {
+            "bot1_count": "increase bottom bar count trial",
+            "db_bot_1": "increase bottom bar diameter trial",
+            "bot2_count": "add secondary bottom layer trial",
+            "D": "increase section depth trial",
+            "b": "increase section width trial"
+          },
+          "failed_check_name": "bending capacity repair catalogue",
+          "failed_check_status": "FAIL",
+          "failed_check_util": 1.0003062036340673,
+          "failed_check_demand": "bending demand remains above checked capacity or serviceability limit",
+          "failed_check_capacity_or_limit": "bending capacity or serviceability limit",
+          "outside_target_band_allowed": false,
+          "outside_target_band_allowed_reason": "Bending repair is blocked by reinforcement, geometry, ductility, or detailing limits. Exhaustive bar count, bar diameter, section depth, and section width trials found no executor-backed one-click arrangement that passes bending capacity plus shear, crack, deflection, spacing, ductility, cover, and detailing checks.",
+          "outside_target_band_allowed_category": "bending_would_fail",
+          "one_click_target_reaching_candidate_exists": false
+        },
+        "shear": {
+          "family": "shear",
+          "current_util": null,
+          "threshold": 0.85,
+          "attempted_candidate_count": 1,
+          "best_rejected_candidate_id": "shear_cleanup_final_threshold_candidate",
+          "attempted_updates": {
+            "lig_d": 10,
+            "lig_legs": 2
+          },
+          "failed_check_name": "final accepted shear-family utilisation",
+          "failed_check_status": "BLOCKED",
+          "failed_check_util": 1.3033331840652385,
+          "failed_check_demand": "shear cleanup remains below final accepted-family threshold",
+          "failed_check_capacity_or_limit": 0.85,
+          "reason": "No executor-backed one-click shear cleanup reached the final accepted-family threshold of 0.85. The best safe shear reduction still leaves shear below the final threshold; further reduction is controlled by minimum/no-links detailing or would fail shear/detailing checks."
+        }
+      },
+      "screenshot_path": null,
+      "colour_alignment": {
+        "summary_statuses": {
+          "bending": "FAIL",
+          "shear": "FAIL",
+          "crack": "PASS",
+          "deflection": "PASS"
+        },
+        "summary_colour_by_family": {
+          "bending": "red",
+          "shear": "red",
+          "crack": "green_or_neutral",
+          "deflection": "green_or_neutral"
+        },
+        "active_fail_families": [
+          "bending",
+          "shear"
+        ],
+        "expected_card_colour": "red",
+        "actual_card_colour": "red",
+        "card_status_label": "",
+        "card_classes": "fast-guidance-item fail",
+        "card_type": "BLOCKER",
+        "alignment_ok": true,
+        "failures": []
+      },
+      "active_failing_families": [
+        "bending",
+        "shear"
+      ],
+      "low_util_families": [],
+      "card_type": "BLOCKER",
+      "optimisation_audit": {
+        "optimisation_family": "combined",
+        "optimisation_type": "combined_underdesign_repair",
+        "card_type": "BLOCKER",
+        "card_family": "combined",
+        "current_util_by_family": {
+          "bending": 1.0,
+          "shear": 1.3,
+          "crack": 0.0,
+          "deflection": 0.0
+        },
+        "preview_util_by_family": {
+          "bending": 1.0,
+          "shear": 1.3,
+          "crack": 0.0,
+          "deflection": 0.0
+        },
+        "intended_family_before": null,
+        "intended_family_after": null,
+        "required_checks_before": {
+          "bending": "FAIL",
+          "shear": "FAIL",
+          "crack": "PASS",
+          "deflection": "PASS"
+        },
+        "required_checks_after": {
+          "preview_pass": false
+        },
+        "target_band_result": {
+          "target_low": 0.88,
+          "target_high": 0.95,
+          "expected_util": null,
+          "in_target": false
+        },
+        "blocker_evidence": {
+          "family": "combined",
+          "exact_blocker_exists": true,
+          "blocker_family_matches": true,
+          "cleanup_search_ran": true,
+          "cleanup_search_exhaustive": true,
+          "safe_candidate_count": 0,
+          "executable_candidate_count": 0,
+          "best_safe_candidate_applied": false,
+          "no_second_cta_required": false,
+          "specificity": {
+            "valid": true,
+            "missing_fields": []
+          },
+          "specificity_valid": true,
+          "specificity_missing_fields": [],
+          "valid": true
+        },
+        "blocking_checks_named": [
+          "shear",
+          "crack",
+          "deflection",
+          "spacing",
+          "ductility",
+          "geometry",
+          "detailing"
+        ],
+        "update_categories": [],
+        "button_contract_actionable": false,
+        "selected_action_updates_count": 0
+      },
+      "no_action_analysis": {
+        "family": "combined",
+        "exact_blocker_exists": true,
+        "blocker_family_matches": true,
+        "cleanup_search_ran": true,
+        "cleanup_search_exhaustive": true,
+        "safe_candidate_count": 0,
+        "executable_candidate_count": 0,
+        "best_safe_candidate_applied": false,
+        "no_second_cta_required": false,
+        "specificity": {
+          "valid": true,
+          "missing_fields": []
+        },
+        "specificity_valid": true,
+        "specificity_missing_fields": [],
+        "valid": true
+      }
+    }
+  ],
+  "final_status": "FAIL",
+  "failure_classification": "blocker_card_without_specific_engineering_reason",
+  "failure_message": "multi-family blocker does not list a separate bending reason",
+  "expected_failure_step": 3,
+  "app_url": "http://127.0.0.1:9301",
+  "port": 9301,
+  "timestamp": "2026-05-07T10:49:07",
+  "replay_command": "python tools/browser_live_design_guide_fuzz_verifier.py --replay-case C:\\Users\\jono\\OneDrive\\Documents\\GitHub\\complete-app - Copy (3)\\artifacts\\verification\\live_fuzz\\2026-05-07T10-47-36\\failure_case.json --port 9301",
+  "diagnosis": {
+    "failure_classification": "blocker_card_without_specific_engineering_reason",
+    "confidence": "high",
+    "product_bug_likely": true,
+    "verifier_bug_likely": false,
+    "visible_user_state": {
+      "summary_statuses": {
+        "bending": "FAIL",
+        "shear": "FAIL",
+        "crack": "PASS",
+        "deflection": "PASS"
+      },
+      "summary_utils": {
+        "bending": 1.0,
+        "shear": 1.3,
+        "crack": 0.0,
+        "deflection": 0.0
+      },
+      "card_title": "BLOCKED",
+      "card_family": "combined",
+      "card_type": "BLOCKER",
+      "card_colour": "red",
+      "card_status_label": "",
+      "card_classes": "fast-guidance-item fail",
+      "expected_card_colour": "red",
+      "colour_alignment": {
+        "summary_statuses": {
+          "bending": "FAIL",
+          "shear": "FAIL",
+          "crack": "PASS",
+          "deflection": "PASS"
+        },
+        "summary_colour_by_family": {
+          "bending": "red",
+          "shear": "red",
+          "crack": "green_or_neutral",
+          "deflection": "green_or_neutral"
+        },
+        "active_fail_families": [
+          "bending",
+          "shear"
+        ],
+        "expected_card_colour": "red",
+        "actual_card_colour": "red",
+        "card_status_label": "",
+        "card_classes": "fast-guidance-item fail",
+        "card_type": "BLOCKER",
+        "alignment_ok": true,
+        "failures": []
+      },
+      "card_displayed_util": 1.3,
+      "cta_visible": false,
+      "cta_enabled": false
+    },
+    "active_failing_families": [
+      "bending",
+      "shear"
+    ],
+    "low_util_families": [],
+    "candidate_evidence": {
+      "safe_candidate_count": 0,
+      "executable_candidate_count": 0,
+      "target_band_candidate_count": 0,
+      "best_safe_final_util": null,
+      "cleanup_search_ran": true,
+      "cleanup_search_exhaustive": true,
+      "no_link_shear_cleanup_audit": {
+        "no_link_candidate_tested": false,
+        "no_link_candidate_evaluated": false,
+        "no_link_candidate_passed": false,
+        "no_link_candidate_selected": false,
+        "no_link_candidate_already_active": true,
+        "no_link_candidate_id": null,
+        "no_link_candidate_updates": {},
+        "no_link_candidate_failed_or_selected_reason": "Shear links are already removed; no further shear-link cleanup is available.",
+        "no_link_s_lig_policy": "retained_or_unknown",
+        "candidate_rows_seen": 0
+      }
+    },
+    "exact_blockers_by_family": {
+      "bending": {
+        "family": "bending",
+        "source": "bending_active_failure_practical_ladder_exhausted",
+        "exact_blocker": true,
+        "current_util": 1.0003062036340673,
+        "threshold": 0.85,
+        "target_low": 0.88,
+        "target_high": 0.95,
+        "reason": "Bending repair is blocked by reinforcement, geometry, ductility, or detailing limits. Exhaustive bar count, bar diameter, section depth, and section width trials found no executor-backed one-click arrangement that passes bending capacity plus shear, crack, deflection, spacing, ductility, cover, and detailing checks.",
+        "active_failures": [
+          "bending",
+          "shear"
+        ],
+        "repair_search_ran": true,
+        "repair_search_exhaustive": true,
+        "local_cleanup_search_ran": true,
+        "local_cleanup_search_exhaustive": true,
+        "cleanup_search_ran": true,
+        "cleanup_search_exhaustive": true,
+        "candidate_search_exhaustive": true,
+        "safe_candidate_count": 0,
+        "executable_candidate_count": 0,
+        "executable_target_band_candidate_count": 0,
+        "safe_cleanup_count": 0,
+        "executable_cleanup_count": 0,
+        "attempted_candidate_count": 5,
+        "attempted_candidate_id": "bending_active_failure_practical_ladder_exhausted",
+        "attempted_updates": {
+          "bot1_count": "increase bottom bar count trial",
+          "db_bot_1": "increase bottom bar diameter trial",
+          "bot2_count": "add secondary bottom layer trial",
+          "D": "increase section depth trial",
+          "b": "increase section width trial"
+        },
+        "failed_check_name": "bending capacity repair catalogue",
+        "failed_check_status": "FAIL",
+        "failed_check_util": 1.0003062036340673,
+        "failed_check_demand": "bending demand remains above checked capacity or serviceability limit",
+        "failed_check_capacity_or_limit": "bending capacity or serviceability limit",
+        "outside_target_band_allowed": false,
+        "outside_target_band_allowed_reason": "Bending repair is blocked by reinforcement, geometry, ductility, or detailing limits. Exhaustive bar count, bar diameter, section depth, and section width trials found no executor-backed one-click arrangement that passes bending capacity plus shear, crack, deflection, spacing, ductility, cover, and detailing checks.",
+        "outside_target_band_allowed_category": "bending_would_fail",
+        "one_click_target_reaching_candidate_exists": false
+      },
+      "shear": {
+        "family": "shear",
+        "current_util": null,
+        "threshold": 0.85,
+        "attempted_candidate_count": 1,
+        "best_rejected_candidate_id": "shear_cleanup_final_threshold_candidate",
+        "attempted_updates": {
+          "lig_d": 10,
+          "lig_legs": 2
+        },
+        "failed_check_name": "final accepted shear-family utilisation",
+        "failed_check_status": "BLOCKED",
+        "failed_check_util": 1.3033331840652385,
+        "failed_check_demand": "shear cleanup remains below final accepted-family threshold",
+        "failed_check_capacity_or_limit": 0.85,
+        "reason": "No executor-backed one-click shear cleanup reached the final accepted-family threshold of 0.85. The best safe shear reduction still leaves shear below the final threshold; further reduction is controlled by minimum/no-links detailing or would fail shear/detailing checks."
+      }
+    },
+    "optimisation_audit": {
+      "optimisation_family": "combined",
+      "optimisation_type": "combined_underdesign_repair",
+      "card_type": "BLOCKER",
+      "card_family": "combined",
+      "current_util_by_family": {
+        "bending": 1.0,
+        "shear": 1.3,
+        "crack": 0.0,
+        "deflection": 0.0
+      },
+      "preview_util_by_family": {
+        "bending": 1.0,
+        "shear": 1.3,
+        "crack": 0.0,
+        "deflection": 0.0
+      },
+      "intended_family_before": null,
+      "intended_family_after": null,
+      "required_checks_before": {
+        "bending": "FAIL",
+        "shear": "FAIL",
+        "crack": "PASS",
+        "deflection": "PASS"
+      },
+      "required_checks_after": {
+        "preview_pass": false
+      },
+      "target_band_result": {
+        "target_low": 0.88,
+        "target_high": 0.95,
+        "expected_util": null,
+        "in_target": false
+      },
+      "blocker_evidence": {
+        "family": "combined",
+        "exact_blocker_exists": true,
+        "blocker_family_matches": true,
+        "cleanup_search_ran": true,
+        "cleanup_search_exhaustive": true,
+        "safe_candidate_count": 0,
+        "executable_candidate_count": 0,
+        "best_safe_candidate_applied": false,
+        "no_second_cta_required": false,
+        "specificity": {
+          "valid": true,
+          "missing_fields": []
+        },
+        "specificity_valid": true,
+        "specificity_missing_fields": [],
+        "valid": true
+      },
+      "blocking_checks_named": [
+        "shear",
+        "crack",
+        "deflection",
+        "spacing",
+        "ductility",
+        "geometry",
+        "detailing"
+      ],
+      "update_categories": [],
+      "button_contract_actionable": false,
+      "selected_action_updates_count": 0
+    },
+    "no_action_analysis": {
+      "family": "combined",
+      "exact_blocker_exists": true,
+      "blocker_family_matches": true,
+      "cleanup_search_ran": true,
+      "cleanup_search_exhaustive": true,
+      "safe_candidate_count": 0,
+      "executable_candidate_count": 0,
+      "best_safe_candidate_applied": false,
+      "no_second_cta_required": false,
+      "specificity": {
+        "valid": true,
+        "missing_fields": []
+      },
+      "specificity_valid": true,
+      "specificity_missing_fields": [],
+      "valid": true
+    },
+    "exact_contradiction": "multi-family blocker does not list a separate bending reason",
+    "likely_failure_layer": "post-click final outcome publication / exact blocker wording",
+    "suspect_paths": [
+      "post-click Design Guide card builder",
+      "accepted green/terminal state derivation",
+      "exact_blockers_by_family publication",
+      "family-specific blocker visible copy",
+      "button_contract publication"
+    ],
+    "do_not_change": [
+      "formulas",
+      "solver maths",
+      "target bands",
+      "broad candidate ranking",
+      "verifier gates"
+    ],
+    "recommended_next_action": "After a one-click action, publish only a green accepted/target state or a specific exact engineering blocker with failed candidate/check/rule evidence for every unresolved family; do not count material key changes alone as success.",
+    "replay_command": "python tools/browser_live_design_guide_fuzz_verifier.py --replay-case C:\\Users\\jono\\OneDrive\\Documents\\GitHub\\complete-app - Copy (3)\\artifacts\\verification\\live_fuzz\\2026-05-07T10-47-36\\failure_case.json --port 9301",
+    "post_click_final_state": {}
+  },
+  "artifact_consistency": {
+    "consistent": true,
+    "seed": 12345,
+    "case_index": 0,
+    "step_index": 3,
+    "classification": "blocker_card_without_specific_engineering_reason"
+  },
+  "failure_screenshot": "C:\\Users\\jono\\OneDrive\\Documents\\GitHub\\complete-app - Copy (3)\\artifacts\\verification\\live_fuzz\\2026-05-07T10-47-36\\failure_screenshot.png"
+}
