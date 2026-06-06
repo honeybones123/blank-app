@@ -18,14 +18,26 @@ from state_and_helpers import (
     get_beam_overall_status,
 )
 from inputs_page import (
+    RESCUE_SEED_LIBRARY,
     _design_guide_dashboard_reasons,
+    _design_guide_button_contract_enabled,
+    _evaluate_auto_design_candidate,
     _fallback_shear_reinforcement_step_updates,
     _generate_escalated_shear_states,
     _generate_local_shear_states,
     _generate_shear_governing_candidates,
     _longitudinal_reo_detailing_failures,
+    _normalise_visible_optimisation_contract,
+    _normalise_terminal_exact_cleanup_card,
+    _publishable_safe_combined_cleanup_row_from_evidence,
+    _terminal_exact_cleanup_blocker_should_render_green,
+    _terminal_green_card_is_safe,
+    _terminal_green_unresolved_strength_families,
+    _visible_safe_combined_cleanup_action_from_evidence,
+    build_design_guide_card_view_model,
     evaluate_candidate_full,
     evaluate_candidate_fast,
+    generate_less_shear_reo_variants,
 )
 
 
@@ -392,6 +404,793 @@ def check_auto_design_rejects_invalid_shear_link_spacing() -> dict:
     }
 
 
+def check_zero_bending_live_shear_cleanup_can_reduce_dia_legs_before_spacing_limit() -> dict:
+    state = _base_state()
+    state.update(
+        {
+            "b": 600.0,
+            "bw": 600.0,
+            "D": 350.0,
+            "Mu_star": 0.0,
+            "uls_Mstar": 0.0,
+            "Vu_star": 300.0,
+            "uls_Vstar": 300.0,
+            "bot1_count": 3,
+            "bot_row_1_bars": 3,
+            "db_bot_1": 20.0,
+            "bot_row_1_dia": 20.0,
+            "top1_count": 2,
+            "top_row_1_bars": 2,
+            "db_top_1": 10.0,
+            "top_row_1_dia": 10.0,
+            "lig_d": 16.0,
+            "lig_legs": 3,
+            "s_lig": 250.0,
+        }
+    )
+    variants = list(generate_less_shear_reo_variants({"state": state}, {}) or [])
+    target_state = next(
+        (
+            variant
+            for variant in variants
+            if int(variant.get("lig_d") or -1) == 12
+            and int(variant.get("lig_legs") or -1) == 2
+            and abs(float(variant.get("s_lig") or 0.0) - 200.0) <= 1e-9
+        ),
+        None,
+    )
+    _assert(
+        target_state is not None,
+        "zero-bending/live-shear cleanup did not generate the N12-2 @ 200 candidate before spacing-limit blockers",
+    )
+    candidate = evaluate_candidate_full(
+        target_state,
+        source="focused_zero_bending_live_shear_cleanup_candidate",
+        label="Zero bending live shear cleanup candidate",
+        action_type="apply_resolved_candidate",
+        updates={"lig_d": 12, "lig_legs": 2, "s_lig": 200.0},
+    )
+    overview = dict(candidate.get("overview") or {})
+    utils = dict(overview.get("utils") or {})
+    statuses = dict(overview.get("statuses") or {})
+    shear_util = float(utils.get("shear") or 0.0)
+    _assert(candidate.get("is_compliant") is True, f"N12-2 @ 200 cleanup candidate was rejected: {candidate.get('rejection_reason')}")
+    _assert(0.88 <= shear_util <= 0.95, f"N12-2 @ 200 cleanup candidate shear util outside target band: {shear_util}")
+    _assert(
+        all(str(status or "").upper() == "PASS" for status in statuses.values()),
+        f"N12-2 @ 200 cleanup candidate did not pass all overview families: {statuses}",
+    )
+    return {
+        "variant_count": len(variants),
+        "selected": {"lig_d": 12, "lig_legs": 2, "s_lig": 200.0},
+        "shear_util": shear_util,
+        "statuses": statuses,
+    }
+
+
+def check_terminal_exact_cleanup_stop_is_not_blue_blocker() -> dict:
+    exact = {
+        "bending": {
+            "family": "bending",
+            "exact_blocker": True,
+            "search_ran": True,
+            "search_exhaustive": True,
+            "cleanup_search_ran": True,
+            "cleanup_search_exhaustive": True,
+            "target_band_search_ran": True,
+            "target_band_search_exhaustive": True,
+            "current_util": 0.0,
+            "failed_check_name": "practical minimum geometry and bottom reinforcement",
+            "failed_check_status": "BLOCKED_BY_PRACTICAL_MINIMUM",
+            "failed_check_util": 0.0,
+            "failed_check_demand": 0.0,
+            "failed_check_capacity_or_limit": "b >= 250 mm, D >= 300 mm, 3-N10 bottom bars",
+            "reason": "The section is already at the practical minimum geometry and bottom reinforcement floor.",
+            "why_reduction_would_hurt_other_design_elements": "The section is already at the practical minimum geometry and bottom reinforcement floor.",
+            "attempted_candidate_count": 2,
+            "previewed_candidate_count": 2,
+            "safe_candidate_count": 0,
+            "executable_candidate_count": 0,
+            "target_band_candidate_count": 0,
+            "executable_target_band_candidate_count": 0,
+        },
+        "shear": {
+            "family": "shear",
+            "exact_blocker": True,
+            "search_ran": True,
+            "search_exhaustive": True,
+            "cleanup_search_ran": True,
+            "cleanup_search_exhaustive": True,
+            "target_band_search_ran": True,
+            "target_band_search_exhaustive": True,
+            "current_util": 0.0,
+            "failed_check_name": "minimum shear reinforcement floor",
+            "failed_check_status": "BLOCKED",
+            "failed_check_util": 0.0,
+            "failed_check_demand": "no shear demand",
+            "failed_check_capacity_or_limit": "no shear links active",
+            "reason": "Shear links are already removed; no further shear-link cleanup is available.",
+            "why_reduction_would_hurt_other_design_elements": "Shear links are already removed; no further shear-link cleanup is available.",
+            "attempted_candidate_count": 1,
+            "previewed_candidate_count": 1,
+            "safe_candidate_count": 0,
+            "executable_candidate_count": 0,
+            "target_band_candidate_count": 0,
+            "executable_target_band_candidate_count": 0,
+        },
+    }
+    overview = {
+        "statuses": {"bending": "PASS", "shear": "PASS", "crack": "PASS", "deflection": "PASS"},
+        "utils": {"bending": 0.0, "shear": 0.0, "crack": 0.0, "deflection": 0.0},
+        "any_fail": False,
+        "any_warn": False,
+        "all_key_pass": True,
+        "worst_util": 0.0,
+    }
+    item = {
+        "title_main": "Design is efficient - no further safe cleanup available",
+        "title": "Design is efficient - no further safe cleanup available",
+        "status": "PASS",
+        "bucket": "pass",
+        "guidance_intent": "already_efficient",
+        "design_guide_terminal_state": "optimal",
+        "post_click_design_guide_state": "accepted_green",
+        "terminal_cleanup_state": "optimal",
+        "primary_card_actionable": False,
+        "button_contract": {"enabled": False, "actionable": False, "updates": {}},
+        "exact_blockers_by_family": exact,
+        "post_click_exact_blockers_by_family": exact,
+        "primary_action": "Bending and shear stop reasons are published by family.",
+        "display_truth": {
+            "display_truth_source": "published_summary",
+            "displayed_util": 0.0,
+            "displayed_within_target_band": False,
+            "source_summary_util": 0.0,
+        },
+    }
+    vm = build_design_guide_card_view_model(
+        item,
+        overview,
+        {"exact_blockers_by_family": exact, "post_click_exact_blockers_by_family": exact},
+        state=_base_state(),
+        item_bucket="pass",
+        use_success_style=True,
+        display_title="Design is efficient - no further safe cleanup available",
+        actionable=False,
+    )
+    title = str(vm.get("title") or vm.get("title_main") or "")
+    _assert("cleanup blocked" not in title.lower(), f"accepted exact-stop card was restamped blue: {title!r}")
+    _assert(str(vm.get("status") or "").upper() != "BLOCKED", f"accepted exact-stop status became BLOCKED: {vm}")
+    _assert(str(vm.get("tone") or "") == "pass", f"accepted exact-stop was not green/pass styled: {vm}")
+    details_exact = dict((vm.get("details") or {}).get("exact_blockers_by_family") or {})
+    _assert({"bending", "shear"}.issubset(details_exact), "accepted exact-stop did not preserve family exact blockers")
+    return {"title": title, "status": vm.get("status"), "tone": vm.get("tone"), "families": sorted(details_exact)}
+
+
+def check_shear_only_terminal_exact_cleanup_stop_is_not_blue_blocker() -> dict:
+    exact = {
+        "shear": {
+            "family": "shear",
+            "exact_blocker": True,
+            "search_ran": True,
+            "search_exhaustive": True,
+            "cleanup_search_ran": True,
+            "cleanup_search_exhaustive": True,
+            "target_band_search_ran": True,
+            "target_band_search_exhaustive": True,
+            "current_util": 0.75,
+            "failed_check_name": "final accepted shear utilisation threshold",
+            "failed_check_status": "below_final_accepted_threshold",
+            "failed_check_util": 0.75,
+            "failed_check_demand": 300.0,
+            "failed_check_capacity_or_limit": 0.85,
+            "reason": "No executor-backed shear cleanup candidate reaches the final accepted threshold while preserving all required checks.",
+            "why_reduction_would_hurt_other_design_elements": "No executor-backed shear cleanup candidate reaches the final accepted threshold while preserving all required checks.",
+            "attempted_candidate_count": 12,
+            "previewed_candidate_count": 12,
+            "safe_candidate_count": 0,
+            "executable_candidate_count": 0,
+            "target_band_candidate_count": 0,
+            "executable_target_band_candidate_count": 0,
+        }
+    }
+    overview = {
+        "statuses": {"bending": "PASS", "shear": "PASS", "crack": "PASS", "deflection": "PASS"},
+        "utils": {"bending": 0.92, "shear": 0.75, "crack": 0.0, "deflection": 0.0},
+        "any_fail": False,
+        "any_warn": False,
+        "all_key_pass": True,
+        "worst_util": 0.92,
+    }
+    item = {
+        "family": "shear",
+        "check_key": "shear",
+        "title_main": "Shear cleanup blocked by final efficiency threshold",
+        "title": "Shear cleanup blocked by final efficiency threshold",
+        "status": "EFFICIENCY",
+        "bucket": "efficiency",
+        "guidance_intent": "specific_blocker",
+        "primary_card_actionable": False,
+        "button_contract": {"enabled": False, "actionable": False, "updates": {}, "family": "shear"},
+        "exact_blockers_by_family": exact,
+        "post_click_exact_blockers_by_family": exact,
+        "primary_action": "Open for engineering detail.",
+    }
+    should_render_green = _terminal_exact_cleanup_blocker_should_render_green(
+        item,
+        overview,
+        item["button_contract"],
+        exact,
+    )
+    _assert(should_render_green, "shear-only exact-stop blocker did not qualify for terminal green normalisation")
+    normalised, contract = _normalise_terminal_exact_cleanup_card(
+        item,
+        overview,
+        item["button_contract"],
+        exact,
+    )
+    _assert("cleanup blocked" not in str(normalised.get("title") or "").lower(), f"shear-only card stayed blocked: {normalised}")
+    _assert(str(normalised.get("status") or "").upper() == "PASS", f"shear-only status not PASS: {normalised}")
+    _assert(str(normalised.get("terminal_cleanup_state") or "") == "optimal", f"shear-only terminal state not optimal: {normalised}")
+    _assert(not bool(contract.get("enabled")), f"terminal exact-stop should not publish a CTA: {contract}")
+    _assert("shear" in dict(normalised.get("exact_blockers_by_family") or {}), "shear exact blocker was dropped")
+    return {
+        "title": normalised.get("title"),
+        "status": normalised.get("status"),
+        "terminal_cleanup_state": normalised.get("terminal_cleanup_state"),
+        "families": sorted(dict(normalised.get("exact_blockers_by_family") or {})),
+    }
+
+
+def check_terminal_green_requires_resolved_strength_families() -> dict:
+    overview = {
+        "statuses": {"bending": "PASS", "shear": "PASS", "crack": "PASS", "deflection": "PASS"},
+        "utils": {"bending": 0.58, "shear": 0.57, "crack": 0.0, "deflection": 0.0},
+        "any_fail": False,
+        "any_warn": False,
+        "all_key_pass": True,
+        "worst_util": 0.58,
+    }
+    unresolved = _terminal_green_unresolved_strength_families(
+        overview,
+        {
+            "family_status_current": {
+                "bending": {"status": "PASS", "util": 0.58},
+                "shear": {"status": "PASS", "util": 0.57},
+            }
+        },
+        state=_base_state(),
+    )
+    _assert(unresolved == ["bending", "shear"], f"unresolved low-util families not detected: {unresolved}")
+    _assert(
+        not _terminal_green_card_is_safe(overview, {}, state=_base_state()),
+        "terminal green was allowed without exact blockers for low-util strength families",
+    )
+
+    fail_rows_safe = _terminal_green_card_is_safe(
+        {"statuses": {"bending": "PASS", "shear": "PASS"}, "utils": {"bending": 0.92, "shear": 0.9}},
+        {"family_status_current": {"shear": {"status": "FAIL", "util": 1.1}}},
+        state=_base_state(),
+    )
+    _assert(not fail_rows_safe, "terminal green was allowed while source family row still showed FAIL")
+    return {"unresolved_without_blockers": unresolved, "fail_row_safe": fail_rows_safe}
+
+
+def check_disabled_action_cleanup_blocker_html_obeys_terminal_policy() -> dict:
+    exact = {
+        "bending": {
+            "family": "bending",
+            "exact_blocker": True,
+            "cleanup_search_exhaustive": True,
+            "target_band_search_exhaustive": True,
+            "failed_check_name": "final accepted bending utilisation threshold",
+            "failed_check_status": "below_final_accepted_threshold",
+            "failed_check_util": 0.76,
+            "failed_check_demand": 120.0,
+            "failed_check_capacity_or_limit": 0.85,
+            "reason": "No executor-backed bending cleanup candidate reaches the final accepted threshold while preserving all required checks.",
+            "executable_candidate_count": 0,
+            "executable_target_band_candidate_count": 0,
+        },
+        "shear": {
+            "family": "shear",
+            "exact_blocker": True,
+            "cleanup_search_exhaustive": True,
+            "target_band_search_exhaustive": True,
+            "failed_check_name": "final accepted shear utilisation threshold",
+            "failed_check_status": "below_final_accepted_threshold",
+            "failed_check_util": 0.47,
+            "failed_check_demand": 80.0,
+            "failed_check_capacity_or_limit": 0.85,
+            "reason": "No executor-backed shear cleanup candidate reaches the final accepted threshold while preserving all required checks.",
+            "executable_candidate_count": 0,
+            "executable_target_band_candidate_count": 0,
+        },
+    }
+    overview = {
+        "statuses": {"bending": "PASS", "shear": "PASS", "crack": "PASS", "deflection": "PASS"},
+        "utils": {"bending": 0.76, "shear": 0.47, "crack": 0.0, "deflection": 0.0},
+        "any_fail": False,
+        "any_warn": False,
+        "all_key_pass": True,
+        "worst_util": 0.76,
+        "family_status_current": {
+            "bending": {"status": "PASS", "util": 0.76},
+            "shear": {"status": "PASS", "util": 0.47},
+            "crack": {"status": "PASS", "util": 0.0},
+            "deflection": {"status": "PASS", "util": 0.0},
+        },
+    }
+    details = {
+        "title": "Bending and shear cleanup blocked",
+        "status": "EFFICIENCY",
+        "bucket": "efficiency",
+        "guidance_intent": "specific_blocker",
+        "primary_card_actionable": False,
+        "button_contract": {
+            "enabled": False,
+            "actionable": False,
+            "updates": {},
+            "blocking_reason": "Exact cleanup stop evidence is published by family.",
+        },
+        "current_overview": overview,
+        # Regression shape from the browser replay: the visible item was a
+        # shear-only blocker, while the full overview/evidence still proved a
+        # safe combined bending + shear cleanup action.
+        "family_status_current": {"shear": overview["family_status_current"]["shear"]},
+        "exact_blockers_by_family": exact,
+        "post_click_exact_blockers_by_family": exact,
+        "blocker_attempts_by_family": exact,
+        "candidate_search_evidence": {
+            "cleanup_search_exhaustive": True,
+            "target_band_search_exhaustive": True,
+            "exact_blockers_by_family": exact,
+        },
+    }
+    should_render_green = _design_guide_should_render_passing_terminal_exact_stop(
+        details,
+        overview,
+        details,
+        None,
+        contract=details["button_contract"],
+        exact_blockers=exact,
+        state=_base_state(),
+    )
+    _assert(should_render_green, "policy helper did not accept pass-current terminal cleanup stop")
+    html = _design_guide_dashboard_card_html(
+        {
+            "status": "action",
+            "pill": "ACTION",
+            "title": "Bending and shear cleanup blocked",
+            "summary_line": "Open for engineering detail.",
+            "governing_label": "Bending 0.76 / Shear 0.47",
+            "details": details,
+            "cta": {"enabled": False},
+            "current": [
+                {"family": "bending", "label": "Bending", "value": "0.76", "status": "PASS", "tone": "green"},
+                {"family": "shear", "label": "Shear", "value": "0.47", "status": "PASS", "tone": "green"},
+            ],
+            "reasons": [],
+        },
+        card_class="fast-guidance-item efficiency dg-card--action",
+    )
+    _assert("dg-card--pass" in html, "disabled action terminal stop did not render as pass card")
+    _assert("data-testid='design-guide-status-pill'>PASS" in html, "terminal stop status pill is not PASS")
+    _assert("Bending and shear cleanup blocked" not in html.split("data-testid='design-guide-title'", 1)[1][:200], "collapsed title stayed blocked")
+    _assert("No executor-backed bending cleanup candidate" in html, "bending stop reason was dropped")
+    _assert("No executor-backed shear cleanup candidate" in html, "shear stop reason was dropped")
+    return {"html_contains_pass": "dg-card--pass" in html, "families": sorted(exact)}
+
+
+def check_publishable_safe_combined_cleanup_candidate_must_not_render_blocked() -> dict:
+    state = _base_state()
+    state.update(
+        {
+            "b": 350.0,
+            "D": 350.0,
+            "uls_Mstar": 115.0,
+            "Mu_star": 115.0,
+            "uls_Vstar": 30.8,
+            "Vu_star": 30.8,
+            "bot_row_count": 1,
+            "bot1_count": 3,
+            "bot_row_1_bars": 3,
+            "db_bot_1": 24,
+            "bot_row_1_dia": 24,
+            "lig_d": 0,
+            "lig_legs": 0,
+            "s_lig": 200.0,
+        }
+    )
+    overview = {
+        "statuses": {"bending": "PASS", "shear": "PASS", "crack": "PASS", "deflection": "PASS"},
+        "utils": {"bending": 0.76, "shear": 0.47, "crack": 0.0, "deflection": 0.0},
+        "any_fail": False,
+        "any_warn": False,
+        "all_key_pass": True,
+        "worst_util": 0.76,
+        "family_status_current": {
+            "bending": {"status": "PASS", "util": 0.76},
+            "shear": {"status": "PASS", "util": 0.47},
+        },
+    }
+    updates = {
+        "lig_d": 10,
+        "lig_legs": 2,
+        "s_lig": 150.0,
+        "bot_row_count": 1,
+        "bot_row_1_bars": 4,
+        "bot_row_1_dia": 20,
+        "bot1_count": 4,
+        "db_bot_1": 20,
+    }
+    evidence = {
+        "search_scope": "combined_best_safe_shear_plus_bending_cleanup",
+        "candidate_search_exhaustive": True,
+        "candidate_rows": [
+            {
+                "candidate_id": "combined_best_safe_shear_plus_bending_cleanup",
+                "title": "Shear and bending cleanup - one-click optimisation",
+                "proposed_updates": dict(updates),
+                "preview_statuses": {
+                    "bending": "PASS",
+                    "shear": "PASS",
+                    "crack": "PASS",
+                    "deflection": "PASS",
+                },
+                "preview_pass": True,
+                "safe_executor_backed": True,
+                "is_executable": True,
+                "preview_util": 0.807,
+                "affected_family": "combined",
+            }
+        ],
+        "safe_executor_backed_candidates_count": 1,
+    }
+    debug_sink = {"candidate_search_evidence": dict(evidence)}
+    stale_blocked_item = {
+        "title": "Bending and shear cleanup blocked",
+        "title_main": "Bending and shear cleanup blocked",
+        "family": "shear",
+        "check_key": "shear",
+        "status": "EFFICIENCY",
+        "guidance_intent": "specific_blocker",
+        "primary_card_actionable": False,
+        "button_contract": {
+            "enabled": False,
+            "actionable": False,
+            "action_type": None,
+            "family": "shear",
+            "updates": {},
+            "preview_pass": False,
+            "blocking_reason": "Shear links are already removed.",
+        },
+        "family_status_current": overview["family_status_current"],
+        "candidate_search_evidence": {"family": "shear", "best_safe_candidate_applied": True},
+        "exact_blockers_by_family": {
+            "shear": {
+                "family": "shear",
+                "exact_blocker": True,
+                "cleanup_search_exhaustive": True,
+                "failed_check_name": "minimum shear reinforcement floor",
+                "reason": "Shear links are already removed.",
+                "executable_target_band_candidate_count": 0,
+            }
+        },
+    }
+    row = _publishable_safe_combined_cleanup_row_from_evidence(evidence, state)
+    _assert(row, "publishable combined candidate row was not detected")
+    action_item = _visible_safe_combined_cleanup_action_from_evidence(
+        stale_blocked_item,
+        overview,
+        state,
+        debug_sink=debug_sink,
+    )
+    _assert(isinstance(action_item, dict), "safe combined candidate was not promoted to an action item")
+    contract = dict(action_item.get("button_contract") or {})
+    _assert(_design_guide_button_contract_enabled(contract), f"promoted combined candidate contract disabled: {contract}")
+    _assert("cleanup blocked" not in str(action_item.get("title") or "").lower(), f"promoted action stayed blocked: {action_item}")
+    _assert(contract.get("candidate_id") == "combined_best_safe_shear_plus_bending_cleanup", f"wrong candidate id: {contract}")
+    _assert(set(contract.get("updates") or {}) & {"lig_d", "lig_legs", "s_lig"}, "promoted updates did not include shear links")
+    _assert(set(contract.get("updates") or {}) & {"bot_row_1_bars", "bot_row_1_dia", "bot1_count", "db_bot_1"}, "promoted updates did not include bottom reo")
+
+    normalised = _normalise_visible_optimisation_contract(
+        stale_blocked_item,
+        state=state,
+        overview=overview,
+        debug_sink=debug_sink,
+    )
+    normalised_contract = dict((normalised or {}).get("button_contract") or {})
+    _assert(
+        _design_guide_button_contract_enabled(normalised_contract),
+        f"normal visible handoff did not publish safe combined candidate: {normalised_contract}",
+    )
+
+    nested_evidence = {
+        "family": "shear",
+        "best_safe_candidate_applied": True,
+        "shear_cleanup_evidence": dict(evidence),
+    }
+    nested_row = _publishable_safe_combined_cleanup_row_from_evidence(nested_evidence, state)
+    _assert(nested_row, "nested publishable combined candidate row was not detected")
+    nested_item = dict(stale_blocked_item)
+    nested_item["candidate_search_evidence"] = {"family": "shear", "best_safe_candidate_applied": True}
+    nested_normalised = _normalise_visible_optimisation_contract(
+        nested_item,
+        state=state,
+        overview=overview,
+        debug_sink={"candidate_search_evidence": dict(nested_evidence)},
+    )
+    nested_contract = dict((nested_normalised or {}).get("button_contract") or {})
+    _assert(
+        _design_guide_button_contract_enabled(nested_contract),
+        f"nested visible handoff did not publish safe combined candidate: {nested_contract}",
+    )
+    return {
+        "candidate_id": normalised_contract.get("candidate_id"),
+        "nested_candidate_id": nested_contract.get("candidate_id"),
+        "updates": normalised_contract.get("updates"),
+    }
+
+
+def check_terminal_no_further_cleanup_must_render_green() -> dict:
+    exact = {
+        "bending": {
+            "family": "bending",
+            "exact_blocker": True,
+            "cleanup_search_exhaustive": True,
+            "target_band_search_exhaustive": True,
+            "failed_check_name": "final accepted bending utilisation threshold",
+            "reason": "No further bending cleanup is available.",
+            "executable_target_band_candidate_count": 0,
+        },
+        "shear": {
+            "family": "shear",
+            "exact_blocker": True,
+            "cleanup_search_exhaustive": True,
+            "target_band_search_exhaustive": True,
+            "failed_check_name": "minimum shear reinforcement floor",
+            "reason": "No further shear cleanup is available.",
+            "executable_target_band_candidate_count": 0,
+        },
+    }
+    overview = {
+        "statuses": {"bending": "PASS", "shear": "PASS", "crack": "PASS", "deflection": "PASS"},
+        "utils": {"bending": 0.76, "shear": 0.47},
+        "any_fail": False,
+        "all_key_pass": True,
+    }
+    item = {
+        "title": "Bending and shear cleanup blocked",
+        "status": "EFFICIENCY",
+        "guidance_intent": "specific_blocker",
+        "primary_card_actionable": False,
+        "button_contract": {"enabled": False, "actionable": False, "updates": {}},
+        "exact_blockers_by_family": exact,
+        "post_click_exact_blockers_by_family": exact,
+    }
+    _assert(
+        _terminal_exact_cleanup_blocker_should_render_green(item, overview, item["button_contract"], exact),
+        "terminal exact-stop did not qualify for green normalisation",
+    )
+    normalised, contract = _normalise_terminal_exact_cleanup_card(item, overview, item["button_contract"], exact)
+    _assert(str(normalised.get("status") or "").upper() == "PASS", f"terminal exact stop did not render PASS: {normalised}")
+    _assert("cleanup blocked" not in str(normalised.get("title") or "").lower(), f"terminal exact stop stayed blocked: {normalised}")
+    _assert(not _design_guide_button_contract_enabled(contract), f"terminal exact stop published CTA: {contract}")
+    preserved = dict(normalised.get("exact_blockers_by_family") or {})
+    _assert({"bending", "shear"}.issubset(preserved), "terminal exact stop dropped blocker evidence")
+    return {"title": normalised.get("title"), "families": sorted(preserved)}
+
+
+def _active_failure_policy_fixture() -> tuple[dict, dict, dict]:
+    overview = {
+        "statuses": {"bending": "FAIL", "shear": "PASS", "crack": "PASS", "deflection": "PASS"},
+        "utils": {"bending": 1.12, "shear": 0.70},
+        "any_fail": True,
+        "all_key_pass": False,
+        "family_status_current": {
+            "bending": {"status": "FAIL", "util": 1.12},
+            "shear": {"status": "PASS", "util": 0.70},
+            "crack": {"status": "PASS", "util": 0.0},
+            "deflection": {"status": "PASS", "util": 0.0},
+        },
+    }
+    exact = {
+        "bending": {
+            "family": "bending",
+            "exact_blocker": True,
+            "cleanup_search_exhaustive": True,
+            "failed_check_name": "Flexural strength capacity",
+            "reason": "Bending repair is blocked by ductility.",
+            "executable_target_band_candidate_count": 0,
+        }
+    }
+    item = {
+        "title": "Bending repair blocked",
+        "title_main": "Bending repair blocked",
+        "family": "bending",
+        "check_key": "bending",
+        "status": "FAIL",
+        "bucket": "fail",
+        "guidance_intent": "specific_blocker",
+        "primary_card_actionable": False,
+        "button_contract": {"enabled": False, "actionable": False, "updates": {}, "family": "bending"},
+        "exact_blockers_by_family": exact,
+        "family_status_current": overview["family_status_current"],
+    }
+    return overview, exact, item
+
+
+def check_locked_active_failure_blocker_stays_blocked_with_exact_proof() -> dict:
+    overview, exact, item = _active_failure_policy_fixture()
+    should_render_green = _terminal_exact_cleanup_blocker_should_render_green(
+        item,
+        overview,
+        item["button_contract"],
+        exact,
+    )
+    _assert(not should_render_green, "active failure blocker qualified for terminal green")
+    _assert(
+        not _terminal_green_card_is_safe(overview, item, state=_base_state(), exact_blockers=exact),
+        "active failure was marked terminal safe",
+    )
+    state = _base_state()
+    state["optimisation_lock_geometry"] = True
+    vm = build_design_guide_card_view_model(
+        item,
+        overview,
+        {},
+        state=state,
+        item_bucket="fail",
+        display_title="Bending repair blocked",
+        actionable=False,
+    )
+    _assert(vm["pill"] == "BLOCKED", f"locked exact blocker did not stay BLOCKED: {vm}")
+    _assert("repair blocked" in vm["title"].lower(), f"locked exact blocker title changed unexpectedly: {vm}")
+    preserved = dict(vm.get("details", {}).get("exact_blockers_by_family") or {})
+    _assert("bending" in preserved, "locked active failure blocker dropped exact proof")
+    return {"green_allowed": should_render_green, "pill": vm["pill"], "title": vm["title"]}
+
+
+def check_unlocked_active_failure_without_apply_cta_fails_policy() -> dict:
+    overview, exact, item = _active_failure_policy_fixture()
+    state = _base_state()
+    state["optimisation_lock_geometry"] = False
+    try:
+        build_design_guide_card_view_model(
+            item,
+            overview,
+            {},
+            state=state,
+            item_bucket="fail",
+            display_title="Bending repair blocked",
+            actionable=False,
+        )
+    except RuntimeError as exc:
+        text = str(exc)
+        _assert("unlocked active failure" in text.lower(), f"wrong policy failure text: {text}")
+        _assert("apply cta" in text.lower(), f"policy failure does not require Apply CTA: {text}")
+        return {"policy_failure": text}
+    raise AssertionError("unlocked active failure without Apply CTA rendered a user-facing card")
+
+
+def check_stale_blocker_cannot_override_unlocked_safe_repair_candidate() -> dict:
+    overview, exact, item = _active_failure_policy_fixture()
+    state = _base_state()
+    state["optimisation_lock_geometry"] = False
+    updates = {"bot_row_1_bars": 5, "bot1_count": 5}
+    contract = {
+        "enabled": True,
+        "actionable": True,
+        "action_type": "apply_resolved_candidate",
+        "family": "bending",
+        "updates": dict(updates),
+        "preview_pass": True,
+        "expected_util": 0.94,
+        "source_candidate_id": "safe_bending_repair_candidate",
+        "candidate_id": "safe_bending_repair_candidate",
+    }
+    debug_payload = {
+        "displayed_guidance_intent_items": [
+            {
+                "title": "Bending capacity is low - one-click repair",
+                "family": "bending",
+                "check_key": "bending",
+                "action_type": "apply_resolved_candidate",
+                "button_contract": dict(contract),
+                "displayed_util": 0.94,
+            }
+        ]
+    }
+    vm = build_design_guide_card_view_model(
+        item,
+        overview,
+        debug_payload,
+        state=state,
+        item_bucket="fail",
+        display_title="Bending repair blocked",
+        actionable=True,
+    )
+    _assert(vm.get("cta", {}).get("enabled"), f"safe repair candidate was not actionable: {vm}")
+    _assert(vm.get("cta", {}).get("payload_id") == "safe_bending_repair_candidate", f"wrong repair candidate: {vm}")
+    _assert("blocked" not in vm["title"].lower(), f"safe repair candidate stayed blocked: {vm}")
+    _assert(vm["pill"] == "ACTION", f"safe repair candidate did not render ACTION: {vm}")
+    return {"pill": vm["pill"], "title": vm["title"], "candidate": vm.get("cta", {}).get("payload_id")}
+
+
+def check_rescue_seed_updates_include_canonical_reo_mirrors() -> dict:
+    seed = dict(((RESCUE_SEED_LIBRARY.get("combined") or {}).get("extreme")) or {})
+    updates = dict(seed.get("updates") or {})
+    required_equal_pairs = [
+        ("bot1_count", "bot_row_1_bars"),
+        ("db_bot_1", "bot_row_1_dia"),
+        ("top1_count", "top_row_1_bars"),
+        ("db_top_1", "top_row_1_dia"),
+    ]
+    for legacy_key, canonical_key in required_equal_pairs:
+        _assert(legacy_key in updates, f"combined rescue seed missing {legacy_key}")
+        _assert(canonical_key in updates, f"combined rescue seed missing {canonical_key}")
+        _assert(
+            updates.get(legacy_key) == updates.get(canonical_key),
+            f"combined rescue seed {legacy_key}={updates.get(legacy_key)!r} "
+            f"does not match {canonical_key}={updates.get(canonical_key)!r}",
+        )
+    _assert(updates.get("bot_row_count") == 1, "combined rescue seed missing canonical bottom row count")
+    _assert(updates.get("top_row_count") == 1, "combined rescue seed missing canonical top row count")
+    return {
+        "seed": seed.get("key"),
+        "bottom": [updates.get("bot_row_1_bars"), updates.get("bot_row_1_dia")],
+        "top": [updates.get("top_row_1_bars"), updates.get("top_row_1_dia")],
+    }
+
+
+def check_unlocked_combined_fail_rescue_seed_previews_pass() -> dict:
+    state = _base_state()
+    state.update(
+        {
+            "b": 300.0,
+            "D": 500.0,
+            "L": 5800.0,
+            "fc": 32.0,
+            "bot1_count": 3,
+            "db_bot_1": 20,
+            "bot_row_1_bars": 3,
+            "bot_row_1_dia": 20,
+            "top1_count": 2,
+            "db_top_1": 10,
+            "top_row_1_bars": 2,
+            "top_row_1_dia": 10,
+            "lig_d": 0,
+            "lig_legs": 0,
+            "s_lig": 250.0,
+            "uls_Mstar": 850.0,
+            "uls_Vstar": 850.0,
+            "Mu_star": 850.0,
+            "Vu_star": 850.0,
+            "optimisation_lock_geometry": False,
+        }
+    )
+    updates = dict(((RESCUE_SEED_LIBRARY.get("combined") or {}).get("extreme") or {}).get("updates") or {})
+    candidate = _evaluate_auto_design_candidate(
+        state,
+        updates=updates,
+        source="focused_unlocked_combined_fail_rescue_seed",
+        label="Unlocked combined fail rescue seed",
+        action_type="apply_resolved_candidate",
+    )
+    overview = dict(candidate.get("overview") or {})
+    _assert(overview.get("all_key_pass") is True, f"rescue seed did not pass all checks: {overview}")
+    _assert(overview.get("any_fail") is False, f"rescue seed still has failing checks: {overview}")
+    return {
+        "statuses": dict(overview.get("statuses") or {}),
+        "utils": dict(overview.get("utils") or {}),
+        "updates": {
+            key: updates.get(key)
+            for key in ("b", "D", "bot_row_1_bars", "bot_row_1_dia", "lig_d", "lig_legs", "s_lig")
+        },
+    }
+
+
 def _first_index(rows: list, predicate, label: str) -> int:
     for idx, row in enumerate(rows):
         if predicate(row):
@@ -474,6 +1273,50 @@ def main() -> int:
         ("vu_zero_invalid_shear_ligs_still_fail_detailing", check_zero_vu_invalid_shear_links_fail_detailing),
         ("vu_zero_no_links_not_flagged_as_invalid_link_detailing", check_zero_vu_no_links_not_flagged_as_invalid_link_detailing),
         ("auto_design_rejects_invalid_shear_link_spacing", check_auto_design_rejects_invalid_shear_link_spacing),
+        (
+            "zero_bending_live_shear_cleanup_reduces_dia_legs_before_spacing_limit",
+            check_zero_bending_live_shear_cleanup_can_reduce_dia_legs_before_spacing_limit,
+        ),
+        (
+            "terminal_exact_cleanup_stop_is_green_not_blue_blocker",
+            check_terminal_exact_cleanup_stop_is_not_blue_blocker,
+        ),
+        (
+            "shear_only_terminal_exact_cleanup_stop_is_green_not_blue_blocker",
+            check_shear_only_terminal_exact_cleanup_stop_is_not_blue_blocker,
+        ),
+        (
+            "terminal_green_requires_resolved_strength_families",
+            check_terminal_green_requires_resolved_strength_families,
+        ),
+        (
+            "publishable_safe_combined_cleanup_candidate_must_not_render_blocked",
+            check_publishable_safe_combined_cleanup_candidate_must_not_render_blocked,
+        ),
+        (
+            "terminal_no_further_cleanup_must_render_green",
+            check_terminal_no_further_cleanup_must_render_green,
+        ),
+        (
+            "locked_active_failure_blocker_stays_blocked_with_exact_proof",
+            check_locked_active_failure_blocker_stays_blocked_with_exact_proof,
+        ),
+        (
+            "unlocked_active_failure_without_apply_cta_fails_policy",
+            check_unlocked_active_failure_without_apply_cta_fails_policy,
+        ),
+        (
+            "stale_blocker_cannot_override_unlocked_safe_repair_candidate",
+            check_stale_blocker_cannot_override_unlocked_safe_repair_candidate,
+        ),
+        (
+            "rescue_seed_updates_include_canonical_reo_mirrors",
+            check_rescue_seed_updates_include_canonical_reo_mirrors,
+        ),
+        (
+            "unlocked_combined_fail_rescue_seed_previews_pass",
+            check_unlocked_combined_fail_rescue_seed_previews_pass,
+        ),
     ]
     results = []
     for name, fn in checks:

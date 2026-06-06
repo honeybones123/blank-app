@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from optimisation_config import get_target_utilisation_band, target_band_payload
+from design_brain.ranking import distance_to_band, selection_sort_key
 
 
 ENGINE_INTENTS = frozenset(
@@ -132,13 +133,7 @@ def _target_band(goal: str | None, payload: dict | None) -> dict:
 
 
 def _distance_to_band(util: float | None, lo: float, hi: float) -> float | None:
-    if util is None:
-        return None
-    if lo <= util <= hi:
-        return 0.0
-    if util < lo:
-        return float(lo - util)
-    return float(util - hi)
+    return distance_to_band(util, lo, hi)
 
 
 def _candidate_nested_dict(candidate: dict, key: str) -> dict:
@@ -516,15 +511,7 @@ def _candidate_search_exhaustive(raw_candidates: list[dict], context: dict) -> t
 
 
 def _selection_sort_key(candidate: dict, target_low: float, target_high: float) -> tuple:
-    preview = _as_float(candidate.get("preview_util"))
-    target_mid = (float(target_low) + float(target_high)) / 2.0
-    return (
-        float(candidate.get("distance_to_target_band") if candidate.get("distance_to_target_band") is not None else 1e9),
-        abs(float(preview) - target_mid) if preview is not None else 1e9,
-        len(dict(candidate.get("updates") or {})),
-        str(candidate.get("title") or ""),
-        str(candidate.get("candidate_id") or ""),
-    )
+    return selection_sort_key(candidate, target_low, target_high)
 
 
 MATERIALLY_OVERPROVIDED_UTIL_THRESHOLD = 0.70
@@ -1450,7 +1437,11 @@ def _build_presentation(context: dict, display_truth: dict, button_contract: dic
             subtext=efficient_subtext,
             button_theme="healthy",
             critical_status="OPTIMAL",
-            headline_override="Design is efficient — target band achieved",
+            headline_override=(
+                "Design is efficient - target band achieved"
+                if primary_truth_in_target
+                else "Design is efficient - no further safe cleanup available"
+            ),
             show_apply_button=False,
             design_guide_terminal_state="optimal",
         )

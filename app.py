@@ -107,6 +107,43 @@ _BROWSER_RECIPE_ROW_MODEL_KEYS = {
 }
 
 
+def _apply_normal_user_page_zoom_css() -> None:
+    if _BROWSER_TEST_MODE or _EXPLICIT_DEV_MODE:
+        return
+    st.markdown(
+        """
+<style>
+:root {
+  --beam-app-compact-density: 0.82;
+}
+[data-testid="stMainBlockContainer"],
+.block-container {
+  padding-top: 1.05rem !important;
+  padding-bottom: 1.05rem !important;
+}
+[data-testid="stVerticalBlock"] {
+  gap: calc(0.9rem * var(--beam-app-compact-density)) !important;
+}
+[data-testid="stHorizontalBlock"] {
+  gap: calc(1rem * var(--beam-app-compact-density)) !important;
+}
+[data-testid="stElementContainer"] {
+  margin-bottom: calc(0.55rem * var(--beam-app-compact-density)) !important;
+}
+h1 {
+  margin-bottom: 0.55rem !important;
+}
+h2,
+h3 {
+  margin-top: 0.8rem !important;
+  margin-bottom: 0.45rem !important;
+}
+</style>
+""",
+        unsafe_allow_html=True,
+    )
+
+
 def _render_hidden_browser_state_probe(browser_state_probe_text: str, browser_state_probe_key: str) -> None:
     st.markdown(
         (
@@ -595,9 +632,257 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
                     decision[decision_key] = _restamp_probe_exact_blocker_maps(
                         decision.get(decision_key),
                         visible_utils,
-                    )
+                )
             out["design_guide_engine_decision"] = dict(decision)
         return out
+
+    def _probe_rendered_design_guide_reuse_payload(
+        *,
+        summary_state: dict,
+        summary_overview: dict,
+    ) -> tuple[dict | None, dict]:
+        """Return a probe-only guidance payload from the rendered bundle, or a fallback reason."""
+        meta = {
+            "attempted": True,
+            "source": "fallback",
+            "reason": "",
+        }
+
+        def _reject(reason: str, **fields) -> tuple[None, dict]:
+            meta.update({"reason": reason, **fields})
+            return None, dict(meta)
+
+        if str(probe_phase or "") != "post_page_render":
+            return _reject("not_post_page_render")
+        if str(selected_slug or "").strip().lower() not in {"inputs", "design"}:
+            return _reject("route_not_probe_supported", route=selected_slug)
+
+        bundle_raw = st.session_state.get(inputs_page.DESIGN_GUIDE_DEBUG_BUNDLE_KEY)
+        if not isinstance(bundle_raw, dict) or not bundle_raw:
+            return _reject("missing_rendered_bundle")
+        bundle = dict(bundle_raw)
+        render_plan = st.session_state.get("_design_guide_render_plan_debug")
+        if not isinstance(render_plan, dict):
+            return _reject("missing_render_plan_debug")
+        if bool(st.session_state.get(inputs_page.DESIGN_GUIDE_NEEDS_REFRESH_KEY)):
+            return _reject("design_guide_needs_refresh")
+
+        pending_keys = (
+            "_pending_inputs_apply_refresh",
+            "_inputs_action_apply_recommendation",
+            "_inputs_action_run_auto_design",
+            inputs_page.DESIGN_GUIDE_COMPONENT_APPLY_IN_FLIGHT_KEY,
+        )
+        active_pending = {
+            key: st.session_state.get(key)
+            for key in pending_keys
+            if bool(st.session_state.get(key))
+        }
+        if active_pending:
+            return _reject("pending_apply_or_action_state", pending_keys=sorted(active_pending.keys()))
+
+        try:
+            current_fp = inputs_page._get_design_guide_fp(dict(summary_state or {}))
+        except Exception as exc:
+            return _reject("current_fingerprint_error", error=f"{type(exc).__name__}: {exc}")
+        publication_fp = st.session_state.get(inputs_page.DESIGN_GUIDE_PUBLICATION_FP_KEY)
+        baseline_fp = st.session_state.get(inputs_page.DESIGN_GUIDE_PANEL_BASELINE_FP_KEY)
+        bundle_publication_fp = bundle.get("design_guide_publication_fingerprint")
+
+        def _fp_matches(left, right) -> bool:
+            if left in (None, "") or right in (None, ""):
+                return False
+            return left == right or str(left) == str(right)
+
+        if not _fp_matches(publication_fp, current_fp):
+            return _reject("publication_fingerprint_mismatch")
+        if not _fp_matches(baseline_fp, current_fp):
+            return _reject("baseline_fingerprint_mismatch")
+        if bundle_publication_fp not in (None, "") and not _fp_matches(bundle_publication_fp, current_fp):
+            return _reject("bundle_publication_fingerprint_mismatch")
+
+        title = str(
+            bundle.get("primary_card_title")
+            or bundle.get("final_primary_title")
+            or bundle.get("selected_title")
+            or ""
+        ).strip()
+        if not title:
+            return _reject("missing_visible_title")
+
+        contract = dict(
+            bundle.get("displayed_primary_button_contract")
+            or bundle.get("primary_button_contract")
+            or bundle.get("button_contract")
+            or st.session_state.get("design_guide_primary_button_contract")
+            or {}
+        )
+        if not contract:
+            return _reject("missing_button_contract")
+
+        display_truth = dict(
+            bundle.get("displayed_primary_display_truth")
+            or bundle.get("primary_display_truth")
+            or bundle.get("display_truth")
+            or st.session_state.get("design_guide_primary_display_truth")
+            or {}
+        )
+        if not display_truth:
+            display_truth = {
+                "displayed_util": bundle.get("displayed_util"),
+                "displayed_status": bundle.get("displayed_status"),
+                "display_truth_source": bundle.get("display_truth_source"),
+                "target_low": bundle.get("target_low"),
+                "target_high": bundle.get("target_high"),
+                "displayed_within_target_band": bundle.get("displayed_within_target_band"),
+                "source_summary_util": bundle.get("source_summary_util"),
+                "source_candidate_util": bundle.get("source_candidate_util"),
+                "source_post_commit_util": bundle.get("source_post_commit_util"),
+            }
+        if not any(display_truth.get(key) is not None for key in ("displayed_util", "displayed_status", "display_truth_source")):
+            return _reject("missing_display_truth")
+
+        design_brain_result = dict(bundle.get("design_brain_result") or {})
+        equivalent_result_payload = dict(
+            design_brain_result
+            or bundle.get("design_guide_engine_decision")
+            or {}
+        )
+        if not equivalent_result_payload:
+            equivalent_result_payload = {
+                "source": "rendered_design_guide_publication",
+                "primary_card_title": title,
+                "primary_card_intent": bundle.get("primary_card_intent"),
+                "primary_guidance_intent": bundle.get("primary_guidance_intent"),
+                "terminal_state": bundle.get("design_guide_terminal_state"),
+                "terminal_state_source": bundle.get("design_guide_terminal_state_source"),
+                "button_contract_enabled": bool(
+                    bundle.get("button_contract_enabled")
+                    or contract.get("enabled")
+                    or contract.get("actionable")
+                ),
+                "displayed_status": display_truth.get("displayed_status"),
+                "display_truth_source": display_truth.get("display_truth_source"),
+            }
+            if not any(value is not None and value != "" for value in equivalent_result_payload.values()):
+                return _reject("missing_design_brain_result_or_equivalent")
+
+        evidence = dict(bundle.get("candidate_search_evidence") or {})
+        exact_blockers = _merge_family_evidence_maps(
+            bundle.get("exact_blockers_by_family"),
+            bundle.get("post_click_exact_blockers_by_family"),
+            bundle.get("cleanup_evidence_by_family"),
+            bundle.get("post_click_cleanup_evidence_by_family"),
+            evidence.get("exact_blockers_by_family"),
+            evidence.get("post_click_exact_blockers_by_family"),
+        )
+        active_fail = bool(summary_overview.get("any_fail")) or any(
+            str(value or "").strip().upper() == "FAIL"
+            for value in dict(summary_overview.get("statuses") or {}).values()
+        )
+        title_l = title.lower()
+        blocker_like = bool(
+            exact_blockers
+            or "blocked" in title_l
+            or "capacity is low" in title_l
+            or "cannot" in title_l
+        )
+        if (active_fail or blocker_like) and not (evidence or exact_blockers):
+            return _reject("missing_required_candidate_or_blocker_evidence")
+
+        updates = dict(contract.get("updates") or {})
+        actionable = bool(contract.get("actionable") or contract.get("enabled"))
+        apply_payload = dict(st.session_state.get(inputs_page.DESIGN_GUIDE_PRIMARY_APPLY_PAYLOAD_KEY) or {})
+        binding_audit = dict(st.session_state.get(inputs_page.DESIGN_GUIDE_PRIMARY_PAYLOAD_BINDING_AUDIT_KEY) or {})
+        if actionable or updates:
+            if not updates:
+                return _reject("actionable_contract_missing_updates")
+            if not apply_payload:
+                return _reject("actionable_contract_missing_apply_payload")
+            if binding_audit.get("payload_binding_match") is False:
+                return _reject("payload_binding_mismatch")
+            if binding_audit.get("payload_update_match") is False:
+                return _reject("payload_update_mismatch")
+            candidate_id = (
+                contract.get("source_candidate_id")
+                or contract.get("candidate_id")
+                or apply_payload.get("candidate_id")
+                or apply_payload.get("source_candidate_id")
+            )
+            if not str(candidate_id or "").strip():
+                return _reject("actionable_contract_missing_candidate_id")
+        elif updates:
+            return _reject("disabled_contract_has_updates")
+
+        if exact_blockers and actionable and updates:
+            return _reject("blocker_action_mismatch")
+
+        overview = dict(bundle.get("overview") or summary_overview or {})
+        family_utils = dict(
+            bundle.get("family_utils")
+            or (overview.get("utils") if isinstance(overview, dict) else {})
+            or {}
+        )
+        debug = dict(bundle)
+        debug.update(
+            {
+                "browser_probe_guidance_source": "rendered_bundle_reuse",
+                "browser_probe_rendered_bundle_reused": True,
+                "browser_probe_rendered_bundle_reuse_reason": "eligible",
+                "overview": overview,
+                "family_utils": family_utils,
+                "primary_button_contract": dict(contract),
+                "button_contract": dict(contract),
+                "primary_display_truth": dict(display_truth),
+                "candidate_search_evidence": dict(evidence),
+                "design_brain_result": dict(design_brain_result),
+                "browser_probe_equivalent_result_payload": dict(equivalent_result_payload),
+            }
+        )
+        if exact_blockers:
+            debug["exact_blockers_by_family"] = dict(exact_blockers)
+            debug.setdefault("post_click_exact_blockers_by_family", dict(exact_blockers))
+
+        item = {
+            "title_main": title,
+            "title": title,
+            "action_type": contract.get("action_type"),
+            "status": bundle.get("primary_status") or display_truth.get("displayed_status"),
+            "design_guide_terminal_state": bundle.get("design_guide_terminal_state"),
+            "guidance_intent": bundle.get("primary_guidance_intent") or bundle.get("primary_card_intent"),
+            "button_contract": dict(contract),
+            "display_truth": dict(display_truth),
+            "candidate_search_evidence": dict(evidence),
+            "action_payload": {
+                "updates": dict(updates),
+                "candidate_search_evidence": dict(evidence),
+            },
+            "resolved_candidate": {
+                "candidate_search_evidence": dict(evidence),
+            },
+            "family": contract.get("family") or evidence.get("family"),
+            "util": display_truth.get("displayed_util"),
+        }
+        payload = {
+            "guidance_items": [item],
+            "debug_trace": dict(debug),
+            "cache_data": {
+                "guidance_cache_fp": str(current_fp),
+                "browser_probe_guidance_source": "rendered_bundle_reuse",
+            },
+            "recommendation_result": bundle.get("recommendation_result"),
+            "design_brain_result": dict(design_brain_result),
+            "browser_probe_equivalent_result_payload": dict(equivalent_result_payload),
+        }
+        meta.update(
+            {
+                "source": "rendered_bundle_reuse",
+                "reason": "eligible",
+                "current_fingerprint": str(current_fp),
+                "route": selected_slug,
+            }
+        )
+        return payload, dict(meta)
 
     if str(probe_phase or "") == "pre_page_render":
         payload = {
@@ -664,15 +949,37 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
         )
         render_timing_mark("app.browser_test_state_emit.summary_overview_probe.end", probe_phase=probe_phase)
         render_timing_mark("app.browser_test_state_emit.guidance_probe.start", probe_phase=probe_phase)
+        guidance_reuse_meta = {
+            "attempted": False,
+            "source": "fallback",
+            "reason": "not_attempted",
+        }
         with speed_profile_section("browser_probe.guidance_probe_build", category="compute"):
-            guidance_payload_probe = inputs_page._compute_design_guidance_items(
-                dict(summary_state_probe or {}),
-                guidance_debug_verbose=False,
-                debug_enabled=False,
+            guidance_payload_probe, guidance_reuse_meta = _probe_rendered_design_guide_reuse_payload(
+                summary_state=dict(summary_state_probe or {}),
+                summary_overview=dict(summary_overview_probe or {}),
             )
-        render_timing_mark("app.browser_test_state_emit.guidance_probe.end", probe_phase=probe_phase)
+            if not isinstance(guidance_payload_probe, dict):
+                guidance_reuse_meta = {
+                    **dict(guidance_reuse_meta or {}),
+                    "source": "fallback",
+                }
+                guidance_payload_probe = inputs_page._compute_design_guidance_items(
+                    dict(summary_state_probe or {}),
+                    guidance_debug_verbose=False,
+                    debug_enabled=False,
+                )
+        render_timing_mark(
+            "app.browser_test_state_emit.guidance_probe.end",
+            probe_phase=probe_phase,
+            source=guidance_reuse_meta.get("source"),
+            reason=guidance_reuse_meta.get("reason"),
+        )
         guidance_items_probe = list(guidance_payload_probe.get("guidance_items") or [])
         guidance_debug_probe = dict(guidance_payload_probe.get("debug_trace") or {})
+        guidance_debug_probe.setdefault("browser_probe_guidance_source", guidance_reuse_meta.get("source"))
+        guidance_debug_probe.setdefault("browser_probe_guidance_reuse_reason", guidance_reuse_meta.get("reason"))
+        guidance_debug_probe.setdefault("browser_probe_rendered_bundle_reuse_attempted", guidance_reuse_meta.get("attempted"))
         primary_probe = guidance_items_probe[0] if guidance_items_probe else {}
         primary_button_contract = dict(primary_probe.get("button_contract") or {})
         primary_display_truth = dict(primary_probe.get("display_truth") or {})
@@ -1227,6 +1534,11 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
             "displayed_guidance_intent_items": list(guidance_debug_probe.get("displayed_guidance_intent_items") or []),
             "primary_button_contract_debug": dict(guidance_debug_probe.get("primary_button_contract") or {}),
             "primary_display_truth_debug": dict(guidance_debug_probe.get("primary_display_truth") or {}),
+            "browser_probe_guidance_source": guidance_debug_probe.get("browser_probe_guidance_source"),
+            "browser_probe_guidance_reuse_reason": guidance_debug_probe.get("browser_probe_guidance_reuse_reason"),
+            "browser_probe_rendered_bundle_reuse_attempted": bool(
+                guidance_debug_probe.get("browser_probe_rendered_bundle_reuse_attempted")
+            ),
         }
         for _post_click_key in (
             "final_accepted_min_family_util",
@@ -1638,6 +1950,11 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
         ux_probe_record(
             "browser_probe.guidance_probe_build",
             fingerprint=(guidance_payload_probe.get("cache_data") or {}).get("guidance_cache_fp"),
+            cache_hit=guidance_reuse_meta.get("source") == "rendered_bundle_reuse",
+            meta={
+                "source": guidance_reuse_meta.get("source"),
+                "reason": guidance_reuse_meta.get("reason"),
+            },
         )
     except Exception as exc:
         summary_state_probe = {"_probe_error": f"{type(exc).__name__}: {exc}"}
@@ -3203,6 +3520,7 @@ def _render_create_project_form(user_id: str, module: str):
 def main():
     # --- ARCHITECTURE LOCK: dev mode flag ---
     st.session_state.setdefault("_dev_mode", bool(_BROWSER_TEST_MODE or _EXPLICIT_DEV_MODE))
+    _apply_normal_user_page_zoom_css()
     reset_speed_profile_last_run()
     reset_rerun_pure_caches()
     ux_probe_begin_rerun()
@@ -3944,6 +4262,43 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     # (See state_and_helpers.py banner: "PAGE FILE RULES (router-owned lifecycle)")
     _page_dispatch_started_perf = time.perf_counter()
     st.session_state["_user_latency_page_dispatch_started_perf"] = _page_dispatch_started_perf
+    same_page_inputs_root_shell = selected_slug == "inputs" and not page_changed
+
+    def _render_inputs_root_dispatch_stable_shell() -> None:
+        st.markdown(
+            """
+<div data-testid="inputs-root-dispatch-stable-shell"
+     aria-hidden="true"
+     style="min-height:900px;margin:0;padding:0;opacity:0;pointer-events:none;user-select:none;">
+  Inputs page stable rerun shell.
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+
+    def _render_selected_page_in_content_slot() -> None:
+        if same_page_inputs_root_shell:
+            render_timing_mark(
+                "app.page_dispatch.inputs_root_stable_shell.start",
+                selected_slug=selected_slug,
+            )
+            with page_content_slot.container():
+                root_shell_slot = st.empty()
+                with root_shell_slot.container():
+                    _render_inputs_root_dispatch_stable_shell()
+                PAGES[selected_slug][1]()
+                root_shell_slot.empty()
+            render_timing_mark(
+                "app.page_dispatch.inputs_root_stable_shell.end",
+                selected_slug=selected_slug,
+            )
+            return
+        render_timing_mark("app.page_dispatch.page_content_slot.clear.start", selected_slug=selected_slug)
+        page_content_slot.empty()
+        render_timing_mark("app.page_dispatch.page_content_slot.clear.end", selected_slug=selected_slug)
+        with page_content_slot.container():
+            PAGES[selected_slug][1]()
+
     if _BROWSER_TEST_MODE:
         _browser_probe_slot = st.empty()
         render_timing_mark("app.pre_dispatch.browser_probe_pre_page_render.start", selected_slug=selected_slug)
@@ -3951,11 +4306,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         render_timing_mark("app.pre_dispatch.browser_probe_pre_page_render.end", selected_slug=selected_slug)
         render_timing_mark("app.page_dispatch.start", selected_slug=selected_slug, browser_test_mode=True)
         try:
-            render_timing_mark("app.page_dispatch.page_content_slot.clear.start", selected_slug=selected_slug)
-            page_content_slot.empty()
-            render_timing_mark("app.page_dispatch.page_content_slot.clear.end", selected_slug=selected_slug)
-            with page_content_slot.container():
-                PAGES[selected_slug][1]()
+            _render_selected_page_in_content_slot()
         finally:
             render_timing_mark("app.page_dispatch.end", selected_slug=selected_slug, browser_test_mode=True)
             # Test-only probe publication must survive early Streamlit stops
@@ -3964,11 +4315,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     else:
         render_timing_mark("app.page_dispatch.start", selected_slug=selected_slug, browser_test_mode=False)
         try:
-            render_timing_mark("app.page_dispatch.page_content_slot.clear.start", selected_slug=selected_slug)
-            page_content_slot.empty()
-            render_timing_mark("app.page_dispatch.page_content_slot.clear.end", selected_slug=selected_slug)
-            with page_content_slot.container():
-                PAGES[selected_slug][1]()
+            _render_selected_page_in_content_slot()
         finally:
             render_timing_mark("app.page_dispatch.end", selected_slug=selected_slug, browser_test_mode=False)
     try:

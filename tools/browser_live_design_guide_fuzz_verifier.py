@@ -9,6 +9,7 @@ visible one-click button state.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import math
 import os
@@ -956,14 +957,15 @@ def _parse_summary_card_text(text: str) -> dict[str, Any]:
     )
     summary_segment = compact[:detail_start].strip() if detail_start >= 0 else compact
     detail_segment = compact[detail_start:].strip() if detail_start >= 0 else ""
+    status_pattern = r"PASS|FAIL|INFO|WARN|WARNING|NEAR LIMIT|CAPACITY|REQUIRES ACTION|NOT RUN|INPUT REQUIRED"
     pairs = re.findall(
-        r"\b([0-9]+(?:\.[0-9]+)?)\s+(PASS|FAIL|INFO|WARN|CAPACITY|REQUIRES ACTION|NOT RUN|INPUT REQUIRED)\b",
+        rf"\b([0-9]+(?:\.[0-9]+)?)\s+({status_pattern})\b",
         compact,
         flags=re.I,
     )
     top_level_match = re.search(
         r"\bUtilisation\s+([0-9]+(?:\.[0-9]+)?|[-—])\s+"
-        r"(PASS|FAIL|INFO|WARN|CAPACITY|REQUIRES ACTION|NOT RUN|INPUT REQUIRED)\b",
+        rf"({status_pattern})\b",
         summary_segment,
         flags=re.I,
     )
@@ -973,7 +975,7 @@ def _parse_summary_card_text(text: str) -> dict[str, Any]:
         selected_source = "top_level_summary_utilisation_row"
     else:
         summary_pairs = re.findall(
-            r"\b([0-9]+(?:\.[0-9]+)?)\s+(PASS|FAIL|INFO|WARN|CAPACITY|REQUIRES ACTION|NOT RUN|INPUT REQUIRED)\b",
+            rf"\b([0-9]+(?:\.[0-9]+)?)\s+({status_pattern})\b",
             summary_segment,
             flags=re.I,
         )
@@ -982,13 +984,13 @@ def _parse_summary_card_text(text: str) -> dict[str, Any]:
         selected_source = "summary_segment_first_pair" if summary_pairs else ("card_first_pair" if pairs else "status_only")
     if status is None:
         status_match = re.search(
-            r"\b(PASS|FAIL|INFO|WARN|CAPACITY|REQUIRES ACTION|NOT RUN|INPUT REQUIRED)\b",
+            rf"\b({status_pattern})\b",
             summary_segment or compact,
             flags=re.I,
         )
         status = status_match.group(1).upper() if status_match else None
     detail_pairs = re.findall(
-        r"\b([0-9]+(?:\.[0-9]+)?)\s+(PASS|FAIL|INFO|WARN|CAPACITY|REQUIRES ACTION|NOT RUN|INPUT REQUIRED)\b",
+        rf"\b([0-9]+(?:\.[0-9]+)?)\s+({status_pattern})\b",
         detail_segment,
         flags=re.I,
     )
@@ -1071,6 +1073,7 @@ def parse_visible_design_guide(page, browser_state: dict[str, Any]) -> dict[str,
                             return {
                                 backgroundColor: cs.backgroundColor,
                                 borderColor: cs.borderColor,
+                                borderLeftColor: cs.borderLeftColor,
                                 color: cs.color,
                             };
                         }"""
@@ -1114,6 +1117,11 @@ def parse_visible_design_guide(page, browser_state: dict[str, Any]) -> dict[str,
                 "design-guide-current-shear",
                 "design-guide-current-crack",
                 "design-guide-current-deflection",
+                "design-guide-preview-row",
+                "design-guide-preview-bending",
+                "design-guide-preview-shear",
+                "design-guide-preview-crack",
+                "design-guide-preview-deflection",
                 "design-guide-main-explanation",
                 "design-guide-reason-bending",
                 "design-guide-reason-shear",
@@ -1245,6 +1253,55 @@ def parse_visible_design_guide(page, browser_state: dict[str, Any]) -> dict[str,
             text,
             flags=re.I,
         )
+    pending_shell_visible_count = 0
+    pending_shell_text = ""
+    body_text = ""
+    try:
+        body_text = str(page.locator("body").inner_text(timeout=5000) if page else "")
+    except Exception:
+        body_text = ""
+    try:
+        pending_shells = page.locator("[data-testid='design-guide-proof-pending']")
+        pending_total = int(pending_shells.count())
+        pending_visible_texts: list[str] = []
+        for pending_index in range(pending_total):
+            pending_loc = pending_shells.nth(pending_index)
+            try:
+                if pending_loc.is_visible(timeout=500):
+                    pending_shell_visible_count += 1
+                    pending_visible_texts.append(str(pending_loc.inner_text(timeout=1000) or "").strip())
+            except Exception:
+                continue
+        pending_shell_text = "\n".join(text for text in pending_visible_texts if text)
+    except Exception:
+        pending_shell_visible_count = 0
+        pending_shell_text = ""
+    dom_family_status_preview: dict[str, dict[str, Any]] = {}
+    if cards:
+        try:
+            card_loc = page.locator(".fast-guidance-item").nth(0)
+            for preview_family in ("bending", "shear", "crack", "deflection"):
+                row_loc = card_loc.locator(f"[data-testid='design-guide-preview-{preview_family}']").first
+                if row_loc.count() <= 0:
+                    continue
+                row_text = str(row_loc.text_content(timeout=1000) or row_loc.inner_text(timeout=1000) or "")
+                row_text = row_text.replace("→", "->").replace("\u2014", "-")
+                match = re.search(
+                    r":\s*([0-9]+(?:\.[0-9]+)?|-)\s*([A-Z ]*?)\s*->\s*([0-9]+(?:\.[0-9]+)?|-)\s*([A-Z ]*)",
+                    row_text,
+                    flags=re.I,
+                )
+                if not match:
+                    continue
+                before_raw, before_status, after_raw, after_status = match.groups()
+                dom_family_status_preview[preview_family] = {
+                    "before_util": _float_or_none(before_raw),
+                    "after_util": _float_or_none(after_raw),
+                    "before_status": str(before_status or "").strip().upper() or None,
+                    "after_status": str(after_status or "").strip().upper() or None,
+                }
+        except Exception:
+            dom_family_status_preview = {}
     return {
         "visible_card_count": visible_count,
         "fast_guidance_item_count": count,
@@ -1261,7 +1318,9 @@ def parse_visible_design_guide(page, browser_state: dict[str, Any]) -> dict[str,
         "cta_label": cta_label,
         "cta_classes": cta_classes,
         "cta_computed_style": dict(cta_computed_style or {}),
-        "preparing_visible": "Design guidance is preparing" in (page.locator("body").inner_text(timeout=5000) if page else ""),
+        "proof_pending_visible_count": int(pending_shell_visible_count),
+        "proof_pending_text": pending_shell_text,
+        "preparing_visible": "Design guidance is preparing" in body_text,
         "button_contract": contract,
         "selected_action_updates": dict(guidance.get("primary_updates") or primary_payload_updates or {}),
         "design_guide_primary_apply_payload": dict(primary_payload),
@@ -1272,7 +1331,8 @@ def parse_visible_design_guide(page, browser_state: dict[str, Any]) -> dict[str,
             or {}
         ),
         "family_status_preview": dict(
-            guidance.get("family_status_preview")
+            dom_family_status_preview
+            or guidance.get("family_status_preview")
             or proof.get("family_status_preview")
             or {}
         ),
@@ -1304,6 +1364,11 @@ def parse_visible_design_guide(page, browser_state: dict[str, Any]) -> dict[str,
                 browser_state.get("design_guide_primary_payload_binding_audit") or {}
             ).get("render_fingerprint"),
         },
+        "design_brain_result_validation": dict(
+            guidance.get("design_brain_result_validation")
+            or dict(guidance.get("design_brain_result") or {}).get("validation")
+            or {}
+        ),
     }
 
 
@@ -3804,6 +3869,50 @@ def assert_colour_alignment(step: dict[str, Any]) -> None:
     )
 
 
+def assert_terminal_card_render_contract(step: dict[str, Any]) -> None:
+    card = dict(step.get("visible_design_guide") or {})
+    if not is_terminal_card(card):
+        return
+    pending_visible = int(card.get("proof_pending_visible_count") or 0)
+    pending_text = str(card.get("proof_pending_text") or "")
+    if pending_visible > 0:
+        _fail(
+            "terminal_design_guide_pending_shell_visible",
+            "Final terminal Design Guide card is visible while the proof-pending shell is still visible.",
+            step,
+        )
+    style = dict(card.get("computed_style") or {})
+    border_left = _rgb_tuple(style.get("borderLeftColor"))
+    if border_left is None:
+        border_left = _rgb_tuple(style.get("borderColor"))
+    if border_left is not None:
+        red, green, blue = border_left
+        terminal_is_green = bool(green >= 120 and green >= red and green >= blue)
+        terminal_looks_blue = bool(blue > green and blue > red)
+        if terminal_looks_blue or not terminal_is_green:
+            _fail(
+                "terminal_design_guide_card_not_green",
+                (
+                    "Final terminal Design Guide card must render with green/pass styling, "
+                    f"but border colour was {style.get('borderLeftColor') or style.get('borderColor')}."
+                ),
+                step,
+            )
+    classes = str(card.get("classes") or "").lower()
+    if "dg-card--pass" in classes and any(token in classes for token in ("dg-card--blocked", "dg-card--action")):
+        _fail(
+            "terminal_design_guide_card_conflicting_classes",
+            f"Final PASS card has conflicting Design Guide classes: {card.get('classes')}.",
+            step,
+        )
+    if "checking design guidance" in pending_text.lower():
+        _fail(
+            "terminal_design_guide_pending_shell_text_leaked",
+            "Final terminal Design Guide card coexists with visible pending-shell text.",
+            step,
+        )
+
+
 def active_fail_families(summary: dict[str, Any]) -> list[str]:
     return [family for family in ("bending", "shear") if family_status(summary, family) == "FAIL"]
 
@@ -3982,6 +4091,41 @@ def _read_shared_value(shared: dict[str, Any], key: str) -> Any:
     return None
 
 
+def _state_fingerprint_values(fingerprint: Any) -> dict[str, Any]:
+    if not isinstance(fingerprint, str) or not fingerprint.strip():
+        return {}
+    try:
+        parsed = ast.literal_eval(fingerprint)
+    except Exception:
+        return {}
+    pairs: Any = None
+    if isinstance(parsed, (tuple, list)):
+        for part in reversed(parsed):
+            if (
+                isinstance(part, (tuple, list))
+                and all(isinstance(row, (tuple, list)) and len(row) >= 2 for row in part)
+            ):
+                pairs = part
+                break
+    if not isinstance(pairs, (tuple, list)):
+        return {}
+    values: dict[str, Any] = {}
+    for row in pairs:
+        try:
+            key, value = row[0], row[1]
+        except Exception:
+            continue
+        values[str(key)] = value
+    return values
+
+
+def _read_fingerprint_value(values: dict[str, Any], key: str) -> Any:
+    for alias in _shared_key_aliases(key):
+        if alias in values:
+            return values.get(alias)
+    return None
+
+
 def _step_summary_signature(step: dict[str, Any]) -> dict[str, Any]:
     summary = dict(step.get("visible_summary") or {})
     return {
@@ -4021,6 +4165,28 @@ def one_click_material_change_audit(previous_step: dict[str, Any], step: dict[st
     after_shared = _shared_probe_values(step)
     before_values = {key: _read_shared_value(before_shared, key) for key in expected_updates}
     after_values = {key: _read_shared_value(after_shared, key) for key in expected_updates}
+    before_summary = _step_summary_signature(previous_step)
+    after_summary = _step_summary_signature(step)
+    before_card = _step_card_signature(previous_step)
+    after_card = _step_card_signature(step)
+    before_fp_values = _state_fingerprint_values(before_card.get("state_fingerprint"))
+    after_fp_values = _state_fingerprint_values(after_card.get("state_fingerprint"))
+    value_source_by_key: dict[str, str] = {}
+    for key in expected_updates:
+        before_fp = _read_fingerprint_value(before_fp_values, key)
+        after_fp = _read_fingerprint_value(after_fp_values, key)
+        before_missing = before_values.get(key) is None
+        after_missing = after_values.get(key) is None
+        if before_missing and before_fp is not None:
+            before_values[key] = before_fp
+            value_source_by_key[key] = "fingerprint_before"
+        if after_missing and after_fp is not None:
+            after_values[key] = after_fp
+            value_source_by_key[key] = (
+                f"{value_source_by_key.get(key)}+fingerprint_after"
+                if key in value_source_by_key
+                else "fingerprint_after"
+            )
     changed_keys = [
         key
         for key in expected_updates
@@ -4033,10 +4199,6 @@ def one_click_material_change_audit(previous_step: dict[str, Any], step: dict[st
         and _same_value(after_values.get(key), expected, tol=1e-9)
     ]
     unchanged_expected_keys = [key for key in expected_updates if key not in changed_keys]
-    before_summary = _step_summary_signature(previous_step)
-    after_summary = _step_summary_signature(step)
-    before_card = _step_card_signature(previous_step)
-    after_card = _step_card_signature(step)
     before_results_version = before_shared.get("results_version") or before_shared.get("design_results_version")
     after_results_version = after_shared.get("results_version") or after_shared.get("design_results_version")
     before_candidate_id = before_card.get("contract_candidate_id")
@@ -4057,6 +4219,7 @@ def one_click_material_change_audit(previous_step: dict[str, Any], step: dict[st
         "before_shared_values": before_values,
         "expected_updates": dict(expected_updates),
         "after_shared_values": after_values,
+        "value_source_by_key": dict(value_source_by_key),
         "changed_keys": list(changed_keys),
         "applied_to_expected_keys": list(applied_to_expected_keys),
         "unchanged_expected_keys": list(unchanged_expected_keys),
@@ -4692,12 +4855,39 @@ def _post_click_final_state_analysis(step: dict[str, Any], previous_step: dict[s
         if family_util(summary, family) is not None
         and float(family_util(summary, family) or 0.0) > ACCEPTED_TARGET_HIGH
     ]
+    current_contract = dict(card.get("button_contract") or {})
+    contract_action_family = str(
+        current_contract.get("family")
+        or card.get("family")
+        or ""
+    ).strip().lower()
+    card_action_family = str(card.get("family") or "").strip().lower()
+    action_families = {family for family in (contract_action_family, card_action_family) if family}
+    if contract_action_family == "combined":
+        action_families.update({"bending", "shear"})
+    action_updates = dict(current_contract.get("updates") or card.get("selected_action_updates") or {})
+    if any(str(key).startswith(("bot", "db_bot", "nb_bot")) for key in action_updates):
+        action_families.add("bending")
+    if any(str(key).startswith(("lig", "s_lig")) for key in action_updates):
+        action_families.add("shear")
+    action_covers_below_accepted_band = bool(
+        ctype == "ACTION"
+        and _contract_actionable(card)
+        and set(strength_families_below_accepted_band).intersection(action_families)
+    )
     target_band_blockers = _target_band_blocker_table(state, strength_families_outside_preferred_target)
     unresolved_low = [
         family
         for family in unresolved_low
         if not bool(dict(target_band_blockers.get(family) or {}).get("valid"))
     ]
+    visible_exact_blocker_families = set(dict(card.get("exact_blockers_by_family") or {}).keys())
+    visible_attempt_families = set(dict(card.get("blocker_attempts_by_family") or {}).keys())
+    outside_accepted_with_exact_target_band_proof = bool(strength_families_outside_accepted_band) and all(
+        bool(dict(target_band_blockers.get(family) or {}).get("valid"))
+        and (family in visible_exact_blocker_families or family in visible_attempt_families)
+        for family in strength_families_outside_accepted_band
+    )
     intended_util = family_util(summary, clicked_family) if clicked_family in {"bending", "shear"} else None
     worst_util = _float_or_none(dict(summary.get("browser_overview_support") or {}).get("worst_util"))
     in_target = bool(
@@ -4734,6 +4924,9 @@ def _post_click_final_state_analysis(step: dict[str, Any], previous_step: dict[s
         "families_below_accepted_band": list(strength_families_below_accepted_band),
         "families_above_accepted_band": list(strength_families_above_accepted_band),
         "target_band_blockers_by_family": target_band_blockers,
+        "outside_accepted_with_exact_target_band_proof": outside_accepted_with_exact_target_band_proof,
+        "visible_exact_blocker_families": sorted(visible_exact_blocker_families),
+        "visible_attempt_families": sorted(visible_attempt_families),
         "unresolved_active_fail_families": unresolved_active,
         "unresolved_low_util_families": unresolved_low,
         "exact_blockers_by_family": blockers,
@@ -4765,17 +4958,6 @@ def _post_click_final_state_analysis(step: dict[str, Any], previous_step: dict[s
                 }
             )
             return analysis
-        if not strength_families_in_accepted_band:
-            analysis.update(
-                {
-                    "failure_classification": "active_fail_post_click_no_family_in_target",
-                    "failure_message": (
-                        "One-click from active FAIL made required checks pass but neither bending nor shear "
-                        f"landed in the accepted {ACCEPTED_TARGET_LOW}-{ACCEPTED_TARGET_HIGH} utilisation band."
-                    ),
-                }
-            )
-            return analysis
         if strength_families_above_accepted_band:
             analysis.update(
                 {
@@ -4787,11 +4969,46 @@ def _post_click_final_state_analysis(step: dict[str, Any], previous_step: dict[s
                 }
             )
             return analysis
+        if action_covers_below_accepted_band:
+            analysis.update(
+                {
+                    "final_state_type": "post_active_repair_next_cleanup_action",
+                    "pass_reason": "post_active_repair_published_executor_backed_cleanup_action_for_below_accepted_family",
+                    "accepted_reason": (
+                        "all required checks pass and below-accepted strength families have an enabled "
+                        "executor-backed follow-up optimisation/cleanup action instead of a terminal/blocker claim"
+                    ),
+                    "action_families": sorted(action_families),
+                }
+            )
+            return analysis
+        if not strength_families_in_accepted_band and outside_accepted_with_exact_target_band_proof:
+            analysis.update(
+                {
+                    "final_state_type": "post_active_repair_exact_target_band_stop",
+                    "pass_reason": "post_active_repair_outside_accepted_with_exact_target_band_blockers",
+                    "accepted_reason": (
+                        "all required checks pass and every outside-accepted strength family has visible "
+                        "exact target-band blocker proof"
+                    ),
+                }
+            )
+            return analysis
+        if not strength_families_in_accepted_band:
+            analysis.update(
+                {
+                    "failure_classification": "active_fail_post_click_no_family_in_target",
+                    "failure_message": (
+                        "One-click from active FAIL made required checks pass but neither bending nor shear "
+                        f"landed in the accepted {ACCEPTED_TARGET_LOW}-{ACCEPTED_TARGET_HIGH} utilisation band."
+                    ),
+                }
+            )
+            return analysis
         if ctype == "ACTION" and _contract_actionable(card):
             action_family = str(
-                card.get("family")
-                or dict(card.get("button_contract") or {}).get("family")
-                or ""
+                contract_action_family
+                or card_action_family
             ).strip().lower()
             if action_family in set(strength_families_below_accepted_band):
                 analysis.update(
@@ -4884,7 +5101,12 @@ def _post_click_final_state_analysis(step: dict[str, Any], previous_step: dict[s
                 }
             )
             return analysis
-        if not (in_target or in_accepted_band or accepted_family_condition):
+        if not (
+            in_target
+            or in_accepted_band
+            or accepted_family_condition
+            or outside_accepted_with_exact_target_band_proof
+        ):
             analysis.update(
                 {
                     "failure_classification": "post_click_outside_target_without_exact_blocker",
@@ -4930,6 +5152,8 @@ def _post_click_final_state_analysis(step: dict[str, Any], previous_step: dict[s
                 "final_state_type": (
                     "green_accepted_best_safe_result"
                     if previous_active and strength_families_outside_preferred_target
+                    else "green_terminal_outside_accepted_with_exact_target_band_blockers"
+                    if outside_accepted_with_exact_target_band_proof
                     else "green_target_accepted_with_explained_secondary_blocker"
                     if previous_active
                     else "green_target_accepted"
@@ -4937,12 +5161,17 @@ def _post_click_final_state_analysis(step: dict[str, Any], previous_step: dict[s
                 "pass_reason": (
                     "post_click_green_accepted_best_safe_result"
                     if previous_active and strength_families_outside_preferred_target
+                    else "post_click_green_terminal_outside_accepted_with_exact_target_band_blockers"
+                    if outside_accepted_with_exact_target_band_proof
                     else "post_click_green_target_accepted_with_explained_secondary_blocker"
                     if previous_active
                     else "post_click_green_target_accepted"
                 ),
                 "accepted_reason": (
-                    "all required checks pass, at least one strength family is in the accepted band after "
+                    "all required checks pass, every strength family outside the accepted band has visible exact "
+                    "target-band blocker proof, and no same-flow CTA remains"
+                    if outside_accepted_with_exact_target_band_proof
+                    else "all required checks pass, at least one strength family is in the accepted band after "
                     "active-fail repair, preferred target-band misses are reported, every below-accepted "
                     "strength family has exact blocker evidence, and no same-flow CTA remains"
                 ),
@@ -5714,6 +5943,19 @@ def assert_visible_contract(
             step,
         )
     assert_design_guide_publication_contract(None, step)
+    design_brain_validation = dict(card.get("design_brain_result_validation") or {})
+    design_brain_failures = [
+        str(failure or "").strip()
+        for failure in list(design_brain_validation.get("failures") or [])
+        if str(failure or "").strip()
+    ]
+    if design_brain_failures:
+        step["design_brain_result_validation"] = dict(design_brain_validation)
+        _fail(
+            "design_brain_contract_validation_failed",
+            f"DesignBrainResult contract validation failed: {design_brain_failures}",
+            step,
+        )
     if card.get("visible_card_count") != 1:
         _fail("missing_visible_card" if int(card.get("visible_card_count") or 0) == 0 else "duplicate_visible_cards", "Expected exactly one visible .fast-guidance-item card.", step)
     if int(card.get("fast_guidance_item_count") or 0) < 1:
@@ -5753,6 +5995,7 @@ def assert_visible_contract(
         if token in text_l:
             _fail(classification, f"Visible Design Guide card uses non-specific blocker wording: {token}", step)
     assert_colour_alignment(step)
+    assert_terminal_card_render_contract(step)
     assert_card_button_colour_semantics(step)
     assert_family_visibility_contract(step)
 
@@ -7578,9 +7821,9 @@ def capture_browser_probe_lifecycle_snapshot(
     return snapshot
 
 
-def _load_browser_state(page) -> dict[str, Any]:
+def _load_browser_state(page, timeout_s: float = 8.0) -> dict[str, Any]:
     """Read Browser state through robust probe fallbacks before label-only helper."""
-    browser_state, read_meta = _read_browser_state_probe_direct(page, timeout_s=8.0)
+    browser_state, read_meta = _read_browser_state_probe_direct(page, timeout_s=timeout_s)
     if isinstance(browser_state, dict):
         return browser_state
     try:

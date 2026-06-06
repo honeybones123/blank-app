@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import html
-import os
 import time
 from typing import Any
 
@@ -99,10 +98,17 @@ def _render_proof_backed_card(st_module: Any, proof_card: dict) -> None:
 
 def _render_proof_pending_shell(st_module: Any) -> None:
     """Render a CTA-free Design Guide placeholder while proof/search is running."""
+    applying = bool(st_module.session_state.get("_design_guide_component_apply_in_flight"))
     chips = ("Strength", "Detailing", "Serviceability", "Cleanup options")
     chips_html = "".join(
         f"<span class='dg-proof-pending-chip'>{html.escape(label)}</span>"
         for label in chips
+    )
+    title = "Applying one-click design..." if applying else "Checking design guidance&hellip;"
+    subtext = (
+        "Updating the beam inputs, recalculating checks, and preparing the final Design Guide result."
+        if applying
+        else "Reviewing strength, detailing, serviceability, and cleanup options."
     )
     st_module.markdown(
         """
@@ -117,6 +123,11 @@ def _render_proof_pending_shell(st_module: Any) -> None:
     color: rgb(31, 41, 55);
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
+.dg-proof-pending-shell.applying {
+    border-color: rgba(22, 163, 74, 0.20);
+    border-left-color: rgb(22, 163, 74);
+    background: linear-gradient(180deg, rgba(240,253,244,0.96), rgba(248,250,252,0.82));
+}
 .dg-proof-pending-eyebrow {
     color: rgb(37, 99, 235);
     font-size: 0.72rem;
@@ -124,6 +135,9 @@ def _render_proof_pending_shell(st_module: Any) -> None:
     text-transform: uppercase;
     letter-spacing: 0;
     margin-bottom: 0.28rem;
+}
+.dg-proof-pending-shell.applying .dg-proof-pending-eyebrow {
+    color: rgb(22, 101, 52);
 }
 .dg-proof-pending-title {
     font-size: 1.02rem;
@@ -153,6 +167,12 @@ def _render_proof_pending_shell(st_module: Any) -> None:
     border-radius: inherit;
     background: linear-gradient(90deg, rgba(37,99,235,0), rgba(37,99,235,0.42), rgba(37,99,235,0));
     animation: dgProofPendingSweep 1.35s ease-in-out infinite;
+}
+.dg-proof-pending-shell.applying .dg-proof-pending-bar {
+    background: rgba(22, 163, 74, 0.14);
+}
+.dg-proof-pending-shell.applying .dg-proof-pending-bar::after {
+    background: linear-gradient(90deg, rgba(22,163,74,0), rgba(22,163,74,0.44), rgba(22,163,74,0));
 }
 .dg-proof-pending-chips {
     display: flex;
@@ -185,13 +205,14 @@ def _render_proof_pending_shell(st_module: Any) -> None:
         """,
         unsafe_allow_html=True,
     )
+    shell_class = "dg-proof-pending-shell applying" if applying else "dg-proof-pending-shell"
     st_module.markdown(
-        "<section class='dg-proof-pending-shell' data-testid='design-guide-proof-pending' "
+        f"<section class='{shell_class}' data-testid='design-guide-proof-pending' "
         "aria-live='polite' aria-busy='true'>"
         "<div class='dg-proof-pending-eyebrow'>Design Guide</div>"
-        "<div class='dg-proof-pending-title'>Checking design guidance&hellip;</div>"
+        f"<div class='dg-proof-pending-title'>{title}</div>"
         "<div class='dg-proof-pending-subtext'>"
-        "Reviewing strength, detailing, serviceability, and cleanup options."
+        f"{html.escape(subtext)}"
         "</div>"
         "<div class='dg-proof-pending-bar' aria-hidden='true'></div>"
         f"<div class='dg-proof-pending-chips'>{chips_html}</div>"
@@ -204,16 +225,7 @@ def render_pre_widget_placeholder(st_module: Any, slot: Any) -> None:
     """Mount the lightweight Design Guide placeholder before inputs widgets."""
     with slot.container():
         st_module.markdown("### Design Guide")
-        browser_test_mode = os.environ.get("CODEX_BROWSER_TEST_MODE", "").strip().lower() in {
-            "1",
-            "true",
-            "yes",
-            "on",
-        }
-        if browser_test_mode:
-            st_module.caption("Design guidance is preparing after the input controls are mounted.")
-        else:
-            _render_proof_pending_shell(st_module)
+        _render_proof_pending_shell(st_module)
 
 
 def render_final_panel(

@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .dg-cta {
+      width: 100%;
+      min-height: 44px;
+      border: 1px solid rgba(15, 23, 42, 0.12);
+      border-left: 4px solid #64748b;
+      border-radius: 10px;
+      background: #F8FAFC;
+      color: #0f172a;
+      font-weight: 700;
+      font-size: 0.96rem;
+      line-height: 1.2;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 0.55rem;
+      padding: 0.72rem 0.95rem;
+      text-align: left;
+      transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease;
+    }
+    .dg-cta--fail {
+      background: #FEF2F2;
+      border-left-color: #dc2626;
+    }
+    .dg-cta--warn {
+      background: #FFF7ED;
+      border-left-color: #f59e0b;
+    }
+    .dg-cta--pass {
+      background: #F0FDF4;
+      border-left-color: #16a34a;
+    }
+    .dg-cta--efficiency {
+      background: #EFF6FF;
+      border-left-color: #2563eb;
+    }
+    .dg-cta--start {
+      background: #F8FAFC;
+      border-left-color: #64748b;
+    }
+    .dg-cta:hover:not(:disabled) {
+      border-color: rgba(15, 23, 42, 0.18);
+    }
+    .dg-cta:disabled {
+      cursor: default;
+      opacity: 1;
+    }
+    .dg-spinner {
+      width: 15px;
+      height: 15px;
+      border: 2px solid rgba(15, 23, 42, 0.24);
+      border-top-color: #0f172a;
+      border-radius: 999px;
+      animation: dg-spin 760ms linear infinite;
+      display: none;
+    }
+    .is-applying .dg-spinner {
+      display: inline-block;
+    }
+    @keyframes dg-spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <button id="cta" class="dg-cta" type="button">
+    <span id="spinner" class="dg-spinner" aria-hidden="true"></span>
+    <span id="label">Run one-click auto design</span>
+  </button>
+  <script>
+    const button = document.getElementById("cta");
+    const label = document.getElementById("label");
+    let args = {};
+    let submitted = false;
+    let submittedToken = "";
+
+    function post(type, data) {
+      window.parent.postMessage(Object.assign({
+        isStreamlitMessage: true,
+        type
+      }, data || {}), "*");
+    }
+
+    function setFrameHeight() {
+      post("streamlit:setFrameHeight", { height: 52 });
+    }
+
+    function parentScroller() {
+      try {
+        const doc = window.parent.document;
+        return doc.querySelector("section.stMain")
+          || doc.querySelector("section[data-testid='stMain']")
+          || doc.querySelector("[data-testid='stAppViewContainer'] section")
+          || doc.scrollingElement
+          || doc.documentElement;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function rememberParentScroll() {
+      try {
+        const scroller = parentScroller();
+        if (!scroller) return;
+        const top = Number(scroller.scrollTop || 0);
+        if (!Number.isFinite(top) || top <= 0) return;
+        window.parent.localStorage.setItem("codex_dg_scroll_restore_v1", JSON.stringify({
+          scrollTop: top,
+          createdAt: Date.now(),
+          until: Date.now() + 15000,
+          token: String(args.token || "")
+        }));
+      } catch (e) {}
+    }
+
+    function currentParentScrollTop() {
+      try {
+        const scroller = parentScroller();
+        if (!scroller) return 0;
+        const top = Number(scroller.scrollTop || 0);
+        return Number.isFinite(top) && top > 0 ? top : 0;
+      } catch (e) {
+        return 0;
+      }
+    }
+
+    function componentReady() {
+      post("streamlit:componentReady", { apiVersion: 1 });
+      setFrameHeight();
+    }
+
+    function render(nextArgs) {
+      args = nextArgs || {};
+      const nextToken = String(args.token || "");
+      if (submitted && submittedToken && nextToken === submittedToken) {
+        button.disabled = true;
+        button.classList.add("is-applying");
+        label.textContent = "Applying one-click design...";
+        setFrameHeight();
+        return;
+      }
+      submitted = false;
+      submittedToken = "";
+      button.disabled = !!args.disabled;
+      button.classList.remove("is-applying");
+      button.className = "dg-cta";
+      button.classList.add(`dg-cta--${String(args.theme || "start").replace(/[^a-z0-9_-]/gi, "") || "start"}`);
+      label.textContent = args.label || "Run one-click auto design";
+      setFrameHeight();
+    }
+
+    window.addEventListener("message", (event) => {
+      const data = event.data || {};
+      if (data.type !== "streamlit:render") return;
+      render(data.args || {});
+    });
+
+    button.addEventListener("click", () => {
+      if (submitted || button.disabled) return;
+      rememberParentScroll();
+      submitted = true;
+      submittedToken = String(args.token || "");
+      button.disabled = true;
+      button.classList.add("is-applying");
+      label.textContent = "Applying one-click design...";
+      setFrameHeight();
+      post("streamlit:setComponentValue", {
+        value: {
+          token: String(args.token || ""),
+          event_id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          candidate_id: String(args.candidate_id || ""),
+          scroll_top: currentParentScrollTop(),
+          state_fingerprint: String(args.state_fingerprint || ""),
+          render_fingerprint: String(args.render_fingerprint || "")
+        },
+        dataType: "json"
+      });
+    });
+
+    componentReady();
+  </script>
+</body>
+</html>

@@ -474,6 +474,26 @@ def build_summary_check_card_html(
         return ""
     if not title:
         title = f"{str(family or 'Design').strip().title()} check"
+    if str(family or "").strip().lower() == "shear":
+        numeric_rows = []
+        for row in list(rows or []):
+            if not isinstance(row, dict) or row.get("is_informational"):
+                continue
+            row_status = str(row.get("status") or "").strip().upper()
+            if row_status in {"INFO", "-", "—"}:
+                continue
+            row_util = _numeric_prefix(row.get("util"))
+            if row_util is None:
+                continue
+            numeric_rows.append((row_util, row))
+        if numeric_rows:
+            governing_util, governing_row = max(numeric_rows, key=lambda item: item[0])
+            header_util = _numeric_prefix(utilisation)
+            if header_util is None or abs(float(header_util) - float(governing_util)) > 1e-9:
+                utilisation = f"{governing_util:.2f}"
+                capacity = governing_row.get("capacity") or governing_row.get("value") or capacity
+                action = governing_row.get("action") or governing_row.get("limit") or action
+                status = governing_row.get("status") or status
     kind = _status_kind(status)
     label = _status_label(status, kind)
     threshold = _threshold_text(kind) if threshold_text is None else threshold_text

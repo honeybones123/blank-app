@@ -81,6 +81,7 @@
         {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/replay_2026-05-09T06-07-04/failure_case.json"},
         {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/replay_2026-05-10T08-10-58/failure_case.json"},
         {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-09T19-05-48/case3_blocker_reason_failure_case.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-06-02T10-15-16/failure_case.json"},
         {"suite": "fuzz_regression", "path": "artifacts/verification/fuzz_regressions/2026-05-14/fuzz_2026_05_14_case0_low_util_no_cleanup_or_blocker.json"},
         {"suite": "fuzz_regression", "path": "artifacts/verification/fuzz_regressions/2026-05-14/fuzz_2026_05_14_case3_optimisation_outside_target_without_blocker.json"},
         {"suite": "fuzz_regression", "path": "artifacts/verification/fuzz_regressions/2026-05-14/fuzz_2026_05_14_case5_overdesign_blocker_false_cleanup_candidate_exists.json"}
@@ -92,7 +93,7 @@
       "failure_classifications": ["overdesign_blocker_false_cleanup_candidate_exists", "optimisation_outside_target_without_blocker"],
       "never_regress_rule": "Materially overprovided designs must either provide executable cleanup or show exact engineering blocker evidence.",
       "date_added": "2026-05-17",
-      "source_artifact_or_screenshot": "artifacts/verification/regression_invariant_audit_2026-05-17.json",
+      "source_artifact_or_screenshot": "artifacts/verification/regression_invariant_audit_2026-05-17.json; artifacts/verification/live_fuzz/2026-06-02T10-15-16/failure_case.json",
       "owner_area": "Design Guide overdesign cleanup/blocker truth"
     },
     {
@@ -169,6 +170,80 @@
       "date_added": "2026-05-17",
       "source_artifact_or_screenshot": "artifacts/verification/regression_invariant_audit_2026-05-17.json",
       "owner_area": "Design Guide post-click terminalisation"
+    },
+    {
+      "id": "terminal_design_guide_pass_card_no_blue_or_pending_shell",
+      "description": "Final terminal Design Guide outcomes must render as green accepted cards and must not coexist with the proof-pending shell.",
+      "focused_replays": [
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/overnight_failure_exports_2026-05-08T23-25-14/f003/failure_case.json"}
+      ],
+      "global_invariant": "terminal_design_guide_card_not_green",
+      "additional_global_invariants": [
+        "terminal_design_guide_pending_shell_visible",
+        "terminal_design_guide_card_conflicting_classes",
+        "terminal_design_guide_pending_shell_text_leaked"
+      ],
+      "regression_suite": "previous_fixed",
+      "failure_classification": "terminal_design_guide_card_not_green",
+      "failure_classifications": [
+        "terminal_design_guide_pending_shell_visible",
+        "terminal_design_guide_card_conflicting_classes",
+        "terminal_design_guide_pending_shell_text_leaked"
+      ],
+      "never_regress_rule": "A final terminal Design Guide card must be green/pass styled, cannot retain blue/action/blocker styling, and cannot leave the proof-pending shell visible underneath.",
+      "date_added": "2026-05-31",
+      "source_artifact_or_screenshot": "manual screenshot state: PASS / Design is efficient card visually blue with Checking design guidance shell visible underneath",
+      "owner_area": "Design Guide final render contract"
+    },
+    {
+      "id": "fuzz50_design_guide_contract_hardening_2026_06_01",
+      "description": "Extracted fuzz-50 Design Guide contract failures must stay fixed across stale-card, no-op CTA, low-util exact-stop, combined active-fail, collapsed-body, family-stamping, and ladder-stop evidence paths.",
+      "focused_replays": [
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_000_card_not_recomputed_after_edit.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_001_active_fail_post_click_out_of_target_family_unexplained.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_003_one_click_no_material_change.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_004_low_util_no_cleanup_or_blocker.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_013_design_guide_collapsed_body_leaking.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_017_card_not_recomputed_after_edit.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_018_card_not_recomputed_after_edit.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_028_ladder_stop_calc_box_evidence_missing.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_035_card_not_recomputed_after_edit.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_036_active_fail_post_click_no_family_in_target.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_040_optimisation_wrong_family.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_044_card_not_recomputed_after_edit.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_047_card_not_recomputed_after_edit.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_048_combined_fail_card_not_red_combined.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_049_low_util_no_cleanup_or_blocker.json"}
+      ],
+      "global_invariant": "card_not_recomputed_after_edit",
+      "additional_global_invariants": [
+        "card_not_recomputed_after_edit",
+        "one_click_no_material_change",
+        "low_util_no_cleanup_or_blocker",
+        "active_fail_post_click_no_family_in_target",
+        "active_fail_post_click_out_of_target_family_unexplained",
+        "optimisation_wrong_family",
+        "combined_fail_card_not_red_combined",
+        "design_guide_collapsed_body_leaking",
+        "ladder_stop_calc_box_evidence_missing"
+      ],
+      "regression_suite": "previous_fixed",
+      "failure_classification": "card_not_recomputed_after_edit",
+      "failure_classifications": [
+        "card_not_recomputed_after_edit",
+        "one_click_no_material_change",
+        "low_util_no_cleanup_or_blocker",
+        "active_fail_post_click_no_family_in_target",
+        "active_fail_post_click_out_of_target_family_unexplained",
+        "optimisation_wrong_family",
+        "combined_fail_card_not_red_combined",
+        "design_guide_collapsed_body_leaking",
+        "ladder_stop_calc_box_evidence_missing"
+      ],
+      "never_regress_rule": "The extracted fuzz-50 contract failures must remain replay-green; accepted exact-stop outcomes must be green with details, active failures must be repair/red or exactly blocked, visible summary/card truth must match, and executor-backed CTAs must not be stale or no-op.",
+      "date_added": "2026-06-01",
+      "source_artifact_or_screenshot": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures",
+      "owner_area": "Design Guide fuzz hardening contract"
     },
     {
       "id": "active_fail_dominates_cleanup_evidence",

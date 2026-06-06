@@ -58,6 +58,20 @@ After a patch, start with compile and the exact focused replay/case that proves
 the behaviour. Do not run previous-fixed, golden, or fuzz-regression before the
 focused proof unless the user explicitly asks for a broad investigation.
 
+For shared candidate contract work, include the structural contract preflight:
+
+```powershell
+python tools/verification/shared_candidate_contract_structure_check.py
+```
+
+This check is allowed to fail only on contract/alias-map structural problems.
+The companion alias coverage probe remains warning-only and must not fail gates
+for saved-artifact coverage gaps:
+
+```powershell
+python tools/verification/shared_candidate_alias_coverage_probe.py
+```
+
 The fixed replay gate is:
 
 ```powershell

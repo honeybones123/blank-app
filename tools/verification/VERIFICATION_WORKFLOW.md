@@ -23,6 +23,32 @@ python -m py_compile app.py inputs_page.py design_guidance_engine.py state_and_h
 
 Stop on compile failure. Do not run browser checks until compile is clean.
 
+For shared Design Brain candidate contract or alias-map changes, also run the
+non-runtime structural preflight:
+
+```powershell
+python tools/verification/shared_candidate_contract_structure_check.py
+```
+
+This structural checker may fail only on shared candidate contract or alias-map
+shape problems, such as invalid JSON, missing required alias-map sections,
+malformed mapping rows, invalid enum values, or missing required mapping entries.
+It must not inspect saved verification artifacts, run browser checks, load the
+product runtime, or fail on semantic alias coverage gaps.
+
+The optional alias coverage companion remains warning-only:
+
+```powershell
+python tools/verification/shared_candidate_alias_coverage_probe.py
+```
+
+The alias coverage probe may report `missing`, `ambiguous`, or
+`high_risk_mismatch` findings, but those findings must not fail gates yet.
+Saved-artifact coverage gaps, semantic split fields such as `safe`,
+`executor_backed`, `preview`, `evidence`, and `apply_payload_ref`, and
+exact-stop/blocker proof mappings remain non-failing until explicitly promoted
+in a later phase.
+
 ## Fix Protection Rule
 
 Every product, UI, verifier, evidence, or publication fix must prove two things:

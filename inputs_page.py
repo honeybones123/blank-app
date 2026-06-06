@@ -18,6 +18,36 @@ import time
 import uuid
 
 import design_guide_page
+from design_brain.optimisation import (
+    optimisation_best_target_band_candidate_fields as _optimisation_best_target_band_candidate_fields,
+    optimisation_candidate_search_count_statistics as _optimisation_candidate_search_count_statistics,
+    optimisation_candidate_search_distance_to_band as _optimisation_candidate_search_distance_to_band,
+    optimisation_candidate_search_summary_row as _optimisation_candidate_search_summary_row,
+    optimisation_cleanup_candidate_id as _optimisation_cleanup_candidate_id,
+    optimisation_closest_safe_candidate_fields as _optimisation_closest_safe_candidate_fields,
+    optimisation_copy_row_slice as _optimisation_copy_row_slice,
+    optimisation_rejected_target_band_rows as _optimisation_rejected_target_band_rows,
+    optimisation_safe_executor_backed_rows as _optimisation_safe_executor_backed_rows,
+    optimisation_selected_candidate_fields as _optimisation_selected_candidate_fields,
+    optimisation_target_band_rows as _optimisation_target_band_rows,
+)
+from design_brain.repair import (
+    active_failure_blocker_payload as _repair_active_failure_blocker_payload,
+    active_failure_blocker_visible_reason_text as _repair_active_failure_blocker_visible_reason_text,
+    active_failure_exact_blockers_for_families as _repair_active_failure_exact_blockers_for_families,
+    active_failure_route_attempt_updates as _repair_active_failure_route_attempt_updates,
+    active_failure_route_inventory as _repair_active_failure_route_inventory,
+    build_near_current_bottom_repair_specs as _repair_build_near_current_bottom_repair_specs,
+    build_near_current_geometry_repair_specs as _repair_build_near_current_geometry_repair_specs,
+    build_near_current_shear_repair_specs as _repair_build_near_current_shear_repair_specs,
+    candidate_failure_coverage_summary_from_overviews as _repair_candidate_failure_coverage_summary_from_overviews,
+    candidate_is_valid_primary_one_click as _repair_candidate_is_valid_primary_one_click,
+    candidate_preview_statuses_have_explicit_fail as _repair_candidate_preview_statuses_have_explicit_fail,
+    repair_attempt_route_summary as _repair_attempt_route_summary,
+    requires_full_coverage_for_primary_one_click as _repair_requires_full_coverage_for_primary_one_click,
+    select_repair_decision as _repair_select_repair_decision,
+    selected_candidate_from_repair_decision as _repair_selected_candidate_from_repair_decision,
+)
 
 _INPUTS_DEBUG_AUDIT = os.environ.get("INPUTS_DEBUG_AUDIT", "").strip().lower() in ("1", "true", "yes", "on")
 
@@ -1032,6 +1062,12 @@ def _overlay_inputs_reo_widget_mirrors_for_model(
         coords = working.get(coord_key)
         if not isinstance(coords, list):
             coords = []
+        try:
+            b_current = max(0.0, float(working.get("b", 0.0) or 0.0))
+            d_current = max(0.0, float(working.get("D", 0.0) or 0.0))
+        except Exception:
+            b_current = 0.0
+            d_current = 0.0
         row_count = max(1, int(float(working.get(f"{section}_row_count", 1) or 1)))
         expected_total = 0
         expected_dias: set[float] = set()
@@ -1071,6 +1107,22 @@ def _overlay_inputs_reo_widget_mirrors_for_model(
                 if isinstance(coord, dict)
             }
             if coord_dias and not coord_dias.issubset(expected_dias):
+                return True
+        for coord in coords:
+            if not isinstance(coord, dict):
+                continue
+            try:
+                x = float(coord.get("x", 0.0) or 0.0)
+                y = float(coord.get("y", 0.0) or 0.0)
+                db = max(0.0, float(coord.get("db", 0.0) or 0.0))
+            except Exception:
+                return True
+            if (
+                x - db / 2.0 < -1e-6
+                or x + db / 2.0 > b_current + 1e-6
+                or y - db / 2.0 < -1e-6
+                or y + db / 2.0 > d_current + 1e-6
+            ):
                 return True
         return False
 
@@ -1547,6 +1599,45 @@ def inputs_show_landing_dashboard() -> bool:
     return bool(no_design_actions and no_loads and not st.session_state.get(_INPUTS_CAPACITY_ONLY_VIEW_KEY, False))
 
 
+def inputs_has_design_actions_or_loads() -> bool:
+    """True once the Inputs page has real actions or generated/applied loads."""
+    def _num(value) -> float:
+        try:
+            return float(value or 0.0)
+        except Exception:
+            return 0.0
+
+    action_keys = (
+        "uls_Mstar",
+        "uls_Mstar_pos_manual",
+        "uls_Mstar_neg_manual",
+        "uls_Vstar",
+        "uls_Nstar",
+        "Tu_star",
+        "N_star",
+        "P_star",
+        "sigma_sr",
+        "sigma_s_sls",
+        "sls_Mstar",
+        "sls_Vstar",
+        "g_udl_kNm_per_m",
+        "q_udl_kNm_per_m",
+        "load_Mstar_proxy",
+        "load_Mstar_pos_proxy",
+        "load_Mstar_neg_proxy",
+        "load_Vstar_proxy",
+        "load_Nstar_proxy",
+        "inputs_load_Mstar_proxy",
+        "inputs_load_Mstar_pos_proxy",
+        "inputs_load_Mstar_neg_proxy",
+        "inputs_load_Vstar_proxy",
+        "inputs_load_Nstar_proxy",
+        "inputs_Tu_star",
+        "inputs_P_star",
+    )
+    return any(abs(_num(st.session_state.get(key, get_param(key, 0.0)))) >= 1e-15 for key in action_keys)
+
+
 def _render_inputs_landing_card_legacy(*, sync_callbacks: dict | None = None) -> None:
     """Centered welcome card when no design actions or loads (Fast mode only)."""
     if sync_callbacks is None:
@@ -1678,10 +1769,11 @@ def render_inputs_landing_card(*, sync_callbacks: dict | None = None) -> None:
 .inputs-landing-illustration {
   justify-self: end;
   width: min(100%, 330px);
-  opacity: 0.72;
+  opacity: 1;
 }
 .inputs-landing-option {
-  min-height: 220px;
+  height: 238px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -1710,19 +1802,24 @@ def render_inputs_landing_card(*, sync_callbacks: dict | None = None) -> None:
   margin: 0 0 0.45rem 0;
   color: #0f172a;
   font-size: 1.02rem;
+  line-height: 1.22;
   font-weight: 800;
+  min-height: 2.5em;
+  display: flex;
+  align-items: flex-start;
 }
 .inputs-landing-option p {
   margin: 0;
   color: #475569;
   font-size: 0.92rem;
   line-height: 1.42;
+  min-height: 3.95em;
 }
 .inputs-landing-helper {
   display: inline-flex;
   align-items: center;
   width: fit-content;
-  margin-top: 1rem;
+  margin-top: auto;
   padding: 0.32rem 0.56rem;
   border-radius: 999px;
   color: var(--theme);
@@ -1770,17 +1867,46 @@ div[data-testid="stHorizontalBlock"]:has(.inputs-landing-option) div[data-testid
       </div>
     </div>
     <svg class="inputs-landing-illustration" viewBox="0 0 360 160" fill="none" aria-hidden="true">
-      <path d="M42 56 L244 24 L318 70 L112 112 Z" fill="#dbeafe" opacity="0.55" stroke="#60a5fa" stroke-width="2"/>
-      <path d="M112 112 L318 70 L318 104 L112 146 Z" fill="#bfdbfe" opacity="0.38" stroke="#60a5fa" stroke-width="2"/>
-      <path d="M42 56 L112 112 L112 146 L42 90 Z" fill="#eff6ff" opacity="0.76" stroke="#60a5fa" stroke-width="2"/>
-      <path d="M67 72 L92 92 M72 84 L97 104" stroke="#3b82f6" stroke-width="2" opacity="0.7"/>
-      <circle cx="130" cy="115" r="4" fill="#2563eb" opacity="0.66"/>
-      <circle cx="164" cy="108" r="4" fill="#2563eb" opacity="0.66"/>
-      <circle cx="198" cy="101" r="4" fill="#2563eb" opacity="0.66"/>
-      <circle cx="232" cy="94" r="4" fill="#2563eb" opacity="0.66"/>
-      <path d="M128 129 L244 105" stroke="#2563eb" stroke-width="2" opacity="0.36"/>
-      <path d="M70 48 L236 20" stroke="#93c5fd" stroke-width="1.5" stroke-dasharray="5 6" opacity="0.75"/>
-      <path d="M120 126 L314 86" stroke="#93c5fd" stroke-width="1.5" stroke-dasharray="5 6" opacity="0.75"/>
+      <defs>
+        <clipPath id="inputs-landing-beam-front">
+          <path d="M54 64 L114 78 L114 132 L54 118 Z"/>
+        </clipPath>
+      </defs>
+      <rect x="6" y="14" width="348" height="132" rx="18" fill="#f8fbff" stroke="#dbe7fb" stroke-width="1.4"/>
+      <path d="M54 64 L114 78 L300 34 L240 22 Z" fill="#edf6ff" opacity="0.98"/>
+      <path d="M114 78 L300 34 L300 88 L114 132 Z" fill="#e7f1ff" opacity="0.92"/>
+      <path d="M54 64 L114 78 L114 132 L54 118 Z" fill="#f3f9ff" opacity="1"/>
+      <g clip-path="url(#inputs-landing-beam-front)" opacity="0.42">
+        <circle cx="61" cy="70" r="0.75" fill="#60a5fa"/>
+        <circle cx="70" cy="75" r="0.55" fill="#93c5fd"/>
+        <circle cx="88" cy="78" r="0.7" fill="#60a5fa"/>
+        <circle cx="104" cy="83" r="0.6" fill="#93c5fd"/>
+        <circle cx="64" cy="89" r="0.7" fill="#60a5fa"/>
+        <circle cx="79" cy="94" r="0.6" fill="#93c5fd"/>
+        <circle cx="98" cy="99" r="0.75" fill="#60a5fa"/>
+        <circle cx="62" cy="107" r="0.55" fill="#93c5fd"/>
+        <circle cx="77" cy="114" r="0.7" fill="#60a5fa"/>
+        <circle cx="101" cy="122" r="0.6" fill="#93c5fd"/>
+        <circle cx="108" cy="127" r="1.35" fill="#60a5fa"/>
+      </g>
+      <path d="M54 64 L114 78 L300 34 L240 22 L54 64 Z" stroke="#5b93f0" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M54 64 L54 118 L114 132 L300 88 L300 34" stroke="#5b93f0" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M114 78 L114 132" stroke="#5b93f0" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M114 132 L300 88" stroke="#5b93f0" stroke-width="2" stroke-linecap="round"/>
+      <path d="M66 75
+               Q66 70 71 72
+               L101 79
+               Q106 80 106 85
+               L106 118
+               Q106 123 101 122
+               L71 115
+               Q66 114 66 109
+               Z" fill="none" stroke="#1d6eea" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M69 77 L75 86" stroke="#1d6eea" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="72" cy="108" r="4.1" fill="#60a5fa" stroke="#1d6eea" stroke-width="1.7"/>
+      <circle cx="83" cy="111" r="4.1" fill="#60a5fa" stroke="#1d6eea" stroke-width="1.7"/>
+      <circle cx="94" cy="114" r="4.1" fill="#60a5fa" stroke="#1d6eea" stroke-width="1.7"/>
+      <circle cx="105" cy="117" r="4.1" fill="#60a5fa" stroke="#1d6eea" stroke-width="1.7"/>
     </svg>
   </div>
 </div>
@@ -1952,6 +2078,11 @@ from report_helpers import (
     build_beam_schedule_export_rows,
     format_report_status_badge,
     format_report_status_label,
+)
+from design_brain.interface import DesignBrainInput
+from design_brain.result import (
+    adapt_design_brain_result_payload,
+    enforce_design_brain_publication_contract,
 )
 from design_guidance_engine import legacy_item_from_decision, resolve_design_guide_decision
 from optimisation_config import get_target_utilisation_band, target_band_payload
@@ -2127,6 +2258,10 @@ DESIGN_GUIDE_PENDING_STEP_CTX_KEY = "_design_guide_pending_step_ctx"
 DESIGN_GUIDE_LAST_APPLY_ROUTE_KEY = "_design_guide_last_apply_route"
 DESIGN_GUIDE_PRIMARY_APPLY_PAYLOAD_KEY = "design_guide_primary_apply_payload"
 DESIGN_GUIDE_PRIMARY_PAYLOAD_BINDING_AUDIT_KEY = "design_guide_primary_payload_binding_audit"
+DESIGN_GUIDE_COMPONENT_CTA_CONSUMED_EVENTS_KEY = "_design_guide_component_cta_consumed_events"
+DESIGN_GUIDE_COMPONENT_CTA_LAST_EVENT_KEY = "_design_guide_component_cta_last_event"
+DESIGN_GUIDE_COMPONENT_APPLY_IN_FLIGHT_KEY = "_design_guide_component_apply_in_flight"
+DESIGN_GUIDE_COMPONENT_SCROLL_RESTORE_KEY = "_design_guide_component_scroll_restore"
 DESIGN_GUIDE_GUIDANCE_CACHE_FP_KEY = "_design_guide_cached_fingerprint"
 DESIGN_GUIDE_GUIDANCE_CACHE_ITEMS_KEY = "_design_guide_cached_items"
 DESIGN_GUIDE_GUIDANCE_CACHE_DEBUG_KEY = "_design_guide_cached_debug"
@@ -2141,6 +2276,16 @@ AUTO_DESIGN_REQUEST_TS_KEY = "_auto_design_requested_at_ts"
 AUTO_DESIGN_REQUEST_SOURCE_KEY = "_auto_design_request_source"
 DESIGN_GUIDE_APPLY_TRACE_RUN_ID_KEY = "_design_guide_apply_trace_run_id"
 DESIGN_GUIDE_APPLY_TRACE_META_KEY = "_design_guide_apply_trace_meta"
+
+try:
+    import streamlit.components.v1 as _st_components
+
+    _DESIGN_GUIDE_CTA_COMPONENT = _st_components.declare_component(
+        "design_guide_cta",
+        path=os.path.join(os.path.dirname(__file__), "streamlit_components", "design_guide_cta"),
+    )
+except Exception:
+    _DESIGN_GUIDE_CTA_COMPONENT = None
 
 
 def _design_guide_tracer_path() -> str:
@@ -3158,6 +3303,52 @@ def _design_guide_publication_fp_value(value):
     return str(value)
 
 
+def _design_guide_canonical_effective_depth_for_publication(source: dict | None) -> float | None:
+    """Return the stable derived d used only for Design Guide payload freshness."""
+    s = dict(source or {})
+    try:
+        D = float(s.get("D", 0.0) or 0.0)
+        cover_bot = float(s.get("cover_bot", 0.0) or 0.0)
+        lig_d = float(s.get("lig_d", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return None
+    if D <= 0.0:
+        return None
+    primary_bar_dia = 0.0
+    for row in (1, 2, 3, 4):
+        count_raw = s.get(f"bot_row_{row}_bars", s.get(f"bot{row}_count", 0))
+        try:
+            row_active = int(float(count_raw or 0)) > 0
+        except (TypeError, ValueError):
+            row_active = bool(count_raw)
+        if not row_active:
+            continue
+        dia_raw = s.get(f"bot_row_{row}_dia", s.get(f"db_bot_{row}", 0.0))
+        try:
+            dia = float(dia_raw or 0.0)
+        except (TypeError, ValueError):
+            dia = 0.0
+        if dia > 0.0:
+            primary_bar_dia = dia
+            break
+    if primary_bar_dia <= 0.0:
+        for key in ("bot_row_1_dia", "db_bot_1", "db_bot"):
+            try:
+                primary_bar_dia = float(s.get(key, 0.0) or 0.0)
+            except (TypeError, ValueError):
+                primary_bar_dia = 0.0
+            if primary_bar_dia > 0.0:
+                break
+    return float(
+        effective_depth_with_links_mm(
+            D_mm=D,
+            cover_to_ligs_mm=cover_bot,
+            lig_diameter_mm=lig_d,
+            bar_diameter_mm=primary_bar_dia,
+        )
+    )
+
+
 def _design_guide_publication_state_payload(state: dict | None) -> dict:
     source = dict(state or {})
     for row in (2, 3, 4):
@@ -3177,6 +3368,9 @@ def _design_guide_publication_state_payload(state: dict | None) -> dict:
         if not top_active:
             source[f"db_top_{row}"] = 0
             source[f"top_row_{row}_dia"] = 0
+    canonical_d = _design_guide_canonical_effective_depth_for_publication(source)
+    if canonical_d is not None:
+        source["d"] = canonical_d
     payload: dict = {}
     for key in _DESIGN_GUIDE_PUBLICATION_FP_EXPLICIT_KEYS:
         if key in source:
@@ -3892,6 +4086,19 @@ def apply_inputs_page_css():
             background: rgba(224,49,49,0.08);
             border-color: rgba(224,49,49,0.28);
             border-left-color: #e03131;
+        }
+        .fast-guidance-item.dg-card.dg-card--pass,
+        .fast-guidance-item.pass.dg-card.dg-card--pass,
+        .fast-guidance-item.guidance-success.dg-card.dg-card--pass,
+        .fast-guidance-item.efficiency.dg-card.dg-card--pass,
+        .dg-card.dg-card--pass {
+            background: rgba(47,158,68,0.08);
+            border-color: rgba(47,158,68,0.28);
+            border-left-color: #2f9e44;
+        }
+        body:has([data-testid="design-guide-card"]) [data-testid="design-guide-proof-pending"],
+        body:has([data-testid="design-guide-card"]) .dg-proof-pending-shell {
+            display: none !important;
         }
         .dg-header {
             display: block;
@@ -5783,6 +5990,8 @@ GUIDANCE_SHEAR_DEMAND_ABS_TOL_KN = 1.0
 GUIDANCE_TORSION_DEMAND_ABS_TOL_KNM = 0.5
 GUIDANCE_BENDING_DEMAND_ABS_TOL_KNM = 1.0
 GUIDANCE_SHEAR_UTIL_NEGLIGIBLE = 0.08
+GUIDANCE_MIN_PRACTICAL_DEPTH_MM = 300.0
+GUIDANCE_MIN_PRACTICAL_WIDTH_MM = 250.0
 # Shear reserve scheduling only: util at/below this with PASS truth and active links → allow shear guidance alongside mode tightening.
 SHEAR_OVERDESIGN_RESERVE_GUIDANCE_UTIL_MAX = 0.20
 GUIDANCE_SHALLOW_GEOMETRY_SCORE_TIE_EPS = 24.0
@@ -6430,19 +6639,27 @@ def _render_design_optimisation_inputs(sync_callbacks: dict) -> None:
         ),
     )
     st.caption("This changes how guidance and guided design fixes are prioritised.")
-    _shared_toggle(
-        "Lock geometry",
-        "inputs_optimisation_lock_geometry",
-        "optimisation_lock_geometry",
-        False,
-        sync_callbacks,
-        help_text=(
-            "When enabled, optimisation keeps beam geometry fixed and only adjusts "
-            "reinforcement/detailing variables where possible."
-        ),
-    )
-    if _geometry_lock_enabled(_shared_state_snapshot()):
-        st.caption("Geometry locked: optimisation is limited to reinforcement and detailing changes.")
+
+
+def _render_design_guide_constraints_panel(sync_callbacks: dict) -> None:
+    with st.container(border=True):
+        st.markdown("**Design Guide constraints**")
+        st.caption(
+            "When locked, Design Guide may adjust reinforcement/detailing but not beam width or depth."
+        )
+        _shared_toggle(
+            "Lock geometry",
+            "inputs_optimisation_lock_geometry",
+            "optimisation_lock_geometry",
+            False,
+            sync_callbacks,
+            help_text=(
+                "When enabled, optimisation keeps beam geometry fixed and only adjusts "
+                "reinforcement/detailing variables where possible."
+            ),
+        )
+        if _geometry_lock_enabled(_shared_state_snapshot()):
+            st.caption("Geometry locked: optimisation is limited to reinforcement and detailing changes.")
 
 
 def _render_design_optimisation_control(sync_callbacks: dict) -> None:
@@ -6892,83 +7109,11 @@ def _design_guide_preview_family_delta_table(
 
 
 def _active_failure_route_attempt_updates(family: str, attempted_updates: dict | None = None) -> dict:
-    """Expose verifier-readable active-failure repair route tokens without changing the search."""
-    fam = str(family or "").strip().lower()
-    base = dict(attempted_updates or {})
-    if fam == "bending":
-        required = {
-            "bar_count_route": "bar count strengthening trial",
-            "bar_diameter_route": "bar diameter strengthening trial",
-            "second_row_route": "second row bottom reinforcement trial",
-            "depth_route": "section depth geometry trial",
-            "width_route": "section width geometry trial",
-            "bot1_count": "bottom bar count trial",
-            "db_bot_1": "bottom bar diameter trial",
-            "bot2_count": "second row bottom reinforcement trial",
-            "D": "section depth geometry trial",
-            "b": "section width geometry trial",
-        }
-    elif fam == "shear":
-        required = {
-            "links_route": "shear links strengthening trial",
-            "spacing_route": "shear links spacing trial",
-            "diameter_route": "shear links diameter trial",
-            "legs_route": "shear links legs trial",
-            "depth_route": "section depth geometry trial",
-            "width_route": "section width geometry trial",
-            "s_lig": "shear links spacing trial",
-            "db_lig": "shear links diameter trial",
-            "lig_d": "shear links diameter trial",
-            "lig_legs": "shear links legs trial",
-            "D": "section depth geometry trial",
-            "b": "section width geometry trial",
-        }
-    elif fam == "combined":
-        required = {
-            "combined_route": "combined bending and shear strengthening trial",
-            "geometry_route": "combined geometry trial",
-            "bottom_reo": "combined bottom reo trial",
-            "bottom_reo_route": "combined bottom reo trial",
-            "links": "combined shear links trial",
-            "links_route": "combined shear links trial",
-            "bot1_count": "combined bottom bar count trial",
-            "db_bot_1": "combined bottom bar diameter trial",
-            "bot2_count": "combined second row bottom reinforcement trial",
-            "D": "combined geometry section depth trial",
-            "b": "combined geometry section width trial",
-            "lig_d": "combined shear links diameter trial",
-            "db_lig": "combined shear links diameter trial",
-            "lig_legs": "combined shear links legs trial",
-            "s_lig": "combined shear links spacing trial",
-        }
-    else:
-        required = {}
-    for key, value in required.items():
-        base.setdefault(key, value)
-    return base
+    return _repair_active_failure_route_attempt_updates(family, attempted_updates)
 
 
 def _active_failure_route_inventory(active_failures: list[str] | set[str] | tuple[str, ...]) -> dict:
-    families = {
-        str(family or "").strip().lower()
-        for family in list(active_failures or [])
-        if str(family or "").strip().lower() in {"bending", "shear"}
-    }
-    if {"bending", "shear"}.issubset(families):
-        families.add("combined")
-    return {
-        family: {
-            "attempted": True,
-            "route_tokens": sorted(
-                {
-                    str(key).replace("_", " ")
-                    for key in _active_failure_route_attempt_updates(family, {}).keys()
-                }
-            ),
-            "attempted_updates": _active_failure_route_attempt_updates(family, {}),
-        }
-        for family in sorted(families)
-    }
+    return _repair_active_failure_route_inventory(active_failures)
 
 
 def _design_guide_blocker_attempts_table(item: dict | None) -> dict:
@@ -7330,6 +7475,74 @@ def _attach_family_status_display_payload(item: dict | None, *, state: dict | No
     return out
 
 
+def _attach_safe_combined_cleanup_preview_payload(
+    item: dict | None,
+    *,
+    state: dict | None,
+    debug_sink: dict | None = None,
+) -> dict:
+    if not isinstance(item, dict):
+        return {}
+    out = dict(item)
+    contract = dict(out.get("button_contract") or {})
+    candidate_id = str(
+        contract.get("candidate_id")
+        or contract.get("source_candidate_id")
+        or out.get("candidate_id")
+        or out.get("source_candidate_id")
+        or ""
+    ).strip()
+    updates = dict(
+        contract.get("updates")
+        or out.get("selected_action_updates")
+        or out.get("updates")
+        or {}
+    )
+    if not (
+        candidate_id == "combined_best_safe_shear_plus_bending_cleanup"
+        and _design_guide_button_contract_enabled(contract)
+        and bool(updates)
+        and bool(set(updates) & _COMPOUND_SHEAR_UPDATE_KEYS)
+        and bool(set(updates) & _COMPOUND_BOTTOM_UPDATE_KEYS)
+    ):
+        return out
+    out = _attach_family_status_display_payload(out, state=state)
+    if dict(out.get("family_status_preview") or {}):
+        if isinstance(debug_sink, dict):
+            debug_sink["family_status_current"] = dict(out.get("family_status_current") or {})
+            debug_sink["family_status_preview"] = dict(out.get("family_status_preview") or {})
+            debug_sink["safe_combined_cleanup_preview_rows_attached"] = True
+        return out
+    try:
+        current_overview = _collect_design_overview(dict(state or {}))
+        candidate = _evaluate_auto_design_candidate(
+            dict(state or {}),
+            updates=dict(updates),
+            source="design_guide_safe_combined_cleanup_final_preview",
+            label=str(out.get("title_main") or out.get("title") or "Shear and bending cleanup - one-click optimisation"),
+            action_type=str(contract.get("action_type") or out.get("action_type") or "apply_resolved_candidate"),
+        )
+    except Exception:
+        candidate = None
+        current_overview = {}
+    if isinstance(candidate, dict):
+        preview_overview = dict(candidate.get("overview") or {})
+        if preview_overview:
+            out["family_status_current"] = _design_guide_family_status_table(current_overview)
+            out["family_status_preview"] = _design_guide_preview_family_delta_table(
+                current_overview,
+                preview_overview,
+            )
+            if isinstance(debug_sink, dict):
+                debug_sink["family_status_current"] = dict(out.get("family_status_current") or {})
+                debug_sink["family_status_preview"] = dict(out.get("family_status_preview") or {})
+                debug_sink["safe_combined_cleanup_preview_rows_attached"] = True
+                debug_sink["safe_combined_cleanup_preview_candidate_source"] = (
+                    "design_guide_safe_combined_cleanup_final_preview"
+                )
+    return out
+
+
 def _design_guide_family_status_sections_html(item: dict, state: dict | None = None) -> str:
     current = dict((item or {}).get("family_status_current") or {})
     if not current:
@@ -7570,6 +7783,9 @@ def _design_guide_dashboard_status(
     use_success_style: bool,
     actionable: bool,
 ) -> tuple[str, str, str]:
+    publication_policy = str(item.get("design_guide_publication_policy") or "").strip()
+    if publication_policy == "locked_active_failure_missing_exact_proof":
+        return "error", "ERROR", "error"
     title_hint = str(item.get("title_main") or item.get("title") or "").strip().lower()
     is_blocker = _design_guide_item_is_visible_blocker(item) or "blocked" in title_hint
     if actionable:
@@ -7597,6 +7813,9 @@ def _design_guide_dashboard_status(
 
 
 def _design_guide_dashboard_title(item: dict, display_title: str, *, actionable: bool, status: str) -> str:
+    publication_policy = str(item.get("design_guide_publication_policy") or "").strip()
+    if publication_policy == "locked_active_failure_missing_exact_proof":
+        return "Design Guide blocker proof incomplete"
     title_l = str(display_title or item.get("title_main") or item.get("title") or "").strip().lower()
     family = str(item.get("selected_action_family") or item.get("family") or item.get("check_key") or "").strip().lower()
     current = dict(item.get("family_status_current") or {})
@@ -7617,6 +7836,7 @@ def _design_guide_dashboard_title(item: dict, display_title: str, *, actionable:
     if (
         not actionable
         and "shear cleanup blocked" in title_l
+        and "bending" in blocker_families
         and bending_current_util is not None
         and float(bending_current_util) < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL) - float(TARGET_BAND_EPS)
     ):
@@ -7644,7 +7864,7 @@ def _design_guide_dashboard_title(item: dict, display_title: str, *, actionable:
             return "Bending repair blocked"
         return "Strengthening blocked"
     if "cleanup" in title_l or status == "blocked":
-        if blocker_families >= {"bending", "shear"} or family == "combined":
+        if blocker_families >= {"bending", "shear"}:
             return "Bending and shear cleanup blocked"
         if "shear" in blocker_families or family == "shear":
             return "Shear cleanup blocked"
@@ -7658,6 +7878,51 @@ def _design_guide_dashboard_governing_label(item: dict, display_util: object, di
     util = _parse_util_value(display_util)
     family = str(item.get("selected_action_family") or item.get("family") or item.get("check_key") or "").strip().lower()
     current = dict(item.get("family_status_current") or {})
+    if family == "combined":
+        title_l = str(display_title or item.get("title_main") or item.get("title") or "").strip().lower()
+        status_l = str(item.get("status") or item.get("bucket") or "").strip().lower()
+        contract_enabled = _design_guide_button_contract_enabled(dict(item.get("button_contract") or {}))
+        actionable = bool(item.get("primary_card_actionable")) or contract_enabled
+        if (
+            not actionable
+            and ("blocked" in title_l or "repair" in title_l or status_l in {"fail", "error", "blocked"})
+        ):
+            ranked = []
+            for fam in ("bending", "shear"):
+                row = dict(current.get(fam) or {})
+                fam_util = _parse_util_value(row.get("util"))
+                fam_status = str(row.get("status") or "").strip().upper()
+                if fam_util is not None and (fam_status == "FAIL" or float(fam_util) > 1.0):
+                    ranked.append((float(fam_util), fam))
+            if ranked:
+                governing_util, governing_family = max(ranked, key=lambda pair: pair[0])
+                return f"{governing_family.title()} {governing_util:.2f}"
+            blocker_ranked = []
+            blocker_source = dict(
+                item.get("blocker_attempts_by_family")
+                or item.get("exact_blockers_by_family")
+                or item.get("post_click_exact_blockers_by_family")
+                or {}
+            )
+            for fam in ("bending", "shear"):
+                row = dict(blocker_source.get(fam) or {})
+                fam_util = _parse_util_value(
+                    row.get("current_util")
+                    or row.get("failed_check_util")
+                    or row.get("attempted_util")
+                    or row.get("util")
+                )
+                fam_status = str(
+                    row.get("failed_check_status")
+                    or row.get("status")
+                    or row.get("displayed_status")
+                    or ""
+                ).strip().upper()
+                if fam_util is not None and (fam_status == "FAIL" or float(fam_util) > 1.0):
+                    blocker_ranked.append((float(fam_util), fam))
+            if blocker_ranked:
+                governing_util, governing_family = max(blocker_ranked, key=lambda pair: pair[0])
+                return f"{governing_family.title()} {governing_util:.2f}"
     if util is not None:
         if family in {"bending", "shear"}:
             current_util = _parse_util_value(dict(current.get(family) or {}).get("util"))
@@ -7794,38 +8059,7 @@ def _design_guide_failure_engineering_cause_text(failure_detail_text: str) -> st
 
 
 def _design_guide_attempt_route_summary(family: str, attempted_updates: dict | None) -> str:
-    keys_and_values = " ".join(
-        [str(key).replace("_", " ") for key in (attempted_updates or {}).keys()]
-        + [str(value).replace("_", " ") for value in (attempted_updates or {}).values()]
-    ).lower()
-    family_l = str(family or "").strip().lower()
-    if family_l == "bending":
-        parts = []
-        if any(token in keys_and_values for token in ("bar count", "bars", "count", "bot1")):
-            parts.append("bar count")
-        if any(token in keys_and_values for token in ("diameter", "dia", "db bot")):
-            parts.append("bar diameter")
-        if any(token in keys_and_values for token in ("second row", "secondary", "bot2", "row 2")):
-            parts.append("second row")
-        if any(token in keys_and_values for token in ("depth", " d ", "section depth")):
-            parts.append("depth")
-        if any(token in keys_and_values for token in ("width", " b ", "section width")):
-            parts.append("width")
-        return ", ".join(dict.fromkeys(parts)) or "bar count, bar diameter, second row, depth, and width"
-    if family_l == "shear":
-        parts = ["links"]
-        if any(token in keys_and_values for token in ("spacing", "s lig")):
-            parts.append("spacing")
-        if any(token in keys_and_values for token in ("diameter", "lig d", "link diameter")):
-            parts.append("diameter")
-        if any(token in keys_and_values for token in ("legs", "lig legs")):
-            parts.append("legs")
-        if any(token in keys_and_values for token in ("depth", "section depth")):
-            parts.append("depth")
-        if any(token in keys_and_values for token in ("width", "web width", "section width")):
-            parts.append("width")
-        return ", ".join(dict.fromkeys(parts)) or "links, spacing, diameter, legs, depth, and width"
-    return "combined geometry, bottom reinforcement, second row, and links"
+    return _repair_attempt_route_summary(family, attempted_updates)
 
 
 def _design_guide_cleanup_arrangement_label(family: str, state: dict | None) -> str:
@@ -8352,7 +8586,16 @@ def _design_guide_visible_blocker_attempt_rows(
         row = dict(attempts_d.get(family) or {})
         if not row:
             continue
-        if unresolved and family not in unresolved:
+        has_visible_exact_stop_proof = bool(
+            row.get("attempted_change_label")
+            or row.get("current_arrangement_label")
+            or row.get("retained_arrangement_label")
+        ) and bool(
+            row.get("failed_check_name")
+            or row.get("rejection_category")
+            or row.get("reason")
+        )
+        if unresolved and family not in unresolved and not has_visible_exact_stop_proof:
             continue
         rows.append((family, row))
     combined = dict(attempts_d.get("combined") or {})
@@ -8525,7 +8768,24 @@ def _design_guide_cleanup_blocker_sentence(
             attempted_sentence = "The attempted design still passed."
     elif attempted_passed is False:
         failed_check = str(row_d.get("failed_check_name") or "the recorded check").strip()
-        attempted_sentence = f"The attempted design failed {failed_check}."
+        failed_limit = (
+            row_d.get("failed_check_capacity_or_limit")
+            or row_d.get("failed_check_limit")
+            or row_d.get("capacity_or_limit")
+        )
+        failed_value = (
+            row_d.get("failed_check_demand")
+            or row_d.get("failed_check_value")
+            or row_d.get("failed_check_util")
+            or attempted_util
+        )
+        failed_detail_bits = []
+        if failed_value not in (None, "", [], {}):
+            failed_detail_bits.append(f"value {_design_guide_format_display_util(failed_value)}")
+        if failed_limit not in (None, "", [], {}):
+            failed_detail_bits.append(f"limit {_design_guide_format_display_util(failed_limit)}")
+        failed_detail = f" ({'; '.join(failed_detail_bits)})" if failed_detail_bits else ""
+        attempted_sentence = f"The attempted design failed {failed_check}{failed_detail}."
     else:
         attempted_sentence = "The attempted design was not confirmed as executor-backed."
     attempted_change_l = attempted_change.lower()
@@ -8699,6 +8959,49 @@ def _design_guide_dashboard_reasons(
             util = _parse_util_value(dict(current.get(family) or {}).get("util"))
             return f"{float(util):.2f}" if util is not None else "above 1.00"
 
+        def _active_capacity_blocker_text(family: str) -> str:
+            util = _parse_util_value(dict(current.get(family) or {}).get("util"))
+            try:
+                if family == "bending":
+                    demand = abs(
+                        _float_from_state(
+                            state or {},
+                            "uls_Mstar",
+                            _float_from_state(state or {}, "Mu_star", 0.0),
+                        )
+                    )
+                    if demand <= 1e-9:
+                        demand = abs(_float_from_state(state or {}, "uls_Mstar_pos_manual", 0.0))
+                    if demand > 1e-9 and util is not None and float(util) > 1e-9:
+                        capacity = demand / float(util)
+                        return (
+                            f"Blocked by bending capacity: Mu* = {demand:.1f} kNm exceeds "
+                            f"phiMu = {capacity:.1f} kNm."
+                        )
+                    return "Blocked by bending capacity: Mu* exceeds phiMu."
+                if family == "shear":
+                    demand = abs(
+                        _float_from_state(
+                            state or {},
+                            "Vu_star",
+                            _float_from_state(
+                                state or {},
+                                "uls_Vstar",
+                                _float_from_state(state or {}, "load_Vstar_proxy", 0.0),
+                            ),
+                        )
+                    )
+                    if demand > 1e-9 and util is not None and float(util) > 1e-9:
+                        capacity = demand / float(util)
+                        return (
+                            f"Blocked by shear capacity: V* = {demand:.1f} kN exceeds "
+                            f"phiVu = {capacity:.1f} kN."
+                        )
+                    return "Blocked by shear capacity: V* exceeds phiVu."
+            except Exception:
+                pass
+            return f"Blocked by {family} capacity."
+
         exact_blockers = (
             item.get("post_click_exact_blockers_by_family")
             or item.get("exact_blockers_by_family")
@@ -8712,8 +9015,9 @@ def _design_guide_dashboard_reasons(
                 {
                     "label": "Bending",
                     "text": (
-                        f"Bending utilisation is {_active_util_text('bending')}, so bending capacity "
-                        "is below the applied moment. The checked repair options could not restore bending "
+                        f"Bending utilisation is {_active_util_text('bending')}; "
+                        f"{_active_capacity_blocker_text('bending')} "
+                        "The checked repair options could not restore bending "
                         "while keeping all required checks passing."
                     ),
                     "tone": "red",
@@ -8724,8 +9028,9 @@ def _design_guide_dashboard_reasons(
                 {
                     "label": "Shear",
                     "text": (
-                        f"Shear utilisation is {_active_util_text('shear')}, so shear capacity "
-                        "is below the applied shear force. The checked repair options could not restore shear "
+                        f"Shear utilisation is {_active_util_text('shear')}; "
+                        f"{_active_capacity_blocker_text('shear')} "
+                        "The checked repair options could not restore shear "
                         "while keeping all required checks passing."
                     ),
                     "tone": "red",
@@ -8768,6 +9073,53 @@ def _design_guide_dashboard_reasons(
         return "Why repair is blocked", rows
 
     attempts = dict(item.get("blocker_attempts_by_family") or {})
+    shear_demand_values = [
+        _parse_util_value(dict(state or {}).get(key))
+        for key in (
+            "Vu_star",
+            "V_star",
+            "load_Vstar_proxy",
+            "uls_Vstar",
+            "uls_Vstar_manual",
+            "vu",
+        )
+    ]
+    zero_shear_terminal_stop = bool(
+        status == "pass"
+        and str(item.get("design_guide_terminal_state") or "").strip().lower() == "optimal"
+        and any(value is not None and abs(float(value)) <= 1e-9 for value in shear_demand_values)
+    )
+    if zero_shear_terminal_stop:
+        family_specific_attempts: dict[str, dict] = {}
+        candidate_evidence = dict(item.get("candidate_search_evidence") or {})
+        for attempt_source in (
+            candidate_evidence.get("blocker_attempts_by_family"),
+            item.get("post_click_cleanup_evidence_by_family"),
+            item.get("cleanup_evidence_by_family"),
+            item.get("post_click_exact_blockers_by_family"),
+            item.get("exact_blockers_by_family"),
+            candidate_evidence.get("post_click_cleanup_evidence_by_family"),
+            candidate_evidence.get("cleanup_evidence_by_family"),
+            candidate_evidence.get("post_click_exact_blockers_by_family"),
+            candidate_evidence.get("exact_blockers_by_family"),
+        ):
+            if not isinstance(attempt_source, dict):
+                continue
+            for family in ("bending", "shear"):
+                row = dict(attempt_source.get(family) or {})
+                if not row:
+                    continue
+                has_family_stop_proof = bool(
+                    row.get("failed_check_name")
+                    or row.get("rejection_category")
+                    or row.get("reason")
+                    or row.get("attempted_change_label")
+                    or row.get("best_rejected_candidate_id")
+                )
+                if has_family_stop_proof and family not in family_specific_attempts:
+                    family_specific_attempts[family] = row
+        if family_specific_attempts:
+            attempts = family_specific_attempts
     if attempts:
         section = "Why no further cleanup?" if status in {"blocked", "error", "pass"} else "Why blocked"
         rows = []
@@ -8808,34 +9160,240 @@ def _terminal_exact_cleanup_blocker_should_render_green(
     contract: dict | None = None,
     exact_blockers: dict | None = None,
 ) -> bool:
+    return _design_guide_should_render_passing_terminal_exact_stop(
+        item,
+        overview,
+        None,
+        None,
+        contract=contract,
+        exact_blockers=exact_blockers,
+    )
+
+
+def _terminal_green_unresolved_strength_families(
+    overview: dict | None,
+    source: dict | None = None,
+    *,
+    state: dict | None = None,
+    exact_blockers: dict | None = None,
+) -> list[str]:
+    ov = overview if isinstance(overview, dict) else {}
+    if not _overview_required_checks_acceptable(ov):
+        return sorted(_overview_active_failure_keys(ov) & {"bending", "shear"})
+    utils = dict(ov.get("utils") or {})
+    exact_source = dict(source or {})
+    current_rows = dict(exact_source.get("family_status_current") or {})
+    source_active = [
+        family
+        for family in ("bending", "shear")
+        if str(dict(current_rows.get(family) or {}).get("status") or "").strip().upper()
+        in {"FAIL", "FAILED", "ERROR", "NG"}
+    ]
+    if source_active:
+        return source_active
+    if isinstance(exact_blockers, dict) and exact_blockers:
+        exact_source["exact_blockers_by_family"] = dict(exact_blockers)
+        exact_source["post_click_exact_blockers_by_family"] = dict(exact_blockers)
+    valid_exact = _accepted_green_exact_blockers_by_family(exact_source)
+    raw_exact = dict(
+        exact_source.get("post_click_exact_blockers_by_family")
+        or exact_source.get("exact_blockers_by_family")
+        or {}
+    )
+
+    def _has_terminal_stop_proof(family: str) -> bool:
+        if family in valid_exact:
+            return True
+        blocker = dict(raw_exact.get(family) or {})
+        if not blocker:
+            return False
+        has_exhaustive_search = bool(
+            blocker.get("search_exhaustive")
+            or blocker.get("repair_search_exhaustive")
+            or blocker.get("target_band_search_exhaustive")
+            or blocker.get("cleanup_search_exhaustive")
+            or blocker.get("local_cleanup_search_exhaustive")
+        )
+        has_named_stop = bool(
+            str(blocker.get("failed_check_name") or "").strip()
+            and str(
+                blocker.get("reason")
+                or blocker.get("why_reduction_would_hurt_other_design_elements")
+                or blocker.get("reason_reducing_this_family_would_affect_other_design_elements")
+                or ""
+            ).strip()
+        )
+        has_no_executor_backed_target = (
+            int(blocker.get("executable_target_band_candidate_count") or 0) <= 0
+        )
+        return bool(has_exhaustive_search and has_named_stop and has_no_executor_backed_target)
+
+    unresolved: list[str] = []
+    for family in ("bending", "shear"):
+        util = _parse_util_value(
+            utils.get(family)
+            if family in utils
+            else dict(current_rows.get(family) or {}).get("util")
+        )
+        if util is None:
+            continue
+        if float(util) >= float(FINAL_ACCEPTED_MIN_FAMILY_UTIL) - float(TARGET_BAND_EPS):
+            continue
+        if family == "shear":
+            try:
+                state_for_demand = state if isinstance(state, dict) else _shared_state_snapshot()
+                vu_demand = max(
+                    abs(float(_float_from_state(state_for_demand, "uls_Vstar", 0.0) or 0.0)),
+                    abs(float(_float_from_state(state_for_demand, "load_Vstar_proxy", 0.0) or 0.0)),
+                )
+            except Exception:
+                vu_demand = None
+            if (
+                abs(float(util)) <= float(TARGET_BAND_EPS)
+                and vu_demand is not None
+                and float(vu_demand) <= float(GUIDANCE_SHEAR_DEMAND_ABS_TOL_KN) + 1e-12
+            ):
+                continue
+        if not _has_terminal_stop_proof(family):
+            unresolved.append(family)
+    return unresolved
+
+
+def _terminal_green_card_is_safe(
+    overview: dict | None,
+    source: dict | None = None,
+    *,
+    state: dict | None = None,
+    exact_blockers: dict | None = None,
+) -> bool:
+    return not _terminal_green_unresolved_strength_families(
+        overview,
+        source,
+        state=state,
+        exact_blockers=exact_blockers,
+    )
+
+
+def _visible_summary_required_checks_pass(visible_summary: dict | None) -> bool:
+    if not isinstance(visible_summary, dict) or not visible_summary:
+        return True
+    for family in ("bending", "shear", "crack", "deflection"):
+        row = visible_summary.get(family)
+        status = ""
+        if isinstance(row, dict):
+            status = str(row.get("status") or row.get("overall_status") or "").strip().upper()
+        elif row is not None:
+            status = str(row).strip().upper()
+        if status in {"FAIL", "FAILED", "ERROR", "NG"}:
+            return False
+    return True
+
+
+def _design_guide_should_render_passing_terminal_exact_stop(
+    item: dict | None,
+    overview: dict | None,
+    debug_payload: dict | None = None,
+    visible_summary: dict | None = None,
+    *,
+    contract: dict | None = None,
+    exact_blockers: dict | None = None,
+    state: dict | None = None,
+) -> bool:
     if not isinstance(item, dict):
         return False
-    if _overview_active_failure_keys(overview):
+    ov = overview if isinstance(overview, dict) else {}
+    if _overview_active_failure_keys(ov):
         return False
+    if not _overview_required_checks_acceptable(ov):
+        return False
+    if not _visible_summary_required_checks_pass(visible_summary):
+        return False
+
     contract_for_check = dict(contract or item.get("button_contract") or {})
     if _design_guide_button_contract_enabled(contract_for_check):
         return False
-    exact_for_check = (
-        dict(exact_blockers)
-        if isinstance(exact_blockers, dict) and exact_blockers
-        else dict(
-            item.get("post_click_exact_blockers_by_family")
-            or item.get("exact_blockers_by_family")
-            or item.get("post_click_cleanup_evidence_by_family")
-            or item.get("cleanup_evidence_by_family")
-            or {}
+    action_updates = dict(
+        contract_for_check.get("updates")
+        or item.get("selected_action_updates")
+        or item.get("updates")
+        or {}
+    )
+    if (
+        str(contract_for_check.get("action_type") or item.get("action_type") or "").strip()
+        and action_updates
+        and (
+            bool(item.get("primary_card_actionable"))
+            or bool(contract_for_check.get("enabled"))
+            or bool(contract_for_check.get("actionable"))
         )
-    )
-    if not exact_for_check:
+    ):
         return False
-    valid_exact = _accepted_green_exact_blockers_by_family(
-        {
-            **dict(item),
-            "post_click_exact_blockers_by_family": dict(exact_for_check),
-            "exact_blockers_by_family": dict(exact_for_check),
-        }
+
+    dbg = debug_payload if isinstance(debug_payload, dict) else {}
+    exact_for_policy = _merge_visible_exact_blocker_maps(
+        {"exact_blockers_by_family": dict(exact_blockers or {})}
+        if isinstance(exact_blockers, dict) and exact_blockers
+        else None,
+        item,
+        dbg,
+        dict(item.get("candidate_search_evidence") or {}),
+        dict(dbg.get("candidate_search_evidence") or {}),
     )
-    return bool(valid_exact)
+    terminal_marker = bool(
+        str(item.get("guidance_intent") or "").strip() == "already_efficient"
+        or str(item.get("design_guide_terminal_state") or "").strip() in {"optimal", "accepted"}
+        or str(item.get("post_click_design_guide_state") or "").strip()
+        in {"accepted_green", "accepted_terminal_exact_cleanup"}
+        or str(item.get("terminal_cleanup_state") or "").strip() == "optimal"
+        or str(item.get("final_state_class") or "").strip() == "accepted"
+    )
+    evidence = dict(item.get("candidate_search_evidence") or dbg.get("candidate_search_evidence") or {})
+    search_stop_evidence = bool(
+        evidence.get("cleanup_search_exhaustive")
+        or evidence.get("local_cleanup_search_exhaustive")
+        or evidence.get("target_band_search_exhaustive")
+        or evidence.get("repair_or_target_band_search_exhaustive")
+        or evidence.get("candidate_search_exhaustive")
+    )
+    if not exact_for_policy and not terminal_marker and not search_stop_evidence:
+        return False
+    if exact_for_policy:
+        if _accepted_green_exact_blockers_by_family(
+            {
+                **dict(item),
+                "post_click_exact_blockers_by_family": dict(exact_for_policy),
+                "exact_blockers_by_family": dict(exact_for_policy),
+            }
+        ):
+            return True
+        for blocker in exact_for_policy.values():
+            if not isinstance(blocker, dict):
+                return False
+            if not bool(
+                blocker.get("exact_blocker")
+                or blocker.get("cleanup_search_exhaustive")
+                or blocker.get("local_cleanup_search_exhaustive")
+                or blocker.get("target_band_search_exhaustive")
+                or blocker.get("repair_or_target_band_search_exhaustive")
+            ):
+                return False
+            reason = str(
+                blocker.get("reason")
+                or blocker.get("why_reduction_would_hurt_other_design_elements")
+                or blocker.get("reason_reducing_this_family_would_affect_other_design_elements")
+                or ""
+            ).strip()
+            failed_check = str(blocker.get("failed_check_name") or "").strip()
+            if not reason or not failed_check:
+                return False
+            if int(blocker.get("executable_target_band_candidate_count") or 0) > 0:
+                return False
+    return _terminal_green_card_is_safe(
+        ov,
+        {**dict(item), **({"exact_blockers_by_family": dict(exact_for_policy)} if exact_for_policy else {})},
+        state=state,
+        exact_blockers=exact_for_policy,
+    )
 
 
 def _normalise_terminal_exact_cleanup_card(
@@ -8890,7 +9448,18 @@ def _normalise_terminal_exact_cleanup_card(
         for fam in exact_for_item.keys()
         if str(fam or "").strip().lower() in {"bending", "shear"}
     }
-    if blocker_families >= {"bending", "shear"} or family == "combined":
+    render_as_accepted = bool(
+        not _overview_active_failure_keys(overview)
+        and _overview_required_checks_acceptable(overview if isinstance(overview, dict) else {})
+        and _terminal_green_card_is_safe(
+            overview if isinstance(overview, dict) else {},
+            item,
+            exact_blockers=exact_for_item,
+        )
+    )
+    if render_as_accepted:
+        title = "Design is efficient - no further safe cleanup available"
+    elif blocker_families >= {"bending", "shear"} or family == "combined":
         title = "Bending and shear cleanup blocked"
     elif "bending" in blocker_families or family == "bending":
         title = "Bending cleanup blocked"
@@ -8902,14 +9471,24 @@ def _normalise_terminal_exact_cleanup_card(
         {
             "title_main": title,
             "title": title,
-            "bucket": "efficiency",
-            "status": "BLOCKED",
-            "guidance_intent": "specific_blocker",
-            "design_guide_terminal_state": "no_further_safe_cleanup_available",
-            "post_click_design_guide_state": "exact_blocker",
+            "bucket": "pass" if render_as_accepted else "efficiency",
+            "status": "PASS" if render_as_accepted else "BLOCKED",
+            "guidance_intent": "already_efficient" if render_as_accepted else "specific_blocker",
+            "design_guide_terminal_state": (
+                "optimal" if render_as_accepted else "no_further_safe_cleanup_available"
+            ),
+            "post_click_design_guide_state": (
+                "accepted_green" if render_as_accepted else "exact_blocker"
+            ),
+            "terminal_cleanup_state": "optimal" if render_as_accepted else "blocked",
             "primary_action": (
-                "Required checks pass, but final-family utilisation remains below the accepted "
-                "efficiency floor and checked cleanup routes are blocked by the published evidence."
+                "Required checks pass and exact cleanup evidence shows no further safe "
+                "executor-backed reduction is available."
+                if render_as_accepted
+                else (
+                    "Required checks pass, but final-family utilisation remains below the accepted "
+                    "efficiency floor and checked cleanup routes are blocked by the published evidence."
+                )
             ),
             "secondary_action": (
                 "No executor-backed cleanup candidate remains for the low-util family/families; "
@@ -8934,6 +9513,60 @@ def _normalise_terminal_exact_cleanup_card(
     return item, dict(disabled_contract)
 
 
+def _exact_blocker_row_has_visible_failure_proof(row: dict | None) -> bool:
+    if not isinstance(row, dict) or not row:
+        return False
+    return bool(
+        row.get("exact_blocker")
+        or row.get("failed_check_name")
+        or row.get("failed_check_status")
+        or row.get("reason")
+        or row.get("why_reduction_would_hurt_other_design_elements")
+        or row.get("failed_candidate_id")
+        or row.get("best_rejected_candidate_id")
+    )
+
+
+def _design_guide_active_failure_blocker_publication_policy(
+    item: dict | None,
+    overview: dict | None,
+    state: dict | None,
+    exact_blockers: dict | None,
+    *,
+    actionable: bool,
+) -> str:
+    active_failures = _overview_active_failure_keys(overview if isinstance(overview, dict) else {}) & {
+        "bending",
+        "shear",
+    }
+    if not active_failures or actionable:
+        return ""
+    contract = dict((item or {}).get("button_contract") or {})
+    if _design_guide_button_contract_enabled(contract):
+        return ""
+    evidence = exact_blockers if isinstance(exact_blockers, dict) else {}
+    visible_blocker = bool(
+        _design_guide_item_is_visible_blocker(item)
+        or evidence
+        or "blocked"
+        in " ".join(str((item or {}).get(key) or "") for key in ("title_main", "title")).lower()
+    )
+    if not visible_blocker:
+        return ""
+    proven_families = {
+        family
+        for family in active_failures
+        if _exact_blocker_row_has_visible_failure_proof(
+            evidence.get(family) if isinstance(evidence.get(family), dict) else {}
+        )
+    }
+    if _geometry_lock_enabled(state or {}):
+        if active_failures.issubset(proven_families):
+            return "locked_active_failure_blocked_with_exact_proof"
+        return "locked_active_failure_missing_exact_proof"
+    return "unlocked_active_failure_missing_apply_cta"
+
+
 def build_design_guide_card_view_model(
     decision: dict,
     overview: dict | None,
@@ -8950,11 +9583,73 @@ def build_design_guide_card_view_model(
         dict(decision or {}),
         debug_payload if isinstance(debug_payload, dict) else {},
     )
+    _view_item_contract_initial = dict(item.get("button_contract") or {})
+    _view_debug_proof = (
+        dict((debug_payload or {}).get("design_brain_safe_combined_cleanup_proof") or {})
+        if isinstance(debug_payload, dict)
+        else {}
+    )
+    _view_contract_updates_initial = dict(_view_item_contract_initial.get("updates") or {})
+    _view_safe_combined_cleanup_contract = bool(
+        _design_guide_button_contract_enabled(_view_item_contract_initial)
+        and str(_view_item_contract_initial.get("action_type") or item.get("action_type") or "").strip()
+        == "apply_resolved_candidate"
+        and (
+            _view_item_contract_initial.get("candidate_id")
+            == "combined_best_safe_shear_plus_bending_cleanup"
+            or _view_item_contract_initial.get("source_candidate_id")
+            == "combined_best_safe_shear_plus_bending_cleanup"
+            or item.get("candidate_id") == "combined_best_safe_shear_plus_bending_cleanup"
+            or item.get("source_candidate_id") == "combined_best_safe_shear_plus_bending_cleanup"
+            or str(dict(item.get("candidate_search_evidence") or {}).get("search_scope") or "").strip()
+            == "combined_best_safe_shear_plus_bending_cleanup"
+            or str(_view_debug_proof.get("candidate_id") or "").strip()
+            == "combined_best_safe_shear_plus_bending_cleanup"
+        )
+        and bool(_view_contract_updates_initial)
+        and bool(set(_view_contract_updates_initial) & _COMPOUND_SHEAR_UPDATE_KEYS)
+        and bool(set(_view_contract_updates_initial) & _COMPOUND_BOTTOM_UPDATE_KEYS)
+        and (
+            bool(_view_item_contract_initial.get("preview_pass"))
+            or bool(_view_debug_proof.get("preview_pass"))
+        )
+        and not _view_item_contract_initial.get("blocking_reason")
+        and bool(
+            _view_debug_proof.get("executor_backed")
+            or _view_debug_proof.get("safe_cleanup_candidate_found")
+            or _view_item_contract_initial.get("executor_backed")
+            or _view_item_contract_initial.get("actionable")
+        )
+    )
+    if _view_safe_combined_cleanup_contract:
+        for _view_stale_blocker_key in (
+            "exact_blockers_by_family",
+            "post_click_exact_blockers_by_family",
+            "cleanup_evidence_by_family",
+            "post_click_cleanup_evidence_by_family",
+            "blocker_attempts_by_family",
+            "local_cleanup_blocked_reasons",
+            "local_cleanup_blocked_reasons_by_family",
+        ):
+            item.pop(_view_stale_blocker_key, None)
+        _view_clean_evidence = dict(item.get("candidate_search_evidence") or {})
+        for _view_stale_evidence_key in (
+            "exact_blockers_by_family",
+            "post_click_exact_blockers_by_family",
+            "cleanup_evidence_by_family",
+            "post_click_cleanup_evidence_by_family",
+            "blocker_attempts_by_family",
+            "local_cleanup_blocked_reasons",
+            "local_cleanup_blocked_reasons_by_family",
+        ):
+            _view_clean_evidence.pop(_view_stale_evidence_key, None)
+        item["candidate_search_evidence"] = dict(_view_clean_evidence)
     if not dict(item.get("family_status_current") or {}):
         item["family_status_current"] = _design_guide_family_status_table(overview)
     if isinstance(overview, dict) and isinstance(overview.get("failure_details_by_family"), dict):
         item.setdefault("failure_details_by_family", dict(overview.get("failure_details_by_family") or {}))
-    item = _complete_visible_low_util_blocker_evidence(item, overview, state)
+    if not _view_safe_combined_cleanup_contract:
+        item = _complete_visible_low_util_blocker_evidence(item, overview, state)
     if isinstance(debug_payload, dict):
         completed_exact = dict(item.get("exact_blockers_by_family") or {})
         completed_cleanup = dict(
@@ -8983,7 +9678,15 @@ def build_design_guide_card_view_model(
             engine_decision["debug"] = dict(engine_debug)
             debug_payload["design_guide_engine_decision"] = dict(engine_decision)
     if _design_guide_item_is_visible_blocker(item) or dict(item.get("exact_blockers_by_family") or {}):
-        item["blocker_attempts_by_family"] = _design_guide_blocker_attempts_table(item)
+        existing_attempts = dict(item.get("blocker_attempts_by_family") or {})
+        generated_attempts = _design_guide_blocker_attempts_table(item)
+        if existing_attempts and any(family in existing_attempts for family in ("bending", "shear")):
+            merged_attempts = dict(generated_attempts)
+            merged_attempts.update(existing_attempts)
+            item["blocker_attempts_by_family"] = dict(merged_attempts)
+        else:
+            item["blocker_attempts_by_family"] = dict(generated_attempts)
+    should_prefer_intent_contract = False
     if actionable and isinstance(debug_payload, dict):
         intent_contract, intent_row = _enabled_design_guide_contract_from_intent_rows(debug_payload)
         if intent_contract and isinstance(intent_row, dict):
@@ -9031,7 +9734,7 @@ def build_design_guide_card_view_model(
                     or (current_family == "combined" and intent_family in {"bending", "shear"})
                 )
             )
-            if should_prefer_intent_contract:
+        if should_prefer_intent_contract:
                 promoted_contract = dict(intent_contract)
                 if intent_family in {"bending", "shear"}:
                     promoted_contract["family"] = intent_family
@@ -9144,21 +9847,48 @@ def build_design_guide_card_view_model(
     )
     contract_for_view = (
         debug_contract_for_view
-        if debug_contract_for_view and not _design_guide_button_contract_enabled(debug_contract_for_view)
+        if (
+            debug_contract_for_view
+            and not _view_safe_combined_cleanup_contract
+            and not _design_guide_button_contract_enabled(debug_contract_for_view)
+        )
         else item_contract_for_view
     )
-    exact_for_view = dict(
-        item.get("post_click_exact_blockers_by_family")
-        or item.get("exact_blockers_by_family")
-        or (
-            (debug_payload or {}).get("post_click_exact_blockers_by_family")
-            if isinstance(debug_payload, dict)
-            else {}
+    exact_for_view = (
+        {}
+        if _view_safe_combined_cleanup_contract
+        else dict(
+            item.get("post_click_exact_blockers_by_family")
+            or item.get("exact_blockers_by_family")
+            or dict(item.get("candidate_search_evidence") or {}).get(
+                "post_click_exact_blockers_by_family"
+            )
+            or dict(item.get("candidate_search_evidence") or {}).get("exact_blockers_by_family")
+            or (
+                (debug_payload or {}).get("post_click_exact_blockers_by_family")
+                if isinstance(debug_payload, dict)
+                else {}
+            )
+            or ((debug_payload or {}).get("exact_blockers_by_family") if isinstance(debug_payload, dict) else {})
+            or (
+                dict((debug_payload or {}).get("candidate_search_evidence") or {}).get(
+                    "post_click_exact_blockers_by_family"
+                )
+                if isinstance(debug_payload, dict)
+                else {}
+            )
+            or (
+                dict((debug_payload or {}).get("candidate_search_evidence") or {}).get(
+                    "exact_blockers_by_family"
+                )
+                if isinstance(debug_payload, dict)
+                else {}
+            )
+            or item.get("blocker_attempts_by_family")
+            or {}
         )
-        or ((debug_payload or {}).get("exact_blockers_by_family") if isinstance(debug_payload, dict) else {})
-        or item.get("blocker_attempts_by_family")
-        or {}
     )
+    terminal_exact_accepted_for_view = _design_guide_item_is_accepted_terminal_with_exact_stop(item)
     if exact_for_view:
         existing_exact_for_item = dict(item.get("exact_blockers_by_family") or {})
         existing_post_click_exact_for_item = dict(item.get("post_click_exact_blockers_by_family") or {})
@@ -9236,8 +9966,54 @@ def build_design_guide_card_view_model(
         )
         for _view_blocker in exact_for_view.values()
     )
+    _view_post_click_exact_blocker = any(
+        isinstance(_view_blocker, dict)
+        and str(_view_blocker.get("source") or "").strip().lower().startswith("post_click")
+        for _view_blocker in exact_for_view.values()
+    )
+    if (
+        actionable
+        and exact_for_view
+        and _view_post_click_exact_blocker
+        and _view_exact_final_threshold_blocker
+        and not _overview_active_failure_keys(overview if isinstance(overview, dict) else {})
+    ):
+        _view_publishable_cleanup_updates = {}
+        _view_contract_blocking_reason = str(
+            blocker_for_view.get("reason")
+            or blocker_for_view.get("why_reduction_would_hurt_other_design_elements")
+            or "Required checks pass and exact cleanup evidence shows no further same-click action is required."
+        ).strip()
+        contract_for_view = _disabled_design_guide_button_contract(
+            item,
+            family=family_for_view or "combined",
+            reason=_view_contract_blocking_reason,
+        )
+        item["button_contract"] = dict(contract_for_view)
+        item["primary_card_actionable"] = False
+        item["action_type"] = None
+        item["updates"] = {}
+        item["selected_action_updates"] = {}
+        item["action_payload"] = {}
+        item["resolved_candidate"] = {}
+        st.session_state["design_guide_primary_button_contract"] = dict(contract_for_view)
+        st.session_state["design_guide_primary_button_contract_enabled"] = False
+        st.session_state.pop(DESIGN_GUIDE_PRIMARY_APPLY_PAYLOAD_KEY, None)
+        actionable = False
+        if isinstance(debug_payload, dict):
+            debug_payload.update(
+                {
+                    "primary_button_contract": dict(contract_for_view),
+                    "button_contract": dict(contract_for_view),
+                    "button_contract_enabled": False,
+                    "button_contract_updates": {},
+                    "design_guide_primary_apply_payload": {},
+                    "selected_action_updates": {},
+                }
+            )
     if (
         not actionable
+        and not terminal_exact_accepted_for_view
         and exact_for_view
         and _view_exact_final_threshold_blocker
         and not _design_guide_button_contract_enabled(contract_for_view)
@@ -9386,6 +10162,10 @@ def build_design_guide_card_view_model(
         item["button_contract"] = dict(contract_for_view)
     if (
         not actionable
+        and not terminal_exact_accepted_for_view
+        and str(item.get("terminal_cleanup_state") or "").strip() != "optimal"
+        and str(item.get("post_click_design_guide_state") or "").strip() != "accepted_green"
+        and str(item.get("design_guide_terminal_state") or "").strip() != "optimal"
         and family_for_view in {"bending", "shear", "combined"}
         and (
             bool(blocker_for_view.get("exact_blocker"))
@@ -9448,6 +10228,10 @@ def build_design_guide_card_view_model(
             )
     if (
         actionable
+        and not terminal_exact_accepted_for_view
+        and str(item.get("terminal_cleanup_state") or "").strip() != "optimal"
+        and str(item.get("post_click_design_guide_state") or "").strip() != "accepted_green"
+        and str(item.get("design_guide_terminal_state") or "").strip() != "optimal"
         and not _design_guide_button_contract_enabled(contract_for_view)
         and family_for_view in {"bending", "shear", "combined"}
         and (
@@ -9524,12 +10308,24 @@ def build_design_guide_card_view_model(
             or "other"
         ).strip().lower() or "other"
         title_for_blocker = str(item.get("title_main") or item.get("title") or "").strip()
+        _active_repair_contract_is_publishable = bool(
+            family_for_blocker
+            in (_overview_active_failure_keys(overview if isinstance(overview, dict) else {}) & {"bending", "shear"})
+            and _design_guide_button_contract_enabled(contract_for_blocker)
+            and dict(contract_for_blocker.get("updates") or {})
+            and contract_for_blocker.get("preview_pass") is not False
+            and expected_for_blocker is not None
+            and float(expected_for_blocker) <= 1.0 + float(TARGET_BAND_EPS)
+        )
         if (
-            "blocked" in title_for_blocker.lower()
-            or expected_for_blocker is None
-            or (
-                family_for_blocker in {"bending", "shear", "combined"}
-                and float(expected_for_blocker) < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL) - float(TARGET_BAND_EPS)
+            not _active_repair_contract_is_publishable
+            and (
+                "blocked" in title_for_blocker.lower()
+                or expected_for_blocker is None
+                or (
+                    family_for_blocker in {"bending", "shear", "combined"}
+                    and float(expected_for_blocker) < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL) - float(TARGET_BAND_EPS)
+                )
             )
         ):
             reason = str(
@@ -9567,12 +10363,13 @@ def build_design_guide_card_view_model(
                         "selected_action_updates": {},
                     }
                 )
+    terminal_exact_accepted_for_view = _design_guide_item_is_accepted_terminal_with_exact_stop(item)
     if _terminal_exact_cleanup_blocker_should_render_green(
         item,
         overview,
         contract_for_view,
         exact_for_view,
-    ):
+    ) and not terminal_exact_accepted_for_view and str(item.get("terminal_cleanup_state") or "").strip() != "optimal":
         item, contract_for_view = _normalise_terminal_exact_cleanup_card(
             item,
             overview,
@@ -9580,9 +10377,14 @@ def build_design_guide_card_view_model(
             exact_for_view,
         )
         actionable = False
-        item_bucket = "efficiency"
-        use_success_style = False
+        _normalised_terminal_accepted = str(item.get("terminal_cleanup_state") or "").strip() == "optimal"
+        item_bucket = "pass" if _normalised_terminal_accepted else "efficiency"
+        use_success_style = bool(_normalised_terminal_accepted)
         display_title = str(item.get("title_main") or item.get("title") or "Further cleanup blocked").strip()
+        if not _design_guide_button_contract_enabled(contract_for_view):
+            st.session_state["design_guide_primary_button_contract"] = dict(contract_for_view)
+            st.session_state["design_guide_primary_button_contract_enabled"] = False
+            st.session_state.pop(DESIGN_GUIDE_PRIMARY_APPLY_PAYLOAD_KEY, None)
         if isinstance(debug_payload, dict):
             debug_payload.update(
                 {
@@ -9595,10 +10397,49 @@ def build_design_guide_card_view_model(
                     "button_contract": dict(contract_for_view),
                     "button_contract_enabled": False,
                     "button_contract_updates": {},
+                    "design_guide_primary_apply_payload": {},
                     "exact_blockers_by_family": dict(exact_for_view),
                     "post_click_exact_blockers_by_family": dict(exact_for_view),
                 }
             )
+    if (
+        not actionable
+        and exact_for_view
+        and not _design_guide_button_contract_enabled(contract_for_view)
+        and family_for_view in {"bending", "shear"}
+        and not _overview_active_failure_keys(overview if isinstance(overview, dict) else {})
+    ):
+        _terminal_current_display_util = _design_guide_family_summary_util(
+            overview,
+            family_for_view,
+        )
+        if _terminal_current_display_util is not None:
+            display_util = float(_terminal_current_display_util)
+            item["family"] = family_for_view
+            item["check_key"] = family_for_view
+            item["selected_action_family"] = family_for_view
+            item["displayed_util"] = float(_terminal_current_display_util)
+            item["source_summary_util"] = float(_terminal_current_display_util)
+            item["source_post_commit_util"] = float(_terminal_current_display_util)
+            item["source_candidate_util"] = None
+            _terminal_display_truth = dict(item.get("display_truth") or {})
+            _terminal_display_truth.update(
+                {
+                    "display_truth_source": "post_commit_truth",
+                    "displayed_util": float(_terminal_current_display_util),
+                    "source_summary_util": float(_terminal_current_display_util),
+                    "source_post_commit_util": float(_terminal_current_display_util),
+                    "source_candidate_util": None,
+                }
+            )
+            item["display_truth"] = dict(_terminal_display_truth)
+            if isinstance(debug_payload, dict):
+                debug_payload["primary_display_truth"] = dict(_terminal_display_truth)
+                debug_payload["displayed_primary_display_truth"] = dict(_terminal_display_truth)
+                debug_payload["displayed_util"] = float(_terminal_current_display_util)
+                debug_payload["source_summary_util"] = float(_terminal_current_display_util)
+                debug_payload["source_candidate_util"] = None
+                debug_payload["terminal_no_action_display_truth_restamped"] = True
     _single_family_blocker_text = " ".join(
         str(part or "").strip().lower()
         for part in (
@@ -9686,6 +10527,124 @@ def build_design_guide_card_view_model(
                 debug_payload["display_family_restamped_from_blocker_title"] = (
                     _single_family_blocker_display_family
                 )
+    _current_family_status_table = _design_guide_family_status_table(
+        overview if isinstance(overview, dict) else {}
+    )
+    if _current_family_status_table:
+        item["family_status_current"] = dict(_current_family_status_table)
+    _combined_blocker_family = str(
+        item.get("selected_action_family") or item.get("family") or item.get("check_key") or ""
+    ).strip().lower()
+    if (
+        not actionable
+        and _combined_blocker_family == "combined"
+        and (
+            _design_guide_item_is_visible_blocker(item)
+            or dict(exact_for_view)
+            or "blocked" in _single_family_blocker_text
+            or "repair" in _single_family_blocker_text
+        )
+    ):
+        _combined_ranked_failures = []
+        for _combined_family in ("bending", "shear"):
+            _combined_row = dict(_current_family_status_table.get(_combined_family) or {})
+            _combined_util = _parse_util_value(_combined_row.get("util"))
+            _combined_status = str(_combined_row.get("status") or "").strip().upper()
+            if _combined_util is not None and (
+                _combined_status == "FAIL" or float(_combined_util) > 1.0
+            ):
+                _combined_ranked_failures.append((float(_combined_util), _combined_family))
+        if _combined_ranked_failures:
+            _combined_display_util, _combined_display_family = max(
+                _combined_ranked_failures,
+                key=lambda pair: pair[0],
+            )
+            display_util = float(_combined_display_util)
+            item["displayed_util"] = float(_combined_display_util)
+            item["source_summary_util"] = float(_combined_display_util)
+            item["source_post_commit_util"] = float(_combined_display_util)
+            item["source_candidate_util"] = None
+            item["title_util_label"] = f"{_combined_display_family} utilisation"
+            _combined_display_truth = dict(item.get("display_truth") or {})
+            _combined_display_truth.update(
+                {
+                    "display_truth_source": "post_commit_truth",
+                    "displayed_util": float(_combined_display_util),
+                    "source_summary_util": float(_combined_display_util),
+                    "source_post_commit_util": float(_combined_display_util),
+                    "source_candidate_util": None,
+                    "display_family": _combined_display_family,
+                }
+            )
+            item["display_truth"] = dict(_combined_display_truth)
+            if isinstance(debug_payload, dict):
+                debug_payload["primary_display_truth"] = dict(_combined_display_truth)
+                debug_payload["displayed_primary_display_truth"] = dict(_combined_display_truth)
+                debug_payload["displayed_util"] = float(_combined_display_util)
+                debug_payload["source_summary_util"] = float(_combined_display_util)
+                debug_payload["selected_action_family"] = "combined"
+                debug_payload["combined_blocker_display_family"] = _combined_display_family
+    _active_failure_blocker_policy = _design_guide_active_failure_blocker_publication_policy(
+        item,
+        overview if isinstance(overview, dict) else {},
+        state if isinstance(state, dict) else {},
+        exact_for_view,
+        actionable=actionable,
+    )
+    if _active_failure_blocker_policy == "unlocked_active_failure_missing_apply_cta":
+        _active_failure_families = sorted(
+            _overview_active_failure_keys(overview if isinstance(overview, dict) else {}) & {"bending", "shear"}
+        )
+        if isinstance(debug_payload, dict):
+            debug_payload.update(
+                {
+                    "design_guide_publication_policy": _active_failure_blocker_policy,
+                    "guidance_branch": _active_failure_blocker_policy,
+                    "active_failure_missing_apply_cta_families": list(_active_failure_families),
+                    "button_contract": dict(item.get("button_contract") or contract_for_view),
+                    "button_contract_enabled": False,
+                }
+            )
+        raise RuntimeError(
+            "Design Guide policy violation: unlocked active failure reached final publication "
+            f"without an executor-backed Apply CTA for {', '.join(_active_failure_families) or 'active failure'}."
+        )
+    if _active_failure_blocker_policy in {
+        "locked_active_failure_missing_exact_proof",
+    }:
+        _active_policy_reason = str(
+            contract_for_view.get("blocking_reason")
+            or blocker_for_view.get("reason")
+            or blocker_for_view.get("why_reduction_would_hurt_other_design_elements")
+            or "The Design Guide did not publish a fresh executor-backed repair action for this active failure."
+        ).strip()
+        item["design_guide_publication_policy"] = _active_failure_blocker_policy
+        item["guidance_intent"] = _active_failure_blocker_policy
+        item["bucket"] = "fail"
+        item["status"] = "FAIL"
+        item["title_main"] = "Design Guide blocker proof incomplete"
+        item["title"] = item["title_main"]
+        item["primary_action"] = f"Why: {_active_policy_reason}"
+        item["secondary_action"] = (
+            "Exact blocker evidence remains available below; this active-failure state is "
+            "not being published as a terminal user-facing BLOCKED card."
+        )
+        item_bucket = "fail"
+        use_success_style = False
+        actionable = False
+        display_title = str(item.get("title_main") or item.get("title") or display_title)
+        if isinstance(debug_payload, dict):
+            debug_payload.update(
+                {
+                    "design_guide_publication_policy": _active_failure_blocker_policy,
+                    "guidance_branch": _active_failure_blocker_policy,
+                    "primary_guidance_intent": _active_failure_blocker_policy,
+                    "primary_card_title": item.get("title_main"),
+                    "button_contract": dict(item.get("button_contract") or contract_for_view),
+                    "button_contract_enabled": False,
+                    "button_contract_updates": {},
+                }
+            )
     status, pill, tone = _design_guide_dashboard_status(
         item,
         item_bucket=item_bucket,
@@ -9693,6 +10652,44 @@ def build_design_guide_card_view_model(
         actionable=actionable,
     )
     title = _design_guide_dashboard_title(item, display_title, actionable=actionable, status=status)
+    if (
+        not actionable
+        and status == "pass"
+        and family_for_view in {"bending", "shear"}
+        and not _design_guide_button_contract_enabled(dict(item.get("button_contract") or contract_for_view or {}))
+        and not _overview_active_failure_keys(overview if isinstance(overview, dict) else {})
+    ):
+        _pass_terminal_current_util = _design_guide_family_summary_util(
+            overview,
+            family_for_view,
+        )
+        if _pass_terminal_current_util is not None:
+            display_util = float(_pass_terminal_current_util)
+            item["family"] = family_for_view
+            item["check_key"] = family_for_view
+            item["selected_action_family"] = family_for_view
+            item["displayed_util"] = float(_pass_terminal_current_util)
+            item["source_summary_util"] = float(_pass_terminal_current_util)
+            item["source_post_commit_util"] = float(_pass_terminal_current_util)
+            item["source_candidate_util"] = None
+            _pass_terminal_display_truth = dict(item.get("display_truth") or {})
+            _pass_terminal_display_truth.update(
+                {
+                    "display_truth_source": "post_commit_truth",
+                    "displayed_util": float(_pass_terminal_current_util),
+                    "source_summary_util": float(_pass_terminal_current_util),
+                    "source_post_commit_util": float(_pass_terminal_current_util),
+                    "source_candidate_util": None,
+                }
+            )
+            item["display_truth"] = dict(_pass_terminal_display_truth)
+            if isinstance(debug_payload, dict):
+                debug_payload["primary_display_truth"] = dict(_pass_terminal_display_truth)
+                debug_payload["displayed_primary_display_truth"] = dict(_pass_terminal_display_truth)
+                debug_payload["displayed_util"] = float(_pass_terminal_current_util)
+                debug_payload["source_summary_util"] = float(_pass_terminal_current_util)
+                debug_payload["source_candidate_util"] = None
+                debug_payload["terminal_pass_display_truth_restamped"] = True
     section_title, reasons = _design_guide_dashboard_reasons(
         item,
         state=state,
@@ -9738,7 +10735,10 @@ def build_design_guide_card_view_model(
         "cta": {
             "enabled": bool(actionable),
             "label": "Run one-click auto design" if actionable else "",
-            "payload_id": item.get("candidate_id") or item.get("source_candidate_id"),
+            "payload_id": item.get("candidate_id")
+            or item.get("source_candidate_id")
+            or dict(item.get("button_contract") or {}).get("candidate_id")
+            or dict(item.get("button_contract") or {}).get("source_candidate_id"),
         },
     }
 
@@ -9762,14 +10762,24 @@ def _design_guide_ladder_stop_evidence_html(details: dict | None) -> str:
         dict(details.get("debug") or {}).get("post_click_cleanup_evidence_by_family")
         if isinstance(details.get("debug"), dict)
         else None,
+        dict(details.get("debug") or {}).get("blocker_attempts_by_family")
+        if isinstance(details.get("debug"), dict)
+        else None,
     ]
     blockers: dict[str, dict] = {}
     for source in sources:
         if not isinstance(source, dict):
             continue
-        nested = source.get("exact_blockers_by_family") if isinstance(source.get("exact_blockers_by_family"), dict) else None
-        if isinstance(nested, dict):
-            sources.append(nested)
+        for nested_key in (
+            "exact_blockers_by_family",
+            "post_click_exact_blockers_by_family",
+            "cleanup_evidence_by_family",
+            "post_click_cleanup_evidence_by_family",
+            "blocker_attempts_by_family",
+        ):
+            nested = source.get(nested_key) if isinstance(source.get(nested_key), dict) else None
+            if isinstance(nested, dict):
+                sources.append(nested)
         for family, row in source.items():
             family_key = str(family or "").strip().lower()
             if family_key not in {"bending", "shear", "combined"} or not isinstance(row, dict):
@@ -9924,7 +10934,7 @@ def _design_guide_ladder_stop_evidence_html(details: dict | None) -> str:
         return ""
     return (
         "<div class='dg-ladder-stop-evidence' data-testid='design-guide-ladder-stop-evidence'>"
-        "<div class='dg-section-title'>Why the ladder stops here</div>"
+        "<div class='dg-section-title'>Why no further cleanup?</div>"
         + "".join(rows_html)
         + "</div>"
     )
@@ -9937,9 +10947,14 @@ def _design_guide_dashboard_card_html(vm: dict, *, card_class: str) -> str:
     governing = str(vm.get("governing_label") or "").strip()
     summary_line = str(vm.get("summary_line") or "").strip()
     _html_details_for_status = dict(vm.get("details") or {})
-    _html_blocker_rows_for_status = dict(
-        _html_details_for_status.get("blocker_attempts_by_family")
+    _html_exact_rows_for_status = dict(
+        _html_details_for_status.get("post_click_exact_blockers_by_family")
         or _html_details_for_status.get("exact_blockers_by_family")
+        or {}
+    )
+    _html_blocker_rows_for_status = dict(
+        _html_exact_rows_for_status
+        or _html_details_for_status.get("blocker_attempts_by_family")
         or {}
     )
     _html_cta_for_status = dict(vm.get("cta") or {})
@@ -9955,7 +10970,19 @@ def _design_guide_dashboard_card_html(vm: dict, *, card_class: str) -> str:
     if _html_disabled_action_with_blocker:
         status = "blocked"
         pill = "BLOCKED"
-        title = "Bending and shear cleanup blocked"
+        _html_exact_families_for_title = {
+            str(family or "").strip().lower()
+            for family in _html_exact_rows_for_status.keys()
+            if str(family or "").strip().lower() in {"bending", "shear"}
+        }
+        if _html_exact_families_for_title >= {"bending", "shear"}:
+            title = "Bending and shear cleanup blocked"
+        elif "shear" in _html_exact_families_for_title:
+            title = "Shear cleanup blocked"
+        elif "bending" in _html_exact_families_for_title:
+            title = "Bending cleanup blocked"
+        else:
+            title = "Further cleanup blocked"
         summary_line = "Open for engineering detail."
         _html_section_title_override = "Why no further cleanup?"
         _html_state_for_reason = dict(_html_details_for_status.get("state_snapshot") or {})
@@ -9992,9 +11019,16 @@ def _design_guide_dashboard_card_html(vm: dict, *, card_class: str) -> str:
     if status in {"blocked", "error"} and title.lower() == "shear cleanup blocked":
         try:
             _html_details = dict(vm.get("details") or {})
+            _html_exact = dict(
+                _html_details.get("post_click_exact_blockers_by_family")
+                or _html_details.get("exact_blockers_by_family")
+                or {}
+            )
             _html_overview = dict(_html_details.get("current_overview") or {})
             _html_bending_util = _parse_util_value(dict(_html_overview.get("utils") or {}).get("bending"))
             if (
+                "bending" in _html_exact
+                and
                 _html_bending_util is not None
                 and float(_html_bending_util)
                 < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL) - float(TARGET_BAND_EPS)
@@ -10005,9 +11039,16 @@ def _design_guide_dashboard_card_html(vm: dict, *, card_class: str) -> str:
     if status in {"blocked", "error"} and title.lower() == "bending cleanup blocked":
         try:
             _html_details = dict(vm.get("details") or {})
+            _html_exact = dict(
+                _html_details.get("post_click_exact_blockers_by_family")
+                or _html_details.get("exact_blockers_by_family")
+                or {}
+            )
             _html_overview = dict(_html_details.get("current_overview") or {})
             _html_shear_util = _parse_util_value(dict(_html_overview.get("utils") or {}).get("shear"))
             if (
+                "shear" in _html_exact
+                and
                 _html_shear_util is not None
                 and float(_html_shear_util)
                 < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL) - float(TARGET_BAND_EPS)
@@ -10017,6 +11058,16 @@ def _design_guide_dashboard_card_html(vm: dict, *, card_class: str) -> str:
             pass
     if status in {"blocked", "error"} and "moves from" in summary_line.lower():
         summary_line = "Open for engineering detail."
+    if status == "pass":
+        _card_tokens = [
+            token
+            for token in str(card_class or "").split()
+            if token not in {"efficiency", "warn", "fail", "error", "dg-card--blocked", "dg-card--action"}
+        ]
+        for token in ("fast-guidance-item", "pass", "guidance-success"):
+            if token not in _card_tokens:
+                _card_tokens.append(token)
+        card_class = " ".join(_card_tokens)
     card_classes = f"{card_class} dg-card dg-card--{html.escape(status)}"
     toggle_id = "dg-toggle-" + hashlib.sha1(
         f"{status}|{pill}|{title}|{governing}|{summary_line}".encode("utf-8", errors="ignore")
@@ -10052,10 +11103,16 @@ def _design_guide_dashboard_card_html(vm: dict, *, card_class: str) -> str:
                 if isinstance(row, dict)
             }
             _html_details = dict(vm.get("details") or {})
+            _html_exact = dict(
+                _html_details.get("post_click_exact_blockers_by_family")
+                or _html_details.get("exact_blockers_by_family")
+                or {}
+            )
             _html_overview = dict(_html_details.get("current_overview") or {})
             _html_bending_util = _parse_util_value(dict(_html_overview.get("utils") or {}).get("bending"))
             if (
                 "bending" not in _reason_labels
+                and "bending" in _html_exact
                 and _html_bending_util is not None
                 and float(_html_bending_util)
                 < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL) - float(TARGET_BAND_EPS)
@@ -10170,6 +11227,7 @@ def _design_guide_dashboard_card_html(vm: dict, *, card_class: str) -> str:
         if preview_html
         else ""
     )
+    ladder_stop_section = _design_guide_ladder_stop_evidence_html(_html_details_for_status)
     current_section = (
         "<div class='dg-current-title'>Current</div>"
         f"<div class='dg-current-grid' data-testid='design-guide-current-row'>{''.join(current_html)}</div>"
@@ -10197,6 +11255,7 @@ def _design_guide_dashboard_card_html(vm: dict, *, card_class: str) -> str:
             preview_section,
             f"<div class='dg-section-title'>{html.escape(str(_html_section_title_override or vm.get('section_title') or 'Status'))}</div>",
             f"<div class='dg-reason-list' data-testid='design-guide-main-explanation'>{''.join(reason_html)}</div>",
+            ladder_stop_section,
             "<details class='dg-details-row' data-testid='design-guide-details'>",
             "<summary>&gt; Details</summary>",
             f"<pre class='dg-details-body'>{html.escape(details_text)}</pre>",
@@ -11365,6 +12424,7 @@ def _design_guide_blocker_reason(item: dict | None) -> str:
 def _design_guide_item_is_visible_blocker(item: dict | None, *, extra_text: str | None = None) -> bool:
     if not isinstance(item, dict):
         return False
+    terminal_exact_accepted = _design_guide_item_is_accepted_terminal_with_exact_stop(item)
     contract = dict(item.get("button_contract") or {})
     action_updates = dict(
         contract.get("updates")
@@ -11381,12 +12441,14 @@ def _design_guide_item_is_visible_blocker(item: dict | None, *, extra_text: str 
             or bool(contract.get("actionable"))
         )
     )
-    if str(item.get("guidance_intent") or "").strip() == "specific_blocker":
+    if not terminal_exact_accepted and str(item.get("guidance_intent") or "").strip() == "specific_blocker":
         return True
-    if str(item.get("post_click_design_guide_state") or "").strip() == "exact_blocker":
+    if not terminal_exact_accepted and str(item.get("post_click_design_guide_state") or "").strip() == "exact_blocker":
         return True
     blockers = item.get("exact_blockers_by_family") or item.get("post_click_exact_blockers_by_family")
     if isinstance(blockers, dict) and blockers and not bool(item.get("primary_card_actionable")):
+        if terminal_exact_accepted:
+            return False
         return True
     text = " ".join(
         str(part or "")
@@ -11415,6 +12477,40 @@ def _design_guide_item_is_visible_blocker(item: dict | None, *, extra_text: str 
     if extra_text and not bool(item.get("action_type")) and not dict(item.get("updates") or {}):
         return _design_guide_text_indicates_blocker(extra_text)
     return False
+
+
+def _design_guide_item_is_accepted_terminal_with_exact_stop(item: dict | None) -> bool:
+    if not isinstance(item, dict):
+        return False
+    blockers = item.get("exact_blockers_by_family") or item.get("post_click_exact_blockers_by_family")
+    if not isinstance(blockers, dict) or not blockers:
+        return False
+    contract = dict(item.get("button_contract") or {})
+    updates = dict(
+        contract.get("updates")
+        or item.get("selected_action_updates")
+        or item.get("updates")
+        or {}
+    )
+    if (
+        str(contract.get("action_type") or item.get("action_type") or "").strip()
+        and updates
+        and (bool(contract.get("enabled")) or bool(contract.get("actionable")) or bool(item.get("primary_card_actionable")))
+    ):
+        return False
+    title_text = " ".join(
+        str(item.get(key) or "")
+        for key in ("title_main", "title", "primary_action", "reasoning")
+    ).strip().lower()
+    if "cleanup blocked" in title_text or "repair blocked" in title_text:
+        return False
+    return bool(
+        str(item.get("guidance_intent") or "").strip() == "already_efficient"
+        or str(item.get("design_guide_terminal_state") or "").strip() == "optimal"
+        or str(item.get("post_click_design_guide_state") or "").strip() == "accepted_green"
+        or str(item.get("terminal_cleanup_state") or "").strip() == "optimal"
+        or str(item.get("final_state_class") or "").strip() == "accepted"
+    )
 
 
 def _merge_visible_exact_blocker_maps(*sources: dict | None) -> dict:
@@ -11631,6 +12727,100 @@ def _visible_cleanup_blocker_from_action(
     return blocker
 
 
+def _publishable_safe_combined_cleanup_row_from_evidence(
+    evidence: dict | None,
+    state: dict | None = None,
+) -> dict:
+    if not isinstance(evidence, dict):
+        return {}
+    rows: list[dict] = []
+
+    def _append_rows_from_evidence(src: dict) -> None:
+        for row_source in (
+            src.get("safe_executor_backed_candidates"),
+            src.get("candidate_rows"),
+            src.get("target_band_candidates"),
+        ):
+            if isinstance(row_source, list):
+                rows.extend(dict(row) for row in row_source if isinstance(row, dict))
+
+    selected_updates = dict(
+        evidence.get("selected_candidate_updates")
+        or evidence.get("best_safe_candidate_updates")
+        or evidence.get("closest_safe_candidate_updates")
+        or {}
+    )
+    if selected_updates:
+        rows.append(
+            {
+                "candidate_id": (
+                    evidence.get("selected_candidate_id")
+                    or evidence.get("best_safe_candidate_id")
+                    or evidence.get("closest_safe_candidate_id")
+                ),
+                "title": (
+                    evidence.get("selected_candidate_title")
+                    or evidence.get("best_safe_candidate_title")
+                    or evidence.get("closest_safe_candidate_title")
+                    or "Shear and bending cleanup - one-click optimisation"
+                ),
+                "proposed_updates": dict(selected_updates),
+                "preview_pass": True,
+                "safe_executor_backed": True,
+                "is_executable": True,
+                "preview_util": (
+                    evidence.get("selected_candidate_util")
+                    or evidence.get("best_safe_final_util")
+                    or evidence.get("closest_safe_candidate_util")
+                ),
+            }
+        )
+    _append_rows_from_evidence(evidence)
+    for nested_key in (
+        "shear_cleanup_evidence",
+        "bending_cleanup_evidence",
+        "combined_cleanup_evidence",
+        "post_click_cleanup_evidence",
+        "residual_shear_cleanup_evidence",
+        "residual_bending_cleanup_evidence",
+        "candidate_search_evidence",
+    ):
+        nested = evidence.get(nested_key)
+        if isinstance(nested, dict) and nested is not evidence:
+            _append_rows_from_evidence(nested)
+    preferred_id = str(
+        evidence.get("selected_candidate_id")
+        or evidence.get("closest_safe_candidate_id")
+        or evidence.get("best_safe_candidate_id")
+        or ""
+    ).strip()
+    if preferred_id:
+        rows.sort(key=lambda row: 0 if str(row.get("candidate_id") or "").strip() == preferred_id else 1)
+    for row in rows:
+        updates = dict(row.get("proposed_updates") or row.get("updates") or {})
+        if not updates:
+            continue
+        update_keys = set(updates)
+        if not (update_keys & _COMPOUND_BOTTOM_UPDATE_KEYS and update_keys & _COMPOUND_SHEAR_UPDATE_KEYS):
+            continue
+        if isinstance(state, dict) and _updates_match_state(state, updates):
+            continue
+        if row.get("preview_pass") is not True:
+            continue
+        if not (
+            bool(row.get("safe_executor_backed"))
+            or bool(row.get("is_executable"))
+            or bool(row.get("executor_backed"))
+        ):
+            continue
+        if _candidate_preview_statuses_have_explicit_fail(dict(row.get("preview_statuses") or {})):
+            continue
+        if str(row.get("rejection_reason") or "").strip():
+            continue
+        return dict(row)
+    return {}
+
+
 def _normalise_visible_optimisation_contract(
     item: dict | None,
     *,
@@ -11656,30 +12846,39 @@ def _normalise_visible_optimisation_contract(
         or {}
     )
     debug_evidence = dict((debug_sink or {}).get("candidate_search_evidence") or {}) if isinstance(debug_sink, dict) else {}
+    debug_combined_row = _publishable_safe_combined_cleanup_row_from_evidence(debug_evidence, state)
     debug_combined_updates = dict(
-        debug_evidence.get("selected_candidate_updates")
+        debug_combined_row.get("proposed_updates")
+        or debug_combined_row.get("updates")
+        or debug_evidence.get("selected_candidate_updates")
         or debug_evidence.get("best_safe_candidate_updates")
         or debug_evidence.get("closest_safe_candidate_updates")
         or {}
     )
     if (
-        str(debug_evidence.get("family") or "").strip().lower() == "combined"
-        and debug_combined_updates
+        debug_combined_updates
+        and bool(set(debug_combined_updates) & _COMPOUND_BOTTOM_UPDATE_KEYS)
+        and bool(set(debug_combined_updates) & _COMPOUND_SHEAR_UPDATE_KEYS)
         and dict(contract.get("updates") or {}) != debug_combined_updates
         and not _updates_match_state(state or {}, debug_combined_updates)
         and bool(
-            debug_evidence.get("cleanup_search_ran")
+            debug_combined_row
+            or debug_evidence.get("cleanup_search_ran")
             or debug_evidence.get("local_cleanup_search_ran")
             or debug_evidence.get("candidate_search_exhaustive")
         )
     ):
         evidence = dict(debug_evidence)
         debug_combined_expected = _parse_util_value(
-            debug_evidence.get("selected_candidate_util")
+            debug_combined_row.get("preview_util")
+            or debug_combined_row.get("candidate_post_util")
+            or debug_combined_row.get("worst_util")
+            or debug_evidence.get("selected_candidate_util")
             or debug_evidence.get("best_safe_final_util")
             or debug_evidence.get("closest_safe_candidate_util")
         )
         debug_combined_candidate_id = _normalise_design_guide_candidate_id(
+            debug_combined_row.get("candidate_id"),
             debug_evidence.get("selected_candidate_id"),
             debug_evidence.get("closest_safe_candidate_id"),
             debug_evidence.get("best_safe_candidate_id"),
@@ -12382,27 +13581,40 @@ def _combined_low_util_exact_blocker_final_item(
         f"Bending cleanup blocked: bending utilisation is {bending_util_text}. {bending_reason} "
         f"Shear cleanup blocked: shear utilisation is {shear_util_text}. {shear_reason}"
     )
+    accepted_exact_state = bool(
+        not bool(ov.get("any_fail"))
+        and _overview_required_checks_acceptable(ov)
+        and {"bending", "shear"}.issubset(set(exact_blockers))
+    )
     if post_click:
-        title = "Further cleanup blocked"
+        title = (
+            "Design is efficient - no further safe cleanup available"
+            if accepted_exact_state
+            else "Further cleanup blocked"
+        )
         primary_action = (
             "The one-click update has been applied and all required checks pass. "
             + body
         )
-        bucket = "efficiency"
-        status = "EFFICIENCY"
-        guidance_intent = "specific_blocker"
-        final_state_class = "blocker"
-        final_state_type = "exact_engineering_blocker"
-        terminal_state = None
+        bucket = "pass" if accepted_exact_state else "efficiency"
+        status = "PASS" if accepted_exact_state else "EFFICIENCY"
+        guidance_intent = "already_efficient" if accepted_exact_state else "specific_blocker"
+        final_state_class = "accepted" if accepted_exact_state else "blocker"
+        final_state_type = "exact_engineering_limit" if accepted_exact_state else "exact_engineering_blocker"
+        terminal_state = "optimal" if accepted_exact_state else None
     else:
-        title = "Further cleanup blocked"
+        title = (
+            "Design is efficient - no further safe cleanup available"
+            if accepted_exact_state
+            else "Further cleanup blocked"
+        )
         primary_action = body
-        bucket = "efficiency"
-        status = "EFFICIENCY"
-        guidance_intent = "specific_blocker"
-        final_state_class = "blocker"
-        final_state_type = "exact_engineering_blocker"
-        terminal_state = None
+        bucket = "pass" if accepted_exact_state else "efficiency"
+        status = "PASS" if accepted_exact_state else "EFFICIENCY"
+        guidance_intent = "already_efficient" if accepted_exact_state else "specific_blocker"
+        final_state_class = "accepted" if accepted_exact_state else "blocker"
+        final_state_type = "exact_engineering_limit" if accepted_exact_state else "exact_engineering_blocker"
+        terminal_state = "optimal" if accepted_exact_state else None
 
     disabled_contract = {
         "enabled": False,
@@ -12460,7 +13672,9 @@ def _combined_low_util_exact_blocker_final_item(
             "selected_action_family": "combined",
             "guidance_intent": guidance_intent,
             "design_guide_terminal_state": terminal_state,
-            "post_click_design_guide_state": "exact_blocker",
+            "post_click_design_guide_state": (
+                "accepted_green" if accepted_exact_state else "exact_blocker"
+            ),
             "final_state_class": final_state_class,
             "final_state_type": final_state_type,
             "primary_card_actionable": False,
@@ -12502,6 +13716,13 @@ def _combined_low_util_exact_blocker_final_item(
             },
             "combined_overdesign_cleanup_final": True,
             "multi_family_blocker": True,
+            "terminal_cleanup_state": (
+                "optimal" if accepted_exact_state else "exact_blocked"
+            ),
+            "stop_reasons_by_family": {
+                "bending": bending_reason,
+                "shear": shear_reason,
+            },
         }
     )
     return normalise_final_visible_design_guide_item(item)
@@ -12635,6 +13856,12 @@ def _complete_exact_blocker_map_from_attempts(
                 blocker["attempted_candidate_count"] = int(attempted_count)
             except Exception:
                 blocker["attempted_candidate_count"] = attempted_count
+        if blocker.get("threshold") in (None, "", [], {}):
+            blocker["threshold"] = float(FINAL_ACCEPTED_MIN_FAMILY_UTIL)
+        if blocker.get("target_low") in (None, "", [], {}):
+            blocker["target_low"] = float(FINAL_ACCEPTED_MIN_FAMILY_UTIL)
+        if blocker.get("target_high") in (None, "", [], {}):
+            blocker["target_high"] = float(EFFICIENCY_TARGET_UTIL_MAX)
         rejected_id = str(
             blocker.get("failed_candidate_id")
             or blocker.get("best_rejected_candidate_id")
@@ -13066,13 +14293,858 @@ def _complete_visible_low_util_blocker_evidence(
                     out["resolved_candidate"] = dict(resolved)
                     return out
         low_strength_families = {family for family in exact if family in {"bending", "shear"}}
-        if len(low_strength_families) > 1 and not bool(out.get("primary_card_actionable")):
+        if (
+            len(low_strength_families) > 1
+            and not bool(out.get("primary_card_actionable"))
+            and not _design_guide_item_is_accepted_terminal_with_exact_stop(out)
+        ):
             out["family"] = "combined"
             out["selected_action_family"] = "combined"
             out["check_key"] = "combined"
             out["title_main"] = "Bending and shear cleanup blocked"
             out["title"] = "Bending and shear cleanup blocked"
     return out
+
+
+def _visible_safe_combined_cleanup_action_from_evidence(
+    item: dict | None,
+    overview: dict | None,
+    state: dict | None,
+    *,
+    debug_sink: dict | None = None,
+) -> dict | None:
+    _diag_enabled = bool(
+        isinstance(debug_sink, dict)
+        and os.environ.get("CODEX_BROWSER_TEST_MODE", "").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
+    _helper_probe: dict | None = None
+    if _diag_enabled:
+        _helper_probe = {
+            "entered": True,
+            "attempts": [],
+        }
+        debug_sink["visible_safe_combined_cleanup_helper_probe"] = _helper_probe
+
+    def _diag_return(reason: str, **payload) -> None:
+        if not isinstance(_helper_probe, dict):
+            return
+        _helper_probe["return_reason"] = reason
+        if payload:
+            _helper_probe.update(payload)
+
+    def _diag_attempt(reason: str, **payload) -> None:
+        if not isinstance(_helper_probe, dict):
+            return
+        attempts = _helper_probe.setdefault("attempts", [])
+        if isinstance(attempts, list):
+            rec = {"gate": reason}
+            rec.update(payload)
+            attempts.append(rec)
+
+    def _contract_disabled_reasons(contract: dict, row_updates: dict) -> list[str]:
+        reasons: list[str] = []
+        if not isinstance(contract, dict) or not contract:
+            return ["empty_contract"]
+        if not contract.get("enabled") and not contract.get("actionable"):
+            reasons.append("missing_actionable")
+        if not (contract.get("updates") or row_updates):
+            reasons.append("missing_updates")
+        if contract.get("preview_pass") is False:
+            reasons.append("preview_pass_false")
+        if str(contract.get("blocking_reason") or "").strip():
+            reasons.append(f"blocking_reason:{contract.get('blocking_reason')}")
+        if bool(contract.get("executor_contract_blocked")):
+            reasons.append("executor_contract_blocked")
+        if bool(contract.get("updates_match_state")):
+            reasons.append("updates_match_state")
+        if bool(contract.get("preview_not_in_target_band")):
+            reasons.append("preview_not_in_target_band")
+        if not reasons:
+            reasons.append("contract_enabled_helper_returned_false")
+        return reasons
+
+    if not isinstance(item, dict) or not isinstance(state, dict):
+        _diag_return("invalid_item_or_state")
+        return None
+    if _overview_active_failure_keys(dict(overview or {})) & {"bending", "shear"}:
+        _diag_return(
+            "current_overview_active_failure",
+            active_failures=sorted(_overview_active_failure_keys(dict(overview or {}))),
+        )
+        return None
+    item_evidence = dict(item.get("candidate_search_evidence") or {})
+    def _combined_publishable_row_score(candidate_evidence: dict) -> int:
+        if not isinstance(candidate_evidence, dict) or not candidate_evidence:
+            return 0
+        score = 0
+        if (
+            str(candidate_evidence.get("search_scope") or "").strip().lower()
+            == "combined_best_safe_shear_plus_bending_cleanup"
+        ):
+            score += 2
+        candidate_rows: list[dict] = []
+        for row_source in (
+            candidate_evidence.get("safe_executor_backed_candidates"),
+            candidate_evidence.get("candidate_rows"),
+            candidate_evidence.get("target_band_candidates"),
+        ):
+            if not isinstance(row_source, list):
+                continue
+            candidate_rows.extend(dict(row) for row in row_source if isinstance(row, dict))
+        selected_candidate_updates = dict(
+            candidate_evidence.get("selected_candidate_updates")
+            or candidate_evidence.get("best_safe_candidate_updates")
+            or candidate_evidence.get("closest_safe_candidate_updates")
+            or {}
+        )
+        if selected_candidate_updates:
+            candidate_rows.insert(
+                0,
+                {
+                    "proposed_updates": dict(selected_candidate_updates),
+                    "preview_pass": True,
+                    "is_executable": True,
+                    "safe_executor_backed": True,
+                },
+            )
+        for row in candidate_rows:
+            row_updates = dict(row.get("proposed_updates") or row.get("updates") or {})
+            update_keys = set(row_updates)
+            if not (update_keys & _COMPOUND_BOTTOM_UPDATE_KEYS and update_keys & _COMPOUND_SHEAR_UPDATE_KEYS):
+                continue
+            if _updates_match_state(dict(state), row_updates):
+                continue
+            if row.get("preview_pass") is False:
+                continue
+            if not (
+                bool(row.get("safe_executor_backed"))
+                or bool(row.get("is_executable"))
+                or bool(row.get("executor_backed"))
+            ):
+                continue
+            if _candidate_preview_statuses_have_explicit_fail(dict(row.get("preview_statuses") or {})):
+                continue
+            score += 10
+        return score
+
+    debug_evidence = dict(
+        (debug_sink or {}).get("candidate_search_evidence") or {}
+    ) if isinstance(debug_sink, dict) else {}
+
+    evidence = max(
+        (debug_evidence, item_evidence),
+        key=_combined_publishable_row_score,
+    )
+    if not evidence:
+        evidence = item_evidence or debug_evidence
+    if not evidence:
+        _diag_return(
+            "no_candidate_evidence",
+            item_evidence_keys=sorted(item_evidence.keys()),
+            debug_evidence_keys=sorted(debug_evidence.keys()),
+        )
+        return None
+    overview_current = dict(_design_guide_family_status_table(overview))
+    item_current = dict(item.get("family_status_current") or {})
+    current = {**overview_current, **item_current}
+    current_utils = {
+        family: _parse_util_value(dict(current.get(family) or {}).get("util"))
+        for family in ("bending", "shear")
+    }
+    low_families = {
+        family
+        for family, util in current_utils.items()
+        if util is not None and float(util) < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL) - 1e-9
+    }
+    if isinstance(_helper_probe, dict):
+        _helper_probe.update(
+            {
+                "evidence_search_scope": evidence.get("search_scope"),
+                "evidence_selected_candidate_id": evidence.get("selected_candidate_id"),
+                "current_utils": dict(current_utils),
+                "low_families": sorted(low_families),
+            }
+        )
+    if "bending" not in low_families:
+        _diag_return("bending_not_low_family")
+        return None
+    existing_exact = {
+        str(family or "").strip().lower(): dict(blocker)
+        for family, blocker in dict(
+            item.get("post_click_exact_blockers_by_family")
+            or item.get("exact_blockers_by_family")
+            or evidence.get("post_click_exact_blockers_by_family")
+            or evidence.get("exact_blockers_by_family")
+            or {}
+        ).items()
+        if str(family or "").strip() and isinstance(blocker, dict)
+    }
+    rows: list[dict] = []
+    for row_source in (
+        evidence.get("safe_executor_backed_candidates"),
+        evidence.get("candidate_rows"),
+        evidence.get("target_band_candidates"),
+    ):
+        if not isinstance(row_source, list):
+            continue
+        for row in row_source:
+            if isinstance(row, dict):
+                rows.append(dict(row))
+    selected_updates = dict(
+        evidence.get("selected_candidate_updates")
+        or evidence.get("best_safe_candidate_updates")
+        or evidence.get("closest_safe_candidate_updates")
+        or {}
+    )
+    if selected_updates:
+        rows.insert(
+            0,
+            {
+                "candidate_id": evidence.get("selected_candidate_id")
+                or evidence.get("best_safe_candidate_id")
+                or evidence.get("closest_safe_candidate_id"),
+                "title": evidence.get("selected_candidate_title")
+                or evidence.get("best_safe_candidate_title")
+                or evidence.get("closest_safe_candidate_title")
+                or "Shear and bending cleanup - one-click optimisation",
+                "proposed_updates": dict(selected_updates),
+                "preview_pass": True,
+                "is_executable": True,
+                "safe_executor_backed": True,
+                "preview_util": evidence.get("selected_candidate_util")
+                or evidence.get("best_safe_final_util")
+                or evidence.get("closest_safe_candidate_util"),
+            },
+        )
+    if isinstance(_helper_probe, dict):
+        _helper_probe["row_count"] = len(rows)
+    for row in rows:
+        row_updates = dict(row.get("proposed_updates") or row.get("updates") or {})
+        row_candidate_id = row.get("candidate_id") or evidence.get("selected_candidate_id")
+        row_update_keys = sorted(str(key) for key in row_updates)
+        if not row_updates:
+            _diag_attempt("reject_missing_updates", candidate_id=row_candidate_id)
+            continue
+        update_keys = set(row_updates)
+        if not (update_keys & _COMPOUND_BOTTOM_UPDATE_KEYS and update_keys & _COMPOUND_SHEAR_UPDATE_KEYS):
+            _diag_attempt(
+                "reject_not_combined_bottom_and_shear",
+                candidate_id=row_candidate_id,
+                update_keys=row_update_keys,
+            )
+            continue
+        updates_match_state = _updates_match_state(dict(state), row_updates)
+        if updates_match_state:
+            _diag_attempt(
+                "reject_updates_match_state",
+                candidate_id=row_candidate_id,
+                update_keys=row_update_keys,
+                updates_match_state=bool(updates_match_state),
+            )
+            continue
+        if row.get("preview_pass") is False:
+            _diag_attempt(
+                "reject_preview_pass_false",
+                candidate_id=row_candidate_id,
+                update_keys=row_update_keys,
+            )
+            continue
+        if not (
+            bool(row.get("safe_executor_backed"))
+            or bool(row.get("is_executable"))
+            or bool(row.get("executor_backed"))
+        ):
+            _diag_attempt(
+                "reject_not_executor_backed",
+                candidate_id=row_candidate_id,
+                update_keys=row_update_keys,
+                safe_executor_backed=bool(row.get("safe_executor_backed")),
+                is_executable=bool(row.get("is_executable")),
+                executor_backed=bool(row.get("executor_backed")),
+            )
+            continue
+        explicit_preview_fail = _candidate_preview_statuses_have_explicit_fail(
+            dict(row.get("preview_statuses") or {})
+        )
+        if explicit_preview_fail:
+            _diag_attempt(
+                "reject_explicit_preview_fail",
+                candidate_id=row_candidate_id,
+                update_keys=row_update_keys,
+                preview_statuses=dict(row.get("preview_statuses") or {}),
+            )
+            continue
+        candidate_id = _normalise_design_guide_candidate_id(
+            row.get("candidate_id"),
+            evidence.get("selected_candidate_id"),
+            evidence.get("best_safe_candidate_id"),
+            evidence.get("closest_safe_candidate_id"),
+            family="combined",
+            updates=row_updates,
+        )
+        title = str(row.get("title") or "Shear and bending cleanup - one-click optimisation").strip()
+        try:
+            candidate = _evaluate_auto_design_candidate(
+                dict(state),
+                updates=dict(row_updates),
+                source="guidance:visible_safe_combined_cleanup_from_blocker_evidence",
+                label=title,
+                action_type="apply_resolved_candidate",
+            )
+        except Exception:
+            candidate = None
+        if not isinstance(candidate, dict):
+            _diag_attempt(
+                "reject_candidate_evaluation_failed",
+                candidate_id=candidate_id,
+                update_keys=row_update_keys,
+            )
+            continue
+        candidate_overview = dict(candidate.get("overview") or {})
+        candidate_failures = _overview_active_failure_keys(candidate_overview) & {"bending", "shear"}
+        if candidate_failures:
+            _diag_attempt(
+                "reject_candidate_overview_active_failure",
+                candidate_id=candidate_id,
+                update_keys=row_update_keys,
+                active_failures=sorted(candidate_failures),
+                candidate_statuses=dict(candidate_overview.get("statuses") or {}),
+                candidate_utils=dict(candidate_overview.get("utils") or {}),
+            )
+            continue
+        preview_util = _parse_util_value(
+            row.get("preview_util")
+            or row.get("candidate_post_util")
+            or row.get("worst_util")
+            or candidate.get("worst_util")
+            or candidate_overview.get("worst_util")
+            or candidate_overview.get("governing_util")
+        )
+        action_evidence = dict(evidence)
+        if existing_exact:
+            action_evidence["post_apply_expected_exact_blockers_by_family"] = dict(existing_exact)
+            action_evidence["post_apply_expected_cleanup_evidence_by_family"] = dict(
+                item.get("post_click_cleanup_evidence_by_family")
+                or item.get("cleanup_evidence_by_family")
+                or existing_exact
+            )
+        for exact_key in (
+            "exact_blockers_by_family",
+            "post_click_exact_blockers_by_family",
+            "cleanup_evidence_by_family",
+            "post_click_cleanup_evidence_by_family",
+        ):
+            action_evidence.pop(exact_key, None)
+        action_evidence.update(
+            {
+                "selected_candidate_id": candidate_id,
+                "selected_candidate_title": title,
+                "selected_candidate_updates": dict(row_updates),
+                "best_safe_candidate_id": candidate_id,
+                "best_safe_candidate_updates": dict(row_updates),
+                "closest_safe_candidate_id": candidate_id,
+                "closest_safe_candidate_updates": dict(row_updates),
+                "safe_executor_backed_candidates_count": max(
+                    1,
+                    int(evidence.get("safe_executor_backed_candidates_count") or 0),
+                ),
+                "safe_candidate_count": max(1, int(evidence.get("safe_candidate_count") or 0)),
+                "executable_candidate_count": max(
+                    1,
+                    int(evidence.get("executable_candidate_count") or 0),
+                ),
+                "best_safe_candidate_applied": False,
+                "best_safe_partial_cleanup": True,
+                "no_second_cta_required": False,
+                "outside_target_band_allowed": True,
+                "outside_target_band_allowed_reason": (
+                    "A safe executor-backed combined cleanup is available; exact stop evidence remains "
+                    "attached for the post-apply terminal state."
+                ),
+                "outside_target_band_allowed_category": "combined_best_safe_cleanup_action",
+                "final_visible_resolver_reason": "visible_safe_combined_cleanup_from_blocker_evidence",
+            }
+        )
+        if preview_util is not None:
+            action_evidence["selected_candidate_util"] = float(preview_util)
+            action_evidence["best_safe_final_util"] = float(preview_util)
+            action_evidence["closest_safe_candidate_util"] = float(preview_util)
+        candidate.update(
+            {
+                "candidate_id": candidate_id,
+                "source_candidate_id": candidate_id,
+                "updates": dict(row_updates),
+                "proposed_updates": dict(row_updates),
+                "action_type": "apply_resolved_candidate",
+                "family": "combined",
+                "recommendation_family_tag": "combined",
+                "candidate_search_evidence": dict(action_evidence),
+                "best_safe_partial_cleanup": True,
+                "primary_card_actionable": True,
+                "no_second_cta_required": False,
+                "local_cleanup_candidate": False,
+            }
+        )
+        if preview_util is not None:
+            candidate["candidate_post_util"] = float(preview_util)
+        action_item = _guidance_item_from_resolved_candidate(
+            candidate,
+            state=dict(state),
+            overview=dict(overview or {}),
+            title=title,
+            reasoning=(
+                "A safe one-click cleanup reduces bending reinforcement and restores shear-link detailing; "
+                "remaining final-efficiency stop proof stays in the post-apply details."
+            ),
+            status="EFFICIENCY",
+            primary_action="Run one-click auto design",
+        )
+        if not isinstance(action_item, dict):
+            _diag_attempt(
+                "reject_guidance_item_not_built",
+                candidate_id=candidate_id,
+                update_keys=row_update_keys,
+            )
+            continue
+        action_item.update(
+            {
+                "title_main": title,
+                "title": title,
+                "family": "combined",
+                "check_key": "combined",
+                "selected_action_family": "combined",
+                "guidance_intent": "efficiency_tightening",
+                "bucket": "efficiency",
+                "status": "EFFICIENCY",
+                "action_type": "apply_resolved_candidate",
+                "primary_card_actionable": True,
+                "best_safe_partial_cleanup": True,
+                "no_second_cta_required": False,
+                "updates": dict(row_updates),
+                "selected_action_updates": dict(row_updates),
+                "resolved_candidate_updates": dict(row_updates),
+                "candidate_id": candidate_id,
+                "source_candidate_id": candidate_id,
+                "candidate_search_evidence": dict(action_evidence),
+                "final_visible_resolver_reason": "visible_safe_combined_cleanup_from_blocker_evidence",
+                "display_truth": {
+                    "display_truth_source": "candidate_preview",
+                    "displayed_util": float(preview_util) if preview_util is not None else None,
+                    "displayed_status": "PASS",
+                    "displayed_within_target_band": False,
+                    "source_candidate_util": float(preview_util) if preview_util is not None else None,
+                },
+            }
+        )
+        for exact_key in (
+            "exact_blockers_by_family",
+            "post_click_exact_blockers_by_family",
+            "cleanup_evidence_by_family",
+            "post_click_cleanup_evidence_by_family",
+        ):
+            action_item.pop(exact_key, None)
+        payload = dict(action_item.get("action_payload") or {})
+        payload.update(
+            {
+                "updates": dict(row_updates),
+                "resolved_candidate_updates": dict(row_updates),
+                "resolved_candidate_action_type": "apply_resolved_candidate",
+                "resolved_candidate_family_tag": "combined",
+                "candidate_id": candidate_id,
+                "source_candidate_id": candidate_id,
+                "candidate_search_evidence": dict(action_evidence),
+            }
+        )
+        if preview_util is not None:
+            payload["resolved_candidate_post_util"] = float(preview_util)
+        action_item["action_payload"] = dict(payload)
+        resolved = dict(action_item.get("resolved_candidate") or {})
+        resolved.update(
+            {
+                "updates": dict(row_updates),
+                "action_type": "apply_resolved_candidate",
+                "family": "combined",
+                "candidate_id": candidate_id,
+                "source_candidate_id": candidate_id,
+                "candidate_search_evidence": dict(action_evidence),
+                "best_safe_partial_cleanup": True,
+                "primary_card_actionable": True,
+                "no_second_cta_required": False,
+            }
+        )
+        if preview_util is not None:
+            resolved["candidate_post_util"] = float(preview_util)
+        action_item["resolved_candidate"] = dict(resolved)
+        contract = _design_guide_button_contract(action_item, state=dict(state))
+        if not _design_guide_button_contract_enabled(contract):
+            _diag_attempt(
+                "reject_button_contract_disabled",
+                candidate_id=candidate_id,
+                update_keys=row_update_keys,
+                updates_match_state=bool(updates_match_state),
+                preview_util=float(preview_util) if preview_util is not None else None,
+                candidate_statuses=dict(candidate_overview.get("statuses") or {}),
+                candidate_utils=dict(candidate_overview.get("utils") or {}),
+                action_item_title=action_item.get("title_main") or action_item.get("title"),
+                action_item_family=action_item.get("family"),
+                action_item_guidance_intent=action_item.get("guidance_intent"),
+                action_item_action_type=action_item.get("action_type"),
+                action_item_update_keys=sorted(str(key) for key in dict(action_item.get("updates") or {})),
+                action_item_evidence_family=dict(action_item.get("candidate_search_evidence") or {}).get("family"),
+                action_item_evidence_search_scope=dict(action_item.get("candidate_search_evidence") or {}).get("search_scope"),
+                contract=dict(contract or {}),
+                contract_disabled_reasons=_contract_disabled_reasons(dict(contract or {}), row_updates),
+            )
+            continue
+        action_item["button_contract"] = dict(contract)
+        if isinstance(debug_sink, dict):
+            debug_sink["visible_safe_combined_cleanup_from_blocker_evidence"] = True
+            debug_sink["primary_button_contract"] = dict(contract)
+            debug_sink["button_contract_enabled"] = True
+            debug_sink["selected_title"] = title
+            debug_sink["primary_card_title"] = title
+            debug_sink["primary_guidance_intent"] = "efficiency_tightening"
+            debug_sink["selected_action_family"] = "combined"
+            debug_sink["selected_action_type"] = "apply_resolved_candidate"
+            debug_sink["candidate_search_evidence"] = dict(action_evidence)
+        if isinstance(_helper_probe, dict):
+            _helper_probe["return_reason"] = "accepted"
+            _helper_probe["accepted_candidate_id"] = candidate_id
+            _helper_probe["accepted_contract"] = dict(contract)
+        return action_item
+    _diag_return("no_rows_survived")
+    return None
+
+
+def _visible_safe_low_util_cleanup_action_from_evidence(
+    item: dict | None,
+    overview: dict | None,
+    state: dict | None,
+    *,
+    debug_sink: dict | None = None,
+) -> dict | None:
+    if not isinstance(item, dict) or not isinstance(state, dict):
+        return None
+    overview = dict(overview or {})
+    if _overview_active_failure_keys(overview) & {"bending", "shear"}:
+        return None
+
+    current = dict(item.get("family_status_current") or _design_guide_family_status_table(overview))
+    current_utils = {
+        family: _parse_util_value(dict(current.get(family) or {}).get("util"))
+        for family in ("bending", "shear")
+    }
+    low_families = {
+        family
+        for family, util in current_utils.items()
+        if util is not None and float(util) < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL) - 1e-9
+    }
+    existing_exact = {
+        str(family or "").strip().lower(): dict(blocker)
+        for family, blocker in dict(
+            item.get("post_click_exact_blockers_by_family")
+            or item.get("exact_blockers_by_family")
+            or {}
+        ).items()
+        if str(family or "").strip() and isinstance(blocker, dict)
+    }
+    if "bending" not in low_families or "bending" in existing_exact:
+        return None
+
+    item_evidence = dict(item.get("candidate_search_evidence") or {})
+    debug_evidence = dict((debug_sink or {}).get("candidate_search_evidence") or {}) if isinstance(debug_sink, dict) else {}
+    evidence_sources: list[dict] = []
+    for source in (item_evidence, debug_evidence):
+        if not isinstance(source, dict) or not source:
+            continue
+        evidence_sources.append(dict(source))
+        for key in ("bending_cleanup_evidence", "residual_bending_cleanup_evidence"):
+            nested = source.get(key)
+            if isinstance(nested, dict) and nested:
+                evidence_sources.append(dict(nested))
+        shear_nested = source.get("shear_cleanup_evidence")
+        if isinstance(shear_nested, dict):
+            nested = shear_nested.get("bending_cleanup_evidence")
+            if isinstance(nested, dict) and nested:
+                evidence_sources.append(dict(nested))
+
+    def _rows_from_evidence(source: dict) -> list[dict]:
+        rows: list[dict] = []
+        selected_updates = dict(
+            source.get("best_target_band_candidate_updates")
+            or source.get("selected_candidate_updates")
+            or source.get("best_safe_candidate_updates")
+            or source.get("closest_safe_candidate_updates")
+            or {}
+        )
+        if selected_updates:
+            rows.append(
+                {
+                    "candidate_id": (
+                        source.get("best_target_band_candidate_id")
+                        or source.get("selected_candidate_id")
+                        or source.get("best_safe_candidate_id")
+                        or source.get("closest_safe_candidate_id")
+                    ),
+                    "title": (
+                        source.get("best_target_band_candidate_title")
+                        or source.get("selected_candidate_title")
+                        or source.get("best_safe_candidate_title")
+                        or source.get("closest_safe_candidate_title")
+                    ),
+                    "proposed_updates": dict(selected_updates),
+                    "preview_pass": True,
+                    "is_executable": True,
+                    "safe_executor_backed": True,
+                    "preview_util": (
+                        source.get("best_target_band_candidate_util")
+                        or source.get("selected_candidate_util")
+                        or source.get("best_safe_final_util")
+                        or source.get("closest_safe_candidate_util")
+                    ),
+                    "preview_bending_util": (
+                        source.get("best_target_band_candidate_util")
+                        or source.get("selected_candidate_util")
+                        or source.get("best_safe_final_util")
+                        or source.get("closest_safe_candidate_util")
+                    ),
+                }
+            )
+        for row_source in (
+            source.get("target_band_candidates"),
+            source.get("safe_executor_backed_candidates"),
+            source.get("candidate_rows"),
+        ):
+            if not isinstance(row_source, list):
+                continue
+            rows.extend(dict(row) for row in row_source if isinstance(row, dict))
+        return rows
+
+    for evidence in evidence_sources:
+        evidence = dict(evidence)
+        search_scope = str(evidence.get("search_scope") or "").strip().lower()
+        if "bending" not in search_scope and not evidence.get("bending_cleanup_evidence"):
+            # Keep this helper scoped to bending cleanup evidence. Combined rows are handled by
+            # _visible_safe_combined_cleanup_action_from_evidence.
+            continue
+        for row in _rows_from_evidence(evidence):
+            row_updates = dict(row.get("proposed_updates") or row.get("updates") or {})
+            if not row_updates:
+                continue
+            update_keys = set(row_updates)
+            if update_keys & _COMPOUND_SHEAR_UPDATE_KEYS:
+                continue
+            if not (update_keys & (_COMPOUND_BOTTOM_UPDATE_KEYS | _COMPOUND_GEOMETRY_UPDATE_KEYS)):
+                continue
+            if _updates_match_state(dict(state), row_updates):
+                continue
+            if row.get("preview_pass") is False:
+                continue
+            if not (
+                bool(row.get("safe_executor_backed"))
+                or bool(row.get("is_executable"))
+                or bool(row.get("executor_backed"))
+            ):
+                continue
+            if _candidate_preview_statuses_have_explicit_fail(dict(row.get("preview_statuses") or {})):
+                continue
+            title = str(row.get("title") or "Bending cleanup - best safe one-click reduction").strip()
+            candidate_id = _normalise_design_guide_candidate_id(
+                row.get("candidate_id"),
+                evidence.get("selected_candidate_id"),
+                evidence.get("best_safe_candidate_id"),
+                evidence.get("closest_safe_candidate_id"),
+                family="bending",
+                updates=row_updates,
+            )
+            try:
+                candidate = _evaluate_auto_design_candidate(
+                    dict(state),
+                    updates=dict(row_updates),
+                    source="guidance:visible_safe_bending_cleanup_from_blocker_evidence",
+                    label=title,
+                    action_type="apply_resolved_candidate",
+                )
+            except Exception:
+                candidate = None
+            if not isinstance(candidate, dict):
+                continue
+            candidate_overview = dict(candidate.get("overview") or {})
+            if _overview_active_failure_keys(candidate_overview) & {"bending", "shear"}:
+                continue
+            if not _overview_required_checks_acceptable(candidate_overview):
+                continue
+            candidate_utils = dict(candidate_overview.get("utils") or {})
+            preview_util = _parse_util_value(
+                row.get("preview_bending_util")
+                or row.get("preview_util")
+                or row.get("candidate_post_util")
+                or candidate_utils.get("bending")
+                or candidate.get("worst_util")
+                or candidate_overview.get("worst_util")
+                or candidate_overview.get("governing_util")
+            )
+            action_evidence = dict(evidence)
+            if existing_exact:
+                action_evidence["post_apply_expected_exact_blockers_by_family"] = dict(existing_exact)
+                action_evidence["post_apply_expected_cleanup_evidence_by_family"] = dict(
+                    item.get("post_click_cleanup_evidence_by_family")
+                    or item.get("cleanup_evidence_by_family")
+                    or existing_exact
+                )
+            for exact_key in (
+                "exact_blockers_by_family",
+                "post_click_exact_blockers_by_family",
+                "cleanup_evidence_by_family",
+                "post_click_cleanup_evidence_by_family",
+            ):
+                action_evidence.pop(exact_key, None)
+            action_evidence.update(
+                {
+                    "selected_candidate_id": candidate_id,
+                    "selected_candidate_title": title,
+                    "selected_candidate_updates": dict(row_updates),
+                    "best_safe_candidate_id": candidate_id,
+                    "best_safe_candidate_updates": dict(row_updates),
+                    "closest_safe_candidate_id": candidate_id,
+                    "closest_safe_candidate_updates": dict(row_updates),
+                    "safe_executor_backed_candidates_count": max(
+                        1,
+                        int(evidence.get("safe_executor_backed_candidates_count") or 0),
+                    ),
+                    "safe_candidate_count": max(1, int(evidence.get("safe_candidate_count") or 0)),
+                    "executable_candidate_count": max(1, int(evidence.get("executable_candidate_count") or 0)),
+                    "best_safe_candidate_applied": False,
+                    "best_safe_partial_cleanup": bool(
+                        row.get("best_safe_partial_cleanup")
+                        or evidence.get("best_safe_partial_cleanup")
+                        or (
+                            preview_util is not None
+                            and float(preview_util) < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL) - 1e-9
+                        )
+                    ),
+                    "no_second_cta_required": False,
+                    "outside_target_band_allowed": bool(
+                        preview_util is not None
+                        and float(preview_util) < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL) - 1e-9
+                    ),
+                    "outside_target_band_allowed_reason": (
+                        "A safe executor-backed bending cleanup is available; exact stop evidence remains "
+                        "attached for the post-apply terminal state."
+                    ),
+                    "outside_target_band_allowed_category": "visible_bending_cleanup_action",
+                    "final_visible_resolver_reason": "visible_safe_bending_cleanup_from_blocker_evidence",
+                }
+            )
+            if preview_util is not None:
+                action_evidence["selected_candidate_util"] = float(preview_util)
+                action_evidence["best_safe_final_util"] = float(preview_util)
+                action_evidence["closest_safe_candidate_util"] = float(preview_util)
+            candidate.update(
+                {
+                    "candidate_id": candidate_id,
+                    "source_candidate_id": candidate_id,
+                    "updates": dict(row_updates),
+                    "proposed_updates": dict(row_updates),
+                    "action_type": "apply_resolved_candidate",
+                    "family": "bending",
+                    "recommendation_family_tag": "bending",
+                    "candidate_search_evidence": dict(action_evidence),
+                    "best_safe_partial_cleanup": bool(action_evidence.get("best_safe_partial_cleanup")),
+                    "primary_card_actionable": True,
+                    "no_second_cta_required": False,
+                    "local_cleanup_candidate": True,
+                }
+            )
+            if preview_util is not None:
+                candidate["candidate_post_util"] = float(preview_util)
+                candidate["worst_util"] = float(preview_util)
+            action_item = _guidance_item_from_resolved_candidate(
+                candidate,
+                state=dict(state),
+                overview=overview,
+                title=title,
+                reasoning=(
+                    "Bending remains below the final accepted-family threshold, and a safe "
+                    "executor-backed one-click reinforcement cleanup is available."
+                ),
+                status="EFFICIENCY",
+                primary_action="Run one-click auto design",
+            )
+            if not isinstance(action_item, dict):
+                continue
+            action_item.update(
+                {
+                    "title_main": title,
+                    "title": title,
+                    "family": "bending",
+                    "check_key": "bending",
+                    "selected_action_family": "bending",
+                    "guidance_intent": "efficiency_tightening",
+                    "bucket": "efficiency",
+                    "status": "EFFICIENCY",
+                    "action_type": "apply_resolved_candidate",
+                    "primary_card_actionable": True,
+                    "best_safe_partial_cleanup": bool(action_evidence.get("best_safe_partial_cleanup")),
+                    "no_second_cta_required": False,
+                    "updates": dict(row_updates),
+                    "selected_action_updates": dict(row_updates),
+                    "resolved_candidate_updates": dict(row_updates),
+                    "candidate_id": candidate_id,
+                    "source_candidate_id": candidate_id,
+                    "candidate_search_evidence": dict(action_evidence),
+                    "final_visible_resolver_reason": "visible_safe_bending_cleanup_from_blocker_evidence",
+                }
+            )
+            payload = dict(action_item.get("action_payload") or {})
+            payload.update(
+                {
+                    "updates": dict(row_updates),
+                    "resolved_candidate_updates": dict(row_updates),
+                    "resolved_candidate_action_type": "apply_resolved_candidate",
+                    "resolved_candidate_family_tag": "bending",
+                    "candidate_id": candidate_id,
+                    "source_candidate_id": candidate_id,
+                    "candidate_search_evidence": dict(action_evidence),
+                }
+            )
+            if preview_util is not None:
+                payload["resolved_candidate_post_util"] = float(preview_util)
+            action_item["action_payload"] = dict(payload)
+            resolved = dict(action_item.get("resolved_candidate") or {})
+            resolved.update(
+                {
+                    "updates": dict(row_updates),
+                    "action_type": "apply_resolved_candidate",
+                    "family": "bending",
+                    "candidate_id": candidate_id,
+                    "source_candidate_id": candidate_id,
+                    "candidate_search_evidence": dict(action_evidence),
+                    "best_safe_partial_cleanup": bool(action_evidence.get("best_safe_partial_cleanup")),
+                    "primary_card_actionable": True,
+                    "no_second_cta_required": False,
+                }
+            )
+            if preview_util is not None:
+                resolved["candidate_post_util"] = float(preview_util)
+            action_item["resolved_candidate"] = dict(resolved)
+            contract = _design_guide_button_contract(action_item, state=dict(state))
+            if not _design_guide_button_contract_enabled(contract):
+                continue
+            action_item["button_contract"] = dict(contract)
+            if isinstance(debug_sink, dict):
+                debug_sink["visible_safe_bending_cleanup_from_blocker_evidence"] = True
+                debug_sink["primary_button_contract"] = dict(contract)
+                debug_sink["button_contract_enabled"] = True
+                debug_sink["selected_title"] = title
+                debug_sink["primary_card_title"] = title
+                debug_sink["primary_guidance_intent"] = "efficiency_tightening"
+                debug_sink["selected_action_family"] = "bending"
+                debug_sink["selected_action_type"] = "apply_resolved_candidate"
+                debug_sink["candidate_search_evidence"] = dict(action_evidence)
+            return action_item
+    return None
 
 
 def _same_design_guide_updates(left: dict | None, right: dict | None) -> bool:
@@ -13159,7 +15231,7 @@ def _active_fail_near_current_repair_item(
         return None
     search_cache_fp = stable_fingerprint_for_payload(
         {
-            "version": "active_fail_near_current_repair_item:2026-05-28.1",
+            "version": "active_fail_near_current_repair_item:2026-06-03.1",
             "base": base,
             "active": sorted(active),
             "overview_statuses": dict((overview or {}).get("statuses") or {}),
@@ -13185,67 +15257,22 @@ def _active_fail_near_current_repair_item(
 
     base_count = max(1, _int_from_state(base, "bot1_count", _int_from_state(base, "bot_row_1_bars", 1)))
     base_dia = max(10, _int_from_state(base, "db_bot_1", _int_from_state(base, "bot_row_1_dia", 16)))
-    dia_catalogue = [10, 12, 16, 20, 24, 28, 32, 36, 40]
-    larger_dias = [dia for dia in dia_catalogue if dia >= base_dia][:4]
-    bottom_specs: list[tuple[int, int, int]] = [(base_count, 0, base_dia)]
-    for extra in (1, 2, 3):
-        bottom_specs.append((base_count + extra, 0, base_dia))
-    for dia in larger_dias:
-        bottom_specs.append((base_count, 0, dia))
-        bottom_specs.append((base_count + 1, 0, dia))
-    bottom_specs.extend(
-        [
-            (max(3, base_count // 2), max(3, base_count // 2), base_dia),
-            (4, 4, max(base_dia, 24)),
-            (5, 5, max(base_dia, 24)),
-            (4, 4, max(base_dia, 28)),
-        ]
+    ordered_bottom = _repair_build_near_current_bottom_repair_specs(
+        base_count,
+        base_dia,
     )
-    ordered_bottom = list(dict.fromkeys((int(c1), int(c2), int(dia)) for c1, c2, dia in bottom_specs))
 
-    geom_specs = [(base_width, base_depth)]
-    for d_step in (25.0, 50.0, 75.0, 100.0, 150.0):
-        geom_specs.append((base_width, base_depth + d_step))
-    for w_step in (50.0, 100.0, 150.0):
-        geom_specs.append((base_width + w_step, base_depth))
-    geom_specs.append((base_width + 50.0, base_depth + 50.0))
-    ordered_geom = list(dict.fromkeys((float(width), float(depth)) for width, depth in geom_specs))
+    ordered_geom = _repair_build_near_current_geometry_repair_specs(base_width, base_depth)
 
     base_lig_d = _int_from_state(base, "lig_d", 0)
     base_legs = _int_from_state(base, "lig_legs", 0)
     base_spacing = _float_from_state(base, "s_lig", CANONICAL_NO_SHEAR_SLIG_MM)
-    shear_specs: list[dict[str, object]] = [{}]
-    if "shear" in active:
-        shear_specs = [
-            {"lig_d": 10, "lig_legs": 2, "s_lig": max(150.0, float(base_spacing or 200.0))},
-            {"lig_d": 10, "lig_legs": 2, "s_lig": 200.0},
-            {"lig_d": 10, "lig_legs": 2, "s_lig": 175.0},
-            {"lig_d": 10, "lig_legs": 2, "s_lig": 150.0},
-            {"lig_d": 12, "lig_legs": 2, "s_lig": 200.0},
-            {"lig_d": 12, "lig_legs": 2, "s_lig": 175.0},
-            {"lig_d": 12, "lig_legs": 2, "s_lig": 150.0},
-            {"lig_d": 16, "lig_legs": 2, "s_lig": 200.0},
-            {"lig_d": 16, "lig_legs": 2, "s_lig": 175.0},
-            {"lig_d": 16, "lig_legs": 2, "s_lig": 150.0},
-            {"lig_d": max(10, base_lig_d), "lig_legs": max(2, base_legs), "s_lig": min(float(base_spacing or 200.0), 200.0)},
-            {"lig_d": 10, "lig_legs": 3, "s_lig": 200.0},
-            {"lig_d": 10, "lig_legs": 3, "s_lig": 150.0},
-            {"lig_d": 12, "lig_legs": 3, "s_lig": 200.0},
-            {"lig_d": 12, "lig_legs": 3, "s_lig": 150.0},
-            {"lig_d": 10, "lig_legs": 4, "s_lig": 200.0},
-            {"lig_d": 10, "lig_legs": 4, "s_lig": 150.0},
-        ]
-    ordered_shear: list[dict[str, object]] = []
-    seen_shear: set[tuple[int, int, float]] = set()
-    for spec in shear_specs:
-        key = (
-            int(spec.get("lig_d", base_lig_d) or 0),
-            int(spec.get("lig_legs", base_legs) or 0),
-            round(float(spec.get("s_lig", base_spacing) or 0.0), 3),
-        )
-        if key not in seen_shear:
-            seen_shear.add(key)
-            ordered_shear.append(dict(spec))
+    ordered_shear = _repair_build_near_current_shear_repair_specs(
+        active,
+        base_lig_d=base_lig_d,
+        base_legs=base_legs,
+        base_spacing=base_spacing,
+    )
 
     candidates: list[dict] = []
     seen_updates: set[tuple] = set()
@@ -13308,6 +15335,25 @@ def _active_fail_near_current_repair_item(
         )
         cand["affected_family"] = cand["recommendation_family_tag"]
         candidates.append(cand)
+
+    if not _geometry_lock_enabled(base):
+        rescue_family = (
+            "combined"
+            if {"bending", "shear"}.issubset(active)
+            else "shear"
+            if "shear" in active
+            else "bending"
+        )
+        requested_tier = _rescue_mode_action_tier(base, rescue_family)
+        for tier in _rescue_mode_seed_order(requested_tier):
+            seed_spec = dict(((RESCUE_SEED_LIBRARY.get(rescue_family) or {}).get(tier)) or {})
+            seed_updates = dict(seed_spec.get("updates") or {})
+            if not seed_updates:
+                continue
+            _evaluate(
+                seed_updates,
+                f"Active fail {rescue_family} rescue repair ({seed_spec.get('key') or f'{rescue_family}_{tier}'})",
+            )
 
     for width, depth in ordered_geom:
         geom_state = _geometry_state_with_updates(base, width=width, depth=depth)
@@ -13375,6 +15421,19 @@ def _active_fail_near_current_repair_item(
                 "active_fail_repair_candidate_rows": list(ev.get("candidate_rows") or []),
                 "safe_repair_candidate_count": int(len(safe)),
                 "executable_repair_candidate_count": int(len(safe)),
+                "strength_repair_selected_outside_target_band": bool(selected),
+                "strength_repair_target_band_secondary": bool(selected),
+                "outside_target_band_allowed": bool(selected),
+                "outside_target_band_allowed_reason": (
+                    "Active bending/shear checks are failing; this executor-backed repair "
+                    "makes all required checks pass even though preferred target-band cleanup "
+                    "remains a secondary optimisation step."
+                )
+                if selected
+                else None,
+                "outside_target_band_allowed_category": (
+                    "active_strength_repair_passes_required_checks" if selected else None
+                ),
                 "candidate_evaluation_cache_hits": int(repair_eval_metrics.get("candidate_evaluation_cache_hits", 0)),
                 "candidate_evaluation_cache_misses": int(repair_eval_metrics.get("candidate_evaluation_cache_misses", 0)),
                 "duplicate_candidate_fingerprints_skipped": int(repair_eval_metrics.get("duplicate_candidate_fingerprints_skipped", 0)),
@@ -13427,6 +15486,18 @@ def _active_fail_near_current_repair_item(
     selected["candidate_search_evidence"] = dict(evidence)
     selected["candidate_id"] = evidence.get("selected_candidate_id")
     selected["source_candidate_id"] = evidence.get("selected_candidate_id")
+    repair_decision = _repair_select_repair_decision(
+        selected_candidate=selected,
+        status="action",
+        reason=evidence.get("outside_target_band_allowed_reason") or "active_fail_repair_candidate_selected",
+        evidence=evidence,
+        cta_metadata={
+            "enabled": True,
+            "actionable": True,
+            "action_type": "apply_resolved_candidate",
+        },
+    )
+    selected = _repair_selected_candidate_from_repair_decision(repair_decision) or selected
     active_family = "combined" if {"bending", "shear"}.issubset(active) else ("shear" if "shear" in active else "bending")
     active_title = (
         "Bending and shear capacity are low"
@@ -13670,6 +15741,543 @@ def _record_rendered_design_guide_primary_apply_payload(
     return payload
 
 
+def _design_guide_component_cta_enabled() -> bool:
+    if _DESIGN_GUIDE_CTA_COMPONENT is None:
+        return False
+    if os.environ.get("CODEX_BROWSER_TEST_MODE", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return False
+    return not bool(st.session_state.get("_dev_mode", False))
+
+
+def _render_design_guide_scroll_keeper() -> None:
+    """Preserve the internal Streamlit main scroll during component-owned apply reruns."""
+    if not _design_guide_component_cta_enabled():
+        return
+    if _st_components is None:
+        return
+    restore_payload = dict(st.session_state.get(DESIGN_GUIDE_COMPONENT_SCROLL_RESTORE_KEY) or {})
+    try:
+        restore_scroll_top = float(restore_payload.get("scroll_top") or 0.0)
+    except Exception:
+        restore_scroll_top = 0.0
+    try:
+        expires_at = float(restore_payload.get("expires_at") or 0.0)
+    except Exception:
+        expires_at = 0.0
+    if expires_at and time.time() > expires_at:
+        st.session_state.pop(DESIGN_GUIDE_COMPONENT_SCROLL_RESTORE_KEY, None)
+        restore_scroll_top = 0.0
+        expires_at = 0.0
+    restore_seed = {
+        "scrollTop": restore_scroll_top,
+        "untilMs": max(0, int((expires_at - time.time()) * 1000.0)) if expires_at else 0,
+    }
+    restore_seed_json = json.dumps(restore_seed, sort_keys=True, default=str)
+    scroll_keeper_html = """
+<script>
+(function() {
+  const KEY = "codex_dg_scroll_restore_v1";
+  const GENERAL_KEY = "codex_inputs_scroll_restore_v1";
+  let inlinePayload = __RESTORE_SEED__;
+  const doc = window.parent.document;
+  let store = null;
+  try { store = window.parent.localStorage; } catch (e) { store = null; }
+
+  function scroller() {
+    return doc.querySelector("section.stMain")
+      || doc.querySelector("section[data-testid='stMain']")
+      || doc.querySelector("[data-testid='stAppViewContainer'] section")
+      || doc.scrollingElement
+      || doc.documentElement;
+  }
+
+  function storagePayload(key) {
+    if (!store) return null;
+    let raw = "";
+    const storageKey = key || KEY;
+    try { raw = store.getItem(storageKey) || ""; } catch (e) { return null; }
+    if (!raw) return null;
+    try {
+      const payload = JSON.parse(raw);
+      payload.__storageKey = storageKey;
+      return payload;
+    } catch (e) {
+      try { store.removeItem(storageKey); } catch (_) {}
+      return null;
+    }
+  }
+
+  function clearPayload(key) {
+    inlinePayload = null;
+    if (store) {
+      try { store.removeItem(key || KEY); } catch (e) {}
+    }
+  }
+
+  function rememberScroll(reason) {
+    if (!store) return;
+    const s = scroller();
+    if (!s) return;
+    const top = Number(s.scrollTop || 0);
+    if (!Number.isFinite(top) || top <= 120) return;
+    try {
+      store.setItem(GENERAL_KEY, JSON.stringify({
+        scrollTop: top,
+        until: Date.now() + 15000,
+        reason: String(reason || "interaction")
+      }));
+    } catch (e) {}
+  }
+
+  function isInteractiveTarget(target) {
+    if (!target || !target.closest) return false;
+    return !!target.closest(
+      "input, textarea, select, button, [role='button'], [role='combobox'], [data-baseweb='select']"
+    );
+  }
+
+  doc.addEventListener("pointerdown", function(ev) {
+    if (isInteractiveTarget(ev.target)) rememberScroll("pointerdown");
+  }, true);
+  doc.addEventListener("input", function(ev) {
+    if (isInteractiveTarget(ev.target)) rememberScroll("input");
+  }, true);
+  doc.addEventListener("change", function(ev) {
+    if (isInteractiveTarget(ev.target)) rememberScroll("change");
+  }, true);
+  doc.addEventListener("keydown", function(ev) {
+    if (isInteractiveTarget(ev.target) && (ev.key === "Enter" || ev.key === "Tab")) {
+      rememberScroll("keydown");
+    }
+  }, true);
+
+  function restoreTick() {
+    let payload = inlinePayload && Number(inlinePayload.scrollTop || 0) > 0
+      ? inlinePayload
+      : (storagePayload(KEY) || storagePayload(GENERAL_KEY));
+    if (!payload) return false;
+    const payloadKey = payload.__storageKey || KEY;
+    if (Number(payload.untilMs || 0) > 0) {
+      payload.until = Date.now() + Number(payload.untilMs || 0);
+      payload.untilMs = 0;
+    }
+    if (Date.now() > Number(payload.until || 0)) {
+      clearPayload(payloadKey);
+      return false;
+    }
+    const target = Number(payload.scrollTop || 0);
+    const s = scroller();
+    if (!s || !Number.isFinite(target) || target <= 0) return true;
+    const current = Number(s.scrollTop || 0);
+    if (current < target - 250) {
+      try { s.scrollTop = target; } catch (e) {}
+    }
+    const bodyText = (doc.body && doc.body.innerText ? doc.body.innerText : "");
+    const transitionActive =
+      bodyText.indexOf("Applying one-click design") !== -1
+      || bodyText.indexOf("Checking design guidance") !== -1
+      || bodyText.indexOf("Preparing current summary") !== -1
+      || bodyText.indexOf("Stop\\nDeploy") !== -1;
+    if (!transitionActive && Math.abs(Number(s.scrollTop || 0) - target) <= 260) {
+      clearPayload(payloadKey);
+      return false;
+    }
+    return true;
+  }
+
+  let ticks = 0;
+  restoreTick();
+  const timer = setInterval(function() {
+    ticks += 1;
+    const keepGoing = restoreTick();
+    if (!keepGoing || ticks > 140) clearInterval(timer);
+  }, 75);
+})();
+</script>
+""".replace("__RESTORE_SEED__", restore_seed_json)
+    _st_components.html(
+        scroll_keeper_html,
+        height=0,
+    )
+
+
+def _render_inputs_scroll_anchor_keeper() -> None:
+    """Preserve the internal Streamlit main scroll across ordinary input edit reruns."""
+    if _st_components is None:
+        return
+    scroll_anchor_html = """
+<script>
+(function() {
+  const KEY = "codex_inputs_edit_scroll_anchor_v1";
+  const doc = window.parent.document;
+  let store = null;
+  try { store = window.parent.localStorage; } catch (e) { store = null; }
+  if (!store) return;
+
+  function scroller() {
+    return doc.querySelector("section.stMain")
+      || doc.querySelector("section[data-testid='stMain']")
+      || doc.querySelector("[data-testid='stAppViewContainer'] section")
+      || doc.scrollingElement
+      || doc.documentElement;
+  }
+
+  function routeKey() {
+    try {
+      const loc = window.parent.location;
+      const params = new URLSearchParams(loc.search || "");
+      return String(params.get("page") || "inputs").toLowerCase();
+    } catch (e) {
+      return "inputs";
+    }
+  }
+
+  function clearPayload() {
+    try { store.removeItem(KEY); } catch (e) {}
+  }
+
+  function readPayload() {
+    let raw = "";
+    try { raw = store.getItem(KEY) || ""; } catch (e) { return null; }
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch (e) {
+      clearPayload();
+      return null;
+    }
+  }
+
+  function inputTarget(target) {
+    if (!target || !target.closest) return null;
+    return target.closest("input, textarea, select, [role='combobox'], [data-baseweb='select']");
+  }
+
+  function controlLabel(target) {
+    const el = inputTarget(target);
+    if (!el) return "";
+    return String(
+      el.getAttribute("aria-label")
+      || el.getAttribute("placeholder")
+      || el.name
+      || el.id
+      || ""
+    );
+  }
+
+  function findControlByLabel(label) {
+    const targetLabel = String(label || "").trim();
+    if (!targetLabel) return null;
+    const controls = Array.from(doc.querySelectorAll("input, textarea, select, [role='combobox'], [data-baseweb='select']"));
+    for (const el of controls) {
+      const labelText = String(
+        el.getAttribute("aria-label")
+        || el.getAttribute("placeholder")
+        || el.name
+        || el.id
+        || ""
+      ).trim();
+      if (labelText === targetLabel) return el;
+    }
+    return null;
+  }
+
+  function rememberScroll(reason, target) {
+    const s = scroller();
+    const control = inputTarget(target);
+    if (!s) return;
+    const top = Number(s.scrollTop || 0);
+    const height = Number(s.scrollHeight || 0);
+    const client = Number(s.clientHeight || 0);
+    if (!Number.isFinite(top) || top <= 120) return;
+    if (!Number.isFinite(height) || height <= client + 120) return;
+    const controlRect = control && control.getBoundingClientRect ? control.getBoundingClientRect() : null;
+    try {
+      store.setItem(KEY, JSON.stringify({
+        scrollTop: top,
+        scrollHeight: height,
+        clientHeight: client,
+        routeKey: routeKey(),
+        label: controlLabel(control || target),
+        rectTop: controlRect ? Number(controlRect.top || 0) : null,
+        reason: String(reason || "input"),
+        until: Date.now() + 12000
+      }));
+    } catch (e) {}
+  }
+
+  doc.addEventListener("pointerdown", function(ev) {
+    if (inputTarget(ev.target)) rememberScroll("pointerdown", ev.target);
+  }, true);
+  doc.addEventListener("input", function(ev) {
+    if (inputTarget(ev.target)) rememberScroll("input", ev.target);
+  }, true);
+  doc.addEventListener("change", function(ev) {
+    if (inputTarget(ev.target)) rememberScroll("change", ev.target);
+  }, true);
+  doc.addEventListener("keydown", function(ev) {
+    if (inputTarget(ev.target) && (ev.key === "Enter" || ev.key === "Tab")) {
+      rememberScroll("keydown", ev.target);
+    }
+  }, true);
+  doc.addEventListener("focusout", function(ev) {
+    if (inputTarget(ev.target)) rememberScroll("focusout", ev.target);
+  }, true);
+
+  function restoreTick() {
+    const payload = readPayload();
+    if (!payload) return false;
+    if (Date.now() > Number(payload.until || 0)) {
+      clearPayload();
+      return false;
+    }
+    if (String(payload.routeKey || "") !== routeKey()) {
+      clearPayload();
+      return false;
+    }
+    const target = Number(payload.scrollTop || 0);
+    if (!Number.isFinite(target) || target <= 120) {
+      clearPayload();
+      return false;
+    }
+    const s = scroller();
+    if (!s) return true;
+    const height = Number(s.scrollHeight || 0);
+    const client = Number(s.clientHeight || 0);
+    if (!Number.isFinite(height) || height <= client + 120) return true;
+    const maxTop = Math.max(0, height - client);
+    const clampedTarget = Math.min(target, maxTop);
+    const current = Number(s.scrollTop || 0);
+    if (!Number.isFinite(current)) return true;
+    if (Math.abs(current - clampedTarget) > 80) {
+      try { s.scrollTop = clampedTarget; } catch (e) {}
+    }
+    let anchorOk = true;
+    const anchorTop = Number(payload.rectTop);
+    const anchor = findControlByLabel(payload.label);
+    if (anchor && Number.isFinite(anchorTop) && anchorTop > -200 && anchorTop < 1200) {
+      const rect = anchor.getBoundingClientRect();
+      const delta = Number(rect.top || 0) - anchorTop;
+      anchorOk = Math.abs(delta) <= 90;
+      if (!anchorOk) {
+        try { s.scrollTop = Number(s.scrollTop || 0) + delta; } catch (e) {}
+        const nextRect = anchor.getBoundingClientRect();
+        anchorOk = Math.abs(Number(nextRect.top || 0) - anchorTop) <= 90;
+      }
+    }
+    if (anchorOk && Math.abs(Number(s.scrollTop || 0) - clampedTarget) <= 520) {
+      clearPayload();
+      return false;
+    }
+    return true;
+  }
+
+  let ticks = 0;
+  restoreTick();
+  const timer = setInterval(function() {
+    ticks += 1;
+    const keepGoing = restoreTick();
+    if (!keepGoing || ticks > 120) clearInterval(timer);
+  }, 75);
+})();
+</script>
+"""
+    _st_components.html(
+        scroll_anchor_html,
+        height=0,
+    )
+
+
+def _design_guide_component_cta_token(payload: dict | None) -> str:
+    p = dict(payload or {})
+    token_payload = {
+        "candidate_id": str(p.get("candidate_id") or p.get("source_candidate_id") or ""),
+        "family": str(p.get("family") or ""),
+        "action_type": str(p.get("action_type") or ""),
+        "updates": dict(p.get("updates") or {}),
+        "render_fingerprint": str(p.get("render_fingerprint") or ""),
+        "state_fingerprint": str(p.get("state_fingerprint") or ""),
+    }
+    return hashlib.sha256(
+        json.dumps(token_payload, sort_keys=True, default=str, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _design_guide_component_cta_trace(block: str, **payload) -> None:
+    _inputs_pre_widget_trace(block, _force=True, **payload)
+
+
+def _clear_design_guide_component_apply_in_flight(reason: str) -> None:
+    """Clear the client-click applying phase once server-side apply is no longer pending."""
+    was_in_flight = bool(st.session_state.get(DESIGN_GUIDE_COMPONENT_APPLY_IN_FLIGHT_KEY))
+    st.session_state.pop(DESIGN_GUIDE_COMPONENT_APPLY_IN_FLIGHT_KEY, None)
+    if was_in_flight:
+        _design_guide_component_cta_trace(
+            "design_guide_component_apply_in_flight_clear",
+            reason=str(reason or ""),
+        )
+
+
+def _consume_design_guide_component_cta_value(
+    value: dict,
+    *,
+    rec: dict,
+    button_contract: dict,
+    primary_route_target: str,
+    apply_label: str,
+) -> bool:
+    event_id = str(value.get("event_id") or "").strip()
+    token = str(value.get("token") or "").strip()
+    try:
+        component_scroll_top = float(value.get("scroll_top") or 0.0)
+    except Exception:
+        component_scroll_top = 0.0
+    consumed = st.session_state.get(DESIGN_GUIDE_COMPONENT_CTA_CONSUMED_EVENTS_KEY)
+    if not isinstance(consumed, list):
+        consumed = []
+    if event_id and event_id in consumed:
+        _design_guide_component_cta_trace(
+            "design_guide_component_apply_value",
+            attempted=True,
+            queued=False,
+            token=token,
+            event_id=event_id,
+            reason="component_apply_duplicate_event_ignored",
+            consumed_count=len(consumed),
+        )
+        return True
+    canonical = dict(st.session_state.get(DESIGN_GUIDE_PRIMARY_APPLY_PAYLOAD_KEY) or {})
+    expected_token = _design_guide_component_cta_token(canonical)
+    current_fp = _design_guide_primary_apply_state_fingerprint(_shared_state_snapshot())
+    expected_fp = str(canonical.get("state_fingerprint") or "")
+    expected_render_fp = str(canonical.get("render_fingerprint") or "")
+    event_state_fp = str(value.get("state_fingerprint") or "")
+    event_render_fp = str(value.get("render_fingerprint") or "")
+    stale_reason = ""
+    if not canonical:
+        stale_reason = "component_apply_missing_canonical_payload"
+    elif not token or token != expected_token:
+        stale_reason = "component_apply_token_mismatch"
+    elif expected_fp and current_fp != expected_fp:
+        stale_reason = "component_apply_stale_state_fingerprint"
+    elif event_state_fp and expected_fp and event_state_fp != expected_fp:
+        stale_reason = "component_apply_event_state_fingerprint_mismatch"
+    elif event_render_fp and expected_render_fp and event_render_fp != expected_render_fp:
+        stale_reason = "component_apply_event_render_fingerprint_mismatch"
+    if stale_reason:
+        _clear_design_guide_component_apply_in_flight(stale_reason)
+        st.session_state.pop(DESIGN_GUIDE_COMPONENT_SCROLL_RESTORE_KEY, None)
+        if event_id:
+            consumed.append(event_id)
+            st.session_state[DESIGN_GUIDE_COMPONENT_CTA_CONSUMED_EVENTS_KEY] = consumed[-40:]
+        st.session_state[DESIGN_GUIDE_COMPONENT_CTA_LAST_EVENT_KEY] = {
+            "event_id": event_id,
+            "token": token,
+            "queued": False,
+            "reason": stale_reason,
+        }
+        _set_design_guide_primary_payload_binding_audit(
+            queued_apply_candidate_id=None,
+            queued_apply_updates={},
+            stale_apply_payload_blocked=True,
+            stale_apply_payload_expected_fingerprint=expected_fp,
+            stale_apply_payload_current_fingerprint=current_fp,
+            stale_apply_payload_mismatch_reason=stale_reason,
+            component_apply_event_id=event_id,
+            component_apply_token=token,
+            component_apply_queued=False,
+            legacy_fallback_used=False,
+        )
+        _design_guide_component_cta_trace(
+            "design_guide_component_apply_value",
+            attempted=True,
+            queued=False,
+            token=token,
+            event_id=event_id,
+            reason=stale_reason,
+            expected_fingerprint=expected_fp,
+            current_fingerprint=current_fp,
+        )
+        return True
+    if event_id:
+        consumed.append(event_id)
+        st.session_state[DESIGN_GUIDE_COMPONENT_CTA_CONSUMED_EVENTS_KEY] = consumed[-40:]
+    st.session_state[DESIGN_GUIDE_COMPONENT_CTA_LAST_EVENT_KEY] = {
+        "event_id": event_id,
+        "token": token,
+        "queued": True,
+        "reason": "component_apply_queued",
+    }
+    st.session_state[DESIGN_GUIDE_COMPONENT_APPLY_IN_FLIGHT_KEY] = True
+    if component_scroll_top > 0:
+        st.session_state[DESIGN_GUIDE_COMPONENT_SCROLL_RESTORE_KEY] = {
+            "scroll_top": component_scroll_top,
+            "expires_at": time.time() + 15.0,
+            "event_id": event_id,
+        }
+    _set_design_guide_primary_payload_binding_audit(
+        component_apply_event_id=event_id,
+        component_apply_token=token,
+        component_apply_queued=True,
+        stale_apply_payload_blocked=False,
+        stale_apply_payload_current_fingerprint=current_fp,
+        stale_apply_payload_expected_fingerprint=expected_fp,
+    )
+    _design_guide_component_cta_trace(
+        "design_guide_component_apply_value",
+        attempted=True,
+        queued=True,
+        token=token,
+        event_id=event_id,
+        reason="component_apply_queued",
+        expected_fingerprint=expected_fp,
+        current_fingerprint=current_fp,
+    )
+    _queue_primary_design_guide_button_action(
+        dict(rec),
+        primary_route_target,
+        apply_label,
+        dict(button_contract),
+    )
+    handle_apply_buttons()
+    return True
+
+
+def _render_design_guide_component_cta(
+    *,
+    label: str,
+    theme: str = "start",
+    rendered_payload: dict,
+    rec: dict,
+    button_contract: dict,
+    primary_route_target: str,
+) -> bool:
+    if not _design_guide_component_cta_enabled():
+        return False
+    payload = dict(rendered_payload or {})
+    if not payload.get("updates"):
+        return False
+    token = _design_guide_component_cta_token(payload)
+    value = _DESIGN_GUIDE_CTA_COMPONENT(
+        label=str(label or "Run one-click auto design"),
+        token=token,
+        candidate_id=str(payload.get("candidate_id") or ""),
+        state_fingerprint=str(payload.get("state_fingerprint") or ""),
+        render_fingerprint=str(payload.get("render_fingerprint") or ""),
+        theme=str(theme or "start"),
+        disabled=False,
+        key=f"design_guide_cta_{token[:16]}",
+        default=None,
+    )
+    if isinstance(value, dict) and value:
+        _consume_design_guide_component_cta_value(
+            value,
+            rec=dict(rec or {}),
+            button_contract=dict(button_contract or {}),
+            primary_route_target=str(primary_route_target or ""),
+            apply_label=str(label or "Run one-click auto design"),
+        )
+    return True
+
+
 def _enabled_design_guide_contract_from_intent_rows(
     guidance_debug: dict | None,
 ) -> tuple[dict | None, dict | None]:
@@ -13701,6 +16309,9 @@ def _publishable_safe_cleanup_updates_from_evidence(
     """Return executor-backed cleanup updates that still represent a visible action."""
     if not isinstance(evidence, dict):
         return {}
+    combined_row = _publishable_safe_combined_cleanup_row_from_evidence(evidence, state)
+    if combined_row:
+        return dict(combined_row.get("proposed_updates") or combined_row.get("updates") or {})
     updates = dict(
         evidence.get("selected_candidate_updates")
         or evidence.get("closest_safe_candidate_updates")
@@ -18707,191 +21318,16 @@ def _active_failure_blocker_payload(
     evidence: dict | None = None,
     reason: str | None = None,
 ) -> dict:
-    fam = str(family or "").strip().lower()
-    ov = overview if isinstance(overview, dict) else {}
-    ev = evidence if isinstance(evidence, dict) else {}
-    current_util = _parse_util_value(dict(ov.get("utils") or {}).get(fam))
-    if current_util is None and str(ev.get("active_under_capacity_blocker_family") or "").strip().lower() == fam:
-        current_util = _parse_util_value(ev.get("failed_check_util"))
-    if current_util is None:
-        current_util = _parse_util_value(ov.get("worst_util") or ov.get("governing_util"))
-    evidence_primary_family = str(ev.get("active_under_capacity_blocker_family") or "").strip().lower()
-    active_failure_set = {
-        "deflection" if str(x or "").strip().lower() == "serviceability" else str(x or "").strip().lower()
-        for x in list(active_failures or ev.get("active_failures") or [fam])
-        if str(x or "").strip()
-    }
-    active_candidate_rows = [
-        dict(row)
-        for row in list(
-            ev.get("active_fail_repair_candidate_rows")
-            or ev.get("candidate_rows")
-            or ev.get("safe_executor_backed_candidates")
-            or ev.get("rejected_target_band_candidates")
-            or []
-        )
-        if isinstance(row, dict)
-    ]
-    active_search_scope = (
-        "active_fail_combined_repair_search"
-        if {"bending", "shear"}.issubset(active_failure_set)
-        else f"active_fail_{fam}_repair_search"
+    return _repair_active_failure_blocker_payload(
+        family,
+        overview=overview,
+        active_failures=active_failures,
+        evidence=evidence,
+        reason=reason,
+        final_accepted_min_family_util=float(FINAL_ACCEPTED_MIN_FAMILY_UTIL),
+        efficiency_target_util_min=float(EFFICIENCY_TARGET_UTIL_MIN),
+        efficiency_target_util_max=float(EFFICIENCY_TARGET_UTIL_MAX),
     )
-    safe_repair_count = int(
-        ev.get("safe_repair_candidate_count")
-        if ev.get("safe_repair_candidate_count") is not None
-        else ev.get("safe_executor_backed_candidates_count")
-        if ev.get("safe_executor_backed_candidates_count") is not None
-        else ev.get("safe_candidate_count")
-        if ev.get("safe_candidate_count") is not None
-        else len([row for row in active_candidate_rows if bool(row.get("safe_executor_backed"))])
-    )
-    executable_repair_count = int(
-        ev.get("executable_repair_candidate_count")
-        if ev.get("executable_repair_candidate_count") is not None
-        else ev.get("executable_candidate_count")
-        if ev.get("executable_candidate_count") is not None
-        else safe_repair_count
-    )
-    rejected_repair_reasons = [
-        str(row.get("rejection_reason") or row.get("failed_check_family") or "preview_failed")
-        for row in active_candidate_rows
-        if not bool(row.get("safe_executor_backed"))
-    ]
-    if not rejected_repair_reasons:
-        rejected_repair_reasons = list(ev.get("rejected_repair_reasons") or ev.get("failed_candidate_reasons") or [])
-    if not rejected_repair_reasons:
-        rejected_repair_reasons = ["no_executor_backed_active_repair_candidate_published"]
-    rejected_candidate_row = None
-    for row in active_candidate_rows:
-        failed_family = str(row.get("failed_check_family") or "").strip().lower()
-        statuses = dict(row.get("preview_statuses") or {})
-        if failed_family == fam or str(statuses.get(fam) or "").strip().upper() == "FAIL":
-            rejected_candidate_row = dict(row)
-            break
-    if rejected_candidate_row is None and active_candidate_rows:
-        rejected_candidate_row = dict(active_candidate_rows[0])
-    rejected_candidate_id = str(
-        (rejected_candidate_row or {}).get("candidate_id")
-        or (rejected_candidate_row or {}).get("source_candidate_id")
-        or ev.get("failed_candidate_id")
-        or ev.get("best_rejected_candidate_id")
-        or ""
-    ).strip()
-    shared_active_failure_blocker = bool(
-        evidence_primary_family
-        and evidence_primary_family != fam
-        and fam in active_failure_set
-        and bool(ev.get("active_under_capacity_blocker"))
-    )
-    if fam == "shear":
-        default_reason = (
-            "Shear repair is blocked by shear/detailing limits. Exhaustive link spacing, link diameter, "
-            "leg count, section depth, and web-width trials found no executor-backed one-click arrangement "
-            "that passes shear capacity plus bending, crack, deflection, spacing, ductility, cover, and detailing checks."
-        )
-        attempted_updates = _active_failure_route_attempt_updates("shear")
-        failed_name = "sectional shear capacity repair catalogue"
-        category = "shear_would_fail"
-    elif fam == "bending":
-        default_reason = (
-            "Bending repair is blocked by reinforcement, geometry, ductility, or detailing limits. Exhaustive "
-            "bar count, bar diameter, section depth, and section width trials found no executor-backed one-click "
-            "arrangement that passes bending capacity plus shear, crack, deflection, spacing, ductility, cover, and detailing checks."
-        )
-        attempted_updates = _active_failure_route_attempt_updates("bending")
-        failed_name = "bending capacity repair catalogue"
-        category = "bending_would_fail"
-    elif fam == "crack":
-        default_reason = (
-            "Crack control repair is blocked by serviceability/detailing limits. Exhaustive bar count, bar diameter, "
-            "section depth, and section width trials found no executor-backed one-click arrangement that resolves the "
-            "crack limit while preserving bending, shear, deflection, spacing, ductility, cover, and detailing checks."
-        )
-        attempted_updates = _active_failure_route_attempt_updates("bending")
-        failed_name = "crack control limit"
-        category = "crack_would_fail"
-    else:
-        fam = "deflection" if fam == "serviceability" else fam
-        default_reason = (
-            "Deflection repair is blocked by geometry/serviceability limits. Exhaustive section depth, section width, "
-            "reinforcement, and sustained-load trials found no executor-backed one-click arrangement that resolves the "
-            "deflection limit while preserving bending, shear, crack, spacing, ductility, cover, and detailing checks."
-        )
-        attempted_updates = {"D": "increase section depth trial", "b": "increase section width trial", "sustained_load": "reduce sustained load advisory trial"}
-        failed_name = "deflection limit"
-        category = "deflection_would_fail"
-    specific_reason = str(reason or "").strip() or default_reason
-    if evidence_primary_family == fam and str(ev.get("active_under_capacity_blocker_reason") or "").strip():
-        specific_reason = str(ev.get("active_under_capacity_blocker_reason") or "").strip()
-    elif shared_active_failure_blocker:
-        primary_reason = str(ev.get("active_under_capacity_blocker_reason") or "").strip()
-        specific_reason = (
-            f"{fam.capitalize()} remains unresolved because the exhaustive active-failure one-click repair "
-            "search found no executor-backed arrangement that passes all required checks while "
-            f"{', '.join(sorted(active_failure_set))} fail."
-        )
-        if primary_reason:
-            specific_reason = f"{specific_reason} The recorded blocking proof says: {primary_reason}"
-        category = "combined_active_failure_would_fail"
-        failed_name = f"{fam} capacity unresolved in combined active-failure repair search"
-    attempted = dict(ev.get("attempted_updates") or {}) if evidence_primary_family == fam else {}
-    if not attempted:
-        attempted = dict(attempted_updates)
-    attempted = _active_failure_route_attempt_updates(fam, attempted)
-    failures = list(dict.fromkeys(str(x or "").strip().lower() for x in list(active_failure_set or {fam}) if str(x or "").strip()))
-    route_inventory = _active_failure_route_inventory(failures)
-    return {
-        "family": fam,
-        "source": "combined_active_failure_practical_ladder_exhausted" if shared_active_failure_blocker else f"{fam}_active_failure_practical_ladder_exhausted",
-        "exact_blocker": True,
-        "current_util": current_util,
-        "threshold": float(FINAL_ACCEPTED_MIN_FAMILY_UTIL),
-        "target_low": float(EFFICIENCY_TARGET_UTIL_MIN),
-        "target_high": float(EFFICIENCY_TARGET_UTIL_MAX),
-        "reason": specific_reason,
-        "active_failures": list(failures or [fam]),
-        "search_scope": active_search_scope,
-        "active_fail_repair_search_scope": active_search_scope,
-        "repair_search_ran": True,
-        "repair_search_exhaustive": True,
-        "geometry_strengthening_searched": True,
-        "reo_strengthening_searched": True,
-        "longitudinal_reinforcement_strengthening_searched": True,
-        "shear_strengthening_searched": bool("shear" in failures or fam == "shear"),
-        "combined_strengthening_searched": bool(len(failures or []) > 1),
-        "local_cleanup_search_ran": False,
-        "local_cleanup_search_exhaustive": False,
-        "cleanup_search_ran": False,
-        "cleanup_search_exhaustive": False,
-        "candidate_search_exhaustive": True,
-        "safe_repair_candidate_count": safe_repair_count,
-        "executable_repair_candidate_count": executable_repair_count,
-        "safe_candidate_count": safe_repair_count,
-        "executable_candidate_count": executable_repair_count,
-        "target_band_candidate_count": int(ev.get("target_band_candidate_count") or 0),
-        "executable_target_band_candidate_count": int(ev.get("executable_target_band_candidate_count") or 0),
-        "safe_cleanup_count": 0,
-        "executable_cleanup_count": 0,
-        "attempted_candidate_count": int(ev.get("total_candidates_considered") or ev.get("preview_count") or max(1, len(attempted))),
-        "attempted_candidate_id": f"{fam}_active_failure_practical_ladder_exhausted",
-        "failed_candidate_id": rejected_candidate_id or f"{fam}_active_failure_practical_ladder_exhausted",
-        "best_rejected_candidate_id": rejected_candidate_id or f"{fam}_active_failure_practical_ladder_exhausted",
-        "attempted_updates": dict(attempted),
-        "route_inventory": dict(route_inventory.get(fam) or {}),
-        "active_repair_route_inventory": dict(route_inventory),
-        "active_fail_repair_candidate_rows": [dict(row) for row in active_candidate_rows[:80]],
-        "rejected_repair_reasons": list(dict.fromkeys(rejected_repair_reasons))[:40],
-        "failed_check_name": failed_name,
-        "failed_check_status": "FAIL",
-        "failed_check_util": current_util if current_util is not None else ev.get("failed_check_util") or 1.0,
-        "failed_check_demand": f"{fam} demand remains above checked capacity or serviceability limit",
-        "failed_check_capacity_or_limit": f"{fam} capacity or serviceability limit",
-        "outside_target_band_allowed": False,
-        "outside_target_band_allowed_reason": specific_reason,
-        "outside_target_band_allowed_category": category,
-        "one_click_target_reaching_candidate_exists": False,
-    }
 
 
 def _active_failure_exact_blockers_for_families(
@@ -18902,103 +21338,23 @@ def _active_failure_exact_blockers_for_families(
     primary_family: str | None = None,
     primary_reason: str | None = None,
 ) -> dict[str, dict]:
-    active = [
-        "deflection" if str(family or "").strip().lower() == "serviceability" else str(family or "").strip().lower()
-        for family in list(families or [])
-        if str(family or "").strip().lower() in {"bending", "shear", "crack", "deflection", "serviceability"}
-    ]
-    primary = str(primary_family or "").strip().lower()
-    if primary == "serviceability":
-        primary = "deflection"
-    if primary and primary in {"bending", "shear", "crack", "deflection"} and primary not in active:
-        active.append(primary)
-    active = list(dict.fromkeys(active))
-    return {
-        family: _active_failure_blocker_payload(
-            family,
-            overview=overview,
-            active_failures=active,
-            evidence=evidence,
-            reason=primary_reason if family == primary else None,
-        )
-        for family in active
-    }
+    return _repair_active_failure_exact_blockers_for_families(
+        families,
+        overview=overview,
+        evidence=evidence,
+        primary_family=primary_family,
+        primary_reason=primary_reason,
+        final_accepted_min_family_util=float(FINAL_ACCEPTED_MIN_FAMILY_UTIL),
+        efficiency_target_util_min=float(EFFICIENCY_TARGET_UTIL_MIN),
+        efficiency_target_util_max=float(EFFICIENCY_TARGET_UTIL_MAX),
+    )
 
 
 def _active_failure_blocker_visible_reason_text(
     exact_blockers: dict | None,
     active_failures: list[str] | set[str] | tuple[str, ...],
 ) -> str:
-    blockers = {
-        str(family or "").strip().lower(): dict(blocker)
-        for family, blocker in dict(exact_blockers or {}).items()
-        if str(family or "").strip() and isinstance(blocker, dict)
-    }
-    ordered = [
-        str(family or "").strip().lower()
-        for family in list(active_failures or [])
-        if str(family or "").strip().lower() in {"bending", "shear"}
-    ]
-    ordered = list(dict.fromkeys(ordered))
-    if not ordered:
-        ordered = [family for family in ("bending", "shear") if family in blockers]
-    labels = {"bending": "Bending", "shear": "Shear"}
-    lines: list[str] = []
-    for family in ordered:
-        label = labels.get(family, family.capitalize())
-        blocker = dict(blockers.get(family) or {})
-        reason = str(
-            blocker.get("reason")
-            or blocker.get("outside_target_band_allowed_reason")
-            or blocker.get("blocking_reason")
-            or ""
-        ).strip()
-        if not reason:
-            lines.append(
-                f"{label} repair remains unresolved: no specific blocker proof was published."
-            )
-            continue
-        details: list[str] = []
-        failed_check = str(blocker.get("failed_check_name") or "").strip()
-        failed_status = str(blocker.get("failed_check_status") or "").strip()
-        failed_util = blocker.get("failed_check_util")
-        failed_limit = blocker.get("failed_check_capacity_or_limit")
-        if failed_check:
-            check_detail = f"failed check/rule: {failed_check}"
-            if failed_status:
-                check_detail += f" ({failed_status})"
-            details.append(check_detail)
-        if failed_util not in (None, ""):
-            try:
-                details.append(f"utilisation {float(failed_util):.2f}")
-            except (TypeError, ValueError):
-                details.append(f"utilisation {failed_util}")
-        if failed_limit not in (None, ""):
-            details.append(f"limit/capacity {failed_limit}")
-        if bool(blocker.get("repair_search_ran")) and bool(blocker.get("repair_search_exhaustive")):
-            details.append("exhaustive active repair search ran")
-        route_summary = _design_guide_attempt_route_summary(
-            family,
-            dict(blocker.get("attempted_updates") or {}),
-        )
-        checked_limit = ""
-        if (
-            bool(blocker.get("repair_search_ran"))
-            and bool(blocker.get("repair_search_exhaustive"))
-            and (
-                blocker.get("safe_repair_candidate_count") in (0, "0")
-                or blocker.get("executable_repair_candidate_count") in (0, "0")
-            )
-        ):
-            checked_limit = (
-                "Maximum depth reached in the checked one-click repair move set; "
-                "maximum width reached in the checked one-click repair move set. "
-            )
-            if route_summary:
-                checked_limit += f"Checked repair routes: {route_summary}. "
-        suffix = f" Evidence: {'; '.join(details)}." if details else ""
-        lines.append(f"{label} repair blocked: {checked_limit}{reason}{suffix}")
-    return "\n".join(lines)
+    return _repair_active_failure_blocker_visible_reason_text(exact_blockers, active_failures)
 
 
 def _design_guide_guidance_intent_debug_rows(items: list[dict] | None) -> list[dict]:
@@ -20985,12 +23341,11 @@ def _local_cleanup_post_apply_acceptance_matches(state: dict | None) -> bool:
 
 
 def _guidance_cleanup_candidate_id(family: str, updates: dict) -> str:
-    try:
-        fp = stable_fingerprint_for_payload({"family": family, "updates": dict(updates or {})})
-        return f"local_cleanup:{family}:{fp}"
-    except Exception:
-        sig = ",".join(f"{k}={updates[k]}" for k in sorted(dict(updates or {})))
-        return f"local_cleanup:{family}:{sig}"
+    return _optimisation_cleanup_candidate_id(
+        family,
+        updates,
+        fingerprint_payload=stable_fingerprint_for_payload,
+    )
 
 
 def _overview_family_utils_for_local_cleanup(overview: dict | None) -> dict[str, float]:
@@ -21200,6 +23555,72 @@ def _final_accepted_meaningful_family_utils(overview: dict | None) -> tuple[dict
             continue
         meaningful[fam] = fu
     return family_utils, meaningful, excluded
+
+
+def _bending_demand_is_negligible(state: dict | None) -> tuple[bool, float | None]:
+    if not isinstance(state, dict):
+        return False, None
+    base = _guidance_state_snapshot(state or {})
+    demand_keys = (
+        "uls_Mstar",
+        "Mu_star",
+        "uls_Mstar_pos_manual",
+        "uls_Mstar_neg_manual",
+        "load_Mstar_proxy",
+    )
+    values: list[float] = []
+    for key in demand_keys:
+        try:
+            values.append(abs(float(_float_from_state(base, key, 0.0) or 0.0)))
+        except Exception:
+            continue
+    if not values:
+        return False, None
+    demand = max(values)
+    return demand <= float(GUIDANCE_BENDING_DEMAND_ABS_TOL_KNM) + 1e-12, demand
+
+
+def _zero_bending_demand_exclusion_row(state: dict | None, family_utils: dict | None = None) -> dict | None:
+    negligible, demand = _bending_demand_is_negligible(state)
+    if not negligible:
+        return None
+    util = None
+    if isinstance(family_utils, dict):
+        util = family_utils.get("bending")
+    return {
+        "excluded_reason": "zero_demand_or_not_meaningful",
+        "reason": "zero_demand",
+        "zero_demand": True,
+        "not_optimisation_governing": True,
+        "cleanup_proof_required": False,
+        "demand": demand,
+        "util": util,
+    }
+
+
+def _stamp_zero_bending_demand_exclusion(
+    target: dict | None,
+    state: dict | None,
+    family_utils: dict | None = None,
+    *,
+    post_click: bool = False,
+) -> bool:
+    if not isinstance(target, dict):
+        return False
+    row = _zero_bending_demand_exclusion_row(state, family_utils)
+    if not row:
+        return False
+    key = "post_click_excluded_families" if post_click else "excluded_families"
+    excluded = dict(target.get(key) or {})
+    excluded["bending"] = dict(row)
+    target[key] = excluded
+    target["bending_zero_demand_excluded_from_optimisation"] = True
+    target["bending_cleanup_proof_required"] = False
+    if post_click:
+        general = dict(target.get("excluded_families") or {})
+        general.setdefault("bending", dict(row))
+        target["excluded_families"] = general
+    return True
 
 
 def _accepted_green_exact_blockers_by_family(source: dict | None) -> dict[str, dict]:
@@ -23735,6 +26156,10 @@ def _post_click_accepted_green_audit(
     build_active_shear_blocker: bool = True,
 ) -> dict:
     family_utils, meaningful_utils, excluded_families = _final_accepted_meaningful_family_utils(overview)
+    zero_bending_exclusion = _zero_bending_demand_exclusion_row(state, family_utils)
+    if zero_bending_exclusion:
+        meaningful_utils.pop("bending", None)
+        excluded_families["bending"] = dict(zero_bending_exclusion)
     if isinstance(state, dict) and not _shear_reinforcement_is_active(state):
         try:
             actions = _resolve_design_actions_from_state(state) or {}
@@ -25442,6 +27867,11 @@ def _combine_best_safe_shear_with_bending_cleanup_item(
         search_scope="combined_best_safe_shear_plus_bending_cleanup",
         selected_title="Shear and bending cleanup - one-click optimisation",
     )
+    combined_post_apply_exact = dict(
+        combined_audit.get("post_click_exact_blockers_by_family")
+        or combined_audit.get("exact_blockers_by_family")
+        or {}
+    )
     evidence.update(
         {
             "local_cleanup_search_ran": True,
@@ -25458,13 +27888,11 @@ def _combine_best_safe_shear_with_bending_cleanup_item(
                 or bending_evidence.get("best_safe_partial_cleanup")
             ),
             "safe_incremental_cleanup_below_final_threshold": bool(bending_incremental_cleanup),
-            "no_second_cta_required": True,
+            "no_second_cta_required": False,
             "combined_from_best_safe_shear_cleanup": True,
             "shear_cleanup_evidence": dict(shear_evidence),
             "bending_cleanup_evidence": dict(bending_evidence),
-            "post_click_exact_blockers_by_family": dict(
-                combined_audit.get("post_click_exact_blockers_by_family") or {}
-            ),
+            "post_apply_expected_exact_blockers_by_family": dict(combined_post_apply_exact),
             "post_click_unresolved_low_util_families": list(
                 combined_audit.get("post_click_unresolved_low_util_families") or []
             ),
@@ -25490,7 +27918,9 @@ def _combine_best_safe_shear_with_bending_cleanup_item(
             "candidate_search_evidence": dict(evidence),
             "local_cleanup_candidate": True,
             "allow_in_target_primary_action": True,
-            "no_second_cta_required": True,
+            "best_safe_partial_cleanup": True,
+            "primary_card_actionable": True,
+            "no_second_cta_required": False,
         }
     )
     item = _guidance_item_from_resolved_candidate(
@@ -25530,9 +27960,13 @@ def _combine_best_safe_shear_with_bending_cleanup_item(
             "selected_action_family": "combined",
             "source": "combined_best_safe_shear_plus_bending_cleanup",
             "allow_in_target_primary_action": True,
-            "no_second_cta_required": True,
+            "best_safe_partial_cleanup": True,
+            "primary_card_actionable": True,
+            "no_second_cta_required": False,
             "canonical_winner_label": "Shear and bending cleanup - one-click optimisation",
             "title_locked_from_final_winner": True,
+            "selected_action_updates": dict(combined_updates),
+            "updates": dict(combined_updates),
         }
     )
     payload = dict(item.get("action_payload") or {})
@@ -25548,7 +27982,9 @@ def _combine_best_safe_shear_with_bending_cleanup_item(
     payload["candidate_id"] = "combined_best_safe_shear_plus_bending_cleanup"
     payload["resolved_candidate_family_tag"] = "combined"
     payload["resolved_candidate_subfamilies"] = ["shear", "bottom_reinforcement"]
-    payload["no_second_cta_required"] = True
+    payload["best_safe_partial_cleanup"] = True
+    payload["primary_card_actionable"] = True
+    payload["no_second_cta_required"] = False
     item["action_payload"] = payload
     resolved = dict(item.get("resolved_candidate") or combined_candidate)
     resolved["updates"] = dict(combined_updates)
@@ -25562,7 +27998,9 @@ def _combine_best_safe_shear_with_bending_cleanup_item(
     resolved["family"] = "combined"
     resolved["recommendation_family_tag"] = "combined"
     resolved["subfamilies"] = ["shear", "bottom_reinforcement"]
-    resolved["no_second_cta_required"] = True
+    resolved["best_safe_partial_cleanup"] = True
+    resolved["primary_card_actionable"] = True
+    resolved["no_second_cta_required"] = False
     item["resolved_candidate"] = resolved
     contract = dict(item.get("button_contract") or {})
     contract.update(
@@ -25605,6 +28043,23 @@ def _maybe_promote_safe_local_cleanup_primary(
     t_lo, t_hi, _ = _resolved_efficiency_target_band(mode_cfg, goal=_design_optimisation_goal(state))
 
     if _overview_has_active_failure(ov):
+        zero_bending_cleanup_item = _zero_bending_demand_cleanup_item(
+            state,
+            ov,
+            mode_cfg,
+            debug_sink=debug_sink if isinstance(debug_sink, dict) else None,
+        )
+        if isinstance(zero_bending_cleanup_item, dict):
+            zero_bending_cleanup_item["local_cleanup_candidate"] = True
+            zero_bending_cleanup_item["source"] = "zero_bending_demand_minimum_cleanup_search"
+            debug["local_cleanup_blocked_reason"] = "zero_bending_demand_cleanup_action_available"
+            debug["zero_bending_demand_cleanup_action_available"] = True
+            debug["safe_local_cleanup_count"] = 1
+            debug["executable_safe_cleanup_count"] = 1
+            debug["terminal_state_blocked_by_local_cleanup"] = True
+            if isinstance(debug_sink, dict):
+                debug_sink.update(debug)
+            return [zero_bending_cleanup_item] + items, debug
         debug["local_cleanup_blocked_reason"] = "active_failure_needs_strengthening"
         if isinstance(debug_sink, dict):
             debug_sink.update(debug)
@@ -25636,6 +28091,7 @@ def _maybe_promote_safe_local_cleanup_primary(
     debug["materially_overprovided_families"] = list(materially_overprovided_families)
     debug["materially_overprovided_threshold"] = 0.70
     debug["governing_family"] = governing_family
+    _stamp_zero_bending_demand_exclusion(debug, state, family_utils)
 
     current_worst_for_direct = None
     try:
@@ -26399,7 +28855,7 @@ def _shallower_beam_correction_trial_updates(state: dict) -> list[tuple[str, dic
     for d_step in (50.0, 100.0):
         for w_add in (25.0, 50.0):
             new_d = d0 - d_step
-            if new_d < 350.0:
+            if new_d < GUIDANCE_MIN_PRACTICAL_DEPTH_MM:
                 continue
             new_w = w0 + w_add
             tw = _geometry_state_with_updates(seed, depth=new_d, width=new_w)
@@ -27308,17 +29764,7 @@ def _optimisation_candidate_family(item: dict | None, state: dict | None = None)
 
 
 def _candidate_search_distance_to_band(util: object, target_low: float, target_high: float) -> float | None:
-    try:
-        u = float(util)
-    except (TypeError, ValueError):
-        return None
-    if math.isnan(u) or math.isinf(u):
-        return None
-    if u < float(target_low):
-        return float(target_low) - u
-    if u > float(target_high):
-        return u - float(target_high)
-    return 0.0
+    return _optimisation_candidate_search_distance_to_band(util, target_low, target_high)
 
 
 def _candidate_search_summary_row(
@@ -27329,95 +29775,14 @@ def _candidate_search_summary_row(
     target_high: float,
     fallback_title: str | None = None,
 ) -> dict:
-    cand = dict(candidate or {})
-    item = dict(cand.get("item") or {})
-    payload = dict(item.get("action_payload") or cand.get("action_payload") or {})
-    resolved = dict(item.get("resolved_candidate") or cand.get("resolved_candidate") or {})
-    updates = dict(
-        cand.get("updates")
-        or cand.get("resolved_candidate_updates")
-        or payload.get("resolved_candidate_updates")
-        or payload.get("updates")
-        or resolved.get("updates")
-        or {}
+    return _optimisation_candidate_search_summary_row(
+        candidate,
+        index=index,
+        target_low=target_low,
+        target_high=target_high,
+        fallback_title=fallback_title,
+        parse_util=_parse_util_value,
     )
-    util = cand.get("candidate_post_util", cand.get("trial_worst_util", cand.get("worst_util")))
-    if util is None:
-        util = payload.get("resolved_candidate_post_util")
-    try:
-        util = float(util) if util is not None else None
-    except (TypeError, ValueError):
-        util = None
-    candidate_id = str(
-        cand.get("candidate_id")
-        or cand.get("source_candidate_id")
-        or payload.get("source_candidate_id")
-        or payload.get("resolved_candidate_id")
-        or resolved.get("candidate_id")
-        or resolved.get("source_candidate_id")
-        or f"candidate_{index:03d}"
-    ).strip()
-    title = str(
-        cand.get("label")
-        or cand.get("title")
-        or item.get("title_main")
-        or payload.get("resolved_candidate_label")
-        or fallback_title
-        or candidate_id
-    ).strip()
-    statuses = dict((cand.get("overview") or {}).get("statuses") or cand.get("statuses") or {})
-    failed_family = None
-    failed_status = None
-    failed_util = None
-    utils = dict((cand.get("overview") or {}).get("utils") or cand.get("utils") or {})
-    preview_bending_util = _parse_util_value(utils.get("bending"))
-    preview_shear_util = _parse_util_value(utils.get("shear"))
-    for key, value in statuses.items():
-        if str(value or "").upper() == "FAIL":
-            failed_family = str(key)
-            failed_status = str(value)
-            try:
-                failed_util = float(utils.get(key)) if utils.get(key) is not None else None
-            except (TypeError, ValueError):
-                failed_util = None
-            break
-    safe = bool(
-        updates
-        and bool(cand.get("is_compliant", cand.get("all_key_pass", False)))
-        and util is not None
-    )
-    row = {
-        "candidate_id": candidate_id,
-        "title": title,
-        "proposed_updates": dict(updates),
-        "preview_util": util,
-        "preview_bending_util": preview_bending_util,
-        "preview_shear_util": preview_shear_util,
-        "preview_statuses": dict(statuses),
-        "distance_to_band": _candidate_search_distance_to_band(util, target_low, target_high),
-        "safe_executor_backed": bool(safe),
-        "preview_pass": bool(cand.get("is_compliant", cand.get("all_key_pass", False))),
-        "reaches_target_band": bool(util is not None and float(target_low) <= float(util) <= float(target_high)),
-        "rejection_reason": None,
-        "failed_check_family": failed_family,
-        "failed_check_status": failed_status,
-        "failed_check_util": failed_util,
-        "candidate_complexity_score": cand.get("candidate_complexity_score"),
-        "net_efficiency_delta": cand.get("net_efficiency_delta"),
-        "material_proxy_before": cand.get("material_proxy_before"),
-        "material_proxy_after": cand.get("material_proxy_after"),
-        "material_proxy_delta": cand.get("material_proxy_delta"),
-        "is_executable": bool(cand.get("is_executable", safe)),
-        "advisory_only": bool(cand.get("advisory_only", not safe)),
-        "affected_family": cand.get("affected_family") or cand.get("family") or cand.get("recommendation_family_tag"),
-    }
-    if not updates:
-        row["rejection_reason"] = "empty_updates"
-    elif util is None:
-        row["rejection_reason"] = "preview_failed"
-    elif not bool(cand.get("is_compliant", cand.get("all_key_pass", False))):
-        row["rejection_reason"] = f"{failed_family or 'preview'}_would_fail"
-    return row
 
 
 def _build_candidate_search_evidence(
@@ -27455,13 +29820,12 @@ def _build_candidate_search_evidence(
             ),
         )
         selected_row_index = 0
-    safe_rows = [row for row in rows if bool(row.get("safe_executor_backed"))]
-    target_rows = [
-        row
-        for row in safe_rows
-        if row.get("preview_util") is not None
-        and float(target_low) <= float(row.get("preview_util")) <= float(target_high)
-    ]
+    safe_rows = _optimisation_safe_executor_backed_rows(rows)
+    target_rows = _optimisation_target_band_rows(
+        safe_rows,
+        target_low=target_low,
+        target_high=target_high,
+    )
     closest_row = None
     if safe_rows:
         closest_row = min(
@@ -27501,53 +29865,46 @@ def _build_candidate_search_evidence(
             "the selected candidate is the closest safe available step."
         )
         category = "discrete_increment_limit"
-    rejected_target_rows = [
-        row
-        for row in rows
-        if bool(row.get("reaches_target_band")) and not bool(row.get("safe_executor_backed"))
-    ]
+    rejected_target_rows = _optimisation_rejected_target_band_rows(rows)
+    count_stats = _optimisation_candidate_search_count_statistics(
+        all_candidates=all_candidates,
+        rows=rows,
+        safe_rows=safe_rows,
+        target_rows=target_rows,
+    )
+    selected_fields = _optimisation_selected_candidate_fields(selected_row, selected_row_index)
+    closest_fields = _optimisation_closest_safe_candidate_fields(closest_row)
+    best_target_fields = _optimisation_best_target_band_candidate_fields(best_target)
     evidence = {
         "candidate_search_exhaustive": bool(exhaustive),
         "search_scope": str(search_scope or ""),
         "target_low": float(target_low),
         "target_high": float(target_high),
-        "generated_count": int(len(all_candidates or [])),
-        "deduped_count": int(len(rows)),
-        "preview_count": int(len(rows)),
-        "total_candidates_considered": int(len(rows)),
-        "candidate_rows": [dict(row) for row in rows[:80]],
-        "safe_executor_backed_candidates_count": int(len(safe_rows)),
-        "target_band_candidate_count": int(len(target_rows)),
-        "selected_rank": None if selected_row_index is None else int(selected_row_index) + 1,
-        "selected_candidate_id": None if selected_row is None else selected_row.get("candidate_id"),
-        "selected_candidate_title": None if selected_row is None else selected_row.get("title"),
-        "selected_candidate_util": selected_util,
-        "selected_candidate_distance_to_band": selected_distance,
-        "selected_candidate_updates": (
-            {}
-            if selected_row is None
-            else dict(selected_row.get("proposed_updates") or {})
-        ),
-        "closest_safe_candidate_id": None if closest_row is None else closest_row.get("candidate_id"),
-        "closest_safe_candidate_title": None if closest_row is None else closest_row.get("title"),
-        "closest_safe_candidate_util": None if closest_row is None else closest_row.get("preview_util"),
-        "closest_safe_candidate_distance_to_band": closest_distance,
-        "closest_safe_candidate_updates": (
-            {}
-            if closest_row is None
-            else dict(closest_row.get("proposed_updates") or {})
-        ),
-        "best_target_band_candidate_id": None if best_target is None else best_target.get("candidate_id"),
-        "best_target_band_candidate_title": None if best_target is None else best_target.get("title"),
-        "best_target_band_candidate_util": None if best_target is None else best_target.get("preview_util"),
-        "best_target_band_candidate_updates": (
-            {}
-            if best_target is None
-            else dict(best_target.get("proposed_updates") or {})
-        ),
-        "target_band_candidates": [dict(row) for row in target_rows[:20]],
-        "safe_executor_backed_candidates": [dict(row) for row in safe_rows[:40]],
-        "rejected_target_band_candidates": [dict(row) for row in rejected_target_rows[:20]],
+        "generated_count": count_stats["generated_count"],
+        "deduped_count": count_stats["deduped_count"],
+        "preview_count": count_stats["preview_count"],
+        "total_candidates_considered": count_stats["total_candidates_considered"],
+        "candidate_rows": _optimisation_copy_row_slice(rows, 80),
+        "safe_executor_backed_candidates_count": count_stats["safe_executor_backed_candidates_count"],
+        "target_band_candidate_count": count_stats["target_band_candidate_count"],
+        "selected_rank": selected_fields["selected_rank"],
+        "selected_candidate_id": selected_fields["selected_candidate_id"],
+        "selected_candidate_title": selected_fields["selected_candidate_title"],
+        "selected_candidate_util": selected_fields["selected_candidate_util"],
+        "selected_candidate_distance_to_band": selected_fields["selected_candidate_distance_to_band"],
+        "selected_candidate_updates": selected_fields["selected_candidate_updates"],
+        "closest_safe_candidate_id": closest_fields["closest_safe_candidate_id"],
+        "closest_safe_candidate_title": closest_fields["closest_safe_candidate_title"],
+        "closest_safe_candidate_util": closest_fields["closest_safe_candidate_util"],
+        "closest_safe_candidate_distance_to_band": closest_fields["closest_safe_candidate_distance_to_band"],
+        "closest_safe_candidate_updates": closest_fields["closest_safe_candidate_updates"],
+        "best_target_band_candidate_id": best_target_fields["best_target_band_candidate_id"],
+        "best_target_band_candidate_title": best_target_fields["best_target_band_candidate_title"],
+        "best_target_band_candidate_util": best_target_fields["best_target_band_candidate_util"],
+        "best_target_band_candidate_updates": best_target_fields["best_target_band_candidate_updates"],
+        "target_band_candidates": _optimisation_copy_row_slice(target_rows, 20),
+        "safe_executor_backed_candidates": _optimisation_copy_row_slice(safe_rows, 40),
+        "rejected_target_band_candidates": _optimisation_copy_row_slice(rejected_target_rows, 20),
         "rejected_target_band_candidate_reasons": [
             str(row.get("rejection_reason") or "preview_failed")
             for row in rejected_target_rows[:20]
@@ -27557,6 +29914,266 @@ def _build_candidate_search_evidence(
         "outside_target_band_allowed_category": category,
     }
     return evidence
+
+
+def _zero_bending_demand_cleanup_item(
+    state: dict,
+    overview: dict | None,
+    mode_config: dict,
+    *,
+    debug_sink: dict | None = None,
+) -> dict | None:
+    """Find a minimum compliant cleanup when bending demand is genuinely zero."""
+    base = _guidance_state_snapshot(state or {})
+    demand_keys = (
+        "uls_Mstar",
+        "Mu_star",
+        "uls_Mstar_pos_manual",
+        "uls_Mstar_neg_manual",
+        "load_Mstar_proxy",
+    )
+    try:
+        max_bending_demand = max(abs(_float_from_state(base, key, 0.0) or 0.0) for key in demand_keys)
+    except Exception:
+        max_bending_demand = 1.0
+    if max_bending_demand > 1e-9:
+        return None
+
+    ov = overview if isinstance(overview, dict) else {}
+    statuses = {
+        str(key or "").strip().lower(): str(value or "").strip().upper()
+        for key, value in dict(ov.get("statuses") or {}).items()
+    }
+    active_failures = {key for key, value in statuses.items() if value == "FAIL"}
+    if active_failures and not active_failures.issubset({"bending"}):
+        return None
+
+    row1_bars = max(1, _int_from_state(base, "bot_row_1_bars", _int_from_state(base, "bot1_count", 0)))
+    row2_bars = max(0, _int_from_state(base, "bot_row_2_bars", _int_from_state(base, "bot2_count", 0)))
+    row1_dia = int(round(_float_from_state(base, "bot_row_1_dia", _float_from_state(base, "db_bot_1", 16.0)) or 16.0))
+    row2_dia = int(round(_float_from_state(base, "bot_row_2_dia", _float_from_state(base, "db_bot_2", row1_dia)) or row1_dia))
+    if row1_bars + row2_bars <= 2 and row1_dia <= 12:
+        return None
+
+    width_key, _, current_width = _resolve_geometry_width_context(base)
+    current_depth = float(_float_from_state(base, "D", 0.0) or 0.0)
+    min_width = float(GUIDANCE_MIN_PRACTICAL_WIDTH_MM)
+    min_depth = float(GUIDANCE_MIN_PRACTICAL_DEPTH_MM)
+    common_dias = [10, 12, 16, 20, 24, 28, 32, 36, 40]
+    dia_trials = sorted({int(d) for d in common_dias if 10 <= int(d) <= max(row1_dia, 10)}, reverse=True)
+    if row1_dia not in dia_trials:
+        dia_trials.append(row1_dia)
+        dia_trials = sorted(set(dia_trials), reverse=True)
+    bar_trials = list(range(max(2, min(row1_bars, 6)), 1, -1))
+    if row1_bars not in bar_trials:
+        bar_trials.insert(0, row1_bars)
+
+    if _geometry_lock_enabled(base):
+        width_trials = [float(current_width)]
+        depth_trials = [float(current_depth)]
+    else:
+        width_trials = sorted(
+            {float(value) for value in (current_width, current_width - 50.0, min_width) if float(value) >= min_width},
+            reverse=True,
+        )
+        depth_trials = sorted(
+            {
+                float(value)
+                for value in (
+                    current_depth,
+                    current_depth - 50.0,
+                    current_depth - 100.0,
+                    current_depth - 150.0,
+                    min_depth,
+                )
+                if float(value) >= min_depth
+            },
+            reverse=True,
+        )
+
+    def _material_proxy(width: float, depth: float, bars: int, dia: int) -> float:
+        ast = float(bars) * math.pi * (float(dia) ** 2.0) / 4.0
+        return float(width) * float(depth) * 0.001 + ast * 0.05
+
+    current_proxy = _material_proxy(float(current_width), float(current_depth), row1_bars + row2_bars, row1_dia)
+    candidates: list[dict] = []
+    seen: set[tuple] = set()
+    for width in width_trials:
+        for depth in depth_trials:
+            for bars in bar_trials:
+                for dia in dia_trials:
+                    updates = {
+                        width_key: float(width),
+                        "D": float(depth),
+                        "bot_row_count": 1,
+                        "bot_row_1_bars": int(bars),
+                        "bot1_count": int(bars),
+                        "nb_bot": int(bars),
+                        "bot_entry": float(bars),
+                        "bot_row_1_dia": int(dia),
+                        "db_bot_1": int(dia),
+                        "bot_row_2_bars": 0,
+                        "bot2_count": 0,
+                        "bot_row_2_dia": int(min(row2_dia, dia)),
+                        "db_bot_2": int(min(row2_dia, dia)),
+                    }
+                    if width_key != "b":
+                        updates["b"] = float(width)
+                    if width_key != "bw":
+                        updates["bw"] = float(width)
+                    updates = {key: value for key, value in updates.items() if str(base.get(key)) != str(value)}
+                    if not updates or _updates_match_state(base, updates):
+                        continue
+                    key = tuple(sorted((str(k), repr(v)) for k, v in updates.items()))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    proxy = _material_proxy(float(width), float(depth), int(bars), int(dia))
+                    if proxy >= current_proxy - 1e-9:
+                        continue
+                    try:
+                        cand = _evaluate_auto_design_candidate(
+                            base,
+                            updates=updates,
+                            source="zero_bending_demand_minimum_cleanup_search",
+                            label=f"Zero bending cleanup - {int(width)}x{int(depth)} {int(bars)}N{int(dia)}",
+                            action_type="apply_resolved_candidate",
+                        )
+                    except Exception:
+                        cand = None
+                    if not isinstance(cand, dict):
+                        continue
+                    cand_overview = dict(cand.get("overview") or {})
+                    statuses_after = dict(cand_overview.get("statuses") or {})
+                    safe = bool(cand_overview.get("all_key_pass")) and not bool(cand_overview.get("any_fail"))
+                    if safe and _candidate_preview_statuses_have_explicit_fail(statuses_after):
+                        safe = False
+                    utils_after = dict(cand_overview.get("utils") or {})
+                    cand.update(
+                        {
+                            "candidate_id": f"zero_bending_cleanup_{len(candidates) + 1:03d}",
+                            "source_candidate_id": f"zero_bending_cleanup_{len(candidates) + 1:03d}",
+                            "title": f"Zero bending cleanup - {int(width)}x{int(depth)} {int(bars)}N{int(dia)}",
+                            "label": f"Zero bending cleanup - {int(width)}x{int(depth)} {int(bars)}N{int(dia)}",
+                            "updates": dict(updates),
+                            "proposed_updates": dict(updates),
+                            "family": "bending",
+                            "recommendation_family_tag": "bending",
+                            "subfamilies": ["geometry", "bottom_reinforcement"] if {"D", width_key, "b", "bw"} & set(updates) else ["bottom_reinforcement"],
+                            "action_type": "apply_resolved_candidate",
+                            "is_compliant": bool(safe),
+                            "preview_pass": bool(safe),
+                            "is_executable": bool(safe),
+                            "safe_executor_backed": bool(safe),
+                            "candidate_material_proxy": float(proxy),
+                            "candidate_post_util": _parse_util_value(cand_overview.get("worst_util") or cand_overview.get("governing_util") or utils_after.get("bending") or 0.0),
+                            "preview_util": _parse_util_value(cand_overview.get("worst_util") or cand_overview.get("governing_util") or utils_after.get("bending") or 0.0),
+                            "zero_bending_demand_cleanup": True,
+                        }
+                    )
+                    if not safe:
+                        cand["rejection_reason"] = "candidate_does_not_keep_all_required_checks_pass"
+                    candidates.append(cand)
+
+    safe_candidates = [cand for cand in candidates if bool(cand.get("safe_executor_backed"))]
+    if not safe_candidates:
+        if isinstance(debug_sink, dict):
+            debug_sink["zero_bending_demand_cleanup_search_ran"] = True
+            debug_sink["zero_bending_demand_cleanup_safe_count"] = 0
+            debug_sink["zero_bending_demand_cleanup_candidate_rows"] = candidates[:40]
+        return None
+
+    selected = min(
+        safe_candidates,
+        key=lambda cand: (
+            float(cand.get("candidate_material_proxy") or current_proxy),
+            len(dict(cand.get("updates") or {})),
+            str(cand.get("candidate_id") or ""),
+        ),
+    )
+    evidence = _build_candidate_search_evidence(
+        selected_candidate=selected,
+        all_candidates=candidates,
+        target_low=0.0,
+        target_high=1.0,
+        exhaustive=True,
+        search_scope="zero_bending_demand_minimum_cleanup_search",
+        selected_title="Bending cleanup - minimum compliant zero-moment design",
+    )
+    evidence.update(
+        {
+            "zero_bending_demand_cleanup": True,
+            "cleanup_search_ran": True,
+            "cleanup_search_exhaustive": True,
+            "local_cleanup_search_ran": True,
+            "local_cleanup_search_exhaustive": True,
+            "family": "bending",
+            "starting_bending_demand_kNm": float(max_bending_demand),
+            "starting_material_proxy": float(current_proxy),
+            "selected_material_proxy": float(selected.get("candidate_material_proxy") or 0.0),
+            "safe_candidate_count": len(safe_candidates),
+            "executable_candidate_count": len(safe_candidates),
+            "safe_executor_backed_candidates_count": len(safe_candidates),
+            "outside_target_band_allowed": True,
+            "outside_target_band_allowed_category": "zero_bending_demand_minimum_compliant_cleanup",
+            "outside_target_band_allowed_reason": (
+                "Bending demand is zero, so target utilisation is not meaningful. The selected "
+                "executor-backed action reduces to the smallest compliant practical state found."
+            ),
+        }
+    )
+    selected = {
+        **dict(selected),
+        "candidate_search_evidence": dict(evidence),
+        "canonical_winner_label": "Bending cleanup - minimum compliant zero-moment design",
+    }
+    item = _guidance_item_from_resolved_candidate(
+        selected,
+        state=base,
+        overview=dict(overview or {}),
+        title="Bending cleanup - minimum compliant zero-moment design",
+        reasoning=(
+            "Bending demand is zero, so target utilisation is not meaningful. This one-click "
+            "cleanup applies the smallest compliant practical beam/reinforcement state found."
+        ),
+        status="EFFICIENCY",
+        primary_action="Run one-click auto design",
+    )
+    if not isinstance(item, dict) or not item:
+        return None
+    item.update(
+        {
+            "candidate_search_evidence": dict(evidence),
+            "local_cleanup_candidate": True,
+            "source": "zero_bending_demand_minimum_cleanup_search",
+            "affected_family": "bending",
+            "family": "bending",
+            "guidance_intent": "efficiency_tightening",
+            "zero_bending_demand_cleanup": True,
+        }
+    )
+    payload = dict(item.get("action_payload") or {})
+    payload["candidate_search_evidence"] = dict(evidence)
+    payload["zero_bending_demand_cleanup"] = True
+    payload["source_candidate_id"] = selected.get("candidate_id")
+    payload["candidate_id"] = selected.get("candidate_id")
+    payload["resolved_candidate_family_tag"] = "bending"
+    item["action_payload"] = payload
+    resolved = dict(item.get("resolved_candidate") or {})
+    resolved["candidate_search_evidence"] = dict(evidence)
+    resolved["zero_bending_demand_cleanup"] = True
+    resolved["candidate_id"] = selected.get("candidate_id")
+    resolved["source_candidate_id"] = selected.get("candidate_id")
+    resolved["family"] = "bending"
+    resolved["recommendation_family_tag"] = "bending"
+    item["resolved_candidate"] = resolved
+    if isinstance(debug_sink, dict):
+        debug_sink["zero_bending_demand_cleanup_search_ran"] = True
+        debug_sink["zero_bending_demand_cleanup_safe_count"] = len(safe_candidates)
+        debug_sink["zero_bending_demand_cleanup_selected_updates"] = dict(selected.get("updates") or {})
+        debug_sink["candidate_search_evidence"] = dict(evidence)
+        debug_sink["local_cleanup_candidate_search_evidence"] = dict(evidence)
+    return item
 
 
 def _probe_equivalent_bending_cleanup_action_item(
@@ -27769,7 +30386,7 @@ def _bending_only_target_band_cleanup_item(
     debug_sink: dict | None = None,
     allow_terminalisation_fold: bool = True,
 ) -> dict | None:
-    """Find a one-click bottom-reinforcement reduction without touching shear state."""
+    """Find a one-click geometry/bottom-reinforcement reduction without touching shear state."""
     ov = overview if isinstance(overview, dict) else {}
     if not _overview_required_checks_acceptable(ov) or bool(ov.get("any_fail")):
         return None
@@ -27794,6 +30411,9 @@ def _bending_only_target_band_cleanup_item(
     row2_dia = int(round(_float_from_state(base, "bot_row_2_dia", _float_from_state(base, "db_bot_2", row1_dia))))
     if row1_bars + row2_bars <= 1:
         return None
+
+    width_key, _, current_width = _resolve_geometry_width_context(base)
+    current_depth = float(_float_from_state(base, "D", 0.0) or 0.0)
 
     common_dias = [10, 12, 16, 20, 24, 28, 32, 36, 40]
     dia_trials = [d for d in common_dias if d <= max(row1_dia, 10)]
@@ -27826,6 +30446,39 @@ def _bending_only_target_band_cleanup_item(
         if changed and not (set(changed) & _COMPOUND_SHEAR_UPDATE_KEYS):
             raw_updates.append(updates)
 
+    def _append_geometry_bottom_update(
+        next_width: float,
+        next_depth: float,
+        next_row1: int,
+        next_dia1: int,
+    ) -> None:
+        next_row1 = max(1, int(next_row1))
+        next_dia1 = int(next_dia1)
+        next_width = float(next_width)
+        next_depth = float(next_depth)
+        updates = {
+            width_key: next_width,
+            "D": next_depth,
+            "bot_row_count": 1,
+            "bot_row_1_bars": next_row1,
+            "bot_row_1_dia": next_dia1,
+            "bot1_count": next_row1,
+            "db_bot_1": next_dia1,
+            "nb_bot": next_row1,
+            "bot_entry": float(next_row1),
+            "bot_row_2_bars": 0,
+            "bot2_count": 0,
+            "bot_row_2_dia": next_dia1,
+            "db_bot_2": next_dia1,
+        }
+        if width_key != "b":
+            updates["b"] = next_width
+        if width_key != "bw":
+            updates["bw"] = next_width
+        changed = {k: v for k, v in updates.items() if str(base.get(k)) != str(v)}
+        if changed and not (set(changed) & _COMPOUND_SHEAR_UPDATE_KEYS):
+            raw_updates.append(updates)
+
     if row2_bars > 0:
         for bars2 in range(row2_bars - 1, -1, -1):
             _append_update(row1_bars, bars2, row1_dia, row2_dia)
@@ -27846,6 +30499,56 @@ def _bending_only_target_band_cleanup_item(
             _append_update(bars1, 0, dia, dia)
         for bars1 in range(row1_bars - 1, 0, -1):
             _append_update(bars1, 0, dia, dia)
+
+    if not _geometry_lock_enabled(base):
+        min_width = float(GUIDANCE_MIN_PRACTICAL_WIDTH_MM)
+        min_depth = float(GUIDANCE_MIN_PRACTICAL_DEPTH_MM)
+        width_trials = sorted(
+            {
+                float(value)
+                for value in (
+                    current_width - 50.0,
+                    current_width - 100.0,
+                    450.0,
+                    400.0,
+                    350.0,
+                    300.0,
+                    min_width,
+                )
+                if min_width <= float(value) < float(current_width) - 1e-9
+            },
+            reverse=True,
+        )
+        depth_trials = sorted(
+            {
+                float(value)
+                for value in (
+                    current_depth - 50.0,
+                    current_depth - 100.0,
+                    current_depth - 150.0,
+                    current_depth - 200.0,
+                    min_depth,
+                )
+                if min_depth <= float(value) < float(current_depth) - 1e-9
+            },
+            reverse=True,
+        )
+        practical_bottom_trials = {
+            (row1_bars, row1_dia),
+            (2, 12),
+            (3, 12),
+            (4, 12),
+            (5, 12),
+            (6, 12),
+            (2, 16),
+            (3, 16),
+            (4, 16),
+            (2, 20),
+        }
+        for trial_width in width_trials:
+            for trial_depth in depth_trials:
+                for trial_bars, trial_dia in sorted(practical_bottom_trials):
+                    _append_geometry_bottom_update(trial_width, trial_depth, trial_bars, trial_dia)
 
     seen: set[tuple] = set()
     update_trials: list[dict] = []
@@ -27887,7 +30590,11 @@ def _bending_only_target_band_cleanup_item(
         cand["label"] = "Bending cleanup - further reduction reaches target range"
         cand["family"] = "bending"
         cand["recommendation_family_tag"] = "bending"
-        cand["subfamilies"] = ["bottom_reinforcement"]
+        cand["subfamilies"] = (
+            ["geometry", "bottom_reinforcement"]
+            if set(dict(updates or {})) & {"D", width_key, "b", "bw"}
+            else ["bottom_reinforcement"]
+        )
         cand["local_cleanup_candidate"] = True
         cand["allow_in_target_primary_action"] = True
         cand["candidate_post_util"] = float(preview_util)
@@ -28012,7 +30719,7 @@ def _bending_only_target_band_cleanup_item(
                 payload["source_candidate_id"] = selected["candidate_id"]
                 payload["candidate_id"] = selected["candidate_id"]
                 payload["resolved_candidate_family_tag"] = "bending"
-                payload["resolved_candidate_subfamilies"] = ["bottom_reinforcement"]
+                payload["resolved_candidate_subfamilies"] = list(selected.get("subfamilies") or ["bottom_reinforcement"])
                 item["action_payload"] = payload
                 resolved = dict(item.get("resolved_candidate") or {})
                 resolved["candidate_search_evidence"] = dict(evidence)
@@ -28022,7 +30729,7 @@ def _bending_only_target_band_cleanup_item(
                 resolved["source_candidate_id"] = selected["candidate_id"]
                 resolved["family"] = "bending"
                 resolved["recommendation_family_tag"] = "bending"
-                resolved["subfamilies"] = ["bottom_reinforcement"]
+                resolved["subfamilies"] = list(selected.get("subfamilies") or ["bottom_reinforcement"])
                 item["resolved_candidate"] = resolved
                 if isinstance(debug_sink, dict):
                     debug_sink["bending_only_cleanup_search_used"] = True
@@ -28652,6 +31359,11 @@ def _post_click_low_bending_resolution_item(
             "the bending reserve is tied to those serviceability, detailing and shear limits."
         )
     )
+    if _geometry_lock_enabled(state):
+        reason = (
+            "Geometry is locked, so optimisation cannot change beam width or depth. "
+            + str(reason)
+        )
     blocker = {
         "family": "bending",
         "source": "post_click_bending_cleanup_exhaustive_search",
@@ -30074,8 +32786,8 @@ def _direct_target_band_guidance_item(
     else:
         width_values = [base_width - step for step in (0.0, 25.0, 50.0, 75.0, 100.0, 125.0, 150.0, 175.0, 200.0)]
         depth_values = [base_depth - step for step in (0.0, 25.0, 50.0, 75.0, 100.0, 125.0, 150.0, 175.0, 200.0)]
-    width_values = sorted({float(v) for v in width_values if float(v) >= 250.0})
-    depth_values = sorted({float(v) for v in depth_values if float(v) >= 300.0})
+    width_values = sorted({float(v) for v in width_values if float(v) >= GUIDANCE_MIN_PRACTICAL_WIDTH_MM})
+    depth_values = sorted({float(v) for v in depth_values if float(v) >= GUIDANCE_MIN_PRACTICAL_DEPTH_MM})
     if strengthening:
         width_values = sorted(width_values)
         depth_values = sorted(depth_values)
@@ -30232,13 +32944,31 @@ def _direct_target_band_guidance_item(
             cand["candidate_reaches_target_band"] = bool(float(t_lo) <= preview_worst <= float(t_hi))
         cand["updates"] = dict(u)
         cand["action_type"] = "apply_resolved_candidate"
-        trial_state_for_final_audit = dict(base)
-        trial_state_for_final_audit.update(u)
-        final_acceptance_audit = _post_click_accepted_green_audit(
-            dict(cand.get("overview") or {}),
-            blocker_source=dict(cand),
-            state=trial_state_for_final_audit,
-        )
+        should_run_final_audit = True
+        if strengthening:
+            should_run_final_audit = bool(
+                cand.get("is_compliant")
+                and bool((cand.get("overview") or {}).get("all_key_pass"))
+                and preview_worst is not None
+                and math.isfinite(float(preview_worst))
+                and (
+                    float(t_lo) <= float(preview_worst) <= float(t_hi)
+                    or float(FINAL_ACCEPTED_MIN_FAMILY_UTIL) <= float(preview_worst) <= 1.0
+                )
+            )
+        if should_run_final_audit:
+            trial_state_for_final_audit = dict(base)
+            trial_state_for_final_audit.update(u)
+            final_acceptance_audit = _post_click_accepted_green_audit(
+                dict(cand.get("overview") or {}),
+                blocker_source=dict(cand),
+                state=trial_state_for_final_audit,
+            )
+        else:
+            final_acceptance_audit = {
+                "post_click_accepted_green_valid": False,
+                "post_click_accepted_green_audit_deferred": True,
+            }
         cand["final_acceptance_audit"] = dict(final_acceptance_audit)
         cand["final_accepted_green_valid"] = bool(
             final_acceptance_audit.get("post_click_accepted_green_valid")
@@ -30287,6 +33017,7 @@ def _direct_target_band_guidance_item(
         exhaustive: bool,
         search_scope: str,
         finish_reason: str,
+        active_repair_outside_target: bool = False,
     ) -> dict | None:
         if not target_candidates:
             return None
@@ -30355,11 +33086,37 @@ def _direct_target_band_guidance_item(
             search_scope=search_scope,
             selected_title=str(selected.get("label") or ""),
         )
+        if bool(active_repair_outside_target):
+            evidence = {
+                **dict(evidence),
+                "strength_repair_selected_outside_target_band": True,
+                "strength_repair_target_band_secondary": True,
+                "outside_target_band_allowed": True,
+                "outside_target_band_allowed_reason": (
+                    "Active bending/shear checks are failing; this executor-backed repair "
+                    "makes all required checks pass even though efficiency cleanup remains a "
+                    "secondary target-band step."
+                ),
+                "outside_target_band_allowed_category": "active_strength_repair_passes_required_checks",
+            }
         selected["candidate_search_evidence"] = dict(evidence)
         selected["candidate_id"] = evidence.get("selected_candidate_id")
         selected["source_candidate_id"] = evidence.get("selected_candidate_id")
         selected["canonical_winner_label"] = str(selected.get("label") or "Direct target-band candidate")
         selected["title_locked_from_final_winner"] = True
+        if strengthening:
+            repair_decision = _repair_select_repair_decision(
+                selected_candidate=selected,
+                status="action",
+                reason=evidence.get("outside_target_band_allowed_reason") or "active_strength_repair_candidate_selected",
+                evidence=evidence,
+                cta_metadata={
+                    "enabled": True,
+                    "actionable": True,
+                    "action_type": "apply_resolved_candidate",
+                },
+            )
+            selected = _repair_selected_candidate_from_repair_decision(repair_decision) or selected
         item = _guidance_item_from_resolved_candidate(
             selected,
             state=base,
@@ -30704,8 +33461,61 @@ def _direct_target_band_guidance_item(
                 and _candidate_clears_active_strength_family_floor(c)
             ]
 
+        def _smart_safe_repair_candidates_since(start_index: int) -> list[dict]:
+            return [
+                c for c in candidates[start_index:]
+                if bool(c.get("is_compliant"))
+                and bool((c.get("overview") or {}).get("all_key_pass"))
+                and bool(dict(c.get("updates") or {}))
+            ]
+
+        def _select_smart_safe_repair_item(
+            repair_candidates: list[dict],
+            *,
+            finish_reason: str,
+        ) -> dict | None:
+            return _select_direct_target_item(
+                repair_candidates,
+                exhaustive=False,
+                search_scope="design_guide_smart_active_failure_search",
+                finish_reason=finish_reason,
+                active_repair_outside_target=True,
+            )
+
+        def _evaluate_rescue_repair_seeds(family: str, label: str) -> None:
+            if _geometry_lock_enabled(base):
+                return
+            requested_tier = _rescue_mode_action_tier(base, family)
+            for tier in _rescue_mode_seed_order(requested_tier):
+                seed_spec = dict(((RESCUE_SEED_LIBRARY.get(family) or {}).get(tier)) or {})
+                seed_updates = dict(seed_spec.get("updates") or {})
+                if not seed_updates:
+                    continue
+                _evaluate_updates(
+                    seed_updates,
+                    f"{label} ({seed_spec.get('key') or f'{family}_{tier}'})",
+                )
+
         if not shear_also_failing:
             bending_preflight_start = len(candidates)
+            _evaluate_rescue_repair_seeds(
+                "bending",
+                "Smart bending rescue one-click repair",
+            )
+            target_candidates = _smart_target_candidates_since(bending_preflight_start)
+            if target_candidates:
+                return _select_direct_target_item(
+                    target_candidates,
+                    exhaustive=False,
+                    search_scope="design_guide_smart_active_failure_search",
+                    finish_reason="smart_active_failure_bending_rescue_selected_item",
+                )
+            safe_repair_candidates = _smart_safe_repair_candidates_since(bending_preflight_start)
+            if safe_repair_candidates:
+                return _select_smart_safe_repair_item(
+                    safe_repair_candidates,
+                    finish_reason="smart_active_failure_bending_safe_repair_selected_item",
+                )
             preflight_depths = sorted(
                 {
                     base_depth,
@@ -30784,9 +33594,33 @@ def _direct_target_band_guidance_item(
                         search_scope="design_guide_smart_active_failure_search",
                         finish_reason="smart_active_failure_bending_geometry_reo_selected_item",
                     )
+                safe_repair_candidates = _smart_safe_repair_candidates_since(bending_preflight_start)
+                if safe_repair_candidates:
+                    return _select_smart_safe_repair_item(
+                        safe_repair_candidates,
+                        finish_reason="smart_active_failure_bending_geometry_reo_safe_repair_selected_item",
+                    )
 
         if shear_also_failing:
             combined_preflight_start = len(candidates)
+            _evaluate_rescue_repair_seeds(
+                "combined",
+                "Smart combined rescue one-click repair",
+            )
+            target_candidates = _smart_target_candidates_since(combined_preflight_start)
+            if target_candidates:
+                return _select_direct_target_item(
+                    target_candidates,
+                    exhaustive=False,
+                    search_scope="design_guide_smart_active_failure_search",
+                    finish_reason="smart_combined_active_failure_rescue_selected_item",
+                )
+            safe_repair_candidates = _smart_safe_repair_candidates_since(combined_preflight_start)
+            if safe_repair_candidates:
+                return _select_smart_safe_repair_item(
+                    safe_repair_candidates,
+                    finish_reason="smart_combined_active_failure_safe_repair_selected_item",
+                )
             preflight_widths = [base_width, 350.0, 400.0, 450.0, 500.0, 600.0, 700.0]
             preflight_depths = [650.0, 600.0, 700.0, 550.0, 750.0, 800.0, 900.0]
             preflight_specs = [
@@ -30858,6 +33692,12 @@ def _direct_target_band_guidance_item(
                                 search_scope="design_guide_smart_active_failure_search",
                                 finish_reason="smart_combined_active_failure_selected_item",
                             )
+                        safe_repair_candidates = _smart_safe_repair_candidates_since(combined_preflight_start)
+                        if safe_repair_candidates:
+                            return _select_smart_safe_repair_item(
+                                safe_repair_candidates,
+                                finish_reason="smart_combined_active_failure_safe_repair_selected_item",
+                            )
 
         for depth in depth_steps:
             if bool(_diag.get("abort")):
@@ -30917,6 +33757,12 @@ def _direct_target_band_guidance_item(
                         exhaustive=False,
                         search_scope="design_guide_smart_active_failure_search",
                         finish_reason="smart_active_failure_selected_item",
+                    )
+                safe_repair_candidates = _smart_safe_repair_candidates_since(preview_start_count)
+                if safe_repair_candidates:
+                    return _select_smart_safe_repair_item(
+                        safe_repair_candidates,
+                        finish_reason="smart_active_failure_safe_repair_selected_item",
                     )
         if isinstance(debug_sink, dict):
             debug_sink["smart_active_failure_search_used"] = True
@@ -31240,7 +34086,7 @@ def _direct_target_band_guidance_item(
                     geometry_updates.append((f"reduce depth {depth_step:g}", {"D": float(next_depth)}))
             for width_step in (25.0, 50.0, 75.0):
                 next_width = base_width - width_step
-                if next_width >= 250.0:
+                if next_width >= GUIDANCE_MIN_PRACTICAL_WIDTH_MM:
                     updates = {width_key: float(next_width)}
                     if width_key != "b":
                         updates["b"] = float(next_width)
@@ -31698,6 +34544,19 @@ def _direct_target_band_guidance_item(
     selected["source_candidate_id"] = evidence.get("selected_candidate_id")
     selected["canonical_winner_label"] = str(selected.get("label") or "Direct target-band candidate")
     selected["title_locked_from_final_winner"] = True
+    if strengthening:
+        repair_decision = _repair_select_repair_decision(
+            selected_candidate=selected,
+            status="action",
+            reason=evidence.get("outside_target_band_allowed_reason") or "active_strength_repair_candidate_selected",
+            evidence=evidence,
+            cta_metadata={
+                "enabled": True,
+                "actionable": True,
+                "action_type": "apply_resolved_candidate",
+            },
+        )
+        selected = _repair_selected_candidate_from_repair_decision(repair_decision) or selected
     item = _guidance_item_from_resolved_candidate(
         selected,
         state=base,
@@ -31912,10 +34771,10 @@ def _in_target_shear_congestion_reshape_guidance_item(
         candidates.append(cand)
 
     for width in width_values:
-        if width < 250.0:
+        if width < GUIDANCE_MIN_PRACTICAL_WIDTH_MM:
             continue
         for depth in depth_values:
-            if depth < 350.0 or depth >= base_depth - 1e-9:
+            if depth < GUIDANCE_MIN_PRACTICAL_DEPTH_MM or depth >= base_depth - 1e-9:
                 continue
             geom_updates: dict[str, object] = {width_key: float(width), "D": float(depth)}
             if width_key != "b":
@@ -36477,6 +39336,14 @@ def _make_rescue_seed_updates(
     lig_legs: int,
     s_lig: float,
 ) -> dict:
+    bottom_updates = _bottom_arrangement_to_shared_updates(
+        {
+            "bot1_count": int(bottom_count),
+            "db_bot_1": int(bottom_dia),
+            "bot2_count": 0,
+            "db_bot_2": int(bottom_dia),
+        }
+    )
     return {
         "b": float(b),
         "D": float(D),
@@ -36485,13 +39352,17 @@ def _make_rescue_seed_updates(
         "db_top_1": int(top_dia),
         "top2_layout_mode": "Count",
         "top2_count": 0,
-        "db_top_2": 0,
-        "bot1_layout_mode": "Count",
-        "bot1_count": int(bottom_count),
-        "db_bot_1": int(bottom_dia),
-        "bot2_layout_mode": "Count",
-        "bot2_count": 0,
-        "db_bot_2": 0,
+        "db_top_2": int(top_dia),
+        "top_row_count": 1,
+        "top_row_1_mode": "Count",
+        "top_row_1_bars": int(top_count),
+        "top_row_1_spacing": 0.0,
+        "top_row_1_dia": int(top_dia),
+        "top_row_2_mode": "Count",
+        "top_row_2_bars": 0,
+        "top_row_2_spacing": 0.0,
+        "top_row_2_dia": int(top_dia),
+        **bottom_updates,
         "lig_d": int(lig_d),
         "lig_legs": int(lig_legs),
         "s_lig": float(s_lig),
@@ -38343,9 +41214,15 @@ def _generate_geometry_candidates(
     depth_max = current_depth + (150.0 if goal == "shallower_beam" else 200.0)
     width_min = current_width - 100.0
     width_max = current_width + 150.0
-    width_start = max(250, int(math.floor(max(250.0, width_min) / 50.0) * 50))
+    width_start = max(
+        int(GUIDANCE_MIN_PRACTICAL_WIDTH_MM),
+        int(math.floor(max(GUIDANCE_MIN_PRACTICAL_WIDTH_MM, width_min) / 50.0) * 50),
+    )
     width_stop = int(math.ceil(width_max / 50.0) * 50) + 50
-    depth_start = max(350, int(math.floor(max(350.0, depth_min) / 50.0) * 50))
+    depth_start = max(
+        int(GUIDANCE_MIN_PRACTICAL_DEPTH_MM),
+        int(math.floor(max(GUIDANCE_MIN_PRACTICAL_DEPTH_MM, depth_min) / 50.0) * 50),
+    )
     depth_stop = int(math.ceil(depth_max / 50.0) * 50) + 50
 
     seed_candidate = _evaluate_auto_design_candidate(state, source="seed")
@@ -38680,8 +41557,8 @@ def _geometry_tightening_trial_updates(state: dict) -> list[dict]:
     unique_updates: dict[tuple[tuple[str, str], ...], dict] = {}
 
     def _add_trial(width: float, depth: float) -> None:
-        rounded_width = float(int(round(max(250.0, width) / 10.0) * 10))
-        rounded_depth = float(int(round(max(350.0, depth) / 10.0) * 10))
+        rounded_width = float(int(round(max(GUIDANCE_MIN_PRACTICAL_WIDTH_MM, width) / 10.0) * 10))
+        rounded_depth = float(int(round(max(GUIDANCE_MIN_PRACTICAL_DEPTH_MM, depth) / 10.0) * 10))
         updates = {width_key: rounded_width, "D": rounded_depth}
         if width_key != "b":
             updates["b"] = rounded_width
@@ -39724,6 +42601,19 @@ def _render_guidance_secondary_items(
             _pre_render_bound_contract = dict(
                 (_pre_render_bound_item or {}).get("button_contract") or {}
             )
+            _pre_render_safe_combined_action = _visible_safe_combined_cleanup_action_from_evidence(
+                _pre_render_bound_item,
+                current_overview,
+                guidance_disp_state,
+                debug_sink=_pre_render_debug_sink,
+            )
+            if isinstance(_pre_render_safe_combined_action, dict):
+                item = dict(_pre_render_safe_combined_action)
+                guidance_items[idx] = item
+                _pre_render_bound_item = dict(item)
+                _pre_render_bound_contract = dict(item.get("button_contract") or {})
+                button_contract = dict(_pre_render_bound_contract)
+                _pre_render_debug_sink["pre_render_safe_combined_cleanup_promoted"] = True
             _pre_render_bound_updates_for_combined = dict(
                 _pre_render_bound_contract.get("updates")
                 or (_pre_render_bound_item or {}).get("updates")
@@ -41659,6 +44549,13 @@ def _render_guidance_secondary_items(
             or _late_search_for_safe_cleanup.get("closest_safe_candidate_updates")
             or {}
         )
+        _late_search_exact_blockers = dict(
+            _late_search_for_safe_cleanup.get("post_click_exact_blockers_by_family")
+            or _late_search_for_safe_cleanup.get("exact_blockers_by_family")
+            or _late_search_for_safe_cleanup.get("post_click_cleanup_evidence_by_family")
+            or _late_search_for_safe_cleanup.get("cleanup_evidence_by_family")
+            or {}
+        )
         _late_safe_cleanup_update_keys = set(_late_safe_cleanup_updates)
         _late_safe_cleanup_family = ""
         if _late_safe_cleanup_update_keys & _COMPOUND_SHEAR_UPDATE_KEYS:
@@ -41680,6 +44577,8 @@ def _render_guidance_secondary_items(
             not _view_model_active_strength_fail
             and not _late_post_click_route
             and not _late_same_flow_apply_route
+            and not _view_model_exact_blockers
+            and not _late_search_exact_blockers
             and _late_safe_cleanup_updates
             and _late_safe_cleanup_family in {"bending", "shear"}
             and int(
@@ -42108,13 +45007,24 @@ def _render_guidance_secondary_items(
                 _render_exact_for_terminal_shell,
             )
             guidance_items[idx] = item
-            card_class = "fast-guidance-item efficiency"
-            badge_class = "fast-guidance-badge efficiency"
+            _terminal_cleanup_accepted = (
+                str(item.get("terminal_cleanup_state") or "").strip() == "optimal"
+            )
+            card_class = (
+                "fast-guidance-item pass guidance-success"
+                if _terminal_cleanup_accepted
+                else "fast-guidance-item efficiency"
+            )
+            badge_class = (
+                "fast-guidance-badge pass guidance-success"
+                if _terminal_cleanup_accepted
+                else "fast-guidance-badge efficiency"
+            )
             display_title = str(
                 item.get("title_main") or item.get("title") or "Further cleanup blocked"
             ).strip()
-            item_bucket = "efficiency"
-            use_success_style = False
+            item_bucket = "pass" if _terminal_cleanup_accepted else "efficiency"
+            use_success_style = bool(_terminal_cleanup_accepted)
             _view_model_actionable = False
             compact_primary_actionable = False
             _dashboard_vm = build_design_guide_card_view_model(
@@ -42122,8 +45032,8 @@ def _render_guidance_secondary_items(
                 current_overview if isinstance(current_overview, dict) else {},
                 _render_debug_payload_for_card,
                 state=guidance_disp_state,
-                item_bucket="efficiency",
-                use_success_style=False,
+                item_bucket=item_bucket,
+                use_success_style=use_success_style,
                 display_title=display_title,
                 display_util=display_util,
                 actionable=False,
@@ -43008,9 +45918,43 @@ def _render_guidance_secondary_items(
                         )
                     except Exception:
                         _safe_accepted_shear_cleanup_action_visible = False
+                    try:
+                        _safe_combined_cleanup_action_visible = bool(
+                            _design_guide_button_contract_enabled(button_contract)
+                            and str(button_contract.get("action_type") or item.get("action_type") or "").strip()
+                            == "apply_resolved_candidate"
+                            and (
+                                str(button_contract.get("family") or item.get("family") or item.get("check_key") or "").strip().lower()
+                                == "combined"
+                            )
+                            and (
+                                button_contract.get("candidate_id")
+                                == "combined_best_safe_shear_plus_bending_cleanup"
+                                or button_contract.get("source_candidate_id")
+                                == "combined_best_safe_shear_plus_bending_cleanup"
+                                or item.get("candidate_id")
+                                == "combined_best_safe_shear_plus_bending_cleanup"
+                                or item.get("source_candidate_id")
+                                == "combined_best_safe_shear_plus_bending_cleanup"
+                                or str(
+                                    dict(item.get("candidate_search_evidence") or {}).get("search_scope")
+                                    or ""
+                                ).strip()
+                                == "combined_best_safe_shear_plus_bending_cleanup"
+                            )
+                            and contract_updates
+                            and bool(set(contract_updates) & _COMPOUND_SHEAR_UPDATE_KEYS)
+                            and bool(set(contract_updates) & _COMPOUND_BOTTOM_UPDATE_KEYS)
+                            and bool(button_contract.get("preview_pass"))
+                            and not button_contract.get("blocking_reason")
+                            and not _updates_match_state(guidance_disp_state or {}, contract_updates)
+                        )
+                    except Exception:
+                        _safe_combined_cleanup_action_visible = False
                     if (
                         not zero_demand_link_removal_allowed
                         and not _safe_accepted_shear_cleanup_action_visible
+                        and not _safe_combined_cleanup_action_visible
                         and not _guidance_item_best_safe_partial_cleanup(item)
                         and not _guidance_item_safe_incremental_cleanup_below_threshold(item)
                         and _overview_required_checks_acceptable(current_overview if isinstance(current_overview, dict) else {})
@@ -43186,6 +46130,7 @@ def _render_guidance_secondary_items(
                 _outside_family in {"bending", "shear", "combined"}
                 and _outside_expected_util is not None
                 and float(_outside_expected_util) < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL)
+                and not bool(locals().get("_safe_combined_cleanup_action_visible", False))
             ):
                 _outside_evidence = dict(
                     item.get("candidate_search_evidence")
@@ -43665,6 +46610,87 @@ def _render_guidance_secondary_items(
             guidance_items[idx] = item
             button_contract = dict(item.get("button_contract") or {})
             _button_contract_enabled = _design_guide_button_contract_enabled(button_contract)
+            _binding_safe_combined_cleanup_action_visible = False
+            try:
+                (
+                    _binding_contract_items,
+                    _binding_contract_debug,
+                    _binding_contract_render_plan,
+                    _binding_contract_presentation,
+                    _binding_contract_enforced,
+                ) = _apply_design_brain_publication_contract_for_render(
+                    guidance_items=[dict(item)],
+                    guidance_debug=dict(_binding_debug_sink or {}),
+                    render_plan={"render_primary_only": True},
+                    presentation=dict(primary_card_presentation or {}),
+                    state=guidance_disp_state,
+                    reason="design_brain_publication_contract_final_binding",
+                )
+            except Exception:
+                _binding_contract_items = []
+                _binding_contract_debug = {}
+                _binding_contract_presentation = {}
+                _binding_contract_enforced = False
+            if (
+                _binding_contract_enforced
+                and _binding_contract_items
+                and isinstance(_binding_contract_items[0], dict)
+            ):
+                item = normalise_final_visible_design_guide_item(dict(_binding_contract_items[0]))
+                item = _attach_safe_combined_cleanup_preview_payload(
+                    item,
+                    state=guidance_disp_state,
+                    debug_sink=_binding_debug_sink,
+                )
+                guidance_items[idx] = item
+                button_contract = dict(item.get("button_contract") or {})
+                _button_contract_enabled = _design_guide_button_contract_enabled(button_contract)
+                primary_card_presentation = dict(_binding_contract_presentation or primary_card_presentation or {})
+                _rendered_card_shell_blocker = False
+                compact_primary_actionable = bool(
+                    item.get("action_type") and _button_contract_enabled
+                )
+                display_title = str(item.get("title_main") or item.get("title") or display_title or "").strip()
+                item_bucket = str(
+                    primary_card_presentation.get("css_bucket")
+                    or item.get("bucket")
+                    or item_bucket
+                    or "efficiency"
+                )
+                card_class = f"fast-guidance-item {item_bucket}"
+                badge_class = f"fast-guidance-badge {item_bucket}"
+                anchor_class = (
+                    "fast-guidance-action-anchor "
+                    f"fast-guidance-action-anchor--{item_bucket} "
+                    "fast-guidance-action-anchor--primary"
+                )
+                _binding_debug_sink.update(
+                    {
+                        **dict(_binding_contract_debug or {}),
+                        "final_binding_design_brain_publication_contract_restamped": True,
+                        "primary_card_title": item.get("title_main") or item.get("title"),
+                        "primary_guidance_intent": item.get("guidance_intent"),
+                        "button_contract": dict(button_contract),
+                        "primary_button_contract": dict(button_contract),
+                        "button_contract_enabled": bool(_button_contract_enabled),
+                        "button_contract_updates": dict(button_contract.get("updates") or {}),
+                    }
+                )
+                _binding_safe_combined_cleanup_action_visible = bool(
+                    _button_contract_enabled
+                    and str(button_contract.get("action_type") or item.get("action_type") or "").strip()
+                    == "apply_resolved_candidate"
+                    and (
+                        button_contract.get("candidate_id")
+                        == "combined_best_safe_shear_plus_bending_cleanup"
+                        or button_contract.get("source_candidate_id")
+                        == "combined_best_safe_shear_plus_bending_cleanup"
+                        or item.get("candidate_id")
+                        == "combined_best_safe_shear_plus_bending_cleanup"
+                        or item.get("source_candidate_id")
+                        == "combined_best_safe_shear_plus_bending_cleanup"
+                    )
+                )
             _post_bind_blocker_title = " ".join(
                 str(part or "")
                 for part in (
@@ -43713,6 +46739,7 @@ def _render_guidance_secondary_items(
             )
             if (
                 _button_contract_enabled
+                and not _binding_safe_combined_cleanup_action_visible
                 and (
                     _design_guide_text_indicates_blocker(_post_bind_blocker_title)
                     or (_rendered_card_shell_blocker and _post_bind_no_second_terminal)
@@ -43784,6 +46811,7 @@ def _render_guidance_secondary_items(
         )
         if (
             is_primary_guidance_card
+            and not bool(locals().get("_binding_safe_combined_cleanup_action_visible", False))
             and (
                 _rendered_card_shell_blocker
                 or _design_guide_item_is_visible_blocker(item)
@@ -43867,6 +46895,7 @@ def _render_guidance_secondary_items(
         ).strip()
         if (
             is_primary_guidance_card
+            and not bool(locals().get("_binding_safe_combined_cleanup_action_visible", False))
             and (
                 _rendered_card_shell_blocker
                 or _design_guide_item_is_visible_blocker(item)
@@ -43945,6 +46974,16 @@ def _render_guidance_secondary_items(
                 or str(button_contract.get("action_type") or "").strip()
             )
         )
+        if bool(locals().get("_binding_safe_combined_cleanup_action_visible", False)):
+            item = _attach_safe_combined_cleanup_preview_payload(
+                item,
+                state=guidance_disp_state,
+                debug_sink=_render_debug_payload_for_card
+                if isinstance(_render_debug_payload_for_card, dict)
+                else None,
+            )
+            guidance_items[idx] = item
+            button_contract = dict(item.get("button_contract") or button_contract or {})
         _final_dashboard_vm = build_design_guide_card_view_model(
             item,
             current_overview if isinstance(current_overview, dict) else {},
@@ -43956,12 +46995,579 @@ def _render_guidance_secondary_items(
             display_util=_final_card_display_util,
             actionable=_final_card_actionable,
         )
+        _final_view_button_contract = dict(item.get("button_contract") or button_contract or {})
+        if (
+            bool(locals().get("_binding_safe_combined_cleanup_action_visible", False))
+            and _design_guide_button_contract_enabled(button_contract)
+        ):
+            _safe_combined_payload = dict(item.get("action_payload") or {})
+            _safe_combined_payload.update(
+                {
+                    "updates": dict(button_contract.get("updates") or {}),
+                    "resolved_candidate_updates": dict(button_contract.get("updates") or {}),
+                    "resolved_candidate_action_type": "apply_resolved_candidate",
+                    "resolved_candidate_family_tag": "combined",
+                    "candidate_id": "combined_best_safe_shear_plus_bending_cleanup",
+                    "source_candidate_id": "combined_best_safe_shear_plus_bending_cleanup",
+                    "candidate_search_evidence": dict(item.get("candidate_search_evidence") or {}),
+                }
+            )
+            item["action_payload"] = dict(_safe_combined_payload)
+            item["action_type"] = "apply_resolved_candidate"
+            item["primary_card_actionable"] = True
+            item["button_contract"] = dict(button_contract)
+            item["updates"] = dict(button_contract.get("updates") or {})
+            item["selected_action_updates"] = dict(button_contract.get("updates") or {})
+            _final_view_button_contract = dict(button_contract)
+            _final_dashboard_details = dict(_final_dashboard_vm.get("details") or {})
+            _final_dashboard_details.update(
+                {
+                    "title": item.get("title_main") or item.get("title"),
+                    "button_contract": dict(button_contract),
+                    "action_payload": dict(_safe_combined_payload),
+                    "exact_blockers_by_family": {},
+                    "blocker_attempts_by_family": {},
+                    "candidate_search_evidence": dict(item.get("candidate_search_evidence") or {}),
+                }
+            )
+            if dict(item.get("family_status_preview") or {}):
+                _final_dashboard_details["family_status_current"] = dict(
+                    item.get("family_status_current") or {}
+                )
+                _final_dashboard_details["family_status_preview"] = dict(
+                    item.get("family_status_preview") or {}
+                )
+            _final_dashboard_vm.update(
+                {
+                    "status": "action",
+                    "tone": "action",
+                    "pill": "ACTION",
+                    "title": item.get("title_main") or item.get("title"),
+                    "summary_line": "One-click optimisation is ready.",
+                    "current": _design_guide_dashboard_current_rows(item),
+                    "preview": dict(item.get("family_status_preview") or {}),
+                    "details": dict(_final_dashboard_details),
+                    "cta": {
+                        "enabled": True,
+                        "label": "Run one-click auto design",
+                        "payload_id": "combined_best_safe_shear_plus_bending_cleanup",
+                    },
+                }
+            )
+            anchor_class = (
+                "fast-guidance-action-anchor "
+                f"fast-guidance-action-anchor--{item_bucket} "
+                "fast-guidance-action-anchor--primary"
+            )
+        _final_view_cta_enabled = bool(dict(_final_dashboard_vm.get("cta") or {}).get("enabled"))
+        if not (
+            _final_view_cta_enabled
+            and _design_guide_button_contract_enabled(_final_view_button_contract)
+        ):
+            _final_disabled_contract = {
+                **dict(_final_view_button_contract or {}),
+                "enabled": False,
+                "actionable": False,
+                "action_type": None,
+                "updates": {},
+                "preview_pass": False,
+                "blocking_reason": str(
+                    (_final_view_button_contract or {}).get("blocking_reason")
+                    or "terminal_or_non_action_card_has_no_same_flow_action"
+                ),
+            }
+            item["button_contract"] = dict(_final_disabled_contract)
+            item["action_type"] = None
+            item["action_payload"] = {}
+            item["resolved_candidate"] = {}
+            item["updates"] = {}
+            item["selected_action_updates"] = {}
+            button_contract = dict(_final_disabled_contract)
+            _final_view_button_contract = dict(_final_disabled_contract)
+            _button_contract_enabled = False
+            _pres_show_apply = False
+            _effective_render_action_type = ""
+            st.session_state["design_guide_primary_button_contract"] = dict(_final_disabled_contract)
+            st.session_state["design_guide_primary_button_contract_enabled"] = False
+            st.session_state.pop(DESIGN_GUIDE_PRIMARY_APPLY_PAYLOAD_KEY, None)
+            if is_primary_guidance_card:
+                _disabled_debug_update = {
+                    "selected_action_type": None,
+                    "selected_action_updates": {},
+                    "button_contract": dict(_final_disabled_contract),
+                    "primary_button_contract": dict(_final_disabled_contract),
+                    "displayed_primary_button_contract": dict(_final_disabled_contract),
+                    "button_contract_enabled": False,
+                    "button_contract_updates": {},
+                    "button_contract_preview_pass": False,
+                    "button_contract_blocking_reason": _final_disabled_contract.get("blocking_reason"),
+                    "design_guide_primary_apply_payload": {},
+                }
+                if isinstance(_render_debug_payload_for_card, dict):
+                    _render_debug_payload_for_card.update(_disabled_debug_update)
+                _session_debug_for_disabled_card = st.session_state.get(DESIGN_GUIDE_DEBUG_BUNDLE_KEY)
+                if isinstance(_session_debug_for_disabled_card, dict):
+                    _session_debug_for_disabled_card.update(_disabled_debug_update)
+                _final_disabled_family = str(
+                    _final_disabled_contract.get("family")
+                    or item.get("selected_action_family")
+                    or item.get("family")
+                    or item.get("check_key")
+                    or ""
+                ).strip().lower()
+                _final_disabled_title = " ".join(
+                    str(part or "").strip().lower()
+                    for part in (
+                        _final_card_display_title,
+                        item.get("title_main"),
+                        item.get("title"),
+                    )
+                    if str(part or "").strip()
+                )
+                _final_disabled_blocker_source = dict(
+                    item.get("blocker_attempts_by_family")
+                    or item.get("exact_blockers_by_family")
+                    or item.get("post_click_exact_blockers_by_family")
+                    or {}
+                )
+                _final_disabled_has_combined_strength_blockers = all(
+                    family in _final_disabled_blocker_source
+                    for family in ("bending", "shear")
+                )
+                if (
+                    _final_disabled_has_combined_strength_blockers
+                    or "bending and shear" in _final_disabled_title
+                    or str(item.get("family") or item.get("check_key") or "").strip().lower()
+                    == "combined"
+                ):
+                    _combined_disabled_label = _design_guide_dashboard_governing_label(
+                        {
+                            **dict(item),
+                            "family": "combined",
+                            "check_key": "combined",
+                            "selected_action_family": "combined",
+                        },
+                        item.get("displayed_util")
+                        or _final_card_display_util
+                        or dict(_final_disabled_blocker_source.get("bending") or {}).get("current_util")
+                        or dict(_final_disabled_blocker_source.get("shear") or {}).get("current_util"),
+                        _final_card_display_title,
+                    )
+                    if _combined_disabled_label:
+                        _final_dashboard_vm["governing_label"] = _combined_disabled_label
+                elif _final_disabled_family in {"bending", "shear"}:
+                    _final_disabled_current_util = _design_guide_family_summary_util(
+                        current_overview if isinstance(current_overview, dict) else {},
+                        _final_disabled_family,
+                    )
+                    if _final_disabled_current_util is not None:
+                        _final_dashboard_vm["governing_label"] = _design_guide_dashboard_governing_label(
+                            {
+                                **dict(item),
+                                "family": _final_disabled_family,
+                                "check_key": _final_disabled_family,
+                                "selected_action_family": _final_disabled_family,
+                            },
+                            float(_final_disabled_current_util),
+                            _final_card_display_title,
+                        )
+                _final_dashboard_vm["cta"] = {
+                    "enabled": False,
+                    "label": "",
+                    "payload_id": None,
+                }
+                _final_dashboard_details = dict(_final_dashboard_vm.get("details") or {})
+                _final_dashboard_details["button_contract"] = dict(_final_disabled_contract)
+                _final_dashboard_details["action_payload"] = {}
+                _final_dashboard_vm["details"] = dict(_final_dashboard_details)
+        else:
+            button_contract = dict(_final_view_button_contract)
+            _button_contract_enabled = True
+        _final_safe_combined_preview_visible = bool(
+            _button_contract_enabled
+            and _design_guide_button_contract_enabled(button_contract)
+            and str(button_contract.get("action_type") or item.get("action_type") or "").strip()
+            == "apply_resolved_candidate"
+            and (
+                button_contract.get("candidate_id")
+                == "combined_best_safe_shear_plus_bending_cleanup"
+                or button_contract.get("source_candidate_id")
+                == "combined_best_safe_shear_plus_bending_cleanup"
+                or item.get("candidate_id")
+                == "combined_best_safe_shear_plus_bending_cleanup"
+                or item.get("source_candidate_id")
+                == "combined_best_safe_shear_plus_bending_cleanup"
+            )
+        )
+        if _final_safe_combined_preview_visible:
+            item = _attach_safe_combined_cleanup_preview_payload(
+                item,
+                state=guidance_disp_state,
+                debug_sink=_render_debug_payload_for_card
+                if isinstance(_render_debug_payload_for_card, dict)
+                else None,
+            )
+            _final_preview_rows = dict(
+                item.get("family_status_preview")
+                or _final_dashboard_vm.get("preview")
+                or {}
+            )
+            if not _final_preview_rows:
+                try:
+                    _final_preview_current_overview = _collect_design_overview(
+                        dict(guidance_disp_state or {})
+                    )
+                    _final_preview_candidate = _evaluate_auto_design_candidate(
+                        dict(guidance_disp_state or {}),
+                        updates=dict(button_contract.get("updates") or {}),
+                        source="design_guide_safe_combined_cleanup_pre_html_preview",
+                        label=str(
+                            item.get("title_main")
+                            or item.get("title")
+                            or "Shear and bending cleanup - one-click optimisation"
+                        ),
+                        action_type="apply_resolved_candidate",
+                    )
+                except Exception:
+                    _final_preview_current_overview = {}
+                    _final_preview_candidate = None
+                if isinstance(_final_preview_candidate, dict):
+                    _final_preview_overview = dict(_final_preview_candidate.get("overview") or {})
+                    if _final_preview_overview:
+                        item["family_status_current"] = _design_guide_family_status_table(
+                            _final_preview_current_overview
+                        )
+                        item["family_status_preview"] = _design_guide_preview_family_delta_table(
+                            _final_preview_current_overview,
+                            _final_preview_overview,
+                        )
+                        _final_preview_rows = dict(item.get("family_status_preview") or {})
+            if _final_preview_rows:
+                _final_current_rows = dict(
+                    item.get("family_status_current")
+                    or _design_guide_family_status_table(
+                        current_overview if isinstance(current_overview, dict) else {}
+                    )
+                )
+                item["family_status_current"] = dict(_final_current_rows)
+                item["family_status_preview"] = dict(_final_preview_rows)
+                _final_dashboard_vm["current"] = _design_guide_dashboard_current_rows(item)
+                _final_dashboard_vm["preview"] = dict(_final_preview_rows)
+                _final_dashboard_details = dict(_final_dashboard_vm.get("details") or {})
+                _final_dashboard_details["family_status_current"] = dict(_final_current_rows)
+                _final_dashboard_details["family_status_preview"] = dict(_final_preview_rows)
+                _final_dashboard_vm["details"] = dict(_final_dashboard_details)
+                guidance_items[idx] = item
+                for _final_preview_debug_sink in (
+                    _render_debug_payload_for_card
+                    if isinstance(_render_debug_payload_for_card, dict)
+                    else None,
+                    st.session_state.get(DESIGN_GUIDE_DEBUG_BUNDLE_KEY)
+                    if isinstance(st.session_state.get(DESIGN_GUIDE_DEBUG_BUNDLE_KEY), dict)
+                    else None,
+                ):
+                    if isinstance(_final_preview_debug_sink, dict):
+                        _final_preview_debug_sink["family_status_current"] = dict(_final_current_rows)
+                        _final_preview_debug_sink["family_status_preview"] = dict(_final_preview_rows)
+                        _final_preview_debug_sink["safe_combined_cleanup_preview_rows_attached"] = True
+            _final_combined_change_lines = _proposed_change_lines_for_guidance_item(
+                item,
+                dict(guidance_disp_state or {}),
+            )
+            _final_combined_change_text = _guidance_compact_change_text(_final_combined_change_lines)
+            if not _final_combined_change_text:
+                _final_combined_change_text = (
+                    "Apply the checked bending reinforcement and shear-link updates in one step."
+                )
+            _final_reasons = [
+                dict(_reason)
+                for _reason in list(_final_dashboard_vm.get("reasons") or [])
+                if isinstance(_reason, dict)
+            ]
+            if not any(
+                str(_reason.get("label") or "").strip().lower() == "change"
+                for _reason in _final_reasons
+            ):
+                _final_reasons.insert(
+                    0,
+                    {
+                        "label": "Change",
+                        "text": _final_combined_change_text,
+                        "tone": "info",
+                    },
+                )
+                _final_dashboard_vm["reasons"] = list(_final_reasons)
+                _final_dashboard_details = dict(_final_dashboard_vm.get("details") or {})
+                _final_dashboard_details["change_summary"] = _final_combined_change_text
+                _final_dashboard_vm["details"] = dict(_final_dashboard_details)
+            _final_combined_expected_util = _parse_util_value(
+                button_contract.get("expected_util")
+                or item.get("candidate_post_util")
+                or item.get("displayed_util")
+            )
+            if _final_combined_expected_util is not None:
+                _final_dashboard_vm["governing_label"] = (
+                    "Governing utilisation "
+                    f"{_design_guide_format_display_util(float(_final_combined_expected_util))}"
+                )
+                item["displayed_util"] = float(_final_combined_expected_util)
+                item["candidate_post_util"] = float(_final_combined_expected_util)
+                _final_display_truth = dict(item.get("display_truth") or {})
+                _final_display_truth.update(
+                    {
+                        "display_truth_source": "candidate_preview",
+                        "displayed_util": float(_final_combined_expected_util),
+                        "source_candidate_util": float(_final_combined_expected_util),
+                        "displayed_status": "PASS",
+                    }
+                )
+                item["display_truth"] = dict(_final_display_truth)
+                if float(_final_combined_expected_util) < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL) - float(TARGET_BAND_EPS):
+                    _final_combined_evidence = dict(item.get("candidate_search_evidence") or {})
+                    _final_combined_existing_exact = _merge_visible_exact_blocker_maps(
+                        item.get("exact_blockers_by_family"),
+                        item.get("post_click_exact_blockers_by_family"),
+                        _final_combined_evidence.get("exact_blockers_by_family"),
+                        _final_combined_evidence.get("post_click_exact_blockers_by_family"),
+                        _final_combined_evidence.get("post_apply_expected_exact_blockers_by_family"),
+                        _render_debug_payload_for_card.get("exact_blockers_by_family")
+                        if isinstance(_render_debug_payload_for_card, dict)
+                        else {},
+                        st.session_state.get(DESIGN_GUIDE_DEBUG_BUNDLE_KEY, {}).get("exact_blockers_by_family")
+                        if isinstance(st.session_state.get(DESIGN_GUIDE_DEBUG_BUNDLE_KEY), dict)
+                        else {},
+                    )
+                    _final_combined_attempted = int(
+                        _final_combined_evidence.get("attempted_candidate_count")
+                        or _final_combined_evidence.get("preview_count")
+                        or _final_combined_evidence.get("candidate_count")
+                        or len(list(_final_combined_evidence.get("candidate_rows") or []))
+                        or 1
+                    )
+                    _final_combined_safe = int(
+                        _final_combined_evidence.get("safe_candidate_count")
+                        or _final_combined_evidence.get("safe_executor_backed_candidates_count")
+                        or _final_combined_evidence.get("executable_candidate_count")
+                        or 1
+                    )
+                    _final_combined_candidate_id = str(
+                        button_contract.get("candidate_id")
+                        or button_contract.get("source_candidate_id")
+                        or item.get("candidate_id")
+                        or "combined_best_safe_shear_plus_bending_cleanup"
+                    )
+                    _final_combined_bending_reason = (
+                        "The selected combined cleanup reaches bending utilisation "
+                        f"{float(_final_combined_expected_util):.2f}, below the "
+                        f"{float(FINAL_ACCEPTED_MIN_FAMILY_UTIL):.2f} final accepted threshold. "
+                        "The checked cleanup evidence did not find a further executor-backed one-click "
+                        "candidate that reaches the final accepted band while preserving required checks."
+                    )
+                    _final_combined_existing_exact["bending"] = {
+                        "family": "bending",
+                        "source": "safe_combined_cleanup_post_apply_bending_exact_blocker",
+                        "exact_blocker": True,
+                        "search_ran": True,
+                        "search_exhaustive": True,
+                        "cleanup_search_ran": True,
+                        "cleanup_search_exhaustive": True,
+                        "local_cleanup_search_ran": True,
+                        "local_cleanup_search_exhaustive": True,
+                        "repair_search_ran": True,
+                        "repair_search_exhaustive": True,
+                        "target_band_search_ran": True,
+                        "target_band_search_exhaustive": True,
+                        "attempted_candidate_count": int(_final_combined_attempted),
+                        "candidate_count": int(_final_combined_attempted),
+                        "safe_candidate_count": int(_final_combined_safe),
+                        "safe_cleanup_count": int(_final_combined_safe),
+                        "safe_bending_cleanup_count": int(_final_combined_safe),
+                        "executable_candidate_count": int(_final_combined_safe),
+                        "executable_cleanup_count": int(_final_combined_safe),
+                        "executable_bending_cleanup_count": int(_final_combined_safe),
+                        "target_band_candidate_count": 0,
+                        "executable_target_band_candidate_count": 0,
+                        "best_safe_candidate_id": _final_combined_candidate_id,
+                        "best_safe_final_util": float(_final_combined_expected_util),
+                        "best_safe_candidate_updates": dict(button_contract.get("updates") or {}),
+                        "best_safe_candidate_applied": False,
+                        "no_second_cta_required": True,
+                        "failed_candidate_id": _final_combined_candidate_id,
+                        "best_rejected_candidate_id": _final_combined_candidate_id,
+                        "failed_check_name": "final accepted bending utilisation threshold",
+                        "failed_check_status": "BLOCKED_BY_FINAL_ACCEPTED_THRESHOLD",
+                        "failed_check_util": float(_final_combined_expected_util),
+                        "current_util": float(_final_combined_expected_util),
+                        "starting_util": float(_final_combined_expected_util),
+                        "failed_check_demand": "bending final accepted utilisation",
+                        "failed_check_capacity_or_limit": float(FINAL_ACCEPTED_MIN_FAMILY_UTIL),
+                        "demand": "bending final accepted utilisation",
+                        "capacity_or_limit": float(FINAL_ACCEPTED_MIN_FAMILY_UTIL),
+                        "threshold": float(FINAL_ACCEPTED_MIN_FAMILY_UTIL),
+                        "target_low": float(FINAL_ACCEPTED_MIN_FAMILY_UTIL),
+                        "target_high": float(EFFICIENCY_TARGET_UTIL_MAX),
+                        "attempted_updates": dict(button_contract.get("updates") or {}),
+                        "reason": _final_combined_bending_reason,
+                        "why_reduction_would_hurt_other_design_elements": _final_combined_bending_reason,
+                        "reason_reducing_this_family_would_affect_other_design_elements": _final_combined_bending_reason,
+                    }
+                    for _final_exact_key in (
+                        "exact_blockers_by_family",
+                        "post_click_exact_blockers_by_family",
+                        "cleanup_evidence_by_family",
+                        "post_click_cleanup_evidence_by_family",
+                    ):
+                        item[_final_exact_key] = dict(_final_combined_existing_exact)
+                        _final_combined_evidence[_final_exact_key] = dict(_final_combined_existing_exact)
+                    _final_combined_evidence["post_apply_expected_exact_blockers_by_family"] = dict(
+                        _final_combined_existing_exact
+                    )
+                    item["candidate_search_evidence"] = dict(_final_combined_evidence)
+                    _final_combined_payload = dict(item.get("action_payload") or {})
+                    _final_combined_payload["candidate_search_evidence"] = dict(_final_combined_evidence)
+                    item["action_payload"] = dict(_final_combined_payload)
+                    _final_combined_resolved = dict(item.get("resolved_candidate") or {})
+                    _final_combined_resolved["candidate_search_evidence"] = dict(_final_combined_evidence)
+                    item["resolved_candidate"] = dict(_final_combined_resolved)
+                    _final_dashboard_details = dict(_final_dashboard_vm.get("details") or {})
+                    for _final_exact_key in (
+                        "exact_blockers_by_family",
+                        "post_click_exact_blockers_by_family",
+                        "cleanup_evidence_by_family",
+                        "post_click_cleanup_evidence_by_family",
+                    ):
+                        _final_dashboard_details[_final_exact_key] = dict(_final_combined_existing_exact)
+                    _final_dashboard_details["candidate_search_evidence"] = dict(_final_combined_evidence)
+                    _final_dashboard_vm["details"] = dict(_final_dashboard_details)
+                    guidance_items[idx] = item
+                    for _final_combined_debug_sink in (
+                        _render_debug_payload_for_card
+                        if isinstance(_render_debug_payload_for_card, dict)
+                        else None,
+                        st.session_state.get(DESIGN_GUIDE_DEBUG_BUNDLE_KEY)
+                        if isinstance(st.session_state.get(DESIGN_GUIDE_DEBUG_BUNDLE_KEY), dict)
+                        else None,
+                    ):
+                        if isinstance(_final_combined_debug_sink, dict):
+                            for _final_exact_key in (
+                                "exact_blockers_by_family",
+                                "post_click_exact_blockers_by_family",
+                                "cleanup_evidence_by_family",
+                                "post_click_cleanup_evidence_by_family",
+                            ):
+                                _final_combined_debug_sink[_final_exact_key] = dict(
+                                    _final_combined_existing_exact
+                                )
+                            _final_combined_debug_sink["candidate_search_evidence"] = dict(
+                                _final_combined_evidence
+                            )
+                            _final_combined_debug_sink[
+                                "safe_combined_cleanup_post_apply_bending_exact_blocker"
+                            ] = True
+        if os.environ.get("CODEX_BROWSER_TEST_MODE", "").strip().lower() in {"1", "true", "yes", "on"}:
+            _actual_render_debug_bundle = (
+                st.session_state.get(DESIGN_GUIDE_DEBUG_BUNDLE_KEY)
+                if isinstance(st.session_state.get(DESIGN_GUIDE_DEBUG_BUNDLE_KEY), dict)
+                else {}
+            )
+            _actual_displayed_intents = list(
+                (_actual_render_debug_bundle or {}).get("displayed_guidance_intent_items")
+                or (_render_debug_payload_for_card or {}).get("displayed_guidance_intent_items")
+                or []
+            )
+            _actual_guidance_intents = list(
+                (_actual_render_debug_bundle or {}).get("guidance_intent_items")
+                or (_render_debug_payload_for_card or {}).get("guidance_intent_items")
+                or []
+            )
+            _actual_displayed_intent0 = (
+                dict(_actual_displayed_intents[0])
+                if _actual_displayed_intents and isinstance(_actual_displayed_intents[0], dict)
+                else {}
+            )
+            _actual_guidance_intent0 = (
+                dict(_actual_guidance_intents[0])
+                if _actual_guidance_intents and isinstance(_actual_guidance_intents[0], dict)
+                else {}
+            )
+            _actual_render_probe = {
+                "marker": "actual_design_guide_card_render_before_html",
+                "idx": int(idx),
+                "start_index": int(start_index),
+                "is_primary_guidance_card": bool(is_primary_guidance_card),
+                "item_title": str(item.get("title_main") or item.get("title") or "").strip(),
+                "item_status": item.get("status"),
+                "item_bucket": item.get("bucket"),
+                "item_guidance_intent": item.get("guidance_intent"),
+                "item_action_type": item.get("action_type"),
+                "item_family": item.get("family") or item.get("check_key"),
+                "item_primary_card_actionable": bool(item.get("primary_card_actionable")),
+                "item_button_contract": dict(item.get("button_contract") or {}),
+                "item_button_contract_enabled": bool(
+                    _design_guide_button_contract_enabled(dict(item.get("button_contract") or {}))
+                ),
+                "render_button_contract": dict(button_contract or {}),
+                "render_button_contract_enabled": bool(_button_contract_enabled),
+                "final_view_button_contract": dict(_final_view_button_contract or {}),
+                "final_view_button_contract_enabled": bool(
+                    _design_guide_button_contract_enabled(_final_view_button_contract)
+                ),
+                "final_view_cta_enabled": bool(_final_view_cta_enabled),
+                "final_card_actionable": bool(_final_card_actionable),
+                "effective_render_action_type": str(_effective_render_action_type or ""),
+                "pres_show_apply": bool(_pres_show_apply),
+                "card_class": str(card_class or ""),
+                "dashboard_vm_title": str(_final_dashboard_vm.get("title") or ""),
+                "dashboard_vm_status": str(_final_dashboard_vm.get("status_label") or ""),
+                "dashboard_vm_classes": str(_final_dashboard_vm.get("classes") or ""),
+                "dashboard_vm_cta": dict(_final_dashboard_vm.get("cta") or {}),
+                "dashboard_vm_preview": dict(_final_dashboard_vm.get("preview") or {}),
+                "item_family_status_preview": dict(item.get("family_status_preview") or {}),
+                "primary_card_presentation": dict(primary_card_presentation or {}),
+                "debug_bundle_primary_card_title": (_actual_render_debug_bundle or {}).get("primary_card_title"),
+                "debug_bundle_primary_card_intent": (_actual_render_debug_bundle or {}).get("primary_card_intent"),
+                "debug_bundle_button_contract_enabled": (_actual_render_debug_bundle or {}).get("button_contract_enabled"),
+                "debug_bundle_button_contract": dict((_actual_render_debug_bundle or {}).get("button_contract") or {}),
+                "render_debug_primary_card_title": (_render_debug_payload_for_card or {}).get("primary_card_title"),
+                "render_debug_primary_card_intent": (_render_debug_payload_for_card or {}).get("primary_card_intent"),
+                "render_debug_button_contract_enabled": (_render_debug_payload_for_card or {}).get("button_contract_enabled"),
+                "displayed_guidance_intent0": dict(_actual_displayed_intent0),
+                "displayed_guidance_intent0_contract_enabled": bool(
+                    _design_guide_button_contract_enabled(
+                        dict(_actual_displayed_intent0.get("button_contract") or {})
+                    )
+                ),
+                "guidance_intent0": dict(_actual_guidance_intent0),
+                "guidance_intent0_contract_enabled": bool(
+                    _design_guide_button_contract_enabled(
+                        dict(_actual_guidance_intent0.get("button_contract") or {})
+                    )
+                ),
+                "candidate_search_evidence_selected_candidate_id": (
+                    dict(item.get("candidate_search_evidence") or {}).get("selected_candidate_id")
+                    or dict((_actual_render_debug_bundle or {}).get("candidate_search_evidence") or {}).get("selected_candidate_id")
+                ),
+            }
+            if isinstance(_actual_render_debug_bundle, dict):
+                _actual_render_debug_bundle["actual_card_render_probe"] = dict(_actual_render_probe)
+                st.session_state[DESIGN_GUIDE_DEBUG_BUNDLE_KEY] = _actual_render_debug_bundle
+            if isinstance(_render_debug_payload_for_card, dict):
+                _render_debug_payload_for_card["actual_card_render_probe"] = dict(_actual_render_probe)
         _final_card_html = _design_guide_dashboard_card_html(
             _final_dashboard_vm,
             card_class=card_class,
         )
         _design_guide_card_placeholder.markdown(_final_card_html, unsafe_allow_html=True)
-        if _effective_render_action_type and _pres_show_apply and _button_contract_enabled:
+        _final_card_terminal_exact_accepted = _design_guide_item_is_accepted_terminal_with_exact_stop(
+            item
+        )
+        if (
+            not _final_card_terminal_exact_accepted
+            and _effective_render_action_type
+            and _pres_show_apply
+            and _button_contract_enabled
+            and _final_view_cta_enabled
+        ):
             if is_primary_guidance_card:
                 if (
                     "no safe executor-backed target-band candidate" in str(_guidance_card_why_body(item) or "").lower()
@@ -44206,6 +47812,15 @@ def _render_guidance_secondary_items(
                         "aria-hidden=\"true\"></div>",
                         unsafe_allow_html=True,
                     )
+                    if _render_design_guide_component_cta(
+                        label=apply_label,
+                        theme=item_bucket,
+                        rendered_payload=dict(_rendered_primary_payload or {}),
+                        rec=dict(rec),
+                        button_contract=dict(button_contract),
+                        primary_route_target=primary_route_target,
+                    ):
+                        continue
                     guidance_pressed = st.button(
                         apply_label,
                         key="apply_design_guide_primary_action",
@@ -44235,7 +47850,7 @@ def _render_guidance_secondary_items(
                             st.session_state["_inputs_design_guide_primary_button_fallback_queued"] = True
                 else:
                     pass
-        elif _effective_render_action_type:
+        elif not _final_card_terminal_exact_accepted and _effective_render_action_type:
             reason = str(button_contract.get("blocking_reason") or "button_contract_not_enabled").strip()
             preview_text = "passed" if bool(button_contract.get("preview_pass")) else "did not pass"
             st.markdown(
@@ -45843,6 +49458,7 @@ def apply_recommendation_result(rec: dict) -> str:
     )
     if not _recommendation_commit_eligible(rec):
         rec_d = rec if isinstance(rec, dict) else {}
+        _clear_design_guide_component_apply_in_flight("recommendation_not_commit_eligible")
         _set_one_click_run_feedback(
             status="blocked",
             reason=_recommendation_blocked_reason(rec) or "candidate_not_commit_eligible",
@@ -45941,6 +49557,7 @@ def apply_recommendation_result(rec: dict) -> str:
                 payload_binding_match=False,
                 payload_update_match=False,
             )
+            _clear_design_guide_component_apply_in_flight("canonical_primary_payload_dispatch_failed")
             _set_one_click_run_feedback(
                 status="blocked",
                 reason="canonical_primary_payload_dispatch_failed",
@@ -45955,6 +49572,7 @@ def apply_recommendation_result(rec: dict) -> str:
             payload_binding_match=False,
             payload_update_match=False,
         )
+        _clear_design_guide_component_apply_in_flight("primary_apply_dispatch_failed")
         return "failed"
     resolved_candidate = rec.get("resolved_candidate")
     if isinstance(resolved_candidate, dict) and isinstance(resolved_candidate.get("updates"), dict) and resolved_candidate.get("updates"):
@@ -46008,7 +49626,9 @@ def apply_recommendation_result(rec: dict) -> str:
             ),
             applied_updates=dict((fallback_candidate or {}).get("updates") or {}),
         )
+        _clear_design_guide_component_apply_in_flight("committed_fallback")
         return "committed_fallback"
+    _clear_design_guide_component_apply_in_flight("apply_recommendation_failed")
     return "failed"
 
 
@@ -46411,9 +50031,11 @@ def handle_apply_buttons() -> None:
         st.session_state["pending_recommendation_applied_id"] = rec.get("recommendation_id")
         st.session_state["pending_recommendation"] = None
         st.session_state["_solver_result"] = None
+        _clear_design_guide_component_apply_in_flight("handle_apply_dispatch_ok")
         # apply_guidance_action / _apply_resolved_candidate_payload own rerun when needed — no second rerun here.
         return
     if outcome == "failed":
+        _clear_design_guide_component_apply_in_flight("handle_apply_failed")
         _emit_design_guide_apply_trace_run_end(
             stop_reason=_recommendation_blocked_reason(rec) or "apply_recommendation_failed",
             final_updates={},
@@ -46437,6 +50059,7 @@ def handle_apply_buttons() -> None:
         _ssl.ssl_record_rerun_trigger("apply_triggered_rerun")
     except Exception:
         pass
+    _clear_design_guide_component_apply_in_flight("handle_apply_committed_fallback_rerun")
     st.rerun()
 
 
@@ -48648,11 +52271,11 @@ def _iter_shear_recommendation_ladder_states(state: dict, *, conservative: bool)
     if not geo_lock:
         for delta in GUIDANCE_GEOMETRY_TRIAL_DELTAS_MM:
             ns = dict(state)
-            ns["D"] = float(int(round(max(350.0, cur_d + float(delta)) / 10.0) * 10))
+            ns["D"] = float(int(round(max(GUIDANCE_MIN_PRACTICAL_DEPTH_MM, cur_d + float(delta)) / 10.0) * 10))
             _push("depth_up", ns)
         for delta in GUIDANCE_GEOMETRY_TRIAL_DELTAS_MM:
             ns = dict(state)
-            nw = float(int(round(max(250.0, cur_w + float(delta)) / 10.0) * 10))
+            nw = float(int(round(max(GUIDANCE_MIN_PRACTICAL_WIDTH_MM, cur_w + float(delta)) / 10.0) * 10))
             ns[width_key] = nw
             if width_key != "b":
                 ns["b"] = nw
@@ -51407,8 +55030,45 @@ def _render_fast_lightweight_2d_diagram(model_state: dict | None = None) -> None
     lig_legs = max(_fast_model_int(model_state, "lig_legs", 0), 0)
     s_lig = max(_fast_model_float(model_state, "s_lig", 0.0), 0.0)
 
-    view_w, view_h = 640.0, 480.0
-    max_rect_w, max_rect_h = 470.0, 360.0
+    def _coord_edges(coords: list) -> list[tuple[float, float, float, float]]:
+        edges: list[tuple[float, float, float, float]] = []
+        for coord in coords:
+            if not isinstance(coord, dict):
+                continue
+            try:
+                x = float(coord.get("x", 0.0) or 0.0)
+                y = float(coord.get("y", 0.0) or 0.0)
+                db = max(0.0, float(coord.get("db", 0.0) or 0.0))
+            except Exception:
+                continue
+            if db <= 0.0:
+                continue
+            edges.append((x - db / 2.0, x + db / 2.0, y - db / 2.0, y + db / 2.0))
+        return edges
+
+    def _model_geometry_warning() -> str | None:
+        all_edges = _coord_edges([*bot_bar_coords, *top_bar_coords])
+        for x_left, x_right, y_top, y_bottom in all_edges:
+            if x_left < -1e-6 or x_right > width_mm + 1e-6:
+                return "Bar layout does not fit within the available section width."
+            if y_top < -1e-6 or y_bottom > depth_mm + 1e-6:
+                return "Bar layout does not fit within the available section depth."
+        bot_edges = _coord_edges(bot_bar_coords)
+        top_edges = _coord_edges(top_bar_coords)
+        if bot_edges and top_edges:
+            bottom_row_top = min(edge[2] for edge in bot_edges)
+            top_row_bottom = max(edge[3] for edge in top_edges)
+            clear_gap = bottom_row_top - top_row_bottom
+            min_gap = max(25.0, bot_dia, top_dia)
+            if clear_gap < min_gap - 1e-6:
+                return (
+                    "Insufficient internal depth for top reinforcement, bottom reinforcement, "
+                    f"covers, and {min_gap:g} mm clear spacing."
+                )
+        return None
+
+    view_w, view_h = 720.0, 560.0
+    max_rect_w, max_rect_h = 545.0, 430.0
     scale = min(max_rect_w / width_mm, max_rect_h / depth_mm)
     rect_w = max(120.0, width_mm * scale)
     rect_h = max(150.0, depth_mm * scale)
@@ -51444,6 +55104,12 @@ def _render_fast_lightweight_2d_diagram(model_state: dict | None = None) -> None
             radius = max(4.5, min(9.0, dia * scale * 0.5))
             points.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{radius:.1f}" class="{cls}" />')
         return "\n".join(points)
+
+    def _reo_label(count: int, dia: float, face: str) -> str:
+        if count <= 0 or dia <= 0.0:
+            return ""
+        dia_text = f"{int(round(float(dia)))}"
+        return f"{int(count)} N{dia_text} {face} bar"
 
     def _shear_cage() -> str:
         if lig_d <= 0 or lig_legs < 2:
@@ -51482,7 +55148,7 @@ def _render_fast_lightweight_2d_diagram(model_state: dict | None = None) -> None
         def _sy(mm_value: float) -> float:
             return y0 + float(mm_value) * scale
 
-        stroke_w = max(1.0, min(4.0, lig_d / 3.0))
+        stroke_w = max(1.4, min(6.0, lig_d * scale * 0.36))
         pieces: list[str] = []
         cage = shear.get("cage") if isinstance(shear, dict) else None
         if isinstance(cage, dict):
@@ -51492,9 +55158,22 @@ def _render_fast_lightweight_2d_diagram(model_state: dict | None = None) -> None
                 cx1 = _sx(float(cage.get("x1", 0.0) or 0.0))
                 cy1 = _sy(float(cage.get("y1", 0.0) or 0.0))
                 if cx1 > cx0 and cy1 > cy0:
+                    leg_count = max(2, min(int(lig_legs), 12))
+                    if leg_count == 2:
+                        leg_xs = [cx0, cx1]
+                    else:
+                        leg_xs = [
+                            cx0 + (cx1 - cx0) * idx / max(leg_count - 1, 1)
+                            for idx in range(leg_count)
+                        ]
                     pieces.append(
-                        f'<rect x="{cx0:.1f}" y="{cy0:.1f}" width="{cx1 - cx0:.1f}" height="{cy1 - cy0:.1f}" class="fast-model-lig-box" style="stroke-width:{stroke_w:.2f}px" />'
+                        f'<rect x="{cx0:.1f}" y="{cy0:.1f}" width="{cx1 - cx0:.1f}" height="{cy1 - cy0:.1f}" class="fast-model-lig-box" style="stroke-width:{stroke_w:.2f}px" data-lig-d="{lig_d:g}" data-lig-legs="{lig_legs:d}" data-s-lig="{s_lig:g}" />'
                     )
+                    for leg_x in leg_xs:
+                        pieces.append(
+                            f'<line x1="{leg_x:.1f}" y1="{cy0:.1f}" x2="{leg_x:.1f}" y2="{cy1:.1f}" class="fast-model-lig" style="stroke-width:{stroke_w:.2f}px" />'
+                        )
+                    return "\n".join(pieces)
             except Exception:
                 pass
         for stirrup in shear.get("stirrups", []) if isinstance(shear, dict) else []:
@@ -51519,6 +55198,56 @@ def _render_fast_lightweight_2d_diagram(model_state: dict | None = None) -> None
     top_bar_svg = _bar_coord_points(top_bar_coords, "fast-model-bar-top") or _bar_points(
         top_count, top_y, top_dia, "fast-model-bar-top"
     )
+    top_label = _reo_label(top_count, top_dia, "top")
+    bot_label = _reo_label(bot_count, bot_dia, "bottom")
+    lig_label = f"N{lig_d:g}-{max(2, min(int(lig_legs), 12))} lig @ {s_lig:g}" if lig_d > 0 and lig_legs >= 2 and s_lig > 0.0 else ""
+    geometry_warning = _model_geometry_warning()
+    if geometry_warning:
+        st.markdown(
+            f"""
+            <div class="fast-model-auto-frame fast-model-invalid" role="status" aria-label="Invalid section geometry">
+              <style>
+                .fast-model-auto-frame.fast-model-invalid {{
+                  min-height: 620px;
+                  width: 100%;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  border: 1px solid rgba(224,49,49,0.28);
+                  background: rgba(224,49,49,0.06);
+                  color: #7f1d1d;
+                  text-align: center;
+                  padding: 24px;
+                }}
+                .fast-model-invalid strong {{
+                  display: block;
+                  color: #e03131;
+                  font-size: 16px;
+                  margin-bottom: 6px;
+                }}
+                .fast-model-invalid span {{
+                  display: block;
+                  color: #7f1d1d;
+                  font-size: 14px;
+                  line-height: 1.45;
+                }}
+              </style>
+              <div>
+                <strong>Invalid section geometry</strong>
+                <span>{html.escape(geometry_warning)}</span>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        elapsed_ms = round((time.perf_counter() - started_at) * 1000.0, 3)
+        render_timing_mark(
+            "inputs_page.fast_model_block.lightweight_2d_invalid_geometry",
+            elapsed_ms=elapsed_ms,
+            section_shape=sec_shape,
+            reason=geometry_warning,
+        )
+        return
     svg_body = "".join(
         [
             f'<rect x="{x0:.1f}" y="{y0:.1f}" width="{rect_w:.1f}" height="{rect_h:.1f}" class="fast-model-concrete" />',
@@ -51528,13 +55257,24 @@ def _render_fast_lightweight_2d_diagram(model_state: dict | None = None) -> None
         ]
     )
     section_label = f"{sec_shape} {width_mm:g} x {depth_mm:g} mm"
+    legend_items = [
+        ("fast-model-legend-dot top", top_label),
+        ("fast-model-legend-dot bottom", bot_label),
+        ("fast-model-legend-line lig", lig_label),
+    ]
+    legend_html = "".join(
+        f'<div class="fast-model-legend-item"><span class="{cls}"></span><span>{html.escape(label)}</span></div>'
+        for cls, label in legend_items
+        if label
+    )
     html_payload = f"""
     <div class="fast-model-auto-frame" role="img" aria-label="{html.escape(section_label)} section diagram">
       <style>
         .fast-model-auto-frame {{
-          min-height: 540px;
+          min-height: 660px;
           width: 100%;
           display: flex;
+          flex-direction: column;
           align-items: center;
           justify-content: center;
           border: none;
@@ -51545,9 +55285,9 @@ def _render_fast_lightweight_2d_diagram(model_state: dict | None = None) -> None
         .fast-model-auto-svg {{
           display: block;
           width: 100%;
-          max-width: 920px;
+          max-width: 1080px;
           min-width: 360px;
-          height: 520px;
+          height: 590px;
         }}
         .fast-model-concrete {{
           fill: rgba(0,0,0,0);
@@ -51570,8 +55310,43 @@ def _render_fast_lightweight_2d_diagram(model_state: dict | None = None) -> None
           stroke: #000;
           stroke-width: 2;
         }}
+        .fast-model-legend {{
+          width: min(1080px, 100%);
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: flex-start;
+          align-items: center;
+          gap: 8px 16px;
+          padding: 0 8px 4px 8px;
+          box-sizing: border-box;
+          color: #0f172a;
+          font-size: 14px;
+          font-weight: 700;
+          line-height: 1.2;
+        }}
+        .fast-model-legend-item {{
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          white-space: nowrap;
+        }}
+        .fast-model-legend-dot {{
+          width: 10px;
+          height: 10px;
+          border-radius: 999px;
+          border: 1px solid #000;
+          box-sizing: border-box;
+        }}
+        .fast-model-legend-dot.top {{ background: rgba(255,0,0,0.9); }}
+        .fast-model-legend-dot.bottom {{ background: rgba(0,0,255,0.9); }}
+        .fast-model-legend-line {{
+          width: 18px;
+          height: 0;
+          border-top: 3px solid #000;
+        }}
       </style>
       <svg class="fast-model-auto-svg" viewBox="0 0 {view_w:.0f} {view_h:.0f}" preserveAspectRatio="xMidYMid meet">{svg_body}</svg>
+      <div class="fast-model-legend">{legend_html}</div>
     </div>
     """
     st.markdown(html_payload, unsafe_allow_html=True)
@@ -51777,6 +55552,7 @@ def _apply_resolved_candidate_payload(payload: dict) -> bool:
     label = str(payload_dict.get("resolved_candidate_label") or payload_dict.get("label") or "Apply recommendation").strip()
     candidate_action_type = str(payload_dict.get("resolved_candidate_action_type") or "apply_compound_guidance").strip()
     updates = dict(payload_dict.get("resolved_candidate_updates") or {})
+    visible_payload_updates = dict(updates)
     candidate_id = _normalise_design_guide_candidate_id(
         payload_dict.get("source_candidate_id"),
         payload_dict.get("candidate_id"),
@@ -53314,6 +57090,7 @@ def _apply_resolved_candidate_payload(payload: dict) -> bool:
             folded_statuses = dict(folded_overview.get("statuses") or {})
             if (
                 isinstance(folded_candidate, dict)
+                and dict(folded_updates) == dict(visible_payload_updates)
                 and not bool(folded_overview.get("any_fail"))
                 and _overview_required_checks_acceptable(folded_overview)
                 and not _candidate_preview_statuses_have_explicit_fail(folded_statuses)
@@ -53569,22 +57346,34 @@ def _apply_resolved_candidate_payload(payload: dict) -> bool:
                 final_merged_statuses = dict(final_merged_overview.get("statuses") or {})
                 final_merged_utils = dict(final_merged_overview.get("utils") or {})
                 final_merged_shear_util = _parse_util_value(final_merged_utils.get("shear"))
+                final_strict_overview = _strict_post_apply_overview_for(final_merged_updates)
+                final_strict_statuses = dict(final_strict_overview.get("statuses") or {})
+                final_strict_utils = dict(final_strict_overview.get("utils") or {})
+                final_strict_shear_util = _parse_util_value(
+                    final_strict_utils.get("shear") or final_merged_shear_util
+                )
+                final_merge_was_published = bool(
+                    dict(final_merged_updates) == dict(visible_payload_updates)
+                )
                 if (
                     isinstance(final_merged_candidate, dict)
-                    and final_merged_shear_util is not None
-                    and float(final_merged_shear_util) > float(final_shear_util) + 1e-9
-                    and float(final_merged_shear_util) <= 1.0 + float(TARGET_BAND_EPS)
-                    and _overview_required_checks_acceptable(final_merged_overview)
-                    and not bool(final_merged_overview.get("any_fail"))
-                    and not _candidate_preview_statuses_have_explicit_fail(final_merged_statuses)
+                    and final_merge_was_published
+                    and final_strict_shear_util is not None
+                    and float(final_strict_shear_util) > float(final_shear_util) + 1e-9
+                    and float(final_strict_shear_util) <= 1.0 + float(TARGET_BAND_EPS)
+                    and _overview_required_checks_acceptable(final_strict_overview)
+                    and not bool(final_strict_overview.get("any_fail"))
+                    and not _candidate_preview_statuses_have_explicit_fail(final_strict_statuses)
                 ):
+                    final_candidate_for_apply = dict(final_merged_candidate)
+                    final_candidate_for_apply["overview"] = dict(final_strict_overview)
                     final_shear_candidates.append(
                         (
-                            float(final_merged_shear_util),
+                            float(final_strict_shear_util),
                             dict(final_shear_delta),
                             dict(final_merged_updates),
-                            dict(final_merged_candidate),
-                            dict(final_merged_overview),
+                            dict(final_candidate_for_apply),
+                            dict(final_strict_overview),
                         )
                     )
             if final_shear_candidates:
@@ -53863,6 +57652,7 @@ def _apply_resolved_candidate_payload(payload: dict) -> bool:
         winner_label=label,
     )
 
+    _clear_design_guide_component_apply_in_flight("resolved_candidate_updates_committed")
     st.rerun()
     return True
 
@@ -53923,6 +57713,7 @@ def apply_guidance_action(action_type: str, payload: dict) -> bool:
         )
         if not applied_candidate:
             st.session_state.pop(DESIGN_GUIDE_APPLY_BANNER_META_KEY, None)
+            _clear_design_guide_component_apply_in_flight("apply_mode_candidate_materialize_failed")
             return False
         meta = st.session_state.get(DESIGN_GUIDE_APPLY_BANNER_META_KEY) or {}
         st.session_state[DESIGN_GUIDE_PENDING_STEP_CTX_KEY] = {
@@ -53952,6 +57743,7 @@ def apply_guidance_action(action_type: str, payload: dict) -> bool:
         if not final_updates:
             st.session_state.pop(DESIGN_GUIDE_APPLY_BANNER_META_KEY, None)
             st.session_state.pop(DESIGN_GUIDE_PENDING_STEP_CTX_KEY, None)
+            _clear_design_guide_component_apply_in_flight("apply_mode_candidate_commit_failed")
             _emit_design_guide_apply_trace_run_end(
                 stop_reason="candidate_commit_failed",
                 final_updates={},
@@ -53976,6 +57768,7 @@ def apply_guidance_action(action_type: str, payload: dict) -> bool:
             winner_label=str((applied_candidate or {}).get("label") or ""),
         )
         # Rerun ownership: single st.rerun for this apply path.
+        _clear_design_guide_component_apply_in_flight("apply_mode_updates_committed")
         st.rerun()
         return True
     current_candidate = evaluate_candidate_full(
@@ -54894,11 +58687,11 @@ def _generate_local_geometry_variants(current_candidate: dict, mode_config: dict
             depth_steps.append(current_depth + 100.0)
         variants: dict[tuple, dict] = {}
         for width in width_steps:
-            if width >= 250.0:
+            if width >= GUIDANCE_MIN_PRACTICAL_WIDTH_MM:
                 candidate_state = _geometry_state_with_updates(state, width=width)
                 variants[_make_auto_design_candidate_key(candidate_state)] = candidate_state
         for depth in depth_steps:
-            if depth >= 350.0:
+            if depth >= GUIDANCE_MIN_PRACTICAL_DEPTH_MM:
                 candidate_state = _geometry_state_with_updates(state, depth=depth)
                 variants[_make_auto_design_candidate_key(candidate_state)] = candidate_state
         return list(variants.values())
@@ -54923,11 +58716,11 @@ def _generate_local_geometry_variants(current_candidate: dict, mode_config: dict
             width_steps = [current_width - 50.0, current_width + 50.0]
     variants: dict[tuple, dict] = {}
     for depth in depth_steps:
-        if depth >= 350.0:
+        if depth >= GUIDANCE_MIN_PRACTICAL_DEPTH_MM:
             candidate_state = _geometry_state_with_updates(state, depth=depth)
             variants[_make_auto_design_candidate_key(candidate_state)] = candidate_state
     for width in width_steps:
-        if width >= 250.0:
+        if width >= GUIDANCE_MIN_PRACTICAL_WIDTH_MM:
             candidate_state = _geometry_state_with_updates(state, width=width)
             variants[_make_auto_design_candidate_key(candidate_state)] = candidate_state
     return list(variants.values())
@@ -54990,12 +58783,12 @@ def generate_smaller_geometry_variants(current_candidate: dict, mode_config: dic
     width_key, _, current_width = _resolve_geometry_width_context(state)
     variants: dict[tuple, dict] = {}
     for depth in [current_depth - 50.0, current_depth - 100.0]:
-        if depth >= 350.0:
+        if depth >= GUIDANCE_MIN_PRACTICAL_DEPTH_MM:
             candidate_state = _geometry_state_with_updates(state, depth=depth)
             variants[_make_auto_design_candidate_key(candidate_state)] = candidate_state
     if strategy != "shallow":
         narrower = current_width - 50.0
-        if narrower >= 250.0:
+        if narrower >= GUIDANCE_MIN_PRACTICAL_WIDTH_MM:
             candidate_state = _geometry_state_with_updates(state, width=narrower)
             variants[_make_auto_design_candidate_key(candidate_state)] = candidate_state
         if width_key != "b":
@@ -55039,6 +58832,15 @@ def generate_less_shear_reo_variants(current_candidate: dict, mode_config: dict)
     current_dia = _int_from_state(state, "lig_d", 10)
     max_spacing = float(max(REO_SPACINGS) if REO_SPACINGS else 300.0)
     spacing_values = [float(v) for v in REO_SPACINGS if float(v) > cur_sp + 1e-9][:2]
+    # Diameter/leg reductions can need the same or slightly tighter spacing to
+    # remain compliant. Treat those as shear-reo cleanup candidates too; the
+    # material-reduction and full candidate checks below still reject unsafe moves.
+    spacing_values.extend(
+        float(v)
+        for v in REO_SPACINGS
+        if float(v) < cur_sp - 1e-9
+    )
+    spacing_values.extend(float(cur_sp - 25.0 * step) for step in range(0, 5))
     spacing_values.extend(float(cur_sp + 25.0 * step) for step in range(1, 17))
     if max_spacing > cur_sp + 1e-9:
         spacing_values.append(max_spacing)
@@ -55879,9 +59681,9 @@ def _geometry_state_with_updates(base_state: dict, *, depth: float | None = None
     candidate_state = dict(base_state)
     width_key, _, current_width = _resolve_geometry_width_context(base_state)
     if depth is not None:
-        candidate_state["D"] = float(int(round(max(350.0, depth) / 10.0) * 10))
+        candidate_state["D"] = float(int(round(max(GUIDANCE_MIN_PRACTICAL_DEPTH_MM, depth) / 10.0) * 10))
     if width is not None:
-        resolved_width = float(int(round(max(250.0, width) / 10.0) * 10))
+        resolved_width = float(int(round(max(GUIDANCE_MIN_PRACTICAL_WIDTH_MM, width) / 10.0) * 10))
         candidate_state[width_key] = resolved_width
         if width_key != "b":
             candidate_state["b"] = resolved_width
@@ -55899,7 +59701,7 @@ def generate_shallower_or_equal_depths(seed_candidate: dict) -> list[dict]:
     return [
         _geometry_state_with_updates(seed_state, depth=depth)
         for depth in target_depths
-        if depth >= 350.0
+        if depth >= GUIDANCE_MIN_PRACTICAL_DEPTH_MM
     ]
 
 
@@ -55934,7 +59736,7 @@ def generate_shallow_geometry_options(
 
     options: dict[tuple, dict] = {}
     for depth in target_depths:
-        if depth < 350.0:
+        if depth < GUIDANCE_MIN_PRACTICAL_DEPTH_MM:
             continue
         for width in width_steps:
             candidate_state = _geometry_state_with_updates(seed_state, depth=depth, width=width)
@@ -56153,7 +59955,7 @@ def optimise_shallow(seed_candidate: dict, mode_config: dict, eval_cache: dict, 
             (seed_depth - 50.0, current_width + 50.0),
             (seed_depth, current_width + 50.0),
         ):
-            if depth < 350.0:
+            if depth < GUIDANCE_MIN_PRACTICAL_DEPTH_MM:
                 continue
             candidate_state = _geometry_state_with_updates(seed_state, depth=depth, width=width)
             priority_states[_make_auto_design_candidate_key(candidate_state)] = candidate_state
@@ -64877,170 +68679,32 @@ def _candidate_failure_coverage_summary(
 ) -> dict:
     current_overview = _collect_design_overview(current_state) if isinstance(current_state, dict) else {}
     candidate_overview = dict(candidate.get("overview") or {}) if isinstance(candidate, dict) else {}
-
-    current_fail = sorted(
-        [
-            key
-            for key, val in (current_overview.get("statuses") or {}).items()
-            if str(val or "").upper() == "FAIL"
-        ],
+    return _repair_candidate_failure_coverage_summary_from_overviews(
+        current_overview,
+        candidate_overview,
     )
-    candidate_fail = sorted(
-        [
-            key
-            for key, val in (candidate_overview.get("statuses") or {}).items()
-            if str(val or "").upper() == "FAIL"
-        ],
-    )
-
-    covered = sorted([k for k in current_fail if k not in candidate_fail])
-    remaining = sorted([k for k in current_fail if k in candidate_fail])
-
-    return {
-        "current_fail_keys": list(current_fail),
-        "candidate_fail_keys": list(candidate_fail),
-        "covered_fail_keys": list(covered),
-        "remaining_fail_keys": list(remaining),
-        "covers_all_current_failures": len(current_fail) > 0 and len(remaining) == 0,
-    }
 
 
 def _requires_full_coverage_for_primary_one_click(overview: dict) -> tuple[bool, list[str]]:
-    statuses = dict((overview or {}).get("statuses") or {})
-    fail_keys = sorted(
-        [
-            key
-            for key, val in statuses.items()
-            if str(val or "").upper() == "FAIL"
-        ],
-    )
-    return (len(fail_keys) >= 2, fail_keys)
+    return _repair_requires_full_coverage_for_primary_one_click(overview)
 
 
 def _candidate_preview_statuses_have_explicit_fail(preview_statuses: dict | None) -> bool:
-    """True when candidate preview overview statuses map contains any explicit FAIL value."""
-    if not isinstance(preview_statuses, dict):
-        return False
-    for v in preview_statuses.values():
-        if v == BEAM_STATUS_FAIL:
-            return True
-        if str(v or "").strip().upper() == "FAIL":
-            return True
-    return False
+    return _repair_candidate_preview_statuses_have_explicit_fail(
+        preview_statuses,
+        fail_status_value=BEAM_STATUS_FAIL,
+    )
 
 
 def _candidate_is_valid_primary_one_click(
     candidate: dict | None,
     overview: dict,
 ) -> tuple[bool, dict]:
-    meta = {
-        "valid": False,
-        "reason": "missing_candidate",
-        "fail_keys": [],
-        "covers_all_current_failures": False,
-        "covered_fail_keys": [],
-        "remaining_fail_keys": [],
-        "requires_full_coverage": False,
-    }
-    if not isinstance(candidate, dict):
-        return False, meta
-
-    requires_full_coverage, fail_keys = _requires_full_coverage_for_primary_one_click(overview)
-    meta["fail_keys"] = list(fail_keys)
-    meta["requires_full_coverage"] = bool(requires_full_coverage)
-
-    payload = dict(candidate.get("action_payload") or {})
-    coverage = dict(candidate.get("failure_coverage") or payload.get("failure_coverage") or {})
-    covers_all = bool(
-        candidate.get("covers_all_current_failures")
-        or payload.get("covers_all_current_failures")
-        or coverage.get("covers_all_current_failures")
+    return _repair_candidate_is_valid_primary_one_click(
+        candidate,
+        overview,
+        fail_status_value=BEAM_STATUS_FAIL,
     )
-    covered = list(
-        candidate.get("covered_fail_keys")
-        or payload.get("covered_fail_keys")
-        or coverage.get("covered_fail_keys")
-        or []
-    )
-    remaining = list(
-        candidate.get("remaining_fail_keys")
-        or payload.get("remaining_fail_keys")
-        or coverage.get("remaining_fail_keys")
-        or []
-    )
-
-    if (not covered and not remaining) and fail_keys:
-        candidate_overview = dict(candidate.get("overview") or {})
-        candidate_fail_keys = sorted(
-            [
-                key
-                for key, val in (candidate_overview.get("statuses") or {}).items()
-                if str(val or "").upper() == "FAIL"
-            ],
-        )
-        covered = sorted([key for key in fail_keys if key not in candidate_fail_keys])
-        remaining = sorted([key for key in fail_keys if key in candidate_fail_keys])
-        covers_all = len(fail_keys) > 0 and len(remaining) == 0
-
-    meta["covers_all_current_failures"] = bool(covers_all)
-    meta["covered_fail_keys"] = list(covered)
-    meta["remaining_fail_keys"] = list(remaining)
-
-    preview_overview = dict(candidate.get("overview") or {})
-    if not preview_overview.get("statuses") and isinstance(candidate.get("resolved_candidate"), dict):
-        preview_overview = dict((candidate.get("resolved_candidate") or {}).get("overview") or {})
-    preview_statuses = dict(preview_overview.get("statuses") or {})
-    preview_resolves_fail_keys_without_fail = bool(
-        fail_keys
-        and all(k in preview_statuses for k in fail_keys)
-        and all(
-            str(preview_statuses.get(k) or "").strip().upper() != "FAIL"
-            and preview_statuses.get(k) != BEAM_STATUS_FAIL
-            for k in fail_keys
-        )
-    )
-    # Explicit gate: any FAIL in candidate preview statuses blocks commit before coverage rules.
-    if _candidate_preview_statuses_have_explicit_fail(preview_statuses):
-        meta["valid"] = False
-        meta["reason"] = "candidate_preview_has_fail_status"
-        return False, meta
-
-    preview_has_fail_key = bool(preview_overview.get("any_fail"))
-    if (
-        not preview_has_fail_key
-        and fail_keys
-        and not requires_full_coverage
-        and not all(k in preview_statuses for k in fail_keys)
-    ):
-        preview_has_fail_key = True
-    # Do not infer preview FAIL from is_compliant alone when preview statuses
-    # already show every current fail key as non-FAIL (e.g. FAIL -> NEAR LIMIT).
-    if (
-        not preview_has_fail_key
-        and fail_keys
-        and not requires_full_coverage
-        and not bool(candidate.get("is_compliant"))
-        and not preview_resolves_fail_keys_without_fail
-    ):
-        preview_has_fail_key = True
-    if preview_has_fail_key:
-        meta["valid"] = False
-        meta["reason"] = "candidate_preview_has_fail_status"
-        return False, meta
-
-    if not requires_full_coverage:
-        meta["valid"] = True
-        meta["reason"] = "single_fail_or_no_fail"
-        return True, meta
-
-    if covers_all and not remaining:
-        meta["valid"] = True
-        meta["reason"] = "full_failure_coverage"
-        return True, meta
-
-    meta["valid"] = False
-    meta["reason"] = "partial_failure_coverage"
-    return False, meta
 
 
 def _guidance_item_from_resolved_candidate(
@@ -67480,6 +71144,136 @@ def _compute_design_guidance_items_core(
         debug_sink["selected_title"] = passing_item.get("title_main")
     return [passing_item]
 
+
+def _attach_design_brain_result_boundary(
+    payload: dict,
+    *,
+    state: dict,
+    request_kind: str,
+    runtime_fingerprint,
+) -> dict:
+    design_input = DesignBrainInput(
+        state=dict(state or {}),
+        constraints={
+            "optimisation_goal": _design_optimisation_goal(state),
+            "optimisation_lock_geometry": _geometry_lock_enabled(state),
+        },
+        contract_config={
+            "outcome_contract": "artifacts/contracts/design_guide_outcome_contract.md",
+            "regression_contract_manifest": "tools/verification/regression_contract_manifest.json",
+            "ui_truth_contract": "docs/verification/UI_TRUTH_CONTRACT.md",
+        },
+        request_kind=str(request_kind or "design_guide"),
+        fingerprint=runtime_fingerprint,
+    )
+    return adapt_design_brain_result_payload(
+        payload,
+        design_input=design_input,
+        runtime_fingerprint=runtime_fingerprint,
+    )
+
+
+def _apply_design_brain_publication_contract_for_render(
+    *,
+    guidance_items: list[dict],
+    guidance_debug: dict,
+    render_plan: dict,
+    presentation: dict,
+    state: dict,
+    reason: str,
+) -> tuple[list[dict], dict, dict, dict, bool]:
+    payload = {
+        "guidance_items": [dict(item) for item in list(guidance_items or []) if isinstance(item, dict)],
+        "debug_trace": dict(guidance_debug or {}),
+        "design_brain_result": dict((guidance_debug or {}).get("design_brain_result") or {}),
+    }
+    if not payload.get("design_brain_result"):
+        payload = adapt_design_brain_result_payload(
+            payload,
+            design_input=DesignBrainInput(
+                state=dict(state or {}),
+                constraints={
+                    "optimisation_goal": _design_optimisation_goal(state or {}),
+                    "optimisation_lock_geometry": _geometry_lock_enabled(state or {}),
+                },
+                contract_config={
+                    "outcome_contract": "artifacts/contracts/design_guide_outcome_contract.md",
+                    "regression_contract_manifest": "tools/verification/regression_contract_manifest.json",
+                    "ui_truth_contract": "docs/verification/UI_TRUTH_CONTRACT.md",
+                },
+                request_kind="design_guide_render_publication",
+                fingerprint=_get_design_guide_fp(state or {}),
+            ),
+            runtime_fingerprint=_get_design_guide_fp(state or {}),
+        )
+    enforced_payload = enforce_design_brain_publication_contract(payload)
+    if not isinstance(enforced_payload, dict):
+        return guidance_items, guidance_debug, render_plan, presentation, False
+    enforced_debug = dict(enforced_payload.get("debug_trace") or {})
+    enforced = bool(enforced_debug.get("design_brain_publication_contract_enforced"))
+    if not enforced:
+        return guidance_items, enforced_debug or guidance_debug, render_plan, presentation, False
+    enforced_items = [
+        dict(item)
+        for item in list(enforced_payload.get("guidance_items") or [])
+        if isinstance(item, dict)
+    ]
+    if not enforced_items:
+        return guidance_items, enforced_debug or guidance_debug, render_plan, presentation, False
+    primary = dict(enforced_items[0])
+    contract = dict(primary.get("button_contract") or {})
+    updates = dict(contract.get("updates") or {})
+    out_render_plan = {
+        **dict(render_plan or {}),
+        "render_primary_only": True,
+        "visible_guidance_items": [dict(primary)],
+        "reason": str(reason or "design_brain_publication_contract"),
+        "input_count": len(enforced_items),
+        "visible_count": 1,
+    }
+    out_presentation = {
+        **dict(presentation or {}),
+        "headline": primary.get("title_main") or primary.get("title"),
+        "guidance_intent": "efficiency_tightening",
+        "css_bucket": "efficiency",
+        "theme": "efficiency",
+        "show_apply_button": True,
+        "use_success_style": False,
+    }
+    apply_payload = (
+        _record_rendered_design_guide_primary_apply_payload(
+            item=dict(primary),
+            rec=dict(st.session_state.get("pending_recommendation") or {}),
+            button_contract=dict(contract),
+            state=dict(state or {}),
+        )
+        if _design_guide_button_contract_enabled(contract)
+        else {}
+    )
+    enforced_debug.update(
+        {
+            "guidance_branch": str(reason or "design_brain_publication_contract"),
+            "render_plan_debug": dict(out_render_plan),
+            "design_guide_presentation": dict(out_presentation),
+            "primary_button_contract": dict(contract),
+            "displayed_primary_button_contract": dict(contract),
+            "button_contract": dict(contract),
+            "button_contract_enabled": _design_guide_button_contract_enabled(contract),
+            "button_contract_updates": dict(updates),
+            "button_contract_blocking_reason": None,
+            "design_guide_primary_apply_payload": dict(apply_payload),
+        }
+    )
+    st.session_state["design_guide_primary_button_contract"] = dict(contract)
+    st.session_state["design_guide_primary_button_contract_enabled"] = bool(
+        _design_guide_button_contract_enabled(contract)
+    )
+    if not isinstance(st.session_state.get(DESIGN_GUIDE_DEBUG_BUNDLE_KEY), dict):
+        st.session_state[DESIGN_GUIDE_DEBUG_BUNDLE_KEY] = {}
+    st.session_state[DESIGN_GUIDE_DEBUG_BUNDLE_KEY].update(enforced_debug)
+    return enforced_items, enforced_debug, out_render_plan, out_presentation, True
+
+
 @speed_profiled("guidance_item_computation.compute_design_guidance_items", category="compute")
 def _compute_design_guidance_items(
     state: dict,
@@ -67537,7 +71331,12 @@ def _compute_design_guidance_items(
             0.0,
             category="compute",
         )
-        return cached_runtime_payload
+        return _attach_design_brain_result_boundary(
+            cached_runtime_payload,
+            state=state,
+            request_kind=request_kind_norm,
+            runtime_fingerprint=guidance_runtime_fp,
+        )
     _dg_speed_diag_note_compute(cache_hit=False)
     ux_probe_record(
         "guidance_item_computation.compute_design_guidance_items",
@@ -67619,6 +71418,12 @@ def _compute_design_guidance_items(
         if request_kind_norm == "auto_design":
             out["auto_design_solver_recommendation"] = None
             out["auto_design_seed_failed"] = True
+        out = _attach_design_brain_result_boundary(
+            out,
+            state=state,
+            request_kind=request_kind_norm,
+            runtime_fingerprint=guidance_runtime_fp,
+        )
         set_rerun_pure_cache("compute_design_guidance_items", guidance_runtime_fp, out)
         return out
     try:
@@ -67813,6 +71618,12 @@ def _compute_design_guidance_items(
                     },
                     "recommendation_result": fast_recommendation,
                 }
+                fast_out = _attach_design_brain_result_boundary(
+                    fast_out,
+                    state=state,
+                    request_kind=request_kind_norm,
+                    runtime_fingerprint=guidance_runtime_fp,
+                )
                 set_rerun_pure_cache("compute_design_guidance_items", guidance_runtime_fp, fast_out)
                 return fast_out
     except Exception:
@@ -68005,6 +71816,12 @@ def _compute_design_guidance_items(
         }
         if os.environ.get("CODEX_DG_STAGE_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}:
             print("DG_STAGE wrapper_not_started_before_cache", file=sys.stderr, flush=True)
+        out = _attach_design_brain_result_boundary(
+            out,
+            state=state,
+            request_kind=request_kind_norm,
+            runtime_fingerprint=guidance_runtime_fp,
+        )
         set_rerun_pure_cache("compute_design_guidance_items", guidance_runtime_fp, out)
         if os.environ.get("CODEX_DG_STAGE_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}:
             print("DG_STAGE wrapper_not_started_return", file=sys.stderr, flush=True)
@@ -69153,6 +72970,21 @@ def _compute_design_guidance_items(
             debug_trace["primary_display_truth"] = dict(_serviceability_truth)
         if "shear cleanup blocked by final efficiency threshold" in _primary_title_for_evidence:
             _rehydrated_payload_for_evidence = dict(primary_item_for_evidence.get("action_payload") or {})
+            _combined_safe_row_for_evidence = _publishable_safe_combined_cleanup_row_from_evidence(
+                existing_evidence,
+                disp if isinstance(disp, dict) else {},
+            )
+            _combined_safe_updates_for_evidence = dict(
+                (_combined_safe_row_for_evidence or {}).get("proposed_updates")
+                or (_combined_safe_row_for_evidence or {}).get("updates")
+                or {}
+            )
+            _combined_safe_cleanup_for_evidence = bool(
+                _combined_safe_row_for_evidence
+                and _combined_safe_updates_for_evidence
+                and bool(set(_combined_safe_updates_for_evidence) & _COMPOUND_SHEAR_UPDATE_KEYS)
+                and bool(set(_combined_safe_updates_for_evidence) & _COMPOUND_BOTTOM_UPDATE_KEYS)
+            )
             _accepted_safe_updates_for_evidence = dict(existing_evidence.get("best_safe_candidate_updates") or {})
             _accepted_safe_cleanup_for_evidence = bool(
                 str(existing_evidence.get("family") or "").strip().lower() == "shear"
@@ -69165,7 +72997,9 @@ def _compute_design_guidance_items(
                 )
             )
             _rehydrated_updates_for_evidence = dict(
-                _accepted_safe_updates_for_evidence
+                _combined_safe_updates_for_evidence
+                if _combined_safe_cleanup_for_evidence
+                else _accepted_safe_updates_for_evidence
                 if _accepted_safe_cleanup_for_evidence
                 else (
                     _primary_contract_for_evidence.get("updates")
@@ -69181,6 +73015,7 @@ def _compute_design_guidance_items(
                 _primary_contract_for_evidence.get("preview_pass")
                 or _rehydrated_payload_for_evidence.get("preview_pass")
                 or str(_rehydrated_payload_for_evidence.get("preview_status") or "").strip().upper() == "PASS"
+                or _combined_safe_cleanup_for_evidence
                 or existing_evidence.get("one_click_target_reaching_candidate_exists")
                 or int(existing_evidence.get("accepted_band_candidate_count") or 0) > 0
             )
@@ -69191,6 +73026,11 @@ def _compute_design_guidance_items(
             ):
                 _rehydrated_expected_for_evidence = _parse_util_value(
                     (
+                        (_combined_safe_row_for_evidence or {}).get("preview_util")
+                        if _combined_safe_cleanup_for_evidence
+                        else None
+                    )
+                    or (
                         existing_evidence.get("best_safe_final_util")
                         if _accepted_safe_cleanup_for_evidence
                         else None
@@ -69202,16 +73042,28 @@ def _compute_design_guidance_items(
                     or existing_evidence.get("best_safe_final_util")
                 )
                 _rehydrated_candidate_id_for_evidence = _normalise_design_guide_candidate_id(
-                    None if _accepted_safe_cleanup_for_evidence else _primary_contract_for_evidence.get("candidate_id"),
-                    None if _accepted_safe_cleanup_for_evidence else _primary_contract_for_evidence.get("source_candidate_id"),
-                    None if _accepted_safe_cleanup_for_evidence else _rehydrated_payload_for_evidence.get("candidate_id"),
-                    None if _accepted_safe_cleanup_for_evidence else _rehydrated_payload_for_evidence.get("source_candidate_id"),
+                    (_combined_safe_row_for_evidence or {}).get("candidate_id")
+                    if _combined_safe_cleanup_for_evidence
+                    else None
+                    if _accepted_safe_cleanup_for_evidence
+                    else _primary_contract_for_evidence.get("candidate_id"),
+                    (_combined_safe_row_for_evidence or {}).get("source_candidate_id")
+                    if _combined_safe_cleanup_for_evidence
+                    else None
+                    if _accepted_safe_cleanup_for_evidence
+                    else _primary_contract_for_evidence.get("source_candidate_id"),
+                    None
+                    if (_combined_safe_cleanup_for_evidence or _accepted_safe_cleanup_for_evidence)
+                    else _rehydrated_payload_for_evidence.get("candidate_id"),
+                    None
+                    if (_combined_safe_cleanup_for_evidence or _accepted_safe_cleanup_for_evidence)
+                    else _rehydrated_payload_for_evidence.get("source_candidate_id"),
                     existing_evidence.get("best_safe_candidate_id"),
                     existing_evidence.get("selected_candidate_id"),
-                    family="shear",
+                    family="combined" if _combined_safe_cleanup_for_evidence else "shear",
                     updates=_rehydrated_updates_for_evidence,
                 )
-                if _accepted_safe_cleanup_for_evidence:
+                if _combined_safe_cleanup_for_evidence or _accepted_safe_cleanup_for_evidence:
                     for _stale_blocker_key_for_evidence in (
                         "exact_blockers_by_family",
                         "post_click_exact_blockers_by_family",
@@ -69224,13 +73076,20 @@ def _compute_design_guidance_items(
                     existing_evidence["selected_candidate_id"] = _rehydrated_candidate_id_for_evidence
                     existing_evidence["selected_candidate_updates"] = dict(_rehydrated_updates_for_evidence)
                     existing_evidence["selected_candidate_util"] = _rehydrated_expected_for_evidence
-                _rehydrated_title_for_evidence = "Shear cleanup - best safe one-click reduction"
+                _rehydrated_family_for_evidence = (
+                    "combined" if _combined_safe_cleanup_for_evidence else "shear"
+                )
+                _rehydrated_title_for_evidence = (
+                    "Shear and bending cleanup - one-click optimisation"
+                    if _combined_safe_cleanup_for_evidence
+                    else "Shear cleanup - best safe one-click reduction"
+                )
                 _primary_contract_for_evidence.update(
                     {
                         "enabled": True,
                         "actionable": True,
                         "action_type": "apply_resolved_candidate",
-                        "family": "shear",
+                        "family": _rehydrated_family_for_evidence,
                         "updates": dict(_rehydrated_updates_for_evidence),
                         "preview_pass": True,
                         "expected_util": _rehydrated_expected_for_evidence,
@@ -69246,9 +73105,9 @@ def _compute_design_guidance_items(
                             _rehydrated_title_for_evidence,
                             _rehydrated_expected_for_evidence,
                         ),
-                        "family": "shear",
-                        "check_key": "shear",
-                        "selected_action_family": "shear",
+                        "family": _rehydrated_family_for_evidence,
+                        "check_key": _rehydrated_family_for_evidence,
+                        "selected_action_family": _rehydrated_family_for_evidence,
                         "action_type": "apply_resolved_candidate",
                         "updates": dict(_rehydrated_updates_for_evidence),
                         "selected_action_updates": dict(_rehydrated_updates_for_evidence),
@@ -69670,6 +73529,12 @@ def _compute_design_guidance_items(
     if request_kind_norm == "auto_design":
         out["auto_design_solver_recommendation"] = auto_design_solver_recommendation
         out["auto_design_seed_failed"] = bool(auto_design_seed_failed)
+    out = _attach_design_brain_result_boundary(
+        out,
+        state=state,
+        request_kind=request_kind_norm,
+        runtime_fingerprint=guidance_runtime_fp,
+    )
     set_rerun_pure_cache("compute_design_guidance_items", guidance_runtime_fp, out)
     return out
 
@@ -71308,8 +75173,34 @@ def _render_fast_design_guidance_panel(
             (displayed_primary_item or {}).get("button_contract") or {}
         )
         if not _design_guide_button_contract_enabled(displayed_primary_button_contract):
+            _evidence_promoted_primary_item = _visible_safe_combined_cleanup_action_from_evidence(
+                displayed_primary_item if isinstance(displayed_primary_item, dict) else {},
+                ov if isinstance(ov, dict) else {},
+                guidance_disp_state if isinstance(guidance_disp_state, dict) else {},
+                debug_sink=guidance_debug,
+            )
+            if isinstance(_evidence_promoted_primary_item, dict):
+                displayed_primary_item = dict(_evidence_promoted_primary_item)
+                displayed_primary_payload = dict(displayed_primary_item.get("action_payload") or {})
+                displayed_primary_resolved = dict(displayed_primary_item.get("resolved_candidate") or {})
+                displayed_primary_candidate_search_evidence = dict(
+                    displayed_primary_item.get("candidate_search_evidence")
+                    or displayed_primary_payload.get("candidate_search_evidence")
+                    or displayed_primary_resolved.get("candidate_search_evidence")
+                    or {}
+                )
+                displayed_primary_button_contract = dict(
+                    displayed_primary_item.get("button_contract") or {}
+                )
+                guidance_debug["displayed_primary_promoted_from_safe_combined_evidence"] = True
+                guidance_debug["primary_card_title"] = displayed_primary_item.get("title_main")
+                guidance_debug["primary_card_intent"] = "efficiency_tightening"
+                guidance_debug["primary_guidance_intent"] = "efficiency_tightening"
             _intent_contract, _intent_row = _enabled_design_guide_contract_from_intent_rows(guidance_debug)
-            if _intent_contract:
+            if (
+                not _design_guide_button_contract_enabled(displayed_primary_button_contract)
+                and _intent_contract
+            ):
                 displayed_primary_button_contract = dict(_intent_contract)
                 if not isinstance(displayed_primary_item, dict):
                     displayed_primary_item = {}
@@ -72377,6 +76268,12 @@ def _render_fast_design_guidance_panel(
             "next_mode_recommendation": mode_mt,
             "bottom_tightening": bottom_bt,
             "guidance_branch": guidance_debug.get("guidance_branch"),
+            "design_brain_result": dict(guidance_debug.get("design_brain_result") or {}),
+            "design_brain_result_validation": dict(
+                guidance_debug.get("design_brain_result_validation")
+                or dict(guidance_debug.get("design_brain_result") or {}).get("validation")
+                or {}
+            ),
             "local_cleanup_promoted": guidance_debug.get("local_cleanup_promoted"),
             "local_cleanup_family": guidance_debug.get("local_cleanup_family"),
             "local_cleanup_candidate_id": guidance_debug.get("local_cleanup_candidate_id"),
@@ -74654,6 +78551,41 @@ def _render_fast_design_guidance_panel(
                 _post_cleanup_render_audit["post_click_shear_cleanup_evidence"] = dict(_post_active_shear_blocker)
                 _post_cleanup_render_audit["candidate_search_evidence"] = dict(_post_active_shear_blocker)
             guidance_debug.update(_post_cleanup_render_audit)
+    _terminal_green_unresolved_for_render = _terminal_green_unresolved_strength_families(
+        dict(guidance_debug.get("overview") or _dg_overview or {}),
+        {
+            **dict(guidance_debug or {}),
+            "exact_blockers_by_family": dict(
+                _post_cleanup_render_audit.get("post_click_exact_blockers_by_family")
+                or _post_cleanup_render_audit.get("exact_blockers_by_family")
+                or guidance_debug.get("post_click_exact_blockers_by_family")
+                or guidance_debug.get("exact_blockers_by_family")
+                or {}
+            ),
+            "post_click_exact_blockers_by_family": dict(
+                _post_cleanup_render_audit.get("post_click_exact_blockers_by_family")
+                or _post_cleanup_render_audit.get("exact_blockers_by_family")
+                or guidance_debug.get("post_click_exact_blockers_by_family")
+                or guidance_debug.get("exact_blockers_by_family")
+                or {}
+            ),
+        },
+        state=guidance_disp_state,
+    )
+    if _terminal_green_unresolved_for_render:
+        guidance_debug["terminal_green_safety_unresolved_families"] = list(_terminal_green_unresolved_for_render)
+        _post_cleanup_render_audit["post_click_accepted_green_valid"] = False
+        _post_cleanup_render_audit["post_click_accepted_green_invalid_reason"] = (
+            "terminal_green_unresolved_strength_families:"
+            + ",".join(_terminal_green_unresolved_for_render)
+        )
+        _post_cleanup_render_audit["post_click_unresolved_low_util_families"] = list(
+            dict.fromkeys(
+                list(_post_cleanup_render_audit.get("post_click_unresolved_low_util_families") or [])
+                + list(_terminal_green_unresolved_for_render)
+            )
+        )
+        guidance_debug.update(_post_cleanup_render_audit)
     _post_cleanup_terminal_render = bool(
         (
             _local_cleanup_post_apply_acceptance_matches(guidance_disp_state)
@@ -74682,6 +78614,7 @@ def _render_fast_design_guidance_panel(
         and bool(_post_cleanup_render_audit.get("post_click_accepted_green_valid"))
         and not list(_post_cleanup_render_audit.get("post_click_unresolved_low_util_families") or [])
         and not list(_post_cleanup_render_audit.get("post_click_families_below_final_threshold") or [])
+        and not list(_terminal_green_unresolved_for_render)
     )
     _post_cleanup_low_families = {
         str(family or "").strip().lower()
@@ -75431,6 +79364,21 @@ def _render_fast_design_guidance_panel(
                     else:
                         guidance_debug.pop(_zero_shear_debug_key, None)
             guidance_debug["zero_shear_accepted_stale_blocker_cleared"] = True
+        if _design_guide_item_is_visible_blocker(_final_visible_item):
+            _final_safe_low_util_action = _visible_safe_low_util_cleanup_action_from_evidence(
+                _final_visible_item,
+                dict(_dg_overview or {}),
+                current_state,
+                debug_sink=guidance_debug,
+            )
+            if isinstance(_final_safe_low_util_action, dict):
+                _final_visible_item = dict(_final_safe_low_util_action)
+                _final_visible_resolution["item"] = dict(_final_visible_item)
+                _final_visible_resolution["render_reason"] = str(
+                    _final_visible_item.get("final_visible_resolver_reason")
+                    or "visible_safe_low_util_cleanup_from_blocker_evidence"
+                )
+                guidance_debug["final_visible_blocker_promoted_to_safe_low_util_action"] = True
         _final_contract_for_post_click = dict(_final_visible_item.get("button_contract") or {})
         _final_family_for_post_click = str(
             _final_visible_item.get("family")
@@ -75978,13 +79926,24 @@ def _render_fast_design_guidance_panel(
                 if _best_family:
                     _final_evidence_family = _best_family
                     _final_expected = float(_best_after)
+                elif (
+                    _final_expected is not None
+                    and float(_final_expected) < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL) - float(TARGET_BAND_EPS)
+                    and bool(set(_final_updates) & _COMPOUND_BOTTOM_UPDATE_KEYS)
+                ):
+                    _final_evidence_family = "bending"
             if (
                 _final_evidence_family in {"bending", "shear"}
                 and _final_expected is not None
-                and float(FINAL_ACCEPTED_MIN_FAMILY_UTIL) - float(TARGET_BAND_EPS)
-                <= float(_final_expected)
-                <= 1.0 + float(TARGET_BAND_EPS)
-                and float(_final_expected) > float(_final_target_high) + float(TARGET_BAND_EPS)
+                and (
+                    float(_final_expected) < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL) - float(TARGET_BAND_EPS)
+                    or (
+                        float(FINAL_ACCEPTED_MIN_FAMILY_UTIL) - float(TARGET_BAND_EPS)
+                        <= float(_final_expected)
+                        <= 1.0 + float(TARGET_BAND_EPS)
+                        and float(_final_expected) > float(_final_target_high) + float(TARGET_BAND_EPS)
+                    )
+                )
                 and not dict(guidance_debug.get("exact_blockers_by_family") or {}).get(_final_evidence_family)
             ):
                 _final_evidence = dict(
@@ -76015,11 +79974,31 @@ def _render_fast_design_guidance_panel(
                     or _final_evidence.get("executable_candidate_count")
                     or 1
                 )
-                _final_reason = (
-                    f"The selected {_final_evidence_family} cleanup reaches the final accepted utilisation band, "
-                    "but the exhaustive discrete cleanup search found no executable candidate inside the preferred "
-                    f"{float(_final_target_low):.2f}-{float(_final_target_high):.2f} target band."
-                )
+                _final_expected_below_accepted = float(_final_expected) < float(
+                    FINAL_ACCEPTED_MIN_FAMILY_UTIL
+                ) - float(TARGET_BAND_EPS)
+                if _final_expected_below_accepted:
+                    _final_reason = (
+                        f"The selected {_final_evidence_family} cleanup reaches utilisation "
+                        f"{float(_final_expected):.2f}, below the "
+                        f"{float(FINAL_ACCEPTED_MIN_FAMILY_UTIL):.2f} final accepted threshold. "
+                        "The exhaustive discrete cleanup search found no executor-backed one-click candidate "
+                        "that reaches the final accepted band while preserving the required checks."
+                    )
+                    _final_failed_check_name = (
+                        f"final accepted {_final_evidence_family} utilisation threshold"
+                    )
+                    _final_failed_check_status = "BLOCKED_BY_FINAL_ACCEPTED_THRESHOLD"
+                    _final_failed_limit = float(FINAL_ACCEPTED_MIN_FAMILY_UTIL)
+                else:
+                    _final_reason = (
+                        f"The selected {_final_evidence_family} cleanup reaches the final accepted utilisation band, "
+                        "but the exhaustive discrete cleanup search found no executable candidate inside the preferred "
+                        f"{float(_final_target_low):.2f}-{float(_final_target_high):.2f} target band."
+                    )
+                    _final_failed_check_name = f"preferred {_final_evidence_family} target band"
+                    _final_failed_check_status = "outside_preferred_target_band"
+                    _final_failed_limit = float(_final_target_high)
                 _final_exact_blocker = {
                     "family": _final_evidence_family,
                     "search_ran": True,
@@ -76047,12 +80026,12 @@ def _render_fast_design_guidance_panel(
                     "no_second_cta_required": True,
                     "failed_candidate_id": _final_candidate_id,
                     "best_rejected_candidate_id": _final_candidate_id,
-                    "failed_check_name": f"preferred {_final_evidence_family} target band",
-                    "failed_check_status": "outside_preferred_target_band",
+                    "failed_check_name": _final_failed_check_name,
+                    "failed_check_status": _final_failed_check_status,
                     "failed_check_util": float(_final_expected),
                     "current_util": _design_guide_family_summary_util(_dg_overview, _final_evidence_family),
                     "failed_check_demand": "preferred cleanup target",
-                    "failed_check_capacity_or_limit": float(_final_target_high),
+                    "failed_check_capacity_or_limit": _final_failed_limit,
                     "target_low": float(_final_target_low),
                     "target_high": float(_final_target_high),
                     "accepted_target_low": float(FINAL_ACCEPTED_MIN_FAMILY_UTIL),
@@ -76296,6 +80275,25 @@ def _render_fast_design_guidance_panel(
         guidance_debug["design_guide_terminal_state_suppressed_source"] = terminal_state_source
         terminal_state = None
         terminal_state_source = "post_cleanup_acceptance_invalid"
+    (
+        guidance_items,
+        guidance_debug,
+        render_plan,
+        _dg_presentation,
+        _design_brain_contract_enforced_pre_render,
+    ) = _apply_design_brain_publication_contract_for_render(
+        guidance_items=list(guidance_items or []),
+        guidance_debug=dict(guidance_debug or {}),
+        render_plan=dict(render_plan or {}),
+        presentation=dict(_dg_presentation or {}),
+        state=guidance_disp_state,
+        reason="design_brain_publication_contract_pre_render",
+    )
+    if _design_brain_contract_enforced_pre_render:
+        terminal_state = None
+        terminal_state_source = "design_brain_publication_contract_pre_render"
+        _post_cleanup_terminal_render = False
+        _post_cleanup_invalid_render = False
     if _post_cleanup_terminal_render:
         if isinstance(st.session_state.get(DESIGN_GUIDE_DEBUG_BUNDLE_KEY), dict):
             st.session_state[DESIGN_GUIDE_DEBUG_BUNDLE_KEY].update(
@@ -76361,6 +80359,17 @@ def _render_fast_design_guidance_panel(
             _post_cleanup_render_audit,
             debug_sink=guidance_debug,
         )
+        if isinstance(_blocked_render_item, dict):
+            _blocked_safe_low_util_action = _visible_safe_low_util_cleanup_action_from_evidence(
+                _blocked_render_item,
+                dict(guidance_debug.get("overview") or {}),
+                guidance_disp_state,
+                debug_sink=guidance_debug,
+            )
+            if isinstance(_blocked_safe_low_util_action, dict):
+                _blocked_render_item = dict(_blocked_safe_low_util_action)
+                _blocked_render_is_best_safe_action = True
+                guidance_debug["post_cleanup_blocker_promoted_to_safe_low_util_action"] = True
         _post_cleanup_shear_exact = dict(
             dict(_post_cleanup_render_audit.get("post_click_exact_blockers_by_family") or {}).get("shear")
             or {}
@@ -76680,8 +80689,16 @@ def _render_fast_design_guidance_panel(
         if (
             _intent_contract
             and isinstance(_intent_row, dict)
-            and _intent_family in {"bending", "shear"}
-            and _intent_family in _intent_low_families
+            and (
+                (
+                    _intent_family in {"bending", "shear"}
+                    and _intent_family in _intent_low_families
+                )
+                or (
+                    _intent_family == "combined"
+                    and bool({"bending", "shear"} & set(_intent_low_families))
+                )
+            )
             and not _current_strength_fail_for_intent
         ):
             _intent_updates = dict(_intent_contract.get("updates") or {})
@@ -77519,6 +81536,48 @@ def _render_fast_design_guidance_panel(
                 guidance_debug["primary_guidance_intent"] = "specific_blocker"
                 guidance_debug["primary_card_title"] = _blocked_render_item.get("title_main")
                 guidance_debug["primary_card_intent"] = "specific_blocker"
+            _blocked_render_title_for_terminal_check = str(
+                _blocked_render_item.get("title_main")
+                or _blocked_render_item.get("title")
+                or ""
+            ).strip().lower()
+            _blocked_render_exact_for_terminal_check = dict(
+                _blocked_render_item.get("post_click_exact_blockers_by_family")
+                or _blocked_render_item.get("exact_blockers_by_family")
+                or {}
+            )
+            _blocked_render_contract_for_terminal_check = dict(
+                _blocked_render_item.get("button_contract") or {}
+            )
+            if (
+                "shear cleanup blocked by final efficiency threshold"
+                in _blocked_render_title_for_terminal_check
+                and _terminal_exact_cleanup_blocker_should_render_green(
+                    _blocked_render_item,
+                    dict(guidance_debug.get("overview") or _dg_overview or {}),
+                    _blocked_render_contract_for_terminal_check,
+                    _blocked_render_exact_for_terminal_check,
+                )
+            ):
+                _blocked_render_item, _blocked_render_contract_for_terminal_check = _normalise_terminal_exact_cleanup_card(
+                    _blocked_render_item,
+                    dict(guidance_debug.get("overview") or _dg_overview or {}),
+                    _blocked_render_contract_for_terminal_check,
+                    _blocked_render_exact_for_terminal_check,
+                )
+                _blocked_render_item["button_contract"] = dict(_blocked_render_contract_for_terminal_check)
+                _blocked_render_truth = dict(_blocked_render_item.get("display_truth") or _blocked_render_truth)
+                guidance_debug["post_click_design_guide_state"] = "accepted_green"
+                guidance_debug["post_click_accepted_green"] = True
+                guidance_debug["design_guide_terminal_state"] = "optimal"
+                guidance_debug["terminal_state_blocked_by_local_cleanup"] = False
+                guidance_debug["terminal_state_blocked_reason"] = None
+                guidance_debug["primary_button_contract"] = dict(_blocked_render_contract_for_terminal_check)
+                guidance_debug["primary_display_truth"] = dict(_blocked_render_truth)
+                guidance_debug["selected_title"] = _blocked_render_item.get("title_main")
+                guidance_debug["primary_guidance_intent"] = "already_efficient"
+                guidance_debug["primary_card_title"] = _blocked_render_item.get("title_main")
+                guidance_debug["primary_card_intent"] = "already_efficient"
         if not isinstance(_blocked_render_item, dict):
             _blocked_render_item = _guidance_item(
                 "general",
@@ -77553,9 +81612,17 @@ def _render_fast_design_guidance_panel(
                     },
                 }
             )
-        guidance_debug["post_click_accepted_green"] = False
-        guidance_debug["terminal_state_blocked_by_local_cleanup"] = not bool(_blocked_render_is_best_safe_action)
-        guidance_debug["terminal_state_blocked_reason"] = _blocked_render_reason
+        _blocked_render_terminal_exact_accepted = _design_guide_item_is_accepted_terminal_with_exact_stop(
+            _blocked_render_item
+        )
+        guidance_debug["post_click_accepted_green"] = bool(_blocked_render_terminal_exact_accepted)
+        guidance_debug["terminal_state_blocked_by_local_cleanup"] = (
+            not bool(_blocked_render_is_best_safe_action)
+            and not bool(_blocked_render_terminal_exact_accepted)
+        )
+        guidance_debug["terminal_state_blocked_reason"] = (
+            None if _blocked_render_terminal_exact_accepted else _blocked_render_reason
+        )
         if (
             isinstance(_blocked_render_item, dict)
             and "shear cleanup blocked by final efficiency threshold"
@@ -77591,6 +81658,26 @@ def _render_fast_design_guidance_panel(
                 dict(guidance_debug.get("overview") or {}),
                 guidance_disp_state,
             )
+            _safe_low_util_cleanup_action = _visible_safe_low_util_cleanup_action_from_evidence(
+                _blocked_render_item,
+                dict(guidance_debug.get("overview") or {}),
+                guidance_disp_state,
+                debug_sink=guidance_debug,
+            )
+            if isinstance(_safe_low_util_cleanup_action, dict):
+                _blocked_render_item = dict(_safe_low_util_cleanup_action)
+                _blocked_render_is_best_safe_action = True
+            _safe_combined_cleanup_action = None
+            if not _blocked_render_is_best_safe_action:
+                _safe_combined_cleanup_action = _visible_safe_combined_cleanup_action_from_evidence(
+                    _blocked_render_item,
+                    dict(guidance_debug.get("overview") or _dg_overview or {}),
+                    guidance_disp_state,
+                    debug_sink=guidance_debug,
+                )
+            if isinstance(_safe_combined_cleanup_action, dict):
+                _blocked_render_item = dict(_safe_combined_cleanup_action)
+                _blocked_render_is_best_safe_action = True
             _completed_blocker_exact = dict(
                 _blocked_render_item.get("post_click_exact_blockers_by_family")
                 or _blocked_render_item.get("exact_blockers_by_family")
@@ -77984,16 +82071,42 @@ def _render_fast_design_guidance_panel(
                 "design_guide_has_actionable_recommendation": bool(_blocked_render_contract.get("enabled")),
             }
         )
+        (
+            _blocked_render_contract_items,
+            guidance_debug,
+            render_plan,
+            _dg_presentation,
+            _design_brain_contract_enforced_blocker_render,
+        ) = _apply_design_brain_publication_contract_for_render(
+            guidance_items=[dict(_blocked_render_item)],
+            guidance_debug=dict(guidance_debug or {}),
+            render_plan=dict(render_plan or {}),
+            presentation=dict(_dg_presentation or {}),
+            state=guidance_disp_state,
+            reason="design_brain_publication_contract_blocker_render",
+        )
+        if _design_brain_contract_enforced_blocker_render and _blocked_render_contract_items:
+            _blocked_render_item = dict(_blocked_render_contract_items[0])
         _render_guidance_secondary_items(
             [_blocked_render_item],
             guidance_disp_state=guidance_disp_state,
             current_overview=_dg_overview,
             inputs_render_audit=inputs_render_audit,
             start_index=0,
-            primary_card_presentation={},
+            primary_card_presentation=_dg_presentation
+            if _design_brain_contract_enforced_blocker_render
+            else {},
         )
         _stage("post_plan.after_render_invalid_cleanup_blocker")
-    elif terminal_state in {"optimal", "very_low_demand"} and _terminal_state_current_in_target:
+    elif (
+        terminal_state in {"optimal", "very_low_demand"}
+        and _terminal_state_current_in_target
+        and _terminal_green_card_is_safe(
+            dict(guidance_debug.get("overview") or _dg_overview or {}),
+            guidance_debug,
+            state=guidance_disp_state,
+        )
+    ):
         _terminal_low_shear_action = None
         _terminal_shear_evidence_for_card: dict = {}
         _terminal_zero_shear_demand_accepted = False
@@ -78262,6 +82375,10 @@ def _render_fast_design_guidance_panel(
                     _render_post_click_route.get("apply_used_resolved_candidate_payload")
                     and _render_post_click_route.get("applied_updates")
                 )
+                _render_current_failures = _overview_active_failure_keys(_render_current_overview) & {
+                    "bending",
+                    "shear",
+                }
                 _render_shear_action = None
                 _render_intent_debug_source = dict(st.session_state.get(DESIGN_GUIDE_DEBUG_BUNDLE_KEY) or {})
                 _render_intent_debug_source.update(guidance_debug)
@@ -78280,10 +82397,6 @@ def _render_fast_design_guidance_panel(
                     or (_render_intent_row or {}).get("expected_util")
                     or (_render_intent_row or {}).get("candidate_post_util")
                 )
-                _render_current_failures = _overview_active_failure_keys(_render_current_overview) & {
-                    "bending",
-                    "shear",
-                }
                 if (
                     _render_intent_contract
                     and _design_guide_button_contract_enabled(_render_intent_contract)
@@ -78810,11 +82923,12 @@ def _render_fast_design_guidance_panel(
                 "shear" in _primary_exact_for_presentation
                 and "bending" not in _primary_exact_for_presentation
                 and _design_guide_button_contract_enabled(_primary_contract_for_presentation)
-                and str(_primary_contract_for_presentation.get("family") or "").strip().lower() == "bending"
+                and str(_primary_contract_for_presentation.get("family") or "").strip().lower()
+                == "bending"
+                and _primary_contract_expected_for_presentation is not None
                 and _primary_bending_util_for_presentation is not None
                 and float(_primary_bending_util_for_presentation)
                 < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL) - float(TARGET_BAND_EPS)
-                and _primary_contract_expected_for_presentation is not None
                 and float(_primary_contract_expected_for_presentation)
                 < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL) - float(TARGET_BAND_EPS)
             ):
@@ -78922,6 +83036,20 @@ def _render_fast_design_guidance_panel(
                             "post_click_cleanup_evidence_by_family": dict(_primary_cleanup_for_presentation),
                         }
                     )
+                    if _terminal_exact_cleanup_blocker_should_render_green(
+                        _primary_post_click_item,
+                        _dg_overview,
+                        _combined_disabled_contract,
+                        _primary_exact_for_presentation,
+                    ):
+                        _primary_post_click_item, _combined_disabled_contract = (
+                            _normalise_terminal_exact_cleanup_card(
+                                _primary_post_click_item,
+                                _dg_overview,
+                                _combined_disabled_contract,
+                                _primary_exact_for_presentation,
+                            )
+                        )
                     _primary_evidence_for_presentation = dict(
                         _primary_post_click_item.get("candidate_search_evidence") or {}
                     )
@@ -78943,12 +83071,28 @@ def _render_fast_design_guidance_panel(
                     _primary_render_items[0] = dict(_primary_post_click_item)
                     guidance_items = [dict(_primary_post_click_item)]
                     render_plan["visible_guidance_items"] = [dict(_primary_post_click_item)]
-                    render_plan["reason"] = "combined_low_util_exact_blocker_primary_render"
+                    _primary_render_terminal_green = (
+                        str(_primary_post_click_item.get("terminal_cleanup_state") or "").strip()
+                        == "optimal"
+                    )
+                    render_plan["reason"] = (
+                        "combined_low_util_exact_stop_primary_render_green"
+                        if _primary_render_terminal_green
+                        else "combined_low_util_exact_blocker_primary_render"
+                    )
                     _dg_presentation = {}
-                    guidance_debug["guidance_branch"] = "combined_low_util_exact_blocker_primary_render"
-                    guidance_debug["selected_title"] = "Bending and shear cleanup blocked"
-                    guidance_debug["primary_card_title"] = "Bending and shear cleanup blocked"
-                    guidance_debug["primary_guidance_intent"] = "specific_blocker"
+                    guidance_debug["guidance_branch"] = str(render_plan["reason"])
+                    guidance_debug["selected_title"] = (
+                        _primary_post_click_item.get("title_main")
+                        or _primary_post_click_item.get("title")
+                    )
+                    guidance_debug["primary_card_title"] = (
+                        _primary_post_click_item.get("title_main")
+                        or _primary_post_click_item.get("title")
+                    )
+                    guidance_debug["primary_guidance_intent"] = str(
+                        _primary_post_click_item.get("guidance_intent") or "specific_blocker"
+                    )
                     guidance_debug["button_contract"] = dict(_combined_disabled_contract)
                     guidance_debug["primary_button_contract"] = dict(_combined_disabled_contract)
                     guidance_debug["button_contract_enabled"] = False
@@ -78961,6 +83105,22 @@ def _render_fast_design_guidance_panel(
                         _primary_cleanup_for_presentation
                     )
                     guidance_debug["candidate_search_evidence"] = dict(_primary_evidence_for_presentation)
+        (
+            guidance_items,
+            guidance_debug,
+            render_plan,
+            _dg_presentation,
+            _design_brain_contract_enforced_primary_render,
+        ) = _apply_design_brain_publication_contract_for_render(
+            guidance_items=list(guidance_items or _primary_render_items or []),
+            guidance_debug=dict(guidance_debug or {}),
+            render_plan=dict(render_plan or {}),
+            presentation=dict(_dg_presentation or {}),
+            state=_primary_guidance_disp_state_for_render,
+            reason="design_brain_publication_contract_primary_render",
+        )
+        if _design_brain_contract_enforced_primary_render:
+            _primary_render_items = [dict(guidance_items[0])] if guidance_items else []
         if _primary_render_items:
             _stage("post_plan.before_render_primary_only_item")
             _render_guidance_secondary_items(
@@ -79387,6 +83547,7 @@ def render_inputs():
         except Exception:
             pass
 
+    page_divider()
     st.markdown("##### Batch design")
     _batch_marker_ms = _inputs_elapsed_ms()
     render_timing_mark(
@@ -79585,13 +83746,27 @@ def render_inputs():
                         _log_beam_load_triggered_rerun("save_active_beam_to_table")
                         st.rerun()
 
-    page_divider()
     _mark("beam_manager")
     _sub_mark("start")
 
-    design_guide_slot = st.empty()
-    design_guide_page.render_pre_widget_placeholder(st, design_guide_slot)
-    page_divider()
+    show_design_guide_for_current_inputs = bool(_browser_test_mode_for_latency or inputs_has_design_actions_or_loads())
+    design_guide_slot = None
+    if show_design_guide_for_current_inputs:
+        page_divider()
+        _render_design_guide_constraints_panel(sync_callbacks)
+        design_guide_slot = st.empty()
+        design_guide_page.render_pre_widget_placeholder(st, design_guide_slot)
+        _render_inputs_scroll_anchor_keeper()
+        _render_design_guide_scroll_keeper()
+        page_divider()
+    else:
+        _render_inputs_scroll_anchor_keeper()
+        st.session_state.pop(DESIGN_GUIDE_COMPONENT_APPLY_IN_FLIGHT_KEY, None)
+        render_timing_mark(
+            "inputs_page.design_guide_hidden_until_actions_or_loads",
+            elapsed_ms=_inputs_elapsed_ms(),
+        )
+        page_divider()
 
     top_dm_l, top_dm_r = st.columns([8, 1], gap="small", vertical_alignment="top")
     with top_dm_l:
@@ -80866,9 +85041,58 @@ def render_inputs():
             _local_veq = 0.0
         if _local_veq >= 0.0:
             shear_demand = f"V*eq = {_local_veq:.1f} kN"
-    _shear_util_value = _parse_util_value(shear_pack_summary.get("summary_util"))
+    _numeric_visible_shear_rows = []
+    for _row in (SHEAR_ROWS or []):
+        if not isinstance(_row, dict) or _row.get("is_informational"):
+            continue
+        _row_util = _parse_util_value(_row.get("util"))
+        if _row_util is None:
+            continue
+        _numeric_visible_shear_rows.append((_row_util, _row))
+    _visible_shear_governing_row = None
+    if _numeric_visible_shear_rows:
+        _visible_shear_governing_row = max(_numeric_visible_shear_rows, key=lambda item: item[0])[1]
+    _shear_has_canonical_governing_truth = bool(
+        shear_pack_summary.get("summary_governing_explicit_canonical_truth_present")
+        or shear_pack_summary.get("summary_governing_util") not in (None, "", [], {})
+    )
+    if _shear_has_canonical_governing_truth:
+        shear_cap = (
+            shear_pack_summary.get("summary_capacity")
+            or shear_pack_summary.get("summary_governing_capacity")
+            or shear_cap
+        )
+        shear_demand = (
+            shear_pack_summary.get("summary_demand")
+            or shear_pack_summary.get("summary_governing_demand")
+            or shear_demand
+        )
+    elif _visible_shear_governing_row:
+        shear_cap = (
+            _visible_shear_governing_row.get("capacity")
+            or _visible_shear_governing_row.get("value")
+            or shear_cap
+        )
+        shear_demand = (
+            _visible_shear_governing_row.get("action")
+            or _visible_shear_governing_row.get("limit")
+            or shear_demand
+        )
+    _shear_util_value = _parse_util_value(
+        shear_pack_summary.get("summary_governing_util")
+        if _shear_has_canonical_governing_truth
+        else shear_pack_summary.get("summary_util")
+    )
+    if not _shear_has_canonical_governing_truth and _visible_shear_governing_row:
+        _visible_shear_governing_util = _parse_util_value(_visible_shear_governing_row.get("util"))
+        if _visible_shear_governing_util is not None:
+            _shear_util_value = _visible_shear_governing_util
     _shear_display_source = str(shear_pack_summary.get("summary_display_source") or "").strip()
-    if _shear_display_source == "sectional_required_shear":
+    if (
+        _shear_display_source == "sectional_required_shear"
+        and not _shear_has_canonical_governing_truth
+        and not _visible_shear_governing_row
+    ):
         try:
             _phi_vu_display = float(shear_pack_summary.get("summary_phiVu_kN") or 0.0)
             _veq_display = float(shear_pack_summary.get("summary_Veq_kN") or 0.0)
@@ -81161,7 +85385,7 @@ def render_inputs():
                     utilisation=bending_util_str,
                     status=bending_status,
                     rows=BENDING_ROWS,
-                    open_by_default=governing_check == "bending",
+                    open_by_default=bool(_browser_test_mode_for_latency and governing_check == "bending"),
                     route_links=True,
                     threshold_text="",
                     capacity_label="Capacity",
@@ -81176,7 +85400,7 @@ def render_inputs():
                     utilisation=shear_util_str,
                     status=shear_status,
                     rows=SHEAR_ROWS,
-                    open_by_default=governing_check == "shear",
+                    open_by_default=bool(_browser_test_mode_for_latency and governing_check == "shear"),
                     route_links=True,
                     status_note_html=shear_status_note_html,
                     threshold_text="",
@@ -81195,7 +85419,7 @@ def render_inputs():
                     utilisation=crack_util_str,
                     status=crack_status,
                     rows=CRACK_ROWS,
-                    open_by_default=governing_check == "crack",
+                    open_by_default=bool(_browser_test_mode_for_latency and governing_check == "crack"),
                     route_links=True,
                     threshold_text="",
                     capacity_label="Limit",
@@ -81211,7 +85435,7 @@ def render_inputs():
                     status=defl_status,
                     rows=DEFLECTION_ROWS,
                     columns=DEFLECTION_CHECK_SUMMARY_COLUMNS,
-                    open_by_default=governing_check == "deflection",
+                    open_by_default=bool(_browser_test_mode_for_latency and governing_check == "deflection"),
                     route_links=True,
                     threshold_text="SLS load not supplied" if no_loads_deflection else "",
                     capacity_label="Design limit",
@@ -81480,6 +85704,13 @@ tr:hover .hint { opacity: 1; }
         _mark("render_summary")
 
     def _render_fresh_design_guide_panel() -> None:
+        if not show_design_guide_for_current_inputs or design_guide_slot is None:
+            render_timing_mark(
+                "inputs_page.design_guide_build.skipped_until_actions_or_loads",
+                elapsed_ms=round((time.perf_counter() - _render_trace_started) * 1000.0, 3),
+            )
+            _mark("render_design_guide_skipped")
+            return
         _design_guide_render_started = time.perf_counter()
         render_timing_mark(
             "inputs_page.design_guide_build.start",
@@ -81495,6 +85726,7 @@ tr:hover .hint { opacity: 1; }
             render_panel=_render_fast_design_guidance_panel,
             trace=_inputs_pre_widget_trace,
         )
+        st.session_state.pop(DESIGN_GUIDE_COMPONENT_APPLY_IN_FLIGHT_KEY, None)
         render_timing_mark(
             "inputs_page.design_guide_build.end",
             duration_ms=round((time.perf_counter() - _design_guide_render_started) * 1000.0, 3),
