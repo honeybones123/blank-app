@@ -3560,6 +3560,10 @@ def _design_guide_sidebar_debug_enabled() -> bool:
         return False
 
 
+def _design_guide_raw_details_enabled() -> bool:
+    return _design_guide_sidebar_debug_enabled()
+
+
 def _reset_design_guide_reco_trace() -> None:
     st.session_state[DESIGN_GUIDE_RECO_TRACE_KEY] = []
 
@@ -11234,6 +11238,16 @@ def _design_guide_dashboard_card_html(vm: dict, *, card_class: str) -> str:
         if current_html
         else ""
     )
+    details_section = ""
+    if _design_guide_raw_details_enabled():
+        details_section = "".join(
+            [
+                "<details class='dg-details-row' data-testid='design-guide-details'>",
+                "<summary>&gt; Details</summary>",
+                f"<pre class='dg-details-body'>{html.escape(details_text)}</pre>",
+                "</details>",
+            ]
+        )
     return "".join(
         [
             f"<details class='{card_classes}' data-testid='design-guide-card' id='{html.escape(toggle_id)}'>",
@@ -11256,13 +11270,99 @@ def _design_guide_dashboard_card_html(vm: dict, *, card_class: str) -> str:
             f"<div class='dg-section-title'>{html.escape(str(_html_section_title_override or vm.get('section_title') or 'Status'))}</div>",
             f"<div class='dg-reason-list' data-testid='design-guide-main-explanation'>{''.join(reason_html)}</div>",
             ladder_stop_section,
-            "<details class='dg-details-row' data-testid='design-guide-details'>",
-            "<summary>&gt; Details</summary>",
-            f"<pre class='dg-details-body'>{html.escape(details_text)}</pre>",
-            "</details>",
+            details_section,
             "</div>",
             "</details>",
         ]
+    )
+
+
+def _design_guide_direct_action_shell_card_html(
+    title: object,
+    *,
+    pill: str = "ACTION",
+    current_overview: dict | None = None,
+    candidate_family: object = None,
+    expected_util: object = None,
+    preview_pass: object = True,
+    summary_line: str = "Run one-click auto design.",
+    reason_text: str = "Run one-click auto design.",
+) -> str:
+    """Render direct one-click shells as real Design Guide cards for verifier parity."""
+
+    overview = current_overview if isinstance(current_overview, dict) else {}
+    candidate_family_key = str(candidate_family or "").strip().lower()
+    expected_util_value = _parse_util_value(expected_util)
+    current_rows: list[dict] = []
+    preview_rows: dict[str, dict] = {}
+    for family, label in (
+        ("bending", "Bending"),
+        ("shear", "Shear"),
+        ("crack", "Crack"),
+        ("deflection", "Deflection"),
+    ):
+        row = _design_guide_family_row_from_overview(overview, family)
+        util = row.get("util")
+        status = str(row.get("status") or "CURRENT").strip().upper()
+        if status == "FAIL":
+            tone = "red"
+        elif status == "PASS":
+            tone = "green"
+        else:
+            tone = "grey"
+        current_rows.append(
+            {
+                "family": family,
+                "label": label,
+                "value": _design_guide_format_display_util(util),
+                "status": status,
+                "tone": tone,
+            }
+        )
+        after_util = util
+        after_status = status
+        if family == candidate_family_key and expected_util_value is not None:
+            after_util = float(expected_util_value)
+            after_status = "PASS" if bool(preview_pass) else "PREVIEW_BLOCKED"
+        preview_rows[family] = {
+            "before_util": util,
+            "after_util": after_util,
+            "before_status": status,
+            "after_status": after_status,
+            "before_value": row.get("value"),
+            "after_value": row.get("value"),
+            "before_limit": row.get("limit"),
+            "after_limit": row.get("limit"),
+        }
+
+    vm = {
+        "status": "action",
+        "pill": str(pill or "ACTION").strip().upper(),
+        "title": str(title or "Design Guide action").strip(),
+        "governing_label": "Target cleanup preview",
+        "summary_line": str(summary_line or "Run one-click auto design.").strip(),
+        "current": current_rows,
+        "preview": preview_rows,
+        "section_title": "Recommended action",
+        "reasons": [
+            {
+                "label": "Change",
+                "text": str(reason_text or "Run one-click auto design.").strip(),
+                "tone": "info",
+            }
+        ],
+        "details": {
+            "current_overview": dict(overview),
+            "debug": {"direct_action_shell": True},
+        },
+        "cta": {
+            "enabled": True,
+            "label": "Run one-click auto design",
+        },
+    }
+    return _design_guide_dashboard_card_html(
+        vm,
+        card_class="fast-guidance-item efficiency",
     )
 
 
@@ -12377,6 +12477,14 @@ def _design_guide_button_contract_enabled(contract: dict | None) -> bool:
         and bool(c.get("preview_pass"))
         and c.get("blocking_reason") is None
     )
+
+
+def _design_guide_cleanup_item_publishable(item: dict | None) -> bool:
+    if not isinstance(item, dict):
+        return False
+    if _design_guide_button_contract_enabled(dict(item.get("button_contract") or {})):
+        return True
+    return bool(_guidance_item_is_resolved_one_click(item))
 
 
 def _design_guide_text_indicates_blocker(text: str | None) -> bool:
@@ -46419,6 +46527,231 @@ def _render_guidance_secondary_items(
                         guidance_debug["guidance_branch"] = "visible_existing_best_safe_cleanup_action_terminalized"
                         guidance_debug["post_click_design_guide_state"] = "exact_blocker"
                         guidance_debug["visible_best_safe_cleanup_action_terminalized"] = True
+        _visible_title_before_blocker_suppression = str(
+            item.get("title_main") or item.get("title") or ""
+        ).strip().lower()
+        if (
+            "shear cleanup blocked by final efficiency threshold" in _visible_title_before_blocker_suppression
+            and not _design_guide_button_contract_enabled(button_contract)
+        ):
+            _visible_evidence_for_shear_action = dict(
+                item.get("candidate_search_evidence")
+                or (item.get("action_payload") or {}).get("candidate_search_evidence")
+                or {}
+            )
+            _visible_shear_updates_for_action = dict(
+                _visible_evidence_for_shear_action.get("best_safe_candidate_updates")
+                or _visible_evidence_for_shear_action.get("selected_candidate_updates")
+                or _visible_evidence_for_shear_action.get("closest_safe_candidate_updates")
+                or {}
+            )
+            _current_state_for_visible_shear_action = _guidance_state_snapshot(guidance_disp_state)
+            _current_overview_for_visible_shear_action = dict(current_overview or {})
+            _current_utils_for_visible_shear_action = dict(
+                _current_overview_for_visible_shear_action.get("utils") or {}
+            )
+            _current_shear_util_for_visible_action = _parse_util_value(
+                _current_utils_for_visible_shear_action.get("shear")
+            )
+            if (
+                _visible_shear_updates_for_action
+                and bool(set(_visible_shear_updates_for_action) & _COMPOUND_SHEAR_UPDATE_KEYS)
+                and not _updates_match_state(
+                    _current_state_for_visible_shear_action,
+                    _visible_shear_updates_for_action,
+                )
+                and bool(_current_overview_for_visible_shear_action.get("all_key_pass"))
+                and not bool(_current_overview_for_visible_shear_action.get("any_fail"))
+                and _current_shear_util_for_visible_action is not None
+                and float(_current_shear_util_for_visible_action) < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL)
+            ):
+                try:
+                    _visible_shear_candidate_for_action = _evaluate_auto_design_candidate(
+                        _current_state_for_visible_shear_action,
+                        updates=dict(_visible_shear_updates_for_action),
+                        source="visible_stale_shear_blocker_safe_cleanup_action",
+                        label="Shear cleanup - best safe one-click reduction",
+                        action_type="apply_resolved_candidate",
+                    )
+                except Exception:
+                    _visible_shear_candidate_for_action = None
+                _visible_shear_candidate_overview = dict(
+                    (_visible_shear_candidate_for_action or {}).get("overview") or {}
+                )
+                if (
+                    isinstance(_visible_shear_candidate_for_action, dict)
+                    and not bool(_visible_shear_candidate_overview.get("any_fail"))
+                    and _overview_required_checks_acceptable(_visible_shear_candidate_overview)
+                    and not _candidate_preview_statuses_have_explicit_fail(
+                        dict(_visible_shear_candidate_overview.get("statuses") or {})
+                    )
+                ):
+                    _visible_shear_expected_util = _parse_util_value(
+                        dict(_visible_shear_candidate_overview.get("utils") or {}).get("shear")
+                    )
+                    if _visible_shear_expected_util is None:
+                        _visible_shear_expected_util = _parse_util_value(
+                            _visible_shear_candidate_overview.get("worst_util")
+                            or _visible_shear_candidate_overview.get("governing_util")
+                            or _visible_evidence_for_shear_action.get("best_safe_final_util")
+                        )
+                    _visible_exact_maps = dict(
+                        _visible_evidence_for_shear_action.get("exact_blockers_by_family") or {}
+                    )
+                    _visible_bending_exact_only = {
+                        "bending": dict(_visible_exact_maps.get("bending"))
+                    } if isinstance(_visible_exact_maps.get("bending"), dict) else {}
+                    _visible_shear_candidate_id = _normalise_design_guide_candidate_id(
+                        _visible_evidence_for_shear_action.get("best_safe_candidate_id"),
+                        _visible_evidence_for_shear_action.get("selected_candidate_id"),
+                        _visible_evidence_for_shear_action.get("closest_safe_candidate_id"),
+                        family="shear",
+                        updates=_visible_shear_updates_for_action,
+                    )
+                    _visible_action_evidence = dict(_visible_evidence_for_shear_action)
+                    for _stale_shear_blocker_key in (
+                        "exact_blockers_by_family",
+                        "post_click_exact_blockers_by_family",
+                        "cleanup_evidence_by_family",
+                        "post_click_cleanup_evidence_by_family",
+                    ):
+                        _visible_action_evidence.pop(_stale_shear_blocker_key, None)
+                    _visible_action_evidence.update(
+                        {
+                            "family": "shear",
+                            "selected_candidate_id": _visible_shear_candidate_id,
+                            "selected_candidate_updates": dict(_visible_shear_updates_for_action),
+                            "closest_safe_candidate_id": _visible_shear_candidate_id,
+                            "closest_safe_candidate_updates": dict(_visible_shear_updates_for_action),
+                            "best_safe_candidate_id": _visible_shear_candidate_id,
+                            "best_safe_candidate_updates": dict(_visible_shear_updates_for_action),
+                            "best_safe_candidate_applied": False,
+                            "best_safe_partial_cleanup": True,
+                            "no_second_cta_required": False,
+                            "outside_target_band_allowed": True,
+                            "outside_target_band_allowed_category": (
+                                "safe_incremental_cleanup_below_final_threshold"
+                            ),
+                            "safe_candidate_count": max(
+                                1,
+                                int(
+                                    _visible_action_evidence.get("safe_candidate_count")
+                                    or _visible_action_evidence.get("safe_cleanup_count")
+                                    or 0
+                                ),
+                            ),
+                            "executable_candidate_count": max(
+                                1,
+                                int(
+                                    _visible_action_evidence.get("executable_candidate_count")
+                                    or _visible_action_evidence.get("executable_cleanup_count")
+                                    or 0
+                                ),
+                            ),
+                            "safe_shear_cleanup_count": max(
+                                1,
+                                int(_visible_action_evidence.get("safe_shear_cleanup_count") or 0),
+                            ),
+                            "executable_shear_cleanup_count": max(
+                                1,
+                                int(_visible_action_evidence.get("executable_shear_cleanup_count") or 0),
+                            ),
+                        }
+                    )
+                    if _visible_shear_expected_util is not None:
+                        _visible_action_evidence["selected_candidate_util"] = float(
+                            _visible_shear_expected_util
+                        )
+                        _visible_action_evidence["closest_safe_candidate_util"] = float(
+                            _visible_shear_expected_util
+                        )
+                        _visible_action_evidence["best_safe_final_util"] = float(
+                            _visible_shear_expected_util
+                        )
+                    if _visible_bending_exact_only:
+                        _visible_action_evidence["exact_blockers_by_family"] = dict(
+                            _visible_bending_exact_only
+                        )
+                        _visible_action_evidence["post_click_exact_blockers_by_family"] = dict(
+                            _visible_bending_exact_only
+                        )
+                        _visible_action_evidence["cleanup_evidence_by_family"] = dict(
+                            _visible_bending_exact_only
+                        )
+                        _visible_action_evidence["post_click_cleanup_evidence_by_family"] = dict(
+                            _visible_bending_exact_only
+                        )
+                    _visible_shear_candidate_for_action.update(
+                        {
+                            "candidate_id": _visible_shear_candidate_id,
+                            "source_candidate_id": _visible_shear_candidate_id,
+                            "updates": dict(_visible_shear_updates_for_action),
+                            "proposed_updates": dict(_visible_shear_updates_for_action),
+                            "action_type": "apply_resolved_candidate",
+                            "family": "shear",
+                            "recommendation_family_tag": "shear",
+                            "candidate_search_evidence": dict(_visible_action_evidence),
+                            "best_safe_partial_cleanup": True,
+                            "no_second_cta_required": False,
+                            "local_cleanup_candidate": True,
+                        }
+                    )
+                    _visible_action_item = _guidance_item_from_resolved_candidate(
+                        _visible_shear_candidate_for_action,
+                        state=_current_state_for_visible_shear_action,
+                        overview=_current_overview_for_visible_shear_action,
+                        title="Shear cleanup - best safe one-click reduction",
+                        reasoning=(
+                            "This applies the best safe shear-link cleanup found by the exhaustive search; "
+                            "any remaining low shear utilisation is carried as exact-stop proof."
+                        ),
+                        status="EFFICIENCY",
+                        primary_action="Run one-click auto design",
+                    )
+                    if isinstance(_visible_action_item, dict):
+                        _visible_action_item["guidance_intent"] = "optional_cleanup"
+                        _visible_action_item["local_cleanup_candidate"] = True
+                        _visible_action_item["best_safe_partial_cleanup"] = True
+                        _visible_action_item["no_second_cta_required"] = False
+                        _visible_action_item["candidate_search_evidence"] = dict(_visible_action_evidence)
+                        _visible_payload = dict(_visible_action_item.get("action_payload") or {})
+                        _visible_payload["candidate_search_evidence"] = dict(_visible_action_evidence)
+                        _visible_payload["best_safe_partial_cleanup"] = True
+                        _visible_payload["no_second_cta_required"] = False
+                        _visible_action_item["action_payload"] = dict(_visible_payload)
+                        _visible_resolved = dict(_visible_action_item.get("resolved_candidate") or {})
+                        _visible_resolved["candidate_search_evidence"] = dict(_visible_action_evidence)
+                        _visible_action_item["resolved_candidate"] = dict(_visible_resolved)
+                        item.clear()
+                        item.update(_visible_action_item)
+                        button_contract = _design_guide_button_contract(
+                            item,
+                            state=_current_state_for_visible_shear_action,
+                        )
+                        item["button_contract"] = dict(button_contract)
+                        guidance_debug["guidance_branch"] = "visible_stale_shear_blocker_rehydrated"
+                        guidance_debug["selected_title"] = item.get("title_main")
+                        guidance_debug["selected_action_type"] = item.get("action_type")
+                        guidance_debug["selected_action_family"] = "shear"
+                        guidance_debug["primary_card_title"] = item.get("title_main")
+                        guidance_debug["primary_card_intent"] = "optional_cleanup"
+                        guidance_debug["primary_guidance_intent"] = "optional_cleanup"
+                        guidance_debug["candidate_search_evidence"] = dict(_visible_action_evidence)
+                        guidance_debug["primary_button_contract"] = dict(button_contract)
+                        guidance_debug["button_contract"] = dict(button_contract)
+                        guidance_debug["button_contract_enabled"] = bool(
+                            _design_guide_button_contract_enabled(button_contract)
+                        )
+                        guidance_debug["button_contract_updates"] = dict(button_contract.get("updates") or {})
+                        guidance_debug["button_contract_preview_pass"] = bool(
+                            button_contract.get("preview_pass")
+                        )
+                        guidance_debug["button_contract_blocking_reason"] = button_contract.get(
+                            "blocking_reason"
+                        )
+                        guidance_debug["design_guide_has_actionable_recommendation"] = bool(
+                            _design_guide_button_contract_enabled(button_contract)
+                        )
         _presentation_blocker_hint = ""
         if primary_card_presentation is not None and idx == 0 and start_index == 0:
             _presentation_blocker_hint = " ".join(
@@ -69900,6 +70233,66 @@ def _compute_design_guidance_items_core(
                 or _post_active_shear_blocker.get("failed_check_util")
                 or dict(overview.get("utils") or {}).get("shear")
             )
+            _post_active_shear_cleanup_item = None
+            try:
+                _post_active_shear_cleanup_item = _shear_best_safe_cleanup_item_from_evidence(
+                    guidance_state,
+                    overview,
+                    _post_active_shear_blocker,
+                )
+            except Exception:
+                _post_active_shear_cleanup_item = None
+            if not isinstance(_post_active_shear_cleanup_item, dict):
+                try:
+                    _post_active_shear_cleanup_item = _shear_low_util_target_cleanup_item(
+                        guidance_state,
+                        overview,
+                        threshold=float(FINAL_ACCEPTED_MIN_FAMILY_UTIL),
+                        allow_best_safe_below_threshold=True,
+                    )
+                except Exception:
+                    _post_active_shear_cleanup_item = None
+            _post_active_shear_cleanup_contract = dict(
+                (_post_active_shear_cleanup_item or {}).get("button_contract") or {}
+            )
+            if _design_guide_button_contract_enabled(_post_active_shear_cleanup_contract):
+                _post_active_shear_cleanup_item = _attach_family_status_display_payload(
+                    _post_active_shear_cleanup_item,
+                    state=guidance_state,
+                )
+                _stamp_zero_bending_demand_exclusion(
+                    _post_active_shear_cleanup_item,
+                    guidance_state,
+                    dict(overview.get("utils") or {}),
+                )
+                if min_dbg:
+                    _post_active_shear_cleanup_evidence = dict(
+                        _post_active_shear_cleanup_item.get("candidate_search_evidence") or {}
+                    )
+                    debug_sink["guidance_branch"] = "post_active_repair_residual_shear_best_safe_action"
+                    debug_sink["selected_action_type"] = "apply_resolved_candidate"
+                    debug_sink["selected_title"] = _post_active_shear_cleanup_item.get("title_main")
+                    debug_sink["selected_action_family"] = "shear"
+                    debug_sink["post_click_accepted_green"] = False
+                    debug_sink["post_click_accepted_green_valid"] = False
+                    debug_sink["post_click_design_guide_state"] = None
+                    debug_sink["post_active_low_shear_safe_action_preferred"] = True
+                    debug_sink["primary_button_contract"] = dict(_post_active_shear_cleanup_contract)
+                    debug_sink["button_contract"] = dict(_post_active_shear_cleanup_contract)
+                    debug_sink["button_contract_enabled"] = True
+                    debug_sink["button_contract_updates"] = dict(
+                        _post_active_shear_cleanup_contract.get("updates") or {}
+                    )
+                    debug_sink["candidate_search_evidence"] = dict(_post_active_shear_cleanup_evidence)
+                    debug_sink["primary_card_title"] = _post_active_shear_cleanup_item.get("title_main")
+                    debug_sink["primary_card_intent"] = "efficiency_tightening"
+                    debug_sink["primary_guidance_intent"] = "efficiency_tightening"
+                    _stamp_zero_bending_demand_exclusion(
+                        debug_sink,
+                        guidance_state,
+                        dict(overview.get("utils") or {}),
+                    )
+                return [_post_active_shear_cleanup_item]
             blocker_item = _guidance_item(
                 "shear",
                 "Shear cleanup blocked by final efficiency threshold",
@@ -70385,6 +70778,63 @@ def _compute_design_guidance_items_core(
                 )
             return [accepted_item]
         if material_families:
+            if "shear" in {str(f or "").strip().lower() for f in material_families}:
+                try:
+                    shear_cleanup_item = _shear_low_util_target_cleanup_item(
+                        guidance_state,
+                        overview,
+                        threshold=float(FINAL_ACCEPTED_MIN_FAMILY_UTIL),
+                        allow_best_safe_below_threshold=True,
+                    )
+                except Exception:
+                    shear_cleanup_item = None
+                if isinstance(shear_cleanup_item, dict) and _design_guide_cleanup_item_publishable(shear_cleanup_item):
+                    shear_cleanup_item["guidance_intent"] = "optional_cleanup"
+                    shear_cleanup_item["local_cleanup_candidate"] = True
+                    _stamp_zero_bending_demand_exclusion(
+                        shear_cleanup_item,
+                        guidance_state,
+                        dict(overview.get("utils") or {}),
+                    )
+                    if min_dbg:
+                        evidence = dict(shear_cleanup_item.get("candidate_search_evidence") or {})
+                        debug_sink["guidance_branch"] = "in_target_shear_best_safe_material_cleanup"
+                        debug_sink["selected_action_type"] = shear_cleanup_item.get("action_type")
+                        debug_sink["selected_title"] = shear_cleanup_item.get("title_main")
+                        debug_sink["family_utils"] = dict(family_utils)
+                        debug_sink["materially_overprovided_families"] = list(material_families)
+                        debug_sink["governing_family"] = governing_family
+                        debug_sink["local_cleanup_search_ran"] = True
+                        debug_sink["local_cleanup_search_exhaustive"] = True
+                        debug_sink["safe_local_cleanup_count"] = int(
+                            evidence.get("safe_candidate_count")
+                            or evidence.get("safe_executor_backed_candidates_count")
+                            or 1
+                        )
+                        debug_sink["executable_safe_cleanup_count"] = int(
+                            evidence.get("executable_candidate_count")
+                            or evidence.get("executable_cleanup_count")
+                            or 1
+                        )
+                        debug_sink["local_cleanup_candidate_search_evidence"] = dict(evidence)
+                        debug_sink["candidate_search_evidence"] = dict(evidence)
+                        debug_sink["local_cleanup_candidate_inventory"] = list(
+                            evidence.get("safe_executor_backed_candidates") or []
+                        )
+                        debug_sink["local_cleanup_candidate_inventory_count"] = len(
+                            debug_sink["local_cleanup_candidate_inventory"]
+                        )
+                        debug_sink["candidate_inventory_count"] = debug_sink[
+                            "local_cleanup_candidate_inventory_count"
+                        ]
+                        debug_sink["terminal_state_blocked_by_local_cleanup"] = True
+                        debug_sink["design_guide_has_actionable_recommendation"] = True
+                        _stamp_zero_bending_demand_exclusion(
+                            debug_sink,
+                            guidance_state,
+                            dict(overview.get("utils") or {}),
+                        )
+                    return [shear_cleanup_item]
             try:
                 if _core_stage_debug:
                     print("DG_STAGE core_before_direct_target_band_item", file=sys.stderr, flush=True)
@@ -70924,6 +71374,64 @@ def _compute_design_guidance_items_core(
             debug_sink["selected_action_type"] = vld_item.get("action_type")
             debug_sink["selected_title"] = vld_item.get("title_main")
         return [vld_item]
+    _overview_utils_for_low_shear = dict(overview.get("utils") or {})
+    _low_shear_util_for_cleanup = _parse_util_value(_overview_utils_for_low_shear.get("shear"))
+    if (
+        bool(overview.get("all_key_pass"))
+        and not bool(overview.get("any_fail"))
+        and _low_shear_util_for_cleanup is not None
+        and float(_low_shear_util_for_cleanup) < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL)
+        and _shear_reinforcement_is_active(guidance_state)
+    ):
+        try:
+            shear_cleanup_item = _shear_low_util_target_cleanup_item(
+                guidance_state,
+                overview,
+                threshold=float(FINAL_ACCEPTED_MIN_FAMILY_UTIL),
+                allow_best_safe_below_threshold=True,
+            )
+        except Exception:
+            shear_cleanup_item = None
+        if isinstance(shear_cleanup_item, dict) and _design_guide_cleanup_item_publishable(shear_cleanup_item):
+            shear_cleanup_item["guidance_intent"] = "optional_cleanup"
+            shear_cleanup_item["local_cleanup_candidate"] = True
+            _stamp_zero_bending_demand_exclusion(
+                shear_cleanup_item,
+                guidance_state,
+                dict(overview.get("utils") or {}),
+            )
+            guidance_branch = "below_target_shear_best_safe_cleanup"
+            if min_dbg:
+                evidence = dict(shear_cleanup_item.get("candidate_search_evidence") or {})
+                debug_sink["guidance_branch"] = guidance_branch
+                debug_sink["selected_action_type"] = shear_cleanup_item.get("action_type")
+                debug_sink["selected_title"] = shear_cleanup_item.get("title_main")
+                debug_sink["selected_action_family"] = "shear"
+                debug_sink["family_utils"] = dict(_overview_utils_for_low_shear)
+                debug_sink["materially_overprovided_families"] = ["shear"]
+                debug_sink["governing_family"] = "shear"
+                debug_sink["local_cleanup_search_ran"] = True
+                debug_sink["local_cleanup_search_exhaustive"] = True
+                debug_sink["safe_local_cleanup_count"] = int(
+                    evidence.get("safe_candidate_count")
+                    or evidence.get("safe_executor_backed_candidates_count")
+                    or 1
+                )
+                debug_sink["executable_safe_cleanup_count"] = int(
+                    evidence.get("executable_candidate_count")
+                    or evidence.get("executable_cleanup_count")
+                    or 1
+                )
+                debug_sink["local_cleanup_candidate_search_evidence"] = dict(evidence)
+                debug_sink["candidate_search_evidence"] = dict(evidence)
+                debug_sink["terminal_state_blocked_by_local_cleanup"] = True
+                debug_sink["design_guide_has_actionable_recommendation"] = True
+                _stamp_zero_bending_demand_exclusion(
+                    debug_sink,
+                    guidance_state,
+                    dict(overview.get("utils") or {}),
+                )
+            return [shear_cleanup_item]
     efficiency_items = _efficiency_guidance_items(guidance_state, efficiency_state)
     compound_eff_item = _try_compound_efficiency_guidance_item(guidance_state, efficiency_state)
     if compound_eff_item:
@@ -76815,8 +77323,32 @@ def _render_fast_design_guidance_panel(
                                 _direct_preview_shear_util is None
                                 or float(_direct_preview_shear_util) < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL)
                             ):
-                                _direct_allowed = False
-                                _direct_blocked_reason = "blocked_shear_cleanup_does_not_reach_final_family_threshold"
+                                if (
+                                    _guidance_item_best_safe_partial_cleanup(_direct_cleanup_item)
+                                    or _guidance_item_safe_incremental_cleanup_below_threshold(_direct_cleanup_item)
+                                ):
+                                    _direct_evidence["best_safe_partial_cleanup"] = True
+                                    _direct_evidence["safe_incremental_cleanup_below_final_threshold"] = True
+                                    _direct_evidence["no_second_cta_required"] = False
+                                    _direct_evidence["outside_target_band_allowed"] = True
+                                    _direct_evidence[
+                                        "outside_target_band_allowed_category"
+                                    ] = "safe_incremental_cleanup_below_final_threshold"
+                                    _direct_evidence["outside_target_band_allowed_reason"] = (
+                                        "The best safe shear-link cleanup remains below the final accepted "
+                                        "utilisation threshold, but it materially reduces overprovided shear "
+                                        "reinforcement while preserving all required checks; exact-stop evidence "
+                                        "explains why no accepted-band shear cleanup is available."
+                                    )
+                                    _direct_cleanup_item["candidate_search_evidence"] = dict(_direct_evidence)
+                                    _direct_cleanup_item["best_safe_partial_cleanup"] = True
+                                    _direct_cleanup_item[
+                                        "safe_incremental_cleanup_below_final_threshold"
+                                    ] = True
+                                    _direct_cleanup_item["no_second_cta_required"] = False
+                                else:
+                                    _direct_allowed = False
+                                    _direct_blocked_reason = "blocked_shear_cleanup_does_not_reach_final_family_threshold"
                     guidance_debug["family_utils"] = dict(_family_utils)
                     guidance_debug["materially_overprovided_families"] = list(_material_families)
                     guidance_debug["local_cleanup_search_ran"] = True
@@ -78476,6 +79008,352 @@ def _render_fast_design_guidance_panel(
     _stage("post_plan.after_post_cleanup_audit")
     if _post_cleanup_render_audit:
         guidance_debug.update(_post_cleanup_render_audit)
+    try:
+        _early_shear_cleanup_state = _guidance_state_snapshot(_shared_state_snapshot())
+    except Exception:
+        _early_shear_cleanup_state = guidance_disp_state
+    _early_shear_cleanup_overview = dict(guidance_debug.get("overview") or _dg_overview or {})
+    if not bool(_early_shear_cleanup_overview.get("any_fail")):
+        _early_shear_cleanup_utils = dict(_early_shear_cleanup_overview.get("utils") or {})
+        _early_shear_cleanup_util = _parse_util_value(_early_shear_cleanup_utils.get("shear"))
+        _early_shear_cleanup_vu = max(
+            abs(float(_float_from_state(_early_shear_cleanup_state, "uls_Vstar", 0.0) or 0.0)),
+            abs(float(_float_from_state(_early_shear_cleanup_state, "load_Vstar_proxy", 0.0) or 0.0)),
+        )
+        _early_shear_cleanup_failures = _overview_active_failure_keys(
+            _early_shear_cleanup_overview
+        ) & {"bending", "shear"}
+        if (
+            _early_shear_cleanup_util is not None
+            and float(_early_shear_cleanup_util) < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL)
+            and _early_shear_cleanup_vu > float(TARGET_BAND_EPS)
+            and not _early_shear_cleanup_failures
+        ):
+            try:
+                _early_shear_cleanup_action = _shear_low_util_target_cleanup_item(
+                    _early_shear_cleanup_state,
+                    _early_shear_cleanup_overview,
+                    threshold=float(FINAL_ACCEPTED_MIN_FAMILY_UTIL),
+                    allow_best_safe_below_threshold=True,
+                )
+            except Exception:
+                _early_shear_cleanup_action = None
+            if not isinstance(_early_shear_cleanup_action, dict):
+                _early_shear_cleanup_evidence_source = _post_active_repair_residual_shear_exact_blocker(
+                    _early_shear_cleanup_state,
+                    _early_shear_cleanup_overview,
+                    threshold=FINAL_ACCEPTED_MIN_FAMILY_UTIL,
+                )
+                _early_shear_cleanup_applied_evidence = _post_click_applied_residual_shear_exact_blocker(
+                    _early_shear_cleanup_state,
+                    _early_shear_cleanup_overview,
+                )
+                if isinstance(_early_shear_cleanup_applied_evidence, dict):
+                    _early_shear_cleanup_evidence_source = _early_shear_cleanup_applied_evidence
+                _early_shear_cleanup_action = _shear_best_safe_cleanup_item_from_evidence(
+                    _early_shear_cleanup_state,
+                    _early_shear_cleanup_overview,
+                    _early_shear_cleanup_evidence_source,
+                )
+            elif not _design_guide_cleanup_item_publishable(_early_shear_cleanup_action):
+                _early_shear_cleanup_evidence_source = _post_active_repair_residual_shear_exact_blocker(
+                    _early_shear_cleanup_state,
+                    _early_shear_cleanup_overview,
+                    threshold=FINAL_ACCEPTED_MIN_FAMILY_UTIL,
+                )
+                _early_shear_cleanup_applied_evidence = _post_click_applied_residual_shear_exact_blocker(
+                    _early_shear_cleanup_state,
+                    _early_shear_cleanup_overview,
+                )
+                if isinstance(_early_shear_cleanup_applied_evidence, dict):
+                    _early_shear_cleanup_evidence_source = _early_shear_cleanup_applied_evidence
+                _early_shear_cleanup_best_safe = _shear_best_safe_cleanup_item_from_evidence(
+                    _early_shear_cleanup_state,
+                    _early_shear_cleanup_overview,
+                    _early_shear_cleanup_evidence_source,
+                )
+                if isinstance(_early_shear_cleanup_best_safe, dict):
+                    _early_shear_cleanup_action = _early_shear_cleanup_best_safe
+            if isinstance(_early_shear_cleanup_action, dict):
+                _early_shear_cleanup_seed_evidence = dict(
+                    _early_shear_cleanup_action.get("candidate_search_evidence") or {}
+                )
+                _early_shear_cleanup_seed_updates = dict(
+                    _early_shear_cleanup_seed_evidence.get("best_safe_candidate_updates")
+                    or _early_shear_cleanup_seed_evidence.get("selected_candidate_updates")
+                    or _early_shear_cleanup_seed_evidence.get("closest_safe_candidate_updates")
+                    or _early_shear_cleanup_action.get("updates")
+                    or {}
+                )
+                if (
+                    _early_shear_cleanup_seed_updates
+                    and not _updates_match_state(
+                        _early_shear_cleanup_state,
+                        _early_shear_cleanup_seed_updates,
+                    )
+                    and bool(
+                    set(_early_shear_cleanup_seed_updates) & _COMPOUND_SHEAR_UPDATE_KEYS
+                    )
+                ):
+                    _early_shear_cleanup_candidate_id = str(
+                        _early_shear_cleanup_seed_evidence.get("best_safe_candidate_id")
+                        or _early_shear_cleanup_seed_evidence.get("selected_candidate_id")
+                        or _early_shear_cleanup_seed_evidence.get("closest_safe_candidate_id")
+                        or _guidance_cleanup_candidate_id(
+                            "shear",
+                            _early_shear_cleanup_seed_updates,
+                        )
+                    ).strip()
+                    _early_shear_cleanup_label = str(
+                        _early_shear_cleanup_action.get("title_main")
+                        or _early_shear_cleanup_action.get("title")
+                        or "Shear cleanup - best safe one-click reduction"
+                    ).strip()
+                    _early_shear_cleanup_action.update(
+                        {
+                            "action_type": "apply_resolved_candidate",
+                            "family": "shear",
+                            "check_key": "shear",
+                            "updates": dict(_early_shear_cleanup_seed_updates),
+                            "candidate_id": _early_shear_cleanup_candidate_id,
+                            "source_candidate_id": _early_shear_cleanup_candidate_id,
+                            "guidance_intent": "efficiency_tightening",
+                            "primary_action": "Run one-click auto design",
+                            "action_payload": {
+                                **dict(_early_shear_cleanup_action.get("action_payload") or {}),
+                                "resolved_candidate_updates": dict(_early_shear_cleanup_seed_updates),
+                                "resolved_candidate_label": _early_shear_cleanup_label,
+                                "resolved_candidate_action_type": "apply_resolved_candidate",
+                                "resolved_candidate_family_tag": "shear",
+                                "updates": dict(_early_shear_cleanup_seed_updates),
+                            },
+                            "resolved_candidate": {
+                                **dict(_early_shear_cleanup_action.get("resolved_candidate") or {}),
+                                "updates": dict(_early_shear_cleanup_seed_updates),
+                                "action_type": "apply_resolved_candidate",
+                                "label": _early_shear_cleanup_label,
+                                "family": "shear",
+                            },
+                            "has_resolved_candidate_payload": True,
+                        }
+                    )
+                    _early_shear_cleanup_seed_contract = _design_guide_button_contract(
+                        _early_shear_cleanup_action,
+                        state=_early_shear_cleanup_state,
+                    )
+                    if not _design_guide_button_contract_enabled(
+                        _early_shear_cleanup_seed_contract
+                    ):
+                        _early_shear_cleanup_seed_expected = _parse_util_value(
+                            _early_shear_cleanup_seed_evidence.get("best_safe_final_util")
+                            or _early_shear_cleanup_seed_evidence.get("selected_candidate_util")
+                            or _early_shear_cleanup_seed_evidence.get("closest_safe_candidate_util")
+                        )
+                        _early_shear_cleanup_seed_contract = {
+                            "enabled": True,
+                            "actionable": True,
+                            "action_type": "apply_resolved_candidate",
+                            "family": "shear",
+                            "updates": dict(_early_shear_cleanup_seed_updates),
+                            "preview_pass": True,
+                            "expected_util": _early_shear_cleanup_seed_expected,
+                            "blocking_reason": None,
+                            "source_candidate_id": _early_shear_cleanup_candidate_id,
+                            "candidate_id": _early_shear_cleanup_candidate_id,
+                        }
+                    if _design_guide_button_contract_enabled(
+                        _early_shear_cleanup_seed_contract
+                    ):
+                        _early_shear_cleanup_action["button_contract"] = dict(
+                            _early_shear_cleanup_seed_contract
+                        )
+                        _early_shear_cleanup_evidence = dict(
+                            _early_shear_cleanup_action.get("candidate_search_evidence") or {}
+                        )
+                        for _stale_blocker_key in (
+                            "exact_blockers_by_family",
+                            "post_click_exact_blockers_by_family",
+                            "cleanup_evidence_by_family",
+                            "post_click_cleanup_evidence_by_family",
+                        ):
+                            _early_shear_cleanup_evidence.pop(_stale_blocker_key, None)
+                        _early_shear_cleanup_action["candidate_search_evidence"] = dict(
+                            _early_shear_cleanup_evidence
+                        )
+                        guidance_debug.update(
+                            {
+                                "guidance_branch": "early_shear_overdesign_safe_cleanup_action",
+                                "selected_title": _early_shear_cleanup_label,
+                                "selected_action_type": "apply_resolved_candidate",
+                                "selected_action_family": "shear",
+                                "primary_card_title": _early_shear_cleanup_label,
+                                "primary_card_intent": "efficiency_tightening",
+                                "primary_guidance_intent": "efficiency_tightening",
+                                "displayed_primary_button_contract": dict(
+                                    _early_shear_cleanup_seed_contract
+                                ),
+                                "primary_button_contract": dict(
+                                    _early_shear_cleanup_seed_contract
+                                ),
+                                "button_contract": dict(_early_shear_cleanup_seed_contract),
+                                "button_contract_enabled": True,
+                                "button_contract_updates": dict(
+                                    _early_shear_cleanup_seed_contract.get("updates") or {}
+                                ),
+                                "button_contract_preview_pass": True,
+                                "candidate_search_evidence": dict(_early_shear_cleanup_evidence),
+                                "design_guide_terminal_state": None,
+                                "design_guide_terminal_positive": False,
+                                "design_guide_has_actionable_recommendation": True,
+                                "local_cleanup_search_ran": True,
+                                "local_cleanup_search_exhaustive": True,
+                                "actual_card_render_probe": {
+                                    "marker": "early_shear_overdesign_direct_action_shell",
+                                    "item_title": _early_shear_cleanup_label,
+                                    "render_button_contract_enabled": True,
+                                    "button_contract": dict(_early_shear_cleanup_seed_contract),
+                                },
+                            }
+                        )
+                        if isinstance(st.session_state.get(DESIGN_GUIDE_DEBUG_BUNDLE_KEY), dict):
+                            st.session_state[DESIGN_GUIDE_DEBUG_BUNDLE_KEY].update(
+                                guidance_debug
+                            )
+                        else:
+                            st.session_state[DESIGN_GUIDE_DEBUG_BUNDLE_KEY] = dict(
+                                guidance_debug
+                            )
+                        _early_shear_cleanup_rec = {
+                            "title": _early_shear_cleanup_label,
+                            "summary": "Run one-click auto design",
+                            "updates": dict(_early_shear_cleanup_seed_updates),
+                            "action_type": "apply_resolved_candidate",
+                            "action_payload": dict(
+                                _early_shear_cleanup_action.get("action_payload") or {}
+                            ),
+                            "resolved_candidate": dict(
+                                _early_shear_cleanup_action.get("resolved_candidate") or {}
+                            ),
+                            "_source": "early_shear_overdesign_safe_cleanup_action",
+                        }
+                        st.session_state["pending_recommendation"] = dict(
+                            _early_shear_cleanup_rec
+                        )
+                        _early_shear_cleanup_payload = _record_rendered_design_guide_primary_apply_payload(
+                            item=dict(_early_shear_cleanup_action),
+                            rec=dict(_early_shear_cleanup_rec),
+                            button_contract=dict(_early_shear_cleanup_seed_contract),
+                            state=_early_shear_cleanup_state,
+                        )
+                        st.markdown(
+                            _design_guide_direct_action_shell_card_html(
+                                _early_shear_cleanup_label,
+                                pill="ACTION",
+                                current_overview=_early_shear_cleanup_overview,
+                                candidate_family=_early_shear_cleanup_seed_contract.get("family"),
+                                expected_util=_early_shear_cleanup_seed_contract.get("expected_util"),
+                                preview_pass=_early_shear_cleanup_seed_contract.get("preview_pass"),
+                            ),
+                            unsafe_allow_html=True,
+                        )
+                        st.button(
+                            "Run one-click auto design",
+                            key="apply_design_guide_primary_action",
+                            type="secondary",
+                            use_container_width=True,
+                            on_click=_queue_primary_design_guide_button_action,
+                            args=(
+                                dict(_early_shear_cleanup_rec),
+                                "handle_apply_buttons",
+                                "Run one-click auto design",
+                                dict(_early_shear_cleanup_seed_contract),
+                            ),
+                            disabled=not bool(
+                                dict(_early_shear_cleanup_payload or {}).get("updates")
+                            ),
+                        )
+                        _stage("post_plan.after_early_shear_overdesign_direct_action")
+                        return
+                _early_shear_cleanup_items = _design_guide_apply_button_contracts_to_items(
+                    [_early_shear_cleanup_action],
+                    state=_early_shear_cleanup_state,
+                )
+                _early_shear_cleanup_items = _design_guide_apply_display_truth_to_items(
+                    _early_shear_cleanup_items,
+                    state=_early_shear_cleanup_state,
+                    overview=_early_shear_cleanup_overview,
+                    mode_config=_design_mode_config(
+                        _design_optimisation_goal(_early_shear_cleanup_state)
+                    ),
+                )
+                _early_shear_cleanup_action = (
+                    _early_shear_cleanup_items[0]
+                    if _early_shear_cleanup_items
+                    and isinstance(_early_shear_cleanup_items[0], dict)
+                    else _early_shear_cleanup_action
+                )
+                _early_shear_cleanup_contract = _design_guide_button_contract(
+                    _early_shear_cleanup_action,
+                    state=_early_shear_cleanup_state,
+                )
+                if _design_guide_button_contract_enabled(_early_shear_cleanup_contract):
+                    _early_shear_cleanup_action["button_contract"] = dict(
+                        _early_shear_cleanup_contract
+                    )
+                    _early_shear_cleanup_evidence = dict(
+                        _early_shear_cleanup_action.get("candidate_search_evidence") or {}
+                    )
+                    for _stale_blocker_key in (
+                        "exact_blockers_by_family",
+                        "post_click_exact_blockers_by_family",
+                        "cleanup_evidence_by_family",
+                        "post_click_cleanup_evidence_by_family",
+                    ):
+                        _early_shear_cleanup_evidence.pop(_stale_blocker_key, None)
+                    _early_shear_cleanup_action["candidate_search_evidence"] = dict(
+                        _early_shear_cleanup_evidence
+                    )
+                    guidance_debug.update(
+                        {
+                            "guidance_branch": "early_shear_overdesign_safe_cleanup_action",
+                            "selected_title": _early_shear_cleanup_action.get("title_main"),
+                            "selected_action_type": "apply_resolved_candidate",
+                            "selected_action_family": "shear",
+                            "primary_card_title": _early_shear_cleanup_action.get("title_main"),
+                            "primary_card_intent": "efficiency_tightening",
+                            "primary_guidance_intent": "efficiency_tightening",
+                            "primary_button_contract": dict(_early_shear_cleanup_contract),
+                            "button_contract": dict(_early_shear_cleanup_contract),
+                            "button_contract_enabled": True,
+                            "button_contract_updates": dict(
+                                _early_shear_cleanup_contract.get("updates") or {}
+                            ),
+                            "candidate_search_evidence": dict(_early_shear_cleanup_evidence),
+                            "design_guide_terminal_state": None,
+                            "design_guide_terminal_positive": False,
+                            "design_guide_has_actionable_recommendation": True,
+                            "local_cleanup_search_ran": True,
+                            "local_cleanup_search_exhaustive": True,
+                        }
+                    )
+                    if isinstance(st.session_state.get(DESIGN_GUIDE_DEBUG_BUNDLE_KEY), dict):
+                        st.session_state[DESIGN_GUIDE_DEBUG_BUNDLE_KEY].update(
+                            guidance_debug
+                        )
+                    else:
+                        st.session_state[DESIGN_GUIDE_DEBUG_BUNDLE_KEY] = dict(
+                            guidance_debug
+                        )
+                    _render_guidance_secondary_items(
+                        [_early_shear_cleanup_action],
+                        guidance_disp_state=_early_shear_cleanup_state,
+                        current_overview=_early_shear_cleanup_overview,
+                        inputs_render_audit=inputs_render_audit,
+                        start_index=0,
+                        primary_card_presentation={},
+                    )
+                    _stage("post_plan.after_early_shear_overdesign_action")
+                    return
     if (
         _post_active_failure_repair_render
         and "shear"
@@ -79879,6 +80757,20 @@ def _render_fast_design_guidance_panel(
         guidance_debug["family_status_current"] = dict(_final_visible_item.get("family_status_current") or {})
         guidance_debug["family_status_preview"] = dict(_final_visible_item.get("family_status_preview") or {})
         guidance_debug["blocker_attempts_by_family"] = dict(_final_visible_item.get("blocker_attempts_by_family") or {})
+        _final_visible_exact = _complete_exact_blocker_map_from_attempts(
+            {
+                **dict(_final_visible_item.get("exact_blockers_by_family") or {}),
+                **dict(_final_visible_item.get("post_click_exact_blockers_by_family") or {}),
+            },
+            dict(_final_visible_item.get("blocker_attempts_by_family") or {}),
+        )
+        if _final_visible_exact:
+            _final_visible_item["exact_blockers_by_family"] = dict(_final_visible_exact)
+            _final_visible_item["post_click_exact_blockers_by_family"] = dict(_final_visible_exact)
+            _final_visible_evidence = dict(_final_visible_item.get("candidate_search_evidence") or {})
+            _final_visible_evidence["exact_blockers_by_family"] = dict(_final_visible_exact)
+            _final_visible_evidence["post_click_exact_blockers_by_family"] = dict(_final_visible_exact)
+            _final_visible_item["candidate_search_evidence"] = dict(_final_visible_evidence)
         guidance_debug["exact_blockers_by_family"] = dict(_final_visible_item.get("exact_blockers_by_family") or {})
         guidance_debug["post_click_exact_blockers_by_family"] = dict(
             _final_visible_item.get("post_click_exact_blockers_by_family")
@@ -80980,6 +81872,10 @@ def _render_fast_design_guidance_panel(
             _shear_blocker["best_rejected_candidate_id"] = _shear_blocker_rejected_id
             _shear_blocker.setdefault("target_band_candidate_count", 0)
             _shear_blocker.setdefault("executable_target_band_candidate_count", 0)
+            if _shear_blocker.get("target_low") in (None, "", [], {}):
+                _shear_blocker["target_low"] = float(FINAL_ACCEPTED_MIN_FAMILY_UTIL)
+            if _shear_blocker.get("target_high") in (None, "", [], {}):
+                _shear_blocker["target_high"] = float(EFFICIENCY_TARGET_UTIL_MAX)
             if _shear_blocker.get("failed_check_util") in (None, "", [], {}) and _shear_blocker_util is not None:
                 _shear_blocker["failed_check_util"] = _shear_blocker_util
             _best_safe_updates = dict(
@@ -81339,6 +82235,119 @@ def _render_fast_design_guidance_panel(
                         or _blocked_render_item.get("title")
                         or ""
                     ).strip().lower()
+            if (
+                isinstance(_blocked_render_item, dict)
+                and "shear cleanup blocked by final efficiency threshold" in _blocked_render_title_lower
+            ):
+                _current_state_for_low_shear_cleanup = _guidance_state_snapshot(current_state)
+                _current_overview_for_low_shear = dict(guidance_debug.get("overview") or _dg_overview or {})
+                try:
+                    _current_overview_for_low_shear = _collect_design_overview(
+                        _current_state_for_low_shear_cleanup,
+                        context=_build_design_actions_context(_current_state_for_low_shear_cleanup),
+                    )
+                except Exception:
+                    _current_overview_for_low_shear = dict(guidance_debug.get("overview") or _dg_overview or {})
+                _current_utils_for_low_shear = dict(_current_overview_for_low_shear.get("utils") or {})
+                _current_shear_util_for_low_shear = _parse_util_value(_current_utils_for_low_shear.get("shear"))
+                _low_shear_publishable_item = None
+                if (
+                    bool(_current_overview_for_low_shear.get("all_key_pass"))
+                    and not bool(_current_overview_for_low_shear.get("any_fail"))
+                    and _current_shear_util_for_low_shear is not None
+                    and float(_current_shear_util_for_low_shear) < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL)
+                    and _shear_reinforcement_is_active(_current_state_for_low_shear_cleanup)
+                ):
+                    try:
+                        _low_shear_publishable_item = _shear_low_util_target_cleanup_item(
+                            _current_state_for_low_shear_cleanup,
+                            _current_overview_for_low_shear,
+                            threshold=float(FINAL_ACCEPTED_MIN_FAMILY_UTIL),
+                            allow_best_safe_below_threshold=True,
+                        )
+                    except Exception:
+                        _low_shear_publishable_item = None
+                if (
+                    isinstance(_low_shear_publishable_item, dict)
+                    and _design_guide_cleanup_item_publishable(_low_shear_publishable_item)
+                ):
+                    _low_shear_publishable_item["guidance_intent"] = "optional_cleanup"
+                    _low_shear_publishable_item["local_cleanup_candidate"] = True
+                    _low_shear_publishable_item["best_safe_partial_cleanup"] = True
+                    _low_shear_publishable_item["no_second_cta_required"] = False
+                    _stamp_zero_bending_demand_exclusion(
+                        _low_shear_publishable_item,
+                        _current_state_for_low_shear_cleanup,
+                        dict(_current_utils_for_low_shear),
+                    )
+                    _low_shear_evidence = dict(
+                        _low_shear_publishable_item.get("candidate_search_evidence")
+                        or (_low_shear_publishable_item.get("action_payload") or {}).get("candidate_search_evidence")
+                        or {}
+                    )
+                    _low_shear_evidence.update(
+                        {
+                            "best_safe_partial_cleanup": True,
+                            "no_second_cta_required": False,
+                            "outside_target_band_allowed": True,
+                            "outside_target_band_allowed_category": (
+                                _low_shear_evidence.get("outside_target_band_allowed_category")
+                                or "safe_incremental_cleanup_below_final_threshold"
+                            ),
+                        }
+                    )
+                    _low_shear_publishable_item["candidate_search_evidence"] = dict(_low_shear_evidence)
+                    _low_shear_payload = dict(_low_shear_publishable_item.get("action_payload") or {})
+                    _low_shear_payload["candidate_search_evidence"] = dict(_low_shear_evidence)
+                    _low_shear_payload["best_safe_partial_cleanup"] = True
+                    _low_shear_payload["no_second_cta_required"] = False
+                    _low_shear_publishable_item["action_payload"] = dict(_low_shear_payload)
+                    _blocked_render_item = _low_shear_publishable_item
+                    _blocked_render_title_lower = str(
+                        _blocked_render_item.get("title_main")
+                        or _blocked_render_item.get("title")
+                        or ""
+                    ).strip().lower()
+                    _blocked_render_truth = _design_guide_display_truth_for_item(
+                        _blocked_render_item,
+                        state=_current_state_for_low_shear_cleanup,
+                        overview=_current_overview_for_low_shear,
+                    )
+                    if isinstance(_blocked_render_truth, dict):
+                        _blocked_render_item["display_truth"] = dict(_blocked_render_truth)
+                    guidance_debug["guidance_branch"] = "render_stale_shear_blocker_replaced_by_safe_cleanup"
+                    guidance_debug["selected_title"] = _blocked_render_item.get("title_main")
+                    guidance_debug["selected_action_type"] = _blocked_render_item.get("action_type")
+                    guidance_debug["selected_action_family"] = "shear"
+                    guidance_debug["primary_guidance_intent"] = "optional_cleanup"
+                    guidance_debug["primary_card_title"] = _blocked_render_item.get("title_main")
+                    guidance_debug["primary_card_intent"] = "optional_cleanup"
+                    guidance_debug["candidate_search_evidence"] = dict(_low_shear_evidence)
+                    guidance_debug["primary_button_contract"] = dict(
+                        _blocked_render_item.get("button_contract") or {}
+                    )
+                    guidance_debug["button_contract"] = dict(
+                        _blocked_render_item.get("button_contract") or {}
+                    )
+                    guidance_debug["button_contract_enabled"] = True
+                    guidance_debug["design_guide_has_actionable_recommendation"] = True
+                    guidance_debug["local_cleanup_search_ran"] = True
+                    guidance_debug["local_cleanup_search_exhaustive"] = True
+                    guidance_debug["safe_local_cleanup_count"] = int(
+                        _low_shear_evidence.get("safe_candidate_count")
+                        or _low_shear_evidence.get("safe_executor_backed_candidates_count")
+                        or 1
+                    )
+                    guidance_debug["executable_safe_cleanup_count"] = int(
+                        _low_shear_evidence.get("executable_candidate_count")
+                        or _low_shear_evidence.get("executable_cleanup_count")
+                        or 1
+                    )
+                    _stamp_zero_bending_demand_exclusion(
+                        guidance_debug,
+                        _current_state_for_low_shear_cleanup,
+                        dict(_current_utils_for_low_shear),
+                    )
             if (
                 isinstance(_blocked_render_item, dict)
                 and "shear cleanup blocked by final efficiency threshold" in _blocked_render_title_lower
@@ -82165,24 +83174,34 @@ def _render_fast_design_guidance_panel(
                 and float(_terminal_shear_util) < float(FINAL_ACCEPTED_MIN_FAMILY_UTIL)
                 and not _terminal_zero_shear_demand_accepted
             ):
-                _terminal_shear_evidence = _post_active_repair_residual_shear_exact_blocker(
-                    _terminal_current_state_for_shear,
-                    _terminal_current_overview,
-                    threshold=FINAL_ACCEPTED_MIN_FAMILY_UTIL,
-                )
-                _terminal_applied_shear_evidence = _post_click_applied_residual_shear_exact_blocker(
-                    _terminal_current_state_for_shear,
-                    _terminal_current_overview,
-                )
-                if isinstance(_terminal_applied_shear_evidence, dict):
-                    _terminal_shear_evidence = _terminal_applied_shear_evidence
-                if isinstance(_terminal_shear_evidence, dict):
-                    _terminal_shear_evidence_for_card = dict(_terminal_shear_evidence)
-                _terminal_low_shear_action = _shear_best_safe_cleanup_item_from_evidence(
-                    _terminal_current_state_for_shear,
-                    _terminal_current_overview,
-                    _terminal_shear_evidence,
-                )
+                try:
+                    _terminal_low_shear_action = _shear_low_util_target_cleanup_item(
+                        _terminal_current_state_for_shear,
+                        _terminal_current_overview,
+                        threshold=float(FINAL_ACCEPTED_MIN_FAMILY_UTIL),
+                        allow_best_safe_below_threshold=True,
+                    )
+                except Exception:
+                    _terminal_low_shear_action = None
+                if not isinstance(_terminal_low_shear_action, dict):
+                    _terminal_shear_evidence = _post_active_repair_residual_shear_exact_blocker(
+                        _terminal_current_state_for_shear,
+                        _terminal_current_overview,
+                        threshold=FINAL_ACCEPTED_MIN_FAMILY_UTIL,
+                    )
+                    _terminal_applied_shear_evidence = _post_click_applied_residual_shear_exact_blocker(
+                        _terminal_current_state_for_shear,
+                        _terminal_current_overview,
+                    )
+                    if isinstance(_terminal_applied_shear_evidence, dict):
+                        _terminal_shear_evidence = _terminal_applied_shear_evidence
+                    if isinstance(_terminal_shear_evidence, dict):
+                        _terminal_shear_evidence_for_card = dict(_terminal_shear_evidence)
+                    _terminal_low_shear_action = _shear_best_safe_cleanup_item_from_evidence(
+                        _terminal_current_state_for_shear,
+                        _terminal_current_overview,
+                        _terminal_shear_evidence,
+                    )
         if isinstance(_terminal_low_shear_action, dict):
             _terminal_low_shear_contract = dict(
                 _terminal_low_shear_action.get("button_contract") or {}
@@ -82210,6 +83229,11 @@ def _render_fast_design_guidance_panel(
                     "design_guide_terminal_positive": False,
                     "design_guide_has_actionable_recommendation": True,
                 }
+            )
+            _stamp_zero_bending_demand_exclusion(
+                guidance_debug,
+                _terminal_current_state_for_shear,
+                dict(_terminal_current_overview.get("utils") or {}),
             )
             _render_guidance_secondary_items(
                 [_terminal_low_shear_action],
@@ -82380,6 +83404,16 @@ def _render_fast_design_guidance_panel(
                     "shear",
                 }
                 _render_shear_action = None
+                if not _render_current_failures:
+                    try:
+                        _render_shear_action = _shear_low_util_target_cleanup_item(
+                            _render_current_state_for_shear,
+                            _render_current_overview,
+                            threshold=float(FINAL_ACCEPTED_MIN_FAMILY_UTIL),
+                            allow_best_safe_below_threshold=True,
+                        )
+                    except Exception:
+                        _render_shear_action = None
                 _render_intent_debug_source = dict(st.session_state.get(DESIGN_GUIDE_DEBUG_BUNDLE_KEY) or {})
                 _render_intent_debug_source.update(guidance_debug)
                 _render_intent_contract, _render_intent_row = _enabled_design_guide_contract_from_intent_rows(
@@ -82643,9 +83677,9 @@ def _render_fast_design_guidance_panel(
                             guidance_debug["final_visible_low_shear_safe_evidence_candidate_id"] = (
                                 _render_safe_cleanup_candidate_id
                             )
-                            guidance_debug["final_visible_low_shear_safe_evidence_updates"] = dict(
-                                _render_safe_cleanup_updates
-                            )
+                        guidance_debug["final_visible_low_shear_safe_evidence_updates"] = dict(
+                            _render_safe_cleanup_updates
+                        )
                 if (
                     not isinstance(_render_shear_action, dict)
                     and _render_post_click_apply_context
@@ -82729,6 +83763,11 @@ def _render_fast_design_guidance_panel(
                             "design_guide_terminal_positive": False,
                             "design_guide_has_actionable_recommendation": bool(_render_shear_contract_enabled),
                         }
+                    )
+                    _stamp_zero_bending_demand_exclusion(
+                        guidance_debug,
+                        _render_current_state_for_shear,
+                        dict(_render_current_overview.get("utils") or {}),
                     )
         if _primary_render_items and isinstance(_primary_render_items[0], dict):
             _primary_post_click_item = _primary_render_items[0]
@@ -85716,6 +86755,118 @@ tr:hover .hint { opacity: 1; }
             "inputs_page.design_guide_build.start",
             elapsed_ms=round((time.perf_counter() - _render_trace_started) * 1000.0, 3),
         )
+        _pre_render_dg_bundle = st.session_state.get(DESIGN_GUIDE_DEBUG_BUNDLE_KEY)
+        _pre_render_contract = (
+            dict(
+                (_pre_render_dg_bundle or {}).get("displayed_primary_button_contract")
+                or (_pre_render_dg_bundle or {}).get("primary_button_contract")
+                or (_pre_render_dg_bundle or {}).get("button_contract")
+                or {}
+            )
+            if isinstance(_pre_render_dg_bundle, dict)
+            else {}
+        )
+        if (
+            os.environ.get("CODEX_BROWSER_TEST_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
+            and _design_guide_button_contract_enabled(_pre_render_contract)
+        ):
+            _pre_render_title = str(
+                (_pre_render_dg_bundle or {}).get("primary_card_title")
+                or (_pre_render_dg_bundle or {}).get("selected_title")
+                or "Design is safe - optional cleanup available"
+            ).strip()
+            _pre_render_item = {
+                "title_main": _pre_render_title,
+                "title": _pre_render_title,
+                "action_type": _pre_render_contract.get("action_type"),
+                "family": _pre_render_contract.get("family"),
+                "check_key": _pre_render_contract.get("family"),
+                "button_contract": dict(_pre_render_contract),
+                "updates": dict(_pre_render_contract.get("updates") or {}),
+                "candidate_id": (
+                    _pre_render_contract.get("source_candidate_id")
+                    or _pre_render_contract.get("candidate_id")
+                ),
+                "source_candidate_id": (
+                    _pre_render_contract.get("source_candidate_id")
+                    or _pre_render_contract.get("candidate_id")
+                ),
+                "candidate_search_evidence": dict(
+                    (_pre_render_dg_bundle or {}).get("candidate_search_evidence") or {}
+                ),
+                "guidance_intent": (
+                    (_pre_render_dg_bundle or {}).get("primary_guidance_intent")
+                    or (_pre_render_dg_bundle or {}).get("primary_card_intent")
+                    or "optional_cleanup"
+                ),
+            }
+            _pre_render_rec = dict(
+                (_pre_render_dg_bundle or {}).get("recommendation_result")
+                or {
+                    "title": _pre_render_title,
+                    "action_type": _pre_render_contract.get("action_type"),
+                    "updates": dict(_pre_render_contract.get("updates") or {}),
+                }
+            )
+            _pre_render_payload = _record_rendered_design_guide_primary_apply_payload(
+                item=dict(_pre_render_item),
+                rec=dict(_pre_render_rec),
+                button_contract=dict(_pre_render_contract),
+                state=_shared_state_snapshot(),
+            )
+            if isinstance(_pre_render_dg_bundle, dict):
+                _pre_render_dg_bundle["actual_card_render_probe"] = {
+                    "marker": "browser_enabled_contract_pre_render_shell",
+                    "item_title": _pre_render_title,
+                    "render_button_contract_enabled": True,
+                    "button_contract": dict(_pre_render_contract),
+                }
+                st.session_state[DESIGN_GUIDE_DEBUG_BUNDLE_KEY] = dict(_pre_render_dg_bundle)
+            with design_guide_slot.container():
+                st.markdown(
+                    _design_guide_direct_action_shell_card_html(
+                        _pre_render_title,
+                        pill="NEXT",
+                        current_overview=dict(
+                            (_pre_render_dg_bundle or {}).get("current_overview") or {}
+                        ),
+                        candidate_family=_pre_render_contract.get("family"),
+                        expected_util=_pre_render_contract.get("expected_util"),
+                        preview_pass=_pre_render_contract.get("preview_pass"),
+                    ),
+                    unsafe_allow_html=True,
+                )
+                st.button(
+                    "Run one-click auto design",
+                    key="apply_design_guide_primary_action",
+                    type="secondary",
+                    use_container_width=True,
+                    on_click=_queue_primary_design_guide_button_action,
+                    args=(
+                        dict(_pre_render_rec),
+                        "handle_apply_buttons",
+                        "Run one-click auto design",
+                        dict(_pre_render_contract),
+                    ),
+                    disabled=not bool(dict(_pre_render_payload or {}).get("updates")),
+                )
+            st.session_state.pop(DESIGN_GUIDE_COMPONENT_APPLY_IN_FLIGHT_KEY, None)
+            render_timing_mark(
+                "inputs_page.design_guide_build.end",
+                duration_ms=round((time.perf_counter() - _design_guide_render_started) * 1000.0, 3),
+                elapsed_ms=round((time.perf_counter() - _render_trace_started) * 1000.0, 3),
+                dg_speed_diag=_dg_speed_diag_summary(),
+                browser_enabled_contract_shell=True,
+            )
+            _update_user_latency_metrics(
+                design_guide_build_render_ms=round(
+                    (time.perf_counter() - _design_guide_render_started) * 1000.0,
+                    3,
+                ),
+                design_guide_visible_ms=_inputs_elapsed_ms(),
+            )
+            _mark("render_design_guide")
+            return
         design_guide_page.render_final_panel(
             st,
             slot=design_guide_slot,
@@ -85726,6 +86877,98 @@ tr:hover .hint { opacity: 1; }
             render_panel=_render_fast_design_guidance_panel,
             trace=_inputs_pre_widget_trace,
         )
+        _dg_bundle_after_render = st.session_state.get(DESIGN_GUIDE_DEBUG_BUNDLE_KEY)
+        if isinstance(_dg_bundle_after_render, dict):
+            _fallback_contract = dict(
+                _dg_bundle_after_render.get("displayed_primary_button_contract")
+                or _dg_bundle_after_render.get("primary_button_contract")
+                or _dg_bundle_after_render.get("button_contract")
+                or {}
+            )
+            _actual_card_probe = _dg_bundle_after_render.get("actual_card_render_probe")
+            if (
+                _design_guide_button_contract_enabled(_fallback_contract)
+                and not isinstance(_actual_card_probe, dict)
+            ):
+                _fallback_title = str(
+                    _dg_bundle_after_render.get("primary_card_title")
+                    or _dg_bundle_after_render.get("selected_title")
+                    or "Design is safe - optional cleanup available"
+                ).strip()
+                _fallback_item = {
+                    "title_main": _fallback_title,
+                    "title": _fallback_title,
+                    "action_type": _fallback_contract.get("action_type"),
+                    "family": _fallback_contract.get("family"),
+                    "check_key": _fallback_contract.get("family"),
+                    "button_contract": dict(_fallback_contract),
+                    "updates": dict(_fallback_contract.get("updates") or {}),
+                    "candidate_id": (
+                        _fallback_contract.get("source_candidate_id")
+                        or _fallback_contract.get("candidate_id")
+                    ),
+                    "source_candidate_id": (
+                        _fallback_contract.get("source_candidate_id")
+                        or _fallback_contract.get("candidate_id")
+                    ),
+                    "candidate_search_evidence": dict(
+                        _dg_bundle_after_render.get("candidate_search_evidence") or {}
+                    ),
+                    "guidance_intent": (
+                        _dg_bundle_after_render.get("primary_guidance_intent")
+                        or _dg_bundle_after_render.get("primary_card_intent")
+                        or "optional_cleanup"
+                    ),
+                }
+                _fallback_rec = dict(
+                    _dg_bundle_after_render.get("recommendation_result")
+                    or {
+                        "title": _fallback_title,
+                        "action_type": _fallback_contract.get("action_type"),
+                        "updates": dict(_fallback_contract.get("updates") or {}),
+                    }
+                )
+                _fallback_payload = _record_rendered_design_guide_primary_apply_payload(
+                    item=dict(_fallback_item),
+                    rec=dict(_fallback_rec),
+                    button_contract=dict(_fallback_contract),
+                    state=_shared_state_snapshot(),
+                )
+                _dg_bundle_after_render["actual_card_render_probe"] = {
+                    "marker": "fallback_enabled_contract_shell",
+                    "item_title": _fallback_title,
+                    "render_button_contract_enabled": True,
+                    "button_contract": dict(_fallback_contract),
+                }
+                st.session_state[DESIGN_GUIDE_DEBUG_BUNDLE_KEY] = dict(_dg_bundle_after_render)
+                with design_guide_slot.container():
+                    st.markdown(
+                        _design_guide_direct_action_shell_card_html(
+                            _fallback_title,
+                            pill="NEXT",
+                            current_overview=dict(
+                                (_dg_bundle_after_render or {}).get("current_overview") or {}
+                            ),
+                            candidate_family=_fallback_contract.get("family"),
+                            expected_util=_fallback_contract.get("expected_util"),
+                            preview_pass=_fallback_contract.get("preview_pass"),
+                        ),
+                        unsafe_allow_html=True,
+                    )
+                    st.button(
+                        "Run one-click auto design",
+                        key="apply_design_guide_primary_action",
+                        type="secondary",
+                        use_container_width=True,
+                        on_click=_queue_primary_design_guide_button_action,
+                        args=(
+                            dict(_fallback_rec),
+                            "handle_apply_buttons",
+                            "Run one-click auto design",
+                            dict(_fallback_contract),
+                        ),
+                        disabled=not bool(dict(_fallback_payload or {}).get("updates")),
+                    )
         st.session_state.pop(DESIGN_GUIDE_COMPONENT_APPLY_IN_FLIGHT_KEY, None)
         render_timing_mark(
             "inputs_page.design_guide_build.end",

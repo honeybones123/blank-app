@@ -1853,13 +1853,16 @@ def _assert_design_guide_layout_contract_sync(page, case_context: dict[str, Any]
         required_text = {
             "design-guide-current-row": _layout_first_visible_descendant_text(card, "design-guide-current-row"),
             "design-guide-main-explanation": main_text,
-            "design-guide-details": details_text or _layout_first_visible_descendant_text(card, "design-guide-details"),
         }
         for test_id, text in required_text.items():
             if int(test_id_counts.get(test_id) or 0) < 1:
                 failures.append(f"missing {test_id}")
             elif not str(text or "").strip():
                 failures.append(f"{test_id} has empty text")
+
+        details_count = int(test_id_counts.get("design-guide-details") or 0)
+        if details_count > 0 or str(details_text or "").strip():
+            failures.append("design_guide_raw_details_visible: design-guide-details must be hidden in normal UI")
 
         for family in ("bending", "shear", "crack", "deflection"):
             test_id = f"design-guide-current-{family}"
@@ -5933,6 +5936,8 @@ def assert_visible_contract(
             layout_classification = "generic_cta_without_action_card"
         elif first_failure.startswith("design_guide_card_missing_family"):
             layout_classification = "design_guide_card_missing_family"
+        elif first_failure.startswith("design_guide_raw_details_visible"):
+            layout_classification = "visible_debug_wording_leaked"
         elif "expected exactly one design-guide-card" in first_failure:
             layout_classification = "duplicate_design_guide_panel"
         elif "missing design-guide-card" in first_failure:
@@ -5977,7 +5982,6 @@ def assert_visible_contract(
         "design-guide-current-crack",
         "design-guide-current-deflection",
         "design-guide-main-explanation",
-        "design-guide-details",
     )
     missing_hooks = [hook for hook in required_hooks if int(hook_counts.get(hook) or 0) < 1]
     if missing_hooks:

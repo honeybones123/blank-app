@@ -66,6 +66,61 @@ A fix is not complete until:
 
 Do not treat "the error disappeared once" as enough. The fix must be locked into recurring verification.
 
+## Mandatory Verifier Impact Discipline
+
+No product, UI, Design Guide, optimisation, repair, publication, contract,
+selector, test-id, or evidence change is complete until verifier impact is
+reviewed.
+
+For every phase, record one of:
+
+1. Verifier updated.
+2. Verifier confirmed still valid.
+3. Verifier update deferred with explicit reason and blocking status.
+
+This rule exists because Phase 6.8 intentionally hid the raw lower Design Guide
+details section from normal UI, while the previous-fixed verifier still required
+`design-guide-details`. That stale verifier/layout contract expectation caused
+the next previous-fixed run to fail `35/35` even though the product behaviour was
+intentional.
+
+### Verifier Impact Checklist
+
+For every change, answer:
+
+1. Did visible UI change?
+   - If yes, update or confirm layout verifier selectors and visibility assertions.
+2. Did any test ID, selector, CSS hook, or DOM structure change?
+   - If yes, update or confirm verifier selectors.
+3. Did any normal-user debug/details visibility change?
+   - If yes, update or confirm verifier expectations for visible or hidden debug content.
+4. Did Design Guide card/status/CTA behaviour change?
+   - If yes, update or confirm the Design Guide outcome verifier.
+5. Did publication priority/order change?
+   - If yes, update or confirm stale-blocker and `ACTION`/`PASS`/`BLOCKED` assertions.
+6. Did repair or optimisation behaviour change?
+   - If yes, update or confirm repair/optimisation expectation ladders.
+7. Did candidate aliases, candidate fields, or result payload shape change?
+   - If yes, update or confirm the alias map, alias coverage probe, and shared candidate preflight.
+8. Did a machine-readable contract change?
+   - If yes, update or confirm the structural checker and all loaders/probes that consume it.
+9. Did formulas, solver maths, or engineering checks change?
+   - If yes, update or confirm formula, golden, and verifier expectations.
+10. Did no verifier change appear necessary?
+    - Record why the existing verifier still proves the new behaviour.
+
+### Standard Phase Closeout
+
+Every phase report must include:
+
+- Verifier Impact:
+  - Product/UI behaviour changed: YES / NO
+  - Verifier updated: YES / NO / NOT REQUIRED
+  - Reason:
+  - Focused verifier run:
+  - Broader verifier required before release: YES / NO
+  - Drift risk remaining:
+
 For confirmed product bugs, also run the regression-contract meta-verifier:
 
 ```powershell

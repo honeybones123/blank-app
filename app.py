@@ -582,6 +582,43 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
             except Exception:
                 return None
 
+    def _complete_probe_exact_blocker_map(source):
+        completed = {}
+        for family_key, raw_blocker in dict(source or {}).items():
+            family = str(family_key or "").strip().lower()
+            if not family or not isinstance(raw_blocker, dict):
+                continue
+            blocker = dict(raw_blocker)
+            blocker.setdefault("family", family)
+            attempted_count = (
+                blocker.get("attempted_candidate_count")
+                or blocker.get("previewed_candidate_count")
+                or blocker.get("candidate_count")
+                or blocker.get("safe_candidate_count")
+                or blocker.get("safe_cleanup_count")
+            )
+            if attempted_count not in (None, "", [], {}):
+                try:
+                    blocker["attempted_candidate_count"] = int(attempted_count)
+                except Exception:
+                    blocker["attempted_candidate_count"] = attempted_count
+            rejected_id = str(
+                blocker.get("failed_candidate_id")
+                or blocker.get("best_rejected_candidate_id")
+                or blocker.get("best_safe_candidate_id")
+                or blocker.get("selected_candidate_id")
+                or ""
+            ).strip()
+            if rejected_id:
+                blocker["failed_candidate_id"] = rejected_id
+                blocker["best_rejected_candidate_id"] = rejected_id
+            if blocker.get("target_low") in (None, "", [], {}):
+                blocker["target_low"] = float(inputs_page.FINAL_ACCEPTED_MIN_FAMILY_UTIL)
+            if blocker.get("target_high") in (None, "", [], {}):
+                blocker["target_high"] = float(inputs_page.EFFICIENCY_TARGET_UTIL_MAX)
+            completed[family] = dict(blocker)
+        return completed
+
     def _restamp_probe_exact_blocker_current_utils(source, visible_utils):
         restamped = {}
         visible = dict(visible_utils or {})
@@ -1447,10 +1484,14 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
             primary_candidate_search_evidence.get("exact_blockers_by_family"),
             primary_candidate_search_evidence.get("post_click_exact_blockers_by_family"),
         )
+        _merged_probe_exact_blockers = _complete_probe_exact_blocker_map(_merged_probe_exact_blockers)
         _merged_probe_post_click_exact_blockers = _merge_family_evidence_maps(
             _merged_probe_exact_blockers,
             guidance_debug_probe.get("post_click_exact_blockers_by_family"),
             primary_candidate_search_evidence.get("post_click_exact_blockers_by_family"),
+        )
+        _merged_probe_post_click_exact_blockers = _complete_probe_exact_blocker_map(
+            _merged_probe_post_click_exact_blockers
         )
         guidance_probe = {
             "item_count": len(guidance_items_probe),
@@ -1565,11 +1606,17 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
             primary_candidate_search_evidence.get("exact_blockers_by_family"),
             primary_candidate_search_evidence.get("post_click_exact_blockers_by_family"),
         )
+        guidance_probe["exact_blockers_by_family"] = _complete_probe_exact_blocker_map(
+            guidance_probe.get("exact_blockers_by_family")
+        )
         guidance_probe["post_click_exact_blockers_by_family"] = _merge_family_evidence_maps(
             guidance_probe.get("post_click_exact_blockers_by_family"),
             guidance_probe.get("exact_blockers_by_family"),
             guidance_debug_probe.get("post_click_exact_blockers_by_family"),
             primary_candidate_search_evidence.get("post_click_exact_blockers_by_family"),
+        )
+        guidance_probe["post_click_exact_blockers_by_family"] = _complete_probe_exact_blocker_map(
+            guidance_probe.get("post_click_exact_blockers_by_family")
         )
         rendered_contract = dict(st.session_state.get("design_guide_primary_button_contract") or {})
         rendered_contract_enabled = bool(
@@ -2465,6 +2512,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
             "why_reduction_would_hurt_other_design_elements": _reason_for_exact,
         }
     if _final_exact_blockers:
+        _final_exact_blockers = _complete_probe_exact_blocker_map(_final_exact_blockers)
         guidance_probe["exact_blockers_by_family"] = dict(_final_exact_blockers)
         guidance_probe["post_click_exact_blockers_by_family"] = dict(_final_exact_blockers)
         _probe_evidence_with_exact = dict(guidance_probe.get("candidate_search_evidence") or {})
@@ -2940,6 +2988,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
         dg_bundle_safe.get("post_click_exact_blockers_by_family"),
         dict(guidance_probe.get("candidate_search_evidence") or {}).get("exact_blockers_by_family"),
     )
+    _final_probe_exact = _complete_probe_exact_blocker_map(_final_probe_exact)
     _final_probe_publishable_cleanup_updates = inputs_page._publishable_safe_cleanup_updates_from_evidence(
         dict(guidance_probe.get("candidate_search_evidence") or dg_bundle_safe.get("candidate_search_evidence") or {}),
         dict(st.session_state),
@@ -3016,6 +3065,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
                     _final_probe_exact,
                     _bending_publication_exact,
                 )
+                _final_probe_exact = _complete_probe_exact_blocker_map(_final_probe_exact)
                 _final_probe_cleanup = _merge_family_evidence_maps(
                     guidance_probe.get("cleanup_evidence_by_family"),
                     guidance_probe.get("post_click_cleanup_evidence_by_family"),
@@ -3076,6 +3126,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
                 _final_probe_exact,
                 _final_visible_probe_utils,
             )
+            _final_probe_exact = _complete_probe_exact_blocker_map(_final_probe_exact)
             _final_probe_cleanup = _merge_family_evidence_maps(
                 guidance_probe.get("cleanup_evidence_by_family"),
                 guidance_probe.get("post_click_cleanup_evidence_by_family"),
