@@ -1195,6 +1195,8 @@ SHARED_DEFAULTS = {
     "fast_mode_show_3d": False,
     "design_optimisation_goal": "balanced",
     "optimisation_lock_geometry": False,
+    "optimisation_lock_width": False,
+    "optimisation_lock_depth": False,
 
     # Materials
     "fc": 40.0,     # MPa
@@ -4020,6 +4022,8 @@ TAB_KEYS = {
     "inputs_fast_mode_show_3d_toggle": "fast_mode_show_3d",
     "inputs_design_optimisation_goal": "design_optimisation_goal",
     "inputs_optimisation_lock_geometry": "optimisation_lock_geometry",
+    "inputs_optimisation_lock_width": "optimisation_lock_width",
+    "inputs_optimisation_lock_depth": "optimisation_lock_depth",
 
     # ----------------- BENDING PAGE -----------------
     "bending_sec_shape": "sec_shape",

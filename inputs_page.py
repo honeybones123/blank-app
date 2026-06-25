@@ -6542,7 +6542,50 @@ def _inputs_geometry_fingerprint(state: dict | None = None) -> tuple:
 
 def _geometry_lock_enabled(source: dict | None = None) -> bool:
     resolved = source if isinstance(source, dict) else st.session_state
-    return bool((resolved or {}).get("optimisation_lock_geometry", False))
+    if bool((resolved or {}).get("optimisation_lock_geometry", False)):
+        return True
+    return bool(
+        (resolved or {}).get("optimisation_lock_width", False)
+        and (resolved or {}).get("optimisation_lock_depth", False)
+    )
+
+
+def _geometry_width_lock_enabled(source: dict | None = None) -> bool:
+    resolved = source if isinstance(source, dict) else st.session_state
+    return bool(
+        (resolved or {}).get("optimisation_lock_geometry", False)
+        or (resolved or {}).get("optimisation_lock_width", False)
+    )
+
+
+def _geometry_depth_lock_enabled(source: dict | None = None) -> bool:
+    resolved = source if isinstance(source, dict) else st.session_state
+    return bool(
+        (resolved or {}).get("optimisation_lock_geometry", False)
+        or (resolved or {}).get("optimisation_lock_depth", False)
+    )
+
+
+def _migrate_geometry_master_lock_to_axis_locks_once() -> None:
+    version_key = "_inputs_geometry_axis_lock_migration_version"
+    if st.session_state.get(version_key) == "axis-locks-v1":
+        return
+    if bool(st.session_state.get("optimisation_lock_geometry", False)):
+        for shared_key, widget_key in (
+            ("optimisation_lock_width", "inputs_optimisation_lock_width"),
+            ("optimisation_lock_depth", "inputs_optimisation_lock_depth"),
+        ):
+            st.session_state[shared_key] = True
+            st.session_state[widget_key] = True
+    st.session_state[version_key] = "axis-locks-v1"
+
+
+def _sync_geometry_master_lock_from_axis_locks() -> None:
+    width_locked = bool(st.session_state.get("optimisation_lock_width", False))
+    depth_locked = bool(st.session_state.get("optimisation_lock_depth", False))
+    master_locked = bool(width_locked and depth_locked)
+    st.session_state["optimisation_lock_geometry"] = master_locked
+    st.session_state["inputs_optimisation_lock_geometry"] = master_locked
 
 
 def _design_optimisation_goal(state: dict | None = None) -> str:
@@ -6646,24 +6689,59 @@ def _render_design_optimisation_inputs(sync_callbacks: dict) -> None:
 
 
 def _render_design_guide_constraints_panel(sync_callbacks: dict) -> None:
-    with st.container(border=True):
-        st.markdown("**Design Guide constraints**")
-        st.caption(
-            "When locked, Design Guide may adjust reinforcement/detailing but not beam width or depth."
-        )
-        _shared_toggle(
-            "Lock geometry",
-            "inputs_optimisation_lock_geometry",
-            "optimisation_lock_geometry",
-            False,
-            sync_callbacks,
-            help_text=(
-                "When enabled, optimisation keeps beam geometry fixed and only adjusts "
-                "reinforcement/detailing variables where possible."
-            ),
-        )
-        if _geometry_lock_enabled(_shared_state_snapshot()):
-            st.caption("Geometry locked: optimisation is limited to reinforcement and detailing changes.")
+    _migrate_geometry_master_lock_to_axis_locks_once()
+    snapshot = _shared_state_snapshot()
+    width_locked = _geometry_width_lock_enabled(snapshot)
+    depth_locked = _geometry_depth_lock_enabled(snapshot)
+    status_bits = []
+    if width_locked:
+        status_bits.append("width")
+    if depth_locked:
+        status_bits.append("depth")
+    status_text = ", ".join(status_bits) if status_bits else "none"
+
+    spacer_col, constraints_col = st.columns([6.4, 2.0], gap="small", vertical_alignment="center")
+    with spacer_col:
+        st.empty()
+    with constraints_col:
+        status_col, info_col = st.columns([4.2, 1.0], gap="small", vertical_alignment="center")
+        with status_col:
+            st.caption(f"Constraints: {status_text}")
+        with info_col:
+            with info_i_button(
+                help_text=(
+                    "Set Design Guide optimisation constraints before the recommendation is resolved."
+                )
+            ):
+                st.markdown("**Design Guide constraints**")
+                st.caption(
+                    "Use these controls when project constraints mean the Design Guide should avoid "
+                    "changing beam dimensions. Reinforcement/detailing checks still decide whether "
+                    "a proposed design is valid."
+                )
+                _shared_toggle(
+                    "Lock width",
+                    "inputs_optimisation_lock_width",
+                    "optimisation_lock_width",
+                    False,
+                    sync_callbacks,
+                    help_text="Record that Design Guide should not change beam width where axis-specific locks are supported.",
+                )
+                _shared_toggle(
+                    "Lock depth",
+                    "inputs_optimisation_lock_depth",
+                    "optimisation_lock_depth",
+                    False,
+                    sync_callbacks,
+                    help_text="Record that Design Guide should not change beam depth where axis-specific locks are supported.",
+                )
+                _sync_geometry_master_lock_from_axis_locks()
+                if _geometry_lock_enabled(_shared_state_snapshot()):
+                    st.caption("Width and depth are both locked: fixed-geometry optimisation is active.")
+                else:
+                    st.caption(
+                        "Axis locks are recorded separately. Locking both activates the existing fixed-geometry mode."
+                    )
 
 
 def _render_design_optimisation_control(sync_callbacks: dict) -> None:
