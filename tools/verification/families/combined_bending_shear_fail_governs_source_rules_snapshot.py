@@ -1,0 +1,7 @@
+from __future__ import annotations
+
+from combined_bending_shear_fail_governs_proof_common import source_rules_main
+
+
+if __name__ == "__main__":
+    raise SystemExit(source_rules_main())

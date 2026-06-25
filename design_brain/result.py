@@ -24,12 +24,15 @@ from design_brain.interface import (
     DesignBrainInput,
     DesignBrainResult,
 )
+from design_brain.governing_state import classify_governing_state
 from design_brain.publication import (
     button_contract_from_payload as _button_contract,
     card_kind_for_publication,
     contract_enabled as _contract_enabled,
     contract_updates_from_publication as _contract_updates,
     enforce_design_brain_publication_contract,
+    enforce_family_selection_publication_contract,
+    enforce_underdesign_repair_publication_boundary,
     outcome_id_for_publication as _outcome_id,
 )
 
@@ -159,9 +162,19 @@ def adapt_design_brain_result_payload(
     result.evidence.validation = dict(validation)
     result_dict = result.to_dict()
     result_dict["validation"] = dict(validation)
+    governing_state = classify_governing_state(
+        payload=out,
+        primary=primary,
+        summary=summary,
+        evidence=evidence,
+        debug=debug,
+        result=result_dict,
+    )
+    result_dict["governing_state_classifier"] = dict(governing_state)
     out["design_brain_result"] = result_dict
     debug["design_brain_result"] = result_dict
     debug["design_brain_result_validation"] = dict(validation)
     debug["design_brain_safe_combined_cleanup_proof"] = dict(safe_combined)
+    debug["governing_state_classifier"] = dict(governing_state)
     out["debug_trace"] = debug
     return out

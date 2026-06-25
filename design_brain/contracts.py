@@ -43,6 +43,46 @@ def _truthy_int(value: Any) -> int:
         return 0
 
 
+def bottom_arrangement_to_shared_updates(arrangement: dict) -> dict:
+    """Map an explicit bottom reinforcement arrangement to shared update keys."""
+    count_1 = int(arrangement.get("bot1_count", 0) or 0)
+    count_2 = int(arrangement.get("bot2_count", 0) or 0)
+    dia_1 = int(arrangement.get("db_bot_1", 0) or 0)
+    dia_2 = int(arrangement.get("db_bot_2", dia_1) or dia_1)
+    row_count = 2 if count_2 > 0 else 1
+    return {
+        "bot1_layout_mode": "Count",
+        "bot1_count": count_1,
+        "db_bot_1": dia_1,
+        "bot2_layout_mode": "Count",
+        "bot2_count": count_2,
+        "db_bot_2": dia_2,
+        "bot_row_count": row_count,
+        "bot_row_1_mode": "Count",
+        "bot_row_1_bars": count_1,
+        "bot_row_1_spacing": 0.0,
+        "bot_row_1_dia": dia_1,
+        "bot_row_2_mode": "Count",
+        "bot_row_2_bars": count_2,
+        "bot_row_2_spacing": 0.0,
+        "bot_row_2_dia": dia_2,
+    }
+
+
+def resolve_recommendation_payload_fast_path(item: dict | None) -> dict:
+    """Return direct recommendation updates from explicit item payload fields."""
+    if not isinstance(item, dict):
+        return {}
+    payload = dict(item.get("action_payload") or {})
+    resolved = payload.get("resolved_candidate_updates")
+    if isinstance(resolved, dict) and resolved:
+        return dict(resolved)
+    direct = payload.get("updates")
+    if isinstance(direct, dict) and direct:
+        return dict(direct)
+    return {}
+
+
 def contract_ids_for_outcome(outcome_id: str, evidence: dict) -> list[str]:
     ids = [
         "design_guide_outcome_contract",

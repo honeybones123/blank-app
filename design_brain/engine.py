@@ -7,6 +7,7 @@ generate candidates or apply updates.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from optimisation_config import get_target_utilisation_band, target_band_payload
@@ -65,6 +66,9 @@ FORBIDDEN_OUTSIDE_TARGET_CATEGORIES = frozenset(
         "unknown",
     }
 )
+
+SHEAR_FAIL_FAMILY_ROUTING_ENV = "DESIGN_BRAIN_SHEAR_FAIL_FAMILY_ROUTING"
+COMBINED_FAIL_FAMILY_ROUTING_ENV = "DESIGN_BRAIN_COMBINED_FAIL_FAMILY_ROUTING"
 
 
 def _as_dict(value: Any) -> dict:
@@ -1079,6 +1083,37 @@ def _active_strength_failure_families(overview: dict, context: dict) -> set[str]
     return families
 
 
+def _item_signals_bending_active_failure(item: dict | None) -> bool:
+    if not isinstance(item, dict):
+        return False
+    evidence = _as_dict(item.get("candidate_search_evidence"))
+    text = " ".join(
+        str(part or "")
+        for part in (
+            item.get("title"),
+            item.get("title_main"),
+            item.get("primary_action"),
+            item.get("reasoning"),
+            item.get("guidance_why"),
+            item.get("summary_line"),
+            evidence.get("reason"),
+            evidence.get("failed_check_name"),
+            evidence.get("failed_check"),
+        )
+    ).lower()
+    return any(
+        token in text
+        for token in (
+            "minimum tensile reinforcement fails",
+            "minimum tensile reinforcement",
+            "bending utilisation moves",
+            "bending utilization moves",
+            "bending fail",
+            "bending capacity fails",
+        )
+    )
+
+
 def _button_enabled(contract: dict) -> bool:
     return bool(
         contract.get("actionable") is True
@@ -1086,6 +1121,309 @@ def _button_enabled(contract: dict) -> bool:
         and contract.get("preview_pass") is True
         and contract.get("blocking_reason") is None
     )
+
+
+def _shear_fail_family_routing_enabled() -> bool:
+    value = str(os.environ.get(SHEAR_FAIL_FAMILY_ROUTING_ENV, "0")).strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
+def _combined_fail_family_routing_enabled() -> bool:
+    value = str(os.environ.get(COMBINED_FAIL_FAMILY_ROUTING_ENV, "0")).strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
+def _stamp_shear_fail_family_route_diagnostics(decision: dict, diagnostics: dict) -> dict:
+    if not diagnostics:
+        return decision
+    stamped = dict(decision)
+    debug = _as_dict(stamped.get("debug"))
+    debug["shear_fail_family_routing"] = dict(diagnostics)
+    stamped["debug"] = debug
+    evidence = _as_dict(stamped.get("candidate_search_evidence"))
+    evidence.update(
+        {
+            "governing_family": diagnostics.get("governing_state") or "SHEAR_FAIL_GOVERNS",
+            "family_name": diagnostics.get("family_name") or "SHEAR_FAIL_GOVERNS",
+            "family_routing_attempted": bool(diagnostics.get("family_routing_attempted")),
+            "family_routing_used": bool(diagnostics.get("family_routing_used")),
+            "fallback_used": bool(diagnostics.get("fallback_used")),
+            "fallback_reason": diagnostics.get("fallback_reason"),
+            "adapter_error": diagnostics.get("adapter_error"),
+            "product_routing_enabled": bool(diagnostics.get("product_routing_enabled")),
+        }
+    )
+    stamped["candidate_search_evidence"] = evidence
+    return stamped
+
+
+def _stamp_combined_fail_family_route_diagnostics(decision: dict, diagnostics: dict) -> dict:
+    if not diagnostics:
+        return decision
+    stamped = dict(decision)
+    debug = _as_dict(stamped.get("debug"))
+    debug["combined_fail_family_routing"] = dict(diagnostics)
+    stamped["debug"] = debug
+    evidence = _as_dict(stamped.get("candidate_search_evidence"))
+    evidence.update(
+        {
+            "governing_family": diagnostics.get("governing_state") or "COMBINED_BENDING_SHEAR_FAIL",
+            "family_name": diagnostics.get("family_name") or "COMBINED_BENDING_SHEAR_FAIL",
+            "family_routing_attempted": bool(diagnostics.get("family_routing_attempted")),
+            "family_routing_used": bool(diagnostics.get("family_routing_used")),
+            "fallback_used": bool(diagnostics.get("fallback_used")),
+            "fallback_reason": diagnostics.get("fallback_reason"),
+            "adapter_error": diagnostics.get("adapter_error"),
+            "product_routing_enabled": bool(diagnostics.get("product_routing_enabled")),
+        }
+    )
+    stamped["candidate_search_evidence"] = evidence
+    return stamped
+
+
+def _route_shear_fail_family_decision(
+    *,
+    decision: dict,
+    primary_item: dict,
+    overview: dict,
+    context: dict,
+    evidence: dict,
+    active_strength_failures: set[str],
+) -> dict:
+    active = {str(item or "").strip().lower() for item in set(active_strength_failures or set())}
+    base_diagnostics = {
+        "family_name": "SHEAR_FAIL_GOVERNS",
+        "governing_state": "SHEAR_FAIL_GOVERNS",
+        "family_routing_attempted": False,
+        "family_routing_used": False,
+        "fallback_used": False,
+        "fallback_reason": None,
+        "adapter_error": None,
+        "product_routing_enabled": _shear_fail_family_routing_enabled(),
+        "active_strength_failures": sorted(active),
+        "routing_flag": SHEAR_FAIL_FAMILY_ROUTING_ENV,
+        "routing_boundary": "design_brain.engine.resolve_design_guide_decision",
+    }
+    if active != {"shear"}:
+        return {
+            "used": False,
+            "decision": dict(decision),
+            "primary_item": dict(primary_item),
+            "diagnostics": {
+                **base_diagnostics,
+                "fallback_reason": "not_shear_only_active_strength_failure",
+            },
+        }
+    if not _shear_fail_family_routing_enabled():
+        return {
+            "used": False,
+            "decision": dict(decision),
+            "primary_item": dict(primary_item),
+            "diagnostics": {
+                **base_diagnostics,
+                "family_routing_attempted": True,
+                "fallback_used": True,
+                "fallback_reason": "routing_flag_disabled",
+            },
+        }
+    try:
+        from design_brain.families.base import FamilyStrategyContext
+        from design_brain.families.registry import family_strategy_for
+
+        strategy = family_strategy_for("SHEAR_FAIL_GOVERNS")
+        if strategy is None or not callable(getattr(strategy, "route_existing_decision", None)):
+            return {
+                "used": False,
+                "decision": dict(decision),
+                "primary_item": dict(primary_item),
+                "diagnostics": {
+                    **base_diagnostics,
+                    "family_routing_attempted": True,
+                    "fallback_used": True,
+                    "fallback_reason": "shear_fail_family_route_method_missing",
+                },
+            }
+        family_context = FamilyStrategyContext(
+            governing_state="SHEAR_FAIL_GOVERNS",
+            payload={
+                "guidance_items": [dict(primary_item)],
+                "debug_trace": {
+                    "overview": dict(overview),
+                    "candidate_search_evidence": dict(evidence),
+                },
+            },
+            primary=dict(primary_item),
+            summary=dict(overview),
+            evidence=dict(evidence),
+            debug={
+                "overview": dict(overview),
+                "candidate_search_evidence": dict(evidence),
+                "fail_keys": list(context.get("fail_keys") or overview.get("fail_keys") or []),
+            },
+            classifier={
+                "governing_state": "SHEAR_FAIL_GOVERNS",
+                "active_failures": ["shear"],
+            },
+        )
+        routed = strategy.route_existing_decision(
+            family_context,
+            decision=dict(decision),
+            primary_item=dict(primary_item),
+            active_strength_failures=set(active),
+        )
+        diagnostics = {
+            **base_diagnostics,
+            **_as_dict(routed.get("diagnostics")),
+            "family_routing_attempted": True,
+            "product_routing_enabled": True,
+        }
+        routed_decision = _stamp_shear_fail_family_route_diagnostics(
+            _as_dict(routed.get("decision") or decision),
+            diagnostics,
+        )
+        return {
+            "used": bool(routed.get("used")),
+            "decision": routed_decision,
+            "primary_item": _as_dict(routed.get("primary_item") or primary_item),
+            "diagnostics": diagnostics,
+        }
+    except Exception as exc:
+        diagnostics = {
+            **base_diagnostics,
+            "family_routing_attempted": True,
+            "fallback_used": True,
+            "fallback_reason": "adapter_exception",
+            "adapter_error": f"{type(exc).__name__}: {exc}",
+        }
+        return {
+            "used": False,
+            "decision": _stamp_shear_fail_family_route_diagnostics(dict(decision), diagnostics),
+            "primary_item": dict(primary_item),
+            "diagnostics": diagnostics,
+        }
+
+
+def _route_combined_fail_family_decision(
+    *,
+    decision: dict,
+    primary_item: dict,
+    overview: dict,
+    context: dict,
+    evidence: dict,
+    active_strength_failures: set[str],
+) -> dict:
+    active = {str(item or "").strip().lower() for item in set(active_strength_failures or set())}
+    base_diagnostics = {
+        "family_name": "COMBINED_BENDING_SHEAR_FAIL",
+        "governing_state": "COMBINED_BENDING_SHEAR_FAIL",
+        "family_routing_attempted": False,
+        "family_routing_used": False,
+        "fallback_used": False,
+        "fallback_reason": None,
+        "adapter_error": None,
+        "product_routing_enabled": _combined_fail_family_routing_enabled(),
+        "active_strength_failures": sorted(active),
+        "routing_flag": COMBINED_FAIL_FAMILY_ROUTING_ENV,
+        "routing_boundary": "design_brain.engine.resolve_design_guide_decision",
+    }
+    if not active >= {"bending", "shear"}:
+        return {
+            "used": False,
+            "decision": dict(decision),
+            "primary_item": dict(primary_item),
+            "diagnostics": {
+                **base_diagnostics,
+                "fallback_reason": "not_combined_bending_shear_active_strength_failure",
+            },
+        }
+    if not _combined_fail_family_routing_enabled():
+        return {
+            "used": False,
+            "decision": dict(decision),
+            "primary_item": dict(primary_item),
+            "diagnostics": {
+                **base_diagnostics,
+                "family_routing_attempted": True,
+                "fallback_used": True,
+                "fallback_reason": "routing_flag_disabled",
+            },
+        }
+    try:
+        from design_brain.families.base import FamilyStrategyContext
+        from design_brain.families.registry import family_strategy_for
+
+        strategy = family_strategy_for("COMBINED_BENDING_SHEAR_FAIL")
+        if strategy is None or not callable(getattr(strategy, "route_existing_decision", None)):
+            diagnostics = {
+                **base_diagnostics,
+                "family_routing_attempted": True,
+                "fallback_used": True,
+                "fallback_reason": "combined_fail_family_route_method_missing",
+            }
+            return {
+                "used": False,
+                "decision": _stamp_combined_fail_family_route_diagnostics(dict(decision), diagnostics),
+                "primary_item": dict(primary_item),
+                "diagnostics": diagnostics,
+            }
+        family_context = FamilyStrategyContext(
+            governing_state="COMBINED_BENDING_SHEAR_FAIL",
+            payload={
+                "guidance_items": [dict(primary_item)],
+                "debug_trace": {
+                    "overview": dict(overview),
+                    "candidate_search_evidence": dict(evidence),
+                },
+            },
+            primary=dict(primary_item),
+            summary=dict(overview),
+            evidence=dict(evidence),
+            debug={
+                "overview": dict(overview),
+                "candidate_search_evidence": dict(evidence),
+                "fail_keys": list(context.get("fail_keys") or overview.get("fail_keys") or []),
+            },
+            classifier={
+                "governing_state": "COMBINED_BENDING_SHEAR_FAIL",
+                "active_failures": sorted(active),
+            },
+        )
+        routed = strategy.route_existing_decision(
+            family_context,
+            decision=dict(decision),
+            primary_item=dict(primary_item),
+            active_strength_failures=set(active),
+        )
+        diagnostics = {
+            **base_diagnostics,
+            **_as_dict(routed.get("diagnostics")),
+            "family_routing_attempted": True,
+            "product_routing_enabled": True,
+        }
+        routed_decision = _stamp_combined_fail_family_route_diagnostics(
+            _as_dict(routed.get("decision") or decision),
+            diagnostics,
+        )
+        return {
+            "used": bool(routed.get("used")),
+            "decision": routed_decision,
+            "primary_item": _as_dict(routed.get("primary_item") or primary_item),
+            "diagnostics": diagnostics,
+        }
+    except Exception as exc:
+        diagnostics = {
+            **base_diagnostics,
+            "family_routing_attempted": True,
+            "fallback_used": True,
+            "fallback_reason": "adapter_exception",
+            "adapter_error": f"{type(exc).__name__}: {exc}",
+        }
+        return {
+            "used": False,
+            "decision": _stamp_combined_fail_family_route_diagnostics(dict(decision), diagnostics),
+            "primary_item": dict(primary_item),
+            "diagnostics": diagnostics,
+        }
 
 
 def _text_indicates_blocker(text: str | None) -> bool:
@@ -2489,8 +2827,46 @@ def resolve_design_guide_decision(
     preview_util = _as_float((decision.get("target_band_outcome") or {}).get("preview_util"))
     button = _as_dict(decision.get("button_contract"))
     active_strength_failures = _active_strength_failure_families(overview, ctx)
+    combined_route_failures = set(active_strength_failures)
+    if "shear" in combined_route_failures and _item_signals_bending_active_failure(primary_item):
+        combined_route_failures.add("bending")
     active_strength_action = bool(active_strength_failures and _button_enabled(button))
-    if active_strength_action:
+    combined_fail_family_route_used = False
+    shear_fail_family_route_used = False
+    if combined_route_failures >= {"bending", "shear"}:
+        combined_route = _route_combined_fail_family_decision(
+            decision=decision,
+            primary_item=primary_item,
+            overview=overview,
+            context=ctx,
+            evidence=evidence,
+            active_strength_failures=combined_route_failures,
+        )
+        decision = _as_dict(combined_route.get("decision") or decision)
+        primary_item = _as_dict(combined_route.get("primary_item") or primary_item)
+        evidence = _as_dict(decision.get("candidate_search_evidence") or evidence)
+        button = _as_dict(decision.get("button_contract"))
+        combined_fail_family_route_used = bool(combined_route.get("used"))
+        if combined_fail_family_route_used:
+            active_strength_action = True
+            active_strength_failures = set(combined_route_failures)
+    elif active_strength_failures == {"shear"}:
+        shear_route = _route_shear_fail_family_decision(
+            decision=decision,
+            primary_item=primary_item,
+            overview=overview,
+            context=ctx,
+            evidence=evidence,
+            active_strength_failures=active_strength_failures,
+        )
+        decision = _as_dict(shear_route.get("decision") or decision)
+        primary_item = _as_dict(shear_route.get("primary_item") or primary_item)
+        evidence = _as_dict(decision.get("candidate_search_evidence") or evidence)
+        button = _as_dict(decision.get("button_contract"))
+        shear_fail_family_route_used = bool(shear_route.get("used"))
+        if shear_fail_family_route_used:
+            active_strength_action = True
+    if active_strength_action and not shear_fail_family_route_used and not combined_fail_family_route_used:
         if active_strength_failures >= {"bending", "shear"}:
             active_family = "combined"
             active_title = "Bending and shear capacity are low"
@@ -2625,14 +3001,124 @@ def resolve_design_guide_decision(
 def legacy_item_from_decision(primary_item: dict | None, decision: dict | None) -> dict | None:
     """Transitional adapter for the legacy Streamlit card renderer.
 
-    The engine remains the source of truth. This only projects an
-    ``already_efficient`` decision onto the old item shape until the renderer
-    can consume the decision dictionary directly.
+    The engine remains the source of truth. This projects selected engine-owned
+    decisions onto the old item shape until the renderer can consume the
+    decision dictionary directly.
     """
     if not isinstance(primary_item, dict):
         return primary_item
     engine_decision = _as_dict(decision)
     card = _as_dict(engine_decision.get("card"))
+    debug = _as_dict(engine_decision.get("debug"))
+    evidence = _as_dict(engine_decision.get("candidate_search_evidence") or debug.get("candidate_search_evidence"))
+    combined_route_diag = _as_dict(debug.get("combined_fail_family_routing"))
+    if (
+        str(card.get("intent") or "").strip() == "required_fix"
+        and str(card.get("family") or "").strip().lower() == "combined"
+        and bool(combined_route_diag.get("family_routing_used") or evidence.get("combined_fail_family_routing_used"))
+        and not bool(combined_route_diag.get("fallback_used") or evidence.get("fallback_used"))
+    ):
+        button = _as_dict(engine_decision.get("button_contract"))
+        title = str(card.get("title") or "").strip() or "Strengthening required for bending and shear"
+        body = str(card.get("body") or "").strip()
+        display_truth = _as_dict(primary_item.get("display_truth"))
+        display_truth.update(
+            {
+                "displayed_status": card.get("status_text") or "FAIL",
+                "display_truth_source": card.get("display_truth_source") or display_truth.get("display_truth_source") or "published_summary",
+            }
+        )
+        primary_item.update(
+            {
+                "bucket": "fail",
+                "status": "FAIL",
+                "check_key": "combined",
+                "family": "combined",
+                "selected_action_family": "combined",
+                "title_main": title,
+                "title": title,
+                "title_sub": "",
+                "primary_action": "Run one-click auto design",
+                "reasoning": body,
+                "guidance_why": body,
+                "guidance_intent": "required_fix",
+                "design_guide_terminal_state": None,
+                "display_truth": dict(display_truth),
+                "button_contract": dict(button),
+                "action_type": button.get("action_type") or primary_item.get("action_type"),
+                "updates": dict(button.get("updates") or primary_item.get("updates") or {}),
+                "selected_action_updates": dict(button.get("updates") or primary_item.get("selected_action_updates") or {}),
+                "candidate_search_evidence": dict(evidence),
+                "target_band_outcome": dict(_as_dict(engine_decision.get("target_band_outcome"))),
+                "guidance_why_text_compact": body,
+                "selected_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                "published_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                "cta_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                "card_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            }
+        )
+        action_payload = _as_dict(primary_item.get("action_payload"))
+        if action_payload:
+            action_payload["candidate_search_evidence"] = dict(evidence)
+            action_payload["button_contract"] = dict(button)
+            primary_item["action_payload"] = action_payload
+        resolved = _as_dict(primary_item.get("resolved_candidate"))
+        if resolved:
+            resolved["candidate_search_evidence"] = dict(evidence)
+            primary_item["resolved_candidate"] = resolved
+        return primary_item
+
+    route_diag = _as_dict(debug.get("shear_fail_family_routing"))
+    if (
+        str(card.get("intent") or "").strip() == "required_fix"
+        and str(card.get("family") or "").strip().lower() == "shear"
+        and bool(route_diag.get("family_routing_used") or evidence.get("family_routing_used"))
+        and not bool(route_diag.get("fallback_used") or evidence.get("fallback_used"))
+    ):
+        button = _as_dict(engine_decision.get("button_contract"))
+        title = str(card.get("title") or "").strip() or "Shear capacity is low"
+        body = str(card.get("body") or "").strip()
+        display_truth = _as_dict(primary_item.get("display_truth"))
+        display_truth.update(
+            {
+                "displayed_status": card.get("status_text") or "FAIL",
+                "display_truth_source": card.get("display_truth_source") or display_truth.get("display_truth_source") or "published_summary",
+            }
+        )
+        primary_item.update(
+            {
+                "bucket": "fail",
+                "status": "FAIL",
+                "check_key": "shear",
+                "family": "shear",
+                "title_main": title,
+                "title": title,
+                "title_sub": "",
+                "primary_action": "Run one-click auto design",
+                "reasoning": body,
+                "guidance_why": body,
+                "guidance_intent": "required_fix",
+                "design_guide_terminal_state": None,
+                "display_truth": dict(display_truth),
+                "button_contract": dict(button),
+                "action_type": button.get("action_type") or primary_item.get("action_type"),
+                "updates": dict(button.get("updates") or primary_item.get("updates") or {}),
+                "candidate_search_evidence": dict(evidence),
+                "target_band_outcome": dict(_as_dict(engine_decision.get("target_band_outcome"))),
+                "guidance_why_text_compact": body,
+            }
+        )
+        action_payload = _as_dict(primary_item.get("action_payload"))
+        if action_payload:
+            action_payload["candidate_search_evidence"] = dict(evidence)
+            action_payload["button_contract"] = dict(button)
+            primary_item["action_payload"] = action_payload
+        resolved = _as_dict(primary_item.get("resolved_candidate"))
+        if resolved:
+            resolved["candidate_search_evidence"] = dict(evidence)
+            primary_item["resolved_candidate"] = resolved
+        return primary_item
+
     if str(card.get("intent") or "").strip() != "already_efficient":
         return primary_item
 

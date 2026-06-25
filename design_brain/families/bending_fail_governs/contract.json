@@ -1,0 +1,431 @@
+{
+  "schema": "design_brain.family_contract.v1",
+  "family_identity": {
+    "family_id": "BENDING_FAIL_GOVERNS",
+    "package": "design_brain.families.bending_fail_governs",
+    "legacy_delegate": "design_brain.families.bending_fail.BendingFailFamily",
+    "public_api": "evaluate_bending_fail_governs"
+  },
+  "classification": {
+    "governs_when": [
+      "bending utilisation exceeds allowable limit",
+      "bending repair is required",
+      "bending failure is the governing published outcome"
+    ],
+    "must_not_govern_when": [
+      "shear-only failure governs",
+      "target band is already reached",
+      "locked-no-repair outcome is required",
+      "exact-stop proven outcome is required"
+    ],
+    "allowed_competing_families": [
+      "SHEAR_FAIL_GOVERNS",
+      "BENDING_AND_SHEAR_FAIL_GOVERN",
+      "BENDING_FAIL_SHEAR_OPTIMISE_GOVERNS",
+      "LOCKED_NO_REPAIR",
+      "EXACT_STOP_PROVEN"
+    ]
+  },
+  "utilisation_definitions": {
+    "FAIL": {
+      "operator": ">",
+      "threshold": 1.0,
+      "summary": "utilisation > 1.00"
+    },
+    "TARGET": {
+      "lower_operator": ">=",
+      "lower_threshold": 0.85,
+      "upper_operator": "<=",
+      "upper_threshold": 1.0,
+      "summary": "0.85 <= utilisation <= 1.00"
+    },
+    "OVERDESIGNED": {
+      "operator": "<",
+      "threshold": 0.85,
+      "summary": "utilisation < 0.85"
+    }
+  },
+  "family_objective": {
+    "summary": "Bring bending utilisation into the target band while maintaining valid geometry, detailing, code compliance, protected non-bending checks, minimum unnecessary change, and deterministic recommendation order.",
+    "target_band": {
+      "lower": 0.85,
+      "upper": 1.0
+    },
+    "must_protect": [
+      "valid geometry",
+      "valid detailing",
+      "code compliance",
+      "other checks",
+      "deterministic recommendation path"
+    ],
+    "change_policy": "minimise unnecessary changes"
+  },
+  "required_family_inputs": [
+    "bending utilisation",
+    "shear utilisation",
+    "serviceability state",
+    "geometry/detailing state",
+    "beam width",
+    "beam depth",
+    "depth/width ratio",
+    "reinforcement arrangement",
+    "spacing",
+    "cover",
+    "congestion status",
+    "geometry locked status",
+    "reinforcement locked status",
+    "target band limits",
+    "exact stop status"
+  ],
+  "depth_width_rule": {
+    "maximum_preferred_ratio": 2.0,
+    "ratio_expression": "depth / width",
+    "when_ratio_exceeds_limit": [
+      "depth growth strategy becomes blocked",
+      "width strategy becomes preferred"
+    ]
+  },
+  "internal_strategy_ladder": {
+    "family_id": "BENDING_FAIL_GOVERNS",
+    "one_family_one_contract_one_ladder": true,
+    "ladder_hash": "2c27cae4e8f2ea2f64cfec85932a96f0d5fcc9c49fe13b1aea3029b9d88bee17",
+    "lanes": [
+      {
+        "lane_index": 0,
+        "lane_id": "geometry_sanity",
+        "title": "Geometry sanity",
+        "purpose": "Check section proportions before strengthening.",
+        "required_checks": [
+          "depth/width ratio",
+          "geometry lock status",
+          "detailing restrictions"
+        ],
+        "required_evidence": [
+          "geometry valid",
+          "geometry blocked",
+          "geometry warning"
+        ],
+        "acceptance_transition": "Lane 1",
+        "blocked_transition": "Lane 7"
+      },
+      {
+        "lane_index": 1,
+        "lane_id": "depth_increase",
+        "title": "Depth increase",
+        "purpose": "Increase bending capacity through lever arm increase before congesting reinforcement.",
+        "rules": [
+          "increase depth in 25 mm increments",
+          "recheck bending",
+          "recheck shear",
+          "recheck serviceability",
+          "recheck depth/width ratio"
+        ],
+        "required_evidence": [
+          "depth before",
+          "depth after",
+          "ratio before",
+          "ratio after",
+          "utilisation before",
+          "utilisation after"
+        ],
+        "stop_conditions": [
+          "target band reached",
+          "depth locked",
+          "depth/width ratio reaches 2.0",
+          "no further valid depth increase"
+        ],
+        "failure_transition": "Lane 2"
+      },
+      {
+        "lane_index": 2,
+        "lane_id": "single_layer_bottom_reinforcement",
+        "title": "Single-layer bottom reinforcement",
+        "purpose": "Strengthen using a single tension layer where practical.",
+        "allowed": [
+          "reduce spacing",
+          "add bars",
+          "maintain single layer"
+        ],
+        "required_evidence": [
+          "bar count before/after",
+          "spacing before/after",
+          "utilisation before/after",
+          "congestion status"
+        ],
+        "limits": [
+          "do not continue once clear spacing reaches approximately 100 mm"
+        ],
+        "failure_transition": "Lane 3"
+      },
+      {
+        "lane_index": 3,
+        "lane_id": "larger_bars",
+        "title": "Larger bars",
+        "purpose": "Increase reinforcement area without excessive congestion.",
+        "allowed": [
+          "N20 to N24",
+          "N24 to N28",
+          "N28 to N32",
+          "similar progression"
+        ],
+        "required_evidence": [
+          "bar size before/after",
+          "utilisation before/after",
+          "detailing compliance"
+        ],
+        "failure_transition": "Lane 4"
+      },
+      {
+        "lane_index": 4,
+        "lane_id": "width_increase",
+        "title": "Width increase",
+        "purpose": "Create reinforcement room before using additional layers.",
+        "rules": [
+          "increase width in 25 mm or 50 mm increments",
+          "preserve valid geometry",
+          "improve spacing capacity"
+        ],
+        "required_evidence": [
+          "width before",
+          "width after",
+          "ratio before",
+          "ratio after",
+          "utilisation before",
+          "utilisation after"
+        ],
+        "success_transition": "Lane 2",
+        "failure_transition": "Lane 5"
+      },
+      {
+        "lane_index": 5,
+        "lane_id": "multi_layer_reinforcement",
+        "title": "Multi-layer reinforcement",
+        "purpose": "Last reinforcement strategy before declaring blocked.",
+        "allowed_only_when": [
+          "width cannot increase",
+          "depth cannot increase",
+          "single layer cannot fit required reinforcement"
+        ],
+        "required_evidence": [
+          "layer arrangement",
+          "actual reinforcement centroid",
+          "utilisation before/after",
+          "congestion status"
+        ],
+        "rules": [
+          "capacity must use actual reinforcement centroid, not bottom-row assumptions"
+        ],
+        "failure_transition": "Lane 6"
+      },
+      {
+        "lane_index": 6,
+        "lane_id": "exact_stop",
+        "title": "Exact stop",
+        "purpose": "Family proves no better valid move exists.",
+        "required_evidence": [
+          "final utilisation",
+          "exhausted lanes",
+          "blocked lanes",
+          "rejected strategies"
+        ],
+        "output": "EXACT_STOP"
+      },
+      {
+        "lane_index": 7,
+        "lane_id": "no_valid_strategy",
+        "title": "No valid strategy",
+        "purpose": "No legal strengthening path exists.",
+        "required_evidence": [
+          "failed utilisation",
+          "exhausted ladder",
+          "blocked reasons",
+          "geometry restrictions",
+          "detailing restrictions",
+          "lock restrictions"
+        ],
+        "output": "NO_VALID_STRATEGY"
+      }
+    ],
+    "global_family_rules": [
+      "Strategy order is deterministic.",
+      "Do not jump directly to width while valid depth growth remains.",
+      "Do not use multi-layer reinforcement before width unless width is locked.",
+      "After any geometry change, retry reinforcement strategies.",
+      "Every rejected lane must record a rejection reason.",
+      "Every accepted lane must record acceptance evidence.",
+      "Exactly one final family outcome is permitted: selected recommendation, exact stop, or no valid strategy."
+    ],
+    "required_outputs": [
+      "family_id",
+      "selected_strategy_lane",
+      "ladder_trace",
+      "selected_recommendation",
+      "accepted_lane_evidence",
+      "rejected_lane_evidence",
+      "final_bending_utilisation",
+      "target_band_status",
+      "exact_stop_status",
+      "blocked_reason",
+      "blocked_reason_source",
+      "terminal_status",
+      "repair_blocked",
+      "internal_cap_only",
+      "hard_blocker_proven",
+      "contract_strategy_exhaustion_proven",
+      "contract_strategies_checked",
+      "contract_strategies_blocked",
+      "contract_strategies_remaining",
+      "implementation_caps_hit",
+      "geometry_locks_used",
+      "project_constraints_used",
+      "detailing_constraints_used",
+      "repair_reason_proof",
+      "cta_intent_proof",
+      "contract_version",
+      "ladder_hash"
+    ]
+  },
+  "repair_ladder": {
+    "required_lanes": [
+      "bottom_reinforcement_increase",
+      "depth_increase_when_reinforcement_exhausted",
+      "width_increase_when_fit_or_spacing_blocks"
+    ],
+    "must_preserve_order": true,
+    "locked_snapshot_fields": [
+      "family_id",
+      "repair_ladder_hash",
+      "stage_plan_order",
+      "candidate_count",
+      "candidate_indexes",
+      "candidate_labels",
+      "update_payload_surfaces",
+      "known_bad_skipped_candidates",
+      "blocker_reasons",
+      "no_candidate_stop_reason",
+      "final_result_summary",
+      "first_spec",
+      "last_spec"
+    ],
+    "expected_ladder_snapshots": {
+      "geometry_unlocked_ladder": {
+        "geometry_locked": false,
+        "candidate_count": 6,
+        "known_bad_candidate_count": 1,
+        "repair_ladder_hash": "4dc65ba00372b5fe01aa8ea341ecd21f361017ddc3ba3605de179eb5f463af60",
+        "known_bad_hash": "136d65c8ae3cbe481692b2c3a53f39de4283343f887619082e482f96ce26fcb1",
+        "depth_steps_mm": [
+          25.0,
+          550.0
+        ],
+        "width_steps_mm": [
+          50.0,
+          150.0,
+          200.0
+        ],
+        "blocker_reasons": [
+          "clear_spacing_below_100_mm"
+        ],
+        "no_candidate_stop_reason": "contract runtime ladder exhausted; legal no-repair proof required"
+      },
+      "geometry_locked_ladder": {
+        "geometry_locked": true,
+        "candidate_count": 2,
+        "known_bad_candidate_count": 1,
+        "repair_ladder_hash": "0fa531e2491afae4fee8dd6d4ce738fb858d4db3620784c84d092c7cb4b83248",
+        "known_bad_hash": "136d65c8ae3cbe481692b2c3a53f39de4283343f887619082e482f96ce26fcb1",
+        "depth_steps_mm": [],
+        "width_steps_mm": [],
+        "blocker_reasons": [
+          "clear_spacing_below_100_mm"
+        ],
+        "no_candidate_stop_reason": "geometry locked; legal no-repair proof required if contract runtime candidates fail"
+      }
+    },
+    "ranking_rule": "Evaluate contract runtime lane order and stop immediately on the first fully compliant executor-backed pure bending repair."
+  },
+  "blockers": {
+    "allowed": [
+      "min_bending_reo",
+      "spacing",
+      "ductility",
+      "geometry_detailing",
+      "locked_geometry",
+      "no_candidate_found",
+      "target_band_exhausted"
+    ],
+    "valid_repair_blocked_proof": [
+      "geometry locked",
+      "depth locked and width locked",
+      "project maximum depth reached",
+      "project maximum width reached",
+      "reinforcement/detailing constraints prohibit remaining bending repair",
+      "spacing/detailing constraints prohibit remaining bending reinforcement options",
+      "material/project/user constraints prohibit remaining repair paths",
+      "all contract-permitted BENDING_FAIL_GOVERNS repair strategies exhausted with explicit terminal evidence"
+    ],
+    "implementation_cap_only_not_terminal": [
+      "internal search exhausted",
+      "bounded move set exhausted",
+      "bounded ladder exhausted",
+      "candidate cap reached",
+      "depth step cap reached",
+      "width step cap reached",
+      "maximum checked move-set depth reached",
+      "maximum checked move-set width reached",
+      "no generated candidates"
+    ],
+    "not_top_level_families": [
+      "min_bending_reo",
+      "geometry_detailing",
+      "spacing",
+      "ductility"
+    ]
+  },
+  "shared_exclusions": [
+    "family classification",
+    "CTA rendering",
+    "CTA source precedence",
+    "publication gate",
+    "apply routing",
+    "one-click orchestration",
+    "visible wording",
+    "UI rendering",
+    "session state",
+    "debug rendering"
+  ],
+  "publication": {
+    "required_fields": [
+      "title",
+      "status",
+      "why_text",
+      "evidence",
+      "cta_contract"
+    ],
+    "allowed_cta_states": [
+      "apply_enabled",
+      "apply_disabled_with_reason",
+      "no_apply_exact_stop",
+      "no_apply_locked"
+    ]
+  },
+  "lock_verification": {
+    "required_verifiers": [
+      "tools/verification/families/bending_fail_governs_locked_regression.py",
+      "tools/verification/families/bending_fail_governs_contract_check.py"
+    ],
+    "required_snapshots": [
+      "geometry_unlocked_ladder",
+      "geometry_locked_ladder"
+    ],
+    "required_gates": [
+      "compileall",
+      "governing_family_architecture_check",
+      "bending_fail_governs_api_check",
+      "publication_snapshot",
+      "C1_C2_C3_product_gates",
+      "SHEAR_COMBINED_BENDING_regressions",
+      "targeted_fingerprint_update_resolution_scan"
+    ]
+  }
+}

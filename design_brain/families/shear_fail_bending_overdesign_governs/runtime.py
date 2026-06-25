@@ -1,0 +1,308 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Callable
+
+from design_brain.shear_fail_bending_overdesign_candidate_merge import (
+    MixedCandidateEvaluation,
+    MixedMergedCandidate,
+    MixedSourceCandidate,
+    ShearFailBendingOverdesignInputs,
+    merge_updates,
+    stable_shear_fail_bending_overdesign_hash,
+)
+from design_brain.families.shear_fail_bending_overdesign_governs.contract import (
+    candidate_source_contract,
+    contract_hash,
+    exact_stop_rules,
+    exhausted_rules,
+    priority_contract,
+    ranking_criteria,
+)
+
+
+CandidateEvaluator = Callable[
+    [ShearFailBendingOverdesignInputs, MixedMergedCandidate],
+    MixedCandidateEvaluation,
+]
+
+
+@dataclass(frozen=True)
+class ShearFailBendingOverdesignResult:
+    status: str
+    selected_recommendation: dict[str, Any] | None
+    candidate_repairs: tuple[dict[str, Any], ...]
+    exhausted_reason: str | None
+    evidence: dict[str, Any]
+    selection_boundary: dict[str, Any]
+    candidate_source_proof: dict[str, Any]
+    mixed_merge_trace: tuple[dict[str, Any], ...]
+    accepted_candidate_evidence: tuple[dict[str, Any], ...]
+    rejected_candidate_evidence: tuple[dict[str, Any], ...]
+    ranking_evidence: dict[str, Any]
+    exact_stop_proof: dict[str, Any]
+    exhausted_proof: dict[str, Any]
+    ownership_proof: dict[str, Any]
+    runtime_hash: str
+
+    def to_family_result_payload(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "selected_recommendation": self.selected_recommendation,
+            "candidate_repairs": self.candidate_repairs,
+            "exhausted_reason": self.exhausted_reason,
+            "evidence": self.evidence,
+            "runtime_hash": self.runtime_hash,
+        }
+
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _source_candidate(value: dict[str, Any]) -> MixedSourceCandidate:
+    return MixedSourceCandidate(
+        source_family_id=str(value.get("source_family_id") or value.get("family_id") or ""),
+        candidate_id=str(value.get("candidate_id") or value.get("id") or ""),
+        updates=_as_dict(value.get("updates")),
+        evidence=_as_dict(value.get("evidence")),
+    )
+
+
+def _source_candidates(values: tuple[dict[str, Any], ...] | list[dict[str, Any]]) -> tuple[MixedSourceCandidate, ...]:
+    return tuple(_source_candidate(dict(value)) for value in values if isinstance(value, dict))
+
+
+def _merged_candidates(inputs: ShearFailBendingOverdesignInputs) -> tuple[MixedMergedCandidate, ...]:
+    shear = tuple(candidate for candidate in _source_candidates(inputs.shear_fail_candidates) if candidate.source_allowed)
+    bending = tuple(candidate for candidate in _source_candidates(inputs.bending_overdesign_candidates) if candidate.source_allowed)
+    approved = tuple(candidate for candidate in _source_candidates(inputs.approved_mixed_merge_candidates) if candidate.source_allowed)
+    merged: list[MixedMergedCandidate] = []
+    for shear_candidate in shear:
+        # Shear repair alone is valid as a fallback because shear repair is mandatory.
+        merged.append(
+            MixedMergedCandidate(
+                candidate_id=shear_candidate.candidate_id,
+                source_candidates=(shear_candidate,),
+                updates=dict(shear_candidate.updates),
+                merge_rule_id="MANDATORY_SHEAR_REPAIR_ONLY",
+            )
+        )
+        for bending_candidate in bending:
+            merged.append(
+                MixedMergedCandidate(
+                    candidate_id=f"{shear_candidate.candidate_id}+{bending_candidate.candidate_id}",
+                    source_candidates=(shear_candidate, bending_candidate),
+                    updates=merge_updates(shear_candidate.updates, bending_candidate.updates),
+                )
+            )
+    for approved_candidate in approved:
+        merged.append(
+            MixedMergedCandidate(
+                candidate_id=approved_candidate.candidate_id,
+                source_candidates=(approved_candidate,),
+                updates=dict(approved_candidate.updates),
+                merge_rule_id="APPROVED_MIXED_MERGE_RULE",
+            )
+        )
+    return tuple(merged)
+
+
+def _status_fail(status: dict[str, Any]) -> bool:
+    return str(status.get("status") or status.get("overall") or "PASS").upper() == "FAIL"
+
+
+def _candidate_valid(candidate: MixedMergedCandidate, evaluation: MixedCandidateEvaluation) -> tuple[bool, tuple[str, ...]]:
+    reasons = list(evaluation.rejection_reasons)
+    if not candidate.has_mandatory_shear_source:
+        reasons.append("missing mandatory shear repair source")
+    if evaluation.shear_repaired is not True:
+        reasons.append("candidate leaves shear underdesign unresolved")
+    if evaluation.bending_compliant is not True or evaluation.creates_bending_underdesign is True:
+        reasons.append("candidate creates bending underdesign")
+    if _status_fail(_as_dict(evaluation.code_compliance_status)):
+        reasons.append("candidate violates code compliance")
+    if _status_fail(_as_dict(evaluation.constructability_status)):
+        reasons.append("candidate violates constructability")
+    if _as_dict(evaluation.engineering_status).get("candidate_valid") is False:
+        reasons.append("engineering status invalid")
+    return not reasons, tuple(dict.fromkeys(reasons))
+
+
+def _as_number(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _target_distance(value: float | None, lower: float = 0.85, upper: float = 1.0) -> float:
+    if value is None:
+        return 999.0
+    parsed = float(value)
+    if parsed < lower:
+        return lower - parsed
+    if parsed > upper:
+        return parsed - upper
+    return 0.0
+
+
+def _rank_key(row: dict[str, Any]) -> tuple[Any, ...]:
+    evaluation = _as_dict(row.get("evaluation"))
+    reinforcement = _as_dict(evaluation.get("reinforcement_quantity"))
+    beam_volume = _as_dict(evaluation.get("beam_volume"))
+    cost = _as_dict(evaluation.get("cost_proxy"))
+    return (
+        0 if evaluation.get("shear_repaired") is True else 1,
+        0 if evaluation.get("bending_compliant") is True else 1,
+        _target_distance(evaluation.get("shear_utilisation_after")),
+        _target_distance(evaluation.get("bending_utilisation_after")),
+        _as_number(beam_volume.get("geometry_increase"), 0.0),
+        _as_number(reinforcement.get("increase"), 0.0),
+        0 if not _status_fail(_as_dict(evaluation.get("constructability_status"))) else 1,
+        _as_number(cost.get("after"), 0.0),
+    )
+
+
+def _row(
+    candidate: MixedMergedCandidate,
+    evaluation: MixedCandidateEvaluation,
+    *,
+    candidate_index: int,
+    rejection_reasons: tuple[str, ...],
+    accepted: bool,
+) -> dict[str, Any]:
+    payload = evaluation.to_dict()
+    return {
+        "candidate_index": candidate_index,
+        "candidate_id": candidate.candidate_id,
+        "source_family_ids": candidate.source_families,
+        "source_candidates": tuple(source.candidate_id for source in candidate.source_candidates),
+        "merge_rule_id": candidate.merge_rule_id,
+        "updates": dict(candidate.updates),
+        "update_hash": candidate.update_hash,
+        "candidate_state_hash": evaluation.candidate_state_hash,
+        "evaluation_hash": evaluation.evaluation_hash,
+        "shear_repaired": evaluation.shear_repaired,
+        "bending_compliant": evaluation.bending_compliant,
+        "creates_bending_underdesign": evaluation.creates_bending_underdesign,
+        "rejection_reasons": rejection_reasons,
+        "accepted": accepted,
+        "evaluation": payload,
+    }
+
+
+def run_shear_fail_bending_overdesign_runtime(
+    *,
+    inputs: ShearFailBendingOverdesignInputs,
+    evaluate_candidate: CandidateEvaluator,
+) -> ShearFailBendingOverdesignResult:
+    merged = _merged_candidates(inputs)
+    accepted: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    trace: list[dict[str, Any]] = []
+    for index, candidate in enumerate(merged, start=1):
+        evaluation = evaluate_candidate(inputs, candidate).with_evaluation_hash()
+        valid, rejection_reasons = _candidate_valid(candidate, evaluation)
+        row = _row(
+            candidate,
+            evaluation,
+            candidate_index=index,
+            rejection_reasons=rejection_reasons,
+            accepted=valid,
+        )
+        row["rank_key"] = _rank_key(row)
+        trace.append(row)
+        if valid:
+            accepted.append(row)
+        else:
+            rejected.append(row)
+    ranked = sorted(accepted, key=_rank_key)
+    selected = dict(ranked[0]) if ranked else None
+    specific_blockers = tuple(reason for row in rejected for reason in tuple(row.get("rejection_reasons") or ()))
+    exhausted_reason = None if selected else next(iter(specific_blockers), "no valid mixed recommendation exists")
+    source_contract = candidate_source_contract()
+    candidate_source_proof = {
+        "allowed_sources": tuple(source_contract.get("allowed_sources") or ()),
+        "must_not_duplicate_ladders": source_contract.get("must_not_duplicate_ladders") is True,
+        "mandatory_source": source_contract.get("mandatory_source"),
+        "opportunistic_source": source_contract.get("opportunistic_source"),
+        "merged_candidate_count": len(merged),
+        "all_sources_allowed": all(candidate.sources_allowed for candidate in merged) if merged else True,
+    }
+    ranking = {
+        "criteria": tuple(ranking_criteria()),
+        "accepted_count": len(accepted),
+        "rejected_count": len(rejected),
+        "selected_candidate_id": selected.get("candidate_id") if selected else None,
+    }
+    exact_stop = {
+        "allowed_when": tuple(exact_stop_rules().get("allowed_when") or ()),
+        "selected_shear_repaired": bool(selected and selected.get("shear_repaired")),
+        "selected_bending_compliant": bool(selected and selected.get("bending_compliant")),
+        "no_higher_ranked_candidate_exists": bool(selected),
+        "bending_optimisation_opportunistic_only": priority_contract().get("opportunistic_objective") == "bending optimisation",
+    }
+    exhausted = {
+        "requires": tuple(exhausted_rules().get("requires") or ()),
+        "all_shear_repair_candidates_attempted": bool(inputs.shear_fail_candidates),
+        "all_bending_optimisation_candidates_attempted": True,
+        "all_approved_merge_candidates_attempted": True,
+        "specific_blocker": exhausted_reason,
+    }
+    ownership = {
+        "mixed_owns_merge_ranking_selection_evidence": True,
+        "mixed_owns_shear_repair_ladder": False,
+        "mixed_owns_bending_optimisation_ladder": False,
+        "shared_surfaces_owned_outside": True,
+    }
+    evidence = {
+        "selection_boundary": {
+            "selected_family_id": inputs.selected_family_id,
+            "selection_boundary_satisfied": inputs.selection_boundary_satisfied,
+            "runtime_did_not_reclassify": True,
+        },
+        "candidate_source_proof": candidate_source_proof,
+        "mixed_merge_trace": tuple(trace),
+        "accepted_candidate_evidence": tuple(accepted),
+        "rejected_candidate_evidence": tuple(rejected),
+        "ranking_evidence": ranking,
+        "exact_stop_proof": exact_stop,
+        "exhausted_proof": exhausted,
+        "ownership_proof": ownership,
+        "contract_version": contract_hash(),
+    }
+    runtime_hash = stable_shear_fail_bending_overdesign_hash(
+        {
+            "contract_hash": contract_hash(),
+            "selected": selected,
+            "trace": trace,
+            "ranking": ranking,
+            "exhausted": exhausted,
+        }
+    )
+    return ShearFailBendingOverdesignResult(
+        status="SELECTED" if selected else "EXHAUSTED",
+        selected_recommendation=selected,
+        candidate_repairs=tuple(accepted),
+        exhausted_reason=exhausted_reason,
+        evidence=evidence,
+        selection_boundary=evidence["selection_boundary"],
+        candidate_source_proof=candidate_source_proof,
+        mixed_merge_trace=tuple(trace),
+        accepted_candidate_evidence=tuple(accepted),
+        rejected_candidate_evidence=tuple(rejected),
+        ranking_evidence=ranking,
+        exact_stop_proof=exact_stop,
+        exhausted_proof=exhausted,
+        ownership_proof=ownership,
+        runtime_hash=runtime_hash,
+    )
+
+
+__all__ = [
+    "CandidateEvaluator",
+    "ShearFailBendingOverdesignInputs",
+    "ShearFailBendingOverdesignResult",
+    "run_shear_fail_bending_overdesign_runtime",
+]

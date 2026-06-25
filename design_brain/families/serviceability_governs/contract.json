@@ -1,0 +1,299 @@
+{
+  "schema": "design_brain.family_contract.v1",
+  "family_identity": {
+    "family_id": "SERVICEABILITY_GOVERNS",
+    "runtime_family_id": "SERVICEABILITY_GOVERNS",
+    "package": "design_brain.families.serviceability_governs",
+    "runtime_module": "design_brain.families.serviceability_governs.runtime",
+    "legacy_delegate": "design_brain.families.serviceability.ServiceabilityFamily",
+    "public_api": "evaluate_serviceability_governs"
+  },
+  "selection_boundary": {
+    "starts_after": "SelectedFamily == SERVICEABILITY_GOVERNS",
+    "runtime_may_assume": [
+      "serviceability governs",
+      "this is the selected governing family"
+    ],
+    "must_not": [
+      "perform classification",
+      "choose another family",
+      "override family selection",
+      "perform family arbitration"
+    ],
+    "owned_by_shared_family_chooser": [
+      "family selection",
+      "family arbitration",
+      "family priority"
+    ]
+  },
+  "entry_contract": {
+    "selected_family_id": "SERVICEABILITY_GOVERNS",
+    "requires_any": [
+      "deflection failure",
+      "crack control failure",
+      "serviceability utilisation exceeds limit"
+    ],
+    "validate_inputs_without_reclassification": true
+  },
+  "inputs_contract": {
+    "input_type": "ServiceabilityInputs",
+    "required_groups": [
+      "geometry",
+      "reinforcement",
+      "material_properties",
+      "actions",
+      "constraints"
+    ],
+    "forbidden_state": [
+      "session state",
+      "UI state",
+      "publication state",
+      "CTA state",
+      "family chooser state except already-selected family identity"
+    ]
+  },
+  "family_result_schema": {
+    "result_type": "FamilyResult",
+    "required_fields": [
+      "status",
+      "selected_recommendation",
+      "candidate_repairs",
+      "exhausted_reason",
+      "evidence"
+    ],
+    "evidence_required_fields": [
+      "selection_boundary",
+      "serviceability_governing_proof",
+      "ladder_trace",
+      "accepted_candidate_evidence",
+      "rejected_candidate_evidence",
+      "ranking_evidence",
+      "exact_stop_proof",
+      "exhausted_proof",
+      "ownership_proof",
+      "contract_version"
+    ]
+  },
+  "ownership_contract": {
+    "family_owns": [
+      "serviceability failure detection",
+      "serviceability candidate generation",
+      "serviceability repair ladder execution",
+      "serviceability recommendation selection",
+      "serviceability exact stop proof",
+      "serviceability exhausted proof",
+      "serviceability blockers",
+      "serviceability evidence"
+    ],
+    "family_blockers_owned": [
+      "geometry limits",
+      "constructability limits",
+      "maximum practical beam dimensions",
+      "detailing constraints",
+      "code compliance boundary",
+      "strength protection boundary"
+    ],
+    "family_must_not_own": [
+      "family selection",
+      "family arbitration",
+      "publication",
+      "CTA generation",
+      "CTA rendering",
+      "apply routing",
+      "session state",
+      "UI rendering",
+      "recommendation publication",
+      "source precedence",
+      "user wording"
+    ],
+    "shared_systems_own": [
+      "family selection",
+      "family arbitration",
+      "publication",
+      "CTA generation",
+      "CTA rendering",
+      "apply routing",
+      "one-click orchestration",
+      "session state",
+      "UI rendering",
+      "recommendation publication",
+      "source precedence",
+      "visible wording",
+      "user wording",
+      "debug rendering"
+    ]
+  },
+  "success_contract": {
+    "valid_serviceability_repair_requires": [
+      "serviceability improves",
+      "serviceability becomes compliant",
+      "strength remains compliant",
+      "code compliance maintained",
+      "constructability maintained"
+    ],
+    "must_not_accept": [
+      "candidate fixes serviceability but creates bending failure",
+      "candidate fixes serviceability but creates shear failure",
+      "candidate violates code compliance",
+      "candidate violates constructability"
+    ]
+  },
+  "governing_checks": {
+    "family_owns": [
+      "deflection checks",
+      "crack control checks",
+      "serviceability utilisation metrics"
+    ],
+    "family_does_not_own": [
+      "strength classification",
+      "publication decisions"
+    ]
+  },
+  "target_band": {
+    "preferred": "serviceability inside allowable limits while maintaining bending and shear compliance",
+    "serviceability_utilisation_upper": 1.0,
+    "bending_strength_ratio_min": 1.0,
+    "shear_strength_ratio_min": 1.0
+  },
+  "repair_ladder": {
+    "ordered_lanes": [
+      "BOTTOM_REINFORCEMENT_INCREASE",
+      "DEPTH_INCREASE_RESTART_REINFORCEMENT_SEARCH",
+      "WIDTH_INCREASE_RESTART_REINFORCEMENT_SEARCH",
+      "COMBINED_GEOMETRY_REINFORCEMENT_SEARCH",
+      "EXACT_STOP",
+      "EXHAUSTED"
+    ],
+    "restart_after": {
+      "DEPTH_INCREASE_RESTART_REINFORCEMENT_SEARCH": [
+        "BOTTOM_REINFORCEMENT_INCREASE"
+      ],
+      "WIDTH_INCREASE_RESTART_REINFORCEMENT_SEARCH": [
+        "BOTTOM_REINFORCEMENT_INCREASE"
+      ]
+    }
+  },
+  "strength_protection": {
+    "invalid_before_ranking": [
+      "bending failure created",
+      "shear failure created",
+      "strength compliance not maintained"
+    ]
+  },
+  "geometry_rules": {
+    "allowed_updates": [
+      "depth",
+      "width"
+    ],
+    "requires": [
+      "all geometry constraints satisfied",
+      "constructability maintained",
+      "beam proportion limits maintained"
+    ]
+  },
+  "exact_stop": {
+    "allowed_when": [
+      "serviceability compliant",
+      "strength compliant",
+      "no higher-ranked repair exists"
+    ]
+  },
+  "exhausted": {
+    "requires": [
+      "all ladder branches attempted",
+      "no valid compliant repair exists",
+      "specific blocker exists"
+    ],
+    "valid_reasons": [
+      "geometry limits reached",
+      "constructability limits reached",
+      "detailing limits reached",
+      "code compliance boundary reached"
+    ],
+    "generic_exhausted_message_prohibited_when_specific_blocker_exists": true
+  },
+  "ranking": {
+    "ordered_criteria": [
+      "serviceability compliance achieved",
+      "smallest geometry increase",
+      "smallest reinforcement increase",
+      "constructability",
+      "cost proxy"
+    ],
+    "invalid_before_ranking": [
+      "candidate creates bending failure",
+      "candidate creates shear failure",
+      "candidate violates code compliance",
+      "candidate violates constructability"
+    ]
+  },
+  "lane_proof_policies": {
+    "repair_validity": {
+      "case_a": {
+        "candidate": "deflection failure resolved and strength remains compliant",
+        "expected": "candidate may be ranked"
+      },
+      "case_b": {
+        "candidate": "deflection failure resolved but bending failure created",
+        "expected": "candidate rejected before ranking"
+      },
+      "case_c": {
+        "candidate": "crack control failure resolved but shear failure created",
+        "expected": "candidate rejected before ranking"
+      }
+    },
+    "ladder_order": {
+      "expected": [
+        "BOTTOM_REINFORCEMENT_INCREASE",
+        "DEPTH_INCREASE_RESTART_REINFORCEMENT_SEARCH",
+        "WIDTH_INCREASE_RESTART_REINFORCEMENT_SEARCH",
+        "COMBINED_GEOMETRY_REINFORCEMENT_SEARCH",
+        "EXACT_STOP",
+        "EXHAUSTED"
+      ]
+    },
+    "terminal": {
+      "exact_stop_allowed_when": [
+        "serviceability compliant",
+        "strength compliant",
+        "no higher-ranked repair exists"
+      ],
+      "exhausted_requires": [
+        "all ladder branches attempted",
+        "specific blocker exists",
+        "no valid repair remaining"
+      ]
+    }
+  },
+  "shared_exclusions": [
+    "family selection",
+    "family arbitration",
+    "publication",
+    "CTA generation",
+    "CTA rendering",
+    "apply routing",
+    "one-click orchestration",
+    "session state",
+    "UI rendering",
+    "recommendation publication",
+    "source precedence",
+    "visible wording",
+    "user wording",
+    "debug rendering"
+  ],
+  "lock_verification": {
+    "required_verifiers": [
+      "tools/verification/families/serviceability_governs_contract_check.py"
+    ],
+    "required_gates": [
+      "SERVICEABILITY_GOVERNS contract check",
+      "serviceability candidate evaluation boundary",
+      "serviceability lane proofs",
+      "serviceability runtime snapshot",
+      "replacement audit",
+      "cutover verifier",
+      "live wiring snapshot",
+      "lock verifier"
+    ]
+  }
+}

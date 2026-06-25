@@ -1,0 +1,99 @@
+from __future__ import annotations
+
+import json
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+INPUTS_PAGE = ROOT / "inputs_page.py"
+ARTIFACTS_VERIFICATION = ROOT / "artifacts" / "verification"
+ARTIFACTS_AUDITS = ROOT / "artifacts" / "audits"
+
+
+def _line_number(text: str, needle: str) -> int | None:
+    index = text.find(needle)
+    if index < 0:
+        return None
+    return text[:index].count("\n") + 1
+
+
+def _function_body(text: str, name: str) -> str:
+    pattern = re.compile(rf"^def {re.escape(name)}\(", re.MULTILINE)
+    match = pattern.search(text)
+    if not match:
+        return ""
+    next_match = re.search(r"^def\s+\w+\(", text[match.end() :], re.MULTILINE)
+    if not next_match:
+        return text[match.start() :]
+    return text[match.start() : match.end() + next_match.start()]
+
+
+def main() -> int:
+    text = INPUTS_PAGE.read_text(encoding="utf-8")
+    helper_body = _function_body(text, "_design_guide_apply_updates_current_state_guard")
+    payload_body = _function_body(text, "_build_design_guide_primary_apply_payload")
+    apply_body = _function_body(text, "_apply_resolved_candidate_payload")
+
+    commit_guard_pos = apply_body.find("current_apply_guard = _design_guide_apply_updates_current_state_guard")
+    commit_pos = apply_body.find('_set_shared_updates(updates, source="guidance:apply_resolved_candidate")')
+
+    checks = {
+        "helper_exists": bool(helper_body),
+        "helper_uses_evaluate_candidate_full": "evaluate_candidate_full(" in helper_body,
+        "helper_blocks_noop_updates": "candidate_updates_already_match_current_state" in helper_body,
+        "helper_blocks_explicit_fail": "current_state_apply_preview_has_fail_status" in helper_body,
+        "helper_blocks_any_fail": "current_state_apply_preview_any_fail" in helper_body,
+        "payload_builder_uses_guard": "current_state_apply_guard = _design_guide_apply_updates_current_state_guard" in payload_body,
+        "payload_builder_refuses_failed_guard": 'current_state_apply_guard.get("pass")' in payload_body and "return {}" in payload_body,
+        "apply_commit_uses_guard": commit_guard_pos >= 0,
+        "apply_commit_guard_before_shared_update": commit_guard_pos >= 0 and commit_pos >= 0 and commit_guard_pos < commit_pos,
+        "apply_commit_blocks_failed_guard": "current_state_apply_preview_blocked" in apply_body,
+        "apply_commit_clears_canonical_payload": "st.session_state.pop(DESIGN_GUIDE_PRIMARY_APPLY_PAYLOAD_KEY, None)" in apply_body,
+    }
+    status = "PASS" if all(checks.values()) else "FAIL"
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+    payload = {
+        "status": status,
+        "checks": checks,
+        "locations": {
+            "guard_helper_line": _line_number(text, "def _design_guide_apply_updates_current_state_guard"),
+            "payload_builder_guard_line": _line_number(text, "current_state_apply_guard = _design_guide_apply_updates_current_state_guard"),
+            "apply_commit_guard_line": _line_number(text, "current_apply_guard = _design_guide_apply_updates_current_state_guard"),
+            "shared_update_commit_line": _line_number(text, '_set_shared_updates(updates, source="guidance:apply_resolved_candidate")'),
+        },
+    }
+
+    ARTIFACTS_VERIFICATION.mkdir(parents=True, exist_ok=True)
+    ARTIFACTS_AUDITS.mkdir(parents=True, exist_ok=True)
+    json_path = ARTIFACTS_VERIFICATION / f"design_guide_apply_current_state_safety_{now}.json"
+    report_path = ARTIFACTS_AUDITS / f"design_guide_apply_current_state_safety_{now}.md"
+    json_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+    report_lines = [
+        "# Design Guide Apply Current-State Safety Snapshot",
+        "",
+        f"Status: `{status}`",
+        "",
+        "## Checks",
+    ]
+    for key, value in checks.items():
+        report_lines.append(f"- `{key}`: `{bool(value)}`")
+    report_lines.extend(
+        [
+            "",
+            "## Locations",
+        ]
+    )
+    for key, value in payload["locations"].items():
+        report_lines.append(f"- `{key}`: `{value}`")
+    report_path.write_text("\n".join(report_lines) + "\n", encoding="utf-8")
+
+    print(json.dumps({"status": status, "json": str(json_path), "report": str(report_path)}, indent=2))
+    return 0 if status == "PASS" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

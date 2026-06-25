@@ -1,0 +1,413 @@
+"""Post-render resolver/restamper cleanup audit.
+
+This proof-only verifier audits the remaining Design Guide resolver/restamper
+paths after the render-stage final visible resolver was replaced by
+FinalDesignGuidePublication authority. It classifies remaining callsites and
+stops before deletion.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import json
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+ARTIFACT_DIR = ROOT / "artifacts" / "verification"
+AUDIT_DIR = ROOT / "artifacts" / "audits"
+INPUTS_PAGE = ROOT / "inputs_page.py"
+
+REQUIRED_GATES = {
+    "render_stage_resolver_deletion_proof": {
+        "script": "tools/verification/design_guide_render_stage_resolver_deletion_proof.py",
+        "prefix": "design_guide_render_stage_resolver_deletion_proof",
+    },
+    "post_render_bridge_restamper_readiness": {
+        "script": "tools/verification/design_guide_post_render_bridge_restamper_readiness_snapshot.py",
+        "prefix": "design_guide_post_render_bridge_restamper_readiness",
+    },
+    "render_bridge_lock": {
+        "script": "tools/verification/design_guide_render_bridge_lock_verifier.py",
+        "prefix": "design_guide_render_bridge_lock",
+    },
+    "independence_lock": {
+        "script": "tools/verification/design_guide_independence_lock_verifier.py",
+        "prefix": "design_guide_independence_lock",
+    },
+}
+
+CLASS_A = "A. safe deletion candidate"
+CLASS_B = "B. compatibility-only stamp"
+CLASS_C = "C. still live compute authority"
+CLASS_D = "D. fallback-only / keep"
+CLASS_E = "E. unknown / needs proof"
+
+
+def _stable_json(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _stable_hash(value: Any) -> str:
+    return hashlib.sha256(_stable_json(value).encode("utf-8")).hexdigest()
+
+
+def _run(script: str) -> dict[str, Any]:
+    proc = subprocess.run(
+        [sys.executable, script],
+        cwd=str(ROOT),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return {
+        "script": script,
+        "returncode": proc.returncode,
+        "passed": proc.returncode == 0,
+        "stdout_tail": proc.stdout.strip().splitlines()[-12:],
+        "stderr_tail": proc.stderr.strip().splitlines()[-12:],
+    }
+
+
+def _latest(prefix: str) -> dict[str, Any]:
+    matches = sorted(ARTIFACT_DIR.glob(f"{prefix}_*.json"), key=lambda path: path.stat().st_mtime)
+    if not matches:
+        return {"found": False, "path": None, "snapshot": {}, "passed": False}
+    path = matches[-1]
+    try:
+        snapshot = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return {
+            "found": True,
+            "path": str(path),
+            "snapshot": {},
+            "passed": False,
+            "error": str(exc),
+        }
+    return {
+        "found": True,
+        "path": str(path),
+        "snapshot": snapshot,
+        "passed": snapshot.get("status") == "PASS",
+    }
+
+
+def _function_bounds(source: str) -> list[tuple[int, int, str]]:
+    tree = ast.parse(source)
+    bounds: list[tuple[int, int, str]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            bounds.append((int(node.lineno), int(getattr(node, "end_lineno", node.lineno)), node.name))
+    return sorted(bounds)
+
+
+def _function_for_line(bounds: list[tuple[int, int, str]], line_no: int) -> str:
+    containing = [name for start, end, name in bounds if start <= line_no <= end]
+    return containing[-1] if containing else "<module>"
+
+
+def _context_hash(lines: list[str], line_no: int, radius: int = 8) -> str:
+    start = max(1, line_no - radius)
+    end = min(len(lines), line_no + radius)
+    return _stable_hash({"line": line_no, "context": lines[start - 1 : end]})
+
+
+def _callsite_scan(source: str) -> list[dict[str, Any]]:
+    lines = source.splitlines()
+    bounds = _function_bounds(source)
+    callsites: list[dict[str, Any]] = []
+    targets = (
+        "resolve_final_visible_design_guide_item(",
+        "_publish_final_visible_design_guide_contract_binding(",
+    )
+    for line_no, text in enumerate(lines, start=1):
+        stripped = text.strip()
+        for target in targets:
+            if target not in text:
+                continue
+            if stripped.startswith("def "):
+                continue
+            function = _function_for_line(bounds, line_no)
+            callsites.append(
+                {
+                    "file": "inputs_page.py",
+                    "line": line_no,
+                    "function": function,
+                    "target": target.removesuffix("("),
+                    "source_line": stripped,
+                    "context_hash": _context_hash(lines, line_no),
+                }
+            )
+    return callsites
+
+
+def _readiness_by_callsite(readiness_snapshot: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
+    mapped: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in list(readiness_snapshot.get("classified_callsites") or []):
+        if not isinstance(row, dict):
+            continue
+        function = str(row.get("function") or "")
+        target = str(row.get("target") or "")
+        mapped[(function, target)] = dict(row)
+    return mapped
+
+
+def _classify_callsite(callsite: dict[str, Any], readiness_row: dict[str, Any] | None) -> dict[str, Any]:
+    function = str(callsite.get("function") or "")
+    target = str(callsite.get("target") or "")
+    readiness_class = str((readiness_row or {}).get("post_render_bridge_classification") or "")
+    reachability_class = str((readiness_row or {}).get("reachability_classification") or "")
+
+    classification = CLASS_E
+    decision_truth = "unclassified resolver/restamper path"
+    current_role = "unknown"
+    required_next_proof = "manual ownership proof before narrowing or deletion"
+    deletion_allowed_now = False
+
+    if function == "_resolve_compute_design_guidance_publication_handoff" and target == "resolve_final_visible_design_guide_item":
+        classification = CLASS_C
+        decision_truth = "compute-stage final visible item selection before render publication authority"
+        current_role = "live compute resolver bridge"
+        required_next_proof = "compute-stage resolver same-object proof against FinalDesignGuidePublication"
+    elif function in {
+        "_apply_compute_late_evidence_contract_rebound",
+        "_orchestrate_compute_post_core_publication_handoff",
+    } and target == "_publish_final_visible_design_guide_contract_binding":
+        classification = CLASS_C
+        decision_truth = "compute-stage evidence/contract rebound before final render publication authority"
+        current_role = "live compute restamper bridge"
+        required_next_proof = "compute evidence rebound authority proof before narrowing"
+    elif readiness_class == "compatibility_stamp_keep_temporarily" or reachability_class == "compatibility stamp":
+        classification = CLASS_B
+        decision_truth = "legacy compatibility/debug stamp derived from publication authority"
+        current_role = "compatibility-only stamp"
+        required_next_proof = "focused consumer reachability proof before deleting this compatibility stamp"
+    elif readiness_class == "fallback_shell_keep" or reachability_class == "fallback shell support":
+        classification = CLASS_D
+        decision_truth = "fallback shell support, non-authoritative but still retained"
+        current_role = "fallback-only support"
+        required_next_proof = "fallback-specific browser/render proof before deletion"
+
+    return {
+        **callsite,
+        "classification": classification,
+        "readiness_classification": readiness_class or None,
+        "reachability_classification": reachability_class or None,
+        "decision_truth_owned": decision_truth,
+        "current_role": current_role,
+        "required_next_proof": required_next_proof,
+        "deletion_allowed_now": deletion_allowed_now,
+        "readiness_context_hash": (readiness_row or {}).get("context_hash"),
+        "matches_readiness_snapshot": bool(readiness_row),
+    }
+
+
+def _summarize_gate(name: str, gate: dict[str, Any], run_result: dict[str, Any]) -> dict[str, Any]:
+    snapshot = dict(gate.get("snapshot") or {})
+    return {
+        "name": name,
+        "script": REQUIRED_GATES[name]["script"],
+        "run_passed": run_result.get("passed") is True,
+        "artifact_found": gate.get("found") is True,
+        "artifact_passed": gate.get("passed") is True,
+        "artifact_path": gate.get("path"),
+        "status": snapshot.get("status"),
+    }
+
+
+def _write_report(payload: dict[str, Any], path: Path) -> None:
+    lines = [
+        "# Design Guide Remaining Resolver Cleanup Audit",
+        "",
+        f"Status: `{payload['status']}`",
+        "",
+        "## Summary",
+        "",
+        f"- Render-stage resolver adapter present: `{payload['render_stage_resolver_adapter_present']}`",
+        f"- Render-stage direct resolver call present: `{payload['render_stage_direct_resolver_call_present']}`",
+        f"- Remaining callsites audited: `{len(payload['remaining_paths'])}`",
+        f"- Unknown paths: `{payload['classification_counts'].get(CLASS_E, 0)}`",
+        f"- Deletion selected: `{bool(payload['selected_for_deletion'])}`",
+        "",
+        "## Classification Counts",
+        "",
+    ]
+    for key in (CLASS_A, CLASS_B, CLASS_C, CLASS_D, CLASS_E):
+        lines.append(f"- `{key}`: `{payload['classification_counts'].get(key, 0)}`")
+    lines.extend(
+        [
+            "",
+            "## Remaining Paths",
+            "",
+            "| Line | Function | Target | Class | Next proof |",
+            "| --- | --- | --- | --- | --- |",
+        ]
+    )
+    for row in payload["remaining_paths"]:
+        lines.append(
+            "| {line} | `{function}` | `{target}` | `{classification}` | {proof} |".format(
+                line=row["line"],
+                function=str(row["function"]).replace("|", "\\|"),
+                target=str(row["target"]).replace("|", "\\|"),
+                classification=str(row["classification"]).replace("|", "\\|"),
+                proof=str(row["required_next_proof"]).replace("|", "\\|"),
+            )
+        )
+    lines.extend(["", "## Gate Results", ""])
+    for gate in payload["required_gate_results"]:
+        lines.append(
+            "- `{name}`: run `{run}`, artifact `{artifact}` ({path})".format(
+                name=gate["name"],
+                run="PASS" if gate["run_passed"] else "FAIL",
+                artifact="PASS" if gate["artifact_passed"] else "FAIL",
+                path=gate["artifact_path"],
+            )
+        )
+    lines.extend(["", "## Failures", ""])
+    if payload["failures"]:
+        lines.extend(f"- `{failure}`" for failure in payload["failures"])
+    else:
+        lines.append("- None")
+    lines.extend(
+        [
+            "",
+            "## Recommendation",
+            "",
+            payload["recommended_next_slice"],
+        ]
+    )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def main() -> int:
+    ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+    AUDIT_DIR.mkdir(parents=True, exist_ok=True)
+
+    gate_runs: dict[str, dict[str, Any]] = {
+        name: _run(config["script"]) for name, config in REQUIRED_GATES.items()
+    }
+    gates: dict[str, dict[str, Any]] = {
+        name: _latest(config["prefix"]) for name, config in REQUIRED_GATES.items()
+    }
+
+    source = INPUTS_PAGE.read_text(encoding="utf-8")
+    callsites = _callsite_scan(source)
+    readiness_snapshot = dict(gates["post_render_bridge_restamper_readiness"].get("snapshot") or {})
+    readiness_map = _readiness_by_callsite(readiness_snapshot)
+    classified = [
+        _classify_callsite(row, readiness_map.get((str(row["function"]), str(row["target"]))))
+        for row in callsites
+    ]
+
+    counts: dict[str, int] = {}
+    for row in classified:
+        classification = str(row["classification"])
+        counts[classification] = counts.get(classification, 0) + 1
+
+    render_stage_adapter_present = "_final_visible_resolution_from_final_publication_authority(" in source
+    render_stage_direct_call_present = (
+        "_final_visible_resolution = resolve_final_visible_design_guide_item(" in source
+    )
+    selected_for_deletion: list[dict[str, Any]] = []
+
+    gate_summaries = [
+        _summarize_gate(name, gates[name], gate_runs[name]) for name in REQUIRED_GATES
+    ]
+
+    failures: list[str] = []
+    for gate in gate_summaries:
+        if not gate["run_passed"] or not gate["artifact_passed"]:
+            failures.append(f"{gate['name']}_not_passed")
+    if counts.get(CLASS_E, 0):
+        failures.append("unknown_remaining_resolver_or_restamper_paths_present")
+    if render_stage_direct_call_present:
+        failures.append("render_stage_direct_resolver_call_still_present")
+    if not render_stage_adapter_present:
+        failures.append("render_stage_publication_authority_adapter_missing")
+    if selected_for_deletion:
+        failures.append("audit_selected_deletion_despite_delete_forbidden")
+    if len(classified) != 11:
+        failures.append(f"expected_11_remaining_resolver_restamper_paths_found_{len(classified)}")
+    if counts.get(CLASS_C, 0) != 3:
+        failures.append(f"expected_3_live_compute_authority_paths_found_{counts.get(CLASS_C, 0)}")
+    if counts.get(CLASS_B, 0) != 6:
+        failures.append(f"expected_6_compatibility_stamps_found_{counts.get(CLASS_B, 0)}")
+    if counts.get(CLASS_D, 0) != 2:
+        failures.append(f"expected_2_fallback_keep_paths_found_{counts.get(CLASS_D, 0)}")
+
+    payload = {
+        "schema": "design_guide_remaining_resolver_cleanup_audit.v1",
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "status": "PASS" if not failures else "FAIL",
+        "failures": failures,
+        "required_gate_results": gate_summaries,
+        "source_artifacts": {name: gates[name].get("path") for name in REQUIRED_GATES},
+        "render_stage_resolver_adapter_present": render_stage_adapter_present,
+        "render_stage_direct_resolver_call_present": render_stage_direct_call_present,
+        "classification_counts": counts,
+        "remaining_paths": classified,
+        "selected_for_deletion": selected_for_deletion,
+        "safe_deletion_candidates": [row for row in classified if row["classification"] == CLASS_A],
+        "compatibility_only_stamps": [row for row in classified if row["classification"] == CLASS_B],
+        "live_compute_authority_paths": [row for row in classified if row["classification"] == CLASS_C],
+        "fallback_only_keep_paths": [row for row in classified if row["classification"] == CLASS_D],
+        "unknown_paths": [row for row in classified if row["classification"] == CLASS_E],
+        "post_render_readiness_summary": {
+            "artifact": gates["post_render_bridge_restamper_readiness"].get("path"),
+            "classification_counts": readiness_snapshot.get("classification_counts"),
+            "restamper_callsite_count": readiness_snapshot.get("restamper_callsite_count"),
+            "render_resolver_replaced_by_publication_authority_adapter": readiness_snapshot.get(
+                "render_resolver_replaced_by_publication_authority_adapter"
+            ),
+        },
+        "audit_hash": _stable_hash(
+            {
+                "callsites": [
+                    {
+                        "line": row["line"],
+                        "function": row["function"],
+                        "target": row["target"],
+                        "classification": row["classification"],
+                        "context_hash": row["context_hash"],
+                    }
+                    for row in classified
+                ],
+                "counts": counts,
+                "render_stage_adapter_present": render_stage_adapter_present,
+                "render_stage_direct_call_present": render_stage_direct_call_present,
+            }
+        ),
+        "product_behavior_changed": False,
+        "recommended_next_slice": (
+            "No deletion in this slice. Next safe work is a compute-stage resolver same-object proof "
+            "for the three class-C paths before narrowing any compute authority bridge."
+        ),
+    }
+
+    timestamp = datetime.now().isoformat(timespec="seconds").replace(":", "-")
+    artifact_path = ARTIFACT_DIR / f"design_guide_remaining_resolver_cleanup_audit_{timestamp}.json"
+    report_path = AUDIT_DIR / f"design_guide_remaining_resolver_cleanup_audit_{timestamp}.md"
+    payload["artifact"] = str(artifact_path)
+    payload["report"] = str(report_path)
+    artifact_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _write_report(payload, report_path)
+
+    print(f"design guide remaining resolver cleanup audit {payload['status']}")
+    print(f"artifact: {artifact_path}")
+    print(f"report: {report_path}")
+    print("classification_counts:", json.dumps(counts, sort_keys=True))
+    if failures:
+        print("failures:", json.dumps(failures, sort_keys=True))
+    return 0 if payload["status"] == "PASS" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

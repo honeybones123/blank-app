@@ -1,0 +1,135 @@
+{
+  "schema": "design_brain.design_guide_formatting_contract.v3",
+  "contract_identity": {
+    "contract_id": "DESIGN_GUIDE_FORMATTING",
+    "version": 3,
+    "owner": "design_brain.display_formatting",
+    "input": "FamilyResult",
+    "output": "DisplayModel"
+  },
+  "purpose": [
+    "own presentation of engineering outcomes",
+    "convert the selected family result into a display model"
+  ],
+  "formatting_owns": [
+    "card layout",
+    "card structure",
+    "section ordering",
+    "titles",
+    "labels",
+    "status presentation",
+    "colours",
+    "icons",
+    "evidence layout",
+    "blocker layout",
+    "display formatting"
+  ],
+  "formatting_must_not_own": [
+    "family selection",
+    "recommendation selection",
+    "candidate generation",
+    "repair ladders",
+    "optimisation ladders",
+    "ranking",
+    "blockers",
+    "evidence generation",
+    "exact stop proof",
+    "exhausted proof",
+    "publication",
+    "CTA generation",
+    "apply routing",
+    "session state"
+  ],
+  "source_contract": {
+    "single_engineering_source": "Selected Family Result",
+    "input_type": "FamilyResult",
+    "forbidden_sources": [
+      "family chooser state",
+      "candidate search state",
+      "raw ladder state",
+      "repair generation state",
+      "ranking state",
+      "publication state",
+      "CTA state",
+      "session state"
+    ],
+    "must_not_merge_engineering_content_from_multiple_families": true
+  },
+  "display_model_contract": {
+    "output_type": "DisplayModel",
+    "ends_at": "DisplayModel generation",
+    "publication_remains_separate": true,
+    "required_sections": [
+      "Outcome",
+      "Recommendation",
+      "Why Selected",
+      "Evidence",
+      "Blockers",
+      "Status"
+    ],
+    "optional_sections": [
+      "Target Band",
+      "Exact Stop",
+      "Exhausted Reason"
+    ]
+  },
+  "status_colour_contract": {
+    "RED": {
+      "meaning": "Design requires repair.",
+      "used_when": [
+        "Underdesign",
+        "Failure",
+        "Repair Required"
+      ],
+      "families": [
+        "BENDING_FAIL_GOVERNS",
+        "SHEAR_FAIL_GOVERNS",
+        "COMBINED_BENDING_SHEAR_FAIL",
+        "COMBINED_BENDING_SHEAR_FAIL_GOVERNS",
+        "SERVICEABILITY_GOVERNS",
+        "BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS",
+        "SHEAR_FAIL_BENDING_OVERDESIGN_GOVERNS"
+      ]
+    },
+    "BLUE": {
+      "meaning": "Design passes but optimisation exists.",
+      "used_when": [
+        "Overdesign",
+        "Optimisation Opportunity"
+      ],
+      "families": [
+        "BENDING_OVERDESIGN_GOVERNS",
+        "SHEAR_OVERDESIGN_GOVERNS",
+        "COMBINED_OVERDESIGN",
+        "COMBINED_OVERDESIGN_GOVERNS"
+      ]
+    },
+    "GREEN": {
+      "meaning": "Design is acceptable. No action required.",
+      "used_when": [
+        "Design compliant",
+        "No governing repair",
+        "No governing optimisation",
+        "Target band achieved"
+      ],
+      "families": [
+        "TARGET_BAND_REACHED",
+        "EXACT_STOP_PROVEN",
+        "OPTIMAL_DESIGN_STATE"
+      ]
+    }
+  },
+  "verifier_contract": {
+    "must_prove": [
+      "formatting receives engineering content from the selected family only",
+      "formatting changes do not alter recommendation ownership",
+      "formatting changes do not alter selected recommendation",
+      "formatting changes do not alter blocker ownership",
+      "formatting changes do not alter exact-stop state",
+      "formatting changes do not alter exhausted state",
+      "formatting changes do not alter publication ownership",
+      "formatting changes do not alter CTA ownership",
+      "formatting only changes presentation"
+    ]
+  }
+}

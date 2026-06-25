@@ -831,7 +831,7 @@ def get_longitudinal_row_inputs(section: str, source: dict | None = None) -> lis
     section = "top" if section == "top" else "bot"
     default_bars = 2 if section == "top" else 4
     default_dia = 16.0 if section == "top" else 20.0
-    row_count = max(1, min(LONGITUDINAL_REO_MAX_ROWS, _safe_int(source.get(f"{section}_row_count", 1), 1)))
+    row_count = max(0, min(LONGITUDINAL_REO_MAX_ROWS, _safe_int(source.get(f"{section}_row_count", 1), 1)))
     rows: list[dict] = []
     for row_index in range(1, LONGITUDINAL_REO_MAX_ROWS + 1):
         mode = str(source.get(_longitudinal_row_key(section, row_index, "mode"), "Count") or "Count")
@@ -3868,8 +3868,6 @@ NONZERO_REQUIRED_SHARED_KEYS = {
     "s_lig",
     "rowgap_bot",
     "rowgap_top",
-    "top_row_count",
-    "bot_row_count",
 
     # Time inputs (must not be clobbered to 0)
     "t_creep",
@@ -3888,6 +3886,7 @@ ZERO_ALLOWED_SHARED_KEYS = {
     # Explicit layout-mode count inputs (0 is valid = layer disabled)
     "bot1_count", "bot2_count",
     "top1_count", "top2_count",
+    "bot_row_count", "top_row_count",
     "top_flange_left_count", "top_flange_right_count",
     "bot_flange_left_count", "bot_flange_right_count",
     # ULS design actions can be legitimately 0
@@ -3914,9 +3913,6 @@ ZERO_ALLOWED_SHARED_KEYS = {
 
 def zero_allowed(shared_key: str) -> bool:
     """Keys where 0 is a legitimate user value (e.g. no layer, no shear links)."""
-    if shared_key in {"top_row_count", "bot_row_count"}:
-        return False
-
     # Explicit allow-list
     if shared_key in ZERO_ALLOWED_SHARED_KEYS:
         return True

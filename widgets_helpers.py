@@ -1266,9 +1266,9 @@ def _longitudinal_reo_sync_row_count_state(
     row_count_widget_key = f"{page_prefix}_{section_norm}_row_count"
     row_count_memory_key = f"_{page_prefix}_{section_norm}_row_count_previous"
     current_row_count = int(
-        st.session_state.get(row_count_widget_key, st.session_state.get(row_count_shared_key, 1)) or 1
+        st.session_state.get(row_count_widget_key, st.session_state.get(row_count_shared_key, 1)) or 0
     )
-    current_row_count = max(1, min(max_rows, current_row_count))
+    current_row_count = max(0, min(max_rows, current_row_count))
     st.session_state[row_count_memory_key] = current_row_count
     return section_norm, row_count_shared_key, row_count_widget_key, row_count_memory_key, current_row_count
 
@@ -1302,8 +1302,8 @@ def render_longitudinal_reo_row_config_controls(
     st.caption("Number of layers and vertical gap between layers (when more than one row is used).")
 
     def _on_row_count_change():
-        new_count = int(st.session_state.get(row_count_widget_key, current_row_count) or current_row_count)
-        new_count = max(1, min(max_rows, new_count))
+        new_count = int(st.session_state.get(row_count_widget_key, current_row_count) or 0)
+        new_count = max(0, min(max_rows, new_count))
         old_count = int(st.session_state.get(row_count_memory_key, current_row_count) or current_row_count)
         set_shared(row_count_shared_key, new_count, source=f"{page_prefix}:set_reo_row_count")
         if new_count < old_count:
@@ -1318,18 +1318,18 @@ def render_longitudinal_reo_row_config_controls(
     select_row(
         "Rows",
         row_count_widget_key,
-        list(range(1, max_rows + 1)),
+        list(range(0, max_rows + 1)),
         current_row_count,
         None,
-        help_text=f"Choose how many {_row_face} reinforcement rows to show.",
+        help_text=f"Choose how many {_row_face} reinforcement rows to show. Use 0 for no active row.",
         on_change=_on_row_count_change,
     )
 
     if rowgap_widget_key:
         n_for_gap = int(
-            st.session_state.get(row_count_widget_key, current_row_count) or current_row_count
+            st.session_state.get(row_count_widget_key, current_row_count) or 0
         )
-        n_for_gap = max(1, min(max_rows, n_for_gap))
+        n_for_gap = max(0, min(max_rows, n_for_gap))
         number_row(
             "Row gap",
             rowgap_widget_key,
