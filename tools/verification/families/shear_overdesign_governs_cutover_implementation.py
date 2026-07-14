@@ -16,9 +16,9 @@ if str(ROOT) not in sys.path:
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 
-from design_brain.families.shear_cleanup import ShearCleanupFamily  # noqa: E402
+from design_brain.families.shear_cleanup import ShearCleanupFamily, _default_runtime_evaluator  # noqa: E402
 from design_brain.families.shear_overdesign_governs import (  # noqa: E402
-    evaluate_shear_overdesign_governs,
+    run_shear_overdesign_governs_runtime,
     shear_overdesign_contract_lane_order,
 )
 
@@ -99,7 +99,10 @@ def _write_artifacts(snapshot: dict[str, Any]) -> tuple[Path, Path]:
 def main() -> int:
     family = ShearCleanupFamily()
     ladder = family.contracted_optimisation_ladder_specs(_base_state())
-    api_result = evaluate_shear_overdesign_governs({"state": _base_state()})
+    runtime_result = run_shear_overdesign_governs_runtime(
+        base_state=_base_state(),
+        evaluate_candidate=_default_runtime_evaluator,
+    )
     specs = [dict(spec) for spec in list(ladder.get("specs") or []) if isinstance(spec, dict)]
     first_spec = specs[0] if specs else {}
     runtime_source = (ROOT / "design_brain" / "families" / "shear_overdesign_governs" / "runtime.py").read_text(
@@ -114,7 +117,9 @@ def main() -> int:
     forbidden_runtime_terms = sorted(term for term in FORBIDDEN_RUNTIME_TERMS if term in runtime_source)
     missing_spec_fields = sorted(REQUIRED_SPEC_FIELDS - set(first_spec))
     all_updates = [dict(spec.get("updates") or {}) for spec in specs]
-    geometry_keys = {"b", "bw", "D", "beam_width", "beam_depth", "beam_width_mm", "beam_depth_mm"}
+    width_keys = {"b", "bw", "beam_width", "beam_width_mm"}
+    prohibited_geometry_keys = {"D", "beam_depth", "beam_depth_mm"}
+    allowed_update_keys = {"s_lig", "lig_d", "lig_legs"} | width_keys
     checks = {
         "family_method_exists": callable(getattr(family, "contracted_optimisation_ladder_specs", None)),
         "compatibility_alias_exists": callable(getattr(family, "contracted_repair_ladder_specs", None)),
@@ -129,21 +134,19 @@ def main() -> int:
         and any(spec.get("ranking_proof") for spec in specs),
         "zero_shear_and_geometry_proof_present": bool(ladder.get("zero_shear_override_proof"))
         and bool(ladder.get("geometry_restriction_proof")),
-        "updates_are_shear_detailing_only": all(
-            set(update) <= {"s_lig", "lig_d", "lig_legs"} for update in all_updates
+        "updates_are_contract_allowed": all(
+            set(update) <= allowed_update_keys for update in all_updates
         ),
-        "no_geometry_reduction_updates": not any(set(update) & geometry_keys for update in all_updates),
-        "api_identifies_runtime_authority": api_result.lock_proof.get("runtime_authority")
-        == "run_shear_overdesign_governs_runtime"
-        and api_result.lock_proof.get("legacy_decision_authority") is False,
-        "contract_lane_order_preserved": tuple(api_result.evidence.get("contract_lane_order") or ())
+        "width_reduction_updates_present": any(set(update) & width_keys for update in all_updates),
+        "no_depth_reduction_updates": not any(set(update) & prohibited_geometry_keys for update in all_updates),
+        "package_runtime_export_matches_family_shell": runtime_result.ladder_hash == ladder.get("ladder_hash"),
+        "contract_lane_order_preserved": tuple(runtime_result.repair_reason_proof.get("contract_lane_order") or ())
         == shear_overdesign_contract_lane_order(),
         "inputs_page_still_owns_shared_plumbing": "from design_brain.cta_contracts import" in inputs_source
         and "from design_brain.publication import" in inputs_source
         and "build_design_guide_apply_button_contract" in inputs_source,
         "runtime_has_no_page_ui_imports": not forbidden_runtime_terms,
-        "no_bending_or_shear_fail_imports": "bending" not in cleanup_source.lower()
-        and "shear_fail_governs" not in cleanup_source,
+        "no_shear_fail_imports": "shear_fail_governs" not in cleanup_source,
     }
     failures = sorted(key for key, passed in checks.items() if not passed)
     if missing_spec_fields:
@@ -159,7 +162,7 @@ def main() -> int:
         "spec_count": len(specs),
         "first_spec": first_spec,
         "ladder_hash": ladder.get("ladder_hash"),
-        "api_lock_proof": dict(api_result.lock_proof),
+        "runtime_result": runtime_result.to_dict(),
     }
     json_path, report_path = _write_artifacts(snapshot)
     if failures:

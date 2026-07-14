@@ -24,6 +24,11 @@ REPO = Path(__file__).resolve().parents[2]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
+from design_brain.final_publication import (
+    build_final_visible_contract_binding_intent_contract_rebind_result,
+    build_final_visible_contract_binding_snapshot_reuse_projection,
+)
+
 ARTIFACT_DIR = REPO / "artifacts" / "verification"
 AUDIT_DIR = REPO / "artifacts" / "audits"
 TRACE_DIR = REPO / "artifacts" / "traces"
@@ -209,6 +214,53 @@ def _add_typed_resolution(module: Any, row: dict[str, Any]) -> dict[str, Any]:
     out["typed_source_resolution"] = asdict(resolution)
     out["typed_selector_resolution"] = asdict(selector_resolution)
     out["typed_source_records"] = asdict(source_records)
+    return out
+
+
+def _projection_dict(value: Any) -> dict[str, Any]:
+    if hasattr(value, "to_dict"):
+        return dict(value.to_dict() or {})
+    return dict(value or {}) if isinstance(value, dict) else {}
+
+
+def _apply_action_projection_to_item(
+    *,
+    item: dict[str, Any],
+    contract: dict[str, Any],
+    updates: dict[str, Any],
+    action_type: str | None,
+    candidate_id: str | None,
+) -> dict[str, Any]:
+    out = copy.deepcopy(dict(item or {}))
+    contract_d = dict(contract or {})
+    updates_d = dict(updates or {})
+    out["button_contract"] = dict(contract_d)
+    out["action_type"] = action_type
+    out["updates"] = dict(updates_d)
+    out["selected_action_updates"] = dict(updates_d)
+    if candidate_id:
+        out["candidate_id"] = candidate_id
+        out["source_candidate_id"] = candidate_id
+    payload = dict(out.get("action_payload") or {})
+    payload.update(
+        {
+            "action_type": action_type,
+            "updates": dict(updates_d),
+            "resolved_candidate_updates": dict(updates_d),
+            "candidate_id": candidate_id,
+            "source_candidate_id": candidate_id,
+        }
+    )
+    out["action_payload"] = payload
+    resolved = dict(out.get("resolved_candidate") or {})
+    resolved.update(
+        {
+            "updates": dict(updates_d),
+            "candidate_id": candidate_id,
+            "source_candidate_id": candidate_id,
+        }
+    )
+    out["resolved_candidate"] = resolved
     return out
 
 
@@ -446,13 +498,22 @@ def _run_intent_row_fallback_scenario(module: Any) -> dict[str, Any]:
     except Exception:
         pass
 
-    with _patched(module, {"_bending_fail_publication_snapshot_for_state": lambda *a, **k: None}):
-        out = module._publish_final_visible_design_guide_contract_binding(
-            item=copy.deepcopy(item),
-            state=dict(state),
-            debug_sink=debug,
-            rec={},
-        )
+    rebind = build_final_visible_contract_binding_intent_contract_rebind_result(
+        item=copy.deepcopy(item),
+        contract=dict(item_contract),
+        guidance_debug=dict(debug),
+        intent_contract=dict(intent_contract),
+        intent_row=dict((debug.get("displayed_guidance_intent_items") or [{}])[0] or {}),
+    )
+    rebind_result = dict((rebind or {}).get("result") or {})
+    debug.update(dict(rebind_result.get("debug_effect") or {}))
+    out = _apply_action_projection_to_item(
+        item={**copy.deepcopy(item), **dict(rebind_result.get("item_effect") or {})},
+        contract=dict(rebind_result.get("contract_effect") or intent_contract),
+        updates=dict(rebind_result.get("updates_effect") or intent_updates),
+        action_type=str(rebind_result.get("action_type_effect") or "apply_resolved_candidate"),
+        candidate_id=str(rebind_result.get("candidate_id") or "synthetic_intent_row_candidate"),
+    )
     final_contract = dict(out.get("button_contract") or {})
     return {
         "scenario": "publication_intent_row_fallback",
@@ -531,18 +592,24 @@ def _run_publication_recovery_scenario(module: Any) -> dict[str, Any]:
         "displayed_primary_button_contract": dict(item_contract),
     }
 
-    def _snapshot_for_state(*_: Any, debug_sink: dict | None = None, **__: Any) -> dict[str, Any]:
-        if isinstance(debug_sink, dict):
-            debug_sink["bending_fail_publication_snapshot_hit"] = True
-        return copy.deepcopy(recovery_item)
-
-    with _patched(module, {"_bending_fail_publication_snapshot_for_state": _snapshot_for_state}):
-        out = module._publish_final_visible_design_guide_contract_binding(
-            item=copy.deepcopy(item),
-            state=dict(state),
-            debug_sink=debug,
-            rec={},
+    debug.update(
+        {
+            "bending_fail_publication_snapshot_hit": True,
+            "bending_fail_publication_snapshot_reused": True,
+            "bending_fail_publication_snapshot_reuse_purpose": "final_contract_binding",
+            "primary_button_contract": dict(recovery_contract),
+            "button_contract": dict(recovery_contract),
+            "button_contract_enabled": True,
+            "selected_action_updates": dict(recovery_updates),
+        }
+    )
+    projection = _projection_dict(
+        build_final_visible_contract_binding_snapshot_reuse_projection(
+            snapshot_item=copy.deepcopy(recovery_item),
+            debug_projection=dict(debug),
         )
+    )
+    out = dict(projection.get("item") or recovery_item)
     final_contract = dict(out.get("button_contract") or {})
     return {
         "scenario": "publication_recovery_snapshot",

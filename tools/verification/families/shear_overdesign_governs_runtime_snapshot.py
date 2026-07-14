@@ -40,6 +40,7 @@ EXPECTED_CONTRACT_ORDER = (
     "BAR_SIZE_REDUCTION",
     "LEG_COUNT_REDUCTION",
     "LIGATURE_REMOVAL",
+    "WIDTH_REDUCTION",
     "EXACT_STOP",
     "EXHAUSTED",
 )
@@ -85,6 +86,7 @@ def _base_state() -> dict[str, Any]:
         "lig_d": 16,
         "lig_legs": 6,
         "shear_utilisation": 0.0,
+        "bending_utilisation": 0.2,
         "minimum_shear_reinforcement_required": False,
     }
 
@@ -95,7 +97,15 @@ def _evaluation(
 ) -> ShearOverdesignCandidateEvaluation:
     updates = dict(candidate_update.updates)
     removes_ligatures = updates.get("lig_legs") == 0 and updates.get("lig_d") == 0
+    width_after = updates.get("b") or candidate_input.base_state.get("b")
+    try:
+        width_after_value = float(width_after)
+    except (TypeError, ValueError):
+        width_after_value = None
+    width_candidate = candidate_update.width_reduction_attempted
     inside_band = updates.get("s_lig") == 300 and not removes_ligatures
+    if width_candidate:
+        inside_band = bool(width_after_value is not None and 250.0 <= width_after_value <= 650.0)
     return ShearOverdesignCandidateEvaluation(
         input_hash=candidate_input.input_hash,
         update_hash=candidate_update.update_hash,
@@ -112,12 +122,25 @@ def _evaluation(
         mandatory_detailing_status={"status": "PASS", "minimum_shear_reinforcement_required": False},
         shear_detailing_update_status={
             "shear_detailing_only": candidate_update.shear_detailing_only,
+            "contract_update_allowed": candidate_update.contract_allowed_update,
             "update_keys": candidate_update.update_keys,
         },
         geometry_restriction_status={
             "geometry_reduction_attempted": candidate_update.geometry_reduction_attempted,
-            "geometry_reduction_prohibited": True,
+            "depth_reduction_prohibited": True,
+            "width_reduction_allowed": True,
         },
+        width_reduction_status={
+            "width_before": candidate_input.base_state.get("b"),
+            "width_after": width_after_value,
+            "width_reduction_attempted": width_candidate,
+            "width_locked": False,
+        },
+        bending_utilisation=0.92 if width_candidate and inside_band else 0.2,
+        previous_bending_utilisation=float(candidate_input.base_state.get("bending_utilisation") or 0.0),
+        reinforcement_fit_status={"status": "PASS", "rearrangement_search_attempted": True},
+        serviceability_status={"status": "PASS"},
+        crack_control_status={"status": "PASS"},
         zero_shear_status={
             "zero_or_negligible_shear": True,
             "must_not_terminate_for_zero_utilisation": True,
@@ -189,14 +212,15 @@ def main() -> int:
         "ligature_removal_policy_represented": any(
             update.get("lig_legs") == 0 and update.get("lig_d") == 0 for update in candidate_updates
         ),
+        "width_reduction_policy_represented": any("b" in update for update in candidate_updates),
         "ranking_criteria_match_contract": tuple(payload["ranking_proof"].get("criteria") or ()) == tuple(ranking_criteria()),
-        "zero_shear_no_ligatures_ranks_first": payload["ranking_proof"].get("zero_shear_no_ligatures_ranks_first") is True,
-        "selected_ligature_removal_for_zero_shear": payload.get("selected_strategy_lane") == "LIGATURE_REMOVAL",
-        "exact_stop_for_zero_shear_no_ligatures": payload["exact_stop_proof"].get("zero_shear_no_unnecessary_ligatures_remain") is True,
+        "smallest_safe_width_selected": payload["ranking_proof"].get("smallest_safe_width_selected") is True,
+        "selected_width_reduction_when_width_available": payload.get("selected_strategy_lane") == "WIDTH_REDUCTION",
+        "exact_stop_proves_width_attempted": payload["exact_stop_proof"].get("width_reduction_attempted") is True,
         "zero_shear_override_proven": payload["zero_shear_override_proof"].get("zero_shear_candidate_seen") is True
         and payload["zero_shear_override_proof"].get("must_not_terminate_for_zero_utilisation") is True,
-        "geometry_restriction_proven": payload["geometry_restriction_proof"].get("geometry_reduction_prohibited") is True
-        and payload["geometry_restriction_proof"].get("candidate_updates_touch_geometry") is False,
+        "geometry_policy_proven": payload["geometry_restriction_proof"].get("width_reduction_attempted") is True
+        and payload["geometry_restriction_proof"].get("candidate_updates_touch_prohibited_geometry") is False,
         "cta_intent_proof_only": payload["cta_intent_proof"].get("proof_only") is True
         and payload["cta_intent_proof"].get("rendered") is False
         and payload["cta_intent_proof"].get("applied") is False,

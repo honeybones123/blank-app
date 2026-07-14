@@ -1,9 +1,7 @@
 # deflection_page.py
 import math
-import numpy as np
 import pandas as pd
 import streamlit as st
-import plotly.graph_objects as go
 from pathlib import Path
 
 from state_and_helpers import (
@@ -39,11 +37,55 @@ from widgets_helpers import (
     render_longitudinal_reo_rows,
     render_longitudinal_reo_row_config_controls,
     main_longitudinal_reo_pair_labels,
+    specialized_widget_rail_columns,
+    render_plotly_diagram,
 )
 from step_ui import init_step_ui_state, render_expandable_step
 from engineering_check_ui import DEFLECTION_CHECK_SUMMARY_COLUMNS
 from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks
+from ui.summary_rows import build_deflection_summary_rows
 from deflection_checks_helpers import build_deflection_check_rows_from_state
+from ui.diagrams.deflection_diagram import (
+    build_deflected_beam_plotly,
+    build_deflected_shape_figure,
+    deflected_longitudinal_profile_mm,
+)
+from calculations.deflection import (
+    DEFLECTION_SUPPORT_OPTIONS_BASE,
+    SUPPORT_DEFLECTION_MAP,
+    active_multispan_lengths_m as _calc_active_multispan_lengths_m,
+    calc_deflection_as3600,
+    calc_ief_simplified,
+    calc_span_depth_limit,
+    compression_to_tension_steel_ratio,
+    deflection_sustained_load_factor,
+    deflection_limit_check_values,
+    effective_flexural_rigidity_kNm2,
+    effective_stiffness_coefficient_k1,
+    defl_support_type_from_design_selection as _defl_support_type_from_design_selection,
+    deflection_from_sfd_case as _deflection_from_sfd_case,
+    design_multispan_mode_from_state as _calc_is_design_multispan_mode,
+    deflection_support_options_for_value as _deflection_support_options_for_value,
+    derive_equiv_udl_from_actions as _derive_equiv_udl_from_actions,
+    effective_design_load_from_shear,
+    effective_flange_width_ratio,
+    deflection_multispan_load_split_values,
+    format_L_over_delta,
+    governing_span_support_pair as _governing_span_support_pair,
+    has_udl_line_loads,
+    multispan_design_elastic_loads as _calc_multispan_design_elastic_loads,
+    multispan_deflection_metric_values,
+    normalize_deflection_support_type as _normalize_deflection_support_type,
+    pick_controlling_span_index as _pick_controlling_span_index,
+    resolve_deflection_equiv_loads_from_inputs,
+    simplified_ief_k1_factor,
+    span_depth_display_values,
+    span_deflection_utilisation_values,
+    span_to_depth_ratio,
+    support_props as _support_props,
+    support_type_from_sfd_case as _support_type_from_sfd_case,
+    tension_reinforcement_ratio,
+)
 
 
 # Standard reinforcement lists (shared with Inputs page patterns)
@@ -53,117 +95,142 @@ REO_SPACINGS = [75, 100, 125, 150, 175, 200, 225, 250, 275, 300]
 REO_LAYOUT_MODE = ["Count", "Spacing"]
 
 
-# ------------------------------------------------------------
-#  Shared helpers
-# ------------------------------------------------------------
-SUPPORT_DEFLECTION_MAP = {
-    "Simply supported": {"k2": 5.0 / 384.0, "diagram": "simply_supported_udl"},
-    # Same idealisation as simply supported for k₂ (ends rotationally free); symbols differ (pin+pin).
-    "Pinned–Pinned": {"k2": 5.0 / 384.0, "diagram": "simply_supported_udl"},
-    "Continuous – end span": {"k2": 2.4 / 384.0, "diagram": "continuous_span_udl"},
-    "Continuous – interior span": {"k2": 1.5 / 384.0, "diagram": "continuous_span_udl"},
-    # Fixed-ended (design-driven): UDL fixed–fixed midspan coefficient 1/384 (δ = wL⁴/(384EI))
-    "Fixed-ended": {"k2": 1.0 / 384.0, "diagram": "fixed_fixed_udl"},
-    # One fixed + one pinned (UDL): δ_max ≈ wL⁴/(185EI) — distinct from fixed–fixed and simply supported
-    "Fixed–Pinned": {"k2": 1.0 / 185.0, "diagram": "fixed_pinned_udl"},
-    "Pinned–Fixed": {"k2": 1.0 / 185.0, "diagram": "fixed_pinned_udl"},
-    "Cantilever": {"k2": 1.0 / 8.0, "diagram": "cantilever_udl"},
-}
 _DEBUG_DEFLECTION_SUPPORT_RESOLUTION = False
 
 
+def _deflection_diagram_reo_layers(D_mm: float) -> dict:
+    """Visual-only reo layer metadata for the deflected shape diagram."""
+    ss = st.session_state
 
-# Standard dropdown order; design-resolved fixed/pinned variants are appended when active.
-DEFLECTION_SUPPORT_OPTIONS_BASE = [
-    "Simply supported",
-    "Pinned–Pinned",
-    "Continuous – end span",
-    "Continuous – interior span",
-    "Cantilever",
-]
+    def _as_float(value, default: float = 0.0) -> float:
+        try:
+            out = float(value)
+        except (TypeError, ValueError):
+            return float(default)
+        if not math.isfinite(out):
+            return float(default)
+        return out
 
-def _normalize_deflection_support_type(value: str | None) -> str:
-    raw = (value or "").strip().replace("-", "–")
-    # Map key uses ASCII hyphen in "Fixed-ended"; replace() turns it into Fixed–ended (en-dash).
-    if raw == "Fixed–ended":
-        raw = "Fixed-ended"
-    if raw in SUPPORT_DEFLECTION_MAP:
-        return raw
-    raw_low = raw.lower()
-    if "cantilever" in raw_low or raw == "Fixed–Free":
-        return "Cantilever"
-    if raw == "Fixed-ended" or "fixed-ended" in raw_low:
-        return "Fixed-ended"
-    if "fixed–pinned" in raw_low or "fixed-pinned" in raw_low:
-        return "Fixed–Pinned"
-    if "pinned–fixed" in raw_low or "pinned-fixed" in raw_low:
-        return "Pinned–Fixed"
-    if "fixed–fixed" in raw_low or "fixed-fixed" in raw_low:
-        return "Fixed-ended"
-    if "continuous" in raw_low:
-        return "Continuous – interior span"
-    if raw_low in ("pinned–pinned", "pinned-pinned"):
-        return "Pinned–Pinned"
-    if "simply" in raw_low:
-        return "Simply supported"
-    if "pinned" in raw_low:
-        return "Simply supported"
-    return "Simply supported"
+    def _first_number(*keys: str, default: float = 0.0) -> float:
+        for key in keys:
+            value = ss.get(key)
+            if value is None:
+                value = get_param(key, None)
+            if value is None:
+                continue
+            return _as_float(value, default)
+        return float(default)
+
+    def _layers(section: str) -> list[dict]:
+        is_bottom = section == "bot"
+        cover_key = "cover_bot" if is_bottom else "cover_top"
+        rowgap_key = "defl_rowgap_bot" if is_bottom else "defl_rowgap_top"
+        shared_rowgap_key = "rowgap_bot" if is_bottom else "rowgap_top"
+        cover = _first_number(cover_key, default=40.0)
+        rowgap = _first_number(rowgap_key, shared_rowgap_key, default=60.0)
+        row_count = int(
+            max(
+                min(
+                    _first_number(
+                        f"defl_{section}_row_count",
+                        f"{section}_row_count",
+                        default=1.0,
+                    ),
+                    4.0,
+                ),
+                0.0,
+            )
+        )
+        layers: list[dict] = []
+        previous_y = None
+        previous_db = None
+        for row_idx in range(1, row_count + 1):
+            count = int(
+                max(
+                    _first_number(
+                        f"defl_{section}_row_{row_idx}_bars",
+                        f"{section}_row_{row_idx}_bars",
+                        f"defl_{section}{row_idx}_count",
+                        f"{section}{row_idx}_count",
+                        default=0.0,
+                    ),
+                    0.0,
+                )
+            )
+            spacing = _first_number(
+                f"defl_{section}_row_{row_idx}_spacing",
+                f"{section}_row_{row_idx}_spacing",
+                f"defl_{section}{row_idx}_spacing",
+                f"{section}{row_idx}_spacing",
+                default=0.0,
+            )
+            db = _first_number(
+                f"defl_{section}_row_{row_idx}_dia",
+                f"{section}_row_{row_idx}_dia",
+                f"defl_db_{section}_{row_idx}",
+                f"db_{section}_{row_idx}",
+                default=20.0 if is_bottom else 16.0,
+            )
+            if db <= 0.0 or (count <= 0 and spacing <= 0.0):
+                continue
+            if previous_y is None or previous_db is None:
+                y_from_top = (
+                    float(D_mm) - cover - 0.5 * db
+                    if is_bottom
+                    else cover + 0.5 * db
+                )
+            elif is_bottom:
+                y_from_top = previous_y - 0.5 * previous_db - rowgap - 0.5 * db
+            else:
+                y_from_top = previous_y + 0.5 * previous_db + rowgap + 0.5 * db
+            previous_y = y_from_top
+            previous_db = db
+            layers.append(
+                {
+                    "count": count,
+                    "spacing": spacing,
+                    "db": db,
+                    "y_from_top_mm": max(0.0, min(float(D_mm), y_from_top)),
+                }
+            )
+        return layers
+
+    return {"bottom": _layers("bot"), "top": _layers("top")}
 
 
-def _defl_support_type_from_design_selection(
-    load_case: str | None, support_condition: str | None
-) -> str:
-    """
-    Match sfd_bmd_page._defl_support_type_from_selection (single-span design model).
-    Returns a label that _normalize_deflection_support_type understands.
-    """
-    case_text = (load_case or "").strip()
-    cond = (support_condition or "").strip().replace("-", "–")
-    if case_text == "Overhanging beam – right overhang with point load at free end":
-        return "Simply supported"
-    if cond == "Fixed–Free" or case_text.startswith("Cantilever"):
-        return "Cantilever"
-    if cond == "Simply supported":
-        return "Simply supported"
-    if cond == "Pinned–Pinned":
-        return "Pinned–Pinned"
-    if cond == "Fixed–Fixed":
-        return "Fixed-ended"
-    if cond == "Fixed–Pinned":
-        return "Fixed–Pinned"
-    if cond == "Pinned–Fixed":
-        return "Pinned–Fixed"
-    return _support_type_from_sfd_case(case_text)
+def _refresh_deflection_effective_span_from_mm(
+    L_mm,
+    fallback_mm: float = 0.0,
+) -> float | None:
+    """Keep the derived deflection span in metres aligned with the active mm input."""
+    try:
+        L_current_mm = float(L_mm if L_mm is not None else fallback_mm)
+    except (TypeError, ValueError):
+        L_current_mm = float(fallback_mm or 0.0)
+    if not math.isfinite(L_current_mm) or L_current_mm <= 0.0:
+        return None
+    L_eff_m = L_current_mm / 1000.0
+    st.session_state["defl_L_eff"] = L_eff_m
+    return L_eff_m
 
 
-def _deflection_support_options_for_value(resolved: str) -> list[str]:
-    opts = list(DEFLECTION_SUPPORT_OPTIONS_BASE)
-    if resolved in SUPPORT_DEFLECTION_MAP and resolved not in opts:
-        opts = opts + [resolved]
-    return opts
-
-
-def _sync_design_deflection_support_widgets(resolved: str) -> None:
-    """In design mode, keep all mapped widgets aligned with the resolved support type."""
+def seed_design_deflection_support_widget_before_render(widget_key: str, resolved: str) -> None:
+    """Seed design-controlled support widgets before Streamlit instantiates them."""
     if str(st.session_state.get("actions_mode", "manual") or "manual") != "design":
         return
-    for wk, sk in TAB_KEYS.items():
-        if sk != "defl_support_type":
-            continue
-        try:
-            if wk in st.session_state and st.session_state[wk] != resolved:
-                st.session_state[wk] = resolved
-        except Exception:
-            pass
+    support_type = _normalize_deflection_support_type(resolved)
+    try:
+        st.session_state["defl_support_type"] = support_type
+        if widget_key:
+            st.session_state[str(widget_key)] = support_type
+    except Exception:
+        pass
 
 
 def _is_design_multispan_mode(state: dict) -> bool:
-    mode = str(state.get("actions_mode", get_param("actions_mode", "manual")) or "manual").strip().lower()
-    beam_mode = str(state.get("sfd_beam_system_mode", "") or "").strip()
-    case_text = str(state.get("sfd_case", "") or "").strip()
-    return mode == "design" and (
-        beam_mode == "Multi-span" or case_text.startswith("Multi-span continuous beam")
+    return _calc_is_design_multispan_mode(
+        state,
+        actions_mode_default=get_param("actions_mode", "manual"),
     )
 
 
@@ -172,58 +239,15 @@ def _multispan_design_elastic_loads(source: dict) -> tuple[list[float], list[str
     Design-page multi-span model: characteristic (g+q) and sustained (g + ψ q) SLS loads
     for the same geometry the SFD/BMD page uses with ``solve_beam_structure``.
     """
-    n_spans = int(float(source.get("sfd_span_count", 0.0) or 0.0))
-    node_positions_m: list[float] = [0.0]
-    for i in range(1, n_spans + 1):
-        li = float(source.get(f"sfd_span_len_{i}", 0.0) or 0.0)
-        node_positions_m.append(node_positions_m[-1] + max(0.0, li))
-    support_types = [
-        str(source.get(f"sfd_support_type_{j}", "Pinned") or "Pinned")
-        for j in range(1, n_spans + 2)
-    ]
-    L_tot = float(node_positions_m[-1]) if node_positions_m else 0.0
-    psi_point = float(source.get("load_psi_point", get_param("psi_point", 0.4)) or 0.4)
-    psi_udl = float(source.get("load_psi_udl", get_param("psi_udl", 0.4)) or 0.4)
-    n_point = int(float(source.get("sfd_ms_point_count", 0.0) or 0.0))
-    pl_char: list[dict] = []
-    pl_sust: list[dict] = []
-    for i in range(1, max(0, n_point) + 1):
-        G = float(source.get(f"load_ms_G_{i}", 0.0) or 0.0)
-        Q = float(source.get(f"load_ms_Q_{i}", 0.0) or 0.0)
-        x = float(source.get(f"load_ms_x_{i}", 0.0) or 0.0)
-        x = max(node_positions_m[0], min(L_tot, x))
-        pl_char.append({"x_m": x, "P_kN": G + Q})
-        pl_sust.append({"x_m": x, "P_kN": G + psi_point * Q})
-    n_udl = int(float(source.get("sfd_ms_udl_count", 0.0) or 0.0))
-    udl_char: list[dict] = []
-    udl_sust: list[dict] = []
-    for i in range(1, max(0, n_udl) + 1):
-        g = float(source.get(f"load_ms_g_{i}", 0.0) or 0.0)
-        q = float(source.get(f"load_ms_q_{i}", 0.0) or 0.0)
-        x0 = float(source.get(f"load_ms_x0_{i}", 0.0) or 0.0)
-        x1 = float(source.get(f"load_ms_x1_{i}", L_tot) or 0.0)
-        x0 = max(node_positions_m[0], min(L_tot, x0))
-        x1 = max(node_positions_m[0], min(L_tot, x1))
-        if x1 <= x0:
-            continue
-        udl_char.append({"x_start_m": x0, "x_end_m": x1, "w_kN_per_m": g + q})
-        udl_sust.append({"x_start_m": x0, "x_end_m": x1, "w_kN_per_m": g + psi_udl * q})
-    return node_positions_m, support_types, pl_char, udl_char, pl_sust, udl_sust
+    return _calc_multispan_design_elastic_loads(
+        source,
+        psi_point_default=get_param("psi_point", 0.4),
+        psi_udl_default=get_param("psi_udl", 0.4),
+    )
 
 
 def _active_multispan_lengths_m(state: dict) -> list[float]:
-    lengths: list[float] = []
-    try:
-        n_spans = int(float(state.get("sfd_span_count", 0.0) or 0.0))
-    except Exception:
-        n_spans = 0
-    for i in range(1, n_spans + 1):
-        try:
-            li = float(state.get(f"sfd_span_len_{i}", 0.0) or 0.0)
-        except Exception:
-            li = 0.0
-        lengths.append(max(0.0, li))
-    return lengths
+    return _calc_active_multispan_lengths_m(state)
 
 
 def compute_and_store_multispan_deflection_metrics(
@@ -254,162 +278,36 @@ def compute_and_store_multispan_deflection_metrics(
     if the FEM path fails.
     """
     source = state if isinstance(state, dict) else st.session_state
-
-    if not _is_design_multispan_mode(source):
-        source.pop("defl_span_deflections_mm", None)
-        source.pop("defl_span_utilisations", None)
-        source.pop("defl_multispan_metrics_source", None)
-        return {"available": False, "reason": "not design multispan mode"}
-
-    span_lengths = _active_multispan_lengths_m(source)
-    if len(span_lengths) < 2:
-        source.pop("defl_span_deflections_mm", None)
-        source.pop("defl_span_utilisations", None)
-        source.pop("defl_multispan_metrics_source", None)
-        return {"available": False, "reason": "insufficient active spans"}
-
-    try:
-        ratio = float(get_deflection_limit_ratio(defl_limit_ratio))
-    except Exception:
-        ratio = 250.0
-    if ratio <= 0:
-        ratio = 250.0
-
-    span_deflections_mm: list[float] = []
-    span_utilisations: list[float] = []
-    n_spans = len(span_lengths)
-    span_g_inputs: list[float] = []
-    span_q_inputs: list[float] = []
-    for i in range(1, n_spans + 1):
-        try:
-            span_g_inputs.append(float(source.get(f"load_ms_g_{i}", 0.0) or 0.0))
-        except Exception:
-            span_g_inputs.append(0.0)
-        try:
-            span_q_inputs.append(float(source.get(f"load_ms_q_{i}", 0.0) or 0.0))
-        except Exception:
-            span_q_inputs.append(0.0)
-
-    g_fallback = float(g_kNm)
-    q_fallback = float(q_kNm)
-
-    metrics_source = "multispan_fem_elastic"
-    used_solver = False
-    node_positions_m: list[float] = []
     try:
         from beam_analysis import solve_beam_structure
-
-        node_positions_m, support_types_ms, pl_c, udl_c, pl_s, udl_s = (
-            _multispan_design_elastic_loads(source)
-        )
-        if len(node_positions_m) >= 2 and len(support_types_ms) == len(node_positions_m):
-            ei_knm2 = max(float(Ec) * float(Ief) / 1e9, 1e-12)
-            res_c = solve_beam_structure(
-                node_positions_m,
-                support_types_ms,
-                pl_c,
-                udl_c,
-                n_points_per_span=96,
-                ei_knm2_for_deflection=ei_knm2,
-            )
-            res_s = solve_beam_structure(
-                node_positions_m,
-                support_types_ms,
-                pl_s,
-                udl_s,
-                n_points_per_span=96,
-                ei_knm2_for_deflection=ei_knm2,
-            )
-            w_c = res_c.get("w_mm")
-            w_s = res_s.get("w_mm")
-            x_sol = res_c.get("x")
-            if (
-                isinstance(w_c, list)
-                and isinstance(w_s, list)
-                and isinstance(x_sol, list)
-                and len(w_c) == len(w_s) == len(x_sol)
-                and len(w_c) > 0
-            ):
-                x_arr = np.asarray(x_sol, dtype=float)
-                w_c_arr = np.asarray(w_c, dtype=float)
-                w_s_arr = np.asarray(w_s, dtype=float)
-                ratio_asc = (float(Asc) / float(Ast)) if float(Ast) > 0 else 0.0
-                kcs_line = max(0.8, 2.0 - 1.2 * ratio_asc)
-                # Nodal FE w_mm follows typical “positive up”; flip so sag is positive like δ in calc_deflection_as3600.
-                sag_c_mm = -w_c_arr
-                sag_s_mm = -w_s_arr
-                delta_line_mm = sag_c_mm + kcs_line * sag_s_mm
-                span_deflections_mm = []
-                span_utilisations = []
-                for idx, span_len_m in enumerate(span_lengths):
-                    if span_len_m <= 0:
-                        span_deflections_mm.append(0.0)
-                        span_utilisations.append(0.0)
-                        continue
-                    x_left = float(node_positions_m[idx])
-                    x_right = float(node_positions_m[idx + 1])
-                    mask = (x_arr >= x_left - 1e-9) & (x_arr <= x_right + 1e-9)
-                    if not np.any(mask):
-                        span_deflections_mm.append(0.0)
-                        span_utilisations.append(0.0)
-                        continue
-                    delta_abs = float(np.max(np.abs(delta_line_mm[mask])))
-                    limit_mm = (float(span_len_m) * 1000.0) / ratio
-                    util = (delta_abs / limit_mm) if limit_mm > 0 else 0.0
-                    span_deflections_mm.append(delta_abs)
-                    span_utilisations.append(util)
-                used_solver = True
     except Exception:
-        used_solver = False
-        metrics_source = "multispan_fem_elastic_failed"
+        solve_beam_structure = None
 
-    if not used_solver:
-        metrics_source = "per_span_k2_approx"
-        span_deflections_mm = []
-        span_utilisations = []
-        for idx, span_len_m in enumerate(span_lengths):
-            if span_len_m <= 0:
-                span_deflections_mm.append(0.0)
-                span_utilisations.append(0.0)
-                continue
+    metrics = multispan_deflection_metric_values(
+        state=source,
+        Ec=Ec,
+        Ief=Ief,
+        g_kNm=g_kNm,
+        q_kNm=q_kNm,
+        psi_s=psi_s,
+        defl_limit_ratio=defl_limit_ratio,
+        Ast=Ast,
+        Asc=Asc,
+        actions_mode_default=get_param("actions_mode", "manual"),
+        psi_point_default=get_param("psi_point", 0.4),
+        psi_udl_default=get_param("psi_udl", 0.4),
+        solve_beam_structure_fn=solve_beam_structure,
+    )
 
-            span_support = (
-                "Continuous – end span"
-                if idx in (0, n_spans - 1)
-                else "Continuous – interior span"
-            )
-            try:
-                g_i = float(span_g_inputs[idx])
-            except Exception:
-                g_i = 0.0
-            try:
-                q_i = float(span_q_inputs[idx])
-            except Exception:
-                q_i = 0.0
-            if (g_i + q_i) == 0.0 and (g_fallback + q_fallback) > 0.0:
-                g_i, q_i = g_fallback, q_fallback
+    if not metrics.get("available"):
+        source.pop("defl_span_deflections_mm", None)
+        source.pop("defl_span_utilisations", None)
+        source.pop("defl_multispan_metrics_source", None)
+        return metrics
 
-            calc = calc_deflection_as3600(
-                L_m=float(span_len_m),
-                Ec=float(Ec),
-                Ief=float(Ief),
-                g_kNm=g_i,
-                q_kNm=q_i,
-                psi_s=float(psi_s),
-                support_type=span_support,
-                Ast=float(Ast),
-                Asc=float(Asc),
-            )
-            if isinstance(calc, dict) and not calc.get("ok", True):
-                span_deflections_mm.append(0.0)
-                span_utilisations.append(0.0)
-                continue
-
-            delta_abs = abs(float(calc.get("delta_total", 0.0) or 0.0))
-            limit_mm = (float(span_len_m) * 1000.0) / ratio
-            util = (delta_abs / limit_mm) if limit_mm > 0 else 0.0
-            span_deflections_mm.append(delta_abs)
-            span_utilisations.append(util)
+    span_deflections_mm = metrics["span_deflections_mm"]
+    span_utilisations = metrics["span_utilisations"]
+    metrics_source = metrics["metrics_source"]
 
     source["defl_span_deflections_mm"] = span_deflections_mm
     source["defl_span_utilisations"] = span_utilisations
@@ -419,57 +317,6 @@ def compute_and_store_multispan_deflection_metrics(
         "span_deflections_mm": span_deflections_mm,
         "span_utilisations": span_utilisations,
     }
-
-
-def _pick_controlling_span_index(state: dict) -> tuple[int, str]:
-    """
-    Deterministic controlling-span selector for the diagram:
-    1) span with max utilisation (if available)
-    2) span with max deflection magnitude (if available)
-    3) longest active span
-    4) first active span
-    """
-    vals = state.get("defl_span_utilisations")
-    if isinstance(vals, (list, tuple)) and vals:
-        nums = []
-        for i, v in enumerate(vals):
-            try:
-                nums.append((i, abs(float(v))))
-            except Exception:
-                pass
-        if nums:
-            idx = max(nums, key=lambda t: t[1])[0]
-            return idx, "highest deflection utilisation"
-
-    vals = state.get("defl_span_deflections_mm")
-    if isinstance(vals, (list, tuple)) and vals:
-        nums = []
-        for i, v in enumerate(vals):
-            try:
-                nums.append((i, abs(float(v))))
-            except Exception:
-                pass
-        if nums:
-            idx = max(nums, key=lambda t: t[1])[0]
-            return idx, "largest absolute deflection"
-
-    span_lengths = []
-    try:
-        n_spans = int(float(state.get("sfd_span_count", 0.0) or 0.0))
-    except Exception:
-        n_spans = 0
-    for i in range(1, n_spans + 1):
-        try:
-            li = float(state.get(f"sfd_span_len_{i}", 0.0) or 0.0)
-        except Exception:
-            li = 0.0
-        span_lengths.append(max(0.0, li))
-    if span_lengths:
-        idx = max(range(len(span_lengths)), key=lambda i: span_lengths[i])
-        return int(idx), "longest active span"
-
-    return 0, "fallback"
-
 
 def get_deflection_diagram_support_condition(state: dict | None = None) -> dict:
     """
@@ -562,7 +409,6 @@ def get_deflection_diagram_support_condition(state: dict | None = None) -> dict:
         controlling_idx, controlling_reason = 0, "design single-span (SFD)"
 
     support_type = _normalize_deflection_support_type(resolved)
-    _sync_design_deflection_support_widgets(support_type)
 
 
     out = {
@@ -599,430 +445,6 @@ def get_deflection_diagram_support_condition(state: dict | None = None) -> dict:
 def get_resolved_deflection_support_type(state: dict | None = None) -> str:
     """Resolved support label for deflection — use instead of raw ``defl_support_type`` in calcs/summaries."""
     return get_deflection_diagram_support_condition(state)["support_type"]
-
-
-def _governing_span_support_pair(state: dict, support_resolution: dict) -> tuple[str, str] | None:
-    try:
-        if str(support_resolution.get("mode", "")).strip().lower() != "design":
-            return None
-        if not bool(support_resolution.get("multi_span")):
-            return None
-        n_spans = int(float(state.get("sfd_span_count", 0.0) or 0.0))
-        if n_spans < 1:
-            return None
-        idx = int(support_resolution.get("controlling_span_idx", 0) or 0)
-        idx = max(0, min(idx, n_spans - 1))
-        left_i = idx + 1
-        right_i = idx + 2
-        left = str(state.get(f"sfd_support_type_{left_i}", "Pinned") or "Pinned")
-        right = str(state.get(f"sfd_support_type_{right_i}", "Pinned") or "Pinned")
-        return (left, right)
-    except Exception:
-        return None
-
-
-def _support_props(support_type: str) -> dict:
-    return SUPPORT_DEFLECTION_MAP.get(
-        support_type, SUPPORT_DEFLECTION_MAP["Simply supported"]
-    )
-
-
-def _add_deflection_supports_plotly(
-    fig: go.Figure,
-    support_type: str | None,
-    L_mm: float,
-    D_mm: float,
-    support_pair: tuple[str, str] | None = None,
-) -> None:
-    """
-    Illustrative supports under the undeformed beam (bottom fibre y = -D_mm).
-
-    Drawing-only (no change to k₂ or analysis):
-    - Simply supported: pin + roller; span terminates at supports (no overhang).
-    - Cantilever: fixed wall at one end only.
-    - Fixed-ended: fixed (hatched) walls both ends.
-    - Fixed–Pinned / Pinned–Fixed: fixed at one end, pin + roller at the other (design order).
-    - Continuous – end span: pins at both ends (beam body extension is drawn in
-      ``build_deflected_beam_plotly``). Interior continuity on the **right**.
-    - Continuous – interior span: pins at both ends; extension on both sides from
-      ``build_deflected_beam_plotly``.
-    """
-    st_val = (support_type or "").strip()
-    y_bot = -float(D_mm)
-    L_mm = float(L_mm)
-    support_w = max(0.02 * float(L_mm), 18.0)
-    support_d = max(0.12 * float(D_mm), 10.0)
-    hatch_dx = max(0.015 * float(L_mm), 12.0)
-    roller_r = max(0.04 * float(D_mm), 5.0)
-
-    def _pinned(x_pos: float, *, roller: bool) -> None:
-        y_base = y_bot - support_d
-        y_ground = y_base - max(0.12 * float(D_mm), 8.0)
-        fig.add_shape(
-            type="path",
-            path=(
-                f"M {x_pos - support_w},{y_base} L {x_pos + support_w},"
-                f"{y_base} L {x_pos},{y_bot} Z"
-            ),
-            line=dict(color="rgba(35,35,35,1.0)", width=1.4),
-            fillcolor="rgba(35,35,35,0.12)",
-            layer="below",
-        )
-        fig.add_shape(
-            type="line",
-            x0=x_pos - support_w * 1.15,
-            y0=y_ground,
-            x1=x_pos + support_w * 1.15,
-            y1=y_ground,
-            line=dict(color="rgba(80,80,80,0.85)", width=1.0),
-            layer="below",
-        )
-        if roller:
-            fig.add_shape(
-                type="circle",
-                xref="x",
-                yref="y",
-                x0=x_pos - roller_r,
-                y0=y_base - support_d * 0.45 - roller_r,
-                x1=x_pos + roller_r,
-                y1=y_base - support_d * 0.45 + roller_r,
-                line=dict(color="rgba(35,35,35,1.0)", width=1.2),
-                fillcolor="rgba(255,255,255,0.55)",
-                layer="below",
-            )
-
-    def _fixed(x_pos: float) -> None:
-        y_min = y_bot - 0.55 * float(D_mm)
-        y_max = 0.55 * float(D_mm)
-        fig.add_shape(
-            type="line",
-            x0=x_pos,
-            y0=y_min,
-            x1=x_pos,
-            y1=y_max,
-            line=dict(color="rgba(35,35,35,1.0)", width=6),
-            layer="below",
-        )
-        for frac in (0.08, 0.28, 0.48, 0.68, 0.88):
-            y_val = y_min + frac * (y_max - y_min)
-            fig.add_shape(
-                type="line",
-                x0=x_pos - hatch_dx,
-                y0=y_val + 0.10 * float(D_mm),
-                x1=x_pos,
-                y1=y_val - 0.04 * float(D_mm),
-                line=dict(color="rgba(80,80,80,0.82)", width=1.0),
-                layer="below",
-            )
-
-    def _draw_support_from_label(x_pos: float, label: str, *, right_edge: bool = False) -> None:
-        l = str(label or "Pinned").strip().lower()
-        if l == "fixed":
-            _fixed(x_pos)
-        elif l == "roller":
-            _pinned(x_pos, roller=True)
-        else:
-            # For right-end pinned in a simple-support view, keep roller convention.
-            _pinned(x_pos, roller=bool(right_edge and st_val == "Simply supported"))
-
-    if isinstance(support_pair, tuple) and len(support_pair) == 2:
-        left_lbl = str(support_pair[0] or "Pinned")
-        right_lbl = str(support_pair[1] or "Pinned")
-        _draw_support_from_label(0.0, left_lbl, right_edge=False)
-        _draw_support_from_label(float(L_mm), right_lbl, right_edge=True)
-        return
-
-    if st_val == "Cantilever":
-        _fixed(0.0)
-    elif st_val == "Fixed-ended":
-        _fixed(0.0)
-        _fixed(float(L_mm))
-    elif st_val == "Fixed–Pinned":
-        _fixed(0.0)
-        _pinned(float(L_mm), roller=True)
-    elif st_val == "Pinned–Fixed":
-        _pinned(0.0, roller=False)
-        _fixed(float(L_mm))
-    elif st_val == "Continuous – end span":
-        _pinned(0.0, roller=False)
-        _pinned(float(L_mm), roller=False)
-    elif st_val == "Continuous – interior span":
-        _pinned(0.0, roller=False)
-        _pinned(float(L_mm), roller=False)
-    elif st_val == "Pinned–Pinned":
-        _pinned(0.0, roller=False)
-        _pinned(float(L_mm), roller=False)
-    else:
-        _pinned(0.0, roller=False)
-        _pinned(float(L_mm), roller=True)
-
-
-def deflected_longitudinal_profile_mm(
-    L_mm: float,
-    support_type: str | None,
-    delta_total: float,
-    n_pts: int = 200,
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Spanwise mesh and longitudinal deflection w (mm, negative sag), using the same
-    normalised curvature template as the Deflection page diagram.
-    """
-    L_mm = float(L_mm)
-    if L_mm <= 0.0 or not math.isfinite(L_mm):
-        return np.array([0.0], dtype=float), np.array([0.0], dtype=float)
-    delta_total = float(delta_total)
-    if not math.isfinite(delta_total):
-        delta_total = 0.0
-    n_pts = max(2, int(n_pts))
-    x = np.linspace(0.0, L_mm, n_pts)
-    xi = x / L_mm
-    shape_kind = _support_props(support_type).get(
-        "diagram", "simply_supported_udl"
-    )
-    if shape_kind == "cantilever_udl":
-        shape = xi**2 * (3.0 - 2.0 * xi)
-    elif shape_kind in (
-        "continuous_span_udl",
-        "fixed_fixed_udl",
-        "fixed_pinned_udl",
-    ):
-        shape = (4.0 * xi * (1.0 - xi)) ** 2
-    else:
-        shape = 4.0 * xi * (1.0 - xi)
-    shape = shape / max(float(np.max(shape)), 1.0)
-    y_long = -delta_total * shape
-    return x, y_long
-
-
-def build_deflected_beam_plotly(
-    x_mm,
-    w_mm,
-    L_mm,
-    D_mm,
-    support_type: str | None = None,
-    continuous_end_side: str | None = None,
-    support_pair: tuple[str, str] | None = None,
-    *,
-    undeformed_fillcolor: str | None = None,
-    undeformed_line: dict | None = None,
-    deflected_fillcolor: str | None = None,
-    deflected_line: dict | None = None,
-    show_legend: bool = True,
-) -> go.Figure:
-    """
-    Illustrative deflected beam: undeformed and deflected rectangular bodies with vertical exaggeration.
-    Hover on the deflected top fibre shows actual (unscaled) deflection from w_mm.
-    """
-    x = np.asarray(x_mm, dtype=float).reshape(-1)
-    w = np.asarray(w_mm, dtype=float).reshape(-1)
-    L_mm = float(L_mm)
-    D_mm = float(max(D_mm, 1.0))
-
-    # Drawing-only: extend mesh past interior supports so undeformed + deflected
-    # fills (and blue outline) show continuity, matching pin positions at 0 and L_mm.
-    st_val = (support_type or "").strip()
-    if x.size:
-        _stub = max(0.025 * L_mm, 20.0)
-        if st_val == "Continuous – interior span":
-            x0 = float(x[0])
-            if x0 > -_stub + 1e-6:
-                left_pts = np.linspace(-_stub, x0, 8, endpoint=False)
-                if left_pts.size:
-                    x = np.r_[left_pts, x]
-                    w = np.r_[np.full_like(left_pts, w[0]), w]
-        if st_val == "Continuous – end span" and str(continuous_end_side or "right").lower() == "left":
-            x0 = float(x[0])
-            if x0 > -_stub + 1e-6:
-                left_pts = np.linspace(-_stub, x0, 8, endpoint=False)
-                if left_pts.size:
-                    x = np.r_[left_pts, x]
-                    w = np.r_[np.full_like(left_pts, w[0]), w]
-        if st_val == "Continuous – end span" and str(continuous_end_side or "right").lower() != "left":
-            xn = float(x[-1])
-            right_pts = np.linspace(xn, xn + _stub, 8)[1:]
-            if right_pts.size:
-                x = np.r_[x, right_pts]
-                w = np.r_[w, np.full_like(right_pts, w[-1])]
-        if st_val == "Continuous – interior span":
-            xn = float(x[-1])
-            right_pts = np.linspace(xn, xn + _stub, 8)[1:]
-            if right_pts.size:
-                x = np.r_[x, right_pts]
-                w = np.r_[w, np.full_like(right_pts, w[-1])]
-
-    max_abs_defl = float(np.max(np.abs(w))) if w.size else 0.0
-    target_visual_drop = max(0.20 * D_mm, 35.0)
-    if max_abs_defl <= 1e-15:
-        scale_factor = 1.0
-    else:
-        raw_sf = target_visual_drop / max_abs_defl
-        scale_factor = min(max(raw_sf, 1.0), 40.0)
-    w_vis = w * scale_factor
-
-    x_poly = np.r_[x, x[::-1], x[:1]]
-    y_undeformed_poly = np.r_[np.zeros_like(
-        x), (-D_mm) * np.ones_like(x)[::-1], [0.0]]
-    y_deformed_poly = np.r_[w_vis, (w_vis - D_mm)[::-1], [w_vis[0]]]
-
-    sf_display = f"{scale_factor:g}"
-
-    _u_fill = (
-        undeformed_fillcolor
-        if undeformed_fillcolor is not None
-        else "rgba(210,210,210,0.22)"
-    )
-    _u_line = (
-        undeformed_line
-        if undeformed_line is not None
-        else dict(color="rgba(140,140,140,0.95)", width=1.5, dash="dash")
-    )
-    _d_fill = (
-        deflected_fillcolor
-        if deflected_fillcolor is not None
-        else "rgba(31,119,180,0.30)"
-    )
-    _d_line = (
-        deflected_line
-        if deflected_line is not None
-        else dict(color="rgba(31,119,180,1.0)", width=2)
-    )
-
-    fig = go.Figure()
-
-    fig.add_trace(
-        go.Scatter(
-            x=x_poly,
-            y=y_undeformed_poly,
-            fill="toself",
-            mode="lines",
-            line=_u_line,
-            fillcolor=_u_fill,
-            name="Undeformed beam",
-            hoverinfo="skip",
-            legendgroup="u",
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=x_poly,
-            y=y_deformed_poly,
-            fill="toself",
-            mode="lines",
-            line=_d_line,
-            fillcolor=_d_fill,
-            name="Deflected beam",
-            hoverinfo="skip",
-            legendgroup="d",
-        )
-    )
-
-    custom = np.column_stack([x, w])
-    fig.add_trace(
-        go.Scatter(
-            x=x,
-            y=w_vis,
-            mode="lines",
-            line=dict(color="rgba(0,0,0,0)", width=16),
-            customdata=custom,
-            hovertemplate="x = %{customdata[0]:.1f} mm<br>δ (actual) = %{customdata[1]:.2f} mm<extra></extra>",
-            name="Deflection (hover)",
-            showlegend=False,
-        )
-    )
-
-    if w.size:
-        i_max = int(np.argmax(np.abs(w)))
-        dmax_actual = float(w[i_max])
-        fig.add_trace(
-            go.Scatter(
-                x=[x[i_max]],
-                y=[w_vis[i_max]],
-                mode="markers",
-                marker=dict(
-                    size=11,
-                    color="#c0392b",
-                    symbol="circle",
-                    line=dict(width=1, color="white"),
-                ),
-                name="Max |δ|",
-                hovertemplate=(
-                    f"Δmax = {dmax_actual:.2f} mm (actual)<extra></extra>"
-                ),
-            )
-        )
-        fig.add_annotation(
-            x=x[i_max],
-            y=w_vis[i_max],
-            text=f"Δmax = {dmax_actual:.2f} mm",
-            showarrow=True,
-            arrowhead=2,
-            arrowsize=1,
-            arrowwidth=1,
-            axref="pixel",
-            ayref="pixel",
-            ax=48,
-            ay=-42,
-            font=dict(size=11, color="#333"),
-            bgcolor="rgba(255,255,255,0.9)",
-            bordercolor="rgba(0,0,0,0.15)",
-            borderwidth=1,
-            borderpad=4,
-        )
-
-    _add_deflection_supports_plotly(fig, support_type, L_mm, D_mm, support_pair=support_pair)
-
-    fig.update_layout(
-        title=dict(
-            text=(
-                f"Deflected shape (illustrative, vertical exaggeration ×{sf_display}; "
-                "hover shows actual deflection)"
-            ),
-            x=0.5,
-            xanchor="center",
-            font=dict(size=13, color="#222"),
-        ),
-        xaxis_title="Span position x (mm)",
-        yaxis_title="Illustrated vertical position (mm)",
-        template="simple_white",
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        height=420,
-        margin=dict(l=64, r=48, t=72, b=56),
-        showlegend=show_legend,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1,
-        ),
-        xaxis=dict(
-            showgrid=True,
-            gridcolor="rgba(0,0,0,0.10)",
-            zeroline=False,
-            range=[-0.03 * L_mm, L_mm * 1.03] if L_mm > 0 else None,
-        ),
-        yaxis=dict(
-            showgrid=True,
-            gridcolor="rgba(0,0,0,0.10)",
-            zeroline=True,
-            zerolinecolor="rgba(0,0,0,0.22)",
-            zerolinewidth=1,
-        ),
-        hovermode="closest",
-    )
-    return fig
-
-
-def _support_type_from_sfd_case(case: str) -> str:
-    case = (case or "").strip()
-    if case.startswith("Cantilever"):
-        return "Cantilever"
-    if case.startswith("Simple beam"):
-        return "Simply supported"
-    if case.startswith("Overhanging beam"):
-        return "Simply supported"
-    return "Simply supported"
 
 
 def _seed_from_param(name: str, fallback: float) -> float:
@@ -1084,177 +506,6 @@ def _render_readonly_value(
         )
 
 
-def _derive_equiv_udl_from_actions(M_kNm, V_kN, L_m, support_type):
-    """
-    Derive equivalent full-span UDL (kN/m) from M* and/or V*.
-    Accept zeros; only None is treated as missing.
-    """
-    note_parts = []
-    # Guard: L_m must be plausible (m, not mm)
-    if L_m is None:
-        return {
-            "w_kN_per_m": None,
-            "w_from_M": None,
-            "w_from_V": None,
-            "consistent": None,
-            "note": "L_m missing",
-        }
-    try:
-        L_m = float(L_m)
-    except Exception:
-        return {
-            "w_kN_per_m": None,
-            "w_from_M": None,
-            "w_from_V": None,
-            "consistent": None,
-            "note": "L_m not numeric",
-        }
-    if not math.isfinite(L_m):
-        return {
-            "w_kN_per_m": None,
-            "w_from_M": None,
-            "w_from_V": None,
-            "consistent": None,
-            "note": "L_m not finite",
-        }
-    if L_m > 50:
-        note_parts.append(
-    f"WARNING: L_m={L_m} looks like mm, not m (expected ~0–50).")
-        # Do not auto-convert silently; return None so caller can fall back to
-        # g+q.
-        return {
-            "w_kN_per_m": None,
-            "w_from_M": None,
-            "w_from_V": None,
-            "consistent": None,
-            "note": " ".join(note_parts),
-        }
-    if L_m <= 0:
-        return {
-            "w_kN_per_m": None,
-            "w_from_M": None,
-            "w_from_V": None,
-            "consistent": None,
-            "note": "L_m must be > 0",
-        }
-
-    # ---- Coefficients by support type ----
-    support = (support_type or "").strip()
-    if support == "Cantilever":
-        aM, aV = 2.0, 1.0
-        # UDL consistency for cantilever: M ≈ V*L/2
-        cons_M = lambda V: (V * L_m / 2.0)
-    else:
-        # Treat simply supported + continuous using SS coefficients
-        aM, aV = 8.0, 2.0
-        # UDL consistency for simply supported: M ≈ V*L/4
-        cons_M = lambda V: (V * L_m / 4.0)
-
-    # ---- Accept zeros; only None is “missing” ----
-    wM = None
-    wV = None
-    if M_kNm is not None and math.isfinite(float(M_kNm)):
-        M_abs = abs(float(M_kNm))
-        wM = aM * M_abs / (L_m ** 2)
-    if V_kN is not None and math.isfinite(float(V_kN)):
-        V_abs = abs(float(V_kN))
-        wV = aV * V_abs / L_m
-
-    # ---- Combine / select ----
-    if wM is None and wV is None:
-        return {
-            "w_kN_per_m": None,
-            "w_from_M": None,
-            "w_from_V": None,
-            "consistent": None,
-            "note": "No M or V provided",
-        }
-    if wM is None:
-        return {
-            "w_kN_per_m": wV,
-            "w_from_M": None,
-            "w_from_V": wV,
-            "consistent": None,
-            "note": "Derived from V only",
-        }
-    if wV is None:
-        return {
-            "w_kN_per_m": wM,
-            "w_from_M": wM,
-            "w_from_V": None,
-            "consistent": None,
-            "note": "Derived from M only",
-        }
-
-    # Both exist: check consistency with UDL model
-    M_implied = cons_M(abs(float(V_kN)))
-    M_provided = abs(float(M_kNm))
-    if M_implied > 0:
-        ratio = M_provided / M_implied
-        consistent = (0.85 <= ratio <= 1.15)
-    else:
-        ratio = None
-        consistent = None
-
-    if ratio is not None:
-        note_parts.append(
-            f"M/V UDL consistency ratio = {ratio:.2f} (≈1 means consistent full-span UDL).")
-
-    if consistent is True:
-        w = 0.5 * (wM + wV)
-        note_parts.append("M and V consistent → using average(wM, wV).")
-    else:
-        w = max(wM, wV)
-        note_parts.append(
-            "M and V not consistent with full-span UDL → using max(wM, wV) (conservative).")
-
-    return {
-        "w_kN_per_m": w,
-        "w_from_M": wM,
-        "w_from_V": wV,
-        "consistent": consistent,
-        "note": " ".join(note_parts),
-    }
-
-
-def has_udl_line_loads(g_udl: float | None, q_udl: float | None) -> bool:
-    """True when explicit dead + live line UDLs (kN/m) sum to a positive value."""
-    return float(g_udl or 0.0) + float(q_udl or 0.0) > 0.0
-
-
-def resolve_deflection_equiv_loads_from_inputs(
-    *,
-    derived: dict,
-    w_sls: float | None,
-    g_udl: float | None,
-    q_udl: float | None,
-) -> tuple[float, float]:
-    """
-    Map SLS-derived / stored UDL inputs to (g_equiv, q_equiv) for calc_deflection_as3600.
-
-    ``derived`` must be the dict from ``_derive_equiv_udl_from_actions`` for the same inputs.
-    """
-    if derived["w_kN_per_m"] is not None:
-        w_used = float(derived["w_kN_per_m"])
-    elif w_sls is not None:
-        w_used = float(w_sls)
-    else:
-        w_used = float((g_udl or 0.0) + (q_udl or 0.0))
-
-    if w_used > 0:
-        if g_udl is not None and q_udl is not None and (float(g_udl) + float(q_udl)) > 0:
-            g_ratio = float(g_udl) / float(float(g_udl) + float(q_udl))
-            g_equiv = w_used * g_ratio
-            q_equiv = w_used * (1.0 - g_ratio)
-        else:
-            g_equiv = w_used
-            q_equiv = 0.0
-    else:
-        g_equiv = float(g_udl or 0.0)
-        q_equiv = float(q_udl or 0.0)
-    return g_equiv, q_equiv
-
-
 def deflection_has_service_load_for_calc() -> bool:
     """
     True when the resolved service UDL model has positive total load (g_equiv + q_equiv),
@@ -1288,216 +539,6 @@ def deflection_has_service_load_for_calc() -> bool:
         q_udl=q_udl,
     )
     return (float(g_eq) + float(q_eq)) > 1e-12
-
-
-# ------------------------------------------------------------
-#  Deflection helper: map load case → closed-form δ formula
-# ------------------------------------------------------------
-def _deflection_from_sfd_case(
-    case: str,
-    L: float,
-    w_eff: float | None,
-    P_sls: float | None,
-    E: float,
-    I: float,
-):
-    """
-    Returns (delta_max, latex_formula, location_text) for classic SLS load cases.
-
-    Assumes:
-      - L in your length unit
-      - w_eff in force/length
-      - P_sls in force
-      - E, I consistent with your deflection units
-    """
-    delta_max = None
-    formula = r"\text{No closed-form deflection linked for this case yet.}"
-    location = "—"
-
-    # 1. Simple beam – UDL over entire span
-    if case == "Simple beam – UDL over entire span" and w_eff is not None:
-        # δ_max = 5 w L^4 / (384 E I) at midspan
-        delta_max = 5.0 * w_eff * L**4 / (384.0 * E * I)
-        formula = (
-            r"\delta_{\max} = \frac{5 w L^4}{384 E I}"
-            r"\quad\text{(simply supported, full UDL, midspan)}"
-        )
-        location = "At midspan (x = L/2)"
-
-    # 2. Simple beam – point load at centre
-    elif case == "Simple beam – point load at centre" and P_sls is not None:
-        # δ_max = P L^3 / (48 E I)
-        delta_max = P_sls * L**3 / (48.0 * E * I)
-        formula = (
-            r"\delta_{\max} = \frac{P L^3}{48 E I}"
-            r"\quad\text{(simply supported, centre point load)}"
-        )
-        location = "At midspan (x = L/2)"
-
-    # 3. Cantilever – point load at free end
-    elif case == "Cantilever – point load at free end" and P_sls is not None:
-        # δ_max = P L^3 / (3 E I)
-        delta_max = P_sls * L**3 / (3.0 * E * I)
-        formula = (
-            r"\delta_{\max} = \frac{P L^3}{3 E I}"
-            r"\quad\text{(cantilever, end point load)}"
-        )
-        location = "At free end (x = L)"
-
-    # 4. Cantilever – UDL over entire span
-    elif case == "Cantilever – UDL over entire span" and w_eff is not None:
-        # δ_max = w L^4 / (8 E I)
-        delta_max = w_eff * L**4 / (8.0 * E * I)
-        formula = (
-            r"\delta_{\max} = \frac{w L^4}{8 E I}"
-            r"\quad\text{(cantilever, full UDL)}"
-        )
-        location = "At free end (x = L)"
-
-    # Other cases (partial UDL, eccentric point load, overhang etc.) can be
-    # added later.
-
-    return delta_max, formula, location
-
-
-# ------------------------------------------------------------
-#  Core deflection helpers (AS 3600:2018 Cl. 8.5)
-# ------------------------------------------------------------
-def calc_ief_simplified(fc, beff, bw, d, Ast):
-    """
-    AS 3600:2018 Cl. 8.5.3.1(2),(3) simplified Ief for reinforced members.
-    """
-    beff = max(beff, 1.0)
-    bw = max(bw, 1.0)
-    d = max(d, 1.0)
-    fc = max(fc, 1.0)
-
-    beta = beff / bw
-    p = Ast / (beff * d) if beff * d > 0 else 0.0  # reinforcement ratio
-    p_lim = 0.001 * (fc ** (1.0 / 3.0)) / (beta ** (2.0 / 3.0))
-
-    if p >= p_lim:
-        # Eqn (8.5.3.1(2)) type
-        k1 = (5.0 - 0.04 * fc) * p + 0.002
-        ief = k1 * beff * (d ** 3)
-        ief_max = (0.1 / (beta ** (2.0 / 3.0))) * beff * (d ** 3)
-    else:
-        # Eqn (8.5.3.1(3)) type
-        k1 = (0.055 * (fc ** (1.0 / 3.0)) / (beta ** (2.0 / 3.0))) - 50.0 * p
-        ief = k1 * beff * (d ** 3)
-        ief_max = (0.06 / (beta ** (2.0 / 3.0))) * beff * (d ** 3)
-
-    ief = min(ief, ief_max)
-    return max(ief, 0.0), beta, p, p_lim, max(ief_max, 0.0), max(k1, 0.0)
-
-
-def calc_deflection_as3600(
-    L_m,
-    Ec,
-    Ief,
-    g_kNm,
-    q_kNm,
-    psi_s,
-    support_type,
-    Ast,
-    Asc,
-):
-    """Return dict with short-term, long-term components and total deflection (mm)."""
-    if L_m is None:
-        return {
-            "ok": False,
-            "error": "Effective span is missing (L_m is None).",
-        }
-    try:
-        L_m = float(L_m)
-    except Exception:
-        return {"ok": False, "error": "Effective span is not a valid number."}
-    if L_m <= 0:
-        return {"ok": False, "error": "Effective span must be > 0."}
-    L_mm = L_m * 1000.0
-    L4 = L_mm ** 4
-    Ief = max(Ief, 1.0)
-    Ec = max(Ec, 1.0)
-
-    k2 = _support_props(support_type).get("k2", 5.0 / 384.0)
-
-    # kN/m → N/mm (1 kN/m = 1 N/mm numerically)
-    w_total = g_kNm + q_kNm
-    w_sust = g_kNm + psi_s * q_kNm
-
-    delta_short_total = k2 * w_total * L4 / (Ec * Ief)
-    delta_short_sust = k2 * w_sust * L4 / (Ec * Ief)
-
-    ratio_Asc_Ast = (Asc / Ast) if Ast > 0 else 0.0
-    kcs = 2.0 - 1.2 * ratio_Asc_Ast
-    kcs = max(kcs, 0.8)
-
-    delta_long_add = kcs * delta_short_sust
-    delta_total = delta_short_total + delta_long_add
-
-    return dict(
-        L_mm=L_mm,
-        k2=k2,
-        w_total=w_total,
-        w_sust=w_sust,
-        delta_short_total=delta_short_total,
-        delta_short_sust=delta_short_sust,
-        kcs=kcs,
-        delta_long_add=delta_long_add,
-        delta_total=delta_total,
-    )
-
-
-def calc_span_depth_limit(
-    ief,
-    beff,
-    bw,
-    d,
-    fc,
-    Ec,
-    Fdef_kNm,
-    support_type,
-    defl_limit_ratio,
-):
-    """
-    Deemed-to-conform span/depth ratio from AS 3600:2018 Cl. 8.5.4.
-    Returns (L_over_d_limit, k1, k2).
-    """
-    # Guard against None values to prevent TypeError
-    beff = max(beff if beff is not None else 1.0, 1.0)
-    bw = max(bw if bw is not None else 1.0, 1.0)
-    d = max(d if d is not None else 1.0, 1.0)
-    Ec = max(Ec if Ec is not None else 1.0, 1.0)
-    ief = max(ief if ief is not None else 1.0, 1.0)
-    fc = fc if fc is not None else 32.0
-    Fdef_kNm = Fdef_kNm if Fdef_kNm is not None else 0.0
-    defl_limit_ratio = defl_limit_ratio if defl_limit_ratio is not None else 250.0
-
-    k1 = ief / (beff * (d ** 3))
-
-    k2 = _support_props(support_type).get("k2", 5.0 / 384.0)
-
-    delta_over_L = 1.0 / defl_limit_ratio if defl_limit_ratio > 0 else 0.0
-    Fdef = Fdef_kNm
-
-    if Fdef <= 0 or delta_over_L <= 0:
-        return None, k1, k2
-
-    inside = (k1 * delta_over_L * beff * Ec) / (k2 * Fdef)
-    if inside <= 0:
-        return None, k1, k2
-
-    L_over_d_limit = inside ** (1.0 / 3.0)
-    return L_over_d_limit, k1, k2
-
-
-def format_L_over_delta(delta_mm, L_mm):
-    if delta_mm <= 0:
-        return "–"
-    ratio = L_mm / delta_mm
-    if ratio <= 0:
-        return "–"
-    return f"L/{ratio:,.0f}"
 
 
 # ------------------------------------------------------------
@@ -1667,6 +708,11 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         }
 
         V_kN = V_manual_kN if is_manual else V_design_kN if is_design else None
+        fd_ef_derived, derived_formula_label = effective_design_load_from_shear(
+            V_kN=V_kN,
+            L_m=L_m_value,
+            support_type=support_type_value,
+        )
         if (
             L_m_value is not None
             and L_m_value > 0
@@ -1674,14 +720,14 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
             and V_kN > 0
         ):
             if support_type_value in ("Simply supported", "Pinned–Pinned"):
-                fd_ef_used = 2.0 * V_kN / L_m_value
-                formula_label = "2V/L"
+                fd_ef_used = fd_ef_derived
+                formula_label = derived_formula_label
             elif support_type_value == "Cantilever":
-                fd_ef_used = V_kN / L_m_value
-                formula_label = "V/L"
+                fd_ef_used = fd_ef_derived
+                formula_label = derived_formula_label
             else:
-                fd_ef_used = V_kN / L_m_value
-                formula_label = "V/L"
+                fd_ef_used = fd_ef_derived
+                formula_label = derived_formula_label
 
             if is_manual:
                 branch = "manual_actions"
@@ -1701,7 +747,11 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         return fallback_value, branch, source_text, meta
 
     # 3-column layout matching Shear pattern
-    col_geom, col_mats, col_loads = st.columns(3, gap="large")
+    col_geom, col_mats, col_loads = specialized_widget_rail_columns(
+        "deflection_primary_inputs",
+        3,
+        gap="large",
+    )
 
     # ---------- Column 1: Geometry ----------
     with col_geom:
@@ -1757,6 +807,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
                 on_change=sync_callbacks["defl_L"],
             ),
         )
+        _refresh_deflection_effective_span_from_mm(L, fallback_mm=L_seed)
 
         # Derived: web width (for calculations; shown in calc box)
         bw = st.session_state.get("defl_bw", b)
@@ -1818,6 +869,9 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
             if current_support_type in support_options
             else 0
         )
+
+        if design_controls:
+            seed_design_deflection_support_widget_before_render(w_support, current_support_type)
 
         if design_controls:
             st.info(
@@ -1998,34 +1052,18 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
             )
         else:
             Ief_selected = st.session_state.get("defl_Ief_user", 1.0e11)
-            beta = beff / bw if (bw is not None and bw > 0) else 1.0
-            p = (
-                Ast / (beff * d)
-                if (beff is not None and d is not None and beff * d > 0)
-                else 0.0
-            )
+            beta = effective_flange_width_ratio(beff, bw)
+            p = tension_reinforcement_ratio(Ast, beff, d)
             p_lim = 0.0
             Ief_max = Ief_selected
-            k1_from_ief = (
-                Ief_selected / (beff * (d**3))
-                if (beff is not None and d is not None and beff * d > 0)
-                else 0.0
-            )
+            k1_from_ief = effective_stiffness_coefficient_k1(Ief_selected, beff, d)
     except Exception:
         Ief_selected = 1.0e11
-        beta = beff / bw if (bw is not None and bw > 0) else 1.0
-        p = (
-            Ast / (beff * d)
-            if (beff is not None and d is not None and beff * d > 0)
-            else 0.0
-        )
+        beta = effective_flange_width_ratio(beff, bw)
+        p = tension_reinforcement_ratio(Ast, beff, d)
         p_lim = 0.0
         Ief_max = Ief_selected
-        k1_from_ief = (
-            Ief_selected / (beff * (d**3))
-            if (beff is not None and d is not None and beff * d > 0)
-            else 0.0
-        )
+        k1_from_ief = effective_stiffness_coefficient_k1(Ief_selected, beff, d)
 
     # --- hard guard: never let L_m be None (prevents session-killing exception) ---
     L_eff_m = get_param("defl_L_eff")
@@ -2043,24 +1081,15 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
         L_m=L_eff_m,
         support_type=support_type,
     )
-    if derived["w_kN_per_m"] is not None:
-        w_used = derived["w_kN_per_m"]
-        w_source = "actions"
-    else:
-        w_used = (g + q) if (g is not None and q is not None) else 0.0
-        w_source = "g+q"
-
-    if w_used > 0:
-        if (g + q) > 0:
-            g_ratio = g / (g + q)
-            g_used = w_used * g_ratio
-            q_used = w_used * (1 - g_ratio)
-        else:
-            g_used = w_used
-            q_used = 0.0
-    else:
-        g_used = g
-        q_used = q
+    load_split = deflection_multispan_load_split_values(
+        derived=derived,
+        g_kNm=g,
+        q_kNm=q,
+    )
+    w_used = load_split["w_used"]
+    w_source = load_split["w_source"]
+    g_used = load_split["g_used"]
+    q_used = load_split["q_used"]
 
     compute_and_store_multispan_deflection_metrics(
         state=st.session_state,
@@ -2204,21 +1233,24 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
                 support_type=support_type,
                 continuous_end_side=support_resolution.get("continuous_end_side"),
                 support_pair=support_pair,
+                reo_layers=_deflection_diagram_reo_layers(D_mm),
             )
-            _c1, _c2, _c3 = st.columns([0.06, 1.0, 0.06])
-            with _c2:
-                st.plotly_chart(
-                    beam_fig,
-                    use_container_width=True,
-                    config={"displayModeBar": False},
-                )
+            render_plotly_diagram(
+                beam_fig,
+                key="deflection_deflected_shape_diagram",
+                title="Deflected shape",
+                center=True,
+                allow_fullscreen=True,
+                preserve_figure_width=True,
+                config={"displayModeBar": False},
+            )
         page_divider()
 
     L_over_delta_short = format_L_over_delta(delta_short_total, L_mm)
     L_over_delta_long_add = format_L_over_delta(delta_long_add, L_mm)
     L_over_delta_total = format_L_over_delta(delta_total, L_mm)
 
-    L_over_d = (L_mm / d) if d > 0 else 0.0
+    L_over_d = span_to_depth_ratio(L_mm, d)
     L_over_d_limit, k1_span, k2_span = calc_span_depth_limit(
         ief=Ief_selected,
         beff=beff,
@@ -2265,7 +1297,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     with summary_placeholder.container():
         render_page_explainer_expander(_render_deflection_explainer)
         defl_pack = build_deflection_check_rows_from_state(st.session_state)
-        ROWS = defl_pack.get("rows", [])
+        ROWS = build_deflection_summary_rows(defl_pack.get("rows", []))
         update_results("deflection", {"rows": ROWS, "summary": defl_pack})
         render_clickable_summary_table(
             ROWS,
@@ -2317,15 +1349,14 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     use_high_branch = p_display >= p_lim_display
     if use_high_branch:
         ief_branch_label = "p ≥ p_lim"
-        k1_expr = (5.0 - 0.04 * fc_display) * p_display + 0.002
+        k1_expr = simplified_ief_k1_factor(fc_display, beta_display, p_display, p_lim_display)
         k1_expr_md = (
             rf"(5 - 0.04\ \times\ {fc_display:.1f})\ \times\ "
             rf"{p_display:.5f} + 0.002"
         )
     else:
         ief_branch_label = "p < p_lim"
-        k1_expr = (0.055 * (fc_display ** (1.0 / 3.0)) /
-                   (beta_display ** (2.0 / 3.0))) - 50.0 * p_display
+        k1_expr = simplified_ief_k1_factor(fc_display, beta_display, p_display, p_lim_display)
         k1_expr_md = (
             rf"0.055\ \times\ ({fc_display:.1f})^{{1/3}}/({beta_display:.3f})^{{2/3}} "
             rf"- 50\ \times\ {p_display:.5f}"
@@ -2433,19 +1464,16 @@ _Ref: AS 3600:2018 Cl. 8.5.3.1(2) & (3) – simplified $I_{{ef}}$ for reinforced
     )
 
     # Short-term deflection step
-    limit_delta_mm = L_mm / defl_limit_ratio if defl_limit_ratio > 0 else None
-    util_short = delta_short_total / \
-        limit_delta_mm if limit_delta_mm and limit_delta_mm > 0 else None
-    short_status = "pass" if (util_short is not None and util_short <=
-                              1.0) else "fail" if util_short is not None else None
-
-    _short_res = (
-        "PASS"
-        if short_status == "pass"
-        else "FAIL"
-        if short_status == "fail"
-        else "—"
+    short_limit_check = deflection_limit_check_values(
+        delta_short_total,
+        L_mm,
+        defl_limit_ratio,
     )
+    limit_delta_mm = short_limit_check["limit_delta_mm"]
+    util_short = short_limit_check["utilisation"]
+    short_status = short_limit_check["status"]
+
+    _short_res = short_limit_check["result_text"]
     short_summary = (
         f"**Check 2 — Short-term deflection**  \n"
         f"$\\delta_{{st,total}} = {delta_short_total:.2f}\\,\\mathrm{{mm}}$ "
@@ -2533,37 +1561,27 @@ _Ref: AS 3600:2018 Cl. 8.5.3.1 – deflection using effective stiffness $I_{{ef}
         info_render_fn=None,
     )
 
-    limit_delta_mm = L_mm / defl_limit_ratio if defl_limit_ratio > 0 else None
-    util_long = (
-        delta_long_add / limit_delta_mm
-        if limit_delta_mm and limit_delta_mm > 0
-        else None
+    long_add_limit_check = deflection_limit_check_values(
+        delta_long_add,
+        L_mm,
+        defl_limit_ratio,
     )
-    util_total = (
-        delta_total / limit_delta_mm
-        if limit_delta_mm and limit_delta_mm > 0
-        else None
+    total_limit_check = deflection_limit_check_values(
+        delta_total,
+        L_mm,
+        defl_limit_ratio,
     )
-    long_status = (
-        "pass"
-        if (util_total is not None and util_total <= 1.0)
-        else "fail"
-        if util_total is not None
-        else None
-    )
+    limit_delta_mm = total_limit_check["limit_delta_mm"]
+    util_long = long_add_limit_check["utilisation"]
+    util_total = total_limit_check["utilisation"]
+    long_status = total_limit_check["status"]
 
-    limit_delta_mm_display = limit_delta_mm if limit_delta_mm is not None else 0.0
-    util_total_display = util_total if util_total is not None else 0.0
+    limit_delta_mm_display = total_limit_check["limit_delta_mm_display"]
+    util_total_display = total_limit_check["utilisation_display"]
 
-    ratio_Asc_Ast = (Asc / Ast) if Ast > 0 else 0.0
+    ratio_Asc_Ast = compression_to_tension_steel_ratio(Asc, Ast)
 
-    _long_res = (
-        "PASS"
-        if long_status == "pass"
-        else "FAIL"
-        if long_status == "fail"
-        else "—"
-    )
+    _long_res = total_limit_check["result_text"]
     long_summary = (
         f"**Check 3 — Long-term deflection**  \n"
         f"$\\delta_{{total}} = {delta_total:.2f}\\,\\mathrm{{mm}}$ "
@@ -2874,17 +1892,10 @@ _Ref: AS 3600:2018 Cl. 8.5.4 – deemed-to-conform span-to-depth limits._
         info_render_fn=None,
     )
 
-    util_span = (
-        L_over_d / L_over_d_limit
-        if L_over_d_limit is not None and L_over_d_limit > 0
-        else None
-    )
-    span_defl_status = None
-    if L_over_d_limit is not None and L_over_d_limit > 0 and L_over_d > 0:
-        span_passes = L_over_d <= L_over_d_limit
-        span_defl_status = "pass" if span_passes else "fail"
-
-    limit_text = f"{L_over_d_limit:.1f}" if L_over_d_limit is not None else "—"
+    span_depth_display = span_depth_display_values(L_over_d, L_over_d_limit)
+    util_span = span_depth_display["util_span"]
+    span_defl_status = span_depth_display["span_defl_status"]
+    limit_text = span_depth_display["limit_text"]
 
     # Guard against None values before formatting
     L_mm_display = L_mm if L_mm is not None else 6000.0
@@ -2900,13 +1911,7 @@ _Ref: AS 3600:2018 Cl. 8.5.4 – deemed-to-conform span-to-depth limits._
         value_source_text or "See Effective design load section above."
     )
 
-    _span_res = (
-        "PASS"
-        if span_defl_status == "pass"
-        else "FAIL"
-        if span_defl_status == "fail"
-        else "—"
-    )
+    _span_res = span_depth_display["result_text"]
     span_summary = (
         f"**Check 5 — Span/depth deemed-to-conform check**  \n"
         f"$L_{{ef}}/d = {L_over_d_display:.1f}$ vs limit = {limit_text} | "

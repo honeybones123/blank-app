@@ -18,15 +18,15 @@ AUDIT_DIR = ROOT / "artifacts" / "audits"
 REQUIRED_FAMILIES: dict[str, dict[str, str]] = {
     "bending_fail_governs": {
         "family_id": "BENDING_FAIL_GOVERNS",
-        "api": "evaluate_bending_fail_governs",
+        "runtime_api": "run_bending_fail_governs_ladder_runtime",
     },
     "shear_fail_governs": {
         "family_id": "SHEAR_FAIL_GOVERNS",
-        "api": "evaluate_shear_fail_governs",
+        "runtime_api": "run_shear_fail_governs_ladder_runtime",
     },
     "bending_and_shear_fail_govern": {
-        "family_id": "BENDING_AND_SHEAR_FAIL_GOVERN",
-        "api": "evaluate_bending_and_shear_fail_govern",
+        "family_id": "COMBINED_BENDING_SHEAR_FAIL_GOVERNS",
+        "runtime_api": "run_combined_bending_shear_fail_runtime",
     },
     "bending_fail_shear_overdesign_governs": {
         "family_id": "BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS",
@@ -42,10 +42,10 @@ REQUIRED_FAMILIES: dict[str, dict[str, str]] = {
     },
     "shear_overdesign_governs": {
         "family_id": "SHEAR_OVERDESIGN_GOVERNS",
-        "api": "evaluate_shear_overdesign_governs",
+        "runtime_api": "run_shear_overdesign_governs_runtime",
     },
     "bending_and_shear_overdesign_govern": {
-        "family_id": "BENDING_AND_SHEAR_OVERDESIGN_GOVERN",
+        "family_id": "COMBINED_OVERDESIGN_GOVERNS",
         "api": "evaluate_bending_and_shear_overdesign_govern",
     },
     "serviceability_governs": {
@@ -104,6 +104,9 @@ ALLOWED_COMPATIBILITY_IMPORTS = {
     ("bending_fail_governs", "design_brain.families.bending_fail"),
     ("shear_fail_governs", "design_brain.families.shear_fail"),
     ("bending_and_shear_fail_govern", "design_brain.families.combined_bending_shear_fail"),
+    ("bending_and_shear_overdesign_govern", "design_brain.families.combined_cleanup"),
+    ("bending_overdesign_governs", "design_brain.families.bending_cleanup"),
+    ("shear_overdesign_governs", "design_brain.families.shear_cleanup"),
 }
 
 
@@ -187,7 +190,8 @@ def main() -> int:
             "folder": str(folder.relative_to(ROOT)),
             "exists": folder.is_dir(),
             "init_exists": init_file.exists(),
-            "required_api": spec["api"],
+            "required_api": spec.get("api"),
+            "required_runtime_api": spec.get("runtime_api"),
             "required_family_id": spec["family_id"],
         }
         if not folder.is_dir():
@@ -200,13 +204,22 @@ def main() -> int:
             continue
         funcs = _functions_in(init_file)
         assignments = _assignments_in(init_file)
-        result["api_exists"] = spec["api"] in funcs
+        required_api = spec.get("api")
+        required_runtime_api = spec.get("runtime_api")
+        result["api_exists"] = required_api in funcs if required_api else None
+        result["runtime_api_exported"] = (
+            required_runtime_api in init_file.read_text(encoding="utf-8", errors="replace")
+            if required_runtime_api
+            else None
+        )
         result["family_id_matches"] = assignments.get("FAMILY_ID") == spec["family_id"]
         cross_family_imports, compatibility_imports = _family_internal_imports(init_file, folder_name)
         result["cross_family_imports"] = cross_family_imports
         result["compatibility_imports"] = compatibility_imports
-        if not result["api_exists"]:
-            failures.append(f"missing_public_api:{folder_name}:{spec['api']}")
+        if required_api and not result["api_exists"]:
+            failures.append(f"missing_public_api:{folder_name}:{required_api}")
+        if required_runtime_api and not result["runtime_api_exported"]:
+            failures.append(f"missing_runtime_api:{folder_name}:{required_runtime_api}")
         if not result["family_id_matches"]:
             failures.append(f"family_id_mismatch:{folder_name}")
         for imported in result["cross_family_imports"]:

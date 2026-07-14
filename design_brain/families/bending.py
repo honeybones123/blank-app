@@ -8,6 +8,8 @@ import json
 import math
 from typing import Any
 
+from design_brain.contracts import bottom_arrangement_to_shared_updates
+
 
 def _bottom_reo_complexity_int(value: Any, default: int) -> int:
     if value is None:
@@ -110,6 +112,113 @@ class BottomReoSelectorResult:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def build_bottom_reo_selector_result_record(
+    *,
+    status: str,
+    selected_reason: str | None,
+    no_candidate_reason: str | None,
+    selected_candidate_id: Any = None,
+    selected_candidate_identity: Any = None,
+    selected_candidate_trace_hash: Any = None,
+    selected_update_keys: tuple[str, ...] | list[str] | None = None,
+    selected_updates_hash: Any = None,
+    strict_band_winner_seen: bool = False,
+    strict_band_winner_accepted: bool = False,
+    strict_band_rejected_reason: str | None = None,
+    legacy_rejection_reason: str | None = None,
+    winner_pool_mode: Any = None,
+    selected_because_band: bool = False,
+    selected_score: float | None = None,
+    selected_bending_util: float | None = None,
+    selected_candidate_post_util: float | None = None,
+    selected_reaches_target_band: bool | None = None,
+    target_low: float | None = None,
+    target_high: float | None = None,
+) -> BottomReoSelectorResult:
+    """Build the family-owned selector result proof record from plain values."""
+
+    return BottomReoSelectorResult(
+        status=str(status or ""),
+        selected_reason=str(selected_reason) if selected_reason else None,
+        no_candidate_reason=str(no_candidate_reason) if no_candidate_reason else None,
+        selected_candidate_id=str(selected_candidate_id) if selected_candidate_id is not None else None,
+        selected_candidate_identity=str(selected_candidate_identity) if selected_candidate_identity is not None else None,
+        selected_candidate_trace_hash=(
+            str(selected_candidate_trace_hash) if selected_candidate_trace_hash is not None else None
+        ),
+        selected_update_keys=tuple(sorted(str(key) for key in (selected_update_keys or ()))),
+        selected_updates_hash=str(selected_updates_hash) if selected_updates_hash is not None else None,
+        strict_band_winner_seen=bool(strict_band_winner_seen),
+        strict_band_winner_accepted=bool(strict_band_winner_accepted),
+        strict_band_rejected_reason=str(strict_band_rejected_reason) if strict_band_rejected_reason else None,
+        legacy_rejection_reason=str(legacy_rejection_reason) if legacy_rejection_reason else None,
+        winner_pool_mode=str(winner_pool_mode) if winner_pool_mode is not None else None,
+        selected_because_band=bool(selected_because_band),
+        selected_score=selected_score,
+        selected_bending_util=selected_bending_util,
+        selected_candidate_post_util=selected_candidate_post_util,
+        selected_reaches_target_band=(
+            bool(selected_reaches_target_band) if selected_reaches_target_band is not None else None
+        ),
+        target_low=_record_float(target_low),
+        target_high=_record_float(target_high),
+    )
+
+
+def build_bottom_reo_selector_result_record_from_candidate(
+    *,
+    selected_candidate: dict | None,
+    status: str,
+    selected_reason: str | None,
+    no_candidate_reason: str | None,
+    strict_band_winner_seen: bool,
+    strict_band_winner_accepted: bool,
+    strict_band_rejected_reason: str | None,
+    legacy_rejection_reason: str | None,
+    target_low: float | None,
+    target_high: float | None,
+) -> BottomReoSelectorResult:
+    """Project selector-result trace identity from a plain selected candidate."""
+
+    selected = dict(selected_candidate or {}) if isinstance(selected_candidate, dict) else {}
+    updates = dict(selected.get("updates") or {})
+    overview = dict(selected.get("overview") or {})
+    utils = dict(overview.get("utils") or {})
+    candidate_hash = _stable_boundary_hash(selected) if selected else None
+    selected_candidate_id = selected.get("candidate_id") or selected.get("source_candidate_id") or None
+    selected_identity = (
+        str(selected_candidate_id)
+        if selected_candidate_id
+        else (f"trace:{candidate_hash}" if candidate_hash else None)
+    )
+    return build_bottom_reo_selector_result_record(
+        status=status,
+        selected_reason=selected_reason,
+        no_candidate_reason=no_candidate_reason,
+        selected_candidate_id=selected_candidate_id,
+        selected_candidate_identity=selected_identity,
+        selected_candidate_trace_hash=candidate_hash,
+        selected_update_keys=tuple(sorted(str(key) for key in updates.keys())),
+        selected_updates_hash=_stable_boundary_hash(updates) if selected else None,
+        strict_band_winner_seen=strict_band_winner_seen,
+        strict_band_winner_accepted=strict_band_winner_accepted,
+        strict_band_rejected_reason=strict_band_rejected_reason,
+        legacy_rejection_reason=legacy_rejection_reason,
+        winner_pool_mode=selected.get("winner_pool_mode") if selected.get("winner_pool_mode") is not None else None,
+        selected_because_band=bool(selected.get("winning_candidate_selected_from_band_reachers")),
+        selected_score=_record_float(selected.get("score")),
+        selected_bending_util=_record_float(utils.get("bending")),
+        selected_candidate_post_util=_record_float(selected.get("candidate_post_util")),
+        selected_reaches_target_band=(
+            bool(selected.get("candidate_reaches_target_band"))
+            if selected.get("candidate_reaches_target_band") is not None
+            else None
+        ),
+        target_low=target_low,
+        target_high=target_high,
+    )
 
 
 @dataclass(frozen=True)
@@ -1878,6 +1987,246 @@ def build_bottom_reo_selector_wrapper_proof(
     )
 
 
+def select_bottom_reo_recommendation_candidate_by_selector(
+    candidates: list[dict] | tuple[dict, ...] | None,
+    *,
+    seed_candidate: dict | None,
+    mode_config: dict | None,
+    select_best_candidate_fn: Any,
+    strict_band_guard_fn: Any,
+    updates_match_state_fn: Any,
+    candidate_ductility_util_fn: Any,
+    seed_ductility_governs: bool,
+    seed_ductility_util: float | None,
+    legacy_rejection_reason_fn: Any,
+) -> dict[str, Any]:
+    """Run the bottom-reo selector policy from plain data and callbacks.
+
+    The caller owns callback implementations and page trace emission. This
+    helper owns selector-loop policy: strict band acceptance, no-op/label/util
+    rejection, ductility/bending improvement checks, and selected/no-result
+    outcome shaping.
+    """
+
+    pool = [candidate for candidate in list(candidates or []) if isinstance(candidate, dict) and candidate]
+    seed = seed_candidate if isinstance(seed_candidate, dict) else {}
+    mode = mode_config if isinstance(mode_config, dict) else {}
+    seed_bu = ((seed.get("overview") or {}).get("utils") or {}).get("bending")
+    try:
+        seed_bu_f = float(seed_bu) if seed_bu is not None else None
+    except (TypeError, ValueError):
+        seed_bu_f = None
+    try:
+        seed_du = float(seed_ductility_util) if seed_ductility_util is not None else None
+    except (TypeError, ValueError):
+        seed_du = None
+    ductility_seed = bool(seed_ductility_governs)
+    strict_band_winner_seen = False
+    strict_band_rejected_reason: str | None = None
+    rank_events: list[dict[str, Any]] = []
+    trace_entries: list[dict[str, Any]] = []
+
+    def _log(event: str, candidate: dict | None, reason: str, **payload: Any) -> None:
+        row = {
+            "domain": "bending",
+            "event": str(event),
+            "candidate": candidate,
+            "reason": str(reason),
+        }
+        row.update(payload)
+        rank_events.append(row)
+
+    def _trace(payload: dict[str, Any]) -> None:
+        trace_entries.append(dict(payload or {}))
+
+    def _selector_result(
+        *,
+        selected_candidate: dict | None,
+        status: str,
+        selected_reason: str | None = None,
+        no_candidate_reason: str | None = None,
+        strict_band_winner_accepted: bool = False,
+        legacy_rejection_reason: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "selected_candidate": selected_candidate,
+            "status": str(status),
+            "selected_reason": selected_reason,
+            "no_candidate_reason": no_candidate_reason,
+            "strict_band_winner_seen": bool(strict_band_winner_seen),
+            "strict_band_winner_accepted": bool(strict_band_winner_accepted),
+            "strict_band_rejected_reason": strict_band_rejected_reason,
+            "legacy_rejection_reason": legacy_rejection_reason,
+        }
+
+    while pool:
+        pick = select_best_candidate_fn(pool, mode, seed) if callable(select_best_candidate_fn) else None
+        if pick is None:
+            return {
+                "selected_candidate": None,
+                "selector_result": _selector_result(
+                    selected_candidate=None,
+                    status="no_result",
+                    no_candidate_reason="selector_returned_none",
+                ),
+                "rank_events": tuple(rank_events),
+                "trace_entries": tuple(trace_entries),
+            }
+        band_seen = bool(pick.get("candidate_reaches_target_band")) and bool(pick.get("is_compliant"))
+        if band_seen:
+            strict_band_winner_seen = True
+            strict_reject = False
+            strict_reason = ""
+            if callable(strict_band_guard_fn):
+                guard_result = strict_band_guard_fn(pick)
+                if isinstance(guard_result, (list, tuple)) and len(guard_result) >= 2:
+                    strict_reject = bool(guard_result[0])
+                    strict_reason = str(guard_result[1])
+            if strict_reject:
+                strict_band_rejected_reason = str(strict_reason)
+                _log("rejected", pick, f"strict_band_reject:{strict_reason}")
+                _trace(
+                    {
+                        "final_selector_band_winner_seen": True,
+                        "final_selector_band_winner_accepted": False,
+                        "final_selector_band_winner_rejected_reason": str(strict_reason),
+                        "final_selector_used_strict_band_accept_rule": True,
+                        "winner_pool_mode": pick.get("winner_pool_mode"),
+                        "selected_because_band": bool(pick.get("winning_candidate_selected_from_band_reachers")),
+                    },
+                )
+                pool = [candidate for candidate in pool if candidate is not pick]
+                continue
+            legacy_reason = (
+                legacy_rejection_reason_fn(pick)
+                if callable(legacy_rejection_reason_fn)
+                else None
+            )
+            _log(
+                "accepted",
+                pick,
+                "strict_band_winner_accept",
+                util_before=seed_du if ductility_seed else seed_bu_f,
+                util_after=(
+                    candidate_ductility_util_fn(pick)
+                    if ductility_seed and callable(candidate_ductility_util_fn)
+                    else pick.get("candidate_post_util")
+                ),
+            )
+            _trace(
+                {
+                    "final_selector_band_winner_seen": True,
+                    "final_selector_band_winner_accepted": True,
+                    "final_selector_band_winner_rejected_reason": None,
+                    "final_selector_used_strict_band_accept_rule": True,
+                    "winner_pool_mode": pick.get("winner_pool_mode"),
+                    "selected_because_band": bool(pick.get("winning_candidate_selected_from_band_reachers")),
+                    "final_winner_label": str(pick.get("label") or ""),
+                    "final_winner_reaches_target_band": bool(pick.get("candidate_reaches_target_band")),
+                    "final_winner_post_util": pick.get("candidate_post_util"),
+                    "final_winner_goal_score": pick.get("candidate_goal_score"),
+                    "final_selector_band_winner_would_have_legacy_reject_reason": legacy_reason,
+                    "final_selector_band_winner_accepted_over_legacy_gate": bool(legacy_reason),
+                },
+            )
+            return {
+                "selected_candidate": pick,
+                "selector_result": _selector_result(
+                    selected_candidate=pick,
+                    status="selected",
+                    selected_reason="strict_band_winner_accept",
+                    strict_band_winner_accepted=True,
+                    legacy_rejection_reason=legacy_reason,
+                ),
+                "rank_events": tuple(rank_events),
+                "trace_entries": tuple(trace_entries),
+            }
+        if not str(pick.get("label") or "").strip():
+            _log("rejected", pick, "missing_label")
+            pool = [candidate for candidate in pool if candidate is not pick]
+            continue
+        if callable(updates_match_state_fn) and bool(updates_match_state_fn(pick.get("updates") or {})):
+            _log("rejected", pick, "noop_updates_match_state")
+            pool = [candidate for candidate in pool if candidate is not pick]
+            continue
+        bu = ((pick.get("overview") or {}).get("utils") or {}).get("bending")
+        try:
+            bu_f = float(bu) if bu is not None else None
+        except (TypeError, ValueError):
+            bu_f = None
+        if bu_f is None:
+            _log("rejected", pick, "missing_bending_util")
+            pool = [candidate for candidate in pool if candidate is not pick]
+            continue
+        if ductility_seed:
+            pdu = candidate_ductility_util_fn(pick) if callable(candidate_ductility_util_fn) else None
+            if seed_du is not None and pdu is not None and float(pdu) >= float(seed_du) - 1e-9:
+                _log(
+                    "rejected",
+                    pick,
+                    "ductility_not_improved",
+                    util_before=float(seed_du),
+                    util_after=float(pdu),
+                )
+                pool = [candidate for candidate in pool if candidate is not pick]
+                continue
+        elif seed_bu_f is not None and float(bu_f) >= float(seed_bu_f) - 1e-9:
+            _log(
+                "rejected",
+                pick,
+                "bending_util_not_improved",
+                util_before=float(seed_bu_f),
+                util_after=float(bu_f),
+            )
+            pool = [candidate for candidate in pool if candidate is not pick]
+            continue
+        _log(
+            "accepted",
+            pick,
+            "selector_top_valid",
+            util_before=seed_du if ductility_seed else seed_bu_f,
+            util_after=(
+                candidate_ductility_util_fn(pick)
+                if ductility_seed and callable(candidate_ductility_util_fn)
+                else bu_f
+            ),
+        )
+        _trace(
+            {
+                "final_selector_band_winner_seen": False,
+                "final_selector_band_winner_accepted": False,
+                "final_selector_band_winner_rejected_reason": None,
+                "final_selector_used_strict_band_accept_rule": False,
+                "winner_pool_mode": pick.get("winner_pool_mode"),
+                "selected_because_band": bool(pick.get("winning_candidate_selected_from_band_reachers")),
+                "final_winner_label": str(pick.get("label") or ""),
+                "final_winner_reaches_target_band": bool(pick.get("candidate_reaches_target_band")),
+                "final_winner_post_util": pick.get("candidate_post_util"),
+                "final_winner_goal_score": pick.get("candidate_goal_score"),
+            },
+        )
+        return {
+            "selected_candidate": pick,
+            "selector_result": _selector_result(
+                selected_candidate=pick,
+                status="selected",
+                selected_reason="selector_top_valid",
+            ),
+            "rank_events": tuple(rank_events),
+            "trace_entries": tuple(trace_entries),
+        }
+    return {
+        "selected_candidate": None,
+        "selector_result": _selector_result(
+            selected_candidate=None,
+            status="no_result",
+            no_candidate_reason="selector_pool_exhausted",
+        ),
+        "rank_events": tuple(rank_events),
+        "trace_entries": tuple(trace_entries),
+    }
+
+
 def _selected_recommendation_forbidden_fields(value: Any) -> tuple[str, ...]:
     found: set[str] = set()
 
@@ -2131,6 +2480,204 @@ def build_bottom_reo_selected_recommendation_proof(
     )
 
 
+def build_bottom_reo_selected_recommendation_proof_from_result(
+    *,
+    result: dict | None,
+    decision: dict | None,
+    selector_result: dict | None = None,
+    return_status: str,
+    return_reason: str,
+) -> dict[str, Any]:
+    """Project selected-recommendation proof inputs from plain trace records."""
+
+    decision_d = dict(decision or {})
+    selector_d = dict(selector_result or {})
+    selected_identity = (
+        selector_d.get("selected_candidate_identity")
+        or decision_d.get("selected_candidate_identity")
+        or None
+    )
+    ranked = [str(value) for value in list(decision_d.get("ranked_candidate_identities") or [])]
+    selected_source_index = None
+    if selected_identity is not None:
+        selected_text = str(selected_identity)
+        selected_source_index = ranked.index(selected_text) if selected_text in ranked else None
+    result_d = dict(result or {})
+    return build_bottom_reo_selected_recommendation_proof(
+        selected_candidate_identity=selected_identity,
+        selected_source="page_local_bottom_reo_selected_recommendation",
+        selected_source_index=selected_source_index,
+        arrangement=dict(result_d.get("arrangement") or {}),
+        updates=dict(result_d.get("updates") or {}),
+        actual_ast=result_d.get("actual_ast"),
+        required_ast=result_d.get("required_ast"),
+        util=result_d.get("util"),
+        label=str(result_d.get("label") or ""),
+        score=result_d.get("score"),
+        recommendation_compound=bool(result_d.get("recommendation_compound")),
+        subfamilies=list(result_d.get("subfamilies") or []),
+        recommendation_family_tag=result_d.get("recommendation_family_tag"),
+        guidance_recommendation_title=result_d.get("guidance_recommendation_title"),
+        delta_b_mm=result_d.get("delta_b_mm"),
+        delta_D_mm=result_d.get("delta_D_mm"),
+        delta_Ast_bot=result_d.get("delta_Ast_bot"),
+        guidance_change_lines=list(result_d.get("guidance_change_lines") or []),
+        utilisation_check_summary={
+            "selected_bending_util": selector_d.get("selected_bending_util") or decision_d.get("selected_bending_util"),
+            "selected_candidate_post_util": selector_d.get("selected_candidate_post_util") or decision_d.get("selected_candidate_post_util"),
+            "selected_reaches_target_band": selector_d.get("selected_reaches_target_band") or decision_d.get("selected_reaches_target_band"),
+            "target_low": selector_d.get("target_low") or decision_d.get("target_low"),
+            "target_high": selector_d.get("target_high") or decision_d.get("target_high"),
+            "post_selector_guard_result": decision_d.get("post_selector_guard_result"),
+            "return_status": return_status,
+            "return_reason": return_reason,
+        },
+        selected_candidate_trace_hash=(
+            selector_d.get("selected_candidate_trace_hash")
+            or decision_d.get("selected_candidate_trace_hash")
+        ),
+    ).to_dict()
+
+
+def build_bottom_reo_repair_blocked_reason_trace_projection(
+    *,
+    selected_proof: dict | None,
+    decision: dict | None,
+    selector_result: dict | None = None,
+    ranking_result_boundary: dict | None = None,
+    guard_surface: dict | None = None,
+) -> dict[str, Any]:
+    """Project repair/blocked proof surfaces from plain bottom-reo trace data."""
+
+    proof_d = dict(selected_proof or {})
+    decision_d = dict(decision or {})
+    selector_d = dict(selector_result or {})
+    ranking_d = dict(ranking_result_boundary or {})
+    guard_d = dict(guard_surface or {})
+    selected = bool(proof_d.get("selected_candidate_identity"))
+    selected_update_hash_surface = {
+        "selected_candidate_update_keys": list(decision_d.get("selected_candidate_update_keys") or []),
+        "selected_candidate_updates_hash": decision_d.get("selected_candidate_updates_hash"),
+        "final_result_update_keys": list(decision_d.get("final_result_update_keys") or []),
+        "final_result_updates_hash": decision_d.get("final_result_updates_hash"),
+        "proof_returned_update_keys": list(proof_d.get("returned_update_keys") or []),
+        "proof_returned_updates_hash": proof_d.get("returned_updates_hash"),
+    }
+    raw_reasons = {
+        "decision_no_result_reason": decision_d.get("no_result_reason"),
+        "selector_no_candidate_reason": selector_d.get("no_candidate_reason"),
+        "selector_legacy_rejection_reason": selector_d.get("legacy_rejection_reason"),
+        "selector_strict_band_rejected_reason": selector_d.get("strict_band_rejected_reason"),
+        "post_selector_guard_result": decision_d.get("post_selector_guard_result"),
+    }
+    selector_trace_reasons = {
+        "reason_kind": "trace_proof_only",
+        "raw_reasons": raw_reasons,
+        "tracked_reasons": {
+            key: any(str(value or "") == key for value in raw_reasons.values())
+            for key in (
+                "no_filtered_candidates",
+                "no_selected_candidate",
+                "growth_blocked_efficiency_reduction",
+            )
+        },
+        "visible_blocked_wording_materialized": False,
+        "visible_blocked_wording_source": None,
+    }
+    if selected:
+        repair_reason_source_surface = {
+            "reason_kind": "visible_guidance_text_source",
+            "source": "selected_recommendation_proof",
+            "selected_candidate_identity": proof_d.get("selected_candidate_identity"),
+            "label": proof_d.get("label"),
+            "guidance_recommendation_title": proof_d.get("guidance_recommendation_title"),
+            "guidance_change_lines": list(proof_d.get("guidance_change_lines") or []),
+            "utilisation_check_summary": dict(proof_d.get("utilisation_check_summary") or {}),
+            "returned_update_keys": list(proof_d.get("returned_update_keys") or []),
+            "returned_updates_hash": proof_d.get("returned_updates_hash"),
+            "visible_reason_rows_materialized": False,
+        }
+        blocked_reason_source_surface = {
+            "reason_kind": "not_applicable_selected_recommendation",
+            "trace_reason_surface": selector_trace_reasons,
+            "visible_blocked_wording_materialized": False,
+            "visible_blocked_wording_source": None,
+        }
+    else:
+        repair_reason_source_surface = {
+            "reason_kind": "not_produced",
+            "source": None,
+            "visible_guidance_text_source": None,
+        }
+        blocked_reason_source_surface = {
+            "reason_kind": "trace_proof_only",
+            "trace_reason_surface": selector_trace_reasons,
+            "visible_blocked_wording_materialized": False,
+            "visible_blocked_wording_source": None,
+        }
+    reason_visibility_surface = {
+        "selected_result_label": "visible_guidance_text_source" if selected else "not_produced",
+        "selected_result_guidance_change_lines": "visible_guidance_text_source" if selected else "not_produced",
+        "selector_no_result_reason": "trace_proof_only",
+        "selector_no_candidate_reason": "trace_proof_only",
+        "blocked_reason": "not_visible_from_bottom_reo_selector",
+    }
+    visible_guidance_text_source = (
+        {
+            "source": repair_reason_source_surface.get("source"),
+            "selected_candidate_identity": repair_reason_source_surface.get("selected_candidate_identity"),
+            "label": repair_reason_source_surface.get("label"),
+            "guidance_recommendation_title": repair_reason_source_surface.get("guidance_recommendation_title"),
+            "guidance_change_lines": list(repair_reason_source_surface.get("guidance_change_lines") or []),
+        }
+        if repair_reason_source_surface.get("reason_kind") == "visible_guidance_text_source"
+        else None
+    )
+    selected_recommendation_handoff_hash = _stable_boundary_hash(
+        {
+            "ranking_result_hash": ranking_d.get("ranking_result_hash"),
+            "selector_result": selector_d,
+            "selected_candidate_decision": decision_d,
+            "selected_recommendation_shape_hash": proof_d.get("selected_recommendation_shape_hash"),
+            "selected_recommendation_proof_hash": proof_d.get("proof_hash"),
+            "guards": guard_d,
+        }
+    )
+    reason_proof = build_bottom_reo_repair_blocked_reason_proof(
+        selected_recommendation_identity=proof_d.get("selected_candidate_identity"),
+        selected_recommendation_proof_hash=proof_d.get("proof_hash"),
+        selected_recommendation_shape_hash=proof_d.get("selected_recommendation_shape_hash"),
+        selected_recommendation_handoff_hash=selected_recommendation_handoff_hash,
+        selected_candidate_identity=(
+            selector_d.get("selected_candidate_identity")
+            or decision_d.get("selected_candidate_identity")
+            or None
+        ),
+        selected_candidate_trace_hash=(
+            selector_d.get("selected_candidate_trace_hash")
+            or decision_d.get("selected_candidate_trace_hash")
+        ),
+        selected_update_hash_surface=selected_update_hash_surface,
+        selector_guard_outcomes=guard_d,
+        selector_trace_reasons=selector_trace_reasons,
+        repair_reason_source_surface=repair_reason_source_surface,
+        blocked_reason_source_surface=blocked_reason_source_surface,
+        reason_visibility_surface=reason_visibility_surface,
+        visible_guidance_text_source=visible_guidance_text_source,
+    ).to_dict()
+    return {
+        "selected_recommendation_handoff_hash": selected_recommendation_handoff_hash,
+        "selected_update_hash_surface": selected_update_hash_surface,
+        "selector_trace_reasons": selector_trace_reasons,
+        "repair_reason_source_surface": repair_reason_source_surface,
+        "blocked_reason_source_surface": blocked_reason_source_surface,
+        "reason_visibility_surface": reason_visibility_surface,
+        "visible_guidance_text_source": visible_guidance_text_source,
+        "repair_blocked_reason_proof": reason_proof,
+        "repair_blocked_reason_proof_hash": reason_proof.get("proof_hash"),
+    }
+
+
 def build_bottom_reo_repair_blocked_reason_proof(
     *,
     selected_recommendation_identity: str | None = None,
@@ -2308,6 +2855,217 @@ def build_bottom_reo_cta_intent_proof(
         forbidden_fields_present=forbidden_fields,
         cta_intent_proof_hash=proof_hash,
     )
+
+
+def build_bottom_reo_cta_intent_trace_projection(
+    *,
+    selected_proof: dict | None,
+    reason_proof: dict | None,
+    selected_update_hash_surface: dict | None,
+    action_payload_identity: dict | None,
+    selector_trace_reasons: dict | None,
+    return_reason: str | None,
+) -> dict[str, Any]:
+    """Project trace-only CTA intent proof from bottom-reo proof surfaces."""
+
+    proof_d = dict(selected_proof or {})
+    reason_d = dict(reason_proof or {})
+    update_surface = dict(selected_update_hash_surface or {})
+    action_identity = dict(action_payload_identity or {})
+    trace_reasons = dict(selector_trace_reasons or {})
+    action_materialized = bool(action_identity.get("materialized"))
+    intent_state = (
+        "actionable_candidate"
+        if action_materialized
+        else (
+            "trace_only_no_selection"
+            if str(return_reason or "") in {"no_filtered_candidates", "no_selected_candidate"}
+            else "not_materialized"
+        )
+    )
+    cta_intent_proof = build_bottom_reo_cta_intent_proof(
+        selected_recommendation_identity=proof_d.get("selected_candidate_identity"),
+        selected_recommendation_proof_hash=proof_d.get("proof_hash"),
+        selected_recommendation_shape_hash=proof_d.get("selected_recommendation_shape_hash"),
+        repair_blocked_reason_proof_hash=reason_d.get("proof_hash"),
+        selected_update_hash_surface=update_surface,
+        action_payload_identity={
+            "materialized": action_materialized,
+            "action_type": action_identity.get("action_type"),
+            "action_type_source": action_identity.get("action_kind_source"),
+            "payload_hash": action_identity.get("payload_hash"),
+            "update_keys": list(action_identity.get("update_keys") or []),
+            "updates_hash": action_identity.get("updates_hash"),
+        },
+        action_intent_source={
+            "source": action_identity.get("source"),
+            "recommendation_family_tag": proof_d.get("recommendation_family_tag"),
+            "subfamilies": list(proof_d.get("subfamilies") or []),
+            "recommendation_compound": bool(proof_d.get("recommendation_compound")),
+        },
+        intent_state=intent_state,
+        no_action_or_blocked_proof_source=(
+            trace_reasons
+            if not action_materialized
+            else {}
+        ),
+    ).to_dict()
+    return {
+        "action_materialized": action_materialized,
+        "intent_state": intent_state,
+        "bottom_reo_cta_intent_proof": cta_intent_proof,
+        "bottom_reo_cta_intent_proof_hash": cta_intent_proof.get("cta_intent_proof_hash"),
+        "bottom_reo_cta_intent_action_payload_identity": {
+            key: value
+            for key, value in action_identity.items()
+            if key != "payload"
+        },
+    }
+
+
+def build_bottom_reo_trace_proof_payload_projection(
+    *,
+    result: dict | None,
+    decision: dict | None,
+    selector_result: dict | None = None,
+    ranking_result_boundary: dict | None = None,
+    guard_surface: dict | None = None,
+    return_status: str,
+    return_reason: str,
+    include_selected_recommendation_proof: bool,
+    trace_scenario: str | None = None,
+) -> dict[str, Any]:
+    """Build the non-authoritative bottom-reo runtime trace proof payload."""
+
+    decision_d = dict(decision or {})
+    selector_d = dict(selector_result or {})
+    ranking_d = dict(ranking_result_boundary or {})
+    guard_d = dict(guard_surface or {})
+    selected_proof = build_bottom_reo_selected_recommendation_proof_from_result(
+        result=result,
+        decision=decision_d,
+        selector_result=selector_d,
+        return_status=return_status,
+        return_reason=return_reason,
+    )
+    reason_projection = build_bottom_reo_repair_blocked_reason_trace_projection(
+        selected_proof=selected_proof,
+        decision=decision_d,
+        selector_result=selector_d,
+        ranking_result_boundary=ranking_d,
+        guard_surface=guard_d,
+    )
+    selected_update_hash_surface = dict(reason_projection.get("selected_update_hash_surface") or {})
+    selector_trace_reasons = dict(reason_projection.get("selector_trace_reasons") or {})
+    reason_visibility_surface = dict(reason_projection.get("reason_visibility_surface") or {})
+    reason_proof = dict(reason_projection.get("repair_blocked_reason_proof") or {})
+    action_payload_identity = build_bottom_reo_trace_guidance_action_payload_identity(result)
+    cta_projection = build_bottom_reo_cta_intent_trace_projection(
+        selected_proof=selected_proof,
+        reason_proof=reason_proof,
+        selected_update_hash_surface=selected_update_hash_surface,
+        action_payload_identity=action_payload_identity,
+        selector_trace_reasons=selector_trace_reasons,
+        return_reason=return_reason,
+    )
+    cta_intent_proof = dict(cta_projection.get("bottom_reo_cta_intent_proof") or {})
+    scenario = str(trace_scenario or "").strip() or None
+    trace_proof_handoff_hash = _stable_boundary_hash(
+        {
+            "scenario": scenario,
+            "decision_identity_hash": _stable_boundary_hash(
+                {
+                    "selected_candidate_identity": (
+                        selector_d.get("selected_candidate_identity")
+                        or decision_d.get("selected_candidate_identity")
+                        or None
+                    ),
+                    "selected_candidate_trace_hash": (
+                        selector_d.get("selected_candidate_trace_hash")
+                        or decision_d.get("selected_candidate_trace_hash")
+                    ),
+                    "post_selector_guard_result": decision_d.get("post_selector_guard_result"),
+                    "no_result_reason": decision_d.get("no_result_reason"),
+                }
+            ),
+            "selected_update_hash_surface": selected_update_hash_surface,
+            "selected_recommendation_proof_hash": selected_proof.get("proof_hash"),
+            "repair_blocked_reason_proof_hash": reason_proof.get("proof_hash"),
+            "no_result_reason_surfaces": selector_trace_reasons,
+        }
+    )
+    payload = {
+        "trace_proof_callsite": "inputs_page.py:_compute_bottom_reo_recommendation:selected_candidate_decision_trace",
+        "trace_proof_handoff_hash": trace_proof_handoff_hash,
+        "repair_blocked_reason_proof": reason_proof,
+        "repair_blocked_reason_proof_json": json.dumps(reason_proof, sort_keys=True, default=str),
+        "repair_blocked_reason_proof_hash": reason_proof.get("proof_hash"),
+        "bottom_reo_cta_intent_proof": cta_intent_proof,
+        "bottom_reo_cta_intent_proof_json": json.dumps(cta_intent_proof, sort_keys=True, default=str),
+        "bottom_reo_cta_intent_proof_hash": cta_intent_proof.get("cta_intent_proof_hash"),
+        "bottom_reo_cta_intent_action_payload_identity": dict(
+            cta_projection.get("bottom_reo_cta_intent_action_payload_identity") or {}
+        ),
+        "selector_trace_reason_surface": selector_trace_reasons,
+        "reason_visibility_surface": reason_visibility_surface,
+        "visible_blocked_wording_materialized": False,
+    }
+    if include_selected_recommendation_proof:
+        payload.update(
+            {
+                "selected_recommendation_proof": selected_proof,
+                "selected_recommendation_proof_json": json.dumps(selected_proof, sort_keys=True, default=str),
+                "selected_recommendation_proof_hash": selected_proof.get("proof_hash"),
+                "selected_recommendation_shape_hash": selected_proof.get("selected_recommendation_shape_hash"),
+            }
+        )
+    return payload
+
+
+def build_bottom_reo_trace_guidance_action_payload_identity(result: dict | None) -> dict[str, Any]:
+    """Build trace-only bottom-reo action payload identity from a result dict."""
+
+    result_d = dict(result or {})
+    updates = dict(result_d.get("updates") or {})
+    if not updates:
+        return {
+            "materialized": False,
+            "source": "bottom_reo_recommendation:no_action",
+            "action_type": None,
+            "payload": {},
+            "payload_hash": _stable_boundary_hash({}),
+            "update_keys": [],
+            "updates_hash": _stable_boundary_hash({}),
+            "action_kind_source": "no_selected_bottom_reo_recommendation",
+        }
+    title = (
+        str(result_d.get("guidance_recommendation_title") or result_d.get("label") or "").strip()
+        or "Apply bottom recommendation"
+    )
+    action_type = (
+        "apply_compound_guidance"
+        if bool(result_d.get("recommendation_compound"))
+        else "apply_bottom_recommendation"
+    )
+    payload = {
+        "updates": updates,
+        "guidance_banner_title": title,
+        "label": title,
+    }
+    return {
+        "materialized": True,
+        "source": "inputs_page.py:_get_one_click_band_reaching_candidate:bottom_recommendation_option",
+        "action_type": action_type,
+        "payload": payload,
+        "payload_hash": _stable_boundary_hash(payload),
+        "update_keys": sorted(str(key) for key in updates.keys()),
+        "updates_hash": _stable_boundary_hash(updates),
+        "action_kind_source": (
+            "recommendation_compound"
+            if bool(result_d.get("recommendation_compound"))
+            else "bottom_recommendation"
+        ),
+    }
 
 
 def build_bottom_reo_tightening_recommendation_proof(
@@ -2541,6 +3299,52 @@ def build_bottom_reo_arrangement_pool(
     return [dict(item) for item in sorted(arrangements.values(), key=_arrangement_rank)[:resolved_limit]]
 
 
+def _bottom_reo_design_width_value_from_state(state: dict[str, Any]) -> float:
+    sec_shape = str(state.get("sec_shape", "RECT") or "RECT")
+    if sec_shape == "T":
+        return _as_float(state.get("bw", state.get("b", 300.0)), 300.0)
+    if sec_shape == "I":
+        return _as_float(state.get("tw", state.get("b", 200.0)), 200.0)
+    return _as_float(state.get("b", 400.0), 400.0)
+
+
+def build_bottom_reo_arrangement_pool_from_state(
+    state: dict[str, Any],
+    mode_config: dict[str, Any],
+    *,
+    band: int,
+    context: dict[str, Any] | None = None,
+    limit: int | None = None,
+    bar_diameters: list[int] | tuple[int, ...],
+    default_limit: int,
+) -> list[dict[str, Any]]:
+    """Build bottom-reo arrangement pool from plain state/config inputs.
+
+    This owns only family-specific arrangement-pool invocation and primitive
+    state/config normalization. It does not evaluate, filter, rank, select,
+    publish, render, or touch UI/session state.
+    """
+
+    source_state = dict(state or {})
+    config = dict(mode_config or {})
+    layout_cache = context.setdefault("layout_fit_cache", {}) if isinstance(context, dict) else {}
+    return build_bottom_reo_arrangement_pool(
+        current_bot1_count=_as_int(source_state.get("bot1_count"), 0),
+        current_bot2_count=_as_int(source_state.get("bot2_count"), 0),
+        current_db_bot_1=_as_int(source_state.get("db_bot_1"), 20),
+        design_width=_bottom_reo_design_width_value_from_state(source_state),
+        cover_side=_as_float(source_state.get("cover_side"), 40.0),
+        rowgap_bot=_as_float(source_state.get("rowgap_bot"), 60.0),
+        search_strategy=str(config.get("search_strategy", "balanced") or "balanced"),
+        bar_diameters=tuple(_as_int(item, 0) for item in list(bar_diameters or []) if _as_int(item, 0) > 0),
+        band=_as_int(band, 0),
+        ductility_priority=bool((context or {}).get("ductility_priority")),
+        limit=limit,
+        default_limit=_as_int(default_limit, 1),
+        layout_fit_cache=layout_cache,
+    )
+
+
 def _bottom_reo_option_window(
     options: list[int] | tuple[int, ...],
     current_value: int,
@@ -2712,6 +3516,90 @@ def is_strictly_rejectable_bottom_reo_band_winner(
     return False, "ok"
 
 
+def assess_bottom_reo_strict_band_winner_candidate(
+    candidate: dict | None,
+    *,
+    updates_match_state: bool,
+) -> tuple[bool, str]:
+    """Assess strict-band bottom-reo winner rejection from a plain candidate.
+
+    The caller owns state comparison and passes `updates_match_state` as a
+    primitive boolean. This keeps page/session state out of the family helper
+    while moving the bottom-reo candidate interpretation into the family.
+    """
+
+    candidate_is_valid = isinstance(candidate, dict)
+    updates = candidate.get("updates") if candidate_is_valid else None
+    updates_present = isinstance(updates, dict) and bool(updates)
+    return is_strictly_rejectable_bottom_reo_band_winner(
+        candidate_is_valid=candidate_is_valid,
+        is_compliant=bool(candidate.get("is_compliant")) if candidate_is_valid else False,
+        candidate_reaches_target_band=(
+            bool(candidate.get("candidate_reaches_target_band"))
+            if candidate_is_valid
+            else False
+        ),
+        updates_present=updates_present,
+        updates_match_state=bool(updates_match_state) if updates_present else False,
+        label_present=bool(str(candidate.get("label") or "").strip()) if candidate_is_valid else False,
+    )
+
+
+def resolve_bottom_reo_legacy_local_rejection_reason(
+    pick: dict | None,
+    *,
+    seed_bending_util: float | int | str | None,
+    ductility_seed: bool,
+    seed_ductility_util: float | int | str | None,
+) -> str | None:
+    """Return the legacy local bottom-reo rejection reason for a candidate."""
+
+    candidate = pick if isinstance(pick, dict) else {}
+    bu = ((candidate.get("overview") or {}).get("utils") or {}).get("bending")
+    try:
+        bu_f = float(bu) if bu is not None else None
+    except (TypeError, ValueError):
+        bu_f = None
+    if bu_f is None:
+        return "missing_bending_util"
+    try:
+        seed_bu_f = float(seed_bending_util) if seed_bending_util is not None else None
+    except (TypeError, ValueError):
+        seed_bu_f = None
+    try:
+        seed_du_f = float(seed_ductility_util) if seed_ductility_util is not None else None
+    except (TypeError, ValueError):
+        seed_du_f = None
+    if bool(ductility_seed):
+        pdu = candidate_ductility_util(candidate)
+        if seed_du_f is not None and pdu is not None and float(pdu) >= float(seed_du_f) - 1e-9:
+            return "ductility_not_improved"
+        return None
+    if seed_bu_f is not None and float(bu_f) >= float(seed_bu_f) - 1e-9:
+        return "bending_util_not_improved"
+    return None
+
+
+def resolve_bottom_reo_geometry_trial_axis(
+    candidate: dict | None,
+    *,
+    width_key: str | None,
+) -> str | None:
+    """Return the bottom-reo geometry trial axis from plain candidate updates."""
+
+    if not isinstance(candidate, dict) or not candidate.get("recommendation_geometry_trial"):
+        return None
+    updates = candidate.get("updates") or {}
+    if not isinstance(updates, dict):
+        return None
+    if "D" in updates:
+        return "depth"
+    width_key_text = str(width_key or "").strip()
+    if width_key_text and width_key_text in updates:
+        return "width"
+    return None
+
+
 def _as_float(value: Any, default: float = 0.0) -> float:
     try:
         return float(value if value is not None else default)
@@ -2776,6 +3664,174 @@ def candidate_ductility_governs(candidate: dict | None) -> bool:
     return ductility_util >= max(governing) - 1e-6 and ductility_util >= 0.85
 
 
+_BOTTOM_REO_GUIDANCE_CHANGE_ARROW = (
+    "\xc3\u0192\xc6\u2019\xc3\u2020\xe2\u20ac\u2122\xc3\u0192\xe2\u20ac\xa0"
+    "\xc3\xa2\xe2\u201a\xac\xe2\u201e\xa2\xc3\u0192\xc6\u2019\xc3\xa2\xe2\u201a"
+    "\xac\xc2\xa0\xc3\u0192\xc2\xa2\xc3\xa2\xe2\u20ac\u0161\xc2\xac\xc3\xa2"
+    "\xe2\u20ac\u017e\xc2\xa2\xc3\u0192\xc6\u2019\xc3\u2020\xe2\u20ac\u2122"
+    "\xc3\u0192\xc2\xa2\xc3\xa2\xe2\u20ac\u0161\xc2\xac\xc3\u2026\xc2\xa1"
+    "\xc3\u0192\xc6\u2019\xc3\xa2\xe2\u201a\xac\xc5\xa1\xc3\u0192\xe2\u20ac"
+    "\u0161\xc3\u201a\xc2\xa2\xc3\u0192\xc6\u2019\xc3\u2020\xe2\u20ac\u2122"
+    "\xc3\u0192\xe2\u20ac\xa0\xc3\xa2\xe2\u201a\xac\xe2\u201e\xa2\xc3\u0192"
+    "\xc6\u2019\xc3\xa2\xe2\u201a\xac\xc5\xa1\xc3\u0192\xe2\u20ac\u0161"
+    "\xc3\u201a\xc2\xa2\xc3\u0192\xc6\u2019\xc3\u2020\xe2\u20ac\u2122\xc3"
+    "\u0192\xe2\u20ac\u0161\xc3\u201a\xc2\xa2\xc3\u0192\xc6\u2019\xc3\u201a"
+    "\xc2\xa2\xc3\u0192\xc2\xa2\xc3\xa2\xe2\u201a\xac\xc5\xa1\xc3\u201a"
+    "\xc2\xac\xc3\u0192\xe2\u20ac\xa6\xc3\u201a\xc2\xa1\xc3\u0192\xc6\u2019"
+    "\xc3\xa2\xe2\u201a\xac\xc5\xa1\xc3\u0192\xe2\u20ac\u0161\xc3\u201a"
+    "\xc2\xac\xc3\u0192\xc6\u2019\xc3\u2020\xe2\u20ac\u2122\xc3\u0192\xc2"
+    "\xa2\xc3\xa2\xe2\u20ac\u0161\xc2\xac\xc3\u2026\xc2\xa1\xc3\u0192"
+    "\xc6\u2019\xc3\xa2\xe2\u201a\xac\xc5\xa1\xc3\u0192\xe2\u20ac\u0161"
+    "\xc3\u201a\xc2\xa0\xc3\u0192\xc6\u2019\xc3\u2020\xe2\u20ac\u2122"
+    "\xc3\u0192\xe2\u20ac\xa0\xc3\xa2\xe2\u201a\xac\xe2\u201e\xa2\xc3"
+    "\u0192\xc6\u2019\xc3\xa2\xe2\u201a\xac\xc5\xa1\xc3\u0192\xe2\u20ac"
+    "\u0161\xc3\u201a\xc2\xa2\xc3\u0192\xc6\u2019\xc3\u2020\xe2\u20ac"
+    "\u2122\xc3\u0192\xe2\u20ac\u0161\xc3\u201a\xc2\xa2\xc3\u0192\xc6"
+    "\u2019\xc3\u201a\xc2\xa2\xc3\u0192\xc2\xa2\xc3\xa2\xe2\u201a\xac"
+    "\xc5\xa1\xc3\u201a\xc2\xac\xc3\u0192\xe2\u20ac\xa6\xc3\u201a\xc2"
+    "\xa1\xc3\u0192\xc6\u2019\xc3\xa2\xe2\u201a\xac\xc5\xa1\xc3\u0192"
+    "\xe2\u20ac\u0161\xc3\u201a\xc2\xac\xc3\u0192\xc6\u2019\xc3\u2020"
+    "\xe2\u20ac\u2122\xc3\u0192\xe2\u20ac\u0161\xc3\u201a\xc2\xa2\xc3"
+    "\u0192\xc6\u2019\xc3\u201a\xc2\xa2\xc3\u0192\xc2\xa2\xc3\xa2\xe2"
+    "\u201a\xac\xc5\xa1\xc3\u201a\xc2\xac\xc3\u0192\xe2\u20ac\xa6\xc3"
+    "\u201a\xc2\xbe\xc3\u0192\xc6\u2019\xc3\xa2\xe2\u201a\xac\xc5\xa1"
+    "\xc3\u0192\xe2\u20ac\u0161\xc3\u201a\xc2\xa2"
+)
+
+
+def _bottom_reo_normalized_sec_shape(raw: Any) -> str:
+    value = str(raw or "RECT").strip().upper()
+    if value in ("T", "T-SECTION", "T_SECTION", "T-BEAM"):
+        return "T"
+    if value in ("I", "I-SECTION", "I_SECTION", "I-BEAM"):
+        return "I"
+    return "RECT"
+
+
+def _bottom_reo_change_line_prefixes(state: dict[str, Any] | None) -> tuple[str, str]:
+    raw = (state or {}).get("sec_shape") or (state or {}).get("inputs_sec_shape")
+    if _bottom_reo_normalized_sec_shape(raw) in ("T", "I"):
+        return "Web bottom reo", "Web top reo"
+    return "Bottom reo", "Top reo"
+
+
+def _bottom_reo_width_context_for_change_lines(state: dict[str, Any]) -> tuple[str, str, float]:
+    sec_shape = str(state.get("sec_shape", "RECT") or "RECT")
+    if sec_shape == "T":
+        return "bw", "Web width bw (mm)", _as_float(state.get("bw", state.get("b", 300.0)), 300.0)
+    if sec_shape == "I":
+        return "tw", "Web thickness tw (mm)", _as_float(state.get("tw", state.get("b", 200.0)), 200.0)
+    return "b", "Width b (mm)", _as_float(state.get("b", 400.0), 400.0)
+
+
+def _bottom_reo_practical_label(count_1: int, count_2: int, dia: int) -> str:
+    if count_2 > 0:
+        return f"{count_1}N{dia} + {count_2}N{dia}"
+    return f"{count_1}N{dia}"
+
+
+def _bottom_reo_change_line_bottom_label(state: dict[str, Any]) -> str:
+    mode_1 = str(state.get("bot1_layout_mode", "Count") or "Count")
+    mode_2 = str(state.get("bot2_layout_mode", "Count") or "Count")
+    if mode_1 == "Count" and mode_2 == "Count":
+        count_1 = _as_int(state.get("bot1_count"), 0)
+        count_2 = _as_int(state.get("bot2_count"), 0)
+        dia = _as_int(state.get("db_bot_1", state.get("db_bot", 0)), 0)
+        if count_1 > 0:
+            return _bottom_reo_practical_label(count_1, count_2, dia)
+    spacing_1 = _as_float(state.get("bot1_spacing"), 0.0)
+    dia_1 = _as_int(state.get("db_bot_1"), 0)
+    return f"N{dia_1} @ {int(spacing_1)}"
+
+
+def _bottom_reo_change_line_top_label(state: dict[str, Any]) -> str:
+    mode_1 = str(state.get("top1_layout_mode", "Count") or "Count")
+    mode_2 = str(state.get("top2_layout_mode", "Count") or "Count")
+    count_1 = _as_int(state.get("top1_count"), 0)
+    count_2 = _as_int(state.get("top2_count"), 0)
+    if mode_1 == "Count" and mode_2 == "Count":
+        dia = _as_int(state.get("db_top_1", state.get("db_top", 0)), 0)
+        if count_1 > 0 or count_2 > 0:
+            return _bottom_reo_practical_label(count_1, count_2, dia)
+        return "None"
+    spacing_1 = _as_float(state.get("top1_spacing"), 0.0)
+    dia_1 = _as_int(state.get("db_top_1"), 0)
+    return f"N{dia_1} @ {int(spacing_1)}"
+
+
+def _bottom_reo_change_line_shear_fragment(state: dict[str, Any]) -> str | None:
+    legs = _as_int(state.get("lig_legs"), 0)
+    if legs <= 0:
+        return None
+    return f"N{_as_int(state.get('lig_d'), 0)}, {legs}-leg @{int(_as_float(state.get('s_lig'), 0.0))}"
+
+
+def build_bottom_reo_guidance_change_lines_for_updates(
+    before: dict[str, Any] | None,
+    updates: dict[str, Any] | None,
+) -> list[str]:
+    """Build the visible change-line projection for bottom-reo recommendations."""
+
+    if not updates:
+        return []
+    before_state = dict(before or {}) if isinstance(before, dict) else {}
+    after_state = dict(before_state)
+    after_state.update(dict(updates or {}))
+    arrow = _BOTTOM_REO_GUIDANCE_CHANGE_ARROW
+    lines: list[str] = []
+    _, _, before_width = _bottom_reo_width_context_for_change_lines(before_state)
+    _, _, after_width = _bottom_reo_width_context_for_change_lines(after_state)
+    try:
+        if abs(float(after_width) - float(before_width)) > 1e-6:
+            lines.append(
+                f"Width: {int(round(float(before_width)))} {arrow} {int(round(float(after_width)))} mm",
+            )
+    except (TypeError, ValueError):
+        pass
+    try:
+        before_depth = _as_float(before_state.get("D"), 0.0)
+        after_depth = _as_float(after_state.get("D"), 0.0)
+        if abs(after_depth - before_depth) > 1e-6:
+            lines.append(f"Depth: {int(round(before_depth))} {arrow} {int(round(after_depth))} mm")
+    except (TypeError, ValueError):
+        pass
+    before_bottom = _bottom_reo_change_line_bottom_label(before_state)
+    after_bottom = _bottom_reo_change_line_bottom_label(after_state)
+    bottom_phrase, top_phrase = _bottom_reo_change_line_prefixes(after_state)
+    if before_bottom != after_bottom:
+        lines.append(f"{bottom_phrase}: {before_bottom} {arrow} {after_bottom}")
+    before_top = _bottom_reo_change_line_top_label(before_state)
+    after_top = _bottom_reo_change_line_top_label(after_state)
+    if before_top != after_top:
+        lines.append(f"{top_phrase}: {before_top} {arrow} {after_top}")
+    before_shear = _bottom_reo_change_line_shear_fragment(before_state)
+    after_shear = _bottom_reo_change_line_shear_fragment(after_state)
+    if before_shear != after_shear:
+        if after_shear is None:
+            lines.append(f"Shear links: {before_shear} {arrow} removed")
+        elif before_shear is None:
+            lines.append(f"Shear links: none {arrow} {after_shear}")
+        else:
+            lines.append(f"Shear links: {before_shear} {arrow} {after_shear}")
+    return lines
+
+
+def build_bottom_reo_required_ast_arrangement_input(
+    selected_candidate: dict[str, Any] | None,
+    selected_bending: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Build the exact arrangement payload used by bottom-reo required-Ast search."""
+
+    candidate = selected_candidate if isinstance(selected_candidate, dict) else {}
+    bending = selected_bending if isinstance(selected_bending, dict) else {}
+    return {
+        "Ast_bot": _as_float(candidate.get("actual_ast"), 0.0),
+        "db_bot": _as_float(bending.get("db_bot"), 0.0),
+        "nb_bot": _as_int(bending.get("nb_bot"), 0),
+        "d_centroid": _as_float(bending.get("d_centroid"), 0.0),
+    }
+
+
 def build_bottom_reo_recommendation_result(
     selected_candidate: dict,
     *,
@@ -2786,8 +3842,8 @@ def build_bottom_reo_recommendation_result(
 ) -> dict:
     """Assemble the existing normal bottom-reinforcement result shape.
 
-    The caller owns candidate generation, ranking, selector decisions, page
-    trace hooks, and guidance-change-line construction.
+    The caller owns candidate generation, ranking, selector decisions, and page
+    trace hooks. The family owns the bottom-reo visible change-line projection.
     """
     best = dict(selected_candidate or {})
     return {
@@ -2807,6 +3863,93 @@ def build_bottom_reo_recommendation_result(
         "delta_Ast_bot": _as_float(best.get("delta_Ast_bot"), 0.0),
         "guidance_change_lines": list(guidance_change_lines or []),
     }
+
+
+def calculate_bottom_reo_required_ast_for_arrangement(
+    *,
+    compute_bending_capacity_fn: Any,
+    b: float,
+    D: float,
+    fc: float,
+    fsy: float,
+    phi: float,
+    Mu_star: float,
+    cover_bot: float,
+    rowgap_bot: float,
+    arrangement: dict,
+    iterations: int = 40,
+) -> float:
+    """Calculate required bottom Ast for an already-selected arrangement.
+
+    The caller supplies the existing bending-capacity callback so this family
+    helper does not import page, Streamlit, session, or cached UI concerns.
+    """
+
+    compute_fn = compute_bending_capacity_fn
+    if not callable(compute_fn):
+        return 0.0
+    arr = arrangement if isinstance(arrangement, dict) else {}
+    low = 0.0
+    high = _as_float(arr.get("Ast_bot"), 0.0)
+    for _ in range(max(int(iterations or 0), 0)):
+        trial = 0.5 * (low + high)
+        trial_results = compute_fn(
+            b=_as_float(b, 0.0),
+            D=_as_float(D, 0.0),
+            fc=_as_float(fc, 0.0),
+            fsy=_as_float(fsy, 0.0),
+            Ast=trial,
+            Mu_star=_as_float(Mu_star, 0.0),
+            phi=_as_float(phi, 0.0),
+            d_input=arr.get("d_centroid"),
+            cover_bot=_as_float(cover_bot, 0.0),
+            db_bot=arr.get("db_bot"),
+            nb_bot=arr.get("nb_bot"),
+            rowgap_bot=_as_float(rowgap_bot, 0.0),
+        )
+        util = _as_float((trial_results or {}).get("Mu_util"), float("inf"))
+        if util <= 1.0:
+            high = trial
+        else:
+            low = trial
+    return float(high)
+
+
+def resolve_bottom_reo_post_selector_guard(
+    selected_candidate: dict | None,
+    *,
+    updates_match_state: bool,
+    growth_rejected: bool = False,
+) -> dict[str, Any]:
+    """Classify the bottom-reo post-selector guard outcome."""
+
+    if not selected_candidate or bool(updates_match_state):
+        return {
+            "post_selector_guard_result": "no_result",
+            "no_result_reason": "no_selected_candidate",
+            "selected": False,
+        }
+    if bool(growth_rejected):
+        return {
+            "post_selector_guard_result": "no_result",
+            "no_result_reason": "growth_blocked_efficiency_reduction",
+            "selected": False,
+        }
+    return {
+        "post_selector_guard_result": "selected",
+        "no_result_reason": None,
+        "selected": True,
+    }
+
+
+def resolve_bottom_reo_result_display_label(selected_candidate: dict | None) -> str:
+    """Resolve the visible bottom-reo result label from plain candidate data."""
+
+    candidate = selected_candidate if isinstance(selected_candidate, dict) else {}
+    label = str(candidate.get("label") or "")
+    if candidate.get("recommendation_compound"):
+        return str(candidate.get("guidance_recommendation_title") or label)
+    return label
 
 
 def prefer_compound_over_pure_geometry(
@@ -2872,6 +4015,337 @@ def prefer_compound_over_pure_geometry(
     if pick is not None:
         return pick
     return best
+
+
+def select_bottom_reo_compound_preference_candidate(
+    best: dict | None,
+    ranked_candidates: list[dict] | tuple[dict, ...],
+    *,
+    width_key: str | None,
+    mode_config: dict | None,
+    seed_candidate: dict | None,
+    score_margin: float,
+) -> dict | None:
+    """Select a compound bottom-reo candidate when family policy prefers it.
+
+    The caller owns page/state collection. This helper owns the bending-family
+    interpretation of geometry-axis, strategy, seed-depth, and score margin
+    inputs before applying the compound-vs-pure-geometry preference policy.
+    """
+
+    mode = mode_config if isinstance(mode_config, dict) else {}
+    seed = seed_candidate if isinstance(seed_candidate, dict) else {}
+    return prefer_compound_over_pure_geometry(
+        best,
+        ranked_candidates,
+        geometry_axis=resolve_bottom_reo_geometry_trial_axis(best, width_key=width_key),
+        search_strategy=str(mode.get("search_strategy", "balanced") or "balanced"),
+        seed_depth=_as_float(seed.get("depth"), 0.0),
+        score_margin=_as_float(score_margin, 0.0),
+    )
+
+
+def _bottom_reo_compound_geo_sort_key(candidate: dict) -> float:
+    bending_util = ((candidate.get("overview") or {}).get("utils") or {}).get("bending")
+    return _as_float(bending_util, 999.0)
+
+
+def select_bottom_reo_compound_geometry_seed_candidates(
+    candidates: list[dict] | tuple[dict, ...],
+    *,
+    axis: str,
+    width_key: str | None,
+    limit: int,
+) -> list[dict]:
+    """Select unique geometry seeds for geometry+bottom compound attempts."""
+
+    axis_text = str(axis or "")
+    if axis_text not in ("width", "depth"):
+        return []
+    width_key_text = str(width_key or "").strip()
+    geo = [
+        dict(candidate)
+        for candidate in list(candidates or [])
+        if isinstance(candidate, dict)
+        and candidate.get("recommendation_geometry_trial")
+        and resolve_bottom_reo_geometry_trial_axis(candidate, width_key=width_key_text) == axis_text
+    ]
+    picked: list[dict] = []
+    seen_marker: set[tuple[str, float]] = set()
+    for candidate in sorted(geo, key=_bottom_reo_compound_geo_sort_key):
+        updates = candidate.get("updates") or {}
+        if not isinstance(updates, dict):
+            continue
+        if axis_text == "width":
+            if not width_key_text or width_key_text not in updates:
+                continue
+            try:
+                marker = ("width", round(float(updates[width_key_text]), 3))
+            except (TypeError, ValueError):
+                continue
+        else:
+            if "D" not in updates:
+                continue
+            try:
+                marker = ("depth", round(float(updates["D"]), 3))
+            except (TypeError, ValueError):
+                continue
+        if marker in seen_marker:
+            continue
+        seen_marker.add(marker)
+        picked.append(candidate)
+        if len(picked) >= max(_as_int(limit, 0), 0):
+            break
+    return picked
+
+
+def build_bottom_reo_compound_attempt_rows(
+    *,
+    state: dict[str, Any],
+    candidates: list[dict] | tuple[dict, ...],
+    mode_config: dict[str, Any],
+    context: dict[str, Any] | None,
+    axis: str,
+    width_key: str | None,
+    seed_limit: int,
+    bar_diameters: list[int] | tuple[int, ...],
+    default_limit: int,
+    arrangement_limit: int = 18,
+    max_attempts: int = 26,
+) -> dict[str, Any]:
+    """Build geometry+bottom compound attempt rows from plain data.
+
+    This owns only bending-family geometry seed selection and bottom arrangement
+    regeneration on each geometry-adjusted state. It does not run evaluator
+    callbacks, decide final acceptance, mutate live candidate pools, publish,
+    render, or build CTA/apply payloads.
+    """
+
+    state_d = dict(state or {})
+    mode = dict(mode_config or {})
+    ctx = context if isinstance(context, dict) else {}
+    axis_text = str(axis or "")
+    seeds = select_bottom_reo_compound_geometry_seed_candidates(
+        candidates,
+        axis=axis_text,
+        width_key=width_key,
+        limit=seed_limit,
+    )
+    rows: list[dict[str, Any]] = []
+    for geometry_candidate in seeds:
+        geo_updates = dict(geometry_candidate.get("updates") or {})
+        base_state = dict(state_d)
+        base_state.update(geo_updates)
+        local_arrangements: list[dict[str, Any]] = []
+        seen_arrangements: set[tuple[int, int, int]] = set()
+        for band in (0, 1):
+            arrangements = build_bottom_reo_arrangement_pool_from_state(
+                base_state,
+                mode,
+                band=band,
+                context=ctx,
+                limit=arrangement_limit,
+                bar_diameters=bar_diameters,
+                default_limit=default_limit,
+            )
+            for arrangement in arrangements:
+                arrangement_d = dict(arrangement or {})
+                signature = (
+                    _as_int(arrangement_d.get("bot1_count"), 0),
+                    _as_int(arrangement_d.get("bot2_count"), 0),
+                    _as_int(arrangement_d.get("db_bot_1"), 0),
+                )
+                if signature in seen_arrangements:
+                    continue
+                seen_arrangements.add(signature)
+                local_arrangements.append(arrangement_d)
+                if len(local_arrangements) >= max(_as_int(max_attempts, 1), 1):
+                    break
+            if len(local_arrangements) >= max(_as_int(max_attempts, 1), 1):
+                break
+        for arrangement in local_arrangements:
+            count_1 = _as_int(arrangement.get("bot1_count"), 0)
+            count_2 = _as_int(arrangement.get("bot2_count"), 0)
+            diameter = _as_int(arrangement.get("db_bot_1"), 0)
+            bottom_updates = bottom_arrangement_to_shared_updates(arrangement)
+            bottom_label = f"{count_1}N{diameter} + {count_2}N{diameter}" if count_2 > 0 else f"{count_1}N{diameter}"
+            rows.append(
+                {
+                    "axis": axis_text,
+                    "geometry_candidate": dict(geometry_candidate),
+                    "geometry_updates": geo_updates,
+                    "geometry_label": str(geometry_candidate.get("label") or ""),
+                    "base_state": dict(base_state),
+                    "arrangement": dict(arrangement),
+                    "bottom_updates": dict(bottom_updates),
+                    "bottom_label": bottom_label,
+                }
+            )
+    return {
+        "axis": axis_text,
+        "selected_geometry_seed_count": len(seeds),
+        "selected_geometry_seeds": [dict(seed) for seed in seeds],
+        "attempt_rows": rows,
+    }
+
+
+def classify_bottom_reo_compound_attempt_merge_policy(
+    *,
+    bottom_updates_match_geometry_state: bool,
+    duplicate_signature: bool,
+    invalid_empty_updates: bool,
+    updates_match_current_state: bool,
+    layout_fits: bool,
+) -> dict[str, Any]:
+    """Classify pure geometry+bottom compound merge/reject policy.
+
+    The page owns the callback facts (state/update equality and layout-fit
+    checks). This family helper owns the bending-family rejection order and
+    reason/stat projection for compound bottom-reo attempts.
+    """
+
+    if bool(bottom_updates_match_geometry_state):
+        return {
+            "accepted_for_evaluation": False,
+            "compound_stats_key": "rejected_no_layout_variation",
+            "trace_result": "rejected",
+            "trace_reason": "no_layout_variation_vs_geometry_adjusted_state",
+        }
+    if bool(duplicate_signature):
+        return {
+            "accepted_for_evaluation": False,
+            "compound_stats_key": "rejected_duplicate_signature",
+            "trace_result": "rejected",
+            "trace_reason": "duplicate_signature",
+        }
+    if bool(invalid_empty_updates):
+        return {
+            "accepted_for_evaluation": False,
+            "compound_stats_key": "rejected_invalid_merge",
+            "trace_result": "rejected",
+            "trace_reason": "invalid_merge_empty_updates",
+        }
+    if bool(updates_match_current_state):
+        return {
+            "accepted_for_evaluation": False,
+            "compound_stats_key": "rejected_same_as_current",
+            "trace_result": "rejected",
+            "trace_reason": "same_as_current_live_state",
+        }
+    if not bool(layout_fits):
+        return {
+            "accepted_for_evaluation": False,
+            "compound_stats_key": "compound_layout_reject_count",
+            "trace_result": "rejected",
+            "trace_reason": "layout_no_fit",
+        }
+    return {
+        "accepted_for_evaluation": True,
+        "compound_stats_key": None,
+        "trace_result": "accepted_for_evaluation",
+        "trace_reason": "ready_for_candidate_evaluation",
+    }
+
+
+def build_bottom_reo_compound_accepted_candidate_projection(
+    *,
+    candidate: dict[str, Any] | None,
+    axis: str,
+    arrangement: dict[str, Any] | None,
+    geometry_label: str | None,
+) -> dict[str, Any]:
+    """Build accepted compound geometry+bottom candidate metadata projection."""
+
+    axis_text = str(axis or "")
+    label = str(geometry_label or "").strip()
+    if axis_text == "width":
+        title = "Increase width and rebalance bottom reinforcement"
+    elif axis_text == "depth":
+        title = "Increase depth and adjust bottom reinforcement"
+    else:
+        title = f"Adjust geometry and bottom reinforcement ({label})" if label else "Adjust geometry and bottom reinforcement"
+    candidate_d = dict(candidate or {})
+    arrangement_d = dict(arrangement or {})
+    return {
+        "recommendation_compound": True,
+        "recommendation_geometry_trial": True,
+        "recommendation_bottom_trial": True,
+        "subfamilies": ["geometry", "bottom_reo"],
+        "recommendation_family_tag": f"compound_{axis_text}_bottom",
+        "compound_geo_axis": axis_text,
+        "arrangement": arrangement_d,
+        "actual_ast": _as_float(candidate_d.get("Ast_bot"), 0.0),
+        "guidance_recommendation_title": title,
+    }
+
+
+def build_bottom_reo_geometry_trial_plan_rows(
+    *,
+    mode_config: dict[str, Any] | None,
+    geometry_trial_deltas_mm: list[int | float] | tuple[int | float, ...],
+) -> list[dict[str, Any]]:
+    """Build the pure bottom-reo geometry trial action rows."""
+
+    mode = dict(mode_config or {})
+    geo_axes = (
+        ("increase_width", "increase_depth")
+        if str(mode.get("search_strategy", "balanced") or "balanced") == "shallow"
+        else ("increase_depth", "increase_width")
+    )
+    rows: list[dict[str, Any]] = []
+    for delta in list(geometry_trial_deltas_mm or []):
+        delta_f = float(delta)
+        for action_type in geo_axes:
+            label = (
+                f"Increase depth D by {int(delta)} mm"
+                if action_type == "increase_depth"
+                else f"Increase section width by {int(delta)} mm"
+            )
+            rows.append(
+                {
+                    "action_type": action_type,
+                    "payload": {"delta_mm": delta_f},
+                    "label": label,
+                    "delta_mm": delta_f,
+                }
+            )
+    return rows
+
+
+def build_bottom_reo_geometry_trial_candidate_projection(
+    *,
+    candidate: dict[str, Any] | None,
+    width_key: str | None,
+) -> dict[str, Any]:
+    """Build metadata for an accepted pure geometry bottom-reo trial."""
+
+    candidate_d = dict(candidate or {})
+    axis = resolve_bottom_reo_geometry_trial_axis(candidate_d, width_key=width_key)
+    return {
+        "recommendation_geometry_trial": True,
+        "actual_ast": float(candidate_d.get("Ast_bot", 0.0) or 0.0),
+        "recommendation_family_tag": (
+            f"pure_geometry_{axis}" if axis in ("width", "depth") else "pure_geometry"
+        ),
+    }
+
+
+def build_bottom_reo_candidate_delta_projection(
+    *,
+    seed_depth: int | float,
+    candidate_depth: int | float,
+    seed_width: int | float,
+    candidate_width: int | float,
+    seed_ast: int | float,
+    candidate_ast: int | float,
+) -> dict[str, Any]:
+    """Build bottom-reo candidate delta evidence from plain numeric inputs."""
+
+    return {
+        "delta_D_mm": round(float(candidate_depth) - float(seed_depth), 3),
+        "delta_b_mm": round(float(candidate_width) - float(seed_width), 3),
+        "delta_Ast_bot": round(float(candidate_ast) - float(seed_ast), 3),
+    }
 
 
 def select_bottom_reo_tightening_recommendation_result(

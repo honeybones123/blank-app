@@ -5,8 +5,7 @@
     "runtime_family_id": "COMBINED_BENDING_SHEAR_FAIL",
     "package": "design_brain.families.bending_and_shear_fail_govern",
     "runtime_module": "design_brain.families.bending_and_shear_fail_govern.runtime",
-    "legacy_delegate": "design_brain.families.combined_bending_shear_fail.CombinedBendingShearFailFamily",
-    "public_api": "evaluate_bending_and_shear_fail_govern"
+    "public_api": "run_combined_bending_shear_fail_runtime"
   },
   "selection_boundary": {
     "starts_after": "SelectedFamily == COMBINED_BENDING_SHEAR_FAIL",

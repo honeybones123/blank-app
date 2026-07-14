@@ -1,0 +1,15 @@
+{
+  "schema": "design_brain.family_known_errors.v2",
+  "family": "COMBINED_OVERDESIGN",
+  "entries": [
+    {
+      "id": "COG-001",
+      "title": "Stale family-contract violation shell hid available zero-shear cleanup",
+      "status": "fixed",
+      "root_cause": "A stale family-contract violation/default publication shell could survive after the combined overdesign ladder selected a current shear cleanup action, causing the published card to show a blocked/error state instead of the family-owned cleanup action.",
+      "fix_summary": "Publication recovery now recognises current cleanup action payloads for COMBINED_OVERDESIGN, restores the enabled cleanup CTA/update payload, and keeps selected, published, and CTA family identity aligned.",
+      "regression": "tools/verification/families/combined_overdesign_governs_locked_regression.py",
+      "locked": true
+    }
+  ]
+}

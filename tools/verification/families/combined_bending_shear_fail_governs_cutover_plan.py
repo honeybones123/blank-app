@@ -82,7 +82,7 @@ def main() -> int:
                 or "run_combined_bending_shear_fail_runtime" in family_source
             )
         ),
-        "compatibility_api_known": "def evaluate_bending_and_shear_fail_govern" in package_source,
+        "runtime_export_known": "run_combined_bending_shear_fail_runtime" in package_source,
         "new_authority_available": callable(run_combined_bending_shear_fail_runtime),
         "planned_targets_are_narrow": not forbidden_targets,
         "inputs_page_not_cutover_target": "inputs_page.py" not in PLANNED_TARGETS,

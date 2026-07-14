@@ -131,10 +131,11 @@ def apply_inputs_page_css():
         .fast-guidance-item {
             border-top: 1px solid rgba(49, 51, 63, 0.08);
             border-left: 4px solid transparent;
-            border-radius: 10px;
+            border-radius: 8px;
             padding: 0.92rem 0.95rem;
             margin-top: 0.7rem;
             line-height: 1.42;
+            box-shadow: 0 6px 18px rgba(15, 23, 42, 0.055);
         }
         .fast-guidance-item:first-of-type {
             border-top: none;
@@ -147,6 +148,10 @@ def apply_inputs_page_css():
         .fast-guidance-item.warn {
             background: rgba(240,140,0,0.08);
             border-left-color: #f08c00;
+        }
+        .fast-guidance-item.error {
+            background: rgba(224,49,49,0.08);
+            border-left-color: #e03131;
         }
         .fast-guidance-item.pass {
             background: rgba(47,158,68,0.08);
@@ -171,17 +176,22 @@ def apply_inputs_page_css():
         .dg-card {
             border: 1px solid rgba(47,158,68,0.28);
             border-left: 5px solid #2f9e44;
-            border-radius: 14px;
+            border-radius: 8px;
             padding: 0;
             margin-top: 0.7rem;
             background: rgba(47,158,68,0.08);
-            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+            box-shadow: 0 6px 18px rgba(15, 23, 42, 0.055);
             color: #1f2937;
         }
         .dg-card.fast-guidance-item {
             border-top: 1px solid rgba(47,158,68,0.28);
             padding: 0;
             line-height: 1.32;
+        }
+        .fast-guidance-item:not(.secondary),
+        .dg-card {
+            min-height: 10.5rem;
+            box-sizing: border-box;
         }
         details.dg-card summary {
             list-style: none;
@@ -196,6 +206,12 @@ def apply_inputs_page_css():
             border-left-color: #4263eb;
         }
         .fast-guidance-item.error.dg-card--action {
+            background: rgba(224,49,49,0.08);
+            border-color: rgba(224,49,49,0.28);
+            border-left-color: #e03131;
+        }
+        .fast-guidance-item.fail.dg-card--action,
+        .fast-guidance-item.fail.dg-card--blocked {
             background: rgba(224,49,49,0.08);
             border-color: rgba(224,49,49,0.28);
             border-left-color: #e03131;
@@ -234,8 +250,115 @@ def apply_inputs_page_css():
             border-left-color: #2f9e44;
         }
         body:has([data-testid="design-guide-card"]) [data-testid="design-guide-proof-pending"],
-        body:has([data-testid="design-guide-card"]) .dg-proof-pending-shell {
+        body:has([data-testid="design-guide-card"]) .dg-proof-pending-shell,
+        body:has(.fast-guidance-item) [data-testid="design-guide-proof-pending"],
+        body:has(.fast-guidance-item) .dg-proof-pending-shell {
             display: none !important;
+        }
+        .element-container:has([data-testid="design-guide-card"]) ~ .element-container:has([data-testid="design-guide-proof-pending"]),
+        .element-container:has([data-testid="design-guide-card"]) ~ .element-container:has(.dg-proof-pending-shell),
+        .element-container:has(.fast-guidance-item) ~ .element-container:has([data-testid="design-guide-proof-pending"]),
+        .element-container:has(.fast-guidance-item) ~ .element-container:has(.dg-proof-pending-shell) {
+            display: none !important;
+        }
+        .dg-proof-pending-shell {
+            min-height: 10.5rem;
+            border: 1px solid rgba(37, 99, 235, 0.18);
+            border-left: 4px solid rgb(37, 99, 235);
+            border-radius: 8px;
+            background: linear-gradient(180deg, rgba(248,250,252,0.96), rgba(241,245,249,0.72));
+            padding: 0.92rem 1rem 0.98rem;
+            color: rgb(31, 41, 55);
+            box-shadow: 0 6px 18px rgba(15, 23, 42, 0.055);
+        }
+        .dg-proof-pending-shell.applying {
+            border-color: rgba(22, 163, 74, 0.20);
+            border-left-color: rgb(22, 163, 74);
+            background: linear-gradient(180deg, rgba(240,253,244,0.96), rgba(248,250,252,0.82));
+        }
+        .dg-proof-pending-eyebrow {
+            color: rgb(37, 99, 235);
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0;
+            margin-bottom: 0.28rem;
+        }
+        .dg-proof-pending-shell.applying .dg-proof-pending-eyebrow {
+            color: rgb(22, 101, 52);
+        }
+        .dg-proof-pending-title {
+            font-size: 1.02rem;
+            font-weight: 750;
+            line-height: 1.25;
+            margin-bottom: 0.22rem;
+        }
+        .dg-proof-pending-subtext {
+            color: rgba(31, 41, 55, 0.72);
+            font-size: 0.86rem;
+            line-height: 1.35;
+            margin-bottom: 0.8rem;
+        }
+        .dg-proof-pending-bar {
+            position: relative;
+            overflow: hidden;
+            height: 0.44rem;
+            border-radius: 999px;
+            background: rgba(37, 99, 235, 0.12);
+            margin-bottom: 0.78rem;
+        }
+        .dg-proof-pending-bar::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            width: 38%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, rgba(37,99,235,0), rgba(37,99,235,0.42), rgba(37,99,235,0));
+            animation: dgProofPendingSweep 1.35s ease-in-out infinite;
+        }
+        .dg-proof-pending-bar-fill {
+            display: block;
+            width: 38%;
+            height: 100%;
+            border-radius: inherit;
+            animation: dgProofPendingSweep 1.35s ease-in-out infinite;
+        }
+        .dg-proof-pending-shell.applying .dg-proof-pending-bar {
+            background: rgba(22, 163, 74, 0.14);
+        }
+        .dg-proof-pending-shell.applying .dg-proof-pending-bar::after {
+            background: linear-gradient(90deg, rgba(22,163,74,0), rgba(22,163,74,0.44), rgba(22,163,74,0));
+        }
+        .dg-proof-pending-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.42rem;
+        }
+        .dg-proof-pending-chip {
+            display: inline-flex;
+            align-items: center;
+            min-height: 1.55rem;
+            padding: 0.18rem 0.56rem;
+            border: 1px solid rgba(37, 99, 235, 0.18);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.72);
+            color: rgba(31, 41, 55, 0.78);
+            font-size: 0.78rem;
+            font-weight: 650;
+        }
+        @keyframes dgProofPendingSweep {
+            0% { transform: translateX(-110%); }
+            100% { transform: translateX(275%); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .dg-proof-pending-bar::after {
+                animation: none;
+                transform: translateX(80%);
+            }
+            .dg-proof-pending-bar-fill {
+                animation: none;
+                transform: translateX(80%);
+            }
         }
         .dg-header {
             display: block;
@@ -279,6 +402,8 @@ def apply_inputs_page_css():
         }
         .dg-status-pill--action { background: #4263eb; }
         .fast-guidance-item.error .dg-status-pill--action { background: #e03131; }
+        .fast-guidance-item.fail .dg-status-pill--action,
+        .fast-guidance-item.fail .dg-status-pill--blocked { background: #e03131; }
         .dg-status-pill--blocked { background: #4263eb; }
         .dg-status-pill--pass { background: #2f9e44; }
         .dg-status-pill--warning { background: #f08c00; }
@@ -366,6 +491,12 @@ def apply_inputs_page_css():
             background: rgba(224,49,49,0.08);
             color: #e03131;
         }
+        .fast-guidance-item.fail.dg-card--action .dg-util-pill,
+        .fast-guidance-item.fail.dg-card--blocked .dg-util-pill {
+            border-color: rgba(224,49,49,0.28);
+            background: rgba(224,49,49,0.08);
+            color: #e03131;
+        }
         .dg-card--warning .dg-util-pill {
             border-color: rgba(240,140,0,0.28);
             background: rgba(240,140,0,0.08);
@@ -395,7 +526,7 @@ def apply_inputs_page_css():
             align-items: center;
             background: rgba(255, 255, 255, 0.9);
             border: 1px solid rgba(148, 163, 184, 0.24);
-            border-radius: 10px;
+            border-radius: 8px;
             padding: 0.72rem 0.85rem;
             min-width: 0;
         }
@@ -437,7 +568,7 @@ def apply_inputs_page_css():
         .dg-preview-row {
             background: rgba(255,255,255,0.76);
             border: 1px solid rgba(148, 163, 184, 0.18);
-            border-radius: 10px;
+            border-radius: 8px;
             padding: 0.55rem 0.65rem;
             color: rgba(30, 41, 59, 0.96);
             font-size: 0.86rem;
@@ -455,7 +586,7 @@ def apply_inputs_page_css():
             align-items: center;
             background: rgba(255, 255, 255, 0.9);
             border: 1px solid rgba(148, 163, 184, 0.22);
-            border-radius: 10px;
+            border-radius: 8px;
             padding: 0.55rem 0.7rem;
             font-size: 0.88rem;
         }
@@ -569,6 +700,9 @@ def apply_inputs_page_css():
         .fast-guidance-badge.warn {
             background: #f08c00;
         }
+        .fast-guidance-badge.error {
+            background: #e03131;
+        }
         .fast-guidance-badge.pass {
             background: #2f9e44;
         }
@@ -583,6 +717,9 @@ def apply_inputs_page_css():
         }
         .fast-guidance-item.secondary .fast-guidance-badge.warn {
             background: #f08c00;
+        }
+        .fast-guidance-item.secondary .fast-guidance-badge.error {
+            background: #e03131;
         }
         .fast-guidance-item.secondary .fast-guidance-badge.pass {
             background: #2f9e44;
@@ -658,7 +795,7 @@ def apply_inputs_page_css():
             height: auto;
             min-height: 0;
             padding: 0.92rem 0.95rem;
-            border-radius: 10px;
+            border-radius: 8px;
             border: 1px solid rgba(15, 23, 42, 0.12);
             border-left: 4px solid transparent;
             background: #ffffff;
@@ -730,7 +867,7 @@ def apply_inputs_page_css():
         .fast-auto-design-summary {
             margin: 0.55rem 0 0.7rem 0;
             padding: 0.75rem 0.85rem;
-            border-radius: 12px;
+            border-radius: 8px;
             border: 1px solid rgba(37, 99, 235, 0.18);
             background: rgba(239, 246, 255, 0.92);
         }

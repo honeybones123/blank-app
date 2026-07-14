@@ -33,6 +33,12 @@ REQUIRED_EVALUATION_FIELDS = {
     "mandatory_detailing_status",
     "shear_detailing_update_status",
     "geometry_restriction_status",
+    "width_reduction_status",
+    "bending_utilisation",
+    "previous_bending_utilisation",
+    "reinforcement_fit_status",
+    "serviceability_status",
+    "crack_control_status",
     "zero_shear_status",
     "ligature_removal_status",
     "reinforcement_quantity",
@@ -58,6 +64,7 @@ FORBIDDEN_SOURCE_TERMS = {
     "BAR_SIZE_REDUCTION",
     "LEG_COUNT_REDUCTION",
     "LIGATURE_REMOVAL",
+    "WIDTH_REDUCTION",
 }
 
 
@@ -117,6 +124,7 @@ def main() -> int:
         updates={"s_lig": 0.0, "lig_d": 0, "lig_legs": 0}
     )
     geometry_update = module.ShearOverdesignCandidateUpdate(updates={"D": 450.0})
+    width_update = module.ShearOverdesignCandidateUpdate(updates={"b": 275.0})
     candidate_state_hash = module.build_shear_overdesign_candidate_state_hash(
         boundary_input.base_state,
         remove_links.updates,
@@ -138,8 +146,20 @@ def main() -> int:
         },
         geometry_restriction_status={
             "geometry_reduction_attempted": remove_links.geometry_reduction_attempted,
-            "geometry_reduction_prohibited": True,
+            "depth_reduction_prohibited": True,
+            "width_reduction_allowed": True,
         },
+        width_reduction_status={
+            "width_before": 300.0,
+            "width_after": 300.0,
+            "width_reduction_attempted": False,
+            "width_locked": False,
+        },
+        bending_utilisation=0.92,
+        previous_bending_utilisation=0.85,
+        reinforcement_fit_status={"status": "PASS", "rearrangement_search_attempted": True},
+        serviceability_status={"status": "PASS"},
+        crack_control_status={"status": "PASS"},
         zero_shear_status={
             "zero_or_negligible_shear": True,
             "ligatures_exist_before": True,
@@ -173,7 +193,10 @@ def main() -> int:
         and evaluation.zero_shear_status.get("must_not_terminate_for_zero_utilisation") is True
         and evaluation.ligature_removal_status.get("no_unnecessary_ligatures_remain") is True,
         "shear_detailing_only_update_allowed": remove_links.shear_detailing_only is True,
-        "geometry_update_rejected_by_boundary": geometry_update.geometry_reduction_attempted is True
+        "width_update_allowed_by_boundary": width_update.contract_allowed_update is True
+        and width_update.width_reduction_attempted is True
+        and width_update.geometry_reduction_attempted is False,
+        "depth_update_rejected_by_boundary": geometry_update.geometry_reduction_attempted is True
         and geometry_update.shear_detailing_only is False,
         "no_page_ui_publication_apply_runtime_or_lane_coupling": not forbidden_hits,
     }

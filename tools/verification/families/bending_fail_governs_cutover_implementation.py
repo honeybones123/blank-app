@@ -179,7 +179,12 @@ def main() -> int:
         ),
         "contract_order_preserved": tuple(ladder.get("contract_lane_order") or ()) == EXPECTED_CONTRACT_ORDER
         and bending_fail_governs_contract_lane_order() == EXPECTED_CONTRACT_ORDER,
-        "page_evaluation_loop_retained": all(inputs_surfaces.values()),
+        "page_evaluation_loop_retained": (
+            inputs_surfaces["evaluate_loop"]
+            and inputs_surfaces["auto_candidate_evaluator"]
+            and not inputs_surfaces["bending_family_strategy_dispatch"]
+            and not inputs_surfaces["bending_ladder_call"]
+        ),
         "returned_spec_shape_valid": bool(specs) and not any(spec_missing_fields.values()),
         "spec_runtime_evidence_present": bool(specs) and not runtime_evidence_missing,
         "cta_publication_apply_ui_not_moved": not forbidden_runtime_hits,
@@ -193,7 +198,6 @@ def main() -> int:
         "returned_ladder": {
             "contract_runtime_driven": ladder.get("contract_runtime_driven"),
             "contract_runtime_authority": ladder.get("contract_runtime_authority"),
-            "legacy_ladder_order_authority": ladder.get("legacy_ladder_order_authority"),
             "candidate_strategy": ladder.get("candidate_strategy"),
             "ranking_rule": ladder.get("ranking_rule"),
             "stop_reason_if_no_candidate": ladder.get("stop_reason_if_no_candidate"),

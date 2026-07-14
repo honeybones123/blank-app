@@ -177,10 +177,10 @@ def _validate_contract_shape(contract: dict[str, Any]) -> list[str]:
         failures.append("family_id_mismatch")
     if identity.get("package") != "design_brain.families.bending_fail_governs":
         failures.append("package_mismatch")
-    if identity.get("legacy_delegate") != "design_brain.families.bending_fail.BendingFailFamily":
-        failures.append("legacy_delegate_mismatch")
-    if identity.get("public_api") != "evaluate_bending_fail_governs":
-        failures.append("public_api_mismatch")
+    if "legacy_delegate" in identity:
+        failures.append("legacy_delegate_present")
+    if "public_api" in identity:
+        failures.append("public_api_present")
 
     definitions = utilisation_definitions()
     if set(definitions) != set(EXPECTED_UTILISATION_DEFINITIONS):

@@ -24,7 +24,9 @@ ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 
 from design_brain.families.bending_fail import BendingFailFamily  # noqa: E402
-from design_brain.families.bending_fail_governs import evaluate_bending_fail_governs  # noqa: E402
+from design_brain.families.bending_fail_governs import (  # noqa: E402
+    run_bending_fail_governs_ladder_runtime,
+)
 from design_brain.families.bending_fail_governs.contract import (  # noqa: E402
     family_identity,
     load_bending_fail_governs_contract,
@@ -166,7 +168,7 @@ def _family_ladder_snapshot() -> dict[str, Any]:
     return {
         "contract_runtime_driven": bool(first.get("contract_runtime_driven")),
         "contract_runtime_authority": first.get("contract_runtime_authority"),
-        "legacy_ladder_order_authority": first.get("legacy_ladder_order_authority"),
+        "legacy_ladder_order_authority_field_absent": "legacy_ladder_order_authority" not in first,
         "contract_lane_order": list(first.get("contract_lane_order") or []),
         "ladder_hash": first.get("ladder_hash"),
         "repeat_ladder_hash": second.get("ladder_hash"),
@@ -181,15 +183,14 @@ def _family_ladder_snapshot() -> dict[str, Any]:
 
 
 def _package_authority_snapshot() -> dict[str, Any]:
-    result = evaluate_bending_fail_governs({"summary": {"utils": {"bending": 1.12}, "statuses": {"bending": "FAIL"}}})
-    evidence = dict(getattr(result, "evidence", {}) or {})
-    lock_proof = dict(getattr(result, "lock_proof", {}) or {})
-    contract_runtime = dict(evidence.get("contract_runtime") or {})
+    package_source = _read("design_brain/families/bending_fail_governs/__init__.py")
+    runtime_source = _read("design_brain/families/bending_fail_governs/runtime.py")
     return {
-        "evidence_authority": contract_runtime.get("authority"),
-        "lock_proof_authority": lock_proof.get("contract_runtime_authority"),
-        "legacy_decision_authority": lock_proof.get("legacy_decision_authority"),
-        "contract_lane_order": list(lock_proof.get("contract_lane_order") or []),
+        "runtime_exported": "run_bending_fail_governs_ladder_runtime" in package_source,
+        "runtime_callable": callable(run_bending_fail_governs_ladder_runtime),
+        "runtime_defined": "def run_bending_fail_governs_ladder_runtime" in runtime_source,
+        "compatibility_api_absent": "evaluate_" + "bending_fail_governs" not in package_source,
+        "contract_lane_order": list(bending_fail_governs_contract_lane_order()),
     }
 
 
@@ -301,14 +302,16 @@ def main() -> int:
         ),
         "contracted_ladder_runtime_driven": ladder["contract_runtime_driven"]
         and ladder["contract_runtime_authority"] == "run_bending_fail_governs_ladder_runtime"
-        and ladder["legacy_ladder_order_authority"] is False,
+        and ladder["legacy_ladder_order_authority_field_absent"],
         "returned_specs_include_runtime_evidence": ladder["spec_count"] > 0
         and not ladder["missing_required_spec_evidence"]
         and ladder["accepted_trace_count"] > 0
         and ladder["rejected_trace_count"] > 0,
-        "package_identifies_runtime_authority": package["evidence_authority"] == "run_bending_fail_governs_ladder_runtime"
-        and package["lock_proof_authority"] == "run_bending_fail_governs_ladder_runtime"
-        and package["legacy_decision_authority"] is False,
+        "package_exports_runtime_authority_without_compatibility_api": package["runtime_exported"]
+        and package["runtime_callable"]
+        and package["runtime_defined"]
+        and package["compatibility_api_absent"]
+        and package["contract_lane_order"] == list(EXPECTED_CONTRACT_ORDER),
         "inputs_page_still_owns_shared_plumbing": all(inputs_page.values()),
         "runtime_has_no_page_ui_imports": not runtime_boundary["forbidden_imports"]
         and not runtime_boundary["forbidden_source_terms"],

@@ -5,7 +5,7 @@
 
 import streamlit as st
 import plotly.graph_objects as go
-from widgets_helpers import render_step, apply_step_expander_css
+from widgets_helpers import render_step, apply_step_expander_css, render_plotly_diagram
 
 
 def main():
@@ -40,7 +40,12 @@ def render_step1_body():
         fig = go.Figure()
         fig.add_bar(x=['A', 'B', 'C'], y=[1, 3, 2])
         fig.update_layout(height=300, showlegend=False, margin=dict(l=0, r=0, t=0, b=0))
-        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+        render_plotly_diagram(
+            fig,
+            key="ui_sandbox_step1_diagram",
+            title="Sandbox step diagram",
+            config={"displayModeBar": False},
+        )
 
     render_step(
         step_id="sandbox_step1",
@@ -74,4 +79,3 @@ def render_step2_body():
 
 if __name__ == "__main__":
     main()
-

@@ -3,7 +3,8 @@
 
 import math
 from state_and_helpers import get_param, update_results, resolve_design_actions
-from crack_page import (
+from calculations.crack_control import (
+    compute_crack_control_values,
     table_sigma_max_A,
     table_sigma_max_B,
     calc_eps_diff,
@@ -133,43 +134,43 @@ def compute_crack_results(publish: bool = True) -> dict:
     # Effective area in tension
     c = max(float(cover_bot if crack_tension_face == "bottom" else get_param("cover_top", cover_bot)), 1.0) if sec_shape == "RECT" else max(float(locals().get("c", cover_bot)), 1.0)
     db = float(locals().get("db", db_bot) or db_bot)
-    d_eff = D - c - db / 2.0 if crack_tension_face == "bottom" else c + db / 2.0
-    height_eff = min(2.5 * c, max(D - d_eff, 0.0), D / 2.0)
-    Aceff = b * max(height_eff, 1.0)
-    rho_eff = Ast / Aceff if Aceff > 0 else 0.0
-    
-    # Table method (8.6.2.2)
     spacing = s_bar_bot
-    sigma_table_A = table_sigma_max_A(db, wmax_choice)
-    sigma_table_B = table_sigma_max_B(spacing, wmax_choice)
-    
-    if member_type == "Primarily tension":
-        sigma_table_combined = sigma_table_A
-    else:
-        sigma_table_combined = max(sigma_table_A, sigma_table_B)
-    
-    sigma_08fsy = 0.8 * fsy
-    sigma_allow_table = min(sigma_table_combined, sigma_08fsy)
-    utilisation_table = sigma_sr / sigma_allow_table if sigma_allow_table > 0 else 0.0
-    passes_table = utilisation_table <= 1.0
-    
-    # Direct calculation (8.6.2.3)
-    fct_eff = 0.6 * math.sqrt(max(fc, 1.0))
-    ne = (1.0 + phi_ce) * Es / Ec if Ec > 0 else 0.0
-    
-    eps_diff = calc_eps_diff(
-        sigma_sr=sigma_sr,
+    crack_values = compute_crack_control_values(
+        b=b,
+        D=D,
+        c=c,
+        db=db,
+        spacing=spacing,
+        Ast=Ast,
+        fc=fc,
+        Ec=Ec,
         Es=Es,
-        fct_eff=fct_eff,
-        rho_eff=rho_eff,
-        ne=ne,
+        fsy=fsy,
+        wmax_choice=wmax_choice,
+        member_type=member_type,
+        sigma_sr=sigma_sr,
+        phi_ce=phi_ce,
         eps_cs=eps_cs,
+        k1=k1,
+        k2=k2,
+        crack_tension_face=crack_tension_face,
     )
-    
-    sr_max = calc_sr_max(c_mm=c, db_mm=db, rho_eff=rho_eff, k1=k1, k2=k2)
-    w_calc = sr_max * eps_diff
-    utilisation_w = w_calc / wmax_choice if wmax_choice > 0 else 0.0
-    passes_w = utilisation_w <= 1.0
+    Aceff = crack_values["Aceff"]
+    rho_eff = crack_values["rho_eff"]
+    fct_eff = crack_values["fct_eff"]
+    ne = crack_values["ne"]
+    sigma_table_A = crack_values["sigma_table_A"]
+    sigma_table_B = crack_values["sigma_table_B"]
+    sigma_table_combined = crack_values["sigma_table_combined"]
+    sigma_08fsy = crack_values["sigma_08fsy"]
+    sigma_allow_table = crack_values["sigma_allow_table"]
+    utilisation_table = crack_values["utilisation_table"]
+    passes_table = crack_values["passes_table"]
+    eps_diff = crack_values["eps_diff"]
+    sr_max = crack_values["sr_max"]
+    w_calc = crack_values["w_calc"]
+    utilisation_w = crack_values["utilisation_w"]
+    passes_w = crack_values["passes_w"]
     
     out = {
         "sigma_sr": sigma_sr,
@@ -383,8 +384,6 @@ def build_crack_report(params: dict) -> dict:
 
 # Backward compatibility alias
 _compute_crack_results = compute_crack_results
-
-
 
 
 

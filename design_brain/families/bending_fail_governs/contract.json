@@ -2,9 +2,7 @@
   "schema": "design_brain.family_contract.v1",
   "family_identity": {
     "family_id": "BENDING_FAIL_GOVERNS",
-    "package": "design_brain.families.bending_fail_governs",
-    "legacy_delegate": "design_brain.families.bending_fail.BendingFailFamily",
-    "public_api": "evaluate_bending_fail_governs"
+    "package": "design_brain.families.bending_fail_governs"
   },
   "classification": {
     "governs_when": [
@@ -342,7 +340,7 @@
         "no_candidate_stop_reason": "geometry locked; legal no-repair proof required if contract runtime candidates fail"
       }
     },
-    "ranking_rule": "Evaluate contract runtime lane order and stop immediately on the first fully compliant executor-backed pure bending repair."
+    "ranking_rule": "Evaluate contract runtime candidates until a target-band executor-backed pure bending repair is found, or until all valid repair candidates are exhausted; rank compliant candidates by target-band satisfaction before ladder-order tie-breaks."
   },
   "blockers": {
     "allowed": [

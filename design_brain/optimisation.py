@@ -509,6 +509,84 @@ def optimisation_candidate_search_distance_to_band(
     return 0.0
 
 
+def _combined_cleanup_target_band_surface(
+    *,
+    fallback_util: float | None,
+    preview_bending_util: float | None,
+    preview_shear_util: float | None,
+    target_low: float,
+    target_high: float,
+) -> dict[str, Any]:
+    """Return the target-band proof surface for combined cleanup rows."""
+    relevant: list[tuple[str, float]] = []
+    for family, util in (
+        ("bending", preview_bending_util),
+        ("shear", preview_shear_util),
+    ):
+        if util is None:
+            continue
+        try:
+            resolved = float(util)
+        except (TypeError, ValueError):
+            continue
+        if math.isnan(resolved) or math.isinf(resolved):
+            continue
+        relevant.append((family, resolved))
+    if not relevant:
+        distance = optimisation_candidate_search_distance_to_band(
+            fallback_util,
+            target_low,
+            target_high,
+        )
+        return {
+            "target_band_util": fallback_util,
+            "distance_to_band": distance,
+            "reaches_target_band": bool(distance == 0.0),
+            "target_band_families": [],
+            "target_band_family_utils": {},
+            "target_band_blocked_families": [],
+        }
+
+    distances: dict[str, float] = {}
+    blocked: list[str] = []
+    for family, util in relevant:
+        distance = optimisation_candidate_search_distance_to_band(
+            util,
+            target_low,
+            target_high,
+        )
+        distances[family] = float(distance if distance is not None else float("inf"))
+        if distance is None or float(distance) > 1e-12:
+            blocked.append(family)
+
+    if blocked:
+        controlling_family, controlling_util = max(
+            relevant,
+            key=lambda item: (
+                distances.get(item[0], float("inf")),
+                -item[1] if item[1] < float(target_low) else item[1],
+            ),
+        )
+        return {
+            "target_band_util": controlling_util,
+            "distance_to_band": distances.get(controlling_family),
+            "reaches_target_band": False,
+            "target_band_families": [family for family, _util in relevant],
+            "target_band_family_utils": {family: util for family, util in relevant},
+            "target_band_blocked_families": blocked,
+        }
+
+    controlling_family, controlling_util = min(relevant, key=lambda item: item[1])
+    return {
+        "target_band_util": controlling_util,
+        "distance_to_band": 0.0,
+        "reaches_target_band": True,
+        "target_band_families": [family for family, _util in relevant],
+        "target_band_family_utils": {family: util for family, util in relevant},
+        "target_band_blocked_families": [],
+    }
+
+
 def optimisation_candidate_search_summary_row(
     candidate: dict | None,
     *,
@@ -547,18 +625,46 @@ def optimisation_candidate_search_summary_row(
                 failed_util = None
             break
     safe = bool(metadata.get("safe_executor_backed"))
+    family = str(metadata.get("family") or "").strip().lower()
+    combined_cleanup = bool(
+        family in {"combined", "compound", "combined_cleanup"}
+        or "combined_best_safe_shear_plus_bending_cleanup" in candidate_id
+    )
+    target_surface = (
+        _combined_cleanup_target_band_surface(
+            fallback_util=util,
+            preview_bending_util=preview_bending_util,
+            preview_shear_util=preview_shear_util,
+            target_low=target_low,
+            target_high=target_high,
+        )
+        if combined_cleanup
+        else {}
+    )
+    proof_util = target_surface.get("target_band_util") if target_surface else util
+    proof_distance = (
+        target_surface.get("distance_to_band")
+        if target_surface
+        else optimisation_candidate_search_distance_to_band(util, target_low, target_high)
+    )
+    reaches_target_band = (
+        bool(target_surface.get("reaches_target_band"))
+        if target_surface
+        else bool(util is not None and float(target_low) <= float(util) <= float(target_high))
+    )
     row = {
         "candidate_id": candidate_id,
         "title": title,
         "proposed_updates": dict(updates),
-        "preview_util": util,
+        "preview_util": proof_util,
+        "raw_preview_util": util,
         "preview_bending_util": preview_bending_util,
         "preview_shear_util": preview_shear_util,
         "preview_statuses": dict(statuses),
-        "distance_to_band": optimisation_candidate_search_distance_to_band(util, target_low, target_high),
+        "distance_to_band": proof_distance,
         "safe_executor_backed": bool(safe),
         "preview_pass": bool(metadata.get("preview_pass")),
-        "reaches_target_band": bool(util is not None and float(target_low) <= float(util) <= float(target_high)),
+        "reaches_target_band": reaches_target_band,
         "rejection_reason": None,
         "failed_check_family": failed_family,
         "failed_check_status": failed_status,
@@ -572,6 +678,15 @@ def optimisation_candidate_search_summary_row(
         "advisory_only": bool(metadata.get("advisory_only")),
         "affected_family": metadata.get("family"),
     }
+    if target_surface:
+        row.update(
+            {
+                "combined_target_band_proof": True,
+                "target_band_families": list(target_surface.get("target_band_families") or []),
+                "target_band_family_utils": dict(target_surface.get("target_band_family_utils") or {}),
+                "target_band_blocked_families": list(target_surface.get("target_band_blocked_families") or []),
+            }
+        )
     if not updates:
         row["rejection_reason"] = "empty_updates"
     elif util is None:

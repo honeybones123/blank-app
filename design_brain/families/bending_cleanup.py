@@ -78,6 +78,16 @@ def _default_runtime_evaluator(
     ).with_evaluation_hash()
 
 
+def _runtime_row_is_publishable_terminal(row: dict[str, Any] | None) -> bool:
+    if not isinstance(row, dict):
+        return False
+    status = str(row.get("terminal_candidate_status") or "").strip().upper()
+    if status in {"TERMINAL_TARGET_BAND", "TERMINAL_EXACT_STOP", "TERMINAL_BLOCKED_WITH_PROOF"}:
+        return True
+    target = dict(row.get("target_band_status") or {})
+    return bool(target.get("inside_target_band") or target.get("inside"))
+
+
 class BendingCleanupFamily(DiagnosticFamilyStrategy):
     metadata = FamilyStrategyMetadata(
         governing_state="BENDING_OVERDESIGN_GOVERNS",
@@ -105,14 +115,22 @@ class BendingCleanupFamily(DiagnosticFamilyStrategy):
             evaluate_candidate=evaluator,
         )
         specs: list[dict[str, Any]] = []
-        for row in result.candidate_repairs:
+        publishable_rows = (
+            (dict(result.selected_recommendation),)
+            if _runtime_row_is_publishable_terminal(result.selected_recommendation)
+            else ()
+        )
+        for row in publishable_rows:
             updates = _as_dict(row.get("updates"))
             if not updates:
                 continue
             lane_id = str(row.get("lane_id") or "")
+            candidate_id = str(row.get("candidate_id") or row.get("update_hash") or "")
             specs.append(
                 {
                     "label": f"BENDING_OVERDESIGN_GOVERNS {lane_id.lower()} candidate {row.get('candidate_index')}",
+                    "candidate_id": candidate_id,
+                    "source_candidate_id": candidate_id,
                     "updates": updates,
                     "action_type": "apply_resolved_candidate",
                     "contract_step": lane_id,
@@ -125,8 +143,16 @@ class BendingCleanupFamily(DiagnosticFamilyStrategy):
                     "ladder_trace_ref": tuple(result.ladder_trace),
                     "update_hash": row.get("update_hash"),
                     "candidate_state_hash": row.get("candidate_state_hash"),
+                    "terminal_candidate_status": row.get("terminal_candidate_status"),
+                    "further_cleanup_available": bool(row.get("further_cleanup_available")),
+                    "target_band_candidate_count": int(row.get("target_band_candidate_count") or 0),
+                    "executable_target_band_candidate_count": int(
+                        row.get("executable_target_band_candidate_count") or 0
+                    ),
+                    "best_target_band_candidate_id": row.get("best_target_band_candidate_id"),
                     "restart_proof": _as_dict(row.get("restart_proof")),
                     "ranking_proof": dict(result.ranking_proof),
+                    "exact_stop_proof": dict(result.exact_stop_proof),
                     "minimum_reinforcement_proof": dict(result.minimum_reinforcement_proof),
                     "geometry_compliance_proof": dict(result.geometry_compliance_proof),
                 }
@@ -138,6 +164,15 @@ class BendingCleanupFamily(DiagnosticFamilyStrategy):
             "specs": specs,
             "candidate_repairs": tuple(result.candidate_repairs),
             "selected_recommendation": result.selected_recommendation,
+            "terminal_publication_gate": {
+                "publishable_action_spec_count": len(specs),
+                "selected_candidate_terminal": _runtime_row_is_publishable_terminal(result.selected_recommendation),
+                "terminal_candidate_status": (
+                    dict(result.selected_recommendation or {}).get("terminal_candidate_status")
+                    or dict(result.exact_stop_proof or {}).get("terminal_candidate_status")
+                ),
+                "target_band_candidate_count": int(result.ranking_proof.get("target_band_candidate_count") or 0),
+            },
             "ranking_rule": "contract runtime ranking: target band, smallest reinforcement quantity, smallest beam volume, constructability, cost proxy",
             "stop_reason_if_no_candidate": result.exhausted_reason
             or "contract runtime selected a compliant bending overdesign optimisation",

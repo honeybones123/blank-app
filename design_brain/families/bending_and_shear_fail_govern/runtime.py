@@ -10,6 +10,7 @@ from design_brain.combined_bending_shear_candidate_merge import (
     CombinedSourceCandidate,
     combined_candidate_state_hash,
     merge_updates,
+    normalise_combined_canonical_reinforcement_updates,
     stable_combined_candidate_hash,
 )
 from design_brain.families.bending_and_shear_fail_govern.contract import (
@@ -59,7 +60,7 @@ def _source_candidate(value: dict[str, Any]) -> CombinedSourceCandidate:
     return CombinedSourceCandidate(
         source_family_id=str(value.get("source_family_id") or value.get("family_id") or ""),
         candidate_id=str(value.get("candidate_id") or value.get("id") or ""),
-        updates=dict(value.get("updates") or {}),
+        updates=normalise_combined_canonical_reinforcement_updates(dict(value.get("updates") or {})),
         evidence=dict(value.get("evidence") or {}),
     )
 
@@ -84,14 +85,14 @@ def _merged_candidates(inputs: CombinedBendingShearFailInputs) -> tuple[Combined
                 )
             )
     for approved in approved_candidates:
-        merged.append(
-            CombinedMergedCandidate(
-                candidate_id=approved.candidate_id,
-                source_candidates=(approved,),
-                updates=dict(approved.updates),
-                merge_rule_id="APPROVED_COMBINED_MERGE_RULE",
+            merged.append(
+                CombinedMergedCandidate(
+                    candidate_id=approved.candidate_id,
+                    source_candidates=(approved,),
+                    updates=normalise_combined_canonical_reinforcement_updates(dict(approved.updates)),
+                    merge_rule_id="APPROVED_COMBINED_MERGE_RULE",
+                )
             )
-        )
     return tuple(merged)
 
 

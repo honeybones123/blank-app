@@ -124,7 +124,11 @@ CTA_AUTHORITY_PATHS: list[dict[str, Any]] = [
         "path": "one_click_action_handoff",
         "owner_file": "inputs_page.py",
         "function_or_symbol": "_queue_primary_design_guide_button_action",
-        "required_tokens": ["def _queue_primary_design_guide_button_action(", "handle_apply_buttons", "apply_design_guide_primary_action"],
+        "required_tokens": [
+            "def _queue_primary_design_guide_button_action(",
+            "handle_apply_buttons",
+            "def _render_design_guide_component_cta(",
+        ],
         "current_authority_role": "queues the primary one-click action from rendered CTA button events",
         "cta_fields": ["one_click_action_handoff", "apply_payload_summary"],
         "can_be_moved_now": False,

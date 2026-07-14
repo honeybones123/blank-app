@@ -5,7 +5,6 @@
     "runtime_family_id": "SERVICEABILITY_GOVERNS",
     "package": "design_brain.families.serviceability_governs",
     "runtime_module": "design_brain.families.serviceability_governs.runtime",
-    "legacy_delegate": "design_brain.families.serviceability.ServiceabilityFamily",
     "public_api": "evaluate_serviceability_governs"
   },
   "selection_boundary": {

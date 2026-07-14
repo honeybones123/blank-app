@@ -8,10 +8,12 @@ from hashlib import sha256
 from typing import Any
 
 
-ALLOWED_SHEAR_OVERDESIGN_UPDATE_KEYS = frozenset({"s_lig", "lig_d", "lig_legs"})
-PROHIBITED_GEOMETRY_UPDATE_KEYS = frozenset(
-    {"b", "bw", "D", "beam_width", "beam_depth", "beam_width_mm", "beam_depth_mm"}
+ALLOWED_SHEAR_DETAILING_UPDATE_KEYS = frozenset({"s_lig", "lig_d", "lig_legs"})
+ALLOWED_SHEAR_OVERDESIGN_GEOMETRY_UPDATE_KEYS = frozenset({"b", "bw", "beam_width", "beam_width_mm"})
+ALLOWED_SHEAR_OVERDESIGN_UPDATE_KEYS = (
+    ALLOWED_SHEAR_DETAILING_UPDATE_KEYS | ALLOWED_SHEAR_OVERDESIGN_GEOMETRY_UPDATE_KEYS
 )
+PROHIBITED_GEOMETRY_UPDATE_KEYS = frozenset({"D", "beam_depth", "beam_depth_mm"})
 
 
 def stable_shear_overdesign_candidate_hash(value: Any) -> str:
@@ -37,14 +39,31 @@ def is_shear_detailing_only_update(value: dict[str, Any] | None) -> bool:
     """Return whether an update is restricted to shear detailing fields."""
 
     keys = set(shear_overdesign_update_keys(value))
+    return bool(keys) and keys <= set(ALLOWED_SHEAR_DETAILING_UPDATE_KEYS)
+
+
+def is_shear_overdesign_contract_update(value: dict[str, Any] | None) -> bool:
+    """Return whether an update is allowed by the shear-overdesign contract."""
+
+    keys = set(shear_overdesign_update_keys(value))
     return bool(keys) and keys <= set(ALLOWED_SHEAR_OVERDESIGN_UPDATE_KEYS)
 
 
 def contains_geometry_reduction_update(value: dict[str, Any] | None) -> bool:
-    """Return whether an update tries to change protected geometry fields."""
+    """Return whether an update tries to change prohibited geometry fields."""
 
     keys = set(shear_overdesign_update_keys(value))
     return bool(keys & set(PROHIBITED_GEOMETRY_UPDATE_KEYS))
+
+
+def contains_width_reduction_update(value: dict[str, Any] | None) -> bool:
+    """Return whether an update tries to reduce beam width."""
+
+    updates = normalise_shear_overdesign_mapping(value)
+    for key in ("b", "bw", "beam_width", "beam_width_mm"):
+        if key in updates:
+            return True
+    return False
 
 
 @dataclass(frozen=True)
@@ -83,8 +102,16 @@ class ShearOverdesignCandidateUpdate:
         return is_shear_detailing_only_update(self.updates)
 
     @property
+    def contract_allowed_update(self) -> bool:
+        return is_shear_overdesign_contract_update(self.updates)
+
+    @property
     def geometry_reduction_attempted(self) -> bool:
         return contains_geometry_reduction_update(self.updates)
+
+    @property
+    def width_reduction_attempted(self) -> bool:
+        return contains_width_reduction_update(self.updates)
 
 
 @dataclass(frozen=True)
@@ -103,6 +130,12 @@ class ShearOverdesignCandidateEvaluation:
     mandatory_detailing_status: dict[str, Any] = field(default_factory=dict)
     shear_detailing_update_status: dict[str, Any] = field(default_factory=dict)
     geometry_restriction_status: dict[str, Any] = field(default_factory=dict)
+    width_reduction_status: dict[str, Any] = field(default_factory=dict)
+    bending_utilisation: float | None = None
+    previous_bending_utilisation: float | None = None
+    reinforcement_fit_status: dict[str, Any] = field(default_factory=dict)
+    serviceability_status: dict[str, Any] = field(default_factory=dict)
+    crack_control_status: dict[str, Any] = field(default_factory=dict)
     zero_shear_status: dict[str, Any] = field(default_factory=dict)
     ligature_removal_status: dict[str, Any] = field(default_factory=dict)
     reinforcement_quantity: dict[str, Any] = field(default_factory=dict)
@@ -140,6 +173,8 @@ def build_shear_overdesign_candidate_state_hash(
 
 
 __all__ = [
+    "ALLOWED_SHEAR_DETAILING_UPDATE_KEYS",
+    "ALLOWED_SHEAR_OVERDESIGN_GEOMETRY_UPDATE_KEYS",
     "ALLOWED_SHEAR_OVERDESIGN_UPDATE_KEYS",
     "PROHIBITED_GEOMETRY_UPDATE_KEYS",
     "ShearOverdesignCandidateEvaluation",
@@ -147,6 +182,8 @@ __all__ = [
     "ShearOverdesignCandidateUpdate",
     "build_shear_overdesign_candidate_state_hash",
     "contains_geometry_reduction_update",
+    "contains_width_reduction_update",
+    "is_shear_overdesign_contract_update",
     "is_shear_detailing_only_update",
     "normalise_shear_overdesign_mapping",
     "shear_overdesign_update_keys",

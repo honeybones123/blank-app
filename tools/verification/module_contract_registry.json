@@ -1,0 +1,495 @@
+{
+  "schema": "module_contract_registry.v1",
+  "levels": {
+    "L0": "compile/import only; allowed only for explicitly low-risk wrappers or compatibility shims",
+    "L1": "smoke-backed contract proving import/render/shape ownership",
+    "L2": "behavioral contract proving stable input/output invariants",
+    "L3": "parity contract proving old-vs-new behavior during extraction or migration",
+    "L4": "domain contract with explicit rules, forbidden behavior, snapshots, lock verifier, or family contract"
+  },
+  "inventory": {
+    "include_roots": [
+      {
+        "path": ".",
+        "recursive": false,
+        "glob": "*.py"
+      },
+      {
+        "path": "ui",
+        "recursive": true,
+        "glob": "*.py"
+      },
+      {
+        "path": "design_brain",
+        "recursive": true,
+        "glob": "*.py"
+      },
+      {
+        "path": "calculations",
+        "recursive": true,
+        "glob": "*.py"
+      }
+    ],
+    "exclude_globs": [
+      "__pycache__/**",
+      ".git/**",
+      ".codex/**",
+      ".agents/**",
+      "artifacts/**",
+      "outputs/**",
+      "tools/**",
+      "apps/**",
+      "streamlit_components/**",
+      "*-Elli\u2019s MacBook Pro.py",
+      "*-Elli's MacBook Pro.py"
+    ]
+  },
+  "default_policy": {
+    "unclassified_modules_are_failures": true,
+    "missing_evidence_is_gap": true
+  },
+  "family_contracts": {
+    "bending_and_shear_fail_govern": {
+      "contract_files": [
+        "design_brain/families/bending_and_shear_fail_govern/contract.json"
+      ],
+      "verifiers": [
+        "tools/verification/families/bending_and_shear_fail_govern_contract_check.py",
+        "tools/verification/families/combined_bending_shear_fail_governs_lock_verifier.py"
+      ]
+    },
+    "bending_and_shear_overdesign_govern": {
+      "contract_files": [
+        "design_brain/families/bending_and_shear_overdesign_govern/contract.json"
+      ],
+      "verifiers": [
+        "tools/verification/families/bending_and_shear_overdesign_govern_contract_check.py",
+        "tools/verification/families/combined_overdesign_governs_lock_verifier.py"
+      ]
+    },
+    "bending_fail_governs": {
+      "contract_files": [
+        "design_brain/families/bending_fail_governs/contract.json"
+      ],
+      "verifiers": [
+        "tools/verification/families/bending_fail_governs_contract_check.py",
+        "tools/verification/families/bending_fail_governs_lock_verifier.py"
+      ]
+    },
+    "bending_fail_shear_overdesign_governs": {
+      "contract_files": [
+        "design_brain/families/bending_fail_shear_overdesign_governs/contract.json"
+      ],
+      "verifiers": [
+        "tools/verification/families/bending_fail_shear_overdesign_governs_contract_check.py",
+        "tools/verification/families/bending_fail_shear_overdesign_governs_lock_verifier.py"
+      ]
+    },
+    "bending_overdesign_governs": {
+      "contract_files": [
+        "design_brain/families/bending_overdesign_governs/contract.json"
+      ],
+      "verifiers": [
+        "tools/verification/families/bending_overdesign_governs_contract_check.py",
+        "tools/verification/families/bending_overdesign_governs_lock_verifier.py"
+      ]
+    },
+    "serviceability_governs": {
+      "contract_files": [
+        "design_brain/families/serviceability_governs/contract.json"
+      ],
+      "verifiers": [
+        "tools/verification/families/serviceability_governs_contract_check.py",
+        "tools/verification/families/serviceability_governs_lock_verifier.py"
+      ]
+    },
+    "shear_fail_bending_overdesign_governs": {
+      "contract_files": [
+        "design_brain/families/shear_fail_bending_overdesign_governs/contract.json"
+      ],
+      "verifiers": [
+        "tools/verification/families/shear_fail_bending_overdesign_governs_contract_check.py",
+        "tools/verification/families/shear_fail_bending_overdesign_governs_lock_verifier.py"
+      ]
+    },
+    "shear_fail_governs": {
+      "contract_files": [
+        "design_brain/families/shear_fail_governs/contract.json"
+      ],
+      "verifiers": [
+        "tools/verification/families/shear_fail_governs_contract_check.py",
+        "tools/verification/families/shear_fail_governs_lock_verifier.py"
+      ]
+    },
+    "shear_overdesign_governs": {
+      "contract_files": [
+        "design_brain/families/shear_overdesign_governs/contract.json"
+      ],
+      "verifiers": [
+        "tools/verification/families/shear_overdesign_governs_contract_check.py",
+        "tools/verification/families/shear_overdesign_governs_lock_verifier.py"
+      ]
+    }
+  },
+  "role_rules": [
+    {
+      "name": "design_brain_family_modules",
+      "glob": "design_brain/families/*/*.py",
+      "role": "design_brain_family",
+      "minimum_level": "L4",
+      "current_level": "L4",
+      "evidence": "family_contracts"
+    },
+    {
+      "name": "pure_calculation_modules",
+      "glob": "calculations/crack_control.py",
+      "role": "pure_calculation",
+      "minimum_level": "L2",
+      "current_level": "L2",
+      "verifiers": [
+        "tools/verification/crack_calculation_module_parity.py"
+      ],
+      "next_level_target": "Promote additional page-owned formulas into calculations/* with parity contracts."
+    },
+    {
+      "name": "pure_creep_shrinkage_calculation_modules",
+      "glob": "calculations/creep_shrinkage.py",
+      "role": "pure_calculation",
+      "minimum_level": "L2",
+      "current_level": "L2",
+      "verifiers": [
+        "tools/verification/creep_shrinkage_calculation_module_parity.py"
+      ],
+      "next_level_target": "Promote additional page-owned formulas into calculations/* with parity contracts."
+    },
+    {
+      "name": "pure_deflection_calculation_modules",
+      "glob": "calculations/deflection.py",
+      "role": "pure_calculation",
+      "minimum_level": "L2",
+      "current_level": "L2",
+      "verifiers": [
+        "tools/verification/deflection_calculation_module_parity.py"
+      ],
+      "next_level_target": "Promote additional page-owned formulas into calculations/* with parity contracts."
+    },
+    {
+      "name": "pure_bending_calculation_modules",
+      "glob": "calculations/bending.py",
+      "role": "pure_calculation",
+      "minimum_level": "L2",
+      "current_level": "L2",
+      "verifiers": [
+        "tools/verification/bending_calculation_module_parity.py"
+      ],
+      "next_level_target": "Promote additional page-owned formulas into calculations/* with parity contracts."
+    },
+    {
+      "name": "pure_design_actions_calculation_modules",
+      "glob": "calculations/design_actions.py",
+      "role": "pure_calculation",
+      "minimum_level": "L2",
+      "current_level": "L2",
+      "verifiers": [
+        "tools/verification/design_actions_calculation_module_parity.py"
+      ],
+      "next_level_target": "Promote additional page-owned formulas into calculations/* with parity contracts."
+    },
+    {
+      "name": "pure_shear_calculation_modules",
+      "glob": "calculations/shear.py",
+      "role": "pure_calculation",
+      "minimum_level": "L2",
+      "current_level": "L2",
+      "verifiers": [
+        "tools/verification/shear_calculation_module_parity.py"
+      ],
+      "next_level_target": "Promote additional page-owned formulas into calculations/* with parity contracts."
+    },
+    {
+      "name": "pure_materials_calculation_modules",
+      "glob": "calculations/materials.py",
+      "role": "pure_calculation",
+      "minimum_level": "L2",
+      "current_level": "L2",
+      "verifiers": [
+        "tools/verification/bending_calculation_module_parity.py",
+        "tools/verification/deflection_calculation_module_parity.py"
+      ],
+      "next_level_target": "Promote additional shared material formulas into calculations/materials.py with parity contracts."
+    },
+    {
+      "name": "pure_shear_zone_spacing_calculation_modules",
+      "glob": "calculations/shear_zone_spacing.py",
+      "role": "pure_calculation",
+      "minimum_level": "L2",
+      "current_level": "L2",
+      "verifiers": [
+        "tools/verification/shear_zone_spacing_calculation_module_parity.py"
+      ],
+      "next_level_target": "Promote additional page-owned formulas into calculations/* with parity contracts."
+    },
+    {
+      "name": "design_brain_legacy_family_adapters",
+      "glob": "design_brain/families/*.py",
+      "role": "design_brain_legacy_family_adapter",
+      "minimum_level": "L3",
+      "current_level": "L3",
+      "verifiers": [
+        "tools/verification/design_brain_family_process_and_churn_lock_verifier.py",
+        "tools/verification/family_classification_lock_verifier.py"
+      ],
+      "next_level_target": "Move remaining legacy family adapters behind family contract directories or retire them after parity proof."
+    },
+    {
+      "name": "design_brain_shared_helpers",
+      "glob": "design_brain/shared/*.py",
+      "role": "design_brain_shared_helper",
+      "minimum_level": "L2",
+      "current_level": "L2",
+      "verifiers": [
+        "tools/verification/design_brain_family_process_and_churn_lock_verifier.py",
+        "tools/verification/design_guide_output_wording_contract_check.py"
+      ]
+    },
+    {
+      "name": "design_brain_core_contract_modules",
+      "glob": "design_brain/*contract*.py",
+      "role": "design_brain_contract_surface",
+      "minimum_level": "L4",
+      "current_level": "L4",
+      "verifiers": [
+        "tools/verification/cta_button_contract_check.py",
+        "tools/verification/family_classification_contract_check.py",
+        "tools/verification/design_guide_output_wording_contract_check.py"
+      ]
+    },
+    {
+      "name": "design_brain_controller_and_publication",
+      "glob": "design_brain/{design_guide_controller,publication,final_publication,repair,family_classification,family_classification_runtime,family_chooser,governing_state,result,terminal_decisions}.py",
+      "role": "design_brain_orchestration",
+      "minimum_level": "L4",
+      "current_level": "L4",
+      "verifiers": [
+        "tools/verification/design_guide_independence_lock_verifier.py",
+        "tools/verification/design_guide_render_bridge_lock_verifier.py",
+        "tools/verification/family_classification_lock_verifier.py"
+      ]
+    },
+    {
+      "name": "design_brain_candidate_modules",
+      "glob": "design_brain/*candidate*.py",
+      "role": "design_brain_candidate_pipeline",
+      "minimum_level": "L3",
+      "current_level": "L3",
+      "verifiers": [
+        "tools/verification/candidate_evaluation_boundary_snapshot.py",
+        "tools/verification/bending_overdesign_candidate_evaluation_boundary_snapshot.py",
+        "tools/verification/shear_candidate_evaluation_boundary_snapshot.py",
+        "tools/verification/serviceability_candidate_evaluation_boundary_snapshot.py"
+      ]
+    },
+    {
+      "name": "design_brain_formatting_modules",
+      "glob": "design_brain/{display_formatting,output_formatting,design_guide_card_attrs}.py",
+      "role": "design_brain_formatting",
+      "minimum_level": "L3",
+      "current_level": "L3",
+      "verifiers": [
+        "tools/verification/design_guide_formatting_contract_v3_snapshot.py",
+        "tools/verification/design_guide_output_formatting_snapshot.py",
+        "tools/verification/design_guide_output_wording_contract_check.py"
+      ]
+    },
+    {
+      "name": "design_brain_policy_modules",
+      "glob": "design_brain/{combined_resolution,engine,evidence,interface,optimisation,overdesign_cleanup,ranking,target_band_selection,underdesign_repair}.py",
+      "role": "design_brain_policy",
+      "minimum_level": "L3",
+      "current_level": "L3",
+      "verifiers": [
+        "tools/verification/design_brain_family_process_and_churn_lock_verifier.py",
+        "tools/verification/design_guide_independence_lock_verifier.py",
+        "tools/verification/design_guide_safe_executor_evidence_snapshot.py"
+      ]
+    },
+    {
+      "name": "design_brain_config_and_init",
+      "glob": "design_brain/{__init__,config,coverage_gates}.py",
+      "role": "design_brain_config",
+      "minimum_level": "L1",
+      "current_level": "L1",
+      "verifiers": [
+        "tools/verification/design_brain_family_process_and_churn_lock_verifier.py"
+      ]
+    },
+    {
+      "name": "legacy_design_guide_bridge_modules",
+      "glob": "{design_guidance_engine,design_runner}.py",
+      "role": "legacy_design_guide_bridge",
+      "minimum_level": "L3",
+      "current_level": "L3",
+      "verifiers": [
+        "tools/verification/design_guide_independence_lock_verifier.py",
+        "tools/verification/design_guide_render_bridge_lock_verifier.py",
+        "tools/verification/design_guide_compute_resolver_publication_bridge_lock_verifier.py"
+      ]
+    },
+    {
+      "name": "diagram_modules",
+      "glob": "*diagram*.py",
+      "role": "diagram",
+      "minimum_level": "L1",
+      "current_level": "L1",
+      "verifiers": [
+        "tools/verification/diagram_all_imports_smoke.py",
+        "tools/verification/diagram_remaining_hits_smoke.py"
+      ],
+      "next_level_target": "L2 geometry/data invariants for each diagram family"
+    },
+    {
+      "name": "diagram_visual_helper_modules",
+      "glob": "{shear_visuals,shear_zone_spacing,plotly_section,reo_layout,section_layout}.py",
+      "role": "diagram_visual_helper",
+      "minimum_level": "L1",
+      "current_level": "L1",
+      "verifiers": [
+        "tools/verification/diagram_all_imports_smoke.py",
+        "tools/verification/diagram_section_smoke.py",
+        "tools/verification/diagram_shear_zone_spacing_smoke.py"
+      ],
+      "next_level_target": "Promote from smoke-backed to shape/data invariant contracts."
+    },
+    {
+      "name": "specialized_widget_layout",
+      "glob": "widgets_helpers.py",
+      "role": "ui_widget_layout",
+      "minimum_level": "L1",
+      "current_level": "L1",
+      "verifiers": [
+        "tools/verify_specialized_widget_rail_usage.py",
+        "tools/verify_specialized_widget_rail_browser_smoke.py"
+      ]
+    },
+    {
+      "name": "summary_section_modules",
+      "glob": "ui/summary*.py",
+      "role": "ui_summary_render",
+      "minimum_level": "L1",
+      "current_level": "L1",
+      "verifiers": [
+        "tools/verification/summary_sections_smoke.py"
+      ],
+      "next_level_target": "L2 status and detail-row structure contract"
+    },
+    {
+      "name": "design_guide_ui_modules",
+      "glob": "ui/design_guide*.py",
+      "role": "design_guide_ui_render",
+      "minimum_level": "L2",
+      "current_level": "L2",
+      "verifiers": [
+        "tools/verification/design_guide_card_render_model_snapshot.py",
+        "tools/verification/design_guide_card_vm_adapter_parity_snapshot.py",
+        "tools/verification/design_guide_formatting_contract_v3_snapshot.py"
+      ]
+    },
+    {
+      "name": "engineering_core_modules",
+      "glob": "{bending_core,shear_core,deflection_core,crack_core,beam_analysis,uls_flexure}.py",
+      "role": "engineering_core",
+      "minimum_level": "L2",
+      "current_level": "L2",
+      "verifiers": [
+        "tools/verification/engineering_core_contract.py"
+      ]
+    },
+    {
+      "name": "engineering_check_helper_modules",
+      "glob": "*_checks_helpers.py",
+      "role": "engineering_check_rows",
+      "minimum_level": "L2",
+      "current_level": "L2",
+      "verifiers": [
+        "tools/verification/engineering_check_rows_contract.py"
+      ]
+    },
+    {
+      "name": "streamlit_page_modules",
+      "glob": "{*_page,creep,deflection,shrinkage}.py",
+      "role": "streamlit_page",
+      "minimum_level": "L1",
+      "current_level": "L1",
+      "verifiers": [
+        "tools/verification/streamlit_page_import_contract.py"
+      ],
+      "next_level_target": "Promote key pages to browser-backed render contracts for layout and widget-state behavior."
+    },
+    {
+      "name": "streamlit_page_helper_modules",
+      "glob": "{bending_tabs,shear_layout,shear_steps,step_ui,ui_seamless_steps,ui/inputs_page_style}.py",
+      "role": "streamlit_page_helper",
+      "minimum_level": "L1",
+      "current_level": "L1",
+      "verifiers": [
+        "tools/verification/streamlit_page_helpers_contract.py"
+      ]
+    },
+    {
+      "name": "engineering_check_ui_module",
+      "glob": "{engineering_check_ui,bending_layer_semantics}.py",
+      "role": "engineering_check_ui",
+      "minimum_level": "L2",
+      "current_level": "L2",
+      "verifiers": [
+        "tools/verification/engineering_check_ui_contract.py"
+      ]
+    },
+    {
+      "name": "report_and_export_modules",
+      "glob": "{report_helpers,summary_table_ui,beam_diagram_publish}.py",
+      "role": "report_export",
+      "minimum_level": "L2",
+      "current_level": "L2",
+      "verifiers": [
+        "tools/verification/report_export_contract.py"
+      ]
+    },
+    {
+      "name": "state_and_session_modules",
+      "glob": "{state_and_helpers,session_state_final_log,jump_nav}.py",
+      "role": "state_session",
+      "minimum_level": "L2",
+      "current_level": "L2",
+      "verifiers": [
+        "tools/verification/state_session_contract.py"
+      ]
+    },
+    {
+      "name": "auth_storage_modules",
+      "glob": "{auth_bridge,auth_streamlit,projects_store,supabase_client}.py",
+      "role": "auth_storage",
+      "minimum_level": "L1",
+      "current_level": "L1",
+      "verifiers": [
+        "tools/verification/auth_storage_contract.py"
+      ]
+    },
+    {
+      "name": "low_risk_ui_shims",
+      "glob": "{ui,calculations}/__init__.py",
+      "role": "low_risk_shim",
+      "minimum_level": "L0",
+      "current_level": "L0",
+      "accepted_low_risk": true
+    },
+    {
+      "name": "low_risk_top_level_wrappers",
+      "glob": "{app,streamlit_app,streamlit_bmd_app,99_UI_sandbox,check_titles,optimisation_config,props,strain_display}.py",
+      "role": "low_risk_wrapper",
+      "minimum_level": "L0",
+      "current_level": "L0",
+      "accepted_low_risk": true
+    }
+  ]
+}

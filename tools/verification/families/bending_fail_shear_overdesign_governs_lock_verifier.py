@@ -41,6 +41,7 @@ PROOF_CHAIN = (
     ("replacement_audit", "tools/verification/families/bending_fail_shear_overdesign_governs_replacement_audit.py"),
     ("cutover_plan", "tools/verification/families/bending_fail_shear_overdesign_governs_cutover_plan.py"),
     ("cutover_implementation", "tools/verification/families/bending_fail_shear_overdesign_governs_cutover_implementation.py"),
+    ("publication_regression", "tools/verification/families/bending_fail_shear_overdesign_governs_publication_regression.py"),
     ("live_wiring", "tools/verification/families/locked_family_live_wiring_snapshot.py"),
 )
 

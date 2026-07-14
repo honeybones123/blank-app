@@ -189,7 +189,12 @@ def build_candidate_search_evidence(
     selected_util = None if selected_row is None else selected_row.get("preview_util")
     selected_distance = None if selected_row is None else selected_row.get("distance_to_band")
     closest_distance = None if closest_row is None else closest_row.get("distance_to_band")
+    strict_target_scope = str(search_scope or "").strip() in {
+        "combined_best_safe_shear_plus_bending_cleanup",
+    }
     outside_allowed = bool(
+        not strict_target_scope
+        and
         selected_util is not None
         and not (float(target_low) <= float(selected_util) <= float(target_high))
         and bool(exhaustive)

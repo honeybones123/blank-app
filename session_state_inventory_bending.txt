@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-06-07 16:27:19",
+  "timestamp": "2026-07-08 16:58:45",
   "page": "bending",
-  "boot_id": "boot_1780813634",
+  "boot_id": "boot_1783486070",
   "fresh_boot": false,
-  "restored_from_snapshot": null,
+  "restored_from_snapshot": true,
   "rendered_widget_count": 23,
-  "session_key_count": 1486,
+  "session_key_count": 1590,
   "missing_shared_for_rendered": [],
   "stray_session_keys": [
     "A_duct_total",
@@ -52,8 +52,20 @@
     "auto_design_status",
     "auto_design_steps",
     "auto_recompute",
+    "batch_design_apply_project_beam_reo_edits",
+    "batch_design_project_beam_reo_editor",
+    "batch_design_save_active_beam_to_table",
+    "batch_design_spacegass_upload",
+    "batch_design_workflow_state",
+    "batch_design_workflow_summary_toggle",
+    "batch_design_workspace_expanded",
     "beam_last_hydrated_id",
+    "beam_manager_active_selector",
+    "beam_manager_add_button",
+    "beam_manager_delete_button",
+    "beam_manager_duplicate_button",
     "beam_manager_initialized",
+    "beam_manager_reset_workspace",
     "beam_order",
     "beam_project_enabled",
     "beam_project_show_manager",
@@ -99,6 +111,7 @@
     "bending_bot_row_4_mode",
     "bending_bot_row_4_spacing",
     "bending_bw",
+    "bending_curved_beam_diagram_fullscreen_button",
     "bending_db_bot",
     "bending_db_bot_1",
     "bending_db_bot_2",
@@ -122,6 +135,7 @@
     "bending_phi_bend",
     "bending_side_cover_bot",
     "bending_side_cover_top",
+    "bending_sls_3_5_strain_distribution_fullscreen_button",
     "bending_sls_dn",
     "bending_sls_dn_mm",
     "bending_sls_eps_bot",
@@ -193,29 +207,15 @@
     "canonical_shear_provided_spacing_mm",
     "canonical_shear_reason",
     "canonical_shear_required_spacing_mm",
-    "canonical_shear_source",
-    "canonical_shear_spacing_override_active",
-    "canonical_shear_spacing_override_reason",
-    "canonical_shear_status",
-    "canonical_shear_util",
-    "concrete_stress_model",
-    "convenience_field_drift_detected",
-    "cr_env",
-    "cr_faces",
-    "cr_t_creep",
-    "cr_tau",
-    "crack_Ast_active_mm2",
-    "crack_D",
-    "crack_L",
-    "crack_Mu_star"
+    "canonical_shear_source"
   ],
   "pairs": [
     {
       "widget_key": "bending_D",
-      "widget_val": 300.0,
+      "widget_val": 850.0,
       "widget_type": "float",
       "shared_key": "D",
-      "shared_val": 300.0,
+      "shared_val": 850.0,
       "shared_type": "float"
     },
     {
@@ -236,27 +236,27 @@
     },
     {
       "widget_key": "bending_b",
-      "widget_val": 250.0,
+      "widget_val": 500.0,
       "widget_type": "float",
       "shared_key": "b",
-      "shared_val": 250.0,
+      "shared_val": 500.0,
       "shared_type": "float"
     },
     {
       "widget_key": "bending_bot_row_1_bars",
-      "widget_val": 3,
+      "widget_val": 6,
       "widget_type": "int",
       "shared_key": "bot_row_1_bars",
-      "shared_val": 3,
+      "shared_val": 6,
       "shared_type": "int"
     },
     {
       "widget_key": "bending_bot_row_1_dia",
-      "widget_val": 10,
+      "widget_val": 28,
       "widget_type": "int",
       "shared_key": "bot_row_1_dia",
-      "shared_val": 10.0,
-      "shared_type": "float"
+      "shared_val": 28,
+      "shared_type": "int"
     },
     {
       "widget_key": "bending_bot_row_1_mode",
@@ -380,10 +380,10 @@
     },
     {
       "widget_key": "inputs_load_Mstar_pos_proxy",
-      "widget_val": 0.0,
+      "widget_val": 100.0,
       "widget_type": "float",
       "shared_key": "load_Mstar_pos_proxy",
-      "shared_val": 0.0,
+      "shared_val": 100.0,
       "shared_type": "float"
     },
     {

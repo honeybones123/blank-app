@@ -126,10 +126,10 @@ def _validate_contract_shape(contract: dict[str, Any]) -> list[str]:
         failures.append("family_id_mismatch")
     if identity.get("package") != "design_brain.families.shear_fail_governs":
         failures.append("package_mismatch")
-    if identity.get("legacy_delegate") != "design_brain.families.shear_fail.ShearFailFamily":
-        failures.append("legacy_delegate_mismatch")
-    if identity.get("public_api") != "evaluate_shear_fail_governs":
-        failures.append("public_api_mismatch")
+    if "legacy_delegate" in identity:
+        failures.append("legacy_delegate_present")
+    if "public_api" in identity:
+        failures.append("public_api_present")
 
     classification = contract.get("classification") or {}
     if classification.get("entry_condition") != "shear underdesign governs":
@@ -236,7 +236,7 @@ def _validate_runtime_authority_source() -> list[str]:
     failures: list[str] = []
     runtime_path = ROOT / "design_brain" / "families" / "shear_fail_governs" / "runtime.py"
     family_path = ROOT / "design_brain" / "families" / "shear_fail.py"
-    api_path = ROOT / "design_brain" / "families" / "shear_fail_governs" / "__init__.py"
+    package_path = ROOT / "design_brain" / "families" / "shear_fail_governs" / "__init__.py"
     if not _source_contains(runtime_path, "def run_shear_fail_governs_ladder_runtime"):
         failures.append("runtime_authority_function_missing")
     if not _source_contains(runtime_path, "load_shear_fail_governs_contract"):
@@ -245,8 +245,10 @@ def _validate_runtime_authority_source() -> list[str]:
         failures.append("family_specs_not_runtime_driven")
     if not _source_contains(family_path, "runtime_authority"):
         failures.append("family_specs_missing_runtime_authority_evidence")
-    if not _source_contains(api_path, "contract_runtime_authority"):
-        failures.append("public_api_missing_contract_runtime_authority")
+    if not _source_contains(package_path, "run_shear_fail_governs_ladder_runtime"):
+        failures.append("package_runtime_export_missing")
+    if _source_contains(package_path, "evaluate_" + "shear_fail_governs"):
+        failures.append("deleted_compatibility_api_still_present")
     return failures
 
 

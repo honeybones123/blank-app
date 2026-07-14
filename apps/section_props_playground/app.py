@@ -7,6 +7,7 @@ from section_props.schema import SHAPES, get_default_dims
 from section_props.validate import validate_dims
 from section_props.shapes import compute_section_properties
 from section_props.plot import plot_shape
+from widgets_helpers import render_plotly_diagram
 
 
 st.set_page_config(page_title="Section Properties Playground", layout="wide")
@@ -101,7 +102,12 @@ with colR:
     st.subheader("Diagram + Properties")
 
     fig = plot_shape(shape_name, dims, reo=reo)
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    render_plotly_diagram(
+        fig,
+        key="section_props_playground_diagram",
+        title="Section properties diagram",
+        config={"displayModeBar": False},
+    )
 
     if ok:
         props = compute_section_properties(shape_name, dims)

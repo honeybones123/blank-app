@@ -17,7 +17,7 @@ if str(ROOT) not in sys.path:
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 
-from design_brain.families.bending_and_shear_fail_govern import evaluate_bending_and_shear_fail_govern  # noqa: E402
+from design_brain.combined_bending_shear_candidate_merge import CombinedBendingShearFailInputs  # noqa: E402
 from design_brain.families.bending_and_shear_fail_govern.contract import (  # noqa: E402
     candidate_source_contract,
     contract_hash,
@@ -25,7 +25,9 @@ from design_brain.families.bending_and_shear_fail_govern.contract import (  # no
     load_bending_and_shear_fail_govern_contract,
     ranking_criteria,
 )
+from design_brain.families.bending_and_shear_fail_govern import run_combined_bending_shear_fail_runtime  # noqa: E402
 from design_brain.families.combined_bending_shear_fail import CombinedBendingShearFailFamily  # noqa: E402
+from design_brain.families.combined_bending_shear_fail import _default_runtime_evaluator  # noqa: E402
 
 
 PROOF_CHAIN = [
@@ -40,6 +42,7 @@ PROOF_CHAIN = [
     ("replacement_audit", "tools/verification/families/combined_bending_shear_fail_governs_replacement_audit.py"),
     ("cutover_plan", "tools/verification/families/combined_bending_shear_fail_governs_cutover_plan.py"),
     ("cutover_implementation", "tools/verification/families/combined_bending_shear_fail_governs_cutover_implementation.py"),
+    ("publication_regression", "tools/verification/families/combined_bending_shear_fail_publication_regression.py"),
     ("live_wiring", "tools/verification/families/locked_family_live_wiring_snapshot.py"),
 ]
 
@@ -108,12 +111,20 @@ def main() -> int:
         bending_fail_candidates=bending,
         shear_fail_candidates=shear,
     )
-    api_result = evaluate_bending_and_shear_fail_govern(
-        {
-            "state": {"selected_family_id": "COMBINED_BENDING_SHEAR_FAIL"},
-            "bending_fail_candidates": bending,
-            "shear_fail_candidates": shear,
-        }
+    runtime_result = run_combined_bending_shear_fail_runtime(
+        inputs=CombinedBendingShearFailInputs(
+            selected_family_id="COMBINED_BENDING_SHEAR_FAIL",
+            base_state={"selected_family_id": "COMBINED_BENDING_SHEAR_FAIL"},
+            geometry={},
+            reinforcement={},
+            material_properties={},
+            actions={},
+            constraints={},
+            bending_fail_candidates=bending,
+            shear_fail_candidates=shear,
+            approved_combined_merge_candidates=(),
+        ),
+        evaluate_candidate=_default_runtime_evaluator,
     )
     runtime_source = (ROOT / "design_brain" / "families" / "bending_and_shear_fail_govern" / "runtime.py").read_text(encoding="utf-8", errors="replace")
     family_source = (ROOT / "design_brain" / "families" / "combined_bending_shear_fail.py").read_text(encoding="utf-8", errors="replace")
@@ -133,8 +144,7 @@ def main() -> int:
         "contract_hash_present": bool(contract_hash()),
         "runtime_authority": ladder.get("contract_runtime_authority") == "run_combined_bending_shear_fail_runtime",
         "family_shell_runtime_driven": ladder.get("contract_runtime_driven") is True,
-        "api_identifies_runtime_authority": api_result.lock_proof.get("runtime_authority")
-        == "run_combined_bending_shear_fail_runtime",
+        "package_runtime_export_matches_family_shell": runtime_result.runtime_hash == ladder.get("runtime_hash"),
         "source_rules_locked": set(source_contract.get("allowed_sources") or [])
         == {"BENDING_FAIL_GOVERNS", "SHEAR_FAIL_GOVERNS", "APPROVED_COMBINED_MERGE_RULE"}
         and source_contract.get("must_not_duplicate_ladders") is True,
@@ -145,8 +155,7 @@ def main() -> int:
         "runtime_has_no_page_chooser_or_ladder_imports": not forbidden_runtime_terms,
         "shared_surfaces_remain_outside": "combined_fail_contract_ladder" in inputs_source
         and "_route_combined_fail_family_publication" in shared_source
-        and api_result.publication == {}
-        and api_result.cta_contract == {},
+        and "shared_system_owned_outside_family" in family_source,
         "no_locked_source_family_files_touched_by_runtime": "from design_brain.families.bending_fail" not in runtime_source
         and "from design_brain.families.shear_fail" not in runtime_source
         and "run_bending_fail_governs" not in runtime_source
@@ -168,7 +177,7 @@ def main() -> int:
             "runtime_hash": ladder.get("runtime_hash"),
             "spec_count": len(list(ladder.get("specs") or [])),
         },
-        "api_lock_proof": dict(api_result.lock_proof),
+        "runtime_result": runtime_result.to_dict(),
     }
     json_path, report_path = _write(snapshot)
     if failures:

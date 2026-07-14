@@ -1,6 +1,8 @@
+import copy
 import streamlit as st
 import os
 import json
+from contextlib import contextmanager
 from state_and_helpers import _debug_log_path
 
 # Debug log path used by optional widget debug blocks
@@ -12,11 +14,526 @@ except Exception:
 import streamlit.components.v1 as components
 import re
 import html
+from typing import Any
 
 from state_and_helpers import TAB_KEYS, resolve_widget_key, NONZERO_REQUIRED_SHARED_KEYS, zero_allowed, _audit, mark_user_edit, set_shared
 
 # Global rendered widget keys set (module-level)
 _RENDERED_WIDGET_KEYS: set[str] = set()
+
+REO_DIAMETER_LABEL = "\u00d8 (mm)"
+SHEAR_LINK_DIAMETER_LABEL = f"Link {REO_DIAMETER_LABEL}"
+
+
+def _safe_dom_id(value: str) -> str:
+    """Return a stable DOM id fragment for Streamlit-injected diagram hooks."""
+    return re.sub(r"[^a-zA-Z0-9_-]+", "_", str(value or "diagram")).strip("_") or "diagram"
+
+
+def _render_plotly_doubleclick_fullscreen_hook(anchor_id: str) -> None:
+    """Bind double-click fullscreen to the Plotly chart nearest the hidden anchor."""
+    script = f"""
+<script>
+(function() {{
+  const anchorId = {json.dumps(anchor_id)};
+  let doc;
+  try {{
+    doc = window.parent && window.parent.document;
+  }} catch (err) {{
+    return;
+  }}
+  if (!doc) return;
+
+  const styleId = "beam-plotly-hidden-fullscreen-style";
+  if (!doc.getElementById(styleId)) {{
+    const style = doc.createElement("style");
+    style.id = styleId;
+    style.textContent = `
+      [data-beam-plotly-fullscreen-host][data-beam-plotly-pseudo-fullscreen="1"] {{
+        position: fixed !important;
+        left: var(--beam-plotly-shell-left, 0px) !important;
+        top: var(--beam-plotly-shell-top, 0px) !important;
+        width: var(--beam-plotly-shell-width, 100vw) !important;
+        height: var(--beam-plotly-shell-height, 100vh) !important;
+        max-width: none !important;
+        max-height: none !important;
+        z-index: 2147483000 !important;
+        padding: 1rem !important;
+        box-sizing: border-box !important;
+        background: #fff !important;
+        display: flex !important;
+        align-items: stretch !important;
+        justify-content: stretch !important;
+        overflow: hidden !important;
+      }}
+      [data-beam-plotly-fullscreen-host][data-beam-plotly-pseudo-fullscreen="1"] [data-testid="stPlotlyChart"],
+      [data-beam-plotly-fullscreen-host][data-beam-plotly-pseudo-fullscreen="1"] .js-plotly-plot {{
+        width: 100% !important;
+        height: 100% !important;
+      }}
+    `;
+    doc.head.appendChild(style);
+  }}
+
+  function nextElementWithPlot(start) {{
+    let node = start;
+    for (let depth = 0; depth < 8 && node; depth += 1) {{
+      let sibling = node.nextElementSibling;
+      while (sibling) {{
+        if (sibling.querySelector && sibling.querySelector(".js-plotly-plot")) {{
+          return sibling;
+        }}
+        sibling = sibling.nextElementSibling;
+      }}
+      node = node.parentElement;
+    }}
+    return null;
+  }}
+
+  function findHost() {{
+    const anchor = doc.getElementById(anchorId);
+    if (!anchor) return null;
+    const markerContainer = anchor.closest('[data-testid="stElementContainer"]') || anchor.parentElement;
+    let host = nextElementWithPlot(markerContainer);
+    if (!host) {{
+      const plots = Array.from(doc.querySelectorAll(".js-plotly-plot"));
+      const following = 4; // DOCUMENT_POSITION_FOLLOWING without relying on parent Node.
+      const plot = plots.find((candidate) => (anchor.compareDocumentPosition(candidate) & following) !== 0);
+      host = plot ? (plot.closest('[data-testid="stElementContainer"]') || plot.parentElement) : null;
+    }}
+    if (!host) return null;
+    host.setAttribute("data-beam-plotly-fullscreen-host", anchorId);
+    return host;
+  }}
+
+  function resizePlot(host) {{
+    if (!host) return;
+    const plots = Array.from(host.querySelectorAll(".js-plotly-plot"));
+    const parentWindow = doc.defaultView || window.parent;
+    for (const plot of plots) {{
+      try {{
+        if (parentWindow && parentWindow.Plotly && parentWindow.Plotly.Plots) {{
+          parentWindow.Plotly.Plots.resize(plot);
+        }}
+      }} catch (err) {{
+        // Plotly may not expose a global in Streamlit; the browser resize event is enough there.
+      }}
+    }}
+    try {{
+      parentWindow.dispatchEvent(new Event("resize"));
+    }} catch (err) {{}}
+  }}
+
+  function activePseudoHost() {{
+    return doc.querySelector('[data-beam-plotly-fullscreen-host][data-beam-plotly-pseudo-fullscreen="1"]');
+  }}
+
+  function exitPseudoFullscreen() {{
+    const host = activePseudoHost();
+    if (!host) return;
+    host.removeAttribute("data-beam-plotly-pseudo-fullscreen");
+    doc.documentElement.style.overflow = host.dataset.beamPlotlyPreviousRootOverflow || "";
+    doc.body.style.overflow = host.dataset.beamPlotlyPreviousBodyOverflow || "";
+    delete host.dataset.beamPlotlyPreviousRootOverflow;
+    delete host.dataset.beamPlotlyPreviousBodyOverflow;
+    setTimeout(() => resizePlot(host), 80);
+    setTimeout(() => resizePlot(host), 300);
+  }}
+
+  function enterPseudoFullscreen(host) {{
+    if (!host || activePseudoHost()) return;
+    const mainShell =
+      doc.querySelector('[data-testid="stMain"]') ||
+      doc.querySelector('[data-testid="stAppViewContainer"]') ||
+      doc.body;
+    const blockShell =
+      doc.querySelector('[data-testid="stMainBlockContainer"]') ||
+      doc.querySelector('.block-container') ||
+      mainShell;
+    const mainRect = mainShell.getBoundingClientRect();
+    const blockRect = blockShell.getBoundingClientRect();
+    const blockStyle = doc.defaultView.getComputedStyle(blockShell);
+    const padLeft = parseFloat(blockStyle.paddingLeft || "0") || 0;
+    const padRight = parseFloat(blockStyle.paddingRight || "0") || 0;
+    const shellLeft = Math.max(mainRect.left, blockRect.left + padLeft);
+    const shellRight = Math.min(mainRect.right, (blockRect.right || mainRect.right) - padRight);
+    const shellWidth = Math.max(320, shellRight - shellLeft);
+    const shellTop = mainRect.top;
+    const shellHeight = Math.max(320, mainRect.height);
+    host.style.setProperty("--beam-plotly-shell-left", `${{shellLeft}}px`);
+    host.style.setProperty("--beam-plotly-shell-top", `${{shellTop}}px`);
+    host.style.setProperty("--beam-plotly-shell-width", `${{shellWidth}}px`);
+    host.style.setProperty("--beam-plotly-shell-height", `${{shellHeight}}px`);
+    host.dataset.beamPlotlyPreviousRootOverflow = doc.documentElement.style.overflow || "";
+    host.dataset.beamPlotlyPreviousBodyOverflow = doc.body.style.overflow || "";
+    doc.documentElement.style.overflow = "hidden";
+    doc.body.style.overflow = "hidden";
+    host.setAttribute("data-beam-plotly-pseudo-fullscreen", "1");
+    setTimeout(() => resizePlot(host), 80);
+    setTimeout(() => resizePlot(host), 300);
+  }}
+
+  function bind() {{
+    const host = findHost();
+    if (!host || host.dataset.beamPlotlyFullscreenBound === "1") return;
+    host.dataset.beamPlotlyFullscreenBound = "1";
+    function openFullscreen() {{
+      enterPseudoFullscreen(host);
+    }}
+    host.addEventListener("dblclick", openFullscreen, true);
+    host.addEventListener("click", function(event) {{
+      // Some embedded browser surfaces do not emit dblclick; event.detail preserves a true double-click.
+      if (event.detail >= 2) openFullscreen();
+    }}, true);
+  }}
+
+  bind();
+  setTimeout(bind, 250);
+  setTimeout(bind, 1000);
+
+  if (!doc.documentElement.dataset.beamPlotlyFullscreenChangeBound) {{
+    doc.documentElement.dataset.beamPlotlyFullscreenChangeBound = "1";
+    doc.addEventListener("fullscreenchange", function() {{
+      const active = doc.fullscreenElement;
+      const host = active && active.hasAttribute("data-beam-plotly-fullscreen-host")
+        ? active
+        : doc.querySelector("[data-beam-plotly-fullscreen-host]");
+      setTimeout(() => resizePlot(host), 80);
+      setTimeout(() => resizePlot(host), 300);
+    }}, true);
+    doc.addEventListener("keydown", function(event) {{
+      if (event.key === "Escape" && activePseudoHost()) {{
+        exitPseudoFullscreen();
+      }}
+    }}, true);
+  }}
+}})();
+</script>
+"""
+    components.html(script, height=0, scrolling=False)
+
+
+def _plotly_fullscreen_figure(fig: Any, fullscreen_height: int) -> Any:
+    """Return a dialog-sized Plotly figure without mutating the page figure."""
+    try:
+        dialog_fig = copy.deepcopy(fig)
+    except Exception:
+        return fig
+
+    try:
+        layout_height = int(getattr(getattr(dialog_fig, "layout", None), "height", 0) or 0)
+    except (TypeError, ValueError):
+        layout_height = 0
+
+    try:
+        target_height = max(layout_height, int(fullscreen_height or 0))
+    except (TypeError, ValueError):
+        target_height = layout_height
+
+    if target_height > 0 and hasattr(dialog_fig, "update_layout"):
+        try:
+            dialog_fig.update_layout(height=target_height)
+        except Exception:
+            pass
+    return dialog_fig
+
+
+def render_plotly_diagram(
+    fig: Any,
+    *,
+    key: str,
+    title: str = "Diagram",
+    config: dict[str, Any] | None = None,
+    center: bool = True,
+    allow_fullscreen: bool = True,
+    preserve_figure_width: bool = False,
+    fullscreen_height: int = 960,
+    width: Any | None = None,
+    **plotly_kwargs: Any,
+) -> None:
+    """Render a Plotly diagram with shared centering and hidden double-click fullscreen."""
+    chart_config = {"displayModeBar": False}
+    if config:
+        chart_config.update(config)
+
+    def _figure_width() -> Any:
+        if width is not None:
+            return width
+        layout_width = getattr(getattr(fig, "layout", None), "width", None)
+        try:
+            width_i = int(layout_width or 0)
+        except (TypeError, ValueError):
+            width_i = 0
+        return width_i if preserve_figure_width and width_i > 0 else "stretch"
+
+    anchor_id = f"beam_plotly_fs_{_safe_dom_id(key)}"
+
+    chart_host = st.container(horizontal_alignment="center" if center else "left")
+    with chart_host:
+        if allow_fullscreen:
+            st.markdown(
+                f'<span id="{html.escape(anchor_id, quote=True)}" '
+                'data-beam-plotly-fullscreen-anchor="1" style="display:none"></span>',
+                unsafe_allow_html=True,
+            )
+        st.plotly_chart(
+            fig,
+            width=_figure_width(),
+            config=chart_config,
+            key=f"{key}_chart",
+            **plotly_kwargs,
+        )
+        if allow_fullscreen:
+            _render_plotly_doubleclick_fullscreen_hook(anchor_id)
+
+
+def render_plotly_fullscreen_control(
+    fig: Any,
+    *,
+    key: str,
+    title: str = "Diagram",
+    config: dict[str, Any] | None = None,
+    fullscreen_height: int = 960,
+) -> None:
+    """Legacy no-op: visible Plotly fullscreen buttons have been replaced by double-click."""
+    return None
+
+
+def render_pyplot_diagram(
+    fig: Any,
+    *,
+    key: str,
+    title: str = "Diagram",
+    center: bool = True,
+    allow_fullscreen: bool = True,
+    clear_figure: bool | None = None,
+    use_container_width: bool | None = None,
+    **pyplot_kwargs: Any,
+) -> None:
+    """Render a Matplotlib diagram with shared centering and an optional full-screen view."""
+    if allow_fullscreen:
+        controls = st.container(horizontal=True, horizontal_alignment="right")
+        with controls:
+            fullscreen_clicked = st.button(
+                "Full screen",
+                key=f"{key}_fullscreen_button",
+                icon=":material/fullscreen:",
+                help="Open this diagram in a larger view.",
+            )
+
+        if fullscreen_clicked:
+            @st.dialog(title, width="large")
+            def _fullscreen_dialog() -> None:
+                st.pyplot(
+                    fig,
+                    clear_figure=False,
+                    use_container_width=True,
+                    **pyplot_kwargs,
+                )
+
+            _fullscreen_dialog()
+
+    chart_host = st.container(horizontal_alignment="center" if center else "left")
+    with chart_host:
+        kwargs = dict(pyplot_kwargs)
+        if clear_figure is not None:
+            kwargs["clear_figure"] = clear_figure
+        if use_container_width is not None:
+            kwargs["use_container_width"] = use_container_width
+        st.pyplot(fig, **kwargs)
+
+
+def render_image_diagram(
+    image: Any,
+    *,
+    key: str,
+    title: str = "Diagram",
+    caption: str | None = None,
+    center: bool = True,
+    allow_fullscreen: bool = True,
+    width: int | None = None,
+    use_container_width: bool | None = None,
+    **image_kwargs: Any,
+) -> None:
+    """Render a static diagram image with shared centering and an optional full-screen view."""
+    if allow_fullscreen:
+        controls = st.container(horizontal=True, horizontal_alignment="right")
+        with controls:
+            fullscreen_clicked = st.button(
+                "Full screen",
+                key=f"{key}_fullscreen_button",
+                icon=":material/fullscreen:",
+                help="Open this diagram in a larger view.",
+            )
+
+        if fullscreen_clicked:
+            @st.dialog(title, width="large")
+            def _fullscreen_dialog() -> None:
+                st.image(
+                    image,
+                    caption=caption,
+                    use_container_width=True,
+                    **image_kwargs,
+                )
+
+            _fullscreen_dialog()
+
+    image_host = st.container(horizontal_alignment="center" if center else "left")
+    with image_host:
+        kwargs = dict(image_kwargs)
+        if width is not None:
+            kwargs["width"] = width
+        elif use_container_width is not None:
+            kwargs["use_container_width"] = use_container_width
+        st.image(image, caption=caption, **kwargs)
+
+
+def render_html_diagram(
+    html_body: str,
+    *,
+    key: str,
+    title: str = "Diagram",
+    height: int,
+    fullscreen_height: int = 960,
+    scrolling: bool = False,
+    center: bool = True,
+    allow_fullscreen: bool = True,
+) -> None:
+    """Render an HTML-backed diagram with shared centering and an optional full-screen view."""
+    if allow_fullscreen:
+        controls = st.container(horizontal=True, horizontal_alignment="right")
+        with controls:
+            fullscreen_clicked = st.button(
+                "Full screen",
+                key=f"{key}_fullscreen_button",
+                icon=":material/fullscreen:",
+                help="Open this diagram in a larger view.",
+            )
+
+        if fullscreen_clicked:
+            @st.dialog(title, width="large")
+            def _fullscreen_dialog() -> None:
+                components.html(html_body, height=fullscreen_height, scrolling=scrolling)
+
+            _fullscreen_dialog()
+
+    html_host = st.container(horizontal_alignment="center" if center else "left")
+    with html_host:
+        components.html(html_body, height=height, scrolling=scrolling)
+
+
+@contextmanager
+def render_specialized_widget_rail(
+    key: str,
+    column_count: int,
+    *,
+    gap: str = "large",
+    visible_columns: int = 3,
+):
+    """Render grouped specialised-page widgets in a three-visible-column horizontal rail."""
+    with _specialized_widget_rail_container(
+        key,
+        column_count,
+        gap=gap,
+        visible_columns=visible_columns,
+    ) as columns:
+        yield columns
+
+
+def specialized_widget_rail_columns(
+    key: str,
+    column_count: int,
+    *,
+    gap: str = "large",
+    visible_columns: int = 3,
+):
+    """Return Streamlit columns placed inside the specialised three-visible-column rail."""
+    with _specialized_widget_rail_container(
+        key,
+        column_count,
+        gap=gap,
+        visible_columns=visible_columns,
+    ) as columns:
+        return columns
+
+
+@contextmanager
+def _specialized_widget_rail_container(
+    key: str,
+    column_count: int,
+    *,
+    gap: str = "large",
+    visible_columns: int = 3,
+):
+    count = max(1, int(column_count))
+    visible = max(1, int(visible_columns))
+    width_pct = max(100.0, (count / visible) * 100.0)
+    mobile_width_pct = max(100.0, count * 100.0)
+    gap_rem_by_name = {"small": 1.0, "medium": 2.0, "large": 4.0}
+    gap_rem = gap_rem_by_name.get(str(gap or "large").strip().lower(), 4.0)
+    extra_gap_rem = max(0.0, (count / visible - 1.0) * gap_rem)
+    mobile_extra_gap_rem = max(0.0, (count - 1.0) * gap_rem)
+    width_expr = f"calc({width_pct:.6g}% + {extra_gap_rem:.6g}rem)"
+    mobile_width_expr = f"calc({mobile_width_pct:.6g}% + {mobile_extra_gap_rem:.6g}rem)"
+    outer_key = f"{key}_outer"
+    inner_key = f"{key}_inner"
+
+    st.markdown(
+        f"""
+        <style>
+        .st-key-{outer_key} {{
+            display: block;
+            width: 100%;
+            max-width: 100%;
+            overflow-x: auto !important;
+            overflow-y: hidden;
+            padding-bottom: 0.6rem;
+            scrollbar-gutter: stable;
+            overscroll-behavior-x: contain;
+            -webkit-overflow-scrolling: touch;
+            clip-path: inset(0);
+        }}
+        .st-key-{outer_key} * {{
+            box-sizing: border-box;
+        }}
+        .st-key-{inner_key} {{
+            width: {width_expr} !important;
+            min-width: {width_expr} !important;
+            max-width: none !important;
+        }}
+        .st-key-{inner_key} > div[data-testid="stVerticalBlock"] {{
+            width: 100% !important;
+            min-width: 100% !important;
+            max-width: none !important;
+        }}
+        .st-key-{outer_key}::-webkit-scrollbar {{
+            height: 10px;
+        }}
+        .st-key-{outer_key}::-webkit-scrollbar-track {{
+            background: rgba(49, 51, 63, 0.08);
+            border-radius: 999px;
+        }}
+        .st-key-{outer_key}::-webkit-scrollbar-thumb {{
+            background: rgba(49, 51, 63, 0.28);
+            border-radius: 999px;
+        }}
+        .st-key-{outer_key}::-webkit-scrollbar-thumb:hover {{
+            background: rgba(49, 51, 63, 0.4);
+        }}
+        @media (max-width: 760px) {{
+            .st-key-{inner_key} {{
+                width: {mobile_width_expr} !important;
+                min-width: {mobile_width_expr} !important;
+            }}
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.container(key=outer_key):
+        with st.container(key=inner_key):
+            yield st.columns([1] * count, gap=gap)
 
 
 def _register_rendered_key(key: str) -> None:
@@ -1219,12 +1736,17 @@ def _render_reo_row_controls(
     spacing_shared_key: str,
     dia_shared_key: str,
 ) -> None:
-    """Bars or Spacing, then Ø (mm); label-left / widget-right rows; keys unchanged."""
+    """Bars or Spacing, then bar diameter; label-left / widget-right rows; keys unchanged."""
     if mode == "Count":
+        valid_count_options = [
+            int(option)
+            for option in list(count_options or [])
+            if int(option) != 1
+        ]
         select_row(
             "Bars",
             bars_key,
-            count_options,
+            valid_count_options,
             int(st.session_state.get(bars_shared_key, default_bars if row_index == 1 else 0)),
             sync_callbacks,
             help_text=f"Number of bars in {row_face} row {row_index}.",
@@ -1239,7 +1761,7 @@ def _render_reo_row_controls(
             help_text=f"Centre-to-centre spacing for {row_face} row {row_index} (mm).",
         )
     select_row(
-        "Ø (mm)",
+        REO_DIAMETER_LABEL,
         dia_key,
         dia_options,
         int(st.session_state.get(dia_shared_key, default_dia)),

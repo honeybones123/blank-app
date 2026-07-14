@@ -18,6 +18,7 @@ from design_brain.families.shear_fail_bending_overdesign_governs.contract import
     exhausted_rules,
     priority_contract,
     ranking_criteria,
+    target_band,
 )
 
 
@@ -147,6 +148,32 @@ def _target_distance(value: float | None, lower: float = 0.85, upper: float = 1.
     return 0.0
 
 
+def _inside_band(value: Any, lower: Any, upper: Any) -> bool:
+    try:
+        parsed = float(value)
+        lower_f = float(lower)
+        upper_f = float(upper)
+    except (TypeError, ValueError):
+        return False
+    return lower_f <= parsed <= upper_f
+
+
+def _row_inside_target_band(row: dict[str, Any], band: dict[str, Any]) -> bool:
+    evaluation = _as_dict(row.get("evaluation"))
+    return bool(
+        _inside_band(
+            evaluation.get("bending_utilisation_after"),
+            band.get("bending_lower", 0.85),
+            band.get("bending_upper", 1.0),
+        )
+        and _inside_band(
+            evaluation.get("shear_utilisation_after"),
+            band.get("shear_lower", 0.85),
+            band.get("shear_upper", 1.0),
+        )
+    )
+
+
 def _rank_key(row: dict[str, Any]) -> tuple[Any, ...]:
     evaluation = _as_dict(row.get("evaluation"))
     reinforcement = _as_dict(evaluation.get("reinforcement_quantity"))
@@ -219,6 +246,34 @@ def run_shear_fail_bending_overdesign_runtime(
             rejected.append(row)
     ranked = sorted(accepted, key=_rank_key)
     selected = dict(ranked[0]) if ranked else None
+    band = target_band()
+    target_band_candidate_count = sum(1 for row in accepted if _row_inside_target_band(row, band))
+    selected_inside_target_band = bool(selected and _row_inside_target_band(selected, band))
+    selected_evaluation = _as_dict(selected.get("evaluation") if selected else {})
+    target_band_refinement_proof = {
+        "lane_id": band.get("candidate_lane"),
+        "target_band_candidate_count": target_band_candidate_count,
+        "selected_inside_target_band": selected_inside_target_band,
+        "selected_inside_bending_band": bool(
+            selected
+            and _inside_band(
+                selected_evaluation.get("bending_utilisation_after"),
+                band.get("bending_lower", 0.85),
+                band.get("bending_upper", 1.0),
+            )
+        ),
+        "selected_inside_shear_band": bool(
+            selected
+            and _inside_band(
+                selected_evaluation.get("shear_utilisation_after"),
+                band.get("shear_lower", 0.85),
+                band.get("shear_upper", 1.0),
+            )
+        ),
+        "fallback_reason": None
+        if selected_inside_target_band
+        else band.get("fallback"),
+    }
     specific_blockers = tuple(reason for row in rejected for reason in tuple(row.get("rejection_reasons") or ()))
     exhausted_reason = None if selected else next(iter(specific_blockers), "no valid mixed recommendation exists")
     source_contract = candidate_source_contract()
@@ -235,12 +290,17 @@ def run_shear_fail_bending_overdesign_runtime(
         "accepted_count": len(accepted),
         "rejected_count": len(rejected),
         "selected_candidate_id": selected.get("candidate_id") if selected else None,
+        "target_band_candidate_count": target_band_candidate_count,
+        "target_band_selected": selected_inside_target_band,
+        "fallback_reason": target_band_refinement_proof.get("fallback_reason"),
     }
     exact_stop = {
         "allowed_when": tuple(exact_stop_rules().get("allowed_when") or ()),
         "selected_shear_repaired": bool(selected and selected.get("shear_repaired")),
         "selected_bending_compliant": bool(selected and selected.get("bending_compliant")),
-        "no_higher_ranked_candidate_exists": bool(selected),
+        "selected_inside_bending_band": bool(target_band_refinement_proof.get("selected_inside_bending_band")),
+        "selected_inside_shear_band": bool(target_band_refinement_proof.get("selected_inside_shear_band")),
+        "no_higher_ranked_candidate_exists": bool(ranked and selected == ranked[0]),
         "bending_optimisation_opportunistic_only": priority_contract().get("opportunistic_objective") == "bending optimisation",
     }
     exhausted = {
@@ -267,6 +327,7 @@ def run_shear_fail_bending_overdesign_runtime(
         "accepted_candidate_evidence": tuple(accepted),
         "rejected_candidate_evidence": tuple(rejected),
         "ranking_evidence": ranking,
+        "target_band_refinement_proof": target_band_refinement_proof,
         "exact_stop_proof": exact_stop,
         "exhausted_proof": exhausted,
         "ownership_proof": ownership,

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 TARGET_LOW_DEFAULT = 0.85
 TARGET_HIGH_DEFAULT = 1.0
 
@@ -35,6 +34,49 @@ def _as_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _geometry_state_from_source(source: Any) -> dict:
+    source_d = _as_dict(source)
+    for key in ("base_state", "state", "current_state", "beam_state", "design_state"):
+        nested = _as_dict(source_d.get(key))
+        if nested:
+            return nested
+    return source_d
+
+
+def _depth_width_ratio_blocker(*sources: Any) -> dict[str, Any]:
+    from design_brain.families.bending_fail_governs.geometry_ratio import (
+        bending_depth_width_ratio_limit,
+        depth_width_ratio,
+    )
+
+    for source in sources:
+        state = _geometry_state_from_source(source)
+        if not state:
+            continue
+        width = _as_float(
+            state.get("b")
+            or state.get("bw")
+            or state.get("beam_width")
+            or state.get("beam_b")
+            or state.get("width")
+        )
+        depth = _as_float(state.get("D") or state.get("depth") or state.get("beam_depth"))
+        if width is None or depth is None:
+            continue
+        ratio = depth_width_ratio(width=float(width), depth=float(depth))
+        limit = bending_depth_width_ratio_limit()
+        if ratio is not None and ratio > float(limit) + 1e-9:
+            return {
+                "blocked": True,
+                "reason": "depth_width_ratio_above_contract_limit",
+                "depth_width_ratio": float(ratio),
+                "maximum_depth_width_ratio": float(limit),
+                "width": float(width),
+                "depth": float(depth),
+            }
+    return {"blocked": False}
 
 
 def _normalise_family(value: Any) -> str:
@@ -331,6 +373,19 @@ def classify_governing_state(
     active_failures = _active_failures(summary_d, evidence_d, debug_d)
     active_overdesigns = _active_overdesigns(summary_d, evidence_d, debug_d, low)
     active_constraints = _active_constraints(evidence_d, debug_d, primary_d)
+    geometry_ratio_blocker = _depth_width_ratio_blocker(
+        payload_d,
+        primary_d,
+        summary_d,
+        evidence_d,
+        debug_d,
+        result_d,
+    )
+    if geometry_ratio_blocker.get("blocked"):
+        if "geometry" not in active_failures:
+            active_failures.append("geometry")
+        if "geometry" not in active_constraints:
+            active_constraints.append("geometry")
     exact_stop = _exact_stop_possible(evidence_d, debug_d, primary_d)
     action_required = _candidate_action_required(primary_d, debug_d, evidence_d)
     target_reached = _target_reached(summary_d, evidence_d, debug_d, primary_d, low, high)
@@ -349,7 +404,10 @@ def classify_governing_state(
     diagnostic_reasons: list[str] = []
 
     active_set = set(active_failures)
-    if {"bending", "shear"}.issubset(active_set):
+    if active_set & _DETAILING_FAMILIES:
+        governing_state = "GEOMETRY_DETAILING_GOVERNS"
+        primary_driver = sorted(active_set & _DETAILING_FAMILIES)[0]
+    elif {"bending", "shear"}.issubset(active_set):
         governing_state = "COMBINED_BENDING_SHEAR_FAIL"
         primary_driver = "combined_strength_failure"
     elif "bending" in active_set:
@@ -361,9 +419,6 @@ def classify_governing_state(
     elif active_set & _SERVICEABILITY_FAMILIES:
         governing_state = "SERVICEABILITY_FAIL_GOVERNS"
         primary_driver = sorted(active_set & _SERVICEABILITY_FAMILIES)[0]
-    elif active_set & _DETAILING_FAMILIES:
-        governing_state = "GEOMETRY_DETAILING_FAIL_GOVERNS"
-        primary_driver = sorted(active_set & _DETAILING_FAMILIES)[0]
     elif "locked_input" in active_constraints and not action_required:
         governing_state = "LOCKED_NO_REPAIR"
         primary_driver = "locked_input"
@@ -395,6 +450,8 @@ def classify_governing_state(
         diagnostic_reasons.append("active_overdesigns_present")
     if active_constraints:
         diagnostic_reasons.append("active_constraints_present")
+    if geometry_ratio_blocker.get("blocked"):
+        diagnostic_reasons.append("depth_width_ratio_above_contract_limit")
     if action_required:
         diagnostic_reasons.append("candidate_action_required")
     if exact_stop:
@@ -419,6 +476,7 @@ def classify_governing_state(
         "active_constraints": list(active_constraints),
         "candidate_action_required": bool(action_required),
         "exact_stop_possible": bool(exact_stop),
+        "geometry_ratio_blocker": dict(geometry_ratio_blocker),
         "diagnostic_reasons": list(dict.fromkeys(diagnostic_reasons)),
         "target_band": {"low": float(low), "high": float(high)},
         "read_only": True,

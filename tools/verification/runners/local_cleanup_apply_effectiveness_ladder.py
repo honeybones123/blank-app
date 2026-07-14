@@ -534,6 +534,27 @@ def _case_effectiveness(case: dict) -> dict:
         "post_click_remaining_cleanup_reason": case.get("post_click_remaining_cleanup_reason"),
         "post_click_all_required_checks_pass": case.get("post_click_all_required_checks_pass"),
         "post_click_failed_checks": list(case.get("post_click_failed_checks") or []),
+        "final_publication_post_click_exact_blocker_raw_bound_parity": dict(
+            case.get("final_publication_post_click_exact_blocker_raw_bound_parity") or {}
+        ),
+        "final_publication_post_click_exact_blocker_raw_bound_parity_hash": case.get(
+            "final_publication_post_click_exact_blocker_raw_bound_parity_hash"
+        ),
+        "final_publication_post_click_exact_blocker_raw_item_hash": case.get(
+            "final_publication_post_click_exact_blocker_raw_item_hash"
+        ),
+        "final_publication_post_click_exact_blocker_bound_item_hash": case.get(
+            "final_publication_post_click_exact_blocker_bound_item_hash"
+        ),
+        "final_publication_post_click_exact_blocker_raw_bound_adapter_result_parity": case.get(
+            "final_publication_post_click_exact_blocker_raw_bound_adapter_result_parity"
+        ),
+        "final_publication_post_click_exact_blocker_ready_to_replace_old_binding": case.get(
+            "final_publication_post_click_exact_blocker_ready_to_replace_old_binding"
+        ),
+        "final_publication_post_click_exact_blocker_raw_bound_parity_error": case.get(
+            "final_publication_post_click_exact_blocker_raw_bound_parity_error"
+        ),
         "verdict": "PASS" if not fail_reasons else "FAIL",
         "fail_reasons": fail_reasons,
     }

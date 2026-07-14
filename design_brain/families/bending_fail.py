@@ -13,12 +13,15 @@ from design_brain.candidate_evaluation import (
 )
 from design_brain.families.base import DiagnosticFamilyStrategy, FamilyStrategyContext, FamilyStrategyMetadata
 from design_brain.families.bending_fail_governs.runtime import (
+    NON_TERMINAL_LANES,
     bending_fail_governs_contract_lane_order,
     run_bending_fail_governs_ladder_runtime,
 )
+from design_brain.families.bending_fail_governs.contract import depth_width_rule
 from design_brain.families.bending_fail_governs.repair_ladder import (
     BendingFailRepairLadderAddResult,
     build_bending_fail_layout_updates,
+    build_bending_fail_known_bad_depth_width_record,
     build_bending_fail_repair_ladder_result,
     decide_bending_fail_repair_ladder_add,
 )
@@ -83,6 +86,32 @@ def _as_int(value: Any, default: int = 0) -> int:
         return int(round(float(value)))
     except (TypeError, ValueError):
         return int(default)
+
+
+def select_bending_fail_fallback_repair_candidate_from_ladder(
+    candidates: list[dict] | tuple[dict, ...] | None,
+) -> dict[str, Any]:
+    """Select the bending-fail fallback ladder candidate in family-owned order."""
+
+    rows = [dict(candidate or {}) for candidate in list(candidates or []) if isinstance(candidate, dict)]
+    if not rows:
+        return {
+            "selected": {},
+            "selection_source": "bending_controller_fallback_ranker",
+            "family_selected": {},
+        }
+    selected = min(
+        rows,
+        key=lambda cand: (
+            int(cand.get("bending_fail_ladder_index") or cand.get("ladder_index") or 999999),
+            len(_as_dict(cand.get("updates"))),
+        ),
+    )
+    return {
+        "selected": dict(selected),
+        "selection_source": "bending_controller_fallback_ranker",
+        "family_selected": {},
+    }
 
 
 def _normalise_family(value: Any) -> str:
@@ -232,6 +261,23 @@ def _width_update(width_key: str, width: float) -> dict[str, Any]:
     return updates
 
 
+def _depth_width_ratio_limit_from_contract() -> float:
+    return _as_float(depth_width_rule().get("maximum_preferred_ratio"), 2.0)
+
+
+def _depth_width_ratio(width: float, depth: float) -> float | None:
+    width_f = _as_float(width, 0.0)
+    depth_f = _as_float(depth, 0.0)
+    if width_f <= 0.0 or depth_f <= 0.0:
+        return None
+    return depth_f / width_f
+
+
+def _depth_width_ratio_blocked(width: float, depth: float, maximum_ratio: float) -> bool:
+    ratio = _depth_width_ratio(width, depth)
+    return ratio is not None and ratio > float(maximum_ratio) + 1e-9
+
+
 def _contract_runtime_candidate_updates(
     *,
     width_key: str,
@@ -242,6 +288,7 @@ def _contract_runtime_candidate_updates(
     base_dia: int,
     next_dia: int,
     max_dia: int,
+    maximum_depth_width_ratio: float,
 ) -> dict[str, dict[str, Any]]:
     split_row1 = max(2, int(math.ceil(float(base_count + 1) / 2.0)))
     split_row2 = max(2, int(base_count + 1) - split_row1)
@@ -256,7 +303,9 @@ def _contract_runtime_candidate_updates(
         "NO_VALID_STRATEGY": {},
     }
     if not geometry_locked:
-        updates["DEPTH_INCREASE"] = {"D": float(base_depth + 25.0)}
+        depth_candidate = float(base_depth + 25.0)
+        if not _depth_width_ratio_blocked(base_width, depth_candidate, maximum_depth_width_ratio):
+            updates["DEPTH_INCREASE"] = {"D": depth_candidate}
         updates["WIDTH_INCREASE"] = _width_update(width_key, float(base_width + 50.0))
     return updates
 
@@ -277,6 +326,81 @@ def _contract_runtime_evaluator(
         engineering_status={"accepted": False, "lane_result": "SPEC_GENERATION_ONLY"},
         failure_flags={},
     ).with_evaluation_hash()
+
+
+def bending_fail_no_valid_repair_proof_from_evidence(evidence: dict | None) -> dict[str, Any]:
+    """Return family-owned no-valid-repair proof from exhaustive bending evidence.
+
+    This is used by publication as a consumer of family proof. It deliberately
+    requires exhaustive repair evidence and zero safe/executable candidates so a
+    generic cap-only diagnostic cannot become a terminal no-apply result.
+    """
+
+    row = _as_dict(evidence)
+    if isinstance(row.get("exact_blockers_by_family"), dict):
+        row = {**row, **_as_dict(row["exact_blockers_by_family"].get("bending"))}
+    if str(row.get("family") or "bending").strip().lower() != "bending":
+        return {}
+    active = {
+        str(item or "").strip().lower()
+        for item in _as_list(row.get("active_failures") or ["bending"])
+        if str(item or "").strip()
+    }
+    if active and "bending" not in active:
+        return {}
+    repair_ran = str(row.get("repair_search_ran") or row.get("candidate_search_ran") or "").strip().lower()
+    repair_exhaustive = str(
+        row.get("repair_search_exhaustive") or row.get("candidate_search_exhaustive") or ""
+    ).strip().lower()
+    attempted = _as_int(row.get("attempted_candidate_count") or row.get("candidate_inventory_count"), 0)
+    safe = _as_int(row.get("safe_repair_candidate_count") or row.get("safe_candidate_count"), 0)
+    executable = _as_int(
+        row.get("executable_repair_candidate_count")
+        or row.get("executable_candidate_count")
+        or row.get("safe_executor_backed_candidates_count"),
+        0,
+    )
+    reason = str(
+        row.get("reason")
+        or row.get("outside_target_band_allowed_reason")
+        or row.get("active_under_capacity_blocker_reason")
+        or row.get("blocked_reason")
+        or ""
+    ).strip()
+    scope = str(row.get("active_fail_repair_search_scope") or row.get("search_scope") or "").strip()
+    source = str(row.get("source") or "").strip()
+    if not (
+        repair_ran == "true"
+        and repair_exhaustive == "true"
+        and attempted > 0
+        and safe == 0
+        and executable == 0
+        and reason
+        and ("bending" in scope.lower() or "bending" in source.lower() or not scope)
+    ):
+        return {}
+    checked = tuple(row.get("contract_strategies_checked") or NON_TERMINAL_LANES)
+    return {
+        "family_id": "BENDING_FAIL_GOVERNS",
+        "terminal_status": "REPAIR_BLOCKED",
+        "repair_blocked": True,
+        "blocked_reason": reason,
+        "blocked_reason_source": "family_contract_blocker_proof",
+        "internal_cap_only": False,
+        "hard_blocker_proven": False,
+        "contract_strategy_exhaustion_proven": True,
+        "contract_strategies_checked": checked,
+        "contract_strategies_blocked": tuple(row.get("contract_strategies_blocked") or ()),
+        "contract_strategies_remaining": (),
+        "implementation_caps_hit": tuple(row.get("implementation_caps_hit") or ()),
+        "geometry_locks_used": tuple(row.get("geometry_locks_used") or ()),
+        "project_constraints_used": tuple(row.get("project_constraints_used") or ()),
+        "detailing_constraints_used": tuple(row.get("detailing_constraints_used") or ()),
+        "evaluated_candidate_count": attempted,
+        "safe_candidate_count": safe,
+        "executable_candidate_count": executable,
+        "proof_source": "BENDING_FAIL_GOVERNS.exhaustive_no_valid_repair_evidence",
+    }
 
 
 class BendingFailFamily(DiagnosticFamilyStrategy):
@@ -307,13 +431,14 @@ class BendingFailFamily(DiagnosticFamilyStrategy):
         diameters = tuple(int(value) for value in (bar_diameters or DEFAULT_BAR_DIAMETERS))
         base_width = _as_float(base.get(width_key), _as_float(base.get("b"), 300.0))
         base_depth = _as_float(base.get("D"), 350.0)
-        base_count = max(1, _as_int(base.get("bot_row_1_bars"), _as_int(base.get("bot1_count"), 2)))
+        base_count = max(2, _as_int(base.get("bot_row_1_bars"), _as_int(base.get("bot1_count"), 2)))
         base_dia = max(10, _as_int(base.get("bot_row_1_dia"), _as_int(base.get("db_bot_1"), 10)))
         larger_dias = [int(dia) for dia in diameters if int(dia) > base_dia]
         max_dia = max(diameters) if diameters else base_dia
         next_dia = larger_dias[0] if larger_dias else base_dia
         cover_side = _as_float(base.get("cover_side"), 40.0)
         lig_d = max(0, _as_int(base.get("lig_d"), 0))
+        maximum_depth_width_ratio = _depth_width_ratio_limit_from_contract()
         runtime_updates = _contract_runtime_candidate_updates(
             width_key=width_key,
             geometry_locked=geometry_locked,
@@ -323,6 +448,7 @@ class BendingFailFamily(DiagnosticFamilyStrategy):
             base_dia=base_dia,
             next_dia=next_dia,
             max_dia=max_dia,
+            maximum_depth_width_ratio=maximum_depth_width_ratio,
         )
         runtime_result = run_bending_fail_governs_ladder_runtime(
             base_state=base,
@@ -358,6 +484,23 @@ class BendingFailFamily(DiagnosticFamilyStrategy):
                 lig_d=lig_d,
             )
             spacing_blocked = clear < MIN_BOTTOM_CLEAR_SPACING_MM - 1e-9
+            ratio_blocked = _depth_width_ratio_blocked(width, depth, maximum_depth_width_ratio)
+            if ratio_blocked:
+                runtime_known_bad.append(
+                    build_bending_fail_known_bad_depth_width_record(
+                        stage_name=str(meta["stage_name"]),
+                        strategy=str(meta["strategy"]),
+                        width=width,
+                        depth=depth,
+                        row1=row1,
+                        row2=row2,
+                        dia=dia,
+                        split=split,
+                        clear=clear,
+                        maximum_depth_width_ratio=maximum_depth_width_ratio,
+                    )
+                )
+                continue
             if spacing_blocked:
                 decision = decide_bending_fail_repair_ladder_add(
                     step=int(runtime_order.index(lane_id)),
@@ -420,11 +563,140 @@ class BendingFailFamily(DiagnosticFamilyStrategy):
                 }
                 runtime_specs.append(spec)
 
+        runtime_depth_steps = [25.0, 550.0]
+
         if not geometry_locked:
+            runtime_width_steps = [50.0, 150.0, 200.0]
+            if not runtime_specs:
+                moderate_width_step = 50.0
+                moderate_depth_step = 150.0
+                moderate_width = float(base_width + moderate_width_step)
+                moderate_depth = float(base_depth + moderate_depth_step)
+                moderate_count = max(int(base_count) + 4, 7)
+                moderate_dia = next((int(dia) for dia in diameters if int(dia) >= 20), int(max_dia))
+                moderate_updates = {
+                    **_width_update(width_key, moderate_width),
+                    "D": moderate_depth,
+                    **_bottom_updates(row1_count=moderate_count, row2_count=0, dia=moderate_dia),
+                }
+                diff = _normalised_update_diff(base, moderate_updates)
+                if diff:
+                    (
+                        layout_width,
+                        layout_depth,
+                        row1,
+                        row2,
+                        dia,
+                        split,
+                        clear,
+                    ) = build_bending_fail_layout_updates(
+                        moderate_updates,
+                        width_key=width_key,
+                        base_width=base_width,
+                        base_depth=base_depth,
+                        base_count=base_count,
+                        base_dia=base_dia,
+                        cover_side=cover_side,
+                        lig_d=lig_d,
+                    )
+                    if _depth_width_ratio_blocked(layout_width, layout_depth, maximum_depth_width_ratio):
+                        runtime_known_bad.append(
+                            build_bending_fail_known_bad_depth_width_record(
+                                stage_name="contract_runtime_moderate_geometry_reo_rescue",
+                                strategy=(
+                                    f"contract runtime moderate geometry/reinforcement rescue to "
+                                    f"{moderate_width:.0f} x {moderate_depth:.0f} mm with {moderate_count} N{moderate_dia}"
+                                ),
+                                width=layout_width,
+                                depth=layout_depth,
+                                row1=row1,
+                                row2=row2,
+                                dia=dia,
+                                split=split,
+                                clear=clear,
+                                maximum_depth_width_ratio=maximum_depth_width_ratio,
+                            )
+                        )
+                    else:
+                        decision = decide_bending_fail_repair_ladder_add(
+                            step=5,
+                            stage_name="contract_runtime_moderate_geometry_reo_rescue",
+                            strategy=(
+                                f"contract runtime moderate geometry/reinforcement rescue to "
+                                f"{moderate_width:.0f} x {moderate_depth:.0f} mm with {moderate_count} N{moderate_dia}"
+                            ),
+                            updates=moderate_updates,
+                            diff=diff,
+                            spacing_blocked=False,
+                            assigned_candidate_index=runtime_index + 1,
+                            assigned_label=(
+                                f"BENDING_FAIL_GOVERNS contract runtime {runtime_index + 1}: "
+                                "contract runtime moderate geometry/reinforcement rescue"
+                            ),
+                            escalation="bounded_geometry_and_reinforcement_repair",
+                            width=layout_width,
+                            depth=layout_depth,
+                            row1=row1,
+                            row2=row2,
+                            dia=dia,
+                            split=split,
+                            clear=clear,
+                            minimum_clear_spacing_mm=float(MIN_BOTTOM_CLEAR_SPACING_MM),
+                        )
+                        if decision.should_append_spec and decision.spec_payload is not None:
+                            runtime_index += 1
+                            moderate_update = BeamCandidateUpdate(updates=moderate_updates)
+                            moderate_evaluation = _contract_runtime_evaluator(
+                                BeamCandidateInput(base_state=base),
+                                moderate_update,
+                            )
+                            runtime_specs.append(
+                                {
+                                    **decision.spec_payload,
+                                    "contract_runtime_authority": "run_bending_fail_governs_ladder_runtime",
+                                    "contract_runtime_lane_id": "MODERATE_GEOMETRY_REO_RESCUE",
+                                    "selected_strategy_lane": "MODERATE_GEOMETRY_REO_RESCUE",
+                                    "ladder_hash": runtime_result.ladder_hash,
+                                    "bending_fail_contract_runtime_ladder_hash": runtime_result.ladder_hash,
+                                    "ladder_trace_evidence": {
+                                        "lane_id": "MODERATE_GEOMETRY_REO_RESCUE",
+                                        "contract_lane_id": "moderate_geometry_reinforcement_rescue",
+                                        "lane_index": 5,
+                                        "evaluation_hash": moderate_evaluation.evaluation_hash,
+                                    },
+                                    "update_hash": moderate_update.update_hash,
+                                    "candidate_state_hash": moderate_evaluation.candidate_state_hash,
+                                    "spacing_threshold_basis": (
+                                        "single-layer clear-spacing threshold is diagnostic for lane transition; "
+                                        "candidate remains subject to full evaluator acceptance"
+                                    ),
+                                }
+                            )
+                            runtime_depth_steps.append(float(moderate_depth_step))
+
             heavy_count = max(base_count + 3, 6)
             heavy_row1 = int(math.ceil(float(heavy_count) / 2.0))
             heavy_row2 = max(0, int(heavy_count) - heavy_row1)
-            for width_step, depth_step in ((200.0, 550.0), (150.0, 550.0)):
+            rescue_width_depth_steps: list[tuple[float, float]] = [(200.0, 550.0), (150.0, 550.0)]
+            governing_depth = float(base_depth + 550.0)
+            governing_row_count = max(heavy_row1, heavy_row2)
+            spacing_width = (
+                float(MIN_BOTTOM_CLEAR_SPACING_MM) * float(max(0, governing_row_count - 1))
+                + (2.0 * float(cover_side))
+                + (2.0 * float(lig_d))
+                + (float(governing_row_count) * float(max_dia))
+            )
+            ratio_width = governing_depth / float(maximum_depth_width_ratio or 1.0)
+            required_width = max(float(base_width), spacing_width, ratio_width)
+            required_width_step = max(0.0, math.ceil((required_width - float(base_width)) / 50.0) * 50.0)
+            if required_width_step > 200.0:
+                rescue_width_depth_steps.insert(0, (float(required_width_step), 550.0))
+            for step, _ in rescue_width_depth_steps:
+                if step not in runtime_width_steps:
+                    runtime_width_steps.append(float(step))
+                if 550.0 not in runtime_depth_steps:
+                    runtime_depth_steps.append(550.0)
+            for width_step, depth_step in rescue_width_depth_steps:
                 width = float(base_width + width_step)
                 width_updates = _width_update(width_key, width)
                 depth = float(base_depth + depth_step)
@@ -446,6 +718,25 @@ class BendingFailFamily(DiagnosticFamilyStrategy):
                     cover_side=cover_side,
                     lig_d=lig_d,
                 )
+                if _depth_width_ratio_blocked(layout_width, layout_depth, maximum_depth_width_ratio):
+                    runtime_known_bad.append(
+                        build_bending_fail_known_bad_depth_width_record(
+                            stage_name="contract_runtime_combined_high_capacity_rescue",
+                            strategy=(
+                                f"contract runtime combined rescue to {width:.0f} x {depth:.0f} mm "
+                                f"with split high-capacity bottom reinforcement ({heavy_row1}+{heavy_row2} N{max_dia})"
+                            ),
+                            width=layout_width,
+                            depth=layout_depth,
+                            row1=row1,
+                            row2=row2,
+                            dia=dia,
+                            split=split,
+                            clear=clear,
+                            maximum_depth_width_ratio=maximum_depth_width_ratio,
+                        )
+                    )
+                    continue
                 decision = decide_bending_fail_repair_ladder_add(
                     step=6,
                     stage_name="contract_runtime_combined_high_capacity_rescue",
@@ -524,13 +815,14 @@ class BendingFailFamily(DiagnosticFamilyStrategy):
             governing_state=self.metadata.governing_state,
             candidate_strategy="contract_runtime_bending_fail_governs_ladder",
             bar_diameters_tried=[int(next_dia)] if int(next_dia) != int(base_dia) else [],
-            depth_steps_mm=[25.0, 550.0] if not geometry_locked else [],
-            width_steps_mm=[50.0, 150.0, 200.0] if not geometry_locked else [],
+            depth_steps_mm=list(runtime_depth_steps) if not geometry_locked else [],
+            width_steps_mm=list(runtime_width_steps) if not geometry_locked else [],
             minimum_clear_spacing_mm=float(MIN_BOTTOM_CLEAR_SPACING_MM),
             known_bad_candidates_skipped=runtime_known_bad,
             ranking_rule=(
-                "Evaluate contract runtime lane order and stop immediately on the first "
-                "fully compliant executor-backed pure bending repair."
+                "Evaluate contract runtime candidates until a target-band executor-backed pure "
+                "bending repair is found, or until all valid repair candidates are exhausted; "
+                "rank compliant candidates by target-band satisfaction before ladder-order tie-breaks."
             ),
             stop_reason_if_no_candidate=stop_reason,
             specs=deduped_runtime_specs,
@@ -539,7 +831,6 @@ class BendingFailFamily(DiagnosticFamilyStrategy):
             {
                 "contract_runtime_authority": "run_bending_fail_governs_ladder_runtime",
                 "contract_runtime_driven": True,
-                "legacy_ladder_order_authority": False,
                 "contract_lane_order": list(runtime_order),
                 "selected_strategy_lane": runtime_result.selected_strategy_lane,
                 "ladder_hash": runtime_result.ladder_hash,
@@ -772,8 +1063,9 @@ class BendingFailFamily(DiagnosticFamilyStrategy):
             minimum_clear_spacing_mm=float(MIN_BOTTOM_CLEAR_SPACING_MM),
             known_bad_candidates_skipped=skipped_known_bad,
             ranking_rule=(
-                "Evaluate staged contract order and stop immediately on the first "
-                "fully compliant executor-backed pure bending repair."
+                "Evaluate staged contract candidates until a target-band executor-backed pure "
+                "bending repair is found, or until all valid repair candidates are exhausted; "
+                "rank compliant candidates by target-band satisfaction before ladder-order tie-breaks."
             ),
             stop_reason_if_no_candidate=stop_reason,
             specs=_dedupe_specs(specs),
@@ -805,21 +1097,46 @@ class BendingFailFamily(DiagnosticFamilyStrategy):
         selected = min(
             safe,
             key=lambda row: (
-                int(row.get("bending_fail_ladder_index") or row.get("ladder_index") or 999999),
-                len(_as_dict(row.get("updates"))),
+                0
+                if float(target_low)
+                <= _as_float(
+                    row.get("candidate_post_util")
+                    or row.get("worst_util")
+                    or _as_dict(row.get("overview")).get("worst_util"),
+                    0.0,
+                )
+                <= float(target_high)
+                else 1,
                 abs(
                     _as_float(row.get("candidate_post_util") or row.get("worst_util"), 0.0)
                     - ((float(target_low) + float(target_high)) / 2.0)
                 ),
+                int(row.get("bending_fail_ladder_index") or row.get("ladder_index") or 999999),
+                len(_as_dict(row.get("updates"))),
             ),
         )
+        selected_util = _as_float(
+            selected.get("candidate_post_util")
+            or selected.get("worst_util")
+            or _as_dict(selected.get("overview")).get("worst_util"),
+            0.0,
+        )
+        selected_in_target = bool(float(target_low) <= selected_util <= float(target_high))
         return {
             "selected": dict(selected),
             "ranking_strategy": self.metadata.ranking_strategy,
-            "selection_reason": "first_compliant_candidate_in_contract_ladder_order",
+            "selection_reason": (
+                "target_band_candidate_selected_by_contract"
+                if selected_in_target
+                else "best_compliant_candidate_selected_after_target_band_exhaustion"
+            ),
             "candidate_count": len(rows),
             "safe_candidate_count": len(safe),
             "selected_ladder_index": int(selected.get("bending_fail_ladder_index") or selected.get("ladder_index") or 0),
+            "target_low": float(target_low),
+            "target_high": float(target_high),
+            "selected_candidate_post_util": selected_util,
+            "selected_in_target_band": selected_in_target,
         }
 
     def repair_ladder_evidence_overlay(
@@ -829,6 +1146,91 @@ class BendingFailFamily(DiagnosticFamilyStrategy):
         selected_result: dict,
     ) -> dict[str, Any]:
         selected = _as_dict(selected_result.get("selected"))
+        spec_count = len(_as_list(ladder.get("specs")))
+        known_bad_count = int(ladder.get("known_bad_candidate_count") or 0)
+        generated_or_known_bad_count = int(spec_count + known_bad_count)
+        evaluated_count = int(selected_result.get("candidate_count") or 0)
+        safe_count = int(selected_result.get("safe_candidate_count") or 0)
+        no_valid_repair_proven = bool(
+            not selected
+            and generated_or_known_bad_count > 0
+            and evaluated_count >= spec_count
+            and safe_count == 0
+            and str(selected_result.get("selection_reason") or "").strip()
+            in {
+                "no_compliant_candidate_in_contract_ladder",
+                "fallback_after_no_compliant_bending_contract_ladder_candidate",
+            }
+        )
+        existing_blocked_proof = dict(
+            dict(ladder.get("repair_reason_proof") or {}).get("blocked_ownership_proof") or {}
+        )
+        if no_valid_repair_proven:
+            blocked_reason = (
+                "all evaluated BENDING_FAIL_GOVERNS contract ladder candidates failed required checks"
+            )
+            blocked_ownership_proof = {
+                **existing_blocked_proof,
+                "family_id": "BENDING_FAIL_GOVERNS",
+                "terminal_status": "REPAIR_BLOCKED",
+                "repair_blocked": True,
+                "blocked_reason": blocked_reason,
+                "blocked_reason_source": "family_contract_blocker_proof",
+                "internal_cap_only": False,
+                "hard_blocker_proven": False,
+                "contract_strategy_exhaustion_proven": True,
+                "contract_strategies_checked": tuple(
+                    existing_blocked_proof.get("contract_strategies_checked")
+                    or ladder.get("contract_strategies_checked")
+                    or NON_TERMINAL_LANES
+                ),
+                "contract_strategies_blocked": tuple(
+                    existing_blocked_proof.get("contract_strategies_blocked")
+                    or ladder.get("contract_strategies_blocked")
+                    or ()
+                ),
+                "contract_strategies_remaining": (),
+                "implementation_caps_hit": tuple(
+                    existing_blocked_proof.get("implementation_caps_hit")
+                    or ladder.get("implementation_caps_hit")
+                    or ()
+                ),
+                "geometry_locks_used": tuple(
+                    existing_blocked_proof.get("geometry_locks_used")
+                    or ladder.get("geometry_locks_used")
+                    or ()
+                ),
+                "project_constraints_used": tuple(
+                    existing_blocked_proof.get("project_constraints_used")
+                    or ladder.get("project_constraints_used")
+                    or ()
+                ),
+                "detailing_constraints_used": tuple(
+                    existing_blocked_proof.get("detailing_constraints_used")
+                    or ladder.get("detailing_constraints_used")
+                    or ()
+                ),
+                "evaluated_candidate_count": evaluated_count,
+                "safe_candidate_count": safe_count,
+                "generated_contract_candidate_count": spec_count,
+                "known_bad_contract_candidate_count": known_bad_count,
+                "checked_contract_candidate_count": generated_or_known_bad_count,
+                "selection_reason": selected_result.get("selection_reason"),
+            }
+            repair_reason_proof = {
+                **dict(ladder.get("repair_reason_proof") or {}),
+                "proof_only": True,
+                "selected_strategy_lane": "NO_VALID_STRATEGY",
+                "blocked_ownership_proof": dict(blocked_ownership_proof),
+                "repair_blocked": True,
+                "internal_cap_only": False,
+                "hard_blocker_proven": False,
+                "contract_strategy_exhaustion_proven": True,
+            }
+        else:
+            blocked_reason = ladder.get("blocked_reason")
+            blocked_ownership_proof = existing_blocked_proof
+            repair_reason_proof = dict(ladder.get("repair_reason_proof") or {})
         return {
             "governing_family": "BENDING_FAIL_GOVERNS",
             "family_name": "BENDING_FAIL_GOVERNS",
@@ -839,13 +1241,20 @@ class BendingFailFamily(DiagnosticFamilyStrategy):
             "family_publication_rule": self.metadata.publication_rule,
             "family_cta_rule": self.metadata.cta_rule,
             "bending_fail_contract_ladder_used": True,
-            "bending_fail_contract_ladder_candidate_count": len(_as_list(ladder.get("specs"))),
-            "bending_fail_contract_ladder_evaluated_candidate_count": int(
-                selected_result.get("candidate_count") or 0
-            ),
-            "bending_fail_contract_ladder_safe_candidate_count": int(
-                selected_result.get("safe_candidate_count") or 0
-            ),
+            "bending_fail_contract_ladder_candidate_count": spec_count,
+            "bending_fail_contract_ladder_evaluated_candidate_count": evaluated_count,
+            "bending_fail_contract_ladder_safe_candidate_count": safe_count,
+            "bending_fail_contract_ladder_known_bad_candidate_count": known_bad_count,
+            "bending_fail_contract_ladder_checked_candidate_count": generated_or_known_bad_count,
+            "candidate_inventory_count": generated_or_known_bad_count,
+            "attempted_candidate_count": evaluated_count or generated_or_known_bad_count,
+            "safe_repair_candidate_count": safe_count,
+            "executable_repair_candidate_count": safe_count,
+            "safe_executor_backed_candidates_count": safe_count,
+            "repair_search_ran": True,
+            "repair_search_exhaustive": True,
+            "candidate_search_ran": True,
+            "candidate_search_exhaustive": True,
             "bending_fail_contract_ladder_selected_index": selected.get("bending_fail_ladder_index"),
             "bending_fail_contract_ladder_selected_step": selected.get("bending_fail_contract_step"),
             "bending_fail_contract_ladder_selected_stage": selected.get("bending_fail_stage_name"),
@@ -858,25 +1267,43 @@ class BendingFailFamily(DiagnosticFamilyStrategy):
             "bending_fail_contract_ladder_width_steps_mm": list(ladder.get("width_steps_mm") or []),
             "bending_fail_contract_ladder_minimum_clear_spacing_mm": ladder.get("minimum_clear_spacing_mm"),
             "bending_fail_contract_ladder_known_bad_candidate_count": ladder.get("known_bad_candidate_count"),
-            "bending_fail_contract_terminal_status": ladder.get("terminal_status"),
-            "bending_fail_repair_blocked": bool(ladder.get("repair_blocked")),
-            "bending_fail_blocked_reason": ladder.get("blocked_reason"),
-            "bending_fail_blocked_reason_source": ladder.get("blocked_reason_source"),
-            "bending_fail_internal_cap_only": bool(ladder.get("internal_cap_only")),
+            "bending_fail_contract_terminal_status": (
+                "REPAIR_BLOCKED" if no_valid_repair_proven else ladder.get("terminal_status")
+            ),
+            "bending_fail_repair_blocked": bool(no_valid_repair_proven or ladder.get("repair_blocked")),
+            "bending_fail_blocked_reason": blocked_reason,
+            "bending_fail_blocked_reason_source": (
+                "family_contract_blocker_proof"
+                if no_valid_repair_proven
+                else ladder.get("blocked_reason_source")
+            ),
+            "bending_fail_internal_cap_only": False if no_valid_repair_proven else bool(ladder.get("internal_cap_only")),
             "bending_fail_hard_blocker_proven": bool(ladder.get("hard_blocker_proven")),
             "bending_fail_contract_strategy_exhaustion_proven": bool(
-                ladder.get("contract_strategy_exhaustion_proven")
+                no_valid_repair_proven or ladder.get("contract_strategy_exhaustion_proven")
             ),
-            "bending_fail_contract_strategies_checked": list(ladder.get("contract_strategies_checked") or []),
-            "bending_fail_contract_strategies_blocked": list(ladder.get("contract_strategies_blocked") or []),
-            "bending_fail_contract_strategies_remaining": list(ladder.get("contract_strategies_remaining") or []),
+            "bending_fail_contract_strategies_checked": list(
+                blocked_ownership_proof.get("contract_strategies_checked")
+                or ladder.get("contract_strategies_checked")
+                or []
+            ),
+            "bending_fail_contract_strategies_blocked": list(
+                blocked_ownership_proof.get("contract_strategies_blocked")
+                or ladder.get("contract_strategies_blocked")
+                or []
+            ),
+            "bending_fail_contract_strategies_remaining": list(
+                blocked_ownership_proof.get("contract_strategies_remaining")
+                if blocked_ownership_proof.get("contract_strategies_remaining") is not None
+                else ladder.get("contract_strategies_remaining")
+                or []
+            ),
             "bending_fail_implementation_caps_hit": list(ladder.get("implementation_caps_hit") or []),
             "bending_fail_geometry_locks_used": list(ladder.get("geometry_locks_used") or []),
             "bending_fail_project_constraints_used": list(ladder.get("project_constraints_used") or []),
             "bending_fail_detailing_constraints_used": list(ladder.get("detailing_constraints_used") or []),
-            "bending_fail_blocked_ownership_proof": dict(
-                dict(ladder.get("repair_reason_proof") or {}).get("blocked_ownership_proof") or {}
-            ),
+            "bending_fail_blocked_ownership_proof": dict(blocked_ownership_proof),
+            "repair_reason_proof": dict(repair_reason_proof),
             "bending_fail_contract_ladder_selected_clear_spacing": selected.get("bending_fail_clear_spacing"),
             "bending_fail_contract_ladder_selected_b": selected.get("bending_fail_candidate_b"),
             "bending_fail_contract_ladder_selected_D": selected.get("bending_fail_candidate_D"),

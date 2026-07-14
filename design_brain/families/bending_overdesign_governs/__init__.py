@@ -39,7 +39,6 @@ def evaluate_bending_overdesign_governs(context: dict[str, Any]) -> FamilyResult
         lock_proof={
             "contract_runtime_driven": True,
             "runtime_authority": "run_bending_overdesign_governs_runtime",
-            "legacy_decision_authority": False,
             "product_routing_enabled": False,
             "shared_systems_remain_shared": True,
         },

@@ -187,6 +187,7 @@
     "bending_upper": 1.0,
     "shear_lower": 0.85,
     "shear_upper": 1.0,
+    "candidate_lane": "BENDING_FAIL_SHEAR_OVERDESIGN_TARGET_BAND_FALLBACK_PROOF",
     "preferred": "bending repaired and shear remains compliant; shear moves closer to target band where possible",
     "fallback": "best bending-compliant repair with specific shear optimisation blocker evidence"
   },
@@ -330,6 +331,14 @@
         "no valid recommendation exists",
         "specific blocker exists"
       ]
+    },
+    "target_band_refinement": {
+      "lane_id": "BENDING_FAIL_SHEAR_OVERDESIGN_TARGET_BAND_FALLBACK_PROOF",
+      "preferred": "bending repaired and shear remains compliant with shear moving closer to target band where possible",
+      "fallback": "best bending-compliant repair with specific shear optimisation blocker evidence",
+      "fallback_requires_specific_blocker": true,
+      "runtime_must_report_target_band_candidate_count": true,
+      "runtime_must_report_selected_target_band_status": true
     }
   },
   "shared_exclusions": [

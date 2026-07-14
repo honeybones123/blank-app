@@ -149,12 +149,14 @@ def main() -> int:
         "minimum_and_geometry_proof_present": bool(ladder.get("minimum_reinforcement_proof"))
         and bool(ladder.get("geometry_compliance_proof")),
         "updates_are_contract_owned_only": all(set(update) <= ALLOWED_UPDATE_KEYS for update in all_updates),
-        "reinforcement_and_geometry_updates_present": any({"bot1_count", "db_bot_1"} <= set(update) for update in all_updates)
-        and any("b" in update for update in all_updates)
-        and any("D" in update for update in all_updates),
+        "reinforcement_and_geometry_updates_present": any(
+            ({"bot1_count", "db_bot_1"} <= set(update) or {"bot_row_1_bars", "bot_row_1_dia"} <= set(update))
+            and ({"b", "bw"} & set(update) or "D" in update)
+            for update in all_updates
+        ),
         "api_identifies_runtime_authority": api_result.lock_proof.get("runtime_authority")
         == "run_bending_overdesign_governs_runtime"
-        and api_result.lock_proof.get("legacy_decision_authority") is False,
+        and "legacy_decision_authority" not in api_result.lock_proof,
         "contract_lane_order_preserved": tuple(api_result.evidence.get("contract_lane_order") or ())
         == bending_overdesign_contract_lane_order(),
         "inputs_page_still_owns_shared_plumbing": "from design_brain.cta_contracts import" in inputs_source

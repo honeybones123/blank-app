@@ -19,6 +19,21 @@ RenderPanelFn = Callable[..., None]
 DebugSidebarFn = Callable[[], None]
 
 
+def _as_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 def _proof_backed_placeholder_card(st_module: Any) -> dict | None:
     """Return a single exact-blocker card when final-panel proof already exists."""
     try:
@@ -38,18 +53,71 @@ def _proof_backed_placeholder_card(st_module: Any) -> dict | None:
         or bundle.get("exact_blockers_by_family")
         or {}
     )
-    if not isinstance(exact_blockers, dict) or not exact_blockers:
+    target_band_blocked = bool(
+        isinstance(contract, dict)
+        and (
+            contract.get("target_band_contract_blocked")
+            or str(contract.get("blocking_reason") or "").strip()
+            == "cleanup_target_band_not_proven"
+        )
+    )
+    if (not isinstance(exact_blockers, dict) or not exact_blockers) and not target_band_blocked:
         return None
     family = ""
     if isinstance(contract, dict):
         family = str(contract.get("family") or "").strip().lower()
     if family not in {"bending", "shear", "crack", "deflection", "combined"}:
-        family = str(next(iter(exact_blockers), "design")).strip().lower()
-    blocker = exact_blockers.get(family) if family in exact_blockers else next(iter(exact_blockers.values()), {})
+        family = str(next(iter(exact_blockers), "design") if isinstance(exact_blockers, dict) and exact_blockers else "combined").strip().lower()
+    blocker = (
+        exact_blockers.get(family)
+        if isinstance(exact_blockers, dict) and family in exact_blockers
+        else (next(iter(exact_blockers.values()), {}) if isinstance(exact_blockers, dict) and exact_blockers else {})
+    )
     blocker = blocker if isinstance(blocker, dict) else {}
+    decision_trace = bundle.get("design_guide_decision_trace") or {}
+    decision_trace = decision_trace if isinstance(decision_trace, dict) else {}
+    candidate_evidence = bundle.get("candidate_search_evidence") or {}
+    candidate_evidence = candidate_evidence if isinstance(candidate_evidence, dict) else {}
+    if target_band_blocked and not exact_blockers and not candidate_evidence:
+        return None
+    family_utils: dict[str, float] = {}
+    for family_name, util_key in (
+        ("bending", "bending_util"),
+        ("shear", "shear_util"),
+    ):
+        util_value = _as_float(
+            (bundle.get("family_utils") or {}).get(family_name)
+            if isinstance(bundle.get("family_utils"), dict)
+            else None
+        )
+        if util_value is None:
+            util_value = _as_float(decision_trace.get(util_key))
+        if util_value is not None:
+            family_utils[family_name] = float(util_value)
+    material_families = [
+        str(value or "").strip().lower()
+        for value in list(bundle.get("materially_overprovided_families") or [])
+        if str(value or "").strip()
+    ]
+    if not material_families:
+        floor = _as_float(bundle.get("final_accepted_min_family_util")) or 0.85
+        material_families = [
+            family_name
+            for family_name, util_value in sorted(family_utils.items())
+            if util_value < floor
+        ]
     truth = bundle.get("primary_display_truth") or {}
     truth = truth if isinstance(truth, dict) else {}
-    util = truth.get("displayed_util")
+    if target_band_blocked:
+        util = (
+            decision_trace.get("worst_util")
+            or decision_trace.get("governing_util")
+            or (max(family_utils.values()) if family_utils else None)
+            or truth.get("source_summary_util")
+            or truth.get("source_post_commit_util")
+        )
+    else:
+        util = truth.get("displayed_util")
     if util is None:
         util = blocker.get("current_util") or blocker.get("failed_check_util")
     reason = ""
@@ -61,7 +129,19 @@ def _proof_backed_placeholder_card(st_module: Any) -> dict | None:
             or blocker.get("why_reduction_would_hurt_other_design_elements")
             or "The exact cleanup search was exhausted and no executor-backed update preserved every required check."
         ).strip()
+    if target_band_blocked and reason == "cleanup_target_band_not_proven":
+        reason = (
+            "No Apply button is published because the cleanup proof does not keep every required "
+            "family inside the target utilisation range."
+        )
     title = str(bundle.get("primary_card_title") or bundle.get("final_primary_title") or "").strip()
+    if target_band_blocked and (
+        not title
+        or title == "Cleanup is advisory for this design state"
+        or "further reduction reaches target range" in title.lower()
+        or "one-click optimisation" in title.lower()
+    ):
+        title = "Bending and shear cleanup blocked"
     if not title or title.lower().startswith("cleanup blocked"):
         label = {
             "bending": "Bending cleanup",
@@ -71,7 +151,63 @@ def _proof_backed_placeholder_card(st_module: Any) -> dict | None:
             "combined": "Design cleanup",
         }.get(family, "Design cleanup")
         title = f"{label} blocked by exact engineering limit"
-    return {"title": title, "family": family, "util": util, "reason": reason}
+    search_ran = _as_bool(
+        bundle.get("local_cleanup_search_ran")
+        or candidate_evidence.get("local_cleanup_search_ran")
+        or candidate_evidence.get("cleanup_search_ran")
+    )
+    search_exhaustive = _as_bool(
+        bundle.get("local_cleanup_search_exhaustive")
+        or candidate_evidence.get("local_cleanup_search_exhaustive")
+        or candidate_evidence.get("candidate_search_exhaustive")
+        or candidate_evidence.get("cleanup_search_exhaustive")
+    )
+    safe_count = bundle.get("safe_local_cleanup_count")
+    if safe_count is None:
+        safe_count = candidate_evidence.get("safe_local_cleanup_count")
+    if safe_count is None:
+        safe_count = candidate_evidence.get("safe_executor_backed_candidates_count")
+    if target_band_blocked and candidate_evidence:
+        safe_count = 0
+    executable_count = bundle.get("executable_safe_cleanup_count")
+    if executable_count is None:
+        executable_count = candidate_evidence.get("executable_safe_cleanup_count")
+    if executable_count is None:
+        executable_count = candidate_evidence.get("executable_target_band_candidate_count")
+    if target_band_blocked and candidate_evidence:
+        executable_count = 0
+    inventory_count = (
+        candidate_evidence.get("candidate_inventory_count")
+        or candidate_evidence.get("local_cleanup_candidate_inventory_count")
+        or len(list(candidate_evidence.get("candidate_rows") or []))
+        or len(list(candidate_evidence.get("safe_executor_backed_candidates") or []))
+    )
+    if target_band_blocked and not exact_blockers:
+        blocker_family = material_families[0] if material_families else family
+        exact_blockers = {
+            blocker_family: {
+                "family": blocker_family,
+                "reason": reason,
+                "cleanup_search_ran": search_ran,
+                "cleanup_search_exhaustive": search_exhaustive,
+                "target_band_contract_blocked": True,
+            }
+        }
+    return {
+        "title": title,
+        "family": family,
+        "util": util,
+        "reason": reason,
+        "target_band_contract_blocked": target_band_blocked,
+        "local_cleanup_search_ran": search_ran,
+        "local_cleanup_search_exhaustive": search_exhaustive,
+        "safe_local_cleanup_count": safe_count,
+        "executable_safe_cleanup_count": executable_count,
+        "candidate_inventory_count": inventory_count,
+        "materially_overprovided_families": material_families,
+        "family_utils": family_utils,
+        "exact_blocker_families": sorted(str(key).lower() for key in dict(exact_blockers).keys()),
+    }
 
 
 def _render_proof_backed_card(st_module: Any, proof_card: dict) -> None:
@@ -83,8 +219,36 @@ def _render_proof_backed_card(st_module: Any, proof_card: dict) -> None:
         util_text = ""
     title = html.escape(str(proof_card.get("title") or "Design cleanup blocked"))
     reason = html.escape(str(proof_card.get("reason") or "Exact blocker evidence is available."))
+    family_utils = proof_card.get("family_utils") if isinstance(proof_card.get("family_utils"), dict) else {}
+    attrs = {
+        "data-testid": "design-guide-card",
+        "data-guidance-intent": "specific_blocker",
+        "data-target-band-contract-blocked": proof_card.get("target_band_contract_blocked"),
+        "data-local-cleanup-search-ran": proof_card.get("local_cleanup_search_ran"),
+        "data-local-cleanup-search-exhaustive": proof_card.get("local_cleanup_search_exhaustive"),
+        "data-safe-local-cleanup-count": proof_card.get("safe_local_cleanup_count"),
+        "data-executable-safe-cleanup-count": proof_card.get("executable_safe_cleanup_count"),
+        "data-candidate-inventory-count": proof_card.get("candidate_inventory_count"),
+        "data-materially-overprovided-families": ",".join(
+            str(value).strip().lower()
+            for value in list(proof_card.get("materially_overprovided_families") or [])
+            if str(value).strip()
+        ),
+        "data-exact-blocker-families": ",".join(
+            str(value).strip().lower()
+            for value in list(proof_card.get("exact_blocker_families") or [])
+            if str(value).strip()
+        ),
+        "data-family-util-bending": family_utils.get("bending"),
+        "data-family-util-shear": family_utils.get("shear"),
+    }
+    attr_text = " ".join(
+        f"{html.escape(str(name), quote=True)}=\"{html.escape(str(value), quote=True)}\""
+        for name, value in attrs.items()
+        if value is not None
+    )
     st_module.markdown(
-        "<div class='fast-guidance-item warn'>"
+        f"<div class='fast-guidance-item warn' {attr_text}>"
         "<div class='fast-guidance-head'>"
         "<span class='fast-guidance-badge warn'>NEXT</span>"
         "<span class='fast-guidance-title-wrap'>"
@@ -110,101 +274,6 @@ def _render_proof_pending_shell(st_module: Any) -> None:
         if applying
         else "Reviewing strength, detailing, serviceability, and cleanup options."
     )
-    st_module.markdown(
-        """
-<style>
-.dg-proof-pending-shell {
-    min-height: 10.5rem;
-    border: 1px solid rgba(37, 99, 235, 0.18);
-    border-left: 4px solid rgb(37, 99, 235);
-    border-radius: 8px;
-    background: linear-gradient(180deg, rgba(248,250,252,0.96), rgba(241,245,249,0.72));
-    padding: 0.92rem 1rem 0.98rem;
-    color: rgb(31, 41, 55);
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-}
-.dg-proof-pending-shell.applying {
-    border-color: rgba(22, 163, 74, 0.20);
-    border-left-color: rgb(22, 163, 74);
-    background: linear-gradient(180deg, rgba(240,253,244,0.96), rgba(248,250,252,0.82));
-}
-.dg-proof-pending-eyebrow {
-    color: rgb(37, 99, 235);
-    font-size: 0.72rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0;
-    margin-bottom: 0.28rem;
-}
-.dg-proof-pending-shell.applying .dg-proof-pending-eyebrow {
-    color: rgb(22, 101, 52);
-}
-.dg-proof-pending-title {
-    font-size: 1.02rem;
-    font-weight: 750;
-    line-height: 1.25;
-    margin-bottom: 0.22rem;
-}
-.dg-proof-pending-subtext {
-    color: rgba(31, 41, 55, 0.72);
-    font-size: 0.86rem;
-    line-height: 1.35;
-    margin-bottom: 0.8rem;
-}
-.dg-proof-pending-bar {
-    position: relative;
-    overflow: hidden;
-    height: 0.44rem;
-    border-radius: 999px;
-    background: rgba(37, 99, 235, 0.12);
-    margin-bottom: 0.78rem;
-}
-.dg-proof-pending-bar::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    width: 38%;
-    border-radius: inherit;
-    background: linear-gradient(90deg, rgba(37,99,235,0), rgba(37,99,235,0.42), rgba(37,99,235,0));
-    animation: dgProofPendingSweep 1.35s ease-in-out infinite;
-}
-.dg-proof-pending-shell.applying .dg-proof-pending-bar {
-    background: rgba(22, 163, 74, 0.14);
-}
-.dg-proof-pending-shell.applying .dg-proof-pending-bar::after {
-    background: linear-gradient(90deg, rgba(22,163,74,0), rgba(22,163,74,0.44), rgba(22,163,74,0));
-}
-.dg-proof-pending-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.42rem;
-}
-.dg-proof-pending-chip {
-    display: inline-flex;
-    align-items: center;
-    min-height: 1.55rem;
-    padding: 0.18rem 0.56rem;
-    border: 1px solid rgba(37, 99, 235, 0.18);
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.72);
-    color: rgba(31, 41, 55, 0.78);
-    font-size: 0.78rem;
-    font-weight: 650;
-}
-@keyframes dgProofPendingSweep {
-    0% { transform: translateX(-110%); }
-    100% { transform: translateX(275%); }
-}
-@media (prefers-reduced-motion: reduce) {
-    .dg-proof-pending-bar::after {
-        animation: none;
-        transform: translateX(80%);
-    }
-}
-</style>
-        """,
-        unsafe_allow_html=True,
-    )
     shell_class = "dg-proof-pending-shell applying" if applying else "dg-proof-pending-shell"
     st_module.markdown(
         f"<section class='{shell_class}' data-testid='design-guide-proof-pending' "
@@ -214,17 +283,55 @@ def _render_proof_pending_shell(st_module: Any) -> None:
         "<div class='dg-proof-pending-subtext'>"
         f"{html.escape(subtext)}"
         "</div>"
-        "<div class='dg-proof-pending-bar' aria-hidden='true'></div>"
+        "<div class='dg-proof-pending-bar' aria-hidden='true'>"
+        "<span class='dg-proof-pending-bar-fill'></span></div>"
         f"<div class='dg-proof-pending-chips'>{chips_html}</div>"
         "</section>",
         unsafe_allow_html=True,
     )
 
 
-def render_pre_widget_placeholder(st_module: Any, slot: Any) -> None:
+def _has_final_design_guide_publication_payload(st_module: Any) -> bool:
+    try:
+        bundle = st_module.session_state.get("_design_guide_debug_bundle")
+    except Exception:
+        bundle = None
+    if not isinstance(bundle, dict):
+        return False
+    payload = bundle.get("final_publication_verifier_payload")
+    if not isinstance(payload, dict):
+        return False
+    if str(payload.get("publication_hash") or "").strip():
+        return True
+    state = str(
+        payload.get("outcome_state")
+        or payload.get("status")
+        or payload.get("publication_status")
+        or ""
+    ).strip().upper()
+    return state in {"PASS", "ACTION", "BLOCKED", "ERROR"}
+
+
+def _should_skip_pre_widget_placeholder(st_module: Any) -> bool:
+    try:
+        if bool(st_module.session_state.get("_design_guide_component_apply_in_flight")):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def render_pre_widget_placeholder(st_module: Any, slot: Any, *, render_heading: bool = True) -> None:
     """Mount the lightweight Design Guide placeholder before inputs widgets."""
+    if _should_skip_pre_widget_placeholder(st_module):
+        return
     with slot.container():
-        st_module.markdown("### Design Guide")
+        if render_heading:
+            st_module.markdown("### Design Guide")
+        proof_card = _proof_backed_placeholder_card(st_module)
+        if isinstance(proof_card, dict):
+            _render_proof_backed_card(st_module, proof_card)
+            return
         _render_proof_pending_shell(st_module)
 
 

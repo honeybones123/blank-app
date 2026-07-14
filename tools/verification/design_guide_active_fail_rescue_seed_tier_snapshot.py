@@ -53,38 +53,39 @@ def _run_compile(paths: list[str]) -> dict[str, Any]:
 
 def _source_checks(source: str) -> dict[str, Any]:
     return {
-        "combined_runtime_feed_uses_overview_tier": (
-            'requested_tier = _rescue_mode_choose_tier_from_overview(\n'
-            '                    base,\n'
-            '                    overview if isinstance(overview, dict) else {},\n'
-            '                    "combined",\n'
-            '                )'
+        "combined_runtime_feed_uses_controller_route_inputs": (
+            "_build_design_guide_controller_active_fail_executor_rescue_tier_route_inputs(\n"
+            '                action_tier=_rescue_mode_action_tier(base, "combined"),\n'
+            "                util_tier=_rescue_mode_overview_util_tier("
         )
         in source,
-        "fallback_rescue_feed_uses_overview_tier": (
-            "requested_tier = _rescue_mode_choose_tier_from_overview(\n"
-            "            base,\n"
-            "            overview if isinstance(overview, dict) else {},\n"
-            "            rescue_family,\n"
-            "        )"
+        "fallback_rescue_feed_uses_controller_route_inputs": (
+            "_build_design_guide_controller_active_fail_executor_rescue_tier_route_inputs(\n"
+            "            action_tier=_rescue_mode_action_tier(base, rescue_family),\n"
+            "            util_tier=_rescue_mode_overview_util_tier("
         )
         in source,
-        "smart_active_failure_feed_uses_overview_tier": (
-            "requested_tier = _rescue_mode_choose_tier_from_overview(\n"
-            "                base,\n"
-            "                overview if isinstance(overview, dict) else {},\n"
-            "                family,\n"
-            "            )"
+        "smart_active_failure_feed_uses_controller_route_inputs": (
+            "_build_design_guide_controller_active_fail_executor_rescue_tier_route_inputs(\n"
+            "                action_tier=_rescue_mode_action_tier(base, family),\n"
+            "                util_tier=_rescue_mode_overview_util_tier("
         )
         in source,
         "old_combined_action_only_feed_removed": (
             'requested_tier = _rescue_mode_action_tier(base, "combined")' not in source
+        ),
+        "deleted_choose_tier_from_overview_helper_not_used": (
+            "_rescue_mode_choose_tier_from_overview" not in source
         ),
     }
 
 
 def _build_snapshot() -> dict[str, Any]:
     import inputs_page  # type: ignore
+    from design_brain.design_guide_controller import (
+        build_design_guide_controller_active_fail_executor_rescue_tier_route_inputs,
+        resolve_design_guide_controller_active_fail_executor_overview_util_tier,
+    )
     from design_brain.families.registry import family_strategy_for
 
     source = INPUTS_PAGE.read_text(encoding="utf-8")
@@ -104,13 +105,17 @@ def _build_snapshot() -> dict[str, Any]:
     }
 
     action_tier = inputs_page._rescue_mode_action_tier(base, "combined")
-    overview_tier = inputs_page._rescue_mode_overview_util_tier(overview, "combined")
-    chosen_tier = inputs_page._rescue_mode_choose_tier_from_overview(
-        base,
+    overview_tier = resolve_design_guide_controller_active_fail_executor_overview_util_tier(
         overview,
         "combined",
     )
-    seed_order = inputs_page._rescue_mode_seed_order(chosen_tier)
+    rescue_tier_inputs = build_design_guide_controller_active_fail_executor_rescue_tier_route_inputs(
+        action_tier=action_tier,
+        util_tier=overview_tier,
+        tier_order=tuple(inputs_page.RESCUE_MODE_TIER_ORDER),
+    )
+    chosen_tier = rescue_tier_inputs.get("requested_tier")
+    seed_order = list(rescue_tier_inputs.get("rescue_tiers") or [])
     approved_combined_merge_candidates: list[dict[str, Any]] = []
     for tier in seed_order:
         seed_spec = dict(((inputs_page.RESCUE_SEED_LIBRARY.get("combined") or {}).get(tier)) or {})
@@ -256,6 +261,7 @@ def main() -> int:
         [
             "inputs_page.py",
             "tools/verification/design_guide_active_fail_rescue_seed_tier_snapshot.py",
+            "design_brain/design_guide_controller.py",
         ]
     )
     payload = _build_snapshot()

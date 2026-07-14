@@ -32,15 +32,10 @@ CANONICAL_LIVE_FAMILY_ALIASES = {
 }
 
 ACCEPTED_PRODUCT_MIGRATION_DRIFTS = {
-    "bending_fail_shear_optimise": {
-        "live_family": "BENDING_FAIL_GOVERNS",
-        "contract_family": "BENDING_FAIL_SHEAR_OPTIMISE_GOVERNS",
-        "reason": "mixed strengthen-and-optimise family is contract-recognised but not product-active in live chooser yet",
-    },
     "shear_fail_bending_optimise": {
-        "live_family": "SHEAR_FAIL_GOVERNS",
+        "live_family": "SHEAR_FAIL_BENDING_OVERDESIGN_GOVERNS",
         "contract_family": "SHEAR_FAIL_BENDING_OPTIMISE_GOVERNS",
-        "reason": "mixed strengthen-and-optimise family is contract-recognised but not product-active in live chooser yet",
+        "reason": "contract uses the accepted optimise naming while legacy live chooser still emits the overdesign alias",
     },
 }
 

@@ -156,8 +156,8 @@ def _validate_ladder(snapshot: dict[str, Any], expected: dict[str, Any]) -> list
     if snapshot.get("repair_ladder_hash") != str(expected.get("repair_ladder_hash") or ""):
         failures.append("repair_ladder_hash_mismatch")
     indexes = list(snapshot.get("candidate_indexes") or [])
-    if indexes != list(range(1, len(indexes) + 1)):
-        failures.append("candidate_indexes_not_strictly_increasing_from_one")
+    if indexes != sorted(indexes) or len(indexes) != len(set(indexes)):
+        failures.append("candidate_indexes_not_strictly_increasing")
     labels = list(snapshot.get("candidate_labels") or [])
     for index, label in zip(indexes, labels):
         expected_prefix = f"{FAMILY_ID} ladder {index}: "

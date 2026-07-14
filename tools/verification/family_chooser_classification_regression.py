@@ -63,14 +63,41 @@ CASES = [
         "flags": _flags(bending_fail=True, shear_fail=True, legal_repair_exists=True),
     },
     {
+        "case_id": "bending_fail_shear_overdesign_mixed_owner",
+        "expected": "BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS",
+        "flags": _flags(
+            bending_fail=True,
+            shear_overdesigned=True,
+            legal_repair_exists=True,
+            repair_required=True,
+            shear_acceptable=True,
+        ),
+    },
+    {
+        "case_id": "shear_fail_bending_overdesign_mixed_owner",
+        "expected": "SHEAR_FAIL_BENDING_OVERDESIGN_GOVERNS",
+        "flags": _flags(
+            shear_fail=True,
+            bending_overdesigned=True,
+            legal_repair_exists=True,
+            repair_required=True,
+            bending_acceptable=True,
+        ),
+    },
+    {
         "case_id": "combined_overdesign",
         "expected": "COMBINED_OVERDESIGN",
         "flags": _flags(bending_overdesigned=True, shear_overdesigned=True),
     },
     {
         "case_id": "geometry_detailing_plus_strength_failure",
-        "expected": "COMBINED_BENDING_SHEAR_FAIL",
+        "expected": "GEOMETRY_DETAILING_GOVERNS",
         "flags": _flags(geometry_detailing_fail=True, bending_fail=True, shear_fail=True),
+    },
+    {
+        "case_id": "geometry_detailing_only",
+        "expected": "GEOMETRY_DETAILING_GOVERNS",
+        "flags": _flags(geometry_detailing_fail=True),
     },
     {
         "case_id": "minimum_bending_reo_maps_to_bending_overdesign_owner",
@@ -93,10 +120,32 @@ CASES = [
         "flags": _flags(shear_fail=True, repair_required=True, locked_repair_blocked=True, legal_repair_exists=False),
     },
     {
+        "case_id": "serviceability_locked_no_repair_owned_by_serviceability",
+        "expected": "SERVICEABILITY_GOVERNS",
+        "flags": _flags(
+            serviceability_fail=True,
+            repair_required=True,
+            locked_repair_blocked=True,
+            legal_repair_exists=False,
+            bending_acceptable=True,
+            shear_acceptable=True,
+        ),
+    },
+    {
         "case_id": "zero_match_state",
         "expected": FAMILY_SELECTION_CONTRACT_VIOLATION,
         "flags": _flags(),
         "expected_match_count": 0,
+    },
+    {
+        "case_id": "safe_near_limit_above_cleanup_band_maps_to_target_band",
+        "expected": "TARGET_BAND_REACHED",
+        "flags": _flags(
+            bending_acceptable=True,
+            shear_acceptable=True,
+            bending_within_target_band=False,
+            shear_within_target_band=True,
+        ),
     },
     {
         "case_id": "multi_match_target_and_exact_stop",

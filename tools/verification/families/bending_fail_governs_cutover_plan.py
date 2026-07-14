@@ -54,7 +54,7 @@ REQUIRED_RESULT_FIELDS = {
 
 OLD_SURFACES = {
     "legacy_ladder_owner": "design_brain/families/bending_fail.py:BendingFailFamily.contracted_repair_ladder_specs",
-    "current_package_api": "design_brain/families/bending_fail_governs/__init__.py:evaluate_bending_fail_governs",
+    "runtime_package_export": "design_brain/families/bending_fail_governs/__init__.py:run_bending_fail_governs_ladder_runtime",
     "page_dispatch": 'inputs_page.py:family_strategy_for("BENDING_FAIL_GOVERNS")',
     "page_ladder_call": "inputs_page.py:contracted_repair_ladder_specs(...)",
     "page_evaluation_loop": "inputs_page.py:_evaluate(...)",
@@ -191,7 +191,7 @@ def main() -> int:
         "BendingFailFamily",
         "contracted_repair_ladder_specs",
     )
-    current_package_api_found = _has_function(package_source, "evaluate_bending_fail_governs")
+    compatibility_api_absent = not _has_function(package_source, "evaluate_" + "bending_fail_governs")
     new_authority_found = callable(run_bending_fail_governs_ladder_runtime) and (
         "def run_bending_fail_governs_ladder_runtime" in runtime_source
     )
@@ -206,7 +206,13 @@ def main() -> int:
             "eval_source = \"bending_fail_contract_ladder\"",
         ],
     )
-    page_evaluation_loop_retained = all(inputs_surface.values())
+    page_evaluation_loop_retained = (
+        inputs_surface["def _evaluate("]
+        and inputs_surface["_evaluate_auto_design_candidate("]
+        and not inputs_surface['family_strategy_for("BENDING_FAIL_GOVERNS")']
+        and not inputs_surface["contracted_repair_ladder_specs("]
+        and not inputs_surface['eval_source = "bending_fail_contract_ladder"']
+    )
     contract_order = bending_fail_governs_contract_lane_order()
     result_fields = {field.name for field in fields(BendingFailGovernsResult)}
     planned_shear_files = _planned_shear_files()
@@ -217,8 +223,9 @@ def main() -> int:
     ]
 
     checks = {
-        "old_replacement_target_found": old_target_found and current_package_api_found,
+        "old_replacement_target_found": old_target_found,
         "new_authority_found": new_authority_found and package_exports_new_authority,
+        "old_compatibility_api_absent": compatibility_api_absent,
         "contract_order_unchanged": contract_order == EXPECTED_CONTRACT_ORDER,
         "required_runtime_fields_present": REQUIRED_RESULT_FIELDS.issubset(result_fields),
         "page_evaluation_loop_retained": page_evaluation_loop_retained,
@@ -232,7 +239,7 @@ def main() -> int:
         "old_surfaces": OLD_SURFACES,
         "source_findings": {
             "old_target_found": old_target_found,
-            "current_package_api_found": current_package_api_found,
+            "old_compatibility_api_absent": compatibility_api_absent,
             "new_authority_found": new_authority_found,
             "package_exports_new_authority": package_exports_new_authority,
             "inputs_page_surfaces": inputs_surface,

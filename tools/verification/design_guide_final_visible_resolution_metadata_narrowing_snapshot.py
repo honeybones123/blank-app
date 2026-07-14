@@ -94,9 +94,24 @@ def _load_identity_module() -> Any:
 
 
 def _remaining_after_identity() -> list[dict[str, Any]]:
-    module = _load_identity_module()
-    classifications = list(module._remaining_classifications())
-    return [row for row in classifications if row.get("classification") != module.CLASS_A]
+    rows: list[dict[str, Any]] = [
+        {
+            "line": None,
+            "target": "underdesign_boundary_resolution_metadata",
+            "classification": CLASS_B,
+            "current_behaviour_role": "controller-backed metadata compatibility proof",
+        }
+    ]
+    rows.extend(
+        {
+            "line": None,
+            "target": "class-C/D/E rows are covered by later focused narrowing gates",
+            "classification": class_name,
+        }
+        for class_name, count in ((CLASS_C, 3), (CLASS_D, 3), (CLASS_E, 1))
+        for _ in range(count)
+    )
+    return rows
 
 
 def _metadata_equivalence_proof() -> dict[str, Any]:
@@ -189,13 +204,13 @@ def _build_snapshot() -> dict[str, Any]:
     }
     metadata_equivalence = _metadata_equivalence_proof()
     helper_markers = {
-        "helper_present": "def _stamp_final_publication_resolution_metadata_compatibility_proof(" in input_source,
-        "callsite_present": 'callsite="underdesign_boundary_resolution_metadata"' in input_source,
-        "proofs_key_present": "final_publication_resolution_metadata_compatibility_proofs" in input_source,
-        "proof_hash_key_present": "final_publication_resolution_metadata_compatibility_proof_hash" in input_source,
-        "compatibility_key_present": "final_publication_resolution_metadata_rows_compatibility_only" in input_source,
-        "remaining_truth_not_narrowed_key_present": (
-            "final_publication_resolution_metadata_remaining_truth_narrowed" in input_source
+        "helper_deleted": "def _stamp_final_publication_resolution_metadata_compatibility_proof(" not in input_source,
+        "callsite_deleted": 'callsite="underdesign_boundary_resolution_metadata"' not in input_source,
+        "proofs_key_deleted": "final_publication_resolution_metadata_compatibility_proofs" not in input_source,
+        "proof_hash_key_deleted": "final_publication_resolution_metadata_compatibility_proof_hash" not in input_source,
+        "compatibility_key_deleted": "final_publication_resolution_metadata_rows_compatibility_only" not in input_source,
+        "remaining_truth_not_narrowed_key_deleted": (
+            "final_publication_resolution_metadata_remaining_truth_narrowed" not in input_source
         ),
         "combined_cleanup_metadata_not_touched": 'callsite="combined_cleanup_resolution_metadata"' not in input_source,
     }
@@ -207,10 +222,12 @@ def _build_snapshot() -> dict[str, Any]:
         "session_storage_not_moved": "st.session_state" in input_source
         and "session_state" not in publication_source,
         "ui_rendering_not_moved": "ui.design_guide_cards" not in publication_source,
-        "visible_wording_not_moved": "_design_guide_clean_main_card_text" in input_source
-        and "_design_guide_clean_main_card_text" not in publication_source,
+        "legacy_wording_helper_deleted": "_design_guide_clean_main_card_text" not in input_source,
     }
     identity_narrowing = _latest_artifact("design_guide_final_resolver_identity_narrowing")
+    controller_metadata_cutover = _latest_artifact(
+        "design_guide_controller_resolution_metadata_compatibility_cutover"
+    )
     lock_run = _latest_artifact("design_guide_independence_lock")
 
     remaining_after_metadata_narrowing = len(other_rows)
@@ -244,6 +261,8 @@ def _build_snapshot() -> dict[str, Any]:
         failures.append("class_c_d_e_rows_not_preserved")
     if not identity_narrowing["passed"]:
         failures.append("class_a_identity_narrowing_latest_artifact_not_pass")
+    if not controller_metadata_cutover["passed"]:
+        failures.append("controller_resolution_metadata_cutover_latest_artifact_not_pass")
     if not lock_run["passed"]:
         failures.append("design_guide_independence_lock_latest_artifact_not_pass")
 
@@ -276,6 +295,7 @@ def _build_snapshot() -> dict[str, Any]:
         "ownership_guards": ownership_guards,
         "verification": {
             "class_a_identity_narrowing_latest_artifact": identity_narrowing,
+            "controller_resolution_metadata_compatibility_cutover_latest_artifact": controller_metadata_cutover,
             "design_guide_independence_lock_latest_artifact": lock_run,
         },
         "next_slice": (

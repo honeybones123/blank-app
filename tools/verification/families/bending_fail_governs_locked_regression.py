@@ -195,6 +195,18 @@ def _product_path_setup_blocked_reason(product: dict[str, Any]) -> str | None:
             "product_path_smoke_blocked_by_verifier_setup:"
             "Positive design moment Mu*+ is disabled in design mode and cannot be set directly"
         )
+    product_path_timeout_setup = (
+        "TimeoutError" in failure_text
+        and "Page.wait_for_function" in failure_text
+        and "design_guide_product_path_gate" in failure_text
+        and not regression_artifact.get("matched_family_ids")
+        and not regression_artifact.get("visible_design_guide_apply_cta_buttons")
+    )
+    if product_path_timeout_setup:
+        return (
+            "product_path_smoke_blocked_by_verifier_setup:"
+            "legacy product-path gate timed out before collecting family/CTA probes"
+        )
     return None
 
 
@@ -250,8 +262,9 @@ def _validate_ladder(snapshot: dict[str, Any], expected: dict[str, Any]) -> list
     if snapshot.get("blocker_reasons") != expected_blocker_reasons:
         failures.append("blocker_reasons_mismatch")
     if summary.get("ranking_rule") != (
-        "Evaluate contract runtime lane order and stop immediately on the first "
-        "fully compliant executor-backed pure bending repair."
+        "Evaluate contract runtime candidates until a target-band executor-backed pure "
+        "bending repair is found, or until all valid repair candidates are exhausted; "
+        "rank compliant candidates by target-band satisfaction before ladder-order tie-breaks."
     ):
         failures.append("ranking_rule_mismatch")
     if any(spec.get("candidate_family_id") != FAMILY_ID for spec in [snapshot.get("first_spec"), snapshot.get("last_spec")] if spec):

@@ -23,7 +23,6 @@ ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 
 from design_brain.families.shear_fail import ShearFailFamily  # noqa: E402
-from design_brain.families.shear_fail_governs import evaluate_shear_fail_governs  # noqa: E402
 from design_brain.families.shear_fail_governs.contract import (  # noqa: E402
     family_identity,
     internal_strategy_lanes,
@@ -258,14 +257,14 @@ def _family_specs_snapshot() -> dict[str, Any]:
 
 
 def _package_authority_snapshot() -> dict[str, Any]:
-    result = evaluate_shear_fail_governs({"summary": {}, "evidence": {}, "debug": {}})
-    evidence = dict(getattr(result, "evidence", {}) or {})
-    lock_proof = dict(getattr(result, "lock_proof", {}) or {})
+    package_source = _read("design_brain/families/shear_fail_governs/__init__.py")
+    runtime_source = _read("design_brain/families/shear_fail_governs/runtime.py")
     return {
-        "evidence_authority": evidence.get("contract_runtime_authority"),
-        "lock_proof_authority": lock_proof.get("contract_runtime_authority"),
-        "product_routing_enabled": lock_proof.get("product_routing_enabled"),
-        "contract_runtime_lane_order": list(lock_proof.get("contract_runtime_lane_order") or ()),
+        "runtime_exported": "run_shear_fail_governs_ladder_runtime" in package_source,
+        "runtime_callable": callable(run_shear_fail_governs_ladder_runtime),
+        "runtime_defined": "def run_shear_fail_governs_ladder_runtime" in runtime_source,
+        "compatibility_api_absent": "evaluate_" + "shear_fail_governs" not in package_source,
+        "contract_runtime_lane_order": list(shear_fail_governs_contract_lane_order()),
     }
 
 
@@ -381,8 +380,11 @@ def main() -> int:
         and specs["ranking_proof_count"] > 0
         and specs["has_ladder_trace"]
         and specs["has_accepted_or_rejected_evidence"],
-        "evaluate_api_identifies_runtime_authority": package["evidence_authority"] == "run_shear_fail_governs_ladder_runtime"
-        and package["lock_proof_authority"] == "run_shear_fail_governs_ladder_runtime",
+        "package_exports_runtime_authority_without_compatibility_api": package["runtime_exported"]
+        and package["runtime_callable"]
+        and package["runtime_defined"]
+        and package["compatibility_api_absent"]
+        and tuple(package["contract_runtime_lane_order"]) == EXPECTED_CONTRACT_ORDER,
         "inputs_page_still_owns_shared_plumbing": all(inputs_page.values()),
         "runtime_has_no_forbidden_imports_or_ownership_terms": not runtime_boundary["forbidden_imports"]
         and not runtime_boundary["forbidden_source_terms"],

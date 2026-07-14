@@ -1,0 +1,6 @@
+Member,Member Size,Length,N*,Vy*,Vz*,Mx*,My*,Mz*,Confidence,Governing Combo,Governing Location
+301,310UB40,6.20,0,0,0,0,0,0,0.90,ULS-zero,midspan
+301,310UB40,6.20,5,2,40,0,7,105,0.87,ULS-duplicate,midspan
+302,360UB50,7.10,not-a-number,3.5,68.0,0.0,9.5,155.0,0.89,ULS-invalid,start
+,410UB54,8.20,15.0,4.0,75.0,0.0,10.5,180.0,0.91,ULS-blank-id,end
+303,460UB67,,5.0,,60.0,,8.0,140.0,1.20,ULS-missing-values,quarter

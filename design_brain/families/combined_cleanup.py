@@ -114,9 +114,25 @@ class CombinedCleanupFamily(DiagnosticFamilyStrategy):
         )
         result = run_combined_overdesign_governs_runtime(inputs=inputs, evaluate_candidate=evaluator)
         specs: list[dict[str, Any]] = []
-        for row in result.candidate_repairs:
+        spec_rows: list[dict[str, Any]] = []
+        if isinstance(result.selected_recommendation, dict):
+            spec_rows.append(dict(result.selected_recommendation))
+        selected_candidate_id = str((result.selected_recommendation or {}).get("candidate_id") or "")
+        for candidate_row in result.candidate_repairs:
+            row = dict(candidate_row)
+            if selected_candidate_id and str(row.get("candidate_id") or "") == selected_candidate_id:
+                continue
+            spec_rows.append(row)
+        for row in spec_rows:
             updates = _as_dict(row.get("updates"))
             if not updates:
+                continue
+            terminal_status = str(row.get("terminal_candidate_status") or "").strip()
+            if terminal_status not in {
+                "TERMINAL_TARGET_BAND",
+                "TERMINAL_EXACT_STOP",
+                "TERMINAL_BLOCKED_WITH_PROOF",
+            }:
                 continue
             specs.append(
                 {
@@ -135,6 +151,9 @@ class CombinedCleanupFamily(DiagnosticFamilyStrategy):
                     "candidate_state_hash": row.get("candidate_state_hash"),
                     "evaluation_hash": row.get("evaluation_hash"),
                     "ranking_evidence": dict(result.ranking_evidence),
+                    "terminal_candidate_status": terminal_status,
+                    "further_cleanup_available": bool(row.get("further_cleanup_available")),
+                    "exact_blocker_reason": row.get("exact_blocker_reason"),
                 }
             )
         return {
@@ -154,6 +173,22 @@ class CombinedCleanupFamily(DiagnosticFamilyStrategy):
             "exact_stop_proof": dict(result.exact_stop_proof),
             "exhausted_proof": dict(result.exhausted_proof),
             "ownership_proof": dict(result.ownership_proof),
+            "terminal_publication_gate": {
+                "publication_gate": "terminal_candidates_only",
+                "selected_candidate_id": (result.selected_recommendation or {}).get("candidate_id")
+                if isinstance(result.selected_recommendation, dict)
+                else None,
+                "selected_terminal_candidate_status": (result.selected_recommendation or {}).get("terminal_candidate_status")
+                if isinstance(result.selected_recommendation, dict)
+                else None,
+                "published_spec_count": len(specs),
+                "blocked_non_terminal_candidates": [
+                    row.get("candidate_id")
+                    for row in result.candidate_repairs
+                    if str(row.get("terminal_candidate_status") or "").strip()
+                    == "NON_TERMINAL_FURTHER_CLEANUP_AVAILABLE"
+                ],
+            },
         }
 
     def contracted_repair_ladder_specs(

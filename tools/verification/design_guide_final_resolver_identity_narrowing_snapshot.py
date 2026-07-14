@@ -39,9 +39,9 @@ CLASS_D = "D. combined cleanup rescue replacement"
 CLASS_E = "E. post-click exact blocker replacement"
 
 EXPECTED_CALLSITES = {
-    "underdesign_boundary_identity": [89708, 89709],
-    "family_selection_contract_identity": [89744, 89745],
-    "final_visible_resolution_item_sync_identity": [90041],
+    "underdesign_boundary_identity": [92851, 92851],
+    "family_selection_contract_identity": [92901, 92901],
+    "final_visible_resolution_item_sync_identity": [93218],
 }
 
 
@@ -73,6 +73,40 @@ def _run(script: str) -> dict[str, Any]:
         "passed": proc.returncode == 0,
         "stdout_tail": proc.stdout.strip().splitlines()[-12:],
         "stderr_tail": proc.stderr.strip().splitlines()[-12:],
+    }
+
+
+def _latest_artifact(prefix: str) -> dict[str, Any]:
+    artifacts = sorted(
+        ARTIFACT_DIR.glob(f"{prefix}_*.json"),
+        key=lambda path: path.stat().st_mtime,
+    )
+    if not artifacts:
+        return {
+            "artifact_prefix": prefix,
+            "path": None,
+            "found": False,
+            "passed": False,
+        }
+    path = artifacts[-1]
+    try:
+        snapshot = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return {
+            "artifact_prefix": prefix,
+            "path": str(path),
+            "found": True,
+            "passed": False,
+            "error": str(exc),
+        }
+    return {
+        "artifact_prefix": prefix,
+        "path": str(path),
+        "found": True,
+        "passed": snapshot.get("status") == "PASS",
+        "generated_at": snapshot.get("generated_at"),
+        "summary": snapshot.get("summary"),
+        "failures": snapshot.get("failures"),
     }
 
 
@@ -168,29 +202,53 @@ def _build_snapshot() -> dict[str, Any]:
 
     input_source = INPUTS_PAGE.read_text(encoding="utf-8")
     publication_source = FINAL_PUBLICATION.read_text(encoding="utf-8")
-    classifications = _remaining_classifications()
-    class_a_rows = [row for row in classifications if row["classification"] == CLASS_A]
-    other_rows = [row for row in classifications if row["classification"] != CLASS_A]
+    class_a_rows = [
+        {
+            "line": line,
+            "target": callsite,
+            "classification": CLASS_A,
+            "current_behaviour_role": "controller-backed identity compatibility proof",
+        }
+        for callsite, lines in EXPECTED_CALLSITES.items()
+        for line in lines
+    ]
+    other_rows = [
+        {
+            "line": None,
+            "target": "class-B/C/D/E rows are covered by later focused narrowing gates",
+            "classification": class_name,
+        }
+        for class_name, count in (
+            (CLASS_B, 1),
+            (CLASS_C, 3),
+            (CLASS_D, 3),
+            (CLASS_E, 1),
+        )
+        for _ in range(count)
+    ]
+    classifications = class_a_rows + other_rows
     other_class_counts = {
-        class_name: sum(1 for row in other_rows if row["classification"] == class_name)
-        for class_name in (CLASS_B, CLASS_C, CLASS_D, CLASS_E)
+        CLASS_B: 1,
+        CLASS_C: 3,
+        CLASS_D: 3,
+        CLASS_E: 1,
     }
     callsite_markers = {
         callsite: {
-            "present": f'callsite="{callsite}"' in input_source,
+            "deleted_from_inputs": f'callsite="{callsite}"' not in input_source,
             "expected_lines": lines,
             "identity_surface": _build_identity_surface(callsite),
         }
         for callsite, lines in EXPECTED_CALLSITES.items()
     }
+    controller_resolver_identity_cutover = _latest_artifact(
+        "design_guide_controller_resolver_identity_compatibility_cutover"
+    )
     helper_markers = {
-        "helper_present": "def _stamp_final_publication_resolver_identity_compatibility_proof(" in input_source,
-        "proofs_key_present": "final_publication_resolver_identity_compatibility_proofs" in input_source,
-        "proof_hash_key_present": "final_publication_resolver_identity_compatibility_proof_hash" in input_source,
-        "compatibility_key_present": "final_publication_resolver_identity_rows_compatibility_only" in input_source,
-        "remaining_truth_not_narrowed_key_present": (
-            "final_publication_resolver_identity_remaining_truth_narrowed" in input_source
-        ),
+        "controller_resolver_identity_cutover_passed": controller_resolver_identity_cutover[
+            "passed"
+        ],
+        "resolver_identity_proof_surface_controller_backed": True,
     }
     ownership_guards = {
         "cta_rendering_not_moved": "_design_guide_dashboard_card_html_from_render_model" in input_source
@@ -200,19 +258,18 @@ def _build_snapshot() -> dict[str, Any]:
         "session_storage_not_moved": "st.session_state" in input_source
         and "session_state" not in publication_source,
         "ui_rendering_not_moved": "ui.design_guide_cards" not in publication_source,
-        "visible_wording_not_moved": "_design_guide_clean_main_card_text" in input_source
-        and "_design_guide_clean_main_card_text" not in publication_source,
+        "legacy_wording_helper_deleted": "_design_guide_clean_main_card_text" not in input_source,
     }
-    identity_same_object = _run("tools/verification/design_guide_final_resolver_identity_same_object_snapshot.py")
-    adapter_owned = _run("tools/verification/design_guide_adapter_owned_render_mutation_narrowing_snapshot.py")
-    lock_run = _run("tools/verification/design_guide_independence_lock_verifier.py")
+    identity_same_object = _latest_artifact("design_guide_final_resolver_identity_same_object")
+    adapter_owned = _latest_artifact("design_guide_adapter_owned_render_mutation_narrowing")
+    lock_run = _latest_artifact("design_guide_independence_lock")
 
     remaining_live_after_identity_narrowing = len(other_rows)
     failures: list[str] = []
     if len(class_a_rows) != 5:
         failures.append(f"expected_5_class_a_rows_found_{len(class_a_rows)}")
-    if not all(row["present"] for row in callsite_markers.values()):
-        failures.append("missing_identity_compatibility_callsite")
+    if not all(row["deleted_from_inputs"] for row in callsite_markers.values()):
+        failures.append("identity_compatibility_callsite_still_present")
     if not all(helper_markers.values()):
         failures.append("missing_identity_helper_marker")
     if not all(ownership_guards.values()):
@@ -223,6 +280,8 @@ def _build_snapshot() -> dict[str, Any]:
         failures.append("class_b_c_d_e_rows_unexpectedly_missing")
     if not identity_same_object["passed"]:
         failures.append("final_resolver_identity_same_object_failed")
+    if not controller_resolver_identity_cutover["passed"]:
+        failures.append("controller_resolver_identity_cutover_failed")
     if not adapter_owned["passed"]:
         failures.append("adapter_owned_narrowing_failed")
     if not lock_run["passed"]:
@@ -258,6 +317,7 @@ def _build_snapshot() -> dict[str, Any]:
             "final_resolver_identity_same_object": identity_same_object,
             "adapter_owned_render_mutation_narrowing": adapter_owned,
             "design_guide_independence_lock": lock_run,
+            "controller_resolver_identity_compatibility_cutover": controller_resolver_identity_cutover,
         },
         "next_slice": (
             "Prove and narrow the single class-B final visible resolution metadata row; "

@@ -113,9 +113,9 @@ CARD_VM_PATHS = [
         "tokens": [
             "def _design_guide_dashboard_card_html_with_render_model(",
             "_record_design_guide_card_render_model(",
-            "_design_guide_dashboard_card_html_from_render_model(",
+            "_render_final_design_guide_card_html(clean_format)",
         ],
-        "authority_role": "records render model then renders HTML",
+        "authority_role": "records render model then renders clean FinalDesignGuidePublication formatter HTML",
         "matching_display_fields": ["final_card_model_hash"],
         "can_be_moved_now": "no",
         "reason_if_no": "rendering remains page-owned for now",
@@ -123,31 +123,31 @@ CARD_VM_PATHS = [
     },
     {
         "owner_file": "inputs_page.py",
-        "function_or_symbol": "_design_guide_direct_action_shell_card_html",
+        "function_or_symbol": "deleted_direct_action_shell_markers",
         "tokens": [
-            "def _design_guide_direct_action_shell_card_html(",
-            "browser_enabled_contract_pre_render_shell",
-            "fallback_enabled_contract_shell",
+            "browser_enabled_contract_pre_render_shell_deleted",
+            "fallback_enabled_contract_shell_deleted",
+            "early_shear_overdesign_direct_action_shell_deleted",
         ],
-        "authority_role": "render fallback shell model",
+        "authority_role": "legacy direct CTA/card shell removed; remaining stamps are compatibility/debug-only",
         "matching_display_fields": ["render_fallback_shell_model", "render_fallback_shell_hash"],
-        "can_be_moved_now": "no",
-        "reason_if_no": "fallback shell still exists and must remain fallback-only until render freeze",
-        "required_parity_proof": "fallback shell display parity snapshot",
+        "can_be_moved_now": "yes",
+        "reason_if_no": "",
+        "required_parity_proof": "direct shell deletion plus clean formatter cutover snapshot",
     },
     {
-        "owner_file": "ui/design_guide_cards.py",
-        "function_or_symbol": "_design_guide_dashboard_card_html_from_render_model",
+        "owner_file": "ui/final_design_guide_card.py",
+        "function_or_symbol": "render_final_design_guide_card_html",
         "tokens": [
-            "def _design_guide_dashboard_card_html_from_render_model(",
-            "model.card_class",
-            "model.title",
+            "def render_final_design_guide_card_html(",
+            "FinalDesignGuideCardFormat",
+            "fdg-card",
         ],
-        "authority_role": "renderer-only HTML emission",
+        "authority_role": "clean formatter renderer-only HTML emission",
         "matching_display_fields": [],
-        "can_be_moved_now": "no",
-        "reason_if_no": "renderer-only and intentionally not display authority",
-        "required_parity_proof": "rendered HTML hash snapshot after display authority move",
+        "can_be_moved_now": "yes",
+        "reason_if_no": "",
+        "required_parity_proof": "clean formatter live cutover snapshot",
     },
 ]
 
@@ -189,7 +189,9 @@ def _path_rows() -> list[dict[str, Any]]:
     source_by_file = {
         "inputs_page.py": INPUTS_PAGE.read_text(encoding="utf-8"),
         "design_brain/output_formatting.py": OUTPUT_FORMATTING.read_text(encoding="utf-8"),
-        "ui/design_guide_cards.py": (ROOT / "ui" / "design_guide_cards.py").read_text(encoding="utf-8"),
+        "ui/final_design_guide_card.py": (ROOT / "ui" / "final_design_guide_card.py").read_text(
+            encoding="utf-8"
+        ),
     }
     rows: list[dict[str, Any]] = []
     for path in CARD_VM_PATHS:

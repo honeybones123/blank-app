@@ -57,6 +57,7 @@ def _base_state() -> dict[str, Any]:
         "lig_d": 16,
         "lig_legs": 6,
         "shear_utilisation": 0.0,
+        "bending_utilisation": 0.2,
         "minimum_shear_reinforcement_required": False,
     }
 
@@ -67,7 +68,15 @@ def _evaluation(
 ) -> ShearOverdesignCandidateEvaluation:
     updates = dict(candidate_update.updates)
     removes_ligatures = updates.get("lig_legs") == 0 and updates.get("lig_d") == 0
+    width_after = updates.get("b") or candidate_input.base_state.get("b")
+    try:
+        width_after_value = float(width_after)
+    except (TypeError, ValueError):
+        width_after_value = None
+    width_candidate = candidate_update.width_reduction_attempted
     inside_band = updates.get("s_lig") == 300 and not removes_ligatures
+    if width_candidate:
+        inside_band = bool(width_after_value is not None and 250.0 <= width_after_value <= 650.0)
     return ShearOverdesignCandidateEvaluation(
         input_hash=candidate_input.input_hash,
         update_hash=candidate_update.update_hash,
@@ -84,12 +93,25 @@ def _evaluation(
         mandatory_detailing_status={"status": "PASS", "minimum_shear_reinforcement_required": False},
         shear_detailing_update_status={
             "shear_detailing_only": candidate_update.shear_detailing_only,
+            "contract_update_allowed": candidate_update.contract_allowed_update,
             "update_keys": candidate_update.update_keys,
         },
         geometry_restriction_status={
             "geometry_reduction_attempted": candidate_update.geometry_reduction_attempted,
-            "geometry_reduction_prohibited": True,
+            "depth_reduction_prohibited": True,
+            "width_reduction_allowed": True,
         },
+        width_reduction_status={
+            "width_before": candidate_input.base_state.get("b"),
+            "width_after": width_after_value,
+            "width_reduction_attempted": width_candidate,
+            "width_locked": False,
+        },
+        bending_utilisation=0.92 if width_candidate and inside_band else 0.2,
+        previous_bending_utilisation=float(candidate_input.base_state.get("bending_utilisation") or 0.0),
+        reinforcement_fit_status={"status": "PASS", "rearrangement_search_attempted": True},
+        serviceability_status={"status": "PASS"},
+        crack_control_status={"status": "PASS"},
         zero_shear_status={
             "zero_or_negligible_shear": True,
             "must_not_terminate_for_zero_utilisation": True,
@@ -150,7 +172,7 @@ def _classify(runtime_payload: dict[str, Any], old_evidence: dict[str, Any]) -> 
         {
             "item": "new_runtime_evidence_surface",
             "class": "EXPECTED_CONTRACT_REPLACEMENT",
-            "reason": "The runtime emits ladder trace, candidate repairs, ranking proof, zero-shear proof, geometry proof, exact stop proof, and stable hash.",
+            "reason": "The runtime emits ladder trace, candidate repairs, ranking proof, zero-shear proof, width/depth geometry proof, exact stop proof, and stable hash.",
         },
     ]
     missing = []
@@ -233,6 +255,7 @@ def main() -> int:
             "BAR_SIZE_REDUCTION",
             "LEG_COUNT_REDUCTION",
             "LIGATURE_REMOVAL",
+            "WIDTH_REDUCTION",
             "EXACT_STOP",
             "EXHAUSTED",
         ),

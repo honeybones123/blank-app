@@ -33,8 +33,10 @@ from widgets_helpers import (
     info_i_button,
     render_longitudinal_reo_row_config_controls,
     main_longitudinal_reo_pair_labels,
+    specialized_widget_rail_columns,
 )
 from ui_seamless_steps import inject_seamless_steps_css, render_clickable_summary_table, bind_summary_clicks
+from ui.summary_rows import build_crack_summary_rows, mark_primary_summary_row
 from crack_checks_helpers import build_crack_check_rows_from_state, pick_governing_check_row
 from crack_side_view_diagram import (
     _resolve_crack_diagram_window,
@@ -42,6 +44,17 @@ from crack_side_view_diagram import (
     render_crack_side_view_diagram,
 )
 from deflection import deflection_has_service_load_for_calc
+from calculations.crack_control import (
+    _nearest_key,
+    average_active_bar_spacing_mm,
+    calc_eps_diff,
+    calc_sr_max,
+    compute_crack_control_values,
+    microstrain_to_strain,
+    table_sigma_max_A,
+    table_sigma_max_B,
+)
+from calculations.bending import bar_area_mm2
 
 # Safe option lists for reinforcement inputs (same as inputs_page)
 REO_BAR_DIAS = [10, 12, 16, 20, 24, 28, 32, 36, 40]
@@ -172,99 +185,6 @@ blockquote p:last-child {
 
 
 # ------------------------------------------------------------
-#  Tables – AS 3600:2018 8.6.2.2(A) & (B)
-# ------------------------------------------------------------
-# TABLE 8.6.2.2(A) – Maximum steel stress for tension or flexure
-# Structure: {db_mm: {wmax_mm: sigma_max_MPa}}
-_TABLE_8_6_2_2A = {
-    10: {0.2: 190, 0.3: 265, 0.4: 335},
-    12: {0.2: 175, 0.3: 245, 0.4: 305},
-    16: {0.2: 155, 0.3: 215, 0.4: 270},
-    20: {0.2: 140, 0.3: 195, 0.4: 240},
-    24: {0.2: 125, 0.3: 175, 0.4: 215},
-    28: {0.2: 115, 0.3: 160, 0.4: 200},
-    32: {0.2: 105, 0.3: 150, 0.4: 185},
-    36: {0.2: 100, 0.3: 140, 0.4: 175},
-    40: {0.2: 90,  0.3: 130, 0.4: 165},
-}
-
-# TABLE 8.6.2.2(B) – Maximum steel stress for flexure vs spacing
-# Structure: {spacing_mm: {wmax_mm: sigma_max_MPa}}
-_TABLE_8_6_2_2B = {
-    50:  {0.2: 200, 0.3: 300, 0.4: 400},
-    100: {0.2: 170, 0.3: 270, 0.4: 360},
-    150: {0.2: 155, 0.3: 245, 0.4: 330},
-    200: {0.2: 145, 0.3: 225, 0.4: 300},
-    250: {0.2: 135, 0.3: 210, 0.4: 280},
-    300: {0.2: 125, 0.3: 200, 0.4: 260},
-}
-
-
-def _nearest_key(mapping: dict, value: float) -> int:
-    """Return integer key in mapping closest to value."""
-    keys = sorted(mapping.keys())
-    return min(keys, key=lambda k: abs(k - value))
-
-
-def table_sigma_max_A(db_mm: float, wmax_mm: float) -> float:
-    """Lookup σ_s,max from Table 8.6.2.2(A) (nearest db, w'max)."""
-    wopt = min([0.2, 0.3, 0.4], key=lambda x: abs(x - wmax_mm))
-    db_key = _nearest_key(_TABLE_8_6_2_2A, db_mm)
-    return _TABLE_8_6_2_2A[db_key][wopt]
-
-
-def table_sigma_max_B(spacing_mm: float, wmax_mm: float) -> float:
-    """Lookup σ_s,max from Table 8.6.2.2(B) (nearest spacing, w'max)."""
-    wopt = min([0.2, 0.3, 0.4], key=lambda x: abs(x - wmax_mm))
-    s_key = _nearest_key(_TABLE_8_6_2_2B, spacing_mm)
-    return _TABLE_8_6_2_2B[s_key][wopt]
-
-
-# ------------------------------------------------------------
-#  Direct calculation helpers – 8.6.2.3
-# ------------------------------------------------------------
-def calc_eps_diff(
-    sigma_sr: float,
-    Es: float,
-    fct_eff: float,
-    rho_eff: float,
-    ne: float,
-    eps_cs: float,
-) -> float:
-    """
-    ε_sm − ε_cm from 8.6.2.3(2):
-
-      ε_sm − ε_cm = σ_sr / Es − 0.6 f_ct,eff / (Es ρ_eff) (1 + n_e ρ_eff) + ε_cs
-                  ≥ 0.6 σ_sr / Es
-
-    All strains are dimensionless.
-    """
-    if rho_eff <= 0:
-        return 0.0
-
-    term1 = sigma_sr / Es
-    term2 = 0.6 * fct_eff / (Es * rho_eff) * (1.0 + ne * rho_eff)
-    eps_diff = term1 - term2 + eps_cs
-
-    # Lower bound 0.6 σ_sr / Es
-    eps_min = 0.6 * sigma_sr / Es
-    return max(eps_diff, eps_min)
-
-
-def calc_sr_max(c_mm: float, db_mm: float, rho_eff: float, k1: float, k2: float) -> float:
-    """
-    Maximum crack spacing  s_r,max  from 8.6.2.3(3):
-
-        s_r,max = 3.4 c + 0.3 k1 k2 d_b / ρ_eff
-
-    Returns s_r,max in mm.
-    """
-    if rho_eff <= 0:
-        return 0.0
-    return 3.4 * c_mm + 0.3 * k1 * k2 * db_mm / rho_eff
-
-
-# ------------------------------------------------------------
 #  MAIN RENDER FUNCTION
 # ------------------------------------------------------------
 def render_crack():
@@ -322,8 +242,12 @@ You can:
     # --------------------------------------------------------
     page_divider()
 
-    # Top row: 3 columns
-    top_c1, top_c2, top_c3 = st.columns(3, gap="large")
+    # Top row: 3 columns in a shared two-visible-column rail.
+    top_c1, top_c2, top_c3 = specialized_widget_rail_columns(
+        "crack_primary_inputs",
+        3,
+        gap="large",
+    )
 
     # --- Materials & Geometry ---
     with top_c1:
@@ -474,11 +398,9 @@ You can:
     # --------------------------------------------------------
     # Adopted values for crack checks (derived / linked; sources in calc steps below)
     # --------------------------------------------------------
-    Ast = _seed_from_param("Ast_bot", 3 * math.pi * 20.0**2 / 4.0)
+    Ast = _seed_from_param("Ast_bot", bar_area_mm2(3, 20.0))
     db = _get_bottom_bar_diameter()
     spacing = _get_bottom_spacing()
-    fct_default = 0.6 * math.sqrt(max(get_param("fc", 40.0), 1.0))
-    fct_eff = float(fct_default)
 
     if spacing is None:
         spacing = 200.0
@@ -487,14 +409,16 @@ You can:
     # Contract-safe: if missing, trigger bending compute (publishes via update_results only)
     results = st.session_state.get("results", {})
     sec_shape = str(get_param("sec_shape", "RECT") or "RECT")
+    tension_face = "bottom"
     # T/I crack checks should use canonical resolved active-bar outputs from crack_core.
     if sec_shape in ("T", "I"):
         Ast = float(st.session_state.get("crack_Ast_active_mm2", Ast) or Ast)
         dias = list(st.session_state.get("crack_active_bar_dias", []) or [])
         db = float(max(dias) if dias else db or 0.0)
         spacing_vals = list(st.session_state.get("crack_active_bar_spacing_mm", []) or [])
-        if spacing_vals:
-            spacing = float(sum(float(v) for v in spacing_vals) / max(len(spacing_vals), 1))
+        active_spacing = average_active_bar_spacing_mm(spacing_vals)
+        if active_spacing is not None:
+            spacing = active_spacing
         b = float(st.session_state.get("crack_tension_width_mm", b) or b)
         tension_face = str(st.session_state.get("crack_tension_face", "bottom") or "bottom")
         c = float(get_param("cover_top" if tension_face == "top" else "cover_bot", c) or c)
@@ -519,7 +443,7 @@ You can:
 
     phi_ce = float(st.session_state.get("phi_cc_t") or 0.0)
     eps_cs_micro = float(st.session_state.get("eps_cs_total_micro") or 0.0)
-    eps_cs = eps_cs_micro * 1e-6
+    eps_cs = microstrain_to_strain(eps_cs_micro)
 
     # --------------------------------------------------------
     # Effective area in tension and ρ_eff
@@ -527,24 +451,16 @@ You can:
     # Get db for calculations (from helper or fallback)
     if db is None:
         db = 20.0  # Fallback
-    d_eff = D - c - db / 2.0
-    height_eff = min(2.5 * c, max(D - d_eff, 0.0), D / 2.0)
-    Aceff = b * max(height_eff, 1.0)  # mm²
-    rho_eff = Ast / Aceff
 
     # --------------------------------------------------------
     # 8.6.2.2 – Table-based max steel stress
     # --------------------------------------------------------
     # Read wmax_char_limit from shared state (widget removed, but value still in shared state)
     wmax_choice = float(get_param("wmax_char_limit", 0.3))
-    sigma_table_A = table_sigma_max_A(db, wmax_choice)
-    sigma_table_B = table_sigma_max_B(spacing, wmax_choice)
 
     if member_type == "Primarily tension":
-        sigma_table_combined = sigma_table_A
         table_basis = "Table 8.6.2.2(A) – bar diameter"
     else:
-        sigma_table_combined = max(sigma_table_A, sigma_table_B)
         table_basis = (
             "Max of Table 8.6.2.2(A) (bar diameter) "
             "and 8.6.2.2(B) (spacing)"
@@ -552,31 +468,42 @@ You can:
 
     fsy_seed = _seed_from_param("fsy", 500.0)
     fsy = fsy_seed
-    sigma_08fsy = 0.8 * fsy
-
-    sigma_allow_table = min(sigma_table_combined, sigma_08fsy)
-    utilisation_table = sigma_sr / sigma_allow_table if sigma_allow_table > 0 else 0.0
-    passes_table = utilisation_table <= 1.0
-
-    # --------------------------------------------------------
-    # 8.6.2.3 – Direct crack width calculation
-    # --------------------------------------------------------
-    # fct_eff, k1, k2 adopted above; modular ratio for effective stiffness
-    ne = (1.0 + phi_ce) * Es / Ec if Ec > 0 else 0.0
-
-    eps_diff = calc_eps_diff(
-        sigma_sr=sigma_sr,
+    crack_values = compute_crack_control_values(
+        b=b,
+        D=D,
+        c=c,
+        db=db,
+        spacing=spacing,
+        Ast=Ast,
+        fc=fc,
+        Ec=Ec,
         Es=Es,
-        fct_eff=fct_eff,
-        rho_eff=rho_eff,
-        ne=ne,
+        fsy=fsy,
+        wmax_choice=wmax_choice,
+        member_type=member_type,
+        sigma_sr=sigma_sr,
+        phi_ce=phi_ce,
         eps_cs=eps_cs,
+        k1=k1,
+        k2=k2,
+        crack_tension_face=tension_face,
     )
-
-    sr_max = calc_sr_max(c_mm=c, db_mm=db, rho_eff=rho_eff, k1=k1, k2=k2)
-    w_calc = sr_max * eps_diff  # mm
-    utilisation_w = w_calc / wmax_choice if wmax_choice > 0 else 0.0
-    passes_w = utilisation_w <= 1.0
+    Aceff = crack_values["Aceff"]
+    rho_eff = crack_values["rho_eff"]
+    fct_eff = crack_values["fct_eff"]
+    ne = crack_values["ne"]
+    sigma_table_A = crack_values["sigma_table_A"]
+    sigma_table_B = crack_values["sigma_table_B"]
+    sigma_table_combined = crack_values["sigma_table_combined"]
+    sigma_08fsy = crack_values["sigma_08fsy"]
+    sigma_allow_table = crack_values["sigma_allow_table"]
+    utilisation_table = crack_values["utilisation_table"]
+    passes_table = crack_values["passes_table"]
+    eps_diff = crack_values["eps_diff"]
+    sr_max = crack_values["sr_max"]
+    w_calc = crack_values["w_calc"]
+    utilisation_w = crack_values["utilisation_w"]
+    passes_w = crack_values["passes_w"]
 
     # --------------------------------------------------------
     # TOP SUMMARY TABLE
@@ -586,32 +513,10 @@ You can:
         render_page_explainer_expander(_render_crack_explainer)
 
         crack_pack = build_crack_check_rows_from_state(st.session_state)
-        rows = []
-        for r in (crack_pack.get("rows") or []):
-            status = r.get("status", "—")
-            is_info = bool(r.get("is_informational", False))
-            stu = str(status).upper()
-            if is_info or stu == "INFO":
-                ok = None
-            else:
-                ok = True if status == "PASS" else False if status == "FAIL" else None
-            rows.append({
-                "uid": r.get("uid", "crk_step_3"),
-                "title": r.get("title", ""),
-                "capacity": r.get("capacity", r.get("value", "")),
-                "action": r.get("action", r.get("limit", "")),
-                "value": r.get("value", ""),
-                "limit": r.get("limit", ""),
-                "util": r.get("util", ""),
-                "status": status,
-                "ok": ok,
-                "is_informational": is_info,
-                "is_primary": False,
-            })
+        rows = build_crack_summary_rows(crack_pack.get("rows") or [])
         gov = pick_governing_check_row(rows)
         gov_uid = (gov or {}).get("uid")
-        for r in rows:
-            r["is_primary"] = bool(gov_uid and r.get("uid") == gov_uid)
+        rows = mark_primary_summary_row(rows, gov_uid)
         update_results("crack", {"rows": rows})
         
         clicked_uid = render_clickable_summary_table(rows, key_prefix="crack_summary")

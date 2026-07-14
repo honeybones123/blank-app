@@ -35,8 +35,10 @@ def main() -> int:
     source = PACKAGE_INIT.read_text(encoding="utf-8", errors="replace") if PACKAGE_INIT.exists() else ""
     if "inputs_page" in source:
         failures.append("bending_and_shear_fail_govern_imports_inputs_page")
-    if "def evaluate_bending_and_shear_fail_govern" not in source:
-        failures.append("missing_evaluate_bending_and_shear_fail_govern")
+    if "def evaluate_bending_and_shear_fail_govern" in source:
+        failures.append("legacy_wrapper_still_present")
+    if "run_combined_bending_shear_fail_runtime" not in source:
+        failures.append("missing_runtime_export")
 
     engine_hits = _line_hits(ROOT / "design_brain" / "engine.py", "evaluate_bending_and_shear_fail_govern")
     inputs_hits = _line_hits(ROOT / "inputs_page.py", "evaluate_bending_and_shear_fail_govern")
@@ -47,57 +49,91 @@ def main() -> int:
 
     result_summary: dict[str, Any] = {}
     if not failures:
-        from design_brain.families.bending_and_shear_fail_govern import evaluate_bending_and_shear_fail_govern
-        from design_brain.shared.schemas import FamilyResult
-
-        result = evaluate_bending_and_shear_fail_govern(
-            {
-                "summary": {
-                    "statuses": {"shear": "FAIL", "bending": "FAIL"},
-                    "utils": {"shear": 1.18, "bending": 1.12},
-                },
-                "evidence": {
-                    "active_failures": ["bending", "shear"],
-                    "candidate_rows": [],
-                },
-                "primary": {
-                    "title": "Combined repair required",
-                    "status": "FAIL",
-                    "button_contract": {
-                        "action_type": "apply_resolved_candidate",
-                        "updates": {"D": 420.0, "s_lig": 125.0},
-                    },
-                },
-            }
+        from design_brain.combined_bending_shear_candidate_merge import (
+            CombinedBendingShearFailInputs,
+            CombinedCandidateEvaluation,
         )
-        if not isinstance(result, FamilyResult):
-            failures.append("api_did_not_return_family_result")
+        from design_brain.families.bending_and_shear_fail_govern import (
+            FAMILY_ID,
+            RUNTIME_FAMILY_ID,
+            run_combined_bending_shear_fail_runtime,
+        )
+
+        def _evaluation(
+            inputs: CombinedBendingShearFailInputs,
+            _candidate: Any,
+        ) -> CombinedCandidateEvaluation:
+            return CombinedCandidateEvaluation(
+                input_hash=inputs.input_hash,
+                update_hash="synthetic-update",
+                candidate_state_hash="synthetic-state",
+                source_family_ids=("BENDING_FAIL_GOVERNS", "SHEAR_FAIL_GOVERNS"),
+                source_candidates=("bend", "shear"),
+                bending_utilisation_before=1.12,
+                shear_utilisation_before=1.18,
+                bending_utilisation_after=0.93,
+                shear_utilisation_after=0.91,
+                bending_improves=True,
+                shear_improves=True,
+                bending_compliant=True,
+                shear_compliant=True,
+                bending_inside_target_band=True,
+                shear_inside_target_band=True,
+                both_failures_repaired=True,
+                geometry_interaction_status={"rechecked": ["bending", "shear"]},
+                reinforcement_interaction_status={"bending_reinforcement_rechecked": True, "shear_reinforcement_rechecked": True},
+                code_compliance_status={"status": "PASS"},
+                detailing_status={"status": "PASS"},
+                constructability_status={"status": "PASS"},
+                geometry_increase={"total_mm": 25.0},
+                reinforcement_increase={"total": 2.0},
+                cost_proxy={"after": 1.0},
+                rejection_reasons=(),
+                engineering_status={"candidate_valid": True},
+            ).with_evaluation_hash()
+
+        result = run_combined_bending_shear_fail_runtime(
+            inputs=CombinedBendingShearFailInputs(
+                selected_family_id="COMBINED_BENDING_SHEAR_FAIL",
+                base_state={},
+                geometry={},
+                reinforcement={},
+                material_properties={},
+                actions={},
+                constraints={},
+                bending_fail_candidates=(
+                    {"source_family_id": "BENDING_FAIL_GOVERNS", "candidate_id": "bend", "updates": {"D": 420.0}},
+                ),
+                shear_fail_candidates=(
+                    {"source_family_id": "SHEAR_FAIL_GOVERNS", "candidate_id": "shear", "updates": {"lig_d": 12}},
+                ),
+                approved_combined_merge_candidates=(),
+            ),
+            evaluate_candidate=_evaluation,
+        )
         result_summary = {
-            "family_id": getattr(result, "family_id", None),
-            "is_applicable": getattr(result, "is_applicable", None),
-            "status": getattr(result, "status", None),
-            "evidence_keys": sorted((getattr(result, "evidence", {}) or {}).keys()),
-            "publication_keys": sorted((getattr(result, "publication", {}) or {}).keys()),
-            "cta_contract_keys": sorted((getattr(result, "cta_contract", {}) or {}).keys()),
-            "legacy_runtime_family_id": (getattr(result, "lock_proof", {}) or {}).get("legacy_runtime_family_id"),
-            "product_routing_enabled": bool((getattr(result, "lock_proof", {}) or {}).get("product_routing_enabled")),
-            "compatibility_api": bool((getattr(result, "lock_proof", {}) or {}).get("compatibility_api")),
+            "family_id": FAMILY_ID,
+            "runtime_family_id": RUNTIME_FAMILY_ID,
+            "status": result.status,
+            "selected_strategy_lane": result.selected_strategy_lane,
+            "candidate_count": len(result.candidate_repairs),
+            "selected_recommendation_present": isinstance(result.selected_recommendation, dict),
+            "runtime_hash": result.runtime_hash,
+            "contract_hash": result.contract_hash,
         }
-        if result_summary.get("family_id") != "BENDING_AND_SHEAR_FAIL_GOVERN":
+        if result_summary.get("family_id") != "COMBINED_BENDING_SHEAR_FAIL_GOVERNS":
             failures.append("family_id_mismatch")
-        if result_summary.get("is_applicable") is not True:
-            failures.append("synthetic_combined_fail_context_not_applicable")
-        if result_summary.get("legacy_runtime_family_id") != "COMBINED_BENDING_SHEAR_FAIL":
+        if result_summary.get("runtime_family_id") != "COMBINED_BENDING_SHEAR_FAIL":
             failures.append("legacy_runtime_family_id_mismatch")
-        if result_summary.get("product_routing_enabled") is not False:
-            failures.append("api_claims_product_routing_enabled")
+        if result_summary.get("status") != "EXACT_STOP":
+            failures.append("synthetic_runtime_context_not_exact_stop")
 
     status = "PASS" if not failures else "FAIL"
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     AUDIT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y-%m-%dT%H-%M-%S")
     output = {
-        "schema": "design_brain_bending_and_shear_fail_govern_api_check.v1",
+        "schema": "design_brain_bending_and_shear_fail_govern_api_check.v2",
         "status": status,
         "package": str(PACKAGE_INIT.relative_to(ROOT)),
         "imports_inputs_page": _source_contains(PACKAGE_INIT, "inputs_page") if PACKAGE_INIT.exists() else None,
@@ -110,17 +146,17 @@ def main() -> int:
     output_path.write_text(json.dumps(output, indent=2, sort_keys=True), encoding="utf-8")
     report_path = AUDIT_DIR / f"design_brain_bending_and_shear_fail_govern_api_check_{stamp}.md"
     report_lines = [
-        "# Design Brain BENDING_AND_SHEAR_FAIL_GOVERN API Check",
+        "# Design Brain BENDING_AND_SHEAR_FAIL_GOVERN Runtime Export Check",
         "",
         f"Status: {status}",
         "",
         "## Result Summary",
         "",
         f"- family_id: `{result_summary.get('family_id')}`",
-        f"- is_applicable: `{result_summary.get('is_applicable')}`",
-        f"- legacy_runtime_family_id: `{result_summary.get('legacy_runtime_family_id')}`",
-        f"- product_routing_enabled: `{result_summary.get('product_routing_enabled')}`",
-        f"- compatibility_api: `{result_summary.get('compatibility_api')}`",
+        f"- runtime_family_id: `{result_summary.get('runtime_family_id')}`",
+        f"- selected_strategy_lane: `{result_summary.get('selected_strategy_lane')}`",
+        f"- candidate_count: `{result_summary.get('candidate_count')}`",
+        f"- runtime_hash: `{result_summary.get('runtime_hash')}`",
         "",
         "## Failures",
         "",

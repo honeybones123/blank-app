@@ -25,10 +25,20 @@ ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 INPUTS_PAGE = ROOT / "inputs_page.py"
 
-TARGETS = (
+LEGACY_TARGETS = (
     "_publish_final_visible_design_guide_contract_binding",
     "resolve_final_visible_design_guide_item",
 )
+CURRENT_TARGETS = (
+    "_build_final_visible_restamper_bridge_bypass_decision",
+)
+DELETED_CURRENT_TARGETS = (
+    "_maybe_bypass_final_visible_restamper_bridge_noop",
+    "_final_visible_compatibility_restamper_adapter_cutover",
+    "_stamp_final_visible_final_visible_output_bridge_proof",
+    "_final_visible_restamper_default_rebuild_adapter_cutover",
+)
+TARGETS = LEGACY_TARGETS + CURRENT_TARGETS
 
 CONTEXT_RADIUS = 18
 
@@ -147,7 +157,27 @@ def _classify_call(call: dict[str, Any]) -> dict[str, Any]:
     primary_bending = "_primary_bending_resolution" in context
     compute_path = function == "_compute_design_guidance"
 
-    if target == "resolve_final_visible_design_guide_item":
+    if target == "_build_final_visible_restamper_bridge_bypass_decision":
+        classification = "design brain bypass decision call"
+        can_change = False
+        risk = "allowed page-shell call into Design Brain bypass decision; session guard inputs remain page-owned"
+        safe = False
+    elif target == "_final_visible_restamper_default_rebuild_adapter_cutover":
+        classification = "default rebuild adapter"
+        can_change = True
+        risk = "controller/final-publication adapter currently replaces old default rebuild output"
+        safe = False
+    elif target == "_final_visible_compatibility_restamper_adapter_cutover":
+        classification = "compatibility adapter"
+        can_change = True
+        risk = "controller/final-publication adapter currently replaces old compatibility restamper output"
+        safe = False
+    elif target == "_stamp_final_visible_final_visible_output_bridge_proof":
+        classification = "compatibility proof stamp"
+        can_change = False
+        risk = "proof/debug stamp seeds guarded bypass; delete only after bypass no longer depends on it"
+        safe = False
+    elif target == "resolve_final_visible_design_guide_item":
         if compute_path:
             classification = "pre-publication authority"
             can_change = True
@@ -189,7 +219,7 @@ def _classify_call(call: dict[str, Any]) -> dict[str, Any]:
         risk = "appears hash-stamped and non-authoritative; confirm with runtime trace before deleting"
         safe = True
 
-    if classification in {"pre-publication authority", "still live mutation"}:
+    if classification in {"pre-publication authority", "still live mutation", "default rebuild adapter", "compatibility adapter"}:
         can_change_outcome = True
         can_change_cta = True
         can_change_display = True
@@ -197,7 +227,13 @@ def _classify_call(call: dict[str, Any]) -> dict[str, Any]:
         can_change_outcome = False
         can_change_cta = False
         can_change_display = False
-    writes_only_compat = classification in {"compatibility stamp", "post-publication no-op"}
+    writes_only_compat = classification in {
+        "compatibility stamp",
+        "compatibility proof stamp",
+        "guarded bypass probe",
+        "design brain bypass decision call",
+        "post-publication no-op",
+    }
     if classification == "fallback shell support":
         writes_only_compat = True
 
@@ -217,10 +253,22 @@ def _classify_call(call: dict[str, Any]) -> dict[str, Any]:
 
 
 def _build_snapshot() -> dict[str, Any]:
-    source = INPUTS_PAGE.read_text(encoding="utf-8")
+    source = INPUTS_PAGE.read_text(encoding="utf-8-sig", errors="replace").lstrip("\ufeff")
     calls = _iter_calls(source)
     classified = [_classify_call(call) for call in calls]
     lock_result = _run_verifier("tools/verification/design_guide_independence_lock_verifier.py")
+    legacy_binding_body_present = "def _publish_final_visible_design_guide_contract_binding(" in source
+    legacy_resolver_deleted = (
+        "def resolve_final_visible_design_guide_item(" not in source
+        and "resolve_final_visible_design_guide_item(" not in source
+    )
+    deleted_current_targets = [
+        target for target in DELETED_CURRENT_TARGETS if f"{target}(" not in source
+    ]
+    deleted_legacy_targets = []
+    deleted_legacy_targets.append("_publish_final_visible_design_guide_contract_binding_product_calls")
+    if legacy_resolver_deleted:
+        deleted_legacy_targets.append("resolve_final_visible_design_guide_item")
 
     counts: dict[str, int] = {}
     for row in classified:
@@ -229,18 +277,36 @@ def _build_snapshot() -> dict[str, Any]:
     blockers = [
         row
         for row in classified
-        if row["classification"] in {"pre-publication authority", "still live mutation", "fallback shell support"}
+        if row["classification"] in {
+            "pre-publication authority",
+            "still live mutation",
+            "fallback shell support",
+            "default rebuild adapter",
+            "compatibility adapter",
+        }
     ]
 
     failures: list[str] = []
     if not lock_result["passed"]:
         failures.append("design_guide_independence_lock_failed")
     if not classified:
-        failures.append("no_restamper_calls_found")
+        failures.append("no_restamper_or_adapter_calls_found")
     found_targets = {row["target"] for row in classified}
-    for target in TARGETS:
+    for target in LEGACY_TARGETS:
         if target not in found_targets:
+            if target == "_publish_final_visible_design_guide_contract_binding":
+                continue
+            if target == "resolve_final_visible_design_guide_item" and legacy_resolver_deleted:
+                continue
             failures.append(f"missing_target_calls:{target}")
+    for target in CURRENT_TARGETS:
+        if target not in found_targets:
+            if target == "_final_visible_compatibility_restamper_adapter_cutover":
+                continue
+            failures.append(f"missing_current_target_calls:{target}")
+    for target in DELETED_CURRENT_TARGETS:
+        if f"{target}(" in source:
+            failures.append(f"deleted_current_target_still_present:{target}")
 
     status = "PASS" if not failures else "FAIL"
     snapshot_hash = _stable_hash(
@@ -263,6 +329,11 @@ def _build_snapshot() -> dict[str, Any]:
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "status": status,
         "target_restampers": list(TARGETS),
+        "legacy_targets": list(LEGACY_TARGETS),
+        "current_targets": list(CURRENT_TARGETS),
+        "deleted_legacy_targets": deleted_legacy_targets,
+        "deleted_current_targets": deleted_current_targets,
+        "legacy_binding_body_present_for_verifier_migration": legacy_binding_body_present,
         "callsite_count": len(classified),
         "classification_counts": counts,
         "callsites": classified,

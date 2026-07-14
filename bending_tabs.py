@@ -4,14 +4,18 @@ import matplotlib.pyplot as plt
 import streamlit as st
 
 from bending_diagrams import (
-    _plot_stress_strain_profiles,
+    _plot_strain_profile,
     _make_uls_stress_block_figure,
     _make_uls_force_model_figure,
     _make_sls_stress_block_figure,  # still used elsewhere, untouched
 )
-from bending_core import _fmt, _layout_bars_in_rows
+from bending_core import _fmt, _layout_bars_in_rows, _stress_strain_state
 from state_and_helpers import get_param, update_results
-from widgets_helpers import calcbox, clickable_calcbox, render_step, render_jumpable_step, apply_step_expander_css, step_expander_calcbox, info_i_button
+from ui.diagrams.stress_strain_diagram import (
+    make_sls_32_stress_block_figure as _shared_make_sls_32_stress_block_figure,
+    make_sls_strain_distribution_figure as _shared_make_sls_strain_distribution_figure,
+)
+from widgets_helpers import calcbox, clickable_calcbox, render_step, render_jumpable_step, apply_step_expander_css, step_expander_calcbox, info_i_button, render_plotly_diagram, render_pyplot_diagram
 
 
 # ============================================================
@@ -44,149 +48,8 @@ blockquote p, blockquote * { color: #1a1a1a !important; }
 #  LOCAL HELPER – SLS STRESS FIGURE FOR 3.2 ONLY
 # ============================================================
 def _make_sls_stress_block_figure_32(D_mm, d_mm, dn_mm, layers_tension):
-    """
-    Local SLS stress diagram used ONLY in 3.2.
-
-    - Triangular compression block
-    - α2 f'c width arrow well above the triangle
-    - Internal compression arrows kept inside the block
-    - Dashed NA, d_n arrow + label
-    - One T arrow for each tension layer (T1, T2, ...)
-    """
-
-    if D_mm <= 0 or math.isnan(D_mm):
-        D_mm = 600.0
-    if dn_mm <= 0 or math.isnan(dn_mm):
-        dn_mm = D_mm / 3.0
-
-    # Horizontal extents (arbitrary "stress" scale)
-    x_comp_max = 1.0       # compression extent
-    x_T_max = 1.8          # tension extent
-
-    # Margins so we have space above & below
-    margin_top = 0.45 * D_mm
-    margin_bot = 0.35 * D_mm
-
-    y_min = -margin_top
-    y_max = D_mm + margin_bot
-
-    fig, ax = plt.subplots(figsize=(3.0, 3.6))
-
-    # Vertical stress axis
-    ax.plot([0, 0], [0, D_mm], color="black", linewidth=1.5)
-
-    # Compression triangle (right angle at top-left)
-    tri_x = [0, x_comp_max, 0]
-    tri_y = [0, 0, dn_mm]
-    ax.fill(tri_x, tri_y, color="#ffcccc", alpha=0.7, zorder=1)
-    ax.plot(tri_x + [tri_x[0]], tri_y + [tri_y[0]], color="red", linewidth=1.2, zorder=2)
-
-    # Dashed neutral axis at y = d_n
-    ax.plot(
-        [0, x_T_max],
-        [dn_mm, dn_mm],
-        linestyle="--",
-        linewidth=0.8,
-        color="black",
-    )
-
-    # Ec * εc label and width arrow above triangle (SLS elastic block)
-    y_alpha = -0.08 * D_mm
-    ax.annotate(
-        "",
-        xy=(0, y_alpha),
-        xytext=(x_comp_max, y_alpha),
-        arrowprops=dict(arrowstyle="<->", color="red", linewidth=1.0),
-    )
-
-    # Put the text clearly above the arrow (no line through it)
-    ax.text(
-        x_comp_max / 2.0,
-        y_alpha - 0.12 * D_mm,   # higher above the arrow
-        r"$E_c \varepsilon_c$",
-        color="red",
-        ha="center",
-        va="bottom",             # anchor from the bottom edge
-        fontsize=9,
-    )
-
-    # Internal compression arrows – strictly inside the triangle
-    if dn_mm > 0:
-        for frac in [0.25, 0.50, 0.75]:
-            y_i = frac * dn_mm
-
-            # Triangle hypotenuse intersection at depth y_i:
-            # x_max = x_comp_max * (1 - y_i / dn_mm)
-            rel = max(0.0, min(1.0, y_i / dn_mm))
-            x_max = x_comp_max * (1.0 - rel)
-
-            x_head = 0.15 * x_max       # head near axis
-            x_tail = 0.85 * x_max       # tail near hypotenuse
-
-            ax.annotate(
-                "",
-                xy=(x_head, y_i),      # head (left, inside block)
-                xytext=(x_tail, y_i),  # tail (right, inside block)
-                arrowprops=dict(arrowstyle="->", color="red", linewidth=0.8),
-            )
-
-    # d_n arrow + label to the right of the block
-    x_dn = x_T_max * 0.9
-    ax.annotate(
-        "",
-        xy=(x_dn, dn_mm),
-        xytext=(x_dn, 0),
-        arrowprops=dict(arrowstyle="<->", color="red", linewidth=0.9),
-    )
-    ax.text(
-        x_dn + 0.05 * x_T_max,
-        dn_mm / 2.0,
-        r"$d_n = %.0f\ \text{mm}$" % dn_mm,
-        color="red",
-        ha="left",
-        va="center",
-        fontsize=9,
-    )
-
-    # Tension arrows for each layer (T1, T2, ...)
-    if layers_tension:
-        layers_sorted = sorted(layers_tension, key=lambda L: L["y"])
-        for i, layer in enumerate(layers_sorted):
-            y_layer = max(0.0, min(D_mm, layer["y"]))
-            name = layer["name"]
-
-            ax.annotate(
-                "",
-                xy=(x_T_max, y_layer),
-                xytext=(0, y_layer),
-                arrowprops=dict(arrowstyle="->", color="tab:blue", linewidth=1.0),
-            )
-            ax.text(
-                x_T_max + 0.05 * x_T_max,
-                y_layer + (i * 0.04 * D_mm),
-                name,
-                color="tab:blue",
-                ha="left",
-                va="center",
-                fontsize=8,
-            )
-
-    # "Stress (MPa)" label at bottom
-    ax.text(
-        x_T_max / 2.0,
-        D_mm + 0.20 * D_mm,
-        "Stress (MPa)",
-        ha="center",
-        va="bottom",
-        fontsize=9,
-    )
-
-    # Axes styling
-    ax.set_xlim(-0.25 * x_comp_max, x_T_max * 1.3)
-    ax.set_ylim(y_max, y_min)  # invert so "top" is visually up
-    ax.axis("off")
-
-    return fig
+    """Compatibility wrapper for the shared SLS 3.2 stress-block figure."""
+    return _shared_make_sls_32_stress_block_figure(D_mm, d_mm, dn_mm, layers_tension)
 
 
 # ============================================================
@@ -293,6 +156,7 @@ $\\alpha_2 = {alpha2_uls:.3f}$, $\\gamma = {gamma_uls:.3f}$ (to be used in Secti
 """
         
         def diagram_1_1():
+            info_1_1()
             fig_uls_11 = _make_uls_stress_block_figure(
                 b_mm=b or 0.0,
                 D_mm=D or 0.0,
@@ -311,7 +175,39 @@ $\\alpha_2 = {alpha2_uls:.3f}$, $\\gamma = {gamma_uls:.3f}$ (to be used in Secti
                 variant="11",
                 moment_sign=moment_sign,
             )
-            st.plotly_chart(fig_uls_11, width="stretch", config={"displayModeBar": False})
+            render_plotly_diagram(
+                fig_uls_11,
+                key="bending_uls_1_1_diagram",
+                title="Stress-block parameters",
+                config={"displayModeBar": False},
+            )
+
+        def info_1_1():
+            with info_i_button(help_text="Stress block parameters"):
+                st.markdown(
+                    f"""
+**Check 1.1 — Stress Block Parameters α₂ and γ**
+
+This check determines the equivalent rectangular stress block factors α₂ and γ used for Ultimate Limit State flexural design.
+
+At ultimate load, the concrete compression stress is not uniform. The real stress distribution is nonlinear, with high compression near the extreme compression face and reducing stress towards the neutral axis.
+
+AS 3600 simplifies this nonlinear stress distribution into an equivalent rectangular stress block [1].
+
+α₂ adjusts the intensity, or height, of the equivalent compression stress block.
+
+Equivalent stress = α₂ × f'c
+
+γ adjusts the depth of the equivalent compression stress block.
+
+Stress block depth, a = γ × dn
+
+Together, α₂ and γ allow the simplified rectangular block to represent the concrete compression force used in the flexural capacity calculation [1].
+
+References:  
+[1] AS 3600:2018, Clause 8.1.3 — Equivalent rectangular stress block.
+"""
+                )
 
         step_expander_calcbox(
             uid="bending_uls_1_1",
@@ -323,7 +219,7 @@ $\\alpha_2 = {alpha2_uls:.3f}$, $\\gamma = {gamma_uls:.3f}$ (to be used in Secti
 
 
         # --------------------------------------------------
-        # 1.2 Concrete compressive force C  (NO DIAGRAM)
+        # 1.4 Concrete compressive force C  (NO DIAGRAM)
         # --------------------------------------------------
         C_kN = C_N / 1000.0 if C_N is not None else float("nan")
         
@@ -366,17 +262,45 @@ $$
 **Result:**  
 Concrete compression resultant $C \\approx {C_kN:.1f}$ kN acting at the centroid of the compression block.
 """
+
+        def info_1_2():
+            with info_i_button(help_text="Concrete compressive force"):
+                st.markdown(
+                    f"""
+**Check 1.4 — Concrete Compressive Force C**
+
+This check calculates the resultant concrete compressive force C developed in the compression zone of the beam at Ultimate Limit State.
+
+The force C acts over the equivalent rectangular stress block area defined using the AS 3600 rectangular stress block model [1].
+
+C = α₂ × f'c × b × a
+
+where:
+
+α₂ × f'c = simplified average concrete compressive stress
+
+b × a = equivalent rectangular stress block area
+
+So the equation can be understood as:
+
+Concrete compressive force = average compressive stress × stress block area
+
+This is a simplified design model, not a literal picture of the exact stress distribution inside the concrete. The actual concrete stress distribution is nonlinear, but AS 3600 permits it to be represented using an equivalent rectangular stress block for design [1].
+
+The concrete compression force is then balanced against the tensile force in the reinforcement to satisfy internal force equilibrium [2].
+
+C = T
+
+Once equilibrium is achieved, the internal force couple is used to determine the section moment capacity [2].
+
+References:  
+[1] AS 3600:2018, Clause 8.1.3 — Equivalent rectangular stress block.  
+[2] AS 3600:2018, Clause 8.1 — Ultimate strength of members subjected to bending.
+"""
+                )
         
-        step_expander_calcbox(
-            uid="bending_uls_1_2",
-            summary_line=f"1.2 Concrete compressive force $C$ | Result: C = {C_kN:.1f} kN",
-            details_md=section12_details,
-            status=None,
-        )
-
-
         # --------------------------------------------------
-        # 1.3 Steel area and steel tension force T (NO DIAGRAM)
+        # 1.2 Steel area and steel tension force T (NO DIAGRAM)
         # --------------------------------------------------
         section13_details = f"""
 *Purpose: Relate the provided tensile reinforcement area to the tension force $T$ at ULS.*  
@@ -417,17 +341,54 @@ $$
 **Result:**  
 Tension force at ULS: $T \\approx {T/1000.0:.1f}$ kN.
 """
+
+        def info_1_3():
+            with info_i_button(help_text="Steel area and tensile force"):
+                st.markdown(
+                    f"""
+**Check 1.2 — Steel Area and Tensile Force T**
+
+This check calculates the tensile force developed by the longitudinal reinforcement at Ultimate Limit State (ULS).
+
+As the beam bends, the concrete below the neutral axis cracks and is assumed to carry no tensile force. Instead, the entire tensile force is resisted by the reinforcing steel [1].
+
+Provided sufficient ductility is available, AS 3600 assumes the tensile reinforcement reaches its yield strength at ultimate capacity [2]. The tensile force is therefore calculated as:
+
+T = Ast × fsy
+
+where:
+
+Ast = total area of tensile reinforcement
+
+fsy = yield strength of the reinforcing steel
+
+This equation can be understood as:
+
+Tensile force = steel area × steel yield stress
+
+The tensile force acts through the centroid of the tensile reinforcement and forms one half of the internal force couple resisting bending. For equilibrium, the tensile force must balance the concrete compressive force [2]:
+
+T = C
+
+Once equilibrium is achieved, the distance between the concrete compression force and the steel tensile force forms the internal lever arm used to calculate the section's ultimate moment capacity.
+
+References:  
+[1] AS 3600:2018, Clause 8.1.1 — Concrete in tension neglected at Ultimate Limit State.  
+[2] AS 3600:2018, Clause 8.1 — Ultimate strength of members subjected to bending using internal force equilibrium.
+"""
+                )
         
         step_expander_calcbox(
             uid="bending_uls_1_3",
-            summary_line=f"1.3 Steel area and tension force $T$ | Result: T = {T/1000.0:.1f} kN",
+            summary_line=f"1.2 Steel area and tension force $T$ | Result: T = {T/1000.0:.1f} kN",
             details_md=section13_details,
             status=None,
+            diagram_fn=info_1_3,
         )
 
 
         # --------------------------------------------------
-        # 1.4 Neutral axis depth d_n and block depth a
+        # 1.3 Neutral axis depth d_n and block depth a
         # --------------------------------------------------
         section14_details = f"""
 *Purpose: Determine the neutral axis depth $d_n$ and corresponding block depth $a$ from force equilibrium.*  
@@ -510,18 +471,31 @@ $ d_n = {dn:.1f}$ mm, $ a = {a_uls:.1f}$ mm.
                 variant="13",
                 moment_sign=moment_sign,
             )
-            st.plotly_chart(fig_uls_14, width="stretch", config={"displayModeBar": False})
+            render_plotly_diagram(
+                fig_uls_14,
+                key="bending_uls_1_4_diagram",
+                title="Neutral axis and block depth",
+                config={"displayModeBar": False},
+            )
 
         step_expander_calcbox(
             uid="bending_uls_1_4",
-            summary_line=f"1.4 Neutral axis depth $d_n$ and block depth $a$ | Result: d_n = {dn:.1f} mm, a = {a_uls:.1f} mm",
+            summary_line=f"1.3 Neutral axis depth $d_n$ and block depth $a$ | Result: d_n = {dn:.1f} mm, a = {a_uls:.1f} mm",
             details_md=section14_details,
             status=None,
             diagram_fn=diagram_1_4,
         )
 
+        step_expander_calcbox(
+            uid="bending_uls_1_2",
+            summary_line=f"1.4 Concrete compressive force $C$ | Result: C = {C_kN:.1f} kN",
+            details_md=section12_details,
+            status=None,
+            diagram_fn=info_1_2,
+        )
+
         # --------------------------------------------------
-        # 1.4A Strain compatibility (εcu and εs)
+        # 1.5 Strain compatibility (εcu and εs)
         # --------------------------------------------------
         eps_cu_uls = 0.003
         try:
@@ -609,14 +583,15 @@ At ULS, $\\varepsilon_s = {eps_s_tension:.5f}$ so $\\varepsilon_s \\ge \\varepsi
 
         section14a_details = (
             f"""
-*Purpose: Once $d_n$ is known from equilibrium (Check 1.4), define the **ULS strain diagram** used in the bending strain profile: ultimate compression strain at the extreme concrete fibre, linear variation through the depth, and tensile strain $\\varepsilon_s$ at the centroid of the tensile reinforcement (depth $d$).*  
+*Purpose: Calculate the tensile reinforcement strain at ULS and compare it with the steel yield strain.*  
 
 **Setup:**  
 
-- Assumed ultimate compressive strain at the extreme compression fibre: $\\varepsilon_{{cu}} = 0.003$ (AS 3600).  
-- Plane sections remain plane → strain varies **linearly** from the neutral axis (zero strain) to the fibres above and below.  
+- Ultimate concrete strain: $\\varepsilon_{{cu}} = 0.003$  
 - Effective depth to tensile steel centroid: $d = {d:.1f}$ mm.  
-- Neutral axis depth from the **compression face** (same $d_n$ as Check 1.4): $d_n = {dn:.1f}$ mm.  
+- Neutral axis depth: $d_n = {dn:.1f}$ mm.  
+- Steel yield strength: $f_{{sy}} = {fsy:.1f}$ MPa.  
+- Steel modulus: $E_s = {Es_card:.0f}$ MPa.  
 
 ---
 
@@ -641,24 +616,87 @@ $$
 ---
 
 **Result:**  
-Tensile reinforcement strain at ULS from strain compatibility: **$\\varepsilon_s = {result_eps_tex}$** — this is the steel strain implied by the same $d_n$ and $\\varepsilon_{{cu}}$ as the strain panel (extreme fibre $\\varepsilon_{{cu}}$, steel level $\\varepsilon_s$)."""
+Tensile reinforcement strain at ULS: **$\\varepsilon_s = {result_eps_tex}$**."""
             + yield_compare_md
         )
+
+        def info_1_5():
+            with info_i_button(help_text="Strain compatibility and steel yield"):
+                st.markdown(
+                    """
+**Strain Compatibility (εcu and εs) — Why This Calculation Is Required**
+
+This check verifies that the tensile reinforcement has reached its yield strain at the Ultimate Limit State (ULS) using the strain compatibility method required by AS 3600 [1].
+
+At ultimate capacity, AS 3600 assumes the concrete at the extreme compression fibre reaches an ultimate compressive strain of εcu = 0.003 [1]. It is also assumed that plane sections remain plane after bending, meaning the strain varies linearly through the depth of the section [2].
+
+Using the neutral axis depth determined in the previous check, the strain at any point within the section can be determined from the geometry of the strain diagram. The tensile steel strain is therefore calculated as:
+
+εs = εcu × (d − dn) / dn
+
+where:
+
+εcu = ultimate concrete compressive strain  
+d = effective depth to the tensile reinforcement  
+dn = neutral axis depth
+
+The calculated steel strain is then compared with the steel yield strain:
+
+εsy = fsy / Es
+
+If:
+
+εs ≥ εsy
+
+the reinforcement has reached yield, confirming that the assumption made in the tensile force calculation,
+
+T = Ast × fsy
+
+is valid [2].
+
+If εs < εsy, the reinforcement has not yielded, and the tensile force must instead be determined from the actual steel stress obtained from the steel stress-strain relationship rather than assuming the full yield stress.
+
+This check therefore confirms that the assumed stress distribution and internal force calculations are consistent with the actual strain profile of the section and that the reinforcement has developed its design yield strength before the flexural capacity is calculated.
+
+**References**
+
+[1] AS 3600:2018, Clause 3.1.7 — Ultimate concrete compressive strain (εcu = 0.003).  
+
+[2] AS 3600:2018, Clause 8.1 — Ultimate strength of members subjected to bending using strain compatibility and internal force equilibrium.
+"""
+                )
+
+        def diagram_1_5():
+            info_1_5()
+            ss_state = _stress_strain_state("ULS", moment_sign=moment_sign)
+            fig_strain = _plot_strain_profile(
+                ss_state,
+                state_label="ULS",
+                layout=None,
+                moment_sign=moment_sign,
+            )
+            render_plotly_diagram(
+                fig_strain,
+                key=f"bending_uls_1_5_strain_diagram_{moment_sign}",
+                title="Strain diagram",
+                config={"displayModeBar": False},
+            )
 
         step_expander_calcbox(
             uid="bending_uls_1_4a",
             summary_line=(
-                f"1.4A Strain compatibility ($\\varepsilon_{{cu}}$ and $\\varepsilon_s$) | Result: "
+                f"1.5 Strain compatibility ($\\varepsilon_{{cu}}$ and $\\varepsilon_s$) | Result: "
                 f"$\\varepsilon_s = {eps_s_tension:.5f}$"
                 if not math.isnan(eps_s_tension)
-                else "1.4A Strain compatibility ($\\varepsilon_{{cu}}$ and $\\varepsilon_s$) | Result: —"
+                else "1.5 Strain compatibility ($\\varepsilon_{{cu}}$ and $\\varepsilon_s$) | Result: —"
             ),
             details_md=section14a_details,
             status=None,
+            diagram_fn=diagram_1_5,
         )
 
         # --------------------------------------------------
-        # 1.5 Neutral axis ratio k_u
+        # 1.6 Neutral axis ratio k_u
         # --------------------------------------------------
         ku = dn / d if d else float("nan")
         ku_lim = 0.36  # Teaching limit (AS 3600 limit for ductile design)
@@ -767,7 +805,7 @@ Neutral axis ratio $k_u = {ku:.3f}$.
         
         step_expander_calcbox(
             uid="bending_uls_1_5",
-            summary_line=f"1.5 Neutral axis ratio $k_u$ | Result: k_u = {ku:.3f} vs k_{{u,lim}} = {ku_lim:.2f} → {'PASS' if ku_ok else 'FAIL' if ku_ok is False else '—'}",
+            summary_line=f"1.6 Neutral axis ratio $k_u$ | Result: k_u = {ku:.3f} vs k_{{u,lim}} = {ku_lim:.2f} → {'PASS' if ku_ok else 'FAIL' if ku_ok is False else '—'}",
             details_md=section15_details,
             status=ku_status,
             content_before=content_1_5,
@@ -775,7 +813,7 @@ Neutral axis ratio $k_u = {ku:.3f}$.
 
 
         # --------------------------------------------------
-        # 1.6 Lever arm z and moment capacity (+ force model)
+        # 1.7 Lever arm z and moment capacity (+ force model)
         # --------------------------------------------------
         section16_details = f"""
 *Purpose: Compute the internal lever arm $z$, nominal moment $M_u$ and design moment $\\phi M_{{u,cap}}$.*  
@@ -842,11 +880,16 @@ Design bending capacity $\\phi M_{{u,cap}} = {phi_Mu_cap_uls:.2f}$ kNm.
                 moment_sign=moment_sign,
                 dn_mm=dn,
             )
-            st.plotly_chart(fig_uls_16, width="stretch", config={"displayModeBar": False})
+            render_plotly_diagram(
+                fig_uls_16,
+                key="bending_uls_1_6_diagram",
+                title="Force model",
+                config={"displayModeBar": False},
+            )
 
         step_expander_calcbox(
             uid="bending_uls_1_6",
-            summary_line=f"1.6 Lever arm $z$ and moment capacity | Result: φM_{{u,cap}} = {phi_Mu_cap_uls:.2f} kNm",
+            summary_line=f"1.7 Lever arm $z$ and moment capacity | Result: φM_{{u,cap}} = {phi_Mu_cap_uls:.2f} kNm",
             details_md=section16_details,
             status=None,
             diagram_fn=diagram_1_6,
@@ -854,7 +897,7 @@ Design bending capacity $\\phi M_{{u,cap}} = {phi_Mu_cap_uls:.2f}$ kNm.
 
 
         # --------------------------------------------------
-        # 1.7 Flexural capacity check (Mu* ≤ φMu,cap)
+        # 1.8 Flexural capacity check (Mu* ≤ φMu,cap)
         # --------------------------------------------------
         Mu_star = float(Mu_star_override) if Mu_star_override is not None else get_param("Mu_star", 0.0)
         if Mu_star is not None and phi_Mu_cap_uls > 0:
@@ -894,7 +937,7 @@ $\\text{{Utilisation}} = \\frac{{M_u^*}}{{\\phi M_{{u,cap}}}} = \\frac{{{Mu_star
             
             step_expander_calcbox(
                 uid="bending_uls_1_7",
-                summary_line=f"1.7 Flexural capacity check | Result: M_u* = {Mu_star:.2f} kNm vs φM_{{u,cap}} = {phi_Mu_cap_uls:.2f} kNm → {'PASS' if Mu_ok else 'FAIL'}",
+                summary_line=f"1.8 Flexural capacity check | Result: M_u* = {Mu_star:.2f} kNm vs φM_{{u,cap}} = {phi_Mu_cap_uls:.2f} kNm → {'PASS' if Mu_ok else 'FAIL'}",
                 details_md=section17_details,
                 status=Mu_status,
             )
@@ -1700,7 +1743,12 @@ d_n = {dn_val:.2f}\ \text{{mm}}
             d_comp_mm=comp_layer["y"] if (include_comp and comp_layer is not None) else None,
             moment_sign="negative" if hogging_sls else "positive",
         )
-        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False}, key=f"sls_3_2_{st.session_state['_diag_nonce']}")
+        render_plotly_diagram(
+            fig,
+            key=f"sls_3_2_{st.session_state['_diag_nonce']}",
+            title="SLS stress block",
+            config={"displayModeBar": False},
+        )
     
     step_expander_calcbox(
         uid="bending_sls_3_2",
@@ -1894,17 +1942,13 @@ See table for $\\varepsilon(y)$ at the top fibre, each steel layer, and bottom f
 """
 
     def _sls_3_5_diagram():
-        fig_eps, ax_eps = plt.subplots()
-        ys = [row["Depth y (mm)"] for row in strain_rows]
-        eps_vals = [row["ε"] for row in strain_rows]
-        ax_eps.plot(eps_vals, ys, marker="o")
-        ax_eps.axhline(dn_sls, linestyle="--", linewidth=0.8, color="black")
-        ax_eps.set_xlabel("Strain ε")
-        ax_eps.set_ylabel("Depth from top (mm)")
-        ax_eps.set_title("SLS strain distribution")
-        ax_eps.invert_yaxis()
-        ax_eps.grid(True, linewidth=0.3)
-        st.pyplot(fig_eps, use_container_width=True)
+        fig_eps = _shared_make_sls_strain_distribution_figure(strain_rows, dn_sls)
+        render_pyplot_diagram(
+            fig_eps,
+            key="bending_sls_3_5_strain_distribution",
+            title="SLS strain distribution",
+            use_container_width=True,
+        )
         plt.close(fig_eps)
     
     def _sls_3_5_table():

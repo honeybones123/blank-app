@@ -155,6 +155,7 @@ def _build_score_records(
     accepted_candidates: list[dict[str, Any]],
     mode_config: dict[str, Any],
     score_call_identities: set[str],
+    score_values_by_identity: dict[str, float],
 ) -> list[dict[str, Any]]:
     accepted_index_by_identity = {
         str(item.get("candidate_identity") or ""): int(item.get("accepted_order_index"))
@@ -171,12 +172,15 @@ def _build_score_records(
             if identity in score_call_identities
             else "candidate.score_from_evaluator_surface"
         )
+        score_value = _as_float(candidate.get("score"))
+        if score_value is None and identity in score_values_by_identity:
+            score_value = _as_float(score_values_by_identity.get(identity))
         score_surfaces.append(
             {
                 "scored_order_index": index,
                 "source_accepted_candidate_index": accepted_index_by_identity.get(identity),
                 "candidate_identity": identity,
-                "score_value": _as_float(candidate.get("score")),
+                "score_value": score_value,
                 "score_source": score_source,
                 "score_inputs": _score_inputs(candidate, mode_config),
             },
@@ -196,6 +200,7 @@ def _run_scenario(module: Any, scenario: str, trace_path: Path) -> dict[str, Any
     seed_ast = boundary_snapshot._ast_for(boundary_snapshot._arrangement_from_state(seed_state))
     seed_util = 1.12 if scenario != "bending_overdesign_cleanup" else 0.72
     score_call_identities: set[str] = set()
+    score_values_by_identity: dict[str, float] = {}
     captured: dict[str, Any] = {
         "scored_candidates": [],
         "mode_config": boundary_snapshot._mode_config(state),
@@ -245,8 +250,18 @@ def _run_scenario(module: Any, scenario: str, trace_path: Path) -> dict[str, Any
         return all((incoming or {}).get(key) == value for key, value in update_dict.items())
 
     def _score_candidate(candidate: dict, mode_config: dict, seed_candidate: dict) -> float:
-        score_call_identities.add(_candidate_identity(candidate))
-        return float(candidate.get("score", 100.0) or 100.0)
+        identity = _candidate_identity(candidate)
+        score_call_identities.add(identity)
+        score = float(candidate.get("score", 100.0) or 100.0)
+        score_values_by_identity[identity] = score
+        return score
+
+    def _annotate_candidate_deltas(candidate: dict, seed: dict, incoming: dict) -> None:
+        identity = _candidate_identity(candidate)
+        score = _as_float(candidate.get("score"))
+        if score is not None:
+            score_values_by_identity[identity] = score
+        candidate.update({"delta_Ast_bot": round(float(candidate.get("Ast_bot", 0.0) or 0.0) - seed_ast, 3)})
 
     def _capture_keep_top(candidates: list[dict], mode_config: dict, *, limit: int) -> list[dict]:
         captured["ranking_call_count"] = int(captured.get("ranking_call_count") or 0) + 1
@@ -279,7 +294,7 @@ def _run_scenario(module: Any, scenario: str, trace_path: Path) -> dict[str, Any
         "_log_design_reco_candidate_rank": lambda *args, **kwargs: None,
         "_log_efficiency_growth_rejection": lambda *args, **kwargs: None,
         "_candidate_is_growth_move": lambda seed, candidate: False,
-        "_annotate_bottom_reo_candidate_deltas": lambda candidate, seed, incoming: candidate.update({"delta_Ast_bot": round(float(candidate.get("Ast_bot", 0.0) or 0.0) - seed_ast, 3)}),
+        "_annotate_bottom_reo_candidate_deltas": _annotate_candidate_deltas,
         "_annotate_candidate_target_band_metrics": lambda candidate, mode_config: candidate.update({
             "candidate_post_util": ((candidate.get("overview") or {}).get("utils") or {}).get("bending"),
             "candidate_reaches_target_band": bool(candidate.get("in_target_band")),
@@ -311,6 +326,7 @@ def _run_scenario(module: Any, scenario: str, trace_path: Path) -> dict[str, Any
         accepted_candidates=accepted,
         mode_config=dict(captured.get("mode_config") or {}),
         score_call_identities=score_call_identities,
+        score_values_by_identity=score_values_by_identity,
     )
     forbidden_present = sorted(
         {

@@ -1,4 +1,4 @@
-"""Proof that bending Ast-min cleanup checks width-reduction relief before blocking."""
+"""Proof that bending Ast-min cleanup checks width/depth relief before blocking."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ if str(ROOT) not in sys.path:
 
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
+TARGET_BAND_SOURCE = ROOT / "design_brain" / "candidate_evaluation.py"
 
 from design_brain.bending_overdesign_candidate_evaluation import (  # noqa: E402
     BendingOverdesignCandidateEvaluation,
@@ -135,6 +136,7 @@ def main() -> int:
     result = run_bending_overdesign_governs_runtime(base_state=_base_state(), evaluate_candidate=_eval)
     updates = [dict(row.get("updates") or {}) for row in result.candidate_repairs]
     inputs_source = (ROOT / "inputs_page.py").read_text(encoding="utf-8", errors="replace")
+    target_band_source = TARGET_BAND_SOURCE.read_text(encoding="utf-8", errors="replace")
     relief_rules = minimum_reinforcement_geometry_relief_rules()
     width_policy = lane_proof_policies().get("width_reduction") or {}
     min_reo_text = json.dumps(minimum_reinforcement_rules(), sort_keys=True)
@@ -143,9 +145,14 @@ def main() -> int:
         and "Ast-min" in json.dumps(relief_rules, sort_keys=True)
         and "width reduction" in json.dumps(relief_rules, sort_keys=True).lower(),
         "minimum_reinforcement_blocker_names_ast_min": "Ast-min" in min_reo_text
-        and "Width-reduction geometry relief" in min_reo_text,
+        and "Width-reduction geometry relief" in min_reo_text
+        and "Valid depth-reduction geometry relief" in min_reo_text,
         "width_policy_requires_restarted_reinforcement": width_policy.get("minimum_reinforcement_relief") is True
         and "width plus restarted bottom reinforcement candidate" in set(width_policy.get("restarted_candidate_requirements") or []),
+        "depth_policy_requires_restarted_reinforcement": (lane_proof_policies().get("depth_reduction") or {}).get("minimum_reinforcement_relief") is True
+        and "depth plus restarted bottom reinforcement candidate" in set(
+            ((lane_proof_policies().get("depth_reduction") or {}).get("restarted_candidate_requirements") or [])
+        ),
         "runtime_emits_width_plus_bottom_reinforcement": any(
             {"b", "bot1_count", "db_bot_1"} <= set(update) for update in updates
         ),
@@ -157,15 +164,20 @@ def main() -> int:
             "minimum_reinforcement_geometry_relief_checked"
         )
         is True
-        and result.restart_proof.get("width_reduction_restarted_reinforcement_candidate_count", 0) >= 2,
+        and result.restart_proof.get("width_reduction_restarted_reinforcement_candidate_count", 0) >= 2
+        and result.restart_proof.get("depth_reduction_restarted_reinforcement_candidate_count", 0) >= 2,
         "visible_blocker_wording_mentions_ast_min": "minimum bending reinforcement (Ast-min" in inputs_source
-        and "Width-reduction geometry relief and restarted bottom-reinforcement routes were checked" in inputs_source,
+        and "Width-reduction and valid depth-reduction geometry relief, with restarted bottom-reinforcement/layer routes, were checked" in inputs_source,
         "visible_blocker_stamps_ast_min_evidence": "minimum_bending_reinforcement_governs" in inputs_source
-        and "width_reduction_as_min_relief_checked" in inputs_source,
-        "live_search_checks_width_reduction_at_current_depth": "current_depth," in inputs_source
-        and "if min_depth <= float(value) <= float(current_depth) + 1e-9" in inputs_source,
-        "live_search_checks_width_plus_lighter_same_diameter_reo": "practical_bottom_trials.update" in inputs_source
-        and "for bars1 in range(row1_bars - 1, 0, -1)" in inputs_source,
+        and "width_reduction_as_min_relief_checked" in inputs_source
+        and "depth_reduction_as_min_relief_checked" in inputs_source
+        and "exact_stop_cleanup_proof_chain_complete" in inputs_source,
+        "legacy_ast_min_ratio_heuristic_removed": "float(min_steel_util) >= float(bending_util) - 0.025" not in inputs_source,
+        "ductility_cleanup_exact_stop_reason_is_explicit": "Ductility (k_u / ku) governs the remaining bending cleanup boundary." in inputs_source
+        and "reo_reduction_attempted_first_for_ductility" in inputs_source,
+        "live_search_checks_width_reduction_at_current_depth": "if float(min_depth) <= float(value) <= float(current_depth) + 1e-9" in target_band_source,
+        "live_search_checks_width_plus_lighter_same_diameter_reo": "practical_bottom_trials.update" in target_band_source
+        and "for bars1 in range(int(row1_bars) - 1, 0, -1)" in target_band_source,
     }
     failures = sorted(key for key, passed in checks.items() if not passed)
     snapshot = {

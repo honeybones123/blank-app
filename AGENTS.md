@@ -1,5 +1,27 @@
 # Repository Instructions
 
+## Inputs Page Decision-Authority Rule
+
+`inputs_page.py` is a Streamlit/page shell only. It may collect user inputs,
+render UI, route apply actions, store compatibility/debug/session payloads, and
+call Design Brain services. It must not own Design Brain decision authority.
+
+Forbidden decision authority in `inputs_page.py` includes family selection,
+family ladder order, candidate generation policy, candidate scoring/ranking,
+target-band/exact-stop/no-valid-repair decisions, publication legality, CTA
+decision truth, blocker legality, and engineering recommendation selection.
+
+When decision-shaped logic is found in `inputs_page.py`, the required response
+is not to preserve it as page logic. Either:
+
+- move the decision into the relevant `design_brain` contract/runtime/service
+  and delete the page-owned decision branch, or
+- prove it is only render/session/apply/debug shell code and keep it classified
+  by verifier.
+
+Do not add or edit decision-shaped logic in `inputs_page.py` without updating
+the Design Brain proof/verifier boundary in the same slice.
+
 ## Design Guide Fuzz Root-Cause Gate
 
 If a Design Guide fuzz failure is not fixed after two narrow patch attempts, stop patching and create a root-cause classification report before making further changes.

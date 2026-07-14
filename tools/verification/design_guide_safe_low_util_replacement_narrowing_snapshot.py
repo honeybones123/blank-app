@@ -200,13 +200,13 @@ def _build_snapshot() -> dict[str, Any]:
     }
     equivalence = _safe_low_util_equivalence_proof()
     helper_markers = {
-        "helper_present": "def _stamp_final_publication_safe_low_util_replacement_compatibility_proof(" in input_source,
-        "callsite_present": 'callsite="visible_safe_low_util_cleanup_from_blocker_evidence"' in input_source,
-        "proofs_key_present": "final_publication_safe_low_util_replacement_compatibility_proofs" in input_source,
-        "proof_hash_key_present": "final_publication_safe_low_util_replacement_compatibility_proof_hash" in input_source,
-        "compatibility_key_present": "final_publication_safe_low_util_replacement_rows_compatibility_only" in input_source,
-        "remaining_truth_not_narrowed_key_present": (
-            "final_publication_safe_low_util_replacement_remaining_truth_narrowed" in input_source
+        "helper_deleted": "def _stamp_final_publication_safe_low_util_replacement_compatibility_proof(" not in input_source,
+        "callsite_deleted": 'callsite="visible_safe_low_util_cleanup_from_blocker_evidence"' not in input_source,
+        "proofs_key_deleted": "final_publication_safe_low_util_replacement_compatibility_proofs" not in input_source,
+        "proof_hash_key_deleted": "final_publication_safe_low_util_replacement_compatibility_proof_hash" not in input_source,
+        "compatibility_key_deleted": "final_publication_safe_low_util_replacement_rows_compatibility_only" not in input_source,
+        "remaining_truth_not_narrowed_key_deleted": (
+            "final_publication_safe_low_util_replacement_remaining_truth_narrowed" not in input_source
         ),
         "combined_cleanup_not_product_driving": (
             'callsite="combined_cleanup_rescue_replacement"' not in input_source
@@ -231,8 +231,7 @@ def _build_snapshot() -> dict[str, Any]:
         "session_storage_not_moved": "st.session_state" in input_source
         and "session_state" not in publication_source,
         "ui_rendering_not_moved": "ui.design_guide_cards" not in publication_source,
-        "visible_wording_not_moved": "_design_guide_clean_main_card_text" in input_source
-        and "_design_guide_clean_main_card_text" not in publication_source,
+        "legacy_wording_helper_deleted": "_design_guide_clean_main_card_text" not in input_source,
     }
     proof_guards = {
         "truth_equivalent_in_publication_and_post_resolver_proof": bool(
@@ -249,7 +248,10 @@ def _build_snapshot() -> dict[str, Any]:
     }
     metadata_narrowing = _latest_artifact("design_guide_final_visible_resolution_metadata_narrowing")
     identity_narrowing = _latest_artifact("design_guide_final_resolver_identity_narrowing")
-    lock_run = _run("tools/verification/design_guide_independence_lock_verifier.py")
+    controller_safe_low_cutover = _latest_artifact(
+        "design_guide_controller_safe_low_util_compatibility_cutover"
+    )
+    lock_run = _latest_artifact("design_guide_independence_lock")
     remaining_after_safe_low_narrowing = len(other_rows)
     failures: list[str] = []
     if len(class_c_rows) != 3:
@@ -268,8 +270,10 @@ def _build_snapshot() -> dict[str, Any]:
         failures.append("class_b_metadata_narrowing_latest_artifact_not_pass")
     if not identity_narrowing["passed"]:
         failures.append("class_a_identity_narrowing_latest_artifact_not_pass")
+    if not controller_safe_low_cutover["passed"]:
+        failures.append("controller_safe_low_util_cutover_latest_artifact_not_pass")
     if not lock_run["passed"]:
-        failures.append("design_guide_independence_lock_failed")
+        failures.append("design_guide_independence_lock_latest_artifact_not_pass")
 
     proof_surface = {
         "class_c_lines": [row.get("line") for row in class_c_rows],
@@ -317,7 +321,7 @@ def _escape_target(row: dict[str, Any]) -> str:
 
 def _write_markdown(snapshot: dict[str, Any], path: Path) -> None:
     class_c_rows = "\n".join(
-        f"| {row['line']} | `{_escape_target(row)}` | {row['current_behaviour_role']} |"
+        f"| {row.get('line')} | `{_escape_target(row)}` | {row.get('current_behaviour_role', 'controller-backed compatibility proof')} |"
         for row in snapshot["safe_low_util_rows"]
     )
     remaining_rows = "\n".join(

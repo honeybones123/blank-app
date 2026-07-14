@@ -76,7 +76,7 @@ def _write(snapshot: dict[str, Any]) -> tuple[Path, Path]:
 
 
 def main() -> int:
-    source = INPUTS_PAGE.read_text(encoding="utf-8", errors="replace")
+    source = INPUTS_PAGE.read_text(encoding="utf-8-sig", errors="replace")
     tree = ast.parse(source, filename=str(INPUTS_PAGE))
     imported_aliases: dict[str, str] = {}
     for node in ast.walk(tree):

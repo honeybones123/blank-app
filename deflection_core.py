@@ -7,10 +7,13 @@ from deflection import (
     _derive_equiv_udl_from_actions,
     compute_and_store_multispan_deflection_metrics,
     get_deflection_diagram_support_condition,
-    calc_ief_simplified,
-    calc_deflection_as3600,
-    calc_span_depth_limit,
     resolve_deflection_equiv_loads_from_inputs,
+)
+from calculations.deflection import (
+    calc_deflection_as3600,
+    calc_ief_simplified,
+    calc_span_depth_limit,
+    effective_design_load_from_shear,
 )
 
 
@@ -171,17 +174,14 @@ def compute_deflection_results(publish: bool = True) -> dict:
     # Derive F_d,ef after final support resolution so span/depth checks and report
     # text stay aligned with governing support_type.
     V_kN = sls_V_kN
-    if L_m_for_fd > 0 and V_kN is not None and V_kN > 0:
-        if support_type == "Simply supported":
-            Fdef_kNm = 2.0 * V_kN / L_m_for_fd
-            fd_formula_label = "2V/L"
-        elif support_type == "Cantilever":
-            Fdef_kNm = V_kN / L_m_for_fd
-            fd_formula_label = "V/L"
-        else:
-            Fdef_kNm = V_kN / L_m_for_fd
-            fd_formula_label = "V/L"
-
+    Fdef_derived, fd_formula_derived = effective_design_load_from_shear(
+        V_kN=V_kN,
+        L_m=L_m_for_fd,
+        support_type=support_type,
+    )
+    if Fdef_derived is not None:
+        Fdef_kNm = Fdef_derived
+        fd_formula_label = fd_formula_derived
         fd_V_used = V_kN
         if fd_source_branch == "fallback":
             fd_source_branch = "sls_actions"

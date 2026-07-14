@@ -2,9 +2,7 @@
   "schema": "design_brain.family_contract.v1",
   "family_identity": {
     "family_id": "SHEAR_FAIL_GOVERNS",
-    "package": "design_brain.families.shear_fail_governs",
-    "legacy_delegate": "design_brain.families.shear_fail.ShearFailFamily",
-    "public_api": "evaluate_shear_fail_governs"
+    "package": "design_brain.families.shear_fail_governs"
   },
   "classification": {
     "entry_condition": "shear underdesign governs",
@@ -333,11 +331,13 @@
     ]
   },
   "repair_ladder": {
-    "contract_role": "current_live_regression_snapshot_until_contract_runtime_cutover",
+    "contract_role": "post_cutover_runtime_adapter_regression_snapshot",
     "required_lanes": [
       "spacing_reduction_first",
       "ligature_diameter_increase_with_spacing_restart",
-      "width_increase_with_diameter_and_spacing_restart"
+      "depth_increase_with_reinforcement_restart",
+      "width_increase_with_reinforcement_restart",
+      "leg_count_increase_with_reinforcement_restart"
     ],
     "must_preserve_order": true,
     "locked_snapshot_fields": [
@@ -361,58 +361,47 @@
     "expected_ladder_snapshots": {
       "geometry_unlocked_ladder": {
         "geometry_locked": false,
-        "candidate_count": 180,
-        "repair_ladder_hash": "0817401d18373ccb7637be553007f273119d32afb41f38eb72292c1ba3367ecc",
+        "candidate_count": 104,
+        "repair_ladder_hash": "dba69ecd681429233804dc1f926d4370559dd0482c2c9f3c2993f227bb062b54",
         "spacing_values_tried": [
           100.0,
           125.0,
           150.0,
-          175.0
+          175.0,
+          250.0,
+          300.0
         ],
         "lig_diameters_tried": [
           12,
-          16,
-          20,
-          24,
-          28,
-          32,
-          36,
-          40
+          16
         ],
         "widths_tried": [
-          450.0,
-          500.0,
-          550.0,
-          600.0
+          425.0
         ],
-        "no_candidate_stop_reason": "b:D = 1:1 reached; depth/combined escalation required if shear still fails"
+        "no_candidate_stop_reason": "all_contract_strategies_attempted"
       },
       "geometry_locked_ladder": {
         "geometry_locked": true,
-        "candidate_count": 36,
-        "repair_ladder_hash": "ca2a3cf295caeb61df88c932e9c8088c84efd85775fac5bd26a3fbfbfc51662b",
+        "candidate_count": 62,
+        "repair_ladder_hash": "26bd8a9e8bb6f7d2a2beed40d631e7aa84185a4aa96d859d18c964e1020cb512",
         "spacing_values_tried": [
           100.0,
           125.0,
           150.0,
-          175.0
+          175.0,
+          250.0,
+          300.0
         ],
         "lig_diameters_tried": [
           12,
-          16,
-          20,
-          24,
-          28,
-          32,
-          36,
-          40
+          16
         ],
         "widths_tried": [],
-        "no_candidate_stop_reason": "geometry locked; legal no-repair proof required if reinforcement ladder fails"
+        "no_candidate_stop_reason": "all_contract_strategies_attempted"
       }
     },
-    "restart_rule": "After every lig diameter increase or beam-width increase, restart the repair ladder from spacing reduction.",
-    "ranking_rule": "Evaluate spacing-first contract order and stop on the first fully compliant executor-backed shear repair."
+    "restart_rule": "After every bar-size, depth, width, or leg-count change, restart the contract shear reinforcement search from spacing/bar-size policy.",
+    "ranking_rule": "Rank runtime candidates by target band, smallest geometry change, smallest reinforcement increase, constructability, and cost proxy."
   },
   "blockers": {
     "allowed": [

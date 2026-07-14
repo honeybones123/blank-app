@@ -140,8 +140,8 @@ def _validate_contract_shape(contract: dict[str, Any]) -> list[str]:
         failures.append("family_id_mismatch")
     if identity.get("package") != "design_brain.families.bending_overdesign_governs":
         failures.append("package_mismatch")
-    if identity.get("legacy_delegate") != "design_brain.families.bending_cleanup.BendingCleanupFamily":
-        failures.append("legacy_delegate_mismatch")
+    if "legacy_delegate" in identity:
+        failures.append("legacy_delegate_present")
     if identity.get("public_api") != "evaluate_bending_overdesign_governs":
         failures.append("public_api_mismatch")
 
@@ -235,7 +235,7 @@ def _validate_contract_shape(contract: dict[str, Any]) -> list[str]:
             + list(min_reo.get("specific_blocker_evidence_required") or [])
         )
     )
-    for term in ("As < As_min", "As = As_min", "lightest compliant", "minimum reinforcement", "Ast-min", "width-reduction"):
+    for term in ("As < As_min", "As = As_min", "lightest compliant", "minimum reinforcement", "Ast-min", "width-reduction", "depth-reduction"):
         if term.lower() not in min_reo_text.lower():
             failures.append(f"minimum_reinforcement_rule_missing:{term}")
     min_relief = minimum_reinforcement_geometry_relief_rules()
@@ -250,7 +250,7 @@ def _validate_contract_shape(contract: dict[str, Any]) -> list[str]:
             + list(min_relief.get("visible_blocker_terms") or [])
         )
     )
-    for term in ("width reduction", "As_min", "bottom reinforcement", "Ast-min", "minimum bending reinforcement"):
+    for term in ("width reduction", "depth reduction", "As_min", "bottom reinforcement", "Ast-min", "minimum bending reinforcement"):
         if term.lower() not in relief_text.lower():
             failures.append(f"minimum_reinforcement_geometry_relief_missing:{term}")
 
@@ -270,7 +270,7 @@ def _validate_contract_shape(contract: dict[str, Any]) -> list[str]:
     if {"bottom reinforcement search", "layer search"} - restart:
         failures.append("geometry_reduction_restart_rules_missing")
     geometry_requires = "\n".join(str(value) for value in geometry.get("requires") or [])
-    for term in ("bending remains compliant", "geometry constraints", "beam proportion", "constructability", "As_min relief"):
+    for term in ("bending remains compliant", "geometry constraints", "beam proportion", "constructability", "As_min relief", "depth reduction"):
         if term.lower() not in geometry_requires.lower():
             failures.append(f"geometry_requirement_missing:{term}")
 
@@ -278,8 +278,14 @@ def _validate_contract_shape(contract: dict[str, Any]) -> list[str]:
     bottom_policy = policies.get("bottom_reinforcement_reduction") or {}
     if bottom_policy.get("lane_id") != "BOTTOM_REINFORCEMENT_REDUCTION":
         failures.append("bottom_policy_lane_id_mismatch")
-    if list(bottom_policy.get("example_sequence") or []) != ["5-N24", "4-N24", "4-N20", "3-N24", "3-N20"]:
+    bottom_sequence = list(bottom_policy.get("example_sequence") or [])
+    required_bottom_milestones = ["5-N24", "4-N24", "3-N20", "2-N16", "2-N12"]
+    if any(value not in bottom_sequence for value in required_bottom_milestones):
         failures.append("bottom_policy_example_sequence_mismatch")
+    if bottom_policy.get("minimum_bottom_bars") != 2:
+        failures.append("bottom_policy_minimum_bottom_bars_mismatch")
+    if bottom_sequence and bottom_sequence[-1] != "2-N12":
+        failures.append("bottom_policy_sequence_does_not_end_at_minimum_two_bar_limit")
     bottom_terminal = "\n".join(str(value) for value in bottom_policy.get("terminates_when") or [])
     if "As < As_min".lower() not in bottom_terminal.lower():
         failures.append("bottom_policy_does_not_terminate_at_min_reinforcement")
@@ -312,6 +318,19 @@ def _validate_contract_shape(contract: dict[str, Any]) -> list[str]:
     failures.extend(
         f"width_policy_restarted_requirement_missing:{requirement}"
         for requirement in sorted(expected_width_requirements - width_requirements)
+    )
+    depth_policy = policies.get("depth_reduction") or {}
+    if depth_policy.get("minimum_reinforcement_relief") is not True:
+        failures.append("depth_policy_missing_minimum_reinforcement_relief")
+    depth_requirements = set(str(value) for value in depth_policy.get("restarted_candidate_requirements") or [])
+    expected_depth_requirements = {
+        "depth-only candidate",
+        "depth plus restarted bottom reinforcement candidate",
+        "depth plus restarted layer reduction candidate",
+    }
+    failures.extend(
+        f"depth_policy_restarted_requirement_missing:{requirement}"
+        for requirement in sorted(expected_depth_requirements - depth_requirements)
     )
 
     min_cases = policies.get("minimum_reinforcement_cases") or {}

@@ -243,8 +243,7 @@ def _build_snapshot() -> dict[str, Any]:
         "session_storage_not_moved": "st.session_state" in input_source
         and "session_state" not in publication_source,
         "ui_rendering_not_moved": "ui.design_guide_cards" not in publication_source,
-        "wording_not_moved": "_design_guide_clean_main_card_text" in input_source
-        and "_design_guide_clean_main_card_text" not in publication_source,
+        "legacy_wording_helper_deleted": "_design_guide_clean_main_card_text" not in input_source,
         "family_runtimes_not_touched_by_this_verifier": True,
     }
     proof_guards = {

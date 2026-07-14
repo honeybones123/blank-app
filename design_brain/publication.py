@@ -647,6 +647,64 @@ class DesignGuideButtonContractActionabilityScalarResolutionResult:
 
 
 @dataclass(frozen=True)
+class DesignGuideButtonContractActionabilityProbeSetupResult:
+    """Pure setup for page-owned actionability probe execution."""
+
+    probe_inputs: DesignGuideButtonContractActionabilityProbeInputs | None = None
+    blocking_reason_before: str | None = None
+    executor_allowed_before: bool | None = None
+    preview_pass_before: bool | None = None
+    expected_util_before: Any = None
+    family_before: str | None = None
+    actionable_before: bool = False
+    enabled_before: bool = False
+    final_accepted_min_family_util: Any = None
+    target_band_eps: Any = None
+    setup_hash: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class DesignGuideButtonContractActionabilityProbeApplicationResult:
+    """Legacy-compatible scalar application after page-owned probes run."""
+
+    executor_contract_evaluated: bool = False
+    executor_allowed: bool = False
+    executor_reason: str | None = None
+    executor_exception_type: str | None = None
+    preview_evaluated: bool = False
+    preview_pass: bool = False
+    preview_util: Any = None
+    preview_reason: str | None = None
+    safe_incremental_below_threshold: bool | None = None
+    family_exact_cleanup_blocker: Any = None
+    local_cleanup_post_apply_acceptance_matches: Any = None
+    best_safe_partial_cleanup: Any = None
+    low_util_exact_blocker: Any = None
+    accepted_band_cleanup_evaluated: bool = False
+    accepted_band_cleanup: Any = None
+    accepted_band_family_preview_util: Any = None
+    accepted_band_override_applied: bool = False
+    partial_cleanup_override_applied: bool = False
+    exact_blocker_override_applied: bool = False
+    family_truth_probe_evaluated: bool = False
+    family_truth_probe_exception_type: str | None = None
+    family_truth_probe_expected_util: Any = None
+    combined_truth_probe_evaluated: bool = False
+    combined_truth_probe_exception_type: str | None = None
+    combined_truth_probe_expected_util: Any = None
+    family: str | None = None
+    expected_util: Any = None
+    blocking_reason: str | None = None
+    application_hash: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class DesignGuideButtonContractFinalResult:
     """Final button-contract wrapper from already-resolved page/publication scalars."""
 
@@ -661,6 +719,241 @@ class DesignGuideButtonContractFinalResult:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class DesignGuideButtonContractStateResolutionResult:
+    """Pure final state/result resolution for a Design Guide button contract."""
+
+    final_result: DesignGuideButtonContractFinalResult
+    source_candidate_id: str | None = None
+    actionable: bool = False
+    action_type: str | None = None
+    family: str | None = None
+    updates_hash: str | None = None
+    contract_hash: str | None = None
+    state_resolution_hash: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class DesignGuideButtonContractExecutionProof:
+    """Trace-only proof of the final CTA/button execution contract."""
+
+    authority: str = "design_brain.publication.button_contract_execution_proof"
+    trace_only: bool = True
+    product_driving: bool = False
+    render_driving: bool = False
+    apply_driving: bool = False
+    session_driving: bool = False
+    item_index: int = 0
+    family: str | None = None
+    action_type: str | None = None
+    effective_action_type: str | None = None
+    enabled: bool = False
+    actionable: bool = False
+    preview_pass: bool | None = None
+    expected_util: Any = None
+    blocking_reason: str | None = None
+    source_candidate_id: str | None = None
+    updates_source: str | None = None
+    update_decision_reason: str | None = None
+    executor_allowed: bool | None = None
+    executor_reason: str | None = None
+    executor_contract_evaluated: bool = False
+    final_contract_hash: str | None = None
+    final_contract_updates_hash: str | None = None
+    final_result_hash: str | None = None
+    item_hash: str | None = None
+    state_hash: str | None = None
+    emission_context_hash: str | None = None
+    actionability_summary_hash: str | None = None
+    execution_proof_hash: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class DesignGuideButtonContractExecutionScopeDefaults:
+    """Initial CTA/button execution-scope defaults before page probes run."""
+
+    action_type: str = ""
+    effective_action_type: str = ""
+    family: str | None = None
+    updates: dict[str, Any] = field(default_factory=dict)
+    expected_util: Any = None
+    preview_pass: bool = False
+    preview_util: Any = None
+    preview_reason: str | None = None
+    blocking_reason: str | None = None
+    executor_allowed: bool = False
+    executor_reason: str | None = None
+    executor_contract_evaluated: bool = False
+    executor_exception_type: str | None = None
+    preview_evaluated: bool = False
+    safe_incremental_below_threshold: bool | None = None
+    family_exact_cleanup_blocker: Any = None
+    local_cleanup_post_apply_acceptance_matches: Any = None
+    best_safe_partial_cleanup: Any = None
+    low_util_exact_blocker: Any = None
+    accepted_band_cleanup_evaluated: bool = False
+    accepted_band_cleanup: Any = None
+    accepted_band_family_preview_util: Any = None
+    accepted_band_override_applied: bool = False
+    partial_cleanup_override_applied: bool = False
+    exact_blocker_override_applied: bool = False
+    family_truth_probe_evaluated: bool = False
+    family_truth_probe_exception_type: str | None = None
+    family_truth_probe_expected_util: Any = None
+    combined_truth_probe_evaluated: bool = False
+    combined_truth_probe_exception_type: str | None = None
+    combined_truth_probe_expected_util: Any = None
+    item_snapshot_before: dict[str, Any] = field(default_factory=dict)
+    work_before: dict[str, Any] = field(default_factory=dict)
+    work_after: dict[str, Any] = field(default_factory=dict)
+    updates_source: str = "not_applicable"
+    update_decision_reason: str | None = None
+    update_exception_type: str | None = None
+    update_family_before: str | None = None
+    update_action_type_before: str = ""
+    update_expected_util_before: Any = None
+    update_resolution_applicable: bool = False
+    update_resolution_input_record: Any = None
+    payload_resolution_attempted: bool = False
+    payload_resolution_exception_type: str | None = None
+    pre_resolved_recommendation_updates: dict[str, Any] = field(default_factory=dict)
+    pre_candidate_search_evidence: dict[str, Any] = field(default_factory=dict)
+    pre_evidence_updates: dict[str, Any] = field(default_factory=dict)
+    pre_evidence_updates_match_state: bool | None = None
+    pre_normalised_evidence_candidate_id: str | None = None
+    pre_evidence_expected_util: Any = None
+    work_mutation_input_snapshot: dict[str, Any] = field(default_factory=dict)
+    work_mutation_output_snapshot: dict[str, Any] = field(default_factory=dict)
+    work_mutation_object_id_before: int | None = None
+    work_mutation_object_id_after: int | None = None
+    work_mutation_applied: bool = False
+    work_mutation_selected_source: str = "not_applicable"
+    work_mutation_selected_updates: dict[str, Any] = field(default_factory=dict)
+    work_mutation_selected_candidate_id: str | None = None
+    work_mutation_selected_util: Any = None
+    work_mutation_record: Any = None
+    actionability_probe_inputs: Any = None
+    resolution_blocking_reason_before: str | None = None
+    resolution_executor_allowed_before: bool = False
+    resolution_preview_pass_before: bool = False
+    resolution_expected_util_before: Any = None
+    resolution_family_before: str | None = None
+    resolution_actionable_before: bool = False
+    resolution_enabled_before: bool = False
+    visible_blocker: bool = False
+    blocking_reason_override: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def build_design_guide_button_contract_execution_scope_defaults(
+    *,
+    item: Mapping[str, Any] | None,
+    family: str | None,
+    expected_util: Any,
+    blocking_reason_override: str | None = None,
+) -> DesignGuideButtonContractExecutionScopeDefaults:
+    """Build deterministic initial defaults for Design Guide button execution.
+
+    The page supplies page-derived values such as family and expected utility;
+    this helper owns the default policy surface and visible-blocker predicate.
+    """
+
+    source = item if isinstance(item, Mapping) else {}
+    action_type = str(source.get("action_type") or "").strip()
+    item_snapshot_before = dict(source)
+    work_before = dict(item_snapshot_before)
+    blocking_reason = str(blocking_reason_override or "").strip() or None
+    return DesignGuideButtonContractExecutionScopeDefaults(
+        action_type=action_type,
+        effective_action_type=action_type,
+        family=family,
+        expected_util=expected_util,
+        blocking_reason=blocking_reason,
+        item_snapshot_before=item_snapshot_before,
+        work_before=work_before,
+        work_after=dict(work_before),
+        update_family_before=family,
+        update_action_type_before=action_type,
+        update_expected_util_before=expected_util,
+        work_mutation_input_snapshot=dict(work_before),
+        work_mutation_output_snapshot=dict(work_before),
+        work_mutation_object_id_before=id(work_before),
+        work_mutation_object_id_after=id(work_before),
+        work_mutation_selected_source="not_applicable",
+        resolution_blocking_reason_before=blocking_reason,
+        resolution_expected_util_before=expected_util,
+        resolution_family_before=family,
+        resolution_actionable_before=False,
+        resolution_enabled_before=False,
+        visible_blocker=bool(isinstance(item, Mapping) and design_guide_item_is_visible_blocker(item)),
+        blocking_reason_override=blocking_reason_override,
+    )
+
+
+@dataclass(frozen=True)
+class DesignGuideButtonContractDefaultGuardResult:
+    """Pure default guard for invalid item / missing action before payload resolution."""
+
+    should_resolve_payload: bool = True
+    blocking_reason: str | None = None
+    update_decision_reason: str | None = None
+    item_valid: bool = True
+    action_type_present: bool = True
+    guard_reason: str | None = None
+    guard_hash: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def resolve_design_guide_button_contract_default_guard(
+    *,
+    item: Mapping[str, Any] | None,
+    action_type: str | None,
+    blocking_reason: str | None = None,
+    update_decision_reason: str | None = None,
+) -> DesignGuideButtonContractDefaultGuardResult:
+    """Resolve pure invalid-item / missing-action defaults before payload work."""
+
+    item_valid = isinstance(item, Mapping)
+    action_present = bool(str(action_type or "").strip())
+    final_blocking_reason = blocking_reason
+    final_update_decision_reason = update_decision_reason
+    guard_reason: str | None = None
+    if not item_valid:
+        guard_reason = "invalid_guidance_item"
+    elif not action_present:
+        guard_reason = "missing_action_type"
+    if guard_reason:
+        final_blocking_reason = final_blocking_reason or guard_reason
+        final_update_decision_reason = guard_reason
+    payload = {
+        "item_valid": item_valid,
+        "action_type_present": action_present,
+        "blocking_reason": final_blocking_reason,
+        "update_decision_reason": final_update_decision_reason,
+        "guard_reason": guard_reason,
+        "should_resolve_payload": guard_reason is None,
+    }
+    return DesignGuideButtonContractDefaultGuardResult(
+        should_resolve_payload=guard_reason is None,
+        blocking_reason=final_blocking_reason,
+        update_decision_reason=final_update_decision_reason,
+        item_valid=item_valid,
+        action_type_present=action_present,
+        guard_reason=guard_reason,
+        guard_hash=publication_snapshot_hash(payload),
+    )
 
 
 @dataclass
@@ -849,6 +1142,265 @@ class DesignGuideButtonContractEmissionContext:
         return asdict(self)
 
 
+def build_design_guide_button_contract_emission_context(
+    *,
+    item_index: int,
+    item: dict | None,
+    work_after: dict | None,
+    updates: dict | None,
+    updates_source: str | None,
+    final_contract: dict | None,
+    action_type: str | None,
+    effective_action_type: str | None,
+    family: str | None,
+    expected_util: Any,
+    blocking_reason: str | None,
+    executor_allowed: bool | None,
+    executor_reason: str | None,
+    executor_exception_type: str | None,
+    executor_contract_evaluated: bool,
+    preview_pass: bool | None,
+    preview_util: Any,
+    preview_reason: str | None,
+    preview_evaluated: bool,
+    source_candidate_id: str | None,
+    actionable: bool,
+    update_decision_reason: str | None,
+    update_exception_type: str | None,
+    safe_incremental_below_threshold: bool | None,
+    family_exact_cleanup_blocker: bool | None,
+    local_cleanup_post_apply_acceptance_matches: bool | None,
+    best_safe_partial_cleanup: bool | None,
+    low_util_exact_blocker: bool | None,
+    accepted_band_cleanup_evaluated: bool,
+    accepted_band_cleanup: bool | None,
+    accepted_band_family_preview_util: Any,
+    accepted_band_override_applied: bool,
+    partial_cleanup_override_applied: bool,
+    exact_blocker_override_applied: bool,
+    family_truth_probe_evaluated: bool,
+    family_truth_probe_exception_type: str | None,
+    family_truth_probe_expected_util: Any,
+    combined_truth_probe_evaluated: bool,
+    combined_truth_probe_exception_type: str | None,
+    combined_truth_probe_expected_util: Any,
+    resolution_blocking_reason_before: str | None,
+    resolution_executor_allowed_before: bool | None,
+    resolution_preview_pass_before: bool | None,
+    resolution_expected_util_before: Any,
+    resolution_family_before: str | None,
+    resolution_actionable_before: bool | None,
+    resolution_enabled_before: bool | None,
+    update_resolution_input_record: DesignGuideButtonContractUpdateResolutionInputs | None,
+    update_resolution_applicable: bool,
+    update_family_before: str | None,
+    update_action_type_before: str | None,
+    update_expected_util_before: Any,
+    blocking_reason_override: str | None,
+    work_before: dict | None,
+    item_snapshot_before: dict | None,
+    work_mutation_record: DesignGuideButtonContractWorkMutation | None,
+    work_mutation_input_snapshot: dict | None,
+    work_mutation_output_snapshot: dict | None,
+    work_mutation_selected_source: str | None,
+    work_mutation_selected_updates: dict | None,
+    work_mutation_selected_candidate_id: str | None,
+    work_mutation_selected_util: Any,
+    work_mutation_applied: bool,
+    work_mutation_object_id_before: int | None,
+    work_mutation_object_id_after: int | None,
+    actionability_resolution_records: list[DesignGuideButtonContractActionabilityResolution] | None,
+    actionability_probe_output_records: list[DesignGuideButtonContractActionabilityProbeOutputs] | None,
+    actionability_helper_output_records: list[DesignGuideButtonContractActionabilityHelperOutputs] | None,
+    actionability_input_records: list[DesignGuideButtonContractActionabilityInputs] | None,
+    actionability_predicate_records: list[DesignGuideButtonContractActionabilityPredicates] | None,
+    actionability_application_records: list[DesignGuideButtonContractActionabilityApplication] | None,
+    actionability_decision_records: list[DesignGuideButtonContractActionabilityDecision] | None,
+    update_resolution_input_records: list[DesignGuideButtonContractUpdateResolutionInputs] | None,
+    update_resolution_decision_records: list[DesignGuideButtonContractUpdateResolutionDecision] | None,
+    scalar_records: list[DesignGuideButtonContractScalars] | None,
+    work_mutation_records: list[DesignGuideButtonContractWorkMutation] | None,
+    update_resolution_records: list[DesignGuideButtonContractUpdateResolution] | None,
+) -> DesignGuideButtonContractEmissionContext:
+    """Build the typed button-contract emission context from resolved values."""
+
+    return DesignGuideButtonContractEmissionContext(
+        item_index=item_index,
+        item=item,
+        work_after=work_after,
+        updates=dict(updates or {}),
+        updates_source=updates_source,
+        final_contract=final_contract,
+        action_type=action_type,
+        effective_action_type=effective_action_type,
+        family=family,
+        expected_util=expected_util,
+        blocking_reason=blocking_reason,
+        executor_allowed=executor_allowed,
+        executor_reason=executor_reason,
+        executor_exception_type=executor_exception_type,
+        executor_contract_evaluated=bool(executor_contract_evaluated),
+        preview_pass=preview_pass,
+        preview_util=preview_util,
+        preview_reason=preview_reason,
+        preview_evaluated=bool(preview_evaluated),
+        source_candidate_id=source_candidate_id,
+        actionable=actionable,
+        update_decision_reason=update_decision_reason,
+        update_exception_type=update_exception_type,
+        safe_incremental_below_threshold=safe_incremental_below_threshold,
+        family_exact_cleanup_blocker=family_exact_cleanup_blocker,
+        local_cleanup_post_apply_acceptance_matches=local_cleanup_post_apply_acceptance_matches,
+        best_safe_partial_cleanup=best_safe_partial_cleanup,
+        low_util_exact_blocker=low_util_exact_blocker,
+        accepted_band_cleanup_evaluated=bool(accepted_band_cleanup_evaluated),
+        accepted_band_cleanup=accepted_band_cleanup,
+        accepted_band_family_preview_util=accepted_band_family_preview_util,
+        accepted_band_override_applied=bool(accepted_band_override_applied),
+        partial_cleanup_override_applied=bool(partial_cleanup_override_applied),
+        exact_blocker_override_applied=bool(exact_blocker_override_applied),
+        family_truth_probe_evaluated=bool(family_truth_probe_evaluated),
+        family_truth_probe_exception_type=family_truth_probe_exception_type,
+        family_truth_probe_expected_util=family_truth_probe_expected_util,
+        combined_truth_probe_evaluated=bool(combined_truth_probe_evaluated),
+        combined_truth_probe_exception_type=combined_truth_probe_exception_type,
+        combined_truth_probe_expected_util=combined_truth_probe_expected_util,
+        resolution_blocking_reason_before=resolution_blocking_reason_before,
+        resolution_executor_allowed_before=resolution_executor_allowed_before,
+        resolution_preview_pass_before=resolution_preview_pass_before,
+        resolution_expected_util_before=resolution_expected_util_before,
+        resolution_family_before=resolution_family_before,
+        resolution_actionable_before=resolution_actionable_before,
+        resolution_enabled_before=resolution_enabled_before,
+        update_resolution_input_record=update_resolution_input_record,
+        update_resolution_applicable=bool(update_resolution_applicable),
+        update_family_before=update_family_before,
+        update_action_type_before=update_action_type_before,
+        update_expected_util_before=update_expected_util_before,
+        blocking_reason_override=blocking_reason_override,
+        work_before=work_before,
+        item_snapshot_before=item_snapshot_before,
+        work_mutation_record=work_mutation_record,
+        work_mutation_input_snapshot=work_mutation_input_snapshot,
+        work_mutation_output_snapshot=work_mutation_output_snapshot,
+        work_mutation_selected_source=work_mutation_selected_source,
+        work_mutation_selected_updates=work_mutation_selected_updates,
+        work_mutation_selected_candidate_id=work_mutation_selected_candidate_id,
+        work_mutation_selected_util=work_mutation_selected_util,
+        work_mutation_applied=bool(work_mutation_applied),
+        work_mutation_object_id_before=work_mutation_object_id_before,
+        work_mutation_object_id_after=work_mutation_object_id_after,
+        actionability_resolution_records=actionability_resolution_records,
+        actionability_probe_output_records=actionability_probe_output_records,
+        actionability_helper_output_records=actionability_helper_output_records,
+        actionability_input_records=actionability_input_records,
+        actionability_predicate_records=actionability_predicate_records,
+        actionability_application_records=actionability_application_records,
+        actionability_decision_records=actionability_decision_records,
+        update_resolution_input_records=update_resolution_input_records,
+        update_resolution_decision_records=update_resolution_decision_records,
+        scalar_records=scalar_records,
+        work_mutation_records=work_mutation_records,
+        update_resolution_records=update_resolution_records,
+    )
+
+
+def build_design_guide_button_contract_emission_context_from_scope(
+    *,
+    item_index: int,
+    item: dict | None,
+    scope: Mapping[str, Any],
+    final_result: DesignGuideButtonContractFinalResult,
+) -> DesignGuideButtonContractEmissionContext:
+    """Build emission context from a whitelisted resolved button-contract scope.
+
+    The page may pass its local scope, but this helper consumes only explicit
+    contract/proof fields. It does not execute callbacks, render UI, route Apply,
+    or read/write session state.
+    """
+
+    get = scope.get
+    return build_design_guide_button_contract_emission_context(
+        item_index=item_index,
+        item=item,
+        work_after=get("work_after"),
+        updates=get("updates"),
+        updates_source=get("updates_source"),
+        final_contract=final_result.final_contract,
+        action_type=get("action_type"),
+        effective_action_type=get("effective_action_type"),
+        family=get("family"),
+        expected_util=get("expected_util"),
+        blocking_reason=get("blocking_reason"),
+        executor_allowed=get("executor_allowed"),
+        executor_reason=get("executor_reason"),
+        executor_exception_type=get("executor_exception_type"),
+        executor_contract_evaluated=bool(get("executor_contract_evaluated")),
+        preview_pass=get("preview_pass"),
+        preview_util=get("preview_util"),
+        preview_reason=get("preview_reason"),
+        preview_evaluated=bool(get("preview_evaluated")),
+        source_candidate_id=final_result.source_candidate_id,
+        actionable=bool(final_result.actionable),
+        update_decision_reason=get("update_decision_reason"),
+        update_exception_type=get("update_exception_type"),
+        safe_incremental_below_threshold=get("safe_incremental_below_threshold"),
+        family_exact_cleanup_blocker=get("family_exact_cleanup_blocker"),
+        local_cleanup_post_apply_acceptance_matches=get("local_cleanup_post_apply_acceptance_matches"),
+        best_safe_partial_cleanup=get("best_safe_partial_cleanup"),
+        low_util_exact_blocker=get("low_util_exact_blocker"),
+        accepted_band_cleanup_evaluated=bool(get("accepted_band_cleanup_evaluated")),
+        accepted_band_cleanup=get("accepted_band_cleanup"),
+        accepted_band_family_preview_util=get("accepted_band_family_preview_util"),
+        accepted_band_override_applied=bool(get("accepted_band_override_applied")),
+        partial_cleanup_override_applied=bool(get("partial_cleanup_override_applied")),
+        exact_blocker_override_applied=bool(get("exact_blocker_override_applied")),
+        family_truth_probe_evaluated=bool(get("family_truth_probe_evaluated")),
+        family_truth_probe_exception_type=get("family_truth_probe_exception_type"),
+        family_truth_probe_expected_util=get("family_truth_probe_expected_util"),
+        combined_truth_probe_evaluated=bool(get("combined_truth_probe_evaluated")),
+        combined_truth_probe_exception_type=get("combined_truth_probe_exception_type"),
+        combined_truth_probe_expected_util=get("combined_truth_probe_expected_util"),
+        resolution_blocking_reason_before=get("resolution_blocking_reason_before"),
+        resolution_executor_allowed_before=get("resolution_executor_allowed_before"),
+        resolution_preview_pass_before=get("resolution_preview_pass_before"),
+        resolution_expected_util_before=get("resolution_expected_util_before"),
+        resolution_family_before=get("resolution_family_before"),
+        resolution_actionable_before=get("resolution_actionable_before"),
+        resolution_enabled_before=get("resolution_enabled_before"),
+        update_resolution_input_record=get("update_resolution_input_record"),
+        update_resolution_applicable=bool(get("update_resolution_applicable")),
+        update_family_before=get("update_family_before"),
+        update_action_type_before=get("update_action_type_before"),
+        update_expected_util_before=get("update_expected_util_before"),
+        blocking_reason_override=get("blocking_reason_override"),
+        work_before=get("work_before"),
+        item_snapshot_before=get("item_snapshot_before"),
+        work_mutation_record=get("work_mutation_record"),
+        work_mutation_input_snapshot=get("work_mutation_input_snapshot"),
+        work_mutation_output_snapshot=get("work_mutation_output_snapshot"),
+        work_mutation_selected_source=get("work_mutation_selected_source"),
+        work_mutation_selected_updates=get("work_mutation_selected_updates"),
+        work_mutation_selected_candidate_id=get("work_mutation_selected_candidate_id"),
+        work_mutation_selected_util=get("work_mutation_selected_util"),
+        work_mutation_applied=bool(get("work_mutation_applied")),
+        work_mutation_object_id_before=get("work_mutation_object_id_before"),
+        work_mutation_object_id_after=get("work_mutation_object_id_after"),
+        actionability_resolution_records=get("actionability_resolution_records"),
+        actionability_probe_output_records=get("actionability_probe_output_records"),
+        actionability_helper_output_records=get("actionability_helper_output_records"),
+        actionability_input_records=get("actionability_input_records"),
+        actionability_predicate_records=get("actionability_predicate_records"),
+        actionability_application_records=get("actionability_application_records"),
+        actionability_decision_records=get("actionability_decision_records"),
+        update_resolution_input_records=get("update_resolution_input_records"),
+        update_resolution_decision_records=get("update_resolution_decision_records"),
+        scalar_records=get("scalar_records"),
+        work_mutation_records=get("work_mutation_records"),
+        update_resolution_records=get("update_resolution_records"),
+    )
+
+
 def build_design_guide_button_contract_actionability_probe_inputs(
     *,
     item_index: int,
@@ -967,6 +1519,203 @@ def build_design_guide_button_contract_actionability_probe_inputs(
         item_index=int(item_index),
         probe_input_hash=publication_snapshot_hash(payload),
         **payload,
+    )
+
+
+def build_design_guide_button_contract_actionability_probe_setup(
+    *,
+    item_index: int,
+    item: dict | None,
+    work: dict | None,
+    updates: dict | None,
+    family: str | None,
+    action_type: str | None,
+    effective_action_type: str | None,
+    selected_update_source: str | None,
+    update_decision_reason: str | None,
+    final_accepted_min_family_util: Any,
+    target_band_eps: Any,
+    compound_shear_update_keys: Iterable[Any] | None,
+    compound_bottom_update_keys: Iterable[Any] | None,
+    blocking_reason_before: str | None,
+    executor_allowed_before: bool | None,
+    preview_pass_before: bool | None,
+    expected_util_before: Any,
+    candidate_search_evidence: dict | None,
+    build_probe_inputs: bool,
+) -> DesignGuideButtonContractActionabilityProbeSetupResult:
+    """Build pure actionability setup before page-owned probe execution."""
+
+    updates_d = dict(updates or {})
+    actionable_before = bool(action_type and updates_d and executor_allowed_before and not blocking_reason_before)
+    enabled_before = bool(
+        actionable_before
+        and updates_d
+        and bool(preview_pass_before)
+        and blocking_reason_before is None
+    )
+    probe_inputs = None
+    if build_probe_inputs:
+        probe_inputs = build_design_guide_button_contract_actionability_probe_inputs(
+            item_index=item_index,
+            item=item,
+            work=work,
+            updates=updates_d,
+            family=family,
+            action_type=action_type,
+            effective_action_type=effective_action_type,
+            selected_update_source=selected_update_source,
+            update_decision_reason=update_decision_reason,
+            final_accepted_min_family_util=final_accepted_min_family_util,
+            target_band_eps=target_band_eps,
+            compound_shear_update_keys=compound_shear_update_keys,
+            compound_bottom_update_keys=compound_bottom_update_keys,
+            blocking_reason_before_probe=blocking_reason_before,
+            executor_allowed_before_probe=executor_allowed_before,
+            preview_pass_before_probe=preview_pass_before,
+            expected_util_before_probe=expected_util_before,
+            actionable_before_probe=actionable_before,
+            enabled_before_probe=enabled_before,
+            candidate_search_evidence=candidate_search_evidence,
+        )
+    setup_payload = {
+        "item_index": item_index,
+        "updates_hash": publication_snapshot_hash(updates_d),
+        "family": family,
+        "action_type": action_type,
+        "effective_action_type": effective_action_type,
+        "selected_update_source": selected_update_source,
+        "blocking_reason_before": blocking_reason_before,
+        "executor_allowed_before": executor_allowed_before,
+        "preview_pass_before": preview_pass_before,
+        "expected_util_before": expected_util_before,
+        "actionable_before": actionable_before,
+        "enabled_before": enabled_before,
+        "probe_input_hash": probe_inputs.probe_input_hash if probe_inputs else None,
+    }
+    return DesignGuideButtonContractActionabilityProbeSetupResult(
+        probe_inputs=probe_inputs,
+        blocking_reason_before=blocking_reason_before,
+        executor_allowed_before=executor_allowed_before,
+        preview_pass_before=preview_pass_before,
+        expected_util_before=expected_util_before,
+        family_before=family,
+        actionable_before=actionable_before,
+        enabled_before=enabled_before,
+        final_accepted_min_family_util=(
+            probe_inputs.final_accepted_min_family_util
+            if isinstance(probe_inputs, DesignGuideButtonContractActionabilityProbeInputs)
+            else final_accepted_min_family_util
+        ),
+        target_band_eps=(
+            probe_inputs.target_band_eps
+            if isinstance(probe_inputs, DesignGuideButtonContractActionabilityProbeInputs)
+            else target_band_eps
+        ),
+        setup_hash=publication_snapshot_hash(setup_payload),
+    )
+
+
+def apply_design_guide_button_contract_actionability_probe_outputs(
+    *,
+    probe_outputs: DesignGuideButtonContractActionabilityProbeOutputs,
+    family_before: str | None,
+    expected_util_before: Any,
+    blocking_reason_before: str | None,
+) -> DesignGuideButtonContractActionabilityProbeApplicationResult:
+    """Apply legacy-compatible scalars from page-owned actionability probes."""
+
+    family = probe_outputs.final_family or family_before
+    expected_util = probe_outputs.final_expected_util
+    blocking_reason = probe_outputs.final_blocking_reason
+    payload = {
+        "probe_output_hash": probe_outputs.probe_output_hash,
+        "family_before": family_before,
+        "family": family,
+        "expected_util_before": expected_util_before,
+        "expected_util": expected_util,
+        "blocking_reason_before": blocking_reason_before,
+        "blocking_reason": blocking_reason,
+        "executor_allowed": bool(probe_outputs.final_executor_allowed),
+        "preview_pass": bool(probe_outputs.final_preview_pass),
+    }
+    return DesignGuideButtonContractActionabilityProbeApplicationResult(
+        executor_contract_evaluated=probe_outputs.executor_contract_evaluated,
+        executor_allowed=bool(probe_outputs.final_executor_allowed),
+        executor_reason=probe_outputs.executor_reason,
+        executor_exception_type=probe_outputs.executor_exception_type,
+        preview_evaluated=probe_outputs.preview_evaluated,
+        preview_pass=bool(probe_outputs.final_preview_pass),
+        preview_util=probe_outputs.preview_util,
+        preview_reason=probe_outputs.preview_reason,
+        safe_incremental_below_threshold=probe_outputs.safe_incremental_below_threshold,
+        family_exact_cleanup_blocker=probe_outputs.family_exact_cleanup_blocker,
+        local_cleanup_post_apply_acceptance_matches=probe_outputs.local_cleanup_post_apply_acceptance_matches,
+        best_safe_partial_cleanup=probe_outputs.best_safe_partial_cleanup,
+        low_util_exact_blocker=probe_outputs.low_util_exact_blocker,
+        accepted_band_cleanup_evaluated=probe_outputs.accepted_band_cleanup_evaluated,
+        accepted_band_cleanup=probe_outputs.accepted_band_cleanup,
+        accepted_band_family_preview_util=probe_outputs.accepted_band_family_preview_util,
+        accepted_band_override_applied=probe_outputs.accepted_band_override_applied,
+        partial_cleanup_override_applied=probe_outputs.partial_cleanup_override_applied,
+        exact_blocker_override_applied=probe_outputs.exact_blocker_override_applied,
+        family_truth_probe_evaluated=probe_outputs.family_truth_probe_evaluated,
+        family_truth_probe_exception_type=probe_outputs.family_truth_probe_exception_type,
+        family_truth_probe_expected_util=probe_outputs.family_truth_probe_expected_util,
+        combined_truth_probe_evaluated=probe_outputs.combined_truth_probe_evaluated,
+        combined_truth_probe_exception_type=probe_outputs.combined_truth_probe_exception_type,
+        combined_truth_probe_expected_util=probe_outputs.combined_truth_probe_expected_util,
+        family=family,
+        expected_util=expected_util,
+        blocking_reason=blocking_reason,
+        application_hash=publication_snapshot_hash(payload),
+    )
+
+
+def design_guide_active_strength_repair_target_band_override_applies(
+    *,
+    item: Mapping[str, Any] | None,
+    preview_reason: str | None,
+    executor_allowed: bool | None,
+) -> bool:
+    """Return whether active-fail repair proof may override cleanup target-band gating."""
+
+    if not bool(executor_allowed):
+        return False
+    reason = str(preview_reason or "").strip()
+    if reason not in {
+        "candidate_preview_not_in_target_band",
+        "candidate_preview_not_in_target_band_after_active_failure",
+        "candidate_preview_still_fails_active_check",
+    }:
+        return False
+    if not guidance_item_is_active_strength_repair_action(dict(item or {})):
+        return False
+
+    item_d = _as_dict(item)
+    contract = _as_dict(item_d.get("button_contract"))
+    payload = _as_dict(item_d.get("action_payload"))
+    resolved = _as_dict(item_d.get("resolved_candidate"))
+    evidence = _as_dict(
+        item_d.get("candidate_search_evidence")
+        or payload.get("candidate_search_evidence")
+        or resolved.get("candidate_search_evidence")
+    )
+    allowed_category = str(evidence.get("outside_target_band_allowed_category") or "").strip()
+    executor_backed_count = int(evidence.get("safe_executor_backed_candidates_count") or 0)
+    executor_backed = bool(
+        contract.get("executor_backed")
+        or payload.get("executor_backed")
+        or evidence.get("executor_backed")
+        or evidence.get("safe_executor_backed_candidate_found")
+        or executor_backed_count > 0
+    )
+    return bool(
+        executor_backed
+        and (
+            bool(evidence.get("outside_target_band_allowed"))
+            or allowed_category == "active_strength_repair_passes_required_checks"
+        )
     )
 
 
@@ -1319,6 +2068,47 @@ class DesignGuideButtonContractPayloadUpdateAdapterResult:
 
 
 @dataclass(frozen=True)
+class DesignGuideButtonContractPayloadUpdateResolutionResult:
+    """Copy-return bundle for resolving button-contract payload/update fields."""
+
+    work: dict[str, Any] = field(default_factory=dict)
+    work_before: dict[str, Any] = field(default_factory=dict)
+    work_after: dict[str, Any] = field(default_factory=dict)
+    updates: dict[str, Any] = field(default_factory=dict)
+    updates_source: str = "none"
+    update_decision_reason: str | None = None
+    update_exception_type: str | None = None
+    family: str | None = None
+    effective_action_type: str | None = None
+    expected_util: Any = None
+    update_resolution_applicable: bool = False
+    update_resolution_input_record: DesignGuideButtonContractUpdateResolutionInputs | None = None
+    payload_resolution_attempted: bool = False
+    payload_resolution_exception_type: str | None = None
+    pre_resolved_recommendation_updates: dict[str, Any] = field(default_factory=dict)
+    pre_candidate_search_evidence: dict[str, Any] = field(default_factory=dict)
+    pre_evidence_updates: dict[str, Any] = field(default_factory=dict)
+    pre_evidence_updates_match_state: bool | None = None
+    pre_normalised_evidence_candidate_id: str | None = None
+    pre_evidence_expected_util: Any = None
+    work_mutation_input_snapshot: dict[str, Any] = field(default_factory=dict)
+    work_mutation_output_snapshot: dict[str, Any] = field(default_factory=dict)
+    work_mutation_object_id_before: int | None = None
+    work_mutation_object_id_after: int | None = None
+    work_mutation_applied: bool = False
+    work_mutation_selected_source: str = "none"
+    work_mutation_selected_updates: dict[str, Any] = field(default_factory=dict)
+    work_mutation_selected_candidate_id: str | None = None
+    work_mutation_selected_util: Any = None
+    work_mutation_record: DesignGuideButtonContractWorkMutation | None = None
+    payload_update_adapter: DesignGuideButtonContractPayloadUpdateAdapterResult | None = None
+    resolution_hash: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class DesignGuideButtonContractPayloadUpdateEvidence:
     """Pure evidence extracted from copied work before update-source selection."""
 
@@ -1406,6 +2196,145 @@ def publication_snapshot_hash(value: object) -> str:
     except (TypeError, ValueError):
         payload = str(value or "")
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def design_guide_text_indicates_blocker(text: str | None) -> bool:
+    """Return whether display text carries blocker/no-further-action meaning."""
+
+    lower = str(text or "").strip().lower()
+    if not lower:
+        return False
+    return any(
+        token in lower
+        for token in (
+            "blocked",
+            "cannot safely",
+            "cannot be safely",
+            "no further safe",
+            "no safe one-click",
+            "no one-click cleanup",
+            "no one-click candidate",
+            "no one-click update",
+        )
+    )
+
+
+def design_guide_item_is_accepted_terminal_with_exact_stop(item: Mapping[str, Any] | None) -> bool:
+    """Return whether an exact-stop item is already accepted/terminal."""
+
+    if not isinstance(item, Mapping):
+        return False
+    blockers = item.get("exact_blockers_by_family") or item.get("post_click_exact_blockers_by_family")
+    if not isinstance(blockers, Mapping) or not blockers:
+        return False
+    contract = dict(item.get("button_contract") or {})
+    updates = dict(
+        contract.get("updates")
+        or item.get("selected_action_updates")
+        or item.get("updates")
+        or {}
+    )
+    if (
+        str(contract.get("action_type") or item.get("action_type") or "").strip()
+        and updates
+        and (bool(contract.get("enabled")) or bool(contract.get("actionable")) or bool(item.get("primary_card_actionable")))
+    ):
+        return False
+    title_text = " ".join(
+        str(item.get(key) or "")
+        for key in ("title_main", "title", "primary_action", "reasoning")
+    ).strip().lower()
+    if "cleanup blocked" in title_text or "repair blocked" in title_text:
+        return False
+    return bool(
+        str(item.get("guidance_intent") or "").strip() == "already_efficient"
+        or str(item.get("design_guide_terminal_state") or "").strip() == "optimal"
+        or str(item.get("post_click_design_guide_state") or "").strip() == "accepted_green"
+        or str(item.get("terminal_cleanup_state") or "").strip() == "optimal"
+        or str(item.get("final_state_class") or "").strip() == "accepted"
+    )
+
+
+def design_guide_item_is_visible_blocker(
+    item: Mapping[str, Any] | None,
+    *,
+    extra_text: str | None = None,
+    final_accepted_min_family_util: float = 0.85,
+    target_band_eps: float = 0.005,
+) -> bool:
+    """Return whether a guidance item should be treated as blocker output."""
+
+    if not isinstance(item, Mapping):
+        return False
+    terminal_exact_accepted = design_guide_item_is_accepted_terminal_with_exact_stop(item)
+    contract = dict(item.get("button_contract") or {})
+    action_updates = dict(
+        contract.get("updates")
+        or item.get("selected_action_updates")
+        or item.get("updates")
+        or {}
+    )
+    has_action_contract = bool(
+        str(contract.get("action_type") or item.get("action_type") or "").strip()
+        and action_updates
+        and (
+            bool(item.get("primary_card_actionable"))
+            or bool(contract.get("enabled"))
+            or bool(contract.get("actionable"))
+        )
+    )
+    if not terminal_exact_accepted and str(item.get("guidance_intent") or "").strip() == "specific_blocker":
+        return True
+    if not terminal_exact_accepted and str(item.get("post_click_design_guide_state") or "").strip() == "exact_blocker":
+        return True
+    blockers = item.get("exact_blockers_by_family") or item.get("post_click_exact_blockers_by_family")
+    if isinstance(blockers, Mapping) and blockers and not bool(item.get("primary_card_actionable")):
+        if terminal_exact_accepted:
+            return False
+        return True
+    text = " ".join(
+        str(part or "")
+        for part in (
+            item.get("title_main"),
+            item.get("title"),
+        )
+    )
+    if design_guide_text_indicates_blocker(text):
+        expected_util = _repair_parse_util_value(
+            contract.get("expected_util")
+            or item.get("expected_util")
+            or item.get("candidate_post_util")
+            or item.get("displayed_util")
+        )
+        if (
+            has_action_contract
+            and expected_util is not None
+            and float(expected_util) < float(final_accepted_min_family_util) - float(target_band_eps)
+        ):
+            return True
+        return not has_action_contract
+    if extra_text and not bool(item.get("action_type")) and not dict(item.get("updates") or {}):
+        return design_guide_text_indicates_blocker(extra_text)
+    return False
+
+
+def design_guide_cleanup_item_publishable(item: Mapping[str, Any] | None) -> bool:
+    """Return whether a cleanup item can be published as an executable item."""
+
+    if not isinstance(item, Mapping):
+        return False
+    if design_guide_button_contract_enabled(dict(item.get("button_contract") or {})):
+        return True
+    payload = dict(item.get("action_payload") or {})
+    resolved_updates = payload.get("resolved_candidate_updates")
+    return bool(
+        (
+            str(item.get("action_type") or "") == "apply_resolved_candidate"
+            or bool(resolved_updates)
+        )
+        and resolved_updates
+        and payload.get("resolved_candidate_reaches_target_band") is not None
+    )
 
 
 def _compute_late_evidence_sync_hash(value: object) -> str:
@@ -2272,6 +3201,203 @@ def adapt_design_guide_button_contract_payload_updates(
     )
 
 
+def resolve_design_guide_button_contract_payload_update_resolution(
+    *,
+    item_index: int,
+    item: dict | None,
+    state: dict | None,
+    family: str | None,
+    effective_action_type: str | None,
+    expected_util: Any,
+    item_snapshot_before: dict | None,
+    update_family_before: str | None,
+    update_action_type_before: str | None,
+    update_expected_util_before: Any,
+    blocking_reason_override: str | None,
+    ensure_resolved_candidate_payload: Callable[..., Any],
+    resolve_recommendation_updates: Callable[..., Any],
+    updates_match_state: Callable[..., Any],
+    normalise_candidate_id: Callable[..., Any],
+    source_candidate_id: Callable[..., Any],
+) -> DesignGuideButtonContractPayloadUpdateResolutionResult:
+    """Resolve and adapt button payload/update fields without owning page state.
+
+    Page-owned state/probe functions are injected so this module owns the pure
+    payload/update normalization and selected-update adaptation flow only.
+    """
+
+    update_resolution_applicable = isinstance(item, dict) and bool(str((item or {}).get("action_type") or "").strip())
+    work = dict(item or {}) if isinstance(item, dict) else {}
+    work["action_payload"] = dict(work.get("action_payload") or {})
+    work_before = dict(work)
+    updates: dict[str, Any] = {}
+    updates_source = "none"
+    update_decision_reason: str | None = None
+    update_exception_type: str | None = None
+    payload_resolution_attempted = False
+    payload_resolution_exception_type: str | None = None
+    pre_resolved_recommendation_updates: dict[str, Any] = {}
+    pre_candidate_search_evidence: dict[str, Any] = {}
+    pre_evidence_updates: dict[str, Any] = {}
+    pre_evidence_updates_match_state: bool | None = None
+    pre_normalised_evidence_candidate_id: str | None = None
+    pre_evidence_expected_util: Any = None
+    update_resolution_input_record: DesignGuideButtonContractUpdateResolutionInputs | None = None
+    work_mutation_input_snapshot = dict(work)
+    work_mutation_output_snapshot = dict(work)
+    work_mutation_object_id_before = id(work)
+    work_mutation_object_id_after = id(work)
+    work_mutation_applied = False
+    work_mutation_selected_source = updates_source
+    work_mutation_selected_updates: dict[str, Any] = {}
+    work_mutation_selected_candidate_id: str | None = None
+    work_mutation_selected_util: Any = None
+    work_mutation_record: DesignGuideButtonContractWorkMutation | None = None
+    payload_update_adapter: DesignGuideButtonContractPayloadUpdateAdapterResult | None = None
+    resolved_family = family
+    resolved_effective_action_type = effective_action_type
+    resolved_expected_util = expected_util
+    try:
+        payload_resolution_attempted = True
+        ensure_resolved_candidate_payload(work, state=state)
+        pre_resolved_recommendation_updates = dict(resolve_recommendation_updates(work, state=state) or {})
+        payload_update_evidence = collect_design_guide_button_contract_payload_update_evidence(
+            work,
+            family=resolved_family,
+        )
+        pre_candidate_search_evidence = payload_update_evidence.candidate_search_evidence
+        pre_evidence_updates = payload_update_evidence.evidence_updates
+        pre_evidence_family = payload_update_evidence.evidence_family
+        pre_evidence_expected_util = payload_update_evidence.evidence_expected_util
+        if pre_evidence_updates and pre_evidence_family in {"bending", "shear", "combined"}:
+            pre_evidence_updates_match_state = bool(updates_match_state(state, pre_evidence_updates))
+            if not pre_evidence_updates_match_state:
+                pre_normalised_evidence_candidate_id = normalise_candidate_id(
+                    pre_candidate_search_evidence.get("selected_candidate_id"),
+                    pre_candidate_search_evidence.get("closest_safe_candidate_id"),
+                    pre_candidate_search_evidence.get("best_safe_candidate_id"),
+                    source_candidate_id(work),
+                    family=pre_evidence_family,
+                    updates=pre_evidence_updates,
+                )
+        update_resolution_input_record = build_design_guide_button_contract_payload_update_resolution_inputs(
+            item_index=item_index,
+            item=item,
+            family_before=update_family_before,
+            action_type_before=update_action_type_before,
+            updates_before=dict((item_snapshot_before or {}).get("updates") or {}),
+            expected_util_before=update_expected_util_before,
+            blocking_reason_override=blocking_reason_override,
+            work_before=work_before,
+            update_resolution_applicable=update_resolution_applicable,
+            payload_resolution_attempted=payload_resolution_attempted,
+            payload_resolution_exception_type=payload_resolution_exception_type,
+            recommendation_updates=pre_resolved_recommendation_updates,
+            evidence=payload_update_evidence,
+            evidence_updates_match_state=pre_evidence_updates_match_state,
+            normalised_evidence_candidate_id=pre_normalised_evidence_candidate_id,
+        )
+        work_mutation_input_snapshot = dict(work)
+        work_mutation_object_id_before = id(work)
+        payload_update_adapter = adapt_design_guide_button_contract_payload_updates(
+            item_index=item_index,
+            item=item,
+            work=work,
+            update_resolution_inputs=update_resolution_input_record,
+            current_family=resolved_family,
+            current_effective_action_type=resolved_effective_action_type,
+            current_expected_util=resolved_expected_util,
+            source_candidate_id_fallback=source_candidate_id(work),
+        )
+        updates = dict(payload_update_adapter.updates)
+        updates_source = str(payload_update_adapter.selected_update_source or "none").strip() or "none"
+        update_decision_reason = payload_update_adapter.update_source_reason
+        work_mutation_selected_source = updates_source
+        work_mutation_selected_updates = dict(updates)
+        work_mutation_selected_candidate_id = payload_update_adapter.selected_evidence_candidate_id
+        work_mutation_selected_util = payload_update_adapter.selected_parsed_util
+        work = dict(payload_update_adapter.work)
+        resolved_family = payload_update_adapter.family or resolved_family
+        resolved_effective_action_type = payload_update_adapter.effective_action_type or resolved_effective_action_type
+        resolved_expected_util = payload_update_adapter.expected_util
+        if (
+            payload_update_adapter.work_application is not None
+            and payload_update_adapter.work_application.mutation is not None
+        ):
+            work_mutation_record = payload_update_adapter.work_application.mutation
+            work_mutation_applied = bool(work_mutation_record.work_mutation_applied)
+        payload = dict(work.get("action_payload") or {})
+        if payload.get("resolved_candidate_updates"):
+            resolved_effective_action_type = "apply_resolved_candidate"
+        work_mutation_output_snapshot = dict(work)
+        work_mutation_object_id_after = id(work)
+    except Exception as exc:
+        update_exception_type = type(exc).__name__
+        payload_resolution_exception_type = type(exc).__name__
+        updates_source = "exception"
+        update_decision_reason = "update_resolution_exception"
+        updates = {}
+        try:
+            work_mutation_output_snapshot = dict(work)
+            work_mutation_object_id_after = id(work)
+        except Exception:
+            work = dict(work_before)
+            work_mutation_output_snapshot = dict(work)
+            work_mutation_object_id_after = id(work)
+        work_mutation_selected_source = updates_source
+        work_mutation_selected_updates = {}
+    work_after = dict(work)
+    resolution_payload = {
+        "item_index": item_index,
+        "updates": updates,
+        "updates_source": updates_source,
+        "update_decision_reason": update_decision_reason,
+        "update_exception_type": update_exception_type,
+        "family": resolved_family,
+        "effective_action_type": resolved_effective_action_type,
+        "expected_util": resolved_expected_util,
+        "work_hash": publication_snapshot_hash(work_after),
+        "payload_resolution_exception_type": payload_resolution_exception_type,
+        "update_resolution_input_hash": publication_snapshot_hash(
+            update_resolution_input_record.to_dict() if update_resolution_input_record else {}
+        ),
+    }
+    return DesignGuideButtonContractPayloadUpdateResolutionResult(
+        work=work,
+        work_before=work_before,
+        work_after=work_after,
+        updates=updates,
+        updates_source=updates_source,
+        update_decision_reason=update_decision_reason,
+        update_exception_type=update_exception_type,
+        family=resolved_family,
+        effective_action_type=resolved_effective_action_type,
+        expected_util=resolved_expected_util,
+        update_resolution_applicable=update_resolution_applicable,
+        update_resolution_input_record=update_resolution_input_record,
+        payload_resolution_attempted=payload_resolution_attempted,
+        payload_resolution_exception_type=payload_resolution_exception_type,
+        pre_resolved_recommendation_updates=pre_resolved_recommendation_updates,
+        pre_candidate_search_evidence=pre_candidate_search_evidence,
+        pre_evidence_updates=pre_evidence_updates,
+        pre_evidence_updates_match_state=pre_evidence_updates_match_state,
+        pre_normalised_evidence_candidate_id=pre_normalised_evidence_candidate_id,
+        pre_evidence_expected_util=pre_evidence_expected_util,
+        work_mutation_input_snapshot=work_mutation_input_snapshot,
+        work_mutation_output_snapshot=work_mutation_output_snapshot,
+        work_mutation_object_id_before=work_mutation_object_id_before,
+        work_mutation_object_id_after=work_mutation_object_id_after,
+        work_mutation_applied=work_mutation_applied,
+        work_mutation_selected_source=work_mutation_selected_source,
+        work_mutation_selected_updates=work_mutation_selected_updates,
+        work_mutation_selected_candidate_id=work_mutation_selected_candidate_id,
+        work_mutation_selected_util=work_mutation_selected_util,
+        work_mutation_record=work_mutation_record,
+        payload_update_adapter=payload_update_adapter,
+        resolution_hash=publication_snapshot_hash(resolution_payload),
+    )
+
+
 def evidence_with_safe_executor_rows_counted(
     evidence: dict | None,
     *,
@@ -2527,6 +3653,201 @@ def build_design_guide_button_contract_result(
         action_type=action_type,
         updates_hash=publication_snapshot_hash(dict(updates or {})),
         contract_hash=publication_snapshot_hash(contract),
+    )
+
+
+def resolve_design_guide_button_contract_state_result(
+    *,
+    item: Mapping[str, Any] | None,
+    action_type: str | None,
+    effective_action_type: str | None,
+    family: str | None,
+    updates: Mapping[str, Any] | None,
+    executor_allowed: bool,
+    preview_pass: bool,
+    expected_util: Any = None,
+    blocking_reason: str | None = None,
+) -> DesignGuideButtonContractStateResolutionResult:
+    """Resolve final button state/result from already-computed publication scalars.
+
+    This is intentionally pure: it does not render, mutate session state, execute
+    Apply, run probes, or inspect Streamlit. Page code provides the already-owned
+    callback/probe outputs and this helper shapes the final contract state.
+    """
+
+    updates_d = dict(updates or {})
+    source_candidate_id = normalise_design_guide_candidate_id(
+        guidance_item_source_candidate_id(item),
+        family=family,
+        updates=updates_d,
+    )
+    actionable = bool(action_type and updates_d and executor_allowed and not blocking_reason)
+    final_result = build_design_guide_button_contract_result(
+        actionable=actionable,
+        action_type=effective_action_type,
+        family=family,
+        updates=updates_d,
+        preview_pass=preview_pass,
+        expected_util=expected_util,
+        blocking_reason=blocking_reason,
+        source_candidate_id=source_candidate_id,
+    )
+    stable_payload = {
+        "source_candidate_id": source_candidate_id,
+        "actionable": actionable,
+        "action_type": effective_action_type,
+        "family": family,
+        "updates_hash": final_result.updates_hash,
+        "contract_hash": final_result.contract_hash,
+        "blocking_reason": blocking_reason,
+        "expected_util": expected_util,
+        "preview_pass": bool(preview_pass),
+    }
+    return DesignGuideButtonContractStateResolutionResult(
+        final_result=final_result,
+        source_candidate_id=source_candidate_id,
+        actionable=actionable,
+        action_type=effective_action_type,
+        family=family,
+        updates_hash=final_result.updates_hash,
+        contract_hash=final_result.contract_hash,
+        state_resolution_hash=publication_snapshot_hash(stable_payload),
+    )
+
+
+def build_design_guide_button_contract_execution_proof(
+    *,
+    item_index: int = 0,
+    item: dict | None = None,
+    state: dict | None = None,
+    final_contract: dict | None = None,
+    final_result: DesignGuideButtonContractFinalResult | None = None,
+    emission_context: DesignGuideButtonContractEmissionContext | None = None,
+) -> DesignGuideButtonContractExecutionProof:
+    """Build a trace-only proof around an already-resolved button contract."""
+
+    item_d = dict(item or {}) if isinstance(item, dict) else {}
+    state_d = dict(state or {}) if isinstance(state, dict) else {}
+    context_d = emission_context.to_dict() if emission_context is not None else {}
+    stable_context_d = dict(context_d)
+    stable_context_d.pop("work_mutation_object_id_before", None)
+    stable_context_d.pop("work_mutation_object_id_after", None)
+    result_d = final_result.to_dict() if final_result is not None else {}
+    contract = dict(
+        final_contract
+        or (final_result.final_contract if final_result is not None else {})
+        or context_d.get("final_contract")
+        or {}
+    )
+    updates = dict(contract.get("updates") or context_d.get("updates") or {})
+    family = (
+        contract.get("family")
+        or (final_result.family if final_result is not None else None)
+        or context_d.get("family")
+    )
+    action_type = (
+        contract.get("action_type")
+        or (final_result.action_type if final_result is not None else None)
+        or context_d.get("action_type")
+    )
+    effective_action_type = context_d.get("effective_action_type") or action_type
+    source_candidate_id = (
+        contract.get("source_candidate_id")
+        or contract.get("candidate_id")
+        or (final_result.source_candidate_id if final_result is not None else None)
+        or context_d.get("source_candidate_id")
+    )
+    blocking_reason = contract.get("blocking_reason")
+    if blocking_reason in (None, ""):
+        blocking_reason = context_d.get("blocking_reason")
+    preview_pass = contract.get("preview_pass")
+    if preview_pass is None:
+        preview_pass = context_d.get("preview_pass")
+    expected_util = contract.get("expected_util")
+    if expected_util is None:
+        expected_util = context_d.get("expected_util")
+    actionable = bool(contract.get("actionable") or (final_result.actionable if final_result is not None else False))
+    enabled = bool(actionable and updates and preview_pass is True and not blocking_reason)
+    actionability_summary = {
+        "accepted_band_cleanup": context_d.get("accepted_band_cleanup"),
+        "accepted_band_cleanup_evaluated": context_d.get("accepted_band_cleanup_evaluated"),
+        "best_safe_partial_cleanup": context_d.get("best_safe_partial_cleanup"),
+        "exact_blocker_override_applied": context_d.get("exact_blocker_override_applied"),
+        "family_exact_cleanup_blocker": context_d.get("family_exact_cleanup_blocker"),
+        "low_util_exact_blocker": context_d.get("low_util_exact_blocker"),
+        "partial_cleanup_override_applied": context_d.get("partial_cleanup_override_applied"),
+        "preview_reason": context_d.get("preview_reason"),
+        "safe_incremental_below_threshold": context_d.get("safe_incremental_below_threshold"),
+    }
+    proof_payload = {
+        "authority": "design_brain.publication.button_contract_execution_proof",
+        "item_index": int(item_index),
+        "family": family,
+        "action_type": action_type,
+        "effective_action_type": effective_action_type,
+        "enabled": enabled,
+        "actionable": actionable,
+        "preview_pass": preview_pass,
+        "expected_util": expected_util,
+        "blocking_reason": blocking_reason,
+        "source_candidate_id": source_candidate_id,
+        "updates_source": context_d.get("updates_source"),
+        "update_decision_reason": context_d.get("update_decision_reason"),
+        "executor_allowed": context_d.get("executor_allowed"),
+        "executor_reason": context_d.get("executor_reason"),
+        "executor_contract_evaluated": bool(context_d.get("executor_contract_evaluated")),
+        "final_contract_hash": publication_snapshot_hash(contract),
+        "final_contract_updates_hash": publication_snapshot_hash(updates),
+        "final_result_hash": publication_snapshot_hash(result_d),
+        "item_hash": publication_snapshot_hash(item_d),
+        "state_hash": publication_snapshot_hash(state_d),
+        "emission_context_hash": publication_snapshot_hash(stable_context_d),
+        "actionability_summary_hash": publication_snapshot_hash(actionability_summary),
+    }
+    return DesignGuideButtonContractExecutionProof(
+        item_index=int(item_index),
+        family=str(family).strip().lower() if family not in (None, "") else None,
+        action_type=str(action_type).strip() if action_type not in (None, "") else None,
+        effective_action_type=(
+            str(effective_action_type).strip()
+            if effective_action_type not in (None, "")
+            else None
+        ),
+        enabled=enabled,
+        actionable=actionable,
+        preview_pass=preview_pass if preview_pass is None else bool(preview_pass),
+        expected_util=expected_util,
+        blocking_reason=str(blocking_reason).strip() if blocking_reason not in (None, "") else None,
+        source_candidate_id=(
+            str(source_candidate_id).strip()
+            if source_candidate_id not in (None, "")
+            else None
+        ),
+        updates_source=(
+            str(context_d.get("updates_source")).strip()
+            if context_d.get("updates_source") not in (None, "")
+            else None
+        ),
+        update_decision_reason=(
+            str(context_d.get("update_decision_reason")).strip()
+            if context_d.get("update_decision_reason") not in (None, "")
+            else None
+        ),
+        executor_allowed=context_d.get("executor_allowed"),
+        executor_reason=(
+            str(context_d.get("executor_reason")).strip()
+            if context_d.get("executor_reason") not in (None, "")
+            else None
+        ),
+        executor_contract_evaluated=bool(context_d.get("executor_contract_evaluated")),
+        final_contract_hash=proof_payload["final_contract_hash"],
+        final_contract_updates_hash=proof_payload["final_contract_updates_hash"],
+        final_result_hash=proof_payload["final_result_hash"],
+        item_hash=proof_payload["item_hash"],
+        state_hash=proof_payload["state_hash"],
+        emission_context_hash=proof_payload["emission_context_hash"],
+        actionability_summary_hash=proof_payload["actionability_summary_hash"],
+        execution_proof_hash=publication_snapshot_hash(proof_payload),
     )
 
 
@@ -2821,6 +4142,21 @@ def resolve_design_guide_button_contract_actionability_scalars(
         if expected_util is None:
             expected_util = preview_util
         if not preview_pass:
+            active_strength_override_applied = (
+                design_guide_active_strength_repair_target_band_override_applies(
+                    item=item,
+                    preview_reason=preview_reason,
+                    executor_allowed=executor_allowed,
+                )
+            )
+            if active_strength_override_applied:
+                preview_pass = True
+                blocking_reason = None
+                executor_allowed = True
+                best_safe_partial_cleanup = True
+                partial_cleanup_override_applied = True
+                if preview_util is not None:
+                    expected_util = preview_util
             below_final_min = False
             if preview_util is not None and final_min is not None and eps is not None:
                 try:
@@ -2828,12 +4164,16 @@ def resolve_design_guide_button_contract_actionability_scalars(
                 except (TypeError, ValueError):
                     below_final_min = False
             if (
+                not active_strength_override_applied
+                and
                 safe_incremental_below_threshold
                 and local_cleanup_post_apply_acceptance_matches
                 and below_final_min
             ):
                 blocking_reason = "post_click_safe_incremental_cleanup_requires_exact_blocker"
             if (
+                not active_strength_override_applied
+                and
                 raw_probe_outputs.partial_cleanup_override_applied
                 and str(preview_reason or "").strip()
                 in {
@@ -2845,10 +4185,14 @@ def resolve_design_guide_button_contract_actionability_scalars(
                 blocking_reason = None
                 executor_allowed = True
                 partial_cleanup_override_applied = True
-            elif str(preview_reason or "").strip() in {
-                "candidate_preview_not_in_target_band",
-                "candidate_preview_not_in_target_band_after_active_failure",
-            }:
+            elif (
+                not active_strength_override_applied
+                and str(preview_reason or "").strip()
+                in {
+                    "candidate_preview_not_in_target_band",
+                    "candidate_preview_not_in_target_band_after_active_failure",
+                }
+            ):
                 if accepted_band_cleanup and (executor_allowed or not executor_reason):
                     preview_pass = True
                     expected_util = (
@@ -2861,7 +4205,7 @@ def resolve_design_guide_button_contract_actionability_scalars(
                     accepted_band_override_applied = True
                 else:
                     blocking_reason = blocking_reason or preview_reason or "preview_failed"
-            else:
+            elif not active_strength_override_applied:
                 blocking_reason = blocking_reason or preview_reason or "preview_failed"
         elif raw_probe_outputs.partial_cleanup_override_applied:
             executor_allowed = True
@@ -5369,6 +6713,303 @@ def _publication_int_from_state(state: dict, key: str, default: int) -> int:
         return int(default)
 
 
+DESIGN_GUIDE_PUBLICATION_CACHE_PREFIX = "dg_publication_cache_v2026_05_09_stale_payload_guard"
+DEFAULT_DESIGN_GUIDE_ALGORITHM_VERSION = "active_strength_repair_publication_v29"
+
+_DESIGN_GUIDE_PUBLICATION_FP_EXPLICIT_KEYS = (
+    "beam_type",
+    "sec_shape",
+    "b",
+    "bw",
+    "D",
+    "d",
+    "L",
+    "span",
+    "span_L_m",
+    "bf",
+    "tf",
+    "tw",
+    "bf_bot",
+    "tf_bot",
+    "cover_top",
+    "cover_bot",
+    "cover_side",
+    "fc",
+    "fsy",
+    "fsyv",
+    "Es",
+    "Ec",
+    "uls_Mstar",
+    "uls_Vstar",
+    "uls_Nstar",
+    "Tu_star",
+    "sls_Mstar",
+    "sls_Vstar",
+    "actions_mode",
+    "actions_source",
+    "loads_edit_mode",
+    "bot_row_count",
+    "bot1_layout_mode",
+    "bot1_count",
+    "bot1_spacing",
+    "db_bot_1",
+    "bot2_layout_mode",
+    "bot2_count",
+    "bot2_spacing",
+    "db_bot_2",
+    "bot_row_1_mode",
+    "bot_row_1_bars",
+    "bot_row_1_spacing",
+    "bot_row_1_dia",
+    "bot_row_2_mode",
+    "bot_row_2_bars",
+    "bot_row_2_spacing",
+    "bot_row_2_dia",
+    "top_row_count",
+    "top1_layout_mode",
+    "top1_count",
+    "top1_spacing",
+    "db_top_1",
+    "top2_layout_mode",
+    "top2_count",
+    "top2_spacing",
+    "db_top_2",
+    "top_row_1_mode",
+    "top_row_1_bars",
+    "top_row_1_spacing",
+    "top_row_1_dia",
+    "top_row_2_mode",
+    "top_row_2_bars",
+    "top_row_2_spacing",
+    "top_row_2_dia",
+    "lig_d",
+    "lig_legs",
+    "s_lig",
+    "link_d",
+    "link_legs",
+    "link_spacing",
+    "crack_limit",
+    "deflection_limit",
+    "creep_coeff",
+    "shrinkage_strain",
+    "results_version",
+)
+
+_DESIGN_GUIDE_PUBLICATION_FP_KEY_TOKENS = (
+    "action",
+    "beam",
+    "bot",
+    "cover",
+    "crack",
+    "creep",
+    "deflect",
+    "depth",
+    "dia",
+    "fc",
+    "fsy",
+    "geometry",
+    "lig",
+    "link",
+    "load",
+    "mstar",
+    "nstar",
+    "reo",
+    "service",
+    "shrink",
+    "sls",
+    "span",
+    "top",
+    "tu_star",
+    "vstar",
+    "width",
+)
+
+_DESIGN_GUIDE_PUBLICATION_FP_PREFIXES = (
+    "actions_",
+    "bot_flange_",
+    "bot_row_",
+    "load_",
+    "sfd_",
+    "sls_",
+    "top_flange_",
+    "top_row_",
+    "uls_",
+)
+
+_DESIGN_GUIDE_PUBLICATION_FP_SKIP_PREFIXES = (
+    "_",
+    "ast_",
+    "final_",
+    "published_",
+    "shear_",
+    "shear_governing_",
+    "shear_truth_",
+    "ybar_",
+    "zbot_",
+    "ztop_",
+)
+
+_DESIGN_GUIDE_PUBLICATION_FP_SKIP_TOKENS = (
+    "_coords",
+    "_resolved",
+    "cache",
+    "capacity",
+    "governing",
+    "publication",
+    "truth",
+    "util",
+)
+
+_DESIGN_GUIDE_PUBLICATION_FP_SKIP_KEYS = {
+    "actions_sls",
+    "actions_uls",
+    "b_crack",
+    "bot_entry",
+    "db_bot",
+    "db_top",
+    "nb_bot",
+    "nb_top",
+    "s_bar_bot",
+    "s_bar_top",
+    "s_bot",
+    "s_top",
+    "top_entry",
+}
+
+
+def design_guide_publication_fingerprint_value(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return tuple(
+            (str(k), design_guide_publication_fingerprint_value(v))
+            for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))
+        )
+    if isinstance(value, (list, tuple, set)):
+        return tuple(design_guide_publication_fingerprint_value(v) for v in value)
+    return str(value)
+
+
+def canonical_effective_depth_for_publication(source: dict | None) -> float | None:
+    """Return the stable derived d used only for Design Guide payload freshness."""
+
+    s = dict(source or {})
+    try:
+        D = float(s.get("D", 0.0) or 0.0)
+        cover_bot = float(s.get("cover_bot", 0.0) or 0.0)
+        lig_d = float(s.get("lig_d", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return None
+    if D <= 0.0:
+        return None
+    primary_bar_dia = 0.0
+    for row in (1, 2, 3, 4):
+        count_raw = s.get(f"bot_row_{row}_bars", s.get(f"bot{row}_count", 0))
+        try:
+            row_active = int(float(count_raw or 0)) > 0
+        except (TypeError, ValueError):
+            row_active = bool(count_raw)
+        if not row_active:
+            continue
+        dia_raw = s.get(f"bot_row_{row}_dia", s.get(f"db_bot_{row}", 0.0))
+        try:
+            dia = float(dia_raw or 0.0)
+        except (TypeError, ValueError):
+            dia = 0.0
+        if dia > 0.0:
+            primary_bar_dia = dia
+            break
+    if primary_bar_dia <= 0.0:
+        for key in ("bot_row_1_dia", "db_bot_1", "db_bot"):
+            try:
+                primary_bar_dia = float(s.get(key, 0.0) or 0.0)
+            except (TypeError, ValueError):
+                primary_bar_dia = 0.0
+            if primary_bar_dia > 0.0:
+                break
+    return float(D - (cover_bot + lig_d + 0.5 * primary_bar_dia))
+
+
+def design_guide_publication_state_payload_from_plain_data(
+    state: dict | None,
+    *,
+    session_controls: dict | None = None,
+    design_actions_signature: Iterable[Any] | None = None,
+    optimisation_goal: str | None = None,
+) -> dict:
+    source = dict(state or {})
+    for row in (2, 3, 4):
+        bot_count = source.get(f"bot{row}_count", source.get(f"bot_row_{row}_bars", 0))
+        try:
+            bot_active = int(bot_count or 0) > 0
+        except Exception:
+            bot_active = bool(bot_count)
+        if not bot_active:
+            source[f"db_bot_{row}"] = 0
+            source[f"bot_row_{row}_dia"] = 0
+        top_count = source.get(f"top{row}_count", source.get(f"top_row_{row}_bars", 0))
+        try:
+            top_active = int(top_count or 0) > 0
+        except Exception:
+            top_active = bool(top_count)
+        if not top_active:
+            source[f"db_top_{row}"] = 0
+            source[f"top_row_{row}_dia"] = 0
+    canonical_d = canonical_effective_depth_for_publication(source)
+    if canonical_d is not None:
+        source["d"] = canonical_d
+    payload: dict = {}
+    for key in _DESIGN_GUIDE_PUBLICATION_FP_EXPLICIT_KEYS:
+        if key in source:
+            payload[key] = design_guide_publication_fingerprint_value(source.get(key))
+    for key in sorted(source.keys(), key=str):
+        key_text = str(key)
+        key_norm = key_text.lower()
+        if key_norm.startswith("design_guide_") or key_norm.startswith("_design_guide"):
+            continue
+        if key_norm in _DESIGN_GUIDE_PUBLICATION_FP_SKIP_KEYS:
+            continue
+        if key_norm.startswith(_DESIGN_GUIDE_PUBLICATION_FP_SKIP_PREFIXES):
+            continue
+        if any(token in key_norm for token in _DESIGN_GUIDE_PUBLICATION_FP_SKIP_TOKENS):
+            continue
+        if key_text in payload:
+            continue
+        if key_norm.startswith(_DESIGN_GUIDE_PUBLICATION_FP_PREFIXES) or any(
+            token in key_norm for token in _DESIGN_GUIDE_PUBLICATION_FP_KEY_TOKENS
+        ):
+            payload[key_text] = design_guide_publication_fingerprint_value(source.get(key))
+    if session_controls:
+        payload["session_controls"] = design_guide_publication_fingerprint_value(
+            dict(session_controls)
+        )
+    payload["design_actions_signature"] = tuple(design_actions_signature or ())
+    payload["optimisation_goal"] = str(optimisation_goal or "")
+    return payload
+
+
+def design_guide_cache_fingerprint_from_plain_data(
+    state: dict | None,
+    *,
+    session_controls: dict | None = None,
+    design_actions_signature: Iterable[Any] | None = None,
+    optimisation_goal: str | None = None,
+    algorithm_version: str = DEFAULT_DESIGN_GUIDE_ALGORITHM_VERSION,
+) -> tuple:
+    return (
+        DESIGN_GUIDE_PUBLICATION_CACHE_PREFIX,
+        str(algorithm_version or DEFAULT_DESIGN_GUIDE_ALGORITHM_VERSION),
+        _stable_fingerprint_for_payload(
+            design_guide_publication_state_payload_from_plain_data(
+                state,
+                session_controls=session_controls,
+                design_actions_signature=design_actions_signature,
+                optimisation_goal=optimisation_goal,
+            )
+        ),
+    )
+
+
 def design_guide_primary_apply_state_fingerprint_from_state(
     state: dict | None,
     *,
@@ -5414,7 +7055,16 @@ def guidance_item_is_active_strength_repair_action(item: dict | None) -> bool:
     )
     return bool(
         action_type == "apply_resolved_candidate"
-        and family in {"bending", "shear", "combined"}
+        and family
+        in {
+            "bending",
+            "shear",
+            "combined",
+            "combined_bending_shear_fail",
+            "combined_bending_shear_fail_govern",
+            "combined_bending_shear_fail_governs",
+            "bending_and_shear_fail_govern",
+        }
         and (
             str(item.get("guidance_intent") or "").strip() == "required_fix"
             or active_strength_title
@@ -5621,6 +7271,9 @@ def finalize_design_guide_active_failure_blocker_publication(
         elif active_family_text == "shear":
             out_blocker["title_main"] = out_blocker.get("title_main") or "Shear repair blocked by shear/detailing limits"
             out_blocker["title"] = out_blocker.get("title") or "Shear repair blocked by shear/detailing limits"
+        elif active_family_text == "serviceability":
+            out_blocker["title_main"] = out_blocker.get("title_main") or "Serviceability repair blocked"
+            out_blocker["title"] = out_blocker.get("title") or "Serviceability repair blocked"
         else:
             out_blocker["title_main"] = out_blocker.get("title_main") or "Bending repair blocked by reinforcement/detailing limits"
             out_blocker["title"] = out_blocker.get("title") or "Bending repair blocked by reinforcement/detailing limits"
@@ -5710,7 +7363,10 @@ def finalize_design_guide_active_failure_blocker_publication(
         out_blocker.update(
             {
                 "bucket": "fail",
-                "status": "FAIL",
+                "status": "BLOCKED" if active_family_text == "serviceability" else "FAIL",
+                "critical_status": "BLOCKED" if active_family_text == "serviceability" else "FAIL",
+                "display_state": "BLOCKED" if active_family_text == "serviceability" else "FAIL",
+                "outcome_state": "BLOCKED" if active_family_text == "serviceability" else "FAIL",
                 "guidance_intent": "specific_blocker",
                 "final_state_class": "blocker",
                 "active_under_capacity_blocker": True,
@@ -5834,6 +7490,35 @@ def accepted_green_exact_blocker_is_valid(blocker: dict | None) -> bool:
     blocker = normalise_accepted_green_exact_blocker(blocker)
     if not blocker:
         return False
+    family = str(blocker.get("family") or "").strip().lower()
+    source = str(blocker.get("source") or "").strip().lower()
+    blocker_text = json.dumps(blocker, sort_keys=True, default=str).lower()
+    if not family and any(
+        token in blocker_text
+        for token in (
+            "bending",
+            "bottom reinforcement",
+            "bottom_reo",
+            "ductility",
+            "k_u",
+            "ku",
+            "as_min",
+            "ast-min",
+            "minimum tensile",
+            "minimum bending",
+        )
+    ):
+        family = "bending"
+    current_util = _repair_parse_util_value(
+        blocker.get("current_util")
+        if blocker.get("current_util") not in (None, "", [], {})
+        else blocker.get("failed_check_util")
+    )
+    accepted_threshold = _repair_parse_util_value(
+        blocker.get("threshold")
+        if blocker.get("threshold") not in (None, "", [], {})
+        else blocker.get("failed_check_capacity_or_limit")
+    )
     if not bool(blocker.get("search_ran")) or not bool(blocker.get("search_exhaustive")):
         return False
     if int(blocker.get("executable_candidate_count") or blocker.get("executable_cleanup_count") or 0) > 0:
@@ -5851,6 +7536,50 @@ def accepted_green_exact_blocker_is_valid(blocker: dict | None) -> bool:
         if value in (None, "", [], {}) and field == "failed_check_capacity_or_limit":
             value = blocker.get("capacity_or_limit")
         if value in (None, "", [], {}):
+            return False
+    bending_below_accepted_threshold = (
+        family == "bending"
+        and current_util is not None
+        and accepted_threshold is not None
+        and float(current_util) < float(accepted_threshold) - 1e-9
+    )
+    # Bending low-util exact stop cannot authorize an accepted-green publication
+    # unless the full cleanup proof chain is present.  This applies even when
+    # the source/status wording changes, because the contract rule is tied to
+    # the below-threshold engineering state, not a page-local source label.
+    if family == "bending" and (
+        bending_below_accepted_threshold
+        or source == "post_click_bending_cleanup_exhaustive_search"
+        or source == "pre_render_bending_cleanup_exhaustive_search"
+        or str(blocker.get("failed_check_status") or "").strip().upper()
+        in {
+            "BLOCKED_BY_MINIMUM_BENDING_REINFORCEMENT",
+            "BLOCKED_BY_FINAL_ACCEPTED_THRESHOLD",
+        }
+    ):
+        if not bool(blocker.get("exact_stop_cleanup_proof_chain_complete")):
+            return False
+        if not bool(blocker.get("every_valid_cleanup_path_exhausted_for_contract_defined_reasons")):
+            return False
+        if not bool(blocker.get("reo_reduction_attempted_first_for_ductility")):
+            return False
+        if not bool(blocker.get("width_reduction_as_min_relief_checked")):
+            return False
+        if not bool(blocker.get("depth_reduction_as_min_relief_checked")):
+            return False
+        if not bool(blocker.get("progressive_geometry_relief_exhausted_to_contract_bounds")):
+            return False
+        if not bool(blocker.get("width_reduction_progressive_relief_exhausted_to_contract_bounds")):
+            return False
+        if not bool(blocker.get("depth_reduction_progressive_relief_exhausted_to_contract_bounds")):
+            return False
+        if int(blocker.get("width_reduction_restarted_reinforcement_candidate_count") or 0) <= 0:
+            return False
+        if int(blocker.get("depth_reduction_restarted_reinforcement_candidate_count") or 0) <= 0:
+            return False
+        if not bool(blocker.get("bottom_reo_layer_search_restarted_after_geometry_relief")):
+            return False
+        if not bool(blocker.get("layer_search_restarted_after_geometry_relief")):
             return False
     reason = str(
         blocker.get("why_reduction_would_hurt_other_design_elements")
@@ -5927,6 +7656,20 @@ def button_contract_from_payload(primary: dict, debug: dict) -> dict:
     )
 
 
+def _button_contract_candidates_from_payload(primary: dict, debug: dict) -> list[dict]:
+    candidates: list[dict] = []
+    for source in (
+        primary.get("button_contract"),
+        debug.get("primary_button_contract"),
+        debug.get("displayed_primary_button_contract"),
+        debug.get("button_contract"),
+    ):
+        candidate = _as_dict(source)
+        if candidate:
+            candidates.append(candidate)
+    return candidates
+
+
 def contract_updates_from_publication(contract: dict, primary: dict) -> dict:
     return _as_dict(
         contract.get("updates")
@@ -5937,8 +7680,107 @@ def contract_updates_from_publication(contract: dict, primary: dict) -> dict:
     )
 
 
+_PUBLICATION_SHEAR_UPDATE_KEYS = frozenset({"lig_d", "lig_legs", "s_lig"})
+_PUBLICATION_BOTTOM_UPDATE_KEYS = frozenset(
+    {
+        "db_bot",
+        "db_bot_1",
+        "db_bot_2",
+        "bot1_count",
+        "bot2_count",
+        "nb_bot",
+        "bot_row_count",
+        "bot_row_1_mode",
+        "bot_row_1_bars",
+        "bot_row_1_spacing",
+        "bot_row_1_dia",
+        "bot_row_2_mode",
+        "bot_row_2_bars",
+        "bot_row_2_spacing",
+        "bot_row_2_dia",
+        "bot_row_3_mode",
+        "bot_row_3_bars",
+        "bot_row_3_spacing",
+        "bot_row_3_dia",
+        "bot_row_4_mode",
+        "bot_row_4_bars",
+        "bot_row_4_spacing",
+        "bot_row_4_dia",
+    }
+)
+_PUBLICATION_GEOMETRY_UPDATE_KEYS = frozenset({"b", "D"})
+
+
+def _overdesign_family_id_from_updates(updates: dict | None) -> str | None:
+    update_keys = set(_as_dict(updates))
+    has_shear = bool(update_keys & _PUBLICATION_SHEAR_UPDATE_KEYS)
+    has_bottom_or_geometry = bool(
+        update_keys & (_PUBLICATION_BOTTOM_UPDATE_KEYS | _PUBLICATION_GEOMETRY_UPDATE_KEYS)
+    )
+    if has_shear and has_bottom_or_geometry:
+        return "COMBINED_OVERDESIGN"
+    if has_shear:
+        return "SHEAR_OVERDESIGN_GOVERNS"
+    if has_bottom_or_geometry:
+        return "BENDING_OVERDESIGN_GOVERNS"
+    return None
+
+
+def _canonical_cleanup_family_from_publication_updates(
+    family_id: str | None,
+    primary: dict,
+    debug: dict,
+) -> str | None:
+    family_text = str(family_id or "").strip().upper()
+    if family_text not in {
+        "COMBINED_OVERDESIGN",
+        "COMBINED_OVERDESIGN_GOVERNS",
+        "SHEAR_OVERDESIGN_GOVERNS",
+        "BENDING_OVERDESIGN_GOVERNS",
+    }:
+        return family_id
+    contract = button_contract_from_payload(primary, debug)
+    updates = contract_updates_from_publication(contract, primary)
+    canonical = _overdesign_family_id_from_updates(updates)
+    if canonical:
+        return canonical
+    return family_id
+
+
 def contract_enabled(contract: dict) -> bool:
     return bool(contract.get("enabled") or contract.get("actionable"))
+
+
+def _repair_button_contract_from_payload(primary: dict, debug: dict) -> dict:
+    fallback = button_contract_from_payload(primary, debug)
+    if debug.get("stale_apply_payload_blocked"):
+        return fallback
+    for contract in _button_contract_candidates_from_payload(primary, debug):
+        updates = contract_updates_from_publication(contract, primary)
+        action_type = str(
+            contract.get("action_type")
+            or primary.get("action_type")
+            or _as_dict(primary.get("action_payload")).get("resolved_candidate_action_type")
+            or _as_dict(primary.get("action_payload")).get("action_type")
+            or _as_dict(primary.get("resolved_candidate")).get("action_type")
+            or ""
+        ).strip()
+        blocking_reason = str(
+            contract.get("blocking_reason")
+            or contract.get("disabled_reason")
+            or primary.get("blocking_reason")
+            or ""
+        ).strip()
+        preview_pass = contract.get("preview_pass", primary.get("preview_pass", True))
+        if (
+            contract_enabled(contract)
+            and updates
+            and action_type == "apply_resolved_candidate"
+            and preview_pass is not False
+            and not blocking_reason
+        ):
+            return dict(contract)
+    return fallback
 
 
 def _load_underdesign_repair_invariant_contract() -> dict:
@@ -5976,11 +7818,104 @@ def _normalise_failure_family(family: Any) -> str | None:
         return "bending"
     if text in {"shear", "links", "ligs"}:
         return "shear"
-    if text in {"combined", "bending+shear", "bending_shear", "combined_bending_shear"}:
+    if text in {
+        "combined",
+        "bending+shear",
+        "bending_shear",
+        "combined_bending_shear",
+        "combined_bending_shear_fail",
+        "combined_bending_shear_fail_governs",
+    }:
         return "combined"
     if text in {"serviceability", "deflection"}:
         return "serviceability"
     return text
+
+
+def _overview_sources_for_publication(payload: dict, debug: dict, result: dict) -> list[dict]:
+    sources: list[dict] = []
+    for source in (
+        payload.get("overview"),
+        debug.get("current_overview"),
+        debug.get("overview"),
+        result.get("overview"),
+    ):
+        if isinstance(source, dict):
+            sources.append(dict(source))
+    return sources
+
+
+def _current_overview_sources_for_publication(payload: dict, debug: dict, result: dict) -> list[dict]:
+    sources: list[dict] = []
+    for source in (
+        payload.get("overview"),
+        debug.get("current_overview"),
+        result.get("overview"),
+    ):
+        if isinstance(source, dict):
+            sources.append(dict(source))
+    return sources
+
+
+def _publication_current_overview_proves_not_failed(
+    payload: dict,
+    debug: dict,
+    result: dict,
+    family: str,
+) -> bool:
+    family_key = str(family or "").strip().lower()
+    if family_key not in {"bending", "shear", "serviceability"}:
+        return False
+    pass_like_status_seen = False
+    fail_like_status_seen = False
+    over_limit_util_seen = False
+    for source in _current_overview_sources_for_publication(payload, debug, result):
+        statuses = _as_dict(source.get("statuses"))
+        utils = _as_dict(source.get("utils"))
+        status = str(statuses.get(family_key) or "").strip().upper()
+        util = _as_float(utils.get(family_key))
+        if status in {"FAIL", "FAILED", "NG", "ERROR"}:
+            fail_like_status_seen = True
+        if util is not None and float(util) > 1.0 + 1e-9:
+            over_limit_util_seen = True
+        if status in {"PASS", "OK", "ACCEPTED", "WARN", "NEAR LIMIT"} and (
+            util is None or float(util) <= 1.0 + 1e-9
+        ):
+            pass_like_status_seen = True
+    family_status_sources = (
+        (payload.get("family_status_current"),)
+        if _as_dict(payload.get("family_status_current"))
+        else (debug.get("family_status_current"),)
+    )
+    for source in family_status_sources:
+        row = _as_dict(_as_dict(source).get(family_key))
+        status = str(row.get("status") or "").strip().upper()
+        util = _as_float(row.get("util") or row.get("utilisation") or row.get("utilization"))
+        if status in {"FAIL", "FAILED", "NG", "ERROR"}:
+            fail_like_status_seen = True
+        if util is not None and float(util) > 1.0 + 1e-9:
+            over_limit_util_seen = True
+        if status in {"PASS", "OK", "ACCEPTED", "WARN", "NEAR LIMIT"} and (
+            util is None or float(util) <= 1.0 + 1e-9
+        ):
+            pass_like_status_seen = True
+    return bool(pass_like_status_seen and not fail_like_status_seen and not over_limit_util_seen)
+
+
+def _prune_active_failures_against_current_overview(
+    active: set[str],
+    payload: dict,
+    debug: dict,
+    result: dict,
+) -> set[str]:
+    out = set(active or set())
+    if "combined" in out:
+        out.update({"bending", "shear"})
+    return {
+        family
+        for family in out
+        if not _publication_current_overview_proves_not_failed(payload, debug, result, family)
+    }
 
 
 def _active_failures_from_publication_payload(payload: dict, debug: dict, result: dict) -> list[str]:
@@ -5992,8 +7927,7 @@ def _active_failures_from_publication_payload(payload: dict, debug: dict, result
     ]
     if explicit_payload_active:
         payload_active = set(explicit_payload_active)
-        if "combined" in payload_active:
-            payload_active.update({"bending", "shear"})
+        payload_active = _prune_active_failures_against_current_overview(payload_active, payload, debug, result)
         return sorted(family for family in payload_active if family in {"bending", "shear", "serviceability"})
     for source in (
         result.get("active_failures"),
@@ -6012,28 +7946,55 @@ def _active_failures_from_publication_payload(payload: dict, debug: dict, result
         debug.get("current_overview"),
     ):
         statuses = _as_dict(_as_dict(source).get("statuses"))
-        for family, status in statuses.items():
+        utils = _as_dict(_as_dict(source).get("utils"))
+        for family in set(statuses) | set(utils):
+            status = statuses.get(family)
+            util = _as_float(utils.get(family))
             if str(status or "").strip().upper() == "FAIL":
                 normalised = _normalise_failure_family(family)
                 if normalised:
                     active.add(normalised)
-    for source in (
-        payload.get("family_status_current"),
-        debug.get("family_status_current"),
-    ):
+            elif util is not None and float(util) > 1.0 + 1e-9:
+                normalised = _normalise_failure_family(family)
+                if normalised:
+                    active.add(normalised)
+    family_status_sources = (
+        (payload.get("family_status_current"),)
+        if _as_dict(payload.get("family_status_current"))
+        else (debug.get("family_status_current"),)
+    )
+    for source in family_status_sources:
         for family, row in _as_dict(source).items():
-            status = row.get("status") if isinstance(row, dict) else row
+            row_d = _as_dict(row)
+            status = row_d.get("status") if isinstance(row, dict) else row
+            util = _as_float(
+                row_d.get("util")
+                or row_d.get("utilisation")
+                or row_d.get("utilization")
+            )
             if str(status or "").strip().upper() == "FAIL":
+                normalised = _normalise_failure_family(family)
+                if normalised:
+                    active.add(normalised)
+            elif util is not None and float(util) > 1.0 + 1e-9:
                 normalised = _normalise_failure_family(family)
                 if normalised:
                     active.add(normalised)
     if "combined" in active:
         active.update({"bending", "shear"})
+    active = _prune_active_failures_against_current_overview(active, payload, debug, result)
     return sorted(family for family in active if family in {"bending", "shear", "serviceability"})
 
 
 def _publication_signals_bending_failure(primary: dict, debug: dict) -> bool:
-    text = _publication_text(primary, debug, include_debug=False) or _publication_text(primary, debug)
+    text = " ".join(
+        part
+        for part in (
+            _publication_text(primary, debug, include_debug=False),
+            _publication_text(primary, debug, include_debug=True),
+        )
+        if part
+    )
     return any(
         token in text
         for token in (
@@ -6048,7 +8009,14 @@ def _publication_signals_bending_failure(primary: dict, debug: dict) -> bool:
 
 
 def _publication_signals_shear_failure(primary: dict, debug: dict) -> bool:
-    text = _publication_text(primary, debug, include_debug=False) or _publication_text(primary, debug)
+    text = " ".join(
+        part
+        for part in (
+            _publication_text(primary, debug, include_debug=False),
+            _publication_text(primary, debug, include_debug=True),
+        )
+        if part
+    )
     return any(
         token in text
         for token in (
@@ -6116,7 +8084,44 @@ def _raw_state_flags_from_publication(
     if _publication_signals_shear_failure(primary, debug):
         active_failures.add("shear")
         text_signals["shear_failure"] = True
+    active_failures = _prune_active_failures_against_current_overview(
+        active_failures,
+        payload,
+        debug,
+        result,
+    )
     publication_text = _publication_text(primary, debug, include_debug=False)
+    family_context: set[str] = set()
+    for source in (
+        payload,
+        primary,
+        debug,
+        result,
+        _as_dict(primary.get("button_contract")),
+        _as_dict(primary.get("action_payload")),
+        _as_dict(primary.get("resolved_candidate")),
+        _as_dict(primary.get("candidate_search_evidence")),
+    ):
+        if not isinstance(source, dict):
+            continue
+        for key in (
+            "selected_family_id",
+            "selected_family",
+            "published_family_id",
+            "cta_family_id",
+            "candidate_family_id",
+            "card_family_id",
+            "apply_payload_family_id",
+            "governing_family",
+            "governing_state",
+        ):
+            raw = str(source.get(key) or "").strip().upper()
+            if raw:
+                family_context.add(raw)
+    for raw in _as_list(primary.get("matched_family_ids")) + _as_list(debug.get("matched_family_ids")):
+        text = str(raw or "").strip().upper()
+        if text:
+            family_context.add(text)
     geometry_statuses = {
         family: _status_from_publication(payload, debug, family)
         for family in ("geometry", "detailing", "spacing", "cover")
@@ -6124,6 +8129,14 @@ def _raw_state_flags_from_publication(
     geometry_detailing_fail = any(
         str(status or "").strip().upper() == "FAIL"
         for status in geometry_statuses.values()
+    ) or "GEOMETRY_DETAILING_GOVERNS" in family_context or any(
+        token in publication_text
+        for token in (
+            "depth-to-width ratio",
+            "depth/width ratio",
+            "geometry needs correction",
+            "geometry/detailing contract",
+        )
     ) or any(
         token in publication_text
         for token in (
@@ -6140,6 +8153,9 @@ def _raw_state_flags_from_publication(
     bending_status = _status_from_publication(payload, debug, "bending")
     shear_status = _status_from_publication(payload, debug, "shear")
     serviceability_status = _status_from_publication(payload, debug, "serviceability")
+    non_applicable_statuses = {"", "NOT_RUN", "NOT RUN", "CAPACITY", "INFO", "NOT SUPPLIED"}
+    bending_not_applicable = bending_utilisation is None and str(bending_status or "").strip().upper() in non_applicable_statuses
+    shear_not_applicable = shear_utilisation is None and str(shear_status or "").strip().upper() in non_applicable_statuses
     exact_text = "exact" in publication_text and "stop" in publication_text
     efficient_text = "design is efficient" in publication_text or "target band reached" in publication_text
     repair_payload = _repair_action_payload_from_publication(
@@ -6205,6 +8221,8 @@ def _raw_state_flags_from_publication(
         "repair_required": bool(active_failures & {"bending", "shear", "serviceability"}),
         "exact_stop_proven": bool(exact_text),
         "bending_acceptable": (
+            bending_not_applicable
+            or
             str(bending_status or "").strip().upper() in {"PASS", "OK", "ACCEPTED", "WARN", "NEAR LIMIT"}
             or (
                 bending_utilisation is not None
@@ -6213,6 +8231,8 @@ def _raw_state_flags_from_publication(
             )
         ),
         "shear_acceptable": (
+            shear_not_applicable
+            or
             str(shear_status or "").strip().upper() in {"PASS", "OK", "ACCEPTED", "WARN", "NEAR LIMIT"}
             or (
                 shear_utilisation is not None
@@ -6220,6 +8240,8 @@ def _raw_state_flags_from_publication(
                 and "shear" not in active_failures
             )
         ),
+        "bending_not_applicable": bool(bending_not_applicable),
+        "shear_not_applicable": bool(shear_not_applicable),
         "target_band_terminal_signal": bool(efficient_text),
     }
     evidence = {
@@ -6371,6 +8393,9 @@ def _selected_family_id_from_publication(payload: dict, primary: dict, debug: di
         or ""
     ).strip()
     if explicit:
+        canonical = _canonical_cleanup_family_from_publication_updates(explicit, primary, debug)
+        if canonical != explicit:
+            return canonical, "explicit_update_canonical"
         return explicit, "explicit"
     active = _active_failures_from_publication_payload(payload, debug, result)
     if {"bending", "shear"}.issubset(set(active)):
@@ -6395,13 +8420,33 @@ def _candidate_family_id_from_publication(primary: dict, debug: dict) -> str | N
         or primary.get("check_key")
         or primary.get("selected_action_family")
     )
+    raw_text = str(raw_family or "").strip().upper()
+    canonical_family_ids = {
+        "COMBINED_OVERDESIGN",
+        "SHEAR_OVERDESIGN_GOVERNS",
+        "BENDING_OVERDESIGN_GOVERNS",
+        "COMBINED_BENDING_SHEAR_FAIL",
+        "SHEAR_FAIL_GOVERNS",
+        "BENDING_FAIL_GOVERNS",
+        "GEOMETRY_DETAILING_GOVERNS",
+        "SERVICEABILITY_GOVERNS",
+        "TARGET_BAND_REACHED",
+        "EXACT_STOP_PROVEN",
+    }
+    if raw_text in canonical_family_ids:
+        return raw_text
     normalised = _normalise_failure_family(raw_family)
+    publication_text = _publication_text(primary, debug, include_debug=False) or _publication_text(primary, debug)
+    cleanup_publication = any(
+        token in publication_text
+        for token in ("cleanup", "optimisation", "optimization", "overdesign", "efficient")
+    )
     if normalised == "combined":
-        return "COMBINED_BENDING_SHEAR_FAIL"
+        return "COMBINED_OVERDESIGN" if cleanup_publication else "COMBINED_BENDING_SHEAR_FAIL"
     if normalised == "shear":
-        return "SHEAR_FAIL_GOVERNS"
+        return "SHEAR_OVERDESIGN_GOVERNS" if cleanup_publication else "SHEAR_FAIL_GOVERNS"
     if normalised == "bending":
-        return "BENDING_FAIL_GOVERNS"
+        return "BENDING_OVERDESIGN_GOVERNS" if cleanup_publication else "BENDING_FAIL_GOVERNS"
     if normalised == "serviceability":
         return "SERVICEABILITY_GOVERNS"
     return None
@@ -6421,6 +8466,12 @@ def _published_family_id_from_publication(
         or ""
     ).strip()
     if explicit:
+        canonical = _canonical_cleanup_family_from_publication_updates(explicit, primary, debug)
+        if (
+            selected_family_id
+            and canonical in {selected_family_id, "SHEAR_OVERDESIGN_GOVERNS", "BENDING_OVERDESIGN_GOVERNS"}
+        ):
+            return canonical
         return explicit
     blocked_type = _blocked_publication_type(primary, debug, result)
     if blocked_type:
@@ -6447,6 +8498,12 @@ def _cta_family_id_from_publication(
 ) -> str | None:
     explicit = str(primary.get("cta_family_id") or debug.get("cta_family_id") or "").strip()
     if explicit:
+        canonical = _canonical_cleanup_family_from_publication_updates(explicit, primary, debug)
+        if (
+            selected_family_id
+            and canonical in {selected_family_id, "SHEAR_OVERDESIGN_GOVERNS", "BENDING_OVERDESIGN_GOVERNS"}
+        ):
+            return canonical
         return explicit
     contract = button_contract_from_payload(primary, debug)
     if not contract_enabled(contract):
@@ -6454,6 +8511,8 @@ def _cta_family_id_from_publication(
     text = _publication_text(primary, debug, include_debug=False) or _publication_text(primary, debug)
     if any(token in text for token in ("cleanup", "optimisation", "optimization")):
         mechanical = _normalise_failure_family(contract.get("family") or primary.get("family"))
+        if selected_family_id == "COMBINED_OVERDESIGN" and mechanical in {"bending", "shear"}:
+            return "COMBINED_OVERDESIGN"
         if mechanical == "combined":
             return "COMBINED_OVERDESIGN"
         if mechanical == "shear":
@@ -6464,7 +8523,7 @@ def _cta_family_id_from_publication(
 
 
 def _repair_action_payload_from_publication(primary: dict, debug: dict, active_failures: list[str]) -> dict:
-    contract = button_contract_from_payload(primary, debug)
+    contract = _repair_button_contract_from_payload(primary, debug)
     updates = contract_updates_from_publication(contract, primary)
     action_payload = _as_dict(primary.get("action_payload"))
     resolved = _as_dict(primary.get("resolved_candidate"))
@@ -6511,6 +8570,199 @@ def _repair_action_payload_from_publication(primary: dict, debug: dict, active_f
             "resolved_candidate": dict(resolved),
         }
     return {}
+
+
+def _cleanup_action_payload_from_publication(primary: dict, debug: dict) -> dict:
+    contract = button_contract_from_payload(primary, debug)
+    updates = contract_updates_from_publication(contract, primary)
+    action_payload = _as_dict(primary.get("action_payload"))
+    resolved = _as_dict(primary.get("resolved_candidate"))
+    action_type = str(
+        contract.get("action_type")
+        or primary.get("action_type")
+        or action_payload.get("resolved_candidate_action_type")
+        or action_payload.get("action_type")
+        or resolved.get("action_type")
+        or ""
+    ).strip()
+    family = _normalise_failure_family(
+        contract.get("family")
+        or primary.get("family")
+        or primary.get("check_key")
+        or primary.get("selected_action_family")
+        or action_payload.get("family")
+        or action_payload.get("resolved_candidate_family_tag")
+        or resolved.get("family")
+        or resolved.get("recommendation_family_tag")
+    )
+    cleanup_family_ids = {
+        "COMBINED_OVERDESIGN",
+        "SHEAR_OVERDESIGN_GOVERNS",
+        "BENDING_OVERDESIGN_GOVERNS",
+    }
+    family_context: set[str] = set()
+    for source in (contract, primary, debug, action_payload, resolved):
+        if not isinstance(source, dict):
+            continue
+        for key in (
+            "selected_family_id",
+            "published_family_id",
+            "cta_family_id",
+            "candidate_family_id",
+            "card_family_id",
+            "apply_payload_family_id",
+            "governing_family",
+            "governing_state",
+        ):
+            raw = str(source.get(key) or "").strip().upper()
+            if raw:
+                family_context.add(raw)
+    text = " ".join(
+        part
+        for part in (
+            _publication_text(primary, debug, include_debug=False),
+            _publication_text(primary, debug, include_debug=True),
+        )
+        if part
+    )
+    cleanup_text = any(token in text for token in ("cleanup", "optimisation", "optimization", "overdesign"))
+    cleanup_text = cleanup_text or bool(family_context & cleanup_family_ids)
+    blocking_reason = str(contract.get("blocking_reason") or primary.get("blocking_reason") or "").strip()
+    preview_pass = contract.get("preview_pass", primary.get("preview_pass", True))
+    if (
+        updates
+        and action_type == "apply_resolved_candidate"
+        and preview_pass is not False
+        and family in {"bending", "shear", "combined"}
+        and cleanup_text
+        and not blocking_reason
+    ):
+        return {
+            "contract": dict(contract),
+            "updates": dict(updates),
+            "action_type": action_type,
+            "family": family,
+            "action_payload": dict(action_payload),
+            "resolved_candidate": dict(resolved),
+        }
+    return {}
+
+
+def _recover_cleanup_action_publication_item(
+    primary: dict,
+    debug: dict,
+    diagnostics: dict,
+    *,
+    cleanup_payload: dict,
+    selected_family_id: str | None,
+    candidate_family_id: str | None,
+    source: str,
+) -> dict:
+    recovered = dict(primary)
+    contract = dict(cleanup_payload.get("contract") or {})
+    updates = dict(cleanup_payload.get("updates") or {})
+    owner_family = _normalise_failure_family(contract.get("family") or cleanup_payload.get("family"))
+    title = str(
+        debug.get("primary_title")
+        or debug.get("selected_title")
+        or debug.get("primary_card_title")
+        or recovered.get("original_title")
+        or "Design is safe - optional cleanup available"
+    ).strip()
+    summary = str(
+        debug.get("primary_summary")
+        or debug.get("selected_summary")
+        or debug.get("summary_line")
+        or recovered.get("original_summary")
+        or "Run one-click auto design."
+    ).strip()
+    for stale_key in (
+        "blocker_explanation",
+        "blocking_reason",
+        "family_match_violation_reason",
+        "blocked_publication_type",
+        "blocked_published_family_id",
+        "blocked_cta_family_id",
+        "blocked_card_family_id",
+    ):
+        recovered.pop(stale_key, None)
+    contract.update(
+        {
+            "enabled": True,
+            "actionable": True,
+            "action_type": "apply_resolved_candidate",
+            "updates": dict(updates),
+            "blocking_reason": None,
+            "disabled_reason": None,
+            "selected_family_id": selected_family_id,
+            "published_family_id": selected_family_id,
+            "cta_family_id": selected_family_id,
+            "candidate_family_id": candidate_family_id,
+            "family_selection_contract": FAMILY_SELECTION_CONTRACT_ID,
+            "family_match_passed": True,
+        }
+    )
+    recovered.update(
+        {
+            "title_main": title,
+            "title": title,
+            "headline": title,
+            "summary_line": summary,
+            "primary_action": summary,
+            "reasoning": summary,
+            "family": owner_family or recovered.get("family") or recovered.get("check_key"),
+            "check_key": owner_family or recovered.get("check_key") or recovered.get("family"),
+            "selected_action_family": owner_family or recovered.get("selected_action_family"),
+            "guidance_intent": "efficiency_tightening",
+            "status": "EFFICIENCY",
+            "critical_status": "EFFICIENCY",
+            "bucket": "efficiency",
+            "tone": "info",
+            "pill": "RECOMMEND",
+            "display_state": "ACTION",
+            "final_state_class": "action",
+            "action_type": "apply_resolved_candidate",
+            "updates": dict(updates),
+            "selected_action_updates": dict(updates),
+            "resolved_candidate_updates": dict(updates),
+            "selected_family": selected_family_id,
+            "selected_family_id": selected_family_id,
+            "published_family_id": selected_family_id,
+            "cta_family_id": selected_family_id,
+            "candidate_family_id": candidate_family_id,
+            "card_family_id": selected_family_id,
+            "apply_payload_family_id": selected_family_id,
+            "family_selection_source": source,
+            "family_selection_contract": FAMILY_SELECTION_CONTRACT_ID,
+            "family_chooser_contract": FAMILY_CHOOSER_CONTRACT_ID,
+            "family_match_passed": True,
+            "primary_card_actionable": True,
+            "button_contract": dict(contract),
+        }
+    )
+    if cleanup_payload.get("action_payload"):
+        action_payload = dict(cleanup_payload.get("action_payload") or {})
+        action_payload.setdefault("updates", dict(updates))
+        action_payload.setdefault("resolved_candidate_updates", dict(updates))
+        recovered["action_payload"] = dict(action_payload)
+    if cleanup_payload.get("resolved_candidate"):
+        resolved = dict(cleanup_payload.get("resolved_candidate") or {})
+        resolved.setdefault("updates", dict(updates))
+        recovered["resolved_candidate"] = dict(resolved)
+    evidence = _as_dict(recovered.get("candidate_search_evidence"))
+    evidence.update(
+        {
+            **diagnostics,
+            "published_family_id": selected_family_id,
+            "cta_family_id": selected_family_id,
+            "card_family_id": selected_family_id,
+            "family_match_passed": True,
+            "family_match_violation_reason": None,
+            "stale_family_contract_violation_recovered_to_cleanup_action": True,
+        }
+    )
+    recovered["candidate_search_evidence"] = dict(evidence)
+    return recovered
 
 
 def _family_selection_safe_item(primary: dict, diagnostics: dict) -> dict:
@@ -6560,8 +8812,14 @@ def _family_selection_safe_item(primary: dict, diagnostics: dict) -> dict:
             "raw_state_flags": dict(diagnostics.get("raw_state_flags") or {}),
             "family_match_passed": False,
             "family_match_violation_reason": diagnostics.get("family_match_violation_reason"),
-            "status": "FAIL",
-            "critical_status": "FAIL",
+            "status": "ERROR",
+            "critical_status": "ERROR",
+            "bucket": "error",
+            "tone": "error",
+            "pill": "ERROR",
+            "display_state": "ERROR",
+            "final_state_class": "blocker",
+            "blocker_explanation": "family_selection_contract_mismatch",
             "guidance_intent": "required_fix",
             "primary_action": "Publication blocked by family contract.",
             "reasoning": "A wrong-family publication was blocked before the final Design Guide render.",
@@ -6577,6 +8835,354 @@ def _family_selection_safe_item(primary: dict, diagnostics: dict) -> dict:
     )
     evidence = _as_dict(item.get("candidate_search_evidence"))
     evidence.update(diagnostics)
+    item["candidate_search_evidence"] = dict(evidence)
+    return item
+
+
+def _is_family_selection_contract_violation_publication(primary: dict | None) -> bool:
+    item = _as_dict(primary)
+    title = str(item.get("title_main") or item.get("title") or item.get("headline") or "").strip().lower()
+    reason = str(item.get("blocker_explanation") or item.get("family_match_violation_reason") or "").strip().lower()
+    return bool(
+        title == "design guide family contract violation"
+        or "family contract violation" in title
+        or reason in {"family_selection_contract_mismatch", "wrong_family_publication"}
+    )
+
+
+def _target_band_reached_publication_item(primary: dict, diagnostics: dict) -> dict:
+    item = dict(primary)
+    for stale_key in (
+        "button_contract",
+        "action_payload",
+        "resolved_candidate",
+        "selected_action_updates",
+        "updates",
+        "blocking_reason",
+        "blocker_explanation",
+        "family_match_violation_reason",
+    ):
+        item.pop(stale_key, None)
+    selected = str(diagnostics.get("selected_family_id") or "TARGET_BAND_REACHED").strip()
+    item.update(
+        {
+            "title_main": "Design is efficient",
+            "title": "Design is efficient",
+            "headline": "Design is efficient",
+            "governing_label": "Design is efficient",
+            "summary_line": "All checks pass.",
+            "family": selected,
+            "check_key": selected,
+            "selected_family_id": selected,
+            "selected_family": selected,
+            "selection_reason": diagnostics.get("selection_reason"),
+            "selected_family_reason": diagnostics.get("selected_family_reason"),
+            "published_family_id": selected,
+            "cta_family_id": selected,
+            "candidate_family_id": selected,
+            "card_family_id": selected,
+            "family_selection_source": diagnostics.get("family_selection_source"),
+            "family_selection_contract": FAMILY_SELECTION_CONTRACT_ID,
+            "family_chooser_contract": FAMILY_CHOOSER_CONTRACT_ID,
+            "rejected_families": dict(diagnostics.get("rejected_families") or {}),
+            "selection_evidence": dict(diagnostics.get("selection_evidence") or {}),
+            "matched_family_ids": list(diagnostics.get("matched_family_ids") or [selected]),
+            "raw_state_flags": dict(diagnostics.get("raw_state_flags") or {}),
+            "family_match_passed": True,
+            "family_match_violation_reason": None,
+            "status": "PASS",
+            "critical_status": "PASS",
+            "bucket": "pass",
+            "tone": "pass",
+            "pill": "PASS",
+            "display_state": "PASS",
+            "final_state_class": "pass",
+            "guidance_intent": "already_efficient",
+            "primary_action": "All checks pass.",
+            "reasoning": "All checks pass.",
+            "button_contract": {
+                "enabled": False,
+                "actionable": False,
+                "family": selected,
+                "selected_family_id": selected,
+                "published_family_id": selected,
+                "cta_family_id": selected,
+                "action_type": None,
+                "updates": {},
+                "blocking_reason": None,
+            },
+        }
+    )
+    evidence = _as_dict(item.get("candidate_search_evidence"))
+    evidence.update(diagnostics)
+    evidence.update(
+        {
+            "selected_family_id": selected,
+            "published_family_id": selected,
+            "cta_family_id": selected,
+            "card_family_id": selected,
+            "family_match_passed": True,
+            "family_match_violation_reason": None,
+            "stale_family_contract_violation_rebuilt_as_target_band": True,
+        }
+    )
+    item["candidate_search_evidence"] = dict(evidence)
+    return item
+
+
+def _bending_fail_no_valid_repair_proof_from_publication(
+    primary: dict,
+    debug: dict,
+    result: dict,
+) -> dict:
+    evidence = _as_dict(
+        primary.get("candidate_search_evidence")
+        or _as_dict(primary.get("action_payload")).get("candidate_search_evidence")
+        or _as_dict(primary.get("resolved_candidate")).get("candidate_search_evidence")
+        or _as_dict(result.get("evidence")).get("candidate_search")
+        or debug.get("candidate_search_evidence")
+    )
+    candidates = [dict(evidence)]
+    for source in (primary, debug, result, evidence):
+        for key in ("exact_blockers_by_family", "post_click_exact_blockers_by_family"):
+            blockers = _as_dict(_as_dict(source).get(key))
+            if blockers:
+                row = _as_dict(blockers.get("bending"))
+                if row:
+                    candidates.append({**dict(evidence), **row})
+    try:
+        from design_brain.families.bending_fail import bending_fail_no_valid_repair_proof_from_evidence
+    except Exception:
+        return {}
+    for candidate in candidates:
+        proof = bending_fail_no_valid_repair_proof_from_evidence(candidate)
+        if proof:
+            return dict(proof)
+    return {}
+
+
+def _bending_fail_no_valid_repair_publication_item(
+    primary: dict,
+    diagnostics: dict,
+    proof: dict,
+) -> dict:
+    item = dict(primary)
+    for stale_key in (
+        "button_contract",
+        "action_payload",
+        "resolved_candidate",
+        "selected_action_updates",
+        "updates",
+        "design_guide_terminal_state",
+        "terminal_cleanup_state",
+        "primary_card_actionable",
+    ):
+        item.pop(stale_key, None)
+    reason = str(
+        proof.get("blocked_reason")
+        or "Bending repair is blocked after all contract-permitted repair strategies were checked."
+    ).strip()
+    repair_reason_proof = {
+        "proof_only": True,
+        "selected_strategy_lane": "NO_VALID_STRATEGY",
+        "blocked_ownership_proof": dict(proof),
+        "repair_blocked": True,
+        "internal_cap_only": False,
+        "hard_blocker_proven": bool(proof.get("hard_blocker_proven")),
+        "contract_strategy_exhaustion_proven": True,
+    }
+    item.update(
+        {
+            "title_main": "Bending repair blocked by reinforcement/detailing limits",
+            "title": "Bending repair blocked by reinforcement/detailing limits",
+            "headline": "Bending repair blocked by reinforcement/detailing limits",
+            "governing_label": "Repair blocked",
+            "summary_line": reason,
+            "family": "bending",
+            "check_key": "bending",
+            "selected_action_family": "bending",
+            "selected_family_id": "BENDING_FAIL_GOVERNS",
+            "selected_family": "BENDING_FAIL_GOVERNS",
+            "published_family_id": "BENDING_FAIL_GOVERNS",
+            "cta_family_id": "BENDING_FAIL_GOVERNS",
+            "candidate_family_id": "BENDING_FAIL_GOVERNS",
+            "card_family_id": "BENDING_FAIL_GOVERNS",
+            "family_selection_source": diagnostics.get("family_selection_source"),
+            "family_selection_contract": FAMILY_SELECTION_CONTRACT_ID,
+            "family_chooser_contract": FAMILY_CHOOSER_CONTRACT_ID,
+            "rejected_families": dict(diagnostics.get("rejected_families") or {}),
+            "selection_evidence": dict(diagnostics.get("selection_evidence") or {}),
+            "matched_family_ids": ["BENDING_FAIL_GOVERNS"],
+            "raw_state_flags": dict(diagnostics.get("raw_state_flags") or {}),
+            "family_match_passed": True,
+            "family_match_violation_reason": None,
+            "status": "FAIL",
+            "critical_status": "FAIL",
+            "guidance_intent": "specific_blocker",
+            "final_state_class": "blocker",
+            "active_under_capacity_blocker": True,
+            "active_under_capacity_blocker_family": "bending",
+            "reasoning": reason,
+            "primary_action": "Repair blocked",
+            "secondary_action": "No executor-backed one-click bending repair is available from the checked contract ladder.",
+            "repair_reason_proof": dict(repair_reason_proof),
+            "button_contract": {
+                "enabled": False,
+                "actionable": False,
+                "family": "bending",
+                "selected_family_id": "BENDING_FAIL_GOVERNS",
+                "published_family_id": "BENDING_FAIL_GOVERNS",
+                "cta_family_id": "BENDING_FAIL_GOVERNS",
+                "action_type": None,
+                "updates": {},
+                "preview_pass": False,
+                "blocking_reason": "no_apply_locked",
+            },
+        }
+    )
+    evidence = _as_dict(item.get("candidate_search_evidence"))
+    evidence.update(
+        {
+            "selected_family_id": "BENDING_FAIL_GOVERNS",
+            "published_family_id": "BENDING_FAIL_GOVERNS",
+            "cta_family_id": "BENDING_FAIL_GOVERNS",
+            "candidate_family_id": "BENDING_FAIL_GOVERNS",
+            "card_family_id": "BENDING_FAIL_GOVERNS",
+            "governing_family": "BENDING_FAIL_GOVERNS",
+            "family_name": "BENDING_FAIL_GOVERNS",
+            "bending_fail_repair_blocked": True,
+            "bending_fail_blocked_reason": reason,
+            "bending_fail_blocked_reason_source": "family_contract_blocker_proof",
+            "bending_fail_internal_cap_only": False,
+            "bending_fail_hard_blocker_proven": bool(proof.get("hard_blocker_proven")),
+            "bending_fail_contract_strategy_exhaustion_proven": True,
+            "bending_fail_contract_strategies_checked": list(proof.get("contract_strategies_checked") or []),
+            "bending_fail_contract_strategies_blocked": list(proof.get("contract_strategies_blocked") or []),
+            "bending_fail_contract_strategies_remaining": list(proof.get("contract_strategies_remaining") or []),
+            "bending_fail_blocked_ownership_proof": dict(proof),
+            "repair_reason_proof": dict(repair_reason_proof),
+            "family_guard_recovered_to_bending_no_valid_repair": True,
+        }
+    )
+    item["candidate_search_evidence"] = dict(evidence)
+    return item
+
+
+def _serviceability_governs_terminal_publication_item(
+    primary: dict,
+    diagnostics: dict,
+    result: dict,
+) -> dict:
+    item = dict(primary)
+    for stale_key in (
+        "button_contract",
+        "action_payload",
+        "resolved_candidate",
+        "selected_action_updates",
+        "updates",
+        "design_guide_terminal_state",
+        "terminal_cleanup_state",
+        "primary_card_actionable",
+    ):
+        item.pop(stale_key, None)
+    result_evidence = _as_dict(result.get("evidence"))
+    runtime_result = _as_dict(result_evidence.get("runtime_result"))
+    runtime_evidence = _as_dict(runtime_result.get("evidence"))
+    exhausted_proof = _as_dict(runtime_result.get("exhausted_proof") or runtime_evidence.get("exhausted_proof"))
+    exact_stop_proof = _as_dict(runtime_result.get("exact_stop_proof") or runtime_evidence.get("exact_stop_proof"))
+    runtime_status = str(runtime_result.get("status") or result.get("status") or "").strip().upper()
+    exhausted_reason = str(
+        runtime_result.get("exhausted_reason")
+        or result.get("exhausted_reason")
+        or ""
+    ).strip()
+    if runtime_status == "EXACT_STOP":
+        title = "Serviceability check accepted"
+        summary = "Serviceability is already within the contract exact-stop boundary."
+        status = "PASS"
+        display_state = "PASS"
+        final_state_class = "pass"
+        guidance_intent = "already_efficient"
+        primary_action = "All checks pass."
+        blocking_reason = None
+    else:
+        title = "Serviceability repair blocked"
+        summary = (
+            exhausted_reason
+            or "Serviceability repair is blocked by the family contract before final render."
+        )
+        status = "BLOCKED"
+        display_state = "BLOCKED"
+        final_state_class = "blocker"
+        guidance_intent = "specific_blocker"
+        primary_action = "Repair blocked"
+        blocking_reason = "serviceability_governs_family_terminal_publication"
+    item.update(
+        {
+            "title_main": title,
+            "title": title,
+            "headline": title,
+            "governing_label": "Serviceability",
+            "summary_line": summary,
+            "family": "serviceability",
+            "check_key": "serviceability",
+            "selected_action_family": "serviceability",
+            "selected_family_id": "SERVICEABILITY_GOVERNS",
+            "selected_family": "SERVICEABILITY_GOVERNS",
+            "published_family_id": "SERVICEABILITY_GOVERNS",
+            "cta_family_id": "SERVICEABILITY_GOVERNS",
+            "candidate_family_id": "SERVICEABILITY_GOVERNS",
+            "card_family_id": "SERVICEABILITY_GOVERNS",
+            "family_selection_source": diagnostics.get("family_selection_source"),
+            "family_selection_contract": FAMILY_SELECTION_CONTRACT_ID,
+            "family_chooser_contract": FAMILY_CHOOSER_CONTRACT_ID,
+            "rejected_families": dict(diagnostics.get("rejected_families") or {}),
+            "selection_evidence": dict(diagnostics.get("selection_evidence") or {}),
+            "matched_family_ids": ["SERVICEABILITY_GOVERNS"],
+            "raw_state_flags": dict(diagnostics.get("raw_state_flags") or {}),
+            "family_match_passed": True,
+            "family_match_violation_reason": None,
+            "status": status,
+            "critical_status": status,
+            "display_state": display_state,
+            "final_state_class": final_state_class,
+            "guidance_intent": guidance_intent,
+            "primary_action": primary_action,
+            "reasoning": summary,
+            "serviceability_governs_terminal_publication": True,
+            "serviceability_governs_runtime_status": runtime_status or None,
+            "serviceability_governs_exact_stop_proof": dict(exact_stop_proof),
+            "serviceability_governs_exhausted_proof": dict(exhausted_proof),
+            "button_contract": {
+                "enabled": False,
+                "actionable": False,
+                "family": "serviceability",
+                "selected_family_id": "SERVICEABILITY_GOVERNS",
+                "published_family_id": "SERVICEABILITY_GOVERNS",
+                "cta_family_id": "SERVICEABILITY_GOVERNS",
+                "action_type": None,
+                "updates": {},
+                "preview_pass": False,
+                "blocking_reason": blocking_reason,
+            },
+        }
+    )
+    evidence = _as_dict(item.get("candidate_search_evidence"))
+    evidence.update(diagnostics)
+    evidence.update(
+        {
+            "selected_family_id": "SERVICEABILITY_GOVERNS",
+            "published_family_id": "SERVICEABILITY_GOVERNS",
+            "cta_family_id": "SERVICEABILITY_GOVERNS",
+            "card_family_id": "SERVICEABILITY_GOVERNS",
+            "family_match_passed": True,
+            "family_match_violation_reason": None,
+            "serviceability_governs_terminal_publication": True,
+            "serviceability_governs_runtime_status": runtime_status or None,
+            "serviceability_governs_exact_stop_proof": dict(exact_stop_proof),
+            "serviceability_governs_exhausted_proof": dict(exhausted_proof),
+        }
+    )
     item["candidate_search_evidence"] = dict(evidence)
     return item
 
@@ -6811,6 +9417,18 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
     chooser_contract = _load_family_chooser_contract()
     chooser = _family_chooser_output_from_publication(out, primary, debug, result, chooser_contract)
     active_failures = list(chooser.get("active_failures") or _active_failures_from_publication_payload(out, debug, result))
+    overview_sources = (
+        _as_dict(debug.get("overview")),
+        _as_dict(result.get("overview")),
+        _as_dict(out.get("overview")),
+    )
+    publication_all_key_pass = any(
+        bool(overview.get("all_key_pass")) and not bool(overview.get("any_fail"))
+        for overview in overview_sources
+        if overview
+    )
+    if publication_all_key_pass:
+        active_failures = []
     selected_family_id = str(chooser.get("selected_family") or "").strip() or None
     source = FAMILY_CHOOSER_CONTRACT_ID
     candidate_family_id = _candidate_family_id_from_publication(primary, debug)
@@ -6823,6 +9441,12 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
     )
     cta_family_id = _cta_family_id_from_publication(primary, debug, selected_family_id, published_family_id)
     card_family_id = published_family_id
+    if selected_family_id and selected_family_id != FAMILY_SELECTION_CONTRACT_VIOLATION:
+        if published_family_id == FAMILY_SELECTION_CONTRACT_VIOLATION:
+            published_family_id = selected_family_id
+            card_family_id = selected_family_id
+        if cta_family_id == FAMILY_SELECTION_CONTRACT_VIOLATION:
+            cta_family_id = selected_family_id
     if selected_family_id and _publication_has_repair_action(primary, debug, active_failures):
         published_family_id = selected_family_id
         cta_family_id = selected_family_id
@@ -6883,6 +9507,153 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
         "cleanup_variables_available": chooser.get("cleanup_variables_available"),
         "locked_variables": list(chooser.get("locked_variables") or []),
     }
+    if (
+        violation
+        and publication_all_key_pass
+        and not active_failures
+    ):
+        accepted_diagnostics = {
+            **diagnostics,
+            "selected_family_id": "TARGET_BAND_REACHED",
+            "published_family_id": "TARGET_BAND_REACHED",
+            "cta_family_id": "TARGET_BAND_REACHED",
+            "candidate_family_id": "TARGET_BAND_REACHED",
+            "card_family_id": "TARGET_BAND_REACHED",
+            "matched_family_ids": ["TARGET_BAND_REACHED"],
+            "family_match_passed": True,
+            "family_match_violation_reason": None,
+            "stale_action_publication_normalised_to_target_band": True,
+            "publication_all_key_pass": True,
+        }
+        primary = _target_band_reached_publication_item(primary, accepted_diagnostics)
+        debug.update(accepted_diagnostics)
+        out["guidance_items"] = [primary] + items[1:]
+        out["debug_trace"] = debug
+        return out
+    cleanup_recovery_payload = _cleanup_action_payload_from_publication(primary, debug)
+    cleanup_recovery_family_ids = {
+        "COMBINED_OVERDESIGN",
+        "SHEAR_OVERDESIGN_GOVERNS",
+        "BENDING_OVERDESIGN_GOVERNS",
+    }
+    if (
+        violation
+        and publication_all_key_pass
+        and selected_family_id in cleanup_recovery_family_ids
+        and _is_family_selection_contract_violation_publication(primary)
+    ):
+        accepted_diagnostics = {
+            **diagnostics,
+            "selected_family_id": "TARGET_BAND_REACHED",
+            "published_family_id": "TARGET_BAND_REACHED",
+            "cta_family_id": "TARGET_BAND_REACHED",
+            "candidate_family_id": "TARGET_BAND_REACHED",
+            "card_family_id": "TARGET_BAND_REACHED",
+            "matched_family_ids": ["TARGET_BAND_REACHED"],
+            "family_match_passed": True,
+            "family_match_violation_reason": None,
+            "stale_cleanup_family_contract_violation_normalised_to_accepted": True,
+            "publication_all_key_pass": True,
+        }
+        primary = _target_band_reached_publication_item(primary, accepted_diagnostics)
+        debug.update(accepted_diagnostics)
+        out["guidance_items"] = [primary] + items[1:]
+        out["debug_trace"] = debug
+        return out
+    if (
+        selected_family_id in cleanup_recovery_family_ids
+        and cleanup_recovery_payload
+        and not active_failures
+        and (violation or _is_family_selection_contract_violation_publication(primary))
+    ):
+        recovered = _recover_cleanup_action_publication_item(
+            primary,
+            debug,
+            diagnostics,
+            cleanup_payload=cleanup_recovery_payload,
+            selected_family_id=selected_family_id,
+            candidate_family_id=candidate_family_id,
+            source=source,
+        )
+        recovered_contract = dict(recovered.get("button_contract") or {})
+        debug.update(
+            {
+                **diagnostics,
+                "published_family_id": selected_family_id,
+                "cta_family_id": selected_family_id,
+                "card_family_id": selected_family_id,
+                "family_match_passed": True,
+                "family_match_violation_reason": None,
+                "stale_family_contract_violation_recovered_to_cleanup_action": True,
+                "primary_button_contract": dict(recovered_contract),
+                "button_contract": dict(recovered_contract),
+            }
+        )
+        out["guidance_items"] = [recovered] + items[1:]
+        out["debug_trace"] = debug
+        return out
+    if (
+        violation
+        and selected_family_id in cleanup_recovery_family_ids
+        and not cleanup_recovery_payload
+        and not active_failures
+        and _is_family_selection_contract_violation_publication(primary)
+    ):
+        accepted_diagnostics = {
+            **diagnostics,
+            "selected_family_id": "TARGET_BAND_REACHED",
+            "published_family_id": "TARGET_BAND_REACHED",
+            "cta_family_id": "TARGET_BAND_REACHED",
+            "candidate_family_id": "TARGET_BAND_REACHED",
+            "card_family_id": "TARGET_BAND_REACHED",
+            "matched_family_ids": ["TARGET_BAND_REACHED"],
+            "family_match_passed": True,
+            "family_match_violation_reason": None,
+            "stale_cleanup_family_contract_violation_normalised_to_accepted": True,
+        }
+        primary = _target_band_reached_publication_item(primary, accepted_diagnostics)
+        diagnostics = accepted_diagnostics
+        selected_family_id = "TARGET_BAND_REACHED"
+        published_family_id = "TARGET_BAND_REACHED"
+        cta_family_id = "TARGET_BAND_REACHED"
+        card_family_id = "TARGET_BAND_REACHED"
+        violation = ""
+        debug.update(accepted_diagnostics)
+    if (
+        not violation
+        and selected_family_id == "TARGET_BAND_REACHED"
+        and _is_family_selection_contract_violation_publication(primary)
+    ):
+        primary = _target_band_reached_publication_item(primary, diagnostics)
+    if selected_family_id == "SERVICEABILITY_GOVERNS" and not bool(primary.get("serviceability_governs_terminal_publication")):
+        serviceability_item = _serviceability_governs_terminal_publication_item(
+            primary,
+            diagnostics,
+            result,
+        )
+        serviceability_contract = _as_dict(serviceability_item.get("button_contract"))
+        serviceability_evidence = _as_dict(serviceability_item.get("candidate_search_evidence"))
+        debug.update(
+            {
+                **diagnostics,
+                "selected_family_id": "SERVICEABILITY_GOVERNS",
+                "published_family_id": "SERVICEABILITY_GOVERNS",
+                "cta_family_id": "SERVICEABILITY_GOVERNS",
+                "card_family_id": "SERVICEABILITY_GOVERNS",
+                "family_match_passed": True,
+                "family_match_violation_reason": None,
+                "family_guard_routed_to_serviceability_terminal_publication": True,
+                "family_guard_blocked_published_family_id": published_family_id,
+                "family_guard_blocked_cta_family_id": cta_family_id,
+                "candidate_search_evidence": dict(serviceability_evidence),
+                "primary_button_contract": dict(serviceability_contract),
+                "button_contract": dict(serviceability_contract),
+                "button_contract_enabled": False,
+            }
+        )
+        out["guidance_items"] = [serviceability_item] + items[1:]
+        out["debug_trace"] = debug
+        return out
     if selected_family_id == "COMBINED_BENDING_SHEAR_FAIL":
         primary, debug, diagnostics = _route_combined_fail_family_publication(primary, debug, diagnostics)
         if diagnostics.get("family_publication_route_used"):
@@ -6895,7 +9666,140 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
         published_family_id = str(diagnostics.get("published_family_id") or published_family_id or "").strip() or None
         cta_family_id = str(diagnostics.get("cta_family_id") or cta_family_id or "").strip() or None
         card_family_id = str(diagnostics.get("card_family_id") or card_family_id or "").strip() or None
+    if not violation:
+        repair_payload = _repair_action_payload_from_publication(primary, debug, active_failures)
+        current_contract = button_contract_from_payload(primary, debug)
+        current_updates = contract_updates_from_publication(current_contract, primary)
+        if repair_payload and (not contract_enabled(current_contract) or not current_updates):
+            recovered_contract = dict(repair_payload.get("contract") or {})
+            recovered_updates = dict(repair_payload.get("updates") or {})
+            owner_family = _mechanical_family_from_family_id(selected_family_id) or repair_payload.get("family")
+            recovered_title = str(primary.get("title_main") or primary.get("title") or primary.get("headline") or "").strip()
+            if _is_family_selection_contract_violation_publication(primary):
+                recovered_title = (
+                    "Bending and shear capacity are low"
+                    if selected_family_id == "COMBINED_BENDING_SHEAR_FAIL"
+                    else "Strengthening required"
+                )
+            recovered_contract.update(
+                {
+                    "enabled": True,
+                    "actionable": True,
+                    "action_type": "apply_resolved_candidate",
+                    "family": owner_family,
+                    "updates": dict(recovered_updates),
+                    "preview_pass": True,
+                    "blocking_reason": None,
+                    "disabled_reason": None,
+                    "selected_family_id": selected_family_id,
+                    "published_family_id": selected_family_id,
+                    "cta_family_id": selected_family_id,
+                    "candidate_family_id": candidate_family_id,
+                    "family_selection_contract": FAMILY_SELECTION_CONTRACT_ID,
+                    "family_match_passed": True,
+                    "family_guard_recovered_same_family_repair_action": True,
+                }
+            )
+            primary.update(
+                {
+                    "title_main": recovered_title,
+                    "title": recovered_title,
+                    "headline": recovered_title,
+                    "family": owner_family or primary.get("family") or primary.get("check_key"),
+                    "check_key": owner_family or primary.get("check_key") or primary.get("family"),
+                    "selected_action_family": owner_family or primary.get("selected_action_family"),
+                    "action_type": "apply_resolved_candidate",
+                    "updates": dict(recovered_updates),
+                    "selected_action_updates": dict(recovered_updates),
+                    "primary_card_actionable": True,
+                    "primary_action": primary.get("primary_action") or "Run one-click auto design",
+                    "selected_family": selected_family_id,
+                    "selected_family_id": selected_family_id,
+                    "published_family_id": selected_family_id,
+                    "cta_family_id": selected_family_id,
+                    "candidate_family_id": candidate_family_id,
+                    "card_family_id": selected_family_id,
+                    "family_match_passed": True,
+                    "family_match_violation_reason": None,
+                    "status": "FAIL",
+                    "critical_status": "FAIL",
+                    "guidance_intent": "required_fix",
+                    "display_state": "ACTION",
+                    "final_state_class": "action",
+                    "pill": "NEXT",
+                    "blocker_explanation": None,
+                    "blocking_reason": None,
+                    "button_contract": dict(recovered_contract),
+                }
+            )
+            action_payload = dict(repair_payload.get("action_payload") or {})
+            if action_payload:
+                action_payload.setdefault("updates", dict(recovered_updates))
+                action_payload.setdefault("resolved_candidate_updates", dict(recovered_updates))
+                action_payload.setdefault("action_type", "apply_resolved_candidate")
+                action_payload.setdefault("resolved_candidate_action_type", "apply_resolved_candidate")
+                primary["action_payload"] = dict(action_payload)
+            resolved = dict(repair_payload.get("resolved_candidate") or {})
+            if resolved:
+                resolved.setdefault("updates", dict(recovered_updates))
+                resolved.setdefault("action_type", "apply_resolved_candidate")
+                primary["resolved_candidate"] = dict(resolved)
+            evidence = _as_dict(primary.get("candidate_search_evidence"))
+            evidence.update(
+                {
+                    **diagnostics,
+                    "published_family_id": selected_family_id,
+                    "cta_family_id": selected_family_id,
+                    "card_family_id": selected_family_id,
+                    "family_match_passed": True,
+                    "family_match_violation_reason": None,
+                    "family_guard_recovered_same_family_repair_action": True,
+                }
+            )
+            primary["candidate_search_evidence"] = dict(evidence)
+            debug.update(
+                {
+                    **diagnostics,
+                    "published_family_id": selected_family_id,
+                    "cta_family_id": selected_family_id,
+                    "card_family_id": selected_family_id,
+                    "family_match_passed": True,
+                    "family_match_violation_reason": None,
+                    "family_guard_recovered_same_family_repair_action": True,
+                    "primary_button_contract": dict(recovered_contract),
+                    "button_contract": dict(recovered_contract),
+                }
+            )
     if violation:
+        if selected_family_id == "SERVICEABILITY_GOVERNS":
+            serviceability_item = _serviceability_governs_terminal_publication_item(
+                primary,
+                diagnostics,
+                result,
+            )
+            serviceability_contract = _as_dict(serviceability_item.get("button_contract"))
+            serviceability_evidence = _as_dict(serviceability_item.get("candidate_search_evidence"))
+            debug.update(
+                {
+                    **diagnostics,
+                    "selected_family_id": "SERVICEABILITY_GOVERNS",
+                    "published_family_id": "SERVICEABILITY_GOVERNS",
+                    "cta_family_id": "SERVICEABILITY_GOVERNS",
+                    "card_family_id": "SERVICEABILITY_GOVERNS",
+                    "family_match_passed": True,
+                    "family_match_violation_reason": None,
+                    "family_guard_recovered_to_serviceability_terminal_publication": True,
+                    "family_guard_blocked_published_family_id": published_family_id,
+                    "family_guard_blocked_cta_family_id": cta_family_id,
+                    "candidate_search_evidence": dict(serviceability_evidence),
+                    "primary_button_contract": dict(serviceability_contract),
+                    "button_contract": dict(serviceability_contract),
+                    "button_contract_enabled": False,
+                }
+            )
+            out["guidance_items"] = [serviceability_item] + items[1:]
+            out["debug_trace"] = debug
+            return out
         repair_payload = _repair_action_payload_from_publication(primary, debug, active_failures)
         if repair_payload:
             owner_family = _mechanical_family_from_family_id(selected_family_id) or repair_payload.get("family")
@@ -6993,6 +9897,145 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
                 }
             )
             out["guidance_items"] = [recovered] + items[1:]
+            out["debug_trace"] = debug
+            return out
+        bending_no_valid_proof = _bending_fail_no_valid_repair_proof_from_publication(primary, debug, result)
+        if set(active_failures) == {"bending"} and bending_no_valid_proof:
+            blocked_item = _bending_fail_no_valid_repair_publication_item(
+                primary,
+                diagnostics,
+                bending_no_valid_proof,
+            )
+            blocked_contract = _as_dict(blocked_item.get("button_contract"))
+            blocked_evidence = _as_dict(blocked_item.get("candidate_search_evidence"))
+            debug.update(
+                {
+                    **diagnostics,
+                    "selected_family_id": "BENDING_FAIL_GOVERNS",
+                    "published_family_id": "BENDING_FAIL_GOVERNS",
+                    "cta_family_id": "BENDING_FAIL_GOVERNS",
+                    "card_family_id": "BENDING_FAIL_GOVERNS",
+                    "family_match_passed": True,
+                    "family_match_violation_reason": None,
+                    "family_guard_recovered_to_bending_no_valid_repair": True,
+                    "family_guard_blocked_published_family_id": published_family_id,
+                    "family_guard_blocked_cta_family_id": cta_family_id,
+                    "candidate_search_evidence": dict(blocked_evidence),
+                    "primary_button_contract": dict(blocked_contract),
+                    "button_contract": dict(blocked_contract),
+                    "button_contract_enabled": False,
+                    "repair_reason_proof": dict(blocked_item.get("repair_reason_proof") or {}),
+                    "bending_fail_blocked_ownership_proof": dict(bending_no_valid_proof),
+                }
+            )
+            out["guidance_items"] = [blocked_item] + items[1:]
+            out["debug_trace"] = debug
+            return out
+        diagnostics_raw_state = _as_dict(diagnostics.get("raw_state_flags"))
+        diagnostics_selection_evidence = _as_dict(diagnostics.get("selection_evidence"))
+        if not diagnostics_raw_state:
+            diagnostics_raw_state = _as_dict(diagnostics_selection_evidence.get("raw_state_flags"))
+        diagnostics_cleanup_terminal_proven = bool(
+            selected_family_id in cleanup_recovery_family_ids
+            and not cleanup_recovery_payload
+            and not active_failures
+            and not diagnostics_raw_state.get("any_failure")
+            and not diagnostics_raw_state.get("any_strength_fail")
+            and not diagnostics_raw_state.get("repair_required")
+            and not diagnostics_raw_state.get("bending_fail")
+            and not diagnostics_raw_state.get("shear_fail")
+            and (
+                diagnostics_raw_state.get("target_band_terminal_signal")
+                or (
+                    selected_family_id == "SHEAR_OVERDESIGN_GOVERNS"
+                    and not diagnostics_raw_state.get("shear_cleanup_possible")
+                    and not diagnostics_raw_state.get("unnecessary_shear_reinforcement_exists")
+                    and not diagnostics_raw_state.get("zero_shear_with_ligatures")
+                )
+            )
+        )
+        if diagnostics_cleanup_terminal_proven:
+            accepted_diagnostics = {
+                **diagnostics,
+                "selected_family_id": "TARGET_BAND_REACHED",
+                "published_family_id": "TARGET_BAND_REACHED",
+                "cta_family_id": "TARGET_BAND_REACHED",
+                "candidate_family_id": "TARGET_BAND_REACHED",
+                "card_family_id": "TARGET_BAND_REACHED",
+                "matched_family_ids": ["TARGET_BAND_REACHED"],
+                "family_match_passed": True,
+                "family_match_violation_reason": None,
+                "cleanup_family_terminal_exhaustion_normalised_to_target_band": True,
+                "cleanup_terminal_source_family_id": selected_family_id,
+                "cleanup_terminal_no_remaining_shear_cleanup_normalised": bool(
+                    selected_family_id == "SHEAR_OVERDESIGN_GOVERNS"
+                    and not diagnostics_raw_state.get("target_band_terminal_signal")
+                ),
+            }
+            primary = _target_band_reached_publication_item(primary, accepted_diagnostics)
+            if accepted_diagnostics.get("cleanup_terminal_no_remaining_shear_cleanup_normalised"):
+                primary.update(
+                    {
+                        "title_main": "Design is efficient - no further safe cleanup available",
+                        "title": "Design is efficient - no further safe cleanup available",
+                        "headline": "Design is efficient - no further safe cleanup available",
+                        "governing_label": "No further safe cleanup available",
+                        "summary_line": (
+                            "Further reduction would lower reserve capacity or stiffness; "
+                            "the guide is explaining why no material one-click change is selected."
+                        ),
+                        "primary_action": (
+                            "No executable shear cleanup remains after the contract-owned "
+                            "width and detailing search."
+                        ),
+                        "reasoning": (
+                            "SHEAR_OVERDESIGN_GOVERNS found no remaining executor-backed "
+                            "width or shear-detailing cleanup that preserves all checks."
+                        ),
+                    }
+                )
+            evidence = _as_dict(primary.get("candidate_search_evidence"))
+            evidence.update(
+                {
+                    "cleanup_family_terminal_exhaustion_normalised_to_target_band": True,
+                    "cleanup_terminal_source_family_id": selected_family_id,
+                    "cleanup_terminal_no_repair_payload": True,
+                    "cleanup_terminal_no_active_failures": True,
+                    "cleanup_terminal_no_remaining_shear_cleanup_normalised": bool(
+                        accepted_diagnostics.get("cleanup_terminal_no_remaining_shear_cleanup_normalised")
+                    ),
+                }
+            )
+            primary["candidate_search_evidence"] = dict(evidence)
+            debug.update(accepted_diagnostics)
+            out["guidance_items"] = [primary] + items[1:]
+            out["debug_trace"] = debug
+            return out
+        diagnostics_target_band_proven = bool(
+            selected_family_id == "TARGET_BAND_REACHED"
+            and diagnostics_raw_state.get("target_band_terminal_signal")
+            and not diagnostics_raw_state.get("any_failure")
+            and not diagnostics_raw_state.get("any_strength_fail")
+            and not diagnostics_raw_state.get("repair_required")
+            and not diagnostics_raw_state.get("bending_fail")
+            and not diagnostics_raw_state.get("shear_fail")
+        )
+        if diagnostics_target_band_proven:
+            accepted_diagnostics = {
+                **diagnostics,
+                "selected_family_id": "TARGET_BAND_REACHED",
+                "published_family_id": "TARGET_BAND_REACHED",
+                "cta_family_id": "TARGET_BAND_REACHED",
+                "candidate_family_id": "TARGET_BAND_REACHED",
+                "card_family_id": "TARGET_BAND_REACHED",
+                "matched_family_ids": ["TARGET_BAND_REACHED"],
+                "family_match_passed": True,
+                "family_match_violation_reason": None,
+                "stale_violation_branch_normalised_to_target_band": True,
+            }
+            primary = _target_band_reached_publication_item(primary, accepted_diagnostics)
+            debug.update(accepted_diagnostics)
+            out["guidance_items"] = [primary] + items[1:]
             out["debug_trace"] = debug
             return out
         safe_item = _family_selection_safe_item(primary, diagnostics)
@@ -7281,9 +10324,26 @@ def enforce_underdesign_repair_publication_boundary(payload: dict) -> dict:
         debug.update(diagnostic)
         out["debug_trace"] = debug
         return out
-    if _publication_has_repair_action(primary, debug, active_failures):
+    repair_action = _repair_action_payload_from_publication(primary, debug, active_failures)
+    if repair_action:
         diagnostic["allowed_outcome"] = "repair_ACTION"
         repair_item = dict(primary)
+        repair_contract = dict(repair_action.get("contract") or {})
+        repair_updates = dict(repair_action.get("updates") or {})
+        repair_contract["enabled"] = True
+        repair_contract["actionable"] = True
+        repair_contract["action_type"] = repair_action.get("action_type") or "apply_resolved_candidate"
+        repair_contract["updates"] = dict(repair_updates)
+        repair_contract["blocking_reason"] = None
+        repair_item["button_contract"] = dict(repair_contract)
+        repair_item["selected_action_updates"] = dict(repair_updates)
+        repair_item["updates"] = dict(repair_updates)
+        repair_item["action_type"] = repair_contract["action_type"]
+        repair_item["primary_card_actionable"] = True
+        if repair_action.get("action_payload"):
+            repair_item["action_payload"] = dict(repair_action.get("action_payload") or {})
+        if repair_action.get("resolved_candidate"):
+            repair_item["resolved_candidate"] = dict(repair_action.get("resolved_candidate") or {})
         repair_item["governing_label"] = "Repair preview"
         repair_item.setdefault("summary_line", "Run one-click auto design.")
         repair_item["guidance_intent"] = "required_fix"
@@ -7296,6 +10356,8 @@ def enforce_underdesign_repair_publication_boundary(payload: dict) -> dict:
                 "contract_boundary_contract": UNDERDESIGN_REPAIR_INVARIANT_CONTRACT_ID,
                 "contract_boundary_passed": True,
                 "allowed_outcome": "repair_ACTION",
+                "recovered_repair_action_from_trace_contract": True,
+                "recovered_repair_update_count": len(repair_updates),
             }
         )
         repair_item["candidate_search_evidence"] = dict(evidence)
@@ -7619,6 +10681,7 @@ def enforce_design_brain_publication_contract(payload: dict) -> dict:
             "family": "combined",
             "updates": dict(updates),
             "resolved_candidate_updates": dict(updates),
+            "resolved_candidate_reaches_target_band": True,
             "resolved_candidate_action_type": "apply_resolved_candidate",
             "resolved_candidate_family_tag": "combined",
             "candidate_id": candidate_id,
@@ -7638,6 +10701,8 @@ def enforce_design_brain_publication_contract(payload: dict) -> dict:
             "family": "combined",
             "recommendation_family_tag": "combined",
             "updates": dict(updates),
+            "reaches_target_band": True,
+            "candidate_reaches_target_band": True,
             "candidate_id": candidate_id,
             "source_candidate_id": candidate_id,
             "candidate_search_evidence": dict(cleaned_evidence),

@@ -51,6 +51,8 @@ REQUIRED_RESULT_FIELDS = {
     "runtime_hash",
 }
 
+LEGACY_BOTTOM_KEYS = {"bot1_count", "db_bot_1", "bot2_count", "db_bot_2"}
+
 FORBIDDEN_RUNTIME_TERMS = {
     "inputs_page",
     "streamlit",
@@ -74,12 +76,12 @@ def _inputs() -> CombinedBendingShearFailInputs:
             {
                 "source_family_id": "BENDING_FAIL_GOVERNS",
                 "candidate_id": "bend_depth",
-                "updates": {"D": 550.0, "bot1_count": 5},
+                "updates": {"D": 550.0, "bot_row_1_bars": 5},
             },
             {
                 "source_family_id": "BENDING_FAIL_GOVERNS",
                 "candidate_id": "bend_only",
-                "updates": {"bot1_count": 6},
+                "updates": {"bot_row_1_bars": 6},
             },
         ),
         shear_fail_candidates=(
@@ -98,7 +100,7 @@ def _evaluation(
 ) -> CombinedCandidateEvaluation:
     updates = dict(candidate.updates)
     repairs_both = updates.get("D") == 550.0 and updates.get("lig_d") == 12
-    bending_ok = bool(repairs_both or updates.get("bot1_count") == 6)
+    bending_ok = bool(repairs_both or updates.get("bot_row_1_bars") == 6)
     shear_ok = bool(repairs_both)
     return CombinedCandidateEvaluation(
         input_hash=inputs.input_hash,
@@ -173,6 +175,7 @@ def main() -> int:
     runtime_source = RUNTIME_PATH.read_text(encoding="utf-8", errors="replace")
     forbidden_hits = sorted(term for term in FORBIDDEN_RUNTIME_TERMS if term in runtime_source)
     payload = result.to_dict()
+    selected_updates = dict((payload.get("selected_recommendation") or {}).get("updates") or {})
     checks = {
         "required_result_fields_exist": REQUIRED_RESULT_FIELDS.issubset(fields_present),
         "source_merge_candidates_created": payload["candidate_source_proof"].get("merged_candidate_count") == 2,
@@ -189,6 +192,7 @@ def main() -> int:
         "ownership_proof_shared_systems_outside": payload["ownership_proof"].get("shared_output_apply_render_state_owned_outside_runtime") is True,
         "cta_intent_proof_only": payload["cta_intent_proof"].get("proof_only") is True
         and payload["cta_intent_proof"].get("rendered") is False,
+        "runtime_selected_updates_are_canonical_only": not bool(LEGACY_BOTTOM_KEYS & set(selected_updates)),
         "runtime_hash_stable": result.runtime_hash == repeat.runtime_hash,
         "runtime_has_no_page_ui_chooser_or_ladder_imports": not forbidden_hits,
     }
@@ -206,6 +210,7 @@ def main() -> int:
             "candidate_count": len(result.candidate_repairs),
             "accepted_count": len(result.accepted_candidate_evidence),
             "rejected_count": len(result.rejected_candidate_evidence),
+            "selected_updates": selected_updates,
             "runtime_hash": result.runtime_hash,
             "repeat_runtime_hash": repeat.runtime_hash,
         },

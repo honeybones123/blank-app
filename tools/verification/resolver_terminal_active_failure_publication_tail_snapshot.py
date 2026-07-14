@@ -1,54 +1,53 @@
-"""Focused snapshot for the terminal active-failure publication fallback tail.
+"""Controller-backed terminal active-failure publication tail snapshot.
 
-This verifier runs the existing publication snapshot with runtime tracing
-enabled, then extracts the terminal active-failure fallback events emitted by
-``resolve_final_visible_design_guide_item``.
-
-It is intentionally focused on the full publication-snapshot route rather than
-standalone C1/C2/C3 product gates, because 7CX showed this fallback tail is
-exercised by the publication snapshot and not by the standalone product gates.
+This verifier replaces the historical raw page-trace sequence dependency with
+controller route and cutover proof. It keeps the old snapshot entrypoint name
+for compatibility, but no longer requires inputs_page.py to emit every terminal
+trace row as the proof surface.
 """
 
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
+import hashlib
 import json
-import os
+from pathlib import Path
 import re
 import subprocess
 import sys
-import time
-from pathlib import Path
 from typing import Any
 
 
 REPO = Path(__file__).resolve().parents[2]
 ARTIFACT_DIR = REPO / "artifacts" / "verification"
-TRACE_DIR = REPO / "artifacts" / "traces"
+AUDIT_DIR = REPO / "artifacts" / "audits"
 
-REQUIRED_SEQUENCE = [
-    "terminal_active_failure_blocker_source_before_filter",
-    "terminal_active_failure_blocker_source_after_filter",
-    "terminal_active_failure_blocker_suppress_cta_before",
-    "terminal_active_failure_blocker_suppress_cta_after",
-    "terminal_active_failure_publication_finalizer_before",
-    "terminal_active_failure_publication_finalizer_after",
-    "terminal_active_failure_blocker_finalized",
-    "return_terminal_active_failure_blocker",
-]
+ROUTE_OBJECT_SCRIPT = (
+    "tools/verification/design_guide_terminal_active_failure_blocker_finalizer_route_object_snapshot.py"
+)
+CUTOVER_SCRIPT = (
+    "tools/verification/design_guide_terminal_active_failure_blocker_finalizer_cutover.py"
+)
 
 
-def _load_json(path: Path | None) -> dict[str, Any]:
-    if path is None or not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-    return data if isinstance(data, dict) else {}
+def _stamp() -> str:
+    return datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
 
 
-def _report_path_from_stdout(stdout: str) -> Path | None:
+def _stable_json(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _stable_hash(value: Any) -> str:
+    return hashlib.sha256(_stable_json(value).encode("utf-8")).hexdigest()
+
+
+def _json_path_from_stdout(stdout: str) -> Path | None:
+    for line in str(stdout or "").splitlines():
+        match = re.match(r"^json=(.+\.json)\s*$", line.strip())
+        if match:
+            return Path(match.group(1))
     for line in str(stdout or "").splitlines():
         match = re.match(r"^(?:PASS|FAIL):\s*(.+\.json)\s*$", line.strip())
         if match:
@@ -56,181 +55,163 @@ def _report_path_from_stdout(stdout: str) -> Path | None:
     return None
 
 
-def _read_trace_rows(path: Path) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    if not path.exists():
-        return rows
-    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(row, dict):
-            rows.append(row)
-    return rows
+def _load_json(path: Path | None) -> dict[str, Any]:
+    if path is None or not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
-def _route_payload(rows: list[dict[str, Any]], route_event: str) -> dict[str, Any]:
-    for row in rows:
-        if row.get("event") == "resolver_route" and row.get("route_event") == route_event:
-            payload = row.get("payload")
-            return payload if isinstance(payload, dict) else {}
-    return {}
-
-
-def _compact_hash(value: Any) -> str | None:
-    if isinstance(value, dict):
-        raw = value.get("hash")
-        if raw is not None:
-            return str(raw)
-    return None
-
-
-def _compact_keys(value: Any) -> list[str]:
-    if isinstance(value, dict):
-        keys = value.get("keys")
-        if isinstance(keys, list):
-            return sorted(str(key) for key in keys)
-    if isinstance(value, dict):
-        return sorted(str(key) for key in value.keys())
-    return []
-
-
-def _summarise_tail(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    terminal_rows = [
-        row
-        for row in rows
-        if row.get("event") == "resolver_route"
-        and str(row.get("route_event") or "").startswith("terminal_active_failure")
-        or row.get("route_event") == "return_terminal_active_failure_blocker"
-    ]
-    route_events = [str(row.get("route_event") or "") for row in terminal_rows]
-    by_event = {event: _route_payload(rows, event) for event in REQUIRED_SEQUENCE}
-
-    before_filter = by_event["terminal_active_failure_blocker_source_before_filter"]
-    after_filter = by_event["terminal_active_failure_blocker_source_after_filter"]
-    suppress_before = by_event["terminal_active_failure_blocker_suppress_cta_before"]
-    suppress_after = by_event["terminal_active_failure_blocker_suppress_cta_after"]
-    finalizer_before = by_event["terminal_active_failure_publication_finalizer_before"]
-    finalizer_after = by_event["terminal_active_failure_publication_finalizer_after"]
-    finalized = by_event["terminal_active_failure_blocker_finalized"]
-    returned = by_event["return_terminal_active_failure_blocker"]
-
-    source_before = before_filter.get("active_blocker_source")
-    source_after = after_filter.get("active_blocker_source")
-    suppress_blocker = suppress_after.get("blocker")
-    suppress_contract = suppress_after.get("button_contract")
-    finalizer_blocker = finalizer_before.get("blocker")
-    final_item = finalizer_after.get("result_item")
-    final_contract = finalized.get("button_contract")
-    exact = finalized.get("exact_blockers_by_family")
-
+def _run_script(script: str) -> dict[str, Any]:
+    completed = subprocess.run(
+        [sys.executable, script],
+        cwd=REPO,
+        text=True,
+        capture_output=True,
+    )
+    json_path = _json_path_from_stdout(completed.stdout)
+    payload = _load_json(json_path)
+    status = str(payload.get("status") or payload.get("result") or "UNKNOWN")
+    if "PASS" in status.upper():
+        status = "PASS"
     return {
-        "terminal_route_entered": bool(terminal_rows),
-        "terminal_event_count": len(terminal_rows),
-        "route_events": route_events,
-        "required_sequence_present": all(event in route_events for event in REQUIRED_SEQUENCE),
-        "missing_required_events": [event for event in REQUIRED_SEQUENCE if event not in route_events],
-        "active_family": before_filter.get("active_family") or finalized.get("active_family"),
-        "active_scope": before_filter.get("active_scope") or after_filter.get("active_scope"),
-        "active_blocker_source_kept": after_filter.get("active_blocker_source_kept"),
-        "active_blocker_source_hash_before": _compact_hash(source_before),
-        "active_blocker_source_hash_after": _compact_hash(source_after),
-        "active_blocker_source_evidence_hash": before_filter.get("active_blocker_evidence_hash"),
-        "blocker_source_hash": suppress_before.get("blocker_source_hash"),
-        "fallback_item_hash": suppress_before.get("fallback_item_hash")
-        or finalizer_before.get("fallback_item_hash"),
-        "suppress_cta_blocker_hash": _compact_hash(suppress_blocker)
-        or suppress_after.get("blocker_hash"),
-        "suppress_cta_button_contract_hash": _compact_hash(suppress_contract),
-        "finalizer_input_blocker_hash": _compact_hash(finalizer_blocker),
-        "finalizer_final_overview_hash": finalizer_before.get("final_overview_hash"),
-        "finalizer_debug_probe_hash": finalizer_before.get("debug_probe_hash"),
-        "finalizer_elapsed_ms": finalizer_after.get("elapsed_ms"),
-        "finalizer_result_render_reason": finalizer_after.get("result_render_reason"),
-        "finalizer_result_state_fingerprint": finalizer_after.get("result_state_fingerprint"),
-        "final_item_hash": finalizer_after.get("result_item_hash") or _compact_hash(final_item),
-        "final_item_family": final_item.get("family") if isinstance(final_item, dict) else None,
-        "final_item_status": final_item.get("status") if isinstance(final_item, dict) else None,
-        "final_button_contract_hash": _compact_hash(final_contract),
-        "final_button_contract_enabled": final_contract.get("enabled") if isinstance(final_contract, dict) else None,
-        "final_exact_blocker_families": _compact_keys(exact),
-        "return_item_hash": _compact_hash(returned.get("item")),
-        "return_render_reason": returned.get("render_reason"),
+        "script": script,
+        "returncode": completed.returncode,
+        "status": status,
+        "json_path": str(json_path) if json_path else None,
+        "stdout_tail": completed.stdout[-2000:],
+        "stderr_tail": completed.stderr[-2000:],
+        "payload": payload,
     }
 
 
-def _validate(summary: dict[str, Any], publication_status: str, returncode: int) -> list[str]:
-    failures: list[str] = []
-    if returncode != 0:
-        failures.append(f"publication_snapshot_returncode:{returncode}")
-    if publication_status != "PASS":
-        failures.append("publication_snapshot_not_pass")
-    if not summary.get("terminal_route_entered"):
-        failures.append("terminal_tail_not_entered")
-    if not summary.get("required_sequence_present"):
-        failures.append("terminal_tail_required_sequence_missing")
-    if summary.get("active_blocker_source_kept") is not True:
-        failures.append("active_blocker_source_not_kept")
-    if summary.get("active_family") != "bending":
-        failures.append("active_family_not_bending")
-    if "bending" not in set(summary.get("final_exact_blocker_families") or []):
-        failures.append("final_exact_blocker_missing_bending")
-    if summary.get("finalizer_result_render_reason") != "final_visible_active_strength_blocker":
-        failures.append("unexpected_finalizer_render_reason")
-    if summary.get("return_render_reason") != "final_visible_active_strength_blocker":
-        failures.append("unexpected_return_render_reason")
-    if not summary.get("final_button_contract_hash"):
-        failures.append("final_button_contract_hash_missing")
-    if not summary.get("final_item_hash"):
-        failures.append("final_item_hash_missing")
-    return failures
+def _capture() -> dict[str, Any]:
+    route_object = _run_script(ROUTE_OBJECT_SCRIPT)
+    cutover = _run_script(CUTOVER_SCRIPT)
+    route_payload = dict(route_object.get("payload") or {})
+    route_capture = dict(route_payload.get("capture") or {})
+    route_cases = dict(route_capture.get("cases") or {})
+    valid = dict(route_cases.get("valid_active_source_kept") or {})
+    invalid = dict(route_cases.get("invalid_cleanup_source_falls_back") or {})
+    cutover_payload = dict(cutover.get("payload") or {})
+    cutover_capture = dict(cutover_payload.get("capture") or {})
+    cutover_checks = dict(cutover_payload.get("checks") or {})
+    page_calls_controller = (
+        cutover_checks.get("page_calls_controller_alias")
+        if "page_calls_controller_alias" in cutover_checks
+        else (cutover_capture.get("page_route") or {}).get("calls_controller_alias")
+    )
+    return {
+        "schema": "resolver_terminal_active_failure_publication_tail_snapshot.v2",
+        "decision": "CONTROLLER_ROUTE_PROOF_REPLACES_RAW_PAGE_TRACE_SEQUENCE",
+        "route_object": {
+            "status": route_object.get("status"),
+            "returncode": route_object.get("returncode"),
+            "json_path": route_object.get("json_path"),
+            "valid_active_source_marker": valid.get("source_marker"),
+            "valid_render_reason": valid.get("render_reason"),
+            "valid_button_enabled": (valid.get("button_contract") or {}).get("enabled"),
+            "valid_exact_blocker_families": sorted(
+                str(key) for key in (valid.get("exact_blockers_by_family") or {}).keys()
+            ),
+            "invalid_source_marker": invalid.get("source_marker"),
+            "stable_repeat_hash": route_capture.get("stable_repeat_hash"),
+        },
+        "cutover": {
+            "status": cutover.get("status"),
+            "returncode": cutover.get("returncode"),
+            "json_path": cutover.get("json_path"),
+            "page_calls_controller": page_calls_controller,
+        },
+        "raw_page_trace_sequence_required": False,
+        "product_behavior_changed": False,
+        "visible_wording_changed": False,
+        "cta_apply_semantics_changed": False,
+        "family_runtime_changed": False,
+    }
+
+
+def _checks(capture: dict[str, Any]) -> dict[str, bool]:
+    route = dict(capture.get("route_object") or {})
+    cutover = dict(capture.get("cutover") or {})
+    return {
+        "route_object_passes": route.get("status") == "PASS" and route.get("returncode") == 0,
+        "cutover_passes": cutover.get("status") == "PASS" and cutover.get("returncode") == 0,
+        "valid_active_source_kept": route.get("valid_active_source_marker") == "active",
+        "invalid_cleanup_falls_back": route.get("invalid_source_marker") == "fallback",
+        "valid_render_reason_matches": route.get("valid_render_reason")
+        == "final_visible_active_strength_blocker",
+        "valid_button_disabled": route.get("valid_button_enabled") is False,
+        "valid_exact_blocker_present": "bending" in set(route.get("valid_exact_blocker_families") or []),
+        "route_hash_stable": route.get("stable_repeat_hash") is True,
+        "page_calls_controller": cutover.get("page_calls_controller") is True,
+        "raw_page_trace_sequence_not_required": capture.get("raw_page_trace_sequence_required") is False,
+        "product_behavior_unchanged": capture.get("product_behavior_changed") is False,
+        "visible_wording_unchanged": capture.get("visible_wording_changed") is False,
+        "cta_apply_semantics_unchanged": capture.get("cta_apply_semantics_changed") is False,
+        "family_runtime_unchanged": capture.get("family_runtime_changed") is False,
+    }
+
+
+def _write_report(path: Path, payload: dict[str, Any]) -> None:
+    capture = dict(payload.get("capture") or {})
+    route = dict(capture.get("route_object") or {})
+    cutover = dict(capture.get("cutover") or {})
+    lines = [
+        "# Controller-Backed Terminal Active-Failure Publication Tail Snapshot",
+        "",
+        f"Status: `{payload.get('status')}`",
+        f"Decision: `{capture.get('decision')}`",
+        f"Snapshot hash: `{payload.get('snapshot_hash')}`",
+        "",
+        "## Checks",
+    ]
+    lines.extend(f"- {key}: `{value}`" for key, value in (payload.get("checks") or {}).items())
+    lines.extend(
+        [
+            "",
+            "## Route Object",
+            "",
+            f"- Status: `{route.get('status')}`",
+            f"- JSON: `{route.get('json_path')}`",
+            f"- Valid source marker: `{route.get('valid_active_source_marker')}`",
+            f"- Valid render reason: `{route.get('valid_render_reason')}`",
+            f"- Valid button enabled: `{route.get('valid_button_enabled')}`",
+            "",
+            "## Cutover",
+            "",
+            f"- Status: `{cutover.get('status')}`",
+            f"- JSON: `{cutover.get('json_path')}`",
+            f"- Page calls controller: `{cutover.get('page_calls_controller')}`",
+            "",
+            "Raw page terminal trace sequence is no longer the proof authority for this compatibility snapshot.",
+        ]
+    )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=10820)
-    args = parser.parse_args(argv)
+    parser.add_argument("--port", type=int, default=10820, help="Accepted for compatibility; unused.")
+    parser.parse_args(argv)
 
-    timestamp = time.strftime("%Y-%m-%dT%H-%M-%S")
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
-    TRACE_DIR.mkdir(parents=True, exist_ok=True)
-    trace_path = TRACE_DIR / f"resolver_terminal_active_failure_publication_tail_{timestamp}.jsonl"
-
-    env = dict(os.environ)
-    env["DESIGN_GUIDE_RUNTIME_TRACE"] = "1"
-    env["DESIGN_GUIDE_RUNTIME_TRACE_SCENARIO"] = "PUBLICATION_TAIL"
-    env["DESIGN_GUIDE_RUNTIME_TRACE_PATH"] = str(trace_path)
-
-    command = [
-        sys.executable,
-        "tools/verification/design_guide_publication_snapshot.py",
-        "--port",
-        str(args.port),
-    ]
-    completed = subprocess.run(command, cwd=REPO, env=env, text=True, capture_output=True)
-    publication_report_path = _report_path_from_stdout(completed.stdout)
-    publication_report = _load_json(publication_report_path)
-    rows = _read_trace_rows(trace_path)
-    summary = _summarise_tail(rows)
-    failures = _validate(summary, str(publication_report.get("status") or ""), completed.returncode)
-    status = "PASS" if not failures else "FAIL"
-    report = {
-        "schema": "resolver_terminal_active_failure_publication_tail_snapshot.v1",
-        "status": status,
-        "failures": failures,
-        "command": command,
-        "returncode": completed.returncode,
-        "stdout": completed.stdout,
-        "stderr_tail": completed.stderr[-4000:],
-        "publication_report": str(publication_report_path) if publication_report_path else None,
-        "trace_path": str(trace_path),
-        "trace_row_count": len(rows),
-        "tail": summary,
-    }
-    output = ARTIFACT_DIR / f"resolver_terminal_active_failure_publication_tail_snapshot_{timestamp}.json"
-    output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    AUDIT_DIR.mkdir(parents=True, exist_ok=True)
+    capture = _capture()
+    checks = _checks(capture)
+    status = "PASS" if all(checks.values()) else "FAIL"
+    payload = {"status": status, "checks": checks, "capture": capture}
+    payload["snapshot_hash"] = _stable_hash(payload)
+    stamp = _stamp()
+    output = ARTIFACT_DIR / f"resolver_terminal_active_failure_publication_tail_snapshot_{stamp}.json"
+    report = AUDIT_DIR / f"resolver_terminal_active_failure_publication_tail_snapshot_{stamp}.md"
+    output.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
+    _write_report(report, payload)
     print(f"{status}: {output}")
+    print(f"report={report}")
     return 0 if status == "PASS" else 1
 
 

@@ -104,8 +104,8 @@ def _validate_contract(contract: dict[str, Any]) -> list[str]:
         failures.append("runtime_family_id_mismatch")
     if identity.get("package") != "design_brain.families.bending_and_shear_fail_govern":
         failures.append("package_mismatch")
-    if identity.get("legacy_delegate") != "design_brain.families.combined_bending_shear_fail.CombinedBendingShearFailFamily":
-        failures.append("legacy_delegate_mismatch")
+    if "legacy_delegate" in identity:
+        failures.append("legacy_delegate_present")
 
     boundary = selection_boundary()
     must_not = list(boundary.get("must_not") or [])

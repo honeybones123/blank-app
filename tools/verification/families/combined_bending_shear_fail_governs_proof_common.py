@@ -59,7 +59,7 @@ def _inputs() -> CombinedBendingShearFailInputs:
     bending = CombinedSourceCandidate(
         source_family_id="BENDING_FAIL_GOVERNS",
         candidate_id="bend_depth",
-        updates={"D": 550.0, "bot1_count": 5},
+        updates={"D": 550.0, "bot_row_1_bars": 5},
     )
     shear = CombinedSourceCandidate(
         source_family_id="SHEAR_FAIL_GOVERNS",
@@ -79,7 +79,7 @@ def _source_candidates() -> tuple[CombinedSourceCandidate, CombinedSourceCandida
         CombinedSourceCandidate(
             source_family_id="BENDING_FAIL_GOVERNS",
             candidate_id="bend_depth",
-            updates={"D": 550.0, "bot1_count": 5},
+            updates={"D": 550.0, "bot_row_1_bars": 5},
         ),
         CombinedSourceCandidate(
             source_family_id="SHEAR_FAIL_GOVERNS",

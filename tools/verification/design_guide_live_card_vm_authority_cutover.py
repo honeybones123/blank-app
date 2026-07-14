@@ -29,8 +29,10 @@ REQUIRED_INPUTS_TOKENS = {
     "display_hash_debug": "debug_sink[\"final_publication_display_hash\"] = authority[\"display_hash\"]",
     "fallback_display_only_marker": "\"final_publication_display_fallback_only\": True",
     "fallback_display_non_authoritative_marker": "\"final_publication_display_non_authoritative_shell\": True",
-    "html_renderer_still_called": "_design_guide_dashboard_card_html_from_render_model(render_model)",
-    "direct_shell_still_present": "def _design_guide_direct_action_shell_card_html(",
+    "clean_html_renderer_called": "_render_final_design_guide_card_html(clean_format)",
+    "pre_render_direct_shell_deleted_marker": "browser_enabled_contract_pre_render_shell_deleted",
+    "post_render_direct_shell_deleted_marker": "fallback_enabled_contract_shell_deleted",
+    "early_shear_direct_shell_deleted_marker": "early_shear_overdesign_direct_action_shell_deleted",
     "cta_authority_constant": '_FINAL_PUBLICATION_CTA_AUTHORITY = "FinalDesignGuidePublication.cta"',
 }
 
@@ -110,9 +112,18 @@ def _build_snapshot() -> dict[str, Any]:
         token_checks["fallback_display_only_marker"]["present"]
         and token_checks["fallback_display_non_authoritative_marker"]["present"]
     )
+    legacy_html_renderer_absent = "_design_guide_dashboard_card_html_from_render_model(" not in inputs_source
+    direct_shell_helper_absent = "def _design_guide_direct_action_shell_card_html(" not in inputs_source
+    direct_shell_deletion_markers_present = bool(
+        token_checks["pre_render_direct_shell_deleted_marker"]["present"]
+        and token_checks["post_render_direct_shell_deleted_marker"]["present"]
+        and token_checks["early_shear_direct_shell_deleted_marker"]["present"]
+    )
     rendering_render_only = bool(
-        token_checks["html_renderer_still_called"]["present"]
-        and token_checks["direct_shell_still_present"]["present"]
+        token_checks["clean_html_renderer_called"]["present"]
+        and legacy_html_renderer_absent
+        and direct_shell_helper_absent
+        and direct_shell_deletion_markers_present
     )
     cta_authority_preserved = bool(token_checks["cta_authority_constant"]["present"] and cta_result["passed"])
 
@@ -142,6 +153,9 @@ def _build_snapshot() -> dict[str, Any]:
         "live_card_vm_wiring_snapshot_still_passes": wiring_result["passed"],
         "cta_authority_remains_final_publication_cta": cta_authority_preserved,
         "rendering_remains_render_only": rendering_render_only,
+        "legacy_html_renderer_absent": legacy_html_renderer_absent,
+        "direct_shell_helper_absent": direct_shell_helper_absent,
+        "direct_shell_deletion_markers_present": direct_shell_deletion_markers_present,
     }
     status = "PASS" if not failures else "FAIL"
     return {

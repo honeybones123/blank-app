@@ -585,6 +585,8 @@ def _visible_cta_buttons(snapshot: dict[str, Any]) -> list[str]:
         clean = " ".join(str(text).split())
         if not clean:
             continue
+        if clean.lower() == "apply beam/reo/load edits":
+            continue
         if "one-click" in clean.lower() or "apply" in clean.lower() or "auto design" in clean.lower():
             if button.get("frame_index") is not None:
                 iframe_rows.append(clean)
@@ -612,6 +614,8 @@ def _viewport_cta_buttons(snapshot: dict[str, Any]) -> list[str]:
         text = button.get("text")
         clean = " ".join(str(text).split())
         if not clean:
+            continue
+        if clean.lower() == "apply beam/reo/load edits":
             continue
         if "one-click" in clean.lower() or "apply" in clean.lower() or "auto design" in clean.lower():
             labels.append(clean)
@@ -836,7 +840,11 @@ def _scenario_underdesign_repair(
     if not _select_first_matching(page, ["No. of legs", "legs"], "2"):
         setup_failures.append("Could not set visible leg count select to 2.")
     _set_first_matching_number(page, ["Link spacing", "spacing"], 300)
-    _set_number(page, "Design shear Vu* (kN)", 20 if pure_bending else 300)
+    # Keep the pure-bending fixture inside the shear target band so the mixed
+    # bending-fail/shear-overdesign family is not contract-eligible.
+    shear_target = 26 if pure_bending else 300
+    if not _set_first_matching_number(page, ["Design shear Vu* (kN)", "Design shear", "Vu*"], shear_target):
+        setup_failures.append(f"Could not set visible design shear input to {shear_target}.")
     setup_snap = _snapshot(page)
     setup_shot = _save_screenshot(page, artifact_dir, name, "after_setup")
     try:
@@ -978,10 +986,15 @@ def _scenario_underdesign_repair(
         )
     if active_fail_visible and not raw_state_flags:
         failures.append("Family chooser did not expose raw_state_flags.")
+    expected_shear_family = (
+        "SHEAR_FAIL_BENDING_OVERDESIGN_GOVERNS"
+        if pure_shear and bool(raw_state_flags.get("bending_overdesigned"))
+        else "SHEAR_FAIL_GOVERNS"
+    )
     allowed_selected_families = (
         {"BENDING_FAIL_GOVERNS"}
         if pure_bending
-        else {"SHEAR_FAIL_GOVERNS"}
+        else {expected_shear_family}
         if pure_shear
         else {"COMBINED_BENDING_SHEAR_FAIL"}
     )
@@ -1096,6 +1109,15 @@ def _scenario_underdesign_repair(
         and has_repair_action
     ):
         failures.append("Pure shear repair action did not expose shear-family owner routing evidence.")
+    if (
+        active_fail_visible
+        and selected_family_id == "SHEAR_FAIL_BENDING_OVERDESIGN_GOVERNS"
+        and "shear_fail_bending_overdesign" not in family_route_owner.lower()
+        and has_repair_action
+    ):
+        failures.append(
+            "Shear fail with bending overdesign repair action did not expose mixed-family owner routing evidence."
+        )
     family_mismatch_blocked = "family mismatch blocked" in text or "publication blocked by family contract" in text
     if (
         active_fail_visible
@@ -1131,7 +1153,7 @@ def _scenario_underdesign_repair(
             "expected_selected_family": (
                 "BENDING_FAIL_GOVERNS"
                 if pure_bending
-                else "SHEAR_FAIL_GOVERNS"
+                else expected_shear_family
                 if pure_shear
                 else "COMBINED_BENDING_SHEAR_FAIL"
             ),

@@ -16,13 +16,23 @@ if str(ROOT) not in sys.path:
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 
-from design_brain.families.bending_and_shear_fail_govern import evaluate_bending_and_shear_fail_govern  # noqa: E402
-from design_brain.families.combined_bending_shear_fail import CombinedBendingShearFailFamily  # noqa: E402
+from design_brain.combined_bending_shear_candidate_merge import CombinedBendingShearFailInputs  # noqa: E402
+from design_brain.families.bending_and_shear_fail_govern import run_combined_bending_shear_fail_runtime  # noqa: E402
+from design_brain.families.combined_bending_shear_fail import (  # noqa: E402
+    CombinedBendingShearFailFamily,
+    _default_runtime_evaluator,
+)
 
 
 def _source_candidates() -> tuple[tuple[dict[str, Any], ...], tuple[dict[str, Any], ...]]:
     return (
-        ({"source_family_id": "BENDING_FAIL_GOVERNS", "candidate_id": "bend_depth", "updates": {"D": 550.0}},),
+        (
+            {
+                "source_family_id": "BENDING_FAIL_GOVERNS",
+                "candidate_id": "bend_depth",
+                "updates": {"D": 550.0, "bot_row_1_bars": 5, "bot_row_1_dia": 20},
+            },
+        ),
         ({"source_family_id": "SHEAR_FAIL_GOVERNS", "candidate_id": "shear_links", "updates": {"lig_d": 12}},),
     )
 
@@ -63,12 +73,14 @@ def main() -> int:
         bending_fail_candidates=bending,
         shear_fail_candidates=shear,
     )
-    api_result = evaluate_bending_and_shear_fail_govern(
-        {
-            "state": {"selected_family_id": "COMBINED_BENDING_SHEAR_FAIL"},
-            "bending_fail_candidates": bending,
-            "shear_fail_candidates": shear,
-        }
+    runtime_result = run_combined_bending_shear_fail_runtime(
+        inputs=CombinedBendingShearFailInputs(
+            selected_family_id="COMBINED_BENDING_SHEAR_FAIL",
+            base_state={"selected_family_id": "COMBINED_BENDING_SHEAR_FAIL"},
+            bending_fail_candidates=bending,
+            shear_fail_candidates=shear,
+        ),
+        evaluate_candidate=_default_runtime_evaluator,
     )
     specs = [dict(spec) for spec in list(ladder.get("specs") or []) if isinstance(spec, dict)]
     first = specs[0] if specs else {}
@@ -83,11 +95,12 @@ def main() -> int:
         "specs_include_runtime_evidence": bool(first.get("runtime_hash"))
         and bool(first.get("candidate_source_proof"))
         and bool(first.get("ranking_evidence")),
+        "family_boundary_emits_canonical_updates": {"bot_row_1_bars", "bot_row_1_dia"} <= set(dict(first.get("updates") or {}))
+        and "bot1_count" not in set(dict(first.get("updates") or {})),
         "source_family_ids_preserved": set(first.get("source_family_ids") or ())
         == {"BENDING_FAIL_GOVERNS", "SHEAR_FAIL_GOVERNS"},
-        "api_identifies_runtime_authority": api_result.lock_proof.get("runtime_authority")
-        == "run_combined_bending_shear_fail_runtime",
-        "api_shared_outputs_empty": api_result.publication == {} and api_result.cta_contract == {},
+        "package_runtime_export_matches_family_shell": runtime_result.runtime_hash == ladder.get("runtime_hash"),
+        "family_shell_keeps_shared_outputs_outside": "shared_system_owned_outside_family" in family_source,
         "inputs_page_not_modified_for_cutover": "combined_fail_contract_ladder" in inputs_source,
         "route_existing_decision_no_longer_claims_used": "'family_routing_used': True" not in family_source
         and '"family_routing_used": True' not in family_source
@@ -102,7 +115,7 @@ def main() -> int:
         "spec_count": len(specs),
         "first_spec": first,
         "runtime_hash": ladder.get("runtime_hash"),
-        "api_lock_proof": dict(api_result.lock_proof),
+        "runtime_result": runtime_result.to_dict(),
     }
     json_path, report_path = _write(snapshot)
     if failures:

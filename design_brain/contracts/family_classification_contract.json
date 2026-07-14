@@ -35,8 +35,9 @@
   "allowed_family_ids": [
     "EXACT_STOP_PROVEN",
     "LOCKED_NO_REPAIR",
+    "GEOMETRY_DETAILING_GOVERNS",
     "BENDING_AND_SHEAR_FAIL_GOVERN",
-    "BENDING_FAIL_SHEAR_OPTIMISE_GOVERNS",
+    "BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS",
     "SHEAR_FAIL_BENDING_OPTIMISE_GOVERNS",
     "BENDING_FAIL_GOVERNS",
     "SHEAR_FAIL_GOVERNS",
@@ -49,8 +50,9 @@
   "classification_priority_order": [
     "EXACT_STOP_PROVEN",
     "LOCKED_NO_REPAIR",
+    "GEOMETRY_DETAILING_GOVERNS",
     "BENDING_AND_SHEAR_FAIL_GOVERN",
-    "BENDING_FAIL_SHEAR_OPTIMISE_GOVERNS",
+    "BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS",
     "SHEAR_FAIL_BENDING_OPTIMISE_GOVERNS",
     "BENDING_FAIL_GOVERNS",
     "SHEAR_FAIL_GOVERNS",
@@ -76,7 +78,10 @@
     "can_optimise_bending_without_hurting_shear",
     "can_optimise_shear_without_hurting_bending",
     "exact_stop_available",
-    "no_valid_repair_available"
+    "no_valid_repair_available",
+    "zero_shear_with_ligatures",
+    "unnecessary_shear_reinforcement_exists",
+    "shear_cleanup_possible"
   ],
   "required_utilisation_status_fields": [
     "bending_utilisation",
@@ -107,7 +112,8 @@
       ],
       "must_not_select_when": [
         "a repair or optimisation remains required and available",
-        "locked/no-repair conditions govern first"
+        "locked/no-repair conditions govern first",
+        "geometry_detailing_state == \"BLOCKED\""
       ],
       "required_evidence": [
         "exact_stop_available",
@@ -133,7 +139,8 @@
         "locked inputs prevent all valid repair/optimisation paths OR no_valid_repair_available == true"
       ],
       "must_not_select_when": [
-        "a valid unlocked repair or optimisation path exists"
+        "a valid unlocked repair or optimisation path exists",
+        "serviceability_state == \"FAIL\" because SERVICEABILITY_GOVERNS owns serviceability blocker and no-valid-repair evidence"
       ],
       "required_evidence": [
         "geometry_locked",
@@ -149,9 +156,36 @@
       "purpose": "Terminal result where no legal action can be taken.",
       "terminal_status": "locked_no_repair"
     },
+    "GEOMETRY_DETAILING_GOVERNS": {
+      "family_id": "GEOMETRY_DETAILING_GOVERNS",
+      "priority": 3,
+      "rule_type": "geometry_detailing",
+      "condition_summary": "input geometry or detailing is blocked, so geometry/detailing governs before normal engineering recommendation families",
+      "select_when": [
+        "geometry_detailing_state == \"BLOCKED\""
+      ],
+      "must_not_select_when": [
+        "EXACT_STOP_PROVEN applies",
+        "LOCKED_NO_REPAIR applies with explicit no-valid-repair or locked-input proof"
+      ],
+      "required_evidence": [
+        "geometry_detailing_state",
+        "geometry_status",
+        "detailing_status",
+        "blocked_reason"
+      ],
+      "output_requirements": [
+        "governing_checks",
+        "inactive_family_evidence",
+        "blocked_reason",
+        "classification_hash"
+      ],
+      "purpose": "Invalid input geometry/detailing must suppress downstream diagram confidence and route Design Guide to geometry/detailing repair guidance.",
+      "terminal_status": null
+    },
     "BENDING_AND_SHEAR_FAIL_GOVERN": {
       "family_id": "BENDING_AND_SHEAR_FAIL_GOVERN",
-      "priority": 3,
+      "priority": 4,
       "rule_type": "combined_underdesign",
       "condition_summary": "bending_utilisation > 1.00 and shear_utilisation > 1.00",
       "select_when": [
@@ -176,9 +210,9 @@
       "purpose": "Combined strengthening. Neither bending nor shear should be solved in isolation.",
       "terminal_status": null
     },
-    "BENDING_FAIL_SHEAR_OPTIMISE_GOVERNS": {
-      "family_id": "BENDING_FAIL_SHEAR_OPTIMISE_GOVERNS",
-      "priority": 4,
+    "BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS": {
+      "family_id": "BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS",
+      "priority": 5,
       "rule_type": "mixed_strengthen_and_optimise",
       "condition_summary": "bending fails, shear is overdesigned, and shear can be optimised without hurting bending",
       "select_when": [
@@ -212,7 +246,7 @@
     },
     "SHEAR_FAIL_BENDING_OPTIMISE_GOVERNS": {
       "family_id": "SHEAR_FAIL_BENDING_OPTIMISE_GOVERNS",
-      "priority": 5,
+      "priority": 6,
       "rule_type": "mixed_strengthen_and_optimise",
       "condition_summary": "shear fails, bending is overdesigned, and bending can be optimised without hurting shear",
       "select_when": [
@@ -246,7 +280,7 @@
     },
     "BENDING_FAIL_GOVERNS": {
       "family_id": "BENDING_FAIL_GOVERNS",
-      "priority": 6,
+      "priority": 7,
       "rule_type": "single_underdesign",
       "condition_summary": "bending fails and shear is protected, acceptable, or cannot be safely optimised",
       "select_when": [
@@ -255,7 +289,7 @@
       ],
       "must_not_select_when": [
         "combined bending and shear failure is active",
-        "BENDING_FAIL_SHEAR_OPTIMISE_GOVERNS is eligible",
+        "BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS is eligible",
         "terminal exact-stop or locked-no-repair applies"
       ],
       "required_evidence": [
@@ -274,7 +308,7 @@
     },
     "SHEAR_FAIL_GOVERNS": {
       "family_id": "SHEAR_FAIL_GOVERNS",
-      "priority": 7,
+      "priority": 8,
       "rule_type": "single_underdesign",
       "condition_summary": "shear fails and bending is protected, acceptable, or cannot be safely optimised",
       "select_when": [
@@ -302,7 +336,7 @@
     },
     "SERVICEABILITY_GOVERNS": {
       "family_id": "SERVICEABILITY_GOVERNS",
-      "priority": 8,
+      "priority": 9,
       "rule_type": "serviceability",
       "condition_summary": "strength checks do not fail and serviceability_state == \"FAIL\"",
       "select_when": [
@@ -328,7 +362,7 @@
     },
     "COMBINED_OVERDESIGN": {
       "family_id": "COMBINED_OVERDESIGN",
-      "priority": 9,
+      "priority": 10,
       "rule_type": "overdesign",
       "condition_summary": "bending and shear are both overdesigned or both have minimum-reinforcement blocker evidence, and both can be safely reduced or stopped together",
       "select_when": [
@@ -355,7 +389,7 @@
     },
     "BENDING_OVERDESIGN_GOVERNS": {
       "family_id": "BENDING_OVERDESIGN_GOVERNS",
-      "priority": 10,
+      "priority": 11,
       "rule_type": "overdesign",
       "condition_summary": "bending is overdesigned or stopped by minimum bending reinforcement while shear is protected",
       "select_when": [
@@ -381,11 +415,11 @@
     },
     "SHEAR_OVERDESIGN_GOVERNS": {
       "family_id": "SHEAR_OVERDESIGN_GOVERNS",
-      "priority": 11,
+      "priority": 12,
       "rule_type": "overdesign",
-      "condition_summary": "shear is overdesigned or stopped by minimum shear reinforcement while bending is protected",
+      "condition_summary": "shear is overdesigned, has removable zero-shear ligatures, or is stopped by minimum shear reinforcement while bending is protected",
       "select_when": [
-        "shear_utilisation < 0.85 OR minimum_shear_reo_state == \"GOVERNS\"",
+        "shear_utilisation < 0.85 OR zero_shear_with_ligatures == true OR unnecessary_shear_reinforcement_exists == true OR shear_cleanup_possible == true OR minimum_shear_reo_state == \"GOVERNS\"",
         "0.85 <= bending_utilisation <= 1.00"
       ],
       "must_not_select_when": [
@@ -396,7 +430,10 @@
       "required_evidence": [
         "shear_utilisation",
         "bending_utilisation",
-        "can_optimise_shear_without_hurting_bending"
+        "can_optimise_shear_without_hurting_bending",
+        "zero_shear_with_ligatures",
+        "unnecessary_shear_reinforcement_exists",
+        "shear_cleanup_possible"
       ],
       "output_requirements": [
         "governing_checks",
@@ -407,7 +444,7 @@
     },
     "TARGET_BAND_REACHED": {
       "family_id": "TARGET_BAND_REACHED",
-      "priority": 12,
+      "priority": 13,
       "rule_type": "terminal",
       "condition_summary": "both strength utilisations are in target, serviceability does not fail, and geometry/detailing is not blocked",
       "select_when": [

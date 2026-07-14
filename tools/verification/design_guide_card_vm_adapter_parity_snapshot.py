@@ -348,12 +348,39 @@ def _build_snapshot() -> dict[str, Any]:
             for field in COMPARE_FIELDS
             if comparable_actual.get(field) != comparable_expected.get(field)
         }
+        action_family = (
+            "SHEAR_FAIL_GOVERNS"
+            if name == "fallback_shell_card"
+            else "BENDING_FAIL_GOVERNS"
+        )
+        is_action = case["outcome_state"] == "ACTION"
         publication = build_final_design_guide_publication(
             item={
                 **case["view_model"],
+                **(
+                    {
+                        "selected_family_id": action_family,
+                        "published_family_id": action_family,
+                        "cta_family_id": action_family,
+                        "family": action_family,
+                    }
+                    if is_action
+                    else {}
+                ),
                 "button_contract": {
-                    "enabled": case["outcome_state"] == "ACTION",
-                    "actionable": case["outcome_state"] == "ACTION",
+                    "enabled": is_action,
+                    "actionable": is_action,
+                    **(
+                        {
+                            "action_type": "apply_resolved_candidate",
+                            "family": action_family,
+                            "updates": {"fixture_action": True},
+                            "candidate_id": f"{name}_candidate",
+                            "source_candidate_id": f"{name}_candidate",
+                        }
+                        if is_action
+                        else {}
+                    ),
                 },
             },
             verifier_payload={"case": name},

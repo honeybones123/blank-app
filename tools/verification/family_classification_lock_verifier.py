@@ -131,9 +131,35 @@ CASES = [
         },
     ),
     _case(
+        "geometry_detailing_governs",
+        expected_legacy="GEOMETRY_DETAILING_GOVERNS",
+        expected_contract="GEOMETRY_DETAILING_GOVERNS",
+        flags={"geometry_detailing_fail": True},
+        evidence={
+            "bending_utilisation": 0.94,
+            "shear_utilisation": 0.96,
+            "geometry_detailing_state": "BLOCKED",
+        },
+    ),
+    _case(
+        "geometry_detailing_priority_over_strength",
+        expected_legacy="GEOMETRY_DETAILING_GOVERNS",
+        expected_contract="GEOMETRY_DETAILING_GOVERNS",
+        flags={"geometry_detailing_fail": True, "bending_fail": True, "shear_fail": True, "legal_repair_exists": True},
+        evidence={
+            "bending_utilisation": 1.11,
+            "shear_utilisation": 1.18,
+            "bending_state": "FAIL",
+            "shear_state": "FAIL",
+            "geometry_detailing_state": "BLOCKED",
+            "can_strengthen_bending": True,
+            "can_strengthen_shear": True,
+        },
+    ),
+    _case(
         "bending_fail_shear_optimise",
-        expected_legacy="BENDING_FAIL_GOVERNS",
-        expected_contract="BENDING_FAIL_SHEAR_OPTIMISE_GOVERNS",
+        expected_legacy="BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS",
+        expected_contract="BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS",
         flags={"bending_fail": True, "shear_overdesigned": True, "legal_repair_exists": True},
         evidence={
             "bending_utilisation": 1.13,
@@ -143,11 +169,10 @@ CASES = [
             "can_strengthen_bending": True,
             "can_optimise_shear_without_hurting_bending": True,
         },
-        accepted_migration=True,
     ),
     _case(
         "shear_fail_bending_optimise",
-        expected_legacy="SHEAR_FAIL_GOVERNS",
+        expected_legacy="SHEAR_FAIL_BENDING_OVERDESIGN_GOVERNS",
         expected_contract="SHEAR_FAIL_BENDING_OPTIMISE_GOVERNS",
         flags={"shear_fail": True, "bending_overdesigned": True, "legal_repair_exists": True},
         evidence={

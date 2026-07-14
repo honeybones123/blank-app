@@ -23,6 +23,10 @@ REPO = Path(__file__).resolve().parents[2]
 ARTIFACT_DIR = REPO / "artifacts" / "verification"
 SCENARIO = "scenario_c1_pure_shear_underdesign_repair"
 REPORT_LINE_RE = re.compile(r"^Report:\s*(?P<path>.+?\.json)\s*$")
+ACCEPTED_PUBLICATION_FAMILIES = {
+    "SHEAR_FAIL_GOVERNS",
+    "SHEAR_FAIL_BENDING_OVERDESIGN_GOVERNS",
+}
 
 
 def _latest_gate_report(started_at: float) -> Path | None:
@@ -104,29 +108,44 @@ def main(argv: list[str] | None = None) -> int:
     first_card_text = str(final_snapshot.get("first_card_text") or final_snapshot.get("body_text") or "")
     lower_text = first_card_text.lower()
     ctas = list(evidence.get("visible_cta_buttons") or [])
+    design_guide_shear_ctas = [
+        str(value)
+        for value in ctas
+        if "shear capacity is low" in str(value).lower()
+        or "one-click auto design" in str(value).lower()
+    ]
     render_cta_payload_id = str(evidence.get("render_cta_payload_id") or "")
     render_cta_payload_id_lower = render_cta_payload_id.lower()
+    selected_family_id = str(evidence.get("selected_family_id") or "")
+    published_family_id = str(evidence.get("published_family_id") or "")
+    cta_family_id = str(evidence.get("cta_family_id") or "")
+    apply_payload_family_id = str(evidence.get("apply_payload_family_id") or "")
+    candidate_family_id = str(evidence.get("candidate_family_id") or "")
+    family_route_owner = str(evidence.get("family_route_owner") or "")
     positive_checks = {
         "normal_mode": env.get("CODEX_BROWSER_TEST_MODE") in (None, "", "0", "false", "False"),
         "scenario_passed": scenario.get("status") == "PASS",
-        "selected_family_is_shear_fail": evidence.get("selected_family_id") == "SHEAR_FAIL_GOVERNS",
-        "published_family_is_shear_fail": evidence.get("published_family_id") == "SHEAR_FAIL_GOVERNS",
-        "cta_family_is_shear_fail": evidence.get("cta_family_id") == "SHEAR_FAIL_GOVERNS",
-        "apply_payload_family_is_shear_fail": evidence.get("apply_payload_family_id") == "SHEAR_FAIL_GOVERNS",
+        "selected_family_is_shear_fail_or_wrapper": selected_family_id in ACCEPTED_PUBLICATION_FAMILIES,
+        "published_family_is_shear_fail_or_wrapper": published_family_id in ACCEPTED_PUBLICATION_FAMILIES,
+        "cta_family_is_shear_fail_or_wrapper": cta_family_id in ACCEPTED_PUBLICATION_FAMILIES,
+        "apply_payload_family_is_shear_fail_or_wrapper": apply_payload_family_id in ACCEPTED_PUBLICATION_FAMILIES,
+        "candidate_source_family_is_shear_fail": candidate_family_id == "SHEAR_FAIL_GOVERNS",
         "shear_underdesign_identified": bool(evidence.get("visible_shear_fail_summary")),
         "bending_fail_absent": not bool(evidence.get("visible_bending_fail_summary")),
         "family_owner_visible": "design_brain.families.shear_fail.ShearFailFamily"
-        in str(evidence.get("family_route_owner") or ""),
+        in family_route_owner
+        or "design_brain.families.shear_fail_bending_overdesign.ShearFailBendingOverdesignFamily"
+        in family_route_owner,
         "repair_action_or_no_repair_evidence": bool(
             evidence.get("has_repair_action") or evidence.get("has_no_repair_evidence")
         ),
         "apply_payload_exists": bool(evidence.get("has_apply_payload") or evidence.get("has_repair_action")),
         "payload_id_is_shear_fail_repair": (
-            "SHEAR_FAIL_GOVERNS" in render_cta_payload_id
+            any(family in render_cta_payload_id for family in ACCEPTED_PUBLICATION_FAMILIES)
             and "shear_fail" in render_cta_payload_id_lower
             and "repair" in render_cta_payload_id_lower
         ),
-        "single_primary_cta_if_actionable": len(ctas) <= 1,
+        "single_design_guide_shear_cta_if_actionable": len(design_guide_shear_ctas) == 1,
     }
     negative_checks = {
         "no_design_is_efficient": "design is efficient" not in lower_text,

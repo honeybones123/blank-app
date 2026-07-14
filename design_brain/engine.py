@@ -2459,7 +2459,11 @@ def _specific_blocker_decision(
     )
     if existing_executable_action:
         safe_executor_count = max(safe_executor_count, 1)
-    if safe_executor_count > 0:
+    outside_target_allowed = bool(evidence.get("outside_target_band_allowed")) and bool(
+        str(evidence.get("outside_target_band_allowed_category") or "").strip()
+    )
+    allowed_outside_target_action = bool(existing_executable_action and outside_target_allowed)
+    if allowed_outside_target_action:
         blocker_theme = "efficiency"
         blocker_bucket = "efficiency"
         blocker_button_theme = "efficiency"
@@ -2497,7 +2501,13 @@ def _specific_blocker_decision(
             if family == "bending"
             else "Cleanup blocked by engineering limits"
         )
-        body = f"No safe one-click cleanup is available for this state. Reason: {reason}."
+        if safe_executor_count > 0:
+            body = (
+                "A safe preview was found, but it does not reach the accepted target band. "
+                f"Reason: {reason}."
+            )
+        else:
+            body = f"No safe one-click cleanup is available for this state. Reason: {reason}."
         badge = "INFO"
         status_text = "INFO"
         intent = "specific_blocker"
@@ -2514,7 +2524,7 @@ def _specific_blocker_decision(
             "candidate_search_evidence": dict(evidence),
         }
     )
-    if existing_executable_action:
+    if allowed_outside_target_action:
         button.update(
             {
                 "enabled": True,
@@ -2547,7 +2557,7 @@ def _specific_blocker_decision(
             "use_success_style": False,
             "headline": card["title"],
             "subtext": card["body"],
-            "show_apply_button": bool(safe_executor_count > 0 and button.get("actionable")),
+            "show_apply_button": bool(allowed_outside_target_action and button.get("actionable")),
             "button_theme": blocker_button_theme,
             "critical_status": status_text,
             "guidance_intent": intent,
@@ -2996,201 +3006,3 @@ def resolve_design_guide_decision(
         }
     )
     return decision
-
-
-def legacy_item_from_decision(primary_item: dict | None, decision: dict | None) -> dict | None:
-    """Transitional adapter for the legacy Streamlit card renderer.
-
-    The engine remains the source of truth. This projects selected engine-owned
-    decisions onto the old item shape until the renderer can consume the
-    decision dictionary directly.
-    """
-    if not isinstance(primary_item, dict):
-        return primary_item
-    engine_decision = _as_dict(decision)
-    card = _as_dict(engine_decision.get("card"))
-    debug = _as_dict(engine_decision.get("debug"))
-    evidence = _as_dict(engine_decision.get("candidate_search_evidence") or debug.get("candidate_search_evidence"))
-    combined_route_diag = _as_dict(debug.get("combined_fail_family_routing"))
-    if (
-        str(card.get("intent") or "").strip() == "required_fix"
-        and str(card.get("family") or "").strip().lower() == "combined"
-        and bool(combined_route_diag.get("family_routing_used") or evidence.get("combined_fail_family_routing_used"))
-        and not bool(combined_route_diag.get("fallback_used") or evidence.get("fallback_used"))
-    ):
-        button = _as_dict(engine_decision.get("button_contract"))
-        title = str(card.get("title") or "").strip() or "Strengthening required for bending and shear"
-        body = str(card.get("body") or "").strip()
-        display_truth = _as_dict(primary_item.get("display_truth"))
-        display_truth.update(
-            {
-                "displayed_status": card.get("status_text") or "FAIL",
-                "display_truth_source": card.get("display_truth_source") or display_truth.get("display_truth_source") or "published_summary",
-            }
-        )
-        primary_item.update(
-            {
-                "bucket": "fail",
-                "status": "FAIL",
-                "check_key": "combined",
-                "family": "combined",
-                "selected_action_family": "combined",
-                "title_main": title,
-                "title": title,
-                "title_sub": "",
-                "primary_action": "Run one-click auto design",
-                "reasoning": body,
-                "guidance_why": body,
-                "guidance_intent": "required_fix",
-                "design_guide_terminal_state": None,
-                "display_truth": dict(display_truth),
-                "button_contract": dict(button),
-                "action_type": button.get("action_type") or primary_item.get("action_type"),
-                "updates": dict(button.get("updates") or primary_item.get("updates") or {}),
-                "selected_action_updates": dict(button.get("updates") or primary_item.get("selected_action_updates") or {}),
-                "candidate_search_evidence": dict(evidence),
-                "target_band_outcome": dict(_as_dict(engine_decision.get("target_band_outcome"))),
-                "guidance_why_text_compact": body,
-                "selected_family_id": "COMBINED_BENDING_SHEAR_FAIL",
-                "published_family_id": "COMBINED_BENDING_SHEAR_FAIL",
-                "cta_family_id": "COMBINED_BENDING_SHEAR_FAIL",
-                "card_family_id": "COMBINED_BENDING_SHEAR_FAIL",
-            }
-        )
-        action_payload = _as_dict(primary_item.get("action_payload"))
-        if action_payload:
-            action_payload["candidate_search_evidence"] = dict(evidence)
-            action_payload["button_contract"] = dict(button)
-            primary_item["action_payload"] = action_payload
-        resolved = _as_dict(primary_item.get("resolved_candidate"))
-        if resolved:
-            resolved["candidate_search_evidence"] = dict(evidence)
-            primary_item["resolved_candidate"] = resolved
-        return primary_item
-
-    route_diag = _as_dict(debug.get("shear_fail_family_routing"))
-    if (
-        str(card.get("intent") or "").strip() == "required_fix"
-        and str(card.get("family") or "").strip().lower() == "shear"
-        and bool(route_diag.get("family_routing_used") or evidence.get("family_routing_used"))
-        and not bool(route_diag.get("fallback_used") or evidence.get("fallback_used"))
-    ):
-        button = _as_dict(engine_decision.get("button_contract"))
-        title = str(card.get("title") or "").strip() or "Shear capacity is low"
-        body = str(card.get("body") or "").strip()
-        display_truth = _as_dict(primary_item.get("display_truth"))
-        display_truth.update(
-            {
-                "displayed_status": card.get("status_text") or "FAIL",
-                "display_truth_source": card.get("display_truth_source") or display_truth.get("display_truth_source") or "published_summary",
-            }
-        )
-        primary_item.update(
-            {
-                "bucket": "fail",
-                "status": "FAIL",
-                "check_key": "shear",
-                "family": "shear",
-                "title_main": title,
-                "title": title,
-                "title_sub": "",
-                "primary_action": "Run one-click auto design",
-                "reasoning": body,
-                "guidance_why": body,
-                "guidance_intent": "required_fix",
-                "design_guide_terminal_state": None,
-                "display_truth": dict(display_truth),
-                "button_contract": dict(button),
-                "action_type": button.get("action_type") or primary_item.get("action_type"),
-                "updates": dict(button.get("updates") or primary_item.get("updates") or {}),
-                "candidate_search_evidence": dict(evidence),
-                "target_band_outcome": dict(_as_dict(engine_decision.get("target_band_outcome"))),
-                "guidance_why_text_compact": body,
-            }
-        )
-        action_payload = _as_dict(primary_item.get("action_payload"))
-        if action_payload:
-            action_payload["candidate_search_evidence"] = dict(evidence)
-            action_payload["button_contract"] = dict(button)
-            primary_item["action_payload"] = action_payload
-        resolved = _as_dict(primary_item.get("resolved_candidate"))
-        if resolved:
-            resolved["candidate_search_evidence"] = dict(evidence)
-            primary_item["resolved_candidate"] = resolved
-        return primary_item
-
-    if str(card.get("intent") or "").strip() != "already_efficient":
-        return primary_item
-
-    button = _as_dict(engine_decision.get("button_contract"))
-    outcome = _as_dict(engine_decision.get("target_band_outcome"))
-    title = str(card.get("title") or "").strip() or "Design is efficient - target band achieved"
-    body = str(card.get("body") or "").strip()
-    displayed_util = _as_float(card.get("displayed_util"))
-    display_truth = {
-        "displayed_util": displayed_util,
-        "displayed_status": card.get("status_text") or card.get("badge") or "PASS",
-        "display_truth_source": card.get("display_truth_source") or "published_summary",
-        "target_low": card.get("target_low"),
-        "target_high": card.get("target_high"),
-        "displayed_within_target_band": True,
-        "source_summary_util": displayed_util,
-        "source_candidate_util": None,
-        "source_post_commit_util": None,
-    }
-    disabled_contract = {
-        "enabled": False,
-        "actionable": False,
-        "action_type": None,
-        "family": card.get("family"),
-        "updates": {},
-        "preview_pass": False,
-        "expected_util": None,
-        "blocking_reason": button.get("blocking_reason")
-        or "current design is inside the target utilisation band",
-        "source_candidate_id": None,
-        "candidate_id": None,
-    }
-    out = dict(primary_item)
-    out.update(
-        {
-            "bucket": "pass",
-            "status": "PASS",
-            "check_key": card.get("family") or out.get("check_key") or "governing",
-            "title_main": title,
-            "title": title,
-            "title_sub": "",
-            "title_util": f"(utilisation = {displayed_util:.2f})" if displayed_util is not None else "",
-            "primary_action": "",
-            "secondary_action": "",
-            "reasoning": body,
-            "guidance_why": body,
-            "guidance_intent": "already_efficient",
-            "design_guide_terminal_state": "optimal",
-            "display_truth": dict(display_truth),
-            "button_contract": dict(disabled_contract),
-            "action_type": None,
-            "action_payload": {},
-            "resolved_candidate": {},
-            "resolved_candidate_updates": {},
-            "updates": {},
-            "candidate_post_util": None,
-            "resolved_candidate_post_util": None,
-            "source_candidate_id": None,
-            "candidate_id": None,
-            "candidate_search_evidence": dict(
-                card.get("candidate_search_evidence")
-                or _as_dict(engine_decision.get("debug")).get("candidate_search_evidence")
-                or out.get("candidate_search_evidence")
-                or {}
-            ),
-            "target_band_outcome": dict(outcome),
-            "guidance_change_lines": [],
-            "guidance_change_summary_compact": "",
-            "guidance_why_text_compact": "",
-            "guidance_alternatives_text_compact": "",
-            "guidance_before_after": None,
-        }
-    )
-    out.update(display_truth)
-    return out

@@ -165,6 +165,60 @@ def build_selected_auto_design_candidate_selection_result(
     )
 
 
+def build_auto_design_selected_candidate_selection_result_from_context(
+    *,
+    winner: dict,
+    candidates: list[dict] | tuple[dict, ...],
+    fallback_hash: str | None,
+    selected_because_band: bool,
+    compliant_available: bool,
+    winner_pool_mode: str | None,
+    candidate_count: int,
+    valid_candidate_count: int,
+    compliant_count: int,
+    band_reacher_count: int,
+    current_in_band: bool,
+    one_click_available: bool,
+    winner_goal_score: float | None,
+    runner_up_goal_score: float | None,
+    goal_tie_break_reason: str | None,
+) -> AutoDesignCandidateSelectionResult:
+    selected_candidate_identity = auto_design_candidate_identity(
+        winner,
+        fallback_hash=fallback_hash,
+    )
+    selected_candidate_index = next(
+        (
+            index
+            for index, item in enumerate(list(candidates or []))
+            if item is winner
+        ),
+        None,
+    )
+    selected_reason = (
+        "band_reacher_goal_tie_break"
+        if selected_because_band
+        else ("compliant_candidate" if compliant_available else "least_violation_candidate")
+    )
+    return build_selected_auto_design_candidate_selection_result(
+        winner=winner,
+        selected_candidate_identity=selected_candidate_identity,
+        selected_candidate_index=selected_candidate_index,
+        selected_reason=selected_reason,
+        selected_because_band=selected_because_band,
+        winner_pool_mode=winner_pool_mode,
+        candidate_count=candidate_count,
+        valid_candidate_count=valid_candidate_count,
+        compliant_count=compliant_count,
+        band_reacher_count=band_reacher_count,
+        current_in_band=current_in_band,
+        one_click_available=one_click_available,
+        winner_goal_score=winner_goal_score,
+        runner_up_goal_score=runner_up_goal_score,
+        goal_tie_break_reason=goal_tie_break_reason,
+    )
+
+
 def _as_float(value: Any) -> float | None:
     try:
         if value is None:

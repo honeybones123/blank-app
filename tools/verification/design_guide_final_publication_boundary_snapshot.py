@@ -142,7 +142,7 @@ def _payload_cases() -> dict[str, dict[str, Any]]:
                 "blocker_reason": None,
                 "cta_enabled": False,
                 "cta_label": None,
-                "cta_disabled_reason": None,
+                "cta_disabled_reason": "terminal_pass_no_action",
                 "display_title": "Design accepted",
                 "display_badge": "PASS",
                 "display_summary": "Target band reached.",

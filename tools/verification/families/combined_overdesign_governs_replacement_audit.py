@@ -59,14 +59,28 @@ def main() -> int:
     shell = _read("design_brain/families/combined_cleanup.py")
     inputs = _read("inputs_page.py")
     runtime = _read("design_brain/families/bending_and_shear_overdesign_govern/runtime.py")
+    controller = _read("design_brain/design_guide_controller.py")
     source_contract = candidate_source_contract()
+    legacy_page_helpers_present = (
+        "_publishable_safe_combined_cleanup_row_from_evidence" in inputs
+        and "_visible_safe_combined_cleanup_action_from_evidence" in inputs
+    )
+    shared_shell_orchestration_present = (
+        "run_design_guide_combined_low_util_orchestration" in controller
+        and "build_design_guide_controller_combined_low_util_cleanup_route_policy_proof" in controller
+    )
+    family_runtime_does_not_absorb_shared_shell_logic = (
+        "_publishable_safe_combined_cleanup_row_from_evidence" not in runtime
+        and "_visible_safe_combined_cleanup_action_from_evidence" not in runtime
+        and "run_design_guide_combined_low_util_orchestration" not in runtime
+    )
     classification = {
         "family_shell_runtime_backed": "class CombinedCleanupFamily" in shell
         and "contracted_optimisation_ladder_specs" in shell
         and "run_combined_overdesign_governs_runtime" in shell,
-        "old_live_logic_page_owned": "_publishable_safe_combined_cleanup_row_from_evidence" in inputs
-        and "_visible_safe_combined_cleanup_action_from_evidence" in inputs
-        and "_combine_best_safe_shear_with_bending_cleanup_item" in inputs,
+        "old_live_logic_stays_shared_shell_owned": legacy_page_helpers_present
+        and shared_shell_orchestration_present
+        and family_runtime_does_not_absorb_shared_shell_logic,
         "new_runtime_authority_is_merge_only": "run_combined_overdesign_governs_runtime" in runtime
         and "run_bending_overdesign_governs_runtime" not in runtime
         and "run_shear_overdesign_governs_runtime" not in runtime,

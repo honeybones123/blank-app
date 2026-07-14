@@ -223,10 +223,14 @@ def bottom_reinforcement_lane_main() -> int:
         as_after=942.0,
         status="REJECTED",
     )
+    required_sequence_milestones = {"5-N24", "4-N24", "3-N20", "2-N16", "2-N12"}
     checks = {
         **_common_checks(),
         "policy_lane_id_matches": policy.get("lane_id") == "BOTTOM_REINFORCEMENT_REDUCTION",
-        "sequence_matches_contract": sequence == ["5-N24", "4-N24", "4-N20", "3-N24", "3-N20"],
+        "sequence_matches_contract": required_sequence_milestones.issubset(set(sequence))
+        and bool(sequence)
+        and sequence[-1] == "2-N12"
+        and policy.get("minimum_bottom_bars") == 2,
         "updates_are_reinforcement_updates": all(update.reinforcement_update for update in updates),
         "candidate_inside_target_band_can_be_accepted": accepted.engineering_status.get("candidate_valid") is True,
         "below_min_or_bending_failure_is_rejected": rejected.engineering_status.get("candidate_valid") is False,

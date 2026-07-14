@@ -337,6 +337,8 @@ class ShearFailFamily(DiagnosticFamilyStrategy):
         runtime_result = _run_contract_runtime(
             base_state=runtime_base,
             evaluate_candidate=_runtime_rejecting_evaluator,
+            max_depth_steps=0 if geometry_locked else 1,
+            max_width_steps=0 if geometry_locked else 1,
         )
         runtime_trace_by_lane = {
             str(row.get("lane_id") or ""): dict(row)

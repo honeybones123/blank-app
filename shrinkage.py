@@ -13,12 +13,24 @@ from state_and_helpers import (
     get_sync_callbacks,
     update_results,  # kept for contract
 )
-from widgets_helpers import apply_global_widget_css, apply_result_page_css, number_row, v2_number_input, v2_selectbox, v2_checkbox, v2_radio, render_page_explainer_expander, render_result_page_title, render_section_title, page_divider
+from widgets_helpers import apply_global_widget_css, apply_result_page_css, number_row, v2_number_input, v2_selectbox, v2_checkbox, v2_radio, render_page_explainer_expander, render_result_page_title, render_section_title, page_divider, render_plotly_diagram
 from step_ui import render_expandable_step
-from engineering_check_ui import PARAMETRIC_RESULT_COLUMNS, sync_legacy_value_limit
+from engineering_check_ui import PARAMETRIC_RESULT_COLUMNS
+from ui.summary_rows import build_shrinkage_summary_rows
 from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks, inject_seamless_steps_css
 from jump_nav import scroll_to_jump_after_render
-from shear_visuals import build_shrinkage_schematic_plotly
+from ui.diagrams.creep_shrinkage_diagram import build_shrinkage_schematic_plotly
+from calculations.creep_shrinkage import (
+    SHRINKAGE_ENV_LABELS as _ENV_LABELS,
+    autogenous_shrinkage_final_from_current,
+    calc_eps_cse,
+    calc_k1_shrinkage,
+    exposed_perimeter_geometry_values,
+    shrinkage_total_values,
+    shrinkage_closest_fc_row as _closest_fc_row,
+    shrinkage_closest_th as _closest_th,
+    shrinkage_eps_final as _shrinkage_eps_final,
+)
 
 
 # ------------------------------------------------------------
@@ -90,110 +102,6 @@ div.element-container:has(div[data-testid="stMarkdownContainer"]:has(p.calc-sect
 
 
 # ------------------------------------------------------------
-#  Table 3.1.7.2 – final design drying shrinkage ε*csd (×10⁻⁶)
-# ------------------------------------------------------------
-_SHRINKAGE_TABLE = {
-    25: {
-        "Arid":      {50: 810, 100: 720, 200: 590, 400: 470},
-        "Interior":  {50: 780, 100: 670, 200: 550, 400: 440},
-        "Temperate": {50: 740, 100: 630, 200: 520, 400: 410},
-        "Tropical":  {50: 610, 100: 530, 200: 440, 400: 350},
-    },
-    32: {
-        "Arid":      {50: 800, 100: 720, 200: 590, 400: 470},
-        "Interior":  {50: 770, 100: 670, 200: 560, 400: 440},
-        "Temperate": {50: 730, 100: 620, 200: 520, 400: 420},
-        "Tropical":  {50: 600, 100: 520, 200: 440, 400: 360},
-    },
-    40: {
-        "Arid":      {50: 790, 100: 710, 200: 590, 400: 480},
-        "Interior":  {50: 740, 100: 670, 200: 560, 400: 450},
-        "Temperate": {50: 700, 100: 620, 200: 530, 400: 420},
-        "Tropical":  {50: 580, 100: 500, 200: 440, 400: 360},
-    },
-    50: {
-        "Arid":      {50: 780, 100: 700, 200: 590, 400: 490},
-        "Interior":  {50: 730, 100: 660, 200: 560, 400: 460},
-        "Temperate": {50: 690, 100: 620, 200: 530, 400: 440},
-        "Tropical":  {50: 570, 100: 490, 200: 430, 400: 370},
-    },
-    65: {
-        "Arid":      {50: 770, 100: 700, 200: 600, 400: 510},
-        "Interior":  {50: 730, 100: 650, 200: 570, 400: 490},
-        "Temperate": {50: 690, 100: 610, 200: 530, 400: 450},
-        "Tropical":  {50: 560, 100: 490, 200: 420, 400: 390},
-    },
-    80: {
-        "Arid":      {50: 750, 100: 690, 200: 610, 400: 530},
-        "Interior":  {50: 720, 100: 660, 200: 590, 400: 510},
-        "Temperate": {50: 680, 100: 630, 200: 550, 400: 470},
-        "Tropical":  {50: 560, 100: 520, 200: 470, 400: 390},
-    },
-    100: {
-        "Arid":      {50: 740, 100: 690, 200: 620, 400: 560},
-        "Interior":  {50: 710, 100: 660, 200: 600, 400: 540},
-        "Temperate": {50: 680, 100: 640, 200: 580, 400: 520},
-        "Tropical":  {50: 560, 100: 530, 200: 490, 400: 420},
-    },
-}
-
-_ENV_LABELS = {
-    "Arid environment": "Arid",
-    "Interior environment": "Interior",
-    "Temperate inland environment": "Temperate",
-    "Tropical / near-coastal / coastal environment": "Tropical",
-}
-
-
-def _closest_fc_row(fc: float) -> int:
-    keys = sorted(_SHRINKAGE_TABLE.keys())
-    return min(keys, key=lambda k: abs(fc - k))
-
-
-def _closest_th(th: float) -> int:
-    options = [50, 100, 200, 400]
-    return min(options, key=lambda x: abs(th - x))
-
-
-def _shrinkage_eps_final(fc: float, env_label: str, th_table: float) -> float:
-    """Return ε*csd (final design drying shrinkage) as strain (not microstrain)."""
-    fc_key = _closest_fc_row(fc)
-    env_key = _ENV_LABELS[env_label]
-    th_key = _closest_th(th_table)
-    microstrain = _SHRINKAGE_TABLE[fc_key][env_key][th_key]
-    return microstrain * 1e-6  # convert ×10⁻⁶ to strain
-
-
-def calc_k1_shrinkage(t_days: float, th_mm: float) -> float:
-    """
-    k1(t, th) from Fig. 3.1.7.2:
-
-        k1 = α_t t^0.8 / (t^0.8 + 0.15 th)
-        α_t = 0.8 + 1.2 e^(-0.005 th)
-    """
-    t = max(t_days, 0.1)
-    th = max(th_mm, 1.0)
-    alpha_t = 0.8 + 1.2 * math.exp(-0.005 * th)
-    num = alpha_t * (t ** 0.8)
-    den = (t ** 0.8) + 0.15 * th
-    return num / den
-
-
-def calc_eps_cse(fc: float, t_days: float) -> float:
-    """
-    Autogenous (chemical) shrinkage ε_cse(t)
-    Cl. 3.1.7.2(2),(3). Returns strain (not microstrain).
-    """
-    if fc <= 50.0:
-        eps_final = (0.07 * fc - 0.5) * 50e-6
-    else:
-        eps_final = (0.08 * fc - 1.0) * 50e-6
-
-    t = max(t_days, 0.0)
-    return eps_final * (1.0 - math.exp(-0.04 * t))
-
-
-# ------------------------------------------------------------
 #  COMPUTE FUNCTION (no UI rendering)
 # ------------------------------------------------------------
 def compute_shrinkage_results(publish: bool = True) -> dict:
@@ -221,32 +129,26 @@ def compute_shrinkage_results(publish: bool = True) -> dict:
     faces_option = get_param("member_faces_exposed", "Beam – three faces exposed")
     
     # Calculate geometry
-    Ag = b * D  # mm²
-    
-    if faces_option == "Slab – one face exposed":
-        ue = b
-    elif faces_option == "Slab – two faces exposed":
-        ue = 2.0 * b
-    elif faces_option == "Beam – three faces exposed":
-        ue = b + 2.0 * D
-    else:  # "Column – four faces exposed"
-        ue = 2.0 * (b + D)
-    
-    th_raw = 2.0 * Ag / ue if ue > 0 else 0.0
+    geometry_values = exposed_perimeter_geometry_values(b, D, faces_option)
+    Ag = geometry_values["Ag"]
+    ue = geometry_values["ue"]
+    th_raw = geometry_values["th_raw"]
     th_table = _closest_th(th_raw)
     
     # Calculate shrinkage components
     k1 = calc_k1_shrinkage(t_days, th_table)
     eps_cse = calc_eps_cse(fc, t_days)
     eps_csd_final = _shrinkage_eps_final(fc, env_option, th_table)
-    eps_csd_t = k1 * eps_csd_final
-    eps_cs_total = eps_cse + eps_csd_t
+    shrinkage_total = shrinkage_total_values(k1, eps_cse, eps_csd_final)
+    eps_csd_t = shrinkage_total["eps_csd_t"]
+    eps_cs_total = shrinkage_total["eps_cs_total"]
+    eps_cs_total_micro = shrinkage_total["eps_cs_total_micro"]
     
     # Update results if publish=True
     if publish:
         update_results(
             eps_cs_total=eps_cs_total,
-            eps_cs_total_micro=eps_cs_total * 1e6,
+            eps_cs_total_micro=eps_cs_total_micro,
             eps_cse=eps_cse,
             eps_csd_t=eps_csd_t,
             th_shrinkage=th_table,
@@ -258,7 +160,7 @@ def compute_shrinkage_results(publish: bool = True) -> dict:
     
     return {
         "eps_cs_total": eps_cs_total,
-        "eps_cs_total_micro": eps_cs_total * 1e6,
+        "eps_cs_total_micro": eps_cs_total_micro,
         "eps_cse": eps_cse,
         "eps_csd_t": eps_csd_t,
         "shrinkage_steps": steps,
@@ -401,18 +303,10 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
     # --------------------------------------------------------
     # Derived geometry: Ag, ue, th
     # --------------------------------------------------------
-    Ag = b * D  # mm²
-
-    if faces_option == "Slab – one face exposed":
-        ue = b
-    elif faces_option == "Slab – two faces exposed":
-        ue = 2.0 * b
-    elif faces_option == "Beam – three faces exposed":
-        ue = b + 2.0 * D
-    else:  # "Column – four faces exposed"
-        ue = 2.0 * (b + D)
-
-    th_raw = 2.0 * Ag / ue if ue > 0 else 0.0
+    geometry_values = exposed_perimeter_geometry_values(b, D, faces_option)
+    Ag = geometry_values["Ag"]
+    ue = geometry_values["ue"]
+    th_raw = geometry_values["th_raw"]
     th_table = _closest_th(th_raw)
 
     # --------------------------------------------------------
@@ -421,8 +315,10 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
     k1 = calc_k1_shrinkage(t_days, th_table)
     eps_cse = calc_eps_cse(fc, t_days)
     eps_csd_final = _shrinkage_eps_final(fc, env_option, th_table)
-    eps_csd_t = k1 * eps_csd_final
-    eps_cs_total = eps_cse + eps_csd_t
+    shrinkage_total = shrinkage_total_values(k1, eps_cse, eps_csd_final)
+    eps_csd_t = shrinkage_total["eps_csd_t"]
+    eps_cs_total = shrinkage_total["eps_cs_total"]
+    eps_cs_total_micro = shrinkage_total["eps_cs_total_micro"]
 
     # --------------------------------------------------------
     # Publish key shrinkage results to shared state
@@ -431,7 +327,7 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
     update_results(
         # total shrinkage strain (dimensionless and microstrain)
         eps_cs_total=eps_cs_total,
-        eps_cs_total_micro=eps_cs_total * 1e6,
+        eps_cs_total_micro=eps_cs_total_micro,
         # components if you ever want them downstream
         eps_cse=eps_cse,
         eps_csd_t=eps_csd_t,
@@ -469,39 +365,11 @@ Shrinkage is not a force (kN). It is a time-dependent strain that can cause defo
 """
                 )
         
-        # Build ROWS for clickable summary table
-        ROWS = [
-            sync_legacy_value_limit({
-                "uid": "shrinkage_autogenous",
-                "title": "Autogenous shrinkage ε_cse",
-                "capacity": f"{eps_cse*1e6:.1f} µε",
-                "action": "—",
-                "util": "—",
-                "status": "—",
-                "ok": None,
-                "tab": "Autogenous shrinkage ε_cse",
-            }),
-            sync_legacy_value_limit({
-                "uid": "shrinkage_drying",
-                "title": "Drying shrinkage ε_csd",
-                "capacity": f"{eps_csd_t*1e6:.1f} µε",
-                "action": "—",
-                "util": "—",
-                "status": "—",
-                "ok": None,
-                "tab": "Drying shrinkage ε_csd",
-            }),
-            sync_legacy_value_limit({
-                "uid": "shrinkage_total",
-                "title": "Total shrinkage ε_cs",
-                "capacity": f"{eps_cs_total*1e6:.1f} µε",
-                "action": "—",
-                "util": "—",
-                "status": "—",
-                "ok": None,
-                "tab": "Total shrinkage ε_cs",
-            }),
-        ]
+        ROWS = build_shrinkage_summary_rows(
+            eps_cse=eps_cse,
+            eps_csd_t=eps_csd_t,
+            eps_cs_total=eps_cs_total,
+        )
 
         render_clickable_summary_table(
             ROWS, key_prefix="shrinkage_summary", columns=PARAMETRIC_RESULT_COLUMNS
@@ -511,16 +379,15 @@ Shrinkage is not a force (kN). It is a time-dependent strain that can cause defo
 
         st.markdown("**Shrinkage strain schematic**")
         fig_shrink_schematic = build_shrinkage_schematic_plotly()
-        _sl, _sc, _sr = st.columns([1, 8, 1])
-        with _sc:
-            st.plotly_chart(
-                fig_shrink_schematic,
-                use_container_width=True,
-                config={
-                    "displayModeBar": False,
-                    "staticPlot": True,
-                },
-            )
+        render_plotly_diagram(
+            fig_shrink_schematic,
+            key="shrinkage_strain_schematic_diagram",
+            title="Shrinkage strain schematic",
+            config={
+                "displayModeBar": False,
+                "staticPlot": True,
+            },
+        )
         page_divider()
 
     # --------------------------------------------------------
@@ -585,10 +452,7 @@ Fig. 3.1.7.2 and Table 3.1.7.2._
         calc_md=render_th(),
     )
 
-    if t_days > 0:
-        eps_cse_final = eps_cse / (1.0 - math.exp(-0.04 * t_days))
-    else:
-        eps_cse_final = eps_cse
+    eps_cse_final = autogenous_shrinkage_final_from_current(eps_cse, t_days)
 
     def render_autogenous():
         return rf"""

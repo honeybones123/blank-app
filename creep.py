@@ -25,12 +25,31 @@ from widgets_helpers import (
     render_result_page_title,
     render_section_title,
     page_divider,
+    render_plotly_diagram,
 )
-from engineering_check_ui import PARAMETRIC_RESULT_COLUMNS, sync_legacy_value_limit
+from engineering_check_ui import PARAMETRIC_RESULT_COLUMNS
+from ui.summary_rows import build_creep_summary_rows
 from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks
 from jump_nav import scroll_to_jump_after_render
 from step_ui import render_expandable_step
-from bending_side_view_diagram import build_creep_side_view_figures
+from ui.diagrams.bending_side_view_diagram import build_creep_side_view_figures
+from calculations.creep_shrinkage import (
+    CREEP_ENV_LABELS as _ENV_LABELS,
+    basic_creep_coeff,
+    calc_k2_creep,
+    calc_k3,
+    calc_k4,
+    calc_k5,
+    calc_k6,
+    creep_alpha2_from_th,
+    creep_coefficient_value,
+    creep_strain_values,
+    creep_closest_fc_row as _closest_fc_row,
+    creep_closest_th as _closest_th,
+    exposed_perimeter_geometry_values,
+    final_creep_coeff_table,
+    sustained_creep_stress_mpa,
+)
 
 
 # ------------------------------------------------------------
@@ -102,171 +121,6 @@ div.element-container:has(div[data-testid="stMarkdownContainer"]:has(p.calc-sect
 
 
 # ------------------------------------------------------------
-#  Tables – AS 3600:2018 3.1.8.2 & 3.1.8.3
-# ------------------------------------------------------------
-# Table 3.1.8.2 – Basic creep coefficient φ_cc,b
-_BASIC_CREEP_COEFF = {
-    20: 5.2,
-    25: 4.2,
-    32: 3.4,
-    40: 2.8,
-    50: 2.4,
-    65: 2.0,
-    80: 1.7,
-    100: 1.5,
-}
-
-# Table 3.1.8.3 – Final creep coefficient φ*_cc after 30 years
-# Structure: {fc: {Env: {th_mm: phi_star}}}
-_CREEP_FINAL_TABLE = {
-    25: {
-        "Arid":      {100: 4.82, 200: 3.90, 400: 3.27},
-        "Interior":  {100: 4.48, 200: 3.62, 400: 3.03},
-        "Temperate": {100: 4.13, 200: 3.34, 400: 2.80},
-        "Tropical":  {100: 3.44, 200: 2.78, 400: 2.33},
-    },
-    32: {
-        "Arid":      {100: 3.90, 200: 3.15, 400: 2.64},
-        "Interior":  {100: 3.62, 200: 2.93, 400: 2.46},
-        "Temperate": {100: 3.34, 200: 2.70, 400: 2.27},
-        "Tropical":  {100: 2.79, 200: 2.25, 400: 1.90},
-    },
-    40: {
-        "Arid":      {100: 3.21, 200: 2.60, 400: 2.18},
-        "Interior":  {100: 2.98, 200: 2.41, 400: 2.02},
-        "Temperate": {100: 2.75, 200: 2.23, 400: 1.87},
-        "Tropical":  {100: 2.30, 200: 1.86, 400: 1.56},
-    },
-    50: {
-        "Arid":      {100: 2.75, 200: 2.23, 400: 1.89},
-        "Interior":  {100: 2.56, 200: 2.07, 400: 1.73},
-        "Temperate": {100: 2.36, 200: 1.91, 400: 1.60},
-        "Tropical":  {100: 1.97, 200: 1.59, 400: 1.33},
-    },
-    65: {
-        "Arid":      {100: 2.07, 200: 1.75, 400: 1.53},
-        "Interior":  {100: 1.95, 200: 1.66, 400: 1.46},
-        "Temperate": {100: 1.84, 200: 1.59, 400: 1.38},
-        "Tropical":  {100: 1.61, 200: 1.38, 400: 1.23},
-    },
-    80: {
-        "Arid":      {100: 1.56, 200: 1.40, 400: 1.29},
-        "Interior":  {100: 1.50, 200: 1.36, 400: 1.25},
-        "Temperate": {100: 1.45, 200: 1.32, 400: 1.22},
-        "Tropical":  {100: 1.33, 200: 1.23, 400: 1.14},
-    },
-    100: {
-        "Arid":      {100: 1.15, 200: 1.14, 400: 1.11},
-        "Interior":  {100: 1.15, 200: 1.14, 400: 1.11},
-        "Temperate": {100: 1.15, 200: 1.14, 400: 1.11},
-        "Tropical":  {100: 1.15, 200: 1.14, 400: 1.11},
-    },
-}
-
-_ENV_LABELS = {
-    "Arid environment": "Arid",
-    "Interior environment": "Interior",
-    "Temperate inland environment": "Temperate",
-    "Tropical / near-coastal / coastal environment": "Tropical",
-}
-
-
-def _closest_fc_row(fc: float) -> int:
-    keys = sorted(_CREEP_FINAL_TABLE.keys())
-    return min(keys, key=lambda k: abs(fc - k))
-
-
-def _closest_th(th: float) -> int:
-    options = [100, 200, 400]
-    return min(options, key=lambda x: abs(th - x))
-
-
-# ------------------------------------------------------------
-#  Factor functions – k2, k3, k4, k5, k6
-# ------------------------------------------------------------
-def calc_k2_creep(t_days: float, th_mm: float) -> float:
-    """
-    k2(t, th) from Fig. 3.1.8.3:
-
-        k2 = α2 t^0.8 / (t^0.8 + 0.15 th)
-        α2 = 1.0 + 1.12 e^(-0.008 th)
-    """
-    t = max(t_days, 0.1)
-    th = max(th_mm, 1.0)
-    alpha2 = 1.0 + 1.12 * math.exp(-0.008 * th)
-    num = alpha2 * (t ** 0.8)
-    den = (t ** 0.8) + 0.15 * th
-    return num / den
-
-
-def calc_k3(age_at_loading_days: float) -> float:
-    """k3 – loading age factor (Cl. 3.1.8.3): 2.7 / [1 + log(τ)] for τ ≥ 1 day."""
-    tau = max(age_at_loading_days, 1.0)
-    return 2.7 / (1.0 + math.log(tau))
-
-
-def calc_k4(environment_label: str) -> float:
-    """k4 – environment factor (Cl. 3.1.8.3)."""
-    short = _ENV_LABELS[environment_label]
-    if short == "Arid":
-        return 0.70
-    if short == "Interior":
-        return 0.65
-    if short == "Temperate":
-        return 0.60
-    # Tropical / coastal
-    return 0.50
-
-
-def calc_k5(fc: float, th_mm: float, k4: float) -> float:
-    """
-    k5 – modification factor for high strength concrete (Cl. 3.1.8.3).
-
-        k5 = 1.0                      for f'c ≤ 50 MPa
-        k5 = (2.0 − α3) − 0.02(1 − α3) f'c    for 50 < f'c ≤ 100 MPa
-        α3 = 0.7 / (k4 α2)
-        α2 = 1.0 + 1.12 e^(−0.008 th)
-    """
-    if fc <= 50.0:
-        return 1.0
-
-    fc_lim = min(fc, 100.0)
-    alpha2 = 1.0 + 1.12 * math.exp(-0.008 * th_mm)
-    alpha3 = 0.7 / (k4 * alpha2)
-    return (2.0 - alpha3) - 0.02 * (1.0 - alpha3) * fc_lim
-
-
-def calc_k6(stress_ratio: float) -> float:
-    """
-    k6 – non-linear creep factor for σ₀ > 0.45 f'c,mi (Cl. 3.1.8.3):
-
-        k6 = 1.0                          when σ₀ ≤ 0.45 f'c,mi
-        k6 = exp[1.5 (σ₀ / f'c,mi − 0.45)] when σ₀ > 0.45 f'c,mi
-
-    stress_ratio = σ₀ / f'c,mi
-    """
-    r = max(stress_ratio, 0.0)
-    if r <= 0.45:
-        return 1.0
-    return math.exp(1.5 * (r - 0.45))
-
-
-def basic_creep_coeff(fc: float) -> float:
-    """φ_cc,b from Table 3.1.8.2."""
-    keys = sorted(_BASIC_CREEP_COEFF.keys())
-    fc_key = min(keys, key=lambda k: abs(fc - k))
-    return _BASIC_CREEP_COEFF[fc_key]
-
-
-def final_creep_coeff_table(fc: float, env_label: str, th_table: float) -> float:
-    """φ*_cc (30-year final creep coefficient) from Table 3.1.8.3."""
-    fc_key = _closest_fc_row(fc)
-    env_key = _ENV_LABELS[env_label]
-    th_key = _closest_th(th_table)
-    return _CREEP_FINAL_TABLE[fc_key][env_key][th_key]
-
-
-# ------------------------------------------------------------
 #  COMPUTE FUNCTION (no UI rendering)
 # ------------------------------------------------------------
 def compute_creep_results(publish: bool = True) -> dict:
@@ -298,18 +152,10 @@ def compute_creep_results(publish: bool = True) -> dict:
     faces_option = get_param("member_faces_exposed", "Beam – three faces exposed")
     
     # Calculate geometry
-    Ag = b * D  # mm²
-    
-    if faces_option == "Slab – one face exposed":
-        ue = b
-    elif faces_option == "Slab – two faces exposed":
-        ue = 2.0 * b
-    elif faces_option == "Beam – three faces exposed":
-        ue = b + 2.0 * D
-    else:  # "Column – four faces exposed"
-        ue = 2.0 * (b + D)
-    
-    th_raw = 2.0 * Ag / ue if ue > 0 else 0.0
+    geometry_values = exposed_perimeter_geometry_values(b, D, faces_option)
+    Ag = geometry_values["Ag"]
+    ue = geometry_values["ue"]
+    th_raw = geometry_values["th_raw"]
     th_table = _closest_th(th_raw)
     
     # Calculate creep coefficients
@@ -320,14 +166,25 @@ def compute_creep_results(publish: bool = True) -> dict:
     k5 = calc_k5(fc, th_table, k4)
     k6 = calc_k6(stress_ratio)
     
-    phi_cc_t = k2 * k3 * k4 * k5 * k6 * phi_cc_b
+    phi_cc_t = creep_coefficient_value(
+        k2=k2,
+        k3=k3,
+        k4=k4,
+        k5=k5,
+        k6=k6,
+        phi_cc_b=phi_cc_b,
+    )
     phi_cc_star_table = final_creep_coeff_table(fc, env_option, th_table)
     
     # Calculate strain (stress ratio is derived from sustained action and section modulus)
-    if sigma0 is None:
-        sigma0 = stress_ratio * fc
-    eps_cc = phi_cc_t * sigma0 / Ec if Ec > 0 else 0.0  # dimensionless
-    eps_cc_micro = eps_cc * 1e6
+    sigma0 = sustained_creep_stress_mpa(
+        sustained_sigma_cs_mpa=sigma0,
+        stress_ratio=stress_ratio,
+        fc_mpa=fc,
+    )
+    creep_strain = creep_strain_values(phi_cc_t, sigma0, Ec)
+    eps_cc = creep_strain["eps_cc"]
+    eps_cc_micro = creep_strain["eps_cc_micro"]
     
     # Update results if publish=True
     if publish:
@@ -512,18 +369,10 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
     # --------------------------------------------------------
     # Derived geometry: Ag, u_e, t_h
     # --------------------------------------------------------
-    Ag = b * D  # mm²
-
-    if faces_option == "Slab – one face exposed":
-        ue = b
-    elif faces_option == "Slab – two faces exposed":
-        ue = 2.0 * b
-    elif faces_option == "Beam – three faces exposed":
-        ue = b + 2.0 * D
-    else:  # "Column – four faces exposed"
-        ue = 2.0 * (b + D)
-
-    th_raw = 2.0 * Ag / ue if ue > 0 else 0.0
+    geometry_values = exposed_perimeter_geometry_values(b, D, faces_option)
+    Ag = geometry_values["Ag"]
+    ue = geometry_values["ue"]
+    th_raw = geometry_values["th_raw"]
     # For Fig. 3.1.8.3 & Table 3.1.8.3, th is rounded to 100 / 200 / 400 mm
     th_table = _closest_th(th_raw)
 
@@ -543,7 +392,14 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
     k5 = calc_k5(fc, th_table, k4)
     k6 = calc_k6(stress_ratio)
 
-    phi_cc_t = k2 * k3 * k4 * k5 * k6 * phi_cc_b
+    phi_cc_t = creep_coefficient_value(
+        k2=k2,
+        k3=k3,
+        k4=k4,
+        k5=k5,
+        k6=k6,
+        phi_cc_b=phi_cc_b,
+    )
     phi_cc_star_table = final_creep_coeff_table(fc, env_option, th_table)
 
     # --------------------------------------------------------
@@ -560,50 +416,27 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
         k6_creep=k6,
     )
 
-    sigma0 = sustained_sigma_cs if sustained_sigma_cs > 0 else (stress_ratio * fc)
+    sigma0 = sustained_creep_stress_mpa(
+        sustained_sigma_cs_mpa=sustained_sigma_cs,
+        stress_ratio=stress_ratio,
+        fc_mpa=fc,
+    )
     # Safety check: prevent division by zero if Ec is 0 (shouldn't happen, but protect against stale state)
     if Ec == 0 or Ec is None:
         Ec = 30000.0  # Default value from SHARED_DEFAULTS
-    eps_cc = phi_cc_t * sigma0 / Ec  # dimensionless
-    eps_cc_micro = eps_cc * 1e6
+    creep_strain = creep_strain_values(phi_cc_t, sigma0, Ec)
+    eps_cc = creep_strain["eps_cc"]
+    eps_cc_micro = creep_strain["eps_cc_micro"]
 
     # --------------------------------------------------------
     # Top-of-page clickable summary table (render in placeholder)
     # --------------------------------------------------------
     with summary_placeholder.container():
-        # Build ROWS for top summary table
-        ROWS = [
-            sync_legacy_value_limit({
-                "uid": "creep_phi_cc_t",
-                "title": "Design creep coefficient ϕ_cc(t)",
-                "capacity": f"ϕ_cc(t) = {phi_cc_t:.2f}",
-                "action": "—",
-                "util": "—",
-                "status": "—",
-                "ok": None,
-                "tab": "Creep coefficient ϕ_cc(t)",
-            }),
-            sync_legacy_value_limit({
-                "uid": "creep_phi_cc_table",
-                "title": "Final creep coefficient ϕ*cc (30y, table)",
-                "capacity": f"ϕ*cc,table = {phi_cc_star_table:.2f}",
-                "action": "—",
-                "util": "—",
-                "status": "—",
-                "ok": None,
-                "tab": "Creep coefficient ϕ_cc(t)",
-            }),
-            sync_legacy_value_limit({
-                "uid": "creep_eps_cc",
-                "title": "Creep strain ε_cc(t)",
-                "capacity": f"ε_cc = {eps_cc_micro:.1f} µε",
-                "action": "—",
-                "util": "—",
-                "status": "—",
-                "ok": None,
-                "tab": "Creep strain ε_cc",
-            }),
-        ]
+        ROWS = build_creep_summary_rows(
+            phi_cc_t=phi_cc_t,
+            phi_cc_star_table=phi_cc_star_table,
+            eps_cc_micro=eps_cc_micro,
+        )
 
         render_page_explainer_expander(_render_creep_explainer)
         render_clickable_summary_table(
@@ -613,6 +446,34 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
         page_divider()
 
         st.markdown("**Concrete creep under sustained load**")
+        st.markdown(
+            """
+<style>
+div[data-testid="stElementContainer"]:has(#creep-side-view-tabs-anchor)
+  + div[data-testid="stTabs"] [data-baseweb="tab-list"],
+div[data-testid="stElementContainer"]:has(#creep-side-view-tabs-anchor)
+  + div[data-testid="stTabs"] [role="tablist"] {
+    display: inline-flex !important;
+    width: fit-content !important;
+    max-width: 100% !important;
+    border-bottom: 0 !important;
+    box-shadow: none !important;
+}
+div[data-testid="stElementContainer"]:has(#creep-side-view-tabs-anchor)
+  + div[data-testid="stTabs"] [data-baseweb="tab-list"] button,
+div[data-testid="stElementContainer"]:has(#creep-side-view-tabs-anchor)
+  + div[data-testid="stTabs"] [role="tablist"] button {
+    flex: 0 0 auto !important;
+}
+div[data-testid="stElementContainer"]:has(#creep-side-view-tabs-anchor)
+  + div[data-testid="stTabs"] [data-baseweb="tab-border"] {
+    display: none !important;
+}
+</style>
+<div id="creep-side-view-tabs-anchor"></div>
+""",
+            unsafe_allow_html=True,
+        )
         fig_creep_immediate, fig_creep_long_term, _creep_meta = build_creep_side_view_figures(
             st.session_state,
             phi_cc_t=phi_cc_t,
@@ -621,27 +482,25 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
             ["Immediate / cracked state", "After creep / long-term"]
         )
         with tab_creep_immediate:
-            _creep_l, _creep_c, _creep_r = st.columns([1, 8, 1])
-            with _creep_c:
-                st.plotly_chart(
-                    fig_creep_immediate,
-                    use_container_width=True,
-                    config={
-                        "displayModeBar": False,
-                        "staticPlot": True,
-                    },
-                )
+            render_plotly_diagram(
+                fig_creep_immediate,
+                key="creep_immediate_cracked_state_diagram",
+                title="Immediate cracked state",
+                config={
+                    "displayModeBar": False,
+                    "staticPlot": True,
+                },
+            )
         with tab_creep_long_term:
-            _creep_l, _creep_c, _creep_r = st.columns([1, 8, 1])
-            with _creep_c:
-                st.plotly_chart(
-                    fig_creep_long_term,
-                    use_container_width=True,
-                    config={
-                        "displayModeBar": False,
-                        "staticPlot": True,
-                    },
-                )
+            render_plotly_diagram(
+                fig_creep_long_term,
+                key="creep_long_term_diagram",
+                title="After creep / long-term",
+                config={
+                    "displayModeBar": False,
+                    "staticPlot": True,
+                },
+            )
         page_divider()
 
     # --------------------------------------------------------
@@ -670,7 +529,7 @@ div[data-testid="stTabs"] [data-baseweb="tab-panel"] {
     )
 
     # Calculate alpha2 for display in k2 calc box
-    alpha2 = 1.0 + 1.12 * math.exp(-0.008 * th_table)
+    alpha2 = creep_alpha2_from_th(th_table)
 
     # Step 1: Notional thickness t_h (raw)
     def render_th_raw():

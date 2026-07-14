@@ -14,6 +14,26 @@ from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
 import streamlit as st
+from calculations.bending import (
+    decode_bars_or_spacing as _decode_bars_or_spacing,
+    effective_depth_with_links_mm,
+)
+from calculations.deflection import (
+    DEFLECTION_LIMIT_DEFAULT_LABEL,
+    DEFLECTION_LIMIT_DEFAULT_RATIO,
+    DEFLECTION_LIMIT_HELP_TEXT,
+    DEFLECTION_LIMIT_OPTIONS,
+    derive_concrete_modulus_from_fc,
+    derive_effective_concrete_modulus,
+    derive_sustained_stress_ratio,
+    get_deflection_limit_label_from_ratio,
+    get_deflection_limit_ratio,
+    get_deflection_limit_ratio_from_label,
+)
+from calculations.design_actions import (
+    derive_design_action_session_updates,
+    resolve_design_actions_from_state,
+)
 
 # Shared-session helpers: treat only None/missing as missing (not falsy)
 _MISSING = object()
@@ -1522,6 +1542,24 @@ SHARED_DEFAULTS = {
     "a_udl_m": 0.0,  # Partial UDL length a (m)
     "a_cant_m": 0.0,  # Cantilever point load distance a (m)
     "a_overhang_m": 0.0,  # Overhang length a (m)
+    "design_point_G_1": 50.0,
+    "design_point_G_2": 50.0,
+    "design_point_G_3": 50.0,
+    "design_point_G_4": 50.0,
+    "design_point_G_5": 50.0,
+    "design_point_G_6": 50.0,
+    "design_point_Q_1": 30.0,
+    "design_point_Q_2": 30.0,
+    "design_point_Q_3": 30.0,
+    "design_point_Q_4": 30.0,
+    "design_point_Q_5": 30.0,
+    "design_point_Q_6": 30.0,
+    "design_point_x_1": 1.0,
+    "design_point_x_2": 2.0,
+    "design_point_x_3": 3.0,
+    "design_point_x_4": 4.0,
+    "design_point_x_5": 5.0,
+    "design_point_x_6": 6.0,
     
     # SFD/BMD inputs (kept as inputs, not results)
     "sfd_span_L_m": 6.0,  # Span length for SFD/deflection pages (m)
@@ -1830,6 +1868,24 @@ BEAM_PROJECT_PARAM_KEYS = [
     "a_udl_m",
     "a_cant_m",
     "a_overhang_m",
+    "design_point_G_1",
+    "design_point_G_2",
+    "design_point_G_3",
+    "design_point_G_4",
+    "design_point_G_5",
+    "design_point_G_6",
+    "design_point_Q_1",
+    "design_point_Q_2",
+    "design_point_Q_3",
+    "design_point_Q_4",
+    "design_point_Q_5",
+    "design_point_Q_6",
+    "design_point_x_1",
+    "design_point_x_2",
+    "design_point_x_3",
+    "design_point_x_4",
+    "design_point_x_5",
+    "design_point_x_6",
     "sfd_span_L_m",
     "sfd_case",
 ]
@@ -2811,266 +2867,43 @@ def _active_load_prefix() -> str:
     return "uls" if mode == "ULS" else "sls"
 
 
+def sync_load_edit_mode_from_toggle(active_slug: str | None = None) -> str:
+    """Keep the SLS/ULS mode string aligned with the shared toggle boolean."""
+    toggle_keys = {
+        "inputs": "inputs_loads_edit_toggle",
+        "design": "design_loads_edit_toggle",
+    }
+    selected_widget_key = ""
+    last_widget = str(st.session_state.get("_last_user_widget_key") or "")
+    if last_widget in set(toggle_keys.values()):
+        selected_widget_key = last_widget
+    else:
+        slug = str(active_slug or st.session_state.get("page_slug") or "").strip().lower()
+        candidate = toggle_keys.get(slug, "")
+        if candidate and candidate in st.session_state:
+            selected_widget_key = candidate
+
+    if selected_widget_key and selected_widget_key in st.session_state:
+        use_sls = bool(st.session_state.get(selected_widget_key))
+    else:
+        use_sls = bool(st.session_state.get("loads_edit_toggle", False))
+
+    mode = "SLS" if use_sls else "ULS"
+    st.session_state["loads_edit_toggle"] = use_sls
+    st.session_state["loads_edit_mode"] = mode
+    for widget_key in toggle_keys.values():
+        if widget_key in st.session_state:
+            st.session_state[widget_key] = use_sls
+    return mode
+
+
 def is_design_governing() -> bool:
     return st.session_state.get("actions_mode", "manual") == "design"
 
 
-DEFLECTION_LIMIT_OPTIONS = {
-    "L/150": 150,
-    "L/180": 180,
-    "L/250": 250,
-    "L/300": 300,
-    "L/350": 350,
-    "L/500": 500,
-}
-DEFLECTION_LIMIT_DEFAULT_LABEL = "L/250"
-DEFLECTION_LIMIT_DEFAULT_RATIO = DEFLECTION_LIMIT_OPTIONS[DEFLECTION_LIMIT_DEFAULT_LABEL]
-
-# Shared help for deflection limit L/Δ widgets (Inputs, Deflection, etc.); AS/NZS 1170.0 App. C framing.
-DEFLECTION_LIMIT_HELP_TEXT = (
-    "Select the serviceability deflection limit required for the member and project. "
-    "AS/NZS 1170.0 Appendix C provides general guidance on deformation and deflection limits, "
-    "but it does not prescribe one universal fixed limit for every case. "
-    "The adopted limit should reflect the governing serviceability requirement and may depend on "
-    "the relevant material code, project specification, finishes, partitions, glazing, "
-    "appearance criteria, client requirements, and engineering judgement."
-)
-
-
-def get_deflection_limit_ratio(value) -> int:
-    """Canonical deflection limit ratio (fallback to default when invalid/unsupported)."""
-    try:
-        ratio = int(round(float(value)))
-    except Exception:
-        return int(DEFLECTION_LIMIT_DEFAULT_RATIO)
-    if ratio in DEFLECTION_LIMIT_OPTIONS.values():
-        return ratio
-    return int(DEFLECTION_LIMIT_DEFAULT_RATIO)
-
-
-def get_deflection_limit_label_from_ratio(value) -> str:
-    ratio = get_deflection_limit_ratio(value)
-    for label, r in DEFLECTION_LIMIT_OPTIONS.items():
-        if int(r) == int(ratio):
-            return label
-    return DEFLECTION_LIMIT_DEFAULT_LABEL
-
-
-def get_deflection_limit_ratio_from_label(label: str) -> int:
-    return int(DEFLECTION_LIMIT_OPTIONS.get(label, DEFLECTION_LIMIT_DEFAULT_RATIO))
-
-
-def derive_concrete_modulus_from_fc(fc_mpa: float) -> float:
-    """
-    Canonical concrete elastic modulus used by this app.
-    Uses the existing project convention Ec = 4700 * sqrt(fc) (MPa).
-    """
-    fc_safe = max(0.0, float(fc_mpa or 0.0))
-    return float(4700.0 * math.sqrt(fc_safe))
-
-
-def derive_effective_concrete_modulus(Ec_mpa: float, phi_cc_t: float) -> float:
-    """
-    Long-term effective modulus used in deflection/crack stiffness context.
-    Consistent with n_e = (1 + phi_cc_t) * Es / Ec  => Eceff = Ec / (1 + phi_cc_t).
-    """
-    Ec_safe = max(1e-9, float(Ec_mpa or 0.0))
-    phi_safe = max(0.0, float(phi_cc_t or 0.0))
-    return float(Ec_safe / (1.0 + phi_safe))
-
-
-def derive_sustained_stress_ratio(
-    *,
-    fc_mpa: float,
-    sls_m_pos_kNm: float,
-    sls_m_neg_kNm: float,
-    z_top_mm3: float,
-    z_bot_mm3: float,
-) -> dict:
-    """
-    Derive sustained concrete stress ratio from the governing sustained SLS moment.
-    sigma_cs = M_sust / Z_comp (MPa), stress_ratio = sigma_cs / f'c.
-    """
-    fc_safe = max(0.0, float(fc_mpa or 0.0))
-    m_pos = max(0.0, float(sls_m_pos_kNm or 0.0))
-    m_neg = max(0.0, float(sls_m_neg_kNm or 0.0))
-    use_sagging = m_pos >= m_neg
-    m_sust = m_pos if use_sagging else m_neg
-    z_comp = float((z_top_mm3 if use_sagging else z_bot_mm3) or 0.0)
-    sigma_cs = (m_sust * 1.0e6 / z_comp) if (m_sust > 0.0 and z_comp > 0.0) else 0.0
-    ratio = (sigma_cs / fc_safe) if fc_safe > 0.0 else 0.0
-    return {
-        "stress_ratio": float(max(0.0, ratio)),
-        "sigma_cs_mpa": float(max(0.0, sigma_cs)),
-        "M_sust_kNm": float(max(0.0, m_sust)),
-        "Z_comp_mm3": float(max(0.0, z_comp)),
-        "compression_fibre": "top" if use_sagging else "bottom",
-    }
-
-
 def resolve_design_actions(state: dict | None = None) -> dict:
     source_state = state if isinstance(state, dict) else st.session_state
-    actions_source = str(source_state.get("actions_source") or "")
-    actions_mode = str(source_state.get("actions_mode") or "")
-    if (
-        str(source_state.get("actions_mode") or "").strip().lower() == "manual"
-        or str(source_state.get("actions_source") or "").strip() == "Manual design actions (inputs below)"
-    ):
-        Mu_signed_fallback = float(source_state.get("uls_Mstar", 0.0) or 0.0)
-        Mu_pos = float(source_state.get("uls_Mstar_pos_manual", source_state.get("Mu_star_pos_manual", max(0.0, Mu_signed_fallback))) or 0.0)
-        Mu_neg = float(source_state.get("uls_Mstar_neg_manual", source_state.get("Mu_star_neg_manual", max(0.0, -Mu_signed_fallback))) or 0.0)
-        Mu_pos = max(0.0, Mu_pos)
-        Mu_neg = max(0.0, Mu_neg)
-        Mu_signed = Mu_pos - Mu_neg
-        Mu = float(max(Mu_pos, Mu_neg))
-        Vu = float(source_state.get("uls_Vstar", 0.0) or 0.0)
-        Nu = float(source_state.get("uls_Nstar", 0.0) or 0.0)
-        SLS_M_signed_fallback = float(source_state.get("sls_Mstar", 0.0) or 0.0)
-        SLS_M_pos = float(source_state.get("sls_Mstar_pos_manual", max(0.0, SLS_M_signed_fallback)) or 0.0)
-        SLS_M_neg = float(source_state.get("sls_Mstar_neg_manual", max(0.0, -SLS_M_signed_fallback)) or 0.0)
-        SLS_M_pos = max(0.0, SLS_M_pos)
-        SLS_M_neg = max(0.0, SLS_M_neg)
-        SLS_M_signed = SLS_M_pos - SLS_M_neg
-        SLS_M = float(max(SLS_M_pos, SLS_M_neg))
-        SLS_V = float(source_state.get("sls_Vstar", 0.0) or 0.0)
-        assert abs(Vu - float(source_state.get("uls_Vstar", 0.0) or 0.0)) < 1e-9
-        assert abs(Nu - float(source_state.get("uls_Nstar", 0.0) or 0.0)) < 1e-9
-
-        return {
-            "Mu": Mu,
-            "Mu_signed": Mu_signed,
-            "Mu_pos": Mu_pos,
-            "Mu_neg": Mu_neg,
-            "has_sagging_case": Mu_pos > 1e-9,
-            "has_hogging_case": Mu_neg > 1e-9,
-            "Vu": Vu,
-            "Nu": Nu,
-            "SLS_M": SLS_M,
-            "SLS_M_signed": SLS_M_signed,
-            "SLS_M_pos": SLS_M_pos,
-            "SLS_M_neg": SLS_M_neg,
-            "SLS_V": SLS_V,
-            "Tu": float(source_state.get("Tu_star", 0.0) or 0.0),
-            "Pu": float(source_state.get("P_star", 0.0) or 0.0),
-            "source": "manual_uls",
-            "actions_source": str(source_state.get("actions_source") or ""),
-            "actions_mode": str(source_state.get("actions_mode") or ""),
-            "signature": (
-                Mu,
-                Vu,
-                Nu,
-                SLS_M,
-                SLS_V,
-                "manual_uls",
-                str(source_state.get("actions_source") or ""),
-                str(source_state.get("actions_mode") or ""),
-            ),
-        }
-
-    design_source = str(source_state.get("design_actions_source") or "max")
-    if design_source == "section":
-        Mu_signed = float(
-            source_state.get(
-                "design_M_uls_kNm_signed",
-                source_state.get("design_M_uls_kNm", source_state.get("Mu_star", 0.0)),
-            )
-            or 0.0
-        )
-        Mu_pos = max(0.0, Mu_signed)
-        Mu_neg = max(0.0, -Mu_signed)
-        Mu = float(max(Mu_pos, Mu_neg))
-        Vu = float(source_state.get("design_V_uls_kN", source_state.get("Vu_star", 0.0)) or 0.0)
-        SLS_M_signed = float(
-            source_state.get(
-                "design_M_sls_kNm_signed",
-                source_state.get("design_M_sls_kNm", source_state.get("sls_Mstar", 0.0)),
-            )
-            or 0.0
-        )
-        SLS_M_pos = max(0.0, SLS_M_signed)
-        SLS_M_neg = max(0.0, -SLS_M_signed)
-        SLS_M = float(max(SLS_M_pos, SLS_M_neg))
-        SLS_V = float(source_state.get("design_V_sls_kN", source_state.get("sls_Vstar", 0.0)) or 0.0)
-    else:
-        Mu_pos = float(
-            source_state.get(
-                "M_pos_max_uls_kNm",
-                source_state.get("uls_Mstar_pos_manual", source_state.get("Mu_star_pos_manual", 0.0)),
-            )
-            or 0.0
-        )
-        Mu_neg = float(
-            abs(
-                min(
-                    0.0,
-                    float(
-                        source_state.get(
-                            "M_neg_min_uls_kNm",
-                            -float(
-                                source_state.get(
-                                    "uls_Mstar_neg_manual",
-                                    source_state.get("Mu_star_neg_manual", 0.0),
-                                )
-                                or 0.0
-                            ),
-                        )
-                        or 0.0
-                    ),
-                )
-            )
-        )
-        if abs(Mu_pos) <= 1e-9 and abs(Mu_neg) <= 1e-9:
-            Mu_pos = float(source_state.get("uls_Mstar_pos_manual", source_state.get("Mu_star_pos_manual", 0.0)) or 0.0)
-            Mu_neg = float(source_state.get("uls_Mstar_neg_manual", source_state.get("Mu_star_neg_manual", 0.0)) or 0.0)
-        Mu_abs_raw = source_state.get("sfd_Mmax_abs_kNm", None)
-        Mu_from_extremes = float(max(Mu_pos, Mu_neg))
-        Mu = float(Mu_abs_raw if Mu_abs_raw not in (None, "") else source_state.get("Mu_star", 0.0) or 0.0)
-        if abs(Mu) <= 1e-9 and Mu_from_extremes > 1e-9:
-            Mu = Mu_from_extremes
-        Mu_signed = float(Mu_pos) if Mu_pos >= Mu_neg else -float(Mu_neg)
-        Vu = float(source_state.get("sfd_Vmax_abs_kN", source_state.get("Vu_star", 0.0)) or 0.0)
-        SLS_M_pos = float(source_state.get("M_pos_max_sls_kNm", 0.0) or 0.0)
-        SLS_M_neg = float(abs(min(0.0, float(source_state.get("M_neg_min_sls_kNm", 0.0) or 0.0))))
-        SLS_M_abs_raw = source_state.get("sfd_Msls_max_kNm", None)
-        SLS_M_from_extremes = float(max(SLS_M_pos, SLS_M_neg))
-        SLS_M = float(SLS_M_abs_raw if SLS_M_abs_raw not in (None, "") else source_state.get("sls_Mstar", 0.0) or 0.0)
-        if abs(SLS_M) <= 1e-9 and SLS_M_from_extremes > 1e-9:
-            SLS_M = SLS_M_from_extremes
-        SLS_M_signed = float(SLS_M_pos) if SLS_M_pos >= SLS_M_neg else -float(SLS_M_neg)
-        SLS_V = float(source_state.get("sfd_Vsls_max_kN", source_state.get("sls_Vstar", 0.0)) or 0.0)
-    Nu = float(source_state.get("Nu_star", source_state.get("N_star", source_state.get("uls_Nstar", 0.0))) or 0.0)
-
-    actions = {
-        "Mu": float(Mu),
-        "Mu_signed": float(Mu_signed),
-        "Mu_pos": float(Mu_pos),
-        "Mu_neg": float(Mu_neg),
-        "has_sagging_case": float(Mu_pos) > 1e-9,
-        "has_hogging_case": float(Mu_neg) > 1e-9,
-        "Vu": float(Vu),
-        "Nu": float(Nu),
-        "SLS_M": float(SLS_M),
-        "SLS_M_signed": float(SLS_M_signed),
-        "SLS_M_pos": float(SLS_M_pos),
-        "SLS_M_neg": float(SLS_M_neg),
-        "SLS_V": float(SLS_V),
-        "Tu": float(source_state.get("Tu_star", 0.0) or 0.0),
-        "Pu": float(source_state.get("P_star", 0.0) or 0.0),
-        "source": "design",
-        "actions_source": actions_source,
-        "actions_mode": actions_mode,
-    }
-    actions["signature"] = (
-        actions["Mu"],
-        actions["Vu"],
-        actions["Nu"],
-        actions["SLS_M"],
-        actions["SLS_V"],
-        actions["source"],
-        actions["actions_source"],
-        actions["actions_mode"],
-    )
-    return actions
+    return resolve_design_actions_from_state(source_state)
 
 
 def load_proxies_from_active_set():
@@ -3146,93 +2979,8 @@ def derive_design_actions():
     Called every render cycle.
     """
     with speed_profile_section("shared_state_hydration.derive_design_actions", category="state_mutation"):
-        _raw_mode = st.session_state.get("actions_mode", "manual")
-        actions_mode = str(_raw_mode or "manual").strip().lower()
-        if actions_mode not in ("manual", "design"):
-            actions_mode = "manual"
-        if actions_mode == "design":
-            source = st.session_state.get("design_actions_source", "max")
-            if source == "section":
-                uls_M_signed = float(
-                    st.session_state.get(
-                        "design_M_uls_kNm_signed",
-                        st.session_state.get("design_M_uls_kNm", 0.0),
-                    )
-                    or 0.0
-                )
-                uls_pos = max(0.0, uls_M_signed)
-                uls_neg = max(0.0, -uls_M_signed)
-                uls_V = float(st.session_state.get("design_V_uls_kN", 0.0) or 0.0)
-                sls_M_signed = float(
-                    st.session_state.get(
-                        "design_M_sls_kNm_signed",
-                        st.session_state.get("design_M_sls_kNm", 0.0),
-                    )
-                    or 0.0
-                )
-                sls_pos = max(0.0, sls_M_signed)
-                sls_neg = max(0.0, -sls_M_signed)
-                sls_V = float(st.session_state.get("design_V_sls_kN", 0.0) or 0.0)
-            else:
-                uls_pos = float(
-                    st.session_state.get(
-                        "M_pos_max_uls_kNm",
-                        st.session_state.get("uls_Mstar_pos_manual", st.session_state.get("Mu_star_pos_manual", 0.0)),
-                    )
-                    or 0.0
-                )
-                uls_neg = float(
-                    abs(
-                        min(
-                            0.0,
-                            float(
-                                st.session_state.get(
-                                    "M_neg_min_uls_kNm",
-                                    -float(
-                                        st.session_state.get(
-                                            "uls_Mstar_neg_manual",
-                                            st.session_state.get("Mu_star_neg_manual", 0.0),
-                                        )
-                                        or 0.0
-                                    ),
-                                )
-                                or 0.0
-                            ),
-                        )
-                    )
-                )
-                if abs(uls_pos) <= 1e-9 and abs(uls_neg) <= 1e-9:
-                    uls_pos = float(st.session_state.get("uls_Mstar_pos_manual", st.session_state.get("Mu_star_pos_manual", 0.0)) or 0.0)
-                    uls_neg = float(st.session_state.get("uls_Mstar_neg_manual", st.session_state.get("Mu_star_neg_manual", 0.0)) or 0.0)
-                uls_M_signed = uls_pos if uls_pos >= uls_neg else -uls_neg
-                uls_V = float(st.session_state.get("sfd_Vmax_abs_kN", 0.0) or 0.0)
-                sls_pos = float(st.session_state.get("M_pos_max_sls_kNm", 0.0) or 0.0)
-                sls_neg = float(abs(min(0.0, float(st.session_state.get("M_neg_min_sls_kNm", 0.0) or 0.0))))
-                sls_M_signed = sls_pos if sls_pos >= sls_neg else -sls_neg
-                sls_V = float(st.session_state.get("sfd_Vsls_max_kN", 0.0) or 0.0)
-            # Design page currently has no separate axial derivation by limit state.
-            shared_N = float(st.session_state.get("N_star", 0.0) or 0.0)
-
-            st.session_state["uls_Mstar"] = float(uls_M_signed)
-            st.session_state["uls_Mstar_pos_manual"] = float(max(0.0, uls_pos))
-            st.session_state["uls_Mstar_neg_manual"] = float(max(0.0, uls_neg))
-            st.session_state["uls_Vstar"] = uls_V
-            st.session_state["uls_Nstar"] = shared_N
-            st.session_state["sls_Mstar"] = float(sls_M_signed)
-            st.session_state["sls_Mstar_pos_manual"] = float(max(0.0, sls_pos))
-            st.session_state["sls_Mstar_neg_manual"] = float(max(0.0, sls_neg))
-            st.session_state["sls_Vstar"] = sls_V
-            st.session_state["sls_Nstar"] = shared_N
-
-        actions = resolve_design_actions()
-        st.session_state["Mu_star_manual"] = float(st.session_state.get("uls_Mstar", 0.0) or 0.0)
-        st.session_state["Mu_star_pos_manual"] = float(st.session_state.get("uls_Mstar_pos_manual", max(0.0, st.session_state.get("uls_Mstar", 0.0) or 0.0)) or 0.0)
-        st.session_state["Mu_star_neg_manual"] = float(st.session_state.get("uls_Mstar_neg_manual", max(0.0, -(st.session_state.get("uls_Mstar", 0.0) or 0.0))) or 0.0)
-        st.session_state["Mu_star"] = float(actions["Mu"])
-        st.session_state["Mu_star_kNm"] = float(actions["Mu"])
-        st.session_state["Mu_star_kNm_signed"] = float(actions.get("Mu_signed", actions["Mu"]))
-        st.session_state["Vu_star"] = float(actions["Vu"])
-        st.session_state["N_star"] = float(actions["Nu"])
+        for key, value in derive_design_action_session_updates(st.session_state).items():
+            st.session_state[key] = value
 
 
 def _allowed_shared_keys() -> set[str]:
@@ -3922,6 +3670,8 @@ def zero_allowed(shared_key: str) -> bool:
         return True
 
     k = shared_key.lower()
+    if k.startswith("design_point_"):
+        return True
 
     # Reinforcement diameter / detailing keys can be 0 (meaning "not used")
     if k.startswith("db_") or k.startswith("lig_"):
@@ -4436,6 +4186,24 @@ TAB_KEYS = {
     "load_Q_point": "Q_point_kN",
     "load_psi_point": "psi_point",
     "load_a_point": "a_m",
+    "load_G_point_1": "design_point_G_1",
+    "load_G_point_2": "design_point_G_2",
+    "load_G_point_3": "design_point_G_3",
+    "load_G_point_4": "design_point_G_4",
+    "load_G_point_5": "design_point_G_5",
+    "load_G_point_6": "design_point_G_6",
+    "load_Q_point_1": "design_point_Q_1",
+    "load_Q_point_2": "design_point_Q_2",
+    "load_Q_point_3": "design_point_Q_3",
+    "load_Q_point_4": "design_point_Q_4",
+    "load_Q_point_5": "design_point_Q_5",
+    "load_Q_point_6": "design_point_Q_6",
+    "load_x_point_1": "design_point_x_1",
+    "load_x_point_2": "design_point_x_2",
+    "load_x_point_3": "design_point_x_3",
+    "load_x_point_4": "design_point_x_4",
+    "load_x_point_5": "design_point_x_5",
+    "load_x_point_6": "design_point_x_6",
     # SFD/BMD widget keys used on the Design page
     "sfd_L_m": "span_L_m",
     "sfd_a_udl": "a_udl_m",
@@ -6153,78 +5921,6 @@ def sync_shared_from_widgets_once_per_run():
             )
 
 
-def _decode_bars_or_spacing(entry, b, cover_side, bar_dia):
-    """
-    Interpret entry as:
-      - ≤ 30 => number of bars
-      - > 30 => spacing in mm
-
-    Returns (mode, n_eff, s_eff):
-      mode = "N" or "S"
-      n_eff = effective number of bars (int)
-      s_eff = effective spacing (mm) (float)
-    """
-    try:
-        val = float(entry)
-    except Exception:
-        return "N", 0, 0.0
-
-    # Fallbacks
-    try:
-        b_val = float(b)
-    except Exception:
-        b_val = 0.0
-    try:
-        cs_val = float(cover_side)
-    except Exception:
-        cs_val = 0.0
-
-    # width between bar centroids
-    L_centroid = max(0.0, b_val - 2.0 * cs_val)
-
-    if val <= 0.0 or L_centroid <= 0.0:
-        return "N", 0, 0.0
-
-    # Case 1: small value => number of bars
-    if val < 30.0:
-        n = int(round(val))
-        n = max(1, n)
-
-        if n == 1:
-            # single bar – spacing is not really defined, use L_centroid as a proxy
-            s_eff = L_centroid
-        else:
-            s_eff = L_centroid / (n - 1)
-
-        return "N", n, s_eff
-
-    # Case 2: large value => spacing in mm
-    s_target = val
-    # max(i) such that cover + (i-1)*s ≤ b-cover  → i ≤ L_centroid/s + 1
-    n = int(L_centroid // s_target) + 1
-    n = max(1, n)
-
-    return "S", n, s_target
-
-
-def effective_depth_with_links_mm(
-    D_mm: float,
-    cover_to_ligs_mm: float,
-    lig_diameter_mm: float,
-    bar_diameter_mm: float,
-) -> float:
-    """
-    Canonical effective depth for bottom tension steel.
-
-    d = D - (cover_to_ligs + lig_diameter + 0.5 * bar_diameter)
-    """
-    Df = float(D_mm or 0.0)
-    cover_f = float(cover_to_ligs_mm or 0.0)
-    lig_f = float(lig_diameter_mm or 0.0)
-    bar_f = float(bar_diameter_mm or 0.0)
-    return max(0.0, Df - (cover_f + lig_f + 0.5 * bar_f))
-
-
 def recalc_derived_values():
     """
     Update derived geometry/reo values in session_state based on the
@@ -7466,11 +7162,10 @@ def compute_all_results() -> None:
                 pass
 
         # SLS steel stress feeding crack/deflection
-        # (Currently lives in bending_page; keep it here to avoid waiting for Bending page)
         try:
-            from bending_page import _compute_sls_bending_values
+            from bending_core import compute_sls_bending_values_from_state
             with speed_profile_section("derived_result_computation.sls_bending_values", category="compute"):
-                _compute_sls_bending_values()
+                compute_sls_bending_values_from_state(publish=True)
         except Exception:
             pass
 

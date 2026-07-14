@@ -25,6 +25,7 @@ ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 INPUTS_PAGE = ROOT / "inputs_page.py"
 FINAL_PUBLICATION = ROOT / "design_brain" / "final_publication.py"
+FINAL_FORMATTER = ROOT / "design_brain" / "final_design_guide_formatter.py"
 
 COMPOSED_GATES: list[dict[str, str]] = [
     {
@@ -152,14 +153,9 @@ def _latest_artifact(prefix: str) -> dict[str, Any]:
 def _direct_source_guards() -> dict[str, bool]:
     input_source = INPUTS_PAGE.read_text(encoding="utf-8")
     final_source = FINAL_PUBLICATION.read_text(encoding="utf-8")
+    formatter_source = FINAL_FORMATTER.read_text(encoding="utf-8")
     compatibility_markers = {
         "post_resolver_adapter_owned": "final_publication_post_resolver_adapter_owned_rows_compatibility_only",
-        "class_a_identity": "final_publication_resolver_identity_rows_compatibility_only",
-        "class_b_metadata": "final_publication_resolution_metadata_rows_compatibility_only",
-        "class_c_safe_low_util": "final_publication_safe_low_util_replacement_rows_compatibility_only",
-        "class_d_combined_cleanup": "final_publication_combined_cleanup_rescue_rows_compatibility_only",
-        "class_e_post_click_exact": "final_publication_post_click_exact_blocker_rows_compatibility_only",
-        "render_bridge_fully_narrowed": "final_publication_render_bridge_fully_narrowed",
     }
     return {
         "final_publication_object_exists": "class FinalDesignGuidePublication" in final_source,
@@ -175,12 +171,13 @@ def _direct_source_guards() -> dict[str, bool]:
             marker in input_source for marker in compatibility_markers.values()
         ),
         "render_stage_compatibility_proof_only": (
-            "final_publication_render_bridge_fully_narrowed" in input_source
+            "final_publication_post_resolver_adapter_owned_rows_compatibility_only" in input_source
             and "compatibility_only" in input_source
             and "proof_only" in input_source
         ),
         "cta_rendering_remains_render_only": (
-            "_design_guide_dashboard_card_html_from_render_model" in input_source
+            "_render_final_design_guide_card_html(clean_format)" in input_source
+            and "_design_guide_dashboard_card_html_from_render_model" not in input_source
             and "_design_guide_dashboard_card_html_from_render_model" not in final_source
         ),
         "apply_routing_remains_page_owned": (
@@ -198,9 +195,9 @@ def _direct_source_guards() -> dict[str, bool]:
             and "final_publication_display_non_authoritative_shell" in input_source
         ),
         "ui_rendering_not_moved": "ui.design_guide_cards" not in final_source,
-        "visible_wording_not_moved": (
-            "_design_guide_clean_main_card_text" in input_source
-            and "_design_guide_clean_main_card_text" not in final_source
+        "legacy_wording_helper_deleted": (
+            "_design_guide_clean_main_card_text" not in input_source
+            and "clean_final_design_guide_reason_text" in formatter_source
         ),
         "family_runtime_ownership_not_moved": (
             "run_bending_fail_governs_ladder_runtime" not in final_source
@@ -303,7 +300,7 @@ def _build_snapshot() -> dict[str, Any]:
             source_guards[key]
             for key in (
                 "ui_rendering_not_moved",
-                "visible_wording_not_moved",
+                "legacy_wording_helper_deleted",
                 "family_runtime_ownership_not_moved",
                 "final_publication_has_no_page_imports",
             )

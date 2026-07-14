@@ -23,6 +23,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 INPUTS_PAGE = ROOT / "inputs_page.py"
+CONTROLLER = ROOT / "design_brain" / "design_guide_controller.py"
 COMBINED_FAMILY = ROOT / "design_brain" / "families" / "combined_bending_shear_fail.py"
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
@@ -49,6 +50,7 @@ def _function_source(source: str, function_name: str) -> str:
 def _run_compile() -> dict[str, Any]:
     paths = [
         "inputs_page.py",
+        "design_brain/design_guide_controller.py",
         "design_brain/families/combined_bending_shear_fail.py",
         "tools/verification/design_guide_combined_fail_target_band_selection_snapshot.py",
     ]
@@ -99,13 +101,18 @@ def _build_snapshot() -> dict[str, Any]:
     selection = family.select_repair_candidate_from_ladder(candidates, target_low=0.85, target_high=1.0)
     selected = dict(selection.get("selected") or {})
     inputs_source = INPUTS_PAGE.read_text(encoding="utf-8")
+    controller_source = CONTROLLER.read_text(encoding="utf-8")
     combined_source = COMBINED_FAMILY.read_text(encoding="utf-8")
-    active_repair_source = inputs_source
-    combined_evidence_marker = "if combined_family_ladder_attempted:\n            family_selected_result_for_evidence"
-    combined_evidence_start = inputs_source.find(combined_evidence_marker)
-    combined_evidence_end = inputs_source.find("if bending_family_ladder_attempted:", combined_evidence_start)
+    active_repair_source = controller_source
+    combined_evidence_function = _function_source(
+        controller_source,
+        "build_design_guide_controller_active_fail_executor_candidate_search_evidence",
+    )
+    combined_evidence_marker = "if combined_family_ladder_attempted:"
+    combined_evidence_start = combined_evidence_function.find(combined_evidence_marker)
+    combined_evidence_end = combined_evidence_function.find("if bending_family_ladder_attempted:", combined_evidence_start)
     combined_evidence_source = (
-        inputs_source[combined_evidence_start:combined_evidence_end]
+        combined_evidence_function[combined_evidence_start:combined_evidence_end]
         if combined_evidence_start >= 0 and combined_evidence_end > combined_evidence_start
         else ""
     )
@@ -121,9 +128,9 @@ def _build_snapshot() -> dict[str, Any]:
             "def build_target_band_refinement_candidates" in combined_source
             and "APPROVED_COMBINED_TARGET_BAND_REFINEMENT" in combined_source
         ),
-        "inputs_requests_family_target_band_refinement_candidates": (
+        "controller_requests_family_target_band_refinement_candidates": (
             "build_target_band_refinement_candidates" in active_repair_source
-            and "approved_combined_merge_candidates.extend" in active_repair_source
+            and "approved_candidates.extend" in active_repair_source
         ),
         "inputs_does_not_stop_combined_search_at_first_safe_seed": (
             "combined_family_ladder_found_safe = True\n                    break" not in active_repair_source
@@ -132,11 +139,11 @@ def _build_snapshot() -> dict[str, Any]:
         "family_selector_chose_target_band_candidate": selected.get("combined_fail_ladder_index") == 2,
         "family_selector_not_first_safe_candidate": selected.get("combined_fail_ladder_index") != 1,
         "selected_has_both_domains_in_band": selection.get("selected_in_target_band_count") == 2,
-        "inputs_delegates_combined_selection_to_family": (
+        "controller_delegates_combined_selection_to_family": (
             'combined_family_strategy.select_repair_candidate_from_ladder(' in active_repair_source
         ),
-        "inputs_fallback_still_prefers_target_band_before_ladder_index": (
-            "-_in_band_count(cand, float(target_low), float(target_high))" in active_repair_source
+        "controller_fallback_still_prefers_target_band_before_ladder_index": (
+            "-_active_fail_executor_candidate_in_band_count(cand, float(low), float(high))" in active_repair_source
         ),
         "selector_uses_overview_utils": (
             "_combined_repair_candidate_rank_key" in selector_source
@@ -144,9 +151,13 @@ def _build_snapshot() -> dict[str, Any]:
             and "overview" in combined_source
             and "utils" in combined_source
         ),
-        "inputs_evidence_no_longer_claims_first_safe_selection": (
+        "controller_evidence_no_longer_claims_first_safe_selection": (
             "contract_family_target_band_ranked_candidate" in combined_evidence_source
             and "first_compliant_candidate_in_contract_ladder_order" not in combined_evidence_source
+        ),
+        "inputs_no_longer_owns_combined_selection_policy": (
+            "combined_family_strategy.select_repair_candidate_from_ladder(" not in inputs_source
+            and "approved_combined_merge_candidates.extend" not in inputs_source
         ),
     }
     payload = {

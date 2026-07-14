@@ -44,7 +44,6 @@ def evaluate_bending_and_shear_overdesign_govern(context: dict[str, Any]) -> Fam
         lock_proof={
             "contract_runtime_driven": True,
             "runtime_authority": "run_combined_overdesign_governs_runtime",
-            "legacy_decision_authority": False,
             "combined_generates_no_optimisation_ladder": True,
             "shared_systems_remain_shared": True,
         },

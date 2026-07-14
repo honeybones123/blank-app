@@ -93,17 +93,19 @@ def _base_state() -> dict[str, Any]:
 
 
 def _numbers_for_update(updates: dict[str, Any]) -> tuple[float, float, bool, bool, float]:
-    if updates.get("b") == 275.0 and updates.get("bot1_count") == 4 and updates.get("db_bot_1") == 20:
+    bot_count = int(updates.get("bot1_count") or updates.get("bot_row_1_bars") or 0)
+    bot_dia = int(updates.get("db_bot_1") or updates.get("bot_row_1_dia") or 0)
+    if updates.get("b") == 275.0 and bot_count == 4 and bot_dia == 20:
         return 0.82, 1256.0, True, True, 0.58
     if updates.get("b") == 275.0 and updates.get("bot_row_count") == 1 and updates.get("bot2_count") == 0:
         return 0.81, 1608.0, True, True, 0.68
-    if updates == {"bot1_count": 4, "db_bot_1": 24}:
+    if bot_count == 4 and bot_dia == 24 and "b" not in updates and "D" not in updates:
         return 0.86, 1809.6, True, True, 0.82
-    if updates == {"bot1_count": 4, "db_bot_1": 20}:
+    if bot_count == 4 and bot_dia == 20 and "b" not in updates and "D" not in updates:
         return 0.96, 1256.0, True, True, 0.61
-    if updates == {"bot1_count": 3, "db_bot_1": 24}:
+    if bot_count == 3 and bot_dia == 24 and "b" not in updates and "D" not in updates:
         return 0.91, 1357.2, True, True, 0.68
-    if updates == {"bot1_count": 3, "db_bot_1": 20}:
+    if bot_count == 3 and bot_dia == 20 and "b" not in updates and "D" not in updates:
         return 1.04, 942.0, False, True, 0.48
     if updates.get("bot_row_count") == 1 and updates.get("bot2_count") == 0:
         return 0.90, 1608.0, True, True, 0.72
@@ -210,11 +212,17 @@ def main() -> int:
     checks = {
         "contract_lane_order_exact": bending_overdesign_contract_lane_order() == EXPECTED_CONTRACT_ORDER,
         "required_result_fields_exist": REQUIRED_RESULT_FIELDS.issubset(fields_present),
-        "bottom_reinforcement_policy_represented": any(update == {"bot1_count": 4, "db_bot_1": 20} for update in candidate_updates),
+        "bottom_reinforcement_policy_represented": any(
+            int(update.get("bot1_count") or update.get("bot_row_1_bars") or 0) == 4
+            and int(update.get("db_bot_1") or update.get("bot_row_1_dia") or 0) == 20
+            for update in candidate_updates
+        ),
         "layer_policy_represented": any(update.get("bot_row_count") == 1 and update.get("bot2_count") == 0 for update in candidate_updates),
         "width_policy_represented": any(update.get("b") == 275.0 for update in candidate_updates),
         "width_min_reinforcement_relief_policy_present": bool(minimum_reinforcement_geometry_relief_rules())
         and (policies.get("width_reduction") or {}).get("minimum_reinforcement_relief") is True,
+        "depth_min_reinforcement_relief_policy_present": bool(minimum_reinforcement_geometry_relief_rules())
+        and (policies.get("depth_reduction") or {}).get("minimum_reinforcement_relief") is True,
         "width_plus_reinforcement_restart_candidate_represented": any(
             update.get("b") == 275.0 and update.get("bot1_count") == 4 and update.get("db_bot_1") == 20
             for update in candidate_updates
@@ -224,6 +232,14 @@ def main() -> int:
             for update in candidate_updates
         ),
         "depth_policy_represented": any(update.get("D") == 475.0 for update in candidate_updates),
+        "depth_plus_reinforcement_restart_candidate_represented": any(
+            update.get("D") == 475.0 and update.get("bot1_count") == 4 and update.get("db_bot_1") == 20
+            for update in candidate_updates
+        )
+        and any(
+            update.get("D") == 475.0 and update.get("bot_row_count") == 1 and update.get("bot2_count") == 0
+            for update in candidate_updates
+        ),
         "ranking_criteria_match_contract": tuple(payload["ranking_proof"].get("criteria") or ()) == tuple(ranking_criteria()),
         "selected_inside_target_band": payload["exact_stop_proof"].get("target_band_selected") is True,
         "selected_bottom_reinforcement_candidate": payload.get("selected_strategy_lane") == "BOTTOM_REINFORCEMENT_REDUCTION",
@@ -234,7 +250,8 @@ def main() -> int:
             "minimum_reinforcement_geometry_relief_checked"
         )
         is True
-        and payload["minimum_reinforcement_proof"].get("width_reduction_relief_candidate_count", 0) >= 2,
+        and payload["minimum_reinforcement_proof"].get("width_reduction_relief_candidate_count", 0) >= 2
+        and payload["minimum_reinforcement_proof"].get("depth_reduction_relief_candidate_count", 0) >= 2,
         "geometry_reductions_restart_reinforcement_search": payload["restart_proof"].get(
             "all_geometry_reductions_restart_bottom_reinforcement_search"
         )
@@ -244,7 +261,8 @@ def main() -> int:
             "minimum_reinforcement_geometry_relief_checked"
         )
         is True
-        and payload["restart_proof"].get("width_reduction_restarted_reinforcement_candidate_count", 0) >= 2,
+        and payload["restart_proof"].get("width_reduction_restarted_reinforcement_candidate_count", 0) >= 2
+        and payload["restart_proof"].get("depth_reduction_restarted_reinforcement_candidate_count", 0) >= 2,
         "cta_intent_proof_only": payload["cta_intent_proof"].get("proof_only") is True
         and payload["cta_intent_proof"].get("rendered") is False
         and payload["cta_intent_proof"].get("applied") is False,

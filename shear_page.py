@@ -2,6 +2,7 @@ import math
 import os
 import json
 import time
+import re
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -29,20 +30,48 @@ from shear_diagrams import (
     make_mcft_longitudinal_strain_profile_fig,
 )
 from shear_visuals import (
+    BEHAVIOUR_VISUAL_HEIGHT,
     BEHAVIOUR_VISUAL_WIDTH,
+    SIDE_VIEW_VISUAL_HEIGHT,
+    SIDE_VIEW_VISUAL_WIDTH,
     build_shear_behaviour_figure,
     build_shear_cross_section_figure,
     build_shear_side_view_figure,
 )
+from ui.diagrams.principal_stress_cue_diagram import (
+    PRINCIPAL_STRESS_AXES_CUE_SCALE,
+    build_principal_stress_axes_cue,
+)
 from shear_core import build_shear_zone_layout_strip_figure, derive_eps_top_bot_for_step4_diagram
 # Shared helpers (same contract as Inputs/Bending)
-from widgets_helpers import apply_global_widget_css, apply_result_page_css, apply_calcbox_css, number_row, select_row, calcbox, clickable_calcbox, render_step, apply_step_summary_expander_css, info_i_button, page_divider, render_page_explainer_expander, render_section_title, render_result_page_title, _register_rendered_key, _wrap_user_edit
+from widgets_helpers import apply_global_widget_css, apply_result_page_css, apply_calcbox_css, number_row, select_row, calcbox, clickable_calcbox, render_step, apply_step_summary_expander_css, info_i_button, page_divider, render_page_explainer_expander, render_section_title, render_result_page_title, render_specialized_widget_rail, _register_rendered_key, _wrap_user_edit, render_plotly_diagram, render_image_diagram, render_html_diagram
 from step_ui import render_expandable_step
-from engineering_check_ui import SHEAR_ROW_UID_TO_TAB, resolve_jump_target_id, sync_legacy_value_limit
+from engineering_check_ui import SHEAR_ROW_UID_TO_TAB
 from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks
+from ui.summary_rows import (
+    build_shear_clickable_summary_rows,
+    build_shear_legacy_summary_rows,
+    filter_shear_summary_rows,
+)
 from shear_checks_helpers import (
     build_shear_calc_bundle_from_state,
     build_shear_check_rows_from_state,
+)
+from calculations.shear import (
+    build_shear_summary_rows_with_overrides,
+    cotangent as cot,
+    duct_area_mm2,
+    effective_shear_depth_mm,
+    longitudinal_strain_fallback_values,
+    maximum_shear_spacing_mm,
+    mcft_kv_theta_values,
+    nonprestressed_longitudinal_strain_display_values,
+    shear_capacity_utilisation_values,
+    shear_check_display_scalars,
+    shear_reinforcement_spacing_check_values,
+    stirrup_area_mm2,
+    torsion_section_geometry_values,
+    web_crushing_fallback_values,
 )
 
 
@@ -72,9 +101,11 @@ def _coalesce_num(v, default: float) -> float:
 #  Helper functions for diagrams
 # ------------------------------------------------------------
 
-SHEAR_VISUAL_HEIGHT_PX = 420
-SHEAR_SIDE_VIEW_HEIGHT_PX = 260
+SHEAR_VISUAL_HEIGHT_PX = BEHAVIOUR_VISUAL_HEIGHT
+SHEAR_SIDE_VIEW_HEIGHT_PX = SIDE_VIEW_VISUAL_HEIGHT
+SHEAR_SIDE_VIEW_MAX_WIDTH_PX = SIDE_VIEW_VISUAL_WIDTH
 SHEAR_VISUAL_MAX_WIDTH_PX = 760
+SHEAR_BEHAVIOUR_MAX_WIDTH_PX = BEHAVIOUR_VISUAL_WIDTH
 # MCFT / principal-stress behaviour diagrams: one canonical pixel frame on every toggle and on both pages.
 MCFT_BEHAVIOUR_MARGIN = dict(l=10, r=10, t=8, b=10)
 SHEAR_VISUAL_CONFIG = {
@@ -100,7 +131,7 @@ def _render_plotly_in_mcft_column(fig: go.Figure, *, chart_key: str) -> None:
     _render_centered_shear_plotly(
         fig,
         chart_key=chart_key,
-        max_width_px=SHEAR_VISUAL_MAX_WIDTH_PX,
+        max_width_px=SHEAR_BEHAVIOUR_MAX_WIDTH_PX,
         height_px=SHEAR_VISUAL_HEIGHT_PX,
         title_pad_t=int(MCFT_BEHAVIOUR_MARGIN["t"]),
         compact_top=True,
@@ -162,10 +193,11 @@ def _render_centered_shear_plotly(
     )
 
     st.markdown(f'<div id="{wrapper_id}"><div>', unsafe_allow_html=True)
-    st.plotly_chart(
+    render_plotly_diagram(
         fig,
-        use_container_width=True,
         key=chart_key,
+        title="Shear diagram",
+        center=True,
         config=config or SHEAR_VISUAL_CONFIG,
     )
     st.markdown("</div></div>", unsafe_allow_html=True)
@@ -212,6 +244,7 @@ def _render_shear_side_view():
     _render_centered_shear_plotly(
         fig,
         chart_key="shear_side_view_diagram",
+        max_width_px=SHEAR_SIDE_VIEW_MAX_WIDTH_PX,
         height_px=SHEAR_SIDE_VIEW_HEIGHT_PX,
         title_pad_t=10,
     )
@@ -300,10 +333,10 @@ def _render_shear_force_diagram():
     )
     fig_sfd.update_layout(height=320)
     st.caption("Shear V(x)")
-    st.plotly_chart(
+    render_plotly_diagram(
         fig_sfd,
-        use_container_width=True,
         key="shear_visual_sfd_diagram",
+        title="Shear force diagram",
         config=SHEAR_VISUAL_CONFIG,
     )
 
@@ -427,7 +460,14 @@ if (gd && !gd.__loadFlowAnimation) {
 
     total_h = plot_h + 18
     if not centered:
-        components.html(plot_html, height=total_h)
+        render_html_diagram(
+            plot_html,
+            key=chart_key,
+            title="Animated shear diagram",
+            height=total_h,
+            fullscreen_height=max(total_h, 820),
+            center=False,
+        )
         return
 
     # Iframe-local flex only (parent-page :has(...) never matches nodes inside this document).
@@ -448,7 +488,14 @@ if (gd && !gd.__loadFlowAnimation) {
 </div></div>"""
     # Full-width iframe (default) so Streamlit aligns like st.plotly_chart; inner div caps
     # and centers the 1120px plot — explicit width=max_width_px was shifting the block right.
-    components.html(wrapped, height=total_h)
+    render_html_diagram(
+        wrapped,
+        key=chart_key,
+        title="Animated shear diagram",
+        height=total_h,
+        fullscreen_height=max(total_h, 820),
+        center=True,
+    )
 
 
 def _render_shear_behaviour_plot(visual_mode: str | None = None, theta_v_deg: float | None = None):
@@ -527,11 +574,10 @@ def _render_shear_behaviour_diagrams(theta_v_deg: float) -> None:
 
 
 # Cumulative scale for principal-stress (A)(B)(C) cue vs original base geometry (two +25% steps).
-_PRINCIPAL_STRESS_AXES_CUE_SCALE = 1.25**2
+_PRINCIPAL_STRESS_AXES_CUE_SCALE = PRINCIPAL_STRESS_AXES_CUE_SCALE
 
 
 def _build_principal_stress_axes_cue() -> go.Figure:
-    fig = go.Figure()
     theta_v_deg = float(
         st.session_state.get(
             "crack_theta_deg",
@@ -539,239 +585,7 @@ def _build_principal_stress_axes_cue() -> go.Figure:
         )
         or 45.0
     )
-    theta_v_rad = math.radians(max(0.0, min(theta_v_deg, 89.0)))
-    D = _PRINCIPAL_STRESS_AXES_CUE_SCALE
-    half_side = 0.34 * D
-    panel_y = 0.0
-    panel_centres = [0.0, 2.2, 4.5]
-
-    def _rot(cx: float, cy: float, dx: float, dy: float, angle: float) -> tuple[float, float]:
-        return (
-            cx + dx * math.cos(angle) - dy * math.sin(angle),
-            cy + dx * math.sin(angle) + dy * math.cos(angle),
-        )
-
-    def _add_poly(points: list[tuple[float, float]], color: str, width: float, dash: str | None = None, opacity: float = 1.0) -> None:
-        fig.add_trace(
-            go.Scatter(
-                x=[pt[0] for pt in points],
-                y=[pt[1] for pt in points],
-                mode="lines",
-                line=dict(color=color, width=width, dash=dash or "solid"),
-                opacity=opacity,
-                hoverinfo="skip",
-                showlegend=False,
-            )
-        )
-
-    def _add_square(cx: float, angle: float, *, color: str, width: float, opacity: float = 1.0) -> None:
-        pts = [
-            _rot(cx, panel_y, -half_side, -half_side, angle),
-            _rot(cx, panel_y, half_side, -half_side, angle),
-            _rot(cx, panel_y, half_side, half_side, angle),
-            _rot(cx, panel_y, -half_side, half_side, angle),
-            _rot(cx, panel_y, -half_side, -half_side, angle),
-        ]
-        _add_poly(pts, color, width, opacity=opacity)
-
-    def _add_arrow(x0: float, y0: float, x1: float, y1: float, *, color: str, width: float = 1.2, dash: str | None = None, opacity: float = 1.0) -> None:
-        fig.add_annotation(
-            x=x1,
-            y=y1,
-            ax=x0,
-            ay=y0,
-            xref="x",
-            yref="y",
-            axref="x",
-            ayref="y",
-            text="",
-            showarrow=True,
-            arrowhead=2,
-            arrowsize=0.8,
-            arrowwidth=width,
-            arrowcolor=color,
-            opacity=opacity,
-            standoff=0,
-        )
-        if dash:
-            _add_poly([(x0, y0), (x1, y1)], color, width, dash=dash, opacity=opacity * 0.9)
-
-    def _add_double_arrow_line(
-        x0: float, y0: float, x1: float, y1: float, *, color: str, width: float, opacity: float = 1.0
-    ) -> None:
-        fig.add_annotation(
-            x=x1,
-            y=y1,
-            ax=x0,
-            ay=y0,
-            xref="x",
-            yref="y",
-            axref="x",
-            ayref="y",
-            text="",
-            showarrow=True,
-            arrowside="end+start",
-            arrowhead=2,
-            startarrowhead=2,
-            arrowsize=0.65,
-            arrowwidth=width,
-            arrowcolor=color,
-            opacity=opacity,
-            standoff=0,
-        )
-
-    for cx, label in zip(panel_centres, ["(A) stress state", "(B) rotate by θ", "(C) principal directions"]):
-        fig.add_annotation(x=cx, y=0.96, text=label, showarrow=False, font=dict(size=10, color="rgba(85,85,85,0.90)"))
-
-    # A: stress state — complementary shear τ (outside) + face-centre resultants (wholly outside square outline)
-    cx = panel_centres[0]
-    top_y = panel_y + half_side
-    bot_y = panel_y - half_side
-    left_x = cx - half_side
-    right_x = cx + half_side
-    tau_blue = "rgba(0,90,200,0.80)"
-    tau_red = "rgba(200,45,45,0.82)"
-    shear_gap = 0.088 * D
-    tau_half = 0.14 * D
-    y_top_tau = top_y + shear_gap
-    y_bot_tau = bot_y - shear_gap
-    x_left_tau = left_x - shear_gap
-    x_right_tau = right_x + shear_gap
-    out_gap = 0.03 * D
-    out_len = 0.12 * D
-    _add_square(cx, 0.0, color="rgba(120,120,120,0.65)", width=1.5)
-    _add_arrow(cx - tau_half, y_top_tau, cx + tau_half, y_top_tau, color=tau_blue, width=1.05)
-    _add_arrow(cx + tau_half, y_bot_tau, cx - tau_half, y_bot_tau, color=tau_blue, width=1.05)
-    _add_arrow(x_left_tau, panel_y + tau_half, x_left_tau, panel_y - tau_half, color=tau_red, width=1.05)
-    _add_arrow(x_right_tau, panel_y - tau_half, x_right_tau, panel_y + tau_half, color=tau_red, width=1.05)
-    _add_arrow(cx, top_y + out_gap, cx, top_y + out_gap + out_len, color=tau_blue, width=1.05)
-    _add_arrow(cx, bot_y - out_gap, cx, bot_y - out_gap - out_len, color=tau_blue, width=1.05)
-    _add_arrow(left_x - out_gap, panel_y, left_x - out_gap - out_len, panel_y, color=tau_red, width=1.05)
-    _add_arrow(right_x + out_gap, panel_y, right_x + out_gap + out_len, panel_y, color=tau_red, width=1.05)
-    fig.add_annotation(x=x_right_tau + 0.22 * D, y=0.50, text="τ", showarrow=False, font=dict(size=10, color="rgba(85,85,85,0.86)"))
-    fig.add_annotation(
-        x=cx,
-        y=-0.90,
-        text="Complementary shear (τ) on opposite faces; face-centre resultants illustrative",
-        showarrow=False,
-        font=dict(size=8, color="rgba(85,85,85,0.86)"),
-    )
-
-    # B: rotated element, shear fading out
-    cx = panel_centres[1]
-    rot_angle = -0.55 * theta_v_rad
-    _add_square(cx, 0.0, color="rgba(150,150,150,0.22)", width=1.2, opacity=0.75)
-    _add_square(cx, rot_angle, color="rgba(120,120,120,0.58)", width=1.5)
-    b_off = 0.18 * D
-    b_ext = 0.90 * D
-    b_trim = 0.06 * D
-    _add_arrow(cx - b_off, panel_y + b_ext, cx + b_off, panel_y + b_ext, color="rgba(110,110,110,0.42)", width=1.0, dash="dot", opacity=0.70)
-    _add_arrow(cx + b_ext, panel_y + b_off, cx + b_ext, panel_y - b_off, color="rgba(110,110,110,0.30)", width=1.0, dash="dot", opacity=0.50)
-    _add_arrow(cx + b_off, panel_y - b_ext, cx - b_trim, panel_y - b_ext, color="rgba(110,110,110,0.20)", width=0.9, dash="dot", opacity=0.34)
-    _add_arrow(cx - b_ext, panel_y - b_off, cx - b_ext, panel_y + b_trim, color="rgba(110,110,110,0.16)", width=0.9, dash="dot", opacity=0.28)
-    fig.add_annotation(x=cx + 0.78 * D, y=-0.55 * D, text="shear → 0", showarrow=False, font=dict(size=9, color="rgba(100,100,100,0.82)"))
-    rot_arc: list[tuple[float, float]] = []
-    rot_r = 0.42 * D
-    for idx in range(22):
-        t = idx / 21
-        ang = rot_angle * t
-        rot_arc.append((cx + rot_r * math.cos(ang), panel_y + rot_r * math.sin(ang)))
-    _add_poly(rot_arc, "rgba(120,120,120,0.76)", 1.2)
-    fig.add_annotation(
-        x=cx + rot_arc[-1][0] - cx,
-        y=panel_y + rot_arc[-1][1] - panel_y,
-        ax=cx + rot_arc[-2][0] - cx,
-        ay=panel_y + rot_arc[-2][1] - panel_y,
-        xref="x",
-        yref="y",
-        axref="x",
-        ayref="y",
-        text="",
-        showarrow=True,
-        arrowhead=2,
-        arrowsize=0.7,
-        arrowwidth=1.0,
-        arrowcolor="rgba(120,120,120,0.72)",
-    )
-    fig.add_annotation(x=cx + 0.50 * D, y=-0.30 * D, text="θ", showarrow=False, font=dict(size=10, color="rgba(100,100,100,0.88)"))
-
-    # C: final principal directions
-    cx = panel_centres[2]
-    principal_angle = -theta_v_rad
-    _add_square(cx, principal_angle, color="rgba(135,135,135,0.34)", width=1.2, opacity=0.95)
-    c_axis = 0.82 * D
-    _add_poly([(cx - c_axis, panel_y), (cx + c_axis, panel_y)], "rgba(120,120,120,0.38)", 1.1, dash="dot")
-    sigma_len = 0.38 * D
-    sigma1_pts = [
-        (cx - sigma_len * math.cos(principal_angle), panel_y - sigma_len * math.sin(principal_angle)),
-        (cx + sigma_len * math.cos(principal_angle), panel_y + sigma_len * math.sin(principal_angle)),
-    ]
-    sigma2_angle = principal_angle + math.pi / 2.0
-    sigma2_pts = [
-        (cx - sigma_len * math.cos(sigma2_angle), panel_y - sigma_len * math.sin(sigma2_angle)),
-        (cx + sigma_len * math.cos(sigma2_angle), panel_y + sigma_len * math.sin(sigma2_angle)),
-    ]
-    _add_double_arrow_line(
-        sigma1_pts[0][0],
-        sigma1_pts[0][1],
-        sigma1_pts[1][0],
-        sigma1_pts[1][1],
-        color="rgba(200,45,45,0.85)",
-        width=2.4,
-    )
-    _add_double_arrow_line(
-        sigma2_pts[0][0],
-        sigma2_pts[0][1],
-        sigma2_pts[1][0],
-        sigma2_pts[1][1],
-        color="rgba(0,90,200,0.82)",
-        width=2.4,
-    )
-
-    final_arc: list[tuple[float, float]] = []
-    fa_r = 0.22 * D
-    for idx in range(18):
-        t = idx / 17
-        ang = -theta_v_rad * t
-        final_arc.append((cx + fa_r * math.cos(ang), panel_y + fa_r * math.sin(ang)))
-    _add_poly(final_arc, "rgba(110,90,90,0.70)", 1.1)
-    # Place σ labels outside the square and past the principal double-arrow tips
-    lbl_pad = 0.08 * D
-    lbl_r = max(sigma_len, half_side) + lbl_pad
-    fig.add_annotation(
-        x=cx + lbl_r * math.cos(principal_angle),
-        y=panel_y + lbl_r * math.sin(principal_angle),
-        text="σ1",
-        showarrow=False,
-        font=dict(size=11, color="rgba(200,45,45,0.92)"),
-    )
-    fig.add_annotation(
-        x=cx + lbl_r * math.cos(sigma2_angle),
-        y=panel_y + lbl_r * math.sin(sigma2_angle),
-        text="σ2",
-        showarrow=False,
-        font=dict(size=11, color="rgba(0,90,200,0.92)"),
-    )
-    th_r = 0.32 * D
-    fig.add_annotation(
-        x=cx + th_r * math.cos(-0.55 * theta_v_rad),
-        y=th_r * math.sin(-0.55 * theta_v_rad) - 0.02 * D,
-        text="θv",
-        showarrow=False,
-        font=dict(size=10, color="rgba(110,90,90,0.82)"),
-    )
-    fig.add_annotation(x=cx, y=-0.88, text="No shear on principal planes", showarrow=False, font=dict(size=9, color="rgba(90,90,90,0.82)"))
-    fig.update_layout(
-        width=int(540 * D),
-        height=int(190 * D),
-        margin=dict(l=4, r=4, t=4, b=4),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        xaxis=dict(visible=False, range=[-1.0, 6.25], fixedrange=True),
-        yaxis=dict(visible=False, range=[-1.05, 1.05], scaleanchor="x", scaleratio=1, fixedrange=True),
-    )
-    return fig
-
+    return build_principal_stress_axes_cue(theta_v_deg)
 
 def _render_principal_stress_directions_explainer() -> None:
     with st.expander("The Stress Field: Explaining the Modified Compression Field Theory and Strut-and-Tie Model"):
@@ -1213,13 +1027,25 @@ def _safe_step_diagram(step_no: int):
         col_left, col_right = st.columns([1, 1])
         with col_left:
             if os.path.exists(path):
-                st.image(path, caption=caption, use_container_width=True)
+                render_image_diagram(
+                    path,
+                    key=f"shear_step_{step_no}_diagram",
+                    title=caption or f"Shear step {step_no} diagram",
+                    caption=caption,
+                    use_container_width=True,
+                )
             else:
                 st.info(f"💡 Add diagram for Step {step_no} at `{path}`.")
         with col_right:
             theta_path = os.path.join("assets", "theta.png")
             if os.path.exists(theta_path):
-                st.image(theta_path, caption="Strut angle $\\theta_v$", use_container_width=True)
+                render_image_diagram(
+                    theta_path,
+                    key=f"shear_step_{step_no}_theta_diagram",
+                    title="Strut angle",
+                    caption="Strut angle $\\theta_v$",
+                    use_container_width=True,
+                )
             else:
                 st.info(f"💡 Add theta diagram at `{theta_path}`.")
         return
@@ -1227,20 +1053,38 @@ def _safe_step_diagram(step_no: int):
     # Special handling for Step 9 (step_no == 7 in dict): stack two images vertically
     if step_no == 7:  # This is Step 9 in the display
         if os.path.exists(path):
-            st.image(path, caption=caption, use_container_width=True)
+            render_image_diagram(
+                path,
+                key=f"shear_step_{step_no}_diagram",
+                title=caption or "Shear step diagram",
+                caption=caption,
+                use_container_width=True,
+            )
         else:
             st.info(f"💡 Add diagram for Step 9 at `{path}`.")
         # Add second image below
         vumax2_path = os.path.join("assets", "shear_step7_Vumax2.png")
         if os.path.exists(vumax2_path):
-            st.image(vumax2_path, caption="Strut-and-tie / concrete compression strut behaviour in deep beams", use_container_width=True)
+            render_image_diagram(
+                vumax2_path,
+                key=f"shear_step_{step_no}_vumax2_diagram",
+                title="Strut-and-tie behaviour",
+                caption="Strut-and-tie / concrete compression strut behaviour in deep beams",
+                use_container_width=True,
+            )
         else:
             st.info(f"💡 Add Step 9 second diagram at `{vumax2_path}`.")
         return
     
     # Default: single image
     if os.path.exists(path):
-        st.image(path, caption=caption, use_container_width=True)
+        render_image_diagram(
+            path,
+            key=f"shear_step_{step_no}_diagram",
+            title=caption or f"Shear step {step_no} diagram",
+            caption=caption,
+            use_container_width=True,
+        )
     else:
         st.info(f"💡 Add diagram for Step {step_no} at `{path}`.")
 
@@ -1601,11 +1445,6 @@ This step checks that the **physical layout of the ligatures** matches the requi
 # ------------------------------------------------------------
 #  Small helpers
 # ------------------------------------------------------------
-def cot(rad: float) -> float:
-    """Cotangent with protection against tan(pi/2) etc."""
-    return 1.0 / math.tan(rad)
-
-
 def _fmt(val, decimals=1):
     """Safe number formatter for text in calc boxes."""
     try:
@@ -1636,13 +1475,32 @@ def _safe_image(path: str, caption: str | None = None, width: int | None = None,
         st.info(f"Add image file at `{path}` for: {caption or 'shear illustration'}")
         return
 
+    image_key = "shear_reference_" + re.sub(r"[^A-Za-z0-9_]+", "_", str(resolved_path))
     try:
         if width is not None:
-            st.image(resolved_path, caption=caption, width=width)
+            render_image_diagram(
+                resolved_path,
+                key=image_key,
+                title=caption or "Shear reference diagram",
+                caption=caption,
+                width=width,
+            )
         elif use_container_width is not None:
-            st.image(resolved_path, caption=caption, use_container_width=use_container_width)
+            render_image_diagram(
+                resolved_path,
+                key=image_key,
+                title=caption or "Shear reference diagram",
+                caption=caption,
+                use_container_width=use_container_width,
+            )
         else:
-            st.image(resolved_path, caption=caption, use_container_width=True)
+            render_image_diagram(
+                resolved_path,
+                key=image_key,
+                title=caption or "Shear reference diagram",
+                caption=caption,
+                use_container_width=True,
+            )
     except Exception:
         st.info(f"Unable to open image `{path}` right now.")
 
@@ -1843,17 +1701,26 @@ def compute_shear_results(publish: bool = True) -> dict:
     s_lig = live_shear_state["s_lig"]
     
     # Derived metrics
-    phi_Vu_cap = results.phi_Vu
-    util = results.V_eq / phi_Vu_cap if phi_Vu_cap > 0 else float("nan")
-    phi_Vu_max = phi * results.Vu_max_kN
-    Vuc_util = results.V_eq / phi_Vu_max if phi_Vu_max > 0 else float("nan")
+    utilisation_values = shear_capacity_utilisation_values(results, phi)
+    phi_Vu_cap = utilisation_values["phi_Vu_cap"]
+    util = utilisation_values["util"]
+    phi_Vu_max = utilisation_values["phi_Vu_max_kN"]
+    Vuc_util = utilisation_values["web_util"]
     
     # Minimum shear reinforcement + spacing checks
-    Asv_over_s = results.Asv / s_lig if s_lig else 0.0
-    Asv_min_over_s = 0.08 * math.sqrt(fc) * results.b_v / (results.f_syv or 1.0)
-    min_shear_ok = Asv_over_s >= Asv_min_over_s
-    max_spacing = min(0.75 * D, 500.0) if D else 500.0
-    spacing_ok = s_lig <= max_spacing if s_lig else False
+    reinforcement_checks = shear_reinforcement_spacing_check_values(
+        Asv_mm2=results.Asv,
+        s_lig_mm=s_lig,
+        fc_mpa=fc,
+        b_v_mm=results.b_v,
+        f_syv_mpa=results.f_syv,
+        D_mm=D,
+    )
+    Asv_over_s = reinforcement_checks["Asv_over_s"]
+    Asv_min_over_s = reinforcement_checks["Asv_min_over_s"]
+    min_shear_ok = reinforcement_checks["min_shear_ok"]
+    max_spacing = reinforcement_checks["max_spacing"]
+    spacing_ok = reinforcement_checks["spacing_ok"]
     
     # Summary for report
     summary = [
@@ -2202,45 +2069,13 @@ In short:
     if st.session_state.get(support_widget_key) != support_current:
         st.session_state[support_widget_key] = support_current
 
-    st.markdown(
-        """
-        <style>
-        .st-key-shear_input_scroll_outer {
-            display: block;
-            width: 100%;
-            max-width: 100%;
-            overflow-x: auto;
-            overflow-y: hidden;
-            padding-bottom: 0.6rem;
-            scrollbar-gutter: stable;
-        }
-        .st-key-shear_input_scroll_inner {
-            width: 1440px !important;
-            min-width: 1440px !important;
-            max-width: 1440px !important;
-        }
-        .st-key-shear_input_scroll_outer::-webkit-scrollbar {
-            height: 10px;
-        }
-        .st-key-shear_input_scroll_outer::-webkit-scrollbar-track {
-            background: rgba(49, 51, 63, 0.08);
-            border-radius: 999px;
-        }
-        .st-key-shear_input_scroll_outer::-webkit-scrollbar-thumb {
-            background: rgba(49, 51, 63, 0.28);
-            border-radius: 999px;
-        }
-        .st-key-shear_input_scroll_outer::-webkit-scrollbar-thumb:hover {
-            background: rgba(49, 51, 63, 0.4);
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    with st.container(key="shear_input_scroll_outer"):
-        with st.container(key="shear_input_scroll_inner", width=1440):
-            col_actions, col_geom_mat, col_shear_reo, col_shear_params = st.columns([1, 1, 1, 1], gap="large")
+    with render_specialized_widget_rail("shear_input_scroll", 4) as (
+        col_actions,
+        col_geom_mat,
+        col_shear_reo,
+        col_shear_params,
+    ):
+        with st.container():
         
             # ---------- 1.1 Design Actions (left column) ----------
             with col_actions:
@@ -2583,10 +2418,7 @@ In short:
                 n_ducts = get_param("n_ducts", 0.0)
                 duct_dia = get_param("duct_dia", 0.0)
         
-                n_ducts = 0.0 if n_ducts is None else float(n_ducts)
-                duct_dia = 0.0 if duct_dia is None else float(duct_dia)
-        
-                sum_duct = n_ducts * (duct_dia ** 2) * 3.14159 / 4.0
+                sum_duct = duct_area_mm2(n_ducts, duct_dia)
                 # Store computed value in session state for use in calculations
                 st.session_state["shear_sum_duct"] = sum_duct
                 
@@ -2713,11 +2545,12 @@ In short:
 
     b_used = float(getattr(shear_results, "b_used", b) or b)
     D_used = float(getattr(shear_results, "D_used", D) or D)
-    A_cp = float(getattr(shear_results, "A_cp", b_used * D_used) or 0.0)
-    u_c = float(getattr(shear_results, "u_c", 2 * (b_used + D_used)) or 0.0)
-    Ao = float(getattr(shear_results, "Ao", 0.9 * A_cp) or 0.0)
-    uh = float(getattr(shear_results, "uh", 2 * (max(b_used - 40, 0) + max(D_used - 40, 0))) or 0.0)
-    A_oh = float(getattr(shear_results, "A_oh", max(b_used - 40, 0) * max(D_used - 40, 0)) or 0.0)
+    torsion_geometry_fallback = torsion_section_geometry_values(b_used, D_used)
+    A_cp = float(getattr(shear_results, "A_cp", torsion_geometry_fallback["A_cp"]) or 0.0)
+    u_c = float(getattr(shear_results, "u_c", torsion_geometry_fallback["u_c"]) or 0.0)
+    Ao = float(getattr(shear_results, "Ao", torsion_geometry_fallback["Ao"]) or 0.0)
+    uh = float(getattr(shear_results, "uh", torsion_geometry_fallback["uh"]) or 0.0)
+    A_oh = float(getattr(shear_results, "A_oh", torsion_geometry_fallback["A_oh"]) or 0.0)
 
     step1_req = ">" if torsion_required else "\\le"
     step1_text = (
@@ -2726,87 +2559,119 @@ In short:
     torsion_status = "pass" if not torsion_required else "fail"
     
     # Check 2: Equivalent shear
-    T_star_Nmm = T_star * 1e6
     torsion_eq_kN = float(getattr(shear_results, "Vt_eq_kN", 0.0) or 0.0)
     V_eq = float(getattr(shear_results, "V_eq", abs(V_star)) or abs(V_star))
+    shear_display_scalars = shear_check_display_scalars(
+        T_star_kNm=T_star,
+        D_mm=D,
+        d_mm=d,
+        fc_mpa=fc,
+        Vuc_kN=float(getattr(shear_results, "Vuc_kN", 0.0) or 0.0),
+        Vus_kN=float(getattr(shear_results, "Vus_kN", 0.0) or 0.0),
+        P_v_kN=P_v,
+        phi=phi,
+        V_eq_kN=V_eq,
+    )
+    T_star_Nmm = shear_display_scalars["T_star_Nmm"]
     
     # Check 3: Effective section parameters
     lig_d = 10.0 if lig_d is None else float(lig_d)
     legs = 2.0 if legs is None else float(legs)
     s = 200.0 if s_lig is None else float(s_lig)
     
-    Asv = float(getattr(shear_results, "Asv", legs * math.pi * lig_d ** 2 / 4.0) or 0.0)
+    Asv = float(getattr(shear_results, "Asv", stirrup_area_mm2(legs, lig_d)) or 0.0)
     f_syv = fsy
 
     b_v = float(getattr(shear_results, "b_v", b - k_d * sum_duct) or 0.0)
-    d_v = float(getattr(shear_results, "d_v", max(0.72 * D, 0.9 * d)) or 0.0)
+    d_v = float(getattr(shear_results, "d_v", effective_shear_depth_mm(D, d)) or 0.0)
     
-    dv_1 = 0.72 * D
-    dv_2 = 0.9 * d
+    dv_1 = shear_display_scalars["dv_1"]
+    dv_2 = shear_display_scalars["dv_2"]
     
     # Check 4: Longitudinal strain εx
-    M_star_Nmm = abs(M_star) * 1e6
-    term_M = M_star_Nmm / (d_v or 1.0)
+    strain_fallback = longitudinal_strain_fallback_values(
+        M_star_kNm=M_star,
+        V_star_kN=V_star,
+        T_star_kNm=T_star,
+        P_v_kN=P_v,
+        N_star_kN=N_star,
+        d_v_mm=d_v,
+        uh_mm=uh,
+        Ao_mm2=Ao,
+        Es_mpa=Es,
+        Ec_mpa=Ec,
+        A_st_mm2=A_st,
+        A_pt_mm2=A_pt,
+        f_po_mpa=f_po,
+        A_ct_mm2=A_ct,
+    )
+    M_star_Nmm = float(strain_fallback["M_star_Nmm"])
+    term_M = float(strain_fallback["term_M"])
+    Vprime_kN = float(strain_fallback["Vprime_kN"])
+    Vprime_N = float(strain_fallback["Vprime_N"])
+    torsion_N = float(strain_fallback["torsion_N"])
+    sqrt_inner = float(strain_fallback["sqrt_inner"])
+    N_star_N = float(strain_fallback["N_star_N"])
+    A_pt_fpo_N = float(strain_fallback["A_pt_fpo_N"])
+    numerator_1 = float(strain_fallback["numerator_1"])
+    Ep = float(strain_fallback["Ep"])
+    denom1 = float(strain_fallback["denom1"])
+    eps_x_1 = float(strain_fallback["eps_x_1"])
+    V_abs_N = float(strain_fallback["V_abs_N"])
+    numerator_2 = float(strain_fallback["numerator_2"])
+    denom2 = float(strain_fallback["denom2"])
+    eps_x_2 = float(strain_fallback["eps_x_2"])
     
-    Vprime_kN = abs(V_star) - P_v
-    Vprime_N = Vprime_kN * 1e3
-    
-    torsion_N = 0.97 * T_star_Nmm * uh / (2.0 * (Ao or 1.0))
-    sqrt_inner = math.sqrt(Vprime_N ** 2 + torsion_N ** 2)
-    
-    N_star_N = 0.5 * N_star * 1e3
-    A_pt_fpo_N = A_pt * f_po
-    
-    numerator_1 = term_M + sqrt_inner + N_star_N - A_pt_fpo_N
-    
-    Ep = 195000.0  # tendon modulus, MPa
-    denom1 = 2.0 * (Es * A_st + Ep * A_pt)
-    eps_x_1 = numerator_1 / denom1 if denom1 > 0 else 0.0
-    
-    V_abs_N = abs(V_star) * 1e3
-    numerator_2 = term_M + V_abs_N - P_v * 1e3 + N_star_N - A_pt_fpo_N
-    denom2 = 2.0 * (Es * A_st + Ep * A_pt + Ec * A_ct)
-    eps_x_2 = numerator_2 / denom2 if denom2 > 0 else 0.0
-    
-    if eps_x_1 >= 0:
-        eps_x_raw = eps_x_1
+    if strain_fallback["use_equation_1"]:
+        eps_x_raw = float(strain_fallback["eps_x_raw"])
         eq_used = "Equation (1) – mid-depth in tension"
     else:
-        eps_x_raw = eps_x_2
+        eps_x_raw = float(strain_fallback["eps_x_raw"])
         eq_used = "Equation (2) – mid-depth in slight compression"
     
-    eps_x = max(-0.0002, min(eps_x_raw, 0.003))
+    eps_x = float(strain_fallback["eps_x"])
+    mcft = mcft_kv_theta_values(
+        use_general_kv=use_general_kv,
+        fc_mpa=fc,
+        d_g_mm=d_g,
+        eps_x=eps_x,
+        Asv_mm2=Asv,
+        s_mm=s,
+        b_v_mm=b_v,
+        f_syv_mpa=f_syv,
+        d_v_mm=d_v,
+    )
     
     # Check 5: k_v and θ_v
     if use_general_kv:
         if fc <= 65:
-            k_dg = 32.0 / (16.0 + d_g)
-            k_dg = max(k_dg, 0.8)
+            k_dg = float(mcft["k_dg"])
+            k_dg = float(mcft["k_dg"])
             if d_g >= 16:
-                k_dg = max(k_dg, 1.0)
+                k_dg = float(mcft["k_dg"])
         else:
-            k_dg = 2.0
+            k_dg = float(mcft["k_dg"])
         
-        Asv_over_s = Asv / s
-        Asv_min_over_s = 0.08 * math.sqrt(fc) * b_v / (f_syv or 1.0)
+        Asv_over_s = float(mcft["Asv_over_s"])
+        Asv_min_over_s = float(mcft["Asv_min_over_s"])
         
-        if Asv_over_s < Asv_min_over_s:
-            k_v = (0.4 / (1 + 1500 * eps_x)) * (1300 / (1000 + k_dg * d_v))
+        if mcft["low_stirrup_ratio"]:
+            k_v = float(mcft["k_v"])
             kv_case = "general MCFT with **low stirrup ratio** ($A_{sv}/s < (A_{sv}/s)_{min}$)"
         else:
-            k_v = 0.4 / (1 + 1500 * eps_x)
+            k_v = float(mcft["k_v"])
             kv_case = "general MCFT with **adequate stirrup ratio**"
         
-        theta_v_deg = 29.0 + 7000.0 * eps_x
+        theta_v_deg = float(mcft["theta_v_deg"])
     else:
-        if Asv / s < 0.08 * math.sqrt(fc) * b_v / (f_syv or 1.0):
-            k_v = min(200.0 / (1000.0 + 1.3 * d_v), 0.10)
+        if mcft["low_stirrup_ratio"]:
+            k_v = float(mcft["k_v"])
             kv_case = "simplified non-prestressed – **low stirrup ratio**"
         else:
-            k_v = 0.15
+            k_v = float(mcft["k_v"])
             kv_case = "simplified non-prestressed – **minimum stirrups provided**"
-        theta_v_deg = 36.0
-        k_dg = float("nan")
+        theta_v_deg = float(mcft["theta_v_deg"])
+        k_dg = float(mcft["k_dg"])
     
     eps_x = float(getattr(shear_results, "eps_x", eps_x) or 0.0)
     k_v = float(getattr(shear_results, "k_v", k_v) or 0.0)
@@ -2817,16 +2682,16 @@ In short:
         _render_shear_visualisation_block(theta_v_deg=shear_results.theta_v_deg)
     
     # Check 6: Concrete shear contribution
-    sqrt_fc_limited = float(getattr(shear_results, "sqrt_fc_limited", min(math.sqrt(fc), 8.0)) or 0.0)
+    sqrt_fc_limited = float(getattr(shear_results, "sqrt_fc_limited", shear_display_scalars["sqrt_fc_limited"]) or 0.0)
     Vuc_kN = float(getattr(shear_results, "Vuc_kN", 0.0) or 0.0)
     
     # Check 7: Steel shear contribution
     Vus_kN = float(getattr(shear_results, "Vus_kN", 0.0) or 0.0)
     
     # Check 8: Combined shear strength
-    Vu_total_kN = float(getattr(shear_results, "Vu_total_kN", Vuc_kN + Vus_kN + P_v) or 0.0)
-    phi_Vu = float(getattr(shear_results, "phi_Vu", phi * Vu_total_kN) or 0.0)
-    shear_ok = bool(getattr(shear_results, "shear_ok", phi_Vu >= V_eq))
+    Vu_total_kN = float(getattr(shear_results, "Vu_total_kN", shear_display_scalars["Vu_total_kN"]) or 0.0)
+    phi_Vu = float(getattr(shear_results, "phi_Vu", shear_display_scalars["phi_Vu"]) or 0.0)
+    shear_ok = bool(getattr(shear_results, "shear_ok", shear_display_scalars["shear_ok"]))
     shear_status = "pass" if shear_ok else "fail"
     
     # Check 9: Web crushing
@@ -2836,22 +2701,39 @@ In short:
     cot_theta_1 = cot(theta_1_rad)
     
     Vu_max_kN = float(getattr(shear_results, "Vu_max_kN", 0.0) or 0.0)
-    Vu_max_N = Vu_max_kN * 1e3
+    web_crushing_fallback = web_crushing_fallback_values(
+        V_star_kN=V_star,
+        T_star_kNm=T_star,
+        uh_mm=uh,
+        A_oh_mm2=A_oh,
+        b_v_mm=b_v,
+        d_v_mm=d_v,
+        phi=phi,
+        Vu_max_kN=Vu_max_kN,
+    )
+    Vu_max_N = float(web_crushing_fallback["Vu_max_N"])
+    V_star_N = float(web_crushing_fallback["V_star_N"])
+    term_V = float(web_crushing_fallback["term_V"])
+    term_T = float(web_crushing_fallback["term_T"])
     
-    V_star_N = V_star * 1e3
-    term_V = V_star_N / (b_v * d_v or 1.0)
-    term_T = T_star_Nmm * uh / (1.7 * (A_oh ** 2 or 1.0))
+    LHS = float(getattr(shear_results, "LHS", web_crushing_fallback["LHS"]) or 0.0)
+    RHS = float(getattr(shear_results, "RHS", web_crushing_fallback["RHS"]) or 0.0)
     
-    LHS = float(getattr(shear_results, "LHS", math.sqrt(term_V ** 2 + term_T ** 2)) or 0.0)
-    RHS = float(getattr(shear_results, "RHS", phi * Vu_max_N / (b_v * d_v or 1.0)) or 0.0)
-    
-    web_ok = bool(getattr(shear_results, "web_ok", LHS <= RHS))
+    web_ok = bool(getattr(shear_results, "web_ok", web_crushing_fallback["web_ok"]))
     web_status = "pass" if web_ok else "fail"
     
     # Check 11: Minimum shear reinforcement (tab 3)
-    Asv_over_s_check11 = Asv / s if s > 0 else 0.0
-    Asv_min_over_s_check11 = 0.08 * math.sqrt(fc) * b_v / (f_syv or 1.0)
-    min_shear_ok = Asv_over_s_check11 >= Asv_min_over_s_check11
+    check11_reinforcement = shear_reinforcement_spacing_check_values(
+        Asv_mm2=Asv,
+        s_lig_mm=s,
+        fc_mpa=fc,
+        b_v_mm=b_v,
+        f_syv_mpa=f_syv,
+        D_mm=D,
+    )
+    Asv_over_s_check11 = check11_reinforcement["Asv_over_s"]
+    Asv_min_over_s_check11 = check11_reinforcement["Asv_min_over_s"]
+    min_shear_ok = check11_reinforcement["min_shear_ok"]
     min_shear_status = "pass" if min_shear_ok else "fail"
 
     # =====================================================
@@ -3586,9 +3468,16 @@ $$A_{{pt}} f_{{po}} = {A_pt:.1f} \\times {f_po:.1f} = {A_pt_fpo_N:,.0f}\\ \\text
 """
 
         if check4_display_mode == "Without prestress":
-            eps_x_noprestress_num = term_M + Veq_term_N + N_star_N
-            eps_x_noprestress_den = 2.0 * (Es * A_st)
-            eps_x_noprestress = eps_x_noprestress_num / eps_x_noprestress_den if eps_x_noprestress_den > 0 else 0.0
+            noprestress_display = nonprestressed_longitudinal_strain_display_values(
+                term_M_N=term_M,
+                V_eq_N=Veq_term_N,
+                N_star_half_N=N_star_N,
+                Es_mpa=Es,
+                A_st_mm2=A_st,
+            )
+            eps_x_noprestress_num = noprestress_display["numerator"]
+            eps_x_noprestress_den = noprestress_display["denominator"]
+            eps_x_noprestress = noprestress_display["eps_x"]
             _np_note = (
                 "Non-prestressed member: prestress-related terms omitted for clarity."
                 if (A_pt <= 1e-9 or f_po <= 1e-9)
@@ -3886,8 +3775,8 @@ in the general shear method.
         # Check 5 — k_v AND θ_v
         # =====================================================
         # For the summary text inside the calcbox
-        Asv_over_s = Asv / s
-        Asv_min_over_s = 0.08 * math.sqrt(fc) * b_v / (f_syv or 1.0)
+        Asv_over_s = float(mcft["Asv_over_s"])
+        Asv_min_over_s = float(mcft["Asv_min_over_s"])
         k_dg_display = k_dg if use_general_kv else float("nan")
         canonical_theta_v_deg = float(getattr(shear_results, "theta_v_deg", theta_v_deg))
         canonical_k_v = float(getattr(shear_results, "k_v", k_v))
@@ -4069,7 +3958,9 @@ The optional STM overlay uses a **separate** strut angle **θ<sub>STM</sub>** fr
                 show_mcft_mechanism_labels=True,
             )
             _render_animated_plotly_figure(
-                fig, height=int(fig.layout.height or 320)
+                fig,
+                height=int(fig.layout.height or 320),
+                chart_key="shear_check5_animated",
             )
 
         # Info render function (popover) — trigger aligned further right above calc/diagram row
@@ -4304,7 +4195,9 @@ $$V_{{us}} = \\left(\\frac{{{Asv:.1f} \\times {f_syv:.1f} \\times {d_v:.1f}}}{{{
                 show_region_labels=False,
             )
             _render_animated_plotly_figure(
-                fig, height=int(fig.layout.height or 320)
+                fig,
+                height=int(fig.layout.height or 320),
+                chart_key="shear_check7_animated",
             )
 
         # Info render function (popover) — trigger on the right, aligned with Checks 5–6
@@ -4554,7 +4447,9 @@ $$v_{{\\mathrm{{dem}}}} = \\sqrt{{\\left(\\frac{{{V_star:.1f}}}{{{b_v:.1f} \\tim
                 web_crushing_stm=True,
             )
             _render_animated_plotly_figure(
-                fig, height=int(fig.layout.height or 320)
+                fig,
+                height=int(fig.layout.height or 320),
+                chart_key="shear_check9_animated",
             )
 
         # Info render function (popover) — right-aligned, matching other shear checks
@@ -4772,7 +4667,7 @@ $= {Asv_min_over_s_check11:.3f}\\ \\mathrm{{mm^2/mm}}$
                 )
             no_variation = abs(float(s_end) - float(s_mid)) < 5.0
             D_mm = float(get_param("D", 0.0) or 0.0)
-            s_max_code = min(0.75 * D_mm, 500.0) if D_mm > 0.0 else 500.0
+            s_max_code = maximum_shear_spacing_mm(D_mm)
             if no_variation:
                 st.info(
                     "Spacing is uniform along the span because shear demand is low. "
@@ -4874,60 +4769,10 @@ Spacing is varied along the span based on shear demand and checked against minim
     # We need to ensure these are available at module scope or recompute them here
     # For now, we'll use the values computed in the tabs (they should be in scope)
     shear_pack = build_shear_check_rows_from_state(st.session_state)
-    rows_summary = [
-        {
-            "uid": r.get("uid", ""),
-            "Check": r.get("title", ""),
-            "capacity": r.get("capacity", r.get("value", "")),
-            "action": r.get("action", r.get("limit", "")),
-            "Utilisation": r.get("util", ""),
-            "Status": r.get("status", ""),
-            "is_informational": bool(r.get("is_informational", False)),
-        }
-        for r in (shear_pack.get("rows") or [])
-    ]
-    summary_util = (shear_results.V_eq / shear_results.phi_Vu) if shear_results.phi_Vu > 0 else float("nan")
-    summary_phi_vu_max = phi * shear_results.Vu_max_kN
-    summary_web_util = (shear_results.V_eq / summary_phi_vu_max) if summary_phi_vu_max > 0 else float("nan")
-
-    summary_overrides = {
-        "Sectional shear capacity": {
-            "capacity": f"φVu = {shear_results.phi_Vu:.1f} kN",
-            "action": f"V*eq = {shear_results.V_eq:.1f} kN",
-            "Utilisation": f"{summary_util:.2f}" if not math.isnan(summary_util) else "—",
-            "Status": "PASS" if summary_util <= 1.0 else "FAIL",
-        },
-        "Equivalent design shear": {
-            "capacity": "—",
-            "action": f"V*eq = {shear_results.V_eq:.1f} kN",
-        },
-        "Longitudinal strain": {
-            "capacity": "—",
-            "action": f"εx = {shear_results.eps_x:.5f}",
-        },
-        "Shear model parameters": {
-            "capacity": "—",
-            "action": f"k_v = {shear_results.k_v:.3f}, θ_v = {shear_results.theta_v_deg:.1f}°",
-        },
-        "Concrete shear strength": {
-            "capacity": "—",
-            "action": f"Vuc = {shear_results.Vuc_kN:.1f} kN",
-        },
-        "Steel shear strength": {
-            "capacity": "—",
-            "action": f"Vs = Vus = {shear_results.Vus_kN:.1f} kN",
-        },
-        "Web-crushing strength": {
-            "capacity": f"φVu,max = {summary_phi_vu_max:.1f} kN",
-            "action": f"V*eq = {shear_results.V_eq:.1f} kN",
-            "Utilisation": f"{summary_web_util:.2f}" if not math.isnan(summary_web_util) else "—",
-            "Status": "PASS" if summary_web_util <= 1.0 else "FAIL",
-        },
-    }
-    for row in rows_summary:
-        override = summary_overrides.get(row.get("Check", ""))
-        if override:
-            row.update(override)
+    rows_summary = build_shear_legacy_summary_rows(shear_pack.get("rows") or [])
+    summary_values = build_shear_summary_rows_with_overrides(rows_summary, shear_results, phi)
+    rows_summary = summary_values["rows_summary"]
+    summary_util = summary_values["summary_util"]
 
     # Publish key shear results for Inputs summary
     shear_util = summary_util
@@ -4936,68 +4781,8 @@ Spacing is varied along the span based on shear demand and checked against minim
         Vu_utilisation=float(shear_util) if shear_util is not None and not math.isnan(shear_util) else 0.0,
     )
 
-    _shear_summary_headline_checks = {
-        "Sectional shear capacity",
-        "Torsion cracking check",
-        "Web-crushing strength",
-    }
-    _shear_summary_mcft_detail_checks = {
-        "Equivalent design shear",
-        "Longitudinal strain",
-        "Shear model parameters",
-        "Concrete shear strength",
-        "Steel shear strength",
-    }
-
-    _shear_summary_row_priority = {
-        "Sectional shear capacity": 0,
-        "Torsion cracking check": 1,
-        "Web-crushing strength": 2,
-        "Equivalent design shear": 3,
-        "Longitudinal strain": 4,
-        "Shear model parameters": 5,
-        "Concrete shear strength": 6,
-        "Steel shear strength": 7,
-    }
-
-    def _clickable_rows_from_shear_summary(rows_list: list[dict]) -> list[dict]:
-        out = []
-        for row in rows_list:
-            check = row["Check"]
-            uid = str(row.get("uid") or "").strip()
-            if not uid:
-                continue
-            status_str = str(row.get("Status", "")).upper()
-            is_info = bool(row.get("is_informational", False))
-            ok = None
-            if not is_info and status_str != "INFO":
-                if status_str == "PASS":
-                    ok = True
-                elif status_str in ("FAIL", "NG", "CHECK"):
-                    ok = False
-            tab = SHEAR_ROW_UID_TO_TAB.get(uid, "")
-            base = {
-                "uid": uid,
-                "title": check,
-                "capacity": row.get("capacity", row.get("Value", "")),
-                "action": row.get("action", row.get("Limit", "")),
-                "util": row.get("Utilisation", ""),
-                "status": status_str,
-                "ok": ok,
-                "tab": tab,
-                "is_primary": (check == "Sectional shear capacity"),
-                "is_informational": is_info,
-                "anchor_id": uid,
-            }
-            jt = resolve_jump_target_id(base)
-            if jt != uid:
-                base["jump_target_id"] = jt
-            out.append(sync_legacy_value_limit(base))
-        out.sort(key=lambda r: _shear_summary_row_priority.get(r["title"], 99))
-        return out
-
     rows_summary_full = rows_summary
-    ROWS_FULL = _clickable_rows_from_shear_summary(rows_summary_full)
+    ROWS_FULL = build_shear_clickable_summary_rows(rows_summary_full)
     update_results("shear", {"rows": ROWS_FULL})
 
     # Render clickable summary table at the top (using placeholder created early)
@@ -5011,13 +4796,11 @@ Spacing is varied along the span based on shear demand and checked against minim
             key="show_mcft_breakdown",
             help="Show intermediate MCFT shear calculation rows such as strain, θ_v, k_v, Vuc and Vus.",
         )
-        display_rows = [
-            r
-            for r in rows_summary_full
-            if r["Check"] in _shear_summary_headline_checks
-            or (show_mcft_breakdown and r["Check"] in _shear_summary_mcft_detail_checks)
-        ]
-        ROWS_DISPLAY = _clickable_rows_from_shear_summary(display_rows)
+        display_rows = filter_shear_summary_rows(
+            rows_summary_full,
+            show_mcft_breakdown=show_mcft_breakdown,
+        )
+        ROWS_DISPLAY = build_shear_clickable_summary_rows(display_rows)
         render_clickable_summary_table(ROWS_DISPLAY, key_prefix="shear_summary")
         if not show_mcft_breakdown:
             st.caption(

@@ -5,7 +5,6 @@
     "runtime_family_id": "COMBINED_OVERDESIGN",
     "package": "design_brain.families.bending_and_shear_overdesign_govern",
     "runtime_module": "design_brain.families.bending_and_shear_overdesign_govern.runtime",
-    "legacy_delegate": "design_brain.families.combined_cleanup.CombinedCleanupFamily",
     "public_api": "evaluate_bending_and_shear_overdesign_govern"
   },
   "selection_boundary": {
@@ -188,6 +187,7 @@
     "bending_upper": 1.0,
     "shear_lower": 0.85,
     "shear_upper": 1.0,
+    "candidate_lane": "COMBINED_OVERDESIGN_TARGET_BAND_FALLBACK_PROOF",
     "preferred": "both bending and shear move toward or sit inside target band",
     "fallback": "best compliant combined optimisation with specific blocker evidence"
   },
@@ -366,6 +366,14 @@
         "no further compliant optimisation exists",
         "specific blocker exists"
       ]
+    },
+    "target_band_refinement": {
+      "lane_id": "COMBINED_OVERDESIGN_TARGET_BAND_FALLBACK_PROOF",
+      "preferred": "both bending and shear move toward or sit inside target band",
+      "fallback": "best compliant combined optimisation with specific blocker evidence",
+      "fallback_requires_specific_blocker": true,
+      "runtime_must_report_target_band_candidate_count": true,
+      "runtime_must_report_selected_target_band_status": true
     }
   },
   "shared_exclusions": [

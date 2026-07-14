@@ -1,0 +1,15 @@
+{
+  "schema": "design_brain.family_known_errors.v2",
+  "family": "COMBINED_BENDING_SHEAR_FAIL_GOVERNS",
+  "entries": [
+    {
+      "id": "CBSF-001",
+      "title": "Published combined repair expected safe but live recompute left bending failing",
+      "status": "fixed",
+      "root_cause": "The combined bending/shear fail family published a resolved repair candidate with an expected post-utilisation below 1.0, and Apply used the resolved payload successfully, but the browser/live post-Apply recompute still reported bending FAIL with final worst utilisation 1.31 while shear passed. The published payload carried bot1_count/db_bot_1 style updates without the row-model mirrors consumed by the live longitudinal reinforcement calculation.",
+      "fix_summary": "Combined-family repair updates are now canonicalized to emit the approved row-model mirrors, including bot_row_1_bars, bot_row_1_dia, bot_row_2_bars, bot_row_2_dia, and bot_row_count, alongside the legacy count/diameter fields.",
+      "regression": "tools/verification/families/combined_bending_shear_fail_apply_output_mismatch_audit.py",
+      "locked": true
+    }
+  ]
+}

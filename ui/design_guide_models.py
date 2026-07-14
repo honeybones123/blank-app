@@ -47,6 +47,10 @@ class DesignGuideCardDataAttributeFields:
     render_gate_terminal_exact: str = ""
     render_gate_button_enabled: str = ""
     render_gate_vm_cta_enabled: str = ""
+    publication_hash: str = ""
+    final_publication_authority_hash: str = ""
+    final_publication_cta_hash: str = ""
+    final_publication_display_hash: str = ""
 
 
 @dataclass(frozen=True)

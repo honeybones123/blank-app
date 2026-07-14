@@ -1,8 +1,8 @@
 from typing import Any, Dict
 
-from bending_core import _compute_bending_capacity_pure_impl, solve_bending_capacity
+from calculations.bending import compute_bending_capacity_from_state_values
 from engineering_check_ui import finalize_bending_check_row
-from state_and_helpers import resolve_design_actions
+from state_and_helpers import get_param
 
 
 def compute_bending_capacity_from_state(st_state: Dict[str, Any]) -> Dict[str, Any]:
@@ -10,91 +10,11 @@ def compute_bending_capacity_from_state(st_state: Dict[str, Any]) -> Dict[str, A
     Single-source bending capacity calculation from an explicit state dict.
     Returns both legacy and signed moment branch results.
     """
-    b = float(st_state.get("b") or 0.0)
-    D = float(st_state.get("D") or 0.0)
-    fc = float(st_state.get("fc") or 0.0)
-    fsy = float(st_state.get("fsy") or 0.0)
-    phi = float(st_state.get("phi_bend") or 0.8)
-
-    Ast_bot = float(st_state.get("Ast_bot") or 0.0)
-    Ast_top = float(st_state.get("Ast_top") or 0.0)
-    d_pos = float(st_state.get("d") or 0.0)
-    do_mm = float(st_state.get("do") or 0.0)
-
-    cover_bot = float(st_state.get("cover_bot") or 0.0)
-    db_bot = float(st_state.get("db_bot") or 0.0)
-    nb_bot = float(st_state.get("nb_bot") or 0.0)
-    rowgap_bot = float(st_state.get("rowgap_bot") or 0.0)
-
-    actions = resolve_design_actions(st_state)
-    Mu_star = float(actions.get("Mu", 0.0) or 0.0)
-    Mu_pos_star = float(actions.get("Mu_pos", 0.0) or 0.0)
-    Mu_neg_star = float(actions.get("Mu_neg", 0.0) or 0.0)
-    has_sagging_case = bool(actions.get("has_sagging_case", False))
-    has_hogging_case = bool(actions.get("has_hogging_case", False))
-
-    # Keep legacy min-strength checks tied to sagging branch for backward compatibility.
-    legacy_results = _compute_bending_capacity_pure_impl(
-        b=b,
-        D=D,
-        fc=fc,
-        fsy=fsy,
-        Ast=Ast_bot,
-        Mu_star=Mu_star,
-        phi=phi,
-        d_input=d_pos,
-        cover_bot=cover_bot,
-        db_bot=db_bot,
-        nb_bot=nb_bot,
-        rowgap_bot=rowgap_bot,
+    lig_diameter_mm = float(get_param("lig_d", 0.0) or 0.0)
+    return compute_bending_capacity_from_state_values(
+        st_state,
+        lig_diameter_mm=lig_diameter_mm,
     )
-
-    section_inputs = {
-        "b": b,
-        "D": D,
-        "fc": fc,
-        "fsy": fsy,
-        "phi_bend": phi,
-        "Ast_bot": Ast_bot,
-        "d": d_pos,
-        "Ast_top": Ast_top,
-        "do": do_mm,
-    }
-    bend_pos = solve_bending_capacity("positive", Mu_pos_star, section_inputs)
-    bend_neg = solve_bending_capacity("negative", Mu_neg_star, section_inputs)
-
-    active_utils: list[tuple[str, float]] = []
-    if has_sagging_case:
-        active_utils.append(("Positive bending", float(bend_pos.get("util", 0.0) or 0.0)))
-    if has_hogging_case:
-        active_utils.append(("Negative bending", float(bend_neg.get("util", 0.0) or 0.0)))
-
-    if active_utils:
-        governing_case, util = max(active_utils, key=lambda x: x[1])
-    else:
-        governing_case, util = "", 0.0
-    if governing_case == "Negative bending":
-        phi_mu_governing = float(bend_neg.get("phi_Mu_kNm", 0.0) or 0.0)
-    elif governing_case == "Positive bending":
-        phi_mu_governing = float(bend_pos.get("phi_Mu_kNm", 0.0) or 0.0)
-    else:
-        phi_mu_governing = float(legacy_results.get("phi_Mu_cap", 0.0) or 0.0)
-
-    return {
-        "actions": actions,
-        "Mu_star": Mu_star,
-        "Mu_pos_star": Mu_pos_star,
-        "Mu_neg_star": Mu_neg_star,
-        "has_sagging_case": has_sagging_case,
-        "has_hogging_case": has_hogging_case,
-        "legacy": legacy_results,
-        "bending_pos": bend_pos,
-        "bending_neg": bend_neg,
-        "governing_case": governing_case,
-        "governing_util": float(util),
-        "governing_phi_mu_kNm": float(phi_mu_governing),
-        "Ast_bot": Ast_bot,
-    }
 
 
 def build_bending_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str, Any]:

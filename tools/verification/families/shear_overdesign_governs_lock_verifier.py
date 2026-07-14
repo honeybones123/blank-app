@@ -17,8 +17,7 @@ if str(ROOT) not in sys.path:
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 
-from design_brain.families.shear_cleanup import ShearCleanupFamily  # noqa: E402
-from design_brain.families.shear_overdesign_governs import evaluate_shear_overdesign_governs  # noqa: E402
+from design_brain.families.shear_cleanup import ShearCleanupFamily, _default_runtime_evaluator  # noqa: E402
 from design_brain.families.shear_overdesign_governs.contract import (  # noqa: E402
     family_identity,
     geometry_restrictions,
@@ -46,6 +45,7 @@ PROOF_CHAIN = [
     ("bar_size_lane", "tools/verification/families/shear_overdesign_governs_bar_size_lane_snapshot.py"),
     ("leg_count_lane", "tools/verification/families/shear_overdesign_governs_leg_count_lane_snapshot.py"),
     ("ligature_removal_lane", "tools/verification/families/shear_overdesign_governs_ligature_removal_lane_snapshot.py"),
+    ("width_reduction_lane", "tools/verification/families/shear_overdesign_governs_width_reduction_lane_snapshot.py"),
     ("terminal_lane", "tools/verification/families/shear_overdesign_governs_terminal_lane_snapshot.py"),
     ("zero_shear_lane", "tools/verification/families/shear_overdesign_governs_zero_shear_lane_snapshot.py"),
     ("geometry_restriction", "tools/verification/families/shear_overdesign_governs_geometry_restriction_snapshot.py"),
@@ -61,6 +61,7 @@ EXPECTED_ORDER = (
     "BAR_SIZE_REDUCTION",
     "LEG_COUNT_REDUCTION",
     "LIGATURE_REMOVAL",
+    "WIDTH_REDUCTION",
     "EXACT_STOP",
     "EXHAUSTED",
 )
@@ -85,6 +86,7 @@ def _base_state() -> dict[str, Any]:
         "lig_d": 16,
         "lig_legs": 6,
         "shear_utilisation": 0.0,
+        "bending_utilisation": 0.2,
         "minimum_shear_reinforcement_required": False,
     }
 
@@ -95,7 +97,15 @@ def _evaluation(
 ) -> ShearOverdesignCandidateEvaluation:
     updates = dict(candidate_update.updates)
     removes_ligatures = updates.get("lig_legs") == 0 and updates.get("lig_d") == 0
+    width_after = updates.get("b") or candidate_input.base_state.get("b")
+    try:
+        width_after_value = float(width_after)
+    except (TypeError, ValueError):
+        width_after_value = None
+    width_candidate = candidate_update.width_reduction_attempted
     inside_band = updates.get("s_lig") == 300 and not removes_ligatures
+    if width_candidate:
+        inside_band = bool(width_after_value is not None and 250.0 <= width_after_value <= 650.0)
     return ShearOverdesignCandidateEvaluation(
         input_hash=candidate_input.input_hash,
         update_hash=candidate_update.update_hash,
@@ -112,12 +122,25 @@ def _evaluation(
         mandatory_detailing_status={"status": "PASS", "minimum_shear_reinforcement_required": False},
         shear_detailing_update_status={
             "shear_detailing_only": candidate_update.shear_detailing_only,
+            "contract_update_allowed": candidate_update.contract_allowed_update,
             "update_keys": candidate_update.update_keys,
         },
         geometry_restriction_status={
             "geometry_reduction_attempted": candidate_update.geometry_reduction_attempted,
-            "geometry_reduction_prohibited": True,
+            "depth_reduction_prohibited": True,
+            "width_reduction_allowed": True,
         },
+        width_reduction_status={
+            "width_before": candidate_input.base_state.get("b"),
+            "width_after": width_after_value,
+            "width_reduction_attempted": width_candidate,
+            "width_locked": False,
+        },
+        bending_utilisation=0.92 if width_candidate and inside_band else 0.2,
+        previous_bending_utilisation=float(candidate_input.base_state.get("bending_utilisation") or 0.0),
+        reinforcement_fit_status={"status": "PASS", "rearrangement_search_attempted": True},
+        serviceability_status={"status": "PASS"},
+        crack_control_status={"status": "PASS"},
         zero_shear_status={
             "zero_or_negligible_shear": True,
             "must_not_terminate_for_zero_utilisation": True,
@@ -190,11 +213,16 @@ def _write_artifacts(snapshot: dict[str, Any]) -> tuple[Path, Path]:
 def main() -> int:
     proof_chain = [{"name": name, **_run_script(script)} for name, script in PROOF_CHAIN]
     proof_chain_pass = all(entry["passed"] for entry in proof_chain)
-    result = run_shear_overdesign_governs_runtime(base_state=_base_state(), evaluate_candidate=_evaluation)
-    repeat = run_shear_overdesign_governs_runtime(base_state=_base_state(), evaluate_candidate=_evaluation)
+    result = run_shear_overdesign_governs_runtime(
+        base_state=_base_state(),
+        evaluate_candidate=_default_runtime_evaluator,
+    )
+    repeat = run_shear_overdesign_governs_runtime(
+        base_state=_base_state(),
+        evaluate_candidate=_default_runtime_evaluator,
+    )
     family = ShearCleanupFamily()
     ladder = family.contracted_optimisation_ladder_specs(_base_state())
-    api_result = evaluate_shear_overdesign_governs({"state": _base_state()})
     runtime_source = (ROOT / "design_brain" / "families" / "shear_overdesign_governs" / "runtime.py").read_text(
         encoding="utf-8",
         errors="replace",
@@ -214,7 +242,8 @@ def main() -> int:
         for spec in list(ladder.get("specs") or [])
         if isinstance(spec, dict)
     ]
-    geometry_keys = {"b", "bw", "D", "beam_width", "beam_depth", "beam_width_mm", "beam_depth_mm"}
+    prohibited_geometry_keys = {"D", "beam_depth", "beam_depth_mm"}
+    width_keys = {"b", "bw", "beam_width", "beam_width_mm"}
     checks = {
         "proof_chain_pass": proof_chain_pass,
         "contract_loads": bool(load_shear_overdesign_governs_contract()),
@@ -225,22 +254,25 @@ def main() -> int:
         "runtime_hash_stable": result.ladder_hash == repeat.ladder_hash,
         "zero_shear_override_protected": (zero_shear_override().get("requires") or {}).get("ligatures_exist") is True
         and result.zero_shear_override_proof.get("must_not_terminate_for_zero_utilisation") is True
-        and result.selected_strategy_lane == "LIGATURE_REMOVAL",
-        "geometry_reduction_prohibited": geometry_restrictions().get("geometry_reduction_prohibited") is True
-        and result.geometry_restriction_proof.get("candidate_updates_touch_geometry") is False
-        and not any(set(update) & geometry_keys for update in all_updates),
+        and any(row.get("lane_id") == "LIGATURE_REMOVAL" for row in result.candidate_repairs),
+        "width_reduction_required_and_attempted": geometry_restrictions().get("width_reduction_required_when_unlocked") is True
+        and result.geometry_restriction_proof.get("width_reduction_attempted") is True
+        and any(set(update) & width_keys for update in all_updates),
+        "depth_reduction_prohibited": geometry_restrictions().get("depth_reduction_prohibited") is True
+        and result.geometry_restriction_proof.get("candidate_updates_touch_prohibited_geometry") is False
+        and not any(set(update) & prohibited_geometry_keys for update in all_updates),
+        "smallest_safe_width_selected": result.ranking_proof.get("smallest_safe_width_selected") is True
+        and result.exact_stop_proof.get("width_reduction_attempted") is True,
         "ranking_contract_proven": tuple(ranking_criteria()) == tuple(result.ranking_proof.get("criteria") or ()),
         "lane_policies_present": bool(lane_proof_policies()),
         "family_shell_runtime_driven": ladder.get("contract_runtime_driven") is True
         and ladder.get("contract_runtime_authority") == "run_shear_overdesign_governs_runtime",
-        "api_identifies_runtime_authority": api_result.lock_proof.get("runtime_authority")
-        == "run_shear_overdesign_governs_runtime",
+        "package_runtime_export_matches_family_shell": result.ladder_hash == ladder.get("ladder_hash"),
         "runtime_has_no_page_ui_imports": not forbidden_runtime_terms,
         "shared_systems_remain_shared": "from design_brain.cta_contracts import" in inputs_source
         and "from design_brain.publication import" in inputs_source
         and "build_design_guide_apply_button_contract" in inputs_source
-        and api_result.publication == {}
-        and api_result.cta_contract == {},
+        and "shared_system_owned_outside_family" not in runtime_source,
         "no_bending_or_shear_fail_coupling": "bending_fail_governs" not in runtime_source
         and "BENDING_FAIL_GOVERNS" not in runtime_source
         and "shear_fail_governs" not in runtime_source
@@ -267,19 +299,20 @@ def main() -> int:
             "ladder_hash": result.ladder_hash,
             "repeat_ladder_hash": repeat.ladder_hash,
             "candidate_count": len(result.candidate_repairs),
+            "smallest_safe_width": result.geometry_restriction_proof.get("smallest_safe_width"),
         },
         "family_ladder": {
             "contract_runtime_driven": ladder.get("contract_runtime_driven"),
             "ladder_hash": ladder.get("ladder_hash"),
             "spec_count": len(list(ladder.get("specs") or [])),
         },
-        "api_lock_proof": dict(api_result.lock_proof),
         "scope_limits": {
             "moves_publication": False,
             "moves_cta": False,
             "moves_apply_routing": False,
             "moves_ui_session_debug": False,
-            "allows_geometry_reduction": False,
+            "allows_width_reduction": True,
+            "allows_depth_reduction": False,
             "touches_bending": False,
             "touches_shear_fail": False,
         },

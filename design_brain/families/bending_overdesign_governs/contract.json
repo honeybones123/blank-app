@@ -3,7 +3,6 @@
   "family_identity": {
     "family_id": "BENDING_OVERDESIGN_GOVERNS",
     "package": "design_brain.families.bending_overdesign_governs",
-    "legacy_delegate": "design_brain.families.bending_cleanup.BendingCleanupFamily",
     "public_api": "evaluate_bending_overdesign_governs"
   },
   "classification": {
@@ -222,7 +221,9 @@
     "global_family_rules": [
       "candidates with As < As_min are discarded before ranking",
       "minimum reinforcement boundary takes precedence over optimisation objective",
+      "when minimum reinforcement or ductility controls the overdesign cleanup boundary, bottom reinforcement reduction must be attempted before geometry relief",
       "when minimum reinforcement controls the overdesign cleanup boundary, width reduction must be checked as an As_min relief path before exact stop or exhausted",
+      "when minimum reinforcement controls the overdesign cleanup boundary, valid depth reduction must also be checked as an As_min relief path before exact stop or exhausted",
       "geometry reductions must preserve bending compliance, geometry constraints, beam proportion limits, and constructability",
       "every geometry reduction restarts bottom reinforcement and layer optimisation",
       "shared CTA/publication/apply/UI/session/source-precedence layers remain outside the family"
@@ -238,31 +239,41 @@
     "valid_blockers": [
       "As = As_min",
       "next candidate would produce As < As_min",
-      "As_min remains governing after width-reduction geometry relief search",
+      "As_min remains governing after width-reduction and valid depth-reduction geometry relief search",
       "width reduction cannot lower As_min enough to permit a lighter compliant reinforcement arrangement",
+      "depth reduction cannot lower As_min enough or improve the cleanup path enough to permit a lighter compliant reinforcement arrangement",
       "current reinforcement arrangement is the lightest compliant arrangement available"
     ],
     "specific_blocker_evidence_required": [
       "Further reinforcement reduction would violate minimum reinforcement requirements.",
       "Minimum bending reinforcement / Ast-min boundary identified.",
+      "Bottom reinforcement reduction was attempted first for ductility / ku cleanup.",
       "Width-reduction geometry relief was checked before accepting the As_min blocker.",
+      "Valid depth-reduction geometry relief was checked before accepting the As_min blocker.",
+      "Bottom reinforcement and layer search restarted after each valid geometry-relief step.",
       "Current reinforcement arrangement is the lightest compliant arrangement available."
     ]
   },
   "minimum_reinforcement_geometry_relief": {
     "required_when": [
       "bottom reinforcement reduction is blocked only by As_min",
+      "ductility / ku cleanup cannot improve further without lighter bottom reinforcement",
       "current bending utilisation is below accepted cleanup floor",
       "geometry reduction is allowed"
     ],
     "must_evaluate": [
       "width reduction candidate",
       "width reduction plus restarted bottom reinforcement candidates",
-      "width reduction plus restarted layer reduction candidates"
+      "width reduction plus restarted layer reduction candidates",
+      "depth reduction candidate",
+      "depth reduction plus restarted bottom reinforcement candidates",
+      "depth reduction plus restarted layer reduction candidates"
     ],
     "exhausted_only_when": [
       "no width reduction plus lighter reinforcement candidate keeps all required checks passing",
+      "no valid depth reduction plus lighter reinforcement candidate keeps all required checks passing",
       "no legal width reduction can reduce As_min enough to permit lighter reinforcement",
+      "no legal depth reduction can reduce As_min enough or improve the cleanup path enough to permit lighter reinforcement",
       "specific Ast-min blocker evidence is published"
     ],
     "visible_blocker_terms": [
@@ -287,7 +298,8 @@
       "all geometry constraints remain satisfied",
       "beam proportion limits remain satisfied",
       "constructability remains satisfied",
-      "when minimum reinforcement governs, width reduction is evaluated as an As_min relief path and restarts bottom reinforcement search"
+      "when minimum reinforcement governs, width reduction is evaluated as an As_min relief path and restarts bottom reinforcement search",
+      "when minimum reinforcement governs, valid depth reduction is evaluated as an As_min relief path and restarts bottom reinforcement search"
     ],
     "width_increment_mm": -25,
     "depth_increment_mm": -25,
@@ -304,7 +316,22 @@
         "4-N24",
         "4-N20",
         "3-N24",
-        "3-N20"
+        "3-N20",
+        "4-N16",
+        "3-N16",
+        "4-N12",
+        "3-N12",
+        "2-N16",
+        "2-N12"
+      ],
+      "minimum_bottom_bars": 2,
+      "common_bar_sizes": [
+        12,
+        16,
+        20,
+        24,
+        28,
+        32
       ],
       "terminates_when": [
         "next candidate produces As < As_min",
@@ -335,7 +362,13 @@
       "lane_id": "DEPTH_REDUCTION",
       "increment_mm": -25,
       "restarts_bottom_reinforcement_search": true,
-      "restarts_layer_search": true
+      "restarts_layer_search": true,
+      "minimum_reinforcement_relief": true,
+      "restarted_candidate_requirements": [
+        "depth-only candidate",
+        "depth plus restarted bottom reinforcement candidate",
+        "depth plus restarted layer reduction candidate"
+      ]
     },
     "minimum_reinforcement_cases": {
       "case_a": {
@@ -362,12 +395,16 @@
     "terminal": {
       "exact_stop_allowed_when": [
         "target band reached",
-        "no higher-ranked optimisation candidate exists"
+        "no higher-ranked optimisation candidate exists",
+        "reo reduction was attempted first for ductility / ku cleanup",
+        "As_min geometry relief by width and valid depth reduction was attempted where geometry is unlocked",
+        "bottom reinforcement and layer search restarted after each valid geometry-relief step"
       ],
       "exhausted_requires": [
         "all optimisation branches attempted",
         "no further compliant optimisation exists",
-        "specific blocker evidence exists"
+        "specific blocker evidence exists",
+        "every valid cleanup path is exhausted for contract-defined reasons"
       ]
     }
   },

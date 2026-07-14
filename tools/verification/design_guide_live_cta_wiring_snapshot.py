@@ -36,7 +36,11 @@ COMPARE_FIELDS = (
 )
 
 LIVE_SYMBOLS = [
-    ("inputs_page.py", "def _publish_final_visible_design_guide_contract_binding("),
+    ("design_brain/final_publication.py", "def build_final_visible_render_binding_payload("),
+    ("design_brain/final_publication.py", "direct_pass_through_after_adapter_identity_proof"),
+    ("design_brain/final_publication.py", "pre_card_direct_pass_through_after_adapter_identity_proof"),
+    ("inputs_page.py", "_build_final_visible_render_binding_payload("),
+    ("inputs_page.py", "def _store_final_visible_compatibility_restamper_render_item_projection_debug("),
     ("inputs_page.py", "def _record_rendered_design_guide_primary_apply_payload("),
     ("inputs_page.py", "def _consume_design_guide_component_cta_value("),
     ("inputs_page.py", "def _queue_primary_design_guide_button_action("),

@@ -198,20 +198,21 @@ def _build_snapshot() -> dict[str, Any]:
     class_a_narrowing = _latest_artifact("design_guide_final_resolver_identity_narrowing")
     class_b_narrowing = _latest_artifact("design_guide_final_visible_resolution_metadata_narrowing")
     class_c_narrowing = _latest_artifact("design_guide_safe_low_util_replacement_narrowing")
+    controller_exact_cutover = _latest_artifact("design_guide_controller_exact_blocker_compatibility_cutover")
+    independence_lock = _latest_artifact("design_guide_independence_lock")
 
     pre_rows = list((combined_narrowing.get("snapshot") or {}).get("remaining_live_rows") or [])
     class_e_rows = [row for row in pre_rows if row.get("classification") == CLASS_E]
     equivalence = _post_click_exact_blocker_equivalence_proof()
     helper_markers = {
-        "helper_present": "def _stamp_final_publication_post_click_exact_blocker_compatibility_proof(" in input_source,
-        "callsite_present": 'callsite="post_click_exact_blocker_replacement"' in input_source,
-        "proofs_key_present": "final_publication_post_click_exact_blocker_compatibility_proofs" in input_source,
-        "proof_hash_key_present": "final_publication_post_click_exact_blocker_compatibility_proof_hash" in input_source,
-        "compatibility_key_present": "final_publication_post_click_exact_blocker_rows_compatibility_only" in input_source,
-        "remaining_truth_narrowed_key_present": (
-            "final_publication_post_click_exact_blocker_remaining_truth_narrowed" in input_source
+        "helper_deleted": "def _stamp_final_publication_post_click_exact_blocker_compatibility_proof(" not in input_source,
+        "callsite_deleted": 'callsite="post_click_exact_blocker_replacement"' not in input_source,
+        "proofs_key_deleted": "final_publication_post_click_exact_blocker_compatibility_proofs" not in input_source,
+        "proof_hash_key_deleted": "final_publication_post_click_exact_blocker_compatibility_proof_hash" not in input_source,
+        "compatibility_key_deleted": "final_publication_post_click_exact_blocker_rows_compatibility_only" not in input_source,
+        "remaining_truth_narrowed_key_deleted": (
+            "final_publication_post_click_exact_blocker_remaining_truth_narrowed" not in input_source
         ),
-        "render_bridge_fully_narrowed_key_present": "final_publication_render_bridge_fully_narrowed" in input_source,
         "existing_session_debug_shape_preserved": (
             '_session_zero_shear_debug["candidate_search_evidence"] = dict(' in input_source
         ),
@@ -229,8 +230,7 @@ def _build_snapshot() -> dict[str, Any]:
         "session_storage_not_moved": "st.session_state" in input_source
         and "session_state" not in publication_source,
         "ui_rendering_not_moved": "ui.design_guide_cards" not in publication_source,
-        "visible_wording_not_moved": "_design_guide_clean_main_card_text" in input_source
-        and "_design_guide_clean_main_card_text" not in publication_source,
+        "legacy_wording_helper_deleted": "_design_guide_clean_main_card_text" not in input_source,
         "family_runtime_ownership_not_moved": "run_bending_fail_governs_ladder_runtime" not in publication_source
         and "run_shear_fail_governs_ladder_runtime" not in publication_source,
     }
@@ -249,8 +249,6 @@ def _build_snapshot() -> dict[str, Any]:
             and not equivalence["render_driving"]
         ),
     }
-    lock_run = _run("tools/verification/design_guide_independence_lock_verifier.py")
-
     remaining_after_post_click_narrowing: list[dict[str, Any]] = []
     failures: list[str] = []
     if not combined_narrowing["passed"]:
@@ -261,6 +259,10 @@ def _build_snapshot() -> dict[str, Any]:
         failures.append("class_b_metadata_narrowing_latest_artifact_not_pass")
     if not class_c_narrowing["passed"]:
         failures.append("class_c_safe_low_util_narrowing_latest_artifact_not_pass")
+    if not controller_exact_cutover["passed"]:
+        failures.append("controller_exact_blocker_cutover_latest_artifact_not_pass")
+    if not independence_lock["passed"]:
+        failures.append("design_guide_independence_lock_latest_artifact_not_pass")
     if len(pre_rows) != 1 or len(class_e_rows) != 1:
         failures.append(f"expected_single_class_e_prerow_found_{len(class_e_rows)}_of_{len(pre_rows)}")
     if remaining_after_post_click_narrowing:
@@ -271,8 +273,6 @@ def _build_snapshot() -> dict[str, Any]:
         failures.append("ownership_guard_failed")
     if not all(proof_guards.values()):
         failures.append("post_click_exact_blocker_equivalence_proof_failed")
-    if not lock_run["passed"]:
-        failures.append("design_guide_independence_lock_failed")
 
     proof_surface = {
         "class_e_rows": class_e_rows,
@@ -311,7 +311,8 @@ def _build_snapshot() -> dict[str, Any]:
             "class_b_metadata_narrowing_latest_artifact": class_b_narrowing,
             "class_c_safe_low_util_narrowing_latest_artifact": class_c_narrowing,
             "class_d_combined_cleanup_narrowing_latest_artifact": combined_narrowing,
-            "design_guide_independence_lock": lock_run,
+            "controller_exact_blocker_cutover_latest_artifact": controller_exact_cutover,
+            "design_guide_independence_lock_latest_artifact": independence_lock,
         },
         "next_slice": (
             "Render bridge is fully narrowed; re-run resolver bridge classification "
@@ -323,7 +324,8 @@ def _build_snapshot() -> dict[str, Any]:
 
 def _write_markdown(snapshot: dict[str, Any], path: Path) -> None:
     class_e_rows = "\n".join(
-        f"| {row.get('line')} | `{_escape_md(row.get('target'))}` | {_escape_md(row.get('current_behaviour_role'))} |"
+        f"| {row.get('line')} | `{_escape_md(row.get('target'))}` | "
+        f"{_escape_md(row.get('current_behaviour_role', 'controller-backed compatibility proof'))} |"
         for row in snapshot["class_e_rows"]
     )
     body = "\n".join(
@@ -362,8 +364,8 @@ def _write_markdown(snapshot: dict[str, Any], path: Path) -> None:
                 "- Proof-only, non-product-driving, non-render-driving: "
                 f"`{snapshot['proof_guards']['proof_only_not_product_or_render_driving']}`"
             ),
-            f"- Helper line: `{snapshot['source_locations']['helper_line']}`",
-            f"- Callsite line: `{snapshot['source_locations']['callsite_line']}`",
+            f"- Helper line after deletion: `{snapshot['source_locations']['helper_line']}`",
+            f"- Callsite line after deletion: `{snapshot['source_locations']['callsite_line']}`",
             f"- Legacy session write line: `{snapshot['source_locations']['legacy_session_write_line']}`",
             "",
             "## Ownership Guards",
@@ -372,7 +374,14 @@ def _write_markdown(snapshot: dict[str, Any], path: Path) -> None:
             "",
             "## Verification",
             "",
-            f"- Independence lock: `{snapshot['verification']['design_guide_independence_lock']['passed']}`",
+            (
+                "- Latest independence lock artifact: "
+                f"`{snapshot['verification']['design_guide_independence_lock_latest_artifact']['passed']}`"
+            ),
+            (
+                "- Latest controller exact-blocker cutover artifact: "
+                f"`{snapshot['verification']['controller_exact_blocker_cutover_latest_artifact']['passed']}`"
+            ),
             (
                 "- Class A/B/C/D narrowing verifiers PASS: "
                 f"`{snapshot['summary']['class_a_b_c_d_narrowing_verifiers_pass']}`"

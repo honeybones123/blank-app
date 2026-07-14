@@ -38,6 +38,7 @@ EXPECTED_LANE_ORDER = [
     "BAR_SIZE_REDUCTION",
     "LEG_COUNT_REDUCTION",
     "LIGATURE_REMOVAL",
+    "WIDTH_REDUCTION",
     "EXACT_STOP",
     "EXHAUSTED",
 ]
@@ -100,12 +101,25 @@ def _evaluation(
         mandatory_detailing_status={"status": "PASS", "minimum_shear_reinforcement_required": False},
         shear_detailing_update_status={
             "shear_detailing_only": candidate_update.shear_detailing_only,
+            "contract_update_allowed": candidate_update.contract_allowed_update,
             "update_keys": candidate_update.update_keys,
         },
         geometry_restriction_status={
             "geometry_reduction_attempted": candidate_update.geometry_reduction_attempted,
-            "geometry_reduction_prohibited": True,
+            "depth_reduction_prohibited": True,
+            "width_reduction_allowed": True,
         },
+        width_reduction_status={
+            "width_before": candidate_input.base_state.get("b"),
+            "width_after": candidate_update.updates.get("b", candidate_input.base_state.get("b")),
+            "width_reduction_attempted": candidate_update.width_reduction_attempted,
+            "width_locked": False,
+        },
+        bending_utilisation=0.92,
+        previous_bending_utilisation=0.8,
+        reinforcement_fit_status={"status": "PASS", "rearrangement_search_attempted": True},
+        serviceability_status={"status": "PASS"},
+        crack_control_status={"status": "PASS"},
         zero_shear_status={
             "zero_or_negligible_shear": zero_shear,
             "must_not_terminate_for_zero_utilisation": zero_shear,
@@ -296,7 +310,10 @@ def terminal_lane_main() -> int:
         "exact_stop_rule_exists": isinstance(rules.get("exact_stop"), dict) and rules["exact_stop"].get("required") is True,
         "exhausted_rule_exists": isinstance(rules.get("exhausted"), dict) and rules["exhausted"].get("required") is True,
         "exact_stop_allows_target_band": "target band reached" in list(policy.get("exact_stop_allowed_when") or []),
-        "exact_stop_allows_no_unnecessary_ligatures": "no unnecessary ligatures remain" in list(policy.get("exact_stop_allowed_when") or []),
+        "exact_stop_requires_width_exhaustion": any(
+            "width reduction" in str(value) or "smallest safe width" in str(value)
+            for value in list(policy.get("exact_stop_allowed_when") or [])
+        ),
         "exhausted_requires_all_branches": "all optimisation branches attempted" in list(policy.get("exhausted_requires") or []),
         "zero_shear_exhausted_restricted": policy.get("zero_shear_exhausted_forbidden_while_ligatures_remain_without_code_requirement") is True,
     }
@@ -329,11 +346,66 @@ def geometry_restriction_main() -> int:
     shear_update = ShearOverdesignCandidateUpdate(updates={"s_lig": 300.0})
     checks = {
         **_common_checks(),
-        "contract_prohibits_geometry_reduction": restrictions.get("geometry_reduction_prohibited") is True,
-        "policy_prohibits_width_reduction": policy.get("prohibits_width_reduction") is True,
+        "contract_requires_width_reduction_when_unlocked": restrictions.get("width_reduction_required_when_unlocked") is True,
         "policy_prohibits_depth_reduction": policy.get("prohibits_depth_reduction") is True,
-        "width_update_rejected_by_boundary": width_update.geometry_reduction_attempted and not width_update.shear_detailing_only,
+        "width_update_allowed_by_boundary": width_update.contract_allowed_update
+        and width_update.width_reduction_attempted
+        and not width_update.geometry_reduction_attempted,
         "depth_update_rejected_by_boundary": depth_update.geometry_reduction_attempted and not depth_update.shear_detailing_only,
         "shear_update_allowed_by_boundary": shear_update.shear_detailing_only and not shear_update.geometry_reduction_attempted,
     }
     return _finish("geometry_restriction", checks, {"policy": policy, "geometry_restrictions": restrictions})
+
+
+def width_reduction_lane_main() -> int:
+    policies = lane_proof_policies()
+    policy = dict(policies.get("width_reduction") or {})
+    candidate_input = ShearOverdesignCandidateInput(
+        base_state={**_base_state(), "b": 730.0, "D": 375.0, "shear_utilisation": 0.05, "bending_utilisation": 0.92}
+    )
+    step = float(policy.get("width_step_mm") or 0.0)
+    minimum_width = float(policy.get("minimum_width_mm") or 0.0)
+    updates = []
+    width = 730.0 - step
+    while step > 0 and width >= minimum_width:
+        updates.append(ShearOverdesignCandidateUpdate(updates={"b": width}))
+        width -= step
+    accepted_widths = [705.0, 680.0, 655.0, 630.0, 605.0, 580.0, 555.0, 530.0, 505.0, 480.0]
+    evaluations = [
+        _evaluation(
+            candidate_input=candidate_input,
+            candidate_update=update,
+            shear_utilisation=0.05,
+            previous_shear_utilisation=0.05,
+            status="ACCEPTED" if update.updates.get("b") in accepted_widths else "REJECTED_NEXT_WIDTH_FAILS_BENDING",
+            zero_shear=False,
+            no_unnecessary_ligatures_remain=True,
+        )
+        for update in updates
+    ]
+    checks = {
+        **_common_checks(),
+        "policy_lane_id_matches": policy.get("lane_id") == "WIDTH_REDUCTION",
+        "width_step_loaded_from_contract": policy.get("width_step_mm") == 25,
+        "updates_are_contract_allowed": all(update.contract_allowed_update for update in updates),
+        "updates_attempt_width_reduction": all(update.width_reduction_attempted for update in updates),
+        "depth_reduction_not_attempted": not any(update.geometry_reduction_attempted for update in updates),
+        "restart_full_reinforcement_search_required": policy.get("restarts_full_reinforcement_search") is True,
+        "boundary_represents_rearrangement_and_fit": all(
+            bool(evaluation.reinforcement_fit_status.get("rearrangement_search_attempted"))
+            and evaluation.serviceability_status.get("status") == "PASS"
+            and evaluation.crack_control_status.get("status") == "PASS"
+            for evaluation in evaluations[:3]
+        ),
+        "candidate_widths_continue_downward": [update.updates.get("b") for update in updates[:4]]
+        == [705.0, 680.0, 655.0, 630.0],
+    }
+    return _finish(
+        "width_reduction_lane",
+        checks,
+        {
+            "policy": policy,
+            "candidate_widths_tested": [update.updates.get("b") for update in updates],
+            "evaluation_hashes": [evaluation.evaluation_hash for evaluation in evaluations],
+        },
+    )

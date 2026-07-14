@@ -20,6 +20,7 @@ from state_and_helpers import (
     normalize_beam_status,
     summarize_longitudinal_rows,
 )
+from widgets_helpers import render_plotly_diagram
 
 
 def _safe_float(value):
@@ -1581,7 +1582,12 @@ def render_active_beam_report_preview(report_data: dict):
     try:
         from inputs_page import make_summary_cross_section_figure
 
-        st.plotly_chart(make_summary_cross_section_figure(), use_container_width=True, config={"displayModeBar": False})
+        render_plotly_diagram(
+            make_summary_cross_section_figure(),
+            key="report_section_diagram",
+            title="Report section diagram",
+            config={"displayModeBar": False},
+        )
     except Exception as exc:
         st.info(f"Section diagram unavailable: {exc}")
     if (report_data.get("diagrams") or {}).get("include_beam_elevation"):
@@ -1590,7 +1596,12 @@ def render_active_beam_report_preview(report_data: dict):
         try:
             from inputs_page import make_beam_3d_figure
 
-            st.plotly_chart(make_beam_3d_figure(), use_container_width=True, config={"displayModeBar": False})
+            render_plotly_diagram(
+                make_beam_3d_figure(),
+                key="report_beam_elevation_diagram",
+                title="Report beam elevation",
+                config={"displayModeBar": False},
+            )
         except Exception as exc:
             st.info(f"Beam elevation unavailable: {exc}")
 

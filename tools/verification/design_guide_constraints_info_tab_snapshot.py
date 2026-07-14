@@ -50,7 +50,7 @@ def main() -> int:
     tab_keys_end = state_text.find("# ----------------- BENDING PAGE", tab_keys_start)
     tab_keys_block = state_text[tab_keys_start:tab_keys_end] if tab_keys_start >= 0 else ""
 
-    constraints_call = inputs_text.find("_render_design_guide_constraints_panel(sync_callbacks)")
+    constraints_call = inputs_text.find("_render_design_guide_constraints_panel(sync_callbacks, include_heading=True)")
     placeholder_call = inputs_text.find("design_guide_page.render_pre_widget_placeholder")
     info_button_index = constraints_body.find("with info_i_button(")
     first_toggle_index = constraints_body.find("_shared_toggle(")
@@ -60,10 +60,12 @@ def main() -> int:
             "with info_i_button(" in constraints_body
             and "st.container(border=True)" not in constraints_body
         ),
-        "constraints_ui_is_right_hand_side_control": (
-            "spacer_col, constraints_col = st.columns([6.4, 2.0]" in constraints_body
-            and "status_col, info_col = st.columns([4.2, 1.0]" in constraints_body
-            and 'st.caption(f"Constraints: {status_text}")' in constraints_body
+        "constraints_ui_is_button_only_header_control": (
+            "constraints_col, _ = st.columns([1.55, 0.35, 8.0]" in constraints_body
+            and "_, constraints_col = st.columns([8.0, 0.35]" in constraints_body
+            and 'st.caption(f"Constraints: {status_text}")' not in constraints_body
+            and 'st.caption("Constraints: none")' not in constraints_body
+            and "status_text" not in constraints_body
             and "Design Guide constraints: locked axes" not in constraints_body
         ),
         "constraints_ui_renders_above_design_guide_placeholder": (
@@ -122,7 +124,7 @@ def main() -> int:
             "tab_keys_line": _line_number(state_text, '"inputs_optimisation_lock_width": "optimisation_lock_width"'),
         },
         "scope": {
-            "ui_change": "Design Guide constraints render as an info popover above the Design Guide, not a bordered card.",
+            "ui_change": "Design Guide constraints render as an info popover button above the Design Guide; the visible constraints caption is removed.",
             "state_change": "Width and depth locks are shared state; locking both activates the legacy fixed-geometry gate.",
             "not_proven": "Axis-specific family ladder behavior still needs separate contract/runtime wiring before claiming width-only or depth-only authority.",
         },

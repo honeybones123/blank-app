@@ -192,6 +192,10 @@ def _evaluation_payload(
         "shear_compliant": evaluation.shear_compliant,
         "bending_moves_toward_target": evaluation.bending_moves_toward_target,
         "shear_moves_toward_target": evaluation.shear_moves_toward_target,
+        "zero_shear_status": dict(evaluation.zero_shear_status),
+        "minimum_reinforcement_status": dict(evaluation.minimum_reinforcement_status),
+        "geometry_interaction_status": dict(evaluation.geometry_interaction_status),
+        "reinforcement_interaction_status": dict(evaluation.reinforcement_interaction_status),
         "rejection_reasons": rejection_reasons,
     }
 
@@ -221,25 +225,81 @@ def run_combined_overdesign_governs_runtime(
     ranked = sorted(accepted, key=lambda row: row["rank_key"])
     selected = dict(ranked[0]) if ranked else None
     band = target_band()
+    target_band_candidate_count = sum(
+        1
+        for row in accepted
+        if _inside_band(
+            row.get("bending_utilisation_after"),
+            float(band.get("bending_lower") or 0.85),
+            float(band.get("bending_upper") or 1.0),
+        )
+        and _inside_band(
+            row.get("shear_utilisation_after"),
+            float(band.get("shear_lower") or 0.85),
+            float(band.get("shear_upper") or 1.0),
+        )
+    )
+    selected_inside_bending_band = bool(
+        selected
+        and _inside_band(
+            selected.get("bending_utilisation_after"),
+            float(band.get("bending_lower") or 0.85),
+            float(band.get("bending_upper") or 1.0),
+        )
+    )
+    selected_inside_shear_band = bool(
+        selected
+        and _inside_band(
+            selected.get("shear_utilisation_after"),
+            float(band.get("shear_lower") or 0.85),
+            float(band.get("shear_upper") or 1.0),
+        )
+    )
+    selected_inside_target_band = bool(selected_inside_bending_band and selected_inside_shear_band)
+    selected_zero_shear_terminal = False
+    if selected:
+        selected_zero_shear = _as_dict(selected.get("zero_shear_status"))
+        selected_zero_shear_terminal = bool(
+            selected_inside_bending_band
+            and _as_number(selected.get("shear_utilisation_after")) <= float(band.get("shear_lower") or 0.85)
+            and selected_zero_shear.get("ligature_removal_compliant") is True
+        )
+    terminal_candidate_status = None
+    further_cleanup_available = None
+    if selected_inside_target_band:
+        terminal_candidate_status = "TERMINAL_TARGET_BAND"
+        further_cleanup_available = False
+    elif selected_zero_shear_terminal:
+        terminal_candidate_status = "TERMINAL_BLOCKED_WITH_PROOF"
+        further_cleanup_available = False
+    elif selected:
+        terminal_candidate_status = "NON_TERMINAL_FURTHER_CLEANUP_AVAILABLE"
+        further_cleanup_available = True
+    if selected:
+        selected["terminal_candidate_status"] = terminal_candidate_status
+        selected["further_cleanup_available"] = further_cleanup_available
+        selected["exact_blocker_reason"] = (
+            "zero shear with ligature removal leaves no remaining shear detailing cleanup"
+            if selected_zero_shear_terminal
+            else None
+        )
+    target_band_refinement_proof = {
+        "lane_id": band.get("candidate_lane"),
+        "target_band_candidate_count": target_band_candidate_count,
+        "selected_inside_target_band": selected_inside_target_band,
+        "selected_inside_bending_band": selected_inside_bending_band,
+        "selected_inside_shear_band": selected_inside_shear_band,
+        "terminal_candidate_status": terminal_candidate_status,
+        "further_cleanup_available": further_cleanup_available,
+        "fallback_reason": None
+        if selected_inside_target_band or selected_zero_shear_terminal
+        else band.get("fallback"),
+    }
     exact_stop = {
         "allowed_when": list(exact_stop_rules().get("allowed_when") or []),
-        "selected_inside_bending_band": bool(
-            selected
-            and _inside_band(
-                selected.get("bending_utilisation_after"),
-                float(band.get("bending_lower") or 0.85),
-                float(band.get("bending_upper") or 1.0),
-            )
-        ),
-        "selected_inside_shear_band": bool(
-            selected
-            and _inside_band(
-                selected.get("shear_utilisation_after"),
-                float(band.get("shear_lower") or 0.85),
-                float(band.get("shear_upper") or 1.0),
-            )
-        ),
-        "no_higher_ranked_candidate_exists": bool(selected),
+        "selected_inside_bending_band": selected_inside_bending_band,
+        "selected_inside_shear_band": selected_inside_shear_band,
+        "no_higher_ranked_candidate_exists": bool(ranked and selected == ranked[0]),
     }
     specific_blockers = tuple(
         reason
@@ -278,6 +338,11 @@ def run_combined_overdesign_governs_runtime(
         "accepted_count": len(accepted),
         "rejected_count": len(rejected),
         "selected_candidate_id": selected.get("candidate_id") if selected else None,
+        "target_band_candidate_count": target_band_candidate_count,
+        "target_band_selected": selected_inside_target_band,
+        "terminal_candidate_status": terminal_candidate_status,
+        "further_cleanup_available": further_cleanup_available,
+        "fallback_reason": target_band_refinement_proof.get("fallback_reason"),
     }
     evidence = {
         "selection_boundary": {
@@ -290,6 +355,7 @@ def run_combined_overdesign_governs_runtime(
         "accepted_candidate_evidence": tuple(accepted),
         "rejected_candidate_evidence": tuple(rejected),
         "ranking_evidence": ranking,
+        "target_band_refinement_proof": target_band_refinement_proof,
         "exact_stop_proof": exact_stop,
         "exhausted_proof": exhausted,
         "ownership_proof": ownership,

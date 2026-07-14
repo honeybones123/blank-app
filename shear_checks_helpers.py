@@ -1,123 +1,16 @@
 from typing import Any, Dict, Tuple
 
 import math
-import json
-import os
 
+from calculations.shear import (
+    compute_canonical_shear_truth_from_bundle,
+    format_shear_row_util as _fmt_row_util,
+    resolve_shear_spacing_truth,
+    session_final_shear_truth_bundle_complete,
+    shear_truth_status_from_util as _truth_status_from_util,
+)
 from engineering_check_ui import sync_legacy_value_limit
 from state_and_helpers import resolve_design_actions
-
-def resolve_shear_spacing_truth(
-    *,
-    provided_spacing_mm: float | None,
-    required_spacing_mm: float | None,
-    effective_spacing_mm: float | None,
-    tolerance_mm: float = 0.51,
-) -> dict[str, Any]:
-    """
-    Single source of truth for shear spacing labels used in results, UI, and logs.
-
-    - **Provided**: canonical user/shared input spacing (s_lig).
-    - **Required**: demand/code envelope spacing from the shear layout (e.g. end-zone
-      spacing from Check 10 / ``shear_spacing_end_mm``).
-    - **Effective**: spacing actually used in the sectional φV_u / V_us check
-      (``shear_sectional_check_spacing_mm`` / ``shear_effective_spacing_mm``).
-    - **Governing source**: whether the check is driven by provided input or by the
-      required envelope spacing (typically when “Apply auto spacing” is on).
-
-    Returns keys: provided_spacing_mm, required_spacing_mm, effective_spacing_mm,
-    governing_spacing_source ("provided" | "required" | None).
-    """
-
-    def _f(x: Any) -> float | None:
-        try:
-            if x is None:
-                return None
-            v = float(x)
-            if math.isnan(v):
-                return None
-            return v
-        except Exception:
-            return None
-
-    p = _f(provided_spacing_mm)
-    r = _f(required_spacing_mm)
-    e = _f(effective_spacing_mm)
-    tol = float(tolerance_mm)
-
-    out: dict[str, Any] = {
-        "provided_spacing_mm": p,
-        "required_spacing_mm": r,
-        "effective_spacing_mm": e,
-        "governing_spacing_source": None,
-    }
-
-    if e is None:
-        out["governing_spacing_source"] = "provided" if p is not None else None
-        return out
-
-    match_p = p is not None and abs(e - p) <= tol
-    match_r = r is not None and abs(e - r) <= tol
-
-    if match_p and not match_r:
-        src = "provided"
-    elif match_r and not match_p:
-        src = "required"
-    elif match_p and match_r:
-        src = "provided"
-    else:
-        if p is None and r is None:
-            src = None
-        elif p is None:
-            src = "required"
-        elif r is None:
-            src = "provided"
-        else:
-            dp = abs(e - p)
-            dr = abs(e - r)
-            src = "required" if dr + 1e-9 < dp else "provided"
-
-    out["governing_spacing_source"] = src
-    return out
-
-
-def session_final_shear_truth_bundle_complete(st_state: Dict[str, Any] | None) -> bool:
-    """
-    True when session carries an explicit Stage-2 final publication slice sufficient for
-    summary / alignment to trust published_result_spacing_mm (not legacy envelope end).
-    """
-    s = dict(st_state or {})
-    if not str(s.get("final_shear_status_source") or "").strip():
-        return False
-    if not isinstance(s.get("final_shear_truth_resolved"), bool):
-        return False
-    if s.get("published_result_spacing_mm") is None:
-        return False
-    if not str(s.get("published_result_spacing_meaning") or "").strip():
-        return False
-    return True
-
-
-def _fmt_row_util(value: object) -> str:
-    """Format utilisation for summary rows; never raises on None / NaN."""
-    if value is None:
-        return "—"
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return "—"
-    if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
-        return "—"
-    return f"{v:.2f}"
-
-
-def _truth_status_from_util(u: float | None) -> str:
-    if u is None or (isinstance(u, float) and (math.isnan(u) or math.isinf(u))):
-        return "—"
-    if u <= 1.0:
-        return "NEAR LIMIT" if u >= 0.95 else "PASS"
-    return "FAIL"
-
 
 def _normalise_canonical_shear_truth_bundle(
     bundle_or_state: Dict[str, Any] | None,
@@ -175,149 +68,18 @@ def compute_canonical_shear_truth(
     and solvers cannot show PASS while governing envelope utilisation is > 1.0 or while
     provided detailing is materially looser than the governing required spacing.
     """
-    zp = dict(zone_payload or {})
     nb, canonical_shear_truth_input_shape = _normalise_canonical_shear_truth_bundle(
         bundle, st_state=st_state
     )
-    res = nb["results"]
-    phi = float(nb["phi"])
-    inp = nb["inputs"]
-
-    util_sec = (res.V_eq / res.phi_Vu) if res.phi_Vu > 0 else float("nan")
-    phi_vu_max = phi * float(res.Vu_max_kN or 0.0)
-    util_web = (res.V_eq / phi_vu_max) if phi_vu_max > 0 else float("nan")
-
-    def _f(x: Any) -> float | None:
-        try:
-            if x is None:
-                return None
-            v = float(x)
-            if math.isnan(v) or math.isinf(v):
-                return None
-            return v
-        except Exception:
-            return None
-
-    util_sec_f = _f(util_sec)
-    util_web_f = _f(util_web)
-    u_env = _f(zp.get("shear_util_min") or st_state.get("shear_util_min"))
-    web_util_governing = _f(util_web)
-
-    s_prov = _f(provided_spacing_mm)
-    if s_prov is None:
-        s_prov = _f(st_state.get("s_lig")) or _f(getattr(inp, "s_lig", None)) or _f(inp.s_lig)
-    s_req = _f(required_spacing_mm)
-    if s_req is None:
-        s_req = _f(st_state.get("shear_required_spacing_mm"))
-    if s_req is None and session_final_shear_truth_bundle_complete(st_state):
-        s_req = _f(zp.get("shear_spacing_end_mm"))
-    s_eff = _f(effective_spacing_mm)
-    if s_eff is None:
-        s_eff = _f(st_state.get("shear_effective_spacing_mm"))
-    if s_eff is None:
-        s_sec = st_state.get("shear_sectional_check_spacing_mm")
-        s_eff = _f(s_sec) if s_sec is not None else s_prov
-    spacing_truth = resolve_shear_spacing_truth(
-        provided_spacing_mm=s_prov,
-        required_spacing_mm=s_req,
-        effective_spacing_mm=s_eff,
+    return compute_canonical_shear_truth_from_bundle(
+        st_state,
+        bundle=nb,
+        canonical_shear_truth_input_shape=canonical_shear_truth_input_shape,
+        zone_payload=zone_payload,
+        provided_spacing_mm=provided_spacing_mm,
+        required_spacing_mm=required_spacing_mm,
+        effective_spacing_mm=effective_spacing_mm,
     )
-
-    governing_candidates: list[dict[str, Any]] = []
-    if util_sec_f is not None:
-        governing_candidates.append(
-            {
-                "name": "Sectional shear capacity",
-                "source": "sectional_shear_capacity",
-                "util": util_sec_f,
-                "demand_kN": _f(res.V_eq),
-                "capacity_kN": _f(res.phi_Vu),
-                "reason": "sectional_shear_capacity_governs",
-            },
-        )
-    if util_web_f is not None:
-        governing_candidates.append(
-            {
-                "name": "Web-crushing strength",
-                "source": "web_crushing_strength",
-                "util": util_web_f,
-                "demand_kN": _f(res.V_eq),
-                "capacity_kN": _f(phi_vu_max),
-                "reason": "web_crushing_strength_governs",
-            },
-        )
-
-    governing = (
-        max(
-            governing_candidates,
-            key=lambda item: (
-                float(item.get("util"))
-                if item.get("util") is not None
-                else float("-inf")
-            ),
-        )
-        if governing_candidates
-        else None
-    )
-    shear_util_governing = _f((governing or {}).get("util"))
-    governing_name = str((governing or {}).get("name") or "").strip() or "Final published shear truth"
-    governing_source = str((governing or {}).get("source") or "").strip() or "unresolved_governing_shear_truth"
-    governing_reason = str((governing or {}).get("reason") or "").strip()
-    governing_demand_kN = _f((governing or {}).get("demand_kN"))
-    governing_capacity_kN = _f((governing or {}).get("capacity_kN"))
-
-    reasons: list[str] = []
-    if governing_reason:
-        reasons.append(governing_reason)
-    shear_truth_inconsistent_status_override: str | None = None
-    env_st = str(zp.get("shear_envelope_status") or st_state.get("shear_envelope_status") or "").strip().upper()
-
-    if shear_util_governing is None:
-        status = "FAIL"
-        reasons.append("missing_governing_shear_util")
-    elif shear_util_governing <= 1.0 + 1e-9:
-        status = "PASS"
-    else:
-        status = "FAIL"
-        reasons.append("governing_shear_util_exceeds_unity")
-
-    spacing_override_active = False
-    spacing_override_reason = ""
-
-    if env_st and env_st not in {"PASS", "FAIL"}:
-        reasons.append(f"raw_envelope_status={env_st.lower()}")
-
-    reason_txt = "; ".join(dict.fromkeys([r for r in reasons if r]))
-
-
-
-
-    return {
-        "provided_spacing_mm": s_prov,
-        "effective_spacing_mm": s_eff,
-        "required_spacing_mm": s_req,
-        "shear_provided_spacing_mm": s_prov,
-        "shear_effective_spacing_mm": s_eff,
-        "shear_required_spacing_mm": s_req,
-        "shear_governing_check_name": governing_name,
-        "shear_governing_demand_kN": governing_demand_kN,
-        "shear_governing_capacity_kN": governing_capacity_kN,
-        "shear_governing_util": shear_util_governing,
-        "shear_governing_status": status,
-        "shear_governing_reason": reason_txt,
-        "shear_governing_source": governing_source,
-        "shear_util_governing": shear_util_governing,
-        "web_util_governing": web_util_governing,
-        "shear_truth_status": status,
-        "shear_truth_reason": reason_txt,
-        "canonical_shear_spacing_override_active": bool(spacing_override_active),
-        "canonical_shear_spacing_override_reason": spacing_override_reason,
-        "shear_truth_inconsistent_status_override": shear_truth_inconsistent_status_override,
-        "shear_spacing_truth": spacing_truth,
-        "shear_envelope_util_min": u_env,
-        "shear_sectional_util": _f(util_sec),
-        "canonical_shear_truth_input_shape": canonical_shear_truth_input_shape,
-    }
 
 
 def _shear_calc_context(st_state: Dict[str, Any]) -> Dict[str, Any]:

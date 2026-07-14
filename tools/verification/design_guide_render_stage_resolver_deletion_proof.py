@@ -1,4 +1,4 @@
-"""Proof-only deletion readiness for the render-stage final-visible resolver.
+﻿"""Proof-only deletion readiness for the render-stage final-visible resolver.
 
 The render bridge lock proves the render-stage resolver no longer owns final
 Design Guide truth. This verifier narrows the deletion boundary for the single
@@ -136,16 +136,15 @@ def _replacement_coverage(*, input_source: str, final_source: str) -> dict[str, 
             "covered": all(
                 marker in input_source
                 for marker in (
-                    "final_publication_resolver_identity_rows_compatibility_only",
                     "build_collapsed_guidance_item_from_final_publication",
                 )
-            ),
+            )
+            and "published_item_id" in final_source,
             "source": "FinalDesignGuidePublication identity + collapsed guidance adapter",
         },
         "render_reason": {
-            "covered": "publication_reason" in final_source
-            and "final_publication_resolution_metadata_rows_compatibility_only" in input_source,
-            "source": "FinalDesignGuidePublication.publication_reason + metadata compatibility proof",
+            "covered": "publication_reason" in final_source,
+            "source": "FinalDesignGuidePublication.publication_reason",
         },
         "overview": {
             "covered": 'dict(_final_visible_resolution.get("overview") or _dg_overview or {})' in input_source,
@@ -159,9 +158,8 @@ def _replacement_coverage(*, input_source: str, final_source: str) -> dict[str, 
             "source": "existing guidance_debug fallback; not render resolver authority",
         },
         "presentation": {
-            "covered": "class FinalDesignGuideDisplay" in final_source
-            and "final_publication_resolution_metadata_rows_compatibility_only" in input_source,
-            "source": "FinalDesignGuidePublication.display + metadata compatibility proof",
+            "covered": "class FinalDesignGuideDisplay" in final_source,
+            "source": "FinalDesignGuidePublication.display",
         },
         "state_fingerprint": {
             "covered": "final_publication_authority_hash" in input_source,
@@ -241,7 +239,6 @@ def _build_projected_resolution_shape_proof() -> dict[str, Any]:
     )
     collapsed_item = build_collapsed_guidance_item_from_final_publication(
         publication,
-        current_item_compatibility=dict(item),
     )
     projected_resolution = {
         "item": dict(collapsed_item),
@@ -356,7 +353,7 @@ def _build_snapshot() -> dict[str, Any]:
         ),
         "ui_wording_family_runtime_not_moved": (
             "ui.design_guide_cards" not in final_source
-            and "_design_guide_clean_main_card_text" not in final_source
+            and "_design_guide_clean_main_card_text" not in input_source
             and "run_bending_fail_governs_ladder_runtime" not in final_source
             and "run_shear_fail_governs_ladder_runtime" not in final_source
         ),
@@ -523,3 +520,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

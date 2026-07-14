@@ -50,6 +50,9 @@ REQUIRED_EVALUATION_FIELDS = {
     "evaluation_hash",
 }
 
+LEGACY_BOTTOM_KEYS = {"bot1_count", "db_bot_1", "bot2_count", "db_bot_2"}
+CANONICAL_BOTTOM_KEYS = {"bot_row_count", "bot_row_1_bars", "bot_row_1_dia", "bot_row_2_bars", "bot_row_2_dia"}
+
 FORBIDDEN_SOURCE_TERMS = {
     "inputs_page",
     "streamlit",
@@ -101,7 +104,7 @@ def main() -> int:
     bending = module.CombinedSourceCandidate(
         source_family_id="BENDING_FAIL_GOVERNS",
         candidate_id="bend_depth",
-        updates={"D": 550.0, "bot1_count": 5},
+        updates={"D": 550.0, "bot1_count": 5, "db_bot_1": 20},
     )
     shear = module.CombinedSourceCandidate(
         source_family_id="SHEAR_FAIL_GOVERNS",
@@ -181,6 +184,12 @@ def main() -> int:
         "allowed_sources_pass": bending.source_allowed is True and shear.source_allowed is True and merged.sources_allowed is True,
         "rogue_source_rejected": rogue.source_allowed is False,
         "merge_hashes_stable": evaluation.evaluation_hash == repeat.evaluation_hash,
+        "merged_updates_are_canonical_only": bool(CANONICAL_BOTTOM_KEYS & set(merged_updates))
+        and not bool(LEGACY_BOTTOM_KEYS & set(merged_updates)),
+        "compatibility_projection_removed": not hasattr(
+            module,
+            "project_combined_reinforcement_update_compatibility_mirrors",
+        ),
         "geometry_interaction_flagged": merged.interaction_flags["geometry_changed"] is True,
         "partial_repair_can_be_represented_as_invalid": partial.both_failures_repaired is False
         and partial.engineering_status.get("candidate_valid") is False,
@@ -205,6 +214,7 @@ def main() -> int:
             "candidate_state_hash": evaluation.candidate_state_hash,
             "evaluation_hash": evaluation.evaluation_hash,
         },
+        "merged_updates": merged_updates,
         "sample_evaluation": evaluation.to_dict(),
         "partial_repair_rejection": partial.to_dict(),
     }

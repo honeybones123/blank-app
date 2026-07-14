@@ -18,7 +18,9 @@ ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 
 from design_brain.families.shear_fail import ShearFailFamily  # noqa: E402
-from design_brain.families.shear_fail_governs import evaluate_shear_fail_governs  # noqa: E402
+from design_brain.families.shear_fail_governs import (  # noqa: E402
+    run_shear_fail_governs_ladder_runtime as package_runtime_authority,
+)
 from design_brain.families.shear_fail_governs.runtime import (  # noqa: E402
     run_shear_fail_governs_ladder_runtime,
     shear_fail_governs_contract_lane_order,
@@ -156,9 +158,10 @@ def main() -> int:
     restart_specs = [spec for spec in specs if dict(spec.get("restart_proof") or {}).get("present")]
     ranking_specs = [spec for spec in specs if spec.get("ranking_proof") is not None]
     first_spec = specs[0] if specs else {}
-    api_result = evaluate_shear_fail_governs({"summary": {}, "evidence": {}, "debug": {}})
-    lock_proof = dict(getattr(api_result, "lock_proof", {}) or {})
-    evidence = dict(getattr(api_result, "evidence", {}) or {})
+    package_exports_runtime = callable(package_runtime_authority) and (
+        "run_shear_fail_governs_ladder_runtime" in package_source
+    )
+    compatibility_api_absent = "evaluate_" + "shear_fail_governs" not in package_source
     inputs_surface = _contains_all(
         inputs_source,
         [
@@ -180,9 +183,12 @@ def main() -> int:
         and bool(first_spec.get("candidate_state_hash")),
         "restart_proof_present": bool(restart_specs),
         "ranking_proof_present": bool(ranking_specs) and bool(ladder.get("ranking_proof") is not None),
-        "compatibility_api_identifies_runtime_authority": lock_proof.get("contract_runtime_authority") == "run_shear_fail_governs_ladder_runtime"
-        and evidence.get("contract_runtime_authority") == "run_shear_fail_governs_ladder_runtime",
-        "inputs_page_still_owns_evaluate_and_execution_plumbing": all(inputs_surface.values()),
+        "package_exports_runtime_authority_without_compatibility_api": package_exports_runtime
+        and compatibility_api_absent,
+        "inputs_page_still_owns_evaluate_and_execution_plumbing": (
+            inputs_surface["def _evaluate("]
+            and inputs_surface["_evaluate_auto_design_candidate("]
+        ),
         "runtime_has_no_cta_publication_apply_ui_session_imports": not _forbidden_runtime_imports()
         and not _forbidden_runtime_source_hits(),
         "no_bending_files_required_or_imported": "design_brain.families.bending" not in shear_source
@@ -207,7 +213,10 @@ def main() -> int:
         "first_spec": first_spec,
         "restart_spec_count": len(restart_specs),
         "ranking_spec_count": len(ranking_specs),
-        "lock_proof": lock_proof,
+        "package_runtime_authority": {
+            "package_exports_runtime": package_exports_runtime,
+            "compatibility_api_absent": compatibility_api_absent,
+        },
         "runtime_forbidden_imports": _forbidden_runtime_imports(),
         "runtime_forbidden_source_hits": _forbidden_runtime_source_hits(),
         "inputs_page_surfaces": inputs_surface,

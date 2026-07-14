@@ -141,12 +141,17 @@ def _load_browser_state(page, timeout_s: float = 30.0) -> dict[str, Any]:
         try:
             remaining_ms = max(100, min(2_000, int((deadline - time.time()) * 1000)))
             last_parsed: dict[str, Any] | None = None
+            best_non_lightweight: dict[str, Any] | None = None
             for raw in _browser_state_raw_candidates(page, timeout_ms=remaining_ms):
                 parsed = json.loads(raw)
                 if isinstance(parsed, dict):
-                    if parsed.get("browser_shared_probe") or parsed.get("summary_state_probe"):
+                    if parsed.get("browser_shared_probe"):
                         return parsed
+                    if not parsed.get("pre_page_render_lightweight"):
+                        best_non_lightweight = parsed
                     last_parsed = parsed
+            if best_non_lightweight is not None:
+                return best_non_lightweight
             if last_parsed is not None:
                 return last_parsed
             raise ValueError("Browser state probe was empty")

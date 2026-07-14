@@ -202,8 +202,7 @@ def _build_snapshot() -> dict[str, Any]:
         "session_storage_not_moved": "st.session_state" in input_source
         and "session_state" not in publication_source,
         "ui_rendering_not_moved": "ui.design_guide_cards" not in publication_source,
-        "visible_wording_not_moved": "_design_guide_clean_main_card_text" in input_source
-        and "_design_guide_clean_main_card_text" not in publication_source,
+        "legacy_wording_helper_deleted": "_design_guide_clean_main_card_text" not in input_source,
     }
     narrowing_run = _run("tools/verification/design_guide_adapter_owned_render_mutation_narrowing_snapshot.py")
     lock_run = _run("tools/verification/design_guide_independence_lock_verifier.py")

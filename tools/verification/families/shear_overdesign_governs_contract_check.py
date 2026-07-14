@@ -71,14 +71,17 @@ EXPECTED_CONTRACT_LANE_ORDER = [
     "BAR_SIZE_REDUCTION",
     "LEG_COUNT_REDUCTION",
     "LIGATURE_REMOVAL",
+    "WIDTH_REDUCTION",
     "EXACT_STOP",
     "EXHAUSTED",
 ]
 
 EXPECTED_RANKING_CRITERIA = [
+    "smallest valid width",
     "target band achieved",
     "no unnecessary ligatures remain",
     "least reinforcement quantity",
+    "least unnecessary geometry",
     "constructability",
     "cost proxy",
 ]
@@ -99,16 +102,13 @@ REQUIRED_SHARED_EXCLUSIONS = {
 }
 
 REQUIRED_GEOMETRY_PROHIBITIONS = {
-    "b",
-    "bw",
     "D",
-    "beam_width",
     "beam_depth",
-    "beam_width_mm",
     "beam_depth_mm",
 }
 
-ALLOWED_SHEAR_UPDATE_KEYS = {"s_lig", "lig_d", "lig_legs"}
+ALLOWED_SHEAR_UPDATE_KEYS = {"s_lig", "lig_d", "lig_legs", "b", "bw", "beam_width", "beam_width_mm"}
+ALLOWED_SHEAR_DETAILING_KEYS = {"s_lig", "lig_d", "lig_legs"}
 EXPECTED_SPACING_SEARCH = [100, 125, 150, 175, 200, 250, 300]
 EXPECTED_BAR_SIZE_SEARCH = ["N16", "N12", "N10"]
 EXPECTED_LEG_COUNT_SEARCH = [6, 4, 2]
@@ -133,9 +133,9 @@ def _validate_contract_shape(contract: dict[str, Any]) -> list[str]:
         failures.append("family_id_mismatch")
     if identity.get("package") != "design_brain.families.shear_overdesign_governs":
         failures.append("package_mismatch")
-    if identity.get("legacy_delegate") != "design_brain.families.shear_cleanup.ShearCleanupFamily":
-        failures.append("legacy_delegate_mismatch")
-    if identity.get("public_api") != "evaluate_shear_overdesign_governs":
+    if "legacy_delegate" in identity:
+        failures.append("legacy_delegate_present")
+    if identity.get("public_api") != "run_shear_overdesign_governs_runtime":
         failures.append("public_api_mismatch")
 
     classification = contract.get("classification") or {}
@@ -225,8 +225,10 @@ def _validate_contract_shape(contract: dict[str, Any]) -> list[str]:
         failures.append("exhausted_output_mismatch")
 
     restrictions = geometry_restrictions()
-    if restrictions.get("geometry_reduction_prohibited") is not True:
-        failures.append("geometry_reduction_not_prohibited")
+    if restrictions.get("width_reduction_required_when_unlocked") is not True:
+        failures.append("width_reduction_not_required_when_unlocked")
+    if restrictions.get("depth_reduction_prohibited") is not True:
+        failures.append("depth_reduction_not_prohibited")
     prohibited = set(str(value) for value in restrictions.get("prohibited_update_keys") or [])
     failures.extend(
         f"geometry_prohibited_key_missing:{key}"
@@ -234,7 +236,7 @@ def _validate_contract_shape(contract: dict[str, Any]) -> list[str]:
     )
     allowed = set(str(value) for value in restrictions.get("allowed_update_keys") or [])
     if allowed != ALLOWED_SHEAR_UPDATE_KEYS:
-        failures.append("geometry_restriction_allowed_update_keys_not_shear_only")
+        failures.append("geometry_restriction_allowed_update_keys_mismatch")
 
     policies = lane_proof_policies()
     spacing_policy = policies.get("spacing_increase") or {}
@@ -269,6 +271,21 @@ def _validate_contract_shape(contract: dict[str, Any]) -> list[str]:
     if dict(removal_policy.get("canonical_update") or {}) != {"lig_legs": 0, "lig_d": 0, "s_lig": 0}:
         failures.append("ligature_removal_canonical_update_mismatch")
 
+    width_policy = policies.get("width_reduction") or {}
+    if width_policy.get("lane_id") != "WIDTH_REDUCTION":
+        failures.append("width_reduction_policy_lane_id_mismatch")
+    if width_policy.get("width_step_mm") != 25:
+        failures.append("width_reduction_policy_step_mismatch")
+    if width_policy.get("restarts_full_reinforcement_search") is not True:
+        failures.append("width_reduction_policy_does_not_restart_full_reinforcement_search")
+    if set(str(value) for value in width_policy.get("allowed_update_keys") or []) != {
+        "b",
+        "bw",
+        "beam_width",
+        "beam_width_mm",
+    }:
+        failures.append("width_reduction_policy_allowed_update_keys_mismatch")
+
     terminal_policy = policies.get("terminal") or {}
     if terminal_policy.get("zero_shear_exhausted_forbidden_while_ligatures_remain_without_code_requirement") is not True:
         failures.append("terminal_policy_allows_zero_shear_exhausted_with_removable_ligatures")
@@ -282,8 +299,8 @@ def _validate_contract_shape(contract: dict[str, Any]) -> list[str]:
         failures.append("zero_shear_case_c_expected_no_optimisation_missing")
 
     geometry_policy = policies.get("geometry_restriction") or {}
-    if geometry_policy.get("prohibits_width_reduction") is not True:
-        failures.append("geometry_policy_does_not_prohibit_width_reduction")
+    if geometry_policy.get("requires_width_reduction") is not True:
+        failures.append("geometry_policy_does_not_require_width_reduction")
     if geometry_policy.get("prohibits_depth_reduction") is not True:
         failures.append("geometry_policy_does_not_prohibit_depth_reduction")
     if set(str(value) for value in geometry_policy.get("allowed_update_keys") or []) != ALLOWED_SHEAR_UPDATE_KEYS:
@@ -356,7 +373,7 @@ def _write_report(output: dict[str, Any], report_path: Path) -> None:
     lines.extend(
         [
             "- Zero-shear override requires negligible shear action, existing ligatures, and design actions.",
-            "- Geometry reduction is prohibited; only `s_lig`, `lig_d`, and `lig_legs` are allowed update keys.",
+            "- Width reduction is required when geometry is unlocked; depth reduction remains prohibited.",
         ]
     )
     lines.extend(["", "## Failures", ""])

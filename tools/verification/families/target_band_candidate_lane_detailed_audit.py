@@ -26,17 +26,17 @@ FAMILIES = {
     "BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS": {
         "contract": ROOT / "design_brain" / "families" / "bending_fail_shear_overdesign_governs" / "contract.json",
         "runtime": ROOT / "design_brain" / "families" / "bending_fail_shear_overdesign_governs" / "runtime.py",
-        "expected_status": "REVIEW_NEEDED",
+        "expected_status": "FIX_VERIFIED",
     },
     "SHEAR_FAIL_BENDING_OVERDESIGN_GOVERNS": {
         "contract": ROOT / "design_brain" / "families" / "shear_fail_bending_overdesign_governs" / "contract.json",
         "runtime": ROOT / "design_brain" / "families" / "shear_fail_bending_overdesign_governs" / "runtime.py",
-        "expected_status": "REVIEW_NEEDED",
+        "expected_status": "FIX_VERIFIED",
     },
     "COMBINED_OVERDESIGN_GOVERNS": {
         "contract": ROOT / "design_brain" / "families" / "bending_and_shear_overdesign_govern" / "contract.json",
         "runtime": ROOT / "design_brain" / "families" / "bending_and_shear_overdesign_govern" / "runtime.py",
-        "expected_status": "REVIEW_NEEDED",
+        "expected_status": "FIX_VERIFIED",
     },
     "BENDING_FAIL_GOVERNS": {
         "contract": ROOT / "design_brain" / "families" / "bending_fail_governs" / "contract.json",
@@ -243,8 +243,12 @@ def main() -> int:
     }
     rows = [_classify_family(family_id, config) for family_id, config in FAMILIES.items()]
     mismatches = [row["family_id"] for row in rows if not row["expected_status_matches"]]
+    review_needed = [row["family_id"] for row in rows if row["classification"] == "REVIEW_NEEDED"]
     combined_gates_pass = all(row["status"] == "PASS" for row in combined_verification.values())
-    status = "PASS_WITH_REVIEW" if py_compile["status"] == "PASS" and combined_gates_pass and not mismatches else "FAIL"
+    if py_compile["status"] == "PASS" and combined_gates_pass and not mismatches:
+        status = "PASS_WITH_REVIEW" if review_needed else "PASS"
+    else:
+        status = "FAIL"
     artifact_path = ARTIFACT_DIR / f"target_band_candidate_lane_detailed_audit_{stamp}.json"
     report_path = AUDIT_DIR / f"target_band_candidate_lane_detailed_audit_{stamp}.md"
     payload = {
@@ -254,7 +258,7 @@ def main() -> int:
         "combined_verification": combined_verification,
         "families": rows,
         "expected_status_mismatches": mismatches,
-        "review_needed_families": [row["family_id"] for row in rows if row["classification"] == "REVIEW_NEEDED"],
+        "review_needed_families": review_needed,
         "artifact": str(artifact_path),
         "report": str(report_path),
     }
@@ -262,7 +266,7 @@ def main() -> int:
     _write_report(payload, report_path)
     print(f"{status}: {artifact_path}")
     print(f"REPORT: {report_path}")
-    return 0 if status == "PASS_WITH_REVIEW" else 1
+    return 0 if status in {"PASS", "PASS_WITH_REVIEW"} else 1
 
 
 if __name__ == "__main__":

@@ -1,28 +1,7 @@
 from typing import Any, Dict
 
+from calculations.crack_control import pick_governing_check_row
 from engineering_check_ui import sync_legacy_value_limit
-
-
-def pick_governing_check_row(rows: list) -> dict | None:
-    """Non-informational row with highest numeric utilisation (summary banners, primary highlight)."""
-    numeric_rows: list[tuple[float, dict]] = []
-    for row in rows or []:
-        if not isinstance(row, dict):
-            continue
-        if row.get("is_informational"):
-            continue
-        util_raw = row.get("util")
-        if util_raw is None or util_raw == "" or util_raw == "—":
-            continue
-        try:
-            util_val = float(util_raw)
-        except (TypeError, ValueError):
-            continue
-        numeric_rows.append((util_val, row))
-    if not numeric_rows:
-        return None
-    numeric_rows.sort(key=lambda x: x[0], reverse=True)
-    return numeric_rows[0][1]
 
 
 def build_crack_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str, Any]:

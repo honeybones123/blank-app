@@ -3,8 +3,7 @@
   "family_identity": {
     "family_id": "SHEAR_OVERDESIGN_GOVERNS",
     "package": "design_brain.families.shear_overdesign_governs",
-    "legacy_delegate": "design_brain.families.shear_cleanup.ShearCleanupFamily",
-    "public_api": "evaluate_shear_overdesign_governs"
+    "public_api": "run_shear_overdesign_governs_runtime"
   },
   "classification": {
     "entry_condition": "shear compliant with unnecessary shear reinforcement or outside efficiency target band",
@@ -74,14 +73,16 @@
       "bending action",
       "design actions present flag"
     ],
-    "constraints": [
-      "target utilisation band",
-      "minimum practical ligature spacing",
-      "minimum ligature diameter",
-      "minimum leg count",
-      "geometry reduction prohibited",
-      "locked/no-repair conditions"
-    ]
+      "constraints": [
+        "target utilisation band",
+        "minimum practical ligature spacing",
+        "minimum ligature diameter",
+        "minimum leg count",
+        "width reduction increment",
+        "minimum practical width",
+        "depth reduction prohibited",
+        "locked/no-repair conditions"
+      ]
   },
   "family_result_schema": {
     "result_type": "FamilyResult",
@@ -177,23 +178,58 @@
           "s_lig"
         ],
         "zero_shear_override_lane": true,
-        "failure_transition": "EXACT_STOP"
+        "failure_transition": "WIDTH_REDUCTION"
       },
       {
         "lane_index": 4,
+        "lane_id": "WIDTH_REDUCTION",
+        "title": "Width reduction",
+        "purpose": "Reduce unnecessary beam width after shear detailing cleanup while preserving bending, shear, detailing, fit, serviceability, and geometry constraints.",
+        "required_evidence": [
+          "width before",
+          "width after",
+          "width increment",
+          "bending utilisation after",
+          "shear utilisation after",
+          "reinforcement rearrangement attempted",
+          "bar fit and clear spacing status",
+          "ligature fit and cover status",
+          "serviceability status",
+          "geometry constraint status"
+        ],
+        "allowed_update_keys": [
+          "b",
+          "bw",
+          "beam_width",
+          "beam_width_mm"
+        ],
+        "restart_proof_required": [
+          "full reinforcement arrangement rebuilt",
+          "bar positions and layers regenerated",
+          "clear spacing recalculated",
+          "alternative safe reinforcement arrangement searched when current arrangement does not fit",
+          "complete design state recomputed"
+        ],
+        "failure_transition": "EXACT_STOP"
+      },
+      {
+        "lane_index": 5,
         "lane_id": "EXACT_STOP",
         "title": "Exact stop",
         "purpose": "Stop when the current or best available shear cleanup state is already justified and no safe improvement remains.",
         "required_evidence": [
           "target-band status",
           "no unnecessary ligatures remain status",
+          "width reduction attempted or locked",
+          "smallest safe width",
+          "next width blocker",
           "exhausted lane evidence"
         ],
         "output": "EXACT_STOP",
         "failure_transition": "EXHAUSTED"
       },
       {
-        "lane_index": 5,
+        "lane_index": 6,
         "lane_id": "EXHAUSTED",
         "title": "Exhausted",
         "purpose": "Prove all legal shear cleanup lanes were attempted or blocked.",
@@ -207,9 +243,11 @@
     ],
     "ranking": {
       "ordered_criteria": [
+        "smallest valid width",
         "target band achieved",
         "no unnecessary ligatures remain",
         "least reinforcement quantity",
+        "least unnecessary geometry",
         "constructability",
         "cost proxy"
       ]
@@ -222,32 +260,34 @@
       "evidence"
     ],
     "global_family_rules": [
-      "candidate updates are restricted to shear-detailing keys only",
-      "geometry reduction is prohibited",
+      "candidate updates are restricted to shear-detailing keys or width-reduction keys only",
+      "depth reduction is prohibited",
+      "width reduction is required when geometry is unlocked and shear remains heavily under-utilised after shear detailing cleanup",
+      "every width candidate rebuilds the full reinforcement arrangement and recomputes all checks",
       "zero-shear with existing ligatures must still run cleanup eligibility",
       "shared CTA/publication/apply/UI/session/source-precedence layers remain outside the family"
     ]
   },
   "geometry_restrictions": {
-    "geometry_reduction_prohibited": true,
+    "width_reduction_required_when_unlocked": true,
+    "depth_reduction_prohibited": true,
     "prohibited_update_keys": [
-      "b",
-      "bw",
       "D",
-      "beam_width",
       "beam_depth",
-      "beam_width_mm",
       "beam_depth_mm"
     ],
     "prohibited_actions": [
-      "width reduction",
       "depth reduction",
-      "geometry cleanup as shear-overdesign strategy"
+      "depth cleanup as shear-overdesign strategy"
     ],
     "allowed_update_keys": [
       "s_lig",
       "lig_d",
-      "lig_legs"
+      "lig_legs",
+      "b",
+      "bw",
+      "beam_width",
+      "beam_width_mm"
     ]
   },
   "lane_proof_policies": {
@@ -301,10 +341,48 @@
         "s_lig": 0
       }
     },
+    "width_reduction": {
+      "lane_id": "WIDTH_REDUCTION",
+      "width_step_mm": 25,
+      "minimum_width_mm": 200,
+      "allowed_update_keys": [
+        "b",
+        "bw",
+        "beam_width",
+        "beam_width_mm"
+      ],
+      "requires_geometry_unlocked": true,
+      "restarts_full_reinforcement_search": true,
+      "must_recompute": [
+        "bending capacity/utilisation",
+        "shear capacity/utilisation",
+        "minimum bending reinforcement",
+        "minimum shear reinforcement",
+        "ductility / neutral-axis ratio",
+        "crack control",
+        "deflection where supplied",
+        "bar fit and clear spacing",
+        "ligature fit and cover",
+        "geometry ratio and minimum width rules",
+        "family-specific target-band rule"
+      ],
+      "blocked_by": [
+        "next width step fails bending",
+        "next width step fails shear",
+        "minimum reinforcement governs",
+        "ductility governs",
+        "serviceability governs",
+        "reinforcement cannot fit after allowed rearrangement search",
+        "minimum width/detailing constraint governs",
+        "geometry ratio limit governs",
+        "width is locked"
+      ]
+    },
     "terminal": {
       "exact_stop_allowed_when": [
         "target band reached",
-        "no unnecessary ligatures remain"
+        "no unnecessary ligatures remain and width reduction is exhausted or locked",
+        "smallest safe width proven"
       ],
       "exhausted_requires": [
         "all optimisation branches attempted",
@@ -331,12 +409,16 @@
       }
     },
     "geometry_restriction": {
-      "prohibits_width_reduction": true,
+      "requires_width_reduction": true,
       "prohibits_depth_reduction": true,
       "allowed_update_keys": [
         "s_lig",
         "lig_d",
-        "lig_legs"
+        "lig_legs",
+        "b",
+        "bw",
+        "beam_width",
+        "beam_width_mm"
       ]
     }
   },
@@ -345,7 +427,7 @@
       "required": true,
       "allowed_when": [
         "target band achieved",
-        "no unnecessary ligatures remain",
+        "no unnecessary ligatures remain and width reduction exhausted or locked",
         "all safe shear cleanup lanes are exhausted"
       ]
     },
@@ -367,6 +449,11 @@
       "reinforcement_locked",
       "no_link_design_not_code_valid",
       "spacing_detailing_blocked",
+      "width_locked",
+      "width_reduction_exhausted",
+      "next_width_step_failed_bending",
+      "next_width_step_failed_shear",
+      "reinforcement_cannot_fit_after_rearrangement",
       "no_safe_shear_cleanup_candidate"
     ],
     "not_top_level_families": [

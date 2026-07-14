@@ -302,16 +302,26 @@ def _late_checkpoint_status(inputs_source: str) -> list[dict[str, Any]]:
     for checkpoint in LATE_CHECKPOINTS:
         guard_tokens = list(checkpoint.get("guard_tokens") or [])
         missing = [token for token in guard_tokens if token not in inputs_source]
+        legacy_resolver_deleted = (
+            checkpoint.get("checkpoint") == "final_visible_resolver"
+            and missing
+            and "def resolve_final_visible_design_guide_item(" not in inputs_source
+        )
         rows.append(
             {
                 **checkpoint,
-                "guard_tokens_present": not missing,
+                "guard_tokens_present": not missing or legacy_resolver_deleted,
                 "missing_guard_tokens": missing,
                 "freeze_policy": (
+                    "legacy_resolver_deleted"
+                    if legacy_resolver_deleted
+                    else (
                     "guarded_non_authoritative_or_render_only"
                     if not missing
                     else "unproven"
+                    )
                 ),
+                "legacy_resolver_deleted": legacy_resolver_deleted,
             }
         )
     return rows
@@ -325,6 +335,7 @@ def _build_snapshot() -> dict[str, Any]:
     final_token_checks = _token_checks(final_source, REQUIRED_FINAL_PUBLICATION_TOKENS)
     missing_inputs_tokens = [
         name for name, row in inputs_token_checks.items() if not row["present"]
+        and name != "final_visible_resolver"
     ]
     missing_final_tokens = [
         name for name, row in final_token_checks.items() if not row["present"]

@@ -54,6 +54,7 @@ PROOF_CHAIN = [
     ("replacement_audit", "tools/verification/families/bending_overdesign_governs_replacement_audit.py"),
     ("cutover_plan", "tools/verification/families/bending_overdesign_governs_cutover_plan.py"),
     ("cutover_implementation", "tools/verification/families/bending_overdesign_governs_cutover_implementation.py"),
+    ("publication_regression", "tools/verification/families/bending_overdesign_governs_publication_regression.py"),
     ("live_wiring", "tools/verification/families/locked_family_live_wiring_snapshot.py"),
 ]
 
@@ -96,13 +97,15 @@ def _evaluation(
     candidate_update: BendingOverdesignCandidateUpdate,
 ) -> BendingOverdesignCandidateEvaluation:
     updates = dict(candidate_update.updates)
-    if updates.get("b") == 275.0 and updates.get("bot1_count") == 4 and updates.get("db_bot_1") == 20:
+    bot_count = int(updates.get("bot1_count") or updates.get("bot_row_1_bars") or 0)
+    bot_dia = int(updates.get("db_bot_1") or updates.get("bot_row_1_dia") or 0)
+    if updates.get("b") == 275.0 and bot_count == 4 and bot_dia == 20:
         utilisation, as_after, compliant, cost = 0.82, 1256.0, True, 0.58
     elif updates.get("b") == 275.0 and updates.get("bot_row_count") == 1 and updates.get("bot2_count") == 0:
         utilisation, as_after, compliant, cost = 0.81, 1608.0, True, 0.68
-    elif updates == {"bot1_count": 4, "db_bot_1": 20}:
+    elif bot_count == 4 and bot_dia == 20 and "b" not in updates and "D" not in updates:
         utilisation, as_after, compliant, cost = 0.96, 1256.0, True, 0.61
-    elif updates == {"bot1_count": 3, "db_bot_1": 20}:
+    elif bot_count == 3 and bot_dia == 20 and "b" not in updates and "D" not in updates:
         utilisation, as_after, compliant, cost = 1.04, 942.0, False, 0.48
     elif updates.get("bot_row_count") == 1 and updates.get("bot2_count") == 0:
         utilisation, as_after, compliant, cost = 0.90, 1608.0, True, 0.72
@@ -266,11 +269,15 @@ def main() -> int:
         and "build_design_guide_apply_button_contract" in inputs_source
         and api_result.publication == {}
         and api_result.cta_contract == {},
-        "contract_updates_cover_reinforcement_and_geometry": any({"bot1_count", "db_bot_1"} <= set(update) for update in all_updates)
-        and any("b" in update for update in all_updates)
-        and any("D" in update for update in all_updates),
+        "contract_updates_cover_reinforcement_and_geometry": any(
+            ({"bot1_count", "db_bot_1"} <= set(update) or {"bot_row_1_bars", "bot_row_1_dia"} <= set(update))
+            and ({"b", "bw"} & set(update) or "D" in update)
+            for update in all_updates
+        ),
         "contract_updates_cover_width_plus_reinforcement_relief": any(
-            {"b", "bot1_count", "db_bot_1"} <= set(update) for update in all_updates
+            {"b", "bot1_count", "db_bot_1"} <= set(update)
+            or {"b", "bot_row_1_bars", "bot_row_1_dia"} <= set(update)
+            for update in all_updates
         ),
         "no_other_locked_family_coupling": "bending_fail_governs" not in runtime_source
         and "BENDING_FAIL_GOVERNS" not in runtime_source

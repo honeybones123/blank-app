@@ -6,12 +6,14 @@ from typing import Any
 
 from design_brain.combined_bending_shear_candidate_merge import (
     BENDING_REINFORCEMENT_UPDATE_KEYS,
+    CANONICAL_BENDING_REINFORCEMENT_UPDATE_KEYS,
     CombinedBendingShearFailInputs,
     CombinedCandidateEvaluation,
     CombinedMergedCandidate,
     GEOMETRY_UPDATE_KEYS,
     SHEAR_REINFORCEMENT_UPDATE_KEYS,
     combined_candidate_state_hash,
+    normalise_combined_canonical_reinforcement_updates,
 )
 from design_brain.families.base import DiagnosticFamilyStrategy, FamilyStrategyContext, FamilyStrategyMetadata
 from design_brain.families.bending_and_shear_fail_govern.runtime import (
@@ -64,6 +66,16 @@ def _combined_in_band_count(candidate: dict[str, Any], low: float, high: float) 
     )
 
 
+def _combined_overview_in_band_count(candidate: dict[str, Any], low: float, high: float) -> int:
+    overview = _as_dict(candidate.get("overview"))
+    utils = _as_dict(overview.get("utils"))
+    return sum(
+        1
+        for family in ("bending", "shear")
+        if (util := _as_float(utils.get(family))) is not None and float(low) <= float(util) <= float(high)
+    )
+
+
 def _combined_target_distance(candidate: dict[str, Any], low: float, high: float) -> float:
     utils = _candidate_family_utils(candidate)
     if not utils:
@@ -88,13 +100,77 @@ def _combined_repair_candidate_rank_key(candidate: dict[str, Any], *, target_low
     )
 
 
+def _distance_to_target_band(util: Any, low: float, high: float) -> float:
+    util_f = _as_float(util)
+    if util_f is None:
+        return 999999.0
+    low_f = float(low)
+    high_f = float(high)
+    if low_f <= util_f <= high_f:
+        return 0.0
+    if util_f < low_f:
+        return low_f - util_f
+    return util_f - high_f
+
+
+def select_combined_fail_fallback_repair_candidate_from_ladder(
+    candidates: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    *,
+    target_low: float,
+    target_high: float,
+    final_accepted_min_family_util: float,
+) -> dict[str, Any]:
+    """Family-owned fallback selector for combined active-fail ladder candidates."""
+
+    rows = [dict(candidate or {}) for candidate in list(candidates or []) if isinstance(candidate, dict)]
+    if not rows:
+        return {
+            "selected": {},
+            "selection_source": "combined_controller_fallback_ranker",
+            "family_selected": {},
+        }
+    low = float(target_low)
+    high = float(target_high)
+    final_floor = float(final_accepted_min_family_util)
+    selected = min(
+        rows,
+        key=lambda cand: (
+            -_combined_overview_in_band_count(cand, low, high),
+            -_combined_overview_in_band_count(cand, final_floor, 1.0),
+            _distance_to_target_band(_as_float(cand.get("candidate_post_util") or cand.get("worst_util")) or 0.0, low, high),
+            int(cand.get("combined_fail_ladder_index") or cand.get("ladder_index") or 999999),
+            len(_as_dict(cand.get("updates"))),
+        ),
+    )
+    return {
+        "selected": dict(selected),
+        "selection_source": "combined_controller_fallback_ranker",
+        "family_selected": {},
+    }
+
+
 def _copy_allowed_refinement_updates(updates: dict[str, Any]) -> dict[str, Any]:
-    allowed = set(GEOMETRY_UPDATE_KEYS) | set(BENDING_REINFORCEMENT_UPDATE_KEYS) | set(SHEAR_REINFORCEMENT_UPDATE_KEYS)
-    return {str(key): value for key, value in updates.items() if str(key) in allowed}
+    allowed = (
+        set(GEOMETRY_UPDATE_KEYS)
+        | set(CANONICAL_BENDING_REINFORCEMENT_UPDATE_KEYS)
+        | set(SHEAR_REINFORCEMENT_UPDATE_KEYS)
+    )
+    canonical = normalise_combined_canonical_reinforcement_updates(updates)
+    return {str(key): value for key, value in canonical.items() if str(key) in allowed}
 
 
 def _candidate_signature(updates: dict[str, Any]) -> tuple[tuple[str, str], ...]:
     return tuple(sorted((str(key), repr(value)) for key, value in updates.items()))
+
+
+def _runtime_updates(updates: dict[str, Any]) -> dict[str, Any]:
+    return normalise_combined_canonical_reinforcement_updates(_as_dict(updates))
+
+
+def _runtime_row(row: dict[str, Any]) -> dict[str, Any]:
+    projected = dict(row)
+    projected["updates"] = _runtime_updates(_as_dict(row.get("updates")))
+    return projected
 
 
 def _inputs_from_state(
@@ -210,7 +286,7 @@ class CombinedBendingShearFailFamily(DiagnosticFamilyStrategy):
         )
         specs: list[dict[str, Any]] = []
         for row in result.candidate_repairs:
-            updates = _as_dict(row.get("updates"))
+            updates = _runtime_updates(_as_dict(row.get("updates")))
             if not updates:
                 continue
             specs.append(
@@ -239,8 +315,10 @@ class CombinedBendingShearFailFamily(DiagnosticFamilyStrategy):
             "contract_runtime_authority": "run_combined_bending_shear_fail_runtime",
             "contract_runtime_driven": True,
             "specs": specs,
-            "candidate_repairs": tuple(result.candidate_repairs),
-            "selected_recommendation": result.selected_recommendation,
+            "candidate_repairs": tuple(_runtime_row(row) for row in result.candidate_repairs),
+            "selected_recommendation": (
+                _runtime_row(result.selected_recommendation) if isinstance(result.selected_recommendation, dict) else None
+            ),
             "ranking_evidence": dict(result.ranking_evidence),
             "candidate_source_proof": dict(result.candidate_source_proof),
             "target_band_refinement_proof": dict(result.target_band_refinement_proof),
@@ -331,14 +409,15 @@ class CombinedBendingShearFailFamily(DiagnosticFamilyStrategy):
                         "b": float(b_value),
                         "bw": float(b_value),
                         "D": float(d_value),
-                        "bot1_count": int(count),
-                        "db_bot_1": int(dia),
-                        "bot2_count": 0,
-                        "db_bot_2": 0,
+                        "bot_row_1_bars": int(count),
+                        "bot_row_1_dia": int(dia),
+                        "bot_row_2_bars": 0,
+                        "bot_row_2_dia": 0,
                         "lig_d": int(lig_d),
                         "lig_legs": int(legs),
                         "s_lig": float(spacing),
                     }
+                    updates = _copy_allowed_refinement_updates(updates)
                     signature = _candidate_signature(updates)
                     if signature in seen:
                         continue
@@ -359,7 +438,7 @@ class CombinedBendingShearFailFamily(DiagnosticFamilyStrategy):
             {
                 "source_family_id": "APPROVED_COMBINED_MERGE_RULE",
                 "candidate_id": f"combined_target_band_refinement_{index}",
-                "updates": updates,
+                "updates": dict(updates),
                 "evidence": {
                     "approved_merge_rule": "APPROVED_COMBINED_TARGET_BAND_REFINEMENT",
                     "source": self.metadata.owner,
@@ -454,4 +533,4 @@ class CombinedBendingShearFailFamily(DiagnosticFamilyStrategy):
         }
 
 
-__all__ = ["CombinedBendingShearFailFamily"]
+__all__ = ["CombinedBendingShearFailFamily", "select_combined_fail_fallback_repair_candidate_from_ladder"]

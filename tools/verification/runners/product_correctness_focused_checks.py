@@ -20,6 +20,7 @@ from state_and_helpers import (
 from inputs_page import (
     RESCUE_SEED_LIBRARY,
     _design_guide_dashboard_reasons,
+    _design_guide_dashboard_card_html_with_render_model,
     _design_guide_button_contract_enabled,
     _evaluate_auto_design_candidate,
     _fallback_shear_reinforcement_step_updates,
@@ -757,7 +758,7 @@ def check_disabled_action_cleanup_blocker_html_obeys_terminal_policy() -> dict:
         state=_base_state(),
     )
     _assert(should_render_green, "policy helper did not accept pass-current terminal cleanup stop")
-    html = _design_guide_dashboard_card_html(
+    html = _design_guide_dashboard_card_html_with_render_model(
         {
             "status": "action",
             "pill": "ACTION",
@@ -773,6 +774,7 @@ def check_disabled_action_cleanup_blocker_html_obeys_terminal_policy() -> dict:
             "reasons": [],
         },
         card_class="fast-guidance-item efficiency dg-card--action",
+        source="product_correctness_terminal_cleanup_stop",
     )
     _assert("dg-card--pass" in html, "disabled action terminal stop did not render as pass card")
     _assert("data-testid='design-guide-status-pill'>PASS" in html, "terminal stop status pill is not PASS")
@@ -1127,20 +1129,34 @@ def check_rescue_seed_updates_include_canonical_reo_mirrors() -> dict:
         ("top1_count", "top_row_1_bars"),
         ("db_top_1", "top_row_1_dia"),
     ]
+    required_canonical_fields = [
+        "bot_row_count",
+        "bot_row_1_bars",
+        "bot_row_1_dia",
+        "top_row_count",
+        "top_row_1_bars",
+        "top_row_1_dia",
+    ]
+    for key in required_canonical_fields:
+        _assert(key in updates, f"combined rescue seed missing canonical field {key}")
+    legacy_projection_present = True
     for legacy_key, canonical_key in required_equal_pairs:
-        _assert(legacy_key in updates, f"combined rescue seed missing {legacy_key}")
         _assert(canonical_key in updates, f"combined rescue seed missing {canonical_key}")
-        _assert(
-            updates.get(legacy_key) == updates.get(canonical_key),
-            f"combined rescue seed {legacy_key}={updates.get(legacy_key)!r} "
-            f"does not match {canonical_key}={updates.get(canonical_key)!r}",
-        )
+        if legacy_key in updates:
+            _assert(
+                updates.get(legacy_key) == updates.get(canonical_key),
+                f"combined rescue seed {legacy_key}={updates.get(legacy_key)!r} "
+                f"does not match {canonical_key}={updates.get(canonical_key)!r}",
+            )
+        else:
+            legacy_projection_present = False
     _assert(updates.get("bot_row_count") == 1, "combined rescue seed missing canonical bottom row count")
     _assert(updates.get("top_row_count") == 1, "combined rescue seed missing canonical top row count")
     return {
         "seed": seed.get("key"),
         "bottom": [updates.get("bot_row_1_bars"), updates.get("bot_row_1_dia")],
         "top": [updates.get("top_row_1_bars"), updates.get("top_row_1_dia")],
+        "legacy_projection_present": legacy_projection_present,
     }
 
 

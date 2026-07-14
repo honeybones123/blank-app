@@ -37,9 +37,11 @@ LIVE_CARD_VM_SYMBOLS = [
     ("inputs_page.py", "def _build_design_guide_card_render_model("),
     ("inputs_page.py", "_build_design_guide_card_render_model_fields_core"),
     ("inputs_page.py", "def _design_guide_dashboard_card_html_with_render_model("),
-    ("inputs_page.py", "def _design_guide_direct_action_shell_card_html("),
-    ("inputs_page.py", "fallback_enabled_contract_shell"),
-    ("ui/design_guide_cards.py", "def _design_guide_dashboard_card_html_from_render_model("),
+    ("inputs_page.py", "_render_final_design_guide_card_html(clean_format)"),
+    ("inputs_page.py", "browser_enabled_contract_pre_render_shell_deleted"),
+    ("inputs_page.py", "fallback_enabled_contract_shell_deleted"),
+    ("inputs_page.py", "early_shear_overdesign_direct_action_shell_deleted"),
+    ("ui/final_design_guide_card.py", "def render_final_design_guide_card_html("),
 ]
 
 
@@ -179,12 +181,40 @@ def _adapter_display_surface(case: dict[str, Any]) -> dict[str, Any]:
 def _publication_outcome_state(case: dict[str, Any]) -> str:
     from design_brain.final_publication import build_final_design_guide_publication
 
+    name = str(case.get("name") or "case")
+    action_family = (
+        "SHEAR_FAIL_GOVERNS"
+        if name == "fallback_shell_card"
+        else "BENDING_FAIL_GOVERNS"
+    )
+    is_action = case.get("outcome_state") == "ACTION"
     publication = build_final_design_guide_publication(
         item={
             **_mapping(case.get("view_model")),
+            **(
+                {
+                    "selected_family_id": action_family,
+                    "published_family_id": action_family,
+                    "cta_family_id": action_family,
+                    "family": action_family,
+                }
+                if is_action
+                else {}
+            ),
             "button_contract": {
-                "enabled": case.get("outcome_state") == "ACTION",
-                "actionable": case.get("outcome_state") == "ACTION",
+                "enabled": is_action,
+                "actionable": is_action,
+                **(
+                    {
+                        "action_type": "apply_resolved_candidate",
+                        "family": action_family,
+                        "updates": {"fixture_action": True},
+                        "candidate_id": f"{name}_candidate",
+                        "source_candidate_id": f"{name}_candidate",
+                    }
+                    if is_action
+                    else {}
+                ),
             },
         },
         verifier_payload={"case": case.get("name")},
@@ -198,6 +228,7 @@ def _build_snapshot() -> dict[str, Any]:
     symbol_rows = _symbol_presence()
     missing_symbols = [row for row in symbol_rows if not row["present"]]
     inputs_source = INPUTS_PAGE.read_text(encoding="utf-8")
+    direct_shell_helper_absent = "def _design_guide_direct_action_shell_card_html(" not in inputs_source
     cta_authority_markers = {
         "FinalDesignGuidePublication.cta": "FinalDesignGuidePublication.cta" in inputs_source,
         "_stamp_final_publication_cta_authority": "_stamp_final_publication_cta_authority(" in inputs_source,
@@ -248,6 +279,8 @@ def _build_snapshot() -> dict[str, Any]:
         failures.append("final_publication_forbidden_imports")
     if missing_symbols:
         failures.append("missing_live_card_vm_symbols")
+    if not direct_shell_helper_absent:
+        failures.append("legacy_direct_action_shell_helper_still_present")
     if not all(cta_authority_markers.values()):
         failures.append("cta_authority_marker_missing")
 
@@ -276,6 +309,7 @@ def _build_snapshot() -> dict[str, Any]:
             if case["mismatches"]
         },
         "fallback_shell_risks": fallback_shell_risks,
+        "direct_shell_helper_absent": direct_shell_helper_absent,
         "cta_authority_markers": cta_authority_markers,
         "object_ready_for_live_card_vm_authority": status == "PASS",
         "object_ready_for_live_card_vm_authority_text": "yes" if status == "PASS" else "no",

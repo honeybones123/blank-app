@@ -1,10 +1,10 @@
 widget_key,widget_val,widget_type,shared_key,shared_val,shared_type
-bending_D,300.0,float,D,300.0,float
+bending_D,850.0,float,D,850.0,float
 bending_L,2000.0,float,L,2000.0,float
 bending_P_star,0.0,float,P_star,0.0,float
-bending_b,250.0,float,b,250.0,float
-bending_bot_row_1_bars,3,int,bot_row_1_bars,3,int
-bending_bot_row_1_dia,10,int,bot_row_1_dia,10.0,float
+bending_b,500.0,float,b,500.0,float
+bending_bot_row_1_bars,6,int,bot_row_1_bars,6,int
+bending_bot_row_1_dia,28,int,bot_row_1_dia,28,int
 bending_bot_row_1_mode,Count,str,bot_row_1_mode,Count,str
 bending_bot_row_count,1,int,bot_row_count,1,int
 bending_cover_bot,40.0,float,cover_bot,40.0,float
@@ -20,5 +20,5 @@ bending_top_row_1_dia,10,int,top_row_1_dia,10.0,float
 bending_top_row_1_mode,Count,str,top_row_1_mode,Count,str
 bending_top_row_count,1,int,top_row_count,1,int
 inputs_load_Mstar_neg_proxy,0.0,float,load_Mstar_neg_proxy,0.0,float
-inputs_load_Mstar_pos_proxy,0.0,float,load_Mstar_pos_proxy,0.0,float
+inputs_load_Mstar_pos_proxy,100.0,float,load_Mstar_pos_proxy,100.0,float
 inputs_load_Nstar_proxy,0.0,float,load_Nstar_proxy,0.0,float

@@ -16,6 +16,18 @@ from state_and_helpers import (
     speed_profile_section,
     update_results,
 )
+from calculations.shear import (
+    approximate_concrete_tension_area_mm2,
+    compute_shear_capacity_values,
+    compute_midspan_spacing_result as _calc_compute_midspan_spacing_result,
+    derive_eps_top_bot_for_step4_diagram,
+    required_asv_per_s as _calc_required_asv_per_s,
+    spacing_from_demand as _calc_spacing_from_demand,
+    stirrup_area_mm2,
+)
+from ui.diagrams.shear_zone_layout_diagram import (
+    build_shear_zone_layout_strip_figure as _shared_build_shear_zone_layout_strip_figure,
+)
 try:
     from shear_visuals import _dbg_log  # type: ignore
 except Exception:
@@ -277,13 +289,7 @@ def required_asv_per_s(V, phi, Vuc, fy, dv, *, cot_theta_v: float = 1.0):
         "derived_result_computation.shear_capacity.subfunction.required_asv_per_s",
         category="compute",
     ):
-        V_arr = np.asarray(V, dtype=float)
-        phi_safe = max(float(phi or 0.0), 1e-9)
-        fy_safe = max(float(fy or 0.0), 1e-9)
-        dv_safe = max(float(dv or 0.0), 1e-9)
-        cot_safe = max(float(cot_theta_v or 0.0), 1e-9)
-        Vus_req_kN = np.maximum(V_arr - phi_safe * float(Vuc or 0.0), 0.0) / phi_safe
-        return (Vus_req_kN * 1000.0) / (fy_safe * dv_safe * cot_safe)
+        return _calc_required_asv_per_s(V, phi, Vuc, fy, dv, cot_theta_v=cot_theta_v)
 
 
 def spacing_from_demand(
@@ -304,27 +310,18 @@ def spacing_from_demand(
         "derived_result_computation.shear_capacity.subfunction.spacing_from_demand",
         category="compute",
     ):
-        s_max_mm = min(0.75 * max(float(D_mm), 1e-9), 500.0)
-        phi_safe = max(float(phi or 0.0), 1e-9)
-        cot_safe = max(float(cot_theta_v or 0.0), 1e-9)
-        Vus_req_kN = max(float(Vi_kN) - phi_safe * float(Vuc_kN or 0.0), 0.0) / phi_safe
-        if Vus_req_kN <= 1e-12:
-            return float(s_max_mm)
-        asv_s_req = (Vus_req_kN * 1000.0) / max(
-            float(fy_mpa or 0.0) * float(dv_mm or 0.0) * cot_safe, 1e-9
+        return _calc_spacing_from_demand(
+            Vi_kN,
+            phi,
+            Vuc_kN,
+            fy_mpa,
+            dv_mm,
+            Asv_mm2,
+            D_mm,
+            s_min_mm,
+            cot_theta_v=cot_theta_v,
+            increment_mm=increment_mm,
         )
-        s_raw = float(Asv_mm2) / max(asv_s_req, 1e-12)
-        s = min(s_raw, s_max_mm)
-        s = max(s, float(s_min_mm))
-        inc = max(float(increment_mm), 1.0)
-        # round down to stay conservative
-        s = max(float(s_min_mm), min(s_max_mm, math.floor(s / inc + 1e-9) * inc))
-        # final detailing round (5 mm increments)
-        s = math.floor(s / 5.0) * 5.0
-        # enforce limits again
-        s = min(s, s_max_mm)
-        s = max(s, float(s_min_mm))
-        return float(s)
 
 
 def compute_midspan_spacing_result(
@@ -348,32 +345,18 @@ def compute_midspan_spacing_result(
         "derived_result_computation.shear_capacity.subfunction.compute_midspan_spacing_result",
         category="compute",
     ):
-        phi_safe = max(float(phi), 1e-9)
-        Vus_req_kN = max(float(V_mid_kN) - phi_safe * float(Vuc_kN), 0.0) / phi_safe
-        mode = "max_spacing" if Vus_req_kN <= 1e-9 else "shear_demand"
-        s_mm = spacing_from_demand(
-            float(V_mid_kN),
-            float(phi),
-            float(Vuc_kN),
-            float(fy_mpa),
-            float(dv_mm),
-            float(Asv_mm2),
-            float(D_mm),
-            float(s_min_mm),
-            cot_theta_v=float(cot_theta_v),
-            increment_mm=float(increment_mm),
+        return _calc_compute_midspan_spacing_result(
+            V_mid_kN=V_mid_kN,
+            phi=phi,
+            Vuc_kN=Vuc_kN,
+            fy_mpa=fy_mpa,
+            dv_mm=dv_mm,
+            Asv_mm2=Asv_mm2,
+            D_mm=D_mm,
+            s_min_mm=s_min_mm,
+            cot_theta_v=cot_theta_v,
+            increment_mm=increment_mm,
         )
-        return float(s_mm), str(mode)
-
-
-def derive_eps_top_bot_for_step4_diagram(eps_x: float, delta: float = 0.00035):
-    """
-    Diagram-only helper.
-    Create a simple linear profile around eps_x so the user can visualize
-    top/mid/bottom strain points. Does NOT affect design calcs.
-    """
-    ex = float(eps_x)
-    return ex - float(delta), ex + float(delta)
 
 
 def ensure_shear_report_built(
@@ -558,267 +541,14 @@ def ensure_shear_report_built(
 
 def run_shear_calc(inp: ShearInputs) -> ShearResults:
     _run_shear_calc_t0 = time.perf_counter()
-    b = inp.b
-    D = inp.D
-    d = inp.d
-    fc = inp.fc
-    fsy = inp.fsy
-    Ec = inp.Ec
-    Es = inp.Es
-    M_star = inp.M_star
-    V_star = inp.V_star
-    T_star = inp.T_star
-    N_star = inp.N_star
-    P_v = inp.P_v
-    phi = inp.phi
-    sigma_cp = inp.sigma_cp
-    A_st = inp.A_st
-    A_pt = inp.A_pt
-    f_po = inp.f_po
-    A_ct = inp.A_ct
-    d_g = inp.d_g
-    lig_d = 10.0 if inp.lig_d is None else float(inp.lig_d)
-    legs = 2.0 if inp.legs is None else float(inp.legs)
-    legs_eff = 0.0 if legs < 2 else legs
-    s = 200.0 if inp.s_lig is None else float(inp.s_lig)
-    use_general_kv = inp.use_general_kv
-    sum_duct = inp.sum_duct
-    k_d = inp.k_d
-
-    # ---------------- Torsion geometry & cracking torque ----------------
-    _section_t0 = time.perf_counter()
-    cover_t = 40.0
-    A_cp = b * D
-    u_c = 2 * (b + D)
-    Ao = 0.9 * A_cp
-    uh = 2 * (max(b - cover_t, 0.0) + max(D - cover_t, 0.0))
-    A_oh = max(b - cover_t, 0.0) * max(D - cover_t, 0.0)
-    speed_profile_record(
-        "derived_result_computation.shear_capacity.run_shear_calc.geometry_torsion_setup",
-        (time.perf_counter() - _section_t0) * 1000.0,
-        category="compute",
-    )
-
-    # Safety checks to prevent division by zero
-    _section_t0 = time.perf_counter()
-    T_used = T_star
-    if u_c <= 0 or A_cp <= 0:
-        # Return zero capacity if geometry is invalid
-        Tcr_kNm = 0.0
-        torsion_required = False
-        torsion_required_limit = 0.0
-        Vt_eq_kN = 0.0
-        V_eq = abs(V_star)
-        T_used = 0.0
-    else:
-        sqrt_fc = math.sqrt(max(fc, 0.1))  # Prevent sqrt of negative
-        denom = 0.33 * sqrt_fc
-        Tcr_Nmm = 0.33 * sqrt_fc * (A_cp**2) / u_c * math.sqrt(
-            1 + (sigma_cp / denom if denom > 0 else 0.0)
-        )
-        Tcr_kNm = Tcr_Nmm / 1e6
-        torsion_required_limit = 0.25 * phi * Tcr_kNm
-        torsion_required = T_star > torsion_required_limit
-        # If torsion design is NOT required, ignore torsion in subsequent strength checks
-        T_used = T_star if torsion_required else 0.0
-
-        # ---------------- Equivalent shear Veq* ----------------
-        T_used_Nmm = T_used * 1e6
-        Ao_safe = max(Ao, 1.0)  # Prevent division by zero
-        uh_safe = max(uh, 1.0)  # Prevent division by zero
-        torsion_eq_N = 0.9 * T_used_Nmm * uh_safe / (2.0 * Ao_safe)
-        Vt_eq_kN = torsion_eq_N / 1e3
-        V_eq = abs(V_star) if not torsion_required else math.sqrt(V_star**2 + Vt_eq_kN**2)
-    speed_profile_record(
-        "derived_result_computation.shear_capacity.run_shear_calc.torsion_and_equivalent_shear",
-        (time.perf_counter() - _section_t0) * 1000.0,
-        category="compute",
-    )
-
-    # ---------------- Shear reinforcement & effective section -----------
-    _section_t0 = time.perf_counter()
-    Asv = legs_eff * math.pi * lig_d**2 / 4.0
-    if legs_eff <= 0:
-        Asv = 0.0
-    f_syv = fsy
-
-    b_v = b - k_d * sum_duct
-    d_v = max(0.72 * D, 0.9 * d)
-
-    # Safety check: prevent division by zero for spacing
-    s_safe = max(s, 1.0)  # Minimum 1mm spacing to prevent division by zero
-    speed_profile_record(
-        "derived_result_computation.shear_capacity.run_shear_calc.reinforcement_and_section_resolution",
-        (time.perf_counter() - _section_t0) * 1000.0,
-        category="compute",
-    )
-
-    # ---------------- Longitudinal strain εx ----------------------------
-    _section_t0 = time.perf_counter()
-    M_star_Nmm = abs(M_star) * 1e6
-    d_v_safe = max(d_v, 1.0)  # Prevent division by zero
-    term_M = M_star_Nmm / d_v_safe
-
-    Vprime_kN = abs(V_star) - P_v
-    Vprime_N = Vprime_kN * 1e3
-
-    # Use safe values for torsion calculation
-    Ao_safe = max(Ao, 1.0)  # Prevent division by zero
-    uh_safe = max(uh, 1.0)  # Prevent division by zero
-    T_used_Nmm = T_used * 1e6
-    torsion_N = 0.97 * T_used_Nmm * uh_safe / (2.0 * Ao_safe)
-    sqrt_inner = math.sqrt(Vprime_N**2 + torsion_N**2)
-
-    N_star_N = 0.5 * N_star * 1e3
-    A_pt_fpo_N = A_pt * f_po
-
-    numerator = term_M + sqrt_inner + N_star_N - A_pt_fpo_N
-
-    Ep = 195000.0
-    denom1 = 2.0 * (Es * A_st + Ep * A_pt)
-    eps_x_1 = numerator / denom1 if denom1 > 0 else 0.0
-
-    if eps_x_1 < 0:
-        denom2 = 2.0 * (Es * A_st + Ep * A_pt + Ec * A_ct)
-        eps_x = numerator / denom2 if denom2 > 0 else 0.0
-        eps_x = max(-0.0002, min(eps_x, 0.0))
-    else:
-        eps_x = max(0.0, min(eps_x_1, 0.003))
-    speed_profile_record(
-        "derived_result_computation.shear_capacity.run_shear_calc.longitudinal_strain",
-        (time.perf_counter() - _section_t0) * 1000.0,
-        category="compute",
-    )
-
-    # ---------------- k_v and θ_v ---------------------------------------
-    _section_t0 = time.perf_counter()
-    if use_general_kv:
-        if fc <= 65:
-            k_dg = 32.0 / (16.0 + d_g)
-            k_dg = max(k_dg, 0.8)
-            if d_g >= 16:
-                k_dg = max(k_dg, 1.0)
-        else:
-            k_dg = 2.0
-
-        Asv_over_s = Asv / s_safe
-        Asv_min_over_s = 0.08 * math.sqrt(max(fc, 0.1)) * b_v / (f_syv or 1.0)
-
-        if Asv_over_s < Asv_min_over_s:
-            k_v = (0.4 / (1 + 1500 * eps_x)) * (1300 / (1000 + k_dg * d_v_safe))
-        else:
-            k_v = 0.4 / (1 + 1500 * eps_x)
-
-        theta_v_deg = 29.0 + 7000.0 * eps_x
-    else:
-        if Asv / s_safe < 0.08 * math.sqrt(max(fc, 0.1)) * b_v / (f_syv or 1.0):
-            k_v = min(200.0 / (1000.0 + 1.3 * d_v_safe), 0.10)
-        else:
-            k_v = 0.15
-        theta_v_deg = 36.0
-
-    theta_v_rad = math.radians(theta_v_deg)
-    speed_profile_record(
-        "derived_result_computation.shear_capacity.run_shear_calc.mcft_parameters",
-        (time.perf_counter() - _section_t0) * 1000.0,
-        category="compute",
-    )
-
-    # ---------------- Sectional shear -----------------------------------
-    _section_t0 = time.perf_counter()
-    sqrt_fc_limited = min(math.sqrt(max(fc, 0.1)), 8.0)
-    Vuc_N = k_v * b_v * d_v_safe * sqrt_fc_limited
-    Vuc_kN = Vuc_N / 1e3
-
-    Vus_N = 0.0 if legs_eff <= 0 else (Asv * f_syv * d_v_safe / s_safe) * cot(theta_v_rad)
-    Vus_kN = Vus_N / 1e3
-
-    Vu_total_kN = Vuc_kN + Vus_kN + P_v
-    phi_Vu = phi * Vu_total_kN
-    shear_ok = phi_Vu >= V_eq
-    speed_profile_record(
-        "derived_result_computation.shear_capacity.run_shear_calc.sectional_shear",
-        (time.perf_counter() - _section_t0) * 1000.0,
-        category="compute",
-    )
-
-    # ---------------- Web crushing --------------------------------------
-    _section_t0 = time.perf_counter()
-    theta_1_deg = 90.0
-    theta_1_rad = math.radians(theta_1_deg)
-    cot_theta_v = cot(theta_v_rad)
-    cot_theta_1 = cot(theta_1_rad)
-
-    Vu_max_N = 0.55 * fc * b_v * d_v * (cot_theta_v + cot_theta_1) / (
-        1 + cot_theta_v**2
-    ) + P_v * 1e3
-    Vu_max_kN = Vu_max_N / 1e3
-
-    V_star_N = V_star * 1e3
-    b_v_d_v_safe = max(b_v * d_v_safe, 1.0)  # Prevent division by zero
-    term_V = V_star_N / b_v_d_v_safe
-    T_used_Nmm = T_used * 1e6
-    A_oh_safe = max(abs(A_oh), 1.0)  # Prevent division by zero
-    uh_safe = max(uh, 1.0)  # Prevent division by zero
-    term_T = T_used_Nmm * uh_safe / (1.7 * (A_oh_safe**2))
-
-    LHS = math.sqrt(term_V**2 + term_T**2)
-    RHS = phi * Vu_max_N / b_v_d_v_safe
-    web_ok = LHS <= RHS
-    speed_profile_record(
-        "derived_result_computation.shear_capacity.run_shear_calc.web_crushing",
-        (time.perf_counter() - _section_t0) * 1000.0,
-        category="compute",
-    )
-
-    _section_t0 = time.perf_counter()
-    _out = ShearResults(
-        b_used=b,
-        D_used=D,
-        A_cp=A_cp,
-        u_c=u_c,
-        Ao=Ao,
-        uh=uh,
-        A_oh=A_oh,
-        Tcr_kNm=Tcr_kNm,
-        torsion_required=torsion_required,
-        torsion_required_limit=torsion_required_limit,
-        Vt_eq_kN=Vt_eq_kN,
-        V_eq=V_eq,
-        b_v=b_v,
-        d_v=d_v,
-        Asv=Asv,
-        f_syv=f_syv,
-        eps_x=eps_x,
-        term_M=term_M,
-        sqrt_inner=sqrt_inner,
-        numerator=numerator,
-        k_v=k_v,
-        theta_v_deg=theta_v_deg,
-        theta_v_rad=theta_v_rad,
-        sqrt_fc_limited=sqrt_fc_limited,
-        Vuc_kN=Vuc_kN,
-        Vus_kN=Vus_kN,
-        Vu_total_kN=Vu_total_kN,
-        phi_Vu=phi_Vu,
-        shear_ok=shear_ok,
-        Vu_max_kN=Vu_max_kN,
-        LHS=LHS,
-        RHS=RHS,
-        web_ok=web_ok,
-    )
-    speed_profile_record(
-        "derived_result_computation.shear_capacity.run_shear_calc.build_results",
-        (time.perf_counter() - _section_t0) * 1000.0,
-        category="compute",
-    )
+    values = compute_shear_capacity_values(inp)
+    _out = ShearResults(**values)
     speed_profile_record(
         "derived_result_computation.shear_capacity.run_shear_calc",
         (time.perf_counter() - _run_shear_calc_t0) * 1000.0,
         category="compute",
     )
     return _out
-
 
 def compute_shear_zones(
     *,
@@ -915,7 +645,7 @@ def compute_shear_zones(
     if use_notional:
         lig_disp = max(float(lig_d_mm), 10.0)
         legs_disp = 2
-        asv_for_spacing = legs_disp * math.pi * lig_disp**2 / 4.0
+        asv_for_spacing = stirrup_area_mm2(legs_disp, lig_disp)
     else:
         lig_disp = max(float(lig_d_mm), 1.0)
         legs_disp = max(legs_i_raw, 1)
@@ -1258,180 +988,15 @@ def build_shear_zone_layout_strip_figure(
     reference_width_px: float = 640.0,
     min_tick_spacing_px: float = 6.0,
 ):
-    """
-    Plotly horizontal strip for Check 10 (3-zone layout).
-
-    Draws zone colour bands, vertical stirrup ticks at each zone spacing (first tick
-    offset by s/2 from the zone start), optional thinning when ticks would crowd in
-    pixel space, and @s labels centred under each zone.
-    """
-    import plotly.graph_objects as go
-
-    segs = list(payload.get("strip_segments_mm") or [])
-    L_mm = float(payload.get("beam_length_mm") or 0.0)
-    support_type = str(payload.get("support_type") or "")
-    is_cantilever = bool(payload.get("is_cantilever", False))
-    support_positions_mm = [float(v) for v in (payload.get("support_positions_mm") or [])]
-    support_types = [str(v) for v in (payload.get("support_types") or [])]
-    if L_mm <= 0.0 and segs:
-        L_mm = max(float(s.get("x1_mm", 0.0) or 0.0) for s in segs)
-    L_m = max(L_mm / 1000.0, 1e-9)
-
-    y0, y1 = 0.0, float(beam_depth_m)
-    # Stirrup extent within the beam strip (slight inset from top/bottom)
-    inset = 0.06 * (y1 - y0)
-    y_bot_reo = y0 + inset
-    y_top_reo = y1 - inset
-
-    zone_stirrup_line = {
-        "1": "rgba(95, 42, 42, 0.78)",
-        "2": "rgba(105, 72, 38, 0.76)",
-        "3": "rgba(42, 98, 58, 0.76)",
-    }
-
-    fig = go.Figure()
-
-    if not segs:
-        fig.add_annotation(
-            x=0.5 * L_m,
-            y=0.5 * y1,
-            text="No shear link spacing set",
-            showarrow=False,
-            font=dict(size=12, color="rgba(60,60,60,0.9)"),
-        )
-        fig.update_xaxes(title_text="Distance along member (m)", range=[0.0, max(L_m, 1e-6)])
-        fig.update_yaxes(visible=False, range=[-0.05 * beam_depth_m, y1 + 0.2 * beam_depth_m])
-        fig.update_layout(
-            title=title or "Shear layout (required zone spacings from envelope / Check 10)",
-            margin=dict(l=40, r=20, t=50, b=48),
-            height=140,
-            showlegend=False,
-        )
-        return fig
-
-    scale_px_per_m = float(reference_width_px) / L_m
-    stirrup_count = 0
-
-    for seg in segs:
-        x0 = float(seg.get("x0_mm", 0.0) or 0.0) / 1000.0
-        x1 = float(seg.get("x1_mm", 0.0) or 0.0) / 1000.0
-        sm = float(seg.get("spacing_mm", 0.0) or 0.0)
-        color = str(seg.get("color") or "rgba(120,120,120,0.5)")
-        zid = str(seg.get("zone", "1") or "1")
-        line_col = zone_stirrup_line.get(zid, "rgba(51, 51, 51, 0.72)")
-
-        fig.add_shape(
-            type="rect",
-            x0=x0,
-            x1=x1,
-            y0=y0,
-            y1=y1,
-            fillcolor=color,
-            line=dict(width=0),
-            layer="below",
-        )
-
-        sm_m = max(sm / 1000.0, 1e-9)
-        spacing_px = sm_m * scale_px_per_m
-        step = 2 if spacing_px < float(min_tick_spacing_px) else 1
-
-        xm = 0.5 * (x0 + x1)
-        fig.add_annotation(
-            x=xm,
-            y=y1 + 0.05 * beam_depth_m,
-            text=f"req. @{sm:.0f} mm",
-            showarrow=False,
-            font=dict(size=10, color="rgba(45,45,45,0.92)"),
-        )
-
-        if show_stirrup_marks and sm_m > 0.0 and x1 > x0 + 1e-12:
-            x_first = x0 + 0.5 * sm_m
-            xi = x_first
-            idx = 0
-            while xi < x1 - 1e-9 and stirrup_count < max_stirrup_marks:
-                if idx % step == 0:
-                    fig.add_shape(
-                        type="line",
-                        x0=xi,
-                        x1=xi,
-                        y0=y_bot_reo,
-                        y1=y_top_reo,
-                        line=dict(color=line_col, width=1),
-                        layer="above",
-                    )
-                    stirrup_count += 1
-                xi += sm_m
-                idx += 1
-
-    fig.add_trace(
-        go.Scatter(
-            x=[0.0, L_m],
-            y=[y1 * 0.5, y1 * 0.5],
-            mode="lines",
-            line=dict(color="rgba(40,40,40,0.85)", width=2),
-            hoverinfo="skip",
-            showlegend=False,
-        )
+    return _shared_build_shear_zone_layout_strip_figure(
+        payload,
+        beam_depth_m=beam_depth_m,
+        title=title,
+        show_stirrup_marks=show_stirrup_marks,
+        max_stirrup_marks=max_stirrup_marks,
+        reference_width_px=reference_width_px,
+        min_tick_spacing_px=min_tick_spacing_px,
     )
-    rendered_supports = []
-    if support_positions_mm and support_types and len(support_positions_mm) == len(support_types):
-        support_symbols = {
-            "fixed": "⏊",
-            "pinned": "▲",
-            "roller": "○",
-        }
-        support_y = y0 - 0.07 * beam_depth_m
-        for sx_mm, stype in zip(support_positions_mm, support_types):
-            sx_m = float(sx_mm) / 1000.0
-            key = str(stype or "").strip().lower()
-            symbol = support_symbols.get(key, "▲")
-            rendered_supports.append({"x_m": sx_m, "type": stype, "symbol": symbol})
-            fig.add_annotation(
-                x=sx_m,
-                y=support_y,
-                text=symbol,
-                showarrow=False,
-                font=dict(size=14, color="rgba(35,35,35,0.95)"),
-            )
-    elif is_cantilever:
-        rendered_supports.append({"x_m": 0.0, "type": "Fixed", "symbol": "⏊"})
-        fig.add_annotation(
-            x=0.0,
-            y=y0 - 0.07 * beam_depth_m,
-            text="⏊",
-            showarrow=False,
-            font=dict(size=14, color="rgba(35,35,35,0.95)"),
-        )
-    elif support_type:
-        rendered_supports.extend(
-            [
-                {"x_m": 0.0, "type": "Pinned", "symbol": "▲"},
-                {"x_m": L_m, "type": "Roller", "symbol": "○"},
-            ]
-        )
-        fig.add_annotation(
-            x=0.0,
-            y=y0 - 0.07 * beam_depth_m,
-            text="▲",
-            showarrow=False,
-            font=dict(size=14, color="rgba(35,35,35,0.95)"),
-        )
-        fig.add_annotation(
-            x=L_m,
-            y=y0 - 0.07 * beam_depth_m,
-            text="○",
-            showarrow=False,
-            font=dict(size=14, color="rgba(35,35,35,0.95)"),
-        )
-    fig.update_xaxes(title_text="Distance along member (m)", range=[0.0, max(L_m, 1e-6)])
-    fig.update_yaxes(visible=False, range=[-0.18 * beam_depth_m, y1 + 0.22 * beam_depth_m])
-    fig.update_layout(
-        title=title or "Shear reinforcement layout (3 zones)",
-        margin=dict(l=40, r=20, t=50, b=48),
-        height=140,
-        showlegend=False,
-    )
-    return fig
 
 
 # ------------------------------------------------------------
@@ -1470,7 +1035,7 @@ def _compute_shear_capacity():
     A_st = get_param("Ast_bot", 0.0)
     A_pt = 0.0
     f_po = 0.0
-    A_ct = b * D / 2.0  # Approximate
+    A_ct = approximate_concrete_tension_area_mm2(b, D)
     d_g = 20.0  # Default aggregate size
     sum_duct = get_param("n_ducts", 0) * get_param("duct_dia", 0.0) if get_param("n_ducts", 0) > 0 else 0.0
     k_d = 0.0  # No ducts by default

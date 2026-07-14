@@ -27,6 +27,7 @@ EXPECTED_ORDER = (
     "BAR_SIZE_REDUCTION",
     "LEG_COUNT_REDUCTION",
     "LIGATURE_REMOVAL",
+    "WIDTH_REDUCTION",
     "EXACT_STOP",
     "EXHAUSTED",
 )
@@ -101,7 +102,7 @@ def main() -> int:
     checks = {
         "old_family_shell_known": "class ShearCleanupFamily" in cleanup_source
         and "SHEAR_OVERDESIGN_GOVERNS" in cleanup_source,
-        "compatibility_api_known": "def evaluate_shear_overdesign_governs(" in package_source,
+        "runtime_export_known": "run_shear_overdesign_governs_runtime" in package_source,
         "old_page_local_cleanup_known": "_compute_shear_tightening_recommendation" in inputs_source
         and "generate_less_shear_reo_variants" in inputs_source,
         "zero_shear_page_anchor_known": "_try_shear_remove_links_tightening_recommendation" in inputs_source
@@ -143,7 +144,8 @@ def main() -> int:
             "product_cutover_enabled": False,
             "inputs_page_modified": False,
             "cta_publication_apply_ui_moved": False,
-            "geometry_reduction_allowed": False,
+            "width_reduction_allowed": True,
+            "depth_reduction_allowed": False,
             "bending_touched": False,
             "shear_fail_touched": False,
         },

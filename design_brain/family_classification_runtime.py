@@ -75,13 +75,23 @@ def normalise_whole_beam_evidence(evidence: dict[str, Any] | None) -> dict[str, 
         ),
         "exact_stop_available": _as_bool(source.get("exact_stop_available")),
         "no_valid_repair_available": _as_bool(source.get("no_valid_repair_available")),
+        "zero_shear_with_ligatures": _as_bool(source.get("zero_shear_with_ligatures")),
+        "unnecessary_shear_reinforcement_exists": _as_bool(
+            source.get("unnecessary_shear_reinforcement_exists")
+        ),
+        "shear_cleanup_possible": _as_bool(source.get("shear_cleanup_possible")),
     }
     out["bending_fail"] = bending_util > 1.0
     out["shear_fail"] = shear_util > 1.0
     out["bending_target"] = _target(bending_util)
     out["shear_target"] = _target(shear_util)
     out["bending_overdesigned"] = bending_util < 0.85
-    out["shear_overdesigned"] = shear_util < 0.85
+    zero_shear_ligature_cleanup = bool(
+        out["zero_shear_with_ligatures"]
+        or out["unnecessary_shear_reinforcement_exists"]
+        or out["shear_cleanup_possible"]
+    )
+    out["shear_overdesigned"] = bool(shear_util < 0.85 or zero_shear_ligature_cleanup)
     out["strength_checks_acceptable"] = _acceptable(bending_util) and _acceptable(shear_util)
     out["serviceability_fail"] = out["serviceability_state"] == "FAIL"
     out["geometry_blocked"] = out["geometry_detailing_state"] == "BLOCKED"
@@ -112,6 +122,9 @@ def normalise_whole_beam_evidence(evidence: dict[str, Any] | None) -> dict[str, 
         "can_optimise_shear_without_hurting_bending",
         "exact_stop_available",
         "no_valid_repair_available",
+        "zero_shear_with_ligatures",
+        "unnecessary_shear_reinforcement_exists",
+        "shear_cleanup_possible",
     )}
     out["raw_evidence_hash"] = _stable_hash(contract_input)
     return out
@@ -132,10 +145,16 @@ FAMILY_PREDICATES: dict[str, FamilyPredicate] = {
         e["exact_stop_available"]
         and e["strength_checks_acceptable"]
         and not e["serviceability_fail"]
+        and not e["geometry_blocked"]
+        and not e["bending_overdesigned"]
+        and not e["shear_overdesigned"]
+        and e["minimum_bending_reo_state"] != "GOVERNS"
+        and e["minimum_shear_reo_state"] != "GOVERNS"
     ),
     "LOCKED_NO_REPAIR": lambda e: (
         (
             e["no_valid_repair_available"]
+            and not e["serviceability_fail"]
             and not (
                 e["bending_fail"]
                 and not e["shear_fail"]
@@ -144,6 +163,7 @@ FAMILY_PREDICATES: dict[str, FamilyPredicate] = {
         )
         or (
             e["repair_or_optimisation_required"]
+            and not e["serviceability_fail"]
             and (e["geometry_locked"] or e["reo_locked"])
             and not (
                 e["can_strengthen_bending"]
@@ -158,6 +178,7 @@ FAMILY_PREDICATES: dict[str, FamilyPredicate] = {
             )
         )
     ),
+    "GEOMETRY_DETAILING_GOVERNS": lambda e: e["geometry_blocked"],
     "BENDING_AND_SHEAR_FAIL_GOVERN": lambda e: e["bending_fail"] and e["shear_fail"],
     "BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS": lambda e: (
         e["bending_fail"]

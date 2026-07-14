@@ -1,0 +1,209 @@
+{
+  "schema": "design_brain.final_design_guide_formatting_contract.v1",
+  "contract_identity": {
+    "contract_id": "FINAL_DESIGN_GUIDE_FORMATTING",
+    "version": 1,
+    "owner": "design_brain.final_design_guide_formatter",
+    "input": "FinalDesignGuidePublication",
+    "output": "FinalDesignGuideCardFormat"
+  },
+  "purpose": [
+    "replace legacy Design Guide card formatting",
+    "render final publication truth without reading legacy guidance item dictionaries",
+    "separate display formatting from engineering, CTA routing, and session state"
+  ],
+  "allowed_inputs": [
+    "FinalDesignGuidePublication",
+    "FinalDesignGuidePublication.cta",
+    "FinalDesignGuidePublication.display",
+    "FinalDesignGuidePublication.evidence"
+  ],
+  "forbidden_inputs": [
+    "raw guidance item dicts",
+    "candidate search internals",
+    "session state",
+    "old page card model",
+    "old restamper output",
+    "apply routing",
+    "family runtime internals",
+    "Streamlit widgets"
+  ],
+  "outcome_state_mapping": {
+    "PASS": {
+      "tone": "green",
+      "default_badge": "PASS",
+      "meaning": "Design is accepted or efficient."
+    },
+    "ACTION": {
+      "tone": "family_contract",
+      "default_badge": "ACTION",
+      "meaning": "A final publication CTA exists. Tone is selected from the governing family contract."
+    },
+    "BLOCKED": {
+      "tone": "family_contract",
+      "default_badge": "BLOCKED",
+      "meaning": "No action is legal from the final publication state. Tone is selected from the governing family contract."
+    },
+    "ERROR": {
+      "tone": "red",
+      "default_badge": "ERROR",
+      "meaning": "Publication is invalid or inconsistent."
+    },
+    "PROOF_PENDING": {
+      "tone": "grey",
+      "default_badge": "INFO",
+      "meaning": "Publication proof is not complete."
+    }
+  },
+  "status_colour_contract": {
+    "red": {
+      "meaning": "Failure, repair required, invalid geometry/detailing, or error.",
+      "families": [
+        "LOCKED_NO_REPAIR",
+        "GEOMETRY_DETAILING_GOVERNS",
+        "BENDING_AND_SHEAR_FAIL_GOVERN",
+        "BENDING_FAIL_GOVERNS",
+        "SHEAR_FAIL_GOVERNS",
+        "COMBINED_BENDING_SHEAR_FAIL",
+        "COMBINED_BENDING_SHEAR_FAIL_GOVERNS",
+        "SERVICEABILITY_GOVERNS",
+        "BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS",
+        "SHEAR_FAIL_BENDING_OVERDESIGN_GOVERNS",
+        "SHEAR_FAIL_BENDING_OPTIMISE_GOVERNS"
+      ]
+    },
+    "green": {
+      "meaning": "Accepted design, target band reached, or exact stop proven.",
+      "families": [
+        "TARGET_BAND_REACHED",
+        "EXACT_STOP_PROVEN",
+        "OPTIMAL_DESIGN_STATE"
+      ]
+    },
+    "blue": {
+      "meaning": "Passing design with optimisation or overdesign cleanup available.",
+      "families": [
+        "BENDING_OVERDESIGN_GOVERNS",
+        "SHEAR_OVERDESIGN_GOVERNS",
+        "COMBINED_OVERDESIGN",
+        "COMBINED_OVERDESIGN_GOVERNS"
+      ]
+    },
+    "grey": {
+      "meaning": "Proof pending, informational, or unknown state.",
+      "families": []
+    }
+  },
+  "field_sources": {
+    "title": [
+      "publication.display.title"
+    ],
+    "badge": [
+      "publication.display.badge",
+      "outcome_state_mapping.default_badge"
+    ],
+    "summary": [
+      "publication.display.summary"
+    ],
+    "blocker_explanation": [
+      "publication.display.blocker_explanation",
+      "publication.blocker_reason",
+      "publication.evidence.blocker_reason"
+    ],
+    "selected_family": [
+      "publication.selected_family",
+      "publication.evidence.selected_family"
+    ],
+    "cta": [
+      "publication.cta"
+    ],
+    "evidence_sections": [
+      "publication.display.expanded_evidence_sections",
+      "publication.evidence",
+      "publication.exact_stop_proof",
+      "publication.target_band_proof"
+    ]
+  },
+  "section_order": [
+    "Current",
+    "Preview after proposed change",
+    "Status",
+    "Blocker evidence",
+    "Exact stop",
+    "Target band",
+    "Details"
+  ],
+  "current_row_contract": {
+    "required_fields": [
+      "family",
+      "label",
+      "value",
+      "status",
+      "tone"
+    ],
+    "tone_mapping": {
+      "FAIL": "red",
+      "PASS": "green",
+      "OK": "green",
+      "GOOD": "green",
+      "ACCEPTED": "green",
+      "WARNING": "amber",
+      "WARN": "amber",
+      "WATCH": "amber",
+      "NEAR LIMIT": "amber",
+      "LOW UTILISATION": "amber",
+      "LOW UTILIZATION": "amber",
+      "NOT RUN": "grey",
+      "CAPACITY": "blue"
+    }
+  },
+  "preview_row_contract": {
+    "required_fields": [
+      "family",
+      "label",
+      "before",
+      "after"
+    ]
+  },
+  "cta_display_binding": {
+    "source": "FinalDesignGuidePublication.cta",
+    "fields": [
+      "enabled",
+      "actionable",
+      "label",
+      "disabled_reason",
+      "action_type",
+      "apply_payload_fingerprint",
+      "button_contract_hash"
+    ],
+    "rendering_remains_page_or_ui_owned": true,
+    "apply_routing_remains_shared_page_owned": true
+  },
+  "fallback_and_proof_pending": {
+    "fallback_shell_non_authoritative": true,
+    "proof_pending_badge": "INFO",
+    "proof_pending_tone": "grey",
+    "fallback_must_be_hash_stamped": true
+  },
+  "required_test_ids": [
+    "design-guide-card",
+    "design-guide-collapsible-header",
+    "design-guide-status-pill",
+    "design-guide-title",
+    "design-guide-governing-utilisation",
+    "design-guide-expanded-body",
+    "design-guide-main-explanation"
+  ],
+  "verifier_contract": {
+    "must_prove": [
+      "formatter imports without inputs_page.py",
+      "formatter imports without streamlit/session/UI/apply routing",
+      "formatter consumes FinalDesignGuidePublication only",
+      "red fail, green pass, and blue optimise tone mapping",
+      "new formatter preserves visible title, badge, status, summary, CTA binding, and evidence sections",
+      "old formatting is comparison evidence only",
+      "unsafe differences are reported before cutover",
+      "no family runtime, CTA routing, apply routing, or engineering ownership moves"
+    ]
+  }
+}

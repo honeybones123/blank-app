@@ -266,6 +266,39 @@ def build_bending_fail_known_bad_spacing_record(
     }
 
 
+def build_bending_fail_known_bad_depth_width_record(
+    *,
+    stage_name: str,
+    strategy: str,
+    width: float,
+    depth: float,
+    row1: int,
+    row2: int,
+    dia: int,
+    split: bool,
+    clear: float,
+    maximum_depth_width_ratio: float,
+) -> dict[str, Any]:
+    """Build the known-bad geometry-ratio record for a rejected ladder row."""
+
+    ratio = None
+    if float(width or 0.0) > 0.0:
+        ratio = float(depth) / float(width)
+    return {
+        "stage_name": stage_name,
+        "strategy": strategy,
+        "b": width,
+        "D": depth,
+        "bottom_bar_count": row1 + row2,
+        "bar_diameter": dia,
+        "split_row": split,
+        "clear_spacing": clear if math.isfinite(clear) else None,
+        "depth_width_ratio": ratio,
+        "maximum_depth_width_ratio": float(maximum_depth_width_ratio),
+        "reason": "depth_width_ratio_above_contract_limit",
+    }
+
+
 def build_bending_fail_repair_ladder_spec_payload(
     *,
     assigned_candidate_index: int,
@@ -460,6 +493,7 @@ def build_bending_fail_repair_ladder_result(
 __all__ = [
     "BendingFailRepairLadderAddDecision",
     "BendingFailRepairLadderAddResult",
+    "build_bending_fail_known_bad_depth_width_record",
     "build_bending_fail_known_bad_spacing_record",
     "build_bending_fail_repair_ladder_add_result",
     "build_bending_fail_repair_ladder_spec_payload",

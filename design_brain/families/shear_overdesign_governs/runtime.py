@@ -88,14 +88,38 @@ def _candidate_updates_from_contract(base_state: dict[str, Any]) -> tuple[dict[s
                 )
 
     removal_policy = dict((policies.get("ligature_removal") or {}))
+    removal_update: dict[str, Any] = {}
     if bool(base_state.get("lig_legs") or base_state.get("lig_d") or base_state.get("s_lig")):
+        removal_update = dict(removal_policy.get("canonical_update") or {})
         updates.append(
             {
                 "lane_id": "LIGATURE_REMOVAL",
-                "updates": dict(removal_policy.get("canonical_update") or {}),
+                "updates": dict(removal_update),
                 "zero_shear_override_candidate": True,
             }
         )
+    width_policy = dict((policies.get("width_reduction") or {}))
+    width_step = float(width_policy.get("width_step_mm") or 25.0)
+    minimum_width = float(width_policy.get("minimum_width_mm") or 0.0)
+    current_width = _float_from_state(base_state, ("b", "bw", "beam_width", "beam_width_mm"))
+    if current_width is not None and width_step > 0:
+        next_width = current_width - width_step
+        while next_width >= minimum_width:
+            width_updates = dict(removal_update)
+            width_updates["b"] = next_width
+            updates.append(
+                {
+                    "lane_id": "WIDTH_REDUCTION",
+                    "updates": width_updates,
+                    "restart_proof": {
+                        "full_reinforcement_arrangement_rebuilt": True,
+                        "bar_fit_rechecked": True,
+                        "ligature_fit_rechecked": True,
+                        "complete_design_state_recomputed": True,
+                    },
+                }
+            )
+            next_width -= width_step
     return tuple(updates)
 
 
@@ -105,9 +129,20 @@ def _is_valid_candidate(evaluation: ShearOverdesignCandidateEvaluation) -> bool:
         bool(status.get("candidate_valid", True))
         and evaluation.shear_remains_compliant is True
         and not bool((evaluation.geometry_restriction_status or {}).get("geometry_reduction_attempted"))
-        and bool((evaluation.shear_detailing_update_status or {}).get("shear_detailing_only"))
+        and bool((evaluation.shear_detailing_update_status or {}).get("contract_update_allowed"))
         and not bool((evaluation.failure_flags or {}).get("underdesign_created"))
     )
+
+
+def _float_from_state(state: dict[str, Any], keys: tuple[str, ...]) -> float | None:
+    for key in keys:
+        if key not in state:
+            continue
+        try:
+            return float(state.get(key))
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 def _reinforcement_after(candidate: dict[str, Any]) -> float:
@@ -126,6 +161,24 @@ def _cost_after(candidate: dict[str, Any]) -> float:
         return 999999.0
 
 
+def _width_after(candidate: dict[str, Any]) -> float:
+    width = (candidate.get("width_reduction_status") or {}).get("width_after")
+    if width is None:
+        width = (candidate.get("updates") or {}).get("b")
+    try:
+        return float(width)
+    except (TypeError, ValueError):
+        return 999999.0
+
+
+def _material_quantity_after(candidate: dict[str, Any]) -> float:
+    geometry = dict(candidate.get("width_reduction_status") or {})
+    try:
+        return float(geometry.get("width_after"))
+    except (TypeError, ValueError):
+        return _width_after(candidate)
+
+
 def _ranking_key(candidate: dict[str, Any]) -> tuple[Any, ...]:
     target = dict(candidate.get("target_band_status") or {})
     ligature = dict(candidate.get("ligature_removal_status") or {})
@@ -135,10 +188,12 @@ def _ranking_key(candidate: dict[str, Any]) -> tuple[Any, ...]:
     )
     constructability = str((candidate.get("constructability_status") or {}).get("status") or "")
     return (
-        not zero_no_ligatures,
+        _width_after(candidate),
         not bool(target.get("inside_target_band")),
+        not zero_no_ligatures,
         not bool(ligature.get("no_unnecessary_ligatures_remain")),
         _reinforcement_after(candidate),
+        _material_quantity_after(candidate),
         constructability != "PASS",
         _cost_after(candidate),
         int(candidate.get("candidate_index") or 0),
@@ -228,11 +283,32 @@ def run_shear_overdesign_governs_runtime(
         "accepted_count": len(accepted),
         "selected_candidate_index": selected.get("candidate_index") if selected else None,
         "zero_shear_no_ligatures_ranks_first": zero_shear_selected,
+        "smallest_safe_width_selected": (
+            _width_after(selected) == min(_width_after(row) for row in accepted)
+            if selected and accepted
+            else False
+        ),
     }
+    width_candidates = [row for row in candidates if row.get("lane_id") == "WIDTH_REDUCTION"]
+    accepted_width_candidates = [row for row in accepted if row.get("lane_id") == "WIDTH_REDUCTION"]
+    smallest_safe_width = (
+        min(_width_after(row) for row in accepted_width_candidates)
+        if accepted_width_candidates
+        else None
+    )
+    blocked_width_candidates = [row for row in width_candidates if row not in accepted_width_candidates]
     exact_stop_proof = {
         "exact_stop": exact_stop,
         "target_band_selected": target_band_selected,
         "zero_shear_no_unnecessary_ligatures_remain": zero_shear_selected,
+        "width_reduction_attempted": bool(width_candidates),
+        "smallest_safe_width": smallest_safe_width,
+        "blocked_width_candidate_count": len(blocked_width_candidates),
+        "next_width_blocker": (
+            blocked_width_candidates[0].get("engineering_status")
+            if blocked_width_candidates
+            else None
+        ),
     }
     zero_shear_proof = {
         "zero_or_negligible_shear": bool(float((base_state or {}).get("Vu") or 0.0) == 0.0),
@@ -243,11 +319,26 @@ def run_shear_overdesign_governs_runtime(
         "must_not_terminate_for_zero_utilisation": True,
     }
     geometry_proof = {
-        "geometry_reduction_prohibited": True,
-        "candidate_updates_touch_geometry": any(
+        "depth_reduction_prohibited": True,
+        "width_reduction_allowed": True,
+        "candidate_updates_touch_prohibited_geometry": any(
             bool((row.get("geometry_restriction_status") or {}).get("geometry_reduction_attempted"))
             for row in candidates
         ),
+        "width_reduction_attempted": bool(width_candidates),
+        "width_candidates_tested": tuple(
+            {
+                "candidate_index": row.get("candidate_index"),
+                "width_after": _width_after(row),
+                "accepted": bool(row.get("accepted")),
+                "update_hash": row.get("update_hash"),
+                "candidate_state_hash": row.get("candidate_state_hash"),
+                "engineering_status": row.get("engineering_status"),
+                "reinforcement_fit_status": row.get("reinforcement_fit_status"),
+            }
+            for row in width_candidates
+        ),
+        "smallest_safe_width": smallest_safe_width,
     }
     cta_proof = {
         "proof_only": True,

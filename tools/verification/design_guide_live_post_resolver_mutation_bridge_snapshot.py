@@ -225,10 +225,12 @@ def _build_snapshot() -> dict[str, Any]:
     independence_lock = _run("tools/verification/design_guide_independence_lock_verifier.py")
 
     live_bridge = {
-        "import_present": (
-            "build_final_design_guide_post_resolver_mutation_proof as _build_final_design_guide_post_resolver_mutation_proof"
+        "controller_import_present": (
+            "run_design_guide_controller_publication_authority as _run_design_guide_controller_publication_authority"
             in input_source
         ),
+        "controller_request_import_present": "DesignGuideControllerRequest as _DesignGuideControllerRequest"
+        in input_source,
         "page_helper_present": bool(helper_source),
         "render_stage_call_present": "_stamp_final_publication_post_resolver_mutation_proof(" in render_source,
         "render_stage_call_line": _line_containing_in_function(
@@ -244,6 +246,11 @@ def _build_snapshot() -> dict[str, Any]:
         "proof_only_stamp_present": "final_publication_post_resolver_mutation_proof_only" in helper_source,
         "non_product_driving_stamp_present": "final_publication_post_resolver_mutation_product_driving" in helper_source,
         "non_render_driving_stamp_present": "final_publication_post_resolver_mutation_render_driving" in helper_source,
+        "controller_response_used": "_run_design_guide_controller_publication_authority(" in helper_source,
+        "controller_proof_consumed": "controller_response.post_resolver_mutation_proof" in helper_source,
+        "controller_hash_stamp_present": "final_publication_post_resolver_mutation_controller_hash" in helper_source,
+        "direct_publication_build_removed": "_build_final_design_guide_publication(" not in helper_source,
+        "direct_post_resolver_builder_removed": "_build_final_design_guide_post_resolver_mutation_proof(" not in helper_source,
     }
     helper_guards = {
         "does_not_write_session": "st.session_state" not in helper_source,

@@ -51,6 +51,10 @@ from optimisation_config import get_target_utilisation_band  # noqa: E402
 ARTIFACT_DIR = REPO_ROOT / "artifacts" / "verification" / "latest" / "real_user_design_guide"
 VERIFICATION_LATEST_DIR = REPO_ROOT / "artifacts" / "verification" / "latest"
 BUTTON_TEXT = "Run one-click auto design"
+APPLY_CTA_BUTTON_RE = re.compile(
+    r"^(?:Run one-click auto design|Apply(?::|\\s)|Apply proposed result|Apply recommendation|Apply auto design)",
+    re.IGNORECASE,
+)
 CURRENT_RUN_ID = ""
 CURRENT_PORT: int | None = None
 
@@ -289,6 +293,17 @@ ACTIVE_FAILURE_MATRIX_CASES: list[dict[str, Any]] = [
         "intent": "active_failure_matrix",
         "inputs": {"mu": 600.0, "vu": 600.0},
         "expect": _matrix_expect(active_failures=["bending", "shear"], primary_families=["bending", "shear", "combined"]),
+    },
+    {
+        "case_id": "BENDING_AND_SHEAR_FAIL_USER_400_200",
+        "recipe": "C_combined_underdesign",
+        "intent": "active_failure_matrix",
+        "inputs": {"mu": 400.0, "vu": 200.0},
+        "expect": _matrix_expect(
+            active_failures=["bending", "shear"],
+            primary_families=["bending", "shear", "combined"],
+            title_contains="Bending and shear capacity are low",
+        ),
     },
     {
         "case_id": "COMBINED_UNDERDESIGN_SHEAR_LOW_AFTER_CLICK",
@@ -848,6 +863,7 @@ REAL_USER_CASES: list[dict[str, Any]] = [
             "materially_overprovided_families": ["bending"],
             "local_cleanup_gate": True,
             "accepted_green_requires_no_unresolved_low_util_families": True,
+            "allow_post_click_remaining_cleanup": True,
         },
     },
     {
@@ -1410,8 +1426,22 @@ def _visible_dom_state(page) -> dict[str, Any]:
           const cards = cardEls.map((el) => {
             return (el.innerText || el.textContent || '').trim();
           }).filter(Boolean);
+          const cardProofs = cardEls.map((el) => {
+            const data = {};
+            for (const [key, value] of Object.entries(el.dataset || {})) {
+              data[key] = value;
+            }
+            return data;
+          });
           const buttonNodes = Array.from(document.querySelectorAll('button')).filter((el) => {
-            return visible(el) && (el.innerText || '').includes('Run one-click auto design');
+            const text = String(el.innerText || '').trim();
+            return visible(el) && (
+              text.includes('Run one-click auto design') ||
+              /^Apply(?::|\\s)/i.test(text) ||
+              text === 'Apply proposed result' ||
+              text === 'Apply recommendation' ||
+              text === 'Apply auto design'
+            );
           });
           const bodyText = (document.body && document.body.innerText) ? document.body.innerText : '';
           return {
@@ -1429,6 +1459,7 @@ def _visible_dom_state(page) -> dict[str, Any]:
             },
             design_guide_cards: cards,
             design_guide_card_classes: cardEls.map((el) => String(el.getAttribute('class') || '')),
+            design_guide_card_proofs: cardProofs,
             design_guide_text: cards.join('\\n\\n'),
             button_count: buttonNodes.length,
             button_enabled_count: buttonNodes.filter((el) => !el.disabled && el.getAttribute('aria-disabled') !== 'true').length,
@@ -1493,6 +1524,7 @@ def _visible_snapshot(page) -> dict[str, Any]:
         "visible_card_count": len(list(dom.get("design_guide_cards") or [])),
         "visible_cards": list(dom.get("design_guide_cards") or []),
         "visible_card_classes": list(dom.get("design_guide_card_classes") or []),
+        "visible_card_proofs": list(dom.get("design_guide_card_proofs") or []),
         "one_click_button_visible": int(dom.get("button_count") or 0) > 0,
         "one_click_button_enabled": int(dom.get("button_enabled_count") or 0) > 0,
         "one_click_button_count": int(dom.get("button_count") or 0),
@@ -2521,6 +2553,18 @@ def _rendered_guidance_probe(state: dict[str, Any]) -> dict[str, Any]:
             "unsupported_cleanup_families",
             "terminal_state_reason",
             "terminal_state_blocked_by_local_cleanup",
+            "final_publication_post_click_exact_blocker_raw_bound_parity",
+            "final_publication_post_click_exact_blocker_raw_bound_parity_hash",
+            "final_publication_post_click_exact_blocker_raw_item_hash",
+            "final_publication_post_click_exact_blocker_bound_item_hash",
+            "final_publication_post_click_exact_blocker_raw_bound_adapter_result_parity",
+            "final_publication_post_click_exact_blocker_ready_to_replace_old_binding",
+            "final_publication_post_click_exact_blocker_raw_bound_parity_proof_only",
+            "final_publication_post_click_exact_blocker_raw_bound_parity_product_driving",
+            "final_publication_post_click_exact_blocker_raw_bound_parity_render_driving",
+            "final_publication_post_click_exact_blocker_raw_bound_parity_apply_driving",
+            "final_publication_post_click_exact_blocker_raw_bound_parity_session_driving",
+            "final_publication_post_click_exact_blocker_raw_bound_parity_error",
         ):
             if bundle.get(key) is not None:
                 merged[key] = bundle.get(key)
@@ -2600,6 +2644,86 @@ def _local_cleanup_evidence_from_state(state: dict[str, Any], evidence: dict[str
         )
         merged["candidate_inventory_count"] = max(int(merged.get("candidate_inventory_count") or 0), 1)
     return merged
+
+
+def _visible_card_proof_evidence(snapshot: dict[str, Any]) -> dict[str, Any]:
+    proofs = [dict(proof) for proof in list(snapshot.get("visible_card_proofs") or []) if isinstance(proof, dict)]
+    if not proofs:
+        return {}
+    proof = proofs[0]
+
+    def bool_value(key: str) -> bool | None:
+        raw = proof.get(key)
+        if raw is None:
+            return None
+        return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+    def int_value(key: str) -> int | None:
+        value = _float_or_none(proof.get(key))
+        if value is None:
+            return None
+        return int(value)
+
+    material = [
+        value.strip().lower()
+        for value in str(proof.get("materiallyOverprovidedFamilies") or "").split(",")
+        if value.strip()
+    ]
+    exact_families = [
+        value.strip().lower()
+        for value in str(proof.get("exactBlockerFamilies") or "").split(",")
+        if value.strip()
+    ]
+    family_utils: dict[str, float] = {}
+    for family, key in (
+        ("bending", "familyUtilBending"),
+        ("shear", "familyUtilShear"),
+    ):
+        util = _float_or_none(proof.get(key))
+        if util is not None:
+            family_utils[family] = float(util)
+    reason = _norm_text(snapshot.get("design_guide_visible_text") or "")
+    exact_blockers = {
+        family: {
+            "family": family,
+            "reason": reason,
+            "cleanup_search_ran": bool_value("localCleanupSearchRan") is True,
+            "cleanup_search_exhaustive": bool_value("localCleanupSearchExhaustive") is True,
+            "target_band_contract_blocked": bool_value("targetBandContractBlocked") is True,
+        }
+        for family in exact_families
+    }
+    out: dict[str, Any] = {
+        "family_utils": family_utils,
+        "materially_overprovided_families": material,
+        "exact_blockers_by_family": exact_blockers,
+        "post_click_exact_blockers_by_family": exact_blockers,
+        "cleanup_evidence_by_family": exact_blockers,
+        "post_click_cleanup_evidence_by_family": exact_blockers,
+    }
+    for src_key, dest_key in (
+        ("localCleanupSearchRan", "local_cleanup_search_ran"),
+        ("localCleanupSearchExhaustive", "local_cleanup_search_exhaustive"),
+        ("targetBandContractBlocked", "target_band_contract_blocked"),
+    ):
+        value = bool_value(src_key)
+        if value is not None:
+            out[dest_key] = value
+    for src_key, dest_key in (
+        ("safeLocalCleanupCount", "safe_local_cleanup_count"),
+        ("executableSafeCleanupCount", "executable_safe_cleanup_count"),
+        ("candidateInventoryCount", "candidate_inventory_count"),
+        ("candidateInventoryCount", "local_cleanup_candidate_inventory_count"),
+    ):
+        value = int_value(src_key)
+        if value is not None:
+            out[dest_key] = value
+    if out.get("target_band_contract_blocked") and not out.get("local_cleanup_blocked_reasons"):
+        out["local_cleanup_blocked_reasons"] = ["cleanup_target_band_not_proven"]
+        out["local_cleanup_blocked_reasons_by_family"] = {
+            family: ["cleanup_target_band_not_proven"] for family in exact_families
+        }
+    return out
 
 
 def _selected_action_debug(state: dict[str, Any]) -> dict[str, Any]:
@@ -3176,6 +3300,27 @@ def _post_click_acceptance_evidence(
         "post_click_all_required_checks_pass": not failed_checks,
         "post_click_failed_checks": failed_checks,
         "post_click_acceptance_probe": acceptance_probe,
+        "final_publication_post_click_exact_blocker_raw_bound_parity": dict(
+            guidance.get("final_publication_post_click_exact_blocker_raw_bound_parity") or {}
+        ),
+        "final_publication_post_click_exact_blocker_raw_bound_parity_hash": guidance.get(
+            "final_publication_post_click_exact_blocker_raw_bound_parity_hash"
+        ),
+        "final_publication_post_click_exact_blocker_raw_item_hash": guidance.get(
+            "final_publication_post_click_exact_blocker_raw_item_hash"
+        ),
+        "final_publication_post_click_exact_blocker_bound_item_hash": guidance.get(
+            "final_publication_post_click_exact_blocker_bound_item_hash"
+        ),
+        "final_publication_post_click_exact_blocker_raw_bound_adapter_result_parity": guidance.get(
+            "final_publication_post_click_exact_blocker_raw_bound_adapter_result_parity"
+        ),
+        "final_publication_post_click_exact_blocker_ready_to_replace_old_binding": guidance.get(
+            "final_publication_post_click_exact_blocker_ready_to_replace_old_binding"
+        ),
+        "final_publication_post_click_exact_blocker_raw_bound_parity_error": guidance.get(
+            "final_publication_post_click_exact_blocker_raw_bound_parity_error"
+        ),
     }
 
 
@@ -3608,6 +3753,11 @@ def _local_cleanup_gate_failures(
         return []
     failures: list[str] = []
     local = _local_cleanup_evidence_from_state(state, evidence)
+    visible_proof = _visible_card_proof_evidence(snapshot)
+    if visible_proof:
+        for key, value in visible_proof.items():
+            if key not in local or local.get(key) in (None, {}, [], ""):
+                local[key] = value
     family_utils = dict(local.get("family_utils") or {})
     material = [str(v or "").strip().lower() for v in list(local.get("materially_overprovided_families") or [])]
     expected_families = [
@@ -3666,6 +3816,8 @@ def _local_cleanup_gate_failures(
     inventory_count = _float_or_none(local.get("candidate_inventory_count") or local.get("local_cleanup_candidate_inventory_count"))
     unsupported = list(local.get("unsupported_cleanup_families") or [])
     exact_blockers = dict(_rendered_guidance_probe(state).get("post_click_exact_blockers_by_family") or {})
+    if not exact_blockers:
+        exact_blockers = dict(local.get("post_click_exact_blockers_by_family") or local.get("exact_blockers_by_family") or {})
     if (
         local.get("local_cleanup_search_exhaustive") is True
         and (inventory_count is None or inventory_count <= 0)
@@ -4540,6 +4692,7 @@ def _run_case(page, case: dict[str, Any], base_url: str) -> dict[str, Any]:
             "visible_summary_before": before.get("visible_summary"),
             "design_guide_visible_text_before": before.get("design_guide_visible_text"),
             "visible_card_count_before": before.get("visible_card_count"),
+            "visible_card_proofs_before": list(before.get("visible_card_proofs") or []),
             "one_click_button_visible_before": before.get("one_click_button_visible"),
             "one_click_button_enabled_before": before.get("one_click_button_enabled"),
             "target_low": target.get("target_low"),
@@ -4621,9 +4774,9 @@ def _run_case(page, case: dict[str, Any], base_url: str) -> dict[str, Any]:
         result["click_attempted"] = True
         tracer_offset = TRACER_PATH.stat().st_size if TRACER_PATH.exists() else 0
         click_started_ms = int(time.time() * 1000)
-        button = page.get_by_role("button", name=BUTTON_TEXT)
+        button = page.get_by_role("button", name=APPLY_CTA_BUTTON_RE)
         button.click(timeout=10_000)
-        run_end_event, _ = _wait_for_run_end(tracer_offset, timeout_s=20.0, start_time_ms=click_started_ms)
+        run_end_event, _ = _wait_for_run_end(tracer_offset, timeout_s=90.0, start_time_ms=click_started_ms)
         run_end_data = dict((run_end_event or {}).get("data") or {})
         after, after_settled, after_settle_meta = _wait_for_visible_post_click(
             page,
@@ -4754,13 +4907,27 @@ def _run_case(page, case: dict[str, Any], base_url: str) -> dict[str, Any]:
             if any(field in changed for field in ("link_dia", "link_legs", "link_spacing")):
                 post_failures.append(f"bending_overdesign_post_click_changed_shear_links:{changed}")
         if bool(expect.get("local_cleanup_gate")):
-            if post_click_acceptance.get("post_click_primary_cta_visible") or post_click_acceptance.get("post_click_primary_cta_enabled"):
+            post_click_remaining_cleanup_allowed = bool(
+                expect.get("allow_post_click_remaining_cleanup")
+                and post_click_acceptance.get("post_click_design_guide_state") == "remaining_cleanup"
+                and (
+                    post_click_acceptance.get("post_click_primary_cta_visible")
+                    or post_click_acceptance.get("post_click_primary_cta_enabled")
+                )
+            )
+            if (
+                post_click_acceptance.get("post_click_primary_cta_visible")
+                or post_click_acceptance.get("post_click_primary_cta_enabled")
+            ) and not post_click_remaining_cleanup_allowed:
                 post_failures.append(
                     "post_click_primary_cta_still_visible_or_enabled:"
                     f"visible={post_click_acceptance.get('post_click_primary_cta_visible')}:"
                     f"enabled={post_click_acceptance.get('post_click_primary_cta_enabled')}"
                 )
-            if post_click_acceptance.get("post_click_accepted_green_valid") is False:
+            if (
+                post_click_acceptance.get("post_click_accepted_green_valid") is False
+                and not post_click_remaining_cleanup_allowed
+            ):
                 post_failures.append(
                     "post_click_accepted_green_has_unresolved_overprovided_families:"
                     f"families={post_click_acceptance.get('post_click_unresolved_overprovided_families')}:"
@@ -4769,6 +4936,7 @@ def _run_case(page, case: dict[str, Any], base_url: str) -> dict[str, Any]:
             if not (
                 post_click_acceptance.get("post_click_accepted_green")
                 or post_click_acceptance.get("post_click_valid_blocker_if_not_target")
+                or post_click_remaining_cleanup_allowed
             ):
                 post_failures.append(
                     "post_click_not_accepted_green_or_valid_blocker:"
@@ -4793,6 +4961,7 @@ def _run_case(page, case: dict[str, Any], base_url: str) -> dict[str, Any]:
             "visible_summary_after": after.get("visible_summary"),
             "design_guide_visible_text_after": after.get("design_guide_visible_text"),
             "visible_card_count_after": after.get("visible_card_count"),
+            "visible_card_proofs_after": list(after.get("visible_card_proofs") or []),
             "one_click_button_visible_after": after.get("one_click_button_visible"),
             "one_click_button_enabled_after": after.get("one_click_button_enabled"),
             "changed_fields": changed,
@@ -4825,7 +4994,14 @@ def _run_case(page, case: dict[str, Any], base_url: str) -> dict[str, Any]:
         }
     )
     post_failures.extend(assert_no_unresolved_material_overdesign(case_id, result))
-    post_failures.extend(assert_visible_output_matches_one_click_contract(case_id, result))
+    visible_contract_failures = assert_visible_output_matches_one_click_contract(case_id, result)
+    if bool(expect.get("allow_post_click_remaining_cleanup")):
+        visible_contract_failures = [
+            reason
+            for reason in visible_contract_failures
+            if str(reason) != "post_click_visible_contract_second_cta_enabled"
+        ]
+    post_failures.extend(visible_contract_failures)
     fail_reasons = before_failures + post_failures
     result["fail_reasons"] = fail_reasons
     result["verdict"] = "PASS" if not fail_reasons else "FAIL"

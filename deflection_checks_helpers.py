@@ -1,19 +1,13 @@
 from typing import Any, Dict
 
 from engineering_check_ui import sync_legacy_value_limit
+from calculations.deflection import (
+    format_deflection_allowable_limit_mm as _format_deflection_allowable_limit_mm,
+)
 from state_and_helpers import (
     get_param,
     get_deflection_limit_ratio,
-    get_deflection_limit_label_from_ratio,
 )
-
-
-def _format_deflection_allowable_limit_mm(defl_limit_mm: float, defl_limit_ratio: float) -> str:
-    ratio = get_deflection_limit_ratio(defl_limit_ratio)
-    ratio_label = get_deflection_limit_label_from_ratio(ratio)
-    if defl_limit_mm and defl_limit_mm > 0:
-        return f"δlim = {defl_limit_mm:.2f} mm ({ratio_label})"
-    return "—"
 
 
 def build_deflection_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str, Any]:

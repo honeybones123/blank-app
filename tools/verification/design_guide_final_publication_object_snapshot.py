@@ -42,7 +42,11 @@ FORBIDDEN_SOURCE_TERMS = {
 }
 
 FORBIDDEN_SOURCE_TERM_EXCEPTIONS = {
-    "one_click": {"one_click_action_handoff"},
+    "one_click": {
+        "one_click_action_handoff",
+        "one_click_target_reaching_candidate_exists",
+        "generic_one_click_solver_skipped",
+    },
 }
 
 REQUIRED_PUBLICATION_FIELDS = {

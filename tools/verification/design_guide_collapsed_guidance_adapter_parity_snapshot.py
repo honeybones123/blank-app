@@ -1,4 +1,4 @@
-"""Proof-only parity snapshot for collapsed guidance item publication adapter.
+﻿"""Proof-only parity snapshot for collapsed guidance item publication adapter.
 
 This verifier proves Design Brain can build the collapsed_guidance_items item
 shape from FinalDesignGuidePublication without importing page/UI/session/apply
@@ -177,11 +177,9 @@ def _build_snapshot() -> dict[str, Any]:
         publication = build_final_design_guide_publication(item=case["item"])
         adapter_a = build_collapsed_guidance_item_from_final_publication(
             publication,
-            current_item_compatibility=case["item"],
         )
         adapter_b = build_collapsed_guidance_item_from_final_publication(
             publication,
-            current_item_compatibility=case["item"],
         )
         missing_fields = [field for field in REQUIRED_ADAPTER_FIELDS if field not in adapter_a]
         hash_stable = _stable_hash(adapter_a) == _stable_hash(adapter_b)
@@ -368,3 +366,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

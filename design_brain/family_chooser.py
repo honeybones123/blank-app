@@ -20,6 +20,7 @@ USE_CONTRACT_FAMILY_CLASSIFIER = False
 FAMILY_IDS: tuple[str, ...] = (
     "SERVICEABILITY_GOVERNS",
     "COMBINED_BENDING_SHEAR_FAIL",
+    "GEOMETRY_DETAILING_GOVERNS",
     "BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS",
     "SHEAR_FAIL_BENDING_OVERDESIGN_GOVERNS",
     "BENDING_FAIL_GOVERNS",
@@ -41,6 +42,9 @@ RAW_FLAG_KEYS: tuple[str, ...] = (
     "min_shear_reo_fail",
     "bending_overdesigned",
     "shear_overdesigned",
+    "zero_shear_with_ligatures",
+    "unnecessary_shear_reinforcement_exists",
+    "shear_cleanup_possible",
     "bending_within_target_band",
     "shear_within_target_band",
     "locked_repair_blocked",
@@ -65,6 +69,14 @@ def _raw(flags: dict[str, Any], key: str) -> bool:
 def normalise_raw_state_flags(flags: dict[str, Any] | None) -> dict[str, Any]:
     source = dict(flags or {})
     out = {key: _raw(source, key) for key in RAW_FLAG_KEYS}
+    zero_shear_ligature_cleanup = bool(
+        out["zero_shear_with_ligatures"]
+        or out["unnecessary_shear_reinforcement_exists"]
+        or out["shear_cleanup_possible"]
+    )
+    if zero_shear_ligature_cleanup and not out["shear_fail"]:
+        out["shear_overdesigned"] = True
+        out["shear_acceptable"] = True
     out["active_combined_bending_shear_failure"] = bool(out["bending_fail"] and out["shear_fail"])
     out["any_strength_fail"] = bool(out["bending_fail"] or out["shear_fail"])
     out["any_min_reo_fail"] = bool(out["min_bending_reo_fail"] or out["min_shear_reo_fail"])
@@ -139,6 +151,12 @@ def _whole_beam_evidence_from_raw_flags(
     )
     out.setdefault("exact_stop_available", _value("exact_stop_available", bool(flags["exact_stop_proven"])))
     out.setdefault("no_valid_repair_available", _value("no_valid_repair_available", bool(flags["locked_repair_blocked"] and not flags["legal_repair_exists"])))
+    out.setdefault("zero_shear_with_ligatures", _value("zero_shear_with_ligatures", bool(flags.get("zero_shear_with_ligatures"))))
+    out.setdefault(
+        "unnecessary_shear_reinforcement_exists",
+        _value("unnecessary_shear_reinforcement_exists", bool(flags.get("unnecessary_shear_reinforcement_exists"))),
+    )
+    out.setdefault("shear_cleanup_possible", _value("shear_cleanup_possible", bool(flags.get("shear_cleanup_possible"))))
     return out
 
 
@@ -256,13 +274,6 @@ def _prune_secondary_overdesign_matches(matched: list[str], flags: dict[str, Any
 
     out = list(matched or [])
     if (
-        "BENDING_FAIL_GOVERNS" in out
-        and "BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS" in out
-        and flags["bending_fail"]
-        and not flags["shear_fail"]
-    ):
-        out = [family for family in out if family != "BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS"]
-    if (
         "SHEAR_FAIL_GOVERNS" in out
         and "SHEAR_FAIL_BENDING_OVERDESIGN_GOVERNS" in out
         and flags["shear_fail"]
@@ -273,30 +284,36 @@ def _prune_secondary_overdesign_matches(matched: list[str], flags: dict[str, Any
 
 
 FAMILY_DEFINITIONS: dict[str, FamilyPredicate] = {
-    "SERVICEABILITY_GOVERNS": lambda f: f["serviceability_fail"],
+    "SERVICEABILITY_GOVERNS": lambda f: f["serviceability_fail"] and not f["geometry_detailing_fail"],
     "LOCKED_NO_REPAIR": lambda f: (
         bool(f["repair_required"] or f["bending_fail"] or f["shear_fail"] or f["serviceability_fail"])
         and f["locked_repair_blocked"]
         and not f["legal_repair_exists"]
+        and not f["serviceability_fail"]
         and not (
             f["bending_fail"]
             and not f["shear_fail"]
             and not f["serviceability_fail"]
         )
     ),
+    "GEOMETRY_DETAILING_GOVERNS": lambda f: f["geometry_detailing_fail"],
     "COMBINED_BENDING_SHEAR_FAIL": lambda f: (
         not f["serviceability_fail"]
+        and not f["geometry_detailing_fail"]
         and not f["locked_repair_blocked"]
         and f["bending_fail"]
         and f["shear_fail"]
     ),
     "BENDING_FAIL_GOVERNS": lambda f: (
         not f["serviceability_fail"]
+        and not f["geometry_detailing_fail"]
         and f["bending_fail"]
         and not f["shear_fail"]
+        and not f["shear_overdesigned"]
     ),
     "BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS": lambda f: (
         not f["serviceability_fail"]
+        and not f["geometry_detailing_fail"]
         and not f["locked_repair_blocked"]
         and f["bending_fail"]
         and not f["shear_fail"]
@@ -304,6 +321,7 @@ FAMILY_DEFINITIONS: dict[str, FamilyPredicate] = {
     ),
     "SHEAR_FAIL_BENDING_OVERDESIGN_GOVERNS": lambda f: (
         not f["serviceability_fail"]
+        and not f["geometry_detailing_fail"]
         and not f["locked_repair_blocked"]
         and not f["bending_fail"]
         and f["shear_fail"]
@@ -311,6 +329,7 @@ FAMILY_DEFINITIONS: dict[str, FamilyPredicate] = {
     ),
     "SHEAR_FAIL_GOVERNS": lambda f: (
         not f["serviceability_fail"]
+        and not f["geometry_detailing_fail"]
         and not f["locked_repair_blocked"]
         and not f["bending_fail"]
         and f["shear_fail"]
@@ -341,8 +360,8 @@ FAMILY_DEFINITIONS: dict[str, FamilyPredicate] = {
         _no_failure(f)
         and not f["bending_overdesigned"]
         and not f["shear_overdesigned"]
-        and f["bending_within_target_band"]
-        and f["shear_within_target_band"]
+        and bool(f["bending_within_target_band"] or f.get("bending_acceptable"))
+        and bool(f["shear_within_target_band"] or f.get("shear_acceptable"))
     ),
     "EXACT_STOP_PROVEN": lambda f: (
         _no_failure(f)

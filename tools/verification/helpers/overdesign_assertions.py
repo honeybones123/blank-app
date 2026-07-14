@@ -87,6 +87,37 @@ def _blockers_by_family(debug: dict[str, Any], *, post_click: bool = False) -> d
                 out.setdefault(fam, {}).update(dict(detail))
             elif isinstance(detail, str) and detail.strip():
                 out.setdefault(fam, {})["reason"] = detail
+    proof_key = "visible_card_proofs_after" if post_click else "visible_card_proofs_before"
+    text_key = "design_guide_visible_text_after" if post_click else "design_guide_visible_text_before"
+    for proof in list(debug.get(proof_key) or []):
+        if not isinstance(proof, dict):
+            continue
+        exact_families = [
+            value.strip().lower()
+            for value in str(proof.get("exactBlockerFamilies") or "").split(",")
+            if value.strip()
+        ]
+        if not exact_families:
+            continue
+        target_blocked = str(proof.get("targetBandContractBlocked") or "").strip().lower() in {"1", "true", "yes", "y"}
+        search_ran = str(proof.get("localCleanupSearchRan") or "").strip().lower() in {"1", "true", "yes", "y"}
+        search_exhaustive = str(proof.get("localCleanupSearchExhaustive") or "").strip().lower() in {"1", "true", "yes", "y"}
+        safe_count = _float_or_none(proof.get("safeLocalCleanupCount"))
+        executable_count = _float_or_none(proof.get("executableSafeCleanupCount"))
+        reason = str(debug.get(text_key) or debug.get("design_guide_visible_text") or "").strip()
+        for fam in exact_families:
+            detail = out.setdefault(fam, {})
+            detail.setdefault("reason", reason)
+            detail["target_band_contract_blocked"] = target_blocked
+            detail["local_cleanup_search_ran"] = search_ran
+            detail["local_cleanup_search_exhaustive"] = search_exhaustive
+            detail["safe_cleanup_count"] = safe_count
+            detail["executable_cleanup_count"] = executable_count
+            if fam == "bending":
+                detail["bending_cleanup_search_ran"] = search_ran
+                detail["bending_cleanup_search_exhaustive"] = search_exhaustive
+                detail["safe_bending_cleanup_count"] = safe_count
+                detail["executable_bending_cleanup_count"] = executable_count
     return out
 
 

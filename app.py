@@ -16,6 +16,80 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+
+def _apply_sharp_embed_css() -> None:
+    """Keep the embedded app sharp by sizing the Streamlit UI, not the iframe."""
+    st.markdown(
+        """
+<style>
+  html, body, [class*="css"] {
+    font-size: 14px;
+  }
+
+  .stApp {
+    background: #ffffff;
+  }
+
+  .stApp [data-testid="stMainBlockContainer"],
+  .stApp .block-container {
+    max-width: 1180px !important;
+    padding-top: 2rem !important;
+    padding-right: 2.25rem !important;
+    padding-left: 2.25rem !important;
+    padding-bottom: 2rem !important;
+  }
+
+  .stApp h1 {
+    font-size: 2rem !important;
+    line-height: 1.15 !important;
+  }
+
+  .stApp h2 {
+    font-size: 1.45rem !important;
+  }
+
+  .stApp .stMarkdown h2 {
+    font-size: 1.45rem !important;
+  }
+
+  .stApp h3 {
+    font-size: 1.1rem !important;
+  }
+
+  .stApp .stMarkdown h3 {
+    font-size: 1.1rem !important;
+  }
+
+  .stApp div[data-testid="stMetricValue"] {
+    font-size: 1.35rem !important;
+  }
+
+  .stApp .stButton button,
+  .stApp .stDownloadButton button,
+  .stApp div[data-baseweb="select"] > div,
+  .stApp input,
+  .stApp textarea {
+    min-height: 2.2rem !important;
+    font-size: 0.9rem !important;
+  }
+
+  section[data-testid="stSidebar"] {
+    width: 17rem !important;
+  }
+
+  section[data-testid="stSidebar"] .block-container {
+    padding-top: 1.25rem !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+</style>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+_apply_sharp_embed_css()
+
 from widgets_helpers import apply_global_widget_css, apply_calcbox_css, info_i_button
 from state_and_helpers import hc_try
 
@@ -28,6 +102,7 @@ from state_and_helpers import (
     resolve_design_actions,
     load_active_beam_into_shared,
     load_proxies_from_active_set,
+    sync_load_edit_mode_from_toggle,
     recalc_derived_values,
     update_results,
     compute_all_results,
@@ -105,10 +180,25 @@ _BROWSER_RECIPE_ROW_MODEL_KEYS = {
     "top_row_2_spacing",
     "top_row_2_dia",
 }
+_BROWSER_RECIPE_DESIGN_GUIDE_PROOF_KEYS = {
+    "exact_stop_available",
+    "exact_stop_proven",
+    "exact_stop_proof",
+    "locked_no_repair",
+    "locked_repair_blocked",
+    "all_repair_paths_locked",
+    "repair_blocked_by_lock",
+    "no_valid_repair_available",
+    "repair_required",
+    "reinforcement_lock",
+    "reo_locked",
+    "shear_lock",
+    "geometry_lock",
+}
 
 
 def _apply_normal_user_page_zoom_css() -> None:
-    if _BROWSER_TEST_MODE or _EXPLICIT_DEV_MODE:
+    if _browser_test_mode_active() or _EXPLICIT_DEV_MODE:
         return
     st.markdown(
         """
@@ -168,6 +258,29 @@ def _render_hidden_browser_state_probe(browser_state_probe_text: str, browser_st
         key=browser_state_probe_key,
         height=120,
         disabled=True,
+    )
+
+
+def _should_emit_browser_state_probe(selected_slug: str | None, probe_phase: str | None = None) -> bool:
+    """Allow hidden browser-state proof without enabling browser recipe behavior."""
+    if _browser_test_mode_active():
+        return True
+    if str(selected_slug or "").strip().lower() not in {"inputs", "design"}:
+        return False
+    if os.environ.get("PERF_TRACE_INPUTS", "").strip().lower() in _TRUE_ENV_VALUES:
+        return True
+    try:
+        bundle = st.session_state.get(inputs_page.DESIGN_GUIDE_DEBUG_BUNDLE_KEY)
+    except Exception:
+        bundle = None
+    if not isinstance(bundle, dict) or not bundle:
+        return False
+    verifier_payload = dict(bundle.get("final_publication_verifier_payload") or {})
+    return bool(
+        verifier_payload.get("publication_hash")
+        or bundle.get("publication_hash")
+        or bundle.get("final_publication_publication_hash")
+        or bundle.get("actual_card_render_probe")
     )
 _BROWSER_RECIPE_LEGACY_REO_KEYS = {
     "bot1_count",
@@ -264,8 +377,14 @@ def _get_query_param_scalar(name: str):
     return None
 
 
+def _browser_test_mode_active() -> bool:
+    if _BROWSER_TEST_MODE:
+        return True
+    return str(_get_query_param_scalar("browser_test_mode") or "").strip().lower() in _TRUE_ENV_VALUES
+
+
 def _browser_query_param_probe() -> dict:
-    if not _BROWSER_TEST_MODE:
+    if not _browser_test_mode_active():
         return {}
     probe: dict[str, object] = {}
     try:
@@ -327,7 +446,7 @@ def _queue_inputs_refresh_after_shared_seed(source: str) -> None:
 
 
 def _apply_browser_recipe_from_query() -> None:
-    if not _BROWSER_TEST_MODE:
+    if not _browser_test_mode_active():
         return
 
     recipe_name = str(
@@ -393,6 +512,12 @@ def _apply_browser_recipe_from_query() -> None:
             continue
         set_shared(key, value, source=recipe_hydrate_source)
         applied_state[key] = value
+    for key in _BROWSER_RECIPE_DESIGN_GUIDE_PROOF_KEYS:
+        if key in state:
+            st.session_state[key] = state.get(key)
+            applied_state[key] = state.get(key)
+        else:
+            st.session_state.pop(key, None)
 
     # Keep the active beam's canonical stored params aligned with the injected
     # shared recipe state so the next rerun cannot resurrect stale beam data.
@@ -533,7 +658,7 @@ def _apply_browser_recipe_from_query() -> None:
 
 
 def _prime_browser_recipe_results_if_needed() -> None:
-    if not _BROWSER_TEST_MODE:
+    if not _browser_test_mode_active():
         return
     if not bool(st.session_state.get("_browser_recipe_boot_compute_pending")):
         return
@@ -545,7 +670,7 @@ def _prime_browser_recipe_results_if_needed() -> None:
 
 
 def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase: str = "final") -> None:
-    if not _BROWSER_TEST_MODE:
+    if not _should_emit_browser_state_probe(selected_slug, probe_phase):
         return
 
     render_timing_mark("app.browser_test_state_emit.start", selected_slug=selected_slug, probe_phase=probe_phase)
@@ -925,7 +1050,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
         payload = {
             "probe_phase": probe_phase,
             "pre_page_render_lightweight": True,
-            "codex_browser_test_mode": bool(_BROWSER_TEST_MODE),
+            "codex_browser_test_mode": bool(_browser_test_mode_active()),
             "page_slug": selected_slug,
             "browser_recipe": st.session_state.get(_BROWSER_RECIPE_APPLIED_KEY),
             "browser_recipe_kind": st.session_state.get("_browser_recipe_kind"),
@@ -1570,6 +1695,48 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
             "selected_action_type": guidance_debug_probe.get("selected_action_type"),
             "selected_title": guidance_debug_probe.get("selected_title"),
             "overview": dict(guidance_debug_probe.get("overview") or {}),
+            "design_guide_controller_compute_resolver_replacement_trace_only": dict(
+                guidance_debug_probe.get(
+                    "design_guide_controller_compute_resolver_replacement_trace_only"
+                )
+                or {}
+            ),
+            "design_guide_controller_compute_resolver_replacement_trace_only_hash": (
+                guidance_debug_probe.get(
+                    "design_guide_controller_compute_resolver_replacement_trace_only_hash"
+                )
+            ),
+            "design_guide_controller_compute_resolver_replacement_trace_only_payload": dict(
+                guidance_debug_probe.get(
+                    "design_guide_controller_compute_resolver_replacement_trace_only_payload"
+                )
+                or {}
+            ),
+            "design_guide_controller_compute_resolver_replacement_trace_only_live_wired": (
+                guidance_debug_probe.get(
+                    "design_guide_controller_compute_resolver_replacement_trace_only_live_wired"
+                )
+            ),
+            "design_guide_controller_compute_resolver_replacement_trace_only_product_driving": (
+                guidance_debug_probe.get(
+                    "design_guide_controller_compute_resolver_replacement_trace_only_product_driving"
+                )
+            ),
+            "design_guide_controller_compute_resolver_replacement_trace_only_render_driving": (
+                guidance_debug_probe.get(
+                    "design_guide_controller_compute_resolver_replacement_trace_only_render_driving"
+                )
+            ),
+            "design_guide_controller_compute_resolver_replacement_trace_only_apply_driving": (
+                guidance_debug_probe.get(
+                    "design_guide_controller_compute_resolver_replacement_trace_only_apply_driving"
+                )
+            ),
+            "design_guide_controller_compute_resolver_replacement_trace_only_session_driving": (
+                guidance_debug_probe.get(
+                    "design_guide_controller_compute_resolver_replacement_trace_only_session_driving"
+                )
+            ),
             "efficiency_tightening_state": dict(guidance_debug_probe.get("efficiency_tightening_state") or {}),
             "guidance_intent_items": list(guidance_debug_probe.get("guidance_intent_items") or []),
             "displayed_guidance_intent_items": list(guidance_debug_probe.get("displayed_guidance_intent_items") or []),
@@ -2037,7 +2204,13 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
 
     dg_bundle = st.session_state.get(inputs_page.DESIGN_GUIDE_DEBUG_BUNDLE_KEY)
     dg_render_plan = st.session_state.get("_design_guide_render_plan_debug")
-    dg_bundle_safe = _compact_browser_probe_payload(dict(dg_bundle), depth=0) if isinstance(dg_bundle, dict) else {}
+    dg_bundle_raw = dict(dg_bundle) if isinstance(dg_bundle, dict) else {}
+    dg_render_eligibility_trace_safe = dict(
+        dg_bundle_raw.get("design_guide_render_eligibility_trace")
+        or st.session_state.get("_design_guide_render_eligibility_trace_last")
+        or {}
+    )
+    dg_bundle_safe = _compact_browser_probe_payload(dg_bundle_raw, depth=0) if dg_bundle_raw else {}
     dg_render_plan_safe = _compact_browser_probe_payload(dict(dg_render_plan), depth=0) if isinstance(dg_render_plan, dict) else {}
     rendered_bundle_title = str(
         dg_bundle_safe.get("primary_card_title")
@@ -3240,11 +3413,88 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
     dg_primary_card_title_probe = dg_bundle_safe.get("primary_card_title")
     dg_eff = dict(dg_bundle_safe.get("efficiency_tightening_state") or {})
     dg_ov = dict(dg_bundle_safe.get("overview") or {})
+
+    def _first_nested_design_guide_publication_value(source, *keys, depth=0):
+        if depth > 6:
+            return None
+        if isinstance(source, dict):
+            for key in keys:
+                value = source.get(key)
+                if value not in (None, "", [], {}):
+                    return value
+            for nested in source.values():
+                value = _first_nested_design_guide_publication_value(nested, *keys, depth=depth + 1)
+                if value not in (None, "", [], {}):
+                    return value
+        elif isinstance(source, list):
+            for nested in source[:12]:
+                value = _first_nested_design_guide_publication_value(nested, *keys, depth=depth + 1)
+                if value not in (None, "", [], {}):
+                    return value
+        return None
+
+    dg_final_publication_payload = dict(dg_bundle_safe.get("final_publication_verifier_payload") or {})
+    dg_nested_publication_hash = _first_nested_design_guide_publication_value(
+        dg_bundle_safe,
+        "publication_hash",
+        "final_publication_publication_hash",
+        "final_publication_authority_hash",
+    )
+    dg_nested_cta_hash = _first_nested_design_guide_publication_value(
+        dg_bundle_safe,
+        "final_publication_cta_hash",
+        "cta_authority_hash",
+        "cta_hash",
+    )
+    dg_nested_display_hash = _first_nested_design_guide_publication_value(
+        dg_bundle_safe,
+        "final_publication_display_hash",
+        "display_authority_hash",
+        "display_hash",
+    )
+    dg_final_publication_hashes = {
+        "publication_hash": (
+            dg_final_publication_payload.get("publication_hash")
+            or dg_bundle_safe.get("publication_hash")
+            or dg_bundle_safe.get("final_publication_publication_hash")
+            or dg_nested_publication_hash
+        ),
+        "authority_hash": (
+            dg_final_publication_payload.get("final_publication_authority_hash")
+            or dg_bundle_safe.get("final_publication_authority_hash")
+            or dg_nested_publication_hash
+        ),
+        "cta_hash": (
+            dg_final_publication_payload.get("final_publication_cta_hash")
+            or dg_final_publication_payload.get("cta_authority_hash")
+            or dg_final_publication_payload.get("cta_hash")
+            or dg_bundle_safe.get("final_publication_cta_hash")
+            or dg_nested_cta_hash
+        ),
+        "display_hash": (
+            dg_final_publication_payload.get("final_publication_display_hash")
+            or dg_final_publication_payload.get("display_authority_hash")
+            or dg_final_publication_payload.get("display_hash")
+            or dg_bundle_safe.get("final_publication_display_hash")
+            or dg_nested_display_hash
+        ),
+    }
+    dg_selected_family_probe = (
+        dg_final_publication_payload.get("selected_family_id")
+        or dg_final_publication_payload.get("selected_family")
+        or dg_bundle_safe.get("selected_family_id")
+        or dg_bundle_safe.get("published_family_id")
+        or dg_bundle_safe.get("cta_family_id")
+        or dg_bundle_safe.get("family")
+    )
     target_band_probe = target_band_payload(str(st.session_state.get("design_optimisation_goal") or "balanced"))
     payload = {
-        "codex_browser_test_mode": bool(_BROWSER_TEST_MODE),
+        "codex_browser_test_mode": bool(_browser_test_mode_active()),
         "browser_probe_phase": str(probe_phase or "final"),
         "target_band": target_band_probe,
+        "final_publication_verifier_payload": dg_final_publication_payload,
+        "final_publication_hashes": dg_final_publication_hashes,
+        "selected_family_id": dg_selected_family_probe,
         "browser_recipe": st.session_state.get(_BROWSER_RECIPE_APPLIED_KEY),
         "browser_recipe_kind": st.session_state.get("_browser_recipe_kind"),
         "browser_recipe_error": st.session_state.get("_browser_recipe_error"),
@@ -3299,6 +3549,41 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
             "inputs_longitudinal_reo_audit": st.session_state.get("_inputs_longitudinal_reo_audit"),
             "inputs_shear_truth_audit": st.session_state.get("_inputs_shear_truth_audit"),
             "inputs_shear_seed_consume_audit": st.session_state.get("_inputs_shear_seed_consume_audit"),
+            "inputs_rerun_trigger_events": list(st.session_state.get("_inputs_rerun_trigger_events") or [])[-24:],
+            "ssl_rerun_triggers": list(st.session_state.get("_ssl_rerun_triggers") or [])[-24:],
+            "inputs_model_diagram_render_reuse_trace": dict(
+                st.session_state.get("_inputs_model_diagram_render_reuse_trace") or {}
+            ),
+            "inputs_stable_render_reuse_trace": dict(
+                st.session_state.get("_inputs_stable_render_reuse_trace") or {}
+            ),
+            "final_publication_summary_card_html_bypass_debug": dict(
+                st.session_state.get("_final_publication_summary_card_html_bypass_debug") or {}
+            ),
+            "inputs_first_paint_cached_summary_reuse_debug": dict(
+                st.session_state.get("_inputs_first_paint_cached_summary_reuse_debug") or {}
+            ),
+            "inputs_summary_final_render_skip_debug": dict(
+                st.session_state.get("_inputs_summary_final_render_skip_debug") or {}
+            ),
+            "inputs_dirty_cache_probe": {
+                "inputs_dirty": bool(st.session_state.get("inputs_dirty")),
+                "_inputs_dirty": bool(st.session_state.get("_inputs_dirty")),
+                "auto_recompute": bool(st.session_state.get("auto_recompute")),
+                "run_design_clicked": bool(st.session_state.get("run_design_clicked")),
+                "computed_once": bool(st.session_state.get("_computed_once")),
+                "compute_in_progress": bool(st.session_state.get("_compute_in_progress")),
+                "solver_running": bool(st.session_state.get("_solver_running")),
+                "pending_apply_refresh": bool(st.session_state.get("_pending_inputs_apply_refresh")),
+                "apply_in_flight": bool(st.session_state.get(inputs_page.DESIGN_GUIDE_COMPONENT_APPLY_IN_FLIGHT_KEY)),
+                "force_inputs_widget_reseed_once": bool(st.session_state.get("_force_inputs_widget_reseed_once")),
+                "results_version": st.session_state.get("results_version"),
+                "has_cached_results": isinstance(st.session_state.get("cached_results"), dict),
+                "has_cached_compute_results": isinstance(st.session_state.get("_cached_compute_results"), dict),
+                "has_summary_html_cache": isinstance(
+                    st.session_state.get("_final_publication_summary_card_html_cache"), dict
+                ),
+            },
         },
         "active_beam_record_probe": {},
         "page_slug": selected_slug,
@@ -3374,6 +3659,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
             "needs_refresh": st.session_state.get(inputs_page.DESIGN_GUIDE_NEEDS_REFRESH_KEY),
             "panel_baseline_fingerprint": st.session_state.get(inputs_page.DESIGN_GUIDE_PANEL_BASELINE_FP_KEY),
             "debug_bundle": dg_bundle_safe,
+            "render_eligibility_trace": dg_render_eligibility_trace_safe,
             "render_plan_debug": dg_render_plan_safe,
             "guidance_branch": dg_bundle_safe.get("guidance_branch"),
             "terminal_state": dg_bundle_safe.get("design_guide_terminal_state"),
@@ -3569,14 +3855,33 @@ def _render_create_project_form(user_id: str, module: str):
 
 
 def main():
+    try:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "design_guide_tracer.jsonl")
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(
+                json.dumps(
+                    {
+                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+                        + f".{int((time.time() % 1) * 1000):03d}Z",
+                        "event": "app_main_stage",
+                        "source": "app.main",
+                        "data": {"stage": "entry"},
+                    },
+                    sort_keys=True,
+                )
+                + "\n"
+            )
+    except Exception:
+        pass
     # --- ARCHITECTURE LOCK: dev mode flag ---
-    st.session_state.setdefault("_dev_mode", bool(_BROWSER_TEST_MODE or _EXPLICIT_DEV_MODE))
+    _browser_test_mode_for_run = bool(_browser_test_mode_active())
+    st.session_state.setdefault("_dev_mode", bool(_browser_test_mode_for_run or _EXPLICIT_DEV_MODE))
     _apply_normal_user_page_zoom_css()
     reset_speed_profile_last_run()
     reset_rerun_pure_caches()
     ux_probe_begin_rerun()
     incoming_browser_recipe = _get_query_param_scalar(_BROWSER_RECIPE_PARAM)
-    if _BROWSER_TEST_MODE and incoming_browser_recipe:
+    if _browser_test_mode_for_run and incoming_browser_recipe:
         st.session_state["_browser_recipe_query_value"] = incoming_browser_recipe
     render_timing_begin_rerun(
         url_page=_get_query_param_scalar("page"),
@@ -3852,7 +4157,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     render_timing_mark("app.pre_dispatch.init_shared_session_state.start")
     init_shared_session_state()
     render_timing_mark("app.pre_dispatch.init_shared_session_state.end")
-    if _BROWSER_TEST_MODE:
+    if _browser_test_mode_for_run:
         st.session_state["_browser_router_probe"] = {
             "after_init_shared": _browser_action_probe("after_init_shared"),
         }
@@ -3869,7 +4174,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     render_timing_mark("app.pre_dispatch.load_active_beam_into_shared.end", beam_hydrated=beam_hydrated)
     if beam_hydrated:
         _queue_inputs_refresh_after_shared_seed("router_active_beam_shared_seed")
-    if _BROWSER_TEST_MODE:
+    if _browser_test_mode_for_run:
         router_probe = dict(st.session_state.get("_browser_router_probe") or {})
         router_probe["after_load_active_beam"] = {
             **_browser_action_probe("after_load_active_beam"),
@@ -3884,7 +4189,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         browser_recipe_error=st.session_state.get("_browser_recipe_error"),
         boot_compute_pending=bool(st.session_state.get("_browser_recipe_boot_compute_pending")),
     )
-    if _BROWSER_TEST_MODE:
+    if _browser_test_mode_for_run:
         router_probe = dict(st.session_state.get("_browser_router_probe") or {})
         router_probe["after_browser_recipe"] = {
             **_browser_action_probe("after_browser_recipe"),
@@ -3894,9 +4199,10 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         st.session_state["_browser_router_probe"] = router_probe
     render_timing_mark("app.pre_dispatch.load_proxies.start")
     with speed_profile_section("shared_state_hydration.router_load_proxies", category="state_mutation"):
+        sync_load_edit_mode_from_toggle(active_slug=selected_slug)
         load_proxies_from_active_set()
     render_timing_mark("app.pre_dispatch.load_proxies.end")
-    if _BROWSER_TEST_MODE:
+    if _browser_test_mode_for_run:
         router_probe = dict(st.session_state.get("_browser_router_probe") or {})
         router_probe["after_load_proxies"] = _browser_action_probe("after_load_proxies")
         st.session_state["_browser_router_probe"] = router_probe
@@ -3904,14 +4210,14 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     with speed_profile_section("shared_state_hydration.router_derive_design_actions", category="state_mutation"):
         derive_design_actions()
     render_timing_mark("app.pre_dispatch.derive_design_actions.end")
-    if _BROWSER_TEST_MODE:
+    if _browser_test_mode_for_run:
         router_probe = dict(st.session_state.get("_browser_router_probe") or {})
         router_probe["after_derive_design_actions"] = _browser_action_probe("after_derive_design_actions")
         st.session_state["_browser_router_probe"] = router_probe
     render_timing_mark("app.pre_dispatch.prime_browser_recipe_results_if_needed.start")
     _prime_browser_recipe_results_if_needed()
     render_timing_mark("app.pre_dispatch.prime_browser_recipe_results_if_needed.end")
-    if _BROWSER_TEST_MODE:
+    if _browser_test_mode_for_run:
         router_probe = dict(st.session_state.get("_browser_router_probe") or {})
         router_probe["after_browser_recipe_boot_compute"] = _browser_action_probe(
             "after_browser_recipe_boot_compute",
@@ -4007,7 +4313,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
                 "route_page_changed": bool(page_changed),
                 "route_page_changed_at_ms": int(time.time() * 1000) if page_changed else None,
                 "dev_mode": bool(st.session_state.get("_dev_mode", False)),
-                "browser_test_mode": bool(_BROWSER_TEST_MODE),
+                "browser_test_mode": bool(_browser_test_mode_for_run),
             }
         )
         st.session_state["_user_latency_metrics"] = _latency_metrics
@@ -4060,7 +4366,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     finally:
         st.session_state["_sync_lock"] = False
     render_timing_mark("app.pre_dispatch.router_hydrate_active_page_widgets.end", selected_slug=selected_slug)
-    if _BROWSER_TEST_MODE:
+    if _browser_test_mode_for_run:
         router_probe = dict(st.session_state.get("_browser_router_probe") or {})
         router_probe["after_router_hydrate"] = {
             **_browser_action_probe("after_router_hydrate"),
@@ -4176,14 +4482,42 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
             # Always clear even if compute raises.
             st.session_state["_compute_in_progress"] = False
 
+    def _trace_structural_recompute_stage(stage: str, **extra) -> None:
+        try:
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "design_guide_tracer.jsonl")
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write(
+                    json.dumps(
+                        {
+                            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
+                            + f".{int((time.time() % 1) * 1000):03d}Z",
+                            "event": "app_structural_recompute_stage",
+                            "source": "app.pre_dispatch.structural_recompute",
+                            "data": {
+                                "stage": str(stage or "").strip(),
+                                **dict(extra or {}),
+                            },
+                        },
+                        default=str,
+                        sort_keys=True,
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+
     def _run_structural_recompute_and_cache() -> None:
         t0 = time.perf_counter()
+        _trace_structural_recompute_stage("before_fingerprint")
         fp = _get_compute_fingerprint()
         t_fp = time.perf_counter()
+        _trace_structural_recompute_stage("after_fingerprint")
         if st.session_state.get("_last_compute_fp") == fp:
             t1 = time.perf_counter()
+            _trace_structural_recompute_stage("before_publish_cached_compute_results")
             cache_hit = _publish_cached_compute_results()
             t2 = time.perf_counter()
+            _trace_structural_recompute_stage("after_publish_cached_compute_results", cache_hit=bool(cache_hit))
             st.session_state["_compute_debug"] = {
                 "fingerprint_ms": round((t_fp - t0) * 1000, 2),
                 "cache_update_ms": round((t2 - t1) * 1000, 2),
@@ -4194,23 +4528,38 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
                 return
 
         t1 = time.perf_counter()
+        _trace_structural_recompute_stage("before_resolve_design_actions")
         actions = resolve_design_actions(st.session_state)
+        _trace_structural_recompute_stage(
+            "after_resolve_design_actions",
+            Mu=actions.get("Mu"),
+            Vu=actions.get("Vu"),
+        )
+        _trace_structural_recompute_stage("before_update_results_actions")
         update_results(
             actions_source=str(actions.get("actions_source") or ""),
             Mu_star=float(actions["Mu"]),
             Mu_star_kNm=float(actions["Mu"]),
             Vu_star=float(actions["Vu"]),
         )
+        _trace_structural_recompute_stage("after_update_results_actions")
+        _trace_structural_recompute_stage("before_run_full_compute")
         run_full_compute()
+        _trace_structural_recompute_stage("after_run_full_compute")
         t2 = time.perf_counter()
         st.session_state["_compute_time_ms"] = round((t2 - t1) * 1000, 2)
         try:
             from bending_core import compute_sigma_s_sls_for_crack
 
+            _trace_structural_recompute_stage("before_compute_sigma_s_sls_for_crack")
             compute_sigma_s_sls_for_crack(publish=True)
+            _trace_structural_recompute_stage("after_compute_sigma_s_sls_for_crack")
         except Exception:
+            _trace_structural_recompute_stage("compute_sigma_s_sls_for_crack_error")
             pass
+        _trace_structural_recompute_stage("before_cache_current_compute_results")
         _cache_current_compute_results()
+        _trace_structural_recompute_stage("after_cache_current_compute_results")
         t3 = time.perf_counter()
         st.session_state["_compute_debug"] = {
             "fingerprint_ms": round((t_fp - t0) * 1000, 2),
@@ -4320,9 +4669,23 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
             """
 <div data-testid="inputs-root-dispatch-stable-shell"
      aria-hidden="true"
-     style="min-height:900px;margin:0;padding:0;opacity:0;pointer-events:none;user-select:none;">
+     style="height:0;min-height:0;margin:0;padding:0;overflow:hidden;opacity:0;pointer-events:none;user-select:none;">
   Inputs page stable rerun shell.
 </div>
+<style data-testid="inputs-root-dispatch-status-layout-guard">
+  [data-testid="stStatusWidget"],
+  [data-testid="stDecoration"] {
+    position: fixed !important;
+    top: 0 !important;
+    right: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    z-index: 2147483000 !important;
+  }
+</style>
 """,
             unsafe_allow_html=True,
         )
@@ -4337,8 +4700,15 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
                 root_shell_slot = st.empty()
                 with root_shell_slot.container():
                     _render_inputs_root_dispatch_stable_shell()
-                PAGES[selected_slug][1]()
-                root_shell_slot.empty()
+                st.session_state["_inputs_same_page_root_dispatch_active"] = {
+                    "active": True,
+                    "source": "app.same_page_inputs_root_shell",
+                }
+                try:
+                    PAGES[selected_slug][1]()
+                finally:
+                    st.session_state.pop("_inputs_same_page_root_dispatch_active", None)
+                    root_shell_slot.empty()
             render_timing_mark(
                 "app.page_dispatch.inputs_root_stable_shell.end",
                 selected_slug=selected_slug,
@@ -4350,7 +4720,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         with page_content_slot.container():
             PAGES[selected_slug][1]()
 
-    if _BROWSER_TEST_MODE:
+    if _browser_test_mode_for_run:
         _browser_probe_slot = st.empty()
         render_timing_mark("app.pre_dispatch.browser_probe_pre_page_render.start", selected_slug=selected_slug)
         _emit_browser_test_state(selected_slug, _browser_probe_slot, probe_phase="pre_page_render")
@@ -4369,6 +4739,8 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
             _render_selected_page_in_content_slot()
         finally:
             render_timing_mark("app.page_dispatch.end", selected_slug=selected_slug, browser_test_mode=False)
+            if _should_emit_browser_state_probe(selected_slug, "post_page_render"):
+                _emit_browser_test_state(selected_slug, None, probe_phase="post_page_render")
     try:
         _latency_metrics = dict(st.session_state.get("_user_latency_metrics") or {})
         _latency_metrics.update(
@@ -4419,11 +4791,17 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     # - the changed key matches _last_user_shared_key, AND
     # - it happened very recently (< 0.5s)
     allowed_due_to_user = False
+    touched_shared_keys_raw = st.session_state.get("_shared_keys_touched_this_run")
+    touched_shared_keys = (
+        {str(k) for k in touched_shared_keys_raw if str(k)}
+        if isinstance(touched_shared_keys_raw, set)
+        else set()
+    )
     if recent_user_edit and last_shared:
         # Allow only the shared key the user actually edited (plus maybe one derived "paired" input)
-        allowed_keys = {last_shared}
+        allowed_keys = {last_shared} | touched_shared_keys
         changed_keys = set(changed_shared.keys())
-        if changed_keys.issubset(allowed_keys) and len(changed_keys) <= 2:
+        if changed_keys.issubset(allowed_keys) and len(changed_keys) <= max(2, len(allowed_keys)):
             allowed_due_to_user = True
     allowed_due_to_design_guide_apply = False
     design_guide_apply_keys = st.session_state.get("_allow_design_guide_apply_shared_keys_once")
@@ -4435,6 +4813,23 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
             or bool(st.session_state.get(inputs_page.DESIGN_GUIDE_LAST_APPLY_ROUTE_KEY))
         ):
             allowed_due_to_design_guide_apply = True
+
+    allowed_due_to_design_model = False
+    if selected_slug == "design" and changed_shared:
+        design_support_keys = {"design_support_condition"} | {
+            f"design_support_type_{idx}" for idx in range(1, 7)
+        }
+        design_load_result_keys = {
+            "loads_edit_mode",
+            "loads_edit_toggle",
+            "w_sls_kNm_per_m",
+            "w_uls_kNm_per_m",
+            "P_sls_kN",
+            "P_uls_kN",
+        }
+        design_allowed_keys = design_support_keys | design_load_result_keys | touched_shared_keys
+        if set(changed_shared.keys()).issubset(design_allowed_keys):
+            allowed_due_to_design_model = True
     
     # Block illegal render-time writes to shared INPUTS
     _shared_input_guard_reverted = bool(
@@ -4442,6 +4837,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         and (not wipe_mode)
         and (not allowed_due_to_user)
         and (not allowed_due_to_design_guide_apply)
+        and (not allowed_due_to_design_model)
     )
     if _shared_input_guard_reverted:
         # revert the illegal changes

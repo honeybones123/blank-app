@@ -12,18 +12,25 @@ ALLOWED_COMBINED_SOURCE_FAMILIES = frozenset(
     {"BENDING_FAIL_GOVERNS", "SHEAR_FAIL_GOVERNS", "APPROVED_COMBINED_MERGE_RULE"}
 )
 GEOMETRY_UPDATE_KEYS = frozenset({"D", "beam_depth", "beam_depth_mm", "b", "bw", "beam_width", "beam_width_mm"})
-BENDING_REINFORCEMENT_UPDATE_KEYS = frozenset(
+CANONICAL_BENDING_REINFORCEMENT_UPDATE_KEYS = frozenset(
     {
-        "bot1_count",
-        "db_bot_1",
-        "bot2_count",
-        "db_bot_2",
         "bot_row_count",
         "bot_row_1_bars",
         "bot_row_1_dia",
         "bot_row_2_bars",
         "bot_row_2_dia",
     }
+)
+LEGACY_BENDING_REINFORCEMENT_UPDATE_KEYS = frozenset(
+    {
+        "bot1_count",
+        "db_bot_1",
+        "bot2_count",
+        "db_bot_2",
+    }
+)
+BENDING_REINFORCEMENT_UPDATE_KEYS = frozenset(
+    set(CANONICAL_BENDING_REINFORCEMENT_UPDATE_KEYS) | set(LEGACY_BENDING_REINFORCEMENT_UPDATE_KEYS)
 )
 SHEAR_REINFORCEMENT_UPDATE_KEYS = frozenset({"lig_d", "lig_legs", "s_lig"})
 
@@ -35,6 +42,44 @@ def stable_combined_candidate_hash(value: Any) -> str:
 
 def normalise_combined_mapping(value: dict[str, Any] | None) -> dict[str, Any]:
     return dict(value or {})
+
+
+def _int_like(value: Any) -> int | None:
+    try:
+        return int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+
+
+def normalise_combined_canonical_reinforcement_updates(updates: dict[str, Any] | None) -> dict[str, Any]:
+    """Normalise mixed combined reinforcement updates into canonical row-model keys only."""
+
+    canonical = normalise_combined_mapping(updates)
+    mirror_pairs = (
+        ("bot1_count", "bot_row_1_bars"),
+        ("db_bot_1", "bot_row_1_dia"),
+        ("bot2_count", "bot_row_2_bars"),
+        ("db_bot_2", "bot_row_2_dia"),
+    )
+    for legacy_key, row_key in mirror_pairs:
+        if row_key in canonical:
+            canonical[legacy_key] = canonical[row_key]
+        elif legacy_key in canonical:
+            canonical[row_key] = canonical[legacy_key]
+
+    row_1_bars = _int_like(canonical.get("bot_row_1_bars"))
+    row_2_bars = _int_like(canonical.get("bot_row_2_bars"))
+    row_2_dia = _int_like(canonical.get("bot_row_2_dia"))
+    if "bot_row_count" not in canonical and (
+        row_1_bars is not None
+        or row_2_bars is not None
+        or row_2_dia is not None
+        or "bot_row_1_dia" in canonical
+    ):
+        canonical["bot_row_count"] = 2 if (row_2_bars or 0) > 0 and (row_2_dia or 0) > 0 else 1
+    for legacy_key in LEGACY_BENDING_REINFORCEMENT_UPDATE_KEYS:
+        canonical.pop(legacy_key, None)
+    return canonical
 
 
 def update_keys(value: dict[str, Any] | None) -> tuple[str, ...]:
@@ -49,7 +94,7 @@ def merge_updates(*updates: dict[str, Any] | None) -> dict[str, Any]:
     merged: dict[str, Any] = {}
     for update in updates:
         merged.update(normalise_combined_mapping(update))
-    return merged
+    return normalise_combined_canonical_reinforcement_updates(merged)
 
 
 def interaction_flags(updates: dict[str, Any] | None) -> dict[str, bool]:
@@ -200,16 +245,19 @@ class CombinedCandidateEvaluation:
 __all__ = [
     "ALLOWED_COMBINED_SOURCE_FAMILIES",
     "BENDING_REINFORCEMENT_UPDATE_KEYS",
+    "CANONICAL_BENDING_REINFORCEMENT_UPDATE_KEYS",
     "CombinedBendingShearFailInputs",
     "CombinedCandidateEvaluation",
     "CombinedMergedCandidate",
     "CombinedSourceCandidate",
     "GEOMETRY_UPDATE_KEYS",
+    "LEGACY_BENDING_REINFORCEMENT_UPDATE_KEYS",
     "SHEAR_REINFORCEMENT_UPDATE_KEYS",
     "combined_candidate_state_hash",
     "interaction_flags",
     "merge_updates",
     "normalise_combined_mapping",
+    "normalise_combined_canonical_reinforcement_updates",
     "source_family_allowed",
     "stable_combined_candidate_hash",
     "update_keys",

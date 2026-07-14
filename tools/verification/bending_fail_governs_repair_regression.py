@@ -97,6 +97,11 @@ def main(argv: list[str] | None = None) -> int:
     first_card_text = str(final_snapshot.get("first_card_text") or final_snapshot.get("body_text") or "")
     lower_text = first_card_text.lower()
     ctas = list(evidence.get("visible_cta_buttons") or [])
+    design_guide_apply_ctas = [
+        label
+        for label in ctas
+        if str(label or "").strip().lower().startswith("apply")
+    ]
     matched_family_ids = list(evidence.get("matched_family_ids") or [])
     render_cta_payload_id = str(evidence.get("render_cta_payload_id") or "")
     render_cta_payload_id_lower = render_cta_payload_id.lower()
@@ -116,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
         "repair_action_visible": bool(evidence.get("has_repair_action")),
         "apply_payload_exists": bool(evidence.get("has_repair_action")),
         "payload_id_is_bending_fail": render_cta_payload_id.startswith("BENDING_FAIL_GOVERNS:"),
-        "single_primary_cta": len(ctas) == 1,
+        "single_primary_cta": len(ctas) == 1 and len(design_guide_apply_ctas) == 1,
     }
     negative_checks = {
         "no_design_is_efficient": "design is efficient" not in lower_text,
@@ -158,6 +163,7 @@ def main(argv: list[str] | None = None) -> int:
         "matched_family_ids": matched_family_ids,
         "render_cta_payload_id": render_cta_payload_id,
         "visible_cta_buttons": ctas,
+        "visible_design_guide_apply_cta_buttons": design_guide_apply_ctas,
         "stdout": completed.stdout,
         "stderr_tail": completed.stderr[-4000:],
     }
