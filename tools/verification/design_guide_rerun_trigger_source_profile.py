@@ -371,6 +371,11 @@ def _state_summary(state: dict[str, Any], *, label: str, recipe: str) -> dict[st
             depth=3,
             max_items=12,
         ),
+        "summary_card_html_cache_probe": _compact(
+            debug_probe.get("final_publication_summary_card_html_cache_probe") or {},
+            depth=3,
+            max_items=12,
+        ),
         "design_guide": {
             "needs_refresh": dg_probe.get("needs_refresh"),
             "primary_card_title": dg_probe.get("primary_card_title"),

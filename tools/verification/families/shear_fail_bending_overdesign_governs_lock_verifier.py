@@ -45,12 +45,26 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8", errors="replace")
 
 
+def _read_inputs_composition_surface() -> str:
+    return "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
+        )
+    )
+
+
 def _static_checks() -> dict[str, bool]:
     runtime = _read("design_brain/families/shear_fail_bending_overdesign_governs/runtime.py")
     registry = _read("design_brain/families/registry.py")
     chooser = _read("design_brain/family_chooser.py")
     classifier = _read("design_brain/family_classification_runtime.py")
-    inputs_page = _read("inputs_page.py")
+    inputs_surface = _read_inputs_composition_surface()
+    evaluator = _read("design_brain/candidate_evaluation.py")
+    controller = _read("design_brain/design_guide_controller.py")
     return {
         "runtime_authority_present": "run_shear_fail_bending_overdesign_runtime" in runtime,
         "runtime_has_no_page_import": "inputs_page" not in runtime and "streamlit" not in runtime,
@@ -62,15 +76,13 @@ def _static_checks() -> dict[str, bool]:
         "registry_contains_legacy_alias": "SHEAR_FAIL_BENDING_OPTIMISE_GOVERNS" in registry,
         "chooser_contains_family": "SHEAR_FAIL_BENDING_OVERDESIGN_GOVERNS" in chooser,
         "classification_runtime_contains_family": "SHEAR_FAIL_BENDING_OVERDESIGN_GOVERNS" in classifier,
-        "inputs_page_keeps_evaluator": "def _evaluate(" in inputs_page and "_evaluate_auto_design_candidate(" in inputs_page,
-        "inputs_page_keeps_shared_surfaces": all(
-            term in inputs_page
-            for term in (
-                "build_design_guide_apply_button_contract",
-                "record_design_guide_publication_snapshot",
-                "st.session_state",
-            )
-        ),
+        "candidate_evaluation_keeps_evaluator_boundary": "def evaluate_design_candidate_with_updates(" in evaluator,
+        "inputs_composition_keeps_auto_candidate_runner": "_evaluate_auto_design_candidate(" in inputs_surface,
+        "controller_keeps_final_publication_bridge": "build_final_design_guide_publication" in controller,
+        "inputs_composition_keeps_shared_surfaces": "from design_brain.cta_contracts import" in inputs_surface
+        and "from design_brain.final_publication import" in inputs_surface
+        and "build_final_design_guide_publication" in inputs_surface
+        and "handle_inputs_apply_buttons" in inputs_surface,
     }
 
 

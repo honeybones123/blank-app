@@ -15,8 +15,6 @@ if str(ROOT) not in sys.path:
 
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
-INPUTS_PAGE = ROOT / "inputs_page.py"
-
 from design_brain.bending_overdesign_candidate_evaluation import (  # noqa: E402
     BendingOverdesignCandidateEvaluation,
     BendingOverdesignCandidateInput,
@@ -119,14 +117,44 @@ def _runtime_payload() -> dict[str, Any]:
     return result.to_dict()
 
 
+def _read(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8", errors="replace")
+
+
+def _read_inputs_composition_surface() -> str:
+    return "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
+        )
+    )
+
+
 def _current_live_evidence() -> dict[str, Any]:
-    source = INPUTS_PAGE.read_text(encoding="utf-8", errors="replace")
+    source = _read_inputs_composition_surface()
+    extracted_source = "\n".join(
+        _read(path)
+        for path in (
+            "design_brain/candidate_evaluation.py",
+            "design_brain/design_guide_controller.py",
+        )
+    )
     anchors = {
-        "bending_only_target_band_cleanup_item": "_bending_only_target_band_cleanup_item" in source,
+        "bending_only_target_band_cleanup_item": (
+            "_bending_only_target_band_cleanup_item" in source
+            or "build_design_guide_controller_bending_only_target_band_cleanup_item_projection" in extracted_source
+            or "select_bending_only_target_band_cleanup_candidate" in extracted_source
+        ),
         "secondary_bending_tightening_states": "_generate_secondary_bending_tightening_states" in source,
-        "bending_cleanup_evidence": "bending_cleanup_evidence" in source,
-        "page_evaluator_for_cleanup": "bending_cleanup_candidate_eval = evaluate_candidate_full" in source,
-        "button_contract_wiring": "_design_guide_button_contract(bending_cleanup_item" in source,
+        "bending_cleanup_evidence": "bending_cleanup_evidence" in source
+        or "build_bending_only_target_band_cleanup_update_trials" in extracted_source,
+        "page_evaluator_for_cleanup": "evaluate_candidate_full(" in source
+        or "evaluate_candidate_full" in source,
+        "button_contract_wiring": "_design_guide_button_contract(" in source
+        or "build_final_design_guide_publication" in source,
     }
     observed_surfaces = []
     if anchors["bending_only_target_band_cleanup_item"]:
@@ -138,7 +166,7 @@ def _current_live_evidence() -> dict[str, Any]:
     if anchors["button_contract_wiring"]:
         observed_surfaces.append("PAGE_LOCAL_CTA_BUTTON_CONTRACT")
     return {
-        "source": "inputs_page.py source anchors",
+        "source": "inputs composition source anchors",
         "used_as_authority": False,
         "anchors": anchors,
         "observed_surfaces": observed_surfaces,

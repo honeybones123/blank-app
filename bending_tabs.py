@@ -1,4 +1,5 @@
-import math
+﻿import math
+from contextlib import contextmanager
 import pandas as pd
 import matplotlib.pyplot as plt
 import streamlit as st
@@ -18,8 +19,19 @@ from ui.diagrams.stress_strain_diagram import (
 from widgets_helpers import calcbox, clickable_calcbox, render_step, render_jumpable_step, apply_step_expander_css, step_expander_calcbox, info_i_button, render_plotly_diagram, render_pyplot_diagram
 
 
+@contextmanager
+def _bending_check_info_row(help_text: str):
+    """Render ULS check info controls with the same layout used by Check 1.6."""
+    col_info_title, col_info_button = st.columns([0.9, 0.1])
+    with col_info_title:
+        st.markdown("**Info:**")
+    with col_info_button:
+        with info_i_button(help_text=help_text):
+            yield
+
+
 # ============================================================
-#  LOCAL HELPER – CALCBOX WITH LATEX SUPPORT
+#  LOCAL HELPER â€“ CALCBOX WITH LATEX SUPPORT
 # ============================================================
 # Keeping _inject_calcbox_css for backward compatibility if needed elsewhere
 def _inject_calcbox_css():
@@ -45,7 +57,7 @@ blockquote p, blockquote * { color: #1a1a1a !important; }
 
 
 # ============================================================
-#  LOCAL HELPER – SLS STRESS FIGURE FOR 3.2 ONLY
+#  LOCAL HELPER â€“ SLS STRESS FIGURE FOR 3.2 ONLY
 # ============================================================
 def _make_sls_stress_block_figure_32(D_mm, d_mm, dn_mm, layers_tension):
     """Compatibility wrapper for the shared SLS 3.2 stress-block figure."""
@@ -53,7 +65,7 @@ def _make_sls_stress_block_figure_32(D_mm, d_mm, dn_mm, layers_tension):
 
 
 # ============================================================
-#  TAB 1 – ULS (UNCHANGED LOGIC, TIDIED CALC BOXES)
+#  TAB 1 â€“ ULS (UNCHANGED LOGIC, TIDIED CALC BOXES)
 # ============================================================
 def render_uls_tab(
     top_results,
@@ -70,7 +82,7 @@ def render_uls_tab(
 ):
     """ULS step-by-step (summary_mode parameter ignored, kept for compatibility)."""
     """
-    Tab 1 – ULS step-by-step.
+    Tab 1 â€“ ULS step-by-step.
     
     Args:
         summary_mode: If True, all steps are collapsed (expanded=False)
@@ -103,11 +115,11 @@ def render_uls_tab(
         Mu_nom_uls = T * z_uls / 1e6
         phi_Mu_cap_uls = phi * Mu_nom_uls
 
-        # Concrete force at ULS (using a = γ d_n)
+        # Concrete force at ULS (using a = Î³ d_n)
         C_N = alpha2_uls * fc * b * a_uls  # N
 
         # --------------------------------------------------
-        # 1.1 Stress-block parameters (α2 and γ)
+        # 1.1 Stress-block parameters (Î±2 and Î³)
         # --------------------------------------------------
         # Section 1.1 details
         section11_details = f"""
@@ -152,11 +164,10 @@ $$
 ---
 
 **Result:**  
-$\\alpha_2 = {alpha2_uls:.3f}$, $\\gamma = {gamma_uls:.3f}$ (to be used in Sections 1.2–1.6).
+$\\alpha_2 = {alpha2_uls:.3f}$, $\\gamma = {gamma_uls:.3f}$ (to be used in Sections 1.2â€“1.6).
 """
         
         def diagram_1_1():
-            info_1_1()
             fig_uls_11 = _make_uls_stress_block_figure(
                 b_mm=b or 0.0,
                 D_mm=D or 0.0,
@@ -183,38 +194,39 @@ $\\alpha_2 = {alpha2_uls:.3f}$, $\\gamma = {gamma_uls:.3f}$ (to be used in Secti
             )
 
         def info_1_1():
-            with info_i_button(help_text="Stress block parameters"):
+            with _bending_check_info_row(help_text="Stress block parameters"):
                 st.markdown(
                     f"""
-**Check 1.1 — Stress Block Parameters α₂ and γ**
+**Check 1.1 â€” Stress Block Parameters Î±â‚‚ and Î³**
 
-This check determines the equivalent rectangular stress block factors α₂ and γ used for Ultimate Limit State flexural design.
+This check determines the equivalent rectangular stress block factors Î±â‚‚ and Î³ used for Ultimate Limit State flexural design.
 
 At ultimate load, the concrete compression stress is not uniform. The real stress distribution is nonlinear, with high compression near the extreme compression face and reducing stress towards the neutral axis.
 
 AS 3600 simplifies this nonlinear stress distribution into an equivalent rectangular stress block [1].
 
-α₂ adjusts the intensity, or height, of the equivalent compression stress block.
+Î±â‚‚ adjusts the intensity, or height, of the equivalent compression stress block.
 
-Equivalent stress = α₂ × f'c
+Equivalent stress = Î±â‚‚ Ã— f'c
 
-γ adjusts the depth of the equivalent compression stress block.
+Î³ adjusts the depth of the equivalent compression stress block.
 
-Stress block depth, a = γ × dn
+Stress block depth, a = Î³ Ã— dn
 
-Together, α₂ and γ allow the simplified rectangular block to represent the concrete compression force used in the flexural capacity calculation [1].
+Together, Î±â‚‚ and Î³ allow the simplified rectangular block to represent the concrete compression force used in the flexural capacity calculation [1].
 
 References:  
-[1] AS 3600:2018, Clause 8.1.3 — Equivalent rectangular stress block.
+[1] AS 3600:2018, Clause 8.1.3 â€” Equivalent rectangular stress block.
 """
                 )
 
         step_expander_calcbox(
             uid="bending_uls_1_1",
-            summary_line=f"1.1 Stress-block parameters (α₂ and γ) | Result: α₂ = {alpha2_uls:.3f}, γ = {gamma_uls:.3f}",
+            summary_line=f"1.1 Stress-block parameters (alpha2 and gamma) | Result: alpha2 = {alpha2_uls:.3f}, gamma = {gamma_uls:.3f}",
             details_md=section11_details,
             status=None,
             diagram_fn=diagram_1_1,
+            content_before=info_1_1,
         )
 
 
@@ -264,26 +276,26 @@ Concrete compression resultant $C \\approx {C_kN:.1f}$ kN acting at the centroid
 """
 
         def info_1_2():
-            with info_i_button(help_text="Concrete compressive force"):
+            with _bending_check_info_row(help_text="Concrete compressive force"):
                 st.markdown(
                     f"""
-**Check 1.4 — Concrete Compressive Force C**
+**Check 1.4 â€” Concrete Compressive Force C**
 
 This check calculates the resultant concrete compressive force C developed in the compression zone of the beam at Ultimate Limit State.
 
 The force C acts over the equivalent rectangular stress block area defined using the AS 3600 rectangular stress block model [1].
 
-C = α₂ × f'c × b × a
+C = Î±â‚‚ Ã— f'c Ã— b Ã— a
 
 where:
 
-α₂ × f'c = simplified average concrete compressive stress
+Î±â‚‚ Ã— f'c = simplified average concrete compressive stress
 
-b × a = equivalent rectangular stress block area
+b Ã— a = equivalent rectangular stress block area
 
 So the equation can be understood as:
 
-Concrete compressive force = average compressive stress × stress block area
+Concrete compressive force = average compressive stress Ã— stress block area
 
 This is a simplified design model, not a literal picture of the exact stress distribution inside the concrete. The actual concrete stress distribution is nonlinear, but AS 3600 permits it to be represented using an equivalent rectangular stress block for design [1].
 
@@ -294,8 +306,8 @@ C = T
 Once equilibrium is achieved, the internal force couple is used to determine the section moment capacity [2].
 
 References:  
-[1] AS 3600:2018, Clause 8.1.3 — Equivalent rectangular stress block.  
-[2] AS 3600:2018, Clause 8.1 — Ultimate strength of members subjected to bending.
+[1] AS 3600:2018, Clause 8.1.3 â€” Equivalent rectangular stress block.  
+[2] AS 3600:2018, Clause 8.1 â€” Ultimate strength of members subjected to bending.
 """
                 )
         
@@ -343,10 +355,10 @@ Tension force at ULS: $T \\approx {T/1000.0:.1f}$ kN.
 """
 
         def info_1_3():
-            with info_i_button(help_text="Steel area and tensile force"):
+            with _bending_check_info_row(help_text="Steel area and tensile force"):
                 st.markdown(
                     f"""
-**Check 1.2 — Steel Area and Tensile Force T**
+**Check 1.2 â€” Steel Area and Tensile Force T**
 
 This check calculates the tensile force developed by the longitudinal reinforcement at Ultimate Limit State (ULS).
 
@@ -354,7 +366,7 @@ As the beam bends, the concrete below the neutral axis cracks and is assumed to 
 
 Provided sufficient ductility is available, AS 3600 assumes the tensile reinforcement reaches its yield strength at ultimate capacity [2]. The tensile force is therefore calculated as:
 
-T = Ast × fsy
+T = Ast Ã— fsy
 
 where:
 
@@ -364,7 +376,7 @@ fsy = yield strength of the reinforcing steel
 
 This equation can be understood as:
 
-Tensile force = steel area × steel yield stress
+Tensile force = steel area Ã— steel yield stress
 
 The tensile force acts through the centroid of the tensile reinforcement and forms one half of the internal force couple resisting bending. For equilibrium, the tensile force must balance the concrete compressive force [2]:
 
@@ -373,8 +385,8 @@ T = C
 Once equilibrium is achieved, the distance between the concrete compression force and the steel tensile force forms the internal lever arm used to calculate the section's ultimate moment capacity.
 
 References:  
-[1] AS 3600:2018, Clause 8.1.1 — Concrete in tension neglected at Ultimate Limit State.  
-[2] AS 3600:2018, Clause 8.1 — Ultimate strength of members subjected to bending using internal force equilibrium.
+[1] AS 3600:2018, Clause 8.1.1 â€” Concrete in tension neglected at Ultimate Limit State.  
+[2] AS 3600:2018, Clause 8.1 â€” Ultimate strength of members subjected to bending using internal force equilibrium.
 """
                 )
         
@@ -383,7 +395,7 @@ References:
             summary_line=f"1.2 Steel area and tension force $T$ | Result: T = {T/1000.0:.1f} kN",
             details_md=section13_details,
             status=None,
-            diagram_fn=info_1_3,
+            content_before=info_1_3,
         )
 
 
@@ -478,12 +490,93 @@ $ d_n = {dn:.1f}$ mm, $ a = {a_uls:.1f}$ mm.
                 config={"displayModeBar": False},
             )
 
+        def info_1_4():
+            with _bending_check_info_row(help_text="Neutral axis depth and stress-block depth"):
+                st.markdown(
+                    """
+### Neutral Axis Depth dn and Stress-Block Depth a
+
+This check determines the neutral axis depth, **dn**, by balancing the internal concrete compression force with the tensile force developed by the reinforcement.
+
+At ultimate flexural capacity, the beam must satisfy internal force equilibrium:
+
+**C = T**
+
+where:
+
+* **C** = resultant compressive force in the concrete
+* **T** = resultant tensile force in the reinforcement
+
+The actual concrete compression stress varies nonlinearly through the compression zone. AS 3600 represents this behaviour using an equivalent rectangular stress block with:
+
+* an effective stress intensity of **alpha2 x f'c**
+* a stress-block depth of **a = gamma x dn** [1]
+
+The concrete compression force is therefore:
+
+**C = alpha2 x f'c x b x a**
+
+Substituting **a = gamma x dn** gives:
+
+**C = alpha2 x f'c x b x gamma x dn**
+
+Because equilibrium requires **C = T**, the neutral axis depth can be calculated from:
+
+**dn = T / (alpha2 x f'c x b x gamma)**
+
+Once **dn** has been determined, the corresponding rectangular stress-block depth is:
+
+**a = gamma x dn**
+
+### What is the neutral axis?
+
+The neutral axis is the location through the section where the longitudinal bending strain is zero.
+
+* Concrete above the neutral axis is in compression.
+* The cracked concrete below the neutral axis is not relied upon to resist flexural tension.
+* The tensile reinforcement below the neutral axis carries the tensile force.
+
+The neutral axis depth controls the extent of the concrete compression zone and directly affects the section's strain distribution, internal lever arm and bending capacity.
+
+### Why is the stress-block depth different from dn?
+
+The neutral axis depth **dn** defines the full depth from the extreme compression face to the point of zero strain.
+
+The stress-block depth **a** is the depth of the simplified rectangular compression block used to represent the actual nonlinear concrete stress distribution.
+
+These values are related by:
+
+**a = gamma x dn**
+
+Because **gamma** is generally less than 1.0, the equivalent rectangular stress block does not extend all the way to the neutral axis.
+
+### Why this check matters
+
+Determining **dn** establishes the strain geometry and compression-zone depth of the section. It is subsequently used to:
+
+* calculate the tensile reinforcement strain
+* confirm whether the reinforcement has yielded
+* calculate the neutral axis ratio **ku**
+* determine the internal lever arm
+* calculate the ultimate moment capacity
+
+A deeper neutral axis generally represents a larger compression zone and lower tensile-steel strain. A shallower neutral axis generally produces greater tensile-steel strain and more ductile flexural behaviour.
+
+### References
+
+[1] AS 3600:2018, Clause 8.1.3 - Equivalent rectangular stress block and the parameters alpha2 and gamma.
+
+[2] AS 3600:2018, Clause 8.1 - Ultimate strength of members subjected to bending, including strain compatibility and internal force equilibrium.
+"""
+                )
+
         step_expander_calcbox(
             uid="bending_uls_1_4",
             summary_line=f"1.3 Neutral axis depth $d_n$ and block depth $a$ | Result: d_n = {dn:.1f} mm, a = {a_uls:.1f} mm",
             details_md=section14_details,
             status=None,
             diagram_fn=diagram_1_4,
+            content_before=info_1_4,
         )
 
         step_expander_calcbox(
@@ -491,11 +584,11 @@ $ d_n = {dn:.1f}$ mm, $ a = {a_uls:.1f}$ mm.
             summary_line=f"1.4 Concrete compressive force $C$ | Result: C = {C_kN:.1f} kN",
             details_md=section12_details,
             status=None,
-            diagram_fn=info_1_2,
+            content_before=info_1_2,
         )
 
         # --------------------------------------------------
-        # 1.5 Strain compatibility (εcu and εs)
+        # 1.5 Strain compatibility (Îµcu and Îµs)
         # --------------------------------------------------
         eps_cu_uls = 0.003
         try:
@@ -573,12 +666,12 @@ At ULS, $\\varepsilon_s = {eps_s_tension:.5f}$ so $\\varepsilon_s \\ge \\varepsi
         sub_tail = (
             f"= {eps_s_tension:.5f}"
             if not math.isnan(eps_s_tension)
-            else "= \\text{—}"
+            else "= \\text{â€”}"
         )
         result_eps_tex = (
             f"{eps_s_tension:.5f}"
             if not math.isnan(eps_s_tension)
-            else r"\text{—}"
+            else r"\text{â€”}"
         )
 
         section14a_details = (
@@ -621,53 +714,52 @@ Tensile reinforcement strain at ULS: **$\\varepsilon_s = {result_eps_tex}$**."""
         )
 
         def info_1_5():
-            with info_i_button(help_text="Strain compatibility and steel yield"):
+            with _bending_check_info_row(help_text="Strain compatibility and steel yield"):
                 st.markdown(
                     """
-**Strain Compatibility (εcu and εs) — Why This Calculation Is Required**
+**Strain Compatibility (Îµcu and Îµs) â€” Why This Calculation Is Required**
 
 This check verifies that the tensile reinforcement has reached its yield strain at the Ultimate Limit State (ULS) using the strain compatibility method required by AS 3600 [1].
 
-At ultimate capacity, AS 3600 assumes the concrete at the extreme compression fibre reaches an ultimate compressive strain of εcu = 0.003 [1]. It is also assumed that plane sections remain plane after bending, meaning the strain varies linearly through the depth of the section [2].
+At ultimate capacity, AS 3600 assumes the concrete at the extreme compression fibre reaches an ultimate compressive strain of Îµcu = 0.003 [1]. It is also assumed that plane sections remain plane after bending, meaning the strain varies linearly through the depth of the section [2].
 
 Using the neutral axis depth determined in the previous check, the strain at any point within the section can be determined from the geometry of the strain diagram. The tensile steel strain is therefore calculated as:
 
-εs = εcu × (d − dn) / dn
+Îµs = Îµcu Ã— (d âˆ’ dn) / dn
 
 where:
 
-εcu = ultimate concrete compressive strain  
+Îµcu = ultimate concrete compressive strain  
 d = effective depth to the tensile reinforcement  
 dn = neutral axis depth
 
 The calculated steel strain is then compared with the steel yield strain:
 
-εsy = fsy / Es
+Îµsy = fsy / Es
 
 If:
 
-εs ≥ εsy
+Îµs â‰¥ Îµsy
 
 the reinforcement has reached yield, confirming that the assumption made in the tensile force calculation,
 
-T = Ast × fsy
+T = Ast Ã— fsy
 
 is valid [2].
 
-If εs < εsy, the reinforcement has not yielded, and the tensile force must instead be determined from the actual steel stress obtained from the steel stress-strain relationship rather than assuming the full yield stress.
+If Îµs < Îµsy, the reinforcement has not yielded, and the tensile force must instead be determined from the actual steel stress obtained from the steel stress-strain relationship rather than assuming the full yield stress.
 
 This check therefore confirms that the assumed stress distribution and internal force calculations are consistent with the actual strain profile of the section and that the reinforcement has developed its design yield strength before the flexural capacity is calculated.
 
 **References**
 
-[1] AS 3600:2018, Clause 3.1.7 — Ultimate concrete compressive strain (εcu = 0.003).  
+[1] AS 3600:2018, Clause 3.1.7 â€” Ultimate concrete compressive strain (Îµcu = 0.003).  
 
-[2] AS 3600:2018, Clause 8.1 — Ultimate strength of members subjected to bending using strain compatibility and internal force equilibrium.
+[2] AS 3600:2018, Clause 8.1 â€” Ultimate strength of members subjected to bending using strain compatibility and internal force equilibrium.
 """
                 )
 
         def diagram_1_5():
-            info_1_5()
             ss_state = _stress_strain_state("ULS", moment_sign=moment_sign)
             fig_strain = _plot_strain_profile(
                 ss_state,
@@ -685,14 +777,15 @@ This check therefore confirms that the assumed stress distribution and internal 
         step_expander_calcbox(
             uid="bending_uls_1_4a",
             summary_line=(
-                f"1.5 Strain compatibility ($\\varepsilon_{{cu}}$ and $\\varepsilon_s$) | Result: "
-                f"$\\varepsilon_s = {eps_s_tension:.5f}$"
+                f"1.5 Strain compatibility (epsilon_cu and epsilon_s) | Result: "
+                f"epsilon_s = {eps_s_tension:.5f}"
                 if not math.isnan(eps_s_tension)
-                else "1.5 Strain compatibility ($\\varepsilon_{{cu}}$ and $\\varepsilon_s$) | Result: —"
+                else "1.5 Strain compatibility (epsilon_cu and epsilon_s) | Result: -"
             ),
             details_md=section14a_details,
             status=None,
             diagram_fn=diagram_1_5,
+            content_before=info_1_5,
         )
 
         # --------------------------------------------------
@@ -711,7 +804,7 @@ This check therefore confirms that the assumed stress distribution and internal 
                 with info_i_button(help_text="What does the neutral-axis ratio mean?"):
                     st.markdown(
                         r"""
-### **Neutral-Axis Ratio \(k_u\) — Meaning & Importance**
+### **Neutral-Axis Ratio \(k_u\) â€” Meaning & Importance**
 
 The ratio  
 
@@ -727,9 +820,9 @@ describes **how deep the neutral axis is** relative to the effective depth.
 
 #### **1. Indicator of section behaviour**
 
-- **Low \(k_u\)** → shallow neutral axis → large tension zone → *steel governs* → ductile.  
+- **Low \(k_u\)** â†’ shallow neutral axis â†’ large tension zone â†’ *steel governs* â†’ ductile.  
 
-- **High \(k_u\)** → deep neutral axis → large compression zone → *concrete governs* → brittle.
+- **High \(k_u\)** â†’ deep neutral axis â†’ large compression zone â†’ *concrete governs* â†’ brittle.
 
 ---
 
@@ -737,9 +830,9 @@ describes **how deep the neutral axis is** relative to the effective depth.
 
 Because strain varies linearly:
 
-- Low \(k_u\)** → steel yields first → **ductile, predictable failure**  
+- Low \(k_u\)** â†’ steel yields first â†’ **ductile, predictable failure**  
 
-- High \(k_u\)** → concrete crushes first → **brittle failure**
+- High \(k_u\)** â†’ concrete crushes first â†’ **brittle failure**
 
 ---
 
@@ -797,18 +890,82 @@ $$
 ---
 
 **Check:**  
-$k_u = {ku:.3f} \\le {ku_lim:.2f}$ → {"✓ PASS" if ku_ok else "✗ FAIL" if ku_ok is False else "—"}
+$k_u = {ku:.3f} \\le {ku_lim:.2f}$ â†’ {"âœ“ PASS" if ku_ok else "âœ— FAIL" if ku_ok is False else "â€”"}
 
 **Result:**  
 Neutral axis ratio $k_u = {ku:.3f}$.
 """
+
+        def info_1_6():
+            with _bending_check_info_row(help_text="Neutral axis ratio and ductility"):
+                st.markdown(
+                    """
+### Neutral Axis Ratio (ku) - Why This Calculation Is Required
+
+This check expresses the neutral axis depth as a **non-dimensional ratio**, **ku**, and verifies that the section satisfies the ductility requirements of AS 3600 [1].
+
+The neutral axis ratio is defined as:
+
+**ku = dn / d**
+
+where:
+
+* **dn** = neutral axis depth
+* **d** = effective depth to the tensile reinforcement
+
+Rather than considering the neutral axis depth alone, expressing it as a ratio allows the behaviour of different beam sizes and reinforcement layouts to be compared on a consistent basis.
+
+### Why is ku important?
+
+The neutral axis ratio provides an indication of the section's strain distribution and ductility.
+
+* A **small ku** indicates a relatively shallow compression zone and a large tensile steel strain. These sections are generally more ductile because the reinforcement yields well before the concrete reaches its crushing strain.
+* A **large ku** indicates a deeper compression zone and lower tensile steel strain. As **ku** increases, the section becomes progressively less ductile and may approach a compression-controlled failure [2].
+
+For this reason, AS 3600 limits the maximum allowable neutral axis ratio to ensure adequate ductility.
+
+### Ductility check
+
+The calculated neutral axis ratio is compared with the code limit:
+
+**ku <= ku,lim**
+
+where **ku,lim** is determined by AS 3600 based on the reinforcement properties and the assumed ultimate concrete strain [2].
+
+If the calculated **ku** is less than or equal to **ku,lim**, the section satisfies the ductility requirements of the Standard.
+
+If **ku** exceeds the limit, the section is considered insufficiently ductile and the design must be modified by changing the reinforcement, geometry or material properties.
+
+### Why this check matters
+
+The neutral axis ratio is one of the most important parameters in reinforced concrete flexural design because it links equilibrium, strain compatibility and ductility.
+
+It confirms that:
+
+* the tensile reinforcement is capable of developing sufficient strain before concrete crushing;
+* the section satisfies the ductility requirements of AS 3600;
+* the calculated flexural capacity is valid for a ductile design.
+
+This check is therefore the final verification that the section will fail in the preferred ductile manner rather than by premature concrete compression failure.
+
+### References
+
+[1] AS 3600:2018, Clause 8.1 - Ultimate strength of members subjected to bending.
+
+[2] AS 3600:2018, Clause 8.1.5 - Neutral axis parameter (ku) limits and ductility requirements.
+"""
+                )
+
+        # Keep the older local callable as an alias so any cached/legacy render
+        # path for this check still receives the updated 1.6 info text.
+        content_1_5 = info_1_6
         
         step_expander_calcbox(
             uid="bending_uls_1_5",
-            summary_line=f"1.6 Neutral axis ratio $k_u$ | Result: k_u = {ku:.3f} vs k_{{u,lim}} = {ku_lim:.2f} → {'PASS' if ku_ok else 'FAIL' if ku_ok is False else '—'}",
+            summary_line=f"1.6 Neutral axis ratio k_u | Result: k_u = {ku:.3f} vs k_u,lim = {ku_lim:.2f} -> {'PASS' if ku_ok else 'FAIL' if ku_ok is False else '-'}",
             details_md=section15_details,
             status=ku_status,
-            content_before=content_1_5,
+            content_before=info_1_6,
         )
 
 
@@ -887,17 +1044,93 @@ Design bending capacity $\\phi M_{{u,cap}} = {phi_Mu_cap_uls:.2f}$ kNm.
                 config={"displayModeBar": False},
             )
 
+        def info_1_7():
+            with _bending_check_info_row(help_text="Lever arm and moment capacity"):
+                st.markdown(
+                    """
+### Lever Arm (z) and Moment Capacity - Why This Calculation Is Required
+
+This check calculates the **internal lever arm** between the concrete compression force and the tensile reinforcement force, and uses this to determine the beam's nominal and design bending capacities.
+
+Once internal force equilibrium has been established (**C = T**), the beam resists bending by developing an internal force couple consisting of:
+
+* the concrete compression force **C**, and
+* the tensile reinforcement force **T**.
+
+Although these forces are equal in magnitude, they act at different locations within the section. The perpendicular distance between their lines of action is called the **lever arm**, **z**.
+
+The lever arm is calculated as:
+
+**z = d - a / 2**
+
+where:
+
+* **d** = effective depth to the tensile reinforcement
+* **a** = equivalent rectangular stress-block depth
+
+The concrete compression force acts through the centroid of the equivalent rectangular stress block, located at **a/2** below the compression face [1]. The tensile force acts through the centroid of the tensile reinforcement.
+
+### Why is the lever arm important?
+
+The internal bending resistance of the section is generated by the force couple formed by **C** and **T**.
+
+The moment produced by this force couple is:
+
+**Mu = T x z**
+
+or equivalently,
+
+**Mu = C x z**
+
+because **C = T**.
+
+Increasing either the internal force or the lever arm increases the bending capacity of the section.
+
+### Design moment capacity
+
+AS 3600 applies a strength reduction factor, **phi**, to the nominal capacity to account for uncertainties in materials, construction tolerances and modelling assumptions [2].
+
+The design bending capacity is therefore:
+
+**phi Mu = phi x Mu**
+
+This is the value that is compared with the applied design bending moment in the final flexural capacity check.
+
+### Why this check matters
+
+This calculation combines all of the preceding checks into the final flexural resistance of the section.
+
+The previous checks established:
+
+* the concrete compression block;
+* the tensile reinforcement force;
+* internal force equilibrium;
+* the neutral axis depth;
+* the strain compatibility; and
+* compliance with the ductility requirements.
+
+This check converts those internal forces into a bending moment that can be directly compared with the applied design action.
+
+### References
+
+[1] AS 3600:2018, Clause 8.1.3 - Equivalent rectangular stress block and location of the concrete compression resultant.
+
+[2] AS 3600:2018, Section 2 - Design philosophy and strength reduction factors (phi), and Clause 8.1 - Ultimate strength of members subjected to bending.
+"""
+                )
+
         step_expander_calcbox(
             uid="bending_uls_1_6",
-            summary_line=f"1.7 Lever arm $z$ and moment capacity | Result: φM_{{u,cap}} = {phi_Mu_cap_uls:.2f} kNm",
+            summary_line=f"1.7 Lever arm z and moment capacity | Result: phi_Mu_cap = {phi_Mu_cap_uls:.2f} kNm",
             details_md=section16_details,
             status=None,
             diagram_fn=diagram_1_6,
+            content_before=info_1_7,
         )
 
 
         # --------------------------------------------------
-        # 1.8 Flexural capacity check (Mu* ≤ φMu,cap)
+        # 1.8 Flexural capacity check (Mu* â‰¤ Ï†Mu,cap)
         # --------------------------------------------------
         Mu_star = float(Mu_star_override) if Mu_star_override is not None else get_param("Mu_star", 0.0)
         if Mu_star is not None and phi_Mu_cap_uls > 0:
@@ -923,7 +1156,7 @@ $$
 **Substitution:**
 
 $$
-{Mu_star:.2f} \\le {phi_Mu_cap_uls:.2f} \\quad \\Rightarrow \\quad \\text{{{"✓ PASS" if Mu_ok else "✗ FAIL"}}}
+{Mu_star:.2f} \\le {phi_Mu_cap_uls:.2f} \\quad \\Rightarrow \\quad \\text{{{"âœ“ PASS" if Mu_ok else "âœ— FAIL"}}}
 $$
 
 **Utilisation:**  
@@ -932,27 +1165,91 @@ $\\text{{Utilisation}} = \\frac{{M_u^*}}{{\\phi M_{{u,cap}}}} = \\frac{{{Mu_star
 ---
 
 **Result:**  
-{"Design moment is within capacity." if Mu_ok else "Design moment exceeds capacity — increase reinforcement or section size."}
+{"Design moment is within capacity." if Mu_ok else "Design moment exceeds capacity â€” increase reinforcement or section size."}
 """
             
+            def info_1_8():
+                with _bending_check_info_row(help_text="Flexural capacity check"):
+                    st.markdown(
+                        """
+### Flexural Capacity Check - Why This Calculation Is Required
+
+This is the final verification of the flexural design. It compares the **applied design bending moment**, **M***, with the **design bending capacity**, **phi Mu**, calculated in the preceding checks.
+
+AS 3600 requires the design action to be less than or equal to the design capacity for the member to satisfy the Ultimate Limit State [1].
+
+The check is:
+
+**M* <= phi Mu**
+
+where:
+
+* **M*** = applied design bending moment from the design loading
+* **phi Mu** = design bending capacity of the reinforced concrete section
+
+### Why is this comparison made?
+
+Throughout the previous calculations, the flexural resistance of the beam has been determined by:
+
+* establishing the concrete compression block;
+* calculating the tensile reinforcement force;
+* satisfying internal force equilibrium;
+* verifying strain compatibility;
+* confirming ductility requirements; and
+* calculating the design moment capacity.
+
+This final step compares that calculated capacity with the design demand placed on the member.
+
+### What does the result mean?
+
+* **PASS:** If **M* <= phi Mu**, the section has sufficient flexural capacity to resist the applied design moment in accordance with AS 3600.
+* **FAIL:** If **M* > phi Mu**, the section does not have adequate flexural capacity. The design must be revised by increasing the section capacity or reducing the applied bending moment.
+
+### Utilisation Ratio
+
+The utilisation ratio provides a measure of how efficiently the section is being used:
+
+**Utilisation = M* / phi Mu**
+
+A utilisation of:
+
+* **1.00** indicates the section is carrying its full design bending capacity.
+* **Less than 1.00** indicates reserve bending capacity remains.
+* **Greater than 1.00** indicates the section exceeds its design capacity and does not satisfy the Ultimate Limit State.
+
+The utilisation ratio is also used by the optimisation routines within the Design Brain to determine whether a section is under-designed, within the target design band, or has potential for further optimisation.
+
+### Why this check matters
+
+This is the governing acceptance check for flexural strength. Regardless of the intermediate calculations, the beam only satisfies the Ultimate Limit State when the applied design moment does not exceed the calculated design capacity.
+
+### References
+
+[1] AS 3600:2018, Clause 2.2 - Design for ultimate limit states.
+
+[2] AS 3600:2018, Clause 8.1 - Ultimate strength of members subjected to bending.
+"""
+                    )
+
             step_expander_calcbox(
                 uid="bending_uls_1_7",
-                summary_line=f"1.8 Flexural capacity check | Result: M_u* = {Mu_star:.2f} kNm vs φM_{{u,cap}} = {phi_Mu_cap_uls:.2f} kNm → {'PASS' if Mu_ok else 'FAIL'}",
+                summary_line=f"1.8 Flexural capacity check | Result: M_u* = {Mu_star:.2f} kNm vs phi_Mu_cap = {phi_Mu_cap_uls:.2f} kNm -> {'PASS' if Mu_ok else 'FAIL'}",
                 details_md=section17_details,
                 status=Mu_status,
+                content_before=info_1_8,
             )
 
     else:
-        st.info("Capacity cannot be evaluated – check geometry / reo inputs.")
+        st.info("Capacity cannot be evaluated â€“ check geometry / reo inputs.")
 
 
 # ============================================================
-#  TAB 2 – Minimum Strength (UNCHANGED LOGIC, TIDIED TEXT)
+#  TAB 2 â€“ Minimum Strength (UNCHANGED LOGIC, TIDIED TEXT)
 # ============================================================
 def render_min_strength_tab(top_results, b, D, fc, fsy, Ast, summary_mode: bool = False, jump_uid: str | None = None):
     """Minimum strength requirements (summary_mode parameter ignored, kept for compatibility)."""
     """
-    Tab 2 – Minimum strength requirements.
+    Tab 2 â€“ Minimum strength requirements.
     
     Args:
         summary_mode: If True, all steps are collapsed (expanded=False)
@@ -1044,7 +1341,7 @@ $Z_g = {Zg:,.3e}\\ \\text{{mm}}^3$.
     
     step_expander_calcbox(
         uid="bending_min_2_2",
-        summary_line=f"2.2 Gross section modulus $Z_g$ | Result: Z_g = {Zg:,.3e} mm³",
+        summary_line=f"2.2 Gross section modulus Z_g | Result: Z_g = {Zg:,.3e} mm^3",
         details_md=section22_details,
         status=None,
     )
@@ -1118,7 +1415,7 @@ $$
 ---
 
 **Check:**  
-$\\phi M_{{u,cap}} = {phi_Mu_cap:.2f} \\ge {Mu_min_as:.2f} = (M_{{u,cap}})_{{min}}$ → {"✓ PASS" if Mu_min_ok else "✗ FAIL" if Mu_min_ok is False else "—"}
+$\\phi M_{{u,cap}} = {phi_Mu_cap:.2f} \\ge {Mu_min_as:.2f} = (M_{{u,cap}})_{{min}}$ â†’ {"âœ“ PASS" if Mu_min_ok else "âœ— FAIL" if Mu_min_ok is False else "â€”"}
 
 **Result:**  
 Minimum required design capacity $(M_{{u,cap}})_{{min}} = {Mu_min_as:.2f}$ kNm.
@@ -1126,7 +1423,7 @@ Minimum required design capacity $(M_{{u,cap}})_{{min}} = {Mu_min_as:.2f}$ kNm.
     
     step_expander_calcbox(
         uid="bending_min_2_4",
-        summary_line=f"2.4 Minimum required design capacity $(M_{{u,cap}})_{{min}}$ | Result: φM_{{u,cap}} = {phi_Mu_cap:.2f} kNm vs (M_{{u,cap}})_{{min}} = {Mu_min_as:.2f} kNm → {'PASS' if Mu_min_ok else 'FAIL' if Mu_min_ok is False else '—'}",
+        summary_line=f"2.4 Minimum required design capacity (M_u,cap)_min | Result: phi_Mu_cap = {phi_Mu_cap:.2f} kNm vs (M_u,cap)_min = {Mu_min_as:.2f} kNm -> {'PASS' if Mu_min_ok else 'FAIL' if Mu_min_ok is False else '-'}",
         details_md=section24_details,
         status=Mu_min_status,
     )
@@ -1144,7 +1441,7 @@ Minimum required design capacity $(M_{{u,cap}})_{{min}} = {Mu_min_as:.2f}$ kNm.
 - $f_{{sy}} = {fsy:.1f}$ MPa  
 - $b = {b:.1f}$ mm  
 - Effective depth $d = {top_results['d']:.1f}$ mm  
-- Provided area: $A_{{st}} = {Ast:.1f}$ mm²
+- Provided area: $A_{{st}} = {Ast:.1f}$ mm^2
 
 ---
 
@@ -1167,22 +1464,22 @@ $$
 ---
 
 **Check:**  
-$A_{{st}} = {Ast:.1f} \\ge {Ast_min_as:.1f} = A_{{st,min}}$ → {"✓ PASS" if As_ok else "✗ FAIL" if As_ok is False else "—"}
+$A_{{st}} = {Ast:.1f} \\ge {Ast_min_as:.1f} = A_{{st,min}}$ â†’ {"âœ“ PASS" if As_ok else "âœ— FAIL" if As_ok is False else "â€”"}
 
 **Result:**  
-Minimum tensile steel area $A_{{st,min}} = {Ast_min_as:.1f}$ mm².
+Minimum tensile steel area $A_{{st,min}} = {Ast_min_as:.1f}$ mm^2.
 """
     
     step_expander_calcbox(
         uid="bending_min_2_5",
-        summary_line=f"2.5 Minimum tensile reinforcement $A_{{st,min}}$ | Result: A_{{st}} = {Ast:.1f} mm² vs A_{{st,min}} = {Ast_min_as:.1f} mm² → {'PASS' if As_ok else 'FAIL' if As_ok is False else '—'}",
+        summary_line=f"2.5 Minimum tensile reinforcement A_st,min | Result: A_st = {Ast:.1f} mm^2 vs A_st,min = {Ast_min_as:.1f} mm^2 -> {'PASS' if As_ok else 'FAIL' if As_ok is False else '-'}",
         details_md=section25_details,
         status=As_status,
     )
 
 
 # ============================================================
-#  TAB 3 – SLS (UPDATED WITH LAYERS + COMP STEEL)
+#  TAB 3 â€“ SLS (UPDATED WITH LAYERS + COMP STEEL)
 # ============================================================
 def render_sls_tab(
     top_results,
@@ -1199,7 +1496,7 @@ def render_sls_tab(
 ):
     """SLS cracked-section (summary_mode parameter ignored, kept for compatibility)."""
     """
-    Tab 3 – SLS cracked-section teaching model.
+    Tab 3 â€“ SLS cracked-section teaching model.
     
     Args:
         summary_mode: If True, all steps are collapsed (expanded=False)
@@ -1282,9 +1579,9 @@ def render_sls_tab(
                 }
             )
 
-    # --- Bottom tension layers (T1, T2, ...) — sagging ---
+    # --- Bottom tension layers (T1, T2, ...) â€” sagging ---
     if (not hogging_sls) and nb_bot > 0 and db_bot > 0 and cover_bot > 0:
-        # Same helper as section diagram → rows of bars
+        # Same helper as section diagram â†’ rows of bars
         min_spacing_bot = 2 * db_bot
         layout_bot = _layout_bars_in_rows(
             nb_bot, b, cover_bot, db_bot, min_spacing_bot, 3
@@ -1383,7 +1680,7 @@ def render_sls_tab(
             with info_i_button(help_text="What does the modular ratio mean?"):
                 st.markdown(
                     r"""
-### **Modular Ratio \(n = E_s / E_c\) — What it Means**
+### **Modular Ratio \(n = E_s / E_c\) â€” What it Means**
 
 The modular ratio
 
@@ -1397,8 +1694,8 @@ compares **steel stiffness** to **concrete stiffness**.
 
 #### 1. Converts steel into 'equivalent concrete'
 
-Because steel is much stiffer than concrete, one mm² of steel carries
-more force than one mm² of concrete at the same strain.
+Because steel is much stiffer than concrete, one mm^2 of steel carries
+more force than one mm^2 of concrete at the same strain.
 
 Using \(n\):
 
@@ -1431,7 +1728,7 @@ For normal RC beams:
 
 - \(E_s \sim 200{,}000\) MPa  
 
-so \(n\) is usually in the range **6–10**.
+so \(n\) is usually in the range **6â€“10**.
 """
                 )
 
@@ -1469,6 +1766,70 @@ The transformed area of each steel layer is $n A_s$.
 **Result:**  
 Modular ratio $n = {Es/Ec:.2f}$ (used to compute $nA_s$ in the table below).
 """
+
+    def info_3_1():
+        with _bending_check_info_row(help_text="Modular ratio and transformed steel areas"):
+            st.markdown(
+                """
+## Check 3.1 - Modular Ratio (n = Es / Ec)
+
+### Why This Calculation Is Required
+
+This check calculates the **modular ratio**, **n**, which is used to transform the reinforcing steel into an equivalent concrete area for Serviceability Limit State (SLS) calculations.
+
+Unlike Ultimate Limit State design, where the steel is assumed to have yielded, SLS analysis assumes both the concrete and reinforcement behave elastically. Because steel is much stiffer than concrete, equal areas of steel and concrete do not carry the same force under the same strain.
+
+The modular ratio accounts for this difference in stiffness and is defined as:
+
+**n = Es / Ec**
+
+where:
+
+* **Es** = modulus of elasticity of reinforcing steel
+* **Ec** = modulus of elasticity of concrete
+
+The transformed steel area is then calculated as:
+
+**nAst = n x Ast**
+
+This converts the steel into an equivalent concrete area that has the same axial stiffness under elastic loading.
+
+### Why is transformed section analysis used?
+
+When analysing cracked concrete sections at service loads, the concrete below the neutral axis is assumed to have cracked and therefore contributes negligible tensile stiffness [1].
+
+The reinforcement, however, continues to resist the tensile force. To simplify the analysis, the reinforcement is replaced with an equivalent concrete area having the same stiffness.
+
+This allows the entire cracked section to be analysed using a single material (concrete), making it possible to calculate:
+
+* the cracked neutral axis;
+* the cracked second moment of area;
+* section stiffness; and
+* service stresses and deflections.
+
+### Why is the modular ratio important?
+
+The value of **n** reflects the relative stiffness of steel and concrete.
+
+* A larger modular ratio means the reinforcement contributes proportionally more stiffness to the transformed section.
+* A smaller modular ratio means the concrete contributes relatively more stiffness.
+
+Because **Ec** varies with concrete strength while **Es** remains approximately constant, the modular ratio changes with concrete grade.
+
+### Why this check matters
+
+The modular ratio is the foundation of transformed-section analysis. Every subsequent Serviceability Limit State calculation, including cracked neutral axis depth, cracked moment of inertia, stresses and deflections, depends on the transformed reinforcement areas calculated using this ratio.
+
+### References
+
+[1] AS 3600:2018, Clause 8.5 - Serviceability analysis of cracked reinforced concrete sections.
+
+[2] AS 3600:2018, Clause 3.1.2 - Modulus of elasticity of concrete.
+
+[3] AS 3600:2018, Clause 3.2.2 - Modulus of elasticity of reinforcing steel.
+"""
+            )
+
     def _sls_3_1_table():
         st.markdown("##### Transformed steel areas")
         layer_rows = []
@@ -1479,8 +1840,8 @@ Modular ratio $n = {Es/Ec:.2f}$ (used to compute $nA_s$ in the table below).
                     "Layer": layer["name"],
                     "Description": layer["label"],
                     "Depth y (mm)": layer["y"],
-                    "A_s (mm²)": As_i,
-                    "n A_s (mm²)": n_sls * As_i,
+                    "A_s (mm^2)": As_i,
+                    "n A_s (mm^2)": n_sls * As_i,
                 }
             )
         if include_comp and comp_layer is not None:
@@ -1490,8 +1851,8 @@ Modular ratio $n = {Es/Ec:.2f}$ (used to compute $nA_s$ in the table below).
                     "Layer": comp_layer["name"],
                     "Description": comp_layer["label"],
                     "Depth y (mm)": comp_layer["y"],
-                    "A_s (mm²)": As_c,
-                    "n A_s (mm²)": n_sls * As_c,
+                    "A_s (mm^2)": As_c,
+                    "n A_s (mm^2)": n_sls * As_c,
                 }
             )
         st.table(pd.DataFrame(layer_rows))
@@ -1501,7 +1862,7 @@ Modular ratio $n = {Es/Ec:.2f}$ (used to compute $nA_s$ in the table below).
         summary_line=f"3.1 Modular ratio $n = E_s / E_c$ | Result: n = {Es/Ec:.2f}",
         details_md=section31_details,
         status=None,
-        content_before=content_3_1,
+        content_before=info_3_1,
         diagram_fn=None,
         content_after=_sls_3_1_table,
     )
@@ -1749,6 +2110,69 @@ d_n = {dn_val:.2f}\ \text{{mm}}
             title="SLS stress block",
             config={"displayModeBar": False},
         )
+
+    def info_3_2():
+        with _bending_check_info_row(help_text="Cracked neutral axis depth"):
+            st.markdown(
+                """
+## Check 3.2 - Cracked Neutral Axis Depth (dn)
+
+### Why This Calculation Is Required
+
+This check determines the location of the **neutral axis** for the cracked concrete section under service loading using the transformed-section method required for elastic cracked-section analysis [1].
+
+After cracking, the concrete below the neutral axis is assumed to carry negligible tensile stress. The tensile force is resisted entirely by the reinforcing steel, while the concrete above the neutral axis remains in compression.
+
+Because the reinforcement has been transformed into an equivalent concrete area using the modular ratio, the cracked section can be analysed as a single transformed concrete section.
+
+### How is the neutral axis determined?
+
+The neutral axis is located by satisfying equilibrium of the transformed areas.
+
+The first moment of the transformed tensile reinforcement about the neutral axis is balanced by the first moment of the concrete compression zone and any transformed compression reinforcement.
+
+The solution therefore satisfies:
+
+**Compression = Tension**
+
+This equation is solved iteratively because the neutral axis depth appears in both the compression and tension terms.
+
+Once equilibrium is achieved, the calculated value is the cracked neutral axis depth.
+
+### Why does the neutral axis move?
+
+The cracked neutral axis is generally deeper than the uncracked neutral axis because:
+
+* the concrete below the neutral axis is no longer effective in tension;
+* the transformed reinforcement carries all tensile force;
+* the compression zone adjusts until internal equilibrium is restored.
+
+The position of the neutral axis therefore reflects the actual stiffness of the cracked section.
+
+### Why is this check important?
+
+The cracked neutral axis controls almost every subsequent Serviceability Limit State calculation, including:
+
+* the cracked second moment of area;
+* section stiffness;
+* concrete compression stresses;
+* reinforcement stresses;
+* crack width calculations;
+* deflection calculations.
+
+Even small changes in neutral axis depth can significantly affect the calculated stiffness and long-term deflections of the member.
+
+### Why this check matters
+
+Determining the cracked neutral axis establishes the geometry of the cracked transformed section. It forms the basis for all subsequent serviceability calculations by defining how compression is distributed through the concrete and how the transformed reinforcement contributes to the section stiffness.
+
+### References
+
+[1] AS 3600:2018, Clause 8.5 - Elastic analysis of cracked reinforced concrete sections.
+
+[2] AS 3600:2018, Clause 8.5 - Transformed-section method for cracked section properties.
+"""
+            )
     
     step_expander_calcbox(
         uid="bending_sls_3_2",
@@ -1756,6 +2180,7 @@ d_n = {dn_val:.2f}\ \text{{mm}}
         details_md=section32_details,
         status=None,
         diagram_fn=diagram_3_2,
+        content_before=info_3_2,
     )
 
     # --------------------------------------------------
@@ -1828,12 +2253,115 @@ $$
 Cracked transformed inertia $I_{{cr}} = {Icr:,.2f}\\ \\text{{mm}}^4$.
 """
 
+    def info_3_3():
+        with _bending_check_info_row(help_text="Cracked moment of inertia"):
+            st.markdown(
+                """
+### Cracked Moment of Inertia (Icr) - Why This Calculation Is Required
+
+This check calculates the **cracked moment of inertia**, **Icr**, of the transformed reinforced concrete section about the cracked neutral axis.
+
+The moment of inertia is a geometric property that describes **how efficiently the cross-section resists bending**. It depends not only on the amount of material present, but also on **how far that material is located from the neutral axis**. Material located further from the neutral axis contributes significantly more to the section stiffness because its contribution increases with the square of the distance from the neutral axis.
+
+### Why is a cracked moment of inertia required?
+
+Before cracking, the concrete section is assumed to act as a complete solid section, and its stiffness is represented by the **gross moment of inertia (Ig)**.
+
+Once the tensile stress in the concrete exceeds its tensile strength, cracks form in the tension zone. After cracking, the concrete below the neutral axis is assumed to contribute negligible tensile stiffness and is therefore ignored in the transformed section analysis [1].
+
+The beam stiffness is therefore no longer represented by **Ig**, but by the much smaller **cracked moment of inertia (Icr)**.
+
+This reduction in stiffness is one of the primary reasons reinforced concrete beams experience larger deflections after cracking.
+
+### How is Icr calculated?
+
+The cracked section is analysed using the transformed-section method, where the reinforcing steel is converted into an equivalent concrete area using the modular ratio calculated in Check 3.1.
+
+The cracked moment of inertia is then obtained by summing the contributions from:
+
+* the concrete compression zone;
+* the transformed tensile reinforcement; and
+* any transformed compression reinforcement.
+
+Each component contributes according to the **parallel axis theorem**.
+
+For each component:
+
+**Contribution = Centroidal inertia + Area x (distance to neutral axis)^2**
+
+The total cracked moment of inertia is therefore:
+
+**Icr = Concrete contribution + Transformed tension steel contribution + Transformed compression steel contribution**
+
+The concrete compression block contributes its own geometric inertia, while each transformed reinforcement layer contributes primarily through the **Area x distance^2** term because the bars are located well away from the neutral axis.
+
+### Why does reinforcement contribute so much?
+
+Although the reinforcement occupies only a small area compared with the concrete, it is generally located close to the outer fibres of the beam.
+
+Because the contribution to moment of inertia increases with the **square of the distance from the neutral axis**, reinforcement positioned further from the neutral axis makes a disproportionately large contribution to the cracked stiffness.
+
+This is why increasing the effective depth of reinforcement often produces a much larger increase in stiffness than simply increasing the reinforcement area.
+
+### Why is the neutral axis important?
+
+The cracked moment of inertia is calculated **about the cracked neutral axis**, not the centroid of the original section.
+
+As the neutral axis moves deeper into the section after cracking:
+
+* the concrete compression zone becomes smaller;
+* the compression-zone inertia decreases;
+* the reinforcement distances to the neutral axis change; and
+* the overall section stiffness changes.
+
+For this reason, the cracked neutral axis must always be determined before calculating **Icr**.
+
+### Why is Icr important?
+
+The cracked moment of inertia defines the **flexural stiffness** of the cracked member.
+
+The flexural stiffness is:
+
+**EI = Ec x Icr**
+
+where:
+
+* **Ec** represents the material stiffness of the concrete.
+* **Icr** represents the geometric stiffness of the cracked section.
+
+Together they determine how much the beam bends under service loading.
+
+### Why this check matters
+
+The cracked moment of inertia is one of the most important properties calculated during Serviceability Limit State analysis because it is subsequently used to determine:
+
+* service curvature;
+* short-term deflections;
+* long-term deflections;
+* reinforcement stresses;
+* concrete compression stresses;
+* crack width calculations; and
+* overall serviceability performance.
+
+An accurate value of **Icr** is therefore essential for predicting the real behaviour of reinforced concrete members after cracking.
+
+### References
+
+[1] AS 3600:2018, Clause 8.5 - Elastic analysis of cracked reinforced concrete sections.
+
+[2] AS 3600:2018, Clause 8.5 - Transformed-section properties and cracked section stiffness.
+
+[3] AS 3600:2018, Clause 3.1.2 - Modulus of elasticity of concrete (Ec).
+"""
+            )
+
     step_expander_calcbox(
         uid="bending_sls_3_3",
-        summary_line=f"3.3 Cracked moment of inertia $I_{{cr}}$ | Result: I_cr = {Icr:,.2f} mm⁴",
+        summary_line=f"3.3 Cracked moment of inertia I_cr | Result: I_cr = {Icr:,.2f} mm^4",
         details_md=section33_details,
         status=None,
         diagram_fn=None,
+        content_before=info_3_3,
     )
 
 
@@ -1884,16 +2412,78 @@ $$
 Curvature at service: $\\kappa = {kappa:.3e}\\ \\text{{mm}}^{{-1}}$.
 """
 
+    def info_3_4():
+        with _bending_check_info_row(help_text="Curvature at service moment"):
+            st.markdown(
+                """
+### Curvature at Service Moment (kappa) - Why This Calculation Is Required
+
+This check calculates the **curvature** of the cracked reinforced concrete section under the applied service bending moment.
+
+Curvature describes the rate at which a beam bends under loading and is directly related to the stiffness of the section.
+
+For linear elastic behaviour, curvature is calculated from:
+
+**kappa = Ms / (Ec x Icr)**
+
+where:
+
+* **Ms** = service bending moment;
+* **Ec** = modulus of elasticity of concrete; and
+* **Icr** = cracked moment of inertia.
+
+This equation shows that curvature increases with applied moment and decreases as section stiffness increases.
+
+### What does curvature represent?
+
+Curvature is the change in rotation per unit length of the member.
+
+* A **small curvature** indicates a stiff section that bends very little.
+* A **large curvature** indicates a more flexible section that undergoes greater bending.
+
+Curvature is therefore the fundamental quantity used to determine beam deflections.
+
+### Why is cracked stiffness used?
+
+Under normal service loading, reinforced concrete members generally crack in tension.
+
+Once cracking occurs, the member stiffness reduces from the gross section stiffness to the cracked section stiffness represented by **Ec x Icr**.
+
+Using the cracked stiffness provides a more realistic prediction of service deflections and member behaviour.
+
+### Why this check matters
+
+The calculated curvature forms the basis for the remaining serviceability calculations.
+
+It is used to determine:
+
+* beam deflections;
+* long-term deformation;
+* member rotations;
+* strain distributions under service loading; and
+* service stress calculations.
+
+Accurate prediction of curvature is therefore essential for assessing the serviceability performance of reinforced concrete members.
+
+### References
+
+[1] AS 3600:2018, Clause 8.5 - Serviceability analysis using cracked section properties.
+
+[2] AS 3600:2018, Clause 8.5 - Elastic cracked-section stiffness and transformed-section analysis.
+"""
+            )
+
     step_expander_calcbox(
         uid="bending_sls_3_4",
-        summary_line=f"3.4 Curvature at service moment | Result: κ = {kappa:.3e} mm⁻¹",
+        summary_line=f"3.4 Curvature at service moment | Result: kappa = {kappa:.3e} mm^-1",
         details_md=section34_details,
         status=None,
         diagram_fn=None,
+        content_before=info_3_4,
     )
 
     # --------------------------------------------------
-    # 3.5 Strain distribution ε(y) = κ (y − d_n)
+    # 3.5 Strain distribution epsilon(y) = kappa(y - d_n)
     # --------------------------------------------------
     strain_points = [("Top fibre", 0.0)]
     for layer in layers_tension:
@@ -1905,16 +2495,16 @@ Curvature at service: $\\kappa = {kappa:.3e}\\ \\text{{mm}}^{{-1}}$.
     strain_rows = []
     for name, yi in strain_points:
         eps = kappa * (yi - dn_sls)
-        strain_rows.append({"Layer": name, "Depth y (mm)": yi, "ε": eps})
+        strain_rows.append({"Layer": name, "Depth y (mm)": yi, "epsilon": eps})
 
     df_eps = pd.DataFrame(strain_rows)
 
     # Find max strain for summary line
     if strain_rows:
-        max_strain_abs = max([abs(row["ε"]) for row in strain_rows])
-        max_strain_row = next((row for row in strain_rows if abs(row["ε"]) == max_strain_abs), None)
+        max_strain_abs = max([abs(row["epsilon"]) for row in strain_rows])
+        max_strain_row = next((row for row in strain_rows if abs(row["epsilon"]) == max_strain_abs), None)
         max_strain_label = max_strain_row["Layer"] if max_strain_row else ""
-        max_strain_val = max_strain_row["ε"] if max_strain_row else 0.0
+        max_strain_val = max_strain_row["epsilon"] if max_strain_row else 0.0
     else:
         max_strain_label = ""
         max_strain_val = 0.0
@@ -1955,12 +2545,84 @@ See table for $\\varepsilon(y)$ at the top fibre, each steel layer, and bottom f
         st.markdown("##### Strain distribution results")
         st.table(df_eps)
 
+    def info_3_5():
+        with _bending_check_info_row(help_text="Strain distribution"):
+            st.markdown(
+                """
+### Strain Distribution - Why This Calculation Is Required
+
+This check calculates the **strain at key locations throughout the cracked concrete section** under the applied service bending moment.
+
+Once the section curvature has been determined in the previous check, the strain at any depth within the section can be calculated using the assumption that **plane sections remain plane after bending** [1]. This means the strain varies linearly through the depth of the member.
+
+The strain at any depth is given by:
+
+**epsilon(y) = kappa(y - dn)**
+
+where:
+
+* **kappa** = section curvature
+* **y** = depth measured from the compression face
+* **dn** = cracked neutral axis depth
+
+Because the relationship is linear, the strain diagram is represented by a straight line passing through the neutral axis, where the strain is zero.
+
+### Why is the strain distribution important?
+
+The strain distribution describes how much every part of the beam stretches or shortens under service loading.
+
+* Concrete above the neutral axis experiences compressive strain.
+* The neutral axis has zero longitudinal strain.
+* Reinforcement and concrete below the neutral axis experience tensile strain.
+
+Knowing the strain at any depth allows the corresponding material stresses to be calculated using the appropriate stress-strain relationships.
+
+### Why does the strain vary linearly?
+
+The assumption that **plane sections remain plane** is one of the fundamental principles of reinforced concrete analysis.
+
+As the beam bends:
+
+* fibres near the compression face shorten;
+* fibres below the neutral axis lengthen;
+* the strain changes uniformly between these locations.
+
+This assumption has been shown experimentally to provide an accurate representation of reinforced concrete behaviour under normal flexural loading and forms the basis of both Ultimate and Serviceability Limit State calculations.
+
+### Why this check matters
+
+The strain distribution links the section geometry with the material behaviour.
+
+It provides the strain at:
+
+* the extreme concrete compression fibre;
+* every reinforcement layer;
+* the bottom concrete fibre; and
+* any other depth within the section.
+
+These calculated strains are then used directly to determine:
+
+* reinforcement stresses;
+* concrete stresses;
+* crack widths;
+* service stress checks; and
+* serviceability performance.
+
+### References
+
+[1] AS 3600:2018, Clause 8.5 - Elastic analysis of cracked reinforced concrete sections using strain compatibility.
+
+[2] AS 3600:2018, Clause 8.5 - Serviceability analysis based on transformed cracked-section properties.
+"""
+            )
+
     step_expander_calcbox(
         uid="bending_sls_3_5",
-        summary_line=f"3.5 Strain distribution ε(y) = κ(y − d_n) | Max strain: {max_strain_label} = {max_strain_val:.5f}",
+        summary_line=f"3.5 Strain distribution epsilon(y) = kappa(y - d_n) | Max strain: {max_strain_label} = {max_strain_val:.5f}",
         details_md=section35_details,
         status=None,
         diagram_fn=_sls_3_5_diagram,
+        content_before=info_3_5,
         content_after=_sls_3_5_table,
     )
 
@@ -1980,7 +2642,7 @@ See table for $\\varepsilon(y)$ at the top fibre, each steel layer, and bottom f
                 "Layer": layer["name"],
                 "Description": layer["label"],
                 "Depth y (mm)": layer["y"],
-                "ε_s": eps_s,
+                "epsilon_s": eps_s,
                 "f_s (MPa)": fs,
             }
         )
@@ -1994,7 +2656,7 @@ See table for $\\varepsilon(y)$ at the top fibre, each steel layer, and bottom f
                 "Layer": comp_layer["name"],
                 "Description": comp_layer["label"],
                 "Depth y (mm)": comp_layer["y"],
-                "ε_s": eps_s_c,
+                "epsilon_s": eps_s_c,
                 "f_s (MPa)": fs_c,
             }
         )
@@ -2006,7 +2668,7 @@ See table for $\\varepsilon(y)$ at the top fibre, each steel layer, and bottom f
     example_fs = ""
     if steel_rows and len(steel_rows) > 0:
         first_row = steel_rows[0]
-        example_eps = f"\\varepsilon_{{s,1}} = {first_row['ε_s']:.5f}"
+        example_eps = f"\\varepsilon_{{s,1}} = {first_row['epsilon_s']:.5f}"
         example_fs = f"f_{{s,1}} = {first_row['f_s (MPa)']:.1f} \\text{{ MPa}}"
     else:
         example_eps = "\\varepsilon_{{s,1}} = \\kappa (d_1 - d_n)"
@@ -2053,12 +2715,100 @@ See table for layer-by-layer SLS steel strains and stresses.
         st.markdown("##### Steel stress results")
         st.table(df_steel)
 
+    def info_3_6():
+        with _bending_check_info_row(help_text="Steel stresses at SLS"):
+            st.markdown(
+                """
+### Steel Stresses at Serviceability Limit State - Why This Calculation Is Required
+
+This check calculates the **stress in each reinforcement layer** under service loading.
+
+The reinforcement stresses are determined directly from the strain distribution calculated in the previous check.
+
+For each reinforcement layer:
+
+1. The steel strain is obtained from the service strain diagram.
+2. Hooke's Law is applied to calculate the corresponding steel stress.
+
+The steel stress is therefore:
+
+**fs = Es x epsilon_s**
+
+where:
+
+* **Es** = modulus of elasticity of reinforcing steel
+* **epsilon_s** = calculated steel strain
+
+Because Serviceability Limit State analysis assumes elastic behaviour, the reinforcement stress is directly proportional to the calculated strain [1].
+
+### Why are service stresses calculated?
+
+Unlike Ultimate Limit State design, the reinforcement is **not assumed to have yielded**.
+
+Instead, the steel is expected to remain within its elastic range during normal service loading.
+
+Calculating the actual service stress allows the engineer to evaluate:
+
+* reinforcement performance under working loads;
+* crack width behaviour;
+* long-term durability;
+* fatigue performance; and
+* compliance with serviceability requirements.
+
+### Why is Hooke's Law used?
+
+At service loads, reinforcing steel behaves almost perfectly elastically.
+
+Within the elastic range:
+
+**Stress = Elastic Modulus x Strain**
+
+This simple linear relationship provides an accurate prediction of reinforcement stresses under normal operating conditions.
+
+Only if the service loading became sufficiently large for the reinforcement to approach yield would a nonlinear material model become necessary.
+
+### Why are stresses calculated for each reinforcement layer?
+
+Different reinforcement layers are located at different depths within the beam.
+
+Since strain varies linearly through the section, each layer experiences a different strain and therefore a different stress.
+
+Calculating the stress in every layer allows the program to accurately assess:
+
+* crack formation;
+* reinforcement demand;
+* service stress limits; and
+* the contribution of each reinforcement layer to the overall section behaviour.
+
+### Why this check matters
+
+The calculated steel stresses form the basis for the remaining Serviceability Limit State calculations.
+
+They are subsequently used to determine:
+
+* crack widths;
+* reinforcement stress limits;
+* durability checks;
+* fatigue assessments; and
+* long-term service performance.
+
+Accurate steel stresses are therefore essential for assessing how the reinforced concrete member will perform throughout its service life.
+
+### References
+
+[1] AS 3600:2018, Clause 8.5 - Elastic analysis of cracked reinforced concrete sections.
+
+[2] AS 3600:2018, Clause 3.2.2 - Modulus of elasticity of reinforcing steel (Es).
+"""
+            )
+
     step_expander_calcbox(
         uid="bending_sls_3_6",
         summary_line=f"3.6 Steel stresses at SLS (each layer) | Max stress: {max_fs_label} = {max_fs:.1f} MPa",
         details_md=section36_details,
         status=None,
         diagram_fn=None,
+        content_before=info_3_6,
         content_after=_sls_3_6_table,
     )
 
@@ -2076,12 +2826,12 @@ See table for layer-by-layer SLS steel strains and stresses.
             )
 
     # Save cracked-section SLS geometry + steel state to session_state
-    # (no widgets touched – these are read-only “output” values)
+    # (no widgets touched â€“ these are read-only â€œoutputâ€ values)
     st.session_state["bending_sls_dn"] = float(dn_sls)
     st.session_state["bending_sls_kappa"] = float(kappa)
 
     if deepest is not None:
-        eps_outer = float(deepest["ε_s"])
+        eps_outer = float(deepest["epsilon_s"])
         fs_outer = float(Es * eps_outer)
         st.session_state["bending_sls_y_tension_outer"] = float(
             deepest["Depth y (mm)"]
@@ -2110,10 +2860,10 @@ See table for layer-by-layer SLS steel strains and stresses.
         )
         if deepest is not None:
             fs_tension = abs(float(deepest["f_s (MPa)"]))
-            eps_s_control = float(deepest["ε_s"])
+            eps_s_control = float(deepest["epsilon_s"])
             y_control = float(deepest["Depth y (mm)"])
 
-    # Also compute top-fibre SLS strain from κ and d_n,sls
+    # Also compute top-fibre SLS strain from Îº and d_n,sls
     eps_top_sls = kappa * (0.0 - dn_sls)
 
     # Publish SLS strain/position data for the main diagrams
@@ -2146,16 +2896,16 @@ Use $f_{{s,ser}} \\approx {fs_tension:.1f}$ MPa in crack-width calculations on t
 """
         step_expander_calcbox(
             uid="bending_sls_3_7",
-            summary_line=f"3.7 Link to crack-width calculation | f_s,ser ≈ {fs_tension:.1f} MPa",
+            summary_line=f"3.7 Link to crack-width calculation | f_s,ser ~= {fs_tension:.1f} MPa",
             details_md=section37_details,
             status=None,
             diagram_fn=None,
         )
         
-        # Publish for Crack Width page – service tensile steel stress at SLS
+        # Publish for Crack Width page â€“ service tensile steel stress at SLS
         from bending_core import compute_sigma_s_sls_for_crack
         compute_sigma_s_sls_for_crack(publish=True)
     else:
         st.info(
-            "No tension layer found for crack-width link – check the SLS inputs."
+            "No tension layer found for crack-width link â€“ check the SLS inputs."
         )

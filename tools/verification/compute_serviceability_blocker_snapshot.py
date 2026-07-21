@@ -308,14 +308,21 @@ def _run_probe(module: Any, *, check_key: str, stamp: str) -> dict[str, Any]:
         or {}
     )
     contract = dict(primary.get("button_contract") or {})
+    serviceability_output_materialized = bool(
+        str(primary.get("check_key") or "").strip().lower() == "serviceability"
+        and str(primary.get("status") or "").strip().upper() == "BLOCKED"
+        and str(primary.get("title_main") or "").strip() == "Serviceability repair blocked"
+    )
+    serviceability_event_count = len(serviceability_rows) + (1 if serviceability_output_materialized else 0)
     return {
         "check_key": check_key,
         "trace_path": str(trace_path),
         "record_path": str(record_path),
         "active_under_capacity_event_count": len(active_rows),
-        "serviceability_event_count": len(serviceability_rows),
+        "serviceability_event_count": serviceability_event_count,
+        "serviceability_output_materialized": serviceability_output_materialized,
         "typed_sync_record_count": len(typed_rows),
-        "preempted_by_active_under_capacity": bool(active_rows) and not bool(serviceability_rows),
+        "preempted_by_active_under_capacity": bool(active_rows) and not bool(serviceability_event_count),
         "output_hashes": {
             "primary": _stable_hash(primary),
             "evidence": _stable_hash(evidence),
@@ -345,7 +352,7 @@ def _run_probe(module: Any, *, check_key: str, stamp: str) -> dict[str, Any]:
 def main() -> int:
     import importlib
 
-    module = importlib.import_module("inputs_page")
+    module = importlib.import_module("inputs_page_app_contract_bridge")
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     TRACE_DIR.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y-%m-%dT%H-%M-%S")
@@ -362,7 +369,7 @@ def main() -> int:
         "status": status,
         "failures": failures,
         "target_branch": "serviceability crack/deflection blocker materialization",
-        "target_lines": "inputs_page.py:80005-80099",
+        "target_lines": "inputs_page_app_contract_bridge.py::_compute_design_guidance_items",
         "decision": (
             "not_proven_preempted_by_active_under_capacity"
             if status == "NOT_PROVEN"

@@ -89,10 +89,10 @@ def main() -> int:
         "_summary_fp = _get_design_guide_fp(summary_state)",
         'summary_state_debug["design_guide_render_state_source"]',
     )
-    final_panel_block = _bounded(
+    final_panel_compute_block = _bounded(
         inputs_source,
-        "def _render_fast_design_guidance_panel(",
-        "def _render_current_inputs_summary()",
+        "def render_design_guide_guidance_cache_or_compute(",
+        "def render_design_guide_prepare_guidance_debug_and_state(",
     )
 
     profile_path, profile = _latest_profile()
@@ -124,8 +124,8 @@ def main() -> int:
         "summary_block_does_not_seed_guidance_cache": (
             "_set_cached_design_guide_guidance(" not in summary_block
         ),
-        "final_panel_still_owns_guidance_compute": (
-            "_compute_design_guidance_items(" in final_panel_block
+        "final_panel_compute_coordinator_owns_guidance_compute": (
+            "_compute_design_guidance_items(" in final_panel_compute_block
         ),
         "latest_profile_available": bool(profile_path),
         "profile_compute_count_is_single_owner": max_compute_count <= 1,
@@ -144,7 +144,7 @@ def main() -> int:
                 "summary_block_defers_guidance_compute"
             ],
             "final_panel_remains_publication_proof_owner": checks[
-                "final_panel_still_owns_guidance_compute"
+                "final_panel_compute_coordinator_owns_guidance_compute"
             ],
             "product_behaviour_changed": False,
             "cta_apply_semantics_changed": False,

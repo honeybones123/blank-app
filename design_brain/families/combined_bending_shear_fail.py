@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
+from design_brain.candidate_evaluation import MAX_LONGITUDINAL_BAR_CC_SPACING_MM
 from design_brain.combined_bending_shear_candidate_merge import (
     BENDING_REINFORCEMENT_UPDATE_KEYS,
     CANONICAL_BENDING_REINFORCEMENT_UPDATE_KEYS,
@@ -27,6 +29,10 @@ ADAPTER_VERSION = "combined_bending_shear_fail.merge_runtime.v1"
 
 def _as_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, list) else []
 
 
 def _as_tuple_of_dicts(value: Any) -> tuple[dict[str, Any], ...]:
@@ -152,11 +158,48 @@ def select_combined_fail_fallback_repair_candidate_from_ladder(
 def _copy_allowed_refinement_updates(updates: dict[str, Any]) -> dict[str, Any]:
     allowed = (
         set(GEOMETRY_UPDATE_KEYS)
-        | set(CANONICAL_BENDING_REINFORCEMENT_UPDATE_KEYS)
+        | set(BENDING_REINFORCEMENT_UPDATE_KEYS)
         | set(SHEAR_REINFORCEMENT_UPDATE_KEYS)
     )
     canonical = normalise_combined_canonical_reinforcement_updates(updates)
-    return {str(key): value for key, value in canonical.items() if str(key) in allowed}
+    mirrored = dict(canonical)
+    mirror_pairs = (
+        ("bot_row_1_bars", "bot1_count"),
+        ("bot_row_1_dia", "db_bot_1"),
+        ("bot_row_2_bars", "bot2_count"),
+        ("bot_row_2_dia", "db_bot_2"),
+        ("top_row_1_bars", "top1_count"),
+        ("top_row_1_dia", "db_top_1"),
+        ("top_row_2_bars", "top2_count"),
+        ("top_row_2_dia", "db_top_2"),
+    )
+    for canonical_key, legacy_key in mirror_pairs:
+        if canonical_key in mirrored:
+            mirrored[legacy_key] = mirrored[canonical_key]
+    return {str(key): value for key, value in mirrored.items() if str(key) in allowed}
+
+
+def _minimum_row_count_for_longitudinal_spacing(
+    *,
+    width: float,
+    bar_dia: float,
+    cover_side: float,
+    lig_d: float,
+    minimum_count: int,
+) -> int:
+    """Return the minimum evenly spaced row count for the shared 300 mm c/c rule."""
+
+    count = max(2, int(minimum_count or 0))
+    try:
+        centre_span = float(width) - 2.0 * (
+            float(cover_side) + max(float(lig_d), 0.0) + float(bar_dia) / 2.0
+        )
+    except (TypeError, ValueError):
+        return count
+    if centre_span <= 0.0:
+        return count
+    required_for_spacing = int(math.ceil(float(centre_span) / float(MAX_LONGITUDINAL_BAR_CC_SPACING_MM))) + 1
+    return max(count, required_for_spacing)
 
 
 def _candidate_signature(updates: dict[str, Any]) -> tuple[tuple[str, str], ...]:
@@ -171,6 +214,344 @@ def _runtime_row(row: dict[str, Any]) -> dict[str, Any]:
     projected = dict(row)
     projected["updates"] = _runtime_updates(_as_dict(row.get("updates")))
     return projected
+
+
+def _candidate_rows(evidence: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for key in (
+        "active_fail_repair_candidate_rows",
+        "candidate_rows",
+        "safe_repair_candidates",
+        "safe_executor_backed_candidates",
+        "repair_candidates",
+    ):
+        for row in _as_list(evidence.get(key)):
+            if isinstance(row, dict):
+                rows.append(dict(row))
+    return rows
+
+
+def _candidate_updates(row: dict[str, Any]) -> dict[str, Any]:
+    for key in (
+        "updates",
+        "selected_candidate_updates",
+        "best_safe_candidate_updates",
+        "closest_safe_candidate_updates",
+        "resolved_candidate_updates",
+        "proposed_updates",
+    ):
+        updates = _runtime_updates(_as_dict(row.get(key)))
+        if updates:
+            return updates
+    payload = _as_dict(row.get("action_payload"))
+    updates = _runtime_updates(
+        _as_dict(payload.get("resolved_candidate_updates") or payload.get("updates"))
+    )
+    if updates:
+        return updates
+    resolved = _as_dict(row.get("resolved_candidate"))
+    return _runtime_updates(_as_dict(resolved.get("updates")))
+
+
+def _candidate_is_executor_backed(row: dict[str, Any]) -> bool:
+    updates = _candidate_updates(row)
+    if not updates:
+        return False
+    if row.get("safe_executor_backed") is True:
+        return True
+    if row.get("executor_backed") is True:
+        return True
+    if row.get("is_compliant") is True and _as_dict(row.get("overview")).get("any_fail") is False:
+        return True
+    if row.get("preview_pass") is True and not str(row.get("blocking_reason") or "").strip():
+        return True
+    return False
+
+
+def _promotable_combined_repair_candidate(evidence: dict[str, Any]) -> dict[str, Any]:
+    rows = [row for row in _candidate_rows(evidence) if _candidate_is_executor_backed(row)]
+    if rows:
+        selected_id = str(
+            evidence.get("selected_candidate_id")
+            or evidence.get("best_safe_candidate_id")
+            or evidence.get("closest_safe_candidate_id")
+            or ""
+        ).strip()
+        if selected_id:
+            for row in rows:
+                row_id = str(
+                    row.get("candidate_id")
+                    or row.get("source_candidate_id")
+                    or row.get("id")
+                    or ""
+                ).strip()
+                if row_id == selected_id:
+                    return dict(row)
+        try:
+            selected = select_combined_fail_fallback_repair_candidate_from_ladder(
+                rows,
+                target_low=float(evidence.get("target_low") or evidence.get("target_band_low") or 0.85),
+                target_high=float(evidence.get("target_high") or evidence.get("target_band_high") or 1.0),
+                final_accepted_min_family_util=float(
+                    evidence.get("final_accepted_min_family_util")
+                    or evidence.get("final_accepted_min_util")
+                    or 0.85
+                ),
+            )
+            row = _as_dict(selected.get("selected"))
+            if row:
+                return row
+        except Exception:
+            return dict(rows[0])
+        return dict(rows[0])
+    updates = _runtime_updates(
+        _as_dict(
+            evidence.get("selected_candidate_updates")
+            or evidence.get("best_safe_candidate_updates")
+            or evidence.get("closest_safe_candidate_updates")
+        )
+    )
+    if updates:
+        return {
+            "candidate_id": str(
+                evidence.get("selected_candidate_id")
+                or evidence.get("best_safe_candidate_id")
+                or evidence.get("closest_safe_candidate_id")
+                or "combined_fail_repair_candidate"
+            ),
+            "updates": updates,
+            "safe_executor_backed": True,
+        }
+    return {}
+
+
+def _combined_expected_util(candidate: dict[str, Any], evidence: dict[str, Any], button: dict[str, Any]) -> Any:
+    return (
+        candidate.get("candidate_post_util")
+        or candidate.get("worst_util")
+        or candidate.get("preview_util")
+        or candidate.get("expected_util")
+        or evidence.get("selected_candidate_util")
+        or evidence.get("best_safe_final_util")
+        or evidence.get("closest_safe_candidate_util")
+        or button.get("expected_util")
+    )
+
+
+def _build_combined_route_success_result(
+    *,
+    decision: dict[str, Any],
+    item: dict[str, Any],
+    diagnostics: dict[str, Any],
+    evidence: dict[str, Any],
+    button: dict[str, Any],
+    updates: dict[str, Any],
+    candidate_id: str,
+    candidate_title: str,
+    expected_util: Any,
+    family_route_owner: str,
+) -> dict[str, Any]:
+    decision_in = _as_dict(decision)
+    item_in = _as_dict(item)
+    diagnostics_out = _as_dict(diagnostics)
+    evidence_in = _as_dict(evidence)
+    button_out = _as_dict(button)
+    updates_out = _runtime_updates(updates)
+
+    card = _as_dict(decision_in.get("card"))
+    card.update(
+        {
+            "title": "Bending and shear capacity are low",
+            "badge": "REPAIR",
+            "intent": "required_fix",
+            "theme": "fail",
+            "css_bucket": "fail",
+            "use_success_style": False,
+            "family": "combined",
+            "check_key": "combined",
+            "body": (
+                "Active bending and shear capacity are failing; this one-click repair "
+                "is executor-backed and keeps all required checks acceptable."
+            ),
+            "status_text": "FAIL",
+        }
+    )
+    presentation = _as_dict(decision_in.get("presentation"))
+    presentation.update(
+        {
+            "theme": "fail",
+            "css_bucket": "fail",
+            "use_success_style": False,
+            "headline": "Bending and shear capacity are low",
+            "subtext": card["body"],
+            "show_apply_button": True,
+            "critical_status": "FAIL",
+            "guidance_intent": "required_fix",
+        }
+    )
+    button_out.update(
+        {
+            "enabled": True,
+            "actionable": True,
+            "family": "combined",
+            "action_type": "apply_resolved_candidate",
+            "updates": dict(updates_out),
+            "preview_pass": True,
+            "blocking_reason": None,
+            "disabled_reason": None,
+            "candidate_id": candidate_id,
+            "source_candidate_id": candidate_id,
+            "selected_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "published_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "cta_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "apply_payload_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "candidate_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+        }
+    )
+    if expected_util is not None:
+        button_out["expected_util"] = expected_util
+
+    evidence_out = dict(evidence_in)
+    evidence_out.update(
+        {
+            "active_strength_repair_action": True,
+            "active_strength_repair_family": "combined",
+            "governing_family": "COMBINED_BENDING_SHEAR_FAIL",
+            "family_name": "COMBINED_BENDING_SHEAR_FAIL",
+            "family_routing_used": False,
+            "family_route_owner": family_route_owner,
+            "selected_candidate_id": candidate_id,
+            "selected_candidate_title": candidate_title,
+            "selected_candidate_updates": dict(updates_out),
+            "safe_repair_candidate_count": max(int(evidence_in.get("safe_repair_candidate_count") or 0), 1),
+            "executable_repair_candidate_count": max(
+                int(evidence_in.get("executable_repair_candidate_count") or 0),
+                1,
+            ),
+            "safe_executor_backed_candidates_count": max(
+                int(evidence_in.get("safe_executor_backed_candidates_count") or 0),
+                1,
+            ),
+            "selected_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "published_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "cta_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "apply_payload_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "candidate_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "card_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "family_match_passed": True,
+            "family_match_violation_reason": None,
+        }
+    )
+
+    item_out = dict(item_in)
+    item_out.update(
+        {
+            "title_main": "Bending and shear capacity are low",
+            "title": "Bending and shear capacity are low",
+            "headline": "Bending and shear capacity are low",
+            "family": "combined",
+            "check_key": "combined",
+            "selected_action_family": "combined",
+            "guidance_intent": "required_fix",
+            "primary_action": "Run one-click auto design",
+            "primary_card_actionable": True,
+            "action_type": "apply_resolved_candidate",
+            "updates": dict(updates_out),
+            "selected_action_updates": dict(updates_out),
+            "candidate_id": candidate_id,
+            "source_candidate_id": candidate_id,
+            "selected_family": "COMBINED_BENDING_SHEAR_FAIL",
+            "selected_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "published_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "cta_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "card_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "apply_payload_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "candidate_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "family_route_owner": family_route_owner,
+            "candidate_search_evidence": dict(evidence_out),
+            "status": "FAIL",
+            "critical_status": "FAIL",
+            "display_state": "ACTION",
+            "final_state_class": "action",
+            "pill": "NEXT",
+            "button_contract": dict(button_out),
+            "final_visible_design_guide_item": True,
+            "final_visible_resolver_reason": "combined_fail_family_owner_repair_action",
+        }
+    )
+    action_payload = _as_dict(item_out.get("action_payload"))
+    action_payload.update(
+        {
+            "family": "combined",
+            "resolved_candidate_family_tag": "combined",
+            "resolved_candidate_action_type": "apply_resolved_candidate",
+            "action_type": "apply_resolved_candidate",
+            "resolved_candidate_updates": dict(updates_out),
+            "updates": dict(updates_out),
+            "candidate_id": candidate_id,
+            "source_candidate_id": candidate_id,
+            "candidate_search_evidence": dict(evidence_out),
+            "button_contract": dict(button_out),
+            "selected_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "published_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "cta_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "apply_payload_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "candidate_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+        }
+    )
+    item_out["action_payload"] = dict(action_payload)
+    resolved = _as_dict(item_out.get("resolved_candidate"))
+    resolved.update(
+        {
+            "family": "combined",
+            "recommendation_family_tag": "combined",
+            "action_type": "apply_resolved_candidate",
+            "updates": dict(updates_out),
+            "candidate_id": candidate_id,
+            "source_candidate_id": candidate_id,
+            "candidate_search_evidence": dict(evidence_out),
+            "selected_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "published_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "cta_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "apply_payload_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+            "candidate_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+        }
+    )
+    item_out["resolved_candidate"] = dict(resolved)
+    diagnostics_out.update(
+        {
+            "family_routing_used": False,
+            "routing_ownership_note": "combined family lock keeps shared routing outside family",
+            "fallback_used": False,
+            "fallback_reason": None,
+            "candidate_source": "combined_candidate_search_evidence",
+            "ranking_source": "COMBINED_BENDING_SHEAR_FAIL",
+            "evidence_source": "COMBINED_BENDING_SHEAR_FAIL",
+            "publication_source": "COMBINED_BENDING_SHEAR_FAIL",
+            "cta_source": "COMBINED_BENDING_SHEAR_FAIL",
+            "visible_title": "Bending and shear capacity are low",
+            "cta_updates_preserved": sorted(str(key) for key in updates_out.keys()),
+        }
+    )
+    debug_out = _as_dict(decision_in.get("debug"))
+    debug_out["combined_fail_family_routing"] = dict(diagnostics_out)
+    decision_out = dict(decision_in)
+    decision_out.update(
+        {
+            "card": card,
+            "presentation": presentation,
+            "button_contract": dict(button_out),
+            "candidate_search_evidence": dict(evidence_out),
+            "debug": debug_out,
+        }
+    )
+    return {
+        "used": True,
+        "decision": decision_out,
+        "primary_item": item_out,
+        "diagnostics": diagnostics_out,
+        "evidence": evidence_out,
+    }
 
 
 def _inputs_from_state(
@@ -370,6 +751,9 @@ class CombinedBendingShearFailFamily(DiagnosticFamilyStrategy):
         base_d = _as_float(base.get("D") or base.get("beam_depth")) or 500.0
         base_count = int(_as_float(base.get("bot1_count")) or 3)
         base_dia = int(_as_float(base.get("db_bot_1")) or 16)
+        base_top_count = int(_as_float(base.get("top1_count")) or _as_float(base.get("top_row_1_bars")) or 2)
+        base_top_dia = int(_as_float(base.get("db_top_1")) or _as_float(base.get("top_row_1_dia")) or 12)
+        cover_side = _as_float(base.get("cover_side") or base.get("cover")) or 40.0
         geometry_pairs = [
             (base_b, base_d),
             (base_b, base_d + 25.0),
@@ -405,14 +789,32 @@ class CombinedBendingShearFailFamily(DiagnosticFamilyStrategy):
         for b_value, d_value in geometry_pairs:
             for count, dia in reo_pairs:
                 for lig_d, legs, spacing in ligature_sets:
+                    bottom_count = _minimum_row_count_for_longitudinal_spacing(
+                        width=float(b_value),
+                        bar_dia=float(dia),
+                        cover_side=float(cover_side),
+                        lig_d=float(lig_d),
+                        minimum_count=int(count),
+                    )
+                    top_count = _minimum_row_count_for_longitudinal_spacing(
+                        width=float(b_value),
+                        bar_dia=float(base_top_dia),
+                        cover_side=float(cover_side),
+                        lig_d=float(lig_d),
+                        minimum_count=int(base_top_count),
+                    )
                     updates = {
                         "b": float(b_value),
                         "bw": float(b_value),
                         "D": float(d_value),
-                        "bot_row_1_bars": int(count),
+                        "bot_row_1_bars": int(bottom_count),
                         "bot_row_1_dia": int(dia),
                         "bot_row_2_bars": 0,
                         "bot_row_2_dia": 0,
+                        "top_row_1_bars": int(top_count),
+                        "top_row_1_dia": int(base_top_dia),
+                        "top_row_2_bars": 0,
+                        "top_row_2_dia": 0,
                         "lig_d": int(lig_d),
                         "lig_legs": int(legs),
                         "s_lig": float(spacing),
@@ -502,18 +904,117 @@ class CombinedBendingShearFailFamily(DiagnosticFamilyStrategy):
         primary_item: dict[str, Any],
         active_strength_failures: set[str],
     ) -> dict[str, Any]:
-        _ = active_strength_failures
+        active = {str(item or "").strip().lower() for item in set(active_strength_failures or set())}
+        decision_in = _as_dict(decision)
+        item_in = _as_dict(primary_item)
+        debug = _as_dict(context.debug or decision_in.get("debug"))
+        evidence = _as_dict(
+            decision_in.get("candidate_search_evidence")
+            or item_in.get("candidate_search_evidence")
+            or context.evidence
+            or debug.get("candidate_search_evidence")
+        )
+        button = _as_dict(
+            decision_in.get("button_contract")
+            or item_in.get("button_contract")
+            or debug.get("primary_button_contract")
+            or debug.get("button_contract")
+        )
+        action_payload = _as_dict(item_in.get("action_payload"))
+        resolved_candidate = _as_dict(item_in.get("resolved_candidate"))
+        promoted_candidate = _promotable_combined_repair_candidate(evidence)
+        promoted_updates = _candidate_updates(promoted_candidate)
+        updates = _runtime_updates(
+            _as_dict(
+                button.get("updates")
+                or item_in.get("updates")
+                or item_in.get("selected_action_updates")
+                or action_payload.get("resolved_candidate_updates")
+                or action_payload.get("updates")
+                or resolved_candidate.get("updates")
+                or promoted_updates
+            )
+        )
+        action_type = str(
+            button.get("action_type")
+            or item_in.get("action_type")
+            or action_payload.get("resolved_candidate_action_type")
+            or action_payload.get("action_type")
+            or resolved_candidate.get("action_type")
+            or promoted_candidate.get("action_type")
+            or ("apply_resolved_candidate" if promoted_updates else "")
+        ).strip()
+        cta_enabled = bool(
+            button.get("enabled")
+            or button.get("actionable")
+            or promoted_updates
+            or updates
+        )
         diagnostics = {
             **self._header("route_existing_decision", context),
+            "family_routing_attempted": True,
             "family_routing_used": False,
             "fallback_used": True,
-            "fallback_reason": "combined family lock keeps shared routing outside family",
+            "fallback_reason": None,
+            "adapter_error": None,
+            "product_routing_enabled": True,
+            "read_only": False,
+            "changes_publication": True,
+            "creates_executable_cta": True,
+            "active_strength_failures": sorted(active),
+            "promoted_candidate_id": promoted_candidate.get("candidate_id") or promoted_candidate.get("id"),
+            "promoted_update_keys": sorted(str(key) for key in promoted_updates),
         }
+        if not active >= {"bending", "shear"}:
+            diagnostics["fallback_reason"] = "active_strength_failures_not_combined_bending_shear"
+            return {
+                "used": False,
+                "decision": decision_in,
+                "primary_item": item_in,
+                "diagnostics": diagnostics,
+            }
+        if not cta_enabled or action_type != "apply_resolved_candidate" or not updates:
+            diagnostics["fallback_reason"] = "existing_combined_repair_cta_not_executor_backed"
+            return {
+                "used": False,
+                "decision": decision_in,
+                "primary_item": item_in,
+                "diagnostics": diagnostics,
+            }
+        candidate_id = str(
+            button.get("candidate_id")
+            or button.get("source_candidate_id")
+            or promoted_candidate.get("candidate_id")
+            or promoted_candidate.get("source_candidate_id")
+            or promoted_candidate.get("id")
+            or evidence.get("selected_candidate_id")
+            or evidence.get("closest_safe_candidate_id")
+            or evidence.get("best_safe_candidate_id")
+            or f"combined_fail_repair_{stable_combined_candidate_hash(updates)[:12]}"
+        )
+        candidate_title = str(
+            promoted_candidate.get("title")
+            or promoted_candidate.get("label")
+            or evidence.get("selected_candidate_title")
+            or "Combined bending and shear repair"
+        )
+        result = _build_combined_route_success_result(
+            decision=decision_in,
+            item=item_in,
+            diagnostics=diagnostics,
+            evidence=evidence,
+            button=button,
+            updates=updates,
+            candidate_id=candidate_id,
+            candidate_title=candidate_title,
+            expected_util=_combined_expected_util(promoted_candidate, evidence, button),
+            family_route_owner=self.metadata.owner,
+        )
         return {
-            "used": False,
-            "decision": _as_dict(decision),
-            "primary_item": _as_dict(primary_item),
-            "diagnostics": diagnostics,
+            "used": bool(result.get("used")),
+            "decision": _as_dict(result.get("decision")),
+            "primary_item": _as_dict(result.get("primary_item")),
+            "diagnostics": _as_dict(result.get("diagnostics")),
         }
 
     def _header(self, operation: str, context: FamilyStrategyContext) -> dict[str, Any]:
@@ -523,13 +1024,13 @@ class CombinedBendingShearFailFamily(DiagnosticFamilyStrategy):
             "adapter_version": ADAPTER_VERSION,
             "operation": operation,
             "owner": self.metadata.owner,
-            "product_routing_enabled": False,
+            "product_routing_enabled": bool(operation == "route_existing_decision"),
             "mutates_product_state": False,
             "calls_ui_or_session_state": False,
             "changes_candidate_selection": False,
-            "creates_executable_cta": False,
+            "creates_executable_cta": bool(operation == "route_existing_decision"),
             "context_governing_state": context.governing_state,
-            "read_only": True,
+            "read_only": bool(operation != "route_existing_decision"),
         }
 
 

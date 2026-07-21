@@ -87,6 +87,33 @@ def _blockers_by_family(debug: dict[str, Any], *, post_click: bool = False) -> d
                 out.setdefault(fam, {}).update(dict(detail))
             elif isinstance(detail, str) and detail.strip():
                 out.setdefault(fam, {})["reason"] = detail
+    evidence = debug.get("candidate_search_evidence")
+    if isinstance(evidence, dict):
+        evidence_keys = (
+            (
+                "post_click_exact_blockers_by_family",
+                "post_click_cleanup_evidence_by_family",
+            )
+            if post_click
+            else (
+                "exact_blockers_by_family",
+                "cleanup_evidence_by_family",
+                "post_click_exact_blockers_by_family",
+                "post_click_cleanup_evidence_by_family",
+            )
+        )
+        for key in evidence_keys:
+            raw = evidence.get(key)
+            if not isinstance(raw, dict):
+                continue
+            for family, detail in raw.items():
+                fam = str(family or "").strip().lower()
+                if not fam:
+                    continue
+                if isinstance(detail, dict):
+                    out.setdefault(fam, {}).update(dict(detail))
+                elif isinstance(detail, str) and detail.strip():
+                    out.setdefault(fam, {})["reason"] = detail
     proof_key = "visible_card_proofs_after" if post_click else "visible_card_proofs_before"
     text_key = "design_guide_visible_text_after" if post_click else "design_guide_visible_text_before"
     for proof in list(debug.get(proof_key) or []):
@@ -543,8 +570,37 @@ def _visible_blocker_has_structured_evidence(
         return False
     for family, blocker in blockers.items():
         fam = str(family or "").strip().lower()
+        repair_ran = (
+            blocker.get("repair_search_ran") is True
+            or blocker.get("active_fail_repair_search_ran") is True
+            or blocker.get("bending_fail_contract_ladder_attempted") is True
+        )
+        repair_exhaustive = (
+            blocker.get("repair_search_exhaustive") is True
+            or blocker.get("active_fail_repair_search_exhaustive") is True
+            or blocker.get("candidate_search_exhaustive") is True
+        )
+        safe_repair_count = _float_or_none(
+            blocker.get("safe_repair_candidate_count")
+            if blocker.get("safe_repair_candidate_count") is not None
+            else blocker.get("safe_candidate_count")
+        )
+        executable_repair_count = _float_or_none(
+            blocker.get("executable_repair_candidate_count")
+            if blocker.get("executable_repair_candidate_count") is not None
+            else blocker.get("executable_candidate_count")
+        )
+        active_repair_blocker_valid = bool(
+            repair_ran
+            and repair_exhaustive
+            and safe_repair_count == 0
+            and executable_repair_count == 0
+        )
         if fam == "bending":
-            if not _family_cleanup_search_proof_valid(fam, blocker, case, post_click=post_click):
+            if (
+                not active_repair_blocker_valid
+                and not _family_cleanup_search_proof_valid(fam, blocker, case, post_click=post_click)
+            ):
                 continue
         text = _blocker_text(blocker)
         if not text:
@@ -599,7 +655,34 @@ def _visible_blocker_has_structured_evidence(
             executable_count = _float_or_none(
                 case.get("post_click_executable_safe_cleanup_count" if post_click else "executable_safe_cleanup_count")
             )
+        target_band_count = _float_or_none(
+            blocker.get("executable_target_band_candidate_count")
+            if blocker.get("executable_target_band_candidate_count") is not None
+            else blocker.get("accepted_band_candidate_count")
+        )
+        if target_band_count is None:
+            target_band_count = _float_or_none(
+                case.get(
+                    "post_click_executable_target_band_candidate_count"
+                    if post_click
+                    else "executable_target_band_candidate_count"
+                )
+            )
+        target_band_blocker_valid = bool(
+            cleanup_ran
+            and cleanup_exhaustive
+            and target_band_count == 0
+            and (
+                blocker.get("failed_check_status") is not None
+                or blocker.get("failed_check_name") is not None
+                or blocker.get("reason") is not None
+            )
+        )
         if cleanup_ran and cleanup_exhaustive and safe_count == 0 and executable_count == 0:
+            return True
+        if target_band_blocker_valid:
+            return True
+        if active_repair_blocker_valid:
             return True
     return False
 

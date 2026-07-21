@@ -50,6 +50,18 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8", errors="ignore")
 
 
+def _read_inputs_composition_surface() -> str:
+    return "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
+        )
+    )
+
+
 def _run(script: str) -> dict[str, Any]:
     completed = subprocess.run(
         [sys.executable, script],
@@ -125,7 +137,7 @@ def main() -> int:
         }
     )
     runtime_source = _read("design_brain/families/bending_fail_shear_overdesign_governs/runtime.py")
-    inputs_source = _read("inputs_page.py")
+    inputs_source = _read_inputs_composition_surface()
     checks = {
         "proof_chain_pass": all(entry["passed"] for entry in proof_chain),
         "contract_loads": bool(load_bending_fail_shear_overdesign_governs_contract()),
@@ -148,8 +160,10 @@ def main() -> int:
             for term in ("inputs_page", "streamlit", "button_contract", "publication", "apply_routing", "one_click")
         ),
         "api_does_not_publish_or_generate_cta": api_result.publication == {} and api_result.cta_contract == {},
-        "inputs_page_still_owns_shared_surfaces": "record_design_guide_publication_snapshot" in inputs_source
-        and "build_design_guide_apply_button_contract" in inputs_source,
+        "inputs_page_still_owns_shared_surfaces": "from design_brain.cta_contracts import" in inputs_source
+        and "from design_brain.final_publication import" in inputs_source
+        and "build_final_design_guide_publication" in inputs_source
+        and "handle_inputs_apply_buttons" in inputs_source,
     }
     failures = [key for key, passed in checks.items() if not passed]
     failed_chain = [entry["name"] for entry in proof_chain if not entry["passed"]]

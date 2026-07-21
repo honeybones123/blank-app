@@ -23,7 +23,8 @@ from design_brain.candidate_evaluation import (  # noqa: E402
 )
 
 
-INPUTS = ROOT / "inputs_page.py"
+APP_CONTRACT_BRIDGE = ROOT / "inputs_page_app_contract_bridge.py"
+AUTO_DESIGN_COMPUTE = ROOT / "inputs_page_modules" / "auto_design_compute.py"
 CANDIDATE_EVALUATION = ROOT / "design_brain" / "candidate_evaluation.py"
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
@@ -146,10 +147,11 @@ def _new_allowed(current_eval: dict[str, Any] | None, next_hop_payload: dict[str
 
 
 def build_payload() -> dict[str, Any]:
-    inputs_source = _read(INPUTS)
+    bridge_source = _read(APP_CONTRACT_BRIDGE)
+    compute_source = _read(AUTO_DESIGN_COMPUTE)
     candidate_source = _read(CANDIDATE_EVALUATION)
-    wrapper_start, wrapper_end, wrapper = _function_segment(inputs_source, "_one_click_exhaustion_next_hop_allowed")
-    solve_start, solve_end, solve = _function_segment(inputs_source, "_solve_one_click_to_target")
+    wrapper_start, wrapper_end, wrapper = _function_segment(bridge_source, "_one_click_exhaustion_next_hop_allowed")
+    solve_start, solve_end, solve = _function_segment(compute_source, "_solve_one_click_to_target")
     mode_config = {"target_util_min": DEFAULT_MIN, "target_util_max": DEFAULT_MAX}
     current = _candidate(target_domains=["bending", "shear"], bending=0.7, shear=0.75)
     better = _candidate(target_domains=["bending", "shear"], bending=0.8, shear=0.82)

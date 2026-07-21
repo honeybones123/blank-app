@@ -106,7 +106,7 @@ def main() -> int:
         (
             case
             for case in classification_payload.get("cases") or []
-            if case.get("case_id") == "safe_near_limit_above_cleanup_band_maps_to_target_band"
+            if case.get("case_id") == "explicit_target_band_requires_both_applicable_domains_in_band"
         ),
         {},
     )

@@ -366,6 +366,65 @@ def _wait_for_settle(page: Page, timeout_ms: int = 45_000) -> None:
     page.wait_for_timeout(1800)
 
 
+def _scroll_to_design_actions(page: Page) -> None:
+    try:
+        page.get_by_text("Design Actions", exact=True).first.scroll_into_view_if_needed(timeout=5_000)
+        page.wait_for_timeout(300)
+    except Exception:
+        try:
+            page.evaluate(
+                """
+                () => {
+                  const nodes = Array.from(document.querySelectorAll('h1,h2,h3,h4,div,span,p,label'));
+                  const target = nodes.find((el) => ((el.innerText || el.textContent || '').trim() === 'Design Actions'));
+                  if (target) target.scrollIntoView({block: 'center'});
+                }
+                """
+            )
+            page.wait_for_timeout(300)
+        except Exception:
+            pass
+
+
+def _open_section_if_control_missing(page: Page, section_label: str, control_label: str) -> None:
+    try:
+        opened = page.evaluate(
+            """
+            ({sectionLabel, controlLabel}) => {
+              const visible = (el) => {
+                if (!el) return false;
+                const style = window.getComputedStyle(el);
+                const rect = el.getBoundingClientRect();
+                return style && style.visibility !== 'hidden' && style.display !== 'none' &&
+                  rect.width > 0 && rect.height > 0;
+              };
+              const norm = (s) => String(s || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+              const section = norm(sectionLabel);
+              const control = norm(controlLabel);
+              if (Array.from(document.querySelectorAll('label, div, span, p'))
+                .some((el) => visible(el) && norm(el.innerText || el.textContent).includes(control))) {
+                return false;
+              }
+              const candidates = Array.from(document.querySelectorAll('button, summary, [role="button"], div'))
+                .filter((el) => visible(el))
+                .map((el) => ({el, text: norm(el.innerText || el.textContent)}))
+                .filter((row) => row.text && row.text.includes(section) && !row.text.includes(control))
+                .sort((a, b) => a.text.length - b.text.length);
+              const target = candidates[0] ? candidates[0].el : null;
+              if (!target) return false;
+              target.scrollIntoView({block: 'center', inline: 'nearest'});
+              target.click();
+              return true;
+            }
+            """,
+            {"sectionLabel": section_label, "controlLabel": control_label},
+        )
+        if opened:
+            page.wait_for_timeout(600)
+    except Exception:
+        pass
+
+
 def _wait_for_design_guide_card(page: Page, timeout_ms: int = 180_000) -> None:
     page.wait_for_function(
         """
@@ -390,6 +449,25 @@ def _wait_for_design_guide_card(page: Page, timeout_ms: int = 180_000) -> None:
 
 def _set_number(page: Page, label: str, value: float) -> None:
     errors: list[str] = []
+    try:
+        page.evaluate(
+            """
+            (label) => {
+              const norm = (s) => String(s || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+              const needle = norm(label);
+              const nodes = Array.from(document.querySelectorAll('label, div, p, span'))
+                .filter((el) => norm(el.innerText || el.textContent).includes(needle))
+                .sort((a, b) => (a.innerText || '').length - (b.innerText || '').length);
+              if (nodes.length) {
+                nodes[0].scrollIntoView({block: 'center', inline: 'nearest'});
+              }
+            }
+            """,
+            label,
+        )
+        page.wait_for_timeout(250)
+    except Exception:
+        pass
     try:
         loc = page.get_by_label(label).first
         loc.wait_for(state="visible", timeout=2500)
@@ -486,6 +564,7 @@ def _select_by_label(page: Page, label: str, option_text: str) -> None:
     rect = page.evaluate(
         """
         ({label}) => {
+          const selectSelector = '[role="combobox"], [data-baseweb="select"]';
           const visible = (el) => {
             if (!el) return false;
             const style = window.getComputedStyle(el);
@@ -827,25 +906,52 @@ def _scenario_underdesign_repair(
     pure_bending: bool = False,
 ) -> ScenarioResult:
     _goto_inputs(page, base_url)
-    _set_number(page, "Positive design moment Mu*+ (kNm)", 900 if pure_bending else 0)
+    _scroll_to_design_actions(page)
+    moment_target = 0 if pure_shear else 900
+    _set_number(page, "Positive design moment Mu*+ (kNm)", moment_target)
     if pure_shear:
         _set_first_matching_number(page, ["Width b (mm)", "Width"], 250)
         _set_first_matching_number(page, ["Depth D (mm)", "Depth"], 300)
     else:
         _set_first_matching_number(page, ["Width b (mm)", "Width"], 300)
         _set_first_matching_number(page, ["Depth D (mm)", "Depth"], 350)
+    _open_section_if_control_missing(page, "Shear", "Link dia")
     setup_failures: list[str] = []
-    if not _select_first_matching(page, ["Link \u00d8 (mm)", "Link Ã˜ (mm)", "Link"], "10"):
-        setup_failures.append("Could not set visible link diameter select to 10.")
-    if not _select_first_matching(page, ["No. of legs", "legs"], "2"):
-        setup_failures.append("Could not set visible leg count select to 2.")
-    _set_first_matching_number(page, ["Link spacing", "spacing"], 300)
+    link_dia = "24" if pure_bending else "10"
+    link_legs = "4" if pure_bending else "2"
+    link_spacing = 125 if pure_bending else 300
+    if not _select_first_matching(page, ["Link dia (mm)", "Link \u00d8 (mm)", "Link Ã˜ (mm)", "Link"], link_dia):
+        setup_failures.append(f"Could not set visible link diameter select to {link_dia}.")
+    if not _select_first_matching(page, ["No. of legs", "legs"], link_legs):
+        setup_failures.append(f"Could not set visible leg count select to {link_legs}.")
+    _set_first_matching_number(page, ["Link spacing (mm)", "Link spacing", "spacing"], link_spacing)
     # Keep the pure-bending fixture inside the shear target band so the mixed
     # bending-fail/shear-overdesign family is not contract-eligible.
     shear_target = 26 if pure_bending else 300
+    _scroll_to_design_actions(page)
     if not _set_first_matching_number(page, ["Design shear Vu* (kN)", "Design shear", "Vu*"], shear_target):
         setup_failures.append(f"Could not set visible design shear input to {shear_target}.")
     setup_snap = _snapshot(page)
+    visible_moment_raw = _visible_control_value(setup_snap, "positive_moment")
+    try:
+        visible_moment_value = float(str(visible_moment_raw).strip())
+    except Exception:
+        visible_moment_value = None
+    if visible_moment_value is None or abs(visible_moment_value - float(moment_target)) > 0.5:
+        setup_failures.append(
+            "Underdesign fixture did not hold the bending moment target after setup: "
+            f"expected {moment_target}, visible {visible_moment_raw!r}."
+        )
+    visible_shear_raw = _visible_control_value(setup_snap, "design_shear")
+    try:
+        visible_shear_value = float(str(visible_shear_raw).strip())
+    except Exception:
+        visible_shear_value = None
+    if visible_shear_value is None or abs(visible_shear_value - float(shear_target)) > 0.5:
+        setup_failures.append(
+            "Underdesign fixture did not hold the shear target after setup: "
+            f"expected {shear_target}, visible {visible_shear_raw!r}."
+        )
     setup_shot = _save_screenshot(page, artifact_dir, name, "after_setup")
     try:
         _wait_for_design_guide_card(page)
@@ -1013,7 +1119,9 @@ def _scenario_underdesign_repair(
         if "SHEAR_FAIL_GOVERNS" not in rejected_families:
             failures.append("Pure bending selection did not document shear-family rejection.")
         payload_id_lower = render_cta_payload_id.lower()
-        if not render_cta_payload_id:
+        if has_no_repair_evidence:
+            pass
+        elif not render_cta_payload_id:
             failures.append("Pure bending repair CTA did not expose a render payload id.")
         elif any(token in payload_id_lower for token in ("shear_fail_governs", "combined_bending_shear_fail", "local_cleanup", "unknown", "cleanup")):
             failures.append(f"Pure bending repair CTA exposed stale non-bending payload id: {render_cta_payload_id!r}.")
@@ -1027,7 +1135,9 @@ def _scenario_underdesign_repair(
         if "BENDING_FAIL_GOVERNS" not in rejected_families:
             failures.append("Pure shear selection did not document bending-family rejection.")
         payload_id_lower = render_cta_payload_id.lower()
-        if not render_cta_payload_id:
+        if has_no_repair_evidence:
+            pass
+        elif not render_cta_payload_id:
             failures.append("Pure shear repair CTA did not expose a render payload id.")
         elif "combined" in payload_id_lower or "cleanup" in payload_id_lower:
             failures.append(f"Pure shear repair CTA exposed stale non-shear payload id: {render_cta_payload_id!r}.")
@@ -1408,7 +1518,19 @@ def _start_server(port: int) -> subprocess.Popen[str]:
     stdout = open(log_dir / f"product_path_streamlit_{port}.log", "w", encoding="utf-8")
     stderr = open(log_dir / f"product_path_streamlit_{port}.err.log", "w", encoding="utf-8")
     return subprocess.Popen(
-        [sys.executable, "-m", "streamlit", "run", "app.py", "--server.port", str(port), "--server.headless", "true"],
+        [
+            sys.executable,
+            "-m",
+            "streamlit",
+            "run",
+            "app.py",
+            "--server.port",
+            str(port),
+            "--server.headless",
+            "true",
+            "--server.fileWatcherType",
+            "none",
+        ],
         cwd=REPO,
         env=env,
         stdout=stdout,

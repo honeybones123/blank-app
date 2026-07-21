@@ -37,6 +37,18 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8", errors="replace")
 
 
+def _read_inputs_composition_surface() -> str:
+    return "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
+        )
+    )
+
+
 def _write(snapshot: dict[str, Any]) -> tuple[Path, Path]:
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     AUDIT_DIR.mkdir(parents=True, exist_ok=True)
@@ -68,7 +80,7 @@ def _write(snapshot: dict[str, Any]) -> tuple[Path, Path]:
 def main() -> int:
     family_source = _read("design_brain/families/combined_bending_shear_fail.py")
     package_source = _read("design_brain/families/bending_and_shear_fail_govern/__init__.py")
-    inputs_source = _read("inputs_page.py")
+    inputs_source = _read_inputs_composition_surface()
     publication_source = _read("design_brain/publication.py")
     forbidden_targets = sorted(
         target for target in PLANNED_TARGETS for fragment in FORBIDDEN_TARGET_FRAGMENTS if fragment in target
@@ -111,7 +123,7 @@ def main() -> int:
         "replacement_boundary": {
             "old_authority": "CombinedBendingShearFailFamily.contracted_repair_ladder_specs bounded ladder",
             "new_authority": "run_combined_bending_shear_fail_runtime",
-            "shared_surfaces": "inputs_page.py and design_brain/publication.py remain shared-owned",
+            "shared_surfaces": "inputs composition surface and design_brain/publication.py remain shared-owned",
         },
     }
     json_path, report_path = _write(snapshot)

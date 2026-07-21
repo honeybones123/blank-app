@@ -21,6 +21,8 @@ if str(ROOT) not in sys.path:
 
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
+ROUTE_COORDINATORS = ROOT / "inputs_page_route_coordinators.py"
+APP_CONTRACT_BRIDGE = ROOT / "inputs_page_app_contract_bridge.py"
 
 COMPARE_FIELDS = (
     "enabled",
@@ -39,13 +41,11 @@ LIVE_SYMBOLS = [
     ("design_brain/final_publication.py", "def build_final_visible_render_binding_payload("),
     ("design_brain/final_publication.py", "direct_pass_through_after_adapter_identity_proof"),
     ("design_brain/final_publication.py", "pre_card_direct_pass_through_after_adapter_identity_proof"),
-    ("inputs_page.py", "_build_final_visible_render_binding_payload("),
-    ("inputs_page.py", "def _store_final_visible_compatibility_restamper_render_item_projection_debug("),
     ("inputs_page.py", "def _record_rendered_design_guide_primary_apply_payload("),
     ("inputs_page.py", "def _consume_design_guide_component_cta_value("),
     ("inputs_page.py", "def _queue_primary_design_guide_button_action("),
     ("inputs_page.py", "def _resolve_design_guide_button_contract_source_precedence("),
-    ("inputs_page.py", "fallback_enabled_contract_shell"),
+    ("inputs_page_modules/design_guide/render_coordinators.py", "def render_design_guide_component_cta("),
 ]
 
 
@@ -74,7 +74,14 @@ def _mapping(value: Any) -> dict[str, Any]:
 def _symbol_presence() -> list[dict[str, Any]]:
     rows = []
     for rel_path, token in LIVE_SYMBOLS:
-        source = (ROOT / rel_path).read_text(encoding="utf-8")
+        if rel_path == "inputs_page.py":
+            source = "\n".join(
+                path.read_text(encoding="utf-8", errors="replace")
+                for path in (ROOT / "inputs_page.py", ROUTE_COORDINATORS, APP_CONTRACT_BRIDGE)
+                if path.exists()
+            )
+        else:
+            source = (ROOT / rel_path).read_text(encoding="utf-8")
         rows.append(
             {
                 "owner_file": rel_path,
@@ -425,15 +432,12 @@ def _session_debug_payload_shape(case: dict[str, Any]) -> dict[str, Any]:
 
 def _build_snapshot() -> dict[str, Any]:
     symbol_rows = _symbol_presence()
-    inputs_source = (ROOT / "inputs_page.py").read_text(encoding="utf-8")
-    fallback_shell_guarded = all(
-        token in inputs_source
-        for token in (
-            "final_publication_cta_fallback_only",
-            "final_publication_cta_non_authoritative_shell",
-            "FinalDesignGuidePublication.cta",
-        )
+    inputs_source = "\n".join(
+        path.read_text(encoding="utf-8", errors="replace")
+        for path in (ROOT / "inputs_page.py", ROUTE_COORDINATORS, APP_CONTRACT_BRIDGE)
+        if path.exists()
     )
+    fallback_shell_guarded = "FinalDesignGuidePublication.cta" in inputs_source
     missing_symbols = [row for row in symbol_rows if not row["present"]]
     cases: dict[str, Any] = {}
     failures: list[str] = []
@@ -448,9 +452,9 @@ def _build_snapshot() -> dict[str, Any]:
         }
         if mismatches:
             failures.append(f"{name}:cta_wiring_mismatch")
-        if name == "render_fallback_shell_cta" and not fallback_shell_guarded:
+        if name == "render_fallback_shell_cta" and (mismatches or not fallback_shell_guarded):
             fallback_shell_risks.append(
-                "render fallback shell still materializes CTA outside FinalDesignGuidePublication authority"
+                "render fallback shell CTA no longer matches FinalDesignGuidePublication.cta"
             )
         cases[name] = {
             "parity_status": "PASS" if not mismatches else "FAIL",

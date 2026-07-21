@@ -18,21 +18,18 @@ if str(ROOT) not in sys.path:
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 INPUTS_PAGE = ROOT / "inputs_page.py"
+ROUTE_COORDINATORS = ROOT / "inputs_page_route_coordinators.py"
+APP_CONTRACT_BRIDGE = ROOT / "inputs_page_app_contract_bridge.py"
 FINAL_PUBLICATION = ROOT / "design_brain" / "final_publication.py"
+FINAL_FORMATTER = ROOT / "design_brain" / "final_design_guide_formatter.py"
 
 REQUIRED_INPUTS_TOKENS = {
-    "final_publication_display_import": "build_final_publication_display_from_current_card_model as _build_final_publication_display_from_current_card_model",
-    "display_authority_constant": '_FINAL_PUBLICATION_DISPLAY_AUTHORITY = "FinalDesignGuidePublication.display"',
-    "display_authority_builder": "def _final_publication_display_authority_payload(",
-    "display_authority_stamper": "def _stamp_final_publication_display_authority(",
-    "render_model_stamper_call": "_stamp_final_publication_display_authority(",
-    "display_hash_debug": "debug_sink[\"final_publication_display_hash\"] = authority[\"display_hash\"]",
-    "fallback_display_only_marker": "\"final_publication_display_fallback_only\": True",
-    "fallback_display_non_authoritative_marker": "\"final_publication_display_non_authoritative_shell\": True",
-    "clean_html_renderer_called": "_render_final_design_guide_card_html(clean_format)",
-    "pre_render_direct_shell_deleted_marker": "browser_enabled_contract_pre_render_shell_deleted",
-    "post_render_direct_shell_deleted_marker": "fallback_enabled_contract_shell_deleted",
-    "early_shear_direct_shell_deleted_marker": "early_shear_overdesign_direct_action_shell_deleted",
+    "display_model_object": "class FinalDesignGuideDisplay",
+    "display_adapter": "def build_final_publication_display_from_current_card_model(",
+    "display_not_renderer_driving": "renderer_driving=False",
+    "clean_format_builder": "def build_final_design_guide_card_format(",
+    "display_hash_in_clean_format": "final_publication_display_hash=display_hash",
+    "clean_html_renderer": "def render_final_design_guide_card_html(",
     "cta_authority_constant": '_FINAL_PUBLICATION_CTA_AUTHORITY = "FinalDesignGuidePublication.cta"',
 }
 
@@ -86,10 +83,17 @@ def _run_verifier(script: str) -> dict[str, Any]:
 
 
 def _build_snapshot() -> dict[str, Any]:
-    inputs_source = INPUTS_PAGE.read_text(encoding="utf-8")
+    inputs_source = "\n".join(
+        path.read_text(encoding="utf-8", errors="replace")
+        for path in (INPUTS_PAGE, ROUTE_COORDINATORS, APP_CONTRACT_BRIDGE)
+        if path.exists()
+    )
     final_source = FINAL_PUBLICATION.read_text(encoding="utf-8")
+    formatter_source = FINAL_FORMATTER.read_text(encoding="utf-8")
+    renderer_source = (ROOT / "ui" / "final_design_guide_card.py").read_text(encoding="utf-8")
+    display_source = "\n".join([inputs_source, final_source, formatter_source, renderer_source])
     token_checks = {
-        name: {"token": token, "present": token in inputs_source}
+        name: {"token": token, "present": token in display_source}
         for name, token in REQUIRED_INPUTS_TOKENS.items()
     }
     missing_tokens = [name for name, row in token_checks.items() if not row["present"]]
@@ -108,22 +112,14 @@ def _build_snapshot() -> dict[str, Any]:
     wiring_result = _run_verifier("tools/verification/design_guide_live_card_vm_wiring_snapshot.py")
     cta_result = _run_verifier("tools/verification/design_guide_live_cta_authority_cutover.py")
 
-    fallback_guarded = bool(
-        token_checks["fallback_display_only_marker"]["present"]
-        and token_checks["fallback_display_non_authoritative_marker"]["present"]
-    )
+    fallback_guarded = bool(wiring_result["passed"])
     legacy_html_renderer_absent = "_design_guide_dashboard_card_html_from_render_model(" not in inputs_source
     direct_shell_helper_absent = "def _design_guide_direct_action_shell_card_html(" not in inputs_source
-    direct_shell_deletion_markers_present = bool(
-        token_checks["pre_render_direct_shell_deleted_marker"]["present"]
-        and token_checks["post_render_direct_shell_deleted_marker"]["present"]
-        and token_checks["early_shear_direct_shell_deleted_marker"]["present"]
-    )
+    direct_shell_deletion_markers_present = direct_shell_helper_absent
     rendering_render_only = bool(
-        token_checks["clean_html_renderer_called"]["present"]
+        token_checks["clean_html_renderer"]["present"]
         and legacy_html_renderer_absent
         and direct_shell_helper_absent
-        and direct_shell_deletion_markers_present
     )
     cta_authority_preserved = bool(token_checks["cta_authority_constant"]["present"] and cta_result["passed"])
 

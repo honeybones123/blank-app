@@ -5,22 +5,23 @@ def test_batch_design_page_uses_lazy_workspace_banner():
     source = Path("batch_design/ui/page.py").read_text(encoding="utf-8")
 
     assert "st.tabs(" not in source
-    assert "WORKSPACE_EXPANDED_KEY" in source
-    assert "WORKSPACE_QUERY_PARAM" in source
     assert "def _batch_design_workspace_banner_label" in source
     assert "def _render_batch_design_workspace_banner_visual" in source
-    assert "def _workspace_expanded_from_state" in source
     assert "batch-design-workspace-expander-anchor" in source
     assert "batch-design-hero" in source
     assert "batch-design-hero-icon" in source
     assert "batch-design-hero-chip" in source
-    assert '+ div div[data-testid="stButton"] button' in source
+    assert "def _workspace_toggle_href" not in source
+    assert "def _workspace_expanded_from_state" not in source
+    assert "WORKSPACE_QUERY_PARAM" not in source
+    assert "batch_design_open" not in source
+    assert 'class="batch-design-hero"' in source
+    assert 'href=' not in source
+    assert 'target="_self"' not in source
     assert "min-height: 58px" in source
-    assert "opacity: 0" in source
-    assert "with st.expander(" not in source
-    assert 'key="batch_design_workspace_banner_toggle"' in source
-    assert "if not workspace_expanded:" in source
-    assert "return" in source
+    assert "with st.expander(" in source
+    assert 'key="batch_design_workspace_banner_toggle"' not in source
+    assert "if not workspace_expanded:" not in source
     assert "batch_design_workspace_summary_toggle" not in source
     assert "st.button(toggle_label" not in source
     assert "[>]" in source

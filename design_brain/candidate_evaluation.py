@@ -904,6 +904,26 @@ def evaluate_probe_equivalent_bending_candidate_with_updates(
     )
 
 
+MAX_LONGITUDINAL_BAR_CC_SPACING_MM = 300.0
+
+
+def _longitudinal_row_actual_cc_spacing(
+    *,
+    n_bars: int,
+    db: float,
+    beam_width: float,
+    cover: float,
+    lig_d: float = 0.0,
+) -> float | None:
+    count = int(n_bars)
+    if count < 2:
+        return None
+    centre_span = float(beam_width) - 2.0 * (float(cover) + float(lig_d) + float(db) / 2.0)
+    if centre_span <= 0.0:
+        return None
+    return float(centre_span) / float(count - 1)
+
+
 def _auto_design_candidate_row_valid(
     *,
     n_bars: int,
@@ -911,14 +931,108 @@ def _auto_design_candidate_row_valid(
     beam_width: float,
     cover: float,
     s_min: float,
+    lig_d: float = 0.0,
+    max_cc_spacing: float = MAX_LONGITUDINAL_BAR_CC_SPACING_MM,
 ) -> bool:
-    available = float(beam_width) - (2.0 * float(cover))
+    available = float(beam_width) - (2.0 * (float(cover) + float(lig_d)))
     required = (int(n_bars) * float(db)) + ((int(n_bars) - 1) * float(s_min))
-    if int(n_bars) < 2:
+    count = int(n_bars)
+    if count < 2:
         return False
     if required > available:
         return False
+    actual_cc_spacing = _longitudinal_row_actual_cc_spacing(
+        n_bars=count,
+        db=float(db),
+        beam_width=float(beam_width),
+        cover=float(cover),
+        lig_d=float(lig_d),
+    )
+    if actual_cc_spacing is None:
+        return False
+    if float(actual_cc_spacing) > float(max_cc_spacing) + 1e-9:
+        return False
     return True
+
+
+def resolve_longitudinal_bar_spacing_rule(
+    state: dict[str, Any] | None,
+    updates: dict[str, Any] | None = None,
+    *,
+    max_cc_spacing_mm: float = MAX_LONGITUDINAL_BAR_CC_SPACING_MM,
+) -> dict[str, Any]:
+    """Return the shared longitudinal bar c/c spacing rule.
+
+    This is the transverse spacing across a top/bottom longitudinal row. It is
+    deliberately separate from shear-link spacing along the beam.
+    """
+
+    trial = dict(state or {})
+    trial.update(dict(updates or {}))
+    _, _, width_raw = resolve_geometry_width_context(trial)
+    width = float(width_raw or _target_band_float(trial, "b", 0.0) or 0.0)
+    cover = float(_target_band_float(trial, "cover_side", 40.0) or 40.0)
+    lig_d = max(float(_target_band_float(trial, "lig_d", 0.0) or 0.0), 0.0)
+    rows: list[dict[str, Any]] = []
+    violations: list[str] = []
+
+    def _row(prefix: str, face_prefix: str, row_index: int, label: str, dia_fallback: float = 0.0) -> None:
+        count = int(
+            _target_band_int(
+                trial,
+                f"{prefix}_count",
+                _target_band_int(trial, f"{face_prefix}_row_{row_index}_bars", 0),
+            )
+            or 0
+        )
+        dia = float(
+            _target_band_float(
+                trial,
+                f"db_{prefix}",
+                _target_band_float(trial, f"{face_prefix}_row_{row_index}_dia", dia_fallback),
+            )
+            or 0.0
+        )
+        if count <= 0:
+            return
+        actual_cc = _longitudinal_row_actual_cc_spacing(
+            n_bars=count,
+            db=dia,
+            beam_width=width,
+            cover=cover,
+            lig_d=lig_d,
+        )
+        row_valid = actual_cc is not None and float(actual_cc) <= float(max_cc_spacing_mm) + 1e-9
+        reason = None if row_valid else f"{label}_longitudinal_bar_cc_spacing_above_300_mm"
+        if reason:
+            violations.append(reason)
+        rows.append(
+            {
+                "label": label,
+                "count": int(count),
+                "dia": float(dia),
+                "actual_cc_spacing_mm": actual_cc,
+                "max_cc_spacing_mm": float(max_cc_spacing_mm),
+                "valid": bool(row_valid),
+                "reason": reason,
+            }
+        )
+
+    _row("bot1", "bot", 1, "bottom_row_1")
+    _row("bot2", "bot", 2, "bottom_row_2", _target_band_float(trial, "db_bot1", _target_band_float(trial, "db_bot_1", 0.0)))
+    _row("top1", "top", 1, "top_row_1")
+    _row("top2", "top", 2, "top_row_2", _target_band_float(trial, "db_top1", _target_band_float(trial, "db_top_1", 0.0)))
+    return {
+        "valid": not violations,
+        "maximum_longitudinal_bar_cc_spacing_mm": float(max_cc_spacing_mm),
+        "meaning": "maximum centre-to-centre spacing across longitudinal top/bottom rows; not shear-link spacing along the beam",
+        "width": float(width),
+        "cover_side": float(cover),
+        "lig_d": float(lig_d),
+        "rows": rows,
+        "violations": violations,
+        "reason": "maximum_longitudinal_bar_spacing_exceeded" if violations else None,
+    }
 
 
 def _longitudinal_face_count(source: dict[str, Any], face: str) -> int:
@@ -985,6 +1099,8 @@ def resolve_auto_design_candidate_row_layout_validity(
     top2_count: int = 0,
     db_top_1: float = 12.0,
     db_top_2: float = 12.0,
+    lig_d: float = 0.0,
+    max_longitudinal_cc_spacing_mm: float = MAX_LONGITUDINAL_BAR_CC_SPACING_MM,
     min_spacing_row_1: float | None = None,
     min_spacing_row_2: float | None = None,
 ) -> dict[str, Any]:
@@ -1002,6 +1118,8 @@ def resolve_auto_design_candidate_row_layout_validity(
         beam_width=float(beam_width),
         cover=float(cover),
         s_min=row1_spacing,
+        lig_d=float(lig_d),
+        max_cc_spacing=float(max_longitudinal_cc_spacing_mm),
     )
     row2_valid = True
     if int(bot2_count) > 0:
@@ -1011,6 +1129,8 @@ def resolve_auto_design_candidate_row_layout_validity(
             beam_width=float(beam_width),
             cover=float(cover),
             s_min=row2_spacing,
+            lig_d=float(lig_d),
+            max_cc_spacing=float(max_longitudinal_cc_spacing_mm),
         )
     top_row_1_valid = _auto_design_candidate_row_valid(
         n_bars=int(top1_count),
@@ -1018,6 +1138,8 @@ def resolve_auto_design_candidate_row_layout_validity(
         beam_width=float(beam_width),
         cover=float(cover),
         s_min=max(float(db_top_1), 25.0),
+        lig_d=float(lig_d),
+        max_cc_spacing=float(max_longitudinal_cc_spacing_mm),
     )
     top_row_2_valid = True
     if int(top2_count) > 0:
@@ -1027,6 +1149,8 @@ def resolve_auto_design_candidate_row_layout_validity(
             beam_width=float(beam_width),
             cover=float(cover),
             s_min=max(float(db_top_2), 25.0),
+            lig_d=float(lig_d),
+            max_cc_spacing=float(max_longitudinal_cc_spacing_mm),
         )
     minimum_bar_rule = resolve_minimum_longitudinal_bar_rule(
         {
@@ -1036,8 +1160,31 @@ def resolve_auto_design_candidate_row_layout_validity(
             "top2_count": int(top2_count),
         }
     )
+    spacing_rule = resolve_longitudinal_bar_spacing_rule(
+        {
+            "b": float(beam_width),
+            "cover_side": float(cover),
+            "lig_d": float(lig_d),
+            "bot1_count": int(bot1_count),
+            "bot2_count": int(bot2_count),
+            "db_bot1": float(db_bot_1),
+            "db_bot2": float(db_bot_2),
+            "top1_count": int(top1_count),
+            "top2_count": int(top2_count),
+            "db_top1": float(db_top_1),
+            "db_top2": float(db_top_2),
+        },
+        max_cc_spacing_mm=float(max_longitudinal_cc_spacing_mm),
+    )
     return {
-        "valid": bool(row1_valid and row2_valid and top_row_1_valid and top_row_2_valid and minimum_bar_rule["valid"]),
+        "valid": bool(
+            row1_valid
+            and row2_valid
+            and top_row_1_valid
+            and top_row_2_valid
+            and minimum_bar_rule["valid"]
+            and spacing_rule["valid"]
+        ),
         "row1_valid": bool(row1_valid),
         "row2_valid": bool(row2_valid),
         "top_row_1_valid": bool(top_row_1_valid),
@@ -1052,7 +1199,10 @@ def resolve_auto_design_candidate_row_layout_validity(
         "db_bot_2": float(db_bot_2),
         "db_top_1": float(db_top_1),
         "db_top_2": float(db_top_2),
+        "lig_d": float(lig_d),
         "minimum_bar_rule": minimum_bar_rule,
+        "longitudinal_bar_spacing_rule": spacing_rule,
+        "maximum_longitudinal_bar_cc_spacing_mm": float(max_longitudinal_cc_spacing_mm),
         "min_spacing_row_1": row1_spacing,
         "min_spacing_row_2": row2_spacing,
     }
@@ -1075,6 +1225,7 @@ def filter_auto_design_candidates_by_row_layout(
         _, _, beam_width_raw = resolve_geometry_width_context(cs)
         beam_width = float(beam_width_raw or 0.0)
         cover = float(_target_band_float(cs, "cover_side", 40.0) or 40.0)
+        lig_d = max(float(_target_band_float(cs, "lig_d", 0.0) or 0.0), 0.0)
         bot1_count = int(_target_band_int(cs, "bot1_count", 0) or 0)
         bot2_count = int(_target_band_int(cs, "bot2_count", 0) or 0)
         db_bot_1 = float(_target_band_float(cs, "db_bot_1", 0.0) or 0.0)
@@ -1094,6 +1245,7 @@ def filter_auto_design_candidates_by_row_layout(
             top2_count=top2_count,
             db_top_1=db_top_1,
             db_top_2=db_top_2,
+            lig_d=lig_d,
         )
         if bool(row_layout.get("valid")):
             filtered.append(candidate)
@@ -4421,8 +4573,6 @@ def build_full_candidate_evaluation_overview_status_projection(
         if governs:
             if any(util > 1.0 for util in governs):
                 bending_status = "FAIL"
-            elif any(util >= 0.95 for util in governs):
-                bending_status = "NEAR LIMIT"
             else:
                 bending_status = "PASS"
         else:
@@ -4658,8 +4808,6 @@ def build_fast_candidate_evaluation_scalar_status_projection(
         if governs:
             if any(u > 1.0 for u in governs):
                 bending_status = "FAIL"
-            elif any(u >= 0.95 for u in governs):
-                bending_status = "NEAR LIMIT"
             else:
                 bending_status = "PASS"
         else:
@@ -4946,6 +5094,7 @@ __all__ = [
     "resolve_auto_design_band_reaching_candidate_goal_score",
     "resolve_auto_design_candidate_target_band_metrics",
     "resolve_auto_design_candidate_violation_score",
+    "resolve_longitudinal_bar_spacing_rule",
     "resolve_minimum_longitudinal_bar_rule",
     "resolve_auto_design_band_reacher_ranked_pool",
     "resolve_auto_design_shallower_beam_metrics",

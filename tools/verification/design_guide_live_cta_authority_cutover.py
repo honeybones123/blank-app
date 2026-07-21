@@ -23,7 +23,11 @@ if str(ROOT) not in sys.path:
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 INPUTS_PAGE = ROOT / "inputs_page.py"
+ROUTE_COORDINATORS = ROOT / "inputs_page_route_coordinators.py"
+APP_CONTRACT_BRIDGE = ROOT / "inputs_page_app_contract_bridge.py"
+APPLY_ROUTING = ROOT / "inputs_page_modules" / "apply_routing.py"
 FINAL_PUBLICATION = ROOT / "design_brain" / "final_publication.py"
+DESIGN_GUIDE_RENDER_COORDINATORS = ROOT / "inputs_page_modules" / "design_guide" / "render_coordinators.py"
 
 REQUIRED_INPUTS_TOKENS = {
     "final_publication_import": "build_final_publication_cta_from_current_state as _build_final_publication_cta_from_current_state",
@@ -34,11 +38,10 @@ REQUIRED_INPUTS_TOKENS = {
     "contract_authority_marker": "contract[\"final_publication_cta_authority\"] = _FINAL_PUBLICATION_CTA_AUTHORITY",
     "contract_match_marker": "contract[\"final_publication_cta_matches_live\"] = bool(authority[\"matches_live\"])",
     "binding_stamper_call": "_stamp_final_publication_cta_authority(",
-    "fallback_only_marker": "\"final_publication_cta_fallback_only\": True",
-    "fallback_non_authoritative_marker": "\"final_publication_cta_non_authoritative_shell\": True",
-    "render_only_still_page_owned": "design_guide_page.render_final_panel(",
+    "render_only_extracted": "def render_design_guide_component_cta(",
+    "render_queue_callback_injected": "queue_primary_button_action_fn",
     "apply_queue_still_page_owned": "def _queue_primary_design_guide_button_action(",
-    "apply_handler_still_page_owned": "handle_apply_buttons()",
+    "apply_handler_still_page_owned": "handle_apply_buttons",
 }
 
 FORBIDDEN_RUNTIME_TOKENS_IN_FINAL_PUBLICATION = (
@@ -91,12 +94,17 @@ def _run_verifier(script: str) -> dict[str, Any]:
 
 
 def _build_snapshot() -> dict[str, Any]:
-    inputs_source = INPUTS_PAGE.read_text(encoding="utf-8")
+    inputs_source = "\n".join(
+        path.read_text(encoding="utf-8", errors="replace")
+        for path in (INPUTS_PAGE, ROUTE_COORDINATORS, APP_CONTRACT_BRIDGE, APPLY_ROUTING)
+        if path.exists()
+    )
+    render_source = DESIGN_GUIDE_RENDER_COORDINATORS.read_text(encoding="utf-8")
     final_source = FINAL_PUBLICATION.read_text(encoding="utf-8")
-    token_checks = {
-        name: {"token": token, "present": token in inputs_source}
-        for name, token in REQUIRED_INPUTS_TOKENS.items()
-    }
+    token_checks = {}
+    for name, token in REQUIRED_INPUTS_TOKENS.items():
+        source = render_source if name in {"render_only_extracted", "render_queue_callback_injected"} else inputs_source
+        token_checks[name] = {"token": token, "present": token in source}
     missing_tokens = [name for name, row in token_checks.items() if not row["present"]]
 
     final_imports = _module_imports(FINAL_PUBLICATION)
@@ -112,11 +120,12 @@ def _build_snapshot() -> dict[str, Any]:
     adapter_result = _run_verifier("tools/verification/design_guide_cta_adapter_parity_snapshot.py")
     wiring_result = _run_verifier("tools/verification/design_guide_live_cta_wiring_snapshot.py")
 
-    fallback_guarded = bool(
-        token_checks["fallback_only_marker"]["present"]
-        and token_checks["fallback_non_authoritative_marker"]["present"]
+    fallback_guarded = bool(wiring_result["passed"])
+    rendering_remains_render_only = bool(
+        token_checks["render_only_extracted"]["present"]
+        and token_checks["render_queue_callback_injected"]["present"]
+        and "def _render_design_guide_component_cta(" not in inputs_source
     )
-    rendering_remains_render_only = bool(token_checks["render_only_still_page_owned"]["present"])
     apply_routing_page_owned = bool(
         token_checks["apply_queue_still_page_owned"]["present"]
         and token_checks["apply_handler_still_page_owned"]["present"]

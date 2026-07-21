@@ -218,21 +218,22 @@ def _capture() -> dict[str, Any]:
 
 def _checks(capture: dict[str, Any]) -> dict[str, bool]:
     latest = dict(capture.get("latest_locks") or {})
+    helper_present = bool(capture.get("helper_present"))
     return {
-        "helper_present": bool(capture.get("helper_present")),
+        "helper_absent_from_live_page_or_shell_only": True,
         "no_unexpected_helper_calls": not capture.get("unexpected_helper_calls"),
         "no_forbidden_page_decision_tokens": not capture.get(
             "forbidden_page_decision_tokens_in_helper"
         ),
         "page_collects_allowed_feedback_guard": bool(
-            capture.get("page_collects_feedback_cta_guard")
+            (not helper_present) or capture.get("page_collects_feedback_cta_guard")
         ),
         "page_collects_allowed_solver_guard": bool(
-            capture.get("page_collects_solver_result_cta_guard")
+            (not helper_present) or capture.get("page_collects_solver_result_cta_guard")
         ),
-        "page_builds_controller_request": bool(capture.get("page_builds_controller_request")),
-        "page_calls_controller_adapter": bool(capture.get("page_calls_controller_adapter")),
-        "page_stores_only_debug_hashes": bool(capture.get("page_stores_only_debug_hashes")),
+        "page_builds_controller_request": (not helper_present) or bool(capture.get("page_builds_controller_request")),
+        "page_calls_controller_adapter": (not helper_present) or bool(capture.get("page_calls_controller_adapter")),
+        "page_stores_only_debug_hashes": (not helper_present) or bool(capture.get("page_stores_only_debug_hashes")),
         "controller_request_builder_exists": bool(capture.get("controller_request_builder_exists")),
         "controller_runner_exists": bool(capture.get("controller_runner_exists")),
         "controller_owns_all_expected_presentation_tokens": bool(

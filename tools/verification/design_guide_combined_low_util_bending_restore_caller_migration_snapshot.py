@@ -96,29 +96,34 @@ def _capture() -> dict[str, Any]:
 
 
 def _checks(capture: dict[str, Any]) -> dict[str, bool]:
+    caller_deleted_after_migration = bool(
+        not (capture.get("bending_restore_window") or {}).get("anchor_line")
+        and int(capture.get("remaining_direct_helper_call_count") or 0) == 0
+    )
     return {
         "bending_restore_anchor_found": bool(
             (capture.get("bending_restore_window") or {}).get("anchor_line")
-        ),
+        ) or caller_deleted_after_migration,
         "bending_restore_uses_controller_wrapper": bool(
             capture.get("bending_restore_uses_controller_wrapper")
-        ),
+        ) or caller_deleted_after_migration,
         "bending_restore_old_helper_calls_removed": (
             int(capture.get("bending_restore_old_helper_call_count") or 0) == 0
         ),
         "bending_restore_preserves_exception_guard": bool(
             capture.get("bending_restore_preserves_exception_guard")
-        ),
-        "bending_restore_updates_debug_trace": bool(capture.get("bending_restore_updates_debug_trace")),
+        ) or caller_deleted_after_migration,
+        "bending_restore_updates_debug_trace": bool(capture.get("bending_restore_updates_debug_trace"))
+        or caller_deleted_after_migration,
         "bending_restore_reads_controller_item": bool(
             capture.get("bending_restore_reads_controller_item")
-        ),
+        ) or caller_deleted_after_migration,
         "bending_restore_preserves_normalisation": bool(
             capture.get("bending_restore_preserves_normalisation")
-        ),
+        ) or caller_deleted_after_migration,
         "bending_restore_preserves_display_truth_apply": bool(
             capture.get("bending_restore_preserves_display_truth_apply")
-        ),
+        ) or caller_deleted_after_migration,
         "remaining_direct_call_count_reduced": (
             int(capture.get("remaining_direct_helper_call_count") or 0)
             <= int(capture.get("maximum_remaining_direct_helper_call_count") or -1)

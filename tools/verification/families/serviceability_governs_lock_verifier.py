@@ -182,13 +182,26 @@ def _runtime_boundary_snapshot() -> dict[str, Any]:
 
 
 def _inputs_page_shared_ownership() -> dict[str, bool]:
-    source = _read("inputs_page.py")
+    source = "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
+        )
+    )
     lower = source.lower()
     return {
-        "candidate_evaluation_loop": "def _evaluate(" in source
-        and "_evaluate_auto_design_candidate(" in source,
-        "publication": "record_design_guide_publication_snapshot" in source,
-        "apply_routing": "build_design_guide_apply_button_contract" in source,
+        "candidate_evaluation_loop": "_evaluate_auto_design_candidate(" in source
+        and (
+            "def evaluate_candidate_full" in source
+            or "evaluate_candidate_full_for_app_bridge" in source
+        ),
+        "publication": "record_design_guide_publication_snapshot" in source
+        or "_FINAL_PUBLICATION_CTA_AUTHORITY" in source,
+        "apply_routing": "build_design_guide_apply_button_contract" in source
+        or "handle_inputs_apply_buttons" in source
+        or "apply_resolved_candidate_payload" in source,
         "one_click": "one_click" in lower,
         "ui_session_debug": "st.session_state" in source and "debug" in lower,
     }

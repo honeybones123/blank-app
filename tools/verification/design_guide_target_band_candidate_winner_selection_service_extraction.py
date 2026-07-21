@@ -17,7 +17,7 @@ if str(ROOT) not in sys.path:
 from design_brain.candidate_evaluation import select_target_band_ranked_candidate  # noqa: E402
 
 
-INPUTS = ROOT / "inputs_page.py"
+AUTO_DESIGN_COMPUTE = ROOT / "inputs_page_modules" / "auto_design_compute.py"
 CANDIDATE_EVALUATION = ROOT / "design_brain" / "candidate_evaluation.py"
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
@@ -47,9 +47,21 @@ def _old_select(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
 
 
 def build_payload() -> dict[str, Any]:
-    inputs_source = _read(INPUTS)
+    inputs_source = _read(AUTO_DESIGN_COMPUTE)
     candidate_source = _read(CANDIDATE_EVALUATION)
     start, end, target_loop = _function_segment(inputs_source, "_solve_one_click_to_target")
+    acceptance_start, acceptance_end, acceptance_gate = _function_segment(
+        inputs_source,
+        "_handle_one_click_solver_selected_candidate_acceptance_gate_coordinator",
+    )
+    apply_start, apply_end, apply_helper = _function_segment(
+        inputs_source,
+        "_handle_one_click_solver_apply_selected_candidate_and_evaluate_coordinator",
+    )
+    fallback_start, fallback_end, fallback_helper = _function_segment(
+        inputs_source,
+        "_handle_one_click_solver_no_scored_fallback_next_hop_injection_coordinator",
+    )
 
     cases = [
         {
@@ -106,7 +118,10 @@ def build_payload() -> dict[str, Any]:
             mismatches.append(row)
 
     service_present = "def select_target_band_ranked_candidate(" in candidate_source
-    page_delegates = "_select_target_band_ranked_candidate(scored)" in target_loop
+    page_delegates = "_select_target_band_ranked_candidate(scored)" in acceptance_gate
+    solver_delegates_acceptance_gate = (
+        "_handle_one_click_solver_selected_candidate_acceptance_gate_coordinator(" in target_loop
+    )
     page_sort_removed = 'scored.sort(key=lambda x: x["sort_key"])' not in target_loop
     post_selection_logic_retained = all(
         token in target_loop
@@ -115,8 +130,18 @@ def build_payload() -> dict[str, Any]:
             "_one_click_in_band_shear_cleanup_candidate_allowed(",
             "evaluate_candidate_full(",
             "working.update(best[\"updates\"])",
-            "_one_click_best_next_hop_improving_candidate(",
         )
+    ) or (
+        "_one_click_step_improves(" in acceptance_gate
+        and "_one_click_in_band_shear_cleanup_candidate_allowed(" in acceptance_gate
+        and (
+            ("evaluate_candidate_full(" in target_loop and "working.update(best[\"updates\"])" in target_loop)
+            or ("evaluate_candidate_full(" in apply_helper and "working.update(best[\"updates\"])" in apply_helper)
+        )
+    )
+    fallback_next_hop_logic_extracted = (
+        "_handle_one_click_solver_no_scored_fallback_next_hop_injection_coordinator(" in target_loop
+        and "_one_click_best_next_hop_improving_candidate(" in fallback_helper
     )
     forbidden_service_import_hits = [
         token
@@ -134,8 +159,10 @@ def build_payload() -> dict[str, Any]:
         mismatches
         or not service_present
         or not page_delegates
+        or not solver_delegates_acceptance_gate
         or not page_sort_removed
         or not post_selection_logic_retained
+        or not fallback_next_hop_logic_extracted
         or forbidden_service_import_hits
     ):
         status = "FAIL"
@@ -148,14 +175,31 @@ def build_payload() -> dict[str, Any]:
             "start_line": start,
             "end_line": end,
         },
+        "fallback_injection_segment": {
+            "function": "_handle_one_click_solver_no_scored_fallback_next_hop_injection_coordinator",
+            "start_line": fallback_start,
+            "end_line": fallback_end,
+        },
+        "acceptance_gate_segment": {
+            "function": "_handle_one_click_solver_selected_candidate_acceptance_gate_coordinator",
+            "start_line": acceptance_start,
+            "end_line": acceptance_end,
+        },
+        "apply_helper_segment": {
+            "function": "_handle_one_click_solver_apply_selected_candidate_and_evaluate_coordinator",
+            "start_line": apply_start,
+            "end_line": apply_end,
+        },
         "case_count": len(cases),
         "mismatches": mismatches,
         "parity_rows": rows,
         "static_checks": {
             "service_present": service_present,
             "page_delegates": page_delegates,
+            "solver_delegates_acceptance_gate": solver_delegates_acceptance_gate,
             "page_sort_removed": page_sort_removed,
             "post_selection_logic_retained": post_selection_logic_retained,
+            "fallback_next_hop_logic_extracted": fallback_next_hop_logic_extracted,
             "forbidden_service_import_hits": forbidden_service_import_hits,
         },
         "ownership": {
@@ -164,8 +208,10 @@ def build_payload() -> dict[str, Any]:
                 "no-improvement stop shaping",
                 "in-band shear cleanup deferral override",
                 "post-selection evaluation and working-state mutation",
-                "fallback next-hop injection",
                 "trace emission",
+            ],
+            "temporary_solver_coordinators": [
+                "_handle_one_click_solver_no_scored_fallback_next_hop_injection_coordinator",
             ],
         },
         "product_behavior_changed": False,

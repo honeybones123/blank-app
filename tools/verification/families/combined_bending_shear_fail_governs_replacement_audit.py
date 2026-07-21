@@ -25,6 +25,22 @@ from design_brain.combined_bending_shear_candidate_merge import (  # noqa: E402
 from design_brain.families.bending_and_shear_fail_govern.runtime import run_combined_bending_shear_fail_runtime  # noqa: E402
 
 
+def _read(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8", errors="replace")
+
+
+def _read_inputs_composition_surface() -> str:
+    return "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
+        )
+    )
+
+
 def _inputs() -> CombinedBendingShearFailInputs:
     return CombinedBendingShearFailInputs(
         selected_family_id="COMBINED_BENDING_SHEAR_FAIL",
@@ -98,7 +114,7 @@ def main() -> int:
     runtime = run_combined_bending_shear_fail_runtime(inputs=_inputs(), evaluate_candidate=_evaluation)
     repeat = run_combined_bending_shear_fail_runtime(inputs=_inputs(), evaluate_candidate=_evaluation)
     family_source = (ROOT / "design_brain" / "families" / "combined_bending_shear_fail.py").read_text(encoding="utf-8", errors="replace")
-    inputs_source = (ROOT / "inputs_page.py").read_text(encoding="utf-8", errors="replace")
+    inputs_source = _read_inputs_composition_surface()
     old_anchors = {
         "old_bounded_ladder_or_replaced": (
             ("DEFAULT_DEPTH_STEPS_MM" in family_source and "DEFAULT_WIDTH_STEPS_MM" in family_source)
@@ -106,7 +122,7 @@ def main() -> int:
         ),
         "old_route_existing_decision_or_replaced": "def route_existing_decision" in family_source,
         "old_page_contract_ladder_call": "combined_fail_contract_ladder" in inputs_source,
-        "old_shared_route_publication_call": "_route_combined_fail_family_publication" in (ROOT / "design_brain" / "publication.py").read_text(encoding="utf-8", errors="replace"),
+        "old_shared_route_publication_call": "_route_combined_fail_family_publication" in _read("design_brain/publication.py"),
     }
     differences = [
         {

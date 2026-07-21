@@ -23,7 +23,7 @@ from design_brain.candidate_evaluation import (  # noqa: E402
 )
 
 
-INPUTS = ROOT / "inputs_page.py"
+INPUTS = ROOT / "inputs_page_app_contract_bridge.py"
 CANDIDATE_EVALUATION = ROOT / "design_brain" / "candidate_evaluation.py"
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"

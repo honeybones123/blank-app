@@ -52,8 +52,31 @@ def _wait_for_http(url: str, timeout_s: float = 45.0) -> None:
 
 
 def _load_browser_state(page) -> dict[str, Any]:
-    raw = page.get_by_label(BROWSER_STATE_LABEL).input_value(timeout=30_000) or "{}"
-    return json.loads(raw)
+    locator = page.get_by_label(BROWSER_STATE_LABEL)
+    locator.first.wait_for(state="attached", timeout=30_000)
+    candidates: list[dict[str, Any]] = []
+    try:
+        count = int(locator.count())
+    except Exception:
+        count = 1
+    for index in range(max(count, 1)):
+        try:
+            raw = locator.nth(index).input_value(timeout=10_000) or "{}"
+        except Exception:
+            continue
+        try:
+            payload = json.loads(raw)
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            candidates.append(payload)
+    for payload in reversed(candidates):
+        if str(payload.get("browser_probe_phase") or "").strip() == "post_page_render":
+            return payload
+    for payload in reversed(candidates):
+        if not bool(payload.get("pre_page_render_lightweight")):
+            return payload
+    return candidates[-1] if candidates else {}
 
 
 def _wait_for_solver_state(page, *, timeout_ms: int = 45_000) -> tuple[dict[str, Any], bool]:

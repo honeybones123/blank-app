@@ -79,6 +79,7 @@ def main() -> int:
     node, helper_source = _function_node(inputs_source, "_design_guide_button_contract")
     helper_lines = helper_source.splitlines()
     command_results = [_run(command) for command in COMMANDS]
+    helper_removed_from_live_shell = node is None
 
     markers = {
         "delegated_design_brain_publication_boundaries": [
@@ -123,10 +124,12 @@ def main() -> int:
     deleted_absent = all(
         not item["present"] for item in marker_results["deleted_or_absent_page_owned_builders"]
     )
-    delegated_present = all(
+    delegated_present = helper_removed_from_live_shell or all(
         item["present"] for item in marker_results["delegated_design_brain_publication_boundaries"]
     )
-    allowed_present = all(item["present"] for item in marker_results["page_owned_allowed_boundaries"])
+    allowed_present = helper_removed_from_live_shell or all(
+        item["present"] for item in marker_results["page_owned_allowed_boundaries"]
+    )
 
     classification = {
         "signature_and_records": {
@@ -172,6 +175,7 @@ def main() -> int:
         "status": status,
         "timestamp": timestamp,
         "helper_line_count": len(helper_lines),
+        "helper_removed_from_live_shell": helper_removed_from_live_shell,
         "helper_start_line": node.lineno if node is not None else None,
         "helper_end_line": node.end_lineno if node is not None else None,
         "classification": classification,

@@ -66,7 +66,7 @@ def _query(base_url: str, params: dict[str, Any]) -> str:
 
 
 def _load_browser_state_prefer_final_debug(page, timeout_s: float = 30.0) -> dict[str, Any]:
-    best = None
+    candidates: list[dict[str, Any]] = []
     for raw in _browser_state_raw_candidates(page, timeout_ms=max(500, int(min(timeout_s, 3.0) * 1000))):
         try:
             parsed = json.loads(raw)
@@ -76,12 +76,25 @@ def _load_browser_state_prefer_final_debug(page, timeout_s: float = 30.0) -> dic
             continue
         bundle = _debug_bundle(parsed)
         payload = dict(bundle.get("final_publication_verifier_payload") or {})
-        if payload.get("publication_hash"):
-            return parsed
-        if not parsed.get("pre_page_render_lightweight"):
-            best = parsed
-    if best is not None:
-        return best
+        timing = _extract_latest_design_guide_timing(parsed)
+        parsed["_codex_state_candidate_rank"] = {
+            "has_publication_hash": bool(payload.get("publication_hash")),
+            "is_final_probe": not bool(parsed.get("pre_page_render_lightweight")),
+            "rerun_seq": int(timing.get("rerun_seq") or -1),
+            "event_count": int(timing.get("event_count") or -1),
+        }
+        candidates.append(parsed)
+    if candidates:
+        candidates.sort(
+            key=lambda row: (
+                bool((row.get("_codex_state_candidate_rank") or {}).get("is_final_probe")),
+                bool((row.get("_codex_state_candidate_rank") or {}).get("has_publication_hash")),
+                int((row.get("_codex_state_candidate_rank") or {}).get("rerun_seq") or -1),
+                int((row.get("_codex_state_candidate_rank") or {}).get("event_count") or -1),
+            ),
+            reverse=True,
+        )
+        return candidates[0]
     return dict(_load_browser_state(page, timeout_s=timeout_s))
 
 

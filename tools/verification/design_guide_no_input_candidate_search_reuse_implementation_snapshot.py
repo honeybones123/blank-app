@@ -24,6 +24,7 @@ ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 INPUTS_PAGE = ROOT / "inputs_page.py"
 FINAL_PUBLICATION = ROOT / "design_brain" / "final_publication.py"
+SESSION_BUILDERS = ROOT / "inputs_page_modules" / "session" / "builders.py"
 
 REQUIRED_LOCKS = {
     "adapter_readiness": "design_guide_no_input_candidate_search_reuse_adapter_readiness",
@@ -85,7 +86,7 @@ def _slice_between(source: str, start_token: str, end_token: str | None = None) 
     return source[start:end]
 
 
-def _source_guards(input_source: str, final_source: str) -> dict[str, bool]:
+def _source_guards(input_source: str, final_source: str, session_builder_source: str) -> dict[str, bool]:
     compute_body = _slice_between(
         input_source,
         "def _compute_design_guidance_items(",
@@ -119,17 +120,21 @@ def _source_guards(input_source: str, final_source: str) -> dict[str, bool]:
         "get_helper_exists": "def _design_guide_candidate_search_reuse_get(" in input_source,
         "store_helper_exists": "def _design_guide_candidate_search_reuse_store(" in input_source,
         "all_force_rebuild_guards_present": all(
-            reason in input_source for reason in REQUIRED_FORCE_REBUILD_REASONS
+            reason in input_source or reason in session_builder_source
+            for reason in REQUIRED_FORCE_REBUILD_REASONS
         ),
         "stale_apply_guard_uses_state_fingerprint": (
             "_design_guide_primary_apply_state_fingerprint(_shared_state_snapshot())" in input_source
             and "DESIGN_GUIDE_PRIMARY_APPLY_PAYLOAD_KEY" in input_source
         ),
-        "get_path_records_reuse_hit": "candidate_search_reuse_decision" in get_helper
-        and "REUSE_HIT" in get_helper,
+        "get_path_records_reuse_hit": (
+            "build_inputs_candidate_search_reuse_lookup_result(" in get_helper
+            and "candidate_search_reuse_decision" in session_builder_source
+            and "REUSE_HIT" in session_builder_source
+        ),
         "get_path_records_force_rebuild": "FORCE_REBUILD" in get_helper,
-        "get_path_deep_copies_payload": "copy.deepcopy(payload)" in get_helper,
-        "store_path_deep_copies_payload": "copy.deepcopy(payload)" in store_helper,
+        "get_path_deep_copies_payload": "copy.deepcopy(cached_payload)" in session_builder_source,
+        "store_path_deep_copies_payload": "copy.deepcopy(dict(payload))" in session_builder_source,
         "store_path_bounded": "_DESIGN_GUIDE_CANDIDATE_SEARCH_REUSE_CACHE_LIMIT" in store_helper,
         "compute_reads_reuse_before_rerun_cache": (
             compute_body.find("_design_guide_candidate_search_reuse_get(") >= 0
@@ -166,8 +171,8 @@ def _source_guards(input_source: str, final_source: str) -> dict[str, bool]:
             and "_record_rendered_design_guide_primary_apply_payload" not in final_source
         ),
         "rendering_remains_page_owned": (
-            "_design_guide_dashboard_card_html_from_render_model" in input_source
-            and "_design_guide_dashboard_card_html_from_render_model" not in final_source
+            "_design_guide_dashboard_card_html_with_render_model" in input_source
+            and "_design_guide_dashboard_card_html_with_render_model" not in final_source
         ),
     }
 
@@ -212,8 +217,9 @@ def main() -> int:
 
     input_source = INPUTS_PAGE.read_text(encoding="utf-8")
     final_source = FINAL_PUBLICATION.read_text(encoding="utf-8")
+    session_builder_source = SESSION_BUILDERS.read_text(encoding="utf-8")
     locks = {name: _latest(prefix) for name, prefix in REQUIRED_LOCKS.items()}
-    source_guards = _source_guards(input_source, final_source)
+    source_guards = _source_guards(input_source, final_source, session_builder_source)
 
     failures: list[str] = []
     for name, lock in locks.items():

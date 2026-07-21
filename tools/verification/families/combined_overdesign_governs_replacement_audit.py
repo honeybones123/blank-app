@@ -23,6 +23,18 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8", errors="replace")
 
 
+def _read_inputs_composition_surface() -> str:
+    return "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
+        )
+    )
+
+
 def _write(snapshot: dict[str, Any]) -> tuple[Path, Path]:
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     AUDIT_DIR.mkdir(parents=True, exist_ok=True)
@@ -57,13 +69,17 @@ def _write(snapshot: dict[str, Any]) -> tuple[Path, Path]:
 
 def main() -> int:
     shell = _read("design_brain/families/combined_cleanup.py")
-    inputs = _read("inputs_page.py")
+    inputs = _read_inputs_composition_surface()
+    publication = _read("design_brain/publication.py")
     runtime = _read("design_brain/families/bending_and_shear_overdesign_govern/runtime.py")
     controller = _read("design_brain/design_guide_controller.py")
     source_contract = candidate_source_contract()
-    legacy_page_helpers_present = (
-        "_publishable_safe_combined_cleanup_row_from_evidence" in inputs
-        and "_visible_safe_combined_cleanup_action_from_evidence" in inputs
+    shared_publication_apply_surface_present = (
+        ("FinalDesignGuidePublication" in inputs or "build_final_design_guide_publication" in inputs)
+        and (
+            "_design_guide_apply_button_contracts_to_items" in inputs
+            or "build_design_guide_apply_button_contract_inputs" in publication
+        )
     )
     shared_shell_orchestration_present = (
         "run_design_guide_combined_low_util_orchestration" in controller
@@ -78,7 +94,7 @@ def main() -> int:
         "family_shell_runtime_backed": "class CombinedCleanupFamily" in shell
         and "contracted_optimisation_ladder_specs" in shell
         and "run_combined_overdesign_governs_runtime" in shell,
-        "old_live_logic_stays_shared_shell_owned": legacy_page_helpers_present
+        "old_live_logic_stays_shared_shell_owned": shared_publication_apply_surface_present
         and shared_shell_orchestration_present
         and family_runtime_does_not_absorb_shared_shell_logic,
         "new_runtime_authority_is_merge_only": "run_combined_overdesign_governs_runtime" in runtime
@@ -87,8 +103,7 @@ def main() -> int:
         "new_source_contract_is_expected_replacement": set(source_contract.get("allowed_sources") or [])
         == {"BENDING_OVERDESIGN_GOVERNS", "SHEAR_OVERDESIGN_GOVERNS", "APPROVED_COMBINED_MERGE_RULE"}
         and source_contract.get("must_not_duplicate_ladders") is True,
-        "shared_surfaces_remain_page_owned": "record_design_guide_publication_snapshot" in inputs
-        and "build_design_guide_apply_button_contract" in inputs,
+        "shared_surfaces_remain_page_owned": shared_publication_apply_surface_present,
     }
     failures = sorted(key for key, passed in classification.items() if not passed)
     snapshot = {

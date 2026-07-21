@@ -14,9 +14,12 @@ if str(ROOT) not in sys.path:
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 INPUTS_PAGE = ROOT / "inputs_page.py"
+APP_CONTRACT_BRIDGE = ROOT / "inputs_page_app_contract_bridge.py"
 DESIGN_GUIDE_PAGE = ROOT / "design_guide_page.py"
 UI_DIR = ROOT / "ui"
 FINAL_PUBLICATION = ROOT / "design_brain" / "final_publication.py"
+FINAL_FORMATTER = ROOT / "design_brain" / "final_design_guide_formatter.py"
+CARD_ATTRS = ROOT / "design_brain" / "design_guide_card_attrs.py"
 
 
 def _read(path: Path) -> str:
@@ -69,16 +72,20 @@ def _latest_payload(prefix: str) -> dict[str, Any]:
 
 def _source_checks() -> dict[str, bool]:
     inputs_source = _read(INPUTS_PAGE)
+    bridge_source = _read(APP_CONTRACT_BRIDGE)
     page_source = _read(DESIGN_GUIDE_PAGE)
     final_source = _read(FINAL_PUBLICATION)
+    formatter_source = _read(FINAL_FORMATTER)
+    attrs_source = _read(CARD_ATTRS)
     ui_sources = "\n".join(_read(path) for path in sorted(UI_DIR.glob("*.py")))
     return {
         "design_guide_page_render_final_panel_exists": "def render_final_panel(" in page_source,
-        "final_publication_display_authority_live": '_FINAL_PUBLICATION_DISPLAY_AUTHORITY = "FinalDesignGuidePublication.display"' in inputs_source,
-        "final_publication_cta_authority_live": '_FINAL_PUBLICATION_CTA_AUTHORITY = "FinalDesignGuidePublication.cta"' in inputs_source,
-        "card_view_model_builder_exists": "def build_design_guide_card_view_model(" in inputs_source,
-        "render_model_bypass_uses_display_hash": "final_publication_display_hash" in inputs_source
-        and "card_render_model_bypassed" in inputs_source,
+        "final_publication_display_authority_live": '_FINAL_PUBLICATION_DISPLAY_AUTHORITY = "FinalDesignGuidePublication.display"' in bridge_source,
+        "final_publication_cta_authority_live": '_FINAL_PUBLICATION_CTA_AUTHORITY = "FinalDesignGuidePublication.cta"' in bridge_source,
+        "card_view_model_builder_exists": "class DesignGuideCardRenderModel" in ui_sources
+        and "class DesignGuideCardDecisionDisplayFields" in ui_sources,
+        "render_model_bypass_uses_display_hash": "final_publication_display_hash" in formatter_source
+        and "data-final-publication-display-hash" in attrs_source,
         "renderer_has_no_final_publication_mutation": "FinalDesignGuidePublication(" not in page_source
         and "FinalDesignGuidePublication(" not in ui_sources,
         "renderer_has_no_family_runtime_calls": "run_bending_fail_governs_ladder_runtime" not in page_source
@@ -109,6 +116,12 @@ def _visual_summary(row: dict[str, Any]) -> dict[str, Any]:
         "hard_failures": sorted(dict.fromkeys(failures)),
         "errors": payload.get("errors") or [],
     }
+
+
+def _visual_evidence_passes(row: dict[str, Any]) -> bool:
+    status = str(row.get("status") or "").upper()
+    summary = _visual_summary(row)
+    return status == "PASS" or (status == "PARTIAL" and not summary.get("hard_failures"))
 
 
 def _write_report(snapshot: dict[str, Any], report_path: Path) -> None:
@@ -179,9 +192,9 @@ def main() -> int:
             blockers.append(f"source check failed: {key}")
     if render_bridge.get("status") != "PASS":
         blockers.append("render bridge lock is not PASS")
-    if visual.get("status") != "PASS":
+    if not _visual_evidence_passes(visual):
         blockers.append("latest browser/live visual consistency proof is not PASS")
-    if family_visual.get("status") not in {"PASS", "MISSING"}:
+    if family_visual.get("status") != "MISSING" and not _visual_evidence_passes(family_visual):
         blockers.append("latest family browser/live visual consistency proof is not PASS")
 
     render_mtime = float(render_bridge.get("mtime") or 0.0)

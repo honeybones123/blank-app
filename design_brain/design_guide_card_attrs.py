@@ -50,7 +50,12 @@ FINAL_DESIGN_GUIDE_CARD_DATA_ATTRIBUTE_FIELDS = (
     ("data-render-gate-terminal-exact", "render_gate_terminal_exact"),
     ("data-render-gate-button-enabled", "render_gate_button_enabled"),
     ("data-render-gate-vm-cta-enabled", "render_gate_vm_cta_enabled"),
+    ("data-outcome-state", "outcome_state"),
+    ("data-status", "status"),
+    ("data-title", "title"),
+    ("data-blocker-reason", "blocker_reason"),
     ("data-publication-hash", "publication_hash"),
+    ("data-authority-hash", "authority_hash"),
     ("data-final-publication-authority-hash", "final_publication_authority_hash"),
     ("data-final-publication-cta-hash", "final_publication_cta_hash"),
     ("data-final-publication-display-hash", "final_publication_display_hash"),
@@ -244,33 +249,47 @@ def _resolve_design_guide_card_data_attribute_fields(
                     return str(value).strip()
         return ""
 
+    def _first_payload_scalar(*keys: str) -> str:
+        return _first_scalar(*keys)
+
+    def _first_payload_value(*keys: str, default=None):
+        for source in (vm_d, details, verifier_payload):
+            if not isinstance(source, dict):
+                continue
+            for key in keys:
+                value = source.get(key)
+                if value not in (None, "", [], {}):
+                    return value
+        return default
+
     return DesignGuideCardDataAttributeFields(
-        selected_family_id=scalars.family,
-        selected_family=scalars.selected_family_name_attr,
-        selection_reason=vm_d.get("selection_reason") or details.get("selection_reason") or "",
-        published_family_id=vm_d.get("published_family_id") or details.get("published_family_id") or "",
-        cta_family_id=vm_d.get("cta_family_id") or details.get("cta_family_id") or "",
-        apply_payload_family_id=scalars.apply_identity,
-        candidate_family_id=vm_d.get("candidate_family_id") or details.get("candidate_family_id") or "",
-        card_family_id=vm_d.get("card_family_id") or details.get("card_family_id") or "",
-        family_selection_source=vm_d.get("family_selection_source") or details.get("family_selection_source") or "",
-        family_selection_contract=vm_d.get("family_selection_contract") or details.get("family_selection_contract") or "",
-        family_chooser_contract=vm_d.get("family_chooser_contract") or details.get("family_chooser_contract") or "",
-        rejected_families=vm_d.get("rejected_families") or details.get("rejected_families") or {},
-        selection_evidence=vm_d.get("selection_evidence") or details.get("selection_evidence") or {},
-        matched_family_ids=vm_d.get("matched_family_ids") or details.get("matched_family_ids") or [],
-        raw_state_flags=vm_d.get("raw_state_flags") or details.get("raw_state_flags") or {},
+        selected_family_id=scalars.family or _first_payload_scalar("selected_family_id", "selected_family"),
+        selected_family=scalars.selected_family_name_attr
+        or _first_payload_scalar("selected_family", "selected_family_id"),
+        selection_reason=_first_payload_scalar("selection_reason", "selected_family_reason"),
+        published_family_id=_first_payload_scalar("published_family_id"),
+        cta_family_id=_first_payload_scalar("cta_family_id"),
+        apply_payload_family_id=scalars.apply_identity or _first_payload_scalar("apply_payload_family_id"),
+        candidate_family_id=_first_payload_scalar("candidate_family_id"),
+        card_family_id=_first_payload_scalar("card_family_id"),
+        family_selection_source=_first_payload_scalar("family_selection_source"),
+        family_selection_contract=_first_payload_scalar("family_selection_contract"),
+        family_chooser_contract=_first_payload_scalar("family_chooser_contract"),
+        rejected_families=_first_payload_value("rejected_families", default={}),
+        selection_evidence=_first_payload_value("selection_evidence", default={}),
+        matched_family_ids=_first_payload_value("matched_family_ids", default=[]),
+        raw_state_flags=_first_payload_value("raw_state_flags", default={}),
         family_match_passed=(
             vm_d.get("family_match_passed")
             if vm_d.get("family_match_passed") is not None
             else details.get("family_match_passed")
+            if details.get("family_match_passed") is not None
+            else verifier_payload.get("family_match_passed")
         ),
         family_match_violation_reason=(
-            vm_d.get("family_match_violation_reason")
-            or details.get("family_match_violation_reason")
-            or ""
+            _first_payload_scalar("family_match_violation_reason")
         ),
-        family_route_owner=scalars.family_route_owner_attr,
+        family_route_owner=scalars.family_route_owner_attr or _first_payload_scalar("family_route_owner"),
         family_early_dispatch_used=scalars.family_early_dispatch_attr,
         generic_one_click_solver_skipped=scalars.generic_one_click_skipped_attr,
         generic_target_band_search_skipped=scalars.generic_target_band_skipped_attr,

@@ -93,6 +93,18 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8", errors="ignore")
 
 
+def _read_inputs_composition_surface() -> str:
+    return "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
+        )
+    )
+
+
 def _module_imports(source: str) -> list[str]:
     tree = ast.parse(source)
     imports: list[str] = []
@@ -195,16 +207,17 @@ def _package_authority_snapshot() -> dict[str, Any]:
 
 
 def _inputs_page_ownership_snapshot() -> dict[str, bool]:
-    source = _read("inputs_page.py")
+    source = _read_inputs_composition_surface()
+    lower = source.lower()
     return {
-        "evaluate_loop": "def _evaluate(" in source,
+        "evaluate_loop": "def _evaluate(" in source or "evaluate_candidate_full_for_app_bridge(" in source,
         "candidate_evaluator": "_evaluate_auto_design_candidate(" in source,
-        "cta_rendering_or_contract": "button_contract" in source or "cta_" in source.lower(),
-        "publication": "publication" in source,
+        "cta_rendering_or_contract": "button_contract" in source or "cta_" in lower,
+        "publication": "publication" in lower or "FinalDesignGuidePublication" in source,
         "apply_routing": "apply_resolved_candidate" in source,
         "one_click": "one_click" in source,
         "visible_wording": "visible_wording" in source or "why_text" in source,
-        "ui_session_debug": "st.session_state" in source and "debug" in source.lower(),
+        "ui_session_debug": "st.session_state" in source and "debug" in lower,
     }
 
 

@@ -17,7 +17,7 @@ if str(ROOT) not in sys.path:
 from design_brain.candidate_evaluation import resolve_target_band_selected_candidate_acceptance  # noqa: E402
 
 
-INPUTS = ROOT / "inputs_page.py"
+AUTO_DESIGN_COMPUTE = ROOT / "inputs_page_modules" / "auto_design_compute.py"
 CANDIDATE_EVALUATION = ROOT / "design_brain" / "candidate_evaluation.py"
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
@@ -53,9 +53,13 @@ def _old_acceptance(*, candidate_improves: bool, allow_in_band_shear_cleanup_can
 
 
 def build_payload() -> dict[str, Any]:
-    inputs_source = _read(INPUTS)
+    inputs_source = _read(AUTO_DESIGN_COMPUTE)
     candidate_source = _read(CANDIDATE_EVALUATION)
     start, end, target_loop = _function_segment(inputs_source, "_solve_one_click_to_target")
+    gate_start, gate_end, gate_body = _function_segment(
+        inputs_source,
+        "_handle_one_click_solver_selected_candidate_acceptance_gate_coordinator",
+    )
     cases = [
         {"case": "improves", "candidate_improves": True, "allow_in_band_shear_cleanup_candidate": False},
         {"case": "no_improve_but_shear_override", "candidate_improves": False, "allow_in_band_shear_cleanup_candidate": True},
@@ -83,13 +87,14 @@ def build_payload() -> dict[str, Any]:
         not in target_loop
     )
     service_present = "def resolve_target_band_selected_candidate_acceptance(" in candidate_source
-    page_delegates = "_resolve_target_band_selected_candidate_acceptance(" in target_loop
-    page_keeps_override_calculation = "_one_click_in_band_shear_cleanup_candidate_allowed(" in target_loop
+    page_delegates = "_resolve_target_band_selected_candidate_acceptance(" in gate_body
+    solver_delegates_gate = "_handle_one_click_solver_selected_candidate_acceptance_gate_coordinator(" in target_loop
+    page_keeps_override_calculation = "_one_click_in_band_shear_cleanup_candidate_allowed(" in gate_body
     page_keeps_trace_strings = (
-        "rank_lexicographic_then_no_improvement_exit" in target_loop
-        and "rank_lexicographic_min_tuple_one_click_step_improves_true" in target_loop
+        "rank_lexicographic_then_no_improvement_exit" in inputs_source
+        and "rank_lexicographic_min_tuple_one_click_step_improves_true" in inputs_source
     )
-    page_keeps_stop_trace = "stop_reason = str(selected_candidate_acceptance.get(\"stop_reason\")" in target_loop
+    page_keeps_stop_trace = "_trace_rejected_best_candidate_solver_stop_coordinator(" in gate_body
     forbidden_service_hits = [
         token
         for token in (
@@ -108,6 +113,7 @@ def build_payload() -> dict[str, Any]:
         or not old_inline_condition_removed
         or not service_present
         or not page_delegates
+        or not solver_delegates_gate
         or not page_keeps_override_calculation
         or not page_keeps_trace_strings
         or not page_keeps_stop_trace
@@ -122,12 +128,18 @@ def build_payload() -> dict[str, Any]:
             "start_line": start,
             "end_line": end,
         },
+        "acceptance_gate_segment": {
+            "function": "_handle_one_click_solver_selected_candidate_acceptance_gate_coordinator",
+            "start_line": gate_start,
+            "end_line": gate_end,
+        },
         "case_count": len(cases),
         "mismatches": mismatches,
         "parity_rows": rows,
         "static_checks": {
             "service_present": service_present,
             "page_delegates": page_delegates,
+            "solver_delegates_gate": solver_delegates_gate,
             "old_inline_condition_removed": old_inline_condition_removed,
             "page_keeps_override_calculation": page_keeps_override_calculation,
             "page_keeps_trace_strings": page_keeps_trace_strings,

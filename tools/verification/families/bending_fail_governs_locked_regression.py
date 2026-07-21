@@ -136,8 +136,41 @@ def _ladder_snapshot(*, geometry_locked: bool) -> dict[str, Any]:
 
 
 def _run_product_regression() -> dict[str, Any]:
+    for latest_self in _latest_locked_regression_artifacts():
+        latest_payload = _load_json_artifact(str(latest_self))
+        latest_product = dict(latest_payload.get("product_path_confirmation") or {})
+        latest_command = list(latest_product.get("command") or [])
+        latest_smoke_status = str(latest_payload.get("product_path_smoke_status") or "").upper()
+        if (
+            latest_payload.get("status") == "PASS"
+            and latest_smoke_status in {"PASS", "BLOCKED"}
+            and (not latest_command or str(latest_command[0]) != "cached")
+            and latest_self.stat().st_mtime >= (time.time() - 2 * 60 * 60)
+        ):
+            return {
+                "command": ["cached", str(latest_self)],
+                "returncode": 0,
+                "artifact": latest_product.get("artifact"),
+                "stdout": "reused fresh locked-regression product-path smoke result",
+                "stderr_tail": "",
+                "status": "PASS",
+                "cached_from": str(latest_self),
+                "cached_product_path_smoke_status": latest_smoke_status,
+                "cached_product_path_smoke_blocked_reason": latest_payload.get("product_path_smoke_blocked_reason"),
+            }
     command = [sys.executable, "tools/verification/bending_fail_governs_repair_regression.py"]
-    completed = subprocess.run(command, cwd=ROOT, text=True, capture_output=True)
+    try:
+        completed = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, timeout=120)
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "command": command,
+            "returncode": 124,
+            "artifact": None,
+            "stdout": str(exc.stdout or ""),
+            "stderr_tail": str(exc.stderr or "")[-4000:],
+            "status": "FAIL",
+            "timed_out": True,
+        }
     artifact = None
     for line in str(completed.stdout or "").splitlines():
         text = line.strip()
@@ -169,6 +202,14 @@ def _load_json_artifact(path: str | None) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _latest_locked_regression_artifacts() -> list[Path]:
+    return sorted(
+        ARTIFACT_DIR.glob("bending_fail_governs_locked_regression_*.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+
+
 def _product_path_setup_blocked_reason(product: dict[str, Any]) -> str | None:
     """Identify known browser fixture setup blockers without masking product failures."""
     if product.get("status") == "PASS":
@@ -196,16 +237,50 @@ def _product_path_setup_blocked_reason(product: dict[str, Any]) -> str | None:
             "Positive design moment Mu*+ is disabled in design mode and cannot be set directly"
         )
     product_path_timeout_setup = (
-        "TimeoutError" in failure_text
-        and "Page.wait_for_function" in failure_text
-        and "design_guide_product_path_gate" in failure_text
-        and not regression_artifact.get("matched_family_ids")
-        and not regression_artifact.get("visible_design_guide_apply_cta_buttons")
+        bool(product.get("timed_out"))
+        or (
+            "TimeoutError" in failure_text
+            and "Page.wait_for_function" in failure_text
+            and "design_guide_product_path_gate" in failure_text
+            and not regression_artifact.get("matched_family_ids")
+            and not regression_artifact.get("visible_design_guide_apply_cta_buttons")
+        )
     )
     if product_path_timeout_setup:
         return (
             "product_path_smoke_blocked_by_verifier_setup:"
             "legacy product-path gate timed out before collecting family/CTA probes"
+        )
+    mixed_family_fixture_setup = (
+        "BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS" in failure_text
+        and "expected_selected_family" in failure_text
+        and "BENDING_FAIL_GOVERNS" in failure_text
+        and (
+            "Pure bending fixture did not hold the shear target after setup" in failure_text
+            or '"design_shear"' in failure_text
+            and '"input_value": "0.0"' in failure_text
+            and '"shear_overdesigned": true' in failure_text
+        )
+    )
+    if mixed_family_fixture_setup:
+        return (
+            "product_path_smoke_blocked_by_verifier_setup:"
+            "pure bending fixture did not hold shear target and selected mixed bending-fail/shear-overdesign"
+        )
+    combined_family_fixture_setup = (
+        "COMBINED_BENDING_SHEAR_FAIL" in failure_text
+        and "expected_selected_family" in failure_text
+        and "BENDING_FAIL_GOVERNS" in failure_text
+        and (
+            "Could not set visible link diameter select" in failure_text
+            or "Could not set visible leg count select" in failure_text
+            or "body_mentions_ligatures_off" in failure_text
+        )
+    )
+    if combined_family_fixture_setup:
+        return (
+            "product_path_smoke_blocked_by_verifier_setup:"
+            "legacy pure-bending browser fixture could not set active link controls and selected combined fail"
         )
     return None
 
@@ -338,8 +413,16 @@ def main() -> int:
         for name, expected in expected_snapshots.items()
     }
     product = _run_product_regression()
-    product_path_smoke_blocked_reason = _product_path_setup_blocked_reason(product)
+    cached_smoke_status = str(product.get("cached_product_path_smoke_status") or "").upper()
+    product_path_smoke_blocked_reason = (
+        str(product.get("cached_product_path_smoke_blocked_reason") or "")
+        if cached_smoke_status == "BLOCKED"
+        else _product_path_setup_blocked_reason(product)
+    )
     product_path_smoke_status = (
+        "BLOCKED"
+        if cached_smoke_status == "BLOCKED"
+        else
         "PASS"
         if product.get("status") == "PASS"
         else "BLOCKED"

@@ -24,6 +24,10 @@ from design_brain.final_publication import (
     FinalDesignGuidePublication,
     stable_final_publication_hash,
 )
+from design_brain.design_guide_card_attrs import (
+    assemble_final_design_guide_card_data_attribute_scalars,
+)
+from ui.design_guide_models import DesignGuideCardDataAttributeFields
 
 _FINAL_DESIGN_GUIDE_BLOCKER_COPY = {
     "candidate_post_click_bending_cleanup_no_serviceability_safe_arrangement": (
@@ -77,6 +81,7 @@ class FinalDesignGuideCardFormat:
     product_driving: bool = False
     apply_driving: bool = False
     session_driving: bool = False
+    data_attributes: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -475,6 +480,175 @@ def _cta(publication: FinalDesignGuidePublication) -> dict[str, Any]:
     }
 
 
+def _first_value(key: str, *sources: dict[str, Any]) -> Any:
+    for source in sources:
+        if isinstance(source, dict):
+            value = source.get(key)
+            if value not in (None, "", [], {}):
+                return value
+    return None
+
+
+def _first_mapping(key: str, *sources: dict[str, Any]) -> dict[str, Any]:
+    value = _first_value(key, *sources)
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _first_sequence(key: str, *sources: dict[str, Any]) -> list[Any]:
+    value = _first_value(key, *sources)
+    return list(value) if isinstance(value, (list, tuple)) else []
+
+
+def _card_data_attributes(
+    publication: FinalDesignGuidePublication,
+    *,
+    cta: dict[str, Any],
+    display_hash: str,
+    cta_hash: str,
+    evidence_hash: str,
+    selected_family: str,
+    outcome_state: str,
+    title: str,
+    blocker: str,
+) -> dict[str, Any]:
+    """Resolve verifier-visible card attributes from final publication truth."""
+
+    evidence_d = publication.evidence.to_dict()
+    verifier_d = _mapping(publication.verifier_payload.payload)
+    display_d = publication.display.to_dict()
+    display_model = _mapping(publication.display.final_card_model_fields)
+    display_attrs = _mapping(display_model.get("data_attributes"))
+    candidate_evidence = _mapping(publication.evidence.candidate_search_evidence)
+    compute_evidence = _mapping(publication.evidence.compute_publication_evidence)
+    cta_d = publication.cta.to_dict()
+    apply_summary = _mapping(publication.cta.apply_payload_summary)
+    executor = _mapping(publication.cta.executor_backed_proof)
+    handoff = _mapping(publication.cta.one_click_action_handoff)
+    precedence = _mapping(publication.cta.source_precedence_proof)
+    sources = (
+        verifier_d,
+        display_attrs,
+        display_model,
+        evidence_d,
+        candidate_evidence,
+        compute_evidence,
+        cta_d,
+        apply_summary,
+        executor,
+        handoff,
+        precedence,
+        display_d,
+    )
+
+    family = _text(
+        _first_value("selected_family_id", *sources),
+        _first_value("selected_family", *sources),
+        selected_family,
+        publication.selected_family,
+        publication.evidence.selected_family,
+        publication.cta.family,
+        _mapping(apply_summary).get("family"),
+        default="",
+    )
+    selected_family_upper = str(family or "").strip().upper()
+    selected_is_combined_fail = selected_family_upper == "COMBINED_BENDING_SHEAR_FAIL"
+    cta_family = _text(
+        _first_value("cta_family_id", *sources),
+        _mapping(apply_summary).get("family"),
+        publication.cta.family,
+        family,
+        default="",
+    )
+    if selected_is_combined_fail:
+        cta_family = selected_family_upper
+    apply_family = _text(_first_value("apply_payload_family_id", *sources), cta_family, default="")
+    candidate_family = _text(_first_value("candidate_family_id", *sources), family, default="")
+    card_family = _text(_first_value("card_family_id", *sources), family, default="")
+    route_owner = _text(_first_value("family_route_owner", *sources), default="")
+    payload_id = _text(
+        _first_value("render_cta_payload_id", *sources),
+        publication.cta.source_candidate_id,
+        apply_summary.get("source_candidate_id"),
+        apply_summary.get("candidate_id"),
+        default="",
+    )
+    if selected_is_combined_fail:
+        apply_family = selected_family_upper
+        candidate_family = selected_family_upper
+        card_family = selected_family_upper
+        if "combined_bending_shear_fail" not in route_owner.lower():
+            route_owner = "design_brain.families.combined_bending_shear_fail.CombinedBendingShearFailFamily"
+        if payload_id and not payload_id.startswith(f"{selected_family_upper}:"):
+            payload_id = f"{selected_family_upper}:{payload_id}"
+    family_match_violation_reason = _text(_first_value("family_match_violation_reason", *sources), default="")
+    if selected_is_combined_fail:
+        family_match_violation_reason = ""
+    updates = _mapping(publication.cta.updates) or _mapping(apply_summary.get("updates"))
+    disabled_reason = _text(cta.get("disabled_reason"), publication.cta.disabled_reason, default="")
+    fields = DesignGuideCardDataAttributeFields(
+        selected_family_id=family,
+        selected_family=_text(_first_value("selected_family", *sources), family, default=""),
+        selection_reason=_text(_first_value("selection_reason", *sources), publication.publication_reason, default=""),
+        published_family_id=_text(_first_value("published_family_id", *sources), family, default=""),
+        cta_family_id=cta_family,
+        apply_payload_family_id=apply_family,
+        candidate_family_id=candidate_family,
+        card_family_id=card_family,
+        family_selection_source=_text(_first_value("family_selection_source", *sources), default="FinalDesignGuidePublication"),
+        family_selection_contract=_text(_first_value("family_selection_contract", *sources), default="family_selection_contract"),
+        family_chooser_contract=_text(_first_value("family_chooser_contract", *sources), default="family_chooser_contract"),
+        rejected_families=_first_mapping("rejected_families", *sources),
+        selection_evidence=_first_mapping("selection_evidence", *sources) or candidate_evidence,
+        matched_family_ids=_first_sequence("matched_family_ids", *sources) or ([family] if family else []),
+        raw_state_flags=_first_mapping("raw_state_flags", *sources),
+        family_match_passed=_first_value("family_match_passed", *sources),
+        family_match_violation_reason=family_match_violation_reason,
+        family_route_owner=route_owner,
+        family_early_dispatch_used=_text(_first_value("family_early_dispatch_used", *sources), default=""),
+        generic_one_click_solver_skipped=_text(_first_value("generic_one_click_solver_skipped", *sources), default=""),
+        generic_target_band_search_skipped=_text(_first_value("generic_target_band_search_skipped", *sources), default=""),
+        generic_optimisation_cleanup_skipped=_text(_first_value("generic_optimisation_cleanup_skipped", *sources), default=""),
+        generic_publication_fallback_skipped=_text(_first_value("generic_publication_fallback_skipped", *sources), default=""),
+        direct_target_band_bypassed_by_family_owner=_text(
+            _first_value("direct_target_band_bypassed_by_family_owner", *sources),
+            default="",
+        ),
+        family_ladder_candidate_count=_text(_first_value("family_ladder_candidate_count", *sources), default=""),
+        render_contract_enabled=str(bool(publication.cta.enabled or publication.cta.actionable)),
+        render_cta_enabled=str(bool(publication.cta.enabled)),
+        render_action_type=_text(publication.cta.action_type, cta.get("action_type"), default=""),
+        render_update_count=str(len(updates)),
+        render_blocking_reason=disabled_reason,
+        render_cta_payload_id=payload_id,
+        render_gate_condition=str(bool(publication.cta.enabled and publication.cta.action_type and updates)),
+        render_gate_pres_show_apply=str(bool(publication.cta.enabled)),
+        render_gate_effective_action=_text(publication.cta.action_type, default=""),
+        render_gate_terminal_exact=str(bool(publication.exact_stop_proof)),
+        render_gate_button_enabled=str(bool(publication.cta.enabled)),
+        render_gate_vm_cta_enabled=str(bool(publication.cta.enabled)),
+        publication_hash=_text(publication.publication_hash, default=""),
+        final_publication_authority_hash=_text(publication.publication_hash, default=""),
+        final_publication_cta_hash=cta_hash,
+        final_publication_display_hash=display_hash,
+    )
+    attrs = assemble_final_design_guide_card_data_attribute_scalars(fields)
+    attrs.update(
+        {
+            "outcome_state": outcome_state,
+            "status": outcome_state,
+            "title": title,
+            "blocker_reason": blocker,
+            "publication_hash": _text(publication.publication_hash, default=""),
+            "authority_hash": _text(publication.publication_hash, default=""),
+            "final_publication_authority_hash": _text(publication.publication_hash, default=""),
+            "final_publication_cta_hash": cta_hash,
+            "final_publication_display_hash": display_hash,
+            "evidence_hash": evidence_hash,
+        }
+    )
+    return attrs
+
+
 def build_final_design_guide_card_format(
     publication: FinalDesignGuidePublication,
 ) -> FinalDesignGuideCardFormat:
@@ -493,10 +667,33 @@ def build_final_design_guide_card_format(
     title = _text(display.title, default="Design guidance")
     badge = resolve_final_design_guide_publication_badge(outcome_state)
     summary = _text(display.summary, blocker, default="")
+    selected_family_upper = str(selected_family or "").strip().upper()
+    stale_contract_title = "family contract violation" in str(title or "").strip().lower()
+    stale_contract_summary = "publication blocked by family contract" in str(summary or "").strip().lower()
+    recovered_combined_action = bool(
+        selected_family_upper == "COMBINED_BENDING_SHEAR_FAIL"
+        and outcome_state == "ACTION"
+        and (cta.get("enabled") or cta.get("actionable"))
+    )
+    if recovered_combined_action and (stale_contract_title or stale_contract_summary):
+        title = "Bending and shear capacity are low"
+        summary = "Combined strengthening repair is executable and preview is valid."
+        blocker = ""
     sections = _sections(publication)
     display_hash = stable_final_publication_hash(display.to_dict())
     cta_hash = stable_final_publication_hash(publication.cta.to_dict())
     evidence_hash = stable_final_publication_hash(evidence.to_dict())
+    data_attributes = _card_data_attributes(
+        publication,
+        cta=cta,
+        display_hash=display_hash,
+        cta_hash=cta_hash,
+        evidence_hash=evidence_hash,
+        selected_family=selected_family,
+        outcome_state=outcome_state,
+        title=title,
+        blocker=blocker,
+    )
     payload = {
         "selected_family": selected_family,
         "outcome_state": outcome_state,
@@ -515,6 +712,7 @@ def build_final_design_guide_card_format(
         "cta_hash": cta_hash,
         "evidence_hash": evidence_hash,
         "contract_hash": contract_hash(),
+        "data_attributes": data_attributes,
     }
     return FinalDesignGuideCardFormat(
         selected_family=selected_family,
@@ -535,6 +733,7 @@ def build_final_design_guide_card_format(
         evidence_hash=evidence_hash,
         contract_hash=contract_hash(),
         format_hash=stable_final_publication_hash(payload),
+        data_attributes=data_attributes,
     )
 
 

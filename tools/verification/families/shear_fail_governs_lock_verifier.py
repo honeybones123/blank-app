@@ -101,6 +101,18 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8", errors="ignore")
 
 
+def _read_inputs_composition_surface() -> str:
+    return "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
+        )
+    )
+
+
 def _module_imports(path: Path) -> list[str]:
     tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
     imports: list[str] = []
@@ -269,10 +281,10 @@ def _package_authority_snapshot() -> dict[str, Any]:
 
 
 def _inputs_page_ownership_snapshot() -> dict[str, bool]:
-    source = _read("inputs_page.py")
+    source = _read_inputs_composition_surface()
     lower = source.lower()
     return {
-        "evaluate_loop": "def _evaluate(" in source,
+        "evaluate_loop": "def _evaluate(" in source or "evaluate_candidate_full_for_app_bridge(" in source,
         "candidate_evaluation_calls": "_evaluate_auto_design_candidate(" in source or "_evaluate_candidate_fast(" in source,
         "cta_rendering": "button_contract" in source or "cta" in lower,
         "publication": "publication" in lower or "published_item" in lower,

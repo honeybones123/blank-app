@@ -21,6 +21,8 @@ CONTRACT_PATH = ROOT / "design_brain" / "contracts" / "final_publication_cta_sou
 FINAL_PUBLICATION_PATH = ROOT / "design_brain" / "final_publication.py"
 CTA_CONTRACTS_PATH = ROOT / "design_brain" / "cta_contracts.py"
 INPUTS_PAGE_PATH = ROOT / "inputs_page.py"
+ROUTE_COORDINATORS_PATH = ROOT / "inputs_page_route_coordinators.py"
+APP_CONTRACT_BRIDGE_PATH = ROOT / "inputs_page_app_contract_bridge.py"
 
 FORBIDDEN_IMPORT_ROOTS = {
     "inputs_page",
@@ -306,7 +308,11 @@ def _capture() -> dict[str, Any]:
     contract = _load_contract()
     final_source = _read(FINAL_PUBLICATION_PATH)
     cta_source = _read(CTA_CONTRACTS_PATH)
-    inputs_source = _read(INPUTS_PAGE_PATH)
+    inputs_source = "\n".join(
+        _read(path)
+        for path in (INPUTS_PAGE_PATH, ROUTE_COORDINATORS_PATH, APP_CONTRACT_BRIDGE_PATH)
+        if path.exists()
+    )
 
     from design_brain.final_publication import FinalDesignGuideCTA, FinalDesignGuidePublication
 
@@ -327,7 +333,10 @@ def _capture() -> dict[str, Any]:
             "build_design_guide_button_contract_source_resolution",
             "DesignGuideButtonContractSourceResolution",
         ],
-        "inputs_page.py": [
+        "composed Inputs surface": [
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
             "_FINAL_PUBLICATION_CTA_AUTHORITY",
             "_FINAL_PUBLICATION_DISPLAY_AUTHORITY",
             "_resolve_design_guide_button_contract_source_precedence",

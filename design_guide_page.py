@@ -321,7 +321,13 @@ def _should_skip_pre_widget_placeholder(st_module: Any) -> bool:
     return False
 
 
-def render_pre_widget_placeholder(st_module: Any, slot: Any, *, render_heading: bool = True) -> None:
+def render_pre_widget_placeholder(
+    st_module: Any,
+    slot: Any,
+    *,
+    render_heading: bool = True,
+    render_pending_shell: bool = True,
+) -> None:
     """Mount the lightweight Design Guide placeholder before inputs widgets."""
     if _should_skip_pre_widget_placeholder(st_module):
         return
@@ -331,6 +337,8 @@ def render_pre_widget_placeholder(st_module: Any, slot: Any, *, render_heading: 
         proof_card = _proof_backed_placeholder_card(st_module)
         if isinstance(proof_card, dict):
             _render_proof_backed_card(st_module, proof_card)
+            return
+        if not render_pending_shell:
             return
         _render_proof_pending_shell(st_module)
 
@@ -345,12 +353,19 @@ def render_final_panel(
     fast_focus_section: str | None,
     render_panel: RenderPanelFn,
     trace: TraceFn,
+    render_panel_accepts_sync_callbacks: bool = True,
 ) -> None:
     """Replace the placeholder with the proof-backed Design Guide panel."""
     slot.empty()
     with slot.container():
         trace_started = time.perf_counter()
-        if inputs_detailed_mode:
+        if not render_panel_accepts_sync_callbacks:
+            render_panel(
+                inputs_render_audit=inputs_render_audit,
+                fast_focus_section=fast_focus_section if inputs_detailed_mode else None,
+            )
+            mode = "detailed" if inputs_detailed_mode else "fast"
+        elif inputs_detailed_mode:
             render_panel(
                 sync_callbacks,
                 inputs_render_audit,

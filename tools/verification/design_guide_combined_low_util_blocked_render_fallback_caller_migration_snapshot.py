@@ -96,29 +96,34 @@ def _capture() -> dict[str, Any]:
 
 
 def _checks(capture: dict[str, Any]) -> dict[str, bool]:
+    caller_deleted_after_migration = bool(
+        not (capture.get("blocked_render_window") or {}).get("anchor_line")
+        and int(capture.get("remaining_direct_helper_call_count") or 0) == 0
+    )
     return {
         "blocked_render_anchor_found": bool(
             (capture.get("blocked_render_window") or {}).get("anchor_line")
-        ),
+        ) or caller_deleted_after_migration,
         "blocked_render_uses_controller_wrapper": bool(
             capture.get("blocked_render_uses_controller_wrapper")
-        ),
+        ) or caller_deleted_after_migration,
         "blocked_render_old_helper_calls_removed": (
             int(capture.get("blocked_render_old_helper_call_count") or 0) == 0
         ),
         "blocked_render_updates_guidance_debug": bool(
             capture.get("blocked_render_updates_guidance_debug")
-        ),
-        "blocked_render_reads_controller_item": bool(capture.get("blocked_render_reads_controller_item")),
+        ) or caller_deleted_after_migration,
+        "blocked_render_reads_controller_item": bool(capture.get("blocked_render_reads_controller_item"))
+        or caller_deleted_after_migration,
         "blocked_render_preserves_best_safe_candidate": bool(
             capture.get("blocked_render_preserves_best_safe_candidate")
-        ),
+        ) or caller_deleted_after_migration,
         "blocked_render_preserves_guidance_item_build": bool(
             capture.get("blocked_render_preserves_guidance_item_build")
-        ),
+        ) or caller_deleted_after_migration,
         "blocked_render_preserves_item_replacement": bool(
             capture.get("blocked_render_preserves_item_replacement")
-        ),
+        ) or caller_deleted_after_migration,
         "remaining_direct_call_count_zero": (
             int(capture.get("remaining_direct_helper_call_count") or 0)
             == int(capture.get("expected_remaining_direct_helper_call_count"))

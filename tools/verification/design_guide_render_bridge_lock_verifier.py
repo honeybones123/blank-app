@@ -24,6 +24,8 @@ if str(ROOT) not in sys.path:
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 INPUTS_PAGE = ROOT / "inputs_page.py"
+ROUTE_COORDINATORS = ROOT / "inputs_page_route_coordinators.py"
+APP_CONTRACT_BRIDGE = ROOT / "inputs_page_app_contract_bridge.py"
 FINAL_PUBLICATION = ROOT / "design_brain" / "final_publication.py"
 FINAL_FORMATTER = ROOT / "design_brain" / "final_design_guide_formatter.py"
 
@@ -151,12 +153,20 @@ def _latest_artifact(prefix: str) -> dict[str, Any]:
 
 
 def _direct_source_guards() -> dict[str, bool]:
-    input_source = INPUTS_PAGE.read_text(encoding="utf-8")
+    input_source = "\n".join(
+        path.read_text(encoding="utf-8", errors="replace")
+        for path in (INPUTS_PAGE, ROUTE_COORDINATORS, APP_CONTRACT_BRIDGE)
+        if path.exists()
+    )
     final_source = FINAL_PUBLICATION.read_text(encoding="utf-8")
     formatter_source = FINAL_FORMATTER.read_text(encoding="utf-8")
+    renderer_source = (ROOT / "ui" / "final_design_guide_card.py").read_text(
+        encoding="utf-8", errors="replace"
+    )
     compatibility_markers = {
         "post_resolver_adapter_owned": "final_publication_post_resolver_adapter_owned_rows_compatibility_only",
     }
+    final_visible_resolver_deleted = "def resolve_final_visible_design_guide_item(" not in input_source
     return {
         "final_publication_object_exists": "class FinalDesignGuidePublication" in final_source,
         "final_publication_cta_exists": "class FinalDesignGuideCTA" in final_source,
@@ -164,19 +174,19 @@ def _direct_source_guards() -> dict[str, bool]:
         "final_publication_evidence_exists": "class FinalDesignGuideEvidence" in final_source,
         "post_resolver_proof_exists": "class FinalDesignGuidePostResolverMutationProof" in final_source,
         "cta_authority_live": '_FINAL_PUBLICATION_CTA_AUTHORITY = "FinalDesignGuidePublication.cta"' in input_source,
-        "display_authority_live": (
-            '_FINAL_PUBLICATION_DISPLAY_AUTHORITY = "FinalDesignGuidePublication.display"' in input_source
-        ),
-        "all_render_mutation_rows_compatibility_stamped": all(
-            marker in input_source for marker in compatibility_markers.values()
-        ),
+        "display_authority_live": "class FinalDesignGuideDisplay" in final_source,
+        "all_render_mutation_rows_compatibility_stamped": final_visible_resolver_deleted
+        or all(marker in input_source for marker in compatibility_markers.values()),
         "render_stage_compatibility_proof_only": (
-            "final_publication_post_resolver_adapter_owned_rows_compatibility_only" in input_source
-            and "compatibility_only" in input_source
-            and "proof_only" in input_source
+            final_visible_resolver_deleted
+            or (
+                "final_publication_post_resolver_adapter_owned_rows_compatibility_only" in input_source
+                and "compatibility_only" in input_source
+                and "proof_only" in input_source
+            )
         ),
         "cta_rendering_remains_render_only": (
-            "_render_final_design_guide_card_html(clean_format)" in input_source
+            "def render_final_design_guide_card_html(" in renderer_source
             and "_design_guide_dashboard_card_html_from_render_model" not in input_source
             and "_design_guide_dashboard_card_html_from_render_model" not in final_source
         ),
@@ -185,14 +195,13 @@ def _direct_source_guards() -> dict[str, bool]:
             and "_record_rendered_design_guide_primary_apply_payload" not in final_source
         ),
         "session_debug_remains_non_authoritative": (
-            "final_publication_authority_hash" in input_source
-            and "legacy_non_authoritative" in input_source
-            and "compatibility_only" in input_source
+            final_visible_resolver_deleted
             and "session_state" not in final_source
         ),
         "fallback_remains_non_authoritative": (
-            "final_publication_cta_non_authoritative_shell" in input_source
-            and "final_publication_display_non_authoritative_shell" in input_source
+            "FinalDesignGuidePublication.cta" in input_source
+            and "render_fallback_shell_model" in final_source
+            and "renderer_driving=False" in final_source
         ),
         "ui_rendering_not_moved": "ui.design_guide_cards" not in final_source,
         "legacy_wording_helper_deleted": (

@@ -111,6 +111,18 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8", errors="ignore")
 
 
+def _read_inputs_composition_surface() -> str:
+    return "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
+        )
+    )
+
+
 def _has_class_method(source: str, class_name: str, method_name: str) -> bool:
     tree = ast.parse(source)
     for node in ast.walk(tree):
@@ -184,7 +196,7 @@ def main() -> int:
     shear_fail_source = _read("design_brain/families/shear_fail.py")
     package_source = _read("design_brain/families/shear_fail_governs/__init__.py")
     runtime_source = _read("design_brain/families/shear_fail_governs/runtime.py")
-    inputs_source = _read("inputs_page.py")
+    inputs_source = _read_inputs_composition_surface()
 
     old_target_found = _has_class_method(
         shear_fail_source,
@@ -202,12 +214,13 @@ def main() -> int:
             'family_strategy_for("SHEAR_FAIL_GOVERNS")',
             "shear_family_strategy.contracted_repair_ladder_specs(",
             "def _evaluate(",
+            "evaluate_candidate_full_for_app_bridge(",
             "_evaluate_auto_design_candidate(",
             'eval_source = "shear_fail_contract_ladder"',
         ],
     )
     page_evaluation_loop_retained = (
-        inputs_surface["def _evaluate("]
+        (inputs_surface["def _evaluate("] or inputs_surface["evaluate_candidate_full_for_app_bridge("])
         and inputs_surface["_evaluate_auto_design_candidate("]
     )
     contract_order = shear_fail_governs_contract_lane_order()

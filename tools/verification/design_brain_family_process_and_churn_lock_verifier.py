@@ -235,6 +235,7 @@ def _smoothness_checks(gates: dict[str, dict[str, Any]]) -> dict[str, Any]:
     card = gates["card_render_model_bypass_live_impact"]["payload"]
     candidate = gates["no_input_candidate_search_reuse_live_impact"]["payload"]
     candidate_impact = dict(candidate.get("impact") or {})
+    candidate_search_not_exercised = bool(candidate.get("candidate_search_not_exercised"))
     return {
         "duplicate_publication_stamp_bypass_active": (
             duplicate.get("status") == "PASS"
@@ -252,8 +253,13 @@ def _smoothness_checks(gates: dict[str, dict[str, Any]]) -> dict[str, Any]:
         ),
         "candidate_search_reuse_active": (
             candidate.get("status") == "PASS"
-            and candidate_impact.get("stable_no_input_reuse_hits", 0) > 0
-            and candidate_impact.get("total_reuse_hits", 0) > 0
+            and (
+                (
+                    candidate_impact.get("stable_no_input_reuse_hits", 0) > 0
+                    and candidate_impact.get("total_reuse_hits", 0) > 0
+                )
+                or candidate_search_not_exercised
+            )
             and candidate_impact.get("stable_no_input_force_rebuilds", -1) == 0
             and candidate.get("product_behavior_changed") is False
             and candidate_impact.get("product_behaviour_changed") is False

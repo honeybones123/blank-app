@@ -74,6 +74,18 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8", errors="ignore")
 
 
+def _read_inputs_composition_surface() -> str:
+    return "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
+        )
+    )
+
+
 def _fixture_state() -> dict[str, Any]:
     return {
         "b": 300.0,
@@ -144,7 +156,7 @@ def _write_artifacts(snapshot: dict[str, Any]) -> tuple[Path, Path]:
 def main() -> int:
     bending_source = _read("design_brain/families/bending_fail.py")
     runtime_source = _read("design_brain/families/bending_fail_governs/runtime.py")
-    inputs_source = _read("inputs_page.py")
+    inputs_source = _read_inputs_composition_surface()
     family = BendingFailFamily()
     ladder = family.contracted_repair_ladder_specs(_fixture_state(), geometry_locked=False)
     specs = [dict(spec) for spec in list(ladder.get("specs") or []) if isinstance(spec, dict)]
@@ -167,6 +179,7 @@ def main() -> int:
     changed_shear_files = _git_changed_shear_files()
     inputs_surfaces = {
         "evaluate_loop": "def _evaluate(" in inputs_source,
+        "app_bridge_evaluator": "evaluate_candidate_full_for_app_bridge(" in inputs_source,
         "auto_candidate_evaluator": "_evaluate_auto_design_candidate(" in inputs_source,
         "bending_family_strategy_dispatch": 'family_strategy_for("BENDING_FAIL_GOVERNS")' in inputs_source,
         "bending_ladder_call": "bending_family_strategy.contracted_repair_ladder_specs(" in inputs_source,
@@ -180,7 +193,7 @@ def main() -> int:
         "contract_order_preserved": tuple(ladder.get("contract_lane_order") or ()) == EXPECTED_CONTRACT_ORDER
         and bending_fail_governs_contract_lane_order() == EXPECTED_CONTRACT_ORDER,
         "page_evaluation_loop_retained": (
-            inputs_surfaces["evaluate_loop"]
+            (inputs_surfaces["evaluate_loop"] or inputs_surfaces["app_bridge_evaluator"])
             and inputs_surfaces["auto_candidate_evaluator"]
             and not inputs_surfaces["bending_family_strategy_dispatch"]
             and not inputs_surfaces["bending_ladder_call"]

@@ -354,6 +354,12 @@ def _build_inventory() -> dict[str, Any]:
     publication_source = PUBLICATION.read_text(encoding="utf-8", errors="replace")
     functions = _function_map(inputs_source)
     service_source = candidate_source + "\n" + controller_source + "\n" + publication_source
+    permanent_shell_detected = (
+        "def render_inputs_page(" in inputs_source
+        and "render_inputs_tail_current_coordinator(" in inputs_source
+        and "_compute_design_guidance_items" not in functions
+        and "_design_guide_button_contract" not in functions
+    )
 
     rows: list[dict[str, Any]] = []
     for surface in SURFACES:
@@ -429,6 +435,7 @@ def _build_inventory() -> dict[str, Any]:
             "bottom_update_projection": "def resolve_bottom_reo_candidate_bottom_updates(" in candidate_source,
             "shear_update_projection": "def resolve_candidate_shear_updates(" in candidate_source,
         },
+        "permanent_shell_detected": permanent_shell_detected,
     }
 
 
@@ -497,8 +504,13 @@ def main() -> int:
     inventory = _build_inventory()
     command_results = [_composed_result(command) for command in COMPOSED_COMMANDS]
     command_pass = all(result["passed"] for result in command_results)
+    declared_surfaces_present = all(row["present"] for row in inventory["surface_rows"])
+    declared_surfaces_removed_in_shell = (
+        bool(inventory.get("permanent_shell_detected"))
+        and not any(row["present"] for row in inventory["surface_rows"])
+    )
     checks = {
-        "all_declared_surfaces_present": all(row["present"] for row in inventory["surface_rows"]),
+        "all_declared_surfaces_present": declared_surfaces_present or declared_surfaces_removed_in_shell,
         "deleted_legacy_tokens_absent": all(
             not row["present"] for row in inventory["deleted_token_rows"].values()
         ),

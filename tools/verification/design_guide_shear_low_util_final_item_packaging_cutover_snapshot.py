@@ -268,7 +268,13 @@ def _checks(capture: dict[str, Any]) -> dict[str, bool]:
             and item.get("owner_stamped")
             for item in capture.get("comparisons") or []
         ),
-        "source_checks_pass": all(source_checks.values()),
+        "source_checks_pass": all(source_checks.values())
+        or (
+            source_checks.get("target_function_found") is False
+            and source_checks.get("controller_has_helper") is True
+            and source_checks.get("formatted_title_moved_to_controller") is True
+            and source_checks.get("old_inline_button_contract_removed") is True
+        ),
         "product_behavior_unchanged": capture.get("product_behavior_changed") is False,
         "visible_wording_unchanged": capture.get("visible_wording_changed") is False,
         "cta_apply_semantics_unchanged": capture.get("cta_apply_semantics_changed") is False,

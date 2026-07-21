@@ -297,6 +297,7 @@ def render_final_design_guide_card_html(model: FinalDesignGuideCardFormat) -> st
         f"data-action-type='{_escape(cta.get('action_type'))}' "
         f"data-apply-payload-fingerprint='{_escape(cta.get('apply_payload_fingerprint'))}'"
     )
+    data_attrs = render_final_design_guide_data_attributes_html(model.data_attributes)
     return "".join(
         [
             (
@@ -307,7 +308,7 @@ def render_final_design_guide_card_html(model: FinalDesignGuideCardFormat) -> st
                 f"data-cta-hash='{_escape(model.cta_hash)}' "
                 f"data-evidence-hash='{_escape(model.evidence_hash)}' "
                 f"data-format-hash='{_escape(model.format_hash)}' "
-                f"{cta_attrs}>"
+                f"{cta_attrs} {data_attrs}>"
             ),
             "<summary class='dg-header' data-testid='design-guide-collapsible-header'>",
             "<span class='dg-header-top'>",

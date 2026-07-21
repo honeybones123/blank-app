@@ -39,6 +39,18 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8", errors="replace")
 
 
+def _read_inputs_composition_surface() -> str:
+    return "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
+        )
+    )
+
+
 def _write(snapshot: dict[str, Any]) -> tuple[Path, Path]:
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     AUDIT_DIR.mkdir(parents=True, exist_ok=True)
@@ -68,7 +80,8 @@ def _write(snapshot: dict[str, Any]) -> tuple[Path, Path]:
 
 
 def main() -> int:
-    inputs_source = _read("inputs_page.py")
+    inputs_source = _read_inputs_composition_surface()
+    publication_source = _read("design_brain/publication.py")
     targets = tuple(PLANNED_CUTOVER_TARGETS)
     forbidden_hits = sorted(target for target in targets if target in FORBIDDEN_TARGETS)
     checks = {
@@ -78,8 +91,14 @@ def main() -> int:
         "no_inputs_page_cutover": "inputs_page.py" not in targets,
         "no_shared_publication_cutover": "design_brain/publication.py" not in targets,
         "no_source_ladder_cutover": not any("bending_cleanup.py" in target or "shear_cleanup.py" in target for target in targets),
-        "shared_surfaces_remain_known": "record_design_guide_publication_snapshot" in inputs_source
-        and "build_design_guide_apply_button_contract" in inputs_source,
+        "shared_surfaces_remain_known": (
+            "FinalDesignGuidePublication" in inputs_source
+            or "build_final_design_guide_publication" in inputs_source
+        )
+        and (
+            "_design_guide_apply_button_contracts_to_items" in inputs_source
+            or "build_design_guide_apply_button_contract_inputs" in publication_source
+        ),
         "planned_targets_are_narrow": not forbidden_hits,
     }
     failures = sorted(key for key, passed in checks.items() if not passed)

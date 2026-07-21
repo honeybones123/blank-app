@@ -23,6 +23,9 @@ if str(ROOT) not in sys.path:
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 FINAL_PUBLICATION_MODULE = ROOT / "design_brain" / "final_publication.py"
+ROUTE_COORDINATORS = ROOT / "inputs_page_route_coordinators.py"
+APP_CONTRACT_BRIDGE = ROOT / "inputs_page_app_contract_bridge.py"
+APPLY_ROUTING = ROOT / "inputs_page_modules" / "apply_routing.py"
 
 REQUIRED_CTA_FIELDS = {
     "enabled",
@@ -127,7 +130,7 @@ CTA_AUTHORITY_PATHS: list[dict[str, Any]] = [
         "required_tokens": [
             "def _queue_primary_design_guide_button_action(",
             "handle_apply_buttons",
-            "def _render_design_guide_component_cta(",
+            "def render_design_guide_component_cta(",
         ],
         "current_authority_role": "queues the primary one-click action from rendered CTA button events",
         "cta_fields": ["one_click_action_handoff", "apply_payload_summary"],
@@ -171,6 +174,21 @@ def _stable_hash(value: Any) -> str:
 
 
 def _read_rel(path: str) -> str:
+    if path == "inputs_page.py":
+        parts = [
+            ROOT / "inputs_page.py",
+            ROUTE_COORDINATORS,
+            APP_CONTRACT_BRIDGE,
+            APPLY_ROUTING,
+            ROOT / "inputs_page_modules" / "design_guide" / "active_fail_single_family_guard.py",
+            ROOT / "inputs_page_modules" / "design_guide" / "pending_recommendation.py",
+            ROOT / "inputs_page_modules" / "design_guide" / "render_coordinators.py",
+        ]
+        return "\n".join(
+            part.read_text(encoding="utf-8", errors="replace")
+            for part in parts
+            if part.exists()
+        )
     return (ROOT / path).read_text(encoding="utf-8")
 
 

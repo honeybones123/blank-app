@@ -287,6 +287,27 @@ def _classify_scenario(row: dict[str, Any]) -> dict[str, Any]:
     row["recipe_probe"] = recipe_probe
     if recipe_probe.get("browser_recipe_error"):
         hard_failures.append(f"browser_recipe_error:{recipe_probe.get('browser_recipe_error')}")
+    final_payload = dict(dict(row.get("browser_state") or {}).get("final_publication_verifier_payload") or {})
+    cta_payload = dict(final_payload.get("cta") or {})
+    display_payload = dict(final_payload.get("display") or {})
+    cta_updates = dict(cta_payload.get("updates") or {})
+    apply_summary = dict(cta_payload.get("apply_payload_summary") or {})
+    handoff = dict(cta_payload.get("one_click_action_handoff") or {})
+    disabled_no_action_publication = (
+        cta_payload
+        and not bool(cta_payload.get("enabled") or cta_payload.get("actionable"))
+        and not cta_updates
+        and not dict(apply_summary.get("updates") or {})
+        and not bool(handoff.get("has_updates"))
+        and bool(cta_payload.get("disabled_reason") or display_payload.get("blocker_explanation"))
+    )
+    if disabled_no_action_publication:
+        hard_failures = [
+            failure
+            for failure in hard_failures
+            if failure != "design_guide_action_state_without_visible_enabled_apply_button"
+        ]
+        non_visual_observations.append("disabled_no_action_publication_without_apply_button")
     selected_family = str(recipe_probe.get("selected_family_id") or "")
     if not selected_family:
         non_visual_observations.append("selected_family_not_exposed_in_browser_state")

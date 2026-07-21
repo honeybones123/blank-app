@@ -148,16 +148,23 @@ def test_final_summary_card_adapter_normalises_inputs_card_values() -> None:
 
 
 def test_inputs_final_summary_cards_use_shared_adapter() -> None:
-    source = (ROOT / "inputs_page.py").read_text(encoding="utf-8")
+    shell_source = (ROOT / "inputs_page.py").read_text(encoding="utf-8")
+    source = (ROOT / "inputs_page_route_coordinators.py").read_text(encoding="utf-8")
+    extracted_builder = (ROOT / "inputs_page_modules" / "summaries" / "builders.py").read_text(encoding="utf-8")
+    assert "def _build_summary_cards_html_for_current_state" not in shell_source
     final_cards = source.split("def _build_summary_cards_html_for_current_state", 1)[1].split(
         '_summary_html_cache_key = "_final_publication_summary_card_html_cache"',
         1,
     )[0]
-    assert final_cards.count("build_final_summary_check_card_html(") == 4
+    assert final_cards.count("build_final_summary_check_card_html(") == 0
+    assert "return build_inputs_summary_html(" in final_cards
+    assert "def build_inputs_summary_html(" in extracted_builder
+    extracted_html_builder = extracted_builder.split("def build_inputs_summary_html(", 1)[1]
+    assert "build_final_summary_check_card_html(**card_source_to_summary_kwargs(card))" in extracted_html_builder
     assert "build_summary_check_card_html(" not in final_cards
-    assert "build_deflection_summary_rows(" in source
+    assert "build_deflection_summary_rows(" in (ROOT / "deflection.py").read_text(encoding="utf-8")
     assert "threshold_text=\"SLS load not supplied\"" not in final_cards
-    assert "threshold_text=\"\"" in final_cards
+    assert '"threshold_text": ""' in extracted_builder
     _assert_no_mojibake(final_cards)
 
 

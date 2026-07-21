@@ -45,7 +45,7 @@ def build_bending_check_rows_from_state(st_state: Dict[str, Any]) -> Dict[str, A
         if u is None:
             return "—"
         if u <= 1.0:
-            return "NEAR LIMIT" if u >= 0.9 else "PASS"
+            return "PASS"
         return "FAIL"
 
     rows: list[dict[str, Any]] = []

@@ -19,6 +19,11 @@ CANONICAL_BENDING_REINFORCEMENT_UPDATE_KEYS = frozenset(
         "bot_row_1_dia",
         "bot_row_2_bars",
         "bot_row_2_dia",
+        "top_row_count",
+        "top_row_1_bars",
+        "top_row_1_dia",
+        "top_row_2_bars",
+        "top_row_2_dia",
     }
 )
 LEGACY_BENDING_REINFORCEMENT_UPDATE_KEYS = frozenset(
@@ -27,6 +32,10 @@ LEGACY_BENDING_REINFORCEMENT_UPDATE_KEYS = frozenset(
         "db_bot_1",
         "bot2_count",
         "db_bot_2",
+        "top1_count",
+        "db_top_1",
+        "top2_count",
+        "db_top_2",
     }
 )
 BENDING_REINFORCEMENT_UPDATE_KEYS = frozenset(
@@ -60,6 +69,10 @@ def normalise_combined_canonical_reinforcement_updates(updates: dict[str, Any] |
         ("db_bot_1", "bot_row_1_dia"),
         ("bot2_count", "bot_row_2_bars"),
         ("db_bot_2", "bot_row_2_dia"),
+        ("top1_count", "top_row_1_bars"),
+        ("db_top_1", "top_row_1_dia"),
+        ("top2_count", "top_row_2_bars"),
+        ("db_top_2", "top_row_2_dia"),
     )
     for legacy_key, row_key in mirror_pairs:
         if row_key in canonical:
@@ -77,6 +90,16 @@ def normalise_combined_canonical_reinforcement_updates(updates: dict[str, Any] |
         or "bot_row_1_dia" in canonical
     ):
         canonical["bot_row_count"] = 2 if (row_2_bars or 0) > 0 and (row_2_dia or 0) > 0 else 1
+    top_row_1_bars = _int_like(canonical.get("top_row_1_bars"))
+    top_row_2_bars = _int_like(canonical.get("top_row_2_bars"))
+    top_row_2_dia = _int_like(canonical.get("top_row_2_dia"))
+    if "top_row_count" not in canonical and (
+        top_row_1_bars is not None
+        or top_row_2_bars is not None
+        or top_row_2_dia is not None
+        or "top_row_1_dia" in canonical
+    ):
+        canonical["top_row_count"] = 2 if (top_row_2_bars or 0) > 0 and (top_row_2_dia or 0) > 0 else 1
     for legacy_key in LEGACY_BENDING_REINFORCEMENT_UPDATE_KEYS:
         canonical.pop(legacy_key, None)
     return canonical

@@ -51,6 +51,12 @@ def _serviceability_result() -> dict[str, Any]:
     }
 
 
+def _serviceability_runtime_only_result() -> dict[str, Any]:
+    result = _serviceability_result()
+    result.pop("selected_family_id", None)
+    return result
+
+
 def _mismatched_payload() -> dict[str, Any]:
     return {
         "guidance_items": [
@@ -93,8 +99,68 @@ def _mismatched_payload() -> dict[str, Any]:
     }
 
 
-def run() -> dict[str, Any]:
-    result = enforce_family_selection_publication_contract(_mismatched_payload())
+def _crack_failure_payload() -> dict[str, Any]:
+    return {
+        "guidance_items": [
+            {
+                "title_main": "Design Guide family contract violation",
+                "title": "Design Guide family contract violation",
+                "headline": "Design Guide family contract violation",
+                "summary_line": "Publication blocked by family contract before final render.",
+                "family": "crack",
+                "check_key": "crack",
+                "selected_family_id": "FAMILY_SELECTION_CONTRACT_VIOLATION",
+                "published_family_id": "FAMILY_SELECTION_CONTRACT_VIOLATION",
+                "cta_family_id": "FAMILY_SELECTION_CONTRACT_VIOLATION",
+                "status": "ERROR",
+                "button_contract": {
+                    "enabled": False,
+                    "actionable": False,
+                    "family": "crack",
+                    "updates": {},
+                },
+            }
+        ],
+        "debug_trace": {
+            "active_failures": ["crack"],
+            "current_overview": {
+                "any_fail": True,
+                "all_key_pass": False,
+                "statuses": {
+                    "bending": "PASS",
+                    "shear": "CAPACITY",
+                    "crack": "FAIL",
+                    "deflection": "PASS",
+                },
+                "utils": {
+                    "bending": 0.23,
+                    "crack": 1.10,
+                    "deflection": 0.87,
+                },
+            },
+            "design_brain_result": _serviceability_runtime_only_result(),
+        },
+        "design_brain_result": _serviceability_runtime_only_result(),
+        "overview": {
+            "any_fail": True,
+            "all_key_pass": False,
+            "statuses": {
+                "bending": "PASS",
+                "shear": "CAPACITY",
+                "crack": "FAIL",
+                "deflection": "PASS",
+            },
+            "utils": {
+                "bending": 0.23,
+                "crack": 1.10,
+                "deflection": 0.87,
+            },
+        },
+    }
+
+
+def _case_checks(payload: dict[str, Any]) -> dict[str, Any]:
+    result = enforce_family_selection_publication_contract(payload)
     item = dict((result.get("guidance_items") or [{}])[0] or {})
     debug = dict(result.get("debug_trace") or {})
     contract = dict(item.get("button_contract") or {})
@@ -112,16 +178,28 @@ def run() -> dict[str, Any]:
             or debug.get("family_guard_routed_to_serviceability_terminal_publication")
         ),
     }
-    passed = all(checks.values())
+    return {
+        "checks": checks,
+        "item": item,
+        "button_contract": contract,
+        "debug": debug,
+        "result": "PASS" if all(checks.values()) else "FAIL",
+    }
+
+
+def run() -> dict[str, Any]:
+    cases = {
+        "stale_bending_blocker_recovered_to_serviceability": _case_checks(_mismatched_payload()),
+        "crack_control_fail_routes_to_serviceability": _case_checks(_crack_failure_payload()),
+    }
+    passed = all(case["result"] == "PASS" for case in cases.values())
     stamp = datetime.now().isoformat(timespec="seconds").replace(":", "-")
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     AUDIT_DIR.mkdir(parents=True, exist_ok=True)
     snapshot = {
         "schema": "serviceability_governs_publication_bridge_snapshot.v1",
         "result": "PASS" if passed else "FAIL",
-        "checks": checks,
-        "item": item,
-        "button_contract": contract,
+        "cases": cases,
     }
     json_path = ARTIFACT_DIR / f"serviceability_governs_publication_bridge_{stamp}.json"
     report_path = AUDIT_DIR / f"serviceability_governs_publication_bridge_{stamp}.md"
@@ -134,7 +212,10 @@ def run() -> dict[str, Any]:
                 f"Result: `{snapshot['result']}`",
                 "",
                 "## Checks",
-                *[f"- `{key}`: `{value}`" for key, value in checks.items()],
+                *[
+                    f"- `{case_name}`: `{case['result']}`"
+                    for case_name, case in cases.items()
+                ],
                 "",
             ]
         ),

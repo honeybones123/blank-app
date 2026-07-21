@@ -63,7 +63,11 @@ LOCKED_FAMILIES: tuple[LockedFamily, ...] = (
         runtime_path="design_brain/families/bending_fail_governs/runtime.py",
         runtime_authority="run_bending_fail_governs_ladder_runtime",
         direct_inputs_anchor='family_strategy_for("BENDING_FAIL_GOVERNS")',
-        app_recognition_paths=("inputs_page.py", "design_brain/family_chooser.py", "design_brain/governing_state.py"),
+        app_recognition_paths=(
+            "design_brain/family_chooser.py",
+            "design_brain/governing_state.py",
+            "design_brain/publication.py",
+        ),
     ),
     LockedFamily(
         family_id="SHEAR_FAIL_GOVERNS",
@@ -71,7 +75,11 @@ LOCKED_FAMILIES: tuple[LockedFamily, ...] = (
         runtime_path="design_brain/families/shear_fail_governs/runtime.py",
         runtime_authority="run_shear_fail_governs_ladder_runtime",
         direct_inputs_anchor='family_strategy_for("SHEAR_FAIL_GOVERNS")',
-        app_recognition_paths=("inputs_page.py", "design_brain/family_chooser.py", "design_brain/governing_state.py"),
+        app_recognition_paths=(
+            "design_brain/family_chooser.py",
+            "design_brain/governing_state.py",
+            "design_brain/publication.py",
+        ),
     ),
     LockedFamily(
         family_id="COMBINED_BENDING_SHEAR_FAIL",
@@ -79,7 +87,11 @@ LOCKED_FAMILIES: tuple[LockedFamily, ...] = (
         runtime_path="design_brain/families/bending_and_shear_fail_govern/runtime.py",
         runtime_authority="run_combined_bending_shear_fail_runtime",
         direct_inputs_anchor='family_strategy_for("COMBINED_BENDING_SHEAR_FAIL")',
-        app_recognition_paths=("inputs_page.py", "design_brain/family_chooser.py", "design_brain/publication.py"),
+        app_recognition_paths=(
+            "design_brain/family_chooser.py",
+            "design_brain/governing_state.py",
+            "design_brain/publication.py",
+        ),
     ),
     LockedFamily(
         family_id="BENDING_OVERDESIGN_GOVERNS",
@@ -271,7 +283,13 @@ def _call_family_method(family: LockedFamily) -> dict[str, Any]:
 
 
 def _family_source_snapshot(family: LockedFamily) -> dict[str, Any]:
-    inputs_source = _read("inputs_page.py")
+    inputs_source = (
+        _read("inputs_page.py")
+        + "\n"
+        + _read("inputs_page_route_coordinators.py")
+        + "\n"
+        + _read("inputs_page_app_contract_bridge.py")
+    )
     recognition_hits = {
         path: family.family_id in _read(path)
         for path in family.app_recognition_paths
@@ -319,15 +337,22 @@ def _runtime_boundary_snapshot(family: LockedFamily) -> dict[str, Any]:
 
 
 def _shared_ownership_snapshot() -> dict[str, bool]:
-    inputs_source = _read("inputs_page.py")
+    inputs_source = (
+        _read("inputs_page.py")
+        + "\n"
+        + _read("inputs_page_route_coordinators.py")
+        + "\n"
+        + _read("inputs_page_app_contract_bridge.py")
+    )
     publication_source = _read("design_brain/publication.py")
     return {
-        "candidate_evaluation_loop_in_inputs_page": "def _evaluate(" in inputs_source
+        "candidate_evaluation_loop_in_inputs_page": "def _evaluate_auto_design_candidate(" in inputs_source
         and "_evaluate_auto_design_candidate(" in inputs_source,
         "cta_contracts_imported_by_inputs_page": "from design_brain.cta_contracts import" in inputs_source,
-        "publication_imported_by_inputs_page": "from design_brain.publication import" in inputs_source,
-        "publication_gate_exists": "record_design_guide_publication_snapshot" in inputs_source,
-        "apply_routing_exists": "build_design_guide_apply_button_contract" in inputs_source,
+        "publication_imported_by_inputs_page": "from design_brain.final_publication import" in inputs_source,
+        "publication_gate_exists": "build_final_design_guide_publication(" in inputs_source
+        or "build_final_design_guide_publication(" in _read("design_brain/design_guide_controller.py"),
+        "apply_routing_exists": "def _queue_primary_design_guide_button_action(" in inputs_source,
         "one_click_orchestration_exists": "one_click" in inputs_source.lower(),
         "ui_session_debug_exists": "st.session_state" in inputs_source and "debug" in inputs_source.lower(),
         "publication_knows_locked_overdesign_ids": "BENDING_OVERDESIGN_GOVERNS" in publication_source
@@ -431,7 +456,7 @@ def main() -> int:
             "runtime_formulas_changed": False,
             "overdesign_reachability_mode": "registry_app_gateway",
             "combined_overdesign_reachability_mode": "registry_app_gateway",
-            "fail_family_reachability_mode": "direct_inputs_ladder",
+            "fail_family_reachability_mode": "registry_app_gateway",
         },
     }
     json_path, report_path = _write_artifacts(snapshot)

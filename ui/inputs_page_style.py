@@ -25,6 +25,10 @@ def apply_inputs_page_css():
         .inputs-page-main-diagram-wrap {
             margin: 0;
             padding: 0;
+            min-height: min(52vh, 560px);
+            contain: layout paint;
+            content-visibility: auto;
+            contain-intrinsic-size: 560px;
         }
         .fast-model-placeholder {
             min-height: 7.5rem;
@@ -36,6 +40,7 @@ def apply_inputs_page_css():
         /* Main inputs diagram: cap height to reduce overflow (complements reduced Plotly layout height) */
         .inputs-page-main-diagram-wrap div[data-testid="stPlotlyChart"] {
             max-height: min(52vh, 560px);
+            min-height: min(52vh, 560px);
         }
         @media print {
           .inputs-diagram-materials-group {
@@ -71,23 +76,6 @@ def apply_inputs_page_css():
             letter-spacing: 0.12em;
             text-transform: uppercase;
             color: rgba(100, 116, 139, 0.95);
-        }
-        .fast-next-hint {
-            background: rgba(59, 130, 246, 0.09);
-            border: 1px solid rgba(59, 130, 246, 0.18);
-            color: rgba(30, 64, 175, 0.95);
-            border-radius: 12px;
-            padding: 0.55rem 0.8rem;
-            margin: 0.15rem 0 0.55rem 0;
-            font-size: 0.92rem;
-            font-weight: 600;
-        }
-        .fast-next-hint.fast-next-hint--design-guide-follow {
-            display: block;
-            width: 100%;
-            box-sizing: border-box;
-            margin-top: 0.65rem;
-            margin-bottom: 0.15rem;
         }
         .stButton > button {
             padding-top: 0.35rem !important;
@@ -190,7 +178,7 @@ def apply_inputs_page_css():
         }
         .fast-guidance-item:not(.secondary),
         .dg-card {
-            min-height: 10.5rem;
+            min-height: 0;
             box-sizing: border-box;
         }
         details.dg-card summary {

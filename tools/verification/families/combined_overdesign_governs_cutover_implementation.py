@@ -45,6 +45,18 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8", errors="replace")
 
 
+def _read_inputs_composition_surface() -> str:
+    return "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
+        )
+    )
+
+
 def _write(snapshot: dict[str, Any]) -> tuple[Path, Path]:
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     AUDIT_DIR.mkdir(parents=True, exist_ok=True)
@@ -94,7 +106,8 @@ def main() -> int:
     )
     shell_source = _read("design_brain/families/combined_cleanup.py")
     runtime_source = _read("design_brain/families/bending_and_shear_overdesign_govern/runtime.py")
-    inputs_source = _read("inputs_page.py")
+    inputs_source = _read_inputs_composition_surface()
+    publication_source = _read("design_brain/publication.py")
     specs = list(ladder.get("specs") or [])
     first = dict(specs[0]) if specs else {}
     checks = {
@@ -113,8 +126,14 @@ def main() -> int:
         and "run_shear_overdesign_governs_runtime" not in shell_source,
         "runtime_does_not_call_source_runtimes": "run_bending_overdesign_governs_runtime" not in runtime_source
         and "run_shear_overdesign_governs_runtime" not in runtime_source,
-        "inputs_page_not_modified_as_cutover_surface": "record_design_guide_publication_snapshot" in inputs_source
-        and "build_design_guide_apply_button_contract" in inputs_source,
+        "inputs_page_not_modified_as_cutover_surface": (
+            "FinalDesignGuidePublication" in inputs_source
+            or "build_final_design_guide_publication" in inputs_source
+        )
+        and (
+            "_design_guide_apply_button_contracts_to_items" in inputs_source
+            or "build_design_guide_apply_button_contract_inputs" in publication_source
+        ),
     }
     failures = sorted(key for key, passed in checks.items() if not passed)
     snapshot = {

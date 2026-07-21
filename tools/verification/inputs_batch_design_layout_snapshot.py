@@ -2,7 +2,7 @@
 
 This snapshot follows the current architecture: inputs_page.py owns the shell
 call into batch_design.ui.page, while the Batch design package owns the compact
-workspace banner, lazy expanded body, and project-beam controls.
+workspace banner, native expander body, and project-beam controls.
 """
 
 from __future__ import annotations
@@ -58,13 +58,17 @@ def main() -> int:
         "batch_heading_outside_workspace_card": 'class="batch-design-hero-title"' not in batch_source
         and ".batch-design-hero-title" not in batch_source,
         "workspace_card_has_bottom_spacing_before_design_guide": "height: 0.85rem" in batch_source,
-        "workspace_uses_lazy_toggle": "with st.expander(" not in batch_source
-        and 'key="batch_design_workspace_banner_toggle"' in batch_source
-        and "if not workspace_expanded:" in batch_source
+        "workspace_uses_native_expander_without_url_navigation": "with st.expander(" in batch_source
+        and "batch-design-workspace-expander-anchor" in batch_source
+        and "href=" not in batch_source
+        and "target=\"_self\"" not in batch_source
+        and "WORKSPACE_QUERY_PARAM" not in batch_source
+        and "batch_design_open" not in batch_source
+        and "_workspace_toggle_href" not in batch_source
+        and "_workspace_expanded_from_state" not in batch_source
+        and "if not workspace_expanded:" not in batch_source
         and "_render_project_beam_design_editor(ctx, workflow)" in batch_source
-        and "WORKSPACE_EXPANDED_KEY" in batch_source
-        and "WORKSPACE_QUERY_PARAM" in batch_source,
-        "workspace_default_closed": "st.session_state[WORKSPACE_EXPANDED_KEY] = False" in batch_source,
+        and "expanded=False" in batch_source,
         "project_beam_editor_lives_in_batch_package": 'st.markdown("### Project beams")' in batch_source
         and "_render_project_beam_controls(ctx)" in batch_source,
         "selector_left_label_active_set": 'st.selectbox(\n                "Active set"' in batch_source,
@@ -111,10 +115,10 @@ def main() -> int:
         "## Ownership",
         "",
         "- inputs_page.py delegates Batch design rendering to batch_design.ui.page.",
-        "- The Batch design package owns the Batch design section heading, compact workspace banner, and lazy expanded body.",
+        "- The Batch design package owns the Batch design section heading, compact workspace banner, and native expander body.",
         "- The Batch design heading is outside the compact workspace card and uses the same native heading level as Design Guide.",
         "- A small spacer separates Batch design from the following Design Guide section.",
-        "- Collapsed Batch design renders only the banner/toggle and does not build hidden expanded controls.",
+        "- Batch design open/close uses a native expander, not URL query-param navigation.",
         "- The expanded Project beams card contains the active set selector plus one row of actions.",
         "- Existing functionality is preserved, including Delete.",
         "- No Design Guide, CTA, apply, publication, or engineering behavior moved.",

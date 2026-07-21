@@ -24,6 +24,9 @@ if str(ROOT) not in sys.path:
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 INPUTS_PAGE = ROOT / "inputs_page.py"
+APP_CONTRACT_BRIDGE = ROOT / "inputs_page_app_contract_bridge.py"
+PRIMARY_APPLY_PAYLOAD = ROOT / "inputs_page_modules" / "design_guide" / "primary_apply_payload.py"
+PRIMARY_APPLY_PAYLOAD_RECORDER = ROOT / "inputs_page_modules" / "design_guide" / "primary_apply_payload_recorder.py"
 FINAL_PUBLICATION = ROOT / "design_brain" / "final_publication.py"
 
 REQUIRED_LOCKS = {
@@ -115,7 +118,14 @@ def _decision(
 def _build() -> dict[str, Any]:
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     AUDIT_DIR.mkdir(parents=True, exist_ok=True)
-    input_source = INPUTS_PAGE.read_text(encoding="utf-8", errors="replace")
+    input_source = "\n".join(
+        [
+            INPUTS_PAGE.read_text(encoding="utf-8", errors="replace"),
+            APP_CONTRACT_BRIDGE.read_text(encoding="utf-8", errors="replace"),
+            PRIMARY_APPLY_PAYLOAD.read_text(encoding="utf-8", errors="replace"),
+            PRIMARY_APPLY_PAYLOAD_RECORDER.read_text(encoding="utf-8", errors="replace"),
+        ]
+    )
     final_source = FINAL_PUBLICATION.read_text(encoding="utf-8", errors="replace")
     locks = {name: _latest(prefix) for name, prefix in REQUIRED_LOCKS.items()}
     scenarios = {

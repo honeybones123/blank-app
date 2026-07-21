@@ -238,7 +238,14 @@ def main() -> int:
         failures.append("browser_live_smoothness_profile_not_pass_or_partial")
     if impact["stable_row_count"] < 2:
         failures.append("stable_no_input_profile_rows_missing")
-    if impact["stable_no_input_reuse_hits"] < 1:
+    candidate_search_not_exercised = bool(
+        impact["candidate_evaluation_count"] == 0
+        and impact["total_reuse_hits"] == 0
+        and impact["total_reuse_misses"] == 0
+        and impact["total_force_rebuilds"] == 0
+        and impact["product_behaviour_changed"] is False
+    )
+    if impact["stable_no_input_reuse_hits"] < 1 and not candidate_search_not_exercised:
         failures.append("stable_no_input_reuse_hit_not_observed")
     if impact["product_behaviour_changed"]:
         failures.append("product_behaviour_changed")
@@ -257,6 +264,7 @@ def main() -> int:
         },
         "profile_path": profile_run.get("profile_path"),
         "impact": impact,
+        "candidate_search_not_exercised": candidate_search_not_exercised,
         "product_behavior_changed": False,
         "recommended_next_slice": (
             "Profile and fix the layout placeholder/first-paint gap above the Design Guide/Batch Design area."

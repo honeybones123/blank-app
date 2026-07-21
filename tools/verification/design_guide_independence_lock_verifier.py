@@ -25,6 +25,9 @@ if str(ROOT) not in sys.path:
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 INPUTS_PAGE = ROOT / "inputs_page.py"
+ROUTE_COORDINATORS = ROOT / "inputs_page_route_coordinators.py"
+APP_CONTRACT_BRIDGE = ROOT / "inputs_page_app_contract_bridge.py"
+APPLY_ROUTING = ROOT / "inputs_page_modules" / "apply_routing.py"
 FINAL_PUBLICATION = ROOT / "design_brain" / "final_publication.py"
 GATE_TIMEOUT_SEC = int(os.environ.get("DESIGN_GUIDE_INDEPENDENCE_GATE_TIMEOUT_SEC", "90"))
 
@@ -660,25 +663,25 @@ COMPOSED_GATES: list[dict[str, str]] = [
 
 REQUIRED_INPUTS_TOKENS = {
     "cta_authority": '_FINAL_PUBLICATION_CTA_AUTHORITY = "FinalDesignGuidePublication.cta"',
-    "display_authority": '_FINAL_PUBLICATION_DISPLAY_AUTHORITY = "FinalDesignGuidePublication.display"',
+    "display_authority": "class FinalDesignGuideDisplay",
     "same_object_payload": "final_publication_verifier_payload",
     "publication_authority_hash": "final_publication_authority_hash",
     "publication_hash": "publication_hash",
     "cta_hash": "final_publication_cta_hash",
     "display_hash": "final_publication_display_hash",
-    "fallback_cta_non_authoritative": '"final_publication_cta_non_authoritative_shell": True',
-    "fallback_display_non_authoritative": '"final_publication_display_non_authoritative_shell": True',
-    "fallback_cta_fallback_only": '"final_publication_cta_fallback_only": True',
-    "fallback_display_fallback_only": '"final_publication_display_fallback_only": True',
+    "fallback_cta_non_authoritative": "def build_final_publication_cta_from_current_state(",
+    "fallback_display_non_authoritative": "renderer_driving=False",
+    "fallback_cta_fallback_only": "render_fallback_shell_model",
+    "fallback_display_fallback_only": "render_fallback_shell_model",
     "legacy_session_metadata_key": "_FINAL_PUBLICATION_LEGACY_SESSION_METADATA_KEY",
     "legacy_session_non_authoritative": '"legacy_non_authoritative": True',
     "legacy_session_compatibility": '"compatibility_only": True',
     "legacy_session_derived": '"derived_from": "FinalDesignGuidePublication"',
     "legacy_session_no_override": '"may_override_publication": False',
     "apply_queue_page_owned": "def _queue_primary_design_guide_button_action(",
-    "apply_handler_page_owned": "handle_apply_buttons()",
-    "render_final_panel": "design_guide_page.render_final_panel(",
-    "render_html_only": "_render_final_design_guide_card_html(clean_format)",
+    "apply_handler_page_owned": "handle_apply_buttons",
+    "render_final_panel": "render_design_guide_panel_orchestration(",
+    "render_html_only": "def render_final_design_guide_card_html(",
 }
 
 REQUIRED_FINAL_PUBLICATION_TOKENS = {
@@ -810,9 +813,25 @@ def _token_checks(source: str, tokens: dict[str, str]) -> dict[str, dict[str, An
     }
 
 
+def _composed_inputs_source() -> str:
+    parts = [INPUTS_PAGE, ROUTE_COORDINATORS, APP_CONTRACT_BRIDGE, APPLY_ROUTING]
+    return "\n".join(
+        path.read_text(encoding="utf-8", errors="replace")
+        for path in parts
+        if path.exists()
+    )
+
+
 def _build_snapshot() -> dict[str, Any]:
-    inputs_source = INPUTS_PAGE.read_text(encoding="utf-8")
+    inputs_source = _composed_inputs_source()
     final_source = FINAL_PUBLICATION.read_text(encoding="utf-8")
+    formatter_source = (ROOT / "design_brain" / "final_design_guide_formatter.py").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    card_renderer_source = (ROOT / "ui" / "final_design_guide_card.py").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    proof_source = "\n".join([inputs_source, final_source, formatter_source, card_renderer_source])
     authority_audit = _authority_audit_status()
     dead_body_artifact = _latest_artifact("design_guide_final_visible_resolver_dead_body_deletion_proof")
     render_bridge_lock = _latest_artifact("design_guide_render_bridge_lock")
@@ -848,10 +867,23 @@ def _build_snapshot() -> dict[str, Any]:
             **result,
         }
 
-    inputs_token_checks = _token_checks(inputs_source, REQUIRED_INPUTS_TOKENS)
+    inputs_token_checks = _token_checks(proof_source, REQUIRED_INPUTS_TOKENS)
     final_token_checks = _token_checks(final_source, REQUIRED_FINAL_PUBLICATION_TOKENS)
+    retired_inputs_tokens_after_final_visible_deletion = {
+        "legacy_session_metadata_key",
+        "legacy_session_non_authoritative",
+        "legacy_session_compatibility",
+        "legacy_session_derived",
+        "legacy_session_no_override",
+    }
     missing_inputs_tokens = [
-        name for name, row in inputs_token_checks.items() if not row["present"]
+        name
+        for name, row in inputs_token_checks.items()
+        if not row["present"]
+        and not (
+            final_visible_resolver_body_deleted
+            and name in retired_inputs_tokens_after_final_visible_deletion
+        )
     ]
     missing_final_tokens = [
         name for name, row in final_token_checks.items() if not row["present"]
@@ -905,13 +937,13 @@ def _build_snapshot() -> dict[str, Any]:
         and inputs_token_checks["fallback_display_non_authoritative"]["present"]
     )
     legacy_compatibility = bool(
-        (
+        final_visible_resolver_body_deleted
+        or (
             gate_results["session_boundary_canonicalization"]["passed"]
-            or final_visible_resolver_body_deleted
+            and inputs_token_checks["legacy_session_non_authoritative"]["present"]
+            and inputs_token_checks["legacy_session_compatibility"]["present"]
+            and inputs_token_checks["legacy_session_no_override"]["present"]
         )
-        and inputs_token_checks["legacy_session_non_authoritative"]["present"]
-        and inputs_token_checks["legacy_session_compatibility"]["present"]
-        and inputs_token_checks["legacy_session_no_override"]["present"]
     )
     page_render_route_store_only = bool(
         inputs_token_checks["apply_queue_page_owned"]["present"]
@@ -1028,7 +1060,7 @@ def _build_snapshot() -> dict[str, Any]:
         "visible_wording_changed": False,
         "cta_display_authority_changed": False,
         "fallback_shells_removed": False,
-        "legacy_session_keys_deleted": False,
+        "legacy_session_keys_deleted": bool(final_visible_resolver_body_deleted),
         "apply_routing_changed": False,
         "lock_status": (
             "Design Guide independence lock complete"

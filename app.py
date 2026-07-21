@@ -10,6 +10,8 @@ import json
 import streamlit as st
 import time
 
+from design_brain.final_publication import build_final_design_guide_publication
+
 st.set_page_config(
     page_title="Concrete Beam Design",
     layout="wide",
@@ -142,8 +144,11 @@ from persistence.save_to_dashboard import (
 from projects_store import create_project, update_project, load_project
 from auth_bridge import ensure_logged_in_state
 
-# 🔁 Import modules, not individual functions
+# ðŸ” Import modules, not individual functions
+import inputs_page_app_contract_bridge as inputs_page_bridge
+import inputs_page_app_contracts
 import inputs_page
+from inputs_page_modules.session import build_inputs_browser_recipe_action_applied_decision
 import session_state_final_log as _session_state_final_log
 import bending_page
 import shear_page
@@ -158,6 +163,16 @@ from optimisation_config import target_band_payload
 _TRUE_ENV_VALUES = ("1", "true", "yes", "on")
 _BROWSER_TEST_MODE = os.environ.get("CODEX_BROWSER_TEST_MODE", "").strip().lower() in _TRUE_ENV_VALUES
 _EXPLICIT_DEV_MODE = os.environ.get("CODEX_DEV_MODE", "").strip().lower() in _TRUE_ENV_VALUES
+_DESIGN_GUIDE_COMPONENT_APPLY_IN_FLIGHT_KEY = getattr(
+    inputs_page_bridge,
+    "DESIGN_GUIDE_COMPONENT_APPLY_IN_FLIGHT_KEY",
+    "_design_guide_component_apply_in_flight",
+)
+_DESIGN_GUIDE_PUBLICATION_FP_KEY = getattr(
+    inputs_page_bridge,
+    "DESIGN_GUIDE_PUBLICATION_FP_KEY",
+    "design_guide_publication_fingerprint",
+)
 _BROWSER_RECIPE_PARAM = "browser_recipe"
 _BROWSER_RECIPE_APPLIED_KEY = "_browser_recipe_applied_name"
 _BROWSER_RECIPE_ROW_MODEL_KEYS = {
@@ -270,7 +285,7 @@ def _should_emit_browser_state_probe(selected_slug: str | None, probe_phase: str
     if os.environ.get("PERF_TRACE_INPUTS", "").strip().lower() in _TRUE_ENV_VALUES:
         return True
     try:
-        bundle = st.session_state.get(inputs_page.DESIGN_GUIDE_DEBUG_BUNDLE_KEY)
+        bundle = st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_DEBUG_BUNDLE_KEY)
     except Exception:
         bundle = None
     if not isinstance(bundle, dict) or not bundle:
@@ -339,15 +354,22 @@ def _browser_recipe_reconciliation_mismatches(applied_state: dict | None) -> dic
 def _browser_recipe_action_already_applied() -> bool:
     """Avoid reseeding a debug recipe after a real Design Guide action changes state."""
     try:
-        last_apply_route = st.session_state.get(inputs_page.DESIGN_GUIDE_LAST_APPLY_ROUTE_KEY)
+        last_apply_route = st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_LAST_APPLY_ROUTE_KEY)
     except Exception:
         last_apply_route = None
-    return bool(
-        st.session_state.get("pending_recommendation_applied_id")
-        or st.session_state.get("_inputs_action_apply_recommendation")
-        or st.session_state.get("_inputs_action_run_auto_design")
-        or last_apply_route
+    inputs_action_apply_recommendation = st.session_state.get("_inputs_action_apply_recommendation")
+    inputs_action_run_auto_design = st.session_state.get("_inputs_action_run_auto_design")
+    inputs_action_signal = (
+        inputs_action_apply_recommendation
+        if inputs_action_apply_recommendation
+        else inputs_action_run_auto_design
     )
+    decision = build_inputs_browser_recipe_action_applied_decision(
+        pending_recommendation_applied=st.session_state.get("pending_recommendation_applied_id"),
+        inputs_action_apply_recommendation=inputs_action_signal,
+        last_apply_route=last_apply_route,
+    )
+    return bool(decision.action_already_applied)
 
 
 def _get_query_param_scalar(name: str):
@@ -534,7 +556,7 @@ def _apply_browser_recipe_from_query() -> None:
     except Exception:
         pass
     try:
-        inputs_page._pop_inputs_widget_keys_for_shared_updates(applied_state)
+        inputs_page_bridge._pop_inputs_widget_keys_for_shared_updates(applied_state)
     except Exception:
         pass
     recipe_widget_mirrors = {
@@ -629,11 +651,11 @@ def _apply_browser_recipe_from_query() -> None:
     ):
         st.session_state.pop(stale_key, None)
     try:
-        inputs_page._clear_design_guide_transient_ui_state(
+        inputs_page_bridge._clear_design_guide_transient_ui_state(
             clear_history=True,
             preserve_apply_banner=False,
         )
-        st.session_state[inputs_page.DESIGN_GUIDE_NEEDS_REFRESH_KEY] = True
+        st.session_state[inputs_page_app_contracts.DESIGN_GUIDE_NEEDS_REFRESH_KEY] = True
     except Exception:
         pass
 
@@ -738,9 +760,9 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
                 blocker["failed_candidate_id"] = rejected_id
                 blocker["best_rejected_candidate_id"] = rejected_id
             if blocker.get("target_low") in (None, "", [], {}):
-                blocker["target_low"] = float(inputs_page.FINAL_ACCEPTED_MIN_FAMILY_UTIL)
+                blocker["target_low"] = float(inputs_page_app_contracts.FINAL_ACCEPTED_MIN_FAMILY_UTIL)
             if blocker.get("target_high") in (None, "", [], {}):
-                blocker["target_high"] = float(inputs_page.EFFICIENCY_TARGET_UTIL_MAX)
+                blocker["target_high"] = float(inputs_page_app_contracts.EFFICIENCY_TARGET_UTIL_MAX)
             completed[family] = dict(blocker)
         return completed
 
@@ -819,21 +841,121 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
         if str(selected_slug or "").strip().lower() not in {"inputs", "design"}:
             return _reject("route_not_probe_supported", route=selected_slug)
 
-        bundle_raw = st.session_state.get(inputs_page.DESIGN_GUIDE_DEBUG_BUNDLE_KEY)
+        session_contract = dict(st.session_state.get("design_guide_primary_button_contract") or {})
+        session_truth = dict(st.session_state.get("design_guide_primary_display_truth") or {})
+        session_title = str(
+            st.session_state.get("design_guide_rebuilt_title")
+            or st.session_state.get("design_guide_original_title")
+            or ""
+        ).strip()
+        if session_contract and session_title:
+            session_updates = dict(session_contract.get("updates") or {})
+            session_apply_payload = dict(
+                st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_PRIMARY_APPLY_PAYLOAD_KEY) or {}
+            )
+            session_binding_audit = dict(
+                st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_PRIMARY_PAYLOAD_BINDING_AUDIT_KEY) or {}
+            )
+            if (
+                bool(session_contract.get("actionable") or session_contract.get("enabled"))
+                and session_updates
+                and session_apply_payload
+                and session_binding_audit.get("payload_binding_match") is not False
+                and session_binding_audit.get("payload_update_match") is not False
+            ):
+                session_evidence = dict(session_apply_payload.get("candidate_search_evidence") or {})
+                session_family = str(
+                    session_contract.get("family")
+                    or session_apply_payload.get("family")
+                    or session_evidence.get("selected_family_id")
+                    or session_evidence.get("family_id")
+                    or ""
+                ).strip()
+                session_debug = {
+                    "browser_probe_guidance_source": "rendered_session_contract_reuse",
+                    "browser_probe_rendered_bundle_reused": True,
+                    "browser_probe_rendered_bundle_reuse_reason": "session_contract_eligible",
+                    "overview": dict(summary_overview or {}),
+                    "family_utils": dict((summary_overview or {}).get("utils") or {}),
+                    "primary_button_contract": dict(session_contract),
+                    "button_contract": dict(session_contract),
+                    "primary_display_truth": dict(session_truth),
+                    "candidate_search_evidence": dict(session_evidence),
+                }
+                session_item = {
+                    "title_main": session_title,
+                    "title": session_title,
+                    "action_type": session_contract.get("action_type"),
+                    "status": session_truth.get("displayed_status"),
+                    "button_contract": dict(session_contract),
+                    "display_truth": dict(session_truth),
+                    "candidate_search_evidence": dict(session_evidence),
+                    "action_payload": {
+                        **dict(session_apply_payload),
+                        "updates": dict(session_updates),
+                        "resolved_candidate_updates": dict(session_updates),
+                        "candidate_search_evidence": dict(session_evidence),
+                        "family": session_family,
+                        "family_id": session_family,
+                        "selected_family_id": session_family,
+                        "published_family_id": session_family,
+                        "cta_family_id": session_family,
+                        "apply_payload_family_id": session_family,
+                    },
+                    "resolved_candidate": {
+                        "candidate_search_evidence": dict(session_evidence),
+                        "updates": dict(session_updates),
+                        "family": session_family,
+                        "family_id": session_family,
+                    },
+                    "family": session_family,
+                    "family_id": session_family,
+                    "selected_family_id": session_family,
+                    "published_family_id": session_family,
+                    "cta_family_id": session_family,
+                    "apply_payload_family_id": session_family,
+                    "util": session_truth.get("displayed_util"),
+                }
+                return {
+                    "guidance_items": [session_item],
+                    "debug_trace": dict(session_debug),
+                    "cache_data": {
+                        "browser_probe_guidance_source": "rendered_session_contract_reuse",
+                    },
+                    "recommendation_result": {},
+                    "design_brain_result": {
+                        "source": "rendered_session_contract_reuse",
+                        "primary_card_title": session_title,
+                        "button_contract_enabled": True,
+                        "displayed_status": session_truth.get("displayed_status"),
+                    },
+                    "browser_probe_equivalent_result_payload": {
+                        "source": "rendered_session_contract_reuse",
+                        "primary_card_title": session_title,
+                        "button_contract_enabled": True,
+                    },
+                }, {
+                    **dict(meta),
+                    "source": "rendered_session_contract_reuse",
+                    "reason": "session_contract_eligible",
+                    "route": selected_slug,
+                }
+
+        bundle_raw = st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_DEBUG_BUNDLE_KEY)
         if not isinstance(bundle_raw, dict) or not bundle_raw:
             return _reject("missing_rendered_bundle")
         bundle = dict(bundle_raw)
         render_plan = st.session_state.get("_design_guide_render_plan_debug")
         if not isinstance(render_plan, dict):
             return _reject("missing_render_plan_debug")
-        if bool(st.session_state.get(inputs_page.DESIGN_GUIDE_NEEDS_REFRESH_KEY)):
+        if bool(st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_NEEDS_REFRESH_KEY)):
             return _reject("design_guide_needs_refresh")
 
         pending_keys = (
             "_pending_inputs_apply_refresh",
             "_inputs_action_apply_recommendation",
             "_inputs_action_run_auto_design",
-            inputs_page.DESIGN_GUIDE_COMPONENT_APPLY_IN_FLIGHT_KEY,
+            _DESIGN_GUIDE_COMPONENT_APPLY_IN_FLIGHT_KEY,
         )
         active_pending = {
             key: st.session_state.get(key)
@@ -844,11 +966,11 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
             return _reject("pending_apply_or_action_state", pending_keys=sorted(active_pending.keys()))
 
         try:
-            current_fp = inputs_page._get_design_guide_fp(dict(summary_state or {}))
+            current_fp = inputs_page_bridge._get_design_guide_fp(dict(summary_state or {}))
         except Exception as exc:
             return _reject("current_fingerprint_error", error=f"{type(exc).__name__}: {exc}")
-        publication_fp = st.session_state.get(inputs_page.DESIGN_GUIDE_PUBLICATION_FP_KEY)
-        baseline_fp = st.session_state.get(inputs_page.DESIGN_GUIDE_PANEL_BASELINE_FP_KEY)
+        publication_fp = st.session_state.get(_DESIGN_GUIDE_PUBLICATION_FP_KEY)
+        baseline_fp = st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_PANEL_BASELINE_FP_KEY)
         bundle_publication_fp = bundle.get("design_guide_publication_fingerprint")
 
         def _fp_matches(left, right) -> bool:
@@ -954,8 +1076,8 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
 
         updates = dict(contract.get("updates") or {})
         actionable = bool(contract.get("actionable") or contract.get("enabled"))
-        apply_payload = dict(st.session_state.get(inputs_page.DESIGN_GUIDE_PRIMARY_APPLY_PAYLOAD_KEY) or {})
-        binding_audit = dict(st.session_state.get(inputs_page.DESIGN_GUIDE_PRIMARY_PAYLOAD_BINDING_AUDIT_KEY) or {})
+        apply_payload = dict(st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_PRIMARY_APPLY_PAYLOAD_KEY) or {})
+        binding_audit = dict(st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_PRIMARY_PAYLOAD_BINDING_AUDIT_KEY) or {})
         if actionable or updates:
             if not updates:
                 return _reject("actionable_contract_missing_updates")
@@ -1096,7 +1218,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
     try:
         render_timing_mark("app.browser_test_state_emit.summary_state_probe.start", probe_phase=probe_phase)
         with speed_profile_section("browser_probe.summary_state_probe_build", category="compute"):
-            summary_state_probe, _ = inputs_page._resolved_inputs_summary_state()
+            summary_state_probe, _ = inputs_page_bridge._resolved_inputs_summary_state()
         ux_probe_record(
             "browser_probe.summary_state_probe_build",
             fingerprint=summary_state_probe,
@@ -1104,7 +1226,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
         render_timing_mark("app.browser_test_state_emit.summary_state_probe.end", probe_phase=probe_phase)
         render_timing_mark("app.browser_test_state_emit.summary_overview_probe.start", probe_phase=probe_phase)
         with speed_profile_section("browser_probe.summary_overview_probe_build", category="compute"):
-            summary_overview_probe = inputs_page._collect_design_overview(dict(summary_state_probe or {}))
+            summary_overview_probe = inputs_page_bridge._collect_design_overview(dict(summary_state_probe or {}))
         ux_probe_record(
             "browser_probe.summary_overview_probe_build",
             fingerprint=summary_overview_probe,
@@ -1126,7 +1248,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
                     **dict(guidance_reuse_meta or {}),
                     "source": "fallback",
                 }
-                guidance_payload_probe = inputs_page._compute_design_guidance_items(
+                guidance_payload_probe = inputs_page_bridge._compute_design_guidance_items(
                     dict(summary_state_probe or {}),
                     guidance_debug_verbose=False,
                     debug_enabled=False,
@@ -1161,13 +1283,13 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
             else (item_candidate_search_evidence or debug_candidate_search_evidence or {})
         )
         _probe_family_utils, _probe_material_families, _probe_governing_family = (
-            inputs_page.identify_materially_overprovided_non_governing_families(
+            inputs_page_bridge.identify_materially_overprovided_non_governing_families(
                 dict(guidance_debug_probe.get("overview") or {})
             )
         )
         _probe_excluded_families = {}
         try:
-            _probe_actions = inputs_page._resolve_design_actions_from_state(dict(summary_state_probe or {})) or {}
+            _probe_actions = inputs_page_bridge._resolve_design_actions_from_state(dict(summary_state_probe or {})) or {}
         except Exception:
             _probe_actions = {}
         try:
@@ -1184,13 +1306,13 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
             _probe_direct_vu = 0.0
         try:
             _probe_zero_shear_demand = bool(
-                inputs_page._shear_demands_negligible(_probe_actions)
-                or _probe_direct_vu <= float(inputs_page.GUIDANCE_SHEAR_DEMAND_ABS_TOL_KN) + 1e-12
+                inputs_page_bridge._shear_demands_negligible(_probe_actions)
+                or _probe_direct_vu <= float(inputs_page_app_contracts.GUIDANCE_SHEAR_DEMAND_ABS_TOL_KN) + 1e-12
             )
         except Exception:
             _probe_zero_shear_demand = _probe_direct_vu <= 1e-12
         try:
-            _probe_shear_active = bool(inputs_page._shear_reinforcement_is_active(dict(summary_state_probe or {})))
+            _probe_shear_active = bool(inputs_page_bridge._shear_reinforcement_is_active(dict(summary_state_probe or {})))
         except Exception:
             _probe_shear_active = False
         if _probe_zero_shear_demand and not _probe_shear_active:
@@ -1205,15 +1327,15 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
         _probe_exact_blockers_by_family = {}
         if _probe_zero_shear_demand and _probe_shear_active:
             try:
-                _probe_shear_blocker = inputs_page._shear_low_util_active_links_exact_blocker(
+                _probe_shear_blocker = inputs_page_bridge._shear_low_util_active_links_exact_blocker(
                     dict(summary_state_probe or {}),
                     dict(summary_overview_probe or {}),
-                    threshold=inputs_page.FINAL_ACCEPTED_MIN_FAMILY_UTIL,
+                    threshold=inputs_page_app_contracts.FINAL_ACCEPTED_MIN_FAMILY_UTIL,
                 )
             except Exception:
                 _probe_shear_blocker = None
             try:
-                _probe_valid_shear_blocker = inputs_page._accepted_green_exact_blocker_is_valid(
+                _probe_valid_shear_blocker = inputs_page_bridge._accepted_green_exact_blocker_is_valid(
                     _probe_shear_blocker if isinstance(_probe_shear_blocker, dict) else None
                 )
             except Exception:
@@ -1389,7 +1511,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
             if (
                 _best_safe_preview_util is not None
                 and float(_best_safe_preview_util)
-                < float(inputs_page.FINAL_ACCEPTED_MIN_FAMILY_UTIL) - 1e-9
+                < float(inputs_page_app_contracts.FINAL_ACCEPTED_MIN_FAMILY_UTIL) - 1e-9
             ):
                 _best_safe_current_util = None
                 try:
@@ -1407,7 +1529,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
                 _best_safe_reason = (
                     "The best safe one-click "
                     f"{_best_safe_cleanup_family} cleanup remains below the final accepted-family "
-                    f"threshold of {float(inputs_page.FINAL_ACCEPTED_MIN_FAMILY_UTIL):.2f}; "
+                    f"threshold of {float(inputs_page_app_contracts.FINAL_ACCEPTED_MIN_FAMILY_UTIL):.2f}; "
                     "the checked discrete catalogue did not contain a target-band update that "
                     "preserved bending, shear, serviceability, spacing, ductility, geometry, and detailing checks."
                 )
@@ -1422,9 +1544,9 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
                     "current_util": _best_safe_current_util,
                     "starting_util": _best_safe_current_util,
                     "best_safe_final_util": float(_best_safe_preview_util),
-                    "threshold": float(inputs_page.FINAL_ACCEPTED_MIN_FAMILY_UTIL),
-                    "target_low": float(inputs_page.FINAL_ACCEPTED_MIN_FAMILY_UTIL),
-                    "target_high": float(primary_display_truth.get("target_high") or target_band_payload(str(summary_state_probe.get("design_optimisation_goal") or st.session_state.get("design_optimisation_goal") or "balanced")).get("max") or inputs_page.EFFICIENCY_TARGET_UTIL_MAX),
+                    "threshold": float(inputs_page_app_contracts.FINAL_ACCEPTED_MIN_FAMILY_UTIL),
+                    "target_low": float(inputs_page_app_contracts.FINAL_ACCEPTED_MIN_FAMILY_UTIL),
+                    "target_high": float(primary_display_truth.get("target_high") or target_band_payload(str(summary_state_probe.get("design_optimisation_goal") or st.session_state.get("design_optimisation_goal") or "balanced")).get("max") or inputs_page_app_contracts.EFFICIENCY_TARGET_UTIL_MAX),
                     "best_safe_candidate_updates": dict(_best_safe_updates),
                     "best_safe_candidate_applied": False,
                     "safe_candidate_count": int(
@@ -1454,7 +1576,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
                     "failed_check_status": "BLOCKED",
                     "failed_check_util": float(_best_safe_preview_util),
                     "failed_check_demand": f"{_best_safe_cleanup_family} family final accepted utilisation",
-                    "failed_check_capacity_or_limit": float(inputs_page.FINAL_ACCEPTED_MIN_FAMILY_UTIL),
+                    "failed_check_capacity_or_limit": float(inputs_page_app_contracts.FINAL_ACCEPTED_MIN_FAMILY_UTIL),
                     "no_second_cta_required": True,
                 }
                 _candidate_post_click_exact = dict(
@@ -1506,12 +1628,12 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
         _action_target_payload = target_band_payload(
             str(summary_state_probe.get("design_optimisation_goal") or st.session_state.get("design_optimisation_goal") or "balanced")
         )
-        _action_target_low = float(_action_target_payload.get("target_low") or inputs_page.EFFICIENCY_TARGET_UTIL_MIN)
-        _action_target_high = float(_action_target_payload.get("target_high") or inputs_page.EFFICIENCY_TARGET_UTIL_MAX)
+        _action_target_low = float(_action_target_payload.get("target_low") or inputs_page_app_contracts.EFFICIENCY_TARGET_UTIL_MIN)
+        _action_target_high = float(_action_target_payload.get("target_high") or inputs_page_app_contracts.EFFICIENCY_TARGET_UTIL_MAX)
         if (
             _action_contract_family in {"bending", "shear"}
             and _action_expected_util is not None
-            and float(inputs_page.FINAL_ACCEPTED_MIN_FAMILY_UTIL) - 1e-9
+            and float(inputs_page_app_contracts.FINAL_ACCEPTED_MIN_FAMILY_UTIL) - 1e-9
             <= float(_action_expected_util)
             <= 1.0 + 1e-9
             and float(_action_expected_util) > float(_action_target_high) + 1e-9
@@ -1583,7 +1705,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
                 "failed_check_capacity_or_limit": float(_action_target_high),
                 "target_low": float(_action_target_low),
                 "target_high": float(_action_target_high),
-                "accepted_target_low": float(inputs_page.FINAL_ACCEPTED_MIN_FAMILY_UTIL),
+                "accepted_target_low": float(inputs_page_app_contracts.FINAL_ACCEPTED_MIN_FAMILY_UTIL),
                 "accepted_target_high": 1.0,
                 "attempted_updates": dict(_action_updates),
                 "reason": _action_reason,
@@ -2202,7 +2324,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
             return value[:4000] + "...[truncated]"
         return value
 
-    dg_bundle = st.session_state.get(inputs_page.DESIGN_GUIDE_DEBUG_BUNDLE_KEY)
+    dg_bundle = st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_DEBUG_BUNDLE_KEY)
     dg_render_plan = st.session_state.get("_design_guide_render_plan_debug")
     dg_bundle_raw = dict(dg_bundle) if isinstance(dg_bundle, dict) else {}
     dg_render_eligibility_trace_safe = dict(
@@ -2423,7 +2545,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
         _shear_governed_zero_bending = bool(
             _has_shear_update
             and _summary_shear_util > 0.0
-            and _summary_shear_util < float(inputs_page.FINAL_ACCEPTED_MIN_FAMILY_UTIL)
+            and _summary_shear_util < float(inputs_page_app_contracts.FINAL_ACCEPTED_MIN_FAMILY_UTIL)
             and _summary_bending_util <= 1e-9
         )
         if (_has_shear_update and not _has_bending_update and _family != "bending") or _shear_governed_zero_bending:
@@ -2568,14 +2690,20 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
         dict(guidance_probe.get("candidate_search_evidence") or {}).get("post_click_cleanup_evidence_by_family"),
     )
     if _final_exact_blockers or _cleanup_exact_for_probe:
-        _final_exact_blockers = inputs_page._complete_exact_blocker_map_from_attempts(
-            {**dict(_final_exact_blockers or {}), **dict(_cleanup_exact_for_probe or {})},
-            _rendered_attempts_for_exact,
+        _complete_exact_blocker_map_from_attempts = getattr(
+            inputs_page_bridge,
+            "_complete_exact_blocker_map_from_attempts",
+            None,
         )
+        if callable(_complete_exact_blocker_map_from_attempts):
+            _final_exact_blockers = _complete_exact_blocker_map_from_attempts(
+                {**dict(_final_exact_blockers or {}), **dict(_cleanup_exact_for_probe or {})},
+                _rendered_attempts_for_exact,
+            )
     _summary_utils_for_exact = dict(summary_overview_probe.get("utils") or {})
     _summary_packs_for_exact = dict(summary_overview_probe.get("packs") or {})
     try:
-        _design_actions_for_exact = inputs_page._resolve_design_actions_from_state(dict(summary_state_probe or {})) or {}
+        _design_actions_for_exact = inputs_page_bridge._resolve_design_actions_from_state(dict(summary_state_probe or {})) or {}
     except Exception:
         _design_actions_for_exact = {}
     for _family_for_exact in ("bending", "shear"):
@@ -2623,13 +2751,13 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
                     or _design_actions_for_exact.get("Mstar")
                     or "bending design action"
                 )
-        _current_util_numeric_for_exact = inputs_page._parse_util_value(_current_util_for_exact)
-        _failed_util_numeric_for_exact = inputs_page._parse_util_value(_failed_util_for_exact)
+        _current_util_numeric_for_exact = inputs_page_bridge._parse_util_value(_current_util_for_exact)
+        _failed_util_numeric_for_exact = inputs_page_bridge._parse_util_value(_failed_util_for_exact)
         _rejected_candidate_failed_util_for_exact = None
         if (
             _current_util_numeric_for_exact is not None
             and _failed_util_numeric_for_exact is not None
-            and 0.0 <= float(_current_util_numeric_for_exact) < float(inputs_page.FINAL_ACCEPTED_MIN_FAMILY_UTIL)
+            and 0.0 <= float(_current_util_numeric_for_exact) < float(inputs_page_app_contracts.FINAL_ACCEPTED_MIN_FAMILY_UTIL)
             and abs(float(_failed_util_numeric_for_exact) - float(_current_util_numeric_for_exact)) > 1e-6
         ):
             _rejected_candidate_failed_util_for_exact = _failed_util_for_exact
@@ -2747,7 +2875,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
                     _best_safe_blocker_updates_match_current_state = _matched_update_keys > 0
             if not _best_safe_blocker_updates_match_current_state and _first_blocker_updates:
                 _last_apply_route_for_probe = dict(
-                    st.session_state.get(inputs_page.DESIGN_GUIDE_LAST_APPLY_ROUTE_KEY) or {}
+                    st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_LAST_APPLY_ROUTE_KEY) or {}
                 )
                 _last_applied_updates_for_probe = dict(
                     _last_apply_route_for_probe.get("applied_updates")
@@ -2787,7 +2915,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
                         )
             if not _best_safe_blocker_updates_match_current_state and _first_blocker_updates:
                 _binding_audit_for_probe = dict(
-                    st.session_state.get(inputs_page.DESIGN_GUIDE_PRIMARY_PAYLOAD_BINDING_AUDIT_KEY) or {}
+                    st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_PRIMARY_PAYLOAD_BINDING_AUDIT_KEY) or {}
                 )
                 _binding_applied_updates = dict(
                     _binding_audit_for_probe.get("applied_updates")
@@ -2846,10 +2974,10 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
         if not _best_safe_blocker_updates_match_current_state:
             try:
                 _direct_last_apply_route = dict(
-                    st.session_state.get(inputs_page.DESIGN_GUIDE_LAST_APPLY_ROUTE_KEY) or {}
+                    st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_LAST_APPLY_ROUTE_KEY) or {}
                 )
                 _direct_binding_audit = dict(
-                    st.session_state.get(inputs_page.DESIGN_GUIDE_PRIMARY_PAYLOAD_BINDING_AUDIT_KEY) or {}
+                    st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_PRIMARY_PAYLOAD_BINDING_AUDIT_KEY) or {}
                 )
                 _direct_applied_updates = dict(
                     _direct_last_apply_route.get("applied_updates")
@@ -3122,7 +3250,13 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
                     "family_status_current": dict(_attempt_current),
                 }
             )
-            _probe_blocker_attempts = inputs_page._design_guide_blocker_attempts_table(_attempt_item)
+            _design_guide_blocker_attempts_table = getattr(
+                inputs_page_bridge,
+                "_design_guide_blocker_attempts_table",
+                None,
+            )
+            if callable(_design_guide_blocker_attempts_table):
+                _probe_blocker_attempts = _design_guide_blocker_attempts_table(_attempt_item)
         if _probe_blocker_attempts:
             guidance_probe["blocker_attempts_by_family"] = dict(_probe_blocker_attempts)
             dg_bundle_safe["blocker_attempts_by_family"] = dict(_probe_blocker_attempts)
@@ -3162,9 +3296,18 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
         dict(guidance_probe.get("candidate_search_evidence") or {}).get("exact_blockers_by_family"),
     )
     _final_probe_exact = _complete_probe_exact_blocker_map(_final_probe_exact)
-    _final_probe_publishable_cleanup_updates = inputs_page._publishable_safe_cleanup_updates_from_evidence(
-        dict(guidance_probe.get("candidate_search_evidence") or dg_bundle_safe.get("candidate_search_evidence") or {}),
-        dict(st.session_state),
+    _publishable_cleanup_updates_from_evidence = getattr(
+        inputs_page_bridge,
+        "_publishable_safe_cleanup_updates_from_evidence",
+        None,
+    )
+    _final_probe_publishable_cleanup_updates = (
+        _publishable_cleanup_updates_from_evidence(
+            dict(guidance_probe.get("candidate_search_evidence") or dg_bundle_safe.get("candidate_search_evidence") or {}),
+            dict(st.session_state),
+        )
+        if callable(_publishable_cleanup_updates_from_evidence)
+        else {}
     )
     _final_probe_low_families = [
         _family
@@ -3172,7 +3315,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
         if (
             _probe_float_or_none(_final_visible_probe_utils.get(_family)) is not None
             and float(_probe_float_or_none(_final_visible_probe_utils.get(_family)))
-            < float(inputs_page.FINAL_ACCEPTED_MIN_FAMILY_UTIL) - float(inputs_page.TARGET_BAND_EPS)
+            < float(inputs_page_app_contracts.FINAL_ACCEPTED_MIN_FAMILY_UTIL) - float(inputs_page_app_contracts.TARGET_BAND_EPS)
         )
     ]
     if (
@@ -3196,22 +3339,28 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
                 dg_bundle_safe.get("post_click_cleanup_evidence_by_family"),
                 _final_probe_exact,
             ),
-            "final_accepted_min_family_util": float(inputs_page.FINAL_ACCEPTED_MIN_FAMILY_UTIL),
+            "final_accepted_min_family_util": float(inputs_page_app_contracts.FINAL_ACCEPTED_MIN_FAMILY_UTIL),
         }
         try:
-            _bending_publication_item = inputs_page._post_click_low_bending_resolution_item(
-                dict(summary_state_probe or {}),
-                dict(summary_overview_probe or {}),
-                inputs_page._design_mode_config(
-                    str(
-                        summary_state_probe.get("design_optimisation_goal")
-                        or st.session_state.get("design_optimisation_goal")
-                        or "balanced"
-                    )
-                ),
-                _bending_publication_audit,
-                debug_sink=_bending_publication_debug,
+            _post_click_low_bending_resolution_item = getattr(
+                inputs_page_bridge,
+                "_post_click_low_bending_resolution_item",
+                None,
             )
+            if callable(_post_click_low_bending_resolution_item):
+                _bending_publication_item = _post_click_low_bending_resolution_item(
+                    dict(summary_state_probe or {}),
+                    dict(summary_overview_probe or {}),
+                    inputs_page_bridge._design_mode_config(
+                        str(
+                            summary_state_probe.get("design_optimisation_goal")
+                            or st.session_state.get("design_optimisation_goal")
+                            or "balanced"
+                        )
+                    ),
+                    _bending_publication_audit,
+                    debug_sink=_bending_publication_debug,
+                )
         except Exception:
             _bending_publication_item = None
         if isinstance(_bending_publication_item, dict):
@@ -3269,7 +3418,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
         and bool(_final_probe_contract.get("actionable") or _final_probe_contract.get("enabled"))
         and _final_probe_contract_expected is not None
         and float(_final_probe_contract_expected)
-        < float(inputs_page.FINAL_ACCEPTED_MIN_FAMILY_UTIL) - float(inputs_page.TARGET_BAND_EPS)
+        < float(inputs_page_app_contracts.FINAL_ACCEPTED_MIN_FAMILY_UTIL) - float(inputs_page_app_contracts.TARGET_BAND_EPS)
     ):
         _final_probe_evidence = dict(guidance_probe.get("candidate_search_evidence") or {})
         _final_probe_updates = dict(
@@ -3278,20 +3427,29 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
             or guidance_probe.get("selected_action_updates")
             or {}
         )
-        _final_generated_blocker = inputs_page._exact_cleanup_blocker_for_outside_target_action(
-            family=_final_probe_contract_family,
-            current_util=_final_visible_probe_utils.get(_final_probe_contract_family),
-            final_util=float(_final_probe_contract_expected),
-            selected_updates=_final_probe_updates,
-            target_low=float(inputs_page.FINAL_ACCEPTED_MIN_FAMILY_UTIL),
-            target_high=float(getattr(inputs_page, "EFFICIENCY_TARGET_UTIL_MAX", 1.0)),
-            blocker=_final_probe_evidence,
-            fallback_candidate_id=(
-                _final_probe_contract.get("source_candidate_id")
-                or _final_probe_contract.get("candidate_id")
-                or f"{_final_probe_contract_family}_hidden_cleanup_below_final_threshold"
-            ),
-            source="browser_state_hidden_cleanup_below_final_threshold",
+        _exact_cleanup_blocker_for_outside_target_action = getattr(
+            inputs_page_bridge,
+            "_exact_cleanup_blocker_for_outside_target_action",
+            None,
+        )
+        _final_generated_blocker = (
+            _exact_cleanup_blocker_for_outside_target_action(
+                family=_final_probe_contract_family,
+                current_util=_final_visible_probe_utils.get(_final_probe_contract_family),
+                final_util=float(_final_probe_contract_expected),
+                selected_updates=_final_probe_updates,
+                target_low=float(inputs_page_app_contracts.FINAL_ACCEPTED_MIN_FAMILY_UTIL),
+                target_high=float(getattr(inputs_page_bridge, "EFFICIENCY_TARGET_UTIL_MAX", 1.0)),
+                blocker=_final_probe_evidence,
+                fallback_candidate_id=(
+                    _final_probe_contract.get("source_candidate_id")
+                    or _final_probe_contract.get("candidate_id")
+                    or f"{_final_probe_contract_family}_hidden_cleanup_below_final_threshold"
+                ),
+                source="browser_state_hidden_cleanup_below_final_threshold",
+            )
+            if callable(_exact_cleanup_blocker_for_outside_target_action)
+            else {}
         )
         if _final_generated_blocker:
             _final_probe_exact[_final_probe_contract_family] = dict(_final_generated_blocker)
@@ -3434,6 +3592,159 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
         return None
 
     dg_final_publication_payload = dict(dg_bundle_safe.get("final_publication_verifier_payload") or {})
+    if not dg_final_publication_payload:
+        try:
+            _probe_contract_for_publication = dict(
+                guidance_probe.get("primary_button_contract")
+                or guidance_probe.get("button_contract")
+                or {}
+            )
+            _probe_evidence_for_publication = dict(guidance_probe.get("candidate_search_evidence") or {})
+            _probe_family_for_publication = str(
+                _probe_contract_for_publication.get("family")
+                or _probe_evidence_for_publication.get("selected_family_id")
+                or _probe_evidence_for_publication.get("family_id")
+                or _probe_evidence_for_publication.get("cta_family_id")
+                or guidance_probe.get("selected_family_id")
+                or ""
+            ).strip()
+            _probe_updates_for_publication = dict(
+                _probe_contract_for_publication.get("updates")
+                or guidance_probe.get("primary_updates")
+                or _probe_evidence_for_publication.get("selected_candidate_updates")
+                or {}
+            )
+            _probe_action_type_for_publication = str(
+                _probe_contract_for_publication.get("action_type")
+                or guidance_probe.get("primary_action_type")
+                or guidance_probe.get("selected_action_type")
+                or ""
+            ).strip()
+            _probe_action_payload_for_publication = {
+                "action_type": _probe_action_type_for_publication,
+                "resolved_candidate_action_type": _probe_action_type_for_publication,
+                "updates": dict(_probe_updates_for_publication),
+                "resolved_candidate_updates": dict(_probe_updates_for_publication),
+                "candidate_search_evidence": dict(_probe_evidence_for_publication),
+                "source_candidate_id": (
+                    _probe_contract_for_publication.get("source_candidate_id")
+                    or _probe_contract_for_publication.get("candidate_id")
+                    or _probe_evidence_for_publication.get("selected_candidate_id")
+                ),
+                "candidate_id": (
+                    _probe_contract_for_publication.get("candidate_id")
+                    or _probe_contract_for_publication.get("source_candidate_id")
+                    or _probe_evidence_for_publication.get("selected_candidate_id")
+                ),
+                "family": _probe_family_for_publication,
+                "family_id": _probe_family_for_publication,
+                "selected_family_id": _probe_family_for_publication,
+                "published_family_id": _probe_family_for_publication,
+                "cta_family_id": _probe_family_for_publication,
+                "apply_payload_family_id": _probe_family_for_publication,
+            }
+            _probe_item_for_publication = {
+                "title_main": guidance_probe.get("primary_title") or guidance_probe.get("selected_title"),
+                "title": guidance_probe.get("primary_title") or guidance_probe.get("selected_title"),
+                "status": guidance_probe.get("primary_status") or guidance_probe.get("displayed_status"),
+                "util": guidance_probe.get("displayed_util"),
+                "action_type": _probe_action_type_for_publication,
+                "button_contract": dict(_probe_contract_for_publication),
+                "action_payload": dict(_probe_action_payload_for_publication),
+                "candidate_search_evidence": dict(_probe_evidence_for_publication),
+                "display_truth": dict(guidance_probe.get("display_truth") or guidance_probe.get("primary_display_truth") or {}),
+                "exact_blockers_by_family": dict(guidance_probe.get("exact_blockers_by_family") or {}),
+                "post_click_exact_blockers_by_family": dict(
+                    guidance_probe.get("post_click_exact_blockers_by_family") or {}
+                ),
+                "family": _probe_family_for_publication,
+                "family_id": _probe_family_for_publication,
+                "selected_family_id": _probe_family_for_publication,
+                "published_family_id": _probe_family_for_publication,
+                "cta_family_id": _probe_family_for_publication,
+                "apply_payload_family_id": _probe_family_for_publication,
+            }
+            _probe_publication = build_final_design_guide_publication(
+                item=dict(_probe_item_for_publication),
+                debug=dict(guidance_probe or {}),
+                publication_reason="browser_state_guidance_probe_projection",
+            )
+            _probe_publication_dict = (
+                _probe_publication.to_dict()
+                if hasattr(_probe_publication, "to_dict")
+                else dict(_probe_publication or {})
+            )
+            _probe_cta_authority = {}
+            _probe_cta_authority_payload = getattr(
+                inputs_page_bridge,
+                "_final_publication_cta_authority_payload",
+                None,
+            )
+            if callable(_probe_cta_authority_payload):
+                _probe_cta_authority = _probe_cta_authority_payload(
+                    item=dict(_probe_item_for_publication),
+                    debug=dict(guidance_probe or {}),
+                    button_contract=dict(_probe_contract_for_publication),
+                    action_payload=dict(_probe_action_payload_for_publication),
+                    source_precedence={
+                        "winning_button_contract_source": "item_contract",
+                        "winning_update_payload_source": "primary.button_contract.updates",
+                        "winning_action_type_source": "primary.button_contract.action_type",
+                        "winning_candidate_source": "primary.button_contract.candidate_id",
+                    },
+                )
+            _probe_publication_cta = dict(
+                (_probe_cta_authority or {}).get("cta")
+                or _probe_publication_dict.get("cta")
+                or {}
+            )
+            _probe_publication_display = dict(_probe_publication_dict.get("display") or {})
+            _probe_publication_evidence = dict(_probe_publication_dict.get("evidence") or {})
+            dg_final_publication_payload = {
+                "publication_hash": _probe_publication_dict.get("publication_hash"),
+                "final_publication_authority_hash": _probe_publication_dict.get("publication_hash"),
+                "final_publication_cta_hash": (_probe_cta_authority or {}).get("cta_hash"),
+                "final_publication_display_hash": (
+                    _probe_publication_display.get("final_card_model_hash")
+                    or _probe_publication_display.get("visible_wording_hash")
+                ),
+                "selected_family_id": _probe_family_for_publication
+                or _probe_publication_dict.get("selected_family"),
+                "selected_family": _probe_family_for_publication
+                or _probe_publication_dict.get("selected_family"),
+                "published_family_id": _probe_family_for_publication
+                or _probe_publication_dict.get("selected_family"),
+                "cta_family_id": _probe_family_for_publication
+                or _probe_publication_dict.get("selected_family"),
+                "outcome_state": _probe_publication_dict.get("outcome_state"),
+                "status": _probe_publication_display.get("status")
+                or _probe_publication_dict.get("outcome_state"),
+                "title": _probe_publication_display.get("title")
+                or _probe_item_for_publication.get("title_main"),
+                "cta": dict(_probe_publication_cta),
+                "display": dict(_probe_publication_display),
+                "evidence": dict(_probe_publication_evidence),
+                "exact_stop_proof": dict(_probe_publication_dict.get("exact_stop_proof") or {}),
+                "target_band_proof": dict(_probe_publication_dict.get("target_band_proof") or {}),
+                "source": "browser_state_guidance_probe_projection",
+                "proof_only": True,
+            }
+            dg_bundle_safe["final_publication_verifier_payload"] = dict(dg_final_publication_payload)
+            dg_bundle_safe["publication_hash"] = dg_final_publication_payload.get("publication_hash")
+            dg_bundle_safe["final_publication_publication_hash"] = dg_final_publication_payload.get(
+                "publication_hash"
+            )
+            dg_bundle_safe["final_publication_authority_hash"] = dg_final_publication_payload.get(
+                "final_publication_authority_hash"
+            )
+            dg_bundle_safe["final_publication_cta_hash"] = dg_final_publication_payload.get(
+                "final_publication_cta_hash"
+            )
+            dg_bundle_safe["final_publication_display_hash"] = dg_final_publication_payload.get(
+                "final_publication_display_hash"
+            )
+        except Exception as exc:
+            dg_bundle_safe["final_publication_verifier_payload_error"] = f"{type(exc).__name__}: {exc}"
     dg_nested_publication_hash = _first_nested_design_guide_publication_value(
         dg_bundle_safe,
         "publication_hash",
@@ -3560,6 +3871,51 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
             "final_publication_summary_card_html_bypass_debug": dict(
                 st.session_state.get("_final_publication_summary_card_html_bypass_debug") or {}
             ),
+            "final_publication_summary_card_html_cache_probe": {
+                "has_cache": isinstance(
+                    st.session_state.get("_final_publication_summary_card_html_cache"), dict
+                ),
+                "reuse_keys": dict(
+                    (
+                        st.session_state.get("_final_publication_summary_card_html_cache")
+                        if isinstance(
+                            st.session_state.get("_final_publication_summary_card_html_cache"),
+                            dict,
+                        )
+                        else {}
+                    ).get("reuse_keys")
+                    or {}
+                ),
+                "has_summary_cards_html": isinstance(
+                    (
+                        st.session_state.get("_final_publication_summary_card_html_cache")
+                        if isinstance(
+                            st.session_state.get("_final_publication_summary_card_html_cache"),
+                            dict,
+                        )
+                        else {}
+                    ).get("summary_cards_html"),
+                    str,
+                )
+                and bool(
+                    (
+                        st.session_state.get("_final_publication_summary_card_html_cache")
+                        if isinstance(
+                            st.session_state.get("_final_publication_summary_card_html_cache"),
+                            dict,
+                        )
+                        else {}
+                    ).get("summary_cards_html")
+                ),
+                "authority": (
+                    st.session_state.get("_final_publication_summary_card_html_cache")
+                    if isinstance(
+                        st.session_state.get("_final_publication_summary_card_html_cache"),
+                        dict,
+                    )
+                    else {}
+                ).get("authority"),
+            },
             "inputs_first_paint_cached_summary_reuse_debug": dict(
                 st.session_state.get("_inputs_first_paint_cached_summary_reuse_debug") or {}
             ),
@@ -3575,7 +3931,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
                 "compute_in_progress": bool(st.session_state.get("_compute_in_progress")),
                 "solver_running": bool(st.session_state.get("_solver_running")),
                 "pending_apply_refresh": bool(st.session_state.get("_pending_inputs_apply_refresh")),
-                "apply_in_flight": bool(st.session_state.get(inputs_page.DESIGN_GUIDE_COMPONENT_APPLY_IN_FLIGHT_KEY)),
+                "apply_in_flight": bool(st.session_state.get(_DESIGN_GUIDE_COMPONENT_APPLY_IN_FLIGHT_KEY)),
                 "force_inputs_widget_reseed_once": bool(st.session_state.get("_force_inputs_widget_reseed_once")),
                 "results_version": st.session_state.get("results_version"),
                 "has_cached_results": isinstance(st.session_state.get("cached_results"), dict),
@@ -3601,10 +3957,10 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
         "router_probe": st.session_state.get("_browser_router_probe"),
         "pending_recommendation_meta": rec_meta,
         "design_guide_primary_apply_payload": dict(
-            st.session_state.get(inputs_page.DESIGN_GUIDE_PRIMARY_APPLY_PAYLOAD_KEY) or {}
+            st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_PRIMARY_APPLY_PAYLOAD_KEY) or {}
         ),
         "design_guide_primary_payload_binding_audit": dict(
-            st.session_state.get(inputs_page.DESIGN_GUIDE_PRIMARY_PAYLOAD_BINDING_AUDIT_KEY) or {}
+            st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_PRIMARY_PAYLOAD_BINDING_AUDIT_KEY) or {}
         ),
         "results_version": st.session_state.get("results_version"),
         "summary_state_probe": {
@@ -3644,11 +4000,11 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
             "enabled": bool(st.session_state.get("_design_guide_post_cleanup_acceptance_enabled")),
             "stored_fp": str(st.session_state.get("_design_guide_post_cleanup_acceptance_fp")),
             "matches_current": bool(
-                inputs_page._local_cleanup_post_apply_acceptance_matches(summary_state_probe)
+                inputs_page_bridge._local_cleanup_post_apply_acceptance_matches(summary_state_probe)
             ),
-            "last_apply_route": dict(st.session_state.get(inputs_page.DESIGN_GUIDE_LAST_APPLY_ROUTE_KEY) or {}),
+            "last_apply_route": dict(st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_LAST_APPLY_ROUTE_KEY) or {}),
             "primary_payload_binding_audit": dict(
-                st.session_state.get(inputs_page.DESIGN_GUIDE_PRIMARY_PAYLOAD_BINDING_AUDIT_KEY) or {}
+                st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_PRIMARY_PAYLOAD_BINDING_AUDIT_KEY) or {}
             ),
             "pending_recommendation_applied_id": st.session_state.get("pending_recommendation_applied_id"),
             "run_design_clicked": st.session_state.get("run_design_clicked"),
@@ -3656,8 +4012,8 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
             "inputs_action_run_auto_design": st.session_state.get("_inputs_action_run_auto_design"),
         },
         "design_guide_probe": {
-            "needs_refresh": st.session_state.get(inputs_page.DESIGN_GUIDE_NEEDS_REFRESH_KEY),
-            "panel_baseline_fingerprint": st.session_state.get(inputs_page.DESIGN_GUIDE_PANEL_BASELINE_FP_KEY),
+            "needs_refresh": st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_NEEDS_REFRESH_KEY),
+            "panel_baseline_fingerprint": st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_PANEL_BASELINE_FP_KEY),
             "debug_bundle": dg_bundle_safe,
             "render_eligibility_trace": dg_render_eligibility_trace_safe,
             "render_plan_debug": dg_render_plan_safe,
@@ -3815,7 +4171,7 @@ def _get_user_id() -> str:
 def _render_create_project_form(user_id: str, module: str):
     name = st.text_input(
         "Project name",
-        placeholder="e.g. SRL East – RC Beam over Station Box",
+        placeholder="e.g. SRL East â€“ RC Beam over Station Box",
     )
     st.caption("This creates a project so you can open it later from your dashboard.")
     cA, cB = st.columns([1, 1])
@@ -3848,7 +4204,7 @@ def _render_create_project_form(user_id: str, module: str):
                         st.session_state["active_project_name"] = name.strip()
 
                     st.session_state["_show_save_modal"] = False
-                    st.toast("Project created and saved", icon="✅")
+                    st.toast("Project created and saved", icon="âœ…")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Create/save failed: {e}")
@@ -3895,10 +4251,11 @@ def main():
 <style>
 /* ==========================================================
    TOP PAGE NAV ONLY (matches Streamlit st.tabs style)
-   Scoped to the container that contains #page-nav-anchor
+   Scoped to the Navigation radio widget key so page-local radios
+   such as "Design mode" cannot inherit the tab treatment.
    ========================================================== */
 
-div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"]{
+div[data-testid="stElementContainer"].st-key-nav_page_slug div[role="radiogroup"]{
   display:flex !important;
   align-items:center !important;
   gap:18px !important;
@@ -3908,7 +4265,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"]{
 }
 
 /* tab label */
-div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] > label{
+div[data-testid="stElementContainer"].st-key-nav_page_slug div[role="radiogroup"] > label{
   margin:0 !important;
   padding: 6px 2px !important;
   background: transparent !important;
@@ -3921,28 +4278,28 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
 }
 
 /* remove the radio circle/control (robust across Streamlit builds) */
-div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] > label svg,
-div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] > label [role="img"],
-div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] > label input[type="radio"],
-div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] > label > div:first-child,
-div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] > label > span:first-child{
+div[data-testid="stElementContainer"].st-key-nav_page_slug div[role="radiogroup"] > label svg,
+div[data-testid="stElementContainer"].st-key-nav_page_slug div[role="radiogroup"] > label [role="img"],
+div[data-testid="stElementContainer"].st-key-nav_page_slug div[role="radiogroup"] > label input[type="radio"],
+div[data-testid="stElementContainer"].st-key-nav_page_slug div[role="radiogroup"] > label > div:first-child,
+div[data-testid="stElementContainer"].st-key-nav_page_slug div[role="radiogroup"] > label > span:first-child{
   display:none !important;
 }
 
 /* active underline (tab selected) */
-div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] > label:has(input:checked),
-div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] > label[aria-checked="true"]{
+div[data-testid="stElementContainer"].st-key-nav_page_slug div[role="radiogroup"] > label:has(input:checked),
+div[data-testid="stElementContainer"].st-key-nav_page_slug div[role="radiogroup"] > label[aria-checked="true"]{
   border-bottom: 2px solid #ff4b4b !important;
   font-weight: 600 !important;
 }
 
 /* prevent "button hover" feel */
-div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] > label:hover{
+div[data-testid="stElementContainer"].st-key-nav_page_slug div[role="radiogroup"] > label:hover{
   background: transparent !important;
 }
 
 /* tighten inner wrappers */
-div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] > label *{
+div[data-testid="stElementContainer"].st-key-nav_page_slug div[role="radiogroup"] > label *{
   margin:0 !important;
   padding:0 !important;
 }
@@ -3972,7 +4329,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
                 st.session_state["_active_project_loaded_id"] = project_row.get("id") or project_id
                 try:
                     payload = project_row.get("payload") or {}
-                    # 🔒 Prevent snapshot restore from overwriting loaded project state
+                    # ðŸ”’ Prevent snapshot restore from overwriting loaded project state
                     from state_and_helpers import (
                         DISABLE_SNAPSHOT_RESTORE_KEY,
                         clear_cached_and_widget_restore_keys,
@@ -3983,7 +4340,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
 
                     apply_project_payload(payload)
 
-                    # After applying a project payload, snapshot is now “dirty” state.
+                    # After applying a project payload, snapshot is now â€œdirtyâ€ state.
                     st.session_state["_dirty"] = True
                     st.session_state["_dirty_reason"] = "Loaded project payload"
                     # Recompute is gate-owned; mark inputs dirty and let the
@@ -3997,14 +4354,14 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
 
     _render_project_header_compact()
 
-    header_left, header_right = st.columns([0.65, 0.35], vertical_alignment="center")
+    header_left, header_right = st.columns([0.55, 0.45], vertical_alignment="center")
 
     with header_left:
         st.title("Beam design")
 
     with header_right:
         # --- Top right actions row (Save + Generate PDF on same level) ---
-        left, right = st.columns([1.0, 9.0], gap="large")
+        left, right = st.columns([1.3, 8.7], gap="large")
 
         with right:
             st.session_state.setdefault("report_mode", "standard")
@@ -4013,12 +4370,12 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
                 report_mode = "standard"
                 st.session_state["report_mode"] = report_mode
 
-            # Equal width for Save and PDF; trailing spacer keeps both slightly narrower
-            # than filling the full row (same share as the original Save-only column).
-            c_save, c_pdf, c_pdf_opts, _ = st.columns([3.0, 3.0, 0.6, 2.8], gap="small")
+            # The PDF label is longer than Save; keep it wide enough for one
+            # line while shifting the action group toward the page edge.
+            c_save, c_pdf, c_pdf_opts, _ = st.columns([2.4, 3.8, 0.5, 0.25], gap="small")
 
             with c_save:
-                if st.button("💾 Save", type="primary", use_container_width=True):
+                if st.button("ðŸ’¾ Save", type="primary", use_container_width=True):
                     if not user_id:
                         st.error("You must be logged in to save projects.")
                         st.stop()
@@ -4032,7 +4389,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
                                     payload=payload,
                                     meta={"module": module},
                                 )
-                                st.toast("Saved", icon="✅")
+                                st.toast("Saved", icon="âœ…")
                             except Exception as e:
                                 st.error(f"Save failed: {e}")
                         else:
@@ -4083,7 +4440,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
 
     
 
-    # --- 0) Deferred top-level nav (e.g. Inputs landing) — must run before NAV_KEY st.radio.
+    # --- 0) Deferred top-level nav (e.g. Inputs landing) â€” must run before NAV_KEY st.radio.
     pending_nav_slug = st.session_state.pop(PENDING_NAV_PAGE_SLUG_KEY, None)
     if isinstance(pending_nav_slug, str) and pending_nav_slug in PAGES:
         st.session_state[NAV_KEY] = pending_nav_slug
@@ -4098,7 +4455,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     if isinstance(qp_page, list):
         qp_page = qp_page[0] if qp_page else None
 
-    # ✅ Adopt URL -> nav when the URL page slug changed since last sync, OR when
+    # âœ… Adopt URL -> nav when the URL page slug changed since last sync, OR when
     # ?jump= is present and nav still disagrees (summary link landed while radio lagged).
     # Never adopt on nav_slug != qp_page alone: after a tab change the widget updates
     # before step 3 rewrites ?page=, and we'd overwrite the new selection with the old URL.
@@ -4110,7 +4467,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
             st.session_state[NAV_KEY] = qp_page
             st.session_state[LAST_QP_KEY] = qp_page
 
-    # ✅ If no valid page in URL, still ensure defaults exist
+    # âœ… If no valid page in URL, still ensure defaults exist
     if NAV_KEY not in st.session_state:
         st.session_state[NAV_KEY] = "inputs"
 
@@ -4131,7 +4488,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         render_timing_mark("app.page_selection.done", selected_slug=selected_slug)
 
     # --- 3) Sync URL ONLY if it differs (prevents "stuck on bending" loops)
-    # ✅ If a jump is present, DO NOT touch query params at all.
+    # âœ… If a jump is present, DO NOT touch query params at all.
     render_timing_mark("app.pre_dispatch.query_param_sync.start", selected_slug=selected_slug)
     if "jump" not in st.query_params:
         if st.query_params.get("page") != selected_slug:
@@ -4231,7 +4588,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
             "router_pre_hydrate_shear_normalisation_start",
             {"stage": "router"},
         )
-        _shear_norm_changed = bool(inputs_page.run_inputs_layer4_pre_hydrate_shear_normalisation())
+        _shear_norm_changed = bool(inputs_page_bridge.run_inputs_layer4_pre_hydrate_shear_normalisation())
         _session_state_final_log.append_session_state_final_log(
             "router_pre_hydrate_shear_normalisation_done",
             {"shared_state_changed": _shear_norm_changed},
@@ -4247,7 +4604,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         except Exception:
             pass
     if st.session_state.get("_dev_mode") and st.session_state.get("_inputs_hydration_trace"):
-        inputs_page._inputs_hydration_trace_log(
+        inputs_page_bridge._inputs_hydration_trace_log(
             "app_after_shear_norm",
             page_slug_preview=str(st.session_state.get("page_slug") or ""),
         )
@@ -4334,7 +4691,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         st.rerun()
 
     # Hydrate BEFORE any widgets render (prevents stale widget keys from clobbering shared).
-    # Primary hydration owner for all pages including Inputs — render_inputs must not repeat this unconditionally.
+    # Primary hydration owner for all pages including Inputs â€” render_inputs must not repeat this unconditionally.
     render_timing_mark("app.pre_dispatch.router_hydrate_log_start.start", selected_slug=selected_slug)
     try:
         _session_state_final_log.append_session_state_final_log(
@@ -4399,7 +4756,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         pass
     render_timing_mark("app.pre_dispatch.router_hydrate_log_done.end", selected_slug=selected_slug)
     if st.session_state.get("_dev_mode") and st.session_state.get("_inputs_hydration_trace"):
-        inputs_page._inputs_hydration_trace_log(
+        inputs_page_bridge._inputs_hydration_trace_log(
             "router_hydrate_active_page",
             selected_slug=selected_slug,
             page_changed=page_changed,
@@ -4787,7 +5144,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
     
     # Stricter guard: only allow shared-input changes if:
     # - wipe recovery mode, OR
-    # - the change set is small (≤ 2 keys), AND
+    # - the change set is small (â‰¤ 2 keys), AND
     # - the changed key matches _last_user_shared_key, AND
     # - it happened very recently (< 0.5s)
     allowed_due_to_user = False
@@ -4810,7 +5167,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
         if design_guide_allowed_keys and (
             not changed_shared
             or set(changed_shared.keys()).issubset(design_guide_allowed_keys)
-            or bool(st.session_state.get(inputs_page.DESIGN_GUIDE_LAST_APPLY_ROUTE_KEY))
+            or bool(st.session_state.get(inputs_page_app_contracts.DESIGN_GUIDE_LAST_APPLY_ROUTE_KEY))
         ):
             allowed_due_to_design_guide_apply = True
 
@@ -4873,7 +5230,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
 
         _contract_session_integrity(dict(st.session_state))
 
-    # IMPORTANT: Do NOT do app-level widget→shared syncing.
+    # IMPORTANT: Do NOT do app-level widgetâ†’shared syncing.
     # Shared state must only update via on_change callbacks.
     # App-level syncing can copy stale navigation zeros into shared and wipe inputs.
     
@@ -4882,3 +5239,6 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
 
 if __name__ == "__main__":
     main()
+
+
+

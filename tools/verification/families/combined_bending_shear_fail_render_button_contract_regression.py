@@ -23,7 +23,7 @@ from design_brain.publication import (  # noqa: E402
     DesignGuideButtonContractActionabilityProbeOutputs,
     resolve_design_guide_button_contract_actionability_scalars,
 )
-import inputs_page as inputs_page_module  # noqa: E402
+import inputs_page_app_contract_bridge as inputs_page_module  # noqa: E402
 
 
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
@@ -168,19 +168,12 @@ def main() -> int:
         preview_reason="candidate_preview_still_fails_active_check",
     )
     cleanup = _resolve(_cleanup_item_without_active_repair_proof())
-    projection_contract, projection_applied = (
-        inputs_page_module._apply_final_publication_cta_to_primary_render_contract(
-            item=_active_repair_item(),
-            existing_contract={
-                "action_type": "apply_resolved_candidate",
-                "family": "combined",
-                "preview_pass": False,
-                "blocking_reason": "candidate_preview_still_fails_active_check",
-            },
-            debug_sink={},
-            state={},
-        )
+    projected_items = inputs_page_module._design_guide_apply_button_contracts_to_items(
+        [_active_repair_item()],
+        state={},
     )
+    projection_contract = dict((projected_items[0] if projected_items else {}).get("button_contract") or {})
+    projection_applied = bool(projected_items and projection_contract)
     active_payload = active.to_dict()
     active_local_preview_false_payload = active_local_preview_false.to_dict()
     cleanup_payload = cleanup.to_dict()
@@ -193,10 +186,14 @@ def main() -> int:
         "active_repair_local_preview_false_actionable": active_local_preview_false.actionable is True,
         "active_repair_local_preview_false_reason_cleared": active_local_preview_false.blocking_reason in (None, ""),
         "active_repair_render_projection_applied": projection_applied is True,
-        "active_repair_render_projection_enabled": inputs_page_module._design_guide_button_contract_enabled(
+        "active_repair_render_projection_uses_current_bridge": bool(
+            callable(getattr(inputs_page_module, "_design_guide_apply_button_contracts_to_items", None))
+        ),
+        "active_repair_empty_state_projection_blocks_preview": inputs_page_module._design_guide_button_contract_enabled(
             projection_contract
         )
-        is True,
+        is not True
+        and projection_contract.get("blocking_reason") == "candidate_preview_introduces_fail_status",
         "active_repair_render_projection_updates_present": bool(
             dict(projection_contract.get("updates") or {})
         ),

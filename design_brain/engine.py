@@ -1129,7 +1129,7 @@ def _shear_fail_family_routing_enabled() -> bool:
 
 
 def _combined_fail_family_routing_enabled() -> bool:
-    value = str(os.environ.get(COMBINED_FAIL_FAMILY_ROUTING_ENV, "0")).strip().lower()
+    value = str(os.environ.get(COMBINED_FAIL_FAMILY_ROUTING_ENV, "1")).strip().lower()
     return value not in {"0", "false", "no", "off"}
 
 
@@ -2433,6 +2433,18 @@ def _outside_target_evidence_allows_recommendation(evidence: dict, selected_util
     reason = str(evidence.get("outside_target_band_allowed_reason") or "").strip()
     if not category or category in {"under_current_rules", "manual_review", "no_candidate_attached", "move_set_failed", "unknown"}:
         return False, "outside-target blocker category is not specific", "no_material_candidate_reached_target"
+    terminal_status = str(evidence.get("terminal_candidate_status") or "").strip().upper()
+    terminal_or_blocked = terminal_status in {
+        "TERMINAL_EXACT_STOP",
+        "TERMINAL_BLOCKED_WITH_PROOF",
+    }
+    no_second_cta_required = bool(evidence.get("no_second_cta_required"))
+    if not (terminal_or_blocked or no_second_cta_required):
+        return (
+            False,
+            "outside-target cleanup is non-terminal; same-click cleanup must reach target band or publish exact blocker proof",
+            "non_terminal_outside_target_cleanup",
+        )
     return True, reason or "no safe executor-backed target-band candidate was found", category
 
 
@@ -2841,6 +2853,24 @@ def resolve_design_guide_decision(
     if "shear" in combined_route_failures and _item_signals_bending_active_failure(primary_item):
         combined_route_failures.add("bending")
     active_strength_action = bool(active_strength_failures and _button_enabled(button))
+    active_family_context: set[str] = set()
+    for source in (primary_item, button, evidence, _as_dict(primary_item.get("action_payload")), _as_dict(primary_item.get("resolved_candidate"))):
+        if not isinstance(source, dict):
+            continue
+        for key in (
+            "selected_family_id",
+            "published_family_id",
+            "cta_family_id",
+            "candidate_family_id",
+            "card_family_id",
+            "apply_payload_family_id",
+            "governing_family",
+            "governing_state",
+        ):
+            raw = str(source.get(key) or "").strip().upper()
+            if raw:
+                active_family_context.add(raw)
+    geometry_detailing_action = bool("GEOMETRY_DETAILING_GOVERNS" in active_family_context)
     combined_fail_family_route_used = False
     shear_fail_family_route_used = False
     if combined_route_failures >= {"bending", "shear"}:
@@ -2876,7 +2906,12 @@ def resolve_design_guide_decision(
         shear_fail_family_route_used = bool(shear_route.get("used"))
         if shear_fail_family_route_used:
             active_strength_action = True
-    if active_strength_action and not shear_fail_family_route_used and not combined_fail_family_route_used:
+    if active_strength_action and geometry_detailing_action:
+        decision["candidate_search_evidence"] = {
+            **dict(decision.get("candidate_search_evidence") or {}),
+            "active_strength_repair_override_suppressed_by_geometry_detailing": True,
+        }
+    elif active_strength_action and not shear_fail_family_route_used and not combined_fail_family_route_used:
         if active_strength_failures >= {"bending", "shear"}:
             active_family = "combined"
             active_title = "Bending and shear capacity are low"

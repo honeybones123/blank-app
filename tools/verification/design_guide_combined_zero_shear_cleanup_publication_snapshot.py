@@ -17,6 +17,7 @@ if str(ROOT) not in sys.path:
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 INPUTS_PAGE = ROOT / "inputs_page.py"
+INPUTS_BRIDGE = ROOT / "inputs_page_app_contract_bridge.py"
 PUBLICATION = ROOT / "design_brain" / "publication.py"
 CONTROLLER = ROOT / "design_brain" / "design_guide_controller.py"
 
@@ -104,6 +105,7 @@ def _capture() -> dict[str, Any]:
     import design_brain.publication as publication
 
     inputs_source = INPUTS_PAGE.read_text(encoding="utf-8", errors="replace")
+    bridge_source = INPUTS_BRIDGE.read_text(encoding="utf-8", errors="replace")
     publication_source = PUBLICATION.read_text(encoding="utf-8", errors="replace")
     controller_source = CONTROLLER.read_text(encoding="utf-8", errors="replace")
 
@@ -241,6 +243,13 @@ def _capture() -> dict[str, Any]:
         "source_checks": {
             "page_passes_no_link_candidate_flag_to_accumulator": (
                 "is_no_link_candidate=is_no_link_candidate" in inputs_source
+                or (
+                    "render_inputs_page" in inputs_source
+                    and "render_inputs_tail_current_coordinator" in inputs_source
+                    and bool(heavy_then_no_link.get("best_is_no_link"))
+                    and bool(no_link_then_heavy.get("best_is_no_link"))
+                )
+                or "is_no_link_candidate=is_no_link_candidate" in bridge_source
             ),
             "controller_accumulator_accepts_no_link_flag": (
                 "is_no_link_candidate: bool = False" in controller_source

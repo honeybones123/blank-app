@@ -21,7 +21,7 @@ from design_brain.candidate_evaluation import (  # noqa: E402
 )
 
 
-INPUTS = ROOT / "inputs_page.py"
+APP_CONTRACT_BRIDGE = ROOT / "inputs_page_app_contract_bridge.py"
 CANDIDATE_EVALUATION = ROOT / "design_brain" / "candidate_evaluation.py"
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
@@ -170,7 +170,7 @@ def _case_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
 
 
 def build_payload() -> dict[str, Any]:
-    inputs_source = _read(INPUTS)
+    inputs_source = _read(APP_CONTRACT_BRIDGE)
     candidate_source = _read(CANDIDATE_EVALUATION)
     start, end, helper = _function_segment(inputs_source, "_one_click_best_next_hop_improving_candidate")
     _, _, diff_wrapper = _function_segment(inputs_source, "_one_click_diff_accumulated_updates")

@@ -30,8 +30,8 @@ def main() -> int:
     source_path = ROOT / "inputs_page.py"
     source = source_path.read_text(encoding="utf-8")
 
-    helper_start = source.find("def _cached_summary_html_for_first_paint")
-    helper_end = source.find("summary_container = st.empty()", helper_start)
+    helper_start = source.find("def render_inputs_cached_summary_html_for_first_paint_coordinator")
+    helper_end = source.find("def render_inputs_fast_model_into_slot_coordinator", helper_start)
     helper_source = source[helper_start:helper_end] if helper_start != -1 and helper_end != -1 else ""
     first_paint_start = source.find("_first_paint_cached_summary_html")
     first_paint_end = source.find("st.markdown(\n            _first_paint_shell_html", first_paint_start)
@@ -49,6 +49,9 @@ def main() -> int:
             "RESULT_CACHE_KEY",
             "results_version",
             "result_cache_hash",
+            "summary_action_fp",
+            "stale_summary_action_fp",
+            "_resolved_inputs_summary_state",
             "inputs_dirty",
             "_inputs_dirty",
             "_pending_inputs_apply_refresh",
@@ -71,6 +74,8 @@ def main() -> int:
             "_inputs_first_paint_cached_summary_reuse_debug",
             "cache_hit=bool",
             "__CACHED_SUMMARY_HTML__",
+            "__SUMMARY_CARD_CSS__",
+            "_summary_card_css()",
             "summary-card-stack",
             "summary-skeleton-row",
         ],
@@ -83,7 +88,7 @@ def main() -> int:
 
     failures: list[str] = []
     if helper_start == -1:
-        failures.append("cached summary first-paint helper missing")
+        failures.append("cached summary first-paint coordinator missing")
     failures.extend(f"missing helper guard: {key}" for key, ok in helper_guards.items() if not ok)
     failures.extend(f"missing first-paint shell check: {key}" for key, ok in shell_checks.items() if not ok)
     if not existing_final_render_still_present:
@@ -105,6 +110,8 @@ def main() -> int:
             "existing_final_render_still_present": existing_final_render_still_present,
             "existing_summary_html_reuse_still_present": existing_summary_html_reuse_still_present,
             "cached_path_scope": "first_paint_summary_shell_only",
+            "cached_summary_shell_includes_card_css": shell_checks["__SUMMARY_CARD_CSS__"]
+            and shell_checks["_summary_card_css()"],
             "normal_final_summary_render_still_runs": existing_final_render_still_present,
             "dirty_apply_debug_states_force_skeleton": all(
                 helper_guards[key]
@@ -119,6 +126,9 @@ def main() -> int:
             "stable_hash_guard": helper_guards["RESULT_CACHE_KEY"]
             and helper_guards["results_version"]
             and helper_guards["result_cache_hash"],
+            "summary_state_hash_guard": helper_guards["summary_action_fp"]
+            and helper_guards["stale_summary_action_fp"]
+            and helper_guards["_resolved_inputs_summary_state"],
         },
         "latest_supporting_artifacts": {
             "browser_live_smoothness_profile": _latest("design_guide_browser_live_smoothness_profile"),

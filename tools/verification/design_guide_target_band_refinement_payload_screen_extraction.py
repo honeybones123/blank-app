@@ -22,7 +22,7 @@ from design_brain.candidate_evaluation import (  # noqa: E402
 )
 
 
-INPUTS = ROOT / "inputs_page.py"
+INPUTS = ROOT / "inputs_page_app_contract_bridge.py"
 CANDIDATE_EVALUATION = ROOT / "design_brain" / "candidate_evaluation.py"
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
@@ -183,7 +183,10 @@ def build_payload() -> dict[str, Any]:
 
     static_checks = {
         "service_present": "def build_target_band_refinement_payload_if_valid(" in candidate_source,
-        "page_delegates_payload_screen": "_build_target_band_refinement_payload_if_valid(" in helper,
+        "page_delegates_payload_screen": (
+            "_build_target_band_refinement_payload_if_valid(" in helper
+            or "_select_best_target_band_refinement_candidate(" in helper
+        ),
         "old_inline_all_pass_screen_removed": 'candidate_overview.get("all_key_pass")' not in helper,
         "old_inline_distance_screen_removed": "_candidate_target_band_distance(candidate_eval, mode_config)" not in helper,
         "old_inline_step_improves_removed": "_one_click_step_improves(candidate_eval, current_eval, mode_config)" not in helper,
@@ -192,10 +195,10 @@ def build_payload() -> dict[str, Any]:
             for token in (
                 "_build_auto_design_context(",
                 "generate_compliant_refinement_candidates(",
-                "evaluate_candidate_full(",
-                "_diff_candidate_state_updates(",
-                "_resolve_target_band_candidate_domains_for_updates(",
-                "_one_click_attach_eval_target_domains(",
+                "evaluator_fn=evaluate_candidate_full",
+                "state_pack_fn=_build_canonical_design_state_pack",
+                "target_domain_attachment_fn=_one_click_attach_eval_target_domains",
+                "spacing_envelope_fail_fn=_one_click_has_unresolved_spacing_envelope_fail",
             )
         ),
     }
@@ -239,13 +242,14 @@ def build_payload() -> dict[str, Any]:
             "remains_page_owned": [
                 "auto-design context construction",
                 "refinement candidate generation",
-                "canonical state pack construction",
-                "full candidate evaluation call",
-                "demand-aware target-domain attachment",
+                "canonical state pack callback",
+                "full candidate evaluator callback",
+                "target-domain attachment callback",
+                "spacing-envelope callback",
             ],
         },
         "product_behavior_changed": False,
-        "next_safe_slice": "audit or extract target-domain attachment/update diff before attempting generator/evaluator service handoff",
+        "next_safe_slice": "extract or bound auto-design context construction and refinement candidate generation",
     }
 
 

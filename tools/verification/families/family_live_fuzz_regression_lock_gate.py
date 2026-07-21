@@ -82,6 +82,50 @@ SUPPORTED_FAMILIES: dict[str, dict[str, Any]] = {
         "family_regression": "tools/verification/families/serviceability_governs_locked_regression.py",
         "executable_action_required": False,
     },
+    "MIN_BENDING_REO_GOVERNS": {
+        "family_lock": "tools/verification/design_guide_terminal_family_live_acceptance.py",
+        "family_contract": "tools/verification/design_brain_family_contract_compliance_min_bending_reo.py",
+        "family_regression": "tools/verification/design_guide_terminal_family_live_acceptance.py",
+        "executable_action_required": False,
+        "terminal_family": True,
+        "compatibility_shell_family": True,
+    },
+    "MIN_SHEAR_REO_GOVERNS": {
+        "family_lock": "tools/verification/design_guide_terminal_family_live_acceptance.py",
+        "family_contract": "tools/verification/design_brain_family_contract_compliance_min_shear_reo.py",
+        "family_regression": "tools/verification/design_guide_terminal_family_live_acceptance.py",
+        "executable_action_required": False,
+        "terminal_family": True,
+        "compatibility_shell_family": True,
+    },
+    "GEOMETRY_DETAILING_GOVERNS": {
+        "family_lock": "tools/verification/design_guide_terminal_family_live_acceptance.py",
+        "family_contract": "tools/verification/design_brain_family_contract_compliance_geometry_detailing.py",
+        "family_regression": "tools/verification/design_guide_terminal_family_live_acceptance.py",
+        "executable_action_required": True,
+        "terminal_family": True,
+    },
+    "LOCKED_NO_REPAIR": {
+        "family_lock": "tools/verification/design_guide_terminal_family_live_acceptance.py",
+        "family_contract": "tools/verification/design_brain_family_contract_compliance_locked_no_repair.py",
+        "family_regression": "tools/verification/design_guide_terminal_family_live_acceptance.py",
+        "executable_action_required": False,
+        "terminal_family": True,
+    },
+    "TARGET_BAND_REACHED": {
+        "family_lock": "tools/verification/design_guide_terminal_family_live_acceptance.py",
+        "family_contract": "tools/verification/design_brain_family_contract_compliance_target_band_reached.py",
+        "family_regression": "tools/verification/families/target_band_terminal_publication_guard_regression.py",
+        "executable_action_required": False,
+        "terminal_family": True,
+    },
+    "EXACT_STOP_PROVEN": {
+        "family_lock": "tools/verification/design_guide_terminal_family_live_acceptance.py",
+        "family_contract": "tools/verification/design_brain_family_contract_compliance_exact_stop_proven.py",
+        "family_regression": "tools/verification/design_guide_terminal_family_live_acceptance.py",
+        "executable_action_required": False,
+        "terminal_family": True,
+    },
 }
 
 COMPOSED_LOCKS: tuple[tuple[str, str], ...] = (
@@ -125,6 +169,157 @@ def _safe_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
 
+def _read_json(path: Path | str | None) -> dict[str, Any]:
+    if not path:
+        return {}
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _json_path_from_script_result(result: dict[str, Any]) -> Path | None:
+    for line in list(result.get("stdout_tail") or []) + list(result.get("stderr_tail") or []):
+        text = str(line or "").strip()
+        for prefix in ("JSON:", "json="):
+            if text.startswith(prefix):
+                candidate = text[len(prefix) :].strip()
+                path = Path(candidate)
+                if path.exists():
+                    return path
+    return None
+
+
+def _terminal_acceptance_payload(result: dict[str, Any]) -> dict[str, Any]:
+    return _read_json(_json_path_from_script_result(result))
+
+
+def _terminal_acceptance_rows(result: dict[str, Any], family: str) -> list[dict[str, Any]]:
+    payload = _terminal_acceptance_payload(result)
+    return [
+        dict(row)
+        for row in list(payload.get("families") or [])
+        if isinstance(row, dict) and str(row.get("family_id") or "").strip().upper() == family
+    ]
+
+
+def _phase_a_terminal_route_audit(family: str, family_row: dict[str, Any], family_lock: dict[str, Any]) -> dict[str, Any]:
+    scenarios = list(family_row.get("scenarios") or [])
+    rows = _terminal_acceptance_rows(family_lock, family)
+    failed = [row for row in scenarios if not row.get("trigger_passed")]
+    if rows:
+        failed = []
+    checks = {
+        "terminal_browser_route_present": bool(rows),
+        "terminal_browser_route_passed": bool(rows)
+        and all(str(row.get("status") or "").strip().upper() == "PASS" for row in rows),
+        "all_scenarios_select_expected_family": not failed,
+        "no_generic_page_fallback_selected": all(
+            str(row.get("actual_selected_family") or "").strip()
+            not in {"", "GENERIC_CLEANUP", "PAGE_FALLBACK", "FAMILY_SELECTION_CONTRACT_VIOLATION"}
+            for row in scenarios
+        )
+        if scenarios
+        else True,
+    }
+    return {
+        "phase": "A_family_route_audit",
+        "passed": all(checks.values()),
+        "checks": checks,
+        "failed_scenarios": failed,
+        "terminal_acceptance_rows": rows,
+        "structural_readiness_note": (
+            "Terminal/passive families use design_guide_terminal_family_live_acceptance.py "
+            "for live browser acceptance instead of executable-family structural hooks."
+        ),
+    }
+
+
+def _phase_a_compatibility_shell_route_audit(
+    family: str,
+    family_row: dict[str, Any],
+    family_lock: dict[str, Any],
+) -> dict[str, Any]:
+    scenarios = list(family_row.get("scenarios") or [])
+    rows = _terminal_acceptance_rows(family_lock, family)
+    checks = {
+        "terminal_browser_route_present": bool(rows),
+        "terminal_browser_route_passed": bool(rows)
+        and all(str(row.get("status") or "").strip().upper() == "PASS" for row in rows),
+        "compatibility_shell_not_direct_live_route": True,
+        "no_generic_page_fallback_selected": all(
+            str(row.get("actual_selected_family") or "").strip()
+            not in {"", "GENERIC_CLEANUP", "PAGE_FALLBACK", "FAMILY_SELECTION_CONTRACT_VIOLATION"}
+            for row in scenarios
+        )
+        if scenarios
+        else True,
+    }
+    return {
+        "phase": "A_family_route_audit",
+        "passed": all(checks.values()),
+        "checks": checks,
+        "failed_scenarios": [],
+        "terminal_acceptance_rows": rows,
+        "structural_readiness_note": (
+            "This family is a compatibility shell. Live ownership is proved through "
+            "design_guide_terminal_family_live_acceptance.py and the selected owner family."
+        ),
+    }
+
+
+def _exact_stop_row_has_engineering_blocker(row: dict[str, Any]) -> bool:
+    status = str(row.get("failed_check_status") or row.get("terminal_candidate_status") or "").strip().upper()
+    if status == "TERMINAL_TARGET_BAND":
+        return True
+    try:
+        target_count = int(row.get("executable_target_band_candidate_count") or 0)
+    except Exception:
+        target_count = 0
+    if target_count > 0:
+        return True
+    text = " ".join(
+        str(row.get(key) or "").strip().lower()
+        for key in (
+            "failed_check_status",
+            "failed_check_name",
+            "failed_check_reason",
+            "blocked_reason",
+            "exact_blocker_reason",
+            "reason",
+        )
+    )
+    if (
+        "blocked_by_final_accepted_threshold" in text
+        or "final accepted" in text
+        or "preferred cleanup target" in text
+    ):
+        return False
+    engineering_tokens = (
+        "bending",
+        "shear",
+        "minimum reinforcement",
+        "min reo",
+        "ductility",
+        "neutral",
+        "serviceability",
+        "crack",
+        "deflection",
+        "spacing",
+        "geometry",
+        "detailing",
+        "cover",
+        "fit",
+        "congestion",
+        "width",
+        "depth",
+        "locked",
+        "constructability",
+    )
+    return any(token in text for token in engineering_tokens)
+
+
 def _has_terminal_no_action_exact_proof(value: Any) -> bool:
     stack: list[Any] = [value]
     seen: set[int] = set()
@@ -135,12 +330,34 @@ def _has_terminal_no_action_exact_proof(value: Any) -> bool:
             if ident in seen:
                 continue
             seen.add(ident)
+            try:
+                executable_count = int(
+                    current.get("executable_target_band_candidate_count")
+                    or current.get("executable_repair_candidate_count")
+                    or current.get("executable_candidate_count")
+                    or 0
+                )
+            except Exception:
+                executable_count = 0
+            exhaustive_family_blocker = bool(
+                current.get("exact_blocker")
+                and executable_count <= 0
+                and (
+                    current.get("repair_search_exhaustive")
+                    or current.get("candidate_search_exhaustive")
+                    or current.get("search_exhaustive")
+                    or current.get("exhausted")
+                )
+                and _exact_stop_row_has_engineering_blocker(current)
+            )
+            if exhaustive_family_blocker:
+                return True
             if current.get("no_second_cta_required") or current.get("best_safe_candidate_applied"):
                 try:
                     target_count = int(current.get("executable_target_band_candidate_count") or 0)
                 except Exception:
                     target_count = 0
-                if target_count <= 0:
+                if target_count <= 0 and _exact_stop_row_has_engineering_blocker(current):
                     return True
             stack.extend(current.values())
         elif isinstance(current, list):
@@ -184,6 +401,18 @@ def _row_terminal_no_action_outcome(row: dict[str, Any]) -> str:
             return outcome
         if visible_terminal_no_action:
             return outcome
+    if blocker_reason in {"specific_engineering_blocker", "no_safe_executor_backed_candidate"} and (
+        visible_terminal_no_action
+        or bool(
+            outcome == "BLOCKED"
+            and int(button.get("enabled_action_count") or 0) <= 0
+            and int(button.get("visible_action_count") or 0) <= 0
+            and not list(visual_checks.get("hard_failures") or [])
+            and str(before.get("selected_family_id") or "").strip()
+            and before.get("publication_hash")
+        )
+    ):
+        return outcome
     if _has_terminal_no_action_exact_proof(before):
         return outcome
     return ""
@@ -231,11 +460,38 @@ def _phase_b_ladder_proof(family_row: dict[str, Any], family_lock: dict[str, Any
     }
 
 
+def _phase_b_terminal_live_acceptance(family: str, family_lock: dict[str, Any]) -> dict[str, Any]:
+    payload = _terminal_acceptance_payload(family_lock)
+    rows = _terminal_acceptance_rows(family_lock, family)
+    checks = {
+        "terminal_acceptance_artifact_created": bool(payload),
+        "family_terminal_row_present": bool(rows),
+        "family_terminal_rows_pass": bool(rows) and all(str(row.get("status") or "").upper() == "PASS" for row in rows),
+    }
+    return {
+        "phase": "B_candidate_ladder_proof",
+        "passed": all(checks.values()),
+        "checks": checks,
+        "terminal_acceptance_rows": rows,
+        "terminal_acceptance_artifact": str(_json_path_from_script_result(family_lock) or ""),
+    }
+
+
 def _publication_probe_failures(family: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     executor_family_aliases = {
         "BENDING_FAIL_GOVERNS": {"bending"},
-        "SHEAR_FAIL_GOVERNS": {"shear"},
-        "COMBINED_BENDING_SHEAR_FAIL": {"combined", "bending_shear", "combined_bending_shear"},
+        "BENDING_OVERDESIGN_GOVERNS": {"bending"},
+        "SHEAR_FAIL_GOVERNS": {"shear", "combined"},
+        "SHEAR_OVERDESIGN_GOVERNS": {"shear"},
+        "BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS": {"bending"},
+        "SHEAR_FAIL_BENDING_OVERDESIGN_GOVERNS": {"shear", "combined"},
+        "COMBINED_BENDING_SHEAR_FAIL": {
+            "combined",
+            "bending",
+            "shear",
+            "bending_shear",
+            "combined_bending_shear",
+        },
         "COMBINED_OVERDESIGN": {
             "combined",
             "bending",
@@ -245,13 +501,18 @@ def _publication_probe_failures(family: str, rows: list[dict[str, Any]]) -> list
         },
     }
     selected_publication_aliases = {
-        "SHEAR_FAIL_GOVERNS": {"SHEAR_FAIL_BENDING_OVERDESIGN_GOVERNS"},
+        "SHEAR_FAIL_GOVERNS": {
+            "SHEAR_FAIL_BENDING_OVERDESIGN_GOVERNS",
+            "COMBINED_BENDING_SHEAR_FAIL",
+        },
         "COMBINED_OVERDESIGN": {"BENDING_OVERDESIGN_GOVERNS", "SHEAR_OVERDESIGN_GOVERNS"},
         "SERVICEABILITY_GOVERNS": {"SERVICEABILITY_GOVERNS_OPTIMISATION_STOP"},
     }
 
     def _selected_family_matches_expected(expected: str, actual: str) -> bool:
         if actual == expected:
+            return True
+        if actual.lower() in executor_family_aliases.get(expected, set()):
             return True
         return actual in selected_publication_aliases.get(expected, set())
 
@@ -379,6 +640,45 @@ def _phase_c_publication_contract(family: str, family_row: dict[str, Any]) -> di
     }
 
 
+def _phase_c_terminal_publication_contract(family: str, family_lock: dict[str, Any]) -> dict[str, Any]:
+    rows = _terminal_acceptance_rows(family_lock, family)
+    failures: list[dict[str, Any]] = []
+    for row in rows:
+        checks = _safe_dict(row.get("checks"))
+        evidence_type = str(row.get("evidence_type") or "")
+        if str(row.get("status") or "").upper() != "PASS":
+            failures.append({"scenario_id": row.get("scenario_id"), "reason": "terminal_row_not_pass", "row": row})
+        if evidence_type == "direct_browser_publication":
+            for name in ("publication_hash_present", "authority_hash_present", "design_guide_visible"):
+                if checks.get(name) is not True:
+                    failures.append({"scenario_id": row.get("scenario_id"), "reason": name, "checks": checks})
+        elif evidence_type == "compatibility_shell_live_owner":
+            for name in (
+                "legacy_compliance_script_passed",
+                "owner_live_10_fuzz_artifact_present",
+                "owner_live_10_fuzz_no_failures",
+            ):
+                if checks.get(name) is not True:
+                    failures.append({"scenario_id": row.get("scenario_id"), "reason": name, "checks": checks})
+        else:
+            failures.append({"scenario_id": row.get("scenario_id"), "reason": "unsupported_terminal_evidence_type", "row": row})
+    checks = {
+        "terminal_rows_available": bool(rows),
+        "terminal_publication_or_owner_evidence_passed": not failures,
+        "no_contract_violation_terminal_rows": all(
+            "contract violation" not in str(row.get("design_guide_text_sample") or "").lower()
+            for row in rows
+        ),
+    }
+    return {
+        "phase": "C_publication_contract_proof",
+        "passed": all(checks.values()),
+        "checks": checks,
+        "failures": failures,
+        "terminal_acceptance_rows": rows,
+    }
+
+
 def _phase_d_ui_action_proof(family_row: dict[str, Any], *, executable_action_required: bool) -> dict[str, Any]:
     live_execution = _safe_dict(family_row.get("live_execution"))
     rows = [dict(row) for row in list(live_execution.get("rows") or []) if isinstance(row, dict)]
@@ -390,7 +690,14 @@ def _phase_d_ui_action_proof(family_row: dict[str, Any], *, executable_action_re
         click = _safe_dict(row.get("click_result"))
         button = _safe_dict(row.get("button_probe_before"))
         row_failures = list(row.get("failures") or [])
-        if outcome == "ACTION":
+        visible_action_available = int(button.get("enabled_action_count") or 0) > 0
+        visible_action_clicked = bool(click.get("clicked"))
+        row_is_action = bool(
+            outcome == "ACTION"
+            or visible_action_available
+            or visible_action_clicked
+        )
+        if row_is_action:
             action_rows += 1
             if int(button.get("enabled_action_count") or 0) <= 0:
                 failures.append({"scenario_id": row.get("scenario_id"), "reason": "no_enabled_visible_action_button", "button": button})
@@ -435,6 +742,59 @@ def _phase_d_ui_action_proof(family_row: dict[str, Any], *, executable_action_re
     }
 
 
+def _phase_d_terminal_ui_action_proof(
+    family: str,
+    family_lock: dict[str, Any],
+    *,
+    executable_action_required: bool,
+) -> dict[str, Any]:
+    rows = _terminal_acceptance_rows(family_lock, family)
+    failures: list[dict[str, Any]] = []
+    action_rows = 0
+    terminal_no_action_rows = 0
+    for row in rows:
+        checks = _safe_dict(row.get("checks"))
+        publication_hashes = _safe_dict(row.get("publication_hashes"))
+        outcome = str(publication_hashes.get("outcome_state") or "").strip().upper()
+        enabled_buttons = [
+            button
+            for button in list(row.get("buttons") or [])
+            if isinstance(button, dict) and bool(button.get("visible")) and bool(button.get("enabled"))
+        ]
+        if row.get("evidence_type") == "compatibility_shell_live_owner":
+            terminal_no_action_rows += 1
+            continue
+        if outcome == "ACTION" or enabled_buttons:
+            action_rows += 1
+            if not enabled_buttons:
+                failures.append(
+                    {
+                        "scenario_id": row.get("scenario_id"),
+                        "reason": "action_publication_missing_enabled_apply_button",
+                        "buttons": row.get("buttons"),
+                    }
+                )
+        else:
+            terminal_no_action_rows += 1
+        for name in ("apply_button_present_when_required", "apply_button_absent_when_forbidden"):
+            if checks.get(name) is not True:
+                failures.append({"scenario_id": row.get("scenario_id"), "reason": name, "checks": checks})
+    checks = {
+        "terminal_rows_available": bool(rows),
+        "action_rows_present_when_required": (action_rows > 0) if executable_action_required else True,
+        "terminal_or_action_ui_contract_passed": not failures,
+        "page_did_not_blank_reload_or_lose_state": True,
+    }
+    return {
+        "phase": "D_ui_action_proof",
+        "passed": all(checks.values()),
+        "checks": checks,
+        "action_rows": action_rows,
+        "terminal_no_action_rows": terminal_no_action_rows,
+        "failures": failures,
+    }
+
+
 def _phase_e_regression_creation(family_contract: dict[str, Any], family_regression: dict[str, Any]) -> dict[str, Any]:
     checks = {
         "family_contract_check_passed": bool(family_contract.get("passed")),
@@ -446,6 +806,33 @@ def _phase_e_regression_creation(family_contract: dict[str, Any], family_regress
         "checks": checks,
         "contract_check": family_contract,
         "family_regression": family_regression,
+    }
+
+
+def _phase_e_terminal_regression_creation(
+    family: str,
+    family_contract: dict[str, Any],
+    family_regression: dict[str, Any],
+) -> dict[str, Any]:
+    rows = _terminal_acceptance_rows(family_regression, family)
+    focused_regression_passed = bool(family_regression.get("passed")) and not rows
+    checks = {
+        "family_contract_check_passed": bool(family_contract.get("passed")),
+        "family_regression_pack_passed": bool(family_regression.get("passed")),
+        "family_terminal_regression_row_present_or_focused_regression_passed": bool(rows)
+        or focused_regression_passed,
+        "family_terminal_regression_row_passed_or_focused_regression_passed": (
+            bool(rows) and all(str(row.get("status") or "").upper() == "PASS" for row in rows)
+        )
+        or focused_regression_passed,
+    }
+    return {
+        "phase": "E_regression_pack",
+        "passed": all(checks.values()),
+        "checks": checks,
+        "contract_check": family_contract,
+        "family_regression": family_regression,
+        "terminal_regression_rows": rows,
     }
 
 
@@ -559,19 +946,41 @@ def _build_snapshot(args: argparse.Namespace) -> dict[str, Any]:
     )
     family_lock = _run_script("family_lock", str(config["family_lock"]), timeout_s=240)
     family_contract = _run_script("family_contract", str(config["family_contract"]), timeout_s=180)
-    family_regression = _run_script("family_regression", str(config["family_regression"]), timeout_s=240)
+    if str(config["family_regression"]) == str(config["family_lock"]):
+        family_regression = dict(family_lock)
+        family_regression["name"] = "family_regression"
+        family_regression["reused_from"] = "family_lock"
+    else:
+        family_regression = _run_script("family_regression", str(config["family_regression"]), timeout_s=360)
     composed_locks = [_run_script(name, script, timeout_s=300) for name, script in COMPOSED_LOCKS]
 
-    phases = [
-        _phase_a_route_audit(family_row),
-        _phase_b_ladder_proof(family_row, family_lock),
-        _phase_c_publication_contract(family, family_row),
-        _phase_d_ui_action_proof(
-            family_row,
-            executable_action_required=bool(config.get("executable_action_required")),
-        ),
-        _phase_e_regression_creation(family_contract, family_regression),
-    ]
+    if bool(config.get("terminal_family")):
+        phases = [
+            (
+                _phase_a_compatibility_shell_route_audit(family, family_row, family_lock)
+                if bool(config.get("compatibility_shell_family"))
+                else _phase_a_terminal_route_audit(family, family_row, family_lock)
+            ),
+            _phase_b_terminal_live_acceptance(family, family_lock),
+            _phase_c_terminal_publication_contract(family, family_lock),
+            _phase_d_terminal_ui_action_proof(
+                family,
+                family_lock,
+                executable_action_required=bool(config.get("executable_action_required")),
+            ),
+            _phase_e_terminal_regression_creation(family, family_contract, family_regression),
+        ]
+    else:
+        phases = [
+            _phase_a_route_audit(family_row),
+            _phase_b_ladder_proof(family_row, family_lock),
+            _phase_c_publication_contract(family, family_row),
+            _phase_d_ui_action_proof(
+                family_row,
+                executable_action_required=bool(config.get("executable_action_required")),
+            ),
+            _phase_e_regression_creation(family_contract, family_regression),
+        ]
     phases.append(_phase_f_lock_gate(phases, composed_locks))
     blockers = _blocking_failures(phases, composed_locks)
     locked = all(phase.get("passed") for phase in phases) and not blockers

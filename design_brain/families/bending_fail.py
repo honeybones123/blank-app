@@ -10,6 +10,7 @@ from design_brain.candidate_evaluation import (
     BeamCandidateInput,
     BeamCandidateUpdate,
     build_candidate_state_hash,
+    resolve_longitudinal_bar_spacing_rule,
 )
 from design_brain.families.base import DiagnosticFamilyStrategy, FamilyStrategyContext, FamilyStrategyMetadata
 from design_brain.families.bending_fail_governs.runtime import (
@@ -278,6 +279,33 @@ def _depth_width_ratio_blocked(width: float, depth: float, maximum_ratio: float)
     return ratio is not None and ratio > float(maximum_ratio) + 1e-9
 
 
+def _bending_fail_known_bad_longitudinal_spacing_record(
+    *,
+    stage_name: str,
+    strategy: str,
+    width: float,
+    depth: float,
+    row1: int,
+    row2: int,
+    dia: int,
+    split: bool,
+    clear: float,
+    spacing_rule: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "stage_name": stage_name,
+        "strategy": strategy,
+        "b": float(width),
+        "D": float(depth),
+        "bottom_bar_count": int(row1) + int(row2),
+        "bar_diameter": int(dia),
+        "split_row": bool(split),
+        "clear_spacing": clear if math.isfinite(clear) else None,
+        "reason": "maximum_longitudinal_bar_spacing_exceeded",
+        "longitudinal_bar_spacing_rule": dict(spacing_rule or {}),
+    }
+
+
 def _contract_runtime_candidate_updates(
     *,
     width_key: str,
@@ -485,6 +513,8 @@ class BendingFailFamily(DiagnosticFamilyStrategy):
             )
             spacing_blocked = clear < MIN_BOTTOM_CLEAR_SPACING_MM - 1e-9
             ratio_blocked = _depth_width_ratio_blocked(width, depth, maximum_depth_width_ratio)
+            longitudinal_spacing_rule = resolve_longitudinal_bar_spacing_rule(base, full_updates)
+            longitudinal_spacing_blocked = not bool(longitudinal_spacing_rule.get("valid"))
             if ratio_blocked:
                 runtime_known_bad.append(
                     build_bending_fail_known_bad_depth_width_record(
@@ -498,6 +528,22 @@ class BendingFailFamily(DiagnosticFamilyStrategy):
                         split=split,
                         clear=clear,
                         maximum_depth_width_ratio=maximum_depth_width_ratio,
+                    )
+                )
+                continue
+            if longitudinal_spacing_blocked:
+                runtime_known_bad.append(
+                    _bending_fail_known_bad_longitudinal_spacing_record(
+                        stage_name=str(meta["stage_name"]),
+                        strategy=str(meta["strategy"]),
+                        width=width,
+                        depth=depth,
+                        row1=row1,
+                        row2=row2,
+                        dia=dia,
+                        split=split,
+                        clear=clear,
+                        spacing_rule=longitudinal_spacing_rule,
                     )
                 )
                 continue
@@ -618,61 +664,81 @@ class BendingFailFamily(DiagnosticFamilyStrategy):
                             )
                         )
                     else:
-                        decision = decide_bending_fail_repair_ladder_add(
-                            step=5,
-                            stage_name="contract_runtime_moderate_geometry_reo_rescue",
-                            strategy=(
-                                f"contract runtime moderate geometry/reinforcement rescue to "
-                                f"{moderate_width:.0f} x {moderate_depth:.0f} mm with {moderate_count} N{moderate_dia}"
-                            ),
-                            updates=moderate_updates,
-                            diff=diff,
-                            spacing_blocked=False,
-                            assigned_candidate_index=runtime_index + 1,
-                            assigned_label=(
-                                f"BENDING_FAIL_GOVERNS contract runtime {runtime_index + 1}: "
-                                "contract runtime moderate geometry/reinforcement rescue"
-                            ),
-                            escalation="bounded_geometry_and_reinforcement_repair",
-                            width=layout_width,
-                            depth=layout_depth,
-                            row1=row1,
-                            row2=row2,
-                            dia=dia,
-                            split=split,
-                            clear=clear,
-                            minimum_clear_spacing_mm=float(MIN_BOTTOM_CLEAR_SPACING_MM),
-                        )
-                        if decision.should_append_spec and decision.spec_payload is not None:
-                            runtime_index += 1
-                            moderate_update = BeamCandidateUpdate(updates=moderate_updates)
-                            moderate_evaluation = _contract_runtime_evaluator(
-                                BeamCandidateInput(base_state=base),
-                                moderate_update,
-                            )
-                            runtime_specs.append(
-                                {
-                                    **decision.spec_payload,
-                                    "contract_runtime_authority": "run_bending_fail_governs_ladder_runtime",
-                                    "contract_runtime_lane_id": "MODERATE_GEOMETRY_REO_RESCUE",
-                                    "selected_strategy_lane": "MODERATE_GEOMETRY_REO_RESCUE",
-                                    "ladder_hash": runtime_result.ladder_hash,
-                                    "bending_fail_contract_runtime_ladder_hash": runtime_result.ladder_hash,
-                                    "ladder_trace_evidence": {
-                                        "lane_id": "MODERATE_GEOMETRY_REO_RESCUE",
-                                        "contract_lane_id": "moderate_geometry_reinforcement_rescue",
-                                        "lane_index": 5,
-                                        "evaluation_hash": moderate_evaluation.evaluation_hash,
-                                    },
-                                    "update_hash": moderate_update.update_hash,
-                                    "candidate_state_hash": moderate_evaluation.candidate_state_hash,
-                                    "spacing_threshold_basis": (
-                                        "single-layer clear-spacing threshold is diagnostic for lane transition; "
-                                        "candidate remains subject to full evaluator acceptance"
+                        longitudinal_spacing_rule = resolve_longitudinal_bar_spacing_rule(base, moderate_updates)
+                        if not bool(longitudinal_spacing_rule.get("valid")):
+                            runtime_known_bad.append(
+                                _bending_fail_known_bad_longitudinal_spacing_record(
+                                    stage_name="contract_runtime_moderate_geometry_reo_rescue",
+                                    strategy=(
+                                        f"contract runtime moderate geometry/reinforcement rescue to "
+                                        f"{moderate_width:.0f} x {moderate_depth:.0f} mm with {moderate_count} N{moderate_dia}"
                                     ),
-                                }
+                                    width=layout_width,
+                                    depth=layout_depth,
+                                    row1=row1,
+                                    row2=row2,
+                                    dia=dia,
+                                    split=split,
+                                    clear=clear,
+                                    spacing_rule=longitudinal_spacing_rule,
+                                )
                             )
-                            runtime_depth_steps.append(float(moderate_depth_step))
+                        else:
+                            decision = decide_bending_fail_repair_ladder_add(
+                                step=5,
+                                stage_name="contract_runtime_moderate_geometry_reo_rescue",
+                                strategy=(
+                                    f"contract runtime moderate geometry/reinforcement rescue to "
+                                    f"{moderate_width:.0f} x {moderate_depth:.0f} mm with {moderate_count} N{moderate_dia}"
+                                ),
+                                updates=moderate_updates,
+                                diff=diff,
+                                spacing_blocked=False,
+                                assigned_candidate_index=runtime_index + 1,
+                                assigned_label=(
+                                    f"BENDING_FAIL_GOVERNS contract runtime {runtime_index + 1}: "
+                                    "contract runtime moderate geometry/reinforcement rescue"
+                                ),
+                                escalation="bounded_geometry_and_reinforcement_repair",
+                                width=layout_width,
+                                depth=layout_depth,
+                                row1=row1,
+                                row2=row2,
+                                dia=dia,
+                                split=split,
+                                clear=clear,
+                                minimum_clear_spacing_mm=float(MIN_BOTTOM_CLEAR_SPACING_MM),
+                            )
+                            if decision.should_append_spec and decision.spec_payload is not None:
+                                runtime_index += 1
+                                moderate_update = BeamCandidateUpdate(updates=moderate_updates)
+                                moderate_evaluation = _contract_runtime_evaluator(
+                                    BeamCandidateInput(base_state=base),
+                                    moderate_update,
+                                )
+                                runtime_specs.append(
+                                    {
+                                        **decision.spec_payload,
+                                        "contract_runtime_authority": "run_bending_fail_governs_ladder_runtime",
+                                        "contract_runtime_lane_id": "MODERATE_GEOMETRY_REO_RESCUE",
+                                        "selected_strategy_lane": "MODERATE_GEOMETRY_REO_RESCUE",
+                                        "ladder_hash": runtime_result.ladder_hash,
+                                        "bending_fail_contract_runtime_ladder_hash": runtime_result.ladder_hash,
+                                        "ladder_trace_evidence": {
+                                            "lane_id": "MODERATE_GEOMETRY_REO_RESCUE",
+                                            "contract_lane_id": "moderate_geometry_reinforcement_rescue",
+                                            "lane_index": 5,
+                                            "evaluation_hash": moderate_evaluation.evaluation_hash,
+                                        },
+                                        "update_hash": moderate_update.update_hash,
+                                        "candidate_state_hash": moderate_evaluation.candidate_state_hash,
+                                        "spacing_threshold_basis": (
+                                            "single-layer clear-spacing threshold is diagnostic for lane transition; "
+                                            "candidate remains subject to full evaluator acceptance"
+                                        ),
+                                    }
+                                )
+                                runtime_depth_steps.append(float(moderate_depth_step))
 
             heavy_count = max(base_count + 3, 6)
             heavy_row1 = int(math.ceil(float(heavy_count) / 2.0))
@@ -734,6 +800,26 @@ class BendingFailFamily(DiagnosticFamilyStrategy):
                             split=split,
                             clear=clear,
                             maximum_depth_width_ratio=maximum_depth_width_ratio,
+                        )
+                    )
+                    continue
+                longitudinal_spacing_rule = resolve_longitudinal_bar_spacing_rule(base, rescue_updates)
+                if not bool(longitudinal_spacing_rule.get("valid")):
+                    runtime_known_bad.append(
+                        _bending_fail_known_bad_longitudinal_spacing_record(
+                            stage_name="contract_runtime_combined_high_capacity_rescue",
+                            strategy=(
+                                f"contract runtime combined rescue to {width:.0f} x {depth:.0f} mm "
+                                f"with split high-capacity bottom reinforcement ({heavy_row1}+{heavy_row2} N{max_dia})"
+                            ),
+                            width=layout_width,
+                            depth=layout_depth,
+                            row1=row1,
+                            row2=row2,
+                            dia=dia,
+                            split=split,
+                            clear=clear,
+                            spacing_rule=longitudinal_spacing_rule,
                         )
                     )
                     continue

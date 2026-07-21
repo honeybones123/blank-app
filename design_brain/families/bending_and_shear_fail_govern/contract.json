@@ -172,11 +172,20 @@
       "db_bot_1",
       "bot2_count",
       "db_bot_2",
+      "top1_count",
+      "db_top_1",
+      "top2_count",
+      "db_top_2",
       "bot_row_count",
       "bot_row_1_bars",
       "bot_row_1_dia",
       "bot_row_2_bars",
-      "bot_row_2_dia"
+      "bot_row_2_dia",
+      "top_row_count",
+      "top_row_1_bars",
+      "top_row_1_dia",
+      "top_row_2_bars",
+      "top_row_2_dia"
     ],
     "shear_reinforcement_update_keys": [
       "lig_d",

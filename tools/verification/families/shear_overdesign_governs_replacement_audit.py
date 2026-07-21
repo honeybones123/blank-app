@@ -15,8 +15,6 @@ if str(ROOT) not in sys.path:
 
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
-INPUTS_PAGE = ROOT / "inputs_page.py"
-
 from design_brain.families.shear_overdesign_governs.runtime import (  # noqa: E402
     run_shear_overdesign_governs_runtime,
     shear_overdesign_contract_lane_order,
@@ -130,8 +128,24 @@ def _runtime_payload() -> dict[str, Any]:
     return result.to_dict()
 
 
+def _read(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8", errors="replace")
+
+
+def _read_inputs_composition_surface() -> str:
+    return "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
+        )
+    )
+
+
 def _current_live_evidence() -> dict[str, Any]:
-    source = INPUTS_PAGE.read_text(encoding="utf-8", errors="replace")
+    source = _read_inputs_composition_surface()
     anchors = {
         "compute_tightening": "_compute_shear_tightening_recommendation" in source,
         "remove_links": "_try_shear_remove_links_tightening_recommendation" in source,
@@ -148,7 +162,7 @@ def _current_live_evidence() -> dict[str, Any]:
     if anchors["density_variants"]:
         observed_surfaces.append("PAGE_LOCAL_DENSITY_REDUCTION_VARIANTS")
     return {
-        "source": "inputs_page.py source anchors",
+        "source": "inputs composition source anchors",
         "used_as_authority": False,
         "anchors": anchors,
         "observed_surfaces": observed_surfaces,

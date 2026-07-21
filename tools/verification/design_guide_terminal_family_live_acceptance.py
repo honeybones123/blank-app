@@ -55,8 +55,10 @@ DIRECT_BROWSER_SCENARIOS = (
         "scenario_id": "target_band_reached_visible_pass",
         "recipe": "TERMINAL_EFFICIENT_NO_CLEANUP_SNAPSHOT",
         "expected_status": "PASS",
-        "required_text": ("Design accepted - target band achieved",),
+        "required_text": ("Design is efficient", "no further safe cleanup available"),
         "forbidden_text": ("contract violation", "Checking design guidance"),
+        "expected_publication_family": "TARGET_BAND_REACHED",
+        "expected_outcome_state": "PASS",
         "apply_required": False,
         "apply_forbidden": True,
     },
@@ -65,7 +67,7 @@ DIRECT_BROWSER_SCENARIOS = (
         "scenario_id": "invalid_geometry_no_actions_visible_geometry_family",
         "recipe": "PRODUCT_INVALID_LONGITUDINAL_REO_SPACING_NO_ACTIONS",
         "expected_status": "ACTION",
-        "required_text": ("GEOMETRY_DETAILING_GOVERNS", "geometry", "Apply"),
+        "required_text": ("Geometry needs correction", "geometry", "Apply"),
         "forbidden_text": ("contract violation", "Checking design guidance"),
         "apply_required": True,
         "apply_forbidden": False,
@@ -85,8 +87,10 @@ DIRECT_BROWSER_SCENARIOS = (
         "scenario_id": "exact_stop_proven_visible_pass_no_apply",
         "recipe": "TERMINAL_EXACT_STOP_PROVEN_SNAPSHOT",
         "expected_status": "PASS",
-        "required_text": ("Design accepted - target band achieved",),
+        "required_text": ("Design is efficient", "no further safe cleanup available"),
         "forbidden_text": ("contract violation", "Checking design guidance"),
+        "expected_publication_family": "EXACT_STOP_PROVEN",
+        "expected_outcome_state": "PASS",
         "apply_required": False,
         "apply_forbidden": True,
     },
@@ -135,6 +139,25 @@ def _latest(pattern: str) -> Path | None:
 
 
 def _latest_live_family_payload(family_id: str) -> tuple[Path | None, dict[str, Any]]:
+    family_slug = str(family_id or "").strip().lower()
+    if family_slug:
+        for path in sorted(
+            ARTIFACT_DIR.glob(f"{family_slug}_live_fuzz_regression_lock_gate_*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        ):
+            payload = _read_json(path)
+            status = str(payload.get("lock_status") or "").strip().upper()
+            if status:
+                return path, {
+                    "family": family_id,
+                    "live_execution": {
+                        "executed": True,
+                        "failed_count": 0 if status == "LOCKED" else 1,
+                        "status": status,
+                    },
+                    "final_lock_status": status,
+                }
     for path in sorted(ARTIFACT_DIR.glob("family_10_fuzz_audit_*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
         payload = _read_json(path)
         for row in payload.get("families", []):
@@ -205,6 +228,76 @@ def _visible_statuses(text: str) -> list[str]:
     return statuses
 
 
+def _first_mapping_with_key(value: Any, key: str) -> dict[str, Any]:
+    if isinstance(value, dict):
+        if key in value and isinstance(value.get(key), dict):
+            return dict(value.get(key) or {})
+        for child in value.values():
+            found = _first_mapping_with_key(child, key)
+            if found:
+                return found
+    if isinstance(value, list):
+        for child in value:
+            found = _first_mapping_with_key(child, key)
+            if found:
+                return found
+    return {}
+
+
+def _publication_hashes_from_state(state: dict[str, Any]) -> dict[str, Any]:
+    top_level = dict(state.get("final_publication_hashes") or {})
+    verifier_payload = dict(state.get("final_publication_verifier_payload") or {})
+    if not verifier_payload:
+        verifier_payload = _first_mapping_with_key(state, "final_publication_verifier_payload")
+    debug_sources = [
+        dict(state.get("design_guide_probe") or {}),
+        dict(state.get("guidance_compute_probe") or {}),
+    ]
+    debug_publication: dict[str, Any] = {}
+    for source in debug_sources:
+        debug_publication = _first_mapping_with_key(source, "final_publication_verifier_payload")
+        if debug_publication:
+            break
+    verifier_payload = verifier_payload or debug_publication
+    return {
+        "selected_family": (
+            verifier_payload.get("selected_family")
+            or verifier_payload.get("selected_family_id")
+            or top_level.get("selected_family")
+            or top_level.get("selected_family_id")
+        ),
+        "outcome_state": (
+            verifier_payload.get("outcome_state")
+            or verifier_payload.get("status")
+            or top_level.get("outcome_state")
+            or top_level.get("status")
+        ),
+        "publication_hash": (
+            verifier_payload.get("publication_hash")
+            or top_level.get("publication_hash")
+            or top_level.get("final_publication_publication_hash")
+        ),
+        "authority_hash": (
+            verifier_payload.get("final_publication_authority_hash")
+            or verifier_payload.get("authority_hash")
+            or top_level.get("authority_hash")
+            or top_level.get("final_publication_authority_hash")
+        ),
+        "cta_hash": (
+            verifier_payload.get("final_publication_cta_hash")
+            or verifier_payload.get("cta_authority_hash")
+            or verifier_payload.get("cta_hash")
+            or top_level.get("cta_hash")
+        ),
+        "display_hash": (
+            verifier_payload.get("final_publication_display_hash")
+            or verifier_payload.get("display_authority_hash")
+            or verifier_payload.get("display_hash")
+            or top_level.get("display_hash")
+        ),
+    }
+
+
 def _design_guide_heading_count(text: str) -> int:
     return sum(1 for line in str(text or "").splitlines() if line.strip() == "Design Guide")
 
@@ -234,7 +327,7 @@ def _capture_direct_browser_rows(
                 body_text = str(page.locator("body").inner_text(timeout=10_000) or "")
                 design_guide_text = _design_guide_section(body_text)
                 buttons = _button_rows(page)
-                hashes = dict(state.get("final_publication_hashes") or {})
+                hashes = _publication_hashes_from_state(state)
                 statuses = _visible_statuses(design_guide_text)
                 required = list(scenario.get("required_text") or ())
                 forbidden = list(scenario.get("forbidden_text") or ())
@@ -243,6 +336,16 @@ def _capture_direct_browser_rows(
                     "browser_state_available": bool(state),
                     "publication_hash_present": bool(hashes.get("publication_hash")),
                     "authority_hash_present": bool(hashes.get("authority_hash")),
+                    "expected_publication_family": (
+                        not scenario.get("expected_publication_family")
+                        or str(hashes.get("selected_family") or "").strip().upper()
+                        == str(scenario.get("expected_publication_family") or "").strip().upper()
+                    ),
+                    "expected_publication_outcome": (
+                        not scenario.get("expected_outcome_state")
+                        or str(hashes.get("outcome_state") or "").strip().upper()
+                        == str(scenario.get("expected_outcome_state") or "").strip().upper()
+                    ),
                     "design_guide_visible": bool(design_guide_text),
                     "expected_status_visible": str(scenario.get("expected_status")) in statuses,
                     "required_text_visible": all(term.lower() in design_guide_text.lower() for term in required),

@@ -57,12 +57,19 @@ def _depth_width_ratio_blocker(*sources: Any) -> dict[str, Any]:
             continue
         width = _as_float(
             state.get("b")
+            or state.get("inputs_b")
             or state.get("bw")
+            or state.get("inputs_bw")
             or state.get("beam_width")
             or state.get("beam_b")
             or state.get("width")
         )
-        depth = _as_float(state.get("D") or state.get("depth") or state.get("beam_depth"))
+        depth = _as_float(
+            state.get("D")
+            or state.get("inputs_D")
+            or state.get("depth")
+            or state.get("beam_depth")
+        )
         if width is None or depth is None:
             continue
         ratio = depth_width_ratio(width=float(width), depth=float(depth))

@@ -44,6 +44,24 @@ class DesignGuideButtonContractSourceResolution:
     source_candidates: dict
 
 
+@dataclass
+class DesignGuideButtonContractSourceRecords:
+    displayed_primary_item: dict
+    primary_item: dict
+    guidance_debug: dict
+    debug_displayed_primary_button_contract: dict
+    debug_primary_button_contract: dict
+    debug_button_contract: dict
+    pending_recommendation: dict
+    apply_payload_session_keys: dict
+    button_contract_session_keys: dict
+    action_payload_sources: dict
+    update_payload_sources: dict
+    candidate_sources: dict
+    publication_recovery_sources: dict
+    source_candidates: dict
+
+
 def build_design_guide_button_contract_source_resolution(
     *,
     winning_button_contract: dict | None,
@@ -85,6 +103,89 @@ def build_design_guide_button_contract_source_resolution(
         final_cta_action_payload_summary=dict(final_cta_action_payload_summary or {}),
         final_published_item_hash=str(final_published_item_hash or ""),
         source_candidates=copy.deepcopy(dict(source_candidates or {})),
+    )
+
+
+def _button_contract_source_summary_for_source_records(contract: dict | None) -> dict:
+    contract_d = dict(contract or {})
+    return {
+        "present": bool(contract_d),
+        "enabled": bool(contract_d.get("enabled")),
+        "actionable": bool(contract_d.get("actionable")),
+        "action_type": contract_d.get("action_type"),
+        "family": contract_d.get("family"),
+        "updates": dict(contract_d.get("updates") or {}),
+        "candidate_id": contract_d.get("candidate_id"),
+        "source_candidate_id": contract_d.get("source_candidate_id"),
+        "expected_util": contract_d.get("expected_util"),
+        "disabled_reason": contract_d.get("blocking_reason") or contract_d.get("disabled_reason"),
+    }
+
+
+def build_design_guide_button_contract_source_records(
+    *,
+    displayed_primary_item: dict | None = None,
+    primary_item: dict | None = None,
+    guidance_debug: dict | None = None,
+    pending_recommendation: dict | None = None,
+    apply_payload_session_keys: dict | None = None,
+    button_contract_session_keys: dict | None = None,
+    action_payload_sources: dict | None = None,
+    update_payload_sources: dict | None = None,
+    candidate_sources: dict | None = None,
+    publication_recovery_sources: dict | None = None,
+    source_candidates: dict | None = None,
+) -> DesignGuideButtonContractSourceRecords:
+    """Assemble typed CTA source records from already-collected page data."""
+
+    displayed = dict(displayed_primary_item or {})
+    primary = dict(primary_item or displayed)
+    debug = dict(guidance_debug or {})
+    source_map = dict(source_candidates or {})
+    item_contract = dict(displayed.get("button_contract") or primary.get("button_contract") or {})
+    if item_contract:
+        source_map.setdefault("item_contract", _button_contract_source_summary_for_source_records(item_contract))
+    session_contract = dict(button_contract_session_keys or {})
+    if session_contract:
+        source_map.setdefault(
+            "session_primary_contract",
+            _button_contract_source_summary_for_source_records(session_contract),
+        )
+    debug_displayed = dict(debug.get("displayed_primary_button_contract") or {})
+    debug_primary = dict(debug.get("primary_button_contract") or {})
+    debug_contract = dict(debug.get("button_contract") or {})
+    displayed_action_payload = dict(displayed.get("action_payload") or {})
+    action_sources = dict(action_payload_sources or {})
+    update_sources = dict(update_payload_sources or {})
+    candidate_source_payload = dict(candidate_sources or {})
+    if displayed_action_payload:
+        action_sources.setdefault("displayed_primary_action_payload", displayed_action_payload)
+    if item_contract:
+        update_sources.setdefault(
+            "displayed_primary_button_contract_updates",
+            dict(item_contract.get("updates") or {}),
+        )
+    candidate_id = displayed.get("candidate_id") or displayed_action_payload.get("candidate_id")
+    source_candidate_id = displayed.get("source_candidate_id") or displayed_action_payload.get("source_candidate_id")
+    if candidate_id is not None:
+        candidate_source_payload.setdefault("displayed_primary_candidate_id", candidate_id)
+    if source_candidate_id is not None:
+        candidate_source_payload.setdefault("displayed_primary_source_candidate_id", source_candidate_id)
+    return DesignGuideButtonContractSourceRecords(
+        displayed_primary_item=displayed,
+        primary_item=primary,
+        guidance_debug=debug,
+        debug_displayed_primary_button_contract=debug_displayed,
+        debug_primary_button_contract=debug_primary,
+        debug_button_contract=debug_contract,
+        pending_recommendation=dict(pending_recommendation or {}),
+        apply_payload_session_keys=dict(apply_payload_session_keys or {}),
+        button_contract_session_keys=session_contract,
+        action_payload_sources=action_sources,
+        update_payload_sources=update_sources,
+        candidate_sources=candidate_source_payload,
+        publication_recovery_sources=dict(publication_recovery_sources or {}),
+        source_candidates=source_map,
     )
 
 

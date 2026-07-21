@@ -17,7 +17,7 @@ if str(ROOT) not in sys.path:
 from design_brain.candidate_evaluation import build_target_band_fallback_scored_candidate  # noqa: E402
 
 
-INPUTS = ROOT / "inputs_page.py"
+AUTO_DESIGN_COMPUTE = ROOT / "inputs_page_modules" / "auto_design_compute.py"
 CANDIDATE_EVALUATION = ROOT / "design_brain" / "candidate_evaluation.py"
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
@@ -55,9 +55,13 @@ def _old_row(next_hop_payload: dict[str, Any] | None, updates: dict[str, Any] | 
 
 
 def build_payload() -> dict[str, Any]:
-    inputs_source = _read(INPUTS)
+    inputs_source = _read(AUTO_DESIGN_COMPUTE)
     candidate_source = _read(CANDIDATE_EVALUATION)
     start, end, solve = _function_segment(inputs_source, "_solve_one_click_to_target")
+    helper_start, helper_end, fallback_helper = _function_segment(
+        inputs_source,
+        "_handle_one_click_solver_no_scored_fallback_next_hop_injection_coordinator",
+    )
     cases = [
         {
             "case": "standard_fallback",
@@ -98,7 +102,7 @@ def build_payload() -> dict[str, Any]:
             mismatches.append(row)
 
     service_present = "def build_target_band_fallback_scored_candidate(" in candidate_source
-    page_delegates = "_build_target_band_fallback_scored_candidate(" in solve
+    page_delegates = "_build_target_band_fallback_scored_candidate(" in fallback_helper
     literal_row_removed = all(
         token not in solve
         for token in (
@@ -108,9 +112,15 @@ def build_payload() -> dict[str, Any]:
             '"change_summary": None',
         )
     )
-    page_keeps_injection_gate = "fallback_next_hop_injected = True" in solve and "fallback_next_hop_reason =" in solve
-    page_keeps_signature_input = "_candidate_state_signature(hop_eval)" in solve
-    page_keeps_update_diff_fallback = "_one_click_diff_accumulated_updates(" in solve
+    page_keeps_injection_gate = (
+        "fallback_next_hop_injected = True" in fallback_helper
+        and "fallback_next_hop_reason =" in fallback_helper
+    )
+    page_keeps_signature_input = "_candidate_state_signature(hop_eval)" in fallback_helper
+    page_keeps_update_diff_fallback = "_one_click_diff_accumulated_updates(" in fallback_helper
+    solver_delegates_injection = (
+        "_handle_one_click_solver_no_scored_fallback_next_hop_injection_coordinator(" in solve
+    )
     forbidden_service_hits = [
         token
         for token in (
@@ -132,6 +142,7 @@ def build_payload() -> dict[str, Any]:
         or not page_keeps_injection_gate
         or not page_keeps_signature_input
         or not page_keeps_update_diff_fallback
+        or not solver_delegates_injection
         or forbidden_service_hits
     ):
         status = "FAIL"
@@ -139,6 +150,11 @@ def build_payload() -> dict[str, Any]:
         "status": status,
         "surface": "target_band_fallback_scored_candidate",
         "inputs_segment": {"function": "_solve_one_click_to_target", "start_line": start, "end_line": end},
+        "fallback_injection_segment": {
+            "function": "_handle_one_click_solver_no_scored_fallback_next_hop_injection_coordinator",
+            "start_line": helper_start,
+            "end_line": helper_end,
+        },
         "case_count": len(cases),
         "mismatches": mismatches,
         "parity_rows": rows,
@@ -149,6 +165,7 @@ def build_payload() -> dict[str, Any]:
             "page_keeps_injection_gate": page_keeps_injection_gate,
             "page_keeps_signature_input": page_keeps_signature_input,
             "page_keeps_update_diff_fallback": page_keeps_update_diff_fallback,
+            "solver_delegates_injection": solver_delegates_injection,
             "forbidden_service_hits": forbidden_service_hits,
         },
         "ownership": {
@@ -158,6 +175,9 @@ def build_payload() -> dict[str, Any]:
                 "missing update diff fallback",
                 "candidate signature input",
                 "fallback injection trace flags",
+            ],
+            "temporary_solver_coordinator": [
+                "_handle_one_click_solver_no_scored_fallback_next_hop_injection_coordinator",
             ],
         },
         "product_behavior_changed": False,

@@ -199,7 +199,15 @@ def _capture() -> dict[str, Any]:
             }
         )
     controller_source = CONTROLLER.read_text(encoding="utf-8", errors="replace")
-    inputs_source = INPUTS_PAGE.read_text(encoding="utf-8", errors="replace")
+    inputs_source = "\n".join(
+        path.read_text(encoding="utf-8", errors="replace")
+        for path in (
+            INPUTS_PAGE,
+            ROOT / "inputs_page_route_coordinators.py",
+            ROOT / "inputs_page_app_contract_bridge.py",
+        )
+        if path.exists()
+    )
     return {
         "decision": "SHEAR_LOW_UTIL_PROMOTION_ADAPTER_PARITY_PASS",
         "comparisons": comparisons,

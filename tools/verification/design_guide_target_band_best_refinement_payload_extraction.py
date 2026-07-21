@@ -17,7 +17,7 @@ if str(ROOT) not in sys.path:
 from design_brain.candidate_evaluation import select_target_band_best_refinement_payload  # noqa: E402
 
 
-INPUTS = ROOT / "inputs_page.py"
+INPUTS = ROOT / "inputs_page_app_contract_bridge.py"
 CANDIDATE_EVALUATION = ROOT / "design_brain" / "candidate_evaluation.py"
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
@@ -76,15 +76,24 @@ def build_payload() -> dict[str, Any]:
             mismatches.append(row)
 
     service_present = "def select_target_band_best_refinement_payload(" in candidate_source
-    page_delegates = "_select_target_band_best_refinement_payload(best_payload, payload)" in helper
+    page_delegates = (
+        "_select_target_band_best_refinement_payload(best_payload, payload)" in helper
+        or "_select_best_target_band_refinement_candidate(" in helper
+    )
     old_inline_selector_removed = "if best_payload is None or float(payload[\"distance\"])" not in helper
     generator_loop_retained = all(
         token in helper
         for token in (
             "for candidate_state in candidate_states:",
             "evaluate_candidate_full(",
-            "_one_click_diff_accumulated_updates(",
-            "_build_target_band_refinement_payload_if_valid(",
+        )
+    ) or all(
+        token in helper
+        for token in (
+            "_select_best_target_band_refinement_candidate(",
+            "evaluator_fn=evaluate_candidate_full",
+            "state_pack_fn=_build_canonical_design_state_pack",
+            "target_domain_attachment_fn=_one_click_attach_eval_target_domains",
         )
     )
     forbidden_service_hits = [
@@ -128,12 +137,14 @@ def build_payload() -> dict[str, Any]:
             "remains_page_owned": [
                 "auto-design context construction",
                 "refinement candidate generation",
-                "full candidate evaluation loop",
-                "candidate target-domain attachment and update diff",
+                "canonical state pack callback",
+                "full candidate evaluator callback",
+                "target-domain attachment callback",
+                "spacing-envelope callback",
             ],
         },
         "product_behavior_changed": False,
-        "next_safe_slice": "candidate generation/evaluation loop boundary audit; likely requires service handoff before more movement",
+        "next_safe_slice": "extract or bound auto-design context construction and refinement candidate generation",
     }
 
 

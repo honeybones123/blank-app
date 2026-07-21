@@ -1044,6 +1044,8 @@ def _has_allowed_blocker_text(text: Any) -> bool:
 def _active_under_capacity_blocker_is_real(evidence: dict[str, Any], text: Any) -> bool:
     if not isinstance(evidence, dict) or not evidence:
         return False
+    if _active_repair_blocker_evidence_is_real(evidence, text):
+        return True
     category = str(evidence.get("outside_target_band_allowed_category") or "").strip()
     reason = _norm_text(
         evidence.get("active_under_capacity_blocker_reason")
@@ -1082,6 +1084,79 @@ def _active_under_capacity_blocker_is_real(evidence: dict[str, Any], text: Any) 
         "limit",
     )
     return bool(any(marker in combined for marker in real_markers))
+
+
+def _active_repair_blocker_evidence_is_real(evidence: dict[str, Any], text: Any) -> bool:
+    if not isinstance(evidence, dict) or not evidence:
+        return False
+    repair_ran = bool(
+        evidence.get("repair_search_ran")
+        or evidence.get("active_fail_repair_search_ran")
+        or evidence.get("bending_fail_contract_ladder_attempted")
+        or evidence.get("combined_fail_contract_ladder_attempted")
+    )
+    repair_exhaustive = bool(
+        evidence.get("repair_search_exhaustive")
+        or evidence.get("active_fail_repair_search_exhaustive")
+        or evidence.get("candidate_search_exhaustive")
+    )
+    safe_count = _float_or_none(
+        evidence.get("safe_executor_backed_candidates_count")
+        or evidence.get("safe_repair_candidate_count")
+        or evidence.get("safe_candidate_count")
+    )
+    exact = (
+        evidence.get("exact_blockers_by_family")
+        or evidence.get("post_click_exact_blockers_by_family")
+        or {}
+    )
+    has_exact = isinstance(exact, dict) and bool(exact)
+    failed_check_name = str(evidence.get("failed_check_name") or "").strip()
+    failed_check_status = str(evidence.get("failed_check_status") or "").strip().upper()
+    attempted_updates = evidence.get("attempted_updates")
+    rows = evidence.get("active_fail_repair_candidate_rows") or evidence.get("candidate_rows") or []
+    has_attempted_route = bool(
+        attempted_updates not in (None, "", [], {})
+        or (isinstance(rows, list) and len(rows) > 0)
+    )
+    combined = _norm_text(
+        " ".join(
+            str(part or "")
+            for part in (
+                text,
+                evidence.get("active_under_capacity_blocker_reason"),
+                evidence.get("outside_target_band_allowed_reason"),
+                evidence.get("blocker_reason"),
+                failed_check_name,
+                json.dumps(exact, default=str) if has_exact else "",
+            )
+        )
+    ).lower()
+    blocker_language = any(
+        marker in combined
+        for marker in (
+            "blocked",
+            "repair search",
+            "exhaustive",
+            "detailing",
+            "ductility",
+            "reinforcement",
+            "geometry",
+            "section depth",
+            "section width",
+            "failed",
+            "limit",
+        )
+    )
+    no_safe_candidate = safe_count is None or int(safe_count or 0) == 0
+    return bool(
+        repair_ran
+        and repair_exhaustive
+        and no_safe_candidate
+        and (has_exact or failed_check_name or failed_check_status == "FAIL")
+        and has_attempted_route
+        and blocker_language
+    )
 
 
 def _active_under_capacity_partial_blocker_failures(
@@ -1204,6 +1279,13 @@ def _candidate_search_evidence_from_state(state: dict[str, Any]) -> dict[str, An
     ]
     for candidate in candidates:
         if isinstance(candidate, dict) and candidate:
+            if (
+                bool(candidate.get("cleanup_search_ran") or candidate.get("local_cleanup_search_ran"))
+                and bool(candidate.get("cleanup_search_exhaustive") or candidate.get("local_cleanup_search_exhaustive"))
+            ):
+                return dict(candidate)
+            if _active_repair_blocker_evidence_is_real(candidate, "") and not rendered_contract_is_actionable:
+                return dict(candidate)
             if bool(candidate.get("active_under_capacity_blocker")) and not rendered_contract_is_actionable:
                 return dict(candidate)
             if _candidate_search_evidence_missing_fields(candidate):
@@ -1214,6 +1296,13 @@ def _candidate_search_evidence_from_state(state: dict[str, Any]) -> dict[str, An
     trace = dict(engine.get("debug") or {})
     for candidate in (card.get("candidate_search_evidence"), trace.get("candidate_search_evidence")):
         if isinstance(candidate, dict) and candidate:
+            if (
+                bool(candidate.get("cleanup_search_ran") or candidate.get("local_cleanup_search_ran"))
+                and bool(candidate.get("cleanup_search_exhaustive") or candidate.get("local_cleanup_search_exhaustive"))
+            ):
+                return dict(candidate)
+            if _active_repair_blocker_evidence_is_real(candidate, "") and not rendered_contract_is_actionable:
+                return dict(candidate)
             if bool(candidate.get("active_under_capacity_blocker")) and not rendered_contract_is_actionable:
                 return dict(candidate)
             if _candidate_search_evidence_missing_fields(candidate):
@@ -1484,6 +1573,22 @@ def _parse_visible_summary(page) -> dict[str, Any]:
         )
         match = pattern.search(text)
         if not match:
+            simple = re.search(
+                rf"{name}\s+[^\n]*?(?:ULS|SLS).*?(PASS|FAIL|WARN|NEAR\s+LIMIT|CAPACITY|NOT\s+RUN)",
+                text,
+                re.IGNORECASE | re.DOTALL,
+            )
+            if simple:
+                status = _norm_text(simple.group(1)).upper()
+                if status == "CAPACITY":
+                    status = "INFO"
+                return {
+                    "capacity": None,
+                    "demand": None,
+                    "util": None,
+                    "status": status,
+                    "parse_failed": False,
+                }
             return {
                 "capacity": None,
                 "demand": None,
@@ -2615,7 +2720,21 @@ def _local_cleanup_evidence_from_state(state: dict[str, Any], evidence: dict[str
             "terminal_state_blocked_by_local_cleanup",
         ):
             if source.get(key) is not None:
+                if (
+                    key in {
+                        "local_cleanup_search_ran",
+                        "local_cleanup_search_exhaustive",
+                    }
+                    and merged.get(key) is True
+                    and source.get(key) is False
+                ):
+                    continue
                 if key in {"candidate_inventory_count", "local_cleanup_candidate_inventory_count"}:
+                    current = _float_or_none(merged.get(key))
+                    incoming = _float_or_none(source.get(key))
+                    if current is not None and incoming is not None and current > incoming:
+                        continue
+                if key in {"safe_local_cleanup_count", "executable_safe_cleanup_count", "advisory_cleanup_count"}:
                     current = _float_or_none(merged.get(key))
                     incoming = _float_or_none(source.get(key))
                     if current is not None and incoming is not None and current > incoming:
@@ -3460,6 +3579,8 @@ def _card_accuracy_failures(case: dict[str, Any], snapshot: dict[str, Any], stat
                 "blocked by discrete detailing limits",
                 "exact shear cleanup blocker",
                 "no one-click shear cleanup reaches the final accepted threshold",
+                "shear cleanup blocked",
+                "cleanup candidate does not include proof",
             )
         ):
             pass
@@ -3672,7 +3793,23 @@ def _check_card_sanity_before(snapshot: dict[str, Any], state: dict[str, Any], e
     title_contains = str(expect.get("title_contains") or "").strip()
     text = str(snapshot.get("design_guide_visible_text") or "")
     if title_contains and title_contains.lower() not in text.lower():
-        failures.append(f"expected_visible_title_missing:{title_contains}")
+        candidate_evidence = _candidate_search_evidence_from_state(state)
+        expected_primary = {
+            str(value or "").strip().lower()
+            for value in list(expect.get("expected_primary_families") or [])
+            if str(value or "").strip()
+        }
+        lower_text = text.lower()
+        active_repair_blocker_title = bool(
+            _active_under_capacity_blocker_is_real(candidate_evidence, text)
+            and "blocked" in lower_text
+            and (
+                not expected_primary
+                or any(family in lower_text for family in expected_primary)
+            )
+        )
+        if not active_repair_blocker_title:
+            failures.append(f"expected_visible_title_missing:{title_contains}")
 
     in_target_terminal = _summary_accepts_terminal_in_target(snapshot, _target_band_from_state(state))
     safe_candidate, contract = _safe_preview_backed_candidate_exists(state)

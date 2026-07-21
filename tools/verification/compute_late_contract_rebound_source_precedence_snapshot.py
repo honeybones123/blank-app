@@ -405,7 +405,7 @@ def _write_audit_report(path: Path, snapshot: dict[str, Any]) -> None:
 def main() -> int:
     import importlib
 
-    module = importlib.import_module("inputs_page")
+    module = importlib.import_module("inputs_page_app_contract_bridge")
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     TRACE_DIR.mkdir(parents=True, exist_ok=True)
     AUDIT_DIR.mkdir(parents=True, exist_ok=True)

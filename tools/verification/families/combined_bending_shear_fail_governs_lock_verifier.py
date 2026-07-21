@@ -30,6 +30,22 @@ from design_brain.families.combined_bending_shear_fail import CombinedBendingShe
 from design_brain.families.combined_bending_shear_fail import _default_runtime_evaluator  # noqa: E402
 
 
+def _read(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8", errors="replace")
+
+
+def _read_inputs_composition_surface() -> str:
+    return "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
+        )
+    )
+
+
 PROOF_CHAIN = [
     ("contract_check", "tools/verification/families/bending_and_shear_fail_govern_contract_check.py"),
     ("candidate_merge_boundary", "tools/verification/combined_bending_shear_candidate_merge_boundary_snapshot.py"),
@@ -128,8 +144,8 @@ def main() -> int:
     )
     runtime_source = (ROOT / "design_brain" / "families" / "bending_and_shear_fail_govern" / "runtime.py").read_text(encoding="utf-8", errors="replace")
     family_source = (ROOT / "design_brain" / "families" / "combined_bending_shear_fail.py").read_text(encoding="utf-8", errors="replace")
-    inputs_source = (ROOT / "inputs_page.py").read_text(encoding="utf-8", errors="replace")
-    shared_source = (ROOT / "design_brain" / "publication.py").read_text(encoding="utf-8", errors="replace")
+    inputs_source = _read_inputs_composition_surface()
+    shared_source = _read("design_brain/publication.py")
     forbidden_runtime_terms = [
         term
         for term in ("inputs_page", "streamlit", "st.session_state", "family_chooser", "DEFAULT_DEPTH_STEPS_MM", "DEFAULT_WIDTH_STEPS_MM")

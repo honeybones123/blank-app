@@ -1487,16 +1487,6 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
     with inputs_placeholder.container():
         page_divider()
 
-        st.markdown(
-            """
-            <style>
-            .input-subsection-gap {
-                height: 0.35rem;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
         with render_specialized_widget_rail("bending_input_scroll", 4) as (
             col_actions,
             col_geom_mat,
@@ -1704,7 +1694,6 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                         ),
                     )
         
-                    st.markdown("<div class='input-subsection-gap'></div>", unsafe_allow_html=True)
                     # Get current values (widget key takes precedence if exists, otherwise use shared key)
                     fc_val = _coalesce_num(st.session_state.get("bending_fc", get_param("fc", 40.0)), 40.0)
                     fsy_val = _coalesce_num(st.session_state.get("bending_fsy", get_param("fsy", 500.0)), 500.0)
@@ -1966,6 +1955,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             with calc_blocks_placeholder.container():
                 # ---------------- Step-by-step tabs ----------------
                 apply_step_summary_expander_css()
+                render_section_title("Bending design checks")
                 detail_view = st.session_state.get("bending_detail_view", "positive")
                 if detail_view not in _valid_bending_views and _valid_bending_views:
                     detail_view = _valid_bending_views[0]

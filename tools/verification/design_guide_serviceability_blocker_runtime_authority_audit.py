@@ -22,6 +22,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 INPUTS_PAGE = ROOT / "inputs_page.py"
+APP_CONTRACT_BRIDGE = ROOT / "inputs_page_app_contract_bridge.py"
+CRACK_GUIDANCE = ROOT / "inputs_page_modules" / "design_guide" / "crack_guidance.py"
+SERVICEABILITY_PREFLIGHT = ROOT / "inputs_page_modules" / "design_guide" / "serviceability_preflight.py"
 SERVICEABILITY_FAMILY = ROOT / "design_brain" / "families" / "serviceability.py"
 SERVICEABILITY_RUNTIME = ROOT / "design_brain" / "families" / "serviceability_governs" / "runtime.py"
 SERVICEABILITY_CONTRACT = ROOT / "design_brain" / "families" / "serviceability_governs" / "contract.json"
@@ -34,8 +37,16 @@ from design_brain.families.serviceability import ServiceabilityFamily  # noqa: E
 LIVE_SERVICEABILITY_FUNCTIONS = (
     "_crack_guidance_item",
     "_deflection_guidance_item",
+    "_serviceability_governs_preflight_payload",
     "_active_failure_no_target_blocker_item",
 )
+
+LIVE_SERVICEABILITY_SOURCE_PATHS = {
+    "_crack_guidance_item": (CRACK_GUIDANCE, APP_CONTRACT_BRIDGE, INPUTS_PAGE),
+    "_deflection_guidance_item": (APP_CONTRACT_BRIDGE, INPUTS_PAGE),
+    "_serviceability_governs_preflight_payload": (SERVICEABILITY_PREFLIGHT, APP_CONTRACT_BRIDGE, INPUTS_PAGE),
+    "_active_failure_no_target_blocker_item": (APP_CONTRACT_BRIDGE, INPUTS_PAGE),
+}
 
 LEGACY_SERVICEABILITY_MARKERS = (
     "serviceability_crack_active_failure_ladder",
@@ -47,6 +58,13 @@ LEGACY_SERVICEABILITY_MARKERS = (
     "Deflection repair is blocked by geometry/serviceability limits",
     "deflection limit",
     "crack control limit",
+)
+
+SERVICEABILITY_PREFLIGHT_MARKERS = (
+    "SERVICEABILITY_GOVERNS",
+    "serviceability_governs_preflight_blocker",
+    "serviceability_preflight_family_route",
+    "build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence",
 )
 
 RUNTIME_AUTHORITY_MARKERS = (
@@ -113,6 +131,9 @@ def _run_compile() -> dict[str, Any]:
             "-m",
             "py_compile",
             "inputs_page.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/crack_guidance.py",
+            "inputs_page_modules/design_guide/serviceability_preflight.py",
             "design_brain/families/serviceability.py",
             "design_brain/families/serviceability_governs/runtime.py",
             "tools/verification/design_guide_serviceability_blocker_runtime_authority_audit.py",
@@ -177,27 +198,39 @@ def _runtime_gateway_probe() -> dict[str, Any]:
 
 
 def _live_source_rows() -> list[dict[str, Any]]:
-    source = INPUTS_PAGE.read_text(encoding="utf-8", errors="replace")
     rows: list[dict[str, Any]] = []
     for function_name in LIVE_SERVICEABILITY_FUNCTIONS:
-        function_source = _function_source(source, function_name)
+        selected_path = None
+        function_source = ""
+        for path in LIVE_SERVICEABILITY_SOURCE_PATHS.get(function_name, (INPUTS_PAGE,)):
+            source = path.read_text(encoding="utf-8", errors="replace")
+            function_source = _function_source(source, function_name)
+            if function_source:
+                selected_path = path
+                break
         legacy_hits = sorted(marker for marker in LEGACY_SERVICEABILITY_MARKERS if marker in function_source)
         runtime_hits = sorted(marker for marker in RUNTIME_AUTHORITY_MARKERS if marker in function_source)
+        preflight_hits = sorted(marker for marker in SERVICEABILITY_PREFLIGHT_MARKERS if marker in function_source)
+        if runtime_hits and {"ladder_hash", "exhausted_proof"}.issubset(set(runtime_hits)):
+            classification = "LIVE_RUNTIME_BACKED"
+        elif preflight_hits:
+            classification = "LIVE_SERVICEABILITY_PREFLIGHT_BACKED"
+        elif legacy_hits:
+            classification = "PAGE_PRACTICAL_LADDER_SOURCED"
+        else:
+            classification = "NO_SERVICEABILITY_BLOCKER_PATH_FOUND"
         rows.append(
             {
                 "function": function_name,
+                "source_path": str(selected_path) if selected_path else None,
                 "legacy_marker_hits": legacy_hits,
                 "runtime_authority_hits": runtime_hits,
+                "serviceability_preflight_hits": preflight_hits,
                 "legacy_marker_count": len(legacy_hits),
                 "runtime_authority_hit_count": len(runtime_hits),
+                "serviceability_preflight_hit_count": len(preflight_hits),
                 "source_hash": _stable_hash(function_source),
-                "classification": (
-                    "LIVE_RUNTIME_BACKED"
-                    if runtime_hits and {"ladder_hash", "exhausted_proof"}.issubset(set(runtime_hits))
-                    else "PAGE_PRACTICAL_LADDER_SOURCED"
-                    if legacy_hits
-                    else "NO_SERVICEABILITY_BLOCKER_PATH_FOUND"
-                ),
+                "classification": classification,
             }
         )
     return rows
@@ -213,6 +246,7 @@ def _build_snapshot() -> dict[str, Any]:
 
     page_sourced_rows = [row for row in rows if row["classification"] == "PAGE_PRACTICAL_LADDER_SOURCED"]
     runtime_backed_rows = [row for row in rows if row["classification"] == "LIVE_RUNTIME_BACKED"]
+    preflight_backed_rows = [row for row in rows if row["classification"] == "LIVE_SERVICEABILITY_PREFLIGHT_BACKED"]
     contract_ready = (
         not contract["missing_required_runtime_evidence_fields"]
         and contract["family_owns_serviceability_blockers"]
@@ -233,6 +267,12 @@ def _build_snapshot() -> dict[str, Any]:
     elif runtime_backed_rows and not page_sourced_rows:
         authority_result = "PASS_RUNTIME_BACKED"
         recommendation = "Serviceability blockers are runtime-backed; proceed to deletion readiness proof."
+    elif preflight_backed_rows and not page_sourced_rows:
+        authority_result = "PARTIAL_PREFLIGHT_BACKED"
+        recommendation = (
+            "Serviceability blockers route through the controller-backed preflight path, but this audit "
+            "does not prove full SERVICEABILITY_GOVERNS runtime-backed publication."
+        )
     else:
         authority_result = "PARTIAL_UNPROVEN"
         recommendation = "Add live serviceability blocker trace coverage before changing product behavior."
@@ -242,7 +282,7 @@ def _build_snapshot() -> dict[str, Any]:
         "serviceability_lock_artifact_pass": bool(latest_lock.get("passed")),
         "contract_owns_serviceability_blockers": contract_ready,
         "runtime_gateway_available": runtime_available,
-        "live_serviceability_blocker_paths_found": bool(page_sourced_rows or runtime_backed_rows),
+        "live_serviceability_blocker_paths_found": bool(page_sourced_rows or runtime_backed_rows or preflight_backed_rows),
         "live_serviceability_blockers_runtime_backed": bool(runtime_backed_rows) and not page_sourced_rows,
         "cross_family_scan_found_serviceability_audit_required": (
             "SERVICEABILITY_GOVERNS" in _stable_json((latest_cross_scan.get("snapshot") or {}).get("high_risk_or_audit_required") or [])

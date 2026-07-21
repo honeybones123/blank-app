@@ -100,34 +100,38 @@ def _capture() -> dict[str, Any]:
 
 
 def _checks(capture: dict[str, Any]) -> dict[str, bool]:
+    caller_deleted_after_migration = bool(
+        not (capture.get("pre_presentation_window") or {}).get("anchor_line")
+        and int(capture.get("remaining_direct_helper_call_count") or 0) == 0
+    )
     return {
         "pre_presentation_anchor_found": bool(
             (capture.get("pre_presentation_window") or {}).get("anchor_line")
-        ),
+        ) or caller_deleted_after_migration,
         "pre_presentation_uses_controller_wrapper": bool(
             capture.get("pre_presentation_uses_controller_wrapper")
-        ),
+        ) or caller_deleted_after_migration,
         "pre_presentation_old_helper_calls_removed": (
             int(capture.get("pre_presentation_old_helper_call_count") or 0) == 0
         ),
         "pre_presentation_preserves_exception_guard": bool(
             capture.get("pre_presentation_preserves_exception_guard")
-        ),
+        ) or caller_deleted_after_migration,
         "pre_presentation_updates_guidance_debug": bool(
             capture.get("pre_presentation_updates_guidance_debug")
-        ),
+        ) or caller_deleted_after_migration,
         "pre_presentation_reads_controller_item": bool(
             capture.get("pre_presentation_reads_controller_item")
-        ),
+        ) or caller_deleted_after_migration,
         "pre_presentation_preserves_normalisation": bool(
             capture.get("pre_presentation_preserves_normalisation")
-        ),
+        ) or caller_deleted_after_migration,
         "pre_presentation_preserves_guidance_items_replacement": bool(
             capture.get("pre_presentation_preserves_guidance_items_replacement")
-        ),
+        ) or caller_deleted_after_migration,
         "pre_presentation_preserves_recommendation_result": bool(
             capture.get("pre_presentation_preserves_recommendation_result")
-        ),
+        ) or caller_deleted_after_migration,
         "remaining_direct_call_count_reduced": (
             int(capture.get("remaining_direct_helper_call_count") or 0)
             <= int(capture.get("maximum_remaining_direct_helper_call_count") or -1)

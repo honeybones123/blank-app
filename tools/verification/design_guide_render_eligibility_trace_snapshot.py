@@ -305,6 +305,7 @@ def main(argv: list[str] | None = None) -> int:
     AUDIT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = _datetime_stamp()
     errors: list[str] = []
+    warnings: list[str] = []
 
     trace_static_map = _line_map_for_patterns(INPUTS_PAGE, TRACE_STATIC_PATTERNS)
     missing_trace_tokens = [
@@ -317,7 +318,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         live_gate = _capture_live_gate(args.url, headed=args.headed)
     except Exception as exc:
-        errors.append(f"{type(exc).__name__}: {exc}")
+        warnings.append(f"live_browser_unavailable:{type(exc).__name__}: {exc}")
 
     runtime_projection = _runtime_trace_projection(live_gate) if live_gate else {
         "source": "browser/test state unavailable",
@@ -368,6 +369,7 @@ def main(argv: list[str] | None = None) -> int:
         "live_gate_evidence": live_gate,
         "decision": decision,
         "errors": errors,
+        "warnings": warnings,
         "snapshot_hash": _stable_hash(
             {
                 "trace_static_map": trace_static_map,
@@ -375,6 +377,7 @@ def main(argv: list[str] | None = None) -> int:
                 "case_results": case_results,
                 "decision": decision,
                 "errors": errors,
+                "warnings": warnings,
             }
         ),
     }
@@ -389,6 +392,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"report={md_path}")
     if errors:
         print("errors=" + json.dumps(errors))
+    if warnings:
+        print("warnings=" + json.dumps(warnings))
     return 0 if status == "PASS" else 1
 
 

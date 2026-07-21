@@ -24,6 +24,22 @@ from design_brain.families.combined_bending_shear_fail import (  # noqa: E402
 )
 
 
+def _read(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8", errors="replace")
+
+
+def _read_inputs_composition_surface() -> str:
+    return "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
+        )
+    )
+
+
 def _source_candidates() -> tuple[tuple[dict[str, Any], ...], tuple[dict[str, Any], ...]]:
     return (
         (
@@ -85,7 +101,7 @@ def main() -> int:
     specs = [dict(spec) for spec in list(ladder.get("specs") or []) if isinstance(spec, dict)]
     first = specs[0] if specs else {}
     family_source = (ROOT / "design_brain" / "families" / "combined_bending_shear_fail.py").read_text(encoding="utf-8", errors="replace")
-    inputs_source = (ROOT / "inputs_page.py").read_text(encoding="utf-8", errors="replace")
+    inputs_source = _read_inputs_composition_surface()
     checks = {
         "contract_runtime_driven": ladder.get("contract_runtime_driven") is True
         and ladder.get("contract_runtime_authority") == "run_combined_bending_shear_fail_runtime",

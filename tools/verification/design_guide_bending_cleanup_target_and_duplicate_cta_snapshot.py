@@ -68,15 +68,28 @@ def main() -> int:
     direct_shell_helper_deleted = "def _design_guide_direct_action_shell_card_html(" not in source
     early_shear_direct_shell_deleted = '"marker": "early_shear_overdesign_direct_action_shell_deleted"' in source
 
-    deleted_marker_present = '"fallback_enabled_contract_shell_deleted"' in fallback_body
-    fallback_marker_present = '"marker": "fallback_enabled_contract_shell_deleted"' in fallback_body
-    fallback_branch = _slice_between(
-        fallback_body,
-        '"marker": "fallback_enabled_contract_shell_deleted"',
-        "st.session_state.pop(DESIGN_GUIDE_COMPONENT_APPLY_IN_FLIGHT_KEY, None)",
+    post_render_fallback_uses_clean_recovery = (
+        '"marker": "render_final_panel_missing_card_clean_recovery"' in fallback_body
+        and "_render_final_design_guide_card_html(" in fallback_body
     )
-    fallback_renders_no_streamlit_button = "st.button(" not in fallback_branch
-    fallback_renders_no_direct_shell_card = "_design_guide_direct_action_shell_card_html(" not in fallback_branch
+    post_render_fallback_canonicalises_overdesign_family = (
+        "_fallback_canonical_family = _canonical_overdesign_family_from_updates(" in fallback_body
+        and "BENDING_OVERDESIGN_GOVERNS" in fallback_body
+        and "shear cleanup" in fallback_body.lower()
+    )
+    pre_widget_pass_marker_counts_as_rendered = (
+        '"early_final_publication_payload_render"' in source
+        and '"post_apply_required_checks_pass_pre_widget_direct"' in source
+        and "_dg_before_form_actual_card_rendered = bool(" in source
+    )
+    wrong_family_title_rebuild_present = (
+        "design_guide_title_rebuilt_from_wrong_family_label" in source
+        and '"shear cleanup" in display_title.lower()' in source
+        and '"bending cleanup" in display_title.lower()' in source
+    )
+    post_render_fallback_renders_no_direct_shell_card = (
+        "_design_guide_direct_action_shell_card_html(" not in fallback_body
+    )
 
     checks = {
         "bending_cleanup_target_uses_bending_util": bool(target_uses_bending),
@@ -91,10 +104,11 @@ def main() -> int:
         "early_shear_overdesign_direct_shell_deleted_marker_present": bool(early_shear_direct_shell_deleted),
         "no_direct_shell_html_call_sites_remain": bool(no_direct_shell_html_calls_remain),
         "direct_shell_html_helper_deleted": bool(direct_shell_helper_deleted),
-        "post_render_fallback_deleted_marker_present": bool(deleted_marker_present),
-        "post_render_fallback_probe_marker_is_deleted": bool(fallback_marker_present),
-        "post_render_fallback_renders_no_streamlit_button": bool(fallback_renders_no_streamlit_button),
-        "post_render_fallback_renders_no_direct_shell_card": bool(fallback_renders_no_direct_shell_card),
+        "post_render_fallback_uses_clean_recovery": bool(post_render_fallback_uses_clean_recovery),
+        "post_render_fallback_canonicalises_overdesign_family": bool(post_render_fallback_canonicalises_overdesign_family),
+        "pre_widget_pass_marker_counts_as_rendered": bool(pre_widget_pass_marker_counts_as_rendered),
+        "wrong_family_title_rebuild_present": bool(wrong_family_title_rebuild_present),
+        "post_render_fallback_renders_no_direct_shell_card": bool(post_render_fallback_renders_no_direct_shell_card),
     }
     failures = [name for name, ok in checks.items() if not ok]
     status = "PASS" if not failures else "FAIL"
@@ -135,8 +149,8 @@ def main() -> int:
                 "",
                 f"Target expression: `{target_expr}`",
                 "",
-                "This verifier is intentionally narrow. It proves the regression boundary only:",
-                "bending-only cleanup target acceptance and removal of duplicate direct CTA render branches.",
+            "This verifier is intentionally narrow. It proves the regression boundary only:",
+            "bending-only cleanup target acceptance, wrong-family title correction, and duplicate PASS-card render guards.",
                 "",
             ]
         ),

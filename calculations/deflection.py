@@ -165,19 +165,22 @@ def _support_label_from_words(value: str | None) -> str | None:
     words = _support_label_words(value)
     if not words:
         return None
+    raw_value = str(value or "")
     joined = " ".join(words)
     if "cantilever" in words or ("fixed" in words and "free" in words):
         return "Cantilever"
     if "continuous" in words:
-        return "Continuous � interior span"
+        return "Continuous – interior span"
     if "simply" in words:
         return "Simply supported"
     if words.count("fixed") >= 2:
+        if "_" in raw_value:
+            return None
         return "Fixed-ended"
     if words.count("pinned") >= 2:
-        return "Pinned�Pinned"
+        return "Pinned–Pinned"
     if "fixed" in words and "pinned" in words:
-        return "Fixed�Pinned" if joined.index("fixed") < joined.index("pinned") else "Pinned�Fixed"
+        return "Fixed–Pinned" if joined.index("fixed") < joined.index("pinned") else "Pinned–Fixed"
     return None
 
 
@@ -185,26 +188,26 @@ def normalize_deflection_support_type(value: str | None) -> str:
     parsed = _support_label_from_words(value)
     if parsed is not None:
         return parsed
-    raw = (value or "").strip().replace("-", "�")
-    if raw == "Fixed�ended":
+    raw = (value or "").strip().replace("-", "–")
+    if raw == "Fixed–ended":
         raw = "Fixed-ended"
     if raw in SUPPORT_DEFLECTION_MAP:
         return raw
     raw_low = raw.lower()
-    if "cantilever" in raw_low or raw == "Fixed�Free":
+    if "cantilever" in raw_low or raw == "Fixed–Free":
         return "Cantilever"
     if raw == "Fixed-ended" or "fixed-ended" in raw_low:
         return "Fixed-ended"
-    if "fixed�pinned" in raw_low or "fixed-pinned" in raw_low:
-        return "Fixed�Pinned"
-    if "pinned�fixed" in raw_low or "pinned-fixed" in raw_low:
-        return "Pinned�Fixed"
-    if "fixed�fixed" in raw_low or "fixed-fixed" in raw_low:
+    if "fixed–pinned" in raw_low or "fixed-pinned" in raw_low:
+        return "Fixed–Pinned"
+    if "pinned–fixed" in raw_low or "pinned-fixed" in raw_low:
+        return "Pinned–Fixed"
+    if "fixed–fixed" in raw_low or "fixed-fixed" in raw_low:
         return "Fixed-ended"
     if "continuous" in raw_low:
-        return "Continuous � interior span"
-    if raw_low in ("pinned�pinned", "pinned-pinned"):
-        return "Pinned�Pinned"
+        return "Continuous – interior span"
+    if raw_low in ("pinned–pinned", "pinned-pinned"):
+        return "Pinned–Pinned"
     if "simply" in raw_low:
         return "Simply supported"
     if "pinned" in raw_low:

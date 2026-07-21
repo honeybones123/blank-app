@@ -19,6 +19,18 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8", errors="replace")
 
 
+def _read_inputs_composition_surface() -> str:
+    return "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
+        )
+    )
+
+
 def _write(snapshot: dict[str, Any]) -> tuple[Path, Path]:
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     AUDIT_DIR.mkdir(parents=True, exist_ok=True)
@@ -53,7 +65,9 @@ def _write(snapshot: dict[str, Any]) -> tuple[Path, Path]:
 def main() -> int:
     family_source = _read("design_brain/families/shear_fail_bending_overdesign.py")
     runtime_source = _read("design_brain/families/shear_fail_bending_overdesign_governs/runtime.py")
-    inputs_source = _read("inputs_page.py")
+    inputs_source = _read_inputs_composition_surface()
+    evaluator_source = _read("design_brain/candidate_evaluation.py")
+    controller_source = _read("design_brain/design_guide_controller.py")
     checks = {
         "family_shell_exists": "class ShearFailBendingOverdesignFamily" in family_source,
         "cutover_method_named": "def contracted_mixed_ladder_result" in family_source,
@@ -63,7 +77,12 @@ def main() -> int:
             term not in runtime_source.lower()
             for term in ("button_contract", "publication", "apply_routing", "one_click", "st.session_state")
         ),
-        "inputs_page_keeps_evaluator_loop": "def _evaluate(" in inputs_source and "_evaluate_auto_design_candidate(" in inputs_source,
+        "candidate_evaluation_keeps_evaluator_boundary": "def evaluate_design_candidate_with_updates(" in evaluator_source,
+        "inputs_composition_keeps_auto_candidate_runner": "_evaluate_auto_design_candidate(" in inputs_source,
+        "controller_keeps_final_publication_bridge": "build_final_design_guide_publication" in controller_source,
+        "inputs_composition_keeps_shared_surfaces": "from design_brain.cta_contracts import" in inputs_source
+        and "from design_brain.final_publication import" in inputs_source
+        and "handle_inputs_apply_buttons" in inputs_source,
     }
     failures = [key for key, passed in checks.items() if not passed]
     snapshot = {

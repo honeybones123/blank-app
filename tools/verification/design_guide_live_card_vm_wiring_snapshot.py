@@ -30,17 +30,15 @@ from tools.verification.design_guide_card_vm_adapter_parity_snapshot import (  #
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 INPUTS_PAGE = ROOT / "inputs_page.py"
+ROUTE_COORDINATORS = ROOT / "inputs_page_route_coordinators.py"
+APP_CONTRACT_BRIDGE = ROOT / "inputs_page_app_contract_bridge.py"
 FINAL_PUBLICATION = ROOT / "design_brain" / "final_publication.py"
 
 LIVE_CARD_VM_SYMBOLS = [
-    ("inputs_page.py", "def build_design_guide_card_view_model("),
-    ("inputs_page.py", "def _build_design_guide_card_render_model("),
-    ("inputs_page.py", "_build_design_guide_card_render_model_fields_core"),
-    ("inputs_page.py", "def _design_guide_dashboard_card_html_with_render_model("),
-    ("inputs_page.py", "_render_final_design_guide_card_html(clean_format)"),
-    ("inputs_page.py", "browser_enabled_contract_pre_render_shell_deleted"),
-    ("inputs_page.py", "fallback_enabled_contract_shell_deleted"),
-    ("inputs_page.py", "early_shear_overdesign_direct_action_shell_deleted"),
+    ("design_brain/final_publication.py", "def build_final_publication_display_from_current_card_model("),
+    ("design_brain/final_publication.py", "class FinalDesignGuideDisplay"),
+    ("design_brain/final_design_guide_formatter.py", "def build_final_design_guide_card_format("),
+    ("design_brain/final_design_guide_formatter.py", "final_publication_display_hash=display_hash"),
     ("ui/final_design_guide_card.py", "def render_final_design_guide_card_html("),
 ]
 
@@ -227,7 +225,11 @@ def _build_snapshot() -> dict[str, Any]:
     forbidden_imports = _forbidden_final_publication_imports(final_imports)
     symbol_rows = _symbol_presence()
     missing_symbols = [row for row in symbol_rows if not row["present"]]
-    inputs_source = INPUTS_PAGE.read_text(encoding="utf-8")
+    inputs_source = "\n".join(
+        path.read_text(encoding="utf-8", errors="replace")
+        for path in (INPUTS_PAGE, ROUTE_COORDINATORS, APP_CONTRACT_BRIDGE)
+        if path.exists()
+    )
     direct_shell_helper_absent = "def _design_guide_direct_action_shell_card_html(" not in inputs_source
     cta_authority_markers = {
         "FinalDesignGuidePublication.cta": "FinalDesignGuidePublication.cta" in inputs_source,

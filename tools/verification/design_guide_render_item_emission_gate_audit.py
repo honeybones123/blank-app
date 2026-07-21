@@ -120,7 +120,10 @@ def _static_source_map() -> dict[str, Any]:
     page = DESIGN_GUIDE_PAGE.read_text(encoding="utf-8")
     markers = {
         "render_final_panel": (DESIGN_GUIDE_PAGE, "def render_final_panel("),
-        "render_fast_design_guidance_panel": (INPUTS_PAGE, "def _render_fast_design_guidance_panel("),
+        "render_design_guide_panel_orchestration_coordinator": (
+            INPUTS_PAGE,
+            "def render_design_guide_panel_orchestration_coordinator(",
+        ),
         "secondary_items_renderer": (INPUTS_PAGE, "def _render_guidance_secondary_items("),
         "card_view_model": (INPUTS_PAGE, "def build_design_guide_card_view_model("),
         "final_visible_authority_adapter": (INPUTS_PAGE, "def _final_visible_resolution_from_final_publication_authority("),

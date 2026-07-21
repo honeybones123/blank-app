@@ -46,7 +46,11 @@ from design_brain.families.bending_fail import (
 from design_brain.families.combined_bending_shear_fail import (
     select_combined_fail_fallback_repair_candidate_from_ladder,
 )
-from design_brain.candidate_evaluation import build_active_fail_executor_candidate_generation_context
+from design_brain.candidate_evaluation import (
+    build_active_fail_executor_candidate_generation_context,
+    resolve_longitudinal_bar_spacing_rule,
+    resolve_minimum_longitudinal_bar_rule,
+)
 from design_brain.publication import design_guide_cache_fingerprint_from_plain_data
 from design_brain.publication import active_failure_blocker_visible_reason_text
 from design_brain.publication import active_failure_exact_blockers_for_families
@@ -144,7 +148,16 @@ def best_safe_cleanup_action_proof_allows_executable_cta(
             or ev.get("closest_safe_candidate_util")
         )
     )
-    return util is not None
+    final_floor = _float_or_none(
+        ev.get("final_accepted_min_family_util")
+        or ev.get("accepted_target_low")
+        or ev.get("target_low")
+        or contract_d.get("final_accepted_min_family_util")
+        or contract_d.get("target_low")
+    )
+    if final_floor is None:
+        final_floor = 0.85
+    return util is not None and float(util) >= float(final_floor) - 1e-9
 
 
 def build_design_guide_controller_compute_core_branch_request_projection(
@@ -169,10 +182,40 @@ def build_design_guide_controller_compute_core_branch_request_projection(
         or ""
     ).strip()
     family = str(route.get("resolved_candidate_family_tag") or "").strip().lower()
+    active_failure_repair_families = {
+        "bending",
+        "shear",
+        "combined",
+        "geometry",
+        "bending_fail_governs",
+        "shear_fail_governs",
+        "combined_bending_shear_fail",
+        "combined_bending_shear_fail_governs",
+        "bending_fail_shear_overdesign_governs",
+        "shear_fail_bending_overdesign_governs",
+        "geometry_detailing_governs",
+    }
+    route_post_apply_overview = _mapping(route.get("post_apply_overview"))
+    route_post_apply_proven = bool(
+        route.get("post_apply_resolved_candidate_attempted")
+        and (
+            route.get("apply_direct_resolved_candidate")
+            or route.get("apply_used_resolved_candidate_payload")
+        )
+        and route.get("payload_update_match") is not False
+        and (
+            bool(route.get("post_apply_all_key_pass"))
+            or bool(route_post_apply_overview.get("all_key_pass"))
+        )
+        and not bool(route.get("post_apply_any_fail"))
+        and not bool(route_post_apply_overview.get("any_fail"))
+        and bool(overview_required_checks_acceptable)
+        and not bool(dict(overview or {}).get("any_fail"))
+    )
     post_apply_from_active_failure_repair = bool(
-        bool(post_apply_acceptance_matches)
+        (bool(post_apply_acceptance_matches) or route_post_apply_proven)
         and route.get("post_apply_resolved_candidate_attempted")
-        and family in {"bending", "shear", "combined", "geometry"}
+        and family in active_failure_repair_families
         and "cleanup" not in label.lower()
     )
     return {
@@ -2857,6 +2900,62 @@ def resolve_design_guide_controller_guidance_action_payload_updates(
     }
 
 
+def resolve_design_guide_controller_guidance_action_generated_updates(
+    *,
+    action_type: str,
+    payload: dict[str, Any] | None,
+    state: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Resolve pure generated Design Guide action updates."""
+
+    action = str(action_type or "")
+    payload_dict = dict(payload or {}) if isinstance(payload, dict) else {}
+    state_dict = dict(state or {}) if isinstance(state, dict) else {}
+    if action == "increase_depth":
+        current_d = float(state_dict.get("D", 600.0) or 600.0)
+        delta_mm = float(payload_dict.get("delta_mm", 50) or 50.0)
+        new_d = max(100.0, current_d + delta_mm)
+        return {
+            "handled": True,
+            "updates": {"D": float(int(round(new_d / 10.0) * 10))},
+            "owner": "DesignGuideController.guidance_action_generated_updates",
+        }
+
+    if action == "increase_width":
+        width_key = str(payload_dict.get("resolved_width_key") or "").strip()
+        if not width_key:
+            return {
+                "handled": False,
+                "updates": None,
+                "owner": "DesignGuideController.guidance_action_generated_updates",
+            }
+        current_width = float(payload_dict.get("current_width", state_dict.get(width_key, 300.0)) or 300.0)
+        delta_mm = float(payload_dict.get("delta_mm", 50) or 50.0)
+        new_width = max(100.0, current_width + delta_mm)
+        return {
+            "handled": True,
+            "updates": {width_key: float(int(round(new_width / 10.0) * 10))},
+            "owner": "DesignGuideController.guidance_action_generated_updates",
+        }
+
+    if action == "reduce_link_spacing":
+        current_spacing = float(payload_dict.get("current_spacing", state_dict.get("s_lig", 200.0)) or 200.0)
+        delta_mm = float(payload_dict.get("delta_mm", 25) or 25.0)
+        minimum_spacing = float(payload_dict.get("minimum_spacing", 75.0) or 75.0)
+        new_spacing = max(minimum_spacing, current_spacing - delta_mm)
+        return {
+            "handled": True,
+            "updates": {"s_lig": float(int(round(new_spacing / 5.0) * 5))},
+            "owner": "DesignGuideController.guidance_action_generated_updates",
+        }
+
+    return {
+        "handled": False,
+        "updates": None,
+        "owner": "DesignGuideController.guidance_action_generated_updates",
+    }
+
+
 def build_design_guide_pure_guidance_step_description(
     *,
     before_state: dict[str, Any] | None,
@@ -3146,36 +3245,73 @@ def build_design_guide_controller_bending_only_best_safe_cleanup_item_projection
     evidence = dict(candidate_search_evidence or {})
     candidate_id = selected.get("candidate_id")
     subfamilies = list(selected.get("subfamilies") or ["bottom_reinforcement"])
+    selected_family = str(selected.get("family") or evidence.get("family") or "bending").strip().lower() or "bending"
+    publication_family_id = str(
+        selected.get("selected_family_id")
+        or selected.get("published_family_id")
+        or evidence.get("selected_family_id")
+        or evidence.get("published_family_id")
+        or ("BENDING_OVERDESIGN_GOVERNS" if selected_family == "bending" else selected_family)
+    ).strip()
+    if selected_family == "bending" and publication_family_id.lower() == "bending":
+        publication_family_id = "BENDING_OVERDESIGN_GOVERNS"
+    terminal_status = str(evidence.get("terminal_candidate_status") or "").strip().upper()
+    terminal_candidate = terminal_status in {
+        "TERMINAL_TARGET_BAND",
+        "TERMINAL_EXACT_STOP",
+        "TERMINAL_BLOCKED_WITH_PROOF",
+    }
+    no_second_cta_required = bool(evidence.get("no_second_cta_required")) or terminal_candidate
+    best_safe_partial_cleanup = bool(evidence.get("best_safe_partial_cleanup")) and not no_second_cta_required
 
     projected = dict(item)
     projected["candidate_search_evidence"] = dict(evidence)
     projected["local_cleanup_candidate"] = True
     projected["source"] = "design_guide_bending_only_best_safe_cleanup_search"
-    projected["affected_family"] = "bending"
-    projected["family"] = "bending"
+    projected["affected_family"] = selected_family
+    projected["family"] = selected_family
+    projected["family_id"] = publication_family_id
+    projected["selected_family_id"] = publication_family_id
+    projected["published_family_id"] = publication_family_id
+    projected["cta_family_id"] = publication_family_id
+    projected["candidate_family_id"] = publication_family_id
+    projected["card_family_id"] = publication_family_id
+    projected["apply_payload_family_id"] = publication_family_id
     projected["allow_in_target_primary_action"] = True
-    projected["best_safe_partial_cleanup"] = False
-    projected["no_second_cta_required"] = False
+    projected["best_safe_partial_cleanup"] = best_safe_partial_cleanup
+    projected["no_second_cta_required"] = no_second_cta_required
     projected["guidance_intent"] = "efficiency_tightening"
 
     payload = dict(projected.get("action_payload") or {})
     payload["candidate_search_evidence"] = dict(evidence)
-    payload["best_safe_partial_cleanup"] = False
-    payload["no_second_cta_required"] = False
+    payload["best_safe_partial_cleanup"] = best_safe_partial_cleanup
+    payload["no_second_cta_required"] = no_second_cta_required
     payload["source_candidate_id"] = candidate_id
     payload["candidate_id"] = candidate_id
-    payload["resolved_candidate_family_tag"] = "bending"
+    payload["family"] = selected_family
+    payload["family_id"] = publication_family_id
+    payload["selected_family_id"] = publication_family_id
+    payload["published_family_id"] = publication_family_id
+    payload["cta_family_id"] = publication_family_id
+    payload["candidate_family_id"] = publication_family_id
+    payload["apply_payload_family_id"] = publication_family_id
+    payload["resolved_candidate_family_tag"] = selected_family
     payload["resolved_candidate_subfamilies"] = list(subfamilies)
     projected["action_payload"] = payload
 
     resolved = dict(projected.get("resolved_candidate") or {})
     resolved["candidate_search_evidence"] = dict(evidence)
-    resolved["best_safe_partial_cleanup"] = False
-    resolved["no_second_cta_required"] = False
+    resolved["best_safe_partial_cleanup"] = best_safe_partial_cleanup
+    resolved["no_second_cta_required"] = no_second_cta_required
     resolved["candidate_id"] = candidate_id
     resolved["source_candidate_id"] = candidate_id
-    resolved["family"] = "bending"
-    resolved["recommendation_family_tag"] = "bending"
+    resolved["family"] = selected_family
+    resolved["family_id"] = publication_family_id
+    resolved["selected_family_id"] = publication_family_id
+    resolved["published_family_id"] = publication_family_id
+    resolved["cta_family_id"] = publication_family_id
+    resolved["candidate_family_id"] = publication_family_id
+    resolved["recommendation_family_tag"] = selected_family
     resolved["subfamilies"] = list(subfamilies)
     projected["resolved_candidate"] = resolved
     return projected
@@ -3438,7 +3574,24 @@ def build_design_guide_controller_bending_only_terminalisation_projection(
         )
     if not candidate_id:
         candidate_id = str(selected.get("candidate_id") or "").strip()
-    label = "Shear and bending cleanup - one-click optimisation"
+    shear_update_keys = {
+        "s_lig",
+        "lig_d",
+        "lig_legs",
+        "db_lig",
+        "n_legs",
+        "shear_lig_spacing",
+        "shear_lig_diameter",
+        "shear_lig_legs",
+    }
+    has_shear_cleanup = bool((set(updates) & shear_update_keys) or (terminal_evidence or {}).get("residual_shear_updates"))
+    selected_family = "combined" if has_shear_cleanup else "bending"
+    publication_family_id = "COMBINED_OVERDESIGN_GOVERNS" if has_shear_cleanup else "BENDING_OVERDESIGN_GOVERNS"
+    label = (
+        "Shear and bending cleanup - one-click optimisation"
+        if has_shear_cleanup
+        else "Bending cleanup - one-click optimisation"
+    )
 
     projected = dict(selected)
     projected["updates"] = dict(updates)
@@ -3446,9 +3599,15 @@ def build_design_guide_controller_bending_only_terminalisation_projection(
     projected["source_candidate_id"] = candidate_id
     projected["label"] = label
     projected["canonical_winner_label"] = label
-    projected["family"] = "combined"
-    projected["recommendation_family_tag"] = "combined"
-    projected["subfamilies"] = ["shear", "bottom_reinforcement"]
+    projected["family"] = selected_family
+    projected["family_id"] = publication_family_id
+    projected["selected_family_id"] = publication_family_id
+    projected["published_family_id"] = publication_family_id
+    projected["cta_family_id"] = publication_family_id
+    projected["candidate_family_id"] = publication_family_id
+    projected["apply_payload_family_id"] = publication_family_id
+    projected["recommendation_family_tag"] = selected_family
+    projected["subfamilies"] = ["shear", "bottom_reinforcement"] if has_shear_cleanup else ["bottom_reinforcement"]
     if terminal_worst is not None:
         projected["candidate_post_util"] = float(terminal_worst)
         projected["worst_util"] = float(terminal_worst)
@@ -3468,7 +3627,11 @@ def build_design_guide_controller_bending_only_terminalisation_projection(
             "best_safe_candidate_updates": dict(updates),
             "selected_candidate_util": projected.get("candidate_post_util"),
             "best_safe_final_util": projected.get("candidate_post_util"),
-            "family": "combined",
+            "family": selected_family,
+            "selected_family_id": publication_family_id,
+            "published_family_id": publication_family_id,
+            "cta_family_id": publication_family_id,
+            "candidate_family_id": publication_family_id,
             "no_second_cta_required": True,
             **dict(terminal_evidence or {}),
         }
@@ -5589,6 +5752,8 @@ def build_design_guide_controller_active_fail_executor_family_evidence_overlay(
     selected_candidate: dict[str, Any] | None = None,
     selection_reason: str,
     selected_ladder_index_key: str | None = None,
+    candidate_count: int | None = None,
+    safe_candidate_count: int | None = None,
 ) -> dict[str, Any]:
     """Build active-fail executor family evidence overlay through the family runtime."""
 
@@ -5598,6 +5763,8 @@ def build_design_guide_controller_active_fail_executor_family_evidence_overlay(
     selected_result = {
         "selected": dict(selected),
         "selection_reason": str(selection_reason or ""),
+        "candidate_count": int(candidate_count or 0),
+        "safe_candidate_count": int(safe_candidate_count or 0),
         "selected_ladder_index": (
             None
             if not selected
@@ -5743,6 +5910,8 @@ def build_design_guide_controller_active_fail_executor_candidate_search_evidence
                 else "no_compliant_candidate_in_contract_ladder"
             ),
             selected_ladder_index_key="shear_fail_ladder_index",
+            candidate_count=len(candidates),
+            safe_candidate_count=len(safe),
         )
         evidence.update(dict(overlay_result.get("overlay") or {}))
         if overlay_result.get("error"):
@@ -5766,6 +5935,8 @@ def build_design_guide_controller_active_fail_executor_candidate_search_evidence
                 else "fallback_after_no_compliant_combined_contract_ladder_candidate"
             ),
             selected_ladder_index_key="combined_fail_ladder_index",
+            candidate_count=len(candidates),
+            safe_candidate_count=len(safe),
         )
         evidence.update(dict(overlay_result.get("overlay") or {}))
         if overlay_result.get("error"):
@@ -5791,6 +5962,8 @@ def build_design_guide_controller_active_fail_executor_candidate_search_evidence
                 else "fallback_after_no_compliant_bending_contract_ladder_candidate"
             ),
             selected_ladder_index_key="bending_fail_ladder_index",
+            candidate_count=int(bending_family_ladder_evaluated_count),
+            safe_candidate_count=len(safe),
         )
         evidence.update(dict(overlay_result.get("overlay") or {}))
         if overlay_result.get("error"):
@@ -5829,6 +6002,10 @@ def build_design_guide_controller_active_fail_executor_selected_repair_candidate
 
     evidence_map = dict(evidence or {})
     selected = dict(selected_candidate or {})
+    selected_updates = _active_fail_executor_candidate_updates(selected, evidence_map)
+    if selected_updates:
+        selected["updates"] = dict(selected_updates)
+        selected["selected_action_updates"] = dict(selected_updates)
     selected["candidate_search_evidence"] = dict(evidence_map)
     selected["candidate_id"] = evidence_map.get("selected_candidate_id")
     selected["source_candidate_id"] = evidence_map.get("selected_candidate_id")
@@ -5862,6 +6039,44 @@ def build_design_guide_controller_active_fail_executor_selected_repair_candidate
     }
 
 
+def _active_fail_executor_family_id(active_family: str) -> str:
+    family = str(active_family or "").strip().lower()
+    if family == "combined":
+        return "COMBINED_BENDING_SHEAR_FAIL"
+    if family == "shear":
+        return "SHEAR_FAIL_GOVERNS"
+    if family == "serviceability":
+        return "SERVICEABILITY_GOVERNS"
+    return "BENDING_FAIL_GOVERNS"
+
+
+def _active_fail_executor_candidate_updates(
+    selected: dict[str, Any] | None,
+    evidence: dict[str, Any] | None,
+) -> dict[str, Any]:
+    candidate = dict(selected or {})
+    evidence_map = dict(evidence or {})
+    payload = dict(candidate.get("action_payload") or {})
+    resolved = dict(candidate.get("resolved_candidate") or {})
+    for source in (
+        candidate.get("updates"),
+        candidate.get("selected_action_updates"),
+        candidate.get("resolved_candidate_updates"),
+        candidate.get("proposed_updates"),
+        payload.get("resolved_candidate_updates"),
+        payload.get("updates"),
+        resolved.get("updates"),
+        evidence_map.get("selected_candidate_updates"),
+        evidence_map.get("best_target_band_candidate_updates"),
+        evidence_map.get("best_safe_candidate_updates"),
+        evidence_map.get("closest_safe_candidate_updates"),
+        evidence_map.get("updates"),
+    ):
+        if isinstance(source, dict) and source:
+            return dict(source)
+    return {}
+
+
 def build_design_guide_controller_active_fail_executor_final_guidance_item_projection(
     *,
     item: dict[str, Any] | None,
@@ -5877,6 +6092,18 @@ def build_design_guide_controller_active_fail_executor_final_guidance_item_proje
     evidence_map = dict(evidence or {})
     family = str(active_family or "").strip()
     title = str(active_title or "").strip()
+    family_id = _active_fail_executor_family_id(family)
+    candidate_updates = _active_fail_executor_candidate_updates(selected, evidence_map)
+    candidate_id = (
+        selected.get("candidate_id")
+        or selected.get("source_candidate_id")
+        or evidence_map.get("selected_candidate_id")
+        or out.get("candidate_id")
+        or out.get("source_candidate_id")
+    )
+    if candidate_updates:
+        evidence_map.setdefault("selected_candidate_updates", dict(candidate_updates))
+        evidence_map.setdefault("repair_payload_available", True)
     out.update(
         {
             "title_main": title,
@@ -5889,15 +6116,71 @@ def build_design_guide_controller_active_fail_executor_final_guidance_item_proje
             "action_type": "apply_resolved_candidate",
             "primary_card_actionable": True,
             "candidate_search_evidence": dict(evidence_map),
-            "updates": dict(selected.get("updates") or {}),
+            "updates": dict(candidate_updates),
+            "selected_action_updates": dict(candidate_updates),
+            "selected_family_id": family_id,
+            "published_family_id": family_id,
+            "cta_family_id": family_id,
+            "apply_payload_family_id": family_id,
+            "candidate_family_id": family_id,
+            "card_family_id": family_id,
         }
     )
+    if candidate_id:
+        out["candidate_id"] = candidate_id
+        out["source_candidate_id"] = candidate_id
     payload = dict(out.get("action_payload") or {})
+    payload.update(
+        {
+            "action_type": "apply_resolved_candidate",
+            "resolved_candidate_action_type": "apply_resolved_candidate",
+            "family": family_id,
+            "selected_family_id": family_id,
+            "published_family_id": family_id,
+            "cta_family_id": family_id,
+            "apply_payload_family_id": family_id,
+            "updates": dict(candidate_updates),
+            "resolved_candidate_updates": dict(candidate_updates),
+        }
+    )
+    if candidate_id:
+        payload["candidate_id"] = candidate_id
+        payload["source_candidate_id"] = candidate_id
     payload["candidate_search_evidence"] = dict(evidence_map)
     out["action_payload"] = payload
     resolved = dict(out.get("resolved_candidate") or {})
+    resolved.update(
+        {
+            "action_type": "apply_resolved_candidate",
+            "family": family_id,
+            "selected_family_id": family_id,
+            "updates": dict(candidate_updates),
+            "resolved_candidate_updates": dict(candidate_updates),
+        }
+    )
+    if candidate_id:
+        resolved["candidate_id"] = candidate_id
+        resolved["source_candidate_id"] = candidate_id
     resolved["candidate_search_evidence"] = dict(evidence_map)
     out["resolved_candidate"] = resolved
+    if candidate_updates:
+        out["button_contract"] = {
+            "enabled": True,
+            "actionable": True,
+            "action_type": "apply_resolved_candidate",
+            "family": family_id,
+            "selected_family_id": family_id,
+            "published_family_id": family_id,
+            "cta_family_id": family_id,
+            "apply_payload_family_id": family_id,
+            "candidate_id": candidate_id,
+            "source_candidate_id": candidate_id,
+            "updates": dict(candidate_updates),
+            "resolved_candidate_updates": dict(candidate_updates),
+            "candidate_search_evidence": dict(evidence_map),
+            "blocking_reason": None,
+            "disabled_reason": None,
+        }
     return out
 
 
@@ -6033,6 +6316,7 @@ def build_design_guide_controller_active_fail_executor_no_repair_blocker_from_ev
             "serviceability" if {"serviceability", "crack", "deflection"} & active else "bending"
         )
     )
+    family_id = _active_fail_executor_family_id(active_family)
     evidence_map = dict(evidence or {})
     bending_family_owned_blocked = (
         active_family == "bending" and _bending_fail_family_owned_repair_blocked_proof(evidence_map)
@@ -6087,8 +6371,31 @@ def build_design_guide_controller_active_fail_executor_no_repair_blocker_from_ev
             "final_state_class": "blocker" if not bending_missing_family_proof else "diagnostic_incomplete_proof",
             "active_under_capacity_blocker": not bending_missing_family_proof,
             "active_under_capacity_blocker_family": active_family,
+            "selected_family": family_id,
+            "selected_family_id": family_id,
+            "published_family_id": family_id,
+            "cta_family_id": family_id,
+            "apply_payload_family_id": family_id,
+            "candidate_family_id": family_id,
+            "card_family_id": family_id,
+            "family_selection_source": "active_fail_executor_no_repair_blocker",
+            "family_selection_contract": "family_selection_contract",
+            "family_chooser_contract": "family_chooser_contract",
+            "family_match_passed": True,
+            "family_match_violation_reason": None,
+            "matched_family_ids": [family_id],
+            "selection_reason": f"active_fail_executor_no_repair_blocker:{family_id}",
             "candidate_search_evidence": {
                 **evidence_map,
+                "selected_family_id": family_id,
+                "published_family_id": family_id,
+                "cta_family_id": family_id,
+                "apply_payload_family_id": family_id,
+                "candidate_family_id": family_id,
+                "card_family_id": family_id,
+                "matched_family_ids": [family_id],
+                "family_match_passed": True,
+                "family_match_violation_reason": None,
                 "exact_blockers_by_family": dict(exact),
                 "post_click_exact_blockers_by_family": dict(exact),
                 "bending_fail_missing_family_owned_no_repair_proof": bool(bending_missing_family_proof),
@@ -6102,9 +6409,23 @@ def build_design_guide_controller_active_fail_executor_no_repair_blocker_from_ev
     )
     item["button_contract"] = disabled_design_guide_button_contract(
         item,
-        family=active_family,
+        family=family_id,
         reason=text,
     )
+    button_contract = dict(item.get("button_contract") or {})
+    button_contract.update(
+        {
+            "family": family_id,
+            "selected_family_id": family_id,
+            "published_family_id": family_id,
+            "cta_family_id": family_id,
+            "apply_payload_family_id": family_id,
+            "candidate_family_id": family_id,
+            "family_match_passed": True,
+            "family_match_violation_reason": None,
+        }
+    )
+    item["button_contract"] = button_contract
     return item
 
 
@@ -6201,6 +6522,7 @@ def run_design_guide_controller_active_fail_executor_ladder_eval_commands(
     ladder: dict[str, Any] | None,
     default_label: str,
     evaluate_command_fn: Callable[[dict[str, Any], str, dict[str, Any]], dict[str, Any] | None],
+    base_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run active-fail ladder eval commands with a page-injected evaluator.
 
@@ -6229,6 +6551,7 @@ def run_design_guide_controller_active_fail_executor_ladder_eval_commands(
         if resolve_design_guide_controller_active_fail_executor_ladder_stop_decision(
             family_id=family_id,
             evaluated_candidate=evaluated if isinstance(evaluated, dict) else None,
+            base_state=base_state,
         ):
             selected_candidate = dict(evaluated or {})
             stopped = True
@@ -6589,6 +6912,7 @@ def resolve_design_guide_controller_active_fail_executor_ladder_stop_decision(
     *,
     family_id: str,
     evaluated_candidate: dict[str, Any] | None,
+    base_state: dict[str, Any] | None = None,
 ) -> bool:
     """Return whether an active-fail family ladder should stop on this candidate."""
 
@@ -6613,15 +6937,60 @@ def resolve_design_guide_controller_active_fail_executor_ladder_stop_decision(
         target_low, target_high = get_target_utilisation_band()
         return bool(float(target_low) <= float(util) <= float(target_high))
     if family == "COMBINED_BENDING_SHEAR_FAIL":
+        detailing = _active_fail_executor_candidate_longitudinal_detailing_status(
+            base_state=base_state,
+            candidate=candidate,
+        )
+        candidate["longitudinal_detailing_status"] = dict(detailing)
+        if not bool(detailing.get("valid")):
+            return False
         return bool(overview.get("all_key_pass")) and not bool(overview.get("any_fail"))
     return not bool(overview.get("any_fail"))
+
+
+def _active_fail_executor_candidate_longitudinal_detailing_status(
+    *,
+    base_state: dict[str, Any] | None,
+    candidate: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Return shared longitudinal detailing validity for an active-fail candidate."""
+
+    cand = dict(candidate or {}) if isinstance(candidate, dict) else {}
+    updates = _mapping(cand.get("updates"))
+    state = _mapping(base_state)
+    if not state:
+        state = _mapping(cand.get("state") or cand.get("candidate_state"))
+    if not updates:
+        return {
+            "valid": False,
+            "reason": "missing_updates",
+            "minimum_bar_rule": {},
+            "longitudinal_bar_spacing_rule": {},
+        }
+    minimum_bar_rule = resolve_minimum_longitudinal_bar_rule(state, updates)
+    spacing_rule = resolve_longitudinal_bar_spacing_rule(state, updates)
+    valid = bool(minimum_bar_rule.get("valid")) and bool(spacing_rule.get("valid"))
+    reason = None
+    if not bool(minimum_bar_rule.get("valid")):
+        reason = str(minimum_bar_rule.get("reason") or "minimum_two_longitudinal_bars_per_face")
+    elif not bool(spacing_rule.get("valid")):
+        reason = str(spacing_rule.get("reason") or "maximum_longitudinal_bar_spacing_exceeded")
+    return {
+        "valid": bool(valid),
+        "reason": reason,
+        "minimum_bar_rule": dict(minimum_bar_rule),
+        "longitudinal_bar_spacing_rule": dict(spacing_rule),
+        "owner": "DesignGuideController.active_fail_executor_ladder_stop_decision",
+    }
 
 
 def accept_design_guide_controller_active_fail_executor_repair_candidate(
     *,
     candidate: dict[str, Any] | None,
+    base_state: dict[str, Any] | None = None,
     bending_family_ladder_attempted: bool = False,
     shear_family_ladder_attempted: bool = False,
+    combined_family_ladder_attempted: bool = False,
 ) -> bool:
     """Return whether an active-fail executor candidate is acceptable for repair."""
 
@@ -6632,6 +7001,13 @@ def accept_design_guide_controller_active_fail_executor_repair_candidate(
     if bool(overview.get("any_fail")):
         return False
     family_id = str(cand.get("candidate_family_id") or "").strip().upper()
+    if family_id == "COMBINED_BENDING_SHEAR_FAIL" or bool(combined_family_ladder_attempted):
+        detailing = _active_fail_executor_candidate_longitudinal_detailing_status(
+            base_state=base_state,
+            candidate=cand,
+        )
+        if not bool(detailing.get("valid")):
+            return False
     if bool(bending_family_ladder_attempted) and family_id == "BENDING_FAIL_GOVERNS":
         return bool(_controller_overview_required_checks_acceptable(overview))
     if bool(shear_family_ladder_attempted) and family_id == "SHEAR_FAIL_GOVERNS":
@@ -6642,8 +7018,10 @@ def accept_design_guide_controller_active_fail_executor_repair_candidate(
 def filter_design_guide_controller_active_fail_executor_repair_candidates(
     *,
     candidates: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    base_state: dict[str, Any] | None = None,
     bending_family_ladder_attempted: bool = False,
     shear_family_ladder_attempted: bool = False,
+    combined_family_ladder_attempted: bool = False,
 ) -> list[dict[str, Any]]:
     """Return active-fail executor candidates accepted by controller policy."""
 
@@ -6653,8 +7031,10 @@ def filter_design_guide_controller_active_fail_executor_repair_candidates(
             continue
         if accept_design_guide_controller_active_fail_executor_repair_candidate(
             candidate=dict(candidate),
+            base_state=base_state,
             bending_family_ladder_attempted=bool(bending_family_ladder_attempted),
             shear_family_ladder_attempted=bool(shear_family_ladder_attempted),
+            combined_family_ladder_attempted=bool(combined_family_ladder_attempted),
         ):
             safe.append(dict(candidate))
     return safe
@@ -15970,6 +16350,7 @@ def build_design_guide_shear_low_util_raw_variant_states(
     reo_spacings: list[Any] | tuple[Any, ...] | None = None,
     reo_bar_dias: list[Any] | tuple[Any, ...] | None = None,
     canonical_no_shear_slig_mm: Any = 200.0,
+    include_extended_spacing_ladder: bool = True,
 ) -> dict[str, Any]:
     """Generate raw shear cleanup variant states without page-owned candidate-key dedupe."""
 
@@ -15989,9 +16370,10 @@ def build_design_guide_shear_low_util_raw_variant_states(
     current_dia = int(_controller_state_int(base_state, "lig_d", 10))
     max_spacing = float(max(spacings) if spacings else 300.0)
     spacing_values = [float(value) for value in spacings if float(value) > cur_sp + 1e-9][:2]
-    spacing_values.extend(float(value) for value in spacings if float(value) < cur_sp - 1e-9)
-    spacing_values.extend(float(cur_sp - 25.0 * step) for step in range(0, 5))
-    spacing_values.extend(float(cur_sp + 25.0 * step) for step in range(1, 17))
+    if include_extended_spacing_ladder:
+        spacing_values.extend(float(value) for value in spacings if float(value) < cur_sp - 1e-9)
+        spacing_values.extend(float(cur_sp - 25.0 * step) for step in range(0, 5))
+        spacing_values.extend(float(cur_sp + 25.0 * step) for step in range(1, 17))
     if max_spacing > cur_sp + 1e-9:
         spacing_values.append(max_spacing)
     spacing_values = sorted(set(float(value) for value in spacing_values))
@@ -16124,13 +16506,60 @@ def build_design_guide_shear_overdesign_contract_candidate_items(
 
     ladder = ShearCleanupFamily().contracted_optimisation_ladder_specs(dict(state or {}))
     candidates: list[dict[str, Any]] = []
-    for index, spec in enumerate(list(ladder.get("specs") or []), start=1):
+    specs: list[dict[str, Any]] = []
+    selected = ladder.get("selected_recommendation")
+    if isinstance(selected, dict) and selected.get("updates"):
+        specs.append(dict(selected))
+    seen_spec_keys: set[str] = set()
+    for spec in specs:
+        seen_spec_keys.add(
+            json.dumps(
+                {
+                    "lane_id": spec.get("lane_id") or spec.get("contract_step"),
+                    "updates": dict(spec.get("updates") or {}),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            )
+        )
+    for spec in list(ladder.get("specs") or []):
+        if not isinstance(spec, dict):
+            continue
+        spec_key = json.dumps(
+            {
+                "lane_id": spec.get("lane_id") or spec.get("contract_step"),
+                "updates": dict(spec.get("updates") or {}),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        if spec_key in seen_spec_keys:
+            continue
+        seen_spec_keys.add(spec_key)
+        specs.append(dict(spec))
+    for index, spec in enumerate(specs, start=1):
         if not isinstance(spec, dict):
             continue
         updates = dict(spec.get("updates") or {})
         if not updates:
             continue
         lane_id = str(spec.get("lane_id") or spec.get("contract_step") or "").strip()
+        selected_util = _float_or_none(
+            spec.get("shear_utilisation")
+            or spec.get("selected_candidate_util")
+            or spec.get("best_safe_final_util")
+            or spec.get("candidate_post_util")
+            or spec.get("expected_util")
+        )
+        target_band = dict(spec.get("target_band_status") or {})
+        inside_target_band = bool(target_band.get("inside_target_band"))
+        terminal_candidate_status = str(spec.get("terminal_candidate_status") or "").strip().upper()
+        if not terminal_candidate_status:
+            terminal_candidate_status = (
+                "TERMINAL_TARGET_BAND" if inside_target_band else "TERMINAL_EXACT_STOP"
+            )
         candidate_id = str(
             spec.get("candidate_id")
             or spec.get("update_hash")
@@ -16153,33 +16582,90 @@ def build_design_guide_shear_overdesign_contract_candidate_items(
             "geometry_restriction_proof": dict(ladder.get("geometry_restriction_proof") or {}),
             "selected_candidate_id": candidate_id,
             "selected_candidate_updates": dict(updates),
+            "selected_candidate_util": selected_util,
+            "best_safe_final_util": selected_util,
             "best_safe_candidate_updates": dict(updates),
+            "terminal_candidate_status": terminal_candidate_status,
+            "further_cleanup_available": False,
+            "no_second_cta_required": terminal_candidate_status
+            in {"TERMINAL_EXACT_STOP", "TERMINAL_BLOCKED_WITH_PROOF"},
+            "target_band_candidate_count": 1 if inside_target_band else 0,
+            "executable_target_band_candidate_count": 1 if inside_target_band else 0,
+            "target_band_status": dict(target_band),
             "update_hash": spec.get("update_hash"),
             "candidate_state_hash": spec.get("candidate_state_hash"),
         }
-        candidates.append(
-            {
+        candidate_payload = {
+            "candidate_id": candidate_id,
+            "source_candidate_id": candidate_id,
+            "label": "Shear cleanup - one-click reduction",
+            "title": "Shear cleanup - one-click reduction",
+            "family": "shear",
+            "family_id": "SHEAR_OVERDESIGN_GOVERNS",
+            "recommendation_family_tag": "shear",
+            "subfamilies": ["shear"],
+            "updates": dict(updates),
+            "proposed_updates": dict(updates),
+            "resolved_candidate_updates": dict(updates),
+            "action_type": "apply_resolved_candidate",
+            "resolved_candidate_action_type": "apply_resolved_candidate",
+            "candidate_family_id": "SHEAR_OVERDESIGN_GOVERNS",
+            "card_family_id": "SHEAR_OVERDESIGN_GOVERNS",
+            "published_family_id": "SHEAR_OVERDESIGN_GOVERNS",
+            "cta_family_id": "SHEAR_OVERDESIGN_GOVERNS",
+            "selected_family_id": "SHEAR_OVERDESIGN_GOVERNS",
+            "apply_payload_family_id": "SHEAR_OVERDESIGN_GOVERNS",
+            "family_route_owner": "design_brain.families.shear_cleanup.ShearCleanupFamily",
+            "contract_runtime_authority": "run_shear_overdesign_governs_runtime",
+            "contract_runtime_driven": True,
+            "candidate_search_evidence": dict(evidence),
+            "button_contract": {
+                "enabled": True,
+                "actionable": True,
+                "action_type": "apply_resolved_candidate",
+                "updates": dict(updates),
                 "candidate_id": candidate_id,
                 "source_candidate_id": candidate_id,
-                "label": "Shear cleanup - one-click reduction",
-                "title": "Shear cleanup - one-click reduction",
-                "family": "shear",
-                "recommendation_family_tag": "shear",
-                "subfamilies": ["shear"],
-                "updates": dict(updates),
-                "proposed_updates": dict(updates),
-                "action_type": "apply_resolved_candidate",
-                "candidate_family_id": "SHEAR_OVERDESIGN_GOVERNS",
-                "card_family_id": "SHEAR_OVERDESIGN_GOVERNS",
+                "family": "SHEAR_OVERDESIGN_GOVERNS",
+                "family_id": "SHEAR_OVERDESIGN_GOVERNS",
+                "selected_family_id": "SHEAR_OVERDESIGN_GOVERNS",
                 "published_family_id": "SHEAR_OVERDESIGN_GOVERNS",
                 "cta_family_id": "SHEAR_OVERDESIGN_GOVERNS",
-                "selected_family_id": "SHEAR_OVERDESIGN_GOVERNS",
-                "family_route_owner": "design_brain.families.shear_cleanup.ShearCleanupFamily",
-                "contract_runtime_authority": "run_shear_overdesign_governs_runtime",
-                "contract_runtime_driven": True,
+                "apply_payload_family_id": "SHEAR_OVERDESIGN_GOVERNS",
+                "preview_pass": True,
+                "executor_backed": True,
+                "safe_executor_backed": True,
+            },
+            "action_payload": {
+                "action_type": "apply_resolved_candidate",
+                "updates": dict(updates),
+                "resolved_candidate_updates": dict(updates),
+                "candidate_id": candidate_id,
+                "source_candidate_id": candidate_id,
+                "family": "SHEAR_OVERDESIGN_GOVERNS",
+                "family_id": "SHEAR_OVERDESIGN_GOVERNS",
+                "cta_family_id": "SHEAR_OVERDESIGN_GOVERNS",
                 "candidate_search_evidence": dict(evidence),
-            }
-        )
+            },
+            "preview_pass": True,
+            "executor_backed": True,
+            "safe_executor_backed": True,
+            "is_executable": True,
+            "terminal_candidate_status": terminal_candidate_status,
+            "further_cleanup_available": False,
+        }
+        if selected_util is not None:
+            candidate_payload.update(
+                {
+                    "expected_util": selected_util,
+                    "candidate_post_util": selected_util,
+                    "resolved_candidate_post_util": selected_util,
+                }
+            )
+            candidate_payload["button_contract"]["expected_util"] = selected_util
+            candidate_payload["action_payload"]["expected_util"] = selected_util
+            candidate_payload["action_payload"]["resolved_candidate_post_util"] = selected_util
+        candidates.append(candidate_payload)
     return {
         "authority": "DesignGuideController.shear_overdesign_contract_candidate_items",
         "family_id": "SHEAR_OVERDESIGN_GOVERNS",
@@ -16205,11 +16691,29 @@ def build_design_guide_bending_overdesign_contract_candidate_items(
         evaluate_candidate=evaluate_candidate,
     )
     candidates: list[dict[str, Any]] = []
+    rejected_non_terminal: list[dict[str, Any]] = []
     for index, spec in enumerate(list(ladder.get("specs") or []), start=1):
         if not isinstance(spec, dict):
             continue
         updates = dict(spec.get("updates") or {})
         if not updates:
+            continue
+        terminal_status = str(spec.get("terminal_candidate_status") or "").strip().upper()
+        if terminal_status not in {
+            "TERMINAL_TARGET_BAND",
+            "TERMINAL_EXACT_STOP",
+            "TERMINAL_BLOCKED_WITH_PROOF",
+        }:
+            rejected_non_terminal.append(
+                {
+                    "candidate_id": spec.get("candidate_id") or spec.get("update_hash"),
+                    "lane_id": spec.get("lane_id") or spec.get("contract_step"),
+                    "terminal_candidate_status": terminal_status
+                    or "NON_TERMINAL_FURTHER_CLEANUP_AVAILABLE",
+                    "further_cleanup_available": bool(spec.get("further_cleanup_available")),
+                    "updates": dict(updates),
+                }
+            )
             continue
         lane_id = str(spec.get("lane_id") or spec.get("contract_step") or "").strip()
         candidate_id = str(
@@ -16217,6 +16721,16 @@ def build_design_guide_bending_overdesign_contract_candidate_items(
             or spec.get("update_hash")
             or f"bending_overdesign_contract_{index}"
         )
+        selected_util = _float_or_none(
+            spec.get("bending_utilisation")
+            or spec.get("candidate_post_util")
+            or spec.get("worst_util")
+            or spec.get("selected_candidate_util")
+            or spec.get("best_safe_final_util")
+        )
+        best_target_candidate_id = spec.get("best_target_band_candidate_id")
+        best_target_updates = dict(updates) if best_target_candidate_id == candidate_id else {}
+        best_target_util = selected_util if best_target_updates else None
         evidence = {
             "family_id": "BENDING_OVERDESIGN_GOVERNS",
             "selected_family_id": "BENDING_OVERDESIGN_GOVERNS",
@@ -16241,13 +16755,20 @@ def build_design_guide_bending_overdesign_contract_candidate_items(
             "executable_target_band_candidate_count": int(
                 spec.get("executable_target_band_candidate_count") or 0
             ),
-            "best_target_band_candidate_id": spec.get("best_target_band_candidate_id"),
+            "best_target_band_candidate_id": best_target_candidate_id,
+            "best_target_band_candidate_updates": dict(best_target_updates),
+            "best_target_band_candidate_util": best_target_util,
             "selected_candidate_id": candidate_id,
             "selected_candidate_updates": dict(updates),
+            "selected_candidate_util": selected_util,
             "best_safe_candidate_updates": dict(updates),
+            "best_safe_final_util": selected_util,
+            "candidate_post_util": selected_util,
+            "bending_utilisation": selected_util,
             "update_hash": spec.get("update_hash"),
             "candidate_state_hash": spec.get("candidate_state_hash"),
-            "no_second_cta_required": True,
+            "no_second_cta_required": terminal_status
+            in {"TERMINAL_TARGET_BAND", "TERMINAL_EXACT_STOP", "TERMINAL_BLOCKED_WITH_PROOF"},
         }
         candidates.append(
             {
@@ -16271,6 +16792,10 @@ def build_design_guide_bending_overdesign_contract_candidate_items(
                 "family_route_owner": "design_brain.families.bending_cleanup.BendingCleanupFamily",
                 "contract_runtime_authority": "run_bending_overdesign_governs_runtime",
                 "contract_runtime_driven": True,
+                "candidate_post_util": selected_util,
+                "expected_util": selected_util,
+                "resolved_candidate_post_util": selected_util,
+                "worst_util": selected_util,
                 "candidate_search_evidence": dict(evidence),
             }
         )
@@ -16282,6 +16807,8 @@ def build_design_guide_bending_overdesign_contract_candidate_items(
         "ladder_hash": ladder.get("ladder_hash"),
         "terminal_publication_gate": dict(ladder.get("terminal_publication_gate") or {}),
         "candidate_count": len(candidates),
+        "rejected_non_terminal_candidate_count": len(rejected_non_terminal),
+        "rejected_non_terminal_candidates": rejected_non_terminal,
         "candidates": candidates,
     }
 
@@ -19201,6 +19728,7 @@ __all__ = [
     "build_design_guide_controller_resolved_candidate_guidance_item_compact_text_pack",
     "build_design_guide_controller_resolved_candidate_guidance_item_before_after_request_pack",
     "resolve_design_guide_controller_before_after_text_eligibility",
+    "resolve_design_guide_controller_guidance_action_generated_updates",
     "resolve_design_guide_controller_guidance_action_payload_updates",
     "build_design_guide_pure_guidance_step_description",
     "build_design_guide_controller_resolved_candidate_guidance_item",

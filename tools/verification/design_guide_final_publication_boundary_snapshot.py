@@ -229,7 +229,7 @@ def _payload_cases() -> dict[str, dict[str, Any]]:
                 "cta_label": None,
                 "cta_disabled_reason": "no_valid_shear_repair",
                 "display_title": "Shear repair blocked by shear/detailing limits",
-                "display_badge": "FAIL",
+                "display_badge": "BLOCKED",
                 "display_summary": "No checked shear repair restored the required checks.",
             },
         },

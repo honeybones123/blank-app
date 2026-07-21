@@ -899,7 +899,7 @@ def solve_bending_capacity(moment_sign: str, M_star_kNm: float, inputs: dict) ->
     if M_star <= 1e-9:
         status = "INFO"
     elif util <= 1.0:
-        status = "NEAR LIMIT" if util >= 0.9 else "PASS"
+        status = "PASS"
     else:
         status = "FAIL"
 

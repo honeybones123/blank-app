@@ -51,6 +51,18 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8", errors="replace")
 
 
+def _read_inputs_composition_surface() -> str:
+    return "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
+        )
+    )
+
+
 def _write_artifacts(snapshot: dict[str, Any]) -> tuple[Path, Path]:
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     AUDIT_DIR.mkdir(parents=True, exist_ok=True)
@@ -88,7 +100,14 @@ def _write_artifacts(snapshot: dict[str, Any]) -> tuple[Path, Path]:
 def main() -> int:
     cleanup_source = _read("design_brain/families/bending_cleanup.py")
     package_source = _read("design_brain/families/bending_overdesign_governs/__init__.py")
-    inputs_source = _read("inputs_page.py")
+    inputs_source = _read_inputs_composition_surface()
+    extracted_cleanup_source = "\n".join(
+        _read(path)
+        for path in (
+            "design_brain/candidate_evaluation.py",
+            "design_brain/design_guide_controller.py",
+        )
+    )
     planned_targets = tuple(PLANNED_CUTOVER_TARGETS)
     forbidden_targets = sorted(
         target
@@ -100,17 +119,22 @@ def main() -> int:
         "old_family_shell_known": "class BendingCleanupFamily" in cleanup_source
         and "BENDING_OVERDESIGN_GOVERNS" in cleanup_source,
         "compatibility_api_known": "def evaluate_bending_overdesign_governs(" in package_source,
-        "old_page_local_cleanup_known": "_bending_only_target_band_cleanup_item" in inputs_source
+        "old_page_local_cleanup_known": (
+            "_bending_only_target_band_cleanup_item" in inputs_source
+            or "build_design_guide_controller_bending_only_target_band_cleanup_item_projection"
+            in extracted_cleanup_source
+            or "select_bending_only_target_band_cleanup_candidate" in extracted_cleanup_source
+        )
         and "_generate_secondary_bending_tightening_states" in inputs_source,
         "minimum_reinforcement_page_anchor_known": "As_min" in inputs_source
-        and "bending_cleanup_candidate_eval = evaluate_candidate_full" in inputs_source,
+        and ("evaluate_candidate_full(" in inputs_source or "evaluate_candidate_full" in inputs_source),
         "page_evaluator_surface_known": "evaluate_candidate_full(" in inputs_source
         and "_evaluate_candidate_fast(" in inputs_source,
         "shared_cta_publication_apply_remain_page_owned": (
             "from design_brain.cta_contracts import" in inputs_source
-            and "from design_brain.publication import" in inputs_source
-            and "build_design_guide_apply_button_contract" in inputs_source
-            and "record_design_guide_publication_snapshot" in inputs_source
+            and "from design_brain.final_publication import" in inputs_source
+            and "build_final_design_guide_publication" in inputs_source
+            and "handle_inputs_apply_buttons" in inputs_source
             and "inputs_page.py" not in planned_targets
             and "design_brain/publication.py" not in planned_targets
         ),

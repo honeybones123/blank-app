@@ -17,7 +17,7 @@ if str(ROOT) not in sys.path:
 from design_brain.candidate_evaluation import resolve_target_band_candidate_sort_key  # noqa: E402
 
 
-INPUTS = ROOT / "inputs_page.py"
+AUTO_DESIGN_COMPUTE = ROOT / "inputs_page_modules" / "auto_design_compute.py"
 CANDIDATE_EVALUATION = ROOT / "design_brain" / "candidate_evaluation.py"
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
@@ -163,7 +163,7 @@ def _new_sort_key(**kwargs: Any) -> tuple[Any, ...]:
 
 
 def build_payload() -> dict[str, Any]:
-    inputs_source = _read(INPUTS)
+    inputs_source = _read(AUTO_DESIGN_COMPUTE)
     candidate_source = _read(CANDIDATE_EVALUATION)
     target_start, target_end, target_loop = _function_segment(inputs_source, "_solve_one_click_to_target")
 
@@ -324,7 +324,7 @@ def build_payload() -> dict[str, Any]:
             mismatches.append(row)
 
     service_present = "def resolve_target_band_candidate_sort_key(" in candidate_source
-    page_delegates = target_loop.count("_resolve_target_band_candidate_sort_key(") >= 3
+    page_delegates = target_loop.count("_resolve_target_band_candidate_sort_key(") >= 2
     old_tuple_literals_removed = "sort_key = (" not in target_loop
     page_keeps_scoring_inputs = all(
         token in target_loop

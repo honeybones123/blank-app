@@ -326,8 +326,8 @@ DEBUG_CASES: list[dict[str, Any]] = [
       {
           "name": "TERMINAL_EFFICIENT_NO_CLEANUP_SNAPSHOT",
           "changes": {
-              "b": 400.0,
-              "bw": 400.0,
+              "b": 375.0,
+              "bw": 375.0,
               "D": 550.0,
               "cover_top": 40.0,
               "cover_bot": 40.0,
@@ -372,8 +372,8 @@ DEBUG_CASES: list[dict[str, Any]] = [
       {
           "name": "TERMINAL_EXACT_STOP_PROVEN_SNAPSHOT",
           "changes": {
-              "b": 400.0,
-              "bw": 400.0,
+              "b": 375.0,
+              "bw": 375.0,
               "D": 550.0,
               "cover_top": 40.0,
               "cover_bot": 40.0,
@@ -817,6 +817,49 @@ def _matrix_crack_only_fail_base() -> dict[str, Any]:
     return changes
 
 
+def _matrix_crack_serviceability_only_fail_base() -> dict[str, Any]:
+    changes = _matrix_strength_serviceability_base(20.0, 10.0, 500.0)
+    changes.update(
+        {
+            "b": 250.0,
+            "bw": 250.0,
+            "D": 350.0,
+            "span_L_m": 8.0,
+            "L": 8000.0,
+            "defl_L_eff": 8.0,
+            "defl_limit_ratio": 250.0,
+            "fc": 40.0,
+            "fsy": 500.0,
+            "bot1_count": 6,
+            "db_bot_1": 16.0,
+            "bot2_count": 0,
+            "db_bot_2": 16.0,
+            "bot_row_count": 1,
+            "bot_row_1_mode": "Count",
+            "bot_row_1_bars": 6,
+            "bot_row_1_dia": 16.0,
+            "bot_row_2_mode": "Count",
+            "bot_row_2_bars": 0,
+            "bot_row_2_dia": 16.0,
+            "nb_bot": 6,
+            "db_bot": 16.0,
+            "bot_entry": 6.0,
+            "top1_count": 2,
+            "db_top_1": 12.0,
+            "top2_count": 0,
+            "db_top_2": 0.0,
+            "top_row_count": 1,
+            "top_row_1_mode": "Count",
+            "top_row_1_bars": 2,
+            "top_row_1_dia": 12.0,
+            "lig_d": 12,
+            "lig_legs": 4,
+            "s_lig": 150.0,
+        }
+    )
+    return changes
+
+
 def _matrix_deflection_only_fail_base(mu: float = 80.0, vu: float = 20.0) -> dict[str, Any]:
     changes = _matrix_strength_serviceability_base(mu, vu, 250.0)
     changes.update(
@@ -971,6 +1014,40 @@ def _base_without_links_and_actions(mu: float, vu: float) -> dict[str, Any]:
     return changes
 
 
+def _bending_only_overdesign_locked_shear_base() -> dict[str, Any]:
+    changes = {
+        "bot1_count": 5,
+        "db_bot_1": 16.0,
+        "bot_row_count": 1,
+        "bot_row_1_bars": 5,
+        "bot_row_1_dia": 16.0,
+        "nb_bot": 5,
+        "bot_entry": 5.0,
+        "lig_d": 0,
+        "lig_legs": 0,
+        "s_lig": 0.0,
+    }
+    changes.update(_manual_actions_with_input_proxies(100.0, 0.0))
+    return changes
+
+
+def _bending_overdesign_shear_probe_base(mu: float, vu: float) -> dict[str, Any]:
+    changes = {
+        "bot1_count": 5,
+        "db_bot_1": 16.0,
+        "bot_row_count": 1,
+        "bot_row_1_bars": 5,
+        "bot_row_1_dia": 16.0,
+        "nb_bot": 5,
+        "bot_entry": 5.0,
+        "lig_d": 10,
+        "lig_legs": 2,
+        "s_lig": 150.0,
+    }
+    changes.update(_manual_actions_with_input_proxies(mu, vu))
+    return changes
+
+
 def _combined_safe_overdesigned_base(mu: float, vu: float) -> dict[str, Any]:
     changes = {
         "b": 350.0,
@@ -1026,6 +1103,7 @@ def _combined_safe_overdesigned_base(mu: float, vu: float) -> dict[str, Any]:
 DEBUG_CASES.extend(
     [
         {"name": "MATRIX_CRACK_ONLY_FAIL", "changes": _matrix_crack_only_fail_base()},
+        {"name": "MATRIX_CRACK_SERVICEABILITY_ONLY_FAIL", "changes": _matrix_crack_serviceability_only_fail_base()},
         {"name": "MATRIX_DEFLECTION_ONLY_FAIL", "changes": _matrix_deflection_only_fail_base(80.0, 20.0)},
         {"name": "GOLDEN_SERVICEABILITY_BLOCKED", "changes": _golden_serviceability_blocked_base()},
         {"name": "MATRIX_BENDING_AND_CRACK_FAIL", "changes": _matrix_strength_serviceability_base(600.0, 20.0, 420.0)},
@@ -1349,6 +1427,206 @@ DEBUG_CASES.extend(
             "changes": _manual_actions_with_input_proxies(40.0, 0.0),
         },
     ]
+)
+
+
+def _live_fuzz_rect(
+    *,
+    mu: float,
+    vu: float,
+    b: float = 300.0,
+    D: float = 400.0,
+    bot_count: int = 4,
+    bot_dia: float = 16.0,
+    top_count: int = 2,
+    top_dia: float = 10.0,
+    lig_d: int = 10,
+    lig_legs: int = 2,
+    s_lig: float = 150.0,
+    span_m: float = 6.0,
+    sls_mu: float = 0.0,
+    defl_limit_ratio: float | None = None,
+    geometry_locked: bool = False,
+    reo_locked: bool = False,
+) -> dict[str, Any]:
+    changes = {
+        "section_shape": "RECT",
+        "sec_shape": "RECT",
+        "b": float(b),
+        "bw": float(b),
+        "D": float(D),
+        "L": float(span_m) * 1000.0,
+        "span_L_m": float(span_m),
+        "defl_L_eff": float(span_m),
+        "fc": 40.0,
+        "fsy": 500.0,
+        "cover_top": 40.0,
+        "cover_bot": 40.0,
+        "cover_side": 40.0,
+        "side_cover_bot": 40.0,
+        "side_cover_top": 40.0,
+        "bot1_count": max(2, int(bot_count)),
+        "db_bot_1": float(bot_dia),
+        "bot2_count": 0,
+        "db_bot_2": 0.0,
+        "bot_row_count": 1,
+        "bot_row_1_mode": "Count",
+        "bot_row_1_bars": max(2, int(bot_count)),
+        "bot_row_1_spacing": 200.0,
+        "bot_row_1_dia": float(bot_dia),
+        "bot_row_2_mode": "Count",
+        "bot_row_2_bars": 0,
+        "bot_row_2_spacing": 200.0,
+        "bot_row_2_dia": 0.0,
+        "nb_or_s_bot_1": float(max(2, int(bot_count))),
+        "nb_or_s_bot_2": 0.0,
+        "nb_bot": max(2, int(bot_count)),
+        "db_bot": float(bot_dia),
+        "bot_entry": float(max(2, int(bot_count))),
+        "top1_count": max(2, int(top_count)),
+        "db_top_1": float(top_dia),
+        "top2_count": 0,
+        "db_top_2": 0.0,
+        "top_row_count": 1,
+        "top_row_1_mode": "Count",
+        "top_row_1_bars": max(2, int(top_count)),
+        "top_row_1_spacing": 200.0,
+        "top_row_1_dia": float(top_dia),
+        "top_row_2_mode": "Count",
+        "top_row_2_bars": 0,
+        "top_row_2_spacing": 200.0,
+        "top_row_2_dia": 0.0,
+        "nb_top": max(2, int(top_count)),
+        "db_top": float(top_dia),
+        "top_entry": float(max(2, int(top_count))),
+        "lig_d": int(lig_d),
+        "lig_legs": int(lig_legs),
+        "s_lig": float(s_lig),
+        "actions_source": "Manual design actions (inputs below)",
+        "actions_mode": "manual",
+        **_manual_actions_with_sls(mu, vu, sls_mu),
+    }
+    if defl_limit_ratio is not None:
+        changes["defl_limit_ratio"] = float(defl_limit_ratio)
+    if geometry_locked:
+        changes.update(
+            {
+                "optimisation_lock_geometry": True,
+                "inputs_optimisation_lock_geometry": True,
+                "geometry_lock": True,
+            }
+        )
+    if reo_locked:
+        changes.update(
+            {
+                "reinforcement_lock": True,
+                "reo_locked": True,
+            }
+        )
+    return changes
+
+
+def _live_fuzz_cases_for_family(family: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": f"LIVE_FUZZ_{family}_{index:02d}",
+            "changes": changes,
+        }
+        for index, changes in enumerate(rows, start=1)
+    ]
+
+
+DEBUG_CASES.extend(
+    _live_fuzz_cases_for_family(
+        "BENDING_FAIL_GOVERNS",
+        [_matrix_shear_safe_bending_fail_base() for _ in range(10)],
+    )
+)
+
+DEBUG_CASES.extend(
+    _live_fuzz_cases_for_family(
+        "SHEAR_FAIL_GOVERNS",
+        [_matrix_bending_target_shear_fail_base() for _ in range(10)],
+    )
+)
+
+DEBUG_CASES.extend(
+    _live_fuzz_cases_for_family(
+        "COMBINED_BENDING_SHEAR_FAIL_GOVERNS",
+        [_manual_actions_with_input_proxies(300.0, 400.0) for _ in range(10)],
+    )
+)
+
+DEBUG_CASES.extend(
+    _live_fuzz_cases_for_family(
+        "BENDING_OVERDESIGN_GOVERNS",
+        [_bending_overdesign_shear_probe_base(100.0, 250.0) for _ in range(10)],
+    )
+)
+
+DEBUG_CASES.extend(
+    [
+        {"name": "BENDING_OVERDESIGN_PROBE_V100", "changes": _bending_overdesign_shear_probe_base(100.0, 100.0)},
+        {"name": "BENDING_OVERDESIGN_PROBE_V150", "changes": _bending_overdesign_shear_probe_base(100.0, 150.0)},
+        {"name": "BENDING_OVERDESIGN_PROBE_V200", "changes": _bending_overdesign_shear_probe_base(100.0, 200.0)},
+        {"name": "BENDING_OVERDESIGN_PROBE_V250", "changes": _bending_overdesign_shear_probe_base(100.0, 250.0)},
+        {"name": "BENDING_OVERDESIGN_PROBE_V300", "changes": _bending_overdesign_shear_probe_base(100.0, 300.0)},
+    ]
+)
+
+DEBUG_CASES.extend(
+    _live_fuzz_cases_for_family(
+        "SHEAR_OVERDESIGN_GOVERNS",
+        [_manual_actions_with_input_proxies(0.0, 150.0) for _ in range(10)],
+    )
+)
+
+DEBUG_CASES.extend(
+    _live_fuzz_cases_for_family(
+        "COMBINED_OVERDESIGN_GOVERNS",
+        [
+            _live_fuzz_rect(mu=30, vu=10, b=375, D=525, bot_count=6, bot_dia=24, lig_d=12, lig_legs=4, s_lig=125)
+            for _ in range(10)
+        ],
+    )
+)
+
+DEBUG_CASES.extend(
+    _live_fuzz_cases_for_family(
+        "BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS",
+        [
+            _live_fuzz_rect(mu=300, vu=0, b=350, D=420, bot_count=2, bot_dia=16, lig_d=16, lig_legs=3, s_lig=125)
+            for _ in range(10)
+        ],
+    )
+)
+
+DEBUG_CASES.extend(
+    _live_fuzz_cases_for_family(
+        "SHEAR_FAIL_BENDING_OVERDESIGN_GOVERNS",
+        [
+            _live_fuzz_rect(mu=20, vu=360, b=350, D=420, bot_count=6, bot_dia=20, lig_d=10, lig_legs=2, s_lig=300)
+            for _ in range(10)
+        ],
+    )
+)
+
+DEBUG_CASES.extend(
+    _live_fuzz_cases_for_family(
+        "SERVICEABILITY_GOVERNS",
+        [
+            _live_fuzz_rect(mu=20, vu=10, b=250, D=320, bot_count=2, bot_dia=16, lig_d=10, s_lig=250, span_m=8.0, sls_mu=500, defl_limit_ratio=250),
+            _live_fuzz_rect(mu=40, vu=20, b=275, D=340, bot_count=2, bot_dia=16, lig_d=10, s_lig=250, span_m=8.5, sls_mu=540, defl_limit_ratio=250),
+            _live_fuzz_rect(mu=60, vu=30, b=300, D=360, bot_count=3, bot_dia=16, lig_d=10, s_lig=250, span_m=9.0, sls_mu=580, defl_limit_ratio=250),
+            _live_fuzz_rect(mu=80, vu=40, b=325, D=380, bot_count=3, bot_dia=16, lig_d=10, s_lig=225, span_m=9.5, sls_mu=620, defl_limit_ratio=250),
+            _live_fuzz_rect(mu=100, vu=50, b=350, D=400, bot_count=4, bot_dia=16, lig_d=10, s_lig=225, span_m=10.0, sls_mu=660, defl_limit_ratio=250),
+            _live_fuzz_rect(mu=120, vu=60, b=375, D=420, bot_count=4, bot_dia=20, lig_d=10, s_lig=225, span_m=10.5, sls_mu=700, defl_limit_ratio=250),
+            _live_fuzz_rect(mu=140, vu=70, b=400, D=440, bot_count=4, bot_dia=20, lig_d=12, s_lig=200, span_m=11.0, sls_mu=740, defl_limit_ratio=250),
+            _live_fuzz_rect(mu=160, vu=80, b=425, D=460, bot_count=5, bot_dia=20, lig_d=12, s_lig=200, span_m=11.5, sls_mu=780, defl_limit_ratio=250),
+            _live_fuzz_rect(mu=180, vu=90, b=450, D=480, bot_count=5, bot_dia=20, lig_d=12, s_lig=200, span_m=12.0, sls_mu=820, defl_limit_ratio=250),
+            _live_fuzz_rect(mu=200, vu=100, b=475, D=500, bot_count=6, bot_dia=20, lig_d=12, s_lig=175, span_m=12.5, sls_mu=860, defl_limit_ratio=250),
+        ],
+    )
 )
 
 

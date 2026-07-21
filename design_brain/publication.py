@@ -6516,6 +6516,7 @@ def design_guide_button_contract_enabled(contract: dict | None) -> bool:
         and dict(c.get("updates") or {})
         and bool(c.get("preview_pass"))
         and c.get("blocking_reason") is None
+        and not str(c.get("disabled_reason") or "").strip()
     )
 
 
@@ -7670,13 +7671,45 @@ def _button_contract_candidates_from_payload(primary: dict, debug: dict) -> list
     return candidates
 
 
-def contract_updates_from_publication(contract: dict, primary: dict) -> dict:
+def _candidate_search_evidence_from_publication(primary: dict, debug: dict | None = None) -> dict:
+    action_payload = _as_dict(primary.get("action_payload"))
+    resolved = _as_dict(primary.get("resolved_candidate"))
+    debug_d = _as_dict(debug)
+    for source in (
+        primary.get("candidate_search_evidence"),
+        action_payload.get("candidate_search_evidence"),
+        resolved.get("candidate_search_evidence"),
+        debug_d.get("candidate_search_evidence"),
+        _as_dict(debug_d.get("design_brain_result")).get("evidence"),
+    ):
+        evidence = _as_dict(source)
+        if evidence:
+            return evidence
+    return {}
+
+
+def _candidate_evidence_updates(evidence: dict) -> dict:
+    return _as_dict(
+        evidence.get("selected_candidate_updates")
+        or evidence.get("best_target_band_candidate_updates")
+        or evidence.get("best_safe_candidate_updates")
+        or evidence.get("closest_safe_candidate_updates")
+        or evidence.get("updates")
+    )
+
+
+def contract_updates_from_publication(contract: dict, primary: dict, debug: dict | None = None) -> dict:
+    action_payload = _as_dict(primary.get("action_payload"))
+    resolved = _as_dict(primary.get("resolved_candidate"))
+    evidence = _candidate_search_evidence_from_publication(primary, debug)
     return _as_dict(
         contract.get("updates")
         or primary.get("selected_action_updates")
         or primary.get("updates")
-        or _as_dict(primary.get("action_payload")).get("resolved_candidate_updates")
-        or _as_dict(primary.get("action_payload")).get("updates")
+        or action_payload.get("resolved_candidate_updates")
+        or action_payload.get("updates")
+        or resolved.get("updates")
+        or _candidate_evidence_updates(evidence)
     )
 
 
@@ -7740,7 +7773,7 @@ def _canonical_cleanup_family_from_publication_updates(
     }:
         return family_id
     contract = button_contract_from_payload(primary, debug)
-    updates = contract_updates_from_publication(contract, primary)
+    updates = contract_updates_from_publication(contract, primary, debug)
     canonical = _overdesign_family_id_from_updates(updates)
     if canonical:
         return canonical
@@ -7756,7 +7789,7 @@ def _repair_button_contract_from_payload(primary: dict, debug: dict) -> dict:
     if debug.get("stale_apply_payload_blocked"):
         return fallback
     for contract in _button_contract_candidates_from_payload(primary, debug):
-        updates = contract_updates_from_publication(contract, primary)
+        updates = contract_updates_from_publication(contract, primary, debug)
         action_type = str(
             contract.get("action_type")
             or primary.get("action_type")
@@ -7827,7 +7860,18 @@ def _normalise_failure_family(family: Any) -> str | None:
         "combined_bending_shear_fail_governs",
     }:
         return "combined"
-    if text in {"serviceability", "deflection"}:
+    if text in {
+        "serviceability",
+        "serviceability_governs",
+        "deflection",
+        "deflection_sls",
+        "crack",
+        "crack_control",
+        "crack control",
+        "crack_control_sls",
+        "crack-control",
+        "sls",
+    }:
         return "serviceability"
     return text
 
@@ -8031,29 +8075,42 @@ def _publication_signals_shear_failure(primary: dict, debug: dict) -> bool:
 
 def _utilisation_from_publication(payload: dict, debug: dict, family: str) -> float | None:
     family_key = str(family or "").strip().lower()
+    family_keys = [family_key]
+    if family_key == "serviceability":
+        family_keys = ["serviceability", "crack", "crack_control", "deflection"]
+    best: float | None = None
     for source in (
         payload.get("overview"),
         debug.get("overview"),
         debug.get("current_overview"),
     ):
-        value = _as_dict(_as_dict(source).get("utils")).get(family_key)
-        parsed = _as_float(value)
-        if parsed is not None:
-            return parsed
-    return None
+        utils = _as_dict(_as_dict(source).get("utils"))
+        for key in family_keys:
+            parsed = _as_float(utils.get(key))
+            if parsed is not None:
+                best = float(parsed) if best is None else max(best, float(parsed))
+    return best
 
 
 def _status_from_publication(payload: dict, debug: dict, family: str) -> str | None:
     family_key = str(family or "").strip().lower()
+    family_keys = [family_key]
+    if family_key == "serviceability":
+        family_keys = ["serviceability", "crack", "crack_control", "deflection"]
+    fallback_status: str | None = None
     for source in (
         payload.get("overview"),
         debug.get("overview"),
         debug.get("current_overview"),
     ):
-        status = str(_as_dict(_as_dict(source).get("statuses")).get(family_key) or "").strip().upper()
-        if status:
-            return status
-    return None
+        statuses = _as_dict(_as_dict(source).get("statuses"))
+        for key in family_keys:
+            status = str(statuses.get(key) or "").strip().upper()
+            if status in {"FAIL", "FAILED", "NG", "ERROR"}:
+                return "FAIL"
+            if status and fallback_status is None:
+                fallback_status = status
+    return fallback_status
 
 
 def _target_band_from_publication(primary: dict, debug: dict) -> tuple[float, float]:
@@ -8068,6 +8125,27 @@ def _target_band_from_publication(primary: dict, debug: dict) -> tuple[float, fl
         if low is not None and high is not None and float(low) < float(high):
             return float(low), float(high)
     return 0.85, 1.0
+
+
+def _raw_state_flags_prove_target_band_terminal(raw_flags: dict | None) -> bool:
+    flags = _as_dict(raw_flags)
+    bending_ok = bool(flags.get("bending_within_target_band") or flags.get("bending_not_applicable"))
+    shear_ok = bool(flags.get("shear_within_target_band") or flags.get("shear_not_applicable"))
+    return bool(
+        bending_ok
+        and shear_ok
+        and not flags.get("bending_overdesigned")
+        and not flags.get("shear_overdesigned")
+        and not flags.get("bending_fail")
+        and not flags.get("shear_fail")
+        and not flags.get("serviceability_fail")
+        and not flags.get("geometry_detailing_fail")
+        and not flags.get("min_bending_reo_fail")
+        and not flags.get("min_shear_reo_fail")
+        and not flags.get("repair_required")
+        and not flags.get("any_failure")
+        and not flags.get("any_strength_fail")
+    )
 
 
 def _raw_state_flags_from_publication(
@@ -8524,7 +8602,8 @@ def _cta_family_id_from_publication(
 
 def _repair_action_payload_from_publication(primary: dict, debug: dict, active_failures: list[str]) -> dict:
     contract = _repair_button_contract_from_payload(primary, debug)
-    updates = contract_updates_from_publication(contract, primary)
+    updates = contract_updates_from_publication(contract, primary, debug)
+    evidence = _candidate_search_evidence_from_publication(primary, debug)
     action_payload = _as_dict(primary.get("action_payload"))
     resolved = _as_dict(primary.get("resolved_candidate"))
     action_type = str(
@@ -8545,14 +8624,68 @@ def _repair_action_payload_from_publication(primary: dict, debug: dict, active_f
         or resolved.get("family")
         or resolved.get("recommendation_family_tag")
     )
+    if family not in {"bending", "shear", "combined", "serviceability"}:
+        family = _mechanical_family_from_family_id(
+            contract.get("selected_family_id")
+            or primary.get("selected_family_id")
+            or evidence.get("selected_family_id")
+            or evidence.get("published_family_id")
+            or evidence.get("governing_family")
+            or evidence.get("family_name")
+        ) or family
+    family_context: set[str] = set()
+    for source in (contract, primary, debug, evidence, action_payload, resolved):
+        if not isinstance(source, dict):
+            continue
+        for key in (
+            "selected_family_id",
+            "published_family_id",
+            "cta_family_id",
+            "candidate_family_id",
+            "card_family_id",
+            "apply_payload_family_id",
+            "governing_family",
+            "governing_state",
+        ):
+            raw = str(source.get(key) or "").strip().upper()
+            if raw:
+                family_context.add(raw)
+    geometry_detailing_action = bool("GEOMETRY_DETAILING_GOVERNS" in family_context)
     if family == "combined":
         family_ok = bool({"bending", "shear"} & set(active_failures))
+    elif geometry_detailing_action:
+        family = "geometry_detailing"
+        family_ok = True
     else:
         family_ok = bool(family and family in set(active_failures))
+    evidence_repair_candidate = bool(
+        updates
+        and _candidate_evidence_updates(evidence)
+        and (
+            int(evidence.get("safe_executor_backed_candidates_count") or 0) > 0
+            or int(evidence.get("executable_repair_candidate_count") or 0) > 0
+            or int(evidence.get("safe_repair_candidate_count") or 0) > 0
+            or bool(evidence.get("repair_search_ran"))
+            or bool(evidence.get("candidate_search_ran"))
+        )
+    )
+    if not action_type and family_ok and evidence_repair_candidate:
+        action_type = "apply_resolved_candidate"
     text = _publication_text(primary, debug, include_debug=False) or _publication_text(primary, debug)
     cleanup_text = "cleanup" in text or "optimisation" in text or "optimization" in text
     blocking_reason = str(contract.get("blocking_reason") or primary.get("blocking_reason") or "").strip()
     preview_pass = contract.get("preview_pass", primary.get("preview_pass", True))
+    if (
+        evidence_repair_candidate
+        and family_ok
+        and blocking_reason
+        in {
+            "family_selection_contract_mismatch",
+            "button_contract_not_enabled",
+        }
+    ):
+        blocking_reason = ""
+        preview_pass = True
     if (
         updates
         and action_type == "apply_resolved_candidate"
@@ -8574,7 +8707,7 @@ def _repair_action_payload_from_publication(primary: dict, debug: dict, active_f
 
 def _cleanup_action_payload_from_publication(primary: dict, debug: dict) -> dict:
     contract = button_contract_from_payload(primary, debug)
-    updates = contract_updates_from_publication(contract, primary)
+    updates = contract_updates_from_publication(contract, primary, debug)
     action_payload = _as_dict(primary.get("action_payload"))
     resolved = _as_dict(primary.get("resolved_candidate"))
     action_type = str(
@@ -9347,6 +9480,8 @@ def _route_combined_fail_family_publication(primary: dict, debug: dict, diagnost
                 "selected_family_id": "COMBINED_BENDING_SHEAR_FAIL",
                 "published_family_id": "COMBINED_BENDING_SHEAR_FAIL",
                 "cta_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                "apply_payload_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                "candidate_family_id": "COMBINED_BENDING_SHEAR_FAIL",
                 "card_family_id": "COMBINED_BENDING_SHEAR_FAIL",
                 "family_chooser_contract": FAMILY_CHOOSER_CONTRACT_ID,
                 "family_selection_contract": FAMILY_SELECTION_CONTRACT_ID,
@@ -9362,16 +9497,44 @@ def _route_combined_fail_family_publication(primary: dict, debug: dict, diagnost
                     "selected_family_id": "COMBINED_BENDING_SHEAR_FAIL",
                     "published_family_id": "COMBINED_BENDING_SHEAR_FAIL",
                     "cta_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                    "apply_payload_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                    "candidate_family_id": "COMBINED_BENDING_SHEAR_FAIL",
                     "family_match_passed": True,
                 }
             )
             routed_primary["button_contract"] = dict(routed_contract)
+        routed_action_payload = _as_dict(routed_primary.get("action_payload"))
+        if routed_action_payload:
+            routed_action_payload.update(
+                {
+                    "selected_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                    "published_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                    "cta_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                    "apply_payload_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                    "candidate_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                }
+            )
+            routed_primary["action_payload"] = dict(routed_action_payload)
+        routed_resolved_candidate = _as_dict(routed_primary.get("resolved_candidate"))
+        if routed_resolved_candidate:
+            routed_resolved_candidate.update(
+                {
+                    "selected_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                    "published_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                    "cta_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                    "apply_payload_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                    "candidate_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                }
+            )
+            routed_primary["resolved_candidate"] = dict(routed_resolved_candidate)
         routed_evidence = _as_dict(routed_primary.get("candidate_search_evidence"))
         routed_evidence.update(diagnostics)
         routed_evidence.update(
             {
                 "published_family_id": "COMBINED_BENDING_SHEAR_FAIL",
                 "cta_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                "apply_payload_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                "candidate_family_id": "COMBINED_BENDING_SHEAR_FAIL",
                 "card_family_id": "COMBINED_BENDING_SHEAR_FAIL",
                 "family_match_passed": True,
                 "family_match_violation_reason": None,
@@ -9383,6 +9546,8 @@ def _route_combined_fail_family_publication(primary: dict, debug: dict, diagnost
             {
                 "published_family_id": "COMBINED_BENDING_SHEAR_FAIL",
                 "cta_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                "apply_payload_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                "candidate_family_id": "COMBINED_BENDING_SHEAR_FAIL",
                 "card_family_id": "COMBINED_BENDING_SHEAR_FAIL",
                 "family_match_passed": True,
                 "family_match_violation_reason": None,
@@ -9424,6 +9589,14 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
     )
     publication_all_key_pass = any(
         bool(overview.get("all_key_pass")) and not bool(overview.get("any_fail"))
+        for overview in overview_sources
+        if overview
+    )
+    publication_target_band_terminal = any(
+        bool(overview.get("all_key_pass"))
+        and not bool(overview.get("any_fail"))
+        and (_as_float(overview.get("worst_util")) is not None)
+        and 0.85 <= float(_as_float(overview.get("worst_util"))) <= 1.0
         for overview in overview_sources
         if overview
     )
@@ -9507,10 +9680,24 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
         "cleanup_variables_available": chooser.get("cleanup_variables_available"),
         "locked_variables": list(chooser.get("locked_variables") or []),
     }
+    diagnostics_raw_state = dict(diagnostics.get("raw_state_flags") or {})
+    raw_state_has_active_overdesign = bool(
+        diagnostics_raw_state.get("any_overdesign")
+        or diagnostics_raw_state.get("bending_overdesigned")
+        or diagnostics_raw_state.get("shear_overdesigned")
+        or diagnostics.get("active_overdesigns")
+    )
+    publication_target_band_terminal_safe = bool(
+        publication_target_band_terminal and not raw_state_has_active_overdesign
+    )
     if (
         violation
         and publication_all_key_pass
         and not active_failures
+        and (
+            _raw_state_flags_prove_target_band_terminal(diagnostics.get("raw_state_flags"))
+            or publication_target_band_terminal_safe
+        )
     ):
         accepted_diagnostics = {
             **diagnostics,
@@ -9524,6 +9711,7 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
             "family_match_violation_reason": None,
             "stale_action_publication_normalised_to_target_band": True,
             "publication_all_key_pass": True,
+            "publication_target_band_terminal": bool(publication_target_band_terminal),
         }
         primary = _target_band_reached_publication_item(primary, accepted_diagnostics)
         debug.update(accepted_diagnostics)
@@ -9541,6 +9729,7 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
         and publication_all_key_pass
         and selected_family_id in cleanup_recovery_family_ids
         and _is_family_selection_contract_violation_publication(primary)
+        and _raw_state_flags_prove_target_band_terminal(diagnostics.get("raw_state_flags"))
     ):
         accepted_diagnostics = {
             **diagnostics,
@@ -9598,6 +9787,7 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
         and not cleanup_recovery_payload
         and not active_failures
         and _is_family_selection_contract_violation_publication(primary)
+        and _raw_state_flags_prove_target_band_terminal(diagnostics.get("raw_state_flags"))
     ):
         accepted_diagnostics = {
             **diagnostics,
@@ -9661,6 +9851,7 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
             published_family_id = "COMBINED_BENDING_SHEAR_FAIL"
             cta_family_id = "COMBINED_BENDING_SHEAR_FAIL"
             card_family_id = "COMBINED_BENDING_SHEAR_FAIL"
+            candidate_family_id = "COMBINED_BENDING_SHEAR_FAIL"
     if not violation:
         primary, debug, diagnostics = _route_shear_fail_family_publication(primary, debug, diagnostics)
         published_family_id = str(diagnostics.get("published_family_id") or published_family_id or "").strip() or None
@@ -9669,11 +9860,16 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
     if not violation:
         repair_payload = _repair_action_payload_from_publication(primary, debug, active_failures)
         current_contract = button_contract_from_payload(primary, debug)
-        current_updates = contract_updates_from_publication(current_contract, primary)
+        current_updates = contract_updates_from_publication(current_contract, primary, debug)
         if repair_payload and (not contract_enabled(current_contract) or not current_updates):
             recovered_contract = dict(repair_payload.get("contract") or {})
             recovered_updates = dict(repair_payload.get("updates") or {})
             owner_family = _mechanical_family_from_family_id(selected_family_id) or repair_payload.get("family")
+            effective_candidate_family_id = (
+                "COMBINED_BENDING_SHEAR_FAIL"
+                if selected_family_id == "COMBINED_BENDING_SHEAR_FAIL"
+                else candidate_family_id
+            )
             recovered_title = str(primary.get("title_main") or primary.get("title") or primary.get("headline") or "").strip()
             if _is_family_selection_contract_violation_publication(primary):
                 recovered_title = (
@@ -9694,7 +9890,8 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
                     "selected_family_id": selected_family_id,
                     "published_family_id": selected_family_id,
                     "cta_family_id": selected_family_id,
-                    "candidate_family_id": candidate_family_id,
+                    "apply_payload_family_id": selected_family_id,
+                    "candidate_family_id": effective_candidate_family_id,
                     "family_selection_contract": FAMILY_SELECTION_CONTRACT_ID,
                     "family_match_passed": True,
                     "family_guard_recovered_same_family_repair_action": True,
@@ -9717,7 +9914,8 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
                     "selected_family_id": selected_family_id,
                     "published_family_id": selected_family_id,
                     "cta_family_id": selected_family_id,
-                    "candidate_family_id": candidate_family_id,
+                    "apply_payload_family_id": selected_family_id,
+                    "candidate_family_id": effective_candidate_family_id,
                     "card_family_id": selected_family_id,
                     "family_match_passed": True,
                     "family_match_violation_reason": None,
@@ -9734,15 +9932,35 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
             )
             action_payload = dict(repair_payload.get("action_payload") or {})
             if action_payload:
-                action_payload.setdefault("updates", dict(recovered_updates))
-                action_payload.setdefault("resolved_candidate_updates", dict(recovered_updates))
-                action_payload.setdefault("action_type", "apply_resolved_candidate")
-                action_payload.setdefault("resolved_candidate_action_type", "apply_resolved_candidate")
+                action_payload.update(
+                    {
+                        "updates": dict(recovered_updates),
+                        "resolved_candidate_updates": dict(recovered_updates),
+                        "action_type": "apply_resolved_candidate",
+                        "resolved_candidate_action_type": "apply_resolved_candidate",
+                        "family": owner_family,
+                        "selected_family_id": selected_family_id,
+                        "published_family_id": selected_family_id,
+                        "cta_family_id": selected_family_id,
+                        "apply_payload_family_id": selected_family_id,
+                        "candidate_family_id": effective_candidate_family_id,
+                    }
+                )
                 primary["action_payload"] = dict(action_payload)
             resolved = dict(repair_payload.get("resolved_candidate") or {})
             if resolved:
-                resolved.setdefault("updates", dict(recovered_updates))
-                resolved.setdefault("action_type", "apply_resolved_candidate")
+                resolved.update(
+                    {
+                        "updates": dict(recovered_updates),
+                        "action_type": "apply_resolved_candidate",
+                        "family": owner_family,
+                        "selected_family_id": selected_family_id,
+                        "published_family_id": selected_family_id,
+                        "cta_family_id": selected_family_id,
+                        "apply_payload_family_id": selected_family_id,
+                        "candidate_family_id": effective_candidate_family_id,
+                    }
+                )
                 primary["resolved_candidate"] = dict(resolved)
             evidence = _as_dict(primary.get("candidate_search_evidence"))
             evidence.update(
@@ -9750,6 +9968,8 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
                     **diagnostics,
                     "published_family_id": selected_family_id,
                     "cta_family_id": selected_family_id,
+                    "apply_payload_family_id": selected_family_id,
+                    "candidate_family_id": effective_candidate_family_id,
                     "card_family_id": selected_family_id,
                     "family_match_passed": True,
                     "family_match_violation_reason": None,
@@ -9803,6 +10023,11 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
         repair_payload = _repair_action_payload_from_publication(primary, debug, active_failures)
         if repair_payload:
             owner_family = _mechanical_family_from_family_id(selected_family_id) or repair_payload.get("family")
+            effective_candidate_family_id = (
+                "COMBINED_BENDING_SHEAR_FAIL"
+                if selected_family_id == "COMBINED_BENDING_SHEAR_FAIL"
+                else candidate_family_id
+            )
             recovered = dict(primary)
             recovered_contract = dict(repair_payload.get("contract") or {})
             expected_util = recovered_contract.get("expected_util")
@@ -9822,7 +10047,8 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
                     "selected_family_id": selected_family_id,
                     "published_family_id": selected_family_id,
                     "cta_family_id": selected_family_id,
-                    "candidate_family_id": candidate_family_id,
+                    "apply_payload_family_id": selected_family_id,
+                    "candidate_family_id": effective_candidate_family_id,
                     "family_selection_contract": FAMILY_SELECTION_CONTRACT_ID,
                     "family_match_passed": True,
                     "family_guard_recovered_to_repair_action": True,
@@ -9851,7 +10077,8 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
                     "selected_family_id": selected_family_id,
                     "published_family_id": selected_family_id,
                     "cta_family_id": selected_family_id,
-                    "candidate_family_id": candidate_family_id,
+                    "apply_payload_family_id": selected_family_id,
+                    "candidate_family_id": effective_candidate_family_id,
                     "card_family_id": selected_family_id,
                     "family_selection_source": source,
                     "family_selection_contract": FAMILY_SELECTION_CONTRACT_ID,
@@ -9871,6 +10098,8 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
                     **diagnostics,
                     "published_family_id": selected_family_id,
                     "cta_family_id": selected_family_id,
+                    "apply_payload_family_id": selected_family_id,
+                    "candidate_family_id": effective_candidate_family_id,
                     "card_family_id": selected_family_id,
                     "family_match_passed": True,
                     "family_match_violation_reason": None,
@@ -9945,9 +10174,13 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
             and not diagnostics_raw_state.get("bending_fail")
             and not diagnostics_raw_state.get("shear_fail")
             and (
-                diagnostics_raw_state.get("target_band_terminal_signal")
+                (
+                    diagnostics_raw_state.get("target_band_terminal_signal")
+                    and _raw_state_flags_prove_target_band_terminal(diagnostics_raw_state)
+                )
                 or (
                     selected_family_id == "SHEAR_OVERDESIGN_GOVERNS"
+                    and not diagnostics_raw_state.get("bending_overdesigned")
                     and not diagnostics_raw_state.get("shear_cleanup_possible")
                     and not diagnostics_raw_state.get("unnecessary_shear_reinforcement_exists")
                     and not diagnostics_raw_state.get("zero_shear_with_ligatures")
@@ -10014,6 +10247,7 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
         diagnostics_target_band_proven = bool(
             selected_family_id == "TARGET_BAND_REACHED"
             and diagnostics_raw_state.get("target_band_terminal_signal")
+            and _raw_state_flags_prove_target_band_terminal(diagnostics_raw_state)
             and not diagnostics_raw_state.get("any_failure")
             and not diagnostics_raw_state.get("any_strength_fail")
             and not diagnostics_raw_state.get("repair_required")
@@ -10074,6 +10308,7 @@ def enforce_family_selection_publication_contract(payload: dict) -> dict:
                 "selected_family_id": selected_family_id,
                 "published_family_id": published_family_id,
                 "cta_family_id": cta_family_id,
+                "apply_payload_family_id": selected_family_id,
                 "candidate_family_id": candidate_family_id,
                 "family_selection_contract": FAMILY_SELECTION_CONTRACT_ID,
                 "family_match_passed": True,
@@ -10371,6 +10606,65 @@ def enforce_underdesign_repair_publication_boundary(payload: dict) -> dict:
         out["debug_trace"] = debug
         return out
     selected_family_id, selected_family_source = _selected_family_id_from_publication(out, primary, debug, result)
+    if set(active_failures) >= {"bending", "shear"} and selected_family_id == "COMBINED_BENDING_SHEAR_FAIL":
+        diagnostic.update(
+            {
+                "contract_boundary_passed": False,
+                "contract_boundary_violation_reason": (
+                    "combined_bending_shear_fail_missing_repair_ACTION_or_family_owned_no_repair_proof"
+                ),
+                "selected_family_id": selected_family_id,
+                "selected_family_source": selected_family_source,
+                "family_owned_boundary_passthrough": True,
+                "family_owned_boundary_passthrough_reason": (
+                    "Publication must not manufacture COMBINED_BENDING_SHEAR_FAIL repair-blocked legality."
+                ),
+            }
+        )
+        primary = dict(primary)
+        primary.update(
+            {
+                "selected_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                "published_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                "cta_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                "candidate_family_id": primary.get("candidate_family_id") or "COMBINED_BENDING_SHEAR_FAIL",
+                "card_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                "family_selection_contract": FAMILY_SELECTION_CONTRACT_ID,
+                "family_chooser_contract": FAMILY_CHOOSER_CONTRACT_ID,
+                "family_match_passed": True,
+                "family_match_violation_reason": None,
+            }
+        )
+        evidence = _as_dict(primary.get("candidate_search_evidence"))
+        evidence.update(
+            {
+                "selected_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                "published_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                "cta_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                "candidate_family_id": primary.get("candidate_family_id") or "COMBINED_BENDING_SHEAR_FAIL",
+                "card_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                "active_failures": list(active_failures),
+                "family_owned_boundary_passthrough": True,
+            }
+        )
+        primary["candidate_search_evidence"] = dict(evidence)
+        contract = _as_dict(primary.get("button_contract"))
+        if contract:
+            contract.update(
+                {
+                    "selected_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                    "published_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                    "cta_family_id": "COMBINED_BENDING_SHEAR_FAIL",
+                    "candidate_family_id": primary.get("candidate_family_id") or "COMBINED_BENDING_SHEAR_FAIL",
+                    "family_match_passed": True,
+                    "family_match_violation_reason": None,
+                }
+            )
+            primary["button_contract"] = dict(contract)
+        debug.update(diagnostic)
+        out["guidance_items"] = [primary] + items[1:]
+        out["debug_trace"] = debug
+        return out
     if active_failures == ["bending"] and selected_family_id == "BENDING_FAIL_GOVERNS":
         diagnostic.update(
             {

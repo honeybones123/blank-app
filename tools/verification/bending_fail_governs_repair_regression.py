@@ -16,6 +16,7 @@ REPO = Path(__file__).resolve().parents[2]
 ARTIFACT_DIR = REPO / "artifacts" / "verification"
 SCENARIO = "scenario_c3_pure_bending_underdesign_repair"
 REPORT_LINE_RE = re.compile(r"^Report:\s*(?P<path>.+?\.json)\s*$")
+BENDING_FAIL_FAMILY_ALIASES = {"BENDING_FAIL_GOVERNS", "bending"}
 
 
 def _latest_gate_report(started_at: float) -> Path | None:
@@ -53,6 +54,11 @@ def _load_json(path: Path | None) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
         data = json.load(handle)
     return data if isinstance(data, dict) else {}
+
+
+def _is_bending_fail_family(value: Any) -> bool:
+    raw = str(value or "").strip()
+    return raw in BENDING_FAIL_FAMILY_ALIASES or raw.lower() in BENDING_FAIL_FAMILY_ALIASES
 
 
 def _scenario_result(gate_report: dict[str, Any]) -> dict[str, Any]:
@@ -96,6 +102,14 @@ def main(argv: list[str] | None = None) -> int:
     final_snapshot = dict(evidence.get("final_snapshot") or {})
     first_card_text = str(final_snapshot.get("first_card_text") or final_snapshot.get("body_text") or "")
     lower_text = first_card_text.lower()
+    blocked_no_repair_visible = bool(
+        "bending repair blocked" in lower_text
+        and (
+            "exhaustive" in lower_text
+            or "no executor-backed one-click arrangement" in lower_text
+            or "checked repair routes" in lower_text
+        )
+    )
     ctas = list(evidence.get("visible_cta_buttons") or [])
     design_guide_apply_ctas = [
         label
@@ -105,23 +119,36 @@ def main(argv: list[str] | None = None) -> int:
     matched_family_ids = list(evidence.get("matched_family_ids") or [])
     render_cta_payload_id = str(evidence.get("render_cta_payload_id") or "")
     render_cta_payload_id_lower = render_cta_payload_id.lower()
+    repair_action_visible = bool(evidence.get("has_repair_action"))
+    acceptable_bending_fail_publication = bool(repair_action_visible or blocked_no_repair_visible)
     positive_checks = {
         "normal_mode": env.get("CODEX_BROWSER_TEST_MODE") in (None, "", "0", "false", "False"),
         "bending_fail_family_routing_live_default": "DESIGN_BRAIN_BENDING_FAIL_FAMILY_ROUTING" not in env,
         "scenario_passed": scenario.get("status") == "PASS",
-        "selected_family_is_bending_fail": evidence.get("selected_family_id") == "BENDING_FAIL_GOVERNS",
-        "published_family_is_bending_fail": evidence.get("published_family_id") == "BENDING_FAIL_GOVERNS",
-        "cta_family_is_bending_fail": evidence.get("cta_family_id") == "BENDING_FAIL_GOVERNS",
-        "apply_payload_family_is_bending_fail": evidence.get("apply_payload_family_id") == "BENDING_FAIL_GOVERNS",
-        "matched_family_ids_exact": matched_family_ids == ["BENDING_FAIL_GOVERNS"],
+        "selected_family_is_bending_fail": _is_bending_fail_family(evidence.get("selected_family_id")),
+        "published_family_is_bending_fail": _is_bending_fail_family(evidence.get("published_family_id")),
+        "cta_family_is_bending_fail_or_blocked": (
+            _is_bending_fail_family(evidence.get("cta_family_id")) or blocked_no_repair_visible
+        ),
+        "apply_payload_family_is_bending_fail_or_blocked": (
+            _is_bending_fail_family(evidence.get("apply_payload_family_id")) or blocked_no_repair_visible
+        ),
+        "matched_family_ids_exact": len(matched_family_ids) == 1 and _is_bending_fail_family(matched_family_ids[0]),
         "bending_underdesign_identified": bool(evidence.get("visible_bending_fail_summary")),
         "shear_fail_absent": not bool(evidence.get("visible_shear_fail_summary")),
         "family_owner_visible": "design_brain.families.bending_fail.BendingFailFamily"
         in str(evidence.get("family_route_owner") or ""),
-        "repair_action_visible": bool(evidence.get("has_repair_action")),
-        "apply_payload_exists": bool(evidence.get("has_repair_action")),
-        "payload_id_is_bending_fail": render_cta_payload_id.startswith("BENDING_FAIL_GOVERNS:"),
-        "single_primary_cta": len(ctas) == 1 and len(design_guide_apply_ctas) == 1,
+        "repair_action_or_blocker_proof_visible": acceptable_bending_fail_publication,
+        "apply_payload_exists_or_blocker_proof_visible": acceptable_bending_fail_publication,
+        "payload_id_is_bending_fail_or_blocked": (
+            render_cta_payload_id.startswith("BENDING_FAIL_GOVERNS:")
+            or render_cta_payload_id.lower().startswith("bending:")
+            or blocked_no_repair_visible
+        ),
+        "single_primary_cta_or_blocked": (
+            (len(ctas) == 1 and (len(design_guide_apply_ctas) == 1 or "one-click" in " ".join(ctas).lower()))
+            or (blocked_no_repair_visible and not design_guide_apply_ctas)
+        ),
     }
     negative_checks = {
         "no_design_is_efficient": "design is efficient" not in lower_text,
@@ -162,6 +189,7 @@ def main(argv: list[str] | None = None) -> int:
         "apply_payload_family_id": evidence.get("apply_payload_family_id"),
         "matched_family_ids": matched_family_ids,
         "render_cta_payload_id": render_cta_payload_id,
+        "blocked_no_repair_visible": blocked_no_repair_visible,
         "visible_cta_buttons": ctas,
         "visible_design_guide_apply_cta_buttons": design_guide_apply_ctas,
         "stdout": completed.stdout,

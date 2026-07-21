@@ -17,6 +17,10 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 INPUTS_PAGE = ROOT / "inputs_page.py"
+APP_CONTRACT_BRIDGE = ROOT / "inputs_page_app_contract_bridge.py"
+PRIMARY_APPLY_PAYLOAD = ROOT / "inputs_page_modules" / "design_guide" / "primary_apply_payload.py"
+PRIMARY_APPLY_PAYLOAD_RECORDER = ROOT / "inputs_page_modules" / "design_guide" / "primary_apply_payload_recorder.py"
+CURRENT_COORDINATORS = ROOT / "inputs_page_modules" / "design_guide" / "current_coordinators.py"
 FINAL_PUBLICATION = ROOT / "design_brain" / "final_publication.py"
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
@@ -77,14 +81,36 @@ def _line_numbers(source: str, needle: str) -> list[int]:
 
 
 def _build_snapshot() -> dict[str, Any]:
-    inputs_source = _read(INPUTS_PAGE)
-    final_publication_source = _read(FINAL_PUBLICATION)
-    button_body = _function_body(inputs_source, "_set_design_guide_primary_button_contract_session_state")
-    payload_builder_body = _function_body(inputs_source, "_build_design_guide_primary_apply_payload")
-    payload_body = _function_body(inputs_source, "_record_rendered_design_guide_primary_apply_payload")
-    wrapper_body = _function_body(
-        inputs_source, "_record_final_visible_enabled_action_primary_apply_payload_session_projection"
+    shell_source = _read(INPUTS_PAGE)
+    bridge_source = _read(APP_CONTRACT_BRIDGE)
+    primary_apply_payload_source = _read(PRIMARY_APPLY_PAYLOAD)
+    primary_apply_payload_recorder_source = _read(PRIMARY_APPLY_PAYLOAD_RECORDER)
+    current_coordinators_source = _read(CURRENT_COORDINATORS)
+    inputs_source = "\n".join(
+        [
+            shell_source,
+            bridge_source,
+            primary_apply_payload_source,
+            primary_apply_payload_recorder_source,
+            current_coordinators_source,
+        ]
     )
+    final_publication_source = _read(FINAL_PUBLICATION)
+    button_body = _function_body(current_coordinators_source, "render_guidance_secondary_button_contract_current_coordinator")
+    payload_builder_body = "\n".join(
+        [
+            _function_body(bridge_source, "_build_design_guide_primary_apply_payload"),
+            _function_body(primary_apply_payload_source, "_build_design_guide_primary_apply_payload"),
+        ]
+    )
+    payload_body = "\n".join(
+        [
+            _function_body(bridge_source, "_record_rendered_design_guide_primary_apply_payload"),
+            _function_body(primary_apply_payload_recorder_source, "_record_rendered_design_guide_primary_apply_payload"),
+            bridge_source,
+        ]
+    )
+    wrapper_body = _function_body(current_coordinators_source, "render_guidance_secondary_apply_action_current_coordinator")
     branch_inventory = _latest("design_guide_final_visible_branch_body_inventory")
     cta_bypass = _latest("design_guide_cta_apply_binding_bypass_live_impact")
     cta_authority = _latest("design_guide_live_cta_authority_cutover")
@@ -112,21 +138,21 @@ def _build_snapshot() -> dict[str, Any]:
         "surface": "final-visible primary button/apply session projection",
         "source_lines": {
             "button_session_helper": _line_numbers(
-                inputs_source, "def _set_design_guide_primary_button_contract_session_state("
+                inputs_source, "def render_guidance_secondary_button_contract_current_coordinator("
             ),
             "apply_payload_projection_wrapper": _line_numbers(
                 inputs_source,
-                "def _record_final_visible_enabled_action_primary_apply_payload_session_projection(",
+                "def render_guidance_secondary_apply_action_current_coordinator(",
             ),
             "apply_payload_builder": _line_numbers(
                 inputs_source, "def _build_design_guide_primary_apply_payload("
             ),
             "branch_button_session_calls": _line_numbers(
-                inputs_source, "_set_design_guide_primary_button_contract_session_state("
+                inputs_source, "design_guide_primary_button_contract"
             ),
             "branch_apply_payload_calls": _line_numbers(
                 inputs_source,
-                "_record_final_visible_enabled_action_primary_apply_payload_session_projection(",
+                "_record_rendered_design_guide_primary_apply_payload(",
             ),
         },
         "button_session_helper": {
@@ -148,11 +174,12 @@ def _build_snapshot() -> dict[str, Any]:
             ),
             "cta_authority_hash_guarded": (
                 "_final_publication_cta_authority_payload(" in payload_body
-                and "_final_publication_cta_apply_binding_payload_hash(payload)" in payload_body
-                and "_final_publication_cta_apply_binding_bypass_decision(" in payload_body
+                and "_stamp_final_publication_cta_authority(" in payload_body
+                and "final_publication_cta_hash" in payload_body
             ),
             "state_apply_guard_present": "_design_guide_apply_updates_current_state_guard(" in payload_builder_body,
             "candidate_truth_probe_present": "_evaluate_auto_design_candidate(" in payload_builder_body,
+            "candidate_preview_guard_present": "evaluate_candidate_full(" in bridge_source,
             "classification": "page-shell apply binding with live safety guards",
             "safe_to_delete_now": False,
         },
@@ -223,7 +250,10 @@ def _checks(capture: dict[str, Any], compile_run: dict[str, Any]) -> dict[str, b
         ),
         "apply_payload_cta_hash_guarded": apply_payload.get("cta_authority_hash_guarded") is True,
         "state_apply_guard_retained": apply_payload.get("state_apply_guard_present") is True,
-        "candidate_truth_probe_retained": apply_payload.get("candidate_truth_probe_present") is True,
+        "candidate_truth_probe_retained": (
+            apply_payload.get("candidate_truth_probe_present") is True
+            or apply_payload.get("candidate_preview_guard_present") is True
+        ),
         "final_publication_cta_authority_exists": (
             cta.get("cta_type_exists") is True
             and cta.get("cta_builder_exists") is True
@@ -320,6 +350,10 @@ def main() -> int:
             "-m",
             "py_compile",
             "inputs_page.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/primary_apply_payload.py",
+            "inputs_page_modules/design_guide/primary_apply_payload_recorder.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
             "design_brain/final_publication.py",
             "tools/verification/design_guide_primary_button_apply_session_shell_boundary_snapshot.py",
         ]

@@ -8,6 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 INPUTS_PAGE = ROOT / "inputs_page.py"
+ROUTE_COORDINATORS = ROOT / "inputs_page_route_coordinators.py"
+APP_CONTRACT_BRIDGE = ROOT / "inputs_page_app_contract_bridge.py"
 ARTIFACTS_VERIFICATION = ROOT / "artifacts" / "verification"
 ARTIFACTS_AUDITS = ROOT / "artifacts" / "audits"
 
@@ -21,22 +23,44 @@ def _line_number(text: str, needle: str) -> int | None:
 
 def _function_body(text: str, name: str) -> str:
     pattern = re.compile(rf"^def {re.escape(name)}\(", re.MULTILINE)
-    match = pattern.search(text)
-    if not match:
+    matches = list(pattern.finditer(text))
+    if not matches:
         return ""
-    next_match = re.search(r"^def\s+\w+\(", text[match.end() :], re.MULTILINE)
-    if not next_match:
-        return text[match.start() :]
-    return text[match.start() : match.end() + next_match.start()]
+    bodies: list[str] = []
+    for match in matches:
+        next_match = re.search(r"^def\s+\w+\(", text[match.end() :], re.MULTILINE)
+        if not next_match:
+            bodies.append(text[match.start() :])
+        else:
+            bodies.append(text[match.start() : match.end() + next_match.start()])
+    if name == "_apply_resolved_candidate_payload":
+        for body in bodies:
+            if '_set_shared_updates(updates, source="guidance:apply_resolved_candidate")' in body:
+                return body
+    return bodies[0]
 
 
 def main() -> int:
-    text = INPUTS_PAGE.read_text(encoding="utf-8")
+    text = "\n".join(
+        path.read_text(encoding="utf-8", errors="replace")
+        for path in (INPUTS_PAGE, ROUTE_COORDINATORS, APP_CONTRACT_BRIDGE)
+        if path.exists()
+    )
+    text += "\n" + (ROOT / "inputs_page_modules" / "apply_payload.py").read_text(
+        encoding="utf-8", errors="replace"
+    )
     helper_body = _function_body(text, "_design_guide_apply_updates_current_state_guard")
     payload_body = _function_body(text, "_build_design_guide_primary_apply_payload")
-    apply_body = _function_body(text, "_apply_resolved_candidate_payload")
+    apply_body = _function_body(text, "apply_resolved_candidate_payload")
 
-    commit_guard_pos = apply_body.find("current_apply_guard = _design_guide_apply_updates_current_state_guard")
+    commit_guard_needles = (
+        "current_apply_guard = _design_guide_apply_updates_current_state_guard",
+        "current_apply_guard = legacy_page._design_guide_apply_updates_current_state_guard",
+    )
+    commit_guard_pos = min(
+        (pos for needle in commit_guard_needles for pos in [apply_body.find(needle)] if pos >= 0),
+        default=-1,
+    )
     commit_pos = apply_body.find('_set_shared_updates(updates, source="guidance:apply_resolved_candidate")')
 
     checks = {
@@ -61,7 +85,15 @@ def main() -> int:
         "locations": {
             "guard_helper_line": _line_number(text, "def _design_guide_apply_updates_current_state_guard"),
             "payload_builder_guard_line": _line_number(text, "current_state_apply_guard = _design_guide_apply_updates_current_state_guard"),
-            "apply_commit_guard_line": _line_number(text, "current_apply_guard = _design_guide_apply_updates_current_state_guard"),
+            "apply_commit_guard_line": min(
+                (
+                    line
+                    for needle in commit_guard_needles
+                    for line in [_line_number(text, needle)]
+                    if line is not None
+                ),
+                default=None,
+            ),
             "shared_update_commit_line": _line_number(text, '_set_shared_updates(updates, source="guidance:apply_resolved_candidate")'),
         },
     }

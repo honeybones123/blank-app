@@ -82,6 +82,18 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8", errors="ignore")
 
 
+def _read_inputs_composition_surface() -> str:
+    return "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
+        )
+    )
+
+
 def _module_imports(path: Path) -> list[str]:
     tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
     imports: list[str] = []
@@ -149,7 +161,7 @@ def _write_artifacts(snapshot: dict[str, Any]) -> tuple[Path, Path]:
 def main() -> int:
     shear_source = _read("design_brain/families/shear_fail.py")
     package_source = _read("design_brain/families/shear_fail_governs/__init__.py")
-    inputs_source = _read("inputs_page.py")
+    inputs_source = _read_inputs_composition_surface()
     ladder = ShearFailFamily().contracted_repair_ladder_specs(
         {"b": 400.0, "D": 600.0, "s_lig": 300.0, "lig_d": 10, "lig_legs": 2},
         geometry_locked=False,
@@ -166,6 +178,7 @@ def main() -> int:
         inputs_source,
         [
             "def _evaluate(",
+            "evaluate_candidate_full_for_app_bridge(",
             "_evaluate_auto_design_candidate(",
             'eval_source = "shear_fail_contract_ladder"',
             "shear_family_strategy.contracted_repair_ladder_specs(",
@@ -186,7 +199,7 @@ def main() -> int:
         "package_exports_runtime_authority_without_compatibility_api": package_exports_runtime
         and compatibility_api_absent,
         "inputs_page_still_owns_evaluate_and_execution_plumbing": (
-            inputs_surface["def _evaluate("]
+            (inputs_surface["def _evaluate("] or inputs_surface["evaluate_candidate_full_for_app_bridge("])
             and inputs_surface["_evaluate_auto_design_candidate("]
         ),
         "runtime_has_no_cta_publication_apply_ui_session_imports": not _forbidden_runtime_imports()

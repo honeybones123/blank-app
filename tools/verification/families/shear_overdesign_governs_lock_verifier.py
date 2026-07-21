@@ -210,6 +210,22 @@ def _write_artifacts(snapshot: dict[str, Any]) -> tuple[Path, Path]:
     return json_path, report_path
 
 
+def _read(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8", errors="replace")
+
+
+def _read_inputs_composition_surface() -> str:
+    return "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_page_route_coordinators.py",
+            "inputs_page_app_contract_bridge.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
+        )
+    )
+
+
 def main() -> int:
     proof_chain = [{"name": name, **_run_script(script)} for name, script in PROOF_CHAIN]
     proof_chain_pass = all(entry["passed"] for entry in proof_chain)
@@ -235,7 +251,7 @@ def main() -> int:
         encoding="utf-8",
         errors="replace",
     )
-    inputs_source = (ROOT / "inputs_page.py").read_text(encoding="utf-8", errors="replace")
+    inputs_source = _read_inputs_composition_surface()
     forbidden_runtime_terms = sorted(term for term in FORBIDDEN_RUNTIME_TERMS if term in runtime_source)
     all_updates = [
         dict(spec.get("updates") or {})
@@ -270,8 +286,9 @@ def main() -> int:
         "package_runtime_export_matches_family_shell": result.ladder_hash == ladder.get("ladder_hash"),
         "runtime_has_no_page_ui_imports": not forbidden_runtime_terms,
         "shared_systems_remain_shared": "from design_brain.cta_contracts import" in inputs_source
-        and "from design_brain.publication import" in inputs_source
-        and "build_design_guide_apply_button_contract" in inputs_source
+        and "from design_brain.final_publication import" in inputs_source
+        and "build_final_design_guide_publication" in inputs_source
+        and "handle_inputs_apply_buttons" in inputs_source
         and "shared_system_owned_outside_family" not in runtime_source,
         "no_bending_or_shear_fail_coupling": "bending_fail_governs" not in runtime_source
         and "BENDING_FAIL_GOVERNS" not in runtime_source

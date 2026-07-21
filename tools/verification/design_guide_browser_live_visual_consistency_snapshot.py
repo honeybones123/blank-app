@@ -365,6 +365,10 @@ def _publication_card_attrs_from_visible_payloads(*payloads: dict[str, Any]) -> 
                 "authority_hash": attrs.get("data-final-publication-authority-hash") or "",
                 "cta_hash": attrs.get("data-final-publication-cta-hash") or "",
                 "display_hash": attrs.get("data-final-publication-display-hash") or "",
+                "outcome_state": attrs.get("data-outcome-state") or "",
+                "status": attrs.get("data-status") or "",
+                "title": attrs.get("data-title") or "",
+                "blocker_reason": attrs.get("data-blocker-reason") or "",
                 "selected_family_id": attrs.get("data-selected-family-id") or "",
                 "selected_family": attrs.get("data-selected-family") or "",
                 "published_family_id": attrs.get("data-published-family-id") or "",
@@ -408,6 +412,7 @@ def _visual_consistency_checks(
     body_text: str,
     summary_cards: dict[str, dict[str, Any]],
     design_guide_text: str,
+    design_guide_cards: list[dict[str, Any]],
     buttons: list[dict[str, Any]],
     pills: list[dict[str, Any]],
     state: dict[str, Any],
@@ -424,6 +429,44 @@ def _visual_consistency_checks(
         hard_failures.append("shear_summary_card_not_found")
     if not design_guide_text:
         hard_failures.append("design_guide_section_not_found")
+
+    visible_design_guide_cards = [
+        card for card in design_guide_cards if isinstance(card, dict)
+    ]
+    visible_design_guide_card_count = len(visible_design_guide_cards)
+    visible_design_guide_card_hashes = [
+        str((card.get("attrs") or {}).get("data-publication-hash") or "").strip()
+        for card in visible_design_guide_cards
+    ]
+    duplicate_visible_publication_hashes = sorted(
+        {
+            card_hash
+            for card_hash in visible_design_guide_card_hashes
+            if card_hash and visible_design_guide_card_hashes.count(card_hash) > 1
+        }
+    )
+    if visible_design_guide_card_count > 1:
+        hard_failures.append("duplicate_visible_design_guide_cards")
+    if duplicate_visible_publication_hashes:
+        hard_failures.append("duplicate_visible_design_guide_publication_hash")
+    visible_design_guide_titles = [
+        re.sub(r"\s+", " ", match.group(1)).strip()
+        for match in re.finditer(
+            r"\b(?:PASS|ACTION|BLOCKED|ERROR|INFO|NEXT|RECOMMEND)\s+([^\n]+)",
+            design_guide_text or "",
+            re.I,
+        )
+        if re.sub(r"\s+", " ", match.group(1)).strip()
+    ]
+    duplicate_visible_design_guide_titles = sorted(
+        {
+            title
+            for title in visible_design_guide_titles
+            if visible_design_guide_titles.count(title) > 1
+        }
+    )
+    if duplicate_visible_design_guide_titles:
+        hard_failures.append("duplicate_visible_design_guide_card_title")
 
     normal_buttons = [_normalise_button(button) for button in buttons]
     action_buttons = [button for button in normal_buttons if ACTION_BUTTON_RE.search(button["text"])]
@@ -528,6 +571,13 @@ def _visual_consistency_checks(
         "observations": observations,
         "summary_cards_present": {"bending": bending_found, "shear": shear_found},
         "design_guide_statuses": guide_statuses,
+        "visible_design_guide_cards": {
+            "count": visible_design_guide_card_count,
+            "publication_hashes": visible_design_guide_card_hashes,
+            "duplicate_publication_hashes": duplicate_visible_publication_hashes,
+            "titles": visible_design_guide_titles,
+            "duplicate_titles": duplicate_visible_design_guide_titles,
+        },
         "cta": {
             "all_buttons": normal_buttons,
             "action_buttons": action_buttons,
@@ -596,6 +646,7 @@ def _capture_visual_snapshot(page, *, scenario_id: str, screenshot_path: Path | 
         body_text=body_text,
         summary_cards=summary_cards,
         design_guide_text=design_guide_text,
+        design_guide_cards=list(guide_visible.get("designGuideCards") or []),
         buttons=combined_buttons,
         pills=combined_pills,
         state=state,
@@ -732,6 +783,7 @@ def _markdown(payload: dict[str, Any]) -> str:
         "",
         f"- Summary cards present: `{checks.get('summary_cards_present')}`",
         f"- Design Guide statuses: `{checks.get('design_guide_statuses')}`",
+        f"- Visible Design Guide card count: `{((checks.get('visible_design_guide_cards') or {}).get('count'))}`",
         f"- Missing or hidden Apply button: `{((checks.get('cta') or {}).get('missing_or_hidden_apply_button'))}`",
         f"- Red card / blue ACTION pill risk: `{((checks.get('tone') or {}).get('red_card_blue_action_pill_risk'))}`",
         f"- Fallback/stale shell risk: `{((checks.get('stale_fallback_publication_shell') or {}).get('risk'))}`",

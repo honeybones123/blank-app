@@ -24,7 +24,10 @@ if str(ROOT) not in sys.path:
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 INPUTS_PAGE = ROOT / "inputs_page.py"
+ROUTE_COORDINATORS = ROOT / "inputs_page_route_coordinators.py"
+APP_CONTRACT_BRIDGE = ROOT / "inputs_page_app_contract_bridge.py"
 FINAL_PUBLICATION = ROOT / "design_brain" / "final_publication.py"
+DESIGN_GUIDE_CONTROLLER = ROOT / "design_brain" / "design_guide_controller.py"
 
 COMPOSED_GATES: tuple[dict[str, str], ...] = (
     {
@@ -102,13 +105,21 @@ COMPOSED_GATES: tuple[dict[str, str], ...] = (
 )
 
 B_D_LIVE_GUARD_TOKENS: dict[str, tuple[str, ...]] = {
-    "late_evidence_acceptance_condition": ("_late_evidence_acceptance",),
-    "post_core_evidence_mismatch_condition": ("_post_core_mismatch",),
-    "rebound_update_payload_summary_hash": ('_late_rebound_contract.get("updates")',),
-    "rebound_contract_enabled_safety": ("_design_guide_button_contract_enabled(_late_rebound_contract)",),
+    "late_evidence_acceptance_condition": ("_late_evidence_acceptance", "late_evidence_acceptance"),
+    "post_core_evidence_mismatch_condition": ("_post_core_mismatch", "post_core_evidence_mismatch"),
+    "rebound_update_payload_summary_hash": (
+        '_late_rebound_contract.get("updates")',
+        "rebound_update_payload",
+        "contract.get(\"updates\")",
+    ),
+    "rebound_contract_enabled_safety": (
+        "_design_guide_button_contract_enabled(_late_rebound_contract)",
+        "_controller_button_contract_enabled(contract)",
+    ),
     "pre_resolver_collapsed_item_mutation": (
         "collapsed_guidance_items[0] = dict(_post_evidence_rebound)",
         "_post_mutation_collapsed_items = list(",
+        "collapsed_guidance_items=list(collapsed_items)",
     ),
 }
 
@@ -161,8 +172,17 @@ def _latest(prefix: str) -> dict[str, Any]:
 
 
 def _source_guards() -> dict[str, bool]:
-    input_source = INPUTS_PAGE.read_text(encoding="utf-8")
+    input_source = "\n".join(
+        path.read_text(encoding="utf-8", errors="replace")
+        for path in (INPUTS_PAGE, ROUTE_COORDINATORS, APP_CONTRACT_BRIDGE)
+        if path.exists()
+    )
     final_source = FINAL_PUBLICATION.read_text(encoding="utf-8")
+    controller_source = DESIGN_GUIDE_CONTROLLER.read_text(encoding="utf-8")
+    renderer_source = (ROOT / "ui" / "final_design_guide_card.py").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    b_d_live_source = input_source + "\n" + controller_source
     forbidden: dict[str, bool] = {}
     for token in FORBIDDEN_FINAL_PUBLICATION_TOKENS:
         scrubbed = final_source
@@ -194,7 +214,7 @@ def _source_guards() -> dict[str, bool]:
             )
         ),
         "b_d_guard_tokens_live": all(
-            any(token in input_source for token in alternatives)
+            any(token in b_d_live_source for token in alternatives)
             for alternatives in B_D_LIVE_GUARD_TOKENS.values()
         ),
         "apply_routing_still_page_owned": (
@@ -202,8 +222,8 @@ def _source_guards() -> dict[str, bool]:
             and "_record_rendered_design_guide_primary_apply_payload" not in final_source
         ),
         "cta_rendering_still_page_owned": (
-            "_render_final_design_guide_card_html(" in input_source
-            and "_render_final_design_guide_card_html(" not in final_source
+            "def render_final_design_guide_card_html(" in renderer_source
+            and "render_final_design_guide_card_html(" not in final_source
         ),
         "session_ui_not_moved_to_design_brain": (
             "streamlit" not in final_source and "st.session_state" not in final_source

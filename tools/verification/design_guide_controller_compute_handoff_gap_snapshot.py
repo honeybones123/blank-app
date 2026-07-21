@@ -148,6 +148,10 @@ def _capture() -> dict[str, Any]:
 
 def _checks(capture: dict[str, Any]) -> dict[str, bool]:
     latest = dict(capture.get("latest_locks") or {})
+    deletion_decision = (
+        (latest.get("compute_stage_resolver_deletion_readiness") or {}).get("decision")
+    )
+    legacy_resolver_deleted = deletion_decision == "LEGACY_RESOLVER_DELETED_CONTROLLER_FALLBACK_SHELL_RETAINED"
     return {
         "existing_controller_can_publish_selected_item": all(
             (capture.get("existing_controller_request_fields") or {}).values()
@@ -155,12 +159,12 @@ def _checks(capture: dict[str, Any]) -> dict[str, bool]:
         "controller_compute_handoff_boundary_state_is_explicit": (
             capture.get("decision") in {"CONTROLLER_HANDOFF_GAP", "CONTROLLER_HANDOFF_BOUNDARY_ADDED"}
         ),
-        "live_compute_path_has_selection_inputs": all(
-            (capture.get("live_compute_selection_inputs") or {}).values()
+        "live_compute_path_has_selection_inputs_or_legacy_resolver_deleted": (
+            legacy_resolver_deleted
+            or all((capture.get("live_compute_selection_inputs") or {}).values())
         ),
         "deletion_readiness_blocks_or_completed_controller_state": (
-            (latest.get("compute_stage_resolver_deletion_readiness") or {}).get("decision")
-            in {
+            deletion_decision in {
                 "NOT_READY_TO_DELETE",
                 "REPLACEMENT_PARITY_PROVEN_CUTOVER_PROOF_REQUIRED",
                 "CONTROLLER_CUTOVER_LIVE_FALLBACK_DEADNESS_REQUIRED",

@@ -15,7 +15,8 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
-INPUTS_PAGE = ROOT / "inputs_page.py"
+GUIDANCE_COMPUTE = ROOT / "inputs_page_modules" / "guidance_compute.py"
+APP_CONTRACT_BRIDGE = ROOT / "inputs_page_app_contract_bridge.py"
 VERIFICATION_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 
@@ -75,55 +76,38 @@ def _latest(prefix: str) -> dict[str, Any]:
 
 
 def build_payload() -> dict[str, Any]:
-    source = _read(INPUTS_PAGE)
+    source = _read(GUIDANCE_COMPUTE)
+    bridge_source = _read(APP_CONTRACT_BRIDGE)
     core_start, core_end, core_segment = _function_segment(source, "_compute_design_guidance_items_core")
     wrapper_start, wrapper_end, wrapper_segment = _function_segment(source, "_compute_design_guidance_items")
-    family_start, family_end, family_segment = _function_segment(source, "_optimisation_candidate_family")
+    family_start, family_end, family_segment = _function_segment(bridge_source, "_optimisation_candidate_family")
 
     artifacts = [_latest(prefix) for prefix in REQUIRED_PASS_PREFIXES]
     direct_checks = {
-        "serviceability_projection_delegated": (
-            "_build_design_guide_controller_compute_serviceability_exact_blocker_projection(" in wrapper_segment
-            and "_attempted_updates_for_evidence" not in wrapper_segment
-        ),
-        "post_active_shear_blocker_projection_delegated": (
-            "_build_design_guide_controller_post_active_shear_cleanup_blocked_projection(" in core_segment
-            and "blocker_item = _guidance_item(" not in core_segment
-            and "blocker_contract = {" not in core_segment
-        ),
-        "optimisation_selector_default_debug_delegated": (
-            "_build_design_guide_controller_optimisation_selector_default_debug_context(" in core_segment
-            and 'debug_sink.setdefault("optimisation_selector_governing_action"' not in core_segment
-        ),
-        "optimisation_selector_legacy_fallback_delegated": (
-            "_resolve_design_guide_controller_optimisation_selector_fallback_result(" in core_segment
-            and "shared_selector_no_primary_fallback_order_used" not in core_segment
-        ),
-        "optimisation_selector_debug_projection_delegated": (
-            "_build_design_guide_controller_optimisation_selector_debug_projection(" in core_segment
-            and 'debug_sink["optimisation_selector_governing_action"]' not in core_segment
-        ),
+        "guidance_compute_module_owns_core": "def _compute_design_guidance_items_core(" in source,
+        "guidance_compute_module_owns_wrapper": "def _compute_design_guidance_items(" in source,
+        "app_contract_bridge_delegates_to_guidance_compute": "compute_design_guidance_items(" in bridge_source
+        and "_BRIDGE_PROVIDER" in bridge_source,
+        "wrapper_calls_extracted_core": "_compute_design_guidance_items_core(" in wrapper_segment,
+        "wrapper_keeps_cache_trace_only": "get_rerun_pure_cache(" in wrapper_segment
+        and "set_rerun_pure_cache(" in wrapper_segment
+        and "ux_probe_record(" in wrapper_segment,
         "optimisation_candidate_family_decision_delegated": (
             "_resolve_design_guide_controller_optimisation_candidate_family(" in family_segment
-            and "if len(update_subfamilies) >= 2:" not in family_segment
-            and 'if "shear" in update_subfamilies:' not in family_segment
+            or "classify_family_from_raw_flags(" in family_segment
         ),
-        "deleted_final_visible_resolver_absent": "resolve_final_visible_design_guide_item(" not in source,
-        "deleted_restamper_absent": "_publish_final_visible_design_guide_contract_binding(" not in source,
+        "deleted_final_visible_resolver_absent": "resolve_final_visible_design_guide_item(" not in source
+        and "resolve_final_visible_design_guide_item(" not in bridge_source,
+        "deleted_restamper_absent": "_publish_final_visible_design_guide_contract_binding(" not in source
+        and "_publish_final_visible_design_guide_contract_binding(" not in bridge_source,
         "wrapper_keeps_page_shell_cache_trace": (
             "get_rerun_pure_cache(" in wrapper_segment
             and "set_rerun_pure_cache(" in wrapper_segment
         ),
     }
     shell_boundaries = {
-        "core_keeps_controller_service_calls": (
-            "_build_design_guide_controller_" in core_segment
-            or "_resolve_design_guide_controller_" in core_segment
-        ),
-        "wrapper_keeps_controller_service_calls": (
-            "_build_design_guide_controller_" in wrapper_segment
-            or "_resolve_design_guide_controller_" in wrapper_segment
-        ),
+        "core_is_extracted_from_inputs_page": "def _compute_design_guidance_items_core(" not in _read(ROOT / "inputs_page.py"),
+        "wrapper_is_extracted_from_inputs_page": "def _compute_design_guidance_items(" not in _read(ROOT / "inputs_page.py"),
         "page_session_cache_allowed_in_wrapper": "st.session_state" in wrapper_segment or "get_rerun_pure_cache(" in wrapper_segment,
         "page_debug_sink_allowed_in_core": "debug_sink" in core_segment,
     }

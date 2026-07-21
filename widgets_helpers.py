@@ -1427,7 +1427,7 @@ def number_row(
     """Create a number input row with label on the left and widget on the right (V2-safe)."""
     label_text = f"{label} *" if required else label
     if use_columns:
-        col1, col2 = st.columns([1, 2], gap="medium")
+        col1, col2 = st.columns([1, 2], gap="medium", vertical_alignment="center")
         with col1:
             if help_text:
                 label_with_hover(label_text, help_text, required=False)
@@ -1681,7 +1681,7 @@ def select_row(
     # ---- SAFE: allow disabling internal columns for compact multi-column bands (reo rows) ----
     label_text = f"{_safe_label} *" if required else _safe_label
     if use_columns:
-        col1, col2 = st.columns([1, 2], gap="medium")
+        col1, col2 = st.columns([1, 2], gap="medium", vertical_alignment="center")
         with col1:
             if help_text:
                 label_with_hover(label_text, help_text, required=False)
@@ -1882,9 +1882,8 @@ def render_longitudinal_reo_rows(
     """
     Each reinforcement row: Layout, then Bars or Spacing, then Ø (mm) as label-left / widget-right rows.
     Row count and row gap render in the column info popover.
-    single_column is ignored (kept for call-site compatibility).
+    single_column hides the redundant row heading when only one row is active.
     """
-    _ = single_column
     section_norm, _, _, _, current_row_count = _longitudinal_reo_sync_row_count_state(
         page_prefix=page_prefix, section=section, max_rows=max_rows
     )
@@ -1896,7 +1895,8 @@ def render_longitudinal_reo_rows(
         st.markdown(title)
 
     for row_index in range(1, current_row_count + 1):
-        st.markdown(f'<div class="reo-layer-title">Row {row_index}</div>', unsafe_allow_html=True)
+        if not (single_column and current_row_count == 1):
+            st.markdown(f'<div class="reo-layer-title">Row {row_index}</div>', unsafe_allow_html=True)
         mode_key = f"{page_prefix}_{section_norm}_row_{row_index}_mode"
         bars_key = f"{page_prefix}_{section_norm}_row_{row_index}_bars"
         spacing_key = f"{page_prefix}_{section_norm}_row_{row_index}_spacing"

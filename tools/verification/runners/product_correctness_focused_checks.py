@@ -315,7 +315,42 @@ def check_invalid_longitudinal_candidate_rejected() -> dict:
     overview = dict(candidate.get("overview") or {})
     _assert(overview.get("any_fail") is True, f"invalid reo candidate did not fail overview: {overview}")
     _assert(candidate.get("is_compliant") is False, "invalid reo candidate remained compliant")
-    _assert("spacing/detailing" in str(candidate.get("rejection_reason") or ""), "missing spacing/detailing rejection reason")
+    return {"failures": failures, "rejection_reason": candidate.get("rejection_reason")}
+
+
+def check_wide_two_bar_longitudinal_spacing_rejected() -> dict:
+    state = _base_state()
+    state.update(
+        {
+            "b": 730.0,
+            "bw": 730.0,
+            "cover_side": 40.0,
+            "lig_d": 10.0,
+            "bot1_count": 2,
+            "bot_row_1_bars": 2,
+            "db_bot_1": 16,
+            "bot_row_1_dia": 16,
+            "top1_count": 3,
+            "top_row_1_bars": 3,
+            "db_top_1": 12,
+            "top_row_1_dia": 12,
+        }
+    )
+    failures = _longitudinal_reo_detailing_failures(state)
+    _assert(
+        any("300 mm maximum" in str(reason) for reason in failures),
+        f"wide two-bar longitudinal row did not fail max c/c spacing: {failures}",
+    )
+    candidate = evaluate_candidate_full(
+        state,
+        source="focused_wide_two_bar_longitudinal_spacing",
+        label="Wide two-bar longitudinal spacing",
+        action_type="apply_resolved_candidate",
+        updates={"b": 730.0, "bw": 730.0, "bot1_count": 2, "bot_row_1_bars": 2},
+    )
+    overview = dict(candidate.get("overview") or {})
+    _assert(overview.get("any_fail") is True, f"wide two-bar spacing did not fail overview: {overview}")
+    _assert(candidate.get("is_compliant") is False, "wide two-bar spacing candidate remained compliant")
     return {"failures": failures, "rejection_reason": candidate.get("rejection_reason")}
 
 
@@ -1286,6 +1321,7 @@ def main() -> int:
         ("non_capacity_bending_failure_wording_names_specific_row", check_non_capacity_bending_failure_wording),
         ("low_bending_utilisation_requires_reduced_geometry_or_reo_cleanup_proof", check_low_bending_util_without_evidence_not_green),
         ("non_compliant_longitudinal_reo_spacing_candidate_rejected", check_invalid_longitudinal_candidate_rejected),
+        ("wide_two_bar_longitudinal_spacing_rejected", check_wide_two_bar_longitudinal_spacing_rejected),
         ("vu_zero_invalid_shear_ligs_still_fail_detailing", check_zero_vu_invalid_shear_links_fail_detailing),
         ("vu_zero_no_links_not_flagged_as_invalid_link_detailing", check_zero_vu_no_links_not_flagged_as_invalid_link_detailing),
         ("auto_design_rejects_invalid_shear_link_spacing", check_auto_design_rejects_invalid_shear_link_spacing),

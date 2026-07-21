@@ -43,7 +43,7 @@ def main() -> int:
 
     source = INPUTS_PAGE.read_text(encoding="utf-8")
     first_paint_helper = re.search(
-        r"^\s{4}def _cached_summary_html_for_first_paint\(.*?(?=^\s{4}\w|\Z)",
+        r"^def render_inputs_cached_summary_html_for_first_paint_coordinator\(.*?(?=^def\s+\w|\Z)",
         source,
         re.M | re.S,
     )
@@ -56,6 +56,8 @@ def main() -> int:
         and "stale_result_cache_hash" in first_paint_helper_body,
         "first_paint_cache_guard_checks_results_version": "current_results_version" in first_paint_helper_body
         and "stale_results_version" in first_paint_helper_body,
+        "first_paint_cache_guard_checks_summary_action_fp": "current_summary_action_fp" in first_paint_helper_body
+        and "stale_summary_action_fp" in first_paint_helper_body,
         "first_paint_cache_guard_blocks_dirty_inputs": "inputs_dirty" in first_paint_helper_body,
         "first_paint_cache_guard_blocks_apply_in_flight": "post_click_apply_in_flight" in first_paint_helper_body,
         "summary_skip_branch_exists": "summary_final_render_skipped" in summary_body,
@@ -71,6 +73,7 @@ def main() -> int:
             and '"product_behavior_changed": False' in summary_body
         ),
         "summary_skip_records_probe": "summary.final_render_skipped_after_first_paint_cache" in summary_body,
+        "summary_skip_reinjects_card_css": "st.markdown(_summary_card_css(), unsafe_allow_html=True)" in summary_body,
         "normal_summary_render_path_still_exists": "render_summary_table(" in summary_body
         and "render_landing_card(" in summary_body,
         "visible_summary_html_cache_still_hash_guarded": "_final_publication_summary_card_html_cache" in source
@@ -94,7 +97,7 @@ def main() -> int:
             "skip_marker_line": _line_number(source, "summary_final_render_skipped"),
             "first_paint_cache_helper_line": _line_number(
                 source,
-                "def _cached_summary_html_for_first_paint()",
+                "def render_inputs_cached_summary_html_for_first_paint_coordinator(",
             ),
         },
         "checks": checks,
@@ -114,6 +117,8 @@ def main() -> int:
                 "## Result",
                 "",
                 "- Later summary repaint is skipped only after the first-paint cached summary is hash-accepted.",
+                "- The skip path still injects the summary-card stylesheet so cached cards cannot render raw.",
+                "- The first-paint cache is also guarded by the overlay-aware summary action fingerprint.",
                 "- Dirty inputs, apply-in-flight, pending apply refresh, debug, stale hash, and stale version keep the rebuild path.",
                 "- Design Guide publication, CTA, apply payload, and engineering decisions are outside this change.",
                 "",

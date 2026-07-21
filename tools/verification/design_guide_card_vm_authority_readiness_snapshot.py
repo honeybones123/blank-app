@@ -23,7 +23,10 @@ if str(ROOT) not in sys.path:
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 INPUTS_PAGE = ROOT / "inputs_page.py"
+ROUTE_COORDINATORS = ROOT / "inputs_page_route_coordinators.py"
+APP_CONTRACT_BRIDGE = ROOT / "inputs_page_app_contract_bridge.py"
 FINAL_PUBLICATION = ROOT / "design_brain" / "final_publication.py"
+FINAL_FORMATTER = ROOT / "design_brain" / "final_design_guide_formatter.py"
 OUTPUT_FORMATTING = ROOT / "design_brain" / "output_formatting.py"
 
 REQUIRED_DISPLAY_FIELDS = {
@@ -47,16 +50,14 @@ REQUIRED_DISPLAY_FIELDS = {
 
 CARD_VM_PATHS = [
     {
-        "owner_file": "inputs_page.py",
-        "function_or_symbol": "build_design_guide_card_view_model",
+        "owner_file": "design_brain/final_publication.py",
+        "function_or_symbol": "build_final_publication_display_from_current_card_model",
         "tokens": [
-            "def build_design_guide_card_view_model(",
-            "_design_guide_dashboard_status(",
-            "_design_guide_dashboard_title(",
-            "_design_guide_dashboard_governing_label(",
-            "_design_guide_dashboard_reasons(",
+            "def build_final_publication_display_from_current_card_model(",
+            "return FinalDesignGuideDisplay(",
+            "renderer_driving=False",
         ],
-        "authority_role": "builds current dashboard VM fields",
+        "authority_role": "adapts current display-shaped data into FinalDesignGuidePublication.display proof without page imports",
         "matching_display_fields": [
             "title",
             "badge",
@@ -67,21 +68,19 @@ CARD_VM_PATHS = [
             "blocker_explanation",
             "display_state",
         ],
-        "can_be_moved_now": "no",
-        "reason_if_no": "needs proof-only card VM adapter parity against live VM output first",
+        "can_be_moved_now": "yes",
+        "reason_if_no": "",
         "required_parity_proof": "card VM adapter parity snapshot",
     },
     {
-        "owner_file": "inputs_page.py",
-        "function_or_symbol": "_build_design_guide_card_render_model",
+        "owner_file": "design_brain/final_design_guide_formatter.py",
+        "function_or_symbol": "build_final_design_guide_card_format",
         "tokens": [
-            "def _build_design_guide_card_render_model(",
-            "DesignGuideCardRenderModel",
-            "_build_design_guide_card_render_model_fields_core",
-            "details_text",
-            "blocker_reason",
+            "def build_final_design_guide_card_format(",
+            "display_hash = stable_final_publication_hash(display.to_dict())",
+            "final_publication_display_hash=display_hash",
         ],
-        "authority_role": "resolves final card render model fields before HTML",
+        "authority_role": "builds renderer-only card format from FinalDesignGuidePublication.display",
         "matching_display_fields": [
             "final_card_model_fields",
             "final_card_model_hash",
@@ -89,8 +88,8 @@ CARD_VM_PATHS = [
             "blocker_explanation",
             "card_class",
         ],
-        "can_be_moved_now": "no",
-        "reason_if_no": "render-model parity/hash snapshot is required before live authority move",
+        "can_be_moved_now": "yes",
+        "reason_if_no": "",
         "required_parity_proof": "card render-model adapter parity snapshot",
     },
     {
@@ -108,32 +107,17 @@ CARD_VM_PATHS = [
         "required_parity_proof": "existing output-formatting snapshot plus future adapter parity",
     },
     {
-        "owner_file": "inputs_page.py",
-        "function_or_symbol": "_design_guide_dashboard_card_html_with_render_model",
+        "owner_file": "ui/final_design_guide_card.py",
+        "function_or_symbol": "render_final_design_guide_card_html_clean_path",
         "tokens": [
-            "def _design_guide_dashboard_card_html_with_render_model(",
-            "_record_design_guide_card_render_model(",
-            "_render_final_design_guide_card_html(clean_format)",
+            "def render_final_design_guide_card_html(",
+            "FinalDesignGuideCardFormat",
         ],
-        "authority_role": "records render model then renders clean FinalDesignGuidePublication formatter HTML",
+        "authority_role": "renders clean FinalDesignGuidePublication formatter HTML without display ownership",
         "matching_display_fields": ["final_card_model_hash"],
-        "can_be_moved_now": "no",
-        "reason_if_no": "rendering remains page-owned for now",
-        "required_parity_proof": "render-freeze snapshot after card VM authority move",
-    },
-    {
-        "owner_file": "inputs_page.py",
-        "function_or_symbol": "deleted_direct_action_shell_markers",
-        "tokens": [
-            "browser_enabled_contract_pre_render_shell_deleted",
-            "fallback_enabled_contract_shell_deleted",
-            "early_shear_overdesign_direct_action_shell_deleted",
-        ],
-        "authority_role": "legacy direct CTA/card shell removed; remaining stamps are compatibility/debug-only",
-        "matching_display_fields": ["render_fallback_shell_model", "render_fallback_shell_hash"],
         "can_be_moved_now": "yes",
         "reason_if_no": "",
-        "required_parity_proof": "direct shell deletion plus clean formatter cutover snapshot",
+        "required_parity_proof": "render-freeze snapshot after card VM authority move",
     },
     {
         "owner_file": "ui/final_design_guide_card.py",
@@ -187,7 +171,13 @@ def _forbidden_final_publication_imports(imports: list[str]) -> list[str]:
 
 def _path_rows() -> list[dict[str, Any]]:
     source_by_file = {
-        "inputs_page.py": INPUTS_PAGE.read_text(encoding="utf-8"),
+        "inputs_page.py": "\n".join(
+            path.read_text(encoding="utf-8", errors="replace")
+            for path in (INPUTS_PAGE, ROUTE_COORDINATORS, APP_CONTRACT_BRIDGE)
+            if path.exists()
+        ),
+        "design_brain/final_publication.py": FINAL_PUBLICATION.read_text(encoding="utf-8"),
+        "design_brain/final_design_guide_formatter.py": FINAL_FORMATTER.read_text(encoding="utf-8"),
         "design_brain/output_formatting.py": OUTPUT_FORMATTING.read_text(encoding="utf-8"),
         "ui/final_design_guide_card.py": (ROOT / "ui" / "final_design_guide_card.py").read_text(
             encoding="utf-8"
@@ -301,7 +291,11 @@ def _build_snapshot() -> dict[str, Any]:
         }
 
     final_publication_source = FINAL_PUBLICATION.read_text(encoding="utf-8")
-    inputs_source = INPUTS_PAGE.read_text(encoding="utf-8")
+    inputs_source = "\n".join(
+        path.read_text(encoding="utf-8", errors="replace")
+        for path in (INPUTS_PAGE, ROUTE_COORDINATORS, APP_CONTRACT_BRIDGE)
+        if path.exists()
+    )
     cta_authority_markers = {
         "final_publication_cta_authority_constant": "FinalDesignGuidePublication.cta" in inputs_source,
         "final_publication_cta_stamper": "_stamp_final_publication_cta_authority(" in inputs_source,

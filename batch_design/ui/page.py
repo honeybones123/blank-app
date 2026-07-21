@@ -54,8 +54,6 @@ class BatchDesignPageContext:
 
 WORKFLOW_STATE_KEY = "batch_design_workflow_state"
 WORKFLOW_SUMMARY_EXPANDED_KEY = "batch_design_workflow_summary_expanded"
-WORKSPACE_EXPANDED_KEY = "batch_design_workspace_expanded"
-WORKSPACE_QUERY_PARAM = "batch_design_open"
 WORKFLOW_MODE_KEY = "batch_design_workflow_mode"
 WORKFLOW_MODE_RUN_DESIGN = "Run design"
 WORKFLOW_MODE_AUTO_ASSIGN = "Auto assign"
@@ -347,13 +345,14 @@ def _inject_batch_design_workspace_banner_css() -> None:
             width: 100%;
             min-height: 58px;
             padding: 10px 16px;
-            margin: 0 0 -1.35rem;
+            margin: 0;
             background: #ffffff;
             border: 1px solid #d9dfeb;
             border-radius: 16px;
             box-shadow: 0 6px 18px rgba(15, 23, 42, 0.055);
             transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
             cursor: pointer;
+            text-decoration: none !important;
         }
         .batch-design-hero:hover {
             border-color: #c9d2e3;
@@ -502,30 +501,6 @@ def _inject_batch_design_workspace_banner_css() -> None:
             margin-top: 0 !important;
             background: #ffffff !important;
         }
-        div:has(.batch-design-workspace-expander-anchor)
-          + div div[data-testid="stButton"] {
-            margin: -68px 0 0 !important;
-            position: relative;
-            z-index: 8;
-        }
-        div:has(.batch-design-workspace-expander-anchor)
-          + div div[data-testid="stButton"] button {
-            min-height: 58px !important;
-            width: 100% !important;
-            border: 0 !important;
-            border-radius: 16px !important;
-            background: transparent !important;
-            box-shadow: none !important;
-            color: transparent !important;
-            opacity: 0 !important;
-            cursor: pointer;
-        }
-        div:has(.batch-design-workspace-expander-anchor)
-          + div div[data-testid="stButton"] button p,
-        div:has(.batch-design-workspace-expander-anchor)
-          + div div[data-testid="stButton"] button span {
-            color: transparent !important;
-        }
         @media (max-width: 900px) {
             .batch-design-hero {
                 align-items: flex-start;
@@ -546,34 +521,6 @@ def _inject_batch_design_workspace_banner_css() -> None:
         """,
         unsafe_allow_html=True,
     )
-
-
-def _query_params_dict() -> dict[str, Any]:
-    try:
-        raw_params = dict(st.query_params)
-    except Exception:
-        return {"page": "inputs"}
-    params: dict[str, Any] = {}
-    for key, value in raw_params.items():
-        if isinstance(value, list):
-            params[key] = value
-        else:
-            params[key] = str(value)
-    if "page" not in params:
-        params["page"] = "inputs"
-    return params
-
-
-def _workspace_expanded_from_state() -> bool:
-    params = _query_params_dict()
-    requested = str(params.get(WORKSPACE_QUERY_PARAM, "")).strip().lower()
-    if requested in {"1", "true", "yes", "open"}:
-        st.session_state[WORKSPACE_EXPANDED_KEY] = True
-    elif requested in {"0", "false", "no", "closed"}:
-        st.session_state[WORKSPACE_EXPANDED_KEY] = False
-    elif WORKSPACE_EXPANDED_KEY not in st.session_state:
-        st.session_state[WORKSPACE_EXPANDED_KEY] = False
-    return bool(st.session_state.get(WORKSPACE_EXPANDED_KEY, False))
 
 
 def _batch_design_workspace_banner_label(
@@ -601,7 +548,6 @@ def _render_batch_design_workspace_banner_visual(
     workflow: BatchDesignWorkflowState,
     *,
     project_beam_count: int,
-    expanded: bool = False,
 ) -> None:
     summary = workflow.preview_summary()
     status_text = _batch_workspace_status_text(workflow)
@@ -611,32 +557,32 @@ def _render_batch_design_workspace_banner_visual(
     st.markdown(
         f"""
         <span class="batch-design-workspace-expander-anchor"></span>
-        <div class="batch-design-hero">
-          <div class="batch-design-hero-icon">[&gt;]</div>
-          <div class="batch-design-hero-main">
-            <div class="batch-design-hero-chips">
-              <div class="batch-design-hero-chip batch-design-chip-blue">
+        <div class="batch-design-hero" role="button" aria-label="Toggle Batch design workspace">
+          <span class="batch-design-hero-icon">[&gt;]</span>
+          <span class="batch-design-hero-main">
+            <span class="batch-design-hero-chips">
+              <span class="batch-design-hero-chip batch-design-chip-blue">
                 <span class="batch-design-chip-icon"><svg viewBox="0 0 24 24"><path d="M4 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"/><path d="M8 21v-4h6v4"/><path d="M8 7h.01M12 7h.01M8 11h.01M12 11h.01M18 9h2v12"/></svg></span><strong>B{project_beam_count}</strong><span>{project_beam_label.split(" ", 1)[1]}</span>
-              </div>
-              <div class="batch-design-hero-separator"></div>
-              <div class="batch-design-hero-chip batch-design-chip-green">
+              </span>
+              <span class="batch-design-hero-separator"></span>
+              <span class="batch-design-hero-chip batch-design-chip-green">
                 <span class="batch-design-chip-icon"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/><circle cx="12" cy="12" r="10"/></svg></span><strong>OK {summary['design_results']}</strong><span>auto designed</span>
-              </div>
-              <div class="batch-design-hero-chip batch-design-chip-cyan">
+              </span>
+              <span class="batch-design-hero-chip batch-design-chip-cyan">
                 <span class="batch-design-chip-icon"><svg viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg></span><strong>AS {summary['assignment_results']}</strong><span>auto assigned</span>
-              </div>
-              <div class="batch-design-hero-chip batch-design-chip-orange">
+              </span>
+              <span class="batch-design-hero-chip batch-design-chip-orange">
                 <span class="batch-design-chip-icon"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></span><strong>D {imported_label}</strong>
-              </div>
-              <div class="batch-design-hero-chip batch-design-chip-green">
+              </span>
+              <span class="batch-design-hero-chip batch-design-chip-green">
                 <span class="batch-design-chip-icon"><svg viewBox="0 0 24 24"><path d="M5 22V4"/><path d="M5 4h12l-1 4 1 4H5"/></svg></span><small>{status_text}</small>
-              </div>
-              <div class="batch-design-hero-chip batch-design-chip-grey">
+              </span>
+              <span class="batch-design-hero-chip batch-design-chip-grey">
                 <span class="batch-design-chip-icon"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg></span><span>Constraints: <strong>{constraints_text}</strong></span>
-              </div>
-            </div>
-          </div>
-          <div class="batch-design-hero-caret">{"^" if expanded else "v"}</div>
+              </span>
+            </span>
+          </span>
+          <span class="batch-design-hero-caret">v</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -770,33 +716,27 @@ def _render_results_export(workflow: BatchDesignWorkflowState) -> None:
 
 def render_batch_design_page(ctx: BatchDesignPageContext) -> None:
     workflow = get_batch_design_workflow_state(st.session_state)
-    workspace_expanded = _workspace_expanded_from_state()
     _inject_batch_design_workspace_banner_css()
     st.markdown("### Batch design")
     _render_batch_design_workspace_banner_visual(
         workflow,
         project_beam_count=len(ctx.beam_order or []),
-        expanded=workspace_expanded,
     )
-    if st.button(
-        _batch_design_workspace_banner_label(workflow, project_beam_count=len(ctx.beam_order or [])),
-        key="batch_design_workspace_banner_toggle",
-        use_container_width=True,
+
+    with st.expander(
+        _batch_design_workspace_banner_label(
+            workflow,
+            project_beam_count=len(ctx.beam_order or []),
+        ),
+        expanded=False,
     ):
-        st.session_state[WORKSPACE_EXPANDED_KEY] = not workspace_expanded
-        st.rerun()
-
-    if not workspace_expanded:
-        st.markdown("<div style='height: 0.85rem;'></div>", unsafe_allow_html=True)
-        return
-
-    with st.container(border=True):
         with st.container(border=True):
-            _render_project_beam_design_editor(ctx, workflow)
-        with st.container(border=True):
-            _render_import_workflow(workflow)
-        with st.container(border=True):
-            _render_design_workflow_card(ctx, workflow)
-        with st.container(border=True):
-            _render_results_export(workflow)
+            with st.container(border=True):
+                _render_project_beam_design_editor(ctx, workflow)
+            with st.container(border=True):
+                _render_import_workflow(workflow)
+            with st.container(border=True):
+                _render_design_workflow_card(ctx, workflow)
+            with st.container(border=True):
+                _render_results_export(workflow)
     st.markdown("<div style='height: 0.85rem;'></div>", unsafe_allow_html=True)

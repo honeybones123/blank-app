@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 INPUTS_PAGE = ROOT / "inputs_page.py"
+INPUTS_ROUTE_COORDINATORS = ROOT / "inputs_page_route_coordinators.py"
 APP_ENTRYPOINTS = [ROOT / "app.py", ROOT / "streamlit_app.py"]
 
 FORBIDDEN_INPUTS_PAGE_TOKENS = {
@@ -63,7 +64,20 @@ def _call_names(source: str) -> list[str]:
     return names
 
 
+def _function_source(source: str, name: str) -> str:
+    tree = ast.parse(source)
+    lines = source.splitlines()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+            end = int(node.end_lineno or node.lineno)
+            return "\n".join(lines[node.lineno - 1 : end])
+    return ""
+
+
 def _active_batch_section(source: str) -> str:
+    current = _function_source(source, "render_inputs_batch_design_manager_coordinator")
+    if current:
+        return current
     start = source.find('render_timing_mark("inputs_page.widget_section_render_start", section="batch_design")')
     if start < 0:
         start = source.find('section="batch_design"')
@@ -74,9 +88,11 @@ def _active_batch_section(source: str) -> str:
 
 
 def run_check() -> dict:
-    inputs_source = INPUTS_PAGE.read_text(encoding="utf-8-sig")
-    inputs_calls = _call_names(inputs_source)
-    active_section = _active_batch_section(inputs_source)
+    shell_source = INPUTS_PAGE.read_text(encoding="utf-8-sig")
+    route_source = INPUTS_ROUTE_COORDINATORS.read_text(encoding="utf-8-sig")
+    inputs_source = shell_source + "\n" + route_source
+    inputs_calls = _call_names(route_source)
+    active_section = _active_batch_section(route_source)
 
     entrypoint_hits = {}
     for path in APP_ENTRYPOINTS:
@@ -84,17 +100,15 @@ def run_check() -> dict:
             text = path.read_text(encoding="utf-8-sig")
             entrypoint_hits[str(path.relative_to(ROOT))] = text.count("render_batch_design_page(")
 
-    forbidden_inputs_hits = sorted(
-        token for token in FORBIDDEN_INPUTS_PAGE_TOKENS if token in inputs_source
-    )
+    forbidden_inputs_hits = sorted(token for token in FORBIDDEN_INPUTS_PAGE_TOKENS if token in shell_source)
     forbidden_section_hits = sorted(
         token for token in FORBIDDEN_ACTIVE_SECTION_TOKENS if token in active_section
     )
 
     checks = {
-        "inputs_page_has_renderer_import": "from batch_design.ui.page import BatchDesignPageContext, render_batch_design_page" in inputs_source,
+        "inputs_page_has_renderer_import": "from batch_design.ui.page import BatchDesignPageContext, render_batch_design_page" in route_source,
         "inputs_page_render_call_count": inputs_calls.count("render_batch_design_page"),
-        "inputs_page_batch_heading_count": inputs_source.count('st.markdown("### Batch design")'),
+        "inputs_page_batch_heading_count": shell_source.count('st.markdown("### Batch design")'),
         "active_section_found": bool(active_section),
         "active_section_has_renderer_call": "render_batch_design_page(" in active_section,
         "forbidden_inputs_page_hits": forbidden_inputs_hits,

@@ -49,6 +49,7 @@ from tools.verification.helpers.browser_one_click_regression import (  # noqa: E
     _wait_for_run_end,
     _wait_for_solver_state,
 )
+from tools.verification.recipes.one_click_recipe_defs import find_named_case  # noqa: E402
 
 
 FAMILIES: tuple[str, ...] = (
@@ -164,12 +165,33 @@ LIVE_AUDIT_PROBE_MAPPINGS: dict[str, dict[str, Any]] = {
         "expected_apply_surface": "combined cleanup CTA and stale-shell recovery regression",
     },
     "SERVICEABILITY_GOVERNS": {
-        "browser_recipe": "MATRIX_DEFLECTION_ONLY_FAIL",
+        "browser_recipe": "MATRIX_CRACK_SERVICEABILITY_ONLY_FAIL",
         "visual_probe": "tools/verification/design_guide_browser_live_visual_consistency_snapshot.py",
         "apply_probe": "tools/verification/families/serviceability_governs_locked_regression.py",
         "expected_apply_surface": "serviceability blocked/exact-stop publication with no family-owned apply CTA",
     },
 }
+
+LIVE_AUDIT_RECIPE_MATRICES: dict[str, tuple[str, ...]] = {
+    family: tuple(f"LIVE_FUZZ_{family}_{index:02d}" for index in range(1, 11))
+    for family in (
+        "BENDING_FAIL_GOVERNS",
+        "SHEAR_FAIL_GOVERNS",
+        "COMBINED_BENDING_SHEAR_FAIL_GOVERNS",
+        "BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS",
+        "SHEAR_FAIL_BENDING_OVERDESIGN_GOVERNS",
+        "BENDING_OVERDESIGN_GOVERNS",
+        "SHEAR_OVERDESIGN_GOVERNS",
+        "COMBINED_OVERDESIGN_GOVERNS",
+        "SERVICEABILITY_GOVERNS",
+    )
+}
+LIVE_AUDIT_RECIPE_MATRICES["COMBINED_BENDING_SHEAR_FAIL"] = LIVE_AUDIT_RECIPE_MATRICES[
+    "COMBINED_BENDING_SHEAR_FAIL_GOVERNS"
+]
+LIVE_AUDIT_RECIPE_MATRICES["COMBINED_OVERDESIGN"] = LIVE_AUDIT_RECIPE_MATRICES[
+    "COMBINED_OVERDESIGN_GOVERNS"
+]
 
 REPORT_DIR = ROOT / "artifacts" / "reports" / "family_fuzz"
 VISUAL_DIR = ROOT / "artifacts" / "reports" / "family_fuzz_visuals"
@@ -449,6 +471,43 @@ def _scenario_trigger_rows(family: str, seed: int) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+def _live_recipe_matrix_status(family: str, scenario_count: int) -> dict[str, Any]:
+    recipes = list(LIVE_AUDIT_RECIPE_MATRICES.get(family) or ())
+    known = [recipe for recipe in recipes if find_named_case(recipe)]
+    unknown = [recipe for recipe in recipes if not find_named_case(recipe)]
+    unique_count = len(set(recipes))
+    return {
+        "family": family,
+        "scenario_count": scenario_count,
+        "recipes": recipes,
+        "recipe_count": len(recipes),
+        "unique_recipe_count": unique_count,
+        "known_recipe_count": len(known),
+        "unknown_recipes": unknown,
+        "has_one_recipe_per_scenario": len(recipes) == scenario_count,
+        "all_recipes_distinct": unique_count == len(recipes),
+        "all_recipes_known": len(known) == len(recipes),
+        "ready": bool(
+            scenario_count > 0
+            and len(recipes) == scenario_count
+            and unique_count == len(recipes)
+            and len(known) == len(recipes)
+        ),
+    }
+
+
+def _attach_live_recipe_matrix(family: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    recipes = list(LIVE_AUDIT_RECIPE_MATRICES.get(family) or ())
+    if len(recipes) != len(rows):
+        return rows
+    enriched: list[dict[str, Any]] = []
+    for row, recipe in zip(rows, recipes, strict=True):
+        next_row = dict(row)
+        next_row["browser_recipe"] = recipe
+        enriched.append(next_row)
+    return enriched
 
 
 def _safe_dict(value: Any) -> dict[str, Any]:
@@ -958,13 +1017,14 @@ def _run_live_family_audit(
             try:
                 for scenario in scenarios:
                     scenario_id = str(scenario.get("scenario_id") or f"{family}_LIVE")
-                    print(f"[family-live] {family} {scenario_id} recipe={recipe}", flush=True)
+                    scenario_recipe = str(scenario.get("browser_recipe") or recipe or "").strip()
+                    print(f"[family-live] {family} {scenario_id} recipe={scenario_recipe}", flush=True)
                     context = browser.new_context(viewport={"width": 1600, "height": 1100})
                     page = context.new_page()
                     page.set_default_timeout(30_000)
                     row: dict[str, Any] = {
                         "scenario_id": scenario_id,
-                        "recipe": recipe,
+                        "recipe": scenario_recipe,
                         "family": family,
                         "trigger_passed": bool(scenario.get("trigger_passed")),
                         "failures": [],
@@ -976,7 +1036,7 @@ def _run_live_family_audit(
                                 url_base,
                                 {
                                     "page": "inputs",
-                                    "browser_recipe": recipe,
+                                    "browser_recipe": scenario_recipe,
                                     "browser_test_mode": "1",
                                     "cid": scenario_id,
                                 },
@@ -1001,10 +1061,10 @@ def _run_live_family_audit(
                         button_probe = _action_button_probe(page)
                         applied_recipe = _browser_recipe_from_state(before_state)
                         recipe_error = _browser_recipe_error_from_state(before_state)
-                        recipe_match = applied_recipe == recipe if applied_recipe else None
+                        recipe_match = applied_recipe == scenario_recipe if applied_recipe else None
                         if applied_recipe and not recipe_match:
                             row["failures"].append(
-                                f"requested_browser_recipe_mismatch:requested={recipe}:applied={applied_recipe}"
+                                f"requested_browser_recipe_mismatch:requested={scenario_recipe}:applied={applied_recipe}"
                             )
                         elif not applied_recipe:
                             row["observations"].append(
@@ -1040,6 +1100,67 @@ def _run_live_family_audit(
                                 visual_snapshot=visual_snapshot,
                             )
                         )
+                        publication_cta = _safe_dict(publication_probe_before_click.get("cta"))
+                        publication_cta_updates = _safe_dict(publication_cta.get("updates"))
+                        publication_cta_action_type = str(publication_cta.get("action_type") or "").strip()
+                        publication_cta_contract_blocked = bool(
+                            publication_cta.get("target_band_contract_blocked")
+                            or publication_cta.get("preview_pass") is False
+                        )
+                        visible_enabled_actions = int(button_probe.get("enabled_action_count") or 0)
+                        if (
+                            visible_enabled_actions > 0
+                            and (
+                                not publication_cta_action_type
+                                or not publication_cta_updates
+                                or publication_cta_contract_blocked
+                            )
+                            and "ACTION"
+                            in {str(marker or "").strip().upper() for marker in final_card_probe.get("status_markers") or []}
+                        ):
+                            for _attempt in range(4):
+                                page.wait_for_timeout(750)
+                                refreshed_state = _safe_dict(_load_browser_state(page))
+                                refreshed_probe = _extract_publication_probe(refreshed_state)
+                                refreshed_cta = _safe_dict(refreshed_probe.get("cta"))
+                                refreshed_updates = _safe_dict(refreshed_cta.get("updates"))
+                                refreshed_action_type = str(refreshed_cta.get("action_type") or "").strip()
+                                refreshed_blocked = bool(
+                                    refreshed_cta.get("target_band_contract_blocked")
+                                    or refreshed_cta.get("preview_pass") is False
+                                )
+                                if refreshed_action_type and refreshed_updates and not refreshed_blocked:
+                                    before_state = refreshed_state
+                                    visual_snapshot["browser_state"] = refreshed_state
+                                    publication_probe_before_click = refreshed_probe
+                                    publication_cta = refreshed_cta
+                                    publication_cta_updates = refreshed_updates
+                                    publication_cta_action_type = refreshed_action_type
+                                    publication_cta_contract_blocked = refreshed_blocked
+                                    row["observations"].append(
+                                        "publication_probe_refreshed_after_visible_action_card"
+                                    )
+                                    break
+                        if (
+                            visible_enabled_actions > 0
+                            and (
+                                not publication_cta_action_type
+                                or not publication_cta_updates
+                                or publication_cta_contract_blocked
+                            )
+                        ):
+                            row["failures"].append(
+                                "visible_apply_button_without_publication_cta_intent:"
+                                + json.dumps(
+                                    {
+                                        "publication_cta_action_type": publication_cta_action_type,
+                                        "publication_cta_updates": publication_cta_updates,
+                                        "publication_cta_contract_blocked": publication_cta_contract_blocked,
+                                        "visible_enabled_actions": visible_enabled_actions,
+                                    },
+                                    sort_keys=True,
+                                )
+                            )
                         if (
                             executable_action_required
                             and not button_probe.get("enabled_action_count")
@@ -1083,6 +1204,20 @@ def _run_live_family_audit(
                             if final_worst is not None and final_worst > 1.0:
                                 row["failures"].append(
                                     f"post_apply_final_util_above_limit:{final_worst}"
+                                )
+                            last_apply_route = _safe_dict(run_data.get("last_apply_route"))
+                            applied_updates = _safe_dict(
+                                last_apply_route.get("applied_updates")
+                                or last_apply_route.get("queued_apply_updates")
+                            )
+                            if (
+                                publication_cta_contract_blocked
+                                and applied_updates
+                                and not publication_cta_updates
+                            ):
+                                row["failures"].append(
+                                    "blocked_publication_candidate_was_still_applied:"
+                                    + json.dumps(applied_updates, sort_keys=True)
                                 )
                         screenshot_after = visual_root / f"{scenario_id}_after_{_datetime_stamp()}.png"
                         post_apply_visual_snapshot: dict[str, Any] = {}
@@ -1149,7 +1284,7 @@ def _run_live_family_audit(
                                 "publication_probe_before": publication_probe_before_click,
                                 "publication_probe_after": _extract_publication_probe(_safe_dict(after_state)),
                                 "browser_recipe_probe": {
-                                    "requested": recipe,
+                                    "requested": scenario_recipe,
                                     "applied": applied_recipe,
                                     "error": recipe_error,
                                 },
@@ -1176,10 +1311,17 @@ def _run_live_family_audit(
             except Exception:
                 process.kill()
     failure_rows = [row for row in live_rows if row.get("failures")]
+    executed_recipes = [
+        str(row.get("recipe") or "").strip()
+        for row in live_rows
+        if str(row.get("recipe") or "").strip()
+    ]
     return {
         "executed": bool(live_rows),
         "family": family,
         "recipe": recipe,
+        "recipes": executed_recipes,
+        "unique_recipe_count": len(set(executed_recipes)),
         "base_url": url_base,
         "started_process": started_process,
         "scenario_count": len(live_rows),
@@ -1207,6 +1349,8 @@ def _audit_family(
     lock_verifiers = _matching_family_verifiers(family, "lock")
     regression_files = _matching_family_verifiers(family, "regression")
     trigger_rows = _scenario_trigger_rows(family, seed)
+    recipe_matrix_status = _live_recipe_matrix_status(family, len(trigger_rows))
+    trigger_rows = _attach_live_recipe_matrix(family, trigger_rows)
     ladder_methods = _strategy_ladder_methods(strategy)
     accepted_family_ids = set(FAMILY_CLASSIFICATION_ALIASES.get(family, (family,)))
     predicate_present = any(alias in FAMILY_PREDICATES for alias in accepted_family_ids)
@@ -1223,6 +1367,11 @@ def _audit_family(
         "family_lock_verifier_present": bool(lock_verifiers),
         "visual_recipe_mapping_present": bool(live_mapping.get("browser_recipe") and visual_probe.exists()),
         "apply_button_probe_mapping_present": bool(live_mapping.get("browser_recipe") and apply_probe.exists()),
+        "ten_distinct_live_browser_recipes_present": (
+            recipe_matrix_status["ready"]
+            if family in LIVE_EXECUTABLE_FAMILIES
+            else True
+        ),
     }
 
     blockers = [key for key, value in readiness_checks.items() if not value]
@@ -1332,6 +1481,8 @@ def _audit_family(
         best_candidate_proof = {
             "source": "browser_live_family_10_fuzz",
             "recipe": live_execution.get("recipe"),
+            "recipes": live_execution.get("recipes"),
+            "unique_recipe_count": live_execution.get("unique_recipe_count"),
             "scenario_count": live_execution.get("scenario_count"),
             "passed_count": live_execution.get("passed_count"),
             "failed_count": live_execution.get("failed_count"),
@@ -1344,6 +1495,7 @@ def _audit_family(
         "regression_files": [str(path.relative_to(ROOT)) for path in regression_files],
         "classification_aliases": sorted(accepted_family_ids),
         "live_audit_probe_mapping": live_mapping,
+        "live_audit_recipe_matrix": recipe_matrix_status,
         "strategy_registered": strategy is not None,
         "strategy_type": type(strategy).__name__ if strategy is not None else None,
         "ladder_methods": ladder_methods,
@@ -1427,20 +1579,36 @@ def _write_family_report(row: dict[str, Any]) -> Path:
         "",
         "## Live Probe Mapping",
         "",
-        *(
-            [f"- `{key}`: `{value}`" for key, value in row["live_audit_probe_mapping"].items()]
-            or ["- none"]
-        ),
-        "",
-        "## 10 Scenarios Generated",
-        "",
-        "| Scenario | Expected | Actual | Trigger | Reason |",
-        "| --- | --- | --- | --- | --- |",
+            *(
+                [f"- `{key}`: `{value}`" for key, value in row["live_audit_probe_mapping"].items()]
+                or ["- none"]
+            ),
+            "",
+            "## Live Recipe Matrix",
+            "",
+            f"- `ready`: `{row['live_audit_recipe_matrix'].get('ready')}`",
+            f"- `recipe_count`: `{row['live_audit_recipe_matrix'].get('recipe_count')}`",
+            f"- `unique_recipe_count`: `{row['live_audit_recipe_matrix'].get('unique_recipe_count')}`",
+            f"- `all_recipes_known`: `{row['live_audit_recipe_matrix'].get('all_recipes_known')}`",
+            f"- `unknown_recipes`: `{row['live_audit_recipe_matrix'].get('unknown_recipes')}`",
+            "",
+            "| Index | Browser recipe |",
+            "| --- | --- |",
+            *[
+                f"| {index} | `{recipe}` |"
+                for index, recipe in enumerate(row["live_audit_recipe_matrix"].get("recipes") or [], start=1)
+            ],
+            "",
+            "## 10 Scenarios Generated",
+            "",
+        "| Scenario | Browser recipe | Expected | Actual | Trigger | Reason |",
+        "| --- | --- | --- | --- | --- | --- |",
     ]
     for scenario in row["scenarios"]:
         lines.append(
-            "| `{sid}` | `{expected}` | `{actual}` | `{trigger}` | `{reason}` |".format(
+            "| `{sid}` | `{recipe}` | `{expected}` | `{actual}` | `{trigger}` | `{reason}` |".format(
                 sid=scenario["scenario_id"],
+                recipe=scenario.get("browser_recipe") or "",
                 expected=scenario["expected_family"],
                 actual=scenario["actual_selected_family"],
                 trigger="PASS" if scenario["trigger_passed"] else "FAIL",

@@ -53,6 +53,8 @@ RAW_FLAG_KEYS: tuple[str, ...] = (
     "exact_stop_proven",
     "bending_acceptable",
     "shear_acceptable",
+    "bending_not_applicable",
+    "shear_not_applicable",
 )
 
 
@@ -360,8 +362,8 @@ FAMILY_DEFINITIONS: dict[str, FamilyPredicate] = {
         _no_failure(f)
         and not f["bending_overdesigned"]
         and not f["shear_overdesigned"]
-        and bool(f["bending_within_target_band"] or f.get("bending_acceptable"))
-        and bool(f["shear_within_target_band"] or f.get("shear_acceptable"))
+        and bool(f["bending_within_target_band"] or f.get("bending_not_applicable"))
+        and bool(f["shear_within_target_band"] or f.get("shear_not_applicable"))
     ),
     "EXACT_STOP_PROVEN": lambda f: (
         _no_failure(f)

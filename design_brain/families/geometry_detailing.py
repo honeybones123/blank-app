@@ -34,10 +34,10 @@ def _float(value: Any, default: float = 0.0) -> float:
 def _geometry_width_context(state: dict[str, Any]) -> tuple[str, str, float]:
     sec_shape = str(state.get("sec_shape", "RECT") or "RECT").upper()
     if sec_shape == "T":
-        return "bw", "Web width bw", _float(state.get("bw", state.get("b", 300.0)), 300.0)
+        return "bw", "Web width bw", _float(state.get("bw", state.get("inputs_bw", state.get("b", state.get("inputs_b", 300.0)))), 300.0)
     if sec_shape == "I":
-        return "tw", "Web thickness tw", _float(state.get("tw", state.get("b", 200.0)), 200.0)
-    return "b", "Width b", _float(state.get("b", 300.0), 300.0)
+        return "tw", "Web thickness tw", _float(state.get("tw", state.get("inputs_tw", state.get("b", state.get("inputs_b", 200.0)))), 200.0)
+    return "b", "Width b", _float(state.get("b", state.get("inputs_b", 300.0)), 300.0)
 
 
 @dataclass(frozen=True)
@@ -104,7 +104,7 @@ def run_geometry_detailing_governs_runtime(
     state = dict(base_state or {})
     constraint_d = dict(constraints or {})
     width_key, width_label, width = _geometry_width_context(state)
-    depth = _float(state.get("D"), 0.0)
+    depth = _float(state.get("D", state.get("inputs_D")), 0.0)
     limit = float(bending_depth_width_ratio_limit())
     ratio_before = depth_width_ratio(width=width, depth=depth)
     base_surface = {

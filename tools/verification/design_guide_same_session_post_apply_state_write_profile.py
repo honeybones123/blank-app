@@ -117,6 +117,11 @@ def _summarise_state(state: dict[str, Any], *, recipe: str, label: str) -> dict[
             depth=3,
             max_items=10,
         ),
+        "summary_card_html_cache_probe": _compact(
+            (source.get("summary_card_html_cache_probe") or {}),
+            depth=3,
+            max_items=10,
+        ),
         "pending_flags": dict(source.get("pending_flags") or {}),
         "any_pending_flag": bool(source.get("any_pending_flag")),
         "rerun_trigger_events": list(source.get("rerun_triggers") or [])[-24:],
@@ -292,6 +297,7 @@ def _classify(capture: dict[str, Any]) -> dict[str, Any]:
     card_model_delta = _delta(after.get("card_render_model_rebuild_count"), post_apply.get("card_render_model_rebuild_count"))
     debug_stamp_delta = _delta(after.get("session_debug_stamp_count"), post_apply.get("session_debug_stamp_count"))
     summary_bypass_after = dict(after.get("summary_card_html_bypass_debug") or {})
+    summary_cache_after = dict(after.get("summary_card_html_cache_probe") or {})
     likely_sources: list[str] = []
     if not apply_click.get("clicked"):
         likely_sources.append("post_apply_action_not_clicked")
@@ -313,7 +319,20 @@ def _classify(capture: dict[str, Any]) -> dict[str, Any]:
         summary_bypass_after.get("summary_card_html_bypassed")
         or summary_bypass_after.get("bypassed")
     )
-    if summary_bypass_after and not summary_html_bypassed and stable_after_apply_rerun:
+    summary_cache_current = (
+        bool(summary_cache_after.get("has_summary_cards_html"))
+        and dict(summary_cache_after.get("reuse_keys") or {})
+        == dict(summary_bypass_after.get("reuse_keys") or {})
+    )
+    if (
+        summary_bypass_after
+        and not summary_html_bypassed
+        and stable_after_apply_rerun
+        and summary_cache_current
+        and not any([candidate_delta, publication_delta, card_model_delta, debug_stamp_delta])
+    ):
+        likely_sources.append("summary_html_cache_current_bypass_debug_stale_only")
+    elif summary_bypass_after and not summary_html_bypassed and stable_after_apply_rerun:
         likely_sources.append("summary_html_rebuild_after_stable_post_apply_rerun")
     if not likely_sources and rerun_changed and stable_after_apply_rerun:
         likely_sources.append("stable_post_apply_rerun_no_product_state_write_hotspot")
@@ -356,6 +375,10 @@ def _classify(capture: dict[str, Any]) -> dict[str, Any]:
     elif likely_sources == ["debug_only_session_stamp_write_after_stable_post_apply_rerun"]:
         decision = "NO_PATCH_DEBUG_ONLY_STAMP_DELTA"
         next_slice = "No product rebuild hotspot remains in this slice; continue with first-paint/layout or browser-probe profiling."
+        status = "PASS"
+    elif likely_sources == ["summary_html_cache_current_bypass_debug_stale_only"]:
+        decision = "NO_PATCH_SUMMARY_CACHE_CURRENT_STALE_DEBUG_PROXY"
+        next_slice = "No product summary rebuild patch is required; browser probe shows the cache is current and product counters are stable."
         status = "PASS"
     elif "stable_post_apply_rerun_no_product_state_write_hotspot" in likely_sources:
         decision = "NO_PATCH_PRODUCT_STATE_WRITES_CLEAN"

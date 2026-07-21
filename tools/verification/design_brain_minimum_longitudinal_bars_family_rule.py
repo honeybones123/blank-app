@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
 
 from design_brain.candidate_evaluation import (  # noqa: E402
     filter_auto_design_candidates_by_row_layout,
+    resolve_longitudinal_bar_spacing_rule,
     resolve_auto_design_candidate_row_layout_validity,
     resolve_minimum_longitudinal_bar_rule,
 )
@@ -94,9 +95,20 @@ def _row_layout_cases() -> list[dict[str, Any]]:
             {"bot1_count": 2, "bot2_count": 0, "top1_count": 1, "top2_count": 0},
             False,
         ),
+        (
+            "row_layout_reject_two_bottom_bars_spaced_over_300",
+            {"bot1_count": 2, "bot2_count": 0, "top1_count": 3, "top2_count": 0, "beam_width": 730.0},
+            False,
+        ),
+        (
+            "row_layout_accept_four_bottom_bars_under_300",
+            {"bot1_count": 4, "bot2_count": 0, "top1_count": 4, "top2_count": 0, "beam_width": 730.0},
+            True,
+        ),
     ):
+        beam_width = float(kwargs.pop("beam_width", 300.0))
         result = resolve_auto_design_candidate_row_layout_validity(
-            beam_width=300.0,
+            beam_width=beam_width,
             cover=40.0,
             db_bot_1=16.0,
             db_bot_2=16.0,
@@ -110,7 +122,37 @@ def _row_layout_cases() -> list[dict[str, Any]]:
                 "expected_valid": expected_valid,
                 "actual_valid": bool(result.get("valid")),
                 "minimum_bar_rule": dict(result.get("minimum_bar_rule") or {}),
+                "longitudinal_bar_spacing_rule": dict(result.get("longitudinal_bar_spacing_rule") or {}),
                 "passes": bool(result.get("valid")) is expected_valid,
+            }
+        )
+    return cases
+
+
+def _longitudinal_spacing_rule_cases() -> list[dict[str, Any]]:
+    cases: list[dict[str, Any]] = []
+    for name, state, expected_valid in (
+        (
+            "spacing_rule_rejects_wide_two_bar_bottom_row",
+            _base_state(b=730.0, bw=730.0, bot_row_1_bars=2, bot1_count=2, top_row_1_bars=3, top1_count=3),
+            False,
+        ),
+        (
+            "spacing_rule_accepts_even_four_bar_bottom_row",
+            _base_state(b=730.0, bw=730.0, bot_row_1_bars=4, bot1_count=4, top_row_1_bars=4, top1_count=4),
+            True,
+        ),
+    ):
+        rule = resolve_longitudinal_bar_spacing_rule(state)
+        cases.append(
+            {
+                "name": name,
+                "expected_valid": expected_valid,
+                "actual_valid": bool(rule.get("valid")),
+                "maximum_longitudinal_bar_cc_spacing_mm": rule.get("maximum_longitudinal_bar_cc_spacing_mm"),
+                "meaning": rule.get("meaning"),
+                "rows": list(rule.get("rows") or []),
+                "passes": bool(rule.get("valid")) is expected_valid,
             }
         )
     return cases
@@ -121,15 +163,23 @@ def _filter_case() -> dict[str, Any]:
         {"label": "valid", "state": _base_state()},
         {"label": "invalid_one_bottom", "state": _base_state(bot_row_1_bars=1, bot1_count=1)},
         {"label": "invalid_one_top", "state": _base_state(top_row_1_bars=1, top1_count=1)},
+        {
+            "label": "invalid_wide_two_bottom",
+            "state": _base_state(b=730.0, bw=730.0, bot_row_1_bars=2, bot1_count=2, top_row_1_bars=3, top1_count=3),
+        },
     ]
     result = filter_auto_design_candidates_by_row_layout(candidates)
     kept_labels = [str(row.get("label") or "") for row in result.get("filtered_candidates") or []]
     rejected_labels = [str(row.get("label") or "") for row in result.get("rejected_candidates") or []]
     return {
-        "name": "auto_design_filter_rejects_one_bar_faces",
+        "name": "auto_design_filter_rejects_one_bar_faces_and_wide_longitudinal_spacing",
         "kept_labels": kept_labels,
         "rejected_labels": rejected_labels,
-        "passes": kept_labels == ["valid"] and rejected_labels == ["invalid_one_bottom", "invalid_one_top"],
+        "passes": kept_labels == ["valid"] and rejected_labels == [
+            "invalid_one_bottom",
+            "invalid_one_top",
+            "invalid_wide_two_bottom",
+        ],
     }
 
 
@@ -150,18 +200,24 @@ def _source_boundary_checks() -> dict[str, Any]:
         "candidate_probe_uses_two_bar_floor": "minimum_bottom_bars = 2" in candidate_source,
         "bending_fail_runtime_uses_two_bar_floor": 'base_count = max(2, _as_int(base.get("bot_row_1_bars")' in bending_fail_source,
         "page_bridge_uses_two_bar_floor": 'row1_bars = max(2, _int_from_state(base, "bot_row_1_bars"' in inputs_source,
+        "candidate_evaluation_owns_300_mm_longitudinal_spacing": "MAX_LONGITUDINAL_BAR_CC_SPACING_MM = 300.0" in candidate_source,
+        "apply_bridge_consumes_design_brain_spacing_rule": "_resolve_longitudinal_bar_spacing_rule(state_d, updates_d)" in inputs_source,
         "widget_filters_one_bar_options": bool(widget_filters_one),
-        "passes": not any(forbidden_fragments.values()) and bool(widget_filters_one),
+        "passes": not any(forbidden_fragments.values())
+        and bool(widget_filters_one)
+        and "MAX_LONGITUDINAL_BAR_CC_SPACING_MM = 300.0" in candidate_source
+        and "_resolve_longitudinal_bar_spacing_rule(state_d, updates_d)" in inputs_source,
     }
 
 
 def build_snapshot() -> dict[str, Any]:
     rule_cases = _rule_cases()
     row_layout_cases = _row_layout_cases()
+    spacing_rule_cases = _longitudinal_spacing_rule_cases()
     filter_case = _filter_case()
     source_boundary = _source_boundary_checks()
     failures: list[str] = []
-    for case in rule_cases + row_layout_cases + [filter_case]:
+    for case in rule_cases + row_layout_cases + spacing_rule_cases + [filter_case]:
         if not bool(case.get("passes")):
             failures.append(str(case.get("name") or "unnamed_case"))
     if not bool(source_boundary.get("passes")):
@@ -170,10 +226,11 @@ def build_snapshot() -> dict[str, Any]:
         "schema": "design_brain_minimum_longitudinal_bars_family_rule.v1",
         "result": "PASS" if not failures else "FAIL",
         "failures": failures,
-        "rule": "top and bottom longitudinal faces must have at least two bars; no family candidate may publish/apply one bar",
+        "rule": "top and bottom longitudinal faces must have at least two bars and no row may exceed 300 mm longitudinal bar c/c spacing; no family candidate may publish/apply a violating layout",
         "owner": "design_brain.candidate_evaluation.resolve_minimum_longitudinal_bar_rule",
         "rule_cases": rule_cases,
         "row_layout_cases": row_layout_cases,
+        "longitudinal_spacing_rule_cases": spacing_rule_cases,
         "filter_case": filter_case,
         "source_boundary": source_boundary,
     }
@@ -193,7 +250,7 @@ def _write_artifacts(snapshot: dict[str, Any]) -> tuple[Path, Path]:
                 "",
                 f"Result: **{snapshot['result']}**",
                 "",
-                "Rule: top and bottom longitudinal faces must not publish/apply a one-bar layout.",
+                "Rule: top and bottom longitudinal faces must not publish/apply a one-bar layout or a longitudinal row with c/c spacing above 300 mm.",
                 "",
                 "## Failures",
                 *(f"- {failure}" for failure in snapshot.get("failures") or ["None"]),

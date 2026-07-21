@@ -37,6 +37,8 @@ BASE_FLAGS = {
     "exact_stop_proven": False,
     "bending_acceptable": False,
     "shear_acceptable": False,
+    "bending_not_applicable": False,
+    "shear_not_applicable": False,
 }
 
 
@@ -139,12 +141,31 @@ CASES = [
     },
     {
         "case_id": "safe_near_limit_above_cleanup_band_maps_to_target_band",
-        "expected": "TARGET_BAND_REACHED",
+        "expected": FAMILY_SELECTION_CONTRACT_VIOLATION,
         "flags": _flags(
             bending_acceptable=True,
             shear_acceptable=True,
             bending_within_target_band=False,
             shear_within_target_band=True,
+        ),
+        "expected_match_count": 0,
+    },
+    {
+        "case_id": "explicit_target_band_requires_both_applicable_domains_in_band",
+        "expected": "TARGET_BAND_REACHED",
+        "flags": _flags(
+            bending_within_target_band=True,
+            shear_within_target_band=True,
+        ),
+    },
+    {
+        "case_id": "underband_bending_with_target_shear_is_bending_overdesign_not_terminal",
+        "expected": "BENDING_OVERDESIGN_GOVERNS",
+        "flags": _flags(
+            bending_overdesigned=True,
+            bending_acceptable=True,
+            shear_within_target_band=True,
+            shear_acceptable=True,
         ),
     },
     {

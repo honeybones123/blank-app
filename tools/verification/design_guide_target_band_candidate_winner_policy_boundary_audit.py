@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-INPUTS = ROOT / "inputs_page.py"
+AUTO_DESIGN_COMPUTE = ROOT / "inputs_page_modules" / "auto_design_compute.py"
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 
@@ -30,33 +30,35 @@ def _function_segment(source: str, name: str) -> tuple[int, int, str]:
 
 
 def build_payload() -> dict:
-    source = _read(INPUTS)
+    source = _read(AUTO_DESIGN_COMPUTE)
     start, end, segment = _function_segment(source, "_solve_one_click_to_target")
     checks = {
         "sort_key_service_delegated": "_resolve_target_band_candidate_sort_key(" in segment,
-        "page_lexicographic_sort_still_present": 'scored.sort(key=lambda x: x["sort_key"])' in segment,
-        "page_best_candidate_assignment_still_present": "best = scored[0]" in segment,
+        "winner_selection_service_delegated": "_select_target_band_ranked_candidate(scored)" in segment,
+        "page_lexicographic_sort_removed": 'scored.sort(key=lambda x: x["sort_key"])' not in segment,
+        "page_best_candidate_assignment_removed": "best = scored[0]" not in segment,
         "step_improvement_policy_delegated": "_one_click_step_improves(" in segment,
         "in_band_shear_override_still_page_owned": "_one_click_in_band_shear_cleanup_candidate_allowed(" in segment,
         "post_selection_evaluation_still_page_owned": "evaluate_candidate_full(" in segment and "one_click_after_step_" in segment,
         "working_state_commit_still_page_owned": "working.update(best[\"updates\"])" in segment,
         "fallback_next_hop_still_page_owned": "_one_click_best_next_hop_improving_candidate(" in segment,
-        "stop_reason_assignment_still_page_owned": "stop_reason = \"no_improving_candidate\"" in segment,
+        "selected_candidate_acceptance_service_delegated": "_resolve_target_band_selected_candidate_acceptance(" in segment,
+        "stop_trace_string_retained": "no_improving_candidate" in segment,
     }
     classifications = [
         {
             "surface": "lexicographic winner selection from scored candidates",
-            "current_owner": "inputs_page.py",
+            "current_owner": "design_brain.candidate_evaluation",
             "target_owner": "design_brain.candidate_evaluation",
-            "classification": "READY_FOR_SELECTION_ONLY_EXTRACTION",
+            "classification": "SERVICE_OWNED",
             "reason": "selection depends only on plain scored candidate dictionaries and their sort_key values",
         },
         {
             "surface": "no-improvement stop decision",
-            "current_owner": "inputs_page.py wrapper calling service policy",
+            "current_owner": "design_brain.candidate_evaluation for pure accept/reject; solver keeps trace shaping",
             "target_owner": "candidate_evaluation/controller after parity",
-            "classification": "PARTIAL_SERVICE_OWNED",
-            "reason": "step-improves policy is service-owned, but page still combines it with shear cleanup deferral override and trace/stop shaping",
+            "classification": "SERVICE_OWNED_WITH_TRACE_SHAPING_RETAINED",
+            "reason": "step-improves and accept/reject policy are service-owned; solver still computes the shear override and emits the legacy stop trace",
         },
         {
             "surface": "in-band shear cleanup deferral override",
@@ -85,7 +87,7 @@ def build_payload() -> dict:
         "fallback next-hop injection is still page-owned route policy",
         "in-band shear cleanup override is still route-state dependent",
     ]
-    first_safe_slice = "extract selection-only helper that returns the lexicographic minimum scored candidate without moving improvement/override/evaluation logic"
+    first_safe_slice = "audit/extract fallback next-hop injection or post-selection evaluation boundary separately"
     status = "PASS" if all(checks.values()) else "FAIL"
     return {
         "status": status,
@@ -94,16 +96,15 @@ def build_payload() -> dict:
         "line_range": [start, end],
         "checks": checks,
         "classifications": classifications,
-        "ready_to_extract_now": ["lexicographic winner selection from scored candidates"] if status == "PASS" else [],
+        "ready_to_extract_now": [] if status == "PASS" else [],
         "not_ready": [
-            "no-improvement stop decision as a whole",
             "in-band shear cleanup deferral override",
             "post-selection evaluate/apply-to-working-state loop",
             "fallback next-hop injection",
         ],
         "blockers": blockers,
         "first_safe_implementation_slice": first_safe_slice,
-        "required_verifier": "design_guide_target_band_candidate_winner_selection_service_extraction.py",
+        "required_verifier": "dedicated fallback next-hop or post-selection evaluation boundary audit",
         "product_behavior_changed": False,
     }
 
@@ -121,7 +122,7 @@ def write_artifacts(payload: dict) -> None:
         "",
         f"## Executive Summary: {payload['status']}",
         "",
-        "The target-band sort-key construction is now service-owned. The next safe extraction is only the lexicographic selected-candidate pick.",
+        "The target-band sort-key construction, lexicographic winner pick, and pure accept/reject decision are now service-owned. Remaining route logic is fallback injection, override calculation, trace shaping, and post-selection evaluation.",
         "",
         "## Checks",
     ]

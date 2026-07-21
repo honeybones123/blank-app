@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-INPUTS_PAGE = ROOT / "inputs_page.py"
+APP_CONTRACT_BRIDGE = ROOT / "inputs_page_app_contract_bridge.py"
 CONTROLLER = ROOT / "design_brain" / "design_guide_controller.py"
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
@@ -70,7 +70,7 @@ def build_payload() -> dict[str, Any]:
         resolve_design_guide_controller_optimisation_candidate_family,
     )
 
-    inputs_source = _read(INPUTS_PAGE)
+    inputs_source = _read(APP_CONTRACT_BRIDGE)
     controller_source = _read(CONTROLLER)
     page_helper = _function_segment(inputs_source, "_optimisation_candidate_family")
     controller_helper = _function_segment(

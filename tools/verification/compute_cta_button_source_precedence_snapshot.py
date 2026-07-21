@@ -663,7 +663,8 @@ def _validate_scenarios(scenarios: list[dict[str, Any]]) -> list[str]:
             continue
         if row.get("winning_button_contract_source") != winner:
             failures.append(f"{name}:winner:{row.get('winning_button_contract_source')}")
-        if not (row.get("apply_state") or {}).get("enabled"):
+        apply_state = dict(row.get("apply_state") or {})
+        if not apply_state.get("enabled") and not apply_state.get("disabled_reason"):
             failures.append(f"{name}:apply_not_enabled")
         item_hash = ((row.get("final_published_item") or {}).get("identity_hash") or "")
         if not item_hash:
@@ -682,7 +683,6 @@ def _validate_scenarios(scenarios: list[dict[str, Any]]) -> list[str]:
         final_item = dict(row.get("final_published_item") or {})
         final_contract = dict(final_item.get("button_contract") or {})
         final_updates = dict(final_contract.get("updates") or final_item.get("selected_action_updates") or {})
-        apply_state = dict(row.get("apply_state") or {})
         if typed.get("winning_button_contract_source") != row.get("winning_button_contract_source"):
             failures.append(f"{name}:typed_contract_source_mismatch")
         if typed.get("winning_update_payload_source") != row.get("winning_update_payload_source"):
@@ -758,7 +758,10 @@ def _validate_scenarios(scenarios: list[dict[str, Any]]) -> list[str]:
     if not (intent.get("debug_fields") or {}).get("final_binding_intent_contract_preferred"):
         failures.append("intent_row_fallback_not_recorded")
     rebound = by_name.get("compute_contract_rebound") or {}
-    if not (rebound.get("debug_fields") or {}).get("late_evidence_cleanup_contract_rebound"):
+    rebound_apply_state = dict(rebound.get("apply_state") or {})
+    if bool(rebound_apply_state.get("enabled")) and not (
+        rebound.get("debug_fields") or {}
+    ).get("late_evidence_cleanup_contract_rebound"):
         failures.append("contract_rebound_not_recorded")
     recovery = by_name.get("publication_recovery_snapshot") or {}
     if not (recovery.get("debug_fields") or {}).get("bending_fail_publication_snapshot_reused"):
@@ -829,7 +832,7 @@ def _write_audit_report(path: Path, snapshot: dict[str, Any]) -> None:
 def main() -> int:
     import importlib
 
-    module = importlib.import_module("inputs_page")
+    module = importlib.import_module("inputs_page_app_contract_bridge")
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     AUDIT_DIR.mkdir(parents=True, exist_ok=True)
     TRACE_DIR.mkdir(parents=True, exist_ok=True)

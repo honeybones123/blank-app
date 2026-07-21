@@ -21,7 +21,7 @@ from design_brain.candidate_evaluation import (  # noqa: E402
 )
 
 
-INPUTS = ROOT / "inputs_page.py"
+INPUTS = ROOT / "inputs_page_app_contract_bridge.py"
 CANDIDATE_EVALUATION = ROOT / "design_brain" / "candidate_evaluation.py"
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
@@ -196,8 +196,8 @@ def build_payload() -> dict[str, Any]:
         for token in (
             "_build_auto_design_context(",
             "generate_compliant_refinement_candidates(",
-            "evaluate_candidate_full(",
-            "_one_click_diff_accumulated_updates(",
+            "evaluator_fn=evaluate_candidate_full",
+            "_select_best_target_band_refinement_candidate(",
         )
     )
     forbidden_service_hits = [
@@ -241,9 +241,10 @@ def build_payload() -> dict[str, Any]:
             "remains_page_owned": [
                 "auto-design context construction",
                 "refinement candidate generation",
-                "full candidate evaluation loop",
-                "candidate target-domain attachment and update diff",
-                "best payload selection by distance",
+                "canonical state pack callback",
+                "full candidate evaluator callback",
+                "target-domain attachment callback",
+                "spacing-envelope callback",
             ],
         },
         "product_behavior_changed": False,
