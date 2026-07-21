@@ -8,6 +8,7 @@ from typing import Any
 from ui.summary_sections import (
     build_final_summary_check_card_html,
     build_final_summary_check_card_model,
+    summary_card_css,
 )
 
 from .contracts import CARD_ORDER
@@ -155,4 +156,4 @@ def build_inputs_summary_html(
                 f'<div class="summary-detail-title">Detailed checks</div>{shear_detail_note_html}',
             )
         html_parts.append(html)
-    return "".join(html_parts)
+    return f'{summary_card_css()}<div class="summary-card-stack">{"".join(html_parts)}</div>'
