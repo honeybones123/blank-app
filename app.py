@@ -3,6 +3,42 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+
+class _SafeConsoleStream:
+    """Best-effort console stream wrapper for detached Streamlit runs."""
+
+    _design_safe_console_stream = True
+
+    def __init__(self, stream):
+        self._stream = stream
+        self.encoding = getattr(stream, "encoding", None)
+        self.errors = getattr(stream, "errors", None)
+
+    def write(self, value):
+        try:
+            return self._stream.write(value)
+        except Exception:
+            return len(value) if isinstance(value, str) else 0
+
+    def flush(self):
+        try:
+            return self._stream.flush()
+        except Exception:
+            return None
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+def _install_safe_console_streams() -> None:
+    for name in ("stdout", "stderr"):
+        stream = getattr(sys, name, None)
+        if stream is not None and not getattr(stream, "_design_safe_console_stream", False):
+            setattr(sys, name, _SafeConsoleStream(stream))
+
+
+_install_safe_console_streams()
+
 import copy
 import hashlib
 import importlib
