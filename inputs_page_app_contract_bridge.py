@@ -6732,22 +6732,32 @@ def _select_top_geometry_seeds_for_compound(
 
 
 def _append_geometry_bottom_compound_candidates(
-    candidates: list[dict],
-    state: dict,
-    bottom_rec: dict,
-    mode_config: dict,
+    candidates: list[dict] | None = None,
+    state: dict | None = None,
+    bottom_rec: dict | None = None,
+    mode_config: dict | None = None,
     *,
+    seed_candidate: dict | None = None,
     context: dict | None = None,
-    compound_trace_log: list | None = None,
+    eval_cache: dict | None = None,
+    metrics: dict | None = None,
+    compound_stats: dict | None = None,
+    compound_trace_log: list[dict] | None = None,
 ) -> None:
     _bind_recommendation_compound_candidate_dependencies(globals())
+    seed = seed_candidate if seed_candidate is not None else bottom_rec
+    if state is None or seed is None or candidates is None or mode_config is None:
+        return None
     return _append_geometry_bottom_compound_candidates_extracted(
-        candidates,
-        state,
-        bottom_rec,
-        mode_config,
-        context=context,
-        compound_trace_log=compound_trace_log,
+        state=state,
+        seed_candidate=seed,
+        candidates=candidates,
+        mode_config=mode_config,
+        context=context if context is not None else {},
+        eval_cache=eval_cache if eval_cache is not None else {},
+        metrics=metrics if metrics is not None else {},
+        compound_stats=compound_stats if compound_stats is not None else {},
+        compound_trace_log=compound_trace_log if compound_trace_log is not None else [],
     )
 
 
