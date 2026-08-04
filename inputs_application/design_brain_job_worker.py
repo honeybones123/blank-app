@@ -66,6 +66,9 @@ def compute_design_brain_job(request: Mapping[str, Any]) -> dict[str, Any]:
         family_override=str(request_payload.get("family_override") or "").strip()
         or None,
         resolved_inputs=guidance_context,
+        engineering_calculations=_mapping(
+            request_payload.get("engineering_calculations")
+        ),
     )
     return {
         "schema": WORKER_SCHEMA,

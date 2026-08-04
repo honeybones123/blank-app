@@ -24,6 +24,7 @@ from inputs_application.region_contexts import (
     InputsControlsRegionContext,
     InputsDesignBrainRegionContext,
     InputsSummaryRegionContext,
+    InputsSummaryRegionState,
     RevisionIdentity,
 )
 from inputs_application.summary_calculation_fragment_store import (
@@ -294,19 +295,40 @@ def build_inputs_calculation_region_context(
     )
 
 
-def build_inputs_summary_region_context(
+def build_inputs_summary_region_state(
     *,
     session_state: dict[str, Any],
     services: InputsSessionServices,
-) -> InputsSummaryRegionContext | None:
-    """Bind Summary to the complete engineering packs for one input revision."""
+) -> InputsSummaryRegionState:
+    """Resolve Summary readiness without conflating empty, pending, and failed."""
 
     workspace_store = InputsWorkspaceStateStore(session_state)
     input_revision = workspace_store.workspace_revision()
     authoritative_result = services.engineering_results.current()
     calculation_state = workspace_store.calculation_status()
+    calculation_revision = int(calculation_state.get("revision", 0) or 0)
+    calculation_status = str(calculation_state.get("status") or "empty")
+    if (
+        calculation_status == "awaiting_inputs"
+        and calculation_revision == input_revision
+        and workspace_store.authoritative_revision() == input_revision
+        and not workspace_store.authoritative_result_present()
+    ):
+        return InputsSummaryRegionState(
+            input_revision=input_revision,
+            status="awaiting_inputs",
+        )
+    if calculation_status == "failed" and calculation_revision == input_revision:
+        return InputsSummaryRegionState(
+            input_revision=input_revision,
+            status="failed",
+            error=str(calculation_state.get("error") or "calculation_failed"),
+        )
     if authoritative_result is None:
-        return None
+        return InputsSummaryRegionState(
+            input_revision=input_revision,
+            status="updating",
+        )
     engineering_hash = authoritative_result.engineering_hash
     current_calculations = dict(
         authoritative_result.current_calculations or {}
@@ -328,18 +350,25 @@ def build_inputs_summary_region_context(
             for family in ("bending", "shear", "crack", "deflection")
         )
     ):
-        return None
-    return InputsSummaryRegionContext(
-        identity=RevisionIdentity(
+        return InputsSummaryRegionState(
             input_revision=input_revision,
-            engineering_hash=engineering_hash,
+            status="updating",
+        )
+    return InputsSummaryRegionState(
+        input_revision=input_revision,
+        status="ready",
+        context=InputsSummaryRegionContext(
+            identity=RevisionIdentity(
+                input_revision=input_revision,
+                engineering_hash=engineering_hash,
+            ),
+            resolved_inputs=dict(resolved_inputs),
+            packs={
+                family: dict(packs[family])
+                for family in ("bending", "shear", "crack", "deflection")
+            },
+            actions_used=dict(current_calculations.get("actions_used") or {}),
         ),
-        resolved_inputs=dict(resolved_inputs),
-        packs={
-            family: dict(packs[family])
-            for family in ("bending", "shear", "crack", "deflection")
-        },
-        actions_used=dict(current_calculations.get("actions_used") or {}),
     )
 
 
@@ -414,6 +443,26 @@ def prepare_engineering_workspace_transaction(
         workspace_revision = committed_revision
         workspace_store.begin_calculation(revision=workspace_revision)
         fragment_store.begin_refresh(workspace_revision=workspace_revision)
+    if authoritative_result is None:
+        # An untouched beam with no actions or explicit design state is not a
+        # calculation failure and is not work that polling should retry. Clear
+        # all result/publication authorities and publish the explicit idle
+        # outcome for this committed input revision.
+        services.engineering_results.clear()
+        services.recommendations.clear_all()
+        fragment_store.clear()
+        workspace_store.await_calculation_inputs(revision=workspace_revision)
+        workspace_store.publish_authoritative_result(
+            revision=workspace_revision,
+            result=None,
+        )
+        return {
+            "reconciled_design_action_keys": reconciled_keys,
+            "engineering_hash": None,
+            "calculation_status": "awaiting_inputs",
+            "design_guide_fragment_status": "empty",
+            "design_guide_publication_authority_hash": None,
+        }
     expected_engineering_hash = input_transaction.get("engineering_hash")
     if (
         authoritative_result is not None
@@ -448,6 +497,7 @@ def prepare_engineering_workspace_transaction(
         "design_guide_publication_authority_hash": (
             fragment_state.active_publication_authority_hash
         ),
+        "calculation_status": "ready",
     }
 
 
@@ -757,13 +807,33 @@ def render_engineering_workspace(
     section_started_ns = time.perf_counter_ns()
     workspace_revision = workspace_store.workspace_revision()
     calculation_state = workspace_store.calculation_status()
-    calculation_is_current = bool(
+    authoritative_result = services.engineering_results.current()
+    ready_calculation_is_current = bool(
         calculation_state.get("status") == "ready"
         and int(calculation_state.get("revision", 0) or 0) == workspace_revision
         and workspace_store.authoritative_result_present()
+        and authoritative_result is not None
+        and services.engineering_results.source_input_revision()
+        == workspace_revision
+        and workspace_store.authoritative_revision() == workspace_revision
+        and workspace_store.authoritative_hash()
+        == authoritative_result.engineering_hash
         and not ss.get(
             "_inputs_authoritative_result_snapshot_update_pending"
         )
+    )
+    awaiting_inputs_is_current = bool(
+        calculation_state.get("status") == "awaiting_inputs"
+        and int(calculation_state.get("revision", 0) or 0) == workspace_revision
+        and workspace_store.authoritative_revision() == workspace_revision
+        and not workspace_store.authoritative_result_present()
+        and authoritative_result is None
+        and not ss.get(
+            "_inputs_authoritative_result_snapshot_update_pending"
+        )
+    )
+    calculation_is_current = bool(
+        ready_calculation_is_current or awaiting_inputs_is_current
     )
     if calculation_is_current:
         fragment_state = services.publications.current()
@@ -788,13 +858,20 @@ def render_engineering_workspace(
         calculation_is_current
     )
     section_started_ns = time.perf_counter_ns()
-    summary_region_context = build_inputs_summary_region_context(
+    summary_region_state = build_inputs_summary_region_state(
         session_state=st_module.session_state,
         services=services,
     )
-    if summary_region_context is None:
+    if summary_region_state.status == "awaiting_inputs":
+        st_module.info("Enter a design action or load to calculate.")
+    elif summary_region_state.status == "failed":
+        st_module.error("Calculations could not be updated.")
+    elif summary_region_state.status == "updating":
         st_module.info("Updating calculations...")
     else:
+        summary_region_context = summary_region_state.context
+        if summary_region_context is None:
+            raise ValueError("ready Summary state is missing its context")
         render_inputs_summary_fragment_section(
             st_module=st_module,
             runtime=runtime,
@@ -1393,7 +1470,8 @@ __all__ = [
     "InputsControlsRegionContext",
     "InputsDesignBrainRegionContext",
     "InputsSummaryRegionContext",
-    "build_inputs_summary_region_context",
+    "InputsSummaryRegionState",
+    "build_inputs_summary_region_state",
     "build_inputs_controls_region_context",
     "RevisionIdentity",
     "build_inputs_calculation_region_context",

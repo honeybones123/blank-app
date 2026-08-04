@@ -894,11 +894,21 @@ def _ensure_authoritative_design_result_current_coordinator(
             guidance_debug_verbose=sidebar_debug,
             debug_enabled=sidebar_debug,
         )
+        engineering_calculations = (
+            dict(existing_result.current_calculations or {})
+            if (
+                existing_result is not None
+                and existing_result.engineering_hash
+                == snapshot_value.engineering_hash
+            )
+            else {}
+        )
         execution = run_live_design_brain_pipeline(
             engineering_snapshot=snapshot_value,
             guidance_payload=guidance_payload,
             family_override=str(family_override or "").strip() or None,
             resolved_inputs=guidance_context,
+            engineering_calculations=engineering_calculations,
         )
         return execution.result
 
@@ -1062,6 +1072,9 @@ def refresh_inputs_design_brain_result_background() -> Any | None:
         beam_id=active_beam_id,
         input_revision=input_revision,
         engineering_snapshot=snapshot,
+        engineering_calculations=dict(
+            engineering_result.current_calculations or {}
+        ),
         guidance_context=guidance_context,
         family_override=str(family_override or "").strip() or None,
         guidance_debug_verbose=_design_guide_sidebar_debug_enabled(),

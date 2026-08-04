@@ -501,6 +501,7 @@ def build_authoritative_design_result_from_guidance_payload(
     guidance_payload: Mapping[str, Any] | None,
     family_override: str | None = None,
     resolved_inputs: Mapping[str, Any] | None = None,
+    engineering_calculations: Mapping[str, Any] | None = None,
     authority_resolution: GuidanceAuthorityResolution | None = None,
 ) -> AuthoritativeDesignResult:
     """Build an authority result from explicit existing guidance data."""
@@ -600,7 +601,14 @@ def build_authoritative_design_result_from_guidance_payload(
         "authoritative_publication_source": "application.guidance_result_adapter",
         "authoritative_publication_evidence": evidence_model,
     }
-    current_calculations = _mapping(guidance_debug.get("overview"))
+    # Design Brain publishes recommendations; it must not silently replace the
+    # complete, revision-matched engineering packs already calculated for the
+    # same snapshot. The explicit engineering handoff wins over any reduced
+    # overview carried in guidance debug data.
+    current_calculations = {
+        **_mapping(guidance_debug.get("overview")),
+        **_mapping(engineering_calculations),
+    }
     if isinstance(resolved_inputs, Mapping):
         current_calculations = {
             **current_calculations,

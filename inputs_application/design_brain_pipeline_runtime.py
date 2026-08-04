@@ -111,6 +111,7 @@ def run_live_design_brain_pipeline(
     guidance_payload: Mapping[str, Any] | None,
     family_override: str | None = None,
     resolved_inputs: Mapping[str, Any] | None = None,
+    engineering_calculations: Mapping[str, Any] | None = None,
 ) -> LiveDesignBrainExecution:
     """Validate and publish one classified live guidance result.
 
@@ -136,6 +137,7 @@ def run_live_design_brain_pipeline(
             guidance_payload=payload,
             family_override=family_override,
             resolved_inputs=resolved_inputs,
+            engineering_calculations=engineering_calculations,
             authority_resolution=authority,
         )
         return LiveDesignBrainExecution(
@@ -411,6 +413,7 @@ def run_live_design_brain_pipeline(
             guidance_payload=payload,
             family_override=family_override,
             resolved_inputs=resolved_inputs,
+            engineering_calculations=engineering_calculations,
             authority_resolution=authority,
         )
         pipeline_evidence = {

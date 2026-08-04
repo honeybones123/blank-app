@@ -66,6 +66,14 @@ class InputsWorkspaceStateStore:
         )
         self._state[self.CALCULATION_ERROR] = None
 
+    def await_calculation_inputs(self, *, revision: int) -> None:
+        """Record that this revision intentionally has nothing to calculate."""
+
+        self._state[self.CALCULATION_STATUS] = "awaiting_inputs"
+        self._state[self.CALCULATION_REVISION] = int(revision)
+        self._state[self.CALCULATION_HASH] = None
+        self._state[self.CALCULATION_ERROR] = None
+
     def fail_calculation(self, *, revision: int, error: BaseException | str) -> None:
         self._state[self.CALCULATION_STATUS] = "failed"
         self._state[self.CALCULATION_REVISION] = int(revision)

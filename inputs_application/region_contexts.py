@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
 from inputs_application.summary_contracts import InputsSummaryCalculationSource
 
@@ -59,6 +59,46 @@ class InputsSummaryRegionContext:
             )
 
 
+InputsSummaryRegionStatus = Literal[
+    "awaiting_inputs",
+    "updating",
+    "ready",
+    "failed",
+]
+
+
+@dataclass(frozen=True)
+class InputsSummaryRegionState:
+    """Explicit lifecycle state consumed by the independent Summary region."""
+
+    input_revision: int
+    status: InputsSummaryRegionStatus
+    context: InputsSummaryRegionContext | None = None
+    error: str | None = None
+
+    def __post_init__(self) -> None:
+        if int(self.input_revision) < 0:
+            raise ValueError("input_revision cannot be negative")
+        if self.status not in {
+            "awaiting_inputs",
+            "updating",
+            "ready",
+            "failed",
+        }:
+            raise ValueError(f"unsupported Summary region status: {self.status}")
+        if self.status == "ready" and self.context is None:
+            raise ValueError("ready Summary state requires a region context")
+        if self.status != "ready" and self.context is not None:
+            raise ValueError("only ready Summary state may carry a region context")
+        if (
+            self.context is not None
+            and self.context.identity.input_revision != int(self.input_revision)
+        ):
+            raise ValueError("Summary state and context revisions must match")
+        if self.status == "failed" and not str(self.error or "").strip():
+            raise ValueError("failed Summary state requires an error")
+
+
 @dataclass(frozen=True)
 class InputsCalculationRegionContext:
     """Stable Summary handoff consumed by one Calculation region render."""
@@ -90,5 +130,7 @@ __all__ = [
     "InputsControlsRegionContext",
     "InputsDesignBrainRegionContext",
     "InputsSummaryRegionContext",
+    "InputsSummaryRegionState",
+    "InputsSummaryRegionStatus",
     "RevisionIdentity",
 ]
