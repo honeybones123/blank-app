@@ -8,6 +8,7 @@ from inputs_application.recommendation_support import resolve_geometry_width_con
 from application.candidate_objective_policy import (
     resolve_auto_design_candidate_objective_util,
 )
+from application.target_band_evaluation import resolve_candidate_in_target_band
 
 
 def _target_band_float(source: dict[str, Any], key: str, default: float) -> float:
@@ -172,6 +173,77 @@ def resolve_auto_design_band_reaching_candidate_goal_score(
         + (row_pen * 8.0)
     )
     return float(score), "balanced_prefers_practical_low_congestion_near_target_mid"
+
+
+def resolve_auto_design_shallower_beam_selection_key(
+    candidate: dict[str, Any] | None,
+    seed_candidate: dict[str, Any] | None,
+    mode_config: dict[str, Any] | None,
+    *,
+    target_mid: float,
+    default_target_min: float,
+    default_target_max: float,
+    fail_status: str = "FAIL",
+    optimisation_goal_resolver: Callable[[dict[str, Any]], str] | None = None,
+) -> tuple[Any, ...]:
+    """Resolve the shallow-search selector key from plain candidate data."""
+
+    candidate_d = candidate if isinstance(candidate, dict) else {}
+    seed_d = seed_candidate if isinstance(seed_candidate, dict) else {}
+    candidate_state = dict(candidate_d.get("state") or {})
+    seed_state = dict(seed_d.get("state") or {})
+    seed_depth_default = _target_band_float(seed_state, "D", 0.0)
+    candidate_depth_default = _target_band_float(candidate_state, "D", 0.0)
+    seed_depth = float(seed_d.get("depth", seed_depth_default) or seed_depth_default)
+    cand_depth = float(candidate_d.get("depth", candidate_depth_default) or candidate_depth_default)
+    _, _, seed_width_default = resolve_geometry_width_context(seed_state)
+    _, _, candidate_width_default = resolve_geometry_width_context(candidate_state)
+    seed_width = float(seed_d.get("width", seed_width_default) or seed_width_default)
+    cand_width = float(candidate_d.get("width", candidate_width_default) or candidate_width_default)
+    seed_ast = float(seed_d.get("Ast_bot", 0.0) or 0.0)
+    cand_ast = float(candidate_d.get("Ast_bot", 0.0) or 0.0)
+    delta_d_mm = max(cand_depth - seed_depth, 0.0)
+    delta_b_mm = max(cand_width - seed_width, 0.0)
+    delta_ast_bot = max(cand_ast - seed_ast, 0.0)
+    is_geometry = bool(candidate_d.get("recommendation_geometry_trial"))
+    in_band = 0 if resolve_candidate_in_target_band(
+        candidate_d,
+        mode_config,
+        default_target_min=default_target_min,
+        default_target_max=default_target_max,
+        fail_status=fail_status,
+        optimisation_goal_resolver=optimisation_goal_resolver,
+    ) else 1
+    congestion = float(candidate_d.get("reo_congestion_index", 0.0) or 0.0)
+    util = resolve_auto_design_candidate_objective_util(
+        candidate_d,
+        optimisation_goal_resolver=optimisation_goal_resolver,
+    )
+    mode = dict(mode_config or {})
+    try:
+        target_min = float(mode.get("target_util_min", default_target_min) or default_target_min)
+        target_max = float(mode.get("target_util_max", default_target_max) or default_target_max)
+    except (TypeError, ValueError):
+        target_min = float(default_target_min)
+        target_max = float(default_target_max)
+    if util < target_min:
+        util_gap = target_min - util
+    elif util > target_max:
+        util_gap = util - target_max
+    else:
+        util_gap = abs(util - float(target_mid))
+    return (
+        0 if bool(candidate_d.get("is_compliant")) else 1,
+        in_band,
+        delta_d_mm,
+        0 if not is_geometry else 1,
+        delta_b_mm,
+        delta_ast_bot,
+        congestion,
+        round(float(candidate_d.get("score", float("inf")) or float("inf")), 4),
+        float(util_gap),
+        float(candidate_d.get("worst_util", float("inf")) or float("inf")),
+    )
 def resolve_auto_design_shallower_beam_metrics(
     candidate: dict[str, Any] | None,
     seed_candidate: dict[str, Any] | None,
@@ -217,5 +289,6 @@ __all__ = [
     "resolve_auto_design_band_reacher_delta_metrics",
     "resolve_auto_design_band_reaching_candidate_goal_score",
     "resolve_auto_design_shallower_beam_metrics",
+    "resolve_auto_design_shallower_beam_selection_key",
     "resolve_auto_design_shear_candidate_practicality_metrics",
 ]
