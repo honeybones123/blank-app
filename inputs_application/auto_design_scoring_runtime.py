@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from design_brain.candidate_evaluation import (
+from inputs_application.legacy_design_brain_adapter import (
     resolve_auto_design_candidate_objective_util,
     resolve_auto_design_candidate_violation_score,
     resolve_auto_design_shallower_beam_metrics,

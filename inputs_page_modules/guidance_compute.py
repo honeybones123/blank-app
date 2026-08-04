@@ -15,7 +15,7 @@ import math
 import re
 from typing import Any, Callable
 
-from design_brain.candidate_evaluation import (
+from inputs_application.legacy_design_brain_adapter import (
     diff_candidate_state_updates,
     project_active_fail_executor_evaluated_candidate_result,
     resolve_active_fail_executor_candidate_eval_source,

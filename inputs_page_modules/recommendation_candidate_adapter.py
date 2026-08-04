@@ -35,7 +35,7 @@ from inputs_application.candidate_full_evaluation import (
     FullCandidateEvaluationRuntime,
     evaluate_candidate_full_for_app_bridge,
 )
-from design_brain.candidate_evaluation import (
+from inputs_application.legacy_design_brain_adapter import (
     build_full_candidate_evaluation_result_projection,
 )
 from inputs_application.recommendation_evaluation import (

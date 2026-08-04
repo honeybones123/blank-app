@@ -14,7 +14,7 @@ from inputs_application.engineering_predicates import (
     shear_demands_negligible,
     shear_reinforcement_is_active,
 )
-from design_brain.candidate_evaluation import (
+from inputs_application.legacy_design_brain_adapter import (
     diff_candidate_state_updates,
     resolve_candidate_domain_max_distance,
     resolve_candidate_domain_score,

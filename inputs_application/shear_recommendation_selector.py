@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any, Callable
 
-from design_brain.candidate_evaluation import (
+from inputs_application.legacy_design_brain_adapter import (
     resolve_auto_design_shear_candidate_practicality_metrics,
     resolve_candidate_in_target_band,
 )

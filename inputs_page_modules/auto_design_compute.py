@@ -13,7 +13,7 @@ import sys
 
 from typing import Any
 
-from design_brain.candidate_evaluation import (
+from inputs_application.legacy_design_brain_adapter import (
     build_target_band_fallback_scored_candidate as _build_target_band_fallback_scored_candidate,
     resolve_target_band_selected_candidate_acceptance as _resolve_target_band_selected_candidate_acceptance,
     resolve_target_band_candidate_sort_key as _resolve_target_band_candidate_sort_key,

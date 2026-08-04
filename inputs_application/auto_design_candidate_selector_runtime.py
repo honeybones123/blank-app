@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from design_brain.candidate_evaluation import (
+from inputs_application.legacy_design_brain_adapter import (
     resolve_auto_design_band_reacher_delta_metrics,
     resolve_auto_design_band_reaching_candidate_goal_score,
     resolve_auto_design_candidate_violation_score,
