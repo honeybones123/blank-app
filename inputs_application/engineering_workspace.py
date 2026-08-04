@@ -19,6 +19,10 @@ from inputs_application.design_brain_polling import (
     stop_design_brain_polling,
 )
 from inputs_application.page_runtime import InputsPageRuntime
+from inputs_application.region_contexts import (
+    InputsDesignBrainRegionContext,
+    RevisionIdentity,
+)
 from inputs_application.summary_calculation_fragment_store import (
     SummaryCalculationFragmentStore,
 )
@@ -220,6 +224,36 @@ def build_engineering_workspace_runtime(
     )
 
 
+def build_inputs_design_brain_region_context(
+    *,
+    session_state: dict[str, Any],
+    services: InputsSessionServices,
+    inputs_detailed_mode: bool,
+) -> InputsDesignBrainRegionContext | None:
+    """Bind the Design Brain region to one ready revision/hash pair."""
+
+    workspace_store = InputsWorkspaceStateStore(session_state)
+    input_revision = workspace_store.workspace_revision()
+    authoritative_result = services.engineering_results.current()
+    authoritative_hash = workspace_store.authoritative_hash()
+    if (
+        workspace_store.authoritative_revision() != input_revision
+        or services.engineering_results.source_input_revision() != input_revision
+        or not workspace_store.authoritative_result_present()
+        or authoritative_result is None
+        or authoritative_result.engineering_hash != authoritative_hash
+    ):
+        return None
+    return InputsDesignBrainRegionContext(
+        identity=RevisionIdentity(
+            input_revision=input_revision,
+            engineering_hash=authoritative_result.engineering_hash,
+        ),
+        beam_id=str(session_state.get("active_beam_id") or ""),
+        inputs_detailed_mode=bool(inputs_detailed_mode),
+    )
+
+
 def prepare_engineering_workspace_transaction(
     *,
     st_module: Any,
@@ -391,8 +425,8 @@ def render_inputs_design_guide_fragment_section(
     st_module: Any,
     runtime: EngineeringWorkspaceRuntime,
     page_context: dict[str, Any],
-    inputs_detailed_mode: bool,
     services: InputsSessionServices,
+    region_context: InputsDesignBrainRegionContext,
     design_guide_slot=None,
 ) -> None:
     """Render Design Guide only from the current authoritative result."""
@@ -409,7 +443,23 @@ def render_inputs_design_guide_fragment_section(
     fragment_store = services.publications
     fragment_state = fragment_store.current()
     workspace_store = InputsWorkspaceStateStore(st_module.session_state)
-    authoritative_revision = workspace_store.authoritative_revision()
+    identity = region_context.identity
+    authoritative_revision = identity.input_revision
+    if not (
+        identity.matches(
+            input_revision=workspace_store.workspace_revision(),
+            engineering_hash=workspace_store.authoritative_hash(),
+        )
+        and workspace_store.authoritative_revision() == authoritative_revision
+        and services.engineering_results.source_input_revision()
+        == authoritative_revision
+    ):
+        if design_guide_slot is None:
+            design_guide_slot = st_module.empty()
+        design_guide_slot.empty()
+        with design_guide_slot.container():
+            st_module.info("Updating design guidance...")
+        return
     design_brain_refresh_required = bool(
         workspace_store.authoritative_result_present()
         and (
@@ -444,7 +494,7 @@ def render_inputs_design_guide_fragment_section(
     ):
         if workspace_store.authoritative_result_present():
             authoritative_result = services.engineering_results.current()
-            expected_hash = workspace_store.authoritative_hash()
+            expected_hash = identity.engineering_hash
             if (
                 authoritative_result is not None
                 and authoritative_result.engineering_hash == expected_hash
@@ -477,13 +527,19 @@ def render_inputs_design_guide_fragment_section(
     if design_guide_slot is None:
         design_guide_slot = st_module.empty()
     fragment_payload = fragment_state.to_dict()
-    fragment_payload["is_current"] = fragment_store.is_current(
+    fragment_is_current = fragment_store.is_current(
         workspace_revision=authoritative_revision,
-        engineering_hash=workspace_store.authoritative_hash(),
+        engineering_hash=identity.engineering_hash,
     )
+    fragment_payload["is_current"] = fragment_is_current
     fragment_payload["target_workspace_revision"] = authoritative_revision
+    if not fragment_is_current:
+        design_guide_slot.empty()
+        with design_guide_slot.container():
+            st_module.info("Updating design guidance...")
+        return
     runtime.render_design_guide(
-        inputs_detailed_mode=inputs_detailed_mode,
+        inputs_detailed_mode=region_context.inputs_detailed_mode,
         sync_callbacks=page_context["sync_callbacks"],
         inputs_render_audit=page_context["inputs_render_audit"],
         fast_focus_section=page_context["fast_focus_section"],
@@ -650,14 +706,23 @@ def render_engineering_workspace(
     section_started_ns = time.perf_counter_ns()
     if include_design_brain:
         design_guide_slot = st_module.empty()
-        render_inputs_design_guide_fragment_section(
-            st_module=st_module,
-            runtime=runtime,
-            page_context=page_context,
-            inputs_detailed_mode=inputs_detailed_mode,
+        region_context = build_inputs_design_brain_region_context(
+            session_state=st_module.session_state,
             services=services,
-            design_guide_slot=design_guide_slot,
+            inputs_detailed_mode=inputs_detailed_mode,
         )
+        if region_context is None:
+            with design_guide_slot.container():
+                st_module.info("Updating design guidance...")
+        else:
+            render_inputs_design_guide_fragment_section(
+                st_module=st_module,
+                runtime=runtime,
+                page_context=page_context,
+                services=services,
+                region_context=region_context,
+                design_guide_slot=design_guide_slot,
+            )
     st_module.session_state["_inputs_detailed_mode"] = bool(inputs_detailed_mode)
     if include_widgets:
         inputs_detailed_mode = runtime.render_mode_selector(
@@ -1108,13 +1173,26 @@ def render_engineering_workspace_design_brain(
     workspace_store = InputsWorkspaceStateStore(ss)
     input_revision = workspace_store.workspace_revision()
     register_design_brain_fragment(ss, revision=input_revision)
-    authoritative_revision = workspace_store.authoritative_revision()
     services = InputsSessionServices.from_mapping(ss)
-    result_revision = services.engineering_results.source_input_revision()
-    if (
-        authoritative_revision != input_revision
-        or result_revision != input_revision
-    ):
+    region_context = build_inputs_design_brain_region_context(
+        session_state=ss,
+        services=services,
+        inputs_detailed_mode=bool(
+            st_module.session_state.get("_inputs_detailed_mode", False)
+        ),
+    )
+    if region_context is None:
+        if (
+            workspace_store.authoritative_revision() == input_revision
+            and not workspace_store.authoritative_result_present()
+        ):
+            design_brain_slot.empty()
+            stop_design_brain_polling(
+                ss,
+                reason="no_authoritative_result",
+                revision=input_revision,
+            )
+            return
         if design_brain_slot is not None:
             design_brain_slot.empty()
             with design_brain_slot.container():
@@ -1122,13 +1200,6 @@ def render_engineering_workspace_design_brain(
             ss["_inputs_design_brain_pending_display_revision"] = int(
                 input_revision
             )
-        return
-    if not workspace_store.authoritative_result_present():
-        stop_design_brain_polling(
-            ss,
-            reason="no_authoritative_result",
-            revision=input_revision,
-        )
         return
     publication = services.publications.current()
     # Polling clears this fragment's prior elements.  A ready publication is
@@ -1141,8 +1212,8 @@ def render_engineering_workspace_design_brain(
         st_module=st_module,
         runtime=runtime,
         page_context=page_context,
-        inputs_detailed_mode=bool(st_module.session_state.get("_inputs_detailed_mode", False)),
         services=services,
+        region_context=region_context,
         design_guide_slot=design_brain_slot,
     )
     publication = services.publications.current()
@@ -1170,6 +1241,9 @@ def render_engineering_workspace_design_brain(
 
 __all__ = [
     "EngineeringWorkspaceRuntime",
+    "InputsDesignBrainRegionContext",
+    "RevisionIdentity",
+    "build_inputs_design_brain_region_context",
     "build_engineering_workspace_runtime",
     "prepare_engineering_workspace_transaction",
     "render_engineering_workspace",
