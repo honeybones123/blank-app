@@ -15,7 +15,9 @@ from inputs_application.design_guide_fragment_store import (
     DesignGuideFragmentState,
 )
 from inputs_application.design_brain_polling import (
+    DEFAULT_DESIGN_BRAIN_POLL_INTERVAL_S,
     register_design_brain_fragment,
+    start_design_brain_polling,
     stop_design_brain_polling,
 )
 from inputs_application.page_runtime import InputsPageRuntime
@@ -1366,6 +1368,16 @@ def render_engineering_workspace_design_brain(
     workspace_store = InputsWorkspaceStateStore(ss)
     input_revision = workspace_store.workspace_revision()
     register_design_brain_fragment(ss, revision=input_revision)
+    # An input commit wakes this stopped fragment on a short 100 ms interval.
+    # That interval is only a first-wake latency optimization; leaving it as
+    # the steady cadence can queue another rerun while a ready card is being
+    # rendered. Re-pace immediately, then terminal branches cancel the timer.
+    start_design_brain_polling(
+        ss,
+        reason="fragment_execution_repaced",
+        revision=input_revision,
+        interval_s=DEFAULT_DESIGN_BRAIN_POLL_INTERVAL_S,
+    )
     services = InputsSessionServices.from_mapping(ss)
     region_context = build_inputs_design_brain_region_context(
         session_state=ss,
