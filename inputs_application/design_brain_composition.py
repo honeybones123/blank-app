@@ -63,10 +63,17 @@ def build_bottom_arrangement_pool_builder():
     return build_bottom_reo_arrangement_pool_from_state
 
 
+def build_publication_builder():
+    """Expose the selected implementation's publication builder by composition."""
+
+    return build_final_design_guide_publication
+
+
 __all__ = [
     "build_design_brain_service",
     "build_replacement_design_brain_service",
     "build_guidance_blocker_builder",
     "build_publication_cta_builder",
     "build_bottom_arrangement_pool_builder",
+    "build_publication_builder",
 ]
