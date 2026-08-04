@@ -7,8 +7,10 @@ import html
 import re
 from typing import Any
 
-from design_brain.design_guide_card_attrs import FINAL_DESIGN_GUIDE_CARD_DATA_ATTRIBUTE_FIELDS
-from design_brain.final_design_guide_formatter import FinalDesignGuideCardFormat
+from application.contracts.design_display import (
+    FINAL_DESIGN_GUIDE_CARD_DATA_ATTRIBUTE_FIELDS,
+    FinalDesignGuideCardFormat,
+)
 
 
 def _escape(value: Any) -> str:

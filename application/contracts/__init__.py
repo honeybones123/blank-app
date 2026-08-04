@@ -17,6 +17,11 @@ from application.contracts.design_policy import (
     resolve_design_optimisation_goal,
     resolve_efficiency_target_band,
 )
+from application.contracts.design_display import (
+    FINAL_DESIGN_GUIDE_CARD_DATA_ATTRIBUTE_FIELDS,
+    FinalDesignGuideCardFormat,
+    FinalDesignGuideFormatSection,
+)
 
 __all__ = [
     "AUTHORITATIVE_DESIGN_RESULT_SCHEMA_VERSION",
@@ -32,4 +37,7 @@ __all__ = [
     "resolve_design_mode_config",
     "resolve_design_optimisation_goal",
     "resolve_efficiency_target_band",
+    "FINAL_DESIGN_GUIDE_CARD_DATA_ATTRIBUTE_FIELDS",
+    "FinalDesignGuideCardFormat",
+    "FinalDesignGuideFormatSection",
 ]

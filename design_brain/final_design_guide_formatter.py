@@ -7,9 +7,13 @@ candidate-search internals, or apply-routing objects.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
 import re
 from typing import Any
+
+from application.contracts.design_display import (
+    FinalDesignGuideCardFormat,
+    FinalDesignGuideFormatSection,
+)
 
 from design_brain.final_design_guide_formatting_contract import (
     contract_hash,
@@ -44,50 +48,6 @@ _FINAL_DESIGN_GUIDE_BLOCKER_COPY = {
         "No practical combined strengthening candidate satisfies the required limit."
     ),
 }
-
-
-@dataclass(frozen=True)
-class FinalDesignGuideFormatSection:
-    title: str
-    rows: tuple[dict[str, Any], ...] = ()
-    visible: bool = True
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-
-@dataclass(frozen=True)
-class FinalDesignGuideCardFormat:
-    selected_family: str
-    outcome_state: str
-    tone: str
-    tone_source: str
-    title: str
-    badge: str
-    summary: str
-    blocker_explanation: str
-    governing_label: str
-    cta: dict[str, Any] = field(default_factory=dict)
-    sections: tuple[FinalDesignGuideFormatSection, ...] = ()
-    required_test_ids: tuple[str, ...] = ()
-    publication_hash: str | None = None
-    display_hash: str | None = None
-    cta_hash: str | None = None
-    evidence_hash: str | None = None
-    contract_hash: str | None = None
-    format_hash: str | None = None
-    source: str = "FinalDesignGuidePublication"
-    renderer_driving: bool = False
-    product_driving: bool = False
-    apply_driving: bool = False
-    session_driving: bool = False
-    data_attributes: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            **asdict(self),
-            "sections": tuple(section.to_dict() for section in self.sections),
-        }
 
 
 def _text(*values: Any, default: str = "") -> str:
