@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from importlib import import_module
+import os
 from typing import Callable, Mapping
 
 from application.design_brain_port import DesignBrainRequest
@@ -15,6 +16,10 @@ from inputs_application.replacement_design_brain_adapter import (
 
 LegacyGuidanceProvider = Callable[[DesignBrainRequest], Mapping[str, object]]
 
+DESIGN_BRAIN_ADAPTER_ENV = "INPUTS_DESIGN_BRAIN_ADAPTER"
+_LEGACY_ADAPTER_NAMES = frozenset({"legacy", "v1"})
+_NEW_ADAPTER_NAMES = frozenset({"new", "v2"})
+
 
 def _legacy_adapter_module():
     """Load the selected compatibility adapter without a static import edge."""
@@ -23,12 +28,51 @@ def _legacy_adapter_module():
 
 
 def build_design_brain_service(
-    guidance_provider: LegacyGuidanceProvider,
+    guidance_provider: LegacyGuidanceProvider | None = None,
+    *,
+    adapter_name: str | None = None,
+    source_root=None,
 ) -> DesignBrainService:
-    """Bind the current implementation without exposing it to consumers."""
+    """Bind the selected implementation without exposing it to consumers.
+
+    The legacy adapter remains the default.  ``INPUTS_DESIGN_BRAIN_ADAPTER``
+    (or the explicit ``adapter_name`` argument used by probes) is the only
+    composition-level switch.  This keeps the cutover reversible: clearing
+    the variable immediately restores the verified V1 path, while the V2
+    implementation remains behind its dedicated adapter.
+    """
+
+    selected = selected_design_brain_adapter_name(adapter_name)
+    if selected == "v2":
+        return build_new_design_brain_service(source_root=source_root)
+
+    if guidance_provider is None:
+        raise TypeError("legacy Design Brain selection requires guidance_provider")
 
     legacy_adapter = _legacy_adapter_module()
     return DesignBrainService(legacy_adapter.LegacyDesignBrainAdapter(guidance_provider))
+
+
+def selected_design_brain_adapter_name(adapter_name: str | None = None) -> str:
+    """Return the canonical composition binding name.
+
+    An explicit value takes precedence over the process environment so tests
+    and controlled callers can exercise rollback without mutating global
+    state.  Unknown values fail closed instead of silently selecting a brain.
+    """
+
+    raw = adapter_name
+    if raw is None:
+        raw = os.environ.get(DESIGN_BRAIN_ADAPTER_ENV)
+    normalized = str(raw or "legacy").strip().lower()
+    if normalized in _LEGACY_ADAPTER_NAMES:
+        return "legacy"
+    if normalized in _NEW_ADAPTER_NAMES:
+        return "v2"
+    raise ValueError(
+        f"unsupported Design Brain adapter {normalized!r}; "
+        "expected legacy, v1, v2, or new"
+    )
 
 
 def build_replacement_design_brain_service(
@@ -97,6 +141,7 @@ def selected_legacy_design_brain_namespace():
 
 __all__ = [
     "build_design_brain_service",
+    "selected_design_brain_adapter_name",
     "build_replacement_design_brain_service",
     "build_new_design_brain_service",
     "build_guidance_blocker_builder",
