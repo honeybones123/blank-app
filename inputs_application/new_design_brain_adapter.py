@@ -557,6 +557,52 @@ class NewDesignBrainAdapter:
             source_revision=int(request.input_revision),
             source_hash=request.engineering_snapshot.engineering_hash,
         )
+        # The neutral result contract carries the canonical publication in the
+        # same envelope as the legacy path.  UI/store consumers intentionally
+        # read ``final_design_guide_publication`` from that envelope; exposing
+        # only the V2 publication body here makes a valid ready job look like
+        # an empty Design Guide (and consequently hides its Apply CTA).
+        publication_body = {
+            **publication_projection["publication"],
+            "source": "inputs_v2",
+            "v2_source_revision": preview.before.source_revision,
+            "final_publication_verifier_payload": publication_projection["verifier_payload"],
+            "final_publication_authority_hash": publication_projection["publication_hash"],
+            "final_publication_display_hash": publication_projection["display_model"].get(
+                "final_card_model_hash"
+            ),
+            "final_publication_cta_hash": publication_projection["cta_model"].get(
+                "button_contract_hash"
+            ),
+        }
+        canonical_publication = {
+            # Compatibility aliases keep diagnostics and non-rendering stores
+            # able to inspect the publication without knowing its nested UI
+            # shape.  Renderers still consume the canonical nested body below.
+            "selected_family": publication_body.get("selected_family"),
+            "selected_family_id": publication_body.get("selected_family_id"),
+            "outcome_state": publication_body.get("outcome_state"),
+            "source_revision": publication_body.get("source_revision"),
+            "source_hash": publication_body.get("source_hash"),
+            "guidance_items": list(publication_body.get("guidance_items") or []),
+            "guidance_debug": {
+                "source": "inputs_v2",
+                "family_contract_version": "inputs_v2.family.v1",
+                "selected_family_id": str(decision.family.value),
+            },
+            "recommendation_result": {
+                "source": "inputs_v2",
+                "family": str(decision.family.value),
+                "accepted": accepted,
+            },
+            "final_design_guide_publication": publication_body,
+            "final_publication_verifier_payload": publication_projection["verifier_payload"],
+            "final_publication_publication_hash": publication_projection["publication_hash"],
+            "final_publication_authority_hash": publication_projection["publication_hash"],
+            "publication_hash": publication_projection["publication_hash"],
+            "authoritative_publication_source": "inputs_v2",
+            "authoritative_publication_evidence": dict(publication_body.get("evidence") or {}),
+        }
         result = build_authoritative_design_result(
             engineering_snapshot=request.engineering_snapshot,
             current_calculations={
@@ -597,19 +643,7 @@ class NewDesignBrainAdapter:
                 "accepted": accepted,
                 "family": str(decision.family.value),
             },
-            final_publication={
-                **publication_projection["publication"],
-                "source": "inputs_v2",
-                "v2_source_revision": preview.before.source_revision,
-                "final_publication_verifier_payload": publication_projection["verifier_payload"],
-                "final_publication_authority_hash": publication_projection["publication_hash"],
-                "final_publication_display_hash": publication_projection["display_model"].get(
-                    "final_card_model_hash"
-                ),
-                "final_publication_cta_hash": publication_projection["cta_model"].get(
-                    "button_contract_hash"
-                ),
-            },
+            final_publication=canonical_publication,
             display_model=publication_projection["display_model"],
             cta_model=publication_projection["cta_model"],
             apply_payload=publication_projection["apply_payload"],
