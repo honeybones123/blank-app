@@ -9,42 +9,36 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from inputs_application.legacy_design_brain_adapter import (
-    BendingOverdesignCandidateEvaluation,
-    BendingOverdesignCandidateInput,
-    BendingOverdesignCandidateUpdate,
-    build_bending_overdesign_candidate_state_hash,
+from inputs_application.design_brain_composition import (
+    selected_legacy_design_brain_namespace,
 )
-from inputs_application.legacy_design_brain_adapter import (
-    ServiceabilityCandidateEvaluation,
-    ServiceabilityCandidateInput,
-    ServiceabilityCandidateUpdate,
-    build_serviceability_candidate_state_hash,
-)
-from inputs_application.legacy_design_brain_adapter import (
-    ShearOverdesignCandidateEvaluation,
-    ShearOverdesignCandidateInput,
-    ShearOverdesignCandidateUpdate,
-    build_shear_overdesign_candidate_state_hash,
-)
-from inputs_application.legacy_design_brain_adapter import (
-    ShearFailBendingOverdesignEvaluation,
-    ShearFailBendingOverdesignCandidate,
-    ShearFailBendingOverdesignInputs,
-    shear_fail_bending_overdesign_state_hash,
-)
-from inputs_application.legacy_design_brain_adapter import (
-    BendingFailShearOverdesignInputs,
-    BendingFailShearOverdesignEvaluation,
-    BendingFailShearOverdesignCandidate,
-    bending_fail_shear_overdesign_state_hash,
-)
-from inputs_application.legacy_design_brain_adapter import (
-    CombinedOverdesignCandidateEvaluation,
-    CombinedOverdesignInputs,
-    CombinedOverdesignMergedCandidate,
-    combined_overdesign_candidate_state_hash,
-)
+
+
+_owner = selected_legacy_design_brain_namespace()
+BendingOverdesignCandidateEvaluation = _owner.BendingOverdesignCandidateEvaluation
+BendingOverdesignCandidateInput = _owner.BendingOverdesignCandidateInput
+BendingOverdesignCandidateUpdate = _owner.BendingOverdesignCandidateUpdate
+build_bending_overdesign_candidate_state_hash = _owner.build_bending_overdesign_candidate_state_hash
+ServiceabilityCandidateEvaluation = _owner.ServiceabilityCandidateEvaluation
+ServiceabilityCandidateInput = _owner.ServiceabilityCandidateInput
+ServiceabilityCandidateUpdate = _owner.ServiceabilityCandidateUpdate
+build_serviceability_candidate_state_hash = _owner.build_serviceability_candidate_state_hash
+ShearOverdesignCandidateEvaluation = _owner.ShearOverdesignCandidateEvaluation
+ShearOverdesignCandidateInput = _owner.ShearOverdesignCandidateInput
+ShearOverdesignCandidateUpdate = _owner.ShearOverdesignCandidateUpdate
+build_shear_overdesign_candidate_state_hash = _owner.build_shear_overdesign_candidate_state_hash
+ShearFailBendingOverdesignEvaluation = _owner.ShearFailBendingOverdesignEvaluation
+ShearFailBendingOverdesignCandidate = _owner.ShearFailBendingOverdesignCandidate
+ShearFailBendingOverdesignInputs = _owner.ShearFailBendingOverdesignInputs
+shear_fail_bending_overdesign_state_hash = _owner.shear_fail_bending_overdesign_state_hash
+BendingFailShearOverdesignInputs = _owner.BendingFailShearOverdesignInputs
+BendingFailShearOverdesignEvaluation = _owner.BendingFailShearOverdesignEvaluation
+BendingFailShearOverdesignCandidate = _owner.BendingFailShearOverdesignCandidate
+bending_fail_shear_overdesign_state_hash = _owner.bending_fail_shear_overdesign_state_hash
+CombinedOverdesignCandidateEvaluation = _owner.CombinedOverdesignCandidateEvaluation
+CombinedOverdesignInputs = _owner.CombinedOverdesignInputs
+CombinedOverdesignMergedCandidate = _owner.CombinedOverdesignMergedCandidate
+combined_overdesign_candidate_state_hash = _owner.combined_overdesign_candidate_state_hash
 
 
 FullCandidateEvaluator = Callable[..., dict[str, Any] | None]
