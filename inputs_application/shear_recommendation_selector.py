@@ -5,8 +5,10 @@ from __future__ import annotations
 import math
 from typing import Any, Callable
 
-from inputs_application.legacy_design_brain_adapter import (
+from application.candidate_geometry_metrics import (
     resolve_auto_design_shear_candidate_practicality_metrics,
+)
+from inputs_application.legacy_design_brain_adapter import (
     resolve_candidate_in_target_band,
 )
 from inputs_application.geometry_search_policy import design_optimisation_goal
