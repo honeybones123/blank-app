@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from inputs_application.legacy_design_brain_adapter import (
-    build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence,
-)
 from inputs_application.guidance_runtime_contracts import ServiceabilityPreflightRuntime
 
 
