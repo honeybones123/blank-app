@@ -20,6 +20,7 @@ from application.contracts.design_brain import (
     AuthoritativeDesignResult,
     EngineeringInputSnapshot,
     build_authoritative_design_result,
+    stable_authority_hash,
 )
 from application.design_brain_port import DesignBrainExecution, DesignBrainRequest
 
@@ -350,6 +351,170 @@ def _clause_metadata(api: Mapping[str, Any]) -> dict[str, Any]:
     return {"standard": "AS 3600", "edition": "2018", "references": references}
 
 
+def _neutral_publication_projection(
+    *,
+    family: str,
+    reason: str,
+    accepted: bool,
+    candidate_payload: Mapping[str, Any],
+    updates: Mapping[str, Any],
+    clause_metadata: Mapping[str, Any],
+    source_revision: int,
+    source_hash: str,
+) -> dict[str, Any]:
+    """Build the application publication shape without importing V1 types.
+
+    The page renderer consumes the neutral ``AuthoritativeDesignResult`` but
+    historically expects a nested final-publication/CTA/display projection.
+    Keep that compatibility shape here, at the replacement boundary, so the
+    V2 implementation does not leak native objects or force the page to call
+    the legacy Design Brain formatter.
+    """
+
+    family_id = str(family or "").strip() or "UNKNOWN"
+    reason_text = str(reason or "").strip() or "no_design_action"
+    update_map = dict(updates or {}) if accepted else {}
+    candidate_id = str(candidate_payload.get("candidate_id") or "").strip() or None
+    action_type = "apply_resolved_candidate" if accepted and update_map else None
+    outcome_state = "ACTION" if action_type else (
+        "PASS" if reason_text in {"no_bending_demand", "serviceability_not_failed"}
+        else "BLOCKED"
+    )
+    title_family = family_id.replace("_", " ").title()
+    display_title = (
+        f"{title_family} — proposed design"
+        if action_type
+        else f"{title_family} — {reason_text.replace('_', ' ')}"
+    )
+    apply_payload = {
+        "updates": dict(update_map),
+        "resolved_candidate_updates": dict(update_map),
+        "candidate_id": candidate_id,
+        "source_candidate_id": candidate_id,
+        "family": family_id,
+        "resolved_candidate_family_tag": family_id,
+        "action_type": action_type,
+        "resolved_candidate_action_type": action_type,
+        "source_input_revision": int(source_revision),
+        "source_engineering_hash": source_hash,
+        "v2_source_hash": source_hash,
+        "review_before_apply": True,
+    }
+    apply_payload["state_fingerprint"] = stable_authority_hash(
+        {"source_revision": source_revision, "source_hash": source_hash, "updates": update_map}
+    )
+    apply_payload["render_fingerprint"] = stable_authority_hash(
+        {"family": family_id, "candidate_id": candidate_id, "updates": update_map}
+    )
+    cta_model = {
+        "enabled": bool(action_type),
+        "actionable": bool(action_type),
+        "apply_allowed": bool(action_type),
+        "label": "Review proposed design before Apply" if action_type else None,
+        "action_type": action_type,
+        "family": family_id,
+        "updates": dict(update_map),
+        "source_candidate_id": candidate_id,
+        "apply_payload_summary": dict(apply_payload),
+        "disabled_reason": None if action_type else reason_text,
+        "review_before_apply": True,
+        "product_driving": True,
+    }
+    cta_model["button_contract_hash"] = stable_authority_hash(cta_model)
+    display_model = {
+        "title": display_title,
+        "badge": "ACTION" if action_type else outcome_state,
+        "summary": reason_text.replace("_", " "),
+        "status": outcome_state,
+        "bucket": outcome_state.lower(),
+        "colour_state": "action" if action_type else outcome_state.lower(),
+        "card_class": "design-guide-card",
+        "display_state": outcome_state,
+        "blocker_explanation": None if action_type else reason_text.replace("_", " "),
+        "clause_metadata": dict(clause_metadata),
+        "selected_family_id": family_id,
+        "renderer_driving": True,
+    }
+    display_model["final_card_model_hash"] = stable_authority_hash(display_model)
+    item = {
+        "title": display_title,
+        "title_main": display_title,
+        "summary": display_model["summary"],
+        "status": outcome_state,
+        "outcome_state": outcome_state,
+        "family": family_id,
+        "selected_family_id": family_id,
+        "published_family_id": family_id,
+        "cta_family_id": family_id,
+        "apply_payload_family_id": family_id,
+        "candidate_id": candidate_id,
+        "source_candidate_id": candidate_id,
+        "updates": dict(update_map),
+        "resolved_candidate_updates": dict(update_map),
+        "action_payload": dict(apply_payload),
+        "button_contract": dict(cta_model),
+    }
+    evidence = {
+        "published_item_id": candidate_id,
+        "selected_family": family_id,
+        "publication_reason": reason_text,
+        "blocker_reason": None if action_type else reason_text,
+        "candidate_search_evidence": {
+            "candidate_id": candidate_id,
+            "accepted": bool(action_type),
+            "source_revision": int(source_revision),
+            "source_hash": source_hash,
+        },
+        "target_band_proof": {"low": 0.85, "high": 1.0},
+        "clause_metadata": dict(clause_metadata),
+    }
+    publication_base = {
+        "published_item_id": candidate_id,
+        "selected_family": family_id,
+        "selected_family_id": family_id,
+        "published_family_id": family_id,
+        "cta_family_id": family_id,
+        "outcome_state": outcome_state,
+        "post_click_design_guide_state": outcome_state,
+        "publication_reason": reason_text,
+        "blocker_reason": None if action_type else reason_text,
+        "source_hash": source_hash,
+        "source_revision": int(source_revision),
+        "guidance_items": [item],
+        "display": dict(display_model),
+        "cta": dict(cta_model),
+        "evidence": dict(evidence),
+        "verifier_payload": {
+            "outcome_state": outcome_state,
+            "selected_family_id": family_id,
+            "published_family_id": family_id,
+            "cta_family_id": family_id,
+            "candidate_id": candidate_id,
+            "source_input_revision": int(source_revision),
+            "source_engineering_hash": source_hash,
+            "review_before_apply": True,
+        },
+        "apply_payload": dict(apply_payload),
+    }
+    publication_hash = stable_authority_hash(publication_base)
+    publication = {**publication_base, "publication_hash": publication_hash}
+    verifier_payload = {
+        **dict(publication_base["verifier_payload"]),
+        "publication_hash": publication_hash,
+        "final_publication_authority_hash": publication_hash,
+    }
+    display_model = {**display_model, "publication_hash": publication_hash}
+    cta_model = {**cta_model, "publication_hash": publication_hash}
+    return {
+        "publication": publication,
+        "display_model": display_model,
+        "cta_model": cta_model,
+        "apply_payload": apply_payload,
+        "verifier_payload": verifier_payload,
+        "publication_hash": publication_hash,
+    }
+
+
 class NewDesignBrainAdapter:
     """Adapt the isolated V2 orchestrator to the neutral V1 DesignBrainPort."""
 
@@ -382,6 +547,16 @@ class NewDesignBrainAdapter:
             "row_counts": list(candidate.row_counts),
             "proposal": asdict(candidate.proposal),
         }
+        publication_projection = _neutral_publication_projection(
+            family=str(decision.family.value),
+            reason=str(preview.reason),
+            accepted=accepted,
+            candidate_payload=candidate_payload,
+            updates=updates,
+            clause_metadata=_clause_metadata(api),
+            source_revision=int(request.input_revision),
+            source_hash=request.engineering_snapshot.engineering_hash,
+        )
         result = build_authoritative_design_result(
             engineering_snapshot=request.engineering_snapshot,
             current_calculations={
@@ -423,30 +598,21 @@ class NewDesignBrainAdapter:
                 "family": str(decision.family.value),
             },
             final_publication={
+                **publication_projection["publication"],
                 "source": "inputs_v2",
-                "review_before_apply": True,
                 "v2_source_revision": preview.before.source_revision,
+                "final_publication_verifier_payload": publication_projection["verifier_payload"],
+                "final_publication_authority_hash": publication_projection["publication_hash"],
+                "final_publication_display_hash": publication_projection["display_model"].get(
+                    "final_card_model_hash"
+                ),
+                "final_publication_cta_hash": publication_projection["cta_model"].get(
+                    "button_contract_hash"
+                ),
             },
-            display_model={
-                "family": str(decision.family.value),
-                "reason": str(preview.reason),
-                "accepted": accepted,
-                "clause_metadata": _clause_metadata(api),
-            },
-            cta_model={
-                "apply_allowed": accepted,
-                "review_before_apply": True,
-                "label": "Review proposed design before Apply",
-            },
-            apply_payload={
-                "resolved_candidate_updates": updates if accepted else {},
-                "source_candidate_id": candidate.candidate_id,
-                "resolved_candidate_family_tag": str(decision.family.value),
-                "source_input_revision": int(request.input_revision),
-                "source_engineering_hash": request.engineering_snapshot.engineering_hash,
-                "v2_source_hash": current.content_hash,
-                "review_before_apply": True,
-            },
+            display_model=publication_projection["display_model"],
+            cta_model=publication_projection["cta_model"],
+            apply_payload=publication_projection["apply_payload"],
         )
         return DesignBrainExecution(
             result=result,
