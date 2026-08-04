@@ -110,13 +110,17 @@ from inputs_page_modules.fragments import run_inputs_fragment
 
 from inputs_page_modules.diagrams.source_projection import build_section_outline_points_and_bbox as build_section_outline_points_and_bbox_module
 
-from inputs_page_modules.design_guide import render_design_guide_panel_orchestration
-
-from inputs_page_modules.design_guide.debug_sidebar import render_design_guide_debug_sidebar
-
-from inputs_page_modules.design_guide.trace import append_design_guide_trace as append_design_guide_trace_module, design_guide_tracer_path as design_guide_tracer_path_module, design_guide_tracer_verbose_log as design_guide_tracer_verbose_log_module
-
-from inputs_page_modules.design_guide.apply_trace_session import DESIGN_GUIDE_APPLY_TRACE_RUN_ID_KEY, begin_design_guide_apply_trace, end_design_guide_apply_trace, set_design_guide_live_breadcrumb
+from inputs_application.design_guide_ui_boundary import (
+    DESIGN_GUIDE_APPLY_TRACE_RUN_ID_KEY,
+    append_design_guide_trace as append_design_guide_trace_module,
+    begin_design_guide_apply_trace,
+    design_guide_tracer_path as design_guide_tracer_path_module,
+    design_guide_tracer_verbose_log as design_guide_tracer_verbose_log_module,
+    end_design_guide_apply_trace,
+    render_design_guide_debug_sidebar,
+    render_design_guide_panel_orchestration,
+    set_design_guide_live_breadcrumb,
+)
 
 from inputs_application.state_projection import (
     build_auto_design_governing_fingerprint as build_auto_design_governing_fingerprint_module,
@@ -177,7 +181,7 @@ from inputs_page_modules.summaries.render_coordinators import render_inputs_summ
 
 from inputs_page_modules.summaries.display_state import render_inputs_summary_display_state as render_inputs_summary_display_state_module
 
-from inputs_page_modules.design_guide.render_eligibility import should_render_design_guide_slot_from_publication_eligibility
+from inputs_application.design_guide_ui_boundary import should_render_design_guide_slot_from_publication_eligibility
 
 from inputs_page_modules.recommendation_runtime import compute_bottom_recommendation_for_page, compute_geometry_recommendation_for_page, compute_shear_recommendation_for_page
 
