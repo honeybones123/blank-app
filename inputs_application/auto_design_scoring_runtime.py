@@ -14,9 +14,7 @@ from application.candidate_geometry_metrics import (
     resolve_auto_design_shallower_beam_metrics,
     resolve_auto_design_shear_candidate_practicality_metrics,
 )
-from inputs_application.legacy_design_brain_adapter import (
-    resolve_candidate_in_target_band,
-)
+from application.target_band_evaluation import resolve_candidate_in_target_band
 from inputs_application.candidate_metrics import compute_reo_complexity
 from inputs_application.geometry_search_policy import (
     candidate_ductility_governs,
