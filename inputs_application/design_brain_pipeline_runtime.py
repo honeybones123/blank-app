@@ -14,6 +14,7 @@ from math import inf
 from typing import Any, Mapping
 
 from application.guidance_result_adapter import (
+    GuidanceResultDependencies,
     GuidanceAuthorityResolution,
     build_authoritative_design_result_from_guidance_payload,
     resolve_guidance_authority,
@@ -34,7 +35,7 @@ from inputs_application.legacy_design_brain_adapter import (
     GoverningStateClassificationStage,
     PIPELINE_STAGE_ORDER,
     PublicationConstructionStage,
-    family_strategy_for,
+    build_guidance_result_dependencies,
     run_design_brain_pipeline,
 )
 
@@ -122,10 +123,12 @@ def run_live_design_brain_pipeline(
     """
 
     payload = _mapping(guidance_payload)
+    dependencies: GuidanceResultDependencies = build_guidance_result_dependencies()
     authority = resolve_guidance_authority(
         guidance_payload=payload,
         family_override=family_override,
         resolved_inputs=resolved_inputs,
+        dependencies=dependencies,
     )
     family_id = normalise_governing_family(authority.governing_family or "")
     if not family_id:
@@ -140,6 +143,7 @@ def run_live_design_brain_pipeline(
             resolved_inputs=resolved_inputs,
             engineering_calculations=engineering_calculations,
             authority_resolution=authority,
+            dependencies=dependencies,
         )
         return LiveDesignBrainExecution(
             result=result,
@@ -183,7 +187,7 @@ def run_live_design_brain_pipeline(
     ) -> FamilyDispatchStage:
         decision = resolve_family_ladder_dispatch(
             dict(classified.classification_evidence),
-            strategy_lookup=family_strategy_for,
+            strategy_lookup=dependencies.family_strategy_lookup,
         )
         if decision.legacy_fallback_allowed:
             raise RuntimeError(
@@ -417,6 +421,7 @@ def run_live_design_brain_pipeline(
             resolved_inputs=resolved_inputs,
             engineering_calculations=engineering_calculations,
             authority_resolution=authority,
+            dependencies=dependencies,
         )
         pipeline_evidence = {
             "schema": LIVE_PIPELINE_SCHEMA,

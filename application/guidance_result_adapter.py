@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from application.contracts.design_brain import (
     AuthoritativeDesignResult,
@@ -18,11 +18,15 @@ from application.contracts.design_brain import (
 )
 from application.family_ladder_dispatch_policy import resolve_family_ladder_dispatch
 from application.whole_beam_family_restamp_policy import restamp_primary_guidance_family_from_whole_beam
-from inputs_application.legacy_design_brain_adapter import (
-    build_final_design_guide_publication,
-    classify_family_from_whole_beam_evidence,
-    family_strategy_for,
-)
+
+
+@dataclass(frozen=True)
+class GuidanceResultDependencies:
+    """Implementation operations supplied by the selected Brain boundary."""
+
+    publication_builder: Callable[..., Any]
+    family_classifier: Callable[[Mapping[str, Any]], Mapping[str, Any]]
+    family_strategy_lookup: Callable[[str], Any]
 
 
 def _mapping(value: Any) -> dict[str, Any]:
@@ -40,6 +44,7 @@ def _suppress_unapproved_family_candidate(
     selected_candidate: dict[str, Any] | None,
     family: Any,
     guidance_debug: Mapping[str, Any],
+    family_strategy_lookup: Callable[[str], Any],
 ) -> tuple[
     list[dict[str, Any]],
     dict[str, Any],
@@ -75,7 +80,7 @@ def _suppress_unapproved_family_candidate(
             "selected_family_id": family_id,
             "classification_passed": True,
         },
-        strategy_lookup=family_strategy_for,
+        strategy_lookup=family_strategy_lookup,
     )
     if not dispatch.should_run_family_ladder:
         return (
@@ -182,6 +187,7 @@ def _family_from_guidance_evidence(
     *,
     primary: Mapping[str, Any],
     guidance_debug: Mapping[str, Any],
+    family_classifier: Callable[[Mapping[str, Any]], Mapping[str, Any]],
 ) -> str | None:
     """Resolve active strength ownership from explicit post-selection evidence."""
 
@@ -232,7 +238,7 @@ def _family_from_guidance_evidence(
         shear_utilisation = float(utils.get("shear")) if utils.get("shear") is not None else None
     except (TypeError, ValueError):
         shear_utilisation = None
-    classified = classify_family_from_whole_beam_evidence(
+    classified = family_classifier(
         {
             "bending_state": "FAIL" if bending_fail else "TARGET",
             "shear_state": (
@@ -370,6 +376,7 @@ def resolve_guidance_authority(
     guidance_payload: Mapping[str, Any] | None,
     family_override: str | None = None,
     resolved_inputs: Mapping[str, Any] | None = None,
+    dependencies: GuidanceResultDependencies,
 ) -> GuidanceAuthorityResolution:
     """Resolve the one family/candidate identity used by every live stage."""
 
@@ -384,7 +391,7 @@ def resolve_guidance_authority(
         restamp_primary_guidance_family_from_whole_beam(
             guidance_items,
             guidance_debug,
-            family_classifier=classify_family_from_whole_beam_evidence,
+            family_classifier=dependencies.family_classifier,
         )
     )
     recommendation_result = _mapping(payload.get("recommendation_result"))
@@ -424,6 +431,7 @@ def resolve_guidance_authority(
         else _family_from_guidance_evidence(
             primary=primary,
             guidance_debug=guidance_debug,
+            family_classifier=dependencies.family_classifier,
         )
     ) or (
         primary.get("selected_family_id")
@@ -467,6 +475,7 @@ def resolve_guidance_authority(
         selected_candidate=selected_candidate,
         family=family,
         guidance_debug=guidance_debug,
+        family_strategy_lookup=dependencies.family_strategy_lookup,
     )
     outcome = (
         primary.get("status")
@@ -506,14 +515,16 @@ def build_authoritative_design_result_from_guidance_payload(
     resolved_inputs: Mapping[str, Any] | None = None,
     engineering_calculations: Mapping[str, Any] | None = None,
     authority_resolution: GuidanceAuthorityResolution | None = None,
+    dependencies: GuidanceResultDependencies,
 ) -> AuthoritativeDesignResult:
     """Build an authority result from explicit existing guidance data."""
 
     resolution = authority_resolution or resolve_guidance_authority(
-            guidance_payload=guidance_payload,
-            family_override=family_override,
-            resolved_inputs=resolved_inputs,
-        )
+        guidance_payload=guidance_payload,
+        family_override=family_override,
+        resolved_inputs=resolved_inputs,
+        dependencies=dependencies,
+    )
     payload = resolution.payload
     guidance_items = list(resolution.guidance_items)
     guidance_debug = resolution.guidance_debug
@@ -555,7 +566,7 @@ def build_authoritative_design_result_from_guidance_payload(
         "published_family_id": publication_family or guidance_debug.get("published_family_id"),
         "cta_family_id": publication_family or guidance_debug.get("cta_family_id"),
     }
-    publication = build_final_design_guide_publication(
+    publication = dependencies.publication_builder(
         item=publication_item,
         debug=publication_debug,
         publication_reason="authoritative_application_compute",
@@ -652,6 +663,7 @@ def guidance_payload_from_authoritative_design_result(
 
 
 __all__ = [
+    "GuidanceResultDependencies",
     "GuidanceAuthorityResolution",
     "build_authoritative_design_result_from_guidance_payload",
     "guidance_payload_from_authoritative_design_result",

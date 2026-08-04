@@ -138,9 +138,22 @@ class LegacyDesignBrainAdapter:
         )
 
 
+def build_guidance_result_dependencies():
+    """Bind legacy publication/family operations at the selected boundary."""
+
+    from application.guidance_result_adapter import GuidanceResultDependencies
+
+    return GuidanceResultDependencies(
+        publication_builder=build_final_design_guide_publication,
+        family_classifier=classify_family_from_whole_beam_evidence,
+        family_strategy_lookup=family_strategy_for,
+    )
+
+
 __all__ = [
     "LegacyDesignBrainAdapter",
     "LegacyGuidanceProvider",
+    "build_guidance_result_dependencies",
     "project_active_fail_executor_evaluated_candidate_result",
     "resolve_active_fail_executor_candidate_eval_source",
     "build_bottom_reo_arrangement_pool_from_state",
