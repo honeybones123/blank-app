@@ -1,8 +1,8 @@
 """Render-only Inputs diagram coordinators.
 
 These helpers own page composition order for diagram panels only. They receive
-Streamlit and page-local render callbacks explicitly so engineering/data
-ownership stays with the existing modules and wrappers.
+typed region contexts and page-local render callbacks explicitly so
+engineering/data ownership stays outside the render layer.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from typing import Any, Callable
 
 from inputs_application.region_contexts import RevisionIdentity
 
-from .models import InputsSection2DRegionContext
+from .models import InputsBeam3DRegionContext, InputsSection2DRegionContext
 
 
 def render_inputs_fast_model_block(
@@ -20,7 +20,6 @@ def render_inputs_fast_model_block(
     sync_callbacks: dict,
     model_state: dict | None,
     shared_toggle_fn: Callable[..., bool],
-    render_with_temporary_model_state_fn: Callable[..., Any],
     render_3d_diagram_block_fn: Callable[..., Any],
     render_section_2d_diagram_block_fn: Callable[..., Any],
 ) -> None:
@@ -36,10 +35,7 @@ def render_inputs_fast_model_block(
             sync_callbacks,
         )
     if show_3d:
-        render_with_temporary_model_state_fn(
-            model_state,
-            lambda: render_3d_diagram_block_fn(compact=True, model_state=model_state),
-        )
+        render_3d_diagram_block_fn(compact=True, model_state=model_state)
     else:
         render_section_2d_diagram_block_fn(compact=True, model_state=model_state)
 
@@ -148,42 +144,51 @@ def render_inputs_section_2d_diagram_block(
 def render_inputs_3d_diagram_block(
     *,
     st_module: Any,
+    region_context: InputsBeam3DRegionContext,
+    current_input_identity_fn: Callable[[], RevisionIdentity | None],
     compact: bool = False,
-    model_state: dict | None = None,
     time_perf_counter_fn: Callable[[], float],
-    inputs_geometry_fingerprint_fn: Callable[..., Any],
     copy_deepcopy_fn: Callable[[Any], Any],
-    compute_section_layout_fn: Callable[[], dict],
-    shared_state_snapshot_fn: Callable[[], dict],
     cache_json_fn: Callable[[Any], str],
     cached_make_section_3d_figure_fn: Callable[..., Any],
-    make_beam_3d_figure_fn: Callable[[], Any],
+    build_inputs_beam_3d_figure_fn: Callable[..., Any],
     render_plotly_diagram_fn: Callable[..., Any],
 ) -> None:
-    """Render the 3D section/beam diagram only using page-supplied callbacks."""
+    """Render only the 3D context that still matches current input authority."""
 
-    time_perf_counter_fn()
-    geo_fp = inputs_geometry_fingerprint_fn(model_state)
+    render_started = time_perf_counter_fn()
+    current_identity = current_input_identity_fn()
+    if current_identity != region_context.identity:
+        st_module.info("3D model is updating to the latest inputs.")
+        return
+
+    view_model = region_context.view_model
+    geo_fp = view_model.display_hash
     cache_payload = st_module.session_state.get("_inputs_model_3d_cache", {})
     cached_fp = cache_payload.get("geo_fp")
     cached_shape = cache_payload.get("shape_name")
     cached_fig = cache_payload.get("fig")
     if cached_fp == geo_fp and cached_fig is not None and isinstance(cached_shape, str):
+        cache_mode = "hit"
         shape_name = cached_shape
         fig3d = copy_deepcopy_fn(cached_fig)
     else:
-        layout = compute_section_layout_fn()
-        shape_name = layout.get("shape_name", "Rectangle (b Ã— D)")
-        dims = layout.get("dims", {})
-        reo = dict(layout.get("reo", {}))
-        shared_state = dict(model_state) if isinstance(model_state, dict) else shared_state_snapshot_fn()
-        reo["lig_d"] = float(shared_state.get("lig_d", reo.get("lig_d", 0.0)) or 0.0)
-        reo["lig_legs"] = int(shared_state.get("lig_legs", reo.get("lig_legs", 0)) or 0)
-        reo["s_lig"] = float(shared_state.get("s_lig", reo.get("s_lig", 200.0)) or 200.0)
-        reo_layout = layout.get("reo_layout", {})
+        cache_mode = "miss"
+        shape_name = view_model.shape_name
         if shape_name.startswith(("T-Section", "I-Section")):
-            if not isinstance(reo_layout, dict):
-                reo_layout = {"top": [], "bottom": []}
+            dims = dict(region_context.layout.get("dims") or {})
+            reo = dict(region_context.layout.get("reo") or {})
+            reo.update(
+                {
+                    "cover_bot": view_model.cover_bot,
+                    "cover_top": view_model.cover_top,
+                    "cover_side": view_model.cover_side,
+                    "lig_d": view_model.lig_d,
+                    "lig_legs": view_model.lig_legs,
+                    "s_lig": view_model.s_lig,
+                }
+            )
+            reo_layout = dict(view_model.reo_layout or {"top": [], "bottom": []})
             fig3d = cached_make_section_3d_figure_fn(
                 shape_name=shape_name,
                 dims_json=cache_json_fn(dims),
@@ -193,12 +198,35 @@ def render_inputs_3d_diagram_block(
                 L_vis=900.0,
             )
         else:
-            fig3d = make_beam_3d_figure_fn()
+            fig3d = build_inputs_beam_3d_figure_fn(
+                shape_name=view_model.shape_name,
+                shape_key=view_model.shape_key,
+                outline_points=list(view_model.outline_points),
+                b_box=float(view_model.b_box),
+                D=float(view_model.D),
+                L_plot=float(view_model.L_plot),
+                fallback_width=float(view_model.fallback_width),
+                cover_bot=float(view_model.cover_bot),
+                cover_top=float(view_model.cover_top),
+                cover_side=float(view_model.cover_side),
+                lig_d=float(view_model.lig_d),
+                lig_legs=int(view_model.lig_legs),
+                s_lig=float(view_model.s_lig),
+                reo_layout=dict(view_model.reo_layout or {}),
+                cage=dict(view_model.cage or {}),
+                resolved_bars=list(view_model.resolved_bars or ()),
+            )
         st_module.session_state["_inputs_model_3d_cache"] = {
             "geo_fp": geo_fp,
             "shape_name": shape_name,
             "fig": copy_deepcopy_fn(fig3d),
         }
+    st_module.session_state["_inputs_model_3d_source_identity"] = {
+        "beam_id": region_context.beam_id,
+        "input_revision": region_context.identity.input_revision,
+        "engineering_hash": region_context.identity.engineering_hash,
+        "display_hash": geo_fp,
+    }
 
     st_module.markdown(
         """
@@ -242,3 +270,8 @@ def render_inputs_3d_diagram_block(
             config={"displayModeBar": True},
         )
         st_module.markdown("</div>", unsafe_allow_html=True)
+
+    st_module.session_state["_inputs_last_3d_diagram_timings_ms"] = {
+        "cache_mode": cache_mode,
+        "total": round((time_perf_counter_fn() - render_started) * 1000.0, 3),
+    }

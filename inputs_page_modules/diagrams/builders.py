@@ -78,13 +78,24 @@ def build_beam_3d_request_view_model(
     reo_layout = dict(layout.get("reo_layout") or {"bottom": [], "top": []})
     resolved_bars = None
     if shape_key in ("T", "I"):
-        resolved_bars = tuple(
-            dict(bar)
-            for bar in resolve_longitudinal_bars_from_layout(
-                shape_name=shape_name,
-                dims=dims,
-                reo_layout=reo_layout,
+        has_layout_bars = any(
+            bool(band.get("x"))
+            for bands in reo_layout.values()
+            if isinstance(bands, list)
+            for band in bands
+            if isinstance(band, dict)
+        )
+        resolved_bars = (
+            tuple(
+                dict(bar)
+                for bar in resolve_longitudinal_bars_from_layout(
+                    shape_name=shape_name,
+                    dims=dims,
+                    reo_layout=reo_layout,
+                )
             )
+            if has_layout_bars
+            else ()
         )
     model = Beam3DFigureRequestViewModel(
         shape_name=shape_name,
@@ -123,4 +134,3 @@ def build_inputs_diagram_view_model(
         beam_3d=beam_3d,
         display_hash=display_hash,
     )
-

@@ -85,3 +85,18 @@ class InputsSection2DRegionContext:
         if not str(self.beam_id or "").strip():
             raise ValueError("beam_id is required")
         object.__setattr__(self, "layout", copy.deepcopy(dict(self.layout or {})))
+
+
+@dataclass(frozen=True)
+class InputsBeam3DRegionContext:
+    """One revision-matched handoff into the independent 3D diagram region."""
+
+    identity: RevisionIdentity
+    beam_id: str
+    layout: dict[str, Any]
+    view_model: Beam3DFigureRequestViewModel
+
+    def __post_init__(self) -> None:
+        if not str(self.beam_id or "").strip():
+            raise ValueError("beam_id is required")
+        object.__setattr__(self, "layout", copy.deepcopy(dict(self.layout or {})))

@@ -99,7 +99,9 @@ from inputs_application.guidance_entrypoint import (
 from inputs_page_modules.calculations import render_inputs_calculation_explainer_trace as render_inputs_calculation_explainer_trace_module
 
 from inputs_page_modules.diagrams import (
+    InputsBeam3DRegionContext,
     InputsSection2DRegionContext,
+    build_beam_3d_request_view_model,
     build_section_2d_request_view_model,
     render_inputs_3d_diagram_block,
     render_inputs_fast_model_block,
@@ -366,7 +368,6 @@ from inputs_application.page_runtime.common import (
     cached_make_section_figure,
     inputs_hydration_trace_log,
     log_debug,
-    make_beam_3d_figure,
 )
 
 def _render_recommendation_section_header(
@@ -541,26 +542,73 @@ def _render_section_2d_diagram_block(*, compact: bool = False, model_state: dict
     )
 
 def _render_3d_diagram_block(*, compact: bool = False, model_state: dict | None = None):
-    def _render():
-        return render_inputs_3d_diagram_block(
-            st_module=st,
-            compact=compact,
-            model_state=model_state,
-            time_perf_counter_fn=time.perf_counter,
-            inputs_geometry_fingerprint_fn=_inputs_geometry_fingerprint,
-            copy_deepcopy_fn=copy.deepcopy,
-            compute_section_layout_fn=compute_section_layout,
-            shared_state_snapshot_fn=_shared_state_snapshot,
-            cache_json_fn=_cache_json,
-            cached_make_section_3d_figure_fn=cached_make_section_3d_figure,
-            make_beam_3d_figure_fn=make_beam_3d_figure,
-            render_plotly_diagram_fn=st.plotly_chart,
-        )
-    return _render_with_temporary_model_state(model_state, _render)
+    beam_id = str(
+        st.session_state.get("active_beam_id")
+        or st.session_state.get("_inputs_engineering_input_store_active_beam_id")
+        or "active"
+    )
+    input_store = InputSnapshotStore(st.session_state)
+    input_state = input_store.current_for_beam(beam_id)
+    if not input_state.engineering_hash:
+        input_state = input_store.current()
+    explicit_state = dict(
+        input_state.snapshot
+        or model_state
+        or _resolved_inputs_model_state()[0]
+    )
+    layout = compute_section_layout(explicit_state)
+    source = _build_inputs_diagram_source_snapshot(layout, explicit_state)
+    beam_view_model = build_beam_3d_request_view_model(source)
+    identity = RevisionIdentity(
+        input_revision=int(input_state.revision),
+        engineering_hash=str(
+            input_state.engineering_hash
+            or beam_view_model.display_hash
+        ),
+    )
+    region_context = InputsBeam3DRegionContext(
+        identity=identity,
+        beam_id=beam_id,
+        layout=layout,
+        view_model=beam_view_model,
+    )
+    trace = dict(st.session_state.get("_inputs_diagram_view_model_trace") or {})
+    trace.update(
+        {
+            "diagram_view_model_trace_source": "inputs_page_modules.diagrams",
+            "diagram_view_model_trace_only": True,
+            "live_cutover": True,
+            "beam_3d_display_hash": beam_view_model.display_hash,
+            "diagram_display_hash": beam_view_model.display_hash,
+            "source_layout_keys": sorted(dict(source.layout or {}).keys()),
+        }
+    )
+    st.session_state["_inputs_diagram_view_model_trace"] = trace
 
-def _inputs_geometry_fingerprint(state: dict | None = None) -> tuple:
-    source = state if isinstance(state, dict) else st.session_state
-    return tuple((k, source.get(k)) for k in sorted(MODEL_RENDER_FINGERPRINT_KEYS))
+    def _current_identity() -> RevisionIdentity:
+        current = input_store.current_for_beam(beam_id)
+        if not current.engineering_hash:
+            current = input_store.current()
+        return RevisionIdentity(
+            input_revision=int(current.revision),
+            engineering_hash=str(
+                current.engineering_hash
+                or region_context.identity.engineering_hash
+            ),
+        )
+
+    return render_inputs_3d_diagram_block(
+        st_module=st,
+        region_context=region_context,
+        current_input_identity_fn=_current_identity,
+        compact=compact,
+        time_perf_counter_fn=time.perf_counter,
+        copy_deepcopy_fn=copy.deepcopy,
+        cache_json_fn=_cache_json,
+        cached_make_section_3d_figure_fn=cached_make_section_3d_figure,
+        build_inputs_beam_3d_figure_fn=build_inputs_beam_3d_figure,
+        render_plotly_diagram_fn=st.plotly_chart,
+    )
 
 def _inputs_model_reo_widget_keys() -> tuple[str, ...]:
     keys: list[str] = []
@@ -647,30 +695,12 @@ def _resolved_inputs_model_state() -> tuple[dict, dict]:
     )
     return dict(model_state), dict(debug_snapshot.debug_payload)
 
-def _render_with_temporary_model_state(model_state: dict | None, render_fn):
-    if not isinstance(model_state, dict) or not model_state:
-        return render_fn()
-    sentinel = object()
-    original_values: dict[str, object] = {}
-    try:
-        for key, value in model_state.items():
-            original_values[key] = st.session_state.get(key, sentinel)
-            st.session_state[key] = value
-        return render_fn()
-    finally:
-        for key, value in original_values.items():
-            if value is sentinel:
-                st.session_state.pop(key, None)
-            else:
-                st.session_state[key] = value
-
 def _render_fast_model_block(sync_callbacks: dict, model_state: dict | None = None) -> None:
     return render_inputs_fast_model_block(
         st_module=st,
         sync_callbacks=sync_callbacks,
         model_state=model_state,
         shared_toggle_fn=_shared_toggle,
-        render_with_temporary_model_state_fn=_render_with_temporary_model_state,
         render_3d_diagram_block_fn=_render_3d_diagram_block,
         render_section_2d_diagram_block_fn=_render_section_2d_diagram_block,
     )
