@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from design_brain.publication import normalise_design_guide_candidate_id
+from inputs_application.legacy_design_brain_adapter import normalise_design_guide_candidate_id
 from inputs_page_modules.design_guide.item_identity import (
     _guidance_item_family,
     _guidance_item_source_candidate_id,

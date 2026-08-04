@@ -7,7 +7,7 @@ Generated mechanically from the last archived page closure; this module has no r
 from __future__ import annotations
 
 
-from design_brain.final_publication import build_final_publication_cta_from_current_state as _build_final_publication_cta_from_current_state
+from inputs_application.legacy_design_brain_adapter import build_final_publication_cta_from_current_state as _build_final_publication_cta_from_current_state
 from inputs_application.guidance_runtime_config import DESIGN_GUIDE_REFERENCE_D_KEY
 from inputs_application.guidance_runtime_config import DESIGN_GUIDE_SESSION_ANCHOR_D_KEY
 from inputs_application.guidance_runtime_config import REO_BAR_DIAS

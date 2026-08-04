@@ -19,19 +19,17 @@ from typing import Any
 from application.design_result_store import AuthoritativeDesignResultStore
 from application.engineering_snapshot import build_engineering_input_snapshot_from_resolved_state
 from application.guidance_result_adapter import guidance_payload_from_authoritative_design_result
-from design_brain.design_guide_controller import (
+from inputs_application.legacy_design_brain_adapter import (
     build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence,
     build_design_guide_controller_compute_active_under_capacity_blocker_projection,
-)
-from design_brain.family_classification_runtime import classify_family_from_whole_beam_evidence
-from design_brain.family_classification import load_family_classification_contract
-from design_brain.families.registry import normalise_governing_family
-from design_brain.final_publication import (
+    classify_family_from_whole_beam_evidence,
+    load_family_classification_contract,
+    normalise_governing_family,
     build_final_design_guide_publication,
     final_design_guide_publication_from_dict,
     stable_final_publication_hash,
+    build_final_design_guide_card_format,
 )
-from design_brain.final_design_guide_formatter import build_final_design_guide_card_format
 from inputs_page_modules.design_guide.render_coordinators import (
     render_design_guide_component_cta,
     render_design_guide_post_apply_banner,

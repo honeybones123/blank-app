@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from design_brain.final_publication import (
+from inputs_application.legacy_design_brain_adapter import (
     build_final_design_guide_primary_apply_payload_projection,
 )
 

@@ -47,6 +47,31 @@ from design_brain.families.bending import (
     candidate_ductility_util,
 )
 from design_brain.family_classification import load_family_classification_contract
+from design_brain.family_classification_runtime import classify_family_from_whole_beam_evidence
+from design_brain.families.registry import normalise_governing_family
+from design_brain.final_design_guide_formatter import build_final_design_guide_card_format
+from design_brain.design_guide_controller import (
+    build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence,
+    build_design_guide_controller_compute_active_under_capacity_blocker_projection,
+    identify_design_guide_controller_materially_overprovided_non_governing_families,
+)
+from design_brain.final_publication import (
+    build_final_design_guide_primary_apply_payload_projection,
+    build_final_design_guide_publication,
+    build_final_publication_cta_from_current_state,
+    final_design_guide_publication_from_dict,
+    stable_final_publication_hash,
+)
+from design_brain.publication import (
+    accepted_green_exact_blocker_is_valid,
+    design_guide_cache_fingerprint_from_plain_data,
+    design_guide_primary_apply_state_fingerprint_from_state,
+    normalise_design_guide_candidate_id,
+)
+from design_brain.repair import (
+    candidate_preview_statuses_have_explicit_fail,
+    requires_full_coverage_for_primary_one_click,
+)
 
 
 LegacyGuidanceProvider = Callable[[DesignBrainRequest], Mapping[str, object]]
@@ -115,4 +140,21 @@ __all__ = [
     "candidate_ductility_governs",
     "candidate_ductility_util",
     "load_family_classification_contract",
+    "classify_family_from_whole_beam_evidence",
+    "normalise_governing_family",
+    "build_final_design_guide_card_format",
+    "build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence",
+    "build_design_guide_controller_compute_active_under_capacity_blocker_projection",
+    "identify_design_guide_controller_materially_overprovided_non_governing_families",
+    "build_final_design_guide_primary_apply_payload_projection",
+    "build_final_design_guide_publication",
+    "build_final_publication_cta_from_current_state",
+    "final_design_guide_publication_from_dict",
+    "stable_final_publication_hash",
+    "accepted_green_exact_blocker_is_valid",
+    "design_guide_cache_fingerprint_from_plain_data",
+    "design_guide_primary_apply_state_fingerprint_from_state",
+    "normalise_design_guide_candidate_id",
+    "candidate_preview_statuses_have_explicit_fail",
+    "requires_full_coverage_for_primary_one_click",
 ]
