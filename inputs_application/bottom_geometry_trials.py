@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from design_brain.design_guide_controller import (
+from inputs_application.legacy_design_brain_adapter import (
     resolve_design_guide_controller_guidance_action_generated_updates,
 )
 from inputs_application.geometry_search_policy import (

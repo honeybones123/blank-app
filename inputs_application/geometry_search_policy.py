@@ -16,7 +16,7 @@ from inputs_application.policy_constants import (
     EFFICIENCY_TARGET_UTIL_MAX,
     EFFICIENCY_TARGET_UTIL_MIN,
 )
-from design_brain.families.bending_fail_governs.geometry_ratio import (
+from inputs_application.legacy_design_brain_adapter import (
     bending_depth_width_ratio_limit,
     depth_width_ratio,
 )
