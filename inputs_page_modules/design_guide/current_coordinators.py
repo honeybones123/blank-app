@@ -24,14 +24,18 @@ from application.contracts.family_classification import (
     normalise_governing_family,
 )
 from application.publication_identity import stable_final_publication_hash
-from inputs_application.legacy_design_brain_adapter import (
-    build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence,
-    build_design_guide_controller_compute_active_under_capacity_blocker_projection,
-    classify_family_from_whole_beam_evidence,
-    build_final_design_guide_publication,
-    final_design_guide_publication_from_dict,
-    build_final_design_guide_card_format,
+from inputs_application.design_brain_composition import (
+    selected_legacy_design_brain_namespace,
 )
+
+
+_owner = selected_legacy_design_brain_namespace()
+build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence = _owner.build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence
+build_design_guide_controller_compute_active_under_capacity_blocker_projection = _owner.build_design_guide_controller_compute_active_under_capacity_blocker_projection
+classify_family_from_whole_beam_evidence = _owner.classify_family_from_whole_beam_evidence
+build_final_design_guide_publication = _owner.build_final_design_guide_publication
+final_design_guide_publication_from_dict = _owner.final_design_guide_publication_from_dict
+build_final_design_guide_card_format = _owner.build_final_design_guide_card_format
 from inputs_page_modules.design_guide.render_coordinators import (
     render_design_guide_component_cta,
     render_design_guide_post_apply_banner,
