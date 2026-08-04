@@ -11,6 +11,7 @@ from inputs_application.legacy_design_brain_adapter import (
     LegacyDesignBrainAdapter,
     LegacyGuidanceProvider,
     build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence,
+    build_final_design_guide_publication,
 )
 
 
