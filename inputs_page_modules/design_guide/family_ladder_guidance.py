@@ -4,12 +4,15 @@ The implementation belongs to :mod:`design_brain.family_ladder_runtime`.
 This module preserves historical imports while callers migrate to the owner.
 """
 
-from inputs_application import legacy_design_brain_adapter as _owner
-from inputs_application.legacy_design_brain_adapter import (
-    FamilyLadderGuidanceRuntime,
-    _family_ladder_guidance_item,
-    bind_family_ladder_guidance_dependencies,
+from inputs_application.design_brain_composition import (
+    selected_legacy_design_brain_namespace,
 )
+
+
+_owner = selected_legacy_design_brain_namespace()
+FamilyLadderGuidanceRuntime = _owner.FamilyLadderGuidanceRuntime
+_family_ladder_guidance_item = _owner._family_ladder_guidance_item
+bind_family_ladder_guidance_dependencies = _owner.bind_family_ladder_guidance_dependencies
 
 
 def __getattr__(name: str):

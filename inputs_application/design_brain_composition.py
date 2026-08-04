@@ -79,6 +79,14 @@ def build_primary_apply_payload_projection_builder():
     return build_final_design_guide_primary_apply_payload_projection
 
 
+def selected_legacy_design_brain_namespace():
+    """Return the selected compatibility namespace for historical facades."""
+
+    from inputs_application import legacy_design_brain_adapter
+
+    return legacy_design_brain_adapter
+
+
 __all__ = [
     "build_design_brain_service",
     "build_replacement_design_brain_service",
@@ -87,4 +95,5 @@ __all__ = [
     "build_bottom_arrangement_pool_builder",
     "build_publication_builder",
     "build_primary_apply_payload_projection_builder",
+    "selected_legacy_design_brain_namespace",
 ]
