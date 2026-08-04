@@ -21,6 +21,7 @@ from inputs_application.design_brain_polling import (
 from inputs_application.page_runtime import InputsPageRuntime
 from inputs_application.region_contexts import (
     InputsCalculationRegionContext,
+    InputsControlsRegionContext,
     InputsDesignBrainRegionContext,
     RevisionIdentity,
 )
@@ -292,6 +293,26 @@ def build_inputs_calculation_region_context(
     )
 
 
+def build_inputs_controls_region_context(
+    *,
+    page_context: dict[str, Any],
+) -> InputsControlsRegionContext:
+    """Adapt the setup dictionary once into immutable Controls inputs."""
+
+    beam_labels = dict(page_context.get("beam_labels") or {})
+    beam_order = tuple(str(beam_id) for beam_id in page_context.get("beam_order") or ())
+    active_beam_id = str(page_context.get("active_beam_id") or "")
+    if beam_order and active_beam_id not in beam_order:
+        active_beam_id = beam_order[0]
+    return InputsControlsRegionContext(
+        beam_labels=tuple(
+            (str(beam_id), str(label)) for beam_id, label in beam_labels.items()
+        ),
+        beam_order=beam_order,
+        active_beam_id=active_beam_id,
+    )
+
+
 def prepare_engineering_workspace_transaction(
     *,
     st_module: Any,
@@ -453,15 +474,15 @@ def render_inputs_controls_fragment_section(
     *,
     st_module: Any,
     runtime: EngineeringWorkspaceRuntime,
-    page_context: dict[str, Any],
+    region_context: InputsControlsRegionContext,
 ) -> bool:
     """Render the existing mode and batch controls in their current order."""
 
     runtime.render_batch(
         ss=st_module.session_state,
-        beam_labels=page_context["beam_labels"],
-        beam_order=page_context["beam_order"],
-        active_beam_id=page_context["active_beam_id"],
+        beam_labels=region_context.labels_dict(),
+        beam_order=list(region_context.beam_order),
+        active_beam_id=region_context.active_beam_id,
     )
     return bool(
         st_module.session_state.get(
@@ -753,10 +774,13 @@ def render_engineering_workspace(
         st_module.session_state.get("_inputs_detailed_mode", False)
     )
     if include_controls:
+        controls_region_context = build_inputs_controls_region_context(
+            page_context=page_context,
+        )
         inputs_detailed_mode = render_inputs_controls_fragment_section(
             st_module=st_module,
             runtime=runtime,
-            page_context=page_context,
+            region_context=controls_region_context,
         )
     section_timings_ms["controls_and_batch"] = (
         time.perf_counter_ns() - section_started_ns
@@ -1186,10 +1210,13 @@ def render_engineering_workspace_controls(
 ) -> bool:
     """Render batch and workspace controls without engineering computation."""
 
+    region_context = build_inputs_controls_region_context(
+        page_context=page_context,
+    )
     inputs_detailed_mode = render_inputs_controls_fragment_section(
         st_module=st_module,
         runtime=runtime,
-        page_context=page_context,
+        region_context=region_context,
     )
     st_module.session_state["_inputs_detailed_mode"] = bool(inputs_detailed_mode)
     return bool(inputs_detailed_mode)
@@ -1300,7 +1327,9 @@ def render_engineering_workspace_design_brain(
 __all__ = [
     "EngineeringWorkspaceRuntime",
     "InputsCalculationRegionContext",
+    "InputsControlsRegionContext",
     "InputsDesignBrainRegionContext",
+    "build_inputs_controls_region_context",
     "RevisionIdentity",
     "build_inputs_calculation_region_context",
     "build_inputs_design_brain_region_context",
