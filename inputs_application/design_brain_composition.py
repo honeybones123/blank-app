@@ -69,6 +69,16 @@ def build_publication_builder():
     return build_final_design_guide_publication
 
 
+def build_primary_apply_payload_projection_builder():
+    """Expose the selected implementation's Apply projection by composition."""
+
+    from inputs_application.legacy_design_brain_adapter import (
+        build_final_design_guide_primary_apply_payload_projection,
+    )
+
+    return build_final_design_guide_primary_apply_payload_projection
+
+
 __all__ = [
     "build_design_brain_service",
     "build_replacement_design_brain_service",
@@ -76,4 +86,5 @@ __all__ = [
     "build_publication_cta_builder",
     "build_bottom_arrangement_pool_builder",
     "build_publication_builder",
+    "build_primary_apply_payload_projection_builder",
 ]
