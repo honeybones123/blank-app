@@ -97,7 +97,6 @@ def __dir__() -> list[str]:
 from design_brain.design_guide_controller import (
     build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence,
     build_design_guide_controller_compute_active_under_capacity_blocker_projection,
-    identify_design_guide_controller_materially_overprovided_non_governing_families,
 )
 from design_brain.final_publication import (
     build_final_design_guide_primary_apply_payload_projection,
@@ -159,7 +158,6 @@ __all__ = [
     "build_final_design_guide_card_format",
     "build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence",
     "build_design_guide_controller_compute_active_under_capacity_blocker_projection",
-    "identify_design_guide_controller_materially_overprovided_non_governing_families",
     "build_final_design_guide_primary_apply_payload_projection",
     "build_final_design_guide_publication",
     "build_final_publication_cta_from_current_state",

@@ -215,7 +215,9 @@ from application.publication_identity import stable_final_publication_hash
 from application.accepted_green_blocker_policy import accepted_green_exact_blocker_is_valid
 from inputs_application.legacy_design_brain_adapter import (
     build_final_design_guide_publication,
-    identify_design_guide_controller_materially_overprovided_non_governing_families,
+)
+from inputs_application.efficiency_classification import (
+    identify_materially_overprovided_non_governing_families,
 )
 from inputs_page_modules.session import build_inputs_browser_recipe_action_applied_decision
 from inputs_application.local_cleanup_acceptance import DESIGN_GUIDE_POST_CLEANUP_ACCEPTED_FPS
@@ -1648,7 +1650,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
             else (item_candidate_search_evidence or debug_candidate_search_evidence or {})
         )
         _probe_family_utils, _probe_material_families, _probe_governing_family = (
-            identify_design_guide_controller_materially_overprovided_non_governing_families(
+            identify_materially_overprovided_non_governing_families(
                 dict(guidance_debug_probe.get("overview") or {})
             )
         )
