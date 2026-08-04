@@ -15,7 +15,6 @@ from design_brain.families.bending import (
     build_bottom_reo_evaluated_candidate_filter_record,
 )
 from design_brain.family_classification_runtime import classify_family_from_whole_beam_evidence
-from design_brain.family_ladder_dispatch import resolve_family_ladder_dispatch
 from design_brain.whole_beam_family_restamp import restamp_primary_guidance_family_from_whole_beam
 from design_brain.pipeline import (
     ApplyCommandConstructionStage,
@@ -156,7 +155,6 @@ __all__ = [
     "build_final_design_guide_publication",
     "build_final_publication_cta_from_current_state",
     "final_design_guide_publication_from_dict",
-    "resolve_family_ladder_dispatch",
     "restamp_primary_guidance_family_from_whole_beam",
     "ApplyCommandConstructionStage",
     "ApprovedCandidateProposal",

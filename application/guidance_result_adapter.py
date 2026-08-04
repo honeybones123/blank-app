@@ -16,11 +16,12 @@ from application.contracts.design_brain import (
     EngineeringInputSnapshot,
     build_authoritative_design_result,
 )
+from application.family_ladder_dispatch_policy import resolve_family_ladder_dispatch
 from inputs_application.legacy_design_brain_adapter import (
     build_final_design_guide_publication,
     classify_family_from_whole_beam_evidence,
-    resolve_family_ladder_dispatch,
     restamp_primary_guidance_family_from_whole_beam,
+    family_strategy_for,
 )
 
 
@@ -73,7 +74,8 @@ def _suppress_unapproved_family_candidate(
         {
             "selected_family_id": family_id,
             "classification_passed": True,
-        }
+        },
+        strategy_lookup=family_strategy_for,
     )
     if not dispatch.should_run_family_ladder:
         return (

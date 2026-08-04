@@ -20,6 +20,7 @@ from application.guidance_result_adapter import (
 )
 from application.contracts.design_brain import AuthoritativeDesignResult, EngineeringInputSnapshot
 from application.contracts.family_classification import normalise_governing_family
+from application.family_ladder_dispatch_policy import resolve_family_ladder_dispatch
 from inputs_application.legacy_design_brain_adapter import (
     ApplyCommandConstructionStage,
     ApprovedCandidateProposal,
@@ -33,8 +34,8 @@ from inputs_application.legacy_design_brain_adapter import (
     GoverningStateClassificationStage,
     PIPELINE_STAGE_ORDER,
     PublicationConstructionStage,
+    family_strategy_for,
     run_design_brain_pipeline,
-    resolve_family_ladder_dispatch,
 )
 
 
@@ -181,7 +182,8 @@ def run_live_design_brain_pipeline(
         classified: GoverningStateClassificationStage,
     ) -> FamilyDispatchStage:
         decision = resolve_family_ladder_dispatch(
-            dict(classified.classification_evidence)
+            dict(classified.classification_evidence),
+            strategy_lookup=family_strategy_for,
         )
         if decision.legacy_fallback_allowed:
             raise RuntimeError(
