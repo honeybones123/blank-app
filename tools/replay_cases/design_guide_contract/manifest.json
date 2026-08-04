@@ -1,0 +1,60 @@
+{
+  "name": "design_guide_contract_replay_pack",
+  "description": "Stable replay pack for previously fixed Design Guide live-fuzz regressions.",
+  "cases": [
+    {
+      "name": "active_fail_post_click_no_family_in_target",
+      "case_file": "tools/replay_cases/design_guide_contract/active_fail_post_click_no_family_in_target.json",
+      "source": "artifacts/verification/live_fuzz/2026-05-07T07-51-05/failure_case.json",
+      "notes": "Regression for active-fail post-click acceptance using accepted band plus exact secondary blocker evidence."
+    },
+    {
+      "name": "combined_fail_card_not_red_combined",
+      "case_file": "tools/replay_cases/design_guide_contract/combined_fail_card_not_red_combined.json",
+      "source": "artifacts/verification/live_fuzz/2026-05-07T09-47-27/failure_case.json",
+      "notes": "Regression for active combined fail requiring red combined repair/blocker state."
+    },
+    {
+      "name": "missing_visible_card",
+      "case_file": "tools/replay_cases/design_guide_contract/missing_visible_card.json",
+      "source": "artifacts/verification/live_fuzz/replay_2026-05-07T10-29-46/failure_case.json",
+      "notes": "Regression for settled Design Guide state rendering zero visible cards while a payload exists."
+    },
+    {
+      "name": "blocker_card_without_specific_engineering_reason",
+      "case_file": "tools/replay_cases/design_guide_contract/blocker_card_without_specific_engineering_reason.json",
+      "source": "artifacts/verification/live_fuzz/2026-05-07T10-47-36/failure_case.json",
+      "notes": "Regression for multi-family active-fail blocker requiring visible family-specific engineering reasons."
+    },
+    {
+      "name": "summary_fail_card_green_or_terminal",
+      "case_file": "tools/replay_cases/design_guide_contract/summary_fail_card_green_or_terminal.json",
+      "source": "artifacts/verification/live_fuzz/2026-05-07T10-56-21/failure_case.json",
+      "notes": "Regression for verifier colour alignment where red summary and red BLOCKED card must not be classified as green/terminal."
+    },
+    {
+      "name": "summary_fail_but_card_not_repair",
+      "case_file": "tools/replay_cases/design_guide_contract/summary_fail_but_card_not_repair.json",
+      "source": "artifacts/verification/live_fuzz/2026-05-07T11-03-52/failure_case.json",
+      "notes": "Regression for active-fail blocker proof not being validated by cleanup/final-threshold evidence."
+    },
+    {
+      "name": "combined_underdesign_active_fail_blocker_exact_evidence",
+      "case_file": "tools/replay_cases/design_guide_contract/combined_underdesign_active_fail_blocker_exact_evidence.json",
+      "source": "artifacts/verification/live_fuzz/2026-05-07T13-04-55/failure_case.json",
+      "notes": "Regression for combined active-fail red blocker publishing exact active-repair exhaustion evidence for bending and shear."
+    },
+    {
+      "name": "combined_overdesign_cleanup_blocker_names_bending_and_shear",
+      "case_file": "tools/replay_cases/design_guide_contract/combined_overdesign_cleanup_blocker_names_bending_and_shear.json",
+      "source": "artifacts/verification/live_fuzz/2026-05-07T13-53-29/failure_case.json",
+      "notes": "Regression for combined overdesign cleanup blocker visibly naming both bending and shear exact blocker reasons."
+    }
+  ],
+  "missing": [
+    {
+      "name": "low_util_no_cleanup_or_blocker",
+      "reason": "Source replay exists but is not a stable passing replay yet; setup test reproduced post_click_not_green_or_exact_engineering_blocker, so it was left out of the stable pack."
+    }
+  ]
+}

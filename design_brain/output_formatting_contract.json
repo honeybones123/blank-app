@@ -1,0 +1,222 @@
+{
+  "schema": "design_brain.design_guide_output_wording_contract.v1",
+  "contract_identity": {
+    "contract_id": "DESIGN_GUIDE_OUTPUT_WORDING",
+    "owner": "design_brain.output_formatting",
+    "live_render_builder": "inputs_page._build_design_guide_card_render_model",
+    "snapshot_verifier": "tools/verification/design_guide_output_formatting_snapshot.py"
+  },
+  "allowed_title_status_formats": {
+    "statuses": [
+      "action",
+      "blocked",
+      "pass"
+    ],
+    "pill_labels": [
+      "ACTION",
+      "BLOCKED",
+      "PASS"
+    ],
+    "title_categories": {
+      "action": [
+        "capacity_low",
+        "recommendation_available"
+      ],
+      "blocked": [
+        "cleanup_blocked",
+        "exact_blocker",
+        "further_cleanup_blocked"
+      ],
+      "pass": [
+        "accepted",
+        "efficient"
+      ]
+    }
+  },
+  "allowed_reason_why_rows": {
+    "required_row_fields": [
+      "label",
+      "text",
+      "tone"
+    ],
+    "allowed_tones": [
+      "red",
+      "amber",
+      "green",
+      "info"
+    ],
+    "expected_categories": [
+      "problem",
+      "cause",
+      "fix",
+      "change",
+      "why",
+      "expected_result",
+      "blocker_evidence",
+      "next_step",
+      "result",
+      "serviceability",
+      "bending",
+      "shear",
+      "combined",
+      "geometry"
+    ]
+  },
+  "blocker_wording_categories": [
+    "active_failure_capacity_blocker",
+    "exact_blocker_evidence",
+    "cleanup_attempt_failed",
+    "combined_cleanup_blocker",
+    "no_link_shear_cleanup_stop",
+    "generic_checked_route_blocker"
+  ],
+  "cleanup_no_repair_wording": {
+    "section_title": "Why no further cleanup?",
+    "summary_line": "Open for engineering detail.",
+    "families": [
+      "bending",
+      "shear",
+      "combined"
+    ],
+    "source_precedence": [
+      "post_click_exact_blockers_by_family",
+      "exact_blockers_by_family",
+      "blocker_attempts_by_family",
+      "candidate_search_evidence.post_click_exact_blockers_by_family",
+      "candidate_search_evidence.exact_blockers_by_family",
+      "candidate_search_evidence.blocker_attempts_by_family"
+    ]
+  },
+  "exact_blocker_fallback_wording": {
+    "source_precedence": [
+      "post_click_exact_blockers_by_family",
+      "exact_blockers_by_family",
+      "candidate_search_evidence.post_click_exact_blockers_by_family",
+      "candidate_search_evidence.exact_blockers_by_family",
+      "debug.post_click_exact_blockers_by_family",
+      "debug.exact_blockers_by_family"
+    ],
+    "fallback_label": "Blocker evidence",
+    "fallback_tone": "amber"
+  },
+  "ladder_stop_evidence_wording": {
+    "source_precedence": [
+      "details.exact_blockers_by_family",
+      "details.blocker_attempts_by_family",
+      "details.candidate_search_evidence",
+      "details.debug.exact_blockers_by_family",
+      "details.debug.post_click_exact_blockers_by_family",
+      "details.debug.cleanup_evidence_by_family",
+      "details.debug.post_click_cleanup_evidence_by_family",
+      "details.debug.blocker_attempts_by_family"
+    ],
+    "allowed_families": [
+      "bending",
+      "shear",
+      "combined"
+    ],
+    "requires_html_hash": true
+  },
+  "cta_display_wording_expectations": {
+    "enabled_label": "Run one-click auto design",
+    "disabled_label": "",
+    "disabled_reason_source_precedence": [
+      "cta.reason",
+      "cta.blocking_reason",
+      "button_contract.blocking_reason"
+    ]
+  },
+  "required_render_model_fields": [
+    "family",
+    "family_label",
+    "title",
+    "status",
+    "pill",
+    "main_text",
+    "why_body",
+    "final_reasons",
+    "reason_display_rows",
+    "cta_label",
+    "cta_enabled",
+    "cta_reason",
+    "button_contract_attributes",
+    "blocker_evidence_display_fields",
+    "details_text",
+    "details_payload",
+    "section_title",
+    "ladder_stop_html",
+    "repair_identity",
+    "apply_identity",
+    "blocker_reason",
+    "verifier_fields",
+    "data_attributes"
+  ],
+  "required_hash_fields": [
+    "decision_display_fields_hash",
+    "final_card_model_hash",
+    "rendered_html_hash"
+  ],
+  "required_snapshot_cases": {
+    "action": {
+      "case_names": [
+        "action_enabled_shear"
+      ],
+      "required": true
+    },
+    "blocked": {
+      "case_names": [
+        "blocked_exact_shear"
+      ],
+      "required": true
+    },
+    "terminal_pass": {
+      "case_names": [
+        "pass_terminal"
+      ],
+      "required": true
+    },
+    "exact_blocker": {
+      "case_names": [
+        "blocked_exact_shear"
+      ],
+      "required": true
+    },
+    "no_repair_cleanup": {
+      "case_names": [
+        "blocked_exact_shear"
+      ],
+      "required": false,
+      "coverage_note": "Covered by the focused synthetic blocked cleanup/exact-blocker display case until a separate product no-repair cleanup wording fixture exists."
+    }
+  },
+  "required_gates": [
+    "tools/verification/design_guide_output_wording_contract_check.py",
+    "tools/verification/design_guide_output_formatting_snapshot.py",
+    "compileall",
+    "design_brain_governing_family_architecture_check",
+    "design_brain_api_checks",
+    "locked_family_regressions",
+    "design_guide_publication_snapshot",
+    "shear_display_boundary_snapshot",
+    "design_guide_cta_source_precedence_current_snapshot",
+    "compute_late_evidence_sync_result_snapshot",
+    "C1_C2_C3_product_gates",
+    "SHEAR_COMBINED_BENDING_regressions",
+    "targeted_fingerprint_update_resolution_scan"
+  ],
+  "movement_rules": {
+    "do_not_move_before_contract": [
+      "_design_guide_dashboard_reasons",
+      "_design_guide_cleanup_blocker_sentence",
+      "_design_guide_ladder_stop_evidence_html",
+      "blocker_reason_selection"
+    ],
+    "no_behavior_changes": [
+      "visible_wording",
+      "cta_display",
+      "render_model_hash",
+      "rendered_html_hash",
+      "locked_family_outputs"
+    ]
+  }
+}

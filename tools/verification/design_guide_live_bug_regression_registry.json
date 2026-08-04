@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "description": "Registry for live/browser-observed Design Guide bugs. A live bug is not considered fixed unless it has a focused verifier listed here and that verifier passes.",
+  "entries": [
+    {
+      "bug_id": "SHEAR_OVERDESIGN_LIVE_WIDTH_PUBLICATION",
+      "description": "Shear overdesign cleanup must not publish a family contract violation or a stale/no-op cleanup state after the contract-owned width cleanup or terminal proof has been evaluated.",
+      "scope": "SHEAR_OVERDESIGN_GOVERNS",
+      "family_id": "SHEAR_OVERDESIGN_GOVERNS",
+      "input_state": "Live overdesign/cleanup path with low shear utilisation, geometry unlocked, and width-cleanup or exact-terminal publication evidence.",
+      "expected_family": "SHEAR_OVERDESIGN_GOVERNS",
+      "expected_card_state": "A valid optimisation action or accepted terminal card; never Design Guide family contract violation.",
+      "expected_cta_state": "Executable apply CTA when a safe cleanup exists, otherwise explicit terminal/no-cleanup proof.",
+      "expected_target_or_blocker": "Target band reached, smallest safe cleanup candidate, or explicit contract-defined no-further-cleanup blocker.",
+      "regression_verifier": "tools/verification/families/shear_overdesign_live_width_publication_regression.py",
+      "verification_commands": [
+        "python tools/verification/families/shear_overdesign_live_width_publication_regression.py"
+      ],
+      "source": "Live app screenshots and browser checks from the shear cleanup width-publication issue.",
+      "status": "active"
+    },
+    {
+      "bug_id": "GEOMETRY_RATIO_MODEL_RENDER_BUT_NO_INVALID_RECOMMENDATION",
+      "description": "The model diagram must still render for current invalid input geometry, but Design Brain must not recommend or apply a candidate whose resulting depth-to-width ratio exceeds the family contract.",
+      "scope": "GEOMETRY_DETAILING_GOVERNS / shared Design Guide apply guard",
+      "family_id": "GEOMETRY_DETAILING_GOVERNS",
+      "input_state": "Current input geometry has D/b above the contract limit.",
+      "expected_family": "GEOMETRY_DETAILING_GOVERNS",
+      "expected_card_state": "Geometry correction action or explicit blocker; model renderer does not hide the current diagram.",
+      "expected_cta_state": "Executable geometry correction only when the resulting candidate satisfies the contract ratio.",
+      "expected_target_or_blocker": "Candidate ratio must be <= the contract limit or blocked with depth_width_ratio_above_contract_limit.",
+      "regression_verifier": "tools/verification/design_guide_ratio_reo_arrangement_regression_snapshot.py",
+      "verification_commands": [
+        "python tools/verification/design_guide_ratio_reo_arrangement_regression_snapshot.py"
+      ],
+      "source": "Live app screenshot showing model hidden for D/b > 2.0.",
+      "status": "active"
+    },
+    {
+      "bug_id": "DESIGN_GUIDE_STALE_PRIMARY_PAYLOAD_RECOVERY",
+      "description": "A stale canonical primary payload must not block one-click when the current FinalDesignGuidePublication CTA has a fresh executor-backed apply payload.",
+      "scope": "Design Guide CTA/apply handoff",
+      "family_id": "shared",
+      "input_state": "One-click finds a candidate but the old primary payload fingerprint is stale.",
+      "expected_family": "selected family from FinalDesignGuidePublication",
+      "expected_card_state": "Current publication card remains authoritative.",
+      "expected_cta_state": "Use the fresh FinalDesignGuidePublication.cta payload when available; only block stale payload when no fresh publication CTA exists.",
+      "expected_target_or_blocker": "Fresh CTA applies, or stale guard reports a real missing fresh payload.",
+      "regression_verifier": "tools/verification/design_guide_ratio_reo_arrangement_regression_snapshot.py",
+      "verification_commands": [
+        "python tools/verification/design_guide_ratio_reo_arrangement_regression_snapshot.py"
+      ],
+      "source": "Live app yellow warning: One-click found a candidate, but it was blocked: stale_primary_design_guide_payload.",
+      "status": "active"
+    },
+    {
+      "bug_id": "MINIMUM_TWO_LONGITUDINAL_BARS_PER_FACE",
+      "description": "Every candidate/apply path must preserve at least two top and two bottom longitudinal bars; one-bar top or bottom arrangements are invalid across all families.",
+      "scope": "shared candidate evaluation / Design Guide apply guard",
+      "family_id": "all",
+      "input_state": "Candidate or update produces one top or one bottom longitudinal bar.",
+      "expected_family": "all",
+      "expected_card_state": "No family may publish a one-bar arrangement as an accepted recommendation.",
+      "expected_cta_state": "Apply is blocked when the resulting top or bottom longitudinal bar count is below 2.",
+      "expected_target_or_blocker": "Blocked with minimum_two_longitudinal_bars_per_face.",
+      "regression_verifier": "tools/verification/design_guide_ratio_reo_arrangement_regression_snapshot.py",
+      "verification_commands": [
+        "python tools/verification/design_guide_ratio_reo_arrangement_regression_snapshot.py"
+      ],
+      "source": "Live app model screenshot showing one bottom bar.",
+      "status": "active"
+    },
+    {
+      "bug_id": "BENDING_OVERDESIGN_POST_APPLY_SECOND_ACTION",
+      "description": "Bending overdesign one-click Apply must not settle back to a second ACTION card when exact-stop or same-click target-band cleanup should own the terminal state.",
+      "scope": "BENDING_OVERDESIGN_GOVERNS post-Apply publication",
+      "family_id": "BENDING_OVERDESIGN_GOVERNS",
+      "input_state": "Bending overdesign cleanup publishes an executable Apply CTA, applies it, then the post-Apply card remains ACTION instead of terminal PASS/accepted proof.",
+      "expected_family": "BENDING_OVERDESIGN_GOVERNS",
+      "expected_card_state": "Green accepted/terminal Design Guide card, or explicit no-action exact blocker proof with no second actionable CTA.",
+      "expected_cta_state": "No second Apply CTA after the selected one-click cleanup is applied unless the family contract explicitly proves multi-step cleanup is required.",
+      "expected_target_or_blocker": "Target band reached, same-click cleanup folded to target band, or exact exhaustive no-further-cleanup proof.",
+      "regression_verifier": "tools/verification/design_guide_overdesign_post_apply_green_regression_snapshot.py",
+      "verification_commands": [
+        "python tools/verification/design_guide_overdesign_post_apply_green_regression_snapshot.py"
+      ],
+      "source": "Full browser/live family 10-fuzz artifact family_10_fuzz_audit_2026-07-13T21-23-52.json.",
+      "status": "active"
+    },
+    {
+      "bug_id": "COMBINED_OVERDESIGN_POST_APPLY_SECOND_ACTION",
+      "description": "Combined overdesign one-click Apply must not settle back to a second ACTION card when combined cleanup or exact-stop proof should own the terminal state.",
+      "scope": "COMBINED_OVERDESIGN_GOVERNS post-Apply publication",
+      "family_id": "COMBINED_OVERDESIGN_GOVERNS",
+      "input_state": "Combined overdesign cleanup publishes an executable Apply CTA, applies it, then the post-Apply card remains ACTION instead of terminal PASS/accepted proof.",
+      "expected_family": "COMBINED_OVERDESIGN_GOVERNS",
+      "expected_card_state": "Green accepted/terminal Design Guide card, or explicit no-action exact blocker proof with no second actionable CTA.",
+      "expected_cta_state": "No second Apply CTA after the selected one-click cleanup is applied unless the family contract explicitly proves multi-step cleanup is required.",
+      "expected_target_or_blocker": "Target band reached, same-click cleanup folded to target band, or exact exhaustive no-further-cleanup proof.",
+      "regression_verifier": "tools/verification/design_guide_overdesign_post_apply_green_regression_snapshot.py",
+      "verification_commands": [
+        "python tools/verification/design_guide_overdesign_post_apply_green_regression_snapshot.py"
+      ],
+      "source": "Full browser/live family 10-fuzz artifact family_10_fuzz_audit_2026-07-13T21-23-52.json.",
+      "status": "active"
+    }
+  ]
+}

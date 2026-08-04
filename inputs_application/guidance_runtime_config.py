@@ -1,0 +1,62 @@
+"""Frozen Inputs guidance runtime configuration.
+
+This module is the permanent owner for values formerly declared by the
+legacy app-contract bridge.
+"""
+
+AUTO_DESIGN_MAX_FIRST_HOP_RAW_CANDIDATES = 32
+AUTO_DESIGN_MAX_KEPT_RESULTS = 5
+AUTO_DESIGN_MAX_LATER_HOP_RAW_CANDIDATES = 16
+AUTO_DESIGN_MAX_STAGE_CANDIDATES = 20
+AUTO_DESIGN_MAX_TIGHTENING_ITERS = 8
+AUTO_DESIGN_TARGET_UTIL = 0.85
+TARGET_UTIL = 0.85
+
+DEBUG_DESIGN_GUIDANCE_PROBE = True
+DESIGN_GUIDE_GEOMETRY_TRIAL_DEBUG_KEY = "_design_guide_geometry_trial_debug"
+DESIGN_GUIDE_REFERENCE_D_KEY = "design_guide_reference_D"
+DESIGN_GUIDE_SESSION_ANCHOR_D_KEY = "design_guide_session_anchor_D"
+GUIDANCE_BENDING_DEMAND_ABS_TOL_KNM = 1.0
+GUIDANCE_GEOMETRY_TRIAL_DELTAS_MM = (25, 50)
+GUIDANCE_INEFFICIENT_UTIL_THRESHOLD = 0.75
+GUIDANCE_LADDER_EARLY_STOP_UTIL = 0.85
+GUIDANCE_NEAR_LIMIT_UTIL_THRESHOLD = 0.95
+GUIDANCE_SHALLOW_CORRECTION_METRIC_MARGIN = 0.08
+GUIDANCE_SHALLOW_CORRECTION_MIN_DEPTH_DROP_MM = 40.0
+GUIDANCE_SHALLOW_CORRECTION_MIN_D_OVER_TEMPLATE_MM = 150.0
+GUIDANCE_STRONGLY_UNDERUTILISED_UTIL = 0.60
+GUIDANCE_TARGET_UTIL_MAX = 0.95
+GUIDANCE_TARGET_UTIL_MIN = 0.88
+GUIDANCE_UNDERSIZED_DONE_BLOCK_UTIL = 0.80
+IN_BAND_COMPOUND_MIN_AST_MM2 = 70.0
+IN_BAND_COMPOUND_MIN_DEPTH_MM = 18.0
+IN_BAND_COMPOUND_MIN_WIDTH_MM = 38.0
+IN_BAND_GOAL_ALIGN_MIN_BALANCED = 10.0
+IN_BAND_GOAL_ALIGN_MIN_SHALLOW = 14.0
+IN_BAND_MIN_AST_DELTA_MM2 = 120.0
+IN_BAND_MIN_DEPTH_DELTA_MM = 25.0
+IN_BAND_MIN_WIDTH_ALONE_MM = 50.0
+IN_BAND_SHALLOW_DEPTH_UP_MIN_GAIN = 22.0
+REO_BAR_DIAS = (10, 12, 16, 20, 24, 28, 32, 36, 40)
+REO_COUNTS_0_12 = tuple(range(13))
+REO_SPACINGS = (75, 100, 125, 150, 175, 200, 225, 250, 275, 300)
+SHEAR_OVERDESIGN_RESERVE_GUIDANCE_UTIL_MAX = 0.20
+TARGET_BAND_ACTIONABLE_AST_DELTA_MM2 = 5.0
+TARGET_BAND_ACTIONABLE_GEO_DELTA_MM = 0.5
+VERY_LOW_DEMAND_UTIL_THRESHOLD = 0.10
+
+COMPOUND_BOTTOM_UPDATE_KEYS = frozenset(
+    {
+        "Ast_bot", "bot1_count", "bot1_layout_mode", "bot1_spacing",
+        "bot2_count", "bot2_layout_mode", "bot2_spacing", "bot_row_1_bars",
+        "bot_row_1_dia", "bot_row_1_mode", "bot_row_1_spacing",
+        "bot_row_2_bars", "bot_row_2_dia", "bot_row_2_mode",
+        "bot_row_2_spacing", "bot_row_3_bars", "bot_row_3_dia",
+        "bot_row_3_mode", "bot_row_3_spacing", "bot_row_4_bars",
+        "bot_row_4_dia", "bot_row_4_mode", "bot_row_4_spacing",
+        "bot_row_count", "db_bot_1", "db_bot_2",
+    }
+)
+COMPOUND_GEOMETRY_UPDATE_KEYS = frozenset(
+    {"D", "b", "bf", "bf_bot", "bw", "tf", "tf_bot", "tw"}
+)

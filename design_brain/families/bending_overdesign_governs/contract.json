@@ -1,0 +1,454 @@
+{
+  "schema": "design_brain.family_contract.v1",
+  "family_identity": {
+    "family_id": "BENDING_OVERDESIGN_GOVERNS",
+    "package": "design_brain.families.bending_overdesign_governs",
+    "public_api": "evaluate_bending_overdesign_governs"
+  },
+  "classification": {
+    "entry_condition": "bending compliant with valid optimisation opportunity outside efficiency target band",
+    "governs_when": [
+      "bending passes",
+      "no underdesign family is active",
+      "valid optimisation opportunity exists",
+      "current bending design lies outside efficiency target band"
+    ],
+    "must_not_govern_when": [
+      "bending underdesign governs",
+      "shear underdesign governs",
+      "combined bending and shear underdesign governs",
+      "serviceability failure governs",
+      "geometry/detailing failure governs",
+      "locked-no-repair outcome is required"
+    ]
+  },
+  "required_family_inputs": {
+    "geometry": [
+      "beam width",
+      "beam depth",
+      "effective depth",
+      "geometry constraints",
+      "beam proportion limits"
+    ],
+    "reinforcement": [
+      "bottom reinforcement arrangement",
+      "reinforcement layers",
+      "provided tensile reinforcement As",
+      "minimum tensile reinforcement As_min",
+      "reinforcement locked status"
+    ],
+    "material_properties": [
+      "concrete strength",
+      "steel strength",
+      "bending capacity parameters"
+    ],
+    "actions": [
+      "design bending action",
+      "design shear action",
+      "design actions present flag"
+    ],
+    "constraints": [
+      "target utilisation band",
+      "minimum reinforcement boundary",
+      "minimum practical geometry limits",
+      "maximum depth-to-width ratio",
+      "constructability limits"
+    ]
+  },
+  "family_result_schema": {
+    "result_type": "FamilyResult",
+    "required_fields": [
+      "status",
+      "selected_recommendation",
+      "candidate_repairs",
+      "exhausted_reason",
+      "evidence"
+    ],
+    "evidence_required_fields": [
+      "entry_condition",
+      "ladder_trace",
+      "accepted_lane_evidence",
+      "rejected_lane_evidence",
+      "ranking_evidence",
+      "minimum_reinforcement_evidence",
+      "geometry_compliance_evidence",
+      "terminal_status",
+      "contract_version"
+    ]
+  },
+  "internal_strategy_ladder": {
+    "family_id": "BENDING_OVERDESIGN_GOVERNS",
+    "entry_condition": "bending compliant with valid optimisation opportunity outside efficiency target band",
+    "lanes": [
+      {
+        "lane_index": 0,
+        "lane_id": "BOTTOM_REINFORCEMENT_REDUCTION",
+        "title": "Reduce bottom reinforcement",
+        "purpose": "Search progressively lighter bottom reinforcement while preserving bending compliance and As >= As_min.",
+        "required_evidence": [
+          "As before",
+          "As after",
+          "As_min",
+          "bending utilisation before",
+          "bending utilisation after",
+          "minimum reinforcement status"
+        ],
+        "allowed_update_keys": [
+          "bot1_count",
+          "db_bot_1",
+          "bot2_count",
+          "db_bot_2",
+          "bot_row_count",
+          "bot_row_1_bars",
+          "bot_row_1_dia",
+          "bot_row_2_bars",
+          "bot_row_2_dia"
+        ],
+        "failure_transition": "LAYER_REDUCTION"
+      },
+      {
+        "lane_index": 1,
+        "lane_id": "LAYER_REDUCTION",
+        "title": "Reduce reinforcement layers",
+        "purpose": "Prefer simpler single-layer reinforcement where code compliance permits.",
+        "required_evidence": [
+          "layer count before",
+          "layer count after",
+          "As after",
+          "As_min",
+          "constructability status"
+        ],
+        "allowed_update_keys": [
+          "bot_row_count",
+          "bot2_count",
+          "db_bot_2",
+          "bot_row_2_bars",
+          "bot_row_2_dia"
+        ],
+        "failure_transition": "WIDTH_REDUCTION"
+      },
+      {
+        "lane_index": 2,
+        "lane_id": "WIDTH_REDUCTION",
+        "title": "Reduce beam width",
+        "purpose": "Reduce width in bounded increments where bending, geometry, proportion, and constructability constraints remain satisfied.",
+        "required_evidence": [
+          "width before",
+          "width after",
+          "bending compliance",
+          "geometry constraints",
+          "proportion limits",
+          "reinforcement search restarted"
+        ],
+        "allowed_update_keys": [
+          "b",
+          "bw",
+          "bot1_count",
+          "db_bot_1",
+          "bot2_count",
+          "db_bot_2",
+          "bot_row_count",
+          "bot_row_1_bars",
+          "bot_row_1_dia",
+          "bot_row_2_bars",
+          "bot_row_2_dia"
+        ],
+        "restart_reinforcement_search": true,
+        "failure_transition": "DEPTH_REDUCTION"
+      },
+      {
+        "lane_index": 3,
+        "lane_id": "DEPTH_REDUCTION",
+        "title": "Reduce beam depth",
+        "purpose": "Reduce depth in bounded increments where bending, geometry, proportion, and constructability constraints remain satisfied.",
+        "required_evidence": [
+          "depth before",
+          "depth after",
+          "bending compliance",
+          "geometry constraints",
+          "proportion limits",
+          "reinforcement search restarted"
+        ],
+        "allowed_update_keys": [
+          "D",
+          "beam_depth"
+        ],
+        "restart_reinforcement_search": true,
+        "failure_transition": "EXACT_STOP"
+      },
+      {
+        "lane_index": 4,
+        "lane_id": "EXACT_STOP",
+        "title": "Exact stop",
+        "purpose": "Stop only when the selected or current optimisation result is inside target band and no higher-ranked candidate exists.",
+        "required_evidence": [
+          "target-band status",
+          "ranking proof",
+          "no higher-ranked optimisation candidate"
+        ],
+        "output": "EXACT_STOP",
+        "failure_transition": "EXHAUSTED"
+      },
+      {
+        "lane_index": 5,
+        "lane_id": "EXHAUSTED",
+        "title": "Exhausted",
+        "purpose": "Prove all legal bending optimisation branches were attempted or blocked with specific blocker evidence.",
+        "required_evidence": [
+          "attempted lane list",
+          "blocked lane list",
+          "specific exhausted reason"
+        ],
+        "output": "EXHAUSTED"
+      }
+    ],
+    "ranking": {
+      "ordered_criteria": [
+        "target band achieved",
+        "smallest reinforcement quantity",
+        "smallest beam volume",
+        "constructability",
+        "cost proxy"
+      ]
+    },
+    "required_outputs": [
+      "status",
+      "selected_recommendation",
+      "candidate_repairs",
+      "exhausted_reason",
+      "evidence"
+    ],
+    "global_family_rules": [
+      "candidates with As < As_min are discarded before ranking",
+      "minimum reinforcement boundary takes precedence over optimisation objective",
+      "when minimum reinforcement or ductility controls the overdesign cleanup boundary, bottom reinforcement reduction must be attempted before geometry relief",
+      "when minimum reinforcement controls the overdesign cleanup boundary, width reduction must be checked as an As_min relief path before exact stop or exhausted",
+      "when minimum reinforcement controls the overdesign cleanup boundary, valid depth reduction must also be checked as an As_min relief path before exact stop or exhausted",
+      "geometry reductions must preserve bending compliance, geometry constraints, beam proportion limits, and constructability",
+      "every geometry reduction restarts bottom reinforcement and layer optimisation",
+      "shared CTA/publication/apply/UI/session/source-precedence layers remain outside the family"
+    ]
+  },
+  "minimum_reinforcement": {
+    "hard_boundary": true,
+    "as_provided_must_be_greater_than_or_equal_to_as_min": true,
+    "discard_before_ranking_when": [
+      "As < As_min",
+      "next optimisation candidate would produce As < As_min"
+    ],
+    "valid_blockers": [
+      "As = As_min",
+      "next candidate would produce As < As_min",
+      "As_min remains governing after width-reduction and valid depth-reduction geometry relief search",
+      "width reduction cannot lower As_min enough to permit a lighter compliant reinforcement arrangement",
+      "depth reduction cannot lower As_min enough or improve the cleanup path enough to permit a lighter compliant reinforcement arrangement",
+      "current reinforcement arrangement is the lightest compliant arrangement available"
+    ],
+    "specific_blocker_evidence_required": [
+      "Further reinforcement reduction would violate minimum reinforcement requirements.",
+      "Minimum bending reinforcement / Ast-min boundary identified.",
+      "Bottom reinforcement reduction was attempted first for ductility / ku cleanup.",
+      "Width-reduction geometry relief was checked before accepting the As_min blocker.",
+      "Valid depth-reduction geometry relief was checked before accepting the As_min blocker.",
+      "Bottom reinforcement and layer search restarted after each valid geometry-relief step.",
+      "Current reinforcement arrangement is the lightest compliant arrangement available."
+    ]
+  },
+  "minimum_reinforcement_geometry_relief": {
+    "required_when": [
+      "bottom reinforcement reduction is blocked only by As_min",
+      "ductility / ku cleanup cannot improve further without lighter bottom reinforcement",
+      "current bending utilisation is below accepted cleanup floor",
+      "geometry reduction is allowed"
+    ],
+    "must_evaluate": [
+      "width reduction candidate",
+      "width reduction plus restarted bottom reinforcement candidates",
+      "width reduction plus restarted layer reduction candidates",
+      "depth reduction candidate",
+      "depth reduction plus restarted bottom reinforcement candidates",
+      "depth reduction plus restarted layer reduction candidates"
+    ],
+    "exhausted_only_when": [
+      "no width reduction plus lighter reinforcement candidate keeps all required checks passing",
+      "no valid depth reduction plus lighter reinforcement candidate keeps all required checks passing",
+      "no legal width reduction can reduce As_min enough to permit lighter reinforcement",
+      "no legal depth reduction can reduce As_min enough or improve the cleanup path enough to permit lighter reinforcement",
+      "specific Ast-min blocker evidence is published"
+    ],
+    "visible_blocker_terms": [
+      "minimum bending reinforcement",
+      "Ast-min",
+      "As_min"
+    ]
+  },
+  "geometry_rules": {
+    "geometry_reduction_allowed": true,
+    "allowed_update_keys": [
+      "b",
+      "bw",
+      "D",
+      "beam_width",
+      "beam_depth",
+      "beam_width_mm",
+      "beam_depth_mm"
+    ],
+    "requires": [
+      "bending remains compliant",
+      "all geometry constraints remain satisfied",
+      "beam proportion limits remain satisfied",
+      "constructability remains satisfied",
+      "when minimum reinforcement governs, width reduction is evaluated as an As_min relief path and restarts bottom reinforcement search",
+      "when minimum reinforcement governs, valid depth reduction is evaluated as an As_min relief path and restarts bottom reinforcement search"
+    ],
+    "width_increment_mm": -25,
+    "depth_increment_mm": -25,
+    "restart_after_geometry_reduction": [
+      "bottom reinforcement search",
+      "layer search"
+    ]
+  },
+  "lane_proof_policies": {
+    "bottom_reinforcement_reduction": {
+      "lane_id": "BOTTOM_REINFORCEMENT_REDUCTION",
+      "example_sequence": [
+        "5-N24",
+        "4-N24",
+        "4-N20",
+        "3-N24",
+        "3-N20",
+        "4-N16",
+        "3-N16",
+        "4-N12",
+        "3-N12",
+        "2-N16",
+        "2-N12"
+      ],
+      "minimum_bottom_bars": 2,
+      "common_bar_sizes": [
+        12,
+        16,
+        20,
+        24,
+        28,
+        32
+      ],
+      "terminates_when": [
+        "next candidate produces As < As_min",
+        "next candidate causes bending failure"
+      ]
+    },
+    "layer_reduction": {
+      "lane_id": "LAYER_REDUCTION",
+      "search": [
+        "multi-layer",
+        "single-layer"
+      ],
+      "preferred_outcome": "simpler reinforcement arrangement"
+    },
+    "width_reduction": {
+      "lane_id": "WIDTH_REDUCTION",
+      "increment_mm": -25,
+      "restarts_bottom_reinforcement_search": true,
+      "restarts_layer_search": true,
+      "minimum_reinforcement_relief": true,
+      "restarted_candidate_requirements": [
+        "width-only candidate",
+        "width plus restarted bottom reinforcement candidate",
+        "width plus restarted layer reduction candidate"
+      ]
+    },
+    "depth_reduction": {
+      "lane_id": "DEPTH_REDUCTION",
+      "increment_mm": -25,
+      "restarts_bottom_reinforcement_search": true,
+      "restarts_layer_search": true,
+      "minimum_reinforcement_relief": true,
+      "restarted_candidate_requirements": [
+        "depth-only candidate",
+        "depth plus restarted bottom reinforcement candidate",
+        "depth plus restarted layer reduction candidate"
+      ]
+    },
+    "minimum_reinforcement_cases": {
+      "case_a": {
+        "As": "greater than As_min",
+        "expected": "optimisation may continue"
+      },
+      "case_b": {
+        "As": "equal to As_min",
+        "expected": "reinforcement reduction branch stops"
+      },
+      "case_c": {
+        "next_candidate": "As below As_min",
+        "expected": "candidate rejected"
+      },
+      "case_d": {
+        "blocked_only_by": "As_min",
+        "expected": "minimum reinforcement blocker evidence published"
+      },
+      "case_e": {
+        "candidate": "As below As_min",
+        "expected": "candidate never appears in ranked recommendations"
+      }
+    },
+    "terminal": {
+      "exact_stop_allowed_when": [
+        "target band reached",
+        "no higher-ranked optimisation candidate exists",
+        "reo reduction was attempted first for ductility / ku cleanup",
+        "As_min geometry relief by width and valid depth reduction was attempted where geometry is unlocked",
+        "bottom reinforcement and layer search restarted after each valid geometry-relief step"
+      ],
+      "exhausted_requires": [
+        "all optimisation branches attempted",
+        "no further compliant optimisation exists",
+        "specific blocker evidence exists",
+        "every valid cleanup path is exhausted for contract-defined reasons"
+      ]
+    }
+  },
+  "blockers": {
+    "allowed": [
+      "bending_not_compliant",
+      "underdesign_family_active",
+      "no_valid_optimisation_opportunity",
+      "minimum_reinforcement_boundary_reached",
+      "bending_capacity_boundary_reached",
+      "geometry_constraint_boundary_reached",
+      "constructability_boundary_reached",
+      "code_compliance_boundary_reached"
+    ],
+    "generic_exhausted_message_prohibited_when_specific_blocker_exists": true
+  },
+  "shared_exclusions": [
+    "CTA generation",
+    "CTA rendering",
+    "CTA source precedence",
+    "publication",
+    "selected-family publication gate",
+    "apply routing",
+    "one-click orchestration",
+    "visible wording",
+    "user wording",
+    "UI rendering",
+    "session state",
+    "debug rendering",
+    "source precedence"
+  ],
+  "lock_verification": {
+    "required_gates": [
+      "BENDING_OVERDESIGN_GOVERNS contract check",
+      "bending overdesign candidate evaluation boundary",
+      "minimum reinforcement lane proofs",
+      "geometry compliance proof",
+      "runtime snapshot",
+      "replacement audit",
+      "cutover verifier",
+      "lock verifier"
+    ],
+    "required_verifiers": [
+      "tools/verification/families/bending_overdesign_governs_contract_check.py"
+    ]
+  }
+}

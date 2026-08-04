@@ -1,0 +1,296 @@
+"""Cutover plan verifier for SHEAR_FAIL_GOVERNS.
+
+This is a planning gate only. It proves the replacement boundary is known and
+narrow before product routing is changed.
+"""
+
+from __future__ import annotations
+
+import ast
+import json
+import sys
+import time
+from dataclasses import fields
+from pathlib import Path
+from typing import Any
+
+
+ROOT = Path(__file__).resolve().parents[3]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+ARTIFACT_DIR = ROOT / "artifacts" / "verification"
+AUDIT_DIR = ROOT / "artifacts" / "audits"
+
+from design_brain.families.shear_fail_governs.runtime import (  # noqa: E402
+    ShearFailGovernsResult,
+    run_shear_fail_governs_ladder_runtime,
+    shear_fail_governs_contract_lane_order,
+)
+
+
+EXPECTED_CONTRACT_ORDER = (
+    "SPACING_REDUCTION",
+    "LEG_COUNT_INCREASE_RESTART_REINFORCEMENT_SEARCH",
+    "BAR_SIZE_INCREASE",
+    "DEPTH_INCREASE_RESTART_REINFORCEMENT_SEARCH",
+    "WIDTH_INCREASE_RESTART_REINFORCEMENT_SEARCH",
+    "EXACT_STOP",
+    "EXHAUSTED",
+    "NO_VALID_REPAIR",
+)
+REQUIRED_RESULT_FIELDS = {
+    "selected_strategy_lane",
+    "ladder_trace",
+    "candidate_repairs",
+    "selected_recommendation",
+    "accepted_lane_evidence",
+    "rejected_lane_evidence",
+    "ranking_proof",
+    "exact_stop_proof",
+    "exhausted_reason",
+    "no_valid_repair_proof",
+    "repair_reason_proof",
+    "blocked_reason",
+    "cta_intent_proof",
+    "ladder_hash",
+}
+OLD_SURFACES = {
+    "legacy_ladder_owner": "design_brain/families/shear_fail.py:ShearFailFamily.contracted_repair_ladder_specs",
+    "runtime_package_export": "design_brain/families/shear_fail_governs/__init__.py:run_shear_fail_governs_ladder_runtime",
+    "page_dispatch": 'inputs_page.py:family_strategy_for("SHEAR_FAIL_GOVERNS")',
+    "page_ladder_call": "inputs_page.py:contracted_repair_ladder_specs(...)",
+    "page_evaluation_loop": "inputs_page.py:_evaluate(...)",
+}
+CUTOVER_PLAN = {
+    "replacement_target": "ShearFailFamily.contracted_repair_ladder_specs",
+    "new_authority": "run_shear_fail_governs_ladder_runtime",
+    "planned_family_owned": [
+        "contract lane order",
+        "strategy lane decision",
+        "candidate update generation",
+        "restart proof",
+        "ranking proof",
+        "terminal proof",
+        "selected recommendation proof",
+        "repair/blocked reason proof",
+        "CTA intent proof only",
+    ],
+    "planned_page_shared_owned": [
+        "candidate evaluation calls",
+        "CTA rendering",
+        "publication",
+        "apply routing",
+        "one-click orchestration",
+        "visible wording",
+        "UI/session/debug",
+    ],
+    "planned_files_for_cutover": [
+        "design_brain/families/shear_fail.py",
+        "design_brain/families/shear_fail_governs/__init__.py",
+        "inputs_page.py",
+    ],
+    "explicitly_not_touched": [
+        "design_brain/families/bending.py",
+        "design_brain/families/bending_fail.py",
+        "design_brain/families/bending_fail_governs/",
+        "design_brain/families/bending_and_shear_fail_govern/",
+    ],
+}
+FORBIDDEN_OWNERSHIP_MOVES = {
+    "CTA rendering",
+    "publication",
+    "apply routing",
+    "one-click orchestration",
+    "visible wording",
+    "UI/session/debug",
+}
+
+
+def _read(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8", errors="ignore")
+
+
+def _read_inputs_composition_surface() -> str:
+    """Read the current Inputs application and family-ladder composition."""
+
+    return "\n".join(
+        _read(path)
+        for path in (
+            "inputs_page.py",
+            "inputs_application/engineering_workspace.py",
+            "inputs_application/guidance_entrypoint.py",
+            "inputs_application/candidate_full_evaluation.py",
+            "inputs_application/live_apply.py",
+            "inputs_application/one_click_entrypoint.py",
+            "inputs_application/page_runtime/design_guide.py",
+            "inputs_page_modules/design_guide/family_ladder_guidance.py",
+            "inputs_page_modules/design_guide/current_coordinators.py",
+        )
+    )
+
+
+def _has_class_method(source: str, class_name: str, method_name: str) -> bool:
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name == class_name:
+            return any(isinstance(child, ast.FunctionDef) and child.name == method_name for child in node.body)
+    return False
+
+
+def _has_function(source: str, function_name: str) -> bool:
+    tree = ast.parse(source)
+    return any(isinstance(node, ast.FunctionDef) and node.name == function_name for node in ast.walk(tree))
+
+
+def _contains_all(source: str, needles: list[str]) -> dict[str, bool]:
+    return {needle: needle in source for needle in needles}
+
+
+def _planned_bending_files() -> list[str]:
+    return [
+        path
+        for path in CUTOVER_PLAN["planned_files_for_cutover"]
+        if "bending" in str(path).replace("\\", "/").lower()
+    ]
+
+
+def _write_artifacts(snapshot: dict[str, Any]) -> tuple[Path, Path]:
+    ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+    AUDIT_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y-%m-%dT%H-%M-%S")
+    json_path = ARTIFACT_DIR / f"shear_fail_governs_cutover_plan_{stamp}.json"
+    report_path = AUDIT_DIR / f"shear_fail_governs_cutover_plan_{stamp}.md"
+    json_path.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    lines = [
+        "# SHEAR_FAIL_GOVERNS Cutover Plan",
+        "",
+        f"Result: `{snapshot['result']}`",
+        "",
+        "Purpose: prove the exact cutover boundary is known and narrow.",
+        "",
+        "## Cutover Boundary",
+        "",
+        f"- replacement target: `{snapshot['cutover_plan']['replacement_target']}`",
+        f"- new authority: `{snapshot['cutover_plan']['new_authority']}`",
+        "",
+        "## Checks",
+        "",
+    ]
+    lines.extend(f"- {key}: `{value}`" for key, value in snapshot["checks"].items())
+    lines.extend(
+        [
+            "",
+            "## Contract Order",
+            "",
+            "```text",
+            " -> ".join(snapshot["contract_lane_order"]),
+            "```",
+            "",
+            "## Inputs Page Remains Owner Of",
+            "",
+        ]
+    )
+    lines.extend(f"- {item}" for item in snapshot["cutover_plan"]["planned_page_shared_owned"])
+    lines.extend(["", "## Failures", ""])
+    lines.extend([f"- {failure}" for failure in snapshot.get("failures") or []] or ["- none"])
+    lines.append("")
+    report_path.write_text("\n".join(lines), encoding="utf-8")
+    return json_path, report_path
+
+
+def main() -> int:
+    shear_fail_source = _read("design_brain/families/shear_fail.py")
+    package_source = _read("design_brain/families/shear_fail_governs/__init__.py")
+    runtime_source = _read("design_brain/families/shear_fail_governs/runtime.py")
+    inputs_source = _read_inputs_composition_surface()
+
+    old_target_found = _has_class_method(
+        shear_fail_source,
+        "ShearFailFamily",
+        "contracted_repair_ladder_specs",
+    )
+    compatibility_api_absent = not _has_function(package_source, "evaluate_" + "shear_fail_governs")
+    package_exports_new_authority = "run_shear_fail_governs_ladder_runtime" in package_source
+    new_authority_found = callable(run_shear_fail_governs_ladder_runtime) and (
+        "def run_shear_fail_governs_ladder_runtime" in runtime_source
+    )
+    inputs_surface = _contains_all(
+        inputs_source,
+        [
+            "family_strategy_for(dispatch_family_id)",
+            "family_strategy.contracted_repair_ladder_specs(",
+            "def _evaluate_updates(",
+            "evaluate_candidate_full_for_app_bridge(",
+            "_evaluate_auto_design_candidate(",
+            '"SHEAR_FAIL_GOVERNS"',
+        ],
+    )
+    application_evaluation_loop_retained = (
+        (
+            inputs_surface["def _evaluate_updates("]
+            or inputs_surface["evaluate_candidate_full_for_app_bridge("]
+        )
+        and inputs_surface["_evaluate_auto_design_candidate("]
+    )
+    contract_order = shear_fail_governs_contract_lane_order()
+    result_fields = {field.name for field in fields(ShearFailGovernsResult)}
+    planned_bending_files = _planned_bending_files()
+    forbidden_family_owned_moves = [
+        item
+        for item in CUTOVER_PLAN["planned_family_owned"]
+        if item in FORBIDDEN_OWNERSHIP_MOVES
+    ]
+
+    checks = {
+        "replacement_target_is_legacy_ladder_specs": old_target_found,
+        "old_compatibility_api_absent": compatibility_api_absent,
+        "new_authority_is_runtime": new_authority_found and package_exports_new_authority,
+        "contract_order_unchanged": contract_order == EXPECTED_CONTRACT_ORDER,
+        "required_runtime_fields_present": REQUIRED_RESULT_FIELDS.issubset(result_fields),
+        "cutover_does_not_require_cta_publication_apply_ui_session_move": not forbidden_family_owned_moves,
+        "application_evaluation_loop_is_shared_execution_surface": (
+            application_evaluation_loop_retained
+        ),
+        "no_bending_files_in_cutover_plan": not planned_bending_files,
+    }
+    failures = [key for key, passed in checks.items() if not passed]
+    snapshot = {
+        "schema": "shear_fail_governs_cutover_plan.v2",
+        "result": "PASS" if not failures else "FAIL",
+        "checks": checks,
+        "old_surfaces": OLD_SURFACES,
+        "source_findings": {
+            "old_target_found": old_target_found,
+            "old_compatibility_api_absent": compatibility_api_absent,
+            "package_exports_new_authority": package_exports_new_authority,
+            "new_authority_found": new_authority_found,
+            "inputs_application_surfaces": inputs_surface,
+        },
+        "cutover_plan": CUTOVER_PLAN,
+        "contract_lane_order": list(contract_order),
+        "expected_contract_order": list(EXPECTED_CONTRACT_ORDER),
+        "required_runtime_fields": sorted(REQUIRED_RESULT_FIELDS),
+        "actual_runtime_fields": sorted(result_fields),
+        "planned_bending_files": planned_bending_files,
+        "forbidden_family_owned_moves": forbidden_family_owned_moves,
+        "scope_limits": {
+            "changes_product_routing": False,
+            "moves_cta_rendering": False,
+            "moves_publication": False,
+            "moves_apply_routing": False,
+            "moves_one_click": False,
+            "moves_visible_wording": False,
+            "moves_ui_session_debug": False,
+            "touches_bending": False,
+        },
+        "failures": failures,
+    }
+    json_path, report_path = _write_artifacts(snapshot)
+    print(f"{snapshot['result']}: {json_path}")
+    print(f"REPORT: {report_path}")
+    return 0 if snapshot["result"] == "PASS" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

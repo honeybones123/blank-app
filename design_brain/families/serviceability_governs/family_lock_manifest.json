@@ -1,0 +1,39 @@
+{
+  "schema": "design_brain.family_lock_manifest.v2",
+  "family": "SERVICEABILITY_GOVERNS",
+  "status": "LOCKED",
+  "owner": "design_brain/families/serviceability_governs",
+  "contracts": {
+    "family_contract": "PASS",
+    "publication_contract": "PASS",
+    "candidate_contract": "PASS"
+  },
+  "known_errors": {
+    "count": 0,
+    "register": "design_brain/families/serviceability_governs/known_errors.json"
+  },
+  "regressions": {
+    "count": 1,
+    "suite": [
+      "tools/verification/families/serviceability_governs_locked_regression.py"
+    ]
+  },
+  "coverage": "v2-lock-regression-owned",
+  "last_verified": "2026-07-10",
+  "shared_dependencies": [
+    "publication_contract",
+    "candidate_contract",
+    "family_selection_contract"
+  ],
+  "allowed_edit_regions": [
+    "serviceability ladder",
+    "serviceability blocking evidence",
+    "serviceability ranking"
+  ],
+  "locked_regions": [
+    "engineering logic",
+    "contract outputs",
+    "evidence outputs",
+    "publication input identity"
+  ]
+}

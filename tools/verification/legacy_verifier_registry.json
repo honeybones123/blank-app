@@ -1,0 +1,13 @@
+{
+  "schema": "beam.legacy_verifier_registry.v1",
+  "status": "RETIRED_AUDIT_ONLY",
+  "retired_route_tokens": [
+    "inputs_page_route_coordinators"
+  ],
+  "policy": {
+    "release_authority": false,
+    "canonical_manifest_membership": false,
+    "physical_deletion": false,
+    "purpose": "Preserve historical cutover evidence without allowing it to define current readiness."
+  }
+}

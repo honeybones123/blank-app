@@ -1,0 +1,261 @@
+{
+  "schema": "design_brain.release_gate_manifest.v1",
+  "description": "Canonical final verification gates. Only these gates are allowed to define fully verified release readiness.",
+  "prerequisite_gates": [
+    {
+      "id": "root_cause_proof_policy",
+      "command": "python tools/verification/root_cause_proof_policy.py",
+      "artifact_prefix": "root_cause_proof_policy_snapshot",
+      "required_status": "PASS",
+      "tier": "fast",
+      "depends_on": []
+    },
+    {
+      "id": "verification_run_manifest_lock",
+      "command": "python tools/verification/verification_run_manifest_lock.py",
+      "artifact_prefix": "verification_run_manifest_lock",
+      "required_status": "PASS",
+      "tier": "fast",
+      "depends_on": []
+    },
+    {
+      "id": "verifier_self_check",
+      "command": "python tools/verification/verifier_self_check.py",
+      "artifact_prefix": "verifier_self_check",
+      "required_status": "PASS",
+      "tier": "fast",
+      "depends_on": []
+    },
+    {
+      "id": "verification_taxonomy_and_retirement_map",
+      "command": "python tools/verification/verification_taxonomy_and_retirement_map.py",
+      "artifact_prefix": "verification_taxonomy_and_retirement_map",
+      "required_status": "PASS",
+      "tier": "fast",
+      "depends_on": []
+    },
+    {
+      "id": "verifier_retirement_deletion_workflow",
+      "command": "python tools/verification/verifier_retirement_deletion_workflow.py",
+      "artifact_prefix": "verifier_retirement_deletion_workflow",
+      "required_status": "PASS",
+      "tier": "fast",
+      "depends_on": [
+        "verification_taxonomy_and_retirement_map"
+      ]
+    },
+    {
+      "id": "design_guide_independence_lock",
+      "command": "python tools/verification/design_guide_independence_lock_verifier.py",
+      "artifact_prefix": "design_guide_independence_lock",
+      "required_status": "PASS",
+      "tier": "live",
+      "depends_on": [
+        "final_visible_resolver_dead_body_deletion_proof"
+      ]
+    },
+    {
+      "id": "design_guide_render_bridge_lock",
+      "command": "python tools/verification/design_guide_render_bridge_lock_verifier.py",
+      "artifact_prefix": "design_guide_render_bridge_lock",
+      "required_status": "PASS",
+      "tier": "live",
+      "depends_on": [
+        "design_guide_independence_lock"
+      ]
+    },
+    {
+      "id": "design_guide_compute_resolver_publication_bridge_lock",
+      "command": "python tools/verification/design_guide_compute_resolver_publication_bridge_lock_verifier.py",
+      "artifact_prefix": "design_guide_compute_resolver_publication_bridge_lock",
+      "required_status": "PASS",
+      "tier": "live",
+      "depends_on": [
+        "design_guide_independence_lock",
+        "design_guide_render_bridge_lock"
+      ]
+    },
+    {
+      "id": "design_brain_inputs_page_zero_authority_inventory_lock",
+      "command": "python tools/verification/design_brain_inputs_page_zero_authority_inventory_lock.py",
+      "artifact_prefix": "design_brain_inputs_page_zero_authority_inventory_lock",
+      "required_status": "PASS",
+      "tier": "live",
+      "depends_on": [
+        "design_guide_independence_lock",
+        "design_guide_render_bridge_lock",
+        "design_guide_compute_resolver_publication_bridge_lock"
+      ]
+    },
+    {
+      "id": "app_stability_critical_workflows_lock",
+      "command": "python tools/verification/app_stability_critical_workflows_lock.py --start-streamlit --port 8521",
+      "artifact_prefix": "app_stability_critical_workflows_lock",
+      "required_status": "PASS",
+      "tier": "live",
+      "timeout_seconds": 3600,
+      "depends_on": []
+    },
+    {
+      "id": "app_stability_inputs_apply_10x_workflow_lock",
+      "command": "python tools/verification/app_stability_inputs_apply_10x_workflow_lock.py --start-streamlit --port 8519",
+      "artifact_prefix": "app_stability_inputs_apply_10x_workflow_lock",
+      "required_status": "PASS",
+      "tier": "live",
+      "timeout_seconds": 1200,
+      "depends_on": []
+    },
+    {
+      "id": "final_visible_resolver_dead_body_deletion_proof",
+      "command": "python tools/verification/design_guide_final_visible_resolver_dead_body_deletion_proof.py",
+      "artifact_prefix": "design_guide_final_visible_resolver_dead_body_deletion_proof",
+      "required_status": "PASS",
+      "tier": "live",
+      "depends_on": []
+    }
+  ],
+  "release_gates": [
+    {
+      "id": "release_gate_manifest",
+      "command": "python tools/verification/check_release_gate_manifest.py",
+      "artifact_prefix": "release_gate_manifest_runner",
+      "required_status": "PASS",
+      "tier": "fast",
+      "depends_on": [
+        "live_bug_registry_contract",
+        "shared_bridge_dependency_binding",
+        "legacy_visible_surface_deletion",
+        "shared_path_release_lock",
+        "browser_visual_layout_lock",
+        "safe_optimal_blocker_publication_lock",
+        "universal_live_family_lock",
+        "family_smooth_operation_lock",
+        "universal_verification_meta_lock",
+        "app_stability_completion"
+      ]
+    },
+    {
+      "id": "live_bug_registry_contract",
+      "command": "python tools/verification/design_guide_live_bug_registry_contract.py",
+      "artifact_prefix": "design_guide_live_bug_registry_contract",
+      "required_status": "PASS",
+      "tier": "live",
+      "depends_on": [
+        "universal_live_family_lock"
+      ]
+    },
+    {
+      "id": "shared_bridge_dependency_binding",
+      "command": "python tools/verification/shared_bridge_dependency_binding_lock.py",
+      "artifact_prefix": "shared_bridge_dependency_binding_lock",
+      "required_status": "PASS",
+      "tier": "fast",
+      "depends_on": []
+    },
+    {
+      "id": "legacy_visible_surface_deletion",
+      "command": "python tools/verification/design_guide_legacy_visible_surface_deletion_lock.py",
+      "artifact_prefix": "design_guide_legacy_visible_surface_deletion_lock",
+      "required_status": "PASS",
+      "tier": "fast",
+      "depends_on": []
+    },
+    {
+      "id": "shared_path_release_lock",
+      "command": "python tools/verification/design_brain_shared_path_release_lock.py",
+      "artifact_prefix": "design_brain_shared_path_release_lock",
+      "required_status": "PASS",
+      "tier": "live",
+      "depends_on": [
+        "shared_bridge_dependency_binding",
+        "legacy_visible_surface_deletion",
+        "design_guide_independence_lock",
+        "design_guide_render_bridge_lock",
+        "design_guide_compute_resolver_publication_bridge_lock",
+        "design_brain_inputs_page_zero_authority_inventory_lock",
+        "app_stability_critical_workflows_lock",
+        "app_stability_inputs_apply_10x_workflow_lock"
+      ]
+    },
+    {
+      "id": "browser_visual_layout_lock",
+      "command": "python tools/verification/design_guide_browser_visual_layout_lock.py",
+      "artifact_prefix": "design_guide_browser_visual_layout_lock",
+      "required_status": "PASS",
+      "tier": "live",
+      "depends_on": [
+        "shared_bridge_dependency_binding",
+        "legacy_visible_surface_deletion"
+      ]
+    },
+    {
+      "id": "safe_optimal_blocker_publication_lock",
+      "command": "python tools/verification/design_guide_safe_optimal_blocker_publication_lock.py",
+      "artifact_prefix": "design_guide_safe_optimal_blocker_publication_lock",
+      "required_status": "PASS",
+      "tier": "live",
+      "depends_on": [
+        "shared_path_release_lock"
+      ]
+    },
+    {
+      "id": "universal_live_family_lock",
+      "command": "python tools/verification/design_brain_universal_live_family_lock.py --run-live --live-card-timeout-s 35 --live-apply-timeout-s 35 --port 9301 --max-workers 3",
+      "artifact_prefix": "design_brain_universal_live_family_lock",
+      "required_status": "PASS",
+      "required_field": "universal_lock_status",
+      "required_field_value": "LOCKED",
+      "tier": "live",
+      "depends_on": [
+        "shared_path_release_lock"
+      ]
+    },
+    {
+      "id": "family_smooth_operation_lock",
+      "command": "python tools/verification/design_brain_family_smooth_operation_lock.py",
+      "artifact_prefix": "design_brain_family_smooth_operation_lock",
+      "required_status": "PASS",
+      "required_field": "smooth_operation_lock",
+      "required_field_value": "LOCKED",
+      "tier": "live",
+      "depends_on": [
+        "universal_live_family_lock",
+        "shared_path_release_lock"
+      ]
+    },
+    {
+      "id": "universal_verification_meta_lock",
+      "command": "python tools/verification/design_brain_universal_verification_meta_lock.py --enforce",
+      "artifact_prefix": "design_brain_universal_verification_meta_lock",
+      "required_status": "PASS",
+      "required_field": "meta_lock_status",
+      "required_field_value": "LOCKED",
+      "tier": "live",
+      "depends_on": [
+        "universal_live_family_lock",
+        "family_smooth_operation_lock",
+        "shared_path_release_lock"
+      ]
+    },
+    {
+      "id": "app_stability_completion",
+      "command": "python tools/verification/app_stability_goal_completion_audit.py",
+      "artifact_prefix": "app_stability_goal_completion_audit",
+      "required_status": "PASS",
+      "required_field": "completion_status",
+      "required_field_value": "COMPLETE",
+      "tier": "live",
+      "depends_on": [
+        "universal_verification_meta_lock",
+        "browser_visual_layout_lock",
+        "safe_optimal_blocker_publication_lock"
+      ]
+    }
+  ],
+  "forbidden_release_gate_classes": [
+    "AUDIT_ONLY",
+    "HISTORICAL_PARITY",
+    "DELETION_CANDIDATE",
+    "STALE_OR_REPLACED"
+  ]
+}

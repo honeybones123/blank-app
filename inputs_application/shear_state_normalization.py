@@ -1,0 +1,66 @@
+"""Canonical normalization for Inputs shear-reinforcement state."""
+
+from __future__ import annotations
+
+from inputs_application.candidate_metrics import int_from_state
+from inputs_application.state_utils import float_from_state
+
+
+CANONICAL_NO_SHEAR_SPACING_MM = 200.0
+PRACTICAL_SHEAR_DIAMETERS = (10, 12, 16)
+PRACTICAL_SHEAR_SPACINGS = (75, 100, 125, 150, 175, 200, 225, 250, 275, 300)
+
+
+def _starter_shear_diameter(state: dict) -> int:
+    current = int_from_state(state, "lig_d", 0)
+    return current if current > 0 else PRACTICAL_SHEAR_DIAMETERS[0]
+
+
+def _starter_shear_spacing(state: dict) -> float:
+    current = float_from_state(state, "s_lig", 0.0)
+    if current > 0.0:
+        return float(
+            min(
+                PRACTICAL_SHEAR_SPACINGS,
+                key=lambda value: abs(float(value) - current),
+            )
+        )
+    return CANONICAL_NO_SHEAR_SPACING_MM
+
+
+def normalize_invalid_shear_state_updates(
+    base_state: dict,
+    updates: dict,
+    *,
+    source: str = "",
+    dev_mode: bool = False,
+) -> dict:
+    del source
+    resolved_state = dict(base_state or {})
+    normalized = dict(updates or {})
+    resolved_state.update(normalized)
+    legs = int_from_state(resolved_state, "lig_legs", 0)
+    diameter = int_from_state(resolved_state, "lig_d", 0)
+    if legs <= 0:
+        normalized["lig_legs"] = 0
+        normalized["lig_d"] = 0
+        spacing = float_from_state(
+            resolved_state,
+            "s_lig",
+            CANONICAL_NO_SHEAR_SPACING_MM,
+        )
+        if abs(spacing - CANONICAL_NO_SHEAR_SPACING_MM) > 1e-9:
+            normalized["s_lig"] = CANONICAL_NO_SHEAR_SPACING_MM
+        return normalized
+    if legs >= 2 and diameter <= 0:
+        starter_diameter = _starter_shear_diameter(resolved_state)
+        if dev_mode:
+            assert starter_diameter > 0
+        normalized["lig_d"] = starter_diameter
+    spacing = float_from_state(resolved_state, "s_lig", 0.0)
+    if legs >= 2 and spacing <= 0.0:
+        normalized["s_lig"] = _starter_shear_spacing(resolved_state)
+    return normalized
+
+
+__all__ = ["normalize_invalid_shear_state_updates"]

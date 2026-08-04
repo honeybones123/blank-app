@@ -1,0 +1,73 @@
+{
+  "manifest_id": "design_guide_interaction_regressions",
+  "version": "1.0",
+  "status": "active",
+  "owner": "tools/verification/design_guide_interaction_regression_gate.py",
+  "purpose": "Permanent browser replay coverage for user-visible Design Guide interaction regressions discovered by manual testing, focused replay, fuzzing, and release-readiness review.",
+  "regressions": [
+    {
+      "id": "design_guide_duplicate_cta_regression",
+      "scenario": "Bending underdesign / repeated action stability",
+      "replay_case": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_013_design_guide_collapsed_body_leaking.json",
+      "protected_failure_classes": [
+        "duplicate CTA",
+        "collapsed Design Guide body",
+        "shell without final card",
+        "CTA/card inconsistency"
+      ],
+      "required_assertions": [
+        "assert_single_primary_cta",
+        "assert_no_duplicate_cta_labels",
+        "assert_no_blank_shell",
+        "assert_click_does_not_collapse_page"
+      ]
+    },
+    {
+      "id": "shear_underdesign_must_resolve_regression",
+      "scenario": "Unlocked underdesign must resolve to repair action or explicit no-repair evidence",
+      "replay_case": "artifacts/verification/focused_replays/2026-05-17/failed_underdesign_unlocked_must_repair.json",
+      "protected_failure_classes": [
+        "shear underdesign freeze",
+        "underdesign without repair publication",
+        "blank Design Guide",
+        "debug text leaked to user"
+      ],
+      "required_assertions": [
+        "assert_underdesign_has_repair_or_explicit_no_repair",
+        "assert_design_guide_resolved",
+        "assert_no_frozen_state",
+        "assert_no_debug_output"
+      ]
+    },
+    {
+      "id": "stale_blocked_cleanup_regression",
+      "scenario": "Passing overdesign must publish cleanup action before stale disabled blocker",
+      "replay_case": "artifacts/verification/live_fuzz/2026-06-02T10-15-16/failure_case.json",
+      "protected_failure_classes": [
+        "stale BLOCKED cleanup",
+        "safe executable cleanup hidden",
+        "passing overdesign without cleanup or exact-stop proof"
+      ],
+      "required_assertions": [
+        "assert_overdesign_has_cleanup_or_exact_stop_proof",
+        "assert_single_visible_outcome",
+        "assert_no_stale_outcomes"
+      ]
+    },
+    {
+      "id": "geometry_change_reo_refresh_regression",
+      "scenario": "Geometry/state edit must refresh Design Guide, CTA, payload, and reinforcement evidence",
+      "replay_case": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_047_card_not_recomputed_after_edit.json",
+      "protected_failure_classes": [
+        "geometry edit stale card",
+        "stale payload after edit",
+        "reinforcement layout stale after geometry change"
+      ],
+      "required_assertions": [
+        "assert_no_stale_outcomes",
+        "assert_reo_refreshes_after_geometry_edit",
+        "assert_design_guide_resolved"
+      ]
+    }
+  ]
+}

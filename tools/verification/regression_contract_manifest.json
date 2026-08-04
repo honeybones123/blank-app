@@ -1,0 +1,261 @@
+{
+  "schema_version": 1,
+  "description": "Machine-readable contract for confirmed Design Guide product regressions. A real product bug is not complete unless it has a focused replay, global invariant, permanent regression-suite entry, failure classification, and never-regress rule.",
+  "entries": [
+    {
+      "id": "failed_underdesign_unlocked_must_repair",
+      "description": "Failed unlocked designs must produce a repair action or exact locked-constraint blocker.",
+      "focused_replay": "artifacts/verification/focused_replays/2026-05-17/failed_underdesign_unlocked_must_repair.json",
+      "global_invariant": "failed_design_terminal_without_locked_constraints",
+      "regression_suite": "previous_fixed",
+      "failure_classification": "failed_design_terminal_without_locked_constraints",
+      "never_regress_rule": "A failed unlocked design cannot terminal-block unless user repair freedoms are locked.",
+      "date_added": "2026-05-17",
+      "source_artifact_or_screenshot": "manual screenshot state: Bending and shear repair blocked with bending utilisation 8.07 FAIL and shear utilisation 7.29 FAIL",
+      "owner_area": "Design Guide visible-output contract"
+    },
+    {
+      "id": "failed_shear_with_no_links_terminal",
+      "description": "Failed shear designs must not present no-links wording as an acceptable terminal state.",
+      "focused_replay": "artifacts/verification/focused_replays/2026-05-17/failed_underdesign_unlocked_must_repair.json",
+      "global_invariant": "failed_shear_with_no_links_terminal",
+      "regression_suite": "previous_fixed",
+      "failure_classification": "failed_shear_with_no_links_terminal",
+      "never_regress_rule": "Failed shear designs cannot present no links or removed links as an acceptable terminal state.",
+      "date_added": "2026-05-17",
+      "source_artifact_or_screenshot": "manual screenshot state: shear utilisation 7.29 FAIL with text saying links are already removed",
+      "owner_area": "Design Guide visible-output contract"
+    },
+    {
+      "id": "design_guide_debug_text_leaked_to_user",
+      "description": "Normal Design Guide cards must use user-facing engineering language, not internal solver/debug wording.",
+      "focused_replay": "artifacts/verification/focused_replays/2026-05-17/failed_underdesign_unlocked_must_repair.json",
+      "global_invariant": "design_guide_debug_text_leaked_to_user",
+      "regression_suite": "previous_fixed",
+      "failure_classification": "design_guide_debug_text_leaked_to_user",
+      "never_regress_rule": "Design Guide cards must not expose raw route, candidate, demand/value, limit/capacity, or other internal solver text to users.",
+      "date_added": "2026-05-17",
+      "source_artifact_or_screenshot": "manual screenshot state: confusing internal/debug-style explanation text in normal Design Guide card",
+      "owner_area": "Design Guide visible-output contract"
+    },
+    {
+      "id": "design_guide_card_button_colour_mismatch",
+      "description": "The visible Design Guide CTA button semantic colour/state must match the visible Design Guide card semantic state.",
+      "focused_replay": "artifacts/verification/focused_replays/2026-05-17/card_button_colour_mismatch.json",
+      "global_invariant": "design_guide_card_button_colour_mismatch",
+      "regression_suite": "previous_fixed",
+      "failure_classification": "design_guide_card_button_colour_mismatch",
+      "never_regress_rule": "Design Guide CTA colour must match the visible card semantic state.",
+      "date_added": "2026-05-17",
+      "source_artifact_or_screenshot": "manual screenshot state: red/danger Design Guide card with orange/warning CTA",
+      "owner_area": "Design Guide visible-output contract"
+    },
+    {
+      "id": "legacy_family_stale_payload_publication",
+      "description": "Visible Design Guide card and apply payload must match current calculated state after edits.",
+      "focused_replays": [
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/overnight_failure_exports_2026-05-08T23-25-14/f005/failure_case.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/overnight_failure_exports_2026-05-08T23-25-14/f016/failure_case.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-10T07-30-33/failure_case.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-10T08-25-31/failure_case.json"},
+        {"suite": "fuzz_regression", "path": "artifacts/verification/fuzz_regressions/2026-05-14/fuzz_2026_05_14_case2_card_not_recomputed_after_edit.json"}
+      ],
+      "global_invariant": "card_not_recomputed_after_edit",
+      "additional_global_invariants": ["stale_after_manual_edit"],
+      "regression_suite": "multiple",
+      "failure_classification": "card_not_recomputed_after_edit",
+      "failure_classifications": ["stale_after_manual_edit"],
+      "never_regress_rule": "Visible Design Guide card, queued payload, applied payload, and current calculated state must agree after every edit.",
+      "date_added": "2026-05-17",
+      "source_artifact_or_screenshot": "artifacts/verification/regression_invariant_audit_2026-05-17.json",
+      "owner_area": "Design Guide publication/state coherence"
+    },
+    {
+      "id": "legacy_family_overdesign_cleanup_action_or_blocker",
+      "description": "Overprovided designs must either publish executable cleanup or exact engineering blocker evidence.",
+      "focused_replays": [
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/overnight_failure_exports_2026-05-08T23-25-14/f003/failure_case.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/overnight_failure_exports_2026-05-08T23-25-14/f009/failure_case.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/overnight_failure_exports_2026-05-08T23-25-14/f023/failure_case.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/overnight_failure_exports_2026-05-08T23-25-14/f025/failure_case.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/replay_2026-05-09T06-07-04/failure_case.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/replay_2026-05-10T08-10-58/failure_case.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-09T19-05-48/case3_blocker_reason_failure_case.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-06-02T10-15-16/failure_case.json"},
+        {"suite": "fuzz_regression", "path": "artifacts/verification/fuzz_regressions/2026-05-14/fuzz_2026_05_14_case0_low_util_no_cleanup_or_blocker.json"},
+        {"suite": "fuzz_regression", "path": "artifacts/verification/fuzz_regressions/2026-05-14/fuzz_2026_05_14_case3_optimisation_outside_target_without_blocker.json"},
+        {"suite": "fuzz_regression", "path": "artifacts/verification/fuzz_regressions/2026-05-14/fuzz_2026_05_14_case5_overdesign_blocker_false_cleanup_candidate_exists.json"}
+      ],
+      "global_invariant": "low_util_no_cleanup_or_blocker",
+      "additional_global_invariants": ["overdesign_blocker_false_cleanup_candidate_exists", "optimisation_outside_target_without_blocker"],
+      "regression_suite": "multiple",
+      "failure_classification": "low_util_no_cleanup_or_blocker",
+      "failure_classifications": ["overdesign_blocker_false_cleanup_candidate_exists", "optimisation_outside_target_without_blocker"],
+      "never_regress_rule": "Materially overprovided designs must either provide executable cleanup or show exact engineering blocker evidence.",
+      "date_added": "2026-05-17",
+      "source_artifact_or_screenshot": "artifacts/verification/regression_invariant_audit_2026-05-17.json; artifacts/verification/live_fuzz/2026-06-02T10-15-16/failure_case.json",
+      "owner_area": "Design Guide overdesign cleanup/blocker truth"
+    },
+    {
+      "id": "legacy_family_design_guide_layout_contract",
+      "description": "The visible Design Guide card must render as exactly one valid card with stable collapsed and expanded layout.",
+      "focused_replays": [
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-09T19-05-48/case2_layout_failure_case.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-09T19-05-48/case4_layout_failure_case.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-10T13-50-22/failure_case.json"},
+        {"suite": "fuzz_regression", "path": "artifacts/verification/fuzz_regressions/2026-05-14/fuzz_2026_05_14_case4_design_guide_collapsed_body_leaking.json"},
+        {"suite": "design_guide_contract", "path": "tools/replay_cases/design_guide_contract/missing_visible_card.json"}
+      ],
+      "global_invariant": "design_guide_layout_contract_failed",
+      "additional_global_invariants": ["design_guide_collapsed_body_leaking", "missing_visible_card"],
+      "regression_suite": "multiple",
+      "failure_classification": "design_guide_layout_contract_failed",
+      "failure_classifications": ["design_guide_collapsed_body_leaking", "missing_visible_card"],
+      "never_regress_rule": "Exactly one visible Design Guide card must render with valid collapsed/expanded layout and no leaked hidden body content.",
+      "date_added": "2026-05-17",
+      "source_artifact_or_screenshot": "artifacts/verification/regression_invariant_audit_2026-05-17.json",
+      "owner_area": "Design Guide card layout contract"
+    },
+    {
+      "id": "legacy_family_failed_design_repair_mode",
+      "description": "Failed designs must render repair mode, not green terminal or cleanup mode.",
+      "focused_replays": [
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-09T16-04-21/case2_strength_blocker_failure_case.json"},
+        {"suite": "design_guide_contract", "path": "tools/replay_cases/design_guide_contract/active_fail_post_click_no_family_in_target.json"},
+        {"suite": "design_guide_contract", "path": "tools/replay_cases/design_guide_contract/combined_underdesign_active_fail_blocker_exact_evidence.json"},
+        {"suite": "design_guide_contract", "path": "tools/replay_cases/design_guide_contract/summary_fail_but_card_not_repair.json"},
+        {"suite": "design_guide_contract", "path": "tools/replay_cases/design_guide_contract/summary_fail_card_green_or_terminal.json"}
+      ],
+      "global_invariant": "summary_fail_but_card_not_repair",
+      "additional_global_invariants": ["summary_fail_card_green_or_terminal", "active_fail_post_click_no_family_in_target", "strength_blocker_missing_combined_repair_attempts"],
+      "regression_suite": "multiple",
+      "failure_classification": "summary_fail_but_card_not_repair",
+      "failure_classifications": ["summary_fail_card_green_or_terminal", "active_fail_post_click_no_family_in_target", "strength_blocker_missing_combined_repair_attempts"],
+      "never_regress_rule": "Failed designs must render repair mode, not green terminal or cleanup mode.",
+      "date_added": "2026-05-17",
+      "source_artifact_or_screenshot": "artifacts/verification/regression_invariant_audit_2026-05-17.json",
+      "owner_area": "Design Guide active-fail repair mode"
+    },
+    {
+      "id": "legacy_family_combined_blocker_specific_evidence",
+      "description": "Combined and blocked cards must name affected families and publish specific engineering evidence.",
+      "focused_replays": [
+        {"suite": "fuzz_regression", "path": "artifacts/verification/fuzz_regressions/2026-05-14/fuzz_2026_05_14_case1_multi_family_blocker_vague_reason.json"},
+        {"suite": "design_guide_contract", "path": "tools/replay_cases/design_guide_contract/combined_fail_card_not_red_combined.json"},
+        {"suite": "design_guide_contract", "path": "tools/replay_cases/design_guide_contract/combined_overdesign_cleanup_blocker_names_bending_and_shear.json"},
+        {"suite": "design_guide_contract", "path": "tools/replay_cases/design_guide_contract/blocker_card_without_specific_engineering_reason.json"}
+      ],
+      "global_invariant": "multi_family_blocker_vague_reason",
+      "additional_global_invariants": ["combined_fail_card_not_red_combined", "blocker_card_without_specific_engineering_reason"],
+      "regression_suite": "multiple",
+      "failure_classification": "multi_family_blocker_vague_reason",
+      "failure_classifications": ["combined_fail_card_not_red_combined", "blocker_card_without_specific_engineering_reason"],
+      "never_regress_rule": "Combined or blocked Design Guide cards must name affected families and show specific engineering evidence.",
+      "date_added": "2026-05-17",
+      "source_artifact_or_screenshot": "artifacts/verification/regression_invariant_audit_2026-05-17.json",
+      "owner_area": "Design Guide combined/multi-family evidence"
+    },
+    {
+      "id": "legacy_family_post_click_terminalisation",
+      "description": "One-click cleanup must not finish by revealing another ordinary action without green/exact-blocker terminalisation.",
+      "focused_replays": [
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-09T17-44-58/failure_case.json"}
+      ],
+      "global_invariant": "post_click_not_green_or_exact_engineering_blocker",
+      "additional_global_invariants": ["post_click_same_action_still_available"],
+      "regression_suite": "multiple",
+      "failure_classification": "post_click_not_green_or_exact_engineering_blocker",
+      "failure_classifications": ["post_click_same_action_still_available"],
+      "never_regress_rule": "A one-click cleanup must end on green accepted or an exact engineering blocker, not a second ordinary action.",
+      "date_added": "2026-05-17",
+      "source_artifact_or_screenshot": "artifacts/verification/regression_invariant_audit_2026-05-17.json",
+      "owner_area": "Design Guide post-click terminalisation"
+    },
+    {
+      "id": "terminal_design_guide_pass_card_no_blue_or_pending_shell",
+      "description": "Final terminal Design Guide outcomes must render as green accepted cards and must not coexist with the proof-pending shell.",
+      "focused_replays": [
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/overnight_failure_exports_2026-05-08T23-25-14/f003/failure_case.json"}
+      ],
+      "global_invariant": "terminal_design_guide_card_not_green",
+      "additional_global_invariants": [
+        "terminal_design_guide_pending_shell_visible",
+        "terminal_design_guide_card_conflicting_classes",
+        "terminal_design_guide_pending_shell_text_leaked"
+      ],
+      "regression_suite": "previous_fixed",
+      "failure_classification": "terminal_design_guide_card_not_green",
+      "failure_classifications": [
+        "terminal_design_guide_pending_shell_visible",
+        "terminal_design_guide_card_conflicting_classes",
+        "terminal_design_guide_pending_shell_text_leaked"
+      ],
+      "never_regress_rule": "A final terminal Design Guide card must be green/pass styled, cannot retain blue/action/blocker styling, and cannot leave the proof-pending shell visible underneath.",
+      "date_added": "2026-05-31",
+      "source_artifact_or_screenshot": "manual screenshot state: PASS / Design is efficient card visually blue with Checking design guidance shell visible underneath",
+      "owner_area": "Design Guide final render contract"
+    },
+    {
+      "id": "fuzz50_design_guide_contract_hardening_2026_06_01",
+      "description": "Extracted fuzz-50 Design Guide contract failures must stay fixed across stale-card, no-op CTA, low-util exact-stop, combined active-fail, collapsed-body, family-stamping, and ladder-stop evidence paths.",
+      "focused_replays": [
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_000_card_not_recomputed_after_edit.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_001_active_fail_post_click_out_of_target_family_unexplained.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_003_one_click_no_material_change.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_004_low_util_no_cleanup_or_blocker.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_013_design_guide_collapsed_body_leaking.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_017_card_not_recomputed_after_edit.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_018_card_not_recomputed_after_edit.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_028_ladder_stop_calc_box_evidence_missing.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_035_card_not_recomputed_after_edit.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_036_active_fail_post_click_no_family_in_target.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_040_optimisation_wrong_family.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_044_card_not_recomputed_after_edit.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_047_card_not_recomputed_after_edit.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_048_combined_fail_card_not_red_combined.json"},
+        {"suite": "previous_fixed", "path": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures/case_049_low_util_no_cleanup_or_blocker.json"}
+      ],
+      "global_invariant": "card_not_recomputed_after_edit",
+      "additional_global_invariants": [
+        "card_not_recomputed_after_edit",
+        "one_click_no_material_change",
+        "low_util_no_cleanup_or_blocker",
+        "active_fail_post_click_no_family_in_target",
+        "active_fail_post_click_out_of_target_family_unexplained",
+        "optimisation_wrong_family",
+        "combined_fail_card_not_red_combined",
+        "design_guide_collapsed_body_leaking",
+        "ladder_stop_calc_box_evidence_missing"
+      ],
+      "regression_suite": "previous_fixed",
+      "failure_classification": "card_not_recomputed_after_edit",
+      "failure_classifications": [
+        "card_not_recomputed_after_edit",
+        "one_click_no_material_change",
+        "low_util_no_cleanup_or_blocker",
+        "active_fail_post_click_no_family_in_target",
+        "active_fail_post_click_out_of_target_family_unexplained",
+        "optimisation_wrong_family",
+        "combined_fail_card_not_red_combined",
+        "design_guide_collapsed_body_leaking",
+        "ladder_stop_calc_box_evidence_missing"
+      ],
+      "never_regress_rule": "The extracted fuzz-50 contract failures must remain replay-green; accepted exact-stop outcomes must be green with details, active failures must be repair/red or exactly blocked, visible summary/card truth must match, and executor-backed CTAs must not be stale or no-op.",
+      "date_added": "2026-06-01",
+      "source_artifact_or_screenshot": "artifacts/verification/live_fuzz/2026-05-31T23-35-44/extracted_failures",
+      "owner_area": "Design Guide fuzz hardening contract"
+    },
+    {
+      "id": "active_fail_dominates_cleanup_evidence",
+      "description": "Active-fail repair/blocker evidence has priority over secondary low-util cleanup evidence for the same visible card.",
+      "focused_replay": "artifacts/verification/live_fuzz/2026-05-21T21-35-41/failure_case.json",
+      "global_invariant": "active_fail_dominates_cleanup_evidence",
+      "regression_suite": "previous_fixed",
+      "failure_classification": "ladder_stop_calc_box_evidence_missing",
+      "never_regress_rule": "If any strength family is actively failing and the visible card is repair-blocked, do not require cleanup-ladder evidence merely because another family is low-util.",
+      "date_added": "2026-05-22",
+      "source_artifact_or_screenshot": "artifacts/verification/live_fuzz/2026-05-21T21-35-41/failure_case.json",
+      "owner_area": "Design Guide verifier evidence priority"
+    }
+  ]
+}

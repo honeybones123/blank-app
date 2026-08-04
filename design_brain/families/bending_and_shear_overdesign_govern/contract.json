@@ -1,0 +1,410 @@
+{
+  "schema": "design_brain.family_contract.v1",
+  "family_identity": {
+    "family_id": "COMBINED_OVERDESIGN_GOVERNS",
+    "runtime_family_id": "COMBINED_OVERDESIGN",
+    "package": "design_brain.families.bending_and_shear_overdesign_govern",
+    "runtime_module": "design_brain.families.bending_and_shear_overdesign_govern.runtime",
+    "public_api": "evaluate_bending_and_shear_overdesign_govern"
+  },
+  "selection_boundary": {
+    "starts_after": "SelectedFamily == COMBINED_OVERDESIGN_GOVERNS or runtime_family_id == COMBINED_OVERDESIGN",
+    "runtime_may_assume": [
+      "bending overdesign exists",
+      "shear overdesign exists",
+      "this is the selected governing optimisation family"
+    ],
+    "must_not": [
+      "perform classification",
+      "choose another family",
+      "override family selection",
+      "perform family arbitration"
+    ],
+    "owned_by_shared_family_chooser": [
+      "family selection",
+      "family arbitration",
+      "family priority"
+    ]
+  },
+  "entry_contract": {
+    "selected_family_id": "COMBINED_OVERDESIGN_GOVERNS",
+    "runtime_family_id": "COMBINED_OVERDESIGN",
+    "requires": [
+      "bending overdesign exists",
+      "shear overdesign exists",
+      "combined overdesign selected before runtime starts"
+    ],
+    "validate_inputs_without_reclassification": true
+  },
+  "inputs_contract": {
+    "input_type": "CombinedOverdesignInputs",
+    "required_groups": [
+      "geometry",
+      "reinforcement",
+      "material_properties",
+      "actions",
+      "constraints",
+      "bending_overdesign_candidates",
+      "shear_overdesign_candidates"
+    ],
+    "forbidden_state": [
+      "session state",
+      "UI state",
+      "publication state",
+      "CTA state",
+      "family chooser state except already-selected family identity"
+    ]
+  },
+  "family_result_schema": {
+    "result_type": "FamilyResult",
+    "required_fields": [
+      "status",
+      "selected_recommendation",
+      "candidate_repairs",
+      "exhausted_reason",
+      "evidence"
+    ],
+    "evidence_required_fields": [
+      "selection_boundary",
+      "candidate_source_proof",
+      "combined_merge_trace",
+      "accepted_candidate_evidence",
+      "rejected_candidate_evidence",
+      "ranking_evidence",
+      "exact_stop_proof",
+      "exhausted_proof",
+      "ownership_proof",
+      "contract_version"
+    ]
+  },
+  "ownership_contract": {
+    "combined_family_owns": [
+      "combined optimisation candidate merge",
+      "combined optimisation candidate ranking",
+      "combined recommendation selection",
+      "combined exact stop proof",
+      "combined exhausted proof",
+      "combined optimisation evidence"
+    ],
+    "combined_family_must_not_own": [
+      "bending optimisation ladder",
+      "shear optimisation ladder",
+      "bending candidate generation",
+      "shear candidate generation",
+      "family selection",
+      "family arbitration",
+      "publication",
+      "CTA generation",
+      "CTA rendering",
+      "apply routing",
+      "session state",
+      "UI rendering",
+      "recommendation publication",
+      "source precedence",
+      "user wording"
+    ],
+    "bending_overdesign_governs_owns": [
+      "reinforcement optimisation ladder",
+      "geometry optimisation ladder",
+      "bending overdesign candidate generation",
+      "minimum reinforcement boundaries",
+      "bending exact stop proof",
+      "bending exhausted proof"
+    ],
+    "shear_overdesign_governs_owns": [
+      "shear reinforcement optimisation ladder",
+      "ligature removal logic",
+      "shear overdesign candidate generation",
+      "shear exact stop proof",
+      "shear exhausted proof"
+    ],
+    "shared_systems_own": [
+      "family selection",
+      "family arbitration",
+      "publication",
+      "CTA generation",
+      "CTA rendering",
+      "apply routing",
+      "one-click orchestration",
+      "session state",
+      "UI rendering",
+      "recommendation publication",
+      "source precedence",
+      "visible wording",
+      "user wording",
+      "debug rendering"
+    ]
+  },
+  "candidate_source_contract": {
+    "allowed_sources": [
+      "BENDING_OVERDESIGN_GOVERNS",
+      "SHEAR_OVERDESIGN_GOVERNS",
+      "APPROVED_COMBINED_MERGE_RULE"
+    ],
+    "must_not_duplicate_ladders": true,
+    "approved_merge_rules": [
+      "combine one bending-overdesign candidate with one shear-overdesign candidate",
+      "use a geometry candidate that affects both checks only when it came from a locked source candidate",
+      "use explicit shared update keys from source candidates without inventing formula ladders"
+    ],
+    "forbidden_sources": [
+      "internally generated bending optimisation ladder",
+      "internally generated shear optimisation ladder",
+      "page-local publication candidates",
+      "CTA payload candidates",
+      "UI/session candidates"
+    ]
+  },
+  "success_contract": {
+    "valid_combined_optimisation_requires": [
+      "bending remains compliant",
+      "shear remains compliant",
+      "code compliance maintained",
+      "constructability maintained",
+      "utilisation moves closer to target band"
+    ],
+    "must_not_accept": [
+      "candidate creates bending underdesign",
+      "candidate creates shear underdesign",
+      "candidate violates minimum reinforcement",
+      "candidate violates code compliance",
+      "candidate violates constructability"
+    ],
+    "partial_optimisation_candidates_are_diagnostic_only": true
+  },
+  "underdesign_protection": {
+    "bending_capacity_ratio_min": 1.0,
+    "shear_capacity_ratio_min": 1.0,
+    "invalid_before_ranking": [
+      "phiMu / Mstar < 1.00",
+      "phiVu / Vstar < 1.00",
+      "bending failure created",
+      "shear failure created"
+    ]
+  },
+  "target_band": {
+    "bending_lower": 0.85,
+    "bending_upper": 1.0,
+    "shear_lower": 0.85,
+    "shear_upper": 1.0,
+    "candidate_lane": "COMBINED_OVERDESIGN_TARGET_BAND_FALLBACK_PROOF",
+    "preferred": "both bending and shear move toward or sit inside target band",
+    "fallback": "best compliant combined optimisation with specific blocker evidence"
+  },
+  "interaction_contract": {
+    "geometry_update_keys": [
+      "D",
+      "beam_depth",
+      "beam_depth_mm",
+      "b",
+      "bw",
+      "beam_width",
+      "beam_width_mm"
+    ],
+    "bending_reinforcement_update_keys": [
+      "bot1_count",
+      "db_bot_1",
+      "bot2_count",
+      "db_bot_2",
+      "bot_row_count",
+      "bot_row_1_bars",
+      "bot_row_1_dia",
+      "bot_row_2_bars",
+      "bot_row_2_dia"
+    ],
+    "shear_reinforcement_update_keys": [
+      "lig_d",
+      "lig_legs",
+      "s_lig"
+    ],
+    "geometry_recheck_required": [
+      "bending",
+      "shear",
+      "minimum reinforcement",
+      "geometry limits",
+      "constructability"
+    ],
+    "bending_reinforcement_recheck_required": [
+      "bending capacity",
+      "minimum bending reinforcement",
+      "constructability",
+      "congestion"
+    ],
+    "shear_reinforcement_recheck_required": [
+      "shear capacity",
+      "shear detailing",
+      "constructability",
+      "congestion"
+    ]
+  },
+  "minimum_reinforcement_protection": {
+    "as_must_be_greater_than_or_equal_to_as_min": true,
+    "invalid_before_ranking": [
+      "As < As_min"
+    ],
+    "source_blockers_remain_valid": [
+      "BENDING_OVERDESIGN_GOVERNS minimum reinforcement boundary"
+    ]
+  },
+  "zero_shear_protection": {
+    "prefer_ligature_removal_when": [
+      "Vstar == 0",
+      "Vstar <= negligible shear threshold",
+      "ligatures present",
+      "removal compliant"
+    ],
+    "must_not_preserve_unnecessary_shear_reinforcement_when_removal_is_compliant": true
+  },
+  "exact_stop": {
+    "allowed_when": [
+      "bending compliant",
+      "shear compliant",
+      "bending inside target band",
+      "shear inside target band",
+      "no higher-ranked combined optimisation candidate exists"
+    ]
+  },
+  "exhausted": {
+    "requires": [
+      "all bending optimisation candidates attempted",
+      "all shear optimisation candidates attempted",
+      "all approved combined merge candidates attempted",
+      "no further compliant optimisation exists",
+      "specific blocker exists"
+    ],
+    "valid_reasons": [
+      "minimum reinforcement boundary",
+      "bending utilisation boundary",
+      "shear utilisation boundary",
+      "geometry constraint boundary",
+      "constructability boundary",
+      "code compliance boundary"
+    ],
+    "generic_exhausted_message_prohibited_when_specific_blocker_exists": true
+  },
+  "ranking": {
+    "ordered_criteria": [
+      "both checks remain compliant",
+      "both checks move toward target band",
+      "worst utilisation closest to target band",
+      "smallest reinforcement quantity",
+      "smallest beam volume",
+      "constructability",
+      "cost proxy"
+    ],
+    "invalid_before_ranking": [
+      "candidate creates bending underdesign",
+      "candidate creates shear underdesign",
+      "candidate violates minimum reinforcement",
+      "candidate violates code compliance",
+      "candidate violates constructability"
+    ]
+  },
+  "lane_proof_policies": {
+    "candidate_source": {
+      "allowed_sources": [
+        "BENDING_OVERDESIGN_GOVERNS",
+        "SHEAR_OVERDESIGN_GOVERNS",
+        "APPROVED_COMBINED_MERGE_RULE"
+      ],
+      "forbidden": [
+        "combined family generated bending optimisation ladder",
+        "combined family generated shear optimisation ladder",
+        "combined family generated page-local publication candidate"
+      ]
+    },
+    "underdesign_protection": {
+      "case_a": {
+        "candidate": "optimisation creates bending failure",
+        "expected": "candidate rejected before ranking"
+      },
+      "case_b": {
+        "candidate": "optimisation creates shear failure",
+        "expected": "candidate rejected before ranking"
+      }
+    },
+    "minimum_reinforcement": {
+      "case_c": {
+        "candidate": "As below As_min",
+        "expected": "candidate rejected before ranking"
+      }
+    },
+    "zero_shear": {
+      "case_d": {
+        "candidate": "Vstar zero with removable ligatures",
+        "expected": "ligature removal preferred"
+      }
+    },
+    "geometry_interaction": {
+      "depth_candidate_expected_rechecks": [
+        "bending",
+        "shear",
+        "minimum reinforcement",
+        "geometry limits",
+        "constructability"
+      ],
+      "width_candidate_expected_rechecks": [
+        "bending",
+        "shear",
+        "minimum reinforcement",
+        "geometry limits",
+        "constructability"
+      ]
+    },
+    "terminal": {
+      "exact_stop_allowed_when": [
+        "bending compliant",
+        "shear compliant",
+        "bending inside target band",
+        "shear inside target band",
+        "no higher-ranked combined optimisation candidate exists"
+      ],
+      "exhausted_requires": [
+        "all bending optimisation candidates attempted",
+        "all shear optimisation candidates attempted",
+        "all approved combined merge candidates attempted",
+        "no further compliant optimisation exists",
+        "specific blocker exists"
+      ]
+    },
+    "target_band_refinement": {
+      "lane_id": "COMBINED_OVERDESIGN_TARGET_BAND_FALLBACK_PROOF",
+      "preferred": "both bending and shear move toward or sit inside target band",
+      "fallback": "best compliant combined optimisation with specific blocker evidence",
+      "fallback_requires_specific_blocker": true,
+      "runtime_must_report_target_band_candidate_count": true,
+      "runtime_must_report_selected_target_band_status": true
+    }
+  },
+  "shared_exclusions": [
+    "family selection",
+    "family arbitration",
+    "publication",
+    "CTA generation",
+    "CTA rendering",
+    "apply routing",
+    "one-click orchestration",
+    "session state",
+    "UI rendering",
+    "recommendation publication",
+    "source precedence",
+    "visible wording",
+    "user wording",
+    "debug rendering"
+  ],
+  "lock_verification": {
+    "required_verifiers": [
+      "tools/verification/families/bending_and_shear_overdesign_govern_contract_check.py"
+    ],
+    "required_gates": [
+      "COMBINED_OVERDESIGN_GOVERNS contract check",
+      "combined overdesign candidate merge boundary",
+      "combined overdesign source and interaction lane proofs",
+      "combined overdesign runtime snapshot",
+      "replacement audit",
+      "cutover verifier",
+      "live wiring snapshot",
+      "lock verifier"
+    ]
+  }
+}
