@@ -35,11 +35,11 @@ def build_design_brain_service(
 ) -> DesignBrainService:
     """Bind the selected implementation without exposing it to consumers.
 
-    The legacy adapter remains the default.  ``INPUTS_DESIGN_BRAIN_ADAPTER``
-    (or the explicit ``adapter_name`` argument used by probes) is the only
-    composition-level switch.  This keeps the cutover reversible: clearing
-    the variable immediately restores the verified V1 path, while the V2
-    implementation remains behind its dedicated adapter.
+    The V2 adapter is the default.  ``INPUTS_DESIGN_BRAIN_ADAPTER`` (or the
+    explicit ``adapter_name`` argument used by probes) is the only
+    composition-level switch.  This keeps the cutover reversible: setting the
+    variable to ``legacy`` immediately restores the verified V1 path while
+    the V2 implementation remains the normal application binding.
     """
 
     selected = selected_design_brain_adapter_name(adapter_name)
@@ -64,7 +64,7 @@ def selected_design_brain_adapter_name(adapter_name: str | None = None) -> str:
     raw = adapter_name
     if raw is None:
         raw = os.environ.get(DESIGN_BRAIN_ADAPTER_ENV)
-    normalized = str(raw or "legacy").strip().lower()
+    normalized = str(raw or "v2").strip().lower()
     if normalized in _LEGACY_ADAPTER_NAMES:
         return "legacy"
     if normalized in _NEW_ADAPTER_NAMES:
@@ -91,7 +91,7 @@ def build_replacement_design_brain_service(
 
 
 def build_new_design_brain_service(*, source_root=None) -> DesignBrainService:
-    """Compose the isolated V2 implementation without changing the V1 default."""
+    """Compose the isolated V2 implementation used by the default binding."""
 
     from inputs_application.new_design_brain_adapter import NewDesignBrainAdapter
 
