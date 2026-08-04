@@ -33,6 +33,8 @@ from inputs_application.region_contexts import (
 from inputs_application.session_services import InputsSessionServices
 from inputs_application.summary_contracts import InputsSummaryCalculationSource
 from inputs_application.workspace_state_store import InputsWorkspaceStateStore
+from inputs_application.design_brain_composition import selected_design_brain_adapter_name
+from inputs_application.v2_design_guide_renderer import render_v2_design_guide_card
 
 
 PageCallable = Callable[..., Any]
@@ -675,15 +677,24 @@ def render_inputs_design_guide_fragment_section(
         reason="matching_fragment_ready_before_render",
         revision=authoritative_revision,
     )
-    runtime.render_design_guide(
-        inputs_detailed_mode=region_context.inputs_detailed_mode,
-        sync_callbacks=page_context["sync_callbacks"],
-        inputs_render_audit=page_context["inputs_render_audit"],
-        fast_focus_section=page_context["fast_focus_section"],
-        mark=page_context["mark"],
-        design_guide_slot=design_guide_slot,
-        fragment_state=fragment_payload,
-    )
+    if selected_design_brain_adapter_name() == "v2":
+        authoritative_result = services.engineering_results.current()
+        if authoritative_result is not None:
+            render_v2_design_guide_card(
+                st_module=st_module,
+                design_guide_slot=design_guide_slot,
+                result=authoritative_result,
+            )
+    else:
+        runtime.render_design_guide(
+            inputs_detailed_mode=region_context.inputs_detailed_mode,
+            sync_callbacks=page_context["sync_callbacks"],
+            inputs_render_audit=page_context["inputs_render_audit"],
+            fast_focus_section=page_context["fast_focus_section"],
+            mark=page_context["mark"],
+            design_guide_slot=design_guide_slot,
+            fragment_state=fragment_payload,
+        )
     if str(os.environ.get("CODEX_BROWSER_TEST_MODE") or "").strip().lower() in {
         "1",
         "true",
