@@ -17,10 +17,10 @@ from application.contracts.design_brain import (
     build_authoritative_design_result,
 )
 from application.family_ladder_dispatch_policy import resolve_family_ladder_dispatch
+from application.whole_beam_family_restamp_policy import restamp_primary_guidance_family_from_whole_beam
 from inputs_application.legacy_design_brain_adapter import (
     build_final_design_guide_publication,
     classify_family_from_whole_beam_evidence,
-    restamp_primary_guidance_family_from_whole_beam,
     family_strategy_for,
 )
 
@@ -384,6 +384,7 @@ def resolve_guidance_authority(
         restamp_primary_guidance_family_from_whole_beam(
             guidance_items,
             guidance_debug,
+            family_classifier=classify_family_from_whole_beam_evidence,
         )
     )
     recommendation_result = _mapping(payload.get("recommendation_result"))
