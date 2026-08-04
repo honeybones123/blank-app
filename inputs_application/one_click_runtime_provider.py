@@ -9,6 +9,9 @@ import os
 from types import SimpleNamespace
 from typing import Any
 
+from application.target_band_domain_policy import (
+    resolve_target_band_candidate_domains_for_updates,
+)
 from inputs_application.engineering_predicates import (
     parse_util_value,
     shear_demands_negligible,
@@ -23,7 +26,6 @@ from inputs_application.legacy_design_brain_adapter import (
     resolve_candidate_required_domain_progress,
     resolve_candidate_required_domains_satisfied,
     resolve_candidate_step_improves,
-    resolve_target_band_candidate_domains_for_updates,
     resolve_target_band_exhaustion_refinement_allowed,
     resolve_target_band_next_hop_precheck,
     select_best_target_band_refinement_candidate,
