@@ -662,6 +662,16 @@ def render_inputs_design_guide_fragment_section(
         with design_guide_slot.container():
             st_module.info("Updating design guidance...")
         return
+    # The run_every timer schedules its next tick before this fragment body.
+    # Cancel it as soon as a revision-matched publication exists, before the
+    # comparatively expensive card rendering below can let that scheduled
+    # tick become runnable.  The workspace-level stop remains as a fallback
+    # for alternate render paths and terminal failure states.
+    stop_design_brain_polling(
+        st_module.session_state,
+        reason="matching_fragment_ready_before_render",
+        revision=authoritative_revision,
+    )
     runtime.render_design_guide(
         inputs_detailed_mode=region_context.inputs_detailed_mode,
         sync_callbacks=page_context["sync_callbacks"],

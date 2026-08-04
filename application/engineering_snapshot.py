@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from calculations.design_actions import resolve_design_actions_contract_from_state
-from design_brain.authority import EngineeringInputSnapshot
+from application.contracts.design_brain import EngineeringInputSnapshot
 
 
 GEOMETRY_INPUT_KEYS: tuple[str, ...] = (

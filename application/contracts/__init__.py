@@ -1,9 +1,4 @@
-"""Compatibility imports for the application-owned Design Brain contracts.
-
-Concrete Design Brain code may continue importing this module during the
-incremental cutover. New application consumers must import
-``application.contracts.design_brain`` directly.
-"""
+"""Application-owned contracts shared with replaceable implementations."""
 
 from application.contracts.design_brain import (
     AUTHORITATIVE_DESIGN_RESULT_SCHEMA_VERSION,

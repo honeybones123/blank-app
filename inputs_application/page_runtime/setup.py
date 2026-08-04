@@ -36,10 +36,11 @@ from application.engineering_snapshot import build_engineering_input_snapshot_fr
 
 from application.guidance_result_adapter import guidance_payload_from_authoritative_design_result
 
-from design_brain.authority import (
+from application.contracts.design_brain import (
     AuthoritativeDesignResult,
     build_authoritative_design_result,
 )
+from application.design_brain_port import DesignBrainRequest
 
 from inputs_application.state_utils import application_guidance_context, bottom_reo_state_label, float_from_state, guidance_state_snapshot, shared_state_snapshot, shear_state_label, updates_match_state
 
@@ -68,7 +69,7 @@ from inputs_application.summary_state_runtime import InputsSummaryStateRuntime, 
 from inputs_application.widget_state_projection import merge_current_engineering_widget_state
 from inputs_application.engineering_input_store import should_reuse_committed_engineering_baseline
 from inputs_application.session_services import InputsSessionServices
-from inputs_application.design_brain_pipeline_runtime import run_live_design_brain_pipeline
+from inputs_application.design_brain_composition import build_design_brain_service
 from inputs_application.design_brain_job_service import DesignBrainJobService
 
 from inputs_application.canonical_runtime_contracts import CanonicalConvenienceResyncRuntime, CanonicalDesignStatePackRuntime
@@ -881,6 +882,18 @@ def _ensure_authoritative_design_result_current_coordinator(
         or last_apply_route.get("published_family_id")
     )
     guidance_context = application_guidance_context(current_state, st.session_state)
+    design_brain_service = (
+        build_design_brain_service(
+            lambda request: _compute_design_guidance_items(
+                dict(request.resolved_inputs),
+                guidance_debug_verbose=request.debug_enabled,
+                debug_enabled=request.debug_enabled,
+            )
+        )
+        if include_design_brain
+        else None
+    )
+
     def _compute(snapshot_value):
         if not include_design_brain:
             engineering_overview = collect_design_overview(
@@ -894,11 +907,6 @@ def _ensure_authoritative_design_result_current_coordinator(
                     "resolved_inputs": dict(guidance_context),
                 },
             )
-        guidance_payload = _compute_design_guidance_items(
-            guidance_context,
-            guidance_debug_verbose=sidebar_debug,
-            debug_enabled=sidebar_debug,
-        )
         engineering_calculations = (
             dict(existing_result.current_calculations or {})
             if (
@@ -908,12 +916,16 @@ def _ensure_authoritative_design_result_current_coordinator(
             )
             else {}
         )
-        execution = run_live_design_brain_pipeline(
-            engineering_snapshot=snapshot_value,
-            guidance_payload=guidance_payload,
-            family_override=str(family_override or "").strip() or None,
-            resolved_inputs=guidance_context,
-            engineering_calculations=engineering_calculations,
+        if design_brain_service is None:
+            raise RuntimeError("Design Brain service was not composed")
+        execution = design_brain_service.run(
+            DesignBrainRequest(
+                engineering_snapshot=snapshot_value,
+                family_hint=str(family_override or "").strip() or None,
+                resolved_inputs=guidance_context,
+                engineering_calculations=engineering_calculations,
+                debug_enabled=sidebar_debug,
+            )
         )
         return execution.result
 

@@ -11,7 +11,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from design_brain.authority import (
+from application.contracts.design_brain import (
     AuthoritativeDesignResult,
     EngineeringInputSnapshot,
     build_authoritative_design_result,

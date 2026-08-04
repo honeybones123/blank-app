@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, fields
 from typing import Any, MutableMapping
 
-from design_brain.authority import AuthoritativeDesignResult
+from application.contracts.design_brain import AuthoritativeDesignResult
 
 
 AUTHORITATIVE_DESIGN_RESULT_SESSION_KEY = "authoritative_design_result"
@@ -21,6 +21,12 @@ AUTHORITATIVE_DESIGN_RESULT_LRU_KEY = "_authoritative_design_result_lru_v1"
 AUTHORITATIVE_DESIGN_RESULT_LRU_MAX_ENTRIES = 8
 _AUTHORITATIVE_RESULT_FIELD_NAMES = frozenset(
     field_info.name for field_info in fields(AuthoritativeDesignResult)
+)
+_AUTHORITATIVE_RESULT_COMPATIBILITY_MODULES = frozenset(
+    {
+        AuthoritativeDesignResult.__module__,
+        "design_brain.authority",
+    }
 )
 
 
@@ -33,7 +39,7 @@ def _coerce_authoritative_design_result(
         return value
     value_type = type(value)
     if (
-        value_type.__module__ != AuthoritativeDesignResult.__module__
+        value_type.__module__ not in _AUTHORITATIVE_RESULT_COMPATIBILITY_MODULES
         or value_type.__name__ != AuthoritativeDesignResult.__name__
     ):
         return None

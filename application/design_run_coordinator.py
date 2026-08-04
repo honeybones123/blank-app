@@ -10,8 +10,11 @@ from __future__ import annotations
 
 from typing import Callable
 
+from application.contracts.design_brain import (
+    AuthoritativeDesignResult,
+    EngineeringInputSnapshot,
+)
 from application.design_result_store import EngineeringResultStore
-from design_brain.authority import AuthoritativeDesignResult, EngineeringInputSnapshot
 
 
 DesignBrainComputeFn = Callable[[EngineeringInputSnapshot], AuthoritativeDesignResult]

@@ -11,10 +11,9 @@ import traceback
 from types import SimpleNamespace
 from typing import Any, Mapping
 
-from design_brain.authority import EngineeringInputSnapshot
-from inputs_application.design_brain_pipeline_runtime import (
-    run_live_design_brain_pipeline,
-)
+from application.contracts.design_brain import EngineeringInputSnapshot
+from application.design_brain_port import DesignBrainRequest
+from inputs_application.design_brain_composition import build_design_brain_service
 from inputs_application.guidance_entrypoint import (
     build_guidance_entrypoint_runtime,
     compute_inputs_guidance,
@@ -52,23 +51,27 @@ def compute_design_brain_job(request: Mapping[str, Any]) -> dict[str, Any]:
         sys_module=sys,
     )
     started = time.perf_counter()
-    guidance_payload = compute_inputs_guidance(
-        runtime,
-        guidance_context,
-        guidance_debug_verbose=bool(
-            request_payload.get("guidance_debug_verbose")
-        ),
-        debug_enabled=bool(request_payload.get("guidance_debug_verbose")),
+    debug_enabled = bool(request_payload.get("guidance_debug_verbose"))
+    design_brain_service = build_design_brain_service(
+        lambda design_request: compute_inputs_guidance(
+            runtime,
+            dict(design_request.resolved_inputs),
+            guidance_debug_verbose=design_request.debug_enabled,
+            debug_enabled=design_request.debug_enabled,
+        )
     )
-    execution = run_live_design_brain_pipeline(
-        engineering_snapshot=snapshot,
-        guidance_payload=guidance_payload,
-        family_override=str(request_payload.get("family_override") or "").strip()
-        or None,
-        resolved_inputs=guidance_context,
-        engineering_calculations=_mapping(
-            request_payload.get("engineering_calculations")
-        ),
+    execution = design_brain_service.run(
+        DesignBrainRequest(
+            engineering_snapshot=snapshot,
+            family_hint=(
+                str(request_payload.get("family_override") or "").strip() or None
+            ),
+            resolved_inputs=guidance_context,
+            engineering_calculations=_mapping(
+                request_payload.get("engineering_calculations")
+            ),
+            debug_enabled=debug_enabled,
+        )
     )
     return {
         "schema": WORKER_SCHEMA,

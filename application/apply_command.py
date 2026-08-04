@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
-from design_brain.authority import AuthoritativeDesignResult
+from application.contracts.design_brain import AuthoritativeDesignResult
 
 
 @dataclass(frozen=True)
