@@ -7,7 +7,7 @@ Generated mechanically from the last archived page closure; this module has no r
 from __future__ import annotations
 
 
-from inputs_application.legacy_design_brain_adapter import build_final_publication_cta_from_current_state as _build_final_publication_cta_from_current_state
+from inputs_application.design_brain_composition import build_publication_cta_builder
 from inputs_application.guidance_runtime_config import DESIGN_GUIDE_REFERENCE_D_KEY
 from inputs_application.guidance_runtime_config import DESIGN_GUIDE_SESSION_ANCHOR_D_KEY
 from inputs_application.guidance_runtime_config import REO_BAR_DIAS
@@ -275,7 +275,7 @@ def _final_publication_cta_authority_payload(
     action_payload: dict | None,
     source_precedence: dict | None,
 ) -> dict:
-    cta = _build_final_publication_cta_from_current_state(
+    cta = build_publication_cta_builder()(
         item=dict(item or {}),
         debug=dict(debug or {}),
         button_contract=dict(button_contract or {}),
