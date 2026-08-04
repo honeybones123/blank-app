@@ -413,6 +413,38 @@ MODEL_RENDER_FINGERPRINT_KEYS = PRIMARY_GEOMETRY_KEYS | {
     "lig_d",
     "lig_legs",
     "s_lig",
+    "top_flange_reo_enabled",
+    "bot_flange_reo_enabled",
+    "top_flange_mirror_lr",
+    "bot_flange_mirror_lr",
+    "top_flange_left_count",
+    "top_flange_left_dia",
+    "top_flange_left_rows",
+    "top_flange_left_row_spacing",
+    "top_flange_left_clear_spacing_mode",
+    "top_flange_right_count",
+    "top_flange_right_dia",
+    "top_flange_right_rows",
+    "top_flange_right_row_spacing",
+    "top_flange_right_clear_spacing_mode",
+    "bot_flange_left_count",
+    "bot_flange_left_dia",
+    "bot_flange_left_rows",
+    "bot_flange_left_row_spacing",
+    "bot_flange_left_clear_spacing_mode",
+    "bot_flange_right_count",
+    "bot_flange_right_dia",
+    "bot_flange_right_rows",
+    "bot_flange_right_row_spacing",
+    "bot_flange_right_clear_spacing_mode",
+    "top_flange_transverse_enabled",
+    "bot_flange_transverse_enabled",
+    "top_flange_transverse_dia",
+    "bot_flange_transverse_dia",
+    "top_flange_transverse_spacing",
+    "bot_flange_transverse_spacing",
+    "top_flange_transverse_legs",
+    "bot_flange_transverse_legs",
 }
 
 _GUIDANCE_ENTRYPOINT_RUNTIME = build_guidance_entrypoint_runtime(
@@ -802,10 +834,35 @@ def _get_outline_points_and_bbox():
 
 def _build_inputs_diagram_source_snapshot(layout=None, model_state: dict | None = None) -> InputsDiagramSourceSnapshot:
     if layout is None:
-        layout = compute_section_layout()
-    shared_state = dict(model_state) if isinstance(model_state, dict) else _shared_state_snapshot()
+        layout = compute_section_layout(model_state) if isinstance(model_state, dict) else compute_section_layout()
+    explicit_state = isinstance(model_state, dict)
+    shared_state = dict(model_state) if explicit_state else _shared_state_snapshot()
     try:
-        outline_points, outline_width, outline_depth = _get_outline_points_and_bbox()
+        if explicit_state:
+            raw_shape = str(
+                shared_state.get("sec_shape")
+                or shared_state.get("shape_name")
+                or "RECT"
+            )
+            raw_shape_lower = raw_shape.strip().lower()
+            sec_shape = (
+                "T"
+                if raw_shape_lower.startswith("t")
+                else "I"
+                if raw_shape_lower.startswith("i")
+                else "RECT"
+            )
+            outline_points, outline_width, outline_depth = build_section_outline_points_and_bbox_module(
+                sec_shape=sec_shape,
+                b=float(shared_state.get("b", 400.0) or 400.0),
+                D=float(shared_state.get("D", 600.0) or 600.0),
+                bf=float(shared_state.get("bf", 600.0) or 600.0),
+                tf=float(shared_state.get("tf", 120.0) or 120.0),
+                bw=float(shared_state.get("bw", 300.0) or 300.0),
+                tw=float(shared_state.get("tw", 200.0) or 200.0),
+            )
+        else:
+            outline_points, outline_width, outline_depth = _get_outline_points_and_bbox()
     except Exception:
         dims = dict((layout or {}).get("dims") or {})
         outline_width = float(dims.get("b", dims.get("bf", 400.0)) or 400.0)
@@ -817,16 +874,25 @@ def _build_inputs_diagram_source_snapshot(layout=None, model_state: dict | None 
             (0.0, outline_depth),
             (0.0, 0.0),
         )
+    span_length = (
+        shared_state.get("L", 3000.0)
+        if explicit_state
+        else shared_state.get("L", get_param("L", 3000.0))
+    )
     return InputsDiagramSourceSnapshot(
         layout=dict(layout or {}),
         shared_state=shared_state,
-        tension_face=st.session_state.get("active_tension_face"),
+        tension_face=(
+            shared_state.get("active_tension_face")
+            if explicit_state
+            else st.session_state.get("active_tension_face")
+        ),
         fallback_cover_side=float(shared_state.get("cover_side", 40.0) or 40.0),
         fallback_cover_top=float(shared_state.get("cover_top", 40.0) or 40.0),
         fallback_cover_bot=float(shared_state.get("cover_bot", 40.0) or 40.0),
         fallback_width=float(shared_state.get("b", outline_width) or outline_width),
         fallback_depth=float(shared_state.get("D", outline_depth) or outline_depth),
-        span_length=float(shared_state.get("L", get_param("L", 3000.0)) or 3000.0),
+        span_length=float(span_length or 3000.0),
         outline_points=tuple(tuple(point) for point in outline_points),
         outline_width=float(outline_width),
         outline_depth=float(outline_depth),

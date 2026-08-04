@@ -432,7 +432,13 @@ def compute_longitudinal_reo_layout_T_I(
     from state_runtime_gateway import get_longitudinal_row_inputs
 
     def _row_model_rows(section_key: str) -> List[Dict[str, Any]]:
-        rows = get_longitudinal_row_inputs(section_key, source=reo)
+        nested_key = "top_rows" if section_key == "top" else "bottom_rows"
+        canonical_rows = reo.get(nested_key)
+        rows = (
+            canonical_rows
+            if isinstance(canonical_rows, list)
+            else get_longitudinal_row_inputs(section_key, source=reo)
+        )
         out: List[Dict[str, Any]] = []
         for idx, row in enumerate(rows, start=1):
             mode = str(row.get("mode", "Count") or "Count")

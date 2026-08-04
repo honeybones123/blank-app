@@ -10,7 +10,7 @@ from section_props.reo_layout import (
     flatten_reo_points as flatten_reo_points_T_I,
 )
 from section_props.shear_layout import compute_shear_reo_layout_T_I
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List, Mapping, Tuple, Optional
 
 
 def _two_row_positions_width(n_bars, bar_dia, w_min, w_max):
@@ -851,11 +851,24 @@ def compute_section_layout_pure(
     }
 
 
-def compute_section_layout() -> Dict[str, Any]:
+def compute_section_layout(state: Mapping[str, Any] | None = None) -> Dict[str, Any]:
     """
-    Wrapper that reads from session state and calls the pure function.
-    For backward compatibility - new code should use compute_section_layout_cached().
+    Project one explicit input state into a section layout.
+
+    The no-argument form preserves the established session-backed API for
+    legacy callers.  Region consumers should pass their committed snapshot so
+    layout construction cannot observe a mixture of session-state revisions.
     """
+    source = state if state is not None else st.session_state
+
+    def _get(name: str, default: Any = None) -> Any:
+        if name in source:
+            value = source.get(name)
+            return default if value is None else value
+        if state is None:
+            return get_param(name, default)
+        return default
+
     def _norm_shape_name(raw: str) -> str:
         raw = (raw or "").strip()
         lo = raw.lower()
@@ -868,65 +881,66 @@ def compute_section_layout() -> Dict[str, Any]:
         return "Rectangle (b × D)"
 
     raw_shape = (
-        st.session_state.get("shape_name")
-        or st.session_state.get("sec_shape")
-        or st.session_state.get("section_shape")
-        or st.session_state.get("geometry_section_shape")
-        or get_param("sec_shape")
+        source.get("shape_name")
+        or source.get("sec_shape")
+        or source.get("section_shape")
+        or source.get("geometry_section_shape")
+        or _get("sec_shape")
         or "RECT"
     )
     shape_name = _norm_shape_name(str(raw_shape))
 
 
-    D = float(get_param("D", 600.0))
+    D = float(_get("D", 600.0))
     if shape_name.startswith("T-Section"):
         dims = {
-            "bf": float(get_param("bf", 600.0)),
-            "tf": float(get_param("tf", 120.0)),
-            "bw": float(get_param("bw", 300.0)),
+            "bf": float(_get("bf", 600.0)),
+            "tf": float(_get("tf", 120.0)),
+            "bw": float(_get("bw", 300.0)),
             "D": D,
         }
         b_env = dims["bf"]
     elif shape_name.startswith("I-Section"):
         dims = {
-            "bf": float(get_param("bf", 600.0)),
-            "tf": float(get_param("tf", 120.0)),
-            "tw": float(get_param("tw", 200.0)),
+            "bf": float(_get("bf", 600.0)),
+            "tf": float(_get("tf", 120.0)),
+            "tw": float(_get("tw", 200.0)),
             "D": D,
         }
         b_env = dims["bf"]
     else:
         dims = {
-            "b": float(get_param("b", 400.0)),
+            "b": float(_get("b", 400.0)),
             "D": D,
         }
         b_env = dims["b"]
 
-    cover_bot = float(get_param("cover_bot", 40.0))
-    cover_top = float(get_param("cover_top", 40.0))
-    cover_side = get_param("cover_side", None)
+    cover_bot = float(_get("cover_bot", 40.0))
+    cover_top = float(_get("cover_top", 40.0))
+    cover_side = _get("cover_side", None)
     if cover_side is None:
         cover_side = min(cover_top, cover_bot)
     cover_side = float(cover_side)
 
-    rowgap_bot = float(get_param("rowgap_bot", 60.0))
-    rowgap_top = float(get_param("rowgap_top", 60.0))
-    min_clear = float(get_param("s_min", 25.0))
-    top_rows = get_longitudinal_row_inputs("top")
-    bottom_rows = get_longitudinal_row_inputs("bot")
+    rowgap_bot = float(_get("rowgap_bot", 60.0))
+    rowgap_top = float(_get("rowgap_top", 60.0))
+    min_clear = float(_get("s_min", 25.0))
+    row_source = dict(source) if state is not None else None
+    top_rows = get_longitudinal_row_inputs("top", row_source)
+    bottom_rows = get_longitudinal_row_inputs("bot", row_source)
 
     def _mode(prefix: str) -> str:
-        return str(st.session_state.get(f"inputs_{prefix}_layout_mode", st.session_state.get(f"{prefix}_layout_mode", "Count")))
+        return str(source.get(f"inputs_{prefix}_layout_mode", source.get(f"{prefix}_layout_mode", "Count")))
 
     def _nb_or_s(prefix: str, default_count: float, default_spacing: float) -> float:
         if _mode(prefix) == "Count":
-            return float(st.session_state.get(f"{prefix}_count", default_count))
-        return float(st.session_state.get(f"{prefix}_spacing", default_spacing))
+            return float(source.get(f"{prefix}_count", default_count))
+        return float(source.get(f"{prefix}_spacing", default_spacing))
 
-    db_bot_1 = float(get_param("db_bot_1", 20.0))
-    db_bot_2 = float(get_param("db_bot_2", db_bot_1))
-    db_top_1 = float(get_param("db_top_1", 16.0))
-    db_top_2 = float(get_param("db_top_2", db_top_1))
+    db_bot_1 = float(_get("db_bot_1", 20.0))
+    db_bot_2 = float(_get("db_bot_2", db_bot_1))
+    db_top_1 = float(_get("db_top_1", 16.0))
+    db_top_2 = float(_get("db_top_2", db_top_1))
 
     reo = {
         "cover_top": cover_top,
@@ -953,40 +967,41 @@ def compute_section_layout() -> Dict[str, Any]:
         "db_bot": db_bot_1,
         "top_rows": top_rows,
         "bottom_rows": bottom_rows,
-        "lig_d": float(get_param("lig_d", 0.0)),
-        "lig_legs": int(get_param("lig_legs", 0)),
-        "top_flange_reo_enabled": bool(get_param("top_flange_reo_enabled", False)),
-        "bot_flange_reo_enabled": bool(get_param("bot_flange_reo_enabled", False)),
-        "top_flange_mirror_lr": bool(get_param("top_flange_mirror_lr", True)),
-        "bot_flange_mirror_lr": bool(get_param("bot_flange_mirror_lr", True)),
-        "top_flange_left_count": int(get_param("top_flange_left_count", 0) or 0),
-        "top_flange_left_dia": float(get_param("top_flange_left_dia", 16.0)),
-        "top_flange_left_rows": int(get_param("top_flange_left_rows", 1) or 1),
-        "top_flange_left_row_spacing": float(get_param("top_flange_left_row_spacing", rowgap_top)),
-        "top_flange_left_clear_spacing_mode": str(get_param("top_flange_left_clear_spacing_mode", "count") or "count"),
-        "top_flange_right_count": int(get_param("top_flange_right_count", 0) or 0),
-        "top_flange_right_dia": float(get_param("top_flange_right_dia", 16.0)),
-        "top_flange_right_rows": int(get_param("top_flange_right_rows", 1) or 1),
-        "top_flange_right_row_spacing": float(get_param("top_flange_right_row_spacing", rowgap_top)),
-        "top_flange_right_clear_spacing_mode": str(get_param("top_flange_right_clear_spacing_mode", "count") or "count"),
-        "bot_flange_left_count": int(get_param("bot_flange_left_count", 0) or 0),
-        "bot_flange_left_dia": float(get_param("bot_flange_left_dia", 20.0)),
-        "bot_flange_left_rows": int(get_param("bot_flange_left_rows", 1) or 1),
-        "bot_flange_left_row_spacing": float(get_param("bot_flange_left_row_spacing", rowgap_bot)),
-        "bot_flange_left_clear_spacing_mode": str(get_param("bot_flange_left_clear_spacing_mode", "count") or "count"),
-        "bot_flange_right_count": int(get_param("bot_flange_right_count", 0) or 0),
-        "bot_flange_right_dia": float(get_param("bot_flange_right_dia", 20.0)),
-        "bot_flange_right_rows": int(get_param("bot_flange_right_rows", 1) or 1),
-        "bot_flange_right_row_spacing": float(get_param("bot_flange_right_row_spacing", rowgap_bot)),
-        "bot_flange_right_clear_spacing_mode": str(get_param("bot_flange_right_clear_spacing_mode", "count") or "count"),
-        "top_flange_transverse_enabled": bool(get_param("top_flange_transverse_enabled", False)),
-        "bot_flange_transverse_enabled": bool(get_param("bot_flange_transverse_enabled", False)),
-        "top_flange_transverse_dia": float(get_param("top_flange_transverse_dia", 10.0) or 10.0),
-        "bot_flange_transverse_dia": float(get_param("bot_flange_transverse_dia", 10.0) or 10.0),
-        "top_flange_transverse_spacing": float(get_param("top_flange_transverse_spacing", 200.0) or 200.0),
-        "bot_flange_transverse_spacing": float(get_param("bot_flange_transverse_spacing", 200.0) or 200.0),
-        "top_flange_transverse_legs": int(get_param("top_flange_transverse_legs", 2) or 2),
-        "bot_flange_transverse_legs": int(get_param("bot_flange_transverse_legs", 2) or 2),
+        "lig_d": float(_get("lig_d", 0.0)),
+        "lig_legs": int(_get("lig_legs", 0)),
+        "s_lig": float(_get("s_lig", 200.0)),
+        "top_flange_reo_enabled": bool(_get("top_flange_reo_enabled", False)),
+        "bot_flange_reo_enabled": bool(_get("bot_flange_reo_enabled", False)),
+        "top_flange_mirror_lr": bool(_get("top_flange_mirror_lr", True)),
+        "bot_flange_mirror_lr": bool(_get("bot_flange_mirror_lr", True)),
+        "top_flange_left_count": int(_get("top_flange_left_count", 0) or 0),
+        "top_flange_left_dia": float(_get("top_flange_left_dia", 16.0)),
+        "top_flange_left_rows": int(_get("top_flange_left_rows", 1) or 1),
+        "top_flange_left_row_spacing": float(_get("top_flange_left_row_spacing", rowgap_top)),
+        "top_flange_left_clear_spacing_mode": str(_get("top_flange_left_clear_spacing_mode", "count") or "count"),
+        "top_flange_right_count": int(_get("top_flange_right_count", 0) or 0),
+        "top_flange_right_dia": float(_get("top_flange_right_dia", 16.0)),
+        "top_flange_right_rows": int(_get("top_flange_right_rows", 1) or 1),
+        "top_flange_right_row_spacing": float(_get("top_flange_right_row_spacing", rowgap_top)),
+        "top_flange_right_clear_spacing_mode": str(_get("top_flange_right_clear_spacing_mode", "count") or "count"),
+        "bot_flange_left_count": int(_get("bot_flange_left_count", 0) or 0),
+        "bot_flange_left_dia": float(_get("bot_flange_left_dia", 20.0)),
+        "bot_flange_left_rows": int(_get("bot_flange_left_rows", 1) or 1),
+        "bot_flange_left_row_spacing": float(_get("bot_flange_left_row_spacing", rowgap_bot)),
+        "bot_flange_left_clear_spacing_mode": str(_get("bot_flange_left_clear_spacing_mode", "count") or "count"),
+        "bot_flange_right_count": int(_get("bot_flange_right_count", 0) or 0),
+        "bot_flange_right_dia": float(_get("bot_flange_right_dia", 20.0)),
+        "bot_flange_right_rows": int(_get("bot_flange_right_rows", 1) or 1),
+        "bot_flange_right_row_spacing": float(_get("bot_flange_right_row_spacing", rowgap_bot)),
+        "bot_flange_right_clear_spacing_mode": str(_get("bot_flange_right_clear_spacing_mode", "count") or "count"),
+        "top_flange_transverse_enabled": bool(_get("top_flange_transverse_enabled", False)),
+        "bot_flange_transverse_enabled": bool(_get("bot_flange_transverse_enabled", False)),
+        "top_flange_transverse_dia": float(_get("top_flange_transverse_dia", 10.0) or 10.0),
+        "bot_flange_transverse_dia": float(_get("bot_flange_transverse_dia", 10.0) or 10.0),
+        "top_flange_transverse_spacing": float(_get("top_flange_transverse_spacing", 200.0) or 200.0),
+        "bot_flange_transverse_spacing": float(_get("bot_flange_transverse_spacing", 200.0) or 200.0),
+        "top_flange_transverse_legs": int(_get("top_flange_transverse_legs", 2) or 2),
+        "bot_flange_transverse_legs": int(_get("bot_flange_transverse_legs", 2) or 2),
     }
 
     if shape_name.startswith(("T-Section", "I-Section")):
@@ -1140,4 +1155,3 @@ def compute_section_layout_cached(*args, **kwargs):
     """Public wrapper for compute_section_layout_cached with conditional caching."""
     _compute_fn = _get_compute_section_layout_cached()
     return _compute_fn(*args, **kwargs)
-

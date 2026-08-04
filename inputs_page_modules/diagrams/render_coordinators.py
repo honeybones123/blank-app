@@ -9,6 +9,10 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from inputs_application.region_contexts import RevisionIdentity
+
+from .models import InputsSection2DRegionContext
+
 
 def render_inputs_fast_model_block(
     *,
@@ -37,36 +41,39 @@ def render_inputs_fast_model_block(
             lambda: render_3d_diagram_block_fn(compact=True, model_state=model_state),
         )
     else:
-        render_with_temporary_model_state_fn(
-            model_state,
-            lambda: render_section_2d_diagram_block_fn(compact=True, model_state=model_state),
-        )
+        render_section_2d_diagram_block_fn(compact=True, model_state=model_state)
 
 
 def render_inputs_section_2d_diagram_block(
     *,
     st_module: Any,
+    region_context: InputsSection2DRegionContext,
+    current_input_identity_fn: Callable[[], RevisionIdentity | None],
     compact: bool = False,
-    model_state: dict | None = None,
     time_perf_counter_fn: Callable[[], float],
-    inputs_geometry_fingerprint_fn: Callable[..., Any],
-    make_summary_cross_section_figure_fn: Callable[[], Any],
+    build_summary_cross_section_result_fn: Callable[..., Any],
+    section_figure_builder_fn: Callable[..., Any],
     copy_deepcopy_fn: Callable[[Any], Any],
     render_plotly_diagram_fn: Callable[..., Any],
 ) -> None:
-    """Render the 2D section diagram only using page-supplied callbacks."""
+    """Render only the 2D context that still matches current input authority."""
 
     render_started = time_perf_counter_fn()
-    sec_shape = st_module.session_state.get("sec_shape", "RECT")
+    current_identity = current_input_identity_fn()
+    if current_identity != region_context.identity:
+        st_module.info("2D section diagram is updating to the latest inputs.")
+        return
 
-    if sec_shape == "RECT":
+    view_model = region_context.view_model
+    shape_name = str(view_model.shape_name or "").strip().lower()
+    if "rectangle" in shape_name or shape_name == "rect":
         required = ["b", "D"]
-    elif sec_shape == "T":
+    elif shape_name.startswith("t"):
         required = ["bf", "tf", "bw", "D"]
     else:
         required = ["bf", "tf", "tw", "D"]
 
-    missing = [key for key in required if st_module.session_state.get(key) in (None, "", 0)]
+    missing = [key for key in required if view_model.dims.get(key) in (None, "", 0)]
     if missing:
         st_module.info("2D section diagram not available right now (inputs are still saved).")
         return
@@ -75,18 +82,32 @@ def render_inputs_section_2d_diagram_block(
     cache_mode = "miss"
     figure_started = time_perf_counter_fn()
     try:
-        geo_fp = inputs_geometry_fingerprint_fn(model_state)
+        geo_fp = view_model.display_hash
         cached_fp = st_module.session_state.get("_inputs_model_2d_geo_fp")
         cached_fig = st_module.session_state.get("_inputs_model_2d_fig")
         if cached_fp == geo_fp and cached_fig is not None:
             cache_mode = "hit"
             fig_sec = copy_deepcopy_fn(cached_fig)
         else:
-            fig_sec = make_summary_cross_section_figure_fn()
+            result = build_summary_cross_section_result_fn(
+                layout=region_context.layout,
+                tension_face=view_model.tension_face,
+                fallback_cover_side=float(view_model.fallback_cover_side),
+                fallback_cover_top=float(view_model.fallback_cover_top),
+                fallback_cover_bot=float(view_model.fallback_cover_bot),
+                section_figure_builder=section_figure_builder_fn,
+            )
+            fig_sec = result.figure
             if fig_sec is None:
                 raise ValueError("2D section diagram function returned None (fig is None)")
             st_module.session_state["_inputs_model_2d_fig"] = copy_deepcopy_fn(fig_sec)
             st_module.session_state["_inputs_model_2d_geo_fp"] = geo_fp
+        st_module.session_state["_inputs_model_2d_source_identity"] = {
+            "beam_id": region_context.beam_id,
+            "input_revision": region_context.identity.input_revision,
+            "engineering_hash": region_context.identity.engineering_hash,
+            "display_hash": geo_fp,
+        }
     except Exception as exc:
         st_module.warning(f"2D section diagram failed: {exc}")
         with st_module.expander("Diagram debug details"):

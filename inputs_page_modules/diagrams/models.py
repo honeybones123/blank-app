@@ -6,8 +6,11 @@ do not compute engineering truth, and do not own session state.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Any
+
+from inputs_application.region_contexts import RevisionIdentity
 
 
 @dataclass(frozen=True)
@@ -68,3 +71,17 @@ class InputsDiagramSectionViewModel:
     beam_3d: Beam3DFigureRequestViewModel
     display_hash: str
 
+
+@dataclass(frozen=True)
+class InputsSection2DRegionContext:
+    """One revision-matched handoff into the independent 2D diagram region."""
+
+    identity: RevisionIdentity
+    beam_id: str
+    layout: dict[str, Any]
+    view_model: Section2DFigureRequestViewModel
+
+    def __post_init__(self) -> None:
+        if not str(self.beam_id or "").strip():
+            raise ValueError("beam_id is required")
+        object.__setattr__(self, "layout", copy.deepcopy(dict(self.layout or {})))

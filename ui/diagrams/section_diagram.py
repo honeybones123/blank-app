@@ -285,6 +285,11 @@ def build_summary_cross_section_result(
                     "db_bot": 0.0,
                     "lig_d": 0.0,
                     "lig_legs": 0,
+                    # The canonical row model is authoritative. Clearing only
+                    # legacy counts leaves the same invalid rows active and
+                    # makes the intended no-bars fallback fail a second time.
+                    "top_rows": [],
+                    "bottom_rows": [],
                 }
             )
 

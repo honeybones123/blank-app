@@ -99,12 +99,16 @@ from inputs_application.guidance_entrypoint import (
 from inputs_page_modules.calculations import render_inputs_calculation_explainer_trace as render_inputs_calculation_explainer_trace_module
 
 from inputs_page_modules.diagrams import (
-    InputsDiagramSourceSnapshot,
-    build_inputs_diagram_view_model,
+    InputsSection2DRegionContext,
+    build_section_2d_request_view_model,
     render_inputs_3d_diagram_block,
     render_inputs_fast_model_block,
     render_inputs_section_2d_diagram_block,
 )
+
+from inputs_application.engineering_input_store import InputSnapshotStore
+
+from inputs_application.region_contexts import RevisionIdentity
 
 from inputs_page_modules.fragments import run_inputs_fragment
 
@@ -350,7 +354,6 @@ from inputs_application.page_runtime.common import (
     _parse_util_value,
     _queue_inputs_refresh,
     _reconcile_design_action_widgets_with_shared,
-    _record_inputs_diagram_view_model_trace,
     _record_inputs_rerun_trigger,
     _request_shear_widget_seed_from_shared,
     _reseed_inputs_longitudinal_reo_widgets_from_shared,
@@ -364,7 +367,6 @@ from inputs_application.page_runtime.common import (
     inputs_hydration_trace_log,
     log_debug,
     make_beam_3d_figure,
-    make_summary_cross_section_figure,
 )
 
 def _render_recommendation_section_header(
@@ -479,18 +481,64 @@ def _render_inputs_materials_subsection(sync_callbacks: dict, *, show_heading: b
     )
 
 def _render_section_2d_diagram_block(*, compact: bool = False, model_state: dict | None = None):
-    def _render():
-        return render_inputs_section_2d_diagram_block(
-            st_module=st,
-            compact=compact,
-            model_state=model_state,
-            time_perf_counter_fn=time.perf_counter,
-            inputs_geometry_fingerprint_fn=_inputs_geometry_fingerprint,
-            make_summary_cross_section_figure_fn=make_summary_cross_section_figure,
-            copy_deepcopy_fn=copy.deepcopy,
-            render_plotly_diagram_fn=st.plotly_chart,
+    explicit_state = dict(model_state or _resolved_inputs_model_state()[0])
+    layout = compute_section_layout(explicit_state)
+    source = _build_inputs_diagram_source_snapshot(layout, explicit_state)
+    section_view_model = build_section_2d_request_view_model(source)
+    beam_id = str(
+        st.session_state.get("active_beam_id")
+        or st.session_state.get("_inputs_engineering_input_store_active_beam_id")
+        or "active"
+    )
+    input_store = InputSnapshotStore(st.session_state)
+    input_state = input_store.current_for_beam(beam_id)
+    if not input_state.engineering_hash:
+        input_state = input_store.current()
+    identity = RevisionIdentity(
+        input_revision=int(input_state.revision),
+        engineering_hash=str(
+            input_state.engineering_hash
+            or section_view_model.display_hash
+        ),
+    )
+    region_context = InputsSection2DRegionContext(
+        identity=identity,
+        beam_id=beam_id,
+        layout=layout,
+        view_model=section_view_model,
+    )
+    st.session_state["_inputs_diagram_view_model_trace"] = {
+        "diagram_view_model_trace_source": "inputs_page_modules.diagrams",
+        "diagram_view_model_trace_only": True,
+        "live_cutover": True,
+        "section_2d_display_hash": section_view_model.display_hash,
+        "diagram_display_hash": section_view_model.display_hash,
+        "source_layout_keys": sorted(dict(source.layout or {}).keys()),
+    }
+
+    def _current_identity() -> RevisionIdentity:
+        current = input_store.current_for_beam(beam_id)
+        if not current.engineering_hash:
+            current = input_store.current()
+        return RevisionIdentity(
+            input_revision=int(current.revision),
+            engineering_hash=str(
+                current.engineering_hash
+                or region_context.identity.engineering_hash
+            ),
         )
-    return _render_with_temporary_model_state(model_state, _render)
+
+    return render_inputs_section_2d_diagram_block(
+        st_module=st,
+        region_context=region_context,
+        current_input_identity_fn=_current_identity,
+        compact=compact,
+        time_perf_counter_fn=time.perf_counter,
+        build_summary_cross_section_result_fn=build_summary_cross_section_result,
+        section_figure_builder_fn=make_sectionA_figure,
+        copy_deepcopy_fn=copy.deepcopy,
+        render_plotly_diagram_fn=st.plotly_chart,
+    )
 
 def _render_3d_diagram_block(*, compact: bool = False, model_state: dict | None = None):
     def _render():
@@ -562,17 +610,9 @@ def _resolved_inputs_model_state() -> tuple[dict, dict]:
     # with the last committed result makes the diagram lag behind width/depth
     # widgets and can also preserve stale shear detailing.  Publication still
     # comes from the authoritative result; this only selects the render state.
-    current_widget_keys = (
-        ("inputs_sec_shape", "sec_shape"),
-        ("inputs_b", "b"),
-        ("inputs_D", "D"),
-        ("inputs_bf", "bf"),
-        ("inputs_tf", "tf"),
-        ("inputs_bw", "bw"),
-        ("inputs_tw", "tw"),
-        ("inputs_lig_d", "lig_d"),
-        ("inputs_lig_legs", "lig_legs"),
-        ("inputs_s_lig", "s_lig"),
+    current_widget_keys = tuple(
+        (f"inputs_{shared_key}", shared_key)
+        for shared_key in MODEL_RENDER_FINGERPRINT_KEYS
     )
     widget_state_differs = any(
         widget_key in st.session_state

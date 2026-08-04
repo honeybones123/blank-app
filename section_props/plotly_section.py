@@ -373,10 +373,21 @@ def make_sectionA_figure(
                         ))
 
     # ---- Longitudinal bars (canonical resolved model) ----
-    resolved_bars = resolve_longitudinal_bars_from_layout(
-        shape_name=shape_key,
-        dims=dims,
-        reo_layout=layout,
+    has_layout_bars = any(
+        bool(band.get("x"))
+        for bands in layout.values()
+        if isinstance(bands, list)
+        for band in bands
+        if isinstance(band, dict)
+    )
+    resolved_bars = (
+        resolve_longitudinal_bars_from_layout(
+            shape_name=shape_key,
+            dims=dims,
+            reo_layout=layout,
+        )
+        if has_layout_bars
+        else []
     )
     active_ids = set()
     if tension_face_norm in ("top", "bottom"):
