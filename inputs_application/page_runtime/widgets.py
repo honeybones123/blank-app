@@ -482,10 +482,6 @@ def _render_inputs_materials_subsection(sync_callbacks: dict, *, show_heading: b
     )
 
 def _render_section_2d_diagram_block(*, compact: bool = False, model_state: dict | None = None):
-    explicit_state = dict(model_state or _resolved_inputs_model_state()[0])
-    layout = compute_section_layout(explicit_state)
-    source = _build_inputs_diagram_source_snapshot(layout, explicit_state)
-    section_view_model = build_section_2d_request_view_model(source)
     beam_id = str(
         st.session_state.get("active_beam_id")
         or st.session_state.get("_inputs_engineering_input_store_active_beam_id")
@@ -495,6 +491,14 @@ def _render_section_2d_diagram_block(*, compact: bool = False, model_state: dict
     input_state = input_store.current_for_beam(beam_id)
     if not input_state.engineering_hash:
         input_state = input_store.current()
+    explicit_state = dict(
+        input_state.snapshot
+        or model_state
+        or _resolved_inputs_model_state()[0]
+    )
+    layout = compute_section_layout(explicit_state)
+    source = _build_inputs_diagram_source_snapshot(layout, explicit_state)
+    section_view_model = build_section_2d_request_view_model(source)
     identity = RevisionIdentity(
         input_revision=int(input_state.revision),
         engineering_hash=str(

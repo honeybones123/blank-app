@@ -741,7 +741,11 @@ def _apply_browser_recipe_from_query() -> None:
     recipe_reapply_reason = None
     recipe_reconcile_mismatches = {}
     if st.session_state.get(_BROWSER_RECIPE_APPLIED_KEY) == recipe_name:
-        st.session_state[_BROWSER_RECIPE_WIDGET_FORCING_KEY] = recipe_name
+        # Widget forcing exists only to seed recipe-owned selectboxes on the
+        # first render after the recipe is applied.  Re-arming it on every
+        # app rerun lets the original recipe overwrite a later committed user
+        # edit when a widget is remounted after page navigation.
+        st.session_state.pop(_BROWSER_RECIPE_WIDGET_FORCING_KEY, None)
         user_widget_edits = _browser_recipe_user_widget_edit_mismatches(
             st.session_state.get("_browser_recipe_applied_state")
         )
