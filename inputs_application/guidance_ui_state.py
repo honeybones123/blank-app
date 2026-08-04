@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Mapping, MutableMapping
 
-from design_brain.config import (
+from application.contracts.design_policy import (
     DESIGN_OPTIMISATION_GOAL_LABELS,
     resolve_design_optimisation_goal,
 )

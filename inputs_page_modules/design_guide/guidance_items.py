@@ -7,7 +7,7 @@ from inputs_application.geometry_search_policy import (
 )
 from inputs_application.recommendation_support import resolve_geometry_width_context
 from inputs_application.state_utils import uls_action_from_state
-from design_brain.config import DESIGN_OPTIMISATION_GOAL_LABELS
+from application.contracts.design_policy import DESIGN_OPTIMISATION_GOAL_LABELS
 from inputs_application.policy_constants import (
     EFFICIENCY_TARGET_UTIL_MAX,
     EFFICIENCY_TARGET_UTIL_MIN,

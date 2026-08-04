@@ -210,7 +210,7 @@ from inputs_application.local_cleanup_acceptance import (
     local_cleanup_post_apply_acceptance_matches,
 )
 from inputs_application.engineering_predicates import parse_util_value, shear_demands_negligible, shear_reinforcement_is_active
-from design_brain.config import AUTO_DESIGN_MODE_CONFIG, resolve_design_mode_config
+from application.contracts.design_policy import AUTO_DESIGN_MODE_CONFIG, resolve_design_mode_config
 from design_brain.design_guide_controller import identify_design_guide_controller_materially_overprovided_non_governing_families
 from design_brain.final_publication import (
     build_final_design_guide_publication,

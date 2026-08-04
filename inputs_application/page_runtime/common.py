@@ -86,7 +86,7 @@ from crack_checks_helpers import build_crack_check_rows_from_state, pick_governi
 
 from deflection_checks_helpers import build_deflection_check_rows_from_state
 
-from design_brain.config import DESIGN_OPTIMISATION_GOAL_LABELS, resolve_design_optimisation_goal
+from application.contracts.design_policy import DESIGN_OPTIMISATION_GOAL_LABELS, resolve_design_optimisation_goal
 
 from design_brain.publication import (
     design_guide_cache_fingerprint_from_plain_data,

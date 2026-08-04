@@ -10,6 +10,13 @@ from application.contracts.design_brain import (
     build_authoritative_design_result,
     stable_authority_hash,
 )
+from application.contracts.design_policy import (
+    AUTO_DESIGN_MODE_CONFIG,
+    DESIGN_OPTIMISATION_GOAL_LABELS,
+    resolve_design_mode_config,
+    resolve_design_optimisation_goal,
+    resolve_efficiency_target_band,
+)
 
 __all__ = [
     "AUTHORITATIVE_DESIGN_RESULT_SCHEMA_VERSION",
@@ -20,4 +27,9 @@ __all__ = [
     "UI_ONLY_EXCLUDED_FIELDS",
     "build_authoritative_design_result",
     "stable_authority_hash",
+    "AUTO_DESIGN_MODE_CONFIG",
+    "DESIGN_OPTIMISATION_GOAL_LABELS",
+    "resolve_design_mode_config",
+    "resolve_design_optimisation_goal",
+    "resolve_efficiency_target_band",
 ]

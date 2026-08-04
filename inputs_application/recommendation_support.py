@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from design_brain.config import (
+from application.contracts.design_policy import (
     DESIGN_OPTIMISATION_GOAL_LABELS,
     resolve_design_optimisation_goal,
 )

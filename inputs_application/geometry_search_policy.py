@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any, Mapping
 
-from design_brain.config import (
+from application.contracts.design_policy import (
     AUTO_DESIGN_MODE_CONFIG,
     DESIGN_OPTIMISATION_GOAL_LABELS,
     resolve_design_mode_config,
