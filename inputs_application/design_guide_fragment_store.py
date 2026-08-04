@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, MutableMapping
 
-from design_brain.authority import AuthoritativeDesignResult
+from application.contracts.design_brain import AuthoritativeDesignResult
 
 
 DESIGN_GUIDE_FRAGMENT_STATE_KEY = "_inputs_design_guide_fragment_state_v1"

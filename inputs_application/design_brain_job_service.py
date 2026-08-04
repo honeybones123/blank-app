@@ -13,7 +13,7 @@ import time
 from typing import Any, Mapping
 from uuid import uuid4
 
-from design_brain.authority import EngineeringInputSnapshot
+from application.contracts.design_brain import EngineeringInputSnapshot
 from inputs_application.design_brain_job_worker import WORKER_SCHEMA
 
 

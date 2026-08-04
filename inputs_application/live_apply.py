@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, MutableMapping
 
 from application.apply_command import ApplyCommandResult, execute_apply_command
-from design_brain.authority import AuthoritativeDesignResult
+from application.contracts.design_brain import AuthoritativeDesignResult
 from inputs_application.adapters import (
     CanonicalRecommendationApplyPort,
     SharedStateSessionPort,

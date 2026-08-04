@@ -13,7 +13,10 @@ from application.design_run_coordinator import ensure_design_result
 from application.guidance_result_adapter import (
     guidance_payload_from_authoritative_design_result,
 )
-from design_brain.authority import AuthoritativeDesignResult, EngineeringInputSnapshot
+from application.contracts.design_brain import (
+    AuthoritativeDesignResult,
+    EngineeringInputSnapshot,
+)
 from inputs_application.contracts import (
     InputsApplyCommand,
     InputsEngineeringResult,
