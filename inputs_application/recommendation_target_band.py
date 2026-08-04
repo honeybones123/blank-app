@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from inputs_application.legacy_design_brain_adapter import (
+from application.target_band_annotation_policy import (
     resolve_auto_design_candidate_target_band_metrics,
 )
 from inputs_application.geometry_search_policy import design_optimisation_goal

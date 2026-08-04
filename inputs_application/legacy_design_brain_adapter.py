@@ -6,7 +6,6 @@ from typing import Callable, Mapping
 
 from application.design_brain_port import DesignBrainExecution, DesignBrainRequest
 from design_brain.candidate_evaluation import (
-    resolve_auto_design_candidate_target_band_metrics,
     project_active_fail_executor_evaluated_candidate_result,
     resolve_active_fail_executor_candidate_eval_source,
     select_best_target_band_refinement_candidate,
@@ -151,7 +150,6 @@ class LegacyDesignBrainAdapter:
 __all__ = [
     "LegacyDesignBrainAdapter",
     "LegacyGuidanceProvider",
-    "resolve_auto_design_candidate_target_band_metrics",
     "project_active_fail_executor_evaluated_candidate_result",
     "resolve_active_fail_executor_candidate_eval_source",
     "select_best_target_band_refinement_candidate",
