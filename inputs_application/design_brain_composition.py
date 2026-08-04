@@ -46,6 +46,14 @@ def build_replacement_design_brain_service(
     )
 
 
+def build_new_design_brain_service(*, source_root=None) -> DesignBrainService:
+    """Compose the isolated V2 implementation without changing the V1 default."""
+
+    from inputs_application.new_design_brain_adapter import NewDesignBrainAdapter
+
+    return DesignBrainService(NewDesignBrainAdapter(source_root=source_root))
+
+
 def build_guidance_blocker_builder():
     """Expose the selected implementation's blocker through composition."""
 
@@ -90,6 +98,7 @@ def selected_legacy_design_brain_namespace():
 __all__ = [
     "build_design_brain_service",
     "build_replacement_design_brain_service",
+    "build_new_design_brain_service",
     "build_guidance_blocker_builder",
     "build_publication_cta_builder",
     "build_bottom_arrangement_pool_builder",
