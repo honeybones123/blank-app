@@ -20,6 +20,7 @@ from inputs_application.design_brain_polling import (
 )
 from inputs_application.page_runtime import InputsPageRuntime
 from inputs_application.region_contexts import (
+    InputsCalculationRegionContext,
     InputsDesignBrainRegionContext,
     RevisionIdentity,
 )
@@ -254,6 +255,43 @@ def build_inputs_design_brain_region_context(
     )
 
 
+def build_inputs_calculation_region_context(
+    *,
+    session_state: dict[str, Any],
+    services: InputsSessionServices,
+) -> InputsCalculationRegionContext | None:
+    """Bind Calculation to one ready Summary and engineering identity."""
+
+    workspace_store = InputsWorkspaceStateStore(session_state)
+    input_revision = workspace_store.workspace_revision()
+    authoritative_result = services.engineering_results.current()
+    calculation_state = workspace_store.calculation_status()
+    summary_state = SummaryCalculationFragmentStore(session_state).current()
+    if authoritative_result is None:
+        return None
+    engineering_hash = authoritative_result.engineering_hash
+    if (
+        workspace_store.authoritative_revision() != input_revision
+        or services.engineering_results.source_input_revision() != input_revision
+        or not workspace_store.authoritative_result_present()
+        or workspace_store.authoritative_hash() != engineering_hash
+        or calculation_state.get("status") != "ready"
+        or int(calculation_state.get("revision", 0) or 0) != input_revision
+        or calculation_state.get("engineering_hash") != engineering_hash
+        or summary_state.source is None
+        or summary_state.input_revision != input_revision
+        or summary_state.engineering_hash != engineering_hash
+    ):
+        return None
+    return InputsCalculationRegionContext(
+        identity=RevisionIdentity(
+            input_revision=input_revision,
+            engineering_hash=engineering_hash,
+        ),
+        summary_source=summary_state.source,
+    )
+
+
 def prepare_engineering_workspace_transaction(
     *,
     st_module: Any,
@@ -379,21 +417,34 @@ def render_inputs_calculation_fragment_section(
     st_module: Any,
     runtime: EngineeringWorkspaceRuntime,
     page_context: dict[str, Any],
+    services: InputsSessionServices,
+    region_context: InputsCalculationRegionContext,
 ) -> None:
-    """Build Calculation state from the session-owned Summary handoff."""
+    """Render Calculation only from a current immutable Summary handoff."""
 
-    summary_state = SummaryCalculationFragmentStore(
-        st_module.session_state
-    ).current()
-    if summary_state.source is None:
-        return
-    current_revision = InputsWorkspaceStateStore(
-        st_module.session_state
-    ).authoritative_revision()
-    if summary_state.input_revision != current_revision:
+    workspace_store = InputsWorkspaceStateStore(st_module.session_state)
+    identity = region_context.identity
+    authoritative_result = services.engineering_results.current()
+    calculation_state = workspace_store.calculation_status()
+    if not (
+        identity.matches(
+            input_revision=workspace_store.workspace_revision(),
+            engineering_hash=workspace_store.authoritative_hash(),
+        )
+        and workspace_store.authoritative_revision() == identity.input_revision
+        and services.engineering_results.source_input_revision()
+        == identity.input_revision
+        and authoritative_result is not None
+        and authoritative_result.engineering_hash == identity.engineering_hash
+        and calculation_state.get("status") == "ready"
+        and int(calculation_state.get("revision", 0) or 0)
+        == identity.input_revision
+        and calculation_state.get("engineering_hash")
+        == identity.engineering_hash
+    ):
         return
     runtime.render_calculation(
-        summary_source=summary_state.source,
+        summary_source=region_context.summary_source,
         trace_fn=page_context["pre_widget_trace"],
     )
 
@@ -682,11 +733,18 @@ def render_engineering_workspace(
         time.perf_counter_ns() - section_started_ns
     ) / 1_000_000
     section_started_ns = time.perf_counter_ns()
-    render_inputs_calculation_fragment_section(
-        st_module=st_module,
-        runtime=runtime,
-        page_context=page_context,
+    calculation_region_context = build_inputs_calculation_region_context(
+        session_state=st_module.session_state,
+        services=services,
     )
+    if calculation_region_context is not None:
+        render_inputs_calculation_fragment_section(
+            st_module=st_module,
+            runtime=runtime,
+            page_context=page_context,
+            services=services,
+            region_context=calculation_region_context,
+        )
     section_timings_ms["calculation"] = (
         time.perf_counter_ns() - section_started_ns
     ) / 1_000_000
@@ -1241,8 +1299,10 @@ def render_engineering_workspace_design_brain(
 
 __all__ = [
     "EngineeringWorkspaceRuntime",
+    "InputsCalculationRegionContext",
     "InputsDesignBrainRegionContext",
     "RevisionIdentity",
+    "build_inputs_calculation_region_context",
     "build_inputs_design_brain_region_context",
     "build_engineering_workspace_runtime",
     "prepare_engineering_workspace_transaction",

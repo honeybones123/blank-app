@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from inputs_application.summary_contracts import InputsSummaryCalculationSource
+
 
 @dataclass(frozen=True)
 class RevisionIdentity:
@@ -34,4 +36,16 @@ class InputsDesignBrainRegionContext:
     inputs_detailed_mode: bool
 
 
-__all__ = ["InputsDesignBrainRegionContext", "RevisionIdentity"]
+@dataclass(frozen=True)
+class InputsCalculationRegionContext:
+    """Stable Summary handoff consumed by one Calculation region render."""
+
+    identity: RevisionIdentity
+    summary_source: InputsSummaryCalculationSource
+
+
+__all__ = [
+    "InputsCalculationRegionContext",
+    "InputsDesignBrainRegionContext",
+    "RevisionIdentity",
+]
