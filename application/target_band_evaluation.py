@@ -341,6 +341,162 @@ def resolve_candidate_in_target_band(
     )
 
 
+def resolve_candidate_target_band_distance(
+    candidate: dict[str, Any] | None,
+    mode_config: dict[str, Any] | None,
+    *,
+    default_target_min: float,
+    default_target_max: float,
+    fail_status: str = "FAIL",
+    optimisation_goal_resolver: Callable[[dict[str, Any]], str] | None = None,
+) -> float:
+    """Return the ranking distance to target band for a candidate."""
+
+    domains = resolve_candidate_target_domains_for_band(candidate)
+    if not domains:
+        util = resolve_auto_design_candidate_objective_util(
+            candidate,
+            optimisation_goal_resolver=optimisation_goal_resolver,
+        )
+        mode = dict(mode_config or {})
+        try:
+            target_min = float(mode.get("target_util_min", default_target_min) or default_target_min)
+            target_max = float(mode.get("target_util_max", default_target_max) or default_target_max)
+        except Exception:
+            target_min = float(default_target_min)
+            target_max = float(default_target_max)
+        return resolve_distance_to_target_band(util, target_min, target_max)
+    return resolve_candidate_domain_max_distance(
+        candidate,
+        mode_config,
+        default_target_min=default_target_min,
+        default_target_max=default_target_max,
+        fail_status=fail_status,
+        optimisation_goal_resolver=optimisation_goal_resolver,
+    )
+
+
+def resolve_candidate_target_band_total_distance(
+    candidate: dict[str, Any] | None,
+    mode_config: dict[str, Any] | None,
+    *,
+    default_target_min: float,
+    default_target_max: float,
+    fail_status: str = "FAIL",
+    optimisation_goal_resolver: Callable[[dict[str, Any]], str] | None = None,
+) -> float:
+    """Return total target-band distance for candidate ranking."""
+
+    return resolve_candidate_domain_total_distance(
+        candidate,
+        mode_config,
+        default_target_min=default_target_min,
+        default_target_max=default_target_max,
+        fail_status=fail_status,
+        optimisation_goal_resolver=optimisation_goal_resolver,
+    )
+
+
+def resolve_candidate_step_improves(
+    new_eval: dict[str, Any] | None,
+    old_eval: dict[str, Any] | None,
+    mode_config: dict[str, Any] | None,
+    *,
+    default_target_min: float,
+    default_target_max: float,
+    fail_status: str = "FAIL",
+    optimisation_goal_resolver: Callable[[dict[str, Any]], str] | None = None,
+) -> bool:
+    """Return whether a candidate step improves target-band progress."""
+
+    old_candidate = old_eval if isinstance(old_eval, dict) else {}
+    new_candidate = new_eval if isinstance(new_eval, dict) else {}
+    old_pass = bool((old_candidate.get("overview") or {}).get("all_key_pass"))
+    new_pass = bool((new_candidate.get("overview") or {}).get("all_key_pass"))
+    old_ib = resolve_candidate_in_target_band(
+        old_candidate, mode_config, default_target_min=default_target_min,
+        default_target_max=default_target_max, fail_status=fail_status,
+        optimisation_goal_resolver=optimisation_goal_resolver,
+    )
+    new_ib = resolve_candidate_in_target_band(
+        new_candidate, mode_config, default_target_min=default_target_min,
+        default_target_max=default_target_max, fail_status=fail_status,
+        optimisation_goal_resolver=optimisation_goal_resolver,
+    )
+    old_u = resolve_auto_design_candidate_objective_util(
+        old_candidate, optimisation_goal_resolver=optimisation_goal_resolver
+    )
+    new_u = resolve_auto_design_candidate_objective_util(
+        new_candidate, optimisation_goal_resolver=optimisation_goal_resolver
+    )
+    old_d = resolve_candidate_target_band_distance(
+        old_candidate, mode_config, default_target_min=default_target_min,
+        default_target_max=default_target_max, fail_status=fail_status,
+        optimisation_goal_resolver=optimisation_goal_resolver,
+    )
+    new_d = resolve_candidate_target_band_distance(
+        new_candidate, mode_config, default_target_min=default_target_min,
+        default_target_max=default_target_max, fail_status=fail_status,
+        optimisation_goal_resolver=optimisation_goal_resolver,
+    )
+    if resolve_candidate_target_domains_for_band(old_candidate) or resolve_candidate_target_domains_for_band(new_candidate):
+        old_progress = resolve_candidate_required_domain_progress(
+            old_candidate, mode_config, default_target_min=default_target_min,
+            default_target_max=default_target_max, fail_status=fail_status,
+            optimisation_goal_resolver=optimisation_goal_resolver,
+        )
+        new_progress = resolve_candidate_required_domain_progress(
+            new_candidate, mode_config, default_target_min=default_target_min,
+            default_target_max=default_target_max, fail_status=fail_status,
+            optimisation_goal_resolver=optimisation_goal_resolver,
+        )
+        old_fail = int(old_progress.get("required_fail_count", 0) or 0)
+        new_fail = int(new_progress.get("required_fail_count", 0) or 0)
+        old_unsatisfied = int(old_progress.get("required_unsatisfied_count", 0) or 0)
+        new_unsatisfied = int(new_progress.get("required_unsatisfied_count", 0) or 0)
+        old_max = float(old_progress.get("domain_max_distance", float("inf")))
+        new_max = float(new_progress.get("domain_max_distance", float("inf")))
+        old_total = float(old_progress.get("domain_total_distance", float("inf")))
+        new_total = float(new_progress.get("domain_total_distance", float("inf")))
+        if new_ib and not old_ib and new_pass:
+            return True
+        if new_fail < old_fail or new_unsatisfied < old_unsatisfied:
+            return True
+        if new_pass and not old_pass:
+            max_not_worse = math.isfinite(old_max) and math.isfinite(new_max) and new_max <= old_max + 1e-6
+            total_improved = math.isfinite(old_total) and math.isfinite(new_total) and new_total < old_total - 1e-6
+            return bool(max_not_worse or total_improved)
+        if new_max < old_max - 1e-6:
+            return True
+        if new_max <= old_max + 1e-6 and new_total < old_total - 1e-6:
+            return True
+        return False
+    old_total = resolve_candidate_target_band_total_distance(
+        old_candidate, mode_config, default_target_min=default_target_min,
+        default_target_max=default_target_max, fail_status=fail_status,
+        optimisation_goal_resolver=optimisation_goal_resolver,
+    )
+    new_total = resolve_candidate_target_band_total_distance(
+        new_candidate, mode_config, default_target_min=default_target_min,
+        default_target_max=default_target_max, fail_status=fail_status,
+        optimisation_goal_resolver=optimisation_goal_resolver,
+    )
+    if new_pass and not old_pass or (new_ib and not old_ib and new_pass):
+        return True
+    if new_d < old_d - 1e-6:
+        return True
+    if new_d <= old_d + 1e-6 and new_total < old_total - 1e-6:
+        return True
+    mode = dict(mode_config or {})
+    lo = float(mode.get("target_util_min", default_target_min) or default_target_min)
+    hi = float(mode.get("target_util_max", default_target_max) or default_target_max)
+    if old_u < lo and new_u > old_u + 1e-9 and new_pass == old_pass:
+        return True
+    if old_u > hi and new_u < old_u - 1e-9 and new_pass == old_pass:
+        return True
+    return False
+
+
 __all__ = [
     "resolve_candidate_domain_max_distance",
     "resolve_candidate_domain_score",
@@ -350,6 +506,9 @@ __all__ = [
     "resolve_candidate_in_target_band",
     "resolve_candidate_required_domain_progress",
     "resolve_candidate_required_domains_satisfied",
+    "resolve_candidate_step_improves",
+    "resolve_candidate_target_band_distance",
+    "resolve_candidate_target_band_total_distance",
     "resolve_candidate_target_domains_for_band",
     "resolve_distance_to_target_band",
 ]
