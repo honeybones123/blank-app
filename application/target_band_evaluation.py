@@ -497,6 +497,109 @@ def resolve_candidate_step_improves(
     return False
 
 
+def resolve_target_band_exhaustion_refinement_allowed(
+    current_eval: dict[str, Any] | None,
+    next_hop_payload: dict[str, Any] | None,
+    mode_config: dict[str, Any] | None,
+    *,
+    default_target_min: float,
+    default_target_max: float,
+    fail_status: str = "FAIL",
+    optimisation_goal_resolver: Callable[[dict[str, Any]], str] | None = None,
+) -> bool:
+    """Return whether an exhaustion fallback refinement may be injected."""
+
+    if not isinstance(current_eval, dict) or not isinstance(next_hop_payload, dict):
+        return False
+    if not bool((current_eval.get("overview") or {}).get("all_key_pass")):
+        return False
+    current_domains = list(resolve_candidate_target_domains_for_band(current_eval) or [])
+    if len(current_domains) < 2:
+        return False
+    current_progress = resolve_candidate_required_domain_progress(
+        current_eval, mode_config, default_target_min=default_target_min,
+        default_target_max=default_target_max, fail_status=fail_status,
+        optimisation_goal_resolver=optimisation_goal_resolver,
+    )
+    if int(current_progress.get("required_fail_count", 0) or 0) != 0:
+        return False
+    if int(current_progress.get("required_unsatisfied_count", 0) or 0) <= 1:
+        return False
+    candidate_eval = next_hop_payload.get("eval")
+    if not isinstance(candidate_eval, dict):
+        return False
+    if not bool((candidate_eval.get("overview") or {}).get("all_key_pass")):
+        return False
+    candidate_progress = resolve_candidate_required_domain_progress(
+        candidate_eval, mode_config, default_target_min=default_target_min,
+        default_target_max=default_target_max, fail_status=fail_status,
+        optimisation_goal_resolver=optimisation_goal_resolver,
+    )
+    if int(candidate_progress.get("required_fail_count", 0) or 0) != 0:
+        return False
+    if int(candidate_progress.get("required_unsatisfied_count", 0) or 0) > int(current_progress.get("required_unsatisfied_count", 0) or 0):
+        return False
+    current_max = float(current_progress.get("domain_max_distance", float("inf")))
+    candidate_max = float(candidate_progress.get("domain_max_distance", float("inf")))
+    current_total = float(current_progress.get("domain_total_distance", float("inf")))
+    candidate_total = float(candidate_progress.get("domain_total_distance", float("inf")))
+    if not all(math.isfinite(value) for value in (current_max, candidate_max, current_total, candidate_total)):
+        return False
+    if candidate_max > current_max + 1e-6 or candidate_total >= current_total - 1e-6:
+        return False
+    return resolve_candidate_step_improves(
+        candidate_eval, current_eval, mode_config,
+        default_target_min=default_target_min, default_target_max=default_target_max,
+        fail_status=fail_status, optimisation_goal_resolver=optimisation_goal_resolver,
+    )
+
+
+def resolve_target_band_next_hop_precheck(
+    current_eval: dict[str, Any] | None,
+    mode_config: dict[str, Any] | None,
+    *,
+    default_target_min: float,
+    default_target_max: float,
+    fail_status: str = "FAIL",
+    optimisation_goal_resolver: Callable[[dict[str, Any]], str] | None = None,
+) -> dict[str, Any]:
+    """Resolve pure preconditions before fallback refinement generation."""
+
+    if not isinstance(current_eval, dict):
+        return {"allowed": False, "reason": "missing_current_eval", "overview": {}, "current_distance": None, "current_state": {}}
+    overview = dict((current_eval.get("overview") or {}))
+    if not bool(overview.get("all_key_pass")):
+        return {"allowed": False, "reason": "current_not_all_pass", "overview": overview, "current_distance": None, "current_state": {}}
+    try:
+        lo = float((mode_config or {}).get("target_util_min", default_target_min) or default_target_min)
+        hi = float((mode_config or {}).get("target_util_max", default_target_max) or default_target_max)
+    except Exception:
+        lo = float(default_target_min)
+        hi = float(default_target_max)
+    try:
+        worst = float(overview.get("governing_util", overview.get("worst_util", 0.0)) or 0.0)
+    except (TypeError, ValueError):
+        worst = None
+    statuses = dict(overview.get("statuses") or {})
+    any_fail = any(
+        value == fail_status or str(value or "").strip().upper() == str(fail_status).strip().upper()
+        for value in statuses.values()
+    )
+    if worst is not None and not any_fail and lo <= float(worst) <= hi:
+        return {"allowed": False, "reason": "already_in_strict_target_band", "overview": overview, "current_distance": None, "current_state": {}}
+    current_distance = resolve_candidate_target_band_distance(
+        current_eval, mode_config, default_target_min=default_target_min,
+        default_target_max=default_target_max, fail_status=fail_status,
+        optimisation_goal_resolver=optimisation_goal_resolver,
+    )
+    if current_distance is None or not math.isfinite(float(current_distance)):
+        return {"allowed": False, "reason": "non_finite_current_distance", "overview": overview, "current_distance": current_distance, "current_state": {}}
+    current_state = dict(current_eval.get("state") or {})
+    if not current_state:
+        return {"allowed": False, "reason": "missing_current_state", "overview": overview, "current_distance": current_distance, "current_state": {}}
+    return {"allowed": True, "reason": "allowed", "overview": overview, "current_distance": float(current_distance), "current_state": current_state}
+
+
 __all__ = [
     "resolve_candidate_domain_max_distance",
     "resolve_candidate_domain_score",
@@ -509,6 +612,8 @@ __all__ = [
     "resolve_candidate_step_improves",
     "resolve_candidate_target_band_distance",
     "resolve_candidate_target_band_total_distance",
+    "resolve_target_band_exhaustion_refinement_allowed",
+    "resolve_target_band_next_hop_precheck",
     "resolve_candidate_target_domains_for_band",
     "resolve_distance_to_target_band",
 ]

@@ -20,6 +20,8 @@ from application.target_band_evaluation import (
     resolve_candidate_required_domain_progress,
     resolve_candidate_required_domains_satisfied,
     resolve_candidate_step_improves,
+    resolve_target_band_exhaustion_refinement_allowed,
+    resolve_target_band_next_hop_precheck,
 )
 from inputs_application.engineering_predicates import (
     parse_util_value,
@@ -28,8 +30,6 @@ from inputs_application.engineering_predicates import (
 )
 from application.candidate_delta_policy import diff_candidate_state_updates
 from inputs_application.legacy_design_brain_adapter import (
-    resolve_target_band_exhaustion_refinement_allowed,
-    resolve_target_band_next_hop_precheck,
     select_best_target_band_refinement_candidate,
 )
 from inputs_application.candidate_metrics import int_from_state
