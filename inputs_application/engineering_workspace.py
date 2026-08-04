@@ -1066,6 +1066,12 @@ def render_engineering_workspace(
           "diagram_2d_timings_ms": dict(
               ss.get("_inputs_last_2d_diagram_timings_ms") or {}
           ),
+          "diagram_2d_source_identity": dict(
+              ss.get("_inputs_model_2d_source_identity") or {}
+          ),
+          "diagram_2d_view_model_trace": dict(
+              ss.get("_inputs_diagram_view_model_trace") or {}
+          ),
           "engineering_compute_count_by_revision": dict(
               ss.get("_inputs_engineering_compute_count_by_revision") or {}
           ),
