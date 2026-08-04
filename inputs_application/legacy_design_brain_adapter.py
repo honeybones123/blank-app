@@ -140,13 +140,11 @@ from design_brain.final_publication import (
     build_final_design_guide_publication,
     build_final_publication_cta_from_current_state,
     final_design_guide_publication_from_dict,
-    stable_final_publication_hash,
 )
 from design_brain.publication import (
     accepted_green_exact_blocker_is_valid,
     design_guide_cache_fingerprint_from_plain_data,
     design_guide_primary_apply_state_fingerprint_from_state,
-    normalise_design_guide_candidate_id,
 )
 from design_brain.repair import (
     candidate_preview_statuses_have_explicit_fail,
@@ -236,11 +234,9 @@ __all__ = [
     "build_final_design_guide_publication",
     "build_final_publication_cta_from_current_state",
     "final_design_guide_publication_from_dict",
-    "stable_final_publication_hash",
     "accepted_green_exact_blocker_is_valid",
     "design_guide_cache_fingerprint_from_plain_data",
     "design_guide_primary_apply_state_fingerprint_from_state",
-    "normalise_design_guide_candidate_id",
     "candidate_preview_statuses_have_explicit_fail",
     "requires_full_coverage_for_primary_one_click",
     "resolve_design_guide_controller_guidance_action_generated_updates",
