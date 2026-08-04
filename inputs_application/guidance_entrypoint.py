@@ -5,9 +5,7 @@ from __future__ import annotations
 from functools import partial
 from typing import Any, Callable
 
-from inputs_application.legacy_design_brain_adapter import (
-    build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence,
-)
+from inputs_application.design_brain_composition import build_guidance_blocker_builder
 from inputs_application.efficiency_classification import (
     identify_materially_overprovided_non_governing_families,
 )
@@ -82,7 +80,7 @@ def build_guidance_entrypoint_runtime(
                 collect_design_overview=collect_overview,
                 parse_util_value=parse_util_value,
                 build_no_repair_blocker=(
-                    build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence
+                    build_guidance_blocker_builder()
                 ),
             ),
         ),

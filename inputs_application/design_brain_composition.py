@@ -10,6 +10,7 @@ from inputs_application.replacement_design_brain_adapter import (
 from inputs_application.legacy_design_brain_adapter import (
     LegacyDesignBrainAdapter,
     LegacyGuidanceProvider,
+    build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence,
 )
 
 
@@ -36,7 +37,14 @@ def build_replacement_design_brain_service(
     )
 
 
+def build_guidance_blocker_builder():
+    """Expose the selected implementation's blocker through composition."""
+
+    return build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence
+
+
 __all__ = [
     "build_design_brain_service",
     "build_replacement_design_brain_service",
+    "build_guidance_blocker_builder",
 ]
