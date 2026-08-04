@@ -16,10 +16,10 @@ from application.contracts.design_brain import (
     EngineeringInputSnapshot,
     build_authoritative_design_result,
 )
-from design_brain.final_publication import build_final_design_guide_publication
-from design_brain.family_classification_runtime import classify_family_from_whole_beam_evidence
-from design_brain.family_ladder_dispatch import resolve_family_ladder_dispatch
-from design_brain.whole_beam_family_restamp import (
+from inputs_application.legacy_design_brain_adapter import (
+    build_final_design_guide_publication,
+    classify_family_from_whole_beam_evidence,
+    resolve_family_ladder_dispatch,
     restamp_primary_guidance_family_from_whole_beam,
 )
 

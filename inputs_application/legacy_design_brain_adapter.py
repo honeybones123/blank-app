@@ -5,9 +5,6 @@ from __future__ import annotations
 from typing import Callable, Mapping
 
 from application.design_brain_port import DesignBrainExecution, DesignBrainRequest
-from inputs_application.design_brain_pipeline_runtime import (
-    run_live_design_brain_pipeline,
-)
 from design_brain.candidate_evaluation import (
     build_full_candidate_evaluation_result_projection,
     build_target_band_fallback_scored_candidate,
@@ -48,6 +45,8 @@ from design_brain.families.bending import (
 )
 from design_brain.family_classification import load_family_classification_contract
 from design_brain.family_classification_runtime import classify_family_from_whole_beam_evidence
+from design_brain.family_ladder_dispatch import resolve_family_ladder_dispatch
+from design_brain.whole_beam_family_restamp import restamp_primary_guidance_family_from_whole_beam
 from design_brain.families.registry import normalise_governing_family
 from design_brain.final_design_guide_formatter import build_final_design_guide_card_format
 from design_brain.families.bending_fail_governs.geometry_ratio import (
@@ -153,6 +152,13 @@ class LegacyDesignBrainAdapter:
         self._guidance_provider = guidance_provider
 
     def run(self, request: DesignBrainRequest) -> DesignBrainExecution:
+        # Keep the concrete pipeline import inside the selected implementation
+        # boundary.  This also lets legacy result projections depend on this
+        # adapter without creating an import cycle through the pipeline.
+        from inputs_application.design_brain_pipeline_runtime import (
+            run_live_design_brain_pipeline,
+        )
+
         guidance_payload = dict(self._guidance_provider(request) or {})
         execution = run_live_design_brain_pipeline(
             engineering_snapshot=request.engineering_snapshot,
@@ -228,6 +234,8 @@ __all__ = [
     "resolve_design_guide_controller_guidance_action_payload_updates",
     "bending_depth_width_ratio_limit",
     "depth_width_ratio",
+    "resolve_family_ladder_dispatch",
+    "restamp_primary_guidance_family_from_whole_beam",
     "FamilyLadderGuidanceRuntime",
     "_family_ladder_guidance_item",
     "bind_family_ladder_guidance_dependencies",
