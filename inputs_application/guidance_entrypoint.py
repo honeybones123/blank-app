@@ -5,47 +5,7 @@ from __future__ import annotations
 from functools import partial
 from typing import Any, Callable
 
-from inputs_application.design_brain_composition import build_guidance_blocker_builder
-from inputs_application.efficiency_classification import (
-    identify_materially_overprovided_non_governing_families,
-)
-from inputs_application.engineering_predicates import parse_util_value
-from inputs_application.geometry_search_policy import (
-    design_mode_config,
-    design_optimisation_goal,
-)
-from inputs_application.guidance_runtime_provider import (
-    build_guidance_runtime_provider,
-)
-from inputs_application.guidance_runtime_contracts import (
-    GuidanceEntrypointRuntime,
-    ServiceabilityPreflightRuntime,
-)
-from inputs_application.mixed_width_cleanup_promotion import (
-    MixedWidthCleanupPromotionRuntime,
-    promote_shear_fail_bending_overdesign_width_cleanup,
-)
-from inputs_application.policy_constants import (
-    EFFICIENCY_TARGET_UTIL_MAX,
-    EFFICIENCY_TARGET_UTIL_MIN,
-)
-from inputs_application.serviceability_preflight import (
-    serviceability_governs_preflight_payload,
-)
-from inputs_page_modules.design_overview_adapter import (
-    collect_design_overview,
-)
-from inputs_page_modules.guidance_compute import (
-    GuidanceComputeRuntime,
-    _application_evaluate_auto_design_candidate,
-    _bind_guidance_compute_runtime,
-    _overview_required_checks_acceptable,
-    build_guidance_compute_runtime,
-    compute_design_guidance_items,
-)
-from inputs_page_modules.recommendation_candidate_adapter import (
-    evaluate_full_candidate,
-)
+from inputs_application.guidance_runtime_contracts import GuidanceEntrypointRuntime
 
 
 def build_guidance_entrypoint_runtime(
@@ -54,6 +14,36 @@ def build_guidance_entrypoint_runtime(
     os_module: Any,
     sys_module: Any,
 ) -> GuidanceEntrypointRuntime:
+    # These imports belong to the legacy guidance implementation.  Keep them
+    # behind the call boundary so selecting V2 does not import the old family
+    # graph merely because the page shell imports this neutral entrypoint.
+    from inputs_application.design_brain_composition import build_guidance_blocker_builder
+    from inputs_application.efficiency_classification import (
+        identify_materially_overprovided_non_governing_families,
+    )
+    from inputs_application.engineering_predicates import parse_util_value
+    from inputs_application.geometry_search_policy import (
+        design_mode_config,
+        design_optimisation_goal,
+    )
+    from inputs_application.guidance_runtime_provider import build_guidance_runtime_provider
+    from inputs_application.guidance_runtime_contracts import ServiceabilityPreflightRuntime
+    from inputs_application.mixed_width_cleanup_promotion import (
+        MixedWidthCleanupPromotionRuntime,
+        promote_shear_fail_bending_overdesign_width_cleanup,
+    )
+    from inputs_application.policy_constants import (
+        EFFICIENCY_TARGET_UTIL_MAX,
+        EFFICIENCY_TARGET_UTIL_MIN,
+    )
+    from inputs_application.serviceability_preflight import serviceability_governs_preflight_payload
+    from inputs_page_modules.design_overview_adapter import collect_design_overview
+    from inputs_page_modules.guidance_compute import (
+        _application_evaluate_auto_design_candidate,
+        _overview_required_checks_acceptable,
+        build_guidance_compute_runtime,
+    )
+    from inputs_page_modules.recommendation_candidate_adapter import evaluate_full_candidate
     compute_runtime = build_guidance_compute_runtime(
         build_guidance_runtime_provider(st_module)
     )
@@ -112,6 +102,8 @@ def compute_inputs_guidance(
     debug_enabled: bool = False,
     request_kind: str = "design_guide",
 ) -> dict:
+    from inputs_page_modules.guidance_compute import _bind_guidance_compute_runtime
+
     # Preflight may return without entering ``compute_design_guidance_items``.
     # Bind the frozen runtime first so downstream publication helpers have the
     # same owners available on both the preflight and normal compute routes.
@@ -152,6 +144,8 @@ def run_guidance_compute(
     request_kind: str,
 ) -> dict:
     """Compute guidance items from the already-bound runtime and state snapshot."""
+
+    from inputs_page_modules.guidance_compute import compute_design_guidance_items
 
     return compute_design_guidance_items(
         runtime.compute_runtime,

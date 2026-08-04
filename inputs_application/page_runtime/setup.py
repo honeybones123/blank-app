@@ -126,7 +126,6 @@ from inputs_page_modules.diagrams.source_projection import build_section_outline
 
 from inputs_page_modules.design_guide import render_design_guide_panel_orchestration
 
-from inputs_page_modules.design_guide import current_coordinators as design_guide_current_coordinators
 from inputs_page_modules.design_overview_adapter import collect_design_overview
 
 from inputs_page_modules.design_guide.debug_sidebar import render_design_guide_debug_sidebar

@@ -10,9 +10,7 @@ from typing import Any, Callable
 
 import streamlit as st
 
-from inputs_page_modules.design_guide import (
-    current_coordinators as design_guide_current_coordinators,
-)
+from inputs_application.design_brain_composition import selected_design_brain_adapter_name
 from inputs_application.page_runtime.batch import (
     render_inputs_batch_design_manager_coordinator,
 )
@@ -24,9 +22,6 @@ from inputs_application.page_runtime.common import (
     make_beam_3d_figure,
     make_summary_cross_section_figure,
     reconcile_inputs_design_actions_before_authority,
-)
-from inputs_application.page_runtime.design_guide import (
-    render_inputs_design_guide_current_coordinator,
 )
 from inputs_application.page_runtime.divider import (
     render_inputs_page_divider_coordinator,
@@ -52,6 +47,12 @@ from inputs_application.page_runtime.widgets import (
 
 
 PageCallable = Callable[..., Any]
+
+
+def _render_design_guide_placeholder(**_: Any) -> None:
+    """V2 owns Design Guide rendering through the workspace card adapter."""
+
+    return None
 
 _DESIGN_GUIDE_DEPENDENCY_MODULE_NAMES = (
     "inputs_application.policy_constants",
@@ -155,31 +156,51 @@ class InputsPageRuntime:
 
 
 def build_inputs_page_runtime() -> InputsPageRuntime:
-    dependency_modules = tuple(
-        importlib.import_module(module_name)
-        for module_name in _DESIGN_GUIDE_DEPENDENCY_MODULE_NAMES
-    )
-    provider = InputsRuntimeDependencyProvider(
-        modules=(
-            common,
-            calculations,
-            widgets,
-            setup,
-            summaries,
-            tail,
-            mode,
-            batch,
-            design_guide,
-            divider,
-            *dependency_modules,
+    selected_adapter = selected_design_brain_adapter_name()
+    design_guide_current_coordinators = None
+    render_design_guide_current_coordinator: PageCallable = _render_design_guide_placeholder
+    design_guide_module = None
+    if selected_adapter == "legacy":
+        from inputs_page_modules.design_guide import (
+            current_coordinators as design_guide_current_coordinators,
         )
+        from inputs_application.page_runtime import design_guide as design_guide_module
+        from inputs_application.page_runtime.design_guide import (
+            render_inputs_design_guide_current_coordinator,
+        )
+
+        render_design_guide_current_coordinator = (
+            render_inputs_design_guide_current_coordinator
+        )
+        dependency_modules = tuple(
+            importlib.import_module(module_name)
+            for module_name in _DESIGN_GUIDE_DEPENDENCY_MODULE_NAMES
+        )
+    else:
+        dependency_modules = ()
+    runtime_modules = (
+        common,
+        calculations,
+        widgets,
+        setup,
+        summaries,
+        tail,
+        mode,
+        batch,
+        divider,
     )
-    design_guide_current_coordinators.configure_design_guide_current_provider(
-        provider,
-        st_module=st,
-        os_module=os,
-        sys_module=sys,
+    if design_guide_module is not None:
+        runtime_modules = (*runtime_modules, design_guide_module)
+    provider = InputsRuntimeDependencyProvider(
+        modules=(*runtime_modules, *dependency_modules)
     )
+    if design_guide_current_coordinators is not None:
+        design_guide_current_coordinators.configure_design_guide_current_provider(
+            provider,
+            st_module=st,
+            os_module=os,
+            sys_module=sys,
+        )
     _bind_declared_runtime_dependencies(provider)
     return InputsPageRuntime(
         make_beam_3d_figure=make_beam_3d_figure,
@@ -192,7 +213,7 @@ def build_inputs_page_runtime() -> InputsPageRuntime:
         refresh_design_brain_result=refresh_inputs_design_brain_result_background,
         render_batch_design_manager=render_inputs_batch_design_manager_coordinator,
         render_calculation=render_inputs_calculation_fragment_current_coordinator,
-        render_design_guide=render_inputs_design_guide_current_coordinator,
+        render_design_guide=render_design_guide_current_coordinator,
         render_design_mode_selector=render_inputs_design_mode_selector_coordinator,
         render_page_divider=render_inputs_page_divider_coordinator,
         render_summary_pipeline=render_inputs_summary_pipeline_current_coordinator,

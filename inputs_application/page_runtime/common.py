@@ -100,6 +100,8 @@ from engineering_check_ui import BENDING_ROW_UID_TO_TAB, SHEAR_ROW_UID_TO_TAB
 
 from inputs_application.one_click_entrypoint import run_one_click_auto_design
 
+from inputs_application.design_brain_composition import selected_design_brain_adapter_name
+
 from inputs_application.guidance_entrypoint import (
     build_guidance_entrypoint_runtime,
     compute_inputs_guidance,
@@ -120,8 +122,6 @@ from inputs_page_modules.fragments import run_inputs_fragment
 from inputs_page_modules.diagrams.source_projection import build_section_outline_points_and_bbox as build_section_outline_points_and_bbox_module
 
 from inputs_page_modules.design_guide import render_design_guide_panel_orchestration
-
-from inputs_page_modules.design_guide import current_coordinators as design_guide_current_coordinators
 
 from inputs_page_modules.design_guide.debug_sidebar import render_design_guide_debug_sidebar
 
@@ -447,10 +447,14 @@ MODEL_RENDER_FINGERPRINT_KEYS = PRIMARY_GEOMETRY_KEYS | {
     "bot_flange_transverse_legs",
 }
 
-_GUIDANCE_ENTRYPOINT_RUNTIME = build_guidance_entrypoint_runtime(
-    st_module=st,
-    os_module=os,
-    sys_module=sys,
+_GUIDANCE_ENTRYPOINT_RUNTIME = (
+    build_guidance_entrypoint_runtime(
+        st_module=st,
+        os_module=os,
+        sys_module=sys,
+    )
+    if selected_design_brain_adapter_name() == "legacy"
+    else None
 )
 
 DEBUG_DESIGN_GUIDANCE_PROBE = True
@@ -462,6 +466,8 @@ def _compute_design_guidance_items(
     debug_enabled: bool = False,
     request_kind: str = "design_guide",
 ) -> dict:
+    if _GUIDANCE_ENTRYPOINT_RUNTIME is None:
+        raise RuntimeError("legacy guidance compute is unavailable when V2 is selected")
     return compute_inputs_guidance(
         _GUIDANCE_ENTRYPOINT_RUNTIME,
         state,

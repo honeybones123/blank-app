@@ -8,22 +8,21 @@ from typing import Any
 
 import streamlit as st
 
-from inputs_application.guidance_entrypoint import (
-    build_guidance_entrypoint_runtime,
-)
-from inputs_application.one_click_runtime_provider import (
-    build_partial_one_click_runtime_provider,
-    missing_one_click_runtime_dependencies,
-)
-from inputs_page_modules.auto_design_compute import (
-    run_one_click_auto_design_coordinator,
-)
 
 
 def build_one_click_runtime_provider(
     *,
     st_module: Any = st,
 ) -> Any:
+    # The one-click implementation is a legacy compatibility path while V2
+    # owns automatic Design Brain publication.  Keep its heavy imports at the
+    # invocation boundary so importing the page shell does not load V1.
+    from inputs_application.guidance_entrypoint import build_guidance_entrypoint_runtime
+    from inputs_application.one_click_runtime_provider import (
+        build_partial_one_click_runtime_provider,
+        missing_one_click_runtime_dependencies,
+    )
+
     guidance_runtime = build_guidance_entrypoint_runtime(
         st_module=st_module,
         os_module=os,
@@ -50,6 +49,8 @@ def run_one_click_auto_design(
     sys_module: Any = sys,
 ) -> dict:
     """Run one-click using only the typed permanent application provider."""
+    from inputs_page_modules.auto_design_compute import run_one_click_auto_design_coordinator
+
     return run_one_click_auto_design_coordinator(
         build_one_click_runtime_provider(st_module=st_module),
         st_module,
