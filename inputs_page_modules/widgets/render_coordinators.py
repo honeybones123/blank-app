@@ -59,15 +59,19 @@ def render_inputs_widget_sections(
         section_fn: Callable[..., Any],
         **section_kwargs: Any,
     ) -> Any:
-        # Every input section and its diagrams share one fast parent fragment.
-        # Sibling child fragments cannot observe one another's widget reruns,
-        # which was the source of stale diagrams after reinforcement edits.
-        _ = run_fragment_fn
         section_started_ns = time.perf_counter_ns()
-        result = _render_inputs_widget_subfragment(
-            section_fn=section_fn,
-            section_kwargs=section_kwargs,
-        )
+        if callable(run_fragment_fn):
+            result = run_fragment_fn(
+                st_module=st_module,
+                fragment_name=f"engineering_input_section_{fragment_name}",
+                render_fn=section_fn,
+                kwargs=section_kwargs,
+            )
+        else:
+            result = _render_inputs_widget_subfragment(
+                section_fn=section_fn,
+                section_kwargs=section_kwargs,
+            )
         section_timings_ms[fragment_name] = round(
             (time.perf_counter_ns() - section_started_ns) / 1_000_000,
             3,
