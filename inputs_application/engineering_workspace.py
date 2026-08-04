@@ -16,6 +16,7 @@ from inputs_application.design_guide_fragment_store import (
 )
 from inputs_application.design_brain_polling import (
     DEFAULT_DESIGN_BRAIN_POLL_INTERVAL_S,
+    DESIGN_BRAIN_POLLING_STATE_KEY,
     register_design_brain_fragment,
     start_design_brain_polling,
     stop_design_brain_polling,
@@ -1367,17 +1368,30 @@ def render_engineering_workspace_design_brain(
         design_brain_slot = st_module.empty()
     workspace_store = InputsWorkspaceStateStore(ss)
     input_revision = workspace_store.workspace_revision()
+    prior_polling_state = dict(
+        ss.get(DESIGN_BRAIN_POLLING_STATE_KEY) or {}
+    )
+    fast_wake_requires_repace = bool(
+        prior_polling_state.get("active") is True
+        and prior_polling_state.get("last_action") == "started"
+        and str(prior_polling_state.get("last_reason") or "").startswith(
+            "input_transaction:"
+        )
+        and int(prior_polling_state.get("last_revision") or 0)
+        == int(input_revision)
+    )
     register_design_brain_fragment(ss, revision=input_revision)
     # An input commit wakes this stopped fragment on a short 100 ms interval.
     # That interval is only a first-wake latency optimization; leaving it as
     # the steady cadence can queue another rerun while a ready card is being
     # rendered. Re-pace immediately, then terminal branches cancel the timer.
-    start_design_brain_polling(
-        ss,
-        reason="fragment_execution_repaced",
-        revision=input_revision,
-        interval_s=DEFAULT_DESIGN_BRAIN_POLL_INTERVAL_S,
-    )
+    if fast_wake_requires_repace:
+        start_design_brain_polling(
+            ss,
+            reason="fragment_execution_repaced",
+            revision=input_revision,
+            interval_s=DEFAULT_DESIGN_BRAIN_POLL_INTERVAL_S,
+        )
     services = InputsSessionServices.from_mapping(ss)
     region_context = build_inputs_design_brain_region_context(
         session_state=ss,
