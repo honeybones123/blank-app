@@ -1660,9 +1660,31 @@ def select_row(
         if forced_browser_recipe_value is not None and forced_browser_recipe_value in _opts
         else None
     )
+    hydrated_seed_index = None
+    hydrated_map = st.session_state.get("_hydrated_from_shared_map")
+    if forced_browser_recipe_index is None and isinstance(hydrated_map, dict):
+        hydrated_sentinel = object()
+        hydrated_value = hydrated_map.pop(original_key, hydrated_sentinel)
+        if hydrated_value is not hydrated_sentinel:
+            hydrated_seed_value = next(
+                (
+                    option
+                    for option in _opts
+                    if _browser_recipe_value_matches(hydrated_value, option)
+                ),
+                None,
+            )
+            if hydrated_seed_value in _opts:
+                hydrated_seed_index = _opts.index(hydrated_seed_value)
+                # Streamlit's frontend otherwise retains the selectbox's
+                # implicit index=0 even though the server-side key was
+                # force-hydrated. Consume the hydration as the widget's one
+                # explicit initial value so both sides begin identically.
+                st.session_state.pop(f"_cached_{original_key}", None)
+                st.session_state.pop(original_key, None)
 
     # Seed ONCE only
-    if original_key not in st.session_state:
+    if original_key not in st.session_state and hydrated_seed_index is None:
         # Prefer shared if present, otherwise default
         shared_key = TAB_KEYS.get(original_key)
         candidate = st.session_state.get(shared_key, default) if shared_key else default
@@ -1714,10 +1736,15 @@ def select_row(
             else:
                 st.markdown(f"**{label_text}**")
         with col2:
-            if forced_browser_recipe_index is None:
+            initial_index = (
+                forced_browser_recipe_index
+                if forced_browser_recipe_index is not None
+                else hydrated_seed_index
+            )
+            if initial_index is None:
                 _ = _coerce_current_value()
             else:
-                selectbox_kwargs["index"] = forced_browser_recipe_index
+                selectbox_kwargs["index"] = initial_index
             return st.selectbox(
                 _safe_label,
                 options=_opts,
@@ -1730,10 +1757,15 @@ def select_row(
         label_with_hover(label_text, help_text, required=False)
     else:
         st.markdown(f"**{label_text}**")
-    if forced_browser_recipe_index is None:
+    initial_index = (
+        forced_browser_recipe_index
+        if forced_browser_recipe_index is not None
+        else hydrated_seed_index
+    )
+    if initial_index is None:
         _ = _coerce_current_value()
     else:
-        selectbox_kwargs["index"] = forced_browser_recipe_index
+        selectbox_kwargs["index"] = initial_index
     return st.selectbox(
         _safe_label,
         options=_opts,
