@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from inputs_application.legacy_design_brain_adapter import build_bottom_reo_arrangement_pool_from_state
+from inputs_application.design_brain_composition import build_bottom_arrangement_pool_builder
 from inputs_application.candidate_identity import make_auto_design_candidate_key
 from inputs_application.candidate_metrics import candidate_bottom_updates
 from inputs_application.geometry_search_policy import (
@@ -90,7 +90,7 @@ def generate_secondary_bending_tightening_states(
     states: dict[tuple, dict] = {}
     raw_limit = max(limit * 2, 6)
     for band in range(2):
-        arrangements = build_bottom_reo_arrangement_pool_from_state(
+        arrangements = build_bottom_arrangement_pool_builder()(
             base_state,
             low_reo_mode,
             band=band,

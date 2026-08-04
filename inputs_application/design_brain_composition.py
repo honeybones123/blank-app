@@ -53,9 +53,20 @@ def build_publication_cta_builder():
     return build_final_publication_cta_from_current_state
 
 
+def build_bottom_arrangement_pool_builder():
+    """Expose the selected bending family arrangement generator by composition."""
+
+    from inputs_application.legacy_design_brain_adapter import (
+        build_bottom_reo_arrangement_pool_from_state,
+    )
+
+    return build_bottom_reo_arrangement_pool_from_state
+
+
 __all__ = [
     "build_design_brain_service",
     "build_replacement_design_brain_service",
     "build_guidance_blocker_builder",
     "build_publication_cta_builder",
+    "build_bottom_arrangement_pool_builder",
 ]
