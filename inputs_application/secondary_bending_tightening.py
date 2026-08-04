@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from design_brain.families.bending import build_bottom_reo_arrangement_pool_from_state
+from inputs_application.legacy_design_brain_adapter import build_bottom_reo_arrangement_pool_from_state
 from inputs_application.candidate_identity import make_auto_design_candidate_key
 from inputs_application.candidate_metrics import candidate_bottom_updates
 from inputs_application.geometry_search_policy import (

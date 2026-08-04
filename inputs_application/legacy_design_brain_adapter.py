@@ -38,6 +38,14 @@ from design_brain.candidate_evaluation import (
     select_best_target_band_refinement_candidate,
     select_target_band_ranked_candidate,
 )
+from design_brain.families.bending import (
+    build_bottom_reo_arrangement_pool_from_state,
+    build_bottom_reo_evaluated_candidate_filter_boundary,
+    build_bottom_reo_evaluated_candidate_filter_record,
+    build_bottom_reo_guidance_change_lines_for_updates,
+    candidate_ductility_governs,
+    candidate_ductility_util,
+)
 
 
 LegacyGuidanceProvider = Callable[[DesignBrainRequest], Mapping[str, object]]
@@ -99,4 +107,10 @@ __all__ = [
     "resolve_target_band_selected_candidate_acceptance",
     "select_best_target_band_refinement_candidate",
     "select_target_band_ranked_candidate",
+    "build_bottom_reo_arrangement_pool_from_state",
+    "build_bottom_reo_evaluated_candidate_filter_boundary",
+    "build_bottom_reo_evaluated_candidate_filter_record",
+    "build_bottom_reo_guidance_change_lines_for_updates",
+    "candidate_ductility_governs",
+    "candidate_ductility_util",
 ]

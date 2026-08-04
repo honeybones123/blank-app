@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from design_brain.families.bending import build_bottom_reo_arrangement_pool_from_state
+from inputs_application.legacy_design_brain_adapter import build_bottom_reo_arrangement_pool_from_state
 from inputs_application.candidate_metrics import candidate_state_to_shared_updates
 from inputs_application.recommendation_primitives import (
     annotate_bottom_candidate_deltas,

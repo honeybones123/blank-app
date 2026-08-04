@@ -12,7 +12,7 @@ from inputs_application.legacy_design_brain_adapter import (
     resolve_candidate_bending_demand_util,
     resolve_candidate_in_target_band,
 )
-from design_brain.families.bending import (
+from inputs_application.legacy_design_brain_adapter import (
     candidate_ductility_governs,
     candidate_ductility_util,
 )

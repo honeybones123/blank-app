@@ -127,7 +127,7 @@ from inputs_application.recommendation_primitives import (
     shear_util_from_candidate as _shear_util_from_overview_candidate,
     shortlist_smallest_successful_shear_candidates as _shortlist_smallest_successful_shear_candidates,
 )
-from design_brain.families.bending import (
+from inputs_application.legacy_design_brain_adapter import (
     build_bottom_reo_arrangement_pool_from_state,
     build_bottom_reo_guidance_change_lines_for_updates as _build_bottom_reo_guidance_change_lines_for_updates,
 )
@@ -308,7 +308,7 @@ def _emit_bottom_reo_filter_boundary_trace(
     if not trace_path:
         return
 
-    from design_brain.families.bending import (
+    from inputs_application.legacy_design_brain_adapter import (
         build_bottom_reo_evaluated_candidate_filter_boundary,
         build_bottom_reo_evaluated_candidate_filter_record,
     )
