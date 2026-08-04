@@ -14,8 +14,8 @@ from inputs_application.engineering_predicates import (
     shear_demands_negligible,
     shear_reinforcement_is_active,
 )
+from application.candidate_delta_policy import diff_candidate_state_updates
 from inputs_application.legacy_design_brain_adapter import (
-    diff_candidate_state_updates,
     resolve_candidate_domain_max_distance,
     resolve_candidate_domain_score,
     resolve_candidate_domain_total_distance,

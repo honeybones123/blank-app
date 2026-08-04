@@ -8,7 +8,6 @@ from application.design_brain_port import DesignBrainExecution, DesignBrainReque
 from design_brain.candidate_evaluation import (
     build_full_candidate_evaluation_result_projection,
     build_target_band_fallback_scored_candidate,
-    diff_candidate_state_updates,
     resolve_auto_design_band_reacher_delta_metrics,
     resolve_auto_design_band_reaching_candidate_goal_score,
     resolve_auto_design_candidate_objective_util,
@@ -178,7 +177,6 @@ __all__ = [
     "LegacyGuidanceProvider",
     "build_full_candidate_evaluation_result_projection",
     "build_target_band_fallback_scored_candidate",
-    "diff_candidate_state_updates",
     "resolve_auto_design_band_reacher_delta_metrics",
     "resolve_auto_design_band_reaching_candidate_goal_score",
     "resolve_auto_design_candidate_objective_util",
