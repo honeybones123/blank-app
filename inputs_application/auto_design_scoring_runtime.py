@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from application.candidate_scoring_policy import (
+    resolve_auto_design_candidate_violation_score,
+)
 from inputs_application.legacy_design_brain_adapter import (
     resolve_auto_design_candidate_objective_util,
-    resolve_auto_design_candidate_violation_score,
     resolve_auto_design_shallower_beam_metrics,
     resolve_auto_design_shear_candidate_practicality_metrics,
     resolve_candidate_in_target_band,

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from application.candidate_scoring_policy import (
+    resolve_auto_design_candidate_violation_score,
+)
 from inputs_application.legacy_design_brain_adapter import (
     resolve_auto_design_band_reacher_delta_metrics,
     resolve_auto_design_band_reaching_candidate_goal_score,
-    resolve_auto_design_candidate_violation_score,
     resolve_auto_design_shallower_beam_selection_key,
     resolve_candidate_in_target_band,
 )
