@@ -24,10 +24,9 @@ def render_inputs_summary_display_state(
     uls_t = abs(float(summary_state.get("Tu_star", 0.0) or 0.0))
     sls_m = abs(float(summary_state.get("sls_Mstar", 0.0) or 0.0))
     sls_v = abs(float(summary_state.get("sls_Vstar", 0.0) or 0.0))
-    sigma_sr = abs(float(summary_state.get("sigma_sr", summary_state.get("sigma_s_sls", 0.0)) or 0.0))
     no_loads_bending = uls_m == 0.0
     no_loads_shear = uls_v == 0.0 and uls_t == 0.0
-    no_loads_crack = sls_m == 0.0 and sls_v == 0.0 and sigma_sr == 0.0
+    no_loads_crack = sls_m == 0.0 and sls_v == 0.0
     no_loads_deflection = sls_m == 0.0 and sls_v == 0.0
 
     bending_primary = primary_row_fn(BENDING_ROWS) or {}
@@ -54,15 +53,24 @@ def render_inputs_summary_display_state(
         return "rgba(31, 119, 180, 0.08)"
 
     shear_pack_summary = shear_pack or {}
-    shear_cap = (
-        shear_pack_summary.get("summary_display_capacity")
-        or shear_pack_summary.get("summary_capacity")
-        or "\u2014"
+    def _complete_summary_text(preferred, fallback) -> str:
+        preferred_text = str(preferred or "").strip()
+        if (
+            preferred_text
+            and "\u2014" not in preferred_text
+            and "â€”" not in preferred_text
+        ):
+            return preferred_text
+        fallback_text = str(fallback or "").strip()
+        return fallback_text or "\u2014"
+
+    shear_cap = _complete_summary_text(
+        shear_pack_summary.get("summary_display_capacity"),
+        shear_pack_summary.get("summary_capacity"),
     )
-    shear_demand = (
-        shear_pack_summary.get("summary_display_demand")
-        or shear_pack_summary.get("summary_demand")
-        or "\u2014"
+    shear_demand = _complete_summary_text(
+        shear_pack_summary.get("summary_display_demand"),
+        shear_pack_summary.get("summary_demand"),
     )
     shear_util_value = parse_util_value_fn(shear_pack_summary.get("summary_util"))
     shear_display_source = str(shear_pack_summary.get("summary_display_source") or "").strip()
@@ -134,17 +142,17 @@ def render_inputs_summary_display_state(
         "visible_shear_summary_status_note": shear_summary_status_note,
     }
 
-    crack_cap = crack_primary.get("capacity") or crack_primary.get("value", "\u2014")
-    crack_demand = crack_primary.get("action") or crack_primary.get("limit", "\u2014")
+    crack_cap = crack_primary.get("capacity") or crack_primary.get("limit", "\u2014")
+    crack_demand = crack_primary.get("action") or crack_primary.get("value", "\u2014")
     crack_util_str = crack_primary.get("util", "\u2014")
     crack_status, crack_colour = overall_status_from_rows_fn(CRACK_ROWS)
 
-    defl_cap = defl_primary.get("capacity") or defl_primary.get("value", "\u2014")
-    defl_demand = defl_primary.get("action") or defl_primary.get("limit", "\u2014")
+    defl_cap = defl_primary.get("capacity") or defl_primary.get("limit", "\u2014")
+    defl_demand = defl_primary.get("action") or defl_primary.get("value", "\u2014")
     defl_util_str = defl_primary.get("util", "\u2014")
     defl_status, defl_colour = overall_status_from_rows_fn(DEFLECTION_ROWS)
 
-    def _apply_neutral_override(rows):
+    def _apply_neutral_override(rows, *, clear_values: bool = False):
         for row in rows:
             if not isinstance(row, dict):
                 continue
@@ -153,6 +161,16 @@ def render_inputs_summary_display_state(
             row["status"] = "\u2014"
             row["ok"] = None
             row["util"] = "\u2014"
+            if clear_values:
+                for key in (
+                    "capacity",
+                    "action",
+                    "calculated",
+                    "requirement",
+                    "value",
+                    "limit",
+                ):
+                    row[key] = "\u2014"
 
     if no_loads_bending:
         _apply_neutral_override(BENDING_ROWS)
@@ -166,15 +184,19 @@ def render_inputs_summary_display_state(
         shear_util_str = "\u2014"
         shear_summary_status_note = ""
     if no_loads_crack:
-        _apply_neutral_override(CRACK_ROWS)
+        _apply_neutral_override(CRACK_ROWS, clear_values=True)
         crack_status = "\u2014"
         crack_colour = "rgba(31, 119, 180, 0.08)"
         crack_util_str = "\u2014"
+        crack_cap = "\u2014"
+        crack_demand = "\u2014"
     if no_loads_deflection:
-        _apply_neutral_override(DEFLECTION_ROWS)
+        _apply_neutral_override(DEFLECTION_ROWS, clear_values=True)
         defl_status = "\u2014"
         defl_colour = "rgba(31, 119, 180, 0.08)"
         defl_util_str = "\u2014"
+        defl_cap = "\u2014"
+        defl_demand = "\u2014"
 
     return (
         bending_cap,

@@ -6930,6 +6930,7 @@ def _request_inputs_engineering_commit(
         # Off-page edits settle when Inputs is rendered again, so a stale
         # fragment target is never woken while another page owns the shell.
         from inputs_application.design_brain_polling import (
+            INITIAL_DESIGN_BRAIN_WAKE_INTERVAL_S,
             start_design_brain_polling,
         )
 
@@ -6937,6 +6938,7 @@ def _request_inputs_engineering_commit(
             st.session_state,
             reason=f"input_transaction:{resolved_widget_key}",
             revision=int(committed.revision),
+            interval_s=INITIAL_DESIGN_BRAIN_WAKE_INTERVAL_S,
         )
     return committed
 

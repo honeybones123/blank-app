@@ -369,8 +369,53 @@ from inputs_application.page_runtime.common import (
     make_summary_cross_section_figure,
 )
 
-def render_inputs_summary_state_cache_current_coordinator(*, ss: dict, mark):
+def render_inputs_summary_state_cache_current_coordinator(
+    *,
+    ss: dict,
+    mark,
+    region_context=None,
+):
     def _summary_state_source():
+        if region_context is not None:
+            summary_inputs = dict(region_context.resolved_inputs)
+            actions = dict(region_context.actions_used)
+            summary_inputs.update(
+                {
+                    "Mu_star": actions.get(
+                        "Mu_signed",
+                        actions.get("Mu", summary_inputs.get("Mu_star", 0.0)),
+                    ),
+                    "Vu_star": actions.get(
+                        "Vu",
+                        summary_inputs.get("Vu_star", 0.0),
+                    ),
+                    "Tu_star": actions.get(
+                        "Tu",
+                        summary_inputs.get("Tu_star", 0.0),
+                    ),
+                    "sls_Mstar": actions.get(
+                        "SLS_M_signed",
+                        actions.get(
+                            "SLS_M",
+                            summary_inputs.get("sls_Mstar", 0.0),
+                        ),
+                    ),
+                    "sls_Vstar": actions.get(
+                        "SLS_V",
+                        summary_inputs.get("sls_Vstar", 0.0),
+                    ),
+                }
+            )
+            return summary_inputs, {
+                "summary_state_source": "typed_summary_region_context",
+                "summary_state_engineering_hash": (
+                    region_context.identity.engineering_hash
+                ),
+                "summary_state_input_revision": (
+                    region_context.identity.input_revision
+                ),
+                "summary_authoritative_result_remains_publication_source": True,
+            }
         authoritative_result = AuthoritativeDesignResultStore(
             st.session_state
         ).current()
@@ -428,6 +473,11 @@ def render_inputs_summary_state_cache_current_coordinator(*, ss: dict, mark):
         build_shear_pack_fn=build_shear_check_rows_from_state,
         build_crack_pack_fn=build_crack_check_rows_from_state,
         build_deflection_pack_fn=build_deflection_check_rows_from_state,
+        authoritative_packs=(
+            dict(region_context.packs)
+            if region_context is not None
+            else None
+        ),
     )
 
 def hc_log(*args, **kwargs) -> None:
@@ -642,6 +692,7 @@ def render_inputs_summary_pipeline_current_coordinator(
     skip_active_beam_record_write: bool,
     mark,
     render_title: bool = True,
+    region_context=None,
 ):
     return render_inputs_summary_pipeline_module(
         ss=ss,
@@ -651,6 +702,7 @@ def render_inputs_summary_pipeline_current_coordinator(
         skip_active_beam_record_write=skip_active_beam_record_write,
         mark=mark,
         render_title=render_title,
+        region_context=region_context,
         summary_state_cache_fn=render_inputs_summary_state_cache_current_coordinator,
         pack_meta_fn=_pack_meta,
         hc_log_fn=hc_log,

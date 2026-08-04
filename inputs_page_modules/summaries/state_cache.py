@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any, Callable
 
 
@@ -17,6 +18,7 @@ def render_inputs_summary_state_cache(
     build_shear_pack_fn: Callable[[dict], Any],
     build_crack_pack_fn: Callable[[dict], Any],
     build_deflection_pack_fn: Callable[[dict], Any],
+    authoritative_packs: dict[str, Any] | None = None,
 ):
     summary_state, summary_state_debug = resolved_inputs_summary_state_fn()
     summary_state_debug = {
@@ -30,6 +32,18 @@ def render_inputs_summary_state_cache(
         "published_result_spacing_mm": summary_state.get("published_result_spacing_mm"),
         "published_result_spacing_meaning": summary_state.get("published_result_spacing_meaning"),
     }
+    complete_authoritative_packs = bool(
+        isinstance(authoritative_packs, dict)
+        and all(
+            isinstance(authoritative_packs.get(family), dict)
+            for family in ("bending", "shear", "crack", "deflection")
+        )
+    )
+    summary_state_debug["summary_pack_source"] = (
+        "authoritative_calculation_packs"
+        if complete_authoritative_packs
+        else "legacy_summary_rebuild"
+    )
     ss["_inputs_summary_debug_bundle"] = dict(summary_state_debug)
     ss["_inputs_summary_consume_audit"] = {
         "summary_state_source": summary_state_debug.get("summary_state_source"),
@@ -96,7 +110,16 @@ def render_inputs_summary_state_cache(
     summary_cache_miss = bool(
         summary_cache_version != results_version or summary_cache_action_fp != summary_action_fp
     )
-    if summary_cache_miss:
+    if complete_authoritative_packs:
+        # The stored engineering result owns the truth. Copy it because the
+        # legacy presentation adapter annotates rows for routing and status.
+        ss["_bend_pack"] = copy.deepcopy(authoritative_packs["bending"])
+        ss["_shear_pack"] = copy.deepcopy(authoritative_packs["shear"])
+        ss["_crack_pack"] = copy.deepcopy(authoritative_packs["crack"])
+        ss["_defl_pack"] = copy.deepcopy(authoritative_packs["deflection"])
+        ss["_summary_cache_version"] = results_version
+        ss["_summary_cache_action_fp"] = summary_action_fp
+    elif summary_cache_miss:
         ss["_bend_pack"] = hc_try_fn(
             "summary.build_bending_pack", lambda: build_bending_pack_fn(summary_state)
         )

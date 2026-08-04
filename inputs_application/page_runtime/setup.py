@@ -126,6 +126,7 @@ from inputs_page_modules.diagrams.source_projection import build_section_outline
 from inputs_page_modules.design_guide import render_design_guide_panel_orchestration
 
 from inputs_page_modules.design_guide import current_coordinators as design_guide_current_coordinators
+from inputs_page_modules.design_overview_adapter import collect_design_overview
 
 from inputs_page_modules.design_guide.debug_sidebar import render_design_guide_debug_sidebar
 
@@ -877,9 +878,16 @@ def _ensure_authoritative_design_result_current_coordinator(
     guidance_context = application_guidance_context(current_state, st.session_state)
     def _compute(snapshot_value):
         if not include_design_brain:
+            engineering_overview = collect_design_overview(
+                guidance_context,
+                session_state=st.session_state,
+            )
             return build_authoritative_design_result(
                 engineering_snapshot=snapshot_value,
-                current_calculations={"resolved_inputs": dict(guidance_context)},
+                current_calculations={
+                    **dict(engineering_overview),
+                    "resolved_inputs": dict(guidance_context),
+                },
             )
         guidance_payload = _compute_design_guidance_items(
             guidance_context,

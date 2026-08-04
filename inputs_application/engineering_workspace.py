@@ -23,6 +23,7 @@ from inputs_application.region_contexts import (
     InputsCalculationRegionContext,
     InputsControlsRegionContext,
     InputsDesignBrainRegionContext,
+    InputsSummaryRegionContext,
     RevisionIdentity,
 )
 from inputs_application.summary_calculation_fragment_store import (
@@ -293,6 +294,55 @@ def build_inputs_calculation_region_context(
     )
 
 
+def build_inputs_summary_region_context(
+    *,
+    session_state: dict[str, Any],
+    services: InputsSessionServices,
+) -> InputsSummaryRegionContext | None:
+    """Bind Summary to the complete engineering packs for one input revision."""
+
+    workspace_store = InputsWorkspaceStateStore(session_state)
+    input_revision = workspace_store.workspace_revision()
+    authoritative_result = services.engineering_results.current()
+    calculation_state = workspace_store.calculation_status()
+    if authoritative_result is None:
+        return None
+    engineering_hash = authoritative_result.engineering_hash
+    current_calculations = dict(
+        authoritative_result.current_calculations or {}
+    )
+    resolved_inputs = current_calculations.get("resolved_inputs")
+    packs = current_calculations.get("packs")
+    if (
+        workspace_store.authoritative_revision() != input_revision
+        or services.engineering_results.source_input_revision() != input_revision
+        or not workspace_store.authoritative_result_present()
+        or workspace_store.authoritative_hash() != engineering_hash
+        or calculation_state.get("status") != "ready"
+        or int(calculation_state.get("revision", 0) or 0) != input_revision
+        or calculation_state.get("engineering_hash") != engineering_hash
+        or not isinstance(resolved_inputs, dict)
+        or not isinstance(packs, dict)
+        or any(
+            not isinstance(packs.get(family), dict)
+            for family in ("bending", "shear", "crack", "deflection")
+        )
+    ):
+        return None
+    return InputsSummaryRegionContext(
+        identity=RevisionIdentity(
+            input_revision=input_revision,
+            engineering_hash=engineering_hash,
+        ),
+        resolved_inputs=dict(resolved_inputs),
+        packs={
+            family: dict(packs[family])
+            for family in ("bending", "shear", "crack", "deflection")
+        },
+        actions_used=dict(current_calculations.get("actions_used") or {}),
+    )
+
+
 def build_inputs_controls_region_context(
     *,
     page_context: dict[str, Any],
@@ -406,9 +456,9 @@ def render_inputs_summary_fragment_section(
     st_module: Any,
     runtime: EngineeringWorkspaceRuntime,
     page_context: dict[str, Any],
-    services: InputsSessionServices,
+    region_context: InputsSummaryRegionContext,
 ) -> Any:
-    """Render Summary from the session-owned authoritative transaction."""
+    """Render Summary from one immutable, revision-matched calculation result."""
 
     summary_source = runtime.render_summary(
         ss=st_module.session_state,
@@ -417,18 +467,12 @@ def render_inputs_summary_fragment_section(
         mark=page_context["mark"],
         summary_container=st_module.container(),
         render_title=False,
+        region_context=region_context,
     )
-    authoritative_result = services.engineering_results.current()
     SummaryCalculationFragmentStore(st_module.session_state).publish(
         summary_source,
-        input_revision=InputsWorkspaceStateStore(
-            st_module.session_state
-        ).authoritative_revision(),
-        engineering_hash=(
-            authoritative_result.engineering_hash
-            if authoritative_result is not None
-            else None
-        ),
+        input_revision=region_context.identity.input_revision,
+        engineering_hash=region_context.identity.engineering_hash,
     )
     return summary_source
 
@@ -744,12 +788,19 @@ def render_engineering_workspace(
         calculation_is_current
     )
     section_started_ns = time.perf_counter_ns()
-    render_inputs_summary_fragment_section(
-        st_module=st_module,
-        runtime=runtime,
-        page_context=page_context,
+    summary_region_context = build_inputs_summary_region_context(
+        session_state=st_module.session_state,
         services=services,
     )
+    if summary_region_context is None:
+        st_module.info("Updating calculations...")
+    else:
+        render_inputs_summary_fragment_section(
+            st_module=st_module,
+            runtime=runtime,
+            page_context=page_context,
+            region_context=summary_region_context,
+        )
     section_timings_ms["summary"] = (
         time.perf_counter_ns() - section_started_ns
     ) / 1_000_000
@@ -1341,6 +1392,8 @@ __all__ = [
     "InputsCalculationRegionContext",
     "InputsControlsRegionContext",
     "InputsDesignBrainRegionContext",
+    "InputsSummaryRegionContext",
+    "build_inputs_summary_region_context",
     "build_inputs_controls_region_context",
     "RevisionIdentity",
     "build_inputs_calculation_region_context",

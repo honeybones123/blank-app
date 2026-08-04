@@ -15,6 +15,7 @@ from typing import Any
 
 DESIGN_BRAIN_POLLING_STATE_KEY = "_inputs_design_brain_polling_state_v1"
 DEFAULT_DESIGN_BRAIN_POLL_INTERVAL_S = 1.0
+INITIAL_DESIGN_BRAIN_WAKE_INTERVAL_S = 0.1
 
 
 def _current_fragment_id() -> str | None:
@@ -205,6 +206,7 @@ def stop_design_brain_polling(
 
 __all__ = [
     "DEFAULT_DESIGN_BRAIN_POLL_INTERVAL_S",
+    "INITIAL_DESIGN_BRAIN_WAKE_INTERVAL_S",
     "DESIGN_BRAIN_POLLING_STATE_KEY",
     "register_design_brain_fragment",
     "start_design_brain_polling",

@@ -16,6 +16,7 @@ def render_inputs_summary_pipeline(
     skip_active_beam_record_write: bool,
     mark: Callable[[str], None],
     render_title: bool = True,
+    region_context=None,
     summary_state_cache_fn: Callable[..., tuple],
     pack_meta_fn: Callable[..., dict],
     hc_log_fn: Callable[..., None],
@@ -25,6 +26,12 @@ def render_inputs_summary_pipeline(
     summary_row_finalization_fn: Callable[..., None],
     summary_container_fn: Callable[..., None],
 ) -> InputsSummaryCalculationSource:
+    state_cache_kwargs = {
+        "ss": ss,
+        "mark": mark,
+    }
+    if region_context is not None:
+        state_cache_kwargs["region_context"] = region_context
     (
         summary_state,
         summary_state_debug,
@@ -32,7 +39,7 @@ def render_inputs_summary_pipeline(
         shear_pack,
         crack_pack,
         defl_pack,
-    ) = summary_state_cache_fn(ss=ss, mark=mark)
+    ) = summary_state_cache_fn(**state_cache_kwargs)
 
     hc_log_fn(
         "summary.pack_meta",

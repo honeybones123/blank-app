@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, Mapping
 
 from inputs_application.summary_contracts import InputsSummaryCalculationSource
 
@@ -37,6 +38,28 @@ class InputsDesignBrainRegionContext:
 
 
 @dataclass(frozen=True)
+class InputsSummaryRegionContext:
+    """One revision-matched engineering result consumed by Summary."""
+
+    identity: RevisionIdentity
+    resolved_inputs: Mapping[str, Any]
+    packs: Mapping[str, Mapping[str, Any]]
+    actions_used: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        missing = {
+            family
+            for family in ("bending", "shear", "crack", "deflection")
+            if not isinstance(self.packs.get(family), Mapping)
+        }
+        if missing:
+            raise ValueError(
+                "summary context is missing authoritative packs: "
+                + ", ".join(sorted(missing))
+            )
+
+
+@dataclass(frozen=True)
 class InputsCalculationRegionContext:
     """Stable Summary handoff consumed by one Calculation region render."""
 
@@ -66,5 +89,6 @@ __all__ = [
     "InputsCalculationRegionContext",
     "InputsControlsRegionContext",
     "InputsDesignBrainRegionContext",
+    "InputsSummaryRegionContext",
     "RevisionIdentity",
 ]

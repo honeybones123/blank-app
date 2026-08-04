@@ -21,6 +21,12 @@ def _normalise_row(row: dict, route_page: str) -> dict:
 
     capacity = row.get("capacity")
     action = row.get("action")
+    explicit_capacity_action = bool(
+        capacity is not None
+        and str(capacity).strip() != ""
+        and action is not None
+        and str(action).strip() != ""
+    )
     calculated = row.get("calculated")
     requirement = row.get("requirement")
     value = row.get("value", "\u2014")
@@ -33,6 +39,24 @@ def _normalise_row(row: dict, route_page: str) -> dict:
         calculated = capacity
     if requirement is None or str(requirement).strip() == "":
         requirement = action
+    if route_page in {"crack", "deflection"} and not explicit_capacity_action:
+        # Authoritative serviceability packs use value/calculated for the
+        # response and limit/requirement for the allowable threshold. Adapt
+        # that legacy shape once so downstream cards have one meaning.
+        response = (
+            calculated
+            if calculated is not None and str(calculated).strip() != ""
+            else value
+        )
+        allowable = (
+            requirement
+            if requirement is not None and str(requirement).strip() != ""
+            else limit
+        )
+        capacity = allowable
+        action = response
+        calculated = response
+        requirement = allowable
 
     return {
         "uid": row.get("uid", ""),
