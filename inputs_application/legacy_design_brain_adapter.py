@@ -47,6 +47,21 @@ from design_brain.family_classification import load_family_classification_contra
 from design_brain.family_classification_runtime import classify_family_from_whole_beam_evidence
 from design_brain.family_ladder_dispatch import resolve_family_ladder_dispatch
 from design_brain.whole_beam_family_restamp import restamp_primary_guidance_family_from_whole_beam
+from design_brain.pipeline import (
+    ApplyCommandConstructionStage,
+    ApprovedCandidateProposal,
+    AuthoritativeCandidateEvaluation,
+    CandidateEvaluationStage,
+    CandidateGenerationStage,
+    CandidateSelectionStage,
+    DesignBrainPipelineDependencies,
+    EngineeringResultIntakeStage,
+    FamilyDispatchStage,
+    GoverningStateClassificationStage,
+    PIPELINE_STAGE_ORDER,
+    PublicationConstructionStage,
+    run_design_brain_pipeline,
+)
 from design_brain.families.registry import normalise_governing_family
 from design_brain.final_design_guide_formatter import build_final_design_guide_card_format
 from design_brain.families.bending_fail_governs.geometry_ratio import (
@@ -236,6 +251,19 @@ __all__ = [
     "depth_width_ratio",
     "resolve_family_ladder_dispatch",
     "restamp_primary_guidance_family_from_whole_beam",
+    "ApplyCommandConstructionStage",
+    "ApprovedCandidateProposal",
+    "AuthoritativeCandidateEvaluation",
+    "CandidateEvaluationStage",
+    "CandidateGenerationStage",
+    "CandidateSelectionStage",
+    "DesignBrainPipelineDependencies",
+    "EngineeringResultIntakeStage",
+    "FamilyDispatchStage",
+    "GoverningStateClassificationStage",
+    "PIPELINE_STAGE_ORDER",
+    "PublicationConstructionStage",
+    "run_design_brain_pipeline",
     "FamilyLadderGuidanceRuntime",
     "_family_ladder_guidance_item",
     "bind_family_ladder_guidance_dependencies",

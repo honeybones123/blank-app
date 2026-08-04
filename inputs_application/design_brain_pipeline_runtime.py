@@ -18,10 +18,8 @@ from application.guidance_result_adapter import (
     build_authoritative_design_result_from_guidance_payload,
     resolve_guidance_authority,
 )
-from design_brain.authority import AuthoritativeDesignResult, EngineeringInputSnapshot
-from design_brain.family_ladder_dispatch import resolve_family_ladder_dispatch
-from design_brain.families.registry import normalise_governing_family
-from design_brain.pipeline import (
+from application.contracts.design_brain import AuthoritativeDesignResult, EngineeringInputSnapshot
+from inputs_application.legacy_design_brain_adapter import (
     ApplyCommandConstructionStage,
     ApprovedCandidateProposal,
     AuthoritativeCandidateEvaluation,
@@ -35,6 +33,8 @@ from design_brain.pipeline import (
     PIPELINE_STAGE_ORDER,
     PublicationConstructionStage,
     run_design_brain_pipeline,
+    normalise_governing_family,
+    resolve_family_ladder_dispatch,
 )
 
 
