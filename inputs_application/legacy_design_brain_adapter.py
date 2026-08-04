@@ -10,9 +10,7 @@ from design_brain.candidate_evaluation import (
     resolve_auto_design_shallower_beam_selection_key,
     project_active_fail_executor_evaluated_candidate_result,
     resolve_active_fail_executor_candidate_eval_source,
-    resolve_target_band_candidate_sort_key,
     select_best_target_band_refinement_candidate,
-    select_target_band_ranked_candidate,
 )
 from design_brain.families.bending import (
     build_bottom_reo_arrangement_pool_from_state,
@@ -159,9 +157,7 @@ __all__ = [
     "resolve_auto_design_shallower_beam_selection_key",
     "project_active_fail_executor_evaluated_candidate_result",
     "resolve_active_fail_executor_candidate_eval_source",
-    "resolve_target_band_candidate_sort_key",
     "select_best_target_band_refinement_candidate",
-    "select_target_band_ranked_candidate",
     "build_bottom_reo_arrangement_pool_from_state",
     "build_bottom_reo_evaluated_candidate_filter_boundary",
     "build_bottom_reo_evaluated_candidate_filter_record",

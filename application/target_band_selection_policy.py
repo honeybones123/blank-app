@@ -57,7 +57,63 @@ def resolve_target_band_selected_candidate_acceptance(
     }
 
 
+def resolve_target_band_candidate_sort_key(
+    *,
+    tier: int,
+    mixed_sort_prefix: tuple[Any, ...] = (),
+    tightening_mode_active: bool,
+    governing_domain: str,
+    has_target_domains: bool,
+    new_max: Any = None,
+    new_total: Any = None,
+    required_fail_count: int = 0,
+    required_unsatisfied_count: int = 0,
+    prefer_total_before_max: bool = False,
+    shear_sort_util: Any = float("inf"),
+    web_sort_util: Any = float("inf"),
+    practical_spacing_penalty: int = 0,
+    congestion_penalty: int = 0,
+    goal_bias: int = 0,
+    new_distance: Any = float("inf"),
+    wrong_dir_penalty: Any = 0.0,
+    directional_tie_key: Any = 0.0,
+    reduction_bias: int = 0,
+    update_count: int = 0,
+) -> tuple[Any, ...]:
+    """Build the target-band candidate ranking tuple from plain scoring inputs."""
+
+    prefix = tuple(mixed_sort_prefix or ())
+    if bool(tightening_mode_active):
+        if str(governing_domain or "").strip().lower() == "shear":
+            if bool(has_target_domains) and new_total is not None:
+                return (tier, *prefix, int(required_fail_count), int(required_unsatisfied_count), float(new_max), float(new_total), float(shear_sort_util), float(web_sort_util), int(practical_spacing_penalty), int(congestion_penalty), int(goal_bias), float(wrong_dir_penalty), int(reduction_bias), int(update_count))
+            return (tier, *prefix, float(shear_sort_util), float(web_sort_util), int(practical_spacing_penalty), int(congestion_penalty), int(goal_bias), float(new_distance), float(wrong_dir_penalty), int(reduction_bias), int(update_count))
+        if bool(has_target_domains) and new_total is not None:
+            if bool(prefer_total_before_max):
+                return (tier, *prefix, int(required_fail_count), int(required_unsatisfied_count), float(new_total), float(new_max), float(wrong_dir_penalty), int(reduction_bias), int(update_count))
+            return (tier, *prefix, int(required_fail_count), int(required_unsatisfied_count), float(new_max), float(new_total), float(wrong_dir_penalty), int(reduction_bias), int(update_count))
+        return (tier, *prefix, float(new_distance), float(wrong_dir_penalty), int(reduction_bias), int(update_count))
+    if bool(has_target_domains) and new_max is not None and new_total is not None:
+        if bool(prefer_total_before_max):
+            return (tier, *prefix, int(required_fail_count), int(required_unsatisfied_count), float(new_total), float(new_max), float(directional_tie_key), int(update_count))
+        return (tier, *prefix, int(required_fail_count), int(required_unsatisfied_count), float(new_max), float(new_total), float(directional_tie_key), int(update_count))
+    return (tier, *prefix, float(new_distance), float(directional_tie_key), int(update_count))
+
+
+def select_target_band_ranked_candidate(
+    scored_candidates: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+) -> dict[str, Any] | None:
+    """Select the lexicographic best target-band candidate from scored rows."""
+
+    rows = [dict(row) for row in list(scored_candidates or []) if isinstance(row, dict)]
+    if not rows:
+        return None
+    return min(rows, key=lambda row: row.get("sort_key"))
+
+
 __all__ = [
     "build_target_band_fallback_scored_candidate",
+    "resolve_target_band_candidate_sort_key",
     "resolve_target_band_selected_candidate_acceptance",
+    "select_target_band_ranked_candidate",
 ]
