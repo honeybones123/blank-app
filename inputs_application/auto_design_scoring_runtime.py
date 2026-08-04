@@ -9,7 +9,6 @@ from inputs_application.legacy_design_brain_adapter import (
     resolve_auto_design_candidate_violation_score,
     resolve_auto_design_shallower_beam_metrics,
     resolve_auto_design_shear_candidate_practicality_metrics,
-    resolve_candidate_bending_demand_util,
     resolve_candidate_in_target_band,
 )
 from inputs_application.candidate_metrics import compute_reo_complexity
@@ -17,6 +16,9 @@ from inputs_application.geometry_search_policy import (
     candidate_ductility_governs,
     candidate_ductility_util,
     design_optimisation_goal,
+)
+from inputs_application.one_click_optimization_policy import (
+    candidate_bending_demand_util as resolve_candidate_bending_demand_util,
 )
 from inputs_application.recommendation_support import resolve_geometry_width_context
 from inputs_application.state_utils import float_from_state
