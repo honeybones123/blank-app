@@ -67,7 +67,6 @@ from design_brain.family_ladder_runtime import (
 )
 from design_brain.families.geometry_detailing import run_geometry_detailing_governs_runtime
 from design_brain.families.registry import family_strategy_for
-from design_brain.candidate_registry import CandidateEvaluationRegistry
 from design_brain.design_guide_controller import (
     build_design_guide_controller_active_fail_executor_ladder_eval_commands,
     build_design_guide_controller_active_fail_executor_ladder_candidate_meta,
@@ -247,7 +246,6 @@ __all__ = [
     "bind_family_ladder_guidance_dependencies",
     "run_geometry_detailing_governs_runtime",
     "family_strategy_for",
-    "CandidateEvaluationRegistry",
     "build_design_guide_controller_active_fail_executor_ladder_eval_commands",
     "build_design_guide_controller_active_fail_executor_ladder_candidate_meta",
     "resolve_design_guide_controller_active_fail_executor_ladder_stop_decision",
