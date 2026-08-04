@@ -129,6 +129,8 @@ from inputs_application.recommendation_primitives import (
 )
 from inputs_application.legacy_design_brain_adapter import (
     build_bottom_reo_arrangement_pool_from_state,
+)
+from application.bottom_reinforcement_policy import (
     build_bottom_reo_guidance_change_lines_for_updates as _build_bottom_reo_guidance_change_lines_for_updates,
 )
 
