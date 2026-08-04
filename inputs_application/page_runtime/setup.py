@@ -99,7 +99,7 @@ from deflection_checks_helpers import build_deflection_check_rows_from_state
 
 from application.contracts.design_policy import DESIGN_OPTIMISATION_GOAL_LABELS, resolve_design_optimisation_goal
 
-from inputs_application.legacy_design_brain_adapter import load_family_classification_contract
+from application.contracts.family_classification import load_family_classification_contract
 
 from engineering_check_ui import BENDING_ROW_UID_TO_TAB, SHEAR_ROW_UID_TO_TAB
 

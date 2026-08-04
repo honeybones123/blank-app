@@ -19,11 +19,11 @@ from typing import Any
 from application.design_result_store import AuthoritativeDesignResultStore
 from application.engineering_snapshot import build_engineering_input_snapshot_from_resolved_state
 from application.guidance_result_adapter import guidance_payload_from_authoritative_design_result
+from application.contracts.family_classification import load_family_classification_contract
 from inputs_application.legacy_design_brain_adapter import (
     build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence,
     build_design_guide_controller_compute_active_under_capacity_blocker_projection,
     classify_family_from_whole_beam_evidence,
-    load_family_classification_contract,
     normalise_governing_family,
     build_final_design_guide_publication,
     final_design_guide_publication_from_dict,

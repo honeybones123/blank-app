@@ -94,7 +94,7 @@ from inputs_application.legacy_design_brain_adapter import (
     normalise_design_guide_candidate_id,
 )
 
-from inputs_application.legacy_design_brain_adapter import load_family_classification_contract
+from application.contracts.family_classification import load_family_classification_contract
 
 from engineering_check_ui import BENDING_ROW_UID_TO_TAB, SHEAR_ROW_UID_TO_TAB
 

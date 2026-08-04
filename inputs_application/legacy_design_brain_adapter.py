@@ -43,7 +43,6 @@ from design_brain.families.bending import (
     candidate_ductility_governs,
     candidate_ductility_util,
 )
-from design_brain.family_classification import load_family_classification_contract
 from design_brain.family_classification_runtime import classify_family_from_whole_beam_evidence
 from design_brain.family_ladder_dispatch import resolve_family_ladder_dispatch
 from design_brain.whole_beam_family_restamp import restamp_primary_guidance_family_from_whole_beam
@@ -227,7 +226,6 @@ __all__ = [
     "build_bottom_reo_guidance_change_lines_for_updates",
     "candidate_ductility_governs",
     "candidate_ductility_util",
-    "load_family_classification_contract",
     "classify_family_from_whole_beam_evidence",
     "normalise_governing_family",
     "build_final_design_guide_card_format",
