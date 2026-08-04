@@ -106,6 +106,12 @@ class InputsCalculationRegionContext:
     identity: RevisionIdentity
     summary_source: InputsSummaryCalculationSource
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.summary_source, InputsSummaryCalculationSource):
+            raise TypeError(
+                "summary_source must be an InputsSummaryCalculationSource"
+            )
+
 
 @dataclass(frozen=True)
 class InputsControlsRegionContext:
