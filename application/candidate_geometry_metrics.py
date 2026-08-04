@@ -89,6 +89,33 @@ def resolve_auto_design_shear_candidate_practicality_metrics(
         "shear_candidate_total_practicality_penalty": float(total_practicality_penalty),
         "shear_candidate_engineering_change": float(engineering_change),
     }
+
+
+def resolve_auto_design_band_reacher_delta_metrics(
+    candidate: dict[str, Any] | None,
+    current_state: dict[str, Any] | None,
+) -> dict[str, float | int]:
+    """Resolve band-reaching candidate geometry and reinforcement deltas."""
+
+    candidate_d = candidate if isinstance(candidate, dict) else {}
+    cs = dict(candidate_d.get("state") or {})
+    current = dict(current_state or {})
+    d0 = float(_target_band_float(current, "D", 0.0) or 0.0)
+    d1 = float(_target_band_float(cs, "D", d0) or d0)
+    _, _, w0_raw = resolve_geometry_width_context(current)
+    _, _, w1_raw = resolve_geometry_width_context(cs)
+    w0 = float(w0_raw or 0.0)
+    w1 = float(w1_raw or w0)
+    ast0 = float(_target_band_float(current, "Ast_bot", 0.0) or 0.0)
+    ast1 = float(candidate_d.get("Ast_bot", _target_band_float(cs, "Ast_bot", ast0)) or ast0)
+    return {
+        "result_depth": float(d1),
+        "delta_d": float(max(d1 - d0, 0.0)),
+        "delta_w": float(max(w1 - w0, 0.0)),
+        "delta_ast": float(max(ast1 - ast0, 0.0)),
+        "congestion": float(candidate_d.get("reo_congestion_index", 0.0) or 0.0),
+        "row_pen": int(max(int(candidate_d.get("row_count", 1) or 1) - 2, 0)),
+    }
 def resolve_auto_design_shallower_beam_metrics(
     candidate: dict[str, Any] | None,
     seed_candidate: dict[str, Any] | None,
@@ -131,6 +158,7 @@ def resolve_auto_design_shallower_beam_metrics(
 
 
 __all__ = [
+    "resolve_auto_design_band_reacher_delta_metrics",
     "resolve_auto_design_shallower_beam_metrics",
     "resolve_auto_design_shear_candidate_practicality_metrics",
 ]
