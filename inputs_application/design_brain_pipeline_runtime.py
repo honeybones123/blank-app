@@ -19,6 +19,7 @@ from application.guidance_result_adapter import (
     resolve_guidance_authority,
 )
 from application.contracts.design_brain import AuthoritativeDesignResult, EngineeringInputSnapshot
+from application.contracts.family_classification import normalise_governing_family
 from inputs_application.legacy_design_brain_adapter import (
     ApplyCommandConstructionStage,
     ApprovedCandidateProposal,
@@ -33,7 +34,6 @@ from inputs_application.legacy_design_brain_adapter import (
     PIPELINE_STAGE_ORDER,
     PublicationConstructionStage,
     run_design_brain_pipeline,
-    normalise_governing_family,
     resolve_family_ladder_dispatch,
 )
 

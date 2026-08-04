@@ -61,7 +61,6 @@ from design_brain.pipeline import (
     PublicationConstructionStage,
     run_design_brain_pipeline,
 )
-from design_brain.families.registry import normalise_governing_family
 from design_brain.final_design_guide_formatter import build_final_design_guide_card_format
 from design_brain.families.bending_fail_governs.geometry_ratio import (
     bending_depth_width_ratio_limit,
@@ -225,7 +224,6 @@ __all__ = [
     "candidate_ductility_governs",
     "candidate_ductility_util",
     "classify_family_from_whole_beam_evidence",
-    "normalise_governing_family",
     "build_final_design_guide_card_format",
     "build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence",
     "build_design_guide_controller_compute_active_under_capacity_blocker_projection",
