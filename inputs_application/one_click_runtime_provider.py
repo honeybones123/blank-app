@@ -23,15 +23,15 @@ from application.target_band_evaluation import (
     resolve_target_band_exhaustion_refinement_allowed,
     resolve_target_band_next_hop_precheck,
 )
+from application.target_band_refinement_policy import (
+    select_best_target_band_refinement_candidate,
+)
 from inputs_application.engineering_predicates import (
     parse_util_value,
     shear_demands_negligible,
     shear_reinforcement_is_active,
 )
 from application.candidate_delta_policy import diff_candidate_state_updates
-from inputs_application.legacy_design_brain_adapter import (
-    select_best_target_band_refinement_candidate,
-)
 from inputs_application.candidate_metrics import int_from_state
 from inputs_application.geometry_search_policy import (
     build_auto_design_context,

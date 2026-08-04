@@ -8,7 +8,6 @@ from application.design_brain_port import DesignBrainExecution, DesignBrainReque
 from design_brain.candidate_evaluation import (
     project_active_fail_executor_evaluated_candidate_result,
     resolve_active_fail_executor_candidate_eval_source,
-    select_best_target_band_refinement_candidate,
 )
 from design_brain.families.bending import (
     build_bottom_reo_arrangement_pool_from_state,
@@ -146,7 +145,6 @@ __all__ = [
     "LegacyGuidanceProvider",
     "project_active_fail_executor_evaluated_candidate_result",
     "resolve_active_fail_executor_candidate_eval_source",
-    "select_best_target_band_refinement_candidate",
     "build_bottom_reo_arrangement_pool_from_state",
     "build_bottom_reo_evaluated_candidate_filter_boundary",
     "build_bottom_reo_evaluated_candidate_filter_record",
