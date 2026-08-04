@@ -40,8 +40,6 @@ from design_brain.families.bending import (
     build_bottom_reo_evaluated_candidate_filter_boundary,
     build_bottom_reo_evaluated_candidate_filter_record,
     build_bottom_reo_guidance_change_lines_for_updates,
-    candidate_ductility_governs,
-    candidate_ductility_util,
 )
 from design_brain.family_classification_runtime import classify_family_from_whole_beam_evidence
 from design_brain.family_ladder_dispatch import resolve_family_ladder_dispatch
@@ -215,8 +213,6 @@ __all__ = [
     "build_bottom_reo_evaluated_candidate_filter_boundary",
     "build_bottom_reo_evaluated_candidate_filter_record",
     "build_bottom_reo_guidance_change_lines_for_updates",
-    "candidate_ductility_governs",
-    "candidate_ductility_util",
     "classify_family_from_whole_beam_evidence",
     "build_final_design_guide_card_format",
     "build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from inputs_application.legacy_design_brain_adapter import (
+from inputs_application.geometry_search_policy import (
     candidate_ductility_governs,
     candidate_ductility_util,
 )

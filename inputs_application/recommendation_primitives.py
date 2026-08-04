@@ -14,7 +14,7 @@ from inputs_application.state_utils import (
     updates_match_state,
 )
 from inputs_application.candidate_metrics import int_from_state
-from inputs_application.legacy_design_brain_adapter import (
+from inputs_application.geometry_search_policy import (
     candidate_ductility_governs,
     candidate_ductility_util,
 )

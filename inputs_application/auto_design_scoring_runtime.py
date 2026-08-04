@@ -12,12 +12,12 @@ from inputs_application.legacy_design_brain_adapter import (
     resolve_candidate_bending_demand_util,
     resolve_candidate_in_target_band,
 )
-from inputs_application.legacy_design_brain_adapter import (
+from inputs_application.candidate_metrics import compute_reo_complexity
+from inputs_application.geometry_search_policy import (
     candidate_ductility_governs,
     candidate_ductility_util,
+    design_optimisation_goal,
 )
-from inputs_application.candidate_metrics import compute_reo_complexity
-from inputs_application.geometry_search_policy import design_optimisation_goal
 from inputs_application.recommendation_support import resolve_geometry_width_context
 from inputs_application.state_utils import float_from_state
 from inputs_application.policy_constants import (

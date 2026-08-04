@@ -180,7 +180,9 @@ def recommendation_search_allowed(
     return not (no_actions and (no_bottom_reo or no_shear_reo))
 
 
-def _candidate_component(candidate: Mapping[str, Any], key: str) -> float | None:
+def _candidate_component(candidate: dict, key: str) -> float | None:
+    if not isinstance(candidate, dict):
+        return None
     try:
         value = float(dict(candidate.get("bending_components") or {}).get(key))
     except (TypeError, ValueError):
@@ -188,17 +190,33 @@ def _candidate_component(candidate: Mapping[str, Any], key: str) -> float | None
     return None if math.isnan(value) else value
 
 
-def candidate_ductility_governs(candidate: Mapping[str, Any] | None) -> bool:
+def candidate_ductility_util(candidate: dict) -> float | None:
+    return _candidate_component(candidate, "ductility_util")
+
+
+def _candidate_flexural_util(candidate: dict) -> float | None:
+    return _candidate_component(candidate, "flexural_util")
+
+
+def _candidate_min_steel_util(candidate: dict) -> float | None:
+    return _candidate_component(candidate, "min_steel_util")
+
+
+def candidate_ductility_governs(candidate: dict | None) -> bool:
     if not isinstance(candidate, Mapping):
         return False
-    ductility = _candidate_component(candidate, "ductility_util")
+    # The legacy helper accepted concrete dict candidates only. Keep that
+    # boundary while exposing the policy from the application module.
+    if not isinstance(candidate, dict):
+        return False
+    ductility = candidate_ductility_util(candidate)
     if ductility is None:
         return False
     governing = [
         value
         for value in (
-            _candidate_component(candidate, "flexural_util"),
-            _candidate_component(candidate, "min_steel_util"),
+            _candidate_flexural_util(candidate),
+            _candidate_min_steel_util(candidate),
             ductility,
         )
         if value is not None
@@ -413,6 +431,7 @@ def generate_balanced_geometry_options(seed_candidate: Mapping[str, Any]) -> lis
 
 __all__ = [
     "candidate_ductility_governs",
+    "candidate_ductility_util",
     "build_auto_design_context",
     "design_mode_config",
     "design_optimisation_goal",
