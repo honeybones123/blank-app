@@ -15,9 +15,11 @@ from typing import Any
 
 from inputs_application.legacy_design_brain_adapter import (
     build_target_band_fallback_scored_candidate as _build_target_band_fallback_scored_candidate,
-    resolve_target_band_selected_candidate_acceptance as _resolve_target_band_selected_candidate_acceptance,
     resolve_target_band_candidate_sort_key as _resolve_target_band_candidate_sort_key,
     select_target_band_ranked_candidate as _select_target_band_ranked_candidate,
+)
+from application.target_band_selection_policy import (
+    resolve_target_band_selected_candidate_acceptance as _resolve_target_band_selected_candidate_acceptance,
 )
 from inputs_page_modules.design_guide.candidate_family_classification import (
     _candidate_family_matches_governing_domain,

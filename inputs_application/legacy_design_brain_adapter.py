@@ -12,7 +12,6 @@ from design_brain.candidate_evaluation import (
     project_active_fail_executor_evaluated_candidate_result,
     resolve_active_fail_executor_candidate_eval_source,
     resolve_target_band_candidate_sort_key,
-    resolve_target_band_selected_candidate_acceptance,
     select_best_target_band_refinement_candidate,
     select_target_band_ranked_candidate,
 )
@@ -163,7 +162,6 @@ __all__ = [
     "project_active_fail_executor_evaluated_candidate_result",
     "resolve_active_fail_executor_candidate_eval_source",
     "resolve_target_band_candidate_sort_key",
-    "resolve_target_band_selected_candidate_acceptance",
     "select_best_target_band_refinement_candidate",
     "select_target_band_ranked_candidate",
     "build_bottom_reo_arrangement_pool_from_state",
