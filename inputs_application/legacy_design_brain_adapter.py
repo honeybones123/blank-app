@@ -46,6 +46,7 @@ from design_brain.families.bending import (
     candidate_ductility_governs,
     candidate_ductility_util,
 )
+from design_brain.family_classification import load_family_classification_contract
 
 
 LegacyGuidanceProvider = Callable[[DesignBrainRequest], Mapping[str, object]]
@@ -113,4 +114,5 @@ __all__ = [
     "build_bottom_reo_guidance_change_lines_for_updates",
     "candidate_ductility_governs",
     "candidate_ductility_util",
+    "load_family_classification_contract",
 ]
