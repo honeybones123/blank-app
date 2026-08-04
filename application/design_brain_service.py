@@ -38,6 +38,13 @@ class DesignBrainService:
             raise ValueError(
                 "Design Brain result engineering_hash does not match the request"
             )
+        if (
+            request.input_revision is not None
+            and execution.input_revision != request.input_revision
+        ):
+            raise ValueError(
+                "Design Brain result input_revision does not match the request"
+            )
         return execution
 
 

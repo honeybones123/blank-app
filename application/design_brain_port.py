@@ -20,6 +20,7 @@ class DesignBrainRequest:
     engineering_calculations: Mapping[str, Any] = field(default_factory=dict)
     family_hint: str | None = None
     debug_enabled: bool = False
+    input_revision: int | None = None
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,7 @@ class DesignBrainExecution:
     stage_trace: tuple[str, ...] = ()
     pipeline_applied: bool = True
     bypass_reason: str | None = None
+    input_revision: int | None = None
 
 
 class DesignBrainPort(Protocol):

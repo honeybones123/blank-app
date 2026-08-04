@@ -921,6 +921,7 @@ def _ensure_authoritative_design_result_current_coordinator(
         execution = design_brain_service.run(
             DesignBrainRequest(
                 engineering_snapshot=snapshot_value,
+                input_revision=int(input_transaction.revision),
                 family_hint=str(family_override or "").strip() or None,
                 resolved_inputs=guidance_context,
                 engineering_calculations=engineering_calculations,

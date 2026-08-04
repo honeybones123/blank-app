@@ -63,6 +63,7 @@ def compute_design_brain_job(request: Mapping[str, Any]) -> dict[str, Any]:
     execution = design_brain_service.run(
         DesignBrainRequest(
             engineering_snapshot=snapshot,
+            input_revision=int(request_payload.get("input_revision") or 0),
             family_hint=(
                 str(request_payload.get("family_override") or "").strip() or None
             ),

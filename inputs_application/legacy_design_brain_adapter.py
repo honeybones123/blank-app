@@ -135,6 +135,7 @@ class LegacyDesignBrainAdapter:
             stage_trace=tuple(execution.stage_trace),
             pipeline_applied=bool(execution.pipeline_applied),
             bypass_reason=execution.bypass_reason,
+            input_revision=request.input_revision,
         )
 
 
