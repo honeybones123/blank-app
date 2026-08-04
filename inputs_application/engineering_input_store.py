@@ -225,6 +225,11 @@ class InputSnapshotStore:
             resolved_beam_id
         )
         self._state["_inputs_workspace_revision"] = transaction.revision
+        # Navigation preservation belongs to the committed input transaction,
+        # not to the slower engineering or Design Brain publication.  Arm the
+        # handoff synchronously so leaving Inputs immediately after an edit
+        # cannot allow stale widget defaults to overwrite this beam snapshot.
+        self._state["_inputs_route_authority_armed"] = True
         return snapshot_state
 
     def current_for_beam(self, beam_id: str) -> InputSnapshotState:
