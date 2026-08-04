@@ -53,7 +53,18 @@ def render_inputs_summary_display_state(
         return "rgba(31, 119, 180, 0.08)"
 
     shear_pack_summary = shear_pack or {}
-    def _complete_summary_text(preferred, fallback) -> str:
+    def _complete_summary_text(*candidates) -> str:
+        preferred = candidates[0] if candidates else None
+        fallback = next(
+            (
+                candidate
+                for candidate in candidates[1:]
+                if str(candidate or "").strip()
+                and "\u2014" not in str(candidate)
+                and any(character.isdigit() for character in str(candidate))
+            ),
+            None,
+        )
         preferred_text = str(preferred or "").strip()
         if (
             preferred_text
@@ -67,10 +78,12 @@ def render_inputs_summary_display_state(
     shear_cap = _complete_summary_text(
         shear_pack_summary.get("summary_display_capacity"),
         shear_pack_summary.get("summary_capacity"),
+        shear_primary.get("capacity") or shear_primary.get("value"),
     )
     shear_demand = _complete_summary_text(
         shear_pack_summary.get("summary_display_demand"),
         shear_pack_summary.get("summary_demand"),
+        shear_primary.get("action") or shear_primary.get("limit"),
     )
     shear_util_value = parse_util_value_fn(shear_pack_summary.get("summary_util"))
     shear_display_source = str(shear_pack_summary.get("summary_display_source") or "").strip()

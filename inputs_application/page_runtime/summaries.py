@@ -383,26 +383,23 @@ def render_inputs_summary_state_cache_current_coordinator(
                 {
                     "Mu_star": actions.get(
                         "Mu_signed",
-                        actions.get("Mu", summary_inputs.get("Mu_star", 0.0)),
+                        actions.get("Mu", 0.0),
                     ),
                     "Vu_star": actions.get(
                         "Vu",
-                        summary_inputs.get("Vu_star", 0.0),
+                        0.0,
                     ),
                     "Tu_star": actions.get(
                         "Tu",
-                        summary_inputs.get("Tu_star", 0.0),
+                        0.0,
                     ),
                     "sls_Mstar": actions.get(
                         "SLS_M_signed",
-                        actions.get(
-                            "SLS_M",
-                            summary_inputs.get("sls_Mstar", 0.0),
-                        ),
+                        actions.get("SLS_M", 0.0),
                     ),
                     "sls_Vstar": actions.get(
                         "SLS_V",
-                        summary_inputs.get("sls_Vstar", 0.0),
+                        0.0,
                     ),
                 }
             )

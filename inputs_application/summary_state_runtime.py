@@ -5,12 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, MutableMapping
 
-from inputs_application.candidate_metrics import candidate_bottom_updates
-from inputs_application.recommendation_evaluation import (
-    effective_bottom_design_state,
-)
-from inputs_page_modules.design_overview_adapter import (
-    build_design_actions_context,
+from inputs_application.engineering_state_projection import (
+    rebuild_engineering_derived_state,
 )
 from inputs_page_modules.session import (
     build_inputs_design_action_result_overlay_snapshot,
@@ -89,29 +85,7 @@ class InputsSummaryStateRuntime:
 
 
 def _recompute_local_fields(state: dict) -> dict:
-    working = dict(state or {})
-    working.update(build_legacy_longitudinal_mirrors_from_rows(working))
-    context = build_design_actions_context(working)
-    resolved = dict(context.get("state") or working)
-    resolved.update(build_legacy_longitudinal_mirrors_from_rows(resolved))
-    bottom = effective_bottom_design_state(
-        resolved,
-        candidate_bottom_updates(resolved),
-    )
-    if float(bottom.get("d_centroid", 0.0) or 0.0) > 0.0:
-        resolved["d"] = float(bottom["d_centroid"])
-    if int(bottom.get("nb_bot", 0) or 0) > 0 and float(
-        bottom.get("db_bot", 0.0) or 0.0
-    ) > 0.0:
-        resolved.update(
-            {
-                "Ast_bot": float(bottom["Ast_bot"]),
-                "db_bot": float(bottom["db_bot"]),
-                "nb_bot": int(bottom["nb_bot"]),
-            }
-        )
-    resolved.update(build_legacy_longitudinal_mirrors_from_rows(resolved))
-    return resolved
+    return rebuild_engineering_derived_state(state)
 
 
 def _overlay_normalized_shear_truth(

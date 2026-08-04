@@ -235,6 +235,10 @@ from inputs_page_modules.widgets.design_action_sync import (
     sync_design_action_widget_to_shared as sync_design_action_widget_to_shared_module,
 )
 
+from inputs_application.engineering_state_projection import (
+    rebuild_engineering_derived_state,
+)
+
 from state_and_helpers import (
     BEAM_PROJECT_PARAM_KEYS,
     DEFLECTION_LIMIT_HELP_TEXT,
@@ -492,7 +496,7 @@ def _fresh_inputs_render_audit() -> dict[str, str]:
 
 def _build_live_engineering_input_snapshot_current_coordinator(state: dict) -> Any:
     return build_engineering_input_snapshot_from_resolved_state(
-        dict(state or {}),
+        rebuild_engineering_derived_state(state),
         contract_versions={
             "design_guide": str(DESIGN_GUIDE_ALGORITHM_VERSION),
             "family_classification": str(
@@ -538,6 +542,7 @@ def _merge_current_engineering_widget_state_current_coordinator(
         INPUTS_PAGE_TAB_KEYS,
         shared_only_mode=shared_only,
     )
+    resolved = rebuild_engineering_derived_state(resolved)
     debug["pre_widget_engineering_widget_bridge"] = {
         "applied": bool(overlay_keys),
         "shared_only_suppressed": shared_only,
@@ -855,7 +860,7 @@ def _ensure_authoritative_design_result_current_coordinator(
         )
         input_transaction = input_store.current()
     st.session_state.pop("_inputs_route_return_pending", None)
-    current_state = input_store.committed()
+    current_state = rebuild_engineering_derived_state(input_store.committed())
     st.session_state["_inputs_engineering_input_transaction_probe"] = {
         "draft_hash": input_transaction.engineering_hash,
         "committed_hash": input_transaction.engineering_hash,
