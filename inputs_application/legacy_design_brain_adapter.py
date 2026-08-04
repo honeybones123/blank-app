@@ -136,10 +136,6 @@ from design_brain.publication import (
     design_guide_cache_fingerprint_from_plain_data,
     design_guide_primary_apply_state_fingerprint_from_state,
 )
-from design_brain.repair import (
-    candidate_preview_statuses_have_explicit_fail,
-    requires_full_coverage_for_primary_one_click,
-)
 
 
 LegacyGuidanceProvider = Callable[[DesignBrainRequest], Mapping[str, object]]
@@ -224,8 +220,6 @@ __all__ = [
     "accepted_green_exact_blocker_is_valid",
     "design_guide_cache_fingerprint_from_plain_data",
     "design_guide_primary_apply_state_fingerprint_from_state",
-    "candidate_preview_statuses_have_explicit_fail",
-    "requires_full_coverage_for_primary_one_click",
     "resolve_family_ladder_dispatch",
     "restamp_primary_guidance_family_from_whole_beam",
     "ApplyCommandConstructionStage",

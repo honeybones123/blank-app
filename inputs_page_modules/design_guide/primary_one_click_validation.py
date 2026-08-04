@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from inputs_application.legacy_design_brain_adapter import (
+from application.design_safety_policy import (
     candidate_preview_statuses_have_explicit_fail as _candidate_preview_statuses_have_explicit_fail,
     requires_full_coverage_for_primary_one_click as _requires_full_coverage_for_primary_one_click,
 )
