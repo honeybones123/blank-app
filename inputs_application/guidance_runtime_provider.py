@@ -5,9 +5,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from inputs_application.legacy_design_brain_adapter import (
-    resolve_design_guide_controller_guidance_action_generated_updates,
-    resolve_design_guide_controller_guidance_action_payload_updates,
+from application.design_action_contract import (
+    resolve_design_guide_action_generated_updates,
+    resolve_design_guide_action_payload_updates,
 )
 from inputs_application import guidance_runtime_config as config
 from inputs_application.local_cleanup_acceptance import (
@@ -36,11 +36,11 @@ def build_guidance_runtime_provider(st_module: Any) -> SimpleNamespace:
             (
                 "_resolve_design_guide_controller_"
                 "guidance_action_generated_updates"
-            ): resolve_design_guide_controller_guidance_action_generated_updates,
+            ): resolve_design_guide_action_generated_updates,
             (
                 "_resolve_design_guide_controller_"
                 "guidance_action_payload_updates"
-            ): resolve_design_guide_controller_guidance_action_payload_updates,
+            ): resolve_design_guide_action_payload_updates,
         }
     )
     return SimpleNamespace(**values)

@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from inputs_application.legacy_design_brain_adapter import (
-    resolve_design_guide_controller_guidance_action_generated_updates,
-)
+from application.design_action_contract import resolve_design_guide_action_generated_updates
 from inputs_application.geometry_search_policy import (
     rescue_geometry_width_for_depth_ratio,
 )
@@ -27,7 +25,7 @@ def bottom_recommendation_geometry_trial_updates(
         generated_payload["resolved_width_key"] = width_key
         generated_payload["current_width"] = current_width
     resolution = (
-        resolve_design_guide_controller_guidance_action_generated_updates(
+        resolve_design_guide_action_generated_updates(
             action_type=action_type,
             payload=generated_payload,
             state=state,

@@ -131,8 +131,6 @@ from design_brain.design_guide_controller import (
     build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence,
     build_design_guide_controller_compute_active_under_capacity_blocker_projection,
     identify_design_guide_controller_materially_overprovided_non_governing_families,
-    resolve_design_guide_controller_guidance_action_generated_updates,
-    resolve_design_guide_controller_guidance_action_payload_updates,
 )
 from design_brain.final_publication import (
     build_final_design_guide_primary_apply_payload_projection,
@@ -237,8 +235,6 @@ __all__ = [
     "design_guide_primary_apply_state_fingerprint_from_state",
     "candidate_preview_statuses_have_explicit_fail",
     "requires_full_coverage_for_primary_one_click",
-    "resolve_design_guide_controller_guidance_action_generated_updates",
-    "resolve_design_guide_controller_guidance_action_payload_updates",
     "bending_depth_width_ratio_limit",
     "depth_width_ratio",
     "resolve_family_ladder_dispatch",
