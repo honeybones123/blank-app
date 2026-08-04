@@ -99,6 +99,7 @@ def _v2_api(source_root: Path):
         LayoutMode,
         LongitudinalReinforcement,
         MaterialInputs,
+        ServiceabilityInputs,
         ShearReinforcement,
         SupportInputs,
         TimeDependentInputs,
@@ -119,6 +120,7 @@ def _v2_api(source_root: Path):
         "LayoutMode": LayoutMode,
         "LongitudinalReinforcement": LongitudinalReinforcement,
         "MaterialInputs": MaterialInputs,
+        "ServiceabilityInputs": ServiceabilityInputs,
         "ShearReinforcement": ShearReinforcement,
         "SupportInputs": SupportInputs,
         "TimeDependentInputs": TimeDependentInputs,
@@ -140,10 +142,11 @@ def _beam_inputs_from_snapshot(
     reinforcement = _merge_primary(_mapping(snapshot.reinforcement), resolved)
     settings = _merge_primary(_mapping(snapshot.design_settings), resolved)
     locks = _mapping(snapshot.locked_variables)
-    actions = _resolved_actions(snapshot)
-    if not actions:
-        actions = dict(resolved)
-    serviceability_loads = _mapping(_mapping(snapshot.design_actions).get("serviceability_loads"))
+    actions = _merge_primary(_resolved_actions(snapshot), resolved)
+    serviceability_loads = _merge_primary(
+        _mapping(_mapping(snapshot.design_actions).get("serviceability_loads")),
+        resolved,
+    )
 
     span_mm = _number(geometry, "L", "span_mm", default=2000.0)
     if "L" not in geometry and "span_mm" not in geometry and geometry.get("span_m") is not None:
@@ -226,6 +229,58 @@ def _beam_inputs_from_snapshot(
         deflection=api["DeflectionInputs"](
             str(settings.get("deflection_support_condition") or "Simply supported"),
             _number(settings, "defl_limit_ratio", default=250.0),
+        ),
+        serviceability=api["ServiceabilityInputs"](
+            moment_knm=_number(actions, "SLS_M", "SLS_M_pos", "sls_Mstar", default=0.0),
+            shear_kn=_number(actions, "SLS_V", "sls_Vstar", default=0.0),
+            permanent_udl_knm_per_m=_number(
+                serviceability_loads,
+                "g_udl_kNm_per_m",
+                "g_kNm",
+                "g_line_kNm",
+                default=0.0,
+            ),
+            imposed_udl_knm_per_m=_number(
+                serviceability_loads,
+                "q_udl_kNm_per_m",
+                "q_kNm",
+                "q_line_kNm",
+                default=0.0,
+            ),
+            equivalent_udl_knm_per_m=_number(
+                serviceability_loads,
+                "w_sls_kNm_per_m",
+                "w_sls",
+                default=0.0,
+            ),
+            sustained_load_factor=_number(
+                serviceability_loads,
+                "psi_udl",
+                "psi_s",
+                "defl_psi_s",
+                default=0.4,
+            ),
+            crack_width_limit_mm=_number(
+                serviceability_loads,
+                "wmax_char_limit",
+                default=0.3,
+            ),
+            crack_member_type=str(
+                serviceability_loads.get("crack_member_type") or "Primarily flexure"
+            ),
+            crack_k1=_number(serviceability_loads, "crack_k1", default=0.8),
+            crack_k2=_number(serviceability_loads, "crack_k2", "crk_k2", default=0.5),
+            creep_coefficient=_number(serviceability_loads, "phi_cc_t", default=2.0),
+            shrinkage_microstrain=_number(
+                serviceability_loads,
+                "eps_cs_total_micro",
+                default=300.0,
+            ),
+            # A committed V1 snapshot must never turn ULS demand into an
+            # implicit SLS demand. Direct V2 fixtures retain their historical
+            # fallback for compatibility, while the production adapter opts
+            # into explicit-load semantics.
+            use_uls_fallback=False,
         ),
     ).validated()
 
