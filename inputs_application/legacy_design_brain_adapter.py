@@ -62,10 +62,6 @@ from design_brain.pipeline import (
     run_design_brain_pipeline,
 )
 from design_brain.final_design_guide_formatter import build_final_design_guide_card_format
-from design_brain.families.bending_fail_governs.geometry_ratio import (
-    bending_depth_width_ratio_limit,
-    depth_width_ratio,
-)
 from design_brain.family_ladder_runtime import (
     FamilyLadderGuidanceRuntime,
     _family_ladder_guidance_item,
@@ -235,8 +231,6 @@ __all__ = [
     "design_guide_primary_apply_state_fingerprint_from_state",
     "candidate_preview_statuses_have_explicit_fail",
     "requires_full_coverage_for_primary_one_click",
-    "bending_depth_width_ratio_limit",
-    "depth_width_ratio",
     "resolve_family_ladder_dispatch",
     "restamp_primary_guidance_family_from_whole_beam",
     "ApplyCommandConstructionStage",
