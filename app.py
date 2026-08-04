@@ -230,6 +230,7 @@ _DESIGN_GUIDE_COMPONENT_APPLY_IN_FLIGHT_KEY = "_design_guide_component_apply_in_
 _DESIGN_GUIDE_PUBLICATION_FP_KEY = "design_guide_publication_fingerprint"
 _BROWSER_RECIPE_PARAM = "browser_recipe"
 _BROWSER_RECIPE_APPLIED_KEY = "_browser_recipe_applied_name"
+_BROWSER_RECIPE_WIDGET_FORCING_KEY = "_browser_recipe_widget_forcing_name"
 if "_BROWSER_RECIPE_GLOBAL_SEED_TOKENS" not in globals():
     _BROWSER_RECIPE_GLOBAL_SEED_TOKENS: set[tuple[str, str]] = set()
 _BROWSER_RECIPE_ROW_MODEL_KEYS = {
@@ -734,11 +735,13 @@ def _apply_browser_recipe_from_query() -> None:
         or ""
     ).strip()
     if not recipe_name:
+        st.session_state.pop(_BROWSER_RECIPE_WIDGET_FORCING_KEY, None)
         return
 
     recipe_reapply_reason = None
     recipe_reconcile_mismatches = {}
     if st.session_state.get(_BROWSER_RECIPE_APPLIED_KEY) == recipe_name:
+        st.session_state[_BROWSER_RECIPE_WIDGET_FORCING_KEY] = recipe_name
         user_widget_edits = _browser_recipe_user_widget_edit_mismatches(
             st.session_state.get("_browser_recipe_applied_state")
         )
@@ -781,6 +784,7 @@ def _apply_browser_recipe_from_query() -> None:
 
     recipe = find_named_case(recipe_name)
     if not isinstance(recipe, dict):
+        st.session_state.pop(_BROWSER_RECIPE_WIDGET_FORCING_KEY, None)
         st.session_state["_browser_recipe_error"] = f"unknown_recipe:{recipe_name}"
         return
 
@@ -947,6 +951,7 @@ def _apply_browser_recipe_from_query() -> None:
     st.session_state["_inputs_dirty"] = True
     st.session_state["run_design_clicked"] = False
     st.session_state[_BROWSER_RECIPE_APPLIED_KEY] = recipe_name
+    st.session_state[_BROWSER_RECIPE_WIDGET_FORCING_KEY] = recipe_name
     st.session_state["_browser_recipe_kind"] = recipe.get("kind")
     st.session_state["_browser_recipe_changes"] = dict(recipe.get("changes") or {})
     st.session_state["_browser_recipe_applied_state"] = dict(applied_state)
@@ -5174,8 +5179,16 @@ def main():
     reset_rerun_pure_caches()
     ux_probe_begin_rerun()
     incoming_browser_recipe = _get_query_param_scalar(_BROWSER_RECIPE_PARAM)
-    if _browser_test_mode_for_run and incoming_browser_recipe:
-        st.session_state["_browser_recipe_query_value"] = incoming_browser_recipe
+    if _browser_test_mode_for_run:
+        if incoming_browser_recipe:
+            st.session_state["_browser_recipe_query_value"] = incoming_browser_recipe
+        else:
+            # The query value is only a same-request bridge. Once a browser
+            # removes the recipe parameter, retaining it would reactivate the
+            # old seed and overwrite correctly hydrated engineering widgets.
+            st.session_state.pop("_browser_recipe_query_value", None)
+            if not str(os.environ.get("CODEX_BROWSER_REPLAY_RECIPE") or "").strip():
+                st.session_state.pop(_BROWSER_RECIPE_WIDGET_FORCING_KEY, None)
     render_timing_begin_rerun(
         url_page=_get_query_param_scalar("page"),
         browser_recipe=incoming_browser_recipe or st.session_state.get("_browser_recipe_query_value"),

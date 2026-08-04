@@ -564,11 +564,37 @@ def _browser_recipe_value_matches(left, right) -> bool:
         return left == right
 
 
+def _requested_browser_recipe_name() -> str:
+    """Return only the recipe requested by the current browser URL or replay env."""
+    requested = None
+    try:
+        requested = st.query_params.get("browser_recipe")
+    except Exception:
+        get_query_params = getattr(st, "experimental_get_query_params", None)
+        if callable(get_query_params):
+            try:
+                requested = (get_query_params() or {}).get("browser_recipe")
+            except Exception:
+                requested = None
+    if isinstance(requested, (list, tuple)):
+        requested = requested[0] if requested else None
+    return str(requested or os.environ.get("CODEX_BROWSER_REPLAY_RECIPE") or "").strip()
+
+
 def _browser_recipe_forced_selectbox_value(widget_key: str, options: list) -> object | None:
     """Return a dev/test recipe value that should initialise this selectbox."""
     if os.environ.get("CODEX_BROWSER_TEST_MODE", "").strip().lower() not in {"1", "true", "yes", "on"}:
         return None
     ss = st.session_state
+    forcing_recipe = str(ss.get("_browser_recipe_widget_forcing_name") or "").strip()
+    applied_recipe = str(ss.get("_browser_recipe_applied_name") or "").strip()
+    requested_recipe = _requested_browser_recipe_name()
+    if (
+        not requested_recipe
+        or requested_recipe != forcing_recipe
+        or forcing_recipe != applied_recipe
+    ):
+        return None
     applied_state = ss.get("_browser_recipe_applied_state")
     if not isinstance(applied_state, dict) or not applied_state:
         return None
