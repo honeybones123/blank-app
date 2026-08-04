@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
+from importlib import import_module
+from typing import Callable, Mapping
+
+from application.design_brain_port import DesignBrainRequest
 from application.design_brain_service import DesignBrainService
 from inputs_application.replacement_design_brain_adapter import (
     ReplacementDesignBrainAdapter,
     ReplacementResultMapper,
 )
-from inputs_application.legacy_design_brain_adapter import (
-    LegacyDesignBrainAdapter,
-    LegacyGuidanceProvider,
-    build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence,
-    build_final_design_guide_publication,
-)
+
+
+LegacyGuidanceProvider = Callable[[DesignBrainRequest], Mapping[str, object]]
+
+
+def _legacy_adapter_module():
+    """Load the selected compatibility adapter without a static import edge."""
+
+    return import_module("inputs_application.legacy_design_brain_adapter")
 
 
 def build_design_brain_service(
@@ -20,7 +27,8 @@ def build_design_brain_service(
 ) -> DesignBrainService:
     """Bind the current implementation without exposing it to consumers."""
 
-    return DesignBrainService(LegacyDesignBrainAdapter(guidance_provider))
+    legacy_adapter = _legacy_adapter_module()
+    return DesignBrainService(legacy_adapter.LegacyDesignBrainAdapter(guidance_provider))
 
 
 def build_replacement_design_brain_service(
@@ -41,51 +49,42 @@ def build_replacement_design_brain_service(
 def build_guidance_blocker_builder():
     """Expose the selected implementation's blocker through composition."""
 
-    return build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence
+    legacy_adapter = _legacy_adapter_module()
+    return legacy_adapter.build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence
 
 
 def build_publication_cta_builder():
     """Expose the selected implementation's CTA proof builder by composition."""
 
-    from inputs_application.legacy_design_brain_adapter import (
-        build_final_publication_cta_from_current_state,
-    )
-
-    return build_final_publication_cta_from_current_state
+    legacy_adapter = _legacy_adapter_module()
+    return legacy_adapter.build_final_publication_cta_from_current_state
 
 
 def build_bottom_arrangement_pool_builder():
     """Expose the selected bending family arrangement generator by composition."""
 
-    from inputs_application.legacy_design_brain_adapter import (
-        build_bottom_reo_arrangement_pool_from_state,
-    )
-
-    return build_bottom_reo_arrangement_pool_from_state
+    legacy_adapter = _legacy_adapter_module()
+    return legacy_adapter.build_bottom_reo_arrangement_pool_from_state
 
 
 def build_publication_builder():
     """Expose the selected implementation's publication builder by composition."""
 
-    return build_final_design_guide_publication
+    legacy_adapter = _legacy_adapter_module()
+    return legacy_adapter.build_final_design_guide_publication
 
 
 def build_primary_apply_payload_projection_builder():
     """Expose the selected implementation's Apply projection by composition."""
 
-    from inputs_application.legacy_design_brain_adapter import (
-        build_final_design_guide_primary_apply_payload_projection,
-    )
-
-    return build_final_design_guide_primary_apply_payload_projection
+    legacy_adapter = _legacy_adapter_module()
+    return legacy_adapter.build_final_design_guide_primary_apply_payload_projection
 
 
 def selected_legacy_design_brain_namespace():
     """Return the selected compatibility namespace for historical facades."""
 
-    from inputs_application import legacy_design_brain_adapter
-
-    return legacy_design_brain_adapter
+    return _legacy_adapter_module()
 
 
 __all__ = [
