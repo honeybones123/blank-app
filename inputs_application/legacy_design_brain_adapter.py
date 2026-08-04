@@ -54,6 +54,67 @@ from design_brain.families.bending_fail_governs.geometry_ratio import (
     bending_depth_width_ratio_limit,
     depth_width_ratio,
 )
+from design_brain.family_ladder_runtime import (
+    FamilyLadderGuidanceRuntime,
+    _family_ladder_guidance_item,
+    bind_family_ladder_guidance_dependencies,
+)
+from design_brain.families.geometry_detailing import run_geometry_detailing_governs_runtime
+from design_brain.families.registry import family_strategy_for
+from design_brain.candidate_registry import CandidateEvaluationRegistry
+from design_brain.design_guide_controller import (
+    build_design_guide_controller_active_fail_executor_ladder_eval_commands,
+    build_design_guide_controller_active_fail_executor_ladder_candidate_meta,
+    resolve_design_guide_controller_active_fail_executor_ladder_stop_decision,
+    resolve_design_guide_controller_optimisation_candidate_family,
+)
+from design_brain.bending_overdesign_candidate_evaluation import (
+    BendingOverdesignCandidateEvaluation,
+    BendingOverdesignCandidateInput,
+    BendingOverdesignCandidateUpdate,
+    build_bending_overdesign_candidate_state_hash,
+)
+from design_brain.serviceability_candidate_evaluation import (
+    ServiceabilityCandidateEvaluation,
+    ServiceabilityCandidateInput,
+    ServiceabilityCandidateUpdate,
+    build_serviceability_candidate_state_hash,
+)
+from design_brain.shear_overdesign_candidate_evaluation import (
+    ShearOverdesignCandidateEvaluation,
+    ShearOverdesignCandidateInput,
+    ShearOverdesignCandidateUpdate,
+    build_shear_overdesign_candidate_state_hash,
+)
+from design_brain.shear_fail_bending_overdesign_candidate_merge import (
+    MixedCandidateEvaluation as ShearFailBendingOverdesignEvaluation,
+    MixedMergedCandidate as ShearFailBendingOverdesignCandidate,
+    ShearFailBendingOverdesignInputs,
+    mixed_candidate_state_hash as shear_fail_bending_overdesign_state_hash,
+)
+from design_brain.bending_fail_shear_overdesign_candidate_merge import (
+    BendingFailShearOverdesignInputs,
+    MixedCandidateEvaluation as BendingFailShearOverdesignEvaluation,
+    MixedMergedCandidate as BendingFailShearOverdesignCandidate,
+    mixed_candidate_state_hash as bending_fail_shear_overdesign_state_hash,
+)
+from design_brain.combined_overdesign_candidate_merge import (
+    CombinedOverdesignCandidateEvaluation,
+    CombinedOverdesignInputs,
+    CombinedOverdesignMergedCandidate,
+    combined_overdesign_candidate_state_hash,
+)
+import design_brain.family_ladder_runtime as _family_ladder_runtime_owner
+
+
+def __getattr__(name: str):
+    """Forward legacy family-ladder helpers through the selected adapter."""
+
+    return getattr(_family_ladder_runtime_owner, name)
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(dir(_family_ladder_runtime_owner)))
 from design_brain.design_guide_controller import (
     build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence,
     build_design_guide_controller_compute_active_under_capacity_blocker_projection,
@@ -167,4 +228,38 @@ __all__ = [
     "resolve_design_guide_controller_guidance_action_payload_updates",
     "bending_depth_width_ratio_limit",
     "depth_width_ratio",
+    "FamilyLadderGuidanceRuntime",
+    "_family_ladder_guidance_item",
+    "bind_family_ladder_guidance_dependencies",
+    "run_geometry_detailing_governs_runtime",
+    "family_strategy_for",
+    "CandidateEvaluationRegistry",
+    "build_design_guide_controller_active_fail_executor_ladder_eval_commands",
+    "build_design_guide_controller_active_fail_executor_ladder_candidate_meta",
+    "resolve_design_guide_controller_active_fail_executor_ladder_stop_decision",
+    "resolve_design_guide_controller_optimisation_candidate_family",
+    "BendingOverdesignCandidateEvaluation",
+    "BendingOverdesignCandidateInput",
+    "BendingOverdesignCandidateUpdate",
+    "build_bending_overdesign_candidate_state_hash",
+    "ServiceabilityCandidateEvaluation",
+    "ServiceabilityCandidateInput",
+    "ServiceabilityCandidateUpdate",
+    "build_serviceability_candidate_state_hash",
+    "ShearOverdesignCandidateEvaluation",
+    "ShearOverdesignCandidateInput",
+    "ShearOverdesignCandidateUpdate",
+    "build_shear_overdesign_candidate_state_hash",
+    "ShearFailBendingOverdesignEvaluation",
+    "ShearFailBendingOverdesignCandidate",
+    "ShearFailBendingOverdesignInputs",
+    "shear_fail_bending_overdesign_state_hash",
+    "BendingFailShearOverdesignInputs",
+    "BendingFailShearOverdesignEvaluation",
+    "BendingFailShearOverdesignCandidate",
+    "bending_fail_shear_overdesign_state_hash",
+    "CombinedOverdesignCandidateEvaluation",
+    "CombinedOverdesignInputs",
+    "CombinedOverdesignMergedCandidate",
+    "combined_overdesign_candidate_state_hash",
 ]

@@ -4,8 +4,8 @@ The implementation belongs to :mod:`design_brain.family_ladder_runtime`.
 This module preserves historical imports while callers migrate to the owner.
 """
 
-from design_brain import family_ladder_runtime as _owner
-from design_brain.family_ladder_runtime import (
+from inputs_application import legacy_design_brain_adapter as _owner
+from inputs_application.legacy_design_brain_adapter import (
     FamilyLadderGuidanceRuntime,
     _family_ladder_guidance_item,
     bind_family_ladder_guidance_dependencies,

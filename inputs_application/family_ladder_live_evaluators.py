@@ -9,37 +9,37 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from design_brain.bending_overdesign_candidate_evaluation import (
+from inputs_application.legacy_design_brain_adapter import (
     BendingOverdesignCandidateEvaluation,
     BendingOverdesignCandidateInput,
     BendingOverdesignCandidateUpdate,
     build_bending_overdesign_candidate_state_hash,
 )
-from design_brain.serviceability_candidate_evaluation import (
+from inputs_application.legacy_design_brain_adapter import (
     ServiceabilityCandidateEvaluation,
     ServiceabilityCandidateInput,
     ServiceabilityCandidateUpdate,
     build_serviceability_candidate_state_hash,
 )
-from design_brain.shear_overdesign_candidate_evaluation import (
+from inputs_application.legacy_design_brain_adapter import (
     ShearOverdesignCandidateEvaluation,
     ShearOverdesignCandidateInput,
     ShearOverdesignCandidateUpdate,
     build_shear_overdesign_candidate_state_hash,
 )
-from design_brain.shear_fail_bending_overdesign_candidate_merge import (
-    MixedCandidateEvaluation as ShearFailBendingOverdesignEvaluation,
-    MixedMergedCandidate as ShearFailBendingOverdesignCandidate,
+from inputs_application.legacy_design_brain_adapter import (
+    ShearFailBendingOverdesignEvaluation,
+    ShearFailBendingOverdesignCandidate,
     ShearFailBendingOverdesignInputs,
-    mixed_candidate_state_hash as shear_fail_bending_overdesign_state_hash,
+    shear_fail_bending_overdesign_state_hash,
 )
-from design_brain.bending_fail_shear_overdesign_candidate_merge import (
+from inputs_application.legacy_design_brain_adapter import (
     BendingFailShearOverdesignInputs,
-    MixedCandidateEvaluation as BendingFailShearOverdesignEvaluation,
-    MixedMergedCandidate as BendingFailShearOverdesignCandidate,
-    mixed_candidate_state_hash as bending_fail_shear_overdesign_state_hash,
+    BendingFailShearOverdesignEvaluation,
+    BendingFailShearOverdesignCandidate,
+    bending_fail_shear_overdesign_state_hash,
 )
-from design_brain.combined_overdesign_candidate_merge import (
+from inputs_application.legacy_design_brain_adapter import (
     CombinedOverdesignCandidateEvaluation,
     CombinedOverdesignInputs,
     CombinedOverdesignMergedCandidate,

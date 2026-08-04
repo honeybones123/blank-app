@@ -7,7 +7,7 @@ import math
 import time
 from typing import Any, Callable
 
-from design_brain.candidate_registry import CandidateEvaluationRegistry
+from inputs_application.legacy_design_brain_adapter import CandidateEvaluationRegistry
 
 
 _AUTO_DESIGN_SOLVER_DEPENDENCIES: tuple[str, ...] = (
