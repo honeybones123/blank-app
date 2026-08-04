@@ -22,22 +22,26 @@ from application.guidance_result_adapter import (
 from application.contracts.design_brain import AuthoritativeDesignResult, EngineeringInputSnapshot
 from application.contracts.family_classification import normalise_governing_family
 from application.family_ladder_dispatch_policy import resolve_family_ladder_dispatch
-from inputs_application.legacy_design_brain_adapter import (
-    ApplyCommandConstructionStage,
-    ApprovedCandidateProposal,
-    AuthoritativeCandidateEvaluation,
-    CandidateEvaluationStage,
-    CandidateGenerationStage,
-    CandidateSelectionStage,
-    DesignBrainPipelineDependencies,
-    EngineeringResultIntakeStage,
-    FamilyDispatchStage,
-    GoverningStateClassificationStage,
-    PIPELINE_STAGE_ORDER,
-    PublicationConstructionStage,
-    build_guidance_result_dependencies,
-    run_design_brain_pipeline,
+from inputs_application.design_brain_composition import (
+    selected_legacy_design_brain_namespace,
 )
+
+
+_owner = selected_legacy_design_brain_namespace()
+ApplyCommandConstructionStage = _owner.ApplyCommandConstructionStage
+ApprovedCandidateProposal = _owner.ApprovedCandidateProposal
+AuthoritativeCandidateEvaluation = _owner.AuthoritativeCandidateEvaluation
+CandidateEvaluationStage = _owner.CandidateEvaluationStage
+CandidateGenerationStage = _owner.CandidateGenerationStage
+CandidateSelectionStage = _owner.CandidateSelectionStage
+DesignBrainPipelineDependencies = _owner.DesignBrainPipelineDependencies
+EngineeringResultIntakeStage = _owner.EngineeringResultIntakeStage
+FamilyDispatchStage = _owner.FamilyDispatchStage
+GoverningStateClassificationStage = _owner.GoverningStateClassificationStage
+PIPELINE_STAGE_ORDER = _owner.PIPELINE_STAGE_ORDER
+PublicationConstructionStage = _owner.PublicationConstructionStage
+build_guidance_result_dependencies = _owner.build_guidance_result_dependencies
+run_design_brain_pipeline = _owner.run_design_brain_pipeline
 
 
 LIVE_PIPELINE_SCHEMA = "live_design_brain_pipeline.v1"
