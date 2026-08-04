@@ -212,8 +212,8 @@ from inputs_application.local_cleanup_acceptance import (
 from inputs_application.engineering_predicates import parse_util_value, shear_demands_negligible, shear_reinforcement_is_active
 from application.contracts.design_policy import AUTO_DESIGN_MODE_CONFIG, resolve_design_mode_config
 from application.publication_identity import stable_final_publication_hash
+from application.accepted_green_blocker_policy import accepted_green_exact_blocker_is_valid
 from inputs_application.legacy_design_brain_adapter import (
-    accepted_green_exact_blocker_is_valid,
     build_final_design_guide_publication,
     identify_design_guide_controller_materially_overprovided_non_governing_families,
 )

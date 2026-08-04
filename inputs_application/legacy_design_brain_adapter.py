@@ -106,7 +106,6 @@ from design_brain.final_publication import (
     final_design_guide_publication_from_dict,
 )
 from design_brain.publication import (
-    accepted_green_exact_blocker_is_valid,
     design_guide_cache_fingerprint_from_plain_data,
     design_guide_primary_apply_state_fingerprint_from_state,
 )
@@ -165,7 +164,6 @@ __all__ = [
     "build_final_design_guide_publication",
     "build_final_publication_cta_from_current_state",
     "final_design_guide_publication_from_dict",
-    "accepted_green_exact_blocker_is_valid",
     "design_guide_cache_fingerprint_from_plain_data",
     "design_guide_primary_apply_state_fingerprint_from_state",
     "resolve_family_ladder_dispatch",
