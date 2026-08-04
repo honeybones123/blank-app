@@ -7,7 +7,6 @@ from typing import Callable, Mapping
 from application.design_brain_port import DesignBrainExecution, DesignBrainRequest
 from design_brain.candidate_evaluation import (
     build_target_band_fallback_scored_candidate,
-    resolve_auto_design_band_reaching_candidate_goal_score,
     resolve_auto_design_candidate_target_band_metrics,
     resolve_auto_design_shallower_beam_selection_key,
     resolve_candidate_domain_max_distance,
@@ -169,7 +168,6 @@ __all__ = [
     "LegacyDesignBrainAdapter",
     "LegacyGuidanceProvider",
     "build_target_band_fallback_scored_candidate",
-    "resolve_auto_design_band_reaching_candidate_goal_score",
     "resolve_auto_design_candidate_target_band_metrics",
     "resolve_auto_design_shallower_beam_selection_key",
     "resolve_candidate_domain_max_distance",

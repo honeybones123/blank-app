@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from inputs_application.recommendation_support import resolve_geometry_width_context
+from application.candidate_objective_policy import (
+    resolve_auto_design_candidate_objective_util,
+)
 
 
 def _target_band_float(source: dict[str, Any], key: str, default: float) -> float:
@@ -116,6 +119,59 @@ def resolve_auto_design_band_reacher_delta_metrics(
         "congestion": float(candidate_d.get("reo_congestion_index", 0.0) or 0.0),
         "row_pen": int(max(int(candidate_d.get("row_count", 1) or 1) - 2, 0)),
     }
+
+
+def resolve_auto_design_band_reaching_candidate_goal_score(
+    candidate: dict[str, Any] | None,
+    goal: str | None,
+    current_state: dict[str, Any] | None,
+    *,
+    target_mid: float,
+) -> tuple[float, str]:
+    """Resolve the goal-specific score for a candidate that reaches target band."""
+
+    candidate_d = candidate if isinstance(candidate, dict) else {}
+    deltas = resolve_auto_design_band_reacher_delta_metrics(candidate_d, current_state)
+    d1 = float(deltas.get("result_depth", 0.0) or 0.0)
+    delta_d = float(deltas.get("delta_d", 0.0) or 0.0)
+    delta_w = float(deltas.get("delta_w", 0.0) or 0.0)
+    delta_ast = float(deltas.get("delta_ast", 0.0) or 0.0)
+    post_util = float(
+        candidate_d.get(
+            "candidate_post_util",
+            resolve_auto_design_candidate_objective_util(candidate_d),
+        )
+        or 0.0
+    )
+    congestion = float(deltas.get("congestion", 0.0) or 0.0)
+    row_pen = int(deltas.get("row_pen", 0) or 0)
+
+    if str(goal or "") == "shallower_beam":
+        score = (
+            (delta_d * 2000.0)
+            + (d1 * 0.6)
+            + (delta_ast * 0.08)
+            + (delta_w * 0.04)
+            + (congestion * 20.0)
+            + (row_pen * 8.0)
+        )
+        if (
+            bool(candidate_d.get("recommendation_compound"))
+            and str(candidate_d.get("compound_geo_axis") or "") == "width"
+            and delta_d <= 1e-6
+        ):
+            score -= 30.0
+        return float(score), "shallower_prefers_min_depth_then_steel_then_width"
+
+    score = (
+        (abs(post_util - float(target_mid)) * 90.0)
+        + (delta_d * 0.3)
+        + (delta_w * 0.25)
+        + (delta_ast * 0.04)
+        + (congestion * 18.0)
+        + (row_pen * 8.0)
+    )
+    return float(score), "balanced_prefers_practical_low_congestion_near_target_mid"
 def resolve_auto_design_shallower_beam_metrics(
     candidate: dict[str, Any] | None,
     seed_candidate: dict[str, Any] | None,
@@ -159,6 +215,7 @@ def resolve_auto_design_shallower_beam_metrics(
 
 __all__ = [
     "resolve_auto_design_band_reacher_delta_metrics",
+    "resolve_auto_design_band_reaching_candidate_goal_score",
     "resolve_auto_design_shallower_beam_metrics",
     "resolve_auto_design_shear_candidate_practicality_metrics",
 ]
