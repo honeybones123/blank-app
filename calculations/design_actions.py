@@ -1,5 +1,100 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Any, Mapping
+
+
+RESOLVED_DESIGN_ACTIONS_SCHEMA_VERSION = "resolved_design_actions.v1"
+
+
+@dataclass(frozen=True)
+class ResolvedDesignActions:
+    """Immutable engineering-facing Design Actions contract.
+
+    Session keys and compatibility aliases are resolved at the boundary.  All
+    downstream identity and typed consumers can use this object without
+    knowing which widget proxy or legacy result key supplied a value.
+    """
+
+    mu: float
+    mu_signed: float
+    mu_pos: float
+    mu_neg: float
+    has_sagging_case: bool
+    has_hogging_case: bool
+    vu: float
+    nu: float
+    sls_m: float
+    sls_m_signed: float
+    sls_m_pos: float
+    sls_m_neg: float
+    sls_v: float
+    sls_n: float
+    tu: float
+    pu: float
+    source: str
+    actions_source: str
+    actions_mode: str
+    design_actions_source: str
+    sls_line_load: float
+    sls_point_load: float
+
+    @property
+    def signature(self) -> tuple[Any, ...]:
+        """Preserve the established cache-signature contract."""
+
+        return (
+            self.mu,
+            self.vu,
+            self.nu,
+            self.sls_m,
+            self.sls_v,
+            self.source,
+            self.actions_source,
+            self.actions_mode,
+        )
+
+    def to_legacy_mapping(self) -> dict[str, Any]:
+        """Adapt to existing dictionary consumers during incremental cutover."""
+
+        return {
+            "Mu": self.mu,
+            "Mu_signed": self.mu_signed,
+            "Mu_pos": self.mu_pos,
+            "Mu_neg": self.mu_neg,
+            "has_sagging_case": self.has_sagging_case,
+            "has_hogging_case": self.has_hogging_case,
+            "Vu": self.vu,
+            "Nu": self.nu,
+            "SLS_M": self.sls_m,
+            "SLS_M_signed": self.sls_m_signed,
+            "SLS_M_pos": self.sls_m_pos,
+            "SLS_M_neg": self.sls_m_neg,
+            "SLS_V": self.sls_v,
+            "Tu": self.tu,
+            "Pu": self.pu,
+            "source": self.source,
+            "actions_source": self.actions_source,
+            "actions_mode": self.actions_mode,
+            "signature": self.signature,
+        }
+
+    def to_snapshot_mapping(self) -> dict[str, Any]:
+        """Return the normalized payload that owns engineering identity."""
+
+        resolved = self.to_legacy_mapping()
+        resolved.pop("signature", None)
+        resolved["SLS_N"] = self.sls_n
+        resolved["design_actions_source"] = self.design_actions_source
+        return {
+            "schema_version": RESOLVED_DESIGN_ACTIONS_SCHEMA_VERSION,
+            "resolved": resolved,
+            "serviceability_loads": {
+                "w_sls_kNm_per_m": self.sls_line_load,
+                "P_sls_kN": self.sls_point_load,
+            },
+        }
+
 
 def _state_read_mapping(source_state):
     return source_state if hasattr(source_state, "get") else {}
@@ -220,6 +315,43 @@ def resolve_design_actions_from_state(source_state: dict | None) -> dict:
     return actions
 
 
+def resolve_design_actions_contract_from_state(
+    source_state: Mapping[str, Any] | None,
+) -> ResolvedDesignActions:
+    """Resolve one immutable contract from an explicit state mapping."""
+
+    working = _state_working_dict(source_state)
+    if not str(working.get("actions_mode") or "").strip():
+        working["actions_mode"] = "manual"
+    actions = resolve_design_actions_from_state(working)
+    return ResolvedDesignActions(
+        mu=float(actions.get("Mu", 0.0) or 0.0),
+        mu_signed=float(actions.get("Mu_signed", actions.get("Mu", 0.0)) or 0.0),
+        mu_pos=float(actions.get("Mu_pos", 0.0) or 0.0),
+        mu_neg=float(actions.get("Mu_neg", 0.0) or 0.0),
+        has_sagging_case=bool(actions.get("has_sagging_case", False)),
+        has_hogging_case=bool(actions.get("has_hogging_case", False)),
+        vu=float(actions.get("Vu", 0.0) or 0.0),
+        nu=float(actions.get("Nu", 0.0) or 0.0),
+        sls_m=float(actions.get("SLS_M", 0.0) or 0.0),
+        sls_m_signed=float(
+            actions.get("SLS_M_signed", actions.get("SLS_M", 0.0)) or 0.0
+        ),
+        sls_m_pos=float(actions.get("SLS_M_pos", 0.0) or 0.0),
+        sls_m_neg=float(actions.get("SLS_M_neg", 0.0) or 0.0),
+        sls_v=float(actions.get("SLS_V", 0.0) or 0.0),
+        sls_n=float(working.get("sls_Nstar", actions.get("Nu", 0.0)) or 0.0),
+        tu=float(actions.get("Tu", 0.0) or 0.0),
+        pu=float(actions.get("Pu", 0.0) or 0.0),
+        source=str(actions.get("source") or ""),
+        actions_source=str(actions.get("actions_source") or ""),
+        actions_mode=str(actions.get("actions_mode") or ""),
+        design_actions_source=str(working.get("design_actions_source") or "max"),
+        sls_line_load=float(working.get("w_sls_kNm_per_m", 0.0) or 0.0),
+        sls_point_load=float(working.get("P_sls_kN", 0.0) or 0.0),
+    )
+
+
 def derive_design_action_session_updates(source_state: dict | None) -> dict:
     """
     Calculate the session-state writes performed by derive_design_actions().
@@ -355,3 +487,12 @@ def derive_design_action_session_updates(source_state: dict | None) -> dict:
         }
     )
     return updates
+
+
+__all__ = [
+    "RESOLVED_DESIGN_ACTIONS_SCHEMA_VERSION",
+    "ResolvedDesignActions",
+    "derive_design_action_session_updates",
+    "resolve_design_actions_contract_from_state",
+    "resolve_design_actions_from_state",
+]

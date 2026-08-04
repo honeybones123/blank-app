@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from calculations.design_actions import resolve_design_actions_contract_from_state
 from design_brain.authority import EngineeringInputSnapshot
 
 
@@ -69,6 +70,9 @@ REINFORCEMENT_INPUT_KEYS: tuple[str, ...] = (
 )
 
 DESIGN_ACTION_INPUT_KEYS: tuple[str, ...] = (
+    "actions_mode",
+    "actions_source",
+    "design_actions_source",
     "uls_Mstar",
     "uls_Mstar_pos_manual",
     "uls_Mstar_neg_manual",
@@ -76,12 +80,6 @@ DESIGN_ACTION_INPUT_KEYS: tuple[str, ...] = (
     "uls_Nstar",
     "Tu_star",
     "P_star",
-    "Mu_star",
-    "Mu_star_manual",
-    "Mu_star_pos_manual",
-    "Mu_star_neg_manual",
-    "Vu_star",
-    "Nu_star",
     "sls_Mstar",
     "sls_Mstar_pos_manual",
     "sls_Mstar_neg_manual",
@@ -125,27 +123,8 @@ def _pick(state: Mapping[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
     return {key: state.get(key) for key in keys if key in state and key not in UI_ONLY_STATE_KEYS}
 
 
-def _first_present(state: Mapping[str, Any], *keys: str) -> Any:
-    for key in keys:
-        value = state.get(key)
-        if value is not None:
-            return value
-    return None
-
-
 def _resolved_design_actions(state: Mapping[str, Any]) -> dict[str, Any]:
-    actions = _pick(state, DESIGN_ACTION_INPUT_KEYS)
-    actions["resolved"] = {
-        "Mu": _first_present(state, "uls_Mstar", "Mu_star", "Mu_star_manual"),
-        "Vu": _first_present(state, "uls_Vstar", "Vu_star"),
-        "Nu": _first_present(state, "uls_Nstar", "Nu_star"),
-        "Tu": _first_present(state, "Tu_star"),
-        "Pu": _first_present(state, "P_star"),
-        "SLS_M": _first_present(state, "sls_Mstar"),
-        "SLS_V": _first_present(state, "sls_Vstar"),
-        "SLS_N": _first_present(state, "sls_Nstar"),
-    }
-    return actions
+    return resolve_design_actions_contract_from_state(state).to_snapshot_mapping()
 
 
 def _resolved_reinforcement(state: Mapping[str, Any]) -> dict[str, Any]:
