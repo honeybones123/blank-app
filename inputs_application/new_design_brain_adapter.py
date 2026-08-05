@@ -111,7 +111,12 @@ def _v2_api(source_root: Path):
         evaluate_arrangement,
     )
     from inputs_v2.application.engineering_advice import (  # noqa: PLC0415
+        EngineeringAdviceResult,
+        EngineeringCheck,
         clause_reference,
+        effects_for_changes,
+        format_engineering_advice,
+        verified_changes,
     )
 
     return {
@@ -129,6 +134,11 @@ def _v2_api(source_root: Path):
         "VoidInputs": VoidInputs,
         "evaluate_arrangement": evaluate_arrangement,
         "clause_reference": clause_reference,
+        "EngineeringAdviceResult": EngineeringAdviceResult,
+        "EngineeringCheck": EngineeringCheck,
+        "effects_for_changes": effects_for_changes,
+        "format_engineering_advice": format_engineering_advice,
+        "verified_changes": verified_changes,
     }
 
 
@@ -333,6 +343,46 @@ def _proposal_updates(proposal: Any, row_counts: tuple[int, ...]) -> dict[str, A
     return {key: value for key, value in updates.items() if value is not None}
 
 
+def _resolved_inputs_projection(
+    source: Mapping[str, Any] | None,
+    current: Any,
+) -> dict[str, Any]:
+    """Expose the committed V2 model as the neutral current-input projection."""
+
+    resolved = dict(source or {})
+    resolved.update(
+        {
+            "b": current.width_mm,
+            "D": current.depth_mm,
+            "L": current.span_mm,
+            "sec_shape": current.section_shape,
+            "fc": current.materials.concrete_strength_mpa,
+            "fsy": current.materials.reinforcement_strength_mpa,
+            "bot_row_1_bars": current.bottom.bars,
+            "bot_row_1_dia": current.bottom.diameter_mm,
+            "bot_row_1_spacing": current.bottom.spacing_mm,
+            "cover_bot": current.bottom.cover_mm,
+            "top_bars": current.top.bars,
+            "db_top": current.top.diameter_mm,
+            "top_spacing": current.top.spacing_mm,
+            "cover_top": current.top.cover_mm,
+            "lig_d": current.shear.diameter_mm,
+            "lig_legs": current.shear.legs,
+            "s_lig": current.shear.spacing_mm,
+            "Mu": current.actions.bending_moment_knm,
+            "Vu": current.actions.shear_force_kn,
+            "Tu": current.actions.torsion_knm,
+            "Nu": current.actions.axial_force_kn,
+            "SLS_M": current.serviceability.moment_knm,
+            "SLS_V": current.serviceability.shear_kn,
+            "g_udl_kNm_per_m": current.serviceability.permanent_udl_knm_per_m,
+            "q_udl_kNm_per_m": current.serviceability.imposed_udl_knm_per_m,
+            "w_sls_kNm_per_m": current.serviceability.equivalent_udl_knm_per_m,
+        }
+    )
+    return resolved
+
+
 def _clause_metadata(api: Mapping[str, Any]) -> dict[str, Any]:
     checks = (
         "bending_capacity",
@@ -352,6 +402,125 @@ def _clause_metadata(api: Mapping[str, Any]) -> dict[str, Any]:
     return {"standard": "AS 3600", "edition": "2018", "references": references}
 
 
+def _v2_display_projection(
+    *,
+    api: Mapping[str, Any],
+    current: Any,
+    decision: Any,
+    candidate: Any,
+) -> dict[str, Any]:
+    """Project the V2 lab's exact Design Guide state into neutral data.
+
+    The V2 lab computes its card state from the current checks, governing
+    family, candidate preview, and verified changes.  Repeating that decision
+    here would create a second Design Brain, so this function calls the V2
+    advice contracts and only serialises their result for the Runtime UI.
+    """
+
+    preview = decision.preview
+    before = preview.before
+    after = preview.after
+    family_name = str(decision.family.value)
+    current_b = float(before.families.get("bending", {}).get("util", 0.0) or 0.0)
+    current_shear = before.families.get("shear", {})
+    current_shear_cap = float(current_shear.get("phi_Vu", 0.0) or 0.0)
+    current_s = (
+        abs(float(current.actions.shear_force_kn)) / current_shear_cap
+        if current_shear_cap > 0
+        else 0.0
+    )
+    current_d = float(
+        before.families.get("serviceability", {}).get("deflection_util", 0.0) or 0.0
+    )
+    current_failing = current_b > 1.0 or current_s > 1.0 or current_d > 1.0
+    all_checks_pass = all(
+        float(values.get("util", values.get("deflection_util", 0.0)) or 0.0) <= 1.0
+        for values in after.families.values()
+        if isinstance(values, dict)
+    )
+    changes = tuple(
+        api["verified_changes"](current, candidate.proposal, candidate.row_counts)
+    )
+    effects = tuple(api["effects_for_changes"](changes))
+    if not effects and current.bottom.bars <= 2:
+        effects = (
+            "Further bending optimisation is blocked because the bottom reinforcement is already at the minimum required.",
+        )
+    proposed_b = float(after.families.get("bending", {}).get("util", 0.0) or 0.0)
+    proposed_shear = after.families.get("shear", {})
+    proposed_shear_cap = float(proposed_shear.get("phi_Vu", 0.0) or 0.0)
+    proposed_s = (
+        abs(float(current.actions.shear_force_kn)) / proposed_shear_cap
+        if proposed_shear_cap > 0
+        else 0.0
+    )
+    proposed_d = float(
+        after.families.get("serviceability", {}).get("deflection_util", 0.0) or 0.0
+    )
+    check = api["EngineeringCheck"]
+    clause = api["clause_reference"]
+    advice = api["EngineeringAdviceResult"](
+        current_checks=(
+            check("bending_capacity", "Bending", clause_reference=clause("bending_capacity"), status="fail" if current_b > 1 else "pass", utilisation=current_b),
+            check("shear_strength", "Shear", clause_reference=clause("shear_strength"), status="fail" if current_s > 1 else "pass", utilisation=current_s),
+            check("short_term_deflection", "Deflection", clause_reference=clause("short_term_deflection"), status="fail" if current_d > 1 else "pass", utilisation=current_d),
+        ),
+        proposed_checks=(
+            check("bending_capacity", "Bending", clause_reference=clause("bending_capacity"), status="fail" if proposed_b > 1 else "pass", utilisation=proposed_b),
+            check("shear_strength", "Shear", clause_reference=clause("shear_strength"), status="fail" if proposed_s > 1 else "pass", utilisation=proposed_s),
+            check("short_term_deflection", "Deflection", clause_reference=clause("short_term_deflection"), status="fail" if proposed_d > 1 else "pass", utilisation=proposed_d),
+        ),
+        recommended_changes=changes,
+        engineering_effects=effects,
+        governing_check=family_name,
+        clause_references=("AS 3600 2018 Clauses 8.1.3, 8.2.3.1, 8.5.3.1",),
+        verified_compliance=bool(preview.accepted),
+        apply_allowed=(family_name != "TARGET_BAND_REACHED")
+        and bool(preview.accepted)
+        and bool(changes),
+        blocked_reason=None if preview.accepted else str(preview.reason),
+        outcome_type=family_name,
+    )
+    if current_failing:
+        state_class, badge = "fail", "BLOCKED"
+    elif (
+        family_name == "TARGET_BAND_REACHED"
+        and all_checks_pass
+        and str(preview.reason)
+        in {"no_improving_shear_cleanup", "no_safe_shear_cleanup", "no_improving_bending_cleanup"}
+    ):
+        state_class, badge = "pass", "PASS"
+    elif family_name in {
+        "BENDING_OVERDESIGN_GOVERNS",
+        "SHEAR_OVERDESIGN_GOVERNS",
+        "COMBINED_OVERDESIGN",
+    }:
+        state_class, badge = "optimise", "ACTION"
+    elif preview.accepted or family_name in {"TARGET_BAND_REACHED", "EXACT_STOP_PROVEN"}:
+        state_class, badge = "pass", "PASS"
+    elif family_name in {
+        "BENDING_FAIL_GOVERNS",
+        "SHEAR_FAIL_GOVERNS",
+        "SHEAR_FAIL_BENDING_OPTIMISE_GOVERNS",
+        "BENDING_AND_SHEAR_FAIL_GOVERN",
+        "GEOMETRY_DETAILING_GOVERNS",
+        "SERVICEABILITY_GOVERNS",
+        "LOCKED_NO_REPAIR",
+    }:
+        state_class, badge = "fail", "BLOCKED" if not preview.accepted else "ACTION"
+    else:
+        state_class, badge = "info", "INFO"
+    return {
+        "state_class": state_class,
+        "badge": badge,
+        "advice_text": api["format_engineering_advice"](advice),
+        "changes": [asdict(change) for change in changes],
+        "effects": list(effects),
+        "apply_allowed": bool(advice.apply_allowed),
+        "current_failing": current_failing,
+    }
+
+
 def _neutral_publication_projection(
     *,
     family: str,
@@ -362,6 +531,7 @@ def _neutral_publication_projection(
     clause_metadata: Mapping[str, Any],
     source_revision: int,
     source_hash: str,
+    v2_display: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the application publication shape without importing V1 types.
 
@@ -374,19 +544,19 @@ def _neutral_publication_projection(
 
     family_id = str(family or "").strip() or "UNKNOWN"
     reason_text = str(reason or "").strip() or "no_design_action"
-    update_map = dict(updates or {}) if accepted else {}
+    v2_display_map = dict(v2_display or {})
+    apply_allowed = bool(v2_display_map.get("apply_allowed", accepted))
+    update_map = dict(updates or {}) if apply_allowed else {}
     candidate_id = str(candidate_payload.get("candidate_id") or "").strip() or None
-    action_type = "apply_resolved_candidate" if accepted and update_map else None
+    action_type = "apply_resolved_candidate" if apply_allowed and update_map else None
     outcome_state = "ACTION" if action_type else (
         "PASS" if reason_text in {"no_bending_demand", "serviceability_not_failed"}
         else "BLOCKED"
     )
     title_family = family_id.replace("_", " ").title()
-    display_title = (
-        f"{title_family} — proposed design"
-        if action_type
-        else f"{title_family} — {reason_text.replace('_', ' ')}"
-    )
+    # V2 renders the governing family as the card title; the advice text
+    # carries the proposed change and result details.
+    display_title = title_family
     apply_payload = {
         "updates": dict(update_map),
         "resolved_candidate_updates": dict(update_map),
@@ -411,7 +581,7 @@ def _neutral_publication_projection(
         "enabled": bool(action_type),
         "actionable": bool(action_type),
         "apply_allowed": bool(action_type),
-        "label": "Review proposed design before Apply" if action_type else None,
+        "label": "Apply recommendation" if action_type else None,
         "action_type": action_type,
         "family": family_id,
         "updates": dict(update_map),
@@ -422,18 +592,27 @@ def _neutral_publication_projection(
         "product_driving": True,
     }
     cta_model["button_contract_hash"] = stable_authority_hash(cta_model)
+    v2_state_class = str(v2_display_map.get("state_class") or ("action" if action_type else outcome_state.lower()))
+    v2_badge = str(v2_display_map.get("badge") or ("ACTION" if action_type else outcome_state))
+    v2_advice_text = str(v2_display_map.get("advice_text") or "")
+    outcome_state = v2_badge
     display_model = {
         "title": display_title,
-        "badge": "ACTION" if action_type else outcome_state,
-        "summary": reason_text.replace("_", " "),
-        "status": outcome_state,
-        "bucket": outcome_state.lower(),
-        "colour_state": "action" if action_type else outcome_state.lower(),
-        "card_class": "design-guide-card",
-        "display_state": outcome_state,
+        "badge": v2_badge,
+        "summary": v2_advice_text or reason_text.replace("_", " "),
+        "status": v2_badge,
+        "bucket": v2_state_class,
+        "colour_state": v2_state_class,
+        "card_class": f"inputs-v2-design-guide-item {v2_state_class}",
+        "display_state": v2_badge,
         "blocker_explanation": None if action_type else reason_text.replace("_", " "),
         "clause_metadata": dict(clause_metadata),
         "selected_family_id": family_id,
+        "v2_state_class": v2_state_class,
+        "v2_badge": v2_badge,
+        "v2_advice_text": v2_advice_text,
+        "v2_changes": list(v2_display_map.get("changes") or []),
+        "v2_apply_allowed": bool(v2_display_map.get("apply_allowed", apply_allowed)),
         "renderer_driving": True,
     }
     display_model["final_card_model_hash"] = stable_authority_hash(display_model)
@@ -549,6 +728,12 @@ class NewDesignBrainAdapter:
             "row_counts": list(candidate.row_counts),
             "proposal": asdict(candidate.proposal),
         }
+        v2_display = _v2_display_projection(
+            api=api,
+            current=current,
+            decision=decision,
+            candidate=candidate,
+        )
         publication_projection = _neutral_publication_projection(
             family=str(decision.family.value),
             reason=str(preview.reason),
@@ -558,6 +743,7 @@ class NewDesignBrainAdapter:
             clause_metadata=_clause_metadata(api),
             source_revision=int(request.input_revision),
             source_hash=request.engineering_snapshot.engineering_hash,
+            v2_display=v2_display,
         )
         # The neutral result contract carries the canonical publication in the
         # same envelope as the legacy path.  UI/store consumers intentionally
@@ -610,6 +796,10 @@ class NewDesignBrainAdapter:
             engineering_snapshot=request.engineering_snapshot,
             current_calculations={
                 "source": "inputs_v2",
+                "resolved_inputs": _resolved_inputs_projection(
+                    request.resolved_inputs,
+                    current,
+                ),
                 "v2_source_manifest_hash": v2_source_manifest,
                 "v2_source_revision": preview.before.source_revision,
                 "v2_source_hash": preview.before.source_hash,
