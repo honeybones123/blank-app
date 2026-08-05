@@ -17,9 +17,6 @@ from inputs_application.shear_truth_policy import (
 from inputs_application.auto_design_scoring_runtime import (
     build_auto_design_scoring_runtime,
 )
-from inputs_application.bottom_compound_runtime import (
-    build_bottom_compound_runtime,
-)
 from inputs_application.bottom_selector_runtime import (
     build_bottom_selector_runtime,
 )
@@ -32,14 +29,6 @@ from inputs_page_modules.recommendation_candidate_adapter import (
 from inputs_page_modules.design_overview_adapter import (
     build_design_actions_context,
     collect_design_overview,
-)
-from inputs_page_modules.recommendation_compute import (
-    BottomRecommendationRuntime,
-    RecommendationEvaluationRuntime,
-    RecommendationTraceRuntime,
-    ShearRecommendationRuntime,
-    compute_bottom_reo_recommendation,
-    compute_shear_recommendation,
 )
 
 
@@ -75,6 +64,12 @@ def build_recommendation_trace_runtime(
     *,
     session_state: Mapping[str, Any],
 ) -> RecommendationTraceRuntime:
+    # The legacy recommendation implementation is loaded only when a caller
+    # explicitly asks for the compatibility recommendation path.  The V2
+    # Inputs page imports this module as part of its shell, so importing the
+    # legacy compute graph here would otherwise make V1 part of V2 startup.
+    from inputs_page_modules.recommendation_compute import RecommendationTraceRuntime
+
     active_recommendation_trace = None
     active_rank_trace = None
 
@@ -255,6 +250,11 @@ def compute_shear_recommendation_for_page(
     *,
     session_state: Mapping[str, Any],
 ) -> dict | None:
+    from inputs_page_modules.recommendation_compute import (
+        ShearRecommendationRuntime,
+        compute_shear_recommendation,
+    )
+
     trace = build_recommendation_trace_runtime(session_state=session_state)
     return compute_shear_recommendation(
         ShearRecommendationRuntime(
@@ -275,6 +275,12 @@ def compute_bottom_recommendation_for_page(
     *,
     session_state: Mapping[str, Any],
 ) -> dict | None:
+    from inputs_application.bottom_compound_runtime import build_bottom_compound_runtime
+    from inputs_page_modules.recommendation_compute import (
+        BottomRecommendationRuntime,
+        compute_bottom_reo_recommendation,
+    )
+
     trace = build_recommendation_trace_runtime(session_state=session_state)
     evaluation = build_recommendation_evaluation_runtime(
         session_state=session_state,
@@ -307,6 +313,8 @@ def build_recommendation_evaluation_runtime(
     *,
     session_state: Mapping[str, Any],
 ) -> RecommendationEvaluationRuntime:
+    from inputs_page_modules.recommendation_compute import RecommendationEvaluationRuntime
+
     return RecommendationEvaluationRuntime(
         build_design_actions_context=build_recommendation_actions_context,
         collect_design_overview=lambda state, context=None: collect_recommendation_overview(
