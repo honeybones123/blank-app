@@ -1,11 +1,12 @@
 """Adapter for the isolated Inputs V2 Design Brain.
 
 This module is the only Runtime boundary that knows how to load the V2
-implementation.  V1 pages, stores, jobs, and Apply code receive only the
+implementation.  Pages, stores, jobs, and Apply code receive only the
 application-owned ``DesignBrainRequest``/``DesignBrainExecution`` contracts.
 
-The adapter is intentionally opt-in.  The existing legacy composition remains
-the default until V2 shadow/parity and browser gates are accepted.
+V2 is the authoritative default composition.  The legacy implementation is
+available only through the explicit rollback binding, and must not shape V2
+inputs, results, publication, display, or Apply semantics.
 """
 
 from __future__ import annotations
@@ -82,7 +83,7 @@ def _merge_primary(primary: Mapping[str, Any], fallback: Mapping[str, Any]) -> d
 
 
 def _v2_api(source_root: Path):
-    """Load V2 modules lazily so the default V1 process has no V2 dependency."""
+    """Load V2 modules lazily at the single composition boundary."""
 
     src_root = source_root / "src"
     if not src_root.is_dir():
@@ -696,7 +697,7 @@ def _neutral_publication_projection(
 
 
 class NewDesignBrainAdapter:
-    """Adapt the isolated V2 orchestrator to the neutral V1 DesignBrainPort."""
+    """Adapt the isolated V2 orchestrator to the neutral application port."""
 
     def __init__(self, *, source_root: Path | str | None = None) -> None:
         configured = source_root or os.environ.get(V2_SOURCE_ROOT_ENV)
