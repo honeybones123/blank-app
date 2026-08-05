@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import importlib
-import os
-import sys
 from typing import Any, Callable
 
 import streamlit as st
@@ -53,34 +50,6 @@ def _render_design_guide_placeholder(**_: Any) -> None:
     """V2 owns Design Guide rendering through the workspace card adapter."""
 
     return None
-
-_DESIGN_GUIDE_DEPENDENCY_MODULE_NAMES = (
-    "inputs_application.policy_constants",
-    "inputs_application.guidance_runtime_config",
-    "inputs_page_modules.guidance_compute",
-    "inputs_page_modules.design_overview_adapter",
-    "inputs_page_modules.recommendation_compute",
-    "inputs_page_modules.design_guide",
-    "inputs_page_modules.design_guide.presentation_state",
-    "inputs_page_modules.design_guide.pending_recommendation",
-    "inputs_page_modules.design_guide.guidance_item_consolidation",
-    "inputs_page_modules.design_guide.guidance_item_dedupe",
-    "inputs_page_modules.design_guide.terminal_state",
-    "inputs_page_modules.design_guide.display_truth",
-    "inputs_page_modules.design_guide.banner_render_state",
-    "inputs_page_modules.design_guide.button_contract",
-    "inputs_page_modules.design_guide.title_alignment_verification",
-    "design_brain.family_ladder_runtime",
-    "inputs_page_modules.design_guide.guidance_items",
-    "inputs_page_modules.design_guide.local_cleanup_promotion",
-    "inputs_page_modules.design_guide.primary_button_queue",
-    "inputs_page_modules.design_guide.main_panel_status",
-    "inputs_page_modules.design_guide.shear_local_cleanup",
-    "inputs_application.efficiency_classification",
-    "inputs_application.guidance_entrypoint",
-    "inputs_application.page_runtime.design_guide_runtime_support",
-)
-
 
 @dataclass(frozen=True)
 class InputsRuntimeDependencyProvider:
@@ -156,28 +125,15 @@ class InputsPageRuntime:
 
 
 def build_inputs_page_runtime() -> InputsPageRuntime:
+    # V2 is the only supported Design Brain composition.  The old branch used
+    # to import a large V1 module graph here; keeping that branch latent made a
+    # direct page-runtime import capable of reintroducing retired V1 code.
+    # The V2 card is rendered by the engineering workspace from the neutral
+    # publication, so no legacy renderer or dependency modules are needed.
     selected_adapter = selected_design_brain_adapter_name()
-    design_guide_current_coordinators = None
+    if selected_adapter != "v2":
+        raise RuntimeError("Inputs page runtime requires the V2 Design Brain")
     render_design_guide_current_coordinator: PageCallable = _render_design_guide_placeholder
-    design_guide_module = None
-    if selected_adapter == "legacy":
-        from inputs_page_modules.design_guide import (
-            current_coordinators as design_guide_current_coordinators,
-        )
-        from inputs_application.page_runtime import design_guide as design_guide_module
-        from inputs_application.page_runtime.design_guide import (
-            render_inputs_design_guide_current_coordinator,
-        )
-
-        render_design_guide_current_coordinator = (
-            render_inputs_design_guide_current_coordinator
-        )
-        dependency_modules = tuple(
-            importlib.import_module(module_name)
-            for module_name in _DESIGN_GUIDE_DEPENDENCY_MODULE_NAMES
-        )
-    else:
-        dependency_modules = ()
     runtime_modules = (
         common,
         calculations,
@@ -189,18 +145,9 @@ def build_inputs_page_runtime() -> InputsPageRuntime:
         batch,
         divider,
     )
-    if design_guide_module is not None:
-        runtime_modules = (*runtime_modules, design_guide_module)
     provider = InputsRuntimeDependencyProvider(
-        modules=(*runtime_modules, *dependency_modules)
+        modules=runtime_modules
     )
-    if design_guide_current_coordinators is not None:
-        design_guide_current_coordinators.configure_design_guide_current_provider(
-            provider,
-            st_module=st,
-            os_module=os,
-            sys_module=sys,
-        )
     _bind_declared_runtime_dependencies(provider)
     return InputsPageRuntime(
         make_beam_3d_figure=make_beam_3d_figure,
