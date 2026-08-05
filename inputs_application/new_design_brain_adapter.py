@@ -23,6 +23,7 @@ from application.contracts.design_brain import (
     stable_authority_hash,
 )
 from application.design_brain_port import DesignBrainExecution, DesignBrainRequest
+from application.v2_source_manifest import source_manifest_hash
 
 
 V2_SOURCE_ROOT_ENV = "INPUTS_V2_SOURCE_ROOT"
@@ -528,6 +529,7 @@ class NewDesignBrainAdapter:
         if request.input_revision is None:
             raise ValueError("V2 adapter requires an input revision")
         api = _v2_api(self._source_root)
+        v2_source_manifest = source_manifest_hash(self._source_root)
         current, row_counts, serviceability_loads = _beam_inputs_from_snapshot(
             request.engineering_snapshot,
             api,
@@ -566,6 +568,7 @@ class NewDesignBrainAdapter:
             **publication_projection["publication"],
             "source": "inputs_v2",
             "v2_source_revision": preview.before.source_revision,
+            "v2_source_manifest_hash": v2_source_manifest,
             "final_publication_verifier_payload": publication_projection["verifier_payload"],
             "final_publication_authority_hash": publication_projection["publication_hash"],
             "final_publication_display_hash": publication_projection["display_model"].get(
@@ -607,6 +610,7 @@ class NewDesignBrainAdapter:
             engineering_snapshot=request.engineering_snapshot,
             current_calculations={
                 "source": "inputs_v2",
+                "v2_source_manifest_hash": v2_source_manifest,
                 "v2_source_revision": preview.before.source_revision,
                 "v2_source_hash": preview.before.source_hash,
                 "v2_status": preview.before.status,
@@ -635,6 +639,7 @@ class NewDesignBrainAdapter:
             candidate_acceptance_proof={
                 "source_revision_matches": candidate.source_revision == current.revision,
                 "source_hash_matches": candidate.source_hash == current.content_hash,
+                "v2_source_manifest_hash": v2_source_manifest,
                 "reinforcement_fit": dict(preview.after.families.get("reinforcement_fit", {})),
                 "review_before_apply": True,
             },
@@ -642,6 +647,7 @@ class NewDesignBrainAdapter:
                 "reason": str(preview.reason),
                 "accepted": accepted,
                 "family": str(decision.family.value),
+                "v2_source_manifest_hash": v2_source_manifest,
             },
             final_publication=canonical_publication,
             display_model=publication_projection["display_model"],
