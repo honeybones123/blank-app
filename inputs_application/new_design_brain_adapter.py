@@ -793,23 +793,31 @@ class NewDesignBrainAdapter:
             "authoritative_publication_source": "inputs_v2",
             "authoritative_publication_evidence": dict(publication_body.get("evidence") or {}),
         }
+        # Design Brain owns the recommendation/publication fields, while the
+        # engineering calculation region owns its revision-matched packs.  A
+        # V2 run must preserve that explicit handoff; replacing the complete
+        # calculation payload with only V2 family projections leaves the
+        # Summary renderer without the packs it needs and makes a ready result
+        # appear to be perpetually updating.
+        current_calculations = {
+            **dict(request.engineering_calculations or {}),
+            "source": "inputs_v2",
+            "resolved_inputs": _resolved_inputs_projection(
+                request.resolved_inputs,
+                current,
+            ),
+            "v2_source_manifest_hash": v2_source_manifest,
+            "v2_source_revision": preview.before.source_revision,
+            "v2_source_hash": preview.before.source_hash,
+            "v2_status": preview.before.status,
+            "v2_summary": preview.before.summary,
+            "families": dict(preview.before.families),
+            "serviceability_loads": serviceability_loads,
+            "proposed_families": dict(preview.after.families),
+        }
         result = build_authoritative_design_result(
             engineering_snapshot=request.engineering_snapshot,
-            current_calculations={
-                "source": "inputs_v2",
-                "resolved_inputs": _resolved_inputs_projection(
-                    request.resolved_inputs,
-                    current,
-                ),
-                "v2_source_manifest_hash": v2_source_manifest,
-                "v2_source_revision": preview.before.source_revision,
-                "v2_source_hash": preview.before.source_hash,
-                "v2_status": preview.before.status,
-                "v2_summary": preview.before.summary,
-                "families": dict(preview.before.families),
-                "serviceability_loads": serviceability_loads,
-                "proposed_families": dict(preview.after.families),
-            },
+            current_calculations=current_calculations,
             governing_family=str(decision.family.value),
             family_contract_version="inputs_v2.family.v1",
             family_outcome=str(preview.reason),
