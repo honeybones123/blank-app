@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+from functools import lru_cache
 from pathlib import Path
 
 
-def source_manifest_hash(source_root: Path | str) -> str:
+@lru_cache(maxsize=4)
+def _source_manifest_hash(source_root_text: str) -> str:
     """Hash the V2 source files in stable path order without importing V2."""
 
-    root = Path(source_root).expanduser().resolve() / "src" / "inputs_v2"
+    root = Path(source_root_text) / "src" / "inputs_v2"
     if not root.is_dir():
         return "missing"
     digest = hashlib.sha256()
@@ -21,6 +23,12 @@ def source_manifest_hash(source_root: Path | str) -> str:
         digest.update(len(content).to_bytes(8, "big"))
         digest.update(content)
     return digest.hexdigest()
+
+
+def source_manifest_hash(source_root: Path | str) -> str:
+    """Return the process-cached identity of the selected V2 source tree."""
+
+    return _source_manifest_hash(str(Path(source_root).expanduser().resolve()))
 
 
 __all__ = ["source_manifest_hash"]
