@@ -554,10 +554,10 @@ def _neutral_publication_projection(
         "PASS" if reason_text in {"no_bending_demand", "serviceability_not_failed"}
         else "BLOCKED"
     )
-    title_family = family_id.replace("_", " ").title()
-    # V2 renders the governing family as the card title; the advice text
-    # carries the proposed change and result details.
-    display_title = title_family
+    # The standalone V2 card renders the governing enum identifier verbatim.
+    # Preserve that exact answer surface in Runtime instead of title-casing it
+    # during neutral publication projection.
+    display_title = family_id
     apply_payload = {
         "updates": dict(update_map),
         "resolved_candidate_updates": dict(update_map),
