@@ -2640,8 +2640,14 @@ In short:
     theta_v_deg = float(getattr(shear_results, "theta_v_deg", theta_v_deg) or 0.0)
     theta_v_rad = float(getattr(shear_results, "theta_v_rad", math.radians(theta_v_deg)) or 0.0)
 
+    # The visualisation placeholder is created before the input rail, but the
+    # actual diagram work happens here. Keep a separate measured boundary so
+    # route timings do not attribute the widget rail to the diagram.
+    render_timing_mark("shear_page.runtime.inputs.end")
+    render_timing_mark("shear_page.runtime.visualisation.render.start")
     with visualisation_placeholder.container():
         _render_shear_visualisation_block(theta_v_deg=shear_results.theta_v_deg)
+    render_timing_mark("shear_page.runtime.visualisation.render.end")
     
     # Check 6: Concrete shear contribution
     sqrt_fc_limited = float(getattr(shear_results, "sqrt_fc_limited", shear_display_scalars["sqrt_fc_limited"]) or 0.0)
@@ -2716,6 +2722,7 @@ In short:
     # =====================================================
     # TAB 1: Torsion + dimensions
     # =====================================================
+    render_timing_mark("shear_page.runtime.checks.tab1.start")
     with tab1:
         # =====================================================
         # Check 1 — TORSION CRACKING CHECK (T_cr)
@@ -3289,6 +3296,8 @@ dv is defined by shear transfer geometry (shear). They represent different mecha
         )
 
     # =====================================================
+    render_timing_mark("shear_page.runtime.checks.tab1.end")
+    render_timing_mark("shear_page.runtime.checks.tab2.start")
     # TAB 2: MCFT and strength checks
     # =====================================================
     with tab2:
@@ -3380,17 +3389,26 @@ div[data-testid="stElementContainer"]:has(#shear-plot-wrap-shear_behaviour_mcft_
 """,
             unsafe_allow_html=True,
         )
-        _render_principal_stress_directions_explainer()
-        st.markdown('<div class="mcft-compact-block">', unsafe_allow_html=True)
-        # Popover anchor (no visible subhead; layout CSS targets #mcft-before-display-popover).
-        st.markdown(
-            """
+        # These explanatory/behaviour diagrams are detailed MCFT content. The
+        # existing breakdown toggle is the explicit user-controlled boundary;
+        # do not build several Plotly figures on every route render when the
+        # detailed view is hidden.
+        st.session_state.setdefault("show_mcft_breakdown", False)
+        show_mcft_breakdown = bool(st.session_state.get("show_mcft_breakdown", False))
+        if show_mcft_breakdown:
+            _render_principal_stress_directions_explainer()
+            st.markdown('<div class="mcft-compact-block">', unsafe_allow_html=True)
+            # Popover anchor (no visible subhead; layout CSS targets #mcft-before-display-popover).
+            st.markdown(
+                """
 <div id="mcft-before-display-popover" style="height:0;line-height:0;font-size:0;margin:0;padding:0;" aria-hidden="true"></div>
 """,
-            unsafe_allow_html=True,
-        )
-        _render_shear_behaviour_diagrams(theta_v_deg=shear_results.theta_v_deg)
-        st.markdown("</div>", unsafe_allow_html=True)
+                unsafe_allow_html=True,
+            )
+            _render_shear_behaviour_diagrams(theta_v_deg=shear_results.theta_v_deg)
+            st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.caption('Detailed MCFT diagrams are hidden. Enable "Show detailed MCFT breakdown" to display them.')
 
         # =====================================================
         # Check 4 — LONGITUDINAL STRAIN εx
@@ -3722,6 +3740,7 @@ in the general shear method.
         # Build summary line
         check4_summary = f"Check 4 — Longitudinal strain $\\varepsilon_x$ | Result: $\\varepsilon_x = {eps_x:.5f}$"
         
+        render_timing_mark("shear_page.runtime.checks.check4.start")
         render_expandable_step(
             page_key="shear",
             step_id="shear_check4",
@@ -3968,6 +3987,7 @@ The blue $A_{st}$ line is the longitudinal tension steel, which helps hold the s
         # Build summary line
         check5_summary = f"Check 5 — MCFT parameters ($k_v$ and $\\theta_v$) | Result: $k_v = {k_v:.3f}$, $\\theta_v = {theta_v_deg:.1f}°$"
         
+        render_timing_mark("shear_page.runtime.checks.check5.start")
         render_expandable_step(
             page_key="shear",
             step_id="shear_check5",
@@ -4047,6 +4067,7 @@ This step gives the concrete contribution only. The steel contribution $V_s$ is 
         # Build summary line
         check6_summary = f"Check 6 — Concrete shear strength $V_{{uc}}$ | Result: $V_{{uc}} = {Vuc_kN:,.1f}$ kN"
         
+        render_timing_mark("shear_page.runtime.checks.check6.start")
         render_expandable_step(
             page_key="shear",
             step_id="shear_check6",
@@ -4195,6 +4216,7 @@ This step gives the steel contribution only. It is then added to the concrete co
         # Build summary line
         check7_summary = f"Check 7 — Steel shear strength $V_s$ | Result: $V_s = V_{{us}} = {Vus_kN:,.1f}$ kN"
         
+        render_timing_mark("shear_page.runtime.checks.check7.start")
         render_expandable_step(
             page_key="shear",
             step_id="shear_check7",
@@ -4297,6 +4319,7 @@ This gives the nominal sectional shear strength before any separate governing li
         pass_fail = "PASS" if shear_ok else "FAIL"
         check8_summary = f"Check 8 — Sectional shear capacity check | Result: $\\phi V_u = {phi_Vu:,.1f}$ kN vs $V_{{eq}}^* = {V_eq:.1f}$ kN → **{pass_fail}**"
         
+        render_timing_mark("shear_page.runtime.checks.check8.start")
         render_expandable_step(
             page_key="shear",
             step_id="shear_check8",
@@ -4452,6 +4475,7 @@ Regardless of reinforcement, design shear capacity cannot exceed this limit.
             f"$v_{{\\mathrm{{dem}}}} = {LHS:,.1f}$ vs $v_{{\\mathrm{{cap}}}} = {RHS:,.1f}$ → **{web_pass_fail}**"
         )
         
+        render_timing_mark("shear_page.runtime.checks.check9.start")
         render_expandable_step(
             page_key="shear",
             step_id="shear_check9",
@@ -4465,6 +4489,8 @@ Regardless of reinforcement, design shear capacity cannot exceed this limit.
         )
 
     # =====================================================
+    render_timing_mark("shear_page.runtime.checks.tab2.end")
+    render_timing_mark("shear_page.runtime.checks.tab3.start")
     # TAB 3: Shear reinforcement checks
     # =====================================================
     with tab3:
@@ -4724,9 +4750,14 @@ Spacing is varied along the span based on shear demand and checked against minim
             diagram_render_fn=check10_layout_diagram_fn,
         )
 
+    render_timing_mark("shear_page.runtime.checks.end")
+
+    render_timing_mark("shear_page.runtime.checks.tab3.end")
+
     # =======================================================
     # 9. SUMMARY TABLE + PUSH RESULTS
     # =======================================================
+    render_timing_mark("shear_page.runtime.summary.start")
     # Note: torsion_required, V_eq, phi_Vu, etc. are computed inside tabs but need to be accessible here
     # They are already computed in tab_dim (torsion_required, V_eq) and tab_reinf (phi_Vu, shear_ok)
     # We need to ensure these are available at module scope or recompute them here
@@ -4771,10 +4802,13 @@ Spacing is varied along the span based on shear demand and checked against minim
             )
         bind_summary_clicks()
 
+    render_timing_mark("shear_page.runtime.summary.end")
+
     # Cross-page jump scroll (Inputs summary → shear/torsion calc anchors)
     from jump_nav import scroll_to_jump_after_render
 
     scroll_to_jump_after_render()
+    render_timing_mark("shear_page.runtime.end")
 
 
 if __name__ == "__main__":
