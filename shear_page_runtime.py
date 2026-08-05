@@ -304,11 +304,29 @@ def _render_animated_plotly_figure(
     *,
     height: int | None = None,
     centered: bool = False,
+    animated: bool = True,
     chart_key: str = "shear_animated",
     max_width_px: int = SHEAR_VISUAL_MAX_WIDTH_PX,
     title_pad_t: int = 28,
     compact_top: bool = False,
 ) -> None:
+    # Checks 5, 7 and 9 use this helper for a consistent visual frame, but
+    # their figures are static.  Sending static figures through components.html
+    # creates a separate iframe and loads a complete Plotly runtime for each
+    # chart, including charts inside collapsed/hidden sections.  Keep the
+    # existing HTML path for genuinely animated figures, while using the
+    # native Plotly renderer for static figures so the visible chart remains
+    # identical without the iframe cost.
+    if not animated:
+        render_plotly_diagram(
+            fig,
+            key=chart_key,
+            title="Shear check diagram",
+            config=SHEAR_VISUAL_CONFIG,
+            center=centered,
+        )
+        return
+
     plot_h = int(height or fig.layout.height or SHEAR_VISUAL_HEIGHT_PX)
     if centered:
         fig = _standardise_shear_visual_layout(fig, title_pad_t=title_pad_t)
@@ -3942,6 +3960,7 @@ The optional STM overlay uses a **separate** strut angle **θ<sub>STM</sub>** fr
             _render_animated_plotly_figure(
                 fig,
                 height=int(fig.layout.height or 320),
+                animated=False,
                 chart_key="shear_check5_animated",
             )
 
@@ -4181,6 +4200,7 @@ $$V_{{us}} = \\left(\\frac{{{Asv:.1f} \\times {f_syv:.1f} \\times {d_v:.1f}}}{{{
             _render_animated_plotly_figure(
                 fig,
                 height=int(fig.layout.height or 320),
+                animated=False,
                 chart_key="shear_check7_animated",
             )
 
@@ -4435,6 +4455,7 @@ $$v_{{\\mathrm{{dem}}}} = \\sqrt{{\\left(\\frac{{{V_star:.1f}}}{{{b_v:.1f} \\tim
             _render_animated_plotly_figure(
                 fig,
                 height=int(fig.layout.height or 320),
+                animated=False,
                 chart_key="shear_check9_animated",
             )
 
