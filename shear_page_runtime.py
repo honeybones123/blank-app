@@ -84,6 +84,21 @@ _render_plotly_in_mcft_column = _shear_visualisation_section._render_plotly_in_m
 _render_mcft_behaviour_chart = _shear_visualisation_section._render_mcft_behaviour_chart
 _shear_visualisation_section.bind_runtime(globals())
 
+# Keep Shear's existing step renderer available, but suppress the expensive
+# detail/diagram branch while an inactive Shear check tab is being assembled.
+# The surrounding summary and calculations still run; only non-visible tab
+# content is skipped until that tab is selected.
+_render_expandable_step = render_expandable_step
+
+
+def render_expandable_step(*args, **kwargs):
+    if (
+        kwargs.get("page_key") == "shear"
+        and bool(st.session_state.get("_shear_skip_inactive_tab", False))
+    ):
+        return None
+    return _render_expandable_step(*args, **kwargs)
+
 
 
 # ------------------------------------------------------------
@@ -101,6 +116,13 @@ SHEAR_VISUAL_CONFIG = {
     "displayModeBar": False,
     "responsive": True,
 }
+
+SHEAR_CHECK_TAB_LABELS = (
+    "Torsion + dimensions",
+    "MCFT and strength checks",
+    "Shear reinforcement checks",
+)
+SHEAR_CHECK_TAB_KEY = "shear_check_tab"
 
 # Shear link legs: 0 means no links; active closed links start at 2 legs.
 REO_SHEAR_LEGS_OPTIONS = [0] + list(range(2, 13))
@@ -2731,16 +2753,77 @@ In short:
     
     apply_step_summary_expander_css()  # same pattern as bending
     
-    tab1, tab2, tab3 = st.tabs([
-        "Torsion + dimensions",
-        "MCFT and strength checks",
-        "Shear reinforcement checks",
-    ])
+    # Streamlit st.tabs renders every tab body on every rerun.  Keep the same
+    # visible tab treatment, but use a styled radio as the server-side active
+    # tab boundary so inactive check diagrams are not assembled at all.
+    _jump_tab = st.session_state.get(JUMP_NAV_TAB_KEY)
+    if _jump_tab in SHEAR_CHECK_TAB_LABELS:
+        st.session_state[SHEAR_CHECK_TAB_KEY] = _jump_tab
+    elif st.session_state.get(SHEAR_CHECK_TAB_KEY) not in SHEAR_CHECK_TAB_LABELS:
+        st.session_state[SHEAR_CHECK_TAB_KEY] = SHEAR_CHECK_TAB_LABELS[0]
+
+    st.markdown(
+        """
+<style>
+div[data-testid="stVerticalBlock"]:has(#shear-check-tabs-anchor) div[role="radiogroup"] {
+    display: flex !important;
+    align-items: center !important;
+    gap: 18px !important;
+    border-bottom: 1px solid rgba(49,51,63,0.20) !important;
+    padding-bottom: 4px !important;
+    margin-bottom: 0.35rem !important;
+}
+div[data-testid="stVerticalBlock"]:has(#shear-check-tabs-anchor) div[role="radiogroup"] > label {
+    margin: 0 !important;
+    padding: 6px 2px !important;
+    background: transparent !important;
+    border: none !important;
+    border-bottom: 2px solid transparent !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    cursor: pointer !important;
+    font-weight: 500 !important;
+}
+div[data-testid="stVerticalBlock"]:has(#shear-check-tabs-anchor) div[role="radiogroup"] > label input[type="radio"],
+div[data-testid="stVerticalBlock"]:has(#shear-check-tabs-anchor) div[role="radiogroup"] > label > div:first-child,
+div[data-testid="stVerticalBlock"]:has(#shear-check-tabs-anchor) div[role="radiogroup"] > label > span:first-child {
+    display: none !important;
+}
+div[data-testid="stVerticalBlock"]:has(#shear-check-tabs-anchor) div[role="radiogroup"] > label:has(input:checked),
+div[data-testid="stVerticalBlock"]:has(#shear-check-tabs-anchor) div[role="radiogroup"] > label[aria-checked="true"] {
+    border-bottom: 2px solid #ff4b4b !important;
+    font-weight: 600 !important;
+}
+div[data-testid="stVerticalBlock"]:has(#shear-check-tabs-anchor) div[role="radiogroup"] > label:hover {
+    background: transparent !important;
+}
+div[data-testid="stVerticalBlock"]:has(#shear-check-tabs-anchor) div[role="radiogroup"] > label * {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+</style>
+""",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div id="shear-check-tabs-anchor" style="height:0;line-height:0;font-size:0;margin:0;padding:0;" aria-hidden="true"></div>',
+        unsafe_allow_html=True,
+    )
+    active_shear_tab = st.radio(
+        "Shear design checks",
+        options=SHEAR_CHECK_TAB_LABELS,
+        horizontal=True,
+        key=SHEAR_CHECK_TAB_KEY,
+        label_visibility="collapsed",
+    )
+    st.session_state.pop(JUMP_NAV_TAB_KEY, None)
+    tab1, tab2, tab3 = st.container(), st.container(), st.container()
     
     # =====================================================
     # TAB 1: Torsion + dimensions
     # =====================================================
     render_timing_mark("shear_page.runtime.checks.tab1.start")
+    st.session_state["_shear_skip_inactive_tab"] = active_shear_tab != SHEAR_CHECK_TAB_LABELS[0]
     with tab1:
         # =====================================================
         # Check 1 — TORSION CRACKING CHECK (T_cr)
@@ -3318,6 +3401,7 @@ dv is defined by shear transfer geometry (shear). They represent different mecha
     render_timing_mark("shear_page.runtime.checks.tab2.start")
     # TAB 2: MCFT and strength checks
     # =====================================================
+    st.session_state["_shear_skip_inactive_tab"] = active_shear_tab != SHEAR_CHECK_TAB_LABELS[1]
     with tab2:
         st.markdown(
             """
@@ -3411,22 +3495,23 @@ div[data-testid="stElementContainer"]:has(#shear-plot-wrap-shear_behaviour_mcft_
         # existing breakdown toggle is the explicit user-controlled boundary;
         # do not build several Plotly figures on every route render when the
         # detailed view is hidden.
-        st.session_state.setdefault("show_mcft_breakdown", False)
-        show_mcft_breakdown = bool(st.session_state.get("show_mcft_breakdown", False))
-        if show_mcft_breakdown:
-            _render_principal_stress_directions_explainer()
-            st.markdown('<div class="mcft-compact-block">', unsafe_allow_html=True)
-            # Popover anchor (no visible subhead; layout CSS targets #mcft-before-display-popover).
-            st.markdown(
-                """
+        if active_shear_tab == SHEAR_CHECK_TAB_LABELS[1]:
+            st.session_state.setdefault("show_mcft_breakdown", False)
+            show_mcft_breakdown = bool(st.session_state.get("show_mcft_breakdown", False))
+            if show_mcft_breakdown:
+                _render_principal_stress_directions_explainer()
+                st.markdown('<div class="mcft-compact-block">', unsafe_allow_html=True)
+                # Popover anchor (no visible subhead; layout CSS targets #mcft-before-display-popover).
+                st.markdown(
+                    """
 <div id="mcft-before-display-popover" style="height:0;line-height:0;font-size:0;margin:0;padding:0;" aria-hidden="true"></div>
 """,
-                unsafe_allow_html=True,
-            )
-            _render_shear_behaviour_diagrams(theta_v_deg=shear_results.theta_v_deg)
-            st.markdown("</div>", unsafe_allow_html=True)
-        else:
-            st.caption('Detailed MCFT diagrams are hidden. Enable "Show detailed MCFT breakdown" to display them.')
+                    unsafe_allow_html=True,
+                )
+                _render_shear_behaviour_diagrams(theta_v_deg=shear_results.theta_v_deg)
+                st.markdown("</div>", unsafe_allow_html=True)
+            else:
+                st.caption('Detailed MCFT diagrams are hidden. Enable "Show detailed MCFT breakdown" to display them.')
 
         # =====================================================
         # Check 4 — LONGITUDINAL STRAIN εx
@@ -4514,6 +4599,7 @@ Regardless of reinforcement, design shear capacity cannot exceed this limit.
     render_timing_mark("shear_page.runtime.checks.tab3.start")
     # TAB 3: Shear reinforcement checks
     # =====================================================
+    st.session_state["_shear_skip_inactive_tab"] = active_shear_tab != SHEAR_CHECK_TAB_LABELS[2]
     with tab3:
         # =====================================================
         # Check 10 — SHEAR REINFORCEMENT LAYOUT (3 zones)
@@ -4774,6 +4860,7 @@ Spacing is varied along the span based on shear demand and checked against minim
     render_timing_mark("shear_page.runtime.checks.end")
 
     render_timing_mark("shear_page.runtime.checks.tab3.end")
+    st.session_state["_shear_skip_inactive_tab"] = False
 
     # =======================================================
     # 9. SUMMARY TABLE + PUSH RESULTS
