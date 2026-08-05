@@ -105,6 +105,12 @@ def build_guidance_blocker_builder():
     return legacy_adapter.build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence
 
 
+def build_guidance_blocker():
+    """Return the compatibility preflight blocker through this boundary."""
+
+    return build_guidance_blocker_builder()
+
+
 def build_publication_cta_builder():
     """Expose the selected implementation's CTA proof builder by composition."""
 
@@ -112,11 +118,23 @@ def build_publication_cta_builder():
     return legacy_adapter.build_final_publication_cta_from_current_state
 
 
+def build_publication_cta():
+    """Return the compatibility CTA builder through this boundary."""
+
+    return build_publication_cta_builder()
+
+
 def build_bottom_arrangement_pool_builder():
     """Expose the selected bending family arrangement generator by composition."""
 
     legacy_adapter = _legacy_adapter_module()
     return legacy_adapter.build_bottom_reo_arrangement_pool_from_state
+
+
+def build_bottom_arrangement_pool():
+    """Return the compatibility arrangement pool through this boundary."""
+
+    return build_bottom_arrangement_pool_builder()
 
 
 def build_publication_builder():
@@ -169,10 +187,22 @@ def build_primary_apply_payload_projection_builder():
     return legacy_adapter.build_final_design_guide_primary_apply_payload_projection
 
 
+def build_primary_apply_payload_projection():
+    """Return the compatibility Apply projection through this boundary."""
+
+    return build_primary_apply_payload_projection_builder()
+
+
 def selected_legacy_design_brain_namespace():
     """Return the selected compatibility namespace for historical facades."""
 
     return _legacy_adapter_module()
+
+
+def selected_compatibility_namespace():
+    """Return the rollback namespace without exposing its concrete owner."""
+
+    return selected_legacy_design_brain_namespace()
 
 
 __all__ = [
@@ -181,10 +211,15 @@ __all__ = [
     "build_replacement_design_brain_service",
     "build_new_design_brain_service",
     "build_guidance_blocker_builder",
+    "build_guidance_blocker",
     "build_publication_cta_builder",
+    "build_publication_cta",
     "build_bottom_arrangement_pool_builder",
+    "build_bottom_arrangement_pool",
     "build_publication_builder",
     "build_browser_publication_probe",
     "build_primary_apply_payload_projection_builder",
+    "build_primary_apply_payload_projection",
     "selected_legacy_design_brain_namespace",
+    "selected_compatibility_namespace",
 ]

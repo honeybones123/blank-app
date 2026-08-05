@@ -128,8 +128,8 @@ from inputs_application.recommendation_primitives import (
     shortlist_smallest_successful_shear_candidates as _shortlist_smallest_successful_shear_candidates,
 )
 from inputs_application.design_brain_composition import (
-    build_bottom_arrangement_pool_builder,
-    selected_legacy_design_brain_namespace,
+    build_bottom_arrangement_pool,
+    selected_compatibility_namespace,
 )
 from application.bottom_reinforcement_policy import (
     build_bottom_reo_guidance_change_lines_for_updates as _build_bottom_reo_guidance_change_lines_for_updates,
@@ -154,7 +154,7 @@ def _generate_local_bottom_arrangements(
     context: dict | None = None,
     limit: int | None = None,
 ) -> list[dict]:
-    return build_bottom_arrangement_pool_builder()(
+    return build_bottom_arrangement_pool()(
         state,
         mode_config,
         band=band,
@@ -311,7 +311,7 @@ def _emit_bottom_reo_filter_boundary_trace(
     if not trace_path:
         return
 
-    _owner = selected_legacy_design_brain_namespace()
+    _owner = selected_compatibility_namespace()
     build_bottom_reo_evaluated_candidate_filter_boundary = _owner.build_bottom_reo_evaluated_candidate_filter_boundary
     build_bottom_reo_evaluated_candidate_filter_record = _owner.build_bottom_reo_evaluated_candidate_filter_record
 

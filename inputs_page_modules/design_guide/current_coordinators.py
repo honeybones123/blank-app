@@ -25,11 +25,11 @@ from application.contracts.family_classification import (
 )
 from application.publication_identity import stable_final_publication_hash
 from inputs_application.design_brain_composition import (
-    selected_legacy_design_brain_namespace,
+    selected_compatibility_namespace,
 )
 
 
-_owner = selected_legacy_design_brain_namespace()
+_owner = selected_compatibility_namespace()
 build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence = _owner.build_design_guide_controller_active_fail_executor_no_repair_blocker_from_evidence
 build_design_guide_controller_compute_active_under_capacity_blocker_projection = _owner.build_design_guide_controller_compute_active_under_capacity_blocker_projection
 classify_family_from_whole_beam_evidence = _owner.classify_family_from_whole_beam_evidence

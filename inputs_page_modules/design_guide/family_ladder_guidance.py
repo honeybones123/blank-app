@@ -5,11 +5,11 @@ This module preserves historical imports while callers migrate to the owner.
 """
 
 from inputs_application.design_brain_composition import (
-    selected_legacy_design_brain_namespace,
+    selected_compatibility_namespace,
 )
 
 
-_owner = selected_legacy_design_brain_namespace()
+_owner = selected_compatibility_namespace()
 FamilyLadderGuidanceRuntime = _owner.FamilyLadderGuidanceRuntime
 _family_ladder_guidance_item = _owner._family_ladder_guidance_item
 bind_family_ladder_guidance_dependencies = _owner.bind_family_ladder_guidance_dependencies

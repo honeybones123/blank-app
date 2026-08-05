@@ -17,11 +17,11 @@ from typing import Any, Callable
 
 from application.candidate_delta_policy import diff_candidate_state_updates
 from inputs_application.design_brain_composition import (
-    selected_legacy_design_brain_namespace,
+    selected_compatibility_namespace,
 )
 
 
-_owner = selected_legacy_design_brain_namespace()
+_owner = selected_compatibility_namespace()
 project_active_fail_executor_evaluated_candidate_result = _owner.project_active_fail_executor_evaluated_candidate_result
 resolve_active_fail_executor_candidate_eval_source = _owner.resolve_active_fail_executor_candidate_eval_source
 build_design_guide_controller_active_fail_executor_ladder_eval_commands = _owner.build_design_guide_controller_active_fail_executor_ladder_eval_commands

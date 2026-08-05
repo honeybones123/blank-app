@@ -10,11 +10,11 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from inputs_application.design_brain_composition import (
-    selected_legacy_design_brain_namespace,
+    selected_compatibility_namespace,
 )
 
 
-_owner = selected_legacy_design_brain_namespace()
+_owner = selected_compatibility_namespace()
 BendingOverdesignCandidateEvaluation = _owner.BendingOverdesignCandidateEvaluation
 BendingOverdesignCandidateInput = _owner.BendingOverdesignCandidateInput
 BendingOverdesignCandidateUpdate = _owner.BendingOverdesignCandidateUpdate

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from inputs_application.design_brain_composition import build_bottom_arrangement_pool_builder
+from inputs_application.design_brain_composition import build_bottom_arrangement_pool
 from inputs_application.candidate_metrics import candidate_state_to_shared_updates
 from inputs_application.recommendation_primitives import (
     annotate_bottom_candidate_deltas,
@@ -167,7 +167,7 @@ def generate_bottom_arrangements(
     context: dict | None = None,
     limit: int | None = None,
 ) -> list[dict]:
-    return build_bottom_arrangement_pool_builder()(
+    return build_bottom_arrangement_pool()(
         state,
         mode_config,
         band=band,

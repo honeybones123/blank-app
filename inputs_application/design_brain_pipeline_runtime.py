@@ -23,11 +23,11 @@ from application.contracts.design_brain import AuthoritativeDesignResult, Engine
 from application.contracts.family_classification import normalise_governing_family
 from application.family_ladder_dispatch_policy import resolve_family_ladder_dispatch
 from inputs_application.design_brain_composition import (
-    selected_legacy_design_brain_namespace,
+    selected_compatibility_namespace,
 )
 
 
-_owner = selected_legacy_design_brain_namespace()
+_owner = selected_compatibility_namespace()
 ApplyCommandConstructionStage = _owner.ApplyCommandConstructionStage
 ApprovedCandidateProposal = _owner.ApprovedCandidateProposal
 AuthoritativeCandidateEvaluation = _owner.AuthoritativeCandidateEvaluation

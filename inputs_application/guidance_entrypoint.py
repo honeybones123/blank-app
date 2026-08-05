@@ -17,7 +17,7 @@ def build_guidance_entrypoint_runtime(
     # These imports belong to the legacy guidance implementation.  Keep them
     # behind the call boundary so selecting V2 does not import the old family
     # graph merely because the page shell imports this neutral entrypoint.
-    from inputs_application.design_brain_composition import build_guidance_blocker_builder
+    from inputs_application.design_brain_composition import build_guidance_blocker
     from inputs_application.efficiency_classification import (
         identify_materially_overprovided_non_governing_families,
     )
@@ -70,7 +70,7 @@ def build_guidance_entrypoint_runtime(
                 collect_design_overview=collect_overview,
                 parse_util_value=parse_util_value,
                 build_no_repair_blocker=(
-                    build_guidance_blocker_builder()
+                    build_guidance_blocker()
                 ),
             ),
         ),

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from inputs_application.design_brain_composition import (
-    build_primary_apply_payload_projection_builder,
+    build_primary_apply_payload_projection,
 )
 
 
@@ -92,7 +92,7 @@ def _build_design_guide_primary_apply_payload(
         }.items()
         if value is not None
     }
-    projection = build_primary_apply_payload_projection_builder()(
+    projection = build_primary_apply_payload_projection()(
         item=dict(item or {}),
         rec=dict(rec or {}),
         button_contract=contract,
