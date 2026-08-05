@@ -99,6 +99,76 @@ REO_LAYOUT_MODE = ["Count", "Spacing"]
 _DEBUG_DEFLECTION_SUPPORT_RESOLUTION = False
 
 
+# ``compute_deflection_results`` publishes the shared report used by other
+# pages, while this renderer performs its own display calculation below.  The
+# published calculation used to run on every Streamlit rerun, including
+# reruns caused only by navigation or expander interaction.  Keep a narrow,
+# state-based cache boundary here so a changed input can never reuse an old
+# publication, without changing the visible page or calculation formulas.
+_DEFLECTION_CORE_CACHE_KEYS = (
+    "b",
+    "D",
+    "L",
+    "fc",
+    "Ec",
+    "Eceff",
+    "Ast_bot",
+    "Ast_top",
+    "d",
+    "sfd_case",
+    "g_udl_kNm_per_m",
+    "q_udl_kNm_per_m",
+    "w_sls_kNm_per_m",
+    "P_sls_kN",
+    "psi_udl",
+    "psi_point",
+    "defl_beff",
+    "defl_bw",
+    "defl_L_eff",
+    "defl_limit_ratio",
+    "defl_Fdef",
+    "actions_source",
+    "sls_Mstar",
+    "sls_Vstar",
+    "span_L_m",
+    "actions_mode",
+    "defl_support_type",
+    "sfd_beam_system_mode",
+    "design_beam_system_mode",
+    "sfd_support_condition",
+    "design_support_condition",
+    "defl_use_simplified_ief",
+    "defl_Ief_user",
+)
+_DEFLECTION_CORE_CACHE_PREFIXES = (
+    "sfd_span_",
+    "load_ms_",
+)
+
+
+def _deflection_core_cache_key() -> tuple:
+    """Return a deterministic key for the published Deflection computation."""
+
+    values: list[tuple[str, str]] = []
+    for key in _DEFLECTION_CORE_CACHE_KEYS:
+        try:
+            value = get_param(key, None)
+        except Exception:
+            value = st.session_state.get(key)
+        if value is None:
+            value = st.session_state.get(key)
+        values.append((key, repr(value)))
+
+    # Multi-span metrics read indexed keys, so include those without making
+    # the cache depend on unrelated session-state/UI bookkeeping keys.
+    for key in sorted(st.session_state.keys()):
+        if key.startswith(_DEFLECTION_CORE_CACHE_PREFIXES):
+            values.append((key, repr(st.session_state.get(key))))
+
+    revision = int(st.session_state.get("_inputs_workspace_revision", 0) or 0)
+    return revision, tuple(values)
+
+
 # Extracted section owners; the runtime below retains ordered page composition only.
 from engineering_page_sections import deflection_diagrams as _deflection_diagrams_section
 from engineering_page_sections import deflection_support as _deflection_support_section
@@ -616,9 +686,27 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     Asc = _seed_from_param("Ast_top", 0.0)
 
     render_timing_mark("deflection_page.runtime.compute.start")
-    # Always refresh deflection results for summary/reporting.
+    # Refresh the published report only when its input state has changed.  The
+    # page-local display calculation below still runs from the current inputs;
+    # this guard removes the duplicate publication/report build on idle
+    # reruns, navigation, and expander interactions.
     from deflection_core import compute_deflection_results
-    compute_deflection_results(publish=True)
+    _deflection_cache_key = _deflection_core_cache_key()
+    _deflection_results_state = st.session_state.get("results")
+    _deflection_params_present = isinstance(_deflection_results_state, dict) and isinstance(
+        _deflection_results_state.get("_deflection_params"), dict
+    )
+    _deflection_report_present = isinstance(_deflection_results_state, dict) and (
+        "deflection_report" in _deflection_results_state
+        or "deflection_report_error" in _deflection_results_state
+    )
+    if (
+        st.session_state.get("_deflection_core_cache_key") != _deflection_cache_key
+        or not _deflection_params_present
+        or not _deflection_report_present
+    ):
+        compute_deflection_results(publish=True)
+        st.session_state["_deflection_core_cache_key"] = _deflection_cache_key
 
     # --------------------------------------------------------
     # SINGLE COMPUTED VALUES BLOCK (compute once, use everywhere)
