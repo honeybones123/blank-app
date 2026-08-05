@@ -13,10 +13,9 @@ from typing import Any, Mapping
 
 from application.contracts.design_brain import EngineeringInputSnapshot
 from application.design_brain_port import DesignBrainRequest
-from inputs_application.design_brain_composition import build_design_brain_service
-from inputs_application.guidance_entrypoint import (
-    build_guidance_entrypoint_runtime,
-    compute_inputs_guidance,
+from inputs_application.design_brain_composition import (
+    build_design_brain_service,
+    selected_design_brain_adapter_name,
 )
 
 
@@ -40,26 +39,40 @@ def compute_design_brain_job(request: Mapping[str, Any]) -> dict[str, Any]:
     if snapshot.engineering_hash != expected_hash:
         raise ValueError("Design Brain job engineering hash mismatch")
     guidance_context = _mapping(request_payload.get("guidance_context"))
-    session_state = {
-        **guidance_context,
-        **_mapping(request_payload.get("session_seed")),
-    }
-    fake_streamlit = SimpleNamespace(session_state=session_state)
-    runtime = build_guidance_entrypoint_runtime(
-        st_module=fake_streamlit,
-        os_module=os,
-        sys_module=sys,
-    )
+    selected_adapter = selected_design_brain_adapter_name()
     started = time.perf_counter()
     debug_enabled = bool(request_payload.get("guidance_debug_verbose"))
-    design_brain_service = build_design_brain_service(
-        lambda design_request: compute_inputs_guidance(
-            runtime,
-            dict(design_request.resolved_inputs),
-            guidance_debug_verbose=design_request.debug_enabled,
-            debug_enabled=design_request.debug_enabled,
+    if selected_adapter == "legacy":
+        # The rollback path retains the historical guidance runtime.  Keep it
+        # entirely inside the explicit legacy branch so V2 jobs do not import
+        # or initialise the old family graph on every process start.
+        from inputs_application.guidance_entrypoint import (
+            build_guidance_entrypoint_runtime,
+            compute_inputs_guidance,
         )
-    )
+        session_state = {
+            **guidance_context,
+            **_mapping(request_payload.get("session_seed")),
+        }
+        fake_streamlit = SimpleNamespace(session_state=session_state)
+        runtime = build_guidance_entrypoint_runtime(
+            st_module=fake_streamlit,
+            os_module=os,
+            sys_module=sys,
+        )
+        design_brain_service = build_design_brain_service(
+            lambda design_request: compute_inputs_guidance(
+                runtime,
+                dict(design_request.resolved_inputs),
+                guidance_debug_verbose=design_request.debug_enabled,
+                debug_enabled=design_request.debug_enabled,
+            ),
+            adapter_name="legacy",
+        )
+    else:
+        # V2 receives the neutral request directly.  No Streamlit façade,
+        # session seed, or legacy guidance provider is needed in this worker.
+        design_brain_service = build_design_brain_service(adapter_name="v2")
     execution = design_brain_service.run(
         DesignBrainRequest(
             engineering_snapshot=snapshot,

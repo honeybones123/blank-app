@@ -126,6 +126,42 @@ def build_publication_builder():
     return legacy_adapter.build_final_design_guide_publication
 
 
+def build_browser_publication_probe(
+    *,
+    item: Mapping[str, object],
+    debug: Mapping[str, object],
+    publication_reason: str,
+    current_publication: Mapping[str, object] | None = None,
+):
+    """Return the browser-probe publication through the neutral boundary.
+
+    V2 already publishes the complete display/CTA/evidence envelope.  Reusing
+    that envelope keeps the V2 path independent from the legacy publication
+    formatter.  The explicit legacy rollback still uses its historical
+    formatter so rollback verification remains meaningful.
+    """
+
+    if selected_design_brain_adapter_name() == "v2":
+        publication = dict(current_publication or {})
+        if publication:
+            return publication
+        # A missing authoritative publication is a probe failure, not a reason
+        # to silently invoke V1.  Preserve enough neutral shape for diagnostics.
+        return {
+            "selected_family": str(item.get("selected_family_id") or item.get("family") or ""),
+            "publication_reason": str(publication_reason or ""),
+            "guidance_items": [dict(item)],
+            "display": {},
+            "cta": {},
+            "evidence": dict(debug),
+        }
+    return build_publication_builder()(
+        item=dict(item),
+        debug=dict(debug),
+        publication_reason=publication_reason,
+    )
+
+
 def build_primary_apply_payload_projection_builder():
     """Expose the selected implementation's Apply projection by composition."""
 
@@ -148,6 +184,7 @@ __all__ = [
     "build_publication_cta_builder",
     "build_bottom_arrangement_pool_builder",
     "build_publication_builder",
+    "build_browser_publication_probe",
     "build_primary_apply_payload_projection_builder",
     "selected_legacy_design_brain_namespace",
 ]

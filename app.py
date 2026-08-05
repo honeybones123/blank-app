@@ -213,7 +213,7 @@ from inputs_application.engineering_predicates import parse_util_value, shear_de
 from application.contracts.design_policy import AUTO_DESIGN_MODE_CONFIG, resolve_design_mode_config
 from application.publication_identity import stable_final_publication_hash
 from application.accepted_green_blocker_policy import accepted_green_exact_blocker_is_valid
-from inputs_application.design_brain_composition import build_publication_builder
+from inputs_application.design_brain_composition import build_browser_publication_probe
 from inputs_application.efficiency_classification import (
     identify_materially_overprovided_non_governing_families,
 )
@@ -4265,10 +4265,11 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
                 "cta_family_id": _probe_family_for_publication,
                 "apply_payload_family_id": _probe_family_for_publication,
             }
-            _probe_publication = build_publication_builder()(
+            _probe_publication = build_browser_publication_probe(
                 item=dict(_probe_item_for_publication),
                 debug=dict(guidance_probe or {}),
                 publication_reason="browser_state_guidance_probe_projection",
+                current_publication=_dg_authoritative_publication,
             )
             _probe_publication_dict = (
                 _probe_publication.to_dict()
