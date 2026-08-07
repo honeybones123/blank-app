@@ -289,25 +289,9 @@ def publish_batch_design_results_to_beam_records(results) -> set[str]:
             else {}
         )
         if proposal_updates:
-            params = dict(record.get("params") or {})
-            params.update(proposal_updates)
-            # Preserve the legacy layer aliases used by the existing widgets,
-            # diagrams and project table in the same stored beam snapshot.
-            aliases = {
-                "bot_row_1_bars": ("bot1_count", "nb_or_s_bot_1"),
-                "bot_row_2_bars": ("bot2_count", "nb_or_s_bot_2"),
-                "bot_row_1_dia": ("db_bot_1",),
-                "bot_row_2_dia": ("db_bot_2",),
-                "top_bars": ("top1_count", "nb_or_s_top_1", "top_row_1_bars"),
-                "top_spacing": ("top1_spacing", "top_row_1_spacing"),
-                "db_top": ("db_top_1", "top_row_1_dia"),
-            }
-            for source_key, target_keys in aliases.items():
-                if source_key not in proposal_updates:
-                    continue
-                for target_key in target_keys:
-                    params[target_key] = proposal_updates[source_key]
-            record["params"] = params
+            record["params"] = apply_v2_proposal_updates_to_beam_params(
+                record.get("params"), proposal_updates
+            )
 
         meta = record.get("meta") if isinstance(record.get("meta"), dict) else {}
         meta["batch_design_published_at"] = timestamp
@@ -326,6 +310,96 @@ def publish_batch_design_results_to_beam_records(results) -> set[str]:
         updated_beam_ids.add(beam_id)
 
     return updated_beam_ids
+
+
+def apply_v2_proposal_updates_to_beam_params(
+    current_params: dict | None,
+    proposal_updates: dict | None,
+) -> dict:
+    """Project one V2 proposal into the complete stored beam-input contract.
+
+    V2 speaks in row-model fields while older Inputs consumers still read the
+    compact layer aliases.  Updating only one representation made a Batch row
+    report V2's verified utilisation while the active page rehydrated stale
+    reinforcement (for example 3-N10 instead of V2's 3-N40).  This is the
+    single compatibility projection for a proposal: the row model and every
+    surviving alias are changed together, and unused trailing rows are cleared.
+    """
+
+    params = dict(current_params or {})
+    updates = dict(proposal_updates or {})
+    if not updates:
+        return params
+    params.update(updates)
+
+    def _integer(value, default=0) -> int:
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return int(default)
+
+    def _number(value, default=0.0) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return float(default)
+
+    bottom_rows = max(1, min(4, _integer(params.get("bot_row_count"), 1)))
+    params["bot_row_count"] = bottom_rows
+    bottom_diameter = _integer(params.get("bot_row_1_dia"), 0)
+    bottom_spacing = _number(params.get("bot_row_1_spacing"), 200.0)
+    for index in range(1, 5):
+        prefix = f"bot_row_{index}"
+        enabled = index <= bottom_rows
+        if index == 1:
+            bars = _integer(params.get(f"{prefix}_bars"), 0)
+            diameter = bottom_diameter
+            spacing = bottom_spacing
+        elif enabled:
+            bars = _integer(params.get(f"{prefix}_bars"), 0)
+            diameter = _integer(params.get(f"{prefix}_dia"), bottom_diameter)
+            spacing = _number(params.get(f"{prefix}_spacing"), bottom_spacing)
+        else:
+            bars, diameter, spacing = 0, 0, bottom_spacing
+        params[f"{prefix}_mode"] = "Count"
+        params[f"{prefix}_bars"] = bars
+        params[f"{prefix}_dia"] = diameter
+        params[f"{prefix}_spacing"] = spacing
+        if index <= 2:
+            params[f"bot{index}_layout_mode"] = "Count"
+            params[f"bot{index}_count"] = bars
+            params[f"bot{index}_spacing"] = spacing
+            params[f"db_bot_{index}"] = diameter
+            params[f"nb_or_s_bot_{index}"] = bars
+
+    if "top_bars" in params or "db_top" in params or "top_spacing" in params:
+        top_bars = _integer(params.get("top_bars"), 0)
+        top_diameter = _integer(params.get("db_top"), 0)
+        top_spacing = _number(params.get("top_spacing"), 200.0)
+        params.update(
+            {
+                "top_row_count": 1,
+                "top_row_1_mode": "Count",
+                "top_row_1_bars": top_bars,
+                "top_row_1_dia": top_diameter,
+                "top_row_1_spacing": top_spacing,
+                "top1_layout_mode": "Count",
+                "top1_count": top_bars,
+                "top1_spacing": top_spacing,
+                "db_top_1": top_diameter,
+                "nb_or_s_top_1": top_bars,
+                "top_row_2_mode": "Count",
+                "top_row_2_bars": 0,
+                "top_row_2_dia": 0,
+                "top_row_2_spacing": top_spacing,
+                "top2_layout_mode": "Count",
+                "top2_count": 0,
+                "top2_spacing": top_spacing,
+                "db_top_2": 0,
+                "nb_or_s_top_2": 0,
+            }
+        )
+    return params
 
 
 def coerce_beam_schedule_value(column: str, value):

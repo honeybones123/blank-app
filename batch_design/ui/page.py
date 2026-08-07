@@ -60,6 +60,7 @@ WORKFLOW_MODE_AUTO_ASSIGN = "Auto assign"
 WORKSPACE_OPEN_KEY = "batch_design_workspace_open"
 PROJECT_BEAM_TABLE_FRAME_KEY = "batch_design_project_beam_table_frame"
 RUN_DESIGN_REQUEST_KEY = "_batch_design_run_requested"
+ACTIVE_BEAM_SELECTOR_KEY = "beam_manager_active_selector"
 
 
 def _request_batch_design_run() -> None:
@@ -74,6 +75,26 @@ def _toggle_batch_design_workspace() -> None:
     st.session_state[WORKSPACE_OPEN_KEY] = not bool(
         st.session_state.get(WORKSPACE_OPEN_KEY, False)
     )
+
+
+def _activate_selected_project_beam(ctx: BatchDesignPageContext) -> None:
+    """Promote the selector value through the one active-beam boundary.
+
+    A selectbox stores its own value in Streamlit session state.  Handling the
+    difference *after* rendering left that widget value able to disagree with
+    ``active_beam_id`` during a fragment rerun.  Batch Design could therefore
+    publish a proposal for one beam while the Inputs Design Brain evaluated a
+    different beam.  A callback runs before the next render, so the selector,
+    stored beam record and revisioned Inputs transaction now change together.
+    """
+
+    selected_beam_id = str(st.session_state.get(ACTIVE_BEAM_SELECTOR_KEY) or "").strip()
+    active_beam_id = str(st.session_state.get("active_beam_id") or "").strip()
+    if not selected_beam_id or selected_beam_id == active_beam_id:
+        return
+    if ctx.set_active_beam(selected_beam_id):
+        ctx.force_refresh("beam_selector_change")
+        ctx.log_rerun("beam_selector_change")
 
 
 def _project_beam_editor_changed(before: pd.DataFrame, after: pd.DataFrame) -> bool:
@@ -135,7 +156,11 @@ def get_batch_design_workflow_state(session_state: MutableMapping[str, Any] | No
 
 
 def _render_project_beam_controls(ctx: BatchDesignPageContext) -> None:
-    active_beam_id = ctx.active_beam_id
+    # ``active_beam_id`` is the application authority.  Do not let a retained
+    # selectbox value choose a different beam for the visible UI.
+    active_beam_id = str(
+        st.session_state.get("active_beam_id") or ctx.active_beam_id or ""
+    ).strip() or None
     beam_order = list(ctx.beam_order or [])
     if active_beam_id not in beam_order and beam_order:
         active_beam_id = beam_order[0]
@@ -148,18 +173,21 @@ def _render_project_beam_controls(ctx: BatchDesignPageContext) -> None:
 
     with beam_selector_col:
         if beam_order:
-            selected_beam_id = st.selectbox(
+            # Synchronise programmatic changes (add/delete/batch promotion)
+            # before the widget is created.  User changes go through the
+            # callback above rather than a post-render branch.
+            if st.session_state.get(ACTIVE_BEAM_SELECTOR_KEY) != active_beam_id:
+                st.session_state[ACTIVE_BEAM_SELECTOR_KEY] = active_beam_id
+            st.selectbox(
                 "Active set",
                 options=beam_order,
                 index=beam_order.index(active_beam_id) if active_beam_id in beam_order else 0,
                 format_func=lambda beam_id: ctx.beam_labels.get(beam_id, beam_id),
-                key="beam_manager_active_selector",
+                key=ACTIVE_BEAM_SELECTOR_KEY,
                 help="Select the project beam used as the base concrete assumptions for manual batch rows.",
+                on_change=_activate_selected_project_beam,
+                args=(ctx,),
             )
-            if selected_beam_id != active_beam_id and ctx.set_active_beam(selected_beam_id):
-                ctx.force_refresh("beam_selector_change")
-                ctx.log_rerun("beam_selector_change")
-                _rerun_batch_design_page()
         else:
             st.caption("No stored project beams yet.")
 
