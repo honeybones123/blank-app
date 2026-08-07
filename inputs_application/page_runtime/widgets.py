@@ -26,7 +26,7 @@ from inputs_application.policy_constants import DESIGN_GUIDE_LAST_APPLY_ROUTE_KE
 
 from inputs_application.design_guide_fingerprint import DESIGN_GUIDE_ALGORITHM_VERSION
 
-from application.design_result_store import AuthoritativeDesignResultStore
+from inputs_application.session_services import InputsSessionServices
 
 from application.design_run_coordinator import ensure_design_result
 
@@ -38,8 +38,6 @@ from inputs_application.state_utils import application_guidance_context, bottom_
 
 from inputs_application.recommendation_support import design_optimisation_goal_label, resolve_geometry_width_context, severe_shear_failure, shear_severity_band
 
-from inputs_application.recommendation_cache import resolve_popover_recommendation
-
 from inputs_application.recommendation_envelope import attach_recommendation_envelope, recommendation_blocked_reason
 
 from inputs_application.live_apply import execute_typed_apply
@@ -49,10 +47,6 @@ from inputs_application.post_apply_state import rehydrate_typed_post_apply_accep
 from inputs_application.guidance_ui_state import prepare_guidance_ui_state
 
 from inputs_application.design_guide_fingerprint import design_guide_fingerprint
-
-from inputs_application.recommendation_evaluation import effective_bottom_design_state, evaluate_bending_with_bottom_state, evaluate_shear_with_state
-
-from inputs_application.popover_recommendation_apply import execute_popover_recommendation_apply
 
 from inputs_application.shear_widget_reconciliation import ShearWidgetReconciliationRuntime, reconcile_shear_widgets_with_shared
 
@@ -65,20 +59,6 @@ from inputs_page_modules.app_bridge.canonical_design_state_pack import _build_ca
 
 from bending_checks_helpers import build_bending_check_rows_from_state
 
-from batch_design.ui.project_beam_manager_adapters import (
-    beam_option_labels as build_batch_beam_option_labels,
-    build_beam_schedule_df as build_batch_beam_schedule_df,
-    build_schedule_export_df as build_batch_schedule_export_df,
-    build_schedule_preview_df as build_batch_schedule_preview_df,
-    format_beam_status_badge as format_batch_beam_status_badge,
-    format_last_checked as format_batch_last_checked,
-    sync_beam_records_from_schedule_df as sync_batch_beam_records_from_schedule_df,
-)
-
-from batch_design.design_brain_adapter import BatchDesignGuidanceAdapter
-
-from batch_design.ui.page import BatchDesignPageContext, render_batch_design_page
-
 from crack_checks_helpers import build_crack_check_rows_from_state, pick_governing_check_row
 
 from deflection_checks_helpers import build_deflection_check_rows_from_state
@@ -90,11 +70,6 @@ from application.contracts.family_classification import load_family_classificati
 from engineering_check_ui import BENDING_ROW_UID_TO_TAB, SHEAR_ROW_UID_TO_TAB
 
 from inputs_application.one_click_entrypoint import run_one_click_auto_design
-
-from inputs_application.guidance_entrypoint import (
-    build_guidance_entrypoint_runtime,
-    compute_inputs_guidance,
-)
 
 from inputs_page_modules.calculations import render_inputs_calculation_explainer_trace as render_inputs_calculation_explainer_trace_module
 
@@ -112,17 +87,17 @@ from inputs_application.engineering_input_store import InputSnapshotStore
 
 from inputs_application.region_contexts import RevisionIdentity
 
-from inputs_page_modules.fragments import run_inputs_fragment
-
 from inputs_page_modules.diagrams.source_projection import build_section_outline_points_and_bbox as build_section_outline_points_and_bbox_module
 
-from inputs_application.design_guide_ui_boundary import render_design_guide_panel_orchestration
+from inputs_page_modules.fragments import run_inputs_fragment
 
-from inputs_application.design_guide_ui_boundary import render_design_guide_debug_sidebar
+from inputs_application.v2_design_brain_ui_boundary import render_design_guide_panel_orchestration
 
-from inputs_application.design_guide_ui_boundary import append_design_guide_trace as append_design_guide_trace_module, design_guide_tracer_path as design_guide_tracer_path_module, design_guide_tracer_verbose_log as design_guide_tracer_verbose_log_module
+from inputs_application.v2_design_brain_ui_boundary import render_design_guide_debug_sidebar
 
-from inputs_application.design_guide_ui_boundary import DESIGN_GUIDE_APPLY_TRACE_RUN_ID_KEY, begin_design_guide_apply_trace, end_design_guide_apply_trace, set_design_guide_live_breadcrumb
+from inputs_application.v2_design_brain_ui_boundary import append_design_guide_trace as append_design_guide_trace_module, design_guide_tracer_path as design_guide_tracer_path_module, design_guide_tracer_verbose_log as design_guide_tracer_verbose_log_module
+
+from inputs_application.v2_design_brain_ui_boundary import DESIGN_GUIDE_APPLY_TRACE_RUN_ID_KEY, begin_design_guide_apply_trace, end_design_guide_apply_trace, set_design_guide_live_breadcrumb
 
 from inputs_application.state_projection import (
     build_auto_design_governing_fingerprint as build_auto_design_governing_fingerprint_module,
@@ -148,8 +123,6 @@ from inputs_page_modules.session.longitudinal_reo_widget_sync import (
     reseed_inputs_longitudinal_reo_widgets_from_shared as reseed_inputs_longitudinal_reo_widgets_from_shared_module,
 )
 
-from inputs_page_modules.auto_design_routing import AutoDesignRoutingRuntime, handle_inputs_auto_design
-
 from inputs_page_modules.apply_routing import handle_inputs_apply_buttons
 
 from inputs_page_modules.landing import (
@@ -171,21 +144,13 @@ from inputs_page_modules.tail import (
     render_inputs_tail as render_inputs_tail_module,
 )
 
-from inputs_page_modules.recommendation_panels import (
-    render_bottom_recommendation_panel,
-    render_geometry_recommendation_panel,
-    render_shear_recommendation_panel,
-)
-
 from inputs_page_modules.summaries import render_inputs_summary_expanders_and_tables_current_coordinator
 
 from inputs_page_modules.summaries.render_coordinators import render_inputs_summary_container_current as render_inputs_summary_container_current_module
 
 from inputs_page_modules.summaries.display_state import render_inputs_summary_display_state as render_inputs_summary_display_state_module
 
-from inputs_application.design_guide_ui_boundary import should_render_design_guide_slot_from_publication_eligibility
-
-from inputs_page_modules.recommendation_runtime import compute_bottom_recommendation_for_page, compute_geometry_recommendation_for_page, compute_shear_recommendation_for_page
+from inputs_application.v2_design_brain_ui_boundary import should_render_design_guide_slot_from_publication_eligibility
 
 from inputs_page_modules.summaries.pipeline import render_inputs_summary_pipeline as render_inputs_summary_pipeline_module
 
@@ -320,7 +285,6 @@ from inputs_application.page_runtime.common import (
     REO_SPACINGS,
     RESULT_CACHE_KEY,
     _AGENT_DEBUG_LOG_PATH,
-    _GUIDANCE_ENTRYPOINT_RUNTIME,
     _INPUTS_DEBUG_AUDIT,
     _INPUTS_DESIGN_ACTIONS_ANCHOR_ID,
     _INPUTS_PENDING_NAV_PAGE_SLUG_KEY,
@@ -400,6 +364,14 @@ def _render_recommendation_section_header(
                 st.caption("Load recommendation tools on demand.")
 
 def _render_bottom_recommendation_panel(*, button_key: str, source: str, compact: bool) -> None:
+    from inputs_application.recommendation_cache import resolve_popover_recommendation
+    from inputs_application.recommendation_evaluation import (
+        effective_bottom_design_state,
+        evaluate_bending_with_bottom_state,
+    )
+    from inputs_page_modules.recommendation_panels import render_bottom_recommendation_panel
+    from inputs_page_modules.recommendation_runtime import compute_bottom_recommendation_for_page
+
     render_bottom_recommendation_panel(
         st_module=st,
         button_key=button_key,
@@ -417,6 +389,11 @@ def _render_bottom_recommendation_panel(*, button_key: str, source: str, compact
     )
 
 def _render_shear_recommendation_panel(*, button_key: str, source: str, compact: bool) -> None:
+    from inputs_application.recommendation_cache import resolve_popover_recommendation
+    from inputs_application.recommendation_evaluation import evaluate_shear_with_state
+    from inputs_page_modules.recommendation_panels import render_shear_recommendation_panel
+    from inputs_page_modules.recommendation_runtime import compute_shear_recommendation_for_page
+
     render_shear_recommendation_panel(
         st_module=st,
         button_key=button_key,
@@ -437,6 +414,14 @@ def _render_shear_recommendation_panel(*, button_key: str, source: str, compact:
     )
 
 def _render_geometry_recommendation_panel(*, button_key: str, source: str, compact: bool) -> None:
+    from inputs_application.recommendation_cache import resolve_popover_recommendation
+    from inputs_application.recommendation_evaluation import (
+        evaluate_bending_with_bottom_state,
+        evaluate_shear_with_state,
+    )
+    from inputs_page_modules.recommendation_panels import render_geometry_recommendation_panel
+    from inputs_page_modules.recommendation_runtime import compute_geometry_recommendation_for_page
+
     render_geometry_recommendation_panel(
         st_module=st,
         button_key=button_key,
@@ -455,7 +440,10 @@ def _render_geometry_recommendation_panel(*, button_key: str, source: str, compa
     )
 
 def _apply_popover_recommendation(kind: str, *, recommendation: dict, source: str) -> bool:
-    return execute_popover_recommendation_apply(kind=kind, source=source, session_state=st.session_state, recommendation=recommendation, set_shared=set_shared, finalize_publish=finalize_auto_design_publish, persist_active_beam=persist_active_beam_from_shared, invalidate_caches=_invalidate_design_guide_caches, rerun=st.rerun)
+    from inputs_application.popover_recommendation_apply import execute_popover_recommendation_apply
+    from inputs_page_modules.fragments import rerun_inputs_current_scope
+
+    return execute_popover_recommendation_apply(kind=kind, source=source, session_state=st.session_state, recommendation=recommendation, set_shared=set_shared, finalize_publish=finalize_auto_design_publish, persist_active_beam=persist_active_beam_from_shared, invalidate_caches=_invalidate_design_guide_caches, rerun=lambda: rerun_inputs_current_scope(st))
 
 def _render_inputs_materials_subsection(sync_callbacks: dict, *, show_heading: bool = True) -> None:
     if show_heading:
@@ -479,14 +467,23 @@ def _render_inputs_materials_subsection(sync_callbacks: dict, *, show_heading: b
         help_text="Characteristic compressive strength of concrete (f'c).",
     )
 
-def _render_section_2d_diagram_block(*, compact: bool = False, model_state: dict | None = None):
+def _render_section_2d_diagram_block_current(
+    *, compact: bool = False, model_state: dict | None = None,
+    workspace_context=None, _retry_latest: bool = False,
+):
     beam_id = str(
-        st.session_state.get("active_beam_id")
+        getattr(workspace_context, "active_beam_id", None)
+        or st.session_state.get("active_beam_id")
         or st.session_state.get("_inputs_engineering_input_store_active_beam_id")
         or "active"
     )
     input_store = InputSnapshotStore(st.session_state)
+    # Fragment payloads can contain a context captured before the widget
+    # callback committed. The store is the authoritative transaction boundary,
+    # so always read the latest beam snapshot first on a workspace rerun.
     input_state = input_store.current_for_beam(beam_id)
+    if not input_state.engineering_hash and workspace_context is not None:
+        input_state = workspace_context.current_input_state()
     if not input_state.engineering_hash:
         input_state = input_store.current()
     explicit_state = dict(
@@ -531,6 +528,19 @@ def _render_section_2d_diagram_block(*, compact: bool = False, model_state: dict
             ),
         )
 
+    latest_identity = _current_identity()
+    if latest_identity != region_context.identity and not _retry_latest:
+        # A Streamlit widget callback can commit while the surrounding page
+        # transaction is still rendering. Rebuild the diagram view model once
+        # from the now-authoritative snapshot instead of emitting a stale
+        # prior-revision Plotly figure.
+        return _render_section_2d_diagram_block_current(
+            compact=compact,
+            model_state=model_state,
+            workspace_context=workspace_context,
+            _retry_latest=True,
+        )
+
     return render_inputs_section_2d_diagram_block(
         st_module=st,
         region_context=region_context,
@@ -543,14 +553,36 @@ def _render_section_2d_diagram_block(*, compact: bool = False, model_state: dict
         render_plotly_diagram_fn=st.plotly_chart,
     )
 
-def _render_3d_diagram_block(*, compact: bool = False, model_state: dict | None = None):
+def _render_section_2d_diagram_block(
+    *, compact: bool = False, model_state: dict | None = None,
+    workspace_context=None,
+):
+    # Diagrams are input previews. Render them in the parent fast workspace so
+    # a widget callback cannot commit successfully while a nested child
+    # fragment remains on the prior revision.
+    return _render_section_2d_diagram_block_current(
+        compact=compact,
+        model_state=model_state,
+        workspace_context=workspace_context,
+    )
+
+
+def _render_3d_diagram_block_current(
+    *, compact: bool = False, model_state: dict | None = None,
+    workspace_context=None, _retry_latest: bool = False,
+):
     beam_id = str(
-        st.session_state.get("active_beam_id")
+        getattr(workspace_context, "active_beam_id", None)
+        or st.session_state.get("active_beam_id")
         or st.session_state.get("_inputs_engineering_input_store_active_beam_id")
         or "active"
     )
     input_store = InputSnapshotStore(st.session_state)
+    # Use the latest committed snapshot rather than a stale parent-fragment
+    # context captured before the widget callback.
     input_state = input_store.current_for_beam(beam_id)
+    if not input_state.engineering_hash and workspace_context is not None:
+        input_state = workspace_context.current_input_state()
     if not input_state.engineering_hash:
         input_state = input_store.current()
     explicit_state = dict(
@@ -599,6 +631,15 @@ def _render_3d_diagram_block(*, compact: bool = False, model_state: dict | None 
             ),
         )
 
+    latest_identity = _current_identity()
+    if latest_identity != region_context.identity and not _retry_latest:
+        return _render_3d_diagram_block_current(
+            compact=compact,
+            model_state=model_state,
+            workspace_context=workspace_context,
+            _retry_latest=True,
+        )
+
     return render_inputs_3d_diagram_block(
         st_module=st,
         region_context=region_context,
@@ -610,6 +651,17 @@ def _render_3d_diagram_block(*, compact: bool = False, model_state: dict | None 
         cached_make_section_3d_figure_fn=cached_make_section_3d_figure,
         build_inputs_beam_3d_figure_fn=build_inputs_beam_3d_figure,
         render_plotly_diagram_fn=st.plotly_chart,
+    )
+
+
+def _render_3d_diagram_block(
+    *, compact: bool = False, model_state: dict | None = None,
+    workspace_context=None,
+):
+    return _render_3d_diagram_block_current(
+        compact=compact,
+        model_state=model_state,
+        workspace_context=workspace_context,
     )
 
 def _inputs_model_reo_widget_keys() -> tuple[str, ...]:
@@ -676,8 +728,8 @@ def _resolved_inputs_model_state() -> tuple[dict, dict]:
             **dict(summary_debug or {}),
             "model_state_source": "authoritative_design_result",
             "model_state_engineering_hash": (
-                AuthoritativeDesignResultStore(st.session_state).current().engineering_hash
-                if AuthoritativeDesignResultStore(st.session_state).current() is not None
+                InputsSessionServices.from_mapping(st.session_state).engineering_results.current().engineering_hash
+                if InputsSessionServices.from_mapping(st.session_state).engineering_results.current() is not None
                 else None
             ),
         }
@@ -698,13 +750,101 @@ def _resolved_inputs_model_state() -> tuple[dict, dict]:
     return dict(model_state), dict(debug_snapshot.debug_payload)
 
 def _render_fast_model_block(sync_callbacks: dict, model_state: dict | None = None) -> None:
+    workspace_context = sync_callbacks.get("_workspace_context")
     return render_inputs_fast_model_block(
         st_module=st,
         sync_callbacks=sync_callbacks,
         model_state=model_state,
         shared_toggle_fn=_shared_toggle,
-        render_3d_diagram_block_fn=_render_3d_diagram_block,
-        render_section_2d_diagram_block_fn=_render_section_2d_diagram_block,
+        render_3d_diagram_block_fn=lambda **kwargs: _render_3d_diagram_block_current(
+            workspace_context=workspace_context, **kwargs
+        ),
+        render_section_2d_diagram_block_fn=lambda **kwargs: _render_section_2d_diagram_block_current(
+            workspace_context=workspace_context, **kwargs
+        ),
+    )
+
+
+def _render_inputs_owned_diagram_fragment_body(
+    *,
+    inputs_detailed_mode: bool,
+    sync_callbacks: dict,
+    right_diagram=None,
+    model_slot=None,
+) -> None:
+    """Render the model into the diagram fragment registered by the parent."""
+
+    st_module = st
+    workspace_context = sync_callbacks.get("_workspace_context")
+    target_slot = right_diagram if inputs_detailed_mode else model_slot
+    if target_slot is None:
+        return
+    with target_slot:
+        if inputs_detailed_mode:
+            st_module.markdown(
+                '<div class="inputs-diagram-materials-group">',
+                unsafe_allow_html=True,
+            )
+            _render_section_2d_diagram_block_current(
+                model_state=None,
+                workspace_context=workspace_context,
+            )
+            st_module.markdown(
+                '<div style="margin-bottom: 0.35rem;"></div>',
+                unsafe_allow_html=True,
+            )
+            st_module.markdown(
+                '<div style="margin-top: 0.35rem;"></div>',
+                unsafe_allow_html=True,
+            )
+            _render_inputs_materials_subsection(sync_callbacks)
+            st_module.markdown("</div>", unsafe_allow_html=True)
+            return
+
+        model_state, model_state_debug = _resolved_inputs_model_state()
+        st_module.session_state["_inputs_fast_model_state_debug"] = {
+            **dict(model_state_debug or {}),
+            "summary_governing_check_name": model_state.get(
+                "shear_truth_governing_check_name"
+            ),
+            "summary_governing_reason": model_state.get(
+                "shear_truth_governing_reason"
+            ),
+            "fast_model_uses_overlay_state": True,
+            "fast_model_overlay_lig_d": model_state_debug.get(
+                "model_overlay_lig_d"
+            ),
+            "fast_model_overlay_lig_legs": model_state_debug.get(
+                "model_overlay_lig_legs"
+            ),
+            "fast_model_overlay_s_lig": model_state_debug.get(
+                "model_overlay_s_lig"
+            ),
+            "fast_model_fingerprint_includes_shear": True,
+        }
+        with st_module.container():
+            st_module.markdown(
+                '<div class="inputs-diagram-materials-group">',
+                unsafe_allow_html=True,
+            )
+            _render_fast_model_block(sync_callbacks, model_state=model_state)
+            st_module.markdown("</div>", unsafe_allow_html=True)
+
+
+def _render_inputs_owned_diagram_fragment(
+    *,
+    inputs_detailed_mode: bool,
+    sync_callbacks: dict,
+    right_diagram=None,
+    model_slot=None,
+) -> None:
+    """Render the diagram directly in the outer widget workspace."""
+
+    return _render_inputs_owned_diagram_fragment_body(
+        inputs_detailed_mode=bool(inputs_detailed_mode),
+        sync_callbacks=sync_callbacks,
+        right_diagram=right_diagram,
+        model_slot=model_slot,
     )
 
 def _caption_inputs_deflection_limit_ratio() -> None:
@@ -737,6 +877,7 @@ def _resolve_inputs_support_and_deflection_defaults() -> dict:
     }
 
 def _render_materials_and_sectionA_2d(sync_callbacks):
+    workspace_context = sync_callbacks.get("_workspace_context")
     render_inputs_materials_and_section_2d_module(
         st_module=st,
         sync_callbacks=sync_callbacks,
@@ -746,7 +887,9 @@ def _render_materials_and_sectionA_2d(sync_callbacks):
         resolve_support_and_deflection_defaults_fn=_resolve_inputs_support_and_deflection_defaults,
         caption_deflection_limit_ratio_fn=_caption_inputs_deflection_limit_ratio,
         number_row_fn=number_row,
-        render_3d_diagram_block_fn=_render_3d_diagram_block,
+        render_3d_diagram_block_fn=lambda **kwargs: _render_3d_diagram_block(
+            workspace_context=workspace_context, **kwargs
+        ),
         deflection_limit_help_text=DEFLECTION_LIMIT_HELP_TEXT,
         k_v_method_options=K_V_METHOD_OPTIONS,
     )
@@ -820,7 +963,7 @@ def _render_fast_next_hint(message: str, *, css_extra_class: str = "") -> None:
 
 def _authoritative_state_snapshot() -> dict:
     """Return committed engineering state for output-only render paths."""
-    result = AuthoritativeDesignResultStore(st.session_state).current()
+    result = InputsSessionServices.from_mapping(st.session_state).engineering_results.current()
     calculations = dict(result.current_calculations or {}) if result is not None else {}
     resolved_inputs = calculations.get("resolved_inputs")
     if isinstance(resolved_inputs, dict):
@@ -1170,6 +1313,9 @@ def render_inputs_widget_sections_current_coordinator(
     mark,
     sub_mark,
 ):
+    nested_section_fragments = str(
+        os.environ.get("CODEX_INPUTS_NESTED_SECTION_FRAGMENTS", "0")
+    ).strip().lower() not in {"0", "false", "no", "off"}
     return render_inputs_widget_sections_module(
         st_module=st,
         ss=ss,
@@ -1181,7 +1327,8 @@ def render_inputs_widget_sections_current_coordinator(
         corrected_invalid_shear_state=bool(corrected_invalid_shear_state),
         mark=mark,
         sub_mark=sub_mark,
-        run_fragment_fn=run_inputs_fragment,
+        run_fragment_fn=run_inputs_fragment if nested_section_fragments else None,
+        render_diagram_fragment_fn=_render_inputs_owned_diagram_fragment,
         top_section_layout_slots_fn=render_inputs_top_section_layout_slots_coordinator,
         design_actions_section_fn=render_inputs_design_actions_section_current_coordinator,
         geometry_materials_top_section_fn=render_inputs_geometry_materials_top_section_current_coordinator,

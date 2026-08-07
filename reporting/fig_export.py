@@ -116,20 +116,15 @@ def export_box_diagram_png(fig_or_callable, key: str, caption: str = "", w_mm: f
                 "h_mm": h_mm,
             }
         
-        # Export plotly figure
+        # Plotly/Kaleido export is deliberately not attempted here.  The
+        # synchronous ``write_image`` call can hang indefinitely when the
+        # Kaleido subprocess is unavailable or mismatched with the active
+        # Plotly version.  That used to leave the Streamlit PDF button stuck
+        # on "Generating PDF report..." forever.  The report builder treats a
+        # missing diagram as a normal, recoverable condition and still emits
+        # the complete calculations/results report.
         elif hasattr(fig, "write_image"):
-            try:
-                import kaleido
-                fig.write_image(filepath, width=w_mm * 3.779527559, scale=2)  # mm to pixels at 96dpi, scale=2 for high-res
-                return {
-                    "path": filepath,
-                    "caption": caption,
-                    "w_mm": w_mm,
-                    "h_mm": h_mm,
-                }
-            except ImportError:
-                st.warning(f"kaleido not available, cannot export plotly figure for {key}")
-                return None
+            return None
         
         else:
             st.warning(f"Unknown figure type for {key}")
@@ -155,4 +150,3 @@ def cleanup_exported_figures(fig_dicts: list):
                     os.remove(path)
                 except Exception:
                     pass
-

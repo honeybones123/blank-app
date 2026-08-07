@@ -13,6 +13,9 @@ from state_and_helpers import get_param, get_sync_callbacks
 
 INPUTS_SCROLL_DESIGN_ACTIONS_FLAG = "_inputs_pending_scroll_design_actions"
 INPUTS_PENDING_NAV_PAGE_SLUG_KEY = "_pending_nav_page_slug"
+# Presentation-only state matching V2's explicit landing -> workspace transition.
+# The canonical input snapshot remains the authority for engineering values.
+INPUTS_DESIGN_STARTED_KEY = "_inputs_design_started"
 
 
 def _landing_design_action_values(get_param_fn: Callable[..., Any]) -> dict[str, Any]:
@@ -36,10 +39,19 @@ def _landing_design_action_values(get_param_fn: Callable[..., Any]) -> dict[str,
 
 
 def _landing_load_values(get_param_fn: Callable[..., Any]) -> dict[str, Any]:
-    return {
+    values = {
         "g_udl_kNm_per_m": get_param_fn("g_udl_kNm_per_m", 0.0),
         "q_udl_kNm_per_m": get_param_fn("q_udl_kNm_per_m", 0.0),
+        # Point and staged load inputs are also applied loads. Omitting them
+        # made a load-driven beam look empty and left the Design Brain waiting
+        # even though the engineering transaction had a real load case.
+        "G_point_kN": get_param_fn("G_point_kN", 0.0),
+        "Q_point_kN": get_param_fn("Q_point_kN", 0.0),
     }
+    for prefix in ("design_point_G_", "design_point_Q_"):
+        for index in range(1, 7):
+            values[f"{prefix}{index}"] = get_param_fn(f"{prefix}{index}", 0.0)
+    return values
 
 
 def inputs_show_landing_dashboard(
@@ -141,6 +153,7 @@ def render_inputs_landing_card(
             use_container_width=True,
         ):
             st_module.session_state[scroll_design_actions_flag] = True
+            st_module.session_state[INPUTS_DESIGN_STARTED_KEY] = True
             st_module.rerun()
     with button_design:
         if st_module.button(
@@ -157,6 +170,7 @@ def render_landing_card(**kwargs: Any) -> None:
 
 
 __all__ = [
+    "INPUTS_DESIGN_STARTED_KEY",
     "INPUTS_PENDING_NAV_PAGE_SLUG_KEY",
     "INPUTS_SCROLL_DESIGN_ACTIONS_FLAG",
     "inputs_has_design_actions_or_loads",

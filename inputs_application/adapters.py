@@ -265,18 +265,27 @@ class CanonicalRecommendationApplyPort:
                 updates = dict(candidate_updates)
         if not updates:
             updates = recommendation_updates(recommendation)
+        expanded_updates = _expand_longitudinal_shared_alias_updates(updates)
+        row_model_updates = {
+            str(key): value
+            for key, value in expanded_updates.items()
+            if str(key).startswith(("bot_row_", "top_row_"))
+        }
         shared_updates = {
             key: value
-            for key, value in _expand_longitudinal_shared_alias_updates(updates).items()
+            for key, value in expanded_updates.items()
             if key in SHARED_DEFAULTS and not str(key).startswith("_")
         }
-        if not shared_updates:
+        if not shared_updates and not row_model_updates:
             return InputsSessionMutation(
                 status="failed",
                 reason="canonical_apply_payload_has_no_shared_updates",
             )
         return InputsSessionMutation(
-            updates=shared_updates,
+            # Preserve row-model fields alongside shared mirrors.  The
+            # SharedStateSessionPort writes these first so canonical
+            # convenience resync cannot restore stale legacy reinforcement.
+            updates={**row_model_updates, **shared_updates},
             removals=(
                 "_auto_design_last_fingerprint",
                 "_inputs_action_apply_recommendation_payload",
@@ -321,6 +330,16 @@ class SharedStateSessionPort:
             raise TypeError("mutation must be InputsSessionMutation")
         for key in mutation.removals:
             self.session_state.pop(key, None)
+        row_model_updates = {
+            str(key): value
+            for key, value in mutation.updates.items()
+            if str(key).startswith(("bot_row_", "top_row_"))
+        }
+        # Row-model fields are canonical input state even though they are not
+        # Streamlit shared-default keys.  Commit them before the shared writer
+        # and its convenience-field resync so mirrors are derived from the
+        # exact proposed arrangement.
+        self.session_state.update(row_model_updates)
         shared_updates = (
             {
                 key: value
@@ -345,7 +364,12 @@ class SharedStateSessionPort:
         # alive lets their pre-Apply values overwrite these updates during the
         # current-widget projection step.
         cleared_widget_keys = pop_inputs_widget_keys_for_shared_updates(
-            shared_updates,
+            # Row-model fields are also canonical widget inputs.  Clearing
+            # only the legacy shared aliases leaves e.g. inputs_bot_row_1_bars
+            # in Streamlit's widget state, so the next rerun visibly restores
+            # the pre-Apply value even though the committed transaction and
+            # calculations already contain the proposed arrangement.
+            {**row_model_updates, **shared_updates},
             session_state=self.session_state,
         )
         self.session_state["_typed_apply_state_commit_probe"] = {
@@ -363,6 +387,51 @@ class SharedStateSessionPort:
             ),
         }
         if shared_updates:
+            # Apply is an input transaction, not only a shared-key mutation.
+            # Promote the exact post-Apply canonical beam snapshot before the
+            # next render can ask the InputSnapshotStore for its authority.
+            # Without this, the shared mapping contains the proposed values
+            # while the beam-owned snapshot still contains the pre-Apply
+            # values, so setup legitimately rehydrates the old result.
+            active_beam_id = str(
+                self.session_state.get("active_beam_id") or ""
+            ).strip()
+            if active_beam_id:
+                from inputs_application.engineering_input_store import (
+                    InputSnapshotStore,
+                )
+                from state_and_helpers import get_beam_project_param_snapshot
+
+                committed_input = InputSnapshotStore(
+                    self.session_state
+                ).commit_active_beam(
+                    get_beam_project_param_snapshot(),
+                    changed_keys=tuple(sorted(shared_updates)),
+                    source=f"{self.source}:input_transaction",
+                )
+                self.session_state[
+                    "_inputs_authoritative_result_snapshot_update_pending"
+                ] = True
+                # The Apply rerun must reseed every Inputs widget from the
+                # committed beam snapshot.  This includes V2 row-model keys
+                # (for example inputs_bot_row_1_bars), which are not reliably
+                # refreshed by Streamlit once a widget has an existing value.
+                # Set the one-shot flag at the transaction boundary so the
+                # page shell, rather than the Design Brain fragment, owns the
+                # hydration on the next render.
+                self.session_state["_force_inputs_widget_reseed_once"] = True
+                self.session_state["_inputs_pending_input_revision"] = int(
+                    committed_input.revision
+                )
+                self.session_state["_typed_apply_input_transaction_probe"] = {
+                    "beam_id": active_beam_id,
+                    "revision": int(committed_input.revision),
+                    "changed_keys": list(committed_input.changed_keys),
+                    "bot_row_1_dia": committed_input.snapshot.get(
+                        "bot_row_1_dia"
+                    ),
+                    "db_bot_1": committed_input.snapshot.get("db_bot_1"),
+                }
             self.finalize_publish(
                 updated_keys=sorted(shared_updates),
                 source=self.source,

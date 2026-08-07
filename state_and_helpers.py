@@ -949,6 +949,37 @@ def build_legacy_longitudinal_mirrors_from_rows(source: dict | None = None) -> d
     top_1 = _row_at(top_rows, 0)
     top_2 = _row_at(top_rows, 1)
 
+    # The row model is authoritative, but a number of established calculation
+    # and diagram paths still read the compact legacy layer representation.
+    # Keep those aliases in the *same* commit as the row edit.  Previously the
+    # mirror contained ``bot1_count`` but omitted ``nb_or_s_bot_1`` (and the
+    # layout-mode/spacing aliases), so a widget edit could produce the
+    # impossible state ``bot_row_1_bars=5`` alongside ``nb_or_s_bot_1=4``.
+    # Consumers then quite correctly rendered four bars from the stale alias.
+    bot_1_all = _row_at(bot_rows_all, 0)
+    bot_2_all = _row_at(bot_rows_all, 1)
+    top_1_all = _row_at(top_rows_all, 0)
+    top_2_all = _row_at(top_rows_all, 1)
+
+    def _layout_mode(row: dict | None) -> str:
+        mode = str((row or {}).get("mode", "Count") or "Count")
+        return mode if mode in {"Count", "Spacing"} else "Count"
+
+    def _layout_count(row: dict | None) -> int:
+        return max(0, _safe_int((row or {}).get("bars"), 0))
+
+    def _layout_spacing(row: dict | None) -> float:
+        return max(0.0, _safe_float((row or {}).get("spacing"), 200.0))
+
+    def _legacy_entry(row: dict | None) -> float:
+        if not row or not row.get("active"):
+            return 0.0
+        return (
+            _layout_spacing(row)
+            if _layout_mode(row) == "Spacing"
+            else float(_layout_count(row))
+        )
+
     mirrors = {
         "bot1_count": _bars(bot_1),
         "bot2_count": _bars(bot_2),
@@ -970,6 +1001,23 @@ def build_legacy_longitudinal_mirrors_from_rows(source: dict | None = None) -> d
         "total_top_bars": int(sum(_bars(row) for row in top_rows)),
         "Ast_bot": _area(bot_rows),
         "Ast_top": _area(top_rows),
+        # Compact layer aliases consumed by legacy calculation/diagram paths.
+        "bot1_layout_mode": _layout_mode(bot_1_all),
+        "bot1_count": _layout_count(bot_1_all),
+        "bot1_spacing": _layout_spacing(bot_1_all),
+        "bot2_layout_mode": _layout_mode(bot_2_all),
+        "bot2_count": _layout_count(bot_2_all),
+        "bot2_spacing": _layout_spacing(bot_2_all),
+        "top1_layout_mode": _layout_mode(top_1_all),
+        "top1_count": _layout_count(top_1_all),
+        "top1_spacing": _layout_spacing(top_1_all),
+        "top2_layout_mode": _layout_mode(top_2_all),
+        "top2_count": _layout_count(top_2_all),
+        "top2_spacing": _layout_spacing(top_2_all),
+        "nb_or_s_bot_1": _legacy_entry(bot_1_all),
+        "nb_or_s_bot_2": _legacy_entry(bot_2_all),
+        "nb_or_s_top_1": _legacy_entry(top_1_all),
+        "nb_or_s_top_2": _legacy_entry(top_2_all),
     }
 
     def _differs(key: str, value) -> bool:
@@ -1562,6 +1610,10 @@ SHARED_DEFAULTS = {
     "design_point_x_4": 4.0,
     "design_point_x_5": 5.0,
     "design_point_x_6": 6.0,
+    # Number of point loads is an editable Design/SFD input, not a page-local
+    # display value.  Keep it in the shared defaults so navigation, beam
+    # persistence, and calculation invalidation all see the same value.
+    "sfd_point_load_count": 2.0,
     
     # SFD/BMD inputs (kept as inputs, not results)
     "sfd_span_L_m": 6.0,  # Span length for SFD/deflection pages (m)
@@ -1769,6 +1821,13 @@ BEAM_PROJECT_PARAM_KEYS = [
     "auto_bottom_reo",
     "auto_shear",
     "fast_mode_show_3d",
+    # Design/optimisation controls are engineering inputs, not page-local UI.
+    # They must travel with the active beam so a change made on another page
+    # advances the same authoritative input revision as an Inputs edit.
+    "design_optimisation_goal",
+    "optimisation_lock_geometry",
+    "optimisation_lock_width",
+    "optimisation_lock_depth",
     # Reinforcement / cover
     "nb_or_s_bot_1",
     "db_bot_1",
@@ -1856,9 +1915,31 @@ BEAM_PROJECT_PARAM_KEYS = [
     "member_faces_exposed",
     "shrinkage_env",
     "env_option",
+    "s_bar_bot",
+    "shear_auto_design",
+    "shear_optimize_reinforcement",
     "t_creep",
     "age_at_loading",
     "t_shrink",
+    # SFD/BMD system and moving-load inputs.  These are edited on the Design
+    # page but feed the same beam actions used by the result pages.
+    "design_beam_system_mode",
+    "design_support_condition",
+    "design_support_type_1",
+    "design_support_type_2",
+    "design_support_type_3",
+    "design_support_type_4",
+    "design_support_type_5",
+    "design_support_type_6",
+    "design_span_count",
+    "design_span_len_1",
+    "design_span_len_2",
+    "design_span_len_3",
+    "design_span_len_4",
+    "design_span_len_5",
+    "design_ms_point_count",
+    "design_ms_udl_count",
+    *[f"design_ms_{kind}_{index}" for kind in ("G", "Q", "g", "q", "x0", "x1", "x") for index in range(1, 9)],
     # SFD/BMD beam-definition inputs
     "span_L_m",
     "g_udl_kNm_per_m",
@@ -1889,6 +1970,7 @@ BEAM_PROJECT_PARAM_KEYS = [
     "design_point_x_4",
     "design_point_x_5",
     "design_point_x_6",
+    "sfd_point_load_count",
     "sfd_span_L_m",
     "sfd_case",
 ]
@@ -1926,6 +2008,7 @@ def make_not_run_beam_summary() -> dict:
         "Vu_utilisation": None,
         "crack_utilisation": None,
         "deflection_utilisation": None,
+        "batch_design_utilisation": None,
     }
 
 
@@ -2021,6 +2104,7 @@ def _sanitize_beam_summary(summary) -> dict:
         "Vu_utilisation",
         "crack_utilisation",
         "deflection_utilisation",
+        "batch_design_utilisation",
     ):
         cleaned[key] = _safe_summary_float(summary.get(key))
     return cleaned
@@ -2310,6 +2394,38 @@ def build_beam_schedule_rows() -> list[dict]:
                 "lig_d": params.get("lig_d"),
                 "lig_legs": params.get("lig_legs"),
                 "s_lig": params.get("s_lig"),
+                # Keep the project schedule connected to the beam's own
+                # committed action/result snapshot.  These are the values
+                # shown in the Batch Design editor when no imported action
+                # row has explicitly replaced them.
+                "n_star": params.get("uls_Nstar", params.get("N_star")),
+                "vy_star": (
+                    summary.get("Vu_star")
+                    if summary.get("Vu_star") is not None
+                    else params.get("uls_Vstar")
+                ),
+                "vz_star": None,
+                "mx_star": params.get("Tu_star"),
+                "my_star": None,
+                "mz_star": (
+                    summary.get("Mu_star")
+                    if summary.get("Mu_star") is not None
+                    else params.get("uls_Mstar")
+                ),
+                "design_utilisation": max(
+                    (
+                        value
+                        for value in (
+                            summary.get("Mu_utilisation"),
+                            summary.get("Vu_utilisation"),
+                            summary.get("crack_utilisation"),
+                            summary.get("deflection_utilisation"),
+                            summary.get("batch_design_utilisation"),
+                        )
+                        if value is not None
+                    ),
+                    default=None,
+                ),
                 "overall_status": summary.get("overall_status", BEAM_STATUS_NOT_RUN),
                 "strength_status": summary.get("strength_status", BEAM_STATUS_NOT_RUN),
                 "detailing_status": summary.get("detailing_status", BEAM_STATUS_NOT_RUN),
@@ -3951,6 +4067,45 @@ TAB_KEYS = {
     "inputs_top2_layout_mode": "top2_layout_mode",
     "inputs_top2_count": "top2_count",
     "inputs_top2_spacing": "top2_spacing",
+
+    # V2 row-model widgets.  These are the visible Inputs controls used by
+    # the current renderer; keeping them in the same widget→shared map as the
+    # legacy layer aliases makes Apply, navigation hydration, and callbacks
+    # observe one canonical row transaction.
+    "inputs_bot_row_count": "bot_row_count",
+    "inputs_bot_row_1_mode": "bot_row_1_mode",
+    "inputs_bot_row_1_bars": "bot_row_1_bars",
+    "inputs_bot_row_1_spacing": "bot_row_1_spacing",
+    "inputs_bot_row_1_dia": "bot_row_1_dia",
+    "inputs_bot_row_2_mode": "bot_row_2_mode",
+    "inputs_bot_row_2_bars": "bot_row_2_bars",
+    "inputs_bot_row_2_spacing": "bot_row_2_spacing",
+    "inputs_bot_row_2_dia": "bot_row_2_dia",
+    "inputs_bot_row_3_mode": "bot_row_3_mode",
+    "inputs_bot_row_3_bars": "bot_row_3_bars",
+    "inputs_bot_row_3_spacing": "bot_row_3_spacing",
+    "inputs_bot_row_3_dia": "bot_row_3_dia",
+    "inputs_bot_row_4_mode": "bot_row_4_mode",
+    "inputs_bot_row_4_bars": "bot_row_4_bars",
+    "inputs_bot_row_4_spacing": "bot_row_4_spacing",
+    "inputs_bot_row_4_dia": "bot_row_4_dia",
+    "inputs_top_row_count": "top_row_count",
+    "inputs_top_row_1_mode": "top_row_1_mode",
+    "inputs_top_row_1_bars": "top_row_1_bars",
+    "inputs_top_row_1_spacing": "top_row_1_spacing",
+    "inputs_top_row_1_dia": "top_row_1_dia",
+    "inputs_top_row_2_mode": "top_row_2_mode",
+    "inputs_top_row_2_bars": "top_row_2_bars",
+    "inputs_top_row_2_spacing": "top_row_2_spacing",
+    "inputs_top_row_2_dia": "top_row_2_dia",
+    "inputs_top_row_3_mode": "top_row_3_mode",
+    "inputs_top_row_3_bars": "top_row_3_bars",
+    "inputs_top_row_3_spacing": "top_row_3_spacing",
+    "inputs_top_row_3_dia": "top_row_3_dia",
+    "inputs_top_row_4_mode": "top_row_4_mode",
+    "inputs_top_row_4_bars": "top_row_4_bars",
+    "inputs_top_row_4_spacing": "top_row_4_spacing",
+    "inputs_top_row_4_dia": "top_row_4_dia",
     "inputs_top_flange_reo_enabled": "top_flange_reo_enabled",
     "inputs_bot_flange_reo_enabled": "bot_flange_reo_enabled",
     "inputs_top_flange_mirror_lr": "top_flange_mirror_lr",
@@ -4280,6 +4435,7 @@ TAB_KEYS = {
     "sfd_span_len_5": "design_span_len_5",
     "sfd_ms_point_count": "design_ms_point_count",
     "sfd_ms_udl_count": "design_ms_udl_count",
+    "sfd_point_load_count": "sfd_point_load_count",
     "load_ms_G_1": "design_ms_G_1",
     "load_ms_G_2": "design_ms_G_2",
     "load_ms_G_3": "design_ms_G_3",
@@ -6795,6 +6951,9 @@ def _request_inputs_engineering_commit(
     """Commit one beam-owned input revision for every downstream consumer."""
     commit_started_ns = time.perf_counter_ns()
     commit_timings_ms: dict[str, float] = {}
+    explicit_changed_keys = tuple(
+        sorted(str(key) for key in (changed_keys or ()) if str(key).strip())
+    )
     resolved_widget_key = str(widget_key or "").strip()
     rerun_class = _classify_inputs_widget(resolved_widget_key)
     if rerun_class is _InputsWidgetRerunClass.DISPLAY_LOCAL:
@@ -6814,13 +6973,7 @@ def _request_inputs_engineering_commit(
         "_inputs_same_beam_return_restored_keys",
     ):
         st.session_state.pop(key, None)
-    resolved_changed_keys = tuple(
-        sorted(
-            str(key)
-            for key in (changed_keys or ())
-            if str(key).strip()
-        )
-    )
+    resolved_changed_keys = explicit_changed_keys
     if not resolved_changed_keys:
         inferred = (
             str(TAB_KEYS.get(resolved_widget_key) or "").strip()
@@ -6851,24 +7004,55 @@ def _request_inputs_engineering_commit(
         time.perf_counter_ns() - stage_started_ns
     ) / 1_000_000
 
+    # Fragment reruns can revisit a callback path after the canonical value
+    # has already been committed.  Reusing the matching beam snapshot avoids
+    # another persistence write and another sibling wake for a no-op event;
+    # a real widget change still differs here and follows the normal commit
+    # path below.  This is deliberately compared after projection/mirror
+    # synchronisation so the canonical state remains the sole authority.
+    from inputs_application.engineering_input_store import InputSnapshotStore
+
+    active_beam_id = str(st.session_state.get("active_beam_id") or "").strip()
+    if not active_beam_id:
+        raise RuntimeError("Inputs engineering edit has no active beam")
+    existing_snapshot = InputSnapshotStore(st.session_state).current_for_beam(
+        active_beam_id
+    )
+    if (
+        existing_snapshot.revision > 0
+        and existing_snapshot.snapshot == live_snapshot
+    ):
+        st.session_state["_inputs_last_commit_timings_ms"] = {
+            "revision": int(existing_snapshot.revision),
+            "widget_key": resolved_widget_key,
+            "no_op": True,
+            "stages": {
+                "synchronize_projections": round(
+                    commit_timings_ms.get("synchronize_projections", 0.0), 3
+                ),
+                "build_canonical_snapshot": round(
+                    commit_timings_ms.get("build_canonical_snapshot", 0.0), 3
+                ),
+                "total": round(
+                    (time.perf_counter_ns() - commit_started_ns) / 1_000_000,
+                    3,
+                ),
+            },
+        }
+        return existing_snapshot
+
     stage_started_ns = time.perf_counter_ns()
     persisted_record = persist_active_beam_from_shared()
     commit_timings_ms["persist_active_beam"] = (
         time.perf_counter_ns() - stage_started_ns
     ) / 1_000_000
-    active_beam_id = str(st.session_state.get("active_beam_id") or "").strip()
-    if not active_beam_id:
-        raise RuntimeError("Inputs engineering edit has no active beam")
     if isinstance(persisted_record, dict):
         persisted_params = persisted_record.get("params")
         if isinstance(persisted_params, dict):
             live_snapshot = copy.deepcopy(persisted_params)
 
-    from inputs_application.engineering_input_store import InputSnapshotStore
-
     stage_started_ns = time.perf_counter_ns()
-    committed = InputSnapshotStore(st.session_state).commit_for_beam(
-        active_beam_id,
+    committed = InputSnapshotStore(st.session_state).commit_active_beam(
         live_snapshot,
         changed_keys=resolved_changed_keys,
         source=(
@@ -6929,6 +7113,33 @@ def _request_inputs_engineering_commit(
         # direct widget callbacks and Apply/recommendation callbacks alike.
         # Off-page edits settle when Inputs is rendered again, so a stale
         # fragment target is never woken while another page owns the shell.
+        from inputs_page_modules.fragments import request_inputs_fragment_wake
+
+        workspace_woken = request_inputs_fragment_wake(
+            st,
+            "engineering_input_workspace",
+            revision=int(committed.revision),
+            interval_s=0.1,
+        )
+        st.session_state["_inputs_workspace_fragment_wake"] = {
+            "revision": int(committed.revision),
+            "woken": bool(workspace_woken),
+            "source": "input_transaction",
+        }
+        calculation_woken = request_inputs_fragment_wake(
+            st,
+            "engineering_calculation_workspace",
+            revision=int(committed.revision),
+            interval_s=0.1,
+        )
+        st.session_state["_inputs_calculation_fragment_wake"] = {
+            "revision": int(committed.revision),
+            "woken": bool(calculation_woken),
+            "source": "input_transaction",
+        }
+        # Diagrams render synchronously inside the parent input workspace, so
+        # they consume this same committed transaction on the widget rerun.
+        # There is deliberately no independent diagram-fragment wake path.
         from inputs_application.design_brain_polling import (
             INITIAL_DESIGN_BRAIN_WAKE_INTERVAL_S,
             start_design_brain_polling,
@@ -6993,6 +7204,12 @@ def _compose_sync_callback(widget_key: str, shared_key: str):
             return
         mark_user_edit(widget_key, shared_key)
         assign_callback()
+        # Display-only controls are already inside the Inputs workspace
+        # fragment. Streamlit schedules that fragment rerun automatically
+        # after the callback returns; explicitly calling st.rerun() here is a
+        # no-op in callback context and surfaces a warning in the UI.
+        if _classify_inputs_widget(widget_key) is _InputsWidgetRerunClass.DISPLAY_LOCAL:
+            return
         commit_changed_keys = _synchronize_manual_design_action_proxy_for_commit(
             str(shared_key or "")
         )
@@ -7022,6 +7239,12 @@ def _compose_sync_callback(widget_key: str, shared_key: str):
             widget_key,
             changed_keys=commit_changed_keys,
         )
+        # Streamlit schedules the owning rerun after an on_change callback
+        # returns.  V2 commits the model and returns; an explicit st.rerun()
+        # here would create a second full-page pass, causing the Inputs shell
+        # and Design Brain card to flicker.  The committed transaction above is
+        # the only wake-up required for both the direct V2-shaped path and the
+        # legacy fragment rollback path.
 
     return _callback
 

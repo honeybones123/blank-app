@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any, Callable
+
+from inputs_application.engineering_input_store import InputSnapshotStore
+from inputs_page_modules.fragments import rerun_inputs_current_scope
 
 
 def _rerun_inputs_fragment_or_app(st_module: Any) -> None:
     """Prefer a local fragment rerun, with compatibility for older Streamlit."""
-    try:
-        st_module.rerun(scope="fragment")
-    except TypeError:
-        st_module.rerun()
+    rerun_inputs_current_scope(st_module)
 
 
 def _render_inputs_widget_subfragment(
@@ -37,6 +38,7 @@ def render_inputs_widget_sections(
     mark: Callable[[str], None],
     sub_mark: Callable[[str], None],
     run_fragment_fn: Callable[..., Any],
+    render_diagram_fragment_fn: Callable[..., Any] | None = None,
     top_section_layout_slots_fn: Callable[..., tuple],
     design_actions_section_fn: Callable[..., None],
     geometry_materials_top_section_fn: Callable[..., None],
@@ -52,8 +54,13 @@ def render_inputs_widget_sections(
     post_widget_autopersist_fn: Callable[..., bool],
 ):
     render_started_ns = time.perf_counter_ns()
+    render_start_revision = int(
+        InputSnapshotStore(st_module.session_state).current().revision or 0
+    )
+    # Retain the injectable child-render hook as a compatibility seam while
+    # keeping diagram rendering in the parent workspace boundary.
+    _ = run_fragment_fn
     section_timings_ms: dict[str, float] = {}
-
     def render_section(
         fragment_name: str,
         section_fn: Callable[..., Any],
@@ -178,6 +185,40 @@ def render_inputs_widget_sections(
         mark=mark,
         sub_mark=sub_mark,
     )
+    # Render the input preview after all widget sections have reconciled their
+    # callbacks.  The diagram remains in the same right-hand model slot, but
+    # it now receives the final committed snapshot for this page transaction;
+    # it cannot publish a one-revision-behind Plotly figure.
+    if callable(render_diagram_fragment_fn):
+        render_diagram_fragment_fn(
+            inputs_detailed_mode=bool(inputs_detailed_mode),
+            sync_callbacks=sync_callbacks,
+            right_diagram=right_diagram,
+            model_slot=model_slot,
+        )
+
+    # A Streamlit widget callback may commit while this render is already in
+    # flight. In that case the just-emitted diagram belonged to the previous
+    # revision. Schedule one bounded settle rerun so the visible diagram and
+    # summaries are guaranteed to share the final transaction; the next pass
+    # starts at the same revision and does not rerun again.
+    settled_revision = int(
+        InputSnapshotStore(st_module.session_state).current().revision or 0
+    )
+    if settled_revision > render_start_revision:
+        fragments_disabled = str(
+            os.environ.get("CODEX_ENABLE_INPUTS_FRAGMENTS", "0")
+        ).strip().lower() in {"0", "false", "no", "off"}
+        st_module.session_state["_inputs_diagram_settle_revision"] = settled_revision
+        # In the V2-shaped full-page path, do not interrupt this render from
+        # inside the widget coordinator.  The page shell owns the single
+        # bounded settle pass after all sibling regions have completed; an
+        # in-flight rerun here can terminate before the latest diagram identity
+        # is published and leave the old Plotly frame visible.  Preserve the
+        # explicit legacy-fragment behaviour for rollback/measurement mode.
+        if not fragments_disabled:
+            rerun_inputs_current_scope(st_module)
+
     autopersist_started_ns = time.perf_counter_ns()
     result = post_widget_autopersist_fn(ss=ss)
     section_timings_ms["post_widget_autopersist"] = round(
@@ -645,6 +686,7 @@ def render_inputs_shear_reinforcement_column(
             int(lig_d_val),
             sync_callbacks,
             help_text="Nominal diameter of shear reinforcement links (mm).",
+            seed_session_state=False,
         )
         select_row_fn(
             "No. of legs",
@@ -653,6 +695,7 @@ def render_inputs_shear_reinforcement_column(
             int(lig_legs_val),
             sync_callbacks,
             help_text="Number of legs per shear link. Use 0 for no links; 2 or more for active shear reinforcement.",
+            seed_session_state=False,
         )
         number_row_fn(
             "Link spacing (mm)",
@@ -904,39 +947,13 @@ def render_inputs_geometry_materials_top_section(
     )
     sub_mark("geometry")
     mark("top_inputs_widgets")
-    stage_started_ns = time.perf_counter_ns()
-    if inputs_detailed_mode and right_diagram is not None:
-        with right_diagram:
-            with st_module.container():
-                st_module.markdown('<div class="inputs-diagram-materials-group">', unsafe_allow_html=True)
-                section_2d_diagram_block_fn(model_state=model_state)
-                st_module.markdown('<div style="margin-bottom: 0.35rem;"></div>', unsafe_allow_html=True)
-                st_module.markdown('<div style="margin-top: 0.35rem;"></div>', unsafe_allow_html=True)
-                materials_subsection_fn(sync_callbacks)
-                st_module.markdown("</div>", unsafe_allow_html=True)
-
+    # The parent workspace now owns a dedicated diagram fragment.  Keeping
+    # diagram/material presentation out of this geometry child prevents a
+    # reinforcement edit from recomputing into a parent-owned slot.  Detailed
+    # materials and the fast model are rendered by that sibling fragment.
     if inputs_detailed_mode:
         page_divider_fn()
-    else:
-        ss["_inputs_fast_model_state_debug"] = {
-            **dict(model_state_debug or {}),
-            "summary_governing_check_name": model_state.get("shear_truth_governing_check_name"),
-            "summary_governing_reason": model_state.get("shear_truth_governing_reason"),
-            "fast_model_uses_overlay_state": True,
-            "fast_model_overlay_lig_d": model_state_debug.get("model_overlay_lig_d"),
-            "fast_model_overlay_lig_legs": model_state_debug.get("model_overlay_lig_legs"),
-            "fast_model_overlay_s_lig": model_state_debug.get("model_overlay_s_lig"),
-            "fast_model_fingerprint_includes_shear": True,
-        }
-        with model_slot:
-            with st_module.container():
-                st_module.markdown('<div class="inputs-diagram-materials-group">', unsafe_allow_html=True)
-                fast_model_block_fn(sync_callbacks, model_state=model_state)
-                st_module.markdown("</div>", unsafe_allow_html=True)
-    stage_timings_ms["diagram_material_presentation"] = round(
-        (time.perf_counter_ns() - stage_started_ns) / 1_000_000,
-        3,
-    )
+    stage_timings_ms["diagram_material_presentation"] = 0.0
     stage_timings_ms["total"] = round(
         (time.perf_counter_ns() - render_started_ns) / 1_000_000,
         3,

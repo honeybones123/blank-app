@@ -4,6 +4,8 @@ import pandas as pd
 import streamlit as st
 from pathlib import Path
 
+from inputs_application.session_services import InputsSessionServices
+
 from state_and_helpers import (
     init_shared_session_state,
     get_param,
@@ -165,7 +167,12 @@ def _deflection_core_cache_key() -> tuple:
         if key.startswith(_DEFLECTION_CORE_CACHE_PREFIXES):
             values.append((key, repr(st.session_state.get(key))))
 
-    revision = int(st.session_state.get("_inputs_workspace_revision", 0) or 0)
+    revision = int(
+        InputsSessionServices.from_mapping(st.session_state)
+        .input_snapshots.current()
+        .revision
+        or 0
+    )
     return revision, tuple(values)
 
 

@@ -8,9 +8,7 @@ from typing import Any, Callable
 import streamlit as st
 
 from inputs_application.design_brain_composition import selected_design_brain_adapter_name
-from inputs_application.page_runtime.batch import (
-    render_inputs_batch_design_manager_coordinator,
-)
+from inputs_application.page_runtime import calculations, common, mode, setup, summaries, tail, widgets
 from inputs_application.page_runtime.calculations import (
     render_inputs_calculation_fragment_current_coordinator,
 )
@@ -20,14 +18,11 @@ from inputs_application.page_runtime.common import (
     make_summary_cross_section_figure,
     reconcile_inputs_design_actions_before_authority,
 )
-from inputs_application.page_runtime.divider import (
-    render_inputs_page_divider_coordinator,
-)
 from inputs_application.page_runtime.mode import (
     render_inputs_design_mode_selector_coordinator,
 )
 from inputs_application.page_runtime.setup import (
-    refresh_inputs_design_brain_result_background,
+    refresh_inputs_design_brain_result,
     refresh_inputs_engineering_result,
     refresh_inputs_authoritative_design_result,
     render_inputs_page_setup_current_coordinator,
@@ -50,6 +45,22 @@ def _render_design_guide_placeholder(**_: Any) -> None:
     """V2 owns Design Guide rendering through the workspace card adapter."""
 
     return None
+
+
+def _render_page_divider_placeholder() -> None:
+    """Compatibility slot retained while the unused divider is retired."""
+
+    return None
+
+
+def _render_inputs_batch_design_manager_lazy(**kwargs: Any) -> Any:
+    """Load the optional Batch Design surface only when it is rendered."""
+
+    from inputs_application.page_runtime.batch import (
+        render_inputs_batch_design_manager_coordinator,
+    )
+
+    return render_inputs_batch_design_manager_coordinator(**kwargs)
 
 @dataclass(frozen=True)
 class InputsRuntimeDependencyProvider:
@@ -142,8 +153,6 @@ def build_inputs_page_runtime() -> InputsPageRuntime:
         summaries,
         tail,
         mode,
-        batch,
-        divider,
     )
     provider = InputsRuntimeDependencyProvider(
         modules=runtime_modules
@@ -157,12 +166,16 @@ def build_inputs_page_runtime() -> InputsPageRuntime:
         reconcile_design_actions=reconcile_inputs_design_actions_before_authority,
         refresh_authoritative_result=refresh_inputs_authoritative_design_result,
         refresh_engineering_result=refresh_inputs_engineering_result,
-        refresh_design_brain_result=refresh_inputs_design_brain_result_background,
-        render_batch_design_manager=render_inputs_batch_design_manager_coordinator,
+        # Match V2: preview synchronously in the Design Brain fragment and
+        # cache/reuse by the committed revision/hash.  A subprocess poll here
+        # added a second state machine and made the card flicker while widgets
+        # and calculations were already independent.
+        refresh_design_brain_result=refresh_inputs_design_brain_result,
+        render_batch_design_manager=_render_inputs_batch_design_manager_lazy,
         render_calculation=render_inputs_calculation_fragment_current_coordinator,
         render_design_guide=render_design_guide_current_coordinator,
         render_design_mode_selector=render_inputs_design_mode_selector_coordinator,
-        render_page_divider=render_inputs_page_divider_coordinator,
+        render_page_divider=_render_page_divider_placeholder,
         render_summary_pipeline=render_inputs_summary_pipeline_current_coordinator,
         render_tail=render_inputs_tail_current_coordinator,
         render_widget_sections=render_inputs_widget_sections_current_coordinator,

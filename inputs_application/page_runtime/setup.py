@@ -38,15 +38,12 @@ from application.guidance_result_adapter import guidance_payload_from_authoritat
 
 from application.contracts.design_brain import (
     AuthoritativeDesignResult,
-    build_authoritative_design_result,
 )
 from application.design_brain_port import DesignBrainRequest
 
 from inputs_application.state_utils import application_guidance_context, bottom_reo_state_label, float_from_state, guidance_state_snapshot, shared_state_snapshot, shear_state_label, updates_match_state
 
 from inputs_application.recommendation_support import design_optimisation_goal_label, resolve_geometry_width_context, severe_shear_failure, shear_severity_band
-
-from inputs_application.recommendation_cache import resolve_popover_recommendation
 
 from inputs_application.recommendation_envelope import attach_recommendation_envelope, recommendation_blocked_reason
 
@@ -58,10 +55,6 @@ from inputs_application.guidance_ui_state import prepare_guidance_ui_state
 
 from inputs_application.design_guide_fingerprint import design_guide_fingerprint
 
-from inputs_application.recommendation_evaluation import effective_bottom_design_state, evaluate_bending_with_bottom_state, evaluate_shear_with_state
-
-from inputs_application.popover_recommendation_apply import execute_popover_recommendation_apply
-
 from inputs_application.shear_widget_reconciliation import ShearWidgetReconciliationRuntime, reconcile_shear_widgets_with_shared
 
 from inputs_application.summary_state_runtime import InputsSummaryStateRuntime, resolve_inputs_summary_state
@@ -69,7 +62,10 @@ from inputs_application.summary_state_runtime import InputsSummaryStateRuntime, 
 from inputs_application.widget_state_projection import merge_current_engineering_widget_state
 from inputs_application.engineering_input_store import should_reuse_committed_engineering_baseline
 from inputs_application.session_services import InputsSessionServices
-from inputs_application.design_brain_composition import build_design_brain_service
+from inputs_application.design_brain_composition import (
+    build_design_brain_service,
+    calculate_v2_authoritative_result,
+)
 from inputs_application.design_brain_job_service import DesignBrainJobService
 
 from inputs_application.canonical_runtime_contracts import CanonicalConvenienceResyncRuntime, CanonicalDesignStatePackRuntime
@@ -78,20 +74,6 @@ from inputs_page_modules.app_bridge.canonical_convenience_resync import _apply_c
 from inputs_page_modules.app_bridge.canonical_design_state_pack import _build_canonical_design_state_pack_for_app_bridge as build_canonical_design_state_pack
 
 from bending_checks_helpers import build_bending_check_rows_from_state
-
-from batch_design.ui.project_beam_manager_adapters import (
-    beam_option_labels as build_batch_beam_option_labels,
-    build_beam_schedule_df as build_batch_beam_schedule_df,
-    build_schedule_export_df as build_batch_schedule_export_df,
-    build_schedule_preview_df as build_batch_schedule_preview_df,
-    format_beam_status_badge as format_batch_beam_status_badge,
-    format_last_checked as format_batch_last_checked,
-    sync_beam_records_from_schedule_df as sync_batch_beam_records_from_schedule_df,
-)
-
-from batch_design.design_brain_adapter import BatchDesignGuidanceAdapter
-
-from batch_design.ui.page import BatchDesignPageContext, render_batch_design_page
 
 from crack_checks_helpers import build_crack_check_rows_from_state, pick_governing_check_row
 
@@ -104,11 +86,6 @@ from application.contracts.family_classification import load_family_classificati
 from engineering_check_ui import BENDING_ROW_UID_TO_TAB, SHEAR_ROW_UID_TO_TAB
 
 from inputs_application.one_click_entrypoint import run_one_click_auto_design
-
-from inputs_application.guidance_entrypoint import (
-    build_guidance_entrypoint_runtime,
-    compute_inputs_guidance,
-)
 
 from inputs_page_modules.calculations import render_inputs_calculation_explainer_trace as render_inputs_calculation_explainer_trace_module
 
@@ -124,15 +101,14 @@ from inputs_page_modules.fragments import run_inputs_fragment
 
 from inputs_page_modules.diagrams.source_projection import build_section_outline_points_and_bbox as build_section_outline_points_and_bbox_module
 
-from inputs_application.design_guide_ui_boundary import render_design_guide_panel_orchestration
+from inputs_application.v2_design_brain_ui_boundary import render_design_guide_panel_orchestration
 
-from inputs_page_modules.design_overview_adapter import collect_design_overview
 
-from inputs_application.design_guide_ui_boundary import render_design_guide_debug_sidebar
+from inputs_application.v2_design_brain_ui_boundary import render_design_guide_debug_sidebar
 
-from inputs_application.design_guide_ui_boundary import append_design_guide_trace as append_design_guide_trace_module, design_guide_tracer_path as design_guide_tracer_path_module, design_guide_tracer_verbose_log as design_guide_tracer_verbose_log_module
+from inputs_application.v2_design_brain_ui_boundary import append_design_guide_trace as append_design_guide_trace_module, design_guide_tracer_path as design_guide_tracer_path_module, design_guide_tracer_verbose_log as design_guide_tracer_verbose_log_module
 
-from inputs_application.design_guide_ui_boundary import DESIGN_GUIDE_APPLY_TRACE_RUN_ID_KEY, begin_design_guide_apply_trace, end_design_guide_apply_trace, set_design_guide_live_breadcrumb
+from inputs_application.v2_design_brain_ui_boundary import DESIGN_GUIDE_APPLY_TRACE_RUN_ID_KEY, begin_design_guide_apply_trace, end_design_guide_apply_trace, set_design_guide_live_breadcrumb
 
 from inputs_application.state_projection import (
     build_auto_design_governing_fingerprint as build_auto_design_governing_fingerprint_module,
@@ -158,11 +134,10 @@ from inputs_page_modules.session.longitudinal_reo_widget_sync import (
     reseed_inputs_longitudinal_reo_widgets_from_shared as reseed_inputs_longitudinal_reo_widgets_from_shared_module,
 )
 
-from inputs_page_modules.auto_design_routing import AutoDesignRoutingRuntime, handle_inputs_auto_design
-
 from inputs_page_modules.apply_routing import handle_inputs_apply_buttons
 
 from inputs_page_modules.landing import (
+    INPUTS_DESIGN_STARTED_KEY,
     inputs_has_design_actions_or_loads,
     inputs_show_landing_dashboard,
     render_landing_card,
@@ -181,21 +156,13 @@ from inputs_page_modules.tail import (
     render_inputs_tail as render_inputs_tail_module,
 )
 
-from inputs_page_modules.recommendation_panels import (
-    render_bottom_recommendation_panel,
-    render_geometry_recommendation_panel,
-    render_shear_recommendation_panel,
-)
-
 from inputs_page_modules.summaries import render_inputs_summary_expanders_and_tables_current_coordinator
 
 from inputs_page_modules.summaries.render_coordinators import render_inputs_summary_container_current as render_inputs_summary_container_current_module
 
 from inputs_page_modules.summaries.display_state import render_inputs_summary_display_state as render_inputs_summary_display_state_module
 
-from inputs_application.design_guide_ui_boundary import should_render_design_guide_slot_from_publication_eligibility
-
-from inputs_page_modules.recommendation_runtime import compute_bottom_recommendation_for_page, compute_geometry_recommendation_for_page, compute_shear_recommendation_for_page
+from inputs_application.v2_design_brain_ui_boundary import should_render_design_guide_slot_from_publication_eligibility
 
 from inputs_page_modules.summaries.pipeline import render_inputs_summary_pipeline as render_inputs_summary_pipeline_module
 
@@ -257,6 +224,7 @@ from state_and_helpers import (
     get_active_beam_summary,
     get_deflection_limit_label_from_ratio,
     get_deflection_limit_ratio,
+    get_beam_project_param_snapshot,
     get_param,
     get_widget_key_for_shared,
     build_legacy_longitudinal_mirrors_from_rows,
@@ -335,7 +303,6 @@ from inputs_application.page_runtime.common import (
     REO_SPACINGS,
     RESULT_CACHE_KEY,
     _AGENT_DEBUG_LOG_PATH,
-    _GUIDANCE_ENTRYPOINT_RUNTIME,
     _INPUTS_DEBUG_AUDIT,
     _INPUTS_DESIGN_ACTIONS_ANCHOR_ID,
     _INPUTS_PENDING_NAV_PAGE_SLUG_KEY,
@@ -392,10 +359,16 @@ def render_inputs_initial_session_state_coordinator(*, ss: dict) -> None:
         ss[RESULT_CACHE_KEY] = None
 
 def render_inputs_param_snapshot_coordinator():
+    # The Inputs page has fragment-owned widget/diagram regions.  A fragment
+    # rerun keeps the page-context closure from the original shell render, so
+    # a frozen ``params`` dictionary would return pre-edit values after a
+    # widget callback had already committed a newer transaction. V2 rebuilds
+    # its model on every rerun; use the current session-backed value (or the
+    # caller's default) on every fragment pass.
     params = {key: st.session_state.get(key) for key in st.session_state.keys()}
 
     def fast_get_param(key, default=None):
-        return params.get(key, default)
+        return st.session_state.get(key, default)
 
     return params, fast_get_param
 
@@ -542,6 +515,8 @@ def _merge_current_engineering_widget_state_current_coordinator(
         INPUTS_PAGE_TAB_KEYS,
         shared_only_mode=shared_only,
     )
+
+
     resolved = rebuild_engineering_derived_state(resolved)
     debug["pre_widget_engineering_widget_bridge"] = {
         "applied": bool(overlay_keys),
@@ -563,6 +538,46 @@ def _canonical_input_transaction_state_current_coordinator(
     """
 
     state = dict(resolved_state or {})
+    # V2 validates BeamInputs before it can calculate.  Older Runtime
+    # sessions did not constrain the geometry widget, so a stale ``inputs_D``
+    # value of 0 could be projected into the canonical transaction and crash
+    # the whole workspace.  Repair only out-of-range legacy/session values at
+    # this boundary; ordinary in-range user edits remain untouched.
+    geometry_bounds = {
+        "D": (200.0, 5000.0, 600.0),
+    }
+    for shared_key, (minimum, maximum, fallback) in geometry_bounds.items():
+        try:
+            candidate = float(state.get(shared_key))
+        except (TypeError, ValueError):
+            candidate = float("nan")
+        if minimum <= candidate <= maximum:
+            continue
+        widget_key = next(
+            (key for key, value in TAB_KEYS.items() if value == shared_key),
+            None,
+        )
+        repaired = None
+        for source_key in (widget_key, shared_key):
+            try:
+                source_value = float(st.session_state.get(source_key))
+            except (TypeError, ValueError):
+                continue
+            if minimum <= source_value <= maximum:
+                repaired = source_value
+                break
+        if repaired is None:
+            try:
+                shared_default = float(SHARED_DEFAULTS.get(shared_key, fallback))
+            except (TypeError, ValueError):
+                shared_default = float(fallback)
+            repaired = shared_default if minimum <= shared_default <= maximum else float(fallback)
+        state[shared_key] = repaired
+        # Keep the widget mirror and canonical alias aligned for the next
+        # render, while the transaction below becomes the single authority.
+        st.session_state[shared_key] = repaired
+        if widget_key:
+            st.session_state[widget_key] = repaired
     return {
         key: copy.deepcopy(
             state[key]
@@ -571,6 +586,7 @@ def _canonical_input_transaction_state_current_coordinator(
         )
         for key in BEAM_PROJECT_PARAM_KEYS
     }
+
 
 def _ensure_authoritative_design_result_current_coordinator(
     *,
@@ -589,6 +605,31 @@ def _ensure_authoritative_design_result_current_coordinator(
     beam_committed_state = dict(beam_input_state.snapshot or {})
     if beam_committed_state:
         committed_state = copy.deepcopy(beam_committed_state)
+        # The beam-owned transaction is the navigation authority.  A page
+        # rerun can recreate Streamlit widget keys from defaults before the
+        # Inputs setup coordinator runs; letting those defaults overlay the
+        # committed result leaves the visible widgets on one revision while
+        # the Design Brain card remains on another.  Re-seed the widget mirror
+        # from the active beam snapshot before resolving any downstream state.
+        # Widget callbacks commit first, so this is also safe after a genuine
+        # edit: the snapshot already contains the new value.
+        hydrated_widget_keys: list[str] = []
+        for shared_key, widget_key in INPUTS_PAGE_TAB_KEYS.items():
+            if shared_key not in beam_committed_state:
+                continue
+            value = copy.deepcopy(beam_committed_state[shared_key])
+            if st.session_state.get(widget_key) != value:
+                st.session_state[widget_key] = value
+                hydrated_widget_keys.append(str(widget_key))
+        current_state = copy.deepcopy(beam_committed_state)
+        current_state_debug = dict(current_state_debug)
+        current_state_debug["beam_snapshot_widget_hydration"] = {
+            "applied": True,
+            "active_beam_id": active_beam_id,
+            "source_revision": int(beam_input_state.revision or 0),
+            "source_hash": beam_input_state.engineering_hash,
+            "hydrated_widget_keys": sorted(hydrated_widget_keys),
+        }
     committed_beam_id = str(
         st.session_state.get(
             "_inputs_engineering_input_store_active_beam_id"
@@ -659,7 +700,14 @@ def _ensure_authoritative_design_result_current_coordinator(
             and committed_state
             and route_snapshot_is_latest
             and result_matches_snapshot
-            and (include_design_brain or bool(committed_result.final_publication))
+            # A route-return result may be an engineering-only V2 result. It
+            # is safe to reuse for summaries, but it is not a Design Brain
+            # publication. The Design Brain caller must continue through the
+            # V2 preview until the result carries its publication envelope.
+            and (
+                not include_design_brain
+                or bool(committed_result.final_publication)
+            )
         ):
             # The router has already restored shared state. Seed the widget
             # mirror from the same immutable transaction and reuse the exact
@@ -693,8 +741,7 @@ def _ensure_authoritative_design_result_current_coordinator(
             # Re-align the legacy global transaction record with the beam-owned
             # snapshot so downstream probes and renderers cannot observe the
             # derived-only transaction that another route may have produced.
-            restored_transaction = input_store.commit_for_beam(
-                active_beam_id,
+            restored_transaction = input_store.commit_active_beam(
                 committed_state,
                 changed_keys=(),
                 source="same_beam_route_return_restore",
@@ -818,7 +865,10 @@ def _ensure_authoritative_design_result_current_coordinator(
         current_state_debug.get("pre_widget_engineering_widget_bridge") or {}
     )
     has_actions_or_loads = inputs_has_design_actions_or_loads()
-    has_explicit_design_state = _has_explicit_design_state_current_coordinator(current_state)
+    has_explicit_design_state = (
+        _has_explicit_design_state_current_coordinator(current_state)
+        or bool(st.session_state.get(INPUTS_DESIGN_STARTED_KEY, False))
+    )
     if not has_actions_or_loads and not has_explicit_design_state:
         return None
     overlay_keys = tuple(
@@ -843,8 +893,7 @@ def _ensure_authoritative_design_result_current_coordinator(
         input_transaction = beam_input_state
         current_state = copy.deepcopy(beam_committed_state)
     elif active_beam_id:
-        input_transaction = input_store.commit_for_beam(
-            active_beam_id,
+        input_transaction = input_store.commit_active_beam(
             canonical_input_state,
             changed_keys=overlay_keys,
             source="authoritative_design_transaction",
@@ -895,16 +944,10 @@ def _ensure_authoritative_design_result_current_coordinator(
 
     def _compute(snapshot_value):
         if not include_design_brain:
-            engineering_overview = collect_design_overview(
-                guidance_context,
-                session_state=st.session_state,
-            )
-            return build_authoritative_design_result(
+            return calculate_v2_authoritative_result(
                 engineering_snapshot=snapshot_value,
-                current_calculations={
-                    **dict(engineering_overview),
-                    "resolved_inputs": dict(guidance_context),
-                },
+                resolved_inputs=guidance_context,
+                input_revision=int(input_transaction.revision),
             )
         engineering_calculations = (
             dict(existing_result.current_calculations or {})
@@ -957,9 +1000,21 @@ def _ensure_authoritative_design_result_current_coordinator(
         )
         or {}
     )
+    # A route-return guard may be present on the first Inputs render in a
+    # browser session, but it must not suppress the first authoritative result.
+    # Only reuse the guard when that beam already has a result for this
+    # transaction; otherwise publish the freshly computed V2 result normally.
+    route_return_missing_result = bool(
+        st.session_state.get("_inputs_same_beam_return_active")
+        and active_beam_id
+        and active_beam_id not in results_by_beam
+    )
     should_store_result = bool(
         active_beam_id
-        and not st.session_state.get("_inputs_same_beam_return_active")
+        and (
+            not st.session_state.get("_inputs_same_beam_return_active")
+            or route_return_missing_result
+        )
         and services.engineering_results.source_input_revision()
         == input_transaction.revision
         and (
@@ -1208,6 +1263,10 @@ def render_inputs_dev_session_debug_sidebar_coordinator(*, ss: dict) -> None:
     )
 
 def render_inputs_batch_design_context_coordinator(*, ss: dict):
+    from batch_design.ui.project_beam_manager_adapters import (
+        beam_option_labels as build_batch_beam_option_labels,
+    )
+
     beam_labels = build_batch_beam_option_labels()
     beam_order = ss.get("beam_order", [])
     active_beam_id = ss.get("active_beam_id")

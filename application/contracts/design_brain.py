@@ -7,7 +7,7 @@ module; the application must not depend on the replacement's internal types.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field, fields, replace
 import hashlib
 import json
 from typing import Any
@@ -132,6 +132,54 @@ class AuthoritativeDesignResult:
         )
 
 
+_AUTHORITATIVE_RESULT_FIELD_NAMES = frozenset(
+    field_info.name for field_info in fields(AuthoritativeDesignResult)
+)
+_AUTHORITATIVE_RESULT_COMPATIBILITY_MODULES = frozenset(
+    {
+        AuthoritativeDesignResult.__module__,
+        "design_brain.authority",
+    }
+)
+
+
+def coerce_authoritative_design_result(
+    value: Any,
+) -> AuthoritativeDesignResult | None:
+    """Normalize a result across Streamlit hot-reload module identities.
+
+    Streamlit can retain an object created by a previous module instance while
+    the current rerun imports a fresh ``AuthoritativeDesignResult`` class.
+    Structural rebinding keeps the neutral contract authoritative without
+    accepting arbitrary dictionaries or legacy result types.
+    """
+
+    if isinstance(value, AuthoritativeDesignResult):
+        return value
+    value_type = type(value)
+    if (
+        value_type.__module__ not in _AUTHORITATIVE_RESULT_COMPATIBILITY_MODULES
+        or value_type.__name__ != AuthoritativeDesignResult.__name__
+    ):
+        return None
+    to_dict = getattr(value, "to_dict", None)
+    if not callable(to_dict):
+        return None
+    try:
+        payload = to_dict()
+        if not isinstance(payload, dict):
+            return None
+        return AuthoritativeDesignResult(
+            **{
+                key: payload[key]
+                for key in _AUTHORITATIVE_RESULT_FIELD_NAMES
+                if key in payload
+            }
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def build_authoritative_design_result(
     *,
     engineering_snapshot: EngineeringInputSnapshot,
@@ -185,5 +233,6 @@ __all__ = [
     "PUBLICATION_AUTHORITY_EXCLUDED_FIELDS",
     "UI_ONLY_EXCLUDED_FIELDS",
     "build_authoritative_design_result",
+    "coerce_authoritative_design_result",
     "stable_authority_hash",
 ]

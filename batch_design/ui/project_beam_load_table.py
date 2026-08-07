@@ -15,9 +15,9 @@ ACTION_LABELS = {
     "n_star": "N*",
     "vy_star": "Vy*",
     "vz_star": "Vz*",
-    "mx_star": "Mx*",
+    "mx_star": "T*",
     "my_star": "My*",
-    "mz_star": "Mz*",
+    "mz_star": "Mx*",
 }
 
 
@@ -55,6 +55,36 @@ def _capacity_status(row: dict[str, Any]) -> str:
     return "NOT RUN"
 
 
+def _first_utilisation(row: dict[str, Any]) -> float | None:
+    for name in (
+        "design_utilisation",
+        "Mu_utilisation",
+        "Vu_utilisation",
+        "crack_utilisation",
+        "deflection_utilisation",
+        "utilisation",
+        "Utilisation",
+    ):
+        value = _number_or_original(row.get(name))
+        if isinstance(value, (int, float)):
+            return float(value)
+    return None
+
+
+def _design_state(row: dict[str, Any]) -> str:
+    """A stable, colour-coded project-table state from the cached beam result."""
+
+    status = _capacity_status(row)
+    utilisation = _first_utilisation(row)
+    if status == "FAIL" or (utilisation is not None and utilisation > 1.0):
+        return "🔴 UNDER-DESIGNED"
+    if utilisation is None or status == "NOT RUN":
+        return "🔵 NOT RUN"
+    if utilisation >= 0.85:
+        return "🟢 OPTIMAL"
+    return "🔵 OVER-DESIGNED"
+
+
 def _blank(value: Any) -> bool:
     if value is None:
         return True
@@ -63,7 +93,7 @@ def _blank(value: Any) -> bool:
             return True
     except (TypeError, ValueError):
         pass
-    return str(value).strip() == ""
+    return str(value).strip().lower() in {"", "none", "null", "nan", "<na>", "na", "nat", "-", "—"}
 
 
 def _number_or_original(value: Any) -> float | Any | None:
@@ -120,10 +150,22 @@ def project_beam_load_editor_frame(
     for row in schedule_df.to_dict("records"):
         record = dict(row)
         record["capacity_status"] = _capacity_status(record)
+        utilisation = _first_utilisation(record)
+        # Keep the raw engineering values in the schedule record, but provide
+        # a compact read-only value for the table.  A dash is deliberately
+        # used before a beam has been run rather than implying zero demand.
+        record["utilisation"] = (
+            f"{utilisation:.2f}" if utilisation is not None else "—"
+        )
+        record["design_state"] = _design_state(record)
         member_id = str(record.get("beam_id") or "").strip()
         case = cases_by_member.get(member_id)
         for column in ACTION_COLUMNS:
-            record[column] = getattr(case, column, None) if case is not None else None
+            imported_value = getattr(case, column, None) if case is not None else None
+            # Imported actions are intentional overrides.  Otherwise preserve
+            # the actions cached with this project's beam record.
+            if imported_value is not None:
+                record[column] = imported_value
         rows.append(record)
     return pd.DataFrame(rows)
 

@@ -61,9 +61,8 @@ import streamlit as st
 import time
 
 from application.engineering_snapshot import build_engineering_input_snapshot_from_resolved_state
-from application.design_result_store import AuthoritativeDesignResultStore
 from application.guidance_result_adapter import guidance_payload_from_authoritative_design_result
-from inputs_application.engineering_input_store import COMMITTED_STATE_KEY
+from inputs_application.session_services import InputsSessionServices
 
 st.set_page_config(
     page_title="Concrete Beam Design",
@@ -576,8 +575,12 @@ def _inputs_route_authority_handoff(selected_slug: str) -> bool:
         st.session_state.get("_inputs_engineering_input_store_active_beam_id")
         or ""
     ).strip()
+    input_services = InputsSessionServices.from_mapping(st.session_state)
+    input_store = input_services.input_snapshots
+    typed_current = input_store.current()
+    typed_beam = input_store.current_for_beam(active_beam_id)
     committed_by_beam = st.session_state.get(_INPUTS_COMMITTED_STATE_BY_BEAM_KEY)
-    current_committed = st.session_state.get(COMMITTED_STATE_KEY)
+    current_committed = typed_current.snapshot
     if (
         isinstance(current_committed, dict)
         and current_committed
@@ -585,11 +588,13 @@ def _inputs_route_authority_handoff(selected_slug: str) -> bool:
     ):
         committed = dict(current_committed)
     else:
-        committed = (
-            dict(committed_by_beam.get(active_beam_id) or {})
-            if isinstance(committed_by_beam, dict) and active_beam_id
-            else {}
-        )
+        committed = dict(typed_beam.snapshot or {})
+        if not committed:
+            committed = (
+                dict(committed_by_beam.get(active_beam_id) or {})
+                if isinstance(committed_by_beam, dict) and active_beam_id
+                else {}
+            )
     has_committed_state = isinstance(committed, dict) and bool(committed)
     authority_handoff_armed = bool(
         st.session_state.get("_inputs_route_authority_armed")
@@ -628,12 +633,19 @@ def _inputs_route_authority_handoff(selected_slug: str) -> bool:
             dict(results_by_beam).get(active_beam_id)
             if isinstance(results_by_beam, dict)
             else None
-        ) or AuthoritativeDesignResultStore(st.session_state).current()
+        ) or InputsSessionServices.from_mapping(st.session_state).engineering_results.current()
         st.session_state[_INPUTS_SAME_BEAM_RETURN_GUARD_KEY] = {
             "beam_id": active_beam_id,
             "from": "inputs",
             "to": selected,
             "committed_state": copy.deepcopy(dict(committed)),
+            "committed_revision": int(typed_beam.revision or typed_current.revision or 0),
+            "result_input_revision": int(
+                input_services.engineering_results.source_input_revision()
+                or typed_beam.revision
+                or typed_current.revision
+                or 0
+            ),
             "authoritative_result": committed_result,
         }
 
@@ -646,6 +658,15 @@ def _inputs_route_authority_handoff(selected_slug: str) -> bool:
         return False
 
     guarded_committed = guard.get("committed_state")
+    latest_snapshot = input_store.current_for_beam(active_beam_id)
+    guarded_revision = int(guard.get("committed_revision", 0) or 0)
+    latest_revision = int(latest_snapshot.revision or 0)
+    if latest_revision > guarded_revision and latest_snapshot.snapshot:
+        # An edit may have committed while another route was visible.  The
+        # latest typed transaction wins; never hydrate the older route guard.
+        guarded_committed = latest_snapshot.snapshot
+        guard["committed_state"] = copy.deepcopy(dict(guarded_committed))
+        guard["committed_revision"] = latest_revision
     if isinstance(guarded_committed, dict) and guarded_committed:
         committed = copy.deepcopy(guarded_committed)
         committed_by_beam = dict(
@@ -654,7 +675,22 @@ def _inputs_route_authority_handoff(selected_slug: str) -> bool:
         committed_by_beam[active_beam_id] = copy.deepcopy(committed)
         st.session_state[_INPUTS_COMMITTED_STATE_BY_BEAM_KEY] = committed_by_beam
     guarded_result = guard.get("authoritative_result")
-    if guarded_result is not None:
+    guarded_result_revision = int(guard.get("result_input_revision", guarded_revision) or 0)
+    guarded_result_hash = (
+        guarded_result.get("engineering_hash")
+        if isinstance(guarded_result, dict)
+        else getattr(guarded_result, "engineering_hash", "")
+    )
+    result_is_current_for_return = bool(
+        guarded_result is not None
+        and latest_revision <= guarded_result_revision
+        and (
+            not latest_snapshot.engineering_hash
+            or str(guarded_result_hash or "")
+            == str(latest_snapshot.engineering_hash or "")
+        )
+    )
+    if guarded_result is not None and result_is_current_for_return:
         results_by_beam = dict(
             st.session_state.get(
                 "_inputs_authoritative_design_result_by_beam_v1"
@@ -665,7 +701,17 @@ def _inputs_route_authority_handoff(selected_slug: str) -> bool:
         st.session_state[
             "_inputs_authoritative_design_result_by_beam_v1"
         ] = results_by_beam
-        AuthoritativeDesignResultStore(st.session_state).store(guarded_result)
+        input_services.engineering_results.store(
+            guarded_result,
+            source_input_revision=guarded_result_revision or None,
+        )
+    elif guarded_result is not None and latest_revision > guarded_result_revision:
+        # A newer input transaction is pending or has already published its
+        # own result.  Do not put the older route-guard publication back into
+        # the active session; freshness is owned by the typed result store.
+        current_result_revision = input_services.engineering_results.source_input_revision()
+        if current_result_revision is None or int(current_result_revision) < latest_revision:
+            input_services.engineering_results.clear()
 
     # A changed replay recipe is an explicit engineering input change, not a
     # navigation return, so let the normal recipe/bootstrap path own it.
@@ -1144,7 +1190,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
         ).strip()
         if session_contract and session_title:
             session_updates = dict(session_contract.get("updates") or {})
-            authoritative_result = AuthoritativeDesignResultStore(st.session_state).current()
+            authoritative_result = InputsSessionServices.from_mapping(st.session_state).engineering_results.current()
             session_apply_payload = (
                 dict(authoritative_result.apply_payload or {})
                 if authoritative_result is not None
@@ -1373,7 +1419,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
 
         updates = dict(contract.get("updates") or {})
         actionable = bool(contract.get("actionable") or contract.get("enabled"))
-        authoritative_result = AuthoritativeDesignResultStore(st.session_state).current()
+        authoritative_result = InputsSessionServices.from_mapping(st.session_state).engineering_results.current()
         apply_payload = (
             dict(authoritative_result.apply_payload or {})
             if authoritative_result is not None
@@ -1520,7 +1566,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
     try:
         render_timing_mark("app.browser_test_state_emit.summary_state_probe.start", probe_phase=probe_phase)
         with speed_profile_section("browser_probe.summary_state_probe_build", category="compute"):
-            _probe_authoritative_result = AuthoritativeDesignResultStore(st.session_state).current()
+            _probe_authoritative_result = InputsSessionServices.from_mapping(st.session_state).engineering_results.current()
             _probe_current_calculations = (
                 dict(_probe_authoritative_result.current_calculations or {})
                 if _probe_authoritative_result is not None
@@ -1608,7 +1654,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
                     "source": "authoritative_design_result",
                 }
                 guidance_payload_probe = guidance_payload_from_authoritative_design_result(
-                    AuthoritativeDesignResultStore(st.session_state).current()
+                    InputsSessionServices.from_mapping(st.session_state).engineering_results.current()
                 )
                 if not guidance_payload_probe:
                     guidance_payload_probe = {
@@ -3996,7 +4042,7 @@ def _emit_browser_test_state(selected_slug: str, probe_slot=None, *, probe_phase
         ).get("family")
         or ""
     ).strip().lower()
-    _dg_authoritative_result_for_publication = AuthoritativeDesignResultStore(st.session_state).current()
+    _dg_authoritative_result_for_publication = InputsSessionServices.from_mapping(st.session_state).engineering_results.current()
     _dg_primary_apply_payload_for_publication = (
         dict(_dg_authoritative_result_for_publication.apply_payload or {})
         if _dg_authoritative_result_for_publication is not None
@@ -5262,6 +5308,26 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
   margin:0 !important;
   padding:0 !important;
 }
+
+/* Header actions intentionally use the app's red action colour.  The marker
+   scopes this rule to Save and PDF Report only; other primary buttons retain
+   their existing theme treatment. */
+/* The marker is a direct child of the Save/PDF column's element container.
+   Restrict the rule to that local column; using :has(marker) on the page
+   shell accidentally coloured every descendant button red, including the
+   Design Brain CTA. */
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .beam-header-action-marker) div[data-testid="stButton"] > button,
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .beam-header-action-marker) div[data-testid="stDownloadButton"] > button{
+  background:#e03131 !important;
+  border-color:#e03131 !important;
+  color:#fff !important;
+}
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .beam-header-action-marker) div[data-testid="stButton"] > button:hover,
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .beam-header-action-marker) div[data-testid="stDownloadButton"] > button:hover{
+  background:#c92a2a !important;
+  border-color:#c92a2a !important;
+  color:#fff !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -5334,6 +5400,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
             c_save, c_pdf, c_pdf_opts, _ = st.columns([2.4, 3.8, 0.5, 0.25], gap="small")
 
             with c_save:
+                st.markdown('<span class="beam-header-action-marker" aria-hidden="true"></span>', unsafe_allow_html=True)
                 if st.button("💾 Save", type="primary", use_container_width=True):
                     if not user_id:
                         st.error("You must be logged in to save projects.")
@@ -5356,6 +5423,7 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
 
             with c_pdf:
                 from reporting.example_integration import render_pdf_button
+                st.markdown('<span class="beam-header-action-marker" aria-hidden="true"></span>', unsafe_allow_html=True)
                 render_pdf_button(
                     detail_level=report_mode,
                     section_figure_factory=(

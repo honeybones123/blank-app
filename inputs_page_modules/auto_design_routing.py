@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from inputs_page_modules.fragments import rerun_inputs_current_scope
+
 
 @dataclass(frozen=True)
 class AutoDesignRoutingRuntime:
@@ -81,7 +83,7 @@ def handle_inputs_auto_design(
                 "invoke_pending": bool(invoke_pending),
             },
         )
-        st_module.rerun()
+        rerun_inputs_current_scope(st_module)
     selected_mode = str(session_state.get("loads_edit_mode", "ULS") or "ULS").upper()
     selected_prefix = "sls" if selected_mode == "SLS" else "uls"
     entry_trace_id = f"had_{int(time_module.time() * 1000)}"
@@ -368,4 +370,4 @@ def handle_inputs_auto_design(
     except Exception:
         pass
     session_state["_force_inputs_widget_reseed_once"] = True
-    st_module.rerun()
+    rerun_inputs_current_scope(st_module)

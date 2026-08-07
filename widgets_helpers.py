@@ -547,6 +547,30 @@ def _register_rendered_key(key: str) -> None:
     rendered.add(key)
 
 
+def _longitudinal_reo_render_key(original_key: str) -> str:
+    """Return a revisioned Streamlit key only after an Apply reseed.
+
+    The canonical/session key remains unchanged for callbacks and shared-state
+    lookup.  The suffix is limited to the Inputs row controls whose browser
+    selectboxes can otherwise retain a pre-Apply value during an app rerun.
+    """
+    epoch = int(st.session_state.get("_inputs_longitudinal_reo_widget_epoch", 0) or 0)
+    if epoch <= 0:
+        return original_key
+    parts = str(original_key).split("_")
+    if len(parts) >= 5 and parts[0] == "inputs" and parts[1] in {"bot", "top"}:
+        if parts[2] == "row" and parts[3].isdigit() and parts[4] in {
+            "mode",
+            "bars",
+            "spacing",
+            "dia",
+        }:
+            return f"{original_key}__epoch_{epoch}"
+    if len(parts) == 4 and parts[0] == "inputs" and parts[1] in {"bot", "top"} and parts[2] == "row" and parts[3] == "count":
+        return f"{original_key}__epoch_{epoch}"
+    return original_key
+
+
 def get_rendered_widget_keys() -> list[str]:
     """Return keys rendered this run (sorted)."""
     return sorted(_RENDERED_WIDGET_KEYS)
@@ -1518,6 +1542,15 @@ def number_row(
 
         # Determine min_value based on key type
         min_val = None
+        max_val = None
+
+        # Keep the Runtime widget contract aligned with V2 BeamInputs.  The
+        # previous wrapper allowed zero/blank depth values to be committed,
+        # which could crash the automatic calculation before this widget was
+        # rendered again.
+        if original_key == "inputs_D":
+            min_val = 200.0
+            max_val = 5000.0
 
         # counts/spacing/detailing can be 0
         if ("nb_or_s" in original_key) or original_key.startswith("inputs_nb_") or original_key.startswith("inputs_db_") or "rowgap" in original_key or "lig_" in original_key:
@@ -1592,6 +1625,22 @@ def number_row(
             current_num = st.session_state.get(original_key)
             if isinstance(current_num, (int, float)) and not isinstance(current_num, bool):
                 st.session_state[original_key] = float(current_num)
+
+        if original_key == "inputs_D":
+            try:
+                depth_value = float(st.session_state.get(original_key))
+            except (TypeError, ValueError):
+                depth_value = float("nan")
+            if not 200.0 <= depth_value <= 5000.0:
+                try:
+                    seeded_depth = float(effective_default)
+                except (TypeError, ValueError):
+                    seeded_depth = 600.0
+                if not 200.0 <= seeded_depth <= 5000.0:
+                    seeded_depth = 600.0
+                st.session_state[original_key] = seeded_depth
+                if shared_key:
+                    st.session_state[shared_key] = seeded_depth
         
         session_value_before_widget = st.session_state.get(original_key)
         _safe_label = _nonempty_label(str(label), f"_{original_key}_label")
@@ -1600,6 +1649,7 @@ def number_row(
         # Session State API and triggers Streamlit warnings when the key is hydrated.
         ni_kwargs = dict(
             min_value=min_val,
+            max_value=max_val,
             format="%.1f",
             label_visibility="collapsed",
             on_change=on_change_callback,
@@ -1636,6 +1686,7 @@ def select_row(
     *,
     disabled: bool = False,
     use_columns: bool = True,
+    seed_session_state: bool = True,
 ):
     """
     Selectbox row with label + hover help.
@@ -1649,8 +1700,11 @@ def select_row(
     kwargs = kwargs or {}
 
     original_key = key
+    render_key = _longitudinal_reo_render_key(original_key)
     _safe_label = _nonempty_label(str(label), f"_{original_key}_label")
     _register_rendered_key(original_key)
+    if render_key != original_key:
+        _register_rendered_key(render_key)
 
     # options may be list[str] or list of things; convert to list for membership checks
     _opts = list(options) if not isinstance(options, dict) else list(options.keys())
@@ -1683,22 +1737,39 @@ def select_row(
                 st.session_state.pop(f"_cached_{original_key}", None)
                 st.session_state.pop(original_key, None)
 
-    # Seed ONCE only
+    # Seed ONCE only.  Most selectboxes use the session key as their initial
+    # authority.  A small number of controls (notably the reinforcement Rows
+    # selector) must instead pass an initial index to Streamlit on first
+    # render; seeding the key and passing a default at the same time produces
+    # the "created with a default value but also had its value set" warning and
+    # lets two authorities compete during a fragment rerun.
+    initial_value_index = None
     if original_key not in st.session_state and hydrated_seed_index is None:
         # Prefer shared if present, otherwise default
         shared_key = TAB_KEYS.get(original_key)
         candidate = st.session_state.get(shared_key, default) if shared_key else default
         # Ensure candidate is one of the options; otherwise fallback safely
-        if candidate in _opts:
+        if candidate not in _opts:
+            candidate = default if default in _opts else _opts[0]
+        initial_value_index = _opts.index(candidate)
+        if seed_session_state:
             st.session_state[original_key] = candidate
-        else:
-            st.session_state[original_key] = default if default in _opts else _opts[0]
 
     on_change_final = on_change
     if on_change_final is None and sync_callbacks and isinstance(sync_callbacks, dict):
         on_change_final = sync_callbacks.get(original_key)
     if on_change_final is not None:
-        on_change_final = _wrap_user_edit(original_key, on_change_final)
+        wrapped_callback = _wrap_user_edit(original_key, on_change_final)
+        if render_key != original_key:
+            def _copy_revisioned_widget_value():
+                # The callback owns the canonical/original key.  Copy the
+                # value out of the revisioned Streamlit widget key first.
+                if render_key in st.session_state:
+                    st.session_state[original_key] = st.session_state[render_key]
+                wrapped_callback()
+            on_change_final = _copy_revisioned_widget_value
+        else:
+            on_change_final = wrapped_callback
     def _coerce_current_value():
         cur = st.session_state.get(original_key, default)
         if cur in _opts:
@@ -1741,14 +1812,24 @@ def select_row(
                 if forced_browser_recipe_index is not None
                 else hydrated_seed_index
             )
-            if initial_index is None:
+            if (
+                initial_index is None
+                and initial_value_index is not None
+                and not seed_session_state
+            ):
+                initial_index = initial_value_index
+            if render_key != original_key and initial_index is None:
+                revisioned_value = st.session_state.get(original_key, default)
+                if revisioned_value in _opts:
+                    initial_index = _opts.index(revisioned_value)
+            if initial_index is None and seed_session_state:
                 _ = _coerce_current_value()
-            else:
+            elif initial_index is not None:
                 selectbox_kwargs["index"] = initial_index
             return st.selectbox(
                 _safe_label,
                 options=_opts,
-                key=original_key,
+                key=render_key,
                 label_visibility="collapsed",
                 disabled=disabled,
                 **selectbox_kwargs,
@@ -1762,14 +1843,29 @@ def select_row(
         if forced_browser_recipe_index is not None
         else hydrated_seed_index
     )
-    if initial_index is None:
+    if (
+        initial_index is None
+        and initial_value_index is not None
+        and not seed_session_state
+    ):
+        initial_index = initial_value_index
+    if render_key != original_key and initial_index is None:
+        # The Apply boundary may have already copied the canonical value into
+        # the stable session key (and consumed the hydration map) before this
+        # widget is created.  Still provide that value as the explicit initial
+        # index for the new revisioned widget identity.
+        revisioned_value = st.session_state.get(original_key, default)
+        if revisioned_value in _opts:
+            initial_index = _opts.index(revisioned_value)
+            selectbox_kwargs["index"] = initial_index
+    if initial_index is None and seed_session_state:
         _ = _coerce_current_value()
-    else:
+    elif initial_index is not None:
         selectbox_kwargs["index"] = initial_index
     return st.selectbox(
         _safe_label,
         options=_opts,
-        key=original_key,
+        key=render_key,
         label_visibility="collapsed",
         disabled=disabled,
         **selectbox_kwargs,
@@ -1808,6 +1904,7 @@ def _render_reo_row_controls(
             int(st.session_state.get(bars_shared_key, default_bars if row_index == 1 else 0)),
             sync_callbacks,
             help_text=f"Number of bars in {row_face} row {row_index}.",
+            seed_session_state=False,
         )
     else:
         select_row(
@@ -1817,6 +1914,7 @@ def _render_reo_row_controls(
             int(st.session_state.get(spacing_shared_key, 200)),
             sync_callbacks,
             help_text=f"Centre-to-centre spacing for {row_face} row {row_index} (mm).",
+            seed_session_state=False,
         )
     select_row(
         REO_DIAMETER_LABEL,
@@ -1825,6 +1923,7 @@ def _render_reo_row_controls(
         int(st.session_state.get(dia_shared_key, default_dia)),
         sync_callbacks,
         help_text=f"Nominal bar diameter for {row_face} row {row_index} (mm).",
+        seed_session_state=False,
     )
 
 
@@ -1903,6 +2002,7 @@ def render_longitudinal_reo_row_config_controls(
         None,
         help_text=f"Choose how many {_row_face} reinforcement rows to show. Use 0 for no active row.",
         on_change=_on_row_count_change,
+        seed_session_state=False,
     )
 
     if rowgap_widget_key:

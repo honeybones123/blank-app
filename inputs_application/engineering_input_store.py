@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 import copy
 import hashlib
 import json
@@ -177,6 +177,26 @@ class InputSnapshotStore:
         resolved_beam_id = str(beam_id or "").strip()
         if not resolved_beam_id:
             raise ValueError("beam_id is required for an engineering-input commit")
+        # ``current_for_beam`` intentionally falls back to the global record
+        # for old sessions.  That fallback is useful for reads, but must not
+        # be treated as a beam-local baseline when calculating changed keys for
+        # a first commit on another beam.
+        typed_by_beam = self._state.get(BEAM_SNAPSHOT_STATE_KEY)
+        legacy_by_beam = self._state.get(LEGACY_BEAM_COMMITTED_STATE_KEY)
+        has_beam_baseline = bool(
+            isinstance(typed_by_beam, dict)
+            and resolved_beam_id in typed_by_beam
+        ) or bool(
+            isinstance(legacy_by_beam, dict)
+            and resolved_beam_id in legacy_by_beam
+            and legacy_by_beam.get(resolved_beam_id)
+        )
+        previous_beam_snapshot = self.current_for_beam(resolved_beam_id)
+        previous_beam_state = (
+            dict(previous_beam_snapshot.snapshot or {})
+            if has_beam_baseline
+            else {}
+        )
         previous_snapshot = self.current().snapshot
         draft = self.capture_draft(
             state,
@@ -184,6 +204,24 @@ class InputSnapshotStore:
             source=source,
         )
         transaction = self.commit_draft(source=source)
+        if previous_beam_state:
+            effective_changed_keys = tuple(
+                sorted(
+                    key
+                    for key in set(previous_beam_state) | set(draft)
+                    if previous_beam_state.get(key) != draft.get(key)
+                )
+            )
+        elif changed_keys:
+            # A first commit for a beam has no beam-local baseline.  Preserve
+            # the callback's canonical changed-key set rather than reporting
+            # every field that differs from the previously active beam.
+            effective_changed_keys = tuple(sorted(str(key) for key in changed_keys))
+        else:
+            effective_changed_keys = transaction.changed_keys
+        if effective_changed_keys != transaction.changed_keys:
+            transaction = replace(transaction, changed_keys=effective_changed_keys)
+            self._state[TRANSACTION_META_KEY] = asdict(transaction)
         trace = list(self._state.get(TRANSACTION_TRACE_KEY) or [])
         trace.append(
             {
@@ -231,6 +269,25 @@ class InputSnapshotStore:
         # cannot allow stale widget defaults to overwrite this beam snapshot.
         self._state["_inputs_route_authority_armed"] = True
         return snapshot_state
+
+    def commit_active_beam(
+        self,
+        state: Mapping[str, Any],
+        *,
+        changed_keys: tuple[str, ...] = (),
+        source: str,
+    ) -> InputSnapshotState:
+        """Commit the currently routed beam through the one input boundary."""
+
+        beam_id = str(self._state.get("active_beam_id") or "").strip()
+        if not beam_id:
+            raise ValueError("active_beam_id is required for an input commit")
+        return self.commit_for_beam(
+            beam_id,
+            state,
+            changed_keys=changed_keys,
+            source=source,
+        )
 
     def current_for_beam(self, beam_id: str) -> InputSnapshotState:
         """Return the latest committed snapshot for ``beam_id``."""

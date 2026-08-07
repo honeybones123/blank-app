@@ -7,6 +7,8 @@ from enum import StrEnum
 import time
 from typing import Any, MutableMapping
 
+from inputs_application.engineering_input_store import InputSnapshotStore
+
 
 class InputsWidgetRerunClass(StrEnum):
     DISPLAY_LOCAL = "display_local"
@@ -56,12 +58,19 @@ class InputsWorkspaceStore:
         self._state = session_state
 
     def current_revision(self) -> int:
+        committed_revision = InputSnapshotStore(self._state).current().revision
+        if committed_revision:
+            return int(committed_revision)
         return int(self._state.get(self.REVISION_KEY, 0) or 0)
 
     def record_refresh(self, request: InputsWorkspaceRefresh) -> None:
         payload = asdict(request)
         payload["rerun_class"] = request.rerun_class.value
-        self._state[self.REVISION_KEY] = int(request.revision)
+        committed_revision = InputSnapshotStore(self._state).current().revision
+        self._state[self.REVISION_KEY] = max(
+            int(committed_revision or 0),
+            int(request.revision),
+        )
         self._state[self.REFRESH_KEY] = payload
         events = list(self._state.get(self.EVENTS_KEY) or [])
         events.append(payload)

@@ -49,6 +49,12 @@ BEAM_MANAGER_EDITABLE_COLUMNS = [
     "s_lig",
 ]
 
+# The batch table uses engineering-neutral column names.  A project-beam
+# record, however, must store the corresponding canonical shared-input keys
+# so selecting that beam hydrates the Inputs workspace, diagrams and V2 Design
+# Brain with exactly the actions shown in the table.
+BATCH_ACTION_COLUMNS = ("n_star", "vy_star", "vz_star", "mx_star", "my_star", "mz_star")
+
 BEAM_MANAGER_STATUS_COLUMNS = [
     "active",
     "overall_status",
@@ -63,6 +69,13 @@ BEAM_MANAGER_TABLE_COLUMNS = [
     "active",
     "beam_id",
     "beam_label",
+    "n_star",
+    "vy_star",
+    "vz_star",
+    "mx_star",
+    "my_star",
+    "mz_star",
+    "design_utilisation",
     "overall_status",
     "bending_status",
     "shear_status",
@@ -111,6 +124,7 @@ BEAM_MANAGER_NUMERIC_COLUMNS = {
     "lig_d",
     "lig_legs",
     "s_lig",
+    *BATCH_ACTION_COLUMNS,
 }
 
 BEAM_MANAGER_INT_COLUMNS = {
@@ -177,6 +191,13 @@ def build_beam_schedule_df() -> pd.DataFrame:
             "crack_status": format_beam_status_badge(item.get("crack_status")),
             "deflection_status": format_beam_status_badge(item.get("deflection_status")),
             "last_checked_at": format_last_checked(item.get("last_checked_at")),
+            "n_star": item.get("n_star"),
+            "vy_star": item.get("vy_star"),
+            "vz_star": item.get("vz_star"),
+            "mx_star": item.get("mx_star"),
+            "my_star": item.get("my_star"),
+            "mz_star": item.get("mz_star"),
+            "design_utilisation": item.get("design_utilisation"),
         }
         for column in BEAM_MANAGER_EDITABLE_COLUMNS:
             if column in row:
@@ -226,6 +247,87 @@ def build_schedule_preview_df() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def publish_batch_design_results_to_beam_records(results) -> set[str]:
+    """Publish completed batch outcomes to the matching stored project beams."""
+
+    beam_records = st.session_state.get("beam_records")
+    if not isinstance(beam_records, dict):
+        return set()
+
+    updated_beam_ids: set[str] = set()
+    timestamp = datetime.now(UTC).replace(tzinfo=None).isoformat(timespec="seconds")
+    for result in results or []:
+        beam_id = str(getattr(result, "member_id", "") or "").strip()
+        record = beam_records.get(beam_id)
+        if not isinstance(record, dict):
+            continue
+
+        passed = getattr(result, "passed", None)
+        status = "PASS" if passed is True else "FAIL" if passed is False else "NOT RUN"
+        try:
+            utilisation = float(getattr(result, "utilisation", None))
+        except (TypeError, ValueError):
+            utilisation = None
+
+        summary = make_not_run_beam_summary()
+        existing_summary = record.get("summary")
+        if isinstance(existing_summary, dict):
+            summary.update(existing_summary)
+        summary["overall_status"] = status
+        summary["strength_status"] = status
+        summary["batch_design_utilisation"] = utilisation
+        summary["last_checked_at"] = timestamp
+        record["summary"] = summary
+
+        # A passing Batch run is an explicit request to design the project
+        # beam. Persist only the V2-approved proposal carried by the neutral
+        # batch result; never reconstruct a candidate or apply a failing one.
+        design_brain_result = getattr(result, "design_brain_result", {})
+        proposal_updates = (
+            dict(design_brain_result.get("selected_updates") or {})
+            if isinstance(design_brain_result, dict) and passed is True
+            else {}
+        )
+        if proposal_updates:
+            params = dict(record.get("params") or {})
+            params.update(proposal_updates)
+            # Preserve the legacy layer aliases used by the existing widgets,
+            # diagrams and project table in the same stored beam snapshot.
+            aliases = {
+                "bot_row_1_bars": ("bot1_count", "nb_or_s_bot_1"),
+                "bot_row_2_bars": ("bot2_count", "nb_or_s_bot_2"),
+                "bot_row_1_dia": ("db_bot_1",),
+                "bot_row_2_dia": ("db_bot_2",),
+                "top_bars": ("top1_count", "nb_or_s_top_1", "top_row_1_bars"),
+                "top_spacing": ("top1_spacing", "top_row_1_spacing"),
+                "db_top": ("db_top_1", "top_row_1_dia"),
+            }
+            for source_key, target_keys in aliases.items():
+                if source_key not in proposal_updates:
+                    continue
+                for target_key in target_keys:
+                    params[target_key] = proposal_updates[source_key]
+            record["params"] = params
+
+        meta = record.get("meta") if isinstance(record.get("meta"), dict) else {}
+        meta["batch_design_published_at"] = timestamp
+        if proposal_updates:
+            meta["batch_design_candidate_id"] = str(
+                design_brain_result.get("selected_candidate", {}).get("candidate_id")
+                if isinstance(design_brain_result.get("selected_candidate"), dict)
+                else ""
+            )
+            meta["batch_design_applied_updates"] = dict(proposal_updates)
+        else:
+            meta.pop("batch_design_candidate_id", None)
+            meta.pop("batch_design_applied_updates", None)
+        record["meta"] = meta
+        beam_records[beam_id] = record
+        updated_beam_ids.add(beam_id)
+
+    return updated_beam_ids
+
+
 def coerce_beam_schedule_value(column: str, value):
     if pd.isna(value):
         return SHARED_DEFAULTS.get(column)
@@ -246,6 +348,60 @@ def coerce_beam_schedule_value(column: str, value):
         text = str(value or "RECT").strip().upper()
         return text if text in ("RECT", "T", "I") else "RECT"
     return value
+
+
+def _optional_action_value(value) -> float | None:
+    """Coerce a batch action without replacing an intentionally blank cell."""
+
+    if value is None or pd.isna(value):
+        return None
+    if isinstance(value, str) and value.strip().lower() in {"", "none", "null", "nan", "-", "—"}:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _sync_batch_actions_into_params(params: dict, row: dict) -> bool:
+    """Store project-table actions using the active app's canonical keys."""
+
+    actions = {column: _optional_action_value(row.get(column)) for column in BATCH_ACTION_COLUMNS}
+    changed = False
+
+    # Retain every imported/table action for audit/export, including axes that
+    # the present one-axis beam model does not consume directly.
+    if params.get("batch_design_actions") != actions:
+        params["batch_design_actions"] = actions
+        changed = True
+
+    mappings = {
+        "uls_Nstar": actions["n_star"],
+        "N_star": actions["n_star"],
+        "uls_Vstar": actions["vy_star"],
+        "Tu_star": actions["mx_star"],
+        "uls_Mstar": actions["mz_star"],
+        "Mu_star_manual": actions["mz_star"],
+    }
+    moment = actions["mz_star"]
+    mappings["uls_Mstar_pos_manual"] = max(moment, 0.0) if moment is not None else None
+    mappings["uls_Mstar_neg_manual"] = max(-moment, 0.0) if moment is not None else None
+
+    for key, value in mappings.items():
+        if params.get(key) != value:
+            params[key] = value
+            changed = True
+
+    if params.get("actions_mode") != "manual":
+        params["actions_mode"] = "manual"
+        changed = True
+    if params.get("actions_source") != "batch_design_project_beams":
+        params["actions_source"] = "batch_design_project_beams"
+        changed = True
+    if params.get("design_actions_source") != "batch_design_project_beams":
+        params["design_actions_source"] = "batch_design_project_beams"
+        changed = True
+    return changed
 
 
 def sync_beam_records_from_schedule_df(schedule_df: pd.DataFrame) -> set[str]:
@@ -277,6 +433,12 @@ def sync_beam_records_from_schedule_df(schedule_df: pd.DataFrame) -> set[str]:
                 params[column] = new_value
                 row_changed = True
                 params_changed = True
+
+        # Actions are not ordinary table geometry fields: map them onto the
+        # canonical input snapshot so activation works across every page.
+        if _sync_batch_actions_into_params(params, row):
+            row_changed = True
+            params_changed = True
 
         if row_changed:
             meta = record.get("meta") if isinstance(record.get("meta"), dict) else {}

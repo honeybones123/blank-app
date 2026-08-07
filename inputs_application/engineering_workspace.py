@@ -15,7 +15,6 @@ from inputs_application.design_guide_fragment_store import (
     DesignGuideFragmentState,
 )
 from inputs_application.design_brain_polling import (
-    DEFAULT_DESIGN_BRAIN_POLL_INTERVAL_S,
     DESIGN_BRAIN_POLLING_STATE_KEY,
     register_design_brain_fragment,
     start_design_brain_polling,
@@ -35,9 +34,66 @@ from inputs_application.summary_contracts import InputsSummaryCalculationSource
 from inputs_application.workspace_state_store import InputsWorkspaceStateStore
 from inputs_application.design_brain_composition import selected_design_brain_adapter_name
 from inputs_application.v2_design_guide_renderer import render_v2_design_guide_card
+from inputs_page_modules.fragments import (
+    request_inputs_fragment_wake,
+    stop_inputs_fragment_polling,
+)
 
 
 PageCallable = Callable[..., Any]
+
+_DESIGN_BRAIN_VISIBLE_REVISION_KEY = "_inputs_design_brain_visible_revision"
+_DESIGN_BRAIN_WIDGET_MARKER_REVISION_KEY = (
+    "_inputs_design_brain_widget_marker_revision"
+)
+_DESIGN_BRAIN_WIDGET_MARKER_STATE_KEY = (
+    "_inputs_design_brain_widget_marker_state"
+)
+
+
+def _render_design_brain_visibility_marker(
+    *,
+    st_module: Any,
+    workspace_revision: int,
+) -> None:
+    """Hide an old card while a newer revision is being published.
+
+    The Design Brain is a stopped sibling fragment in its steady state. A
+    widget edit can therefore repaint Summary before that sibling gets its
+    first wake-up. The marker lets the browser hide the stale card during that
+    short hand-off without coupling calculations to Design Brain rendering.
+    """
+
+    visible_revision = int(
+        st_module.session_state.get(_DESIGN_BRAIN_VISIBLE_REVISION_KEY, 0)
+        or 0
+    )
+    # The current product path owns Design Brain and widgets in the same
+    # unified fragment. There is no sibling hand-off window to hide here; the
+    # marker's pending CSS only applies to the retired split-fragment route.
+    unified_workspace_fragment = (
+        str(
+            st_module.session_state.get(
+                "_inputs_engineering_workspace_fragment_mode"
+            )
+            or ""
+        )
+        == "fragment"
+    )
+    pending = (not unified_workspace_fragment) and (
+        visible_revision != int(workspace_revision)
+    )
+    state = "pending" if pending else "ready"
+    st_module.session_state[_DESIGN_BRAIN_WIDGET_MARKER_REVISION_KEY] = int(
+        workspace_revision
+    )
+    st_module.session_state[_DESIGN_BRAIN_WIDGET_MARKER_STATE_KEY] = state
+    st_module.markdown(
+        f"<div data-testid='inputs-v2-design-brain-visibility' "
+        f"data-state='{state}' data-revision='{int(workspace_revision)}' "
+        "style='display:none'></div>",
+        unsafe_allow_html=True,
+    )
 
 
 @dataclass(frozen=True)
@@ -204,10 +260,19 @@ def _fragment_browser_publication_projection(
             if authoritative_result is not None
             else fragment_state.active_engineering_hash
         ),
+        # The calculation result and the Design Brain publication are sibling
+        # revisions. During the short hand-off window the calculation result
+        # can be current while carrying no publication hash; in that case the
+        # fragment-owned publication hash is the authoritative source for the
+        # browser probe and must not be replaced with ``None``.
         "publication_authority_hash": (
-            authoritative_result.publication_authority_hash
-            if authoritative_result is not None
-            else fragment_state.active_publication_authority_hash
+            getattr(authoritative_result, "publication_authority_hash", None)
+            or fragment_state.active_publication_authority_hash
+            or final_publication.get("publication_hash")
+            or final_verifier.get("final_publication_authority_hash")
+            or final_verifier.get("publication_hash")
+            or authoritative_payload.get("final_publication_authority_hash")
+            or authoritative_payload.get("publication_hash")
         ),
     }
 
@@ -384,13 +449,52 @@ def prepare_engineering_workspace_transaction(
     st_module: Any,
     runtime: EngineeringWorkspaceRuntime,
     services: InputsSessionServices,
+    include_design_brain: bool = False,
 ) -> dict[str, Any]:
-    """Commit widget actions and refresh the one authoritative result."""
+    """Commit widget actions and refresh the one authoritative result.
+
+    The direct Inputs path follows the standalone V2 page: it asks the
+    authoritative V2 service for one revision-matched result that contains
+    both the engineering packs and Design Brain publication.  The legacy
+    sibling-fragment path passes ``False`` and keeps its historical two-stage
+    calculation/Design Brain hand-off for rollback and measurement.
+    """
 
     workspace_store = InputsWorkspaceStateStore(st_module.session_state)
     reconciled_keys = list(runtime.reconcile_design_actions() or [])
     workspace_store.set_reconciled_keys(reconciled_keys)
     workspace_revision = workspace_store.workspace_revision()
+
+    # Fragment polling can overlap a just-completed calculation.  Once the
+    # committed revision already has a matching authoritative result, this
+    # transaction is complete and must be reused.  Re-entering the refresh
+    # path here used to make one widget edit look like several calculations
+    # and caused the summary/Design Brain siblings to flicker while they
+    # repeatedly rebuilt the same revision.
+    existing_result = services.engineering_results.current()
+    calculation_state = workspace_store.calculation_status()
+    if (
+        str(calculation_state.get("status") or "") == "ready"
+        and int(calculation_state.get("revision", 0) or 0) == workspace_revision
+        and workspace_store.authoritative_result_present()
+        and workspace_store.authoritative_revision() == workspace_revision
+        and existing_result is not None
+        and services.engineering_results.source_input_revision()
+        == workspace_revision
+        and workspace_store.authoritative_hash()
+        == existing_result.engineering_hash
+    ):
+        fragment_state = services.publications.current()
+        return {
+            "reconciled_design_action_keys": reconciled_keys,
+            "engineering_hash": existing_result.engineering_hash,
+            "calculation_status": "ready",
+            "design_guide_fragment_status": fragment_state.status,
+            "design_guide_publication_authority_hash": (
+                fragment_state.active_publication_authority_hash
+            ),
+        }
+
     workspace_store.begin_calculation(revision=workspace_revision)
     fragment_store = services.publications
     fragment_store.begin_refresh(workspace_revision=workspace_revision)
@@ -405,7 +509,12 @@ def prepare_engineering_workspace_transaction(
     ] = compute_counts
     try:
         engineering_refresh = (
-            runtime.refresh_engineering_result or runtime.refresh_authoritative_result
+            runtime.refresh_authoritative_result
+            if include_design_brain
+            else (
+                runtime.refresh_engineering_result
+                or runtime.refresh_authoritative_result
+            )
         )
         authoritative_result = engineering_refresh()
     except Exception as exc:
@@ -471,6 +580,17 @@ def prepare_engineering_workspace_transaction(
     workspace_store.publish_authoritative_result(
         revision=workspace_revision,
         result=authoritative_result,
+    )
+    # Calculation readiness is the only trigger that may start Design Brain.
+    # The Design Brain fragment can mount before this sibling publishes its
+    # first result, so explicitly wake the matching revision once the result
+    # is authoritative. This avoids a permanent "Updating design guidance"
+    # state without introducing a steady-state polling loop.
+    start_design_brain_polling(
+        st_module.session_state,
+        reason="calculation_revision_ready",
+        revision=workspace_revision,
+        interval_s=0.1,
     )
     fragment_state = fragment_store.current()
     return {
@@ -589,8 +709,24 @@ def render_inputs_design_guide_fragment_section(
         with design_guide_slot.container():
             st_module.info("Updating design guidance...")
         return
+    # The direct V2-shaped transaction already computed the complete result,
+    # including its publication.  Do not immediately invoke the Design Brain
+    # service a second time just because the UI publication store has not yet
+    # been projected for this render.  The projection below publishes that
+    # existing revision-matched result.  The fragment fallback still refreshes
+    # here because its calculation and Design Brain stages are intentionally
+    # separate.
+    current_authoritative_result = services.engineering_results.current()
+    result_has_matching_publication = bool(
+        current_authoritative_result is not None
+        and current_authoritative_result.engineering_hash == identity.engineering_hash
+        and services.engineering_results.source_input_revision()
+        == authoritative_revision
+        and current_authoritative_result.final_publication
+    )
     design_brain_refresh_required = bool(
         workspace_store.authoritative_result_present()
+        and not result_has_matching_publication
         and (
             fragment_state.status == "empty"
             or (
@@ -616,11 +752,21 @@ def render_inputs_design_guide_fragment_section(
                 3,
             )
         fragment_state = fragment_store.current()
-    if (
-        fragment_state.status == "refreshing"
-        and fragment_state.pending_workspace_revision
-        == authoritative_revision
-    ):
+    # A direct V2 refresh can start from an empty publication store on a
+    # fresh session. In that case the refresh has no pending marker yet, but
+    # the returned result is still the matching authoritative publication.
+    # Publish it immediately instead of leaving the card in an eternal
+    # "Updating design guidance" state. A refreshing store still requires its
+    # explicit pending-revision match.
+    publication_refresh_revision_matches = bool(
+        fragment_state.status == "empty"
+        or (
+            fragment_state.status == "refreshing"
+            and fragment_state.pending_workspace_revision
+            == authoritative_revision
+        )
+    )
+    if publication_refresh_revision_matches:
         if workspace_store.authoritative_result_present():
             authoritative_result = services.engineering_results.current()
             expected_hash = identity.engineering_hash
@@ -667,6 +813,13 @@ def render_inputs_design_guide_fragment_section(
         with design_guide_slot.container():
             st_module.info("Updating design guidance...")
         return
+    # At this point the card is revision-current and is about to be rendered.
+    # Mark it visible before the widget/diagram region emits its compatibility
+    # visibility marker; otherwise that older marker treats every unified
+    # workspace render as a pending sibling publication and hides the card.
+    st_module.session_state[_DESIGN_BRAIN_VISIBLE_REVISION_KEY] = int(
+        authoritative_revision
+    )
     # The run_every timer schedules its next tick before this fragment body.
     # Cancel it as soon as a revision-matched publication exists, before the
     # comparatively expensive card rendering below can let that scheduled
@@ -674,6 +827,12 @@ def render_inputs_design_guide_fragment_section(
     # for alternate render paths and terminal failure states.
     stop_design_brain_polling(
         st_module.session_state,
+        reason="matching_fragment_ready_before_render",
+        revision=authoritative_revision,
+    )
+    stop_inputs_fragment_polling(
+        st_module,
+        "design_brain_workspace",
         reason="matching_fragment_ready_before_render",
         revision=authoritative_revision,
     )
@@ -708,7 +867,18 @@ def render_inputs_design_guide_fragment_section(
         final_publication = dict(
             publication_projection.get("final_publication") or {}
         )
+        projected_publication_hash = (
+            final_publication.get("publication_hash")
+            or dict(publication_projection.get("final_verifier") or {}).get(
+                "final_publication_authority_hash"
+            )
+            or dict(publication_projection.get("final_verifier") or {}).get(
+                "publication_hash"
+            )
+            or publication_projection.get("publication_authority_hash")
+        )
         probe = {
+            "probe_source": "design_brain_fragment",
             "fragment_emitted_at_ms": int(time.time() * 1000),
             "workspace_revision": authoritative_revision,
             "authoritative_revision": authoritative_revision,
@@ -716,9 +886,15 @@ def render_inputs_design_guide_fragment_section(
                 st_module.session_state.get("_inputs_design_brain_job_probe")
                 or {}
             ),
+            "fragment_polling_state": dict(
+                st_module.session_state.get(
+                    "_inputs_design_brain_workspace_polling_state"
+                )
+                or {}
+            ),
             "final_publication_hashes": {
-                "publication_hash": final_publication.get("publication_hash"),
-                "authority_hash": publication_projection.get("authority_hash"),
+                "publication_hash": projected_publication_hash,
+                "authority_hash": projected_publication_hash,
             },
         }
         poll_count = int(
@@ -746,10 +922,22 @@ def render_inputs_widget_fragment_section(
     """Render widget inputs and their existing nested diagram positions."""
 
     render_started_ns = time.perf_counter_ns()
+    _render_design_brain_visibility_marker(
+        st_module=st_module,
+        workspace_revision=InputsWorkspaceStateStore(
+            st_module.session_state
+        ).workspace_revision(),
+    )
+    # Carry the already-built context through the widget callback bundle.  The
+    # widget renderer is legacy-shaped, but the diagram callbacks can now use
+    # the explicit committed snapshot instead of rebuilding it from scattered
+    # keys.
+    sync_callbacks = dict(page_context["sync_callbacks"])
+    sync_callbacks["_workspace_context"] = page_context.get("workspace_context")
     skip_active_beam_record_write = runtime.render_widgets(
         ss=st_module.session_state,
         inputs_detailed_mode=inputs_detailed_mode,
-        sync_callbacks=page_context["sync_callbacks"],
+        sync_callbacks=sync_callbacks,
         inputs_render_audit=page_context["inputs_render_audit"],
         fast_focus_section=page_context["fast_focus_section"],
         fast_get_param=page_context["fast_get_param"],
@@ -782,7 +970,12 @@ def render_engineering_workspace(
 ) -> dict[str, Any]:
     """Render every consumer that must refresh after an engineering edit."""
     ss = st_module.session_state
-    services = InputsSessionServices.from_mapping(ss)
+    workspace_context = page_context.get("workspace_context")
+    services = (
+        workspace_context.services
+        if workspace_context is not None
+        else InputsSessionServices.from_mapping(ss)
+    )
     workspace_store = InputsWorkspaceStateStore(ss)
     workspace_store.record_fragment_render()
     section_timings_ms: dict[str, float] = {}
@@ -832,6 +1025,7 @@ def render_engineering_workspace(
             st_module=st_module,
             runtime=runtime,
             services=services,
+            include_design_brain=include_design_brain,
         )
     section_timings_ms["authoritative_transaction"] = (
         time.perf_counter_ns() - section_started_ns
@@ -915,6 +1109,18 @@ def render_engineering_workspace(
                 region_context=region_context,
                 design_guide_slot=design_guide_slot,
             )
+        # The widget/diagram renderer still emits the shared visibility marker
+        # below. In the unified workspace the Design Brain is rendered in this
+        # same fragment, so publish its ready revision before that marker is
+        # emitted; otherwise the marker's legacy pending CSS hides the fresh
+        # V2 card even though the publication is already current.
+        current_publication = services.publications.current()
+        if (
+            current_publication.status == "ready"
+            and current_publication.active_workspace_revision
+            == int(workspace_revision)
+        ):
+            ss[_DESIGN_BRAIN_VISIBLE_REVISION_KEY] = int(workspace_revision)
     st_module.session_state["_inputs_detailed_mode"] = bool(inputs_detailed_mode)
     if include_widgets:
         inputs_detailed_mode = runtime.render_mode_selector(
@@ -1012,6 +1218,12 @@ def render_engineering_workspace(
             "design_brain_job_probe": dict(
                 ss.get("_inputs_design_brain_job_probe") or {}
             ),
+            "design_brain_entered_probe": dict(
+                ss.get("_inputs_design_brain_entered_probe") or {}
+            ),
+            "design_brain_boundary_probe": dict(
+                ss.get("_inputs_design_brain_boundary_probe") or {}
+            ),
             "primary_button_contract": dict(cta_model),
             "button_contract": dict(cta_model),
             "design_guide_primary_button_contract": dict(cta_model),
@@ -1031,8 +1243,16 @@ def render_engineering_workspace(
             "final_design_guide_publication": dict(final_publication),
             "final_publication_verifier_payload": dict(final_verifier),
             "final_publication_hashes": {
-                "publication_hash": final_publication.get("publication_hash"),
-                "authority_hash": final_publication.get("publication_hash"),
+                "publication_hash": (
+                    final_publication.get("publication_hash")
+                    or final_verifier.get("publication_hash")
+                    or final_verifier.get("final_publication_authority_hash")
+                ),
+                "authority_hash": (
+                    final_publication.get("publication_hash")
+                    or final_verifier.get("final_publication_authority_hash")
+                    or final_verifier.get("publication_hash")
+                ),
                 "cta_hash": final_verifier.get("final_publication_cta_hash"),
                 "display_hash": final_verifier.get(
                     "final_publication_display_hash"
@@ -1140,11 +1360,12 @@ def render_engineering_workspace(
             ):
                 browser_state_overlay.pop(unavailable_key, None)
         probe = {
+            "probe_source": "design_brain_workspace",
             # Verifier-only wall-clock freshness marker.  Streamlit can retain
             # the prior fragment textarea for a short window while the outer
             # post-render probe has already advanced.
             "fragment_emitted_at_ms": int(time.time() * 1000),
-            "workspace_revision": ss.get("_inputs_workspace_revision", 0),
+            "workspace_revision": workspace_store.workspace_revision(),
             "authoritative_revision": workspace_store.authoritative_revision(),
             "calculation_status": workspace_store.calculation_status(),
             "result_source_input_revision": services.engineering_results.source_input_revision(),
@@ -1217,6 +1438,7 @@ def render_engineering_workspace(
             "fragment_modes": {
                 name: ss.get(f"_inputs_{name}_fragment_mode")
                 for name in (
+                    "engineering_workspace",
                     "engineering_calculation_workspace",
                     "engineering_controls_workspace",
                     "design_brain_workspace",
@@ -1225,6 +1447,9 @@ def render_engineering_workspace(
                     "diagram_3d",
                 )
             },
+            "fragment_ids": dict(
+                ss.get("_inputs_fragment_ids_v1") or {}
+            ),
             "latest_refresh": ss.get("_inputs_workspace_refresh"),
             "event_count": len(
                 ss.get("_inputs_workspace_rerun_events") or []
@@ -1286,189 +1511,6 @@ def render_engineering_workspace(
     }
 
 
-def render_engineering_workspace_calculation(
-    *,
-    st_module: Any,
-    runtime: EngineeringWorkspaceRuntime,
-    page_context: dict[str, Any],
-    workspace_slot: Any = None,
-) -> dict[str, Any]:
-    ss = st_module.session_state
-    workspace_store = InputsWorkspaceStateStore(ss)
-    input_revision = workspace_store.workspace_revision()
-    # A Streamlit fragment clears its previous elements on every poll.  The
-    # engineering transaction may be reused, but the cached Summary and
-    # Calculation view models must still be redrawn or the region disappears.
-    # render_engineering_workspace performs the revision check and skips the
-    # engineering calculation when calculation_state is already current.
-
-    def _render() -> dict[str, Any]:
-        return render_engineering_workspace(
-            st_module=st_module,
-            runtime=runtime,
-            page_context=page_context,
-            include_design_brain=False,
-            include_controls=False,
-            include_widgets=False,
-        )
-
-    if workspace_slot is None:
-        result = _render()
-    else:
-        workspace_slot.empty()
-        with workspace_slot.container():
-            result = _render()
-    ss["_inputs_calculation_workspace_presented_revision"] = int(
-        InputsWorkspaceStateStore(ss).workspace_revision()
-    )
-    return result
-
-
-def render_engineering_workspace_controls(
-    *,
-    st_module: Any,
-    runtime: EngineeringWorkspaceRuntime,
-    page_context: dict[str, Any],
-) -> bool:
-    """Render batch and workspace controls without engineering computation."""
-
-    region_context = build_inputs_controls_region_context(
-        page_context=page_context,
-    )
-    inputs_detailed_mode = render_inputs_controls_fragment_section(
-        st_module=st_module,
-        runtime=runtime,
-        region_context=region_context,
-    )
-    st_module.session_state["_inputs_detailed_mode"] = bool(inputs_detailed_mode)
-    return bool(inputs_detailed_mode)
-
-
-def render_engineering_workspace_widgets(
-    *,
-    st_module: Any,
-    runtime: EngineeringWorkspaceRuntime,
-    page_context: dict[str, Any],
-) -> bool:
-    """Render mode and engineering widgets in their own stable fragment."""
-
-    inputs_detailed_mode = runtime.render_mode_selector(
-        sync_callbacks=page_context["sync_callbacks"],
-    )
-    st_module.session_state["_inputs_detailed_mode"] = bool(inputs_detailed_mode)
-    return render_inputs_widget_fragment_section(
-        st_module=st_module,
-        runtime=runtime,
-        page_context=page_context,
-        inputs_detailed_mode=bool(inputs_detailed_mode),
-    )
-
-
-def render_engineering_workspace_design_brain(
-    *,
-    st_module: Any,
-    runtime: EngineeringWorkspaceRuntime,
-    page_context: dict[str, Any],
-    design_brain_slot: Any = None,
-) -> None:
-    ss = st_module.session_state
-    # The fragment owns its output container.  Passing a shell-owned empty
-    # container across this boundary lets sibling fragment reruns erase the
-    # Design Guide even though its matching publication is still current.
-    if design_brain_slot is None:
-        design_brain_slot = st_module.empty()
-    workspace_store = InputsWorkspaceStateStore(ss)
-    input_revision = workspace_store.workspace_revision()
-    prior_polling_state = dict(
-        ss.get(DESIGN_BRAIN_POLLING_STATE_KEY) or {}
-    )
-    fast_wake_requires_repace = bool(
-        prior_polling_state.get("active") is True
-        and prior_polling_state.get("last_action") == "started"
-        and str(prior_polling_state.get("last_reason") or "").startswith(
-            "input_transaction:"
-        )
-        and int(prior_polling_state.get("last_revision") or 0)
-        == int(input_revision)
-    )
-    register_design_brain_fragment(ss, revision=input_revision)
-    # An input commit wakes this stopped fragment on a short 100 ms interval.
-    # That interval is only a first-wake latency optimization; leaving it as
-    # the steady cadence can queue another rerun while a ready card is being
-    # rendered. Re-pace immediately, then terminal branches cancel the timer.
-    if fast_wake_requires_repace:
-        start_design_brain_polling(
-            ss,
-            reason="fragment_execution_repaced",
-            revision=input_revision,
-            interval_s=DEFAULT_DESIGN_BRAIN_POLL_INTERVAL_S,
-        )
-    services = InputsSessionServices.from_mapping(ss)
-    region_context = build_inputs_design_brain_region_context(
-        session_state=ss,
-        services=services,
-        inputs_detailed_mode=bool(
-            st_module.session_state.get("_inputs_detailed_mode", False)
-        ),
-    )
-    if region_context is None:
-        if (
-            workspace_store.authoritative_revision() == input_revision
-            and not workspace_store.authoritative_result_present()
-        ):
-            design_brain_slot.empty()
-            stop_design_brain_polling(
-                ss,
-                reason="no_authoritative_result",
-                revision=input_revision,
-            )
-            return
-        if design_brain_slot is not None:
-            design_brain_slot.empty()
-            with design_brain_slot.container():
-                st_module.info("Updating design guidance…")
-            ss["_inputs_design_brain_pending_display_revision"] = int(
-                input_revision
-            )
-        return
-    publication = services.publications.current()
-    # Polling clears this fragment's prior elements.  A ready publication is
-    # cheap to reuse, but it must be rendered on every poll to remain visible.
-    # The refresh coordinator below is revision-gated and performs no Design
-    # Brain work once a matching final publication exists.
-    if design_brain_slot is not None:
-        design_brain_slot.empty()
-    render_inputs_design_guide_fragment_section(
-        st_module=st_module,
-        runtime=runtime,
-        page_context=page_context,
-        services=services,
-        region_context=region_context,
-        design_guide_slot=design_brain_slot,
-    )
-    publication = services.publications.current()
-    if (
-        publication.status == "ready"
-        and publication.active_workspace_revision == int(input_revision)
-    ):
-        ss["_inputs_design_brain_presented_revision"] = int(input_revision)
-        ss.pop("_inputs_design_brain_pending_display_revision", None)
-        stop_design_brain_polling(
-            ss,
-            reason="matching_publication_ready",
-            revision=input_revision,
-        )
-    elif (
-        publication.status in {"failed", "ready_stale"}
-        and publication.pending_workspace_revision is None
-    ):
-        stop_design_brain_polling(
-            ss,
-            reason=f"publication_{publication.status}",
-            revision=input_revision,
-        )
-
-
 __all__ = [
     "EngineeringWorkspaceRuntime",
     "InputsCalculationRegionContext",
@@ -1484,10 +1526,6 @@ __all__ = [
     "build_engineering_workspace_runtime",
     "prepare_engineering_workspace_transaction",
     "render_engineering_workspace",
-    "render_engineering_workspace_calculation",
-    "render_engineering_workspace_controls",
-    "render_engineering_workspace_design_brain",
-    "render_engineering_workspace_widgets",
     "render_inputs_calculation_fragment_section",
     "render_inputs_controls_fragment_section",
     "render_inputs_design_guide_fragment_section",

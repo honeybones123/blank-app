@@ -185,8 +185,99 @@ def reseed_inputs_longitudinal_reo_widgets_from_shared(
     return payload
 
 
+def hydrate_inputs_longitudinal_reo_widgets_for_revision(
+    *,
+    state: dict,
+    revision: int,
+    active_beam_id: str | None = None,
+    copy_deepcopy_fn: Callable[[Any], Any],
+) -> dict:
+    """Keep visible Inputs row widgets aligned with the committed snapshot.
+
+    The Inputs workspace can be rerun as a fragment without running the page
+    setup code again.  In that path a callback may have committed a new beam
+    snapshot while Streamlit retained the old ``inputs_*`` widget values.  The
+    calculation and Design Brain then consume the committed row model, while
+    the controls still display the previous diameter/count.  That split is a
+    direct parity failure: the user sees one design and V2 evaluates another.
+
+    Call this before the workspace renders any widgets.  A committed input
+    revision is the authority, so a changed revision is safe to reseed even if
+    the previous rerun was marked as a recent widget edit; the callback has
+    already copied that edit into the shared row model before this function is
+    reached.
+    """
+
+    revision_value = int(revision or 0)
+    beam_value = str(active_beam_id or "").strip() or None
+    marker = (beam_value, revision_value)
+    previous_marker = state.get("_inputs_longitudinal_reo_widget_revision")
+    # Apply commits can occur during page setup, after the shell's first
+    # hydration pass has already consumed the one-shot reseed flag.  The
+    # unified workspace fragment is then the next (and sometimes only) place
+    # that can reconcile the visible selectboxes.  Treat that flag as an
+    # explicit revision-boundary request, even when the marker was written by
+    # an earlier pass in the same app rerun.
+    force_reseed = bool(state.pop("_force_inputs_widget_reseed_once", False))
+    changed_widget_keys: list[str] = []
+
+    if previous_marker != marker or force_reseed:
+        hydrated_map = state.get("_hydrated_from_shared_map")
+        if not isinstance(hydrated_map, dict):
+            hydrated_map = {}
+            state["_hydrated_from_shared_map"] = hydrated_map
+        for section in ("bot", "top"):
+            shared_count_key = f"{section}_row_count"
+            widget_count_key = f"inputs_{section}_row_count"
+            if shared_count_key in state:
+                shared_value = copy_deepcopy_fn(state.get(shared_count_key))
+                if state.get(widget_count_key) != shared_value or force_reseed:
+                    # Give select_row an explicit initial index.  Merely
+                    # assigning an existing Streamlit widget key can leave
+                    # the browser-side selectbox displaying its old value.
+                    state.pop(widget_count_key, None)
+                    state.pop(f"_cached_{widget_count_key}", None)
+                    hydrated_map[widget_count_key] = shared_value
+                    changed_widget_keys.append(widget_count_key)
+            for row_idx in _RESEED_ROWS:
+                for field in _ROW_FIELDS:
+                    shared_key = f"{section}_row_{row_idx}_{field}"
+                    widget_key = f"inputs_{section}_row_{row_idx}_{field}"
+                    if shared_key not in state:
+                        continue
+                    shared_value = copy_deepcopy_fn(state.get(shared_key))
+                    if state.get(widget_key) != shared_value or force_reseed:
+                        state.pop(widget_key, None)
+                        state.pop(f"_cached_{widget_key}", None)
+                        hydrated_map[widget_key] = shared_value
+                        changed_widget_keys.append(widget_key)
+        state["_inputs_longitudinal_reo_widget_revision"] = marker
+        if force_reseed:
+            # Streamlit can retain a selectbox's browser-side value even after
+            # its session key is cleared during an app rerun.  Bump a stable
+            # epoch so the row controls receive a new widget identity exactly
+            # at an Apply transaction boundary; ordinary edits keep their
+            # existing identities and fast fragment path.
+            state["_inputs_longitudinal_reo_widget_epoch"] = int(
+                state.get("_inputs_longitudinal_reo_widget_epoch", 0) or 0
+            ) + 1
+
+    payload = {
+        "revision": revision_value,
+        "active_beam_id": beam_value,
+        "previous_marker": previous_marker,
+        "marker": marker,
+        "force_reseed": force_reseed,
+        "reseed_applied": bool(changed_widget_keys),
+        "changed_widget_keys": list(changed_widget_keys),
+    }
+    state["_inputs_longitudinal_reo_widget_revision_probe"] = dict(payload)
+    return payload
+
+
 __all__ = [
     "is_inputs_longitudinal_reo_widget_key",
     "longitudinal_reo_widget_audit_snapshot",
     "reseed_inputs_longitudinal_reo_widgets_from_shared",
+    "hydrate_inputs_longitudinal_reo_widgets_for_revision",
 ]

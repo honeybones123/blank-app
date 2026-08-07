@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from application.design_result_store import AuthoritativeDesignResultStore
 from inputs_application.apply_transaction_store import ApplyTransactionStore
 from inputs_application.design_guide_fragment_store import DesignGuideFragmentStore
+from inputs_application.session_services import InputsSessionServices
 from inputs_application.workspace_state_store import InputsWorkspaceStateStore
 
 
@@ -68,7 +68,7 @@ def _queue_primary_design_guide_button_action(
             "expected_util": contract.get("expected_util"),
         }
 
-    authoritative_result = AuthoritativeDesignResultStore(st.session_state).current()
+    authoritative_result = InputsSessionServices.from_mapping(st.session_state).engineering_results.current()
     canonical = (
         dict(authoritative_result.apply_payload or {})
         if authoritative_result is not None

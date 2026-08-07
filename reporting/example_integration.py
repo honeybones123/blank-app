@@ -221,26 +221,28 @@ def render_pdf_button(
 
     # PDF export button
     if st.button("📄 PDF Report", type=button_type, use_container_width=True):
-        # Flush proxy widget keys (e.g. inputs_*) into shared keys before running checks / exporting
-        try:
-            from state_and_helpers import save_proxies_to_active_set, recalc_derived_values, update_results
-            save_proxies_to_active_set()
-            recalc_derived_values()
-            update_results()
-        except Exception:
-            # Don't block PDF if one helper isn't available; checks will still run
-            pass
-
-        # 1) Run all checks FIRST (and show spinner so user knows it's working)
-        with st.spinner("Running all checks..."):
+        # Inputs now owns one revisioned V2 transaction. Do not invoke the
+        # legacy ``design_runner`` here: it recomputes a second graph of
+        # session-state checks, can overwrite the committed V2 result, and was
+        # the source of the long/flickering report click on the Inputs page.
+        # The report is a consumer of the already-published calculation state;
+        # refresh only the current authoritative engineering result when the
+        # page has not rendered it yet.
+        with st.spinner("Preparing report..."):
             try:
-                from design_runner import run_all_design_checks
-                run_all_design_checks(force=True)
+                from inputs_application.page_runtime.setup import (
+                    refresh_inputs_engineering_result,
+                )
+
+                refresh_inputs_engineering_result()
             except Exception as run_err:
-                st.error(f"Could not run all checks before export: {run_err}")
+                st.error(
+                    "Could not prepare the current calculation for export: "
+                    f"{run_err}"
+                )
                 return
-        
-        # 2) Build the new active-beam report PDF directly from the Stage 5 report structure.
+
+        # Build the active-beam report directly from the revision-matched state.
         with st.spinner("Generating PDF report..."):
             try:
                 report_data = build_active_beam_report_data_from_state(report_mode=detail_level_key)

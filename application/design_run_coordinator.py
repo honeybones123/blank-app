@@ -13,6 +13,7 @@ from typing import Callable
 from application.contracts.design_brain import (
     AuthoritativeDesignResult,
     EngineeringInputSnapshot,
+    coerce_authoritative_design_result,
 )
 from application.design_result_store import EngineeringResultStore
 
@@ -51,8 +52,8 @@ def ensure_design_result(
             )
         return current
 
-    result = compute_fn(snapshot)
-    if not isinstance(result, AuthoritativeDesignResult):
+    result = coerce_authoritative_design_result(compute_fn(snapshot))
+    if result is None:
         raise TypeError("compute_fn must return an AuthoritativeDesignResult")
     if result.engineering_hash != snapshot.engineering_hash:
         raise ValueError(

@@ -63,6 +63,22 @@ def _boolean(mapping: Mapping[str, Any], *keys: str) -> bool:
     return False
 
 
+_V2_DEFLECTION_LIMIT_RATIOS = frozenset({200.0, 250.0, 300.0, 400.0})
+
+
+def _v2_deflection_limit_ratio(mapping: Mapping[str, Any]) -> float:
+    """Normalize legacy Runtime values at the V2 boundary.
+
+    The old Runtime exposed L/500 while the standalone V2 contract exposes
+    200/250/300/400.  A persisted legacy value must not crash the automatic
+    calculation region; it is projected to V2's documented default and the
+    committed V2 model becomes the displayed authority for that revision.
+    """
+
+    ratio = _number(mapping, "defl_limit_ratio", default=250.0)
+    return ratio if ratio in _V2_DEFLECTION_LIMIT_RATIOS else 250.0
+
+
 def _normalise_shape(value: Any) -> str:
     shape = str(value or "RECT").strip().upper()
     if shape in {"RECTANGULAR", "RECTANGLE"}:
@@ -95,6 +111,12 @@ def _v2_api(source_root: Path):
     from inputs_v2.application.design_guide_orchestrator import (  # noqa: PLC0415
         DesignGuideOrchestrator,
     )
+    from inputs_v2.application.calculation_coordinator import (  # noqa: PLC0415
+        CalculationCoordinator,
+    )
+    from inputs_v2.engineering.legacy_snapshot_calculator import (  # noqa: PLC0415
+        LegacySnapshotCalculator,
+    )
     from inputs_v2.domain.beam_inputs import (  # noqa: PLC0415
         ActionInputs,
         BeamInputs,
@@ -122,6 +144,8 @@ def _v2_api(source_root: Path):
 
     return {
         "DesignGuideOrchestrator": DesignGuideOrchestrator,
+        "CalculationCoordinator": CalculationCoordinator,
+        "LegacySnapshotCalculator": LegacySnapshotCalculator,
         "ActionInputs": ActionInputs,
         "BeamInputs": BeamInputs,
         "DeflectionInputs": DeflectionInputs,
@@ -241,7 +265,7 @@ def _beam_inputs_from_snapshot(
         ),
         deflection=api["DeflectionInputs"](
             str(settings.get("deflection_support_condition") or "Simply supported"),
-            _number(settings, "defl_limit_ratio", default=250.0),
+            _v2_deflection_limit_ratio(settings),
         ),
         serviceability=api["ServiceabilityInputs"](
             moment_knm=_number(actions, "SLS_M", "SLS_M_pos", "sls_Mstar", default=0.0),
@@ -374,6 +398,8 @@ def _resolved_inputs_projection(
             "Vu": current.actions.shear_force_kn,
             "Tu": current.actions.torsion_knm,
             "Nu": current.actions.axial_force_kn,
+            "defl_limit_ratio": current.deflection.limit_ratio,
+            "deflection_support_condition": current.deflection.support_condition,
             "SLS_M": current.serviceability.moment_knm,
             "SLS_V": current.serviceability.shear_kn,
             "g_udl_kNm_per_m": current.serviceability.permanent_udl_knm_per_m,
@@ -384,7 +410,51 @@ def _resolved_inputs_projection(
     return resolved
 
 
-def _clause_metadata(api: Mapping[str, Any]) -> dict[str, Any]:
+def _actions_used_projection(current: Any) -> dict[str, float]:
+    """Expose the committed V2 action model to summary consumers.
+
+    The Inputs summary uses this small neutral projection to distinguish an
+    active check from an informational/no-load check.  V2 owns the action
+    values, so leaving this out makes the summary overlay default to zeros and
+    hides otherwise valid ULS utilisation/status values.
+    """
+
+    return {
+        "Mu_signed": float(current.actions.bending_moment_knm or 0.0),
+        "Mu": float(current.actions.bending_moment_knm or 0.0),
+        "Vu": float(current.actions.shear_force_kn or 0.0),
+        "Tu": float(current.actions.torsion_knm or 0.0),
+        "Nu": float(current.actions.axial_force_kn or 0.0),
+        "SLS_M_signed": float(current.serviceability.moment_knm or 0.0),
+        "SLS_M": float(current.serviceability.moment_knm or 0.0),
+        "SLS_V": float(current.serviceability.shear_kn or 0.0),
+    }
+
+
+def _calculation_owned_check_metadata(
+    calculation: Any,
+    check_id: str,
+) -> dict[str, Any] | None:
+    """Find V2's calculation-owned metadata for one engineering check.
+
+    Clause references must be projected from the calculation result, rather
+    than reconstructed in the Runtime adapter.  That keeps the V2 calculation
+    the single authority for both the check and its AS 3600 reference.
+    """
+
+    for family in getattr(calculation, "families", {}).values():
+        if not isinstance(family, Mapping):
+            continue
+        metadata = family.get("check_metadata", {})
+        if not isinstance(metadata, Mapping):
+            continue
+        reference = metadata.get(check_id)
+        if isinstance(reference, Mapping):
+            return dict(reference)
+    return None
+
+
+def _clause_metadata(api: Mapping[str, Any], calculation: Any) -> dict[str, Any]:
     checks = (
         "bending_capacity",
         "bending_ductility",
@@ -397,7 +467,10 @@ def _clause_metadata(api: Mapping[str, Any]) -> dict[str, Any]:
     )
     references = []
     for check_id in checks:
-        reference = api["clause_reference"](check_id)
+        reference = api["clause_reference"](
+            check_id,
+            _calculation_owned_check_metadata(calculation, check_id),
+        )
         if reference is not None:
             references.append(asdict(reference))
     return {"standard": "AS 3600", "edition": "2018", "references": references}
@@ -459,22 +532,38 @@ def _v2_display_projection(
         after.families.get("serviceability", {}).get("deflection_util", 0.0) or 0.0
     )
     check = api["EngineeringCheck"]
-    clause = api["clause_reference"]
+    current_clause = lambda check_id: api["clause_reference"](
+        check_id,
+        _calculation_owned_check_metadata(before, check_id),
+    )
+    proposed_clause = lambda check_id: api["clause_reference"](
+        check_id,
+        _calculation_owned_check_metadata(after, check_id),
+    )
+    current_checks = (
+        check("bending_capacity", "Bending", clause_reference=current_clause("bending_capacity"), status="fail" if current_b > 1 else "pass", utilisation=current_b),
+        check("shear_strength", "Shear", clause_reference=current_clause("shear_strength"), status="fail" if current_s > 1 else "pass", utilisation=current_s),
+        check("short_term_deflection", "Deflection", clause_reference=current_clause("short_term_deflection"), status="fail" if current_d > 1 else "pass", utilisation=current_d),
+    )
+    proposed_checks = (
+        check("bending_capacity", "Bending", clause_reference=proposed_clause("bending_capacity"), status="fail" if proposed_b > 1 else "pass", utilisation=proposed_b),
+        check("shear_strength", "Shear", clause_reference=proposed_clause("shear_strength"), status="fail" if proposed_s > 1 else "pass", utilisation=proposed_s),
+        check("short_term_deflection", "Deflection", clause_reference=proposed_clause("short_term_deflection"), status="fail" if proposed_d > 1 else "pass", utilisation=proposed_d),
+    )
+    clause_references = tuple(
+        dict(
+            (item.clause_reference.check_id, item.clause_reference)
+            for item in current_checks + proposed_checks
+            if item.clause_reference is not None
+        ).values()
+    )
     advice = api["EngineeringAdviceResult"](
-        current_checks=(
-            check("bending_capacity", "Bending", clause_reference=clause("bending_capacity"), status="fail" if current_b > 1 else "pass", utilisation=current_b),
-            check("shear_strength", "Shear", clause_reference=clause("shear_strength"), status="fail" if current_s > 1 else "pass", utilisation=current_s),
-            check("short_term_deflection", "Deflection", clause_reference=clause("short_term_deflection"), status="fail" if current_d > 1 else "pass", utilisation=current_d),
-        ),
-        proposed_checks=(
-            check("bending_capacity", "Bending", clause_reference=clause("bending_capacity"), status="fail" if proposed_b > 1 else "pass", utilisation=proposed_b),
-            check("shear_strength", "Shear", clause_reference=clause("shear_strength"), status="fail" if proposed_s > 1 else "pass", utilisation=proposed_s),
-            check("short_term_deflection", "Deflection", clause_reference=clause("short_term_deflection"), status="fail" if proposed_d > 1 else "pass", utilisation=proposed_d),
-        ),
+        current_checks=current_checks,
+        proposed_checks=proposed_checks,
         recommended_changes=changes,
         engineering_effects=effects,
         governing_check=family_name,
-        clause_references=("AS 3600 2018 Clauses 8.1.3, 8.2.3.1, 8.5.3.1",),
+        clause_references=clause_references,
         verified_compliance=bool(preview.accepted),
         apply_allowed=(family_name != "TARGET_BAND_REACHED")
         and bool(preview.accepted)
@@ -519,6 +608,171 @@ def _v2_display_projection(
         "effects": list(effects),
         "apply_allowed": bool(advice.apply_allowed),
         "current_failing": current_failing,
+    }
+
+
+def _v2_summary_packs(*, current: Any, families: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    """Project V2 family results into the Runtime summary-pack shape.
+
+    The summary is a presentation consumer, not a second calculator. Keeping
+    this projection at the V2 adapter boundary lets the existing Runtime cards
+    consume the same family result as Design Brain while the old dictionary
+    check builders are retired behind shadow tests.
+    """
+
+    def _family(name: str) -> dict[str, Any]:
+        value = families.get(name) if isinstance(families, Mapping) else None
+        return dict(value) if isinstance(value, Mapping) else {}
+
+    def _status(value: Any, *, informational: bool = False) -> str:
+        if informational:
+            return "INFO"
+        text = str(value or "").strip().upper()
+        return text if text in {"PASS", "FAIL", "WARN", "CHECK", "INFO"} else "—"
+
+    def _row(
+        *,
+        uid: str,
+        title: str,
+        route_page: str,
+        action: Any = "—",
+        capacity: Any = "—",
+        util: Any = None,
+        status: Any = "—",
+        informational: bool = False,
+    ) -> dict[str, Any]:
+        return {
+            "uid": uid,
+            "title": title,
+            "row_type": "v2_family",
+            "action": action,
+            "capacity": capacity,
+            "calculated": capacity,
+            "requirement": action,
+            "value": action,
+            "limit": capacity,
+            "util": util if util is not None else "—",
+            "status": _status(status, informational=informational),
+            "ok": None if informational else (_status(status) == "PASS"),
+            "is_informational": informational,
+            "is_primary": True,
+            "route_page": route_page,
+            "tab": route_page,
+        }
+
+    bending = _family("bending")
+    shear = _family("shear")
+    crack = _family("crack_control")
+    serviceability = _family("serviceability")
+    mu = float(getattr(current.actions, "bending_moment_knm", 0.0) or 0.0)
+    vu = float(getattr(current.actions, "shear_force_kn", 0.0) or 0.0)
+    phi_mu = bending.get("phi_Mu_kNm")
+    phi_vu = shear.get("phi_Vu")
+    shear_util = (
+        abs(vu) / float(phi_vu)
+        if phi_vu not in (None, "") and float(phi_vu or 0.0) > 0.0
+        else 0.0
+    )
+    crack_run = bool(crack.get("serviceability_loads_present"))
+    deflection_run = bool(serviceability.get("serviceability_loads_present"))
+
+    # The V2 standalone card is the visual authority for these values.  Keep
+    # the raw numbers in the family result, but project the exact V2 display
+    # strings into the legacy summary-pack boundary so the Runtime renderer
+    # cannot fall back to Python's long float representation.
+    bending_action_display = f"Mu*(+) = {mu:.1f} kNm" if abs(mu) > 1e-9 else "Mu*(+) = —"
+    bending_capacity_display = (
+        f"ϕMu(+) = {float(phi_mu):.1f} kNm"
+        if phi_mu not in (None, "")
+        else "ϕMu(+) = —"
+    )
+    bending_util_display = (
+        f"{float(bending.get('util')):.2f}"
+        if bending.get("util") not in (None, "")
+        else "—"
+    )
+    shear_util_display = f"{shear_util:.2f}" if abs(vu) > 1e-9 else "—"
+    shear_status = (
+        "PASS" if abs(vu) > 1e-9 and shear_util <= 1.0
+        else "FAIL" if abs(vu) > 1e-9
+        else "INFO"
+    )
+    shear_informational = abs(vu) <= 1e-9
+
+    return {
+        "bending": {
+            "source": "inputs_v2",
+            "rows": [
+                _row(
+                    uid="v2_bending_capacity",
+                    title="Bending capacity",
+                    route_page="bending",
+                    action=bending_action_display,
+                    capacity=bending_capacity_display,
+                    util=bending_util_display,
+                    status=bending.get("status"),
+                )
+            ],
+        },
+        "shear": {
+            "source": "inputs_v2",
+            "summary_display_source": "inputs_v2",
+            "summary_display_capacity": (
+                f"ϕVu = {float(phi_vu):.1f} kN" if phi_vu not in (None, "") else "ϕVu = —"
+            ),
+            "summary_display_demand": (
+                f"V*eq = {vu:.1f} kN" if abs(vu) > 1e-9 else "V*eq = —"
+            ),
+            "summary_phiVu_kN": phi_vu,
+            "summary_Veq_kN": vu,
+            "summary_util": shear_util,
+            "summary_status": shear_status,
+            "rows": [
+                _row(
+                    uid="v2_shear_capacity",
+                    title="Shear capacity",
+                    route_page="shear",
+                    action=(f"V*eq = {vu:.1f} kN" if abs(vu) > 1e-9 else "V*eq = —"),
+                    capacity=(f"ϕVu = {float(phi_vu):.1f} kN" if phi_vu not in (None, "") else "ϕVu = —"),
+                    util=shear_util_display,
+                    status=shear_status,
+                    informational=shear_informational,
+                )
+            ],
+        },
+        "crack": {
+            "source": "inputs_v2",
+            "rows": [
+                _row(
+                    uid="v2_crack_control",
+                    title="Crack control",
+                    route_page="crack",
+                    action=(crack.get("width_mm") if crack_run else "Not supplied"),
+                    capacity=(crack.get("limit_mm") if crack_run else "—"),
+                    util=(crack.get("util") if crack_run else None),
+                    status=(crack.get("status") if crack_run else "INFO"),
+                    informational=not crack_run,
+                )
+            ],
+        },
+        "deflection": {
+            "source": "inputs_v2",
+            "summary_delta_total_mm": serviceability.get("deflection_mm") if deflection_run else 0.0,
+            "summary_defl_limit_mm": serviceability.get("limit_mm") if deflection_run else 0.0,
+            "summary_util_total": serviceability.get("deflection_util") if deflection_run else None,
+            "rows": [
+                _row(
+                    uid="v2_deflection",
+                    title="Deflection",
+                    route_page="deflection",
+                    action=(serviceability.get("deflection_mm") if deflection_run else "Not supplied"),
+                    capacity=(serviceability.get("limit_mm") if deflection_run else "—"),
+                    util=(serviceability.get("deflection_util") if deflection_run else None),
+                    status=(serviceability.get("status") if deflection_run else "INFO"),
+                    informational=not deflection_run,
+                )
+            ],
+        },
     }
 
 
@@ -596,7 +850,13 @@ def _neutral_publication_projection(
     v2_state_class = str(v2_display_map.get("state_class") or ("action" if action_type else outcome_state.lower()))
     v2_badge = str(v2_display_map.get("badge") or ("ACTION" if action_type else outcome_state))
     v2_advice_text = str(v2_display_map.get("advice_text") or "")
-    outcome_state = v2_badge
+    # The visual badge describes the current engineering state, which may be
+    # BLOCKED when the current design fails even though V2 has produced an
+    # approved repair candidate.  Publication outcome is the Apply authority:
+    # keep it ACTION whenever an actionable candidate exists, otherwise a
+    # terminal PASS/BLOCKED state.  Conflating these two states made the card
+    # show an enabled Apply button that the canonical executor then rejected.
+    publication_outcome_state = "ACTION" if action_type else v2_badge
     display_model = {
         "title": display_title,
         "badge": v2_badge,
@@ -621,8 +881,8 @@ def _neutral_publication_projection(
         "title": display_title,
         "title_main": display_title,
         "summary": display_model["summary"],
-        "status": outcome_state,
-        "outcome_state": outcome_state,
+        "status": publication_outcome_state,
+        "outcome_state": publication_outcome_state,
         "family": family_id,
         "selected_family_id": family_id,
         "published_family_id": family_id,
@@ -655,8 +915,8 @@ def _neutral_publication_projection(
         "selected_family_id": family_id,
         "published_family_id": family_id,
         "cta_family_id": family_id,
-        "outcome_state": outcome_state,
-        "post_click_design_guide_state": outcome_state,
+        "outcome_state": publication_outcome_state,
+        "post_click_design_guide_state": publication_outcome_state,
         "publication_reason": reason_text,
         "blocker_reason": None if action_type else reason_text,
         "source_hash": source_hash,
@@ -666,7 +926,7 @@ def _neutral_publication_projection(
         "cta": dict(cta_model),
         "evidence": dict(evidence),
         "verifier_payload": {
-            "outcome_state": outcome_state,
+            "outcome_state": publication_outcome_state,
             "selected_family_id": family_id,
             "published_family_id": family_id,
             "cta_family_id": family_id,
@@ -696,6 +956,58 @@ def _neutral_publication_projection(
     }
 
 
+def calculate_v2_authoritative_result(
+    *,
+    source_root: Path | str | None,
+    engineering_snapshot: EngineeringInputSnapshot,
+    resolved_inputs: Mapping[str, Any],
+    input_revision: int,
+) -> AuthoritativeDesignResult:
+    """Calculate one revision-matched V2 result without running Design Brain.
+
+    This is the sibling calculation path used before the Design Guide starts.
+    It uses the same V2 calculator and input mapping as the Design Brain
+    adapter, but publishes only engineering families and summary packs.
+    """
+
+    api = _v2_api(Path(source_root) if source_root else DEFAULT_V2_SOURCE_ROOT)
+    current, _row_counts, serviceability_loads = _beam_inputs_from_snapshot(
+        engineering_snapshot,
+        api,
+        int(input_revision),
+        resolved_inputs,
+    )
+    publication = api["CalculationCoordinator"](
+        api["LegacySnapshotCalculator"]()
+    ).calculate_current(current)
+    if publication.stale or publication.result is None:
+        raise ValueError("V2 calculation result is stale")
+    calculated = publication.result
+    families = dict(calculated.families)
+    manifest = source_manifest_hash(
+        Path(source_root) if source_root else DEFAULT_V2_SOURCE_ROOT
+    )
+    current_calculations = {
+        "source": "inputs_v2",
+        "actions_used": _actions_used_projection(current),
+        "resolved_inputs": _resolved_inputs_projection(resolved_inputs, current),
+        "v2_source_manifest_hash": manifest,
+        "v2_source_revision": int(calculated.source_revision),
+        "v2_source_hash": calculated.source_hash,
+        "v2_status": calculated.status,
+        "v2_summary": calculated.summary,
+        "families": families,
+        "packs": _v2_summary_packs(current=current, families=families),
+        "serviceability_loads": serviceability_loads,
+    }
+    return build_authoritative_design_result(
+        engineering_snapshot=engineering_snapshot,
+        current_calculations=current_calculations,
+        family_contract_version="inputs_v2.family.v1",
+        family_outcome="engineering_calculation_ready",
+    )
+
+
 class NewDesignBrainAdapter:
     """Adapt the isolated V2 orchestrator to the neutral application port."""
 
@@ -704,7 +1016,23 @@ class NewDesignBrainAdapter:
         self._source_root = Path(configured) if configured else DEFAULT_V2_SOURCE_ROOT
 
     def run(self, request: DesignBrainRequest) -> DesignBrainExecution:
-        if not isinstance(request, DesignBrainRequest):
+        # Streamlit can retain a fragment callback while reloading an
+        # application module. In that narrow case the callback may carry an
+        # equivalent request object created by the previous module instance.
+        # Keep the neutral port strict at the service boundary, but accept the
+        # same typed request structurally here so a development reload cannot
+        # turn a valid widget edit into a Design Brain crash.
+        if not isinstance(request, DesignBrainRequest) and not all(
+            hasattr(request, field)
+            for field in (
+                "engineering_snapshot",
+                "input_revision",
+                "family_hint",
+                "resolved_inputs",
+                "engineering_calculations",
+                "debug_enabled",
+            )
+        ):
             raise TypeError("request must be a DesignBrainRequest")
         if request.input_revision is None:
             raise ValueError("V2 adapter requires an input revision")
@@ -720,7 +1048,13 @@ class NewDesignBrainAdapter:
         preview = decision.preview
         candidate = preview.candidate
         accepted = bool(preview.accepted)
-        updates = _proposal_updates(candidate.proposal, candidate.row_counts or row_counts)
+        # V2 deliberately leaves ``row_counts`` empty for candidates whose
+        # authoritative proposal changes only the total bottom-bar count
+        # (for example the shear-failure ladder).  Passing the current input
+        # rows as a fallback changes the displayed V2 proposal back to the
+        # old count at the Runtime Apply boundary.  Let _proposal_updates
+        # derive the one-row arrangement from proposal.bottom_bars instead.
+        updates = _proposal_updates(candidate.proposal, candidate.row_counts)
         candidate_payload = {
             "candidate_id": candidate.candidate_id,
             "source_revision": candidate.source_revision,
@@ -741,7 +1075,7 @@ class NewDesignBrainAdapter:
             accepted=accepted,
             candidate_payload=candidate_payload,
             updates=updates,
-            clause_metadata=_clause_metadata(api),
+            clause_metadata=_clause_metadata(api, preview.before),
             source_revision=int(request.input_revision),
             source_hash=request.engineering_snapshot.engineering_hash,
             v2_display=v2_display,
@@ -793,15 +1127,13 @@ class NewDesignBrainAdapter:
             "authoritative_publication_source": "inputs_v2",
             "authoritative_publication_evidence": dict(publication_body.get("evidence") or {}),
         }
-        # Design Brain owns the recommendation/publication fields, while the
-        # engineering calculation region owns its revision-matched packs.  A
-        # V2 run must preserve that explicit handoff; replacing the complete
-        # calculation payload with only V2 family projections leaves the
-        # Summary renderer without the packs it needs and makes a ready result
-        # appear to be perpetually updating.
+        # Design Brain owns the recommendation/publication fields and V2 now
+        # also publishes the revision-matched summary packs.  The Runtime
+        # renderer can consume those packs without rebuilding legacy checks.
         current_calculations = {
             **dict(request.engineering_calculations or {}),
             "source": "inputs_v2",
+            "actions_used": _actions_used_projection(current),
             "resolved_inputs": _resolved_inputs_projection(
                 request.resolved_inputs,
                 current,
@@ -812,6 +1144,18 @@ class NewDesignBrainAdapter:
             "v2_status": preview.before.status,
             "v2_summary": preview.before.summary,
             "families": dict(preview.before.families),
+            "packs": _v2_summary_packs(
+                current=current,
+                families=preview.before.families,
+            ),
+            # Batch Design is a consumer of the V2 proposal, not a second
+            # calculator.  Publish the already-verified post-proposal packs
+            # beside the current packs so batch rows can report the exact
+            # result V2 selected, without re-deriving a candidate in Runtime.
+            "proposed_packs": _v2_summary_packs(
+                current=current,
+                families=preview.after.families,
+            ),
             "serviceability_loads": serviceability_loads,
             "proposed_families": dict(preview.after.families),
         }
@@ -862,4 +1206,9 @@ class NewDesignBrainAdapter:
         )
 
 
-__all__ = ["DEFAULT_V2_SOURCE_ROOT", "NewDesignBrainAdapter", "V2_SOURCE_ROOT_ENV"]
+__all__ = [
+    "DEFAULT_V2_SOURCE_ROOT",
+    "NewDesignBrainAdapter",
+    "V2_SOURCE_ROOT_ENV",
+    "calculate_v2_authoritative_result",
+]

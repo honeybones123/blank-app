@@ -8,10 +8,13 @@ It does not calculate, publish, render, mutate inputs, or execute Apply.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass
 from typing import Any, MutableMapping
 
-from application.contracts.design_brain import AuthoritativeDesignResult
+from application.contracts.design_brain import (
+    AuthoritativeDesignResult,
+    coerce_authoritative_design_result,
+)
 
 
 AUTHORITATIVE_DESIGN_RESULT_SESSION_KEY = "authoritative_design_result"
@@ -19,49 +22,6 @@ AUTHORITATIVE_DESIGN_RESULT_LAST_DECISION_KEY = "_authoritative_design_result_la
 AUTHORITATIVE_DESIGN_RESULT_REVISION_KEY = "_authoritative_design_result_input_revision"
 AUTHORITATIVE_DESIGN_RESULT_LRU_KEY = "_authoritative_design_result_lru_v1"
 AUTHORITATIVE_DESIGN_RESULT_LRU_MAX_ENTRIES = 8
-_AUTHORITATIVE_RESULT_FIELD_NAMES = frozenset(
-    field_info.name for field_info in fields(AuthoritativeDesignResult)
-)
-_AUTHORITATIVE_RESULT_COMPATIBILITY_MODULES = frozenset(
-    {
-        AuthoritativeDesignResult.__module__,
-        "design_brain.authority",
-    }
-)
-
-
-def _coerce_authoritative_design_result(
-    value: Any,
-) -> AuthoritativeDesignResult | None:
-    """Rebind a valid pre-hot-reload result to the current dataclass identity."""
-
-    if isinstance(value, AuthoritativeDesignResult):
-        return value
-    value_type = type(value)
-    if (
-        value_type.__module__ not in _AUTHORITATIVE_RESULT_COMPATIBILITY_MODULES
-        or value_type.__name__ != AuthoritativeDesignResult.__name__
-    ):
-        return None
-    to_dict = getattr(value, "to_dict", None)
-    if not callable(to_dict):
-        return None
-    try:
-        payload = to_dict()
-        if not isinstance(payload, dict):
-            return None
-        rebound = AuthoritativeDesignResult(
-            **{
-                key: payload[key]
-                for key in _AUTHORITATIVE_RESULT_FIELD_NAMES
-                if key in payload
-            }
-        )
-    except (KeyError, TypeError, ValueError):
-        return None
-    return rebound
-
-
 @dataclass(frozen=True)
 class DesignResultReuseDecision:
     """Pure decision record for whether a stored result can be reused."""
@@ -105,7 +65,7 @@ class EngineeringResultStore:
 
     def current(self) -> AuthoritativeDesignResult | None:
         result = self._session_state.get(self._result_key)
-        normalized = _coerce_authoritative_design_result(result)
+        normalized = coerce_authoritative_design_result(result)
         if normalized is not None and normalized is not result:
             self._session_state[self._result_key] = normalized
         return normalized
@@ -116,7 +76,7 @@ class EngineeringResultStore:
         *,
         source_input_revision: int | None = None,
     ) -> AuthoritativeDesignResult:
-        normalized = _coerce_authoritative_design_result(result)
+        normalized = coerce_authoritative_design_result(result)
         if normalized is None:
             raise TypeError("result must be an AuthoritativeDesignResult")
         self._session_state[self._result_key] = normalized
@@ -226,7 +186,7 @@ class EngineeringResultStore:
             return {}
         normalized: dict[str, AuthoritativeDesignResult] = {}
         for key, value in raw.items():
-            result = _coerce_authoritative_design_result(value)
+            result = coerce_authoritative_design_result(value)
             if result is not None and str(key) == result.engineering_hash:
                 normalized[str(key)] = result
         return normalized

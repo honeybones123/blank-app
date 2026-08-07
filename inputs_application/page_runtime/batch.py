@@ -26,7 +26,6 @@ from inputs_application.policy_constants import DESIGN_GUIDE_LAST_APPLY_ROUTE_KE
 
 from inputs_application.design_guide_fingerprint import DESIGN_GUIDE_ALGORITHM_VERSION
 
-from application.design_result_store import AuthoritativeDesignResultStore
 
 from application.design_run_coordinator import ensure_design_result
 
@@ -38,8 +37,6 @@ from inputs_application.state_utils import application_guidance_context, bottom_
 
 from inputs_application.recommendation_support import design_optimisation_goal_label, resolve_geometry_width_context, severe_shear_failure, shear_severity_band
 
-from inputs_application.recommendation_cache import resolve_popover_recommendation
-
 from inputs_application.recommendation_envelope import attach_recommendation_envelope, recommendation_blocked_reason
 
 from inputs_application.live_apply import execute_typed_apply
@@ -49,10 +46,6 @@ from inputs_application.post_apply_state import rehydrate_typed_post_apply_accep
 from inputs_application.guidance_ui_state import prepare_guidance_ui_state
 
 from inputs_application.design_guide_fingerprint import design_guide_fingerprint
-
-from inputs_application.recommendation_evaluation import effective_bottom_design_state, evaluate_bending_with_bottom_state, evaluate_shear_with_state
-
-from inputs_application.popover_recommendation_apply import execute_popover_recommendation_apply
 
 from inputs_application.shear_widget_reconciliation import ShearWidgetReconciliationRuntime, reconcile_shear_widgets_with_shared
 
@@ -72,6 +65,7 @@ from batch_design.ui.project_beam_manager_adapters import (
     build_schedule_preview_df as build_batch_schedule_preview_df,
     format_beam_status_badge as format_batch_beam_status_badge,
     format_last_checked as format_batch_last_checked,
+    publish_batch_design_results_to_beam_records,
     sync_beam_records_from_schedule_df as sync_batch_beam_records_from_schedule_df,
 )
 
@@ -91,11 +85,6 @@ from engineering_check_ui import BENDING_ROW_UID_TO_TAB, SHEAR_ROW_UID_TO_TAB
 
 from inputs_application.one_click_entrypoint import run_one_click_auto_design
 
-from inputs_application.guidance_entrypoint import (
-    build_guidance_entrypoint_runtime,
-    compute_inputs_guidance,
-)
-
 from inputs_page_modules.calculations import render_inputs_calculation_explainer_trace as render_inputs_calculation_explainer_trace_module
 
 from inputs_page_modules.diagrams import (
@@ -110,7 +99,7 @@ from inputs_page_modules.fragments import run_inputs_fragment
 
 from inputs_page_modules.diagrams.source_projection import build_section_outline_points_and_bbox as build_section_outline_points_and_bbox_module
 
-from inputs_application.design_guide_ui_boundary import (
+from inputs_application.v2_design_brain_ui_boundary import (
     DESIGN_GUIDE_APPLY_TRACE_RUN_ID_KEY,
     append_design_guide_trace as append_design_guide_trace_module,
     begin_design_guide_apply_trace,
@@ -146,8 +135,6 @@ from inputs_page_modules.session.longitudinal_reo_widget_sync import (
     reseed_inputs_longitudinal_reo_widgets_from_shared as reseed_inputs_longitudinal_reo_widgets_from_shared_module,
 )
 
-from inputs_page_modules.auto_design_routing import AutoDesignRoutingRuntime, handle_inputs_auto_design
-
 from inputs_page_modules.apply_routing import handle_inputs_apply_buttons
 
 from inputs_page_modules.landing import (
@@ -169,21 +156,13 @@ from inputs_page_modules.tail import (
     render_inputs_tail as render_inputs_tail_module,
 )
 
-from inputs_page_modules.recommendation_panels import (
-    render_bottom_recommendation_panel,
-    render_geometry_recommendation_panel,
-    render_shear_recommendation_panel,
-)
-
 from inputs_page_modules.summaries import render_inputs_summary_expanders_and_tables_current_coordinator
 
 from inputs_page_modules.summaries.render_coordinators import render_inputs_summary_container_current as render_inputs_summary_container_current_module
 
 from inputs_page_modules.summaries.display_state import render_inputs_summary_display_state as render_inputs_summary_display_state_module
 
-from inputs_application.design_guide_ui_boundary import should_render_design_guide_slot_from_publication_eligibility
-
-from inputs_page_modules.recommendation_runtime import compute_bottom_recommendation_for_page, compute_geometry_recommendation_for_page, compute_shear_recommendation_for_page
+from inputs_application.v2_design_brain_ui_boundary import should_render_design_guide_slot_from_publication_eligibility
 
 from inputs_page_modules.summaries.pipeline import render_inputs_summary_pipeline as render_inputs_summary_pipeline_module
 
@@ -244,6 +223,7 @@ from state_and_helpers import (
     get_param,
     get_widget_key_for_shared,
     build_legacy_longitudinal_mirrors_from_rows,
+    apply_beam_project_param_snapshot,
     hc_log as _state_hc_log,
     hc_try,
     hydrate_active_page_widgets_from_shared,
@@ -319,7 +299,6 @@ from inputs_application.page_runtime.common import (
     REO_SPACINGS,
     RESULT_CACHE_KEY,
     _AGENT_DEBUG_LOG_PATH,
-    _GUIDANCE_ENTRYPOINT_RUNTIME,
     _INPUTS_DEBUG_AUDIT,
     _INPUTS_DESIGN_ACTIONS_ANCHOR_ID,
     _INPUTS_PENDING_NAV_PAGE_SLUG_KEY,
@@ -377,6 +356,95 @@ def save_active_batch_beam_to_table() -> None:
     persist_active_beam_from_shared()
     st.session_state["_beam_skip_auto_persist_once"] = False
 
+
+def activate_batch_project_beam(beam_id: str) -> bool:
+    """Switch the active batch beam and commit its full input snapshot.
+
+    ``set_active_beam`` performs the storage hydration.  This coordinator is
+    the application boundary that also aligns the revisioned input snapshot,
+    ensuring every page sees the selected beam's actions, dimensions and
+    reinforcement immediately rather than waiting for a later widget edit.
+    """
+
+    changed = set_active_beam(beam_id)
+    if not changed:
+        return False
+    _apply_canonical_convenience_resync(
+        source="batch_design:activate_project_beam"
+    )
+    _request_inputs_engineering_commit("inputs_batch_design_activate_beam")
+    return True
+
+
+def publish_batch_design_results(results) -> set[str]:
+    """Persist V2 batch proposals and promote an active one to app state."""
+
+    updated_beam_ids = publish_batch_design_results_to_beam_records(results)
+    active_beam_id = str(st.session_state.get("active_beam_id") or "").strip()
+    if active_beam_id not in updated_beam_ids:
+        return updated_beam_ids
+
+    active_record = dict(
+        (st.session_state.get("beam_records") or {}).get(active_beam_id) or {}
+    )
+    meta = dict(active_record.get("meta") or {})
+    if not isinstance(meta.get("batch_design_applied_updates"), dict):
+        # V2 did not accept a proposal for this row. Keep its current
+        # engineering state untouched rather than manufacturing a new input
+        # revision from a failed/exhausted batch result.
+        return updated_beam_ids
+    params = dict(active_record.get("params") or {})
+    if not params:
+        return updated_beam_ids
+
+    # The Batch button is the explicit auto-design action.  Once V2 has
+    # accepted a proposal for the active member, hydrate the exact persisted
+    # result and commit it as the next authoritative input revision so all
+    # pages, diagrams and calculations immediately agree with the table.
+    apply_beam_project_param_snapshot(params)
+    _apply_canonical_convenience_resync(
+        source="batch_design:apply_active_verified_proposal"
+    )
+    # Give the Batch editor a fresh widget identity on its next render.
+    # Reusing its pre-design identity lets Streamlit replay the old table
+    # frame into auto-save, overwriting this proposal and causing a rerun
+    # loop.  The record above remains the sole authoritative source.
+    st.session_state["_batch_design_project_beam_editor_epoch"] = (
+        int(st.session_state.get("_batch_design_project_beam_editor_epoch", 0) or 0)
+        + 1
+    )
+    st.session_state["_force_hydrate_widgets_after_beam_load"] = True
+    _request_inputs_engineering_commit("inputs_batch_design_apply_proposal")
+    return updated_beam_ids
+
+
+def sync_batch_project_beam_editor_auto_save(schedule_df) -> set[str]:
+    """Commit project-table edits without a second manual save action.
+
+    The table owns the stored beam record.  When its active row changes, the
+    row is first hydrated into the shared input model and then promoted through
+    the same canonical input transaction used by ordinary Inputs widgets.
+    """
+
+    changed_beam_ids = sync_batch_beam_records_from_schedule_df(schedule_df)
+    if not changed_beam_ids:
+        return changed_beam_ids
+
+    active_beam_id = str(st.session_state.get("active_beam_id") or "").strip()
+    if active_beam_id and active_beam_id in changed_beam_ids:
+        record = dict(
+            (st.session_state.get("beam_records") or {}).get(active_beam_id)
+            or {}
+        )
+        apply_beam_project_param_snapshot(dict(record.get("params") or {}))
+        _request_inputs_engineering_commit(
+            "inputs_batch_design_project_beam_table",
+        )
+    else:
+        # Non-active rows still need to survive navigation/refresh immediately.
+        persist_state_snapshot()
+    return changed_beam_ids
+
 def render_inputs_beam_load_triggered_rerun_log_coordinator(reason: str) -> None:
     _record_inputs_rerun_trigger(
         "beam_load_triggered_rerun",
@@ -396,7 +464,7 @@ def render_inputs_batch_design_manager_coordinator(
             beam_order=beam_order,
             active_beam_id=active_beam_id,
             beam_labels=beam_labels,
-            set_active_beam=set_active_beam,
+            set_active_beam=activate_batch_project_beam,
             add_beam=add_new_beam_record,
             duplicate_beam=duplicate_active_beam_record,
             delete_beam=delete_beam_record,
@@ -407,7 +475,8 @@ def render_inputs_batch_design_manager_coordinator(
             apply_resync=_apply_canonical_convenience_resync,
             build_schedule_preview_df=build_batch_schedule_preview_df,
             build_schedule_editor_df=build_batch_beam_schedule_df,
-            sync_schedule_editor_df=sync_batch_beam_records_from_schedule_df,
+            sync_schedule_editor_df=sync_batch_project_beam_editor_auto_save,
+            publish_batch_design_results=publish_batch_design_results,
             build_schedule_export_df=build_batch_schedule_export_df,
             get_active_summary=get_active_beam_summary,
             format_status_badge=format_batch_beam_status_badge,

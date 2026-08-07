@@ -26,9 +26,10 @@ from inputs_application.policy_constants import DESIGN_GUIDE_LAST_APPLY_ROUTE_KE
 
 from inputs_application.design_guide_fingerprint import DESIGN_GUIDE_ALGORITHM_VERSION
 
-from application.design_result_store import AuthoritativeDesignResultStore
+from inputs_application.session_services import InputsSessionServices
 
 from application.design_run_coordinator import ensure_design_result
+from application.design_brain_port import DesignBrainRequest
 
 from application.engineering_snapshot import build_engineering_input_snapshot_from_resolved_state
 
@@ -37,8 +38,6 @@ from application.guidance_result_adapter import build_authoritative_design_resul
 from inputs_application.state_utils import application_guidance_context, bottom_reo_state_label, float_from_state, guidance_state_snapshot, shared_state_snapshot, shear_state_label, updates_match_state
 
 from inputs_application.recommendation_support import design_optimisation_goal_label, resolve_geometry_width_context, severe_shear_failure, shear_severity_band
-
-from inputs_application.recommendation_cache import resolve_popover_recommendation
 
 from inputs_application.recommendation_envelope import attach_recommendation_envelope, recommendation_blocked_reason
 
@@ -53,10 +52,6 @@ from inputs_application.guidance_ui_state import prepare_guidance_ui_state
 
 from inputs_application.design_guide_fingerprint import design_guide_fingerprint
 
-from inputs_application.recommendation_evaluation import effective_bottom_design_state, evaluate_bending_with_bottom_state, evaluate_shear_with_state
-
-from inputs_application.popover_recommendation_apply import execute_popover_recommendation_apply
-
 from inputs_application.shear_widget_reconciliation import ShearWidgetReconciliationRuntime, reconcile_shear_widgets_with_shared
 
 from inputs_application.summary_state_runtime import InputsSummaryStateRuntime, resolve_inputs_summary_state
@@ -67,20 +62,6 @@ from inputs_page_modules.app_bridge.canonical_convenience_resync import _apply_c
 from inputs_page_modules.app_bridge.canonical_design_state_pack import _build_canonical_design_state_pack_for_app_bridge as build_canonical_design_state_pack
 
 from bending_checks_helpers import build_bending_check_rows_from_state
-
-from batch_design.ui.project_beam_manager_adapters import (
-    beam_option_labels as build_batch_beam_option_labels,
-    build_beam_schedule_df as build_batch_beam_schedule_df,
-    build_schedule_export_df as build_batch_schedule_export_df,
-    build_schedule_preview_df as build_batch_schedule_preview_df,
-    format_beam_status_badge as format_batch_beam_status_badge,
-    format_last_checked as format_batch_last_checked,
-    sync_beam_records_from_schedule_df as sync_batch_beam_records_from_schedule_df,
-)
-
-from batch_design.design_brain_adapter import BatchDesignGuidanceAdapter
-
-from batch_design.ui.page import BatchDesignPageContext, render_batch_design_page
 
 from crack_checks_helpers import build_crack_check_rows_from_state, pick_governing_check_row
 
@@ -100,12 +81,7 @@ from engineering_check_ui import BENDING_ROW_UID_TO_TAB, SHEAR_ROW_UID_TO_TAB
 
 from inputs_application.one_click_entrypoint import run_one_click_auto_design
 
-from inputs_application.design_brain_composition import selected_design_brain_adapter_name
-
-from inputs_application.guidance_entrypoint import (
-    build_guidance_entrypoint_runtime,
-    compute_inputs_guidance,
-)
+from inputs_application.design_brain_composition import build_new_design_brain_service
 
 from inputs_page_modules.calculations import render_inputs_calculation_explainer_trace as render_inputs_calculation_explainer_trace_module
 
@@ -121,7 +97,7 @@ from inputs_page_modules.fragments import run_inputs_fragment
 
 from inputs_page_modules.diagrams.source_projection import build_section_outline_points_and_bbox as build_section_outline_points_and_bbox_module
 
-from inputs_application.design_guide_ui_boundary import (
+from inputs_application.v2_design_brain_ui_boundary import (
     DESIGN_GUIDE_APPLY_TRACE_RUN_ID_KEY,
     append_design_guide_trace as append_design_guide_trace_module,
     begin_design_guide_apply_trace,
@@ -157,8 +133,6 @@ from inputs_page_modules.session.longitudinal_reo_widget_sync import (
     reseed_inputs_longitudinal_reo_widgets_from_shared as reseed_inputs_longitudinal_reo_widgets_from_shared_module,
 )
 
-from inputs_page_modules.auto_design_routing import AutoDesignRoutingRuntime, handle_inputs_auto_design
-
 from inputs_page_modules.apply_routing import handle_inputs_apply_buttons
 
 from inputs_page_modules.landing import (
@@ -180,21 +154,13 @@ from inputs_page_modules.tail import (
     render_inputs_tail as render_inputs_tail_module,
 )
 
-from inputs_page_modules.recommendation_panels import (
-    render_bottom_recommendation_panel,
-    render_geometry_recommendation_panel,
-    render_shear_recommendation_panel,
-)
-
 from inputs_page_modules.summaries import render_inputs_summary_expanders_and_tables_current_coordinator
 
 from inputs_page_modules.summaries.render_coordinators import render_inputs_summary_container_current as render_inputs_summary_container_current_module
 
 from inputs_page_modules.summaries.display_state import render_inputs_summary_display_state as render_inputs_summary_display_state_module
 
-from inputs_application.design_guide_ui_boundary import should_render_design_guide_slot_from_publication_eligibility
-
-from inputs_page_modules.recommendation_runtime import compute_bottom_recommendation_for_page, compute_geometry_recommendation_for_page, compute_shear_recommendation_for_page
+from inputs_application.v2_design_brain_ui_boundary import should_render_design_guide_slot_from_publication_eligibility
 
 from inputs_page_modules.summaries.pipeline import render_inputs_summary_pipeline as render_inputs_summary_pipeline_module
 
@@ -451,15 +417,7 @@ MODEL_RENDER_FINGERPRINT_KEYS = PRIMARY_GEOMETRY_KEYS | {
     "bot_flange_transverse_legs",
 }
 
-_GUIDANCE_ENTRYPOINT_RUNTIME = (
-    build_guidance_entrypoint_runtime(
-        st_module=st,
-        os_module=os,
-        sys_module=sys,
-    )
-    if selected_design_brain_adapter_name() == "legacy"
-    else None
-)
+_V2_BATCH_DESIGN_BRAIN_SERVICE = None
 
 DEBUG_DESIGN_GUIDANCE_PROBE = True
 
@@ -470,15 +428,118 @@ def _compute_design_guidance_items(
     debug_enabled: bool = False,
     request_kind: str = "design_guide",
 ) -> dict:
-    if _GUIDANCE_ENTRYPOINT_RUNTIME is None:
-        raise RuntimeError("legacy guidance compute is unavailable when V2 is selected")
-    return compute_inputs_guidance(
-        _GUIDANCE_ENTRYPOINT_RUNTIME,
-        state,
-        guidance_debug_verbose=guidance_debug_verbose,
-        debug_enabled=debug_enabled,
-        request_kind=request_kind,
+    """Run the same V2 Design Brain used by the main Inputs card.
+
+    Batch Design historically called the retired V1 guidance runner.  Under
+    the V2-only composition that function returned an empty compatibility
+    payload, so batch rows silently bypassed the authoritative Design Brain.
+    Keep the batch adapter's dictionary shape, but derive every value from the
+    neutral service result instead of reintroducing a second calculator.
+    """
+
+    del guidance_debug_verbose, debug_enabled, request_kind
+    if not isinstance(state, dict):
+        raise TypeError("design guidance state must be a dictionary")
+    global _V2_BATCH_DESIGN_BRAIN_SERVICE
+    if _V2_BATCH_DESIGN_BRAIN_SERVICE is None:
+        _V2_BATCH_DESIGN_BRAIN_SERVICE = build_new_design_brain_service()
+    snapshot = build_engineering_input_snapshot_from_resolved_state(state)
+    revision = int(
+        state.get("_inputs_workspace_revision")
+        or state.get("input_revision")
+        or state.get("_inputs_input_revision")
+        or 1
     )
+    execution = _V2_BATCH_DESIGN_BRAIN_SERVICE.run(
+        DesignBrainRequest(
+            engineering_snapshot=snapshot,
+            resolved_inputs=dict(state),
+            input_revision=revision,
+        )
+    )
+    result = execution.result
+    payload = guidance_payload_from_authoritative_design_result(result)
+    calculations = dict(result.current_calculations or {})
+    # A reviewed batch run is asking V2 to design the member, not merely to
+    # report the capacity of its starting geometry.  When V2 has accepted a
+    # proposal, it has already published verified post-proposal packs at the
+    # adapter boundary.  Consume those exact packs; otherwise retain the
+    # current-result packs so an exhausted/blocked candidate remains visible
+    # as a failure instead of being represented as a passing redesign.
+    candidate_evaluation = (
+        dict(result.candidate_evaluation)
+        if isinstance(result.candidate_evaluation, dict)
+        else {}
+    )
+    candidate_accepted = bool(
+        isinstance(result.selected_candidate, dict)
+        and candidate_evaluation.get("accepted")
+    )
+    packs_key = "proposed_packs" if candidate_accepted else "packs"
+    packs = dict(calculations.get(packs_key) or calculations.get("packs") or {})
+
+    def _number(value: Any) -> float | None:
+        try:
+            if value in (None, "", "—", "-"):
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    statuses: dict[str, str] = {}
+    utilisations: list[float] = []
+    for family, pack in packs.items():
+        if not isinstance(pack, dict):
+            continue
+        rows = list(pack.get("rows") or [])
+        status = str(pack.get("summary_status") or "").strip().upper()
+        if not status and rows and isinstance(rows[0], dict):
+            status = str(rows[0].get("status") or "").strip().upper()
+        if status:
+            statuses[str(family)] = status
+        util = _number(pack.get("summary_util"))
+        if util is None:
+            util = _number(pack.get("summary_util_total"))
+        if util is None and rows and isinstance(rows[0], dict):
+            util = _number(rows[0].get("util"))
+        if util is not None:
+            utilisations.append(util)
+    worst_util = max(utilisations, default=None)
+    any_fail = any(status == "FAIL" for status in statuses.values())
+    selected = dict(result.selected_candidate or {})
+    overview = {
+        "statuses": statuses,
+        "any_fail": any_fail,
+        "all_key_pass": not any_fail,
+        "worst_util": worst_util,
+    }
+    payload["debug_trace"] = {
+        "overview": overview,
+        "source": "inputs_v2",
+        "result_basis": "verified_v2_proposal" if candidate_accepted else "current_design",
+        "input_revision": revision,
+        "engineering_hash": result.engineering_hash,
+    }
+    payload["design_brain_result"] = {
+        "selected_candidate_label": (
+            selected.get("candidate_id")
+            or selected.get("label")
+            or result.governing_family
+        ),
+        "selected_section": selected.get("section"),
+        "utilisation": worst_util,
+        "result_basis": "verified_v2_proposal" if candidate_accepted else "current_design",
+        # Batch Design owns the member records, so carry V2's exact
+        # approved changes across this neutral adapter boundary.  The batch
+        # publisher can then update the selected member without reproducing
+        # V2 candidate generation or guessing reinforcement values.
+        "selected_updates": (
+            dict(result.selected_updates) if candidate_accepted else {}
+        ),
+        "selected_candidate": selected if candidate_accepted else {},
+        "source": "inputs_v2",
+    }
+    return payload
 
 def log_debug(message, value=None):
     print(f"[INPUTS DEBUG] {message}: {value}")
@@ -593,7 +654,10 @@ def _handle_inputs_apply_buttons_current_coordinator() -> None:
     )
 
 def _execute_authoritative_apply_current_coordinator(recommendation: dict[str, Any]) -> str:
-    current_result = AuthoritativeDesignResultStore(st.session_state).current()
+    result_store = InputsSessionServices.from_mapping(
+        st.session_state
+    ).engineering_results
+    current_result = result_store.current()
     typed = execute_typed_apply(
         session_state=st.session_state,
         current_result=current_result,
@@ -609,7 +673,7 @@ def _execute_authoritative_apply_current_coordinator(recommendation: dict[str, A
         "updates": dict(typed.mutation.updates) if typed.mutation else {},
     }
     if command.status in {"dispatch_ok", "rerun_required"}:
-        AuthoritativeDesignResultStore(st.session_state).clear()
+        result_store.clear()
         st.session_state[
             "_inputs_authoritative_result_snapshot_update_pending"
         ] = True

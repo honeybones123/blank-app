@@ -6,6 +6,7 @@ from typing import Mapping
 
 from application.design_brain_port import DesignBrainRequest
 from application.design_brain_service import DesignBrainService
+from application.contracts.design_brain import AuthoritativeDesignResult, EngineeringInputSnapshot
 from inputs_application.replacement_design_brain_adapter import (
     ReplacementDesignBrainAdapter,
     ReplacementResultMapper,
@@ -58,6 +59,27 @@ def build_new_design_brain_service(*, source_root=None) -> DesignBrainService:
     return DesignBrainService(NewDesignBrainAdapter(source_root=source_root))
 
 
+def calculate_v2_authoritative_result(
+    *,
+    source_root=None,
+    engineering_snapshot: EngineeringInputSnapshot,
+    resolved_inputs,
+    input_revision: int,
+) -> AuthoritativeDesignResult:
+    """Expose the V2 calculation sibling without leaking its concrete module."""
+
+    from inputs_application.new_design_brain_adapter import (
+        calculate_v2_authoritative_result as calculate,
+    )
+
+    return calculate(
+        source_root=source_root,
+        engineering_snapshot=engineering_snapshot,
+        resolved_inputs=resolved_inputs,
+        input_revision=input_revision,
+    )
+
+
 def build_browser_publication_probe(
     *,
     item: Mapping[str, object],
@@ -84,6 +106,7 @@ __all__ = [
     "build_browser_publication_probe",
     "build_design_brain_service",
     "build_new_design_brain_service",
+    "calculate_v2_authoritative_result",
     "build_replacement_design_brain_service",
     "selected_design_brain_adapter_name",
 ]

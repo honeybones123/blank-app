@@ -26,7 +26,6 @@ from inputs_application.policy_constants import DESIGN_GUIDE_LAST_APPLY_ROUTE_KE
 
 from inputs_application.design_guide_fingerprint import DESIGN_GUIDE_ALGORITHM_VERSION
 
-from application.design_result_store import AuthoritativeDesignResultStore
 
 from application.design_run_coordinator import ensure_design_result
 
@@ -38,8 +37,6 @@ from inputs_application.state_utils import application_guidance_context, bottom_
 
 from inputs_application.recommendation_support import design_optimisation_goal_label, resolve_geometry_width_context, severe_shear_failure, shear_severity_band
 
-from inputs_application.recommendation_cache import resolve_popover_recommendation
-
 from inputs_application.recommendation_envelope import attach_recommendation_envelope, recommendation_blocked_reason
 
 from inputs_application.live_apply import execute_typed_apply
@@ -49,10 +46,6 @@ from inputs_application.post_apply_state import rehydrate_typed_post_apply_accep
 from inputs_application.guidance_ui_state import prepare_guidance_ui_state
 
 from inputs_application.design_guide_fingerprint import design_guide_fingerprint
-
-from inputs_application.recommendation_evaluation import effective_bottom_design_state, evaluate_bending_with_bottom_state, evaluate_shear_with_state
-
-from inputs_application.popover_recommendation_apply import execute_popover_recommendation_apply
 
 from inputs_application.shear_widget_reconciliation import ShearWidgetReconciliationRuntime, reconcile_shear_widgets_with_shared
 
@@ -65,20 +58,6 @@ from inputs_page_modules.app_bridge.canonical_design_state_pack import _build_ca
 
 from bending_checks_helpers import build_bending_check_rows_from_state
 
-from batch_design.ui.project_beam_manager_adapters import (
-    beam_option_labels as build_batch_beam_option_labels,
-    build_beam_schedule_df as build_batch_beam_schedule_df,
-    build_schedule_export_df as build_batch_schedule_export_df,
-    build_schedule_preview_df as build_batch_schedule_preview_df,
-    format_beam_status_badge as format_batch_beam_status_badge,
-    format_last_checked as format_batch_last_checked,
-    sync_beam_records_from_schedule_df as sync_batch_beam_records_from_schedule_df,
-)
-
-from batch_design.design_brain_adapter import BatchDesignGuidanceAdapter
-
-from batch_design.ui.page import BatchDesignPageContext, render_batch_design_page
-
 from crack_checks_helpers import build_crack_check_rows_from_state, pick_governing_check_row
 
 from deflection_checks_helpers import build_deflection_check_rows_from_state
@@ -90,11 +69,6 @@ from application.contracts.family_classification import load_family_classificati
 from engineering_check_ui import BENDING_ROW_UID_TO_TAB, SHEAR_ROW_UID_TO_TAB
 
 from inputs_application.one_click_entrypoint import run_one_click_auto_design
-
-from inputs_application.guidance_entrypoint import (
-    build_guidance_entrypoint_runtime,
-    compute_inputs_guidance,
-)
 
 from inputs_page_modules.calculations import render_inputs_calculation_explainer_trace as render_inputs_calculation_explainer_trace_module
 
@@ -110,13 +84,13 @@ from inputs_page_modules.fragments import run_inputs_fragment
 
 from inputs_page_modules.diagrams.source_projection import build_section_outline_points_and_bbox as build_section_outline_points_and_bbox_module
 
-from inputs_application.design_guide_ui_boundary import render_design_guide_panel_orchestration
+from inputs_application.v2_design_brain_ui_boundary import render_design_guide_panel_orchestration
 
-from inputs_application.design_guide_ui_boundary import render_design_guide_debug_sidebar
+from inputs_application.v2_design_brain_ui_boundary import render_design_guide_debug_sidebar
 
-from inputs_application.design_guide_ui_boundary import append_design_guide_trace as append_design_guide_trace_module, design_guide_tracer_path as design_guide_tracer_path_module, design_guide_tracer_verbose_log as design_guide_tracer_verbose_log_module
+from inputs_application.v2_design_brain_ui_boundary import append_design_guide_trace as append_design_guide_trace_module, design_guide_tracer_path as design_guide_tracer_path_module, design_guide_tracer_verbose_log as design_guide_tracer_verbose_log_module
 
-from inputs_application.design_guide_ui_boundary import DESIGN_GUIDE_APPLY_TRACE_RUN_ID_KEY, begin_design_guide_apply_trace, end_design_guide_apply_trace, set_design_guide_live_breadcrumb
+from inputs_application.v2_design_brain_ui_boundary import DESIGN_GUIDE_APPLY_TRACE_RUN_ID_KEY, begin_design_guide_apply_trace, end_design_guide_apply_trace, set_design_guide_live_breadcrumb
 
 from inputs_application.state_projection import (
     build_auto_design_governing_fingerprint as build_auto_design_governing_fingerprint_module,
@@ -142,8 +116,6 @@ from inputs_page_modules.session.longitudinal_reo_widget_sync import (
     reseed_inputs_longitudinal_reo_widgets_from_shared as reseed_inputs_longitudinal_reo_widgets_from_shared_module,
 )
 
-from inputs_page_modules.auto_design_routing import AutoDesignRoutingRuntime, handle_inputs_auto_design
-
 from inputs_page_modules.apply_routing import handle_inputs_apply_buttons
 
 from inputs_page_modules.landing import (
@@ -165,21 +137,13 @@ from inputs_page_modules.tail import (
     render_inputs_tail as render_inputs_tail_module,
 )
 
-from inputs_page_modules.recommendation_panels import (
-    render_bottom_recommendation_panel,
-    render_geometry_recommendation_panel,
-    render_shear_recommendation_panel,
-)
-
 from inputs_page_modules.summaries import render_inputs_summary_expanders_and_tables_current_coordinator
 
 from inputs_page_modules.summaries.render_coordinators import render_inputs_summary_container_current as render_inputs_summary_container_current_module
 
 from inputs_page_modules.summaries.display_state import render_inputs_summary_display_state as render_inputs_summary_display_state_module
 
-from inputs_application.design_guide_ui_boundary import should_render_design_guide_slot_from_publication_eligibility
-
-from inputs_page_modules.recommendation_runtime import compute_bottom_recommendation_for_page, compute_geometry_recommendation_for_page, compute_shear_recommendation_for_page
+from inputs_application.v2_design_brain_ui_boundary import should_render_design_guide_slot_from_publication_eligibility
 
 from inputs_page_modules.summaries.pipeline import render_inputs_summary_pipeline as render_inputs_summary_pipeline_module
 
@@ -315,7 +279,6 @@ from inputs_application.page_runtime.common import (
     REO_SPACINGS,
     RESULT_CACHE_KEY,
     _AGENT_DEBUG_LOG_PATH,
-    _GUIDANCE_ENTRYPOINT_RUNTIME,
     _INPUTS_DEBUG_AUDIT,
     _INPUTS_DESIGN_ACTIONS_ANCHOR_ID,
     _INPUTS_PENDING_NAV_PAGE_SLUG_KEY,
@@ -367,6 +330,11 @@ from inputs_application.page_runtime.common import (
 )
 
 def _handle_inputs_auto_design_current_coordinator() -> None:
+    from inputs_page_modules.auto_design_routing import (
+        AutoDesignRoutingRuntime,
+        handle_inputs_auto_design,
+    )
+
     handle_inputs_auto_design(
         st_module=st,
         stderr=sys.stderr,
