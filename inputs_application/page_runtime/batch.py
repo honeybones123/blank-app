@@ -405,6 +405,14 @@ def publish_batch_design_results(results) -> set[str]:
     _apply_canonical_convenience_resync(
         source="batch_design:apply_active_verified_proposal"
     )
+    # Batch Run redraws inside the Inputs fragment.  A fragment redraw does
+    # not pass through app.py's top-level widget hydration, leaving the old
+    # ``inputs_*`` values able to win the model-preview overlay even though
+    # the calculation has already committed the V2 proposal.  Reseed now,
+    # from this exact active-beam snapshot, before the local redraw.
+    _force_inputs_apply_refresh_cycle(
+        "batch_design:apply_active_verified_proposal"
+    )
     # Give the Batch editor a fresh widget identity on its next render.
     # Reusing its pre-design identity lets Streamlit replay the old table
     # frame into auto-save, overwriting this proposal and causing a rerun
