@@ -136,7 +136,22 @@ def _section_label(row: dict[str, Any]) -> str | None:
 
 
 def _has_supplied_action(row: dict[str, Any]) -> bool:
-    return any(not _blank(row.get(column)) for column in ACTION_COLUMNS)
+    """Include only beams with a meaningful design action.
+
+    Empty project rows are displayed as zeroes by the editable table. Those
+    zeroes are placeholders, not a request to send an invalid all-zero member
+    to Batch Design. A non-numeric value remains included so validation can
+    report the actual data-entry problem instead of hiding it.
+    """
+
+    for column in ACTION_COLUMNS:
+        value = _number_or_original(row.get(column))
+        if isinstance(value, (int, float)):
+            if abs(float(value)) > 1e-9:
+                return True
+        elif value is not None:
+            return True
+    return False
 
 
 def project_beam_load_editor_frame(
