@@ -347,9 +347,21 @@ def publish_batch_design_results_to_beam_records(results) -> set[str]:
         meta = record.get("meta") if isinstance(record.get("meta"), dict) else {}
         meta["batch_design_published_at"] = timestamp
         if passed is True and auto_design_source_beam_id:
+            source_record = beam_records.get(auto_design_source_beam_id)
+            source_label = (
+                str(source_record.get("beam_label") or auto_design_source_beam_id).strip()
+                if isinstance(source_record, dict)
+                else auto_design_source_beam_id
+            )
+            # Auto assignment reuses this source beam's full physical design.
+            # Make the relationship immediately visible by adopting its Beam
+            # Label, while preserving this row's immutable Beam ID/actions.
+            record["beam_label"] = source_label
             meta["auto_design_source_beam_id"] = auto_design_source_beam_id
+            meta["auto_design_source_beam_label"] = source_label
         else:
             meta.pop("auto_design_source_beam_id", None)
+            meta.pop("auto_design_source_beam_label", None)
         if proposal_updates:
             meta["batch_design_candidate_id"] = str(
                 design_brain_result.get("selected_candidate", {}).get("candidate_id")
