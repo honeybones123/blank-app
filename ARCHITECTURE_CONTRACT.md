@@ -56,6 +56,11 @@ Calculations receive an explicit immutable input snapshot and return an explicit
 
 Design Brain receives an explicit engineering snapshot/result and returns typed pipeline outputs. It does not import page modules or read `st.session_state`.
 
+The concrete V2 implementation is supplied by the installed
+`beamapp-inputs-v2` distribution. Runtime may depend only on the neutral
+application contracts and its adapter; it must not locate a V2 checkout,
+insert a V2 source directory into `sys.path`, or select a legacy Design Brain.
+
 The only allowed pipeline order is:
 
 1. snapshot validation;

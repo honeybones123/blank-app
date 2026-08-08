@@ -243,7 +243,6 @@ def _render_design_check_summary(
     snapshot = build_engineering_input_snapshot_from_resolved_state(design_state)
     try:
         authoritative = calculate_v2_authoritative_result(
-            source_root=None,
             engineering_snapshot=snapshot,
             resolved_inputs=design_state,
             input_revision=int(services.input_snapshots.current().revision or 0),

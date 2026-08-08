@@ -27,13 +27,12 @@ def build_design_brain_service(
     guidance_provider=None,
     *,
     adapter_name: str | None = None,
-    source_root=None,
 ) -> DesignBrainService:
     """Build the application service backed exclusively by V2."""
 
     del guidance_provider
     selected_design_brain_adapter_name(adapter_name)
-    return build_new_design_brain_service(source_root=source_root)
+    return build_new_design_brain_service()
 
 
 def build_replacement_design_brain_service(
@@ -51,17 +50,16 @@ def build_replacement_design_brain_service(
     )
 
 
-def build_new_design_brain_service(*, source_root=None) -> DesignBrainService:
+def build_new_design_brain_service() -> DesignBrainService:
     """Compose the isolated V2 implementation at the sole concrete boundary."""
 
     from inputs_application.new_design_brain_adapter import NewDesignBrainAdapter
 
-    return DesignBrainService(NewDesignBrainAdapter(source_root=source_root))
+    return DesignBrainService(NewDesignBrainAdapter())
 
 
 def calculate_v2_authoritative_result(
     *,
-    source_root=None,
     engineering_snapshot: EngineeringInputSnapshot,
     resolved_inputs,
     input_revision: int,
@@ -73,7 +71,6 @@ def calculate_v2_authoritative_result(
     )
 
     return calculate(
-        source_root=source_root,
         engineering_snapshot=engineering_snapshot,
         resolved_inputs=resolved_inputs,
         input_revision=input_revision,

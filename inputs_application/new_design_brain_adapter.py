@@ -12,9 +12,6 @@ inputs, results, publication, display, or Apply semantics.
 from __future__ import annotations
 
 from dataclasses import asdict, replace
-import os
-from pathlib import Path
-import sys
 from typing import Any, Mapping
 
 from application.contracts.design_brain import (
@@ -25,12 +22,6 @@ from application.contracts.design_brain import (
 )
 from application.design_brain_port import DesignBrainExecution, DesignBrainRequest
 from application.v2_source_manifest import source_manifest_hash
-
-
-V2_SOURCE_ROOT_ENV = "INPUTS_V2_SOURCE_ROOT"
-DEFAULT_V2_SOURCE_ROOT = Path(
-    r"C:\Users\jonathon\Documents\Codex\2026-08-03\why\work\inputs-v2-lab"
-)
 
 
 def _mapping(value: Any) -> dict[str, Any]:
@@ -98,15 +89,8 @@ def _merge_primary(primary: Mapping[str, Any], fallback: Mapping[str, Any]) -> d
     return merged
 
 
-def _v2_api(source_root: Path):
-    """Load V2 modules lazily at the single composition boundary."""
-
-    src_root = source_root / "src"
-    if not src_root.is_dir():
-        raise FileNotFoundError(f"V2 source directory does not exist: {src_root}")
-    src_text = str(src_root.resolve())
-    if src_text not in sys.path:
-        sys.path.insert(0, src_text)
+def _v2_api():
+    """Load the installed V2 distribution at the single composition boundary."""
 
     from inputs_v2.application.design_guide_orchestrator import (  # noqa: PLC0415
         DesignGuideOrchestrator,
@@ -928,7 +912,6 @@ def _neutral_publication_projection(
 
 def calculate_v2_authoritative_result(
     *,
-    source_root: Path | str | None,
     engineering_snapshot: EngineeringInputSnapshot,
     resolved_inputs: Mapping[str, Any],
     input_revision: int,
@@ -940,7 +923,7 @@ def calculate_v2_authoritative_result(
     adapter, but publishes only engineering families and summary packs.
     """
 
-    api = _v2_api(Path(source_root) if source_root else DEFAULT_V2_SOURCE_ROOT)
+    api = _v2_api()
     current, _row_counts, serviceability_loads = _beam_inputs_from_snapshot(
         engineering_snapshot,
         api,
@@ -954,9 +937,7 @@ def calculate_v2_authoritative_result(
         raise ValueError("V2 calculation result is stale")
     calculated = publication.result
     families = dict(calculated.families)
-    manifest = source_manifest_hash(
-        Path(source_root) if source_root else DEFAULT_V2_SOURCE_ROOT
-    )
+    manifest = source_manifest_hash()
     current_calculations = {
         "source": "inputs_v2",
         "actions_used": _actions_used_projection(current),
@@ -981,10 +962,6 @@ def calculate_v2_authoritative_result(
 class NewDesignBrainAdapter:
     """Adapt the isolated V2 orchestrator to the neutral application port."""
 
-    def __init__(self, *, source_root: Path | str | None = None) -> None:
-        configured = source_root or os.environ.get(V2_SOURCE_ROOT_ENV)
-        self._source_root = Path(configured) if configured else DEFAULT_V2_SOURCE_ROOT
-
     def run(self, request: DesignBrainRequest) -> DesignBrainExecution:
         # Streamlit can retain a fragment callback while reloading an
         # application module. In that narrow case the callback may carry an
@@ -1006,8 +983,8 @@ class NewDesignBrainAdapter:
             raise TypeError("request must be a DesignBrainRequest")
         if request.input_revision is None:
             raise ValueError("V2 adapter requires an input revision")
-        api = _v2_api(self._source_root)
-        v2_source_manifest = source_manifest_hash(self._source_root)
+        api = _v2_api()
+        v2_source_manifest = source_manifest_hash()
         current, row_counts, serviceability_loads = _beam_inputs_from_snapshot(
             request.engineering_snapshot,
             api,
@@ -1232,8 +1209,6 @@ class NewDesignBrainAdapter:
 
 
 __all__ = [
-    "DEFAULT_V2_SOURCE_ROOT",
     "NewDesignBrainAdapter",
-    "V2_SOURCE_ROOT_ENV",
     "calculate_v2_authoritative_result",
 ]
