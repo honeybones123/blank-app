@@ -76,6 +76,7 @@ from calculations.deflection import (
 
 
 from engineering_page_sections import design_inputs as _design_inputs_section
+from engineering_page_sections import design_check_summary_policy as _summary_policy
 _agent_debug_log = _design_inputs_section._agent_debug_log
 _label_with_hover = _design_inputs_section._label_with_hover
 _span_from_inputs = _design_inputs_section._span_from_inputs
@@ -321,13 +322,13 @@ def _render_design_check_summary(
             status = "PASS"
         return f"{utilisation:.2f}", status
 
-    resolved_bending_utilisation, resolved_bending_status = _header_check_state(
+    resolved_bending_utilisation, resolved_bending_status = _summary_policy.resolve_header_check_state(
         bending_action,
         bending_capacity,
         bending_utilisation,
         bending_rows,
     )
-    resolved_shear_utilisation, resolved_shear_status = _header_check_state(
+    resolved_shear_utilisation, resolved_shear_status = _summary_policy.resolve_header_check_state(
         shear_action,
         shear_capacity,
         shear_utilisation,
@@ -353,18 +354,18 @@ def _render_design_check_summary(
             str(primary.get("status") or "INFO"),
         )
 
-    crack_cap, crack_action, crack_util, crack_status = _serviceability_values(
+    crack_cap, crack_action, crack_util, crack_status = _summary_policy.serviceability_values(
         crack_rows,
         preferred_title="Direct crack width check",
     )
-    defl_cap, defl_action, defl_util, defl_status = _serviceability_values(deflection_rows)
+    defl_cap, defl_action, defl_util, defl_status = _summary_policy.serviceability_values(deflection_rows)
     scenario_id = str(st.session_state.get("active_beam_id") or "design")
     source = InputsSummarySourceSnapshot(
         scenario_id=scenario_id,
         scenario_label=scenario_id,
         bending=InputsSummaryCardSource(
             family="bending", title="Bending &mdash; ULS check",
-            capacity=_strength(bending_capacity, "kNm"),
+            capacity=_summary_policy.format_strength(bending_capacity, "kNm"),
             action=f"Mu* = {bending_action:.2f} kNm",
             utilisation=resolved_bending_utilisation, status=resolved_bending_status,
             rows=tuple(bending_rows), capacity_label="Calculated capacity",
@@ -372,7 +373,7 @@ def _render_design_check_summary(
         ),
         shear=InputsSummaryCardSource(
             family="shear", title="Shear &mdash; ULS check",
-            capacity=_strength(shear_capacity, "kN"),
+            capacity=_summary_policy.format_strength(shear_capacity, "kN"),
             action=f"V* = {shear_action:.2f} kN",
             utilisation=resolved_shear_utilisation, status=resolved_shear_status,
             rows=tuple(shear_rows), capacity_label="Calculated capacity",
