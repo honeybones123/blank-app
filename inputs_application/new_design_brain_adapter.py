@@ -98,8 +98,8 @@ def _v2_api():
     from inputs_v2.application.calculation_coordinator import (  # noqa: PLC0415
         CalculationCoordinator,
     )
-    from inputs_v2.engineering.legacy_snapshot_calculator import (  # noqa: PLC0415
-        LegacySnapshotCalculator,
+    from inputs_v2.engineering.engineering_calculator import (  # noqa: PLC0415
+        EngineeringCalculator,
     )
     from inputs_v2.domain.beam_inputs import (  # noqa: PLC0415
         ActionInputs,
@@ -132,7 +132,7 @@ def _v2_api():
     return {
         "DesignGuideOrchestrator": DesignGuideOrchestrator,
         "CalculationCoordinator": CalculationCoordinator,
-        "LegacySnapshotCalculator": LegacySnapshotCalculator,
+        "EngineeringCalculator": EngineeringCalculator,
         "ActionInputs": ActionInputs,
         "BeamInputs": BeamInputs,
         "DeflectionInputs": DeflectionInputs,
@@ -931,7 +931,7 @@ def calculate_v2_authoritative_result(
         resolved_inputs,
     )
     publication = api["CalculationCoordinator"](
-        api["LegacySnapshotCalculator"]()
+        api["EngineeringCalculator"]()
     ).calculate_current(current)
     if publication.stale or publication.result is None:
         raise ValueError("V2 calculation result is stale")
@@ -1023,7 +1023,7 @@ class NewDesignBrainAdapter:
             # calculation remains available to the summary region.
             candidate = None
             before = api["CalculationCoordinator"](
-                api["LegacySnapshotCalculator"]()
+                api["EngineeringCalculator"]()
             ).calculate_current(current).result
             if before is None:
                 raise ValueError("V2 calculation did not produce a current no-load result")
