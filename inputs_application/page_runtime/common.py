@@ -29,11 +29,8 @@ from inputs_application.design_guide_fingerprint import DESIGN_GUIDE_ALGORITHM_V
 from inputs_application.session_services import InputsSessionServices
 
 from application.design_run_coordinator import ensure_design_result
-from application.design_brain_port import DesignBrainRequest
 
-from application.engineering_snapshot import build_engineering_input_snapshot_from_resolved_state
 
-from application.guidance_result_adapter import build_authoritative_design_result_from_guidance_payload, guidance_payload_from_authoritative_design_result
 
 from inputs_application.state_utils import application_guidance_context, bottom_reo_state_label, float_from_state, guidance_state_snapshot, shared_state_snapshot, shear_state_label, updates_match_state
 
@@ -81,7 +78,9 @@ from engineering_check_ui import BENDING_ROW_UID_TO_TAB, SHEAR_ROW_UID_TO_TAB
 
 from inputs_application.one_click_entrypoint import run_one_click_auto_design
 
-from inputs_application.design_brain_composition import build_new_design_brain_service
+from inputs_application.batch_design_guidance import (
+    compute_design_guidance_items as _compute_design_guidance_items,
+)
 
 from inputs_page_modules.calculations import render_inputs_calculation_explainer_trace as render_inputs_calculation_explainer_trace_module
 
@@ -157,8 +156,8 @@ from inputs_page_modules.tail import (
 from inputs_page_modules.summaries import render_inputs_summary_expanders_and_tables_current_coordinator
 
 from inputs_page_modules.summaries.render_coordinators import render_inputs_summary_container_current as render_inputs_summary_container_current_module
-
 from inputs_page_modules.summaries.display_state import render_inputs_summary_display_state as render_inputs_summary_display_state_module
+
 
 from inputs_application.v2_design_brain_ui_boundary import should_render_design_guide_slot_from_publication_eligibility
 
@@ -417,142 +416,8 @@ MODEL_RENDER_FINGERPRINT_KEYS = PRIMARY_GEOMETRY_KEYS | {
     "bot_flange_transverse_legs",
 }
 
-_V2_BATCH_DESIGN_BRAIN_SERVICE = None
-
 DEBUG_DESIGN_GUIDANCE_PROBE = True
 
-def _compute_design_guidance_items(
-    state: dict,
-    *,
-    guidance_debug_verbose: bool | None = None,
-    debug_enabled: bool = False,
-    request_kind: str = "design_guide",
-) -> dict:
-    """Run the same V2 Design Brain used by the main Inputs card.
-
-    Batch Design historically called the retired V1 guidance runner.  Under
-    the V2-only composition that function returned an empty compatibility
-    payload, so batch rows silently bypassed the authoritative Design Brain.
-    Keep the batch adapter's dictionary shape, but derive every value from the
-    neutral service result instead of reintroducing a second calculator.
-    """
-
-    del guidance_debug_verbose, debug_enabled
-    if not isinstance(state, dict):
-        raise TypeError("design guidance state must be a dictionary")
-    global _V2_BATCH_DESIGN_BRAIN_SERVICE
-    if _V2_BATCH_DESIGN_BRAIN_SERVICE is None:
-        _V2_BATCH_DESIGN_BRAIN_SERVICE = build_new_design_brain_service()
-    snapshot = build_engineering_input_snapshot_from_resolved_state(state)
-    revision = int(
-        state.get("_inputs_workspace_revision")
-        or state.get("input_revision")
-        or state.get("_inputs_input_revision")
-        or 1
-    )
-    execution = _V2_BATCH_DESIGN_BRAIN_SERVICE.run(
-        DesignBrainRequest(
-            engineering_snapshot=snapshot,
-            resolved_inputs=dict(state),
-            input_revision=revision,
-        )
-    )
-    result = execution.result
-    payload = guidance_payload_from_authoritative_design_result(result)
-    calculations = dict(result.current_calculations or {})
-    # A reviewed batch run is asking V2 to design the member, not merely to
-    # report the capacity of its starting geometry.  When V2 has accepted a
-    # proposal, it has already published verified post-proposal packs at the
-    # adapter boundary.  Consume those exact packs; otherwise retain the
-    # current-result packs so an exhausted/blocked candidate remains visible
-    # as a failure instead of being represented as a passing redesign.
-    candidate_evaluation = (
-        dict(result.candidate_evaluation)
-        if isinstance(result.candidate_evaluation, dict)
-        else {}
-    )
-    template_assignment = request_kind == "template_assignment"
-    candidate_accepted = not template_assignment and bool(
-        isinstance(result.selected_candidate, dict)
-        and candidate_evaluation.get("accepted")
-    )
-    packs_key = "proposed_packs" if candidate_accepted else "packs"
-    packs = dict(calculations.get(packs_key) or calculations.get("packs") or {})
-
-    def _number(value: Any) -> float | None:
-        try:
-            if value in (None, "", "—", "-"):
-                return None
-            return float(value)
-        except (TypeError, ValueError):
-            return None
-
-    # This map crosses the neutral Batch Design boundary with the result that
-    # V2 actually calculated. The table displays these stored values rather
-    # than deriving a second set of utilisations from its own row projection.
-    family_utilisations: dict[str, float | None] = {
-        "bending": None,
-        "shear": None,
-        "crack": None,
-        "deflection": None,
-    }
-    statuses: dict[str, str] = {}
-    utilisations: list[float] = []
-    for family, pack in packs.items():
-        if not isinstance(pack, dict):
-            continue
-        rows = list(pack.get("rows") or [])
-        status = str(pack.get("summary_status") or "").strip().upper()
-        if not status and rows and isinstance(rows[0], dict):
-            status = str(rows[0].get("status") or "").strip().upper()
-        if status:
-            statuses[str(family)] = status
-        util = _number(pack.get("summary_util"))
-        if util is None:
-            util = _number(pack.get("summary_util_total"))
-        if util is None and rows and isinstance(rows[0], dict):
-            util = _number(rows[0].get("util"))
-        if str(family) in family_utilisations:
-            family_utilisations[str(family)] = util
-        if util is not None:
-            utilisations.append(util)
-    worst_util = max(utilisations, default=None)
-    any_fail = any(status == "FAIL" for status in statuses.values())
-    selected = dict(result.selected_candidate or {})
-    overview = {
-        "statuses": statuses,
-        "any_fail": any_fail,
-        "all_key_pass": not any_fail,
-        "worst_util": worst_util,
-        "family_utilisations": family_utilisations,
-    }
-    payload["debug_trace"] = {
-        "overview": overview,
-        "source": "inputs_v2",
-        "result_basis": "verified_v2_proposal" if candidate_accepted else "current_design",
-        "input_revision": revision,
-        "engineering_hash": result.engineering_hash,
-    }
-    payload["design_brain_result"] = {
-        "selected_candidate_label": (
-            selected.get("candidate_id")
-            or selected.get("label")
-            or result.governing_family
-        ),
-        "selected_section": selected.get("section"),
-        "utilisation": worst_util,
-        "result_basis": "verified_v2_proposal" if candidate_accepted else "current_design",
-        # Batch Design owns the member records, so carry V2's exact
-        # approved changes across this neutral adapter boundary.  The batch
-        # publisher can then update the selected member without reproducing
-        # V2 candidate generation or guessing reinforcement values.
-        "selected_updates": (
-            dict(result.selected_updates) if candidate_accepted else {}
-        ),
-        "selected_candidate": selected if candidate_accepted else {},
-        "source": "inputs_v2",
-    }
-    return payload
 
 def log_debug(message, value=None):
     print(f"[INPUTS DEBUG] {message}: {value}")
