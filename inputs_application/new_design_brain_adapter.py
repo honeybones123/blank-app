@@ -640,6 +640,7 @@ def _v2_summary_packs(*, current: Any, families: Mapping[str, Any]) -> dict[str,
         util: Any = None,
         status: Any = "—",
         informational: bool = False,
+        primary: bool = False,
     ) -> dict[str, Any]:
         return {
             "uid": uid,
@@ -655,7 +656,7 @@ def _v2_summary_packs(*, current: Any, families: Mapping[str, Any]) -> dict[str,
             "status": _status(status, informational=informational),
             "ok": None if informational else (_status(status) == "PASS"),
             "is_informational": informational,
-            "is_primary": True,
+            "is_primary": primary,
             "route_page": route_page,
             "tab": route_page,
         }
@@ -675,6 +676,29 @@ def _v2_summary_packs(*, current: Any, families: Mapping[str, Any]) -> dict[str,
     )
     crack_run = bool(crack.get("serviceability_loads_present"))
     deflection_run = bool(serviceability.get("serviceability_loads_present"))
+
+    def _number(value: Any) -> float | None:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if number == number else None
+
+    def _display(value: Any, *, unit: str = "", decimals: int = 1) -> str:
+        number = _number(value)
+        if number is None:
+            return "—"
+        suffix = f" {unit}" if unit else ""
+        return f"{number:.{decimals}f}{suffix}"
+
+    def _status_for_util(util: Any, *, fallback: Any = "INFO") -> str:
+        number = _number(util)
+        if number is None:
+            return _status(
+                fallback,
+                informational=str(fallback).strip().upper() in {"INFO", "NOT RUN"},
+            )
+        return "PASS" if number <= 1.0 else "FAIL"
 
     # The V2 standalone card is the visual authority for these values.  Keep
     # the raw numbers in the family result, but project the exact V2 display
@@ -699,7 +723,49 @@ def _v2_summary_packs(*, current: Any, families: Mapping[str, Any]) -> dict[str,
     )
     shear_informational = abs(vu) <= 1e-9
 
-    return {
+    # Expose the already-calculated V2 family evidence that the compact
+    # Runtime projection previously discarded.  This is presentation only:
+    # no legacy calculation is called from this adapter.
+    bending_status = (
+        _status_for_util(bending.get("util"), fallback=bending.get("status"))
+        if abs(mu) > 1e-9
+        else "INFO"
+    )
+    bending_informational = abs(mu) <= 1e-9
+    ductility = _family("ductility")
+    bending_rows = [
+        _row(uid="v2_bending_capacity", title="Flexural strength capacity", route_page="bending", action=bending_action_display, capacity=bending_capacity_display, util=bending_util_display, status=bending_status, informational=bending_informational, primary=True),
+        _row(uid="v2_bending_minimum_tensile", title="Minimum tensile reinforcement", route_page="bending", action=f"As,provided = {_display(bending.get('Ast_tension_mm2'), unit='mm²', decimals=0)}", capacity=f"As,min = {_display(bending.get('Ast_min_mm2'), unit='mm²', decimals=0)}", util="—", status=bending.get("minimum_tensile_status") or "INFO", informational=bending.get("Ast_min_mm2") is None),
+        _row(uid="v2_bending_ductility", title="Ductility limit", route_page="bending", action=f"k_u = {_display(ductility.get('ku'), decimals=3)}", capacity=f"k_u,lim = {_display(ductility.get('limit'), decimals=2)}", util=_display(ductility.get("util"), decimals=2), status=ductility.get("status") or "INFO", informational=ductility.get("ku") is None),
+        _row(uid="v2_bending_service_moment", title="Service bending moment", route_page="bending", action="SLS design / manual actions", capacity=f"M_s = {_display(bending.get('service_moment_knm'), unit='kNm')}", util="—", status="INFO", informational=True),
+        _row(uid="v2_bending_minimum_capacity", title="Minimum design capacity requirement", route_page="bending", action="Code minimum capacity", capacity=f"ϕMu,cap = {_display(bending.get('minimum_capacity_knm'), unit='kNm')}", util="—", status="INFO", informational=True),
+    ]
+
+    shear_capacity_display = f"ϕVu = {_display(phi_vu, unit='kN')}"
+    shear_action_display = f"V*eq = {vu:.1f} kN" if abs(vu) > 1e-9 else "V*eq = —"
+    shear_rows = [
+        _row(uid="v2_shear_capacity", title="Sectional shear capacity", route_page="shear", action=shear_action_display, capacity=shear_capacity_display, util=shear_util_display, status=shear_status, informational=shear_informational, primary=True),
+        _row(uid="v2_shear_torsion", title="Torsion cracking check", route_page="shear", action=("Torsion design required" if shear.get("torsion_required") else "Torsion design not required"), capacity=f"Reference: 0.25 ϕTcr = {_display(shear.get('torsion_required_limit'), unit='kNm')}", util="—", status="INFO", informational=True),
+        _row(uid="v2_shear_web_crushing", title="Web-crushing strength", route_page="shear", action=shear_action_display, capacity=f"Vu,max = {_display(shear.get('Vu_max_kN'), unit='kN')}", util="—", status="INFO" if shear.get("web_ok") is None else ("PASS" if shear.get("web_ok") else "FAIL"), informational=shear.get("web_ok") is None),
+        _row(uid="v2_shear_reinforcement", title="Transverse reinforcement requirement", route_page="shear", action=("Shear reinforcement required" if shear.get("transverse_reinforcement_required") else "No shear reinforcement required"), capacity="V2 shear verification", util="—", status="INFO", informational=True),
+    ]
+
+    crack_status = _status(crack.get("status"), informational=not crack_run)
+    crack_rows = [
+        _row(uid="v2_crack_governing", title="Governing outcome", route_page="crack", action=("Serviceability checks assessed" if crack_run else "SLS actions not supplied"), capacity="Table stress + direct width", util="—", status=crack_status, informational=not crack_run, primary=True),
+        _row(uid="v2_crack_table", title="Table-based crack control check", route_page="crack", action=f"σsr = {_display(crack.get('sigma_sr'), unit='MPa')}", capacity=f"σallow = {_display(crack.get('sigma_allow_table'), unit='MPa')}", util=_display(crack.get("table_util"), decimals=2), status=_status_for_util(crack.get("table_util"), fallback="INFO"), informational=not crack_run),
+        _row(uid="v2_crack_width", title="Direct crack width check", route_page="crack", action=f"w = {_display(crack.get('width_mm'), unit='mm', decimals=3)}", capacity=f"w′max = {_display(crack.get('limit_mm'), unit='mm', decimals=3)}", util=_display(crack.get("width_util"), decimals=2), status=_status_for_util(crack.get("width_util"), fallback=crack_status), informational=not crack_run),
+    ]
+
+    deflection_status = _status(serviceability.get("status"), informational=not deflection_run)
+    deflection_limit = serviceability.get("limit_mm")
+    deflection_rows = [
+        _row(uid="v2_deflection_total", title="Total deflection (short + long-term)", route_page="deflection", action=f"δtotal = {_display(serviceability.get('deflection_mm'), unit='mm', decimals=2)}", capacity=f"δlim = {_display(deflection_limit, unit='mm', decimals=2)}", util=_display(serviceability.get("deflection_util"), decimals=2), status=deflection_status, informational=not deflection_run, primary=True),
+        _row(uid="v2_deflection_short", title="Short-term deflection (total load)", route_page="deflection", action=f"δshort = {_display(serviceability.get('short_term_deflection_mm'), unit='mm', decimals=2)}", capacity=f"δlim = {_display(deflection_limit, unit='mm', decimals=2)}", util="—", status="INFO" if not deflection_run else "PASS", informational=not deflection_run),
+        _row(uid="v2_deflection_long", title="Additional long-term deflection", route_page="deflection", action=f"δlong = {_display(serviceability.get('long_term_deflection_mm'), unit='mm', decimals=2)}", capacity=f"δlim = {_display(deflection_limit, unit='mm', decimals=2)}", util="—", status="INFO" if not deflection_run else "PASS", informational=not deflection_run),
+    ]
+
+    summary_packs = {
         "bending": {
             "source": "inputs_v2",
             "rows": [
@@ -774,6 +840,11 @@ def _v2_summary_packs(*, current: Any, families: Mapping[str, Any]) -> dict[str,
             ],
         },
     }
+    summary_packs["bending"]["rows"] = bending_rows
+    summary_packs["shear"]["rows"] = shear_rows
+    summary_packs["crack"]["rows"] = crack_rows
+    summary_packs["deflection"]["rows"] = deflection_rows
+    return summary_packs
 
 
 def _neutral_publication_projection(
