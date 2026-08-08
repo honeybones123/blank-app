@@ -61,7 +61,7 @@ from inputs_page_modules.app_bridge.canonical_design_state_pack import _build_ca
 
 from bending_checks_helpers import build_bending_check_rows_from_state
 
-from crack_checks_helpers import build_crack_check_rows_from_state, pick_governing_check_row
+from crack_checks_helpers import build_crack_check_rows_from_state
 
 from deflection_checks_helpers import build_deflection_check_rows_from_state
 
@@ -143,7 +143,6 @@ from inputs_page_modules.summaries import render_inputs_summary_expanders_and_ta
 
 from inputs_page_modules.summaries.render_coordinators import render_inputs_summary_container_current as render_inputs_summary_container_current_module
 
-from inputs_page_modules.summaries.display_state import render_inputs_summary_display_state as render_inputs_summary_display_state_module
 
 from inputs_application.v2_design_brain_ui_boundary import should_render_design_guide_slot_from_publication_eligibility
 
@@ -311,7 +310,6 @@ from inputs_application.page_runtime.common import (
     _is_inputs_longitudinal_reo_widget_key,
     _longitudinal_reo_widget_audit_snapshot,
     _mark_design_guide_dirty,
-    _parse_util_value,
     _queue_inputs_refresh,
     _reconcile_design_action_widgets_with_shared,
     _record_inputs_diagram_view_model_trace,
@@ -466,61 +464,6 @@ def render_inputs_summary_rows_from_packs_current_coordinator(
         defl_pack=defl_pack,
     )
 
-def _overall_status_from_rows(rows):
-    if not rows:
-        return "\u2014", "rgba(31, 119, 180, 0.08)"
-    filtered = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        if row.get("is_informational"):
-            continue
-        status = str(row.get("status", "")).upper()
-        if status == "INFO":
-            continue
-        filtered.append(row)
-    if not filtered:
-        return "\u2014", "rgba(31, 119, 180, 0.08)"
-    statuses = [str(row.get("status", "")).upper() for row in filtered]
-    if any("FAIL" in status or status == "NG" for status in statuses):
-        return "FAIL", "rgba(255,0,0,0.12)"
-    if any("WARN" in status or "NEAR LIMIT" in status or status == "CHECK" for status in statuses):
-        return "NEAR LIMIT", "rgba(255,193,7,0.15)"
-    if any("PASS" in status or status == "OK" for status in statuses):
-        return "PASS", "rgba(0,128,0,0.12)"
-    return "\u2014", "rgba(31, 119, 180, 0.08)"
-
-def _primary_row(rows):
-    if not rows:
-        return None
-    for row in rows:
-        if row.get("is_primary"):
-            return row
-    return rows[0]
-
-def render_inputs_summary_display_state_current_coordinator(
-    *,
-    summary_state: dict,
-    shear_pack,
-    BENDING_ROWS,
-    SHEAR_ROWS,
-    CRACK_ROWS,
-    DEFLECTION_ROWS,
-):
-    return render_inputs_summary_display_state_module(
-        st_module=st,
-        summary_state=summary_state,
-        shear_pack=shear_pack,
-        BENDING_ROWS=BENDING_ROWS,
-        SHEAR_ROWS=SHEAR_ROWS,
-        CRACK_ROWS=CRACK_ROWS,
-        DEFLECTION_ROWS=DEFLECTION_ROWS,
-        primary_row_fn=_primary_row,
-        pick_governing_check_row_fn=pick_governing_check_row,
-        overall_status_from_rows_fn=_overall_status_from_rows,
-        parse_util_value_fn=_parse_util_value,
-    )
-
 def render_inputs_summary_guidance_cache_current_coordinator(
     *,
     summary_state: dict,
@@ -599,39 +542,10 @@ def render_inputs_summary_row_finalization_current_coordinator(
 
 def render_inputs_summary_container_current_coordinator(
     *,
+    summary_state,
     summary_container,
     sync_callbacks: dict,
     render_title: bool = True,
-    BENDING_ROWS,
-    SHEAR_ROWS,
-    CRACK_ROWS,
-    DEFLECTION_ROWS,
-    defl_pack,
-    governing_check,
-    bending_cap,
-    bending_demand,
-    bending_util_str,
-    bending_status,
-    bending_colour,
-    shear_cap,
-    shear_demand,
-    shear_util_str,
-    shear_status,
-    shear_colour,
-    shear_summary_status_note,
-    shear_governing_name,
-    shear_governing_source,
-    shear_reason,
-    crack_cap,
-    crack_demand,
-    crack_util_str,
-    crack_status,
-    crack_colour,
-    defl_cap,
-    defl_demand,
-    defl_util_str,
-    defl_status,
-    defl_colour,
 ) -> None:
     payload = dict(locals())
     payload.update(
@@ -668,7 +582,6 @@ def render_inputs_summary_pipeline_current_coordinator(
         pack_meta_fn=_pack_meta,
         hc_log_fn=hc_log,
         summary_rows_from_packs_fn=render_inputs_summary_rows_from_packs_current_coordinator,
-        summary_display_state_fn=render_inputs_summary_display_state_current_coordinator,
         summary_guidance_cache_fn=render_inputs_summary_guidance_cache_current_coordinator,
         summary_row_finalization_fn=render_inputs_summary_row_finalization_current_coordinator,
         summary_container_fn=render_inputs_summary_container_current_coordinator,

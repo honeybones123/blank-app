@@ -19,7 +19,8 @@ from engineering_check_ui import PARAMETRIC_RESULT_COLUMNS
 from ui.summary_rows import build_shrinkage_summary_rows
 from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks, inject_seamless_steps_css
 from jump_nav import scroll_to_jump_after_render
-from ui.diagrams.creep_shrinkage_diagram import build_shrinkage_schematic_plotly
+from section_layout import compute_section_layout
+from ui.diagrams.creep_shrinkage_diagram import build_shrinkage_side_view_result
 from calculations.creep_shrinkage import (
     SHRINKAGE_ENV_LABELS as _ENV_LABELS,
     autogenous_shrinkage_final_from_current,
@@ -377,17 +378,20 @@ Shrinkage is not a force (kN). It is a time-dependent strain that can cause defo
         bind_summary_clicks()
         page_divider()
 
-        st.markdown("**Shrinkage strain schematic**")
-        fig_shrink_schematic = build_shrinkage_schematic_plotly()
-        render_plotly_diagram(
-            fig_shrink_schematic,
-            key="shrinkage_strain_schematic_diagram",
-            title="Shrinkage strain schematic",
-            config={
-                "displayModeBar": False,
-                "staticPlot": True,
-            },
+        st.markdown("**Drying shrinkage — beam side view**")
+        shrinkage_section_result = build_shrinkage_side_view_result(
+            layout=compute_section_layout(),
+            faces_option=faces_option,
         )
+        if shrinkage_section_result.error_message:
+            st.warning(shrinkage_section_result.error_message)
+        if shrinkage_section_result.figure is not None:
+            render_plotly_diagram(
+                shrinkage_section_result.figure,
+                key="shrinkage_side_view_diagram",
+                title="Drying shrinkage — beam side view",
+                config={"displayModeBar": False},
+            )
         page_divider()
 
     # --------------------------------------------------------

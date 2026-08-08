@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import html
-
 import streamlit as st
 
-from ui_seamless_steps import inject_seamless_steps_css
 from widgets_helpers import page_divider
+from application.design_actions_adapters import adapt_design_actions_from_state
+from inputs_application.session_services import InputsSessionServices
 
 from .builders import build_inputs_summary_html
-from .models import InputsSummaryCardSource, InputsSummarySourceSnapshot
+from .models import InputsSummarySourceSnapshot
+from .source_from_design_result import build_summary_source_from_design_result
 
 
 def _build_summary_cards_html_for_current_state(
@@ -27,115 +27,48 @@ def _build_summary_cards_html_for_current_state(
 
 
 def render_inputs_summary_expanders_and_tables_current_coordinator(**kwargs) -> None:
-    BENDING_ROWS = kwargs["BENDING_ROWS"]
-    SHEAR_ROWS = kwargs["SHEAR_ROWS"]
-    CRACK_ROWS = kwargs["CRACK_ROWS"]
-    DEFLECTION_ROWS = kwargs["DEFLECTION_ROWS"]
-    defl_pack = kwargs["defl_pack"]
-    bending_cap = kwargs["bending_cap"]
-    bending_demand = kwargs["bending_demand"]
-    bending_util_str = kwargs["bending_util_str"]
-    bending_status = kwargs["bending_status"]
-    shear_cap = kwargs["shear_cap"]
-    shear_demand = kwargs["shear_demand"]
-    shear_util_str = kwargs["shear_util_str"]
-    shear_status = kwargs["shear_status"]
-    shear_summary_status_note = kwargs["shear_summary_status_note"]
-    shear_governing_name = kwargs["shear_governing_name"]
-    shear_governing_source = kwargs["shear_governing_source"]
-    shear_reason = kwargs["shear_reason"]
-    crack_cap = kwargs["crack_cap"]
-    crack_demand = kwargs["crack_demand"]
-    crack_util_str = kwargs["crack_util_str"]
-    crack_status = kwargs["crack_status"]
-    defl_cap = kwargs["defl_cap"]
-    defl_demand = kwargs["defl_demand"]
-    defl_util_str = kwargs["defl_util_str"]
-    defl_status = kwargs["defl_status"]
+    """Render only a revision-matched authoritative Design Brain result."""
 
-    inject_seamless_steps_css()
+    summary_state = dict(kwargs.get("summary_state") or {})
+    services = InputsSessionServices.from_mapping(st.session_state)
+    authoritative = services.engineering_results.current()
+    if authoritative is None or not summary_state:
+        st.session_state["_inputs_summary_authority"] = {
+            "source": "unavailable",
+            "reason": "missing_design_result",
+        }
+        st.info("Design checks are being calculated for the current inputs.")
+        page_divider()
+        return
 
-    if not BENDING_ROWS:
-        st.info("Bending results not available yet. Check inputs or visit Bending page for details.")
-    if not SHEAR_ROWS:
-        st.info("Shear results not available yet. Check inputs or visit Shear page for details.")
-    if not CRACK_ROWS:
-        st.info("Crack results not available yet. Check inputs or visit Crack Control page for details.")
-    if not DEFLECTION_ROWS:
-        st.info("Deflection results not available yet. Check inputs or visit Deflection page for details.")
+    input_revision = int(services.input_snapshots.current().revision or 0)
+    result_revision = services.engineering_results.source_input_revision()
+    if result_revision is None or int(result_revision) != input_revision:
+        st.session_state["_inputs_summary_authority"] = {
+            "source": "unavailable",
+            "reason": "revision_mismatch",
+            "input_revision": input_revision,
+            "result_revision": result_revision,
+        }
+        st.info("Design checks are being refreshed for the current inputs.")
+        page_divider()
+        return
 
-    shear_governing_is_sectional = shear_governing_source == "sectional_shear_capacity"
-    shear_gov_note_parts = []
-    if shear_governing_name and not shear_governing_is_sectional:
-        shear_gov_note_parts.append(
-            f"<div style='font-size:0.82rem;opacity:0.68;margin:0.35rem 0 0.1rem 0;'>"
-            f"Governing check: {html.escape(shear_governing_name)}</div>"
-        )
-    if shear_reason and not shear_governing_is_sectional:
-        shear_gov_note_parts.append(
-            f"<div style='font-size:0.8rem;opacity:0.62;margin:0 0 0.15rem 0;'>"
-            f"Reason: {html.escape(shear_reason)}</div>"
-        )
-    shear_gov_note_html = "".join(shear_gov_note_parts)
-
-    summary_source = InputsSummarySourceSnapshot(
+    projection = build_summary_source_from_design_result(
+        result=authoritative,
+        actions=adapt_design_actions_from_state(summary_state),
+        st_module=st,
         scenario_id=str(st.session_state.get("active_beam_id") or "inputs"),
         scenario_label=str(st.session_state.get("active_beam_id") or "Inputs"),
-        bending=InputsSummaryCardSource(
-            family="bending",
-            title="Bending &mdash; ULS check",
-            capacity=str(bending_cap),
-            action=str(bending_demand),
-            utilisation=str(bending_util_str),
-            status=str(bending_status),
-            rows=tuple(dict(row) for row in BENDING_ROWS),
-            capacity_label="Calculated capacity",
-            action_label="Applied design action",
-        ),
-        shear=InputsSummaryCardSource(
-            family="shear",
-            title="Shear &mdash; ULS check",
-            capacity=str(shear_cap),
-            action=str(shear_demand),
-            utilisation=str(shear_util_str),
-            status=str(shear_status),
-            rows=tuple(dict(row) for row in SHEAR_ROWS),
-            capacity_label="Calculated capacity",
-            action_label="Applied design action",
-            status_note_html=str(shear_summary_status_note or ""),
-        ),
-        crack=InputsSummaryCardSource(
-            family="crack",
-            title="Crack control &mdash; SLS check",
-            capacity=str(crack_cap),
-            action=str(crack_demand),
-            utilisation=str(crack_util_str),
-            status=str(crack_status),
-            rows=tuple(dict(row) for row in CRACK_ROWS),
-            capacity_label="Allowable limit",
-            action_label="Calculated crack width",
-        ),
-        deflection=InputsSummaryCardSource(
-            family="deflection",
-            title="Deflection &mdash; SLS check",
-            capacity=str(defl_cap),
-            action=str(defl_demand),
-            utilisation=str(defl_util_str),
-            status=str(defl_status),
-            rows=tuple(dict(row) for row in DEFLECTION_ROWS),
-            capacity_label="Allowable limit",
-            action_label="Calculated deflection",
-        ),
-        geometry={},
-        actions={},
-        run_state={"deflection_summary_present": bool(defl_pack)},
     )
-    summary_cards_html = _build_summary_cards_html_for_current_state(
-        summary_source,
-        shear_detail_note_html=shear_gov_note_html,
+    st.session_state["_inputs_summary_authority"] = {
+        "source": "authoritative_design_result",
+        "engineering_hash": authoritative.engineering_hash,
+    }
+    st.markdown(
+        _build_summary_cards_html_for_current_state(projection.source),
+        unsafe_allow_html=True,
     )
-    st.markdown(summary_cards_html, unsafe_allow_html=True)
-
     page_divider()
 
 
@@ -149,70 +82,12 @@ def render_inputs_summary_container_current(
     inputs_show_landing_dashboard_fn,
     render_landing_card_fn,
     render_summary_expanders_and_tables_fn,
-    BENDING_ROWS,
-    SHEAR_ROWS,
-    CRACK_ROWS,
-    DEFLECTION_ROWS,
-    defl_pack,
-    governing_check,
-    bending_cap,
-    bending_demand,
-    bending_util_str,
-    bending_status,
-    bending_colour,
-    shear_cap,
-    shear_demand,
-    shear_util_str,
-    shear_status,
-    shear_colour,
-    shear_summary_status_note,
-    shear_governing_name,
-    shear_governing_source,
-    shear_reason,
-    crack_cap,
-    crack_demand,
-    crack_util_str,
-    crack_status,
-    crack_colour,
-    defl_cap,
-    defl_demand,
-    defl_util_str,
-    defl_status,
-    defl_colour,
+    summary_state=None,
 ) -> None:
     def render_summary_table(results):
         _ = results
         render_summary_expanders_and_tables_fn(
-            BENDING_ROWS=BENDING_ROWS,
-            SHEAR_ROWS=SHEAR_ROWS,
-            CRACK_ROWS=CRACK_ROWS,
-            DEFLECTION_ROWS=DEFLECTION_ROWS,
-            defl_pack=defl_pack,
-            governing_check=governing_check,
-            bending_cap=bending_cap,
-            bending_demand=bending_demand,
-            bending_util_str=bending_util_str,
-            bending_status=bending_status,
-            bending_colour=bending_colour,
-            shear_cap=shear_cap,
-            shear_demand=shear_demand,
-            shear_util_str=shear_util_str,
-            shear_status=shear_status,
-            shear_colour=shear_colour,
-            shear_summary_status_note=shear_summary_status_note,
-            shear_governing_name=shear_governing_name,
-            shear_governing_source=shear_governing_source,
-            shear_reason=shear_reason,
-            crack_cap=crack_cap,
-            crack_demand=crack_demand,
-            crack_util_str=crack_util_str,
-            crack_status=crack_status,
-            crack_colour=crack_colour,
-            defl_cap=defl_cap,
-            defl_demand=defl_demand,
-            defl_util_str=defl_util_str,
-            defl_status=defl_status,
-            defl_colour=defl_colour,
+            summary_state=summary_state,
         )
 
     with summary_container:

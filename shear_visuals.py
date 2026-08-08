@@ -1414,20 +1414,26 @@ def build_shear_side_view_figure(
     shear_fails: bool = False,
 ) -> go.Figure:
     model = _beam_model()
-    model["side_view_display"] = _side_view_display_state(model)
-    display_length_m = _side_view_display_length_from_model(model)
-    fig = _build_side_view_figure(
-        model["total_length_m"],
-        model["D_m"],
-        height,
-        model["support_condition"],
-        display_length_m=display_length_m,
+    if shear_fails:
+        # Preserve the existing failure-specific link annotations.
+        model["side_view_display"] = _side_view_display_state(model)
+        display_length_m = _side_view_display_length_from_model(model)
+        fig = _build_side_view_figure(
+            model["total_length_m"],
+            model["D_m"],
+            height,
+            model["support_condition"],
+            display_length_m=display_length_m,
+        )
+        _add_beam_band(fig, display_length_m, model["D_m"])
+        _build_side_view_support_shapes(fig, model)
+        _build_side_view_tension_reo(fig, model)
+        _build_stirrup_markers(fig, model, shear_fails=True)
+        return fig
+    return shared_side_view_diagram.build_standard_reinforced_beam_side_view(
+        model,
+        height=height,
     )
-    _add_beam_band(fig, display_length_m, model["D_m"])
-    _build_side_view_support_shapes(fig, model)
-    _build_side_view_tension_reo(fig, model)
-    _build_stirrup_markers(fig, model, shear_fails=shear_fails)
-    return fig
 
 
 def build_shear_behaviour_figure(

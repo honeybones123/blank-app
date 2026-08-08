@@ -39,6 +39,7 @@ from .diagram_styles import (
     SUPPORT_ROLLER_MIN_RADIUS_MM,
     SUPPORT_ROLLER_RADIUS_BEAM_RATIO,
 )
+from .shear_behaviour_diagram import add_shear_behaviour_beam_band
 
 SIDE_VIEW_VISUAL_WIDTH = DIAGRAM_SIZE_LONGITUDINAL["width"]
 SIDE_VIEW_VISUAL_HEIGHT = DIAGRAM_SIZE_LONGITUDINAL["height"]
@@ -210,6 +211,44 @@ def build_side_view_figure(
         zeroline=False,
         scaleanchor="x",
         scaleratio=1,
+    )
+    return fig
+
+
+def build_standard_reinforced_beam_side_view(
+    model: dict[str, Any],
+    *,
+    height: int = SIDE_VIEW_VISUAL_HEIGHT,
+) -> go.Figure:
+    """Build the app's canonical reinforced-concrete beam side elevation.
+
+    This centralises the exact assembly historically used by the Shear page:
+    shared frame and scaling, concrete band, supports, longitudinal
+    reinforcement and shear-link markers. Calculation pages can add their own
+    teaching overlays without recreating the underlying beam view.
+    """
+    work_model = dict(model)
+    if not work_model.get("side_view_display"):
+        work_model["side_view_display"] = side_view_display_state(work_model)
+    display_length_m = side_view_display_length_from_model(work_model)
+    fig = build_side_view_figure(
+        float(work_model["total_length_m"]),
+        float(work_model["D_m"]),
+        int(height),
+        str(work_model.get("support_condition", "simply_supported") or "simply_supported"),
+        display_length_m=display_length_m,
+    )
+    add_shear_behaviour_beam_band(fig, display_length_m, float(work_model["D_m"]))
+    build_side_view_support_shapes(fig, work_model)
+    build_side_view_tension_reo(fig, work_model)
+    build_stirrup_markers(fig, work_model)
+    existing_meta = fig.layout.meta if isinstance(fig.layout.meta, dict) else {}
+    fig.update_layout(
+        meta={
+            **dict(existing_meta),
+            "diagram_component": "shared_standard_reinforced_beam_side_view",
+            "base_component": "ui.diagrams.side_view_diagram.build_standard_reinforced_beam_side_view",
+        }
     )
     return fig
 

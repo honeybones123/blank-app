@@ -25,9 +25,11 @@ from ui.diagrams.moment_shear_diagram import (
 )
 
 from state_and_helpers import (
+    finalize_auto_design_publish,
     get_sync_callbacks,
     get_param,
     is_design_governing,
+    persist_active_beam_from_shared,
     set_shared,
     update_results,
     render_timing_mark,
@@ -52,14 +54,19 @@ from widgets_helpers import (
     render_plotly_diagram,
     render_plotly_fullscreen_control,
 )
-from engineering_check_ui import sync_legacy_value_limit
 from ui_seamless_steps import bind_summary_clicks
 from inputs_application.session_services import InputsSessionServices
 from application.engineering_snapshot import build_engineering_input_snapshot_from_resolved_state
-from inputs_application.new_design_brain_adapter import calculate_v2_authoritative_result
+from application.design_actions_adapters import LoadAnalysisDesignActionsAdapter
+from application.design_brain_comparison import compare_design_brain_actions
+from application.design_brain_port import DesignBrainRequest
+from inputs_application.design_brain_composition import build_design_brain_service
+from inputs_application.live_apply import execute_typed_apply
 from inputs_page_modules.summaries.builders import build_inputs_summary_html
-from inputs_page_modules.summaries.models import InputsSummaryCardSource, InputsSummarySourceSnapshot
-from inputs_page_modules.summaries.rows_from_packs import render_inputs_summary_rows_from_packs
+from inputs_page_modules.summaries.source_from_design_result import (
+    build_summary_source_from_design_result,
+)
+from inputs_application.v2_design_guide_renderer import render_v2_design_guide_card
 from ui_seamless_steps import inject_seamless_steps_css
 from inputs_page_modules.fragments import rerun_inputs_current_scope
 
@@ -76,7 +83,6 @@ from calculations.deflection import (
 
 
 from engineering_page_sections import design_inputs as _design_inputs_section
-from engineering_page_sections import design_check_summary_policy as _summary_policy
 _agent_debug_log = _design_inputs_section._agent_debug_log
 _label_with_hover = _design_inputs_section._label_with_hover
 _span_from_inputs = _design_inputs_section._span_from_inputs
@@ -154,7 +160,10 @@ def _install_design_scroll_preserver() -> None:
             const root = doc.querySelector("[data-testid='stMainBlockContainer']") || doc.body;
             const restorePending = () => {
               const saved = win.__beamDesignPendingScroll;
-              if (!saved || saved.page !== pageToken() || Date.now() - saved.at > 3000) return;
+              // The engineering fragment can take several seconds to finish.
+              // Keep the anchor alive until its late diagrams and derivation
+              // cards have finished replacing their DOM.
+              if (!saved || saved.page !== pageToken() || Date.now() - saved.at > 30000) return;
               const el = scroller();
               if (!el) return;
               const target = Number(saved.top || 0);
@@ -173,15 +182,26 @@ def _install_design_scroll_preserver() -> None:
                 }
               }
             };
-            const observer = new MutationObserver(() => {
+            // Create the observer in the parent document's realm; the script
+            // itself runs inside a Streamlit component iframe.
+            const observer = new win.MutationObserver(() => {
               restorePending();
               win.requestAnimationFrame(restorePending);
               win.setTimeout(restorePending, 40);
               win.setTimeout(restorePending, 120);
               win.setTimeout(restorePending, 300);
+              win.setTimeout(restorePending, 700);
+              win.setTimeout(restorePending, 1500);
+              win.setTimeout(restorePending, 3000);
             });
-            observer.observe(root, {childList: true, subtree: true});
-            win.__beamDesignScrollObserver = observer;
+            try {
+              observer.observe(root, {childList: true, subtree: true});
+              win.__beamDesignScrollObserver = observer;
+            } catch (_) {
+              // A fragment can briefly expose a cross-realm placeholder while
+              // Streamlit swaps the main block. Timed restoration below still
+              // preserves the widget anchor for that rerun.
+            }
           }
 
           let saved = null;
@@ -210,23 +230,46 @@ def _install_design_scroll_preserver() -> None:
 def _render_design_check_summary(
     *,
     bending_action: float,
-    bending_capacity: float | None,
-    bending_utilisation: str,
-    bending_status: str,
     shear_action: float,
-    shear_capacity: float | None,
-    shear_utilisation: str,
-    shear_status: str,
     sls_moment: float,
     sls_shear: float,
 ) -> None:
     """Render the Inputs summary cards using the Design page's solved actions."""
+    # The shared card queues a typed command. Beam Setup consumes it in its
+    # Design Brain fragment; Load Analysis consumes it here against the exact
+    # result that published the CTA so a different page result cannot be used
+    # to validate or apply the recommendation.
+    queued_apply = bool(st.session_state.pop("_inputs_action_apply_recommendation", False))
+    queued_payload = st.session_state.get("_inputs_action_apply_recommendation_payload")
+    queued_result = st.session_state.pop("_queued_design_brain_apply_result", None)
+    if queued_apply and isinstance(queued_payload, dict) and queued_result is not None:
+        applied = execute_typed_apply(
+            session_state=st.session_state,
+            current_result=queued_result,
+            recommendation=dict(queued_payload),
+            set_shared=set_shared,
+            finalize_publish=finalize_auto_design_publish,
+            persist_active_beam=persist_active_beam_from_shared,
+        )
+        st.session_state["_load_analysis_apply_probe"] = {
+            "status": applied.command.status,
+            "reason": applied.command.reason,
+            "updates": (
+                dict(applied.mutation.updates)
+                if applied.mutation is not None
+                else {}
+            ),
+        }
+        if applied.command.status not in {"dispatch_ok", "rerun_required"}:
+            st.error(f"Design Brain recommendation was not applied: {applied.command.reason}")
+
     services = InputsSessionServices.from_mapping(st.session_state)
     # Calculate a page-local V2 result from the actions just solved above.
     # Reading the session's last Inputs result here left crack/deflection stale
     # until the user visited Inputs, which is exactly what this summary must not
     # do.  This projection does not overwrite manual action inputs.
     design_state = dict(st.session_state)
+    input_revision = int(services.input_snapshots.current().revision or 0)
     design_state.update(
         {
             "actions_mode": "design",
@@ -239,169 +282,93 @@ def _render_design_check_summary(
             "uls_Vstar": float(shear_action),
             "sls_Mstar": float(sls_moment),
             "sls_Vstar": float(sls_shear),
+            "input_revision": input_revision,
         }
     )
     snapshot = build_engineering_input_snapshot_from_resolved_state(design_state)
     try:
-        authoritative = calculate_v2_authoritative_result(
-            engineering_snapshot=snapshot,
-            resolved_inputs=design_state,
-            input_revision=int(services.input_snapshots.current().revision or 0),
-        )
+        # Run the full shared Design Brain, not its calculation-only sibling.
+        # The latter intentionally has no recommendation publication and made
+        # the visible card report UNKNOWN / 0.00 even while the checks failed.
+        authoritative = build_design_brain_service().run(
+            DesignBrainRequest(
+                engineering_snapshot=snapshot,
+                resolved_inputs=design_state,
+                input_revision=input_revision,
+            )
+        ).result
         st.session_state.pop("_design_summary_calculation_error", None)
+        actions_snapshot = LoadAnalysisDesignActionsAdapter.from_state(design_state)
+        comparison = compare_design_brain_actions(
+            actions_snapshot,
+            dict(authoritative.current_calculations or {}).get("actions_used", {}),
+            actual_revision=dict(authoritative.current_calculations or {}).get(
+                "v2_source_revision"
+            ),
+        )
+        st.session_state["_load_analysis_design_brain_comparison"] = (
+            comparison.to_dict()
+        )
     except Exception as exc:
         # Preserve a usable summary if an incomplete section cannot yet run,
         # while exposing the reason for diagnostics rather than failing page
         # rendering or silently presenting a mismatched result.
         st.session_state["_design_summary_calculation_error"] = str(exc)
-        authoritative = services.engineering_results.current()
-    packs = (
-        dict(authoritative.current_calculations or {}).get("packs", {})
-        if authoritative is not None
-        else {}
-    )
-    bend_pack = dict(packs.get("bending") or {})
-    shear_pack = dict(packs.get("shear") or {})
-    crack_pack = dict(packs.get("crack") or {})
-    defl_pack = dict(packs.get("deflection") or {})
-    bending_rows, shear_rows, crack_rows, deflection_rows, *_ = (
-        render_inputs_summary_rows_from_packs(
+        st.session_state.pop("_load_analysis_design_brain_comparison", None)
+        st.info("Design checks are unavailable until the current Load Analysis inputs are valid.")
+        return
+    if (
+        authoritative is not None
+        and "_design_summary_calculation_error" not in st.session_state
+    ):
+        # Shared authority path: the summary headers and detail rows are both
+        # projected from the exact Design Brain result that consumed the Load
+        # Analysis adapter snapshot. No page-local status calculation remains
+        # on the successful path.
+        actions_snapshot = LoadAnalysisDesignActionsAdapter.from_state(design_state)
+        scenario_id = str(st.session_state.get("active_beam_id") or "design")
+        projection = build_summary_source_from_design_result(
+            result=authoritative,
+            actions=actions_snapshot,
             st_module=st,
-            bend_pack=bend_pack or None,
-            shear_pack=shear_pack or None,
-            crack_pack=crack_pack or None,
-            defl_pack=defl_pack or None,
-        )
-    )
-
-    def _strength(value: float | None, units: str) -> str:
-        if value is None or value <= 0 or (isinstance(value, float) and math.isnan(value)):
-            return "—"
-        return f"{value:.2f} {units}"
-
-    def _header_check_state(
-        action: float,
-        capacity: float | None,
-        fallback_utilisation: str,
-        rows,
-    ) -> tuple[str, str]:
-        """Resolve status and utilisation from the values visible in the card."""
-        utilisation = None
-        try:
-            action_value = abs(float(action))
-            capacity_value = float(capacity) if capacity is not None else 0.0
-        except (TypeError, ValueError):
-            action_value = 0.0
-            capacity_value = 0.0
-        if (
-            action_value > 1e-12
-            and capacity_value > 0.0
-            and not math.isnan(action_value)
-            and not math.isnan(capacity_value)
-        ):
-            utilisation = action_value / capacity_value
-        if utilisation is None:
-            match = re.search(r"[-+]?\d+(?:\.\d+)?", str(fallback_utilisation or ""))
-            if match:
-                utilisation = float(match.group(0))
-        if utilisation is None:
-            row_utilisations = []
-            for row in rows:
-                match = re.search(r"[-+]?\d+(?:\.\d+)?", str(row.get("util") or ""))
-                if match:
-                    row_utilisations.append(float(match.group(0)))
-            if row_utilisations:
-                utilisation = max(row_utilisations)
-        if utilisation is None:
-            return "—", "NOT CHECKED"
-        if utilisation > 1.0:
-            status = "FAIL"
-        elif utilisation >= 0.9:
-            status = "NEAR LIMIT"
-        else:
-            status = "PASS"
-        return f"{utilisation:.2f}", status
-
-    resolved_bending_utilisation, resolved_bending_status = _summary_policy.resolve_header_check_state(
-        bending_action,
-        bending_capacity,
-        bending_utilisation,
-        bending_rows,
-    )
-    resolved_shear_utilisation, resolved_shear_status = _summary_policy.resolve_header_check_state(
-        shear_action,
-        shear_capacity,
-        shear_utilisation,
-        shear_rows,
-    )
-
-    def _serviceability_values(rows, *, preferred_title: str = ""):
-        preferred = str(preferred_title or "").strip().lower()
-        primary = next(
-            (
-                row for row in rows
-                if preferred and preferred in str(row.get("title") or "").lower()
-            ),
-            next(
-                (row for row in rows if row.get("is_primary")),
-                next((row for row in rows if not row.get("is_informational")), {}),
-            ),
-        )
-        return (
-            str(primary.get("capacity") or primary.get("limit") or "—"),
-            str(primary.get("action") or primary.get("value") or "—"),
-            str(primary.get("util") or "—"),
-            str(primary.get("status") or "INFO"),
+            scenario_id=scenario_id,
+            scenario_label=scenario_id,
         )
 
-    crack_cap, crack_action, crack_util, crack_status = _summary_policy.serviceability_values(
-        crack_rows,
-        preferred_title="Direct crack width check",
-    )
-    defl_cap, defl_action, defl_util, defl_status = _summary_policy.serviceability_values(deflection_rows)
-    scenario_id = str(st.session_state.get("active_beam_id") or "design")
-    source = InputsSummarySourceSnapshot(
-        scenario_id=scenario_id,
-        scenario_label=scenario_id,
-        bending=InputsSummaryCardSource(
-            family="bending", title="Bending &mdash; ULS check",
-            capacity=_summary_policy.format_strength(bending_capacity, "kNm"),
-            action=f"Mu* = {bending_action:.2f} kNm",
-            utilisation=resolved_bending_utilisation, status=resolved_bending_status,
-            rows=tuple(bending_rows), capacity_label="Calculated capacity",
-            action_label="Applied design action",
-        ),
-        shear=InputsSummaryCardSource(
-            family="shear", title="Shear &mdash; ULS check",
-            capacity=_summary_policy.format_strength(shear_capacity, "kN"),
-            action=f"V* = {shear_action:.2f} kN",
-            utilisation=resolved_shear_utilisation, status=resolved_shear_status,
-            rows=tuple(shear_rows), capacity_label="Calculated capacity",
-            action_label="Applied design action",
-        ),
-        crack=InputsSummaryCardSource(
-            family="crack", title="Crack control &mdash; SLS check",
-            capacity=crack_cap, action=crack_action, utilisation=crack_util,
-            status=crack_status, rows=tuple(crack_rows),
-            capacity_label="Allowable limit", action_label="Calculated crack width",
-        ),
-        deflection=InputsSummaryCardSource(
-            family="deflection", title="Deflection &mdash; SLS check",
-            capacity=defl_cap, action=defl_action, utilisation=defl_util,
-            status=defl_status, rows=tuple(deflection_rows),
-            capacity_label="Allowable limit", action_label="Calculated deflection",
-        ),
-        geometry={},
-        actions={"Mu_star": bending_action, "Vu_star": shear_action,
-                 "sls_Mstar": sls_moment, "sls_Vstar": sls_shear},
-        run_state={"source": "design_page"},
-    )
-    inject_seamless_steps_css()
-    st.markdown(build_inputs_summary_html(source), unsafe_allow_html=True)
+        def _projected_capacity(value: str) -> float | None:
+            match = re.search(
+                r"[-+]?\d+(?:\.\d+)?",
+                str(value or "").replace(",", ""),
+            )
+            return float(match.group(0)) if match else None
 
-
-
-
+        st.session_state["_design_resolved_bending_capacity_kNm"] = (
+            _projected_capacity(projection.source.bending.capacity)
+        )
+        st.session_state["_design_resolved_shear_capacity_kN"] = (
+            _projected_capacity(projection.source.shear.capacity)
+        )
+        st.session_state["_design_resolved_bending_status"] = (
+            projection.source.bending.status
+        )
+        st.session_state["_design_resolved_shear_status"] = (
+            projection.source.shear.status
+        )
+        inject_seamless_steps_css()
+        st.markdown(
+            build_inputs_summary_html(projection.source),
+            unsafe_allow_html=True,
+        )
+        # Show the same Design Brain publication card used by Beam Setup.
+        # Load Analysis supplies the calculated actions above; the shared
+        # authoritative result supplies the recommendation and status shown
+        # here, so the two pages cannot drift into different answers.
+        render_v2_design_guide_card(
+            st_module=st,
+            design_guide_slot=st.empty(),
+            result=authoritative,
+        )
+        return
 # ---------------------------------------------------
 # Helper: get span from Inputs page
 # ---------------------------------------------------
@@ -824,7 +791,7 @@ def plot_load_diagram_plotly(
     point_loads: list[dict] | None = None,
     udl_loads: list[dict] | None = None,
 ):
-    return _shared_plot_load_diagram_plotly(
+    fig = _shared_plot_load_diagram_plotly(
         case=case,
         L=L,
         params=params,
@@ -836,6 +803,10 @@ def plot_load_diagram_plotly(
         point_loads=point_loads,
         udl_loads=udl_loads,
     )
+    # Match the effective SFD plotting width. Its visible y-axis labels reserve
+    # space on the left, while the load diagram has no visible y-axis.
+    fig.update_xaxes(domain=[0.042, 1.0])
+    return fig
 
 
 # ---------------------------------------------------
@@ -2588,279 +2559,50 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         commit_msg = st.session_state.get("_design_section_commit_msg")
         if commit_msg:
             st.success(commit_msg)
-    # Determine support type for summary
-    support_type = "—"
-    if case == "Overhanging beam – right overhang with point load at free end":
-        support_type = "Pinned–Pinned (overhang)"
-    else:
-        support_type = str(
-            params.get(
-                "support_condition",
-                support_condition if "support_condition" in locals() else "Simply supported",
-            )
-        )
-
-    # Get capacity values for limit display (reuse existing computed values)
-    phi_Mu_cap = get_param("phi_Mu_cap", None)
-    phi_Vu_cap = get_param("phi_Vu_cap", None)
-    
-    # Determine limit strings for derivation rows
-    shear_limit = "—"
-    if phi_Vu_cap is not None and not (isinstance(phi_Vu_cap, float) and math.isnan(phi_Vu_cap)) and phi_Vu_cap > 0:
-        shear_limit = f"φV_u,cap = {phi_Vu_cap:.1f} kN"
-    
-    moment_limit = "—"
-    if phi_Mu_cap is not None and not (isinstance(phi_Mu_cap, float) and math.isnan(phi_Mu_cap)) and phi_Mu_cap > 0:
-        moment_limit = f"φM_u = {phi_Mu_cap:.1f} kNm"
-
-    # Build summary rows for clickable table (capacity = reference strength; action = derived demand)
-    rows_summary = [
-        {"Check": "Support conditions", "capacity": support_type, "action": "—", "Utilisation": "—", "Status": "OK"},
-        {"Check": "Reactions", "capacity": "Derived from model", "action": "—", "Utilisation": "—", "Status": "OK"},
-        {"Check": "Shear derivation", "capacity": shear_limit, "action": f"|V|_max = {V_max_abs:.2f} kN", "Utilisation": "—", "Status": "OK"},
-        {"Check": "Moment derivation", "capacity": moment_limit, "action": f"|M|_max = {M_max_abs:.2f} kNm", "Utilisation": "—", "Status": "OK"},
-    ]
-
-    support_condition_summary = str(params.get("support_condition", "")).replace("-", "–")
-    solver_case_summary = (
-        case == "Multi-span continuous beam"
-        or (
-            case.startswith("Simple beam")
-            and support_condition_summary in {"Fixed–Pinned", "Pinned–Fixed", "Fixed–Fixed"}
-        )
-    )
-    check_to_uid = {
-        "Support conditions": EQ_SLS_UID["step1"],
-        "Reactions": EQ_SLS_UID["step2f"] if solver_case_summary else EQ_SLS_UID["step2"],
-        "Shear derivation": EQ_SLS_UID["step3"],
-        "Moment derivation": EQ_SLS_UID["step4"],
-    }
-
-    check_to_tab = {
-        "Support conditions": "SLS",
-        "Reactions": "SLS",
-        "Shear derivation": "SLS",
-        "Moment derivation": "SLS",
-    }
-
-    ROWS = []
-    for r in rows_summary:
-        check = r.get("Check", "")
-        cap_cell = r.get("capacity", r.get("Value", "—"))
-        act_cell = r.get("action", r.get("Limit", "—"))
-        util_str = r.get("Utilisation", "—")
-        status_str = r.get("Status", "")
-        
-        # Explicitly set capacity + demand for derivation rows (util = demand / capacity)
-        if check == "Shear derivation":
-            cap_cell = shear_limit
-            act_cell = f"|V|_max = {V_max_abs:.2f} kN"
-            if phi_Vu_cap not in (0, None) and not (isinstance(phi_Vu_cap, float) and math.isnan(phi_Vu_cap)):
-                util_val = V_max_abs / phi_Vu_cap
-                util_str = str(round(util_val, 3)) if util_val is not None else "—"
-                status_str = "OK" if (util_val is not None and util_val <= 1.0) else "NG"
-                ok = True if status_str == "OK" else False
-            else:
-                util_str = "—"
-                status_str = "—"
-                ok = None
-        elif check == "Moment derivation":
-            cap_cell = moment_limit
-            act_cell = f"|M|_max = {M_max_abs:.2f} kNm"
-            if phi_Mu_cap not in (0, None) and not (isinstance(phi_Mu_cap, float) and math.isnan(phi_Mu_cap)):
-                util_val = M_max_abs / phi_Mu_cap
-                util_str = str(round(util_val, 3)) if util_val is not None else "—"
-                status_str = "OK" if (util_val is not None and util_val <= 1.0) else "NG"
-                ok = True if status_str == "OK" else False
-            else:
-                util_str = "—"
-                status_str = "—"
-                ok = None
-        
-        # Determine if this is a check row (has numeric utilisation for pass/fail)
-        # A row is a check row only if it has a numeric utilisation (not just a limit)
-        is_check_row = util_str not in ("", "—", None)
-        
-        # Force derivation rows to be treated as check rows
-        if check in ("Shear derivation", "Moment derivation"):
-            is_check_row = True
-        
-        # Determine ok status for styling (True=pass/green, False=fail/red, None=neutral-blue)
-        if not is_check_row:
-            # No utilisation check → neutral blue styling
-            util_str = "—"
-            ok = None
-        else:
-            # Has utilisation check → derive ok from status (if not already set above)
-            if ok is None:
-                if status_str == "OK":
-                    ok = True
-                elif status_str in ("NG", "Fail", "Not OK"):
-                    ok = False
-                else:
-                    # For rows with utilisation, derive status from util if status is not explicitly set
-                    if util_str != "—" and status_str == "":
-                        try:
-                            util_val = float(util_str)
-                            if not math.isnan(util_val):
-                                status_str = "OK" if util_val <= 1.0 else "NG"
-                                ok = True if util_val <= 1.0 else False
-                            else:
-                                ok = None
-                        except (ValueError, TypeError):
-                            ok = None
-                    else:
-                        ok = None
-
-        ROWS.append(
-            sync_legacy_value_limit(
-                {
-                    "title": check,
-                    "capacity": cap_cell,
-                    "action": act_cell,
-                    "util": util_str,
-                    "status": status_str,
-                    "ok": ok,
-                    "uid": check_to_uid.get(check, ""),
-                    "tab": check_to_tab.get(check, "SLS"),
-                }
-            )
-        )
-
-    # Render design actions summary table (SLS + ULS + strength/utilisation)
+    # The Load Analysis page owns demands only. The shared Design Brain owns
+    # every capacity, utilisation and status displayed by the summary.
     with summary_placeholder.container():
         render_page_explainer_expander(_render_sfd_bmd_explainer)
-        phi_Vu_cap = get_param("phi_Vu_cap", None)
-        phi_Mu_cap = get_param("phi_Mu_cap", None)
-
-        def _strength_display(value: float | None, units: str) -> str:
-            if value is None or (isinstance(value, float) and math.isnan(value)) or value <= 0:
-                return "—"
-            return f"{value:.2f} {units}"
-
-        def _util_status(uls_value: float, strength_value: float | None) -> tuple[str, str, bool | None]:
-            if strength_value is None or (isinstance(strength_value, float) and math.isnan(strength_value)) or strength_value <= 0:
-                return "—", "Not checked", None
-            util_val = uls_value / strength_value
-            util_str = f"{util_val:.3f}"
-            if util_val > 1.0:
-                return util_str, "FAIL", False
-            if util_val >= 0.9:
-                return util_str, "NEAR LIMIT", None
-            return util_str, "PASS", True
-
         use_committed_section_actions = (
             design_actions_source == "section"
             and bool(get_param("design_section_committed", False))
         )
-        summary_V_uls = float(get_param("design_V_uls_kN", 0.0) or 0.0) if use_committed_section_actions else float(V_uls)
-        summary_V_sls = float(get_param("design_V_sls_kN", 0.0) or 0.0) if use_committed_section_actions else float(V_sls)
-
+        summary_V_uls = (
+            float(get_param("design_V_uls_kN", 0.0) or 0.0)
+            if use_committed_section_actions
+            else float(V_uls)
+        )
+        summary_V_sls = (
+            float(get_param("design_V_sls_kN", 0.0) or 0.0)
+            if use_committed_section_actions
+            else float(V_sls)
+        )
         if use_committed_section_actions:
-            M_uls_signed = float(
-                get_param("design_M_uls_kNm_signed", get_param("design_M_uls_kNm", 0.0)) or 0.0
+            summary_M_uls = abs(
+                float(
+                    get_param(
+                        "design_M_uls_kNm_signed",
+                        get_param("design_M_uls_kNm", 0.0),
+                    )
+                    or 0.0
+                )
             )
-            M_sls_signed = float(
-                get_param("design_M_sls_kNm_signed", get_param("design_M_sls_kNm", 0.0)) or 0.0
+            summary_M_sls = abs(
+                float(
+                    get_param(
+                        "design_M_sls_kNm_signed",
+                        get_param("design_M_sls_kNm", 0.0),
+                    )
+                    or 0.0
+                )
             )
-            sag_M_uls = max(0.0, M_uls_signed)
-            sag_M_sls = max(0.0, M_sls_signed)
-            hog_M_uls = abs(min(0.0, M_uls_signed))
-            hog_M_sls = abs(min(0.0, M_sls_signed))
-            M_neg_min_uls_for_rule = M_uls_signed
         else:
-            sag_M_uls = float(M_pos_max_uls)
-            sag_M_sls = float(M_pos_max_sls)
-            hog_M_uls = abs(float(M_neg_min_uls))
-            hog_M_sls = abs(float(M_neg_min_sls))
-            M_neg_min_uls_for_rule = float(M_neg_min_uls)
-
-        shear_strength = None if phi_Vu_cap is None else float(phi_Vu_cap)
-        shear_util, shear_status, shear_ok = _util_status(summary_V_uls, shear_strength)
-
-        phi_mu_pos_cap = get_param("phi_Mu_pos_kNm", None)
-        phi_mu_neg_cap = get_param("phi_Mu_neg_kNm", None)
-        if phi_mu_pos_cap is None or (isinstance(phi_mu_pos_cap, float) and math.isnan(phi_mu_pos_cap)):
-            phi_mu_pos_cap = None
-        else:
-            phi_mu_pos_cap = float(phi_mu_pos_cap)
-        if phi_mu_neg_cap is None or (isinstance(phi_mu_neg_cap, float) and math.isnan(phi_mu_neg_cap)):
-            phi_mu_neg_cap = None
-        else:
-            phi_mu_neg_cap = float(phi_mu_neg_cap)
-        if phi_mu_pos_cap is None or phi_mu_pos_cap <= 0:
-            _fb = None if phi_Mu_cap is None else float(phi_Mu_cap)
-            phi_mu_pos_cap = _fb if _fb is not None and _fb > 0 else None
-        if phi_mu_neg_cap is None or phi_mu_neg_cap <= 0:
-            phi_mu_neg_cap = None
-
-        has_sagging_case = True
-        has_hogging_case = M_neg_min_uls_for_rule is not None and float(M_neg_min_uls_for_rule) < -1e-9
-
-        sag_util, sag_status, sag_ok = _util_status(sag_M_uls, phi_mu_pos_cap)
-        hog_util, hog_status, hog_ok = _util_status(hog_M_uls, phi_mu_neg_cap)
-
-        summary_rows = [
-            {
-                "name": "Shear V",
-                "sls": f"{summary_V_sls:.2f} kN",
-                "uls": f"{summary_V_uls:.2f} kN",
-                "strength": _strength_display(shear_strength, "kN"),
-                "util": shear_util,
-                "status": shear_status,
-                "uid": EQ_SLS_UID["step3"],
-                "tab": "SLS",
-                "ok": shear_ok,
-            },
-        ]
-        if has_sagging_case:
-            summary_rows.append(
-                {
-                    "name": "Sagging moment M+",
-                    "sls": f"{sag_M_sls:.2f} kNm",
-                    "uls": f"{sag_M_uls:.2f} kNm",
-                    "strength": _strength_display(phi_mu_pos_cap, "kNm"),
-                    "util": sag_util,
-                    "status": sag_status,
-                    "uid": EQ_SLS_UID["step4"],
-                    "tab": "SLS",
-                    "ok": sag_ok,
-                }
-            )
-        if has_hogging_case:
-            summary_rows.append(
-                {
-                    "name": "Hogging moment M−",
-                    "sls": f"{hog_M_sls:.2f} kNm",
-                    "uls": f"{hog_M_uls:.2f} kNm",
-                    "strength": _strength_display(phi_mu_neg_cap, "kNm"),
-                    "util": hog_util,
-                    "status": hog_status,
-                    "uid": EQ_SLS_UID["step4"],
-                    "tab": "SLS",
-                    "ok": hog_ok,
-                }
-            )
-        if has_hogging_case and hog_M_uls >= sag_M_uls:
-            governing_bending_action = hog_M_uls
-            governing_bending_capacity = phi_mu_neg_cap
-            governing_bending_util = hog_util
-            governing_bending_status = hog_status
-        else:
-            governing_bending_action = sag_M_uls
-            governing_bending_capacity = phi_mu_pos_cap
-            governing_bending_util = sag_util
-            governing_bending_status = sag_status
+            summary_M_uls = max(float(M_pos_max_uls), abs(float(M_neg_min_uls)))
+            summary_M_sls = max(float(M_pos_max_sls), abs(float(M_neg_min_sls)))
         _render_design_check_summary(
-            bending_action=governing_bending_action,
-            bending_capacity=governing_bending_capacity,
-            bending_utilisation=governing_bending_util,
-            bending_status=governing_bending_status,
+            bending_action=summary_M_uls,
             shear_action=summary_V_uls,
-            shear_capacity=shear_strength,
-            shear_utilisation=shear_util,
-            shear_status=shear_status,
-            sls_moment=max(sag_M_sls, hog_M_sls),
+            sls_moment=summary_M_sls,
             sls_shear=summary_V_sls,
         )
 
@@ -3175,7 +2917,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
             summary_line=step0_summary,
             details_md=step0_md,
             status=None,
-            accent="load",
+            accent=None,
         )
 
     # STEP 1 – Support conditions (expandable)
@@ -3293,7 +3035,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
             summary_line=step1_summary,
             details_md=step1_md,
             status=None,
-            accent="support",
+            accent=None,
         )
 
     solver_case = (
@@ -3332,7 +3074,7 @@ x = [{node_text}]\\,\\text{{m}}, \\qquad L_e = [{span_text}]\\,\\text{{m}}
             summary_line=step2a_summary,
             details_md=step2a_md,
             status=None,
-            accent="fe",
+            accent=None,
         )
 
         ex_le = float(element_lengths[0]) if element_lengths else float(L)
@@ -3358,7 +3100,7 @@ L_e^{{(example)}} = {ex_le:.3g}\\,\\text{{m}}
             summary_line=step2b_summary,
             details_md=step2b_md,
             status=None,
-            accent="fe",
+            accent=None,
         )
 
         gF = list(solver_md.get("global_F", solver_md.get("global_F_preview", [])) or [])
@@ -3376,7 +3118,7 @@ Applied loads are converted to equivalent nodal actions and assembled.
             summary_line=step2c_summary,
             details_md=step2c_md,
             status=None,
-            accent="fe",
+            accent=None,
         )
 
         rK = solver_md.get("reduced_K", solver_md.get("reduced_K_preview", [])) or []
@@ -3405,7 +3147,7 @@ K u = F, \\qquad K_r u_r = F_r
             summary_line=step2d_summary,
             details_md=step2d_md,
             status=None,
-            accent="fe",
+            accent=None,
         )
 
         ru = list(solver_md.get("reduced_u", solver_md.get("reduced_u_preview", [])) or [])
@@ -3420,7 +3162,7 @@ These solved DOFs are used to recover support actions and element-end forces.
             summary_line=step2e_summary,
             details_md=step2e_md,
             status=None,
-            accent="fe",
+            accent=None,
         )
 
         reactions_solver = dict(results_local.get("reactions", {}))
@@ -3454,7 +3196,7 @@ Recovered support actions define the final SFD/BMD response.
             summary_line=step2f_summary,
             details_md=step2f_md,
             status=None,
-            accent="fe",
+            accent=None,
         )
 
     # STEP 2 – reactions (case-by-case)
@@ -3762,10 +3504,21 @@ $R_A = {RA:.3g}\\, \\text{{kN}}$ (downward), $R_B = {RB:.3g}\\, \\text{{kN}}$ (u
             summary_line=step2_summary,
             details_md=step2_details,
             status=None,
-            accent="reaction",
+            accent=None,
         )
 
     # STEP 3 – shear function V(x)
+    def _shared_step_status(value):
+        status = str(value or "").strip().upper()
+        if status in {"PASS", "OK"}:
+            return "pass"
+        if status in {"FAIL", "NG"}:
+            return "fail"
+        return None
+
+    step3_capacity_status = _shared_step_status(
+        st.session_state.get("_design_resolved_shear_status")
+    )
     step3_md = ""
 
     if case == "Multi-span continuous beam":
@@ -4006,11 +3759,14 @@ The shear increases linearly from \\(-wL\\) at the fixed end to zero at the free
             uid=step3_uid,
             summary_line=step3_summary,
             details_md=step3_details,
-            status=None,
-            accent="shear",
+            status=step3_capacity_status,
+            accent=None,
         )
 
     # STEP 4 – moment function M(x)
+    step4_capacity_status = _shared_step_status(
+        st.session_state.get("_design_resolved_bending_status")
+    )
     step4_md = ""
 
     if case == "Multi-span continuous beam":
@@ -4239,8 +3995,8 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
             uid=step4_uid,
             summary_line=step4_summary,
             details_md=step4_details,
-            status=None,
-            accent="moment",
+            status=step4_capacity_status,
+            accent=None,
         )
 
     # Push SFD/BMD results into shared state

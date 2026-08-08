@@ -19,7 +19,11 @@ def _text(value: Any, fallback: str = "") -> str:
     return value or fallback
 
 
-def _queue_v2_design_guide_apply(st_module: Any, payload: dict[str, Any]) -> None:
+def _queue_v2_design_guide_apply(
+    st_module: Any,
+    payload: dict[str, Any],
+    result: AuthoritativeDesignResult,
+) -> None:
     """Queue Apply before the next complete Inputs transaction."""
 
     queued_payload = dict(payload)
@@ -29,6 +33,11 @@ def _queue_v2_design_guide_apply(st_module: Any, payload: dict[str, Any]) -> Non
     st_module.session_state["pending_recommendation"] = dict(queued_payload)
     st_module.session_state["_inputs_action_apply_recommendation_payload"] = dict(queued_payload)
     st_module.session_state["_inputs_action_apply_recommendation"] = True
+    # A non-Inputs consumer (currently Load Analysis) must execute the command
+    # against the exact authoritative result that published this payload.
+    # Beam Setup ignores this handover and continues through its existing
+    # revision-owned fragment transaction.
+    st_module.session_state["_queued_design_brain_apply_result"] = result
 
 
 def _format_clause_reference(value: Any) -> str:
@@ -138,12 +147,16 @@ def render_v2_design_guide_card(
             # A broad ancestor :has() selector also sees the unrelated Batch
             # Design expander higher in the page and paints it red/blue.
             "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-fail) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"]{background:#fff0f0;border-color:#e03131;border-left:5px solid #e03131;}"
+            "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-fail) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] details>summary{background:#fff0f0!important;border-left:5px solid #e03131!important;}"
             "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-fail) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] summary:hover{background:#ffe3e3;}"
             "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-optimise) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"]{background:#eef3ff;border-color:#4263eb;border-left:5px solid #4263eb;}"
+            "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-optimise) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] details>summary{background:#eef3ff!important;border-left:5px solid #4263eb!important;}"
             "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-optimise) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] summary:hover{background:#dbe4ff;}"
             "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-pass) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"]{background:#edf8ef;border-color:#2f9e44;border-left:5px solid #2f9e44;}"
+            "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-pass) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] details>summary{background:#edf8ef!important;border-left:5px solid #2f9e44!important;}"
             "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-pass) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] summary:hover{background:#dff3e3;}"
             "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-empty) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"]{background:#fff;border-color:#adb5bd;border-left:5px solid #868e96;}"
+            "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-empty) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] details>summary{background:#fff!important;border-left:5px solid #868e96!important;}"
             "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-empty) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] summary:hover{background:#f8f9fa;}"
             ".inputs-v2-root .inputs-v2-design-guide-cta-gap{height:.8rem;}"
             "div[data-testid=\"stButton\"]>button{width:100%;border-radius:8px;}"
@@ -213,7 +226,7 @@ def render_v2_design_guide_card(
                     key=f"v2_design_guide_apply_{_text(publication.get('publication_hash'), 'current')}",
                     use_container_width=True,
                     on_click=_queue_v2_design_guide_apply,
-                    args=(st_module, payload),
+                    args=(st_module, payload, result),
                 )
 
 
