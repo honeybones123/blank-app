@@ -160,6 +160,14 @@ def project_beam_load_editor_frame(
         record["utilisation"] = (
             f"{utilisation:.2f}" if utilisation is not None else "—"
         )
+        for column in (
+            "bending_utilisation",
+            "shear_utilisation",
+            "crack_utilisation",
+            "deflection_utilisation",
+        ):
+            value = _number_or_original(record.get(column))
+            record[column] = f"{value:.2f}" if isinstance(value, (int, float)) else "—"
         record["design_state"] = _design_state(record)
         member_id = str(record.get("beam_id") or "").strip()
         case = cases_by_member.get(member_id)

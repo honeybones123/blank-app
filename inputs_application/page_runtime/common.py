@@ -486,6 +486,15 @@ def _compute_design_guidance_items(
         except (TypeError, ValueError):
             return None
 
+    # This map crosses the neutral Batch Design boundary with the result that
+    # V2 actually calculated. The table displays these stored values rather
+    # than deriving a second set of utilisations from its own row projection.
+    family_utilisations: dict[str, float | None] = {
+        "bending": None,
+        "shear": None,
+        "crack": None,
+        "deflection": None,
+    }
     statuses: dict[str, str] = {}
     utilisations: list[float] = []
     for family, pack in packs.items():
@@ -502,6 +511,8 @@ def _compute_design_guidance_items(
             util = _number(pack.get("summary_util_total"))
         if util is None and rows and isinstance(rows[0], dict):
             util = _number(rows[0].get("util"))
+        if str(family) in family_utilisations:
+            family_utilisations[str(family)] = util
         if util is not None:
             utilisations.append(util)
     worst_util = max(utilisations, default=None)
@@ -512,6 +523,7 @@ def _compute_design_guidance_items(
         "any_fail": any_fail,
         "all_key_pass": not any_fail,
         "worst_util": worst_util,
+        "family_utilisations": family_utilisations,
     }
     payload["debug_trace"] = {
         "overview": overview,

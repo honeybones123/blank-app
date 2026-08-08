@@ -2426,6 +2426,12 @@ def build_beam_schedule_rows() -> list[dict]:
                     ),
                     default=None,
                 ),
+                # Individual values are retained for Batch Design's read-only
+                # check columns. Rendering this schedule never recalculates.
+                "Mu_utilisation": summary.get("Mu_utilisation"),
+                "Vu_utilisation": summary.get("Vu_utilisation"),
+                "crack_utilisation": summary.get("crack_utilisation"),
+                "deflection_utilisation": summary.get("deflection_utilisation"),
                 "overall_status": summary.get("overall_status", BEAM_STATUS_NOT_RUN),
                 "strength_status": summary.get("strength_status", BEAM_STATUS_NOT_RUN),
                 "detailing_status": summary.get("detailing_status", BEAM_STATUS_NOT_RUN),

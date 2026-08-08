@@ -76,6 +76,10 @@ BEAM_MANAGER_TABLE_COLUMNS = [
     "my_star",
     "mz_star",
     "design_utilisation",
+    "bending_utilisation",
+    "shear_utilisation",
+    "crack_utilisation",
+    "deflection_utilisation",
     "overall_status",
     "bending_status",
     "shear_status",
@@ -198,6 +202,10 @@ def build_beam_schedule_df() -> pd.DataFrame:
             "my_star": item.get("my_star"),
             "mz_star": item.get("mz_star"),
             "design_utilisation": item.get("design_utilisation"),
+            "bending_utilisation": item.get("Mu_utilisation"),
+            "shear_utilisation": item.get("Vu_utilisation"),
+            "crack_utilisation": item.get("crack_utilisation"),
+            "deflection_utilisation": item.get("deflection_utilisation"),
         }
         for column in BEAM_MANAGER_EDITABLE_COLUMNS:
             if column in row:
@@ -273,9 +281,36 @@ def publish_batch_design_results_to_beam_records(results) -> set[str]:
         existing_summary = record.get("summary")
         if isinstance(existing_summary, dict):
             summary.update(existing_summary)
+        raw_result = getattr(result, "raw_result", {})
+        raw_payload = (
+            raw_result.get("design_brain_payload", {})
+            if isinstance(raw_result, dict)
+            else {}
+        )
+        raw_debug = raw_payload.get("debug_trace", {}) if isinstance(raw_payload, dict) else {}
+        raw_overview = raw_debug.get("overview", {}) if isinstance(raw_debug, dict) else {}
+        family_utilisations = (
+            raw_overview.get("family_utilisations", {})
+            if isinstance(raw_overview, dict)
+            else {}
+        )
+
+        def _family_utilisation(name: str) -> float | None:
+            value = family_utilisations.get(name) if isinstance(family_utilisations, dict) else None
+            try:
+                return None if value is None else float(value)
+            except (TypeError, ValueError):
+                return None
+
         summary["overall_status"] = status
         summary["strength_status"] = status
         summary["batch_design_utilisation"] = utilisation
+        # Batch results are authoritative for every check in this row. Clear
+        # unavailable SLS values rather than retaining a prior result.
+        summary["Mu_utilisation"] = _family_utilisation("bending")
+        summary["Vu_utilisation"] = _family_utilisation("shear")
+        summary["crack_utilisation"] = _family_utilisation("crack")
+        summary["deflection_utilisation"] = _family_utilisation("deflection")
         summary["last_checked_at"] = timestamp
         record["summary"] = summary
 
