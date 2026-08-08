@@ -50,8 +50,15 @@ from widgets_helpers import (
     render_plotly_diagram,
     render_plotly_fullscreen_control,
 )
-from engineering_check_ui import DESIGN_ACTION_SUMMARY_COLUMNS, sync_legacy_value_limit
-from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks
+from engineering_check_ui import sync_legacy_value_limit
+from ui_seamless_steps import bind_summary_clicks
+from inputs_application.session_services import InputsSessionServices
+from application.engineering_snapshot import build_engineering_input_snapshot_from_resolved_state
+from inputs_application.new_design_brain_adapter import calculate_v2_authoritative_result
+from inputs_page_modules.summaries.builders import build_inputs_summary_html
+from inputs_page_modules.summaries.models import InputsSummaryCardSource, InputsSummarySourceSnapshot
+from inputs_page_modules.summaries.rows_from_packs import render_inputs_summary_rows_from_packs
+from ui_seamless_steps import inject_seamless_steps_css
 
 from beam_analysis import (
     build_beam_model_from_legacy_case,
@@ -84,6 +91,144 @@ _strip_leading_load_intro = _design_inputs_section._strip_leading_load_intro
 _governing_shear_star_value = _design_inputs_section._governing_shear_star_value
 _governing_moment_star_value = _design_inputs_section._governing_moment_star_value
 _design_inputs_section.bind_runtime(globals())
+
+
+def _render_design_check_summary(
+    *,
+    bending_action: float,
+    bending_capacity: float | None,
+    bending_utilisation: str,
+    bending_status: str,
+    shear_action: float,
+    shear_capacity: float | None,
+    shear_utilisation: str,
+    shear_status: str,
+    sls_moment: float,
+    sls_shear: float,
+) -> None:
+    """Render the Inputs summary cards using the Design page's solved actions."""
+    services = InputsSessionServices.from_mapping(st.session_state)
+    # Calculate a page-local V2 result from the actions just solved above.
+    # Reading the session's last Inputs result here left crack/deflection stale
+    # until the user visited Inputs, which is exactly what this summary must not
+    # do.  This projection does not overwrite manual action inputs.
+    design_state = dict(st.session_state)
+    design_state.update(
+        {
+            "actions_mode": "design",
+            "actions_source": "Teaching SFD/BMD page (|M|max, |V|max)",
+            "sfd_Mmax_abs_kNm": float(bending_action),
+            "sfd_Vmax_abs_kN": float(shear_action),
+            "sfd_Msls_max_kNm": float(sls_moment),
+            "sfd_Vsls_max_kN": float(sls_shear),
+            "uls_Mstar": float(bending_action),
+            "uls_Vstar": float(shear_action),
+            "sls_Mstar": float(sls_moment),
+            "sls_Vstar": float(sls_shear),
+        }
+    )
+    snapshot = build_engineering_input_snapshot_from_resolved_state(design_state)
+    try:
+        authoritative = calculate_v2_authoritative_result(
+            source_root=None,
+            engineering_snapshot=snapshot,
+            resolved_inputs=design_state,
+            input_revision=int(services.input_snapshots.current().revision or 0),
+        )
+        st.session_state.pop("_design_summary_calculation_error", None)
+    except Exception as exc:
+        # Preserve a usable summary if an incomplete section cannot yet run,
+        # while exposing the reason for diagnostics rather than failing page
+        # rendering or silently presenting a mismatched result.
+        st.session_state["_design_summary_calculation_error"] = str(exc)
+        authoritative = services.engineering_results.current()
+    packs = (
+        dict(authoritative.current_calculations or {}).get("packs", {})
+        if authoritative is not None
+        else {}
+    )
+    bend_pack = dict(packs.get("bending") or {})
+    shear_pack = dict(packs.get("shear") or {})
+    crack_pack = dict(packs.get("crack") or {})
+    defl_pack = dict(packs.get("deflection") or {})
+    bending_rows, shear_rows, crack_rows, deflection_rows, *_ = (
+        render_inputs_summary_rows_from_packs(
+            st_module=st,
+            bend_pack=bend_pack or None,
+            shear_pack=shear_pack or None,
+            crack_pack=crack_pack or None,
+            defl_pack=defl_pack or None,
+        )
+    )
+
+    def _strength(value: float | None, units: str) -> str:
+        if value is None or value <= 0 or (isinstance(value, float) and math.isnan(value)):
+            return "—"
+        return f"{value:.2f} {units}"
+
+    def _serviceability_values(rows, *, preferred_title: str = ""):
+        preferred = str(preferred_title or "").strip().lower()
+        primary = next(
+            (
+                row for row in rows
+                if preferred and preferred in str(row.get("title") or "").lower()
+            ),
+            next(
+                (row for row in rows if row.get("is_primary")),
+                next((row for row in rows if not row.get("is_informational")), {}),
+            ),
+        )
+        return (
+            str(primary.get("capacity") or primary.get("limit") or "—"),
+            str(primary.get("action") or primary.get("value") or "—"),
+            str(primary.get("util") or "—"),
+            str(primary.get("status") or "INFO"),
+        )
+
+    crack_cap, crack_action, crack_util, crack_status = _serviceability_values(
+        crack_rows,
+        preferred_title="Direct crack width check",
+    )
+    defl_cap, defl_action, defl_util, defl_status = _serviceability_values(deflection_rows)
+    scenario_id = str(st.session_state.get("active_beam_id") or "design")
+    source = InputsSummarySourceSnapshot(
+        scenario_id=scenario_id,
+        scenario_label=scenario_id,
+        bending=InputsSummaryCardSource(
+            family="bending", title="Bending &mdash; ULS check",
+            capacity=_strength(bending_capacity, "kNm"),
+            action=f"Mu* = {bending_action:.2f} kNm",
+            utilisation=bending_utilisation, status=bending_status,
+            rows=tuple(bending_rows), capacity_label="Calculated capacity",
+            action_label="Applied design action",
+        ),
+        shear=InputsSummaryCardSource(
+            family="shear", title="Shear &mdash; ULS check",
+            capacity=_strength(shear_capacity, "kN"),
+            action=f"V* = {shear_action:.2f} kN",
+            utilisation=shear_utilisation, status=shear_status,
+            rows=tuple(shear_rows), capacity_label="Calculated capacity",
+            action_label="Applied design action",
+        ),
+        crack=InputsSummaryCardSource(
+            family="crack", title="Crack control &mdash; SLS check",
+            capacity=crack_cap, action=crack_action, utilisation=crack_util,
+            status=crack_status, rows=tuple(crack_rows),
+            capacity_label="Allowable limit", action_label="Calculated crack width",
+        ),
+        deflection=InputsSummaryCardSource(
+            family="deflection", title="Deflection &mdash; SLS check",
+            capacity=defl_cap, action=defl_action, utilisation=defl_util,
+            status=defl_status, rows=tuple(deflection_rows),
+            capacity_label="Allowable limit", action_label="Calculated deflection",
+        ),
+        geometry={},
+        actions={"Mu_star": bending_action, "Vu_star": shear_action,
+                 "sls_Mstar": sls_moment, "sls_Vstar": sls_shear},
+        run_state={"source": "design_page"},
+    )
+    inject_seamless_steps_css()
+    st.markdown(build_inputs_summary_html(source), unsafe_allow_html=True)
 
 
 
@@ -1281,29 +1426,22 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         except Exception:
             pass
 
-    heading_l, heading_r = st.columns([6, 2], gap="small")
+    # Read the persisted mode before solving.  The control itself is rendered
+    # beside the diagrams, where its effect is visible.
+    use_sls = bool(st.session_state.get(load_toggle_key, False))
+    heading_l, heading_r = st.columns([6, 1], gap="small")
     with heading_l:
         render_section_title("Beam loading condition")
     with heading_r:
-        controls_info, controls_toggle = st.columns([1, 5], gap="small")
-        with controls_info:
-            with info_i_button(help_text="Beam loading inputs define the response shown in the diagrams below."):
-                st.markdown("Adjust support conditions, span, and loads to update the load, SFD, and BMD plots.")
-        with controls_toggle:
-            use_sls = st.toggle(
-                "Diagram/action state: SLS",
-                key=load_toggle_key,
-                on_change=_on_design_load_mode_change,
-                help="Toggle which limit state response to display (ULS or SLS). Base loads remain unchanged.",
-            )
-            mode_from_toggle = "SLS" if bool(use_sls) else "ULS"
-            st.session_state["loads_edit_toggle"] = bool(use_sls)
-            st.session_state["loads_edit_mode"] = mode_from_toggle
-            try:
-                set_shared("loads_edit_toggle", bool(use_sls), source="sfd_bmd_page:load_mode_toggle")
-                set_shared("loads_edit_mode", mode_from_toggle, source="sfd_bmd_page:load_mode_toggle")
-            except Exception:
-                pass
+        with info_i_button(help_text="Beam loading inputs define the response shown in the diagrams below."):
+            st.markdown("Adjust support conditions, span, and loads to update the load, SFD, and BMD plots.")
+
+    # Match the Inputs workspace: editable values on the left and the exact
+    # shared section/reinforcement diagram on the right.  Entering the column
+    # context here keeps the existing loading workflow intact without creating
+    # a second set of widgets or calculation state.
+    loading_inputs_col, loading_diagram_col = st.columns([1.15, 1.85], gap="large")
+    loading_inputs_col.__enter__()
 
     # Standardized row grid widths (label col + input col)
     ROW_COLS = [1.0, 3.0]
@@ -2011,6 +2149,13 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
 
     # Close the loading-grid container
     st.markdown("</div>", unsafe_allow_html=True)
+    loading_inputs_col.__exit__(None, None, None)
+    with loading_diagram_col:
+        from inputs_application.page_runtime.widgets import (
+            _render_section_2d_diagram_block_current,
+        )
+
+        _render_section_2d_diagram_block_current(compact=True)
     st.divider()
 
     st.session_state["loads_edit_mode"] = "SLS" if use_sls else "ULS"
@@ -2512,10 +2657,27 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                     "ok": hog_ok,
                 }
             )
-        render_clickable_summary_table(
-            summary_rows,
-            key_prefix="design_actions_summary",
-            columns=DESIGN_ACTION_SUMMARY_COLUMNS,
+        if has_hogging_case and hog_M_uls >= sag_M_uls:
+            governing_bending_action = hog_M_uls
+            governing_bending_capacity = phi_mu_neg_cap
+            governing_bending_util = hog_util
+            governing_bending_status = hog_status
+        else:
+            governing_bending_action = sag_M_uls
+            governing_bending_capacity = phi_mu_pos_cap
+            governing_bending_util = sag_util
+            governing_bending_status = sag_status
+        _render_design_check_summary(
+            bending_action=governing_bending_action,
+            bending_capacity=governing_bending_capacity,
+            bending_utilisation=governing_bending_util,
+            bending_status=governing_bending_status,
+            shear_action=summary_V_uls,
+            shear_capacity=shear_strength,
+            shear_utilisation=shear_util,
+            shear_status=shear_status,
+            sls_moment=max(sag_M_sls, hog_M_sls),
+            sls_shear=summary_V_sls,
         )
 
     st.markdown('<div id="shear-analysis-section"></div>', unsafe_allow_html=True)
@@ -2584,6 +2746,25 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
 
     render_timing_mark("design_page.runtime.diagrams.start")
     # ===== STACKED DIAGRAM LAYOUT =====
+    diagram_mode_l, diagram_mode_r = st.columns([6, 2], gap="small")
+    with diagram_mode_l:
+        st.caption("Choose which calculated load combination is shown in all three diagrams.")
+    with diagram_mode_r:
+        use_sls = st.toggle(
+            "Diagram/action state: SLS",
+            key=load_toggle_key,
+            on_change=_on_design_load_mode_change,
+            help="SLS uses G + ψsQ; ULS uses 1.2G + 1.5Q. Base loads remain unchanged.",
+        )
+        mode_from_toggle = "SLS" if bool(use_sls) else "ULS"
+        st.session_state["loads_edit_toggle"] = bool(use_sls)
+        st.session_state["loads_edit_mode"] = mode_from_toggle
+        try:
+            set_shared("loads_edit_toggle", bool(use_sls), source="sfd_bmd_page:load_mode_toggle")
+            set_shared("loads_edit_mode", mode_from_toggle, source="sfd_bmd_page:load_mode_toggle")
+        except Exception:
+            pass
+
     render_section_title(f"Load diagram ({active_mode} loads)")
     st.caption("Loads")
     if use_plotly_event_component:
@@ -3880,6 +4061,17 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
 
     # Push SFD/BMD results into shared state
     # (use key names expected by Inputs page)
+    canonical_action_updates = {}
+    if _use_beam_page:
+        # Publish both limit states to the canonical Design Actions contract.
+        # This makes the SLS actions immediately available to crack and
+        # deflection consumers, including dead-load-only cases where Q = 0.
+        canonical_action_updates = {
+            "uls_Mstar": float(M_uls),
+            "uls_Vstar": float(V_uls),
+            "sls_Mstar": float(M_sls),
+            "sls_Vstar": float(V_sls),
+        }
     update_results(
         sfd_case=case,                  # store current teaching case
         sfd_Msls_max_kNm=float(M_sls),
@@ -3904,6 +4096,7 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
         critical_shear_x=x_crit,
         critical_shear_V=V_crit,
         V_max=float(np.max(np.abs(V_uls_vals))) if V_uls_vals is not None and len(V_uls_vals) else 0.0,
+        **canonical_action_updates,
     )
 
     # Bind JS click/scroll after all steps render
