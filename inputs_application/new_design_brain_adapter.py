@@ -141,6 +141,9 @@ def _v2_api(source_root: Path):
         format_engineering_advice,
         verified_changes,
     )
+    from inputs_v2.presentation.view_models.design_brain_card import (  # noqa: PLC0415
+        build_design_brain_card_view_model,
+    )
 
     return {
         "DesignGuideOrchestrator": DesignGuideOrchestrator,
@@ -164,6 +167,7 @@ def _v2_api(source_root: Path):
         "effects_for_changes": effects_for_changes,
         "format_engineering_advice": format_engineering_advice,
         "verified_changes": verified_changes,
+        "build_design_brain_card_view_model": build_design_brain_card_view_model,
     }
 
 
@@ -481,133 +485,22 @@ def _v2_display_projection(
     api: Mapping[str, Any],
     current: Any,
     decision: Any,
-    candidate: Any,
 ) -> dict[str, Any]:
-    """Project the V2 lab's exact Design Guide state into neutral data.
+    """Serialize V2's own card view model without recreating its decisions."""
 
-    The V2 lab computes its card state from the current checks, governing
-    family, candidate preview, and verified changes.  Repeating that decision
-    here would create a second Design Brain, so this function calls the V2
-    advice contracts and only serialises their result for the Runtime UI.
-    """
-
-    preview = decision.preview
-    before = preview.before
-    after = preview.after
-    family_name = str(decision.family.value)
-    current_b = float(before.families.get("bending", {}).get("util", 0.0) or 0.0)
-    current_shear = before.families.get("shear", {})
-    current_shear_cap = float(current_shear.get("phi_Vu", 0.0) or 0.0)
-    current_s = (
-        abs(float(current.actions.shear_force_kn)) / current_shear_cap
-        if current_shear_cap > 0
-        else 0.0
-    )
-    current_d = float(
-        before.families.get("serviceability", {}).get("deflection_util", 0.0) or 0.0
-    )
-    current_failing = current_b > 1.0 or current_s > 1.0 or current_d > 1.0
-    all_checks_pass = all(
-        float(values.get("util", values.get("deflection_util", 0.0)) or 0.0) <= 1.0
-        for values in after.families.values()
-        if isinstance(values, dict)
-    )
-    changes = tuple(
-        api["verified_changes"](current, candidate.proposal, candidate.row_counts)
-    )
-    effects = tuple(api["effects_for_changes"](changes))
-    if not effects and current.bottom.bars <= 2:
-        effects = (
-            "Further bending optimisation is blocked because the bottom reinforcement is already at the minimum required.",
-        )
-    proposed_b = float(after.families.get("bending", {}).get("util", 0.0) or 0.0)
-    proposed_shear = after.families.get("shear", {})
-    proposed_shear_cap = float(proposed_shear.get("phi_Vu", 0.0) or 0.0)
-    proposed_s = (
-        abs(float(current.actions.shear_force_kn)) / proposed_shear_cap
-        if proposed_shear_cap > 0
-        else 0.0
-    )
-    proposed_d = float(
-        after.families.get("serviceability", {}).get("deflection_util", 0.0) or 0.0
-    )
-    check = api["EngineeringCheck"]
-    current_clause = lambda check_id: api["clause_reference"](
-        check_id,
-        _calculation_owned_check_metadata(before, check_id),
-    )
-    proposed_clause = lambda check_id: api["clause_reference"](
-        check_id,
-        _calculation_owned_check_metadata(after, check_id),
-    )
-    current_checks = (
-        check("bending_capacity", "Bending", clause_reference=current_clause("bending_capacity"), status="fail" if current_b > 1 else "pass", utilisation=current_b),
-        check("shear_strength", "Shear", clause_reference=current_clause("shear_strength"), status="fail" if current_s > 1 else "pass", utilisation=current_s),
-        check("short_term_deflection", "Deflection", clause_reference=current_clause("short_term_deflection"), status="fail" if current_d > 1 else "pass", utilisation=current_d),
-    )
-    proposed_checks = (
-        check("bending_capacity", "Bending", clause_reference=proposed_clause("bending_capacity"), status="fail" if proposed_b > 1 else "pass", utilisation=proposed_b),
-        check("shear_strength", "Shear", clause_reference=proposed_clause("shear_strength"), status="fail" if proposed_s > 1 else "pass", utilisation=proposed_s),
-        check("short_term_deflection", "Deflection", clause_reference=proposed_clause("short_term_deflection"), status="fail" if proposed_d > 1 else "pass", utilisation=proposed_d),
-    )
-    clause_references = tuple(
-        dict(
-            (item.clause_reference.check_id, item.clause_reference)
-            for item in current_checks + proposed_checks
-            if item.clause_reference is not None
-        ).values()
-    )
-    advice = api["EngineeringAdviceResult"](
-        current_checks=current_checks,
-        proposed_checks=proposed_checks,
-        recommended_changes=changes,
-        engineering_effects=effects,
-        governing_check=family_name,
-        clause_references=clause_references,
-        verified_compliance=bool(preview.accepted),
-        apply_allowed=(family_name != "TARGET_BAND_REACHED")
-        and bool(preview.accepted)
-        and bool(changes),
-        blocked_reason=None if preview.accepted else str(preview.reason),
-        outcome_type=family_name,
-    )
-    if current_failing:
-        state_class, badge = "fail", "BLOCKED"
-    elif (
-        family_name == "TARGET_BAND_REACHED"
-        and all_checks_pass
-        and str(preview.reason)
-        in {"no_improving_shear_cleanup", "no_safe_shear_cleanup", "no_improving_bending_cleanup"}
-    ):
-        state_class, badge = "pass", "PASS"
-    elif family_name in {
-        "BENDING_OVERDESIGN_GOVERNS",
-        "SHEAR_OVERDESIGN_GOVERNS",
-        "COMBINED_OVERDESIGN",
-    }:
-        state_class, badge = "optimise", "ACTION"
-    elif preview.accepted or family_name in {"TARGET_BAND_REACHED", "EXACT_STOP_PROVEN"}:
-        state_class, badge = "pass", "PASS"
-    elif family_name in {
-        "BENDING_FAIL_GOVERNS",
-        "SHEAR_FAIL_GOVERNS",
-        "SHEAR_FAIL_BENDING_OPTIMISE_GOVERNS",
-        "BENDING_AND_SHEAR_FAIL_GOVERN",
-        "GEOMETRY_DETAILING_GOVERNS",
-        "SERVICEABILITY_GOVERNS",
-        "LOCKED_NO_REPAIR",
-    }:
-        state_class, badge = "fail", "BLOCKED" if not preview.accepted else "ACTION"
-    else:
-        state_class, badge = "info", "INFO"
+    card = api["build_design_brain_card_view_model"](decision, current)
+    advice = decision.advice
     return {
-        "state_class": state_class,
-        "badge": badge,
+        "state_class": card.state_class,
+        "badge": card.badge,
+        "heading": card.heading,
+        "governing_utilisation": card.governing_utilisation,
+        "show_apply": card.show_apply,
         "advice_text": api["format_engineering_advice"](advice),
-        "changes": [asdict(change) for change in changes],
-        "effects": list(effects),
+        "changes": [asdict(change) for change in advice.recommended_changes],
+        "effects": list(advice.engineering_effects),
         "apply_allowed": bool(advice.apply_allowed),
-        "current_failing": current_failing,
+        "current_failing": any(check.status == "fail" for check in advice.current_checks),
     }
 
 
@@ -921,6 +814,8 @@ def _neutral_publication_projection(
     v2_state_class = str(v2_display_map.get("state_class") or ("action" if action_type else outcome_state.lower()))
     v2_badge = str(v2_display_map.get("badge") or ("ACTION" if action_type else outcome_state))
     v2_advice_text = str(v2_display_map.get("advice_text") or "")
+    v2_heading = str(v2_display_map.get("heading") or family_id)
+    v2_governing_utilisation = float(v2_display_map.get("governing_utilisation") or 0.0)
     # The visual badge describes the current engineering state, which may be
     # BLOCKED when the current design fails even though V2 has produced an
     # approved repair candidate.  Publication outcome is the Apply authority:
@@ -943,6 +838,10 @@ def _neutral_publication_projection(
         "v2_state_class": v2_state_class,
         "v2_badge": v2_badge,
         "v2_advice_text": v2_advice_text,
+        "v2_heading": v2_heading,
+        "v2_governing_utilisation": v2_governing_utilisation,
+        "v2_show_apply": bool(v2_display_map.get("show_apply", apply_allowed)),
+        "v2_no_design_actions": bool(v2_display_map.get("no_design_actions")),
         "v2_changes": list(v2_display_map.get("changes") or []),
         "v2_apply_allowed": bool(v2_display_map.get("apply_allowed", apply_allowed)),
         "renderer_driving": True,
@@ -1115,38 +1014,93 @@ class NewDesignBrainAdapter:
             int(request.input_revision),
             request.resolved_inputs,
         )
-        decision = api["DesignGuideOrchestrator"]().preview(current)
-        preview = decision.preview
-        candidate = preview.candidate
-        accepted = bool(preview.accepted)
+        has_design_actions = any(
+            (
+                current.actions.bending_moment_knm,
+                current.actions.torsion_knm,
+                current.actions.shear_force_kn,
+                abs(current.actions.axial_force_kn),
+            )
+        )
+        if has_design_actions:
+            # This is the exact decision contract consumed by V2's own card.
+            # The former Runtime path called ``preview`` and then rebuilt the
+            # status/badge/heading independently, which caused card and
+            # acceptance differences whenever V2 changed.
+            decision = api["DesignGuideOrchestrator"]().decide(current)
+            candidate = decision.candidate
+            before = decision.current_result
+            after = decision.proposed_result or before
+            accepted = bool(decision.apply_allowed)
+            family = str(decision.family.value)
+            reason = str(decision.reason)
+            changed_fields = tuple(decision.changed_fields)
+            v2_display = _v2_display_projection(
+                api=api,
+                current=current,
+                decision=decision,
+            )
+        else:
+            # V2 deliberately does not run its Design Guide with no actions.
+            # It shows a separate waiting card while the ordinary engineering
+            # calculation remains available to the summary region.
+            candidate = None
+            before = api["CalculationCoordinator"](
+                api["LegacySnapshotCalculator"]()
+            ).calculate_current(current).result
+            if before is None:
+                raise ValueError("V2 calculation did not produce a current no-load result")
+            after = before
+            accepted = False
+            family = "NO_DESIGN_ACTIONS"
+            reason = "no_design_actions"
+            changed_fields = ()
+            v2_display = {
+                "state_class": "empty",
+                "badge": "NO LOADS",
+                "heading": "Design Brain waiting for actions",
+                "governing_utilisation": 0.0,
+                "show_apply": False,
+                "apply_allowed": False,
+                "no_design_actions": True,
+                "advice_text": (
+                    "No design actions entered. Add loads and the Design Brain "
+                    "will check and optimise your beam."
+                ),
+                "changes": [],
+                "effects": [],
+                "current_failing": False,
+            }
         # V2 deliberately leaves ``row_counts`` empty for candidates whose
         # authoritative proposal changes only the total bottom-bar count
         # (for example the shear-failure ladder).  Passing the current input
         # rows as a fallback changes the displayed V2 proposal back to the
         # old count at the Runtime Apply boundary.  Let _proposal_updates
         # derive the one-row arrangement from proposal.bottom_bars instead.
-        updates = _proposal_updates(candidate.proposal, candidate.row_counts)
-        candidate_payload = {
-            "candidate_id": candidate.candidate_id,
-            "source_revision": candidate.source_revision,
-            "source_hash": candidate.source_hash,
-            "rationale": candidate.rationale,
-            "row_counts": list(candidate.row_counts),
-            "proposal": asdict(candidate.proposal),
-        }
-        v2_display = _v2_display_projection(
-            api=api,
-            current=current,
-            decision=decision,
-            candidate=candidate,
+        updates = (
+            _proposal_updates(candidate.proposal, candidate.row_counts)
+            if candidate is not None and accepted
+            else {}
+        )
+        candidate_payload = (
+            {
+                "candidate_id": candidate.candidate_id,
+                "source_revision": candidate.source_revision,
+                "source_hash": candidate.source_hash,
+                "rationale": candidate.rationale,
+                "row_counts": list(candidate.row_counts),
+                "proposal": asdict(candidate.proposal),
+            }
+            if candidate is not None
+            else {}
         )
         publication_projection = _neutral_publication_projection(
-            family=str(decision.family.value),
-            reason=str(preview.reason),
+            family=family,
+            reason=reason,
             accepted=accepted,
             candidate_payload=candidate_payload,
             updates=updates,
-            clause_metadata=_clause_metadata(api, preview.before),
+            clause_metadata=_clause_metadata(api, before),
             source_revision=int(request.input_revision),
             source_hash=request.engineering_snapshot.engineering_hash,
             v2_display=v2_display,
@@ -1159,7 +1113,7 @@ class NewDesignBrainAdapter:
         publication_body = {
             **publication_projection["publication"],
             "source": "inputs_v2",
-            "v2_source_revision": preview.before.source_revision,
+            "v2_source_revision": before.source_revision,
             "v2_source_manifest_hash": v2_source_manifest,
             "final_publication_verifier_payload": publication_projection["verifier_payload"],
             "final_publication_authority_hash": publication_projection["publication_hash"],
@@ -1183,11 +1137,11 @@ class NewDesignBrainAdapter:
             "guidance_debug": {
                 "source": "inputs_v2",
                 "family_contract_version": "inputs_v2.family.v1",
-                "selected_family_id": str(decision.family.value),
+                "selected_family_id": family,
             },
             "recommendation_result": {
                 "source": "inputs_v2",
-                "family": str(decision.family.value),
+                "family": family,
                 "accepted": accepted,
             },
             "final_design_guide_publication": publication_body,
@@ -1210,14 +1164,14 @@ class NewDesignBrainAdapter:
                 current,
             ),
             "v2_source_manifest_hash": v2_source_manifest,
-            "v2_source_revision": preview.before.source_revision,
-            "v2_source_hash": preview.before.source_hash,
-            "v2_status": preview.before.status,
-            "v2_summary": preview.before.summary,
-            "families": dict(preview.before.families),
+            "v2_source_revision": before.source_revision,
+            "v2_source_hash": before.source_hash,
+            "v2_status": before.status,
+            "v2_summary": before.summary,
+            "families": dict(before.families),
             "packs": _v2_summary_packs(
                 current=current,
-                families=preview.before.families,
+                families=before.families,
             ),
             # Batch Design is a consumer of the V2 proposal, not a second
             # calculator.  Publish the already-verified post-proposal packs
@@ -1225,42 +1179,42 @@ class NewDesignBrainAdapter:
             # result V2 selected, without re-deriving a candidate in Runtime.
             "proposed_packs": _v2_summary_packs(
                 current=current,
-                families=preview.after.families,
+                families=after.families,
             ),
             "serviceability_loads": serviceability_loads,
-            "proposed_families": dict(preview.after.families),
+            "proposed_families": dict(after.families),
         }
         result = build_authoritative_design_result(
             engineering_snapshot=request.engineering_snapshot,
             current_calculations=current_calculations,
-            governing_family=str(decision.family.value),
+            governing_family=family,
             family_contract_version="inputs_v2.family.v1",
-            family_outcome=str(preview.reason),
+            family_outcome=reason,
             selected_candidate=candidate_payload if accepted else None,
             selected_candidate_absence=None if accepted else {
-                "reason": str(preview.reason),
-                "candidate_id": candidate.candidate_id,
+                "reason": reason,
+                "candidate_id": candidate_payload.get("candidate_id"),
             },
             selected_updates=updates if accepted else {},
             candidate_evaluation={
                 "accepted": accepted,
-                "changed_fields": list(preview.changed_fields),
-                "target_low": preview.target_low,
-                "target_high": preview.target_high,
-                "before": dict(preview.before.families),
-                "after": dict(preview.after.families),
+                "changed_fields": list(changed_fields),
+                "target_low": 0.85,
+                "target_high": 1.0,
+                "before": dict(before.families),
+                "after": dict(after.families),
             },
             candidate_acceptance_proof={
-                "source_revision_matches": candidate.source_revision == current.revision,
-                "source_hash_matches": candidate.source_hash == current.content_hash,
+                "source_revision_matches": candidate is None or candidate.source_revision == current.revision,
+                "source_hash_matches": candidate is None or candidate.source_hash == current.content_hash,
                 "v2_source_manifest_hash": v2_source_manifest,
-                "reinforcement_fit": dict(preview.after.families.get("reinforcement_fit", {})),
+                "reinforcement_fit": dict(after.families.get("reinforcement_fit", {})),
                 "review_before_apply": True,
             },
             blocker_or_exhaustion_proof={
-                "reason": str(preview.reason),
+                "reason": reason,
                 "accepted": accepted,
-                "family": str(decision.family.value),
+                "family": family,
                 "v2_source_manifest_hash": v2_source_manifest,
             },
             final_publication=canonical_publication,
@@ -1272,7 +1226,7 @@ class NewDesignBrainAdapter:
             result=result,
             stage_trace=("v2.input_mapping", "v2.family_classification", "v2.candidate_preview", "v2.neutral_projection"),
             pipeline_applied=True,
-            bypass_reason=None if accepted else str(preview.reason),
+            bypass_reason=None if accepted else reason,
             input_revision=int(request.input_revision),
         )
 

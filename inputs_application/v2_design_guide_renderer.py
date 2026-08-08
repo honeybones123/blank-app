@@ -80,10 +80,10 @@ def render_v2_design_guide_card(
     guidance_items = list(nested.get("guidance_items") or [])
     primary = dict(guidance_items[0]) if guidance_items and isinstance(guidance_items[0], dict) else {}
 
-    title = _text(display.get("title"), "UNKNOWN")
     badge = _text(display.get("v2_badge"), _text(display.get("badge"), _text(display.get("status"), "INFO"))).upper()
     family = _text(display.get("selected_family_id"), _text(result.governing_family, "UNKNOWN"))
     summary = _text(display.get("v2_advice_text"), _text(primary.get("rationale"), _text(primary.get("summary"), "No recommendation published.")))
+    no_design_actions = bool(display.get("v2_no_design_actions"))
     clause_metadata = display.get("clause_metadata")
     clause_refs = list(
         clause_metadata.get("references") or []
@@ -111,40 +111,15 @@ def render_v2_design_guide_card(
         badge,
     )
 
-    accepted = bool(dict(result.candidate_evaluation or {}).get("accepted"))
-    current_families = dict(dict(result.current_calculations or {}).get("families") or {})
-
-    def _utilisation(name: str, *aliases: str) -> float:
-        values = dict(current_families.get(name) or {})
-        for key in ("util", "utilisation", "deflection_util", *aliases):
-            try:
-                value = values.get(key)
-                if value is not None:
-                    return float(value)
-            except (TypeError, ValueError):
-                continue
-        return 0.0
-
-    current_bending = _utilisation("bending")
-    current_shear = _utilisation("shear")
-    current_deflection = _utilisation("serviceability", "deflection_util")
-    summary_util = max(current_bending, current_shear, current_deflection)
-    if family.startswith("SHEAR_FAIL") and not accepted:
-        visible_family = "Shear design revision required"
-    elif family.startswith("SHEAR") and accepted:
-        visible_family = "Verified shear revision"
-    else:
-        visible_family = (
-            "Further design revision required"
-            if (not accepted or state == "fail")
-            else family.replace("_", " ").title()
-        )
-    # Keep the expander label identical to V2's native Streamlit label.  The
-    # values are provider-controlled display fields, not arbitrary markup.
-    summary_label = (
-        f"**{badge}**  **{visible_family}**  |  "
-        f"Governing utilisation: {summary_util:.2f}"
-    )
+    try:
+        summary_util = float(display.get("v2_governing_utilisation") or 0.0)
+    except (TypeError, ValueError):
+        summary_util = 0.0
+    heading = _text(display.get("v2_heading"), family)
+    # V2 owns the text, status, and governing utilisation in this label.  Do
+    # not translate the family again in Runtime: that was the source of the
+    # previously different card answers.
+    summary_label = f"**{badge}**  **{heading}**  |  Governing utilisation: {summary_util:.2f}"
 
     with design_guide_slot.container():
         st_module.markdown(
@@ -158,7 +133,7 @@ def render_v2_design_guide_card(
             "div[data-testid=\"stExpander\"]:has(.inputs-v2-design-guide-copy) summary:hover{background:#eef3ff;}"
             "div[data-testid=\"stExpander\"]:has(.inputs-v2-design-guide-copy)>div[role=\"region\"]{padding:0 .7rem .7rem;}"
             ".inputs-v2-root.inputs-v2-design-guide-copy{border:0!important;background:transparent!important;padding:.35rem .2rem .15rem!important;margin:0!important;border-radius:0!important;line-height:1.42;}"
-            ".inputs-v2-brain-state-fail,.inputs-v2-brain-state-pass,.inputs-v2-brain-state-optimise,.inputs-v2-brain-state-info,.inputs-v2-brain-state-warn{display:none!important;}"
+            ".inputs-v2-brain-state-fail,.inputs-v2-brain-state-pass,.inputs-v2-brain-state-optimise,.inputs-v2-brain-state-info,.inputs-v2-brain-state-warn,.inputs-v2-brain-state-empty{display:none!important;}"
             # Limit the semantic colour to the Design Guide workspace block.
             # A broad ancestor :has() selector also sees the unrelated Batch
             # Design expander higher in the page and paints it red/blue.
@@ -168,6 +143,8 @@ def render_v2_design_guide_card(
             "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-optimise) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] summary:hover{background:#dbe4ff;}"
             "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-pass) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"]{background:#edf8ef;border-color:#2f9e44;border-left:5px solid #2f9e44;}"
             "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-pass) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] summary:hover{background:#dff3e3;}"
+            "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-empty) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"]{background:#fff;border-color:#adb5bd;border-left:5px solid #868e96;}"
+            "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-empty) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] summary:hover{background:#f8f9fa;}"
             ".inputs-v2-root .inputs-v2-design-guide-cta-gap{height:.8rem;}"
             "div[data-testid=\"stButton\"]>button{width:100%;border-radius:8px;}"
             "div[data-testid=\"stButton\"]>button:not(:disabled){background:#4263eb;color:#fff;border-color:#4263eb;}"
@@ -191,6 +168,23 @@ def render_v2_design_guide_card(
             f'<span data-testid="v2-design-guide-card" class="inputs-v2-brain-state-{html.escape(state)}" aria-hidden="true">{html.escape(family)}</span>',
             unsafe_allow_html=True,
         )
+
+        if no_design_actions:
+            st_module.markdown(
+                '<span class="inputs-v2-brain-state-empty" aria-hidden="true">NO_DESIGN_ACTIONS</span>',
+                unsafe_allow_html=True,
+            )
+            with st_module.expander(
+                "**NO LOADS**  **Design Brain waiting for actions**  |  Governing utilisation: 0.00",
+                expanded=False,
+            ):
+                st_module.markdown(
+                    '<div class="inputs-v2-root inputs-v2-design-guide-copy empty">'
+                    'No design actions entered. Add loads and the Design Brain will check and optimise your beam.'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+            return
 
         with st_module.expander(summary_label, expanded=False):
             st_module.markdown(
