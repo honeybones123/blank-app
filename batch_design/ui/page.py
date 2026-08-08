@@ -259,7 +259,12 @@ def _render_project_beam_design_editor(ctx: BatchDesignPageContext, workflow: Ba
         "b",
         "D",
         "L",
-        *ACTION_COLUMNS,
+        # Keep all imported axes in the stored frame, but show only the
+        # quantities consumed by the one-axis design model.
+        "n_star",
+        "vy_star",
+        "mx_star",
+        "mz_star",
         "bf",
         "tf",
         "bw",

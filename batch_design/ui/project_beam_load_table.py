@@ -13,11 +13,14 @@ from batch_design.store import BatchDesignWorkflowState
 ACTION_COLUMNS = ("n_star", "vy_star", "vz_star", "mx_star", "my_star", "mz_star")
 ACTION_LABELS = {
     "n_star": "N*",
-    "vy_star": "Vy*",
+    # This one-axis beam workflow uses the Y shear component as its design
+    # shear and the Z bending component as its design moment.  Present the
+    # engineering quantities, not the retained import-axis names.
+    "vy_star": "Vu*",
     "vz_star": "Vz*",
     "mx_star": "T*",
     "my_star": "My*",
-    "mz_star": "Mx*",
+    "mz_star": "Mu*",
 }
 
 
