@@ -21,16 +21,31 @@ def build_design_page_context() -> DesignPageContext:
     return DesignPageContext()
 
 
-def render_sfd_bmd_page_workspace() -> None:
+def _render_design_workspace_fragment() -> None:
     from state_and_helpers import render_timing_mark
 
     context = build_design_page_context()
-    render_timing_mark("design_page.shell.setup", route=context.route_slug)
     render_timing_mark("design_page.shell.workspace.start")
     try:
         _runtime().render_sfd_bmd_page()
     finally:
         render_timing_mark("design_page.shell.workspace.end")
+
+
+def render_sfd_bmd_page_workspace() -> None:
+    import streamlit as st
+
+    from inputs_page_modules.fragments import run_inputs_fragment
+    from state_and_helpers import render_timing_mark
+
+    context = build_design_page_context()
+    render_timing_mark("design_page.shell.setup", route=context.route_slug)
+    run_inputs_fragment(
+        st_module=st,
+        fragment_name="design_workspace",
+        render_fn=_render_design_workspace_fragment,
+        force_fragment=True,
+    )
 
 
 def render_sfd_bmd_page() -> None:

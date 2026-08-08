@@ -5116,8 +5116,8 @@ def _render_deflection_page():
 
 # ---- page registry ----
 PAGES = {
-    "inputs": ("Inputs", inputs_page.render_inputs),
-    "design": ("Design", _render_design_page),
+    "inputs": ("Beam Setup", inputs_page.render_inputs),
+    "design": ("Load Analysis", _render_design_page),
     "bending": ("Bending", _render_bending_page),
     "shear": ("Shear", _render_shear_page),
     "creep": ("Creep", _render_creep_page),

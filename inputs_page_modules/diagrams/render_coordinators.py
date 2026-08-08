@@ -46,6 +46,7 @@ def render_inputs_section_2d_diagram_block(
     region_context: InputsSection2DRegionContext,
     current_input_identity_fn: Callable[[], RevisionIdentity | None],
     compact: bool = False,
+    height_scale: float = 1.0,
     time_perf_counter_fn: Callable[[], float],
     build_summary_cross_section_result_fn: Callable[..., Any],
     section_figure_builder_fn: Callable[..., Any],
@@ -115,7 +116,7 @@ def render_inputs_section_2d_diagram_block(
         try:
             fig_sec.update_layout(
                 autosize=True,
-                height=(475 if compact else 545),
+                height=int((475 if compact else 545) * max(0.25, float(height_scale))),
                 margin=dict(l=4, r=4, t=4, b=4),
             )
         except Exception:

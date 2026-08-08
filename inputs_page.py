@@ -207,7 +207,7 @@ def render_inputs_page() -> None:
     # Static route chrome belongs to the page shell.  Keeping the title outside
     # every polling fragment prevents calculation or Design Brain refreshes
     # from marking the whole page identity as stale.
-    st.title("Inputs")
+    st.title("Beam Setup")
 
     # Match V2's explicit landing boundary. Runtime previously rendered the
     # calculation, Design Brain, widgets, and diagram siblings underneath the

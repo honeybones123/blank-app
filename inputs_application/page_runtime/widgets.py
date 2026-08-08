@@ -469,7 +469,8 @@ def _render_inputs_materials_subsection(sync_callbacks: dict, *, show_heading: b
 
 def _render_section_2d_diagram_block_current(
     *, compact: bool = False, model_state: dict | None = None,
-    workspace_context=None, _retry_latest: bool = False,
+    workspace_context=None, height_scale: float = 1.0,
+    _retry_latest: bool = False,
 ):
     beam_id = str(
         getattr(workspace_context, "active_beam_id", None)
@@ -538,6 +539,7 @@ def _render_section_2d_diagram_block_current(
             compact=compact,
             model_state=model_state,
             workspace_context=workspace_context,
+            height_scale=height_scale,
             _retry_latest=True,
         )
 
@@ -546,6 +548,7 @@ def _render_section_2d_diagram_block_current(
         region_context=region_context,
         current_input_identity_fn=_current_identity,
         compact=compact,
+        height_scale=height_scale,
         time_perf_counter_fn=time.perf_counter,
         build_summary_cross_section_result_fn=build_summary_cross_section_result,
         section_figure_builder_fn=make_sectionA_figure,
@@ -555,7 +558,7 @@ def _render_section_2d_diagram_block_current(
 
 def _render_section_2d_diagram_block(
     *, compact: bool = False, model_state: dict | None = None,
-    workspace_context=None,
+    workspace_context=None, height_scale: float = 1.0,
 ):
     # Diagrams are input previews. Render them in the parent fast workspace so
     # a widget callback cannot commit successfully while a nested child
@@ -564,6 +567,7 @@ def _render_section_2d_diagram_block(
         compact=compact,
         model_state=model_state,
         workspace_context=workspace_context,
+        height_scale=height_scale,
     )
 
 

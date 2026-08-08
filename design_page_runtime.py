@@ -4,12 +4,14 @@
 # ==========================================
 
 import math
+import re
 import time
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 from streamlit_plotly_events import plotly_events
 from beam_diagram_runtime import (
     compute_diagram_arrays as _compute_diagram_arrays_cached_service,
@@ -59,6 +61,7 @@ from inputs_page_modules.summaries.builders import build_inputs_summary_html
 from inputs_page_modules.summaries.models import InputsSummaryCardSource, InputsSummarySourceSnapshot
 from inputs_page_modules.summaries.rows_from_packs import render_inputs_summary_rows_from_packs
 from ui_seamless_steps import inject_seamless_steps_css
+from inputs_page_modules.fragments import rerun_inputs_current_scope
 
 from beam_analysis import (
     build_beam_model_from_legacy_case,
@@ -91,6 +94,116 @@ _strip_leading_load_intro = _design_inputs_section._strip_leading_load_intro
 _governing_shear_star_value = _design_inputs_section._governing_shear_star_value
 _governing_moment_star_value = _design_inputs_section._governing_moment_star_value
 _design_inputs_section.bind_runtime(globals())
+
+
+def _install_design_scroll_preserver() -> None:
+    """Keep the Design workspace anchored across fragment widget reruns."""
+    components.html(
+        """
+        <script>
+        (() => {
+          const win = window.parent;
+          const doc = win.document;
+          const key = "beam_design_scroll_restore_v1";
+          const scroller = () =>
+            doc.querySelector("section.stMain") ||
+            doc.querySelector("section[data-testid='stMain']") ||
+            doc.scrollingElement || doc.documentElement;
+          const pageToken = () => String(win.location.pathname + win.location.search);
+          const interactiveControls = () => Array.from(doc.querySelectorAll(
+            "section.stMain input, section.stMain [role='combobox'], section.stMain [role='switch']"
+          ));
+          const remember = eventTarget => {
+            const el = scroller();
+            if (!el) return;
+            const top = Number(el.scrollTop || 0);
+            if (!Number.isFinite(top) || top < 1) return;
+            const controls = interactiveControls();
+            const anchor = eventTarget && eventTarget.closest
+              ? eventTarget.closest("input, [role='combobox'], [role='switch']")
+              : null;
+            const anchorIndex = anchor ? controls.indexOf(anchor) : -1;
+            const anchorRect = anchor ? anchor.getBoundingClientRect() : null;
+            const anchorSignature = anchor
+              ? `${anchor.tagName}:${anchor.getAttribute("type") || ""}:${anchor.getAttribute("role") || ""}`
+              : "";
+            win.__beamDesignPendingScroll = {
+              top, page: pageToken(), at: Date.now(), anchorIndex,
+              anchorTop: anchorRect ? anchorRect.top : null,
+              anchorSignature
+            };
+            try {
+              win.sessionStorage.setItem(key, JSON.stringify({
+                top, page: pageToken(), at: Date.now()
+              }));
+            } catch (_) {}
+          };
+
+          if (!win.__beamDesignScrollCaptureInstalled) {
+            win.__beamDesignScrollCaptureInstalled = true;
+            for (const eventName of ["pointerdown", "input", "change", "keydown"]) {
+              doc.addEventListener(eventName, event => {
+                const target = event.target;
+                if (!target || !target.closest) return;
+                if (!target.closest("[data-testid='stMainBlockContainer']")) return;
+                if (eventName === "keydown" && event.key !== "Enter") return;
+                remember(target);
+              }, true);
+            }
+            const root = doc.querySelector("[data-testid='stMainBlockContainer']") || doc.body;
+            const restorePending = () => {
+              const saved = win.__beamDesignPendingScroll;
+              if (!saved || saved.page !== pageToken() || Date.now() - saved.at > 3000) return;
+              const el = scroller();
+              if (!el) return;
+              const target = Number(saved.top || 0);
+              if (Number.isFinite(target) && target > 0) el.scrollTop = target;
+              if (saved.anchorIndex >= 0 && Number.isFinite(saved.anchorTop)) {
+                const controls = interactiveControls();
+                const anchor = controls[saved.anchorIndex];
+                if (anchor) {
+                  const signature = `${anchor.tagName}:${anchor.getAttribute("type") || ""}:${anchor.getAttribute("role") || ""}`;
+                  if (signature === saved.anchorSignature) {
+                    const delta = anchor.getBoundingClientRect().top - saved.anchorTop;
+                    if (Number.isFinite(delta) && Math.abs(delta) > 0.5) {
+                      el.scrollTop += delta;
+                    }
+                  }
+                }
+              }
+            };
+            const observer = new MutationObserver(() => {
+              restorePending();
+              win.requestAnimationFrame(restorePending);
+              win.setTimeout(restorePending, 40);
+              win.setTimeout(restorePending, 120);
+              win.setTimeout(restorePending, 300);
+            });
+            observer.observe(root, {childList: true, subtree: true});
+            win.__beamDesignScrollObserver = observer;
+          }
+
+          let saved = null;
+          try { saved = JSON.parse(win.sessionStorage.getItem(key) || "null"); }
+          catch (_) { saved = null; }
+          if (!saved || saved.page !== pageToken() || Date.now() - saved.at > 15000) return;
+
+          const restore = () => {
+            const el = scroller();
+            if (!el) return;
+            const target = Number(saved.top || 0);
+            if (Number.isFinite(target) && target > 0) el.scrollTop = target;
+          };
+          [0, 40, 120, 260, 500, 900].forEach(delay => win.setTimeout(restore, delay));
+          win.setTimeout(() => {
+            try { win.sessionStorage.removeItem(key); } catch (_) {}
+          }, 1100);
+        })();
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
 
 
 def _render_design_check_summary(
@@ -166,6 +279,62 @@ def _render_design_check_summary(
             return "—"
         return f"{value:.2f} {units}"
 
+    def _header_check_state(
+        action: float,
+        capacity: float | None,
+        fallback_utilisation: str,
+        rows,
+    ) -> tuple[str, str]:
+        """Resolve status and utilisation from the values visible in the card."""
+        utilisation = None
+        try:
+            action_value = abs(float(action))
+            capacity_value = float(capacity) if capacity is not None else 0.0
+        except (TypeError, ValueError):
+            action_value = 0.0
+            capacity_value = 0.0
+        if (
+            action_value > 1e-12
+            and capacity_value > 0.0
+            and not math.isnan(action_value)
+            and not math.isnan(capacity_value)
+        ):
+            utilisation = action_value / capacity_value
+        if utilisation is None:
+            match = re.search(r"[-+]?\d+(?:\.\d+)?", str(fallback_utilisation or ""))
+            if match:
+                utilisation = float(match.group(0))
+        if utilisation is None:
+            row_utilisations = []
+            for row in rows:
+                match = re.search(r"[-+]?\d+(?:\.\d+)?", str(row.get("util") or ""))
+                if match:
+                    row_utilisations.append(float(match.group(0)))
+            if row_utilisations:
+                utilisation = max(row_utilisations)
+        if utilisation is None:
+            return "—", "NOT CHECKED"
+        if utilisation > 1.0:
+            status = "FAIL"
+        elif utilisation >= 0.9:
+            status = "NEAR LIMIT"
+        else:
+            status = "PASS"
+        return f"{utilisation:.2f}", status
+
+    resolved_bending_utilisation, resolved_bending_status = _header_check_state(
+        bending_action,
+        bending_capacity,
+        bending_utilisation,
+        bending_rows,
+    )
+    resolved_shear_utilisation, resolved_shear_status = _header_check_state(
+        shear_action,
+        shear_capacity,
+        shear_utilisation,
+        shear_rows,
+    )
+
     def _serviceability_values(rows, *, preferred_title: str = ""):
         preferred = str(preferred_title or "").strip().lower()
         primary = next(
@@ -198,7 +367,7 @@ def _render_design_check_summary(
             family="bending", title="Bending &mdash; ULS check",
             capacity=_strength(bending_capacity, "kNm"),
             action=f"Mu* = {bending_action:.2f} kNm",
-            utilisation=bending_utilisation, status=bending_status,
+            utilisation=resolved_bending_utilisation, status=resolved_bending_status,
             rows=tuple(bending_rows), capacity_label="Calculated capacity",
             action_label="Applied design action",
         ),
@@ -206,7 +375,7 @@ def _render_design_check_summary(
             family="shear", title="Shear &mdash; ULS check",
             capacity=_strength(shear_capacity, "kN"),
             action=f"V* = {shear_action:.2f} kN",
-            utilisation=shear_utilisation, status=shear_status,
+            utilisation=resolved_shear_utilisation, status=resolved_shear_status,
             rows=tuple(shear_rows), capacity_label="Calculated capacity",
             action_label="Applied design action",
         ),
@@ -444,8 +613,8 @@ def render_inline_number_row(
     step=0.01,
     format="%.2f",
     help_text=None,
-    label_col_ratio=1.15,
-    input_col_ratio=1.0,
+    label_col_ratio=0.65,
+    input_col_ratio=1.50,
     disabled=False,
     sync_callbacks=None,
     on_change=None,
@@ -520,8 +689,8 @@ def render_inline_select_row(
     index=0,
     *,
     help_text=None,
-    label_col_ratio=1.15,
-    input_col_ratio=1.0,
+    label_col_ratio=0.65,
+    input_col_ratio=1.50,
     disabled=False,
     sync_callbacks=None,
     on_change=None,
@@ -1309,6 +1478,12 @@ def render_sfd_bmd_page():
             max-width: none !important;
         }
 
+        body div[data-testid="stNumberInput"],
+        body div[data-testid="stNumberInput"] > div {
+            width: 100% !important;
+            max-width: none !important;
+        }
+
         body div[data-testid="stSelectbox"] div[data-baseweb="select"] {
             width: 100% !important;
             max-width: none !important;
@@ -1365,7 +1540,8 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
 """
         )
 
-    render_result_page_title("Beam Actions & Diagrams (SFD / BMD)")
+    render_result_page_title("Load Analysis")
+    _install_design_scroll_preserver()
 
     # App-wide design-action source (same canonical keys as Inputs page)
     _LEGACY_ACTIONS_MANUAL = "Manual design actions (inputs below)"
@@ -1407,7 +1583,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
             set_shared("actions_mode", _mapped_mode, source="sfd_bmd:actions_toggle")
         except Exception:
             pass
-        st.rerun()
+        rerun_inputs_current_scope(st)
 
     summary_placeholder = st.empty()
     st.divider()
@@ -1440,11 +1616,16 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
     # shared section/reinforcement diagram on the right.  Entering the column
     # context here keeps the existing loading workflow intact without creating
     # a second set of widgets or calculation state.
-    loading_inputs_col, loading_diagram_col = st.columns([1.15, 1.85], gap="large")
+    loading_inputs_col, _diagram_gutter, loading_diagram_col = st.columns(
+        [1.47, 0.1425, 1.3875],
+        gap="large",
+    )
     loading_inputs_col.__enter__()
 
     # Standardized row grid widths (label col + input col)
-    ROW_COLS = [1.0, 3.0]
+    # Pull controls left while preserving the row's right edge: the width
+    # removed from the label track is added directly to the widget track.
+    ROW_COLS = [0.6, 3.4]
     
     # Force all inputs in the input column to start at the same left edge
     st.markdown("""
@@ -2155,7 +2336,10 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
             _render_section_2d_diagram_block_current,
         )
 
-        _render_section_2d_diagram_block_current(compact=True)
+        _render_section_2d_diagram_block_current(
+            compact=True,
+            height_scale=0.75,
+        )
     st.divider()
 
     st.session_state["loads_edit_mode"] = "SLS" if use_sls else "ULS"
@@ -2869,7 +3053,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
 
         if clicked_x is not None:
             set_shared("section_cursor_x_m", float(clicked_x), source="sfd_bmd_page")
-            st.rerun()
+            rerun_inputs_current_scope(st)
 
     st.divider()
     # ---------------------------------------------------
