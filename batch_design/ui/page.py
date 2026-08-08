@@ -61,6 +61,7 @@ WORKFLOW_MODE_AUTO_ASSIGN = "Auto assign"
 WORKSPACE_OPEN_KEY = "batch_design_workspace_open"
 PROJECT_BEAM_TABLE_FRAME_KEY = "batch_design_project_beam_table_frame"
 RUN_DESIGN_REQUEST_KEY = "_batch_design_run_requested"
+AUTO_ASSIGN_REQUEST_KEY = "_batch_design_auto_assign_requested"
 ACTIVE_BEAM_SELECTOR_KEY = "beam_manager_active_selector"
 
 
@@ -68,6 +69,12 @@ def _request_batch_design_run() -> None:
     """Queue one batch run before Streamlit starts the next page transaction."""
 
     st.session_state[RUN_DESIGN_REQUEST_KEY] = True
+
+
+def _request_batch_auto_assign() -> None:
+    """Queue one assignment before Streamlit starts the next transaction."""
+
+    st.session_state[AUTO_ASSIGN_REQUEST_KEY] = True
 
 
 def _toggle_batch_design_workspace() -> None:
@@ -1093,14 +1100,20 @@ def _render_workflow_mode_selector(ctx: BatchDesignPageContext, workflow: BatchD
             st.session_state[WORKFLOW_MODE_KEY] = current_mode
             _run_batch_design_now(workflow, ctx)
     with mode_cols[1]:
-        if st.button(
+        st.button(
             WORKFLOW_MODE_AUTO_ASSIGN,
             key="batch_design_workflow_mode_auto_assign",
             type="primary" if current_mode == WORKFLOW_MODE_AUTO_ASSIGN else "secondary",
             use_container_width=True,
-        ):
+            on_click=_request_batch_auto_assign,
+        )
+        # Match the Run design button: this is the command, not merely a
+        # navigation control. The queued request survives the parent Inputs
+        # rerun caused by the click.
+        if st.session_state.pop(AUTO_ASSIGN_REQUEST_KEY, False):
             current_mode = WORKFLOW_MODE_AUTO_ASSIGN
             st.session_state[WORKFLOW_MODE_KEY] = current_mode
+            _run_auto_assign_now(workflow, ctx)
     return current_mode
 
 
