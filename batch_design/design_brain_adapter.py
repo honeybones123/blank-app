@@ -42,6 +42,7 @@ def batch_case_to_design_brain_state(
     base_state: Mapping[str, Any] | None = None,
     *,
     assumptions: Mapping[str, Any] | None = None,
+    preserve_base_geometry: bool = False,
 ) -> dict[str, Any]:
     """Overlay a normalized batch row onto a single-beam Design Brain state.
 
@@ -90,7 +91,7 @@ def batch_case_to_design_brain_state(
         state["span_L_m"] = float(case.length)
 
     parsed_section = parse_concrete_section_dimensions(case.existing_section)
-    if parsed_section:
+    if parsed_section and not preserve_base_geometry:
         state["b"] = parsed_section.width
         state["bw"] = parsed_section.width
         state["D"] = parsed_section.depth
@@ -167,17 +168,20 @@ class BatchDesignGuidanceAdapter:
         case: BatchBeamCase,
         *,
         assumptions: Mapping[str, Any] | None = None,
+        base_state: Mapping[str, Any] | None = None,
+        request_kind: str | None = None,
     ) -> BatchDesignResult:
         mapped_state = batch_case_to_design_brain_state(
             case,
-            self._base_state_provider(),
+            self._base_state_provider() if base_state is None else base_state,
             assumptions=assumptions,
+            preserve_base_geometry=base_state is not None,
         )
         payload = self._design_guidance_runner(
             mapped_state,
             guidance_debug_verbose=True,
             debug_enabled=False,
-            request_kind=self._request_kind,
+            request_kind=str(request_kind or self._request_kind),
         )
         if not isinstance(payload, dict):
             return BatchDesignResult(

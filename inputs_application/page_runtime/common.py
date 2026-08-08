@@ -437,7 +437,7 @@ def _compute_design_guidance_items(
     neutral service result instead of reintroducing a second calculator.
     """
 
-    del guidance_debug_verbose, debug_enabled, request_kind
+    del guidance_debug_verbose, debug_enabled
     if not isinstance(state, dict):
         raise TypeError("design guidance state must be a dictionary")
     global _V2_BATCH_DESIGN_BRAIN_SERVICE
@@ -471,7 +471,8 @@ def _compute_design_guidance_items(
         if isinstance(result.candidate_evaluation, dict)
         else {}
     )
-    candidate_accepted = bool(
+    template_assignment = request_kind == "template_assignment"
+    candidate_accepted = not template_assignment and bool(
         isinstance(result.selected_candidate, dict)
         and candidate_evaluation.get("accepted")
     )

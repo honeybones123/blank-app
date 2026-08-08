@@ -2370,6 +2370,11 @@ def build_beam_schedule_rows() -> list[dict]:
                 "active": beam_id == payload.get("active_beam_id"),
                 "beam_id": beam_id,
                 "beam_label": record.get("beam_label", beam_id),
+                "use_for_auto_design": bool(
+                    (record.get("meta") if isinstance(record.get("meta"), dict) else {}).get(
+                        "use_for_auto_design", False
+                    )
+                ),
                 "sec_shape": params.get("sec_shape"),
                 "b": params.get("b"),
                 "bf": params.get("bf"),

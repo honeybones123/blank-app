@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from batch_design.importers.spacegass_excel import SpaceGassExcelImporter
+from batch_design.models import BatchAssignmentResult
 from batch_design.runner import DesignBrainAdapter, run_reviewed_batch_design
 from batch_design.store import BatchDesignWorkflowState
 from batch_design.ui.assignment_panel import render_assignment_panel
@@ -106,6 +107,7 @@ def _project_beam_editor_changed(before: pd.DataFrame, after: pd.DataFrame) -> b
     """
 
     editable_columns = (
+        "use_for_auto_design",
         "beam_label",
         "sec_shape",
         "b", "D", "L", "bf", "tf", "bw", "tw",
@@ -252,6 +254,7 @@ def _render_project_beam_design_editor(ctx: BatchDesignPageContext, workflow: Ba
     visible_columns = [
         "active",
         "beam_id",
+        "use_for_auto_design",
         "design_state",
         "bending_utilisation",
         "shear_utilisation",
@@ -310,6 +313,11 @@ def _render_project_beam_design_editor(ctx: BatchDesignPageContext, workflow: Ba
         column_config={
             "active": st.column_config.TextColumn("Active", disabled=True),
             "beam_id": st.column_config.TextColumn("Beam ID", disabled=True),
+            "use_for_auto_design": st.column_config.CheckboxColumn(
+                "Use for auto design",
+                help="Use this beam's complete geometry and reinforcement as an Auto assign template.",
+                default=False,
+            ),
             "design_state": st.column_config.TextColumn("Design state", disabled=True),
             "bending_utilisation": st.column_config.TextColumn("Bending", disabled=True),
             "shear_utilisation": st.column_config.TextColumn("Shear", disabled=True),
@@ -439,6 +447,124 @@ def _run_batch_design_now(workflow: BatchDesignWorkflowState, ctx: BatchDesignPa
     # The editable table was rendered before the button handler.  Re-run once
     # after publishing so its live Design state changes immediately.
     if published_beam_ids:
+        _rerun_batch_design_page()
+
+
+def _run_auto_assign_now(workflow: BatchDesignWorkflowState, ctx: BatchDesignPageContext) -> None:
+    """Assign checked whole-beam templates to unticked target beams.
+
+    Each possible source is checked through the V2 current-design path using
+    the target member's loads. This is deliberately not the retired capacity
+    matching shortcut: a target receives the source's actual geometry and reo
+    only after that exact arrangement has passed V2 for the target loads.
+    """
+
+    schedule_df = st.session_state.get(PROJECT_BEAM_TABLE_FRAME_KEY)
+    if not isinstance(schedule_df, pd.DataFrame):
+        schedule_df = ctx.build_schedule_editor_df()
+    apply_project_beam_load_editor_rows(workflow, schedule_df)
+    source_ids = {
+        str(row.get("beam_id") or "").strip()
+        for row in schedule_df.to_dict("records")
+        if bool(row.get("use_for_auto_design", False))
+    }
+    source_ids.discard("")
+    if not source_ids:
+        st.warning("Tick at least one beam in ‘Use for auto design’ first.")
+        return
+    if ctx.design_brain_adapter is None:
+        st.info("Design Brain adapter is not connected for this app session.")
+        return
+
+    beam_records = st.session_state.get("beam_records") or {}
+    targets = [
+        case for case in workflow.runnable_cases()
+        if str(case.member_id or "").strip() not in source_ids
+    ]
+    if not targets:
+        st.info("No unticked, valid project beams are available to assign.")
+        return
+
+    assignment_results: list[BatchAssignmentResult] = []
+    selected_results = []
+    for target in targets:
+        viable: list[tuple[float, str, Any]] = []
+        rejected: list[dict[str, Any]] = []
+        for source_id in sorted(source_ids):
+            source_record = beam_records.get(source_id)
+            source_params = (
+                dict(source_record.get("params") or {})
+                if isinstance(source_record, dict)
+                else {}
+            )
+            if not source_params:
+                rejected.append({"template_id": source_id, "reason": "template input snapshot is unavailable"})
+                continue
+            try:
+                result = ctx.design_brain_adapter.run_case(
+                    target,
+                    assumptions=workflow.assumptions,
+                    base_state=source_params,
+                    request_kind="template_assignment",
+                )
+            except Exception as exc:
+                rejected.append({"template_id": source_id, "reason": str(exc)})
+                continue
+            try:
+                utilisation = float(result.utilisation)
+            except (TypeError, ValueError):
+                utilisation = None
+            if result.passed is not True or utilisation is None or utilisation > 1.0:
+                rejected.append(
+                    {
+                        "template_id": source_id,
+                        "reason": result.error or "template does not pass the target beam's V2 checks",
+                    }
+                )
+                continue
+            viable.append((abs(1.0 - utilisation), source_id, result))
+
+        if not viable:
+            assignment_results.append(
+                BatchAssignmentResult(
+                    member_id=target.member_id,
+                    assigned_template_id=None,
+                    assigned_label=None,
+                    passed=False,
+                    reason="No checked beam passed V2 for this target beam's loads.",
+                    rejected_candidates=rejected,
+                )
+            )
+            continue
+
+        _, source_id, selected = min(viable, key=lambda candidate: (candidate[0], candidate[1]))
+        raw_result = dict(selected.raw_result or {})
+        raw_result["auto_design_source_beam_id"] = source_id
+        raw_result["auto_design_template_params"] = dict(
+            (beam_records.get(source_id) or {}).get("params") or {}
+        )
+        selected.raw_result = raw_result
+        selected_results.append(selected)
+        source_label = str((beam_records.get(source_id) or {}).get("beam_label") or source_id)
+        assignment_results.append(
+            BatchAssignmentResult(
+                member_id=target.member_id,
+                assigned_template_id=source_id,
+                assigned_label=source_label,
+                passed=True,
+                reason=(
+                    f"Applied the checked template with the closest passing V2 utilisation "
+                    f"({float(selected.utilisation):.3f})."
+                ),
+                utilisation=float(selected.utilisation),
+                rejected_candidates=rejected,
+            )
+        )
+
+    workflow.replace_assignment_results(assignment_results)
+    st.session_state["batch_design_assignment_results"] = assignment_results
+    updated_beam_ids = ctx.publish_batch_design_results(selected_results)
+    if updated_beam_ids:
         _rerun_batch_design_page()
 
 
@@ -1008,7 +1134,23 @@ def _render_design_workflow_card(ctx: BatchDesignPageContext, workflow: BatchDes
         render_assignment_panel(
             st,
             workflow=workflow,
-            current_project_templates=project_beam_templates_from_frame(schedule_export_df),
+            selected_template_count=sum(
+                1
+                for record in (st.session_state.get("beam_records") or {}).values()
+                if isinstance(record, dict)
+                and bool((record.get("meta") or {}).get("use_for_auto_design", False))
+            ),
+            target_count=sum(
+                1
+                for case in workflow.runnable_cases()
+                if str(case.member_id or "") not in {
+                    str(beam_id)
+                    for beam_id, record in (st.session_state.get("beam_records") or {}).items()
+                    if isinstance(record, dict)
+                    and bool((record.get("meta") or {}).get("use_for_auto_design", False))
+                }
+            ),
+            on_auto_assign=lambda: _run_auto_assign_now(workflow, ctx),
         )
     else:
         _render_run_design(workflow, ctx)

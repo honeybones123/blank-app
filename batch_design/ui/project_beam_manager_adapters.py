@@ -69,6 +69,7 @@ BEAM_MANAGER_TABLE_COLUMNS = [
     "active",
     "beam_id",
     "beam_label",
+    "use_for_auto_design",
     "n_star",
     "vy_star",
     "vz_star",
@@ -185,6 +186,7 @@ def build_beam_schedule_df() -> pd.DataFrame:
             "active": "ACTIVE" if item.get("active") else "",
             "beam_id": item.get("beam_id"),
             "beam_label": item.get("beam_label"),
+            "use_for_auto_design": bool(item.get("use_for_auto_design", False)),
             "overall_status": format_beam_status_badge(
                 item.get("overall_status"),
                 strength_status=item.get("strength_status"),
@@ -318,6 +320,20 @@ def publish_batch_design_results_to_beam_records(results) -> set[str]:
         # beam. Persist only the V2-approved proposal carried by the neutral
         # batch result; never reconstruct a candidate or apply a failing one.
         design_brain_result = getattr(result, "design_brain_result", {})
+        template_params = (
+            raw_result.get("auto_design_template_params", {})
+            if isinstance(raw_result, dict)
+            else {}
+        )
+        auto_design_source_beam_id = (
+            str(raw_result.get("auto_design_source_beam_id") or "").strip()
+            if isinstance(raw_result, dict)
+            else ""
+        )
+        if passed is True and isinstance(template_params, dict) and template_params:
+            record["params"] = apply_auto_design_template_to_beam_params(
+                record.get("params"), template_params
+            )
         proposal_updates = (
             dict(design_brain_result.get("selected_updates") or {})
             if isinstance(design_brain_result, dict) and passed is True
@@ -330,6 +346,10 @@ def publish_batch_design_results_to_beam_records(results) -> set[str]:
 
         meta = record.get("meta") if isinstance(record.get("meta"), dict) else {}
         meta["batch_design_published_at"] = timestamp
+        if passed is True and auto_design_source_beam_id:
+            meta["auto_design_source_beam_id"] = auto_design_source_beam_id
+        else:
+            meta.pop("auto_design_source_beam_id", None)
         if proposal_updates:
             meta["batch_design_candidate_id"] = str(
                 design_brain_result.get("selected_candidate", {}).get("candidate_id")
@@ -345,6 +365,55 @@ def publish_batch_design_results_to_beam_records(results) -> set[str]:
         updated_beam_ids.add(beam_id)
 
     return updated_beam_ids
+
+
+def apply_auto_design_template_to_beam_params(
+    current_params: dict | None,
+    template_params: dict | None,
+) -> dict:
+    """Copy one approved beam's complete physical design, never its actions.
+
+    Auto assignment reuses a selected beam's geometry and reinforcement while
+    retaining the target beam's own loads and identity.  Keeping this
+    projection here means the V2 verification path and the persisted target
+    record use the same complete input representation.
+    """
+
+    target = dict(current_params or {})
+    source = dict(template_params or {})
+    # A target's span is part of its own load/serviceability problem, not a
+    # reusable section property.
+    direct_fields = set(BEAM_MANAGER_EDITABLE_COLUMNS) - {"beam_id", "beam_label", "L"}
+    reinforcement_prefixes = (
+        "bot_row_",
+        "top_row_",
+        "bot1_",
+        "bot2_",
+        "top1_",
+        "top2_",
+        "db_bot_",
+        "db_top_",
+        "nb_or_s_bot_",
+        "nb_or_s_top_",
+    )
+    reinforcement_fields = {
+        "bot_row_count",
+        "top_row_count",
+        "top_bars",
+        "db_top",
+        "top_spacing",
+        "lig_d",
+        "lig_legs",
+        "s_lig",
+    }
+    for key, value in source.items():
+        if (
+            key in direct_fields
+            or key in reinforcement_fields
+            or key.startswith(reinforcement_prefixes)
+        ):
+            target[key] = value
+    return target
 
 
 def apply_v2_proposal_updates_to_beam_params(
@@ -534,6 +603,12 @@ def sync_beam_records_from_schedule_df(schedule_df: pd.DataFrame) -> set[str]:
             record["beam_label"] = new_label
             row_changed = True
 
+        use_for_auto_design = bool(row.get("use_for_auto_design", False))
+        meta = record.get("meta") if isinstance(record.get("meta"), dict) else {}
+        if bool(meta.get("use_for_auto_design", False)) != use_for_auto_design:
+            meta["use_for_auto_design"] = use_for_auto_design
+            row_changed = True
+
         for column in BEAM_MANAGER_EDITABLE_COLUMNS:
             if column in ("beam_id", "beam_label"):
                 continue
@@ -550,7 +625,6 @@ def sync_beam_records_from_schedule_df(schedule_df: pd.DataFrame) -> set[str]:
             params_changed = True
 
         if row_changed:
-            meta = record.get("meta") if isinstance(record.get("meta"), dict) else {}
             meta["updated_at"] = datetime.now(UTC).replace(tzinfo=None).isoformat(timespec="seconds")
             record["params"] = params
             record["meta"] = meta

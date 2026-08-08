@@ -11,7 +11,14 @@ from batch_design.validation import validate_batch_cases
 
 
 class DesignBrainAdapter(Protocol):
-    def run_case(self, case: BatchBeamCase, *, assumptions: Mapping[str, Any] | None = None) -> BatchDesignResult | dict[str, Any]:
+    def run_case(
+        self,
+        case: BatchBeamCase,
+        *,
+        assumptions: Mapping[str, Any] | None = None,
+        base_state: Mapping[str, Any] | None = None,
+        request_kind: str | None = None,
+    ) -> BatchDesignResult | dict[str, Any]:
         """Run the existing single-beam Design Brain path for one normalized case."""
 
 
@@ -25,7 +32,15 @@ class DesignBrainCallableAdapter:
     def __init__(self, design_brain_callable: Callable[[BatchBeamCase, Mapping[str, Any] | None], BatchDesignResult | dict[str, Any]]):
         self._design_brain_callable = design_brain_callable
 
-    def run_case(self, case: BatchBeamCase, *, assumptions: Mapping[str, Any] | None = None) -> BatchDesignResult | dict[str, Any]:
+    def run_case(
+        self,
+        case: BatchBeamCase,
+        *,
+        assumptions: Mapping[str, Any] | None = None,
+        base_state: Mapping[str, Any] | None = None,
+        request_kind: str | None = None,
+    ) -> BatchDesignResult | dict[str, Any]:
+        del base_state, request_kind
         return self._design_brain_callable(case, assumptions)
 
 

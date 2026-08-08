@@ -388,7 +388,10 @@ def publish_batch_design_results(results) -> set[str]:
         (st.session_state.get("beam_records") or {}).get(active_beam_id) or {}
     )
     meta = dict(active_record.get("meta") or {})
-    if not isinstance(meta.get("batch_design_applied_updates"), dict):
+    if not (
+        isinstance(meta.get("batch_design_applied_updates"), dict)
+        or str(meta.get("auto_design_source_beam_id") or "").strip()
+    ):
         # V2 did not accept a proposal for this row. Keep its current
         # engineering state untouched rather than manufacturing a new input
         # revision from a failed/exhausted batch result.
