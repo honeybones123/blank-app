@@ -59,10 +59,12 @@ release evidence column, not merely the absence of an exception.
 
 - Current Design Brain package suite: 363 passed and 7 explicitly skipped.
 - Architecture check: 81 Python files passed.
-- Discoverable button sweep: 39/39 passed in isolated AppTest sessions.
-- Selector/radio/checkbox/toggle sweep: 85/87 passed. Failures are SA-002
-  and SA-003.
-- Number-input sweep: 65/67 passed. Failures are covered by SA-004.
+- Exhaustive Runtime control sweep: all 211 discoverable controls across all
+  nine routes were inventoried in isolated AppTest sessions. All 39 enabled
+  buttons, 60 enabled number inputs, 60 selectboxes, 8 non-navigation radios,
+  8 checkboxes, 11 toggles and 9 text inputs executed without an application
+  exception. The 9 navigation radios were exercised through route traversal,
+  and all 7 intentionally disabled number inputs were separately inventoried.
 - Stateful Runtime fuzz gate: 50/50 sequences and 1,000/1,000 operations pass
   across geometry, materials, longitudinal and shear reinforcement, manual and
   Load Analysis actions, serviceability, locks, UI state and navigation. Every
