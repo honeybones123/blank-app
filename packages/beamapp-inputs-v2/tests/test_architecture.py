@@ -7,7 +7,7 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "inputs_v2"
-RUNTIME_ROOT = Path(r"C:\Users\jonathon\OneDrive\Documents\GitHub\complete-app - Runtime")
+RUNTIME_ROOT = ROOT.parents[1]
 
 
 def python_files():
@@ -60,9 +60,13 @@ def test_css_selectors_are_scoped_or_approved_foundations() -> None:
         assert selector == ".stApp" or selector.startswith(".inputs-v2-root"), selector
 
 
-def test_lab_is_outside_existing_runtime() -> None:
-    assert RUNTIME_ROOT not in ROOT.parents
-    assert ROOT != RUNTIME_ROOT
+def test_package_is_runtime_owned_without_source_path_coupling() -> None:
+    assert ROOT == RUNTIME_ROOT / "packages" / "beamapp-inputs-v2"
+    assert (ROOT / "pyproject.toml").is_file()
+    requirements = (RUNTIME_ROOT / "requirements.txt").read_text(
+        encoding="utf-8"
+    )
+    assert "./packages/beamapp-inputs-v2" in requirements
 
 
 def test_components_do_not_access_raw_session_state() -> None:
