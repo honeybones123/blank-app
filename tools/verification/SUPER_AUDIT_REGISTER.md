@@ -50,7 +50,7 @@ release evidence column, not merely the absence of an exception.
 | SA-006 | Packaged Design Brain architecture | Approved composition: Design Brain is installed inside Runtime and reached through the application port, without absolute paths, `sys.path` mutation, or UI imports of internal family pipelines. | Contract verified | Architecture check; clean-install contract; import-boundary checks; revised non-obsolete architecture test. | VERIFIED |
 | SA-007 | Engineering/state verifiers | A verifier must reject deliberately corrupted capacity, utilisation, mandatory-check, clause, revision, hash, and Apply-candidate evidence. | Mutation verified | One positive control and required negative mutations for each verifier; demonstrated false-result rejection. | VERIFIED |
 | SA-008 | Independent engineering fixtures | AS 3600 clause/equation derivation or separately reviewed calculation, not production output copied into expectations. | Independently verified | Bending, shear, crack, deflection, minimum reinforcement, geometry/detailing, combined, overdesign, and serviceability fixtures with tolerances and review status. | VERIFIED |
-| SA-009 | Design Brain family corpus | Explicit family predicates evaluated from authoritative checks; historical recipe names are regression evidence only. | Independent or review required | All 90 live recipes classified as confirmed, alias, invalid fixture, genuine defect, or review required; valid cases match reviewed predicates. | REVIEW_REQUIRED |
+| SA-009 | Design Brain family corpus | Explicit family predicates evaluated from authoritative checks; historical recipe names are regression evidence only. | Independent or review required | All 90 live recipes classified as confirmed, alias, invalid fixture, genuine defect, or review required; valid cases match reviewed predicates. | VERIFIED |
 | SA-010 | Streamlit compatibility | Supported Streamlit API behaviour and unchanged approved UI/state contracts. | Contract verified | Deprecated `use_container_width` and component HTML usages migrated in isolated slices; route, control, fragment, and layout regressions pass after each slice. | OPEN |
 | SA-011 | Desktop/mobile behaviour | Approved UI behaviour observed in a real browser: no Apply scroll jump, overflow, unusable touch target, or navigation failure. | Contract verified | Narrow phone, large phone, tablet, and desktop journeys; cold/warm Apply; portrait/landscape; keyboard; screenshots and console evidence. | BLOCKED_ENVIRONMENT |
 | SA-012 | Final release gate | This register plus the approved release criteria; no item may be silently excluded. | Composite | All objective items verified; engineering review items explicitly resolved/accepted; 1,000+ stateful fuzz operations; all routes and controls; clean worktree; final evidence report. | OPEN |
@@ -66,9 +66,11 @@ release evidence column, not merely the absence of an exception.
 - Number-input sweep: 65/67 passed. Failures are covered by SA-004.
 - Stateful Runtime fuzz baseline: 25/25 sequences and 300/300 operations
   passed without exception, non-finite engineering actions, or revision drift.
-- Live family corpus: 90 cases; 39 label matches, 41 label differences, and
-  10 invalid three-leg shear fixtures. These are evidence for SA-009, not 51
-  automatically confirmed Design Brain defects.
+- Live family corpus: all 90 cases are now predicate-classified: 40 exact
+  matches, 30 documented legacy aliases, 10 valid states mislabeled as pure
+  bending failure despite active low-utilisation shear, and 10 invalid
+  three-leg shear fixtures. No difference is treated as a Design Brain defect
+  merely because its historical label differs.
 - Cross-page `Mu=200, Vu=0` round-trip passed through Inputs, Load Analysis,
   Bending, Shear, and back to Inputs.
 - SA-002 focused certification passes real AppTest zero/non-zero ULS and SLS
@@ -130,6 +132,12 @@ release evidence column, not merely the absence of an exception.
   serviceability ratios drive combined-failure, overdesign and deflection-
   governed family predicates without relying on historical recipe labels.
   All named fixture categories now have direct evidence, so SA-008 is
+  `VERIFIED`.
+- SA-009's executable corpus contract rebuilds every frozen live state through
+  Runtime's engineering snapshot boundary, recalculates it with the packaged
+  Design Brain, independently derives the governing family from authoritative
+  checks, and requires exact agreement with the production classifier. All 90
+  cases are accounted for with no unclassified difference, so SA-009 is
   `VERIFIED`.
 - Real-browser mobile/scroll certification was unavailable and remains
   explicitly blocked rather than inferred from AppTest.
