@@ -49,6 +49,31 @@ class LoadAnalysisDesignActionsAdapter:
         working = _working_state(state)
         working["actions_mode"] = "design"
         working.setdefault("design_actions_source", "max")
+        if (
+            str(working.get("design_actions_source") or "max") == "max"
+            and all(
+                key in working
+                for key in (
+                    "M_pos_max_uls_kNm",
+                    "M_neg_min_uls_kNm",
+                    "M_pos_max_sls_kNm",
+                    "M_neg_min_sls_kNm",
+                )
+            )
+        ):
+            # Explicit solved extrema, including an all-zero no-load result,
+            # are authoritative for this adapter.  The shared resolver keeps
+            # manual aliases as a legacy fallback, so neutralise only its local
+            # copy to prevent Beam Inputs actions leaking into Load Analysis.
+            for key in (
+                "uls_Mstar_pos_manual",
+                "uls_Mstar_neg_manual",
+                "Mu_star_pos_manual",
+                "Mu_star_neg_manual",
+                "sls_Mstar_pos_manual",
+                "sls_Mstar_neg_manual",
+            ):
+                working[key] = 0.0
         return _with_handover_metadata(
             resolve_design_actions_contract_from_state(working),
             working,

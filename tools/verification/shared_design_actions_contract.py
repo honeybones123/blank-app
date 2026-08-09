@@ -84,6 +84,34 @@ def verify_load_analysis_max_adapter() -> None:
     assert actions.design_actions_source == "max"
 
 
+def verify_zero_load_analysis_does_not_fall_back_to_manual_actions() -> None:
+    state = {
+        "actions_mode": "design",
+        "actions_source": "Teaching SFD/BMD page (|M|max, |V|max)",
+        "design_actions_source": "max",
+        "sfd_Mmax_abs_kNm": 0.0,
+        "sfd_Vmax_abs_kN": 0.0,
+        "sfd_Msls_max_kNm": 0.0,
+        "sfd_Vsls_max_kN": 0.0,
+        "M_pos_max_uls_kNm": 0.0,
+        "M_neg_min_uls_kNm": 0.0,
+        "M_pos_max_sls_kNm": 0.0,
+        "M_neg_min_sls_kNm": 0.0,
+        # These belong to Beam Inputs and must not become Load Analysis output.
+        "uls_Mstar_pos_manual": 200.0,
+        "uls_Mstar_neg_manual": 0.0,
+        "Mu_star_pos_manual": 200.0,
+        "Mu_star_neg_manual": 0.0,
+        "sls_Mstar_pos_manual": 0.0,
+        "sls_Mstar_neg_manual": 0.0,
+    }
+    actions = LoadAnalysisDesignActionsAdapter.from_state(state)
+    _assert_close(actions.mu, 0.0)
+    _assert_close(actions.vu, 0.0)
+    _assert_close(actions.sls_m, 0.0)
+    _assert_close(actions.sls_v, 0.0)
+
+
 def verify_load_analysis_section_adapter() -> None:
     state = {
         "actions_mode": "design",
@@ -272,6 +300,7 @@ def verify_production_pages_share_one_composition_and_projection() -> None:
 def main() -> None:
     verify_manual_adapter()
     verify_load_analysis_max_adapter()
+    verify_zero_load_analysis_does_not_fall_back_to_manual_actions()
     verify_load_analysis_section_adapter()
     verify_snapshot_identity_uses_shared_contract()
     verify_same_actions_produce_same_design_calculations()

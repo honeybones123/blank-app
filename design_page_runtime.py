@@ -233,6 +233,11 @@ def _render_design_check_summary(
     shear_action: float,
     sls_moment: float,
     sls_shear: float,
+    bending_positive: float,
+    bending_negative: float,
+    sls_positive: float,
+    sls_negative: float,
+    design_actions_source: str,
 ) -> None:
     """Render the Inputs summary cards using the Design page's solved actions."""
     # The shared card queues a typed command. Beam Setup consumes it in its
@@ -274,14 +279,31 @@ def _render_design_check_summary(
         {
             "actions_mode": "design",
             "actions_source": "Teaching SFD/BMD page (|M|max, |V|max)",
+            "design_actions_source": str(design_actions_source or "max"),
             "sfd_Mmax_abs_kNm": float(bending_action),
             "sfd_Vmax_abs_kN": float(shear_action),
             "sfd_Msls_max_kNm": float(sls_moment),
             "sfd_Vsls_max_kN": float(sls_shear),
+            "M_pos_max_uls_kNm": float(bending_positive),
+            "M_neg_min_uls_kNm": float(bending_negative),
+            "M_pos_max_sls_kNm": float(sls_positive),
+            "M_neg_min_sls_kNm": float(sls_negative),
             "uls_Mstar": float(bending_action),
             "uls_Vstar": float(shear_action),
             "sls_Mstar": float(sls_moment),
             "sls_Vstar": float(sls_shear),
+            # This is a page-local calculation snapshot.  The design-action
+            # resolver retains manual aliases as a compatibility fallback when
+            # calculated extrema are all zero; clear those aliases here so a
+            # cold Load Analysis page cannot inherit Beam Inputs actions before
+            # any loads have been entered.  Shared state is not mutated, so the
+            # existing opt-in Load Analysis -> Beam Inputs handover is retained.
+            "uls_Mstar_pos_manual": 0.0,
+            "uls_Mstar_neg_manual": 0.0,
+            "Mu_star_pos_manual": 0.0,
+            "Mu_star_neg_manual": 0.0,
+            "sls_Mstar_pos_manual": 0.0,
+            "sls_Mstar_neg_manual": 0.0,
             "input_revision": input_revision,
         }
     )
@@ -2604,6 +2626,11 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
             shear_action=summary_V_uls,
             sls_moment=summary_M_sls,
             sls_shear=summary_V_sls,
+            bending_positive=float(M_pos_max_uls),
+            bending_negative=float(M_neg_min_uls),
+            sls_positive=float(M_pos_max_sls),
+            sls_negative=float(M_neg_min_sls),
+            design_actions_source=design_actions_source,
         )
 
     st.markdown('<div id="shear-analysis-section"></div>', unsafe_allow_html=True)
