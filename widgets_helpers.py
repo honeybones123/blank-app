@@ -813,7 +813,7 @@ def apply_global_widget_css():
         /* Hover tooltip styles */
         .sb-label {
             font-size: 0.9rem;
-            font-weight: 600;
+            font-weight: 400;
             margin: 0.25rem 0 0.25rem 0;
         }
         .sb-tooltip {
@@ -1482,13 +1482,13 @@ def number_row(
             if help_text:
                 label_with_hover(label_text, help_text, required=False)
             else:
-                st.markdown(f"**{label_text}**")
+                label_with_hover(label_text, required=False)
         widget_container = col2
     else:
         if help_text:
             label_with_hover(label_text, help_text, required=False)
         else:
-            st.markdown(f"**{label_text}**")
+            label_with_hover(label_text, required=False)
         widget_container = st.container()
 
     with widget_container:
@@ -1805,7 +1805,7 @@ def select_row(
             if help_text:
                 label_with_hover(label_text, help_text, required=False)
             else:
-                st.markdown(f"**{label_text}**")
+                label_with_hover(label_text, required=False)
         with col2:
             initial_index = (
                 forced_browser_recipe_index
@@ -1837,7 +1837,7 @@ def select_row(
     if help_text:
         label_with_hover(label_text, help_text, required=False)
     else:
-        st.markdown(f"**{label_text}**")
+        label_with_hover(label_text, required=False)
     initial_index = (
         forced_browser_recipe_index
         if forced_browser_recipe_index is not None

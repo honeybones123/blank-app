@@ -11,6 +11,11 @@ def apply_inputs_page_css():
     st.markdown(
         """
         <style>
+        /* Beam Setup typography follows the V2 presentation contract while
+           retaining Runtime's existing widget columns and control geometry. */
+        html, body, .stApp {
+            font-size: 14px !important;
+        }
         .nr-field select,
         .nr-field input {
             width: 100% !important;
@@ -28,6 +33,34 @@ def apply_inputs_page_css():
             margin: 0;
             padding: 0;
         }
+        .inputs-model-reo-labels {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 0.45rem 1.1rem;
+            margin: -0.15rem 0 0.4rem;
+            color: #334155;
+            font-size: 0.82rem;
+            font-weight: 400;
+            line-height: 1.35;
+        }
+        .inputs-model-reo-labels span {
+            display: inline-flex;
+            align-items: center;
+            white-space: nowrap;
+        }
+        .inputs-model-reo-dot {
+            width: 0.55rem;
+            height: 0.55rem;
+            margin-right: 0.35rem;
+            border: 1px solid rgba(30, 41, 59, 0.72);
+            border-radius: 50%;
+            box-sizing: border-box;
+        }
+        .inputs-model-reo-dot--bottom { background: rgba(0, 90, 200, 0.95); }
+        .inputs-model-reo-dot--top { background: rgba(200, 45, 45, 0.95); }
+        .inputs-model-reo-dot--links { background: rgba(0, 0, 0, 0.95); }
         /* Main inputs diagram: cap height to reduce overflow (complements reduced Plotly layout height) */
         .inputs-page-main-diagram-wrap div[data-testid="stPlotlyChart"] {
             max-height: min(52vh, 560px);
@@ -88,23 +121,77 @@ def apply_inputs_page_css():
             padding-top: 0.35rem !important;
             padding-bottom: 0.35rem !important;
         }
-        .stMarkdown h2, .stMarkdown h3 {
-            margin-top: 0.6rem !important;
-            margin-bottom: 0.25rem !important;
+        .stApp .stMarkdown h2 {
+            color: #182230 !important;
+            font-family: inherit !important;
+            font-size: 1.05rem !important;
+            font-weight: 700 !important;
+            line-height: 1.35 !important;
+            border-bottom: 1px solid #dce3ec !important;
+            padding-bottom: 0.55rem !important;
+            margin: 0.25rem 0 0.85rem !important;
         }
-        .stMarkdown h2 {
-            font-size: 1.65rem !important;
-            font-weight: 800 !important;
+        .stApp .stMarkdown h3 {
+            color: #182230 !important;
+            font-family: inherit !important;
+            font-size: 1.1rem !important;
+            font-weight: 700 !important;
+            line-height: 1.35 !important;
+            margin: 0.25rem 0 0.85rem !important;
         }
-        .stMarkdown h3 {
-            font-size: 1.35rem !important;
-            font-weight: 800 !important;
+        /* V2 renders Design Guide as an overview subheader. Batch design uses
+           the normal underlined section-heading treatment in Runtime. */
+        .stApp .stMarkdown h2#design-guide {
+            font-size: 1.1rem !important;
+            border-bottom: 0 !important;
+            padding-bottom: 0 !important;
         }
         /* Match the Design Guide-to-mode gap to the Batch-to-guide gap.
            Apply only while a published Design Guide is present. */
         div[data-testid="stVerticalBlock"]:has(h2#design-guide)
         div[data-testid="stElementContainer"]:has(h2#design-mode) {
             margin-top: 23.5px !important;
+        }
+        /* Design mode is a compact choice, not page navigation.  The page-nav
+           tab treatment is intentionally broad enough to survive Streamlit DOM
+           changes, so restore this keyed radio's native circular controls here. */
+        div[data-testid="stVerticalBlock"]:has(h2#design-mode)
+        .st-key-inputs_detailed_mode_toggle div[role="radiogroup"] {
+            display: flex !important;
+            align-items: center !important;
+            gap: 1.15rem !important;
+            width: fit-content !important;
+            border-bottom: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(h2#design-mode)
+        .st-key-inputs_detailed_mode_toggle div[role="radiogroup"] > label[data-testid="stRadioOption"] {
+            display: flex !important;
+            align-items: center !important;
+            gap: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            font-weight: 400 !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(h2#design-mode)
+        .st-key-inputs_detailed_mode_toggle
+        label[data-testid="stRadioOption"] > div > div > div:first-child {
+            display: flex !important;
+            flex: 0 0 14px !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(h2#design-mode)
+        .st-key-inputs_detailed_mode_toggle label[data-testid="stRadioOption"] p {
+            font-weight: 400 !important;
+        }
+        /* Pull only the following workspace section upward; the spacing above
+           Design mode and all other section spacing remain unchanged. */
+        div[data-testid="stHorizontalBlock"]:has(.st-key-inputs_detailed_mode_toggle) {
+            margin-bottom: -1.75rem !important;
         }
         .fast-live-checks {
             border: 1px solid rgba(49, 51, 63, 0.12);

@@ -7,11 +7,64 @@ engineering/data ownership stays outside the render layer.
 
 from __future__ import annotations
 
+import html
 from typing import Any, Callable
 
 from inputs_application.region_contexts import RevisionIdentity
 
 from .models import InputsBeam3DRegionContext, InputsSection2DRegionContext
+
+
+def _format_reo_number(value: Any) -> str:
+    numeric = float(value or 0.0)
+    return str(int(numeric)) if numeric.is_integer() else f"{numeric:g}"
+
+
+def _longitudinal_arrangement_label(layers: Any) -> str:
+    parts: list[str] = []
+    for layer in list(layers or []):
+        if not isinstance(layer, dict):
+            continue
+        count = len(list(layer.get("x") or []))
+        diameter = float(layer.get("db", 0.0) or 0.0)
+        if count > 0 and diameter > 0.0:
+            parts.append(f"{count}N{_format_reo_number(diameter)}")
+    return " + ".join(parts) if parts else "None"
+
+
+def _render_reinforcement_arrangement_labels(
+    *,
+    st_module: Any,
+    reo_layout: Any,
+    reo: Any,
+) -> None:
+    """Label the exact reinforcement arrangement drawn by the model."""
+
+    resolved_layout = dict(reo_layout or {})
+    resolved_reo = dict(reo or {})
+    bottom = _longitudinal_arrangement_label(resolved_layout.get("bottom"))
+    top = _longitudinal_arrangement_label(resolved_layout.get("top"))
+    link_diameter = float(resolved_reo.get("lig_d", 0.0) or 0.0)
+    link_legs = int(float(resolved_reo.get("lig_legs", 0) or 0))
+    link_spacing = float(resolved_reo.get("s_lig", 0.0) or 0.0)
+    if link_diameter > 0.0 and link_legs >= 2 and link_spacing > 0.0:
+        links = (
+            f"{link_legs}-leg N{_format_reo_number(link_diameter)}"
+            f" @ {_format_reo_number(link_spacing)} mm"
+        )
+    else:
+        links = "Off"
+
+    st_module.markdown(
+        (
+            '<div class="inputs-model-reo-labels" aria-label="Reinforcement arrangement">'
+            f'<span><i class="inputs-model-reo-dot inputs-model-reo-dot--bottom"></i>Bottom: {html.escape(bottom)}</span>'
+            f'<span><i class="inputs-model-reo-dot inputs-model-reo-dot--top"></i>Top: {html.escape(top)}</span>'
+            f'<span><i class="inputs-model-reo-dot inputs-model-reo-dot--links"></i>Links: {html.escape(links)}</span>'
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
 
 
 def render_inputs_fast_model_block(
@@ -131,6 +184,11 @@ def render_inputs_section_2d_diagram_block(
         )
         chart_emit_ms = (time_perf_counter_fn() - chart_started) * 1000.0
         st_module.markdown("</div>", unsafe_allow_html=True)
+        _render_reinforcement_arrangement_labels(
+            st_module=st_module,
+            reo_layout=region_context.layout.get("reo_layout"),
+            reo=region_context.layout.get("reo"),
+        )
         st_module.session_state["_inputs_last_2d_diagram_timings_ms"] = {
             "cache_mode": cache_mode,
             "figure_prepare": round(figure_prepare_ms, 3),
@@ -271,6 +329,16 @@ def render_inputs_3d_diagram_block(
             config={"displayModeBar": True},
         )
         st_module.markdown("</div>", unsafe_allow_html=True)
+
+    _render_reinforcement_arrangement_labels(
+        st_module=st_module,
+        reo_layout=view_model.reo_layout,
+        reo={
+            "lig_d": view_model.lig_d,
+            "lig_legs": view_model.lig_legs,
+            "s_lig": view_model.s_lig,
+        },
+    )
 
     st_module.session_state["_inputs_last_3d_diagram_timings_ms"] = {
         "cache_mode": cache_mode,

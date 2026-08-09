@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import copy
-import os
 from typing import Any, Callable
 
 import streamlit as st
@@ -12,7 +11,6 @@ import streamlit as st
 from inputs_page_modules.landing import (
     INPUTS_DESIGN_STARTED_KEY,
     inputs_has_design_actions_or_loads,
-    inputs_show_landing_dashboard,
     render_inputs_landing_card as _render_inputs_landing_card,
 )
 from inputs_application.page_runtime import (
@@ -73,7 +71,14 @@ def build_inputs_page_view_model(page_snapshot: InputsPageSnapshot | None = None
 
 
 def render_inputs_landing_card(*, sync_callbacks: dict | None = None) -> None:
-    _render_inputs_landing_card(sync_callbacks=sync_callbacks, st_module=st)
+    _render_inputs_landing_card(
+        sync_callbacks=sync_callbacks,
+        st_module=st,
+        # This is the same shared, state-driven section builder used by the
+        # Inputs model and result-page summaries; the landing card only applies
+        # a compact Plotly layout to a copied figure.
+        make_cross_section_figure_fn=make_summary_cross_section_figure,
+    )
 
 
 def build_inputs_session_source_snapshot(*args: Any, **kwargs: Any) -> Any:
@@ -169,6 +174,9 @@ def render_inputs_page() -> None:
     """
 
     ss = st.session_state
+    # Start now owns initial navigation. Beam Inputs always renders its existing
+    # workspace, including the zero-action state used to enter direct actions.
+    ss[INPUTS_DESIGN_STARTED_KEY] = True
     ss["_inputs_page_shell_render_count"] = int(
         ss.get("_inputs_page_shell_render_count", 0) or 0
     ) + 1
@@ -207,55 +215,7 @@ def render_inputs_page() -> None:
     # Static route chrome belongs to the page shell.  Keeping the title outside
     # every polling fragment prevents calculation or Design Brain refreshes
     # from marking the whole page identity as stale.
-    st.title("Beam Setup")
-
-    # Match V2's explicit landing boundary. Runtime previously rendered the
-    # calculation, Design Brain, widgets, and diagram siblings underneath the
-    # landing card. That could expose a zero-input recommendation while the
-    # page still said "Start Your Design" and made the empty state do needless
-    # engineering work. Existing non-zero actions count as started (including
-    # restored beams); the landing button sets the presentation-only flag.
-    if inputs_has_design_actions_or_loads(
-        get_param_fn=page_context["fast_get_param"],
-    ):
-        ss[INPUTS_DESIGN_STARTED_KEY] = True
-    # Browser verifiers exercise widget/diagram transactions directly. Keep
-    # their fixture sessions out of the product landing flow; this does not
-    # affect normal users and leaves V2's explicit landing boundary intact.
-    if str(os.environ.get("CODEX_BROWSER_TEST_MODE") or "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }:
-        ss[INPUTS_DESIGN_STARTED_KEY] = True
-    show_landing = inputs_show_landing_dashboard(
-        get_param_fn=page_context["fast_get_param"],
-        same_page_rerun_has_non_landing_state=bool(
-            ss.get(INPUTS_DESIGN_STARTED_KEY, False)
-            # A committed V2 input transaction is itself proof that the user
-            # has entered the workspace.  Do not let route/session hydration
-            # drop the presentation-only flag and send a live widget edit
-            # back to the landing branch, which would leave the old diagram
-            # probe on screen while the canonical revision advances.
-            or InputSnapshotStore(ss).current().revision > 0
-        ),
-        capacity_context_matches=False,
-    )
-    if show_landing:
-        render_inputs_landing_card(
-            sync_callbacks=page_context["sync_callbacks"],
-        )
-        _INPUTS_PAGE_RUNTIME.render_batch_design_manager(
-            ss=ss,
-            beam_labels=page_context["beam_labels"],
-            beam_order=page_context["beam_order"],
-            active_beam_id=page_context["active_beam_id"],
-        )
-        st.subheader("Design mode")
-        # V2 stops here: no calculation, Design Brain, widgets, or diagram
-        # fragment runs until the user explicitly starts the workspace.
-        st.stop()
+    st.title("Beam Inputs")
 
     # The Inputs shell has one V2-shaped transaction.  Calculation, summary,
     # Design Brain, controls, widgets, and diagrams all consume the same

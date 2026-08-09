@@ -57,6 +57,13 @@ def export_state_for_saving() -> dict:
         "schema_version": 2,
         "shared": shared,
         "beam_project": build_beam_project_payload(),
+        "ui_state": {
+            "last_active_page": str(
+                st.session_state.get("_last_design_page_slug")
+                or st.session_state.get("page_slug")
+                or "inputs"
+            ),
+        },
     }
 
 
@@ -126,6 +133,16 @@ def apply_project_payload(payload: dict) -> None:
         load_beam_project_payload(beam_project_payload)
     else:
         reset_beam_project_to_single_default_if_missing()
+
+    ui_state = payload.get("ui_state")
+    if isinstance(ui_state, dict):
+        last_active_page = str(ui_state.get("last_active_page") or "").strip().lower()
+        if last_active_page in {
+            "inputs", "design", "bending", "shear", "creep",
+            "shrinkage", "crack", "deflection",
+        }:
+            st.session_state["_last_design_page_slug"] = last_active_page
+            st.session_state["_pending_nav_page_slug"] = last_active_page
 
     st.session_state.pop(WORKSPACE_IDENTITY_KEY, None)
     st.session_state[WORKSPACE_ORIGIN_KEY] = WORKSPACE_ORIGIN_LOADED_FILE

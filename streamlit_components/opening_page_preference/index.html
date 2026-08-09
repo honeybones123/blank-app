@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>html, body { margin: 0; padding: 0; height: 0; overflow: hidden; }</style>
+</head>
+<body>
+  <script>
+    (() => {
+      let lastPayload = null;
+
+      function post(type, detail) {
+        window.parent.postMessage(
+          Object.assign({ isStreamlitMessage: true, type }, detail || {}),
+          "*"
+        );
+      }
+
+      function sendPreference(args) {
+        const storageKey = String(args.storage_key || "");
+        const allowed = Array.isArray(args.allowed) ? args.allowed.map(String) : [];
+        let value = "";
+        try {
+          value = String(window.localStorage.getItem(storageKey) || "").toLowerCase();
+        } catch (error) {
+          value = "";
+        }
+        if (!allowed.includes(value)) value = "";
+        const payload = JSON.stringify({ ready: true, value });
+        if (payload === lastPayload) return;
+        lastPayload = payload;
+        post("streamlit:setComponentValue", {
+          value: JSON.parse(payload),
+          dataType: "json"
+        });
+        post("streamlit:setFrameHeight", { height: 0 });
+      }
+
+      window.addEventListener("message", (event) => {
+        const data = event.data || {};
+        if (data.type !== "streamlit:render") return;
+        sendPreference(data.args || {});
+      });
+
+      post("streamlit:componentReady", { apiVersion: 1 });
+      post("streamlit:setFrameHeight", { height: 0 });
+    })();
+  </script>
+</body>
+</html>

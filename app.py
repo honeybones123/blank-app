@@ -1,7 +1,11 @@
 import os, sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
+# Runtime is the canonical application source.  Keep it ahead of editable
+# installs and earlier development checkouts so similarly named page modules
+# cannot be resolved from a stale workspace.
+while ROOT in sys.path:
+    sys.path.remove(ROOT)
+sys.path.insert(0, ROOT)
 
 
 def _local_trace_log_path(filename: str) -> str:
@@ -199,6 +203,11 @@ from auth_bridge import ensure_logged_in_state
 # ðŸ” Import modules, not individual functions
 import inputs_page_app_contracts
 import inputs_page
+import start_page
+from application.opening_page_preferences import (
+    load_opening_page_preference,
+    render_guest_preference_bootstrap,
+)
 from inputs_page_modules.session.hydration_trace import inputs_hydration_trace_log
 from inputs_page_modules.session.widget_cache_clear import clear_inputs_widget_cache_for_shared_updates
 from inputs_page_modules.session.shear_normalization import run_inputs_pre_hydrate_shear_normalization
@@ -5091,6 +5100,13 @@ def _render_design_page():
     return _render_lazy_page("sfd_bmd_page", "render_sfd_bmd_page")
 
 
+def _render_start_page():
+    return start_page.render_start_page(
+        make_cross_section_figure_fn=inputs_page.make_summary_cross_section_figure,
+        user_id=_get_user_id(),
+    )
+
+
 def _render_bending_page():
     return _render_lazy_page("bending_page", "render_bending")
 
@@ -5116,7 +5132,8 @@ def _render_deflection_page():
 
 # ---- page registry ----
 PAGES = {
-    "inputs": ("Beam Setup", inputs_page.render_inputs),
+    "start": ("Start", _render_start_page),
+    "inputs": ("Beam Inputs", inputs_page.render_inputs),
     "design": ("Load Analysis", _render_design_page),
     "bending": ("Bending", _render_bending_page),
     "shear": ("Shear", _render_shear_page),
@@ -5474,6 +5491,33 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
     
 
     # --- 0) Deferred top-level nav (e.g. Inputs landing) â€” must run before NAV_KEY st.radio.
+    if not user_id and not project_id:
+        # Read a guest's browser-local choice through the Streamlit component
+        # bridge. Its first value arrives on a component rerun, so remember
+        # whether this navigation originally had an explicit page before the
+        # router writes its normal query parameter.
+        if "_guest_opening_default_pending" not in st.session_state:
+            initial_query_page = st.query_params.get("page")
+            if isinstance(initial_query_page, list):
+                initial_query_page = initial_query_page[0] if initial_query_page else None
+            st.session_state["_guest_opening_default_pending"] = initial_query_page not in PAGES
+        guest_preference = render_guest_preference_bootstrap()
+        if (
+            isinstance(guest_preference, dict)
+            and guest_preference.get("ready") is True
+            and st.session_state.get("_guest_opening_default_pending")
+        ):
+            guest_slug = str(guest_preference.get("value") or "start")
+            if guest_slug not in ("start", "inputs", "design"):
+                guest_slug = "start"
+            st.session_state[NAV_KEY] = guest_slug
+            st.session_state[LAST_QP_KEY] = guest_slug
+            st.session_state["_guest_opening_default_pending"] = False
+            try:
+                st.query_params["page"] = guest_slug
+            except Exception:
+                pass
+
     pending_nav_slug = st.session_state.pop(PENDING_NAV_PAGE_SLUG_KEY, None)
     if isinstance(pending_nav_slug, str) and pending_nav_slug in PAGES:
         st.session_state[NAV_KEY] = pending_nav_slug
@@ -5502,7 +5546,16 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
 
     # âœ… If no valid page in URL, still ensure defaults exist
     if NAV_KEY not in st.session_state:
-        st.session_state[NAV_KEY] = "inputs"
+        if project_id:
+            initial_slug = str(st.session_state.get("_last_design_page_slug") or "inputs")
+        elif user_id:
+            initial_slug = load_opening_page_preference(
+                user_id=user_id,
+                session_state=st.session_state,
+            )
+        else:
+            initial_slug = "start"
+        st.session_state[NAV_KEY] = initial_slug if initial_slug in PAGES else "start"
 
     # --- 2) TOP "tabs" (same logic, just container + anchor for CSS targeting)
     nav_container = st.container()
@@ -5698,6 +5751,8 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
     render_timing_mark("app.pre_dispatch.set_page_slug.start", selected_slug=selected_slug)
     st.session_state["page_slug"] = selected_slug
     st.session_state["_active_page_slug"] = selected_slug  # Keep for backward compatibility
+    if selected_slug != "start":
+        st.session_state["_last_design_page_slug"] = selected_slug
     render_timing_mark("app.pre_dispatch.set_page_slug.end", selected_slug=selected_slug)
     
     

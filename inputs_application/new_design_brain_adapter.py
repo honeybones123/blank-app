@@ -55,6 +55,51 @@ def _boolean(mapping: Mapping[str, Any], *keys: str) -> bool:
 
 
 _V2_DEFLECTION_LIMIT_RATIOS = frozenset({200.0, 250.0, 300.0, 400.0})
+_V2_LONGITUDINAL_DIAMETERS = frozenset({10, 12, 16, 20, 24, 28, 32, 36, 40})
+
+
+def _v2_longitudinal_bar_count(
+    mapping: Mapping[str, Any],
+    *keys: str,
+    default: int,
+) -> int:
+    bars = _integer(mapping, *keys, default=default)
+    return bars if 2 <= bars <= 12 else int(default)
+
+
+def _v2_longitudinal_diameter(
+    mapping: Mapping[str, Any],
+    *keys: str,
+    default: int = 10,
+) -> int:
+    diameter = _integer(mapping, *keys, default=default)
+    return diameter if diameter in _V2_LONGITUDINAL_DIAMETERS else int(default)
+
+
+def _v2_longitudinal_cover(
+    mapping: Mapping[str, Any],
+    *keys: str,
+    default: float = 40.0,
+) -> float:
+    cover = _number(mapping, *keys, default=default)
+    return cover if 10.0 <= cover <= 150.0 else float(default)
+
+
+def _v2_longitudinal_spacing(
+    mapping: Mapping[str, Any],
+    *keys: str,
+    default: float = 150.0,
+) -> float:
+    """Supply a valid spacing placeholder for V2 count-based layouts.
+
+    Legacy Runtime snapshots can persist ``0`` because longitudinal spacing is
+    inactive when reinforcement is entered by bar count.  V2 validates the
+    field even in count mode, so normalise only invalid legacy values at this
+    adapter boundary without changing the saved Runtime snapshot.
+    """
+
+    spacing = _number(mapping, *keys, default=default)
+    return spacing if 50.0 <= spacing <= 500.0 else float(default)
 
 
 def _v2_deflection_limit_ratio(mapping: Mapping[str, Any]) -> float:
@@ -177,38 +222,49 @@ def _beam_inputs_from_snapshot(
     if "L" not in geometry and "span_mm" not in geometry and geometry.get("span_m") is not None:
         span_mm = _number(geometry, "span_m", default=2.0) * 1000.0
 
-    bottom_bars = _integer(
+    bottom_bars = _v2_longitudinal_bar_count(
         reinforcement,
         "bot_row_1_bars",
         "bot1_count",
         "bot1_bars",
         default=3,
     )
-    bottom_diameter = _integer(
+    bottom_diameter = _v2_longitudinal_diameter(
         reinforcement,
         "bot_row_1_dia",
         "db_bot_1",
         "db_bot",
         default=10,
     )
-    bottom_spacing = _number(
-        reinforcement,
-        "bot_row_1_spacing",
-        "bot1_spacing",
-        default=150.0,
-    )
-    bottom_cover = _number(reinforcement, "cover_bot", default=40.0)
+    bottom_cover = _v2_longitudinal_cover(reinforcement, "cover_bot")
     top = api["LongitudinalReinforcement"](
         mode=api["LayoutMode"].COUNT,
-        bars=_integer(reinforcement, "top_bars", "top_row_1_bars", default=2),
-        spacing_mm=_number(reinforcement, "top_spacing", "top_row_1_spacing", default=150.0),
-        diameter_mm=_integer(reinforcement, "db_top", "top_dia", default=10),
-        cover_mm=_number(reinforcement, "cover_top", default=40.0),
+        bars=_v2_longitudinal_bar_count(
+            reinforcement,
+            "top_bars",
+            "top_row_1_bars",
+            default=2,
+        ),
+        spacing_mm=_v2_longitudinal_spacing(
+            reinforcement,
+            "top_spacing",
+            "top_row_1_spacing",
+        ),
+        diameter_mm=_v2_longitudinal_diameter(
+            reinforcement,
+            "db_top",
+            "top_dia",
+        ),
+        cover_mm=_v2_longitudinal_cover(reinforcement, "cover_top"),
     )
     bottom = api["LongitudinalReinforcement"](
         mode=api["LayoutMode"].COUNT,
-        bars=max(2, bottom_bars),
-        spacing_mm=bottom_spacing,
+        bars=bottom_bars,
+        spacing_mm=_v2_longitudinal_spacing(
+            reinforcement,
+            "bot_row_1_spacing",
+            "bot1_spacing",
+        ),
         diameter_mm=bottom_diameter,
         cover_mm=bottom_cover,
     )

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import streamlit as st
 
-from widgets_helpers import page_divider
 from application.design_actions_adapters import adapt_design_actions_from_state
 from inputs_application.session_services import InputsSessionServices
 
@@ -38,7 +37,6 @@ def render_inputs_summary_expanders_and_tables_current_coordinator(**kwargs) -> 
             "reason": "missing_design_result",
         }
         st.info("Design checks are being calculated for the current inputs.")
-        page_divider()
         return
 
     input_revision = int(services.input_snapshots.current().revision or 0)
@@ -51,7 +49,6 @@ def render_inputs_summary_expanders_and_tables_current_coordinator(**kwargs) -> 
             "result_revision": result_revision,
         }
         st.info("Design checks are being refreshed for the current inputs.")
-        page_divider()
         return
 
     projection = build_summary_source_from_design_result(
@@ -69,7 +66,6 @@ def render_inputs_summary_expanders_and_tables_current_coordinator(**kwargs) -> 
         _build_summary_cards_html_for_current_state(projection.source),
         unsafe_allow_html=True,
     )
-    page_divider()
 
 
 def render_inputs_summary_container_current(
@@ -93,11 +89,12 @@ def render_inputs_summary_container_current(
     with summary_container:
         if render_title:
             st_module.title("Inputs")
-        show_landing = inputs_show_landing_dashboard_fn()
-        if show_landing:
-            render_landing_card_fn(sync_callbacks=sync_callbacks, st_module=st_module)
-        else:
-            render_summary_table(st_module.session_state.get(result_cache_key))
+        # Initial path selection now belongs exclusively to the top-level
+        # Start page.  Beam Inputs must always present its existing summary and
+        # workspace, including when actions are still zero; rendering the old
+        # landing card here duplicates navigation inside the page.
+        _ = inputs_show_landing_dashboard_fn, render_landing_card_fn, sync_callbacks
+        render_summary_table(st_module.session_state.get(result_cache_key))
 
 
 __all__ = [
