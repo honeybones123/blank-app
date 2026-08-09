@@ -20,7 +20,9 @@ def main() -> None:
     assert ".summary-detail-inner" in summary_css
     assert "min-width: 0" in summary_css
 
-    assert "@media (max-width: 1200px)" in summary_css
+    assert "container-type: inline-size" in summary_css
+    assert "@container (max-width: 850px)" in summary_css
+    assert "@media (max-width: 1200px)" not in summary_css
     assert "@media (max-width: 1200px)" in widget_css
     assert ".sb-tooltip-bubble" in widget_css
     assert "left: auto" in widget_css

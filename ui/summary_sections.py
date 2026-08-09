@@ -164,6 +164,7 @@ def summary_card_css() -> str:
   --metric-color: #0f172a;
   --metric-label-color: #64748b;
   position: relative;
+  container-type: inline-size;
   border: 1px solid rgba(49,51,63,0.12);
   border-radius: 8px;
   background: var(--accent-soft);
@@ -314,7 +315,7 @@ def summary_card_css() -> str:
   text-decoration: none;
   width: 100%;
 }
-@media (max-width: 1200px) {
+@container (max-width: 850px) {
   .summary-check-card summary {
     grid-template-columns: 1fr 24px;
     gap: 0.8rem;
