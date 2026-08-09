@@ -45,8 +45,12 @@ class ShearFailurePipeline:
         capacity = float(before.families.get("shear", {}).get("phi_Vu", 0.0))
         current_util = abs(float(current.actions.shear_force_kn)) / capacity if capacity > 0 else 0.0
         seed = propose_neutral_candidate(current)
-        if current_util <= 1.0:
-            return DesignBrainPreview(seed, before, before, (), False, "shear_not_failed")
+        # Entry into this family is owned by the family classifier and includes
+        # every authoritative shear check, not only headline capacity.  A
+        # section may have phiVu >= V* while still failing the transverse-
+        # reinforcement, minimum-link or spacing checks.  Rechecking headline
+        # utilisation here created a second decision centre and suppressed the
+        # repair ladder for those valid failure states.
         low, high = 0.85, 1.0
         trials: list[tuple[float, Candidate, BeamInputs, EngineeringResult, float]] = []
         for lane, changes, edit_size in generate_shear_repair_specs(current, current_util):

@@ -190,8 +190,21 @@ def format_engineering_advice(advice: EngineeringAdviceResult) -> str:
     current = _check_summary("Current", advice.current_checks)
     proposed_label = "Verified result" if advice.apply_allowed else "Assessed result"
     proposed = _check_summary(proposed_label, advice.proposed_checks)
+    if (
+        advice.outcome_type == "EXACT_STOP_PROVEN"
+        and advice.verified_compliance
+        and not advice.apply_allowed
+    ):
+        proposed = ""
     why = " ".join(advice.engineering_effects) if advice.engineering_effects else "No further safe change is available."
-    if not advice.apply_allowed and advice.blocked_reason:
+    if (
+        not advice.apply_allowed
+        and advice.blocked_reason
+        and advice.outcome_type == "EXACT_STOP_PROVEN"
+        and advice.verified_compliance
+    ):
+        why = advice.blocked_reason.rstrip(".") + ". The current design remains compliant."
+    elif not advice.apply_allowed and advice.blocked_reason:
         blocker = advice.blocked_reason.rstrip(".")
         if len(blocker) > 1 and blocker[0].isupper() and blocker[1].islower():
             blocker = blocker[0].lower() + blocker[1:]

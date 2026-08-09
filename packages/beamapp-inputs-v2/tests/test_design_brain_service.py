@@ -1,3 +1,7 @@
+from dataclasses import replace
+
+from inputs_v2.application.design_brain.family_owners import FAMILY_OWNERS
+from inputs_v2.application.design_brain_families import DesignFamily
 from inputs_v2.application.design_brain_service import DesignBrainService
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.domain.beam_inputs import ActionInputs, LongitudinalReinforcement, ShearReinforcement
@@ -108,11 +112,26 @@ def test_shear_overdesign_does_not_add_unrequested_bottom_bar():
     assert preview.candidate.proposal.bottom_bars == current.bottom.bars
 
 def test_zero_shear_overdesign_can_still_apply_link_removal():
-    current = BeamInputs(
+    base = BeamInputs(
+        width_mm=300.0,
+        depth_mm=500.0,
+        bottom=LongitudinalReinforcement(bars=4, diameter_mm=24),
         shear=ShearReinforcement(diameter_mm=16, legs=4, spacing_mm=200.0),
-        actions=ActionInputs(shear_force_kn=0.0),
     ).validated()
-    preview = DesignBrainService().preview_shear_overdesign(current)
+    service = DesignBrainService()
+    result = service._calculator.calculate_current(base).result
+    assert result is not None
+    current = replace(
+        base,
+        actions=ActionInputs(
+            bending_moment_knm=0.90 * float(result.families["bending"]["phi_Mu_kNm"]),
+            shear_force_kn=0.0,
+        ),
+    ).validated()
+    preview = FAMILY_OWNERS[DesignFamily.SHEAR_OVERDESIGN_GOVERNS].preview(
+        current,
+        service,
+    )
     assert preview.accepted
     assert (
         preview.candidate.proposal.shear_diameter_mm != current.shear.diameter_mm

@@ -1,0 +1,62 @@
+{
+  "schema": "inputs_v2.shadow_parity.v1",
+  "cases": [
+    {
+      "revision": 0,
+      "input_hash": "8ecbf36d08c0d1e04accf7ffa519f2d4b212c56f9872b91be3560e4ca9fa2431",
+      "fixture_status": "fixture",
+      "shadow_status": "production-shadow",
+      "fixture_families": [],
+      "shadow_families": [
+        "bending",
+        "crack_control",
+        "creep_shrinkage",
+        "ductility",
+        "geometry",
+        "reinforcement_fit",
+        "serviceability",
+        "shear"
+      ],
+      "shadow_bending_capacity": 24.788595666530608,
+      "shadow_shear_capacity": 27.215352112824114
+    },
+    {
+      "revision": 0,
+      "input_hash": "8192b2702bcb135ca254284e43112f2b2092e21d4469766ffea978fd8bd06bdb",
+      "fixture_status": "fixture",
+      "shadow_status": "production-shadow",
+      "fixture_families": [],
+      "shadow_families": [
+        "bending",
+        "crack_control",
+        "creep_shrinkage",
+        "ductility",
+        "geometry",
+        "reinforcement_fit",
+        "serviceability",
+        "shear"
+      ],
+      "shadow_bending_capacity": 24.788595666530608,
+      "shadow_shear_capacity": 27.215352112824114
+    },
+    {
+      "revision": 0,
+      "input_hash": "254b9efd16c02e22c752e6ed66836e8f823c6590531196cad5c6223b40c17f4d",
+      "fixture_status": "fixture",
+      "shadow_status": "production-shadow",
+      "fixture_families": [],
+      "shadow_families": [
+        "bending",
+        "crack_control",
+        "creep_shrinkage",
+        "ductility",
+        "geometry",
+        "reinforcement_fit",
+        "serviceability",
+        "shear"
+      ],
+      "shadow_bending_capacity": 44.940692519987024,
+      "shadow_shear_capacity": 58.27287158275281
+    }
+  ]
+}

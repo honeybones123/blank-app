@@ -40,7 +40,7 @@ EXPECTED = {
     DesignFamily.BENDING_OVERDESIGN_GOVERNS: ("Verified bending optimisation", "Bending optimisation review required", "Compliant bending design retained", ("bending", "shear", "ductility", "minimum_tensile", "reinforcement_fit")),
     DesignFamily.SHEAR_OVERDESIGN_GOVERNS: ("Verified shear optimisation", "Shear optimisation review required", "Compliant shear design retained", ("shear", "bending", "ductility", "reinforcement_fit")),
     DesignFamily.TARGET_BAND_REACHED: ("Target band reached", "Target-band verification required", "Target band reached", ("bending", "shear", "serviceability", "crack_control", "reinforcement_fit")),
-    DesignFamily.EXACT_STOP_PROVEN: ("Verified exact stop", "Exact-stop verification required", "Verified exact stop", ("bending", "shear", "ductility", "minimum_tensile", "serviceability", "crack_control", "reinforcement_fit")),
+    DesignFamily.EXACT_STOP_PROVEN: ("Verified exact stop", "Exact-stop verification required", "Compliant design retained", ("bending", "shear", "ductility", "minimum_tensile", "serviceability", "crack_control", "reinforcement_fit")),
     DesignFamily.LOCKED_NO_REPAIR: ("Verified constrained revision", "Further design review required", "Locked design verified", ("geometry", "bending", "shear", "ductility", "minimum_tensile", "serviceability", "crack_control", "reinforcement_fit")),
 }
 

@@ -23,6 +23,7 @@ Calculate = Callable[[BeamInputs], EngineeringResult]
 Evaluate = Callable[..., Any]
 RankKey = Callable[[BeamInputs, Candidate, EngineeringResult, float, float], tuple]
 CompleteStage = Callable[[str], None]
+MergeMetrics = Callable[[dict[str, object]], None]
 Trial = tuple[float, Candidate, EngineeringResult, float]
 
 
@@ -50,18 +51,30 @@ class CombinedOverdesignPipeline:
         evaluate: Evaluate,
         rank_key: RankKey,
         complete_stage: CompleteStage,
+        merge_metrics: MergeMetrics = lambda _metrics: None,
         nearby_dimension_steps: int,
     ) -> None:
         self._calculate = calculate
         self._evaluate = evaluate
         self._rank_key = rank_key
         self._complete_stage = complete_stage
+        self._merge_metrics = merge_metrics
         self._nearby_dimension_steps = nearby_dimension_steps
 
     def preview(self, current: BeamInputs) -> DesignBrainPreview:
         before = self._calculate(current)
         seed = propose_neutral_candidate(current)
         current_distance = _distance(_active_utils(current, before))
+        improving_rejections: dict[str, int] = {}
+
+        def reject(*codes: str) -> None:
+            for code in codes:
+                improving_rejections[code] = improving_rejections.get(code, 0) + 1
+
+        def publish_metrics() -> None:
+            self._merge_metrics(
+                {"improving_rejection_counts": dict(sorted(improving_rejections.items()))}
+            )
 
         shear_options = self._shear_stage(current, seed)
         self._complete_stage("reduce_shear_reinforcement")
@@ -107,9 +120,11 @@ class CombinedOverdesignPipeline:
                             stage_id="reduce_geometry_and_redesign",
                         )
                         if not evaluation.usable or evaluation.result is None:
+                            reject(*evaluation.rejection_codes)
                             continue
                         result = evaluation.result
                         if ratio_gate_required(current, candidate.proposal, result):
+                            reject("longitudinal_ratio_gate")
                             continue
                         values = _active_utils(current, result)
                         distance = _distance(values)
@@ -127,17 +142,32 @@ class CombinedOverdesignPipeline:
                 # target-band solution proves that broader cells are needless.
                 break
         self._complete_stage("reduce_geometry_and_redesign")
+        publish_metrics()
 
         if not trials:
             return DesignBrainPreview(
-                seed, before, before, (), False, "no_safe_combined_cleanup", 0.85, 1.0
+                seed,
+                before,
+                before,
+                (),
+                False,
+                "verified_combined_constraints_exhausted",
+                0.85,
+                1.0,
             )
         target_trials = [row for row in trials if row[0] == 0.0]
         improving = [row for row in trials if row[0] < current_distance]
         selectable = target_trials or improving
         if not selectable:
             return DesignBrainPreview(
-                seed, before, before, (), False, "no_improving_combined_cleanup", 0.85, 1.0
+                seed,
+                before,
+                before,
+                (),
+                False,
+                "verified_combined_constraints_exhausted",
+                0.85,
+                1.0,
             )
         _, candidate, after, _ = min(
             selectable,

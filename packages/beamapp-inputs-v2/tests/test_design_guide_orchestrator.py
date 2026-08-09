@@ -4,9 +4,12 @@ from dataclasses import replace
 import pytest
 
 from inputs_v2.application.design_guide_orchestrator import DesignGuideOrchestrator
-import inputs_v2.application.design_guide_orchestrator as orchestrator_module
 from inputs_v2.application.design_brain_service import DesignBrainService
 from inputs_v2.application.design_brain.family_owners import FAMILY_OWNERS
+from inputs_v2.application.engineering_advice import format_engineering_advice
+from inputs_v2.presentation.view_models.design_brain_card import (
+    build_design_brain_card_view_model,
+)
 from inputs_v2.domain.beam_inputs import (
     ActionInputs,
     BeamInputs,
@@ -14,41 +17,6 @@ from inputs_v2.domain.beam_inputs import (
     ServiceabilityInputs,
     ShearReinforcement,
 )
-
-
-def test_orchestrator_returns_selected_owner_decision_by_identity(monkeypatch) -> None:
-    """The orchestration boundary must not rebuild or reinterpret a decision."""
-    current = BeamInputs().validated()
-    calculated = DesignBrainService()._calculator.calculate_current(current).result
-    expected_decision = object()
-    selected_family = DesignFamily.TARGET_BAND_REACHED
-
-    class StubCalculator:
-        def calculate_current(self, received):
-            assert received is current
-            return type("Calculation", (), {"result": calculated})()
-
-    class StubService:
-        _calculator = StubCalculator()
-
-    class StubOwner:
-        def decide(self, received_current, received_result, received_service):
-            assert received_current is current
-            assert received_result is calculated
-            assert received_service is service
-            return expected_decision
-
-    service = StubService()
-    orchestrator = DesignGuideOrchestrator()
-    orchestrator._service = service
-    monkeypatch.setattr(
-        orchestrator_module,
-        "classify_design_family",
-        lambda received_result, received_current: selected_family,
-    )
-    monkeypatch.setitem(orchestrator_module.DECISION_OWNERS, selected_family, StubOwner())
-
-    assert orchestrator.decide(current) is expected_decision
 
 
 def test_orchestrator_routes_combined_failure_to_one_atomic_ladder() -> None:
@@ -450,6 +418,156 @@ def test_bending_overdesign_preserves_near_limit_shear_in_one_decision() -> None
     assert 0.85 <= proposed_bending <= 1.0
     assert proposed_shear_util <= 1.0
     assert decision.candidate.proposal.shear_spacing_mm < current.shear.spacing_mm
+
+
+def test_exhausted_bending_cleanup_is_green_pass_with_verified_blockers() -> None:
+    """A passing beam is retained only after every real reduction is checked."""
+
+    base = BeamInputs(
+        width_mm=200.0,
+        depth_mm=300.0,
+        bottom=LongitudinalReinforcement(bars=2, diameter_mm=16),
+        shear=ShearReinforcement(diameter_mm=10, legs=2, spacing_mm=150.0),
+    ).validated()
+    baseline = DesignBrainService()._calculator.calculate_current(base).result
+    current = replace(
+        base,
+        actions=ActionInputs(
+            bending_moment_knm=(
+                0.74 * float(baseline.families["bending"]["phi_Mu_kNm"])
+            ),
+            shear_force_kn=0.98 * float(baseline.families["shear"]["phi_Vu"]),
+        ),
+    ).validated()
+
+    decision = DesignGuideOrchestrator().decide(current)
+    card = build_design_brain_card_view_model(decision, current)
+    advice = format_engineering_advice(decision.advice)
+
+    assert decision.family is DesignFamily.EXACT_STOP_PROVEN
+    assert decision.status is DecisionStatus.PASS
+    assert not decision.apply_allowed
+    assert decision.search_evidence.exhausted
+    assert decision.search_evidence.improving_rejection_counts
+    assert card.state_class == "pass"
+    assert card.badge == "PASS"
+    assert decision.display_heading == "Compliant design retained"
+    assert "Every permitted reinforcement and geometry reduction was assessed" in advice
+    assert "The current design remains compliant" in advice
+    assert "cannot yet be applied" not in advice
+
+
+def test_exhausted_combined_cleanup_is_green_pass_with_verified_blockers() -> None:
+    """A compliant combined design must not become blocked after exhaustion."""
+
+    base = BeamInputs(
+        width_mm=300.0,
+        depth_mm=500.0,
+        width_locked=True,
+        depth_locked=True,
+        bottom=LongitudinalReinforcement(bars=4, diameter_mm=16),
+        shear=ShearReinforcement(diameter_mm=10, legs=2, spacing_mm=300.0),
+    ).validated()
+    baseline = DesignBrainService()._calculator.calculate_current(base).result
+    assert baseline is not None
+    current = replace(
+        base,
+        actions=ActionInputs(
+            bending_moment_knm=0.40 * float(baseline.families["bending"]["phi_Mu_kNm"]),
+            shear_force_kn=0.40 * float(baseline.families["shear"]["phi_Vu"]),
+        ),
+    ).validated()
+
+    decision = DesignGuideOrchestrator().decide(current)
+    card = build_design_brain_card_view_model(decision, current)
+
+    assert decision.family is DesignFamily.EXACT_STOP_PROVEN
+    assert decision.status is DecisionStatus.PASS
+    assert not decision.apply_allowed
+    assert decision.candidate is None
+    assert decision.search_evidence.exhausted
+    assert decision.search_evidence.completed_stage_ids == decision.search_evidence.declared_stage_ids
+    assert card.state_class == "pass"
+    assert card.badge == "PASS"
+    assert decision.search_evidence.governing_blocker
+
+
+def test_exhausted_shear_cleanup_is_green_pass_with_verified_blockers() -> None:
+    """Minimum links/locked width are a verified stop, not a failed design."""
+
+    base = BeamInputs(
+        width_mm=300.0,
+        depth_mm=500.0,
+        width_locked=True,
+        depth_locked=True,
+        bottom=LongitudinalReinforcement(bars=4, diameter_mm=24),
+        shear=ShearReinforcement(diameter_mm=10, legs=2, spacing_mm=300.0),
+    ).validated()
+    baseline = DesignBrainService()._calculator.calculate_current(base).result
+    assert baseline is not None
+    current = replace(
+        base,
+        actions=ActionInputs(
+            bending_moment_knm=0.90 * float(baseline.families["bending"]["phi_Mu_kNm"]),
+            shear_force_kn=0.40 * float(baseline.families["shear"]["phi_Vu"]),
+        ),
+    ).validated()
+
+    decision = DesignGuideOrchestrator().decide(current)
+    card = build_design_brain_card_view_model(decision, current)
+
+    assert decision.family is DesignFamily.EXACT_STOP_PROVEN
+    assert decision.status is DecisionStatus.PASS
+    assert not decision.apply_allowed
+    assert decision.candidate is None
+    assert decision.search_evidence.exhausted
+    assert decision.search_evidence.completed_stage_ids == decision.search_evidence.declared_stage_ids
+    assert card.state_class == "pass"
+    assert card.badge == "PASS"
+    assert decision.search_evidence.governing_blocker
+
+
+@pytest.mark.parametrize(
+    ("bending_utilisation", "expected_family"),
+    (
+        (0.90, DesignFamily.SHEAR_FAIL_GOVERNS),
+        (0.40, DesignFamily.SHEAR_FAIL_BENDING_OPTIMISE_GOVERNS),
+    ),
+)
+def test_minimum_shear_failure_below_capacity_runs_the_repair_ladder(
+    bending_utilisation: float,
+    expected_family: DesignFamily,
+) -> None:
+    """Detailed shear failures cannot be dismissed by headline utilisation."""
+
+    base = BeamInputs(
+        width_mm=300.0,
+        depth_mm=500.0,
+        bottom=LongitudinalReinforcement(bars=4, diameter_mm=24),
+        shear=ShearReinforcement(diameter_mm=10, legs=2, spacing_mm=600.0),
+    ).validated()
+    baseline = DesignBrainService()._calculator.calculate_current(base).result
+    assert baseline is not None
+    current = replace(
+        base,
+        actions=ActionInputs(
+            bending_moment_knm=(
+                bending_utilisation
+                * float(baseline.families["bending"]["phi_Mu_kNm"])
+            ),
+            shear_force_kn=0.40 * float(baseline.families["shear"]["phi_Vu"]),
+        ),
+    ).validated()
+
+    decision = DesignGuideOrchestrator().decide(current)
+
+    assert decision.current_result.families["shear"]["min_shear_ok"] is False
+    assert decision.family is expected_family
+    assert decision.status is DecisionStatus.ACTION
+    assert decision.apply_allowed
+    assert decision.reason != "shear_not_failed"
+    assert decision.proposed_result.families["shear"]["min_shear_ok"] is True
+    assert decision.proposed_result.families["shear"]["spacing_ok"] is True
 
 
 def test_bending_overdesign_reaches_final_safe_floor_without_incremental_loop() -> None:

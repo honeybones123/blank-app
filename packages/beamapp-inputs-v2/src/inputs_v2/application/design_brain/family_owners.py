@@ -189,6 +189,60 @@ class FamilyResolution:
     proposed_utilisations: tuple[float, ...]
 
 
+def _exact_stop_explanation(
+    reason: str,
+    improving_rejections: dict[str, int],
+    fallback: str | None,
+) -> str:
+    """Describe only checks that rejected otherwise useful reductions."""
+
+    if reason not in {
+        "verified_bending_constraints_exhausted",
+        "verified_shear_constraints_exhausted",
+        "verified_combined_constraints_exhausted",
+    }:
+        return fallback or "The permitted family search is exhausted at a verified governing limit."
+
+    constraints: list[str] = []
+
+    def include(label: str, *codes: str) -> None:
+        if any(int(improving_rejections.get(code, 0)) > 0 for code in codes):
+            constraints.append(label)
+
+    include("minimum tensile reinforcement", "minimum_tensile_reinforcement_failed")
+    include(
+        "the governing shear checks",
+        "shear_strength_failed",
+        "shear_web_crushing_failed",
+        "transverse_reinforcement_required",
+        "minimum_shear_reinforcement_failed",
+        "shear_spacing_failed",
+    )
+    include("the deflection limit", "serviceability_fail")
+    include("crack-control requirements", "crack_control_fail")
+    include("the neutral-axis ductility limit", "ductility_fail")
+    include("reinforcement fit and clear spacing", "reinforcement_fit_failed")
+    include("the section geometry limit", "geometry_fail")
+    include("the longitudinal reinforcement-ratio policy", "longitudinal_ratio_gate")
+    include("the target-band improvement requirement", "no_utilisation_improvement")
+
+    if not constraints:
+        return fallback or "Every permitted reduction was rejected by a governing engineering check."
+    if len(constraints) == 1:
+        joined = constraints[0]
+    else:
+        joined = ", ".join(constraints[:-1]) + f" and {constraints[-1]}"
+    domain = {
+        "verified_bending_constraints_exhausted": "bending",
+        "verified_shear_constraints_exhausted": "shear",
+        "verified_combined_constraints_exhausted": "the combined design",
+    }[reason]
+    return (
+        "Every permitted reinforcement and geometry reduction was assessed. "
+        f"Candidates that improved {domain} were rejected by {joined}."
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class FamilyContract:
     family: DesignFamily
@@ -242,7 +296,7 @@ class FamilyContract:
             status = "ACTION" if preview_accepted else "BLOCKED"
         elif current_in_band:
             return FamilyOutcome("PASS", DesignFamily.TARGET_BAND_REACHED, self.pass_intent)
-        elif exact_stop_proven:
+        elif exact_stop_proven and self.retain_compliant_on_optimisation_exhaustion:
             return FamilyOutcome("PASS", DesignFamily.EXACT_STOP_PROVEN, self.pass_intent)
         elif preview_accepted and (
             not self.improvement_policy.require_target_band
@@ -474,8 +528,12 @@ class FamilyOwner:
         outcome = resolution.outcome
         status = DecisionStatus(outcome.status)
         final_family = outcome.final_family
+        display_result = preview.after
+        display_candidate = preview.candidate
         if status is DecisionStatus.PASS:
             changes = ()
+            display_result = current_result
+            display_candidate = None
         apply_allowed = (
             outcome.cta_intent is CtaIntent.APPLY_VERIFIED_PROPOSAL
             and resolution.policy_accepted
@@ -526,6 +584,13 @@ class FamilyOwner:
                     "The family search did not produce a verified proposal; "
                     "review the recorded candidate rejection evidence"
                 )
+        elif status is DecisionStatus.PASS and resolution.exact_stop_proven:
+            blocker_code = preview.reason
+            blocker = _exact_stop_explanation(
+                preview.reason,
+                dict(metrics.get("improving_rejection_counts", {}) or {}),
+                self.contract.blocker_for(preview.reason),
+            )
 
         selected_text = FAMILY_TEXT_CONTRACTS[self.contract.family]
         final_text = FAMILY_TEXT_CONTRACTS[final_family]
@@ -534,7 +599,7 @@ class FamilyOwner:
             current, current_result, self.contract.required_checks
         )
         proposed_checks = authoritative_checks(
-            current, preview.after, self.contract.required_checks
+            current, display_result, self.contract.required_checks
         )
         references = clause_references_from_checks(current_checks + proposed_checks)
         governing_failed = next(
@@ -595,13 +660,13 @@ class FamilyOwner:
             family=final_family,
             status=status,
             display_heading=final_text.title_for(status.value),
-            candidate=preview.candidate,
+            candidate=display_candidate,
             current_result=current_result,
-            proposed_result=preview.after,
+            proposed_result=display_result,
             advice=advice,
             apply_allowed=apply_allowed,
             reason=preview.reason,
-            changed_fields=preview.changed_fields,
+            changed_fields=() if status is DecisionStatus.PASS else preview.changed_fields,
             search_evidence=SearchEvidence(
                 candidates_attempted=candidates_attempted,
                 candidates_valid=int(metrics.get("candidates_valid", 0) or 0),
@@ -639,6 +704,14 @@ class FamilyOwner:
                         (str(code), int(count))
                         for code, count in dict(
                             metrics.get("rejection_counts", {}) or {}
+                        ).items()
+                    )
+                ),
+                improving_rejection_counts=tuple(
+                    sorted(
+                        (str(code), int(count))
+                        for code, count in dict(
+                            metrics.get("improving_rejection_counts", {}) or {}
                         ).items()
                     )
                 ),
@@ -837,7 +910,7 @@ FAMILY_OWNERS: dict[DesignFamily, FamilyOwner] = {
         DesignFamily.COMBINED_OVERDESIGN, "combined_overdesign", "bending_and_shear_below_target",
         (LadderStage("reduce_shear_reinforcement", ("shear",)), LadderStage("reduce_bending_reinforcement", ("bottom",)), LadderStage("reduce_geometry_and_redesign", ("width_mm", "depth_mm", "bottom", "shear"))),
         ("bottom", "shear", "width_mm", "depth_mm"), ("bending", "shear", "ductility", "reinforcement_fit"), active_domains=("bending", "shear"), search_kind=SearchKind.OPTIMISATION, allow_safe_progress=True, retain_compliant_on_optimisation_exhaustion=True,
-        exact_reasons=("minimum_reinforcement_geometry_exhausted", "ductility_geometry_exhausted"),
+        exact_reasons=("minimum_reinforcement_geometry_exhausted", "ductility_geometry_exhausted", "verified_bending_constraints_exhausted", "verified_combined_constraints_exhausted"),
     ), _combined_overdesign),
     DesignFamily.BENDING_AND_SHEAR_FAIL_GOVERN: FamilyOwner(_contract(
         DesignFamily.BENDING_AND_SHEAR_FAIL_GOVERN, "combined_failure", "bending_and_shear_fail",
@@ -868,13 +941,13 @@ FAMILY_OWNERS: dict[DesignFamily, FamilyOwner] = {
         DesignFamily.BENDING_OVERDESIGN_GOVERNS, "bending_overdesign", "bending_below_target_other_active_domains_compliant",
         (LadderStage("reduce_bottom_reinforcement", ("bottom",)), LadderStage("remove_unnecessary_layer", ("bottom",)), LadderStage("reduce_geometry_and_redesign", ("width_mm", "depth_mm", "bottom")), LadderStage("preserve_near_limit_shear", ("shear",))),
         ("bottom", "width_mm", "depth_mm", "shear"), ("bending", "shear", "ductility", "minimum_tensile", "reinforcement_fit"), active_domains=("bending",), search_kind=SearchKind.OPTIMISATION, allow_safe_progress=True, retain_compliant_on_optimisation_exhaustion=True,
-        exact_reasons=("minimum_reinforcement_geometry_exhausted", "ductility_geometry_exhausted"),
+        exact_reasons=("minimum_reinforcement_geometry_exhausted", "ductility_geometry_exhausted", "verified_bending_constraints_exhausted"),
     ), _bending_overdesign),
     DesignFamily.SHEAR_OVERDESIGN_GOVERNS: FamilyOwner(_contract(
         DesignFamily.SHEAR_OVERDESIGN_GOVERNS, "shear_overdesign", "shear_below_target_other_active_domains_compliant",
         (LadderStage("increase_spacing", ("shear",)), LadderStage("reduce_ligature_size_or_legs", ("shear",)), LadderStage("remove_unrequired_ligatures", ("shear",)), LadderStage("reduce_width_and_redesign", ("width_mm", "bottom", "shear"))),
         ("shear", "width_mm", "bottom"), ("shear", "bending", "ductility", "reinforcement_fit"), active_domains=("shear",), search_kind=SearchKind.OPTIMISATION, allow_safe_progress=True, retain_compliant_on_optimisation_exhaustion=True,
-        exact_reasons=("minimum_shear_reinforcement_exhausted",),
+        exact_reasons=("minimum_shear_reinforcement_exhausted", "verified_shear_constraints_exhausted"),
     ), _shear_overdesign),
 }
 

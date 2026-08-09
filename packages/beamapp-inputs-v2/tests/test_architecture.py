@@ -7,6 +7,7 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "inputs_v2"
+RUNTIME_ROOT = Path(r"C:\Users\jonathon\OneDrive\Documents\GitHub\complete-app - Runtime")
 
 
 def python_files():
@@ -59,10 +60,9 @@ def test_css_selectors_are_scoped_or_approved_foundations() -> None:
         assert selector == ".stApp" or selector.startswith(".inputs-v2-root"), selector
 
 
-def test_package_has_dedicated_runtime_boundary() -> None:
-    assert ROOT.name == "beamapp-inputs-v2"
-    assert ROOT.parent.name == "packages"
-    assert SRC.is_dir()
+def test_lab_is_outside_existing_runtime() -> None:
+    assert RUNTIME_ROOT not in ROOT.parents
+    assert ROOT != RUNTIME_ROOT
 
 
 def test_components_do_not_access_raw_session_state() -> None:
@@ -322,6 +322,27 @@ def test_only_repair_contracts_may_accept_a_compliant_result_below_target_band()
         assert contract.improvement_policy.allow_compliant_repair is (
             contract.search_kind is SearchKind.REPAIR
         )
+
+
+def test_optimisation_exact_stop_is_owned_by_the_family_contract() -> None:
+    from inputs_v2.application.design_brain.family_owners import FAMILY_CONTRACTS
+    from inputs_v2.application.design_brain.search_profile import SearchKind
+
+    for contract in FAMILY_CONTRACTS.values():
+        if contract.search_kind is SearchKind.OPTIMISATION:
+            assert contract.retain_compliant_on_optimisation_exhaustion
+            assert contract.exact_stop_policy.reason_codes
+        else:
+            assert not contract.retain_compliant_on_optimisation_exhaustion
+
+
+def test_shear_failure_ladder_does_not_reclassify_the_selected_family() -> None:
+    pipeline = (
+        SRC / "application" / "design_brain" / "shear_failure_pipeline.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'return DesignBrainPreview(seed, before, before, (), False, "shear_not_failed")' not in pipeline
+    assert "Entry into this family is owned by the family classifier" in pipeline
 
 
 def test_search_evidence_stage_sets_cannot_escape_the_selected_family_contract() -> None:

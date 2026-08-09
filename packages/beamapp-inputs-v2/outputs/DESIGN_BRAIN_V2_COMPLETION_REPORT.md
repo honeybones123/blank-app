@@ -44,11 +44,11 @@ The current Inputs V2 page and Design Brain visual shell were preserved.
 
 Latest complete offline gate:
 
-- **342 tests passed**;
+- **349 tests passed**;
 - **7 tests intentionally skipped**;
 - architecture checker passed across **81 Python files**;
 - shadow calculation parity report generated;
-- **20/20** repair, optimisation, terminal and locked-outcome audit fixtures
+- **23/23** repair, optimisation, terminal, exact-stop and locked-outcome audit fixtures
   passed; and
 - protected V1 Runtime git status was identical before and after the gate.
 
@@ -66,16 +66,19 @@ Representative recovery audit:
 | Serviceability failure | `SERVICEABILITY_GOVERNS` | Yes | 960 |
 | Combined overdesign | `COMBINED_OVERDESIGN` | Yes | 420 |
 | Bending overdesign | `BENDING_OVERDESIGN_GOVERNS` | Yes | 1159 |
-| Shear overdesign | `SHEAR_OVERDESIGN_GOVERNS` | Yes | 40 |
+| Shear overdesign | `SHEAR_OVERDESIGN_GOVERNS` | Yes | 124 |
 | Zero-shear ligature cleanup | `SHEAR_OVERDESIGN_GOVERNS` | Yes | 1 |
+| Detailed minimum-shear failure below headline capacity | `SHEAR_FAIL_GOVERNS` | Yes | 889 |
+| Exhausted compliant shear optimisation | `EXACT_STOP_PROVEN` | No | 5 |
+| Exhausted compliant combined optimisation | `EXACT_STOP_PROVEN` | No | 16 |
 | Target band | `TARGET_BAND_REACHED` | No | 0 |
 | Locked bending failure | `BENDING_FAIL_GOVERNS` | No | 105 |
-| Locked geometry/detailing failure | `GEOMETRY_DETAILING_GOVERNS` | No | 803 |
-| Locked combined failure | `BENDING_AND_SHEAR_FAIL_GOVERN` | No | 32 |
-| Locked bending/shear mixed failure | `BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS` | No | 113 |
-| Locked shear/bending mixed failure | `SHEAR_FAIL_BENDING_OPTIMISE_GOVERNS` | No | 1185 |
-| Locked shear failure | `SHEAR_FAIL_GOVERNS` | No | 5 |
-| Locked serviceability failure | `SERVICEABILITY_GOVERNS` | No | 960 |
+| Locked geometry/detailing failure | `GEOMETRY_DETAILING_GOVERNS` | No | 0 |
+| Locked combined failure | `BENDING_AND_SHEAR_FAIL_GOVERN` | No | 24 |
+| Locked bending/shear mixed failure | `BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS` | No | 88 |
+| Locked shear/bending mixed failure | `SHEAR_FAIL_BENDING_OPTIMISE_GOVERNS` | No | 91 |
+| Locked shear failure | `SHEAR_FAIL_GOVERNS` | No | 91 |
+| Locked serviceability failure | `SERVICEABILITY_GOVERNS` | No | 60 |
 
 Performance fixtures prove:
 
@@ -83,6 +86,16 @@ Performance fixtures prove:
   evaluations and zero calculation-cache misses;
 - the no-load contract completes in approximately **0.64 ms**, with zero
   candidate evaluations and no Apply action;
+- a passing bending-overdesign case is retained as a green PASS only after
+  every permitted reinforcement and geometry stage completes, with the exact
+  checks that rejected useful reductions preserved in the decision evidence;
+- the same exact-stop rule is enforced for shear-only and combined overdesign,
+  with no candidate or Apply action retained on terminal PASS;
+- detailed shear failures below headline utilisation 1.0 enter the selected
+  shear repair ladder rather than being reclassified by the pipeline;
+- every overdesign ACTION is rejected unless it reduces longitudinal steel,
+  transverse steel density or concrete area while preserving all mandatory
+  checks;
 - triggered Fast search remains below its configured 2500-evaluation budget;
 - candidate count, cache hits/misses and elapsed time are published; and
 - a configured consecutive-infeasible limit may stop only with recorded

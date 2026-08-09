@@ -26,11 +26,14 @@ def select_bending_overdesign_preview(
     geometry_attempted: bool,
     minimum_reinforcement_blocked: bool,
     ductility_blocked: bool,
+    improving_rejection_counts: dict[str, int],
     rank_key: RankKey,
 ) -> DesignBrainPreview:
     """Select one cleanup in contract order and apply mandatory safety gates."""
     if not trials:
-        if geometry_attempted and ductility_blocked:
+        if geometry_attempted and improving_rejection_counts:
+            reason = "verified_bending_constraints_exhausted"
+        elif geometry_attempted and ductility_blocked:
             reason = "ductility_geometry_exhausted"
         elif geometry_attempted and minimum_reinforcement_blocked:
             reason = "minimum_reinforcement_geometry_exhausted"
@@ -132,6 +135,12 @@ def select_bending_overdesign_preview(
         reason = "safe_overdesign_cleanup"
     elif accepted:
         reason = "bending_overdesign_cleanup"
+    elif geometry_attempted and improving_rejection_counts:
+        reason = "verified_bending_constraints_exhausted"
+    elif geometry_attempted and ductility_blocked:
+        reason = "ductility_geometry_exhausted"
+    elif geometry_attempted and minimum_reinforcement_blocked:
+        reason = "minimum_reinforcement_geometry_exhausted"
     elif geometry_floor_reached:
         reason = "minimum_reinforcement_geometry_exhausted"
     else:

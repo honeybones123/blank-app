@@ -45,6 +45,7 @@ _BENDING_BLOCKERS = (
     BlockerText("no_safe_bending_cleanup", "No safe reduction satisfied bending strength, ductility, minimum tensile reinforcement and fit."),
     BlockerText("minimum_reinforcement_geometry_exhausted", "Minimum tensile reinforcement governs after all permitted geometry reductions were assessed."),
     BlockerText("ductility_geometry_exhausted", "The neutral-axis ductility limit governs after all permitted geometry revisions were assessed."),
+    BlockerText("verified_bending_constraints_exhausted", "Every permitted reinforcement and geometry reduction was assessed and rejected by a governing engineering check."),
 )
 
 _SHEAR_BLOCKERS = (
@@ -53,6 +54,7 @@ _SHEAR_BLOCKERS = (
     BlockerText("no_improving_shear_target_band_candidate", "No verified shear candidate improved the design into the target band."),
     BlockerText("no_safe_shear_cleanup", "Further ligature reduction would breach a verified shear or detailing requirement."),
     BlockerText("no_improving_shear_cleanup", "No further ligature reduction reached the target band while preserving every governing shear requirement."),
+    BlockerText("verified_shear_constraints_exhausted", "Every permitted shear-reinforcement and width reduction was assessed; the current compliant design is at its verified governing limit."),
     BlockerText("minimum_shear_reinforcement_exhausted", "Minimum shear reinforcement prevents any further ligature reduction."),
 )
 
@@ -61,6 +63,7 @@ _COMBINED_BLOCKERS = (
     BlockerText("no_combined_target_band_candidate", "No coordinated candidate brought the governing strength checks into the target band."),
     BlockerText("no_safe_combined_cleanup", "No further combined material reduction preserves all governing checks."),
     BlockerText("no_improving_combined_cleanup", "No coordinated revision placed every active governing check within its target band while preserving compliance."),
+    BlockerText("verified_combined_constraints_exhausted", "Every permitted reinforcement and geometry reduction was assessed; the current compliant design is at its verified governing limit."),
 ) + _BENDING_BLOCKERS + _SHEAR_BLOCKERS
 
 _SERVICEABILITY_BLOCKERS = (
@@ -151,7 +154,7 @@ FAMILY_TEXT_CONTRACTS: dict[DesignFamily, FamilyTextContract] = {
     ),
     DesignFamily.EXACT_STOP_PROVEN: FamilyTextContract(
         DesignFamily.EXACT_STOP_PROVEN,
-        "Verified exact stop", "Exact-stop verification required", "Verified exact stop",
+        "Verified exact stop", "Exact-stop verification required", "Compliant design retained",
         "Retain the current design because the permitted search is exhausted at a verified governing limit.",
         ("bending", "shear", "ductility", "minimum_tensile", "serviceability", "crack_control", "reinforcement_fit"),
         _COMBINED_BLOCKERS + _SERVICEABILITY_BLOCKERS + _GEOMETRY_BLOCKERS,

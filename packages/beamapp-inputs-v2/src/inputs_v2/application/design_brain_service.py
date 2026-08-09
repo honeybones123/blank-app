@@ -462,6 +462,7 @@ class DesignBrainService:
             evaluate=self._evaluate,
             rank_key=self._rank_key,
             complete_stage=self.complete_stage,
+            merge_metrics=self.merge_search_metrics,
         ).preview(current)
     def preview_geometry_detailing(self, current: BeamInputs) -> DesignBrainPreview:
         """Repair arrangement fit and geometry without partial edits."""
@@ -615,6 +616,7 @@ class DesignBrainService:
             evaluate=self._evaluate,
             rank_key=self._rank_key,
             complete_stage=self.complete_stage,
+            merge_metrics=self.merge_search_metrics,
             nearby_dimension_steps=self.search_profile.nearby_dimension_steps,
         ).preview(current)
 

@@ -34,7 +34,7 @@ CompleteStage = Callable[[str, str | None], None]
 @dataclass(frozen=True)
 class BendingOverdesignOutcome:
     preview: DesignBrainPreview
-    metrics: dict[str, float | int | bool]
+    metrics: dict[str, object]
 
 
 class BendingOverdesignPipeline:
@@ -66,7 +66,7 @@ class BendingOverdesignPipeline:
         shear_preservation_queue: list[
             tuple[float, Candidate, EngineeringResult]
         ] = []
-        metrics: dict[str, float | int | bool] = {
+        metrics: dict[str, object] = {
             "proportion_triggered": False,
             "additional_evaluations": 0,
             "geometry_evaluations": 0,
@@ -75,6 +75,22 @@ class BendingOverdesignPipeline:
         geometry_attempted = False
         minimum_reinforcement_blocked = False
         ductility_blocked = False
+        improving_rejection_counts: dict[str, int] = {}
+
+        def record_improving_rejections(evaluation, result) -> None:
+            """Record only constraints that rejected a useful bending reduction."""
+
+            if result is None or evaluation.usable:
+                return
+            trial_util = float(
+                result.families.get("bending", {}).get("util", 0.0) or 0.0
+            )
+            if not current_util < trial_util <= 1.0:
+                return
+            for code in evaluation.rejection_codes:
+                improving_rejection_counts[code] = (
+                    improving_rejection_counts.get(code, 0) + 1
+                )
 
         for cell in generate_overdesign_geometry_cells(current, current_util):
             metrics["geometry_evaluations"] = int(
@@ -82,6 +98,16 @@ class BendingOverdesignPipeline:
             ) + 1
             geometry_attempted = True
             for bars, diameter in cell.arrangements:
+                # The current design is evidence, not a cleanup candidate.  If
+                # it enters the trial list it can hide the real constraint
+                # that rejected every actual reduction.
+                if (
+                    cell.width_mm == current.width_mm
+                    and cell.depth_mm == current.depth_mm
+                    and bars == current.bottom.bars
+                    and diameter == current.bottom.diameter_mm
+                ):
+                    continue
                 proposal = replace(
                     seed.proposal,
                     width_mm=cell.width_mm,
@@ -106,6 +132,7 @@ class BendingOverdesignPipeline:
                         metrics["additional_evaluations"]
                     ) + 1
                     result = evaluation.result
+                    record_improving_rejections(evaluation, result)
                     if result is not None:
                         bending = result.families.get("bending", {})
                         minimum_reinforcement_blocked |= (
@@ -183,6 +210,7 @@ class BendingOverdesignPipeline:
                     metrics["additional_evaluations"]
                 ) + 1
                 result = evaluation.result
+                record_improving_rejections(evaluation, result)
                 reduction_failed_bending |= "bending_fail" in evaluation.rejection_codes
                 if result is not None:
                     bending = result.families.get("bending", {})
@@ -247,7 +275,11 @@ class BendingOverdesignPipeline:
         self._complete_stage("remove_unnecessary_layer", None)
 
         self._append_shear_preservation_trials(
-            current, current_util, shear_preservation_queue, trials
+            current,
+            current_util,
+            shear_preservation_queue,
+            trials,
+            improving_rejection_counts,
         )
         self._complete_stage("preserve_near_limit_shear", None)
         preview = select_bending_overdesign_preview(
@@ -259,7 +291,11 @@ class BendingOverdesignPipeline:
             geometry_attempted=geometry_attempted,
             minimum_reinforcement_blocked=minimum_reinforcement_blocked,
             ductility_blocked=ductility_blocked,
+            improving_rejection_counts=improving_rejection_counts,
             rank_key=self._rank_key,
+        )
+        metrics["improving_rejection_counts"] = dict(
+            sorted(improving_rejection_counts.items())
         )
         return BendingOverdesignOutcome(preview, metrics)
 
@@ -293,6 +329,7 @@ class BendingOverdesignPipeline:
         current_util: float,
         queue: list[tuple[float, Candidate, EngineeringResult]],
         trials: list[Trial],
+        improving_rejection_counts: dict[str, int],
     ) -> None:
         for _distance, base_candidate, _base_result in sorted(
             queue, key=lambda row: row[0]
@@ -318,6 +355,16 @@ class BendingOverdesignPipeline:
                     current, candidate, stage_id="preserve_near_limit_shear"
                 )
                 result = evaluation.result
+                if result is not None and not evaluation.usable:
+                    util = float(
+                        result.families.get("bending", {}).get("util", 0.0)
+                        or 0.0
+                    )
+                    if current_util < util <= 1.0:
+                        for code in evaluation.rejection_codes:
+                            improving_rejection_counts[code] = (
+                                improving_rejection_counts.get(code, 0) + 1
+                            )
                 if not evaluation.usable or result is None:
                     continue
                 util = float(

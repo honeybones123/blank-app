@@ -49,6 +49,7 @@ class SearchEvidence:
     stage_attempt_counts: tuple[tuple[str, int], ...] = ()
     stage_valid_counts: tuple[tuple[str, int], ...] = ()
     rejection_counts: tuple[tuple[str, int], ...] = ()
+    improving_rejection_counts: tuple[tuple[str, int], ...] = ()
     stage_rejection_counts: tuple[
         tuple[str, tuple[tuple[str, int], ...]], ...
     ] = ()
