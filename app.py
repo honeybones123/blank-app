@@ -140,6 +140,33 @@ def _apply_sharp_embed_css() -> None:
     padding-left: 1rem !important;
     padding-right: 1rem !important;
   }
+
+  /* Phone-only ergonomics.  Keep every desktop declaration above unchanged;
+     this boundary is also used by the responsive verification suite. */
+  @media (max-width: 760px) {
+    .stApp [data-testid="stMainBlockContainer"],
+    .stApp .block-container {
+      padding-left: 0.85rem !important;
+      padding-right: 0.85rem !important;
+    }
+
+    .stApp button,
+    .stApp .stButton button,
+    .stApp .stDownloadButton button,
+    .stApp div[data-baseweb="select"] > div,
+    .stApp input,
+    .stApp textarea {
+      min-height: 44px !important;
+    }
+
+    /* The production app sidebar contains developer controls only.  Removing
+       its collapsed handle on phones prevents a stray chevron overlapping the
+       project header while leaving the desktop sidebar exactly as-is. */
+    section[data-testid="stSidebar"],
+    button[data-testid="stExpandSidebarButton"] {
+      display: none !important;
+    }
+  }
 </style>
 """,
         unsafe_allow_html=True,
@@ -5318,6 +5345,37 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
 /* prevent "button hover" feel */
 div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] > label:hover{
   background: transparent !important;
+}
+
+/* On phones the nine destinations remain one predictable, swipeable row.
+   Desktop keeps the existing tab geometry and spacing above. */
+@media (max-width: 760px) {
+  div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"]{
+    flex-wrap: nowrap !important;
+    align-items: stretch !important;
+    gap: 14px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    touch-action: pan-x;
+    -webkit-overflow-scrolling: touch;
+  }
+  div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] > label{
+    flex: 0 0 auto !important;
+    min-height: 44px !important;
+    display: flex !important;
+    align-items: center !important;
+  }
+  div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"]::-webkit-scrollbar{
+    height: 4px;
+  }
+  div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"]::-webkit-scrollbar-thumb{
+    background: rgba(100, 116, 139, 0.42);
+    border-radius: 999px;
+  }
 }
 
 /* tighten inner wrappers */
