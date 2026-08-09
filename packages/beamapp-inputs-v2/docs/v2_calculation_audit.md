@@ -26,7 +26,8 @@ the calculation contract.
 | Total deflection (short + long-term) | `serviceability` | `deflection_mm`, `deflection_util`, `status` | Partial | Add exact Runtime row |
 | Short-term deflection (total load) | `serviceability` | `short_term_deflection_mm` | Partial | Add row status and limit |
 | Additional long-term deflection | `serviceability` | `long_term_deflection_mm` | Partial | Add row status and limit |
-| Reinforcement fit/congestion | `reinforcement_fit` | accepted, congestion, layers, reasons | Not shown | Add detailing check section where applicable |
+| Reinforcement fit/congestion | `reinforcement_fit` | accepted, congestion, layers, reasons; cover explicitly not checked | Not shown | Independent physical-geometry fixture passes; add detailing check section where applicable |
+| Section proportion policy | `engineering_calculator.geometry` | `D/b`, application limit, policy basis and status | Not shown | Keep as application constructability policy, not an AS 3600 check |
 
 ## Required completion gates
 

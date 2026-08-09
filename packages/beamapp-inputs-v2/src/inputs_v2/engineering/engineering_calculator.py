@@ -362,12 +362,16 @@ class EngineeringCalculator:
             "congestion_class": fit.congestion.congestion_class,
             "failure_reasons": fit.failure_reasons,
             "cover_mm": float(inputs.bottom.cover_mm),
-            "cover_status": "PASS" if float(inputs.bottom.cover_mm) > 0.0 else "FAIL",
+            # Exposure classification and required durability cover are not
+            # represented in BeamInputs, so specified cover cannot be certified.
+            "cover_status": "NOT CHECKED",
+            "cover_check_basis": "specified_cover_only",
             "check_metadata": check_metadata("durability_cover"),
         }
         geometry = {
             "depth_width_ratio": float(inputs.depth_mm) / max(float(inputs.width_mm), 1.0),
             "maximum_depth_width_ratio": 2.0,
+            "policy_basis": "application_constructability",
             "status": "PASS" if float(inputs.depth_mm) <= 2.0 * float(inputs.width_mm) else "FAIL",
         }
         return EngineeringResult(

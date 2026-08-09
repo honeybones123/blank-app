@@ -86,7 +86,11 @@ release evidence column, not merely the absence of an exception.
   clears stale result authority, renders the exact validation reason, recovers
   after correction, and translates unsupported saved-state inputs through the
   same typed boundary. Independent material-property fixture review remains
-  outstanding under SA-008, so SA-004 is not yet `VERIFIED`.
+  outstanding under SA-008, so SA-004 is not yet `VERIFIED`. Standard review
+  confirms the eight concrete grades and 500 MPa reinforcement; 600 MPa is
+  conditional on higher-grade product properties, while the app's legacy
+  400 MPa option remains `REVIEW_REQUIRED` pending an approved material basis
+  or explicit saved-session migration.
 - SA-005 automated AppTest inventory passes every route with zero empty labels
   across buttons, number inputs, selectors, radios, checkboxes, toggles, text
   inputs/areas, multiselects, date/time inputs, and sliders. Collapsed widgets
@@ -119,8 +123,11 @@ release evidence column, not merely the absence of an exception.
   Table 8.6.2.2 and the Clause 8.6.2.3 effective tension area, mean tensile
   strength, strain difference, maximum spacing and width. Direct width is no
   longer claimed when its close-bar-spacing precondition is false. The
-  remaining fixture families are still outstanding, so SA-008 remains
-  `IN_PROGRESS`.
+  geometry/detailing fixture independently verifies usable width, clear
+  spacing, reinforcement centroid and effective depth. It also prevents the
+  app-policy `D/b <= 2` rule and specified cover from being misreported as
+  AS 3600 compliance. The remaining fixture families are still outstanding,
+  so SA-008 remains `IN_PROGRESS`.
 - Real-browser mobile/scroll certification was unavailable and remains
   explicitly blocked rather than inferred from AppTest.
 

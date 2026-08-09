@@ -31,6 +31,8 @@ from inputs_v2.engineering.crack_control import (
     CrackControlInput,
     calculate_crack_control,
 )
+from inputs_v2.engineering.reinforcement_fit import evaluate_arrangement
+from inputs_v2.domain.beam_inputs import ShearReinforcement
 
 
 @dataclass(frozen=True, slots=True)
@@ -395,3 +397,44 @@ def test_direct_crack_width_is_not_claimed_outside_spacing_limit() -> None:
     assert actual.w_calc is None
     assert actual.utilisation_w is None
     assert actual.passes_w is None
+
+
+def test_reinforcement_fit_matches_independent_geometry_fixture() -> None:
+    inputs = BeamInputs(
+        width_mm=300.0,
+        depth_mm=500.0,
+        bottom=LongitudinalReinforcement(
+            bars=4,
+            diameter_mm=20,
+            cover_mm=40.0,
+        ),
+        shear=ShearReinforcement(
+            diameter_mm=10,
+            legs=2,
+            spacing_mm=200.0,
+        ),
+    ).validated()
+    fit = evaluate_arrangement(inputs, (4,))
+    usable_width = 300.0 - 2.0 * (40.0 + 10.0)
+    clear_spacing = (usable_width - 4.0 * 20.0) / 3.0
+    row_centre = 40.0 + 10.0 + 20.0 / 2.0
+
+    assert fit.accepted
+    assert fit.arrangement.rows[0].clear_spacing_mm == pytest.approx(
+        clear_spacing, rel=1e-12
+    )
+    assert fit.congestion.horizontal_clearance_margin_mm == pytest.approx(
+        clear_spacing - 20.0, rel=1e-12
+    )
+    assert fit.arrangement.reinforcement_centroid_mm == pytest.approx(
+        row_centre, rel=1e-12
+    )
+    assert fit.arrangement.effective_depth_mm == pytest.approx(
+        inputs.depth_mm - row_centre, rel=1e-12
+    )
+    result = EngineeringCalculator().calculate(inputs)
+    reinforcement = result.families["reinforcement_fit"]
+    geometry = result.families["geometry"]
+    assert reinforcement["cover_status"] == "NOT CHECKED"
+    assert reinforcement["cover_check_basis"] == "specified_cover_only"
+    assert geometry["policy_basis"] == "application_constructability"
