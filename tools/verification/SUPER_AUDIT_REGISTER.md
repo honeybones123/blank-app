@@ -108,7 +108,10 @@ release evidence column, not merely the absence of an exception.
   and Table 2.2.2. It independently verifies effective depth, steel area,
   stress-block factors, neutral axis, ductility ratio, reduction factor,
   nominal/design moment and minimum tensile steel. This exposed and corrected
-  the former minimum-steel exponent/coefficient error; the remaining fixture
+  the former minimum-steel exponent/coefficient error. A second derivation now
+  verifies the simplified unreinforced-shear branch, including effective shear
+  depth, concrete contribution, reduced capacity and the web-crushing ceiling,
+  against Clauses 8.2.1.9, 8.2.3.1, 8.2.3.3 and 8.2.4.1. The remaining fixture
   families are still outstanding, so SA-008 remains `IN_PROGRESS`.
 - Real-browser mobile/scroll certification was unavailable and remains
   explicitly blocked rather than inferred from AppTest.

@@ -5,6 +5,8 @@ Authorities were visually reviewed against AS 3600:2018(+A1):
 - Table 2.2.2, PDF page 38 (printed page 36): bending phi expression
 - Clause 8.1.3, PDF page 112 (printed page 110): rectangular stress block
 - Clause 8.1.6.1, PDF page 113 (printed page 111): minimum tensile steel
+- Clauses 8.2.1.9, 8.2.3.1, 8.2.3.3 and 8.2.4.1, PDF pages 117-119
+  (printed pages 115-117): shear depth, strength and web crushing
 
 Expected values below are evaluated from those equations, not copied from an
 EngineeringCalculator result.  Production is imported only inside the tests.
@@ -13,7 +15,7 @@ EngineeringCalculator result.  Production is imported only inside the tests.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import pi, sqrt
+from math import pi, radians, sqrt, tan
 
 import pytest
 
@@ -140,3 +142,58 @@ def test_minimum_tensile_steel_matches_standard_derived_fixture() -> None:
     assert actual["Ast_min_mm2"] == pytest.approx(
         expected["minimum_steel_mm2"], rel=1e-12
     )
+
+
+def test_unreinforced_shear_matches_standard_derived_fixture() -> None:
+    """Verify the declared simplified-method branch from standard equations."""
+
+    case = RECTANGULAR_FLEXURE
+    shear_demand_kn = 40.0
+    effective_depth = case.depth_mm - case.cover_mm - case.bar_diameter_mm / 2.0
+    shear_depth = max(0.72 * case.depth_mm, 0.9 * effective_depth)
+    # The calculator explicitly selects the Clause 8.2.4.3 simplified branch.
+    kv = min(200.0 / (1000.0 + 1.3 * shear_depth), 0.10)
+    theta = radians(36.0)
+    concrete_capacity_kn = (
+        kv
+        * case.width_mm
+        * shear_depth
+        * min(sqrt(case.concrete_strength_mpa), 8.0)
+        / 1000.0
+    )
+    shear_phi = 0.75  # Table 2.2.2(e)(i), Class N fitments.
+    cot_theta = 1.0 / tan(theta)
+    web_capacity_kn = (
+        0.55
+        * case.concrete_strength_mpa
+        * case.width_mm
+        * shear_depth
+        * (cot_theta / (1.0 + cot_theta**2))
+        / 1000.0
+    )
+    inputs = BeamInputs(
+        width_mm=case.width_mm,
+        depth_mm=case.depth_mm,
+        bottom=LongitudinalReinforcement(
+            bars=case.bar_count,
+            diameter_mm=case.bar_diameter_mm,
+            cover_mm=case.cover_mm,
+        ),
+        materials=MaterialInputs(
+            concrete_strength_mpa=case.concrete_strength_mpa,
+            reinforcement_strength_mpa=case.steel_strength_mpa,
+        ),
+        actions=ActionInputs(shear_force_kn=shear_demand_kn),
+    ).validated()
+    actual = EngineeringCalculator().calculate(inputs).families["shear"]
+
+    assert actual["d_v"] == pytest.approx(shear_depth, rel=1e-12)
+    assert actual["k_v"] == pytest.approx(kv, rel=1e-12)
+    assert actual["Vuc_kN"] == pytest.approx(concrete_capacity_kn, rel=1e-12)
+    assert actual["Vus_kN"] == pytest.approx(0.0, abs=1e-12)
+    assert actual["phi_Vu"] == pytest.approx(
+        shear_phi * concrete_capacity_kn, rel=1e-12
+    )
+    assert actual["Vu_max_kN"] == pytest.approx(web_capacity_kn, rel=1e-12)
+    assert actual["shear_ok"] is (shear_phi * concrete_capacity_kn >= shear_demand_kn)
+    assert actual["web_ok"] is (shear_phi * web_capacity_kn >= shear_demand_kn)
