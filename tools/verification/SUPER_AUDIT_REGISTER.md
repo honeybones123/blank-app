@@ -4,6 +4,23 @@ This register is the release authority map for the Runtime super-audit repair
 goal. A green regression test is not sufficient by itself: every item must
 name the independent evidence that defines correct behaviour.
 
+## Repair rules
+
+1. Repair the first incorrect ownership decision or state transition that
+   causes a failure. Do not mask its final exception, add permissive keys, or
+   weaken a guard merely to turn a test green.
+2. Before introducing a new mechanism, locate the established architecture
+   used by the closest equivalent operation and reuse its contracts, ports,
+   transaction stores, revision rules, and persistence boundary.
+3. If an analogous pattern cannot be found, record that fact and justify the
+   new boundary before implementation.
+4. Prove the failure before the change, then prove the focused contract and
+   broad regressions after it.
+5. Keep one behavioural repair per checkpoint commit. Do not mix engineering,
+   state-management, compatibility, or presentation changes.
+6. Never change an expected engineering result solely to match current output.
+   Disagreement remains `REVIEW_REQUIRED` until independently resolved.
+
 ## Confidence classifications
 
 | Classification | Meaning |
