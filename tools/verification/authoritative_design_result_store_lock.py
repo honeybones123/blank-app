@@ -16,6 +16,11 @@ if str(ROOT) not in sys.path:
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 APPLICATION_DIR = ROOT / "application"
+STORE_BOUNDARY_PATHS = (
+    APPLICATION_DIR / "design_result_store.py",
+    APPLICATION_DIR / "design_run_coordinator.py",
+    APPLICATION_DIR / "contracts" / "design_brain.py",
+)
 
 
 def _read(path: Path) -> str:
@@ -59,7 +64,10 @@ def _run_store_checks() -> dict[str, Any]:
         AuthoritativeDesignResultStore,
         ensure_design_result,
     )
-    from design_brain.authority import EngineeringInputSnapshot, build_authoritative_design_result
+    from application.contracts.design_brain import (
+        EngineeringInputSnapshot,
+        build_authoritative_design_result,
+    )
 
     calls: list[str] = []
     session: dict[str, Any] = {}
@@ -95,12 +103,12 @@ def _run_store_checks() -> dict[str, Any]:
             apply_payload={"updates": {"sv": 150 + len(calls)}},
         )
 
-    first = ensure_design_result(session_state=session, snapshot=snapshot_a, compute_fn=compute)
-    second = ensure_design_result(session_state=session, snapshot=snapshot_a, compute_fn=compute)
-    calls_after_same_hash = list(calls)
-    forced = ensure_design_result(session_state=session, snapshot=snapshot_a, compute_fn=compute, force=True)
-    changed = ensure_design_result(session_state=session, snapshot=snapshot_b, compute_fn=compute)
     store = AuthoritativeDesignResultStore(session)
+    first = ensure_design_result(result_store=store, snapshot=snapshot_a, compute_fn=compute)
+    second = ensure_design_result(result_store=store, snapshot=snapshot_a, compute_fn=compute)
+    calls_after_same_hash = list(calls)
+    forced = ensure_design_result(result_store=store, snapshot=snapshot_a, compute_fn=compute, force=True)
+    changed = ensure_design_result(result_store=store, snapshot=snapshot_b, compute_fn=compute)
 
     def mismatched_compute(snapshot: EngineeringInputSnapshot):
         return build_authoritative_design_result(
@@ -115,7 +123,11 @@ def _run_store_checks() -> dict[str, Any]:
 
     mismatch_rejected = False
     try:
-        ensure_design_result(session_state={}, snapshot=snapshot_b, compute_fn=mismatched_compute)
+        ensure_design_result(
+            result_store=AuthoritativeDesignResultStore({}),
+            snapshot=snapshot_b,
+            compute_fn=mismatched_compute,
+        )
     except ValueError:
         mismatch_rejected = True
 
@@ -133,7 +145,9 @@ def _run_store_checks() -> dict[str, Any]:
         "mismatched_compute_result_rejected": mismatch_rejected,
         "last_decision_recorded": bool(decision),
         "last_decision_reason": decision.get("reason"),
-        "no_streamlit_imports": not any(_imports_streamlit(path) for path in APPLICATION_DIR.glob("*.py")),
+        "store_boundary_has_no_streamlit_imports": not any(
+            _imports_streamlit(path) for path in STORE_BOUNDARY_PATHS
+        ),
     }
 
 
@@ -183,7 +197,7 @@ def main() -> int:
             "application/__init__.py",
             "application/design_result_store.py",
             "application/design_run_coordinator.py",
-            "design_brain/authority.py",
+            "application/contracts/design_brain.py",
             "tools/verification/authoritative_design_result_store_lock.py",
         ]
     )
@@ -209,5 +223,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-

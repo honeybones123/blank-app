@@ -39,12 +39,37 @@ def _candidate_identity_values(payload: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(values)
 
 
+def _candidate_updates(payload: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Resolve the canonical update map without deriving new Apply policy."""
+
+    containers: list[Mapping[str, Any]] = [payload]
+    for key in (
+        "resolved_candidate",
+        "action_payload",
+        "canonical_primary_payload",
+        "recommendation_envelope",
+    ):
+        value = payload.get(key)
+        if isinstance(value, Mapping):
+            containers.append(value)
+    for container in containers:
+        for key in ("resolved_candidate_updates", "updates"):
+            value = container.get(key)
+            if isinstance(value, Mapping):
+                return dict(value)
+    return None
+
+
 def _candidate_identity_matches(
     authoritative_payload: Mapping[str, Any],
     incoming_payload: Mapping[str, Any],
 ) -> bool:
     authoritative_ids = _candidate_identity_values(authoritative_payload)
     incoming_ids = _candidate_identity_values(incoming_payload)
+    authoritative_updates = _candidate_updates(authoritative_payload)
+    incoming_updates = _candidate_updates(incoming_payload)
+    if authoritative_updates is not None and incoming_updates != authoritative_updates:
+        return False
     if not authoritative_ids or not incoming_ids:
         return True
     if set(authoritative_ids).intersection(incoming_ids):
