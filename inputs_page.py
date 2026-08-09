@@ -156,10 +156,20 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, 
         copy_deepcopy_fn=copy.deepcopy,
     )
 
+    # A fragment rerun retains the shell's Python closure.  Never pass the
+    # frozen pre-Apply workspace snapshot back into widget/diagram consumers:
+    # bind a fresh immutable context to the newly committed beam revision.
+    fragment_page_context = dict(page_context)
+    fragment_page_context["active_beam_id"] = active_beam_id
+    fragment_page_context["workspace_context"] = InputsWorkspaceContext.from_session(
+        st.session_state,
+        active_beam_id=active_beam_id,
+    )
+
     return render_engineering_workspace(
         st_module=st,
         runtime=_ENGINEERING_WORKSPACE_RUNTIME,
-        page_context=page_context,
+        page_context=fragment_page_context,
         include_design_brain=True,
         include_controls=True,
         include_widgets=True,
