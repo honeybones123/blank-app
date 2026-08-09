@@ -51,7 +51,7 @@ release evidence column, not merely the absence of an exception.
 | SA-007 | Engineering/state verifiers | A verifier must reject deliberately corrupted capacity, utilisation, mandatory-check, clause, revision, hash, and Apply-candidate evidence. | Mutation verified | One positive control and required negative mutations for each verifier; demonstrated false-result rejection. | VERIFIED |
 | SA-008 | Independent engineering fixtures | AS 3600 clause/equation derivation or separately reviewed calculation, not production output copied into expectations. | Independently verified | Bending, shear, crack, deflection, minimum reinforcement, geometry/detailing, combined, overdesign, and serviceability fixtures with tolerances and review status. | VERIFIED |
 | SA-009 | Design Brain family corpus | Explicit family predicates evaluated from authoritative checks; historical recipe names are regression evidence only. | Independent or review required | All 90 live recipes classified as confirmed, alias, invalid fixture, genuine defect, or review required; valid cases match reviewed predicates. | VERIFIED |
-| SA-010 | Streamlit compatibility | Supported Streamlit API behaviour and unchanged approved UI/state contracts. | Contract verified | Deprecated `use_container_width` and component HTML usages migrated in isolated slices; route, control, fragment, and layout regressions pass after each slice. | OPEN |
+| SA-010 | Streamlit compatibility | Supported Streamlit API behaviour and unchanged approved UI/state contracts. | Contract verified | Deprecated `use_container_width` and component HTML usages migrated in isolated slices; route, control, fragment, and layout regressions pass after each slice. | VERIFIED |
 | SA-011 | Desktop/mobile behaviour | Approved UI behaviour observed in a real browser: no Apply scroll jump, overflow, unusable touch target, or navigation failure. | Contract verified | Narrow phone, large phone, tablet, and desktop journeys; cold/warm Apply; portrait/landscape; keyboard; screenshots and console evidence. | BLOCKED_ENVIRONMENT |
 | SA-012 | Final release gate | This register plus the approved release criteria; no item may be silently excluded. | Composite | All objective items verified; engineering review items explicitly resolved/accepted; 1,000+ stateful fuzz operations; all routes and controls; clean worktree; final evidence report. | OPEN |
 
@@ -139,6 +139,13 @@ release evidence column, not merely the absence of an exception.
   checks, and requires exact agreement with the production classifier. All 90
   cases are accounted for with no unclassified difference, so SA-009 is
   `VERIFIED`.
+- SA-010 uses Streamlit 1.61.1 or newer and contains no deprecated
+  `use_container_width`, `components.html`, or experimental query-parameter
+  calls. The shared trusted-iframe boundary preserves the former fixed-height
+  and no-scroll behavior, including zero-size script hooks through a validated
+  one-pixel host. The compatibility contract, every-route widget inventory,
+  360-test package suite, verifier mutations, and 90-case family corpus all
+  pass without a Streamlit deprecation warning. SA-010 is `VERIFIED`.
 - Real-browser mobile/scroll certification was unavailable and remains
   explicitly blocked rather than inferred from AppTest.
 

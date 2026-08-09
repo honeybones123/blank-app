@@ -11,10 +11,11 @@ try:
     log_path = _debug_log_path()
 except Exception:
     pass
-import streamlit.components.v1 as components
 import re
 import html
 from typing import Any
+
+from ui.streamlit_iframe import render_trusted_iframe
 
 from state_runtime_gateway import TAB_KEYS, resolve_widget_key, NONZERO_REQUIRED_SHARED_KEYS, zero_allowed, _audit, mark_user_edit, set_shared
 
@@ -210,7 +211,7 @@ def _render_plotly_doubleclick_fullscreen_hook(anchor_id: str) -> None:
 }})();
 </script>
 """
-    components.html(script, height=0, scrolling=False)
+    render_trusted_iframe(st, script, height=0, scrolling=False)
 
 
 def _plotly_fullscreen_figure(fig: Any, fullscreen_height: int) -> Any:
@@ -410,13 +411,13 @@ def render_html_diagram(
         if fullscreen_clicked:
             @st.dialog(title, width="large")
             def _fullscreen_dialog() -> None:
-                components.html(html_body, height=fullscreen_height, scrolling=scrolling)
+                render_trusted_iframe(st, html_body, height=fullscreen_height, scrolling=scrolling)
 
             _fullscreen_dialog()
 
     html_host = st.container(horizontal_alignment="center" if center else "left")
     with html_host:
-        components.html(html_body, height=height, scrolling=scrolling)
+        render_trusted_iframe(st, html_body, height=height, scrolling=scrolling)
 
 
 @contextmanager
@@ -591,12 +592,7 @@ def _requested_browser_recipe_name() -> str:
     try:
         requested = st.query_params.get("browser_recipe")
     except Exception:
-        get_query_params = getattr(st, "experimental_get_query_params", None)
-        if callable(get_query_params):
-            try:
-                requested = (get_query_params() or {}).get("browser_recipe")
-            except Exception:
-                requested = None
+        requested = None
     if isinstance(requested, (list, tuple)):
         requested = requested[0] if requested else None
     return str(requested or os.environ.get("CODEX_BROWSER_REPLAY_RECIPE") or "").strip()
@@ -2626,7 +2622,7 @@ def clickable_calcbox(
     </script>
     """
     
-    components.html(full_html, height=expanded_height, scrolling=False)
+    render_trusted_iframe(st, full_html, height=expanded_height, scrolling=False)
 
 
 # ============================================================

@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Any
 
 import streamlit.components.v1 as components
+import streamlit as st
+
+from ui.streamlit_iframe import render_trusted_iframe
 
 from application.user_preference_store import (
     clear_account_preference,
@@ -114,7 +117,7 @@ def render_pending_guest_preference_write(session_state: Any) -> None:
             f"url.searchParams.delete('opening_page_pref');"
             f"parentWindow.history.replaceState({{}}, '', url.toString());"
         )
-    components.html(
+    render_trusted_iframe(st,
         f"""
 <script>
 (() => {{

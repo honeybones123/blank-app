@@ -2,6 +2,8 @@ import json
 
 import streamlit as st
 
+from ui.streamlit_iframe import render_trusted_iframe
+
 # Session key: Streamlit tab label to activate before scrolling (cross-page jump only).
 JUMP_NAV_TAB_KEY = "_jump_nav_tab"
 
@@ -51,11 +53,9 @@ def scroll_to_jump_after_render(offset_px: int = 96, duration_ms: int = 850):
     tab_label = st.session_state.pop(JUMP_NAV_TAB_KEY, None)
     tab_json = json.dumps(str(tab_label)) if tab_label else "null"
 
-    import streamlit.components.v1 as components
-
     uid_json = json.dumps(str(uid))
 
-    components.html(
+    render_trusted_iframe(st,
         f"""
 <script>
 (function () {{

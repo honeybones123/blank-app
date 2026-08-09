@@ -1,6 +1,7 @@
 import json
 import streamlit as st
-import streamlit.components.v1 as components
+
+from ui.streamlit_iframe import render_trusted_iframe
 
 from state_and_helpers import (
     SHARED_DEFAULTS,
@@ -13,20 +14,12 @@ from state_and_helpers import (
 
 
 def _qp(name: str) -> str:
-    # Streamlit query params API varies by version; support both
-    try:
-        v = st.query_params.get(name, "")
-        return (v[0] if isinstance(v, list) and v else str(v or "")).strip()
-    except Exception:
-        qp = st.experimental_get_query_params()
-        return str(qp.get(name, [""])[0] if name in qp else "").strip()
+    value = st.query_params.get(name, "")
+    return (value[0] if isinstance(value, list) and value else str(value or "")).strip()
 
 
 def _set_project_qp(project_id: str):
-    try:
-        st.query_params["project"] = project_id
-    except Exception:
-        st.experimental_set_query_params(project=project_id)
+    st.query_params["project"] = project_id
 
 
 def get_context():
@@ -154,7 +147,7 @@ def redirect_parent_to_project(project_id: str):
     to include ?project=<id> so future saves target the same project.
     Safe no-op if not embedded.
     """
-    components.html(
+    render_trusted_iframe(st,
         f"""
         <script>
           try {{

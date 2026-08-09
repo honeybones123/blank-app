@@ -1,5 +1,6 @@
 import streamlit as st
-import streamlit.components.v1 as components
+
+from ui.streamlit_iframe import render_trusted_iframe
 
 
 def render_clickable_summary_table(rows, key="summary"):
@@ -163,7 +164,7 @@ def _bind_summary_clicks(key_prefix="summary"):
     """
     clicked_uid_key = f"{key_prefix}_clicked_uid"
     
-    components.html(
+    render_trusted_iframe(st,
         f"""
 <script>
 (function() {{
@@ -507,4 +508,3 @@ def _bind_summary_clicks(key_prefix="summary"):
 """,
         height=0,
     )
-

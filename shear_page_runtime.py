@@ -8,7 +8,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import streamlit as st
-import streamlit.components.v1 as components
 
 from state_and_helpers import (
     get_param,
@@ -333,7 +332,7 @@ def _render_animated_plotly_figure(
     compact_top: bool = False,
 ) -> None:
     # Checks 5, 7 and 9 use this helper for a consistent visual frame, but
-    # their figures are static.  Sending static figures through components.html
+    # their figures are static. Sending static figures through an HTML iframe
     # creates a separate iframe and loads a complete Plotly runtime for each
     # chart, including charts inside collapsed/hidden sections.  Keep the
     # existing HTML path for genuinely animated figures, while using the

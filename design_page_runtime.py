@@ -11,8 +11,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import streamlit as st
-import streamlit.components.v1 as components
 from streamlit_plotly_events import plotly_events
+from ui.streamlit_iframe import render_trusted_iframe
 from beam_diagram_runtime import (
     compute_diagram_arrays as _compute_diagram_arrays_cached_service,
 )
@@ -107,7 +107,7 @@ _design_inputs_section.bind_runtime(globals())
 
 def _install_design_scroll_preserver() -> None:
     """Keep the Design workspace anchored across fragment widget reruns."""
-    components.html(
+    render_trusted_iframe(st,
         """
         <script>
         (() => {

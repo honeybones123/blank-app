@@ -495,25 +495,11 @@ def _browser_recipe_action_already_applied() -> bool:
 
 
 def _get_query_param_scalar(name: str):
-    values = []
     try:
         value = st.query_params.get(name)
-        if isinstance(value, list):
-            values.extend(value)
-        elif value is not None:
-            values.append(value)
     except Exception:
-        pass
-    try:
-        get_query_params = getattr(st, "experimental_get_query_params", None)
-        if callable(get_query_params):
-            value = (get_query_params() or {}).get(name)
-            if isinstance(value, list):
-                values.extend(value)
-            elif value is not None:
-                values.append(value)
-    except Exception:
-        pass
+        value = None
+    values = value if isinstance(value, list) else [value]
     for value in values:
         text = str(value or "").strip()
         if text:
@@ -535,12 +521,6 @@ def _browser_query_param_probe() -> dict:
         probe["query_params"] = dict(st.query_params)
     except Exception as exc:
         probe["query_params_error"] = f"{type(exc).__name__}: {exc}"
-    try:
-        get_query_params = getattr(st, "experimental_get_query_params", None)
-        if callable(get_query_params):
-            probe["experimental_query_params"] = get_query_params()
-    except Exception as exc:
-        probe["experimental_query_params_error"] = f"{type(exc).__name__}: {exc}"
     return probe
 
 

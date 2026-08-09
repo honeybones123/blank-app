@@ -7,7 +7,6 @@ import math
 import textwrap
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 from state_and_helpers import (
     get_sync_callbacks,
