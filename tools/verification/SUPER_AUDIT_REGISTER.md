@@ -64,8 +64,11 @@ release evidence column, not merely the absence of an exception.
 - Selector/radio/checkbox/toggle sweep: 85/87 passed. Failures are SA-002
   and SA-003.
 - Number-input sweep: 65/67 passed. Failures are covered by SA-004.
-- Stateful Runtime fuzz baseline: 25/25 sequences and 300/300 operations
-  passed without exception, non-finite engineering actions, or revision drift.
+- Stateful Runtime fuzz gate: 50/50 sequences and 1,000/1,000 operations pass
+  across geometry, materials, longitudinal and shear reinforcement, manual and
+  Load Analysis actions, serviceability, locks, UI state and navigation. Every
+  operation rebuilds Runtime's real engineering snapshot and packaged Design
+  Brain result while checking authority hashes, revisions and finite outputs.
 - Live family corpus: all 90 cases are now predicate-classified: 40 exact
   matches, 30 documented legacy aliases, 10 valid states mislabeled as pure
   bending failure despite active low-utilisation shear, and 10 invalid
@@ -146,6 +149,10 @@ release evidence column, not merely the absence of an exception.
   one-pixel host. The compatibility contract, every-route widget inventory,
   360-test package suite, verifier mutations, and 90-case family corpus all
   pass without a Streamlit deprecation warning. SA-010 is `VERIFIED`.
+- SA-012's required stateful volume is now met by a deterministic 50-sequence,
+  1,000-operation Runtime fuzz contract (seed 20260809). The composite release
+  gate remains `OPEN` because SA-004 material policy and SA-011 real-browser
+  certification are not yet resolved.
 - Real-browser mobile/scroll certification was unavailable and remains
   explicitly blocked rather than inferred from AppTest.
 
