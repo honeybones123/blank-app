@@ -115,8 +115,12 @@ release evidence column, not merely the absence of an exception.
   deflection fixture independently verifies effective inertia, the conservative
   end-span coefficient, short-term deflection and the Clause 8.5.3.2 sustained
   multiplier; it corrected the generic `Continuous` route's former silent
-  simply-supported fallback. The remaining fixture families are still
-  outstanding, so SA-008 remains `IN_PROGRESS`.
+  simply-supported fallback. Crack-control fixtures now independently verify
+  Table 8.6.2.2 and the Clause 8.6.2.3 effective tension area, mean tensile
+  strength, strain difference, maximum spacing and width. Direct width is no
+  longer claimed when its close-bar-spacing precondition is false. The
+  remaining fixture families are still outstanding, so SA-008 remains
+  `IN_PROGRESS`.
 - Real-browser mobile/scroll certification was unavailable and remains
   explicitly blocked rather than inferred from AppTest.
 

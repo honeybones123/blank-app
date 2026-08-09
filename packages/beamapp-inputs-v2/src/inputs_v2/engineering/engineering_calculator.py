@@ -158,12 +158,12 @@ def _sls_outer_steel_stress(
     inputs: BeamInputs,
     steel_area_mm2: float,
     effective_depth_mm: float,
-) -> float:
+) -> tuple[float, float]:
     """Match the V1 cracked-section SLS outer-steel stress calculation."""
 
     moment = float(inputs.serviceability.moment_knm)
     if not _nonzero(moment) or steel_area_mm2 <= 0.0 or effective_depth_mm <= 0.0:
-        return 0.0
+        return 0.0, 0.0
     ec = 30000.0
     es = 200000.0
     transformed = (es / ec) * steel_area_mm2
@@ -176,9 +176,12 @@ def _sls_outer_steel_stress(
         + transformed * (effective_depth_mm - neutral_axis) ** 2
     )
     if cracked_inertia <= 0.0:
-        return 0.0
+        return 0.0, neutral_axis
     curvature = (moment * 1e6) / (ec * cracked_inertia)
-    return float(es * curvature * (effective_depth_mm - neutral_axis))
+    return (
+        float(es * curvature * (effective_depth_mm - neutral_axis)),
+        float(neutral_axis),
+    )
 
 
 def _calculate_crack_control(
@@ -214,7 +217,11 @@ def _calculate_crack_control(
         )
     else:
         inputs_for_stress = inputs
-    sigma_sr = _sls_outer_steel_stress(inputs_for_stress, steel_area, effective_depth_mm)
+    sigma_sr, neutral_axis_depth = _sls_outer_steel_stress(
+        inputs_for_stress,
+        steel_area,
+        effective_depth_mm,
+    )
     crack = calculate_crack_control(CrackControlInput(
         width_mm=inputs.width_mm,
         depth_mm=inputs.depth_mm,
@@ -233,8 +240,12 @@ def _calculate_crack_control(
         shrinkage_strain=sls.shrinkage_microstrain * 1e-6,
         bond_factor=sls.crack_k1,
         strain_distribution_factor=sls.crack_k2,
+        neutral_axis_depth_mm=neutral_axis_depth,
     ))
-    util = max(crack.utilisation_table, crack.utilisation_w)
+    utilisations = [crack.utilisation_table]
+    if crack.utilisation_w is not None:
+        utilisations.append(crack.utilisation_w)
+    util = max(utilisations)
     return {
         "status": "FAIL" if util > 1.0 else "PASS",
         "util": util,
@@ -244,6 +255,7 @@ def _calculate_crack_control(
         "sigma_allow_table": crack.sigma_allow_table,
         "table_util": crack.utilisation_table,
         "width_util": crack.utilisation_w,
+        "direct_width_applicable": crack.direct_width_applicable,
         "effective_depth_mm": effective_depth_mm,
         "serviceability_loads_present": True,
     }

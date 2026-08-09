@@ -21,8 +21,8 @@ the calculation contract.
 | Drying shrinkage | `creep_shrinkage` | Missing | Missing | Add explicit shrinkage family result |
 | Total shrinkage | `creep_shrinkage` | Missing | Missing | Add explicit total result |
 | Governing crack-control outcome | `crack_control` | `status`, `width_mm`, `limit_mm`, `util` | Partial | Add governing outcome row |
-| Table-based crack control check | `crack_control` | Missing table stress/result fields | Missing | Propagate table method result/status |
-| Direct crack width check | `crack_control` | Width only; no direct sub-result | Partial | Add direct-width result/status |
+| Table-based crack control check | `crack_control` | Stress limit, utilisation and status | Available | Standard-derived Table 8.6.2.2 fixture passes |
+| Direct crack width check | `crack_control` | Width, utilisation, applicability and status | Available | Standard-derived Clause 8.6.2.3 fixture and spacing-precondition rejection pass |
 | Total deflection (short + long-term) | `serviceability` | `deflection_mm`, `deflection_util`, `status` | Partial | Add exact Runtime row |
 | Short-term deflection (total load) | `serviceability` | `short_term_deflection_mm` | Partial | Add row status and limit |
 | Additional long-term deflection | `serviceability` | `long_term_deflection_mm` | Partial | Add row status and limit |

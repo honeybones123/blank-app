@@ -27,6 +27,10 @@ from inputs_v2.domain.beam_inputs import (
 )
 from inputs_v2.engineering.engineering_calculator import EngineeringCalculator
 from inputs_v2.engineering.deflection import DeflectionInput, calculate_deflection
+from inputs_v2.engineering.crack_control import (
+    CrackControlInput,
+    calculate_crack_control,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,3 +280,118 @@ def test_continuous_end_span_deflection_matches_standard_derived_fixture() -> No
     assert actual.total_mm == pytest.approx(
         short_term + kcs * sustained_short, rel=1e-12
     )
+
+
+def test_crack_control_matches_standard_derived_fixture() -> None:
+    """Verify Table 8.6.2.2 and direct-width Clause 8.6.2.3 independently."""
+
+    width = 300.0
+    depth = 600.0
+    cover = 40.0
+    diameter = 20.0
+    spacing = 150.0
+    steel_area = 4.0 * pi * diameter**2 / 4.0
+    neutral_axis = 180.0
+    steel_stress = 180.0
+    steel_modulus = 200_000.0
+    concrete_modulus = 30_000.0
+    concrete_strength = 40.0
+    creep = 2.0
+    shrinkage = 300e-6
+    k1 = 0.8
+    k2 = 0.5
+    limit = 0.3
+
+    effective_depth = depth - cover - diameter / 2.0
+    effective_height = min(
+        2.5 * (depth - effective_depth),
+        (depth - neutral_axis) / 3.0,
+        depth / 2.0,
+    )
+    effective_area = width * effective_height
+    reinforcement_ratio = steel_area / effective_area
+    mean_axial_tensile_strength = 1.4 * 0.36 * sqrt(concrete_strength)
+    effective_modular_ratio = (1.0 + creep) * steel_modulus / concrete_modulus
+    strain_difference = max(
+        steel_stress / steel_modulus
+        - 0.6
+        * mean_axial_tensile_strength
+        / (steel_modulus * reinforcement_ratio)
+        * (1.0 + effective_modular_ratio * reinforcement_ratio)
+        + shrinkage,
+        0.6 * steel_stress / steel_modulus,
+    )
+    maximum_spacing = (
+        3.4 * cover + 0.3 * k1 * k2 * diameter / reinforcement_ratio
+    )
+    crack_width = maximum_spacing * strain_difference
+    values = CrackControlInput(
+        width_mm=width,
+        depth_mm=depth,
+        cover_mm=cover,
+        bar_diameter_mm=diameter,
+        bar_spacing_mm=spacing,
+        steel_area_mm2=steel_area,
+        concrete_strength_mpa=concrete_strength,
+        concrete_modulus_mpa=concrete_modulus,
+        steel_modulus_mpa=steel_modulus,
+        steel_strength_mpa=500.0,
+        crack_width_limit_mm=limit,
+        member_type="Primarily flexure",
+        outer_steel_stress_mpa=steel_stress,
+        creep_coefficient=creep,
+        shrinkage_strain=shrinkage,
+        bond_factor=k1,
+        strain_distribution_factor=k2,
+        neutral_axis_depth_mm=neutral_axis,
+    )
+    actual = calculate_crack_control(values)
+
+    assert actual.sigma_table_A == pytest.approx(195.0, abs=1e-12)
+    assert actual.sigma_table_B == pytest.approx(245.0, abs=1e-12)
+    assert actual.sigma_allow_table == pytest.approx(245.0, abs=1e-12)
+    assert actual.utilisation_table == pytest.approx(steel_stress / 245.0, rel=1e-12)
+    assert actual.d_eff == pytest.approx(effective_depth, rel=1e-12)
+    assert actual.height_eff == pytest.approx(effective_height, rel=1e-12)
+    assert actual.Aceff == pytest.approx(effective_area, rel=1e-12)
+    assert actual.rho_eff == pytest.approx(reinforcement_ratio, rel=1e-12)
+    assert actual.fct_eff == pytest.approx(mean_axial_tensile_strength, rel=1e-12)
+    assert actual.ne == pytest.approx(effective_modular_ratio, rel=1e-12)
+    assert actual.eps_diff == pytest.approx(strain_difference, rel=1e-12)
+    assert actual.sr_max == pytest.approx(maximum_spacing, rel=1e-12)
+    assert actual.w_calc == pytest.approx(crack_width, rel=1e-12)
+    assert actual.utilisation_w == pytest.approx(crack_width / limit, rel=1e-12)
+
+
+def test_direct_crack_width_is_not_claimed_outside_spacing_limit() -> None:
+    values = CrackControlInput(
+        width_mm=300.0,
+        depth_mm=600.0,
+        cover_mm=40.0,
+        bar_diameter_mm=10.0,
+        bar_spacing_mm=300.0,
+        steel_area_mm2=4.0 * pi * 10.0**2 / 4.0,
+        concrete_strength_mpa=40.0,
+        concrete_modulus_mpa=30_000.0,
+        steel_modulus_mpa=200_000.0,
+        steel_strength_mpa=500.0,
+        crack_width_limit_mm=0.3,
+        member_type="Primarily flexure",
+        outer_steel_stress_mpa=120.0,
+        creep_coefficient=2.0,
+        shrinkage_strain=300e-6,
+        bond_factor=0.8,
+        strain_distribution_factor=0.5,
+        neutral_axis_depth_mm=180.0,
+    )
+    assert values.bar_spacing_mm > 5.0 * (
+        values.cover_mm + 0.5 * values.bar_diameter_mm
+    )
+    actual = calculate_crack_control(values)
+
+    assert not actual.direct_width_applicable
+    assert actual.eps_diff is None
+    assert actual.sr_max is None
+    assert actual.w_calc is None
+    assert actual.utilisation_w is None
+    assert actual.passes_w is None
