@@ -1,0 +1,65 @@
+# Runtime Super-Audit Verification Register
+
+This register is the release authority map for the Runtime super-audit repair
+goal. A green regression test is not sufficient by itself: every item must
+name the independent evidence that defines correct behaviour.
+
+## Confidence classifications
+
+| Classification | Meaning |
+|---|---|
+| Independently verified | Compared with a separately derived engineering fixture or external standard calculation. |
+| Invariant verified | A state, identity, safety, or mathematical relationship was checked independently of the implementation decision. |
+| Contract verified | Behaviour matches an explicitly approved application or UI ownership contract. |
+| Regression matched | Behaviour matches historical output only; this is not independent engineering proof. |
+| Review required | Available authorities disagree or engineering intent is not yet approved. |
+| Untested | Required evidence or execution environment is unavailable. |
+
+## Status vocabulary
+
+`OPEN`, `IN_PROGRESS`, `REVIEW_REQUIRED`, `BLOCKED_ENVIRONMENT`, and `VERIFIED`
+are the only accepted statuses. `VERIFIED` requires every item in the named
+release evidence column, not merely the absence of an exception.
+
+## Findings and repair evidence
+
+| ID | Scope | Correctness authority | Confidence target | Required release evidence | Current status |
+|---|---|---|---|---|---|
+| SA-001 | Inputs Design Brain Apply | Approved transaction contract: visible candidate, applied payload, committed input revision, and recalculated result must agree. Apply inside the unified workspace is fragment-scoped; page-level callers retain an app fallback. | Contract + invariant verified | Cold and warm `Mu=200, Vu=0` AppTest; candidate/payload identity; input/result revision equality; fragment/app rerun routing contract; cross-page return. | VERIFIED |
+| SA-002 | Load Analysis action publication | Approved ownership contract: Load Analysis actions remain page-local until explicit publication; publication uses the shared Design Actions boundary and must not write calculation outputs through the result-store API. | Contract + invariant verified | Zero/non-zero ULS and SLS cases; toggle on/off; Inputs round-trip; manual-action isolation; cross-beam isolation; no exception. | OPEN |
+| SA-003 | Bending RECT/T/I diagrams | Presentation contract: every supported section renders; diagram composition must not mutate or redefine authoritative bending calculations. | Contract + invariant verified | RECT, T, and I positive/negative cases; linear/parabolic stress blocks; calculation identity before/after diagram render; fullscreen controls. | OPEN |
+| SA-004 | Concrete and reinforcement strengths | Approved material policy plus independently checked material-property fixtures. Unsupported values must be rejected before calculation with a user-facing validation state. | Independent + contract verified | Supported-grade matrix; unsupported values; saved-session migration; all calculation-family smoke cases; no uncaught exception. | REVIEW_REQUIRED |
+| SA-005 | Empty widget labels | WCAG/Streamlit accessibility contract: every interactive widget has a stable non-empty accessible label, whether visibly shown or collapsed. | Contract verified | Automated widget inventory across all routes reports zero empty labels. | OPEN |
+| SA-006 | Packaged Design Brain architecture | Approved composition: Design Brain is installed inside Runtime and reached through the application port, without absolute paths, `sys.path` mutation, or UI imports of internal family pipelines. | Contract verified | Architecture check; clean-install contract; import-boundary checks; revised non-obsolete architecture test. | OPEN |
+| SA-007 | Engineering/state verifiers | A verifier must reject deliberately corrupted capacity, utilisation, mandatory-check, clause, revision, hash, and Apply-candidate evidence. | Mutation verified | One positive control and required negative mutations for each verifier; demonstrated false-result rejection. | OPEN |
+| SA-008 | Independent engineering fixtures | AS 3600 clause/equation derivation or separately reviewed calculation, not production output copied into expectations. | Independently verified | Bending, shear, crack, deflection, minimum reinforcement, geometry/detailing, combined, overdesign, and serviceability fixtures with tolerances and review status. | OPEN |
+| SA-009 | Design Brain family corpus | Explicit family predicates evaluated from authoritative checks; historical recipe names are regression evidence only. | Independent or review required | All 90 live recipes classified as confirmed, alias, invalid fixture, genuine defect, or review required; valid cases match reviewed predicates. | REVIEW_REQUIRED |
+| SA-010 | Streamlit compatibility | Supported Streamlit API behaviour and unchanged approved UI/state contracts. | Contract verified | Deprecated `use_container_width` and component HTML usages migrated in isolated slices; route, control, fragment, and layout regressions pass after each slice. | OPEN |
+| SA-011 | Desktop/mobile behaviour | Approved UI behaviour observed in a real browser: no Apply scroll jump, overflow, unusable touch target, or navigation failure. | Contract verified | Narrow phone, large phone, tablet, and desktop journeys; cold/warm Apply; portrait/landscape; keyboard; screenshots and console evidence. | BLOCKED_ENVIRONMENT |
+| SA-012 | Final release gate | This register plus the approved release criteria; no item may be silently excluded. | Composite | All objective items verified; engineering review items explicitly resolved/accepted; 1,000+ stateful fuzz operations; all routes and controls; clean worktree; final evidence report. | OPEN |
+
+## Known super-audit evidence baseline
+
+- Design Brain package suite: 348 passed, 7 skipped, 1 obsolete packaging
+  assertion failed.
+- Architecture check: 81 Python files passed.
+- Discoverable button sweep: 39/39 passed in isolated AppTest sessions.
+- Selector/radio/checkbox/toggle sweep: 85/87 passed. Failures are SA-002
+  and SA-003.
+- Number-input sweep: 65/67 passed. Failures are covered by SA-004.
+- Stateful Runtime fuzz baseline: 25/25 sequences and 300/300 operations
+  passed without exception, non-finite engineering actions, or revision drift.
+- Live family corpus: 90 cases; 39 label matches, 41 label differences, and
+  10 invalid three-leg shear fixtures. These are evidence for SA-009, not 51
+  automatically confirmed Design Brain defects.
+- Cross-page `Mu=200, Vu=0` round-trip passed through Inputs, Load Analysis,
+  Bending, Shear, and back to Inputs.
+- Real-browser mobile/scroll certification was unavailable and remains
+  explicitly blocked rather than inferred from AppTest.
+
+## Release rule
+
+The Runtime is eligible for upload only when SA-012 is satisfied and the user
+explicitly approves the upload. `REVIEW_REQUIRED` may be resolved only by
+documented engineering approval or independent evidence; changing expected
+outputs to match current production results is not verification.
