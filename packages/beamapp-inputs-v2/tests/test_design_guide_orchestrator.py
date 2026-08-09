@@ -244,7 +244,12 @@ def test_severe_shear_failure_searches_geometry_links_and_minimum_longitudinal_s
     assert 0.85 <= proposed_utilisation <= 1.0
     assert decision.candidate.proposal.depth_mm > current.depth_mm
     assert decision.candidate.proposal.shear_legs > 0
-    assert decision.candidate.proposal.bottom_diameter_mm >= current.bottom.diameter_mm
+    proposed_area_token = (
+        decision.candidate.proposal.bottom_bars
+        * decision.candidate.proposal.bottom_diameter_mm**2
+    )
+    current_area_token = current.bottom.bars * current.bottom.diameter_mm**2
+    assert proposed_area_token >= current_area_token
 
 
 def test_shear_repair_apply_does_not_require_preserved_bending_to_enter_target_band() -> None:

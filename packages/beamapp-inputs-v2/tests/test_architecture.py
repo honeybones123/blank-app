@@ -192,6 +192,18 @@ def test_clause_numbers_are_owned_only_by_engineering_metadata() -> None:
     assert not clause_pattern.search(app)
 
 
+def test_minimum_reinforcement_equation_is_engineering_owned() -> None:
+    application_root = SRC / "application"
+    for path in application_root.rglob("*.py"):
+        source = path.read_text(encoding="utf-8")
+        assert "concrete_strength_mpa) ** (2.0 / 3.0)" not in source, path
+        assert "0.4 * (fctf / fsy)" not in source, path
+    combined = (
+        application_root / "design_brain" / "combined_failure_pipeline.py"
+    ).read_text(encoding="utf-8")
+    assert "rectangular_minimum_tensile_area_mm2(" in combined
+
+
 def test_visible_design_brain_copy_does_not_publish_internal_family_codes() -> None:
     app = (SRC / "app.py").read_text(encoding="utf-8")
     assert "decision.display_heading" not in app  # presentation consumes the typed card model

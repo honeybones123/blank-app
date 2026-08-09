@@ -13,6 +13,9 @@ from inputs_v2.application.design_brain.ratio_policy import ratio_gate_required
 from inputs_v2.application.design_brain_apply import Candidate, propose_neutral_candidate
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.domain.engineering_result import EngineeringResult
+from inputs_v2.engineering.minimum_reinforcement import (
+    rectangular_minimum_tensile_area_mm2,
+)
 
 
 Calculate = Callable[[BeamInputs], EngineeringResult]
@@ -68,8 +71,6 @@ class CombinedFailurePipeline:
                     * current.depth_mm
                     / max(depth, 1.0)
                 )
-                fctf = 0.6 * float(current.materials.concrete_strength_mpa) ** (2.0 / 3.0)
-                fsy = max(float(current.materials.reinforcement_strength_mpa), 1.0)
                 bottom_options = []
                 for bars in range(max(2, current.bottom.bars), 13):
                     for diameter in (10, 12, 16, 20, 24, 28, 32, 36, 40):
@@ -81,7 +82,13 @@ class CombinedFailurePipeline:
                             - diameter / 2.0,
                             1.0,
                         )
-                        minimum_ast = 0.4 * (fctf / fsy) * float(width) * effective_depth
+                        minimum_ast = rectangular_minimum_tensile_area_mm2(
+                            width_mm=width,
+                            overall_depth_mm=depth,
+                            effective_depth_mm=effective_depth,
+                            concrete_strength_mpa=current.materials.concrete_strength_mpa,
+                            reinforcement_strength_mpa=current.materials.reinforcement_strength_mpa,
+                        )
                         required_ast = max(demand_ast, minimum_ast)
                         bottom_options.append(
                             (area, bars, diameter, required_ast)
