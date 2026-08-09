@@ -102,7 +102,10 @@ def test_required_checks_and_clauses_are_calculation_owned() -> None:
     references = clause_references_from_checks(checks)
     assert references
     assert all(reference.standard == "AS 3600" and reference.edition == "2018" for reference in references)
-    source = Path("src/inputs_v2/application/engineering_advice.py").read_text(encoding="utf-8")
+    package_root = Path(__file__).resolve().parents[1]
+    source = (package_root / "src/inputs_v2/application/engineering_advice.py").read_text(
+        encoding="utf-8"
+    )
     assert "AS3600_CLAUSES" not in source
     assert '"8.1.3"' not in source
 
