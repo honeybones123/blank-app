@@ -72,7 +72,7 @@ def render_inputs_fast_model_block(
     st_module: Any,
     sync_callbacks: dict,
     model_state: dict | None,
-    shared_toggle_fn: Callable[..., bool],
+    display_toggle_fn: Callable[..., bool],
     render_3d_diagram_block_fn: Callable[..., Any],
     render_section_2d_diagram_block_fn: Callable[..., Any],
 ) -> None:
@@ -80,7 +80,7 @@ def render_inputs_fast_model_block(
     with title_col:
         st_module.markdown("## Model")
     with toggle_col:
-        show_3d = shared_toggle_fn(
+        show_3d = display_toggle_fn(
             "3D model",
             "inputs_fast_mode_show_3d_toggle",
             "fast_mode_show_3d",

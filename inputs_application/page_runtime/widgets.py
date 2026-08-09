@@ -324,6 +324,7 @@ from inputs_application.page_runtime.common import (
     _resolved_inputs_summary_state,
     _shared_state_snapshot,
     _shared_toggle,
+    _ui_toggle,
     _sync_auto_design_invalidation,
     _sync_design_action_widget_to_shared,
     cached_make_section_figure,
@@ -758,7 +759,7 @@ def _render_fast_model_block(sync_callbacks: dict, model_state: dict | None = No
         st_module=st,
         sync_callbacks=sync_callbacks,
         model_state=model_state,
-        shared_toggle_fn=_shared_toggle,
+        display_toggle_fn=_ui_toggle,
         render_3d_diagram_block_fn=lambda **kwargs: _render_3d_diagram_block_current(
             workspace_context=workspace_context, **kwargs
         ),

@@ -995,6 +995,34 @@ def _shared_toggle(
         on_change=sync_callbacks.get(widget_key),
     )
 
+
+def _ui_toggle(
+    label: str,
+    widget_key: str,
+    ui_key: str,
+    default: bool,
+    _sync_callbacks: dict,
+    *,
+    help_text: str | None = None,
+) -> bool:
+    """Render a presentation-only toggle outside the beam input contract."""
+
+    _register_rendered_key(widget_key)
+    if ui_key not in st.session_state:
+        st.session_state[ui_key] = bool(default)
+    if widget_key not in st.session_state:
+        st.session_state[widget_key] = bool(st.session_state[ui_key])
+
+    def _commit_ui_choice() -> None:
+        st.session_state[ui_key] = bool(st.session_state.get(widget_key, default))
+
+    return st.toggle(
+        label,
+        key=widget_key,
+        help=help_text,
+        on_change=_commit_ui_choice,
+    )
+
 def _resolve_design_actions_from_state(state: dict) -> dict:
     return resolve_design_actions(state)
 

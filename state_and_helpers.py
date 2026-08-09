@@ -1166,7 +1166,6 @@ SHARED_DEFAULTS = {
     "auto_geometry": False,
     "auto_bottom_reo": False,
     "auto_shear": False,
-    "fast_mode_show_3d": False,
     "design_optimisation_goal": "balanced",
     "optimisation_lock_geometry": False,
     "optimisation_lock_width": False,
@@ -1527,6 +1526,9 @@ SHARED_DEFAULTS = {
 
 # UI-only session state defaults (not shared, not synced)
 UI_STATE_DEFAULTS = {
+    # Diagram choice is presentation-only. It must never enter the beam input
+    # transaction or advance the Design Brain engineering revision.
+    "fast_mode_show_3d": False,
     "_reo_msg_top_auto_layer2": "",
     "_reo_msg_top_layer2_overwritten": "",
     "_reo_error_top_1": "",
@@ -1725,7 +1727,6 @@ BEAM_PROJECT_PARAM_KEYS = [
     "auto_geometry",
     "auto_bottom_reo",
     "auto_shear",
-    "fast_mode_show_3d",
     # Design/optimisation controls are engineering inputs, not page-local UI.
     # They must travel with the active beam so a change made on another page
     # advances the same authoritative input revision as an Inputs edit.
@@ -3614,7 +3615,6 @@ TAB_KEYS = {
     "inputs_auto_geometry_toggle": "auto_geometry",
     "inputs_auto_bottom_reo_toggle": "auto_bottom_reo",
     "inputs_auto_shear_toggle": "auto_shear",
-    "inputs_fast_mode_show_3d_toggle": "fast_mode_show_3d",
     "inputs_design_optimisation_goal": "design_optimisation_goal",
     "inputs_optimisation_lock_geometry": "optimisation_lock_geometry",
     "inputs_optimisation_lock_width": "optimisation_lock_width",
