@@ -45,7 +45,7 @@ release evidence column, not merely the absence of an exception.
 | SA-001 | Inputs Design Brain Apply | Approved transaction contract: visible candidate, applied payload, committed input revision, and recalculated result must agree. Apply inside the unified workspace is fragment-scoped; page-level callers retain an app fallback. | Contract + invariant verified | Cold and warm `Mu=200, Vu=0` AppTest; candidate/payload identity; input/result revision equality; fragment/app rerun routing contract; cross-page return. | VERIFIED |
 | SA-002 | Load Analysis action publication | Approved ownership contract: Load Analysis actions remain page-local until explicit publication; publication uses the shared Design Actions boundary and must not write calculation outputs through the result-store API. | Contract + invariant verified | Zero/non-zero ULS and SLS cases; toggle on/off; Inputs round-trip; manual-action isolation; cross-beam isolation; no exception. | VERIFIED |
 | SA-003 | Bending RECT/T/I diagrams | Presentation contract: every supported section renders; diagram composition must not mutate or redefine authoritative bending calculations. | Contract + invariant verified | RECT, T, and I positive/negative cases; linear/parabolic stress blocks; calculation identity before/after diagram render; fullscreen controls. | VERIFIED |
-| SA-004 | Concrete and reinforcement strengths | Approved material policy plus independently checked material-property fixtures. Unsupported values must be rejected before calculation with a user-facing validation state. | Independent + contract verified | Supported-grade matrix; unsupported values; saved-session migration; all calculation-family smoke cases; no uncaught exception. | REVIEW_REQUIRED |
+| SA-004 | Concrete and reinforcement strengths | Approved material policy plus independently checked material-property fixtures. Unsupported values must be rejected before calculation with a user-facing validation state. | Independent + contract verified | Supported-grade matrix; unsupported values; saved-session migration; all calculation-family smoke cases; no uncaught exception. | IN_PROGRESS |
 | SA-005 | Empty widget labels | WCAG/Streamlit accessibility contract: every interactive widget has a stable non-empty accessible label, whether visibly shown or collapsed. | Contract verified | Automated widget inventory across all routes reports zero empty labels. | OPEN |
 | SA-006 | Packaged Design Brain architecture | Approved composition: Design Brain is installed inside Runtime and reached through the application port, without absolute paths, `sys.path` mutation, or UI imports of internal family pipelines. | Contract verified | Architecture check; clean-install contract; import-boundary checks; revised non-obsolete architecture test. | OPEN |
 | SA-007 | Engineering/state verifiers | A verifier must reject deliberately corrupted capacity, utilisation, mandatory-check, clause, revision, hash, and Apply-candidate evidence. | Mutation verified | One positive control and required negative mutations for each verifier; demonstrated false-result rejection. | OPEN |
@@ -81,6 +81,12 @@ release evidence column, not merely the absence of an exception.
   The shared subplot composer preserves its child figure, bending capacity is
   identical before/after display-mode changes, and every rendered Plotly chart
   has the shared fullscreen anchor.
+- SA-004 Runtime contract passes all 24 supported concrete/reinforcement grade
+  combinations, rejects f'c = 41 MPa and fsy = 501 MPa before calculation,
+  clears stale result authority, renders the exact validation reason, recovers
+  after correction, and translates unsupported saved-state inputs through the
+  same typed boundary. Independent material-property fixture review remains
+  outstanding under SA-008, so SA-004 is not yet `VERIFIED`.
 - Real-browser mobile/scroll certification was unavailable and remains
   explicitly blocked rather than inferred from AppTest.
 

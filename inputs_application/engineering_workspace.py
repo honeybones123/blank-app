@@ -11,6 +11,9 @@ from typing import Any, Callable
 from application.guidance_result_adapter import (
     guidance_payload_from_authoritative_design_result,
 )
+from application.engineering_input_validation import (
+    EngineeringInputValidationError,
+)
 from inputs_application.design_guide_fragment_store import (
     DesignGuideFragmentState,
 )
@@ -517,6 +520,29 @@ def prepare_engineering_workspace_transaction(
             )
         )
         authoritative_result = engineering_refresh()
+    except EngineeringInputValidationError as exc:
+        # Unsupported committed inputs are an expected domain outcome, not an
+        # app crash.  Publish a revision-matched failed state and clear every
+        # older authority so Summary/Design Brain cannot display stale truth.
+        workspace_store.fail_calculation(
+            revision=workspace_revision,
+            error=str(exc),
+        )
+        services.engineering_results.clear()
+        services.recommendations.clear_all()
+        workspace_store.publish_authoritative_result(
+            revision=workspace_revision,
+            result=None,
+        )
+        fragment_store.fail_refresh(str(exc))
+        return {
+            "reconciled_design_action_keys": reconciled_keys,
+            "engineering_hash": None,
+            "calculation_status": "failed",
+            "validation_error": str(exc),
+            "design_guide_fragment_status": "failed",
+            "design_guide_publication_authority_hash": None,
+        }
     except Exception as exc:
         workspace_store.fail_calculation(revision=workspace_revision, error=exc)
         fragment_store.fail_refresh(exc)
@@ -1007,8 +1033,20 @@ def render_engineering_workspace(
             "_inputs_authoritative_result_snapshot_update_pending"
         )
     )
+    failed_calculation_is_current = bool(
+        calculation_state.get("status") == "failed"
+        and int(calculation_state.get("revision", 0) or 0) == workspace_revision
+        and workspace_store.authoritative_revision() == workspace_revision
+        and not workspace_store.authoritative_result_present()
+        and authoritative_result is None
+        and not ss.get(
+            "_inputs_authoritative_result_snapshot_update_pending"
+        )
+    )
     calculation_is_current = bool(
-        ready_calculation_is_current or awaiting_inputs_is_current
+        ready_calculation_is_current
+        or awaiting_inputs_is_current
+        or failed_calculation_is_current
     )
     if calculation_is_current:
         fragment_state = services.publications.current()
@@ -1043,7 +1081,10 @@ def render_engineering_workspace(
     if summary_region_state.status == "awaiting_inputs":
         st_module.info("Enter a design action or load to calculate.")
     elif summary_region_state.status == "failed":
-        st_module.error("Calculations could not be updated.")
+        st_module.error(
+            "Calculations could not be updated: "
+            f"{summary_region_state.error or 'check the current inputs.'}"
+        )
     elif summary_region_state.status == "updating":
         st_module.info("Updating calculations...")
     else:

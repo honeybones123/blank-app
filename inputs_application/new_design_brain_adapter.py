@@ -21,6 +21,9 @@ from application.contracts.design_brain import (
     stable_authority_hash,
 )
 from application.design_brain_port import DesignBrainExecution, DesignBrainRequest
+from application.engineering_input_validation import (
+    EngineeringInputValidationError,
+)
 from application.v2_source_manifest import source_manifest_hash
 
 
@@ -200,6 +203,15 @@ def _v2_api():
     }
 
 
+def _validated_runtime_inputs(value: Any) -> Any:
+    """Translate domain validation into the typed Runtime input boundary."""
+
+    try:
+        return value.validated()
+    except ValueError as exc:
+        raise EngineeringInputValidationError(str(exc)) from exc
+
+
 def _beam_inputs_from_snapshot(
     snapshot: EngineeringInputSnapshot,
     api: Mapping[str, Any],
@@ -273,7 +285,7 @@ def _beam_inputs_from_snapshot(
         legs=_integer(reinforcement, "lig_legs", default=0),
         spacing_mm=_number(reinforcement, "s_lig", default=200.0),
     )
-    v2_inputs = api["BeamInputs"](
+    v2_inputs_unvalidated = api["BeamInputs"](
         revision=int(revision),
         width_mm=_number(geometry, "b", "bw", default=250.0),
         depth_mm=_number(geometry, "D", "d", default=300.0),
@@ -363,7 +375,8 @@ def _beam_inputs_from_snapshot(
             # into explicit-load semantics.
             use_uls_fallback=False,
         ),
-    ).validated()
+    )
+    v2_inputs = _validated_runtime_inputs(v2_inputs_unvalidated)
 
     row_counts = []
     for key in ("bot_row_1_bars", "bot_row_2_bars"):
@@ -376,7 +389,9 @@ def _beam_inputs_from_snapshot(
         row_counts = [bottom.bars]
     fit = api["evaluate_arrangement"](v2_inputs, tuple(row_counts))
     if fit.accepted:
-        v2_inputs = replace(v2_inputs, bottom_arrangement=fit.arrangement).validated()
+        v2_inputs = _validated_runtime_inputs(
+            replace(v2_inputs, bottom_arrangement=fit.arrangement)
+        )
     return v2_inputs, tuple(row_counts), serviceability_loads
 
 
