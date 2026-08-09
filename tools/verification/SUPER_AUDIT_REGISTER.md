@@ -58,7 +58,7 @@ release evidence column, not merely the absence of an exception.
 ## Known super-audit evidence baseline
 
 - Current Design Brain package suite: 363 passed and 7 explicitly skipped.
-- Architecture check: 81 Python files passed.
+- Architecture check: 82 Python files passed.
 - Exhaustive Runtime control sweep: all 211 discoverable controls across all
   nine routes were inventoried in isolated AppTest sessions. All 39 enabled
   buttons, 60 enabled number inputs, 60 selectboxes, 8 non-navigation radios,
@@ -150,6 +150,14 @@ release evidence column, not merely the absence of an exception.
   one-pixel host. The compatibility contract, every-route widget inventory,
   363-test package suite, verifier mutations, and 90-case family corpus all
   pass without a Streamlit deprecation warning. SA-010 is `VERIFIED`.
+- The final control rerun exposed keyed widgets that supplied both a session
+  value and an explicit Streamlit default. The shared single-authority pattern
+  now seeds session state once and omits the competing `value`/`index`
+  argument for Load Analysis number rows, the active-beam selector, crack
+  exposure and the calculated-actions toggle. Static compatibility checks and
+  the focused Load Analysis, Apply and accessibility contracts pass without
+  the duplicate-default warning; the 211-control contract also passes after
+  the repair.
 - SA-012's required stateful volume is now met by a deterministic 50-sequence,
   1,000-operation Runtime fuzz contract (seed 20260809). The composite release
   gate remains `OPEN` because SA-011 real-browser certification is not yet
