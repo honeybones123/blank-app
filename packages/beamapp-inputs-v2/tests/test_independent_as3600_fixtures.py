@@ -24,6 +24,7 @@ from inputs_v2.domain.beam_inputs import (
     BeamInputs,
     LongitudinalReinforcement,
     MaterialInputs,
+    ServiceabilityInputs,
 )
 from inputs_v2.engineering.engineering_calculator import EngineeringCalculator
 from inputs_v2.engineering.deflection import DeflectionInput, calculate_deflection
@@ -33,6 +34,10 @@ from inputs_v2.engineering.crack_control import (
 )
 from inputs_v2.engineering.reinforcement_fit import evaluate_arrangement
 from inputs_v2.domain.beam_inputs import ShearReinforcement
+from inputs_v2.application.design_brain_families import (
+    DesignFamily,
+    classify_design_family,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -438,3 +443,137 @@ def test_reinforcement_fit_matches_independent_geometry_fixture() -> None:
     assert reinforcement["cover_status"] == "NOT CHECKED"
     assert reinforcement["cover_check_basis"] == "specified_cover_only"
     assert geometry["policy_basis"] == "application_constructability"
+
+
+@pytest.mark.parametrize(
+    ("bending_ratio", "shear_ratio", "expected_family"),
+    (
+        (1.20, 1.20, DesignFamily.BENDING_AND_SHEAR_FAIL_GOVERN),
+        (0.40, 0.40, DesignFamily.COMBINED_OVERDESIGN),
+    ),
+)
+def test_combined_family_matches_independent_strength_predicates(
+    bending_ratio: float,
+    shear_ratio: float,
+    expected_family: DesignFamily,
+) -> None:
+    case = RECTANGULAR_FLEXURE
+    expected = _standard_derived_values(case)
+    effective_depth = expected["effective_depth_mm"]
+    shear_depth = max(0.72 * case.depth_mm, 0.9 * effective_depth)
+    kv = min(200.0 / (1000.0 + 1.3 * shear_depth), 0.10)
+    shear_design_capacity = (
+        0.75
+        * kv
+        * case.width_mm
+        * shear_depth
+        * min(sqrt(case.concrete_strength_mpa), 8.0)
+        / 1000.0
+    )
+    inputs = BeamInputs(
+        width_mm=case.width_mm,
+        depth_mm=case.depth_mm,
+        bottom=LongitudinalReinforcement(
+            bars=case.bar_count,
+            diameter_mm=case.bar_diameter_mm,
+            cover_mm=case.cover_mm,
+        ),
+        materials=MaterialInputs(
+            concrete_strength_mpa=case.concrete_strength_mpa,
+            reinforcement_strength_mpa=case.steel_strength_mpa,
+        ),
+        actions=ActionInputs(
+            bending_moment_knm=bending_ratio * expected["design_moment_knm"],
+            shear_force_kn=shear_ratio * shear_design_capacity,
+        ),
+    ).validated()
+    result = EngineeringCalculator().calculate(inputs)
+    actual_bending_ratio = float(result.families["bending"]["util"])
+    actual_shear_ratio = inputs.actions.shear_force_kn / float(
+        result.families["shear"]["phi_Vu"]
+    )
+
+    assert actual_bending_ratio == pytest.approx(bending_ratio, rel=1e-12)
+    assert actual_shear_ratio == pytest.approx(shear_ratio, rel=1e-12)
+    assert classify_design_family(result, inputs) is expected_family
+
+
+def test_serviceability_family_matches_independent_deflection_predicate() -> None:
+    case = RECTANGULAR_FLEXURE
+    expected = _standard_derived_values(case)
+    span_m = 6.0
+    permanent_udl = 100.0
+    imposed_udl = 50.0
+    effective_depth = expected["effective_depth_mm"]
+    beta = 1.0
+    steel_area = expected["steel_area_mm2"]
+    reinforcement_ratio = steel_area / (case.width_mm * effective_depth)
+    k1 = (5.0 - 0.04 * case.concrete_strength_mpa) * reinforcement_ratio + 0.002
+    inertia = min(
+        k1 * case.width_mm * effective_depth**3,
+        0.1 * case.width_mm * effective_depth**3 / beta ** (2.0 / 3.0),
+    )
+    coefficient = 5.0 / 384.0
+    span_mm = span_m * 1000.0
+    short_term = (
+        coefficient
+        * (permanent_udl + imposed_udl)
+        * span_mm**4
+        / (30_000.0 * inertia)
+    )
+    compression_area = 2.0 * pi * 10.0**2 / 4.0
+    kcs = max(2.0 - 1.2 * compression_area / steel_area, 0.8)
+    sustained_short = (
+        coefficient
+        * (permanent_udl + 0.4 * imposed_udl)
+        * span_mm**4
+        / (30_000.0 * inertia)
+    )
+    independently_derived_total = short_term + kcs * sustained_short
+    limit = span_mm / 250.0
+    assert independently_derived_total > limit
+
+    shear_depth = max(0.72 * case.depth_mm, 0.9 * effective_depth)
+    shear_design_capacity = (
+        0.75
+        * min(200.0 / (1000.0 + 1.3 * shear_depth), 0.10)
+        * case.width_mm
+        * shear_depth
+        * min(sqrt(case.concrete_strength_mpa), 8.0)
+        / 1000.0
+    )
+    inputs = BeamInputs(
+        width_mm=case.width_mm,
+        depth_mm=case.depth_mm,
+        span_mm=span_mm,
+        bottom=LongitudinalReinforcement(
+            bars=case.bar_count,
+            diameter_mm=case.bar_diameter_mm,
+            cover_mm=case.cover_mm,
+        ),
+        materials=MaterialInputs(
+            concrete_strength_mpa=case.concrete_strength_mpa,
+            reinforcement_strength_mpa=case.steel_strength_mpa,
+        ),
+        actions=ActionInputs(
+            bending_moment_knm=0.90 * expected["design_moment_knm"],
+            shear_force_kn=0.90 * shear_design_capacity,
+        ),
+        serviceability=ServiceabilityInputs(
+            moment_knm=0.0,
+            permanent_udl_knm_per_m=permanent_udl,
+            imposed_udl_knm_per_m=imposed_udl,
+            sustained_load_factor=0.4,
+        ),
+    ).validated()
+    result = EngineeringCalculator().calculate(inputs)
+    serviceability = result.families["serviceability"]
+
+    assert serviceability["deflection_mm"] == pytest.approx(
+        independently_derived_total, rel=1e-12
+    )
+    assert serviceability["deflection_util"] == pytest.approx(
+        independently_derived_total / limit, rel=1e-12
+    )
+    assert serviceability["status"] == "FAIL"
+    assert classify_design_family(result, inputs) is DesignFamily.SERVICEABILITY_GOVERNS
