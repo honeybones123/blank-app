@@ -15,6 +15,9 @@ from inputs_application.adapters import SharedStateSessionPort
 from inputs_application.contracts import InputsSessionMutation
 from inputs_application.engineering_input_store import InputSnapshotStore
 from inputs_application.workspace_context import InputsWorkspaceContext
+from inputs_page_modules.session.startup_hydration import (
+    render_inputs_startup_hydration,
+)
 
 
 class _ApplyStoreStub:
@@ -235,11 +238,42 @@ def verify_apply_preserves_unchanged_authoritative_inputs() -> None:
     assert persisted[-1]["uls_Mstar"] == 200.0
 
 
+def verify_typed_apply_does_not_force_refresh_unchanged_widgets() -> None:
+    """Changed Apply widgets reseed themselves; actions must not be replayed."""
+
+    state = {
+        "_pending_inputs_apply_refresh": {
+            "source": "guidance:typed_inputs_application",
+            "keys": ["D", "bot_row_1_dia"],
+        },
+        "_force_inputs_widget_reseed_once": True,
+        "_force_inputs_shear_widget_reseed_once": False,
+    }
+    forced_cycles: list[str] = []
+    render_inputs_startup_hydration(
+        ss=state,
+        mark=lambda _name: None,
+        load_active_beam_into_shared_fn=lambda: False,
+        apply_canonical_convenience_resync_to_shared_fn=lambda **_kwargs: None,
+        inputs_hydration_trace_log_fn=lambda *_args, **_kwargs: None,
+        force_inputs_apply_refresh_cycle_fn=forced_cycles.append,
+        agent_debug_log_fn=lambda *_args, **_kwargs: None,
+        final_log_append_fn=lambda *_args, **_kwargs: None,
+        final_log_increment_fn=lambda *_args, **_kwargs: None,
+        final_log_set_flag_fn=lambda *_args, **_kwargs: None,
+    )
+
+    assert forced_cycles == []
+    assert "_pending_inputs_apply_refresh" not in state
+    assert state["_force_inputs_widget_reseed_once"] is False
+
+
 def main() -> None:
     verify_committed_apply_uses_fragment_when_active()
     verify_page_level_apply_falls_back_to_app_rerun()
     verify_fragment_context_can_refresh_to_post_apply_revision()
     verify_apply_preserves_unchanged_authoritative_inputs()
+    verify_typed_apply_does_not_force_refresh_unchanged_widgets()
     print("inputs apply rerun contract: PASS")
 
 
