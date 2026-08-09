@@ -26,6 +26,7 @@ from inputs_v2.domain.beam_inputs import (
     MaterialInputs,
 )
 from inputs_v2.engineering.engineering_calculator import EngineeringCalculator
+from inputs_v2.engineering.deflection import DeflectionInput, calculate_deflection
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,3 +198,81 @@ def test_unreinforced_shear_matches_standard_derived_fixture() -> None:
     assert actual["Vu_max_kN"] == pytest.approx(web_capacity_kn, rel=1e-12)
     assert actual["shear_ok"] is (shear_phi * concrete_capacity_kn >= shear_demand_kn)
     assert actual["web_ok"] is (shear_phi * web_capacity_kn >= shear_demand_kn)
+
+
+def test_continuous_end_span_deflection_matches_standard_derived_fixture() -> None:
+    """Generic Continuous uses the conservative end-span Clause 8.5.4 case."""
+
+    values = DeflectionInput(
+        span_m=6.0,
+        concrete_modulus_mpa=30_000.0,
+        concrete_strength_mpa=32.0,
+        effective_width_mm=300.0,
+        web_width_mm=300.0,
+        effective_depth_mm=450.0,
+        tension_steel_area_mm2=4.0 * pi * 20.0**2 / 4.0,
+        compression_steel_area_mm2=2.0 * pi * 10.0**2 / 4.0,
+        permanent_udl_kn_per_m=8.0,
+        imposed_udl_kn_per_m=3.0,
+        sustained_load_factor=0.4,
+        support_condition="Continuous",
+    )
+    beta = values.effective_width_mm / values.web_width_mm
+    reinforcement_ratio = values.tension_steel_area_mm2 / (
+        values.effective_width_mm * values.effective_depth_mm
+    )
+    ratio_limit = (
+        0.001
+        * values.concrete_strength_mpa ** (1.0 / 3.0)
+        / beta ** (2.0 / 3.0)
+    )
+    assert reinforcement_ratio >= ratio_limit
+    k1 = (5.0 - 0.04 * values.concrete_strength_mpa) * reinforcement_ratio + 0.002
+    inertia = min(
+        k1 * values.effective_width_mm * values.effective_depth_mm**3,
+        0.1
+        * values.effective_width_mm
+        * values.effective_depth_mm**3
+        / beta ** (2.0 / 3.0),
+    )
+    coefficient = 2.4 / 384.0  # Continuous end span, conservative generic case.
+    span_mm = values.span_m * 1000.0
+    total_load = values.permanent_udl_kn_per_m + values.imposed_udl_kn_per_m
+    sustained_load = (
+        values.permanent_udl_kn_per_m
+        + values.sustained_load_factor * values.imposed_udl_kn_per_m
+    )
+    short_term = (
+        coefficient
+        * total_load
+        * span_mm**4
+        / (values.concrete_modulus_mpa * inertia)
+    )
+    sustained_short = (
+        coefficient
+        * sustained_load
+        * span_mm**4
+        / (values.concrete_modulus_mpa * inertia)
+    )
+    kcs = max(
+        2.0
+        - 1.2
+        * values.compression_steel_area_mm2
+        / values.tension_steel_area_mm2,
+        0.8,
+    )
+    actual = calculate_deflection(values)
+
+    assert actual.effective_inertia_mm4 == pytest.approx(inertia, rel=1e-12)
+    assert actual.support_coefficient == pytest.approx(coefficient, rel=1e-12)
+    assert actual.short_term_mm == pytest.approx(short_term, rel=1e-12)
+    assert actual.sustained_short_term_mm == pytest.approx(
+        sustained_short, rel=1e-12
+    )
+    assert actual.sustained_deflection_factor == pytest.approx(kcs, rel=1e-12)
+    assert actual.long_term_addition_mm == pytest.approx(
+        kcs * sustained_short, rel=1e-12
+    )
+    assert actual.total_mm == pytest.approx(
+        short_term + kcs * sustained_short, rel=1e-12
+    )

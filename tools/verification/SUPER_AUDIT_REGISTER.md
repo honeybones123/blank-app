@@ -111,8 +111,12 @@ release evidence column, not merely the absence of an exception.
   the former minimum-steel exponent/coefficient error. A second derivation now
   verifies the simplified unreinforced-shear branch, including effective shear
   depth, concrete contribution, reduced capacity and the web-crushing ceiling,
-  against Clauses 8.2.1.9, 8.2.3.1, 8.2.3.3 and 8.2.4.1. The remaining fixture
-  families are still outstanding, so SA-008 remains `IN_PROGRESS`.
+  against Clauses 8.2.1.9, 8.2.3.1, 8.2.3.3 and 8.2.4.1. A continuous-beam
+  deflection fixture independently verifies effective inertia, the conservative
+  end-span coefficient, short-term deflection and the Clause 8.5.3.2 sustained
+  multiplier; it corrected the generic `Continuous` route's former silent
+  simply-supported fallback. The remaining fixture families are still
+  outstanding, so SA-008 remains `IN_PROGRESS`.
 - Real-browser mobile/scroll certification was unavailable and remains
   explicitly blocked rather than inferred from AppTest.
 
