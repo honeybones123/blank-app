@@ -463,7 +463,7 @@ def plot_stress_strain_profiles(
             apply_section_axes(sec_fig, W=W, D=D)
             _normalise_bending_section_panel_styles(sec_fig)
 
-        _inject_figure_into_subplot(fig, sec_fig, row=1, col=1, xref="x1", yref="y1")
+        inject_figure_into_subplot(fig, sec_fig, row=1, col=1, xref="x1", yref="y1")
 
         # Enforce 1:1 aspect like your current plots
         fig.update_yaxes(scaleanchor="x", scaleratio=1, row=1, col=1)
