@@ -3,33 +3,31 @@
 Runtime consumes Inputs V2 as the installed `beamapp-inputs-v2` distribution.
 It does not locate or import directly from a V2 checkout.
 
-Until the distribution is published to a package feed, a two-repository
-checkout is installed into one Python environment in this order:
+The package source is owned by this Runtime repository at
+`packages/beamapp-inputs-v2`. Install the application environment from the
+repository root:
 
 ```powershell
-python -m pip install C:\path\to\inputs-v2-lab
 python -m pip install -r requirements.txt
 ```
 
 For editable development, use:
 
 ```powershell
-python -m pip install -e C:\path\to\inputs-v2-lab
+python -m pip install -e .\packages\beamapp-inputs-v2
 ```
 
-The installed distribution must report version `0.1.0`. Verify a completely
-fresh installation and the Runtime adapter boundary with:
+The installed distribution must report version `0.1.0`. Its source package
+retains an independent architecture and test boundary even though Runtime now
+owns deployment and version control in one repository.
+
+Verify V2 directly with:
 
 ```powershell
-python -m tools.verification.run_inputs_v2_clean_install_contract `
-  --v2-checkout C:\path\to\inputs-v2-lab
+python -m pytest .\packages\beamapp-inputs-v2\tests -q
+python .\packages\beamapp-inputs-v2\tools\architecture_check.py
 ```
 
-Hosted Runtime deployments install the tested V2 wheel vendored at
-`vendor/beamapp_inputs_v2-0.1.0-py3-none-any.whl` through `requirements.txt`.
-Its SHA-256 digest is
-`244fe5c87f12c7db00a4ed50e3ad9a9065c9decd85d18fd9bdb011ba7e9bf13e`.
-
-Publishing `beamapp-inputs-v2==0.1.0` to the deployment package feed is the
-remaining distribution step. Once published, add the pinned dependency to the
-deployment requirements without restoring any checkout-path discovery.
+Hosted deployments build the internal package from source through
+`requirements.txt`; no external V2 checkout, binary wheel, source-path
+discovery, or package feed is required.

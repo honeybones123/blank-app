@@ -1,0 +1,22 @@
+{
+  "schema": "inputs_v2.visual_baseline_manifest.v1",
+  "target": "pixel_parity_with_current_inputs_page",
+  "viewports": [
+    {"name": "desktop", "width": 1440, "height": 1000},
+    {"name": "narrow", "width": 900, "height": 1000}
+  ],
+  "states": [
+    "default",
+    "expanded_sections",
+    "bottom_count_mode",
+    "bottom_spacing_mode",
+    "top_reinforcement",
+    "shear_reinforcement",
+    "validation_error",
+    "fixture_updating",
+    "fixture_error"
+  ],
+  "status": "reference_capture_pending",
+  "approval_required_for_intentional_differences": true
+}
+

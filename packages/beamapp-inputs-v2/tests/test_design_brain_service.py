@@ -1,0 +1,196 @@
+from inputs_v2.application.design_brain_service import DesignBrainService
+from inputs_v2.domain.beam_inputs import BeamInputs
+from inputs_v2.domain.beam_inputs import ActionInputs, LongitudinalReinforcement, ShearReinforcement
+
+
+def test_design_brain_preview_is_calculator_backed() -> None:
+    current = BeamInputs().validated()
+    preview = DesignBrainService().preview(current)
+    assert preview.accepted is False
+    assert preview.reason == "no_bending_demand"
+    assert preview.candidate.source_hash == current.content_hash
+    assert preview.after.source_revision == current.revision
+    assert preview.after.families["bending"]
+
+
+def test_design_brain_apply_rejects_preview_from_changed_revision() -> None:
+    service = DesignBrainService()
+    current = BeamInputs().validated()
+    preview = service.preview(current)
+    changed = current.next_revision(width_mm=current.width_mm, depth_mm=current.depth_mm, bottom=current.bottom)
+    outcome = service.apply(changed, preview)
+    assert outcome.applied is False
+    assert outcome.reason in {"stale_candidate", "candidate_validation_failed"}
+
+
+def test_bending_ladder_requires_target_band() -> None:
+    current = BeamInputs(actions=ActionInputs(bending_moment_knm=20.0)).validated()
+    preview = DesignBrainService().preview(current)
+    assert preview.target_low == 0.85
+    assert preview.target_high == 1.0
+    if preview.accepted:
+        util = preview.after.families["bending"]["util"]
+        assert 0.85 <= util <= 1.0
+
+
+def test_geometry_ladder_never_exceeds_two_to_one_depth_width_ratio() -> None:
+    current = BeamInputs(actions=ActionInputs(bending_moment_knm=300.0)).validated()
+    preview = DesignBrainService().preview(current)
+    proposed_depth = preview.candidate.proposal.depth_mm
+    assert proposed_depth <= 2.0 * current.width_mm
+    if preview.accepted:
+        assert 0.85 <= preview.after.families["bending"]["util"] <= 1.0
+
+
+def test_shear_only_ladder_uses_v1_order_and_target_band() -> None:
+    from inputs_v2.domain.beam_inputs import ShearReinforcement
+
+    current = BeamInputs(
+        actions=ActionInputs(shear_force_kn=500.0),
+        shear=ShearReinforcement(diameter_mm=10, legs=2, spacing_mm=300.0),
+    ).validated()
+    preview = DesignBrainService().preview_shear_only(current)
+    assert preview.candidate.source_hash == current.content_hash
+    if preview.accepted:
+        family = preview.after.families["shear"]
+        util = current.actions.shear_force_kn / family["phi_Vu"]
+        assert 0.85 <= util <= 1.0
+
+def test_shear_width_lane_can_progress_beyond_one_hundred_mm_when_needed() -> None:
+    current = BeamInputs(width_mm=250.0, actions=ActionInputs(shear_force_kn=300.0)).validated()
+    preview = DesignBrainService().preview_shear_only(current)
+    # A valid link repair is preferred, but the candidate search must expose
+    # the wider geometry envelope instead of hard-stopping at 350 mm.
+    assert preview.candidate.proposal.width_mm <= 500.0
+
+def test_shear_width_lane_combines_width_with_link_repair() -> None:
+    current = BeamInputs(
+        width_mm=250.0,
+        depth_mm=400.0,
+        bottom=BeamInputs().bottom.__class__(bars=3, diameter_mm=28),
+        actions=ActionInputs(bending_moment_knm=200.0, shear_force_kn=300.0),
+    ).validated()
+    preview = DesignBrainService().preview_shear_only(current)
+    assert preview.accepted
+    assert preview.candidate.proposal.shear_diameter_mm > 0
+    assert preview.candidate.proposal.shear_legs >= 2
+    shear_util = 300.0 / float(preview.after.families["shear"]["phi_Vu"])
+    assert 0.85 <= shear_util <= 1.0
+
+def test_geometry_locks_are_respected_by_shear_ladder() -> None:
+    current = BeamInputs(
+        width_mm=250.0, depth_mm=400.0, width_locked=True, depth_locked=True,
+        actions=ActionInputs(shear_force_kn=300.0),
+    ).validated()
+    preview = DesignBrainService().preview_shear_only(current)
+    assert preview.candidate.proposal.width_mm == current.width_mm
+    assert preview.candidate.proposal.depth_mm == current.depth_mm
+
+def test_bending_ladder_expands_width_when_depth_ratio_is_reached() -> None:
+    current = BeamInputs(
+        width_mm=250.0,
+        depth_mm=300.0,
+        actions=ActionInputs(bending_moment_knm=800.0),
+    ).validated()
+    preview = DesignBrainService().preview(current)
+    proposal = preview.candidate.proposal
+    assert proposal.width_mm > current.width_mm
+    assert proposal.depth_mm <= 2.0 * proposal.width_mm
+    assert preview.accepted
+    assert 0.85 <= preview.after.families["bending"]["util"] <= 1.0
+
+def test_shear_overdesign_does_not_add_unrequested_bottom_bar():
+    current = BeamInputs(
+        bottom=BeamInputs().bottom.__class__(bars=4),
+        actions=ActionInputs(shear_force_kn=0.0),
+    ).validated()
+    preview = DesignBrainService().preview_shear_overdesign(current)
+    assert preview.candidate.proposal.bottom_bars == current.bottom.bars
+
+def test_zero_shear_overdesign_can_still_apply_link_removal():
+    current = BeamInputs(
+        shear=ShearReinforcement(diameter_mm=16, legs=4, spacing_mm=200.0),
+        actions=ActionInputs(shear_force_kn=0.0),
+    ).validated()
+    preview = DesignBrainService().preview_shear_overdesign(current)
+    assert preview.accepted
+    assert (
+        preview.candidate.proposal.shear_diameter_mm != current.shear.diameter_mm
+        or preview.candidate.proposal.shear_legs != current.shear.legs
+        or preview.candidate.proposal.shear_spacing_mm != current.shear.spacing_mm
+    )
+
+
+def test_combined_failure_ladder_is_atomic() -> None:
+    current = BeamInputs(actions=ActionInputs(bending_moment_knm=1000.0, shear_force_kn=300.0)).validated()
+    preview = DesignBrainService().preview_combined_failure(current)
+    assert preview.candidate.source_revision == current.revision
+    if preview.accepted:
+        assert "bottom" in preview.changed_fields and "shear" in preview.changed_fields
+    else:
+        assert preview.changed_fields == ()
+        assert preview.reason == "no_valid_combined_repair"
+
+
+def test_combined_failure_finds_applicable_target_band_repair() -> None:
+    current = BeamInputs(
+        actions=ActionInputs(bending_moment_knm=300.0, shear_force_kn=300.0)
+    ).validated()
+
+    preview = DesignBrainService().preview_combined_failure(current)
+
+    assert preview.accepted
+    assert preview.candidate is not None
+    assert preview.after is not None
+    assert "bottom" in preview.changed_fields
+    assert "shear" in preview.changed_fields
+    bending_util = float(preview.after.families["bending"]["util"])
+    shear_family = preview.after.families["shear"]
+    shear_util = abs(current.actions.shear_force_kn) / float(shear_family["phi_Vu"])
+    assert 0.85 <= bending_util <= 1.0
+    assert 0.85 <= shear_util <= 1.0
+
+
+def test_overdesign_ladders_only_accept_safe_reductions() -> None:
+    from inputs_v2.domain.beam_inputs import ShearReinforcement
+
+    current = BeamInputs(
+        bottom=BeamInputs().bottom,
+        shear=ShearReinforcement(diameter_mm=16, legs=6, spacing_mm=100.0),
+    ).validated()
+    service = DesignBrainService()
+    bending = service.preview_bending_overdesign(current)
+    shear = service.preview_shear_overdesign(current)
+    if bending.accepted:
+        assert bending.after.families["bending"]["util"] <= 1.0
+    if shear.accepted:
+        sf = shear.after.families["shear"]
+        assert current.actions.shear_force_kn / sf["phi_Vu"] <= 1.0
+
+
+def test_bending_overdesign_allows_fewer_larger_bars_when_total_steel_reduces() -> None:
+    """Regression: the 4-N28 case must discover the compliant 2-N36 cleanup."""
+    current = BeamInputs(
+        width_mm=275.0,
+        depth_mm=475.0,
+        actions=ActionInputs(bending_moment_knm=300.0, shear_force_kn=200.0),
+        bottom=LongitudinalReinforcement(bars=4, diameter_mm=28),
+        top=LongitudinalReinforcement(bars=2, diameter_mm=10),
+        shear=ShearReinforcement(diameter_mm=10, legs=2, spacing_mm=200.0),
+    ).validated()
+
+    preview = DesignBrainService().preview_bending_overdesign(current)
+
+    assert preview.accepted
+    assert preview.candidate.proposal.bottom_bars == 2
+    assert preview.candidate.proposal.bottom_diameter_mm == 36
+    assert preview.candidate.proposal.bottom_bars * preview.candidate.proposal.bottom_diameter_mm**2 < 4 * 28**2
+    assert 0.85 <= float(preview.after.families["bending"]["util"]) <= 1.0
+
+
+def test_serviceability_ladder_is_safe_when_deflection_fails() -> None:
+    current = BeamInputs(actions=ActionInputs(bending_moment_knm=5000.0)).validated()
+    preview = DesignBrainService().preview_serviceability(current)
+    assert preview.candidate.source_revision == current.revision
+    if preview.accepted:
+        assert preview.after.families["serviceability"]["deflection_util"] <= 1.0

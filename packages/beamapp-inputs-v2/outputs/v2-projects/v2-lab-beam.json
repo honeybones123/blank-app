@@ -1,0 +1,59 @@
+{
+  "beam_id": "v2-lab-beam",
+  "content_hash": "e49b66d65c779b0fd490d2fc91c68a650c966c21bdb2e931751da34e7de03fa3",
+  "inputs": {
+    "actions": {
+      "axial_force_kn": 0.0,
+      "bending_moment_knm": 0.0,
+      "shear_force_kn": 0.0,
+      "torsion_knm": 0.0
+    },
+    "bottom": {
+      "bars": 3,
+      "cover_mm": 40.0,
+      "diameter_mm": 10,
+      "mode": "Count",
+      "spacing_mm": 150.0
+    },
+    "deflection": {
+      "limit_ratio": 250.0,
+      "support_condition": "Simply supported"
+    },
+    "depth_mm": 300.0,
+    "materials": {
+      "concrete_strength_mpa": 40.0,
+      "reinforcement_strength_mpa": 500.0
+    },
+    "revision": 0,
+    "section_shape": "RECT",
+    "shear": {
+      "diameter_mm": 0,
+      "legs": 0,
+      "spacing_mm": 200.0
+    },
+    "span_mm": 2000.0,
+    "supports": {
+      "left_type": "Pinned",
+      "right_type": "Roller"
+    },
+    "time_dependent": {
+      "age_at_loading_days": 28.0,
+      "creep_time_days": 365.0,
+      "shrinkage_time_days": 365.0
+    },
+    "top": {
+      "bars": 2,
+      "cover_mm": 40.0,
+      "diameter_mm": 10,
+      "mode": "Count",
+      "spacing_mm": 150.0
+    },
+    "voids": {
+      "diameter_mm": 0.0,
+      "ducts": 0
+    },
+    "width_mm": 250.0
+  },
+  "revision": 0,
+  "schema": "inputs_v2.beam_inputs.v1"
+}
