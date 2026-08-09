@@ -12,7 +12,6 @@ import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import streamlit as st
 from streamlit_plotly_events import plotly_events
-from ui.streamlit_iframe import render_trusted_iframe
 from beam_diagram_runtime import (
     compute_diagram_arrays as _compute_diagram_arrays_cached_service,
 )
@@ -103,130 +102,6 @@ _strip_leading_load_intro = _design_inputs_section._strip_leading_load_intro
 _governing_shear_star_value = _design_inputs_section._governing_shear_star_value
 _governing_moment_star_value = _design_inputs_section._governing_moment_star_value
 _design_inputs_section.bind_runtime(globals())
-
-
-def _install_design_scroll_preserver() -> None:
-    """Keep the Design workspace anchored across fragment widget reruns."""
-    render_trusted_iframe(st,
-        """
-        <script>
-        (() => {
-          const win = window.parent;
-          const doc = win.document;
-          const key = "beam_design_scroll_restore_v1";
-          const scroller = () =>
-            doc.querySelector("section.stMain") ||
-            doc.querySelector("section[data-testid='stMain']") ||
-            doc.scrollingElement || doc.documentElement;
-          const pageToken = () => String(win.location.pathname + win.location.search);
-          const interactiveControls = () => Array.from(doc.querySelectorAll(
-            "section.stMain input, section.stMain [role='combobox'], section.stMain [role='switch']"
-          ));
-          const remember = eventTarget => {
-            const el = scroller();
-            if (!el) return;
-            const top = Number(el.scrollTop || 0);
-            if (!Number.isFinite(top) || top < 1) return;
-            const controls = interactiveControls();
-            const anchor = eventTarget && eventTarget.closest
-              ? eventTarget.closest("input, [role='combobox'], [role='switch']")
-              : null;
-            const anchorIndex = anchor ? controls.indexOf(anchor) : -1;
-            const anchorRect = anchor ? anchor.getBoundingClientRect() : null;
-            const anchorSignature = anchor
-              ? `${anchor.tagName}:${anchor.getAttribute("type") || ""}:${anchor.getAttribute("role") || ""}`
-              : "";
-            win.__beamDesignPendingScroll = {
-              top, page: pageToken(), at: Date.now(), anchorIndex,
-              anchorTop: anchorRect ? anchorRect.top : null,
-              anchorSignature
-            };
-            try {
-              win.sessionStorage.setItem(key, JSON.stringify({
-                top, page: pageToken(), at: Date.now()
-              }));
-            } catch (_) {}
-          };
-
-          if (!win.__beamDesignScrollCaptureInstalled) {
-            win.__beamDesignScrollCaptureInstalled = true;
-            for (const eventName of ["pointerdown", "input", "change", "keydown"]) {
-              doc.addEventListener(eventName, event => {
-                const target = event.target;
-                if (!target || !target.closest) return;
-                if (!target.closest("[data-testid='stMainBlockContainer']")) return;
-                if (eventName === "keydown" && event.key !== "Enter") return;
-                remember(target);
-              }, true);
-            }
-            const root = doc.querySelector("[data-testid='stMainBlockContainer']") || doc.body;
-            const restorePending = () => {
-              const saved = win.__beamDesignPendingScroll;
-              // The engineering fragment can take several seconds to finish.
-              // Keep the anchor alive until its late diagrams and derivation
-              // cards have finished replacing their DOM.
-              if (!saved || saved.page !== pageToken() || Date.now() - saved.at > 30000) return;
-              const el = scroller();
-              if (!el) return;
-              const target = Number(saved.top || 0);
-              if (Number.isFinite(target) && target > 0) el.scrollTop = target;
-              if (saved.anchorIndex >= 0 && Number.isFinite(saved.anchorTop)) {
-                const controls = interactiveControls();
-                const anchor = controls[saved.anchorIndex];
-                if (anchor) {
-                  const signature = `${anchor.tagName}:${anchor.getAttribute("type") || ""}:${anchor.getAttribute("role") || ""}`;
-                  if (signature === saved.anchorSignature) {
-                    const delta = anchor.getBoundingClientRect().top - saved.anchorTop;
-                    if (Number.isFinite(delta) && Math.abs(delta) > 0.5) {
-                      el.scrollTop += delta;
-                    }
-                  }
-                }
-              }
-            };
-            // Create the observer in the parent document's realm; the script
-            // itself runs inside a Streamlit component iframe.
-            const observer = new win.MutationObserver(() => {
-              restorePending();
-              win.requestAnimationFrame(restorePending);
-              win.setTimeout(restorePending, 40);
-              win.setTimeout(restorePending, 120);
-              win.setTimeout(restorePending, 300);
-              win.setTimeout(restorePending, 700);
-              win.setTimeout(restorePending, 1500);
-              win.setTimeout(restorePending, 3000);
-            });
-            try {
-              observer.observe(root, {childList: true, subtree: true});
-              win.__beamDesignScrollObserver = observer;
-            } catch (_) {
-              // A fragment can briefly expose a cross-realm placeholder while
-              // Streamlit swaps the main block. Timed restoration below still
-              // preserves the widget anchor for that rerun.
-            }
-          }
-
-          let saved = null;
-          try { saved = JSON.parse(win.sessionStorage.getItem(key) || "null"); }
-          catch (_) { saved = null; }
-          if (!saved || saved.page !== pageToken() || Date.now() - saved.at > 15000) return;
-
-          const restore = () => {
-            const el = scroller();
-            if (!el) return;
-            const target = Number(saved.top || 0);
-            if (Number.isFinite(target) && target > 0) el.scrollTop = target;
-          };
-          [0, 40, 120, 260, 500, 900].forEach(delay => win.setTimeout(restore, delay));
-          win.setTimeout(() => {
-            try { win.sessionStorage.removeItem(key); } catch (_) {}
-          }, 1100);
-        })();
-        </script>
-        """,
-        height=0,
-        width=0,
-    )
 
 
 def _render_design_check_summary(
@@ -1535,8 +1410,6 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         )
 
     render_result_page_title("Load Analysis")
-    _install_design_scroll_preserver()
-
     # App-wide design-action source (same canonical keys as Inputs page)
     _LEGACY_ACTIONS_MANUAL = "Manual design actions (inputs below)"
     _LEGACY_ACTIONS_DESIGN = "Teaching SFD/BMD page (|M|max, |V|max)"
