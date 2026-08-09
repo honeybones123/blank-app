@@ -253,7 +253,7 @@ You can:
             )
         with col2:
             st.selectbox(
-                "",
+                "Exposure class",
                 options=exp_options,
                 index=exp_options.index(exp_current),
                 key="crack_exposure_class",
@@ -267,7 +267,7 @@ You can:
         with col2:
             member_current = st.session_state.get("crack_member_type", "Primarily flexure")
             member_type = st.selectbox(
-                "",
+                "Resultant action",
                 options=["Primarily flexure", "Primarily tension"],
                 index=0 if member_current == "Primarily flexure" else 1,
                 key="inputs_crack_member_type",
@@ -283,7 +283,7 @@ You can:
             k1_val = float(st.session_state.get("crack_k1", 0.8))
             k1_options = [0.8, 1.6]
             k1 = st.selectbox(
-                "",
+                "k1 bond coefficient",
                 options=k1_options,
                 index=k1_options.index(k1_val) if k1_val in k1_options else 0,
                 format_func=lambda x: "Deformed bars (k₁ = 0.8)" if abs(x - 0.8) < 1e-9 else "Plain bars (k₁ = 1.6)",

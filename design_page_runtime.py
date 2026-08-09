@@ -659,7 +659,7 @@ def render_inline_number_row(
         if on_change_callback is not None:
             on_change_callback = _wrap_user_edit(key, on_change_callback)
         return st.number_input(
-            label="",
+            label=label,
             key=key,
             value=st.session_state.get(key, value),
             min_value=min_value,
@@ -715,7 +715,7 @@ def render_inline_select_row(
         current_value = st.session_state.get(key, options[index])
         current_index = options.index(current_value) if current_value in options else index
         value = st.selectbox(
-            label="",
+            label=label,
             key=key,
             options=options,
             index=current_index,
