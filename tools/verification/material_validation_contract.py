@@ -21,7 +21,7 @@ from inputs_application.new_design_brain_adapter import (
 )
 
 SUPPORTED_CONCRETE = (20.0, 25.0, 32.0, 40.0, 50.0, 65.0, 80.0, 100.0)
-SUPPORTED_REINFORCEMENT = (400.0, 500.0, 600.0)
+SUPPORTED_REINFORCEMENT = (500.0,)
 
 
 def _open_inputs() -> AppTest:
@@ -71,11 +71,11 @@ def verify_unsupported_grades_and_recovery() -> None:
     app.number_input(key="inputs_fc").set_value(40.0).run(timeout=120)
     _assert_ready(app)
 
-    app.number_input(key="inputs_fsy").set_value(501.0).run(timeout=120)
-    _assert_rejected(app, "Reinforcement strength is not supported.")
-
-    app.number_input(key="inputs_fsy").set_value(500.0).run(timeout=120)
-    _assert_ready(app)
+    for unsupported in (400.0, 600.0, 501.0):
+        app.number_input(key="inputs_fsy").set_value(unsupported).run(timeout=120)
+        _assert_rejected(app, "Only 500 MPa reinforcement is supported")
+        app.number_input(key="inputs_fsy").set_value(500.0).run(timeout=120)
+        _assert_ready(app)
 
 
 def verify_unsupported_saved_beam_is_migrated_to_validation_state() -> None:
@@ -111,6 +111,25 @@ def verify_unsupported_saved_beam_is_migrated_to_validation_state() -> None:
         assert str(exc) == "Concrete strength is not supported."
     else:
         raise AssertionError("unsupported saved input bypassed validation")
+
+    for unsupported in (400.0, 600.0):
+        unsupported_steel = {**saved_state, "fc": 40.0, "fsy": unsupported}
+        try:
+            calculate_v2_authoritative_result(
+                engineering_snapshot=(
+                    build_engineering_input_snapshot_from_resolved_state(
+                        unsupported_steel
+                    )
+                ),
+                resolved_inputs=unsupported_steel,
+                input_revision=1,
+            )
+        except EngineeringInputValidationError as exc:
+            assert "Only 500 MPa reinforcement is supported" in str(exc)
+        else:
+            raise AssertionError(
+                f"unsupported saved reinforcement fsy={unsupported} bypassed validation"
+            )
 
 def main() -> None:
     verify_supported_grade_matrix()

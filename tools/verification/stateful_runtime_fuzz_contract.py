@@ -47,7 +47,7 @@ def _geometry(state: dict[str, Any], rng: random.Random) -> None:
 
 def _materials(state: dict[str, Any], rng: random.Random) -> None:
     state["fc"] = _different(rng, state.get("fc"), (20.0, 25.0, 32.0, 40.0, 50.0, 65.0, 80.0, 100.0))
-    state["fsy"] = _different(rng, state.get("fsy"), (400.0, 500.0, 600.0))
+    state["fsy"] = 500.0
 
 
 def _longitudinal(state: dict[str, Any], rng: random.Random) -> None:

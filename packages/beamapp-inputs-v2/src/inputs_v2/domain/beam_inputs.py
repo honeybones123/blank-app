@@ -67,8 +67,12 @@ class MaterialInputs:
     def validated(self) -> "MaterialInputs":
         if self.concrete_strength_mpa not in (20, 25, 32, 40, 50, 65, 80, 100):
             raise ValueError("Concrete strength is not supported.")
-        if self.reinforcement_strength_mpa not in (400, 500, 600):
-            raise ValueError("Reinforcement strength is not supported.")
+        if self.reinforcement_strength_mpa != 500:
+            raise ValueError(
+                "Only 500 MPa reinforcement is supported; 400 MPa lacks an "
+                "approved material basis and 600 MPa requires product properties "
+                "that are not modeled."
+            )
         return self
 
 

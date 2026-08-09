@@ -1,7 +1,7 @@
 import pytest
 
 from inputs_v2.application.input_commands import UpdateFirstSlice, apply_input_command
-from inputs_v2.domain.beam_inputs import BeamInputs, LayoutMode
+from inputs_v2.domain.beam_inputs import BeamInputs, LayoutMode, MaterialInputs
 
 
 def command(**overrides) -> UpdateFirstSlice:
@@ -42,3 +42,9 @@ def test_canonical_model_does_not_expose_legacy_aliases() -> None:
     inputs = BeamInputs()
     assert not hasattr(inputs, "bot1_count")
     assert not hasattr(inputs, "db_bot_1")
+
+
+@pytest.mark.parametrize("strength", (400.0, 600.0))
+def test_reinforcement_without_modeled_product_evidence_is_rejected(strength: float) -> None:
+    with pytest.raises(ValueError, match="Only 500 MPa reinforcement is supported"):
+        MaterialInputs(reinforcement_strength_mpa=strength).validated()
