@@ -661,7 +661,6 @@ def render_inline_number_row(
         return st.number_input(
             label=label,
             key=key,
-            value=st.session_state.get(key, value),
             min_value=min_value,
             max_value=max_value,
             step=step,

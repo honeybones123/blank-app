@@ -190,7 +190,6 @@ def _render_project_beam_controls(ctx: BatchDesignPageContext) -> None:
             st.selectbox(
                 "Active set",
                 options=beam_order,
-                index=beam_order.index(active_beam_id) if active_beam_id in beam_order else 0,
                 format_func=lambda beam_id: ctx.beam_labels.get(beam_id, beam_id),
                 key=ACTIVE_BEAM_SELECTOR_KEY,
                 help="Select the project beam used as the base concrete assumptions for manual batch rows.",

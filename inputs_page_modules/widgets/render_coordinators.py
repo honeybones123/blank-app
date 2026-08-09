@@ -1018,6 +1018,8 @@ def render_inputs_design_actions_section(
         itk_calculated = "inputs_use_calculated_actions"
         itk_calculated_intent = "_inputs_use_calculated_actions_user_intent"
         user_intent_pending = bool(st_module.session_state.get(itk_calculated_intent, False))
+        if itk_calculated not in st_module.session_state:
+            st_module.session_state[itk_calculated] = bool(design_actions_toggle_default)
         if (
             (not user_intent_pending)
             and itk_calculated in st_module.session_state
@@ -1048,7 +1050,6 @@ def render_inputs_design_actions_section(
 
                 use_calculated_actions = st_module.toggle(
                     "Use calculated design actions",
-                    value=design_actions_toggle_default,
                     key="inputs_use_calculated_actions",
                     on_change=_on_inputs_use_calculated_actions_change,
                     help=(

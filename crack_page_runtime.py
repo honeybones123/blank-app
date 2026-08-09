@@ -244,6 +244,8 @@ You can:
         exp_current = st.session_state.get("exposure_class", "B1")
         if exp_current not in exp_options:
             exp_current = "B1"
+        if st.session_state.get("crack_exposure_class") not in exp_options:
+            st.session_state["crack_exposure_class"] = exp_current
 
         col1, col2 = st.columns([1, 2])
         with col1:
@@ -255,7 +257,6 @@ You can:
             st.selectbox(
                 "Exposure class",
                 options=exp_options,
-                index=exp_options.index(exp_current),
                 key="crack_exposure_class",
                 on_change=sync_callbacks["crack_exposure_class"],
                 label_visibility="collapsed",
