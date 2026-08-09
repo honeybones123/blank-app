@@ -179,7 +179,7 @@ def render_inputs_section_2d_diagram_block(
         render_plotly_diagram_fn(
             fig_sec,
             key="inputs_section_2d_model_chart",
-            use_container_width=True,
+            width="stretch",
             config={"displayModeBar": False},
         )
         chart_emit_ms = (time_perf_counter_fn() - chart_started) * 1000.0
@@ -310,7 +310,7 @@ def render_inputs_3d_diagram_block(
         st_module.markdown('<div class="inputs-page-main-diagram-wrap">', unsafe_allow_html=True)
         render_plotly_diagram_fn(
             fig3d,
-            use_container_width=True,
+            width="stretch",
             config={"displayModeBar": False},
         )
         st_module.markdown("</div>", unsafe_allow_html=True)

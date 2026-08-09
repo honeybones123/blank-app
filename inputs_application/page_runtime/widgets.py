@@ -355,7 +355,7 @@ def _render_recommendation_section_header(
                 "Load recommendation tools",
                 key=load_key,
                 type="secondary",
-                use_container_width=True,
+                width="stretch",
             )
             if load_pressed:
                 render_popover_content()

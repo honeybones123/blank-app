@@ -86,4 +86,4 @@ def assignment_results_csv(results: list[BatchAssignmentResult]) -> str:
 
 
 def render_results_table(st, results: list[BatchDesignResult]) -> None:
-    st.dataframe(design_results_frame(results), hide_index=True, use_container_width=True)
+    st.dataframe(design_results_frame(results), hide_index=True, width="stretch")

@@ -46,4 +46,4 @@ def preview_rows(cases: list[BatchBeamCase]) -> pd.DataFrame:
 
 
 def render_preview_table(st, cases: list[BatchBeamCase]) -> None:
-    st.dataframe(preview_rows(cases), hide_index=True, use_container_width=True)
+    st.dataframe(preview_rows(cases), hide_index=True, width="stretch")

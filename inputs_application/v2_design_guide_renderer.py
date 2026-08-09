@@ -224,7 +224,7 @@ def render_v2_design_guide_card(
                 st_module.button(
                     label,
                     key=f"v2_design_guide_apply_{_text(publication.get('publication_hash'), 'current')}",
-                    use_container_width=True,
+                    width="stretch",
                     on_click=_queue_v2_design_guide_apply,
                     args=(st_module, payload, result),
                 )

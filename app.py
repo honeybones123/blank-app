@@ -5213,11 +5213,11 @@ def _render_create_project_form(user_id: str, module: str):
     st.caption("This creates a project so you can open it later from your dashboard.")
     cA, cB = st.columns([1, 1])
     with cA:
-        if st.button("Cancel", use_container_width=True):
+        if st.button("Cancel", width="stretch"):
             st.session_state["_show_save_modal"] = False
             st.rerun()
     with cB:
-        if st.button("Create & Save", type="primary", use_container_width=True):
+        if st.button("Create & Save", type="primary", width="stretch"):
             if not user_id:
                 st.error("You must be logged in to save projects.")
                 return
@@ -5476,7 +5476,7 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
 
             with c_save:
                 st.markdown('<span class="beam-header-action-marker" aria-hidden="true"></span>', unsafe_allow_html=True)
-                if st.button("💾 Save", type="primary", use_container_width=True):
+                if st.button("💾 Save", type="primary", width="stretch"):
                     if not user_id:
                         st.error("You must be logged in to save projects.")
                         st.stop()

@@ -148,7 +148,7 @@ def render_review_table(st, workflow: BatchDesignWorkflowState) -> pd.DataFrame:
         review_rows(workflow),
         key="batch_design_review_editor",
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
         num_rows="dynamic",
         column_config={
             "include": st.column_config.CheckboxColumn("Include"),

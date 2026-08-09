@@ -1030,7 +1030,7 @@ def _safe_step_diagram(step_no: int):
                     key=f"shear_step_{step_no}_diagram",
                     title=caption or f"Shear step {step_no} diagram",
                     caption=caption,
-                    use_container_width=True,
+                    width="stretch",
                 )
             else:
                 st.info(f"💡 Add diagram for Step {step_no} at `{path}`.")
@@ -1042,7 +1042,7 @@ def _safe_step_diagram(step_no: int):
                     key=f"shear_step_{step_no}_theta_diagram",
                     title="Strut angle",
                     caption="Strut angle $\\theta_v$",
-                    use_container_width=True,
+                    width="stretch",
                 )
             else:
                 st.info(f"💡 Add theta diagram at `{theta_path}`.")
@@ -1056,7 +1056,7 @@ def _safe_step_diagram(step_no: int):
                 key=f"shear_step_{step_no}_diagram",
                 title=caption or "Shear step diagram",
                 caption=caption,
-                use_container_width=True,
+                width="stretch",
             )
         else:
             st.info(f"💡 Add diagram for Step 9 at `{path}`.")
@@ -1068,7 +1068,7 @@ def _safe_step_diagram(step_no: int):
                 key=f"shear_step_{step_no}_vumax2_diagram",
                 title="Strut-and-tie behaviour",
                 caption="Strut-and-tie / concrete compression strut behaviour in deep beams",
-                use_container_width=True,
+                width="stretch",
             )
         else:
             st.info(f"💡 Add Step 9 second diagram at `{vumax2_path}`.")
@@ -1081,7 +1081,7 @@ def _safe_step_diagram(step_no: int):
             key=f"shear_step_{step_no}_diagram",
             title=caption or f"Shear step {step_no} diagram",
             caption=caption,
-            use_container_width=True,
+            width="stretch",
         )
     else:
         st.info(f"💡 Add diagram for Step {step_no} at `{path}`.")
@@ -1462,7 +1462,7 @@ def _fmt(val, decimals=1):
 #  SHEAR – DRAWINGS + INSIGHT BLOCKS
 # ------------------------------------------------------------
 
-def _safe_image(path: str, caption: str | None = None, width: int | None = None, use_container_width: bool | None = None):
+def _safe_image(path: str, caption: str | None = None, width: int | str | None = None):
     """Tiny helper so missing images don't break the app."""
     candidate_paths = [path]
     if not os.path.isabs(path):
@@ -1483,21 +1483,13 @@ def _safe_image(path: str, caption: str | None = None, width: int | None = None,
                 caption=caption,
                 width=width,
             )
-        elif use_container_width is not None:
-            render_image_diagram(
-                resolved_path,
-                key=image_key,
-                title=caption or "Shear reference diagram",
-                caption=caption,
-                use_container_width=use_container_width,
-            )
         else:
             render_image_diagram(
                 resolved_path,
                 key=image_key,
                 title=caption or "Shear reference diagram",
                 caption=caption,
-                use_container_width=True,
+                width="stretch",
             )
     except Exception:
         st.info(f"Unable to open image `{path}` right now.")
@@ -1525,7 +1517,7 @@ def render_shear_mcft_block():
 
         # Info button
         with info_col:
-            with info_i_button(use_container_width=True):
+            with info_i_button(width="stretch"):
                 calcbox(
                     r"""
 **Concrete contribution $V_{uc}$ in AS 3600**
@@ -1948,7 +1940,7 @@ In short:
                 st.markdown("</div>", unsafe_allow_html=True)
 
             with info_col:
-                with info_i_button(use_container_width=True):
+                with info_i_button(width="stretch"):
                     calcbox(
                         r"""
 **What is shear in a beam?**

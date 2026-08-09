@@ -307,7 +307,7 @@ def render_pyplot_diagram(
     center: bool = True,
     allow_fullscreen: bool = True,
     clear_figure: bool | None = None,
-    use_container_width: bool | None = None,
+    width: Any | None = None,
     **pyplot_kwargs: Any,
 ) -> None:
     """Render a Matplotlib diagram with shared centering and an optional full-screen view."""
@@ -327,7 +327,7 @@ def render_pyplot_diagram(
                 st.pyplot(
                     fig,
                     clear_figure=False,
-                    use_container_width=True,
+                    width="stretch",
                     **pyplot_kwargs,
                 )
 
@@ -338,8 +338,8 @@ def render_pyplot_diagram(
         kwargs = dict(pyplot_kwargs)
         if clear_figure is not None:
             kwargs["clear_figure"] = clear_figure
-        if use_container_width is not None:
-            kwargs["use_container_width"] = use_container_width
+        if width is not None:
+            kwargs["width"] = width
         st.pyplot(fig, **kwargs)
 
 
@@ -351,8 +351,7 @@ def render_image_diagram(
     caption: str | None = None,
     center: bool = True,
     allow_fullscreen: bool = True,
-    width: int | None = None,
-    use_container_width: bool | None = None,
+    width: Any | None = None,
     **image_kwargs: Any,
 ) -> None:
     """Render a static diagram image with shared centering and an optional full-screen view."""
@@ -372,7 +371,7 @@ def render_image_diagram(
                 st.image(
                     image,
                     caption=caption,
-                    use_container_width=True,
+                    width="stretch",
                     **image_kwargs,
                 )
 
@@ -383,8 +382,6 @@ def render_image_diagram(
         kwargs = dict(image_kwargs)
         if width is not None:
             kwargs["width"] = width
-        elif use_container_width is not None:
-            kwargs["use_container_width"] = use_container_width
         st.image(image, caption=caption, **kwargs)
 
 
@@ -2108,7 +2105,7 @@ def show_reo_message(msg_key: str, layer: str = "", s_min: float = None):
         st.info(msg)
 
 
-def info_i_button(content=None, help_text=None, key=None, use_container_width=False):
+def info_i_button(content=None, help_text=None, key=None, width="content"):
     """
     Render a small blue "i" icon info button that opens a popover.
     
@@ -2116,7 +2113,7 @@ def info_i_button(content=None, help_text=None, key=None, use_container_width=Fa
         content: Callable function that renders content inside the popover, or None if using help_text
         help_text: Optional help text (alternative to content function)
         key: Optional unique key for the popover (not supported by st.popover, ignored)
-        use_container_width: Whether to use container width (for content function)
+        width: Streamlit popover width (``"content"`` or ``"stretch"``)
     
     Returns:
         The popover context manager
@@ -2129,10 +2126,7 @@ def info_i_button(content=None, help_text=None, key=None, use_container_width=Fa
     if help_text:
         return st.popover(trigger_text, help=help_text)
     else:
-        kwargs = {}
-        if use_container_width:
-            kwargs["use_container_width"] = use_container_width
-        return st.popover(trigger_text, **kwargs)
+        return st.popover(trigger_text, width=width)
 
 
 def render_calc_section_heading(text: str) -> None:

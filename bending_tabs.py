@@ -2537,7 +2537,7 @@ See table for $\\varepsilon(y)$ at the top fibre, each steel layer, and bottom f
             fig_eps,
             key="bending_sls_3_5_strain_distribution",
             title="SLS strain distribution",
-            use_container_width=True,
+            width="stretch",
         )
         plt.close(fig_eps)
     
