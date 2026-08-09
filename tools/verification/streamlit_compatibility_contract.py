@@ -125,11 +125,37 @@ def verify_session_owned_selectors_have_one_initial_value_authority() -> None:
     )
 
 
+def verify_session_owned_sliders_have_one_initial_value_authority() -> None:
+    """Pre-seeded slider state is the default; the widget must not compete."""
+
+    session_owned_keys = {"design_section_x_slider"}
+    offenders: list[str] = []
+    for path in ROOT.rglob("*.py"):
+        if any(part in {".venv", "build", "__pycache__"} for part in path.parts):
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Attribute) or node.func.attr != "slider":
+                continue
+            keywords = {keyword.arg: keyword.value for keyword in node.keywords}
+            key_node = keywords.get("key")
+            key_value = key_node.value if isinstance(key_node, ast.Constant) else None
+            if key_value in session_owned_keys and "value" in keywords:
+                offenders.append(f"{path.relative_to(ROOT)}:{key_value}")
+    assert not offenders, (
+        "session-owned sliders also pass an explicit widget default: "
+        f"{offenders}"
+    )
+
+
 def main() -> None:
     verify_iframe_contract()
     verify_no_deprecated_calls()
     verify_session_owned_number_rows_have_one_initial_value_authority()
     verify_session_owned_selectors_have_one_initial_value_authority()
+    verify_session_owned_sliders_have_one_initial_value_authority()
     print("streamlit compatibility contract: PASS")
 
 

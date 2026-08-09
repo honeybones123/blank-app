@@ -2587,7 +2587,6 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                 "Section location x (m)",
                 min_value=0.0,
                 max_value=float(beam_length),
-                value=float(st.session_state.get("design_section_x_slider", initial_cursor_x)),
                 step=0.01,
                 key="design_section_x_slider",
                 on_change=_on_design_section_slider_change,
