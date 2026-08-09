@@ -4,6 +4,7 @@ from dataclasses import replace
 import pytest
 
 from inputs_v2.application.design_guide_orchestrator import DesignGuideOrchestrator
+import inputs_v2.application.design_guide_orchestrator as orchestrator_module
 from inputs_v2.application.design_brain_service import DesignBrainService
 from inputs_v2.application.design_brain.family_owners import FAMILY_OWNERS
 from inputs_v2.domain.beam_inputs import (
@@ -13,6 +14,41 @@ from inputs_v2.domain.beam_inputs import (
     ServiceabilityInputs,
     ShearReinforcement,
 )
+
+
+def test_orchestrator_returns_selected_owner_decision_by_identity(monkeypatch) -> None:
+    """The orchestration boundary must not rebuild or reinterpret a decision."""
+    current = BeamInputs().validated()
+    calculated = DesignBrainService()._calculator.calculate_current(current).result
+    expected_decision = object()
+    selected_family = DesignFamily.TARGET_BAND_REACHED
+
+    class StubCalculator:
+        def calculate_current(self, received):
+            assert received is current
+            return type("Calculation", (), {"result": calculated})()
+
+    class StubService:
+        _calculator = StubCalculator()
+
+    class StubOwner:
+        def decide(self, received_current, received_result, received_service):
+            assert received_current is current
+            assert received_result is calculated
+            assert received_service is service
+            return expected_decision
+
+    service = StubService()
+    orchestrator = DesignGuideOrchestrator()
+    orchestrator._service = service
+    monkeypatch.setattr(
+        orchestrator_module,
+        "classify_design_family",
+        lambda received_result, received_current: selected_family,
+    )
+    monkeypatch.setitem(orchestrator_module.DECISION_OWNERS, selected_family, StubOwner())
+
+    assert orchestrator.decide(current) is expected_decision
 
 
 def test_orchestrator_routes_combined_failure_to_one_atomic_ladder() -> None:

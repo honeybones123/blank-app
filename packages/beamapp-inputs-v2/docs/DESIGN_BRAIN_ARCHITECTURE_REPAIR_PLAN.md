@@ -94,6 +94,12 @@ Acceptance:
 
 ## Stage 4 — Define typed search evidence and exact-stop proof
 
+**Status: completed and verified in Runtime on 9 August 2026.**
+
+Verification: candidate records, rejection counts, completed-stage proof and
+missing-stage exact-stop rejection are covered by the full acceptance gate.
+This completion checkpoint changes no production search or presentation code.
+
 Replace silent candidate skipping with structured records:
 
 ```text
@@ -128,6 +134,12 @@ Acceptance:
 - diagnostics can explain why every candidate was rejected.
 
 ## Stage 5 — Move final decision authority into each family
+
+**Status: completed and verified in Runtime on 9 August 2026.**
+
+Verification: an identity test proves the orchestrator returns the selected
+owner's exact decision object. Static architecture checks continue to reject
+status, blocker, exact-stop and Apply decisions outside family ownership.
 
 Each selected family must return the final `FamilyDecision`, including:
 
@@ -293,4 +305,3 @@ Implement one stage at a time. After each stage:
 4. run architecture checks;
 5. record performance impact; and
 6. stop if the change creates another decision centre or changes presentation.
-
