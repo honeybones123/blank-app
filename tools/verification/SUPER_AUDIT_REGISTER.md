@@ -52,8 +52,8 @@ release evidence column, not merely the absence of an exception.
 | SA-008 | Independent engineering fixtures | AS 3600 clause/equation derivation or separately reviewed calculation, not production output copied into expectations. | Independently verified | Bending, shear, crack, deflection, minimum reinforcement, geometry/detailing, combined, overdesign, and serviceability fixtures with tolerances and review status. | VERIFIED |
 | SA-009 | Design Brain family corpus | Explicit family predicates evaluated from authoritative checks; historical recipe names are regression evidence only. | Independent or review required | All 90 live recipes classified as confirmed, alias, invalid fixture, genuine defect, or review required; valid cases match reviewed predicates. | VERIFIED |
 | SA-010 | Streamlit compatibility | Supported Streamlit API behaviour and unchanged approved UI/state contracts. | Contract verified | Deprecated `use_container_width` and component HTML usages migrated in isolated slices; route, control, fragment, and layout regressions pass after each slice. | VERIFIED |
-| SA-011 | Desktop/mobile behaviour | Approved UI behaviour observed in a real browser: no Apply scroll jump, overflow, unusable touch target, or navigation failure. | Contract verified | Narrow phone, large phone, tablet, and desktop journeys; cold/warm Apply; portrait/landscape; keyboard; screenshots and console evidence. | BLOCKED_ENVIRONMENT |
-| SA-012 | Final release gate | This register plus the approved release criteria; no item may be silently excluded. | Composite | All objective items verified; engineering review items explicitly resolved/accepted; 1,000+ stateful fuzz operations; all routes and controls; clean worktree; final evidence report. | OPEN |
+| SA-011 | Desktop/mobile behaviour | Approved UI behaviour observed in a real browser: no Apply scroll jump, overflow, unusable touch target, or navigation failure. | Contract verified | Narrow phone, large phone, tablet, and desktop journeys; cold/warm Apply; portrait/landscape; keyboard; screenshots and console evidence. | VERIFIED |
+| SA-012 | Final release gate | This register plus the approved release criteria; no item may be silently excluded. | Composite | All objective items verified; engineering review items explicitly resolved/accepted; 1,000+ stateful fuzz operations; all routes and controls; clean worktree; final evidence report. | VERIFIED |
 
 ## Known super-audit evidence baseline
 
@@ -158,12 +158,36 @@ release evidence column, not merely the absence of an exception.
   the focused Load Analysis, Apply and accessibility contracts pass without
   the duplicate-default warning; the 211-control contract also passes after
   the repair.
-- SA-012's required stateful volume is now met by a deterministic 50-sequence,
-  1,000-operation Runtime fuzz contract (seed 20260809). The composite release
-  gate remains `OPEN` because SA-011 real-browser certification is not yet
-  resolved.
-- Real-browser mobile/scroll certification was unavailable and remains
-  explicitly blocked rather than inferred from AppTest.
+- Design Brain Apply is now browser-certified against the original cold
+  `Mu=200, Vu=0` case and a warm `Mu=300` case. The action edit and Apply each
+  create one authoritative revision; result revisions match, the visible
+  action remains unchanged, and the accepted candidates update depth from
+  300 to 400 mm and then 400 to 500 mm. The Streamlit main scroll position
+  remained exactly 1866 px before and after both Apply operations.
+- The 2D/3D display preference is owned by UI state. Mouse and rerun journeys
+  leave the authoritative input revision, result revision, action, geometry
+  and governing family unchanged; the static display-state contract rejects
+  reintroduction into the beam-project parameter boundary.
+- SA-011 passed real-browser journeys at 360x800, 430x932, 800x360, 768x1024,
+  1024x768 and 1440x900. Document and Streamlit-main widths matched at every
+  viewport, including 1024x768 with the 300 px sidebar open. Twenty-five
+  visible application buttons in the 360 px session had a 44 px minimum hit
+  height. Mobile and desktop screenshots were visually inspected, Enter-key
+  action commits passed, cross-page Load Analysis return preserved revision 5,
+  `Mu=300` and `D=500`, and browser logs contained no warning or error entries.
+- Responsive CSS is emitted at the per-run Streamlit lifecycle boundary rather
+  than module import, so independent later sessions receive the same phone
+  ergonomics as the first. Expanded summary tables now scroll inside their
+  owned container, and hidden tooltip geometry cannot widen tablet content.
+- The exhaustive final control rerun exposed one remaining keyed-slider
+  duplicate-default warning. The Design-page section slider now follows the
+  established session-owned default pattern, its mutation-sensitive static
+  contract passes, and a second complete 211-control sweep passes without the
+  warning.
+- SA-012's deterministic 50-sequence, 1,000-operation Runtime fuzz contract
+  (seed 20260809), 363-test package suite, 82-file architecture check, clean
+  install, all-route accessibility inventory and complete control sweep all
+  pass on the final source. The composite release gate is `VERIFIED`.
 
 ## Release rule
 

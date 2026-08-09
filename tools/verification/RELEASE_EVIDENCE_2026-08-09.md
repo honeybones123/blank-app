@@ -2,16 +2,16 @@
 
 ## Decision
 
-`NOT RELEASE-ELIGIBLE`
+`RELEASE-ELIGIBLE — EXPLICIT UPLOAD APPROVAL REQUIRED`
 
-All current-source automated and AppTest gates pass. The real-browser gate
-SA-011 remains `BLOCKED_ENVIRONMENT`, so the composite SA-012 release gate
-remains `OPEN`. Nothing has been uploaded to GitHub.
+All current-source automated, AppTest and real-browser gates pass. SA-011 and
+the composite SA-012 release gate are `VERIFIED`. Nothing has been uploaded to
+GitHub; publication still requires the user's explicit approval.
 
 ## Current source
 
 - Branch: `main`
-- Latest verified commit: `c57a9fb` (`Use one authority for keyed widget defaults`)
+- Latest verified source commit: `189b9bb` (`Use one authority for the design section slider`)
 - Worktree at evidence collection: clean
 
 ## Passing evidence
@@ -36,24 +36,45 @@ remains `OPEN`. Nothing has been uploaded to GitHub.
 | Longitudinal-row policy | PASS |
 | Stateful Runtime fuzz | 1,000/1,000 operations; 50/50 sequences; seed 20260809 |
 | Exhaustive Runtime controls | 211/211 inventoried and handled; process exit 0 |
+| Responsive/browser matrix | 360x800, 430x932, 800x360, 768x1024, 1024x768, 1440x900; PASS |
+| Cold/warm Apply scroll retention | 1866 px before and after both operations; PASS |
+| 2D/3D UI-state isolation | Input/result revisions, actions and geometry unchanged; PASS |
 
 The 211-control sweep covers all nine routes in isolated AppTest sessions: 39
 enabled buttons, 60 enabled number inputs, 60 selectboxes, 8 non-navigation
 radios, 8 checkboxes, 11 toggles, 9 text inputs, 9 route-navigation radios,
 and 7 intentionally disabled number inputs.
 
-## Unresolved required evidence
+## Real-browser evidence
 
-SA-011 requires real-browser journeys at narrow-phone, large-phone, tablet and
-desktop widths, including portrait/landscape, keyboard behaviour, cold/warm
-Apply, navigation, scroll-position retention, overflow, touch targets,
-screenshots and console inspection.
+The local current-source application was exercised in the Codex in-app browser
+at narrow-phone, large-phone, phone-landscape, tablet, tablet-landscape and
+desktop sizes. Document width and the Streamlit main region stayed contained at
+all six sizes, including an open 300 px sidebar at 1024x768. Mobile and desktop
+screenshots were visually inspected.
 
-The in-app browser backend returned an empty browser list on both availability
-checks. AppTest cannot prove browser scroll or physical viewport behaviour, so
-no substitute evidence has been used and SA-011 remains unresolved.
+In the cold mobile case, Enter committed `Mu=200`; Apply preserved the live
+field and authoritative action at 200, changed depth 300 to 400 mm, advanced
+input/result revision 2 to 3, and left main scroll at exactly 1866 px. The warm
+case committed `Mu=300`, changed depth 400 to 500 mm, advanced revision 4 to 5,
+and again left scroll at 1866 px. Navigation through Load Analysis and back
+preserved revision 5, `Mu=300`, `D=500` and `TARGET_BAND_REACHED`.
+
+Switching the 3D display with the control leaves the authoritative input and
+result revisions, action, depth and governing family unchanged. All 25 visible
+application buttons in the 360 px session had at least a 44 px hit height.
+Browser logs contained informational component binding messages only, with no
+warning or error entries.
+
+The browser sweep found and drove two root fixes: responsive CSS formerly ran
+only during cached Python module import, and summary/tooltip children could
+widen tablet content. CSS now emits once per Streamlit run, tables scroll only
+inside their owned detail container, and tooltip placement is bounded below the
+responsive breakpoint. A separate static contract locks these lifecycle and
+containment rules.
 
 ## Upload rule
 
-Do not upload until SA-011 passes, SA-012 is changed to `VERIFIED`, the final
-worktree is clean, and the user explicitly approves the upload.
+The technical release gate is satisfied. Do not upload until the evidence
+checkpoint is committed, the worktree is clean, and the user explicitly
+approves the upload.
