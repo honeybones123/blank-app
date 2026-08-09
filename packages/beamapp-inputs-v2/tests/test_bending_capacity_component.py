@@ -1,4 +1,5 @@
 import pytest
+import math
 
 from inputs_v2.engineering.bending_capacity import (
     BendingCapacityInput,
@@ -50,3 +51,21 @@ def test_bending_capacity_preserves_snapshot_numerical_parity(sign, demand, valu
             assert current[key] == pytest.approx(expected, rel=0.0, abs=1e-12, nan_ok=True)
         else:
             assert current[key] == expected
+
+
+def test_overreinforced_section_never_publishes_negative_or_infinite_capacity() -> None:
+    result = calculate_bending_capacity(
+        moment_sign="positive",
+        demand_knm=100.0,
+        values=_values(
+            depth_mm=400.0,
+            concrete_strength_mpa=20.0,
+            bottom_steel_area_mm2=8042.47719318987,
+            positive_effective_depth_mm=324.0,
+        ),
+    )
+    assert result["phi_Mu_kNm"] == 0.0
+    assert result["Mu_nom_kNm"] == 0.0
+    assert math.isfinite(result["util"])
+    assert result["util"] > 1.0
+    assert result["status"] == "FAIL"

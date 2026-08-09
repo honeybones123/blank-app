@@ -110,10 +110,14 @@ def solve_bending_capacity(moment_sign: str, M_star_kNm: float, inputs: dict) ->
     lever_arm = compression_block_lever_arm_values(dn_mm=c, gamma=gamma, d_mm=d_mm)
     a = lever_arm["a"] if c == c else float("nan")
     z = lever_arm["z"] if a == a else float("nan")
-    Mu_nom = T * z / 1e6 if z == z else 0.0
+    # The rectangular-block expression is outside its physical range when an
+    # overreinforced arrangement drives the internal lever arm to zero or
+    # below. Never publish a negative capacity or an infinite utilisation;
+    # the associated ductility/fit checks still retain the explicit failure.
+    Mu_nom = max(0.0, T * z / 1e6) if z == z else 0.0
     phi_Mu = phi * Mu_nom
     M_star = float(max(0.0, M_star_kNm))
-    util = M_star / phi_Mu if phi_Mu > 0 else (0.0 if M_star <= 0 else float("inf"))
+    util = M_star / max(phi_Mu, 1e-9) if M_star > 0 else 0.0
     ku = c / d_mm if d_mm > 0 else float("nan")
 
     if M_star <= 1e-9:
