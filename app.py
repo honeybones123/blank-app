@@ -173,8 +173,6 @@ def _apply_sharp_embed_css() -> None:
     )
 
 
-_apply_sharp_embed_css()
-
 from widgets_helpers import apply_global_widget_css, apply_calcbox_css, info_i_button
 from state_and_helpers import hc_try
 
@@ -5228,6 +5226,10 @@ def _render_create_project_form(user_id: str, module: str):
 
 
 def main():
+    # Streamlit re-executes ``main`` for every session and rerun while Python
+    # imports remain cached.  Emit the responsive shell CSS at this lifecycle
+    # boundary so later browser sessions receive the same UI as the first.
+    _apply_sharp_embed_css()
     try:
         path = _local_trace_log_path("design_guide_tracer.jsonl")
         with open(path, "a", encoding="utf-8") as fh:

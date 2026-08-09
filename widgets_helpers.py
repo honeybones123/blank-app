@@ -838,6 +838,13 @@ def apply_global_widget_css():
             opacity: 1;
         }
 
+        @media (max-width: 1200px) {
+            .sb-tooltip-bubble {
+                left: auto;
+                right: 0;
+            }
+        }
+
         /* --- Keep widgets from stretching across the page --- */
         :root {
             --sb-widget-max: 240px;   /* tweak 240–320 to taste */

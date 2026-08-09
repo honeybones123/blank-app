@@ -235,8 +235,16 @@ def summary_card_css() -> str:
 .summary-status-threshold:empty { display: none; }
 .summary-card-chevron { color: #0f172a; font-size: 1.1rem; transition: transform 0.18s ease; justify-self: center; }
 .summary-check-card details[open] .summary-card-chevron { transform: rotate(180deg); }
-.summary-detail-shell { padding: 0 1.25rem 1.15rem 1.6rem; }
+.summary-detail-shell {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0 1.25rem 1.15rem 1.6rem;
+}
 .summary-detail-inner {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
   background: rgba(255,255,255,0.82);
   border: 1px solid rgba(148,163,184,0.22);
   border-radius: 8px;
@@ -306,7 +314,7 @@ def summary_card_css() -> str:
   text-decoration: none;
   width: 100%;
 }
-@media (max-width: 960px) {
+@media (max-width: 1200px) {
   .summary-check-card summary {
     grid-template-columns: 1fr 24px;
     gap: 0.8rem;
