@@ -1007,7 +1007,14 @@ def render_inputs_design_actions_section(
         elif current_actions_source == "Calculated design actions (from SFD/BMD)":
             current_actions_source = legacy_design
 
-        design_actions_toggle_default = current_actions_source == legacy_design
+        current_actions_mode = str(
+            st_module.session_state.get("actions_mode") or ""
+        ).strip().lower()
+        design_actions_toggle_default = (
+            current_actions_mode == "design"
+            if current_actions_mode in ("manual", "design")
+            else current_actions_source == legacy_design
+        )
         itk_calculated = "inputs_use_calculated_actions"
         itk_calculated_intent = "_inputs_use_calculated_actions_user_intent"
         user_intent_pending = bool(st_module.session_state.get(itk_calculated_intent, False))
@@ -1083,6 +1090,11 @@ def render_inputs_design_actions_section(
         if source_changed or mode_changed:
             st_module.session_state["inputs_dirty"] = True
             st_module.session_state["_inputs_dirty"] = True
+        # ``actions_mode`` is the canonical behavioral choice.  Updating its
+        # derived legacy label does not require another render; rerunning for
+        # label-only reconciliation can loop when navigating from a fragment
+        # that still has the older browser widget state.
+        if mode_changed:
             _rerun_inputs_fragment_or_app(st_module)
 
         prev_mode = st_module.session_state.get("loads_edit_mode", "ULS")

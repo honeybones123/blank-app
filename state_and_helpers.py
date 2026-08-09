@@ -3869,7 +3869,10 @@ TAB_KEYS = {
     "inputs_crack_member_type": "crack_member_type",
     "inputs_crack_k1": "crack_k1",
     "inputs_crack_k2": "crack_k2",
-    "inputs_actions_source": "actions_source",  # Source of design actions (manual vs teaching)
+    # ``inputs_use_calculated_actions`` owns this choice.  The retired
+    # ``inputs_actions_source`` widget must not remain a second publisher of
+    # the compatibility label, otherwise its stale browser value can undo the
+    # toggle callback during navigation.
 
     # Time-dependent inputs
     "inputs_t_creep": "t_creep",

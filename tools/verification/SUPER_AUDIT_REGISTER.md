@@ -43,7 +43,7 @@ release evidence column, not merely the absence of an exception.
 | ID | Scope | Correctness authority | Confidence target | Required release evidence | Current status |
 |---|---|---|---|---|---|
 | SA-001 | Inputs Design Brain Apply | Approved transaction contract: visible candidate, applied payload, committed input revision, and recalculated result must agree. Apply inside the unified workspace is fragment-scoped; page-level callers retain an app fallback. | Contract + invariant verified | Cold and warm `Mu=200, Vu=0` AppTest; candidate/payload identity; input/result revision equality; fragment/app rerun routing contract; cross-page return. | VERIFIED |
-| SA-002 | Load Analysis action publication | Approved ownership contract: Load Analysis actions remain page-local until explicit publication; publication uses the shared Design Actions boundary and must not write calculation outputs through the result-store API. | Contract + invariant verified | Zero/non-zero ULS and SLS cases; toggle on/off; Inputs round-trip; manual-action isolation; cross-beam isolation; no exception. | OPEN |
+| SA-002 | Load Analysis action publication | Approved ownership contract: Load Analysis actions remain page-local until explicit publication; publication uses the shared Design Actions boundary and must not write calculation outputs through the result-store API. | Contract + invariant verified | Zero/non-zero ULS and SLS cases; toggle on/off; Inputs round-trip; manual-action isolation; cross-beam isolation; no exception. | VERIFIED |
 | SA-003 | Bending RECT/T/I diagrams | Presentation contract: every supported section renders; diagram composition must not mutate or redefine authoritative bending calculations. | Contract + invariant verified | RECT, T, and I positive/negative cases; linear/parabolic stress blocks; calculation identity before/after diagram render; fullscreen controls. | OPEN |
 | SA-004 | Concrete and reinforcement strengths | Approved material policy plus independently checked material-property fixtures. Unsupported values must be rejected before calculation with a user-facing validation state. | Independent + contract verified | Supported-grade matrix; unsupported values; saved-session migration; all calculation-family smoke cases; no uncaught exception. | REVIEW_REQUIRED |
 | SA-005 | Empty widget labels | WCAG/Streamlit accessibility contract: every interactive widget has a stable non-empty accessible label, whether visibly shown or collapsed. | Contract verified | Automated widget inventory across all routes reports zero empty labels. | OPEN |
@@ -71,6 +71,11 @@ release evidence column, not merely the absence of an exception.
   automatically confirmed Design Brain defects.
 - Cross-page `Mu=200, Vu=0` round-trip passed through Inputs, Load Analysis,
   Bending, Shear, and back to Inputs.
+- SA-002 focused certification passes real AppTest zero/non-zero ULS and SLS
+  publication, manual -> design -> manual restoration, Inputs navigation, and
+  two-beam source isolation. Calculated extrema remain result-owned; the
+  canonical per-beam `actions_mode` owns source selection and the legacy label
+  is compatibility-only.
 - Real-browser mobile/scroll certification was unavailable and remains
   explicitly blocked rather than inferred from AppTest.
 

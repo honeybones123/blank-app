@@ -26,6 +26,7 @@ from ui.diagrams.moment_shear_diagram import (
 
 from state_and_helpers import (
     finalize_auto_design_publish,
+    get_beam_project_param_snapshot,
     get_sync_callbacks,
     get_param,
     is_design_governing,
@@ -56,6 +57,7 @@ from widgets_helpers import (
 )
 from ui_seamless_steps import bind_summary_clicks
 from inputs_application.session_services import InputsSessionServices
+from inputs_application.engineering_input_store import InputSnapshotStore
 from application.engineering_snapshot import build_engineering_input_snapshot_from_resolved_state
 from application.design_actions_adapters import LoadAnalysisDesignActionsAdapter
 from application.design_brain_comparison import compare_design_brain_actions
@@ -1550,9 +1552,37 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
 
     _src_canon = _norm_actions_source_label(st.session_state.get("actions_source", _LEGACY_ACTIONS_MANUAL))
     _wk_sfd_actions = "inputs_use_calculated_actions"
-    _beam_page_selected = _src_canon == _LEGACY_ACTIONS_DESIGN
+    _current_actions_mode = str(
+        st.session_state.get("actions_mode") or ""
+    ).strip().lower()
+    _beam_page_selected = (
+        _current_actions_mode == "design"
+        if _current_actions_mode in ("manual", "design")
+        else _src_canon == _LEGACY_ACTIONS_DESIGN
+    )
     if _wk_sfd_actions not in st.session_state:
         st.session_state[_wk_sfd_actions] = _beam_page_selected
+
+    def _on_load_analysis_action_source_change() -> None:
+        use_design_actions = bool(st.session_state.get(_wk_sfd_actions, False))
+        selected_source = _LEGACY_ACTIONS_DESIGN if use_design_actions else _LEGACY_ACTIONS_MANUAL
+        selected_mode = "design" if use_design_actions else "manual"
+        set_shared(
+            "actions_source",
+            selected_source,
+            source="callback:inputs_use_calculated_actions",
+        )
+        set_shared(
+            "actions_mode",
+            selected_mode,
+            source="callback:inputs_use_calculated_actions",
+        )
+        persist_active_beam_from_shared()
+        InputSnapshotStore(st.session_state).commit_active_beam(
+            get_beam_project_param_snapshot(),
+            changed_keys=("actions_mode", "actions_source"),
+            source="load_analysis:select_design_action_source",
+        )
 
     st.caption("Design-action source (synced with **Inputs → Design Actions**)")
     _use_beam_page = st.toggle(
@@ -1562,21 +1592,8 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
             "When enabled, ULS/SLS demands follow this beam model and stay linked to the same toggle on the Inputs page. "
             "When disabled, demands follow manual actions entered on Inputs."
         ),
+        on_change=_on_load_analysis_action_source_change,
     )
-    _mapped_src = _LEGACY_ACTIONS_DESIGN if _use_beam_page else _LEGACY_ACTIONS_MANUAL
-    _mapped_mode = "design" if _use_beam_page else "manual"
-    if (
-        _norm_actions_source_label(st.session_state.get("actions_source")) != _mapped_src
-        or str(st.session_state.get("actions_mode", "manual") or "manual") != _mapped_mode
-    ):
-        st.session_state["actions_source"] = _mapped_src
-        st.session_state["actions_mode"] = _mapped_mode
-        try:
-            set_shared("actions_source", _mapped_src, source="sfd_bmd:actions_toggle")
-            set_shared("actions_mode", _mapped_mode, source="sfd_bmd:actions_toggle")
-        except Exception:
-            pass
-        rerun_inputs_current_scope(st)
 
     summary_placeholder = st.empty()
     st.divider()
@@ -4026,19 +4043,9 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
             accent=None,
         )
 
-    # Push SFD/BMD results into shared state
-    # (use key names expected by Inputs page)
-    canonical_action_updates = {}
-    if _use_beam_page:
-        # Publish both limit states to the canonical Design Actions contract.
-        # This makes the SLS actions immediately available to crack and
-        # deflection consumers, including dead-load-only cases where Q = 0.
-        canonical_action_updates = {
-            "uls_Mstar": float(M_uls),
-            "uls_Vstar": float(V_uls),
-            "sls_Mstar": float(M_sls),
-            "sls_Vstar": float(V_sls),
-        }
+    # The solved extrema below are calculation outputs. The explicit toggle
+    # publishes only the source selection; the shared Design Actions resolver
+    # consumes these result fields whenever that selection is ``design``.
     update_results(
         sfd_case=case,                  # store current teaching case
         sfd_Msls_max_kNm=float(M_sls),
@@ -4063,7 +4070,6 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
         critical_shear_x=x_crit,
         critical_shear_V=V_crit,
         V_max=float(np.max(np.abs(V_uls_vals))) if V_uls_vals is not None and len(V_uls_vals) else 0.0,
-        **canonical_action_updates,
     )
 
     # Bind JS click/scroll after all steps render
