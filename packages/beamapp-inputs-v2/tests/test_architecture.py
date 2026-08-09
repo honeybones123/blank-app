@@ -48,7 +48,8 @@ def test_only_application_command_creates_next_revision() -> None:
     for path in python_files():
         if "next_revision(" in path.read_text(encoding="utf-8"):
             writers.append(path.relative_to(SRC).as_posix())
-    assert writers == ["application/input_commands.py", "domain/beam_inputs.py"]
+    assert len(writers) == 2
+    assert set(writers) == {"application/input_commands.py", "domain/beam_inputs.py"}
 
 
 def test_css_selectors_are_scoped_or_approved_foundations() -> None:
