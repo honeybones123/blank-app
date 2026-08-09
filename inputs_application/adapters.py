@@ -328,6 +328,20 @@ class SharedStateSessionPort:
     def commit(self, mutation: InputsSessionMutation) -> None:
         if not isinstance(mutation, InputsSessionMutation):
             raise TypeError("mutation must be InputsSessionMutation")
+        active_beam_id = str(
+            self.session_state.get("active_beam_id") or ""
+        ).strip()
+        input_store = None
+        authoritative_before: dict[str, Any] = {}
+        if active_beam_id:
+            from inputs_application.engineering_input_store import (
+                InputSnapshotStore,
+            )
+
+            input_store = InputSnapshotStore(self.session_state)
+            authoritative_before = dict(
+                input_store.current_for_beam(active_beam_id).snapshot or {}
+            )
         for key in mutation.removals:
             self.session_state.pop(key, None)
         row_model_updates = {
@@ -349,6 +363,25 @@ class SharedStateSessionPort:
             if mutation.status != "failed"
             else {}
         )
+        # The beam-owned input transaction is authoritative for unchanged
+        # fields. A browser widget can commit that transaction before its
+        # legacy shared mirror catches up. Reconcile only the unchanged shared
+        # inputs before applying the recommendation, otherwise capturing the
+        # legacy mapping below can silently replace (for example) Mu=200 with
+        # its stale zero mirror.
+        authoritative_bridge_updates = {
+            key: value
+            for key, value in authoritative_before.items()
+            if key in SHARED_DEFAULTS
+            and key not in shared_updates
+            and self.session_state.get(key) != value
+        }
+        for key, value in authoritative_bridge_updates.items():
+            self.set_shared(
+                key,
+                value,
+                source=f"{self.source}:authoritative_input_bridge",
+            )
         shared_before = {
             key: self.session_state.get(key)
             for key in shared_updates
@@ -393,20 +426,21 @@ class SharedStateSessionPort:
             # Without this, the shared mapping contains the proposed values
             # while the beam-owned snapshot still contains the pre-Apply
             # values, so setup legitimately rehydrates the old result.
-            active_beam_id = str(
-                self.session_state.get("active_beam_id") or ""
-            ).strip()
             if active_beam_id:
-                from inputs_application.engineering_input_store import (
-                    InputSnapshotStore,
-                )
                 from state_and_helpers import get_beam_project_param_snapshot
 
-                committed_input = InputSnapshotStore(
-                    self.session_state
-                ).commit_active_beam(
-                    get_beam_project_param_snapshot(),
-                    changed_keys=tuple(sorted(shared_updates)),
+                committed_snapshot = (
+                    dict(authoritative_before)
+                    if authoritative_before
+                    else get_beam_project_param_snapshot()
+                )
+                committed_snapshot.update(row_model_updates)
+                committed_snapshot.update(shared_updates)
+                committed_input = input_store.commit_active_beam(
+                    committed_snapshot,
+                    changed_keys=tuple(
+                        sorted({*row_model_updates, *shared_updates})
+                    ),
                     source=f"{self.source}:input_transaction",
                 )
                 self.session_state[
@@ -431,6 +465,9 @@ class SharedStateSessionPort:
                         "bot_row_1_dia"
                     ),
                     "db_bot_1": committed_input.snapshot.get("db_bot_1"),
+                    "authoritative_bridge_updates": sorted(
+                        authoritative_bridge_updates
+                    ),
                 }
             self.finalize_publish(
                 updated_keys=sorted(shared_updates),

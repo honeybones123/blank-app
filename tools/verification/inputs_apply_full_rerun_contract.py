@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+from unittest.mock import patch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import inputs_page_modules.apply_routing as routing
+from inputs_application.adapters import SharedStateSessionPort
+from inputs_application.contracts import InputsSessionMutation
 from inputs_application.engineering_input_store import InputSnapshotStore
 from inputs_application.workspace_context import InputsWorkspaceContext
 
@@ -164,10 +167,79 @@ def verify_fragment_context_can_refresh_to_post_apply_revision() -> None:
     assert refreshed_context.input_state.snapshot["D"] == 500.0
 
 
+def verify_apply_preserves_unchanged_authoritative_inputs() -> None:
+    """Apply must merge into the beam transaction, not stale shared mirrors."""
+
+    state = {
+        "active_beam_id": "beam-1",
+        # Reproduce the real-browser split: the current widget transaction has
+        # Mu=200 while the legacy shared mirror has not caught up yet.
+        "uls_Mstar": 0.0,
+        "uls_Mstar_pos_manual": 0.0,
+        "D": 300.0,
+    }
+    store = InputSnapshotStore(state)
+    store.commit_active_beam(
+        {
+            "uls_Mstar": 200.0,
+            "uls_Mstar_pos_manual": 200.0,
+            "D": 300.0,
+        },
+        changed_keys=("uls_Mstar", "uls_Mstar_pos_manual"),
+        source="browser_widget_transaction",
+    )
+    persisted: list[dict[str, object]] = []
+
+    def set_shared(key, value, *, source=""):
+        del source
+        state[key] = value
+
+    def project_legacy_shared_snapshot():
+        return {
+            "uls_Mstar": state.get("uls_Mstar", 0.0),
+            "uls_Mstar_pos_manual": state.get(
+                "uls_Mstar_pos_manual", 0.0
+            ),
+            "D": state.get("D", 300.0),
+        }
+
+    def persist_active_beam():
+        persisted.append(project_legacy_shared_snapshot())
+
+    port = SharedStateSessionPort(
+        session_state=state,
+        set_shared=set_shared,
+        finalize_publish=lambda **kwargs: kwargs,
+        persist_active_beam=persist_active_beam,
+        store_post_apply_acceptance=False,
+    )
+    with patch(
+        "state_and_helpers.get_beam_project_param_snapshot",
+        project_legacy_shared_snapshot,
+    ):
+        port.commit(
+            InputsSessionMutation(
+                updates={"D": 400.0},
+                rerun_required=True,
+                status="rerun_required",
+                reason="verified_candidate",
+            )
+        )
+
+    committed = store.current_for_beam("beam-1").snapshot
+    assert committed["uls_Mstar"] == 200.0
+    assert committed["uls_Mstar_pos_manual"] == 200.0
+    assert committed["D"] == 400.0
+    assert state["uls_Mstar"] == 200.0
+    assert state["uls_Mstar_pos_manual"] == 200.0
+    assert persisted[-1]["uls_Mstar"] == 200.0
+
+
 def main() -> None:
     verify_committed_apply_uses_fragment_when_active()
     verify_page_level_apply_falls_back_to_app_rerun()
     verify_fragment_context_can_refresh_to_post_apply_revision()
+    verify_apply_preserves_unchanged_authoritative_inputs()
     print("inputs apply rerun contract: PASS")
 
 
