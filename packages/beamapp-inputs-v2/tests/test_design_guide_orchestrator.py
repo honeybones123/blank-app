@@ -231,6 +231,7 @@ def test_severe_shear_failure_searches_geometry_links_and_minimum_longitudinal_s
     base = BeamInputs(actions=ActionInputs(bending_moment_knm=10.0, shear_force_kn=600.0))
     current = replace(
         base,
+        width_mm=500.0,
         bottom=replace(base.bottom, bars=2, diameter_mm=12),
     ).validated()
     decision = DesignGuideOrchestrator().decide(current)
@@ -250,7 +251,7 @@ def test_shear_repair_apply_does_not_require_preserved_bending_to_enter_target_b
     base = BeamInputs()
     base = replace(
         base,
-        bottom=replace(base.bottom, bars=3, diameter_mm=20),
+        bottom=replace(base.bottom, bars=2, diameter_mm=10),
     ).validated()
     calculated = DesignBrainService()._calculator.calculate_current(base).result
     assert calculated is not None
@@ -426,7 +427,7 @@ def test_exhausted_bending_cleanup_is_green_pass_with_verified_blockers() -> Non
     base = BeamInputs(
         width_mm=200.0,
         depth_mm=300.0,
-        bottom=LongitudinalReinforcement(bars=2, diameter_mm=16),
+        bottom=LongitudinalReinforcement(bars=2, diameter_mm=10),
         shear=ShearReinforcement(diameter_mm=10, legs=2, spacing_mm=150.0),
     ).validated()
     baseline = DesignBrainService()._calculator.calculate_current(base).result
@@ -465,7 +466,7 @@ def test_exhausted_combined_cleanup_is_green_pass_with_verified_blockers() -> No
         depth_mm=500.0,
         width_locked=True,
         depth_locked=True,
-        bottom=LongitudinalReinforcement(bars=4, diameter_mm=16),
+        bottom=LongitudinalReinforcement(bars=3, diameter_mm=12),
         shear=ShearReinforcement(diameter_mm=10, legs=2, spacing_mm=300.0),
     ).validated()
     baseline = DesignBrainService()._calculator.calculate_current(base).result

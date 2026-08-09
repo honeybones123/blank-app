@@ -7,7 +7,7 @@ the calculation contract.
 | Runtime check | V2 owner | V2 output currently available | Summary row | Action |
 |---|---|---|---|---|
 | Positive bending | `legacy_snapshot_calculator.bending` | `phi_Mu_kNm`, `M_star_kNm`, `util`, `status` | Partial | Add exact row contract and status |
-| Minimum tensile reinforcement | bending calculation | `Ast_tension_mm2`; `Ast_min_mm2` placeholder | Partial | Copy Runtime `As,min` calculation |
+| Minimum tensile reinforcement | `minimum_reinforcement.rectangular_minimum_tensile_area_mm2` | `Ast_tension_mm2`, `Ast_min_mm2`, status | Available | Standard-derived Clause 8.1.6.1 fixture passes for the current rectangular section model |
 | Minimum design capacity requirement | bending calculation | `minimum_capacity_knm` placeholder | Partial | Copy Runtime `Mcr`/minimum-capacity calculation |
 | Ductility limit | `ductility` family | `ku`, `limit`, `util`, `status` | Partial | Propagate exact row values |
 | Service bending moment | bending/serviceability boundary | `service_moment_knm` | Partial | Preserve explicit SLS-only semantics |

@@ -169,6 +169,7 @@ def test_single_row_bar_count_change_does_not_repeat_row_layout() -> None:
 
 def test_mandatory_bending_failure_is_not_hidden_by_two_low_summary_utilisations() -> None:
     current = BeamInputs(
+        width_mm=500.0,
         actions=ActionInputs(bending_moment_knm=20.0, shear_force_kn=10.0),
         shear=ShearReinforcement(12, 2, 100.0),
     ).validated()

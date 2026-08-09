@@ -29,6 +29,9 @@ from inputs_v2.engineering.shear_capacity import (
 from inputs_v2.engineering.shear_detailing import ShearDetailingInput, calculate_shear_detailing
 from inputs_v2.engineering.reinforcement_fit import evaluate_arrangement
 from inputs_v2.engineering.check_metadata import check_metadata
+from inputs_v2.engineering.minimum_reinforcement import (
+    rectangular_minimum_tensile_area_mm2,
+)
 from inputs_v2.engineering.time_dependent import (
     LoadingAgeFactorInput,
     calculate_loading_age_factor,
@@ -270,8 +273,13 @@ class EngineeringCalculator:
         # Row-level values consumed by the Runtime-style summary contract.
         # These are sourced from the same immutable calculation payload.
         bending["Ast_tension_mm2"] = float(payload["Ast_bot"])
-        fctf = 0.6 * float(inputs.materials.concrete_strength_mpa) ** (2.0 / 3.0)
-        ast_min = 0.4 * (fctf / float(inputs.materials.reinforcement_strength_mpa)) * float(inputs.width_mm) * float(payload["d"])
+        ast_min = rectangular_minimum_tensile_area_mm2(
+            width_mm=inputs.width_mm,
+            overall_depth_mm=inputs.depth_mm,
+            effective_depth_mm=payload["d"],
+            concrete_strength_mpa=inputs.materials.concrete_strength_mpa,
+            reinforcement_strength_mpa=inputs.materials.reinforcement_strength_mpa,
+        )
         bending["Ast_min_mm2"] = ast_min
         bending["minimum_tensile_status"] = "PASS" if float(payload["Ast_bot"]) >= ast_min else "FAIL"
         bending["service_moment_knm"] = float(inputs.serviceability.moment_knm)
@@ -355,4 +363,3 @@ class EngineeringCalculator:
             "Copied V1 formulas running inside the isolated V2 engineering boundary.",
             families={"bending": bending, "ductility": ductility, "shear": shear, "creep_shrinkage": creep, "serviceability": serviceability, "crack_control": crack_control, "reinforcement_fit": reinforcement_fit, "geometry": geometry},
         )
-
