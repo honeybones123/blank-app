@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any, MutableMapping
 
-from inputs_application.engineering_input_store import TRANSACTION_META_KEY
+from inputs_application.engineering_input_store import InputSnapshotStore
 
 
 class InputsWorkspaceStateStore:
@@ -26,9 +26,12 @@ class InputsWorkspaceStateStore:
         self._state = session_state
 
     def workspace_revision(self) -> int:
-        transaction = self._state.get(TRANSACTION_META_KEY)
-        if isinstance(transaction, dict) and transaction.get("revision") is not None:
-            return int(transaction.get("revision", 0) or 0)
+        # The active branch snapshot is the revision authority.  The retired
+        # single transaction record is not branch-keyed and can therefore
+        # describe the previously displayed branch after navigation.
+        committed_revision = int(InputSnapshotStore(self._state).current().revision or 0)
+        if committed_revision:
+            return committed_revision
         return int(self._state.get("_inputs_workspace_revision", 0) or 0)
 
     def align_workspace_revision(self, revision: int) -> int:

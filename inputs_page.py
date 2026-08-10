@@ -22,11 +22,17 @@ from inputs_application.engineering_workspace import (
 )
 from inputs_application.workspace_context import InputsWorkspaceContext
 from inputs_application.engineering_input_store import InputSnapshotStore
+from application.contracts.design_branch import DesignBranch
+from inputs_application.design_branch_store import (
+    BeamDesignBranchStore,
+    StaleSelectionRevisionError,
+)
 from inputs_page_modules.session.longitudinal_reo_widget_sync import (
     hydrate_inputs_longitudinal_reo_widgets_for_revision,
 )
 from inputs_page_modules.fragments import run_inputs_fragment
 from state_and_helpers import (
+    load_active_beam_into_shared,
     render_timing_mark,
     speed_profiled,
 )
@@ -79,6 +85,80 @@ def render_inputs_landing_card(*, sync_callbacks: dict | None = None) -> None:
         # a compact Plotly layout to a copied figure.
         make_cross_section_figure_fn=make_summary_cross_section_figure,
     )
+
+
+def _render_main_design_selector(*, beam_id: str) -> None:
+    """Change only the beam-owned display pointer, never engineering values."""
+
+    if not beam_id:
+        return
+    store = BeamDesignBranchStore(st.session_state)
+    selection = store.selection(beam_id)
+    widget_key = f"_inputs_main_design_load_analysis:{beam_id}"
+    identity_key = f"{widget_key}:selection_revision"
+    if st.session_state.get(identity_key) != selection.revision:
+        st.session_state[widget_key] = (
+            selection.selected_branch is DesignBranch.LOAD_ANALYSIS
+        )
+        st.session_state[identity_key] = selection.revision
+
+    def _select_branch() -> None:
+        # Capture the user's requested branch before persisting the currently
+        # displayed design. Persistence/hydration may legitimately refresh
+        # session-owned widget values, but it must not rewrite this command.
+        requested = (
+            DesignBranch.LOAD_ANALYSIS
+            if bool(st.session_state.get(widget_key))
+            else DesignBranch.BEAM_INPUTS
+        )
+        # Engineering widgets commit through their own typed callback before
+        # a later toggle event can run. The selector must therefore verify the
+        # branch command state, but must never serialize the whole rendered
+        # page back into the branch: doing so would turn a display-only toggle
+        # into an engineering revision.
+        if st.session_state.get("_branch_edit_conflict"):
+            conflict = dict(st.session_state.get("_branch_edit_conflict") or {})
+            st.session_state["_main_design_selection_error"] = str(
+                conflict.get("reason") or "The displayed design changed before it could be saved."
+            )
+            latest = store.selection(beam_id)
+            st.session_state[widget_key] = (
+                latest.selected_branch is DesignBranch.LOAD_ANALYSIS
+            )
+            return
+        latest = store.selection(beam_id)
+        try:
+            updated = store.select_main_design_branch(
+                beam_id,
+                requested,
+                expected_selection_revision=latest.revision,
+            )
+        except StaleSelectionRevisionError as exc:
+            st.session_state["_main_design_selection_error"] = str(exc)
+            st.session_state[widget_key] = (
+                latest.selected_branch is DesignBranch.LOAD_ANALYSIS
+            )
+            return
+        st.session_state[identity_key] = updated.revision
+        st.session_state["beam_last_hydrated_id"] = None
+        st.session_state["_beam_skip_auto_persist_once"] = True
+        load_active_beam_into_shared(force=True, selection_only=True)
+
+    st.toggle(
+        "Use Load Analysis design as main",
+        key=widget_key,
+        on_change=_select_branch,
+    )
+    current = store.selection(beam_id)
+    label = (
+        "Load Analysis"
+        if current.selected_branch is DesignBranch.LOAD_ANALYSIS
+        else "Beam Inputs"
+    )
+    st.caption(f"Main design: {label}")
+    selection_error = st.session_state.pop("_main_design_selection_error", None)
+    if selection_error:
+        st.error(f"Main design was not changed: {selection_error}")
 
 
 def build_inputs_session_source_snapshot(*args: Any, **kwargs: Any) -> Any:
@@ -216,6 +296,7 @@ def render_inputs_page() -> None:
     # every polling fragment prevents calculation or Design Brain refreshes
     # from marking the whole page identity as stale.
     st.title("Beam Inputs")
+    _render_main_design_selector(beam_id=str(page_context.get("active_beam_id") or ""))
 
     # The Inputs shell has one V2-shaped transaction.  Calculation, summary,
     # Design Brain, controls, widgets, and diagrams all consume the same
@@ -253,28 +334,10 @@ def render_inputs_page() -> None:
     )
     render_timing_mark("inputs_page.shell.tail.end")
 
-    # A browser widget callback can finish its canonical commit while the
-    # current full-page transaction is already rendering.  V2's single-page
-    # renderer naturally sees that commit on the next pass; the Runtime still
-    # has legacy section coordinators that may have emitted the previous
-    # diagram before the callback settled.  Re-run once at the page boundary
-    # when that happens so the visible diagram cannot remain one revision
-    # behind the committed inputs.  This is deliberately bounded per revision
-    # and only applies to the default V2-shaped full-page path.
-    active_beam_id = str(ss.get("active_beam_id") or "").strip()
-    current_input = InputSnapshotStore(ss).current_for_beam(active_beam_id)
-    diagram_identity = dict(ss.get("_inputs_model_2d_source_identity") or {})
-    current_revision = int(current_input.revision or 0)
-    diagram_revision = int(diagram_identity.get("input_revision") or 0)
-    last_settle_revision = int(ss.get("_inputs_page_diagram_settle_revision") or 0)
-    if (
-        active_beam_id
-        and diagram_identity
-        and current_revision > diagram_revision
-        and current_revision != last_settle_revision
-    ):
-        ss["_inputs_page_diagram_settle_revision"] = current_revision
-        st.rerun()
+    # Widgets, calculations, summaries and diagrams share the one engineering
+    # workspace fragment. A committed edit or Apply is settled locally by that
+    # fragment; the former page-level diagram catch-up must not restart the
+    # complete page shell.
 
 
 render_inputs = speed_profiled(

@@ -306,7 +306,7 @@ def summary_card_css() -> str:
   text-decoration: none;
   width: 100%;
 }
-@media (max-width: 960px) {
+@media (max-width: 720px) {
   .summary-check-card summary {
     grid-template-columns: 1fr 24px;
     gap: 0.8rem;

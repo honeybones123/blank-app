@@ -17,6 +17,7 @@ from inputs_v2.application.design_brain.ratio_policy import ratio_gate_required
 from inputs_v2.application.design_brain_apply import Candidate, propose_neutral_candidate
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.domain.engineering_result import EngineeringResult
+from inputs_v2.domain.design_preferences import DesignPreferenceProfile
 
 
 Calculate = Callable[[BeamInputs], EngineeringResult]
@@ -53,6 +54,7 @@ class CombinedOverdesignPipeline:
         complete_stage: CompleteStage,
         merge_metrics: MergeMetrics = lambda _metrics: None,
         nearby_dimension_steps: int,
+        preferences: DesignPreferenceProfile,
     ) -> None:
         self._calculate = calculate
         self._evaluate = evaluate
@@ -60,6 +62,7 @@ class CombinedOverdesignPipeline:
         self._complete_stage = complete_stage
         self._merge_metrics = merge_metrics
         self._nearby_dimension_steps = nearby_dimension_steps
+        self._preferences = preferences
 
     def preview(self, current: BeamInputs) -> DesignBrainPreview:
         before = self._calculate(current)
@@ -123,7 +126,12 @@ class CombinedOverdesignPipeline:
                             reject(*evaluation.rejection_codes)
                             continue
                         result = evaluation.result
-                        if ratio_gate_required(current, candidate.proposal, result):
+                        if ratio_gate_required(
+                            current,
+                            candidate.proposal,
+                            result,
+                            self._preferences,
+                        ):
                             reject("longitudinal_ratio_gate")
                             continue
                         values = _active_utils(current, result)

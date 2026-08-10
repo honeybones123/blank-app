@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from application.contracts.design_brain import AuthoritativeDesignResult
+from inputs_application.branch_apply_identity import stamp_branch_apply_identity
 
 
 def _text(value: Any, fallback: str = "") -> str:
@@ -26,18 +27,20 @@ def _queue_v2_design_guide_apply(
 ) -> None:
     """Queue Apply before the next complete Inputs transaction."""
 
-    queued_payload = dict(payload)
+    queued_payload = stamp_branch_apply_identity(
+        st_module.session_state,
+        result=result,
+        payload=payload,
+    )
     # The stable Runtime route is a full page transaction.  The setup
     # coordinator consumes this command before rendering the workspace.
     queued_payload["_defer_scoped_apply_rerun"] = False
     st_module.session_state["pending_recommendation"] = dict(queued_payload)
     st_module.session_state["_inputs_action_apply_recommendation_payload"] = dict(queued_payload)
     st_module.session_state["_inputs_action_apply_recommendation"] = True
-    # A non-Inputs consumer (currently Load Analysis) must execute the command
-    # against the exact authoritative result that published this payload.
-    # Beam Setup ignores this handover and continues through its existing
-    # revision-owned fragment transaction.
-    st_module.session_state["_queued_design_brain_apply_result"] = result
+    # Beam Inputs consumes the stamped payload through its revision-owned
+    # fragment transaction. Load Analysis has no recommendation or Apply
+    # authority, so no cross-page result handover is retained.
 
 
 def _format_clause_reference(value: Any) -> str:

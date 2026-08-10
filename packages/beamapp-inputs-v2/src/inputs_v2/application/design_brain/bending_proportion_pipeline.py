@@ -13,10 +13,12 @@ from inputs_v2.application.design_brain.bending_repair_policy import (
 from inputs_v2.application.design_brain_apply import Candidate
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.domain.engineering_result import EngineeringResult
+from inputs_v2.domain.design_preferences import DesignPreferenceProfile
 from inputs_v2.engineering.reinforcement_policy import ratio_trigger, tension_ratio
 
 
 Evaluate = Callable[..., Any]
+RankKey = Callable[[BeamInputs, Candidate, EngineeringResult, float, float], tuple]
 
 
 @dataclass(frozen=True)
@@ -31,9 +33,18 @@ class ProportionBalanceOutcome:
 class BendingProportionPipeline:
     """Trigger, evaluate and select a bounded proportion-balancing repair."""
 
-    def __init__(self, *, evaluate: Evaluate, stage_id: str = "reduce_geometry_and_redesign") -> None:
+    def __init__(
+        self,
+        *,
+        evaluate: Evaluate,
+        rank_key: RankKey,
+        preferences: DesignPreferenceProfile,
+        stage_id: str = "reduce_geometry_and_redesign",
+    ) -> None:
         self._evaluate = evaluate
+        self._rank_key = rank_key
         self._stage_id = stage_id
+        self._preferences = preferences
 
     def balance(
         self,
@@ -75,7 +86,7 @@ class BendingProportionPipeline:
                 baseline_volume
                 > current.width_mm * current.depth_mm * 1.20
                 or "high_depth_span_ratio" in trigger_reasons
-                or tension_ratio_value < 0.005
+                or tension_ratio_value < self._preferences.normal_low_ratio_trigger
             )
         )
         if not triggered:
@@ -92,7 +103,7 @@ class BendingProportionPipeline:
             tuple[float, float, int, int, tuple[int, ...]],
             EngineeringResult | None,
         ] = {}
-        balanced: list[tuple[float, Candidate, EngineeringResult]] = []
+        balanced: list[tuple[Candidate, EngineeringResult, float, float]] = []
         evaluations = 0
         cache_hits = 0
         for spec in generate_proportion_balance_specs(current, candidate):
@@ -137,8 +148,9 @@ class BendingProportionPipeline:
                 1.0 - spec.width_mm * spec.depth_mm / baseline_volume
             )
             steel_increase = steel / max(baseline_steel, 1.0) - 1.0
-            if concrete_reduction >= 0.05 and (
-                steel_increase <= 0.25 or concrete_reduction >= 0.10
+            if concrete_reduction >= self._preferences.normal_concrete_reduction_threshold and (
+                steel_increase <= self._preferences.normal_reinforcement_increase_limit
+                or concrete_reduction >= self._preferences.substantial_concrete_reduction_threshold
             ):
                 proposal = replace(
                     candidate.proposal,
@@ -155,13 +167,27 @@ class BendingProportionPipeline:
                     "Proportion-balanced section with a practical reinforcement increase.",
                     spec.row_counts,
                 )
-                penalty = max(0.0, steel_increase - 0.25) * baseline_volume
+                util = float(
+                    result.families.get("bending", {}).get("util", 0.0) or 0.0
+                )
+                edit_size = (
+                    abs(spec.width_mm - current.width_mm) / 100.0
+                    + abs(spec.depth_mm - current.depth_mm) / 100.0
+                    + abs(spec.bars - current.bottom.bars)
+                    + abs(spec.diameter_mm - current.bottom.diameter_mm) / 10.0
+                    + max(0, len(spec.row_counts) - 1) * 0.25
+                )
                 balanced.append(
-                    (spec.width_mm * spec.depth_mm + penalty, trial, result)
+                    (trial, result, abs(util - 0.925), edit_size)
                 )
         reason = "target_band_candidate"
         if balanced:
-            _, candidate, after = min(balanced, key=lambda item: item[0])
+            candidate, after, _, _ = min(
+                balanced,
+                key=lambda item: self._rank_key(
+                    current, item[0], item[1], item[2], item[3]
+                ),
+            )
             resolved = self._evaluate(
                 current,
                 candidate,
@@ -183,9 +209,8 @@ class BendingProportionPipeline:
             candidate, updated_inputs, after, reason, metrics
         )
 
-    @staticmethod
     def _trigger_reasons(
-        current: BeamInputs, candidate: Candidate, ratio: float
+        self, current: BeamInputs, candidate: Candidate, ratio: float
     ) -> list[str]:
         reasons: list[str] = []
         if (
@@ -197,7 +222,7 @@ class BendingProportionPipeline:
             reasons.append("high_depth_span_ratio")
         if candidate.proposal.bottom_bars <= current.bottom.bars + 1:
             reasons.append("near_minimum_longitudinal_reinforcement")
-        ratio_reason = ratio_trigger(ratio)
+        ratio_reason = ratio_trigger(ratio, self._preferences)
         if ratio_reason:
             reasons.append(ratio_reason)
         if (

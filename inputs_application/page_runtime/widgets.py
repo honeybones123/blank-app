@@ -469,9 +469,13 @@ def _render_inputs_materials_subsection(sync_callbacks: dict, *, show_heading: b
 def _render_section_2d_diagram_block_current(
     *, compact: bool = False, model_state: dict | None = None,
     workspace_context=None, height_scale: float = 1.0,
+    source_identity: RevisionIdentity | None = None,
+    source_beam_id: str | None = None,
     _retry_latest: bool = False,
 ):
     beam_id = str(
+        source_beam_id
+        or
         getattr(workspace_context, "active_beam_id", None)
         or st.session_state.get("active_beam_id")
         or st.session_state.get("_inputs_engineering_input_store_active_beam_id")
@@ -481,20 +485,24 @@ def _render_section_2d_diagram_block_current(
     # Fragment payloads can contain a context captured before the widget
     # callback committed. The store is the authoritative transaction boundary,
     # so always read the latest beam snapshot first on a workspace rerun.
-    input_state = input_store.current_for_beam(beam_id)
-    if not input_state.engineering_hash and workspace_context is not None:
-        input_state = workspace_context.current_input_state()
-    if not input_state.engineering_hash:
-        input_state = input_store.current()
-    explicit_state = dict(
-        input_state.snapshot
-        or model_state
-        or _resolved_inputs_model_state()[0]
-    )
+    if source_identity is not None and model_state is not None:
+        input_state = None
+        explicit_state = dict(model_state)
+    else:
+        input_state = input_store.current_for_beam(beam_id)
+        if not input_state.engineering_hash and workspace_context is not None:
+            input_state = workspace_context.current_input_state()
+        if not input_state.engineering_hash:
+            input_state = input_store.current()
+        explicit_state = dict(
+            input_state.snapshot
+            or model_state
+            or _resolved_inputs_model_state()[0]
+        )
     layout = compute_section_layout(explicit_state)
     source = _build_inputs_diagram_source_snapshot(layout, explicit_state)
     section_view_model = build_section_2d_request_view_model(source)
-    identity = RevisionIdentity(
+    identity = source_identity or RevisionIdentity(
         input_revision=int(input_state.revision),
         engineering_hash=str(
             input_state.engineering_hash
@@ -517,6 +525,8 @@ def _render_section_2d_diagram_block_current(
     }
 
     def _current_identity() -> RevisionIdentity:
+        if source_identity is not None:
+            return source_identity
         current = input_store.current_for_beam(beam_id)
         if not current.engineering_hash:
             current = input_store.current()
@@ -539,6 +549,8 @@ def _render_section_2d_diagram_block_current(
             model_state=model_state,
             workspace_context=workspace_context,
             height_scale=height_scale,
+            source_identity=source_identity,
+            source_beam_id=source_beam_id,
             _retry_latest=True,
         )
 
@@ -572,9 +584,14 @@ def _render_section_2d_diagram_block(
 
 def _render_3d_diagram_block_current(
     *, compact: bool = False, model_state: dict | None = None,
-    workspace_context=None, _retry_latest: bool = False,
+    workspace_context=None,
+    source_identity: RevisionIdentity | None = None,
+    source_beam_id: str | None = None,
+    _retry_latest: bool = False,
 ):
     beam_id = str(
+        source_beam_id
+        or
         getattr(workspace_context, "active_beam_id", None)
         or st.session_state.get("active_beam_id")
         or st.session_state.get("_inputs_engineering_input_store_active_beam_id")
@@ -583,20 +600,24 @@ def _render_3d_diagram_block_current(
     input_store = InputSnapshotStore(st.session_state)
     # Use the latest committed snapshot rather than a stale parent-fragment
     # context captured before the widget callback.
-    input_state = input_store.current_for_beam(beam_id)
-    if not input_state.engineering_hash and workspace_context is not None:
-        input_state = workspace_context.current_input_state()
-    if not input_state.engineering_hash:
-        input_state = input_store.current()
-    explicit_state = dict(
-        input_state.snapshot
-        or model_state
-        or _resolved_inputs_model_state()[0]
-    )
+    if source_identity is not None and model_state is not None:
+        input_state = None
+        explicit_state = dict(model_state)
+    else:
+        input_state = input_store.current_for_beam(beam_id)
+        if not input_state.engineering_hash and workspace_context is not None:
+            input_state = workspace_context.current_input_state()
+        if not input_state.engineering_hash:
+            input_state = input_store.current()
+        explicit_state = dict(
+            input_state.snapshot
+            or model_state
+            or _resolved_inputs_model_state()[0]
+        )
     layout = compute_section_layout(explicit_state)
     source = _build_inputs_diagram_source_snapshot(layout, explicit_state)
     beam_view_model = build_beam_3d_request_view_model(source)
-    identity = RevisionIdentity(
+    identity = source_identity or RevisionIdentity(
         input_revision=int(input_state.revision),
         engineering_hash=str(
             input_state.engineering_hash
@@ -623,6 +644,8 @@ def _render_3d_diagram_block_current(
     st.session_state["_inputs_diagram_view_model_trace"] = trace
 
     def _current_identity() -> RevisionIdentity:
+        if source_identity is not None:
+            return source_identity
         current = input_store.current_for_beam(beam_id)
         if not current.engineering_hash:
             current = input_store.current()
@@ -640,6 +663,8 @@ def _render_3d_diagram_block_current(
             compact=compact,
             model_state=model_state,
             workspace_context=workspace_context,
+            source_identity=source_identity,
+            source_beam_id=source_beam_id,
             _retry_latest=True,
         )
 
@@ -764,6 +789,59 @@ def _render_fast_model_block(sync_callbacks: dict, model_state: dict | None = No
         ),
         render_section_2d_diagram_block_fn=lambda **kwargs: _render_section_2d_diagram_block_current(
             workspace_context=workspace_context, **kwargs
+        ),
+    )
+
+
+def render_inputs_model_diagram_component_current(
+    *,
+    model_state: dict,
+    beam_id: str,
+    revision: int,
+    engineering_hash: str,
+    toggle_key: str = "inputs_fast_mode_show_3d_toggle",
+) -> None:
+    """Render the exact Inputs model shell from an explicit design snapshot.
+
+    The caller owns the design snapshot.  This renderer owns presentation only,
+    so embedding it on Load Analysis cannot fall back to the Beam Inputs store
+    or mutate either design branch.
+    """
+
+    source_identity = RevisionIdentity(
+        input_revision=int(revision),
+        engineering_hash=str(engineering_hash),
+    )
+
+    def _diagram_toggle(
+        label,
+        _widget_key,
+        _shared_key,
+        default,
+        _sync_callbacks,
+    ) -> bool:
+        return bool(
+            st.toggle(
+                label,
+                value=bool(st.session_state.get(toggle_key, default)),
+                key=toggle_key,
+            )
+        )
+
+    return render_inputs_fast_model_block(
+        st_module=st,
+        sync_callbacks={},
+        model_state=dict(model_state),
+        shared_toggle_fn=_diagram_toggle,
+        render_3d_diagram_block_fn=lambda **kwargs: _render_3d_diagram_block_current(
+            source_identity=source_identity,
+            source_beam_id=str(beam_id),
+            **kwargs,
+        ),
+        render_section_2d_diagram_block_fn=lambda **kwargs: _render_section_2d_diagram_block_current(
+            source_identity=source_identity,
+            source_beam_id=str(beam_id),
+            **kwargs,
         ),
     )
 
@@ -1297,11 +1375,10 @@ def render_inputs_post_widget_autopersist_current_coordinator(*, ss: dict) -> bo
     skip_active_beam_record_write = bool(ss.get("_beam_skip_auto_persist_once", False))
     if skip_active_beam_record_write:
         ss["_beam_skip_auto_persist_once"] = False
-    elif ss.get("inputs_dirty"):
-        _apply_canonical_convenience_resync(
-            source="inputs_page:inputs_dirty_autopersist"
-        )
-        persist_active_beam_from_shared()
+    # Rendering is never an input command. Engineering widgets, typed Apply,
+    # and explicit batch/project actions commit at their own application
+    # boundaries. The former ``inputs_dirty`` writeback serialized calculated
+    # projections on a later rerun and manufactured a second branch revision.
     return skip_active_beam_record_write
 
 def render_inputs_widget_sections_current_coordinator(

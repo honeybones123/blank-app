@@ -13,6 +13,7 @@ from inputs_v2.application.design_brain.ratio_policy import ratio_gate_required
 from inputs_v2.application.design_brain_apply import Candidate, propose_neutral_candidate
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.domain.engineering_result import EngineeringResult
+from inputs_v2.domain.design_preferences import DesignPreferenceProfile
 
 
 Calculate = Callable[[BeamInputs], EngineeringResult]
@@ -24,10 +25,11 @@ CompleteStage = Callable[[str], None]
 class CombinedFailurePipeline:
     """Evaluate one atomic candidate that repairs both governing failures."""
 
-    def __init__(self, *, calculate: Calculate, evaluate: Evaluate, rank_key: RankKey, complete_stage: CompleteStage = lambda _stage_id: None) -> None:
+    def __init__(self, *, calculate: Calculate, evaluate: Evaluate, rank_key: RankKey, preferences: DesignPreferenceProfile, complete_stage: CompleteStage = lambda _stage_id: None) -> None:
         self._calculate = calculate
         self._evaluate = evaluate
         self._rank_key = rank_key
+        self._preferences = preferences
         self._complete_stage = complete_stage
 
     def preview(self, current: BeamInputs) -> DesignBrainPreview:
@@ -310,7 +312,9 @@ class CombinedFailurePipeline:
             bend <= 1.0
             and shear <= 1.0
             and complete_compliance(after)
-            and not ratio_gate_required(current, candidate.proposal, after)
+            and not ratio_gate_required(
+                current, candidate.proposal, after, self._preferences
+            )
         )
         if accepted:
             reason = (

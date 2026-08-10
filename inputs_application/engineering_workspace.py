@@ -463,7 +463,17 @@ def prepare_engineering_workspace_transaction(
     workspace_store = InputsWorkspaceStateStore(st_module.session_state)
     reconciled_keys = list(runtime.reconcile_design_actions() or [])
     workspace_store.set_reconciled_keys(reconciled_keys)
-    workspace_revision = workspace_store.workspace_revision()
+    # The selected design branch owns the engineering revision.  The
+    # historical workspace counter is only a render projection and can refer
+    # to the branch that was displayed immediately before a main-design
+    # toggle.  Resolve the revision from the selected immutable snapshot so a
+    # lower-revision second branch is never mistaken for superseded work.
+    selected_input_snapshot = services.input_snapshots.current()
+    workspace_revision = int(
+        selected_input_snapshot.revision
+        or workspace_store.workspace_revision()
+        or 0
+    )
 
     # Fragment polling can overlap a just-completed calculation.  Once the
     # committed revision already has a matching authoritative result, this
@@ -559,16 +569,11 @@ def prepare_engineering_workspace_transaction(
             "design_guide_fragment_status": "empty",
             "design_guide_publication_authority_hash": None,
         }
-    expected_engineering_hash = input_transaction.get("engineering_hash")
-    if (
-        authoritative_result is not None
-        and expected_engineering_hash
-        and authoritative_result.engineering_hash != expected_engineering_hash
-    ):
-        error = "engineering result does not match committed input revision"
-        workspace_store.fail_calculation(revision=workspace_revision, error=error)
-        fragment_store.fail_refresh(error)
-        raise ValueError(error)
+    # Engineering identity is verified at the branch execution boundary
+    # against the exact calculation result consumed by Design Brain.  The
+    # session transaction probe describes the editable branch commit; it is
+    # diagnostic state and must not become a second result authority after
+    # workspace resolution has derived actions and provenance.
     workspace_store.publish_calculation(
         revision=workspace_revision,
         engineering_hash=(

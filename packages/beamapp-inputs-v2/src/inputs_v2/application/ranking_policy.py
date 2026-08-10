@@ -1,5 +1,18 @@
-"""Shared ranking primitives; family modules remain the decision owners."""
+"""Factual ranking evidence; family contracts remain the decision owners."""
 from dataclasses import dataclass
+
+
+@dataclass(frozen=True, slots=True)
+class NearLimitEvidence:
+    """One explicitly whitelisted family near-limit comparison."""
+
+    check_id: str
+    current_value: float
+    proposed_value: float
+    direction: str
+    threshold: float
+    comparison_method: str
+    penalty_applied: bool
 
 @dataclass(frozen=True, slots=True)
 class CandidateEvidence:
@@ -16,6 +29,10 @@ class CandidateEvidence:
     new_near_failure_count: int = 0
     edit_count: int = 0
     constructability_penalty: float = 0.0
+    hard_congestion_rejection_codes: tuple[str, ...] = ()
+    soft_congestion_score: float = 0.0
+    soft_congestion_reasons: tuple[str, ...] = ()
+    near_limit_evidence: tuple[NearLimitEvidence, ...] = ()
     geometry_change_penalty: float = 0.0
     material_quantity: float = 0.0
     target_distance: float = 0.0
@@ -27,24 +44,5 @@ class CandidateEvidence:
     rejection_codes: tuple[str, ...] = ()
     elapsed_ms: float = 0.0
 
-    @property
-    def rank_key(self) -> tuple:
-        """Lexicographic safety-first ordering; lower is better."""
-        return (
-            0 if self.compliant and self.mandatory_checks_complete else 1,
-            self.target_distance,
-            self.new_near_failure_count,
-            self.edit_count,
-            self.constructability_penalty,
-            self.geometry_change_penalty,
-            self.material_quantity,
-            self.candidate_id,
-        )
 
-def reject_invalid(evidence: CandidateEvidence) -> bool:
-    """Hard exclusion for unsafe or incomplete candidates."""
-    return not (evidence.compliant and evidence.mandatory_checks_complete)
-
-def choose_valid(candidates: list[CandidateEvidence]) -> CandidateEvidence | None:
-    valid = [candidate for candidate in candidates if not reject_invalid(candidate)]
-    return min(valid, key=lambda candidate: candidate.rank_key) if valid else None
+__all__ = ["CandidateEvidence", "NearLimitEvidence"]

@@ -13,9 +13,10 @@ from typing import Callable
 
 from inputs_v2.application.design_brain_families import DesignFamily, ENTRY_CONDITIONS, EntryCondition
 from inputs_v2.application.design_brain_service import DesignBrainPreview, DesignBrainService
-from inputs_v2.application.ranking_policy import CandidateEvidence
+from inputs_v2.application.ranking_policy import CandidateEvidence, NearLimitEvidence
 from inputs_v2.application.design_brain.text_contracts import FAMILY_TEXT_CONTRACTS
 from inputs_v2.application.design_brain.search_profile import SearchKind
+from inputs_v2.application.design_brain.family_context import FamilyRunContext
 from inputs_v2.application.candidate_evaluation import complete_compliance
 from inputs_v2.application.design_brain_decision import (
     DecisionStatus,
@@ -45,6 +46,86 @@ class CtaIntent(StrEnum):
     RETAIN_VERIFIED_DESIGN = "retain_verified_design"
     REVIEW_BLOCKER = "review_blocker"
     REQUEST_INPUT = "request_input"
+
+
+class NearLimitDirection(StrEnum):
+    UPPER_BOUND = "upper_bound"
+
+
+class NearLimitComparison(StrEnum):
+    NORMALISED_UTILISATION = "normalised_utilisation"
+
+
+@dataclass(frozen=True, slots=True)
+class NearLimitRule:
+    check_id: str
+    domain: str
+    direction: NearLimitDirection
+    threshold: float
+    comparison_method: NearLimitComparison
+    permit_required_repair_exception: bool = True
+
+
+def _near_limit_value(result: EngineeringResult, check_id: str) -> float | None:
+    if check_id == "bending_capacity":
+        return float(result.families.get("bending", {}).get("util", 0.0) or 0.0)
+    if check_id == "shear_strength":
+        return float(result.families.get("shear", {}).get("util", 0.0) or 0.0)
+    if check_id == "ductility":
+        return float(result.families.get("ductility", {}).get("util", 0.0) or 0.0)
+    if check_id == "crack_control":
+        return float(result.families.get("crack_control", {}).get("util", 0.0) or 0.0)
+    if check_id == "serviceability":
+        return float(
+            result.families.get("serviceability", {}).get("deflection_util", 0.0)
+            or 0.0
+        )
+    return None
+
+
+@dataclass(frozen=True, slots=True)
+class NearLimitPolicy:
+    """Explicit family-owned whitelist; an empty policy applies no penalty."""
+
+    rules: tuple[NearLimitRule, ...] = ()
+
+    def assess(
+        self,
+        current: EngineeringResult,
+        proposed: EngineeringResult,
+        *,
+        repair_domains: tuple[str, ...],
+        target_high: float,
+    ) -> tuple[NearLimitEvidence, ...]:
+        evidence: list[NearLimitEvidence] = []
+        for rule in self.rules:
+            current_value = _near_limit_value(current, rule.check_id)
+            proposed_value = _near_limit_value(proposed, rule.check_id)
+            if current_value is None or proposed_value is None:
+                continue
+            if rule.comparison_method is not NearLimitComparison.NORMALISED_UTILISATION:
+                continue
+            crossed = (
+                rule.direction is NearLimitDirection.UPPER_BOUND
+                and current_value <= rule.threshold < proposed_value <= target_high
+            )
+            required_repair_exception = (
+                rule.permit_required_repair_exception
+                and rule.domain in repair_domains
+                and proposed_value <= target_high
+            )
+            evidence.append(
+                NearLimitEvidence(
+                    check_id=rule.check_id,
+                    current_value=current_value,
+                    proposed_value=proposed_value,
+                    direction=rule.direction.value,
+                    threshold=rule.threshold,
+                    comparison_method=rule.comparison_method.value,
+                    penalty_applied=crossed and not required_repair_exception,
+                )
+            )
+        return tuple(evidence)
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,10 +217,10 @@ class RankingPolicy:
         "complete_compliance",
         "target_distance",
         "new_near_failure_count",
-        "fewest_changes",
         "least_congestion",
-        "least_geometry_change",
         "least_material",
+        "least_geometry_change",
+        "fewest_changes",
         "candidate_id",
     )
 
@@ -149,12 +230,24 @@ class RankingPolicy:
             "target_distance": evidence.target_distance,
             "new_near_failure_count": evidence.new_near_failure_count,
             "fewest_changes": evidence.edit_count,
-            "least_congestion": evidence.constructability_penalty,
+            "least_congestion": evidence.soft_congestion_score,
             "least_geometry_change": evidence.geometry_change_penalty,
             "least_material": evidence.material_quantity,
             "candidate_id": evidence.candidate_id,
         }
         return tuple(values[criterion] for criterion in self.criteria)
+
+    def select(self, evidence: tuple[CandidateEvidence, ...]) -> CandidateEvidence | None:
+        """Perform the selected family's only final evidence selection."""
+
+        passing = tuple(
+            item
+            for item in evidence
+            if item.compliant
+            and item.mandatory_checks_complete
+            and not item.hard_congestion_rejection_codes
+        )
+        return min(passing, key=self.rank_key) if passing else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -256,6 +349,7 @@ class FamilyContract:
     improvement_policy: ImprovementPolicy
     search_kind: SearchKind
     ranking_policy: RankingPolicy = RankingPolicy()
+    near_limit_policy: NearLimitPolicy = NearLimitPolicy()
     exact_stop_policy: ExactStopPolicy = ExactStopPolicy()
     blocker_contract_id: str = ""
     blocker_wording: tuple[tuple[str, str], ...] = ()
@@ -295,7 +389,13 @@ class FamilyContract:
         if current_failed:
             status = "ACTION" if preview_accepted else "BLOCKED"
         elif current_in_band:
-            return FamilyOutcome("PASS", DesignFamily.TARGET_BAND_REACHED, self.pass_intent)
+            if preview_accepted and proposed_in_band:
+                return FamilyOutcome("ACTION", self.family, self.action_intent)
+            if exact_stop_proven:
+                return FamilyOutcome("PASS", DesignFamily.EXACT_STOP_PROVEN, self.pass_intent)
+            if preview_reason == "target_band_candidate":
+                return FamilyOutcome("PASS", DesignFamily.TARGET_BAND_REACHED, self.pass_intent)
+            return FamilyOutcome("BLOCKED", self.family, self.blocked_intent)
         elif exact_stop_proven and self.retain_compliant_on_optimisation_exhaustion:
             return FamilyOutcome("PASS", DesignFamily.EXACT_STOP_PROVEN, self.pass_intent)
         elif preview_accepted and (
@@ -437,7 +537,7 @@ class FamilyContract:
                 if capacity > 0.0
                 else float("inf")
             )
-        if "serviceability" in domains:
+        if "serviceability" in domains and DesignBrainService._has_sls(inputs):
             deflection = float(
                 result.families.get("serviceability", {}).get("deflection_util", 0.0)
                 or 0.0
@@ -489,10 +589,10 @@ class FamilyOwner:
     def family(self) -> DesignFamily:
         return self.contract.family
 
-    def preview(self, current: BeamInputs, service: DesignBrainService) -> DesignBrainPreview:
-        with service.family_contract(self.contract, current):
-            preview = self.ladder(service, current)
-            preview = service.publish_preview(current, preview)
+    def preview(self, context: FamilyRunContext, service: DesignBrainService) -> DesignBrainPreview:
+        with service.family_contract(self.contract, context):
+            preview = self.ladder(service, context.current)
+            preview = service.publish_preview(context.current, preview)
         service.last_search_metrics["owner_id"] = self.contract.owner_id
         service.last_search_metrics["declared_stage_ids"] = tuple(
             stage.stage_id for stage in self.contract.ladder_stages
@@ -501,13 +601,14 @@ class FamilyOwner:
 
     def decide(
         self,
-        current: BeamInputs,
-        current_result: EngineeringResult,
+        context: FamilyRunContext,
         service: DesignBrainService,
     ) -> FamilyDecision:
         """Run this family's ladder and return its complete final decision."""
 
-        preview = self.preview(current, service)
+        current = context.current
+        current_result = context.current_result
+        preview = self.preview(context, service)
         metrics = service.last_search_metrics
         resolution = self.contract.decide(
             current=current,
@@ -731,6 +832,10 @@ class FamilyOwner:
                 ),
                 cache_hits=int(metrics.get("cache_hits", 0) or 0),
                 cache_misses=int(metrics.get("cache_misses", 0) or 0),
+                generated_candidates=int(metrics.get("candidates_attempted", 0) or 0),
+                full_evaluations=int(metrics.get("cache_misses", 0) or 0),
+                preference_profile_id=context.preferences.preference_profile_id,
+                preference_profile_version=context.preferences.preference_profile_version,
                 elapsed_ms=float(metrics.get("elapsed_ms", 0.0) or 0.0),
                 budget_exhausted=bool(metrics.get("budget_exhausted", False)),
                 budget_skipped_candidates=int(
@@ -823,6 +928,10 @@ def _geometry_detailing(service: DesignBrainService, current: BeamInputs) -> Des
     return service.preview_geometry_detailing(current)
 
 
+def _target_band_review(service: DesignBrainService, current: BeamInputs) -> DesignBrainPreview:
+    return service.preview_target_band(current)
+
+
 _NEVER_CHANGE = ("actions", "serviceability_inputs", "materials", "supports", "persistence", "widget_state")
 
 
@@ -846,6 +955,22 @@ _EVIDENCE_BLOCKERS: tuple[tuple[str, str], ...] = (
 )
 
 
+_PRESERVE_BENDING_NEAR_LIMIT = NearLimitRule(
+    check_id="bending_capacity",
+    domain="bending",
+    direction=NearLimitDirection.UPPER_BOUND,
+    threshold=0.95,
+    comparison_method=NearLimitComparison.NORMALISED_UTILISATION,
+)
+_PRESERVE_SHEAR_NEAR_LIMIT = NearLimitRule(
+    check_id="shear_strength",
+    domain="shear",
+    direction=NearLimitDirection.UPPER_BOUND,
+    threshold=0.95,
+    comparison_method=NearLimitComparison.NORMALISED_UTILISATION,
+)
+
+
 def _contract(
     family: DesignFamily,
     owner_id: str,
@@ -861,6 +986,7 @@ def _contract(
     require_target_band: bool = True,
     retain_compliant_on_optimisation_exhaustion: bool = False,
     exact_reasons: tuple[str, ...] = (),
+    near_limit_rules: tuple[NearLimitRule, ...] = (),
 ) -> FamilyContract:
     return FamilyContract(
         family=family,
@@ -882,6 +1008,7 @@ def _contract(
             ),
         ),
         search_kind=search_kind,
+        near_limit_policy=NearLimitPolicy(near_limit_rules),
         retain_compliant_on_optimisation_exhaustion=retain_compliant_on_optimisation_exhaustion,
         exact_stop_policy=ExactStopPolicy(
             reason_codes=exact_reasons,
@@ -896,6 +1023,19 @@ def _contract(
 
 
 FAMILY_OWNERS: dict[DesignFamily, FamilyOwner] = {
+    DesignFamily.TARGET_BAND_REACHED: FamilyOwner(_contract(
+        DesignFamily.TARGET_BAND_REACHED,
+        "target_band",
+        "all_active_domains_in_target_band",
+        (LadderStage("proportion_balance_target_band", ("width_mm", "depth_mm", "bottom")),),
+        ("width_mm", "depth_mm", "bottom"),
+        ("bending", "shear", "serviceability", "crack_control", "reinforcement_fit"),
+        active_domains=("bending", "shear", "serviceability"),
+        search_kind=SearchKind.OPTIMISATION,
+        allow_safe_progress=True,
+        retain_compliant_on_optimisation_exhaustion=True,
+        exact_reasons=("proportion_balance_exhausted",),
+    ), _target_band_review),
     DesignFamily.GEOMETRY_DETAILING_GOVERNS: FamilyOwner(_contract(
         DesignFamily.GEOMETRY_DETAILING_GOVERNS, "geometry_detailing", "invalid_geometry_or_reinforcement_fit",
         (LadderStage("repair_arrangement", ("bottom", "top", "shear")), LadderStage("repair_geometry", ("width_mm", "depth_mm"))),
@@ -936,25 +1076,27 @@ FAMILY_OWNERS: dict[DesignFamily, FamilyOwner] = {
         DesignFamily.BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS, "bending_failure_shear_cleanup", "bending_fails_shear_below_target",
         (LadderStage("repair_bending", ("bottom",)), LadderStage("reduce_shear_excess", ("shear",)), LadderStage("coordinate_geometry", ("width_mm", "depth_mm", "bottom", "shear"))),
         ("bottom", "shear", "width_mm", "depth_mm"), ("bending", "shear", "ductility", "minimum_tensile", "reinforcement_fit"), active_domains=("bending", "shear"), search_kind=SearchKind.REPAIR, require_target_band=False,
+        near_limit_rules=(_PRESERVE_SHEAR_NEAR_LIMIT,),
     ), _bending_failure_shear_cleanup),
     DesignFamily.BENDING_OVERDESIGN_GOVERNS: FamilyOwner(_contract(
         DesignFamily.BENDING_OVERDESIGN_GOVERNS, "bending_overdesign", "bending_below_target_other_active_domains_compliant",
         (LadderStage("reduce_bottom_reinforcement", ("bottom",)), LadderStage("remove_unnecessary_layer", ("bottom",)), LadderStage("reduce_geometry_and_redesign", ("width_mm", "depth_mm", "bottom")), LadderStage("preserve_near_limit_shear", ("shear",))),
         ("bottom", "width_mm", "depth_mm", "shear"), ("bending", "shear", "ductility", "minimum_tensile", "reinforcement_fit"), active_domains=("bending",), search_kind=SearchKind.OPTIMISATION, allow_safe_progress=True, retain_compliant_on_optimisation_exhaustion=True,
         exact_reasons=("minimum_reinforcement_geometry_exhausted", "ductility_geometry_exhausted", "verified_bending_constraints_exhausted"),
+        near_limit_rules=(_PRESERVE_SHEAR_NEAR_LIMIT,),
     ), _bending_overdesign),
     DesignFamily.SHEAR_OVERDESIGN_GOVERNS: FamilyOwner(_contract(
         DesignFamily.SHEAR_OVERDESIGN_GOVERNS, "shear_overdesign", "shear_below_target_other_active_domains_compliant",
         (LadderStage("increase_spacing", ("shear",)), LadderStage("reduce_ligature_size_or_legs", ("shear",)), LadderStage("remove_unrequired_ligatures", ("shear",)), LadderStage("reduce_width_and_redesign", ("width_mm", "bottom", "shear"))),
         ("shear", "width_mm", "bottom"), ("shear", "bending", "ductility", "reinforcement_fit"), active_domains=("shear",), search_kind=SearchKind.OPTIMISATION, allow_safe_progress=True, retain_compliant_on_optimisation_exhaustion=True,
         exact_reasons=("minimum_shear_reinforcement_exhausted", "verified_shear_constraints_exhausted"),
+        near_limit_rules=(_PRESERVE_BENDING_NEAR_LIMIT,),
     ), _shear_overdesign),
 }
 
 
 TERMINAL_FAMILIES = {
     DesignFamily.INPUT_REQUIRED,
-    DesignFamily.TARGET_BAND_REACHED,
     DesignFamily.EXACT_STOP_PROVEN,
     DesignFamily.LOCKED_NO_REPAIR,
 }
@@ -996,10 +1138,6 @@ TERMINAL_CONTRACTS: dict[DesignFamily, FamilyContract] = {
         "verify_design_actions_present", ("reinforcement_fit",),
         terminal_status=DecisionStatus.INPUT_REQUIRED,
     ),
-    DesignFamily.TARGET_BAND_REACHED: _terminal_contract(
-        DesignFamily.TARGET_BAND_REACHED, "target_band", "all_active_domains_in_target_band",
-        "verify_active_target_band", ("bending", "shear", "serviceability", "crack_control", "reinforcement_fit"),
-    ),
     DesignFamily.EXACT_STOP_PROVEN: _terminal_contract(
         DesignFamily.EXACT_STOP_PROVEN, "exact_stop", "active_family_search_exhausted_at_verified_limit",
         "verify_exact_stop_evidence", ("bending", "shear", "ductility", "minimum_tensile", "serviceability", "crack_control", "reinforcement_fit"),
@@ -1039,10 +1177,6 @@ TERMINAL_OWNERS: dict[DesignFamily, FamilyOwner] = {
     DesignFamily.INPUT_REQUIRED: FamilyOwner(
         TERMINAL_CONTRACTS[DesignFamily.INPUT_REQUIRED],
         _input_required_terminal,
-    ),
-    DesignFamily.TARGET_BAND_REACHED: FamilyOwner(
-        TERMINAL_CONTRACTS[DesignFamily.TARGET_BAND_REACHED],
-        _target_band_terminal,
     ),
     DesignFamily.EXACT_STOP_PROVEN: FamilyOwner(
         TERMINAL_CONTRACTS[DesignFamily.EXACT_STOP_PROVEN],

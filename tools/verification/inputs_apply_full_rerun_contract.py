@@ -36,7 +36,7 @@ class _ApplyStoreStub:
         self.session_state["cleared"] = True
 
 
-def verify_committed_apply_forces_full_app_rerun() -> None:
+def verify_committed_apply_refreshes_fragment_only() -> None:
     calls: list[tuple[str, object]] = []
     state = {
         "uls_Mstar": 200.0,
@@ -53,7 +53,11 @@ def verify_committed_apply_forces_full_app_rerun() -> None:
             calls.append(("rerun", scope))
 
     original_store = routing.ApplyTransactionStore
+    original_refresh = routing.rerun_active_inputs_fragment_only
     routing.ApplyTransactionStore = _ApplyStoreStub
+    routing.rerun_active_inputs_fragment_only = lambda st_module: (
+        calls.append(("rerun", "fragment")) or True
+    )
     try:
         routing.handle_inputs_apply_buttons(
             st_module=_StreamlitStub(),
@@ -70,6 +74,7 @@ def verify_committed_apply_forces_full_app_rerun() -> None:
         )
     finally:
         routing.ApplyTransactionStore = original_store
+        routing.rerun_active_inputs_fragment_only = original_refresh
 
     assert state["marked_committed"] == "cold-mu-200"
     assert state["uls_Mstar"] == 200.0
@@ -77,16 +82,16 @@ def verify_committed_apply_forces_full_app_rerun() -> None:
     assert state["uls_Vstar"] == 0.0
     assert calls == [
         (
-            "apply_triggered_rerun",
-            {"path": "handle_apply_buttons_committed_full_app"},
+            "apply_triggered_fragment_rerun",
+            {"path": "handle_apply_buttons_committed_fragment"},
         ),
-        ("rerun", "app"),
+        ("rerun", "fragment"),
     ]
 
 
 def main() -> None:
-    verify_committed_apply_forces_full_app_rerun()
-    print("inputs apply full rerun contract: PASS")
+    verify_committed_apply_refreshes_fragment_only()
+    print("inputs apply fragment rerun contract: PASS")
 
 
 if __name__ == "__main__":
