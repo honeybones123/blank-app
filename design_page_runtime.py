@@ -154,7 +154,10 @@ def _install_design_scroll_preserver() -> None:
             const root = doc.querySelector("[data-testid='stMainBlockContainer']") || doc.body;
             const restorePending = () => {
               const saved = win.__beamDesignPendingScroll;
-              if (!saved || saved.page !== pageToken() || Date.now() - saved.at > 3000) return;
+              // The engineering fragment can take several seconds to finish.
+              // Keep the anchor alive until its late diagrams and derivation
+              // cards have finished replacing their DOM.
+              if (!saved || saved.page !== pageToken() || Date.now() - saved.at > 30000) return;
               const el = scroller();
               if (!el) return;
               const target = Number(saved.top || 0);
@@ -173,15 +176,26 @@ def _install_design_scroll_preserver() -> None:
                 }
               }
             };
-            const observer = new MutationObserver(() => {
+            // Create the observer in the parent document's realm; the script
+            // itself runs inside a Streamlit component iframe.
+            const observer = new win.MutationObserver(() => {
               restorePending();
               win.requestAnimationFrame(restorePending);
               win.setTimeout(restorePending, 40);
               win.setTimeout(restorePending, 120);
               win.setTimeout(restorePending, 300);
+              win.setTimeout(restorePending, 700);
+              win.setTimeout(restorePending, 1500);
+              win.setTimeout(restorePending, 3000);
             });
-            observer.observe(root, {childList: true, subtree: true});
-            win.__beamDesignScrollObserver = observer;
+            try {
+              observer.observe(root, {childList: true, subtree: true});
+              win.__beamDesignScrollObserver = observer;
+            } catch (_) {
+              // A fragment can briefly expose a cross-realm placeholder while
+              // Streamlit swaps the main block. Timed restoration below still
+              // preserves the widget anchor for that rerun.
+            }
           }
 
           let saved = null;
@@ -824,7 +838,7 @@ def plot_load_diagram_plotly(
     point_loads: list[dict] | None = None,
     udl_loads: list[dict] | None = None,
 ):
-    return _shared_plot_load_diagram_plotly(
+    fig = _shared_plot_load_diagram_plotly(
         case=case,
         L=L,
         params=params,
@@ -836,6 +850,10 @@ def plot_load_diagram_plotly(
         point_loads=point_loads,
         udl_loads=udl_loads,
     )
+    # Match the effective SFD plotting width. Its visible y-axis labels reserve
+    # space on the left, while the load diagram has no visible y-axis.
+    fig.update_xaxes(domain=[0.042, 1.0])
+    return fig
 
 
 # ---------------------------------------------------
