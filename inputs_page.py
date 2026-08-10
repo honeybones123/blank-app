@@ -134,6 +134,14 @@ def build_inputs_calculation_explainer_view_model(*args: Any, **kwargs: Any) -> 
 def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, Any]:
     """Render the single V2 transaction inside one stable page fragment."""
 
+    # A fragment rerun does not pass through the page-level setup boundary.
+    # Commit the visible design-action draft before consuming a queued Apply
+    # command so the candidate is applied to the same action state that was
+    # calculated and displayed.  Applying first can otherwise combine the
+    # candidate updates with an older zero-action beam snapshot while leaving
+    # the 200 kNm widget visible.
+    _INPUTS_PAGE_RUNTIME.reconcile_design_actions()
+
     # Apply is owned by the same V2 workspace fragment as the Design Brain
     # button.  Processing the queued command here keeps the explicit Apply
     # interaction scoped to this workspace instead of forcing a page rerun.
