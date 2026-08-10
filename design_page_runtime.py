@@ -25,9 +25,11 @@ from ui.diagrams.moment_shear_diagram import (
 )
 
 from state_and_helpers import (
+    finalize_auto_design_publish,
     get_sync_callbacks,
     get_param,
     is_design_governing,
+    persist_active_beam_from_shared,
     set_shared,
     update_results,
     render_timing_mark,
@@ -53,22 +55,18 @@ from widgets_helpers import (
     render_plotly_fullscreen_control,
 )
 from ui_seamless_steps import bind_summary_clicks
+from inputs_application.session_services import InputsSessionServices
+from application.engineering_snapshot import build_engineering_input_snapshot_from_resolved_state
 from application.design_actions_adapters import LoadAnalysisDesignActionsAdapter
-from application.contracts.design_branch import DesignBranch
-from inputs_application.branch_workspace import (
-    ActionSelectionPolicy,
-    ActionSource,
-    resolve_branch_workspace,
-)
-from inputs_application.design_branch_store import BeamDesignBranchStore
-from inputs_application.load_analysis_store import LoadAnalysisSnapshotStore
-from inputs_application.workspace_application_service import (
-    execute_installed_v2_workspace,
-)
+from application.design_brain_comparison import compare_design_brain_actions
+from application.design_brain_port import DesignBrainRequest
+from inputs_application.design_brain_composition import build_design_brain_service
+from inputs_application.live_apply import execute_typed_apply
 from inputs_page_modules.summaries.builders import build_inputs_summary_html
 from inputs_page_modules.summaries.source_from_design_result import (
     build_summary_source_from_design_result,
 )
+from inputs_application.v2_design_guide_renderer import render_v2_design_guide_card
 from ui_seamless_steps import inject_seamless_steps_css
 from inputs_page_modules.fragments import rerun_inputs_current_scope
 
@@ -229,20 +227,49 @@ def _install_design_scroll_preserver() -> None:
     )
 
 
-def _render_calculation_check_summary(
+def _render_design_check_summary(
     *,
     bending_action: float,
     shear_action: float,
     sls_moment: float,
     sls_shear: float,
 ) -> None:
-    """Render calculation-only checks using Load Analysis solved actions.
+    """Render the Inputs summary cards using the Design page's solved actions."""
+    # The shared card queues a typed command. Beam Setup consumes it in its
+    # Design Brain fragment; Load Analysis consumes it here against the exact
+    # result that published the CTA so a different page result cannot be used
+    # to validate or apply the recommendation.
+    queued_apply = bool(st.session_state.pop("_inputs_action_apply_recommendation", False))
+    queued_payload = st.session_state.get("_inputs_action_apply_recommendation_payload")
+    queued_result = st.session_state.pop("_queued_design_brain_apply_result", None)
+    if queued_apply and isinstance(queued_payload, dict) and queued_result is not None:
+        applied = execute_typed_apply(
+            session_state=st.session_state,
+            current_result=queued_result,
+            recommendation=dict(queued_payload),
+            set_shared=set_shared,
+            finalize_publish=finalize_auto_design_publish,
+            persist_active_beam=persist_active_beam_from_shared,
+        )
+        st.session_state["_load_analysis_apply_probe"] = {
+            "status": applied.command.status,
+            "reason": applied.command.reason,
+            "updates": (
+                dict(applied.mutation.updates)
+                if applied.mutation is not None
+                else {}
+            ),
+        }
+        if applied.command.status not in {"dispatch_ok", "rerun_required"}:
+            st.error(f"Design Brain recommendation was not applied: {applied.command.reason}")
 
-    Load Analysis deliberately has no Design Brain recommendation or Apply
-    authority.  Beam Inputs is the single UI that presents and applies Design
-    Brain advice, including when its selected main branch is Load Analysis.
-    """
+    services = InputsSessionServices.from_mapping(st.session_state)
+    # Calculate a page-local V2 result from the actions just solved above.
+    # Reading the session's last Inputs result here left crack/deflection stale
+    # until the user visited Inputs, which is exactly what this summary must not
+    # do.  This projection does not overwrite manual action inputs.
     design_state = dict(st.session_state)
+    input_revision = int(services.input_snapshots.current().revision or 0)
     design_state.update(
         {
             "actions_mode": "design",
@@ -255,51 +282,33 @@ def _render_calculation_check_summary(
             "uls_Vstar": float(shear_action),
             "sls_Mstar": float(sls_moment),
             "sls_Vstar": float(sls_shear),
+            "input_revision": input_revision,
         }
     )
+    snapshot = build_engineering_input_snapshot_from_resolved_state(design_state)
     try:
-        beam_id = str(st.session_state.get("active_beam_id") or "").strip()
-        if not beam_id:
-            raise ValueError("Load Analysis requires an active beam")
-        branch_snapshot = BeamDesignBranchStore(st.session_state).get(
-            beam_id,
-            DesignBranch.LOAD_ANALYSIS,
-        )
-        analysis_snapshot = LoadAnalysisSnapshotStore(st.session_state).current(
-            beam_id
-        )
-        if branch_snapshot is None or analysis_snapshot is None:
-            raise ValueError("Load Analysis branch migration is incomplete")
-        actions_snapshot = LoadAnalysisDesignActionsAdapter.from_state(design_state)
-        workspace = resolve_branch_workspace(
-            branch_snapshot,
-            analysis_snapshot,
-            ActionSource.LOAD_ANALYSIS,
-            (
-                ActionSelectionPolicy.SELECTED_SECTION
-                if str(design_state.get("design_actions_source") or "max")
-                == "section"
-                else ActionSelectionPolicy.MAXIMUM
-            ),
-            derived_design_actions=actions_snapshot,
-        )
-        workspace_result = execute_installed_v2_workspace(
-            st.session_state,
-            workspace,
-            include_design_brain=False,
-        )
-        authoritative = workspace_result.calculation_result
-        if authoritative is None:
-            raise RuntimeError("Engineering calculations did not return a branch result")
+        # Run the full shared Design Brain, not its calculation-only sibling.
+        # The latter intentionally has no recommendation publication and made
+        # the visible card report UNKNOWN / 0.00 even while the checks failed.
+        authoritative = build_design_brain_service().run(
+            DesignBrainRequest(
+                engineering_snapshot=snapshot,
+                resolved_inputs=design_state,
+                input_revision=input_revision,
+            )
+        ).result
         st.session_state.pop("_design_summary_calculation_error", None)
-        st.session_state["_load_analysis_workspace_identity"] = {
-            **workspace.identity.__dict__,
-            "design_branch": workspace.identity.design_branch.value,
-            "engineering_hash": workspace.engineering_hash,
-            "calculation_cache_hit": workspace_result.calculation_cache_hit,
-            "design_brain_executed": False,
-        }
-        st.session_state.pop("_load_analysis_design_brain_comparison", None)
+        actions_snapshot = LoadAnalysisDesignActionsAdapter.from_state(design_state)
+        comparison = compare_design_brain_actions(
+            actions_snapshot,
+            dict(authoritative.current_calculations or {}).get("actions_used", {}),
+            actual_revision=dict(authoritative.current_calculations or {}).get(
+                "v2_source_revision"
+            ),
+        )
+        st.session_state["_load_analysis_design_brain_comparison"] = (
+            comparison.to_dict()
+        )
     except Exception as exc:
         # Preserve a usable summary if an incomplete section cannot yet run,
         # while exposing the reason for diagnostics rather than failing page
@@ -312,9 +321,10 @@ def _render_calculation_check_summary(
         authoritative is not None
         and "_design_summary_calculation_error" not in st.session_state
     ):
-        # Summary headers and detail rows are projected from the authoritative
-        # calculation result for this Load Analysis workspace. No page-local
-        # capacity/status calculation or Design Brain execution remains.
+        # Shared authority path: the summary headers and detail rows are both
+        # projected from the exact Design Brain result that consumed the Load
+        # Analysis adapter snapshot. No page-local status calculation remains
+        # on the successful path.
         actions_snapshot = LoadAnalysisDesignActionsAdapter.from_state(design_state)
         scenario_id = str(st.session_state.get("active_beam_id") or "design")
         projection = build_summary_source_from_design_result(
@@ -348,6 +358,15 @@ def _render_calculation_check_summary(
         st.markdown(
             build_inputs_summary_html(projection.source),
             unsafe_allow_html=True,
+        )
+        # Show the same Design Brain publication card used by Beam Setup.
+        # Load Analysis supplies the calculated actions above; the shared
+        # authoritative result supplies the recommendation and status shown
+        # here, so the two pages cannot drift into different answers.
+        render_v2_design_guide_card(
+            st_module=st,
+            design_guide_slot=st.empty(),
+            result=authoritative,
         )
         return
 # ---------------------------------------------------
@@ -1495,9 +1514,47 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
     render_result_page_title("Load Analysis")
     _install_design_scroll_preserver()
 
-    # Load Analysis is a fixed engineering branch. Its actions are always
-    # derived from this page's LoadAnalysisSnapshot; it must never read, select,
-    # overwrite, or fall back to the manual actions owned by Beam Inputs.
+    # App-wide design-action source (same canonical keys as Inputs page)
+    _LEGACY_ACTIONS_MANUAL = "Manual design actions (inputs below)"
+    _LEGACY_ACTIONS_DESIGN = "Teaching SFD/BMD page (|M|max, |V|max)"
+
+    def _norm_actions_source_label(raw) -> str:
+        s = str(raw or _LEGACY_ACTIONS_MANUAL)
+        if s == "Manual design actions":
+            return _LEGACY_ACTIONS_MANUAL
+        if s == "Calculated design actions (from SFD/BMD)":
+            return _LEGACY_ACTIONS_DESIGN
+        return s
+
+    _src_canon = _norm_actions_source_label(st.session_state.get("actions_source", _LEGACY_ACTIONS_MANUAL))
+    _wk_sfd_actions = "inputs_use_calculated_actions"
+    _beam_page_selected = _src_canon == _LEGACY_ACTIONS_DESIGN
+    if _wk_sfd_actions not in st.session_state:
+        st.session_state[_wk_sfd_actions] = _beam_page_selected
+
+    st.caption("Design-action source (synced with **Inputs → Design Actions**)")
+    _use_beam_page = st.toggle(
+        "Use design actions from this page (Beam Actions & Diagrams)",
+        key=_wk_sfd_actions,
+        help=(
+            "When enabled, ULS/SLS demands follow this beam model and stay linked to the same toggle on the Inputs page. "
+            "When disabled, demands follow manual actions entered on Inputs."
+        ),
+    )
+    _mapped_src = _LEGACY_ACTIONS_DESIGN if _use_beam_page else _LEGACY_ACTIONS_MANUAL
+    _mapped_mode = "design" if _use_beam_page else "manual"
+    if (
+        _norm_actions_source_label(st.session_state.get("actions_source")) != _mapped_src
+        or str(st.session_state.get("actions_mode", "manual") or "manual") != _mapped_mode
+    ):
+        st.session_state["actions_source"] = _mapped_src
+        st.session_state["actions_mode"] = _mapped_mode
+        try:
+            set_shared("actions_source", _mapped_src, source="sfd_bmd:actions_toggle")
+            set_shared("actions_mode", _mapped_mode, source="sfd_bmd:actions_toggle")
+        except Exception:
+            pass
+        rerun_inputs_current_scope(st)
 
     summary_placeholder = st.empty()
     st.divider()
@@ -2247,24 +2304,13 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
     loading_inputs_col.__exit__(None, None, None)
     with loading_diagram_col:
         from inputs_application.page_runtime.widgets import (
-            render_inputs_model_diagram_component_current,
+            _render_section_2d_diagram_block_current,
         )
 
-        active_beam_id = str(st.session_state.get("active_beam_id") or "").strip()
-        load_analysis_design = BeamDesignBranchStore(st.session_state).get(
-            active_beam_id,
-            DesignBranch.LOAD_ANALYSIS,
+        _render_section_2d_diagram_block_current(
+            compact=True,
+            height_scale=0.75,
         )
-        if load_analysis_design is None:
-            st.info("The Load Analysis design diagram is unavailable until its branch is ready.")
-        else:
-            render_inputs_model_diagram_component_current(
-                model_state=load_analysis_design.to_payload(),
-                beam_id=load_analysis_design.beam_id,
-                revision=load_analysis_design.revision,
-                engineering_hash=load_analysis_design.content_hash,
-                toggle_key="load_analysis_show_3d_model",
-            )
     st.divider()
 
     st.session_state["loads_edit_mode"] = "SLS" if use_sls else "ULS"
@@ -2513,8 +2559,8 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         commit_msg = st.session_state.get("_design_section_commit_msg")
         if commit_msg:
             st.success(commit_msg)
-    # Load Analysis owns demands and displays calculation checks only. Design
-    # Brain recommendations and Apply remain exclusive to Beam Inputs.
+    # The Load Analysis page owns demands only. The shared Design Brain owns
+    # every capacity, utilisation and status displayed by the summary.
     with summary_placeholder.container():
         render_page_explainer_expander(_render_sfd_bmd_explainer)
         use_committed_section_actions = (
@@ -2553,7 +2599,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         else:
             summary_M_uls = max(float(M_pos_max_uls), abs(float(M_neg_min_uls)))
             summary_M_sls = max(float(M_pos_max_sls), abs(float(M_neg_min_sls)))
-        _render_calculation_check_summary(
+        _render_design_check_summary(
             bending_action=summary_M_uls,
             shear_action=summary_V_uls,
             sls_moment=summary_M_sls,
@@ -3953,9 +3999,19 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
             accent=None,
         )
 
-    # Publish display-only analysis results here. Branch-owned design actions
-    # are published by the workspace service, so this page must not mirror
-    # them through global ResultStore keys.
+    # Push SFD/BMD results into shared state
+    # (use key names expected by Inputs page)
+    canonical_action_updates = {}
+    if _use_beam_page:
+        # Publish both limit states to the canonical Design Actions contract.
+        # This makes the SLS actions immediately available to crack and
+        # deflection consumers, including dead-load-only cases where Q = 0.
+        canonical_action_updates = {
+            "uls_Mstar": float(M_uls),
+            "uls_Vstar": float(V_uls),
+            "sls_Mstar": float(M_sls),
+            "sls_Vstar": float(V_sls),
+        }
     update_results(
         sfd_case=case,                  # store current teaching case
         sfd_Msls_max_kNm=float(M_sls),
@@ -3980,6 +4036,7 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
         critical_shear_x=x_crit,
         critical_shear_V=V_crit,
         V_max=float(np.max(np.abs(V_uls_vals))) if V_uls_vals is not None and len(V_uls_vals) else 0.0,
+        **canonical_action_updates,
     )
 
     # Bind JS click/scroll after all steps render

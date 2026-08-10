@@ -246,30 +246,6 @@ def rerun_inputs_current_scope(st_module: Any) -> None:
     st_module.rerun()
 
 
-def rerun_active_inputs_fragment_only(st_module: Any) -> bool:
-    """Refresh the active workspace fragment without widening to the app.
-
-    Apply buttons are rendered inside forced Runtime workspace fragments. If
-    this is ever called outside that boundary, defer the local refresh rather
-    than restarting the complete navigation shell.
-    """
-
-    if not _current_fragment_id():
-        st_module.session_state["_inputs_fragment_refresh_pending"] = True
-        return False
-    try:
-        st_module.rerun(scope="fragment")
-    except (TypeError, RuntimeError):
-        st_module.session_state["_inputs_fragment_refresh_pending"] = True
-        return False
-    except Exception as exc:
-        if exc.__class__.__name__ != "StreamlitAPIException":
-            raise
-        st_module.session_state["_inputs_fragment_refresh_pending"] = True
-        return False
-    return True
-
-
 def request_inputs_fragment_wake(
     st_module: Any,
     fragment_name: str,
@@ -336,7 +312,6 @@ def stop_inputs_fragment_polling(
 __all__ = [
     "current_inputs_fragment_id",
     "request_inputs_fragment_wake",
-    "rerun_active_inputs_fragment_only",
     "rerun_inputs_current_scope",
     "run_inputs_fragment",
     "run_inputs_polling_fragment",

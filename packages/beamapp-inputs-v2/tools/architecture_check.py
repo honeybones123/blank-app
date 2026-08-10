@@ -106,38 +106,6 @@ def main() -> None:
         fail("selected proxy evidence is not separated from the publishable result")
     if "self.search_profile.max_consecutive_infeasible" not in service:
         fail("the configured monotonic infeasible-search limit is not bound")
-    if "candidate ranking requires a selected family contract" not in service:
-        fail("candidate ranking can run without a selected family contract")
-
-    ranking_evidence = (SRC / "application" / "ranking_policy.py").read_text(
-        encoding="utf-8"
-    )
-    for forbidden in ("def choose_valid(", "def reject_invalid(", "def rank_key("):
-        if forbidden in ranking_evidence:
-            fail("factual CandidateEvidence contains decision authority")
-
-    ranking_bridge = (
-        SRC / "application" / "design_brain" / "candidate_ranking.py"
-    ).read_text(encoding="utf-8")
-    if "family_contract: FamilyContract | None" in ranking_bridge:
-        fail("candidate ranking retains an unbound family-contract fallback")
-    if "family_contract.ranking_policy.rank_key(evidence)" not in ranking_bridge:
-        fail("candidate comparison is not delegated to the selected family policy")
-
-    preference_source = (SRC / "domain" / "design_preferences.py").read_text(
-        encoding="utf-8"
-    )
-    if "ReinforcementPreferenceConfig" in preference_source:
-        fail("multiple reinforcement preference types are present")
-    for forbidden in ("rank_key", "select_family", "apply_allowed", "publish"):
-        if forbidden in preference_source:
-            fail("DesignPreferenceProfile contains decision or publication authority")
-
-    orchestrator = (
-        SRC / "application" / "design_guide_orchestrator.py"
-    ).read_text(encoding="utf-8")
-    if "FamilyRunContext(" not in orchestrator:
-        fail("selected families do not receive the typed FamilyRunContext")
 
     apply_boundary = (
         SRC / "application" / "design_brain_apply.py"

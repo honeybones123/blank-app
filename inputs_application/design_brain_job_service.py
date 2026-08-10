@@ -14,7 +14,6 @@ from typing import Any, Mapping
 from uuid import uuid4
 
 from application.contracts.design_brain import EngineeringInputSnapshot
-from application.contracts.design_branch import DesignBranch
 from inputs_application.design_brain_job_worker import WORKER_SCHEMA
 
 
@@ -42,8 +41,8 @@ _JOBS: dict[str, _JobRecord] = {}
 _JOBS_LOCK = threading.Lock()
 
 
-def _job_key(owner_id: str, beam_id: str, design_branch: DesignBranch) -> str:
-    return f"{owner_id}:{beam_id or 'draft'}:{DesignBranch(design_branch).value}"
+def _job_key(owner_id: str, beam_id: str) -> str:
+    return f"{owner_id}:{beam_id or 'draft'}"
 
 
 def _response(record: _JobRecord) -> dict[str, Any] | None:
@@ -69,7 +68,6 @@ class DesignBrainJobService:
         *,
         owner_id: str,
         beam_id: str,
-        design_branch: DesignBranch | str = DesignBranch.BEAM_INPUTS,
         input_revision: int,
         engineering_snapshot: EngineeringInputSnapshot,
         engineering_calculations: Mapping[str, Any],
@@ -80,35 +78,16 @@ class DesignBrainJobService:
     ) -> DesignBrainJobPoll:
         revision = int(input_revision)
         engineering_hash = engineering_snapshot.engineering_hash
-        branch = DesignBranch(design_branch)
-        key = _job_key(owner_id, beam_id, branch)
+        key = _job_key(owner_id, beam_id)
         with _JOBS_LOCK:
             record = _JOBS.get(key)
             if record is not None and record.process.poll() is None:
-                same_identity = bool(
-                    int(record.request.get("input_revision") or -1) == revision
-                    and str(record.request.get("engineering_hash") or "")
-                    == engineering_hash
-                    and str(record.request.get("design_branch") or "")
-                    == branch.value
+                return DesignBrainJobPoll(
+                    status="running",
+                    input_revision=revision,
+                    engineering_hash=engineering_hash,
+                    job_id=str(record.request.get("job_id") or ""),
                 )
-                if same_identity:
-                    return DesignBrainJobPoll(
-                        status="running",
-                        input_revision=revision,
-                        engineering_hash=engineering_hash,
-                        job_id=str(record.request.get("job_id") or ""),
-                    )
-                # A newer branch revision supersedes the old pending worker.
-                # The old response has no publication authority and its unique
-                # response path may be retained for diagnostics.
-                record.process.terminate()
-                try:
-                    record.log_handle.close()
-                except Exception:
-                    pass
-                _JOBS.pop(key, None)
-                record = None
             if record is not None:
                 response = _response(record)
                 try:
@@ -122,7 +101,6 @@ class DesignBrainJobService:
                     and int(response.get("input_revision") or -1) == revision
                     and str(response.get("engineering_hash") or "")
                     == engineering_hash
-                    and str(response.get("design_branch") or "") == branch.value
                     and isinstance(response.get("result"), dict)
                 ):
                     return DesignBrainJobPoll(
@@ -139,7 +117,6 @@ class DesignBrainJobService:
                     and int(response.get("input_revision") or -1) == revision
                     and str(response.get("engineering_hash") or "")
                     == engineering_hash
-                    and str(response.get("design_branch") or "") == branch.value
                 ):
                     return DesignBrainJobPoll(
                         status="failed",
@@ -151,7 +128,6 @@ class DesignBrainJobService:
             record = self._spawn(
                 owner_id=owner_id,
                 beam_id=beam_id,
-                design_branch=branch,
                 input_revision=revision,
                 engineering_snapshot=engineering_snapshot,
                 engineering_calculations=engineering_calculations,
@@ -173,7 +149,6 @@ class DesignBrainJobService:
         *,
         owner_id: str,
         beam_id: str,
-        design_branch: DesignBranch,
         input_revision: int,
         engineering_snapshot: EngineeringInputSnapshot,
         engineering_calculations: Mapping[str, Any],
@@ -193,7 +168,6 @@ class DesignBrainJobService:
             "job_id": job_id,
             "owner_id": owner_id,
             "beam_id": beam_id,
-            "design_branch": design_branch.value,
             "input_revision": int(input_revision),
             "engineering_hash": engineering_snapshot.engineering_hash,
             "engineering_snapshot": engineering_snapshot.to_dict(),

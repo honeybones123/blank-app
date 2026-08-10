@@ -400,12 +400,12 @@ class SharedStateSessionPort:
                 from inputs_application.engineering_input_store import (
                     InputSnapshotStore,
                 )
-                from state_and_helpers import get_beam_design_branch_snapshot
+                from state_and_helpers import get_beam_project_param_snapshot
 
                 committed_input = InputSnapshotStore(
                     self.session_state
                 ).commit_active_beam(
-                    get_beam_design_branch_snapshot(),
+                    get_beam_project_param_snapshot(),
                     changed_keys=tuple(sorted(shared_updates)),
                     source=f"{self.source}:input_transaction",
                 )
@@ -423,36 +423,6 @@ class SharedStateSessionPort:
                 self.session_state["_inputs_pending_input_revision"] = int(
                     committed_input.revision
                 )
-                # The typed input command has already advanced the routed
-                # branch.  Update the displayed optimistic-concurrency token
-                # before the compatibility record projection runs below; the
-                # subsequent persist is then a no-op for engineering content,
-                # not a second branch revision or a false stale conflict.
-                from inputs_application.design_branch_store import (
-                    BeamDesignBranchStore,
-                )
-
-                branch_store = BeamDesignBranchStore(self.session_state)
-                committed_branch = branch_store.active_context(
-                    active_beam_id,
-                    page_slug=str(
-                        self.session_state.get("_active_page_slug")
-                        or self.session_state.get("page_slug")
-                        or "inputs"
-                    ),
-                )
-                displayed_revisions = dict(
-                    self.session_state.get(
-                        "_displayed_branch_revision_by_identity"
-                    )
-                    or {}
-                )
-                displayed_revisions[
-                    f"{active_beam_id}:{committed_branch.value}"
-                ] = int(committed_input.revision)
-                self.session_state[
-                    "_displayed_branch_revision_by_identity"
-                ] = displayed_revisions
                 self.session_state["_typed_apply_input_transaction_probe"] = {
                     "beam_id": active_beam_id,
                     "revision": int(committed_input.revision),

@@ -5,24 +5,11 @@ from inputs_v2.application.design_brain_families import DesignFamily
 from inputs_v2.application.design_brain_service import DesignBrainService
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.domain.beam_inputs import ActionInputs, LongitudinalReinforcement, ShearReinforcement
-from inputs_v2.application.design_brain.family_context import FamilyRunContext
-from inputs_v2.application.design_brain.search_profile import SearchProfile
-from inputs_v2.domain.design_preferences import DEFAULT_DESIGN_PREFERENCES
-
-
-def _owned_preview(family: DesignFamily, current: BeamInputs, service: DesignBrainService | None = None):
-    service = service or DesignBrainService()
-    result = service._calculator.calculate_current(current).result
-    assert result is not None
-    return FAMILY_OWNERS[family].preview(
-        FamilyRunContext(current, result, DEFAULT_DESIGN_PREFERENCES, SearchProfile()),
-        service,
-    )
 
 
 def test_design_brain_preview_is_calculator_backed() -> None:
     current = BeamInputs().validated()
-    preview = _owned_preview(DesignFamily.BENDING_FAIL_GOVERNS, current)
+    preview = DesignBrainService().preview(current)
     assert preview.accepted is False
     assert preview.reason == "no_bending_demand"
     assert preview.candidate.source_hash == current.content_hash
@@ -42,7 +29,7 @@ def test_design_brain_apply_rejects_preview_from_changed_revision() -> None:
 
 def test_bending_ladder_requires_target_band() -> None:
     current = BeamInputs(actions=ActionInputs(bending_moment_knm=20.0)).validated()
-    preview = _owned_preview(DesignFamily.BENDING_FAIL_GOVERNS, current)
+    preview = DesignBrainService().preview(current)
     assert preview.target_low == 0.85
     assert preview.target_high == 1.0
     if preview.accepted:
@@ -52,7 +39,7 @@ def test_bending_ladder_requires_target_band() -> None:
 
 def test_geometry_ladder_never_exceeds_two_to_one_depth_width_ratio() -> None:
     current = BeamInputs(actions=ActionInputs(bending_moment_knm=300.0)).validated()
-    preview = _owned_preview(DesignFamily.BENDING_FAIL_GOVERNS, current)
+    preview = DesignBrainService().preview(current)
     proposed_depth = preview.candidate.proposal.depth_mm
     assert proposed_depth <= 2.0 * current.width_mm
     if preview.accepted:
@@ -109,7 +96,7 @@ def test_bending_ladder_expands_width_when_depth_ratio_is_reached() -> None:
         depth_mm=300.0,
         actions=ActionInputs(bending_moment_knm=800.0),
     ).validated()
-    preview = _owned_preview(DesignFamily.BENDING_FAIL_GOVERNS, current)
+    preview = DesignBrainService().preview(current)
     proposal = preview.candidate.proposal
     assert proposal.width_mm > current.width_mm
     assert proposal.depth_mm <= 2.0 * proposal.width_mm
@@ -121,7 +108,7 @@ def test_shear_overdesign_does_not_add_unrequested_bottom_bar():
         bottom=BeamInputs().bottom.__class__(bars=4),
         actions=ActionInputs(shear_force_kn=0.0),
     ).validated()
-    preview = _owned_preview(DesignFamily.SHEAR_OVERDESIGN_GOVERNS, current)
+    preview = DesignBrainService().preview_shear_overdesign(current)
     assert preview.candidate.proposal.bottom_bars == current.bottom.bars
 
 def test_zero_shear_overdesign_can_still_apply_link_removal():
@@ -141,7 +128,10 @@ def test_zero_shear_overdesign_can_still_apply_link_removal():
             shear_force_kn=0.0,
         ),
     ).validated()
-    preview = _owned_preview(DesignFamily.SHEAR_OVERDESIGN_GOVERNS, current, service)
+    preview = FAMILY_OWNERS[DesignFamily.SHEAR_OVERDESIGN_GOVERNS].preview(
+        current,
+        service,
+    )
     assert preview.accepted
     assert (
         preview.candidate.proposal.shear_diameter_mm != current.shear.diameter_mm
@@ -188,12 +178,8 @@ def test_overdesign_ladders_only_accept_safe_reductions() -> None:
         shear=ShearReinforcement(diameter_mm=16, legs=6, spacing_mm=100.0),
     ).validated()
     service = DesignBrainService()
-    bending = _owned_preview(
-        DesignFamily.BENDING_OVERDESIGN_GOVERNS, current, service
-    )
-    shear = _owned_preview(
-        DesignFamily.SHEAR_OVERDESIGN_GOVERNS, current, service
-    )
+    bending = service.preview_bending_overdesign(current)
+    shear = service.preview_shear_overdesign(current)
     if bending.accepted:
         assert bending.after.families["bending"]["util"] <= 1.0
     if shear.accepted:
@@ -202,7 +188,7 @@ def test_overdesign_ladders_only_accept_safe_reductions() -> None:
 
 
 def test_bending_overdesign_allows_fewer_larger_bars_when_total_steel_reduces() -> None:
-    """Regression: a larger diameter remains legal when total steel reduces."""
+    """Regression: the 4-N28 case must discover the compliant 2-N36 cleanup."""
     current = BeamInputs(
         width_mm=275.0,
         depth_mm=475.0,
@@ -212,11 +198,11 @@ def test_bending_overdesign_allows_fewer_larger_bars_when_total_steel_reduces() 
         shear=ShearReinforcement(diameter_mm=10, legs=2, spacing_mm=200.0),
     ).validated()
 
-    preview = _owned_preview(DesignFamily.BENDING_OVERDESIGN_GOVERNS, current)
+    preview = DesignBrainService().preview_bending_overdesign(current)
 
     assert preview.accepted
-    assert preview.candidate.proposal.bottom_bars < 4
-    assert preview.candidate.proposal.bottom_diameter_mm > 28
+    assert preview.candidate.proposal.bottom_bars == 2
+    assert preview.candidate.proposal.bottom_diameter_mm == 36
     assert preview.candidate.proposal.bottom_bars * preview.candidate.proposal.bottom_diameter_mm**2 < 4 * 28**2
     assert 0.85 <= float(preview.after.families["bending"]["util"]) <= 1.0
 

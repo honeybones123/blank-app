@@ -55,10 +55,6 @@ class SearchEvidence:
     ] = ()
     cache_hits: int = 0
     cache_misses: int = 0
-    generated_candidates: int = 0
-    full_evaluations: int = 0
-    preference_profile_id: str = ""
-    preference_profile_version: str = ""
     elapsed_ms: float = 0.0
     budget_exhausted: bool = False
     budget_skipped_candidates: int = 0

@@ -36,44 +36,6 @@ from application.longitudinal_row_policy import (
 )
 
 from inputs_application.rerun_pure_cache_store import RerunPureCacheStore
-from application.contracts.design_branch import (
-    BeamDesignSnapshot,
-    DesignBranch,
-    MainDesignSelection,
-    canonical_hash,
-)
-from inputs_application.design_branch_store import (
-    ACTIVE_DESIGN_BRANCH_CONTEXT_KEY,
-    BRANCH_MIGRATION_STATE_KEY,
-    BRANCH_MIGRATION_VERSION,
-    BRANCH_SNAPSHOT_STATE_KEY,
-    MAIN_DESIGN_SELECTION_STATE_KEY,
-    LOAD_ANALYSIS_BRANCH_EXCLUDED_FIELDS,
-    BeamDesignBranchStore,
-    StaleBranchRevisionError,
-    branch_for_page,
-)
-from inputs_application.load_analysis_store import (
-    LOAD_ANALYSIS_SNAPSHOT_STATE_KEY,
-    LoadAnalysisSnapshotStore,
-    StaleLoadAnalysisRevisionError,
-)
-from inputs_application.design_actions_store import (
-    DERIVED_DESIGN_ACTIONS_BY_BRANCH_KEY,
-    DerivedDesignActionsStore,
-)
-from application.design_result_store import (
-    AUTHORITATIVE_DESIGN_RESULT_BY_BRANCH_KEY,
-    AUTHORITATIVE_DESIGN_RESULT_REVISION_BY_BRANCH_KEY,
-)
-from inputs_application.design_guide_fragment_store import (
-    DESIGN_GUIDE_FRAGMENT_BY_BRANCH_STATE_KEY,
-)
-from inputs_application.workspace_application_service import (
-    BRANCH_RESULT_KEY,
-    CALCULATION_CACHE_KEY,
-    DESIGN_BRAIN_CACHE_KEY,
-)
 from calculations.bending import (
     decode_bars_or_spacing as _decode_bars_or_spacing,
     effective_depth_with_links_mm,
@@ -1759,9 +1721,6 @@ BEAM_PROJECT_PARAM_KEYS = [
     "Mu_star_pos_manual",
     "Mu_star_neg_manual",
     "design_actions_source",
-    "design_section_x_m",
-    "section_cursor_x_m",
-    "design_section_committed",
     "inputs_detailed_mode",
     "auto_geometry",
     "auto_bottom_reo",
@@ -1921,53 +1880,6 @@ BEAM_PROJECT_PARAM_KEYS = [
     "sfd_case",
 ]
 
-# Load Analysis owns only the structural analysis model. These fields are
-# stored independently from both design branches and are merged into a
-# workspace only when that branch derives calculated actions.
-LOAD_ANALYSIS_PARAM_KEYS: frozenset[str] = frozenset(
-    {
-        "design_beam_system_mode",
-        "design_support_condition",
-        *{f"design_support_type_{index}" for index in range(1, 7)},
-        "design_span_count",
-        *{f"design_span_len_{index}" for index in range(1, 6)},
-        "design_ms_point_count",
-        "design_ms_udl_count",
-        *{
-            f"design_ms_{kind}_{index}"
-            for kind in ("G", "Q", "g", "q", "x0", "x1", "x")
-            for index in range(1, 9)
-        },
-        "span_L_m",
-        "g_udl_kNm_per_m",
-        "q_udl_kNm_per_m",
-        "psi_udl",
-        "G_point_kN",
-        "Q_point_kN",
-        "psi_point",
-        "a_m",
-        "a_udl_m",
-        "a_cant_m",
-        "a_overhang_m",
-        *{f"design_point_{kind}_{index}" for kind in ("G", "Q", "x") for index in range(1, 7)},
-        "sfd_point_load_count",
-        "sfd_span_L_m",
-        "sfd_case",
-    }
-)
-
-LOAD_ANALYSIS_POLICY_KEYS: frozenset[str] = frozenset(
-    {
-        "design_actions_source",
-        "design_section_x_m",
-        "section_cursor_x_m",
-        "design_section_committed",
-    }
-)
-
-# Manual action values belong only to BEAM_INPUTS.  LOAD_ANALYSIS owns its
-# solved action result through DerivedDesignActionsStore, never through copied
-# widgets or a second editable action payload.
 
 def _beam_project_now() -> str:
     return datetime.utcnow().isoformat(timespec="seconds")
@@ -1984,37 +1896,13 @@ def _sanitize_beam_record(beam_id: str, record) -> dict:
     }
     meta = copy.deepcopy(record.get("meta")) if isinstance(record.get("meta"), dict) else {}
     beam_label = str(record.get("beam_label") or beam_id).strip() or beam_id
-    sanitized = {
+    return {
         "beam_id": beam_id,
         "beam_label": beam_label,
         "params": params,
         "meta": meta,
         "summary": _sanitize_beam_summary(record.get("summary")),
     }
-    # Dual-design data is persisted beside the compatibility ``params``
-    # projection.  ``params`` remains the selected-main view for older
-    # project consumers; it is no longer the owner of either design.
-    if isinstance(record.get("design_branches"), dict):
-        sanitized["design_branches"] = copy.deepcopy(record["design_branches"])
-    if isinstance(record.get("main_design_selection"), dict):
-        sanitized["main_design_selection"] = copy.deepcopy(
-            record["main_design_selection"]
-        )
-    if isinstance(record.get("design_branch_migration"), dict):
-        sanitized["design_branch_migration"] = copy.deepcopy(
-            record["design_branch_migration"]
-        )
-    if isinstance(record.get("summary_by_branch"), dict):
-        sanitized["summary_by_branch"] = {
-            str(key): _sanitize_beam_summary(value)
-            for key, value in record["summary_by_branch"].items()
-            if isinstance(value, dict)
-        }
-    if isinstance(record.get("load_analysis_snapshot"), dict):
-        sanitized["load_analysis_snapshot"] = copy.deepcopy(
-            record["load_analysis_snapshot"]
-        )
-    return sanitized
 
 
 def validate_beam_project_payload(payload) -> dict:
@@ -2082,10 +1970,6 @@ def repair_beam_project_payload(payload) -> dict:
 def build_beam_project_payload() -> dict:
     """Return the canonical serializable multi-beam project payload."""
     ensure_beam_project_initialized()
-    # Flush branch-owned state into the serializable beam records before the
-    # conservative sanitizer creates the project payload.
-    for beam_id in list(st.session_state.get("beam_order") or []):
-        _persist_branch_contract_into_record(str(beam_id))
     payload = repair_beam_project_payload(
         {
             "beam_order": copy.deepcopy(st.session_state.get("beam_order") or []),
@@ -2101,23 +1985,6 @@ def reset_beam_project_to_single_default_if_missing() -> dict:
     Legacy/backward-compatible fallback: build a one-beam project from current shared state.
     Call this after shared inputs have been loaded when no beam-project payload exists.
     """
-    for branch_state_key in (
-        BRANCH_SNAPSHOT_STATE_KEY,
-        MAIN_DESIGN_SELECTION_STATE_KEY,
-        BRANCH_MIGRATION_STATE_KEY,
-        ACTIVE_DESIGN_BRANCH_CONTEXT_KEY,
-        LOAD_ANALYSIS_SNAPSHOT_STATE_KEY,
-        DERIVED_DESIGN_ACTIONS_BY_BRANCH_KEY,
-        AUTHORITATIVE_DESIGN_RESULT_BY_BRANCH_KEY,
-        AUTHORITATIVE_DESIGN_RESULT_REVISION_BY_BRANCH_KEY,
-        DESIGN_GUIDE_FRAGMENT_BY_BRANCH_STATE_KEY,
-        BRANCH_RESULT_KEY,
-        CALCULATION_CACHE_KEY,
-        DESIGN_BRAIN_CACHE_KEY,
-        "_displayed_branch_revision_by_identity",
-        "_displayed_load_analysis_revision_by_beam",
-    ):
-        st.session_state.pop(branch_state_key, None)
     st.session_state["beam_project_enabled"] = True
     st.session_state["beam_project_show_manager"] = False
     st.session_state["beam_records"] = {}
@@ -2139,23 +2006,6 @@ def load_beam_project_payload(payload) -> dict:
     if not repaired.get("beam_records"):
         return reset_beam_project_to_single_default_if_missing()
 
-    for branch_state_key in (
-        BRANCH_SNAPSHOT_STATE_KEY,
-        MAIN_DESIGN_SELECTION_STATE_KEY,
-        BRANCH_MIGRATION_STATE_KEY,
-        ACTIVE_DESIGN_BRANCH_CONTEXT_KEY,
-        LOAD_ANALYSIS_SNAPSHOT_STATE_KEY,
-        DERIVED_DESIGN_ACTIONS_BY_BRANCH_KEY,
-        AUTHORITATIVE_DESIGN_RESULT_BY_BRANCH_KEY,
-        AUTHORITATIVE_DESIGN_RESULT_REVISION_BY_BRANCH_KEY,
-        DESIGN_GUIDE_FRAGMENT_BY_BRANCH_STATE_KEY,
-        BRANCH_RESULT_KEY,
-        CALCULATION_CACHE_KEY,
-        DESIGN_BRAIN_CACHE_KEY,
-        "_displayed_branch_revision_by_identity",
-        "_displayed_load_analysis_revision_by_beam",
-    ):
-        st.session_state.pop(branch_state_key, None)
     st.session_state["beam_project_enabled"] = True
     st.session_state["beam_project_show_manager"] = False
     st.session_state["beam_records"] = copy.deepcopy(repaired["beam_records"])
@@ -2163,28 +2013,6 @@ def load_beam_project_payload(payload) -> dict:
     st.session_state["active_beam_id"] = repaired["active_beam_id"]
     st.session_state["beam_last_hydrated_id"] = None
     st.session_state["beam_manager_initialized"] = True
-
-    branch_store = BeamDesignBranchStore(st.session_state)
-    for beam_id, record in repaired["beam_records"].items():
-        migration_record = record.get("design_branch_migration")
-        migration_version = (
-            migration_record.get("version")
-            if isinstance(migration_record, dict)
-            else migration_record
-        )
-        branch_store.import_for_beam(
-            str(beam_id),
-            {
-                "branches": copy.deepcopy(record.get("design_branches") or {}),
-                "main_selection": copy.deepcopy(record.get("main_design_selection") or {}),
-                "migration_version": migration_version,
-            },
-        )
-        LoadAnalysisSnapshotStore(st.session_state).import_for_beam(
-            str(beam_id),
-            copy.deepcopy(record.get("load_analysis_snapshot") or {}),
-        )
-        _ensure_design_branches_for_beam(str(beam_id), record=record)
 
     load_active_beam_into_shared(force=True)
     st.session_state[BEAM_MODULE_STARTER_SEED_DONE_KEY] = True
@@ -2201,18 +2029,7 @@ def build_beam_schedule_rows() -> list[dict]:
     for beam_id in payload["beam_order"]:
         record = payload["beam_records"].get(beam_id, {})
         params = migrate_longitudinal_reo_snapshot(record.get("params", {}))
-        selection_record = record.get("main_design_selection")
-        selected_branch = str(
-            (selection_record or {}).get("selected_branch")
-            if isinstance(selection_record, dict)
-            else DesignBranch.BEAM_INPUTS.value
-        )
-        summaries = record.get("summary_by_branch")
-        summary = _sanitize_beam_summary(
-            summaries.get(selected_branch, record.get("summary"))
-            if isinstance(summaries, dict)
-            else record.get("summary")
-        )
+        summary = _sanitize_beam_summary(record.get("summary"))
         rows.append(
             {
                 "active": beam_id == payload.get("active_beam_id"),
@@ -2310,11 +2127,6 @@ def get_active_beam_record() -> dict | None:
 
 def get_active_beam_summary() -> dict:
     record = get_active_beam_record()
-    beam_id = str((record or {}).get("beam_id") or "")
-    branch = _route_design_branch() if beam_id else DesignBranch.BEAM_INPUTS
-    by_branch = (record or {}).get("summary_by_branch")
-    if isinstance(by_branch, dict) and isinstance(by_branch.get(branch.value), dict):
-        return _sanitize_beam_summary(by_branch[branch.value])
     return _sanitize_beam_summary((record or {}).get("summary"))
 
 
@@ -2380,243 +2192,6 @@ def get_beam_project_param_snapshot() -> dict:
     return snapshot
 
 
-def _design_payload_for_branch(
-    full_snapshot: dict,
-    branch: DesignBranch,
-) -> dict:
-    excluded = set(LOAD_ANALYSIS_PARAM_KEYS)
-    if branch is DesignBranch.LOAD_ANALYSIS:
-        excluded.update(LOAD_ANALYSIS_POLICY_KEYS)
-        excluded.update(LOAD_ANALYSIS_BRANCH_EXCLUDED_FIELDS)
-    return {
-        key: copy.deepcopy(value)
-        for key, value in full_snapshot.items()
-        if key not in excluded
-    }
-
-
-def get_beam_design_branch_snapshot(
-    branch: DesignBranch | None = None,
-) -> dict:
-    """Capture design-owned fields while excluding the analysis model."""
-
-    resolved_branch = DesignBranch(branch) if branch is not None else _route_design_branch()
-    return _design_payload_for_branch(
-        get_beam_project_param_snapshot(),
-        resolved_branch,
-    )
-
-
-def get_load_analysis_param_snapshot() -> dict:
-    """Capture only Load Analysis supports, spans, loads and policy state."""
-
-    full = get_beam_project_param_snapshot()
-    return {
-        key: copy.deepcopy(full.get(key, SHARED_DEFAULTS.get(key)))
-        for key in (LOAD_ANALYSIS_PARAM_KEYS | LOAD_ANALYSIS_POLICY_KEYS)
-    }
-
-
-def persist_load_analysis_snapshot_from_shared() -> object | None:
-    """Commit analysis-only state without rewriting either design branch.
-
-    Load widgets are edited inside a Streamlit fragment.  Persisting them at
-    the callback boundary prevents page navigation from hydrating an older
-    analysis snapshot back over the user's latest loads.
-    """
-
-    active_beam_id = str(st.session_state.get("active_beam_id") or "").strip()
-    if not active_beam_id or _route_design_branch() is not DesignBranch.LOAD_ANALYSIS:
-        return None
-    store = LoadAnalysisSnapshotStore(st.session_state)
-    current = store.current(active_beam_id)
-    displayed = dict(
-        st.session_state.get("_displayed_load_analysis_revision_by_beam") or {}
-    )
-    expected_revision = int(
-        displayed.get(active_beam_id, current.revision if current else 0)
-    )
-    try:
-        committed = store.replace(
-            active_beam_id,
-            expected_revision=expected_revision,
-            analysis=get_load_analysis_param_snapshot(),
-        )
-    except StaleLoadAnalysisRevisionError as exc:
-        latest = store.current(active_beam_id)
-        st.session_state["_load_analysis_edit_conflict"] = {
-            "beam_id": active_beam_id,
-            "expected_revision": expected_revision,
-            "current_revision": int(latest.revision if latest else 0),
-            "reason": str(exc),
-        }
-        return None
-    displayed[active_beam_id] = int(committed.revision)
-    st.session_state["_displayed_load_analysis_revision_by_beam"] = displayed
-    st.session_state.pop("_load_analysis_edit_conflict", None)
-    if current is not None and committed.content_hash == current.content_hash:
-        return committed
-
-    # Analysis changes invalidate only work that depends on this snapshot.
-    from application.design_result_store import EngineeringResultStore
-    from inputs_application.design_guide_fragment_store import PublicationStore
-
-    branch = DesignBranch.LOAD_ANALYSIS
-    branch_snapshot = BeamDesignBranchStore(st.session_state).get(
-        active_beam_id, branch
-    )
-    DerivedDesignActionsStore(st.session_state).clear(active_beam_id, branch)
-    EngineeringResultStore(
-        st.session_state,
-        beam_id=active_beam_id,
-        design_branch=branch,
-    ).clear()
-    PublicationStore(st.session_state).begin_refresh(
-        workspace_revision=int(branch_snapshot.revision if branch_snapshot else 0),
-        beam_id=active_beam_id,
-        design_branch=branch,
-    )
-    _persist_branch_contract_into_record(active_beam_id)
-    st.session_state["inputs_dirty"] = True
-    st.session_state["_inputs_dirty"] = True
-    return committed
-
-
-def _route_design_branch() -> DesignBranch:
-    """Resolve the branch this render is authorised to project/edit."""
-
-    beam_id = str(st.session_state.get("active_beam_id") or "").strip()
-    store = BeamDesignBranchStore(st.session_state)
-    selected = store.selection(beam_id).selected_branch if beam_id else DesignBranch.BEAM_INPUTS
-    # ``page_slug`` belongs to the current router transaction.  The
-    # compatibility marker can still name the page rendered immediately
-    # before navigation, so it must not override the current route.
-    page_slug = str(
-        st.session_state.get("page_slug")
-        or st.session_state.get("_active_page_slug")
-        or "inputs"
-    )
-    return branch_for_page(
-        page_slug,
-        BeamDesignBranchStore(st.session_state).selection(beam_id),
-    )
-
-
-def _ensure_design_branches_for_beam(
-    beam_id: str,
-    *,
-    record: dict | None = None,
-) -> None:
-    """Run the idempotent per-beam branch migration exactly once."""
-
-    resolved_record = record if isinstance(record, dict) else _beam_records_dict().get(beam_id)
-    resolved_record = resolved_record if isinstance(resolved_record, dict) else {}
-    full_seed = migrate_longitudinal_reo_snapshot(
-        copy.deepcopy(resolved_record.get("params") or get_beam_project_param_snapshot())
-    )
-    beam_seed = _design_payload_for_branch(full_seed, DesignBranch.BEAM_INPUTS)
-    load_analysis_seed = None
-    load_analysis_seed_is_existing = False
-    for key in ("load_analysis_design", "load_analysis_params", "design_params"):
-        candidate = resolved_record.get(key)
-        if isinstance(candidate, dict):
-            load_analysis_seed = _design_payload_for_branch(
-                migrate_longitudinal_reo_snapshot(copy.deepcopy(candidate)),
-                DesignBranch.LOAD_ANALYSIS,
-            )
-            load_analysis_seed_is_existing = True
-            break
-    if load_analysis_seed is None:
-        load_analysis_seed = _design_payload_for_branch(
-            full_seed,
-            DesignBranch.LOAD_ANALYSIS,
-        )
-    BeamDesignBranchStore(st.session_state).ensure_migrated(
-        beam_id,
-        beam_inputs_seed=beam_seed,
-        load_analysis_seed=load_analysis_seed,
-        load_analysis_source_revision=(
-            int(resolved_record.get("load_analysis_revision") or 0) or None
-        ),
-        load_analysis_source_hash=(
-            str(resolved_record.get("load_analysis_hash") or "")
-            or (
-                canonical_hash(load_analysis_seed)
-                if load_analysis_seed_is_existing
-                else None
-            )
-        ),
-    )
-    LoadAnalysisSnapshotStore(st.session_state).ensure_seeded(
-        beam_id,
-        {
-            key: copy.deepcopy(full_seed.get(key, SHARED_DEFAULTS.get(key)))
-            for key in (LOAD_ANALYSIS_PARAM_KEYS | LOAD_ANALYSIS_POLICY_KEYS)
-        },
-    )
-
-
-def _persist_branch_contract_into_record(beam_id: str) -> None:
-    records = _beam_records_dict()
-    record = records.get(beam_id)
-    if not isinstance(record, dict):
-        return
-    _ensure_design_branches_for_beam(beam_id, record=record)
-    exported = BeamDesignBranchStore(st.session_state).export_for_beam(beam_id)
-    record["design_branches"] = copy.deepcopy(exported.get("branches") or {})
-    record["main_design_selection"] = copy.deepcopy(exported.get("main_selection") or {})
-    record["design_branch_migration"] = {
-        "version": exported.get("migration_version")
-    }
-    record["load_analysis_snapshot"] = LoadAnalysisSnapshotStore(
-        st.session_state
-    ).export_for_beam(beam_id)
-    # Compatibility projection for schedules and older project consumers is
-    # always the selected main branch, never whichever page rendered last.
-    selected = BeamDesignBranchStore(st.session_state).selected_snapshot(beam_id)
-    if selected is not None:
-        record["params"] = _project_branch_payload_with_analysis(
-            beam_id,
-            selected.design_branch,
-            selected.to_mutable_dict(),
-        )
-    records[beam_id] = record
-
-
-def _project_branch_payload_with_analysis(
-    beam_id: str,
-    branch: DesignBranch,
-    payload: dict,
-) -> dict:
-    """Merge analysis facts only for branches that derive calculated actions."""
-
-    projected = copy.deepcopy(payload)
-    uses_analysis = branch is DesignBranch.LOAD_ANALYSIS or str(
-        projected.get("actions_source") or projected.get("actions_mode") or ""
-    ).strip().lower() in {"analysis", "calculated", "design", "load_analysis"}
-    if uses_analysis:
-        analysis = LoadAnalysisSnapshotStore(st.session_state).current(beam_id)
-        if analysis is not None:
-            projected.update(analysis.to_mutable_dict())
-        projected["actions_mode"] = "design"
-        branch_snapshot = BeamDesignBranchStore(st.session_state).get(beam_id, branch)
-        derived = (
-            DerivedDesignActionsStore(st.session_state).current_for_dependencies(
-                beam_id,
-                branch,
-                branch_revision=int(branch_snapshot.revision),
-                branch_hash=branch_snapshot.content_hash,
-                load_analysis_revision=(analysis.revision if analysis else None),
-                load_analysis_hash=(analysis.content_hash if analysis else None),
-            )
-            if branch_snapshot is not None
-            else None
-        )
-        if derived is not None:
-            projected.update(derived.to_state_updates())
-    return projected
-
-
 def apply_beam_project_param_snapshot(snapshot) -> None:
     """Apply a stored beam snapshot back into shared state."""
     snapshot = migrate_longitudinal_reo_snapshot(snapshot)
@@ -2632,7 +2207,7 @@ def apply_beam_project_param_snapshot(snapshot) -> None:
 def make_default_beam_record(beam_id, beam_label=None) -> dict:
     label = beam_label or f"Beam {_next_beam_index()}"
     now = _beam_project_now()
-    record = {
+    return {
         "beam_id": beam_id,
         "beam_label": label,
         "params": get_beam_project_param_snapshot(),
@@ -2642,7 +2217,6 @@ def make_default_beam_record(beam_id, beam_label=None) -> dict:
         },
         "summary": make_not_run_beam_summary(),
     }
-    return record
 
 
 def _build_new_beam_starter_param_snapshot() -> dict:
@@ -2727,10 +2301,6 @@ def ensure_beam_project_initialized():
 
     st.session_state["beam_project_enabled"] = True
     st.session_state["beam_manager_initialized"] = True
-    for beam_id in list(st.session_state.get("beam_order") or []):
-        record = records.get(beam_id)
-        if isinstance(record, dict):
-            _ensure_design_branches_for_beam(str(beam_id), record=record)
     return st.session_state["active_beam_id"]
 
 
@@ -2748,203 +2318,17 @@ def persist_active_beam_from_shared():
 
     record["beam_id"] = active_beam_id
     record["beam_label"] = str(record.get("beam_label") or active_beam_id)
-    branch_store = BeamDesignBranchStore(st.session_state)
-    _ensure_design_branches_for_beam(active_beam_id, record=record)
-    branch = _route_design_branch()
-    current_branch = branch_store.get(active_beam_id, branch)
-    snapshot = get_beam_design_branch_snapshot(branch)
-    displayed_revisions = dict(
-        st.session_state.get("_displayed_branch_revision_by_identity") or {}
-    )
-    displayed_key = f"{active_beam_id}:{branch.value}"
-    expected_revision = int(
-        displayed_revisions.get(
-            displayed_key,
-            current_branch.revision if current_branch else 0,
-        )
-    )
-    analysis_store = None
-    current_analysis = None
-    displayed_analysis_revisions = None
-    expected_analysis_revision = None
-    if branch is DesignBranch.LOAD_ANALYSIS:
-        # Validate both independent optimistic-concurrency owners before
-        # changing either one. A stale analysis page must not partially commit
-        # its design branch and then fail on the analysis snapshot.
-        analysis_store = LoadAnalysisSnapshotStore(st.session_state)
-        current_analysis = analysis_store.current(active_beam_id)
-        displayed_analysis_revisions = dict(
-            st.session_state.get("_displayed_load_analysis_revision_by_beam") or {}
-        )
-        expected_analysis_revision = int(
-            displayed_analysis_revisions.get(
-                str(active_beam_id),
-                current_analysis.revision if current_analysis else 0,
-            )
-        )
-        current_analysis_revision = int(
-            current_analysis.revision if current_analysis else 0
-        )
-        if expected_analysis_revision != current_analysis_revision:
-            st.session_state["_load_analysis_edit_conflict"] = {
-                "beam_id": str(active_beam_id),
-                "expected_revision": expected_analysis_revision,
-                "current_revision": current_analysis_revision,
-                "reason": (
-                    f"expected Load Analysis revision {expected_analysis_revision}, "
-                    f"current is {current_analysis_revision}"
-                ),
-            }
-            return None
-    try:
-        committed_branch = branch_store.replace(
-            active_beam_id,
-            branch,
-            expected_branch_revision=expected_revision,
-            payload=snapshot,
-            source="shared_state_branch_commit",
-        )
-    except StaleBranchRevisionError as exc:
-        # Reject stale page state atomically. The caller can explicitly reload
-        # and retry; never overwrite a newer command with last-write-wins.
-        st.session_state["_branch_edit_conflict"] = {
-            "beam_id": str(active_beam_id),
-            "design_branch": branch.value,
-            "expected_revision": expected_revision,
-            "current_revision": int(current_branch.revision if current_branch else 0),
-            "reason": str(exc),
-        }
-        return None
-    displayed_revisions[displayed_key] = committed_branch.revision
-    st.session_state["_displayed_branch_revision_by_identity"] = displayed_revisions
-    st.session_state.pop("_branch_edit_conflict", None)
-    branch_store.set_active_context(branch)
-    branch_changed = bool(
-        current_branch is None
-        or committed_branch.revision != current_branch.revision
-        or committed_branch.content_hash != current_branch.content_hash
-    )
-    if branch_changed:
-        from application.design_result_store import EngineeringResultStore
-        from inputs_application.design_guide_fragment_store import PublicationStore
-
-        DerivedDesignActionsStore(st.session_state).clear(active_beam_id, branch)
-        EngineeringResultStore(
-            st.session_state,
-            beam_id=active_beam_id,
-            design_branch=branch,
-        ).clear()
-        PublicationStore(st.session_state).begin_refresh(
-            workspace_revision=committed_branch.revision,
-            beam_id=active_beam_id,
-            design_branch=branch,
-        )
-    if branch is DesignBranch.LOAD_ANALYSIS:
-        assert analysis_store is not None
-        assert displayed_analysis_revisions is not None
-        assert expected_analysis_revision is not None
-        try:
-            committed_analysis = analysis_store.replace(
-                active_beam_id,
-                expected_revision=expected_analysis_revision,
-                analysis=get_load_analysis_param_snapshot(),
-            )
-        except StaleLoadAnalysisRevisionError as exc:
-            st.session_state["_load_analysis_edit_conflict"] = {
-                "beam_id": str(active_beam_id),
-                "expected_revision": expected_analysis_revision,
-                "current_revision": int(
-                    current_analysis.revision if current_analysis else 0
-                ),
-                "reason": str(exc),
-            }
-            return None
-        displayed_analysis_revisions[str(active_beam_id)] = (
-            committed_analysis.revision
-        )
-        st.session_state["_displayed_load_analysis_revision_by_beam"] = (
-            displayed_analysis_revisions
-        )
-        st.session_state.pop("_load_analysis_edit_conflict", None)
-        analysis_changed = bool(
-            current_analysis is None
-            or committed_analysis.revision != current_analysis.revision
-            or committed_analysis.content_hash != current_analysis.content_hash
-        )
-        if analysis_changed:
-            from application.design_result_store import EngineeringResultStore
-            from inputs_application.design_guide_fragment_store import PublicationStore
-
-            dependent_branches = {DesignBranch.LOAD_ANALYSIS}
-            beam_inputs_branch = branch_store.get(
-                active_beam_id,
-                DesignBranch.BEAM_INPUTS,
-            )
-            beam_inputs_payload = (
-                beam_inputs_branch.to_mutable_dict()
-                if beam_inputs_branch is not None
-                else {}
-            )
-            if str(
-                beam_inputs_payload.get("actions_mode")
-                or beam_inputs_payload.get("actions_source")
-                or ""
-            ).strip().lower() in {
-                "analysis",
-                "calculated",
-                "design",
-                "load_analysis",
-            }:
-                dependent_branches.add(DesignBranch.BEAM_INPUTS)
-            for dependent_branch in dependent_branches:
-                DerivedDesignActionsStore(st.session_state).clear(
-                    active_beam_id,
-                    dependent_branch,
-                )
-                EngineeringResultStore(
-                    st.session_state,
-                    beam_id=active_beam_id,
-                    design_branch=dependent_branch,
-                ).clear()
-                dependent_snapshot = branch_store.get(
-                    active_beam_id,
-                    dependent_branch,
-                )
-                PublicationStore(st.session_state).begin_refresh(
-                    workspace_revision=int(
-                        dependent_snapshot.revision if dependent_snapshot else 0
-                    ),
-                    beam_id=active_beam_id,
-                    design_branch=dependent_branch,
-                )
-    # ``params`` is a read-only compatibility projection of the selected main
-    # branch. A Load Analysis page save cannot overwrite the Beam Inputs view.
-    selected = branch_store.selected_snapshot(active_beam_id)
-    record["params"] = (
-        _project_branch_payload_with_analysis(
-            active_beam_id,
-            selected.design_branch,
-            selected.to_mutable_dict(),
-        )
-        if selected is not None
-        else snapshot
-    )
+    record["params"] = get_beam_project_param_snapshot()
     meta = record.get("meta") if isinstance(record.get("meta"), dict) else {}
     meta["updated_at"] = _beam_project_now()
     record["meta"] = meta
     if not isinstance(record.get("summary"), dict):
         record["summary"] = make_not_run_beam_summary()
-    summaries = record.get("summary_by_branch")
-    if not isinstance(summaries, dict):
-        summaries = {}
-    summaries.setdefault(branch.value, copy.deepcopy(record["summary"]))
-    record["summary_by_branch"] = summaries
     records[active_beam_id] = record
-    _persist_branch_contract_into_record(active_beam_id)
     return record
 
 
-def load_active_beam_into_shared(force=False, *, selection_only=False):
+def load_active_beam_into_shared(force=False):
     """
     Hydrate the selected stored beam into shared state once per explicit beam load.
     The guard prevents stored data from overwriting live shared state on every rerun.
@@ -2954,90 +2338,19 @@ def load_active_beam_into_shared(force=False, *, selection_only=False):
     if not active_beam_id:
         return False
 
+    if (not force) and st.session_state.get("beam_last_hydrated_id") == active_beam_id:
+        return False
+
     record = _beam_records_dict().get(active_beam_id)
     if not isinstance(record, dict):
         return False
-    _ensure_design_branches_for_beam(active_beam_id, record=record)
-    branch_store = BeamDesignBranchStore(st.session_state)
-    branch = _route_design_branch()
-    branch_snapshot = branch_store.get(active_beam_id, branch)
-    hydration_identity = (
-        f"{active_beam_id}:{branch.value}:"
-        f"{int(branch_snapshot.revision if branch_snapshot else 0)}"
-    )
-    if (not force) and st.session_state.get("beam_last_hydrated_id") == hydration_identity:
-        return False
 
-    payload = (
-        _project_branch_payload_with_analysis(
-            active_beam_id,
-            branch,
-            branch_snapshot.to_mutable_dict(),
-        )
-        if branch_snapshot is not None
-        else copy.deepcopy(record.get("params") or {})
-    )
-    apply_beam_project_param_snapshot(payload)
-    branch_store.set_active_context(branch)
-    displayed_revisions = dict(
-        st.session_state.get("_displayed_branch_revision_by_identity") or {}
-    )
-    displayed_revisions[f"{active_beam_id}:{branch.value}"] = int(
-        branch_snapshot.revision if branch_snapshot else 0
-    )
-    st.session_state["_displayed_branch_revision_by_identity"] = displayed_revisions
-    analysis_snapshot = LoadAnalysisSnapshotStore(st.session_state).current(active_beam_id)
-    displayed_analysis_revisions = dict(
-        st.session_state.get("_displayed_load_analysis_revision_by_beam") or {}
-    )
-    displayed_analysis_revisions[str(active_beam_id)] = int(
-        analysis_snapshot.revision if analysis_snapshot else 0
-    )
-    st.session_state["_displayed_load_analysis_revision_by_beam"] = (
-        displayed_analysis_revisions
-    )
-    # General pages still contain a small number of read-only consumers of
-    # the historical single-result keys. Project only this branch's stored
-    # result/publication into those keys, or clear them when the selected
-    # branch has not been calculated. Never fall back to the other branch.
-    from application.design_result_store import EngineeringResultStore
-    from inputs_application.design_guide_fragment_store import PublicationStore
-
-    bound_result_store = EngineeringResultStore(
-        st.session_state,
-        beam_id=str(active_beam_id),
-        design_branch=branch,
-    )
-    projected_result = EngineeringResultStore(
-        st.session_state
-    ).project_current_branch()
-    projected_publication = PublicationStore(st.session_state).project_current_branch(
-        beam_id=str(active_beam_id),
-        design_branch=branch,
-    )
-    st.session_state["beam_last_hydrated_id"] = hydration_identity
+    apply_beam_project_param_snapshot(record.get("params") or {})
+    st.session_state["beam_last_hydrated_id"] = active_beam_id
     # One-shot: force tab widgets to match shared after beam record applied (any page).
     st.session_state["_force_hydrate_widgets_after_beam_load"] = True
-    branch_revision = int(branch_snapshot.revision if branch_snapshot else 0)
-    has_current_result = bool(
-        projected_result is not None
-        and bound_result_store.source_input_revision() == branch_revision
-    )
-    has_current_publication = bool(
-        projected_publication.status == "ready"
-        and projected_publication.active_workspace_revision == branch_revision
-        and projected_publication.active_publication_authority_hash
-    )
-    requires_execution = not (has_current_result and has_current_publication)
-    # A display-pointer change projects an already-owned branch publication.
-    # It is not an engineering edit and therefore must not mark a current
-    # branch dirty or force calculation/Design Brain execution.
-    # Hydration projects an existing branch; it is not an engineering edit.
-    # Only a branch without a current result/publication needs execution.
-    dirty = requires_execution
-    st.session_state["inputs_dirty"] = dirty
-    st.session_state["_inputs_dirty"] = dirty
-    st.session_state["_beam_hydration_requires_execution"] = requires_execution
+    st.session_state["inputs_dirty"] = True
+    st.session_state["_inputs_dirty"] = True
     return True
 
 
@@ -3135,24 +2448,6 @@ def reset_app_to_clean_starter_workspace() -> None:
     st.session_state[DISABLE_SNAPSHOT_RESTORE_KEY] = True
 
     for key in (
-        BRANCH_SNAPSHOT_STATE_KEY,
-        MAIN_DESIGN_SELECTION_STATE_KEY,
-        BRANCH_MIGRATION_STATE_KEY,
-        ACTIVE_DESIGN_BRANCH_CONTEXT_KEY,
-        LOAD_ANALYSIS_SNAPSHOT_STATE_KEY,
-        DERIVED_DESIGN_ACTIONS_BY_BRANCH_KEY,
-        AUTHORITATIVE_DESIGN_RESULT_BY_BRANCH_KEY,
-        AUTHORITATIVE_DESIGN_RESULT_REVISION_BY_BRANCH_KEY,
-        DESIGN_GUIDE_FRAGMENT_BY_BRANCH_STATE_KEY,
-        BRANCH_RESULT_KEY,
-        CALCULATION_CACHE_KEY,
-        DESIGN_BRAIN_CACHE_KEY,
-        "_displayed_branch_revision_by_identity",
-        "_displayed_load_analysis_revision_by_beam",
-    ):
-        st.session_state.pop(key, None)
-
-    for key in (
         "_snapshot_restore_complete",
         "_restored_from_snapshot",
         "_restore_guard_active",
@@ -3240,56 +2535,10 @@ def duplicate_active_beam_record():
     record["params"] = copy.deepcopy((active_record or {}).get("params") or get_beam_project_param_snapshot())
     # Duplicates start as unverified until this beam becomes the active checked beam.
     record["summary"] = make_not_run_beam_summary()
-    record["summary_by_branch"] = {
-        branch.value: make_not_run_beam_summary() for branch in DesignBranch
-    }
 
     records = _beam_records_dict()
     records[beam_id] = record
     _beam_order_list().append(beam_id)
-
-    # Duplicate both independent designs. Copying only the selected ``params``
-    # projection silently discarded the hidden branch and recreated both
-    # branches from whichever design happened to be main.
-    source_store = BeamDesignBranchStore(st.session_state)
-    source_selection = source_store.selection(str(active_beam_id))
-    branch_records: dict[str, dict] = {}
-    for branch in DesignBranch:
-        source_snapshot = source_store.get(str(active_beam_id), branch)
-        if source_snapshot is None:
-            continue
-        branch_records[branch.value] = BeamDesignSnapshot(
-            beam_id=beam_id,
-            design_branch=branch,
-            revision=1 if source_snapshot.payload else 0,
-            content_hash="",
-            payload=source_snapshot.to_mutable_dict(),
-            source=f"duplicate:{active_beam_id}:{branch.value}",
-            source_revision=source_snapshot.revision,
-            source_hash=source_snapshot.content_hash,
-        ).to_record()
-    source_store.import_for_beam(
-        beam_id,
-        {
-            "branches": branch_records,
-            "main_selection": MainDesignSelection(
-                beam_id=beam_id,
-                selected_branch=source_selection.selected_branch,
-                revision=0,
-            ).to_record(),
-            "migration_version": BRANCH_MIGRATION_VERSION,
-        },
-    )
-    source_analysis = LoadAnalysisSnapshotStore(st.session_state).current(
-        str(active_beam_id)
-    )
-    if source_analysis is not None:
-        LoadAnalysisSnapshotStore(st.session_state).replace(
-            beam_id,
-            expected_revision=0,
-            analysis=source_analysis.to_mutable_dict(),
-        )
-    _persist_branch_contract_into_record(beam_id)
     set_active_beam(beam_id)
     return beam_id
 
@@ -3305,8 +2554,6 @@ def delete_beam_record(beam_id):
     was_active = beam_id == st.session_state.get("active_beam_id")
 
     records.pop(beam_id, None)
-    BeamDesignBranchStore(st.session_state).delete_beam(str(beam_id))
-    LoadAnalysisSnapshotStore(st.session_state).delete_beam(str(beam_id))
     st.session_state["beam_order"] = [item for item in order if item != beam_id]
 
     if not was_active:
@@ -3340,11 +2587,7 @@ def update_active_beam_summary_from_results(
     record = records[active_beam_id]
     if st.session_state.get("_dirty", False):
         # Save/load may call this before the active beam's latest edits have been recomputed.
-        branch = _route_design_branch()
-        existing_summary = dict(record.get("summary_by_branch") or {}).get(
-            branch.value,
-            record.get("summary"),
-        )
+        existing_summary = record.get("summary")
         return existing_summary if isinstance(existing_summary, dict) else make_not_run_beam_summary()
 
     summary = make_not_run_beam_summary()
@@ -3385,13 +2628,7 @@ def update_active_beam_summary_from_results(
         summary["detailing_status"] = classified["detailing_status"]
         summary["overall_status"] = classified["overall_status"]
     else:
-        branch = _route_design_branch()
-        existing_summary = _sanitize_beam_summary(
-            dict(record.get("summary_by_branch") or {}).get(
-                branch.value,
-                record.get("summary"),
-            )
-        )
+        existing_summary = _sanitize_beam_summary(record.get("summary"))
         summary["strength_status"] = existing_summary.get("strength_status", BEAM_STATUS_NOT_RUN)
         summary["detailing_status"] = existing_summary.get("detailing_status", BEAM_STATUS_NOT_RUN)
         summary["overall_status"] = get_beam_overall_status(summary)
@@ -3409,23 +2646,10 @@ def update_active_beam_summary_from_results(
 
     if summary["overall_status"] == BEAM_STATUS_NOT_RUN:
         # Keep the existing cached summary if current results are still not trustworthy.
-        branch = _route_design_branch()
-        existing_summary = dict(record.get("summary_by_branch") or {}).get(
-            branch.value,
-            record.get("summary"),
-        )
+        existing_summary = record.get("summary")
         return existing_summary if isinstance(existing_summary, dict) else summary
 
-    branch = _route_design_branch()
-    summaries = dict(record.get("summary_by_branch") or {})
-    summaries[branch.value] = summary
-    record["summary_by_branch"] = summaries
-    # Compatibility projection follows the selected main branch only.
-    selected_branch = BeamDesignBranchStore(st.session_state).selection(
-        str(active_beam_id)
-    ).selected_branch
-    if branch is selected_branch:
-        record["summary"] = summary
+    record["summary"] = summary
     meta = record.get("meta") if isinstance(record.get("meta"), dict) else {}
     meta["summary_updated_at"] = summary["last_checked_at"]
     record["meta"] = meta
@@ -7446,7 +6670,7 @@ def _request_inputs_engineering_commit(
     # before capturing the transaction so diagrams, legacy calculations, beam
     # persistence, and navigation all observe the same values and revision.
     stage_started_ns = time.perf_counter_ns()
-    live_snapshot = get_beam_design_branch_snapshot()
+    live_snapshot = get_beam_project_param_snapshot()
     legacy_mirrors = build_legacy_longitudinal_mirrors_from_rows(live_snapshot)
     for key, value in legacy_mirrors.items():
         if key in BEAM_PROJECT_PARAM_KEYS:
@@ -7494,54 +6718,25 @@ def _request_inputs_engineering_commit(
         return existing_snapshot
 
     stage_started_ns = time.perf_counter_ns()
-    resolved_branch = _route_design_branch()
-    current_branch = BeamDesignBranchStore(st.session_state).get(
-        active_beam_id,
-        resolved_branch,
+    persisted_record = persist_active_beam_from_shared()
+    commit_timings_ms["persist_active_beam"] = (
+        time.perf_counter_ns() - stage_started_ns
+    ) / 1_000_000
+    if isinstance(persisted_record, dict):
+        persisted_params = persisted_record.get("params")
+        if isinstance(persisted_params, dict):
+            live_snapshot = copy.deepcopy(persisted_params)
+
+    stage_started_ns = time.perf_counter_ns()
+    committed = InputSnapshotStore(st.session_state).commit_active_beam(
+        live_snapshot,
+        changed_keys=resolved_changed_keys,
+        source=(
+            f"inputs_widget:{resolved_widget_key}"
+            if resolved_widget_key.startswith("inputs_")
+            else f"beam_widget:{resolved_widget_key}"
+        ),
     )
-    displayed_revisions = dict(
-        st.session_state.get("_displayed_branch_revision_by_identity") or {}
-    )
-    displayed_key = f"{active_beam_id}:{resolved_branch.value}"
-    expected_revision = int(
-        displayed_revisions.get(
-            displayed_key,
-            current_branch.revision if current_branch is not None else 0,
-        )
-    )
-    try:
-        committed = InputSnapshotStore(st.session_state).commit_for_beam(
-            active_beam_id,
-            live_snapshot,
-            branch=resolved_branch,
-            expected_branch_revision=expected_revision,
-            changed_keys=resolved_changed_keys,
-            source=(
-                f"inputs_widget:{resolved_widget_key}"
-                if resolved_widget_key.startswith("inputs_")
-                else f"beam_widget:{resolved_widget_key}"
-            ),
-        )
-    except ValueError as exc:
-        latest = BeamDesignBranchStore(st.session_state).get(
-            active_beam_id,
-            resolved_branch,
-        )
-        st.session_state["_branch_edit_conflict"] = {
-            "beam_id": active_beam_id,
-            "design_branch": resolved_branch.value,
-            "expected_revision": expected_revision,
-            "current_revision": int(latest.revision if latest else 0),
-            "reason": str(exc),
-        }
-        return None
-    displayed_revisions[displayed_key] = int(committed.revision)
-    st.session_state["_displayed_branch_revision_by_identity"] = displayed_revisions
-    st.session_state.pop("_branch_edit_conflict", None)
-    # The typed command above is the sole input write for this event. Prevent
-    # the post-widget compatibility pass from serializing derived projections
-    # as a second branch revision.
-    st.session_state["_beam_skip_auto_persist_once"] = True
     commit_timings_ms["commit_input_transaction"] = (
         time.perf_counter_ns() - stage_started_ns
     ) / 1_000_000
@@ -7685,12 +6880,6 @@ def _compose_sync_callback(widget_key: str, shared_key: str):
             return
         mark_user_edit(widget_key, shared_key)
         assign_callback()
-        if (
-            rendered_slug == "design"
-            and str(shared_key or "")
-            in (LOAD_ANALYSIS_PARAM_KEYS | LOAD_ANALYSIS_POLICY_KEYS)
-        ):
-            persist_load_analysis_snapshot_from_shared()
         # Display-only controls are already inside the Inputs workspace
         # fragment. Streamlit schedules that fragment rerun automatically
         # after the callback returns; explicitly calling st.rerun() here is a

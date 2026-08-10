@@ -189,15 +189,6 @@ def compliance_rejection_codes(result: EngineeringResult) -> tuple[str, ...]:
         rejected.append("minimum_shear_reinforcement_failed")
     if links_provided and shear.get("spacing_ok") is not True:
         rejected.append("shear_spacing_failed")
-    fit = families.get("reinforcement_fit", {})
-    if not bool(fit.get("accepted", False)):
+    if not bool(families.get("reinforcement_fit", {}).get("accepted", False)):
         rejected.append("reinforcement_fit_failed")
-        if str(fit.get("cover_status", "PASS")).upper() == "FAIL":
-            rejected.append("cover_failed")
-        if fit.get("horizontal_fit_ok") is False:
-            rejected.append("clear_spacing_failed")
-        if fit.get("vertical_fit_ok") is False:
-            rejected.append("row_spacing_failed")
-        if fit.get("aggregate_clearance_ok") is False:
-            rejected.append("constructability_limit_failed")
     return tuple(dict.fromkeys(rejected))

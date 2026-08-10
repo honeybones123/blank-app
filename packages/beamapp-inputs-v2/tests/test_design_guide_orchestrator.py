@@ -728,5 +728,4 @@ def test_terminal_execution_uses_the_terminal_family_declared_stage() -> None:
     decision = DesignGuideOrchestrator().decide(current)
 
     assert decision.family is DesignFamily.TARGET_BAND_REACHED
-    assert decision.search_evidence.generated_candidates == 0
-    assert decision.search_evidence.completed_stage_ids == ()
+    assert decision.search_evidence.completed_stage_ids == decision.search_evidence.declared_stage_ids

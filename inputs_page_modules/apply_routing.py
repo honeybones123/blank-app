@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from inputs_application.apply_transaction_store import ApplyTransactionStore
-from inputs_page_modules.fragments import rerun_active_inputs_fragment_only
 
 
 def handle_inputs_apply_buttons(
@@ -68,11 +67,14 @@ def handle_inputs_apply_buttons(
                 or "Apply recommendation"
             ),
         )
-    # Apply commits inside the same workspace fragment that rendered its CTA.
-    # Refresh that fragment only; rebuilding the complete app shell causes
-    # layout flicker and can rehydrate stale compatibility values.
+    # Apply commits a new authoritative input transaction.  Always rebuild the
+    # page shell after that boundary so the workspace context, action widgets,
+    # summaries, diagrams, and Design Brain all start from the committed
+    # revision.  A fragment-only rerun can retain the zero-action context from
+    # the first Inputs render and temporarily project zero actions after a
+    # successful cold-page Apply.
     record_rerun_trigger_fn(
-        "apply_triggered_fragment_rerun",
-        meta={"path": "handle_apply_buttons_committed_fragment"},
+        "apply_triggered_rerun",
+        meta={"path": "handle_apply_buttons_committed_full_app"},
     )
-    rerun_active_inputs_fragment_only(st_module)
+    st_module.rerun(scope="app")

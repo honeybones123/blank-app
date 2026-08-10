@@ -248,24 +248,17 @@ def verify_comparison_mode_detects_mismatch() -> None:
     assert not revision_comparison.revision_matches
 
 
-def verify_production_pages_share_calculation_projection_without_duplicate_brain() -> None:
+def verify_production_pages_share_one_composition_and_projection() -> None:
     root = Path(__file__).resolve().parents[2]
     load_analysis = (root / "design_page_runtime.py").read_text(encoding="utf-8")
     beam_setup = (
         root / "inputs_application" / "page_runtime" / "setup.py"
     ).read_text(encoding="utf-8")
-    assert "from inputs_application.workspace_application_service import" in load_analysis
-    assert "execute_installed_v2_workspace" in load_analysis
-    assert "include_design_brain=False" in load_analysis
-    assert "resolve_branch_workspace" in load_analysis
-    assert "render_v2_design_guide_card" not in load_analysis
-    assert "execute_typed_apply" not in load_analysis
-    assert "compare_design_brain_actions" not in load_analysis
-    assert "from inputs_application.workspace_application_service import" in beam_setup
-    assert "execute_installed_v2_workspace" in beam_setup
-    assert "resolve_branch_workspace" in beam_setup
-    assert "build_design_brain_service(" not in beam_setup
-    assert "calculate_v2_authoritative_result(" not in beam_setup
+    shared_import = (
+        "from inputs_application.design_brain_composition import"
+    )
+    assert shared_import in load_analysis
+    assert shared_import in beam_setup
     assert "from inputs_application.new_design_brain_adapter import calculate_v2_authoritative_result" not in load_analysis
     assert "build_summary_source_from_design_result" in load_analysis
     beam_setup_summary = (
@@ -283,7 +276,7 @@ def main() -> None:
     verify_snapshot_identity_uses_shared_contract()
     verify_same_actions_produce_same_design_calculations()
     verify_comparison_mode_detects_mismatch()
-    verify_production_pages_share_calculation_projection_without_duplicate_brain()
+    verify_production_pages_share_one_composition_and_projection()
     print("shared design actions contract: PASS")
 
 

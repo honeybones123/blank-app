@@ -23,7 +23,6 @@ from inputs_v2.application.design_brain_apply import (
 )
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.domain.engineering_result import EngineeringResult
-from inputs_v2.domain.design_preferences import DesignPreferenceProfile
 
 
 Calculate = Callable[[BeamInputs], EngineeringResult]
@@ -48,14 +47,12 @@ class BendingOverdesignPipeline:
         evaluate: Evaluate,
         rank_key: RankKey,
         complete_stage: CompleteStage,
-        preferences: DesignPreferenceProfile,
         max_consecutive_infeasible: int = 80,
     ) -> None:
         self._calculate = calculate
         self._evaluate = evaluate
         self._rank_key = rank_key
         self._complete_stage = complete_stage
-        self._preferences = preferences
         self._max_consecutive_infeasible = max(1, max_consecutive_infeasible)
 
     def preview(self, current: BeamInputs) -> BendingOverdesignOutcome:
@@ -296,7 +293,6 @@ class BendingOverdesignPipeline:
             ductility_blocked=ductility_blocked,
             improving_rejection_counts=improving_rejection_counts,
             rank_key=self._rank_key,
-            preferences=self._preferences,
         )
         metrics["improving_rejection_counts"] = dict(
             sorted(improving_rejection_counts.items())

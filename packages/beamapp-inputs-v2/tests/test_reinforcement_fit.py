@@ -5,8 +5,7 @@ from inputs_v2.engineering.reinforcement_fit import evaluate_arrangement, practi
 from inputs_v2.engineering.engineering_calculator import EngineeringCalculator
 from inputs_v2.presentation.view_models.input_diagram import build_input_diagram_view_model
 from inputs_v2.application.design_brain_apply import Candidate, apply_candidate, propose_neutral_candidate
-from inputs_v2.application.ranking_policy import CandidateEvidence
-from inputs_v2.application.design_brain.family_owners import RankingPolicy
+from inputs_v2.application.ranking_policy import CandidateEvidence, choose_valid
 
 def test_single_row_fit_and_effective_depth():
     result = evaluate_arrangement(BeamInputs(), (3,))
@@ -97,6 +96,4 @@ def test_any_canonical_edit_invalidates_stale_arrangement():
 def test_ranking_rejects_invalid_before_target_distance():
     invalid_near_target = CandidateEvidence("invalid", False, False, target_distance=0.01)
     valid_farther = CandidateEvidence("valid", True, True, target_distance=0.20)
-    selected = RankingPolicy().select((invalid_near_target, valid_farther))
-    assert selected is not None
-    assert selected.candidate_id == "valid"
+    assert choose_valid([invalid_near_target, valid_farther]).candidate_id == "valid"

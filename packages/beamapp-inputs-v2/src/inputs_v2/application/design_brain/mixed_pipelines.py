@@ -17,7 +17,6 @@ from inputs_v2.application.design_brain.shear_failure_pipeline import ShearFailu
 from inputs_v2.application.design_brain_apply import Candidate
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.domain.engineering_result import EngineeringResult
-from inputs_v2.domain.design_preferences import DesignPreferenceProfile
 
 
 Calculate = Callable[[BeamInputs], EngineeringResult]
@@ -41,14 +40,12 @@ class BendingFailureShearCleanupPipeline:
         calculate: Calculate,
         evaluate: Evaluate,
         rank_key: RankKey,
-        preferences: DesignPreferenceProfile,
         complete_stage: CompleteStage = lambda _stage_id: None,
         budget_exhausted: BudgetExhausted = lambda: False,
     ) -> None:
         self._calculate = calculate
         self._evaluate = evaluate
         self._rank_key = rank_key
-        self._preferences = preferences
         self._complete_stage = complete_stage
         self._budget_exhausted = budget_exhausted
 
@@ -63,8 +60,6 @@ class BendingFailureShearCleanupPipeline:
                 "increase_width_at_ratio_limit": "coordinate_geometry",
             },
             complete_stage=self._complete_stage,
-            rank_key=self._rank_key,
-            preferences=self._preferences,
         ).preview(current).preview
         if not base.accepted:
             return base

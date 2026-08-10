@@ -12,7 +12,6 @@ from inputs_application.adapters import (
     SharedStateSessionPort,
 )
 from inputs_application.apply_transaction_store import ApplyTransactionStore
-from inputs_application.branch_apply_identity import validate_branch_apply_identity
 from inputs_application.design_guide_fragment_store import DesignGuideFragmentStore
 from inputs_application.contracts import (
     InputsApplyCommand,
@@ -47,31 +46,6 @@ def execute_typed_apply(
     )
     workspace_store = InputsWorkspaceStateStore(session_state)
     fragment_state = DesignGuideFragmentStore(session_state).current()
-    branch_valid, branch_reason = validate_branch_apply_identity(
-        session_state,
-        result=current_result,
-        payload=recommendation,
-    )
-    if not branch_valid:
-        apply_store.update_route(
-            typed_apply_status="failed",
-            typed_apply_reason=branch_reason,
-            typed_apply_branch_rejected=True,
-        )
-        return TypedApplyExecution(
-            command=ApplyCommandResult(
-                status="failed",
-                reason=branch_reason,
-                recommendation_id=str(
-                    recommendation.get("recommendation_id")
-                    or recommendation.get("candidate_id")
-                    or recommendation.get("source_candidate_id")
-                    or ""
-                ).strip()
-                or None,
-            ),
-            mutation=None,
-        )
     revision_valid, revision_reason = apply_store.validate_revision_expectation(
         dict(recommendation),
         input_revision=workspace_store.workspace_revision(),

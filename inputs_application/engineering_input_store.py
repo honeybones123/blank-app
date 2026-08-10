@@ -2,23 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 import copy
 import hashlib
 import json
 import math
 from typing import Any, Mapping, MutableMapping
 
-from application.contracts.design_branch import DesignBranch, freeze_payload, thaw_payload
-from inputs_application.design_branch_store import (
-    LOAD_ANALYSIS_BRANCH_EXCLUDED_FIELDS,
-    BeamDesignBranchStore,
-)
-
 
 DRAFT_STATE_KEY = "_inputs_draft_engineering_state_v1"
+COMMITTED_STATE_KEY = "_inputs_committed_engineering_state_v1"
 TRANSACTION_META_KEY = "_inputs_engineering_input_transaction_v1"
 TRANSACTION_TRACE_KEY = "_inputs_engineering_input_transaction_trace_v1"
+BEAM_SNAPSHOT_STATE_KEY = "_inputs_engineering_input_snapshot_by_beam_v2"
+LEGACY_BEAM_COMMITTED_STATE_KEY = "_inputs_committed_engineering_state_by_beam_v1"
 
 
 def should_reuse_committed_engineering_baseline(
@@ -89,15 +86,12 @@ class InputSnapshotState:
 
     revision: int = 0
     engineering_hash: str | None = None
-    snapshot: Mapping[str, Any] = field(default_factory=dict)
+    snapshot: dict[str, Any] = field(default_factory=dict)
     changed_keys: tuple[str, ...] = ()
     source: str | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "snapshot", freeze_payload(self.snapshot or {}))
-
-    def to_mutable_dict(self) -> dict[str, Any]:
-        return thaw_payload(self.snapshot)
+        object.__setattr__(self, "snapshot", copy.deepcopy(self.snapshot or {}))
 
 
 class InputSnapshotStore:
@@ -126,25 +120,45 @@ class InputSnapshotStore:
         draft = dict(self._state.get(DRAFT_STATE_KEY) or {})
         if not draft:
             raise ValueError("cannot commit an empty engineering-input draft")
-        beam_id = str(self._state.get("active_beam_id") or "").strip()
-        if not beam_id:
-            raise ValueError("active_beam_id is required to commit engineering inputs")
+        previous = copy.deepcopy(self._state.get(COMMITTED_STATE_KEY) or {})
         changed_keys = tuple(
-            self._state.get(f"{DRAFT_STATE_KEY}:changed_keys") or ()
+            sorted(
+                key
+                for key in set(previous) | set(draft)
+                if previous.get(key) != draft.get(key)
+            )
         )
-        snapshot = self.commit_for_beam(
-            beam_id,
-            draft,
+        previous_metadata = dict(self._state.get(TRANSACTION_META_KEY) or {})
+        previous_revision = int(
+            previous_metadata.get(
+                "revision",
+                0,
+            )
+            or 0
+        )
+        draft_hash = _stable_hash(draft)
+        previous_hash = _stable_hash(previous) if previous else None
+        semantically_unchanged = bool(previous) and not changed_keys
+        if semantically_unchanged and previous_revision > 0:
+            revision = previous_revision
+            committed_hash = str(
+                previous_metadata.get("committed_hash")
+                or previous_hash
+                or draft_hash
+            )
+        else:
+            revision = previous_revision + 1
+            committed_hash = draft_hash
+        transaction = EngineeringInputTransaction(
+            draft_hash=draft_hash,
+            committed_hash=committed_hash,
+            revision=revision,
             changed_keys=changed_keys,
-            source=source,
+            source=str(source),
         )
-        return EngineeringInputTransaction(
-            draft_hash=_stable_hash(draft),
-            committed_hash=str(snapshot.engineering_hash or ""),
-            revision=snapshot.revision,
-            changed_keys=snapshot.changed_keys,
-            source=str(snapshot.source or source),
-        )
+        self._state[COMMITTED_STATE_KEY] = copy.deepcopy(draft)
+        self._state[TRANSACTION_META_KEY] = asdict(transaction)
+        return transaction
 
     def commit_for_beam(
         self,
@@ -153,95 +167,70 @@ class InputSnapshotStore:
         *,
         changed_keys: tuple[str, ...] = (),
         source: str,
-        branch: DesignBranch | None = None,
-        expected_branch_revision: int | None = None,
     ) -> InputSnapshotState:
-        """Atomically commit one branch-owned input snapshot.
+        """Atomically commit one beam-owned input snapshot and global revision.
 
-        ``BeamDesignBranchStore`` is the sole engineering owner.  The draft,
-        transaction metadata and trace below are audit/display projections;
-        no second per-beam payload is written.
+        The global record remains as a compatibility view for existing consumers.
+        The beam-owned record is the route/navigation authority.
         """
 
         resolved_beam_id = str(beam_id or "").strip()
         if not resolved_beam_id:
             raise ValueError("beam_id is required for an engineering-input commit")
-        branch_store = BeamDesignBranchStore(self._state)
-        resolved_branch = (
-            DesignBranch(branch)
-            if branch is not None
-            else branch_store.active_context(
-                resolved_beam_id,
-                page_slug=str(
-                    self._state.get("_active_page_slug")
-                    or self._state.get("page_slug")
-                    or "inputs"
-                ),
-            )
+        # ``current_for_beam`` intentionally falls back to the global record
+        # for old sessions.  That fallback is useful for reads, but must not
+        # be treated as a beam-local baseline when calculating changed keys for
+        # a first commit on another beam.
+        typed_by_beam = self._state.get(BEAM_SNAPSHOT_STATE_KEY)
+        legacy_by_beam = self._state.get(LEGACY_BEAM_COMMITTED_STATE_KEY)
+        has_beam_baseline = bool(
+            isinstance(typed_by_beam, dict)
+            and resolved_beam_id in typed_by_beam
+        ) or bool(
+            isinstance(legacy_by_beam, dict)
+            and resolved_beam_id in legacy_by_beam
+            and legacy_by_beam.get(resolved_beam_id)
         )
-        current_branch = branch_store.get(resolved_beam_id, resolved_branch)
-        branch_revision = int(current_branch.revision if current_branch else 0)
-        if expected_branch_revision is not None and int(expected_branch_revision) != branch_revision:
-            raise ValueError(
-                f"expected branch revision {expected_branch_revision}, current is {branch_revision}"
-            )
-        previous_beam_snapshot = self.current_for_beam(
-            resolved_beam_id,
-            branch=resolved_branch,
-        )
+        previous_beam_snapshot = self.current_for_beam(resolved_beam_id)
         previous_beam_state = (
-            previous_beam_snapshot.to_mutable_dict()
-            if previous_beam_snapshot.revision > 0
+            dict(previous_beam_snapshot.snapshot or {})
+            if has_beam_baseline
             else {}
         )
-        branch_state = dict(state)
-        if resolved_branch is DesignBranch.LOAD_ANALYSIS:
-            branch_state = {
-                key: value
-                for key, value in branch_state.items()
-                if key not in LOAD_ANALYSIS_BRANCH_EXCLUDED_FIELDS
-            }
+        previous_snapshot = self.current().snapshot
         draft = self.capture_draft(
-            branch_state,
+            state,
             changed_keys=tuple(changed_keys),
             source=source,
         )
-        committed_branch = branch_store.replace(
-            resolved_beam_id,
-            resolved_branch,
-            expected_branch_revision=branch_revision,
-            payload=draft,
-            source=source,
-        )
-        effective_changed_keys = tuple(
-            sorted(
-                key
-                for key in set(previous_beam_state) | set(draft)
-                if previous_beam_state.get(key) != draft.get(key)
-            )
-        )
-        if not previous_beam_state and changed_keys:
+        transaction = self.commit_draft(source=source)
+        if previous_beam_state:
             effective_changed_keys = tuple(
-                sorted(str(key) for key in changed_keys)
+                sorted(
+                    key
+                    for key in set(previous_beam_state) | set(draft)
+                    if previous_beam_state.get(key) != draft.get(key)
+                )
             )
-        transaction = EngineeringInputTransaction(
-            draft_hash=_stable_hash(draft),
-            committed_hash=committed_branch.content_hash,
-            revision=committed_branch.revision,
-            changed_keys=effective_changed_keys,
-            source=str(source),
-        )
-        self._state[TRANSACTION_META_KEY] = asdict(transaction)
+        elif changed_keys:
+            # A first commit for a beam has no beam-local baseline.  Preserve
+            # the callback's canonical changed-key set rather than reporting
+            # every field that differs from the previously active beam.
+            effective_changed_keys = tuple(sorted(str(key) for key in changed_keys))
+        else:
+            effective_changed_keys = transaction.changed_keys
+        if effective_changed_keys != transaction.changed_keys:
+            transaction = replace(transaction, changed_keys=effective_changed_keys)
+            self._state[TRANSACTION_META_KEY] = asdict(transaction)
         trace = list(self._state.get(TRANSACTION_TRACE_KEY) or [])
         trace.append(
             {
                 "beam_id": resolved_beam_id,
-                "design_branch": resolved_branch.value,
                 "revision": transaction.revision,
                 "changed_keys": list(transaction.changed_keys),
                 "change_values": {
                     key: {
-                        "before": copy.deepcopy(previous_beam_state.get(key)),
+                        "before": copy.deepcopy(previous_snapshot.get(key)),
                         "after": copy.deepcopy(draft.get(key)),
                     }
                     for key in transaction.changed_keys[:50]
@@ -259,10 +248,20 @@ class InputSnapshotStore:
             changed_keys=transaction.changed_keys,
             source=transaction.source,
         )
+        by_beam = dict(self._state.get(BEAM_SNAPSHOT_STATE_KEY) or {})
+        by_beam[resolved_beam_id] = asdict(snapshot_state)
+        self._state[BEAM_SNAPSHOT_STATE_KEY] = by_beam
+
+        # Preserve the established payload during the cutover so routes that
+        # have not yet moved to the typed store cannot observe different data.
+        legacy_by_beam = dict(
+            self._state.get(LEGACY_BEAM_COMMITTED_STATE_KEY) or {}
+        )
+        legacy_by_beam[resolved_beam_id] = copy.deepcopy(draft)
+        self._state[LEGACY_BEAM_COMMITTED_STATE_KEY] = legacy_by_beam
         self._state["_inputs_engineering_input_store_active_beam_id"] = (
             resolved_beam_id
         )
-        branch_store.set_active_context(resolved_branch)
         self._state["_inputs_workspace_revision"] = transaction.revision
         # Navigation preservation belongs to the committed input transaction,
         # not to the slower engineering or Design Brain publication.  Arm the
@@ -290,49 +289,65 @@ class InputSnapshotStore:
             source=source,
         )
 
-    def current_for_beam(
-        self,
-        beam_id: str,
-        *,
-        branch: DesignBranch | None = None,
-    ) -> InputSnapshotState:
+    def current_for_beam(self, beam_id: str) -> InputSnapshotState:
         """Return the latest committed snapshot for ``beam_id``."""
 
         resolved_beam_id = str(beam_id or "").strip()
         if not resolved_beam_id:
             return InputSnapshotState()
-        branch_store = BeamDesignBranchStore(self._state)
-        resolved_branch = (
-            DesignBranch(branch)
-            if branch is not None
-            else branch_store.active_context(
-                resolved_beam_id,
-                page_slug=str(
-                    self._state.get("_active_page_slug")
-                    or self._state.get("page_slug")
-                    or "inputs"
-                ),
-            )
-        )
-        branch_snapshot = branch_store.get(resolved_beam_id, resolved_branch)
-        if branch_snapshot is not None:
+        by_beam = self._state.get(BEAM_SNAPSHOT_STATE_KEY)
+        value = by_beam.get(resolved_beam_id) if isinstance(by_beam, dict) else None
+        if isinstance(value, InputSnapshotState):
+            return value
+        if isinstance(value, dict):
             return InputSnapshotState(
-                revision=branch_snapshot.revision,
-                engineering_hash=branch_snapshot.content_hash,
-                snapshot=branch_snapshot.to_payload(),
-                changed_keys=(),
-                source=branch_snapshot.source,
+                revision=int(value.get("revision", 0) or 0),
+                engineering_hash=(
+                    str(value.get("engineering_hash"))
+                    if value.get("engineering_hash")
+                    else None
+                ),
+                snapshot=dict(value.get("snapshot") or {}),
+                changed_keys=tuple(value.get("changed_keys") or ()),
+                source=(str(value.get("source")) if value.get("source") else None),
             )
-        return InputSnapshotState()
+
+        # Read old sessions without creating a second revision. A later edit
+        # promotes this payload through ``commit_for_beam``.
+        legacy = self._state.get(LEGACY_BEAM_COMMITTED_STATE_KEY)
+        legacy_snapshot = (
+            dict(legacy.get(resolved_beam_id) or {})
+            if isinstance(legacy, dict)
+            else {}
+        )
+        if not legacy_snapshot:
+            return InputSnapshotState()
+        current = self.current()
+        return InputSnapshotState(
+            revision=current.revision,
+            engineering_hash=_stable_hash(legacy_snapshot),
+            snapshot=legacy_snapshot,
+            changed_keys=(),
+            source="legacy_beam_snapshot_migration",
+        )
 
     def current(self) -> InputSnapshotState:
-        beam_id = str(self._state.get("active_beam_id") or "").strip()
-        if beam_id:
-            return self.current_for_beam(beam_id)
-        return InputSnapshotState()
+        committed = copy.deepcopy(self._state.get(COMMITTED_STATE_KEY) or {})
+        metadata = dict(self._state.get(TRANSACTION_META_KEY) or {})
+        return InputSnapshotState(
+            revision=int(metadata.get("revision", 0) or 0),
+            engineering_hash=(
+                str(metadata.get("committed_hash"))
+                if metadata.get("committed_hash")
+                else None
+            ),
+            snapshot=committed,
+            changed_keys=tuple(metadata.get("changed_keys") or ()),
+            source=(str(metadata.get("source")) if metadata.get("source") else None),
+        )
 
     def committed(self) -> dict[str, Any]:
-        return self.current().to_mutable_dict()
+        return self.current().snapshot
 
 
 # Transitional import compatibility only. Both names resolve to the exact same
@@ -341,11 +356,14 @@ EngineeringInputStore = InputSnapshotStore
 
 
 __all__ = [
+    "BEAM_SNAPSHOT_STATE_KEY",
+    "COMMITTED_STATE_KEY",
     "DRAFT_STATE_KEY",
     "EngineeringInputStore",
     "EngineeringInputTransaction",
     "InputSnapshotState",
     "InputSnapshotStore",
+    "LEGACY_BEAM_COMMITTED_STATE_KEY",
     "TRANSACTION_META_KEY",
     "TRANSACTION_TRACE_KEY",
     "should_reuse_committed_engineering_baseline",

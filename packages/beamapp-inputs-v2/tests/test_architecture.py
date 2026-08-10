@@ -145,8 +145,7 @@ def test_family_contract_is_the_only_terminal_decision_centre() -> None:
     orchestrator = (SRC / "application" / "design_guide_orchestrator.py").read_text(encoding="utf-8")
     owners = (SRC / "application" / "design_brain" / "family_owners.py").read_text(encoding="utf-8")
 
-    assert "return owner.decide(context, self._service)" in orchestrator
-    assert "FamilyRunContext(" in orchestrator
+    assert "return owner.decide(current, result, self._service)" in orchestrator
     assert "apply_allowed=" not in orchestrator
     assert "DecisionStatus(" not in orchestrator
     assert "TargetBandBlocker(" not in orchestrator
@@ -251,24 +250,12 @@ def test_family_contract_binding_cannot_leak_between_ladder_runs() -> None:
     from inputs_v2.application.design_brain.family_owners import FAMILY_OWNERS
     from inputs_v2.application.design_brain_families import DesignFamily
     from inputs_v2.application.design_brain_service import DesignBrainService
-    from inputs_v2.application.design_brain.family_context import FamilyRunContext
-    from inputs_v2.application.design_brain.search_profile import SearchProfile
     from inputs_v2.domain.beam_inputs import BeamInputs
-    from inputs_v2.domain.design_preferences import DEFAULT_DESIGN_PREFERENCES
 
     service = DesignBrainService()
     owner = FAMILY_OWNERS[DesignFamily.BENDING_OVERDESIGN_GOVERNS]
 
-    current = BeamInputs().validated()
-    result = service._calculator.calculate_current(current).result
-    assert result is not None
-    context = FamilyRunContext(
-        current,
-        result,
-        DEFAULT_DESIGN_PREFERENCES,
-        SearchProfile(),
-    )
-    owner.preview(context, service)
+    owner.preview(BeamInputs().validated(), service)
 
     assert service._active_family_contract is None
 
@@ -317,7 +304,6 @@ def test_search_budget_intent_is_explicitly_owned_by_each_family_contract() -> N
         DesignFamily.COMBINED_OVERDESIGN,
         DesignFamily.BENDING_OVERDESIGN_GOVERNS,
         DesignFamily.SHEAR_OVERDESIGN_GOVERNS,
-        DesignFamily.TARGET_BAND_REACHED,
     }
 
     assert {family for family, contract in FAMILY_CONTRACTS.items() if contract.search_kind is SearchKind.REPAIR} == repair

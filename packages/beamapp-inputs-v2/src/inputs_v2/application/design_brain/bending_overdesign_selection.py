@@ -10,7 +10,6 @@ from inputs_v2.application.design_brain.ratio_policy import ratio_gate_required
 from inputs_v2.application.design_brain_apply import Candidate
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.domain.engineering_result import EngineeringResult
-from inputs_v2.domain.design_preferences import DesignPreferenceProfile
 
 
 Trial = tuple[float, Candidate, EngineeringResult, float]
@@ -29,7 +28,6 @@ def select_bending_overdesign_preview(
     ductility_blocked: bool,
     improving_rejection_counts: dict[str, int],
     rank_key: RankKey,
-    preferences: DesignPreferenceProfile,
 ) -> DesignBrainPreview:
     """Select one cleanup in contract order and apply mandatory safety gates."""
     if not trials:
@@ -64,8 +62,11 @@ def select_bending_overdesign_preview(
     if target_reinforcement:
         _, candidate, after, _ = min(
             target_reinforcement,
-            key=lambda row: rank_key(
-                current, row[1], row[2], row[0], row[3]
+            key=lambda row: (
+                row[1].proposal.bottom_bars
+                * row[1].proposal.bottom_diameter_mm**2,
+                abs(float(row[2].families["bending"]["util"]) - 0.925),
+                row[3],
             ),
         )
     elif current_util < 0.85 and geometry_trials:
@@ -81,15 +82,22 @@ def select_bending_overdesign_preview(
         if target_geometry:
             _, candidate, after, _ = min(
                 target_geometry,
-                key=lambda row: rank_key(
-                    current, row[1], row[2], row[0], row[3]
+                key=lambda row: (
+                    abs(float(row[2].families["bending"]["util"]) - 0.925),
+                    row[1].proposal.width_mm * row[1].proposal.depth_mm,
+                    row[3],
                 ),
             )
         else:
             _, candidate, after, _ = min(
                 geometry_trials,
-                key=lambda row: rank_key(
-                    current, row[1], row[2], row[0], row[3]
+                key=lambda row: (
+                    -float(
+                        row[2].families.get("bending", {}).get("util", 0.0)
+                        or 0.0
+                    ),
+                    row[1].proposal.width_mm * row[1].proposal.depth_mm,
+                    row[3],
                 ),
             )
     else:
@@ -112,9 +120,7 @@ def select_bending_overdesign_preview(
     accepted = (
         ((util > current_util and util <= 1.0) or zero_demand_cleanup)
         and complete_compliance(after)
-        and not ratio_gate_required(
-            current, candidate.proposal, after, preferences
-        )
+        and not ratio_gate_required(current, candidate.proposal, after)
     )
     if (
         abs(float(current.actions.bending_moment_knm)) < 1e-9

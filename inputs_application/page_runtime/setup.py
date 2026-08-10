@@ -6,6 +6,8 @@ import copy
 
 import html
 
+import os
+
 import json
 
 import sys
@@ -14,7 +16,11 @@ import time
 
 from datetime import datetime
 
+from pathlib import Path
+
 from typing import Any
+
+from uuid import uuid4
 
 import streamlit as st
 
@@ -24,6 +30,8 @@ from inputs_application.policy_constants import DESIGN_GUIDE_LAST_APPLY_ROUTE_KE
 
 from inputs_application.design_guide_fingerprint import DESIGN_GUIDE_ALGORITHM_VERSION
 
+from application.design_run_coordinator import ensure_design_result
+
 from application.engineering_snapshot import build_engineering_input_snapshot_from_resolved_state
 
 from application.guidance_result_adapter import guidance_payload_from_authoritative_design_result
@@ -31,6 +39,8 @@ from application.guidance_result_adapter import guidance_payload_from_authoritat
 from application.contracts.design_brain import (
     AuthoritativeDesignResult,
 )
+from application.design_brain_port import DesignBrainRequest
+
 from inputs_application.state_utils import application_guidance_context, bottom_reo_state_label, float_from_state, guidance_state_snapshot, shared_state_snapshot, shear_state_label, updates_match_state
 
 from inputs_application.recommendation_support import design_optimisation_goal_label, resolve_geometry_width_context, severe_shear_failure, shear_severity_band
@@ -52,17 +62,11 @@ from inputs_application.summary_state_runtime import InputsSummaryStateRuntime, 
 from inputs_application.widget_state_projection import merge_current_engineering_widget_state
 from inputs_application.engineering_input_store import should_reuse_committed_engineering_baseline
 from inputs_application.session_services import InputsSessionServices
-from inputs_application.design_branch_store import BeamDesignBranchStore
-from inputs_application.branch_workspace import (
-    ActionSelectionPolicy,
-    ActionSource,
-    resolve_branch_workspace,
+from inputs_application.design_brain_composition import (
+    build_design_brain_service,
+    calculate_v2_authoritative_result,
 )
-from inputs_application.design_actions_store import DerivedDesignActionsStore
-from inputs_application.load_analysis_store import LoadAnalysisSnapshotStore
-from inputs_application.workspace_application_service import (
-    execute_installed_v2_workspace,
-)
+from inputs_application.design_brain_job_service import DesignBrainJobService
 
 from inputs_application.canonical_runtime_contracts import CanonicalConvenienceResyncRuntime, CanonicalDesignStatePackRuntime
 from inputs_page_modules.app_bridge.canonical_convenience_resync import _apply_canonical_convenience_resync_to_shared, convenience_scalar_differs
@@ -220,7 +224,6 @@ from state_and_helpers import (
     get_deflection_limit_label_from_ratio,
     get_deflection_limit_ratio,
     get_beam_project_param_snapshot,
-    LOAD_ANALYSIS_PARAM_KEYS,
     get_param,
     get_widget_key_for_shared,
     build_legacy_longitudinal_mirrors_from_rows,
@@ -311,6 +314,7 @@ from inputs_application.page_runtime.common import (
     _build_inputs_diagram_source_snapshot,
     _clear_auto_design_runtime_latches,
     _clear_design_guide_transient_ui_state,
+    _compute_design_guidance_items,
     _debug_check_design_action_consistency,
     _debug_resolved_guidance_actions,
     _design_action_widget_specs,
@@ -643,7 +647,16 @@ def _ensure_authoritative_design_result_current_coordinator(
         or int(beam_input_state.revision or 0) >= latest_input_revision
     )
     if same_beam_return_restore:
-        committed_result = services.engineering_results.current()
+        result_map = dict(
+            st.session_state.get(
+                "_inputs_authoritative_design_result_by_beam_v1"
+            )
+            or {}
+        )
+        committed_result = (
+            result_map.get(active_beam_id)
+            or services.engineering_results.current()
+        )
         committed_snapshot_hash = (
             _build_live_engineering_input_snapshot_current_coordinator(
                 committed_state
@@ -661,6 +674,11 @@ def _ensure_authoritative_design_result_current_coordinator(
             "committed_beam_id": committed_beam_id,
             "beam_state_present": bool(beam_committed_state),
             "beam_state_keys": len(beam_committed_state),
+            "result_map_hash": getattr(
+                result_map.get(active_beam_id),
+                "engineering_hash",
+                None,
+            ),
             "current_result_hash_before": getattr(
                 services.engineering_results.current(),
                 "engineering_hash",
@@ -845,9 +863,13 @@ def _ensure_authoritative_design_result_current_coordinator(
     st.session_state["_inputs_pre_widget_engineering_state_bridge"] = dict(
         current_state_debug.get("pre_widget_engineering_widget_bridge") or {}
     )
-    # Capacity and detailing checks remain useful with zero applied actions.
-    # The Design Brain publishes its explicit no-actions state separately; do
-    # not suppress the authoritative calculation or the summary cards here.
+    has_actions_or_loads = inputs_has_design_actions_or_loads()
+    has_explicit_design_state = (
+        _has_explicit_design_state_current_coordinator(current_state)
+        or bool(st.session_state.get(INPUTS_DESIGN_STARTED_KEY, False))
+    )
+    if not has_actions_or_loads and not has_explicit_design_state:
+        return None
     overlay_keys = tuple(
         current_state_debug.get("pre_widget_engineering_widget_bridge", {}).get(
             "overlay_keys",
@@ -857,18 +879,16 @@ def _ensure_authoritative_design_result_current_coordinator(
     canonical_input_state = _canonical_input_transaction_state_current_coordinator(
         current_state
     )
-    canonical_input_state = {
-        key: value
-        for key, value in canonical_input_state.items()
-        if key not in LOAD_ANALYSIS_PARAM_KEYS
-    }
-    if active_beam_id and beam_committed_state:
-        # The branch command/widget callback owns every input transaction.
-        # Inputs setup is a read-only consumer on every render, not merely on
-        # the first render after a callback. Recommitting here allowed hidden
-        # widget defaults and calculated projections to alternate the branch
-        # payload, producing two revisions per rerun and stale cross-page
-        # identities.
+    if (
+        active_beam_id
+        and snapshot_update_pending
+        and int(beam_input_state.revision or 0) > 0
+        and beam_committed_state
+    ):
+        # The widget callback already owns this input transaction. Inputs setup
+        # is now a consumer: rebuilding and committing the snapshot here would
+        # turn one edit into a second revision (often when a derived projection
+        # catches up on the following render).
         input_transaction = beam_input_state
         current_state = copy.deepcopy(beam_committed_state)
     elif active_beam_id:
@@ -908,118 +928,116 @@ def _ensure_authoritative_design_result_current_coordinator(
         or last_apply_route.get("selected_family_id")
         or last_apply_route.get("published_family_id")
     )
-    branch_store = BeamDesignBranchStore(st.session_state)
-    active_branch = branch_store.active_context(
-        active_beam_id,
-        page_slug=str(
-            st.session_state.get("_active_page_slug")
-            or st.session_state.get("page_slug")
-            or "inputs"
-        ),
-    )
-    branch_snapshot = branch_store.get(active_beam_id, active_branch)
-    if branch_snapshot is None:
-        raise RuntimeError("selected design branch has not been migrated")
-    if (
-        branch_snapshot.revision != int(input_transaction.revision)
-        or branch_snapshot.content_hash != input_transaction.engineering_hash
-    ):
-        raise ValueError("Inputs transaction and selected branch identity differ")
-
-    action_mode = str(
-        current_state.get("actions_mode")
-        or current_state.get("actions_source")
-        or "manual"
-    ).strip().lower()
-    uses_load_analysis = bool(
-        active_branch.value == "load_analysis"
-        or action_mode in {"analysis", "calculated", "design", "load_analysis"}
-    )
-    analysis_snapshot = (
-        LoadAnalysisSnapshotStore(st.session_state).current(active_beam_id)
-        if uses_load_analysis
+    guidance_context = application_guidance_context(current_state, st.session_state)
+    design_brain_service = (
+        build_design_brain_service(
+            lambda request: _compute_design_guidance_items(
+                dict(request.resolved_inputs),
+                guidance_debug_verbose=request.debug_enabled,
+                debug_enabled=request.debug_enabled,
+            )
+        )
+        if include_design_brain
         else None
     )
-    derived_actions = None
-    if uses_load_analysis and analysis_snapshot is not None:
-        derived_record = DerivedDesignActionsStore(
-            st.session_state
-        ).current_for_dependencies(
-            active_beam_id,
-            active_branch,
-            branch_revision=branch_snapshot.revision,
-            branch_hash=branch_snapshot.content_hash,
-            load_analysis_revision=analysis_snapshot.revision,
-            load_analysis_hash=analysis_snapshot.content_hash,
-        )
-        if derived_record is not None:
-            derived_actions = derived_record.actions
-    workspace = resolve_branch_workspace(
-        branch_snapshot,
-        analysis_snapshot,
-        ActionSource.LOAD_ANALYSIS if uses_load_analysis else ActionSource.MANUAL,
-        (
-            ActionSelectionPolicy.SELECTED_SECTION
-            if str(current_state.get("design_actions_source") or "max") == "section"
-            else (
-                ActionSelectionPolicy.MAXIMUM
-                if uses_load_analysis
-                else ActionSelectionPolicy.MANUAL
+
+    def _compute(snapshot_value):
+        if not include_design_brain:
+            return calculate_v2_authoritative_result(
+                engineering_snapshot=snapshot_value,
+                resolved_inputs=guidance_context,
+                input_revision=int(input_transaction.revision),
             )
-        ),
-        derived_design_actions=derived_actions,
-    )
-    # The authoritative calculation consumes the fully resolved workspace,
-    # including its selected/derived action envelope.  The earlier snapshot
-    # represents the editable branch transaction only and is therefore not a
-    # valid result-hash comparator when action resolution adds provenance or
-    # calculated actions.  Publish the exact calculation input identity for
-    # the workspace transaction guard.
-    resolved_engineering_snapshot = (
-        _build_live_engineering_input_snapshot_current_coordinator(
-            workspace.to_mutable_state()
+        engineering_calculations = (
+            dict(existing_result.current_calculations or {})
+            if (
+                existing_result is not None
+                and existing_result.engineering_hash
+                == snapshot_value.engineering_hash
+            )
+            else {}
         )
+        if design_brain_service is None:
+            raise RuntimeError("Design Brain service was not composed")
+        execution = design_brain_service.run(
+            DesignBrainRequest(
+                engineering_snapshot=snapshot_value,
+                input_revision=int(input_transaction.revision),
+                family_hint=str(family_override or "").strip() or None,
+                resolved_inputs=guidance_context,
+                engineering_calculations=engineering_calculations,
+                debug_enabled=sidebar_debug,
+            )
+        )
+        return execution.result
+
+    existing_result = services.engineering_results.current()
+    force_design_brain_refresh = bool(
+        include_design_brain
+        and existing_result is not None
+        and existing_result.engineering_hash == snapshot.engineering_hash
+        and not existing_result.final_publication
     )
-    st.session_state["_inputs_engineering_input_transaction_probe"] = {
-        **dict(
-            st.session_state.get("_inputs_engineering_input_transaction_probe")
-            or {}
-        ),
-        "engineering_hash": resolved_engineering_snapshot.engineering_hash,
-        "workspace_engineering_hash": workspace.engineering_hash,
-        "design_branch": active_branch.value,
-    }
-    workspace_result = execute_installed_v2_workspace(
-        st.session_state,
-        workspace,
-        include_design_brain=include_design_brain,
-        family_hint=str(family_override or "").strip() or None,
-        debug_enabled=sidebar_debug,
+    result = ensure_design_result(
+        result_store=services.engineering_results,
+        snapshot=snapshot,
+        compute_fn=_compute,
+        force=force_design_brain_refresh,
+        source_input_revision=input_transaction.revision,
     )
-    result = (
-        workspace_result.design_brain_result
-        if include_design_brain
-        else workspace_result.calculation_result
-    )
-    if result is None:
-        raise RuntimeError("branch workspace execution returned no authoritative result")
     st.session_state["_inputs_route_return_debug"] = {
         "branch": "normal_coordinator",
         "route_return_active": bool(
             st.session_state.get("_inputs_same_beam_return_active")
         ),
         "result_hash": result.engineering_hash,
-        "snapshot_hash": resolved_engineering_snapshot.engineering_hash,
+        "snapshot_hash": snapshot.engineering_hash,
     }
-    # ``WorkspaceApplicationService`` has already stored this result in the
-    # exact (beam, branch) owner. This block only settles the pending-input
-    # marker; it must not mirror the result into another per-beam map.
+    results_by_beam = dict(
+        st.session_state.get(
+            "_inputs_authoritative_design_result_by_beam_v1"
+        )
+        or {}
+    )
+    # A route-return guard may be present on the first Inputs render in a
+    # browser session, but it must not suppress the first authoritative result.
+    # Only reuse the guard when that beam already has a result for this
+    # transaction; otherwise publish the freshly computed V2 result normally.
+    route_return_missing_result = bool(
+        st.session_state.get("_inputs_same_beam_return_active")
+        and active_beam_id
+        and active_beam_id not in results_by_beam
+    )
     should_store_result = bool(
         active_beam_id
+        and (
+            not st.session_state.get("_inputs_same_beam_return_active")
+            or route_return_missing_result
+        )
         and services.engineering_results.source_input_revision()
         == input_transaction.revision
+        and (
+            active_beam_id not in results_by_beam
+            or snapshot_update_pending
+        )
     )
     if should_store_result:
+        results_by_beam[active_beam_id] = result
+        st.session_state[
+            "_inputs_authoritative_design_result_by_beam_v1"
+        ] = results_by_beam
+        result_revisions_by_beam = dict(
+            st.session_state.get(
+                "_inputs_authoritative_design_result_revision_by_beam_v1"
+            )
+            or {}
+        )
+        result_revisions_by_beam[active_beam_id] = int(
+            input_transaction.revision
+        )
+        st.session_state[
+            "_inputs_authoritative_design_result_revision_by_beam_v1"
+        ] = result_revisions_by_beam
         st.session_state.pop(
             "_inputs_authoritative_result_snapshot_update_pending",
             None,
@@ -1029,13 +1047,10 @@ def _ensure_authoritative_design_result_current_coordinator(
     prepare_guidance_ui_state(st.session_state, current_state, preserve_apply_banner=True, clear_transient=_clear_design_guide_transient_ui_state)
     st.session_state["_authoritative_design_result_runtime_probe"] = {
         "engineering_hash": result.engineering_hash,
-        "reuse_decision": {
-            "calculation_cache_hit": workspace_result.calculation_cache_hit,
-            "design_brain_cache_hit": workspace_result.design_brain_cache_hit,
-        },
-        "workspace_engineering_hash": workspace.engineering_hash,
-        "design_branch": active_branch.value,
-        "source": "branch_workspace_application_service",
+        "reuse_decision": dict(
+            st.session_state.get("_authoritative_design_result_last_decision") or {}
+        ),
+        "source": "inputs_pre_widget_application_coordinator",
     }
     return result
 
@@ -1056,6 +1071,150 @@ def refresh_inputs_design_brain_result() -> Any | None:
         include_design_brain=True
     )
 
+
+def _design_brain_outputs_root() -> Path:
+    configured = str(os.environ.get("BEAM_OUTPUTS_DIR") or "").strip()
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return Path(__file__).resolve().parents[3] / "complete-app - Outputs"
+
+
+def refresh_inputs_design_brain_result_background() -> Any | None:
+    """Submit/poll Design Brain without running its search on the session thread."""
+
+    engineering_result = _ensure_authoritative_design_result_current_coordinator(
+        include_design_brain=False
+    )
+    if engineering_result is None:
+        return None
+    services = InputsSessionServices.from_mapping(st.session_state)
+    input_store = services.input_snapshots
+    transaction = input_store.current()
+    current_state = input_store.committed()
+    input_revision = int(transaction.revision or 0)
+    snapshot = _build_live_engineering_input_snapshot_current_coordinator(
+        current_state
+    )
+    if engineering_result.engineering_hash != snapshot.engineering_hash:
+        raise ValueError("engineering result changed before Design Brain submission")
+    existing = services.engineering_results.current()
+    if (
+        existing is not None
+        and existing.engineering_hash == snapshot.engineering_hash
+        and services.engineering_results.source_input_revision() == input_revision
+        and bool(existing.final_publication)
+    ):
+        return existing
+    active_beam_id = str(st.session_state.get("active_beam_id") or "").strip()
+    owner_id = str(
+        st.session_state.get("_inputs_design_brain_job_owner_id") or ""
+    ).strip()
+    if not owner_id:
+        owner_id = uuid4().hex
+        st.session_state["_inputs_design_brain_job_owner_id"] = owner_id
+    last_apply_route = dict(
+        st.session_state.get(DESIGN_GUIDE_LAST_APPLY_ROUTE_KEY) or {}
+    )
+    family_override = (
+        last_apply_route.get("resolved_candidate_family_tag")
+        or last_apply_route.get("recommendation_family_tag")
+        or last_apply_route.get("selected_family_id")
+        or last_apply_route.get("published_family_id")
+    )
+    guidance_context = application_guidance_context(
+        current_state,
+        st.session_state,
+    )
+    session_seed = {
+        key: st.session_state.get(key)
+        for key in (
+            "_dev_mode",
+            "_design_guide_post_cleanup_acceptance_enabled",
+            "_design_guide_post_cleanup_acceptance_fp",
+        )
+        if key in st.session_state
+    }
+    service = DesignBrainJobService(
+        outputs_root=_design_brain_outputs_root(),
+        app_root=Path(__file__).resolve().parents[2],
+    )
+    poll = service.poll_or_submit(
+        owner_id=owner_id,
+        beam_id=active_beam_id,
+        input_revision=input_revision,
+        engineering_snapshot=snapshot,
+        engineering_calculations=dict(
+            engineering_result.current_calculations or {}
+        ),
+        guidance_context=guidance_context,
+        family_override=str(family_override or "").strip() or None,
+        guidance_debug_verbose=_design_guide_sidebar_debug_enabled(),
+        session_seed=session_seed,
+    )
+    st.session_state["_inputs_design_brain_job_probe"] = {
+        "status": poll.status,
+        "input_revision": poll.input_revision,
+        "engineering_hash": poll.engineering_hash,
+        "job_id": poll.job_id,
+        "elapsed_ms": poll.elapsed_ms,
+        "error": poll.error,
+    }
+    if poll.status == "failed":
+        return engineering_result
+    if poll.status != "ready" or not isinstance(poll.result, dict):
+        return engineering_result
+    result = AuthoritativeDesignResult(**dict(poll.result))
+    if result.engineering_hash != snapshot.engineering_hash:
+        raise ValueError("Design Brain worker returned a different engineering hash")
+    expected_authority_hash = (
+        result.with_publication_authority_hash().publication_authority_hash
+    )
+    if result.publication_authority_hash != expected_authority_hash:
+        raise ValueError("Design Brain worker returned an invalid authority hash")
+    latest_transaction = input_store.current()
+    latest_snapshot = _build_live_engineering_input_snapshot_current_coordinator(
+        input_store.committed()
+    )
+    if (
+        int(latest_transaction.revision or 0) != input_revision
+        or latest_snapshot.engineering_hash != result.engineering_hash
+    ):
+        st.session_state["_inputs_design_brain_job_probe"]["status"] = (
+            "stale_result_rejected"
+        )
+        return engineering_result
+    services.engineering_results.store(
+        result,
+        source_input_revision=input_revision,
+    )
+    if active_beam_id:
+        result_map = dict(
+            st.session_state.get(
+                "_inputs_authoritative_design_result_by_beam_v1"
+            )
+            or {}
+        )
+        result_map[active_beam_id] = result
+        st.session_state[
+            "_inputs_authoritative_design_result_by_beam_v1"
+        ] = result_map
+        revision_map = dict(
+            st.session_state.get(
+                "_inputs_authoritative_design_result_revision_by_beam_v1"
+            )
+            or {}
+        )
+        revision_map[active_beam_id] = input_revision
+        st.session_state[
+            "_inputs_authoritative_design_result_revision_by_beam_v1"
+        ] = revision_map
+    prepare_guidance_ui_state(
+        st.session_state,
+        current_state,
+        preserve_apply_banner=True,
+        clear_transient=_clear_design_guide_transient_ui_state,
+    )
+    return result
 
 def render_inputs_pre_widget_apply_and_render_setup_coordinator(*, ss: dict, fast_get_param):
     corrected_invalid_shear_state = bool(st.session_state.pop("_inputs_shear_shared_normalised_this_run", False))

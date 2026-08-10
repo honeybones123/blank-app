@@ -12,18 +12,17 @@ from inputs_v2.application.design_brain.bending_repair_policy import (
     generate_bending_reduction_specs,
     generate_bending_width_lanes,
 )
+from inputs_v2.application.design_brain.candidate_ranking import bending_candidate_rank_key
 from inputs_v2.application.design_brain.preview import DesignBrainPreview
 from inputs_v2.application.design_brain.ratio_policy import ratio_gate_required
 from inputs_v2.application.design_brain_apply import Candidate, propose_neutral_candidate
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.domain.engineering_result import EngineeringResult
-from inputs_v2.domain.design_preferences import DesignPreferenceProfile
 
 
 Calculate = Callable[[BeamInputs], EngineeringResult]
 Evaluate = Callable[..., Any]
 CompleteStage = Callable[[str], None]
-RankKey = Callable[[BeamInputs, Candidate, EngineeringResult, float, float], tuple]
 
 
 @dataclass(frozen=True)
@@ -42,15 +41,11 @@ class BendingFailurePipeline:
         evaluate: Evaluate,
         stage_map: dict[str, str] | None = None,
         complete_stage: CompleteStage = lambda _stage_id: None,
-        rank_key: RankKey,
-        preferences: DesignPreferenceProfile,
     ) -> None:
         self._calculate = calculate
         self._evaluate = evaluate
         self._stage_map = stage_map or {}
         self._complete_stage = complete_stage
-        self._rank_key = rank_key
-        self._preferences = preferences
 
     def _stage(self, stage_id: str) -> str:
         return self._stage_map.get(stage_id, stage_id)
@@ -151,7 +146,7 @@ class BendingFailurePipeline:
                 if cell_target_trials:
                     target_trial = min(
                         cell_target_trials,
-                        key=lambda row: self._rank_key(
+                        key=lambda row: bending_candidate_rank_key(
                             current, row[1], row[3], row[0], row[4]
                         ),
                     )
@@ -184,7 +179,7 @@ class BendingFailurePipeline:
             )
 
         def rank(row):
-            return self._rank_key(current, row[1], row[3], row[0], row[4])
+            return bending_candidate_rank_key(current, row[1], row[3], row[0], row[4])
 
         if target_trial is not None:
             _, candidate, updated_inputs, after, _ = target_trial
@@ -253,9 +248,7 @@ class BendingFailurePipeline:
         initial = candidate, updated_inputs, after
         balance = BendingProportionPipeline(
             evaluate=self._evaluate,
-            rank_key=self._rank_key,
             stage_id=self._stage("increase_width_at_ratio_limit"),
-            preferences=self._preferences,
         ).balance(
             current, before, candidate, updated_inputs, after
         )
@@ -287,9 +280,7 @@ class BendingFailurePipeline:
             if old != new
         )
         final_util = float(after.families.get("bending", {}).get("util", 0.0) or 0.0)
-        ratio_blocked = ratio_gate_required(
-            current, candidate.proposal, after, self._preferences
-        )
+        ratio_blocked = ratio_gate_required(current, candidate.proposal, after)
         unnecessary_layer = (
             current_util < low
             and

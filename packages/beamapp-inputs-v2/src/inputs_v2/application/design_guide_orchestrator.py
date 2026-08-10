@@ -12,11 +12,6 @@ from inputs_v2.application.design_brain.family_owners import (
 )
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.application.design_brain.search_profile import SearchProfile
-from inputs_v2.application.design_brain.family_context import FamilyRunContext
-from inputs_v2.domain.design_preferences import (
-    DEFAULT_DESIGN_PREFERENCES,
-    DesignPreferenceProfile,
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,17 +24,8 @@ class DesignGuideDecision:
 class DesignGuideOrchestrator:
     """Classify once, then delegate to exactly one family-owned ladder."""
 
-    def __init__(
-        self,
-        search_profile: SearchProfile | None = None,
-        preference_profile: DesignPreferenceProfile | None = None,
-    ) -> None:
-        self._search_profile = search_profile or SearchProfile()
-        self._preference_profile = preference_profile or DEFAULT_DESIGN_PREFERENCES
-        self._service = DesignBrainService(
-            self._search_profile,
-            self._preference_profile,
-        )
+    def __init__(self, search_profile: SearchProfile | None = None) -> None:
+        self._service = DesignBrainService(search_profile)
 
     @staticmethod
     def registered_families() -> tuple[DesignFamily, ...]:
@@ -52,13 +38,7 @@ class DesignGuideOrchestrator:
             raise ValueError("calculation result is stale")
         family = classify_design_family(result, current)
         owner = DECISION_OWNERS[family]
-        context = FamilyRunContext(
-            current=current,
-            current_result=result,
-            preferences=self._preference_profile,
-            search_profile=self._search_profile,
-        )
-        return owner.decide(context, self._service)
+        return owner.decide(current, result, self._service)
 
     def preview(self, current: BeamInputs) -> DesignGuideDecision:
         """Compatibility wrapper retained while callers migrate to decide()."""

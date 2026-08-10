@@ -570,6 +570,223 @@ def _queue_inputs_refresh_after_shared_seed(source: str) -> None:
     st.session_state["_pending_inputs_apply_refresh"] = payload
 
 
+_INPUTS_SAME_BEAM_RETURN_GUARD_KEY = "_inputs_same_beam_return_guard"
+_INPUTS_COMMITTED_STATE_BY_BEAM_KEY = "_inputs_committed_engineering_state_by_beam_v1"
+
+
+def _inputs_route_authority_handoff(selected_slug: str) -> bool:
+    """Preserve the committed Inputs transaction across same-beam navigation.
+
+    The legacy router runs before the Inputs coordinator.  On a return from
+    another page it can therefore reseed or derive shared values before the
+    committed transaction is consulted.  This handoff is intentionally
+    route-scoped: a same-beam return restores the session-owned state, while a
+    new beam or an explicitly changed browser recipe follows the normal load.
+    """
+    selected = str(selected_slug or "").strip().lower()
+    previous = str(st.session_state.get("_prev_page_slug") or "").strip().lower()
+    query_page = str(_get_query_param_scalar("page") or "").strip().lower()
+    url_confirms_route_change = bool(query_page and query_page == selected)
+    active_beam_id = str(st.session_state.get("active_beam_id") or "").strip()
+    committed_beam_id = str(
+        st.session_state.get("_inputs_engineering_input_store_active_beam_id")
+        or ""
+    ).strip()
+    input_services = InputsSessionServices.from_mapping(st.session_state)
+    input_store = input_services.input_snapshots
+    typed_current = input_store.current()
+    typed_beam = input_store.current_for_beam(active_beam_id)
+    committed_by_beam = st.session_state.get(_INPUTS_COMMITTED_STATE_BY_BEAM_KEY)
+    current_committed = typed_current.snapshot
+    if (
+        isinstance(current_committed, dict)
+        and current_committed
+        and committed_beam_id == active_beam_id
+    ):
+        committed = dict(current_committed)
+    else:
+        committed = dict(typed_beam.snapshot or {})
+        if not committed:
+            committed = (
+                dict(committed_by_beam.get(active_beam_id) or {})
+                if isinstance(committed_by_beam, dict) and active_beam_id
+                else {}
+            )
+    has_committed_state = isinstance(committed, dict) and bool(committed)
+    authority_handoff_armed = bool(
+        st.session_state.get("_inputs_route_authority_armed")
+    )
+    if not authority_handoff_armed:
+        st.session_state.pop(_INPUTS_SAME_BEAM_RETURN_GUARD_KEY, None)
+        st.session_state.pop("_inputs_same_beam_return_active", None)
+        st.session_state.pop("_inputs_same_beam_return_restored_keys", None)
+
+    existing_guard = dict(
+        st.session_state.get(_INPUTS_SAME_BEAM_RETURN_GUARD_KEY) or {}
+    )
+    # Record the handoff before the away-page router can touch shared state.
+    if (
+        authority_handoff_armed
+        and selected != "inputs"
+        and previous == "inputs"
+        and url_confirms_route_change
+        and active_beam_id
+        and committed_beam_id == active_beam_id
+        and has_committed_state
+        and not (
+            str(existing_guard.get("beam_id") or "").strip()
+            == active_beam_id
+            and str(existing_guard.get("from") or "").strip() == "inputs"
+        )
+    ):
+        results_by_beam = st.session_state.get(
+            "_inputs_authoritative_design_result_by_beam_v1"
+        )
+        # The beam-owned snapshot is authoritative here.  The legacy current
+        # result may have been transiently replaced by a derived-only pass
+        # while the route changed, so it must not win over the committed beam
+        # record.
+        committed_result = (
+            dict(results_by_beam).get(active_beam_id)
+            if isinstance(results_by_beam, dict)
+            else None
+        ) or InputsSessionServices.from_mapping(st.session_state).engineering_results.current()
+        st.session_state[_INPUTS_SAME_BEAM_RETURN_GUARD_KEY] = {
+            "beam_id": active_beam_id,
+            "from": "inputs",
+            "to": selected,
+            "committed_state": copy.deepcopy(dict(committed)),
+            "committed_revision": int(typed_beam.revision or typed_current.revision or 0),
+            "result_input_revision": int(
+                input_services.engineering_results.source_input_revision()
+                or typed_beam.revision
+                or typed_current.revision
+                or 0
+            ),
+            "authoritative_result": committed_result,
+        }
+
+    guard = dict(st.session_state.get(_INPUTS_SAME_BEAM_RETURN_GUARD_KEY) or {})
+    if selected != "inputs":
+        return False
+    if str(guard.get("beam_id") or "").strip() != active_beam_id:
+        if guard:
+            st.session_state.pop(_INPUTS_SAME_BEAM_RETURN_GUARD_KEY, None)
+        return False
+
+    guarded_committed = guard.get("committed_state")
+    latest_snapshot = input_store.current_for_beam(active_beam_id)
+    guarded_revision = int(guard.get("committed_revision", 0) or 0)
+    latest_revision = int(latest_snapshot.revision or 0)
+    if latest_revision > guarded_revision and latest_snapshot.snapshot:
+        # An edit may have committed while another route was visible.  The
+        # latest typed transaction wins; never hydrate the older route guard.
+        guarded_committed = latest_snapshot.snapshot
+        guard["committed_state"] = copy.deepcopy(dict(guarded_committed))
+        guard["committed_revision"] = latest_revision
+    if isinstance(guarded_committed, dict) and guarded_committed:
+        committed = copy.deepcopy(guarded_committed)
+        committed_by_beam = dict(
+            st.session_state.get(_INPUTS_COMMITTED_STATE_BY_BEAM_KEY) or {}
+        )
+        committed_by_beam[active_beam_id] = copy.deepcopy(committed)
+        st.session_state[_INPUTS_COMMITTED_STATE_BY_BEAM_KEY] = committed_by_beam
+    guarded_result = guard.get("authoritative_result")
+    guarded_result_revision = int(guard.get("result_input_revision", guarded_revision) or 0)
+    guarded_result_hash = (
+        guarded_result.get("engineering_hash")
+        if isinstance(guarded_result, dict)
+        else getattr(guarded_result, "engineering_hash", "")
+    )
+    result_is_current_for_return = bool(
+        guarded_result is not None
+        and latest_revision <= guarded_result_revision
+        and (
+            not latest_snapshot.engineering_hash
+            or str(guarded_result_hash or "")
+            == str(latest_snapshot.engineering_hash or "")
+        )
+    )
+    if guarded_result is not None and result_is_current_for_return:
+        results_by_beam = dict(
+            st.session_state.get(
+                "_inputs_authoritative_design_result_by_beam_v1"
+            )
+            or {}
+        )
+        results_by_beam[active_beam_id] = guarded_result
+        st.session_state[
+            "_inputs_authoritative_design_result_by_beam_v1"
+        ] = results_by_beam
+        input_services.engineering_results.store(
+            guarded_result,
+            source_input_revision=guarded_result_revision or None,
+        )
+    elif guarded_result is not None and latest_revision > guarded_result_revision:
+        # A newer input transaction is pending or has already published its
+        # own result.  Do not put the older route-guard publication back into
+        # the active session; freshness is owned by the typed result store.
+        current_result_revision = input_services.engineering_results.source_input_revision()
+        if current_result_revision is None or int(current_result_revision) < latest_revision:
+            input_services.engineering_results.clear()
+
+    # A changed replay recipe is an explicit engineering input change, not a
+    # navigation return, so let the normal recipe/bootstrap path own it.
+    if _browser_test_mode_active():
+        requested_recipe = str(
+            _get_query_param_scalar(_BROWSER_RECIPE_PARAM)
+            or st.session_state.get("_browser_recipe_query_value")
+            or os.environ.get("CODEX_BROWSER_REPLAY_RECIPE")
+            or ""
+        ).strip()
+        applied_recipe = str(
+            st.session_state.get(_BROWSER_RECIPE_APPLIED_KEY) or ""
+        ).strip()
+        if requested_recipe and applied_recipe and requested_recipe != applied_recipe:
+            st.session_state.pop(_INPUTS_SAME_BEAM_RETURN_GUARD_KEY, None)
+            return False
+
+    restored_keys: list[str] = []
+    for key, value in dict(committed or {}).items():
+        if key not in SHARED_DEFAULTS:
+            continue
+        if st.session_state.get(key) != value:
+            set_shared(
+                key,
+                copy.deepcopy(value),
+                source="inputs_same_beam_return_committed_restore",
+            )
+            restored_keys.append(str(key))
+    if restored_keys:
+        recalc_derived_values()
+        load_proxies_from_active_set()
+    st.session_state["_inputs_same_beam_return_active"] = True
+    st.session_state["_inputs_same_beam_return_restored_keys"] = sorted(
+        restored_keys
+    )
+    results_by_beam = st.session_state.get(
+        "_inputs_authoritative_design_result_by_beam_v1"
+    )
+    committed_result = (
+        dict(results_by_beam).get(active_beam_id)
+        if isinstance(results_by_beam, dict) and active_beam_id
+        else None
+    )
+    if committed_result is not None:
+        st.session_state["authoritative_design_result"] = committed_result
+        st.session_state[
+            "_authoritative_design_result_runtime_probe"
+        ] = {
+            "engineering_hash": committed_result.engineering_hash,
+            "reuse_decision": {
+                "reused": True,
+                "reason": "same_beam_route_return_pre_router_restore",
+            },
+            "source": "inputs_same_beam_route_return_pre_router_restore",
+        }
+    return True
+
+
 def _apply_browser_recipe_from_query() -> None:
     if not _browser_test_mode_active():
         return
@@ -5033,10 +5250,7 @@ def main():
     # --- ARCHITECTURE LOCK: dev mode flag ---
     _browser_test_mode_for_run = bool(_browser_test_mode_active())
     st.session_state.setdefault("_dev_mode", bool(_browser_test_mode_for_run or _EXPLICIT_DEV_MODE))
-    # Streamlit can replace the main document during a route/full rerun while
-    # retaining this module in memory.  Re-emit the page-width contract on
-    # every application render so the app cannot fall back to Streamlit's
-    # narrow default container after navigation or a hot reload.
+    # Preserve the wide responsive layout across route and hot-reload renders.
     _apply_sharp_embed_css()
     _apply_normal_user_page_zoom_css()
     reset_speed_profile_last_run()
@@ -5379,6 +5593,8 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
             st.session_state[LAST_QP_KEY] = selected_slug
     render_timing_mark("app.pre_dispatch.query_param_sync.end", selected_slug=selected_slug)
 
+    same_beam_inputs_return_active = _inputs_route_authority_handoff(selected_slug)
+
     # ============================================================
     # PHASE 1: ROUTER-OWNED LIFECYCLE (matches State Lab ordering)
     # ============================================================
@@ -5399,6 +5615,12 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
     if _browser_test_mode_for_run:
         st.session_state["_browser_router_probe"] = {
             "after_init_shared": _browser_action_probe("after_init_shared"),
+            "same_beam_inputs_return_active": bool(
+                st.session_state.get("_inputs_same_beam_return_active")
+            ),
+            "same_beam_inputs_return_restored_keys": list(
+                st.session_state.get("_inputs_same_beam_return_restored_keys") or []
+            ),
         }
     render_timing_mark("app.pre_dispatch.session_state_final_log_reset.start")
     try:
@@ -5408,21 +5630,30 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
     render_timing_mark("app.pre_dispatch.session_state_final_log_reset.end")
     # Apply stored active-beam params into shared before design resolution and widget hydration.
     render_timing_mark("app.pre_dispatch.load_active_beam_into_shared.start")
-    # The branch store, not a page-return heuristic, now owns hydration. Its
-    # beam:branch:revision identity makes an unchanged route a no-op while
-    # still switching coherently between the main branch and Load Analysis.
-    with speed_profile_section("shared_state_hydration.load_active_beam_into_shared", category="state_mutation"):
-        beam_hydrated = bool(load_active_beam_into_shared())
+    same_beam_inputs_route_return = bool(
+        same_beam_inputs_return_active
+        or st.session_state.get("_inputs_same_beam_return_active")
+    )
+    if same_beam_inputs_route_return:
+        # Inputs already owns the committed engineering transaction for this
+        # beam. Returning from another page must not reseed shared values from
+        # the older beam record before the Inputs restore coordinator runs.
+        st.session_state["beam_last_hydrated_id"] = st.session_state.get(
+            "active_beam_id"
+        )
+        beam_hydrated = False
+    else:
+        with speed_profile_section("shared_state_hydration.load_active_beam_into_shared", category="state_mutation"):
+            beam_hydrated = bool(load_active_beam_into_shared())
     render_timing_mark("app.pre_dispatch.load_active_beam_into_shared.end", beam_hydrated=beam_hydrated)
-    if beam_hydrated and bool(
-        st.session_state.pop("_beam_hydration_requires_execution", False)
-    ):
+    if beam_hydrated:
         _queue_inputs_refresh_after_shared_seed("router_active_beam_shared_seed")
     if _browser_test_mode_for_run:
         router_probe = dict(st.session_state.get("_browser_router_probe") or {})
         router_probe["after_load_active_beam"] = {
             **_browser_action_probe("after_load_active_beam"),
             "beam_hydrated": beam_hydrated,
+            "same_beam_inputs_route_return": bool(same_beam_inputs_route_return),
         }
         st.session_state["_browser_router_probe"] = router_probe
     render_timing_mark("app.pre_dispatch.apply_browser_recipe.start")
@@ -5618,7 +5849,13 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
             hydrate_active_page_widgets_from_shared(
                 selected_slug,
                 force_on_restore=True,
-                force_on_page_change=page_changed,
+                # Returning to Inputs intentionally uses a shell rerun.  On
+                # that second run ``page_changed`` is false, but the committed
+                # transaction still has to reseed stale widget aliases before
+                # Inputs widgets mount and callbacks can fire.
+                force_on_page_change=(
+                    page_changed or same_beam_inputs_route_return
+                ),
             )
     finally:
         st.session_state["_sync_lock"] = False
@@ -5628,6 +5865,7 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
         router_probe["after_router_hydrate"] = {
             **_browser_action_probe("after_router_hydrate"),
             "page_changed": bool(page_changed),
+            "same_beam_inputs_route_return": bool(same_beam_inputs_route_return),
             "pending_inputs_apply_refresh_present": bool(
                 st.session_state.get("_pending_inputs_apply_refresh"),
             ),
@@ -5828,14 +6066,20 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
         st.session_state["results_version"] = int(st.session_state.get("results_version", 0) or 0) + 1
 
     should_structural_recompute = (
+        not bool(st.session_state.get("_inputs_same_beam_return_active"))
+        and (
         bool(st.session_state.get("run_design_clicked")) or (
         bool(st.session_state.get("inputs_dirty") or st.session_state.get("_inputs_dirty"))
         and bool(st.session_state.get("auto_recompute"))
+        )
         )
     )
     render_timing_mark(
         "app.pre_dispatch.structural_recompute.decision",
         should_structural_recompute=bool(should_structural_recompute),
+        same_beam_inputs_return_active=bool(
+            st.session_state.get("_inputs_same_beam_return_active")
+        ),
         run_design_clicked=bool(st.session_state.get("run_design_clicked")),
         inputs_dirty=bool(st.session_state.get("inputs_dirty")),
         _inputs_dirty=bool(st.session_state.get("_inputs_dirty")),
@@ -5883,6 +6127,10 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
                 pass
         st.session_state["_computed_once"] = True
         st.session_state["_dirty"] = False
+        try:
+            persist_active_beam_from_shared()
+        except Exception:
+            pass
         render_timing_mark(
             "app.pre_dispatch.structural_recompute.end",
             compute_time_ms=st.session_state.get("_compute_time_ms"),
