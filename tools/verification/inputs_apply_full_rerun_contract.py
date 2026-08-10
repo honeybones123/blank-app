@@ -78,7 +78,7 @@ def verify_committed_apply_forces_full_app_rerun() -> None:
     assert calls == [
         (
             "apply_triggered_rerun",
-            {"path": "handle_apply_buttons_committed_full_app"},
+            {"path": "handle_apply_buttons_committed_fallback"},
         ),
         ("rerun", "app"),
     ]

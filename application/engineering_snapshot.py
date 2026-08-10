@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from application.design_actions_adapters import adapt_design_actions_from_state
+from calculations.design_actions import resolve_design_actions_contract_from_state
 from application.contracts.design_brain import EngineeringInputSnapshot
 
 
@@ -124,7 +124,7 @@ def _pick(state: Mapping[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
 
 
 def _resolved_design_actions(state: Mapping[str, Any]) -> dict[str, Any]:
-    return adapt_design_actions_from_state(state).to_snapshot_mapping()
+    return resolve_design_actions_contract_from_state(state).to_snapshot_mapping()
 
 
 def _resolved_reinforcement(state: Mapping[str, Any]) -> dict[str, Any]:

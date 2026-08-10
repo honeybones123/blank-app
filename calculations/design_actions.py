@@ -1,15 +1,99 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Mapping
 
-from application.contracts.design_actions import (
-    DESIGN_ACTIONS_SNAPSHOT_SCHEMA_VERSION,
-    DesignActionsSnapshot,
-)
+
+RESOLVED_DESIGN_ACTIONS_SCHEMA_VERSION = "resolved_design_actions.v1"
 
 
-RESOLVED_DESIGN_ACTIONS_SCHEMA_VERSION = DESIGN_ACTIONS_SNAPSHOT_SCHEMA_VERSION
-ResolvedDesignActions = DesignActionsSnapshot
+@dataclass(frozen=True)
+class ResolvedDesignActions:
+    """Immutable engineering-facing Design Actions contract.
+
+    Session keys and compatibility aliases are resolved at the boundary.  All
+    downstream identity and typed consumers can use this object without
+    knowing which widget proxy or legacy result key supplied a value.
+    """
+
+    mu: float
+    mu_signed: float
+    mu_pos: float
+    mu_neg: float
+    has_sagging_case: bool
+    has_hogging_case: bool
+    vu: float
+    nu: float
+    sls_m: float
+    sls_m_signed: float
+    sls_m_pos: float
+    sls_m_neg: float
+    sls_v: float
+    sls_n: float
+    tu: float
+    pu: float
+    source: str
+    actions_source: str
+    actions_mode: str
+    design_actions_source: str
+    sls_line_load: float
+    sls_point_load: float
+
+    @property
+    def signature(self) -> tuple[Any, ...]:
+        """Preserve the established cache-signature contract."""
+
+        return (
+            self.mu,
+            self.vu,
+            self.nu,
+            self.sls_m,
+            self.sls_v,
+            self.source,
+            self.actions_source,
+            self.actions_mode,
+        )
+
+    def to_legacy_mapping(self) -> dict[str, Any]:
+        """Adapt to existing dictionary consumers during incremental cutover."""
+
+        return {
+            "Mu": self.mu,
+            "Mu_signed": self.mu_signed,
+            "Mu_pos": self.mu_pos,
+            "Mu_neg": self.mu_neg,
+            "has_sagging_case": self.has_sagging_case,
+            "has_hogging_case": self.has_hogging_case,
+            "Vu": self.vu,
+            "Nu": self.nu,
+            "SLS_M": self.sls_m,
+            "SLS_M_signed": self.sls_m_signed,
+            "SLS_M_pos": self.sls_m_pos,
+            "SLS_M_neg": self.sls_m_neg,
+            "SLS_V": self.sls_v,
+            "Tu": self.tu,
+            "Pu": self.pu,
+            "source": self.source,
+            "actions_source": self.actions_source,
+            "actions_mode": self.actions_mode,
+            "signature": self.signature,
+        }
+
+    def to_snapshot_mapping(self) -> dict[str, Any]:
+        """Return the normalized payload that owns engineering identity."""
+
+        resolved = self.to_legacy_mapping()
+        resolved.pop("signature", None)
+        resolved["SLS_N"] = self.sls_n
+        resolved["design_actions_source"] = self.design_actions_source
+        return {
+            "schema_version": RESOLVED_DESIGN_ACTIONS_SCHEMA_VERSION,
+            "resolved": resolved,
+            "serviceability_loads": {
+                "w_sls_kNm_per_m": self.sls_line_load,
+                "P_sls_kN": self.sls_point_load,
+            },
+        }
 
 
 def _state_read_mapping(source_state):
