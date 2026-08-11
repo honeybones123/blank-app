@@ -33,6 +33,7 @@ from inputs_application.session_services import InputsSessionServices
 from inputs_application.summary_contracts import InputsSummaryCalculationSource
 from inputs_application.workspace_state_store import InputsWorkspaceStateStore
 from inputs_application.design_brain_composition import selected_design_brain_adapter_name
+from inputs_application.apply_transaction_store import ApplyTransactionStore
 from inputs_application.v2_design_guide_renderer import render_v2_design_guide_card
 from inputs_page_modules.fragments import (
     request_inputs_fragment_wake,
@@ -839,10 +840,26 @@ def render_inputs_design_guide_fragment_section(
     if selected_design_brain_adapter_name() == "v2":
         authoritative_result = services.engineering_results.current()
         if authoritative_result is not None:
+            revisioned_apply_payload = ApplyTransactionStore(
+                st_module.session_state
+            ).attach_revision_expectation(
+                dict(authoritative_result.apply_payload or {}),
+                input_revision=authoritative_revision,
+                publication_revision=int(
+                    fragment_state.active_workspace_revision
+                    if fragment_state.active_workspace_revision is not None
+                    else authoritative_revision
+                ),
+                engineering_hash=identity.engineering_hash,
+                publication_authority_hash=str(
+                    authoritative_result.publication_authority_hash or ""
+                ),
+            )
             render_v2_design_guide_card(
                 st_module=st_module,
                 design_guide_slot=design_guide_slot,
                 result=authoritative_result,
+                apply_payload=revisioned_apply_payload,
             )
     else:
         runtime.render_design_guide(

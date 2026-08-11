@@ -70,6 +70,7 @@ def render_v2_design_guide_card(
     st_module: Any,
     design_guide_slot: Any,
     result: AuthoritativeDesignResult,
+    apply_payload: Mapping[str, Any] | None = None,
 ) -> None:
     """Render the replacement V2 card in the existing Design Guide slot."""
 
@@ -203,7 +204,14 @@ def render_v2_design_guide_card(
             unsafe_allow_html=True,
         )
 
-        payload = dict(result.apply_payload or {})
+        # Apply identity is bound by the application workspace immediately
+        # before rendering.  The renderer may display/queue that exact payload
+        # but cannot manufacture revision evidence or Apply authority itself.
+        payload = dict(
+            apply_payload
+            if apply_payload is not None
+            else result.apply_payload or {}
+        )
         enabled = bool(cta.get("enabled") or cta.get("actionable")) and bool(payload.get("updates") or payload.get("resolved_candidate_updates"))
         if enabled:
             label = _text(cta.get("label"), "Apply recommendation")

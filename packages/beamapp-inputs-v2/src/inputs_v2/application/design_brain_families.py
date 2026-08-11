@@ -186,6 +186,16 @@ ENTRY_CONDITIONS: dict[DesignFamily, EntryCondition] = {
         (s.zero_bending_with_reinforcement and s.zero_shear_with_reinforcement)
         or (
             not s.bending_failed and not s.shear_failed and not s.serviceability_failed
+            and s.zero_bending_with_reinforcement
+            and s.shear_domain and s.shear_utilisation < 0.85
+        )
+        or (
+            not s.bending_failed and not s.shear_failed and not s.serviceability_failed
+            and s.zero_shear_with_reinforcement
+            and s.bending_domain and s.bending_utilisation < 0.85
+        )
+        or (
+            not s.bending_failed and not s.shear_failed and not s.serviceability_failed
             and s.bending_utilisation < 0.85 and s.shear_utilisation < 0.85
             and s.bending_domain and s.shear_domain
         )

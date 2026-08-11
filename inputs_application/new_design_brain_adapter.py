@@ -31,10 +31,35 @@ from inputs_application.v2_engineering_calculation_adapter import (
 )
 
 
+_REQUIRED_V2_DESIGN_BRAIN_CONTRACT_VERSION = 2
+
+
+def _require_compatible_v2_design_brain_contract(version: object) -> None:
+    if version != _REQUIRED_V2_DESIGN_BRAIN_CONTRACT_VERSION:
+        raise RuntimeError(
+            "Installed beamapp-inputs-v2 is incompatible with this Runtime "
+            f"(Design Brain contract {version!r}; required "
+            f"{_REQUIRED_V2_DESIGN_BRAIN_CONTRACT_VERSION}). Reinstall the "
+            "Runtime package from packages/beamapp-inputs-v2."
+        )
+
+
 def _v2_api():
     """Extend the calculation facts with the selected Design Brain contracts."""
 
     api = _v2_calculation_api()
+    try:
+        from inputs_v2 import (  # noqa: PLC0415
+            RUNTIME_DESIGN_BRAIN_CONTRACT_VERSION,
+        )
+    except ImportError as exc:
+        raise RuntimeError(
+            "Installed beamapp-inputs-v2 predates the required Runtime Design "
+            "Brain contract. Reinstall packages/beamapp-inputs-v2."
+        ) from exc
+    _require_compatible_v2_design_brain_contract(
+        RUNTIME_DESIGN_BRAIN_CONTRACT_VERSION
+    )
     from inputs_v2.application.design_guide_orchestrator import (  # noqa: PLC0415
         DesignGuideOrchestrator,
     )

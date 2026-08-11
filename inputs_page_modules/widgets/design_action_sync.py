@@ -226,11 +226,14 @@ def hydrate_design_action_widgets_from_shared(
         bool(design_controls),
         tuple(_display_value(spec) for spec in specs),
     )
-    should_hydrate = (
-        force
-        or design_controls
-        or st_module.session_state.get("_design_action_widget_signature") != signature
-    )
+    # Existing manual widgets are the edit authority.  A signature change can
+    # be observed by an older fragment render after a newer edit has already
+    # committed; hydrating on that change would repaint the control with stale
+    # canonical data even though the latest engineering snapshot is correct.
+    # External ownership changes (beam/source/load-set) request ``force``
+    # explicitly.  Derived Load Analysis controls remain projection-owned and
+    # are therefore refreshed on every render.
+    should_hydrate = bool(force or design_controls)
     _record_design_action_state_transition(
         st_module,
         "hydrate_entry",

@@ -94,6 +94,21 @@ def test_single_family_overdesign_is_distinct() -> None:
     assert classify_design_family(result, inputs) is DesignFamily.BENDING_OVERDESIGN_GOVERNS
 
 
+def test_zero_bending_with_underused_shear_is_coordinated_overdesign() -> None:
+    inputs = BeamInputs(
+        actions=ActionInputs(shear_force_kn=40.0),
+        shear=ShearReinforcement(diameter_mm=12, legs=2, spacing_mm=200),
+    ).validated()
+    classification = classify_design_family_selection(
+        _classification_result(0.0, 0.40),
+        inputs,
+    )
+
+    assert classification.selected_family is DesignFamily.COMBINED_OVERDESIGN
+    assert DesignFamily.BENDING_OVERDESIGN_GOVERNS in classification.matched_families
+    assert DesignFamily.SHEAR_OVERDESIGN_GOVERNS in classification.matched_families
+
+
 def test_target_band_requires_every_active_uls_domain_to_be_in_band() -> None:
     inputs = BeamInputs(
         actions=ActionInputs(bending_moment_knm=500.0, shear_force_kn=300.0),

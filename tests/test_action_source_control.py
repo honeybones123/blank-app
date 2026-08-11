@@ -185,6 +185,64 @@ def test_design_mode_widgets_display_resolved_uls_and_sls_projection() -> None:
     assert fake.session_state["inputs_load_Vstar_proxy"] == 208.0
 
 
+def test_manual_widget_is_not_repainted_by_a_stale_signature_change() -> None:
+    class _FakeStreamlit:
+        def __init__(self) -> None:
+            self.session_state = {
+                "inputs_load_Mstar_pos_proxy": 75.0,
+                "uls_Mstar_pos_manual": 50.0,
+                "uls_Mstar_neg_manual": 0.0,
+                "uls_Mstar": 50.0,
+                "uls_Vstar": 0.0,
+                "uls_Nstar": 0.0,
+                "P_star": 0.0,
+                "Tu_star": 0.0,
+                "_design_action_widget_signature": ("uls", False, (50.0,)),
+            }
+
+    fake = _FakeStreamlit()
+
+    hydrate_design_action_widgets_from_shared(
+        "uls",
+        st_module=fake,
+        get_param_fn=lambda key, default=0.0: fake.session_state.get(key, default),
+        state_hc_log_fn=lambda *args, **kwargs: None,
+        design_action_widget_specs_fn=design_action_widget_specs,
+        design_controls=False,
+    )
+
+    assert fake.session_state["inputs_load_Mstar_pos_proxy"] == 75.0
+
+
+def test_forced_manual_hydration_projects_authoritative_value() -> None:
+    class _FakeStreamlit:
+        def __init__(self) -> None:
+            self.session_state = {
+                "inputs_load_Mstar_pos_proxy": 75.0,
+                "uls_Mstar_pos_manual": 50.0,
+                "uls_Mstar_neg_manual": 0.0,
+                "uls_Mstar": 50.0,
+                "uls_Vstar": 0.0,
+                "uls_Nstar": 0.0,
+                "P_star": 0.0,
+                "Tu_star": 0.0,
+            }
+
+    fake = _FakeStreamlit()
+
+    hydrate_design_action_widgets_from_shared(
+        "uls",
+        st_module=fake,
+        get_param_fn=lambda key, default=0.0: fake.session_state.get(key, default),
+        state_hc_log_fn=lambda *args, **kwargs: None,
+        design_action_widget_specs_fn=design_action_widget_specs,
+        design_controls=False,
+        force=True,
+    )
+
+    assert fake.session_state["inputs_load_Mstar_pos_proxy"] == 50.0
+
+
 def test_design_actions_renderer_has_no_action_source_or_rerun_authority() -> None:
     source = inspect.getsource(render_inputs_design_actions_section)
 
