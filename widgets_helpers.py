@@ -1025,10 +1025,15 @@ def render_section_title(title: str) -> None:
     )
 
 
-def render_result_page_title(title: str) -> None:
+def render_result_page_title(title: str, *, top_margin_rem: float = -0.55) -> None:
     """Render a tightly spaced main title for result/check pages."""
     st.markdown(
-        f"<div class='result-page-title'>{html.escape(str(title))}</div>",
+        (
+            "<div class='result-page-title' "
+        "style='font-size:2.35rem;font-weight:700;line-height:1.05;"
+        f"margin-top:{top_margin_rem:g}rem;margin-bottom:0.08rem'>"
+            f"{html.escape(str(title))}</div>"
+        ),
         unsafe_allow_html=True,
     )
 

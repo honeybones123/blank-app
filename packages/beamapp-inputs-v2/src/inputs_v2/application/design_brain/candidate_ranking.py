@@ -122,8 +122,22 @@ def candidate_evidence(
             abs(float(candidate.proposal.width_mm) - float(current.width_mm))
             + abs(float(candidate.proposal.depth_mm) - float(current.depth_mm))
         ) / 100.0,
+        # Factual reinforcement quantity proxy used only after compliance,
+        # target distance and near-limit checks.  Counting longitudinal steel
+        # alone made two otherwise-equal combined candidates prefer the one
+        # closest to the current design even when it retained unnecessary
+        # ligatures.  Include transverse steel density so family ranking can
+        # distinguish a real shear cleanup without creating a new decision
+        # authority.
         material_quantity=float(
-            candidate.proposal.bottom_bars * candidate.proposal.bottom_diameter_mm**2
+            candidate.proposal.bottom_bars
+            * candidate.proposal.bottom_diameter_mm**2
+            + (
+                candidate.proposal.shear_legs
+                * candidate.proposal.shear_diameter_mm**2
+                / max(candidate.proposal.shear_spacing_mm, 1.0)
+            )
+            * 100.0
         ),
         target_distance=float(target_distance),
     )

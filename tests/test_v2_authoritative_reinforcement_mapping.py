@@ -4,9 +4,13 @@ import math
 import pytest
 
 from application.contracts.design_brain import EngineeringInputSnapshot
+from application.engineering_snapshot import (
+    build_engineering_input_snapshot_from_resolved_state,
+)
 from inputs_application.v2_engineering_calculation_adapter import (
     _beam_inputs_from_snapshot,
     _v2_api,
+    calculate_v2_authoritative_result,
 )
 
 
@@ -130,3 +134,116 @@ def test_runtime_aliases_preserve_shear_method_and_time_dependent_inputs() -> No
     assert current.time_dependent.shrinkage_time_days == 730.0
     assert current.time_dependent.creep_time_days == 540.0
     assert current.time_dependent.age_at_loading_days == 56.0
+
+
+def test_authoritative_creep_strain_uses_resolved_manual_sls_moment() -> None:
+    snapshot = EngineeringInputSnapshot(
+        geometry={"b": 300.0, "D": 600.0, "L": 4000.0, "sec_shape": "RECT"},
+        materials={"fc": 40.0, "fsy": 500.0},
+        reinforcement={
+            "bot1_count": 4,
+            "db_bot_1": 20,
+            "cover_bot": 40.0,
+            "top_bars": 2,
+            "db_top": 12,
+            "cover_top": 40.0,
+            "lig_d": 10,
+            "lig_legs": 2,
+            "s_lig": 150.0,
+        },
+        design_actions={
+            "resolved": {
+                "Mu": 150.0,
+                "Vu": 0.0,
+                "SLS_M": 100.0,
+                "SLS_M_pos": 100.0,
+                "SLS_M_neg": 0.0,
+                "SLS_V": 0.0,
+            }
+        },
+    )
+
+    result = calculate_v2_authoritative_result(
+        engineering_snapshot=snapshot,
+        resolved_inputs={},
+        input_revision=10,
+    )
+    creep = result.current_calculations["families"]["creep"]
+
+    assert creep["sustained_sigma_cs_mpa"] > 0.0
+    assert creep["stress_ratio"] > 0.0
+    assert creep["eps_cc_micro"] > 0.0
+
+
+def test_authoritative_creep_strain_uses_load_analysis_sls_projection() -> None:
+    resolved_inputs = {
+        "b": 300.0,
+        "D": 600.0,
+        "L": 4000.0,
+        "sec_shape": "RECT",
+        "fc": 40.0,
+        "fsy": 500.0,
+        **{
+            "bot1_count": 4,
+            "db_bot_1": 20,
+            "cover_bot": 40.0,
+            "top_bars": 2,
+            "db_top": 12,
+            "cover_top": 40.0,
+            "lig_d": 10,
+            "lig_legs": 2,
+            "s_lig": 150.0,
+        },
+        "actions_mode": "design",
+        "actions_source": "Teaching SFD/BMD page (|M|max, |V|max)",
+        "sfd_Mmax_abs_kNm": 150.0,
+        "M_pos_max_uls_kNm": 150.0,
+        "M_neg_min_uls_kNm": 0.0,
+        "sfd_Msls_max_kNm": 90.0,
+        "M_pos_max_sls_kNm": 90.0,
+        "M_neg_min_sls_kNm": 0.0,
+    }
+    snapshot = build_engineering_input_snapshot_from_resolved_state(
+        resolved_inputs
+    )
+
+    result = calculate_v2_authoritative_result(
+        engineering_snapshot=snapshot,
+        resolved_inputs=resolved_inputs,
+        input_revision=11,
+    )
+    creep = result.current_calculations["families"]["creep"]
+
+    assert creep["sustained_sigma_cs_mpa"] > 0.0
+    assert creep["eps_cc_micro"] > 0.0
+
+
+def test_bending_summary_publishes_every_authoritative_detailed_check() -> None:
+    snapshot = _snapshot_with_bottom_rows(
+        row_1=(4, 20),
+        row_2=(0, 0),
+    )
+    result = calculate_v2_authoritative_result(
+        engineering_snapshot=snapshot,
+        resolved_inputs={},
+        input_revision=12,
+    )
+    assert (
+        result.current_calculations["calculation_contract_version"]
+        == "inputs_v2.calculation.v2"
+    )
+    rows = result.current_calculations["packs"]["bending"]["rows"]
+    rows_by_uid = {row["uid"]: row for row in rows}
+
+    assert set(rows_by_uid) == {
+        "v2_bending_capacity",
+        "v2_bending_minimum_tensile",
+        "v2_bending_ductility",
+        "v2_bending_service_moment",
+        "v2_bending_minimum_capacity",
+    }
+    minimum_capacity = rows_by_uid["v2_bending_minimum_capacity"]
+    assert "Mu,min =" in minimum_capacity["action"]
+    assert "ϕMu,cap =" in minimum_capacity["capacity"]
+    assert minimum_capacity["util"] != "—"
+    assert minimum_capacity["status"] in {"PASS", "FAIL"}

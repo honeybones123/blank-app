@@ -26,12 +26,16 @@ class SearchProfile:
     max_failure_evaluations: int = 12000
     nearby_dimension_steps: int = 4
     max_consecutive_infeasible: int = 80
+    max_combined_continuation_rounds: int = 5
 
     @classmethod
     def for_mode(cls, mode: str | SearchMode) -> "SearchProfile":
         selected = SearchMode(mode)
         if selected is SearchMode.DETAILED:
-            return cls(selected, 12000, 24000, 12, 200)
+            # Detailed mode already owns the full twelve-step geometry
+            # neighbourhood, so it does not need Fast mode's bounded
+            # continuation frontiers.
+            return cls(selected, 12000, 24000, 12, 200, 1)
         return cls()
 
     def evaluation_budget(self, kind: SearchKind) -> int:

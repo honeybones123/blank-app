@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from inputs_application.action_source_control import (
+    authoritative_action_source_projection,
+)
 from inputs_application.state_projection import build_guidance_state_snapshot
 from state_and_helpers import RESULT_KEYS, SHARED_DEFAULTS, resolve_design_actions
 
@@ -29,10 +32,12 @@ def application_guidance_context(
 
 
 def shared_state_snapshot(session_state: Mapping[str, Any]) -> dict[str, Any]:
-    return {
+    snapshot = {
         key: session_state.get(key, default)
         for key, default in SHARED_DEFAULTS.items()
     }
+    snapshot.update(authoritative_action_source_projection(session_state))
+    return snapshot
 
 
 def guidance_state_snapshot(state: Mapping[str, Any] | None = None) -> dict[str, Any]:

@@ -38,8 +38,14 @@ from application.guidance_result_adapter import guidance_payload_from_authoritat
 
 from application.contracts.design_brain import (
     AuthoritativeDesignResult,
+    coerce_authoritative_design_result,
 )
 from application.design_brain_port import DesignBrainRequest
+
+from inputs_application.action_source_control import (
+    authoritative_action_source_projection,
+    uses_load_analysis_actions,
+)
 
 from inputs_application.state_utils import application_guidance_context, bottom_reo_state_label, float_from_state, guidance_state_snapshot, shared_state_snapshot, shear_state_label, updates_match_state
 
@@ -65,6 +71,7 @@ from inputs_application.session_services import InputsSessionServices
 from inputs_application.design_brain_composition import (
     build_design_brain_service,
     calculate_v2_authoritative_result,
+    v2_engineering_calculation_contract_version,
 )
 from inputs_application.design_brain_job_service import DesignBrainJobService
 
@@ -630,6 +637,14 @@ def _ensure_authoritative_design_result_current_coordinator(
             "source_hash": beam_input_state.engineering_hash,
             "hydrated_widget_keys": sorted(hydrated_widget_keys),
         }
+    if uses_load_analysis_actions(st.session_state):
+        # The beam snapshot owns the selected source, while the current Load
+        # Analysis solve owns its derived ULS/SLS values. Reapply that typed
+        # projection after navigation hydration so an older beam snapshot
+        # cannot replace the selected analysis actions with zero manual ones.
+        current_state.update(
+            authoritative_action_source_projection(st.session_state)
+        )
     committed_beam_id = str(
         st.session_state.get(
             "_inputs_engineering_input_store_active_beam_id"
@@ -971,6 +986,21 @@ def _ensure_authoritative_design_result_current_coordinator(
         return execution.result
 
     existing_result = services.engineering_results.current()
+    expected_calculation_contract_version = (
+        v2_engineering_calculation_contract_version()
+    )
+    existing_calculation_contract_version = str(
+        dict(existing_result.current_calculations or {}).get(
+            "calculation_contract_version"
+        )
+        or ""
+    ) if existing_result is not None else ""
+    force_calculation_contract_refresh = bool(
+        existing_result is not None
+        and existing_result.engineering_hash == snapshot.engineering_hash
+        and existing_calculation_contract_version
+        != expected_calculation_contract_version
+    )
     force_design_brain_refresh = bool(
         include_design_brain
         and existing_result is not None
@@ -981,7 +1011,10 @@ def _ensure_authoritative_design_result_current_coordinator(
         result_store=services.engineering_results,
         snapshot=snapshot,
         compute_fn=_compute,
-        force=force_design_brain_refresh,
+        force=(
+            force_design_brain_refresh
+            or force_calculation_contract_refresh
+        ),
         source_input_revision=input_transaction.revision,
     )
     st.session_state["_inputs_route_return_debug"] = {
@@ -1007,17 +1040,40 @@ def _ensure_authoritative_design_result_current_coordinator(
         and active_beam_id
         and active_beam_id not in results_by_beam
     )
+    result_revisions_by_beam = dict(
+        st.session_state.get(
+            "_inputs_authoritative_design_result_revision_by_beam_v1"
+        )
+        or {}
+    )
+    stored_beam_result = coerce_authoritative_design_result(
+        results_by_beam.get(active_beam_id)
+    )
+    stored_beam_revision = result_revisions_by_beam.get(active_beam_id)
+    stored_result_is_current = bool(
+        stored_beam_result is not None
+        and stored_beam_result.engineering_hash == result.engineering_hash
+        and stored_beam_revision is not None
+        and int(stored_beam_revision) == int(input_transaction.revision)
+        and (
+            not include_design_brain
+            or not result.final_publication
+            or bool(stored_beam_result.final_publication)
+        )
+    )
+    # The per-beam result is the read authority for Bending, Shear and the
+    # serviceability pages.  It must follow the current immutable input
+    # transaction even when a previous entry for the beam already exists.
+    # The former "only when missing" gate left those pages permanently on an
+    # unavailable/stale pack after Apply or a normal Inputs edit.
     should_store_result = bool(
         active_beam_id
-        and (
-            not st.session_state.get("_inputs_same_beam_return_active")
-            or route_return_missing_result
-        )
         and services.engineering_results.source_input_revision()
         == input_transaction.revision
         and (
-            active_beam_id not in results_by_beam
+            route_return_missing_result
             or snapshot_update_pending
+            or not stored_result_is_current
         )
     )
     if should_store_result:
@@ -1025,12 +1081,6 @@ def _ensure_authoritative_design_result_current_coordinator(
         st.session_state[
             "_inputs_authoritative_design_result_by_beam_v1"
         ] = results_by_beam
-        result_revisions_by_beam = dict(
-            st.session_state.get(
-                "_inputs_authoritative_design_result_revision_by_beam_v1"
-            )
-            or {}
-        )
         result_revisions_by_beam[active_beam_id] = int(
             input_transaction.revision
         )

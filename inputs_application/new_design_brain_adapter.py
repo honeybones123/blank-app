@@ -22,6 +22,7 @@ from application.contracts.design_brain import (
 from application.design_brain_port import DesignBrainExecution, DesignBrainRequest
 from application.v2_source_manifest import source_manifest_hash
 from inputs_application.v2_engineering_calculation_adapter import (
+    V2_ENGINEERING_CALCULATION_CONTRACT_VERSION,
     _actions_used_projection,
     _beam_inputs_from_snapshot,
     _mapping,
@@ -600,6 +601,7 @@ class NewDesignBrainAdapter:
         current_calculations = {
             **dict(request.engineering_calculations or {}),
             "source": "inputs_v2",
+            "calculation_contract_version": V2_ENGINEERING_CALCULATION_CONTRACT_VERSION,
             "actions_used": _actions_used_projection(current),
             "resolved_inputs": _resolved_inputs_projection(
                 request.resolved_inputs,

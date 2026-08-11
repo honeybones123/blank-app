@@ -36,6 +36,9 @@ from inputs_application.time_dependent_engineering_state import (
     resolve_time_dependent_engineering_state,
 )
 from inputs_application.authoritative_check_packs import current_authoritative_family
+from inputs_application.time_dependent_presentation import (
+    resolve_time_dependent_family_values,
+)
 
 
 # ------------------------------------------------------------
@@ -207,6 +210,7 @@ def compute_shrinkage_results(publish: bool = True) -> dict:
 #  MAIN RENDER FUNCTION
 # ------------------------------------------------------------
 def render_shrinkage():
+    page_title_placeholder = st.empty()
     apply_global_widget_css()
     apply_result_page_css()
     _inject_calcbox_css()
@@ -238,7 +242,8 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
 """
         )
 
-    render_result_page_title("Shrinkage")
+    with page_title_placeholder.container():
+        render_result_page_title("Shrinkage")
 
     # --------------------------------------------------------
     # Reserve space for the top summary table
@@ -362,6 +367,30 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
     eps_csd_t = shrinkage_total["eps_csd_t"]
     eps_cs_total = shrinkage_total["eps_cs_total"]
     eps_cs_total_micro = shrinkage_total["eps_cs_total_micro"]
+
+    # Use the same current V2 family result for the summary and every detailed
+    # value.  Page-local calculation is retained only as an unavailable-result
+    # fallback, so navigation cannot leave the card on an older value.
+    displayed = resolve_time_dependent_family_values(
+        st.session_state,
+        family="shrinkage",
+        fallback={
+            "th_shrinkage_mm": th_table,
+            "k1_shrinkage": k1,
+            "eps_cse": eps_cse,
+            "eps_csd_final": eps_csd_final,
+            "eps_csd_t": eps_csd_t,
+            "eps_cs_total": eps_cs_total,
+            "eps_cs_total_micro": eps_cs_total_micro,
+        },
+    )
+    th_table = int(displayed["th_shrinkage_mm"])
+    k1 = float(displayed["k1_shrinkage"])
+    eps_cse = float(displayed["eps_cse"])
+    eps_csd_final = float(displayed["eps_csd_final"])
+    eps_csd_t = float(displayed["eps_csd_t"])
+    eps_cs_total = float(displayed["eps_cs_total"])
+    eps_cs_total_micro = float(displayed["eps_cs_total_micro"])
 
     # --------------------------------------------------------
     # Publish key shrinkage results to shared state

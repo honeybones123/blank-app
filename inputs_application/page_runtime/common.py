@@ -736,10 +736,7 @@ def _mark_design_guide_dirty() -> None:
     )
 
 def _shared_state_snapshot() -> dict:
-    return {
-        key: st.session_state.get(key, default)
-        for key, default in SHARED_DEFAULTS.items()
-    }
+    return shared_state_snapshot(st.session_state)
 
 def cached_make_section_figure(
     *,

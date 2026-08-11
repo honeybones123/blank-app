@@ -5,6 +5,7 @@ from inputs_application.action_source_control import (
     LOAD_ANALYSIS_ACTIONS_SOURCE,
     LOAD_ANALYSIS_ACTION_SOURCE_TOGGLE_KEY,
     MANUAL_ACTIONS_SOURCE,
+    authoritative_action_source_projection,
     commit_action_source_toggle,
     load_analysis_action_projection,
     seed_action_source_toggle,
@@ -12,6 +13,9 @@ from inputs_application.action_source_control import (
     uses_load_analysis_actions,
 )
 from calculations.design_actions import resolve_design_actions_from_state
+from inputs_application.state_projection import build_guidance_state_snapshot
+from inputs_application.summary_state_runtime import SUMMARY_OVERLAY_SKIP_SHARED_KEYS
+from inputs_page_modules.session import build_inputs_summary_source_shaping_snapshot
 from inputs_page_modules.widgets.design_action_sync import (
     design_action_widget_specs,
     hydrate_design_action_widgets_from_shared,
@@ -100,6 +104,161 @@ def test_load_analysis_projection_supplies_uls_and_sls_without_overwriting_manua
     assert state["uls_Vstar"] == 8.0
     assert state["sls_Mstar_pos_manual"] == 11.0
     assert state["sls_Vstar"] == 5.0
+
+
+def test_guidance_projection_preserves_selected_load_analysis_uls_and_sls() -> None:
+    state = {
+        "actions_mode": "design",
+        "actions_source": LOAD_ANALYSIS_ACTIONS_SOURCE,
+    }
+    synchronize_load_analysis_actions_for_inputs(
+        state,
+        draft={"design_actions_source_selector": "max"},
+        results={
+            "sfd_Mmax_abs_kNm": 135.0,
+            "sfd_Vmax_abs_kN": 270.0,
+            "sfd_Msls_max_kNm": 104.0,
+            "sfd_Vsls_max_kN": 208.0,
+            "M_pos_max_uls_kNm": 135.0,
+            "M_neg_min_uls_kNm": -20.0,
+            "M_pos_max_sls_kNm": 104.0,
+            "M_neg_min_sls_kNm": -12.0,
+        },
+    )
+
+    snapshot = build_guidance_state_snapshot(
+        state,
+        result_keys={
+            "actions_source",
+            "sfd_Mmax_abs_kNm",
+            "sfd_Vmax_abs_kN",
+            "sfd_Msls_max_kNm",
+            "sfd_Vsls_max_kN",
+            "M_pos_max_uls_kNm",
+            "M_neg_min_uls_kNm",
+            "M_pos_max_sls_kNm",
+            "M_neg_min_sls_kNm",
+        },
+        shared_defaults={
+            "actions_mode": "manual",
+            "actions_source": MANUAL_ACTIONS_SOURCE,
+        },
+    )
+    actions = resolve_design_actions_from_state(snapshot)
+
+    assert snapshot["actions_source"] == LOAD_ANALYSIS_ACTIONS_SOURCE
+    assert actions["Mu"] == 135.0
+    assert actions["Vu"] == 270.0
+    assert actions["SLS_M"] == 104.0
+    assert actions["SLS_V"] == 208.0
+
+
+def test_guidance_projection_still_removes_stale_actions_in_manual_mode() -> None:
+    snapshot = build_guidance_state_snapshot(
+        {
+            "actions_mode": "manual",
+            "actions_source": MANUAL_ACTIONS_SOURCE,
+            "sfd_Mmax_abs_kNm": 135.0,
+        },
+        result_keys={"actions_source", "sfd_Mmax_abs_kNm"},
+        shared_defaults={
+            "actions_mode": "manual",
+            "actions_source": MANUAL_ACTIONS_SOURCE,
+        },
+    )
+
+    assert snapshot["actions_source"] == MANUAL_ACTIONS_SOURCE
+    assert "sfd_Mmax_abs_kNm" not in snapshot
+
+
+def test_summary_shaping_cannot_restore_stale_manual_action_source_widget() -> None:
+    shaped = build_inputs_summary_source_shaping_snapshot(
+        base_state={
+            "actions_mode": "design",
+            "actions_source": LOAD_ANALYSIS_ACTIONS_SOURCE,
+            "design_actions_source": "max",
+            "sfd_Mmax_abs_kNm": 135.0,
+        },
+        source_state={
+            "inputs_actions_source": MANUAL_ACTIONS_SOURCE,
+            "design_actions_source_selector": "section",
+        },
+        input_tab_keys={
+            "actions_source": "inputs_actions_source",
+            "design_actions_source": "design_actions_source_selector",
+        },
+        skip_shared_keys=SUMMARY_OVERLAY_SKIP_SHARED_KEYS,
+        skip_longitudinal_keys=(),
+        skip_prefixes=(),
+        deferred_overlay_keys=(),
+        shared_only_mode=False,
+        shared_only_reason="",
+    )
+
+    assert shaped.working_state["actions_source"] == LOAD_ANALYSIS_ACTIONS_SOURCE
+    assert shaped.working_state["design_actions_source"] == "max"
+    assert shaped.overlay_applied == {}
+
+
+def test_authoritative_snapshot_projection_includes_load_analysis_results() -> None:
+    projection = authoritative_action_source_projection(
+        {
+            "actions_mode": "design",
+            "actions_source": LOAD_ANALYSIS_ACTIONS_SOURCE,
+            "design_actions_source": "max",
+            "sfd_Mmax_abs_kNm": 135.0,
+            "sfd_Vmax_abs_kN": 270.0,
+            "sfd_Msls_max_kNm": 104.0,
+            "sfd_Vsls_max_kN": 208.0,
+        }
+    )
+
+    assert projection["sfd_Mmax_abs_kNm"] == 135.0
+    assert projection["sfd_Vmax_abs_kN"] == 270.0
+    assert projection["sfd_Msls_max_kNm"] == 104.0
+    assert projection["sfd_Vsls_max_kN"] == 208.0
+
+
+def test_authoritative_projection_carries_committed_canonical_action_values() -> None:
+    projection = authoritative_action_source_projection(
+        {
+            "actions_mode": "design",
+            "actions_source": LOAD_ANALYSIS_ACTIONS_SOURCE,
+            "uls_Mstar": 9.75,
+            "uls_Mstar_pos_manual": 9.75,
+            "uls_Mstar_neg_manual": 0.0,
+            "uls_Vstar": 19.5,
+            "sls_Mstar": 7.5,
+            "sls_Mstar_pos_manual": 7.5,
+            "sls_Mstar_neg_manual": 0.0,
+            "sls_Vstar": 15.0,
+        }
+    )
+
+    assert projection["uls_Mstar"] == 9.75
+    assert projection["uls_Vstar"] == 19.5
+    assert projection["sls_Mstar"] == 7.5
+    assert projection["sls_Vstar"] == 15.0
+
+
+def test_design_action_resolution_uses_committed_shear_fallback() -> None:
+    actions = resolve_design_actions_from_state(
+        {
+            "actions_mode": "design",
+            "actions_source": LOAD_ANALYSIS_ACTIONS_SOURCE,
+            "design_actions_source": "max",
+            "uls_Mstar_pos_manual": 9.75,
+            "uls_Mstar_neg_manual": 0.0,
+            "uls_Vstar": 19.5,
+            "sls_Mstar": 7.5,
+            "sls_Vstar": 15.0,
+        }
+    )
+
+    assert actions["Mu"] == 9.75
+    assert actions["Vu"] == 19.5
+    assert actions["SLS_M"] == 7.5
+    assert actions["SLS_V"] == 15.0
 
 
 def test_manual_source_never_imports_load_analysis_actions() -> None:

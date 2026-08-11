@@ -6,6 +6,7 @@ import pytest
 from inputs_v2.application.design_guide_orchestrator import DesignGuideOrchestrator
 from inputs_v2.application.design_brain_service import DesignBrainService
 from inputs_v2.application.design_brain.family_owners import FAMILY_OWNERS
+from inputs_v2.application.design_brain.search_profile import SearchProfile
 from inputs_v2.application.engineering_advice import format_engineering_advice
 from inputs_v2.presentation.view_models.design_brain_card import (
     build_design_brain_card_view_model,
@@ -17,6 +18,7 @@ from inputs_v2.domain.beam_inputs import (
     ServiceabilityInputs,
     ShearReinforcement,
 )
+from inputs_v2.engineering.reinforcement_fit import evaluate_arrangement
 
 
 def test_orchestrator_routes_combined_failure_to_one_atomic_ladder() -> None:
@@ -347,6 +349,126 @@ def test_combined_overdesign_reaches_both_target_bands_in_one_apply() -> None:
     assert decision.search_evidence.candidates_attempted < 1000
 
 
+def test_fast_combined_overdesign_continues_to_the_bounded_exact_stop_in_one_apply() -> None:
+    """A shallow first frontier must not force a second cleanup Apply."""
+
+    base = BeamInputs(
+        width_mm=250.0,
+        depth_mm=400.0,
+        bottom=LongitudinalReinforcement(bars=3, diameter_mm=16),
+        shear=ShearReinforcement(diameter_mm=10, legs=2, spacing_mm=125.0),
+    ).validated()
+    calculated = DesignBrainService()._calculator.calculate_current(base).result
+    assert calculated is not None
+    current = replace(
+        base,
+        actions=ActionInputs(
+            bending_moment_knm=0.15 * float(calculated.families["bending"]["phi_Mu_kNm"]),
+            shear_force_kn=0.15 * float(calculated.families["shear"]["phi_Vu"]),
+        ),
+    ).validated()
+
+    profile = SearchProfile.for_mode("Fast")
+    decision = DesignGuideOrchestrator(search_profile=profile).decide(current)
+
+    assert decision.family is DesignFamily.COMBINED_OVERDESIGN
+    assert decision.apply_allowed
+    assert decision.search_evidence.cache_misses <= profile.max_full_evaluations
+
+    outcome = DesignBrainService(search_profile=profile).apply_decision(current, decision)
+    assert outcome.applied
+
+    follow_up = DesignGuideOrchestrator(search_profile=profile).decide(outcome.inputs)
+    assert follow_up.family is DesignFamily.EXACT_STOP_PROVEN
+    assert not follow_up.apply_allowed
+
+
+def test_fast_combined_low_demand_live_shape_reaches_target_in_one_apply() -> None:
+    """Regression for the live 225x425, 5-N12, low-demand two-Apply case."""
+
+    current = BeamInputs(
+        width_mm=225.0,
+        depth_mm=425.0,
+        bottom=LongitudinalReinforcement(bars=5, diameter_mm=12),
+        shear=ShearReinforcement(diameter_mm=0, legs=0, spacing_mm=300.0),
+        actions=ActionInputs(bending_moment_knm=10.0, shear_force_kn=10.0),
+    ).validated()
+    profile = SearchProfile.for_mode("Fast")
+
+    decision = DesignGuideOrchestrator(search_profile=profile).decide(current)
+
+    assert decision.family is DesignFamily.COMBINED_OVERDESIGN
+    assert decision.apply_allowed
+    assert decision.search_evidence.cache_misses <= profile.max_full_evaluations
+
+    outcome = DesignBrainService(search_profile=profile).apply_decision(current, decision)
+    assert outcome.applied
+
+    follow_up = DesignGuideOrchestrator(search_profile=profile).decide(outcome.inputs)
+    assert follow_up.family is DesignFamily.TARGET_BAND_REACHED
+    assert not follow_up.apply_allowed
+
+
+def test_fast_combined_continuation_adds_no_work_when_first_frontier_finds_target() -> None:
+    base = BeamInputs(
+        width_mm=300.0,
+        depth_mm=500.0,
+        bottom=LongitudinalReinforcement(bars=4, diameter_mm=24),
+        shear=ShearReinforcement(diameter_mm=12, legs=2, spacing_mm=200.0),
+    ).validated()
+    calculated = DesignBrainService()._calculator.calculate_current(base).result
+    assert calculated is not None
+    current = replace(
+        base,
+        actions=ActionInputs(
+            bending_moment_knm=0.40 * float(calculated.families["bending"]["phi_Mu_kNm"]),
+            shear_force_kn=0.40 * float(calculated.families["shear"]["phi_Vu"]),
+        ),
+    ).validated()
+
+    one_frontier = SearchProfile(max_combined_continuation_rounds=1)
+    continued = SearchProfile()
+    baseline = DesignGuideOrchestrator(search_profile=one_frontier).decide(current)
+    decision = DesignGuideOrchestrator(search_profile=continued).decide(current)
+
+    assert decision.apply_allowed
+    assert decision.candidate == baseline.candidate
+    assert (
+        decision.search_evidence.candidates_attempted
+        == baseline.search_evidence.candidates_attempted
+    )
+
+
+def test_shear_overdesign_with_no_remaining_legal_move_is_a_verified_exact_stop() -> None:
+    base = BeamInputs(
+        width_mm=150.0,
+        depth_mm=225.0,
+        bottom=LongitudinalReinforcement(bars=4, diameter_mm=10),
+        shear=ShearReinforcement(diameter_mm=0, legs=0, spacing_mm=200.0),
+        actions=ActionInputs(bending_moment_knm=10.0, shear_force_kn=10.0),
+    ).validated()
+    fit = evaluate_arrangement(base, (2, 2))
+    assert fit.accepted
+    arranged = replace(base, bottom_arrangement=fit.arrangement).validated()
+    calculated = DesignBrainService()._calculator.calculate_current(arranged).result
+    assert calculated is not None
+    current = replace(
+        arranged,
+        actions=ActionInputs(
+            bending_moment_knm=0.90 * float(calculated.families["bending"]["phi_Mu_kNm"]),
+            shear_force_kn=0.40 * float(calculated.families["shear"]["phi_Vu"]),
+        ),
+    ).validated()
+
+    decision = DesignGuideOrchestrator().decide(current)
+
+    assert decision.classification.selected_family is DesignFamily.SHEAR_OVERDESIGN_GOVERNS
+    assert decision.family is DesignFamily.EXACT_STOP_PROVEN
+    assert decision.status.value == "PASS"
+    assert not decision.apply_allowed
+    assert decision.search_evidence.exhausted
+
+
 def test_shear_overdesign_selects_nearest_minimum_reinforcement_compliant_cleanup() -> None:
     base = BeamInputs(
         shear=ShearReinforcement(diameter_mm=16, legs=2, spacing_mm=175),
@@ -596,6 +718,42 @@ def test_bending_overdesign_reaches_final_safe_floor_without_incremental_loop() 
     assert not terminal.apply_allowed
 
 
+@pytest.mark.parametrize("moment_knm", (45.0, 55.0))
+def test_frozen_bending_overdesign_recipes_complete_in_one_apply(
+    moment_knm: float,
+) -> None:
+    """The R4 live recipes must finish bending and zero-shear cleanup atomically."""
+
+    current = BeamInputs(
+        width_mm=300.0,
+        depth_mm=400.0,
+        bottom=LongitudinalReinforcement(bars=4, diameter_mm=16),
+        shear=ShearReinforcement(diameter_mm=10, legs=2, spacing_mm=150.0),
+        actions=ActionInputs(
+            bending_moment_knm=moment_knm,
+            shear_force_kn=0.0,
+        ),
+    ).validated()
+    profile = SearchProfile.for_mode("Fast")
+    orchestrator = DesignGuideOrchestrator(search_profile=profile)
+
+    decision = orchestrator.decide(current)
+
+    assert decision.status.value == "ACTION"
+    assert decision.apply_allowed
+    assert decision.candidate.proposal.shear_diameter_mm == 0
+    assert decision.candidate.proposal.shear_legs == 0
+    outcome = DesignBrainService(search_profile=profile).apply_decision(
+        current,
+        decision,
+    )
+    assert outcome.applied
+
+    terminal = orchestrator.decide(outcome.inputs)
+    assert terminal.status.value == "PASS"
+    assert not terminal.apply_allowed
+
+
 def test_bending_only_current_target_band_is_terminal_pass() -> None:
     base = replace(
         BeamInputs(),
@@ -615,6 +773,58 @@ def test_bending_only_current_target_band_is_terminal_pass() -> None:
     assert decision.family is DesignFamily.TARGET_BAND_REACHED
     assert decision.status.value == "PASS"
     assert decision.apply_allowed is False
+
+
+def test_target_band_retains_current_when_balancing_preview_falls_outside_band(
+    monkeypatch,
+) -> None:
+    """An inferior optional preview cannot turn a verified current design red."""
+
+    base = BeamInputs(
+        width_mm=300.0,
+        depth_mm=400.0,
+        bottom=LongitudinalReinforcement(bars=3, diameter_mm=16),
+        shear=ShearReinforcement(diameter_mm=10, legs=2, spacing_mm=200.0),
+    ).validated()
+    calculated = DesignBrainService()._calculator.calculate_current(base).result
+    assert calculated is not None
+    current = replace(
+        base,
+        actions=ActionInputs(
+            bending_moment_knm=0.90 * float(calculated.families["bending"]["phi_Mu_kNm"]),
+            shear_force_kn=0.90 * float(calculated.families["shear"]["phi_Vu"]),
+        ),
+    ).validated()
+
+    service = DesignBrainService()
+    result = service._calculator.calculate_current(current).result
+    assert result is not None
+    from inputs_v2.application.design_brain.preview import DesignBrainPreview
+    from inputs_v2.application.design_brain_apply import propose_neutral_candidate
+    from inputs_v2.application.design_brain.family_owners import FAMILY_OWNERS
+
+    owner = FAMILY_OWNERS[DesignFamily.TARGET_BAND_REACHED]
+    inferior = DesignBrainPreview(
+        candidate=propose_neutral_candidate(current),
+        before=result,
+        after=replace(
+            result,
+            families={
+                **result.families,
+                "bending": {**result.families["bending"], "util": 0.62},
+            },
+        ),
+        changed_fields=("width_mm",),
+        accepted=True,
+        reason="safe_overdesign_cleanup",
+    )
+    monkeypatch.setattr(type(owner), "preview", lambda self, context, service: inferior)
+
+    decision = DesignGuideOrchestrator().decide(current)
+
+    assert decision.status.value == "PASS"
+    assert decision.family is DesignFamily.TARGET_BAND_REACHED
+    assert not decision.apply_allowed
 
 
 def test_no_op_preview_cannot_publish_action_without_apply_payload(monkeypatch) -> None:

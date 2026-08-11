@@ -15,6 +15,12 @@ from application.contracts.design_brain import (
     build_authoritative_design_result,
 )
 from application.v2_source_manifest import source_manifest_hash
+from calculations.deflection import derive_sustained_stress_ratio
+from section_props.props import compute_gross_props
+
+
+V2_ENGINEERING_CALCULATION_CONTRACT_VERSION = "inputs_v2.calculation.v2"
+
 
 def _mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
@@ -124,6 +130,42 @@ def _merge_primary(primary: Mapping[str, Any], fallback: Mapping[str, Any]) -> d
     merged = dict(fallback)
     merged.update(primary)
     return merged
+
+
+def _derived_sustained_creep_state(
+    *,
+    geometry: Mapping[str, Any],
+    materials: Mapping[str, Any],
+    actions: Mapping[str, Any],
+) -> dict[str, float]:
+    """Derive creep stress from the same resolved SLS action used by V2.
+
+    Creep strain is stress-dependent.  Passing the SLS moment into the
+    serviceability contract without also deriving its concrete stress left the
+    authoritative creep family at zero strain.  Keep this derivation at the
+    calculation adapter boundary so every consumer receives the same result.
+    """
+
+    shape = _normalise_shape(geometry.get("sec_shape"))
+    dimensions = {
+        key: _number(geometry, key, default=0.0)
+        for key in ("b", "D", "bf", "tf", "bw", "tw")
+    }
+    try:
+        gross = compute_gross_props(shape, dimensions)
+    except (KeyError, TypeError, ValueError, ZeroDivisionError):
+        gross = compute_gross_props("RECT", dimensions)
+    sustained = derive_sustained_stress_ratio(
+        fc_mpa=_number(materials, "fc", default=0.0),
+        sls_m_pos_kNm=_number(actions, "SLS_M_pos", default=0.0),
+        sls_m_neg_kNm=_number(actions, "SLS_M_neg", default=0.0),
+        z_top_mm3=_number(gross, "Ztop_g", default=0.0),
+        z_bot_mm3=_number(gross, "Zbot_g", default=0.0),
+    )
+    return {
+        "stress_ratio": float(sustained["stress_ratio"]),
+        "sustained_sigma_cs_mpa": float(sustained["sigma_cs_mpa"]),
+    }
 
 
 def _bottom_row_specs(reinforcement: Mapping[str, Any]) -> tuple[tuple[int, int], ...]:
@@ -241,6 +283,11 @@ def _beam_inputs_from_snapshot(
         _mapping(_mapping(snapshot.design_actions).get("serviceability_loads")),
         resolved,
     )
+    sustained_creep = _derived_sustained_creep_state(
+        geometry=geometry,
+        materials=materials,
+        actions=actions,
+    )
 
     span_mm = _number(geometry, "L", "span_mm", default=2000.0)
     if "L" not in geometry and "span_mm" not in geometry and geometry.get("span_m") is not None:
@@ -341,12 +388,10 @@ def _beam_inputs_from_snapshot(
             exposed_faces=exposed_faces,
             creep_environment=str(resolved.get("creep_env") or "Temperate inland environment"),
             shrinkage_environment=str(resolved.get("shrinkage_env") or "Temperate inland environment"),
-            stress_ratio=_number(resolved, "stress_ratio", default=0.0),
-            sustained_concrete_stress_mpa=(
-                _number(resolved, "sustained_sigma_cs_mpa")
-                if resolved.get("sustained_sigma_cs_mpa") not in (None, "")
-                else None
-            ),
+            stress_ratio=sustained_creep["stress_ratio"],
+            sustained_concrete_stress_mpa=sustained_creep[
+                "sustained_sigma_cs_mpa"
+            ],
             concrete_modulus_mpa=_number(resolved, "Ec", default=30000.0),
         ),
         voids=api["VoidInputs"](
@@ -657,7 +702,7 @@ def _v2_summary_packs(*, current: Any, families: Mapping[str, Any]) -> dict[str,
         _row(uid="v2_bending_minimum_tensile", title="Minimum tensile reinforcement", route_page="bending", action=f"As,provided = {_display(bending.get('Ast_tension_mm2'), unit='mm²', decimals=0)}", capacity=f"As,min = {_display(bending.get('Ast_min_mm2'), unit='mm²', decimals=0)}", util="—", status=bending.get("minimum_tensile_status") or "INFO", informational=bending.get("Ast_min_mm2") is None),
         _row(uid="v2_bending_ductility", title="Ductility limit", route_page="bending", action=f"k_u = {_display(ductility.get('ku'), decimals=3)}", capacity=f"k_u,lim = {_display(ductility.get('limit'), decimals=2)}", util=_display(ductility.get("util"), decimals=2), status=ductility.get("status") or "INFO", informational=ductility.get("ku") is None),
         _row(uid="v2_bending_service_moment", title="Service bending moment", route_page="bending", action="SLS design / manual actions", capacity=f"M_s = {_display(bending.get('service_moment_knm'), unit='kNm')}", util="—", status="INFO", informational=True),
-        _row(uid="v2_bending_minimum_capacity", title="Minimum design capacity requirement", route_page="bending", action="Code minimum capacity", capacity=f"ϕMu,cap = {_display(bending.get('minimum_capacity_knm'), unit='kNm')}", util="—", status="INFO", informational=True),
+        _row(uid="v2_bending_minimum_capacity", title="Minimum design capacity requirement", route_page="bending", action=f"Mu,min = {_display(bending.get('minimum_capacity_knm'), unit='kNm')}", capacity=f"ϕMu,cap = {_display(bending.get('phi_Mu_kNm'), unit='kNm')}", util=_display(bending.get("minimum_capacity_util"), decimals=2), status=bending.get("minimum_capacity_status") or "INFO", informational=bending.get("minimum_capacity_knm") is None),
     ]
 
     shear_capacity_display = f"ϕVu = {_display(phi_vu, unit='kN')}"
@@ -827,6 +872,7 @@ def calculate_v2_authoritative_result(
     manifest = source_manifest_hash()
     current_calculations = {
         "source": "inputs_v2",
+        "calculation_contract_version": V2_ENGINEERING_CALCULATION_CONTRACT_VERSION,
         "actions_used": _actions_used_projection(current),
         "resolved_inputs": _resolved_inputs_projection(resolved_inputs, current),
         "v2_source_manifest_hash": manifest,
@@ -848,5 +894,6 @@ def calculate_v2_authoritative_result(
 
 
 __all__ = [
+    "V2_ENGINEERING_CALCULATION_CONTRACT_VERSION",
     "calculate_v2_authoritative_result",
 ]

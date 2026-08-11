@@ -77,6 +77,16 @@ def calculate_v2_authoritative_result(
     )
 
 
+def v2_engineering_calculation_contract_version() -> str:
+    """Return the calculation contract identity at the composition boundary."""
+
+    from inputs_application.v2_engineering_calculation_adapter import (
+        V2_ENGINEERING_CALCULATION_CONTRACT_VERSION,
+    )
+
+    return V2_ENGINEERING_CALCULATION_CONTRACT_VERSION
+
+
 def build_browser_publication_probe(
     *,
     item: Mapping[str, object],
@@ -104,6 +114,7 @@ __all__ = [
     "build_design_brain_service",
     "build_new_design_brain_service",
     "calculate_v2_authoritative_result",
+    "v2_engineering_calculation_contract_version",
     "build_replacement_design_brain_service",
     "selected_design_brain_adapter_name",
 ]

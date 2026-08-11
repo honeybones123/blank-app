@@ -780,6 +780,7 @@ class DesignBrainService:
             complete_stage=self.complete_stage,
             merge_metrics=self.merge_search_metrics,
             nearby_dimension_steps=self.search_profile.nearby_dimension_steps,
+            max_continuation_rounds=self.search_profile.max_combined_continuation_rounds,
             preferences=self.preference_profile,
         ).preview(current)
 

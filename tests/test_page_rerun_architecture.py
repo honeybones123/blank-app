@@ -82,3 +82,10 @@ def test_direct_app_reruns_are_confined_to_shell_transition_owners() -> None:
 def test_removed_legacy_apply_path_cannot_reintroduce_full_page_rerun() -> None:
     source = (ROOT / "state_and_helpers.py").read_text(encoding="utf-8-sig")
     assert "def apply_auto_design_results(" not in source
+
+
+def test_load_analysis_has_no_competing_scroll_restoration_authority() -> None:
+    source = (ROOT / "design_page_runtime.py").read_text(encoding="utf-8-sig")
+    assert "_install_design_scroll_preserver" not in source
+    assert "beam_design_scroll_restore" not in source
+    assert "__beamDesignScrollObserver" not in source

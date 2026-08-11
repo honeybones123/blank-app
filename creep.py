@@ -54,6 +54,9 @@ from inputs_application.time_dependent_engineering_state import (
     resolve_time_dependent_engineering_state,
 )
 from inputs_application.authoritative_check_packs import current_authoritative_family
+from inputs_application.time_dependent_presentation import (
+    resolve_time_dependent_family_values,
+)
 
 
 # ------------------------------------------------------------
@@ -222,6 +225,7 @@ def compute_creep_results(publish: bool = True) -> dict:
     creep_strain = creep_strain_values(phi_cc_t, sigma0, Ec)
     eps_cc = creep_strain["eps_cc"]
     eps_cc_micro = creep_strain["eps_cc_micro"]
+
     if authoritative is not None:
         sigma0 = float(authoritative["sustained_sigma_cs_mpa"])
         eps_cc = float(authoritative["eps_cc"])
@@ -254,6 +258,7 @@ def compute_creep_results(publish: bool = True) -> dict:
 #  MAIN RENDER FUNCTION
 # ------------------------------------------------------------
 def render_creep():
+    page_title_placeholder = st.empty()
     apply_global_widget_css()
     apply_result_page_css()
     _inject_calcbox_css()
@@ -288,7 +293,8 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
 """
         )
 
-    render_result_page_title("Creep")
+    with page_title_placeholder.container():
+        render_result_page_title("Creep")
 
     # --------------------------------------------------------
     # Reserve space for top summary table (will be filled after calculations)
@@ -458,20 +464,6 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
     )
     phi_cc_star_table = final_creep_coeff_table(fc, env_option, th_table)
 
-    # --------------------------------------------------------
-    # Publish key creep results to shared state
-    #   (for reuse in crack-width page etc.)
-    # --------------------------------------------------------
-    update_results(
-        phi_cc_t=phi_cc_t,  # design creep coeff at t
-        phi_cc_star_table=phi_cc_star_table,  # 30-year table value
-        k2_creep=k2,
-        k3_creep=k3,
-        k4_creep=k4,
-        k5_creep=k5,
-        k6_creep=k6,
-    )
-
     sigma0 = sustained_creep_stress_mpa(
         sustained_sigma_cs_mpa=sustained_sigma_cs,
         stress_ratio=stress_ratio,
@@ -483,6 +475,54 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
     creep_strain = creep_strain_values(phi_cc_t, sigma0, Ec)
     eps_cc = creep_strain["eps_cc"]
     eps_cc_micro = creep_strain["eps_cc_micro"]
+
+    # The visible summary and detailed calculations must use the same
+    # revision-matched V2 family result as Inputs and Design Brain.  The local
+    # calculation above remains an explicit fallback only while no current
+    # authoritative publication exists.
+    displayed = resolve_time_dependent_family_values(
+        st.session_state,
+        family="creep",
+        fallback={
+            "phi_cc_b": phi_cc_b,
+            "k2_creep": k2,
+            "k3_creep": k3,
+            "k4_creep": k4,
+            "k5_creep": k5,
+            "k6_creep": k6,
+            "phi_cc_t": phi_cc_t,
+            "phi_cc_star_table": phi_cc_star_table,
+            "sustained_sigma_cs_mpa": sigma0,
+            "eps_cc": eps_cc,
+            "eps_cc_micro": eps_cc_micro,
+        },
+    )
+    phi_cc_b = float(displayed["phi_cc_b"])
+    k2 = float(displayed["k2_creep"])
+    k3 = float(displayed["k3_creep"])
+    k4 = float(displayed["k4_creep"])
+    k5 = float(displayed["k5_creep"])
+    k6 = float(displayed["k6_creep"])
+    phi_cc_t = float(displayed["phi_cc_t"])
+    phi_cc_star_table = float(displayed["phi_cc_star_table"])
+    sigma0 = float(displayed["sustained_sigma_cs_mpa"])
+    eps_cc = float(displayed["eps_cc"])
+    eps_cc_micro = float(displayed["eps_cc_micro"])
+
+    # Publish only the same resolved values displayed by this page.  Other
+    # pages therefore cannot receive a page-local value while this summary is
+    # showing the authoritative V2 result.
+    update_results(
+        phi_cc_t=phi_cc_t,
+        phi_cc_star_table=phi_cc_star_table,
+        k2_creep=k2,
+        k3_creep=k3,
+        k4_creep=k4,
+        k5_creep=k5,
+        k6_creep=k6,
+        eps_cc=eps_cc,
+        eps_cc_micro=eps_cc_micro,
+    )
 
     # --------------------------------------------------------
     # Top-of-page clickable summary table (render in placeholder)

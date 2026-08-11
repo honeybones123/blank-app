@@ -3011,6 +3011,8 @@ RESULT_KEYS = {
     # Creep
     "phi_cc_t",
     "phi_cc_star_table",
+    "eps_cc",
+    "eps_cc_micro",
     "k2_creep",
     "k3_creep",
     "k4_creep",
@@ -6767,7 +6769,12 @@ def _request_inputs_engineering_commit(
     # clearing it is racy with Streamlit's URL-sync rerun and can let the old
     # snapshot be armed again before Inputs renders.
     if str(route_guard.get("beam_id") or "").strip() == active_beam_id:
-        route_guard["committed_state"] = copy.deepcopy(committed.snapshot)
+        # ``InputSnapshotState.snapshot`` is recursively immutable and can
+        # contain ``MappingProxyType`` values.  Route guards are a mutable
+        # presentation/session boundary, so use the contract's defensive
+        # serialization copy instead of trying to deepcopy the immutable
+        # mapping (which is not pickleable).
+        route_guard["committed_state"] = committed.to_dict()
         route_guard["source_input_revision"] = int(committed.revision)
         route_guard["authoritative_result"] = None
         st.session_state["_inputs_same_beam_return_guard"] = route_guard

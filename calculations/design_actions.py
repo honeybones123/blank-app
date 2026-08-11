@@ -266,7 +266,13 @@ def resolve_design_actions_from_state(source_state: dict | None) -> dict:
         if abs(Mu) <= 1e-9 and Mu_from_extremes > 1e-9:
             Mu = Mu_from_extremes
         Mu_signed = float(Mu_pos) if Mu_pos >= Mu_neg else -float(Mu_neg)
-        Vu = float(state.get("sfd_Vmax_abs_kN", state.get("Vu_star", 0.0)) or 0.0)
+        Vu = float(
+            state.get(
+                "sfd_Vmax_abs_kN",
+                state.get("Vu_star", state.get("uls_Vstar", 0.0)),
+            )
+            or 0.0
+        )
         SLS_M_pos = float(state.get("M_pos_max_sls_kNm", 0.0) or 0.0)
         SLS_M_neg = float(abs(min(0.0, float(state.get("M_neg_min_sls_kNm", 0.0) or 0.0))))
         SLS_M_abs_raw = state.get("sfd_Msls_max_kNm", None)

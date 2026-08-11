@@ -24,6 +24,39 @@ _ACTION_SOURCE_WIDGET_KEYS = (
     "inputs_use_calculated_actions",
 )
 
+# Several of these authoritative derived-action inputs remain classified as
+# historical calculation results for compatibility.  Snapshot boundaries must
+# carry them explicitly whenever Load Analysis is the selected source.
+LOAD_ANALYSIS_ENGINEERING_ACTION_KEYS = (
+    "actions_source",
+    "design_actions_source",
+    "uls_Mstar",
+    "uls_Mstar_pos_manual",
+    "uls_Mstar_neg_manual",
+    "uls_Vstar",
+    "uls_Nstar",
+    "sls_Mstar",
+    "sls_Mstar_pos_manual",
+    "sls_Mstar_neg_manual",
+    "sls_Vstar",
+    "sls_Nstar",
+    "sfd_Mmax_abs_kNm",
+    "sfd_Vmax_abs_kN",
+    "sfd_Msls_max_kNm",
+    "sfd_Vsls_max_kN",
+    "M_pos_max_uls_kNm",
+    "M_neg_min_uls_kNm",
+    "M_pos_max_sls_kNm",
+    "M_neg_min_sls_kNm",
+    "design_M_uls_kNm",
+    "design_M_uls_kNm_signed",
+    "design_V_uls_kN",
+    "design_M_sls_kNm",
+    "design_M_sls_kNm_signed",
+    "design_V_sls_kN",
+    "Nu_star",
+)
+
 
 def uses_load_analysis_actions(state: MutableMapping[str, Any]) -> bool:
     """Resolve the canonical source without consulting page widget mirrors."""
@@ -36,6 +69,27 @@ def uses_load_analysis_actions(state: MutableMapping[str, Any]) -> bool:
         LOAD_ANALYSIS_ACTIONS_SOURCE,
         "Calculated design actions (from SFD/BMD)",
     }
+
+
+def authoritative_action_source_projection(
+    state: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return action-source fields that are engineering inputs, not results."""
+
+    projection = {
+        "actions_mode": state.get("actions_mode", "manual"),
+        "actions_source": state.get("actions_source", MANUAL_ACTIONS_SOURCE),
+        "design_actions_source": state.get("design_actions_source", "max"),
+    }
+    if uses_load_analysis_actions(dict(state)):
+        projection.update(
+            {
+                key: state[key]
+                for key in LOAD_ANALYSIS_ENGINEERING_ACTION_KEYS
+                if key in state
+            }
+        )
+    return projection
 
 
 def seed_action_source_toggle(
@@ -209,8 +263,10 @@ def render_action_source_toggle(
 __all__ = [
     "INPUTS_ACTION_SOURCE_TOGGLE_KEY",
     "LOAD_ANALYSIS_ACTIONS_SOURCE",
+    "LOAD_ANALYSIS_ENGINEERING_ACTION_KEYS",
     "LOAD_ANALYSIS_ACTION_SOURCE_TOGGLE_KEY",
     "MANUAL_ACTIONS_SOURCE",
+    "authoritative_action_source_projection",
     "commit_action_source_toggle",
     "load_analysis_action_projection",
     "render_action_source_toggle",

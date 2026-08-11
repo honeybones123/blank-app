@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, MutableMapping
 
@@ -418,6 +419,20 @@ class SharedStateSessionPort:
             from state_and_helpers import get_beam_project_param_snapshot
 
             canonical_before = dict(get_beam_project_param_snapshot())
+
+        # Apply must preserve the action state that produced the displayed
+        # publication.  A fragment edit can already be committed to shared
+        # state while the beam-owned snapshot still contains the previous
+        # action values.  Merging a verified design revision into that stale
+        # snapshot used to reset the actions to zero after Apply.  Promote only
+        # the live action-authority fields here; geometry and reinforcement
+        # remain owned by the revision-bound beam snapshot and the verified
+        # candidate payload below.
+        for key in DESIGN_ACTION_INVARIANT_KEYS:
+            if key in self.session_state:
+                canonical_before[key] = copy.deepcopy(
+                    self.session_state.get(key)
+                )
         actions_before = {
             key: canonical_before.get(key)
             for key in DESIGN_ACTION_INVARIANT_KEYS

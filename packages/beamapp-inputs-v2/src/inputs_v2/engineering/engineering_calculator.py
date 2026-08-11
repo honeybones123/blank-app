@@ -309,7 +309,25 @@ class EngineeringCalculator:
         bending["Ast_min_mm2"] = ast_min
         bending["minimum_tensile_status"] = "PASS" if float(payload["Ast_bot"]) >= ast_min else "FAIL"
         bending["service_moment_knm"] = float(inputs.serviceability.moment_knm)
-        bending["minimum_capacity_knm"] = None
+        # Publish the minimum flexural-strength check with the authoritative
+        # bending result so no summary or family has to reconstruct it.
+        gross_section_modulus_mm3 = (
+            float(inputs.width_mm) * float(inputs.depth_mm) ** 2 / 6.0
+        )
+        cracking_moment_knm = (
+            fctf * gross_section_modulus_mm3 / 1_000_000.0
+        )
+        minimum_capacity_knm = 1.2 * cracking_moment_knm
+        phi_mu_knm = float(bending.get("phi_Mu_kNm", 0.0) or 0.0)
+        minimum_capacity_util = (
+            minimum_capacity_knm / phi_mu_knm if phi_mu_knm > 0.0 else None
+        )
+        bending["Mcr_kNm"] = cracking_moment_knm
+        bending["minimum_capacity_knm"] = minimum_capacity_knm
+        bending["minimum_capacity_util"] = minimum_capacity_util
+        bending["minimum_capacity_status"] = (
+            "PASS" if phi_mu_knm >= minimum_capacity_knm else "FAIL"
+        )
         bending["check_metadata"] = check_metadata(
             "bending_capacity",
             "bending_phi_factor",

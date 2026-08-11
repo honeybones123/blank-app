@@ -5139,6 +5139,33 @@ def _render_deflection_page():
     return _render_lazy_page("deflection", "render_deflection")
 
 
+_GENERAL_ENGINEERING_RESULT_PAGES = frozenset(
+    {"bending", "shear", "creep", "shrinkage", "crack", "deflection"}
+)
+
+
+def _ensure_general_page_engineering_publication(selected_slug: str) -> None:
+    """Publish the current beam's V2 calculation before result-page render.
+
+    This is an application-shell coordination step, not page-local calculation
+    authority.  The detailed pages remain read-only consumers of one shared,
+    revision-matched V2 result and never fall back to their historical local
+    summary calculators.
+    """
+
+    slug = str(selected_slug or "").strip().lower()
+    if slug not in _GENERAL_ENGINEERING_RESULT_PAGES:
+        return
+    from inputs_application.page_runtime import refresh_inputs_engineering_result
+
+    result = refresh_inputs_engineering_result()
+    st.session_state["_general_page_engineering_publication_probe"] = {
+        "page": slug,
+        "engineering_hash": getattr(result, "engineering_hash", None),
+        "source": "app.general_page_engineering_publication",
+    }
+
+
 # Page-local controls must rerender only their result workspace.  Navigation,
 # project selection and authentication remain shell-owned app transactions.
 # Inputs owns its own engineering fragment and Load Analysis is already
@@ -6232,6 +6259,12 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
     _page_dispatch_started_perf = time.perf_counter()
     st.session_state["_user_latency_page_dispatch_started_perf"] = _page_dispatch_started_perf
     same_page_inputs_root_shell = selected_slug == "inputs" and not page_changed
+
+    # General result pages project the same authoritative V2 calculation used
+    # by Inputs.  Resolve it centrally before entering a page fragment so a
+    # direct visit, navigation after an edit, or Apply cannot expose an empty
+    # or stale summary pack.
+    _ensure_general_page_engineering_publication(selected_slug)
 
     def _render_inputs_root_dispatch_stable_shell() -> None:
         st.markdown(

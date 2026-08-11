@@ -46,6 +46,7 @@ class SearchEvidence:
     reinforcement_attempted: bool = False
     governing_blocker: str | None = None
     exhausted: bool = False
+    empty_search_space_proven: bool = False
     declared_stage_ids: tuple[str, ...] = ()
     attempted_stage_ids: tuple[str, ...] = ()
     completed_stage_ids: tuple[str, ...] = ()
@@ -112,7 +113,10 @@ class FamilyDecision:
                 raise ValueError("EXACT_STOP_PROVEN must publish PASS")
             if not evidence.exhausted or evidence.budget_exhausted:
                 raise ValueError("EXACT_STOP_PROVEN requires bounded search exhaustion")
-            if evidence.candidates_attempted <= 0:
+            if (
+                evidence.candidates_attempted <= 0
+                and not evidence.empty_search_space_proven
+            ):
                 raise ValueError("EXACT_STOP_PROVEN requires attempted candidate evidence")
             if not str(evidence.governing_blocker or "").strip():
                 raise ValueError("EXACT_STOP_PROVEN requires a specific governing blocker")

@@ -39,6 +39,11 @@ SUMMARY_OVERLAY_SKIP_SHARED_KEYS = (
     "_defl_pack",
     "_summary_cache_version",
     "_summary_cache_action_fp",
+    # Action-source authority is committed by the shared toggle contract.
+    # Historical page widget mirrors must never overwrite it while summaries
+    # are being shaped, particularly after navigating from Load Analysis.
+    "actions_source",
+    "design_actions_source",
 )
 SUMMARY_OVERLAY_SKIP_LONGITUDINAL_KEYS = (
     "bot_row_count", "top_row_count", "bot1_layout_mode", "bot1_count",

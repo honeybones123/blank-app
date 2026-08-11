@@ -112,3 +112,85 @@ def test_zero_actions_remain_zero_only_when_zero_before_apply() -> None:
     assert after.snapshot["D"] == 450.0
     assert after.snapshot["uls_Mstar"] == 0.0
     assert after.snapshot["sls_Mstar"] == 0.0
+
+
+def test_typed_apply_promotes_live_actions_over_a_stale_zero_snapshot() -> None:
+    stale = _baseline()
+    for key in tuple(stale):
+        if key.startswith(("uls_", "sls_")) or key in {
+            "Tu_star",
+            "P_star",
+            "N_star",
+        }:
+            stale[key] = 0.0
+
+    live = _baseline()
+    state: dict[str, object] = {
+        "active_beam_id": "beam-stale-actions",
+        **{
+            key: value
+            for key, value in live.items()
+            if key in {
+                "actions_source",
+                "actions_mode",
+                "design_actions_source",
+                "uls_Mstar",
+                "uls_Mstar_pos_manual",
+                "uls_Mstar_neg_manual",
+                "uls_Vstar",
+                "uls_Nstar",
+                "sls_Mstar",
+                "sls_Mstar_pos_manual",
+                "sls_Mstar_neg_manual",
+                "sls_Vstar",
+                "sls_Nstar",
+                "Tu_star",
+                "P_star",
+                "N_star",
+            }
+        },
+    }
+    store = InputSnapshotStore(state)
+    before = store.commit_active_beam(
+        stale,
+        changed_keys=tuple(stale),
+        source="test:stale_seed",
+    )
+
+    port = SharedStateSessionPort(
+        session_state=state,
+        set_shared=lambda key, value, **_kwargs: state.__setitem__(key, value),
+        finalize_publish=lambda **_kwargs: None,
+        persist_active_beam=lambda: None,
+        store_post_apply_acceptance=False,
+    )
+    port.commit(
+        InputsSessionMutation(
+            updates={"D": 450.0},
+            status="rerun_required",
+            rerun_required=True,
+        )
+    )
+
+    after = store.current_for_beam("beam-stale-actions")
+    assert after.revision == before.revision + 1
+    assert after.snapshot["D"] == 450.0
+    for key in (
+        "uls_Mstar",
+        "uls_Mstar_pos_manual",
+        "uls_Mstar_neg_manual",
+        "uls_Vstar",
+        "uls_Nstar",
+        "sls_Mstar",
+        "sls_Mstar_pos_manual",
+        "sls_Mstar_neg_manual",
+        "sls_Vstar",
+        "sls_Nstar",
+        "Tu_star",
+        "P_star",
+        "N_star",
+    ):
+        assert after.snapshot[key] == live[key]
+    assert state["_typed_apply_input_transaction_probe"][
+        "design_actions_preserved"
+    ] is True

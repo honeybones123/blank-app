@@ -397,7 +397,14 @@ class FamilyContract:
                 return FamilyOutcome("ACTION", self.family, self.action_intent)
             if exact_stop_proven:
                 return FamilyOutcome("PASS", DesignFamily.EXACT_STOP_PROVEN, self.pass_intent)
-            if preview_reason == "target_band_candidate":
+            # The current design is already calculator-verified and inside
+            # every active target band.  A proportion-balancing preview that
+            # is rejected (or falls back outside a target band) is evidence
+            # to retain the current design, not a new engineering failure.
+            # Keeping that failed preview out of publication also prevents a
+            # green target-band state from turning red simply because a
+            # non-actionable optimisation was assessed.
+            if current_compliant:
                 return FamilyOutcome("PASS", DesignFamily.TARGET_BAND_REACHED, self.pass_intent)
             return FamilyOutcome("BLOCKED", self.family, self.blocked_intent)
         elif exact_stop_proven and self.retain_compliant_on_optimisation_exhaustion:
@@ -469,6 +476,9 @@ class FamilyContract:
             preview_accepted=policy_accepted,
             preview_reason=preview.reason,
             candidates_attempted=candidates_attempted,
+            empty_search_space_proven=bool(
+                search_metrics.get("empty_search_space_proven", False)
+            ),
             completed_stage_ids=tuple(search_metrics.get("completed_stage_ids", ()) or ()),
             stage_stop_reasons=dict(
                 search_metrics.get("stage_stop_reasons", {}) or {}
@@ -502,6 +512,7 @@ class FamilyContract:
         preview_reason: str,
         candidates_attempted: int,
         completed_stage_ids: tuple[str, ...],
+        empty_search_space_proven: bool = False,
         stage_stop_reasons: dict[str, str] | None = None,
         budget_exhausted: bool = False,
     ) -> bool:
@@ -510,7 +521,7 @@ class FamilyContract:
             not preview_accepted
             and not budget_exhausted
             and preview_reason in policy.reason_codes
-            and candidates_attempted > 0
+            and (candidates_attempted > 0 or empty_search_space_proven)
             and bool(policy.required_stage_ids)
             and set(policy.required_stage_ids).issubset(completed_stage_ids)
             and all(
@@ -811,6 +822,9 @@ class FamilyOwner:
                 ),
                 governing_blocker=blocker,
                 exhausted=resolution.exact_stop_proven,
+                empty_search_space_proven=bool(
+                    metrics.get("empty_search_space_proven", False)
+                ),
                 declared_stage_ids=tuple(metrics.get("declared_stage_ids", ()) or ()),
                 attempted_stage_ids=attempted_stage_ids,
                 completed_stage_ids=tuple(metrics.get("completed_stage_ids", ()) or ()),

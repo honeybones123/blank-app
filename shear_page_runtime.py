@@ -1874,6 +1874,7 @@ def compute_shear_results(publish: bool = True) -> dict:
 #  MAIN PAGE RENDER FUNCTION
 # ------------------------------------------------------------
 def render_shear():
+    page_title_placeholder = st.container()
     _shear_visualisation_section.bind_runtime(globals())
     render_timing_mark("shear_page.runtime.start")
     # Handle cross-page navigation from Inputs page
@@ -1997,7 +1998,11 @@ In short:
 """
                     )
 
-    render_result_page_title("Shear & Torsion")
+    with page_title_placeholder:
+        # This page's runtime shell contributes one additional Streamlit row
+        # before its content. Offset that shell row so the visible heading
+        # aligns with the Bending-page reference spacing.
+        render_result_page_title("Shear & Torsion", top_margin_rem=-1.25)
 
     debug_mode = st.sidebar.checkbox(
         "Debug session state",

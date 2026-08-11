@@ -203,6 +203,7 @@ for _page_section_module in _PAGE_SECTION_MODULES:
     _page_section_module.bind_runtime(globals())
 
 def render_deflection():
+    page_title_placeholder = st.empty()
     """Deflection page – short-term, long-term, span/depth to AS 3600:2018 Cl. 8.5."""
     render_timing_mark("deflection_page.runtime.start")
     # NOTE: init_shared_session_state() is called by app.py router before this
@@ -259,7 +260,8 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
             """
         )
 
-    render_result_page_title("Beam Deflection")
+    with page_title_placeholder.container():
+        render_result_page_title("Beam Deflection")
 
     if not deflection_has_service_load_for_calc():
         st.info("No loads applied — deflection not calculated")

@@ -92,3 +92,24 @@ def test_minimum_tensile_reinforcement_uses_the_accepted_flexural_tensile_streng
     )
 
     assert bending["Ast_min_mm2"] == pytest.approx(expected_ast_min)
+
+
+def test_minimum_flexural_capacity_is_published_from_the_authoritative_check() -> None:
+    current = BeamInputs().validated()
+    bending = EngineeringCalculator().calculate(current).families["bending"]
+    expected_fctf = 0.6 * math.sqrt(current.materials.concrete_strength_mpa)
+    expected_mcr = (
+        expected_fctf
+        * current.width_mm
+        * current.depth_mm**2
+        / 6.0
+        / 1_000_000.0
+    )
+    expected_minimum = 1.2 * expected_mcr
+
+    assert bending["Mcr_kNm"] == pytest.approx(expected_mcr)
+    assert bending["minimum_capacity_knm"] == pytest.approx(expected_minimum)
+    assert bending["minimum_capacity_util"] == pytest.approx(
+        expected_minimum / bending["phi_Mu_kNm"]
+    )
+    assert bending["minimum_capacity_status"] in {"PASS", "FAIL"}

@@ -645,6 +645,9 @@ _bending_calculations_section.bind_runtime(globals())
 
 
 def render_bending():
+    # Reserve the page-top result container before invisible CSS/style elements
+    # so its heading aligns with the other engineering pages.
+    top_container = st.container()
     render_timing_mark("bending_page.runtime.start")
     # NOTE: init_shared_session_state() is called by app.py router before this function runs.
     # Pages must NOT call init/hydrate themselves - the router owns the lifecycle.
@@ -720,9 +723,6 @@ def render_bending():
         unsafe_allow_html=True,
     )
     
-
-    # Container so title + summary + 3D sit at the very top (like Inputs page)
-    top_container = st.container()
 
     # ---------------- Sidebar glossary ----------------
     with st.sidebar.expander("📘 Glossary – Bending terms", expanded=False):

@@ -44,7 +44,6 @@ from crack_side_view_diagram import (
     render_crack_moment_tab_plotly,
     render_crack_side_view_diagram,
 )
-from deflection_support import deflection_has_service_load_for_calc
 from calculations.crack_control import (
     _nearest_key,
     average_active_bar_spacing_mm,
@@ -93,6 +92,7 @@ _crack_inputs_section.bind_runtime(globals())
 #  MAIN RENDER FUNCTION
 # ------------------------------------------------------------
 def render_crack():
+    page_title_placeholder = st.empty()
     render_timing_mark("crack_page.runtime.start")
     # Hydrate widget keys from shared BEFORE rendering widgets (prevents 0/default after restore)
     # Handle cross-page navigation from Inputs page
@@ -132,10 +132,11 @@ You can:
 """
         )
 
-    render_result_page_title("Crack width – AS 3600:2018")
-
-    if not deflection_has_service_load_for_calc():
-        st.info("No loads applied — deflection not calculated")
+    with page_title_placeholder.container():
+        render_result_page_title(
+            "Crack width – AS 3600:2018",
+            top_margin_rem=-0.80,
+        )
 
     # --------------------------------------------------------
     # Reserve space for top summary then diagram (filled after calculations)
