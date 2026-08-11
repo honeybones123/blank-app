@@ -3,7 +3,12 @@ from dataclasses import replace
 import pytest
 
 from inputs_v2.application.calculation_coordinator import calculate_legacy_shadow_current
-from inputs_v2.application.design_brain_families import DesignFamily, classify_design_family, design_signals
+from inputs_v2.application.design_brain_families import (
+    DesignFamily,
+    classify_design_family,
+    classify_design_family_selection,
+    design_signals,
+)
 from inputs_v2.domain.beam_inputs import ActionInputs, BeamInputs, LongitudinalReinforcement, ShearReinforcement
 from inputs_v2.domain.engineering_result import EngineeringResult
 
@@ -28,6 +33,21 @@ def test_no_design_actions_select_typed_input_required_family_first() -> None:
     result = calculate_legacy_shadow_current(inputs)
     assert result is not None
     assert classify_design_family(result, inputs) is DesignFamily.INPUT_REQUIRED
+    classification = classify_design_family_selection(result, inputs)
+    assert classification.selected_entry_condition_id == "no_design_actions_entered"
+    assert classification.matched_families[0] is DesignFamily.INPUT_REQUIRED
+
+
+def test_unsupported_action_domain_fails_closed_for_engineering_review() -> None:
+    inputs = BeamInputs(actions=ActionInputs(axial_force_kn=100.0)).validated()
+    result = calculate_legacy_shadow_current(inputs)
+    assert result is not None
+
+    classification = classify_design_family_selection(result, inputs)
+
+    assert classification.selected_family is DesignFamily.ENGINEERING_REVIEW_REQUIRED
+    assert classification.reason_code == "unsupported_action_domain"
+    assert classify_design_family(result, inputs) is DesignFamily.ENGINEERING_REVIEW_REQUIRED
 
 
 def test_family_classifier_selects_shear_failure() -> None:

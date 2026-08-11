@@ -4,9 +4,16 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from inputs_v2.application.design_brain_service import DesignBrainPreview, DesignBrainService
+from inputs_v2.application.design_brain_service import DesignBrainService
+from inputs_v2.application.design_brain_decision import FamilyDecision
 from inputs_v2.application.design_brain.family_context import FamilyRunContext
 
 
 class FamilyOwner(Protocol):
-    def preview(self, context: FamilyRunContext, service: DesignBrainService) -> DesignBrainPreview: ...
+    def validates_entry(self, context: FamilyRunContext) -> bool: ...
+
+    def decide(
+        self,
+        context: FamilyRunContext,
+        service: DesignBrainService,
+    ) -> FamilyDecision: ...

@@ -88,8 +88,6 @@ class ApplyTransactionStore:
             self.EXPECTED_ENGINEERING_HASH_KEY,
             self.EXPECTED_PUBLICATION_AUTHORITY_HASH_KEY,
         )
-        if not any(key in payload for key in expected_keys):
-            return True, "unrevisioned_compatibility_payload"
         if not all(key in payload for key in expected_keys):
             return False, "incomplete_apply_revision_expectation"
         if int(payload[self.EXPECTED_INPUT_REVISION_KEY]) != int(input_revision):

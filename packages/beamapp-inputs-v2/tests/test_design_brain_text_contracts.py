@@ -33,6 +33,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
 EXPECTED = {
     DesignFamily.INPUT_REQUIRED: ("Design actions required", "Design actions required", "Design actions required", ("reinforcement_fit",)),
+    DesignFamily.ENGINEERING_REVIEW_REQUIRED: ("Engineering review required", "Engineering review required", "Engineering review required", ("geometry", "bending", "shear", "ductility", "minimum_tensile", "serviceability", "crack_control", "reinforcement_fit")),
     DesignFamily.GEOMETRY_DETAILING_GOVERNS: ("Verified geometry and detailing revision", "Geometry and detailing review required", "Geometry and detailing verified", ("geometry", "reinforcement_fit")),
     DesignFamily.SERVICEABILITY_GOVERNS: ("Verified serviceability revision", "Serviceability revision required", "Serviceability checks verified", ("crack_control", "serviceability", "bending", "shear", "reinforcement_fit")),
     DesignFamily.COMBINED_OVERDESIGN: ("Verified combined optimisation", "Combined optimisation review required", "Compliant combined design retained", ("bending", "shear", "ductility", "reinforcement_fit")),

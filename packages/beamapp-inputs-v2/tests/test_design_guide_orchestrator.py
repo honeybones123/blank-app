@@ -631,6 +631,7 @@ def test_no_op_preview_cannot_publish_action_without_apply_payload(monkeypatch) 
     from inputs_v2.application.design_brain_apply import propose_neutral_candidate
     from inputs_v2.application.design_brain.family_context import FamilyRunContext
     from inputs_v2.application.design_brain.family_owners import FAMILY_OWNERS
+    from inputs_v2.application.design_brain_families import classify_design_family_selection
     from inputs_v2.domain.design_preferences import DEFAULT_DESIGN_PREFERENCES
 
     owner = FAMILY_OWNERS[DesignFamily.BENDING_OVERDESIGN_GOVERNS]
@@ -648,6 +649,7 @@ def test_no_op_preview_cannot_publish_action_without_apply_payload(monkeypatch) 
         FamilyRunContext(
             current=current,
             current_result=result,
+            classification=classify_design_family_selection(result, current),
             preferences=DEFAULT_DESIGN_PREFERENCES,
             search_profile=service.search_profile,
         ),

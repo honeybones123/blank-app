@@ -89,61 +89,25 @@ def execute_typed_apply(
         if payload.get("recommendation_envelope") == {}:
             payload.pop("recommendation_envelope", None)
         result = current_result
-        button_contract = dict(
-            session_state.get("design_guide_primary_button_contract")
-            or session_state.get("primary_button_contract")
-            or {}
-        )
-        canonical_primary_payload = bool(
-            str(payload.get("_source") or "").strip()
-            == "design_guide_primary_apply_payload"
-            and isinstance(recommendation.get("recommendation_envelope"), dict)
-        )
-        contract_enabled = bool(
-            session_state.get("design_guide_primary_button_contract_enabled")
-            or button_contract.get("enabled")
-            or button_contract.get("cta_enabled")
-            or canonical_primary_payload
-        )
+        if result is None:
+            return "failed"
         final_publication = dict(
-            (result.final_publication if result is not None else {}) or {}
+            result.final_publication or {}
         )
         cta = dict(
             final_publication.get("cta")
-            or (result.cta_model if result is not None else {})
+            or result.cta_model
             or {}
         )
-        cta_enabled = bool(
-            cta.get("enabled")
-            or cta.get("actionable")
-            or str(cta.get("state") or cta.get("cta_state") or "").strip().upper()
-            == "ENABLED"
-            or contract_enabled
-        )
-        cta["enabled"] = cta_enabled
         raw_outcome = str(
             final_publication.get("outcome_state")
-            or (result.family_outcome if result is not None else "")
+            or result.family_outcome
             or ""
         ).upper()
         publication = InputsPublicationResult(
-            publication_hash=str(
-                (result.publication_authority_hash if result is not None else "") or ""
-            ),
-            outcome="ACTION" if cta_enabled else raw_outcome,
-            family_id=(
-                result.governing_family
-                if result is not None
-                else str(
-                    button_contract.get("selected_family_id")
-                    or button_contract.get("published_family_id")
-                    or button_contract.get("cta_family_id")
-                    or payload.get("resolved_candidate_family_tag")
-                    or payload.get("family")
-                    or ""
-                ).strip()
-                or None
-            ),
+            publication_hash=str(result.publication_authority_hash or ""),
+            outcome=raw_outcome,
+            family_id=result.governing_family,
             cta=cta,
             payload=final_publication,
         )

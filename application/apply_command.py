@@ -39,37 +39,46 @@ def _candidate_identity_values(payload: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(values)
 
 
-def _candidate_identity_matches(
-    authoritative_payload: Mapping[str, Any],
-    incoming_payload: Mapping[str, Any],
-) -> bool:
-    authoritative_ids = _candidate_identity_values(authoritative_payload)
-    incoming_ids = _candidate_identity_values(incoming_payload)
-    if not authoritative_ids or not incoming_ids:
-        return True
-    if set(authoritative_ids).intersection(incoming_ids):
-        return True
-    # The transitional authority adapter stores the source candidate token,
-    # while the rendered CTA may carry the family-qualified canonical token.
-    # Accept that representation only when the family tag also agrees.
-    authoritative_family = str(
-        authoritative_payload.get("family")
-        or authoritative_payload.get("resolved_candidate_family_tag")
-        or (authoritative_payload.get("resolved_candidate") or {}).get("family")
+def _candidate_id(payload: Mapping[str, Any]) -> str:
+    values = _candidate_identity_values(payload)
+    return values[0] if values else ""
+
+
+def _family_id(payload: Mapping[str, Any]) -> str:
+    resolved = payload.get("resolved_candidate")
+    resolved_map = resolved if isinstance(resolved, Mapping) else {}
+    return str(
+        payload.get("family")
+        or payload.get("resolved_candidate_family_tag")
+        or resolved_map.get("family")
         or ""
     ).strip().upper()
-    incoming_family = str(
-        incoming_payload.get("family")
-        or incoming_payload.get("resolved_candidate_family_tag")
-        or (incoming_payload.get("resolved_candidate") or {}).get("family")
-        or ""
-    ).strip().upper()
-    if authoritative_family and incoming_family and authoritative_family != incoming_family:
-        return False
-    return any(
-        auth_id.rsplit(":", 1)[-1] == incoming_id.rsplit(":", 1)[-1]
-        for auth_id in authoritative_ids
-        for incoming_id in incoming_ids
+
+
+def _updates(payload: Mapping[str, Any]) -> dict[str, Any]:
+    for key in ("resolved_candidate_updates", "updates"):
+        value = payload.get(key)
+        if isinstance(value, Mapping) and value:
+            return dict(value)
+    action_payload = payload.get("action_payload")
+    if isinstance(action_payload, Mapping):
+        for key in ("resolved_candidate_updates", "updates"):
+            value = action_payload.get(key)
+            if isinstance(value, Mapping) and value:
+                return dict(value)
+    resolved = payload.get("resolved_candidate")
+    if isinstance(resolved, Mapping):
+        value = resolved.get("updates")
+        if isinstance(value, Mapping) and value:
+            return dict(value)
+    return {}
+
+
+def _failed(reason: str, payload: Mapping[str, Any]) -> ApplyCommandResult:
+    return ApplyCommandResult(
+        status="failed",
+        reason=reason,
+        recommendation_id=_candidate_id(payload) or None,
     )
 
 
@@ -85,15 +94,36 @@ def execute_apply_command(
     if not payload:
         return ApplyCommandResult(status="failed", reason="missing_apply_payload")
 
-    if current_result is not None:
-        authoritative_payload = _mapping(current_result.apply_payload)
-        if not _candidate_identity_matches(authoritative_payload, payload):
-            incoming_ids = _candidate_identity_values(payload)
-            return ApplyCommandResult(
-                status="failed",
-                reason="stale_authoritative_apply_payload",
-                recommendation_id=incoming_ids[0] if incoming_ids else None,
-            )
+    if current_result is None:
+        return _failed("missing_authoritative_design_result", payload)
+
+    authoritative_payload = _mapping(current_result.apply_payload)
+    final_publication = _mapping(current_result.final_publication)
+    cta = _mapping(final_publication.get("cta") or current_result.cta_model)
+    if str(current_result.family_outcome or "").strip().upper() != "ACTION":
+        return _failed("authoritative_result_not_action", payload)
+    if str(final_publication.get("outcome_state") or "").strip().upper() != "ACTION":
+        return _failed("authoritative_publication_not_action", payload)
+    if not all(bool(cta.get(key)) for key in ("enabled", "actionable", "apply_allowed")):
+        return _failed("authoritative_cta_not_actionable", payload)
+
+    authoritative_candidate_id = _candidate_id(authoritative_payload)
+    incoming_candidate_id = _candidate_id(payload)
+    if not authoritative_candidate_id or incoming_candidate_id != authoritative_candidate_id:
+        return _failed("stale_authoritative_apply_candidate", payload)
+    authoritative_family = _family_id(authoritative_payload)
+    incoming_family = _family_id(payload)
+    if not authoritative_family or incoming_family != authoritative_family:
+        return _failed("stale_authoritative_apply_family", payload)
+    if authoritative_family != str(current_result.governing_family or "").strip().upper():
+        return _failed("authoritative_apply_family_mismatch", payload)
+    if str(authoritative_payload.get("action_type") or "").strip() != "apply_resolved_candidate":
+        return _failed("invalid_authoritative_apply_action_type", payload)
+    if str(payload.get("action_type") or "").strip() != "apply_resolved_candidate":
+        return _failed("invalid_incoming_apply_action_type", payload)
+    authoritative_updates = _updates(authoritative_payload)
+    if not authoritative_updates or _updates(payload) != authoritative_updates:
+        return _failed("stale_authoritative_apply_updates", payload)
 
     recommendation_id = str(
         payload.get("recommendation_id")
@@ -107,7 +137,7 @@ def execute_apply_command(
         status = "rerun_required"
     return ApplyCommandResult(
         status=status,
-        reason="legacy_executor_dispatched_once",
+        reason="authoritative_executor_dispatched_once",
         recommendation_id=recommendation_id,
         executor_result=executor_result,
     )

@@ -1,7 +1,7 @@
 from dataclasses import replace
 
 from inputs_v2.application.design_brain.family_owners import FAMILY_OWNERS
-from inputs_v2.application.design_brain_families import DesignFamily
+from inputs_v2.application.design_brain_families import DesignFamily, classify_design_family_selection
 from inputs_v2.application.design_brain_service import DesignBrainService
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.domain.beam_inputs import (
@@ -20,7 +20,13 @@ def _owned_preview(family: DesignFamily, current: BeamInputs, service: DesignBra
     result = service._calculator.calculate_current(current).result
     assert result is not None
     return FAMILY_OWNERS[family].preview(
-        FamilyRunContext(current, result, DEFAULT_DESIGN_PREFERENCES, SearchProfile()),
+        FamilyRunContext(
+            current,
+            result,
+            classify_design_family_selection(result, current),
+            DEFAULT_DESIGN_PREFERENCES,
+            SearchProfile(),
+        ),
         service,
     )
 

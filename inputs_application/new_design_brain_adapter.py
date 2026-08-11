@@ -172,7 +172,11 @@ def _neutral_publication_projection(
     *,
     family: str,
     reason: str,
-    accepted: bool,
+    decision_status: str,
+    apply_allowed: bool,
+    selected_entry_condition_id: str,
+    matched_families: tuple[str, ...],
+    classification_reason_code: str,
     candidate_payload: Mapping[str, Any],
     updates: Mapping[str, Any],
     clause_metadata: Mapping[str, Any],
@@ -192,14 +196,25 @@ def _neutral_publication_projection(
     family_id = str(family or "").strip() or "UNKNOWN"
     reason_text = str(reason or "").strip() or "no_design_action"
     v2_display_map = dict(v2_display or {})
-    apply_allowed = bool(v2_display_map.get("apply_allowed", accepted))
-    update_map = dict(updates or {}) if apply_allowed else {}
+    authoritative_status = str(decision_status or "").strip().upper()
+    if authoritative_status not in {"ACTION", "PASS", "BLOCKED", "INPUT_REQUIRED"}:
+        raise ValueError(f"unsupported authoritative decision status: {decision_status!r}")
+    typed_apply_allowed = bool(apply_allowed)
+    if typed_apply_allowed != (authoritative_status == "ACTION"):
+        raise ValueError("Apply authority must exactly match the ACTION decision status")
+    if (
+        "apply_allowed" in v2_display_map
+        and bool(v2_display_map["apply_allowed"]) != typed_apply_allowed
+    ):
+        raise ValueError("card Apply state differs from the typed family decision")
+    update_map = dict(updates or {}) if typed_apply_allowed else {}
     candidate_id = str(candidate_payload.get("candidate_id") or "").strip() or None
-    action_type = "apply_resolved_candidate" if apply_allowed and update_map else None
-    outcome_state = "ACTION" if action_type else (
-        "PASS" if reason_text in {"no_bending_demand", "serviceability_not_failed"}
-        else "BLOCKED"
-    )
+    action_type = "apply_resolved_candidate" if typed_apply_allowed and update_map else None
+    if typed_apply_allowed and action_type is None:
+        raise ValueError("ACTION publication requires exact resolved candidate updates")
+    if typed_apply_allowed and candidate_id is None:
+        raise ValueError("ACTION publication requires an exact resolved candidate ID")
+    outcome_state = authoritative_status
     # The standalone V2 card renders the governing enum identifier verbatim.
     # Preserve that exact answer surface in Runtime instead of title-casing it
     # during neutral publication projection.
@@ -239,18 +254,14 @@ def _neutral_publication_projection(
         "product_driving": True,
     }
     cta_model["button_contract_hash"] = stable_authority_hash(cta_model)
-    v2_state_class = str(v2_display_map.get("state_class") or ("action" if action_type else outcome_state.lower()))
-    v2_badge = str(v2_display_map.get("badge") or ("ACTION" if action_type else outcome_state))
+    v2_state_class = str(v2_display_map.get("state_class") or outcome_state.lower())
+    v2_badge = str(v2_display_map.get("badge") or outcome_state)
     v2_advice_text = str(v2_display_map.get("advice_text") or "")
     v2_heading = str(v2_display_map.get("heading") or family_id)
     v2_governing_utilisation = float(v2_display_map.get("governing_utilisation") or 0.0)
-    # The visual badge describes the current engineering state, which may be
-    # BLOCKED when the current design fails even though V2 has produced an
-    # approved repair candidate.  Publication outcome is the Apply authority:
-    # keep it ACTION whenever an actionable candidate exists, otherwise a
-    # terminal PASS/BLOCKED state.  Conflating these two states made the card
-    # show an enabled Apply button that the canonical executor then rejected.
-    publication_outcome_state = "ACTION" if action_type else v2_badge
+    # Presentation may describe the current state, but publication authority
+    # comes only from the typed family decision.
+    publication_outcome_state = outcome_state
     display_model = {
         "title": display_title,
         "badge": v2_badge,
@@ -263,6 +274,9 @@ def _neutral_publication_projection(
         "blocker_explanation": None if action_type else reason_text.replace("_", " "),
         "clause_metadata": dict(clause_metadata),
         "selected_family_id": family_id,
+        "selected_entry_condition_id": selected_entry_condition_id,
+        "classification_reason_code": classification_reason_code,
+        "matched_families": list(matched_families),
         "v2_state_class": v2_state_class,
         "v2_badge": v2_badge,
         "v2_advice_text": v2_advice_text,
@@ -283,6 +297,8 @@ def _neutral_publication_projection(
         "outcome_state": publication_outcome_state,
         "family": family_id,
         "selected_family_id": family_id,
+        "selected_entry_condition_id": selected_entry_condition_id,
+        "classification_reason_code": classification_reason_code,
         "published_family_id": family_id,
         "cta_family_id": family_id,
         "apply_payload_family_id": family_id,
@@ -296,6 +312,9 @@ def _neutral_publication_projection(
     evidence = {
         "published_item_id": candidate_id,
         "selected_family": family_id,
+        "selected_entry_condition_id": selected_entry_condition_id,
+        "classification_reason_code": classification_reason_code,
+        "matched_families": list(matched_families),
         "publication_reason": reason_text,
         "blocker_reason": None if action_type else reason_text,
         "candidate_search_evidence": {
@@ -311,6 +330,9 @@ def _neutral_publication_projection(
         "published_item_id": candidate_id,
         "selected_family": family_id,
         "selected_family_id": family_id,
+        "selected_entry_condition_id": selected_entry_condition_id,
+        "classification_reason_code": classification_reason_code,
+        "matched_families": list(matched_families),
         "published_family_id": family_id,
         "cta_family_id": family_id,
         "outcome_state": publication_outcome_state,
@@ -326,6 +348,8 @@ def _neutral_publication_projection(
         "verifier_payload": {
             "outcome_state": publication_outcome_state,
             "selected_family_id": family_id,
+            "selected_entry_condition_id": selected_entry_condition_id,
+            "classification_reason_code": classification_reason_code,
             "published_family_id": family_id,
             "cta_family_id": family_id,
             "candidate_id": candidate_id,
@@ -407,6 +431,17 @@ class NewDesignBrainAdapter:
             accepted = bool(decision.apply_allowed)
             family = str(decision.family.value)
             reason = str(decision.reason)
+            decision_status = str(decision.status.value)
+            selected_entry_condition_id = str(
+                decision.classification.selected_entry_condition_id
+            )
+            matched_families = tuple(
+                str(item.value) for item in decision.classification.matched_families
+            )
+            classification_reason_code = str(
+                decision.classification.reason_code
+            )
+            decision_search_evidence = asdict(decision.search_evidence)
             changed_fields = tuple(decision.changed_fields)
             v2_display = _v2_display_projection(
                 api=api,
@@ -427,6 +462,11 @@ class NewDesignBrainAdapter:
             accepted = False
             family = "NO_DESIGN_ACTIONS"
             reason = "no_design_actions"
+            decision_status = "INPUT_REQUIRED"
+            selected_entry_condition_id = "no_design_actions_entered"
+            matched_families = ("INPUT_REQUIRED",)
+            classification_reason_code = "no_design_actions_entered"
+            decision_search_evidence = {}
             changed_fields = ()
             v2_display = {
                 "state_class": "empty",
@@ -470,7 +510,11 @@ class NewDesignBrainAdapter:
         publication_projection = _neutral_publication_projection(
             family=family,
             reason=reason,
-            accepted=accepted,
+            decision_status=decision_status,
+            apply_allowed=accepted,
+            selected_entry_condition_id=selected_entry_condition_id,
+            matched_families=matched_families,
+            classification_reason_code=classification_reason_code,
             candidate_payload=candidate_payload,
             updates=updates,
             clause_metadata=_clause_metadata(api, before),
@@ -561,8 +605,11 @@ class NewDesignBrainAdapter:
             engineering_snapshot=request.engineering_snapshot,
             current_calculations=current_calculations,
             governing_family=family,
+            selected_entry_condition_id=selected_entry_condition_id,
+            matched_families=matched_families,
+            classification_reason_code=classification_reason_code,
             family_contract_version="inputs_v2.family.v1",
-            family_outcome=reason,
+            family_outcome=decision_status,
             selected_candidate=candidate_payload if accepted else None,
             selected_candidate_absence=None if accepted else {
                 "reason": reason,
@@ -576,6 +623,7 @@ class NewDesignBrainAdapter:
                 "target_high": 1.0,
                 "before": dict(before.families),
                 "after": dict(after.families),
+                "family_search_evidence": decision_search_evidence,
             },
             candidate_acceptance_proof={
                 "source_revision_matches": candidate is None or candidate.source_revision == current.revision,
@@ -583,11 +631,18 @@ class NewDesignBrainAdapter:
                 "v2_source_manifest_hash": v2_source_manifest,
                 "reinforcement_fit": dict(after.families.get("reinforcement_fit", {})),
                 "review_before_apply": True,
+                "decision_status": decision_status,
+                "selected_entry_condition_id": selected_entry_condition_id,
+                "classification_reason_code": classification_reason_code,
             },
             blocker_or_exhaustion_proof={
                 "reason": reason,
                 "accepted": accepted,
                 "family": family,
+                "decision_status": decision_status,
+                "selected_entry_condition_id": selected_entry_condition_id,
+                "classification_reason_code": classification_reason_code,
+                "search_evidence": decision_search_evidence,
                 "v2_source_manifest_hash": v2_source_manifest,
             },
             final_publication=canonical_publication,

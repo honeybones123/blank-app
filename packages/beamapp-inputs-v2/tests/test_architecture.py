@@ -90,7 +90,7 @@ def test_family_sorter_has_only_one_application_consumer() -> None:
     for path in (SRC / "application").rglob("*.py"):
         if path.name == "design_brain_families.py":
             continue
-        if "classify_design_family(" in path.read_text(encoding="utf-8"):
+        if "classify_design_family_selection(" in path.read_text(encoding="utf-8"):
             consumers.append(path.relative_to(SRC).as_posix())
     assert consumers == ["application/design_guide_orchestrator.py"]
 
@@ -249,7 +249,10 @@ def test_every_active_design_brain_family_owns_a_complete_contract() -> None:
 
 def test_family_contract_binding_cannot_leak_between_ladder_runs() -> None:
     from inputs_v2.application.design_brain.family_owners import FAMILY_OWNERS
-    from inputs_v2.application.design_brain_families import DesignFamily
+    from inputs_v2.application.design_brain_families import (
+        DesignFamily,
+        classify_design_family_selection,
+    )
     from inputs_v2.application.design_brain_service import DesignBrainService
     from inputs_v2.application.design_brain.family_context import FamilyRunContext
     from inputs_v2.application.design_brain.search_profile import SearchProfile
@@ -259,12 +262,15 @@ def test_family_contract_binding_cannot_leak_between_ladder_runs() -> None:
     service = DesignBrainService()
     owner = FAMILY_OWNERS[DesignFamily.BENDING_OVERDESIGN_GOVERNS]
 
-    current = BeamInputs().validated()
+    from inputs_v2.domain.beam_inputs import ActionInputs
+
+    current = BeamInputs(actions=ActionInputs(bending_moment_knm=10.0)).validated()
     result = service._calculator.calculate_current(current).result
     assert result is not None
     context = FamilyRunContext(
         current,
         result,
+        classify_design_family_selection(result, current),
         DEFAULT_DESIGN_PREFERENCES,
         SearchProfile(),
     )

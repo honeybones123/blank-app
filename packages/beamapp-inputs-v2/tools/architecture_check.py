@@ -84,7 +84,7 @@ def main() -> None:
         path
         for path in application_files
         if path.name != "design_brain_families.py"
-        and "classify_design_family(" in path.read_text(encoding="utf-8")
+        and "classify_design_family_selection(" in path.read_text(encoding="utf-8")
     )
     if classifier_consumers != (SRC / "application" / "design_guide_orchestrator.py",):
         fail("the family classifier must have exactly one orchestrator consumer")

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from inputs_v2.application.design_brain_families import DesignFamily, classify_design_family
+from inputs_v2.application.design_brain_families import (
+    DesignFamily,
+    FamilyClassification,
+    classify_design_family_selection,
+)
 from inputs_v2.application.design_brain_service import DesignBrainPreview, DesignBrainService
 from inputs_v2.application.design_brain_decision import FamilyDecision
 from inputs_v2.application.design_brain.family_owners import (
@@ -50,14 +54,32 @@ class DesignGuideOrchestrator:
         result = self._service._calculator.calculate_current(current).result
         if result is None:
             raise ValueError("calculation result is stale")
-        family = classify_design_family(result, current)
+        classification = classify_design_family_selection(result, current)
+        family = classification.selected_family
         owner = DECISION_OWNERS[family]
         context = FamilyRunContext(
             current=current,
             current_result=result,
+            classification=classification,
             preferences=self._preference_profile,
             search_profile=self._search_profile,
         )
+        if not owner.validates_entry(context):
+            classification = FamilyClassification(
+                selected_family=DesignFamily.ENGINEERING_REVIEW_REQUIRED,
+                selected_entry_condition_id="selected_family_entry_validation_failed",
+                matched_families=classification.matched_families,
+                signals=classification.signals,
+                reason_code="selected_family_entry_validation_failed",
+            )
+            owner = DECISION_OWNERS[DesignFamily.ENGINEERING_REVIEW_REQUIRED]
+            context = FamilyRunContext(
+                current=current,
+                current_result=result,
+                classification=classification,
+                preferences=self._preference_profile,
+                search_profile=self._search_profile,
+            )
         return owner.decide(context, self._service)
 
     def preview(self, current: BeamInputs) -> DesignGuideDecision:

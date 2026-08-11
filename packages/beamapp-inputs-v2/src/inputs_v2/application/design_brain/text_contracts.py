@@ -86,6 +86,41 @@ FAMILY_TEXT_CONTRACTS: dict[DesignFamily, FamilyTextContract] = {
         "No design actions entered. Add loads and the Design Brain will check and optimise your beam.",
         ("reinforcement_fit",), (),
     ),
+    DesignFamily.ENGINEERING_REVIEW_REQUIRED: FamilyTextContract(
+        DesignFamily.ENGINEERING_REVIEW_REQUIRED,
+        "Engineering review required",
+        "Engineering review required",
+        "Engineering review required",
+        "Review the unsupported or inconsistent engineering state before optimisation.",
+        (
+            "geometry",
+            "bending",
+            "shear",
+            "ductility",
+            "minimum_tensile",
+            "serviceability",
+            "crack_control",
+            "reinforcement_fit",
+        ),
+        (
+            BlockerText(
+                "non_finite_utilisation",
+                "An authoritative engineering check returned a non-finite utilisation.",
+            ),
+            BlockerText(
+                "unsupported_action_domain",
+                "The supplied actions do not match a supported Design Brain optimisation family.",
+            ),
+            BlockerText(
+                "no_family_entry_condition_matched",
+                "No Design Brain family contract matched the authoritative engineering state.",
+            ),
+            BlockerText(
+                "selected_family_entry_validation_failed",
+                "The selected family did not validate its own entry condition.",
+            ),
+        ),
+    ),
     DesignFamily.GEOMETRY_DETAILING_GOVERNS: FamilyTextContract(
         DesignFamily.GEOMETRY_DETAILING_GOVERNS,
         "Verified geometry and detailing revision", "Geometry and detailing review required", "Geometry and detailing verified",

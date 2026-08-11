@@ -7,7 +7,7 @@ presentation can select a concrete ladder or reach into its implementation.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Callable
 
@@ -379,11 +379,15 @@ class FamilyContract:
     ) -> FamilyOutcome:
         """Own the final status and CTA intent for this family."""
 
-        if self.terminal_status is DecisionStatus.INPUT_REQUIRED:
+        if self.terminal_status is not None:
             return FamilyOutcome(
-                DecisionStatus.INPUT_REQUIRED.value,
+                self.terminal_status.value,
                 self.family,
-                CtaIntent.REQUEST_INPUT,
+                (
+                    CtaIntent.REQUEST_INPUT
+                    if self.terminal_status is DecisionStatus.INPUT_REQUIRED
+                    else self.blocked_intent
+                ),
             )
 
         if current_failed:
@@ -598,9 +602,19 @@ class FamilyOwner:
     def family(self) -> DesignFamily:
         return self.contract.family
 
+    def validates_entry(self, context: FamilyRunContext) -> bool:
+        """Prove the classifier selected this owner through its own entry rule."""
+
+        return (
+            context.classification.selected_family is self.family
+            and self.contract.entry_condition(context.classification.signals)
+        )
+
     def preview(self, context: FamilyRunContext, service: DesignBrainService) -> DesignBrainPreview:
         with service.family_contract(self.contract, context):
             preview = self.ladder(service, context.current)
+            if self.family is DesignFamily.ENGINEERING_REVIEW_REQUIRED:
+                preview = replace(preview, reason=context.classification.reason_code)
             preview = service.publish_preview(context.current, preview)
         service.last_search_metrics["owner_id"] = self.contract.owner_id
         service.last_search_metrics["declared_stage_ids"] = tuple(
@@ -614,6 +628,11 @@ class FamilyOwner:
         service: DesignBrainService,
     ) -> FamilyDecision:
         """Run this family's ladder and return its complete final decision."""
+
+        if not self.validates_entry(context):
+            raise ValueError(
+                f"family entry validation failed for {self.family.value}"
+            )
 
         current = context.current
         current_result = context.current_result
@@ -769,6 +788,7 @@ class FamilyOwner:
         )
         return FamilyDecision(
             family=final_family,
+            classification=context.classification,
             status=status,
             display_heading=final_text.title_for(status.value),
             candidate=display_candidate,
@@ -1107,6 +1127,7 @@ FAMILY_OWNERS: dict[DesignFamily, FamilyOwner] = {
 
 TERMINAL_FAMILIES = {
     DesignFamily.INPUT_REQUIRED,
+    DesignFamily.ENGINEERING_REVIEW_REQUIRED,
     DesignFamily.EXACT_STOP_PROVEN,
     DesignFamily.LOCKED_NO_REPAIR,
 }
@@ -1148,6 +1169,23 @@ TERMINAL_CONTRACTS: dict[DesignFamily, FamilyContract] = {
         "verify_design_actions_present", ("reinforcement_fit",),
         terminal_status=DecisionStatus.INPUT_REQUIRED,
     ),
+    DesignFamily.ENGINEERING_REVIEW_REQUIRED: _terminal_contract(
+        DesignFamily.ENGINEERING_REVIEW_REQUIRED,
+        "engineering_review_required",
+        "unclassified_or_invalid_engineering_state",
+        "verify_engineering_state_classifiable",
+        (
+            "geometry",
+            "bending",
+            "shear",
+            "ductility",
+            "minimum_tensile",
+            "serviceability",
+            "crack_control",
+            "reinforcement_fit",
+        ),
+        terminal_status=DecisionStatus.BLOCKED,
+    ),
     DesignFamily.EXACT_STOP_PROVEN: _terminal_contract(
         DesignFamily.EXACT_STOP_PROVEN, "exact_stop", "active_family_search_exhausted_at_verified_limit",
         "verify_exact_stop_evidence", ("bending", "shear", "ductility", "minimum_tensile", "serviceability", "crack_control", "reinforcement_fit"),
@@ -1171,6 +1209,12 @@ def _input_required_terminal(
     return service.preview_terminal(current, "design_actions_required")
 
 
+def _engineering_review_terminal(
+    service: DesignBrainService, current: BeamInputs
+) -> DesignBrainPreview:
+    return service.preview_terminal(current, "engineering_review_required")
+
+
 def _exact_stop_terminal(
     service: DesignBrainService, current: BeamInputs
 ) -> DesignBrainPreview:
@@ -1187,6 +1231,10 @@ TERMINAL_OWNERS: dict[DesignFamily, FamilyOwner] = {
     DesignFamily.INPUT_REQUIRED: FamilyOwner(
         TERMINAL_CONTRACTS[DesignFamily.INPUT_REQUIRED],
         _input_required_terminal,
+    ),
+    DesignFamily.ENGINEERING_REVIEW_REQUIRED: FamilyOwner(
+        TERMINAL_CONTRACTS[DesignFamily.ENGINEERING_REVIEW_REQUIRED],
+        _engineering_review_terminal,
     ),
     DesignFamily.EXACT_STOP_PROVEN: FamilyOwner(
         TERMINAL_CONTRACTS[DesignFamily.EXACT_STOP_PROVEN],

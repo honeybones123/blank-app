@@ -139,6 +139,9 @@ class AuthoritativeDesignResult:
     engineering_hash: str
     current_calculations: dict[str, Any] = field(default_factory=dict)
     governing_family: str | None = None
+    selected_entry_condition_id: str | None = None
+    matched_families: tuple[str, ...] = ()
+    classification_reason_code: str | None = None
     family_contract_version: str | None = None
     family_outcome: str | None = None
     selected_candidate: dict[str, Any] | None = None
@@ -162,6 +165,9 @@ class AuthoritativeDesignResult:
             "schema_version": self.schema_version,
             "engineering_hash": self.engineering_hash,
             "governing_family": self.governing_family,
+            "selected_entry_condition_id": self.selected_entry_condition_id,
+            "matched_families": self.matched_families,
+            "classification_reason_code": self.classification_reason_code,
             "family_outcome": self.family_outcome,
             "selected_candidate": self.selected_candidate,
             "selected_candidate_absence": self.selected_candidate_absence,
@@ -236,6 +242,9 @@ def build_authoritative_design_result(
     engineering_snapshot: EngineeringInputSnapshot,
     current_calculations: dict[str, Any] | None = None,
     governing_family: str | None = None,
+    selected_entry_condition_id: str | None = None,
+    matched_families: tuple[str, ...] = (),
+    classification_reason_code: str | None = None,
     family_contract_version: str | None = None,
     family_outcome: str | None = None,
     selected_candidate: dict[str, Any] | None = None,
@@ -253,6 +262,9 @@ def build_authoritative_design_result(
         engineering_hash=engineering_snapshot.engineering_hash,
         current_calculations=dict(current_calculations or {}),
         governing_family=governing_family,
+        selected_entry_condition_id=selected_entry_condition_id,
+        matched_families=tuple(matched_families),
+        classification_reason_code=classification_reason_code,
         family_contract_version=family_contract_version,
         family_outcome=family_outcome,
         selected_candidate=(

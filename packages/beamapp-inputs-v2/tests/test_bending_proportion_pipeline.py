@@ -2,7 +2,7 @@ from inputs_v2.application.design_brain_service import DesignBrainService
 from inputs_v2.domain.beam_inputs import ActionInputs, BeamInputs
 from inputs_v2.application.design_brain.family_context import FamilyRunContext
 from inputs_v2.application.design_brain.family_owners import FAMILY_OWNERS
-from inputs_v2.application.design_brain_families import DesignFamily
+from inputs_v2.application.design_brain_families import DesignFamily, classify_design_family_selection
 from inputs_v2.application.design_brain.search_profile import SearchProfile
 from inputs_v2.domain.design_preferences import DEFAULT_DESIGN_PREFERENCES
 
@@ -11,7 +11,13 @@ def _preview(current: BeamInputs, service: DesignBrainService):
     result = service._calculator.calculate_current(current).result
     assert result is not None
     return FAMILY_OWNERS[DesignFamily.BENDING_FAIL_GOVERNS].preview(
-        FamilyRunContext(current, result, DEFAULT_DESIGN_PREFERENCES, SearchProfile()),
+        FamilyRunContext(
+            current,
+            result,
+            classify_design_family_selection(result, current),
+            DEFAULT_DESIGN_PREFERENCES,
+            SearchProfile(),
+        ),
         service,
     )
 
