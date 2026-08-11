@@ -1,8 +1,10 @@
+from dataclasses import replace
+
 import pytest
 
 from inputs_v2.application.calculation_coordinator import calculate_legacy_shadow_current
 from inputs_v2.application.design_brain_families import DesignFamily, classify_design_family, design_signals
-from inputs_v2.domain.beam_inputs import ActionInputs, BeamInputs, ShearReinforcement
+from inputs_v2.domain.beam_inputs import ActionInputs, BeamInputs, LongitudinalReinforcement, ShearReinforcement
 from inputs_v2.domain.engineering_result import EngineeringResult
 
 
@@ -129,7 +131,10 @@ def test_serviceability_failure_is_not_hidden_by_uls_overdesign() -> None:
 
 
 def test_minimum_tensile_failure_is_routed_to_bending_repair_not_overdesign() -> None:
-    inputs = BeamInputs(actions=ActionInputs(bending_moment_knm=10.0)).validated()
+    inputs = replace(
+        BeamInputs(actions=ActionInputs(bending_moment_knm=10.0)),
+        bottom=LongitudinalReinforcement(bars=2, diameter_mm=10),
+    ).validated()
     result = calculate_legacy_shadow_current(inputs)
     assert result is not None
     assert result.families["bending"]["util"] < 0.85

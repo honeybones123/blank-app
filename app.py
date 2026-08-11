@@ -214,8 +214,8 @@ import inputs_page
 import start_page
 from application.opening_page_preferences import (
     load_opening_page_preference,
-    render_guest_preference_bootstrap,
 )
+from ui.opening_page_preference_bridge import render_guest_preference_bootstrap
 from inputs_page_modules.session.hydration_trace import inputs_hydration_trace_log
 from inputs_page_modules.session.widget_cache_clear import clear_inputs_widget_cache_for_shared_updates
 from inputs_page_modules.session.shear_normalization import run_inputs_pre_hydrate_shear_normalization
@@ -5138,17 +5138,57 @@ def _render_crack_page():
 def _render_deflection_page():
     return _render_lazy_page("deflection", "render_deflection")
 
+
+# Page-local controls must rerender only their result workspace.  Navigation,
+# project selection and authentication remain shell-owned app transactions.
+# Inputs owns its own engineering fragment and Load Analysis is already
+# fragment-scoped at its page entry point, so only the remaining general pages
+# need these stable wrappers.
+@st.fragment
+def _render_start_page_fragment():
+    return _render_start_page()
+
+
+@st.fragment
+def _render_bending_page_fragment():
+    return _render_bending_page()
+
+
+@st.fragment
+def _render_shear_page_fragment():
+    return _render_shear_page()
+
+
+@st.fragment
+def _render_creep_page_fragment():
+    return _render_creep_page()
+
+
+@st.fragment
+def _render_shrinkage_page_fragment():
+    return _render_shrinkage_page()
+
+
+@st.fragment
+def _render_crack_page_fragment():
+    return _render_crack_page()
+
+
+@st.fragment
+def _render_deflection_page_fragment():
+    return _render_deflection_page()
+
 # ---- page registry ----
 PAGES = {
-    "start": ("Start", _render_start_page),
+    "start": ("Start", _render_start_page_fragment),
     "inputs": ("Beam Inputs", inputs_page.render_inputs),
     "design": ("Load Analysis", _render_design_page),
-    "bending": ("Bending", _render_bending_page),
-    "shear": ("Shear", _render_shear_page),
-    "creep": ("Creep", _render_creep_page),
-    "shrinkage": ("Shrinkage", _render_shrinkage_page),
-    "crack": ("Crack Control", _render_crack_page),
-    "deflection": ("Deflection", _render_deflection_page),
+    "bending": ("Bending", _render_bending_page_fragment),
+    "shear": ("Shear", _render_shear_page_fragment),
+    "creep": ("Creep", _render_creep_page_fragment),
+    "shrinkage": ("Shrinkage", _render_shrinkage_page_fragment),
+    "crack": ("Crack Control", _render_crack_page_fragment),
+    "deflection": ("Deflection", _render_deflection_page_fragment),
 }
 
 SLUGS = list(PAGES.keys())
@@ -5184,6 +5224,98 @@ def _get_user_id() -> str:
     except Exception:
         return ""
     return get_user_id_from_token()
+
+
+@st.fragment
+def _render_header_actions(
+    *,
+    user_id: str,
+    project_id: str | None,
+    module: str,
+) -> None:
+    """Render report and persistence controls without remounting the page."""
+    st.session_state.setdefault("report_mode", "standard")
+    report_mode = str(st.session_state.get("report_mode", "standard")).strip().lower()
+    if report_mode not in {"standard", "detailed"}:
+        report_mode = "standard"
+        st.session_state["report_mode"] = report_mode
+
+    c_save, c_pdf, c_pdf_opts, _ = st.columns([2.4, 3.8, 0.5, 0.25], gap="small")
+
+    with c_save:
+        st.markdown(
+            '<span class="beam-header-action-marker" aria-hidden="true"></span>',
+            unsafe_allow_html=True,
+        )
+        if st.button("💾 Save", type="primary", use_container_width=True):
+            if not user_id:
+                st.error("You must be logged in to save projects.")
+            elif project_id:
+                try:
+                    payload = export_state_for_saving()
+                    update_project(
+                        project_id=project_id,
+                        user_id=user_id,
+                        payload=payload,
+                        meta={"module": module},
+                    )
+                    st.toast("Saved", icon="✅")
+                except Exception as exc:
+                    st.error(f"Save failed: {exc}")
+            else:
+                # Opening the project-creation shell is an intentional app-level
+                # transition; it is not a page-local engineering interaction.
+                st.session_state["_show_save_modal"] = True
+                st.rerun(scope="app")
+
+    with c_pdf:
+        from reporting.example_integration import render_pdf_button
+
+        st.markdown(
+            '<span class="beam-header-action-marker" aria-hidden="true"></span>',
+            unsafe_allow_html=True,
+        )
+        render_pdf_button(
+            detail_level=report_mode,
+            section_figure_factory=inputs_page.make_summary_cross_section_figure,
+            beam_figure_factory=inputs_page.make_beam_3d_figure,
+        )
+
+    with c_pdf_opts:
+        report_container = (
+            info_i_button(help_text="Report options")
+            if hasattr(st, "popover")
+            else st.expander("i", expanded=False)
+        )
+        with report_container:
+            st.selectbox(
+                "Report mode",
+                options=["standard", "detailed"],
+                key="report_mode",
+                format_func=lambda mode: (
+                    "Standard Report" if mode == "standard" else "Detailed Report"
+                ),
+            )
+            st.text_input(
+                "Company name (optional)",
+                key="report_company_name",
+                placeholder="Your company name",
+            )
+            report_logo = st.file_uploader(
+                "Upload company logo (optional)",
+                type=["png", "jpg", "jpeg"],
+                key="report_company_logo_upload",
+                help="Used for the current report session only. Not saved to the project.",
+            )
+            if report_logo is not None:
+                st.session_state["report_company_logo_bytes"] = report_logo.getvalue()
+                st.session_state["report_company_logo_name"] = report_logo.name
+                st.session_state["report_company_logo_type"] = report_logo.type
+                st.image(report_logo, width=120)
+            else:
+                st.session_state["report_company_logo_bytes"] = None
+                st.session_state["report_company_logo_name"] = None
+                st.session_state["report_company_logo_type"] = None
 
 
 def _render_create_project_form(user_id: str, module: str):
@@ -5416,77 +5548,11 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
         left, right = st.columns([1.3, 8.7], gap="large")
 
         with right:
-            st.session_state.setdefault("report_mode", "standard")
-            report_mode = str(st.session_state.get("report_mode", "standard")).strip().lower()
-            if report_mode not in {"standard", "detailed"}:
-                report_mode = "standard"
-                st.session_state["report_mode"] = report_mode
-
-            # The PDF label is longer than Save; keep it wide enough for one
-            # line while shifting the action group toward the page edge.
-            c_save, c_pdf, c_pdf_opts, _ = st.columns([2.4, 3.8, 0.5, 0.25], gap="small")
-
-            with c_save:
-                st.markdown('<span class="beam-header-action-marker" aria-hidden="true"></span>', unsafe_allow_html=True)
-                if st.button("💾 Save", type="primary", use_container_width=True):
-                    if not user_id:
-                        st.error("You must be logged in to save projects.")
-                        st.stop()
-                    else:
-                        if project_id:
-                            try:
-                                payload = export_state_for_saving()
-                                update_project(
-                                    project_id=project_id,
-                                    user_id=user_id,
-                                    payload=payload,
-                                    meta={"module": module},
-                                )
-                                st.toast("Saved", icon="âœ…")
-                            except Exception as e:
-                                st.error(f"Save failed: {e}")
-                        else:
-                            st.session_state["_show_save_modal"] = True
-
-            with c_pdf:
-                from reporting.example_integration import render_pdf_button
-                st.markdown('<span class="beam-header-action-marker" aria-hidden="true"></span>', unsafe_allow_html=True)
-                render_pdf_button(
-                    detail_level=report_mode,
-                    section_figure_factory=(
-                        inputs_page.make_summary_cross_section_figure
-                    ),
-                    beam_figure_factory=inputs_page.make_beam_3d_figure,
-                )
-
-            with c_pdf_opts:
-                with info_i_button(help_text="Report options") if hasattr(st, "popover") else st.expander("i", expanded=False):
-                    st.selectbox(
-                        "Report mode",
-                        options=["standard", "detailed"],
-                        key="report_mode",
-                        format_func=lambda mode: "Standard Report" if mode == "standard" else "Detailed Report",
-                    )
-                    st.text_input(
-                        "Company name (optional)",
-                        key="report_company_name",
-                        placeholder="Your company name",
-                    )
-                    report_logo = st.file_uploader(
-                        "Upload company logo (optional)",
-                        type=["png", "jpg", "jpeg"],
-                        key="report_company_logo_upload",
-                        help="Used for the current report session only. Not saved to the project.",
-                    )
-                    if report_logo is not None:
-                        st.session_state["report_company_logo_bytes"] = report_logo.getvalue()
-                        st.session_state["report_company_logo_name"] = report_logo.name
-                        st.session_state["report_company_logo_type"] = report_logo.type
-                        st.image(report_logo, width=120)
-                    else:
-                        st.session_state["report_company_logo_bytes"] = None
-                        st.session_state["report_company_logo_name"] = None
-                        st.session_state["report_company_logo_type"] = None
+            _render_header_actions(
+                user_id=user_id,
+                project_id=project_id,
+                module=module,
+            )
 
     # Modal for first-time save (no project id yet)
     if st.session_state.get("_show_save_modal", False):

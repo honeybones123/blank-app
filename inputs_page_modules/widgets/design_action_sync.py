@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from calculations.design_actions import resolve_design_actions_from_state
 from inputs_page_modules.fragments import rerun_inputs_current_scope
 
 
@@ -194,13 +195,36 @@ def hydrate_design_action_widgets_from_shared(
     design_controls: bool = False,
 ) -> None:
     specs = design_action_widget_specs_fn(selected_prefix)
+
+    def _display_value(spec: dict) -> float:
+        shared_key = str(spec["shared_key"])
+        if not design_controls:
+            return float(get_param_fn(shared_key, 0.0) or 0.0)
+
+        # In Load Analysis mode the manual ULS/SLS fields remain untouched.
+        # Render the resolved, derived action contract instead of the saved
+        # manual fields so switching the source off restores those values.
+        resolved = resolve_design_actions_from_state(
+            dict(st_module.session_state)
+        )
+        is_sls = str(selected_prefix).strip().lower() == "sls"
+        if shared_key.endswith("_Mstar_pos_manual"):
+            key = "SLS_M_pos" if is_sls else "Mu_pos"
+            return float(resolved.get(key, 0.0) or 0.0)
+        if shared_key.endswith("_Mstar_neg_manual"):
+            key = "SLS_M_neg" if is_sls else "Mu_neg"
+            return float(resolved.get(key, 0.0) or 0.0)
+        if shared_key.endswith("_Vstar"):
+            key = "SLS_V" if is_sls else "Vu"
+            return float(resolved.get(key, 0.0) or 0.0)
+        if shared_key.endswith("_Nstar"):
+            return 0.0
+        return float(get_param_fn(shared_key, 0.0) or 0.0)
+
     signature = (
         selected_prefix,
         bool(design_controls),
-        tuple(
-            float(get_param_fn(str(spec["shared_key"]), 0.0) or 0.0)
-            for spec in specs
-        ),
+        tuple(_display_value(spec) for spec in specs),
     )
     should_hydrate = (
         force
@@ -230,7 +254,7 @@ def hydrate_design_action_widgets_from_shared(
         widget_key = str(spec["widget_key"])
         shared_key = str(spec["shared_key"])
         if should_hydrate or widget_key not in st_module.session_state:
-            shared_value = float(get_param_fn(shared_key, 0.0) or 0.0)
+            shared_value = _display_value(spec)
             old_widget_value = st_module.session_state.get(widget_key)
             if old_widget_value != shared_value:
                 st_module.session_state[widget_key] = shared_value

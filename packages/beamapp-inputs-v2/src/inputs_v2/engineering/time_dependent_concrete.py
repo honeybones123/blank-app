@@ -128,13 +128,13 @@ def exposed_perimeter_geometry_values(
     """Gross area, exposed perimeter, and notional thickness for creep/shrinkage."""
     b = float(b_mm or 0.0)
     D = float(D_mm or 0.0)
-    faces = str(faces_option or "").replace("-", "–")
+    faces = str(faces_option or "").replace("-", "â€“")
     Ag = b * D
-    if faces == "Slab – one face exposed":
+    if faces == "Slab â€“ one face exposed":
         ue = b
-    elif faces == "Slab – two faces exposed":
+    elif faces == "Slab â€“ two faces exposed":
         ue = 2.0 * b
-    elif faces == "Beam – three faces exposed":
+    elif faces == "Beam â€“ three faces exposed":
         ue = b + 2.0 * D
     else:
         ue = 2.0 * (b + D)
@@ -336,3 +336,5 @@ _creep_closest_th = creep_closest_th
 _shrinkage_closest_fc_row = shrinkage_closest_fc_row
 _shrinkage_closest_th = shrinkage_closest_th
 _shrinkage_eps_final = shrinkage_eps_final
+
+

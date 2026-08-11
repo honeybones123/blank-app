@@ -3,57 +3,63 @@
   "cases": [
     {
       "revision": 0,
-      "input_hash": "8ecbf36d08c0d1e04accf7ffa519f2d4b212c56f9872b91be3560e4ca9fa2431",
+      "input_hash": "9b8f01290b7e6daf31100e7c56e4bfe14dd74c185110a77ce1ca4b1fcd7f2571",
       "fixture_status": "fixture",
       "shadow_status": "production-shadow",
       "fixture_families": [],
       "shadow_families": [
         "bending",
         "crack_control",
+        "creep",
         "creep_shrinkage",
         "ductility",
         "geometry",
         "reinforcement_fit",
         "serviceability",
-        "shear"
+        "shear",
+        "shrinkage"
       ],
       "shadow_bending_capacity": 24.788595666530608,
       "shadow_shear_capacity": 27.215352112824114
     },
     {
       "revision": 0,
-      "input_hash": "8192b2702bcb135ca254284e43112f2b2092e21d4469766ffea978fd8bd06bdb",
+      "input_hash": "d10b42dff42b97925ae90dbfd2c461756e4cc20a5d7b18d7ee1662b14d714bf5",
       "fixture_status": "fixture",
       "shadow_status": "production-shadow",
       "fixture_families": [],
       "shadow_families": [
         "bending",
         "crack_control",
+        "creep",
         "creep_shrinkage",
         "ductility",
         "geometry",
         "reinforcement_fit",
         "serviceability",
-        "shear"
+        "shear",
+        "shrinkage"
       ],
       "shadow_bending_capacity": 24.788595666530608,
       "shadow_shear_capacity": 27.215352112824114
     },
     {
       "revision": 0,
-      "input_hash": "254b9efd16c02e22c752e6ed66836e8f823c6590531196cad5c6223b40c17f4d",
+      "input_hash": "4a575b5686dafe499b6d101f612cb2da9fc92cd26521f336428406ce1ca66759",
       "fixture_status": "fixture",
       "shadow_status": "production-shadow",
       "fixture_families": [],
       "shadow_families": [
         "bending",
         "crack_control",
+        "creep",
         "creep_shrinkage",
         "ductility",
         "geometry",
         "reinforcement_fit",
         "serviceability",
-        "shear"
+        "shear",
+        "shrinkage"
       ],
       "shadow_bending_capacity": 44.940692519987024,
       "shadow_shear_capacity": 58.27287158275281

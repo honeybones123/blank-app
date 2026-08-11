@@ -13,9 +13,9 @@ from application.opening_page_preferences import (
     clear_opening_page_preference,
     load_opening_page_preference,
     normalise_opening_page,
-    render_pending_guest_preference_write,
     save_opening_page_preference,
 )
+from ui.opening_page_preference_bridge import render_pending_guest_preference_write
 from application.reference_registry import reference_entries
 from application.user_preference_store import save_account_preference
 
@@ -203,6 +203,9 @@ def render_start_page(
 
     def _navigate(page_slug: str) -> None:
         st.session_state[PENDING_NAV_PAGE_SLUG_KEY] = page_slug
+        # Navigation is the one Start-page action that intentionally changes
+        # the shell.  Other Start widgets remain inside the page fragment.
+        st.rerun()
 
     beam_col, load_col = st.columns(2, gap="medium")
     with beam_col:

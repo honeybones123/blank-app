@@ -31,9 +31,26 @@ from inputs_v2.engineering.reinforcement_fit import evaluate_arrangement
 from inputs_v2.engineering.check_metadata import check_metadata
 from inputs_v2.engineering.time_dependent import (
     LoadingAgeFactorInput,
+    basic_creep_coeff,
+    calc_eps_cse,
+    calc_k1_shrinkage,
+    calc_k2_creep,
+    calc_k4,
+    calc_k5,
+    calc_k6,
     calculate_loading_age_factor,
+    creep_closest_th,
+    creep_coefficient_value,
+    creep_strain_values,
+    exposed_perimeter_geometry_values,
+    final_creep_coeff_table,
+    shrinkage_closest_th,
+    shrinkage_eps_final,
+    shrinkage_total_values,
+    sustained_creep_stress_mpa,
 )
 from inputs_v2.domain.reinforcement_arrangement import ReinforcementArrangement
+from inputs_v2.domain.serviceability_source import ServiceabilityActionSource
 
 
 def _legacy_payload(inputs: BeamInputs, arrangement: ReinforcementArrangement | None = None) -> dict[str, object]:
@@ -42,8 +59,12 @@ def _legacy_payload(inputs: BeamInputs, arrangement: ReinforcementArrangement | 
     # single-row widget count, so a two-layer diagram could display eight bars
     # while bending capacity was calculated from four (or fewer).
     bottom_count = arrangement.total_bar_count if arrangement is not None else inputs.bottom.bars
-    bottom_diameter = arrangement.bar_diameter_mm if arrangement is not None else inputs.bottom.diameter_mm
-    bottom_area = bottom_count * 3.141592653589793 * bottom_diameter**2 / 4.0
+    bottom_diameter = arrangement.outer_bar_diameter_mm if arrangement is not None else inputs.bottom.diameter_mm
+    bottom_area = (
+        arrangement.total_steel_area_mm2
+        if arrangement is not None
+        else bottom_count * 3.141592653589793 * bottom_diameter**2 / 4.0
+    )
     top_area = inputs.top.bars * 3.141592653589793 * inputs.top.diameter_mm**2 / 4.0
     d = arrangement.effective_depth_mm if arrangement is not None else inputs.depth_mm - inputs.bottom.cover_mm - inputs.bottom.diameter_mm / 2.0
     return {
@@ -94,6 +115,11 @@ def _calculate_serviceability(
         "limit_ratio": inputs.deflection.limit_ratio,
         "effective_depth_mm": effective_depth_mm,
         "serviceability_loads_present": has_load,
+        "action_source": (
+            ServiceabilityActionSource.ACTUAL_SLS_ACTIONS.value
+            if has_load
+            else ServiceabilityActionSource.NOT_PROVIDED.value
+        ),
     }
     if not has_load:
         return base
@@ -198,6 +224,7 @@ def _calculate_crack_control(
             "limit_mm": sls.crack_width_limit_mm,
             "effective_depth_mm": effective_depth_mm,
             "serviceability_loads_present": False,
+            "action_source": ServiceabilityActionSource.NOT_PROVIDED.value,
         }
     rows = arrangement.rows if arrangement is not None else ()
     spacing = rows[0].clear_spacing_mm if rows else inputs.bottom.spacing_mm
@@ -216,7 +243,11 @@ def _calculate_crack_control(
         width_mm=inputs.width_mm,
         depth_mm=inputs.depth_mm,
         cover_mm=inputs.bottom.cover_mm,
-        bar_diameter_mm=inputs.bottom.diameter_mm,
+        bar_diameter_mm=(
+            arrangement.outer_bar_diameter_mm
+            if arrangement is not None
+            else inputs.bottom.diameter_mm
+        ),
         bar_spacing_mm=spacing,
         steel_area_mm2=steel_area,
         concrete_strength_mpa=inputs.materials.concrete_strength_mpa,
@@ -243,6 +274,7 @@ def _calculate_crack_control(
         "width_util": crack.utilisation_w,
         "effective_depth_mm": effective_depth_mm,
         "serviceability_loads_present": True,
+        "action_source": ServiceabilityActionSource.ACTUAL_SLS_ACTIONS.value,
     }
 
 
@@ -270,15 +302,21 @@ class EngineeringCalculator:
         # Row-level values consumed by the Runtime-style summary contract.
         # These are sourced from the same immutable calculation payload.
         bending["Ast_tension_mm2"] = float(payload["Ast_bot"])
-        fctf = 0.6 * float(inputs.materials.concrete_strength_mpa) ** (2.0 / 3.0)
+        # Keep the minimum-flexural-strength check on the accepted AS 3600
+        # project contract: f'ct.f = 0.6 * sqrt(f'c).
+        fctf = 0.6 * math.sqrt(float(inputs.materials.concrete_strength_mpa))
         ast_min = 0.4 * (fctf / float(inputs.materials.reinforcement_strength_mpa)) * float(inputs.width_mm) * float(payload["d"])
         bending["Ast_min_mm2"] = ast_min
         bending["minimum_tensile_status"] = "PASS" if float(payload["Ast_bot"]) >= ast_min else "FAIL"
         bending["service_moment_knm"] = float(inputs.serviceability.moment_knm)
         bending["minimum_capacity_knm"] = None
-        bending["check_metadata"] = check_metadata("bending_capacity", "minimum_flexural_strength")
+        bending["check_metadata"] = check_metadata(
+            "bending_capacity",
+            "bending_phi_factor",
+            "minimum_flexural_strength",
+        )
         ku = float(bending.get("ku", 0.0) or 0.0)
-        ductility_limit = 0.4
+        ductility_limit = 0.36
         ductility = {
             "status": "FAIL" if ku > ductility_limit else "PASS",
             "ku": ku,
@@ -296,7 +334,10 @@ class EngineeringCalculator:
             P_v=0.0, phi=0.75, sigma_cp=0.0, A_st=payload["Ast_bot"], A_pt=payload["Ast_top"],
             f_po=0.0, A_ct=inputs.width_mm * inputs.depth_mm, d_g=20.0,
             lig_d=inputs.shear.diameter_mm, legs=inputs.shear.legs,
-            s_lig=inputs.shear.spacing_mm, use_general_kv=False, sum_duct=0.0, k_d=1.0,
+            s_lig=inputs.shear.spacing_mm,
+            use_general_kv=inputs.shear.use_general_kv,
+            sum_duct=0.0,
+            k_d=1.0,
         )
         shear = compute_shear_capacity_values(shear_input)
         shear_detailing = calculate_shear_detailing(ShearDetailingInput(
@@ -313,13 +354,87 @@ class EngineeringCalculator:
         )
         shear["check_metadata"] = check_metadata(
             "shear_strength", "shear_web_crushing", "concrete_shear_capacity",
+            "kv_general_method" if inputs.shear.use_general_kv else "kv_simplified_method",
             "transverse_reinforcement_required", "minimum_shear_reinforcement",
-            "shear_reinforcement_capacity",
+            "shear_reinforcement_capacity", "additional_longitudinal_shear_reinforcement",
         )
         loading_age = calculate_loading_age_factor(
             LoadingAgeFactorInput(inputs.time_dependent.age_at_loading_days)
         )
-        creep = {"k3_age_loading": loading_age.k3}
+        time_geometry = exposed_perimeter_geometry_values(
+            inputs.width_mm,
+            inputs.depth_mm,
+            inputs.time_dependent.exposed_faces,
+        )
+        creep_th = creep_closest_th(time_geometry["th_raw"])
+        shrinkage_th = shrinkage_closest_th(time_geometry["th_raw"])
+        phi_cc_b = basic_creep_coeff(inputs.materials.concrete_strength_mpa)
+        k2 = calc_k2_creep(inputs.time_dependent.creep_time_days, creep_th)
+        k4 = calc_k4(inputs.time_dependent.creep_environment)
+        k5 = calc_k5(inputs.materials.concrete_strength_mpa, creep_th, k4)
+        k6 = calc_k6(inputs.time_dependent.stress_ratio)
+        phi_cc_t = creep_coefficient_value(
+            k2=k2,
+            k3=loading_age.k3,
+            k4=k4,
+            k5=k5,
+            k6=k6,
+            phi_cc_b=phi_cc_b,
+        )
+        phi_cc_star_table = final_creep_coeff_table(
+            inputs.materials.concrete_strength_mpa,
+            inputs.time_dependent.creep_environment,
+            creep_th,
+        )
+        sigma0 = sustained_creep_stress_mpa(
+            sustained_sigma_cs_mpa=inputs.time_dependent.sustained_concrete_stress_mpa,
+            stress_ratio=inputs.time_dependent.stress_ratio,
+            fc_mpa=inputs.materials.concrete_strength_mpa,
+        )
+        creep_strain = creep_strain_values(
+            phi_cc_t,
+            sigma0,
+            inputs.time_dependent.concrete_modulus_mpa,
+        )
+        creep = {
+            **time_geometry,
+            "th_creep_mm": creep_th,
+            "phi_cc_b": phi_cc_b,
+            "phi_cc_t": phi_cc_t,
+            "phi_cc_star_table": phi_cc_star_table,
+            "k2_creep": k2,
+            "k3_age_loading": loading_age.k3,
+            "k3_creep": loading_age.k3,
+            "k4_creep": k4,
+            "k5_creep": k5,
+            "k6_creep": k6,
+            "stress_ratio": inputs.time_dependent.stress_ratio,
+            "sustained_sigma_cs_mpa": sigma0,
+            **creep_strain,
+            "check_metadata": check_metadata("creep_coefficient"),
+        }
+        shrinkage_k1 = calc_k1_shrinkage(
+            inputs.time_dependent.shrinkage_time_days,
+            shrinkage_th,
+        )
+        eps_cse = calc_eps_cse(
+            inputs.materials.concrete_strength_mpa,
+            inputs.time_dependent.shrinkage_time_days,
+        )
+        eps_csd_final = shrinkage_eps_final(
+            inputs.materials.concrete_strength_mpa,
+            inputs.time_dependent.shrinkage_environment,
+            shrinkage_th,
+        )
+        shrinkage = {
+            **time_geometry,
+            "th_shrinkage_mm": shrinkage_th,
+            "k1_shrinkage": shrinkage_k1,
+            "eps_cse": eps_cse,
+            "eps_csd_final": eps_csd_final,
+            **shrinkage_total_values(shrinkage_k1, eps_cse, eps_csd_final),
+            "check_metadata": check_metadata("shrinkage_strain"),
+        }
         fit = evaluate_arrangement(
             inputs,
             tuple(row.bar_count for row in arrangement.rows)
@@ -341,6 +456,9 @@ class EngineeringCalculator:
             "effective_depth_mm": fit.arrangement.effective_depth_mm,
             "congestion_class": fit.congestion.congestion_class,
             "failure_reasons": fit.failure_reasons,
+            "vertical_fit_ok": fit.vertical_fit,
+            "horizontal_fit_ok": fit.horizontal_fit,
+            "aggregate_clearance_ok": fit.aggregate_clearance_ok,
             "cover_mm": float(inputs.bottom.cover_mm),
             "cover_status": "PASS" if float(inputs.bottom.cover_mm) > 0.0 else "FAIL",
             "check_metadata": check_metadata("durability_cover"),
@@ -353,6 +471,6 @@ class EngineeringCalculator:
         return EngineeringResult(
             inputs.revision, inputs.content_hash, "production-shadow",
             "Copied V1 formulas running inside the isolated V2 engineering boundary.",
-            families={"bending": bending, "ductility": ductility, "shear": shear, "creep_shrinkage": creep, "serviceability": serviceability, "crack_control": crack_control, "reinforcement_fit": reinforcement_fit, "geometry": geometry},
+            families={"bending": bending, "ductility": ductility, "shear": shear, "creep": creep, "shrinkage": shrinkage, "creep_shrinkage": creep, "serviceability": serviceability, "crack_control": crack_control, "reinforcement_fit": reinforcement_fit, "geometry": geometry},
         )
 

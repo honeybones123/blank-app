@@ -17,6 +17,50 @@ def format_strength(value: float | None, units: str) -> str:
     return f"{value:.2f} {units}"
 
 
+def load_analysis_action_projection(
+    *,
+    uls_m_pos: float,
+    uls_m_neg: float,
+    uls_v: float,
+    sls_m_pos: float,
+    sls_m_neg: float,
+    sls_v: float,
+) -> dict[str, Any]:
+    """Return the complete page-local action aliases for one analysis result.
+
+    The engineering snapshot resolver intentionally supports historical action
+    aliases.  A Load Analysis calculation must replace all of those aliases at
+    its read-only calculation boundary; otherwise a Beam Inputs action can win
+    precedence and leak into the analysis summary.
+    """
+
+    uls_pos = max(0.0, float(uls_m_pos))
+    uls_neg = max(0.0, float(uls_m_neg))
+    sls_pos = max(0.0, float(sls_m_pos))
+    sls_neg = max(0.0, float(sls_m_neg))
+    return {
+        "actions_mode": "design",
+        "actions_source": "Teaching SFD/BMD page (|M|max, |V|max)",
+        "design_actions_source": "max",
+        "M_pos_max_uls_kNm": uls_pos,
+        "M_neg_min_uls_kNm": -uls_neg,
+        "sfd_Mmax_abs_kNm": max(uls_pos, uls_neg),
+        "sfd_Vmax_abs_kN": abs(float(uls_v)),
+        "uls_Mstar": max(uls_pos, uls_neg),
+        "uls_Mstar_pos_manual": uls_pos,
+        "uls_Mstar_neg_manual": uls_neg,
+        "uls_Vstar": abs(float(uls_v)),
+        "M_pos_max_sls_kNm": sls_pos,
+        "M_neg_min_sls_kNm": -sls_neg,
+        "sfd_Msls_max_kNm": max(sls_pos, sls_neg),
+        "sfd_Vsls_max_kN": abs(float(sls_v)),
+        "sls_Mstar": max(sls_pos, sls_neg),
+        "sls_Mstar_pos_manual": sls_pos,
+        "sls_Mstar_neg_manual": sls_neg,
+        "sls_Vstar": abs(float(sls_v)),
+    }
+
+
 def resolve_header_check_state(
     action: float,
     capacity: float | None,
@@ -24,6 +68,12 @@ def resolve_header_check_state(
     rows: Iterable[Mapping[str, Any]],
 ) -> tuple[str, str]:
     """Resolve status and utilisation from the values visible in the card."""
+    try:
+        action_value = abs(float(action))
+    except (TypeError, ValueError):
+        action_value = 0.0
+    if not math.isfinite(action_value) or action_value <= 1e-12:
+        return "\u2014", "INFO"
     utilisation = _ratio(action, capacity)
     if utilisation is None:
         utilisation = _first_number(fallback_utilisation)

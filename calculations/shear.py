@@ -568,13 +568,13 @@ def compute_canonical_shear_truth_from_bundle(
 def format_shear_row_util(value: object) -> str:
     """Format utilisation for summary rows; never raises on None / NaN."""
     if value is None:
-        return "—"
+        return "â€”"
     try:
         v = float(value)
     except (TypeError, ValueError):
-        return "—"
+        return "â€”"
     if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
-        return "—"
+        return "â€”"
     return f"{v:.2f}"
 
 
@@ -583,7 +583,7 @@ def shear_truth_status_from_util(utilisation: float | None) -> str:
         isinstance(utilisation, float)
         and (math.isnan(utilisation) or math.isinf(utilisation))
     ):
-        return "—"
+        return "â€”"
     if utilisation <= 1.0:
         return "NEAR LIMIT" if utilisation >= 0.95 else "PASS"
     return "FAIL"
@@ -879,79 +879,3 @@ def derive_eps_top_bot_for_step4_diagram(
     ex = float(eps_x)
     return ex - float(delta), ex + float(delta)
 
-
-def build_shear_summary_rows_with_overrides(
-    rows_summary: list[dict[str, Any]],
-    shear_results: Any,
-    phi: float,
-) -> dict[str, Any]:
-    """
-    Pure summary-table values for the specialised shear page.
-
-    The Streamlit page remains responsible for state publication and click wiring;
-    this helper owns the derived utilisation/override values only.
-    """
-    rows_out = [dict(row) for row in (rows_summary or [])]
-
-    utilisation_values = shear_capacity_utilisation_values(shear_results, phi)
-    V_eq = utilisation_values["V_eq"]
-    phi_Vu = utilisation_values["phi_Vu_cap"]
-    Vu_max_kN = utilisation_values["Vu_max_kN"]
-    eps_x = float(getattr(shear_results, "eps_x", 0.0) or 0.0)
-    k_v = float(getattr(shear_results, "k_v", 0.0) or 0.0)
-    theta_v_deg = float(getattr(shear_results, "theta_v_deg", 0.0) or 0.0)
-    Vuc_kN = float(getattr(shear_results, "Vuc_kN", 0.0) or 0.0)
-    Vus_kN = float(getattr(shear_results, "Vus_kN", 0.0) or 0.0)
-
-    summary_util = utilisation_values["util"]
-    summary_phi_vu_max = utilisation_values["phi_Vu_max_kN"]
-    summary_web_util = utilisation_values["web_util"]
-
-    dash = "\u2014"
-    summary_overrides = {
-        "Sectional shear capacity": {
-            "capacity": f"\u03c6Vu = {phi_Vu:.1f} kN",
-            "action": f"V*eq = {V_eq:.1f} kN",
-            "Utilisation": f"{summary_util:.2f}" if not math.isnan(summary_util) else dash,
-            "Status": "PASS" if summary_util <= 1.0 else "FAIL",
-        },
-        "Equivalent design shear": {
-            "capacity": dash,
-            "action": f"V*eq = {V_eq:.1f} kN",
-        },
-        "Longitudinal strain": {
-            "capacity": dash,
-            "action": f"\u03b5x = {eps_x:.5f}",
-        },
-        "Shear model parameters": {
-            "capacity": dash,
-            "action": f"k_v = {k_v:.3f}, \u03b8_v = {theta_v_deg:.1f}\u00b0",
-        },
-        "Concrete shear strength": {
-            "capacity": dash,
-            "action": f"Vuc = {Vuc_kN:.1f} kN",
-        },
-        "Steel shear strength": {
-            "capacity": dash,
-            "action": f"Vs = Vus = {Vus_kN:.1f} kN",
-        },
-        "Web-crushing strength": {
-            "capacity": f"\u03c6Vu,max = {summary_phi_vu_max:.1f} kN",
-            "action": f"V*eq = {V_eq:.1f} kN",
-            "Utilisation": f"{summary_web_util:.2f}" if not math.isnan(summary_web_util) else dash,
-            "Status": "PASS" if summary_web_util <= 1.0 else "FAIL",
-        },
-    }
-
-    for row in rows_out:
-        override = summary_overrides.get(row.get("Check", ""))
-        if override:
-            row.update(override)
-
-    return {
-        "rows_summary": rows_out,
-        "summary_util": summary_util,
-        "summary_phi_vu_max": summary_phi_vu_max,
-        "summary_web_util": summary_web_util,
-        "summary_overrides": summary_overrides,
-    }

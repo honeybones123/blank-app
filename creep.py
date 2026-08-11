@@ -50,6 +50,10 @@ from calculations.creep_shrinkage import (
     final_creep_coeff_table,
     sustained_creep_stress_mpa,
 )
+from inputs_application.time_dependent_engineering_state import (
+    resolve_time_dependent_engineering_state,
+)
+from inputs_application.authoritative_check_packs import current_authoritative_family
 
 
 # ------------------------------------------------------------
@@ -133,20 +137,42 @@ def compute_creep_results(publish: bool = True) -> dict:
     Returns:
         dict with computed results
     """
-    # Read geometry from shared state
-    b = get_param("b", 300.0)
-    D = get_param("D", 600.0)
-    
-    # Read materials
-    fc = get_param("fc", 32.0)
-    Ec = get_param("Ec", 30000.0)
+    authoritative = current_authoritative_family(st.session_state, "creep")
+    if authoritative is not None:
+        if publish:
+            update_results(
+                phi_cc_t=authoritative.get("phi_cc_t"),
+                phi_cc_star_table=authoritative.get("phi_cc_star_table"),
+                k2_creep=authoritative.get("k2_creep"),
+                k3_creep=authoritative.get("k3_creep"),
+                k4_creep=authoritative.get("k4_creep"),
+                k5_creep=authoritative.get("k5_creep"),
+                k6_creep=authoritative.get("k6_creep"),
+            )
+        return {
+            "phi_cc_t": authoritative.get("phi_cc_t"),
+            "phi_cc_star_table": authoritative.get("phi_cc_star_table"),
+            "eps_cc_micro": authoritative.get("eps_cc_micro"),
+            "creep_steps": ["Authoritative Inputs V2 calculation"],
+        }
+
+    # Geometry, materials and sustained actions must come from the committed
+    # Beam Inputs snapshot.  Session mirrors can be stale after fragment edits
+    # or Design Brain Apply and are not an engineering authority.
+    committed_engineering = resolve_time_dependent_engineering_state(
+        st.session_state
+    ).values
+    b = float(committed_engineering.get("b", 300.0) or 300.0)
+    D = float(committed_engineering.get("D", 600.0) or 600.0)
+    fc = float(committed_engineering.get("fc", 32.0) or 32.0)
+    Ec = float(committed_engineering.get("Ec", 30000.0) or 30000.0)
     
     # Read creep parameters (use defaults if not in shared state)
     env_option = get_param("env_option", "Temperate inland environment")
     t_creep = get_param("t_creep", 365.0)
     age_at_loading = get_param("age_at_loading", 28.0)
-    stress_ratio = get_param("stress_ratio", 0.0)
-    sigma0 = get_param("sustained_sigma_cs_mpa", None)
+    stress_ratio = float(committed_engineering.get("stress_ratio", 0.0) or 0.0)
+    sigma0 = committed_engineering.get("sustained_sigma_cs_mpa")
     
     # Read faces option (default to beam)
     faces_option = get_param("member_faces_exposed", "Beam – three faces exposed")
@@ -175,6 +201,17 @@ def compute_creep_results(publish: bool = True) -> dict:
         phi_cc_b=phi_cc_b,
     )
     phi_cc_star_table = final_creep_coeff_table(fc, env_option, th_table)
+
+    authoritative = current_authoritative_family(st.session_state, "creep")
+    if authoritative is not None:
+        phi_cc_b = float(authoritative["phi_cc_b"])
+        k2 = float(authoritative["k2_creep"])
+        k3 = float(authoritative["k3_creep"])
+        k4 = float(authoritative["k4_creep"])
+        k5 = float(authoritative["k5_creep"])
+        k6 = float(authoritative["k6_creep"])
+        phi_cc_t = float(authoritative["phi_cc_t"])
+        phi_cc_star_table = float(authoritative["phi_cc_star_table"])
     
     # Calculate strain (stress ratio is derived from sustained action and section modulus)
     sigma0 = sustained_creep_stress_mpa(
@@ -185,6 +222,10 @@ def compute_creep_results(publish: bool = True) -> dict:
     creep_strain = creep_strain_values(phi_cc_t, sigma0, Ec)
     eps_cc = creep_strain["eps_cc"]
     eps_cc_micro = creep_strain["eps_cc_micro"]
+    if authoritative is not None:
+        sigma0 = float(authoritative["sustained_sigma_cs_mpa"])
+        eps_cc = float(authoritative["eps_cc"])
+        eps_cc_micro = float(authoritative["eps_cc_micro"])
     
     # Update results if publish=True
     if publish:
@@ -217,6 +258,13 @@ def render_creep():
     apply_result_page_css()
     _inject_calcbox_css()
     sync_callbacks = get_sync_callbacks()  # keeps contract with Inputs page
+    committed_engineering = resolve_time_dependent_engineering_state(
+        st.session_state
+    )
+    engineering_values = committed_engineering.values
+
+    def engineering_value(name: str, default):
+        return engineering_values.get(name, get_param(name, default))
 
     # --------------------------------------------------------
     # Page title
@@ -253,8 +301,8 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
     # --- Geometry ---
     with col_geom:
         st.markdown("**Geometry / member**")
-        b_val = float(st.session_state.get("cr_b", get_param("b", 400.0)))
-        D_val = float(st.session_state.get("cr_D", get_param("D", 600.0)))
+        b_val = float(engineering_value("b", 400.0))
+        D_val = float(engineering_value("D", 600.0))
 
         number_row(
             "Section width b (mm)",
@@ -269,8 +317,8 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
             D_val,
             sync_callbacks,
         )
-        b = float(get_param("b", b_val))
-        D = float(get_param("D", D_val))
+        b = float(engineering_value("b", b_val))
+        D = float(engineering_value("D", D_val))
 
         col1, col2 = st.columns([1, 2])
         with col1:
@@ -297,8 +345,8 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
     # --- Environment & material ---
     with col_env:
         st.markdown("**Material / environment**")
-        fc_val = float(st.session_state.get("inputs_fc", get_param("fc", 32.0)))
-        Ec_val = float(get_param("Ec", 30000.0) or 30000.0)
+        fc_val = float(engineering_value("fc", 32.0))
+        Ec_val = float(engineering_value("Ec", 30000.0) or 30000.0)
 
         number_row(
             "Concrete strength f'c (MPa)",
@@ -307,8 +355,8 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
             sync_callbacks,
         )
 
-        fc = float(get_param("fc", fc_val))
-        Ec = float(get_param("Ec", Ec_val))
+        fc = float(engineering_value("fc", fc_val))
+        Ec = float(engineering_value("Ec", Ec_val))
 
         col1, col2 = st.columns([1, 2])
         with col1:
@@ -379,11 +427,19 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
     # --------------------------------------------------------
     # Creep coefficients & strain
     # --------------------------------------------------------
-    stress_ratio = float(get_param("stress_ratio", 0.0) or 0.0)
-    sustained_mstar = float(get_param("sustained_Mstar_kNm", 0.0) or 0.0)
-    sustained_sigma_cs = float(get_param("sustained_sigma_cs_mpa", 0.0) or 0.0)
-    sustained_z = float(get_param("sustained_section_modulus_mm3", 0.0) or 0.0)
-    sustained_fibre = str(get_param("sustained_compression_fibre", "top") or "top")
+    stress_ratio = float(engineering_value("stress_ratio", 0.0) or 0.0)
+    sustained_mstar = float(
+        engineering_value("sustained_Mstar_kNm", 0.0) or 0.0
+    )
+    sustained_sigma_cs = float(
+        engineering_value("sustained_sigma_cs_mpa", 0.0) or 0.0
+    )
+    sustained_z = float(
+        engineering_value("sustained_section_modulus_mm3", 0.0) or 0.0
+    )
+    sustained_fibre = str(
+        engineering_value("sustained_compression_fibre", "top") or "top"
+    )
 
     phi_cc_b = basic_creep_coeff(fc)
     k2 = calc_k2_creep(t_creep, th_table)

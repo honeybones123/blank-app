@@ -9,7 +9,6 @@ from inputs_application.engineering_state_projection import (
     rebuild_engineering_derived_state,
 )
 from inputs_page_modules.session import (
-    build_inputs_design_action_result_overlay_snapshot,
     build_inputs_normalized_shear_truth_overlay_snapshot,
     build_inputs_shear_widget_mirror_overlay_plan,
     build_inputs_summary_debug_payload_snapshot,
@@ -50,12 +49,6 @@ SUMMARY_OVERLAY_SKIP_LONGITUDINAL_KEYS = (
 )
 SUMMARY_OVERLAY_SKIP_PREFIXES = ("bot_row_", "top_row_")
 SHEAR_TRIPLE_DEFERRED_OVERLAY_KEYS = ("s_lig", "lig_d", "lig_legs")
-SUMMARY_DESIGN_ACTION_RESULT_KEYS = (
-    "Mu_star", "Mu_star_kNm", "Mu_star_kNm_signed", "Vu_star",
-    "sfd_Mmax_abs_kNm", "sfd_Vmax_abs_kN", "M_pos_max_uls_kNm",
-    "M_neg_min_uls_kNm", "M_pos_max_sls_kNm", "M_neg_min_sls_kNm",
-    "sfd_Msls_max_kNm", "sfd_Vsls_max_kN",
-)
 CURRENT_SHEAR_TRUTH_SESSION_KEYS = (
     "shear_design_status", "shear_envelope_status", "shear_truth_status",
     "shear_truth_reason", "shear_truth_util_governing",
@@ -225,20 +218,15 @@ def resolve_inputs_summary_state(
         working = dict(shear_plan.working_state)
         overlay_applied = dict(shear_plan.overlay_applied)
         shear_debug = dict(shear_plan.debug_payload)
-    action_overlay = build_inputs_design_action_result_overlay_snapshot(
-        working_state=working,
-        source_state=session,
-        result_keys=SUMMARY_DESIGN_ACTION_RESULT_KEYS,
-        overlay_applied=overlay_applied,
-    )
-    working = dict(action_overlay.working_state)
-    overlay_applied = dict(action_overlay.overlay_applied)
-    design_action_overlay = dict(action_overlay.result_overlay)
+    # Inputs summaries consume only the committed Inputs action model.  Load
+    # Analysis publishes to its own beam-keyed store, so page result aliases
+    # must never be overlaid here.
+    design_action_overlay: dict[str, Any] = {}
     runtime.ux_probe_record(
         "inputs_summary_design_action_result_overlay_delegated",
         meta={
             "overlay_count": len(design_action_overlay),
-            "module_display_hash": action_overlay.display_hash,
+            "module_display_hash": stable_fingerprint_for_payload({}),
             "live_page_cutover": True,
         },
     )

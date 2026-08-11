@@ -3,11 +3,24 @@ import math
 import pytest
 
 from inputs_v2.domain.beam_inputs import BeamInputs, TimeDependentInputs
-from inputs_v2.engineering.legacy_snapshot.creep_shrinkage import calc_k3
 from inputs_v2.engineering.engineering_calculator import EngineeringCalculator
 from inputs_v2.engineering.time_dependent import (
     LoadingAgeFactorInput,
+    basic_creep_coeff,
+    calc_eps_cse,
+    calc_k1_shrinkage,
+    calc_k2_creep,
+    calc_k3,
+    calc_k4,
+    calc_k5,
+    calc_k6,
     calculate_loading_age_factor,
+    creep_closest_th,
+    creep_coefficient_value,
+    exposed_perimeter_geometry_values,
+    shrinkage_closest_th,
+    shrinkage_eps_final,
+    shrinkage_total_values,
 )
 
 
@@ -33,3 +46,41 @@ def test_authoritative_calculator_uses_v2_owned_loading_age_component() -> None:
     assert result.source_revision == inputs.revision
     assert result.source_hash == inputs.content_hash
     assert result.families["creep_shrinkage"]["k3_age_loading"] == expected.k3
+
+
+def test_authoritative_calculator_publishes_complete_creep_and_shrinkage_results() -> None:
+    time = TimeDependentInputs(
+        shrinkage_time_days=730.0,
+        creep_time_days=540.0,
+        age_at_loading_days=56.0,
+        exposed_faces="Beam – three faces exposed",
+        creep_environment="Temperate inland environment",
+        shrinkage_environment="Temperate inland environment",
+        stress_ratio=0.35,
+        concrete_modulus_mpa=30000.0,
+    )
+    inputs = BeamInputs(width_mm=300.0, depth_mm=600.0, time_dependent=time).validated()
+    result = EngineeringCalculator().calculate(inputs)
+    geometry = exposed_perimeter_geometry_values(300.0, 600.0, time.exposed_faces)
+    creep_th = creep_closest_th(geometry["th_raw"])
+    shrinkage_th = shrinkage_closest_th(geometry["th_raw"])
+    expected_phi = creep_coefficient_value(
+        k2=calc_k2_creep(time.creep_time_days, creep_th),
+        k3=calc_k3(time.age_at_loading_days),
+        k4=calc_k4(time.creep_environment),
+        k5=calc_k5(40.0, creep_th, calc_k4(time.creep_environment)),
+        k6=calc_k6(time.stress_ratio),
+        phi_cc_b=basic_creep_coeff(40.0),
+    )
+    expected_shrinkage = shrinkage_total_values(
+        calc_k1_shrinkage(time.shrinkage_time_days, shrinkage_th),
+        calc_eps_cse(40.0, time.shrinkage_time_days),
+        shrinkage_eps_final(40.0, time.shrinkage_environment, shrinkage_th),
+    )
+
+    assert result.families["creep"]["phi_cc_t"] == pytest.approx(expected_phi)
+    assert result.families["shrinkage"]["eps_cs_total"] == pytest.approx(
+        expected_shrinkage["eps_cs_total"]
+    )
+    assert result.families["creep"]["check_metadata"]["creep_coefficient"]["clause"] == "3.1.8"
+    assert result.families["shrinkage"]["check_metadata"]["shrinkage_strain"]["clause"] == "3.1.7"

@@ -1,5 +1,6 @@
 """Immutable reinforcement arrangement and fit contracts."""
 from dataclasses import dataclass
+import math
 from typing import Literal
 
 @dataclass(frozen=True, slots=True)
@@ -8,6 +9,7 @@ class ReinforcementRow:
     bar_count: int
     clear_spacing_mm: float
     centre_from_tension_face_mm: float
+    bar_diameter_mm: float = 0.0
 
 @dataclass(frozen=True, slots=True)
 class ReinforcementArrangement:
@@ -18,6 +20,24 @@ class ReinforcementArrangement:
     clear_row_gap_mm: float
     reinforcement_centroid_mm: float
     effective_depth_mm: float
+
+    @property
+    def total_steel_area_mm2(self) -> float:
+        """Return the exact area of every stored row, including mixed diameters."""
+
+        return sum(
+            row.bar_count * math.pi * (row.bar_diameter_mm or self.bar_diameter_mm) ** 2 / 4.0
+            for row in self.rows
+        )
+
+    @property
+    def outer_bar_diameter_mm(self) -> float:
+        """Diameter of the row nearest the tension face."""
+
+        if not self.rows:
+            return self.bar_diameter_mm
+        first = min(self.rows, key=lambda row: row.row_index)
+        return first.bar_diameter_mm or self.bar_diameter_mm
 
 @dataclass(frozen=True, slots=True)
 class CongestionAssessment:

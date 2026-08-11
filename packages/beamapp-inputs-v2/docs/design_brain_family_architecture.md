@@ -189,6 +189,31 @@ session state, and Runtime modules.
 
 ## Mechanical enforcement
 
+### Family-owned preference contract
+
+`DesignPreferenceProfile` is immutable project configuration. It supplies
+standard sizes, dimension increments, soft-buildability values and the selected
+optimisation mode. It cannot classify a family, generate an unrequested move,
+evaluate compliance, rank globally, publish advice or authorise Apply.
+
+The classifier selects one owner. That owner receives a typed
+`FamilyRunContext`, runs its ordered ladder, rejects hard failures, and uses its
+own `RankingPolicy` to compare only passing candidates. Hard congestion (fit,
+cover, clear spacing, row spacing, anchorage or a declared constructability
+limit) is mandatory rejection evidence. Soft congestion is recorded separately
+and may only affect family-owned ranking.
+
+Near-limit treatment is opt-in per family and per check. Each `NearLimitRule`
+declares the check, direction, threshold and comparison method. No default
+near-limit rule is inferred. Preferred `As/(bd)` bands remain proportion-
+balancing diagnostics unless a calculation contract explicitly promotes a
+ratio to a mandatory requirement.
+
+`SearchProfile` remains the sole owner of Fast/Detailed evaluation budgets.
+Every decision records the preference profile identity/version, generated
+candidates, cache hits, full evaluations and elapsed time for reproducibility.
+Normal cards do not display this diagnostic provenance.
+
 - Every `DesignFamily` must exist in `FAMILY_CONTRACTS`.
 - Every non-terminal family must have a unique owner and ladder entry point.
 - A proposal is rejected if any changed field is outside the family boundary,

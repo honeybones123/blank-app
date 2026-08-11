@@ -25,11 +25,9 @@ from ui.diagrams.moment_shear_diagram import (
 )
 
 from state_and_helpers import (
-    get_sync_callbacks,
+    _request_inputs_engineering_commit,
     get_param,
     is_design_governing,
-    set_shared,
-    update_results,
     render_timing_mark,
 )
 from widgets_helpers import (
@@ -54,9 +52,17 @@ from widgets_helpers import (
 )
 from engineering_check_ui import sync_legacy_value_limit
 from ui_seamless_steps import bind_summary_clicks
-from inputs_application.session_services import InputsSessionServices
+from inputs_application.engineering_input_store import InputSnapshotStore
 from application.engineering_snapshot import build_engineering_input_snapshot_from_resolved_state
-from inputs_application.new_design_brain_adapter import calculate_v2_authoritative_result
+from inputs_application.v2_engineering_calculation_adapter import (
+    calculate_v2_authoritative_result,
+)
+from inputs_application.load_analysis_state_store import LoadAnalysisStateStore
+from inputs_application.action_source_control import (
+    LOAD_ANALYSIS_ACTION_SOURCE_TOGGLE_KEY,
+    render_action_source_toggle,
+    synchronize_load_analysis_actions_for_inputs,
+)
 from inputs_page_modules.summaries.builders import build_inputs_summary_html
 from inputs_page_modules.summaries.models import InputsSummaryCardSource, InputsSummarySourceSnapshot
 from inputs_page_modules.summaries.rows_from_packs import render_inputs_summary_rows_from_packs
@@ -223,6 +229,8 @@ def _install_design_scroll_preserver() -> None:
 
 def _render_design_check_summary(
     *,
+    bending_positive_action: float,
+    bending_negative_action: float,
     bending_action: float,
     bending_capacity: float | None,
     bending_utilisation: str,
@@ -231,44 +239,40 @@ def _render_design_check_summary(
     shear_capacity: float | None,
     shear_utilisation: str,
     shear_status: str,
+    sls_positive_moment: float,
+    sls_negative_moment: float,
     sls_moment: float,
     sls_shear: float,
 ) -> None:
     """Render the Inputs summary cards using the Design page's solved actions."""
-    services = InputsSessionServices.from_mapping(st.session_state)
     # Calculate a page-local V2 result from the actions just solved above.
     # Reading the session's last Inputs result here left crack/deflection stale
     # until the user visited Inputs, which is exactly what this summary must not
     # do.  This projection does not overwrite manual action inputs.
     design_state = dict(st.session_state)
     design_state.update(
-        {
-            "actions_mode": "design",
-            "actions_source": "Teaching SFD/BMD page (|M|max, |V|max)",
-            "sfd_Mmax_abs_kNm": float(bending_action),
-            "sfd_Vmax_abs_kN": float(shear_action),
-            "sfd_Msls_max_kNm": float(sls_moment),
-            "sfd_Vsls_max_kN": float(sls_shear),
-            "uls_Mstar": float(bending_action),
-            "uls_Vstar": float(shear_action),
-            "sls_Mstar": float(sls_moment),
-            "sls_Vstar": float(sls_shear),
-        }
+        _summary_policy.load_analysis_action_projection(
+            uls_m_pos=bending_positive_action,
+            uls_m_neg=bending_negative_action,
+            uls_v=shear_action,
+            sls_m_pos=sls_positive_moment,
+            sls_m_neg=sls_negative_moment,
+            sls_v=sls_shear,
+        )
     )
     snapshot = build_engineering_input_snapshot_from_resolved_state(design_state)
     try:
         authoritative = calculate_v2_authoritative_result(
             engineering_snapshot=snapshot,
             resolved_inputs=design_state,
-            input_revision=int(services.input_snapshots.current().revision or 0),
+            input_revision=int(InputSnapshotStore(st.session_state).current().revision or 0),
         )
         st.session_state.pop("_design_summary_calculation_error", None)
     except Exception as exc:
-        # Preserve a usable summary if an incomplete section cannot yet run,
-        # while exposing the reason for diagnostics rather than failing page
-        # rendering or silently presenting a mismatched result.
+        # A Load Analysis summary must never fall back to the last Beam Inputs
+        # result.  Preserve diagnostics and render page-local fallback values.
         st.session_state["_design_summary_calculation_error"] = str(exc)
-        authoritative = services.engineering_results.current()
+        authoritative = None
     packs = (
         dict(authoritative.current_calculations or {}).get("packs", {})
         if authoritative is not None
@@ -1464,6 +1468,7 @@ def render_derivation(case, L, params, results):
 # ---------------------------------------------------
 # MAIN PAGE RENDER FUNCTION
 # ---------------------------------------------------
+@st.fragment
 def render_sfd_bmd_page():
     """
     Standalone SFD/BMD teaching page in the beam app.
@@ -1524,7 +1529,32 @@ def render_sfd_bmd_page():
         unsafe_allow_html=True,
     )
 
-    sync_callbacks = get_sync_callbacks()
+    load_analysis_store = LoadAnalysisStateStore(st.session_state)
+    route_metrics = dict(st.session_state.get("_user_latency_metrics") or {})
+    route_token = route_metrics.get("route_page_changed_at_ms")
+    load_analysis_store.restore_widgets(route_token=route_token)
+
+    def _publish_local_results(**values):
+        load_analysis_store.publish_results(**values)
+
+    def _commit_inputs_action_source(_selected: bool) -> None:
+        """Publish the selected one-way action source to Beam Inputs only."""
+
+        projected_keys = synchronize_load_analysis_actions_for_inputs(
+            st.session_state,
+            draft=load_analysis_store.current().to_dict(),
+            results=load_analysis_store.results(),
+        )
+        _request_inputs_engineering_commit(
+            "inputs_action_source_toggle",
+            changed_keys=tuple(
+                sorted({"actions_mode", "actions_source", *projected_keys})
+            ),
+        )
+
+    # Load Analysis controls are page-owned. They must not call Beam Inputs
+    # synchronization callbacks or publish actions into its canonical model.
+    sync_callbacks = {}
 
     # Define stable UIDs for each calc box (step)
     EQ_SLS_UID = {
@@ -1559,49 +1589,16 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         )
 
     render_result_page_title("Load Analysis")
-    _install_design_scroll_preserver()
-
-    # App-wide design-action source (same canonical keys as Inputs page)
-    _LEGACY_ACTIONS_MANUAL = "Manual design actions (inputs below)"
-    _LEGACY_ACTIONS_DESIGN = "Teaching SFD/BMD page (|M|max, |V|max)"
-
-    def _norm_actions_source_label(raw) -> str:
-        s = str(raw or _LEGACY_ACTIONS_MANUAL)
-        if s == "Manual design actions":
-            return _LEGACY_ACTIONS_MANUAL
-        if s == "Calculated design actions (from SFD/BMD)":
-            return _LEGACY_ACTIONS_DESIGN
-        return s
-
-    _src_canon = _norm_actions_source_label(st.session_state.get("actions_source", _LEGACY_ACTIONS_MANUAL))
-    _wk_sfd_actions = "inputs_use_calculated_actions"
-    _beam_page_selected = _src_canon == _LEGACY_ACTIONS_DESIGN
-    if _wk_sfd_actions not in st.session_state:
-        st.session_state[_wk_sfd_actions] = _beam_page_selected
-
-    st.caption("Design-action source (synced with **Inputs → Design Actions**)")
-    _use_beam_page = st.toggle(
-        "Use design actions from this page (Beam Actions & Diagrams)",
-        key=_wk_sfd_actions,
-        help=(
-            "When enabled, ULS/SLS demands follow this beam model and stay linked to the same toggle on the Inputs page. "
-            "When disabled, demands follow manual actions entered on Inputs."
-        ),
+    render_action_source_toggle(
+        st,
+        widget_key=LOAD_ANALYSIS_ACTION_SOURCE_TOGGLE_KEY,
+        # A source change controls only which actions Beam Inputs consumes.
+        # Commit the page-owned Load Analysis draft first so this fragment
+        # rerun can never replace live loads with an older persisted draft.
+        before_commit=load_analysis_store.capture_widgets,
+        after_commit=_commit_inputs_action_source,
     )
-    _mapped_src = _LEGACY_ACTIONS_DESIGN if _use_beam_page else _LEGACY_ACTIONS_MANUAL
-    _mapped_mode = "design" if _use_beam_page else "manual"
-    if (
-        _norm_actions_source_label(st.session_state.get("actions_source")) != _mapped_src
-        or str(st.session_state.get("actions_mode", "manual") or "manual") != _mapped_mode
-    ):
-        st.session_state["actions_source"] = _mapped_src
-        st.session_state["actions_mode"] = _mapped_mode
-        try:
-            set_shared("actions_source", _mapped_src, source="sfd_bmd:actions_toggle")
-            set_shared("actions_mode", _mapped_mode, source="sfd_bmd:actions_toggle")
-        except Exception:
-            pass
-        rerun_inputs_current_scope(st)
+    _install_design_scroll_preserver()
 
     summary_placeholder = st.empty()
     st.divider()
@@ -1614,11 +1611,6 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         use_sls_now = bool(st.session_state.get(load_toggle_key, False))
         mode_now = "SLS" if use_sls_now else "ULS"
         st.session_state["loads_edit_mode"] = mode_now
-        try:
-            set_shared("loads_edit_toggle", use_sls_now, source=f"callback:{load_toggle_key}")
-            set_shared("loads_edit_mode", mode_now, source=f"callback:{load_toggle_key}")
-        except Exception:
-            pass
 
     # Read the persisted mode before solving.  The control itself is rendered
     # beside the diagrams, where its effect is visible.
@@ -1692,14 +1684,11 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
     ]
 
     def _on_design_span_change() -> None:
-        span_sync_callback = sync_callbacks.get("sfd_L_m")
-        if span_sync_callback:
-            span_sync_callback()
         try:
             span_m = max(0.1, float(st.session_state.get("sfd_L_m", 0.1)))
         except (TypeError, ValueError):
             span_m = 0.1
-        set_shared("L", span_m * 1000.0, source="callback:sfd_L_m")
+        st.session_state["sfd_L_m"] = span_m
 
     load_case = "Multi-span continuous beam"
     support_condition = "Multi-span continuous"
@@ -2067,7 +2056,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         base_Q = float(sum(r["Q"] for r in ms_rows))
         base_g = float(sum(r["g"] for r in ms_udl_rows))
         base_q = float(sum(r["q"] for r in ms_udl_rows))
-        update_results(
+        _publish_local_results(
             psi_point=float(psi_point),
             psi_udl=float(psi_udl),
             P_sls_kN=float(P_sls_total),
@@ -2147,7 +2136,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                 sync_callbacks=sync_callbacks,
             )
 
-        update_results(
+        _publish_local_results(
             g_udl_kNm_per_m=float(g_shared),
             q_udl_kNm_per_m=float(q_shared),
             psi_udl=float(psi_shared),
@@ -2338,7 +2327,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                 params["L_main"] = L_main
                 params["a_overhang"] = float(get_param("a_overhang_m", a_over))
 
-        update_results(
+        _publish_local_results(
             G_point_kN=float(base_G or 0.0),
             Q_point_kN=float(base_Q or 0.0),
             psi_point=float(psi_shared),
@@ -2367,11 +2356,11 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
 
     def _on_design_actions_source_change() -> None:
         source_value = str(st.session_state.get("design_actions_source_selector", "max") or "max")
-        set_shared("design_actions_source", source_value, source="callback:design_actions_source_selector")
+        st.session_state["design_actions_source_selector"] = source_value
         if source_value != "section":
             return
         committed_x = float(st.session_state.get("design_section_x_m", 0.0) or 0.0)
-        current_x = float(st.session_state.get("section_cursor_x_m", 0.0) or 0.0)
+        current_x = float(st.session_state.get("design_section_x_slider", 0.0) or 0.0)
         if bool(st.session_state.get("design_section_committed")) and 0.0 <= committed_x <= beam_length_seed:
             init_x = committed_x
         elif 0.0 < current_x <= beam_length_seed:
@@ -2381,10 +2370,9 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         init_x = _clamp_x(init_x, beam_length_seed) if beam_length_seed > 0 else 0.0
         st.session_state["design_section_x_slider"] = init_x
         st.session_state["design_section_x_input"] = init_x
-        set_shared("section_cursor_x_m", init_x, source="callback:design_actions_source_selector")
 
     source_options = ["max", "section"]
-    current_source = str(get_param("design_actions_source", "max") or "max")
+    current_source = str(st.session_state.get("design_actions_source_selector", "max") or "max")
     if current_source not in source_options:
         current_source = "max"
     v2_radio(
@@ -2517,19 +2505,17 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         x_new = _clamp_x(float(st.session_state.get("design_section_x_slider", 0.0) or 0.0), beam_length)
         st.session_state["design_section_x_slider"] = x_new
         st.session_state["design_section_x_input"] = x_new
-        set_shared("section_cursor_x_m", x_new, source="callback:design_section_x_slider")
 
     def _on_design_section_input_change() -> None:
         x_new = _clamp_x(float(st.session_state.get("design_section_x_input", 0.0) or 0.0), beam_length)
         st.session_state["design_section_x_input"] = x_new
         st.session_state["design_section_x_slider"] = x_new
-        set_shared("section_cursor_x_m", x_new, source="callback:design_section_x_input")
 
     def _commit_design_section() -> None:
         x_commit = _clamp_x(float(st.session_state.get("design_section_x_slider", 0.0) or 0.0), beam_length)
-        set_shared("design_section_x_m", x_commit, source="callback:use_design_section_btn")
-        set_shared("design_section_committed", True, source="callback:use_design_section_btn")
-        update_results(
+        st.session_state["design_section_x_m"] = x_commit
+        st.session_state["design_section_committed"] = True
+        _publish_local_results(
             design_M_uls_kNm=float(st.session_state.get("preview_M_uls_kNm", 0.0) or 0.0),
             design_M_uls_kNm_signed=float(st.session_state.get("preview_M_uls_kNm", 0.0) or 0.0),
             design_V_uls_kN=float(st.session_state.get("preview_V_uls_kN", 0.0) or 0.0),
@@ -2540,10 +2526,10 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         st.session_state["_design_section_commit_msg"] = f"Design actions set from x = {x_commit:.3f} m"
 
     if design_actions_source == "section" and beam_length > 0:
-        initial_cursor_x = float(get_param("section_cursor_x_m", 0.0) or 0.0)
+        initial_cursor_x = float(st.session_state.get("design_section_x_slider", 0.0) or 0.0)
         if initial_cursor_x <= 0.0:
-            committed_seed = float(get_param("design_section_x_m", 0.0) or 0.0)
-            if bool(get_param("design_section_committed", False)) and 0.0 <= committed_seed <= beam_length:
+            committed_seed = float(st.session_state.get("design_section_x_m", 0.0) or 0.0)
+            if bool(st.session_state.get("design_section_committed", False)) and 0.0 <= committed_seed <= beam_length:
                 initial_cursor_x = committed_seed
             else:
                 initial_cursor_x = beam_length / 2.0
@@ -2563,7 +2549,7 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         preview_M_uls = _interp_at_x(x_uls, M_uls_vals, preview_x_m)
         preview_V_sls = _interp_at_x(x_sls, V_sls_vals, preview_x_m)
         preview_M_sls = _interp_at_x(x_sls, M_sls_vals, preview_x_m)
-        update_results(
+        _publish_local_results(
             preview_M_uls_kNm=float(preview_M_uls),
             preview_V_uls_kN=float(preview_V_uls),
             preview_M_sls_kNm=float(preview_M_sls),
@@ -2572,8 +2558,8 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         preview_V_active = preview_V_uls if active_mode == "ULS" else preview_V_sls
         preview_M_active = preview_M_uls if active_mode == "ULS" else preview_M_sls
         committed_x_m = None
-        if bool(get_param("design_section_committed", False)):
-            committed_x_m = _clamp_x(float(get_param("design_section_x_m", 0.0) or 0.0), beam_length)
+        if bool(st.session_state.get("design_section_committed", False)):
+            committed_x_m = _clamp_x(float(st.session_state.get("design_section_x_m", 0.0) or 0.0), beam_length)
 
         with sec_r:
             with info_i_button(help_text="Preview actions and committed design section"):
@@ -2769,17 +2755,18 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
 
         use_committed_section_actions = (
             design_actions_source == "section"
-            and bool(get_param("design_section_committed", False))
+            and bool(st.session_state.get("design_section_committed", False))
         )
-        summary_V_uls = float(get_param("design_V_uls_kN", 0.0) or 0.0) if use_committed_section_actions else float(V_uls)
-        summary_V_sls = float(get_param("design_V_sls_kN", 0.0) or 0.0) if use_committed_section_actions else float(V_sls)
+        local_result = load_analysis_store.results()
+        summary_V_uls = float(local_result.get("design_V_uls_kN", 0.0) or 0.0) if use_committed_section_actions else float(V_uls)
+        summary_V_sls = float(local_result.get("design_V_sls_kN", 0.0) or 0.0) if use_committed_section_actions else float(V_sls)
 
         if use_committed_section_actions:
             M_uls_signed = float(
-                get_param("design_M_uls_kNm_signed", get_param("design_M_uls_kNm", 0.0)) or 0.0
+                local_result.get("design_M_uls_kNm_signed", local_result.get("design_M_uls_kNm", 0.0)) or 0.0
             )
             M_sls_signed = float(
-                get_param("design_M_sls_kNm_signed", get_param("design_M_sls_kNm", 0.0)) or 0.0
+                local_result.get("design_M_sls_kNm_signed", local_result.get("design_M_sls_kNm", 0.0)) or 0.0
             )
             sag_M_uls = max(0.0, M_uls_signed)
             sag_M_sls = max(0.0, M_sls_signed)
@@ -2870,6 +2857,8 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
             governing_bending_util = sag_util
             governing_bending_status = sag_status
         _render_design_check_summary(
+            bending_positive_action=sag_M_uls,
+            bending_negative_action=hog_M_uls,
             bending_action=governing_bending_action,
             bending_capacity=governing_bending_capacity,
             bending_utilisation=governing_bending_util,
@@ -2878,6 +2867,8 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
             shear_capacity=shear_strength,
             shear_utilisation=shear_util,
             shear_status=shear_status,
+            sls_positive_moment=sag_M_sls,
+            sls_negative_moment=hog_M_sls,
             sls_moment=max(sag_M_sls, hog_M_sls),
             sls_shear=summary_V_sls,
         )
@@ -2961,11 +2952,6 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         mode_from_toggle = "SLS" if bool(use_sls) else "ULS"
         st.session_state["loads_edit_toggle"] = bool(use_sls)
         st.session_state["loads_edit_mode"] = mode_from_toggle
-        try:
-            set_shared("loads_edit_toggle", bool(use_sls), source="sfd_bmd_page:load_mode_toggle")
-            set_shared("loads_edit_mode", mode_from_toggle, source="sfd_bmd_page:load_mode_toggle")
-        except Exception:
-            pass
 
     render_section_title(f"Load diagram ({active_mode} loads)")
     st.caption("Loads")
@@ -3070,7 +3056,8 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
                     break
 
         if clicked_x is not None:
-            set_shared("section_cursor_x_m", float(clicked_x), source="sfd_bmd_page")
+            st.session_state["design_section_x_slider"] = float(clicked_x)
+            st.session_state["design_section_x_input"] = float(clicked_x)
             rerun_inputs_current_scope(st)
 
     st.divider()
@@ -4261,20 +4248,9 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
             accent="moment",
         )
 
-    # Push SFD/BMD results into shared state
-    # (use key names expected by Inputs page)
-    canonical_action_updates = {}
-    if _use_beam_page:
-        # Publish both limit states to the canonical Design Actions contract.
-        # This makes the SLS actions immediately available to crack and
-        # deflection consumers, including dead-load-only cases where Q = 0.
-        canonical_action_updates = {
-            "uls_Mstar": float(M_uls),
-            "uls_Vstar": float(V_uls),
-            "sls_Mstar": float(M_sls),
-            "sls_Vstar": float(V_sls),
-        }
-    update_results(
+    # Publish only to the Load Analysis beam-owned result store.  Inputs and
+    # the Design Brain never consume these values implicitly.
+    _publish_local_results(
         sfd_case=case,                  # store current teaching case
         sfd_Msls_max_kNm=float(M_sls),
         sfd_Vsls_max_kN=float(V_sls),
@@ -4298,8 +4274,19 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
         critical_shear_x=x_crit,
         critical_shear_V=V_crit,
         V_max=float(np.max(np.abs(V_uls_vals))) if V_uls_vals is not None and len(V_uls_vals) else 0.0,
-        **canonical_action_updates,
     )
+
+    load_analysis_store.capture_widgets()
+    projected_action_keys = synchronize_load_analysis_actions_for_inputs(
+        st.session_state,
+        draft=load_analysis_store.current().to_dict(),
+        results=load_analysis_store.results(),
+    )
+    if projected_action_keys:
+        _request_inputs_engineering_commit(
+            "inputs_action_source_toggle",
+            changed_keys=projected_action_keys,
+        )
 
     # Bind JS click/scroll after all steps render
     bind_summary_clicks()

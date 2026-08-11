@@ -66,7 +66,7 @@ def calculate_v2_authoritative_result(
 ) -> AuthoritativeDesignResult:
     """Expose the V2 calculation sibling without leaking its concrete module."""
 
-    from inputs_application.new_design_brain_adapter import (
+    from inputs_application.v2_engineering_calculation_adapter import (
         calculate_v2_authoritative_result as calculate,
     )
 

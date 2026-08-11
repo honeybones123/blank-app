@@ -864,13 +864,11 @@ def _ensure_authoritative_design_result_current_coordinator(
     st.session_state["_inputs_pre_widget_engineering_state_bridge"] = dict(
         current_state_debug.get("pre_widget_engineering_widget_bridge") or {}
     )
-    has_actions_or_loads = inputs_has_design_actions_or_loads()
-    has_explicit_design_state = (
-        _has_explicit_design_state_current_coordinator(current_state)
-        or bool(st.session_state.get(INPUTS_DESIGN_STARTED_KEY, False))
-    )
-    if not has_actions_or_loads and not has_explicit_design_state:
-        return None
+    # Capacity summaries are useful before actions are entered and must remain
+    # visible for a zero-action beam.  Calculation therefore always receives
+    # the committed design snapshot.  The Design Brain independently treats
+    # the same snapshot as ``no_design_actions`` and publishes its idle card;
+    # absence of loads is not an absence of calculable section capacity.
     overlay_keys = tuple(
         current_state_debug.get("pre_widget_engineering_widget_bridge", {}).get(
             "overlay_keys",

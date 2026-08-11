@@ -27,16 +27,16 @@ def main() -> int:
     )
     assert resolve_header_check_state(101.0, 100.0, "", []) == ("1.01", "FAIL")
     assert resolve_header_check_state(0.0, None, "util 0.72", []) == (
-        "0.72",
-        "PASS",
+        "\u2014",
+        "INFO",
     )
     assert resolve_header_check_state(
         0.0,
         None,
         "",
         [{"util": "0.81"}, {"util": "0.94"}],
-    ) == ("0.94", "NEAR LIMIT")
-    assert resolve_header_check_state(0.0, None, "", []) == ("\u2014", "NOT CHECKED")
+    ) == ("\u2014", "INFO")
+    assert resolve_header_check_state(0.0, None, "", []) == ("\u2014", "INFO")
 
     rows = [
         {"title": "Other", "capacity": "A", "is_primary": True},

@@ -10,7 +10,7 @@ from application.v2_source_manifest import (
     EXPECTED_INPUTS_V2_VERSION,
     installed_inputs_v2_root,
 )
-from inputs_application.new_design_brain_adapter import (
+from inputs_application.v2_engineering_calculation_adapter import (
     calculate_v2_authoritative_result,
 )
 
@@ -18,7 +18,9 @@ from inputs_application.new_design_brain_adapter import (
 def main() -> int:
     runtime_root = Path(__file__).resolve().parents[2]
     adapter_source = (
-        runtime_root / "inputs_application" / "new_design_brain_adapter.py"
+        runtime_root
+        / "inputs_application"
+        / "v2_engineering_calculation_adapter.py"
     ).read_text(encoding="utf-8")
     forbidden = (
         "DEFAULT_V2_SOURCE_ROOT",

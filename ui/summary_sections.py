@@ -375,12 +375,6 @@ def _overall_status_from_rows(rows) -> tuple[str, str]:
 
 
 def _primary_summary_row(rows, family: str = "") -> dict:
-    if family == "crack":
-        for row in rows:
-            uid = str((row or {}).get("uid") or "").lower()
-            title = str((row or {}).get("title") or "").lower()
-            if uid == "crk_step_3" or "direct crack width" in title:
-                return row
     for row in rows:
         if isinstance(row, dict) and row.get("is_primary"):
             return row
@@ -485,7 +479,14 @@ def build_final_summary_check_card_model(
 
     model_capacity = normalise_summary_display_value(capacity, "") or normalise_summary_display_value(row_capacity)
     model_action = normalise_summary_display_value(action, "") or normalise_summary_display_value(row_action, "Not supplied")
-    model_util = normalise_summary_display_value(utilisation, "") or normalise_summary_display_value(row_util)
+    # An explicit header utilisation (including an explicit dash for no load)
+    # is authoritative.  Falling through from a dash to a detailed-row value
+    # can mix a stale or differently scoped calculation into the card header.
+    model_util = (
+        normalise_summary_display_value(utilisation)
+        if utilisation is not None
+        else normalise_summary_display_value(row_util)
+    )
     model_status = _normalise_summary_status(status) or _normalise_summary_status(row_status)
 
     capacity_only_probe = (
@@ -681,7 +682,11 @@ def render_clickable_summary_table(rows, key_prefix="summary", columns=None):
             primary.get("ok"),
             is_info=bool(primary.get("is_informational")),
         )
-        if primary_kind in {"fail", "warn", "pass", "capacity", "requires-action"} or str(primary.get("status") or "").strip().upper() in {"NOT RUN", "INPUT REQUIRED"}:
+        primary_is_informational = bool(primary.get("is_informational"))
+        if primary_is_informational:
+            status = "INFO"
+            kind = "info"
+        elif primary_kind in {"fail", "warn", "pass", "capacity", "requires-action"} or str(primary.get("status") or "").strip().upper() in {"NOT RUN", "INPUT REQUIRED"}:
             status = primary.get("status") or status
             kind = primary_kind
 

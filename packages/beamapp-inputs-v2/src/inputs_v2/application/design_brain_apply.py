@@ -80,6 +80,13 @@ def propose_neutral_candidate(current: BeamInputs) -> Candidate[UpdateFirstSlice
         crack_creep_coefficient=current.serviceability.creep_coefficient,
         crack_shrinkage_microstrain=current.serviceability.shrinkage_microstrain,
         sls_use_uls_fallback=current.serviceability.use_uls_fallback,
+        shear_use_general_kv=current.shear.use_general_kv,
+        exposed_faces=current.time_dependent.exposed_faces,
+        creep_environment=current.time_dependent.creep_environment,
+        shrinkage_environment=current.time_dependent.shrinkage_environment,
+        sustained_stress_ratio=current.time_dependent.stress_ratio,
+        sustained_concrete_stress_mpa=current.time_dependent.sustained_concrete_stress_mpa,
+        concrete_modulus_mpa=current.time_dependent.concrete_modulus_mpa,
     )
     return Candidate(
         "neutral-candidate-seed",

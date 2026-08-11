@@ -6379,16 +6379,36 @@ def recalc_derived_values():
         if primary_bot_row
         else float(st.session_state.get("db_bot_1", 0.0) or 0.0)
     )
-    st.session_state["d"] = effective_depth_with_links_mm(
-        D_mm=D,
-        cover_to_ligs_mm=cover_bot,
-        lig_diameter_mm=lig_d_for_d,
-        bar_diameter_mm=primary_bar_dia,
+    # Bending effective depth is measured to the area-weighted centroid of
+    # every active tension row.  Using only the outer row made the detailed
+    # Bending page overstate capacity whenever a second row was present, while
+    # the installed V2 calculator correctly used the complete arrangement.
+    bottom_row_area = sum(
+        float(row.get("steel_area_row", 0.0) or 0.0)
+        for row in bot_rows_resolved
+        if row.get("active")
     )
-    st.session_state["do"] = D - float(primary_top_row["y_position"]) if primary_top_row else D
+    if bottom_row_area > 0.0:
+        bottom_centroid_from_top_face = sum(
+            float(row.get("steel_area_row", 0.0) or 0.0)
+            * float(row.get("y_position", 0.0) or 0.0)
+            for row in bot_rows_resolved
+            if row.get("active")
+        ) / bottom_row_area
+        # Section-layout y coordinates are measured from the top face, which
+        # is also the compression-face datum for positive bending.
+        st.session_state["d"] = max(0.0, bottom_centroid_from_top_face)
+    else:
+        st.session_state["d"] = effective_depth_with_links_mm(
+            D_mm=D,
+            cover_to_ligs_mm=cover_bot,
+            lig_diameter_mm=lig_d_for_d,
+            bar_diameter_mm=primary_bar_dia,
+        )
+    st.session_state["do"] = float(primary_top_row["y_position"]) if primary_top_row else D
     if st.session_state.get("_dev_mode", False):
         st.session_state["_debug_d_consistency"] = {
-            "formula": "d = D - (cover_to_ligs + lig_diameter + 0.5 * bar_diameter)",
+            "formula": "d = D - area_weighted_bottom_reinforcement_centroid",
             "D_mm": float(D),
             "cover_to_ligs_mm": float(cover_bot),
             "lig_diameter_mm": float(lig_d_for_d),
@@ -6623,6 +6643,7 @@ def _request_inputs_engineering_commit(
     widget_key: str,
     *,
     changed_keys: tuple[str, ...] | None = None,
+    wake_fragments: bool = True,
 ):
     """Commit one beam-owned input revision for every downstream consumer."""
     commit_started_ns = time.perf_counter_ns()
@@ -6784,7 +6805,7 @@ def _request_inputs_engineering_commit(
         or st.session_state.get("_active_page_slug")
         or ""
     ).strip().lower()
-    if rendered_slug == "inputs":
+    if rendered_slug == "inputs" and wake_fragments:
         # The committed transaction is the single wake-up trigger. This covers
         # direct widget callbacks and Apply/recommendation callbacks alike.
         # Off-page edits settle when Inputs is rendered again, so a stale
@@ -7056,82 +7077,6 @@ def finalize_auto_design_publish(
         pass
 
     return payload
-
-
-def apply_auto_design_results(results_dict: dict) -> None:
-    """
-    Apply auto-designed reinforcement to shared state and mirror to mapped widgets.
-    Shared state remains the single source of truth.
-    """
-    if not isinstance(results_dict, dict):
-        return
-
-    rendered_widget_keys = st.session_state.get("_rendered_widget_keys", set())
-    if not isinstance(rendered_widget_keys, set):
-        rendered_widget_keys = set()
-    updates: dict[str, object] = {}
-    for key, value in results_dict.items():
-        if key in SHARED_DEFAULTS:
-            set_shared(key, value, source="auto_design_apply")
-            updates[key] = value
-
-
-    if not updates:
-        return
-
-    set_shared("auto_design_active", True, source="auto_design_apply")
-    st.session_state["_applying_auto_design"] = True
-    deferred_widget_update = False
-    try:
-        # Only mirror into non-rendered widget keys. Rendered widgets must wait until the next rerun.
-        for widget_key, shared_key in TAB_KEYS.items():
-            if shared_key in updates:
-                next_value = updates[shared_key]
-                if widget_key in rendered_widget_keys:
-                    if st.session_state.get(widget_key) != next_value:
-                        deferred_widget_update = True
-                        if widget_key.startswith("inputs_"):
-                            st.session_state["_force_inputs_widget_reseed_once"] = True
-                    continue
-                st.session_state[widget_key] = next_value
-                if widget_key.startswith("inputs_"):
-                    st.session_state[f"_cached_{widget_key}"] = next_value
-
-        publish_payload = finalize_auto_design_publish(
-            updated_keys=sorted(list(updates.keys())),
-            source="auto_design_apply",
-            focus_section="shear" if any(k in {"lig_d", "lig_legs", "s_lig"} for k in updates.keys()) else None,
-            set_run_design_clicked=True,
-        )
-        st.session_state["_auto_design_apply_debug"] = {
-            "applied_updates": dict(updates),
-            "publish_payload": dict(publish_payload),
-            "shared_shear_after_apply": {
-                "s_lig": st.session_state.get("s_lig"),
-                "lig_d": st.session_state.get("lig_d"),
-                "lig_legs": st.session_state.get("lig_legs"),
-            },
-            "widget_shear_after_apply": {
-                "inputs_s_lig": st.session_state.get("inputs_s_lig"),
-                "inputs_lig_d": st.session_state.get("inputs_lig_d"),
-                "inputs_lig_legs": st.session_state.get("inputs_lig_legs"),
-            },
-        }
-    finally:
-        st.session_state["_applying_auto_design"] = False
-
-    if deferred_widget_update:
-        try:
-            import session_state_final_log as _ssl
-
-            _ssl.append_session_state_final_log(
-                "auto_design_apply_triggered_rerun",
-                {"source": "apply_auto_design_results", "deferred_widget_update": True},
-            )
-            _ssl.ssl_record_rerun_trigger("auto_design_apply_triggered_rerun")
-        except Exception:
-            pass
-        st.rerun()
 
 
 def _invalidate_inputs_summary_packs(*, source: str, updated_keys: list[str] | None = None) -> None:

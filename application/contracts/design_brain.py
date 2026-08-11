@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field, fields, replace
 import hashlib
 import json
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Any
 
 
@@ -44,12 +46,36 @@ PUBLICATION_AUTHORITY_EXCLUDED_FIELDS = frozenset(
 
 
 def _canonical(value: Any) -> Any:
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return {str(key): _canonical(value[key]) for key in sorted(value)}
     if isinstance(value, (list, tuple)):
         return [_canonical(item) for item in value]
     if isinstance(value, set):
         return [_canonical(item) for item in sorted(value, key=lambda item: repr(item))]
+    return value
+
+
+def _freeze(value: Any) -> Any:
+    """Recursively freeze an engineering payload at its ownership boundary."""
+
+    if isinstance(value, Mapping):
+        return MappingProxyType({str(key): _freeze(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return frozenset(_freeze(item) for item in value)
+    return value
+
+
+def _thaw(value: Any) -> Any:
+    """Return a defensive JSON-compatible copy of an immutable payload."""
+
+    if isinstance(value, Mapping):
+        return {str(key): _thaw(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw(item) for item in value]
+    if isinstance(value, frozenset):
+        return [_thaw(item) for item in sorted(value, key=repr)]
     return value
 
 
@@ -62,19 +88,44 @@ def stable_authority_hash(value: Any) -> str:
 class EngineeringInputSnapshot:
     """Complete committed engineering input state, excluding UI-only state."""
 
-    geometry: dict[str, Any] = field(default_factory=dict)
-    materials: dict[str, Any] = field(default_factory=dict)
-    reinforcement: dict[str, Any] = field(default_factory=dict)
-    design_actions: dict[str, Any] = field(default_factory=dict)
-    design_settings: dict[str, Any] = field(default_factory=dict)
-    locked_variables: dict[str, Any] = field(default_factory=dict)
-    unlocked_variables: dict[str, Any] = field(default_factory=dict)
-    contract_versions: dict[str, Any] = field(default_factory=dict)
-    calculation_versions: dict[str, Any] = field(default_factory=dict)
+    geometry: Mapping[str, Any] = field(default_factory=dict)
+    materials: Mapping[str, Any] = field(default_factory=dict)
+    reinforcement: Mapping[str, Any] = field(default_factory=dict)
+    design_actions: Mapping[str, Any] = field(default_factory=dict)
+    design_settings: Mapping[str, Any] = field(default_factory=dict)
+    locked_variables: Mapping[str, Any] = field(default_factory=dict)
+    unlocked_variables: Mapping[str, Any] = field(default_factory=dict)
+    contract_versions: Mapping[str, Any] = field(default_factory=dict)
+    calculation_versions: Mapping[str, Any] = field(default_factory=dict)
     schema_version: str = ENGINEERING_INPUT_SNAPSHOT_SCHEMA_VERSION
 
+    def __post_init__(self) -> None:
+        for name in (
+            "geometry",
+            "materials",
+            "reinforcement",
+            "design_actions",
+            "design_settings",
+            "locked_variables",
+            "unlocked_variables",
+            "contract_versions",
+            "calculation_versions",
+        ):
+            object.__setattr__(self, name, _freeze(getattr(self, name)))
+
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return {
+            "geometry": _thaw(self.geometry),
+            "materials": _thaw(self.materials),
+            "reinforcement": _thaw(self.reinforcement),
+            "design_actions": _thaw(self.design_actions),
+            "design_settings": _thaw(self.design_settings),
+            "locked_variables": _thaw(self.locked_variables),
+            "unlocked_variables": _thaw(self.unlocked_variables),
+            "contract_versions": _thaw(self.contract_versions),
+            "calculation_versions": _thaw(self.calculation_versions),
+            "schema_version": self.schema_version,
+        }
 
     @property
     def engineering_hash(self) -> str:

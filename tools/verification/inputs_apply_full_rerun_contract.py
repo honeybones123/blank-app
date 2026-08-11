@@ -36,7 +36,7 @@ class _ApplyStoreStub:
         self.session_state["cleared"] = True
 
 
-def verify_committed_apply_forces_full_app_rerun() -> None:
+def verify_committed_apply_never_forces_full_app_rerun() -> None:
     calls: list[tuple[str, object]] = []
     state = {
         "uls_Mstar": 200.0,
@@ -53,7 +53,14 @@ def verify_committed_apply_forces_full_app_rerun() -> None:
             calls.append(("rerun", scope))
 
     original_store = routing.ApplyTransactionStore
+    original_wake = routing.request_inputs_fragment_wake
     routing.ApplyTransactionStore = _ApplyStoreStub
+    routing.request_inputs_fragment_wake = (
+        lambda _st, name, revision=None: calls.append(
+            ("fragment_wake", {"name": name, "revision": revision})
+        )
+        or True
+    )
     try:
         routing.handle_inputs_apply_buttons(
             st_module=_StreamlitStub(),
@@ -70,6 +77,7 @@ def verify_committed_apply_forces_full_app_rerun() -> None:
         )
     finally:
         routing.ApplyTransactionStore = original_store
+        routing.request_inputs_fragment_wake = original_wake
 
     assert state["marked_committed"] == "cold-mu-200"
     assert state["uls_Mstar"] == 200.0
@@ -80,13 +88,16 @@ def verify_committed_apply_forces_full_app_rerun() -> None:
             "apply_triggered_rerun",
             {"path": "handle_apply_buttons_committed_fallback"},
         ),
-        ("rerun", "app"),
+        (
+            "fragment_wake",
+            {"name": "engineering_workspace", "revision": None},
+        ),
     ]
 
 
 def main() -> None:
-    verify_committed_apply_forces_full_app_rerun()
-    print("inputs apply full rerun contract: PASS")
+    verify_committed_apply_never_forces_full_app_rerun()
+    print("inputs apply fragment-only rerun contract: PASS")
 
 
 if __name__ == "__main__":

@@ -59,7 +59,6 @@ from shear_checks_helpers import (
     build_shear_check_rows_from_state,
 )
 from calculations.shear import (
-    build_shear_summary_rows_with_overrides,
     cotangent as cot,
     duct_area_mm2,
     effective_shear_depth_mm,
@@ -2130,7 +2129,6 @@ In short:
                     st.session_state["inputs_load_Mstar_neg_proxy"] = st.session_state.get("load_Mstar_neg_proxy", 0.0)
                     recalc_derived_values()
                     update_results()
-                    st.rerun()
                 else:
                     st.session_state["loads_edit_mode"] = new_mode
                 selected_mode = st.session_state.get("loads_edit_mode", "ULS")
@@ -4872,14 +4870,16 @@ Spacing is varied along the span based on shear demand and checked against minim
     # For now, we'll use the values computed in the tabs (they should be in scope)
     shear_pack = build_shear_check_rows_from_state(st.session_state)
     rows_summary = build_shear_legacy_summary_rows(shear_pack.get("rows") or [])
-    summary_values = build_shear_summary_rows_with_overrides(rows_summary, shear_results, phi)
-    rows_summary = summary_values["rows_summary"]
-    summary_util = summary_values["summary_util"]
+    summary_util_raw = shear_pack.get("summary_util")
+    try:
+        summary_util = float(summary_util_raw)
+    except (TypeError, ValueError):
+        summary_util = math.nan
 
     # Publish key shear results for Inputs summary
     shear_util = summary_util
     update_results(
-        phi_Vu_cap=float(shear_results.phi_Vu or 0.0),
+        phi_Vu_cap=float(shear_pack.get("summary_phiVu_kN") or 0.0),
         Vu_utilisation=float(shear_util) if shear_util is not None and not math.isnan(shear_util) else 0.0,
     )
 

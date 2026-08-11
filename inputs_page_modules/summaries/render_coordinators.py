@@ -218,11 +218,11 @@ def render_inputs_summary_container_current(
     with summary_container:
         if render_title:
             st_module.title("Inputs")
-        show_landing = inputs_show_landing_dashboard_fn()
-        if show_landing:
-            render_landing_card_fn(sync_callbacks=sync_callbacks, st_module=st_module)
-        else:
-            render_summary_table(st_module.session_state.get(result_cache_key))
+        # Capacity and detailing summaries remain useful before actions are
+        # entered.  The former landing-dashboard path called a deliberately
+        # empty compatibility renderer and silently removed all four cards
+        # for a zero-action beam.  Summary has one render path now.
+        render_summary_table(st_module.session_state.get(result_cache_key))
 
 
 __all__ = [

@@ -46,6 +46,7 @@ class ShearReinforcement:
     diameter_mm: int = 0
     legs: int = 0
     spacing_mm: float = 200.0
+    use_general_kv: bool = False
 
     def validated(self) -> "ShearReinforcement":
         if self.diameter_mm != 0 and self.diameter_mm not in ALLOWED_BAR_DIAMETERS:
@@ -108,10 +109,39 @@ class TimeDependentInputs:
     shrinkage_time_days: float = 365.0
     creep_time_days: float = 365.0
     age_at_loading_days: float = 28.0
+    exposed_faces: str = "Beam – three faces exposed"
+    creep_environment: str = "Temperate inland environment"
+    shrinkage_environment: str = "Temperate inland environment"
+    stress_ratio: float = 0.0
+    sustained_concrete_stress_mpa: float | None = None
+    concrete_modulus_mpa: float = 30000.0
 
     def validated(self) -> "TimeDependentInputs":
         if min(self.shrinkage_time_days, self.creep_time_days, self.age_at_loading_days) < 0:
             raise ValueError("Time-dependent inputs cannot be negative.")
+        if self.exposed_faces not in {
+            "Slab – one face exposed",
+            "Slab – two faces exposed",
+            "Beam – three faces exposed",
+            "Beam – four faces exposed",
+        }:
+            raise ValueError("Exposed-face option is not supported.")
+        allowed_environments = {
+            "Arid environment",
+            "Interior environment",
+            "Temperate inland environment",
+            "Tropical / near-coastal / coastal environment",
+        }
+        if self.creep_environment not in allowed_environments:
+            raise ValueError("Creep environment is not supported.")
+        if self.shrinkage_environment not in allowed_environments:
+            raise ValueError("Shrinkage environment is not supported.")
+        if self.stress_ratio < 0.0:
+            raise ValueError("Sustained concrete stress ratio cannot be negative.")
+        if self.sustained_concrete_stress_mpa is not None and self.sustained_concrete_stress_mpa < 0.0:
+            raise ValueError("Sustained concrete stress cannot be negative.")
+        if self.concrete_modulus_mpa <= 0.0:
+            raise ValueError("Concrete modulus must be positive.")
         return self
 
 
@@ -304,7 +334,8 @@ class BeamInputs:
                     "rows": [
                         {"row_index": row.row_index, "bar_count": row.bar_count,
                          "clear_spacing_mm": row.clear_spacing_mm,
-                         "centre_from_tension_face_mm": row.centre_from_tension_face_mm}
+                         "centre_from_tension_face_mm": row.centre_from_tension_face_mm,
+                         "bar_diameter_mm": row.bar_diameter_mm}
                         for row in self.bottom_arrangement.rows
                     ],
                 },
@@ -320,6 +351,7 @@ class BeamInputs:
                 "diameter_mm": self.shear.diameter_mm,
                 "legs": self.shear.legs,
                 "spacing_mm": self.shear.spacing_mm,
+                "use_general_kv": self.shear.use_general_kv,
             },
             "materials": {
                 "concrete_strength_mpa": self.materials.concrete_strength_mpa,
@@ -339,6 +371,12 @@ class BeamInputs:
                 "shrinkage_time_days": self.time_dependent.shrinkage_time_days,
                 "creep_time_days": self.time_dependent.creep_time_days,
                 "age_at_loading_days": self.time_dependent.age_at_loading_days,
+                "exposed_faces": self.time_dependent.exposed_faces,
+                "creep_environment": self.time_dependent.creep_environment,
+                "shrinkage_environment": self.time_dependent.shrinkage_environment,
+                "stress_ratio": self.time_dependent.stress_ratio,
+                "sustained_concrete_stress_mpa": self.time_dependent.sustained_concrete_stress_mpa,
+                "concrete_modulus_mpa": self.time_dependent.concrete_modulus_mpa,
             },
             "voids": {"ducts": self.voids.ducts, "diameter_mm": self.voids.diameter_mm},
             "deflection": {

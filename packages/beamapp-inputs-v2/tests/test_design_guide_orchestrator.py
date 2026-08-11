@@ -227,7 +227,7 @@ def test_action_status_always_has_an_applyable_verified_candidate() -> None:
         assert decision.candidate is not None
 
 
-def test_severe_shear_failure_searches_geometry_links_and_minimum_longitudinal_steel_together() -> None:
+def test_severe_shear_failure_searches_geometry_links_and_longitudinal_steel_together() -> None:
     base = BeamInputs(actions=ActionInputs(bending_moment_knm=10.0, shear_force_kn=600.0))
     current = replace(
         base,
@@ -239,7 +239,7 @@ def test_severe_shear_failure_searches_geometry_links_and_minimum_longitudinal_s
 
     assert decision.status.value == "ACTION"
     assert decision.apply_allowed
-    assert decision.reason == "safe_combined_failure_repair"
+    assert decision.reason == "shear_target_band_candidate"
     assert 0.85 <= proposed_utilisation <= 1.0
     assert decision.candidate.proposal.depth_mm > current.depth_mm
     assert decision.candidate.proposal.shear_legs > 0
@@ -281,7 +281,9 @@ def test_marginal_shear_failure_finds_coordinated_target_band_repair() -> None:
     base = BeamInputs(
         width_mm=250.0,
         depth_mm=300.0,
-        bottom=LongitudinalReinforcement(bars=4, diameter_mm=20),
+        # Keep this fixture inside the authoritative k_u <= 0.36 ductility
+        # limit so it isolates the intended marginal shear repair path.
+        bottom=LongitudinalReinforcement(bars=4, diameter_mm=16),
         shear=ShearReinforcement(diameter_mm=10, legs=2, spacing_mm=250.0),
     ).validated()
     calculated = DesignBrainService()._calculator.calculate_current(base).result
@@ -349,7 +351,10 @@ def test_shear_overdesign_selects_nearest_minimum_reinforcement_compliant_cleanu
     base = BeamInputs(
         shear=ShearReinforcement(diameter_mm=16, legs=2, spacing_mm=175),
     )
-    base = replace(base, bottom=replace(base.bottom, bars=3, diameter_mm=24)).validated()
+    # N24 made the original fixture fail the authoritative k_u <= 0.36
+    # check, which routes to a mixed bending/shear family.  N20 preserves the
+    # shear-only cleanup scenario this test owns.
+    base = replace(base, bottom=replace(base.bottom, bars=3, diameter_mm=20)).validated()
     calculated = DesignBrainService()._calculator.calculate_current(base).result
     assert calculated is not None
     current = replace(
@@ -420,8 +425,8 @@ def test_bending_overdesign_preserves_near_limit_shear_in_one_decision() -> None
     assert decision.candidate.proposal.shear_spacing_mm < current.shear.spacing_mm
 
 
-def test_exhausted_bending_cleanup_is_green_pass_with_verified_blockers() -> None:
-    """A passing beam is retained only after every real reduction is checked."""
+def test_bending_cleanup_uses_newly_available_compliant_geometry_candidate() -> None:
+    """A real compliant reduction must be actionable rather than called an exact stop."""
 
     base = BeamInputs(
         width_mm=200.0,
@@ -442,23 +447,18 @@ def test_exhausted_bending_cleanup_is_green_pass_with_verified_blockers() -> Non
 
     decision = DesignGuideOrchestrator().decide(current)
     card = build_design_brain_card_view_model(decision, current)
-    advice = format_engineering_advice(decision.advice)
-
-    assert decision.family is DesignFamily.EXACT_STOP_PROVEN
-    assert decision.status is DecisionStatus.PASS
-    assert not decision.apply_allowed
-    assert decision.search_evidence.exhausted
-    assert decision.search_evidence.improving_rejection_counts
-    assert card.state_class == "pass"
-    assert card.badge == "PASS"
-    assert decision.display_heading == "Compliant design retained"
-    assert "Every permitted reinforcement and geometry reduction was assessed" in advice
-    assert "The current design remains compliant" in advice
-    assert "cannot yet be applied" not in advice
+    assert decision.family is DesignFamily.BENDING_OVERDESIGN_GOVERNS
+    assert decision.status is DecisionStatus.ACTION
+    assert decision.apply_allowed
+    assert decision.candidate is not None
+    assert decision.candidate.proposal.depth_mm == 400.0
+    assert decision.candidate.proposal.bottom_diameter_mm == 12
+    assert card.state_class == "optimise"
+    assert card.badge == "ACTION"
 
 
-def test_exhausted_combined_cleanup_is_green_pass_with_verified_blockers() -> None:
-    """A compliant combined design must not become blocked after exhaustion."""
+def test_locked_geometry_still_allows_compliant_reinforcement_cleanup() -> None:
+    """Geometry locks must not suppress a valid reinforcement-only cleanup."""
 
     base = BeamInputs(
         width_mm=300.0,
@@ -481,15 +481,15 @@ def test_exhausted_combined_cleanup_is_green_pass_with_verified_blockers() -> No
     decision = DesignGuideOrchestrator().decide(current)
     card = build_design_brain_card_view_model(decision, current)
 
-    assert decision.family is DesignFamily.EXACT_STOP_PROVEN
-    assert decision.status is DecisionStatus.PASS
-    assert not decision.apply_allowed
-    assert decision.candidate is None
-    assert decision.search_evidence.exhausted
-    assert decision.search_evidence.completed_stage_ids == decision.search_evidence.declared_stage_ids
-    assert card.state_class == "pass"
-    assert card.badge == "PASS"
-    assert decision.search_evidence.governing_blocker
+    assert decision.family is DesignFamily.COMBINED_OVERDESIGN
+    assert decision.status is DecisionStatus.ACTION
+    assert decision.apply_allowed
+    assert decision.candidate is not None
+    assert decision.candidate.proposal.width_mm == current.width_mm
+    assert decision.candidate.proposal.depth_mm == current.depth_mm
+    assert decision.candidate.proposal.bottom_diameter_mm == 12
+    assert card.state_class == "optimise"
+    assert card.badge == "ACTION"
 
 
 def test_exhausted_shear_cleanup_is_green_pass_with_verified_blockers() -> None:
@@ -617,6 +617,48 @@ def test_bending_only_current_target_band_is_terminal_pass() -> None:
     assert decision.apply_allowed is False
 
 
+def test_no_op_preview_cannot_publish_action_without_apply_payload(monkeypatch) -> None:
+    """A family-selected current design must never become a fake ACTION."""
+
+    current = BeamInputs(
+        actions=ActionInputs(bending_moment_knm=10.0),
+    ).validated()
+    service = DesignBrainService()
+    result = service._calculator.calculate_current(current).result
+    assert result is not None
+
+    from inputs_v2.application.design_brain.preview import DesignBrainPreview
+    from inputs_v2.application.design_brain_apply import propose_neutral_candidate
+    from inputs_v2.application.design_brain.family_context import FamilyRunContext
+    from inputs_v2.application.design_brain.family_owners import FAMILY_OWNERS
+    from inputs_v2.domain.design_preferences import DEFAULT_DESIGN_PREFERENCES
+
+    owner = FAMILY_OWNERS[DesignFamily.BENDING_OVERDESIGN_GOVERNS]
+    no_op = DesignBrainPreview(
+        candidate=propose_neutral_candidate(current),
+        before=result,
+        after=result,
+        changed_fields=("bottom",),
+        accepted=True,
+        reason="safe_overdesign_cleanup",
+    )
+    monkeypatch.setattr(type(owner), "preview", lambda self, context, service: no_op)
+
+    decision = owner.decide(
+        FamilyRunContext(
+            current=current,
+            current_result=result,
+            preferences=DEFAULT_DESIGN_PREFERENCES,
+            search_profile=service.search_profile,
+        ),
+        service,
+    )
+
+    assert decision.status is not DecisionStatus.ACTION
+    assert decision.apply_allowed is False
+    assert decision.candidate is no_op.candidate
+
+
 def test_severe_bending_failure_finds_verified_repair_without_exhausting_budget() -> None:
     """Regression for the repair that previously consumed all 12,000 calculations."""
 
@@ -728,4 +770,5 @@ def test_terminal_execution_uses_the_terminal_family_declared_stage() -> None:
     decision = DesignGuideOrchestrator().decide(current)
 
     assert decision.family is DesignFamily.TARGET_BAND_REACHED
-    assert decision.search_evidence.completed_stage_ids == decision.search_evidence.declared_stage_ids
+    assert decision.search_evidence.generated_candidates == 0
+    assert decision.search_evidence.completed_stage_ids == ()

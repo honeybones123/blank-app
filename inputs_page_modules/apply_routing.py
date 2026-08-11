@@ -139,5 +139,15 @@ def handle_inputs_apply_buttons(
     record_rerun_trigger_fn("apply_triggered_rerun", meta=rerun_meta)
     if scoped:
         rerun_inputs_current_scope(st_module)
-    else:
-        st_module.rerun(scope="app")
+        return
+    # Inputs runs as one forced ``engineering_workspace`` fragment.  A stale
+    # or temporarily unavailable active-fragment marker must never turn Apply
+    # into an app-wide rerun: queue a one-shot wake for the unified owner and
+    # let its revision protocol render the committed transaction.  The next
+    # ordinary Streamlit event remains a safe fallback when a test double or
+    # unsupported runtime has no fragment id.
+    request_inputs_fragment_wake(
+        st_module,
+        "engineering_workspace",
+        revision=revision,
+    )

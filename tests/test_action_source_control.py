@@ -1,0 +1,194 @@
+import inspect
+
+from inputs_application.action_source_control import (
+    INPUTS_ACTION_SOURCE_TOGGLE_KEY,
+    LOAD_ANALYSIS_ACTIONS_SOURCE,
+    LOAD_ANALYSIS_ACTION_SOURCE_TOGGLE_KEY,
+    MANUAL_ACTIONS_SOURCE,
+    commit_action_source_toggle,
+    load_analysis_action_projection,
+    seed_action_source_toggle,
+    synchronize_load_analysis_actions_for_inputs,
+    uses_load_analysis_actions,
+)
+from calculations.design_actions import resolve_design_actions_from_state
+from inputs_page_modules.widgets.design_action_sync import (
+    design_action_widget_specs,
+    hydrate_design_action_widgets_from_shared,
+)
+from inputs_page_modules.widgets.render_coordinators import (
+    render_inputs_design_actions_section,
+)
+
+
+def test_inputs_toggle_selects_load_analysis_and_synchronizes_both_pages() -> None:
+    state = {
+        "actions_mode": "manual",
+        "actions_source": MANUAL_ACTIONS_SOURCE,
+        INPUTS_ACTION_SOURCE_TOGGLE_KEY: True,
+    }
+
+    assert commit_action_source_toggle(state, INPUTS_ACTION_SOURCE_TOGGLE_KEY)
+    assert state["actions_mode"] == "design"
+    assert state["actions_source"] == LOAD_ANALYSIS_ACTIONS_SOURCE
+    assert state[LOAD_ANALYSIS_ACTION_SOURCE_TOGGLE_KEY] is True
+    assert state["inputs_use_calculated_actions"] is True
+    assert uses_load_analysis_actions(state)
+
+
+def test_load_analysis_toggle_selects_inputs_and_synchronizes_both_pages() -> None:
+    state = {
+        "actions_mode": "design",
+        "actions_source": LOAD_ANALYSIS_ACTIONS_SOURCE,
+        LOAD_ANALYSIS_ACTION_SOURCE_TOGGLE_KEY: False,
+    }
+
+    assert commit_action_source_toggle(
+        state, LOAD_ANALYSIS_ACTION_SOURCE_TOGGLE_KEY
+    )
+    assert state["actions_mode"] == "manual"
+    assert state["actions_source"] == MANUAL_ACTIONS_SOURCE
+    assert state[INPUTS_ACTION_SOURCE_TOGGLE_KEY] is False
+    assert state["inputs_use_calculated_actions"] is False
+    assert not uses_load_analysis_actions(state)
+
+
+def test_page_widget_is_always_seeded_from_canonical_source() -> None:
+    state = {
+        "actions_mode": "design",
+        "actions_source": LOAD_ANALYSIS_ACTIONS_SOURCE,
+        INPUTS_ACTION_SOURCE_TOGGLE_KEY: False,
+    }
+
+    assert seed_action_source_toggle(state, INPUTS_ACTION_SOURCE_TOGGLE_KEY)
+    assert state[INPUTS_ACTION_SOURCE_TOGGLE_KEY] is True
+
+
+def test_load_analysis_projection_supplies_uls_and_sls_without_overwriting_manual_actions() -> None:
+    state = {
+        "actions_mode": "design",
+        "actions_source": LOAD_ANALYSIS_ACTIONS_SOURCE,
+        "uls_Mstar_pos_manual": 17.0,
+        "uls_Vstar": 8.0,
+        "sls_Mstar_pos_manual": 11.0,
+        "sls_Vstar": 5.0,
+    }
+    results = {
+        "sfd_Mmax_abs_kNm": 135.0,
+        "sfd_Vmax_abs_kN": 270.0,
+        "sfd_Msls_max_kNm": 104.0,
+        "sfd_Vsls_max_kN": 208.0,
+        "M_pos_max_uls_kNm": 135.0,
+        "M_neg_min_uls_kNm": -20.0,
+        "M_pos_max_sls_kNm": 104.0,
+        "M_neg_min_sls_kNm": -12.0,
+    }
+
+    changed = synchronize_load_analysis_actions_for_inputs(
+        state,
+        draft={"design_actions_source_selector": "max"},
+        results=results,
+    )
+    actions = resolve_design_actions_from_state(state)
+
+    assert "sfd_Mmax_abs_kNm" in changed
+    assert actions["Mu"] == 135.0
+    assert actions["Vu"] == 270.0
+    assert actions["SLS_M"] == 104.0
+    assert actions["SLS_V"] == 208.0
+    assert state["uls_Mstar_pos_manual"] == 17.0
+    assert state["uls_Vstar"] == 8.0
+    assert state["sls_Mstar_pos_manual"] == 11.0
+    assert state["sls_Vstar"] == 5.0
+
+
+def test_manual_source_never_imports_load_analysis_actions() -> None:
+    state = {
+        "actions_mode": "manual",
+        "actions_source": MANUAL_ACTIONS_SOURCE,
+        "uls_Mstar_pos_manual": 17.0,
+    }
+
+    changed = synchronize_load_analysis_actions_for_inputs(
+        state,
+        draft={},
+        results={"sfd_Mmax_abs_kNm": 135.0},
+    )
+
+    assert changed == ()
+    assert "sfd_Mmax_abs_kNm" not in state
+    assert state["uls_Mstar_pos_manual"] == 17.0
+
+
+def test_projection_supports_selected_section_uls_and_sls() -> None:
+    projection = load_analysis_action_projection(
+        draft={"design_actions_source_selector": "section"},
+        results={
+            "design_M_uls_kNm": 75.0,
+            "design_M_uls_kNm_signed": -75.0,
+            "design_V_uls_kN": 42.0,
+            "design_M_sls_kNm": 55.0,
+            "design_M_sls_kNm_signed": -55.0,
+            "design_V_sls_kN": 31.0,
+        },
+    )
+
+    assert projection["design_actions_source"] == "section"
+    assert projection["design_M_uls_kNm_signed"] == -75.0
+    assert projection["design_M_sls_kNm_signed"] == -55.0
+
+
+def test_design_mode_widgets_display_resolved_uls_and_sls_projection() -> None:
+    class _FakeStreamlit:
+        def __init__(self) -> None:
+            self.session_state = {
+                "actions_mode": "design",
+                "actions_source": LOAD_ANALYSIS_ACTIONS_SOURCE,
+                "design_actions_source": "max",
+                "M_pos_max_uls_kNm": 135.0,
+                "M_neg_min_uls_kNm": -20.0,
+                "sfd_Mmax_abs_kNm": 135.0,
+                "sfd_Vmax_abs_kN": 270.0,
+                "M_pos_max_sls_kNm": 104.0,
+                "M_neg_min_sls_kNm": -12.0,
+                "sfd_Msls_max_kNm": 104.0,
+                "sfd_Vsls_max_kN": 208.0,
+            }
+
+    fake = _FakeStreamlit()
+
+    def _get_param(key: str, default=0.0):
+        return fake.session_state.get(key, default)
+
+    hydrate_design_action_widgets_from_shared(
+        "uls",
+        st_module=fake,
+        get_param_fn=_get_param,
+        state_hc_log_fn=lambda *args, **kwargs: None,
+        design_action_widget_specs_fn=design_action_widget_specs,
+        design_controls=True,
+    )
+    assert fake.session_state["inputs_load_Mstar_pos_proxy"] == 135.0
+    assert fake.session_state["inputs_load_Mstar_neg_proxy"] == 20.0
+    assert fake.session_state["inputs_load_Vstar_proxy"] == 270.0
+
+    hydrate_design_action_widgets_from_shared(
+        "sls",
+        st_module=fake,
+        get_param_fn=_get_param,
+        state_hc_log_fn=lambda *args, **kwargs: None,
+        design_action_widget_specs_fn=design_action_widget_specs,
+        design_controls=True,
+    )
+    assert fake.session_state["inputs_load_Mstar_pos_proxy"] == 104.0
+    assert fake.session_state["inputs_load_Mstar_neg_proxy"] == 12.0
+    assert fake.session_state["inputs_load_Vstar_proxy"] == 208.0
+
+
+def test_design_actions_renderer_has_no_action_source_or_rerun_authority() -> None:
+    source = inspect.getsource(render_inputs_design_actions_section)
+
+    assert 'session_state["actions_mode"] =' not in source
+    assert 'session_state["actions_source"] =' not in source
+    assert "rerun_inputs_current_scope" not in source
+    assert "_rerun_inputs_fragment_or_app" not in source

@@ -444,7 +444,10 @@ def compute_bending_capacity_legacy(
         rowgap_bot,
         lig_diameter_mm,
     )
-    d = d_centroid if d_centroid not in (None, 0) else d_input
+    # ``d_input`` is the canonical area-weighted centroid published by the
+    # shared reinforcement layout.  The scalar fallback can only represent a
+    # single row and must not replace that exact multi-row value.
+    d = d_input if d_input not in (None, 0) else d_centroid
 
     if None in (b, D, d, fc, fsy, Ast, Mu_star):
         return {

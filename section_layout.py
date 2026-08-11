@@ -595,6 +595,7 @@ def compute_longitudinal_reo_layout(
     db_top_2: float,
     rowgap_bot: float,
     rowgap_top: float,
+    lig_d: float = 0.0,
     s_min: float = 25.0,
     bottom_rows: Optional[List[Dict[str, Any]]] = None,
     top_rows: Optional[List[Dict[str, Any]]] = None,
@@ -662,10 +663,10 @@ def compute_longitudinal_reo_layout(
         dia = float(row.get("dia", 0.0) or 0.0)
         if dia <= 0.0:
             continue
-        y = D - cover_bot - dia / 2.0 if prev_y is None else prev_y - prev_dia / 2.0 - rowgap_bot - dia / 2.0
+        y = D - cover_bot - lig_d - dia / 2.0 if prev_y is None else prev_y - prev_dia / 2.0 - rowgap_bot - dia / 2.0
         band = _resolve_single_row_band(
-            x0=cover_side + dia / 2.0,
-            x1=b - cover_side - dia / 2.0,
+            x0=cover_side + lig_d + dia / 2.0,
+            x1=b - cover_side - lig_d - dia / 2.0,
             y=y,
             mode=str(row.get("mode", "Count")),
             value=float(row.get("nb_or_s", 0.0) or 0.0),
@@ -690,10 +691,10 @@ def compute_longitudinal_reo_layout(
         dia = float(row.get("dia", 0.0) or 0.0)
         if dia <= 0.0:
             continue
-        y = cover_top + dia / 2.0 if prev_y is None else prev_y + prev_dia / 2.0 + rowgap_top + dia / 2.0
+        y = cover_top + lig_d + dia / 2.0 if prev_y is None else prev_y + prev_dia / 2.0 + rowgap_top + dia / 2.0
         band = _resolve_single_row_band(
-            x0=cover_side + dia / 2.0,
-            x1=b - cover_side - dia / 2.0,
+            x0=cover_side + lig_d + dia / 2.0,
+            x1=b - cover_side - lig_d - dia / 2.0,
             y=y,
             mode=str(row.get("mode", "Count")),
             value=float(row.get("nb_or_s", 0.0) or 0.0),
@@ -789,6 +790,7 @@ def compute_section_layout_pure(
         nb_or_s_top_1=nb_or_s_top_1, db_top_1=db_top_1,
         nb_or_s_top_2=nb_or_s_top_2, db_top_2=db_top_2,
         rowgap_bot=rowgap_bot, rowgap_top=rowgap_top,
+        lig_d=lig_d,
         bottom_rows=bottom_rows,
         top_rows=top_rows,
     )

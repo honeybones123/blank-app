@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from dataclasses import replace
 
 import pytest
 
@@ -18,13 +19,16 @@ from inputs_v2.application.engineering_advice import (
     EngineeringAdviceResult,
     EngineeringCheck,
 )
-from inputs_v2.domain.beam_inputs import BeamInputs, ShearReinforcement
+from inputs_v2.domain.beam_inputs import BeamInputs, LongitudinalReinforcement, ShearReinforcement
 from inputs_v2.application.design_brain_decision import DecisionStatus
 from inputs_v2.application.design_guide_orchestrator import DesignGuideOrchestrator
 from inputs_v2.domain.beam_inputs import ActionInputs
 from inputs_v2.presentation.view_models.design_brain_card import build_design_brain_card_view_model
 from inputs_v2.application.design_brain.family_owners import FAMILY_OWNERS
 from inputs_v2.application.input_commands import UpdateFirstSlice
+
+
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
 
 EXPECTED = {
@@ -102,7 +106,9 @@ def test_required_checks_and_clauses_are_calculation_owned() -> None:
     references = clause_references_from_checks(checks)
     assert references
     assert all(reference.standard == "AS 3600" and reference.edition == "2018" for reference in references)
-    source = Path("src/inputs_v2/application/engineering_advice.py").read_text(encoding="utf-8")
+    source = (
+        PACKAGE_ROOT / "src" / "inputs_v2" / "application" / "engineering_advice.py"
+    ).read_text(encoding="utf-8")
     assert "AS3600_CLAUSES" not in source
     assert '"8.1.3"' not in source
 
@@ -168,9 +174,12 @@ def test_single_row_bar_count_change_does_not_repeat_row_layout() -> None:
 
 
 def test_mandatory_bending_failure_is_not_hidden_by_two_low_summary_utilisations() -> None:
-    current = BeamInputs(
-        actions=ActionInputs(bending_moment_knm=20.0, shear_force_kn=10.0),
-        shear=ShearReinforcement(12, 2, 100.0),
+    current = replace(
+        BeamInputs(
+            actions=ActionInputs(bending_moment_knm=20.0, shear_force_kn=10.0),
+            shear=ShearReinforcement(12, 2, 100.0),
+        ),
+        bottom=LongitudinalReinforcement(bars=2, diameter_mm=10),
     ).validated()
     decision = DesignGuideOrchestrator().decide(current)
     assert decision.current_result.families["bending"]["minimum_tensile_status"] == "FAIL"

@@ -1305,7 +1305,6 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                         st.session_state["inputs_load_Nstar_proxy"] = st.session_state.get("load_Nstar_proxy", 0.0)
                         recalc_derived_values()
                         update_results()
-                        st.rerun()
                     else:
                         st.session_state["loads_edit_mode"] = new_mode
                     selected_mode = st.session_state.get("loads_edit_mode", "ULS")

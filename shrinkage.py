@@ -32,6 +32,10 @@ from calculations.creep_shrinkage import (
     shrinkage_closest_th as _closest_th,
     shrinkage_eps_final as _shrinkage_eps_final,
 )
+from inputs_application.time_dependent_engineering_state import (
+    resolve_time_dependent_engineering_state,
+)
+from inputs_application.authoritative_check_packs import current_authoritative_family
 
 
 # ------------------------------------------------------------
@@ -115,12 +119,33 @@ def compute_shrinkage_results(publish: bool = True) -> dict:
     Returns:
         dict with computed results
     """
-    # Read geometry from shared state
-    b = get_param("b", 300.0)
-    D = get_param("D", 600.0)
-    
-    # Read materials
-    fc = get_param("fc", 32.0)
+    authoritative = current_authoritative_family(st.session_state, "shrinkage")
+    if authoritative is not None:
+        if publish:
+            update_results(
+                eps_cs_total=authoritative.get("eps_cs_total"),
+                eps_cs_total_micro=authoritative.get("eps_cs_total_micro"),
+                eps_cse=authoritative.get("eps_cse"),
+                eps_csd_t=authoritative.get("eps_csd_t"),
+                th_shrinkage=authoritative.get("th_shrinkage_mm"),
+                k1_shrinkage=authoritative.get("k1_shrinkage"),
+            )
+        return {
+            "eps_cs_total": authoritative.get("eps_cs_total"),
+            "eps_cs_total_micro": authoritative.get("eps_cs_total_micro"),
+            "eps_cse": authoritative.get("eps_cse"),
+            "eps_csd_t": authoritative.get("eps_csd_t"),
+            "shrinkage_steps": ["Authoritative Inputs V2 calculation"],
+        }
+
+    # Geometry and material strength come from the committed Beam Inputs
+    # snapshot so reports and the visible page share one engineering owner.
+    committed_engineering = resolve_time_dependent_engineering_state(
+        st.session_state
+    ).values
+    b = float(committed_engineering.get("b", 300.0) or 300.0)
+    D = float(committed_engineering.get("D", 600.0) or 600.0)
+    fc = float(committed_engineering.get("fc", 32.0) or 32.0)
     
     # Read shrinkage parameters (use defaults if not in shared state)
     env_option = get_param("shrinkage_env", "Temperate inland environment")
@@ -144,6 +169,16 @@ def compute_shrinkage_results(publish: bool = True) -> dict:
     eps_csd_t = shrinkage_total["eps_csd_t"]
     eps_cs_total = shrinkage_total["eps_cs_total"]
     eps_cs_total_micro = shrinkage_total["eps_cs_total_micro"]
+
+    authoritative = current_authoritative_family(st.session_state, "shrinkage")
+    if authoritative is not None:
+        th_table = int(authoritative["th_shrinkage_mm"])
+        k1 = float(authoritative["k1_shrinkage"])
+        eps_cse = float(authoritative["eps_cse"])
+        eps_csd_final = float(authoritative["eps_csd_final"])
+        eps_csd_t = float(authoritative["eps_csd_t"])
+        eps_cs_total = float(authoritative["eps_cs_total"])
+        eps_cs_total_micro = float(authoritative["eps_cs_total_micro"])
     
     # Update results if publish=True
     if publish:
@@ -177,6 +212,13 @@ def render_shrinkage():
     _inject_calcbox_css()
     inject_seamless_steps_css()  # For summary table + scroll functionality
     sync_callbacks = get_sync_callbacks()  # maintains contract with Inputs page
+    committed_engineering = resolve_time_dependent_engineering_state(
+        st.session_state
+    )
+    engineering_values = committed_engineering.values
+
+    def engineering_value(name: str, default):
+        return engineering_values.get(name, get_param(name, default))
 
     # --------------------------------------------------------
     # Page title
@@ -208,8 +250,8 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
 
     with col_geom:
         st.markdown("**Geometry / member**")
-        b_val = float(st.session_state.get("sh_b", get_param("b", 400.0)))
-        D_val = float(st.session_state.get("sh_D", get_param("D", 600.0)))
+        b_val = float(engineering_value("b", 400.0))
+        D_val = float(engineering_value("D", 600.0))
 
         number_row(
             "Section width b (mm)",
@@ -224,8 +266,8 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
             D_val,
             sync_callbacks,
         )
-        b = float(get_param("b", b_val))
-        D = float(get_param("D", D_val))
+        b = float(engineering_value("b", b_val))
+        D = float(engineering_value("D", D_val))
 
         col1, col2 = st.columns([1, 2])
         with col1:
@@ -251,7 +293,7 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
 
     with col_env:
         st.markdown("**Material / environment**")
-        fc_val = float(st.session_state.get("inputs_fc", get_param("fc", 32.0)))
+        fc_val = float(engineering_value("fc", 32.0))
 
         number_row(
             "Concrete strength f'c (MPa)",
@@ -259,7 +301,7 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
             fc_val,
             sync_callbacks,
         )
-        fc = float(get_param("fc", fc_val))
+        fc = float(engineering_value("fc", fc_val))
 
         col1, col2 = st.columns([1, 2])
         with col1:

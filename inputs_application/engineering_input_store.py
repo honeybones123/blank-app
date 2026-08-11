@@ -7,6 +7,7 @@ import copy
 import hashlib
 import json
 import math
+from types import MappingProxyType
 from typing import Any, Mapping, MutableMapping
 
 
@@ -71,6 +72,28 @@ def _stable_hash(value: Mapping[str, Any]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _freeze_snapshot_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return MappingProxyType(
+            {str(key): _freeze_snapshot_value(item) for key, item in value.items()}
+        )
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_snapshot_value(item) for item in value)
+    if isinstance(value, set):
+        return frozenset(_freeze_snapshot_value(item) for item in value)
+    return copy.deepcopy(value)
+
+
+def _thaw_snapshot_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _thaw_snapshot_value(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [_thaw_snapshot_value(item) for item in value]
+    if isinstance(value, (set, frozenset)):
+        return [_thaw_snapshot_value(item) for item in value]
+    return copy.deepcopy(value)
+
+
 @dataclass(frozen=True)
 class EngineeringInputTransaction:
     draft_hash: str
@@ -86,12 +109,17 @@ class InputSnapshotState:
 
     revision: int = 0
     engineering_hash: str | None = None
-    snapshot: dict[str, Any] = field(default_factory=dict)
+    snapshot: Mapping[str, Any] = field(default_factory=dict)
     changed_keys: tuple[str, ...] = ()
     source: str | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "snapshot", copy.deepcopy(self.snapshot or {}))
+        object.__setattr__(self, "snapshot", _freeze_snapshot_value(self.snapshot or {}))
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a defensive mutable copy for serialization/presentation."""
+
+        return _thaw_snapshot_value(self.snapshot)
 
 
 class InputSnapshotStore:
@@ -230,7 +258,7 @@ class InputSnapshotStore:
                 "changed_keys": list(transaction.changed_keys),
                 "change_values": {
                     key: {
-                        "before": copy.deepcopy(previous_snapshot.get(key)),
+                        "before": _thaw_snapshot_value(previous_snapshot.get(key)),
                         "after": copy.deepcopy(draft.get(key)),
                     }
                     for key in transaction.changed_keys[:50]
@@ -249,7 +277,13 @@ class InputSnapshotStore:
             source=transaction.source,
         )
         by_beam = dict(self._state.get(BEAM_SNAPSHOT_STATE_KEY) or {})
-        by_beam[resolved_beam_id] = asdict(snapshot_state)
+        by_beam[resolved_beam_id] = {
+            "revision": snapshot_state.revision,
+            "engineering_hash": snapshot_state.engineering_hash,
+            "snapshot": snapshot_state.to_dict(),
+            "changed_keys": list(snapshot_state.changed_keys),
+            "source": snapshot_state.source,
+        }
         self._state[BEAM_SNAPSHOT_STATE_KEY] = by_beam
 
         # Preserve the established payload during the cutover so routes that
@@ -347,7 +381,7 @@ class InputSnapshotStore:
         )
 
     def committed(self) -> dict[str, Any]:
-        return self.current().snapshot
+        return self.current().to_dict()
 
 
 # Transitional import compatibility only. Both names resolve to the exact same
