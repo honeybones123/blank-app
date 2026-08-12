@@ -504,9 +504,20 @@ class SharedStateSessionPort:
             # while the beam-owned snapshot still contains the pre-Apply
             # values, so setup legitimately rehydrates the old result.
             if active_beam_id:
-                canonical_after = dict(canonical_before)
-                canonical_after.update(row_model_updates)
+                # Rebuild the complete canonical projection after the
+                # mutation. Row/layer fields are normalised into the beam
+                # snapshot by the canonical snapshot helper; merging only
+                # raw row aliases into ``canonical_before`` leaves the
+                # persisted beam record on its pre-Apply arrangement.
+                from state_and_helpers import get_beam_project_param_snapshot
+
+                canonical_after = get_beam_project_param_snapshot()
                 canonical_after.update(shared_updates)
+                # The Apply contract never changes design actions.  Keep the
+                # revision-bound action authority even when this lightweight
+                # port is exercised without a fully populated Streamlit
+                # shared mapping (as in installed-package tests).
+                canonical_after.update(actions_before)
                 actions_after = {
                     key: canonical_after.get(key)
                     for key in DESIGN_ACTION_INVARIANT_KEYS
