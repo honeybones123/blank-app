@@ -30,7 +30,11 @@ from ui.diagrams.crack_side_view_diagram import (
     build_crack_side_view_figure,
     compute_crack_diagram_deflection_mesh,
 )
-from widgets_helpers import render_plotly_diagram
+from widgets_helpers import (
+    compact_side_view_figure,
+    inject_compact_side_view_spacing,
+    render_plotly_diagram,
+)
 
 
 def __getattr__(name: str) -> Any:
@@ -87,8 +91,11 @@ def render_crack_side_view_diagram(
     state: Any,
     crack_metrics: Mapping[str, Any] | None = None,
 ) -> None:
+    inject_compact_side_view_spacing("crack-side-view-compact")
     st.markdown("**Beam side view (flexural cracking)**")
-    fig = build_crack_side_view_figure(state, crack_metrics=crack_metrics)
+    fig = compact_side_view_figure(
+        build_crack_side_view_figure(state, crack_metrics=crack_metrics)
+    )
     render_plotly_diagram(
         fig,
         key="crack_side_view_diagram",

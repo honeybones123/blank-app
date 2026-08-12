@@ -24,8 +24,11 @@ from widgets_helpers import (
     render_page_explainer_expander,
     render_result_page_title,
     render_section_title,
+    specialized_widget_rail_columns,
     page_divider,
     render_plotly_diagram,
+    compact_side_view_figure,
+    inject_compact_side_view_spacing,
 )
 from engineering_check_ui import PARAMETRIC_RESULT_COLUMNS
 from ui.summary_rows import build_creep_summary_rows
@@ -302,7 +305,11 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
     summary_placeholder = st.empty()
     
     # --------------------------------------------------------
-    col_geom, col_env, col_load = st.columns(3)
+    col_geom, col_env, col_load = specialized_widget_rail_columns(
+        "creep_primary_inputs",
+        3,
+        gap="large",
+    )
 
     # --- Geometry ---
     with col_geom:
@@ -541,6 +548,7 @@ The immediate tab shows the beam in its cracked short-term state. The long-term 
         bind_summary_clicks()
         page_divider()
 
+        inject_compact_side_view_spacing("creep-side-view-compact")
         st.markdown("**Concrete creep under sustained load**")
         st.markdown(
             """
@@ -574,6 +582,8 @@ div[data-testid="stElementContainer"]:has(#creep-side-view-tabs-anchor)
             st.session_state,
             phi_cc_t=phi_cc_t,
         )
+        fig_creep_immediate = compact_side_view_figure(fig_creep_immediate)
+        fig_creep_long_term = compact_side_view_figure(fig_creep_long_term)
         tab_creep_immediate, tab_creep_long_term = st.tabs(
             ["Immediate / cracked state", "After creep / long-term"]
         )

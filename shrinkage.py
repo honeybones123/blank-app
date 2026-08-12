@@ -13,7 +13,7 @@ from state_runtime_gateway import (
     get_sync_callbacks,
     update_results,  # kept for contract
 )
-from widgets_helpers import apply_global_widget_css, apply_result_page_css, number_row, v2_number_input, v2_selectbox, v2_checkbox, v2_radio, render_page_explainer_expander, render_result_page_title, render_section_title, page_divider, render_plotly_diagram
+from widgets_helpers import apply_global_widget_css, apply_result_page_css, number_row, v2_number_input, v2_selectbox, v2_checkbox, v2_radio, render_page_explainer_expander, render_result_page_title, render_section_title, specialized_widget_rail_columns, page_divider, render_plotly_diagram, COMPACT_SIDE_VIEW_HEIGHT_PX, compact_side_view_figure, inject_compact_side_view_spacing
 from step_ui import render_expandable_step
 from engineering_check_ui import PARAMETRIC_RESULT_COLUMNS
 from ui.summary_rows import build_shrinkage_summary_rows
@@ -359,7 +359,11 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
     summary_placeholder = st.empty()
 
     # --------------------------------------------------------
-    col_geom, col_env, col_time = st.columns(3)
+    col_geom, col_env, col_time = specialized_widget_rail_columns(
+        "shrinkage_primary_inputs",
+        3,
+        gap="large",
+    )
 
     with col_geom:
         st.markdown("**Geometry / member**")
@@ -612,16 +616,18 @@ Shrinkage is not a force (kN). It is a time-dependent strain that can cause defo
         bind_summary_clicks()
         page_divider()
 
+        inject_compact_side_view_spacing("shrinkage-side-view-compact")
         st.markdown("**Drying shrinkage — beam side view**")
         shrinkage_section_result = build_shrinkage_side_view_result(
             layout=compute_section_layout(),
             faces_option=faces_option,
+            height_px=COMPACT_SIDE_VIEW_HEIGHT_PX,
         )
         if shrinkage_section_result.error_message:
             st.warning(shrinkage_section_result.error_message)
         if shrinkage_section_result.figure is not None:
             render_plotly_diagram(
-                shrinkage_section_result.figure,
+                compact_side_view_figure(shrinkage_section_result.figure),
                 key="shrinkage_side_view_diagram",
                 title="Drying shrinkage — beam side view",
                 config={"displayModeBar": False},

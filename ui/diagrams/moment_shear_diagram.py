@@ -6,6 +6,14 @@ import numpy as np
 import plotly.graph_objects as go
 
 
+# Keep the beam span and section cursor on the same horizontal pixel grid in
+# the load, shear-force, and bending-moment diagrams.  The explicit left
+# margin also leaves room for SFD/BMD y-axis labels without Plotly expanding
+# only those figures at render time.
+_ACTION_DIAGRAM_MARGIN_LEFT_PX = 72
+_ACTION_DIAGRAM_MARGIN_RIGHT_PX = 16
+
+
 def _clamp_x(x_m: float, max_x: float) -> float:
     return max(0.0, min(float(x_m), float(max_x)))
 
@@ -623,7 +631,12 @@ def plot_load_diagram_plotly(
         title_text="",
         yaxis_title="",
         plot_bgcolor="white",
-        margin=dict(l=16, r=16, t=28, b=64),
+        margin=dict(
+            l=_ACTION_DIAGRAM_MARGIN_LEFT_PX,
+            r=_ACTION_DIAGRAM_MARGIN_RIGHT_PX,
+            t=28,
+            b=64,
+        ),
         height=170,
     )
 
@@ -778,7 +791,12 @@ def figure_sfd_from_state(state: dict) -> go.Figure:
         title_text="",
         yaxis_title="",
         plot_bgcolor="white",
-        margin=dict(l=16, r=16, t=28, b=64),
+        margin=dict(
+            l=_ACTION_DIAGRAM_MARGIN_LEFT_PX,
+            r=_ACTION_DIAGRAM_MARGIN_RIGHT_PX,
+            t=28,
+            b=64,
+        ),
         height=300,
     )
     fig_sfd.update_xaxes(
@@ -801,6 +819,7 @@ def figure_sfd_from_state(state: dict) -> go.Figure:
         showgrid=True,
         gridcolor="rgba(0,0,0,0.08)",
         range=sfd_y_range,
+        automargin=False,
     )
     _add_plotly_support_markers_aligned(
         fig_sfd,
@@ -900,7 +919,12 @@ def figure_bmd_from_state(state: dict, *, show_m_peak: bool = False) -> go.Figur
         title_text="",
         yaxis_title="",
         plot_bgcolor="white",
-        margin=dict(l=16, r=16, t=28, b=64),
+        margin=dict(
+            l=_ACTION_DIAGRAM_MARGIN_LEFT_PX,
+            r=_ACTION_DIAGRAM_MARGIN_RIGHT_PX,
+            t=28,
+            b=64,
+        ),
         height=300,
     )
     fig_bmd.update_xaxes(
@@ -914,6 +938,7 @@ def figure_bmd_from_state(state: dict, *, show_m_peak: bool = False) -> go.Figur
         showgrid=True,
         gridcolor="rgba(0,0,0,0.08)",
         range=bmd_y_range,
+        automargin=False,
     )
     _add_plotly_support_markers_aligned(
         fig_bmd,

@@ -42,6 +42,9 @@ from widgets_helpers import (
     main_longitudinal_reo_pair_labels,
     specialized_widget_rail_columns,
     render_plotly_diagram,
+    COMPACT_SIDE_VIEW_HEIGHT_PX,
+    compact_side_view_figure,
+    inject_compact_side_view_spacing,
 )
 from step_ui import init_step_ui_state, render_expandable_step
 from engineering_check_ui import DEFLECTION_CHECK_SUMMARY_COLUMNS
@@ -404,10 +407,11 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
 
         return fallback_value, branch, source_text, meta
 
-    # 3-column layout matching Shear pattern
-    col_geom, col_mats, col_loads = specialized_widget_rail_columns(
+    # One shared rail: three visible columns, with reinforcement continuing
+    # horizontally to the right in the same three-row shell.
+    col_geom, col_mats, col_loads, col_reo_bot, col_reo_top = specialized_widget_rail_columns(
         "deflection_primary_inputs",
-        3,
+        5,
         gap="large",
     )
 
@@ -570,6 +574,87 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
             ),
         )
 
+    _defl_sec_shape_ui = str(get_param("sec_shape", "RECT") or "RECT")
+    _defl_bot_md, _defl_top_md = main_longitudinal_reo_pair_labels(
+        _defl_sec_shape_ui, variant="sentence_lower"
+    )
+
+    # ---------- Column 4: Bottom reinforcement ----------
+    with col_reo_bot:
+        _defl_bot_title_col, _defl_bot_info_col = st.columns(
+            [0.92, 0.08], vertical_alignment="center"
+        )
+        with _defl_bot_title_col:
+            st.markdown(f"**{_defl_bot_md.title()}**")
+        rowgap_bot_val = float(
+            st.session_state.get(
+                "defl_rowgap_bot", get_param("rowgap_bot", 60.0)
+            )
+            or 60.0
+        )
+        with _defl_bot_info_col:
+            with info_i_button(
+                help_text="Row count and vertical gap between reinforcement layers."
+            ):
+                render_longitudinal_reo_row_config_controls(
+                    page_prefix="defl",
+                    section="bot",
+                    sync_callbacks=sync_callbacks,
+                    rowgap_widget_key="defl_rowgap_bot",
+                    rowgap_default=rowgap_bot_val,
+                    rowgap_help_text="Clear vertical gap between reinforcement rows (mm).",
+                    sec_shape=_defl_sec_shape_ui,
+                )
+        render_longitudinal_reo_rows(
+            page_prefix="defl",
+            section="bot",
+            sync_callbacks=sync_callbacks,
+            layout_modes=REO_LAYOUT_MODE,
+            count_options=REO_COUNTS_0_12,
+            spacing_options=REO_SPACINGS,
+            dia_options=REO_BAR_DIAS,
+            single_column=True,
+            sec_shape=_defl_sec_shape_ui,
+        )
+
+    # ---------- Column 5: Top reinforcement ----------
+    with col_reo_top:
+        _defl_top_title_col, _defl_top_info_col = st.columns(
+            [0.92, 0.08], vertical_alignment="center"
+        )
+        with _defl_top_title_col:
+            st.markdown(f"**{_defl_top_md.title()}**")
+        rowgap_top_val = float(
+            st.session_state.get(
+                "defl_rowgap_top", get_param("rowgap_top", 60.0)
+            )
+            or 60.0
+        )
+        with _defl_top_info_col:
+            with info_i_button(
+                help_text="Row count and vertical gap between reinforcement layers."
+            ):
+                render_longitudinal_reo_row_config_controls(
+                    page_prefix="defl",
+                    section="top",
+                    sync_callbacks=sync_callbacks,
+                    rowgap_widget_key="defl_rowgap_top",
+                    rowgap_default=rowgap_top_val,
+                    rowgap_help_text="Clear vertical gap between reinforcement rows (mm).",
+                    sec_shape=_defl_sec_shape_ui,
+                )
+        render_longitudinal_reo_rows(
+            page_prefix="defl",
+            section="top",
+            sync_callbacks=sync_callbacks,
+            layout_modes=REO_LAYOUT_MODE,
+            count_options=REO_COUNTS_0_12,
+            spacing_options=REO_SPACINGS,
+            dia_options=REO_BAR_DIAS,
+            single_column=True,
+            sec_shape=_defl_sec_shape_ui,
+        )
+
     page_divider()
 
     # Derive F_d,ef from Inputs / Teaching actions (after column inputs)
@@ -597,94 +682,6 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
     )
 
     Fdef_kNm = fd_ef_used
-
-    with st.container():
-        _defl_sec_shape_ui = str(get_param("sec_shape", "RECT") or "RECT")
-        _defl_bot_md, _defl_top_md = main_longitudinal_reo_pair_labels(
-            _defl_sec_shape_ui, variant="sentence_lower"
-        )
-        _reo_pad_l, _reo_mid, _reo_pad_r = st.columns([1, 3, 1])
-        with _reo_mid:
-            reo_col_left, reo_col_right = st.columns([1, 1], gap="large")
-            with reo_col_left:
-                _defl_bot_title_col, _defl_bot_info_col = st.columns(
-                    [0.92, 0.08], vertical_alignment="center"
-                )
-                with _defl_bot_title_col:
-                    st.markdown(f"**{_defl_bot_md.title()}**")
-                rowgap_bot_val = float(
-                    st.session_state.get(
-                        "defl_rowgap_bot", get_param("rowgap_bot", 60.0)
-                    )
-                    or 60.0
-                )
-                with _defl_bot_info_col:
-                    with info_i_button(
-                        help_text="Row count and vertical gap between reinforcement layers."
-                    ):
-                        render_longitudinal_reo_row_config_controls(
-                            page_prefix="defl",
-                            section="bot",
-                            sync_callbacks=sync_callbacks,
-                            rowgap_widget_key="defl_rowgap_bot",
-                            rowgap_default=rowgap_bot_val,
-                            rowgap_help_text=(
-                                "Clear vertical gap between reinforcement rows (mm)."
-                            ),
-                            sec_shape=_defl_sec_shape_ui,
-                        )
-                render_longitudinal_reo_rows(
-                    page_prefix="defl",
-                    section="bot",
-                    sync_callbacks=sync_callbacks,
-                    layout_modes=REO_LAYOUT_MODE,
-                    count_options=REO_COUNTS_0_12,
-                    spacing_options=REO_SPACINGS,
-                    dia_options=REO_BAR_DIAS,
-                    single_column=True,
-                    sec_shape=_defl_sec_shape_ui,
-                )
-
-            with reo_col_right:
-                _defl_top_title_col, _defl_top_info_col = st.columns(
-                    [0.92, 0.08], vertical_alignment="center"
-                )
-                with _defl_top_title_col:
-                    st.markdown(f"**{_defl_top_md.title()}**")
-                rowgap_top_val = float(
-                    st.session_state.get(
-                        "defl_rowgap_top", get_param("rowgap_top", 60.0)
-                    )
-                    or 60.0
-                )
-                with _defl_top_info_col:
-                    with info_i_button(
-                        help_text="Row count and vertical gap between reinforcement layers."
-                    ):
-                        render_longitudinal_reo_row_config_controls(
-                            page_prefix="defl",
-                            section="top",
-                            sync_callbacks=sync_callbacks,
-                            rowgap_widget_key="defl_rowgap_top",
-                            rowgap_default=rowgap_top_val,
-                            rowgap_help_text=(
-                                "Clear vertical gap between reinforcement rows (mm)."
-                            ),
-                            sec_shape=_defl_sec_shape_ui,
-                        )
-                render_longitudinal_reo_rows(
-                    page_prefix="defl",
-                    section="top",
-                    sync_callbacks=sync_callbacks,
-                    layout_modes=REO_LAYOUT_MODE,
-                    count_options=REO_COUNTS_0_12,
-                    spacing_options=REO_SPACINGS,
-                    dia_options=REO_BAR_DIAS,
-                    single_column=True,
-                    sec_shape=_defl_sec_shape_ui,
-                )
-
-    page_divider()
 
     # Read derived reinforcement areas for calculations (no UI rows)
     Ast = _seed_from_param("Ast_bot", 2010.0)
@@ -874,6 +871,7 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
 
     # Deflected shape (rendered in slot above reinforcement; same computed values)
     with diagram_placeholder.container():
+        inject_compact_side_view_spacing("deflection-side-view-compact")
         st.markdown("**Deflected shape**")
         st.caption("Illustrative — see figure title for vertical exaggeration")
         st.caption(
@@ -911,9 +909,10 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
                 continuous_end_side=support_resolution.get("continuous_end_side"),
                 support_pair=support_pair,
                 reo_layers=_deflection_diagram_reo_layers(D_mm),
+                height=COMPACT_SIDE_VIEW_HEIGHT_PX,
             )
             render_plotly_diagram(
-                beam_fig,
+                compact_side_view_figure(beam_fig),
                 key="deflection_deflected_shape_diagram",
                 title="Deflected shape",
                 center=True,

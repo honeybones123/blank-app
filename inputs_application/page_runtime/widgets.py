@@ -793,15 +793,6 @@ def _render_inputs_owned_diagram_fragment_body(
                 model_state=None,
                 workspace_context=workspace_context,
             )
-            st_module.markdown(
-                '<div style="margin-bottom: 0.35rem;"></div>',
-                unsafe_allow_html=True,
-            )
-            st_module.markdown(
-                '<div style="margin-top: 0.35rem;"></div>',
-                unsafe_allow_html=True,
-            )
-            _render_inputs_materials_subsection(sync_callbacks)
             st_module.markdown("</div>", unsafe_allow_html=True)
             return
 
@@ -891,6 +882,7 @@ def _render_materials_and_sectionA_2d(sync_callbacks):
         resolve_support_and_deflection_defaults_fn=_resolve_inputs_support_and_deflection_defaults,
         caption_deflection_limit_ratio_fn=_caption_inputs_deflection_limit_ratio,
         number_row_fn=number_row,
+        materials_subsection_fn=_render_inputs_materials_subsection,
         render_3d_diagram_block_fn=lambda **kwargs: _render_3d_diagram_block(
             workspace_context=workspace_context, **kwargs
         ),
@@ -1154,7 +1146,6 @@ def render_inputs_geometry_materials_top_section_current_coordinator(
     )
 
 def create_reinforcement_columns():
-    page_divider()
     return st.columns(3, gap="large")
 
 def get_inputs_section_shape_for_reinforcement() -> str:

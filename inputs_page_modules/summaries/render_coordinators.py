@@ -7,7 +7,6 @@ import html
 import streamlit as st
 
 from ui_seamless_steps import inject_seamless_steps_css
-from widgets_helpers import page_divider
 
 from .builders import build_inputs_summary_html
 from .models import InputsSummaryCardSource, InputsSummarySourceSnapshot
@@ -135,8 +134,6 @@ def render_inputs_summary_expanders_and_tables_current_coordinator(**kwargs) -> 
         shear_detail_note_html=shear_gov_note_html,
     )
     st.markdown(summary_cards_html, unsafe_allow_html=True)
-
-    page_divider()
 
 
 def render_inputs_summary_container_current(

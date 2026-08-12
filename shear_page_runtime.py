@@ -45,7 +45,7 @@ from ui.diagrams.principal_stress_cue_diagram import (
 )
 from shear_core import build_shear_zone_layout_strip_figure, derive_eps_top_bot_for_step4_diagram
 # Shared helpers (same contract as Inputs/Bending)
-from widgets_helpers import apply_global_widget_css, apply_result_page_css, apply_calcbox_css, number_row, select_row, calcbox, clickable_calcbox, render_step, apply_step_summary_expander_css, info_i_button, page_divider, render_page_explainer_expander, render_section_title, render_result_page_title, render_specialized_widget_rail, _register_rendered_key, _wrap_user_edit, render_plotly_diagram, render_image_diagram, render_html_diagram
+from widgets_helpers import apply_global_widget_css, apply_result_page_css, apply_calcbox_css, number_row, select_row, calcbox, clickable_calcbox, render_step, apply_step_summary_expander_css, info_i_button, page_divider, render_page_explainer_expander, render_section_title, render_result_page_title, render_specialized_widget_rail, _register_rendered_key, _wrap_user_edit, render_plotly_diagram, render_image_diagram, render_html_diagram, COMPACT_SIDE_VIEW_HEIGHT_PX, compact_side_view_figure, inject_compact_side_view_spacing
 from step_ui import render_expandable_step
 from engineering_check_ui import SHEAR_ROW_UID_TO_TAB
 from ui_seamless_steps import render_clickable_summary_table, bind_summary_clicks
@@ -193,16 +193,22 @@ def _safe_float(x, fallback):
 
 
 def _render_shear_cross_section():
-    fig = build_shear_cross_section_figure()
-    section_fig = _standardise_shear_visual_layout(fig)
+    inject_compact_side_view_spacing("shear-section-compact")
+    fig = build_shear_cross_section_figure(height=COMPACT_SIDE_VIEW_HEIGHT_PX)
+    section_fig = compact_side_view_figure(
+        _standardise_shear_visual_layout(fig, title_pad_t=8)
+    )
     _render_centered_shear_plotly(
         section_fig,
         chart_key="shear_section_diagram",
         max_width_px=SHEAR_VISUAL_MAX_WIDTH_PX,
+        height_px=COMPACT_SIDE_VIEW_HEIGHT_PX,
+        title_pad_t=8,
     )
 
 
 def _render_shear_side_view():
+    inject_compact_side_view_spacing("shear-side-view-compact")
     try:
         _phi_vu = float(get_param("phi_Vu_cap") or 0.0)
         _v_eq = float(get_param("V_eq_kN") or 0.0)
@@ -219,13 +225,18 @@ def _render_shear_side_view():
         else "Side view: required zone spacings from Check 10 when available; otherwise provided spacing (s_lig). "
         "φV_u check uses effective spacing (provided unless auto spacing applies envelope spacing)."
     )
-    fig = build_shear_side_view_figure(shear_fails=shear_fails)
+    fig = compact_side_view_figure(
+        build_shear_side_view_figure(
+            shear_fails=shear_fails,
+            height=COMPACT_SIDE_VIEW_HEIGHT_PX,
+        )
+    )
     _render_centered_shear_plotly(
         fig,
         chart_key="shear_side_view_diagram",
         max_width_px=SHEAR_SIDE_VIEW_MAX_WIDTH_PX,
-        height_px=SHEAR_SIDE_VIEW_HEIGHT_PX,
-        title_pad_t=10,
+        height_px=COMPACT_SIDE_VIEW_HEIGHT_PX,
+        title_pad_t=8,
     )
 
 
@@ -2750,7 +2761,6 @@ In short:
     # =====================================================
     # 3. SHEAR DESIGN CHECKS UI (organized into tabs)
     # =====================================================
-    page_divider()
     render_timing_mark("shear_page.runtime.checks.start")
     render_section_title("Shear design checks")
     
@@ -3501,6 +3511,15 @@ div[data-testid="stElementContainer"]:has(#shear-plot-wrap-shear_behaviour_mcft_
         if active_shear_tab == SHEAR_CHECK_TAB_LABELS[1]:
             st.session_state.setdefault("show_mcft_breakdown", False)
             show_mcft_breakdown = bool(st.session_state.get("show_mcft_breakdown", False))
+            st.toggle(
+                "Show detailed MCFT breakdown",
+                key="show_mcft_breakdown",
+                help="Show intermediate MCFT shear calculation rows such as strain, θ_v, k_v, Vuc and Vus.",
+            )
+            if not show_mcft_breakdown:
+                st.caption(
+                    'Intermediate MCFT calculation rows hidden. Enable "Show detailed MCFT breakdown" to view.'
+                )
             if show_mcft_breakdown:
                 _render_principal_stress_directions_explainer()
                 st.markdown('<div class="mcft-compact-block">', unsafe_allow_html=True)
@@ -3513,8 +3532,6 @@ div[data-testid="stElementContainer"]:has(#shear-plot-wrap-shear_behaviour_mcft_
                 )
                 _render_shear_behaviour_diagrams(theta_v_deg=shear_results.theta_v_deg)
                 st.markdown("</div>", unsafe_allow_html=True)
-            else:
-                st.caption('Detailed MCFT diagrams are hidden. Enable "Show detailed MCFT breakdown" to display them.')
 
         # =====================================================
         # Check 4 — LONGITUDINAL STRAIN εx
@@ -4905,15 +4922,6 @@ Spacing is varied along the span based on shear demand and checked against minim
         )
         ROWS_DISPLAY = build_shear_clickable_summary_rows(display_rows)
         render_clickable_summary_table(ROWS_DISPLAY, key_prefix="shear_summary")
-        st.toggle(
-            "Show detailed MCFT breakdown",
-            key="show_mcft_breakdown",
-            help="Show intermediate MCFT shear calculation rows such as strain, θ_v, k_v, Vuc and Vus.",
-        )
-        if not show_mcft_breakdown:
-            st.caption(
-                'Intermediate MCFT calculation rows hidden. Enable "Show detailed MCFT breakdown" to view.'
-            )
         bind_summary_clicks()
 
     render_timing_mark("shear_page.runtime.summary.end")

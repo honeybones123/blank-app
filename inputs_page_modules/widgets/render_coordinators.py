@@ -945,8 +945,6 @@ def render_inputs_geometry_materials_top_section(
     # diagram/material presentation out of this geometry child prevents a
     # reinforcement edit from recomputing into a parent-owned slot.  Detailed
     # materials and the fast model are rendered by that sibling fragment.
-    if inputs_detailed_mode:
-        page_divider_fn()
     stage_timings_ms["diagram_material_presentation"] = 0.0
     stage_timings_ms["total"] = round(
         (time.perf_counter_ns() - render_started_ns) / 1_000_000,
@@ -1113,6 +1111,7 @@ def render_inputs_materials_and_section_2d(
     resolve_support_and_deflection_defaults_fn: Callable[[], dict],
     caption_deflection_limit_ratio_fn: Callable[[], None],
     number_row_fn: Callable[..., None],
+    materials_subsection_fn: Callable[..., None],
     render_3d_diagram_block_fn: Callable[[], None],
     deflection_limit_help_text: str,
     k_v_method_options: list,
@@ -1214,6 +1213,9 @@ def render_inputs_materials_and_section_2d(
             help_text=deflection_limit_help_text,
         )
         caption_deflection_limit_ratio_fn()
+
+        st_module.markdown("")
+        materials_subsection_fn(sync_callbacks)
 
         st_module.markdown("")
         st_module.subheader("Shear section parameters")

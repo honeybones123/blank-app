@@ -287,6 +287,60 @@ def render_plotly_diagram(
             _render_plotly_doubleclick_fullscreen_hook(anchor_id)
 
 
+COMPACT_SIDE_VIEW_HEIGHT_PX = 280
+
+
+def compact_side_view_figure(
+    fig: Any,
+    *,
+    height_px: int = COMPACT_SIDE_VIEW_HEIGHT_PX,
+) -> Any:
+    """Apply the shared compact canvas used by longitudinal side-view diagrams."""
+    fig.update_layout(
+        height=int(height_px),
+        margin=dict(l=10, r=10, t=8, b=8),
+    )
+    return fig
+
+
+def inject_compact_side_view_spacing(anchor_id: str) -> None:
+    """Normalise the whitespace around a page's side-view diagram block."""
+    safe_id = _safe_dom_id(anchor_id)
+    st.markdown(
+        f"""
+<style>
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #{safe_id}) {{
+  gap: 0.35rem !important;
+  margin-top: 0.35rem !important;
+  margin-bottom: 0.35rem !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}}
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #{safe_id})
+  > div[data-testid="stElementContainer"] {{
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}}
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #{safe_id})
+  [data-testid="stPlotlyChart"],
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #{safe_id})
+  [data-testid="stTabs"],
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #{safe_id})
+  [data-testid="stRadio"] {{
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}}
+</style>
+<span id="{safe_id}" style="display:none"></span>
+""",
+        unsafe_allow_html=True,
+    )
+
+
 def render_plotly_fullscreen_control(
     fig: Any,
     *,
@@ -429,13 +483,15 @@ def render_specialized_widget_rail(
     *,
     gap: str = "large",
     visible_columns: int = 3,
+    visible_rows: int = 3,
 ):
-    """Render grouped specialised-page widgets in a three-visible-column horizontal rail."""
+    """Render specialised-page widgets in a three-row, scrollable rail."""
     with _specialized_widget_rail_container(
         key,
         column_count,
         gap=gap,
         visible_columns=visible_columns,
+        visible_rows=visible_rows,
     ) as columns:
         yield columns
 
@@ -446,13 +502,15 @@ def specialized_widget_rail_columns(
     *,
     gap: str = "large",
     visible_columns: int = 3,
+    visible_rows: int = 3,
 ):
-    """Return Streamlit columns placed inside the specialised three-visible-column rail."""
+    """Return columns inside the specialised three-row scrollable rail."""
     with _specialized_widget_rail_container(
         key,
         column_count,
         gap=gap,
         visible_columns=visible_columns,
+        visible_rows=visible_rows,
     ) as columns:
         return columns
 
@@ -464,9 +522,11 @@ def _specialized_widget_rail_container(
     *,
     gap: str = "large",
     visible_columns: int = 3,
+    visible_rows: int = 3,
 ):
     count = max(1, int(column_count))
     visible = max(1, int(visible_columns))
+    rows = max(1, int(visible_rows))
     width_pct = max(100.0, (count / visible) * 100.0)
     mobile_width_pct = max(100.0, count * 100.0)
     gap_rem_by_name = {"small": 1.0, "medium": 2.0, "large": 4.0}
@@ -475,6 +535,10 @@ def _specialized_widget_rail_container(
     mobile_extra_gap_rem = max(0.0, (count - 1.0) * gap_rem)
     width_expr = f"calc({width_pct:.6g}% + {extra_gap_rem:.6g}rem)"
     mobile_width_expr = f"calc({mobile_width_pct:.6g}% + {mobile_extra_gap_rem:.6g}rem)"
+    # Measured Streamlit geometry: 2.1875rem heading, then 2.582rem widget
+    # rows separated by a 0.645rem vertical gap. The final allowance keeps
+    # both scrollbars clear of the third visible row.
+    rail_height_rem = 2.1875 + 0.645 + rows * 2.582 + max(0, rows - 1) * 0.645 + 1.2
     outer_key = f"{key}_outer"
     inner_key = f"{key}_inner"
 
@@ -485,11 +549,14 @@ def _specialized_widget_rail_container(
             display: block;
             width: 100%;
             max-width: 100%;
+            height: {rail_height_rem:.6g}rem;
+            max-height: {rail_height_rem:.6g}rem;
             overflow-x: auto !important;
-            overflow-y: hidden;
+            overflow-y: auto !important;
+            padding-right: 0.25rem;
             padding-bottom: 0.6rem;
             scrollbar-gutter: stable;
-            overscroll-behavior-x: contain;
+            overscroll-behavior: contain;
             -webkit-overflow-scrolling: touch;
             clip-path: inset(0);
         }}
@@ -506,8 +573,74 @@ def _specialized_widget_rail_container(
             min-width: 100% !important;
             max-width: none !important;
         }}
+        /* The first direct item in every rail column is its heading. Give
+           every heading the same slot so row 1 begins at exactly the same Y
+           coordinate, including headings that contain an info popover. */
+        .st-key-{inner_key}
+            > div[data-testid="stLayoutWrapper"]
+            > div[data-testid="stHorizontalBlock"]
+            > div[data-testid="stColumn"]
+            > div[data-testid="stVerticalBlock"]
+            > :first-child {{
+            position: sticky;
+            top: 0;
+            z-index: 4;
+            display: flex;
+            align-items: center;
+            width: 100%;
+            height: 2.1875rem !important;
+            min-height: 2.1875rem !important;
+            max-height: 2.1875rem !important;
+            margin: 0 !important;
+            background: #ffffff;
+        }}
+        /* Each direct layout wrapper after the heading is one widget row.
+           A fixed slot prevents wrapped labels in one column from shifting
+           the following rows relative to neighbouring columns. */
+        .st-key-{inner_key}
+            > div[data-testid="stLayoutWrapper"]
+            > div[data-testid="stHorizontalBlock"]
+            > div[data-testid="stColumn"]
+            > div[data-testid="stVerticalBlock"]
+            > div[data-testid="stLayoutWrapper"]:not(:first-child) {{
+            display: flex;
+            align-items: center;
+            width: 100%;
+            height: 2.582rem !important;
+            min-height: 2.582rem !important;
+            max-height: 2.582rem !important;
+            margin: 0 !important;
+        }}
+        .st-key-{inner_key}
+            > div[data-testid="stLayoutWrapper"]
+            > div[data-testid="stHorizontalBlock"]
+            > div[data-testid="stColumn"]
+            > div[data-testid="stVerticalBlock"]
+            > div[data-testid="stLayoutWrapper"]:not(:first-child)
+            > div[data-testid="stHorizontalBlock"] {{
+            width: 100%;
+            align-items: center;
+        }}
+        /* Markdown-only opening/closing markers are structural helpers, not
+           widget rows. Remove them from the rail flow so reinforcement rows
+           line up with the same slots as every other section. */
+        .st-key-{inner_key}
+            > div[data-testid="stLayoutWrapper"]
+            > div[data-testid="stHorizontalBlock"]
+            > div[data-testid="stColumn"]
+            > div[data-testid="stVerticalBlock"]
+            > div[data-testid="stElementContainer"]:has(.compact-reo),
+        .st-key-{inner_key}
+            > div[data-testid="stLayoutWrapper"]
+            > div[data-testid="stHorizontalBlock"]
+            > div[data-testid="stColumn"]
+            > div[data-testid="stVerticalBlock"]
+            > div[data-testid="stElementContainer"]:has(div[data-testid="stMarkdownContainer"]:empty) {{
+            display: none !important;
+        }}
         .st-key-{outer_key}::-webkit-scrollbar {{
             height: 10px;
+            width: 10px;
         }}
         .st-key-{outer_key}::-webkit-scrollbar-track {{
             background: rgba(49, 51, 63, 0.08);
