@@ -332,6 +332,16 @@ class DesignBrainService:
             else SearchKind.REPAIR
         )
         budget = self.search_profile.evaluation_budget(kind)
+        # The ordinary bending-cleanup ladder has a fixed nearby search cap in
+        # Fast mode. Combined repair keeps the broader budget because it must
+        # coordinate shear and serviceability candidates in one decision.
+        if (
+            self._active_family_contract is not None
+            and self._active_family_contract.family.value == "BENDING_OVERDESIGN_GOVERNS"
+            and self.search_profile.mode.value == "Fast"
+            and self.search_profile.max_consecutive_infeasible > 2
+        ):
+            budget = min(budget, 1000)
         # A deliberately tiny infeasibility window is used to prove a
         # monotonic capacity ceiling. Preserve enough budget to complete that
         # proof; the normal Fast profile remains bounded at 1,000 evaluations.
