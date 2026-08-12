@@ -641,6 +641,53 @@ def _canonical_input_transaction_state_current_coordinator(
     }
 
 
+def _reconcile_initial_reinforcement_widget_state(
+    state: dict,
+    session_state: dict,
+) -> tuple[dict, bool]:
+    """Reconcile only impossible cold-start row values from valid widgets.
+
+    The Inputs workspace is rendered above the reinforcement controls.  On a
+    genuinely cold Streamlit session the canonical projection can therefore
+    observe the inactive/default row value before the widget hydrator has
+    copied its valid value into the beam transaction.  A fast local process
+    usually hides that ordering; a cold hosted process does not.
+
+    This is deliberately not a general repair path.  It may copy a value only
+    from the matching visible widget and only when that value already satisfies
+    the hard row contract.  Imported or programmatic invalid state for which no
+    valid widget exists remains invalid and is rejected by the V2 calculator.
+    """
+
+    reconciled = dict(state or {})
+    changed = False
+    for prefix in ("bot", "top"):
+        try:
+            row_count = int(float(reconciled.get(f"{prefix}_row_count", 1) or 1))
+        except (TypeError, ValueError):
+            row_count = 1
+        if row_count not in {1, 2}:
+            continue
+        for row_index in range(1, row_count + 1):
+            shared_key = f"{prefix}_row_{row_index}_bars"
+            try:
+                current_count = int(float(reconciled.get(shared_key, 0) or 0))
+            except (TypeError, ValueError):
+                current_count = 0
+            if current_count >= 2:
+                continue
+            widget_key = f"inputs_{shared_key}"
+            try:
+                widget_count = int(float(session_state.get(widget_key, 0) or 0))
+            except (TypeError, ValueError):
+                widget_count = 0
+            if widget_count < 2:
+                continue
+            reconciled[shared_key] = widget_count
+            changed = True
+    return reconciled, changed
+
+
 def _ensure_authoritative_design_result_current_coordinator(
     *,
     include_design_brain: bool = True,
@@ -953,6 +1000,25 @@ def _ensure_authoritative_design_result_current_coordinator(
     canonical_input_state = _canonical_input_transaction_state_current_coordinator(
         current_state
     )
+    readiness_by_beam = dict(
+        st.session_state.get("_inputs_engineering_snapshot_ready_by_beam_v1")
+        or {}
+    )
+    if active_beam_id and not readiness_by_beam.get(active_beam_id):
+        canonical_input_state, initial_rows_reconciled = (
+            _reconcile_initial_reinforcement_widget_state(
+                canonical_input_state,
+                st.session_state,
+            )
+        )
+        if initial_rows_reconciled:
+            current_state = rebuild_engineering_derived_state(
+                canonical_input_state
+            )
+        st.session_state["_inputs_initial_row_reconciliation_probe"] = {
+            "active_beam_id": active_beam_id,
+            "reconciled": initial_rows_reconciled,
+        }
     if (
         active_beam_id
         and snapshot_update_pending
@@ -1115,6 +1181,14 @@ def _ensure_authoritative_design_result_current_coordinator(
             expected_calculation_contract_version
         ),
     )
+    if active_beam_id:
+        readiness_by_beam[active_beam_id] = {
+            "input_revision": int(input_transaction.revision),
+            "engineering_hash": snapshot.engineering_hash,
+        }
+        st.session_state[
+            "_inputs_engineering_snapshot_ready_by_beam_v1"
+        ] = readiness_by_beam
     st.session_state["_inputs_route_return_debug"] = {
         "branch": "normal_coordinator",
         "route_return_active": bool(
