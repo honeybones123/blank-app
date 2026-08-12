@@ -1068,12 +1068,23 @@ def _ensure_authoritative_design_result_current_coordinator(
     expected_calculation_contract_version = (
         v2_engineering_calculation_contract_version()
     )
+    # A calculation-only result may need one follow-up Design Brain pass to
+    # publish its CTA.  Do that at most once for a given engineering hash.
+    # Re-forcing on every Streamlit rerun replaces the candidate publication
+    # for unchanged inputs and makes Apply appear to jump between solutions.
+    force_refresh_key = "_inputs_design_brain_force_refresh_hash_v1"
+    previous_force_refresh_hash = str(
+        st.session_state.get(force_refresh_key) or ""
+    )
     force_design_brain_refresh = bool(
         include_design_brain
         and existing_result is not None
         and existing_result.engineering_hash == snapshot.engineering_hash
         and not existing_result.final_publication
+        and previous_force_refresh_hash != snapshot.engineering_hash
     )
+    if force_design_brain_refresh:
+        st.session_state[force_refresh_key] = snapshot.engineering_hash
     result = ensure_design_result(
         result_store=services.engineering_results,
         snapshot=snapshot,
