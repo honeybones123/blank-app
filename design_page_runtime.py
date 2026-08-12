@@ -118,7 +118,7 @@ def _render_design_check_summary(
     sls_negative_moment: float,
     sls_moment: float,
     sls_shear: float,
-) -> None:
+) -> dict[str, str | None]:
     """Render the Inputs summary cards using the Design page's solved actions."""
     # Calculate a page-local V2 result from the actions just solved above.
     # Reading the session's last Inputs result here left crack/deflection stale
@@ -157,6 +157,34 @@ def _render_design_check_summary(
     shear_pack = dict(packs.get("shear") or {})
     crack_pack = dict(packs.get("crack") or {})
     defl_pack = dict(packs.get("deflection") or {})
+
+    def _resolved_pack_capacity(
+        provided: float | None,
+        pack: dict,
+        pack_key: str,
+    ) -> float | None:
+        for candidate in (provided, pack.get(pack_key)):
+            try:
+                value = float(candidate) if candidate is not None else 0.0
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(value) and value > 0.0:
+                return value
+        return None
+
+    # Load Analysis calculates a page-local authoritative result. Its pack is
+    # therefore the current capacity source when the legacy session aliases
+    # have not yet been projected by Beam Inputs.
+    bending_capacity = _resolved_pack_capacity(
+        bending_capacity,
+        bend_pack,
+        "summary_phiMu_kNm",
+    )
+    shear_capacity = _resolved_pack_capacity(
+        shear_capacity,
+        shear_pack,
+        "summary_phiVu_kN",
+    )
     bending_rows, shear_rows, crack_rows, deflection_rows, *_ = (
         render_inputs_summary_rows_from_packs(
             st_module=st,
@@ -187,8 +215,7 @@ def _render_design_check_summary(
             action_value = 0.0
             capacity_value = 0.0
         if (
-            action_value > 1e-12
-            and capacity_value > 0.0
+            capacity_value > 0.0
             and not math.isnan(action_value)
             and not math.isnan(capacity_value)
         ):
@@ -291,6 +318,23 @@ def _render_design_check_summary(
     )
     inject_seamless_steps_css()
     st.markdown(build_inputs_summary_html(source), unsafe_allow_html=True)
+
+    def _function_card_status(
+        demand: float,
+        capacity: float | None,
+    ) -> str | None:
+        if capacity is None:
+            return None
+        return (
+            "pass"
+            if abs(float(demand)) <= float(capacity) + 1e-9
+            else "fail"
+        )
+
+    return {
+        "bending": _function_card_status(bending_action, bending_capacity),
+        "shear": _function_card_status(shear_action, shear_capacity),
+    }
 
 
 
@@ -717,7 +761,7 @@ def plot_load_diagram_plotly(
     point_loads: list[dict] | None = None,
     udl_loads: list[dict] | None = None,
 ):
-    fig = _shared_plot_load_diagram_plotly(
+    return _shared_plot_load_diagram_plotly(
         case=case,
         L=L,
         params=params,
@@ -729,10 +773,6 @@ def plot_load_diagram_plotly(
         point_loads=point_loads,
         udl_loads=udl_loads,
     )
-    # Match the effective SFD plotting width. Its visible y-axis labels reserve
-    # space on the left, while the load diagram has no visible y-axis.
-    fig.update_xaxes(domain=[0.042, 1.0])
-    return fig
 
 
 # ---------------------------------------------------
@@ -1464,12 +1504,8 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
 """
         )
 
-    with page_title_placeholder.container():
-        render_result_page_title("Load Analysis")
-    # Reserve the summary immediately below the shared page heading. The
-    # calculated projection fills this slot later without moving page-specific
-    # action-source controls above the summary cards.
-    summary_placeholder = st.empty()
+    # The application shell owns the route heading.  Keeping a second title
+    # here duplicated "Load Analysis" on every route render.
     render_action_source_toggle(
         st,
         widget_key=LOAD_ANALYSIS_ACTION_SOURCE_TOGGLE_KEY,
@@ -1479,6 +1515,9 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         before_commit=load_analysis_store.capture_widgets,
         after_commit=_commit_inputs_action_source,
     )
+    # Keep the shared source control directly below the page heading. The
+    # calculated summary fills this reserved slot beneath it later.
+    summary_placeholder = st.empty()
     st.divider()
     # =========================================================
     render_timing_mark("design_page.runtime.loading_inputs.start")
@@ -1486,6 +1525,9 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
     # =========================================================
     load_toggle_key = "design_loads_edit_toggle"
     def _on_design_load_mode_change() -> None:
+        # Persist the edited mode before a rerun; otherwise route hydration
+        # can restore an older SLS/ULS widget value over the current edit.
+        load_analysis_store.capture_widgets()
         use_sls_now = bool(st.session_state.get(load_toggle_key, False))
         mode_now = "SLS" if use_sls_now else "ULS"
         st.session_state["loads_edit_mode"] = mode_now
@@ -2734,7 +2776,8 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
             governing_bending_capacity = phi_mu_pos_cap
             governing_bending_util = sag_util
             governing_bending_status = sag_status
-        _render_design_check_summary(
+
+        function_card_statuses = _render_design_check_summary(
             bending_positive_action=sag_M_uls,
             bending_negative_action=hog_M_uls,
             bending_action=governing_bending_action,
@@ -3058,7 +3101,6 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
             summary_line=step0_summary,
             details_md=step0_md,
             status=None,
-            accent="load",
         )
 
     # STEP 1 – Support conditions (expandable)
@@ -3176,7 +3218,6 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
             summary_line=step1_summary,
             details_md=step1_md,
             status=None,
-            accent="support",
         )
 
     solver_case = (
@@ -3215,7 +3256,6 @@ x = [{node_text}]\\,\\text{{m}}, \\qquad L_e = [{span_text}]\\,\\text{{m}}
             summary_line=step2a_summary,
             details_md=step2a_md,
             status=None,
-            accent="fe",
         )
 
         ex_le = float(element_lengths[0]) if element_lengths else float(L)
@@ -3241,7 +3281,6 @@ L_e^{{(example)}} = {ex_le:.3g}\\,\\text{{m}}
             summary_line=step2b_summary,
             details_md=step2b_md,
             status=None,
-            accent="fe",
         )
 
         gF = list(solver_md.get("global_F", solver_md.get("global_F_preview", [])) or [])
@@ -3259,7 +3298,6 @@ Applied loads are converted to equivalent nodal actions and assembled.
             summary_line=step2c_summary,
             details_md=step2c_md,
             status=None,
-            accent="fe",
         )
 
         rK = solver_md.get("reduced_K", solver_md.get("reduced_K_preview", [])) or []
@@ -3288,7 +3326,6 @@ K u = F, \\qquad K_r u_r = F_r
             summary_line=step2d_summary,
             details_md=step2d_md,
             status=None,
-            accent="fe",
         )
 
         ru = list(solver_md.get("reduced_u", solver_md.get("reduced_u_preview", [])) or [])
@@ -3303,7 +3340,6 @@ These solved DOFs are used to recover support actions and element-end forces.
             summary_line=step2e_summary,
             details_md=step2e_md,
             status=None,
-            accent="fe",
         )
 
         reactions_solver = dict(results_local.get("reactions", {}))
@@ -3337,7 +3373,6 @@ Recovered support actions define the final SFD/BMD response.
             summary_line=step2f_summary,
             details_md=step2f_md,
             status=None,
-            accent="fe",
         )
 
     # STEP 2 – reactions (case-by-case)
@@ -3645,7 +3680,6 @@ $R_A = {RA:.3g}\\, \\text{{kN}}$ (downward), $R_B = {RB:.3g}\\, \\text{{kN}}$ (u
             summary_line=step2_summary,
             details_md=step2_details,
             status=None,
-            accent="reaction",
         )
 
     # STEP 3 – shear function V(x)
@@ -3889,7 +3923,7 @@ The shear increases linearly from \\(-wL\\) at the fixed end to zero at the free
             uid=step3_uid,
             summary_line=step3_summary,
             details_md=step3_details,
-            status=None,
+            status=function_card_statuses.get("shear"),
             accent="shear",
         )
 
@@ -4122,7 +4156,7 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
             uid=step4_uid,
             summary_line=step4_summary,
             details_md=step4_details,
-            status=None,
+            status=function_card_statuses.get("bending"),
             accent="moment",
         )
 
