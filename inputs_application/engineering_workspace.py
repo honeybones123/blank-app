@@ -689,6 +689,18 @@ def render_inputs_design_guide_fragment_section(
     )
     if apply_requested:
         runtime.handle_pending_apply()
+        # Apply is a transaction boundary. Stop this fragment before it can
+        # render the pre-Apply publication or an interim empty result. The
+        # owning fragment rerun publishes the replacement result once.
+        apply_probe = dict(
+            st_module.session_state.get("_typed_inputs_apply_probe") or {}
+        )
+        if str(apply_probe.get("status") or "") in {
+            "dispatch_ok",
+            "rerun_required",
+        }:
+            st_module.rerun()
+            return
 
     fragment_store = services.publications
     fragment_state = fragment_store.current()

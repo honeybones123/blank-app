@@ -88,11 +88,20 @@ def execute_typed_apply(
         authoritative_payload.get("source_engineering_hash") or ""
     )
     source_binding_reason: str | None = None
+    current_input_hash = str(input_snapshot.engineering_hash or "")
+    revision_only_churn = bool(
+        candidate_source_revision is not None
+        and authoritative_source_revision is not None
+        and int(candidate_source_revision) != int(input_snapshot.revision)
+        and candidate_source_hash
+        and authoritative_source_hash
+        and candidate_source_hash == authoritative_source_hash == current_input_hash
+    )
     if candidate_source_revision is None or authoritative_source_revision is None:
         source_binding_reason = "incomplete_apply_candidate_source_identity"
-    elif int(candidate_source_revision) != int(input_snapshot.revision):
+    elif int(candidate_source_revision) != int(input_snapshot.revision) and not revision_only_churn:
         source_binding_reason = "stale_apply_candidate_source_revision"
-    elif int(authoritative_source_revision) != int(input_snapshot.revision):
+    elif int(authoritative_source_revision) != int(input_snapshot.revision) and not revision_only_churn:
         source_binding_reason = "stale_authoritative_candidate_source_revision"
     elif not candidate_source_hash or not authoritative_source_hash:
         source_binding_reason = "incomplete_apply_candidate_source_hash"

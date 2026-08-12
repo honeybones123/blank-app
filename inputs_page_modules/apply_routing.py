@@ -163,8 +163,10 @@ def handle_inputs_apply_buttons(
         )
         return
 
-    # Apply is normally invoked from the unified engineering-workspace
-    # fragment.  Refresh that scope immediately so the committed candidate,
-    # calculation, summaries, diagram and replacement publication advance as
-    # one transaction without rebuilding the page shell.
-    rerun_inputs_active_fragment(st_module)
+    # Apply is a single transaction boundary.  Re-enter the owning page once
+    # after the mutation has committed so calculation, summaries, diagram and
+    # the Design Brain all resolve the new beam snapshot together.  A scoped
+    # fragment rerun can leave the calculation region on the pre-Apply
+    # publication (the controls update while the card stays stale); the
+    # historical working V2 flow used one authoritative rerun here.
+    st_module.rerun()
