@@ -46,7 +46,6 @@ class CrackControlInput:
     shrinkage_strain: float
     bond_factor: float
     strain_distribution_factor: float
-    neutral_axis_depth_mm: float
     tension_face: str = "bottom"
 
 
@@ -63,27 +62,29 @@ class CrackControlResult:
     sigma_allow_table: float
     utilisation_table: float
     passes_table: bool
-    direct_width_applicable: bool
     fct_eff: float
     ne: float
-    eps_diff: float | None
-    sr_max: float | None
-    w_calc: float | None
-    utilisation_w: float | None
-    passes_w: bool | None
+    eps_diff: float
+    sr_max: float
+    w_calc: float
+    utilisation_w: float
+    passes_w: bool
 
-    def as_family_values(self) -> dict[str, float | bool | None]:
+    def as_family_values(self) -> dict[str, float | bool]:
         return asdict(self)
 
 
 def calculate_crack_control(values: CrackControlInput) -> CrackControlResult:
     """Calculate the AS 3600 table and direct crack-width checks."""
     _validate_finite(values)
-    tension_steel_face_distance = values.cover_mm + values.bar_diameter_mm / 2.0
-    d_eff = values.depth_mm - tension_steel_face_distance
+    d_eff = (
+        values.depth_mm - values.cover_mm - values.bar_diameter_mm / 2.0
+        if values.tension_face == "bottom"
+        else values.cover_mm + values.bar_diameter_mm / 2.0
+    )
     height_eff = min(
-        2.5 * max(values.depth_mm - d_eff, 0.0),
-        max(values.depth_mm - values.neutral_axis_depth_mm, 0.0) / 3.0,
+        2.5 * values.cover_mm,
+        max(values.depth_mm - d_eff, 0.0),
         values.depth_mm / 2.0,
     )
     effective_area = values.width_mm * max(height_eff, 1.0)
@@ -94,11 +95,7 @@ def calculate_crack_control(values: CrackControlInput) -> CrackControlResult:
     sigma_strength_limit = 0.8 * values.steel_strength_mpa
     sigma_allow = min(sigma_combined, sigma_strength_limit)
     table_util = values.outer_steel_stress_mpa / sigma_allow if sigma_allow > 0 else 0.0
-    # Clause 8.6.2.3 uses mean axial tensile strength. Clause 3.1.1.3 gives
-    # characteristic f'ct = 0.36 sqrt(f'c), with mean value 1.4 times that.
-    tensile_strength = 1.4 * 0.36 * math.sqrt(
-        max(values.concrete_strength_mpa, 1.0)
-    )
+    tensile_strength = 0.6 * math.sqrt(max(values.concrete_strength_mpa, 1.0))
     modular_ratio = (
         (1.0 + values.creep_coefficient)
         * values.steel_modulus_mpa
@@ -106,29 +103,10 @@ def calculate_crack_control(values: CrackControlInput) -> CrackControlResult:
         if values.concrete_modulus_mpa > 0
         else 0.0
     )
-    direct_width_applicable = values.bar_spacing_mm <= 5.0 * (
-        values.cover_mm + 0.5 * values.bar_diameter_mm
-    )
-    strain_difference = (
-        _strain_difference(values, tensile_strength, ratio, modular_ratio)
-        if direct_width_applicable
-        else None
-    )
-    crack_spacing = (
-        _maximum_crack_spacing(values, ratio)
-        if direct_width_applicable
-        else None
-    )
-    crack_width = (
-        crack_spacing * strain_difference
-        if crack_spacing is not None and strain_difference is not None
-        else None
-    )
-    width_util = (
-        crack_width / values.crack_width_limit_mm
-        if crack_width is not None and values.crack_width_limit_mm > 0
-        else None
-    )
+    strain_difference = _strain_difference(values, tensile_strength, ratio, modular_ratio)
+    crack_spacing = _maximum_crack_spacing(values, ratio)
+    crack_width = crack_spacing * strain_difference
+    width_util = crack_width / values.crack_width_limit_mm if values.crack_width_limit_mm > 0 else 0.0
     return CrackControlResult(
         d_eff=d_eff,
         height_eff=height_eff,
@@ -141,14 +119,13 @@ def calculate_crack_control(values: CrackControlInput) -> CrackControlResult:
         sigma_allow_table=sigma_allow,
         utilisation_table=table_util,
         passes_table=table_util <= 1.0,
-        direct_width_applicable=direct_width_applicable,
         fct_eff=tensile_strength,
         ne=modular_ratio,
         eps_diff=strain_difference,
         sr_max=crack_spacing,
         w_calc=crack_width,
         utilisation_w=width_util,
-        passes_w=width_util <= 1.0 if width_util is not None else None,
+        passes_w=width_util <= 1.0,
     )
 
 

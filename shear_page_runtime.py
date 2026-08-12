@@ -8,6 +8,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 
 from state_and_helpers import (
     get_param,
@@ -58,7 +59,6 @@ from shear_checks_helpers import (
     build_shear_check_rows_from_state,
 )
 from calculations.shear import (
-    build_shear_summary_rows_with_overrides,
     cotangent as cot,
     duct_area_mm2,
     effective_shear_depth_mm,
@@ -332,7 +332,7 @@ def _render_animated_plotly_figure(
     compact_top: bool = False,
 ) -> None:
     # Checks 5, 7 and 9 use this helper for a consistent visual frame, but
-    # their figures are static. Sending static figures through an HTML iframe
+    # their figures are static.  Sending static figures through components.html
     # creates a separate iframe and loads a complete Plotly runtime for each
     # chart, including charts inside collapsed/hidden sections.  Keep the
     # existing HTML path for genuinely animated figures, while using the
@@ -1029,7 +1029,7 @@ def _safe_step_diagram(step_no: int):
                     key=f"shear_step_{step_no}_diagram",
                     title=caption or f"Shear step {step_no} diagram",
                     caption=caption,
-                    width="stretch",
+                    use_container_width=True,
                 )
             else:
                 st.info(f"💡 Add diagram for Step {step_no} at `{path}`.")
@@ -1041,7 +1041,7 @@ def _safe_step_diagram(step_no: int):
                     key=f"shear_step_{step_no}_theta_diagram",
                     title="Strut angle",
                     caption="Strut angle $\\theta_v$",
-                    width="stretch",
+                    use_container_width=True,
                 )
             else:
                 st.info(f"💡 Add theta diagram at `{theta_path}`.")
@@ -1055,7 +1055,7 @@ def _safe_step_diagram(step_no: int):
                 key=f"shear_step_{step_no}_diagram",
                 title=caption or "Shear step diagram",
                 caption=caption,
-                width="stretch",
+                use_container_width=True,
             )
         else:
             st.info(f"💡 Add diagram for Step 9 at `{path}`.")
@@ -1067,7 +1067,7 @@ def _safe_step_diagram(step_no: int):
                 key=f"shear_step_{step_no}_vumax2_diagram",
                 title="Strut-and-tie behaviour",
                 caption="Strut-and-tie / concrete compression strut behaviour in deep beams",
-                width="stretch",
+                use_container_width=True,
             )
         else:
             st.info(f"💡 Add Step 9 second diagram at `{vumax2_path}`.")
@@ -1080,7 +1080,7 @@ def _safe_step_diagram(step_no: int):
             key=f"shear_step_{step_no}_diagram",
             title=caption or f"Shear step {step_no} diagram",
             caption=caption,
-            width="stretch",
+            use_container_width=True,
         )
     else:
         st.info(f"💡 Add diagram for Step {step_no} at `{path}`.")
@@ -1461,7 +1461,7 @@ def _fmt(val, decimals=1):
 #  SHEAR – DRAWINGS + INSIGHT BLOCKS
 # ------------------------------------------------------------
 
-def _safe_image(path: str, caption: str | None = None, width: int | str | None = None):
+def _safe_image(path: str, caption: str | None = None, width: int | None = None, use_container_width: bool | None = None):
     """Tiny helper so missing images don't break the app."""
     candidate_paths = [path]
     if not os.path.isabs(path):
@@ -1482,13 +1482,21 @@ def _safe_image(path: str, caption: str | None = None, width: int | str | None =
                 caption=caption,
                 width=width,
             )
+        elif use_container_width is not None:
+            render_image_diagram(
+                resolved_path,
+                key=image_key,
+                title=caption or "Shear reference diagram",
+                caption=caption,
+                use_container_width=use_container_width,
+            )
         else:
             render_image_diagram(
                 resolved_path,
                 key=image_key,
                 title=caption or "Shear reference diagram",
                 caption=caption,
-                width="stretch",
+                use_container_width=True,
             )
     except Exception:
         st.info(f"Unable to open image `{path}` right now.")
@@ -1516,7 +1524,7 @@ def render_shear_mcft_block():
 
         # Info button
         with info_col:
-            with info_i_button(width="stretch"):
+            with info_i_button(use_container_width=True):
                 calcbox(
                     r"""
 **Concrete contribution $V_{uc}$ in AS 3600**
@@ -1866,6 +1874,7 @@ def compute_shear_results(publish: bool = True) -> dict:
 #  MAIN PAGE RENDER FUNCTION
 # ------------------------------------------------------------
 def render_shear():
+    page_title_placeholder = st.container()
     _shear_visualisation_section.bind_runtime(globals())
     render_timing_mark("shear_page.runtime.start")
     # Handle cross-page navigation from Inputs page
@@ -1939,7 +1948,7 @@ In short:
                 st.markdown("</div>", unsafe_allow_html=True)
 
             with info_col:
-                with info_i_button(width="stretch"):
+                with info_i_button(use_container_width=True):
                     calcbox(
                         r"""
 **What is shear in a beam?**
@@ -1989,7 +1998,11 @@ In short:
 """
                     )
 
-    render_result_page_title("Shear & Torsion")
+    with page_title_placeholder:
+        # This page contributes one additional shell row before its content;
+        # compensate for that row while keeping the same visible gap as the
+        # other result-page headings.
+        render_result_page_title("Shear & Torsion", top_margin_rem=-0.9)
 
     debug_mode = st.sidebar.checkbox(
         "Debug session state",
@@ -2121,7 +2134,6 @@ In short:
                     st.session_state["inputs_load_Mstar_neg_proxy"] = st.session_state.get("load_Mstar_neg_proxy", 0.0)
                     recalc_derived_values()
                     update_results()
-                    st.rerun()
                 else:
                     st.session_state["loads_edit_mode"] = new_mode
                 selected_mode = st.session_state.get("loads_edit_mode", "ULS")
@@ -4863,14 +4875,16 @@ Spacing is varied along the span based on shear demand and checked against minim
     # For now, we'll use the values computed in the tabs (they should be in scope)
     shear_pack = build_shear_check_rows_from_state(st.session_state)
     rows_summary = build_shear_legacy_summary_rows(shear_pack.get("rows") or [])
-    summary_values = build_shear_summary_rows_with_overrides(rows_summary, shear_results, phi)
-    rows_summary = summary_values["rows_summary"]
-    summary_util = summary_values["summary_util"]
+    summary_util_raw = shear_pack.get("summary_util")
+    try:
+        summary_util = float(summary_util_raw)
+    except (TypeError, ValueError):
+        summary_util = math.nan
 
     # Publish key shear results for Inputs summary
     shear_util = summary_util
     update_results(
-        phi_Vu_cap=float(shear_results.phi_Vu or 0.0),
+        phi_Vu_cap=float(shear_pack.get("summary_phiVu_kN") or 0.0),
         Vu_utilisation=float(shear_util) if shear_util is not None and not math.isnan(shear_util) else 0.0,
     )
 

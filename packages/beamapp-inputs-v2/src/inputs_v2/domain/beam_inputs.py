@@ -14,6 +14,13 @@ class LayoutMode(StrEnum):
     SPACING = "Spacing"
 
 
+class KvMethod(StrEnum):
+    """Authoritative AS 3600 shear-strain method selected for the beam."""
+
+    SIMPLIFIED = "simplified"
+    GENERAL = "general"
+
+
 ALLOWED_BAR_DIAMETERS = (10, 12, 16, 20, 24, 28, 32, 36, 40)
 
 
@@ -46,6 +53,13 @@ class ShearReinforcement:
     diameter_mm: int = 0
     legs: int = 0
     spacing_mm: float = 200.0
+    kv_method: KvMethod = KvMethod.SIMPLIFIED
+
+    @property
+    def use_general_kv(self) -> bool:
+        """Compatibility projection for the numerical component boundary."""
+
+        return self.kv_method is KvMethod.GENERAL
 
     def validated(self) -> "ShearReinforcement":
         if self.diameter_mm != 0 and self.diameter_mm not in ALLOWED_BAR_DIAMETERS:
@@ -56,6 +70,8 @@ class ShearReinforcement:
             raise ValueError("Shear links must be fully off or specify diameter and legs.")
         if self.spacing_mm < 50.0 or self.spacing_mm > 600.0:
             raise ValueError("Shear link spacing must be between 50 and 600 mm.")
+        if not isinstance(self.kv_method, KvMethod):
+            raise ValueError("Shear k_v method must be simplified or general.")
         return self
 
 
@@ -67,12 +83,8 @@ class MaterialInputs:
     def validated(self) -> "MaterialInputs":
         if self.concrete_strength_mpa not in (20, 25, 32, 40, 50, 65, 80, 100):
             raise ValueError("Concrete strength is not supported.")
-        if self.reinforcement_strength_mpa != 500:
-            raise ValueError(
-                "Only 500 MPa reinforcement is supported; 400 MPa lacks an "
-                "approved material basis and 600 MPa requires product properties "
-                "that are not modeled."
-            )
+        if self.reinforcement_strength_mpa not in (400, 500, 600):
+            raise ValueError("Reinforcement strength is not supported.")
         return self
 
 
@@ -82,6 +94,7 @@ class ActionInputs:
     torsion_knm: float = 0.0
     shear_force_kn: float = 0.0
     axial_force_kn: float = 0.0
+    applied_prestress_kn: float = 0.0
 
     def validated(self) -> "ActionInputs":
         if self.bending_moment_knm < 0 or self.bending_moment_knm > 100000:
@@ -92,6 +105,8 @@ class ActionInputs:
             raise ValueError("Shear force must be between 0 and 10000 kN.")
         if self.axial_force_kn < -100000 or self.axial_force_kn > 100000:
             raise ValueError("Axial force must be between -100000 and 100000 kN.")
+        if self.applied_prestress_kn < 0 or self.applied_prestress_kn > 100000:
+            raise ValueError("Applied prestress must be between 0 and 100000 kN.")
         return self
 
 
@@ -112,10 +127,39 @@ class TimeDependentInputs:
     shrinkage_time_days: float = 365.0
     creep_time_days: float = 365.0
     age_at_loading_days: float = 28.0
+    exposed_faces: str = "Beam – three faces exposed"
+    creep_environment: str = "Temperate inland environment"
+    shrinkage_environment: str = "Temperate inland environment"
+    stress_ratio: float = 0.0
+    sustained_concrete_stress_mpa: float | None = None
+    concrete_modulus_mpa: float = 30000.0
 
     def validated(self) -> "TimeDependentInputs":
         if min(self.shrinkage_time_days, self.creep_time_days, self.age_at_loading_days) < 0:
             raise ValueError("Time-dependent inputs cannot be negative.")
+        if self.exposed_faces not in {
+            "Slab – one face exposed",
+            "Slab – two faces exposed",
+            "Beam – three faces exposed",
+            "Beam – four faces exposed",
+        }:
+            raise ValueError("Exposed-face option is not supported.")
+        allowed_environments = {
+            "Arid environment",
+            "Interior environment",
+            "Temperate inland environment",
+            "Tropical / near-coastal / coastal environment",
+        }
+        if self.creep_environment not in allowed_environments:
+            raise ValueError("Creep environment is not supported.")
+        if self.shrinkage_environment not in allowed_environments:
+            raise ValueError("Shrinkage environment is not supported.")
+        if self.stress_ratio < 0.0:
+            raise ValueError("Sustained concrete stress ratio cannot be negative.")
+        if self.sustained_concrete_stress_mpa is not None and self.sustained_concrete_stress_mpa < 0.0:
+            raise ValueError("Sustained concrete stress cannot be negative.")
+        if self.concrete_modulus_mpa <= 0.0:
+            raise ValueError("Concrete modulus must be positive.")
         return self
 
 
@@ -196,6 +240,11 @@ class BeamInputs:
     depth_mm: float = 300.0
     span_mm: float = 2000.0
     section_shape: str = "RECT"
+    flange_width_mm: float | None = None
+    flange_thickness_mm: float | None = None
+    web_width_mm: float | None = None
+    clause_815_analysis_verified: bool = False
+    compression_reinforcement_restrained: bool = False
     width_locked: bool = False
     depth_locked: bool = False
     bottom: LongitudinalReinforcement = LongitudinalReinforcement()
@@ -221,6 +270,18 @@ class BeamInputs:
             raise ValueError("Beam span must be between 500 and 100000 mm.")
         if self.section_shape not in {"RECT", "T", "I"}:
             raise ValueError("Section shape is not supported.")
+        if self.section_shape in {"T", "I"} and any(
+            value is not None
+            for value in (self.flange_width_mm, self.flange_thickness_mm, self.web_width_mm)
+        ):
+            if self.flange_width_mm is None or self.flange_thickness_mm is None or self.web_width_mm is None:
+                raise ValueError("Flanged sections require flange width, flange thickness and web width.")
+            if not (self.flange_width_mm >= self.web_width_mm > 0.0):
+                raise ValueError("Flange width must be at least the web width.")
+            if not (0.0 < self.flange_thickness_mm < self.depth_mm):
+                raise ValueError("Flange thickness must be within the section depth.")
+            if self.section_shape == "I" and 2.0 * self.flange_thickness_mm >= self.depth_mm:
+                raise ValueError("I-section flanges must leave a positive web depth.")
         self.bottom.validated()
         self.top.validated()
         self.shear.validated()
@@ -290,6 +351,11 @@ class BeamInputs:
             "depth_mm": self.depth_mm,
             "span_mm": self.span_mm,
             "section_shape": self.section_shape,
+            "flange_width_mm": self.flange_width_mm,
+            "flange_thickness_mm": self.flange_thickness_mm,
+            "web_width_mm": self.web_width_mm,
+            "clause_815_analysis_verified": self.clause_815_analysis_verified,
+            "compression_reinforcement_restrained": self.compression_reinforcement_restrained,
             "width_locked": self.width_locked,
             "depth_locked": self.depth_locked,
             "bottom": {
@@ -308,7 +374,8 @@ class BeamInputs:
                     "rows": [
                         {"row_index": row.row_index, "bar_count": row.bar_count,
                          "clear_spacing_mm": row.clear_spacing_mm,
-                         "centre_from_tension_face_mm": row.centre_from_tension_face_mm}
+                         "centre_from_tension_face_mm": row.centre_from_tension_face_mm,
+                         "bar_diameter_mm": row.bar_diameter_mm}
                         for row in self.bottom_arrangement.rows
                     ],
                 },
@@ -324,6 +391,7 @@ class BeamInputs:
                 "diameter_mm": self.shear.diameter_mm,
                 "legs": self.shear.legs,
                 "spacing_mm": self.shear.spacing_mm,
+                "kv_method": self.shear.kv_method.value,
             },
             "materials": {
                 "concrete_strength_mpa": self.materials.concrete_strength_mpa,
@@ -334,6 +402,7 @@ class BeamInputs:
                 "torsion_knm": self.actions.torsion_knm,
                 "shear_force_kn": self.actions.shear_force_kn,
                 "axial_force_kn": self.actions.axial_force_kn,
+                "applied_prestress_kn": self.actions.applied_prestress_kn,
             },
             "supports": {
                 "left_type": self.supports.left_type,
@@ -343,6 +412,12 @@ class BeamInputs:
                 "shrinkage_time_days": self.time_dependent.shrinkage_time_days,
                 "creep_time_days": self.time_dependent.creep_time_days,
                 "age_at_loading_days": self.time_dependent.age_at_loading_days,
+                "exposed_faces": self.time_dependent.exposed_faces,
+                "creep_environment": self.time_dependent.creep_environment,
+                "shrinkage_environment": self.time_dependent.shrinkage_environment,
+                "stress_ratio": self.time_dependent.stress_ratio,
+                "sustained_concrete_stress_mpa": self.time_dependent.sustained_concrete_stress_mpa,
+                "concrete_modulus_mpa": self.time_dependent.concrete_modulus_mpa,
             },
             "voids": {"ducts": self.voids.ducts, "diameter_mm": self.voids.diameter_mm},
             "deflection": {

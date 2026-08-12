@@ -20,8 +20,6 @@ from typing import Any
 
 import streamlit as st
 
-from ui.streamlit_iframe import render_trusted_iframe
-
 import design_guide_page
 
 from inputs_application.policy_constants import DESIGN_GUIDE_LAST_APPLY_ROUTE_KEY
@@ -143,6 +141,7 @@ from inputs_page_modules.summaries import render_inputs_summary_expanders_and_ta
 
 from inputs_page_modules.summaries.render_coordinators import render_inputs_summary_container_current as render_inputs_summary_container_current_module
 
+from inputs_page_modules.summaries.display_state import render_inputs_summary_display_state as render_inputs_summary_display_state_module
 
 from inputs_application.v2_design_brain_ui_boundary import should_render_design_guide_slot_from_publication_eligibility
 
@@ -377,8 +376,10 @@ def _inputs_inject_scroll_to_design_actions() -> None:
     """Scroll main view to the Design Actions anchor (one-shot)."""
     if not st.session_state.pop(_INPUTS_SCROLL_DESIGN_ACTIONS_FLAG, False):
         return
+    import streamlit.components.v1 as components
+
     aid = json.dumps(_INPUTS_DESIGN_ACTIONS_ANCHOR_ID)
-    render_trusted_iframe(st,
+    components.html(
         f"""
 <script>
 (function() {{
@@ -399,7 +400,6 @@ def _inputs_inject_scroll_to_design_actions() -> None:
 </script>
 """,
         height=0,
-        scrolling=False,
     )
 
 def render_inputs_post_summary_actions_and_dev_audit_current_coordinator(

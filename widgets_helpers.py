@@ -11,11 +11,10 @@ try:
     log_path = _debug_log_path()
 except Exception:
     pass
+import streamlit.components.v1 as components
 import re
 import html
 from typing import Any
-
-from ui.streamlit_iframe import render_trusted_iframe
 
 from state_runtime_gateway import TAB_KEYS, resolve_widget_key, NONZERO_REQUIRED_SHARED_KEYS, zero_allowed, _audit, mark_user_edit, set_shared
 
@@ -211,7 +210,7 @@ def _render_plotly_doubleclick_fullscreen_hook(anchor_id: str) -> None:
 }})();
 </script>
 """
-    render_trusted_iframe(st, script, height=0, scrolling=False)
+    components.html(script, height=0, scrolling=False)
 
 
 def _plotly_fullscreen_figure(fig: Any, fullscreen_height: int) -> Any:
@@ -308,7 +307,7 @@ def render_pyplot_diagram(
     center: bool = True,
     allow_fullscreen: bool = True,
     clear_figure: bool | None = None,
-    width: Any | None = None,
+    use_container_width: bool | None = None,
     **pyplot_kwargs: Any,
 ) -> None:
     """Render a Matplotlib diagram with shared centering and an optional full-screen view."""
@@ -328,7 +327,7 @@ def render_pyplot_diagram(
                 st.pyplot(
                     fig,
                     clear_figure=False,
-                    width="stretch",
+                    use_container_width=True,
                     **pyplot_kwargs,
                 )
 
@@ -339,8 +338,8 @@ def render_pyplot_diagram(
         kwargs = dict(pyplot_kwargs)
         if clear_figure is not None:
             kwargs["clear_figure"] = clear_figure
-        if width is not None:
-            kwargs["width"] = width
+        if use_container_width is not None:
+            kwargs["use_container_width"] = use_container_width
         st.pyplot(fig, **kwargs)
 
 
@@ -352,7 +351,8 @@ def render_image_diagram(
     caption: str | None = None,
     center: bool = True,
     allow_fullscreen: bool = True,
-    width: Any | None = None,
+    width: int | None = None,
+    use_container_width: bool | None = None,
     **image_kwargs: Any,
 ) -> None:
     """Render a static diagram image with shared centering and an optional full-screen view."""
@@ -372,7 +372,7 @@ def render_image_diagram(
                 st.image(
                     image,
                     caption=caption,
-                    width="stretch",
+                    use_container_width=True,
                     **image_kwargs,
                 )
 
@@ -383,6 +383,8 @@ def render_image_diagram(
         kwargs = dict(image_kwargs)
         if width is not None:
             kwargs["width"] = width
+        elif use_container_width is not None:
+            kwargs["use_container_width"] = use_container_width
         st.image(image, caption=caption, **kwargs)
 
 
@@ -411,13 +413,13 @@ def render_html_diagram(
         if fullscreen_clicked:
             @st.dialog(title, width="large")
             def _fullscreen_dialog() -> None:
-                render_trusted_iframe(st, html_body, height=fullscreen_height, scrolling=scrolling)
+                components.html(html_body, height=fullscreen_height, scrolling=scrolling)
 
             _fullscreen_dialog()
 
     html_host = st.container(horizontal_alignment="center" if center else "left")
     with html_host:
-        render_trusted_iframe(st, html_body, height=height, scrolling=scrolling)
+        components.html(html_body, height=height, scrolling=scrolling)
 
 
 @contextmanager
@@ -592,7 +594,12 @@ def _requested_browser_recipe_name() -> str:
     try:
         requested = st.query_params.get("browser_recipe")
     except Exception:
-        requested = None
+        get_query_params = getattr(st, "experimental_get_query_params", None)
+        if callable(get_query_params):
+            try:
+                requested = (get_query_params() or {}).get("browser_recipe")
+            except Exception:
+                requested = None
     if isinstance(requested, (list, tuple)):
         requested = requested[0] if requested else None
     return str(requested or os.environ.get("CODEX_BROWSER_REPLAY_RECIPE") or "").strip()
@@ -838,13 +845,6 @@ def apply_global_widget_css():
             opacity: 1;
         }
 
-        @media (max-width: 1200px) {
-            .sb-tooltip-bubble {
-                left: auto;
-                right: 0;
-            }
-        }
-
         /* --- Keep widgets from stretching across the page --- */
         :root {
             --sb-widget-max: 240px;   /* tweak 240–320 to taste */
@@ -926,7 +926,7 @@ def apply_result_page_css():
     font-size: 2.35rem;
     font-weight: 700;
     line-height: 1.05;
-    margin-top: -0.55rem;
+    margin-top: -0.2rem;
     margin-bottom: 0.08rem;
 }
 
@@ -1025,10 +1025,15 @@ def render_section_title(title: str) -> None:
     )
 
 
-def render_result_page_title(title: str) -> None:
+def render_result_page_title(title: str, *, top_margin_rem: float = -0.2) -> None:
     """Render a tightly spaced main title for result/check pages."""
     st.markdown(
-        f"<div class='result-page-title'>{html.escape(str(title))}</div>",
+        (
+            "<div class='result-page-title' "
+        "style='font-size:2.35rem;font-weight:700;line-height:1.05;"
+        f"margin-top:{top_margin_rem:g}rem;margin-bottom:0.08rem'>"
+            f"{html.escape(str(title))}</div>"
+        ),
         unsafe_allow_html=True,
     )
 
@@ -2108,7 +2113,7 @@ def show_reo_message(msg_key: str, layer: str = "", s_min: float = None):
         st.info(msg)
 
 
-def info_i_button(content=None, help_text=None, key=None, width="content"):
+def info_i_button(content=None, help_text=None, key=None, use_container_width=False):
     """
     Render a small blue "i" icon info button that opens a popover.
     
@@ -2116,7 +2121,7 @@ def info_i_button(content=None, help_text=None, key=None, width="content"):
         content: Callable function that renders content inside the popover, or None if using help_text
         help_text: Optional help text (alternative to content function)
         key: Optional unique key for the popover (not supported by st.popover, ignored)
-        width: Streamlit popover width (``"content"`` or ``"stretch"``)
+        use_container_width: Whether to use container width (for content function)
     
     Returns:
         The popover context manager
@@ -2129,7 +2134,10 @@ def info_i_button(content=None, help_text=None, key=None, width="content"):
     if help_text:
         return st.popover(trigger_text, help=help_text)
     else:
-        return st.popover(trigger_text, width=width)
+        kwargs = {}
+        if use_container_width:
+            kwargs["use_container_width"] = use_container_width
+        return st.popover(trigger_text, **kwargs)
 
 
 def render_calc_section_heading(text: str) -> None:
@@ -2629,7 +2637,7 @@ def clickable_calcbox(
     </script>
     """
     
-    render_trusted_iframe(st, full_html, height=expanded_height, scrolling=False)
+    components.html(full_html, height=expanded_height, scrolling=False)
 
 
 # ============================================================

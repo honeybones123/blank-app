@@ -474,6 +474,7 @@ def render_inline_number_row(
         return st.number_input(
             label="",
             key=key,
+            value=st.session_state.get(key, value),
             min_value=min_value,
             max_value=max_value,
             step=step,
@@ -527,3 +528,4 @@ def render_inline_select_row(
             label_visibility="collapsed",
             on_change=on_change_callback,
         )
+

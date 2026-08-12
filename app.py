@@ -97,6 +97,14 @@ def _apply_sharp_embed_css() -> None:
     padding-bottom: 2rem !important;
   }
 
+  @media (max-width: 1100px) {
+    .stApp [data-testid="stMainBlockContainer"],
+    .stApp .block-container {
+      padding-right: 1.5rem !important;
+      padding-left: 1.5rem !important;
+    }
+  }
+
   .stApp h1 {
     font-size: 2rem !important;
     line-height: 1.15 !important;
@@ -140,38 +148,13 @@ def _apply_sharp_embed_css() -> None:
     padding-left: 1rem !important;
     padding-right: 1rem !important;
   }
-
-  /* Phone-only ergonomics.  Keep every desktop declaration above unchanged;
-     this boundary is also used by the responsive verification suite. */
-  @media (max-width: 760px) {
-    .stApp [data-testid="stMainBlockContainer"],
-    .stApp .block-container {
-      padding-left: 0.85rem !important;
-      padding-right: 0.85rem !important;
-    }
-
-    .stApp button,
-    .stApp .stButton button,
-    .stApp .stDownloadButton button,
-    .stApp div[data-baseweb="select"] > div,
-    .stApp input,
-    .stApp textarea {
-      min-height: 44px !important;
-    }
-
-    /* The production app sidebar contains developer controls only.  Removing
-       its collapsed handle on phones prevents a stray chevron overlapping the
-       project header while leaving the desktop sidebar exactly as-is. */
-    section[data-testid="stSidebar"],
-    button[data-testid="stExpandSidebarButton"] {
-      display: none !important;
-    }
-  }
 </style>
 """,
         unsafe_allow_html=True,
     )
 
+
+_apply_sharp_embed_css()
 
 from widgets_helpers import apply_global_widget_css, apply_calcbox_css, info_i_button
 from state_and_helpers import hc_try
@@ -231,8 +214,8 @@ import inputs_page
 import start_page
 from application.opening_page_preferences import (
     load_opening_page_preference,
-    render_guest_preference_bootstrap,
 )
+from ui.opening_page_preference_bridge import render_guest_preference_bootstrap
 from inputs_page_modules.session.hydration_trace import inputs_hydration_trace_log
 from inputs_page_modules.session.widget_cache_clear import clear_inputs_widget_cache_for_shared_updates
 from inputs_page_modules.session.shear_normalization import run_inputs_pre_hydrate_shear_normalization
@@ -493,11 +476,25 @@ def _browser_recipe_action_already_applied() -> bool:
 
 
 def _get_query_param_scalar(name: str):
+    values = []
     try:
         value = st.query_params.get(name)
+        if isinstance(value, list):
+            values.extend(value)
+        elif value is not None:
+            values.append(value)
     except Exception:
-        value = None
-    values = value if isinstance(value, list) else [value]
+        pass
+    try:
+        get_query_params = getattr(st, "experimental_get_query_params", None)
+        if callable(get_query_params):
+            value = (get_query_params() or {}).get(name)
+            if isinstance(value, list):
+                values.extend(value)
+            elif value is not None:
+                values.append(value)
+    except Exception:
+        pass
     for value in values:
         text = str(value or "").strip()
         if text:
@@ -519,6 +516,12 @@ def _browser_query_param_probe() -> dict:
         probe["query_params"] = dict(st.query_params)
     except Exception as exc:
         probe["query_params_error"] = f"{type(exc).__name__}: {exc}"
+    try:
+        get_query_params = getattr(st, "experimental_get_query_params", None)
+        if callable(get_query_params):
+            probe["experimental_query_params"] = get_query_params()
+    except Exception as exc:
+        probe["experimental_query_params_error"] = f"{type(exc).__name__}: {exc}"
     return probe
 
 
@@ -5135,17 +5138,84 @@ def _render_crack_page():
 def _render_deflection_page():
     return _render_lazy_page("deflection", "render_deflection")
 
+
+_GENERAL_ENGINEERING_RESULT_PAGES = frozenset(
+    {"bending", "shear", "creep", "shrinkage", "crack", "deflection"}
+)
+
+
+def _ensure_general_page_engineering_publication(selected_slug: str) -> None:
+    """Publish the current beam's V2 calculation before result-page render.
+
+    This is an application-shell coordination step, not page-local calculation
+    authority.  The detailed pages remain read-only consumers of one shared,
+    revision-matched V2 result and never fall back to their historical local
+    summary calculators.
+    """
+
+    slug = str(selected_slug or "").strip().lower()
+    if slug not in _GENERAL_ENGINEERING_RESULT_PAGES:
+        return
+    from inputs_application.page_runtime import refresh_inputs_engineering_result
+
+    result = refresh_inputs_engineering_result()
+    st.session_state["_general_page_engineering_publication_probe"] = {
+        "page": slug,
+        "engineering_hash": getattr(result, "engineering_hash", None),
+        "source": "app.general_page_engineering_publication",
+    }
+
+
+# Page-local controls must rerender only their result workspace.  Navigation,
+# project selection and authentication remain shell-owned app transactions.
+# Inputs owns its own engineering fragment and Load Analysis is already
+# fragment-scoped at its page entry point, so only the remaining general pages
+# need these stable wrappers.
+@st.fragment
+def _render_start_page_fragment():
+    return _render_start_page()
+
+
+@st.fragment
+def _render_bending_page_fragment():
+    return _render_bending_page()
+
+
+@st.fragment
+def _render_shear_page_fragment():
+    return _render_shear_page()
+
+
+@st.fragment
+def _render_creep_page_fragment():
+    return _render_creep_page()
+
+
+@st.fragment
+def _render_shrinkage_page_fragment():
+    return _render_shrinkage_page()
+
+
+@st.fragment
+def _render_crack_page_fragment():
+    return _render_crack_page()
+
+
+@st.fragment
+def _render_deflection_page_fragment():
+    return _render_deflection_page()
+
 # ---- page registry ----
 PAGES = {
-    "start": ("Start", _render_start_page),
+    "start": ("Start", _render_start_page_fragment),
     "inputs": ("Beam Inputs", inputs_page.render_inputs),
     "design": ("Load Analysis", _render_design_page),
-    "bending": ("Bending", _render_bending_page),
-    "shear": ("Shear", _render_shear_page),
-    "creep": ("Creep", _render_creep_page),
-    "shrinkage": ("Shrinkage", _render_shrinkage_page),
-    "crack": ("Crack Control", _render_crack_page),
-    "deflection": ("Deflection", _render_deflection_page),
+    "bending": ("Bending", _render_bending_page_fragment),
+    "shear": ("Shear", _render_shear_page_fragment),
+    "creep": ("Creep", _render_creep_page_fragment),
+    "shrinkage": ("Shrinkage", _render_shrinkage_page_fragment),
+    "crack": ("Crack Control", _render_crack_page_fragment),
+    "deflection": ("Deflection", _render_deflection_page_fragment),
 }
 
 SLUGS = list(PAGES.keys())
@@ -5183,6 +5253,98 @@ def _get_user_id() -> str:
     return get_user_id_from_token()
 
 
+@st.fragment
+def _render_header_actions(
+    *,
+    user_id: str,
+    project_id: str | None,
+    module: str,
+) -> None:
+    """Render report and persistence controls without remounting the page."""
+    st.session_state.setdefault("report_mode", "standard")
+    report_mode = str(st.session_state.get("report_mode", "standard")).strip().lower()
+    if report_mode not in {"standard", "detailed"}:
+        report_mode = "standard"
+        st.session_state["report_mode"] = report_mode
+
+    c_save, c_pdf, c_pdf_opts, _ = st.columns([2.4, 3.8, 0.5, 0.25], gap="small")
+
+    with c_save:
+        st.markdown(
+            '<span class="beam-header-action-marker" aria-hidden="true"></span>',
+            unsafe_allow_html=True,
+        )
+        if st.button("💾 Save", type="primary", use_container_width=True):
+            if not user_id:
+                st.error("You must be logged in to save projects.")
+            elif project_id:
+                try:
+                    payload = export_state_for_saving()
+                    update_project(
+                        project_id=project_id,
+                        user_id=user_id,
+                        payload=payload,
+                        meta={"module": module},
+                    )
+                    st.toast("Saved", icon="✅")
+                except Exception as exc:
+                    st.error(f"Save failed: {exc}")
+            else:
+                # Opening the project-creation shell is an intentional app-level
+                # transition; it is not a page-local engineering interaction.
+                st.session_state["_show_save_modal"] = True
+                st.rerun(scope="app")
+
+    with c_pdf:
+        from reporting.example_integration import render_pdf_button
+
+        st.markdown(
+            '<span class="beam-header-action-marker" aria-hidden="true"></span>',
+            unsafe_allow_html=True,
+        )
+        render_pdf_button(
+            detail_level=report_mode,
+            section_figure_factory=inputs_page.make_summary_cross_section_figure,
+            beam_figure_factory=inputs_page.make_beam_3d_figure,
+        )
+
+    with c_pdf_opts:
+        report_container = (
+            info_i_button(help_text="Report options")
+            if hasattr(st, "popover")
+            else st.expander("i", expanded=False)
+        )
+        with report_container:
+            st.selectbox(
+                "Report mode",
+                options=["standard", "detailed"],
+                key="report_mode",
+                format_func=lambda mode: (
+                    "Standard Report" if mode == "standard" else "Detailed Report"
+                ),
+            )
+            st.text_input(
+                "Company name (optional)",
+                key="report_company_name",
+                placeholder="Your company name",
+            )
+            report_logo = st.file_uploader(
+                "Upload company logo (optional)",
+                type=["png", "jpg", "jpeg"],
+                key="report_company_logo_upload",
+                help="Used for the current report session only. Not saved to the project.",
+            )
+            if report_logo is not None:
+                st.session_state["report_company_logo_bytes"] = report_logo.getvalue()
+                st.session_state["report_company_logo_name"] = report_logo.name
+                st.session_state["report_company_logo_type"] = report_logo.type
+                st.image(report_logo, width=120)
+            else:
+                st.session_state["report_company_logo_bytes"] = None
+                st.session_state["report_company_logo_name"] = None
+                st.session_state["report_company_logo_type"] = None
+
+
 def _render_create_project_form(user_id: str, module: str):
     name = st.text_input(
         "Project name",
@@ -5191,11 +5353,11 @@ def _render_create_project_form(user_id: str, module: str):
     st.caption("This creates a project so you can open it later from your dashboard.")
     cA, cB = st.columns([1, 1])
     with cA:
-        if st.button("Cancel", width="stretch"):
+        if st.button("Cancel", use_container_width=True):
             st.session_state["_show_save_modal"] = False
             st.rerun()
     with cB:
-        if st.button("Create & Save", type="primary", width="stretch"):
+        if st.button("Create & Save", type="primary", use_container_width=True):
             if not user_id:
                 st.error("You must be logged in to save projects.")
                 return
@@ -5226,10 +5388,6 @@ def _render_create_project_form(user_id: str, module: str):
 
 
 def main():
-    # Streamlit re-executes ``main`` for every session and rerun while Python
-    # imports remain cached.  Emit the responsive shell CSS at this lifecycle
-    # boundary so later browser sessions receive the same UI as the first.
-    _apply_sharp_embed_css()
     try:
         path = _local_trace_log_path("design_guide_tracer.jsonl")
         with open(path, "a", encoding="utf-8") as fh:
@@ -5251,6 +5409,8 @@ def main():
     # --- ARCHITECTURE LOCK: dev mode flag ---
     _browser_test_mode_for_run = bool(_browser_test_mode_active())
     st.session_state.setdefault("_dev_mode", bool(_browser_test_mode_for_run or _EXPLICIT_DEV_MODE))
+    # Preserve the wide responsive layout across route and hot-reload renders.
+    _apply_sharp_embed_css()
     _apply_normal_user_page_zoom_css()
     reset_speed_profile_last_run()
     reset_rerun_pure_caches()
@@ -5327,37 +5487,6 @@ div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] 
 /* prevent "button hover" feel */
 div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] > label:hover{
   background: transparent !important;
-}
-
-/* On phones the nine destinations remain one predictable, swipeable row.
-   Desktop keeps the existing tab geometry and spacing above. */
-@media (max-width: 760px) {
-  div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"]{
-    flex-wrap: nowrap !important;
-    align-items: stretch !important;
-    gap: 14px !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    overflow-x: auto !important;
-    overflow-y: hidden !important;
-    overscroll-behavior-x: contain;
-    scrollbar-width: thin;
-    touch-action: pan-x;
-    -webkit-overflow-scrolling: touch;
-  }
-  div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"] > label{
-    flex: 0 0 auto !important;
-    min-height: 44px !important;
-    display: flex !important;
-    align-items: center !important;
-  }
-  div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"]::-webkit-scrollbar{
-    height: 4px;
-  }
-  div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"]::-webkit-scrollbar-thumb{
-    background: rgba(100, 116, 139, 0.42);
-    border-radius: 999px;
-  }
 }
 
 /* tighten inner wrappers */
@@ -5446,77 +5575,11 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
         left, right = st.columns([1.3, 8.7], gap="large")
 
         with right:
-            st.session_state.setdefault("report_mode", "standard")
-            report_mode = str(st.session_state.get("report_mode", "standard")).strip().lower()
-            if report_mode not in {"standard", "detailed"}:
-                report_mode = "standard"
-                st.session_state["report_mode"] = report_mode
-
-            # The PDF label is longer than Save; keep it wide enough for one
-            # line while shifting the action group toward the page edge.
-            c_save, c_pdf, c_pdf_opts, _ = st.columns([2.4, 3.8, 0.5, 0.25], gap="small")
-
-            with c_save:
-                st.markdown('<span class="beam-header-action-marker" aria-hidden="true"></span>', unsafe_allow_html=True)
-                if st.button("💾 Save", type="primary", width="stretch"):
-                    if not user_id:
-                        st.error("You must be logged in to save projects.")
-                        st.stop()
-                    else:
-                        if project_id:
-                            try:
-                                payload = export_state_for_saving()
-                                update_project(
-                                    project_id=project_id,
-                                    user_id=user_id,
-                                    payload=payload,
-                                    meta={"module": module},
-                                )
-                                st.toast("Saved", icon="âœ…")
-                            except Exception as e:
-                                st.error(f"Save failed: {e}")
-                        else:
-                            st.session_state["_show_save_modal"] = True
-
-            with c_pdf:
-                from reporting.example_integration import render_pdf_button
-                st.markdown('<span class="beam-header-action-marker" aria-hidden="true"></span>', unsafe_allow_html=True)
-                render_pdf_button(
-                    detail_level=report_mode,
-                    section_figure_factory=(
-                        inputs_page.make_summary_cross_section_figure
-                    ),
-                    beam_figure_factory=inputs_page.make_beam_3d_figure,
-                )
-
-            with c_pdf_opts:
-                with info_i_button(help_text="Report options") if hasattr(st, "popover") else st.expander("i", expanded=False):
-                    st.selectbox(
-                        "Report mode",
-                        options=["standard", "detailed"],
-                        key="report_mode",
-                        format_func=lambda mode: "Standard Report" if mode == "standard" else "Detailed Report",
-                    )
-                    st.text_input(
-                        "Company name (optional)",
-                        key="report_company_name",
-                        placeholder="Your company name",
-                    )
-                    report_logo = st.file_uploader(
-                        "Upload company logo (optional)",
-                        type=["png", "jpg", "jpeg"],
-                        key="report_company_logo_upload",
-                        help="Used for the current report session only. Not saved to the project.",
-                    )
-                    if report_logo is not None:
-                        st.session_state["report_company_logo_bytes"] = report_logo.getvalue()
-                        st.session_state["report_company_logo_name"] = report_logo.name
-                        st.session_state["report_company_logo_type"] = report_logo.type
-                        st.image(report_logo, width=120)
-                    else:
-                        st.session_state["report_company_logo_bytes"] = None
-                        st.session_state["report_company_logo_name"] = None
-                        st.session_state["report_company_logo_type"] = None
+            _render_header_actions(
+                user_id=user_id,
+                project_id=project_id,
+                module=module,
+            )
 
     # Modal for first-time save (no project id yet)
     if st.session_state.get("_show_save_modal", False):
@@ -6196,6 +6259,12 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
     _page_dispatch_started_perf = time.perf_counter()
     st.session_state["_user_latency_page_dispatch_started_perf"] = _page_dispatch_started_perf
     same_page_inputs_root_shell = selected_slug == "inputs" and not page_changed
+
+    # General result pages project the same authoritative V2 calculation used
+    # by Inputs.  Resolve it centrally before entering a page fragment so a
+    # direct visit, navigation after an edit, or Apply cannot expose an empty
+    # or stale summary pack.
+    _ensure_general_page_engineering_publication(selected_slug)
 
     def _render_inputs_root_dispatch_stable_shell() -> None:
         st.markdown(

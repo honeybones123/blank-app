@@ -1166,6 +1166,7 @@ SHARED_DEFAULTS = {
     "auto_geometry": False,
     "auto_bottom_reo": False,
     "auto_shear": False,
+    "fast_mode_show_3d": False,
     "design_optimisation_goal": "balanced",
     "optimisation_lock_geometry": False,
     "optimisation_lock_width": False,
@@ -1526,9 +1527,6 @@ SHARED_DEFAULTS = {
 
 # UI-only session state defaults (not shared, not synced)
 UI_STATE_DEFAULTS = {
-    # Diagram choice is presentation-only. It must never enter the beam input
-    # transaction or advance the Design Brain engineering revision.
-    "fast_mode_show_3d": False,
     "_reo_msg_top_auto_layer2": "",
     "_reo_msg_top_layer2_overwritten": "",
     "_reo_error_top_1": "",
@@ -1727,6 +1725,7 @@ BEAM_PROJECT_PARAM_KEYS = [
     "auto_geometry",
     "auto_bottom_reo",
     "auto_shear",
+    "fast_mode_show_3d",
     # Design/optimisation controls are engineering inputs, not page-local UI.
     # They must travel with the active beam so a change made on another page
     # advances the same authoritative input revision as an Inputs edit.
@@ -3012,6 +3011,8 @@ RESULT_KEYS = {
     # Creep
     "phi_cc_t",
     "phi_cc_star_table",
+    "eps_cc",
+    "eps_cc_micro",
     "k2_creep",
     "k3_creep",
     "k4_creep",
@@ -3615,6 +3616,7 @@ TAB_KEYS = {
     "inputs_auto_geometry_toggle": "auto_geometry",
     "inputs_auto_bottom_reo_toggle": "auto_bottom_reo",
     "inputs_auto_shear_toggle": "auto_shear",
+    "inputs_fast_mode_show_3d_toggle": "fast_mode_show_3d",
     "inputs_design_optimisation_goal": "design_optimisation_goal",
     "inputs_optimisation_lock_geometry": "optimisation_lock_geometry",
     "inputs_optimisation_lock_width": "optimisation_lock_width",
@@ -3869,10 +3871,7 @@ TAB_KEYS = {
     "inputs_crack_member_type": "crack_member_type",
     "inputs_crack_k1": "crack_k1",
     "inputs_crack_k2": "crack_k2",
-    # ``inputs_use_calculated_actions`` owns this choice.  The retired
-    # ``inputs_actions_source`` widget must not remain a second publisher of
-    # the compatibility label, otherwise its stale browser value can undo the
-    # toggle callback during navigation.
+    "inputs_actions_source": "actions_source",  # Source of design actions (manual vs teaching)
 
     # Time-dependent inputs
     "inputs_t_creep": "t_creep",
@@ -6382,16 +6381,36 @@ def recalc_derived_values():
         if primary_bot_row
         else float(st.session_state.get("db_bot_1", 0.0) or 0.0)
     )
-    st.session_state["d"] = effective_depth_with_links_mm(
-        D_mm=D,
-        cover_to_ligs_mm=cover_bot,
-        lig_diameter_mm=lig_d_for_d,
-        bar_diameter_mm=primary_bar_dia,
+    # Bending effective depth is measured to the area-weighted centroid of
+    # every active tension row.  Using only the outer row made the detailed
+    # Bending page overstate capacity whenever a second row was present, while
+    # the installed V2 calculator correctly used the complete arrangement.
+    bottom_row_area = sum(
+        float(row.get("steel_area_row", 0.0) or 0.0)
+        for row in bot_rows_resolved
+        if row.get("active")
     )
-    st.session_state["do"] = D - float(primary_top_row["y_position"]) if primary_top_row else D
+    if bottom_row_area > 0.0:
+        bottom_centroid_from_top_face = sum(
+            float(row.get("steel_area_row", 0.0) or 0.0)
+            * float(row.get("y_position", 0.0) or 0.0)
+            for row in bot_rows_resolved
+            if row.get("active")
+        ) / bottom_row_area
+        # Section-layout y coordinates are measured from the top face, which
+        # is also the compression-face datum for positive bending.
+        st.session_state["d"] = max(0.0, bottom_centroid_from_top_face)
+    else:
+        st.session_state["d"] = effective_depth_with_links_mm(
+            D_mm=D,
+            cover_to_ligs_mm=cover_bot,
+            lig_diameter_mm=lig_d_for_d,
+            bar_diameter_mm=primary_bar_dia,
+        )
+    st.session_state["do"] = float(primary_top_row["y_position"]) if primary_top_row else D
     if st.session_state.get("_dev_mode", False):
         st.session_state["_debug_d_consistency"] = {
-            "formula": "d = D - (cover_to_ligs + lig_diameter + 0.5 * bar_diameter)",
+            "formula": "d = D - area_weighted_bottom_reinforcement_centroid",
             "D_mm": float(D),
             "cover_to_ligs_mm": float(cover_bot),
             "lig_diameter_mm": float(lig_d_for_d),
@@ -6626,6 +6645,7 @@ def _request_inputs_engineering_commit(
     widget_key: str,
     *,
     changed_keys: tuple[str, ...] | None = None,
+    wake_fragments: bool = True,
 ):
     """Commit one beam-owned input revision for every downstream consumer."""
     commit_started_ns = time.perf_counter_ns()
@@ -6749,7 +6769,12 @@ def _request_inputs_engineering_commit(
     # clearing it is racy with Streamlit's URL-sync rerun and can let the old
     # snapshot be armed again before Inputs renders.
     if str(route_guard.get("beam_id") or "").strip() == active_beam_id:
-        route_guard["committed_state"] = copy.deepcopy(committed.snapshot)
+        # ``InputSnapshotState.snapshot`` is recursively immutable and can
+        # contain ``MappingProxyType`` values.  Route guards are a mutable
+        # presentation/session boundary, so use the contract's defensive
+        # serialization copy instead of trying to deepcopy the immutable
+        # mapping (which is not pickleable).
+        route_guard["committed_state"] = committed.to_dict()
         route_guard["source_input_revision"] = int(committed.revision)
         route_guard["authoritative_result"] = None
         st.session_state["_inputs_same_beam_return_guard"] = route_guard
@@ -6787,7 +6812,7 @@ def _request_inputs_engineering_commit(
         or st.session_state.get("_active_page_slug")
         or ""
     ).strip().lower()
-    if rendered_slug == "inputs":
+    if rendered_slug == "inputs" and wake_fragments:
         # The committed transaction is the single wake-up trigger. This covers
         # direct widget callbacks and Apply/recommendation callbacks alike.
         # Off-page edits settle when Inputs is rendered again, so a stale
@@ -6796,7 +6821,7 @@ def _request_inputs_engineering_commit(
 
         workspace_woken = request_inputs_fragment_wake(
             st,
-            "engineering_input_workspace",
+            "engineering_workspace",
             revision=int(committed.revision),
             interval_s=0.1,
         )
@@ -6805,20 +6830,10 @@ def _request_inputs_engineering_commit(
             "woken": bool(workspace_woken),
             "source": "input_transaction",
         }
-        calculation_woken = request_inputs_fragment_wake(
-            st,
-            "engineering_calculation_workspace",
-            revision=int(committed.revision),
-            interval_s=0.1,
-        )
-        st.session_state["_inputs_calculation_fragment_wake"] = {
-            "revision": int(committed.revision),
-            "woken": bool(calculation_woken),
-            "source": "input_transaction",
-        }
-        # Diagrams render synchronously inside the parent input workspace, so
-        # they consume this same committed transaction on the widget rerun.
-        # There is deliberately no independent diagram-fragment wake path.
+        # Summary, Design Brain, controls, Apply, and diagrams all render in
+        # this one workspace.  Waking the removed sibling fragment names left
+        # the visible controls on a new revision while the summary retained an
+        # older authoritative result.  No legacy sibling wake path remains.
         from inputs_application.design_brain_polling import (
             INITIAL_DESIGN_BRAIN_WAKE_INTERVAL_S,
             start_design_brain_polling,
@@ -7059,82 +7074,6 @@ def finalize_auto_design_publish(
         pass
 
     return payload
-
-
-def apply_auto_design_results(results_dict: dict) -> None:
-    """
-    Apply auto-designed reinforcement to shared state and mirror to mapped widgets.
-    Shared state remains the single source of truth.
-    """
-    if not isinstance(results_dict, dict):
-        return
-
-    rendered_widget_keys = st.session_state.get("_rendered_widget_keys", set())
-    if not isinstance(rendered_widget_keys, set):
-        rendered_widget_keys = set()
-    updates: dict[str, object] = {}
-    for key, value in results_dict.items():
-        if key in SHARED_DEFAULTS:
-            set_shared(key, value, source="auto_design_apply")
-            updates[key] = value
-
-
-    if not updates:
-        return
-
-    set_shared("auto_design_active", True, source="auto_design_apply")
-    st.session_state["_applying_auto_design"] = True
-    deferred_widget_update = False
-    try:
-        # Only mirror into non-rendered widget keys. Rendered widgets must wait until the next rerun.
-        for widget_key, shared_key in TAB_KEYS.items():
-            if shared_key in updates:
-                next_value = updates[shared_key]
-                if widget_key in rendered_widget_keys:
-                    if st.session_state.get(widget_key) != next_value:
-                        deferred_widget_update = True
-                        if widget_key.startswith("inputs_"):
-                            st.session_state["_force_inputs_widget_reseed_once"] = True
-                    continue
-                st.session_state[widget_key] = next_value
-                if widget_key.startswith("inputs_"):
-                    st.session_state[f"_cached_{widget_key}"] = next_value
-
-        publish_payload = finalize_auto_design_publish(
-            updated_keys=sorted(list(updates.keys())),
-            source="auto_design_apply",
-            focus_section="shear" if any(k in {"lig_d", "lig_legs", "s_lig"} for k in updates.keys()) else None,
-            set_run_design_clicked=True,
-        )
-        st.session_state["_auto_design_apply_debug"] = {
-            "applied_updates": dict(updates),
-            "publish_payload": dict(publish_payload),
-            "shared_shear_after_apply": {
-                "s_lig": st.session_state.get("s_lig"),
-                "lig_d": st.session_state.get("lig_d"),
-                "lig_legs": st.session_state.get("lig_legs"),
-            },
-            "widget_shear_after_apply": {
-                "inputs_s_lig": st.session_state.get("inputs_s_lig"),
-                "inputs_lig_d": st.session_state.get("inputs_lig_d"),
-                "inputs_lig_legs": st.session_state.get("inputs_lig_legs"),
-            },
-        }
-    finally:
-        st.session_state["_applying_auto_design"] = False
-
-    if deferred_widget_update:
-        try:
-            import session_state_final_log as _ssl
-
-            _ssl.append_session_state_final_log(
-                "auto_design_apply_triggered_rerun",
-                {"source": "apply_auto_design_results", "deferred_widget_update": True},
-            )
-            _ssl.ssl_record_rerun_trigger("auto_design_apply_triggered_rerun")
-        except Exception:
-            pass
-        st.rerun()
 
 
 def _invalidate_inputs_summary_packs(*, source: str, updated_keys: list[str] | None = None) -> None:
@@ -8415,8 +8354,16 @@ def set_shared(key: str, value, *, source: str = "") -> None:
     The only allowed way to write shared inputs (SHARED_DEFAULTS keys).
     All writes are audited for debugging.
     """
-    # HARD GUARD: block render-time writes
-    if st.session_state.get("_sync_lock", False):
+    # HARD GUARD: block render-time hydration/merge writes.  A Streamlit
+    # widget callback is an explicit user command and may legitimately run
+    # while the surrounding fragment still owns the render synchronisation
+    # lock.  Silently rejecting that command left the visible action proxy at
+    # the edited value while the canonical ULS/SLS owner (and therefore
+    # bending/publication) retained its previous value.
+    if (
+        st.session_state.get("_sync_lock", False)
+        and not _set_shared_is_user_intent_source(source)
+    ):
         try:
             _write_sync_trace_line(
                 f"BLOCKED set_shared (sync_lock) key={key} val={value} source={source}"

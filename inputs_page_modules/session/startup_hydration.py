@@ -75,19 +75,13 @@ def render_inputs_startup_hydration(
             pass
         ss["_force_inputs_widget_reseed_once"] = False
         ss["_force_inputs_shear_widget_reseed_once"] = False
-        targeted_widget_refresh_sources = {
-            "design_action_widget_sync",
-            "guidance:typed_inputs_application",
-        }
-        if pending_refresh_source in targeted_widget_refresh_sources:
+        if pending_refresh_source == "design_action_widget_sync":
             try:
                 final_log_append_fn(
                     "render_inputs_pending_refresh_skip_force_cycle",
                     {
                         "refresh_source": pending_refresh_source,
-                        "reason": (
-                            "changed_widgets_already_cleared_or_match_authority"
-                        ),
+                        "reason": "current_inputs_widgets_already_match_user_edit",
                     },
                 )
             except Exception:

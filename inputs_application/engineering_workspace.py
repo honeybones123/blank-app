@@ -11,9 +11,6 @@ from typing import Any, Callable
 from application.guidance_result_adapter import (
     guidance_payload_from_authoritative_design_result,
 )
-from application.engineering_input_validation import (
-    EngineeringInputValidationError,
-)
 from inputs_application.design_guide_fragment_store import (
     DesignGuideFragmentState,
 )
@@ -36,6 +33,7 @@ from inputs_application.session_services import InputsSessionServices
 from inputs_application.summary_contracts import InputsSummaryCalculationSource
 from inputs_application.workspace_state_store import InputsWorkspaceStateStore
 from inputs_application.design_brain_composition import selected_design_brain_adapter_name
+from inputs_application.apply_transaction_store import ApplyTransactionStore
 from inputs_application.v2_design_guide_renderer import render_v2_design_guide_card
 from inputs_page_modules.fragments import (
     request_inputs_fragment_wake,
@@ -520,29 +518,6 @@ def prepare_engineering_workspace_transaction(
             )
         )
         authoritative_result = engineering_refresh()
-    except EngineeringInputValidationError as exc:
-        # Unsupported committed inputs are an expected domain outcome, not an
-        # app crash.  Publish a revision-matched failed state and clear every
-        # older authority so Summary/Design Brain cannot display stale truth.
-        workspace_store.fail_calculation(
-            revision=workspace_revision,
-            error=str(exc),
-        )
-        services.engineering_results.clear()
-        services.recommendations.clear_all()
-        workspace_store.publish_authoritative_result(
-            revision=workspace_revision,
-            result=None,
-        )
-        fragment_store.fail_refresh(str(exc))
-        return {
-            "reconciled_design_action_keys": reconciled_keys,
-            "engineering_hash": None,
-            "calculation_status": "failed",
-            "validation_error": str(exc),
-            "design_guide_fragment_status": "failed",
-            "design_guide_publication_authority_hash": None,
-        }
     except Exception as exc:
         workspace_store.fail_calculation(revision=workspace_revision, error=exc)
         fragment_store.fail_refresh(exc)
@@ -865,10 +840,27 @@ def render_inputs_design_guide_fragment_section(
     if selected_design_brain_adapter_name() == "v2":
         authoritative_result = services.engineering_results.current()
         if authoritative_result is not None:
+            revisioned_apply_payload = ApplyTransactionStore(
+                st_module.session_state
+            ).attach_revision_expectation(
+                dict(authoritative_result.apply_payload or {}),
+                input_revision=authoritative_revision,
+                publication_revision=int(
+                    fragment_state.active_workspace_revision
+                    if fragment_state.active_workspace_revision is not None
+                    else authoritative_revision
+                ),
+                engineering_hash=identity.engineering_hash,
+                publication_authority_hash=str(
+                    authoritative_result.publication_authority_hash or ""
+                ),
+            )
             render_v2_design_guide_card(
                 st_module=st_module,
                 design_guide_slot=design_guide_slot,
                 result=authoritative_result,
+                apply_payload=revisioned_apply_payload,
+                apply_handler=runtime.handle_pending_apply,
             )
     else:
         runtime.render_design_guide(
@@ -1033,20 +1025,8 @@ def render_engineering_workspace(
             "_inputs_authoritative_result_snapshot_update_pending"
         )
     )
-    failed_calculation_is_current = bool(
-        calculation_state.get("status") == "failed"
-        and int(calculation_state.get("revision", 0) or 0) == workspace_revision
-        and workspace_store.authoritative_revision() == workspace_revision
-        and not workspace_store.authoritative_result_present()
-        and authoritative_result is None
-        and not ss.get(
-            "_inputs_authoritative_result_snapshot_update_pending"
-        )
-    )
     calculation_is_current = bool(
-        ready_calculation_is_current
-        or awaiting_inputs_is_current
-        or failed_calculation_is_current
+        ready_calculation_is_current or awaiting_inputs_is_current
     )
     if calculation_is_current:
         fragment_state = services.publications.current()
@@ -1081,10 +1061,7 @@ def render_engineering_workspace(
     if summary_region_state.status == "awaiting_inputs":
         st_module.info("Enter a design action or load to calculate.")
     elif summary_region_state.status == "failed":
-        st_module.error(
-            "Calculations could not be updated: "
-            f"{summary_region_state.error or 'check the current inputs.'}"
-        )
+        st_module.error("Calculations could not be updated.")
     elif summary_region_state.status == "updating":
         st_module.info("Updating calculations...")
     else:

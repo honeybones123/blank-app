@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from math import pi
+from math import pi, sqrt
 from typing import Any, Callable
 
 from inputs_v2.application.candidate_evaluation import complete_compliance
@@ -13,9 +13,7 @@ from inputs_v2.application.design_brain.ratio_policy import ratio_gate_required
 from inputs_v2.application.design_brain_apply import Candidate, propose_neutral_candidate
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.domain.engineering_result import EngineeringResult
-from inputs_v2.engineering.minimum_reinforcement import (
-    rectangular_minimum_tensile_area_mm2,
-)
+from inputs_v2.domain.design_preferences import DesignPreferenceProfile
 
 
 Calculate = Callable[[BeamInputs], EngineeringResult]
@@ -27,10 +25,11 @@ CompleteStage = Callable[[str], None]
 class CombinedFailurePipeline:
     """Evaluate one atomic candidate that repairs both governing failures."""
 
-    def __init__(self, *, calculate: Calculate, evaluate: Evaluate, rank_key: RankKey, complete_stage: CompleteStage = lambda _stage_id: None) -> None:
+    def __init__(self, *, calculate: Calculate, evaluate: Evaluate, rank_key: RankKey, preferences: DesignPreferenceProfile, complete_stage: CompleteStage = lambda _stage_id: None) -> None:
         self._calculate = calculate
         self._evaluate = evaluate
         self._rank_key = rank_key
+        self._preferences = preferences
         self._complete_stage = complete_stage
 
     def preview(self, current: BeamInputs) -> DesignBrainPreview:
@@ -71,6 +70,8 @@ class CombinedFailurePipeline:
                     * current.depth_mm
                     / max(depth, 1.0)
                 )
+                fctf = 0.6 * sqrt(float(current.materials.concrete_strength_mpa))
+                fsy = max(float(current.materials.reinforcement_strength_mpa), 1.0)
                 bottom_options = []
                 for bars in range(max(2, current.bottom.bars), 13):
                     for diameter in (10, 12, 16, 20, 24, 28, 32, 36, 40):
@@ -82,13 +83,7 @@ class CombinedFailurePipeline:
                             - diameter / 2.0,
                             1.0,
                         )
-                        minimum_ast = rectangular_minimum_tensile_area_mm2(
-                            width_mm=width,
-                            overall_depth_mm=depth,
-                            effective_depth_mm=effective_depth,
-                            concrete_strength_mpa=current.materials.concrete_strength_mpa,
-                            reinforcement_strength_mpa=current.materials.reinforcement_strength_mpa,
-                        )
+                        minimum_ast = 0.4 * (fctf / fsy) * float(width) * effective_depth
                         required_ast = max(demand_ast, minimum_ast)
                         bottom_options.append(
                             (area, bars, diameter, required_ast)
@@ -317,7 +312,9 @@ class CombinedFailurePipeline:
             bend <= 1.0
             and shear <= 1.0
             and complete_compliance(after)
-            and not ratio_gate_required(current, candidate.proposal, after)
+            and not ratio_gate_required(
+                current, candidate.proposal, after, self._preferences
+            )
         )
         if accepted:
             reason = (

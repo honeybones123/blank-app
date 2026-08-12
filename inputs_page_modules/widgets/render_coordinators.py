@@ -7,12 +7,6 @@ import time
 from typing import Any, Callable
 
 from inputs_application.engineering_input_store import InputSnapshotStore
-from inputs_page_modules.fragments import rerun_inputs_current_scope
-
-
-def _rerun_inputs_fragment_or_app(st_module: Any) -> None:
-    """Prefer a local fragment rerun, with compatibility for older Streamlit."""
-    rerun_inputs_current_scope(st_module)
 
 
 def _render_inputs_widget_subfragment(
@@ -1007,26 +1001,13 @@ def render_inputs_design_actions_section(
         elif current_actions_source == "Calculated design actions (from SFD/BMD)":
             current_actions_source = legacy_design
 
-        current_actions_mode = str(
-            st_module.session_state.get("actions_mode") or ""
-        ).strip().lower()
-        design_actions_toggle_default = (
-            current_actions_mode == "design"
-            if current_actions_mode in ("manual", "design")
-            else current_actions_source == legacy_design
+        use_calculated_actions = (
+            str(st_module.session_state.get("actions_mode") or "")
+            .strip()
+            .lower()
+            == "design"
+            or current_actions_source == legacy_design
         )
-        itk_calculated = "inputs_use_calculated_actions"
-        itk_calculated_intent = "_inputs_use_calculated_actions_user_intent"
-        user_intent_pending = bool(st_module.session_state.get(itk_calculated_intent, False))
-        if itk_calculated not in st_module.session_state:
-            st_module.session_state[itk_calculated] = bool(design_actions_toggle_default)
-        if (
-            (not user_intent_pending)
-            and itk_calculated in st_module.session_state
-            and bool(st_module.session_state[itk_calculated]) != bool(design_actions_toggle_default)
-        ):
-            st_module.session_state[itk_calculated] = bool(design_actions_toggle_default)
-            _rerun_inputs_fragment_or_app(st_module)
 
         with info_col:
             with info_i_button_fn(
@@ -1042,21 +1023,6 @@ def render_inputs_design_actions_section(
                 st_module.markdown("**What to avoid**")
                 st_module.markdown("- Do not compare a ULS strength result against an SLS load view by mistake.")
                 st_module.divider()
-
-                def _on_inputs_use_calculated_actions_change() -> None:
-                    st_module.session_state[itk_calculated_intent] = True
-                    st_module.session_state["inputs_dirty"] = True
-                    st_module.session_state["_inputs_dirty"] = True
-
-                use_calculated_actions = st_module.toggle(
-                    "Use calculated design actions",
-                    key="inputs_use_calculated_actions",
-                    on_change=_on_inputs_use_calculated_actions_change,
-                    help=(
-                        "When enabled, the design actions below are taken from the "
-                        "Design / SFD-BMD page and become read-only."
-                    ),
-                )
 
                 selected_mode_preview = "design" if use_calculated_actions else "manual"
                 actions_mode_preview = legacy_design if selected_mode_preview == "design" else legacy_manual
@@ -1076,27 +1042,11 @@ def render_inputs_design_actions_section(
                 preview_action_verb = "viewing" if selected_mode_preview == "design" else "editing"
                 st_module.caption(f"Currently {preview_action_verb}: **{preview_mode}** loads")
 
-        selected_mode = "design" if use_calculated_actions else "manual"
-        mapped_source = legacy_design if selected_mode == "design" else legacy_manual
-
-        source_changed = st_module.session_state.get("actions_source") != mapped_source
-        mode_changed = st_module.session_state.get("actions_mode") != selected_mode
-
-        if source_changed:
-            st_module.session_state["actions_source"] = mapped_source
-
-        if mode_changed:
-            st_module.session_state["actions_mode"] = selected_mode
-
-        if source_changed or mode_changed:
-            st_module.session_state["inputs_dirty"] = True
-            st_module.session_state["_inputs_dirty"] = True
-        # ``actions_mode`` is the canonical behavioral choice.  Updating its
-        # derived legacy label does not require another render; rerunning for
-        # label-only reconciliation can loop when navigating from a fragment
-        # that still has the older browser widget state.
-        if mode_changed:
-            _rerun_inputs_fragment_or_app(st_module)
+        # The shared page-top action-source control is the sole owner of
+        # ``actions_mode`` and ``actions_source``.  This renderer only reads
+        # that committed state.  The former compatibility block rewrote the
+        # same fields and forced another fragment rerun, which could leave the
+        # Inputs page permanently truncated at this section after a toggle.
 
         prev_mode = st_module.session_state.get("loads_edit_mode", "ULS")
         toggle_widget_key = get_widget_key_for_shared_fn("loads_edit_toggle", prefix="inputs_") or "inputs_loads_edit_toggle"
@@ -1110,12 +1060,8 @@ def render_inputs_design_actions_section(
             st_module.session_state["_force_design_action_widget_hydrate"] = True
             st_module.session_state["inputs_dirty"] = True
             st_module.session_state["_inputs_dirty"] = True
-            _rerun_inputs_fragment_or_app(st_module)
         else:
             st_module.session_state["loads_edit_mode"] = new_mode
-
-        if user_intent_pending:
-            st_module.session_state[itk_calculated_intent] = False
 
         design_controls = is_design_governing_fn()
         if design_controls:

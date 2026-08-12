@@ -1,7 +1,6 @@
 import html as html_stdlib
 import streamlit as st
-
-from ui.streamlit_iframe import render_trusted_iframe
+import streamlit.components.v1 as components
 
 from engineering_check_ui import (
     ENGINEERING_CHECK_COLUMNS,
@@ -231,7 +230,7 @@ def bind_summary_clicks():
     Binds JavaScript to handle opening expanders and smooth scrolling when summary rows are clicked.
     Finds expanders by searching all expanders and picking the one that comes after the marker in document order.
     """
-    render_trusted_iframe(st,
+    components.html(
         r"""
 <script>
 (function() {

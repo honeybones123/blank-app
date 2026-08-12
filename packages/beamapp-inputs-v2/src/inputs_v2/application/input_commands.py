@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from inputs_v2.domain.beam_inputs import ActionInputs, BeamInputs, DeflectionInputs, LongitudinalReinforcement, LayoutMode, MaterialInputs, ServiceabilityInputs, ShearReinforcement, SupportInputs, TimeDependentInputs, VoidInputs
+from inputs_v2.domain.beam_inputs import ActionInputs, BeamInputs, DeflectionInputs, KvMethod, LongitudinalReinforcement, LayoutMode, MaterialInputs, ServiceabilityInputs, ShearReinforcement, SupportInputs, TimeDependentInputs, VoidInputs
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +30,7 @@ class UpdateFirstSlice:
     torsion_knm: float = 0.0
     shear_force_kn: float = 0.0
     axial_force_kn: float = 0.0
+    applied_prestress_kn: float = 0.0
     left_support: str = "Pinned"
     right_support: str = "Roller"
     span_mm: float = 2000.0
@@ -56,6 +57,13 @@ class UpdateFirstSlice:
     crack_creep_coefficient: float | None = None
     crack_shrinkage_microstrain: float | None = None
     sls_use_uls_fallback: bool | None = None
+    shear_kv_method: KvMethod | None = None
+    exposed_faces: str | None = None
+    creep_environment: str | None = None
+    shrinkage_environment: str | None = None
+    sustained_stress_ratio: float | None = None
+    sustained_concrete_stress_mpa: float | None = None
+    concrete_modulus_mpa: float | None = None
 
 
 def apply_input_command(current: BeamInputs, command: UpdateFirstSlice) -> BeamInputs:
@@ -74,11 +82,49 @@ def apply_input_command(current: BeamInputs, command: UpdateFirstSlice) -> BeamI
     shear = ShearReinforcement(
         diameter_mm=int(command.shear_diameter_mm), legs=int(command.shear_legs),
         spacing_mm=float(command.shear_spacing_mm),
+        kv_method=(
+            current.shear.kv_method
+            if command.shear_kv_method is None
+            else KvMethod(command.shear_kv_method)
+        ),
     )
     materials = MaterialInputs(command.concrete_strength_mpa, command.reinforcement_strength_mpa)
-    actions = ActionInputs(command.bending_moment_knm, command.torsion_knm, command.shear_force_kn, command.axial_force_kn)
+    actions = ActionInputs(
+        bending_moment_knm=command.bending_moment_knm,
+        torsion_knm=command.torsion_knm,
+        shear_force_kn=command.shear_force_kn,
+        axial_force_kn=command.axial_force_kn,
+        applied_prestress_kn=command.applied_prestress_kn,
+    )
     supports = SupportInputs(command.left_support, command.right_support)
-    time_dependent = TimeDependentInputs(command.shrinkage_time_days, command.creep_time_days, command.age_at_loading_days)
+    existing_time = current.time_dependent
+    time_dependent = TimeDependentInputs(
+        shrinkage_time_days=command.shrinkage_time_days,
+        creep_time_days=command.creep_time_days,
+        age_at_loading_days=command.age_at_loading_days,
+        exposed_faces=existing_time.exposed_faces if command.exposed_faces is None else command.exposed_faces,
+        creep_environment=existing_time.creep_environment if command.creep_environment is None else command.creep_environment,
+        shrinkage_environment=(
+            existing_time.shrinkage_environment
+            if command.shrinkage_environment is None
+            else command.shrinkage_environment
+        ),
+        stress_ratio=(
+            existing_time.stress_ratio
+            if command.sustained_stress_ratio is None
+            else command.sustained_stress_ratio
+        ),
+        sustained_concrete_stress_mpa=(
+            existing_time.sustained_concrete_stress_mpa
+            if command.sustained_concrete_stress_mpa is None
+            else command.sustained_concrete_stress_mpa
+        ),
+        concrete_modulus_mpa=(
+            existing_time.concrete_modulus_mpa
+            if command.concrete_modulus_mpa is None
+            else command.concrete_modulus_mpa
+        ),
+    )
     voids = VoidInputs(command.duct_count, command.duct_diameter_mm)
     deflection = DeflectionInputs(command.deflection_support_condition, command.deflection_limit_ratio)
     existing_sls = current.serviceability

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from calculations.design_actions import resolve_design_actions_from_state
 from inputs_page_modules.fragments import rerun_inputs_current_scope
 
 
@@ -194,19 +195,45 @@ def hydrate_design_action_widgets_from_shared(
     design_controls: bool = False,
 ) -> None:
     specs = design_action_widget_specs_fn(selected_prefix)
+
+    def _display_value(spec: dict) -> float:
+        shared_key = str(spec["shared_key"])
+        if not design_controls:
+            return float(get_param_fn(shared_key, 0.0) or 0.0)
+
+        # In Load Analysis mode the manual ULS/SLS fields remain untouched.
+        # Render the resolved, derived action contract instead of the saved
+        # manual fields so switching the source off restores those values.
+        resolved = resolve_design_actions_from_state(
+            dict(st_module.session_state)
+        )
+        is_sls = str(selected_prefix).strip().lower() == "sls"
+        if shared_key.endswith("_Mstar_pos_manual"):
+            key = "SLS_M_pos" if is_sls else "Mu_pos"
+            return float(resolved.get(key, 0.0) or 0.0)
+        if shared_key.endswith("_Mstar_neg_manual"):
+            key = "SLS_M_neg" if is_sls else "Mu_neg"
+            return float(resolved.get(key, 0.0) or 0.0)
+        if shared_key.endswith("_Vstar"):
+            key = "SLS_V" if is_sls else "Vu"
+            return float(resolved.get(key, 0.0) or 0.0)
+        if shared_key.endswith("_Nstar"):
+            return 0.0
+        return float(get_param_fn(shared_key, 0.0) or 0.0)
+
     signature = (
         selected_prefix,
         bool(design_controls),
-        tuple(
-            float(get_param_fn(str(spec["shared_key"]), 0.0) or 0.0)
-            for spec in specs
-        ),
+        tuple(_display_value(spec) for spec in specs),
     )
-    should_hydrate = (
-        force
-        or design_controls
-        or st_module.session_state.get("_design_action_widget_signature") != signature
-    )
+    # Existing manual widgets are the edit authority.  A signature change can
+    # be observed by an older fragment render after a newer edit has already
+    # committed; hydrating on that change would repaint the control with stale
+    # canonical data even though the latest engineering snapshot is correct.
+    # External ownership changes (beam/source/load-set) request ``force``
+    # explicitly.  Derived Load Analysis controls remain projection-owned and
+    # are therefore refreshed on every render.
+    should_hydrate = bool(force or design_controls)
     _record_design_action_state_transition(
         st_module,
         "hydrate_entry",
@@ -230,7 +257,7 @@ def hydrate_design_action_widgets_from_shared(
         widget_key = str(spec["widget_key"])
         shared_key = str(spec["shared_key"])
         if should_hydrate or widget_key not in st_module.session_state:
-            shared_value = float(get_param_fn(shared_key, 0.0) or 0.0)
+            shared_value = _display_value(spec)
             old_widget_value = st_module.session_state.get(widget_key)
             if old_widget_value != shared_value:
                 st_module.session_state[widget_key] = shared_value
@@ -488,14 +515,15 @@ def sync_design_action_widget_to_shared(
     st_module.session_state["_inputs_dirty"] = True
     st_module.session_state["run_design_clicked"] = True
     mark_design_guide_dirty_fn()
-    try:
-        persist_active_beam_from_shared_fn()
-    except Exception:
-        pass
-    try:
-        persist_state_snapshot_fn()
-    except Exception:
-        pass
+    # Do not persist the beam or the project snapshot from this proxy-widget
+    # callback.  The Inputs engineering transaction is the sole owner of the
+    # beam revision and publication invalidation.  Persisting here used to
+    # update the legacy beam record before that transaction ran; the canonical
+    # commit then compared equal and incorrectly returned as a no-op.  The
+    # result was a split page where serviceability used the new widget value
+    # while the ULS summary and Design Brain publication retained the old one.
+    # The owning page transaction consumes the shared values immediately after
+    # this callback and performs the single authoritative persistence step.
     _record_design_action_state_transition(
         st_module,
         "sync_exit",

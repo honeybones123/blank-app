@@ -97,7 +97,12 @@ def generate_overdesign_geometry_cells(
         OverdesignGeometryCell(
             width,
             depth,
-            _geometry_arrangements(current, width, depth),
+            _geometry_arrangements(
+                current,
+                width,
+                depth,
+                current_utilisation,
+            ),
         )
         for width, depth in selected
     )
@@ -194,6 +199,7 @@ def _geometry_arrangements(
     current: BeamInputs,
     width_mm: float,
     depth_mm: float,
+    current_utilisation: float,
 ) -> tuple[GeometryArrangement, ...]:
     estimated_minimum = 0.006 * width_mm * max(
         depth_mm - current.bottom.cover_mm, 1.0
@@ -211,8 +217,43 @@ def _geometry_arrangements(
         ),
         key=lambda item: item[0],
     )
-    nearest = sorted(pool, key=lambda item: abs(item[0] - estimated_minimum))[:8]
-    balanced = tuple(dict.fromkeys((*pool[:8], *nearest)))
+    nearest = sorted(pool, key=lambda item: abs(item[0] - estimated_minimum))[:4]
+    current_effective_depth = max(
+        current.depth_mm
+        - current.bottom.cover_mm
+        - current.bottom.diameter_mm / 2.0,
+        1.0,
+    )
+    target_tensile_potential = (
+        current.bottom.bars
+        * current.bottom.diameter_mm**2
+        * current_effective_depth
+        * max(current_utilisation, 0.01)
+        / 0.925
+    )
+    # Geometry and reinforcement are one coordinated family move.  Selecting
+    # arrangements only around minimum steel forced Runtime to apply a
+    # geometry change first and discover the target reinforcement on the next
+    # run.  Include the standard arrangements nearest the target tensile
+    # potential for this geometry so one family run can publish the resolved
+    # candidate directly.
+    target_nearest = sorted(
+        pool,
+        key=lambda item: abs(
+            item[1]
+            * item[2] ** 2
+            * max(
+                depth_mm
+                - current.bottom.cover_mm
+                - item[2] / 2.0,
+                1.0,
+            )
+            - target_tensile_potential
+        ),
+    )[:8]
+    # Keep the same bounded arrangement count as the earlier policy so the
+    # coordinated move does not expand Fast-mode evaluation budgets.
+    balanced = tuple(dict.fromkeys((*pool[:4], *nearest, *target_nearest)))
     return tuple(
         GeometryArrangement(bars, diameter)
         for bars, diameter in dict.fromkeys(

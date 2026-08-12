@@ -26,4 +26,4 @@ def render_assignment_panel(
         st.caption("Auto assign needs at least one checked template and one valid unticked beam.")
 
     if workflow and workflow.assignment_results:
-        st.dataframe(assignment_results_frame(workflow.assignment_results), width="stretch")
+        st.dataframe(assignment_results_frame(workflow.assignment_results), use_container_width=True)

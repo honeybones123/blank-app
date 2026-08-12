@@ -7,7 +7,9 @@ from typing import Any, Callable
 from inputs_application.apply_transaction_store import ApplyTransactionStore
 from inputs_page_modules.fragments import (
     active_inputs_fragment_id,
-    rerun_inputs_current_scope,
+    current_inputs_fragment_id,
+    request_inputs_fragment_wake,
+    rerun_inputs_active_fragment,
 )
 
 
@@ -46,8 +48,22 @@ def handle_inputs_apply_buttons(
         if not defer_scoped_apply_rerun:
             return
     if outcome == "failed":
+        failure_reason = (
+            recommendation_blocked_reason_fn(rec)
+            or str(
+                dict(
+                    session_state.get("_typed_inputs_apply_probe") or {}
+                ).get("reason")
+                or "apply_recommendation_failed"
+            )
+        )
+        print(
+            f"Inputs Apply rejected: {failure_reason}",
+            file=stderr,
+        )
+        st_module.error(f"Apply could not complete: {failure_reason}")
         emit_apply_trace_run_end_fn(
-            stop_reason=recommendation_blocked_reason_fn(rec) or "apply_recommendation_failed",
+            stop_reason=failure_reason,
             final_updates={},
             winner_label=str(rec.get("title") or ""),
         )
@@ -71,21 +87,84 @@ def handle_inputs_apply_buttons(
                 or "Apply recommendation"
             ),
         )
-    # The unified workspace refreshes its immutable context on every fragment
-    # pass, so an Apply handled inside that fragment can remain locally scoped.
-    # Keep the app rerun only as a compatibility fallback for page-level calls.
-    fragment_active = bool(active_inputs_fragment_id())
-    record_rerun_trigger_fn(
-        "apply_triggered_rerun",
-        meta={
-            "path": (
-                "handle_apply_buttons_committed_fragment"
-                if fragment_active
-                else "handle_apply_buttons_committed_app_fallback"
-            )
-        },
+    # The Apply click is handled inside the Design Brain fragment.  Wake the
+    # sibling calculation and input/diagram fragments for the same committed
+    # revision, then rerun only the current fragment.  If the app is running
+    # without fragment support (or the fragment ids are unavailable), retain
+    # the safe full-app fallback.
+    # The current product path owns all Inputs regions in one unified
+    # ``engineering_workspace`` fragment.  Keep the old Design Brain name as
+    # a rollback-compatible fallback, but prefer the live unified owner.
+    unified_fragment = current_inputs_fragment_id(
+        st_module,
+        "engineering_workspace",
     )
-    if fragment_active:
-        rerun_inputs_current_scope(st_module)
+    legacy_design_fragment = current_inputs_fragment_id(
+        st_module,
+        "design_brain_workspace",
+    )
+    current_fragment = unified_fragment or legacy_design_fragment
+    active_fragment = active_inputs_fragment_id()
+    revision = session_state.get("_inputs_pending_input_revision")
+    unified_workspace_active = bool(
+        unified_fragment and current_fragment == unified_fragment
+    )
+    if unified_workspace_active:
+        # There are no sibling fragments to wake in the unified path; the
+        # current workspace rerun recomputes calculation, summary, diagram,
+        # and Design Brain from the committed transaction in one pass.
+        woken_fragments: list[str] = []
     else:
-        st_module.rerun(scope="app")
+        woken_fragments = [
+            name
+            for name in (
+                "engineering_calculation_workspace",
+                "engineering_input_workspace",
+            )
+            if request_inputs_fragment_wake(
+                st_module,
+                name,
+                revision=revision,
+            )
+        ]
+    # A stored fragment id can survive a later full-page rerun.  It is not
+    # safe to request scope="fragment" merely because that stale id exists:
+    # Streamlit only permits fragment scope while a fragment body is actively
+    # executing.  Require the live execution context to match the stored id.
+    # The unified V2 workspace owns the Apply dispatcher inside its active
+    # fragment.  Keep the command and its rerun in that same fragment so the
+    # rest of the page shell does not flicker or rebuild unnecessarily.
+    scoped = bool(
+        current_fragment
+        and active_fragment
+        and current_fragment == active_fragment
+        and (unified_workspace_active or len(woken_fragments) == 2)
+    )
+    rerun_meta = (
+        {
+            "path": "handle_apply_buttons_scoped_fragments",
+            "scope": "fragment",
+            "woken_fragments": list(woken_fragments),
+            "revision": int(revision) if revision is not None else None,
+        }
+        if scoped
+        else {"path": "handle_apply_buttons_committed_fallback"}
+    )
+    record_rerun_trigger_fn("apply_triggered_rerun", meta=rerun_meta)
+    if not scoped:
+        # A queued framework wake is the only safe refresh when Apply is
+        # dispatched outside the live fragment body.  Never widen this into
+        # a full-page rerun: doing so rebuilds the Inputs shell and can
+        # rehydrate stale widget values over the committed snapshot.
+        request_inputs_fragment_wake(
+            st_module,
+            "engineering_workspace",
+            revision=revision,
+        )
+        return
+
+    # Apply is normally invoked from the unified engineering-workspace
+    # fragment.  Refresh that scope immediately so the committed candidate,
+    # calculation, summaries, diagram and replacement publication advance as
+    # one transaction without rebuilding the page shell.
+    rerun_inputs_active_fragment(st_module)

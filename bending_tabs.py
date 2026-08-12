@@ -64,6 +64,139 @@ def _make_sls_stress_block_figure_32(D_mm, d_mm, dn_mm, layers_tension):
     return _shared_make_sls_32_stress_block_figure(D_mm, d_mm, dn_mm, layers_tension)
 
 
+def _render_authoritative_uls_steps(*, top_results, fc: float, demand: float) -> None:
+    """Render the published strain-compatible ULS result without recalculating it."""
+
+    alpha2 = float(top_results.get("alpha2", 0.0) or 0.0)
+    gamma = float(top_results.get("gamma", 0.0) or 0.0)
+    dn = float(top_results.get("c", 0.0) or 0.0)
+    d = float(top_results.get("d", 0.0) or 0.0)
+    block_depth = float(top_results.get("a", 0.0) or 0.0)
+    ku = float(top_results.get("ku", 0.0) or 0.0)
+    phi = float(top_results.get("phi", 0.65) or 0.65)
+    nominal = float(top_results.get("Mu_nom", 0.0) or 0.0)
+    capacity = float(top_results.get("phi_Mu_cap", 0.0) or 0.0)
+    utilisation = demand / capacity if capacity > 0.0 else float("inf")
+    tension_kn = float(top_results.get("T_N", 0.0) or 0.0) / 1000.0
+    concrete_kn = float(top_results.get("C_concrete_N", 0.0) or 0.0) / 1000.0
+    compression_steel_kn = float(top_results.get("C_steel_N", 0.0) or 0.0) / 1000.0
+    residual_kn = float(top_results.get("equilibrium_residual_n", 0.0) or 0.0) / 1000.0
+    stresses = tuple(float(value) for value in top_results.get("steel_layer_stresses_mpa", ()) or ())
+    stress_text = ", ".join(f"{value:.1f} MPa" for value in stresses) or "No steel layers"
+    limit = float(top_results.get("ductility_limit", 0.36) or 0.36)
+    triggered = bool(top_results.get("clause_815_triggered", False))
+    clause_status = str(top_results.get("ductility_status", "NOT RUN") or "NOT RUN").upper()
+    failed = tuple(top_results.get("clause_815_failed_requirements", ()) or ())
+    failed_text = ", ".join(str(value).replace("_", " ") for value in failed) or "None"
+
+    step_expander_calcbox(
+        uid="bending_uls_authoritative_1",
+        summary_line=(
+            "1.1 Stress-block parameters | "
+            f"Result: alpha2 = {alpha2:.3f}, gamma = {gamma:.3f}"
+        ),
+        details_md=rf"""
+The authoritative AS 3600 rectangular stress-block factors are calculated from
+$f'_c={fc:.1f}$ MPa:
+
+$$\alpha_2=\max(0.67,0.85-0.0015f'_c)={alpha2:.3f}$$
+
+$$\gamma=\max(0.67,0.97-0.0025f'_c)={gamma:.3f}$$
+""",
+        status=None,
+    )
+    step_expander_calcbox(
+        uid="bending_uls_authoritative_2",
+        summary_line=(
+            "1.2 Strain compatibility and force equilibrium | "
+            f"Result: dn = {dn:.1f} mm, a = {block_depth:.1f} mm"
+        ),
+        details_md=rf"""
+The neutral axis is solved iteratively using the section-shape compression
+block, every reinforcement layer and linear strain compatibility with
+$\varepsilon_{{cu}}=0.003$.
+
+Calculated steel-layer stresses: {stress_text}.
+
+The equilibrium residual is {residual_kn:.6f} kN. The resulting neutral-axis
+depth is $d_n={dn:.1f}$ mm and the equivalent block depth is
+$a=\gamma d_n={block_depth:.1f}$ mm.
+""",
+        status=None,
+    )
+    step_expander_calcbox(
+        uid="bending_uls_authoritative_3",
+        summary_line=(
+            "1.3 Internal force resultants | "
+            f"Result: T = {tension_kn:.1f} kN"
+        ),
+        details_md=rf"""
+Tension resultant: {tension_kn:.1f} kN.
+
+Concrete compression resultant: {concrete_kn:.1f} kN.
+
+Compression-steel resultant: {compression_steel_kn:.1f} kN.
+
+Concrete and steel resultants are taken about the compression face when the
+nominal moment is calculated; compression steel is therefore not treated as
+yielded tension steel.
+""",
+        status=None,
+    )
+    step_expander_calcbox(
+        uid="bending_uls_authoritative_4",
+        summary_line=(
+            "1.4 Neutral-axis ratio and strength factor | "
+            f"Result: ku = {ku:.3f}, phi = {phi:.3f}"
+        ),
+        details_md=rf"""
+$$k_u=\frac{{d_n}}{{d}}=\frac{{{dn:.1f}}}{{{d:.1f}}}={ku:.3f}$$
+
+For Class N pure bending, the calculated strength-reduction factor is:
+
+$$\phi=\min(0.85,\max(0.65,1.24-13k_u/12))={phi:.3f}$$
+
+The factor is derived from the calculated neutral-axis ratio; it is not a
+fixed user-selected value.
+""",
+        status=None,
+    )
+    step_expander_calcbox(
+        uid="bending_uls_authoritative_5",
+        summary_line=(
+            "1.5 Clause 8.1.5 conditional assessment | "
+            f"Result: {clause_status}"
+        ),
+        details_md=rf"""
+Clause 8.1.5's additional assessment is required only when both
+$k_u>{limit:.2f}$ and the design action exceeds $0.8\phi M_u$.
+
+Conditional assessment triggered: {"Yes" if triggered else "No"}.
+
+Outstanding verified requirements: {failed_text}.
+""",
+        status=("PASS" if clause_status == "PASS" else "FAIL" if clause_status == "FAIL" else None),
+    )
+    capacity_ok = capacity > 0.0 and demand <= capacity
+    step_expander_calcbox(
+        uid="bending_uls_authoritative_6",
+        summary_line=(
+            "1.6 Flexural capacity | "
+            f"Result: phi Mu = {capacity:.1f} kNm ({'PASS' if capacity_ok else 'FAIL'})"
+        ),
+        details_md=rf"""
+Nominal capacity: $M_u={nominal:.2f}$ kNm.
+
+Design capacity: $\phi M_u={phi:.3f}\times {nominal:.2f}={capacity:.2f}$ kNm.
+
+Applied design action: $M_u^*={demand:.2f}$ kNm.
+
+Utilisation: $M_u^*/(\phi M_u)={utilisation:.3f}$.
+""",
+        status="PASS" if capacity_ok else "FAIL",
+    )
+
+
 # ============================================================
 #  TAB 1 â€“ ULS (UNCHANGED LOGIC, TIDIED CALC BOXES)
 # ============================================================
@@ -97,6 +230,14 @@ def render_uls_tab(
 
     # Apply CSS for compact collapsed steps
     apply_step_expander_css()
+
+    if top_results.get("_authoritative_uls"):
+        _render_authoritative_uls_steps(
+            top_results=top_results,
+            fc=fc,
+            demand=float(Mu_star_override or 0.0),
+        )
+        return
 
     if phi_Mu_cap > 0 and d and Ast:
 
@@ -2537,7 +2678,7 @@ See table for $\\varepsilon(y)$ at the top fibre, each steel layer, and bottom f
             fig_eps,
             key="bending_sls_3_5_strain_distribution",
             title="SLS strain distribution",
-            width="stretch",
+            use_container_width=True,
         )
         plt.close(fig_eps)
     

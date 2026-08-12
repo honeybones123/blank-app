@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, MutableMapping
 
@@ -34,6 +35,73 @@ from state_and_helpers import SHARED_DEFAULTS
 from inputs_application.post_apply_state import store_typed_post_apply_acceptance
 from inputs_application.one_click_session import (
     pop_inputs_widget_keys_for_shared_updates,
+)
+
+
+# A Design Brain proposal may revise the beam design, never its applied loads.
+# Keep this boundary explicit instead of accepting every legacy shared key.
+DESIGN_RECOMMENDATION_UPDATE_KEYS = frozenset(
+    {
+        "b",
+        "D",
+        "L",
+        "sec_shape",
+        "cover_bot",
+        "cover_top",
+        "bot_row_count",
+        "top_row_count",
+        "top_bars",
+        "top_spacing",
+        "db_top",
+        "lig_d",
+        "lig_legs",
+        "s_lig",
+        "bot1_count",
+        "bot1_spacing",
+        "bot1_layout_mode",
+        "bot2_count",
+        "bot2_spacing",
+        "bot2_layout_mode",
+        "top1_count",
+        "top1_spacing",
+        "top1_layout_mode",
+        "top2_count",
+        "top2_spacing",
+        "top2_layout_mode",
+        "db_bot_1",
+        "db_bot_2",
+        "db_top_1",
+        "db_top_2",
+        *{
+            f"{face}_row_{row}_{field}"
+            for face in ("bot", "top")
+            for row in (1, 2)
+            for field in ("bars", "spacing", "dia", "mode")
+        },
+    }
+)
+
+
+DESIGN_ACTION_INVARIANT_KEYS = (
+    "actions_source",
+    "actions_mode",
+    "design_actions_source",
+    "Tu_star",
+    "P_star",
+    "N_star",
+    "uls_Mstar",
+    "uls_Mstar_pos_manual",
+    "uls_Mstar_neg_manual",
+    "uls_Vstar",
+    "uls_Nstar",
+    "sls_Mstar",
+    "sls_Mstar_pos_manual",
+    "sls_Mstar_neg_manual",
+    "sls_Vstar",
+    "sls_Nstar",
+    "Mu_star_manual",
+    "Mu_star_pos_manual",
+    "Mu_star_neg_manual",
 )
 
 
@@ -274,7 +342,9 @@ class CanonicalRecommendationApplyPort:
         shared_updates = {
             key: value
             for key, value in expanded_updates.items()
-            if key in SHARED_DEFAULTS and not str(key).startswith("_")
+            if key in SHARED_DEFAULTS
+            and key in DESIGN_RECOMMENDATION_UPDATE_KEYS
+            and not str(key).startswith("_")
         }
         if not shared_updates and not row_model_updates:
             return InputsSessionMutation(
@@ -332,16 +402,41 @@ class SharedStateSessionPort:
             self.session_state.get("active_beam_id") or ""
         ).strip()
         input_store = None
-        authoritative_before: dict[str, Any] = {}
+        canonical_before: dict[str, Any] = {}
         if active_beam_id:
             from inputs_application.engineering_input_store import (
                 InputSnapshotStore,
             )
 
             input_store = InputSnapshotStore(self.session_state)
-            authoritative_before = dict(
+            canonical_before = dict(
                 input_store.current_for_beam(active_beam_id).snapshot or {}
             )
+        if not canonical_before:
+            # First Apply for a beam may predate the typed beam snapshot. Use
+            # the current canonical projection once, then commit only through
+            # InputSnapshotStore below.
+            from state_and_helpers import get_beam_project_param_snapshot
+
+            canonical_before = dict(get_beam_project_param_snapshot())
+
+        # Apply must preserve the action state that produced the displayed
+        # publication.  A fragment edit can already be committed to shared
+        # state while the beam-owned snapshot still contains the previous
+        # action values.  Merging a verified design revision into that stale
+        # snapshot used to reset the actions to zero after Apply.  Promote only
+        # the live action-authority fields here; geometry and reinforcement
+        # remain owned by the revision-bound beam snapshot and the verified
+        # candidate payload below.
+        for key in DESIGN_ACTION_INVARIANT_KEYS:
+            if key in self.session_state:
+                canonical_before[key] = copy.deepcopy(
+                    self.session_state.get(key)
+                )
+        actions_before = {
+            key: canonical_before.get(key)
+            for key in DESIGN_ACTION_INVARIANT_KEYS
+        }
         for key in mutation.removals:
             self.session_state.pop(key, None)
         row_model_updates = {
@@ -359,29 +454,11 @@ class SharedStateSessionPort:
                 key: value
                 for key, value in mutation.updates.items()
                 if key in SHARED_DEFAULTS
+                and key in DESIGN_RECOMMENDATION_UPDATE_KEYS
             }
             if mutation.status != "failed"
             else {}
         )
-        # The beam-owned input transaction is authoritative for unchanged
-        # fields. A browser widget can commit that transaction before its
-        # legacy shared mirror catches up. Reconcile only the unchanged shared
-        # inputs before applying the recommendation, otherwise capturing the
-        # legacy mapping below can silently replace (for example) Mu=200 with
-        # its stale zero mirror.
-        authoritative_bridge_updates = {
-            key: value
-            for key, value in authoritative_before.items()
-            if key in SHARED_DEFAULTS
-            and key not in shared_updates
-            and self.session_state.get(key) != value
-        }
-        for key, value in authoritative_bridge_updates.items():
-            self.set_shared(
-                key,
-                value,
-                source=f"{self.source}:authoritative_input_bridge",
-            )
         shared_before = {
             key: self.session_state.get(key)
             for key in shared_updates
@@ -427,17 +504,19 @@ class SharedStateSessionPort:
             # while the beam-owned snapshot still contains the pre-Apply
             # values, so setup legitimately rehydrates the old result.
             if active_beam_id:
-                from state_and_helpers import get_beam_project_param_snapshot
-
-                committed_snapshot = (
-                    dict(authoritative_before)
-                    if authoritative_before
-                    else get_beam_project_param_snapshot()
-                )
-                committed_snapshot.update(row_model_updates)
-                committed_snapshot.update(shared_updates)
+                canonical_after = dict(canonical_before)
+                canonical_after.update(row_model_updates)
+                canonical_after.update(shared_updates)
+                actions_after = {
+                    key: canonical_after.get(key)
+                    for key in DESIGN_ACTION_INVARIANT_KEYS
+                }
+                if actions_after != actions_before:
+                    raise ValueError(
+                        "typed Apply attempted to change design actions"
+                    )
                 committed_input = input_store.commit_active_beam(
-                    committed_snapshot,
+                    canonical_after,
                     changed_keys=tuple(
                         sorted({*row_model_updates, *shared_updates})
                     ),
@@ -461,13 +540,11 @@ class SharedStateSessionPort:
                     "beam_id": active_beam_id,
                     "revision": int(committed_input.revision),
                     "changed_keys": list(committed_input.changed_keys),
+                    "design_actions_preserved": True,
                     "bot_row_1_dia": committed_input.snapshot.get(
                         "bot_row_1_dia"
                     ),
                     "db_bot_1": committed_input.snapshot.get("db_bot_1"),
-                    "authoritative_bridge_updates": sorted(
-                        authoritative_bridge_updates
-                    ),
                 }
             self.finalize_publish(
                 updated_keys=sorted(shared_updates),

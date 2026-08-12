@@ -22,14 +22,24 @@ from inputs_application.engineering_workspace import (
 )
 from inputs_application.workspace_context import InputsWorkspaceContext
 from inputs_application.engineering_input_store import InputSnapshotStore
+from inputs_application.action_source_control import (
+    INPUTS_ACTION_SOURCE_TOGGLE_KEY,
+    authoritative_action_source_projection,
+    render_action_source_toggle,
+    synchronize_load_analysis_actions_for_inputs,
+    uses_load_analysis_actions,
+)
+from inputs_application.load_analysis_state_store import LoadAnalysisStateStore
 from inputs_page_modules.session.longitudinal_reo_widget_sync import (
     hydrate_inputs_longitudinal_reo_widgets_for_revision,
 )
 from inputs_page_modules.fragments import run_inputs_fragment
 from state_and_helpers import (
+    _request_inputs_engineering_commit,
     render_timing_mark,
     speed_profiled,
 )
+from widgets_helpers import render_result_page_title
 
 
 _INPUTS_PAGE_RUNTIME = build_inputs_page_runtime()
@@ -134,6 +144,109 @@ def build_inputs_calculation_explainer_view_model(*args: Any, **kwargs: Any) -> 
 def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, Any]:
     """Render the single V2 transaction inside one stable page fragment."""
 
+    load_analysis_store = LoadAnalysisStateStore(st.session_state)
+
+    def _commit_selected_action_source(_selected: bool) -> None:
+        projected_keys = synchronize_load_analysis_actions_for_inputs(
+            st.session_state,
+            draft=load_analysis_store.current().to_dict(),
+            results=load_analysis_store.results(),
+        )
+        _request_inputs_engineering_commit(
+            INPUTS_ACTION_SOURCE_TOGGLE_KEY,
+            changed_keys=tuple(
+                sorted({"actions_mode", "actions_source", *projected_keys})
+            ),
+            # The toggle callback already causes the owning fragment to rerun.
+            # Scheduling another fragment wake here creates overlapping runs
+            # and can truncate the page below Design Actions.
+            wake_fragments=False,
+        )
+
+    # Both Beam Inputs and Load Analysis render this same branch selector.
+    # Its widget keys are projections of the existing canonical action-source
+    # contract, so changing either page cannot create a split source state.
+    render_action_source_toggle(
+        st,
+        widget_key=INPUTS_ACTION_SOURCE_TOGGLE_KEY,
+        after_commit=_commit_selected_action_source,
+    )
+
+    # Load Analysis owns its loads and solved actions. Beam Inputs receives a
+    # one-way, derived ULS/SLS projection only while that source is selected.
+    # Running this idempotently also catches a newer Load Analysis solve after
+    # the user returns to Inputs without manufacturing a second authority.
+    projected_keys = synchronize_load_analysis_actions_for_inputs(
+        st.session_state,
+        draft=load_analysis_store.current().to_dict(),
+        results=load_analysis_store.results(),
+    )
+    # The Load Analysis page may already have projected the latest actions into
+    # shared state before Inputs is opened.  In that case ``projected_keys`` is
+    # empty even though the beam-owned input transaction still contains the
+    # former manual actions.  Compare the typed projection with the committed
+    # beam snapshot as well, so navigation cannot leave widgets on the live
+    # Load Analysis values while summaries and Design Brain evaluate zeros.
+    active_beam_id = str(st.session_state.get("active_beam_id") or "").strip()
+    committed_actions = (
+        InputSnapshotStore(st.session_state)
+        .current_for_beam(active_beam_id)
+        .to_dict()
+        if active_beam_id
+        else {}
+    )
+    action_projection = authoritative_action_source_projection(st.session_state)
+    projection_commit_keys = tuple(
+        sorted(
+            key
+            for key, value in action_projection.items()
+            if committed_actions.get(key) != value
+        )
+    ) if uses_load_analysis_actions(st.session_state) else ()
+    action_commit_keys = tuple(sorted({*projected_keys, *projection_commit_keys}))
+    if action_commit_keys:
+        _request_inputs_engineering_commit(
+            INPUTS_ACTION_SOURCE_TOGGLE_KEY,
+            changed_keys=action_commit_keys,
+            wake_fragments=False,
+        )
+
+    # A fragment rerun does not pass through the page-level setup boundary.
+    # Commit the visible design-action draft before consuming a queued Apply
+    # command so the candidate is applied to the same action state that was
+    # calculated and displayed.  Applying first can otherwise combine the
+    # candidate updates with an older zero-action beam snapshot while leaving
+    # the 200 kNm widget visible.
+    _INPUTS_PAGE_RUNTIME.reconcile_design_actions()
+    if not uses_load_analysis_actions(st.session_state):
+        # Reconciliation writes the visible manual controls to their canonical
+        # ULS/SLS owners.  Close that command by idempotently committing the
+        # active action set before calculation/publication is read below.
+        # This is required even when the reconcile call reports no difference:
+        # an earlier proxy-only callback may already have updated shared state
+        # while the beam-owned snapshot still contains the previous action.
+        # ``_request_inputs_engineering_commit`` is content-idempotent, so an
+        # already complete callback transaction creates no extra revision.
+        selected_prefix = (
+            "sls"
+            if str(st.session_state.get("loads_edit_mode", "ULS") or "ULS")
+            .strip()
+            .upper()
+            == "SLS"
+            else "uls"
+        )
+        _request_inputs_engineering_commit(
+            "inputs_load_Mstar_pos_proxy",
+            changed_keys=(
+                f"{selected_prefix}_Mstar",
+                f"{selected_prefix}_Mstar_pos_manual",
+                f"{selected_prefix}_Mstar_neg_manual",
+                f"{selected_prefix}_Vstar",
+                f"{selected_prefix}_Nstar",
+            ),
+            wake_fragments=False,
+        )
+
     # Apply is owned by the same V2 workspace fragment as the Design Brain
     # button.  Processing the queued command here keeps the explicit Apply
     # interaction scoped to this workspace instead of forcing a page rerun.
@@ -156,20 +269,10 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, 
         copy_deepcopy_fn=copy.deepcopy,
     )
 
-    # A fragment rerun retains the shell's Python closure.  Never pass the
-    # frozen pre-Apply workspace snapshot back into widget/diagram consumers:
-    # bind a fresh immutable context to the newly committed beam revision.
-    fragment_page_context = dict(page_context)
-    fragment_page_context["active_beam_id"] = active_beam_id
-    fragment_page_context["workspace_context"] = InputsWorkspaceContext.from_session(
-        st.session_state,
-        active_beam_id=active_beam_id,
-    )
-
     return render_engineering_workspace(
         st_module=st,
         runtime=_ENGINEERING_WORKSPACE_RUNTIME,
-        page_context=fragment_page_context,
+        page_context=page_context,
         include_design_brain=True,
         include_controls=True,
         include_widgets=True,
@@ -177,6 +280,7 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, 
 
 
 def render_inputs_page() -> None:
+    page_title_placeholder = st.empty()
     """Future Inputs entry point.
 
     The shell owns route-order composition. The section coordinators are still
@@ -225,7 +329,8 @@ def render_inputs_page() -> None:
     # Static route chrome belongs to the page shell.  Keeping the title outside
     # every polling fragment prevents calculation or Design Brain refreshes
     # from marking the whole page identity as stale.
-    st.title("Beam Inputs")
+    with page_title_placeholder.container():
+        render_result_page_title("Beam Inputs")
 
     # The Inputs shell has one V2-shaped transaction.  Calculation, summary,
     # Design Brain, controls, widgets, and diagrams all consume the same
@@ -263,28 +368,10 @@ def render_inputs_page() -> None:
     )
     render_timing_mark("inputs_page.shell.tail.end")
 
-    # A browser widget callback can finish its canonical commit while the
-    # current full-page transaction is already rendering.  V2's single-page
-    # renderer naturally sees that commit on the next pass; the Runtime still
-    # has legacy section coordinators that may have emitted the previous
-    # diagram before the callback settled.  Re-run once at the page boundary
-    # when that happens so the visible diagram cannot remain one revision
-    # behind the committed inputs.  This is deliberately bounded per revision
-    # and only applies to the default V2-shaped full-page path.
-    active_beam_id = str(ss.get("active_beam_id") or "").strip()
-    current_input = InputSnapshotStore(ss).current_for_beam(active_beam_id)
-    diagram_identity = dict(ss.get("_inputs_model_2d_source_identity") or {})
-    current_revision = int(current_input.revision or 0)
-    diagram_revision = int(diagram_identity.get("input_revision") or 0)
-    last_settle_revision = int(ss.get("_inputs_page_diagram_settle_revision") or 0)
-    if (
-        active_beam_id
-        and diagram_identity
-        and current_revision > diagram_revision
-        and current_revision != last_settle_revision
-    ):
-        ss["_inputs_page_diagram_settle_revision"] = current_revision
-        st.rerun()
+    # The unified engineering workspace fragment owns summary, diagram,
+    # calculation and Design Brain refresh.  Do not widen a committed widget
+    # edit into a full-page rerun here; the fragment wake/revision protocol
+    # settles every consumer against the newest canonical revision.
 
 
 render_inputs = speed_profiled(

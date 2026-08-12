@@ -4,10 +4,18 @@ from __future__ import annotations
 
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.domain.engineering_result import EngineeringResult
+from inputs_v2.domain.design_preferences import (
+    DEFAULT_DESIGN_PREFERENCES,
+    DesignPreferenceProfile,
+)
 from inputs_v2.engineering.reinforcement_policy import ratio_trigger, tension_ratio
 
 
-def ratio_review_required(inputs: BeamInputs, result: EngineeringResult) -> bool:
+def ratio_review_required(
+    inputs: BeamInputs,
+    result: EngineeringResult,
+    preferences: DesignPreferenceProfile = DEFAULT_DESIGN_PREFERENCES,
+) -> bool:
     """Return true when longitudinal steel is below the policy review floor."""
     bending = result.families.get("bending", {})
     ast = float(bending.get("Ast_bot", bending.get("Ast_tension_mm2", 0.0)) or 0.0)
@@ -17,7 +25,7 @@ def ratio_review_required(inputs: BeamInputs, result: EngineeringResult) -> bool
         or 1.0
     )
     return ratio_trigger(
-        tension_ratio(ast, float(inputs.width_mm), effective_depth)
+        tension_ratio(ast, float(inputs.width_mm), effective_depth), preferences
     ) is not None
 
 
@@ -25,6 +33,7 @@ def ratio_gate_required(
     current: BeamInputs,
     proposal: BeamInputs,
     result: EngineeringResult,
+    preferences: DesignPreferenceProfile = DEFAULT_DESIGN_PREFERENCES,
 ) -> bool:
     """Request further review only when low-ratio geometry was not improved.
 
@@ -33,7 +42,7 @@ def ratio_gate_required(
     section remains eligible even when minimum reinforcement leaves its ratio
     below the preferred band.
     """
-    if not ratio_review_required(proposal, result):
+    if not ratio_review_required(proposal, result, preferences):
         return False
     enlarged = (
         float(proposal.width_mm) > float(current.width_mm) * 1.20
@@ -52,7 +61,11 @@ def ratio_gate_required(
         or 1.0
     )
     ratio = tension_ratio(ast, float(proposal.width_mm), effective_depth)
-    return ratio < 0.003 and not enlarged and not geometry_materially_reduced
+    return (
+        ratio < preferences.strong_low_ratio_trigger
+        and not enlarged
+        and not geometry_materially_reduced
+    )
 
 
 __all__ = ["ratio_gate_required", "ratio_review_required"]

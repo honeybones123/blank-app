@@ -83,10 +83,10 @@ def render_inputs_perf_finalization_current_coordinator(
         st.sidebar.metric("Inputs render (ms)", perf.get("total_ms", 0))
         st.sidebar.metric("Compute time (ms)", st.session_state.get("_compute_time_ms", 0))
         if "sections" in perf:
-            st.sidebar.dataframe(perf["sections"], width="stretch")
+            st.sidebar.dataframe(perf["sections"], use_container_width=True)
         if "top_inputs_widgets_sections" in perf:
             st.sidebar.caption("Top inputs widgets breakdown")
-            st.sidebar.dataframe(perf["top_inputs_widgets_sections"], width="stretch")
+            st.sidebar.dataframe(perf["top_inputs_widgets_sections"], use_container_width=True)
 
     if bool(st.session_state.get("_dev_mode")):
         st.caption(f"Inputs render: {(time.perf_counter() - t0) * 1000:.1f} ms")

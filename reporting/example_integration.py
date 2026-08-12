@@ -220,7 +220,7 @@ def render_pdf_button(
     detail_level_key = "detailed" if str(detail_level).strip().lower() == "detailed" else "standard"
 
     # PDF export button
-    if st.button("📄 PDF Report", type=button_type, width="stretch"):
+    if st.button("📄 PDF Report", type=button_type, use_container_width=True):
         # Inputs now owns one revisioned V2 transaction. Do not invoke the
         # legacy ``design_runner`` here: it recomputes a second graph of
         # session-state checks, can overwrite the committed V2 result, and was

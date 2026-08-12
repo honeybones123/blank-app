@@ -104,7 +104,7 @@ def render_design_guide_component_cta(
             apply_label,
             key="apply_design_guide",
             type="secondary",
-            width="stretch",
+            use_container_width=True,
             on_click=queue_primary_button_action_fn,
             args=(
                 dict(rec),

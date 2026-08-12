@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import html
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Callable
 
 from application.contracts.design_brain import AuthoritativeDesignResult
 
@@ -19,25 +19,19 @@ def _text(value: Any, fallback: str = "") -> str:
     return value or fallback
 
 
-def _queue_v2_design_guide_apply(
-    st_module: Any,
-    payload: dict[str, Any],
-    result: AuthoritativeDesignResult,
-) -> None:
+def _queue_v2_design_guide_apply(st_module: Any, payload: dict[str, Any]) -> None:
     """Queue Apply before the next complete Inputs transaction."""
 
     queued_payload = dict(payload)
-    # The stable Runtime route is a full page transaction.  The setup
-    # coordinator consumes this command before rendering the workspace.
-    queued_payload["_defer_scoped_apply_rerun"] = False
+    # Apply commits the verified candidate immediately, then the active
+    # engineering-workspace fragment must redraw from that committed state.
+    # Keeping this false caused a successful ``dispatch_ok`` transaction to
+    # return before the fragment rerun, leaving the old card and widgets on
+    # screen so the button appeared to do nothing.
+    queued_payload["_defer_scoped_apply_rerun"] = True
     st_module.session_state["pending_recommendation"] = dict(queued_payload)
     st_module.session_state["_inputs_action_apply_recommendation_payload"] = dict(queued_payload)
     st_module.session_state["_inputs_action_apply_recommendation"] = True
-    # A non-Inputs consumer (currently Load Analysis) must execute the command
-    # against the exact authoritative result that published this payload.
-    # Beam Setup ignores this handover and continues through its existing
-    # revision-owned fragment transaction.
-    st_module.session_state["_queued_design_brain_apply_result"] = result
 
 
 def _format_clause_reference(value: Any) -> str:
@@ -79,6 +73,8 @@ def render_v2_design_guide_card(
     st_module: Any,
     design_guide_slot: Any,
     result: AuthoritativeDesignResult,
+    apply_payload: Mapping[str, Any] | None = None,
+    apply_handler: Callable[[], Any] | None = None,
 ) -> None:
     """Render the replacement V2 card in the existing Design Guide slot."""
 
@@ -147,17 +143,17 @@ def render_v2_design_guide_card(
             # A broad ancestor :has() selector also sees the unrelated Batch
             # Design expander higher in the page and paints it red/blue.
             "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-fail) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"]{background:#fff0f0;border-color:#e03131;border-left:5px solid #e03131;}"
-            "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-fail) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] details>summary{background:#fff0f0!important;border-left:5px solid #e03131!important;}"
             "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-fail) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] summary:hover{background:#ffe3e3;}"
             "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-optimise) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"]{background:#eef3ff;border-color:#4263eb;border-left:5px solid #4263eb;}"
-            "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-optimise) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] details>summary{background:#eef3ff!important;border-left:5px solid #4263eb!important;}"
             "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-optimise) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] summary:hover{background:#dbe4ff;}"
             "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-pass) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"]{background:#edf8ef;border-color:#2f9e44;border-left:5px solid #2f9e44;}"
-            "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-pass) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] details>summary{background:#edf8ef!important;border-left:5px solid #2f9e44!important;}"
             "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-pass) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] summary:hover{background:#dff3e3;}"
             "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-empty) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"]{background:#fff;border-color:#adb5bd;border-left:5px solid #868e96;}"
-            "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-empty) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] details>summary{background:#fff!important;border-left:5px solid #868e96!important;}"
             "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-empty) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] summary:hover{background:#f8f9fa;}"
+            "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-fail) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] details>summary{background:#fff0f0!important;border-left:5px solid #e03131!important;}"
+            "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-optimise) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] details>summary{background:#eef3ff!important;border-left:5px solid #4263eb!important;}"
+            "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-pass) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] details>summary{background:#edf8ef!important;border-left:5px solid #2f9e44!important;}"
+            "div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-state-empty) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"] details>summary{background:#fff!important;border-left:5px solid #868e96!important;}"
             ".inputs-v2-root .inputs-v2-design-guide-cta-gap{height:.8rem;}"
             "div[data-testid=\"stButton\"]>button{width:100%;border-radius:8px;}"
             "div[data-testid=\"stButton\"]>button:not(:disabled){background:#4263eb;color:#fff;border-color:#4263eb;}"
@@ -212,7 +208,14 @@ def render_v2_design_guide_card(
             unsafe_allow_html=True,
         )
 
-        payload = dict(result.apply_payload or {})
+        # Apply identity is bound by the application workspace immediately
+        # before rendering.  The renderer may display/queue that exact payload
+        # but cannot manufacture revision evidence or Apply authority itself.
+        payload = dict(
+            apply_payload
+            if apply_payload is not None
+            else result.apply_payload or {}
+        )
         enabled = bool(cta.get("enabled") or cta.get("actionable")) and bool(payload.get("updates") or payload.get("resolved_candidate_updates"))
         if enabled:
             label = _text(cta.get("label"), "Apply recommendation")
@@ -221,13 +224,20 @@ def render_v2_design_guide_card(
             # cards elsewhere in the page and incorrectly turn an ACTION
             # button red when the current card is blue.
             with st_module.container(key=f"v2_design_guide_apply_scope_{state}"):
-                st_module.button(
+                apply_clicked = st_module.button(
                     label,
                     key=f"v2_design_guide_apply_{_text(publication.get('publication_hash'), 'current')}",
-                    width="stretch",
-                    on_click=_queue_v2_design_guide_apply,
-                    args=(st_module, payload, result),
+                    use_container_width=True,
                 )
+                if apply_clicked:
+                    # Execute the typed Apply transaction in the same active
+                    # workspace fragment as the click.  Merely queueing an
+                    # on_click callback left the command waiting for a later
+                    # unrelated event in some Streamlit fragment runs, which
+                    # made a valid button appear to do nothing.
+                    _queue_v2_design_guide_apply(st_module, payload)
+                    if apply_handler is not None:
+                        apply_handler()
 
 
 __all__ = ["render_v2_design_guide_card"]

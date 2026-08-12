@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Mapping
 
+from inputs_application.action_source_control import (
+    authoritative_action_source_projection,
+)
+
 
 _STALE_SOLVER_KEYS = {
     "pending_recommendation", "_solver_result", "_one_click_run_feedback",
@@ -49,9 +53,16 @@ def build_guidance_state_snapshot(
 ) -> dict:
     snapshot = dict(state or {})
     proof_values = {key: snapshot.get(key) for key in _DESIGN_GUIDE_PROOF_KEYS if key in snapshot}
+    # Load Analysis actions are derived engineering inputs while that source is
+    # selected, even though several compatibility aliases still live in the
+    # historical RESULT_KEYS registry.  Preserve that committed projection
+    # across stale-result cleanup; otherwise the summary/calculation boundary
+    # silently falls back to zero manual actions after a page change.
+    load_analysis_actions = authoritative_action_source_projection(snapshot)
     for key in set(result_keys) | _STALE_SOLVER_KEYS | _STALE_SHEAR_PUBLICATION_KEYS:
         snapshot.pop(key, None)
     snapshot.update(proof_values)
+    snapshot.update(load_analysis_actions)
     for key, default in dict(shared_defaults).items():
         snapshot.setdefault(key, default)
     return snapshot

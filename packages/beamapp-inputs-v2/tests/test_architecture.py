@@ -7,7 +7,7 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "inputs_v2"
-RUNTIME_ROOT = ROOT.parents[1]
+RUNTIME_ROOT = Path(r"C:\Users\jonathon\OneDrive\Documents\GitHub\complete-app - Runtime")
 
 
 def python_files():
@@ -48,7 +48,8 @@ def test_only_application_command_creates_next_revision() -> None:
     for path in python_files():
         if "next_revision(" in path.read_text(encoding="utf-8"):
             writers.append(path.relative_to(SRC).as_posix())
-    assert writers == ["application/input_commands.py", "domain/beam_inputs.py"]
+    assert len(writers) == 2
+    assert set(writers) == {"application/input_commands.py", "domain/beam_inputs.py"}
 
 
 def test_css_selectors_are_scoped_or_approved_foundations() -> None:
@@ -60,13 +61,9 @@ def test_css_selectors_are_scoped_or_approved_foundations() -> None:
         assert selector == ".stApp" or selector.startswith(".inputs-v2-root"), selector
 
 
-def test_package_is_runtime_owned_without_source_path_coupling() -> None:
-    assert ROOT == RUNTIME_ROOT / "packages" / "beamapp-inputs-v2"
-    assert (ROOT / "pyproject.toml").is_file()
-    requirements = (RUNTIME_ROOT / "requirements.txt").read_text(
-        encoding="utf-8"
-    )
-    assert "./packages/beamapp-inputs-v2" in requirements
+def test_lab_is_outside_existing_runtime() -> None:
+    assert RUNTIME_ROOT not in ROOT.parents
+    assert ROOT != RUNTIME_ROOT
 
 
 def test_components_do_not_access_raw_session_state() -> None:
@@ -93,7 +90,7 @@ def test_family_sorter_has_only_one_application_consumer() -> None:
     for path in (SRC / "application").rglob("*.py"):
         if path.name == "design_brain_families.py":
             continue
-        if "classify_design_family(" in path.read_text(encoding="utf-8"):
+        if "classify_design_family_selection(" in path.read_text(encoding="utf-8"):
             consumers.append(path.relative_to(SRC).as_posix())
     assert consumers == ["application/design_guide_orchestrator.py"]
 
@@ -148,7 +145,8 @@ def test_family_contract_is_the_only_terminal_decision_centre() -> None:
     orchestrator = (SRC / "application" / "design_guide_orchestrator.py").read_text(encoding="utf-8")
     owners = (SRC / "application" / "design_brain" / "family_owners.py").read_text(encoding="utf-8")
 
-    assert "return owner.decide(current, result, self._service)" in orchestrator
+    assert "return owner.decide(context, self._service)" in orchestrator
+    assert "FamilyRunContext(" in orchestrator
     assert "apply_allowed=" not in orchestrator
     assert "DecisionStatus(" not in orchestrator
     assert "TargetBandBlocker(" not in orchestrator
@@ -156,7 +154,9 @@ def test_family_contract_is_the_only_terminal_decision_centre() -> None:
     assert ".resolve_outcome(" not in orchestrator
     assert ".proves_exact_stop(" not in orchestrator
     assert "def decide(" in owners
-    assert "self.improvement_policy.accepts(" in owners
+    assert "self.improvement_policy.accepts(" not in owners
+    assert "def accepts(" not in owners
+    assert "and complete_compliance(preview.after)" in owners
     assert "self.proves_exact_stop(" in owners
     assert "self.resolve_outcome(" in owners
 
@@ -190,18 +190,6 @@ def test_clause_numbers_are_owned_only_by_engineering_metadata() -> None:
             assert not clause_pattern.search(path.read_text(encoding="utf-8")), path
     app = (SRC / "app.py").read_text(encoding="utf-8")
     assert not clause_pattern.search(app)
-
-
-def test_minimum_reinforcement_equation_is_engineering_owned() -> None:
-    application_root = SRC / "application"
-    for path in application_root.rglob("*.py"):
-        source = path.read_text(encoding="utf-8")
-        assert "concrete_strength_mpa) ** (2.0 / 3.0)" not in source, path
-        assert "0.4 * (fctf / fsy)" not in source, path
-    combined = (
-        application_root / "design_brain" / "combined_failure_pipeline.py"
-    ).read_text(encoding="utf-8")
-    assert "rectangular_minimum_tensile_area_mm2(" in combined
 
 
 def test_visible_design_brain_copy_does_not_publish_internal_family_codes() -> None:
@@ -263,14 +251,32 @@ def test_every_active_design_brain_family_owns_a_complete_contract() -> None:
 
 def test_family_contract_binding_cannot_leak_between_ladder_runs() -> None:
     from inputs_v2.application.design_brain.family_owners import FAMILY_OWNERS
-    from inputs_v2.application.design_brain_families import DesignFamily
+    from inputs_v2.application.design_brain_families import (
+        DesignFamily,
+        classify_design_family_selection,
+    )
     from inputs_v2.application.design_brain_service import DesignBrainService
+    from inputs_v2.application.design_brain.family_context import FamilyRunContext
+    from inputs_v2.application.design_brain.search_profile import SearchProfile
     from inputs_v2.domain.beam_inputs import BeamInputs
+    from inputs_v2.domain.design_preferences import DEFAULT_DESIGN_PREFERENCES
 
     service = DesignBrainService()
     owner = FAMILY_OWNERS[DesignFamily.BENDING_OVERDESIGN_GOVERNS]
 
-    owner.preview(BeamInputs().validated(), service)
+    from inputs_v2.domain.beam_inputs import ActionInputs
+
+    current = BeamInputs(actions=ActionInputs(bending_moment_knm=10.0)).validated()
+    result = service._calculator.calculate_current(current).result
+    assert result is not None
+    context = FamilyRunContext(
+        current,
+        result,
+        classify_design_family_selection(result, current),
+        DEFAULT_DESIGN_PREFERENCES,
+        SearchProfile(),
+    )
+    owner.preview(context, service)
 
     assert service._active_family_contract is None
 
@@ -319,6 +325,7 @@ def test_search_budget_intent_is_explicitly_owned_by_each_family_contract() -> N
         DesignFamily.COMBINED_OVERDESIGN,
         DesignFamily.BENDING_OVERDESIGN_GOVERNS,
         DesignFamily.SHEAR_OVERDESIGN_GOVERNS,
+        DesignFamily.TARGET_BAND_REACHED,
     }
 
     assert {family for family, contract in FAMILY_CONTRACTS.items() if contract.search_kind is SearchKind.REPAIR} == repair

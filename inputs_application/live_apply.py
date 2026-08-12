@@ -13,6 +13,7 @@ from inputs_application.adapters import (
 )
 from inputs_application.apply_transaction_store import ApplyTransactionStore
 from inputs_application.design_guide_fragment_store import DesignGuideFragmentStore
+from inputs_application.engineering_input_store import InputSnapshotStore
 from inputs_application.contracts import (
     InputsApplyCommand,
     InputsPublicationResult,
@@ -46,6 +47,67 @@ def execute_typed_apply(
     )
     workspace_store = InputsWorkspaceStateStore(session_state)
     fragment_state = DesignGuideFragmentStore(session_state).current()
+    input_snapshot = InputSnapshotStore(session_state).current()
+
+    # A button can remain internally consistent with an old publication while
+    # the beam-owned input snapshot has already advanced.  Runtime has separate
+    # widget, input and publication lifecycles, so candidate/publication
+    # equality alone is not sufficient (the standalone V2 app has no such
+    # separation).  Bind the exact V2 candidate source to the current committed
+    # beam snapshot before considering the normal publication expectations.
+    authoritative_payload = (
+        dict(current_result.apply_payload or {})
+        if current_result is not None
+        else {}
+    )
+    candidate_source_revision = recommendation.get("source_input_revision")
+    authoritative_source_revision = authoritative_payload.get(
+        "source_input_revision"
+    )
+    candidate_source_hash = str(
+        recommendation.get("source_engineering_hash") or ""
+    )
+    authoritative_source_hash = str(
+        authoritative_payload.get("source_engineering_hash") or ""
+    )
+    source_binding_reason: str | None = None
+    if candidate_source_revision is None or authoritative_source_revision is None:
+        source_binding_reason = "incomplete_apply_candidate_source_identity"
+    elif int(candidate_source_revision) != int(input_snapshot.revision):
+        source_binding_reason = "stale_apply_candidate_source_revision"
+    elif int(authoritative_source_revision) != int(input_snapshot.revision):
+        source_binding_reason = "stale_authoritative_candidate_source_revision"
+    elif not candidate_source_hash or not authoritative_source_hash:
+        source_binding_reason = "incomplete_apply_candidate_source_hash"
+    elif candidate_source_hash != authoritative_source_hash:
+        source_binding_reason = "stale_apply_candidate_source_hash"
+    elif current_result is None or authoritative_source_hash != str(
+        current_result.engineering_hash or ""
+    ):
+        source_binding_reason = "stale_authoritative_candidate_engineering_hash"
+    if source_binding_reason is not None:
+        apply_store.update_route(
+            typed_apply_status="failed",
+            typed_apply_reason=source_binding_reason,
+            typed_apply_revision_rejected=True,
+            typed_apply_candidate_source_revision=candidate_source_revision,
+            typed_apply_authoritative_source_revision=authoritative_source_revision,
+            typed_apply_current_input_revision=int(input_snapshot.revision),
+        )
+        return TypedApplyExecution(
+            command=ApplyCommandResult(
+                status="failed",
+                reason=source_binding_reason,
+                recommendation_id=str(
+                    recommendation.get("recommendation_id")
+                    or recommendation.get("candidate_id")
+                    or recommendation.get("source_candidate_id")
+                    or ""
+                ).strip()
+                or None,
+            ),
+            mutation=None,
+        )
     revision_valid, revision_reason = apply_store.validate_revision_expectation(
         dict(recommendation),
         input_revision=workspace_store.workspace_revision(),
@@ -89,61 +151,25 @@ def execute_typed_apply(
         if payload.get("recommendation_envelope") == {}:
             payload.pop("recommendation_envelope", None)
         result = current_result
-        button_contract = dict(
-            session_state.get("design_guide_primary_button_contract")
-            or session_state.get("primary_button_contract")
-            or {}
-        )
-        canonical_primary_payload = bool(
-            str(payload.get("_source") or "").strip()
-            == "design_guide_primary_apply_payload"
-            and isinstance(recommendation.get("recommendation_envelope"), dict)
-        )
-        contract_enabled = bool(
-            session_state.get("design_guide_primary_button_contract_enabled")
-            or button_contract.get("enabled")
-            or button_contract.get("cta_enabled")
-            or canonical_primary_payload
-        )
+        if result is None:
+            return "failed"
         final_publication = dict(
-            (result.final_publication if result is not None else {}) or {}
+            result.final_publication or {}
         )
         cta = dict(
             final_publication.get("cta")
-            or (result.cta_model if result is not None else {})
+            or result.cta_model
             or {}
         )
-        cta_enabled = bool(
-            cta.get("enabled")
-            or cta.get("actionable")
-            or str(cta.get("state") or cta.get("cta_state") or "").strip().upper()
-            == "ENABLED"
-            or contract_enabled
-        )
-        cta["enabled"] = cta_enabled
         raw_outcome = str(
             final_publication.get("outcome_state")
-            or (result.family_outcome if result is not None else "")
+            or result.family_outcome
             or ""
         ).upper()
         publication = InputsPublicationResult(
-            publication_hash=str(
-                (result.publication_authority_hash if result is not None else "") or ""
-            ),
-            outcome="ACTION" if cta_enabled else raw_outcome,
-            family_id=(
-                result.governing_family
-                if result is not None
-                else str(
-                    button_contract.get("selected_family_id")
-                    or button_contract.get("published_family_id")
-                    or button_contract.get("cta_family_id")
-                    or payload.get("resolved_candidate_family_tag")
-                    or payload.get("family")
-                    or ""
-                ).strip()
-                or None
-            ),
+            publication_hash=str(result.publication_authority_hash or ""),
+            outcome=raw_outcome,
+            family_id=result.governing_family,
             cta=cta,
             payload=final_publication,
         )

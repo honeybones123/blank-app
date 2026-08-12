@@ -1,5 +1,5 @@
-./packages/beamapp-inputs-v2
-streamlit>=1.61.1,<2
+./vendor/beamapp_inputs_v2-0.1.0-py3-none-any.whl
+streamlit>=1.43.0
 pandas
 numpy
 matplotlib

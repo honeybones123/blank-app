@@ -148,6 +148,7 @@ from inputs_page_modules.summaries import render_inputs_summary_expanders_and_ta
 
 from inputs_page_modules.summaries.render_coordinators import render_inputs_summary_container_current as render_inputs_summary_container_current_module
 
+from inputs_page_modules.summaries.display_state import render_inputs_summary_display_state as render_inputs_summary_display_state_module
 
 from inputs_application.v2_design_brain_ui_boundary import should_render_design_guide_slot_from_publication_eligibility
 
@@ -324,7 +325,6 @@ from inputs_application.page_runtime.common import (
     _resolved_inputs_summary_state,
     _shared_state_snapshot,
     _shared_toggle,
-    _ui_toggle,
     _sync_auto_design_invalidation,
     _sync_design_action_widget_to_shared,
     cached_make_section_figure,
@@ -356,7 +356,7 @@ def _render_recommendation_section_header(
                 "Load recommendation tools",
                 key=load_key,
                 type="secondary",
-                width="stretch",
+                use_container_width=True,
             )
             if load_pressed:
                 render_popover_content()
@@ -759,7 +759,7 @@ def _render_fast_model_block(sync_callbacks: dict, model_state: dict | None = No
         st_module=st,
         sync_callbacks=sync_callbacks,
         model_state=model_state,
-        display_toggle_fn=_ui_toggle,
+        shared_toggle_fn=_shared_toggle,
         render_3d_diagram_block_fn=lambda **kwargs: _render_3d_diagram_block_current(
             workspace_context=workspace_context, **kwargs
         ),

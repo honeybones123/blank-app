@@ -11,7 +11,7 @@ requires-python = ">=3.12"
 dependencies = [
     "numpy",
     "plotly",
-    "streamlit>=1.61.1,<2",
+    "streamlit",
 ]
 
 [project.optional-dependencies]

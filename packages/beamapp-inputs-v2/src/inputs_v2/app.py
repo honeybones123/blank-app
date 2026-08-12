@@ -391,7 +391,7 @@ def _render_design_brain() -> None:
             unsafe_allow_html=True,
         )
     st.markdown('<div class="inputs-v2-design-guide-cta-gap"></div>', unsafe_allow_html=True)
-    if card.show_apply and st.button("Apply recommendation", key="v2_design_brain_apply", width="stretch"):
+    if card.show_apply and st.button("Apply recommendation", key="v2_design_brain_apply", use_container_width=True):
         outcome = DesignBrainService().apply_decision(current, decision)
         if outcome.applied:
             st.session_state[MODEL_KEY] = outcome.inputs
@@ -436,11 +436,11 @@ def render() -> None:
         st.title("Beam design")
     with header_right:
         save_col, report_col = st.columns(2)
-        if save_col.button("💾 Save", width="stretch"):
+        if save_col.button("💾 Save", use_container_width=True):
             current = _model()
             _repository().save(BEAM_ID, current)
             st.session_state["v2_save_status"] = f"Saved revision {current.revision}"
-        if report_col.button("📄 PDF Report", width="stretch"):
+        if report_col.button("📄 PDF Report", use_container_width=True):
             # The artifact is published below once the current revision has
             # been calculated; the header action remains presentation-only.
             st.session_state["v2_report_requested"] = True
@@ -475,10 +475,10 @@ def render() -> None:
         )
         with st.container(key="inputs-v2-landing-actions"):
             start_a, start_b = st.columns(2)
-            if start_a.button("Go to Design Inputs", width="stretch"):
+            if start_a.button("Go to Design Inputs", use_container_width=True):
                 st.session_state["v2_design_started"] = True
                 st.rerun()
-            start_b.button("Open Design Mode", disabled=True, width="stretch")
+            start_b.button("Open Design Mode", disabled=True, use_container_width=True)
         _render_batch_status()
         if st.session_state.pop("v2_report_requested", False):
             report_result = _calculate_fixture(inputs)
@@ -577,7 +577,7 @@ def render() -> None:
         st.markdown(f'<div class="inputs-v2-root"><div class="inputs-v2-card-label">{st.session_state["v2_diagram_mode"]}</div></div>', unsafe_allow_html=True)
         st.plotly_chart(
             build_3d_figure(view_model) if st.session_state["v2_diagram_mode"] == "3D section" else build_section_figure(view_model),
-            width="stretch",
+            use_container_width=True,
             key=f"inputs_v2_diagram_{view_model.source_revision}",
             config={"displayModeBar": False, "responsive": True},
         )

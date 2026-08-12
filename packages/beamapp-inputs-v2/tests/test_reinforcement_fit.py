@@ -1,11 +1,14 @@
 from dataclasses import replace
 
+import pytest
+
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.engineering.reinforcement_fit import evaluate_arrangement, practical_row_counts
 from inputs_v2.engineering.engineering_calculator import EngineeringCalculator
 from inputs_v2.presentation.view_models.input_diagram import build_input_diagram_view_model
 from inputs_v2.application.design_brain_apply import Candidate, apply_candidate, propose_neutral_candidate
-from inputs_v2.application.ranking_policy import CandidateEvidence, choose_valid
+from inputs_v2.application.ranking_policy import CandidateEvidence
+from inputs_v2.application.design_brain.family_owners import RankingPolicy
 
 def test_single_row_fit_and_effective_depth():
     result = evaluate_arrangement(BeamInputs(), (3,))
@@ -83,6 +86,39 @@ def test_apply_persists_exact_two_row_arrangement():
     assert outcome.inputs.bottom_arrangement is not None
     assert tuple(row.bar_count for row in outcome.inputs.bottom_arrangement.rows) == (3, 3)
 
+
+def test_apply_persists_exact_mixed_diameter_two_row_arrangement():
+    inputs = BeamInputs(depth_mm=500.0)
+    seed = propose_neutral_candidate(inputs)
+    candidate = Candidate(
+        seed.candidate_id,
+        inputs.revision,
+        inputs.content_hash,
+        replace(seed.proposal, bottom_bars=5, bottom_diameter_mm=20),
+        seed.rationale,
+        (3, 2),
+        (20.0, 16.0),
+    )
+    outcome = apply_candidate(inputs, candidate)
+    assert outcome.applied
+    assert outcome.inputs.bottom_arrangement is not None
+    assert tuple(
+        (row.bar_count, row.bar_diameter_mm)
+        for row in outcome.inputs.bottom_arrangement.rows
+    ) == ((3, 20.0), (2, 16.0))
+    result = EngineeringCalculator().calculate(outcome.inputs)
+    assert result.families["bending"]["Ast_tension_mm2"] == pytest.approx(
+        outcome.inputs.bottom_arrangement.total_steel_area_mm2
+    )
+    diagram = build_input_diagram_view_model(
+        outcome.inputs,
+        outcome.inputs.bottom_arrangement,
+    )
+    assert tuple(
+        tuple(bar.diameter_mm for bar in row)
+        for row in diagram.bottom_rows
+    ) == ((20.0, 20.0, 20.0), (16.0, 16.0))
+
 def test_any_canonical_edit_invalidates_stale_arrangement():
     inputs = BeamInputs(depth_mm=500.0)
     arrangement = evaluate_arrangement(inputs, (3, 3)).arrangement
@@ -96,4 +132,6 @@ def test_any_canonical_edit_invalidates_stale_arrangement():
 def test_ranking_rejects_invalid_before_target_distance():
     invalid_near_target = CandidateEvidence("invalid", False, False, target_distance=0.01)
     valid_farther = CandidateEvidence("valid", True, True, target_distance=0.20)
-    assert choose_valid([invalid_near_target, valid_farther]).candidate_id == "valid"
+    selected = RankingPolicy().select((invalid_near_target, valid_farther))
+    assert selected is not None
+    assert selected.candidate_id == "valid"

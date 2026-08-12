@@ -72,7 +72,7 @@ def render_inputs_fast_model_block(
     st_module: Any,
     sync_callbacks: dict,
     model_state: dict | None,
-    display_toggle_fn: Callable[..., bool],
+    shared_toggle_fn: Callable[..., bool],
     render_3d_diagram_block_fn: Callable[..., Any],
     render_section_2d_diagram_block_fn: Callable[..., Any],
 ) -> None:
@@ -80,7 +80,7 @@ def render_inputs_fast_model_block(
     with title_col:
         st_module.markdown("## Model")
     with toggle_col:
-        show_3d = display_toggle_fn(
+        show_3d = shared_toggle_fn(
             "3D model",
             "inputs_fast_mode_show_3d_toggle",
             "fast_mode_show_3d",
@@ -179,7 +179,7 @@ def render_inputs_section_2d_diagram_block(
         render_plotly_diagram_fn(
             fig_sec,
             key="inputs_section_2d_model_chart",
-            width="stretch",
+            use_container_width=True,
             config={"displayModeBar": False},
         )
         chart_emit_ms = (time_perf_counter_fn() - chart_started) * 1000.0
@@ -310,7 +310,7 @@ def render_inputs_3d_diagram_block(
         st_module.markdown('<div class="inputs-page-main-diagram-wrap">', unsafe_allow_html=True)
         render_plotly_diagram_fn(
             fig3d,
-            width="stretch",
+            use_container_width=True,
             config={"displayModeBar": False},
         )
         st_module.markdown("</div>", unsafe_allow_html=True)

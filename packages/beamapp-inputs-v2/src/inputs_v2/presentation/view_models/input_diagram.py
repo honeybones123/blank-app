@@ -58,9 +58,12 @@ def build_input_diagram_view_model(inputs: BeamInputs, arrangement: Reinforcemen
         row_items = []
         for row in arrangement.rows:
             row_count = row.bar_count
-            row_step = usable / max(1, row_count - 1)
+            row_diameter = row.bar_diameter_mm or arrangement.bar_diameter_mm
+            row_edge = inputs.bottom.cover_mm + row_diameter / 2.0
+            row_usable = max(0.0, inputs.width_mm - 2.0 * row_edge)
+            row_step = row_usable / max(1, row_count - 1)
             row_items.append(tuple(
-                DiagramBar(edge + index * row_step, inputs.depth_mm - row.centre_from_tension_face_mm, arrangement.bar_diameter_mm)
+                DiagramBar(row_edge + index * row_step, inputs.depth_mm - row.centre_from_tension_face_mm, row_diameter)
                 for index in range(row_count)
             ))
         bottom_rows = tuple(row_items)

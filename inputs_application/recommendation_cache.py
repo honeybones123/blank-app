@@ -39,7 +39,7 @@ def resolve_popover_recommendation(
         "Generate current recommendation" if recommendation is None else "Refresh recommendation",
         key=f"{button_key}_generate",
         type="secondary",
-        width="stretch",
+        use_container_width=True,
     )
     if generate_pressed:
         recommendation = compute_fn(state)

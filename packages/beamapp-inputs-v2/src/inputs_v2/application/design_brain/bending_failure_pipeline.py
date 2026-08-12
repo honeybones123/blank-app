@@ -6,23 +6,27 @@ from dataclasses import dataclass, replace
 from math import pi
 from typing import Any, Callable
 
-from inputs_v2.application.candidate_evaluation import complete_compliance
+from inputs_v2.application.candidate_evaluation import (
+    bending_mandatory_failure,
+    complete_compliance,
+)
 from inputs_v2.application.design_brain.bending_proportion_pipeline import BendingProportionPipeline
 from inputs_v2.application.design_brain.bending_repair_policy import (
     generate_bending_reduction_specs,
     generate_bending_width_lanes,
 )
-from inputs_v2.application.design_brain.candidate_ranking import bending_candidate_rank_key
 from inputs_v2.application.design_brain.preview import DesignBrainPreview
 from inputs_v2.application.design_brain.ratio_policy import ratio_gate_required
 from inputs_v2.application.design_brain_apply import Candidate, propose_neutral_candidate
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.domain.engineering_result import EngineeringResult
+from inputs_v2.domain.design_preferences import DesignPreferenceProfile
 
 
 Calculate = Callable[[BeamInputs], EngineeringResult]
 Evaluate = Callable[..., Any]
 CompleteStage = Callable[[str], None]
+RankKey = Callable[[BeamInputs, Candidate, EngineeringResult, float, float], tuple]
 
 
 @dataclass(frozen=True)
@@ -41,11 +45,15 @@ class BendingFailurePipeline:
         evaluate: Evaluate,
         stage_map: dict[str, str] | None = None,
         complete_stage: CompleteStage = lambda _stage_id: None,
+        rank_key: RankKey,
+        preferences: DesignPreferenceProfile,
     ) -> None:
         self._calculate = calculate
         self._evaluate = evaluate
         self._stage_map = stage_map or {}
         self._complete_stage = complete_stage
+        self._rank_key = rank_key
+        self._preferences = preferences
 
     def _stage(self, stage_id: str) -> str:
         return self._stage_map.get(stage_id, stage_id)
@@ -53,6 +61,7 @@ class BendingFailurePipeline:
     def preview(self, current: BeamInputs) -> BendingFailureOutcome:
         before = self._calculate(current)
         current_util = float(before.families.get("bending", {}).get("util", 0.0))
+        current_bending_failed = bending_mandatory_failure(before)
         seed = propose_neutral_candidate(current)
         if current_util <= 0.0:
             return BendingFailureOutcome(
@@ -146,7 +155,7 @@ class BendingFailurePipeline:
                 if cell_target_trials:
                     target_trial = min(
                         cell_target_trials,
-                        key=lambda row: bending_candidate_rank_key(
+                        key=lambda row: self._rank_key(
                             current, row[1], row[3], row[0], row[4]
                         ),
                     )
@@ -179,7 +188,7 @@ class BendingFailurePipeline:
             )
 
         def rank(row):
-            return bending_candidate_rank_key(current, row[1], row[3], row[0], row[4])
+            return self._rank_key(current, row[1], row[3], row[0], row[4])
 
         if target_trial is not None:
             _, candidate, updated_inputs, after, _ = target_trial
@@ -222,7 +231,7 @@ class BendingFailurePipeline:
             _, candidate, updated_inputs, after, _ = min(trials, key=rank)
         after_util = float(after.families.get("bending", {}).get("util", 0.0))
         safe_failure_repair = (
-            current_util > high
+            current_bending_failed
             and after_util <= high
             and complete_compliance(after)
         )
@@ -248,7 +257,9 @@ class BendingFailurePipeline:
         initial = candidate, updated_inputs, after
         balance = BendingProportionPipeline(
             evaluate=self._evaluate,
+            rank_key=self._rank_key,
             stage_id=self._stage("increase_width_at_ratio_limit"),
+            preferences=self._preferences,
         ).balance(
             current, before, candidate, updated_inputs, after
         )
@@ -280,7 +291,9 @@ class BendingFailurePipeline:
             if old != new
         )
         final_util = float(after.families.get("bending", {}).get("util", 0.0) or 0.0)
-        ratio_blocked = ratio_gate_required(current, candidate.proposal, after)
+        ratio_blocked = ratio_gate_required(
+            current, candidate.proposal, after, self._preferences
+        )
         unnecessary_layer = (
             current_util < low
             and
@@ -293,7 +306,7 @@ class BendingFailurePipeline:
         geometry_reduced = candidate.proposal.width_mm * candidate.proposal.depth_mm < current.width_mm * current.depth_mm
         safe_cleanup = geometry_reduced and complete_compliance(after) and final_util <= 1.0 and not ratio_blocked
         safe_failure_repair = (
-            current_util > high
+            current_bending_failed
             and final_util <= high
             and complete_compliance(after)
             and not ratio_blocked

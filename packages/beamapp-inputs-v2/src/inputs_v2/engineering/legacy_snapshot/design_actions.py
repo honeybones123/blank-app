@@ -114,18 +114,12 @@ def resolve_design_actions_from_state(source_state: dict | None) -> dict:
     """Resolve canonical design actions from an explicit state mapping."""
     state = _state_read_mapping(source_state)
     actions_source = str(state.get("actions_source") or "")
-    actions_mode = str(state.get("actions_mode") or "").strip().lower()
-    if actions_mode not in ("manual", "design"):
-        actions_mode = (
-            "design"
-            if actions_source.strip()
-            in {
-                "Teaching SFD/BMD page (|M|max, |V|max)",
-                "Calculated design actions (from SFD/BMD)",
-            }
-            else "manual"
-        )
-    if actions_mode == "manual":
+    actions_mode = str(state.get("actions_mode") or "")
+    if (
+        str(state.get("actions_mode") or "").strip().lower() == "manual"
+        or str(state.get("actions_source") or "").strip()
+        == "Manual design actions (inputs below)"
+    ):
         Mu_signed_fallback = float(state.get("uls_Mstar", 0.0) or 0.0)
         Mu_pos = float(
             state.get(
@@ -450,32 +444,41 @@ def derive_design_action_session_updates(source_state: dict | None) -> dict:
             sls_M_signed = sls_pos if sls_pos >= sls_neg else -sls_neg
             sls_V = float(working.get("sfd_Vsls_max_kN", 0.0) or 0.0)
 
-        # Calculated actions already have explicit result fields.  Preserve the
-        # manual ULS/SLS fields as the user's source for a later mode switch.
-
-    actions = resolve_design_actions_from_state(working)
-    if actions_mode == "manual":
+        shared_N = float(working.get("N_star", 0.0) or 0.0)
         updates.update(
             {
-                "Mu_star_manual": float(working.get("uls_Mstar", 0.0) or 0.0),
-                "Mu_star_pos_manual": float(
-                    working.get(
-                        "uls_Mstar_pos_manual",
-                        max(0.0, working.get("uls_Mstar", 0.0) or 0.0),
-                    )
-                    or 0.0
-                ),
-                "Mu_star_neg_manual": float(
-                    working.get(
-                        "uls_Mstar_neg_manual",
-                        max(0.0, -(working.get("uls_Mstar", 0.0) or 0.0)),
-                    )
-                    or 0.0
-                ),
+                "uls_Mstar": float(uls_M_signed),
+                "uls_Mstar_pos_manual": float(max(0.0, uls_pos)),
+                "uls_Mstar_neg_manual": float(max(0.0, uls_neg)),
+                "uls_Vstar": float(uls_V),
+                "uls_Nstar": shared_N,
+                "sls_Mstar": float(sls_M_signed),
+                "sls_Mstar_pos_manual": float(max(0.0, sls_pos)),
+                "sls_Mstar_neg_manual": float(max(0.0, sls_neg)),
+                "sls_Vstar": float(sls_V),
+                "sls_Nstar": shared_N,
             }
         )
+        working.update(updates)
+
+    actions = resolve_design_actions_from_state(working)
     updates.update(
         {
+            "Mu_star_manual": float(working.get("uls_Mstar", 0.0) or 0.0),
+            "Mu_star_pos_manual": float(
+                working.get(
+                    "uls_Mstar_pos_manual",
+                    max(0.0, working.get("uls_Mstar", 0.0) or 0.0),
+                )
+                or 0.0
+            ),
+            "Mu_star_neg_manual": float(
+                working.get(
+                    "uls_Mstar_neg_manual",
+                    max(0.0, -(working.get("uls_Mstar", 0.0) or 0.0)),
+                )
+                or 0.0
+            ),
             "Mu_star": float(actions["Mu"]),
             "Mu_star_kNm": float(actions["Mu"]),
             "Mu_star_kNm_signed": float(actions.get("Mu_signed", actions["Mu"])),

@@ -7,7 +7,7 @@ the calculation contract.
 | Runtime check | V2 owner | V2 output currently available | Summary row | Action |
 |---|---|---|---|---|
 | Positive bending | `legacy_snapshot_calculator.bending` | `phi_Mu_kNm`, `M_star_kNm`, `util`, `status` | Partial | Add exact row contract and status |
-| Minimum tensile reinforcement | `minimum_reinforcement.rectangular_minimum_tensile_area_mm2` | `Ast_tension_mm2`, `Ast_min_mm2`, status | Available | Standard-derived Clause 8.1.6.1 fixture passes for the current rectangular section model |
+| Minimum tensile reinforcement | bending calculation | `Ast_tension_mm2`; `Ast_min_mm2` placeholder | Partial | Copy Runtime `As,min` calculation |
 | Minimum design capacity requirement | bending calculation | `minimum_capacity_knm` placeholder | Partial | Copy Runtime `Mcr`/minimum-capacity calculation |
 | Ductility limit | `ductility` family | `ku`, `limit`, `util`, `status` | Partial | Propagate exact row values |
 | Service bending moment | bending/serviceability boundary | `service_moment_knm` | Partial | Preserve explicit SLS-only semantics |
@@ -21,13 +21,12 @@ the calculation contract.
 | Drying shrinkage | `creep_shrinkage` | Missing | Missing | Add explicit shrinkage family result |
 | Total shrinkage | `creep_shrinkage` | Missing | Missing | Add explicit total result |
 | Governing crack-control outcome | `crack_control` | `status`, `width_mm`, `limit_mm`, `util` | Partial | Add governing outcome row |
-| Table-based crack control check | `crack_control` | Stress limit, utilisation and status | Available | Standard-derived Table 8.6.2.2 fixture passes |
-| Direct crack width check | `crack_control` | Width, utilisation, applicability and status | Available | Standard-derived Clause 8.6.2.3 fixture and spacing-precondition rejection pass |
+| Table-based crack control check | `crack_control` | Missing table stress/result fields | Missing | Propagate table method result/status |
+| Direct crack width check | `crack_control` | Width only; no direct sub-result | Partial | Add direct-width result/status |
 | Total deflection (short + long-term) | `serviceability` | `deflection_mm`, `deflection_util`, `status` | Partial | Add exact Runtime row |
 | Short-term deflection (total load) | `serviceability` | `short_term_deflection_mm` | Partial | Add row status and limit |
 | Additional long-term deflection | `serviceability` | `long_term_deflection_mm` | Partial | Add row status and limit |
-| Reinforcement fit/congestion | `reinforcement_fit` | accepted, congestion, layers, reasons; cover explicitly not checked | Not shown | Independent physical-geometry fixture passes; add detailing check section where applicable |
-| Section proportion policy | `engineering_calculator.geometry` | `D/b`, application limit, policy basis and status | Not shown | Keep as application constructability policy, not an AS 3600 check |
+| Reinforcement fit/congestion | `reinforcement_fit` | accepted, congestion, layers, reasons | Not shown | Add detailing check section where applicable |
 
 ## Required completion gates
 

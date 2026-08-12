@@ -16,11 +16,6 @@ if str(ROOT) not in sys.path:
 ARTIFACT_DIR = ROOT / "artifacts" / "verification"
 AUDIT_DIR = ROOT / "artifacts" / "audits"
 APPLICATION_DIR = ROOT / "application"
-STORE_BOUNDARY_PATHS = (
-    APPLICATION_DIR / "design_result_store.py",
-    APPLICATION_DIR / "design_run_coordinator.py",
-    APPLICATION_DIR / "contracts" / "design_brain.py",
-)
 
 
 def _read(path: Path) -> str:
@@ -71,13 +66,14 @@ def _run_store_checks() -> dict[str, Any]:
 
     calls: list[str] = []
     session: dict[str, Any] = {}
+    store = AuthoritativeDesignResultStore(session)
     snapshot_a = EngineeringInputSnapshot(
         geometry={"D": 300, "b": 250},
         materials={"fc": 32},
         reinforcement={"bottom": {"count": 3, "dia": 16}},
         design_actions={"Mu": 600, "Vu": 450},
         design_settings={"mode": "normal"},
-        contract_versions={"design_brain": "v1"},
+        contract_versions={"design_brain": "v2"},
     )
     snapshot_b = EngineeringInputSnapshot(
         geometry={"D": 350, "b": 250},
@@ -85,7 +81,7 @@ def _run_store_checks() -> dict[str, Any]:
         reinforcement={"bottom": {"count": 3, "dia": 16}},
         design_actions={"Mu": 600, "Vu": 450},
         design_settings={"mode": "normal"},
-        contract_versions={"design_brain": "v1"},
+        contract_versions={"design_brain": "v2"},
     )
 
     def compute(snapshot: EngineeringInputSnapshot):
@@ -103,7 +99,6 @@ def _run_store_checks() -> dict[str, Any]:
             apply_payload={"updates": {"sv": 150 + len(calls)}},
         )
 
-    store = AuthoritativeDesignResultStore(session)
     first = ensure_design_result(result_store=store, snapshot=snapshot_a, compute_fn=compute)
     second = ensure_design_result(result_store=store, snapshot=snapshot_a, compute_fn=compute)
     calls_after_same_hash = list(calls)
@@ -145,9 +140,7 @@ def _run_store_checks() -> dict[str, Any]:
         "mismatched_compute_result_rejected": mismatch_rejected,
         "last_decision_recorded": bool(decision),
         "last_decision_reason": decision.get("reason"),
-        "store_boundary_has_no_streamlit_imports": not any(
-            _imports_streamlit(path) for path in STORE_BOUNDARY_PATHS
-        ),
+        "no_streamlit_imports": not any(_imports_streamlit(path) for path in APPLICATION_DIR.glob("*.py")),
     }
 
 
@@ -223,3 +216,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+

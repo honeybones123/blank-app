@@ -6,7 +6,10 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from inputs_v2.application.design_brain_apply import Candidate
-from inputs_v2.application.design_brain_families import DesignFamily
+from inputs_v2.application.design_brain_families import (
+    DesignFamily,
+    FamilyClassification,
+)
 from inputs_v2.application.engineering_advice import EngineeringAdviceResult
 from inputs_v2.application.ranking_policy import CandidateEvidence
 from inputs_v2.domain.engineering_result import EngineeringResult
@@ -43,6 +46,7 @@ class SearchEvidence:
     reinforcement_attempted: bool = False
     governing_blocker: str | None = None
     exhausted: bool = False
+    empty_search_space_proven: bool = False
     declared_stage_ids: tuple[str, ...] = ()
     attempted_stage_ids: tuple[str, ...] = ()
     completed_stage_ids: tuple[str, ...] = ()
@@ -55,6 +59,10 @@ class SearchEvidence:
     ] = ()
     cache_hits: int = 0
     cache_misses: int = 0
+    generated_candidates: int = 0
+    full_evaluations: int = 0
+    preference_profile_id: str = ""
+    preference_profile_version: str = ""
     elapsed_ms: float = 0.0
     budget_exhausted: bool = False
     budget_skipped_candidates: int = 0
@@ -67,6 +75,7 @@ class FamilyDecision:
     """The only contract presentation and Apply may consume."""
 
     family: DesignFamily
+    classification: FamilyClassification
     status: DecisionStatus
     display_heading: str
     candidate: Candidate | None
@@ -79,6 +88,12 @@ class FamilyDecision:
     search_evidence: SearchEvidence
 
     def __post_init__(self) -> None:
+        if self.family not in {
+            self.classification.selected_family,
+            DesignFamily.TARGET_BAND_REACHED,
+            DesignFamily.EXACT_STOP_PROVEN,
+        }:
+            raise ValueError("final family is inconsistent with classifier evidence")
         if self.apply_allowed and self.status is not DecisionStatus.ACTION:
             raise ValueError("only ACTION decisions may allow Apply")
         if self.apply_allowed and self.candidate is None:
@@ -92,3 +107,20 @@ class FamilyDecision:
             DesignFamily.EXACT_STOP_PROVEN,
         }:
             raise ValueError("PASS requires an authoritative terminal family")
+        if self.family is DesignFamily.EXACT_STOP_PROVEN:
+            evidence = self.search_evidence
+            if self.status is not DecisionStatus.PASS:
+                raise ValueError("EXACT_STOP_PROVEN must publish PASS")
+            if not evidence.exhausted or evidence.budget_exhausted:
+                raise ValueError("EXACT_STOP_PROVEN requires bounded search exhaustion")
+            if (
+                evidence.candidates_attempted <= 0
+                and not evidence.empty_search_space_proven
+            ):
+                raise ValueError("EXACT_STOP_PROVEN requires attempted candidate evidence")
+            if not str(evidence.governing_blocker or "").strip():
+                raise ValueError("EXACT_STOP_PROVEN requires a specific governing blocker")
+            declared = set(evidence.declared_stage_ids)
+            completed = set(evidence.completed_stage_ids)
+            if not declared or not declared.issubset(completed):
+                raise ValueError("EXACT_STOP_PROVEN requires every declared stage to complete")

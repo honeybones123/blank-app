@@ -164,6 +164,17 @@ class ShearOverdesignPipeline:
                             trials.append((abs(util - 0.925), candidate, result, abs(width - current.width_mm) / 100))
                             break
         self._complete_stage("reduce_width_and_redesign")
+        # No candidate calculation is necessary when every permitted shear
+        # move is structurally absent: links are already off and width is at
+        # its contractual minimum (or locked).  Record that fact explicitly
+        # so exact-stop proof does not depend on inventing a fake candidate
+        # attempt merely to make the counter non-zero.
+        empty_search_space_proven = bool(
+            current_link_index <= 1e-9
+            and (current.width_locked or current.width_mm <= 150.0 + 1e-9)
+        )
+        if empty_search_space_proven:
+            self._merge_metrics({"empty_search_space_proven": True})
         publish_metrics()
         if not trials:
             return DesignBrainPreview(

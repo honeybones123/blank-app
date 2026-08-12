@@ -1,15 +1,99 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Mapping
 
-from application.contracts.design_actions import (
-    DESIGN_ACTIONS_SNAPSHOT_SCHEMA_VERSION,
-    DesignActionsSnapshot,
-)
+
+RESOLVED_DESIGN_ACTIONS_SCHEMA_VERSION = "resolved_design_actions.v1"
 
 
-RESOLVED_DESIGN_ACTIONS_SCHEMA_VERSION = DESIGN_ACTIONS_SNAPSHOT_SCHEMA_VERSION
-ResolvedDesignActions = DesignActionsSnapshot
+@dataclass(frozen=True)
+class ResolvedDesignActions:
+    """Immutable engineering-facing Design Actions contract.
+
+    Session keys and compatibility aliases are resolved at the boundary.  All
+    downstream identity and typed consumers can use this object without
+    knowing which widget proxy or legacy result key supplied a value.
+    """
+
+    mu: float
+    mu_signed: float
+    mu_pos: float
+    mu_neg: float
+    has_sagging_case: bool
+    has_hogging_case: bool
+    vu: float
+    nu: float
+    sls_m: float
+    sls_m_signed: float
+    sls_m_pos: float
+    sls_m_neg: float
+    sls_v: float
+    sls_n: float
+    tu: float
+    pu: float
+    source: str
+    actions_source: str
+    actions_mode: str
+    design_actions_source: str
+    sls_line_load: float
+    sls_point_load: float
+
+    @property
+    def signature(self) -> tuple[Any, ...]:
+        """Preserve the established cache-signature contract."""
+
+        return (
+            self.mu,
+            self.vu,
+            self.nu,
+            self.sls_m,
+            self.sls_v,
+            self.source,
+            self.actions_source,
+            self.actions_mode,
+        )
+
+    def to_legacy_mapping(self) -> dict[str, Any]:
+        """Adapt to existing dictionary consumers during incremental cutover."""
+
+        return {
+            "Mu": self.mu,
+            "Mu_signed": self.mu_signed,
+            "Mu_pos": self.mu_pos,
+            "Mu_neg": self.mu_neg,
+            "has_sagging_case": self.has_sagging_case,
+            "has_hogging_case": self.has_hogging_case,
+            "Vu": self.vu,
+            "Nu": self.nu,
+            "SLS_M": self.sls_m,
+            "SLS_M_signed": self.sls_m_signed,
+            "SLS_M_pos": self.sls_m_pos,
+            "SLS_M_neg": self.sls_m_neg,
+            "SLS_V": self.sls_v,
+            "Tu": self.tu,
+            "Pu": self.pu,
+            "source": self.source,
+            "actions_source": self.actions_source,
+            "actions_mode": self.actions_mode,
+            "signature": self.signature,
+        }
+
+    def to_snapshot_mapping(self) -> dict[str, Any]:
+        """Return the normalized payload that owns engineering identity."""
+
+        resolved = self.to_legacy_mapping()
+        resolved.pop("signature", None)
+        resolved["SLS_N"] = self.sls_n
+        resolved["design_actions_source"] = self.design_actions_source
+        return {
+            "schema_version": RESOLVED_DESIGN_ACTIONS_SCHEMA_VERSION,
+            "resolved": resolved,
+            "serviceability_loads": {
+                "w_sls_kNm_per_m": self.sls_line_load,
+                "P_sls_kN": self.sls_point_load,
+            },
+        }
 
 
 def _state_read_mapping(source_state):
@@ -30,18 +114,22 @@ def resolve_design_actions_from_state(source_state: dict | None) -> dict:
     """Resolve canonical design actions from an explicit state mapping."""
     state = _state_read_mapping(source_state)
     actions_source = str(state.get("actions_source") or "")
-    actions_mode = str(state.get("actions_mode") or "").strip().lower()
-    if actions_mode not in ("manual", "design"):
-        actions_mode = (
-            "design"
-            if actions_source.strip()
-            in {
-                "Teaching SFD/BMD page (|M|max, |V|max)",
-                "Calculated design actions (from SFD/BMD)",
-            }
-            else "manual"
-        )
-    if actions_mode == "manual":
+    actions_mode = str(state.get("actions_mode") or "")
+    normalized_mode = actions_mode.strip().lower()
+    normalized_source = actions_source.strip()
+    uses_load_analysis = bool(
+        normalized_mode == "design"
+        or normalized_source
+        in {
+            "Teaching SFD/BMD page (|M|max, |V|max)",
+            "Calculated design actions (from SFD/BMD)",
+        }
+    )
+    # Beam Inputs is the safe default.  Older sessions may not contain the
+    # typed action-source fields, but the visible toggle still defaults off.
+    # Treating an empty source as Load Analysis allowed stale SFD/BMD maxima
+    # to override the manual widgets after a page switch or code rerun.
+    if not uses_load_analysis:
         Mu_signed_fallback = float(state.get("uls_Mstar", 0.0) or 0.0)
         Mu_pos = float(
             state.get(
@@ -188,7 +276,13 @@ def resolve_design_actions_from_state(source_state: dict | None) -> dict:
         if abs(Mu) <= 1e-9 and Mu_from_extremes > 1e-9:
             Mu = Mu_from_extremes
         Mu_signed = float(Mu_pos) if Mu_pos >= Mu_neg else -float(Mu_neg)
-        Vu = float(state.get("sfd_Vmax_abs_kN", state.get("Vu_star", 0.0)) or 0.0)
+        Vu = float(
+            state.get(
+                "sfd_Vmax_abs_kN",
+                state.get("Vu_star", state.get("uls_Vstar", 0.0)),
+            )
+            or 0.0
+        )
         SLS_M_pos = float(state.get("M_pos_max_sls_kNm", 0.0) or 0.0)
         SLS_M_neg = float(abs(min(0.0, float(state.get("M_neg_min_sls_kNm", 0.0) or 0.0))))
         SLS_M_abs_raw = state.get("sfd_Msls_max_kNm", None)
@@ -366,35 +460,41 @@ def derive_design_action_session_updates(source_state: dict | None) -> dict:
             sls_M_signed = sls_pos if sls_pos >= sls_neg else -sls_neg
             sls_V = float(working.get("sfd_Vsls_max_kN", 0.0) or 0.0)
 
-        # Keep calculated actions in the result fields consumed by the design
-        # resolver.  The ``uls_*``/``sls_*_manual`` fields are the user's
-        # per-beam manual source and must survive a design -> manual round trip.
-        # Reusing them as calculated output destroys that source whenever the
-        # Load Analysis publication toggle is enabled.
-
-    actions = resolve_design_actions_from_state(working)
-    if actions_mode == "manual":
+        shared_N = float(working.get("N_star", 0.0) or 0.0)
         updates.update(
             {
-                "Mu_star_manual": float(working.get("uls_Mstar", 0.0) or 0.0),
-                "Mu_star_pos_manual": float(
-                    working.get(
-                        "uls_Mstar_pos_manual",
-                        max(0.0, working.get("uls_Mstar", 0.0) or 0.0),
-                    )
-                    or 0.0
-                ),
-                "Mu_star_neg_manual": float(
-                    working.get(
-                        "uls_Mstar_neg_manual",
-                        max(0.0, -(working.get("uls_Mstar", 0.0) or 0.0)),
-                    )
-                    or 0.0
-                ),
+                "uls_Mstar": float(uls_M_signed),
+                "uls_Mstar_pos_manual": float(max(0.0, uls_pos)),
+                "uls_Mstar_neg_manual": float(max(0.0, uls_neg)),
+                "uls_Vstar": float(uls_V),
+                "uls_Nstar": shared_N,
+                "sls_Mstar": float(sls_M_signed),
+                "sls_Mstar_pos_manual": float(max(0.0, sls_pos)),
+                "sls_Mstar_neg_manual": float(max(0.0, sls_neg)),
+                "sls_Vstar": float(sls_V),
+                "sls_Nstar": shared_N,
             }
         )
+        working.update(updates)
+
+    actions = resolve_design_actions_from_state(working)
     updates.update(
         {
+            "Mu_star_manual": float(working.get("uls_Mstar", 0.0) or 0.0),
+            "Mu_star_pos_manual": float(
+                working.get(
+                    "uls_Mstar_pos_manual",
+                    max(0.0, working.get("uls_Mstar", 0.0) or 0.0),
+                )
+                or 0.0
+            ),
+            "Mu_star_neg_manual": float(
+                working.get(
+                    "uls_Mstar_neg_manual",
+                    max(0.0, -(working.get("uls_Mstar", 0.0) or 0.0)),
+                )
+                or 0.0
+            ),
             "Mu_star": float(actions["Mu"]),
             "Mu_star_kNm": float(actions["Mu"]),
             "Mu_star_kNm_signed": float(actions.get("Mu_signed", actions["Mu"])),

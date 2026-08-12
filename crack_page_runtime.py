@@ -44,7 +44,6 @@ from crack_side_view_diagram import (
     render_crack_moment_tab_plotly,
     render_crack_side_view_diagram,
 )
-from deflection_support import deflection_has_service_load_for_calc
 from calculations.crack_control import (
     _nearest_key,
     average_active_bar_spacing_mm,
@@ -93,6 +92,7 @@ _crack_inputs_section.bind_runtime(globals())
 #  MAIN RENDER FUNCTION
 # ------------------------------------------------------------
 def render_crack():
+    page_title_placeholder = st.empty()
     render_timing_mark("crack_page.runtime.start")
     # Hydrate widget keys from shared BEFORE rendering widgets (prevents 0/default after restore)
     # Handle cross-page navigation from Inputs page
@@ -132,10 +132,11 @@ You can:
 """
         )
 
-    render_result_page_title("Crack width – AS 3600:2018")
-
-    if not deflection_has_service_load_for_calc():
-        st.info("No loads applied — deflection not calculated")
+    with page_title_placeholder.container():
+        render_result_page_title(
+            "Crack width – AS 3600:2018",
+            top_margin_rem=-0.80,
+        )
 
     # --------------------------------------------------------
     # Reserve space for top summary then diagram (filled after calculations)
@@ -244,8 +245,6 @@ You can:
         exp_current = st.session_state.get("exposure_class", "B1")
         if exp_current not in exp_options:
             exp_current = "B1"
-        if st.session_state.get("crack_exposure_class") not in exp_options:
-            st.session_state["crack_exposure_class"] = exp_current
 
         col1, col2 = st.columns([1, 2])
         with col1:
@@ -255,8 +254,9 @@ You can:
             )
         with col2:
             st.selectbox(
-                "Exposure class",
+                "",
                 options=exp_options,
+                index=exp_options.index(exp_current),
                 key="crack_exposure_class",
                 on_change=sync_callbacks["crack_exposure_class"],
                 label_visibility="collapsed",
@@ -268,7 +268,7 @@ You can:
         with col2:
             member_current = st.session_state.get("crack_member_type", "Primarily flexure")
             member_type = st.selectbox(
-                "Resultant action",
+                "",
                 options=["Primarily flexure", "Primarily tension"],
                 index=0 if member_current == "Primarily flexure" else 1,
                 key="inputs_crack_member_type",
@@ -284,7 +284,7 @@ You can:
             k1_val = float(st.session_state.get("crack_k1", 0.8))
             k1_options = [0.8, 1.6]
             k1 = st.selectbox(
-                "k1 bond coefficient",
+                "",
                 options=k1_options,
                 index=k1_options.index(k1_val) if k1_val in k1_options else 0,
                 format_func=lambda x: "Deformed bars (k₁ = 0.8)" if abs(x - 0.8) < 1e-9 else "Plain bars (k₁ = 1.6)",

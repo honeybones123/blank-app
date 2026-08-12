@@ -8,9 +8,6 @@ from dataclasses import dataclass
 
 _SUPPORT_COEFFICIENTS = {
     "Simply supported": 5.0 / 384.0,
-    # The domain does not yet distinguish continuous end/interior spans.
-    # Use the larger AS 3600 end-span coefficient for the generic choice.
-    "Continuous": 2.4 / 384.0,
     "Pinned–Pinned": 5.0 / 384.0,
     "Continuous – end span": 2.4 / 384.0,
     "Continuous – interior span": 1.5 / 384.0,

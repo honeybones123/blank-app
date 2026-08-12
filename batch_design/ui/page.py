@@ -190,6 +190,7 @@ def _render_project_beam_controls(ctx: BatchDesignPageContext) -> None:
             st.selectbox(
                 "Active set",
                 options=beam_order,
+                index=beam_order.index(active_beam_id) if active_beam_id in beam_order else 0,
                 format_func=lambda beam_id: ctx.beam_labels.get(beam_id, beam_id),
                 key=ACTIVE_BEAM_SELECTOR_KEY,
                 help="Select the project beam used as the base concrete assumptions for manual batch rows.",
@@ -203,14 +204,14 @@ def _render_project_beam_controls(ctx: BatchDesignPageContext) -> None:
         st.empty()
 
     with add_beam_col:
-        if st.button("+ Add", key="beam_manager_add_button", width="stretch"):
+        if st.button("+ Add", key="beam_manager_add_button", use_container_width=True):
             ctx.add_beam()
             ctx.force_refresh("add_beam")
             ctx.log_rerun("add_beam")
             _rerun_batch_design_page()
 
     with dup_beam_col:
-        if st.button("Duplicate", key="beam_manager_duplicate_button", width="stretch"):
+        if st.button("Duplicate", key="beam_manager_duplicate_button", use_container_width=True):
             ctx.duplicate_beam()
             ctx.force_refresh("duplicate_beam")
             ctx.log_rerun("duplicate_beam")
@@ -220,7 +221,7 @@ def _render_project_beam_controls(ctx: BatchDesignPageContext) -> None:
         if st.button(
             "Delete",
             key="beam_manager_delete_button",
-            width="stretch",
+            use_container_width=True,
             disabled=len(beam_order) <= 1,
         ):
             ctx.delete_beam(active_beam_id)
@@ -232,7 +233,7 @@ def _render_project_beam_controls(ctx: BatchDesignPageContext) -> None:
         if st.button(
             "Reset workspace",
             key="beam_manager_reset_workspace",
-            width="stretch",
+            use_container_width=True,
             help="Reset the project beam workspace. Batch imported rows are not deleted.",
         ):
             ctx.reset_workspace()
@@ -303,7 +304,7 @@ def _render_project_beam_design_editor(ctx: BatchDesignPageContext, workflow: Ba
         editor_df,
         key=f"batch_design_project_beam_reo_editor_{editor_epoch}",
         hide_index=True,
-        width="stretch",
+        use_container_width=True,
         num_rows="fixed",
         column_order=visible_columns,
         disabled=[
@@ -589,7 +590,7 @@ def _render_run_design(workflow: BatchDesignWorkflowState, ctx: BatchDesignPageC
     with settings_col_left:
         if blocked:
             st.warning(" ".join(blocked))
-            st.button("Run design", key="batch_design_run_design_blocked", disabled=True, width="content")
+            st.button("Run design", key="batch_design_run_design_blocked", disabled=True, use_container_width=False)
             st.caption("Runs the batch design for included rows using the current settings.")
             return
 
@@ -1089,7 +1090,7 @@ def _render_workflow_mode_selector(ctx: BatchDesignPageContext, workflow: BatchD
             WORKFLOW_MODE_RUN_DESIGN,
             key="batch_design_workflow_mode_run_design",
             type="primary" if current_mode == WORKFLOW_MODE_RUN_DESIGN else "secondary",
-            width="stretch",
+            use_container_width=True,
             on_click=_request_batch_design_run,
         )
         # A callback runs before the page body, so this durable one-shot
@@ -1103,7 +1104,7 @@ def _render_workflow_mode_selector(ctx: BatchDesignPageContext, workflow: BatchD
             WORKFLOW_MODE_AUTO_ASSIGN,
             key="batch_design_workflow_mode_auto_assign",
             type="primary" if current_mode == WORKFLOW_MODE_AUTO_ASSIGN else "secondary",
-            width="stretch",
+            use_container_width=True,
         )
         # This control is a command, not a navigation control.  It must be
         # handled in the button's own render pass: fragment callbacks can run
@@ -1121,7 +1122,7 @@ def _render_auto_assign_hint() -> None:
     if st.button(
         "Auto assign  -  Assign candidate beams to project beams.  v",
         key="batch_design_auto_assign_hint",
-        width="stretch",
+        use_container_width=True,
     ):
         st.session_state[WORKFLOW_MODE_KEY] = WORKFLOW_MODE_AUTO_ASSIGN
         _rerun_batch_design_page()

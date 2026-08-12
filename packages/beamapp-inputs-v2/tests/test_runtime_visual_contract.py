@@ -32,7 +32,7 @@ def test_design_brain_visual_shell_remains_frozen() -> None:
     assert "background:#eef3ff" in css
     assert "background:#edf8ef" in css
     assert 'st.button("Apply recommendation"' in app
-    assert 'width="stretch"' in app
+    assert "use_container_width=True" in app
 
 
 def test_engineering_summary_header_owns_expand_and_collapse() -> None:

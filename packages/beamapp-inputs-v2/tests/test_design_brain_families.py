@@ -1,8 +1,15 @@
+from dataclasses import replace
+
 import pytest
 
 from inputs_v2.application.calculation_coordinator import calculate_legacy_shadow_current
-from inputs_v2.application.design_brain_families import DesignFamily, classify_design_family, design_signals
-from inputs_v2.domain.beam_inputs import ActionInputs, BeamInputs, ShearReinforcement
+from inputs_v2.application.design_brain_families import (
+    DesignFamily,
+    classify_design_family,
+    classify_design_family_selection,
+    design_signals,
+)
+from inputs_v2.domain.beam_inputs import ActionInputs, BeamInputs, LongitudinalReinforcement, ShearReinforcement
 from inputs_v2.domain.engineering_result import EngineeringResult
 
 
@@ -26,6 +33,21 @@ def test_no_design_actions_select_typed_input_required_family_first() -> None:
     result = calculate_legacy_shadow_current(inputs)
     assert result is not None
     assert classify_design_family(result, inputs) is DesignFamily.INPUT_REQUIRED
+    classification = classify_design_family_selection(result, inputs)
+    assert classification.selected_entry_condition_id == "no_design_actions_entered"
+    assert classification.matched_families[0] is DesignFamily.INPUT_REQUIRED
+
+
+def test_unsupported_action_domain_fails_closed_for_engineering_review() -> None:
+    inputs = BeamInputs(actions=ActionInputs(axial_force_kn=100.0)).validated()
+    result = calculate_legacy_shadow_current(inputs)
+    assert result is not None
+
+    classification = classify_design_family_selection(result, inputs)
+
+    assert classification.selected_family is DesignFamily.ENGINEERING_REVIEW_REQUIRED
+    assert classification.reason_code == "unsupported_action_domain"
+    assert classify_design_family(result, inputs) is DesignFamily.ENGINEERING_REVIEW_REQUIRED
 
 
 def test_family_classifier_selects_shear_failure() -> None:
@@ -70,6 +92,21 @@ def test_single_family_overdesign_is_distinct() -> None:
     result = calculate_legacy_shadow_current(inputs)
     assert result is not None
     assert classify_design_family(result, inputs) is DesignFamily.BENDING_OVERDESIGN_GOVERNS
+
+
+def test_zero_bending_with_underused_shear_is_coordinated_overdesign() -> None:
+    inputs = BeamInputs(
+        actions=ActionInputs(shear_force_kn=40.0),
+        shear=ShearReinforcement(diameter_mm=12, legs=2, spacing_mm=200),
+    ).validated()
+    classification = classify_design_family_selection(
+        _classification_result(0.0, 0.40),
+        inputs,
+    )
+
+    assert classification.selected_family is DesignFamily.COMBINED_OVERDESIGN
+    assert DesignFamily.BENDING_OVERDESIGN_GOVERNS in classification.matched_families
+    assert DesignFamily.SHEAR_OVERDESIGN_GOVERNS in classification.matched_families
 
 
 def test_target_band_requires_every_active_uls_domain_to_be_in_band() -> None:
@@ -129,9 +166,9 @@ def test_serviceability_failure_is_not_hidden_by_uls_overdesign() -> None:
 
 
 def test_minimum_tensile_failure_is_routed_to_bending_repair_not_overdesign() -> None:
-    inputs = BeamInputs(
-        width_mm=500.0,
-        actions=ActionInputs(bending_moment_knm=10.0),
+    inputs = replace(
+        BeamInputs(actions=ActionInputs(bending_moment_knm=10.0)),
+        bottom=LongitudinalReinforcement(bars=2, diameter_mm=10),
     ).validated()
     result = calculate_legacy_shadow_current(inputs)
     assert result is not None

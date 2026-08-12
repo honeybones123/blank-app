@@ -164,7 +164,6 @@ def summary_card_css() -> str:
   --metric-color: #0f172a;
   --metric-label-color: #64748b;
   position: relative;
-  container-type: inline-size;
   border: 1px solid rgba(49,51,63,0.12);
   border-radius: 8px;
   background: var(--accent-soft);
@@ -236,16 +235,8 @@ def summary_card_css() -> str:
 .summary-status-threshold:empty { display: none; }
 .summary-card-chevron { color: #0f172a; font-size: 1.1rem; transition: transform 0.18s ease; justify-self: center; }
 .summary-check-card details[open] .summary-card-chevron { transform: rotate(180deg); }
-.summary-detail-shell {
-  box-sizing: border-box;
-  max-width: 100%;
-  min-width: 0;
-  padding: 0 1.25rem 1.15rem 1.6rem;
-}
+.summary-detail-shell { padding: 0 1.25rem 1.15rem 1.6rem; }
 .summary-detail-inner {
-  box-sizing: border-box;
-  max-width: 100%;
-  min-width: 0;
   background: rgba(255,255,255,0.82);
   border: 1px solid rgba(148,163,184,0.22);
   border-radius: 8px;
@@ -315,7 +306,7 @@ def summary_card_css() -> str:
   text-decoration: none;
   width: 100%;
 }
-@container (max-width: 850px) {
+@media (max-width: 720px) {
   .summary-check-card summary {
     grid-template-columns: 1fr 24px;
     gap: 0.8rem;
@@ -384,12 +375,6 @@ def _overall_status_from_rows(rows) -> tuple[str, str]:
 
 
 def _primary_summary_row(rows, family: str = "") -> dict:
-    if family == "crack":
-        for row in rows:
-            uid = str((row or {}).get("uid") or "").lower()
-            title = str((row or {}).get("title") or "").lower()
-            if uid == "crk_step_3" or "direct crack width" in title:
-                return row
     for row in rows:
         if isinstance(row, dict) and row.get("is_primary"):
             return row
@@ -494,7 +479,14 @@ def build_final_summary_check_card_model(
 
     model_capacity = normalise_summary_display_value(capacity, "") or normalise_summary_display_value(row_capacity)
     model_action = normalise_summary_display_value(action, "") or normalise_summary_display_value(row_action, "Not supplied")
-    model_util = normalise_summary_display_value(utilisation, "") or normalise_summary_display_value(row_util)
+    # An explicit header utilisation (including an explicit dash for no load)
+    # is authoritative.  Falling through from a dash to a detailed-row value
+    # can mix a stale or differently scoped calculation into the card header.
+    model_util = (
+        normalise_summary_display_value(utilisation)
+        if utilisation is not None
+        else normalise_summary_display_value(row_util)
+    )
     model_status = _normalise_summary_status(status) or _normalise_summary_status(row_status)
 
     capacity_only_probe = (
@@ -690,7 +682,11 @@ def render_clickable_summary_table(rows, key_prefix="summary", columns=None):
             primary.get("ok"),
             is_info=bool(primary.get("is_informational")),
         )
-        if primary_kind in {"fail", "warn", "pass", "capacity", "requires-action"} or str(primary.get("status") or "").strip().upper() in {"NOT RUN", "INPUT REQUIRED"}:
+        primary_is_informational = bool(primary.get("is_informational"))
+        if primary_is_informational:
+            status = "INFO"
+            kind = "info"
+        elif primary_kind in {"fail", "warn", "pass", "capacity", "requires-action"} or str(primary.get("status") or "").strip().upper() in {"NOT RUN", "INPUT REQUIRED"}:
             status = primary.get("status") or status
             kind = primary_kind
 

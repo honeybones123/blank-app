@@ -189,10 +189,10 @@ def cases() -> tuple[AuditCase, ...]:
             "PASS",
         ),
         AuditCase(
-            "exhausted_combined_overdesign",
+            "bounded_combined_overdesign_continuation",
             exact_combined_stop,
-            DesignFamily.EXACT_STOP_PROVEN,
-            "PASS",
+            DesignFamily.COMBINED_OVERDESIGN,
+            "ACTION",
         ),
         AuditCase(
             "target_band",

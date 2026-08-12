@@ -8,14 +8,17 @@ from __future__ import annotations
 
 from enum import StrEnum
 from dataclasses import dataclass
+from math import isfinite
 from typing import Callable
 
+from inputs_v2.application.candidate_evaluation import bending_mandatory_failure
 from inputs_v2.domain.engineering_result import EngineeringResult
 from inputs_v2.domain.beam_inputs import BeamInputs
 
 
 class DesignFamily(StrEnum):
     INPUT_REQUIRED = "INPUT_REQUIRED"
+    ENGINEERING_REVIEW_REQUIRED = "ENGINEERING_REVIEW_REQUIRED"
     EXACT_STOP_PROVEN = "EXACT_STOP_PROVEN"
     LOCKED_NO_REPAIR = "LOCKED_NO_REPAIR"
     GEOMETRY_DETAILING_GOVERNS = "GEOMETRY_DETAILING_GOVERNS"
@@ -63,6 +66,17 @@ class DesignSignals:
 EntryCondition = Callable[[DesignSignals], bool]
 
 
+@dataclass(frozen=True, slots=True)
+class FamilyClassification:
+    """Immutable proof of the classifier's one authoritative selection."""
+
+    selected_family: DesignFamily
+    selected_entry_condition_id: str
+    matched_families: tuple[DesignFamily, ...]
+    signals: DesignSignals
+    reason_code: str
+
+
 def design_signals(result: EngineeringResult, inputs: BeamInputs | None) -> DesignSignals:
     bending = result.families.get("bending", {})
     ductility = result.families.get("ductility", {})
@@ -95,12 +109,7 @@ def design_signals(result: EngineeringResult, inputs: BeamInputs | None) -> Desi
         or links_provided
         or bool(inputs is not None and (inputs.shear.diameter_mm > 0 or inputs.shear.legs > 0))
     )
-    bending_failed = bool(bending_domain and (
-        bend_util > 1.0
-        or str(bending.get("status", "PASS")).upper() == "FAIL"
-        or str(bending.get("minimum_tensile_status", "PASS")).upper() == "FAIL"
-        or str(ductility.get("status", "PASS")).upper() == "FAIL"
-    ))
+    bending_failed = bool(bending_domain and bending_mandatory_failure(result))
     shear_failed = bool(shear_action > 1e-9 and (
         shear_util > 1.0
         or shear.get("shear_ok") is False
@@ -148,6 +157,10 @@ def design_signals(result: EngineeringResult, inputs: BeamInputs | None) -> Desi
 
 ENTRY_CONDITIONS: dict[DesignFamily, EntryCondition] = {
     DesignFamily.INPUT_REQUIRED: lambda s: not s.design_actions_present,
+    # Review-required is an explicit fail-closed terminal outcome.  It is not
+    # part of CLASSIFICATION_PRIORITY and can never compete with an
+    # engineering family.
+    DesignFamily.ENGINEERING_REVIEW_REQUIRED: lambda _s: True,
     DesignFamily.GEOMETRY_DETAILING_GOVERNS: lambda s: s.geometry_invalid,
     DesignFamily.BENDING_AND_SHEAR_FAIL_GOVERN: lambda s: s.bending_failed and s.shear_failed,
     DesignFamily.BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS: lambda s: (
@@ -167,6 +180,16 @@ ENTRY_CONDITIONS: dict[DesignFamily, EntryCondition] = {
     DesignFamily.SERVICEABILITY_GOVERNS: lambda s: s.serviceability_failed,
     DesignFamily.COMBINED_OVERDESIGN: lambda s: (
         (s.zero_bending_with_reinforcement and s.zero_shear_with_reinforcement)
+        or (
+            not s.bending_failed and not s.shear_failed and not s.serviceability_failed
+            and s.zero_bending_with_reinforcement
+            and s.shear_domain and s.shear_utilisation < 0.85
+        )
+        or (
+            not s.bending_failed and not s.shear_failed and not s.serviceability_failed
+            and s.zero_shear_with_reinforcement
+            and s.bending_domain and s.bending_utilisation < 0.85
+        )
         or (
             not s.bending_failed and not s.shear_failed and not s.serviceability_failed
             and s.bending_utilisation < 0.85 and s.shear_utilisation < 0.85
@@ -213,10 +236,85 @@ CLASSIFICATION_PRIORITY: tuple[DesignFamily, ...] = (
 )
 
 
-def classify_design_family(result: EngineeringResult, inputs: BeamInputs | None = None) -> DesignFamily:
-    """Classify once using the executable family entry-condition registry."""
+def classify_design_family_selection(
+    result: EngineeringResult,
+    inputs: BeamInputs | None = None,
+) -> FamilyClassification:
+    """Classify once and return immutable selection evidence.
+
+    ``EXACT_STOP_PROVEN`` and ``LOCKED_NO_REPAIR`` are family-owned outcomes,
+    not classifier fallbacks.  Unsupported or invalid states fail closed as
+    ``ENGINEERING_REVIEW_REQUIRED``.
+    """
     signals = design_signals(result, inputs)
-    for family in CLASSIFICATION_PRIORITY:
-        if ENTRY_CONDITIONS[family](signals):
-            return family
-    return DesignFamily.EXACT_STOP_PROVEN
+    matched = tuple(
+        family
+        for family in CLASSIFICATION_PRIORITY
+        if ENTRY_CONDITIONS[family](signals)
+    )
+
+    if matched and matched[0] is DesignFamily.INPUT_REQUIRED:
+        return FamilyClassification(
+            selected_family=DesignFamily.INPUT_REQUIRED,
+            selected_entry_condition_id="no_design_actions_entered",
+            matched_families=matched,
+            signals=signals,
+            reason_code="no_design_actions_entered",
+        )
+
+    if any(not isfinite(value) for value in (
+        signals.bending_utilisation,
+        signals.shear_utilisation,
+    )):
+        return FamilyClassification(
+            selected_family=DesignFamily.ENGINEERING_REVIEW_REQUIRED,
+            selected_entry_condition_id="invalid_engineering_result",
+            matched_families=matched,
+            signals=signals,
+            reason_code="non_finite_utilisation",
+        )
+
+    unsupported_action_domain = bool(
+        inputs is not None
+        and abs(float(inputs.actions.bending_moment_knm)) <= 1e-9
+        and abs(float(inputs.actions.shear_force_kn)) <= 1e-9
+        and (
+            abs(float(inputs.actions.torsion_knm)) > 1e-9
+            or abs(float(inputs.actions.axial_force_kn)) > 1e-9
+        )
+    )
+    if unsupported_action_domain:
+        return FamilyClassification(
+            selected_family=DesignFamily.ENGINEERING_REVIEW_REQUIRED,
+            selected_entry_condition_id="unsupported_action_domain",
+            matched_families=matched,
+            signals=signals,
+            reason_code="unsupported_action_domain",
+        )
+
+    if matched:
+        selected = matched[0]
+        return FamilyClassification(
+            selected_family=selected,
+            selected_entry_condition_id=selected.value.lower(),
+            matched_families=matched,
+            signals=signals,
+            reason_code="priority_entry_condition_matched",
+        )
+
+    return FamilyClassification(
+        selected_family=DesignFamily.ENGINEERING_REVIEW_REQUIRED,
+        selected_entry_condition_id="no_family_entry_condition_matched",
+        matched_families=(),
+        signals=signals,
+        reason_code="no_family_entry_condition_matched",
+    )
+
+
+def classify_design_family(
+    result: EngineeringResult,
+    inputs: BeamInputs | None = None,
+) -> DesignFamily:
+    """Compatibility projection of the authoritative classification evidence."""
+
+    return classify_design_family_selection(result, inputs).selected_family

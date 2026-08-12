@@ -10,6 +10,11 @@ from inputs_v2.application.calculation_coordinator import CalculationCoordinator
 from inputs_v2.application.design_brain_apply import Candidate, ApplyOutcome, apply_candidate, propose_neutral_candidate
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.domain.engineering_result import EngineeringResult
+from inputs_v2.domain.design_preferences import (
+    DEFAULT_DESIGN_PREFERENCES,
+    DesignPreferenceProfile,
+)
+from inputs_v2.domain.serviceability_source import ServiceabilityActionSource
 from inputs_v2.engineering.engineering_calculator import EngineeringCalculator
 from inputs_v2.engineering.reinforcement_fit import practical_row_counts
 from inputs_v2.application.candidate_evaluation import (
@@ -19,6 +24,7 @@ from inputs_v2.application.candidate_evaluation import (
 )
 from inputs_v2.application.design_brain.search_profile import SearchKind, SearchProfile
 from inputs_v2.application.design_brain.candidate_ranking import (
+    candidate_evidence,
     candidate_rank_key,
 )
 from inputs_v2.application.ranking_policy import CandidateEvidence
@@ -30,6 +36,7 @@ from inputs_v2.application.design_brain.bending_overdesign_pipeline import Bendi
 from inputs_v2.application.design_brain.shear_overdesign_pipeline import ShearOverdesignPipeline
 from inputs_v2.application.design_brain.combined_failure_pipeline import CombinedFailurePipeline
 from inputs_v2.application.design_brain.bending_failure_pipeline import BendingFailurePipeline
+from inputs_v2.application.design_brain.bending_proportion_pipeline import BendingProportionPipeline
 from inputs_v2.application.design_brain.mixed_pipelines import (
     BendingFailureShearCleanupPipeline,
     ShearFailureBendingOptimisePipeline,
@@ -40,31 +47,42 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from inputs_v2.application.design_brain.family_owners import FamilyContract
     from inputs_v2.application.design_brain_decision import FamilyDecision
+    from inputs_v2.application.design_brain.family_context import FamilyRunContext
 
 
 class DesignBrainService:
     """Generate and evaluate proposals without accessing UI or session state."""
 
-    def __init__(self, search_profile: SearchProfile | None = None) -> None:
+    def __init__(
+        self,
+        search_profile: SearchProfile | None = None,
+        preference_profile: DesignPreferenceProfile | None = None,
+    ) -> None:
         self._calculator = CalculationCoordinator(EngineeringCalculator())
         self.last_search_metrics: dict[str, float | int | bool] = {"proportion_triggered": False, "additional_evaluations": 0}
         self._active_family_contract = None
         self._active_family_current: BeamInputs | None = None
+        self._active_family_result: EngineeringResult | None = None
         self._calculation_cache: dict[tuple[str, str], EngineeringResult | None] = {}
         self.search_profile = search_profile or SearchProfile()
+        self.preference_profile = preference_profile or DEFAULT_DESIGN_PREFERENCES
 
     @contextmanager
     def family_contract(
         self,
         contract: "FamilyContract",
-        current: BeamInputs | None = None,
+        context: "FamilyRunContext",
     ) -> "Iterator[None]":
         """Bind family-owned ranking rules for exactly one ladder execution."""
 
         previous = self._active_family_contract
         previous_current = self._active_family_current
+        previous_result = self._active_family_result
+        previous_preferences = self.preference_profile
         self._active_family_contract = contract
-        self._active_family_current = current
+        self._active_family_current = context.current
+        self._active_family_result = context.current_result
+        self.preference_profile = context.preferences
         started = perf_counter()
         self.last_search_metrics = {
             "proportion_triggered": False,
@@ -81,6 +99,8 @@ class DesignBrainService:
             "candidate_records": [],
             "cache_hits": 0,
             "cache_misses": 0,
+            "preference_profile_id": context.preferences.preference_profile_id,
+            "preference_profile_version": context.preferences.preference_profile_version,
         }
         try:
             yield
@@ -90,6 +110,8 @@ class DesignBrainService:
             )
             self._active_family_contract = previous
             self._active_family_current = previous_current
+            self._active_family_result = previous_result
+            self.preference_profile = previous_preferences
 
     def complete_stage(self, stage_id: str, stop_reason: str | None = None) -> None:
         """Record that a family-owned stage was fully enumerated.
@@ -181,6 +203,46 @@ class DesignBrainService:
             )
         return DesignBrainPreview(candidate, result, result, (), False, reason)
 
+    def preview_target_band(self, current: BeamInputs) -> DesignBrainPreview:
+        """Run only the target family's bounded proportion-balancing stage."""
+
+        before = self._calculator.calculate_current(current).result
+        if before is None:
+            raise ValueError("calculation result is stale")
+        seed = propose_neutral_candidate(current)
+        outcome = BendingProportionPipeline(
+            evaluate=self._evaluate,
+            rank_key=self._rank_key,
+            preferences=self.preference_profile,
+            stage_id="proportion_balance_target_band",
+        ).balance(current, before, seed, current, before)
+        self.merge_search_metrics(outcome.metrics)
+        triggered = bool(outcome.metrics.get("proportion_triggered", False))
+        if not triggered:
+            return DesignBrainPreview(
+                seed, before, before, (), False, "target_band_candidate"
+            )
+        self.complete_stage(
+            "proportion_balance_target_band",
+            "proportion_balance_candidate_found"
+            if outcome.reason == "proportion_balanced_candidate"
+            else "bounded_proportion_search_exhausted",
+        )
+        if outcome.reason != "proportion_balanced_candidate":
+            return DesignBrainPreview(
+                seed, before, before, (), False, "proportion_balance_exhausted"
+            )
+        changed = self._candidate_change_keys(current, outcome.candidate)
+        accepted = bool(changed) and _complete_compliance(outcome.result)
+        return DesignBrainPreview(
+            outcome.candidate,
+            before,
+            outcome.result,
+            changed,
+            accepted,
+            "proportion_balanced_candidate",
+        )
+
     @staticmethod
     def _has_sls(inputs: BeamInputs) -> bool:
         s = inputs.serviceability
@@ -189,7 +251,11 @@ class DesignBrainService:
     def _calculate_for_design_brain(self, inputs: BeamInputs) -> EngineeringResult | None:
         """Use a private provisional SLS proxy only for candidate ranking."""
         proxy_active = not self._has_sls(inputs) and inputs.serviceability.use_uls_fallback
-        cache_key = (inputs.content_hash, "proxy-0.60" if proxy_active else "explicit-sls")
+        proxy_ratio = float(self.preference_profile.provisional_sls_uls_ratio)
+        cache_key = (
+            inputs.content_hash,
+            f"proxy-{proxy_ratio:.6f}" if proxy_active else "explicit-sls",
+        )
         if cache_key in self._calculation_cache:
             self.last_search_metrics["cache_hits"] = int(
                 self.last_search_metrics.get("cache_hits", 0) or 0
@@ -208,14 +274,16 @@ class DesignBrainService:
             result = self._calculator.calculate_current(inputs).result
             self._calculation_cache[cache_key] = result
             return result
-        self.last_search_metrics["sls_source"] = "PROVISIONAL_ULS_RATIO_PROXY"
-        self.last_search_metrics["sls_proxy_ratio"] = 0.60
+        self.last_search_metrics["sls_source"] = (
+            ServiceabilityActionSource.PROVISIONAL_ULS_RATIO_PROXY.value
+        )
+        self.last_search_metrics["sls_proxy_ratio"] = proxy_ratio
         provisional = replace(
             inputs,
             serviceability=replace(
                 inputs.serviceability,
-                moment_knm=0.60 * float(inputs.actions.bending_moment_knm),
-                shear_kn=0.60 * float(inputs.actions.shear_force_kn),
+                moment_knm=proxy_ratio * float(inputs.actions.bending_moment_knm),
+                shear_kn=proxy_ratio * float(inputs.actions.shear_force_kn),
                 use_uls_fallback=True,
             ),
         )
@@ -230,6 +298,29 @@ class DesignBrainService:
             result,
             source_revision=inputs.revision,
             source_hash=inputs.content_hash,
+            families={
+                **result.families,
+                "serviceability": {
+                    **result.families.get("serviceability", {}),
+                    "status": (
+                        "PROVISIONAL PASS"
+                        if str(result.families.get("serviceability", {}).get("status", "")).upper() == "PASS"
+                        else result.families.get("serviceability", {}).get("status")
+                    ),
+                    "action_source": ServiceabilityActionSource.PROVISIONAL_ULS_RATIO_PROXY.value,
+                    "proxy_ratio": proxy_ratio,
+                },
+                "crack_control": {
+                    **result.families.get("crack_control", {}),
+                    "status": (
+                        "PROVISIONAL PASS"
+                        if str(result.families.get("crack_control", {}).get("status", "")).upper() == "PASS"
+                        else result.families.get("crack_control", {}).get("status")
+                    ),
+                    "action_source": ServiceabilityActionSource.PROVISIONAL_ULS_RATIO_PROXY.value,
+                    "proxy_ratio": proxy_ratio,
+                },
+            },
         )
         self._calculation_cache[cache_key] = result
         return result
@@ -256,6 +347,18 @@ class DesignBrainService:
         result displayed beside the Apply action.
         """
 
+        # With genuine SLS actions the family evaluation already used the
+        # ordinary authoritative calculator.  Recalculating the selected
+        # candidate here created a second post-family decision path: the
+        # family could select a verified candidate and a later calculation
+        # could replace its evidence and suppress Apply.  Preserve the exact
+        # result that the family evaluated and ranked.
+        if self._has_sls(current):
+            return preview
+
+        # A second calculation is required only for the private 0.60 ULS
+        # proxy.  It strips synthetic SLS actions from the displayed and
+        # published result without changing the family-owned selection.
         outcome = apply_candidate(current, preview.candidate)
         if not outcome.applied:
             return preview
@@ -310,6 +413,33 @@ class DesignBrainService:
         candidate_records = list(
             self.last_search_metrics.get("candidate_records", []) or []
         )
+        hard_congestion_codes = tuple(
+            code
+            for code in evaluation.rejection_codes
+            if code in {
+                "reinforcement_fit_failed",
+                "cover_failed",
+                "clear_spacing_failed",
+                "row_spacing_failed",
+                "anchorage_failed",
+                "constructability_limit_failed",
+            }
+        )
+        congestion_class = "low"
+        if evaluation.result is not None:
+            congestion_class = str(
+                evaluation.result.families.get("reinforcement_fit", {}).get(
+                    "congestion_class", "low"
+                )
+            ).lower()
+        soft_congestion_score = (
+            {
+                "moderate": self.preference_profile.soft_congestion_moderate_penalty,
+                "high": self.preference_profile.soft_congestion_high_penalty,
+            }.get(congestion_class, 0.0)
+            if not hard_congestion_codes
+            else 0.0
+        )
         candidate_records.append(
             CandidateEvidence(
                 candidate_id=candidate.candidate_id,
@@ -321,6 +451,13 @@ class DesignBrainService:
                 calculated_checks=evaluation.calculated_checks,
                 accepted_by_mandatory_checks=evaluation.mandatory_compliance,
                 rejection_codes=evaluation.rejection_codes,
+                hard_congestion_rejection_codes=hard_congestion_codes,
+                soft_congestion_score=soft_congestion_score,
+                soft_congestion_reasons=(
+                    (f"{congestion_class}_congestion",)
+                    if soft_congestion_score > 0.0
+                    else ()
+                ),
                 elapsed_ms=round(float(evaluation.elapsed_ms), 3),
             )
         )
@@ -367,7 +504,34 @@ class DesignBrainService:
             ("shear_legs", current.shear.legs, proposal.shear_legs),
             ("shear_spacing_mm", current.shear.spacing_mm, proposal.shear_spacing_mm),
         )
-        return tuple(name for name, before, after in comparisons if before != after)
+        changes = [
+            name for name, before, after in comparisons if before != after
+        ]
+        current_rows = (
+            tuple(row.bar_count for row in current.bottom_arrangement.rows)
+            if current.bottom_arrangement is not None
+            else (int(current.bottom.bars),)
+        )
+        current_row_diameters = (
+            tuple(
+                float(row.bar_diameter_mm or current.bottom.diameter_mm)
+                for row in current.bottom_arrangement.rows
+            )
+            if current.bottom_arrangement is not None
+            else (float(current.bottom.diameter_mm),)
+        )
+        candidate_rows = candidate.row_counts or (
+            int(candidate.proposal.bottom_bars),
+        )
+        candidate_row_diameters = candidate.row_diameters_mm or tuple(
+            float(candidate.proposal.bottom_diameter_mm)
+            for _ in candidate_rows
+        )
+        if tuple(candidate_rows) != current_rows:
+            changes.append("bottom_row_counts")
+        if tuple(candidate_row_diameters) != current_row_diameters:
+            changes.append("bottom_row_diameters_mm")
+        return tuple(changes)
 
     def _rank_key(
         self,
@@ -377,7 +541,37 @@ class DesignBrainService:
         target_distance: float,
         edit_size: float,
     ) -> tuple:
-        """Use the shared, safety-first ranking contract for every family."""
+        """Use only the selected family's complete contract-bound policy."""
+        if self._active_family_contract is None or self._active_family_result is None:
+            raise RuntimeError("candidate ranking requires a selected family contract")
+        evidence = candidate_evidence(
+            current,
+            candidate,
+            result,
+            target_distance,
+            edit_size,
+            family_contract=self._active_family_contract,
+            current_result=self._active_family_result,
+            preferences=self.preference_profile,
+        )
+        records = list(self.last_search_metrics.get("candidate_records", ()) or ())
+        for index in range(len(records) - 1, -1, -1):
+            if records[index].candidate_id == candidate.candidate_id:
+                records[index] = replace(
+                    records[index],
+                    new_near_failure_count=evidence.new_near_failure_count,
+                    constructability_penalty=evidence.constructability_penalty,
+                    hard_congestion_rejection_codes=evidence.hard_congestion_rejection_codes,
+                    soft_congestion_score=evidence.soft_congestion_score,
+                    soft_congestion_reasons=evidence.soft_congestion_reasons,
+                    near_limit_evidence=evidence.near_limit_evidence,
+                    geometry_change_penalty=evidence.geometry_change_penalty,
+                    material_quantity=evidence.material_quantity,
+                    target_distance=evidence.target_distance,
+                    edit_count=evidence.edit_count,
+                )
+                break
+        self.last_search_metrics["candidate_records"] = records
         return candidate_rank_key(
             current,
             candidate,
@@ -385,6 +579,8 @@ class DesignBrainService:
             target_distance,
             edit_size,
             family_contract=self._active_family_contract,
+            current_result=self._active_family_result,
+            preferences=self.preference_profile,
         )
 
     def preview(self, current: BeamInputs) -> DesignBrainPreview:
@@ -392,6 +588,8 @@ class DesignBrainService:
             calculate=lambda inputs: self._calculator.calculate_current(inputs).result,
             evaluate=self._evaluate,
             complete_stage=self.complete_stage,
+            rank_key=self._rank_key,
+            preferences=self.preference_profile,
         ).preview(current)
         if outcome.metrics is not None:
             self.merge_search_metrics(outcome.metrics)
@@ -412,6 +610,7 @@ class DesignBrainService:
             calculate=lambda inputs: self._calculator.calculate_current(inputs).result,
             evaluate=self._evaluate,
             rank_key=self._rank_key,
+            preferences=self.preference_profile,
             complete_stage=self.complete_stage,
         ).preview(current)
     def preview_bending_failure_shear_cleanup(self, current: BeamInputs) -> DesignBrainPreview:
@@ -426,6 +625,7 @@ class DesignBrainService:
             calculate=lambda inputs: self._calculator.calculate_current(inputs).result,
             evaluate=self._evaluate,
             rank_key=self._rank_key,
+            preferences=self.preference_profile,
             complete_stage=self.complete_stage,
             budget_exhausted=lambda: bool(
                 self.last_search_metrics.get("budget_exhausted", False)
@@ -451,6 +651,7 @@ class DesignBrainService:
             evaluate=self._evaluate,
             rank_key=self._rank_key,
             complete_stage=self.complete_stage,
+            preferences=self.preference_profile,
             max_consecutive_infeasible=self.search_profile.max_consecutive_infeasible,
         ).preview(current)
         self.merge_search_metrics(outcome.metrics)
@@ -618,6 +819,8 @@ class DesignBrainService:
             complete_stage=self.complete_stage,
             merge_metrics=self.merge_search_metrics,
             nearby_dimension_steps=self.search_profile.nearby_dimension_steps,
+            max_continuation_rounds=self.search_profile.max_combined_continuation_rounds,
+            preferences=self.preference_profile,
         ).preview(current)
 
     def apply(self, current: BeamInputs, preview: DesignBrainPreview) -> ApplyOutcome:

@@ -24,12 +24,9 @@ def installed_inputs_v2_root() -> Path:
     return Path(locations[0]).resolve()
 
 
-@lru_cache(maxsize=8)
-def source_tree_manifest_hash(
-    package_root_text: str,
-    distribution_version: str,
-) -> str:
-    """Hash one V2 Python source tree in stable path order."""
+@lru_cache(maxsize=4)
+def _source_manifest_hash(package_root_text: str, distribution_version: str) -> str:
+    """Hash installed V2 Python sources in stable path order."""
 
     root = Path(package_root_text)
     digest = hashlib.sha256()
@@ -54,12 +51,11 @@ def source_manifest_hash() -> str:
             "incompatible beamapp-inputs-v2 distribution: "
             f"expected {EXPECTED_INPUTS_V2_VERSION}, found {version}"
         )
-    return source_tree_manifest_hash(str(root), version)
+    return _source_manifest_hash(str(root), version)
 
 
 __all__ = [
     "EXPECTED_INPUTS_V2_VERSION",
     "installed_inputs_v2_root",
     "source_manifest_hash",
-    "source_tree_manifest_hash",
 ]

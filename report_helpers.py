@@ -1522,7 +1522,7 @@ def render_active_beam_report_preview(
     }
     if project_rows:
         st.markdown("#### Project Information")
-        st.dataframe(_df_from_group(project_rows), hide_index=True, width="stretch")
+        st.dataframe(_df_from_group(project_rows), hide_index=True, use_container_width=True)
 
     summary_cols = st.columns(3)
     summary_cols[0].markdown(f"**Overall**\n\n{format_report_status_badge(checks.get('overall_status'), strength_status=checks.get('strength_status'), detailing_status=checks.get('detailing_status'))}")
@@ -1547,23 +1547,23 @@ def render_active_beam_report_preview(
             for row in summary_rows
         ]
     )
-    st.dataframe(summary_df, hide_index=True, width="stretch")
+    st.dataframe(summary_df, hide_index=True, use_container_width=True)
 
     input_col_1, input_col_2 = st.columns(2, gap="large")
     with input_col_1:
         st.markdown("#### Geometry")
-        st.dataframe(_df_from_group(inputs.get("geometry", {})), hide_index=True, width="stretch")
+        st.dataframe(_df_from_group(inputs.get("geometry", {})), hide_index=True, use_container_width=True)
         st.markdown("#### Materials")
-        st.dataframe(_df_from_group(inputs.get("materials", {})), hide_index=True, width="stretch")
+        st.dataframe(_df_from_group(inputs.get("materials", {})), hide_index=True, use_container_width=True)
     with input_col_2:
         st.markdown("#### Reinforcement")
-        st.dataframe(_df_from_group(inputs.get("reinforcement", {})), hide_index=True, width="stretch")
+        st.dataframe(_df_from_group(inputs.get("reinforcement", {})), hide_index=True, use_container_width=True)
         st.markdown("#### ULS Design Actions")
-        st.dataframe(_df_from_group(actions.get("uls", {})), hide_index=True, width="stretch")
+        st.dataframe(_df_from_group(actions.get("uls", {})), hide_index=True, use_container_width=True)
         st.markdown("#### SLS Design Actions")
-        st.dataframe(_df_from_group(actions.get("sls", {})), hide_index=True, width="stretch")
+        st.dataframe(_df_from_group(actions.get("sls", {})), hide_index=True, use_container_width=True)
         st.markdown("#### Design Basis")
-        st.dataframe(_df_from_group(design_basis), hide_index=True, width="stretch")
+        st.dataframe(_df_from_group(design_basis), hide_index=True, use_container_width=True)
 
     st.markdown('<div class="beam-report-section"></div>', unsafe_allow_html=True)
     st.markdown("#### Analysis Context")
@@ -1571,17 +1571,17 @@ def render_active_beam_report_preview(
     context_groups = _analysis_context_groups(analysis_context)
     with ctx_col_1:
         st.markdown("##### Beam Model")
-        st.dataframe(_df_from_group(context_groups.get("Beam model", {})), hide_index=True, width="stretch")
+        st.dataframe(_df_from_group(context_groups.get("Beam model", {})), hide_index=True, use_container_width=True)
     with ctx_col_2:
         st.markdown("##### Loads")
-        st.dataframe(_df_from_group(context_groups.get("Loads", {})), hide_index=True, width="stretch")
+        st.dataframe(_df_from_group(context_groups.get("Loads", {})), hide_index=True, use_container_width=True)
     with ctx_col_3:
         st.markdown("##### Section Extraction")
-        st.dataframe(_df_from_group(context_groups.get("Section extraction", {})), hide_index=True, width="stretch")
+        st.dataframe(_df_from_group(context_groups.get("Section extraction", {})), hide_index=True, use_container_width=True)
     load_summary = analysis_context.get("load_summary") or []
     if load_summary:
         st.markdown("#### Loads On Beam")
-        st.dataframe(pd.DataFrame(load_summary), hide_index=True, width="stretch")
+        st.dataframe(pd.DataFrame(load_summary), hide_index=True, use_container_width=True)
 
     st.markdown('<div class="beam-report-section"></div>', unsafe_allow_html=True)
     st.markdown("#### Essential Diagrams")
@@ -1624,7 +1624,7 @@ def render_active_beam_report_preview(
     )
     st.markdown('<div class="beam-report-section"></div>', unsafe_allow_html=True)
     st.markdown("#### Key Results")
-    st.dataframe(key_results_df, hide_index=True, width="stretch")
+    st.dataframe(key_results_df, hide_index=True, use_container_width=True)
     if serviceability.get("components"):
         st.caption(
             "Serviceability: "
@@ -1680,7 +1680,7 @@ def render_active_beam_report_preview(
                         }
                     ]
                 )
-            st.dataframe(detail_df, hide_index=True, width="stretch")
+            st.dataframe(detail_df, hide_index=True, use_container_width=True)
 
 
 def build_active_beam_report_pdf(

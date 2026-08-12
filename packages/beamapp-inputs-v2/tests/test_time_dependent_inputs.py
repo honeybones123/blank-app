@@ -45,3 +45,34 @@ def test_void_diameter_without_ducts_is_rejected() -> None:
         assert "diameter" in str(exc)
     else:
         raise AssertionError("invalid void input was accepted")
+
+
+def test_unrelated_input_command_preserves_time_dependent_method_inputs() -> None:
+    current = BeamInputs(
+        time_dependent=TimeDependentInputs(
+            exposed_faces="Beam – four faces exposed",
+            creep_environment="Arid environment",
+            shrinkage_environment="Interior environment",
+            stress_ratio=0.4,
+            sustained_concrete_stress_mpa=12.0,
+            concrete_modulus_mpa=32000.0,
+        )
+    ).validated()
+    command = UpdateFirstSlice(
+        width_mm=current.width_mm,
+        depth_mm=current.depth_mm,
+        bottom_mode=current.bottom.mode,
+        bottom_bars=current.bottom.bars,
+        bottom_spacing_mm=current.bottom.spacing_mm,
+        bottom_diameter_mm=current.bottom.diameter_mm,
+        bottom_cover_mm=current.bottom.cover_mm,
+    )
+
+    updated = apply_input_command(current, command)
+
+    assert updated.time_dependent.exposed_faces == "Beam – four faces exposed"
+    assert updated.time_dependent.creep_environment == "Arid environment"
+    assert updated.time_dependent.shrinkage_environment == "Interior environment"
+    assert updated.time_dependent.stress_ratio == 0.4
+    assert updated.time_dependent.sustained_concrete_stress_mpa == 12.0
+    assert updated.time_dependent.concrete_modulus_mpa == 32000.0

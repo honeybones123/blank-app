@@ -17,7 +17,7 @@ def render_recommendation_apply_button(
         "Applied" if applied else button_label,
         key=button_key,
         type="secondary",
-        width="content" if compact else "stretch",
+        use_container_width=not compact,
         disabled=applied,
     )
 

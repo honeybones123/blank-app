@@ -18,7 +18,7 @@ from inputs_v2.engineering.legacy_snapshot.crack_control import (
         (40.0, 300.0, 0.3, "Primarily tension", 0.0, "bottom"),
     ],
 )
-def test_crack_control_table_preserves_snapshot_numerical_parity(
+def test_crack_control_preserves_snapshot_numerical_parity(
     diameter: float,
     spacing: float,
     limit: float,
@@ -44,7 +44,6 @@ def test_crack_control_table_preserves_snapshot_numerical_parity(
         shrinkage_strain=650e-6,
         bond_factor=0.8,
         strain_distribution_factor=0.5,
-        neutral_axis_depth_mm=180.0,
         tension_face=face,
     )
     current = calculate_crack_control(values).as_family_values()
@@ -68,17 +67,8 @@ def test_crack_control_table_preserves_snapshot_numerical_parity(
         k2=values.strain_distribution_factor,
         crack_tension_face=values.tension_face,
     )
-    table_keys = (
-        "sigma_table_A",
-        "sigma_table_B",
-        "sigma_table_combined",
-        "sigma_08fsy",
-        "sigma_allow_table",
-        "utilisation_table",
-        "passes_table",
-    )
-    for key in table_keys:
-        expected = legacy[key]
+    assert current.keys() == legacy.keys()
+    for key, expected in legacy.items():
         if isinstance(expected, bool):
             assert current[key] is expected
         else:
@@ -104,7 +94,6 @@ def test_crack_control_rejects_non_finite_inputs() -> None:
         shrinkage_strain=650e-6,
         bond_factor=0.8,
         strain_distribution_factor=0.5,
-        neutral_axis_depth_mm=180.0,
     )
     with pytest.raises(ValueError, match="width_mm must be finite"):
         calculate_crack_control(values)

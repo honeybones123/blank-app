@@ -18,10 +18,13 @@ V1_CONTRACT_FAMILIES = {
 }
 
 
-def test_v2_registry_preserves_v1_contract_families_and_adds_typed_no_load_state() -> None:
-    assert {family.value for family in DesignFamily} == V1_CONTRACT_FAMILIES | {"INPUT_REQUIRED"}
+def test_v2_registry_preserves_v1_contract_families_and_adds_typed_terminal_states() -> None:
+    assert {family.value for family in DesignFamily} == V1_CONTRACT_FAMILIES | {
+        "INPUT_REQUIRED",
+        "ENGINEERING_REVIEW_REQUIRED",
+    }
     assert tuple(family.value for family in V1_FAMILY_PRIORITY) == (
-        "INPUT_REQUIRED", "EXACT_STOP_PROVEN", "LOCKED_NO_REPAIR", "GEOMETRY_DETAILING_GOVERNS",
+        "INPUT_REQUIRED", "ENGINEERING_REVIEW_REQUIRED", "EXACT_STOP_PROVEN", "LOCKED_NO_REPAIR", "GEOMETRY_DETAILING_GOVERNS",
         "BENDING_AND_SHEAR_FAIL_GOVERN", "BENDING_FAIL_SHEAR_OVERDESIGN_GOVERNS",
         "SHEAR_FAIL_BENDING_OPTIMISE_GOVERNS", "BENDING_FAIL_GOVERNS", "SHEAR_FAIL_GOVERNS",
         "SERVICEABILITY_GOVERNS", "COMBINED_OVERDESIGN", "BENDING_OVERDESIGN_GOVERNS",

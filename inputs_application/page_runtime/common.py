@@ -156,6 +156,7 @@ from inputs_page_modules.tail import (
 from inputs_page_modules.summaries import render_inputs_summary_expanders_and_tables_current_coordinator
 
 from inputs_page_modules.summaries.render_coordinators import render_inputs_summary_container_current as render_inputs_summary_container_current_module
+from inputs_page_modules.summaries.display_state import render_inputs_summary_display_state as render_inputs_summary_display_state_module
 
 
 from inputs_application.v2_design_brain_ui_boundary import should_render_design_guide_slot_from_publication_eligibility
@@ -735,10 +736,7 @@ def _mark_design_guide_dirty() -> None:
     )
 
 def _shared_state_snapshot() -> dict:
-    return {
-        key: st.session_state.get(key, default)
-        for key, default in SHARED_DEFAULTS.items()
-    }
+    return shared_state_snapshot(st.session_state)
 
 def cached_make_section_figure(
     *,
@@ -993,34 +991,6 @@ def _shared_toggle(
         key=widget_key,
         help=help_text,
         on_change=sync_callbacks.get(widget_key),
-    )
-
-
-def _ui_toggle(
-    label: str,
-    widget_key: str,
-    ui_key: str,
-    default: bool,
-    _sync_callbacks: dict,
-    *,
-    help_text: str | None = None,
-) -> bool:
-    """Render a presentation-only toggle outside the beam input contract."""
-
-    _register_rendered_key(widget_key)
-    if ui_key not in st.session_state:
-        st.session_state[ui_key] = bool(default)
-    if widget_key not in st.session_state:
-        st.session_state[widget_key] = bool(st.session_state[ui_key])
-
-    def _commit_ui_choice() -> None:
-        st.session_state[ui_key] = bool(st.session_state.get(widget_key, default))
-
-    return st.toggle(
-        label,
-        key=widget_key,
-        help=help_text,
-        on_change=_commit_ui_choice,
     )
 
 def _resolve_design_actions_from_state(state: dict) -> dict:

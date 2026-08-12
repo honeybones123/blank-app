@@ -13,9 +13,9 @@ from application.opening_page_preferences import (
     clear_opening_page_preference,
     load_opening_page_preference,
     normalise_opening_page,
-    render_pending_guest_preference_write,
     save_opening_page_preference,
 )
+from ui.opening_page_preference_bridge import render_pending_guest_preference_write
 from application.reference_registry import reference_entries
 from application.user_preference_store import save_account_preference
 
@@ -58,9 +58,6 @@ div[data-testid="stHorizontalBlock"]:has(.st-key-start_beam_inputs_card) { align
 .st-key-start_open_load_analysis button:focus-visible { border-color:#1d4ed8 !important; background:#1d4ed8 !important; color:#fff !important; }
 .start-path-help { margin:.8rem 0 1.1rem; color:#475569; font-size:.9rem; }
 .start-secondary-panel { border:1px solid #e2e8f0; border-radius:12px; padding:.9rem 1rem; background:#fff; }
-.start-notice { border-left:4px solid #2563eb; background:rgba(37,99,235,.05); border-radius:10px; padding:.8rem .95rem; }
-.start-notice h3 { margin:0 0 .3rem !important; font-size:1rem !important; }
-.start-notice p { margin:0; color:#475569; font-size:.9rem; line-height:1.5; }
 .start-metadata { margin:1.15rem 0 .2rem; color:#64748b; font-size:.78rem; line-height:1.45; }
 @media (max-width:700px) {
   .st-key-start_beam_inputs_card,
@@ -159,33 +156,81 @@ def _show_disclaimer_dialog(user_id: str) -> None:
     _dialog()
 
 
-def _show_full_references_dialog() -> None:
-    @st.dialog("References and design basis", width="large")
-    def _dialog() -> None:
-        metadata = application_metadata()
-        for entry in reference_entries():
-            st.markdown(f"### {entry.standard_title} ({entry.identifier})")
-            st.write(f"Edition: {entry.edition}")
-            st.write(f"Amendment status: {entry.amendment_status}")
-            st.write(f"Used for: {entry.application_use}")
-            st.write("Modules/checks: " + ", ".join(entry.modules))
-            st.caption(entry.qualifications)
-        st.caption(f"Calculation engine: {metadata.calculation_engine_version}")
+def _render_opening_page_preference(user_id: str) -> None:
+    """Render the saved opening-page controls after the design-basis content."""
+    st.markdown("## Default opening page")
+    st.write("Choose which page opens when you start a new beam design.")
+    if user_id:
+        saved_default = load_opening_page_preference(
+            user_id=user_id,
+            session_state=st.session_state,
+        )
+    else:
+        query_saved = st.query_params.get("opening_page_pref")
+        if isinstance(query_saved, list):
+            query_saved = query_saved[0] if query_saved else None
+        saved_default = normalise_opening_page(
+            st.session_state.get("_opening_page_preference") or query_saved
+        )
+    st.session_state.setdefault("start_default_opening_page_choice", saved_default)
+    selected_default = st.radio(
+        "Default opening page",
+        options=("start", "inputs", "design"),
+        format_func=lambda value: OPENING_PAGE_LABELS[value],
+        key="start_default_opening_page_choice",
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+    remember = st.checkbox("Remember my choice", key="start_remember_opening_page")
 
-    _dialog()
+    def _clear_saved_opening_preference() -> None:
+        result = clear_opening_page_preference(
+            user_id=user_id,
+            session_state=st.session_state,
+        )
+        if result is not None and not result.saved:
+            st.session_state["_start_preference_flash"] = (
+                "warning",
+                result.error or "The account preference could not be cleared.",
+            )
+        else:
+            st.session_state["_start_preference_flash"] = (
+                "success",
+                "Saved preference cleared. New beam designs will open on Start.",
+            )
 
+    save_col, clear_col = st.columns(2, gap="small")
+    with save_col:
+        if st.button(
+            "Save opening preference",
+            key="start_save_opening_preference",
+            width="stretch",
+        ):
+            result = save_opening_page_preference(
+                user_id=user_id,
+                value=selected_default,
+                remember=remember,
+                session_state=st.session_state,
+            )
+            if result is not None and not result.saved:
+                st.warning(result.error or "The account preference could not be saved.")
+            else:
+                st.success("Opening preference saved. It will apply to new beam designs.")
+    with clear_col:
+        st.button(
+            "Clear saved preference",
+            key="start_clear_opening_preference",
+            width="stretch",
+            on_click=_clear_saved_opening_preference,
+        )
 
-def _show_assumptions_dialog() -> None:
-    @st.dialog("Assumptions and limitations", width="large")
-    def _dialog() -> None:
-        for entry in reference_entries():
-            if entry.key in {"assumptions_limitations", "clause_register"}:
-                st.markdown(f"### {entry.row_title}")
-                st.write(entry.application_use)
-                st.caption(entry.qualifications)
-        st.info("Calculation-specific assumptions and clause references remain on each calculation page.")
-
-    _dialog()
+    flash = st.session_state.pop("_start_preference_flash", None)
+    if isinstance(flash, tuple) and len(flash) == 2:
+        level, message = flash
+        if level == "warning":
+            st.warning(str(message))
+        else:
+            st.success(str(message))
 
 
 def render_start_page(
@@ -193,9 +238,8 @@ def render_start_page(
     make_cross_section_figure_fn: Callable[[], Any],
     user_id: str = "",
 ) -> None:
-    """Render navigation and design-basis content without owning calculations."""
+    """Render initial navigation without owning calculations."""
     _render_card_styles()
-    st.title("Start your beam design")
     st.markdown(
         '<div class="start-page-intro"><p>Choose whether to define the beam directly or calculate its design actions from applied loads.</p></div>',
         unsafe_allow_html=True,
@@ -203,6 +247,9 @@ def render_start_page(
 
     def _navigate(page_slug: str) -> None:
         st.session_state[PENDING_NAV_PAGE_SLUG_KEY] = page_slug
+        # Navigation is the one Start-page action that intentionally changes
+        # the shell.  Other Start widgets remain inside the page fragment.
+        st.rerun()
 
     beam_col, load_col = st.columns(2, gap="medium")
     with beam_col:
@@ -274,113 +321,52 @@ def render_start_page(
         unsafe_allow_html=True,
     )
 
-    st.markdown("## Default opening page")
-    st.write("Choose which page opens when you start a new beam design.")
-    if user_id:
-        saved_default = load_opening_page_preference(
-            user_id=user_id,
-            session_state=st.session_state,
-        )
-    else:
-        query_saved = st.query_params.get("opening_page_pref")
-        if isinstance(query_saved, list):
-            query_saved = query_saved[0] if query_saved else None
-        saved_default = normalise_opening_page(
-            st.session_state.get("_opening_page_preference") or query_saved
-        )
-    st.session_state.setdefault("start_default_opening_page_choice", saved_default)
-    selected_default = st.radio(
-        "Default opening page",
-        options=("start", "inputs", "design"),
-        format_func=lambda value: OPENING_PAGE_LABELS[value],
-        key="start_default_opening_page_choice",
-        horizontal=True,
-        label_visibility="collapsed",
+    st.divider()
+    st.markdown("## Disclaimer")
+    disclaimer_status_col, disclaimer_action_col = st.columns(
+        [4.2, 1.4], gap="small", vertical_alignment="center"
     )
-    remember = st.checkbox("Remember my choice", key="start_remember_opening_page")
-
-    def _clear_saved_opening_preference() -> None:
-        result = clear_opening_page_preference(
-            user_id=user_id,
-            session_state=st.session_state,
+    with disclaimer_status_col:
+        st.success(
+            "Accepted — current StructuralBase design disclaimer "
+            f"(last updated 10 August 2026 · {DISCLAIMER.version})."
         )
-        if result is not None and not result.saved:
-            st.session_state["_start_preference_flash"] = (
-                "warning",
-                result.error or "The account preference could not be cleared.",
-            )
-        else:
-            st.session_state["_start_preference_flash"] = (
-                "success",
-                "Saved preference cleared. New beam designs will open on Start.",
-            )
-
-    save_col, clear_col = st.columns(2, gap="small")
-    with save_col:
-        if st.button("Save opening preference", key="start_save_opening_preference", width="stretch"):
-            result = save_opening_page_preference(
-                user_id=user_id,
-                value=selected_default,
-                remember=remember,
-                session_state=st.session_state,
-            )
-            if result is not None and not result.saved:
-                st.warning(result.error or "The account preference could not be saved.")
-            else:
-                st.success("Opening preference saved. It will apply to new beam designs.")
-    with clear_col:
-        st.button(
-            "Clear saved preference",
-            key="start_clear_opening_preference",
-            width="stretch",
-            on_click=_clear_saved_opening_preference,
-        )
-
-    flash = st.session_state.pop("_start_preference_flash", None)
-    if isinstance(flash, tuple) and len(flash) == 2:
-        level, message = flash
-        if level == "warning":
-            st.warning(str(message))
-        else:
-            st.success(str(message))
-
-    st.markdown("## Getting started")
-    with st.container(key="start_getting_started"):
-        st.markdown(
-            "1. Define the beam geometry, materials and reinforcement.\n"
-            "2. Enter known design actions or calculate them from supports and loads.\n"
-            "3. Review the design checks and Design Brain recommendations."
-        )
-
-    st.markdown("## Important design notice")
-    st.markdown(
-        f'<div class="start-notice"><h3>Important design notice</h3><p>{DISCLAIMER.short_notice}</p></div>',
-        unsafe_allow_html=True,
-    )
-    if st.button("Read full disclaimer", key="start_read_full_disclaimer"):
-        _show_disclaimer_dialog(user_id)
-
-    st.markdown("## References and design basis")
-    st.write(
-        "Calculations are based on the Australian Standards, project inputs and engineering assumptions identified below. "
-        "Confirm that the nominated standards, editions and project requirements are appropriate for the design."
-    )
-    for entry in reference_entries():
-        label = f"{entry.row_title} · {entry.identifier} · {entry.edition}"
-        with st.expander(label, expanded=False):
-            st.write(entry.standard_title)
-            st.caption(entry.amendment_status)
-    refs_col, assumptions_col = st.columns(2, gap="small")
-    with refs_col:
-        if st.button("View full references", key="start_view_full_references", width="stretch"):
-            _show_full_references_dialog()
-    with assumptions_col:
+    with disclaimer_action_col:
         if st.button(
-            "View assumptions and limitations",
-            key="start_view_assumptions",
+            "View full disclaimer",
+            key="start_view_full_disclaimer",
             width="stretch",
         ):
-            _show_assumptions_dialog()
+            _show_disclaimer_dialog(user_id)
+
+    st.divider()
+    st.markdown("## Referenced documents")
+    referenced_document_keys = {
+        "concrete_design",
+        "bridge_concrete",
+        "structural_actions",
+    }
+    reference_lines: list[str] = []
+    for entry in reference_entries():
+        if entry.key not in referenced_document_keys:
+            continue
+        edition_label = (
+            f"{entry.identifier}:{entry.edition}"
+            if entry.edition[:1].isdigit()
+            else f"{entry.identifier} ({entry.edition})"
+        )
+        reference_lines.append(
+            f"- **{edition_label} — {entry.standard_title}.**  \n"
+            f"  {entry.application_use} {entry.amendment_status}"
+        )
+    st.markdown("\n".join(reference_lines))
+    st.caption(
+        "Consult the complete, current and legally applicable editions for the project. "
+        "Clause-level citations remain with the relevant calculation explanations."
+    )
+
+    st.divider()
+    _render_opening_page_preference(user_id)
 
     metadata = application_metadata()
     st.markdown(
@@ -388,7 +374,6 @@ def render_start_page(
             '<p class="start-metadata">'
             f'Application {metadata.application_version} · '
             f'Calculation engine {metadata.calculation_engine_version} · '
-            f'References {metadata.reference_set_version} · '
             f'Last updated {metadata.last_updated_date}'
             '</p>'
         ),
