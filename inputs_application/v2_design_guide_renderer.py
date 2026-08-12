@@ -238,14 +238,6 @@ def render_v2_design_guide_card(
                     _queue_v2_design_guide_apply(st_module, payload)
                     if apply_handler is not None:
                         apply_handler()
-                    # The handler commits the typed mutation; explicitly
-                    # re-enter the owning page so the committed snapshot is
-                    # recalculated before this card is rendered again.
-                    # Without this boundary Streamlit can leave the old
-                    # publication visible while the widget mirror has moved.
-                    rerun = getattr(st_module, "rerun", None)
-                    if callable(rerun):
-                        rerun()
 
 
 __all__ = ["render_v2_design_guide_card"]

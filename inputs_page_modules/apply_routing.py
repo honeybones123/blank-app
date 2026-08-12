@@ -169,4 +169,10 @@ def handle_inputs_apply_buttons(
     # fragment rerun can leave the calculation region on the pre-Apply
     # publication (the controls update while the card stays stale); the
     # historical working V2 flow used one authoritative rerun here.
-    st_module.rerun()
+    # Re-enter only the owning workspace fragment so the committed model is
+    # recalculated without rebuilding navigation and unrelated page widgets.
+    try:
+        st_module.rerun(scope="fragment")
+    except TypeError:
+        # Compatibility for test doubles/older Streamlit versions.
+        st_module.rerun()
