@@ -91,6 +91,11 @@ def _render_authoritative_uls_steps(
     clause_status = str(top_results.get("ductility_status", "NOT RUN") or "NOT RUN").upper()
     failed = tuple(top_results.get("clause_815_failed_requirements", ()) or ())
     failed_text = ", ".join(str(value).replace("_", " ") for value in failed) or "None"
+    tension_n = float(top_results.get("T_N", 0.0) or 0.0)
+    concrete_n = float(top_results.get("C_concrete_N", 0.0) or 0.0)
+    compression_steel_n = float(top_results.get("C_steel_N", 0.0) or 0.0)
+    lever_arm = nominal * 1e6 / tension_n if abs(tension_n) > 1e-9 else 0.0
+    utilisation_text = f"{utilisation:.3f}" if math.isfinite(utilisation) else "not finite (zero capacity)"
 
     def info_control(help_text: str, heading: str, body: str):
         def render_info():
@@ -136,12 +141,29 @@ def _render_authoritative_uls_steps(
             f"Result: alpha2 = {alpha2:.3f}, gamma = {gamma:.3f}"
         ),
         details_md=rf"""
-The authoritative AS 3600 rectangular stress-block factors are calculated from
-$f'_c={fc:.1f}$ MPa:
+**Purpose**
 
-$$\alpha_2=\max(0.67,0.85-0.0015f'_c)={alpha2:.3f}$$
+Determine the AS 3600 ULS rectangular stress-block factors used by the authoritative section analysis.
 
-$$\gamma=\max(0.67,0.97-0.0025f'_c)={gamma:.3f}$$
+**Inputs**
+
+- Concrete strength: $f'_c={fc:.1f}\,\text{{MPa}}$
+
+**Formula**
+
+$$\alpha_2=\max(0.67,0.85-0.0015f'_c)$$
+
+$$\gamma=\max(0.67,0.97-0.0025f'_c)$$
+
+**Substitution**
+
+$$\alpha_2=\max(0.67,0.85-0.0015\times {fc:.1f})={alpha2:.3f}$$
+
+$$\gamma=\max(0.67,0.97-0.0025\times {fc:.1f})={gamma:.3f}$$
+
+**Result**
+
+$\alpha_2={alpha2:.3f}$ and $\gamma={gamma:.3f}$.
 """,
         status=None,
         content_before=info_control(
@@ -160,15 +182,38 @@ $$\gamma=\max(0.67,0.97-0.0025f'_c)={gamma:.3f}$$
             f"Result: dn = {dn:.1f} mm, a = {block_depth:.1f} mm"
         ),
         details_md=rf"""
-The neutral axis is solved iteratively using the section-shape compression
-block, every reinforcement layer and linear strain compatibility with
-$\varepsilon_{{cu}}=0.003$.
+**Purpose**
 
-Calculated steel-layer stresses: {stress_text}.
+Solve the neutral-axis depth using strain compatibility and internal force equilibrium for every reinforcement layer.
 
-The equilibrium residual is {residual_kn:.6f} kN. The resulting neutral-axis
-depth is $d_n={dn:.1f}$ mm and the equivalent block depth is
-$a=\gamma d_n={block_depth:.1f}$ mm.
+**Inputs**
+
+- Section: $b={b:.1f}\,\text{{mm}}$, $D={D:.1f}\,\text{{mm}}$
+- Effective depth: $d={d:.1f}\,\text{{mm}}$
+- Ultimate concrete strain: $\varepsilon_{{cu}}=0.003$
+- Steel-layer stresses from the authoritative solver: {stress_text}
+
+**Formula**
+
+$$\varepsilon_s=\varepsilon_{{cu}}\frac{{d-y_s}}{{d_n}}$$
+
+The solver varies $d_n$ until:
+
+$$\sum C-\sum T=0$$
+
+and then calculates:
+
+$$a=\gamma d_n$$
+
+**Substitution**
+
+The converged equilibrium residual is ${residual_kn:.6f}\,\text{{kN}}$.
+
+$$a={gamma:.3f}\times {dn:.1f}={block_depth:.1f}\,\text{{mm}}$$
+
+**Result**
+
+$d_n={dn:.1f}\,\text{{mm}}$ and $a={block_depth:.1f}\,\text{{mm}}$.
 """,
         status=None,
         content_before=info_control(
@@ -187,15 +232,33 @@ $a=\gamma d_n={block_depth:.1f}$ mm.
             f"Result: T = {tension_kn:.1f} kN"
         ),
         details_md=rf"""
-Tension resultant: {tension_kn:.1f} kN.
+**Purpose**
 
-Concrete compression resultant: {concrete_kn:.1f} kN.
+Resolve the authoritative concrete and reinforcement stresses into the internal ULS force resultants.
 
-Compression-steel resultant: {compression_steel_kn:.1f} kN.
+**Inputs**
 
-Concrete and steel resultants are taken about the compression face when the
-nominal moment is calculated; compression steel is therefore not treated as
-yielded tension steel.
+- Concrete compression block: $\alpha_2={alpha2:.3f}$, $a={block_depth:.1f}\,\text{{mm}}$
+- Steel yield strength: $f_{{sy}}={fsy:.1f}\,\text{{MPa}}$
+- Calculated steel-layer stresses: {stress_text}
+
+**Formula**
+
+$$C_c=\int_A \sigma_c\,dA$$
+
+$$F_{{s,i}}=A_{{s,i}}\sigma_{{s,i}}$$
+
+$$\sum C=C_c+\sum C_s,\qquad \sum T=\sum T_s$$
+
+**Substitution**
+
+- Tension resultant: $T={tension_kn:.1f}\,\text{{kN}}$
+- Concrete compression: $C_c={concrete_kn:.1f}\,\text{{kN}}$
+- Compression-steel resultant: $C_s={compression_steel_kn:.1f}\,\text{{kN}}$
+
+**Result**
+
+The authoritative force-equilibrium residual is ${residual_kn:.6f}\,\text{{kN}}$.
 """,
         status=None,
         content_before=info_control(
@@ -211,14 +274,30 @@ yielded tension steel.
             f"Result: ku = {ku:.3f}, phi = {phi:.3f}"
         ),
         details_md=rf"""
-$$k_u=\frac{{d_n}}{{d}}=\frac{{{dn:.1f}}}{{{d:.1f}}}={ku:.3f}$$
+**Purpose**
 
-For Class N pure bending, the calculated strength-reduction factor is:
+Calculate the neutral-axis ratio and the AS 3600 bending strength-reduction factor.
 
-$$\phi=\min(0.85,\max(0.65,1.24-13k_u/12))={phi:.3f}$$
+**Inputs**
 
-The factor is derived from the calculated neutral-axis ratio; it is not a
-fixed user-selected value.
+- Neutral-axis depth: $d_n={dn:.1f}\,\text{{mm}}$
+- Effective depth: $d={d:.1f}\,\text{{mm}}$
+
+**Formula**
+
+$$k_u=\frac{{d_n}}{{d}}$$
+
+$$\phi=\min(0.85,\max(0.65,1.24-13k_u/12))$$
+
+**Substitution**
+
+$$k_u=\frac{{{dn:.1f}}}{{{d:.1f}}}={ku:.3f}$$
+
+$$\phi=\min(0.85,\max(0.65,1.24-13\times {ku:.3f}/12))={phi:.3f}$$
+
+**Result**
+
+$k_u={ku:.3f}$ and $\phi={phi:.3f}$.
 """,
         status=None,
         content_before=info_control(
@@ -237,12 +316,35 @@ fixed user-selected value.
             f"Result: {clause_status}"
         ),
         details_md=rf"""
-Clause 8.1.5's additional assessment is required only when both
-$k_u>{limit:.2f}$ and the design action exceeds $0.8\phi M_u$.
+**Purpose**
 
-Conditional assessment triggered: {"Yes" if triggered else "No"}.
+Determine whether the additional AS 3600 Clause 8.1.5 ductility assessment is required and report its verified outcome.
 
-Outstanding verified requirements: {failed_text}.
+**Inputs**
+
+- Calculated neutral-axis ratio: $k_u={ku:.3f}$
+- Ductility threshold: $k_{{u,lim}}={limit:.2f}$
+- Design action: $M_u^*={demand:.2f}\,\text{{kNm}}$
+- Design capacity: $\phi M_u={capacity:.2f}\,\text{{kNm}}$
+
+**Formula / condition**
+
+The additional assessment is triggered when both:
+
+$$k_u>k_{{u,lim}}$$
+
+$$M_u^*>0.8\phi M_u$$
+
+**Substitution**
+
+- $k_u={ku:.3f}$ compared with ${limit:.2f}$
+- $M_u^*={demand:.2f}\,\text{{kNm}}$ compared with $0.8\phi M_u={0.8 * capacity:.2f}\,\text{{kNm}}$
+
+**Result**
+
+- Conditional assessment triggered: **{"Yes" if triggered else "No"}**
+- Status: **{clause_status}**
+- Outstanding requirements: {failed_text}
 """,
         status=("PASS" if clause_status == "PASS" else "FAIL" if clause_status == "FAIL" else None),
         content_before=info_control(
@@ -259,13 +361,36 @@ Outstanding verified requirements: {failed_text}.
             f"Result: phi Mu = {capacity:.1f} kNm ({'PASS' if capacity_ok else 'FAIL'})"
         ),
         details_md=rf"""
-Nominal capacity: $M_u={nominal:.2f}$ kNm.
+**Purpose**
 
-Design capacity: $\phi M_u={phi:.3f}\times {nominal:.2f}={capacity:.2f}$ kNm.
+Calculate nominal and design bending capacity from the authoritative internal-force solution and compare it with the applied ULS action.
 
-Applied design action: $M_u^*={demand:.2f}$ kNm.
+**Inputs**
 
-Utilisation: $M_u^*/(\phi M_u)={utilisation:.3f}$.
+- Tension resultant: $T={tension_kn:.1f}\,\text{{kN}}$
+- Authoritative lever arm: $z={lever_arm:.1f}\,\text{{mm}}$
+- Strength-reduction factor: $\phi={phi:.3f}$
+- Applied moment: $M_u^*={demand:.2f}\,\text{{kNm}}$
+
+**Formula**
+
+$$M_u=\sum F_i z_i$$
+
+$$\phi M_u=\phi\,M_u$$
+
+$$\text{{Utilisation}}=\frac{{M_u^*}}{{\phi M_u}}$$
+
+**Substitution**
+
+$$M_u={nominal:.2f}\,\text{{kNm}}$$
+
+$$\phi M_u={phi:.3f}\times {nominal:.2f}={capacity:.2f}\,\text{{kNm}}$$
+
+$$\text{{Utilisation}}={utilisation_text}$$
+
+**Result**
+
+$M_u^*={demand:.2f}\,\text{{kNm}}$ versus $\phi M_u={capacity:.2f}\,\text{{kNm}}$: **{"PASS" if capacity_ok else "FAIL"}**.
 """,
         status="PASS" if capacity_ok else "FAIL",
         content_before=info_control(
