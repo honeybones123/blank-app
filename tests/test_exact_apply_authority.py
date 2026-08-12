@@ -202,6 +202,65 @@ def test_typed_apply_rejects_publication_from_previous_input_snapshot() -> None:
     assert execution.mutation is None
 
 
+def test_typed_apply_accepts_revision_only_churn_for_same_authority_hash() -> None:
+    session: dict = {"active_beam_id": "beam-a"}
+    snapshots = InputSnapshotStore(session)
+    first = snapshots.commit_for_beam(
+        "beam-a", {"beam_width": 250.0}, source="initial"
+    )
+    result = _action_result()
+    snapshots.bind_authority_hash(
+        "beam-a", revision=first.revision, authority_hash=result.engineering_hash
+    )
+
+    # Simulate a compatibility/global transaction moving the numeric revision
+    # while the beam's canonical engineering snapshot remains identical.
+    session["_inputs_engineering_input_snapshot_by_beam_v2"]["beam-a"][
+        "revision"
+    ] = first.revision + 1
+    snapshots.bind_authority_hash(
+        "beam-a",
+        revision=first.revision + 1,
+        authority_hash=result.engineering_hash,
+    )
+    payload = {
+        **dict(result.apply_payload),
+        "source_input_revision": first.revision,
+        "source_engineering_hash": result.engineering_hash,
+    }
+    current_result = AuthoritativeDesignResult(
+        **{**result.to_dict(), "apply_payload": dict(payload)}
+    )
+
+    execution = execute_typed_apply(
+        session_state=session,
+        current_result=current_result,
+        recommendation=payload,
+        set_shared=lambda *args, **kwargs: None,
+        finalize_publish=lambda *args, **kwargs: None,
+        persist_active_beam=lambda: None,
+    )
+
+    assert execution.command.reason != "stale_apply_candidate_source_revision"
+
+
+def test_binding_authority_hash_does_not_create_an_input_revision() -> None:
+    session: dict = {"active_beam_id": "beam-a"}
+    snapshots = InputSnapshotStore(session)
+    committed = snapshots.commit_for_beam(
+        "beam-a", {"beam_width": 250.0}, source="initial"
+    )
+
+    bound = snapshots.bind_authority_hash(
+        "beam-a", revision=committed.revision, authority_hash="canonical-hash"
+    )
+
+    assert bound.revision == committed.revision
+    assert bound.engineering_hash == committed.engineering_hash
+    assert bound.authority_hash == "canonical-hash"
+    assert bound.to_dict() == committed.to_dict()
+
+
 def test_apply_revision_is_owned_by_active_beam_not_global_compatibility_view() -> None:
     session: dict = {"active_beam_id": "beam-a"}
     snapshots = InputSnapshotStore(session)

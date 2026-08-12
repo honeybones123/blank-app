@@ -109,6 +109,7 @@ class InputSnapshotState:
 
     revision: int = 0
     engineering_hash: str | None = None
+    authority_hash: str | None = None
     snapshot: Mapping[str, Any] = field(default_factory=dict)
     changed_keys: tuple[str, ...] = ()
     source: str | None = None
@@ -280,6 +281,7 @@ class InputSnapshotStore:
         by_beam[resolved_beam_id] = {
             "revision": snapshot_state.revision,
             "engineering_hash": snapshot_state.engineering_hash,
+            "authority_hash": snapshot_state.authority_hash,
             "snapshot": snapshot_state.to_dict(),
             "changed_keys": list(snapshot_state.changed_keys),
             "source": snapshot_state.source,
@@ -341,6 +343,11 @@ class InputSnapshotStore:
                     if value.get("engineering_hash")
                     else None
                 ),
+                authority_hash=(
+                    str(value.get("authority_hash"))
+                    if value.get("authority_hash")
+                    else None
+                ),
                 snapshot=dict(value.get("snapshot") or {}),
                 changed_keys=tuple(value.get("changed_keys") or ()),
                 source=(str(value.get("source")) if value.get("source") else None),
@@ -364,6 +371,29 @@ class InputSnapshotStore:
             changed_keys=(),
             source="legacy_beam_snapshot_migration",
         )
+
+    def bind_authority_hash(
+        self,
+        beam_id: str,
+        *,
+        revision: int,
+        authority_hash: str,
+    ) -> InputSnapshotState:
+        """Bind canonical engineering identity without creating a revision."""
+
+        resolved_beam_id = str(beam_id or "").strip()
+        resolved_hash = str(authority_hash or "").strip()
+        if not resolved_beam_id or not resolved_hash:
+            raise ValueError("beam_id and authority_hash are required")
+        by_beam = dict(self._state.get(BEAM_SNAPSHOT_STATE_KEY) or {})
+        value = by_beam.get(resolved_beam_id)
+        if not isinstance(value, dict) or int(value.get("revision", 0) or 0) != int(revision):
+            raise ValueError("authority hash must bind to the current beam revision")
+        value = dict(value)
+        value["authority_hash"] = resolved_hash
+        by_beam[resolved_beam_id] = value
+        self._state[BEAM_SNAPSHOT_STATE_KEY] = by_beam
+        return self.current_for_beam(resolved_beam_id)
 
     def current(self) -> InputSnapshotState:
         committed = copy.deepcopy(self._state.get(COMMITTED_STATE_KEY) or {})

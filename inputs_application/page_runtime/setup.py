@@ -1015,6 +1015,12 @@ def _ensure_authoritative_design_result_current_coordinator(
         "source": input_transaction.source,
     }
     snapshot = _build_live_engineering_input_snapshot_current_coordinator(current_state)
+    if active_beam_id:
+        input_transaction = input_store.bind_authority_hash(
+            active_beam_id,
+            revision=int(input_transaction.revision),
+            authority_hash=snapshot.engineering_hash,
+        )
     st.session_state["_inputs_engineering_input_transaction_probe"] = {
         **dict(st.session_state.get("_inputs_engineering_input_transaction_probe") or {}),
         "engineering_hash": snapshot.engineering_hash,
