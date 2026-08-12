@@ -83,7 +83,9 @@ class LoadAnalysisStateStore:
             and tokens.get(snapshot.beam_id) != resolved_token
         )
         for key, value in snapshot.values.items():
-            if switched or new_route_entry or key not in self._state:
+            if key == "design_loads_edit_toggle" and self._beam_id(beam_id) in modes:
+                self._state[key] = bool(value)
+            elif switched or new_route_entry or key not in self._state:
                 self._state[key] = copy.deepcopy(value)
         self._state[_ACTIVE_BEAM_KEY] = snapshot.beam_id
         if resolved_token is not None:
