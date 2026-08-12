@@ -7,7 +7,10 @@ from inputs_v2.application.design_guide_orchestrator import DesignGuideOrchestra
 from inputs_v2.application.design_brain_service import DesignBrainService
 from inputs_v2.application.design_brain.family_owners import FAMILY_OWNERS, TERMINAL_FAMILIES
 from inputs_v2.application.design_brain_families import DesignFamily
-from inputs_v2.application.candidate_evaluation import complete_compliance
+from inputs_v2.application.candidate_evaluation import (
+    bending_mandatory_failure,
+    complete_compliance,
+)
 from inputs_v2.domain.beam_inputs import ActionInputs, BeamInputs, LongitudinalReinforcement
 from inputs_v2.domain.engineering_result import EngineeringResult
 
@@ -49,6 +52,21 @@ def test_every_non_terminal_family_has_exactly_one_owner() -> None:
 def test_missing_mandatory_check_metadata_never_defaults_to_pass() -> None:
     result = EngineeringResult(0, "fixture", "complete", "missing checks", families={})
     assert not complete_compliance(result)
+
+
+def test_bending_failure_includes_ductility_with_passing_flexural_capacity() -> None:
+    result = EngineeringResult(
+        0,
+        "fixture",
+        "complete",
+        "ductility failure",
+        families={
+            "bending": {"status": "PASS", "minimum_tensile_status": "PASS"},
+            "ductility": {"status": "FAIL"},
+        },
+    )
+
+    assert bending_mandatory_failure(result)
 
 
 def test_apply_uses_the_exact_displayed_proposal() -> None:

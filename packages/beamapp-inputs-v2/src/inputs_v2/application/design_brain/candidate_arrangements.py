@@ -19,8 +19,19 @@ def with_practical_bottom_rows(candidate: Candidate) -> tuple[Candidate, ...]:
     variants: list[Candidate] = []
     for rows in practical_row_counts(candidate.proposal.bottom_bars):
         suffix = "-rows" + "-".join(str(count) for count in rows)
+        row_diameters = (
+            candidate.row_diameters_mm
+            if rows == candidate.row_counts
+            and len(candidate.row_diameters_mm) == len(rows)
+            else tuple(float(candidate.proposal.bottom_diameter_mm) for _ in rows)
+        )
         variants.append(
-            replace(candidate, candidate_id=candidate.candidate_id + suffix, row_counts=rows)
+            replace(
+                candidate,
+                candidate_id=candidate.candidate_id + suffix,
+                row_counts=rows,
+                row_diameters_mm=row_diameters,
+            )
         )
     return tuple(variants)
 

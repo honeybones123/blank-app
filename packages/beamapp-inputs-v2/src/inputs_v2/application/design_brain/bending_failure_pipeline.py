@@ -6,7 +6,10 @@ from dataclasses import dataclass, replace
 from math import pi
 from typing import Any, Callable
 
-from inputs_v2.application.candidate_evaluation import complete_compliance
+from inputs_v2.application.candidate_evaluation import (
+    bending_mandatory_failure,
+    complete_compliance,
+)
 from inputs_v2.application.design_brain.bending_proportion_pipeline import BendingProportionPipeline
 from inputs_v2.application.design_brain.bending_repair_policy import (
     generate_bending_reduction_specs,
@@ -58,6 +61,7 @@ class BendingFailurePipeline:
     def preview(self, current: BeamInputs) -> BendingFailureOutcome:
         before = self._calculate(current)
         current_util = float(before.families.get("bending", {}).get("util", 0.0))
+        current_bending_failed = bending_mandatory_failure(before)
         seed = propose_neutral_candidate(current)
         if current_util <= 0.0:
             return BendingFailureOutcome(
@@ -227,7 +231,7 @@ class BendingFailurePipeline:
             _, candidate, updated_inputs, after, _ = min(trials, key=rank)
         after_util = float(after.families.get("bending", {}).get("util", 0.0))
         safe_failure_repair = (
-            current_util > high
+            current_bending_failed
             and after_util <= high
             and complete_compliance(after)
         )
@@ -302,7 +306,7 @@ class BendingFailurePipeline:
         geometry_reduced = candidate.proposal.width_mm * candidate.proposal.depth_mm < current.width_mm * current.depth_mm
         safe_cleanup = geometry_reduced and complete_compliance(after) and final_util <= 1.0 and not ratio_blocked
         safe_failure_repair = (
-            current_util > high
+            current_bending_failed
             and final_util <= high
             and complete_compliance(after)
             and not ratio_blocked

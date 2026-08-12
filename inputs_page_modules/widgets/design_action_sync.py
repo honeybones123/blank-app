@@ -515,14 +515,15 @@ def sync_design_action_widget_to_shared(
     st_module.session_state["_inputs_dirty"] = True
     st_module.session_state["run_design_clicked"] = True
     mark_design_guide_dirty_fn()
-    try:
-        persist_active_beam_from_shared_fn()
-    except Exception:
-        pass
-    try:
-        persist_state_snapshot_fn()
-    except Exception:
-        pass
+    # Do not persist the beam or the project snapshot from this proxy-widget
+    # callback.  The Inputs engineering transaction is the sole owner of the
+    # beam revision and publication invalidation.  Persisting here used to
+    # update the legacy beam record before that transaction ran; the canonical
+    # commit then compared equal and incorrectly returned as a no-op.  The
+    # result was a split page where serviceability used the new widget value
+    # while the ULS summary and Design Brain publication retained the old one.
+    # The owning page transaction consumes the shared values immediately after
+    # this callback and performs the single authoritative persistence step.
     _record_design_action_state_transition(
         st_module,
         "sync_exit",

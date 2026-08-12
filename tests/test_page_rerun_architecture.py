@@ -89,3 +89,14 @@ def test_load_analysis_has_no_competing_scroll_restoration_authority() -> None:
     assert "_install_design_scroll_preserver" not in source
     assert "beam_design_scroll_restore" not in source
     assert "__beamDesignScrollObserver" not in source
+
+
+def test_inputs_commits_wake_only_the_unified_engineering_workspace() -> None:
+    source = (ROOT / "state_and_helpers.py").read_text(encoding="utf-8-sig")
+    start = source.index("def _request_inputs_engineering_commit(")
+    end = source.index("\ndef _engineering_widget_owner_slug(", start)
+    commit_source = source[start:end]
+
+    assert '"engineering_workspace"' in commit_source
+    assert '"engineering_input_workspace"' not in commit_source
+    assert '"engineering_calculation_workspace"' not in commit_source

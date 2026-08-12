@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from math import isfinite
 from typing import Callable
 
+from inputs_v2.application.candidate_evaluation import bending_mandatory_failure
 from inputs_v2.domain.engineering_result import EngineeringResult
 from inputs_v2.domain.beam_inputs import BeamInputs
 
@@ -108,12 +109,7 @@ def design_signals(result: EngineeringResult, inputs: BeamInputs | None) -> Desi
         or links_provided
         or bool(inputs is not None and (inputs.shear.diameter_mm > 0 or inputs.shear.legs > 0))
     )
-    bending_failed = bool(bending_domain and (
-        bend_util > 1.0
-        or str(bending.get("status", "PASS")).upper() == "FAIL"
-        or str(bending.get("minimum_tensile_status", "PASS")).upper() == "FAIL"
-        or str(ductility.get("status", "PASS")).upper() == "FAIL"
-    ))
+    bending_failed = bool(bending_domain and bending_mandatory_failure(result))
     shear_failed = bool(shear_action > 1e-9 and (
         shear_util > 1.0
         or shear.get("shear_ok") is False

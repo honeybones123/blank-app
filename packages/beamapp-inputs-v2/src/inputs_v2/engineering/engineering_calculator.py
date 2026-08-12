@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 from dataclasses import replace
 
-from inputs_v2.domain.beam_inputs import BeamInputs
+from inputs_v2.domain.beam_inputs import BeamInputs, KvMethod
 from inputs_v2.domain.engineering_result import EngineeringResult
 from inputs_v2.engineering.bending_capacity import (
     BendingCapacityInput,
@@ -67,12 +67,30 @@ def _legacy_payload(inputs: BeamInputs, arrangement: ReinforcementArrangement | 
     )
     top_area = inputs.top.bars * 3.141592653589793 * inputs.top.diameter_mm**2 / 4.0
     d = arrangement.effective_depth_mm if arrangement is not None else inputs.depth_mm - inputs.bottom.cover_mm - inputs.bottom.diameter_mm / 2.0
+    bottom_layers = (
+        tuple(
+            (
+                row.bar_count * math.pi * row.bar_diameter_mm**2 / 4.0,
+                inputs.depth_mm - row.centre_from_tension_face_mm,
+            )
+            for row in arrangement.rows
+        )
+        if arrangement is not None
+        else ((bottom_area, d),)
+    )
+    top_depth = inputs.top.cover_mm + inputs.top.diameter_mm / 2.0
     return {
         "b": inputs.width_mm, "D": inputs.depth_mm, "L": inputs.span_mm,
         "fc": inputs.materials.concrete_strength_mpa,
         "fsy": inputs.materials.reinforcement_strength_mpa,
         "phi_bend": 0.85, "Ast_bot": bottom_area, "Ast_top": top_area,
-        "d": d, "do": inputs.top.cover_mm + inputs.top.diameter_mm / 2.0,
+        "d": d, "do": top_depth,
+        "section_shape": inputs.section_shape,
+        "flange_width_mm": inputs.flange_width_mm,
+        "flange_thickness_mm": inputs.flange_thickness_mm,
+        "web_width_mm": inputs.web_width_mm,
+        "bottom_layers": bottom_layers,
+        "top_layers": ((top_area, top_depth),) if top_area > 0.0 else (),
     }
 
 
@@ -297,6 +315,12 @@ class EngineeringCalculator:
                 top_steel_area_mm2=float(payload["Ast_top"]),
                 positive_effective_depth_mm=float(payload["d"]),
                 top_steel_depth_mm=float(payload["do"]),
+                section_shape=str(payload["section_shape"]),
+                flange_width_mm=payload["flange_width_mm"],
+                flange_thickness_mm=payload["flange_thickness_mm"],
+                web_width_mm=payload["web_width_mm"],
+                bottom_layers=tuple(payload["bottom_layers"]),
+                top_layers=tuple(payload["top_layers"]),
             ),
         )
         # Row-level values consumed by the Runtime-style summary contract.
@@ -335,12 +359,61 @@ class EngineeringCalculator:
         )
         ku = float(bending.get("ku", 0.0) or 0.0)
         ductility_limit = 0.36
+        ku_is_valid = math.isfinite(ku) and ku > 0.0
+        bending_util = float(bending.get("util", 0.0) or 0.0)
+        # Runtime's mandatory ductility policy treats the neutral-axis limit
+        # as a hard acceptance boundary.  Demand below 80% of flexural
+        # capacity must not hide a section with k_u > 0.36 from the summary or
+        # the Design Brain repair families.
+        conditional_triggered = bool(ku_is_valid and ku > ductility_limit)
+        compression_steel_area = float(
+            bending.get("compression_steel_area_mm2", 0.0) or 0.0
+        )
+        compression_concrete_area = float(
+            bending.get("compression_concrete_area_mm2", 0.0) or 0.0
+        )
+        compression_steel_ratio = (
+            compression_steel_area / compression_concrete_area
+            if compression_concrete_area > 0.0
+            else 0.0
+        )
+        compression_steel_ok = compression_steel_ratio >= 0.01
+        analysis_verified = bool(inputs.clause_815_analysis_verified)
+        restraint_verified = bool(inputs.compression_reinforcement_restrained)
+        conditional_requirements_satisfied = bool(
+            not conditional_triggered
+            or (compression_steel_ok and analysis_verified and restraint_verified)
+        )
+        failed_requirements: list[str] = []
+        if conditional_triggered:
+            failed_requirements.append("neutral_axis_limit_exceeded")
+            if not analysis_verified:
+                failed_requirements.append("clause_815_analysis_not_verified")
+            if not compression_steel_ok:
+                failed_requirements.append("compression_reinforcement_below_one_percent")
+            if not restraint_verified:
+                failed_requirements.append("compression_reinforcement_restraint_not_verified")
         ductility = {
-            "status": "FAIL" if ku > ductility_limit else "PASS",
+            "status": (
+                "NOT RUN" if not ku_is_valid
+                else "PASS" if ku <= ductility_limit
+                else "FAIL"
+            ),
             "ku": ku,
             "limit": ductility_limit,
-            "util": ku / ductility_limit if ductility_limit else 0.0,
+            "util": ku / ductility_limit if ku_is_valid and ductility_limit else None,
             "effective_depth_mm": float(payload["d"]),
+            "bending_demand_ratio": bending_util,
+            "conditional_triggered": conditional_triggered,
+            "analysis_verified": analysis_verified,
+            "compression_steel_area_mm2": compression_steel_area,
+            "compression_concrete_area_mm2": compression_concrete_area,
+            "compression_steel_ratio": compression_steel_ratio,
+            "minimum_compression_steel_ratio": 0.01,
+            "compression_steel_requirement_satisfied": compression_steel_ok,
+            "compression_reinforcement_restrained": restraint_verified,
+            "conditional_requirements_satisfied": conditional_requirements_satisfied,
+            "failed_requirements": tuple(failed_requirements),
             "check_metadata": check_metadata("bending_ductility"),
         }
         shear_input = ShearCapacityInput(
@@ -349,15 +422,39 @@ class EngineeringCalculator:
             fsy=inputs.materials.reinforcement_strength_mpa, Ec=30000.0, Es=200000.0,
             M_star=inputs.actions.bending_moment_knm, V_star=inputs.actions.shear_force_kn,
             T_star=inputs.actions.torsion_knm, N_star=inputs.actions.axial_force_kn,
-            P_v=0.0, phi=0.75, sigma_cp=0.0, A_st=payload["Ast_bot"], A_pt=payload["Ast_top"],
+            # P_v is the applied prestress action carried by Runtime. A_pt and
+            # f_po describe actual prestressing steel, which the current beam
+            # input contract does not yet define. Ordinary top reinforcement
+            # must never be substituted for either prestressing-steel term.
+            P_v=inputs.actions.applied_prestress_kn,
+            phi=0.75, sigma_cp=0.0, A_st=payload["Ast_bot"], A_pt=0.0,
             f_po=0.0, A_ct=inputs.width_mm * inputs.depth_mm, d_g=20.0,
             lig_d=inputs.shear.diameter_mm, legs=inputs.shear.legs,
             s_lig=inputs.shear.spacing_mm,
-            use_general_kv=inputs.shear.use_general_kv,
+            use_general_kv=inputs.shear.kv_method is KvMethod.GENERAL,
             sum_duct=0.0,
             k_d=1.0,
         )
         shear = compute_shear_capacity_values(shear_input)
+        # Publish the exact authoritative general-method input mapping for
+        # auditability without changing the numerical component's established
+        # parity surface.
+        shear.update(
+            {
+                "P_v": float(shear_input.P_v),
+                "A_st": float(shear_input.A_st),
+                "A_pt": float(shear_input.A_pt),
+                "f_po": float(shear_input.f_po),
+            }
+        )
+        shear["kv_method"] = (
+            inputs.shear.kv_method.value
+        )
+        shear["kv_check_id"] = (
+            "kv_general_method"
+            if inputs.shear.kv_method is KvMethod.GENERAL
+            else "kv_simplified_method"
+        )
         shear_detailing = calculate_shear_detailing(ShearDetailingInput(
             reinforcement_area_mm2=float(shear.get("Asv", 0.0) or 0.0),
             spacing_mm=float(inputs.shear.spacing_mm),
@@ -372,7 +469,7 @@ class EngineeringCalculator:
         )
         shear["check_metadata"] = check_metadata(
             "shear_strength", "shear_web_crushing", "concrete_shear_capacity",
-            "kv_general_method" if inputs.shear.use_general_kv else "kv_simplified_method",
+            "kv_general_method" if inputs.shear.kv_method is KvMethod.GENERAL else "kv_simplified_method",
             "transverse_reinforcement_required", "minimum_shear_reinforcement",
             "shear_reinforcement_capacity", "additional_longitudinal_shear_reinforcement",
         )

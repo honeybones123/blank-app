@@ -218,6 +218,34 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, 
     # candidate updates with an older zero-action beam snapshot while leaving
     # the 200 kNm widget visible.
     _INPUTS_PAGE_RUNTIME.reconcile_design_actions()
+    if not uses_load_analysis_actions(st.session_state):
+        # Reconciliation writes the visible manual controls to their canonical
+        # ULS/SLS owners.  Close that command by idempotently committing the
+        # active action set before calculation/publication is read below.
+        # This is required even when the reconcile call reports no difference:
+        # an earlier proxy-only callback may already have updated shared state
+        # while the beam-owned snapshot still contains the previous action.
+        # ``_request_inputs_engineering_commit`` is content-idempotent, so an
+        # already complete callback transaction creates no extra revision.
+        selected_prefix = (
+            "sls"
+            if str(st.session_state.get("loads_edit_mode", "ULS") or "ULS")
+            .strip()
+            .upper()
+            == "SLS"
+            else "uls"
+        )
+        _request_inputs_engineering_commit(
+            "inputs_load_Mstar_pos_proxy",
+            changed_keys=(
+                f"{selected_prefix}_Mstar",
+                f"{selected_prefix}_Mstar_pos_manual",
+                f"{selected_prefix}_Mstar_neg_manual",
+                f"{selected_prefix}_Vstar",
+                f"{selected_prefix}_Nstar",
+            ),
+            wake_fragments=False,
+        )
 
     # Apply is owned by the same V2 workspace fragment as the Design Brain
     # button.  Processing the queued command here keeps the explicit Apply

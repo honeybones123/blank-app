@@ -10,8 +10,6 @@ import os
 
 import json
 
-import sys
-
 import time
 
 from datetime import datetime
@@ -26,7 +24,6 @@ import streamlit as st
 
 import design_guide_page
 
-from inputs_application.policy_constants import DESIGN_GUIDE_LAST_APPLY_ROUTE_KEY
 
 from inputs_application.design_guide_fingerprint import DESIGN_GUIDE_ALGORITHM_VERSION
 
@@ -509,6 +506,46 @@ def _has_explicit_design_state_current_coordinator(state: dict) -> bool:
     return False
 
 
+def _engineering_transaction_widget_keys(
+    *,
+    design_governing: bool,
+    loads_edit_mode: str,
+) -> dict[str, str]:
+    """Return widget projections that may enter one input transaction."""
+
+    transaction_widget_keys = dict(INPUTS_PAGE_TAB_KEYS)
+    if design_governing:
+        # Load Analysis actions are an immutable derived projection. Disabled
+        # manual widgets may still exist in Streamlit session state, but they
+        # cannot write back over that projection.
+        for key in (
+            "uls_Mstar",
+            "uls_Mstar_pos_manual",
+            "uls_Mstar_neg_manual",
+            "uls_Vstar",
+            "uls_Nstar",
+            "sls_Mstar",
+            "sls_Mstar_pos_manual",
+            "sls_Mstar_neg_manual",
+            "sls_Vstar",
+            "sls_Nstar",
+        ):
+            transaction_widget_keys.pop(key, None)
+        return transaction_widget_keys
+    selected_prefix = (
+        "sls" if str(loads_edit_mode or "ULS").strip().upper() == "SLS" else "uls"
+    )
+    transaction_widget_keys.update(
+        {
+            f"{selected_prefix}_Mstar_pos_manual": "inputs_load_Mstar_pos_proxy",
+            f"{selected_prefix}_Mstar_neg_manual": "inputs_load_Mstar_neg_proxy",
+            f"{selected_prefix}_Vstar": "inputs_load_Vstar_proxy",
+            f"{selected_prefix}_Nstar": "inputs_load_Nstar_proxy",
+        }
+    )
+    return transaction_widget_keys
+
+
 def _merge_current_engineering_widget_state_current_coordinator(
     state: dict,
     state_debug: dict | None,
@@ -516,10 +553,19 @@ def _merge_current_engineering_widget_state_current_coordinator(
     """Use the current edit snapshot before the pre-widget Design Brain run."""
     debug = dict(state_debug or {})
     shared_only = bool(debug.get("summary_shared_only_mode"))
+    design_governing = is_design_governing()
+    transaction_widget_keys = _engineering_transaction_widget_keys(
+        design_governing=design_governing,
+        loads_edit_mode=str(st.session_state.get("loads_edit_mode", "ULS") or "ULS"),
+    )
+    # The visible manual-action controls are edit commands, not calculation
+    # projections. Their historical ``load_*_proxy`` mappings remain for
+    # render compatibility, while the extra mappings above commit the same
+    # values to their canonical ULS/SLS owners.
     resolved, overlay_keys = merge_current_engineering_widget_state(
         state,
         st.session_state,
-        INPUTS_PAGE_TAB_KEYS,
+        transaction_widget_keys,
         shared_only_mode=shared_only,
     )
 
@@ -669,6 +715,12 @@ def _ensure_authoritative_design_result_current_coordinator(
             )
             or {}
         )
+        result_revision_map = dict(
+            st.session_state.get(
+                "_inputs_authoritative_design_result_revision_by_beam_v1"
+            )
+            or {}
+        )
         committed_result = (
             result_map.get(active_beam_id)
             or services.engineering_results.current()
@@ -683,6 +735,11 @@ def _ensure_authoritative_design_result_current_coordinator(
         result_matches_snapshot = bool(
             committed_result is not None
             and committed_result.engineering_hash == committed_snapshot_hash
+        )
+        result_matches_revision = bool(
+            committed_result is not None
+            and int(result_revision_map.get(active_beam_id) or 0)
+            == int(beam_input_state.revision or 0)
         )
         st.session_state["_inputs_route_return_debug"] = {
             "branch": "route_return_candidate",
@@ -709,12 +766,18 @@ def _ensure_authoritative_design_result_current_coordinator(
             "latest_input_revision": latest_input_revision,
             "route_snapshot_is_latest": route_snapshot_is_latest,
             "result_matches_snapshot": result_matches_snapshot,
+            "result_matches_revision": result_matches_revision,
         }
         if (
             committed_result is not None
             and committed_state
             and route_snapshot_is_latest
             and result_matches_snapshot
+            # A design change can preserve the same engineering hash when it
+            # only resolves aliases or display projections.  Hash equality is
+            # therefore necessary but not sufficient: never republish the
+            # previous revision after Apply.
+            and result_matches_revision
             # A route-return result may be an engineering-only V2 result. It
             # is safe to reuse for summaries, but it is not a Design Brain
             # publication. The Design Brain caller must continue through the
@@ -792,9 +855,6 @@ def _ensure_authoritative_design_result_current_coordinator(
         st.session_state.get("_inputs_same_beam_return_active")
         and active_beam_id
         and committed_beam_id == active_beam_id
-    )
-    last_apply_route = dict(
-        st.session_state.get(DESIGN_GUIDE_LAST_APPLY_ROUTE_KEY) or {}
     )
     shared_only_mode = bool(
         current_state_debug.get("summary_shared_only_mode")
@@ -899,12 +959,24 @@ def _ensure_authoritative_design_result_current_coordinator(
         and int(beam_input_state.revision or 0) > 0
         and beam_committed_state
     ):
-        # The widget callback already owns this input transaction. Inputs setup
-        # is now a consumer: rebuilding and committing the snapshot here would
-        # turn one edit into a second revision (often when a derived projection
-        # catches up on the following render).
-        input_transaction = beam_input_state
-        current_state = copy.deepcopy(beam_committed_state)
+        # The widget callback normally owns this input transaction.  Reuse it
+        # only when it contains the exact canonical state now projected by the
+        # visible controls.  A historical action-widget path committed only
+        # the ``load_*_proxy`` value, leaving the ULS/SLS owner unchanged; the
+        # unconditional shortcut here then discarded the newer canonical
+        # overlay and published stale bending/Design Brain results.  The store
+        # is content-idempotent, so reconciliation creates no second revision
+        # when the callback transaction is already complete.
+        if dict(beam_committed_state) == dict(canonical_input_state):
+            input_transaction = beam_input_state
+            current_state = copy.deepcopy(beam_committed_state)
+        else:
+            input_transaction = input_store.commit_active_beam(
+                canonical_input_state,
+                changed_keys=overlay_keys,
+                source="authoritative_widget_transaction_reconcile",
+            )
+            current_state = copy.deepcopy(input_transaction.to_dict())
     elif active_beam_id:
         input_transaction = input_store.commit_active_beam(
             canonical_input_state,
@@ -936,12 +1008,11 @@ def _ensure_authoritative_design_result_current_coordinator(
         "engineering_hash": snapshot.engineering_hash,
     }
     sidebar_debug = _design_guide_sidebar_debug_enabled()
-    family_override = (
-        last_apply_route.get("resolved_candidate_family_tag")
-        or last_apply_route.get("recommendation_family_tag")
-        or last_apply_route.get("selected_family_id")
-        or last_apply_route.get("published_family_id")
-    )
+    # Family classification belongs to the current V2 input revision.  The
+    # previous Apply route is audit evidence, not authority to pin the next
+    # run to the old family.  Reusing it here caused a successfully applied
+    # bending cleanup to be published again as the same ACTION/no-op card.
+    family_override = None
     guidance_context = application_guidance_context(current_state, st.session_state)
     design_brain_service = (
         build_design_brain_service(
@@ -962,12 +1033,20 @@ def _ensure_authoritative_design_result_current_coordinator(
                 resolved_inputs=guidance_context,
                 input_revision=int(input_transaction.revision),
             )
+        existing_calculation_version = str(
+            dict(existing_result.current_calculations or {}).get(
+                "calculation_contract_version"
+            )
+            or ""
+        ) if existing_result is not None else ""
         engineering_calculations = (
             dict(existing_result.current_calculations or {})
             if (
                 existing_result is not None
                 and existing_result.engineering_hash
                 == snapshot_value.engineering_hash
+                and existing_calculation_version
+                == v2_engineering_calculation_contract_version()
             )
             else {}
         )
@@ -989,18 +1068,6 @@ def _ensure_authoritative_design_result_current_coordinator(
     expected_calculation_contract_version = (
         v2_engineering_calculation_contract_version()
     )
-    existing_calculation_contract_version = str(
-        dict(existing_result.current_calculations or {}).get(
-            "calculation_contract_version"
-        )
-        or ""
-    ) if existing_result is not None else ""
-    force_calculation_contract_refresh = bool(
-        existing_result is not None
-        and existing_result.engineering_hash == snapshot.engineering_hash
-        and existing_calculation_contract_version
-        != expected_calculation_contract_version
-    )
     force_design_brain_refresh = bool(
         include_design_brain
         and existing_result is not None
@@ -1013,9 +1080,11 @@ def _ensure_authoritative_design_result_current_coordinator(
         compute_fn=_compute,
         force=(
             force_design_brain_refresh
-            or force_calculation_contract_refresh
         ),
         source_input_revision=input_transaction.revision,
+        expected_calculation_contract_version=(
+            expected_calculation_contract_version
+        ),
     )
     st.session_state["_inputs_route_return_debug"] = {
         "branch": "normal_coordinator",
@@ -1161,15 +1230,9 @@ def refresh_inputs_design_brain_result_background() -> Any | None:
     if not owner_id:
         owner_id = uuid4().hex
         st.session_state["_inputs_design_brain_job_owner_id"] = owner_id
-    last_apply_route = dict(
-        st.session_state.get(DESIGN_GUIDE_LAST_APPLY_ROUTE_KEY) or {}
-    )
-    family_override = (
-        last_apply_route.get("resolved_candidate_family_tag")
-        or last_apply_route.get("recommendation_family_tag")
-        or last_apply_route.get("selected_family_id")
-        or last_apply_route.get("published_family_id")
-    )
+    # Reclassify every new revision.  The prior publication family remains
+    # diagnostic evidence only and must not override the family sorter.
+    family_override = None
     guidance_context = application_guidance_context(
         current_state,
         st.session_state,

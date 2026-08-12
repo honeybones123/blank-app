@@ -21,6 +21,7 @@ class Candidate(Generic[T]):
     proposal: T
     rationale: str
     row_counts: tuple[int, ...] = ()
+    row_diameters_mm: tuple[float, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +59,7 @@ def propose_neutral_candidate(current: BeamInputs) -> Candidate[UpdateFirstSlice
         torsion_knm=current.actions.torsion_knm,
         shear_force_kn=current.actions.shear_force_kn,
         axial_force_kn=current.actions.axial_force_kn,
+        applied_prestress_kn=current.actions.applied_prestress_kn,
         left_support=current.supports.left_type,
         right_support=current.supports.right_type,
         shrinkage_time_days=current.time_dependent.shrinkage_time_days,
@@ -80,7 +82,7 @@ def propose_neutral_candidate(current: BeamInputs) -> Candidate[UpdateFirstSlice
         crack_creep_coefficient=current.serviceability.creep_coefficient,
         crack_shrinkage_microstrain=current.serviceability.shrinkage_microstrain,
         sls_use_uls_fallback=current.serviceability.use_uls_fallback,
-        shear_use_general_kv=current.shear.use_general_kv,
+        shear_kv_method=current.shear.kv_method,
         exposed_faces=current.time_dependent.exposed_faces,
         creep_environment=current.time_dependent.creep_environment,
         shrinkage_environment=current.time_dependent.shrinkage_environment,
@@ -88,15 +90,22 @@ def propose_neutral_candidate(current: BeamInputs) -> Candidate[UpdateFirstSlice
         sustained_concrete_stress_mpa=current.time_dependent.sustained_concrete_stress_mpa,
         concrete_modulus_mpa=current.time_dependent.concrete_modulus_mpa,
     )
+    current_rows = (
+        tuple(current.bottom_arrangement.rows)
+        if current.bottom_arrangement is not None
+        else ()
+    )
     return Candidate(
         "neutral-candidate-seed",
         current.revision,
         current.content_hash,
         proposal,
         "Unchanged candidate seed; the selected family owns every mutation.",
+        tuple(row.bar_count for row in current_rows),
         tuple(
-            row.bar_count for row in current.bottom_arrangement.rows
-        ) if current.bottom_arrangement is not None else (),
+            float(row.bar_diameter_mm or current.bottom.diameter_mm)
+            for row in current_rows
+        ),
     )
 
 
@@ -121,9 +130,28 @@ def apply_candidate(
         updated = apply_input_command(current, proposal)
     except ValueError:
         return ApplyOutcome(False, "candidate_validation_failed", current)
-    fit = evaluate_arrangement(updated, (updated.bottom.bars,))
+    # ``apply_input_command`` intentionally rebuilds dependent engineering
+    # state, including ``bottom_arrangement``.  Preserve the committed clear
+    # row gap explicitly while testing a candidate; otherwise a two-row input
+    # silently falls back to the 25 mm default and appears to gain effective
+    # depth that the published Apply command cannot reproduce.
+    committed_row_gap = (
+        float(current.bottom_arrangement.clear_row_gap_mm)
+        if current.bottom_arrangement is not None
+        else None
+    )
+    fit = evaluate_arrangement(
+        updated,
+        (updated.bottom.bars,),
+        min_row_gap_mm=committed_row_gap,
+    )
     if candidate.row_counts:
-        fit = evaluate_arrangement(updated, candidate.row_counts)
+        fit = evaluate_arrangement(
+            updated,
+            candidate.row_counts,
+            row_diameters_mm=(candidate.row_diameters_mm or None),
+            min_row_gap_mm=committed_row_gap,
+        )
     if not fit.accepted:
         return ApplyOutcome(False, "reinforcement_fit_failed", current)
     if candidate.row_counts:

@@ -91,9 +91,18 @@ def _v2_api():
     return api
 
 
-def _proposal_updates(proposal: Any, row_counts: tuple[int, ...]) -> dict[str, Any]:
+def _proposal_updates(
+    proposal: Any,
+    row_counts: tuple[int, ...],
+    row_diameters_mm: tuple[float, ...] = (),
+) -> dict[str, Any]:
     values = asdict(proposal)
     rows = tuple(row_counts) or (int(values.get("bottom_bars", 0)),)
+    diameters = (
+        tuple(float(value) for value in row_diameters_mm)
+        if len(row_diameters_mm) == len(rows)
+        else tuple(float(values.get("bottom_diameter_mm", 0.0)) for _ in rows)
+    )
     updates: dict[str, Any] = {
         "b": values.get("width_mm"),
         "D": values.get("depth_mm"),
@@ -102,7 +111,7 @@ def _proposal_updates(proposal: Any, row_counts: tuple[int, ...]) -> dict[str, A
         "bot_row_count": len(rows),
         "bot_row_1_bars": rows[0],
         "bot_row_1_spacing": values.get("bottom_spacing_mm"),
-        "bot_row_1_dia": values.get("bottom_diameter_mm"),
+        "bot_row_1_dia": diameters[0],
         "cover_bot": values.get("bottom_cover_mm"),
         "top_bars": values.get("top_bars"),
         "top_spacing": values.get("top_spacing_mm"),
@@ -117,7 +126,7 @@ def _proposal_updates(proposal: Any, row_counts: tuple[int, ...]) -> dict[str, A
             {
                 "bot_row_2_bars": rows[1],
                 "bot_row_2_spacing": values.get("bottom_spacing_mm"),
-                "bot_row_2_dia": values.get("bottom_diameter_mm"),
+                "bot_row_2_dia": diameters[1],
             }
         )
     return {key: value for key, value in updates.items() if value is not None}
@@ -517,7 +526,11 @@ class NewDesignBrainAdapter:
         # old count at the Runtime Apply boundary.  Let _proposal_updates
         # derive the one-row arrangement from proposal.bottom_bars instead.
         updates = (
-            _proposal_updates(candidate.proposal, candidate.row_counts)
+            _proposal_updates(
+                candidate.proposal,
+                candidate.row_counts,
+                candidate.row_diameters_mm,
+            )
             if candidate is not None and accepted
             else {}
         )
@@ -528,6 +541,7 @@ class NewDesignBrainAdapter:
                 "source_hash": candidate.source_hash,
                 "rationale": candidate.rationale,
                 "row_counts": list(candidate.row_counts),
+                "row_diameters_mm": list(candidate.row_diameters_mm),
                 "proposal": asdict(candidate.proposal),
             }
             if candidate is not None

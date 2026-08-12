@@ -19,10 +19,47 @@ from inputs_page_modules.session import build_inputs_summary_source_shaping_snap
 from inputs_page_modules.widgets.design_action_sync import (
     design_action_widget_specs,
     hydrate_design_action_widgets_from_shared,
+    sync_design_action_widget_to_shared,
 )
 from inputs_page_modules.widgets.render_coordinators import (
     render_inputs_design_actions_section,
 )
+from inputs_application.page_runtime.setup import (
+    _engineering_transaction_widget_keys,
+)
+
+
+def test_manual_uls_widgets_enter_the_canonical_input_transaction() -> None:
+    mapping = _engineering_transaction_widget_keys(
+        design_governing=False,
+        loads_edit_mode="ULS",
+    )
+
+    assert mapping["uls_Mstar_pos_manual"] == "inputs_load_Mstar_pos_proxy"
+    assert mapping["uls_Mstar_neg_manual"] == "inputs_load_Mstar_neg_proxy"
+    assert mapping["uls_Vstar"] == "inputs_load_Vstar_proxy"
+    assert mapping["uls_Nstar"] == "inputs_load_Nstar_proxy"
+
+
+def test_manual_sls_widgets_enter_only_the_sls_input_transaction() -> None:
+    mapping = _engineering_transaction_widget_keys(
+        design_governing=False,
+        loads_edit_mode="SLS",
+    )
+
+    assert mapping["sls_Mstar_pos_manual"] == "inputs_load_Mstar_pos_proxy"
+    assert mapping["sls_Vstar"] == "inputs_load_Vstar_proxy"
+    assert "uls_Mstar_pos_manual" not in mapping
+
+
+def test_load_analysis_controls_do_not_overwrite_manual_action_owners() -> None:
+    mapping = _engineering_transaction_widget_keys(
+        design_governing=True,
+        loads_edit_mode="ULS",
+    )
+
+    assert "uls_Mstar_pos_manual" not in mapping
+    assert "uls_Vstar" not in mapping
 
 
 def test_inputs_toggle_selects_load_analysis_and_synchronizes_both_pages() -> None:
@@ -66,6 +103,22 @@ def test_page_widget_is_always_seeded_from_canonical_source() -> None:
 
     assert seed_action_source_toggle(state, INPUTS_ACTION_SOURCE_TOGGLE_KEY)
     assert state[INPUTS_ACTION_SOURCE_TOGGLE_KEY] is True
+
+
+def test_missing_action_source_defaults_to_beam_inputs_not_stale_analysis() -> None:
+    actions = resolve_design_actions_from_state(
+        {
+            "uls_Mstar_pos_manual": 0.0,
+            "uls_Mstar_neg_manual": 0.0,
+            "uls_Vstar": 0.0,
+            "sfd_Mmax_abs_kNm": 200.0,
+            "sfd_Vmax_abs_kN": 300.0,
+        }
+    )
+
+    assert actions["Mu"] == 0.0
+    assert actions["Vu"] == 0.0
+    assert actions["source"] == "manual_uls"
 
 
 def test_load_analysis_projection_supplies_uls_and_sls_without_overwriting_manual_actions() -> None:
@@ -409,3 +462,10 @@ def test_design_actions_renderer_has_no_action_source_or_rerun_authority() -> No
     assert 'session_state["actions_source"] =' not in source
     assert "rerun_inputs_current_scope" not in source
     assert "_rerun_inputs_fragment_or_app" not in source
+
+
+def test_design_action_callback_does_not_bypass_canonical_input_transaction() -> None:
+    source = inspect.getsource(sync_design_action_widget_to_shared)
+
+    assert "persist_active_beam_from_shared_fn()" not in source
+    assert "persist_state_snapshot_fn()" not in source

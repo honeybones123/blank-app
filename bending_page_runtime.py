@@ -62,6 +62,7 @@ from ui.diagrams.bending_3d_diagram import (
 from bending_side_view_diagram import render_bending_side_view_diagram
 from bending_tabs import render_uls_tab, render_min_strength_tab, render_sls_tab
 from bending_checks_helpers import build_bending_check_rows_from_state
+from inputs_application.authoritative_check_packs import current_authoritative_family
 from calculations.bending import (
     bar_area_mm2,
     bending_summary_check_values,
@@ -93,6 +94,46 @@ REO_BAR_DIAS = [10, 12, 16, 20, 24, 28, 32, 36, 40]
 REO_COUNTS_0_12 = list(range(0, 13))
 REO_SPACINGS = [75, 100, 125, 150, 175, 200, 225, 250, 275, 300]
 REO_LAYOUT_MODE = ["Count", "Spacing"]
+
+
+def _overlay_authoritative_bending_result(target, bending, ductility, default_depth):
+    """Project the published V2 result into the existing detail-renderer shape."""
+
+    if not bending:
+        return
+    target.update({
+        "_authoritative_uls": True,
+        "phi_Mu_cap": float(bending.get("phi_Mu_kNm", 0.0) or 0.0),
+        "phi_Mu_kNm": float(bending.get("phi_Mu_kNm", 0.0) or 0.0),
+        "Mu_util": float(bending.get("util", 0.0) or 0.0),
+        "util": float(bending.get("util", 0.0) or 0.0),
+        "Mu_nom": float(bending.get("Mu_nom_kNm", 0.0) or 0.0),
+        "Mu_nom_kNm": float(bending.get("Mu_nom_kNm", 0.0) or 0.0),
+        "phi": float(bending.get("phi", 0.65) or 0.65),
+        "ku": float(bending.get("ku", 0.0) or 0.0),
+        "c": float(bending.get("dn_mm", 0.0) or 0.0),
+        "dn_mm": float(bending.get("dn_mm", 0.0) or 0.0),
+        "a": float(bending.get("block_depth_mm", 0.0) or 0.0),
+        "z": float(bending.get("resultant_lever_arm_mm", 0.0) or 0.0),
+        "d": float(bending.get("d_mm", default_depth) or default_depth),
+        "d_mm": float(bending.get("d_mm", default_depth) or default_depth),
+        "alpha2": float(bending.get("alpha2", 0.0) or 0.0),
+        "gamma": float(bending.get("gamma", 0.0) or 0.0),
+        "T_N": float(bending.get("tension_force_n", 0.0) or 0.0),
+        "C_concrete_N": float(bending.get("concrete_force_n", 0.0) or 0.0),
+        "C_steel_N": float(bending.get("compression_steel_force_n", 0.0) or 0.0),
+        "equilibrium_residual_n": float(bending.get("equilibrium_residual_n", 0.0) or 0.0),
+        "steel_layer_stresses_mpa": tuple(bending.get("steel_layer_stresses_mpa", ()) or ()),
+        "steel_layer_forces_n": tuple(bending.get("steel_layer_forces_n", ()) or ()),
+    })
+    if ductility:
+        target.update({
+            "ductility_status": str(ductility.get("status", "NOT RUN")),
+            "ductility_limit": float(ductility.get("limit", 0.36) or 0.36),
+            "clause_815_triggered": bool(ductility.get("conditional_triggered", False)),
+            "clause_815_satisfied": bool(ductility.get("conditional_requirements_satisfied", False)),
+            "clause_815_failed_requirements": tuple(ductility.get("failed_requirements", ()) or ()),
+        })
 
 
 from engineering_page_sections import bending_diagrams as _bending_diagrams_section
@@ -797,6 +838,14 @@ def render_bending():
     }
     top_results_pos = solve_bending_capacity("positive", Mu_pos_star, common_bending_inputs)
     top_results_neg = solve_bending_capacity("negative", Mu_neg_star, common_bending_inputs)
+    authoritative_bending = current_authoritative_family(st.session_state, "bending")
+    authoritative_ductility = current_authoritative_family(st.session_state, "ductility")
+    _overlay_authoritative_bending_result(
+        top_results_pos,
+        authoritative_bending,
+        authoritative_ductility,
+        d_pos_val,
+    )
 
     phi_Mu_cap_top = top_results["phi_Mu_cap"]
     
@@ -918,6 +967,13 @@ def render_bending():
         canonical_state = "ULS"
 
     bend_pack = build_bending_check_rows_from_state(st.session_state)
+    if not top_results_pos.get("_authoritative_uls"):
+        _overlay_authoritative_bending_result(
+            top_results_pos,
+            bend_pack.get("authoritative_family") or {},
+            bend_pack.get("authoritative_ductility_family") or {},
+            d_pos_val,
+        )
     has_sagging_case = bool(bend_pack.get("has_sagging_case", has_sagging_case))
     has_hogging_case = bool(bend_pack.get("has_hogging_case", has_hogging_case))
     rows_summary = build_bending_legacy_summary_rows(bend_pack.get("rows") or [])
@@ -1381,13 +1437,14 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                         ),
                     )
                     number_row(
-                        "Bending strength factor ϕb",
+                        "Maximum bending strength factor phi_b,max",
                         "bending_phi_b",
                         phi_b_val,
                         sync_callbacks,
                         help_text=(
-                            "Strength reduction factor for bending (AS 3600 ϕ-factor). "
-                            "This multiplies the nominal capacity to give ϕM_u,cap."
+                            "Upper limit for the AS 3600 bending strength factor. The "
+                            "authoritative calculation derives phi from the calculated k_u "
+                            "and applies this value only as a maximum."
                         ),
                     )
         
@@ -1772,6 +1829,11 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                     Mu_uls_active = Mu_neg_star
                     Mu_sls_active = Ms_neg_star
                 else:
+                    # Preserve the complete revision-matched V2 evidence for
+                    # the detailed ULS renderer.  Copying only capacity/ku
+                    # here previously dropped the authority marker and made
+                    # the page run its retired local bending formula again.
+                    top_results_active.update(top_results_pos)
                     top_results_active.update({
                         "phi_Mu_cap": float(top_results_pos.get("phi_Mu_kNm", top_results.get("phi_Mu_cap", 0.0)) or 0.0),
                         "Mu_util": float(top_results_pos.get("util", top_results.get("Mu_util", 0.0)) or 0.0),

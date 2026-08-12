@@ -1999,10 +1999,10 @@ In short:
                     )
 
     with page_title_placeholder:
-        # This page's runtime shell contributes one additional Streamlit row
-        # before its content. Offset that shell row so the visible heading
-        # aligns with the Bending-page reference spacing.
-        render_result_page_title("Shear & Torsion", top_margin_rem=-1.25)
+        # This page contributes one additional shell row before its content;
+        # compensate for that row while keeping the same visible gap as the
+        # other result-page headings.
+        render_result_page_title("Shear & Torsion", top_margin_rem=-0.9)
 
     debug_mode = st.sidebar.checkbox(
         "Debug session state",

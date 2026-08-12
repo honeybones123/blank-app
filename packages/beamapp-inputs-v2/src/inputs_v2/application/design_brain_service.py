@@ -347,6 +347,18 @@ class DesignBrainService:
         result displayed beside the Apply action.
         """
 
+        # With genuine SLS actions the family evaluation already used the
+        # ordinary authoritative calculator.  Recalculating the selected
+        # candidate here created a second post-family decision path: the
+        # family could select a verified candidate and a later calculation
+        # could replace its evidence and suppress Apply.  Preserve the exact
+        # result that the family evaluated and ranked.
+        if self._has_sls(current):
+            return preview
+
+        # A second calculation is required only for the private 0.60 ULS
+        # proxy.  It strips synthetic SLS actions from the displayed and
+        # published result without changing the family-owned selection.
         outcome = apply_candidate(current, preview.candidate)
         if not outcome.applied:
             return preview
@@ -492,7 +504,34 @@ class DesignBrainService:
             ("shear_legs", current.shear.legs, proposal.shear_legs),
             ("shear_spacing_mm", current.shear.spacing_mm, proposal.shear_spacing_mm),
         )
-        return tuple(name for name, before, after in comparisons if before != after)
+        changes = [
+            name for name, before, after in comparisons if before != after
+        ]
+        current_rows = (
+            tuple(row.bar_count for row in current.bottom_arrangement.rows)
+            if current.bottom_arrangement is not None
+            else (int(current.bottom.bars),)
+        )
+        current_row_diameters = (
+            tuple(
+                float(row.bar_diameter_mm or current.bottom.diameter_mm)
+                for row in current.bottom_arrangement.rows
+            )
+            if current.bottom_arrangement is not None
+            else (float(current.bottom.diameter_mm),)
+        )
+        candidate_rows = candidate.row_counts or (
+            int(candidate.proposal.bottom_bars),
+        )
+        candidate_row_diameters = candidate.row_diameters_mm or tuple(
+            float(candidate.proposal.bottom_diameter_mm)
+            for _ in candidate_rows
+        )
+        if tuple(candidate_rows) != current_rows:
+            changes.append("bottom_row_counts")
+        if tuple(candidate_row_diameters) != current_row_diameters:
+            changes.append("bottom_row_diameters_mm")
+        return tuple(changes)
 
     def _rank_key(
         self,

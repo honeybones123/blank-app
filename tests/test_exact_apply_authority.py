@@ -5,6 +5,8 @@ from pathlib import Path
 from application.apply_command import execute_apply_command
 from application.contracts.design_brain import AuthoritativeDesignResult
 from inputs_application.apply_transaction_store import ApplyTransactionStore
+from inputs_application.engineering_input_store import InputSnapshotStore
+from inputs_application.live_apply import execute_typed_apply
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -159,3 +161,39 @@ def test_apply_authority_has_no_ui_or_unrevisioned_fallback_path() -> None:
         assert forbidden not in live_apply
 
     assert "unrevisioned_compatibility_payload" not in transaction_store
+
+
+def test_typed_apply_rejects_publication_from_previous_input_snapshot() -> None:
+    session: dict = {}
+    snapshots = InputSnapshotStore(session)
+    snapshots.capture_draft({"beam_width": 250.0}, source="initial")
+    first = snapshots.commit_draft(source="initial")
+    snapshots.capture_draft({"beam_width": 300.0}, source="edited")
+    second = snapshots.commit_draft(source="edited")
+    assert second.revision > first.revision
+
+    result = _action_result()
+    stale_payload = {
+        **dict(result.apply_payload),
+        "source_input_revision": first.revision,
+        "source_engineering_hash": result.engineering_hash,
+    }
+    stale_result = AuthoritativeDesignResult(
+        **{
+            **result.to_dict(),
+            "apply_payload": dict(stale_payload),
+        }
+    )
+
+    execution = execute_typed_apply(
+        session_state=session,
+        current_result=stale_result,
+        recommendation=stale_payload,
+        set_shared=lambda *args, **kwargs: None,
+        finalize_publish=lambda *args, **kwargs: None,
+        persist_active_beam=lambda: None,
+    )
+
+    assert execution.command.status == "failed"
+    assert execution.command.reason == "stale_apply_candidate_source_revision"
+    assert execution.mutation is None

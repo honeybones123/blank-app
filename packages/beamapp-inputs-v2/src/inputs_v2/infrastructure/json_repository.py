@@ -9,6 +9,7 @@ from pathlib import Path
 from inputs_v2.domain.beam_inputs import (
     ActionInputs,
     BeamInputs,
+    KvMethod,
     LongitudinalReinforcement,
     LayoutMode,
     MaterialInputs,
@@ -67,6 +68,13 @@ class JsonBeamInputsRepository:
         bottom_raw = dict(raw.pop("bottom") or {})
         top_raw = dict(raw.pop("top") or {})
         shear_raw = dict(raw.pop("shear") or {})
+        # Read the historical boolean representation once at the persistence
+        # boundary; all current domain objects store an explicit method enum.
+        legacy_general = shear_raw.pop("use_general_kv", None)
+        shear_raw["kv_method"] = KvMethod(
+            shear_raw.get("kv_method")
+            or (KvMethod.GENERAL if legacy_general else KvMethod.SIMPLIFIED)
+        )
         materials_raw = dict(raw.pop("materials") or {})
         actions_raw = dict(raw.pop("actions") or {})
         supports_raw = dict(raw.pop("supports") or {})

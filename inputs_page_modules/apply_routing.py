@@ -9,7 +9,7 @@ from inputs_page_modules.fragments import (
     active_inputs_fragment_id,
     current_inputs_fragment_id,
     request_inputs_fragment_wake,
-    rerun_inputs_current_scope,
+    rerun_inputs_active_fragment,
 )
 
 
@@ -48,8 +48,22 @@ def handle_inputs_apply_buttons(
         if not defer_scoped_apply_rerun:
             return
     if outcome == "failed":
+        failure_reason = (
+            recommendation_blocked_reason_fn(rec)
+            or str(
+                dict(
+                    session_state.get("_typed_inputs_apply_probe") or {}
+                ).get("reason")
+                or "apply_recommendation_failed"
+            )
+        )
+        print(
+            f"Inputs Apply rejected: {failure_reason}",
+            file=stderr,
+        )
+        st_module.error(f"Apply could not complete: {failure_reason}")
         emit_apply_trace_run_end_fn(
-            stop_reason=recommendation_blocked_reason_fn(rec) or "apply_recommendation_failed",
+            stop_reason=failure_reason,
             final_updates={},
             winner_label=str(rec.get("title") or ""),
         )
@@ -137,17 +151,20 @@ def handle_inputs_apply_buttons(
         else {"path": "handle_apply_buttons_committed_fallback"}
     )
     record_rerun_trigger_fn("apply_triggered_rerun", meta=rerun_meta)
-    if scoped:
-        rerun_inputs_current_scope(st_module)
+    if not scoped:
+        # A queued framework wake is the only safe refresh when Apply is
+        # dispatched outside the live fragment body.  Never widen this into
+        # a full-page rerun: doing so rebuilds the Inputs shell and can
+        # rehydrate stale widget values over the committed snapshot.
+        request_inputs_fragment_wake(
+            st_module,
+            "engineering_workspace",
+            revision=revision,
+        )
         return
-    # Inputs runs as one forced ``engineering_workspace`` fragment.  A stale
-    # or temporarily unavailable active-fragment marker must never turn Apply
-    # into an app-wide rerun: queue a one-shot wake for the unified owner and
-    # let its revision protocol render the committed transaction.  The next
-    # ordinary Streamlit event remains a safe fallback when a test double or
-    # unsupported runtime has no fragment id.
-    request_inputs_fragment_wake(
-        st_module,
-        "engineering_workspace",
-        revision=revision,
-    )
+
+    # Apply is normally invoked from the unified engineering-workspace
+    # fragment.  Refresh that scope immediately so the committed candidate,
+    # calculation, summaries, diagram and replacement publication advance as
+    # one transaction without rebuilding the page shell.
+    rerun_inputs_active_fragment(st_module)

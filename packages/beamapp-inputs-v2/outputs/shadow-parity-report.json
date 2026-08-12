@@ -3,7 +3,7 @@
   "cases": [
     {
       "revision": 0,
-      "input_hash": "9b8f01290b7e6daf31100e7c56e4bfe14dd74c185110a77ce1ca4b1fcd7f2571",
+      "input_hash": "c57fcb5fcc2d592300278c3d714cbdc3235b4e6d16c2f08f10de5daea2f4cfba",
       "fixture_status": "fixture",
       "shadow_status": "production-shadow",
       "fixture_families": [],
@@ -19,12 +19,12 @@
         "shear",
         "shrinkage"
       ],
-      "shadow_bending_capacity": 24.788595666530608,
+      "shadow_bending_capacity": 26.225658214998063,
       "shadow_shear_capacity": 27.215352112824114
     },
     {
       "revision": 0,
-      "input_hash": "d10b42dff42b97925ae90dbfd2c461756e4cc20a5d7b18d7ee1662b14d714bf5",
+      "input_hash": "fd8230780ff9798c94f6dd2028b37496905bb1f6db044c2bdc56b1f5eaad3727",
       "fixture_status": "fixture",
       "shadow_status": "production-shadow",
       "fixture_families": [],
@@ -40,12 +40,12 @@
         "shear",
         "shrinkage"
       ],
-      "shadow_bending_capacity": 24.788595666530608,
+      "shadow_bending_capacity": 26.225658214998063,
       "shadow_shear_capacity": 27.215352112824114
     },
     {
       "revision": 0,
-      "input_hash": "4a575b5686dafe499b6d101f612cb2da9fc92cd26521f336428406ce1ca66759",
+      "input_hash": "66883b69959c750c350023492d0302a3ef9b805eb5889ef6d1eb5a6dca47e9a3",
       "fixture_status": "fixture",
       "shadow_status": "production-shadow",
       "fixture_families": [],
@@ -61,7 +61,7 @@
         "shear",
         "shrinkage"
       ],
-      "shadow_bending_capacity": 44.940692519987024,
+      "shadow_bending_capacity": 46.838674389902366,
       "shadow_shear_capacity": 58.27287158275281
     }
   ]

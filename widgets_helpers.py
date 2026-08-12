@@ -926,7 +926,7 @@ def apply_result_page_css():
     font-size: 2.35rem;
     font-weight: 700;
     line-height: 1.05;
-    margin-top: -0.55rem;
+    margin-top: -0.2rem;
     margin-bottom: 0.08rem;
 }
 
@@ -1025,7 +1025,7 @@ def render_section_title(title: str) -> None:
     )
 
 
-def render_result_page_title(title: str, *, top_margin_rem: float = -0.55) -> None:
+def render_result_page_title(title: str, *, top_margin_rem: float = -0.2) -> None:
     """Render a tightly spaced main title for result/check pages."""
     st.markdown(
         (

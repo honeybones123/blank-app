@@ -19,7 +19,7 @@ from calculations.deflection import derive_sustained_stress_ratio
 from section_props.props import compute_gross_props
 
 
-V2_ENGINEERING_CALCULATION_CONTRACT_VERSION = "inputs_v2.calculation.v2"
+V2_ENGINEERING_CALCULATION_CONTRACT_VERSION = "inputs_v2.calculation.v6"
 
 
 def _mapping(value: Any) -> dict[str, Any]:
@@ -120,6 +120,24 @@ def _normalise_shape(value: Any) -> str:
     return shape if shape in {"RECT", "T", "I"} else "RECT"
 
 
+def _v2_kv_method(value: Any, api: Mapping[str, Any]):
+    """Map Runtime labels to the explicit V2 shear-method contract.
+
+    Runtime historically persisted presentation labels rather than an
+    engineering enum.  Resolve those aliases once at this adapter boundary
+    and fail closed for an unknown non-empty value so the calculator cannot
+    silently run the wrong AS 3600 branch.
+    """
+
+    raw = str(value or "").strip()
+    normalised = raw.casefold()
+    if not normalised or "8.2.4.3" in normalised or "simplified" in normalised:
+        return api["KvMethod"].SIMPLIFIED
+    if "8.2.4.2" in normalised or "general" in normalised:
+        return api["KvMethod"].GENERAL
+    raise ValueError(f"Unsupported shear k_v method: {raw}")
+
+
 def _resolved_actions(snapshot: EngineeringInputSnapshot) -> dict[str, Any]:
     actions = _mapping(snapshot.design_actions)
     resolved = _mapping(actions.get("resolved"))
@@ -199,7 +217,20 @@ def _bottom_row_specs(reinforcement: Mapping[str, Any]) -> tuple[tuple[int, int]
         "bot2_bars",
         default=0,
     )
-    if row_2_count > 0:
+    # ``bot_row_count`` is the authoritative activation flag used by the
+    # Runtime editor and section diagram.  Inactive row values are retained so
+    # a user can switch back to two rows without re-entering them, but they
+    # must not contribute to the engineering calculation.  Older snapshots do
+    # not contain this field, so infer their active rows from the stored count.
+    declared_row_count = (
+        _integer(reinforcement, "bot_row_count", default=1)
+        if "bot_row_count" in reinforcement
+        else (2 if row_2_count > 0 else 1)
+    )
+    if declared_row_count not in {1, 2}:
+        raise ValueError("Bottom reinforcement row count must be one or two.")
+
+    if declared_row_count == 2 and row_2_count > 0:
         row_2_diameter = _v2_longitudinal_diameter(
             reinforcement,
             "bot_row_2_dia",
@@ -235,6 +266,7 @@ def _v2_api():
         ActionInputs,
         BeamInputs,
         DeflectionInputs,
+        KvMethod,
         LayoutMode,
         LongitudinalReinforcement,
         MaterialInputs,
@@ -254,6 +286,7 @@ def _v2_api():
         "ActionInputs": ActionInputs,
         "BeamInputs": BeamInputs,
         "DeflectionInputs": DeflectionInputs,
+        "KvMethod": KvMethod,
         "LayoutMode": LayoutMode,
         "LongitudinalReinforcement": LongitudinalReinforcement,
         "MaterialInputs": MaterialInputs,
@@ -337,31 +370,48 @@ def _beam_inputs_from_snapshot(
         diameter_mm=bottom_diameter,
         cover_mm=bottom_cover,
     )
+    kv_method_value = (
+        settings.get("k_v_method")
+        or settings.get("kv_method")
+        or settings.get("shear_k_v_method")
+        or ""
+    )
     shear = api["ShearReinforcement"](
         diameter_mm=_integer(reinforcement, "lig_d", default=0),
         legs=_integer(reinforcement, "lig_legs", default=0),
         spacing_mm=_number(reinforcement, "s_lig", default=200.0),
-        use_general_kv=(
-            "8.2.4.2" in str(
-                settings.get("k_v_method")
-                or settings.get("kv_method")
-                or settings.get("shear_k_v_method")
-                or ""
-            )
-            or "general" in str(
-                settings.get("k_v_method")
-                or settings.get("kv_method")
-                or settings.get("shear_k_v_method")
-                or ""
-            ).lower()
-        ),
+        kv_method=_v2_kv_method(kv_method_value, api),
     )
+    section_shape = _normalise_shape(geometry.get("sec_shape"))
+    section_width = _number(
+        geometry,
+        "bw" if section_shape == "T" else "tw" if section_shape == "I" else "b",
+        "b",
+        default=250.0,
+    )
+    flange_width = _number(geometry, "bf", default=section_width)
+    web_width = _number(
+        geometry,
+        "tw" if section_shape == "I" else "bw",
+        "b",
+        default=section_width,
+    )
+    flange_thickness = _number(geometry, "tf", default=0.0)
     v2_inputs = api["BeamInputs"](
         revision=int(revision),
-        width_mm=_number(geometry, "b", "bw", default=250.0),
+        width_mm=section_width,
         depth_mm=_number(geometry, "D", "d", default=300.0),
         span_mm=span_mm,
-        section_shape=_normalise_shape(geometry.get("sec_shape")),
+        section_shape=section_shape,
+        flange_width_mm=flange_width if section_shape in {"T", "I"} else None,
+        flange_thickness_mm=flange_thickness if section_shape in {"T", "I"} else None,
+        web_width_mm=web_width if section_shape in {"T", "I"} else None,
+        clause_815_analysis_verified=_boolean(
+            settings, "clause_815_analysis_verified", "advanced_analysis_verified"
+        ),
+        compression_reinforcement_restrained=_boolean(
+            settings, "compression_reinforcement_restrained", "compression_steel_restrained"
+        ),
         width_locked=_boolean(locks, "optimisation_lock_width", "lock_width", "width_locked"),
         depth_locked=_boolean(locks, "optimisation_lock_depth", "lock_depth", "depth_locked"),
         bottom=bottom,
@@ -376,6 +426,7 @@ def _beam_inputs_from_snapshot(
             torsion_knm=_number(actions, "Tu", default=0.0),
             shear_force_kn=_number(actions, "Vu", default=0.0),
             axial_force_kn=_number(actions, "Nu", default=0.0),
+            applied_prestress_kn=_number(actions, "P", "Pu", "P_star", default=0.0),
         ),
         supports=api["SupportInputs"](
             str(settings.get("left_support") or "Pinned"),
@@ -531,6 +582,7 @@ def _resolved_inputs_projection(
             "Vu": current.actions.shear_force_kn,
             "Tu": current.actions.torsion_knm,
             "Nu": current.actions.axial_force_kn,
+            "P_star": current.actions.applied_prestress_kn,
             "defl_limit_ratio": current.deflection.limit_ratio,
             "deflection_support_condition": current.deflection.support_condition,
             "SLS_M": current.serviceability.moment_knm,
@@ -739,6 +791,8 @@ def _v2_summary_packs(*, current: Any, families: Mapping[str, Any]) -> dict[str,
     summary_packs = {
         "bending": {
             "source": "inputs_v2",
+            "authoritative_family": dict(bending),
+            "authoritative_ductility_family": dict(ductility),
             "summary_phiMu_kNm": phi_mu,
             "summary_Mu_star_kNm": mu,
             "summary_Ms_sls_kNm": bending.get("service_moment_knm"),

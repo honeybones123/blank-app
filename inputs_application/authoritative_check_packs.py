@@ -89,7 +89,22 @@ def current_authoritative_check_pack(
     pack = packs.get(str(family))
     if not isinstance(pack, Mapping) or pack.get("source") != "inputs_v2":
         return None
-    return copy.deepcopy(dict(pack))
+    projected = copy.deepcopy(dict(pack))
+    # Detailed Bending cards consume the exact same calculation family as the
+    # summary pack.  Attach the already-published facts here rather than
+    # letting the result page invoke a second bending solver.
+    if str(family) == "bending":
+        families = calculations.get("families")
+        if isinstance(families, Mapping):
+            bending = families.get("bending")
+            ductility = families.get("ductility")
+            if isinstance(bending, Mapping):
+                projected["authoritative_family"] = copy.deepcopy(dict(bending))
+            if isinstance(ductility, Mapping):
+                projected["authoritative_ductility_family"] = copy.deepcopy(
+                    dict(ductility)
+                )
+    return projected
 
 
 def unavailable_authoritative_check_pack(family: str) -> dict[str, Any]:

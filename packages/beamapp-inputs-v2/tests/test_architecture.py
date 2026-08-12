@@ -154,7 +154,9 @@ def test_family_contract_is_the_only_terminal_decision_centre() -> None:
     assert ".resolve_outcome(" not in orchestrator
     assert ".proves_exact_stop(" not in orchestrator
     assert "def decide(" in owners
-    assert "self.improvement_policy.accepts(" in owners
+    assert "self.improvement_policy.accepts(" not in owners
+    assert "def accepts(" not in owners
+    assert "and complete_compliance(preview.after)" in owners
     assert "self.proves_exact_stop(" in owners
     assert "self.resolve_outcome(" in owners
 

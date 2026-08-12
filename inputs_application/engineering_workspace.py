@@ -860,6 +860,7 @@ def render_inputs_design_guide_fragment_section(
                 design_guide_slot=design_guide_slot,
                 result=authoritative_result,
                 apply_payload=revisioned_apply_payload,
+                apply_handler=runtime.handle_pending_apply,
             )
     else:
         runtime.render_design_guide(

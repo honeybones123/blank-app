@@ -146,68 +146,6 @@ class ImprovementPolicy:
     allow_safe_progress_below_band: bool = False
     allow_compliant_repair: bool = False
 
-    def accepts(
-        self,
-        current_utilisations: tuple[float, ...],
-        proposed_utilisations: tuple[float, ...],
-        *,
-        current_compliant: bool,
-        complete_compliance: bool,
-        reason: str,
-        target_low: float,
-        target_high: float,
-    ) -> bool:
-        if self.require_complete_compliance and not complete_compliance:
-            return False
-        if self.allow_compliant_repair:
-            return (
-                (not proposed_utilisations or all(value <= target_high for value in proposed_utilisations))
-                and (
-                    not current_compliant
-                    or
-                    not current_utilisations
-                    or any(value > target_high for value in current_utilisations)
-                )
-            )
-        if reason == "safe_shear_failure_repair":
-            return bool(proposed_utilisations) and all(
-                value <= target_high for value in proposed_utilisations
-            )
-        if self.allow_safe_progress_below_band and reason == "safe_overdesign_cleanup":
-            return not proposed_utilisations or all(value <= target_high for value in proposed_utilisations)
-        if not proposed_utilisations:
-            return (
-                not self.require_target_band
-                and reason in {
-                    "geometry_ratio_repaired",
-                    "reinforcement_arrangement_repaired",
-                }
-            )
-        if all(target_low <= value <= target_high for value in proposed_utilisations):
-            return True
-        # A verified material cleanup at zero demand cannot improve its
-        # utilisation: both current and proposed values remain 0.00.  The
-        # owning family has already proved that the proposal removes material,
-        # changes the design and preserves every mandatory check, so equality
-        # of utilisation must not suppress its Apply action.
-        def distance(values: tuple[float, ...]) -> float:
-            return sum(
-                target_low - value if value < target_low else value - target_high if value > target_high else 0.0
-                for value in values
-            )
-
-        if not self.require_target_band:
-            return (
-                all(value <= target_high for value in proposed_utilisations)
-                and distance(proposed_utilisations) < distance(current_utilisations)
-            )
-        if not self.allow_safe_progress_below_band or reason != "proportion_balanced_candidate":
-            return False
-        if any(value > target_high for value in proposed_utilisations):
-            return False
-
-        return distance(proposed_utilisations) < distance(current_utilisations)
-
 
 @dataclass(frozen=True, slots=True)
 class RankingPolicy:
@@ -455,18 +393,18 @@ class FamilyContract:
         # resolves to the current canonical design.  Treating that no-op as
         # accepted would let the family publish ACTION without an Apply
         # command, violating the FamilyDecision contract.
+        # The selected family ladder is the sole optimisation authority.  It
+        # has already generated, calculator-checked, ranked and selected this
+        # proposal under this contract's ImprovementPolicy.  Reapplying the
+        # target-distance policy here created a second stopping gate: a fully
+        # verified repair or cleanup could be selected by the family and then
+        # lose its Apply action during publication.  This boundary therefore
+        # validates only publication invariants; it does not rerank or
+        # reinterpret the family-owned result.
         policy_accepted = (
             proposal_changed
             and preview.accepted
-            and self.improvement_policy.accepts(
-                current_utils,
-                proposed_utils,
-                current_compliant=current_compliant,
-                complete_compliance=complete_compliance(preview.after),
-                reason=preview.reason,
-                target_low=self.target_low,
-                target_high=self.target_high,
-            )
+            and complete_compliance(preview.after)
         )
         candidates_attempted = max(
             int(search_metrics.get("candidates_attempted", 0) or 0),
@@ -541,12 +479,17 @@ class FamilyContract:
         inputs: BeamInputs,
         result: EngineeringResult,
     ) -> tuple[float, ...]:
-        """Return only the target-band domains owned by this family.
+        """Return only strength utilisations governed by the target band.
 
         Mandatory checks still verify the complete proposal.  This narrower
         tuple prevents a passing preservation domain (for example bending in
         a shear repair) from being incorrectly required to enter the
         optimisation band before Apply can be authorised.
+
+        Serviceability is an upper-bound compliance check, not an efficiency
+        target.  A crack or deflection utilisation of 0.20 is safely passing;
+        requiring it to reach the 0.85--1.00 ULS optimisation band would turn
+        a verified design into a false blocked outcome after Apply.
         """
 
         values: list[float] = []
@@ -561,16 +504,6 @@ class FamilyContract:
                 if capacity > 0.0
                 else float("inf")
             )
-        if "serviceability" in domains and DesignBrainService._has_sls(inputs):
-            deflection = float(
-                result.families.get("serviceability", {}).get("deflection_util", 0.0)
-                or 0.0
-            )
-            crack = float(
-                result.families.get("crack_control", {}).get("util", 0.0)
-                or 0.0
-            )
-            values.append(max(deflection, crack))
         return tuple(values)
 
     @staticmethod
@@ -578,7 +511,12 @@ class FamilyContract:
         inputs: BeamInputs,
         result: EngineeringResult,
     ) -> tuple[float, ...]:
-        """Return active user-load utilisations used by the classifier."""
+        """Return active strength utilisations used by the classifier.
+
+        SLS failures remain authoritative through ``complete_compliance`` and
+        the serviceability family entry condition.  They are deliberately not
+        interpreted as lower-bound target-band values.
+        """
 
         values: list[float] = []
         if abs(float(inputs.actions.bending_moment_knm)) > 1e-9:
@@ -591,16 +529,6 @@ class FamilyContract:
                 if capacity > 0.0
                 else float("inf")
             )
-        if DesignBrainService._has_sls(inputs):
-            deflection = float(
-                result.families.get("serviceability", {}).get("deflection_util", 0.0)
-                or 0.0
-            )
-            crack = float(
-                result.families.get("crack_control", {}).get("util", 0.0)
-                or 0.0
-            )
-            values.append(max(deflection, crack))
         return tuple(values)
 
 
@@ -712,8 +640,11 @@ class FamilyOwner:
                 blocker_code = "search_budget_exhausted"
                 blocker = self.contract.blocker_for(blocker_code)
             elif preview.accepted and not resolution.policy_accepted:
-                blocker_code = "proposal_outside_target_band"
-                blocker = "The assessed revision remains outside the required target band"
+                blocker_code = "verified_proposal_publication_invariant_failed"
+                blocker = (
+                    "The selected family proposal could not be published because its "
+                    "verified Apply invariants were not satisfied"
+                )
             elif blocker is None and rejection_counts:
                 blocker_code = max(
                     rejection_counts,

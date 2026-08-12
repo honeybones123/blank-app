@@ -246,6 +246,14 @@ def rerun_inputs_current_scope(st_module: Any) -> None:
     st_module.rerun()
 
 
+def rerun_inputs_active_fragment(st_module: Any) -> None:
+    """Rerun only the live Inputs fragment; never widen to app scope."""
+
+    if not _current_fragment_id():
+        raise RuntimeError("No active Inputs fragment is available for a scoped rerun")
+    st_module.rerun(scope="fragment")
+
+
 def request_inputs_fragment_wake(
     st_module: Any,
     fragment_name: str,
@@ -312,6 +320,7 @@ def stop_inputs_fragment_polling(
 __all__ = [
     "current_inputs_fragment_id",
     "request_inputs_fragment_wake",
+    "rerun_inputs_active_fragment",
     "rerun_inputs_current_scope",
     "run_inputs_fragment",
     "run_inputs_polling_fragment",

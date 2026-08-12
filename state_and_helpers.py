@@ -6821,7 +6821,7 @@ def _request_inputs_engineering_commit(
 
         workspace_woken = request_inputs_fragment_wake(
             st,
-            "engineering_input_workspace",
+            "engineering_workspace",
             revision=int(committed.revision),
             interval_s=0.1,
         )
@@ -6830,20 +6830,10 @@ def _request_inputs_engineering_commit(
             "woken": bool(workspace_woken),
             "source": "input_transaction",
         }
-        calculation_woken = request_inputs_fragment_wake(
-            st,
-            "engineering_calculation_workspace",
-            revision=int(committed.revision),
-            interval_s=0.1,
-        )
-        st.session_state["_inputs_calculation_fragment_wake"] = {
-            "revision": int(committed.revision),
-            "woken": bool(calculation_woken),
-            "source": "input_transaction",
-        }
-        # Diagrams render synchronously inside the parent input workspace, so
-        # they consume this same committed transaction on the widget rerun.
-        # There is deliberately no independent diagram-fragment wake path.
+        # Summary, Design Brain, controls, Apply, and diagrams all render in
+        # this one workspace.  Waking the removed sibling fragment names left
+        # the visible controls on a new revision while the summary retained an
+        # older authoritative result.  No legacy sibling wake path remains.
         from inputs_application.design_brain_polling import (
             INITIAL_DESIGN_BRAIN_WAKE_INTERVAL_S,
             start_design_brain_polling,
@@ -8364,8 +8354,16 @@ def set_shared(key: str, value, *, source: str = "") -> None:
     The only allowed way to write shared inputs (SHARED_DEFAULTS keys).
     All writes are audited for debugging.
     """
-    # HARD GUARD: block render-time writes
-    if st.session_state.get("_sync_lock", False):
+    # HARD GUARD: block render-time hydration/merge writes.  A Streamlit
+    # widget callback is an explicit user command and may legitimately run
+    # while the surrounding fragment still owns the render synchronisation
+    # lock.  Silently rejecting that command left the visible action proxy at
+    # the edited value while the canonical ULS/SLS owner (and therefore
+    # bending/publication) retained its previous value.
+    if (
+        st.session_state.get("_sync_lock", False)
+        and not _set_shared_is_user_intent_source(source)
+    ):
         try:
             _write_sync_trace_line(
                 f"BLOCKED set_shared (sync_lock) key={key} val={value} source={source}"

@@ -8,6 +8,8 @@ import pytest
 from inputs_v2.domain.beam_inputs import (
     ActionInputs,
     BeamInputs,
+    KvMethod,
+    LongitudinalReinforcement,
     ShearReinforcement,
 )
 from inputs_v2.engineering.check_metadata import AS3600_2018_CHECKS
@@ -21,7 +23,7 @@ def _calculated(*, use_general_kv: bool):
             diameter_mm=10,
             legs=2,
             spacing_mm=200.0,
-            use_general_kv=use_general_kv,
+            kv_method=KvMethod.GENERAL if use_general_kv else KvMethod.SIMPLIFIED,
         ),
     ).validated()
     return EngineeringCalculator().calculate(current)
@@ -55,6 +57,73 @@ def test_ductility_check_uses_the_authoritative_neutral_axis_limit() -> None:
     }
 
 
+def test_ductility_ku_comes_from_strain_compatible_force_equilibrium() -> None:
+    current = BeamInputs().validated()
+    result = EngineeringCalculator().calculate(current)
+    bending = result.families["bending"]
+    ductility = result.families["ductility"]
+
+    assert bending["shape_equilibrium_valid"] is True
+    assert abs(bending["equilibrium_residual_n"]) < 1e-6
+    assert ductility["ku"] == pytest.approx(
+        bending["dn_mm"] / ductility["effective_depth_mm"]
+    )
+    assert ductility["util"] == pytest.approx(ductility["ku"] / 0.36)
+
+
+def _high_ku_design(*, demand_fraction: float, verified: bool) -> tuple[dict, dict]:
+    base = BeamInputs(
+        width_mm=300.0,
+        depth_mm=600.0,
+        bottom=LongitudinalReinforcement(bars=6, diameter_mm=32, cover_mm=40.0),
+        top=LongitudinalReinforcement(bars=4, diameter_mm=20, cover_mm=40.0),
+        clause_815_analysis_verified=verified,
+        compression_reinforcement_restrained=verified,
+    ).validated()
+    initial = EngineeringCalculator().calculate(base).families["bending"]
+    loaded = replace(
+        base,
+        actions=replace(
+            base.actions,
+            bending_moment_knm=demand_fraction * initial["phi_Mu_kNm"],
+        ),
+    ).validated()
+    result = EngineeringCalculator().calculate(loaded)
+    return result.families["bending"], result.families["ductility"]
+
+
+def test_ductility_limit_is_mandatory_even_at_low_demand() -> None:
+    bending, ductility = _high_ku_design(demand_fraction=0.70, verified=False)
+
+    assert bending["ku"] > 0.36
+    assert ductility["conditional_triggered"] is True
+    assert ductility["status"] == "FAIL"
+    assert "neutral_axis_limit_exceeded" in ductility["failed_requirements"]
+
+
+def test_clause_815_requires_all_conditional_evidence_above_eighty_percent() -> None:
+    bending, ductility = _high_ku_design(demand_fraction=0.90, verified=False)
+
+    assert bending["ku"] > 0.36
+    assert ductility["conditional_triggered"] is True
+    assert ductility["compression_steel_requirement_satisfied"] is True
+    assert ductility["status"] == "FAIL"
+    assert ductility["failed_requirements"] == (
+        "neutral_axis_limit_exceeded",
+        "clause_815_analysis_not_verified",
+        "compression_reinforcement_restraint_not_verified",
+    )
+
+
+def test_verified_conditional_evidence_does_not_override_the_runtime_ku_limit() -> None:
+    _bending, ductility = _high_ku_design(demand_fraction=0.90, verified=True)
+
+    assert ductility["conditional_triggered"] is True
+    assert ductility["conditional_requirements_satisfied"] is True
+    assert ductility["failed_requirements"] == ("neutral_axis_limit_exceeded",)
+    assert ductility["status"] == "FAIL"
+
+
 def test_every_emitted_clause_record_is_complete_and_owned_by_the_check_registry() -> None:
     result = _calculated(use_general_kv=True)
 
@@ -71,10 +140,90 @@ def test_shear_method_participates_in_the_engineering_content_hash() -> None:
     simplified = BeamInputs().validated()
     general = replace(
         simplified,
-        shear=replace(simplified.shear, use_general_kv=True),
+        shear=replace(simplified.shear, kv_method=KvMethod.GENERAL),
     ).validated()
 
     assert simplified.content_hash != general.content_hash
+
+
+@pytest.mark.parametrize(
+    ("use_general_kv", "expected_method", "expected_check_id"),
+    [
+        (False, "simplified", "kv_simplified_method"),
+        (True, "general", "kv_general_method"),
+    ],
+)
+def test_shear_result_explicitly_records_selected_kv_method(
+    use_general_kv: bool,
+    expected_method: str,
+    expected_check_id: str,
+) -> None:
+    shear = _calculated(use_general_kv=use_general_kv).families["shear"]
+
+    assert shear["kv_method"] == expected_method
+    assert shear["kv_check_id"] == expected_check_id
+    assert expected_check_id in shear["check_metadata"]
+
+
+def test_conventional_top_reinforcement_is_not_mapped_as_prestressing_steel() -> None:
+    baseline = BeamInputs(
+        shear=replace(BeamInputs().shear, kv_method=KvMethod.GENERAL),
+        actions=replace(
+            BeamInputs().actions,
+            bending_moment_knm=180.0,
+            shear_force_kn=160.0,
+        ),
+    ).validated()
+    increased_top_steel = replace(
+        baseline,
+        top=replace(baseline.top, bars=8, diameter_mm=32),
+    ).validated()
+
+    baseline_shear = EngineeringCalculator().calculate(baseline).families["shear"]
+    increased_shear = EngineeringCalculator().calculate(increased_top_steel).families["shear"]
+
+    assert increased_shear["eps_x"] == pytest.approx(baseline_shear["eps_x"])
+    assert increased_shear["phi_Vu"] == pytest.approx(baseline_shear["phi_Vu"])
+
+
+def test_runtime_applied_prestress_is_mapped_to_general_method_pv_only() -> None:
+    baseline = BeamInputs(
+        bottom=LongitudinalReinforcement(bars=4, diameter_mm=20),
+        shear=ShearReinforcement(
+            diameter_mm=10,
+            legs=2,
+            spacing_mm=150.0,
+            kv_method=KvMethod.GENERAL,
+        ),
+        actions=ActionInputs(
+            bending_moment_knm=40.0,
+            shear_force_kn=80.0,
+        ),
+    ).validated()
+    prestressed = replace(
+        baseline,
+        actions=replace(baseline.actions, applied_prestress_kn=20.0),
+    ).validated()
+
+    baseline_shear = EngineeringCalculator().calculate(baseline).families["shear"]
+    prestressed_shear = EngineeringCalculator().calculate(prestressed).families["shear"]
+
+    assert baseline_shear["P_v"] == pytest.approx(0.0)
+    assert prestressed_shear["P_v"] == pytest.approx(20.0)
+    assert prestressed_shear["A_pt"] == pytest.approx(0.0)
+    assert prestressed_shear["f_po"] == pytest.approx(0.0)
+    assert prestressed_shear["eps_x"] < baseline_shear["eps_x"]
+    assert prestressed_shear["phi_Vu"] > baseline_shear["phi_Vu"]
+
+    ast = 4.0 * math.pi * 20.0**2 / 4.0
+    expected_eps_x = (
+        40.0e6 / prestressed_shear["d_v"]
+        + abs(80.0 - 20.0) * 1.0e3
+    ) / (2.0 * 200000.0 * ast)
+    expected_kv = 0.4 / (1.0 + 1500.0 * expected_eps_x)
+    assert prestressed_shear["A_st"] == pytest.approx(ast)
+    assert prestressed_shear["eps_x"] == pytest.approx(expected_eps_x)
+    assert prestressed_shear["k_v"] == pytest.approx(expected_kv)
 
 
 def test_minimum_tensile_reinforcement_uses_the_accepted_flexural_tensile_strength() -> None:

@@ -28,6 +28,7 @@ def ensure_design_result(
     compute_fn: DesignBrainComputeFn,
     force: bool = False,
     source_input_revision: int | None = None,
+    expected_calculation_contract_version: str | None = None,
 ) -> AuthoritativeDesignResult:
     """Return the authoritative result for ``snapshot``.
 
@@ -40,7 +41,11 @@ def ensure_design_result(
         raise TypeError("snapshot must be an EngineeringInputSnapshot")
     if not isinstance(result_store, EngineeringResultStore):
         raise TypeError("result_store must be an EngineeringResultStore")
-    decision = result_store.can_reuse(snapshot.engineering_hash, force=force)
+    decision = result_store.can_reuse(
+        snapshot.engineering_hash,
+        force=force,
+        expected_calculation_contract_version=expected_calculation_contract_version,
+    )
     if decision.reused:
         current = result_store.current()
         if current is None:

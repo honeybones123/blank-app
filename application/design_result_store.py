@@ -109,8 +109,15 @@ class EngineeringResultStore:
         self._session_state.pop(self._lru_key, None)
         self._session_state.pop(AUTHORITATIVE_DESIGN_RESULT_REVISION_KEY, None)
 
-    def can_reuse(self, engineering_hash: str, *, force: bool = False) -> DesignResultReuseDecision:
+    def can_reuse(
+        self,
+        engineering_hash: str,
+        *,
+        force: bool = False,
+        expected_calculation_contract_version: str | None = None,
+    ) -> DesignResultReuseDecision:
         requested_hash = str(engineering_hash or "")
+        expected_version = str(expected_calculation_contract_version or "").strip()
         result = self.current()
         stored_hash = result.engineering_hash if result is not None else None
         if result is not None:
@@ -128,7 +135,10 @@ class EngineeringResultStore:
             )
         if result is None:
             cached = self._cached_result(requested_hash)
-            if cached is not None:
+            if cached is not None and self._matches_calculation_contract(
+                cached,
+                expected_version,
+            ):
                 self._session_state[self._result_key] = cached
                 return self._record_decision(
                     DesignResultReuseDecision(
@@ -150,7 +160,10 @@ class EngineeringResultStore:
             )
         if stored_hash != requested_hash:
             cached = self._cached_result(requested_hash)
-            if cached is not None:
+            if cached is not None and self._matches_calculation_contract(
+                cached,
+                expected_version,
+            ):
                 self._session_state[self._result_key] = cached
                 return self._record_decision(
                     DesignResultReuseDecision(
@@ -170,6 +183,16 @@ class EngineeringResultStore:
                     result_present=True,
                 )
             )
+        if not self._matches_calculation_contract(result, expected_version):
+            return self._record_decision(
+                DesignResultReuseDecision(
+                    reused=False,
+                    reason="calculation_contract_version_changed",
+                    requested_engineering_hash=requested_hash,
+                    stored_engineering_hash=stored_hash,
+                    result_present=True,
+                )
+            )
         return self._record_decision(
             DesignResultReuseDecision(
                 reused=True,
@@ -179,6 +202,21 @@ class EngineeringResultStore:
                 result_present=True,
             )
         )
+
+    @staticmethod
+    def _matches_calculation_contract(
+        result: AuthoritativeDesignResult,
+        expected_version: str,
+    ) -> bool:
+        if not expected_version:
+            return True
+        actual_version = str(
+            dict(result.current_calculations or {}).get(
+                "calculation_contract_version"
+            )
+            or ""
+        ).strip()
+        return actual_version == expected_version
 
     def _cache(self) -> dict[str, AuthoritativeDesignResult]:
         raw = self._session_state.get(self._lru_key)

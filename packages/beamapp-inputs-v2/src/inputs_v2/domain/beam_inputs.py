@@ -14,6 +14,13 @@ class LayoutMode(StrEnum):
     SPACING = "Spacing"
 
 
+class KvMethod(StrEnum):
+    """Authoritative AS 3600 shear-strain method selected for the beam."""
+
+    SIMPLIFIED = "simplified"
+    GENERAL = "general"
+
+
 ALLOWED_BAR_DIAMETERS = (10, 12, 16, 20, 24, 28, 32, 36, 40)
 
 
@@ -46,7 +53,13 @@ class ShearReinforcement:
     diameter_mm: int = 0
     legs: int = 0
     spacing_mm: float = 200.0
-    use_general_kv: bool = False
+    kv_method: KvMethod = KvMethod.SIMPLIFIED
+
+    @property
+    def use_general_kv(self) -> bool:
+        """Compatibility projection for the numerical component boundary."""
+
+        return self.kv_method is KvMethod.GENERAL
 
     def validated(self) -> "ShearReinforcement":
         if self.diameter_mm != 0 and self.diameter_mm not in ALLOWED_BAR_DIAMETERS:
@@ -57,6 +70,8 @@ class ShearReinforcement:
             raise ValueError("Shear links must be fully off or specify diameter and legs.")
         if self.spacing_mm < 50.0 or self.spacing_mm > 600.0:
             raise ValueError("Shear link spacing must be between 50 and 600 mm.")
+        if not isinstance(self.kv_method, KvMethod):
+            raise ValueError("Shear k_v method must be simplified or general.")
         return self
 
 
@@ -79,6 +94,7 @@ class ActionInputs:
     torsion_knm: float = 0.0
     shear_force_kn: float = 0.0
     axial_force_kn: float = 0.0
+    applied_prestress_kn: float = 0.0
 
     def validated(self) -> "ActionInputs":
         if self.bending_moment_knm < 0 or self.bending_moment_knm > 100000:
@@ -89,6 +105,8 @@ class ActionInputs:
             raise ValueError("Shear force must be between 0 and 10000 kN.")
         if self.axial_force_kn < -100000 or self.axial_force_kn > 100000:
             raise ValueError("Axial force must be between -100000 and 100000 kN.")
+        if self.applied_prestress_kn < 0 or self.applied_prestress_kn > 100000:
+            raise ValueError("Applied prestress must be between 0 and 100000 kN.")
         return self
 
 
@@ -222,6 +240,11 @@ class BeamInputs:
     depth_mm: float = 300.0
     span_mm: float = 2000.0
     section_shape: str = "RECT"
+    flange_width_mm: float | None = None
+    flange_thickness_mm: float | None = None
+    web_width_mm: float | None = None
+    clause_815_analysis_verified: bool = False
+    compression_reinforcement_restrained: bool = False
     width_locked: bool = False
     depth_locked: bool = False
     bottom: LongitudinalReinforcement = LongitudinalReinforcement()
@@ -247,6 +270,18 @@ class BeamInputs:
             raise ValueError("Beam span must be between 500 and 100000 mm.")
         if self.section_shape not in {"RECT", "T", "I"}:
             raise ValueError("Section shape is not supported.")
+        if self.section_shape in {"T", "I"} and any(
+            value is not None
+            for value in (self.flange_width_mm, self.flange_thickness_mm, self.web_width_mm)
+        ):
+            if self.flange_width_mm is None or self.flange_thickness_mm is None or self.web_width_mm is None:
+                raise ValueError("Flanged sections require flange width, flange thickness and web width.")
+            if not (self.flange_width_mm >= self.web_width_mm > 0.0):
+                raise ValueError("Flange width must be at least the web width.")
+            if not (0.0 < self.flange_thickness_mm < self.depth_mm):
+                raise ValueError("Flange thickness must be within the section depth.")
+            if self.section_shape == "I" and 2.0 * self.flange_thickness_mm >= self.depth_mm:
+                raise ValueError("I-section flanges must leave a positive web depth.")
         self.bottom.validated()
         self.top.validated()
         self.shear.validated()
@@ -316,6 +351,11 @@ class BeamInputs:
             "depth_mm": self.depth_mm,
             "span_mm": self.span_mm,
             "section_shape": self.section_shape,
+            "flange_width_mm": self.flange_width_mm,
+            "flange_thickness_mm": self.flange_thickness_mm,
+            "web_width_mm": self.web_width_mm,
+            "clause_815_analysis_verified": self.clause_815_analysis_verified,
+            "compression_reinforcement_restrained": self.compression_reinforcement_restrained,
             "width_locked": self.width_locked,
             "depth_locked": self.depth_locked,
             "bottom": {
@@ -351,7 +391,7 @@ class BeamInputs:
                 "diameter_mm": self.shear.diameter_mm,
                 "legs": self.shear.legs,
                 "spacing_mm": self.shear.spacing_mm,
-                "use_general_kv": self.shear.use_general_kv,
+                "kv_method": self.shear.kv_method.value,
             },
             "materials": {
                 "concrete_strength_mpa": self.materials.concrete_strength_mpa,
@@ -362,6 +402,7 @@ class BeamInputs:
                 "torsion_knm": self.actions.torsion_knm,
                 "shear_force_kn": self.actions.shear_force_kn,
                 "axial_force_kn": self.actions.axial_force_kn,
+                "applied_prestress_kn": self.actions.applied_prestress_kn,
             },
             "supports": {
                 "left_type": self.supports.left_type,

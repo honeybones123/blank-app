@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import html
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Callable
 
 from application.contracts.design_brain import AuthoritativeDesignResult
 
@@ -23,9 +23,12 @@ def _queue_v2_design_guide_apply(st_module: Any, payload: dict[str, Any]) -> Non
     """Queue Apply before the next complete Inputs transaction."""
 
     queued_payload = dict(payload)
-    # The stable Runtime route is a full page transaction.  The setup
-    # coordinator consumes this command before rendering the workspace.
-    queued_payload["_defer_scoped_apply_rerun"] = False
+    # Apply commits the verified candidate immediately, then the active
+    # engineering-workspace fragment must redraw from that committed state.
+    # Keeping this false caused a successful ``dispatch_ok`` transaction to
+    # return before the fragment rerun, leaving the old card and widgets on
+    # screen so the button appeared to do nothing.
+    queued_payload["_defer_scoped_apply_rerun"] = True
     st_module.session_state["pending_recommendation"] = dict(queued_payload)
     st_module.session_state["_inputs_action_apply_recommendation_payload"] = dict(queued_payload)
     st_module.session_state["_inputs_action_apply_recommendation"] = True
@@ -71,6 +74,7 @@ def render_v2_design_guide_card(
     design_guide_slot: Any,
     result: AuthoritativeDesignResult,
     apply_payload: Mapping[str, Any] | None = None,
+    apply_handler: Callable[[], Any] | None = None,
 ) -> None:
     """Render the replacement V2 card in the existing Design Guide slot."""
 
@@ -220,13 +224,20 @@ def render_v2_design_guide_card(
             # cards elsewhere in the page and incorrectly turn an ACTION
             # button red when the current card is blue.
             with st_module.container(key=f"v2_design_guide_apply_scope_{state}"):
-                st_module.button(
+                apply_clicked = st_module.button(
                     label,
                     key=f"v2_design_guide_apply_{_text(publication.get('publication_hash'), 'current')}",
                     use_container_width=True,
-                    on_click=_queue_v2_design_guide_apply,
-                    args=(st_module, payload),
                 )
+                if apply_clicked:
+                    # Execute the typed Apply transaction in the same active
+                    # workspace fragment as the click.  Merely queueing an
+                    # on_click callback left the command waiting for a later
+                    # unrelated event in some Streamlit fragment runs, which
+                    # made a valid button appear to do nothing.
+                    _queue_v2_design_guide_apply(st_module, payload)
+                    if apply_handler is not None:
+                        apply_handler()
 
 
 __all__ = ["render_v2_design_guide_card"]

@@ -21,6 +21,8 @@ def _state_with_pack(*, revision_offset: int = 0) -> dict:
         current_calculations={
             "source": "inputs_v2",
             "families": {
+                "bending": {"phi_Mu_kNm": 245.0, "ku": 0.31},
+                "ductility": {"status": "PASS", "limit": 0.36},
                 "creep": {"phi_cc_t": 1.25},
                 "shrinkage": {"eps_cs_total_micro": 612.0},
             },
@@ -61,6 +63,8 @@ def test_authoritative_pack_is_returned_as_a_defensive_copy() -> None:
     second = current_authoritative_check_pack(state, "bending")
     assert second is not None
     assert second["rows"][0]["status"] == "PASS"
+    assert second["authoritative_family"]["ku"] == 0.31
+    assert second["authoritative_ductility_family"]["status"] == "PASS"
 
 
 def test_authoritative_pack_rejects_a_stale_input_revision() -> None:

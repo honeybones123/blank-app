@@ -3,6 +3,9 @@ from dataclasses import replace
 from inputs_v2.application.design_brain.family_owners import FAMILY_OWNERS
 from inputs_v2.application.design_brain_families import DesignFamily, classify_design_family_selection
 from inputs_v2.application.design_brain_service import DesignBrainService
+from inputs_v2.application.design_brain_apply import apply_candidate
+from inputs_v2.application.design_brain.preview import DesignBrainPreview
+from inputs_v2.application.design_brain_apply import propose_neutral_candidate
 from inputs_v2.domain.beam_inputs import BeamInputs
 from inputs_v2.domain.beam_inputs import (
     ActionInputs,
@@ -13,6 +16,7 @@ from inputs_v2.domain.beam_inputs import (
 from inputs_v2.application.design_brain.family_context import FamilyRunContext
 from inputs_v2.application.design_brain.search_profile import SearchProfile
 from inputs_v2.domain.design_preferences import DEFAULT_DESIGN_PREFERENCES
+from inputs_v2.engineering.reinforcement_fit import evaluate_arrangement
 
 
 def _owned_preview(family: DesignFamily, current: BeamInputs, service: DesignBrainService | None = None):
@@ -81,6 +85,34 @@ def test_actual_sls_actions_replace_the_proxy() -> None:
     assert result.families["serviceability"]["action_source"] == "ACTUAL_SLS_ACTIONS"
     assert result.families["crack_control"]["action_source"] == "ACTUAL_SLS_ACTIONS"
     assert "sls_source" not in service.last_search_metrics
+
+
+def test_explicit_sls_publication_preserves_the_family_verified_result() -> None:
+    """Publication must not become a second decision centre for real SLS."""
+
+    current = BeamInputs(
+        actions=ActionInputs(bending_moment_knm=190.0),
+        serviceability=ServiceabilityInputs(moment_knm=150.0),
+    ).validated()
+    service = DesignBrainService()
+    verified = service._calculate_for_design_brain(current)
+    assert verified is not None
+    preview = DesignBrainPreview(
+        propose_neutral_candidate(current),
+        verified,
+        verified,
+        (),
+        False,
+        "test_verified_explicit_sls",
+    )
+
+    class PublicationMustNotRecalculate:
+        def calculate_current(self, _inputs):
+            raise AssertionError("explicit-SLS publication recalculated the family result")
+
+    service._calculator = PublicationMustNotRecalculate()
+
+    assert service.publish_preview(current, preview) is preview
 
 
 def test_design_brain_apply_rejects_preview_from_changed_revision() -> None:
@@ -272,6 +304,33 @@ def test_bending_overdesign_allows_fewer_larger_bars_when_total_steel_reduces() 
     assert preview.candidate.proposal.bottom_diameter_mm > 28
     assert preview.candidate.proposal.bottom_bars * preview.candidate.proposal.bottom_diameter_mm**2 < 4 * 28**2
     assert 0.85 <= float(preview.after.families["bending"]["util"]) <= 1.0
+
+
+def test_bending_overdesign_reaches_terminal_band_in_one_family_apply() -> None:
+    """A coordinated two-row cleanup must not require another family run."""
+    base = BeamInputs(
+        width_mm=275.0,
+        depth_mm=475.0,
+        actions=ActionInputs(bending_moment_knm=200.0, shear_force_kn=0.0),
+        bottom=LongitudinalReinforcement(bars=7, diameter_mm=20),
+    ).validated()
+    current = replace(
+        base,
+        bottom_arrangement=evaluate_arrangement(base, (4, 3)).arrangement,
+    ).validated()
+
+    preview = _owned_preview(DesignFamily.BENDING_OVERDESIGN_GOVERNS, current)
+
+    assert preview.accepted
+    assert 0.85 <= float(preview.after.families["bending"]["util"]) <= 1.0
+    applied = apply_candidate(current, preview.candidate)
+    assert applied.applied
+    result = DesignBrainService()._calculator.calculate_current(applied.inputs).result
+    assert result is not None
+    assert (
+        classify_design_family_selection(result, applied.inputs).selected_family
+        is DesignFamily.TARGET_BAND_REACHED
+    )
 
 
 def test_serviceability_ladder_is_safe_when_deflection_fails() -> None:

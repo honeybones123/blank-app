@@ -44,6 +44,28 @@ def complete_compliance(result: EngineeringResult) -> bool:
     return bool(result.families.get("reinforcement_fit", {}).get("accepted", False))
 
 
+def bending_mandatory_failure(result: EngineeringResult) -> bool:
+    """Return true when an authoritative mandatory bending check fails.
+
+    Bending-family selection is not based on flexural utilisation alone. A
+    design also belongs to a bending-failure family when minimum tensile
+    reinforcement or the Clause 8.1.5 ductility assessment fails. Repair
+    pipelines must use the same definition so a fully compliant repair is not
+    rejected merely because its flexural utilisation was already below 1.0.
+    """
+
+    bending = result.families.get("bending", {})
+    ductility = result.families.get("ductility", {})
+    return any(
+        (
+            float(bending.get("util", 0.0) or 0.0) > 1.0,
+            str(bending.get("status", "PASS")).upper() == "FAIL",
+            str(bending.get("minimum_tensile_status", "PASS")).upper() == "FAIL",
+            str(ductility.get("status", "PASS")).upper() == "FAIL",
+        )
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class CandidateEvaluation:
     candidate: Candidate

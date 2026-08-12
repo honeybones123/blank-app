@@ -115,11 +115,21 @@ def resolve_design_actions_from_state(source_state: dict | None) -> dict:
     state = _state_read_mapping(source_state)
     actions_source = str(state.get("actions_source") or "")
     actions_mode = str(state.get("actions_mode") or "")
-    if (
-        str(state.get("actions_mode") or "").strip().lower() == "manual"
-        or str(state.get("actions_source") or "").strip()
-        == "Manual design actions (inputs below)"
-    ):
+    normalized_mode = actions_mode.strip().lower()
+    normalized_source = actions_source.strip()
+    uses_load_analysis = bool(
+        normalized_mode == "design"
+        or normalized_source
+        in {
+            "Teaching SFD/BMD page (|M|max, |V|max)",
+            "Calculated design actions (from SFD/BMD)",
+        }
+    )
+    # Beam Inputs is the safe default.  Older sessions may not contain the
+    # typed action-source fields, but the visible toggle still defaults off.
+    # Treating an empty source as Load Analysis allowed stale SFD/BMD maxima
+    # to override the manual widgets after a page switch or code rerun.
+    if not uses_load_analysis:
         Mu_signed_fallback = float(state.get("uls_Mstar", 0.0) or 0.0)
         Mu_pos = float(
             state.get(

@@ -13,6 +13,7 @@ from inputs_application.adapters import (
 )
 from inputs_application.apply_transaction_store import ApplyTransactionStore
 from inputs_application.design_guide_fragment_store import DesignGuideFragmentStore
+from inputs_application.engineering_input_store import InputSnapshotStore
 from inputs_application.contracts import (
     InputsApplyCommand,
     InputsPublicationResult,
@@ -46,6 +47,67 @@ def execute_typed_apply(
     )
     workspace_store = InputsWorkspaceStateStore(session_state)
     fragment_state = DesignGuideFragmentStore(session_state).current()
+    input_snapshot = InputSnapshotStore(session_state).current()
+
+    # A button can remain internally consistent with an old publication while
+    # the beam-owned input snapshot has already advanced.  Runtime has separate
+    # widget, input and publication lifecycles, so candidate/publication
+    # equality alone is not sufficient (the standalone V2 app has no such
+    # separation).  Bind the exact V2 candidate source to the current committed
+    # beam snapshot before considering the normal publication expectations.
+    authoritative_payload = (
+        dict(current_result.apply_payload or {})
+        if current_result is not None
+        else {}
+    )
+    candidate_source_revision = recommendation.get("source_input_revision")
+    authoritative_source_revision = authoritative_payload.get(
+        "source_input_revision"
+    )
+    candidate_source_hash = str(
+        recommendation.get("source_engineering_hash") or ""
+    )
+    authoritative_source_hash = str(
+        authoritative_payload.get("source_engineering_hash") or ""
+    )
+    source_binding_reason: str | None = None
+    if candidate_source_revision is None or authoritative_source_revision is None:
+        source_binding_reason = "incomplete_apply_candidate_source_identity"
+    elif int(candidate_source_revision) != int(input_snapshot.revision):
+        source_binding_reason = "stale_apply_candidate_source_revision"
+    elif int(authoritative_source_revision) != int(input_snapshot.revision):
+        source_binding_reason = "stale_authoritative_candidate_source_revision"
+    elif not candidate_source_hash or not authoritative_source_hash:
+        source_binding_reason = "incomplete_apply_candidate_source_hash"
+    elif candidate_source_hash != authoritative_source_hash:
+        source_binding_reason = "stale_apply_candidate_source_hash"
+    elif current_result is None or authoritative_source_hash != str(
+        current_result.engineering_hash or ""
+    ):
+        source_binding_reason = "stale_authoritative_candidate_engineering_hash"
+    if source_binding_reason is not None:
+        apply_store.update_route(
+            typed_apply_status="failed",
+            typed_apply_reason=source_binding_reason,
+            typed_apply_revision_rejected=True,
+            typed_apply_candidate_source_revision=candidate_source_revision,
+            typed_apply_authoritative_source_revision=authoritative_source_revision,
+            typed_apply_current_input_revision=int(input_snapshot.revision),
+        )
+        return TypedApplyExecution(
+            command=ApplyCommandResult(
+                status="failed",
+                reason=source_binding_reason,
+                recommendation_id=str(
+                    recommendation.get("recommendation_id")
+                    or recommendation.get("candidate_id")
+                    or recommendation.get("source_candidate_id")
+                    or ""
+                ).strip()
+                or None,
+            ),
+            mutation=None,
+        )
     revision_valid, revision_reason = apply_store.validate_revision_expectation(
         dict(recommendation),
         input_revision=workspace_store.workspace_revision(),
