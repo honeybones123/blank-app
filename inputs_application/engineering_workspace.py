@@ -34,7 +34,10 @@ from inputs_application.summary_contracts import InputsSummaryCalculationSource
 from inputs_application.workspace_state_store import InputsWorkspaceStateStore
 from inputs_application.design_brain_composition import selected_design_brain_adapter_name
 from inputs_application.apply_transaction_store import ApplyTransactionStore
-from inputs_application.v2_design_guide_renderer import render_v2_design_guide_card
+from inputs_application.v2_design_guide_renderer import (
+    render_v2_design_guide_card,
+    render_v2_design_guide_loading_shell,
+)
 from inputs_page_modules.fragments import (
     request_inputs_fragment_wake,
     stop_inputs_fragment_polling,
@@ -50,6 +53,60 @@ _DESIGN_BRAIN_WIDGET_MARKER_REVISION_KEY = (
 _DESIGN_BRAIN_WIDGET_MARKER_STATE_KEY = (
     "_inputs_design_brain_widget_marker_state"
 )
+
+
+def _result_has_no_design_actions(result: Any | None) -> bool:
+    """Return whether a result is the neutral no-actions publication."""
+
+    if result is None:
+        return False
+    display_model = dict(getattr(result, "display_model", {}) or {})
+    return bool(
+        display_model.get("v2_no_design_actions")
+        or str(getattr(result, "governing_family", "") or "").upper()
+        == "NO_DESIGN_ACTIONS"
+    )
+
+
+def _apply_publication_transition_active(session_state: Any) -> bool:
+    """Return whether Apply has committed but its replacement is unsettled."""
+
+    probe = dict(session_state.get("_typed_inputs_apply_probe") or {})
+    return str(probe.get("status") or "") in {
+        "dispatch_ok",
+        "rerun_required",
+    }
+
+
+def _hold_interim_no_actions_publication(
+    *,
+    session_state: Any,
+    candidate_result: Any | None,
+    fragment_state: DesignGuideFragmentState,
+) -> bool:
+    """Keep Apply atomic when a cold run briefly resolves zero actions.
+
+    The pre-Apply publication may remain stored, but it is never rendered for
+    the newer revision.  The Design Brain region shows its loading shell until
+    the committed revision produces one non-interim result.
+    """
+
+    return bool(
+        _apply_publication_transition_active(session_state)
+        and fragment_state.active_publication
+        and _result_has_no_design_actions(candidate_result)
+    )
+
+
+def _settle_apply_publication_transition(session_state: Any) -> None:
+    probe = dict(session_state.get("_typed_inputs_apply_probe") or {})
+    if str(probe.get("status") or "") not in {
+        "dispatch_ok",
+        "rerun_required",
+    }:
+        return
+    probe["status"] = "settled"
+    session_state["_typed_inputs_apply_probe"] = probe
 
 
 def _render_design_brain_visibility_marker(
@@ -721,9 +778,10 @@ def render_inputs_design_guide_fragment_section(
     ):
         if design_guide_slot is None:
             design_guide_slot = st_module.empty()
-        design_guide_slot.empty()
-        with design_guide_slot.container():
-            st_module.info("Updating design guidance...")
+        render_v2_design_guide_loading_shell(
+            st_module=st_module,
+            design_guide_slot=design_guide_slot,
+        )
         return
     # The direct V2-shaped transaction already computed the complete result,
     # including its publication.  Do not immediately invoke the Design Brain
@@ -793,10 +851,31 @@ def render_inputs_design_guide_fragment_section(
                 == authoritative_revision
                 and bool(authoritative_result.final_publication)
             ):
-                fragment_state = fragment_store.publish(
-                    authoritative_result,
-                    workspace_revision=authoritative_revision,
-                )
+                if _hold_interim_no_actions_publication(
+                    session_state=st_module.session_state,
+                    candidate_result=authoritative_result,
+                    fragment_state=fragment_state,
+                ):
+                    st_module.session_state[
+                        "_inputs_design_brain_interim_publication_held"
+                    ] = {
+                        "reason": "apply_transition_no_design_actions",
+                        "workspace_revision": int(authoritative_revision),
+                        "engineering_hash": str(identity.engineering_hash or ""),
+                    }
+                else:
+                    fragment_state = fragment_store.publish(
+                        authoritative_result,
+                        workspace_revision=authoritative_revision,
+                    )
+                    st_module.session_state.pop(
+                        "_inputs_design_brain_interim_publication_held",
+                        None,
+                    )
+                    if not _result_has_no_design_actions(authoritative_result):
+                        _settle_apply_publication_transition(
+                            st_module.session_state
+                        )
             elif str(
                 st_module.session_state.get(
                     "_inputs_design_brain_job_probe", {}
@@ -825,9 +904,10 @@ def render_inputs_design_guide_fragment_section(
     fragment_payload["is_current"] = fragment_is_current
     fragment_payload["target_workspace_revision"] = authoritative_revision
     if not fragment_is_current:
-        design_guide_slot.empty()
-        with design_guide_slot.container():
-            st_module.info("Updating design guidance...")
+        render_v2_design_guide_loading_shell(
+            st_module=st_module,
+            design_guide_slot=design_guide_slot,
+        )
         return
     # At this point the card is revision-current and is about to be rendered.
     # Mark it visible before the widget/diagram region emits its compatibility

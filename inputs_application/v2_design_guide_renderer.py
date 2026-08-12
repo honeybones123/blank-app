@@ -68,6 +68,44 @@ def _normalise_visual_state(raw_state: Any, badge: Any) -> str:
     return "info"
 
 
+def render_v2_design_guide_loading_shell(
+    *,
+    st_module: Any,
+    design_guide_slot: Any,
+) -> None:
+    """Render only the Design Brain's neutral shell while it is evaluating.
+
+    Calculations and the rest of the Inputs workspace remain visible.  The
+    shell deliberately exposes no family, candidate, status, CTA, or Apply
+    authority, so a slow/cold evaluation cannot flash an interim decision.
+    """
+
+    design_guide_slot.empty()
+    with design_guide_slot.container():
+        st_module.markdown(
+            "<style>"
+            ".inputs-v2-brain-loading-shell{display:flex;align-items:center;gap:.7rem;"
+            "min-height:58px;padding:.85rem 1rem;margin:.7rem 0;border:1px solid #cbd5e1;"
+            "border-left:5px solid #98a2b3;border-radius:10px;background:#fff;color:#475569;}"
+            ".inputs-v2-brain-loading-icon{font-size:1.25rem;line-height:1;}"
+            ".inputs-v2-brain-loading-copy{font-weight:700;color:#334155;}"
+            ".inputs-v2-brain-loading-dot{display:inline-block;width:.42rem;height:.42rem;"
+            "margin-left:.18rem;border-radius:999px;background:#94a3b8;animation:inputs-v2-pulse 1s infinite alternate;}"
+            ".inputs-v2-brain-loading-dot:nth-child(2){animation-delay:.2s;}"
+            ".inputs-v2-brain-loading-dot:nth-child(3){animation-delay:.4s;}"
+            "@keyframes inputs-v2-pulse{from{opacity:.25}to{opacity:1}}"
+            "</style>"
+            '<div data-testid="inputs-v2-design-brain-loading" class="inputs-v2-brain-loading-shell" role="status" aria-live="polite">'
+            '<span class="inputs-v2-brain-loading-icon" aria-hidden="true">&#129504;</span>'
+            '<span class="inputs-v2-brain-loading-copy">Updating Design Brain'
+            '<span class="inputs-v2-brain-loading-dot"></span>'
+            '<span class="inputs-v2-brain-loading-dot"></span>'
+            '<span class="inputs-v2-brain-loading-dot"></span>'
+            "</span></div>",
+            unsafe_allow_html=True,
+        )
+
+
 def render_v2_design_guide_card(
     *,
     st_module: Any,
