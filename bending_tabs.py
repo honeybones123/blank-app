@@ -64,7 +64,10 @@ def _make_sls_stress_block_figure_32(D_mm, d_mm, dn_mm, layers_tension):
     return _shared_make_sls_32_stress_block_figure(D_mm, d_mm, dn_mm, layers_tension)
 
 
-def _render_authoritative_uls_steps(*, top_results, fc: float, demand: float) -> None:
+def _render_authoritative_uls_steps(
+    *, top_results, b: float, D: float, fc: float, fsy: float,
+    demand: float, moment_sign: str,
+) -> None:
     """Render the published strain-compatible ULS result without recalculating it."""
 
     alpha2 = float(top_results.get("alpha2", 0.0) or 0.0)
@@ -89,6 +92,43 @@ def _render_authoritative_uls_steps(*, top_results, fc: float, demand: float) ->
     failed = tuple(top_results.get("clause_815_failed_requirements", ()) or ())
     failed_text = ", ".join(str(value).replace("_", " ") for value in failed) or "None"
 
+    def info_control(help_text: str, heading: str, body: str):
+        def render_info():
+            with _bending_check_info_row(help_text=help_text):
+                st.markdown(f"**{heading}**\n\n{body}")
+        return render_info
+
+    def stress_block_diagram(key: str, title: str, *, show_dn: bool, show_lever_arm: bool):
+        def render_diagram():
+            fig = _make_uls_stress_block_figure(
+                b_mm=b, D_mm=D, d_mm=d, dn_mm=dn, a_mm=block_depth,
+                alpha2=alpha2, gamma=gamma, fc=fc, fsy=fsy,
+                show_lever_arm=show_lever_arm, show_dn=show_dn,
+                show_alpha_label=True, show_C=False, C_N=None,
+                variant="13" if show_dn else "11", moment_sign=moment_sign,
+            )
+            render_plotly_diagram(fig, key=key, title=title, config={"displayModeBar": False})
+        return render_diagram
+
+    def force_diagram(key: str, title: str):
+        def render_diagram():
+            fig = _make_uls_force_model_figure(
+                D_mm=D, d_mm=d, a_mm=block_depth,
+                C_N=float(top_results.get("C_concrete_N", 0.0) or 0.0),
+                T_N=float(top_results.get("T_N", 0.0) or 0.0),
+                moment_sign=moment_sign, dn_mm=dn,
+            )
+            render_plotly_diagram(fig, key=key, title=title, config={"displayModeBar": False})
+        return render_diagram
+
+    def strain_diagram():
+        state = _stress_strain_state("ULS", moment_sign=moment_sign)
+        fig = _plot_strain_profile(state, state_label="ULS", layout=None, moment_sign=moment_sign)
+        render_plotly_diagram(
+            fig, key=f"bending_uls_authoritative_strain_{moment_sign}",
+            title="ULS strain compatibility", config={"displayModeBar": False},
+        )
+
     step_expander_calcbox(
         uid="bending_uls_authoritative_1",
         summary_line=(
@@ -104,6 +144,14 @@ $$\alpha_2=\max(0.67,0.85-0.0015f'_c)={alpha2:.3f}$$
 $$\gamma=\max(0.67,0.97-0.0025f'_c)={gamma:.3f}$$
 """,
         status=None,
+        content_before=info_control(
+            "Stress-block parameters", "Check 1.1 — Stress-block parameters",
+            "Explains the AS 3600 equivalent rectangular stress block and how α₂ and γ vary with concrete strength.",
+        ),
+        diagram_fn=stress_block_diagram(
+            "bending_uls_authoritative_1_diagram", "Stress-block parameters",
+            show_dn=False, show_lever_arm=False,
+        ),
     )
     step_expander_calcbox(
         uid="bending_uls_authoritative_2",
@@ -123,6 +171,14 @@ depth is $d_n={dn:.1f}$ mm and the equivalent block depth is
 $a=\gamma d_n={block_depth:.1f}$ mm.
 """,
         status=None,
+        content_before=info_control(
+            "Strain compatibility and equilibrium", "Check 1.2 — Strain compatibility and force equilibrium",
+            "Explains the iterative neutral-axis solution using every reinforcement layer, material stress limits and internal force equilibrium.",
+        ),
+        diagram_fn=stress_block_diagram(
+            "bending_uls_authoritative_2_diagram", "Neutral axis and block depth",
+            show_dn=True, show_lever_arm=True,
+        ),
     )
     step_expander_calcbox(
         uid="bending_uls_authoritative_3",
@@ -142,6 +198,11 @@ nominal moment is calculated; compression steel is therefore not treated as
 yielded tension steel.
 """,
         status=None,
+        content_before=info_control(
+            "Internal force resultants", "Check 1.3 — Internal force resultants",
+            "Shows how concrete compression, compression steel and tension steel form the internal resisting couple.",
+        ),
+        diagram_fn=force_diagram("bending_uls_authoritative_3_diagram", "Internal force resultants"),
     )
     step_expander_calcbox(
         uid="bending_uls_authoritative_4",
@@ -160,6 +221,14 @@ The factor is derived from the calculated neutral-axis ratio; it is not a
 fixed user-selected value.
 """,
         status=None,
+        content_before=info_control(
+            "Neutral-axis ratio and strength factor", "Check 1.4 — Neutral-axis ratio and strength factor",
+            "Explains how kᵤ is calculated from the solved neutral axis and how it determines the bending strength-reduction factor φ.",
+        ),
+        diagram_fn=stress_block_diagram(
+            "bending_uls_authoritative_4_diagram", "Neutral-axis ratio",
+            show_dn=True, show_lever_arm=False,
+        ),
     )
     step_expander_calcbox(
         uid="bending_uls_authoritative_5",
@@ -176,6 +245,11 @@ Conditional assessment triggered: {"Yes" if triggered else "No"}.
 Outstanding verified requirements: {failed_text}.
 """,
         status=("PASS" if clause_status == "PASS" else "FAIL" if clause_status == "FAIL" else None),
+        content_before=info_control(
+            "Clause 8.1.5 assessment", "Check 1.5 — Clause 8.1.5 conditional assessment",
+            "Explains when the additional ductility assessment is triggered and which verified requirements govern the result.",
+        ),
+        diagram_fn=strain_diagram,
     )
     capacity_ok = capacity > 0.0 and demand <= capacity
     step_expander_calcbox(
@@ -194,6 +268,11 @@ Applied design action: $M_u^*={demand:.2f}$ kNm.
 Utilisation: $M_u^*/(\phi M_u)={utilisation:.3f}$.
 """,
         status="PASS" if capacity_ok else "FAIL",
+        content_before=info_control(
+            "Flexural capacity", "Check 1.6 — Flexural capacity",
+            "Explains how the authoritative internal forces and lever arm produce nominal capacity, then applies φ and compares capacity with demand.",
+        ),
+        diagram_fn=force_diagram("bending_uls_authoritative_6_diagram", "ULS force model and capacity"),
     )
 
 
@@ -234,8 +313,12 @@ def render_uls_tab(
     if top_results.get("_authoritative_uls"):
         _render_authoritative_uls_steps(
             top_results=top_results,
+            b=b,
+            D=D,
             fc=fc,
+            fsy=fsy,
             demand=float(Mu_star_override or 0.0),
+            moment_sign=moment_sign,
         )
         return
 
