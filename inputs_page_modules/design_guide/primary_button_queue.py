@@ -141,6 +141,12 @@ def _queue_primary_design_guide_button_action(
             "source_candidate_id": canonical_candidate_id,
             "label": canonical_label,
             "expected_util": canonical.get("expected_util"),
+            # Preserve the authoritative source identity when the visible
+            # button is rebuilt from the current publication. Without these
+            # fields, an older rendered recommendation can remain attached to
+            # the callback and fail the exact revision guard on Apply.
+            "source_input_revision": canonical.get("source_input_revision"),
+            "source_engineering_hash": canonical.get("source_engineering_hash"),
         }
         action_payload = {
             "resolved_candidate_updates": dict(canonical_updates),
@@ -155,6 +161,8 @@ def _queue_primary_design_guide_button_action(
             "primary_apply_render_fingerprint": canonical.get("render_fingerprint"),
             "primary_apply_state_fingerprint": canonical.get("state_fingerprint"),
             "primary_apply_payload_source": canonical.get("source"),
+            "source_input_revision": canonical.get("source_input_revision"),
+            "source_engineering_hash": canonical.get("source_engineering_hash"),
         }
         rec_dict = {
             **rec_dict,
@@ -167,6 +175,8 @@ def _queue_primary_design_guide_button_action(
             "resolved_candidate_updates": dict(canonical_updates),
             "source_candidate_id": canonical_candidate_id,
             "candidate_id": canonical_candidate_id,
+            "source_input_revision": canonical.get("source_input_revision"),
+            "source_engineering_hash": canonical.get("source_engineering_hash"),
             "resolved_candidate": dict(resolved_candidate),
             "action_payload": dict(action_payload),
             "apply": {
