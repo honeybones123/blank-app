@@ -201,7 +201,7 @@ def render_inputs_widget_sections(
     )
     if settled_revision > render_start_revision:
         fragments_disabled = str(
-            os.environ.get("CODEX_ENABLE_INPUTS_FRAGMENTS", "0")
+            os.environ.get("CODEX_ENABLE_INPUTS_FRAGMENTS", "1")
         ).strip().lower() in {"0", "false", "no", "off"}
         st_module.session_state["_inputs_diagram_settle_revision"] = settled_revision
         # In the V2-shaped full-page path, do not interrupt this render from

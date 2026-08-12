@@ -132,7 +132,7 @@ def run_inputs_fragment(
     # make the V2-shaped full-page path the safe product default.
     disabled = (
         not force_fragment
-        and str(os.environ.get("CODEX_ENABLE_INPUTS_FRAGMENTS", "0"))
+        and str(os.environ.get("CODEX_ENABLE_INPUTS_FRAGMENTS", "1"))
         .strip()
         .lower()
         in {"0", "false", "no", "off"}
@@ -172,7 +172,7 @@ def run_inputs_polling_fragment(
 
     payload = dict(kwargs or {})
     disabled = str(
-        os.environ.get("CODEX_ENABLE_INPUTS_FRAGMENTS", "0")
+        os.environ.get("CODEX_ENABLE_INPUTS_FRAGMENTS", "1")
     ).strip().lower() in {"0", "false", "no", "off"}
     fragment = getattr(st_module, "fragment", None)
     if not callable(fragment) or disabled:
