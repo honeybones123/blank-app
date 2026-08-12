@@ -2740,9 +2740,13 @@ def sync_load_edit_mode_from_toggle(active_slug: str | None = None) -> str:
     mode = "SLS" if use_sls else "ULS"
     st.session_state["loads_edit_toggle"] = use_sls
     st.session_state["loads_edit_mode"] = mode
-    for widget_key in toggle_keys.values():
-        if widget_key in st.session_state:
-            st.session_state[widget_key] = use_sls
+    # Do not let the Inputs route's default/shared projection overwrite the
+    # Load Analysis-owned SLS mode while navigating.  Each route restores its
+    # own widget from its owner; only the active route's key is authoritative.
+    active_slug = str(active_slug or st.session_state.get("page_slug") or "").strip().lower()
+    active_key = toggle_keys.get(active_slug)
+    if active_key and active_key in st.session_state:
+        st.session_state[active_key] = use_sls
     return mode
 
 
