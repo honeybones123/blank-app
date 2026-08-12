@@ -533,6 +533,14 @@ class SharedStateSessionPort:
                     ),
                     source=f"{self.source}:input_transaction",
                 )
+                # Keep the in-memory shared projection authoritative for the
+                # rerun that follows Apply.  Streamlit widget callbacks can
+                # otherwise re-submit their pre-click values before the
+                # startup hydrator sees the committed beam snapshot, creating
+                # a second revision and restoring the old publication.
+                for key, value in committed_input.snapshot.items():
+                    if key in SHARED_DEFAULTS or str(key).startswith(("bot_row_", "top_row_")):
+                        self.session_state[key] = copy.deepcopy(value)
                 self.session_state[
                     "_inputs_authoritative_result_snapshot_update_pending"
                 ] = True
