@@ -239,7 +239,9 @@ def render_uls_tab(
         )
         return
 
-    if phi_Mu_cap > 0 and d and Ast:
+    # A zero capacity is an engineering failure result, not a reason to hide
+    # the ULS calculation cards, INFO content, and diagrams that explain it.
+    if d and Ast and b and fc and fsy:
 
         # Stress-block factors
         alpha2_raw_uls = 0.85 - 0.0015 * fc
@@ -253,7 +255,8 @@ def render_uls_tab(
         dn = T / denom_uls if denom_uls > 0 else float("nan")
         a_uls = gamma_uls * dn
         z_uls = d - 0.5 * a_uls
-        Mu_nom_uls = T * z_uls / 1e6
+        Mu_nom_raw_uls = T * z_uls / 1e6
+        Mu_nom_uls = max(0.0, Mu_nom_raw_uls)
         phi_Mu_cap_uls = phi * Mu_nom_uls
 
         # Concrete force at ULS (using a = Î³ d_n)
@@ -1274,9 +1277,10 @@ This check converts those internal forces into a bending moment that can be dire
         # 1.8 Flexural capacity check (Mu* â‰¤ Ï†Mu,cap)
         # --------------------------------------------------
         Mu_star = float(Mu_star_override) if Mu_star_override is not None else get_param("Mu_star", 0.0)
-        if Mu_star is not None and phi_Mu_cap_uls > 0:
-            Mu_ok = Mu_star <= phi_Mu_cap_uls
+        if Mu_star is not None:
+            Mu_ok = Mu_star <= phi_Mu_cap_uls if phi_Mu_cap_uls > 0 else Mu_star <= 0
             Mu_status = "pass" if Mu_ok is True else "fail" if Mu_ok is False else None
+            Mu_utilisation = Mu_star / max(phi_Mu_cap_uls, 1e-9) if Mu_star > 0 else 0.0
             
             section17_details = f"""
 *Purpose: Verify that the design moment does not exceed the design capacity.*  
@@ -1301,7 +1305,7 @@ $$
 $$
 
 **Utilisation:**  
-$\\text{{Utilisation}} = \\frac{{M_u^*}}{{\\phi M_{{u,cap}}}} = \\frac{{{Mu_star:.2f}}}{{{phi_Mu_cap_uls:.2f}}} = {Mu_star/phi_Mu_cap_uls:.3f}$
+$\\text{{Utilisation}} = \\frac{{M_u^*}}{{\\max(\\phi M_{{u,cap}},10^{{-9}})}} = {Mu_utilisation:.3f}$
 
 ---
 
