@@ -12,6 +12,7 @@ _DRAFTS_KEY = "_load_analysis_drafts_by_beam_v1"
 _RESULTS_KEY = "_load_analysis_results_by_beam_v1"
 _ACTIVE_BEAM_KEY = "_load_analysis_restored_beam_id_v1"
 _ROUTE_TOKENS_KEY = "_load_analysis_route_restore_tokens_by_beam_v1"
+_MODES_KEY = "_load_analysis_modes_by_beam_v1"
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,11 @@ class LoadAnalysisStateStore:
         """
 
         snapshot = self.current(beam_id)
+        modes = dict(self._state.get(_MODES_KEY) or {})
+        if self._beam_id(beam_id) in modes:
+            snapshot_values = snapshot.to_dict()
+            snapshot_values["design_loads_edit_toggle"] = bool(modes[self._beam_id(beam_id)])
+            snapshot = LoadAnalysisSnapshot(snapshot.beam_id, _freeze_mapping(snapshot_values))
         switched = str(self._state.get(_ACTIVE_BEAM_KEY) or "") != snapshot.beam_id
         tokens = copy.deepcopy(dict(self._state.get(_ROUTE_TOKENS_KEY) or {}))
         resolved_token = None if route_token is None else str(route_token)
@@ -95,6 +101,9 @@ class LoadAnalysisStateStore:
         drafts = copy.deepcopy(dict(self._state.get(_DRAFTS_KEY) or {}))
         drafts[resolved] = values
         self._state[_DRAFTS_KEY] = drafts
+        modes = copy.deepcopy(dict(self._state.get(_MODES_KEY) or {}))
+        modes[resolved] = bool(values.get("design_loads_edit_toggle", self._state.get("design_loads_edit_toggle", False)))
+        self._state[_MODES_KEY] = modes
         self._state[_ACTIVE_BEAM_KEY] = resolved
         return LoadAnalysisSnapshot(resolved, _freeze_mapping(values))
 
