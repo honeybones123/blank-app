@@ -11,6 +11,7 @@ not import this concrete Design Brain boundary.
 from __future__ import annotations
 
 from dataclasses import asdict
+from functools import lru_cache
 from typing import Any, Mapping
 
 from application.contracts.design_brain import (
@@ -45,10 +46,14 @@ def _require_compatible_v2_design_brain_contract(version: object) -> None:
         )
 
 
+@lru_cache(maxsize=1)
 def _v2_api():
     """Extend the calculation facts with the selected Design Brain contracts."""
 
-    api = _v2_calculation_api()
+    # The calculation boundary caches its immutable import table.  Copy that
+    # table before adding Design Brain-only contracts so this adapter cannot
+    # widen the calculation-only boundary for other Runtime consumers.
+    api = dict(_v2_calculation_api())
     try:
         from inputs_v2 import (  # noqa: PLC0415
             RUNTIME_DESIGN_BRAIN_CONTRACT_VERSION,

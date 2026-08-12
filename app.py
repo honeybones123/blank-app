@@ -67,12 +67,19 @@ import time
 from application.engineering_snapshot import build_engineering_input_snapshot_from_resolved_state
 from application.guidance_result_adapter import guidance_payload_from_authoritative_design_result
 from inputs_application.session_services import InputsSessionServices
+from application.v2_runtime_warmup import start_v2_runtime_warmup
 
 st.set_page_config(
     page_title="Concrete Beam Design",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+# Import the installed calculation and Design Brain contracts while the first
+# page is being composed.  This removes their cold import penalty from the
+# user's first engineering edit without performing any engineering work or
+# touching Streamlit session state.
+start_v2_runtime_warmup()
 
 
 def _apply_sharp_embed_css() -> None:
@@ -205,7 +212,6 @@ from persistence.save_to_dashboard import (
     apply_project_payload,
     redirect_parent_to_project,
 )
-from projects_store import create_project, update_project, load_project
 from auth_bridge import ensure_logged_in_state
 
 # ðŸ” Import modules, not individual functions
@@ -5285,6 +5291,8 @@ def _render_header_actions(
                 st.error("You must be logged in to save projects.")
             elif project_id:
                 try:
+                    from projects_store import update_project
+
                     payload = export_state_for_saving()
                     update_project(
                         project_id=project_id,
@@ -5371,6 +5379,8 @@ def _render_create_project_form(user_id: str, module: str):
                 st.error("Project name is required.")
             else:
                 try:
+                    from projects_store import create_project
+
                     payload = export_state_for_saving()
                     row = create_project(
                         user_id=user_id,
@@ -5616,6 +5626,8 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
         loaded_for_id = st.session_state.get("_active_project_loaded_id")
         if needs_name or loaded_for_id != project_id:
             try:
+                from projects_store import load_project
+
                 project_row = load_project(project_id=project_id, user_id=user_id)
                 st.session_state["active_project_id"] = project_row.get("id") or project_id
                 st.session_state["active_project_name"] = project_row.get("name") or "Untitled project"

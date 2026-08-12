@@ -6,6 +6,7 @@ Design Brain orchestration, recommendation, rendering, CTA, or Apply code.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from dataclasses import asdict, replace
 from typing import Any, Mapping
 
@@ -248,6 +249,7 @@ def _bottom_row_specs(reinforcement: Mapping[str, Any]) -> tuple[tuple[int, int]
 
 
 
+@lru_cache(maxsize=1)
 def _v2_api():
     """Load only the installed V2 calculation contracts.
 

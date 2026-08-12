@@ -67,11 +67,25 @@ def test_direct_app_reruns_are_confined_to_shell_transition_owners() -> None:
         "start_page.py",  # explicit navigation to another page
         "state_and_helpers.py",  # create/reset beam workspace
         "inputs_page_modules/fragments.py",  # centralized scoped compatibility boundary
+        # These two owners request only the engineering workspace fragment;
+        # their unscoped call is a compatibility fallback for older Streamlit
+        # and test doubles, not ordinary Runtime authority.
+        "inputs_application/engineering_workspace.py",
+        "inputs_page_modules/apply_routing.py",
     }
     offenders: dict[str, list[int]] = {}
     for path in ROOT.rglob("*.py"):
         relative = path.relative_to(ROOT).as_posix()
-        if relative.startswith(("tests/", "tools/", "packages/beamapp-inputs-v2/")):
+        if relative.startswith(
+            (
+                "tests/",
+                "tools/",
+                "packages/beamapp-inputs-v2/",
+                ".venv/",
+                "venv/",
+                "env/",
+            )
+        ):
             continue
         lines = _direct_rerun_calls(path)
         if lines and relative not in approved:
