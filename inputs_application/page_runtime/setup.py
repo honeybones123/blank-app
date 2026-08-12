@@ -959,18 +959,30 @@ def _ensure_authoritative_design_result_current_coordinator(
         and int(beam_input_state.revision or 0) > 0
         and beam_committed_state
     ):
-        # The widget callback normally owns this input transaction.  Reuse it
-        # only when it contains the exact canonical state now projected by the
-        # visible controls.  A historical action-widget path committed only
-        # the ``load_*_proxy`` value, leaving the ULS/SLS owner unchanged; the
-        # unconditional shortcut here then discarded the newer canonical
-        # overlay and published stale bending/Design Brain results.  The store
-        # is content-idempotent, so reconciliation creates no second revision
-        # when the callback transaction is already complete.
-        if dict(beam_committed_state) == dict(canonical_input_state):
+        # The typed Apply transaction already committed this exact snapshot.
+        # Do not project derived widget aliases back through the store on the
+        # first rerun: that creates revision N+1 while the displayed Apply
+        # candidate is still bound to revision N, producing a false stale
+        # candidate rejection.  Reuse the transaction when its one-shot
+        # revision marker matches the beam-owned snapshot.
+        pending_revision = int(
+            st.session_state.get("_inputs_pending_input_revision") or 0
+        )
+        typed_apply_transaction = bool(
+            pending_revision > 0
+            and pending_revision == int(beam_input_state.revision or 0)
+            and st.session_state.get("_typed_apply_input_transaction_probe")
+        )
+        if typed_apply_transaction:
+            input_transaction = beam_input_state
+            current_state = copy.deepcopy(beam_committed_state)
+        elif dict(beam_committed_state) == dict(canonical_input_state):
             input_transaction = beam_input_state
             current_state = copy.deepcopy(beam_committed_state)
         else:
+            # The widget callback normally owns this input transaction.  A
+            # historical action-widget path may commit only a proxy value, so
+            # reconcile that case when it is not the typed Apply transaction.
             input_transaction = input_store.commit_active_beam(
                 canonical_input_state,
                 changed_keys=overlay_keys,
