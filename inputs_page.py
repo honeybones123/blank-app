@@ -332,10 +332,12 @@ def render_inputs_page() -> None:
     with page_title_placeholder.container():
         render_result_page_title("Beam Inputs")
 
-    # The Inputs shell has one V2-shaped transaction.  Calculation, summary,
+    # The Inputs shell has one V2-shaped transaction. Calculation, summary,
     # Design Brain, controls, widgets, and diagrams all consume the same
-    # committed snapshot and revision; there is no alternate sibling-fragment
-    # composition that can render a stale revision.
+    # committed snapshot and revision. Keep this as a normal shell call: the
+    # older Runtime path performs one complete rerun and replaces the result
+    # atomically, whereas a forced fragment can leave the old card visible
+    # while the replacement calculation is still running.
     for section_name in (
         "engineering_calculation_workspace",
         "engineering_controls_workspace",
@@ -344,16 +346,7 @@ def render_inputs_page() -> None:
     ):
         ss[f"_inputs_{section_name}_fragment_mode"] = "v2_workspace"
     render_timing_mark("inputs_page.shell.workspace.start")
-    run_inputs_fragment(
-        st_module=st,
-        fragment_name="engineering_workspace",
-        render_fn=_render_v2_workspace_fragment,
-        kwargs={"page_context": page_context},
-        # Inputs controls are intentionally local to this workspace.  The
-        # batch and Design Guide commands are now queued callbacks, so they
-        # no longer depend on an ephemeral full-page button rerun.
-        force_fragment=True,
-    )
+    _render_v2_workspace_fragment(page_context=page_context)
     render_timing_mark("inputs_page.shell.workspace.end")
 
     render_timing_mark("inputs_page.shell.tail.start")
@@ -368,10 +361,9 @@ def render_inputs_page() -> None:
     )
     render_timing_mark("inputs_page.shell.tail.end")
 
-    # The unified engineering workspace fragment owns summary, diagram,
-    # calculation and Design Brain refresh.  Do not widen a committed widget
-    # edit into a full-page rerun here; the fragment wake/revision protocol
-    # settles every consumer against the newest canonical revision.
+    # The unified engineering workspace owns summary, diagram, calculation
+    # and Design Brain refresh. All page controls settle through this one
+    # shell transaction; no sibling fragment can publish an interim result.
 
 
 render_inputs = speed_profiled(
