@@ -1525,12 +1525,13 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
     # =========================================================
     load_toggle_key = "design_loads_edit_toggle"
     def _on_design_load_mode_change() -> None:
-        # Persist the edited mode before a rerun; otherwise route hydration
-        # can restore an older SLS/ULS widget value over the current edit.
-        load_analysis_store.capture_widgets()
         use_sls_now = bool(st.session_state.get(load_toggle_key, False))
         mode_now = "SLS" if use_sls_now else "ULS"
         st.session_state["loads_edit_mode"] = mode_now
+        # Snapshot only after Streamlit has written the new toggle value.
+        # Capturing before this point preserves the previous mode and the
+        # immediate rerun then hydrates that stale value back into the widget.
+        load_analysis_store.capture_widgets()
 
     # Read the persisted mode before solving.  The control itself is rendered
     # beside the diagrams, where its effect is visible.
