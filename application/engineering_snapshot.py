@@ -97,6 +97,9 @@ DESIGN_SETTING_INPUT_KEYS: tuple[str, ...] = (
     "exposure_class",
     "ductility_class",
     "design_code",
+    # Crack-control method changes the authoritative calculation branch and
+    # therefore must participate in the engineering identity/cache key.
+    "crack_control_method",
 )
 
 UI_ONLY_STATE_KEYS: frozenset[str] = frozenset(
