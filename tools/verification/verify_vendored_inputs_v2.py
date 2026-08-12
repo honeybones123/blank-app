@@ -16,6 +16,17 @@ VENDOR_ROOT = RUNTIME_ROOT / "vendor"
 REQUIREMENTS = RUNTIME_ROOT / "requirements.txt"
 
 
+def _normalise_python_source(content: bytes) -> bytes:
+    """Compare source independently of the checkout platform's line endings.
+
+    The vendored wheel is built on Windows while GitHub and Render verify it
+    on Linux.  CRLF versus LF does not change the installed Python program and
+    must not make an otherwise byte-identical source release fail its gate.
+    """
+
+    return content.replace(b"\r\n", b"\n")
+
+
 def _required_wheel() -> Path:
     matches = []
     pattern = re.compile(
@@ -77,7 +88,10 @@ def main() -> int:
         extra = sorted(wheel_files.keys() - source_files.keys())
         raise AssertionError(f"wheel/source file mismatch; missing={missing}, extra={extra}")
     changed = sorted(
-        name for name, content in source_files.items() if wheel_files[name] != content
+        name
+        for name, content in source_files.items()
+        if _normalise_python_source(wheel_files[name])
+        != _normalise_python_source(content)
     )
     if changed:
         raise AssertionError(f"vendored wheel contains stale source files: {changed}")
