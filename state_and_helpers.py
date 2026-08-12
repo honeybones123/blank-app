@@ -1436,6 +1436,29 @@ SHARED_DEFAULTS = {
     "crack_k1": 0.8,                        # deformed bars
     "crack_k2": 0.5,                        # default for flexure
     "crack_diagram_panel": "Crack Diagram",  # Crack page diagram view (shared with TAB_KEYS)
+    "crack_control_method": "existing_as3600",
+    "crack_wall_thickness_mm": 600.0,
+    "crack_wall_in_base_zone": False,
+    "crack_wall_horizontal_area_per_face": 2750.0,
+    "crack_wall_vertical_spacing_mm": 150.0,
+    "crack_c766_restraint_type": "continuous_edge",
+    "crack_c766_t1_c": 46.1,
+    "crack_c766_t2_c": 20.0,
+    "crack_c766_alpha_micro_per_c": 12.0,
+    "crack_c766_restraint_early": 0.676,
+    "crack_c766_restraint_medium": 0.644,
+    "crack_c766_restraint_long": 0.644,
+    "crack_c766_tensile_capacity_micro": 70.0,
+    "crack_c766_autogenous_early_micro": 0.0,
+    "crack_c766_autogenous_long_micro": 75.0,
+    "crack_c766_effective_reinforcement_ratio": 0.01,
+    "crack_c766_bar_diameter_mm": 20.0,
+    "crack_c766_cover_mm": 45.0,
+    "crack_c766_modular_ratio": 7.0,
+    "crack_c766_non_uniform_k": 0.65,
+    "crack_c766_stress_distribution_kc": 1.0,
+    "crack_c766_characteristic_tensile_mpa": 2.0,
+    "crack_c766_total_reinforcement_ratio": 0.01,
 
     # Crack / torsion sketch control
     "crack_theta_deg": 45.0,  # physical crack angle (degrees)
@@ -1472,6 +1495,10 @@ SHARED_DEFAULTS = {
     # Shrinkage page inputs
     "member_faces_exposed": "Beam – three faces exposed",  # Member / faces exposed for shrinkage
     "shrinkage_env": "Temperate inland environment",  # Shrinkage environment (Table 3.1.7.2)
+    "shrinkage_method": "existing_as3600",
+    "shrinkage_relative_humidity_percent": 51.0,
+    "shrinkage_cement_class": "S",
+    "shrinkage_drying_start_age_days": 7.0,
     
     # Creep page inputs
     "env_option": "Temperate inland environment",  # Creep environment (Tables 3.1.8.2 & 3.1.8.3)
@@ -1810,6 +1837,29 @@ BEAM_PROJECT_PARAM_KEYS = [
     "crack_k1",
     "crack_k2",
     "crack_diagram_panel",
+    "crack_control_method",
+    "crack_wall_thickness_mm",
+    "crack_wall_in_base_zone",
+    "crack_wall_horizontal_area_per_face",
+    "crack_wall_vertical_spacing_mm",
+    "crack_c766_restraint_type",
+    "crack_c766_t1_c",
+    "crack_c766_t2_c",
+    "crack_c766_alpha_micro_per_c",
+    "crack_c766_restraint_early",
+    "crack_c766_restraint_medium",
+    "crack_c766_restraint_long",
+    "crack_c766_tensile_capacity_micro",
+    "crack_c766_autogenous_early_micro",
+    "crack_c766_autogenous_long_micro",
+    "crack_c766_effective_reinforcement_ratio",
+    "crack_c766_bar_diameter_mm",
+    "crack_c766_cover_mm",
+    "crack_c766_modular_ratio",
+    "crack_c766_non_uniform_k",
+    "crack_c766_stress_distribution_kc",
+    "crack_c766_characteristic_tensile_mpa",
+    "crack_c766_total_reinforcement_ratio",
     "crack_theta_deg",
     "defl_beff",
     "defl_support_type",
@@ -1819,6 +1869,10 @@ BEAM_PROJECT_PARAM_KEYS = [
     "defl_Ief_user",
     "member_faces_exposed",
     "shrinkage_env",
+    "shrinkage_method",
+    "shrinkage_relative_humidity_percent",
+    "shrinkage_cement_class",
+    "shrinkage_drying_start_age_days",
     "env_option",
     "s_bar_bot",
     "shear_auto_design",
@@ -3872,6 +3926,29 @@ TAB_KEYS = {
     "inputs_crack_k1": "crack_k1",
     "inputs_crack_k2": "crack_k2",
     "inputs_actions_source": "actions_source",  # Source of design actions (manual vs teaching)
+    "crack_method": "crack_control_method",
+    "crack_wall_thickness": "crack_wall_thickness_mm",
+    "crack_wall_base_zone": "crack_wall_in_base_zone",
+    "crack_wall_area": "crack_wall_horizontal_area_per_face",
+    "crack_wall_spacing": "crack_wall_vertical_spacing_mm",
+    "crack_c766_restraint": "crack_c766_restraint_type",
+    "crack_c766_t1": "crack_c766_t1_c",
+    "crack_c766_t2": "crack_c766_t2_c",
+    "crack_c766_alpha": "crack_c766_alpha_micro_per_c",
+    "crack_c766_r1": "crack_c766_restraint_early",
+    "crack_c766_r2": "crack_c766_restraint_medium",
+    "crack_c766_r3": "crack_c766_restraint_long",
+    "crack_c766_ectu": "crack_c766_tensile_capacity_micro",
+    "crack_c766_epsca_early": "crack_c766_autogenous_early_micro",
+    "crack_c766_epsca_long": "crack_c766_autogenous_long_micro",
+    "crack_c766_rho_eff": "crack_c766_effective_reinforcement_ratio",
+    "crack_c766_db": "crack_c766_bar_diameter_mm",
+    "crack_c766_cover": "crack_c766_cover_mm",
+    "crack_c766_alpha_e": "crack_c766_modular_ratio",
+    "crack_c766_k": "crack_c766_non_uniform_k",
+    "crack_c766_kc": "crack_c766_stress_distribution_kc",
+    "crack_c766_fctk": "crack_c766_characteristic_tensile_mpa",
+    "crack_c766_rho_total": "crack_c766_total_reinforcement_ratio",
 
     # Time-dependent inputs
     "inputs_t_creep": "t_creep",
@@ -4235,6 +4312,10 @@ TAB_KEYS = {
     "sh_faces": "member_faces_exposed",
     "sh_env": "shrinkage_env",
     "sh_t_days": "t_shrink",
+    "sh_method": "shrinkage_method",
+    "sh_rh": "shrinkage_relative_humidity_percent",
+    "sh_cement_class": "shrinkage_cement_class",
+    "sh_drying_start": "shrinkage_drying_start_age_days",
     
     # ----------------- CREEP PAGE -----------------
     "cr_b": "b",
@@ -5432,6 +5513,31 @@ def hydrate_active_page_widgets_from_shared(
         return
     _write_sync_trace_line(f"HYDRATE_ACTIVE_PAGE slug={active_slug} keys={len(wmap)}")
 
+    # Load Analysis owns a beam-local draft until the user explicitly enables
+    # publication to Beam Inputs.  On a route return, Streamlit has discarded
+    # the page's widget instances and the router must recreate them from that
+    # draft—not from the unchanged main-beam shared state.  Hydrating from the
+    # shared state here used to make an entered load visibly return to zero.
+    load_analysis_draft_snapshot: dict[str, object] = {}
+    if active_slug == "design" and (
+        not bool(st.session_state.get("inputs_use_calculated_actions", False))
+        or bool(
+            st.session_state.get(
+                "_load_analysis_action_publication_requested", False
+            )
+        )
+    ):
+        try:
+            from inputs_application.load_analysis_draft import (
+                current_load_analysis_draft,
+            )
+
+            draft = current_load_analysis_draft(st.session_state)
+            if draft is not None:
+                load_analysis_draft_snapshot = dict(draft.snapshot or {})
+        except (ImportError, RuntimeError, TypeError, ValueError):
+            load_analysis_draft_snapshot = {}
+
     beam_just_loaded = bool(st.session_state.pop("_force_hydrate_widgets_after_beam_load", False))
     in_restore_hydrate_window = bool(
         force_on_restore and st.session_state.get("_restore_guard_active")
@@ -5469,13 +5575,22 @@ def hydrate_active_page_widgets_from_shared(
             if widget_key in st.session_state:
                 hydrated_count += 1
             continue
-        if shared_key not in st.session_state:
+        source_has_value = (
+            shared_key in load_analysis_draft_snapshot
+            or shared_key in st.session_state
+        )
+        if not source_has_value:
             continue
         widget_before = st.session_state.get(widget_key)
         force = bool(force_on_page_change) or beam_just_loaded or in_restore_hydrate_window
         if active_slug == "inputs" and widget_key.startswith("inputs_") and force_inputs_reseed:
             force = True
-        safe_hydrate(widget_key, shared_key, st.session_state.get(shared_key), force=force)
+        source_value = (
+            load_analysis_draft_snapshot[shared_key]
+            if shared_key in load_analysis_draft_snapshot
+            else st.session_state.get(shared_key)
+        )
+        safe_hydrate(widget_key, shared_key, source_value, force=force)
         if bool(st.session_state.get("_dev_mode")) and widget_key in {
             "inputs_bot_row_1_dia",
             "inputs_bot_row_1_bars",

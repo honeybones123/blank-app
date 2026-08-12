@@ -117,6 +117,7 @@ def design_signals(result: EngineeringResult, inputs: BeamInputs | None) -> Desi
         or (bool(shear.get("transverse_reinforcement_required")) and not links_provided)
         or (links_provided and shear.get("min_shear_ok") is False)
         or (links_provided and shear.get("spacing_ok") is False)
+        or (links_provided and shear.get("transverse_spacing_ok") is False)
     ))
     fit = result.families.get("reinforcement_fit", {})
     geometry_invalid = bool(inputs is not None and (

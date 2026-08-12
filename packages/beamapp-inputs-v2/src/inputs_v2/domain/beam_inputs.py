@@ -247,6 +247,7 @@ class BeamInputs:
     compression_reinforcement_restrained: bool = False
     width_locked: bool = False
     depth_locked: bool = False
+    side_cover_mm: float = 40.0
     bottom: LongitudinalReinforcement = LongitudinalReinforcement()
     bottom_arrangement: ReinforcementArrangement | None = None
     top: LongitudinalReinforcement = LongitudinalReinforcement(bars=2, diameter_mm=10)
@@ -283,6 +284,8 @@ class BeamInputs:
                 raise ValueError("Flange thickness must be within the section depth.")
             if self.section_shape == "I" and 2.0 * self.flange_thickness_mm >= self.depth_mm:
                 raise ValueError("I-section flanges must leave a positive web depth.")
+        if self.side_cover_mm < 10.0 or self.side_cover_mm > 150.0:
+            raise ValueError("Side cover must be between 10 and 150 mm.")
         self.bottom.validated()
         self.top.validated()
         self.shear.validated()
@@ -359,6 +362,7 @@ class BeamInputs:
             "compression_reinforcement_restrained": self.compression_reinforcement_restrained,
             "width_locked": self.width_locked,
             "depth_locked": self.depth_locked,
+            "side_cover_mm": self.side_cover_mm,
             "bottom": {
                 "mode": self.bottom.mode.value,
                 "bars": self.bottom.bars,

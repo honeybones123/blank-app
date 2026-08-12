@@ -414,6 +414,11 @@ def _beam_inputs_from_snapshot(
         ),
         width_locked=_boolean(locks, "optimisation_lock_width", "lock_width", "width_locked"),
         depth_locked=_boolean(locks, "optimisation_lock_depth", "lock_depth", "depth_locked"),
+        side_cover_mm=_number(
+            reinforcement,
+            "cover_side",
+            default=bottom_cover,
+        ),
         bottom=bottom,
         top=top,
         shear=shear,

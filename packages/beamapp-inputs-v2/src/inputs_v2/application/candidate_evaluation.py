@@ -41,6 +41,8 @@ def complete_compliance(result: EngineeringResult) -> bool:
         return False
     if links_provided and shear.get("spacing_ok") is not True:
         return False
+    if links_provided and shear.get("transverse_spacing_ok") is not True:
+        return False
     return bool(result.families.get("reinforcement_fit", {}).get("accepted", False))
 
 
@@ -160,6 +162,12 @@ def calculated_check_statuses(result: EngineeringResult) -> tuple[tuple[str, str
             else "PASS" if shear.get("spacing_ok") is True else "FAIL",
         ),
         (
+            "transverse_shear_leg_spacing",
+            "NOT REQUIRED"
+            if not links_provided
+            else "PASS" if shear.get("transverse_spacing_ok") is True else "FAIL",
+        ),
+        (
             "geometry",
             str(families.get("geometry", {}).get("status", "MISSING")).upper(),
         ),
@@ -212,6 +220,8 @@ def compliance_rejection_codes(result: EngineeringResult) -> tuple[str, ...]:
     if links_provided and shear.get("spacing_ok") is not True:
         rejected.append("shear_spacing_failed")
     fit = families.get("reinforcement_fit", {})
+    if links_provided and shear.get("transverse_spacing_ok") is not True:
+        rejected.append("transverse_shear_leg_spacing_failed")
     if not bool(fit.get("accepted", False)):
         rejected.append("reinforcement_fit_failed")
         if str(fit.get("cover_status", "PASS")).upper() == "FAIL":

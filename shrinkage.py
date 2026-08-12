@@ -39,6 +39,18 @@ from inputs_application.authoritative_check_packs import current_authoritative_f
 from inputs_application.time_dependent_presentation import (
     resolve_time_dependent_family_values,
 )
+from application.contracts.concrete_crack_shrinkage import (
+    CementClass,
+    EC2C766ShrinkageInput,
+    ShrinkageMethod,
+)
+from calculations.concrete_crack_shrinkage_methods import calculate_ec2_c766_shrinkage
+
+
+SHRINKAGE_METHOD_LABELS = {
+    ShrinkageMethod.EXISTING_AS3600.value: "Existing StructuralBase method (AS 3600:2018)",
+    ShrinkageMethod.EC2_C766.value: "EC2 equation method (CIRIA C766 Appendices A3-A4)",
+}
 
 
 # ------------------------------------------------------------
@@ -122,7 +134,12 @@ def compute_shrinkage_results(publish: bool = True) -> dict:
     Returns:
         dict with computed results
     """
-    authoritative = current_authoritative_family(st.session_state, "shrinkage")
+    method = str(get_param("shrinkage_method", ShrinkageMethod.EXISTING_AS3600.value))
+    authoritative = (
+        current_authoritative_family(st.session_state, "shrinkage")
+        if method == ShrinkageMethod.EXISTING_AS3600.value
+        else None
+    )
     if authoritative is not None:
         if publish:
             update_results(
@@ -164,24 +181,33 @@ def compute_shrinkage_results(publish: bool = True) -> dict:
     th_raw = geometry_values["th_raw"]
     th_table = _closest_th(th_raw)
     
-    # Calculate shrinkage components
-    k1 = calc_k1_shrinkage(t_days, th_table)
-    eps_cse = calc_eps_cse(fc, t_days)
-    eps_csd_final = _shrinkage_eps_final(fc, env_option, th_table)
-    shrinkage_total = shrinkage_total_values(k1, eps_cse, eps_csd_final)
-    eps_csd_t = shrinkage_total["eps_csd_t"]
-    eps_cs_total = shrinkage_total["eps_cs_total"]
-    eps_cs_total_micro = shrinkage_total["eps_cs_total_micro"]
-
-    authoritative = current_authoritative_family(st.session_state, "shrinkage")
-    if authoritative is not None:
-        th_table = int(authoritative["th_shrinkage_mm"])
-        k1 = float(authoritative["k1_shrinkage"])
-        eps_cse = float(authoritative["eps_cse"])
-        eps_csd_final = float(authoritative["eps_csd_final"])
-        eps_csd_t = float(authoritative["eps_csd_t"])
-        eps_cs_total = float(authoritative["eps_cs_total"])
-        eps_cs_total_micro = float(authoritative["eps_cs_total_micro"])
+    method_result = None
+    if method == ShrinkageMethod.EC2_C766.value:
+        method_result = calculate_ec2_c766_shrinkage(
+            EC2C766ShrinkageInput(
+                characteristic_cylinder_strength_mpa=float(fc),
+                relative_humidity_percent=float(get_param("shrinkage_relative_humidity_percent", 51.0)),
+                cement_class=CementClass(str(get_param("shrinkage_cement_class", "S"))),
+                concrete_area_mm2=float(Ag),
+                drying_perimeter_mm=float(ue),
+                age_days=float(t_days),
+                drying_start_age_days=float(get_param("shrinkage_drying_start_age_days", 7.0)),
+            )
+        )
+        k1 = method_result.drying_time_coefficient
+        eps_cse = method_result.autogenous_shrinkage
+        eps_csd_t = method_result.drying_shrinkage
+        eps_cs_total = method_result.total_shrinkage
+        eps_cs_total_micro = eps_cs_total * 1e6
+        th_table = method_result.notional_size_mm
+    else:
+        k1 = calc_k1_shrinkage(t_days, th_table)
+        eps_cse = calc_eps_cse(fc, t_days)
+        eps_csd_final = _shrinkage_eps_final(fc, env_option, th_table)
+        shrinkage_total = shrinkage_total_values(k1, eps_cse, eps_csd_final)
+        eps_csd_t = shrinkage_total["eps_csd_t"]
+        eps_cs_total = shrinkage_total["eps_cs_total"]
+        eps_cs_total_micro = shrinkage_total["eps_cs_total_micro"]
     
     # Update results if publish=True
     if publish:
@@ -193,6 +219,16 @@ def compute_shrinkage_results(publish: bool = True) -> dict:
             th_shrinkage=th_table,
             k1_shrinkage=k1,
         )
+        update_results(
+            "shrinkage_method",
+            {
+                "method": method,
+                "reference": (
+                    method_result.reference.document if method_result is not None else "AS 3600:2018"
+                ),
+                "warnings": list(method_result.warnings if method_result is not None else ()),
+            },
+        )
     
     # Build steps list (placeholder)
     steps = ["(Detailed steps not available for this module yet)"]
@@ -203,6 +239,56 @@ def compute_shrinkage_results(publish: bool = True) -> dict:
         "eps_cse": eps_cse,
         "eps_csd_t": eps_csd_t,
         "shrinkage_steps": steps,
+    }
+
+
+def compute_shrinkage_components_for_crack_control() -> dict:
+    """Calculate C766 strain components from the active Shrinkage-page method."""
+    b = float(get_param("b", 300.0))
+    D = float(get_param("D", 600.0))
+    fc = float(get_param("fc", 32.0))
+    age_days = max(float(get_param("t_shrink", 365.0)), 0.0)
+    drying_start = max(float(get_param("shrinkage_drying_start_age_days", 7.0)), 0.0)
+    early_age = min(drying_start, age_days)
+    faces_option = get_param("member_faces_exposed", "Beam – three faces exposed")
+    geometry = exposed_perimeter_geometry_values(b, D, faces_option)
+    method = str(get_param("shrinkage_method", ShrinkageMethod.EXISTING_AS3600.value))
+
+    if method == ShrinkageMethod.EC2_C766.value:
+        common = dict(
+            characteristic_cylinder_strength_mpa=fc,
+            relative_humidity_percent=float(get_param("shrinkage_relative_humidity_percent", 51.0)),
+            cement_class=CementClass(str(get_param("shrinkage_cement_class", "S"))),
+            concrete_area_mm2=float(geometry["Ag"]),
+            drying_perimeter_mm=float(geometry["ue"]),
+            drying_start_age_days=drying_start,
+        )
+        early = calculate_ec2_c766_shrinkage(EC2C766ShrinkageInput(age_days=early_age, **common))
+        current = calculate_ec2_c766_shrinkage(EC2C766ShrinkageInput(age_days=age_days, **common))
+        return {
+            "method": method,
+            "early_age_days": early_age,
+            "age_days": age_days,
+            "autogenous_early": early.autogenous_shrinkage,
+            "autogenous_long_term": current.autogenous_shrinkage,
+            "drying_long_term": current.drying_shrinkage,
+        }
+
+    th_table = _closest_th(float(geometry["th_raw"]))
+    k1 = calc_k1_shrinkage(age_days, th_table)
+    eps_csd_final = _shrinkage_eps_final(
+        fc,
+        get_param("shrinkage_env", "Temperate inland environment"),
+        th_table,
+    )
+    current = shrinkage_total_values(k1, calc_eps_cse(fc, age_days), eps_csd_final)
+    return {
+        "method": method,
+        "early_age_days": early_age,
+        "age_days": age_days,
+        "autogenous_early": calc_eps_cse(fc, early_age),
+        "autogenous_long_term": calc_eps_cse(fc, age_days),
+        "drying_long_term": current["eps_csd_t"],
     }
 
 
@@ -228,6 +314,27 @@ def render_shrinkage():
     # Page title
     # --------------------------------------------------------
     def _render_shrinkage_explainer() -> None:
+        method_options = list(SHRINKAGE_METHOD_LABELS)
+        method_current = str(get_param("shrinkage_method", ShrinkageMethod.EXISTING_AS3600.value))
+        if method_current not in method_options:
+            method_current = ShrinkageMethod.EXISTING_AS3600.value
+        st.selectbox(
+            "Calculation method",
+            options=method_options,
+            index=method_options.index(method_current),
+            format_func=lambda value: SHRINKAGE_METHOD_LABELS[value],
+            key="sh_method",
+            on_change=sync_callbacks["sh_method"],
+        )
+        if method_current == ShrinkageMethod.EC2_C766.value:
+            st.markdown(
+                """
+This method calculates drying and autogenous shrinkage using the published
+equations reproduced in **CIRIA C766 Appendices A3-A4** from
+**BS EN 1992-1-1:2004**. Temperature-model spreadsheet parity is not claimed.
+"""
+            )
+            return
         st.markdown(
             r"""
 This page computes **concrete shrinkage strain** in accordance with  
@@ -244,6 +351,7 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
 
     with page_title_placeholder.container():
         render_result_page_title("Shrinkage")
+    shrinkage_method = str(get_param("shrinkage_method", ShrinkageMethod.EXISTING_AS3600.value))
 
     # --------------------------------------------------------
     # Reserve space for the top summary table
@@ -321,14 +429,33 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
             env_current = get_param("shrinkage_env", "Arid environment")
             if env_current not in env_options:
                 env_current = "Arid environment"
-            env_option = v2_selectbox(
-                label="Value",
-                key="sh_env",
-                options=env_options,
-                default_index=env_options.index(env_current),
-                label_visibility="collapsed",
-                on_change=sync_callbacks["sh_env"],
-            )
+            if shrinkage_method == ShrinkageMethod.EXISTING_AS3600.value:
+                env_option = v2_selectbox(
+                    label="Value",
+                    key="sh_env",
+                    options=env_options,
+                    default_index=env_options.index(env_current),
+                    label_visibility="collapsed",
+                    on_change=sync_callbacks["sh_env"],
+                )
+            else:
+                env_option = env_current
+                v2_number_input(
+                    label="Relative humidity (%)",
+                    key="sh_rh",
+                    default=float(get_param("shrinkage_relative_humidity_percent", 51.0)),
+                    step=1.0,
+                    min_value=0.0,
+                    max_value=100.0,
+                    on_change=sync_callbacks["sh_rh"],
+                )
+                v2_selectbox(
+                    label="Cement class",
+                    key="sh_cement_class",
+                    options=["S", "N", "R"],
+                    default_index=["S", "N", "R"].index(str(get_param("shrinkage_cement_class", "S"))),
+                    on_change=sync_callbacks["sh_cement_class"],
+                )
 
     with col_time:
         st.markdown("**Time / drying**")
@@ -345,6 +472,15 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
                 label_visibility="collapsed",
                 on_change=sync_callbacks["inputs_t_shrink"],
             )
+            if shrinkage_method == ShrinkageMethod.EC2_C766.value:
+                v2_number_input(
+                    label="End of curing / start of drying (days)",
+                    key="sh_drying_start",
+                    default=float(get_param("shrinkage_drying_start_age_days", 7.0)),
+                    step=1.0,
+                    min_value=0.0,
+                    on_change=sync_callbacks["sh_drying_start"],
+                )
 
     page_divider()
 
@@ -360,13 +496,33 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
     # --------------------------------------------------------
     # Shrinkage components
     # --------------------------------------------------------
-    k1 = calc_k1_shrinkage(t_days, th_table)
-    eps_cse = calc_eps_cse(fc, t_days)
-    eps_csd_final = _shrinkage_eps_final(fc, env_option, th_table)
-    shrinkage_total = shrinkage_total_values(k1, eps_cse, eps_csd_final)
-    eps_csd_t = shrinkage_total["eps_csd_t"]
-    eps_cs_total = shrinkage_total["eps_cs_total"]
-    eps_cs_total_micro = shrinkage_total["eps_cs_total_micro"]
+    method_result = None
+    if shrinkage_method == ShrinkageMethod.EC2_C766.value:
+        method_result = calculate_ec2_c766_shrinkage(
+            EC2C766ShrinkageInput(
+                characteristic_cylinder_strength_mpa=fc,
+                relative_humidity_percent=float(get_param("shrinkage_relative_humidity_percent", 51.0)),
+                cement_class=CementClass(str(get_param("shrinkage_cement_class", "S"))),
+                concrete_area_mm2=Ag,
+                drying_perimeter_mm=ue,
+                age_days=t_days,
+                drying_start_age_days=float(get_param("shrinkage_drying_start_age_days", 7.0)),
+            )
+        )
+        th_table = method_result.notional_size_mm
+        k1 = method_result.drying_time_coefficient
+        eps_cse = method_result.autogenous_shrinkage
+        eps_csd_t = method_result.drying_shrinkage
+        eps_cs_total = method_result.total_shrinkage
+        eps_cs_total_micro = eps_cs_total * 1e6
+    else:
+        k1 = calc_k1_shrinkage(t_days, th_table)
+        eps_cse = calc_eps_cse(fc, t_days)
+        eps_csd_final = _shrinkage_eps_final(fc, env_option, th_table)
+        shrinkage_total = shrinkage_total_values(k1, eps_cse, eps_csd_final)
+        eps_csd_t = shrinkage_total["eps_csd_t"]
+        eps_cs_total = shrinkage_total["eps_cs_total"]
+        eps_cs_total_micro = shrinkage_total["eps_cs_total_micro"]
 
     # Use the same current V2 family result for the summary and every detailed
     # value.  Page-local calculation is retained only as an unavailable-result
@@ -407,17 +563,22 @@ All strains are reported in units of microstrain ($\times 10^{-6}$).
         th_shrinkage=th_table,
         k1_shrinkage=k1,
     )
+    update_results(
+        "shrinkage_method",
+        {
+            "method": shrinkage_method,
+            "reference": method_result.reference.document if method_result is not None else "AS 3600:2018",
+            "warnings": list(method_result.warnings if method_result is not None else ()),
+        },
+    )
 
     # --------------------------------------------------------
     # TOP SUMMARY TABLE (clickable, like bending/shear)
     # --------------------------------------------------------
     with summary_placeholder.container():
-        # Keep only the info control; the page title already provides the heading.
-        _, h_right = st.columns([8, 1], vertical_alignment="center")
-        with h_right:
-            with st.popover("ℹ️ INFO"):
-                st.markdown(
-                    """
+        def _render_shrinkage_explainer() -> None:
+            st.markdown(
+                """
 **What shrinkage is**  
 Concrete shrinkage is the time-dependent reduction in volume that occurs mainly due to **loss of moisture** (drying shrinkage) and ongoing hydration/chemical effects. It occurs even with no external load.
 
@@ -435,7 +596,9 @@ Commonly shown as **microstrain (µε)** where 1 µε = 1×10⁻⁶.
 **Effect on design**  
 Shrinkage is not a force (kN). It is a time-dependent strain that can cause deformation and cracking in restrained members.
 """
-                )
+            )
+
+        render_page_explainer_expander(_render_shrinkage_explainer)
         
         ROWS = build_shrinkage_summary_rows(
             eps_cse=eps_cse,
@@ -469,6 +632,54 @@ Shrinkage is not a force (kN). It is a time-dependent strain that can cause defo
     # Stacked calculation sections
     # --------------------------------------------------------
     render_section_title("Shrinkage checks")
+
+    if shrinkage_method == ShrinkageMethod.EC2_C766.value and method_result is not None:
+        render_expandable_step(
+            page_key="shrinkage",
+            step_id="shrinkage_ec2_drying",
+            title="EC2/C766 drying shrinkage",
+            summary_md=[
+                "Check 1 — Notional size and drying shrinkage",
+                rf"Result: $\varepsilon_{{cd}}(t) = {method_result.drying_shrinkage * 1e6:.1f}\,\mu\varepsilon$",
+            ],
+            status_kind=None,
+            calc_md=rf"""
+**Notional size**
+
+\[h_0 = \frac{{2A_c}}{{u}} = {method_result.notional_size_mm:.1f}\,\text{{mm}}\]
+
+**Drying shrinkage**
+
+- Nominal drying shrinkage: $\varepsilon_{{cd,0}} = {method_result.nominal_drying_shrinkage * 1e6:.1f}\,\mu\varepsilon$
+- Size coefficient: $k_h = {method_result.size_coefficient_kh:.3f}$
+- Drying-time coefficient: $\beta_{{ds}} = {method_result.drying_time_coefficient:.3f}$
+- Result: $\varepsilon_{{cd}}(t) = {method_result.drying_shrinkage * 1e6:.1f}\,\mu\varepsilon$
+""",
+        )
+        render_expandable_step(
+            page_key="shrinkage",
+            step_id="shrinkage_ec2_total",
+            title="EC2/C766 total shrinkage",
+            summary_md=[
+                "Check 2 — Drying plus autogenous shrinkage",
+                rf"Result: $\varepsilon_{{cs}} = {method_result.total_shrinkage * 1e6:.1f}\,\mu\varepsilon$",
+            ],
+            status_kind=None,
+            calc_md=rf"""
+**Autogenous and total shrinkage**
+
+\[\varepsilon_{{cs}} = \varepsilon_{{cd}} + \varepsilon_{{ca}}\]
+
+- Drying shrinkage: $\varepsilon_{{cd}}(t) = {method_result.drying_shrinkage * 1e6:.1f}\,\mu\varepsilon$
+- Autogenous shrinkage: $\varepsilon_{{ca}}(t) = {method_result.autogenous_shrinkage * 1e6:.1f}\,\mu\varepsilon$
+- **Total shrinkage: $\varepsilon_{{cs}} = {method_result.total_shrinkage * 1e6:.1f}\,\mu\varepsilon$**
+
+Reference: {method_result.reference.document}, {method_result.reference.clause}.
+""",
+        )
+        st.warning(method_result.warnings[0])
+        scroll_to_jump_after_render("shrinkage")
+        return
 
     def render_th():
         return rf"""

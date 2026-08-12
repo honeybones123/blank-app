@@ -55,7 +55,7 @@ CHECK_IDS_BY_GROUP = {
     "bending": {"bending_capacity"},
     "ductility": {"bending_ductility"},
     "minimum_tensile": {"minimum_flexural_strength"},
-    "shear": {"shear_strength", "shear_web_crushing", "concrete_shear_capacity", "transverse_reinforcement_required", "minimum_shear_reinforcement", "shear_reinforcement_capacity"},
+    "shear": {"shear_strength", "shear_web_crushing", "concrete_shear_capacity", "transverse_reinforcement_required", "minimum_shear_reinforcement", "shear_reinforcement_capacity", "transverse_shear_leg_spacing"},
     "serviceability": {"short_term_deflection", "long_term_deflection", "span_depth_check"},
     "crack_control": {"general_crack_control", "crack_table_method", "direct_crack_width"},
 }
@@ -89,7 +89,14 @@ def test_every_family_has_complete_golden_current_and_proposed_check_ids(family:
     assert {check.check_id for check in current} == expected_ids
     assert {check.check_id for check in proposed} == expected_ids
     assert all(check.status in {"pass", "fail", "overdesigned", "not_checked", "info", "provisional"} for check in current + proposed)
-    assert all(not check.standard or check.clause_reference is not None for check in current + proposed)
+    # The transverse leg-spacing rule is an explicit product acceptance
+    # contract pending licensed clause metadata; do not invent a clause.
+    assert all(
+        not check.standard
+        or check.clause_reference is not None
+        or check.check_id == "transverse_shear_leg_spacing"
+        for check in current + proposed
+    )
     for current_check, proposed_check in zip(current, proposed, strict=True):
         if current_check.clause_reference is not None:
             assert current_check.clause_reference == proposed_check.clause_reference
@@ -177,8 +184,9 @@ def test_single_row_bar_count_change_does_not_repeat_row_layout() -> None:
 def test_mandatory_bending_failure_is_not_hidden_by_two_low_summary_utilisations() -> None:
     current = replace(
         BeamInputs(
+            width_mm=500.0,
             actions=ActionInputs(bending_moment_knm=20.0, shear_force_kn=10.0),
-            shear=ShearReinforcement(12, 2, 100.0),
+            shear=ShearReinforcement(12, 4, 100.0),
         ),
         bottom=LongitudinalReinforcement(bars=2, diameter_mm=10),
     ).validated()

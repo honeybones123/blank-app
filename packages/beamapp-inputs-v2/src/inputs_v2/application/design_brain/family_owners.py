@@ -248,6 +248,7 @@ def _exact_stop_explanation(
         "transverse_reinforcement_required",
         "minimum_shear_reinforcement_failed",
         "shear_spacing_failed",
+        "transverse_shear_leg_spacing_failed",
     )
     include("the deflection limit", "serviceability_fail")
     include("crack-control requirements", "crack_control_fail")
@@ -924,6 +925,7 @@ _EVIDENCE_BLOCKERS: tuple[tuple[str, str], ...] = (
     ("transverse_reinforcement_required", "Transverse reinforcement is required for the proposed design."),
     ("minimum_shear_reinforcement_failed", "Minimum shear reinforcement is not satisfied."),
     ("shear_spacing_failed", "The proposed ligature spacing exceeds the permitted limit."),
+    ("transverse_shear_leg_spacing_failed", "The fitted horizontal spacing between adjacent effective shear-link legs exceeds the permitted limit."),
     ("serviceability_fail", "Deflection remains above the allowable limit."),
     ("crack_control_fail", "Crack width remains above the allowable limit."),
     ("search_budget_exhausted", "The configured search budget was reached before every required ladder stage could be completed."),

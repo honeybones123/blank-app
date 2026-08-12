@@ -55,6 +55,25 @@ from calculations.crack_control import (
     table_sigma_max_B,
 )
 from calculations.bending import bar_area_mm2
+from application.contracts.concrete_crack_shrinkage import (
+    AS5100WallCrackControlInput,
+    C766CrackControlInput,
+    C766EndRestraintInput,
+    CrackControlMethod,
+    RestraintType,
+)
+from calculations.concrete_crack_shrinkage_methods import (
+    calculate_as5100_wall_crack_control,
+    calculate_c766_crack_control,
+    calculate_c766_end_restraint,
+)
+
+
+CRACK_METHOD_LABELS = {
+    CrackControlMethod.EXISTING_AS3600.value: "Existing StructuralBase method (AS 3600:2018)",
+    CrackControlMethod.AS5100_WALL.value: "AS 5100.5:2017 restrained wall (Clause 11.7.2)",
+    CrackControlMethod.CIRIA_C766_EC2.value: "CIRIA C766 + EC2 equation method",
+}
 
 # Safe option lists for reinforcement inputs (same as inputs_page)
 REO_BAR_DIAS = [10, 12, 16, 20, 24, 28, 32, 36, 40]
@@ -74,6 +93,313 @@ _get_bottom_spacing = _crack_inputs_section._get_bottom_spacing
 _col_heading = _crack_inputs_section._col_heading
 _inject_calcbox_css = _crack_inputs_section._inject_calcbox_css
 _crack_inputs_section.bind_runtime(globals())
+
+
+def _method_number(label: str, key: str, shared_key: str, default: float, sync_callbacks, **kwargs) -> float:
+    if key not in st.session_state:
+        st.session_state[key] = float(get_param(shared_key, default))
+    return float(st.number_input(label, key=key, on_change=sync_callbacks[key], **kwargs))
+
+
+def _render_as5100_wall_method(sync_callbacks):
+    st.caption("AS 5100.5:2017 incorporating Amendment No. 1 - Clause 11.7.2")
+    c1, c2 = st.columns(2)
+    with c1:
+        thickness = _method_number(
+            "Wall thickness (mm)", "crack_wall_thickness", "crack_wall_thickness_mm", 600.0,
+            sync_callbacks, min_value=1.0, step=25.0,
+        )
+        area = _method_number(
+            "Provided horizontal area per face (mm²/m)", "crack_wall_area",
+            "crack_wall_horizontal_area_per_face", 2750.0, sync_callbacks, min_value=0.0, step=50.0,
+        )
+    with c2:
+        if "crack_wall_base_zone" not in st.session_state:
+            st.session_state["crack_wall_base_zone"] = bool(get_param("crack_wall_in_base_zone", False))
+        in_base_zone = st.checkbox(
+            "Base zone (height equal to wall thickness)",
+            key="crack_wall_base_zone",
+            on_change=sync_callbacks["crack_wall_base_zone"],
+        )
+        spacing = _method_number(
+            "Provided vertical spacing (mm)", "crack_wall_spacing",
+            "crack_wall_vertical_spacing_mm", 150.0, sync_callbacks, min_value=1.0, step=25.0,
+        )
+    result = calculate_as5100_wall_crack_control(
+        AS5100WallCrackControlInput(
+            wall_thickness_mm=thickness,
+            provided_horizontal_area_per_face_mm2_per_m=area,
+            provided_vertical_spacing_mm=spacing,
+            in_base_zone=in_base_zone,
+        )
+    )
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Required per face", f"{result.required_area_per_face_mm2_per_m:,.0f} mm²/m")
+    m2.metric("Maximum spacing", f"{result.maximum_spacing_mm:,.0f} mm")
+    m3.metric("Status", "PASS" if result.passes else "FAIL")
+    st.info(result.warnings[0])
+    update_results(
+        "crack_method",
+        {
+            "method": result.method.value,
+            "reference": f"{result.reference.document} {result.reference.edition}, Clause {result.reference.clause}",
+            "required_area_per_face_mm2_per_m": result.required_area_per_face_mm2_per_m,
+            "maximum_spacing_mm": result.maximum_spacing_mm,
+            "area_utilisation": result.area_utilisation,
+            "passes": result.passes,
+            "warnings": list(result.warnings),
+        },
+    )
+    return result
+
+
+def _render_c766_method(sync_callbacks):
+    st.caption("CIRIA C766 equation path; temperature and restraint are explicit designer inputs.")
+    restraint_options = [
+        RestraintType.CONTINUOUS_EDGE.value,
+        RestraintType.END.value,
+        RestraintType.INTERNAL.value,
+    ]
+    restraint_current = str(get_param("crack_c766_restraint_type", restraint_options[0]))
+    if restraint_current not in restraint_options:
+        restraint_current = restraint_options[0]
+    restraint = st.selectbox(
+        "Restraint type",
+        options=restraint_options,
+        index=restraint_options.index(restraint_current),
+        format_func=lambda value: value.replace("_", " ").title(),
+        key="crack_c766_restraint",
+        on_change=sync_callbacks["crack_c766_restraint"],
+    )
+    if restraint == RestraintType.END.value:
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            alpha_e = _method_number("Effective modular ratio αe", "crack_c766_alpha_e", "crack_c766_modular_ratio", 7.0, sync_callbacks, min_value=0.000001)
+            coefficient_k = _method_number("Non-uniform stress coefficient k", "crack_c766_k", "crack_c766_non_uniform_k", 0.65, sync_callbacks, min_value=0.000001)
+            coefficient_kc = _method_number("Stress-distribution coefficient kc", "crack_c766_kc", "crack_c766_stress_distribution_kc", 1.0, sync_callbacks, min_value=0.000001)
+        with c2:
+            fctk = _method_number("Characteristic tensile strength at cracking (MPa)", "crack_c766_fctk", "crack_c766_characteristic_tensile_mpa", 2.0, sync_callbacks, min_value=0.000001)
+            rho_total = _method_number("Total reinforcement / tension-area ratio", "crack_c766_rho_total", "crack_c766_total_reinforcement_ratio", 0.01, sync_callbacks, min_value=0.000001, format="%.5f")
+            es_mpa = float(get_param("Es", 200_000.0))
+            st.caption(f"Reinforcement modulus Es = {es_mpa:,.0f} MPa (shared material input)")
+        with c3:
+            cover = _method_number("Cover (mm)", "crack_c766_cover", "crack_c766_cover_mm", 45.0, sync_callbacks, min_value=0.0)
+            diameter = _method_number("Bar diameter (mm)", "crack_c766_db", "crack_c766_bar_diameter_mm", 20.0, sync_callbacks, min_value=1.0)
+            rho_eff = _method_number("Effective reinforcement ratio", "crack_c766_rho_eff", "crack_c766_effective_reinforcement_ratio", 0.01, sync_callbacks, min_value=0.000001, format="%.5f")
+        end_result = calculate_c766_end_restraint(
+            C766EndRestraintInput(
+                effective_modular_ratio=alpha_e,
+                non_uniform_stress_coefficient_k=coefficient_k,
+                stress_distribution_coefficient_kc=coefficient_kc,
+                characteristic_tensile_strength_at_cracking_mpa=fctk,
+                reinforcement_modulus_mpa=es_mpa,
+                reinforcement_ratio_total_to_tension_area=rho_total,
+                cover_mm=cover,
+                bar_diameter_mm=diameter,
+                effective_reinforcement_ratio=rho_eff,
+            )
+        )
+        m1, m2 = st.columns(2)
+        m1.metric("Crack-inducing strain", f"{end_result.crack_inducing_strain * 1e6:,.0f} µε")
+        m2.metric("Crack width", f"{(end_result.characteristic_crack_width_mm or 0.0):.3f} mm")
+        st.warning(end_result.warnings[0])
+        update_results(
+            "crack_method",
+            {
+                "method": end_result.method.value,
+                "restraint_type": restraint,
+                "reference": f"{end_result.reference.document}, Equation 3.12 and Equations 3.21-3.23",
+                "crack_inducing_strain": end_result.crack_inducing_strain,
+                "maximum_crack_spacing_mm": end_result.maximum_crack_spacing_mm,
+                "characteristic_crack_width_mm": end_result.characteristic_crack_width_mm,
+                "warnings": list(end_result.warnings),
+            },
+        )
+        return end_result
+    from shrinkage import compute_shrinkage_components_for_crack_control
+
+    shrinkage_components = compute_shrinkage_components_for_crack_control()
+    epsca_early = float(shrinkage_components["autogenous_early"]) * 1e6
+    epsca_long = float(shrinkage_components["autogenous_long_term"]) * 1e6
+    drying = float(shrinkage_components["drying_long_term"])
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        t1 = _method_number("Early temperature drop T1 / ΔT (°C)", "crack_c766_t1", "crack_c766_t1_c", 46.1, sync_callbacks, min_value=0.0)
+        t2 = _method_number("Long-term temperature change T2 (°C)", "crack_c766_t2", "crack_c766_t2_c", 20.0, sync_callbacks, min_value=0.0)
+        alpha_micro = _method_number("Thermal expansion (µε/°C)", "crack_c766_alpha", "crack_c766_alpha_micro_per_c", 12.0, sync_callbacks, min_value=0.0)
+    with c2:
+        r1 = _method_number("Early restraint R1", "crack_c766_r1", "crack_c766_restraint_early", 0.676, sync_callbacks, min_value=0.0, max_value=1.0)
+        r2 = _method_number("Medium-term restraint R2", "crack_c766_r2", "crack_c766_restraint_medium", 0.644, sync_callbacks, min_value=0.0, max_value=1.0)
+        r3 = _method_number("Long-term restraint R3", "crack_c766_r3", "crack_c766_restraint_long", 0.644, sync_callbacks, min_value=0.0, max_value=1.0)
+    with c3:
+        ectu_micro = _method_number("Tensile strain capacity (µε)", "crack_c766_ectu", "crack_c766_tensile_capacity_micro", 70.0, sync_callbacks, min_value=0.0)
+        st.metric(
+            f"Calculated autogenous shrinkage at {shrinkage_components['early_age_days']:.0f} d",
+            f"{epsca_early:.1f} µε",
+        )
+        st.metric(
+            f"Calculated autogenous shrinkage at {shrinkage_components['age_days']:.0f} d",
+            f"{epsca_long:.1f} µε",
+        )
+        st.metric("Calculated drying shrinkage", f"{drying * 1e6:.1f} µε")
+        source_label = "EC2/C766" if shrinkage_components["method"] == "ec2_c766" else "AS 3600"
+        st.caption(f"Calculated automatically from the Shrinkage page ({source_label} method).")
+        st.caption("C766 creep-relaxation factors are applied automatically: K1 = 0.65 and K2 = 0.50.")
+    g1, g2, g3 = st.columns(3)
+    with g1:
+        cover = _method_number("Cover (mm)", "crack_c766_cover", "crack_c766_cover_mm", 45.0, sync_callbacks, min_value=0.0)
+    with g2:
+        diameter = _method_number("Bar diameter (mm)", "crack_c766_db", "crack_c766_bar_diameter_mm", 20.0, sync_callbacks, min_value=1.0)
+    with g3:
+        rho_eff = _method_number("Effective reinforcement ratio", "crack_c766_rho_eff", "crack_c766_effective_reinforcement_ratio", 0.01, sync_callbacks, min_value=0.000001, format="%.5f")
+
+    result = calculate_c766_crack_control(
+        C766CrackControlInput(
+            restraint_type=RestraintType(restraint),
+            temperature_drop_early_c=t1,
+            temperature_change_long_term_c=t2,
+            thermal_expansion_per_c=alpha_micro * 1e-6,
+            autogenous_shrinkage_early=epsca_early * 1e-6,
+            autogenous_shrinkage_long_term=epsca_long * 1e-6,
+            drying_shrinkage=drying,
+            restraint_early=r1,
+            restraint_medium=r2,
+            restraint_long_term=r3,
+            tensile_strain_capacity=ectu_micro * 1e-6,
+            cover_mm=cover,
+            bar_diameter_mm=diameter,
+            effective_reinforcement_ratio=rho_eff,
+        )
+    )
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Restrained strain", f"{result.restrained_strain * 1e6:,.0f} µε")
+    m2.metric("Crack width", f"{(result.characteristic_crack_width_mm or 0.0):.3f} mm")
+    m3.metric("Crack initiation", "YES" if result.crack_initiates else "NO")
+    st.warning(result.warnings[0])
+    update_results(
+        "crack_method",
+        {
+            "method": result.method.value,
+            "reference": f"{result.reference.document}, {result.reference.clause}",
+            "restrained_strain": result.restrained_strain,
+            "crack_initiates": result.crack_initiates,
+            "crack_inducing_strain": result.crack_inducing_strain,
+            "maximum_crack_spacing_mm": result.maximum_crack_spacing_mm,
+            "characteristic_crack_width_mm": result.characteristic_crack_width_mm,
+            "shrinkage_source_method": shrinkage_components["method"],
+            "autogenous_shrinkage_early": epsca_early * 1e-6,
+            "autogenous_shrinkage_long_term": epsca_long * 1e-6,
+            "drying_shrinkage": drying,
+            "c766_relaxation_factor_early": 0.65,
+            "c766_relaxation_factor_long_term": 0.50,
+            "warnings": list(result.warnings),
+        },
+    )
+    return result
+
+
+def _render_retained_crack_diagram(sync_callbacks, crack_metrics) -> None:
+    """Keep the standard crack/moment diagram control for every method."""
+    st.markdown('<div id="crack-diagram-module" style="height:0;width:0;overflow:hidden;"></div>', unsafe_allow_html=True)
+    seed_widget_from_shared("crack_diagram_view", "crack_diagram_panel", "Crack Diagram")
+    st.radio(
+        "Diagram view",
+        options=["Crack Diagram", "Moment Diagram"],
+        horizontal=True,
+        key="crack_diagram_view",
+        on_change=sync_callbacks["crack_diagram_view"],
+        label_visibility="collapsed",
+    )
+    panel = str(st.session_state.get("crack_diagram_view", "Crack Diagram") or "Crack Diagram")
+    if panel == "Moment Diagram":
+        render_crack_moment_tab_plotly()
+    else:
+        render_crack_side_view_diagram(st.session_state, crack_metrics=crack_metrics)
+
+
+def _render_as5100_method_cards(result) -> None:
+    page_divider()
+    render_section_title("Calculation Checks")
+    design_thickness = float(result.calculation_thickness_per_face_mm)
+    ratio = float(result.required_ratio)
+    area_md = rf"""
+**Required horizontal reinforcement per face — AS 5100.5 Clause 11.7.2**
+
+\(t_d = {design_thickness:.0f}\,\text{{mm per face}}\)
+
+\(A_{{s,req}} = {ratio:.3f}\,t_d\,(1000) = {result.required_area_per_face_mm2_per_m:,.0f}\,\text{{mm}}^2/\text{{m per face}}\)
+
+Provided: \({result.provided_area_per_face_mm2_per_m:,.0f}\,\text{{mm}}^2/\text{{m per face}}\)
+"""
+    render_jumpable_step(
+        uid="crk_as5100_area",
+        title="Check 1 — Horizontal reinforcement per face",
+        summary_md=f"Required {result.required_area_per_face_mm2_per_m:,.0f} mm²/m; provided {result.provided_area_per_face_mm2_per_m:,.0f} mm²/m",
+        body_fn=lambda: calcbox(area_md, status="pass" if result.area_passes else "fail"),
+        expanded=bool(st.session_state.get("step_open_crk_as5100_area", False)),
+        status=result.area_passes,
+    )
+    spacing_md = rf"""
+**Spacing check**
+
+Provided vertical spacing: \({float(result.provided_spacing_mm or 0.0):.0f}\,\text{{mm}}\)
+
+Maximum permitted spacing: \({result.maximum_spacing_mm:.0f}\,\text{{mm}}\)
+"""
+    render_jumpable_step(
+        uid="crk_as5100_spacing",
+        title="Check 2 — Reinforcement spacing",
+        summary_md=f"Provided {float(result.provided_spacing_mm or 0.0):.0f} mm; maximum {result.maximum_spacing_mm:.0f} mm",
+        body_fn=lambda: calcbox(spacing_md, status="pass" if result.spacing_passes else "fail"),
+        expanded=bool(st.session_state.get("step_open_crk_as5100_spacing", False)),
+        status=result.spacing_passes,
+    )
+
+
+def _render_c766_method_cards(result, restraint_type: str) -> None:
+    page_divider()
+    render_section_title("Calculation Checks")
+    crack_width = float(result.characteristic_crack_width_mm or 0.0)
+    spacing = float(result.maximum_crack_spacing_mm or 0.0)
+    strain = float(getattr(result, "crack_inducing_strain", 0.0) or 0.0)
+    strain_md = rf"""
+**Restrained-deformation strain — CIRIA C766 ({restraint_type.replace('_', ' ').title()})**
+
+Crack-inducing strain: \(\varepsilon_{{cr}} = {strain * 1e6:,.0f}\,\mu\varepsilon\)
+
+Maximum crack spacing: \(s_{{r,max}} = {spacing:,.0f}\,\text{{mm}}\)
+"""
+    render_jumpable_step(
+        uid="crk_c766_strain",
+        title="Check 1 — Restrained-deformation strain",
+        summary_md=f"Crack-inducing strain {strain * 1e6:,.0f} µε; spacing {spacing:,.0f} mm",
+        body_fn=lambda: calcbox(strain_md, status=None),
+        expanded=bool(st.session_state.get("step_open_crk_c766_strain", False)),
+        status=None,
+    )
+    width_md = rf"""
+**Characteristic crack width — EC2 equation path**
+
+\(w_k = s_{{r,max}}\,\varepsilon_{{cr}} = {crack_width:.3f}\,\text{{mm}}\)
+
+This is an equation-path result; corrected CIRIA spreadsheet parity is not claimed.
+"""
+    render_jumpable_step(
+        uid="crk_c766_width",
+        title="Check 2 — Characteristic crack width",
+        summary_md=f"Calculated crack width {crack_width:.3f} mm",
+        body_fn=lambda: calcbox(width_md, status=None),
+        expanded=bool(st.session_state.get("step_open_crk_c766_width", False)),
+        status=None,
+    )
+
+
+def _render_method_summary(render_explainer, rows, key_prefix: str) -> None:
+    render_page_explainer_expander(render_explainer)
+    clicked_uid = render_clickable_summary_table(rows, key_prefix=key_prefix)
+    if clicked_uid:
+        st.session_state[f"step_open_{clicked_uid}"] = True
+    bind_summary_clicks()
 
 
 
@@ -110,6 +436,30 @@ def render_crack():
     # Page title
     # --------------------------------------------------------
     def _render_crack_explainer() -> None:
+        method_options = list(CRACK_METHOD_LABELS)
+        method_current = str(get_param("crack_control_method", CrackControlMethod.EXISTING_AS3600.value))
+        if method_current not in method_options:
+            method_current = CrackControlMethod.EXISTING_AS3600.value
+        st.selectbox(
+            "Calculation method",
+            options=method_options,
+            index=method_options.index(method_current),
+            format_func=lambda value: CRACK_METHOD_LABELS[value],
+            key="crack_method",
+            on_change=sync_callbacks["crack_method"],
+        )
+        if method_current == CrackControlMethod.AS5100_WALL.value:
+            st.markdown(
+                "AS 5100.5:2017 Clause 11.7.2 restrained-wall horizontal reinforcement check. "
+                "Strength and Clause 11.7.1 remain separate design gates."
+            )
+            return
+        if method_current == CrackControlMethod.CIRIA_C766_EC2.value:
+            st.markdown(
+                "CIRIA C766 / EC2 restrained-deformation equation path. Temperature changes and "
+                "restraint factors are explicit designer inputs; corrected spreadsheet parity is not claimed."
+            )
+            return
         st.markdown(
             """
 This page checks flexural crack control in reinforced concrete beams in accordance with **AS 3600:2018 Clause 8.6.2**, using:
@@ -132,11 +482,66 @@ You can:
 """
         )
 
-    with page_title_placeholder.container():
-        render_result_page_title(
-            "Crack width – AS 3600:2018",
-            top_margin_rem=-0.80,
-        )
+    selected_method = str(get_param("crack_control_method", CrackControlMethod.EXISTING_AS3600.value))
+
+    if selected_method == CrackControlMethod.EXISTING_AS3600.value:
+        with page_title_placeholder.container():
+            render_result_page_title(
+                "Crack width – AS 3600:2018",
+                top_margin_rem=-0.80,
+            )
+    elif selected_method == CrackControlMethod.AS5100_WALL.value:
+        with page_title_placeholder.container():
+            render_result_page_title(
+                "Wall crack control – AS 5100.5:2017",
+                top_margin_rem=-0.80,
+            )
+        summary_placeholder = st.empty()
+        diagram_placeholder = st.empty()
+        page_divider()
+        render_section_title("Wall crack-control inputs")
+        method_result = _render_as5100_wall_method(sync_callbacks)
+        area_status = "PASS" if method_result.area_passes else "FAIL"
+        spacing_status = "PASS" if method_result.spacing_passes else "FAIL"
+        rows = [
+            {"uid": "crk_as5100_area", "title": "Horizontal reinforcement per face", "capacity": f"{method_result.provided_area_per_face_mm2_per_m:,.0f} mm²/m", "action": f"Required ≥ {method_result.required_area_per_face_mm2_per_m:,.0f} mm²/m", "util": f"{(method_result.area_utilisation or 0.0) * 100:.0f}%", "status": area_status, "ok": bool(method_result.area_passes)},
+            {"uid": "crk_as5100_spacing", "title": "Reinforcement spacing", "capacity": f"{float(method_result.provided_spacing_mm or 0.0):.0f} mm", "action": f"Maximum {method_result.maximum_spacing_mm:.0f} mm", "util": "", "status": spacing_status, "ok": bool(method_result.spacing_passes)},
+        ]
+        with summary_placeholder.container():
+            _render_method_summary(_render_crack_explainer, rows, "crack_as5100_summary")
+        with diagram_placeholder.container():
+            _render_retained_crack_diagram(
+                sync_callbacks,
+                {"sr_max_mm": float(method_result.provided_spacing_mm or method_result.maximum_spacing_mm), "w_calc_mm": 0.0, "wmax_mm": 0.3},
+            )
+        _render_as5100_method_cards(method_result)
+        return
+    else:
+        with page_title_placeholder.container():
+            render_result_page_title(
+                "Restrained-deformation crack control – CIRIA C766 / EC2",
+                top_margin_rem=-0.80,
+            )
+        summary_placeholder = st.empty()
+        diagram_placeholder = st.empty()
+        page_divider()
+        render_section_title("Restrained-deformation inputs")
+        method_result = _render_c766_method(sync_callbacks)
+        restraint_type = str(get_param("crack_c766_restraint_type", RestraintType.CONTINUOUS_EDGE.value))
+        crack_width = float(method_result.characteristic_crack_width_mm or 0.0)
+        rows = [
+            {"uid": "crk_c766_strain", "title": "Crack-inducing strain", "capacity": f"{float(method_result.crack_inducing_strain) * 1e6:,.0f} µε", "action": restraint_type.replace("_", " ").title(), "util": "", "status": "INFO", "ok": True, "is_informational": True},
+            {"uid": "crk_c766_width", "title": "Characteristic crack width", "capacity": f"{crack_width:.3f} mm", "action": "EC2 equation path", "util": "", "status": "INFO", "ok": True, "is_informational": True},
+        ]
+        with summary_placeholder.container():
+            _render_method_summary(_render_crack_explainer, rows, "crack_c766_summary")
+        with diagram_placeholder.container():
+            _render_retained_crack_diagram(
+                sync_callbacks,
+                {"sr_max_mm": float(method_result.maximum_crack_spacing_mm or 0.0), "w_calc_mm": crack_width, "wmax_mm": 0.3},
+            )
+        _render_c766_method_cards(method_result, restraint_type)
+        return
 
     # --------------------------------------------------------
     # Reserve space for top summary then diagram (filled after calculations)
@@ -449,11 +854,11 @@ You can:
         st.markdown(
             """
 <style>
-div[data-testid="stVerticalBlock"]:has(#crack-diagram-module) [data-testid="stRadio"] {
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #crack-diagram-module) [data-testid="stRadio"] {
     margin-top: 0.15rem !important;
     margin-bottom: 0.4rem !important;
 }
-div[data-testid="stVerticalBlock"]:has(#crack-diagram-module) [data-testid="stPlotlyChart"] {
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #crack-diagram-module) [data-testid="stPlotlyChart"] {
     margin-bottom: 0.1rem !important;
 }
 </style>

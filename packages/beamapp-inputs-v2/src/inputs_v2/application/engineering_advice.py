@@ -101,6 +101,22 @@ def authoritative_checks(inputs, result, required_groups: tuple[str, ...]) -> tu
             else ("pass" if bool(shear.get("min_shear_ok")) else "fail")
         )
         add("shear", "minimum_shear_reinforcement", "Minimum shear reinforcement", minimum_status, minimum_util)
+        transverse_util = _ratio(
+            shear.get("transverse_max_leg_spacing_mm"),
+            shear.get("transverse_spacing_limit_mm"),
+        )
+        transverse_status: CheckStatus = (
+            "info"
+            if not links_provided
+            else "pass" if bool(shear.get("transverse_spacing_ok")) else "fail"
+        )
+        add(
+            "shear",
+            "transverse_shear_leg_spacing",
+            "Transverse spacing between effective shear-link legs",
+            transverse_status,
+            transverse_util,
+        )
         reinforcement_util = _ratio(demand, shear.get("Vus_kN")) if links_provided else None
         add("shear", "shear_reinforcement_capacity", "Shear reinforcement contribution", "info", reinforcement_util)
     if "serviceability" in requested:
@@ -143,6 +159,7 @@ def authoritative_checks(inputs, result, required_groups: tuple[str, ...]) -> tu
         "shear_strength": "shear", "shear_web_crushing": "shear",
         "concrete_shear_capacity": "shear", "transverse_reinforcement_required": "shear",
         "minimum_shear_reinforcement": "shear", "shear_reinforcement_capacity": "shear",
+        "transverse_shear_leg_spacing": "shear",
         "short_term_deflection": "serviceability", "long_term_deflection": "serviceability",
         "span_depth_check": "serviceability", "general_crack_control": "crack_control",
         "crack_table_method": "crack_control", "direct_crack_width": "crack_control",
