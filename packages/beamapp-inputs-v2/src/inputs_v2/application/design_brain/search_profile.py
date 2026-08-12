@@ -22,10 +22,7 @@ class SearchKind(StrEnum):
 @dataclass(frozen=True, slots=True)
 class SearchProfile:
     mode: SearchMode = SearchMode.FAST
-    # Fast mode deliberately keeps the candidate budget below the CI/runtime
-    # latency gate; the family ladder remains ordered and Detailed mode keeps
-    # the broader search budget.
-    max_full_evaluations: int = 1000
+    max_full_evaluations: int = 2500
     max_failure_evaluations: int = 12000
     nearby_dimension_steps: int = 4
     max_consecutive_infeasible: int = 80
