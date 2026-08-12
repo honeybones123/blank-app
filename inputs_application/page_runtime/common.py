@@ -552,6 +552,17 @@ def _execute_authoritative_apply_current_coordinator(recommendation: dict[str, A
     }
     if command.status in {"dispatch_ok", "rerun_required"}:
         result_store.clear()
+        # The committed Apply snapshot is a new engineering transaction.  Do
+        # not let the previous workspace readiness markers short-circuit the
+        # next render and project the pre-Apply publication back onto the
+        # page.  The following single rerun must execute the calculation and
+        # Design Brain against the committed snapshot.
+        st.session_state["_inputs_workspace_authoritative_result_present"] = False
+        st.session_state["_inputs_workspace_authoritative_result_hash"] = None
+        st.session_state["_inputs_workspace_authoritative_revision"] = 0
+        st.session_state["_inputs_workspace_calculation_status"] = "pending"
+        st.session_state["_inputs_workspace_calculation_revision"] = 0
+        st.session_state["_inputs_workspace_calculation_hash"] = None
         st.session_state[
             "_inputs_authoritative_result_snapshot_update_pending"
         ] = True
