@@ -699,7 +699,10 @@ def render_inputs_design_guide_fragment_section(
             "dispatch_ok",
             "rerun_required",
         }:
-            st_module.rerun()
+            try:
+                st_module.rerun(scope="fragment")
+            except TypeError:
+                st_module.rerun()
             return
 
     fragment_store = services.publications
