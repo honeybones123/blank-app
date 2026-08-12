@@ -634,29 +634,29 @@ def _render_shear_visualisation_block(theta_v_deg: float | None = None):
             """
 <style>
 /* Shear page only: anchor is inside this container vertical block */
-div[data-testid="stVerticalBlock"]:has(#shear-visuals-block) {
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) {
     margin-top: 0.25rem !important;
     padding-top: 0 !important;
 }
-div[data-testid="stVerticalBlock"]:has(#shear-visuals-block) .section-title {
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) .section-title {
     margin-bottom: 0.35rem !important;
 }
-div[data-testid="stVerticalBlock"]:has(#shear-visuals-block) h3,
-div[data-testid="stVerticalBlock"]:has(#shear-visuals-block) h4 {
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) h3,
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) h4 {
     margin-bottom: 0.35rem !important;
 }
-div[data-testid="stVerticalBlock"]:has(#shear-visuals-block) [data-testid="stPlotlyChart"] {
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) [data-testid="stPlotlyChart"] {
     margin-bottom: 0.2rem !important;
 }
-div[data-testid="stVerticalBlock"]:has(#shear-visuals-block) [data-testid="stTabs"] {
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) [data-testid="stTabs"] {
     margin-top: 0.35rem !important;
     padding-top: 0 !important;
 }
-div[data-testid="stVerticalBlock"]:has(#shear-visuals-block) div[data-testid="stRadio"] {
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) div[data-testid="stRadio"] {
     margin-top: 0.25rem !important;
     padding-top: 0 !important;
 }
-div[data-testid="stVerticalBlock"]:has(#shear-visuals-block) label[data-testid="stWidgetLabel"] {
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-visuals-block) label[data-testid="stWidgetLabel"] {
     margin-bottom: 0.2rem !important;
 }
 </style>
@@ -2768,7 +2768,7 @@ In short:
     st.markdown(
         """
 <style>
-div[data-testid="stVerticalBlock"]:has(#shear-check-tabs-anchor) div[role="radiogroup"] {
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-check-tabs-anchor) div[role="radiogroup"] {
     display: flex !important;
     align-items: center !important;
     gap: 18px !important;
@@ -2776,7 +2776,7 @@ div[data-testid="stVerticalBlock"]:has(#shear-check-tabs-anchor) div[role="radio
     padding-bottom: 4px !important;
     margin-bottom: 0.35rem !important;
 }
-div[data-testid="stVerticalBlock"]:has(#shear-check-tabs-anchor) div[role="radiogroup"] > label {
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-check-tabs-anchor) div[role="radiogroup"] > label {
     margin: 0 !important;
     padding: 6px 2px !important;
     background: transparent !important;
@@ -2787,20 +2787,20 @@ div[data-testid="stVerticalBlock"]:has(#shear-check-tabs-anchor) div[role="radio
     cursor: pointer !important;
     font-weight: 500 !important;
 }
-div[data-testid="stVerticalBlock"]:has(#shear-check-tabs-anchor) div[role="radiogroup"] > label input[type="radio"],
-div[data-testid="stVerticalBlock"]:has(#shear-check-tabs-anchor) div[role="radiogroup"] > label > div:first-child,
-div[data-testid="stVerticalBlock"]:has(#shear-check-tabs-anchor) div[role="radiogroup"] > label > span:first-child {
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-check-tabs-anchor) div[role="radiogroup"] > label input[type="radio"],
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-check-tabs-anchor) div[role="radiogroup"] > label > div:first-child,
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-check-tabs-anchor) div[role="radiogroup"] > label > span:first-child {
     display: none !important;
 }
-div[data-testid="stVerticalBlock"]:has(#shear-check-tabs-anchor) div[role="radiogroup"] > label:has(input:checked),
-div[data-testid="stVerticalBlock"]:has(#shear-check-tabs-anchor) div[role="radiogroup"] > label[aria-checked="true"] {
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-check-tabs-anchor) div[role="radiogroup"] > label:has(input:checked),
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-check-tabs-anchor) div[role="radiogroup"] > label[aria-checked="true"] {
     border-bottom: 2px solid #ff4b4b !important;
     font-weight: 600 !important;
 }
-div[data-testid="stVerticalBlock"]:has(#shear-check-tabs-anchor) div[role="radiogroup"] > label:hover {
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-check-tabs-anchor) div[role="radiogroup"] > label:hover {
     background: transparent !important;
 }
-div[data-testid="stVerticalBlock"]:has(#shear-check-tabs-anchor) div[role="radiogroup"] > label * {
+div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] #shear-check-tabs-anchor) div[role="radiogroup"] > label * {
     margin: 0 !important;
     padding: 0 !important;
 }
@@ -4898,17 +4898,18 @@ Spacing is varied along the span based on shear demand and checked against minim
         render_page_explainer_expander(_render_shear_explainer)
         if "show_mcft_breakdown" not in st.session_state:
             st.session_state["show_mcft_breakdown"] = False
-        show_mcft_breakdown = st.toggle(
-            "Show detailed MCFT breakdown",
-            key="show_mcft_breakdown",
-            help="Show intermediate MCFT shear calculation rows such as strain, θ_v, k_v, Vuc and Vus.",
-        )
+        show_mcft_breakdown = bool(st.session_state.get("show_mcft_breakdown", False))
         display_rows = filter_shear_summary_rows(
             rows_summary_full,
             show_mcft_breakdown=show_mcft_breakdown,
         )
         ROWS_DISPLAY = build_shear_clickable_summary_rows(display_rows)
         render_clickable_summary_table(ROWS_DISPLAY, key_prefix="shear_summary")
+        st.toggle(
+            "Show detailed MCFT breakdown",
+            key="show_mcft_breakdown",
+            help="Show intermediate MCFT shear calculation rows such as strain, θ_v, k_v, Vuc and Vus.",
+        )
         if not show_mcft_breakdown:
             st.caption(
                 'Intermediate MCFT calculation rows hidden. Enable "Show detailed MCFT breakdown" to view.'

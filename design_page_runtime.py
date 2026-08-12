@@ -1466,6 +1466,10 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
 
     with page_title_placeholder.container():
         render_result_page_title("Load Analysis")
+    # Reserve the summary immediately below the shared page heading. The
+    # calculated projection fills this slot later without moving page-specific
+    # action-source controls above the summary cards.
+    summary_placeholder = st.empty()
     render_action_source_toggle(
         st,
         widget_key=LOAD_ANALYSIS_ACTION_SOURCE_TOGGLE_KEY,
@@ -1475,7 +1479,6 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
         before_commit=load_analysis_store.capture_widgets,
         after_commit=_commit_inputs_action_source,
     )
-    summary_placeholder = st.empty()
     st.divider()
     # =========================================================
     render_timing_mark("design_page.runtime.loading_inputs.start")

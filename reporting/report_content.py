@@ -640,11 +640,38 @@ def extract_summary_rows():
         })
     
     # --- Crack Control ---
+    crack_method_result = _r(results, "crack_method", {})
+    if isinstance(crack_method_result, dict) and crack_method_result.get("method") not in (None, "existing_as3600"):
+        method_name = str(crack_method_result.get("method"))
+        if method_name == "as5100_wall":
+            required = crack_method_result.get("required_area_per_face_mm2_per_m")
+            passes = crack_method_result.get("passes")
+            rows.append({
+                "Check": "Wall Crack Control (AS 5100.5)",
+                "Demand": "Provided reinforcement",
+                "Capacity": f"≥ {required:,.0f} mm²/m per face" if required is not None else "—",
+                "Utilisation": _safe_value(crack_method_result.get("area_utilisation"), "{:.2f}", "—"),
+                "Status": "PASS" if passes is True else "FAIL" if passes is False else "—",
+            })
+        else:
+            width = crack_method_result.get("characteristic_crack_width_mm")
+            initiates = crack_method_result.get("crack_initiates")
+            rows.append({
+                "Check": "Restrained Cracking (C766 / EC2)",
+                "Demand": f"{float(width):.3f} mm" if width is not None else "—",
+                "Capacity": "Designer limit",
+                "Utilisation": "—",
+                "Status": "CRACKS" if initiates is True else "NO CRACK" if initiates is False else "N/A",
+            })
+
     w_calc = get_param("w_calc", 0.0)
     wmax_char = get_param("wmax_char", 0.3)
     crack_util = _safe_ratio(w_calc, wmax_char)
     
-    if w_calc > 0 or wmax_char > 0:
+    if (
+        not isinstance(crack_method_result, dict)
+        or crack_method_result.get("method") in (None, "existing_as3600")
+    ) and (w_calc > 0 or wmax_char > 0):
         status = "PASS" if (crack_util is not None and crack_util <= 1.0) else "FAIL" if crack_util is not None else "—"
         rows.append({
             "Check": "Crack Control",
@@ -799,6 +826,23 @@ def extract_check_sections(fig_paths=None):
                 "steps": steps,
                 "figures": figs,
             })
+
+    shrinkage_method_result = _r(results, "shrinkage_method", {})
+    if isinstance(shrinkage_method_result, dict) and shrinkage_method_result.get("method") == "ec2_c766":
+        eps_total = get_param("eps_cs_total", 0.0)
+        eps_auto = get_param("eps_cse", 0.0)
+        eps_drying = get_param("eps_csd_t", 0.0)
+        sections.append({
+            "title": "Shrinkage - EC2 / CIRIA C766",
+            "summary": [
+                ("Autogenous shrinkage", f"{float(eps_auto) * 1e6:,.0f} µε"),
+                ("Drying shrinkage", f"{float(eps_drying) * 1e6:,.0f} µε"),
+                ("Total shrinkage", f"{float(eps_total) * 1e6:,.0f} µε"),
+                ("Reference", str(shrinkage_method_result.get("reference", ""))),
+            ],
+            "steps": list(shrinkage_method_result.get("warnings") or []),
+            "figures": [],
+        })
     
     # --- Shear ---
     Vu_star = actions.get("Vu", 0.0)
@@ -838,11 +882,52 @@ def extract_check_sections(fig_paths=None):
             sections.append(shear_report)
     
     # --- Crack Control ---
+    crack_method_result = _r(results, "crack_method", {})
+    if isinstance(crack_method_result, dict) and crack_method_result.get("method") not in (None, "existing_as3600"):
+        method_name = str(crack_method_result.get("method"))
+        reference = str(crack_method_result.get("reference", ""))
+        if method_name == "as5100_wall":
+            required = crack_method_result.get("required_area_per_face_mm2_per_m")
+            maximum_spacing = crack_method_result.get("maximum_spacing_mm")
+            passes = crack_method_result.get("passes")
+            sections.append({
+                "title": "Wall Crack Control - AS 5100.5",
+                "summary": [
+                    ("Required reinforcement", f"{required:,.0f} mm²/m per face" if required is not None else "N/A"),
+                    ("Maximum spacing", f"{maximum_spacing:,.0f} mm" if maximum_spacing is not None else "N/A"),
+                    ("Outcome", "PASS" if passes is True else "FAIL" if passes is False else "N/A"),
+                    ("Reference", reference),
+                ],
+                "steps": [
+                    "The result applies AS 5100.5:2017 Clause 11.7.2 restrained-wall horizontal reinforcement requirements.",
+                    *list(crack_method_result.get("warnings") or []),
+                ],
+                "figures": [],
+            })
+        else:
+            width = crack_method_result.get("characteristic_crack_width_mm")
+            initiates = crack_method_result.get("crack_initiates")
+            restrained = crack_method_result.get("restrained_strain")
+            sections.append({
+                "title": "Restrained-Deformation Crack Control - CIRIA C766 / EC2",
+                "summary": [
+                    ("Restrained strain", f"{float(restrained) * 1e6:,.0f} µε" if restrained is not None else "N/A"),
+                    ("Characteristic crack width", f"{float(width):.3f} mm" if width is not None else "N/A"),
+                    ("Crack initiation", "YES" if initiates is True else "NO" if initiates is False else "N/A (end-restraint width check)"),
+                    ("Reference", reference),
+                ],
+                "steps": list(crack_method_result.get("warnings") or []),
+                "figures": [],
+            })
+
     w_calc = get_param("w_calc", 0.0)
     wmax_char = get_param("wmax_char", 0.3)
     crack_util = _safe_ratio(w_calc, wmax_char)
     
-    if w_calc > 0 or wmax_char > 0:
+    if (
+        not isinstance(crack_method_result, dict)
+        or crack_method_result.get("method") in (None, "existing_as3600")
+    ) and (w_calc > 0 or wmax_char > 0):
         outcome = "PASS" if (crack_util is not None and crack_util <= 1.0) else "FAIL" if crack_util is not None else "N/A"
 
         figs = fig_paths.get("crack", [])

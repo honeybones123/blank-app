@@ -130,6 +130,19 @@ def exposed_perimeter_geometry_values(
     D = float(D_mm or 0.0)
     faces = str(faces_option or "").replace("-", "â€“")
     Ag = b * D
+    # Canonical UI values use an en dash. Handle those values before the
+    # legacy comparison literals below so a valid three-face beam is not
+    # accidentally treated as exposed on all four faces.
+    faces_key = str(faces_option or "").replace("\u2013", "-").casefold()
+    canonical_perimeters = {
+        "slab - one face exposed": b,
+        "slab - two faces exposed": 2.0 * b,
+        "beam - three faces exposed": b + 2.0 * D,
+    }
+    if faces_key in canonical_perimeters:
+        ue = canonical_perimeters[faces_key]
+        th_raw = 2.0 * Ag / ue if ue > 0 else 0.0
+        return {"Ag": Ag, "ue": ue, "th_raw": th_raw}
     if faces == "Slab â€“ one face exposed":
         ue = b
     elif faces == "Slab â€“ two faces exposed":

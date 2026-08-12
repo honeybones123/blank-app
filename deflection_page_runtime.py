@@ -192,7 +192,6 @@ get_deflection_diagram_support_condition = _deflection_support_section.get_defle
 get_resolved_deflection_support_type = _deflection_support_section.get_resolved_deflection_support_type
 _seed_from_param = _deflection_inputs_section._seed_from_param
 _render_readonly_value = _deflection_inputs_section._render_readonly_value
-deflection_has_service_load_for_calc = _deflection_inputs_section.deflection_has_service_load_for_calc
 
 _PAGE_SECTION_MODULES = (
     _deflection_diagrams_section,
@@ -262,9 +261,6 @@ This page checks **reinforced concrete beam deflections** to AS 3600:2018:
 
     with page_title_placeholder.container():
         render_result_page_title("Beam Deflection")
-
-    if not deflection_has_service_load_for_calc():
-        st.info("No loads applied — deflection not calculated")
 
     # Reserve space for the top summary table
     summary_placeholder = st.empty()

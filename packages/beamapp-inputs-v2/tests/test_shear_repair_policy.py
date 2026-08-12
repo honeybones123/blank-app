@@ -7,18 +7,18 @@ from inputs_v2.domain.beam_inputs import BeamInputs
 def test_shear_repair_policy_preserves_declared_lane_order() -> None:
     specs = generate_shear_repair_specs(BeamInputs().validated(), 1.5)
     lanes = [spec.lane for spec in specs]
-    assert len(specs) == 763
+    assert len(specs) == 1001
     assert lanes[:7] == ["spacing"] * 7
-    assert lanes[7:28] == ["legs"] * 21
-    assert lanes[28:91] == ["diameter"] * 63
-    assert lanes[91:133] == ["depth"] * 42
-    assert lanes[133:] == ["width"] * 630
+    assert lanes[7:35] == ["legs"] * 28
+    assert lanes[35:119] == ["diameter"] * 84
+    assert lanes[119:161] == ["depth"] * 42
+    assert lanes[161:] == ["width"] * 840
 
 
 def test_locked_geometry_removes_depth_and_width_lanes() -> None:
     current = BeamInputs(width_locked=True, depth_locked=True).validated()
     specs = generate_shear_repair_specs(current, 3.0)
-    assert len(specs) == 91
+    assert len(specs) == 119
     assert {spec.lane for spec in specs} == {"spacing", "legs", "diameter"}
 
 

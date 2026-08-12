@@ -462,6 +462,12 @@ class EngineeringCalculator:
             web_width_mm=float(shear.get("b_v", inputs.width_mm) or inputs.width_mm),
             reinforcement_strength_mpa=float(inputs.materials.reinforcement_strength_mpa),
             section_depth_mm=float(inputs.depth_mm),
+            effective_legs=int(inputs.shear.legs),
+            link_diameter_mm=float(inputs.shear.diameter_mm),
+            # BeamInputs currently carries one cover per longitudinal face;
+            # the bottom cover is the canonical side-cover proxy used by the
+            # fitted section layout and reproduces cover + link radius.
+            side_cover_mm=float(inputs.side_cover_mm),
         ))
         shear.update(shear_detailing.as_family_values())
         shear["transverse_reinforcement_required"] = bool(

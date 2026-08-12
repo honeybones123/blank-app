@@ -18,7 +18,7 @@ def generate_shear_repair_specs(
 ) -> tuple[ShearRepairSpec, ...]:
     """Generate the V1-ordered spacing-to-geometry shear repair ladder."""
     spacings = (300.0, 250.0, 200.0, 175.0, 150.0, 125.0, 100.0)
-    legs_values = (2, 4, 6)
+    legs_values = (2, 4, 6, 8)
     diameters = (10, 12, 16)
     depths = (
         ()
@@ -108,10 +108,11 @@ def _append_coordinated_geometry(
     widths: tuple[float, ...],
 ) -> None:
     coordinated_links = (
-        (10, 2, 100.0), (10, 4, 100.0), (10, 6, 100.0),
-        (12, 2, 100.0), (12, 4, 100.0), (12, 6, 100.0),
-        (16, 2, 100.0), (16, 4, 100.0), (16, 6, 100.0),
+        (10, 2, 100.0), (10, 4, 100.0), (10, 6, 100.0), (10, 8, 100.0),
+        (12, 2, 100.0), (12, 4, 100.0), (12, 6, 100.0), (12, 8, 100.0),
+        (16, 2, 100.0), (16, 4, 100.0), (16, 6, 100.0), (16, 8, 100.0),
         (16, 6, 125.0), (16, 6, 150.0), (16, 6, 175.0), (16, 6, 200.0),
+        (16, 8, 125.0), (16, 8, 150.0), (16, 8, 175.0), (16, 8, 200.0),
     )
     for width in (float(current.width_mm), *widths):
         maximum_depth = min(5000.0, 2.0 * width, current.depth_mm + 700.0)

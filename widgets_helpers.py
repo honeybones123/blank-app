@@ -1026,7 +1026,9 @@ def render_section_title(title: str) -> None:
 
 
 def render_result_page_title(title: str, *, top_margin_rem: float = -0.2) -> None:
-    """Render a tightly spaced main title for result/check pages."""
+    """Render a tightly spaced title when used outside the shared app shell."""
+    if st.session_state.get("_shared_page_title_owned_by_shell", False):
+        return
     st.markdown(
         (
             "<div class='result-page-title' "
@@ -1222,11 +1224,12 @@ div[data-testid="stExpander"] details:has(span.step-fail) > summary {
 
 
 def render_page_explainer_expander(render_fn, label: str = "ℹ️ INFO") -> None:
-    """Render a right-aligned page explainer popover."""
-    _, info_col = st.columns([8, 1], vertical_alignment="center")
-    with info_col:
-        with st.popover(label):
-            render_fn()
+    """Render a right-aligned page explainer without displacing the summary."""
+    with st.container(key="page_explainer_float"):
+        _, info_col = st.columns([8, 1], vertical_alignment="center")
+        with info_col:
+            with st.popover(label):
+                render_fn()
 
 
 # Optional left-border / background accents for calc steps (Design / SFD page, etc.)

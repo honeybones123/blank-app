@@ -21,6 +21,7 @@ def test_candidate_rejection_evidence_names_every_failed_mandatory_check() -> No
                 "transverse_reinforcement_required": True,
                 "min_shear_ok": False,
                 "spacing_ok": False,
+                "transverse_spacing_ok": False,
             },
             "reinforcement_fit": {"accepted": False},
         },
@@ -37,5 +38,6 @@ def test_candidate_rejection_evidence_names_every_failed_mandatory_check() -> No
         "shear_web_crushing_failed",
         "minimum_shear_reinforcement_failed",
         "shear_spacing_failed",
+        "transverse_shear_leg_spacing_failed",
         "reinforcement_fit_failed",
     )

@@ -5189,6 +5189,41 @@ PAGES = {
     "deflection": ("Deflection", _render_deflection_page),
 }
 
+# Page-level headings belong to the shared application shell so every route
+# starts at the same position and uses the same semantic/visual H1.  Navigation
+# labels stay deliberately shorter where that reads better in the tab row.
+PAGE_TITLES = {
+    "start": "Start your beam design",
+    "inputs": "Beam Inputs",
+    "design": "Load Analysis",
+    "bending": "Bending capacity",
+    "shear": "Shear & Torsion",
+    "creep": "Creep",
+    "shrinkage": "Shrinkage",
+    "crack": "Crack width – AS 3600:2018",
+    "deflection": "Beam Deflection",
+}
+
+
+def _active_page_title(slug: str) -> str:
+    """Return the shell H1, including the selected concrete design method."""
+    if slug == "crack":
+        method = str(st.session_state.get("crack_control_method", "existing_as3600") or "existing_as3600")
+        return {
+            "existing_as3600": "Crack width – AS 3600:2018",
+            "as5100_wall": "Wall crack control – AS 5100.5:2017 Clause 11.7.2",
+            "ciria_c766_ec2": "Restrained-deformation crack control – CIRIA C766 / EC2",
+        }.get(method, PAGE_TITLES[slug])
+    if slug == "shrinkage":
+        method = str(st.session_state.get("shrinkage_method", "existing_as3600") or "existing_as3600")
+        return {
+            "existing_as3600": "Shrinkage – AS 3600:2018",
+            "ec2_c766": "Shrinkage – EC2 equation method / CIRIA C766",
+        }.get(method, PAGE_TITLES[slug])
+    return PAGE_TITLES[slug]
+
+SHARED_PAGE_TITLE_ACTIVE_KEY = "_shared_page_title_owned_by_shell"
+
 SLUGS = list(PAGES.keys())
 LABELS = [PAGES[s][0] for s in SLUGS]
 
@@ -5412,6 +5447,82 @@ def main():
    Scoped to the Navigation radio widget key so page-local radios
    such as "Design mode" cannot inherit the tab treatment.
    ========================================================== */
+
+/* Page modules inject code-only style blocks before their visible summary.
+   Streamlit gives each zero-height block a layout slot, which otherwise
+   creates a large false gap below the shared page heading. */
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"]:first-child h1
+) > div[data-testid="stElementContainer"]:has(style) {
+  display: none !important;
+}
+
+/* Every route is rendered beneath this shell-owned marker.  Use it to give
+   page headings one shared, slightly lower start position and to remove
+   zero-height placeholders that would otherwise add flex-gap space on only
+   some pages (notably Beam Inputs). */
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] #shared-page-content-anchor
+) > div[data-testid="stElementContainer"]:has(h1) {
+  margin-top: 0.5rem !important;
+}
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] #shared-page-content-anchor
+) > div[data-testid="stElementContainer"]:has(#shared-page-content-anchor),
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] #shared-page-content-anchor
+) > div[data-testid="stElementContainer"]:empty {
+  display: none !important;
+}
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] #shared-page-content-anchor
+) > div[data-testid="stElementContainer"]:has(> [data-testid="stEmpty"]:only-child) {
+  display: none !important;
+}
+
+/* CSS-only page setup blocks can sit inside a page fragment rather than
+   beside the H1.  Hide only those style slots that occur before the summary
+   stack; this removes their flex gaps without affecting diagram/content
+   elements later in the page. */
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] #shared-page-content-anchor
+) > div[data-testid="stElementContainer"]:has(style):has(~ div .summary-card-stack),
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stElementContainer"] #shared-page-content-anchor
+) div[data-testid="stVerticalBlock"]
+  > div[data-testid="stElementContainer"]:has(style):has(~ div .summary-card-stack) {
+  display: none !important;
+}
+
+/* Keep page help beside the heading without letting its dedicated row push
+   result summary cards below the true Beam Inputs summary-card position. */
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stLayoutWrapper"] > div.st-key-page_explainer_float
+) {
+  position: relative !important;
+}
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stLayoutWrapper"] > div.st-key-page_explainer_float
+) > div[data-testid="stLayoutWrapper"]:has(
+  > div.st-key-page_explainer_float
+) {
+  position: absolute !important;
+  top: -60px !important;
+  right: 0 !important;
+  width: 100% !important;
+  z-index: 20 !important;
+  pointer-events: none !important;
+}
+div[data-testid="stLayoutWrapper"]:has(
+  > div.st-key-page_explainer_float
+) * {
+  pointer-events: auto !important;
+}
+div[data-testid="stVerticalBlock"]:has(
+  > div[data-testid="stLayoutWrapper"] > div.st-key-page_explainer_float
+) > div[data-testid="stElementContainer"]:has(style):not(:has(.summary-card-stack)) {
+  display: none !important;
+}
 
 div[data-testid="stVerticalBlock"]:has(#page-nav-anchor) div[role="radiogroup"]{
   display:flex !important;
@@ -6264,6 +6375,18 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
         )
 
     def _render_selected_page_in_content_slot() -> None:
+        def _render_page_beneath_shared_title() -> None:
+            st.title(_active_page_title(selected_slug))
+            st.markdown(
+                '<span id="shared-page-content-anchor" aria-hidden="true"></span>',
+                unsafe_allow_html=True,
+            )
+            st.session_state[SHARED_PAGE_TITLE_ACTIVE_KEY] = True
+            try:
+                PAGES[selected_slug][1]()
+            finally:
+                st.session_state.pop(SHARED_PAGE_TITLE_ACTIVE_KEY, None)
+
         if same_page_inputs_root_shell:
             render_timing_mark(
                 "app.page_dispatch.inputs_root_stable_shell.start",
@@ -6278,7 +6401,7 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
                     "source": "app.same_page_inputs_root_shell",
                 }
                 try:
-                    PAGES[selected_slug][1]()
+                    _render_page_beneath_shared_title()
                 finally:
                     st.session_state.pop("_inputs_same_page_root_dispatch_active", None)
                     root_shell_slot.empty()
@@ -6291,7 +6414,7 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
         page_content_slot.empty()
         render_timing_mark("app.page_dispatch.page_content_slot.clear.end", selected_slug=selected_slug)
         with page_content_slot.container():
-            PAGES[selected_slug][1]()
+            _render_page_beneath_shared_title()
 
     if _browser_test_mode_for_run:
         _browser_probe_slot = st.empty()
