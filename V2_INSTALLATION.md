@@ -17,7 +17,7 @@ For editable development, use:
 python -m pip install -e C:\path\to\inputs-v2-lab
 ```
 
-The installed distribution must report version `0.1.0`. Verify a completely
+The installed distribution must report version `0.1.1`. Verify a completely
 fresh installation and the Runtime adapter boundary with:
 
 ```powershell
@@ -26,10 +26,10 @@ python -m tools.verification.run_inputs_v2_clean_install_contract `
 ```
 
 Hosted Runtime deployments install the tested V2 wheel vendored at
-`vendor/beamapp_inputs_v2-0.1.0-py3-none-any.whl` through `requirements.txt`.
+`vendor/beamapp_inputs_v2-0.1.1-py3-none-any.whl` through `requirements.txt`.
 Its SHA-256 digest is
 `244fe5c87f12c7db00a4ed50e3ad9a9065c9decd85d18fd9bdb011ba7e9bf13e`.
 
-Publishing `beamapp-inputs-v2==0.1.0` to the deployment package feed is the
+Publishing `beamapp-inputs-v2==0.1.1` to the deployment package feed is the
 remaining distribution step. Once published, add the pinned dependency to the
 deployment requirements without restoring any checkout-path discovery.

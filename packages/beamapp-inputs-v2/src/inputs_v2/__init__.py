@@ -13,9 +13,8 @@ from .domain.beam_inputs import (
 )
 
 # Runtime checks this explicit shape version before loading the concrete
-# Design Brain.  Distribution version 0.1.0 has intentionally remained stable
-# during the migration, so package metadata alone cannot detect an older wheel
-# with an incompatible FamilyDecision contract.
+# Design Brain. Package metadata alone cannot prove that a wheel contains the
+# current contract, so deployment also verifies the wheel's source manifest.
 RUNTIME_DESIGN_BRAIN_CONTRACT_VERSION = 2
 
 __all__ = [

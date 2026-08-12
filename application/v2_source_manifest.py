@@ -8,7 +8,7 @@ from importlib import metadata, util
 from pathlib import Path
 
 
-EXPECTED_INPUTS_V2_VERSION = "0.1.0"
+EXPECTED_INPUTS_V2_VERSION = "0.1.1"
 
 
 def installed_inputs_v2_root() -> Path:

@@ -34,6 +34,9 @@ jobs:
             packages/beamapp-inputs-v2/pyproject.toml
             packages/beamapp-inputs-v2/requirements.txt
 
+      - name: Verify Render vendored V2 artifact matches source
+        run: python tools/verification/verify_vendored_inputs_v2.py
+
       - name: Install Runtime-owned V2 and test dependencies
         run: |
           python -m pip install --upgrade pip
@@ -61,4 +64,4 @@ jobs:
       - name: Verify clean installed-package boundary
         run: >-
           python tools/verification/run_inputs_v2_clean_install_contract.py
-          --v2-checkout packages/beamapp-inputs-v2
+          --runtime-vendored
