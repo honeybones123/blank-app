@@ -689,34 +689,6 @@ def render_inputs_design_guide_fragment_section(
     )
     if apply_requested:
         runtime.handle_pending_apply()
-        # Apply is a transaction boundary.  The typed command commits the
-        # candidate and invalidates the current result before the replacement
-        # calculation is available.  Do not continue rendering this same
-        # fragment from the pre-Apply workspace: doing so briefly exposes the
-        # old publication, then an empty result, then the replacement result
-        # (the flicker seen in Runtime but not in standalone V2).  The Apply
-        # dispatcher schedules the owning fragment rerun; this pass must stop
-        # at the boundary and let that rerun publish one coherent result.
-        apply_probe = dict(
-            st_module.session_state.get("_typed_inputs_apply_probe") or {}
-        )
-        if str(apply_probe.get("status") or "") in {
-            "dispatch_ok",
-            "rerun_required",
-        }:
-            # Use the original single-transaction behavior: the Apply command
-            # has already updated the canonical shared model and reset widget
-            # mirrors. Abort this render completely and perform one rerun so
-            # the replacement calculation and Design Brain publication appear
-            # together. Rendering an interim fragment is what caused the
-            # current card to flicker through stale/empty candidates.
-            # Keep rerun authority in the shared fragment boundary so the
-            # transaction has one consistent wake-up path across local and
-            # deployed Streamlit versions.
-            from inputs_page_modules.fragments import rerun_inputs_current_scope
-
-            rerun_inputs_current_scope(st_module)
-            return
 
     fragment_store = services.publications
     fragment_state = fragment_store.current()

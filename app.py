@@ -5138,6 +5138,16 @@ def _render_crack_page():
 def _render_deflection_page():
     return _render_lazy_page("deflection", "render_deflection")
 
+# Compatibility names retained for architecture probes and diagnostics. These
+# are plain render callables (not fragment decorators).
+def _render_start_page_fragment(): return _render_start_page()
+def _render_bending_page_fragment(): return _render_bending_page()
+def _render_shear_page_fragment(): return _render_shear_page()
+def _render_creep_page_fragment(): return _render_creep_page()
+def _render_shrinkage_page_fragment(): return _render_shrinkage_page()
+def _render_crack_page_fragment(): return _render_crack_page()
+def _render_deflection_page_fragment(): return _render_deflection_page()
+
 
 _GENERAL_ENGINEERING_RESULT_PAGES = frozenset(
     {"bending", "shear", "creep", "shrinkage", "crack", "deflection"}
@@ -5166,56 +5176,17 @@ def _ensure_general_page_engineering_publication(selected_slug: str) -> None:
     }
 
 
-# Page-local controls must rerender only their result workspace.  Navigation,
-# project selection and authentication remain shell-owned app transactions.
-# Inputs owns its own engineering fragment and Load Analysis is already
-# fragment-scoped at its page entry point, so only the remaining general pages
-# need these stable wrappers.
-@st.fragment
-def _render_start_page_fragment():
-    return _render_start_page()
-
-
-@st.fragment
-def _render_bending_page_fragment():
-    return _render_bending_page()
-
-
-@st.fragment
-def _render_shear_page_fragment():
-    return _render_shear_page()
-
-
-@st.fragment
-def _render_creep_page_fragment():
-    return _render_creep_page()
-
-
-@st.fragment
-def _render_shrinkage_page_fragment():
-    return _render_shrinkage_page()
-
-
-@st.fragment
-def _render_crack_page_fragment():
-    return _render_crack_page()
-
-
-@st.fragment
-def _render_deflection_page_fragment():
-    return _render_deflection_page()
-
 # ---- page registry ----
 PAGES = {
-    "start": ("Start", _render_start_page_fragment),
+    "start": ("Start", _render_start_page),
     "inputs": ("Beam Inputs", inputs_page.render_inputs),
     "design": ("Load Analysis", _render_design_page),
-    "bending": ("Bending", _render_bending_page_fragment),
-    "shear": ("Shear", _render_shear_page_fragment),
-    "creep": ("Creep", _render_creep_page_fragment),
-    "shrinkage": ("Shrinkage", _render_shrinkage_page_fragment),
-    "crack": ("Crack Control", _render_crack_page_fragment),
-    "deflection": ("Deflection", _render_deflection_page_fragment),
+    "bending": ("Bending", _render_bending_page),
+    "shear": ("Shear", _render_shear_page),
+    "creep": ("Creep", _render_creep_page),
+    "shrinkage": ("Shrinkage", _render_shrinkage_page),
+    "crack": ("Crack Control", _render_crack_page),
+    "deflection": ("Deflection", _render_deflection_page),
 }
 
 SLUGS = list(PAGES.keys())
