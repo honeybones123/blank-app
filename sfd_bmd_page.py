@@ -33,19 +33,15 @@ def _render_design_workspace_fragment() -> None:
 
 
 def render_sfd_bmd_page_workspace() -> None:
-    import streamlit as st
-
-    from inputs_page_modules.fragments import run_inputs_fragment
     from state_and_helpers import render_timing_mark
 
     context = build_design_page_context()
     render_timing_mark("design_page.shell.setup", route=context.route_slug)
-    run_inputs_fragment(
-        st_module=st,
-        fragment_name="design_workspace",
-        render_fn=_render_design_workspace_fragment,
-        force_fragment=True,
-    )
+    # Load Analysis owns its own page/runtime fragment.  Do not route it
+    # through the shared Inputs fragment: that wrapper carries Inputs-page
+    # workspace reconciliation and publication state, which can rehydrate
+    # stale beam widgets or make Apply appear to jump between results.
+    _render_design_workspace_fragment()
 
 
 def render_sfd_bmd_page() -> None:
