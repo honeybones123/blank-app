@@ -65,6 +65,9 @@ class JsonBeamInputsRepository:
         if payload.get("schema") != SCHEMA:
             raise ValueError("Unsupported Inputs V2 persistence schema")
         raw = dict(payload.get("inputs") or {})
+        # Cached runtime hash is an implementation detail, never persisted as
+        # an input field or passed back into the frozen domain constructor.
+        raw.pop("_content_hash", None)
         bottom_raw = dict(raw.pop("bottom") or {})
         top_raw = dict(raw.pop("top") or {})
         shear_raw = dict(raw.pop("shear") or {})
