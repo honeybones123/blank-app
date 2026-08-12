@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "beamapp-inputs-v2"
-version = "0.1.0"
+version = "0.1.1"
 description = "Typed Inputs and Design Brain core for Beamapp"
 readme = "README.md"
 requires-python = ">=3.12"
