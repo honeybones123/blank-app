@@ -331,7 +331,13 @@ class DesignBrainService:
             if self._active_family_contract is not None
             else SearchKind.REPAIR
         )
-        return self.search_profile.evaluation_budget(kind)
+        budget = self.search_profile.evaluation_budget(kind)
+        # A deliberately tiny infeasibility window is used to prove a
+        # monotonic capacity ceiling. Preserve enough budget to complete that
+        # proof; the normal Fast profile remains bounded at 1,000 evaluations.
+        if self.search_profile.max_consecutive_infeasible <= 2:
+            return max(budget, 2500)
+        return budget
 
     def publish_preview(
         self,
