@@ -709,6 +709,13 @@ def render_inputs_design_guide_fragment_section(
             design_guide_slot.empty()
             with design_guide_slot.container():
                 st_module.info("Updating design guidance...")
+            # Do not let the parent fragment continue painting summaries or
+            # the previous publication after Apply has committed.  Returning
+            # only from this section still allowed Streamlit to render stale
+            # sibling regions during the same rerun, which looked like the
+            # Design Brain flickering between candidates.  The next scoped
+            # rerun is the sole authority for the replacement result.
+            st_module.stop()
             return
 
     fragment_store = services.publications
