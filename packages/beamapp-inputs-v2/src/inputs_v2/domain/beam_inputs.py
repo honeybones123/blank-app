@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from inputs_v2.domain.reinforcement_arrangement import ReinforcementArrangement
 from enum import StrEnum
 import hashlib
@@ -258,6 +258,7 @@ class BeamInputs:
     voids: VoidInputs = VoidInputs()
     deflection: DeflectionInputs = DeflectionInputs()
     serviceability: ServiceabilityInputs = ServiceabilityInputs()
+    _content_hash: str | None = field(default=None, init=False, repr=False, compare=False)
 
     def validated(self) -> "BeamInputs":
         if self.revision < 0:
@@ -443,6 +444,11 @@ class BeamInputs:
 
     @property
     def content_hash(self) -> str:
+        cached = self._content_hash
+        if cached is not None:
+            return cached
         payload = self.canonical_payload
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+        digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+        object.__setattr__(self, "_content_hash", digest)
+        return digest
