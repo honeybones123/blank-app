@@ -28,6 +28,23 @@ class TypedApplyExecution:
     mutation: InputsSessionMutation | None
 
 
+def _current_apply_input_snapshot(
+    session_state: MutableMapping[str, Any],
+):
+    """Resolve the committed snapshot owned by the beam receiving Apply.
+
+    The global snapshot is retained only for old sessions and tests that do not
+    yet have a routed beam.  It must not invalidate a current recommendation
+    merely because another beam was committed more recently.
+    """
+
+    input_store = InputSnapshotStore(session_state)
+    active_beam_id = str(session_state.get("active_beam_id") or "").strip()
+    if active_beam_id:
+        return input_store.current_for_beam(active_beam_id)
+    return input_store.current()
+
+
 def execute_typed_apply(
     *,
     session_state: MutableMapping[str, Any],
@@ -47,7 +64,7 @@ def execute_typed_apply(
     )
     workspace_store = InputsWorkspaceStateStore(session_state)
     fragment_state = DesignGuideFragmentStore(session_state).current()
-    input_snapshot = InputSnapshotStore(session_state).current()
+    input_snapshot = _current_apply_input_snapshot(session_state)
 
     # A button can remain internally consistent with an old publication while
     # the beam-owned input snapshot has already advanced.  Runtime has separate
@@ -110,7 +127,10 @@ def execute_typed_apply(
         )
     revision_valid, revision_reason = apply_store.validate_revision_expectation(
         dict(recommendation),
-        input_revision=workspace_store.workspace_revision(),
+        # Apply is beam-owned.  The compatibility workspace revision can move
+        # when a different beam is committed, while this beam's exact source
+        # snapshot remains unchanged.
+        input_revision=int(input_snapshot.revision),
         publication_revision=fragment_state.active_workspace_revision,
         engineering_hash=(
             current_result.engineering_hash

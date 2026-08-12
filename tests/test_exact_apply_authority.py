@@ -6,7 +6,10 @@ from application.apply_command import execute_apply_command
 from application.contracts.design_brain import AuthoritativeDesignResult
 from inputs_application.apply_transaction_store import ApplyTransactionStore
 from inputs_application.engineering_input_store import InputSnapshotStore
-from inputs_application.live_apply import execute_typed_apply
+from inputs_application.live_apply import (
+    _current_apply_input_snapshot,
+    execute_typed_apply,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -197,3 +200,25 @@ def test_typed_apply_rejects_publication_from_previous_input_snapshot() -> None:
     assert execution.command.status == "failed"
     assert execution.command.reason == "stale_apply_candidate_source_revision"
     assert execution.mutation is None
+
+
+def test_apply_revision_is_owned_by_active_beam_not_global_compatibility_view() -> None:
+    session: dict = {"active_beam_id": "beam-a"}
+    snapshots = InputSnapshotStore(session)
+    beam_a = snapshots.commit_for_beam(
+        "beam-a",
+        {"beam_width": 250.0},
+        source="beam-a-input",
+    )
+    beam_b = snapshots.commit_for_beam(
+        "beam-b",
+        {"beam_width": 400.0},
+        source="beam-b-input",
+    )
+    assert beam_b.revision > beam_a.revision
+    assert snapshots.current().revision == beam_b.revision
+
+    current = _current_apply_input_snapshot(session)
+
+    assert current.revision == beam_a.revision
+    assert current.snapshot["beam_width"] == 250.0
