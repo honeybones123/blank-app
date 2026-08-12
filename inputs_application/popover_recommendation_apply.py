@@ -107,8 +107,10 @@ def execute_popover_recommendation_apply(
         "status": mutation.status,
         "updates": dict(mutation.updates),
     }
-    if mutation.rerun_required:
-        rerun()
+    # This function is invoked by a Streamlit widget callback.  Streamlit
+    # schedules the owning fragment rerun after the callback returns; calling
+    # rerun() here is a no-op in deployed builds and can leave the UI showing
+    # the old publication before the replacement result settles.
     return True
 
 

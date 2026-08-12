@@ -247,9 +247,9 @@ def render_start_page(
 
     def _navigate(page_slug: str) -> None:
         st.session_state[PENDING_NAV_PAGE_SLUG_KEY] = page_slug
-        # Navigation is the one Start-page action that intentionally changes
-        # the shell.  Other Start widgets remain inside the page fragment.
-        st.rerun()
+        # Streamlit automatically reruns after a widget callback returns.
+        # Calling st.rerun() here is a no-op in callback context and produces
+        # a warning (and an extra render pass) in deployed builds.
 
     beam_col, load_col = st.columns(2, gap="medium")
     with beam_col:

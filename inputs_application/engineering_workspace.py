@@ -710,7 +710,12 @@ def render_inputs_design_guide_fragment_section(
             # the replacement calculation and Design Brain publication appear
             # together. Rendering an interim fragment is what caused the
             # current card to flicker through stale/empty candidates.
-            st_module.rerun()
+            # Keep rerun authority in the shared fragment boundary so the
+            # transaction has one consistent wake-up path across local and
+            # deployed Streamlit versions.
+            from inputs_page_modules.fragments import rerun_inputs_current_scope
+
+            rerun_inputs_current_scope(st_module)
             return
 
     fragment_store = services.publications
