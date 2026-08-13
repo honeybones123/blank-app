@@ -5179,10 +5179,32 @@ def _refresh_result_page_fragment_calculations() -> None:
     st.session_state["run_design_clicked"] = False
 
 
+def _prepare_result_page_workspace(page_slug: str) -> None:
+    """Refresh once for engineering edits and never for display-only reruns."""
+
+    from application.result_page_workspace import resolve_result_page_workspace
+
+    decision = resolve_result_page_workspace(page_slug, st.session_state)
+    audit = dict(st.session_state.get("_result_page_workspace_audit") or {})
+    page_audit = dict(audit.get(decision.page_slug) or {})
+    page_audit["renders"] = int(page_audit.get("renders", 0) or 0) + 1
+    page_audit["last_reason"] = decision.reason
+    page_audit["last_required_calculation"] = bool(decision.requires_calculation)
+    if decision.requires_calculation:
+        _refresh_result_page_fragment_calculations()
+        page_audit["calculations"] = int(page_audit.get("calculations", 0) or 0) + 1
+    # Result pages reuse the same action widgets as Inputs.  Project the
+    # committed owner after any refresh so a correct new summary is never
+    # displayed beside a stale pre-edit widget value.
+    inputs_page.hydrate_committed_design_action_widgets(force=True)
+    audit[decision.page_slug] = page_audit
+    st.session_state["_result_page_workspace_audit"] = audit
+
+
 @st.fragment
 def _render_bending_page_fragment():
     _record_result_page_fragment_render("bending")
-    _refresh_result_page_fragment_calculations()
+    _prepare_result_page_workspace("bending")
     _ensure_general_page_engineering_publication("bending")
     return _render_bending_page()
 
@@ -5190,7 +5212,7 @@ def _render_bending_page_fragment():
 @st.fragment
 def _render_shear_page_fragment():
     _record_result_page_fragment_render("shear")
-    _refresh_result_page_fragment_calculations()
+    _prepare_result_page_workspace("shear")
     _ensure_general_page_engineering_publication("shear")
     return _render_shear_page()
 
@@ -5198,7 +5220,7 @@ def _render_shear_page_fragment():
 @st.fragment
 def _render_creep_page_fragment():
     _record_result_page_fragment_render("creep")
-    _refresh_result_page_fragment_calculations()
+    _prepare_result_page_workspace("creep")
     _ensure_general_page_engineering_publication("creep")
     return _render_creep_page()
 
@@ -5206,7 +5228,7 @@ def _render_creep_page_fragment():
 @st.fragment
 def _render_shrinkage_page_fragment():
     _record_result_page_fragment_render("shrinkage")
-    _refresh_result_page_fragment_calculations()
+    _prepare_result_page_workspace("shrinkage")
     _ensure_general_page_engineering_publication("shrinkage")
     return _render_shrinkage_page()
 
@@ -5214,7 +5236,7 @@ def _render_shrinkage_page_fragment():
 @st.fragment
 def _render_crack_page_fragment():
     _record_result_page_fragment_render("crack")
-    _refresh_result_page_fragment_calculations()
+    _prepare_result_page_workspace("crack")
     _ensure_general_page_engineering_publication("crack")
     return _render_crack_page()
 
@@ -5222,7 +5244,7 @@ def _render_crack_page_fragment():
 @st.fragment
 def _render_deflection_page_fragment():
     _record_result_page_fragment_render("deflection")
-    _refresh_result_page_fragment_calculations()
+    _prepare_result_page_workspace("deflection")
     _ensure_general_page_engineering_publication("deflection")
     return _render_deflection_page()
 

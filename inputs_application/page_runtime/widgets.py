@@ -1077,6 +1077,28 @@ def _hydrate_design_action_widgets_from_shared(
         design_controls=design_controls,
     )
 
+
+def hydrate_inputs_design_action_widgets_before_summary(
+    *, force: bool = False
+) -> None:
+    """Project the committed action set before any summary is rendered.
+
+    The lower controls still own edits.  This projection only makes the
+    summary and those controls read the same committed ULS/SLS revision during
+    the single workspace-fragment transaction.
+    """
+
+    selected_mode = str(st.session_state.get("loads_edit_mode", "ULS")).upper()
+    selected_prefix = "sls" if selected_mode == "SLS" else "uls"
+    force = bool(force) or bool(
+        st.session_state.pop("_force_design_action_widget_hydrate", False)
+    )
+    _hydrate_design_action_widgets_from_shared(
+        selected_prefix,
+        force=force,
+        design_controls=is_design_governing(),
+    )
+
 def _commit_design_action_widgets_to_shared(selected_prefix: str) -> None:
     commit_design_action_widgets_to_shared_module(
         selected_prefix,

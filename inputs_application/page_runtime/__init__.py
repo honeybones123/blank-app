@@ -121,6 +121,7 @@ class InputsPageRuntime:
     make_summary_cross_section_figure: PageCallable
     render_page_setup: PageCallable
     handle_pending_apply: PageCallable
+    hydrate_design_action_widgets: PageCallable
     reconcile_design_actions: PageCallable
     refresh_authoritative_result: PageCallable
     refresh_engineering_result: PageCallable
@@ -163,6 +164,7 @@ def build_inputs_page_runtime() -> InputsPageRuntime:
         make_summary_cross_section_figure=make_summary_cross_section_figure,
         render_page_setup=render_inputs_page_setup_current_coordinator,
         handle_pending_apply=_handle_inputs_apply_buttons_current_coordinator,
+        hydrate_design_action_widgets=widgets.hydrate_inputs_design_action_widgets_before_summary,
         reconcile_design_actions=reconcile_inputs_design_actions_before_authority,
         refresh_authoritative_result=refresh_inputs_authoritative_design_result,
         refresh_engineering_result=refresh_inputs_engineering_result,

@@ -6966,29 +6966,11 @@ def _request_inputs_engineering_commit(
             for key, value in commit_timings_ms.items()
         },
     }
-    rendered_slug = str(
-        st.session_state.get("page_slug")
-        or st.session_state.get("_active_page_slug")
-        or ""
-    ).strip().lower()
-    if rendered_slug == "inputs" and wake_fragments:
-        # The committed transaction is the single wake-up trigger. This covers
-        # direct widget callbacks and Apply/recommendation callbacks alike.
-        # Off-page edits settle when Inputs is rendered again, so a stale
-        # fragment target is never woken while another page owns the shell.
-        from inputs_page_modules.fragments import request_inputs_fragment_wake
-
-        workspace_woken = request_inputs_fragment_wake(
-            st,
-            "engineering_workspace",
-            revision=int(committed.revision),
-            interval_s=0.1,
-        )
-        st.session_state["_inputs_workspace_fragment_wake"] = {
-            "revision": int(committed.revision),
-            "woken": bool(workspace_woken),
-            "source": "input_transaction",
-        }
+    # A widget callback executing inside the unified Inputs fragment already
+    # schedules exactly one owning-fragment rerun.  Do not enqueue a second
+    # framework wake: that duplicate state machine could render an interim
+    # revision and made cold sessions flicker before settling.
+    del wake_fragments
     return committed
 
 

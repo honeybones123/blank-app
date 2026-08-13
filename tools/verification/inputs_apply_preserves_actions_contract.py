@@ -9,7 +9,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def verify_actions_are_reconciled_before_apply() -> None:
+def verify_pending_apply_is_consumed_before_projection_can_advance() -> None:
     source = (REPO_ROOT / "inputs_page.py").read_text(encoding="utf-8")
     module = ast.parse(source)
     function = next(
@@ -34,14 +34,14 @@ def verify_actions_are_reconciled_before_apply() -> None:
         if isinstance(statement, ast.Expr)
         and isinstance(statement.value, ast.Call)
     ]
-    assert body_calls.index(reconcile) < body_calls.index(apply), (
-        "the visible action draft must be committed before a queued Apply "
-        "command can mutate the canonical beam snapshot"
+    assert body_calls.index(apply) < body_calls.index(reconcile), (
+        "the immutable revision-bound Apply command must be consumed before "
+        "action projection or reconciliation can advance its source revision"
     )
 
 
 def main() -> None:
-    verify_actions_are_reconciled_before_apply()
+    verify_pending_apply_is_consumed_before_projection_can_advance()
     print("inputs apply preserves actions contract: PASS")
 
 

@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import os
 import time
 from typing import Any, Callable
-
-from inputs_application.engineering_input_store import InputSnapshotStore
 
 
 def _render_inputs_widget_subfragment(
@@ -48,9 +45,6 @@ def render_inputs_widget_sections(
     post_widget_autopersist_fn: Callable[..., bool],
 ):
     render_started_ns = time.perf_counter_ns()
-    render_start_revision = int(
-        InputSnapshotStore(st_module.session_state).current().revision or 0
-    )
     # Retain the injectable child-render hook as a compatibility seam while
     # keeping diagram rendering in the parent workspace boundary.
     _ = run_fragment_fn
@@ -190,28 +184,6 @@ def render_inputs_widget_sections(
             right_diagram=right_diagram,
             model_slot=model_slot,
         )
-
-    # A Streamlit widget callback may commit while this render is already in
-    # flight. In that case the just-emitted diagram belonged to the previous
-    # revision. Schedule one bounded settle rerun so the visible diagram and
-    # summaries are guaranteed to share the final transaction; the next pass
-    # starts at the same revision and does not rerun again.
-    settled_revision = int(
-        InputSnapshotStore(st_module.session_state).current().revision or 0
-    )
-    if settled_revision > render_start_revision:
-        fragments_disabled = str(
-            os.environ.get("CODEX_ENABLE_INPUTS_FRAGMENTS", "1")
-        ).strip().lower() in {"0", "false", "no", "off"}
-        st_module.session_state["_inputs_diagram_settle_revision"] = settled_revision
-        # In the V2-shaped full-page path, do not interrupt this render from
-        # inside the widget coordinator.  The page shell owns the single
-        # bounded settle pass after all sibling regions have completed; an
-        # in-flight rerun here can terminate before the latest diagram identity
-        # is published and leave the old Plotly frame visible.  Preserve the
-        # explicit legacy-fragment behaviour for rollback/measurement mode.
-        if not fragments_disabled:
-            rerun_inputs_current_scope(st_module)
 
     autopersist_started_ns = time.perf_counter_ns()
     result = post_widget_autopersist_fn(ss=ss)

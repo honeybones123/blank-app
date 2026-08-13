@@ -45,6 +45,15 @@ def test_general_result_pages_are_fragment_scoped() -> None:
     assert '"deflection": ("Deflection", _render_deflection_page_fragment)' in source
 
 
+def test_result_pages_use_one_neutral_refresh_contract() -> None:
+    source = (ROOT / "app.py").read_text(encoding="utf-8-sig")
+    for slug in ("bending", "shear", "creep", "shrinkage", "crack", "deflection"):
+        assert f'_prepare_result_page_workspace("{slug}")' in source
+    # One function definition plus its single call from the neutral contract.
+    assert source.count("_refresh_result_page_fragment_calculations()") == 2
+    assert "inputs_page.hydrate_committed_design_action_widgets(force=True)" in source
+
+
 def test_global_header_actions_are_fragment_scoped() -> None:
     source = (ROOT / "app.py").read_text(encoding="utf-8-sig")
     assert "@st.fragment\ndef _render_header_actions(" in source
@@ -111,15 +120,35 @@ def test_load_analysis_has_no_competing_scroll_restoration_authority() -> None:
     assert "__beamDesignScrollObserver" not in source
 
 
-def test_inputs_commits_wake_only_the_unified_engineering_workspace() -> None:
+def test_inputs_commits_do_not_enqueue_a_redundant_fragment_wake() -> None:
     source = (ROOT / "state_and_helpers.py").read_text(encoding="utf-8-sig")
     start = source.index("def _request_inputs_engineering_commit(")
     end = source.index("\ndef _engineering_widget_owner_slug(", start)
     commit_source = source[start:end]
 
-    assert '"engineering_workspace"' in commit_source
-    assert '"engineering_input_workspace"' not in commit_source
-    assert '"engineering_calculation_workspace"' not in commit_source
+    assert "request_inputs_fragment_wake" not in commit_source
+    assert "auto_rerun" not in commit_source
+
+
+def test_inputs_widget_coordinator_has_no_second_rerun_authority() -> None:
+    source = (ROOT / "inputs_page_modules/widgets/render_coordinators.py").read_text(
+        encoding="utf-8-sig"
+    )
+
+    assert "rerun_inputs_current_scope" not in source
+    assert "_inputs_diagram_settle_revision" not in source
+
+
+def test_inputs_hydrates_committed_actions_before_summary_workspace_render() -> None:
+    source = (ROOT / "inputs_page.py").read_text(encoding="utf-8-sig")
+    start = source.index("def _render_v2_workspace_fragment(")
+    end = source.index("\ndef render_inputs_page()", start)
+    fragment_source = source[start:end]
+
+    hydrate_index = fragment_source.index(
+        "hydrate_committed_design_action_widgets(force=True)"
+    )
+    assert hydrate_index < fragment_source.index("render_engineering_workspace(")
 
 
 def test_inputs_apply_is_consumed_before_any_projection_or_rendering() -> None:
@@ -187,3 +216,19 @@ def test_design_brain_renderer_only_projects_completed_authoritative_result() ->
     assert "request_inputs_fragment_wake" not in renderer_source
     assert ".rerun(" not in renderer_source
     assert "fragment_store.publish(" in renderer_source
+
+
+def test_each_result_page_has_one_workspace_refresh_authority() -> None:
+    source = (ROOT / "app.py").read_text(encoding="utf-8-sig")
+    pages = ("bending", "shear", "creep", "shrinkage", "crack", "deflection")
+    for index, page in enumerate(pages):
+        start = source.index(f"def _render_{page}_page_fragment()")
+        if index + 1 < len(pages):
+            end = source.index(f"def _render_{pages[index + 1]}_page_fragment()", start)
+        else:
+            end = source.index("\ndef ", start + 5)
+        fragment_source = source[start:end]
+        assert fragment_source.count(
+            f'_prepare_result_page_workspace("{page}")'
+        ) == 1
+        assert "_refresh_result_page_fragment_calculations()" not in fragment_source

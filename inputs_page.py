@@ -142,6 +142,12 @@ def build_inputs_calculation_explainer_view_model(*args: Any, **kwargs: Any) -> 
     return builder(*args, **kwargs)
 
 
+def hydrate_committed_design_action_widgets(*, force: bool = False) -> None:
+    """Project committed ULS/SLS actions into their shared page widgets."""
+
+    _INPUTS_PAGE_RUNTIME.hydrate_design_action_widgets(force=force)
+
+
 def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, Any]:
     """Render the single V2 transaction inside one stable page fragment."""
 
@@ -283,6 +289,15 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, 
         active_beam_id=active_beam_id,
         copy_deepcopy_fn=copy.deepcopy,
     )
+
+    # Summary cards and the lower action controls must project the same
+    # committed action revision.  Hydrating here avoids the former two-stage
+    # render where the summary briefly showed the previous action set.
+    # The committed input snapshot is the transaction authority. Project it
+    # into the action controls before either summaries or widgets render so a
+    # remounted control cannot autopersist an older browser value and advance
+    # the revision behind the already-verified Design Brain candidate.
+    hydrate_committed_design_action_widgets(force=True)
 
     return render_engineering_workspace(
         st_module=st,
