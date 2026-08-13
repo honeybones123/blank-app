@@ -31,7 +31,10 @@ from inputs_application.recommendation_envelope import (
     recommendation_commit_eligible,
     recommendation_updates,
 )
-from state_and_helpers import SHARED_DEFAULTS
+from state_and_helpers import (
+    SHARED_DEFAULTS,
+    build_legacy_longitudinal_mirrors_from_rows,
+)
 from inputs_application.post_apply_state import store_typed_post_apply_acceptance
 from inputs_application.one_click_session import (
     pop_inputs_widget_keys_for_shared_updates,
@@ -504,15 +507,44 @@ class SharedStateSessionPort:
             # while the beam-owned snapshot still contains the pre-Apply
             # values, so setup legitimately rehydrates the old result.
             if active_beam_id:
-                # Rebuild the complete canonical projection after the
-                # mutation. Row/layer fields are normalised into the beam
-                # snapshot by the canonical snapshot helper; merging only
-                # raw row aliases into ``canonical_before`` leaves the
-                # persisted beam record on its pre-Apply arrangement.
-                from state_and_helpers import get_beam_project_param_snapshot
-
-                canonical_after = get_beam_project_param_snapshot()
-                canonical_after.update(shared_updates)
+                # Build the committed snapshot from the revision-bound input
+                # authority, then publish the row model and every derived
+                # reinforcement alias in this same transaction. Rebuilding
+                # from the live widget projection here used to introduce
+                # unrelated defaults (for example ``db_top``) while omitting
+                # row-derived aliases (for example ``nb_or_s_bot_1``). The
+                # next widget callback then manufactured a second revision
+                # solely to reconcile those mirrors, making Apply appear to
+                # flicker through multiple states.
+                canonical_after = copy.deepcopy(canonical_before)
+                canonical_after.update(row_model_updates)
+                canonical_shared_updates = dict(shared_updates)
+                convenience_alias_owners = {
+                    "db_bot": "db_bot_1",
+                    "db_top": "db_top_1",
+                }
+                for alias_key, owner_key in convenience_alias_owners.items():
+                    if (
+                        alias_key not in canonical_before
+                        and alias_key in canonical_shared_updates
+                        and canonical_shared_updates.get(alias_key)
+                        == canonical_before.get(owner_key)
+                    ):
+                        # An unchanged convenience alias is not a new input.
+                        # Persisting it here and dropping it in the ordinary
+                        # widget snapshot created a second Apply revision.
+                        canonical_shared_updates.pop(alias_key, None)
+                canonical_after.update(canonical_shared_updates)
+                derived_mirrors = build_legacy_longitudinal_mirrors_from_rows(
+                    canonical_after
+                )
+                canonical_after.update(
+                    {
+                        key: value
+                        for key, value in derived_mirrors.items()
+                        if key in canonical_before
+                    }
+                )
                 # The Apply contract never changes design actions.  Keep the
                 # revision-bound action authority even when this lightweight
                 # port is exercised without a fully populated Streamlit

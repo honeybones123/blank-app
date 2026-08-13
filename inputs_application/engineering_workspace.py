@@ -639,17 +639,18 @@ def prepare_engineering_workspace_transaction(
         revision=workspace_revision,
         result=authoritative_result,
     )
-    # Calculation readiness is the only trigger that may start Design Brain.
-    # The Design Brain fragment can mount before this sibling publishes its
-    # first result, so explicitly wake the matching revision once the result
-    # is authoritative. This avoids a permanent "Updating design guidance"
-    # state without introducing a steady-state polling loop.
-    start_design_brain_polling(
-        st_module.session_state,
-        reason="calculation_revision_ready",
-        revision=workspace_revision,
-        interval_s=0.1,
-    )
+    # The unified Runtime path requested the complete authoritative result,
+    # including the final Design Brain publication, before rendering begins.
+    # It therefore has nothing to poll.  Polling remains only for the isolated
+    # rollback/measurement path where calculation and Design Brain are still
+    # intentionally separate.
+    if not include_design_brain:
+        start_design_brain_polling(
+            st_module.session_state,
+            reason="calculation_revision_ready",
+            revision=workspace_revision,
+            interval_s=0.1,
+        )
     fragment_state = fragment_store.current()
     return {
         "reconciled_design_action_keys": reconciled_keys,
@@ -955,7 +956,6 @@ def render_inputs_design_guide_fragment_section(
                 design_guide_slot=design_guide_slot,
                 result=authoritative_result,
                 apply_payload=revisioned_apply_payload,
-                apply_handler=runtime.handle_pending_apply,
             )
     else:
         runtime.render_design_guide(

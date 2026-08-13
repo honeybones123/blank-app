@@ -71,7 +71,6 @@ def test_direct_app_reruns_are_confined_to_shell_transition_owners() -> None:
         # their unscoped call is a compatibility fallback for older Streamlit
         # and test doubles, not ordinary Runtime authority.
         "inputs_application/engineering_workspace.py",
-        "inputs_page_modules/apply_routing.py",
     }
     offenders: dict[str, list[int]] = {}
     for path in ROOT.rglob("*.py"):
@@ -114,3 +113,28 @@ def test_inputs_commits_wake_only_the_unified_engineering_workspace() -> None:
     assert '"engineering_workspace"' in commit_source
     assert '"engineering_input_workspace"' not in commit_source
     assert '"engineering_calculation_workspace"' not in commit_source
+
+
+def test_inputs_apply_is_consumed_before_any_projection_or_rendering() -> None:
+    source = (ROOT / "inputs_page.py").read_text(encoding="utf-8-sig")
+    start = source.index("def _render_v2_workspace_fragment(")
+    end = source.index("\ndef render_inputs_page()", start)
+    fragment_source = source[start:end]
+
+    apply_index = fragment_source.index(
+        "_INPUTS_PAGE_RUNTIME.handle_pending_apply()"
+    )
+    assert apply_index < fragment_source.index("render_action_source_toggle(")
+    assert apply_index < fragment_source.index(
+        "_INPUTS_PAGE_RUNTIME.reconcile_design_actions()"
+    )
+    assert apply_index < fragment_source.index("render_engineering_workspace(")
+
+
+def test_apply_routing_never_requests_an_explicit_rerun_or_polling_wake() -> None:
+    source = (ROOT / "inputs_page_modules" / "apply_routing.py").read_text(
+        encoding="utf-8-sig"
+    )
+    assert ".rerun(" not in source
+    assert "request_inputs_fragment_wake" not in source
+    assert "current_inputs_fragment_id" not in source

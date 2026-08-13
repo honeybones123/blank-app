@@ -144,6 +144,14 @@ def build_inputs_calculation_explainer_view_model(*args: Any, **kwargs: Any) -> 
 def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, Any]:
     """Render the single V2 transaction inside one stable page fragment."""
 
+    # Streamlit executes the Apply button callback before re-entering this
+    # fragment.  Consume that immutable, revision-bound command first: no
+    # action-source projection, widget reconciliation or rendering may advance
+    # state between the user's click and the atomic Apply validation/commit.
+    # After the commit, this same fragment run resolves and renders the new
+    # complete workspace once.
+    _INPUTS_PAGE_RUNTIME.handle_pending_apply()
+
     load_analysis_store = LoadAnalysisStateStore(st.session_state)
 
     def _commit_selected_action_source(_selected: bool) -> None:
@@ -246,12 +254,6 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, 
             ),
             wake_fragments=False,
         )
-
-    # Apply is owned by the same V2 workspace fragment as the Design Brain
-    # button.  Processing the queued command here keeps the explicit Apply
-    # interaction scoped to this workspace instead of forcing a page rerun.
-    # The page-level setup remains as a fallback for non-fragment routes.
-    _INPUTS_PAGE_RUNTIME.handle_pending_apply()
 
     # Fragment reruns do not execute the page setup coordinator.  Reconcile
     # the visible Inputs reinforcement controls from the committed beam

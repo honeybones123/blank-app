@@ -30,13 +30,15 @@ class _ClickedStreamlit:
     def container(self, *_args, **_kwargs):
         return _Context()
 
-    def button(self, *_args, **_kwargs) -> bool:
+    def button(self, *_args, **kwargs) -> bool:
+        callback = kwargs.get("on_click")
+        if callback is not None:
+            callback(*tuple(kwargs.get("args") or ()))
         return True
 
 
-def test_apply_click_queues_and_executes_in_active_workspace_fragment() -> None:
+def test_apply_click_queues_before_workspace_fragment_renders() -> None:
     st_module = _ClickedStreamlit()
-    handled: list[bool] = []
     result = AuthoritativeDesignResult(
         engineering_hash="engineering-v1",
         governing_family="BENDING_OVERDESIGN_GOVERNS",
@@ -56,17 +58,12 @@ def test_apply_click_queues_and_executes_in_active_workspace_fragment() -> None:
         st_module=st_module,
         design_guide_slot=_Slot(),
         result=result,
-        apply_handler=lambda: handled.append(True),
     )
 
-    assert handled == [True]
     assert st_module.session_state["_inputs_action_apply_recommendation"] is True
     assert st_module.session_state["pending_recommendation"]["updates"] == {
         "bot_bar_dia": 20
     }
-    assert (
-        st_module.session_state["pending_recommendation"][
-            "_defer_scoped_apply_rerun"
-        ]
-        is True
-    )
+    assert "_defer_scoped_apply_rerun" not in st_module.session_state[
+        "pending_recommendation"
+    ]

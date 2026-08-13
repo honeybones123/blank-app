@@ -61,8 +61,8 @@ def test_css_selectors_are_scoped_or_approved_foundations() -> None:
         assert selector == ".stApp" or selector.startswith(".inputs-v2-root"), selector
 
 
-def test_lab_is_outside_existing_runtime() -> None:
-    assert RUNTIME_ROOT not in ROOT.parents
+def test_v2_is_bundled_inside_runtime_without_importing_runtime() -> None:
+    assert RUNTIME_ROOT in ROOT.parents
     assert ROOT != RUNTIME_ROOT
 
 

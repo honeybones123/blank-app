@@ -34,10 +34,6 @@ _LAZY_EXPORTS = {
     ),
     "ApplyCommandResult": ("application.apply_command", "ApplyCommandResult"),
     "execute_apply_command": ("application.apply_command", "execute_apply_command"),
-    "build_authoritative_design_result_from_guidance_payload": (
-        "application.guidance_result_adapter",
-        "build_authoritative_design_result_from_guidance_payload",
-    ),
     "guidance_payload_from_authoritative_design_result": (
         "application.guidance_result_adapter",
         "guidance_payload_from_authoritative_design_result",
