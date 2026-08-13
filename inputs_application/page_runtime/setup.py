@@ -36,6 +36,7 @@ from application.design_brain_port import DesignBrainRequest
 
 from inputs_application.action_source_control import (
     authoritative_action_source_projection,
+    migrate_missing_manual_action_owners,
     uses_load_analysis_actions,
 )
 
@@ -635,27 +636,14 @@ def _canonical_input_transaction_state_current_coordinator(
         "manual_sls_Vstar",
         "manual_sls_Nstar",
     }
-    legacy_manual_owner_pairs = {
-        "manual_uls_Vstar": "uls_Vstar",
-        "manual_uls_Nstar": "uls_Nstar",
-        "manual_sls_Vstar": "sls_Vstar",
-        "manual_sls_Nstar": "sls_Nstar",
-    }
-    # Warm sessions created before the dedicated owners were introduced can
-    # already contain the new default zero alongside a real value in the old
-    # canonical field.  Promote that value once at the transaction boundary.
-    # In the new model every manual edit projects both fields together, so a
-    # mismatch of owner=0 and compatibility!=0 can only be legacy state.
-    for owner_key, compatibility_key in legacy_manual_owner_pairs.items():
-        try:
-            owner_value = float(st.session_state.get(owner_key, 0.0) or 0.0)
-            compatibility_value = float(
-                st.session_state.get(compatibility_key, 0.0) or 0.0
-            )
-        except (TypeError, ValueError):
-            continue
-        if owner_value == 0.0 and compatibility_value != 0.0:
-            st.session_state[owner_key] = compatibility_value
+    # Migrate only genuinely absent owners while Beam Inputs is the selected
+    # source.  A zero manual action is a valid engineering value, not evidence
+    # that migration is required.  Load Analysis deliberately projects its
+    # solved shear/axial values into the compatibility fields while preserving
+    # the manual owners; inferring ownership from a zero/non-zero mismatch
+    # therefore leaks calculated actions into the manual design on source
+    # switch-back.
+    migrate_missing_manual_action_owners(st.session_state)
     transaction = {
         key: copy.deepcopy(
             st.session_state.get(key, SHARED_DEFAULTS.get(key))

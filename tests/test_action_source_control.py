@@ -8,6 +8,7 @@ from inputs_application.action_source_control import (
     authoritative_action_source_projection,
     commit_action_source_toggle,
     load_analysis_action_projection,
+    migrate_missing_manual_action_owners,
     seed_action_source_toggle,
     synchronize_load_analysis_actions_for_inputs,
     uses_load_analysis_actions,
@@ -505,6 +506,34 @@ def test_source_round_trip_never_mutates_distinct_manual_uls_and_sls_owners() ->
     assert state["manual_uls_Nstar"] == 12.0
     assert state["manual_sls_Vstar"] == 53.0
     assert state["manual_sls_Nstar"] == 7.0
+
+
+def test_manual_owner_migration_never_claims_load_analysis_projection() -> None:
+    state = {
+        "actions_mode": "design",
+        "actions_source": LOAD_ANALYSIS_ACTIONS_SOURCE,
+        "uls_Vstar": 19.5,
+        "manual_uls_Vstar": 0.0,
+    }
+
+    assert migrate_missing_manual_action_owners(state) == ()
+    assert state["manual_uls_Vstar"] == 0.0
+
+    state[INPUTS_ACTION_SOURCE_TOGGLE_KEY] = False
+    commit_action_source_toggle(state, INPUTS_ACTION_SOURCE_TOGGLE_KEY)
+    assert migrate_missing_manual_action_owners(state) == ()
+    assert state["manual_uls_Vstar"] == 0.0
+
+
+def test_manual_owner_migration_is_absence_only() -> None:
+    state = {
+        "actions_mode": "manual",
+        "actions_source": MANUAL_ACTIONS_SOURCE,
+        "uls_Vstar": 80.0,
+    }
+
+    assert migrate_missing_manual_action_owners(state) == ("manual_uls_Vstar",)
+    assert state["manual_uls_Vstar"] == 80.0
 
 
 def test_design_mode_widgets_display_resolved_uls_and_sls_projection() -> None:

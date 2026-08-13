@@ -34,6 +34,27 @@ MANUAL_ACTION_OWNER_KEYS = {
     "sls_Vstar": "manual_sls_Vstar",
     "sls_Nstar": "manual_sls_Nstar",
 }
+
+
+def migrate_missing_manual_action_owners(
+    state: MutableMapping[str, Any],
+) -> tuple[str, ...]:
+    """Migrate pre-owner manual actions without interpreting valid zeroes.
+
+    This is intentionally source-aware and absence-only.  Derived Load
+    Analysis actions may occupy the compatibility keys, so their numerical
+    relationship to an existing manual owner can never establish ownership.
+    """
+
+    if uses_load_analysis_actions(state):
+        return ()
+    migrated: list[str] = []
+    for compatibility_key, owner_key in MANUAL_ACTION_OWNER_KEYS.items():
+        if owner_key in state or compatibility_key not in state:
+            continue
+        state[owner_key] = state[compatibility_key]
+        migrated.append(owner_key)
+    return tuple(sorted(migrated))
 # Changing action source is a pointer/projection command.  It never commits
 # manual actions; those are committed only by their own input callbacks.
 ACTION_SOURCE_COMMIT_KEYS: tuple[str, ...] = ()
@@ -275,6 +296,7 @@ __all__ = [
     "authoritative_action_source_projection",
     "commit_action_source_toggle",
     "load_analysis_action_projection",
+    "migrate_missing_manual_action_owners",
     "render_action_source_toggle",
     "seed_action_source_toggle",
     "synchronize_load_analysis_actions_for_inputs",
