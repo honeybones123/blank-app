@@ -18,23 +18,22 @@ def verify_pending_apply_is_consumed_before_projection_can_advance() -> None:
         if isinstance(node, ast.FunctionDef)
         and node.name == "_render_v2_workspace_fragment"
     )
-    calls = [
-        ast.unparse(node.func)
-        for node in ast.walk(function)
-        if isinstance(node, ast.Call)
-    ]
+    calls = [node for node in ast.walk(function) if isinstance(node, ast.Call)]
     reconcile = "_INPUTS_PAGE_RUNTIME.reconcile_design_actions"
     apply = "_INPUTS_PAGE_RUNTIME.handle_pending_apply"
-    assert reconcile in calls
-    assert apply in calls
-
-    body_calls = [
-        ast.unparse(statement.value.func)
-        for statement in function.body
-        if isinstance(statement, ast.Expr)
-        and isinstance(statement.value, ast.Call)
+    reconcile_calls = [
+        node for node in calls if ast.unparse(node.func) == reconcile
     ]
-    assert body_calls.index(apply) < body_calls.index(reconcile), (
+    apply_calls = [node for node in calls if ast.unparse(node.func) == apply]
+    assert reconcile_calls
+    assert len(apply_calls) == 1
+
+    # Reconciliation now occurs both in the source-toggle callback and in the
+    # manual-owner branch, rather than as one unconditional top-level call.
+    # Line ordering is the durable transaction invariant: pending Apply must
+    # be consumed before either path can be defined or executed.
+    apply_line = apply_calls[0].lineno
+    assert all(apply_line < node.lineno for node in reconcile_calls), (
         "the immutable revision-bound Apply command must be consumed before "
         "action projection or reconciliation can advance its source revision"
     )
