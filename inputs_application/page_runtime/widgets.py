@@ -1044,6 +1044,14 @@ def _make_design_action_widget_callback(widget_key: str, shared_key: str, proxy_
         shared_key,
         proxy_key,
         sync_design_action_widget_to_shared_fn=_sync_design_action_widget_to_shared,
+        selected_prefix_fn=lambda: (
+            "sls"
+            if str(st.session_state.get("loads_edit_mode", "ULS") or "ULS")
+            .strip()
+            .upper()
+            == "SLS"
+            else "uls"
+        ),
     )
 
     def _committing_callback() -> None:

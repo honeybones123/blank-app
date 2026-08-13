@@ -37,8 +37,9 @@ class _ClickedStreamlit:
         return True
 
 
-def test_apply_click_queues_before_workspace_fragment_renders() -> None:
+def test_apply_click_commits_before_workspace_fragment_renders() -> None:
     st_module = _ClickedStreamlit()
+    handled: list[dict] = []
     result = AuthoritativeDesignResult(
         engineering_hash="engineering-v1",
         governing_family="BENDING_OVERDESIGN_GOVERNS",
@@ -58,6 +59,9 @@ def test_apply_click_queues_before_workspace_fragment_renders() -> None:
         st_module=st_module,
         design_guide_slot=_Slot(),
         result=result,
+        apply_handler=lambda: handled.append(
+            dict(st_module.session_state["pending_recommendation"])
+        ),
     )
 
     assert st_module.session_state["_inputs_action_apply_recommendation"] is True
@@ -67,3 +71,4 @@ def test_apply_click_queues_before_workspace_fragment_renders() -> None:
     assert "_defer_scoped_apply_rerun" not in st_module.session_state[
         "pending_recommendation"
     ]
+    assert handled == [st_module.session_state["pending_recommendation"]]

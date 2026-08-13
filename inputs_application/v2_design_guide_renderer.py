@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import html
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Callable
 
 from application.contracts.design_brain import AuthoritativeDesignResult
 
@@ -26,6 +26,25 @@ def _queue_v2_design_guide_apply(st_module: Any, payload: dict[str, Any]) -> Non
     st_module.session_state["pending_recommendation"] = dict(queued_payload)
     st_module.session_state["_inputs_action_apply_recommendation_payload"] = dict(queued_payload)
     st_module.session_state["_inputs_action_apply_recommendation"] = True
+
+
+def _commit_v2_design_guide_apply(
+    st_module: Any,
+    payload: dict[str, Any],
+    apply_handler: Callable[[], Any],
+) -> None:
+    """Commit the pre-verified payload in the button callback transaction.
+
+    A callback is guaranteed to run before Streamlit performs the widget's
+    owning fragment render.  Merely queueing the payload relied on that
+    fragment body being re-entered, which is not guaranteed for every cold or
+    remounted hosted widget.  The queued command could consequently remain
+    dormant until a later edit.  Execute the existing typed Apply handler now;
+    the one automatic fragment render then sees only the committed revision.
+    """
+
+    _queue_v2_design_guide_apply(st_module, payload)
+    apply_handler()
 
 
 def _format_clause_reference(value: Any) -> str:
@@ -68,6 +87,7 @@ def render_v2_design_guide_card(
     design_guide_slot: Any,
     result: AuthoritativeDesignResult,
     apply_payload: Mapping[str, Any] | None = None,
+    apply_handler: Callable[[], Any] | None = None,
 ) -> None:
     """Render the replacement V2 card in the existing Design Guide slot."""
 
@@ -211,6 +231,10 @@ def render_v2_design_guide_card(
         )
         enabled = bool(cta.get("enabled") or cta.get("actionable")) and bool(payload.get("updates") or payload.get("resolved_candidate_updates"))
         if enabled:
+            if apply_handler is None:
+                raise RuntimeError(
+                    "Actionable Design Brain publication has no typed Apply handler"
+                )
             label = _text(cta.get("label"), "Apply recommendation")
             # Scope the state styling to this card's own Apply button.  A
             # broad ancestor ``:has(...)`` selector can see unrelated/stale
@@ -228,8 +252,8 @@ def render_v2_design_guide_card(
                     label,
                     key=f"v2_design_guide_apply_{_text(publication.get('publication_hash'), 'current')}",
                     use_container_width=True,
-                    on_click=_queue_v2_design_guide_apply,
-                    args=(st_module, payload),
+                    on_click=_commit_v2_design_guide_apply,
+                    args=(st_module, payload, apply_handler),
                 )
 
 

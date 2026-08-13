@@ -1018,20 +1018,33 @@ def render_inputs_design_actions_section(
         # same fields and forced another fragment rerun, which could leave the
         # Inputs page permanently truncated at this section after a toggle.
 
-        prev_mode = st_module.session_state.get("loads_edit_mode", "ULS")
         toggle_widget_key = get_widget_key_for_shared_fn("loads_edit_toggle", prefix="inputs_") or "inputs_loads_edit_toggle"
         new_mode = "SLS" if edit_sls else "ULS"
+        new_prefix = "sls" if new_mode == "SLS" else "uls"
 
-        if new_mode != prev_mode:
-            previous_prefix = "sls" if str(prev_mode).upper() == "SLS" else "uls"
-            commit_design_action_widgets_to_shared_fn(previous_prefix)
+        # ``sync_load_edit_mode_from_toggle`` can observe the Streamlit toggle
+        # before this fragment body executes.  Comparing against
+        # ``loads_edit_mode`` then loses the transition and leaves the reused
+        # action widgets displaying the preceding load set.  Track the load
+        # set that was actually rendered instead; this is presentation state,
+        # not another engineering owner.
+        rendered_prefix = str(
+            st_module.session_state.get("_inputs_design_actions_rendered_prefix")
+            or ("sls" if str(st_module.session_state.get("loads_edit_mode", "ULS")).upper() == "SLS" else "uls")
+        ).strip().lower()
+        if rendered_prefix not in {"uls", "sls"}:
+            rendered_prefix = "uls"
+
+        if new_prefix != rendered_prefix:
+            commit_design_action_widgets_to_shared_fn(rendered_prefix)
             st_module.session_state["loads_edit_mode"] = new_mode
-            mirror_design_action_proxies_from_shared_fn("sls" if str(new_mode).upper() == "SLS" else "uls")
+            mirror_design_action_proxies_from_shared_fn(new_prefix)
             st_module.session_state["_force_design_action_widget_hydrate"] = True
             st_module.session_state["inputs_dirty"] = True
             st_module.session_state["_inputs_dirty"] = True
         else:
             st_module.session_state["loads_edit_mode"] = new_mode
+        st_module.session_state["_inputs_design_actions_rendered_prefix"] = new_prefix
 
         design_controls = is_design_governing_fn()
         if design_controls:

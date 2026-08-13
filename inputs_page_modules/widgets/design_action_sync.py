@@ -151,11 +151,39 @@ def make_design_action_widget_callback(
     proxy_key: str | None = None,
     *,
     sync_design_action_widget_to_shared_fn: Callable[..., None],
+    selected_prefix_fn: Callable[[], str] | None = None,
 ):
+    """Build a stable callback whose owner is resolved when it executes.
+
+    Streamlit keeps a widget's callback with its stable widget identity.  The
+    Inputs page intentionally reuses the same visible controls when the user
+    switches between ULS and SLS.  Capturing ``uls_*`` or ``sls_*`` in the
+    callback closure therefore lets a warm widget publish an SLS edit into
+    the ULS fields (or vice versa).  Resolve the load-set owner at callback
+    time so the visible mode and the canonical write can never diverge.
+    """
+
     def _callback() -> None:
+        resolved_shared_key = str(shared_key)
+        if selected_prefix_fn is not None:
+            selected_prefix = str(selected_prefix_fn() or "uls").strip().lower()
+            selected_prefix = "sls" if selected_prefix == "sls" else "uls"
+            for prefix in ("uls", "sls"):
+                if resolved_shared_key.startswith(f"{prefix}_"):
+                    resolved_shared_key = (
+                        selected_prefix + resolved_shared_key[len(prefix):]
+                    )
+                    break
+                manual_prefix = f"manual_{prefix}_"
+                if resolved_shared_key.startswith(manual_prefix):
+                    resolved_shared_key = (
+                        f"manual_{selected_prefix}_"
+                        + resolved_shared_key[len(manual_prefix):]
+                    )
+                    break
         sync_design_action_widget_to_shared_fn(
             widget_key,
-            shared_key,
+            resolved_shared_key,
             proxy_key,
             trigger_rerun=False,
         )

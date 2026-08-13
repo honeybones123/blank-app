@@ -199,7 +199,7 @@ def test_runtime_has_no_background_design_brain_publication_path() -> None:
     assert not (ROOT / "inputs_application" / "design_brain_job_worker.py").exists()
 
 
-def test_design_brain_renderer_only_projects_completed_authoritative_result() -> None:
+def test_design_brain_renderer_projects_result_and_binds_one_typed_apply_handler() -> None:
     source = (ROOT / "inputs_application" / "engineering_workspace.py").read_text(
         encoding="utf-8-sig"
     )
@@ -207,7 +207,7 @@ def test_design_brain_renderer_only_projects_completed_authoritative_result() ->
     end = source.index("\ndef render_inputs_widget_fragment_section(", start)
     renderer_source = source[start:end]
 
-    assert "handle_pending_apply" not in renderer_source
+    assert renderer_source.count("apply_handler=runtime.handle_pending_apply") == 1
     assert "refresh_design_brain_result" not in renderer_source
     assert "refresh_authoritative_result" not in renderer_source
     assert "render_v2_design_guide_loading_shell" not in renderer_source
