@@ -7,7 +7,7 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "inputs_v2"
-RUNTIME_ROOT = Path(r"C:\Users\jonathon\OneDrive\Documents\GitHub\complete-app - Runtime")
+RUNTIME_ROOT = ROOT.parents[1]
 
 
 def python_files():
@@ -62,8 +62,11 @@ def test_css_selectors_are_scoped_or_approved_foundations() -> None:
 
 
 def test_v2_is_bundled_inside_runtime_without_importing_runtime() -> None:
-    assert RUNTIME_ROOT in ROOT.parents
+    assert ROOT.parent == RUNTIME_ROOT / "packages"
     assert ROOT != RUNTIME_ROOT
+    assert (RUNTIME_ROOT / "app.py").is_file()
+    assert (RUNTIME_ROOT / "requirements.txt").is_file()
+    assert (RUNTIME_ROOT / "vendor").is_dir()
 
 
 def test_components_do_not_access_raw_session_state() -> None:
