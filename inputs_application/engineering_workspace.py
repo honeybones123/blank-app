@@ -14,12 +14,7 @@ from application.guidance_result_adapter import (
 from inputs_application.design_guide_fragment_store import (
     DesignGuideFragmentState,
 )
-from inputs_application.design_brain_polling import (
-    DESIGN_BRAIN_POLLING_STATE_KEY,
-    register_design_brain_fragment,
-    start_design_brain_polling,
-    stop_design_brain_polling,
-)
+from inputs_application.design_brain_polling import start_design_brain_polling
 from inputs_application.page_runtime import InputsPageRuntime
 from inputs_application.region_contexts import (
     InputsCalculationRegionContext,
@@ -36,11 +31,6 @@ from inputs_application.design_brain_composition import selected_design_brain_ad
 from inputs_application.apply_transaction_store import ApplyTransactionStore
 from inputs_application.v2_design_guide_renderer import (
     render_v2_design_guide_card,
-    render_v2_design_guide_loading_shell,
-)
-from inputs_page_modules.fragments import (
-    request_inputs_fragment_wake,
-    stop_inputs_fragment_polling,
 )
 
 
@@ -53,60 +43,6 @@ _DESIGN_BRAIN_WIDGET_MARKER_REVISION_KEY = (
 _DESIGN_BRAIN_WIDGET_MARKER_STATE_KEY = (
     "_inputs_design_brain_widget_marker_state"
 )
-
-
-def _result_has_no_design_actions(result: Any | None) -> bool:
-    """Return whether a result is the neutral no-actions publication."""
-
-    if result is None:
-        return False
-    display_model = dict(getattr(result, "display_model", {}) or {})
-    return bool(
-        display_model.get("v2_no_design_actions")
-        or str(getattr(result, "governing_family", "") or "").upper()
-        == "NO_DESIGN_ACTIONS"
-    )
-
-
-def _apply_publication_transition_active(session_state: Any) -> bool:
-    """Return whether Apply has committed but its replacement is unsettled."""
-
-    probe = dict(session_state.get("_typed_inputs_apply_probe") or {})
-    return str(probe.get("status") or "") in {
-        "dispatch_ok",
-        "rerun_required",
-    }
-
-
-def _hold_interim_no_actions_publication(
-    *,
-    session_state: Any,
-    candidate_result: Any | None,
-    fragment_state: DesignGuideFragmentState,
-) -> bool:
-    """Keep Apply atomic when a cold run briefly resolves zero actions.
-
-    The pre-Apply publication may remain stored, but it is never rendered for
-    the newer revision.  The Design Brain region shows its loading shell until
-    the committed revision produces one non-interim result.
-    """
-
-    return bool(
-        _apply_publication_transition_active(session_state)
-        and fragment_state.active_publication
-        and _result_has_no_design_actions(candidate_result)
-    )
-
-
-def _settle_apply_publication_transition(session_state: Any) -> None:
-    probe = dict(session_state.get("_typed_inputs_apply_probe") or {})
-    if str(probe.get("status") or "") not in {
-        "dispatch_ok",
-        "rerun_required",
-    }:
-        return
-    probe["status"] = "settled"
-    session_state["_typed_inputs_apply_probe"] = probe
 
 
 def _render_design_brain_visibility_marker(
@@ -737,38 +673,19 @@ def render_inputs_design_guide_fragment_section(
     region_context: InputsDesignBrainRegionContext,
     design_guide_slot=None,
 ) -> None:
-    """Render Design Guide only from the current authoritative result."""
+    """Render the complete authoritative result without refresh or polling.
 
-    apply_requested = bool(
-        st_module.session_state.get("_inputs_action_apply_recommendation")
-        or st_module.session_state.get(
-            "_inputs_action_apply_recommendation_payload"
-        )
-    )
-    if apply_requested:
-        runtime.handle_pending_apply()
-        # Apply is a transaction boundary. Stop this fragment before it can
-        # render the pre-Apply publication or an interim empty result. The
-        # owning fragment rerun publishes the replacement result once.
-        apply_probe = dict(
-            st_module.session_state.get("_typed_inputs_apply_probe") or {}
-        )
-        if str(apply_probe.get("status") or "") in {
-            "dispatch_ok",
-            "rerun_required",
-        }:
-            try:
-                st_module.rerun(scope="fragment")
-            except TypeError:
-                st_module.rerun()
-            return
-
+    The owning workspace transaction has already calculated and verified the
+    recommendation. This function only projects that immutable result into
+    the card store and renders it; it has no Apply, refresh, loading-shell or
+    rerun authority.
+    """
     fragment_store = services.publications
-    fragment_state = fragment_store.current()
     workspace_store = InputsWorkspaceStateStore(st_module.session_state)
     identity = region_context.identity
     authoritative_revision = identity.input_revision
-    if not (
+    authoritative_result = services.engineering_results.current()
+    authoritative_is_current = bool(
         identity.matches(
             input_revision=workspace_store.workspace_revision(),
             engineering_hash=workspace_store.authoritative_hash(),
@@ -776,125 +693,19 @@ def render_inputs_design_guide_fragment_section(
         and workspace_store.authoritative_revision() == authoritative_revision
         and services.engineering_results.source_input_revision()
         == authoritative_revision
-    ):
-        if design_guide_slot is None:
-            design_guide_slot = st_module.empty()
-        render_v2_design_guide_loading_shell(
-            st_module=st_module,
-            design_guide_slot=design_guide_slot,
-        )
-        return
-    # The direct V2-shaped transaction already computed the complete result,
-    # including its publication.  Do not immediately invoke the Design Brain
-    # service a second time just because the UI publication store has not yet
-    # been projected for this render.  The projection below publishes that
-    # existing revision-matched result.  The fragment fallback still refreshes
-    # here because its calculation and Design Brain stages are intentionally
-    # separate.
-    current_authoritative_result = services.engineering_results.current()
-    result_has_matching_publication = bool(
-        current_authoritative_result is not None
-        and current_authoritative_result.engineering_hash == identity.engineering_hash
-        and services.engineering_results.source_input_revision()
-        == authoritative_revision
-        and current_authoritative_result.final_publication
+        and authoritative_result is not None
+        and authoritative_result.engineering_hash == identity.engineering_hash
+        and bool(authoritative_result.final_publication)
     )
-    design_brain_refresh_required = bool(
-        workspace_store.authoritative_result_present()
-        and not result_has_matching_publication
-        and (
-            fragment_state.status == "empty"
-            or (
-                fragment_state.status == "refreshing"
-                and fragment_state.pending_workspace_revision
-                == authoritative_revision
-            )
+    if not authoritative_is_current:
+        raise RuntimeError(
+            "Design Brain render attempted before its authoritative "
+            "workspace transaction completed"
         )
+    fragment_state = fragment_store.publish(
+        authoritative_result,
+        workspace_revision=authoritative_revision,
     )
-    if design_brain_refresh_required:
-        design_brain_refresh = (
-            runtime.refresh_design_brain_result
-            or runtime.refresh_authoritative_result
-        )
-        refresh_started_ns = time.perf_counter_ns()
-        try:
-            design_brain_refresh()
-        finally:
-            st_module.session_state[
-                "_inputs_design_brain_refresh_elapsed_ms"
-            ] = round(
-                (time.perf_counter_ns() - refresh_started_ns) / 1_000_000,
-                3,
-            )
-        fragment_state = fragment_store.current()
-    # A direct V2 refresh can start from an empty publication store on a
-    # fresh session. In that case the refresh has no pending marker yet, but
-    # the returned result is still the matching authoritative publication.
-    # Publish it immediately instead of leaving the card in an eternal
-    # "Updating design guidance" state. A refreshing store still requires its
-    # explicit pending-revision match.
-    publication_refresh_revision_matches = bool(
-        fragment_state.status == "empty"
-        or (
-            fragment_state.status == "refreshing"
-            and fragment_state.pending_workspace_revision
-            == authoritative_revision
-        )
-    )
-    if publication_refresh_revision_matches:
-        if workspace_store.authoritative_result_present():
-            authoritative_result = services.engineering_results.current()
-            expected_hash = identity.engineering_hash
-            if (
-                authoritative_result is not None
-                and authoritative_result.engineering_hash == expected_hash
-                and services.engineering_results.source_input_revision()
-                == authoritative_revision
-                and bool(authoritative_result.final_publication)
-            ):
-                if _hold_interim_no_actions_publication(
-                    session_state=st_module.session_state,
-                    candidate_result=authoritative_result,
-                    fragment_state=fragment_state,
-                ):
-                    st_module.session_state[
-                        "_inputs_design_brain_interim_publication_held"
-                    ] = {
-                        "reason": "apply_transition_no_design_actions",
-                        "workspace_revision": int(authoritative_revision),
-                        "engineering_hash": str(identity.engineering_hash or ""),
-                    }
-                else:
-                    fragment_state = fragment_store.publish(
-                        authoritative_result,
-                        workspace_revision=authoritative_revision,
-                    )
-                    st_module.session_state.pop(
-                        "_inputs_design_brain_interim_publication_held",
-                        None,
-                    )
-                    if not _result_has_no_design_actions(authoritative_result):
-                        _settle_apply_publication_transition(
-                            st_module.session_state
-                        )
-            elif str(
-                st_module.session_state.get(
-                    "_inputs_design_brain_job_probe", {}
-                ).get("status")
-                or ""
-            ) == "failed":
-                fragment_state = fragment_store.fail_refresh(
-                    str(
-                        st_module.session_state.get(
-                            "_inputs_design_brain_job_probe", {}
-                        ).get("error")
-                        or "design_brain_worker_failed"
-                    )
-                )
-            else:
-                fragment_state = fragment_store.current()
-        else:
-            fragment_state = fragment_store.clear()
     if design_guide_slot is None:
         design_guide_slot = st_module.empty()
     fragment_payload = fragment_state.to_dict()
@@ -905,33 +716,13 @@ def render_inputs_design_guide_fragment_section(
     fragment_payload["is_current"] = fragment_is_current
     fragment_payload["target_workspace_revision"] = authoritative_revision
     if not fragment_is_current:
-        render_v2_design_guide_loading_shell(
-            st_module=st_module,
-            design_guide_slot=design_guide_slot,
-        )
-        return
+        raise RuntimeError("Completed Design Brain publication failed projection")
     # At this point the card is revision-current and is about to be rendered.
     # Mark it visible before the widget/diagram region emits its compatibility
     # visibility marker; otherwise that older marker treats every unified
     # workspace render as a pending sibling publication and hides the card.
     st_module.session_state[_DESIGN_BRAIN_VISIBLE_REVISION_KEY] = int(
         authoritative_revision
-    )
-    # The run_every timer schedules its next tick before this fragment body.
-    # Cancel it as soon as a revision-matched publication exists, before the
-    # comparatively expensive card rendering below can let that scheduled
-    # tick become runnable.  The workspace-level stop remains as a fallback
-    # for alternate render paths and terminal failure states.
-    stop_design_brain_polling(
-        st_module.session_state,
-        reason="matching_fragment_ready_before_render",
-        revision=authoritative_revision,
-    )
-    stop_inputs_fragment_polling(
-        st_module,
-        "design_brain_workspace",
-        reason="matching_fragment_ready_before_render",
-        revision=authoritative_revision,
     )
     if selected_design_brain_adapter_name() == "v2":
         authoritative_result = services.engineering_results.current()

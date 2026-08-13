@@ -138,3 +138,22 @@ def test_apply_routing_never_requests_an_explicit_rerun_or_polling_wake() -> Non
     assert ".rerun(" not in source
     assert "request_inputs_fragment_wake" not in source
     assert "current_inputs_fragment_id" not in source
+
+
+def test_design_brain_renderer_only_projects_completed_authoritative_result() -> None:
+    source = (ROOT / "inputs_application" / "engineering_workspace.py").read_text(
+        encoding="utf-8-sig"
+    )
+    start = source.index("def render_inputs_design_guide_fragment_section(")
+    end = source.index("\ndef render_inputs_widget_fragment_section(", start)
+    renderer_source = source[start:end]
+
+    assert "handle_pending_apply" not in renderer_source
+    assert "refresh_design_brain_result" not in renderer_source
+    assert "refresh_authoritative_result" not in renderer_source
+    assert "render_v2_design_guide_loading_shell" not in renderer_source
+    assert "start_design_brain_polling" not in renderer_source
+    assert "stop_design_brain_polling" not in renderer_source
+    assert "request_inputs_fragment_wake" not in renderer_source
+    assert ".rerun(" not in renderer_source
+    assert "fragment_store.publish(" in renderer_source
