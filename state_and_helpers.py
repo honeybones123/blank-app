@@ -2265,6 +2265,24 @@ def get_beam_project_param_snapshot() -> dict:
 def apply_beam_project_param_snapshot(snapshot) -> None:
     """Apply a stored beam snapshot back into shared state."""
     snapshot = migrate_longitudinal_reo_snapshot(snapshot)
+    # One-time compatibility migration for snapshots saved before shear and
+    # axial actions gained permanent manual owners.  New snapshots always
+    # contain the owner keys, so a deliberate zero is never mistaken for a
+    # missing value or reseeded on a later render.
+    snapshot = dict(snapshot or {})
+    for canonical_key, owner_key in {
+        "uls_Vstar": "manual_uls_Vstar",
+        "uls_Nstar": "manual_uls_Nstar",
+        "sls_Vstar": "manual_sls_Vstar",
+        "sls_Nstar": "manual_sls_Nstar",
+    }.items():
+        owner_missing = owner_key not in snapshot
+        owner_defaulted_while_legacy_value_exists = (
+            float(snapshot.get(owner_key, 0.0) or 0.0) == 0.0
+            and float(snapshot.get(canonical_key, 0.0) or 0.0) != 0.0
+        )
+        if (owner_missing or owner_defaulted_while_legacy_value_exists) and canonical_key in snapshot:
+            snapshot[owner_key] = copy.deepcopy(snapshot[canonical_key])
     for key in BEAM_PROJECT_PARAM_KEYS:
         value = copy.deepcopy(snapshot.get(key, SHARED_DEFAULTS.get(key)))
         set_shared(key, value, source="beam_project_hydrate")
@@ -2786,8 +2804,8 @@ def load_proxies_from_active_set():
         signed_m = float(st.session_state.get(f"{p}_Mstar", 0.0) or 0.0)
         m_pos = float(st.session_state.get(f"{p}_Mstar_pos_manual", max(0.0, signed_m)) or 0.0)
         m_neg = float(st.session_state.get(f"{p}_Mstar_neg_manual", max(0.0, -signed_m)) or 0.0)
-        st.session_state["load_Nstar_proxy"] = float(st.session_state.get(f"{p}_Nstar", 0.0) or 0.0)
-        st.session_state["load_Vstar_proxy"] = float(st.session_state.get(f"{p}_Vstar", 0.0) or 0.0)
+        st.session_state["load_Nstar_proxy"] = float(st.session_state.get(f"manual_{p}_Nstar", 0.0) or 0.0)
+        st.session_state["load_Vstar_proxy"] = float(st.session_state.get(f"manual_{p}_Vstar", 0.0) or 0.0)
         st.session_state["load_Mstar_pos_proxy"] = float(max(0.0, m_pos))
         st.session_state["load_Mstar_neg_proxy"] = float(max(0.0, m_neg))
         # Legacy compatibility proxy (signed)
@@ -2811,8 +2829,12 @@ def save_proxies_to_active_set():
         st.session_state.get(f"{other}_Mstar"),
     )
 
-    st.session_state[f"{p}_Nstar"] = float(st.session_state.get("load_Nstar_proxy", 0.0) or 0.0)
-    st.session_state[f"{p}_Vstar"] = float(st.session_state.get("load_Vstar_proxy", 0.0) or 0.0)
+    st.session_state[f"manual_{p}_Nstar"] = float(st.session_state.get("load_Nstar_proxy", 0.0) or 0.0)
+    st.session_state[f"manual_{p}_Vstar"] = float(st.session_state.get("load_Vstar_proxy", 0.0) or 0.0)
+    # Compatibility projections remain readable by legacy report consumers,
+    # but they are no longer the owner selected by widgets or the resolver.
+    st.session_state[f"{p}_Nstar"] = st.session_state[f"manual_{p}_Nstar"]
+    st.session_state[f"{p}_Vstar"] = st.session_state[f"manual_{p}_Vstar"]
     m_pos = float(st.session_state.get("load_Mstar_pos_proxy", max(0.0, st.session_state.get("load_Mstar_proxy", 0.0) or 0.0)) or 0.0)
     m_neg = float(st.session_state.get("load_Mstar_neg_proxy", max(0.0, -(st.session_state.get("load_Mstar_proxy", 0.0) or 0.0))) or 0.0)
     st.session_state[f"{p}_Mstar_pos_manual"] = float(max(0.0, m_pos))
@@ -2885,6 +2907,8 @@ def _synchronize_manual_design_action_proxy_for_commit(shared_key: str) -> tuple
         f"{active_prefix}_Mstar_neg_manual",
         f"{active_prefix}_Vstar",
         f"{active_prefix}_Nstar",
+        f"manual_{active_prefix}_Vstar",
+        f"manual_{active_prefix}_Nstar",
         "load_Mstar_proxy",
         "load_Mstar_pos_proxy",
         "load_Mstar_neg_proxy",

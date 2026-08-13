@@ -62,7 +62,7 @@ def design_action_widget_specs(selected_prefix: str) -> list[dict]:
         {
             "label": "Design shear Vu* (kN)",
             "widget_key": "inputs_load_Vstar_proxy",
-            "shared_key": f"{selected_prefix}_Vstar",
+            "shared_key": f"manual_{selected_prefix}_Vstar",
             "proxy_key": "load_Vstar_proxy",
             "help_text": "Factored design shear at the critical section.",
             "disabled_in_design_mode": True,
@@ -70,7 +70,7 @@ def design_action_widget_specs(selected_prefix: str) -> list[dict]:
         {
             "label": "Axial force N* (kN)",
             "widget_key": "inputs_load_Nstar_proxy",
-            "shared_key": f"{selected_prefix}_Nstar",
+            "shared_key": f"manual_{selected_prefix}_Nstar",
             "proxy_key": "load_Nstar_proxy",
             "help_text": "Axial action at the section (+compression / \u2212tension).",
             "disabled_in_design_mode": True,
@@ -173,8 +173,8 @@ def mirror_design_action_proxies_from_shared(
         ("load_Mstar_pos_proxy", f"{selected_prefix}_Mstar_pos_manual"),
         ("load_Mstar_neg_proxy", f"{selected_prefix}_Mstar_neg_manual"),
         ("load_Mstar_proxy", f"{selected_prefix}_Mstar"),
-        ("load_Vstar_proxy", f"{selected_prefix}_Vstar"),
-        ("load_Nstar_proxy", f"{selected_prefix}_Nstar"),
+        ("load_Vstar_proxy", f"manual_{selected_prefix}_Vstar"),
+        ("load_Nstar_proxy", f"manual_{selected_prefix}_Nstar"),
     )
     for proxy_key, shared_key in proxy_pairs:
         set_shared_fn(
@@ -199,16 +199,6 @@ def hydrate_design_action_widgets_from_shared(
     def _display_value(spec: dict) -> float:
         shared_key = str(spec["shared_key"])
         if not design_controls:
-            manual_owner_key = {
-                "uls_Vstar": "manual_uls_Vstar",
-                "uls_Nstar": "manual_uls_Nstar",
-                "sls_Vstar": "manual_sls_Vstar",
-                "sls_Nstar": "manual_sls_Nstar",
-            }.get(shared_key)
-            if manual_owner_key in st_module.session_state:
-                return float(
-                    st_module.session_state.get(manual_owner_key, 0.0) or 0.0
-                )
             return float(get_param_fn(shared_key, 0.0) or 0.0)
 
         # In Load Analysis mode the manual ULS/SLS fields remain untouched.
@@ -485,17 +475,17 @@ def sync_design_action_widget_to_shared(
             pass
     mark_user_edit_fn(widget_key, shared_key)
     set_shared_fn(shared_key, numeric_value, source="design_action_widget_sync")
-    manual_owner_key = {
-        "uls_Vstar": "manual_uls_Vstar",
-        "uls_Nstar": "manual_uls_Nstar",
-        "sls_Vstar": "manual_sls_Vstar",
-        "sls_Nstar": "manual_sls_Nstar",
+    canonical_projection_key = {
+        "manual_uls_Vstar": "uls_Vstar",
+        "manual_uls_Nstar": "uls_Nstar",
+        "manual_sls_Vstar": "sls_Vstar",
+        "manual_sls_Nstar": "sls_Nstar",
     }.get(shared_key)
-    if manual_owner_key:
+    if canonical_projection_key:
         set_shared_fn(
-            manual_owner_key,
+            canonical_projection_key,
             numeric_value,
-            source="design_action_widget_sync",
+            source="manual_design_action_projection",
         )
     if proxy_key:
         set_shared_fn(proxy_key, numeric_value, source="design_action_widget_sync")
@@ -509,10 +499,10 @@ def sync_design_action_widget_to_shared(
             set_shared_fn("Mu_star_neg_manual", float(neg), source="design_action_widget_sync")
             set_shared_fn("Mu_star_manual", float(pos - neg), source="design_action_widget_sync")
             set_shared_fn("load_Mstar_proxy", float(pos - neg), source="design_action_widget_sync")
-    if shared_key in {"uls_Nstar", "sls_Nstar"}:
+    if shared_key in {"manual_uls_Nstar", "manual_sls_Nstar"}:
         set_shared_fn("N_star", numeric_value, source="design_action_widget_sync")
     affected_keys = [
-        key for key in (shared_key, manual_owner_key, proxy_key) if key
+        key for key in (shared_key, canonical_projection_key, proxy_key) if key
     ]
     invalidate_inputs_summary_packs_fn(
         source="design_action_widget_sync",

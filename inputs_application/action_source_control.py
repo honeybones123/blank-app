@@ -28,15 +28,15 @@ _ACTION_SOURCE_WIDGET_KEYS = (
 # historical canonical shear/axial keys are still consumed by the calculation
 # adapter in manual mode, so retain an explicit manual value beside each one
 # while the Load Analysis projection is selected.
-_MANUAL_ACTION_OWNER_KEYS = {
+MANUAL_ACTION_OWNER_KEYS = {
     "uls_Vstar": "manual_uls_Vstar",
     "uls_Nstar": "manual_uls_Nstar",
     "sls_Vstar": "manual_sls_Vstar",
     "sls_Nstar": "manual_sls_Nstar",
 }
-ACTION_SOURCE_COMMIT_KEYS = tuple(
-    sorted({*_MANUAL_ACTION_OWNER_KEYS, *_MANUAL_ACTION_OWNER_KEYS.values()})
-)
+# Changing action source is a pointer/projection command.  It never commits
+# manual actions; those are committed only by their own input callbacks.
+ACTION_SOURCE_COMMIT_KEYS: tuple[str, ...] = ()
 
 # Several of these authoritative derived-action inputs remain classified as
 # historical calculation results for compatibility.  Snapshot boundaries must
@@ -44,16 +44,6 @@ ACTION_SOURCE_COMMIT_KEYS = tuple(
 LOAD_ANALYSIS_ENGINEERING_ACTION_KEYS = (
     "actions_source",
     "design_actions_source",
-    "uls_Mstar",
-    "uls_Mstar_pos_manual",
-    "uls_Mstar_neg_manual",
-    "uls_Vstar",
-    "uls_Nstar",
-    "sls_Mstar",
-    "sls_Mstar_pos_manual",
-    "sls_Mstar_neg_manual",
-    "sls_Vstar",
-    "sls_Nstar",
     "sfd_Mmax_abs_kNm",
     "sfd_Vmax_abs_kN",
     "sfd_Msls_max_kNm",
@@ -124,46 +114,6 @@ def commit_action_source_toggle(
     """Commit one page toggle and synchronize every non-authoritative mirror."""
 
     selected = bool(state.get(widget_key, False))
-    was_selected = uses_load_analysis_actions(state)
-    if selected and not was_selected:
-        for canonical_key, manual_key in _MANUAL_ACTION_OWNER_KEYS.items():
-            state[manual_key] = state.get(canonical_key, 0.0)
-        # Streamlit can hold the latest visible number-input value one callback
-        # ahead of the canonical snapshot. Capture that page-owned edit before
-        # changing source so a rapid edit-then-toggle cannot save the previous
-        # shear/axial value. Only the currently displayed ULS/SLS set is read;
-        # the other set remains owned by its canonical manual field.
-        active_prefix = (
-            "sls"
-            if str(state.get("loads_edit_mode", "ULS")).strip().upper() == "SLS"
-            else "uls"
-        )
-        for widget_action, action_name in (
-            ("inputs_load_Vstar_proxy", "Vstar"),
-            ("inputs_load_Nstar_proxy", "Nstar"),
-        ):
-            if widget_action not in state:
-                continue
-            canonical_key = f"{active_prefix}_{action_name}"
-            manual_key = _MANUAL_ACTION_OWNER_KEYS[canonical_key]
-            value = state[widget_action]
-            state[canonical_key] = value
-            state[manual_key] = value
-    elif not selected and was_selected:
-        for canonical_key, manual_key in _MANUAL_ACTION_OWNER_KEYS.items():
-            if manual_key in state:
-                state[canonical_key] = state[manual_key]
-        active_prefix = (
-            "sls"
-            if str(state.get("loads_edit_mode", "ULS")).strip().upper() == "SLS"
-            else "uls"
-        )
-        restored_v = state.get(f"manual_{active_prefix}_Vstar", 0.0)
-        restored_n = state.get(f"manual_{active_prefix}_Nstar", 0.0)
-        state["inputs_load_Vstar_proxy"] = restored_v
-        state["load_Vstar_proxy"] = restored_v
-        state["inputs_load_Nstar_proxy"] = restored_n
-        state["load_Nstar_proxy"] = restored_n
     mode = "design" if selected else "manual"
     source = (
         LOAD_ANALYSIS_ACTIONS_SOURCE if selected else MANUAL_ACTIONS_SOURCE
@@ -321,6 +271,7 @@ __all__ = [
     "LOAD_ANALYSIS_ENGINEERING_ACTION_KEYS",
     "LOAD_ANALYSIS_ACTION_SOURCE_TOGGLE_KEY",
     "MANUAL_ACTIONS_SOURCE",
+    "MANUAL_ACTION_OWNER_KEYS",
     "authoritative_action_source_projection",
     "commit_action_source_toggle",
     "load_analysis_action_projection",

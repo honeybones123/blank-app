@@ -518,11 +518,15 @@ def _engineering_transaction_widget_keys(
             "uls_Mstar_neg_manual",
             "uls_Vstar",
             "uls_Nstar",
+            "manual_uls_Vstar",
+            "manual_uls_Nstar",
             "sls_Mstar",
             "sls_Mstar_pos_manual",
             "sls_Mstar_neg_manual",
             "sls_Vstar",
             "sls_Nstar",
+            "manual_sls_Vstar",
+            "manual_sls_Nstar",
         ):
             transaction_widget_keys.pop(key, None)
         return transaction_widget_keys
@@ -533,8 +537,8 @@ def _engineering_transaction_widget_keys(
         {
             f"{selected_prefix}_Mstar_pos_manual": "inputs_load_Mstar_pos_proxy",
             f"{selected_prefix}_Mstar_neg_manual": "inputs_load_Mstar_neg_proxy",
-            f"{selected_prefix}_Vstar": "inputs_load_Vstar_proxy",
-            f"{selected_prefix}_Nstar": "inputs_load_Nstar_proxy",
+            f"manual_{selected_prefix}_Vstar": "inputs_load_Vstar_proxy",
+            f"manual_{selected_prefix}_Nstar": "inputs_load_Nstar_proxy",
         }
     )
     return transaction_widget_keys
@@ -625,11 +629,42 @@ def _canonical_input_transaction_state_current_coordinator(
         st.session_state[shared_key] = repaired
         if widget_key:
             st.session_state[widget_key] = repaired
+    manual_action_owner_keys = {
+        "manual_uls_Vstar",
+        "manual_uls_Nstar",
+        "manual_sls_Vstar",
+        "manual_sls_Nstar",
+    }
+    legacy_manual_owner_pairs = {
+        "manual_uls_Vstar": "uls_Vstar",
+        "manual_uls_Nstar": "uls_Nstar",
+        "manual_sls_Vstar": "sls_Vstar",
+        "manual_sls_Nstar": "sls_Nstar",
+    }
+    # Warm sessions created before the dedicated owners were introduced can
+    # already contain the new default zero alongside a real value in the old
+    # canonical field.  Promote that value once at the transaction boundary.
+    # In the new model every manual edit projects both fields together, so a
+    # mismatch of owner=0 and compatibility!=0 can only be legacy state.
+    for owner_key, compatibility_key in legacy_manual_owner_pairs.items():
+        try:
+            owner_value = float(st.session_state.get(owner_key, 0.0) or 0.0)
+            compatibility_value = float(
+                st.session_state.get(compatibility_key, 0.0) or 0.0
+            )
+        except (TypeError, ValueError):
+            continue
+        if owner_value == 0.0 and compatibility_value != 0.0:
+            st.session_state[owner_key] = compatibility_value
     return {
         key: copy.deepcopy(
-            state[key]
-            if key in state
-            else st.session_state.get(key, SHARED_DEFAULTS.get(key))
+            st.session_state.get(key, SHARED_DEFAULTS.get(key))
+            if key in manual_action_owner_keys
+            else (
+                state[key]
+                if key in state
+                else st.session_state.get(key, SHARED_DEFAULTS.get(key))
+            )
         )
         for key in BEAM_PROJECT_PARAM_KEYS
     }

@@ -37,8 +37,8 @@ def test_manual_uls_widgets_enter_the_canonical_input_transaction() -> None:
 
     assert mapping["uls_Mstar_pos_manual"] == "inputs_load_Mstar_pos_proxy"
     assert mapping["uls_Mstar_neg_manual"] == "inputs_load_Mstar_neg_proxy"
-    assert mapping["uls_Vstar"] == "inputs_load_Vstar_proxy"
-    assert mapping["uls_Nstar"] == "inputs_load_Nstar_proxy"
+    assert mapping["manual_uls_Vstar"] == "inputs_load_Vstar_proxy"
+    assert mapping["manual_uls_Nstar"] == "inputs_load_Nstar_proxy"
 
 
 def test_manual_sls_widgets_enter_only_the_sls_input_transaction() -> None:
@@ -48,7 +48,7 @@ def test_manual_sls_widgets_enter_only_the_sls_input_transaction() -> None:
     )
 
     assert mapping["sls_Mstar_pos_manual"] == "inputs_load_Mstar_pos_proxy"
-    assert mapping["sls_Vstar"] == "inputs_load_Vstar_proxy"
+    assert mapping["manual_sls_Vstar"] == "inputs_load_Vstar_proxy"
     assert "uls_Mstar_pos_manual" not in mapping
 
 
@@ -119,6 +119,25 @@ def test_missing_action_source_defaults_to_beam_inputs_not_stale_analysis() -> N
     assert actions["Mu"] == 0.0
     assert actions["Vu"] == 0.0
     assert actions["source"] == "manual_uls"
+
+
+def test_manual_shear_and_axial_owners_override_compatibility_projections() -> None:
+    actions = resolve_design_actions_from_state(
+        {
+            "actions_mode": "manual",
+            "actions_source": MANUAL_ACTIONS_SOURCE,
+            "manual_uls_Vstar": 80.0,
+            "manual_uls_Nstar": 12.0,
+            "manual_sls_Vstar": 53.0,
+            "uls_Vstar": 0.0,
+            "uls_Nstar": 0.0,
+            "sls_Vstar": 0.0,
+        }
+    )
+
+    assert actions["Vu"] == 80.0
+    assert actions["Nu"] == 12.0
+    assert actions["SLS_V"] == 53.0
 
 
 def test_load_analysis_projection_supplies_uls_and_sls_without_overwriting_manual_actions() -> None:
@@ -272,7 +291,7 @@ def test_authoritative_snapshot_projection_includes_load_analysis_results() -> N
     assert projection["sfd_Vsls_max_kN"] == 208.0
 
 
-def test_authoritative_projection_carries_committed_canonical_action_values() -> None:
+def test_authoritative_projection_does_not_claim_manual_action_ownership() -> None:
     projection = authoritative_action_source_projection(
         {
             "actions_mode": "design",
@@ -288,10 +307,10 @@ def test_authoritative_projection_carries_committed_canonical_action_values() ->
         }
     )
 
-    assert projection["uls_Mstar"] == 9.75
-    assert projection["uls_Vstar"] == 19.5
-    assert projection["sls_Mstar"] == 7.5
-    assert projection["sls_Vstar"] == 15.0
+    assert "uls_Mstar" not in projection
+    assert "uls_Vstar" not in projection
+    assert "sls_Mstar" not in projection
+    assert "sls_Vstar" not in projection
 
 
 def test_design_action_resolution_uses_committed_shear_fallback() -> None:
@@ -350,7 +369,7 @@ def test_projection_supports_selected_section_uls_and_sls() -> None:
     assert projection["design_M_sls_kNm_signed"] == -55.0
 
 
-def test_source_round_trip_restores_distinct_manual_uls_and_sls_actions() -> None:
+def test_source_round_trip_never_mutates_distinct_manual_uls_and_sls_owners() -> None:
     state = {
         "actions_mode": "manual",
         "actions_source": MANUAL_ACTIONS_SOURCE,
@@ -358,6 +377,10 @@ def test_source_round_trip_restores_distinct_manual_uls_and_sls_actions() -> Non
         "uls_Nstar": 12.0,
         "sls_Vstar": 53.0,
         "sls_Nstar": 7.0,
+        "manual_uls_Vstar": 80.0,
+        "manual_uls_Nstar": 12.0,
+        "manual_sls_Vstar": 53.0,
+        "manual_sls_Nstar": 7.0,
         "loads_edit_mode": "ULS",
         "inputs_load_Vstar_proxy": 81.0,
         INPUTS_ACTION_SOURCE_TOGGLE_KEY: True,
@@ -380,10 +403,10 @@ def test_source_round_trip_restores_distinct_manual_uls_and_sls_actions() -> Non
     assert commit_action_source_toggle(
         state, INPUTS_ACTION_SOURCE_TOGGLE_KEY
     ) is True
-    assert state["uls_Vstar"] == 81.0
-    assert state["uls_Nstar"] == 12.0
-    assert state["sls_Vstar"] == 53.0
-    assert state["sls_Nstar"] == 7.0
+    assert state["manual_uls_Vstar"] == 80.0
+    assert state["manual_uls_Nstar"] == 12.0
+    assert state["manual_sls_Vstar"] == 53.0
+    assert state["manual_sls_Nstar"] == 7.0
 
 
 def test_design_mode_widgets_display_resolved_uls_and_sls_projection() -> None:

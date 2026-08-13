@@ -149,8 +149,12 @@ def resolve_design_actions_from_state(source_state: dict | None) -> dict:
         Mu_neg = max(0.0, Mu_neg)
         Mu_signed = Mu_pos - Mu_neg
         Mu = float(max(Mu_pos, Mu_neg))
-        Vu = float(state.get("uls_Vstar", 0.0) or 0.0)
-        Nu = float(state.get("uls_Nstar", 0.0) or 0.0)
+        Vu = float(
+            state.get("manual_uls_Vstar", state.get("uls_Vstar", 0.0)) or 0.0
+        )
+        Nu = float(
+            state.get("manual_uls_Nstar", state.get("uls_Nstar", 0.0)) or 0.0
+        )
         SLS_M_signed_fallback = float(state.get("sls_Mstar", 0.0) or 0.0)
         SLS_M_pos = float(
             state.get("sls_Mstar_pos_manual", max(0.0, SLS_M_signed_fallback))
@@ -164,9 +168,9 @@ def resolve_design_actions_from_state(source_state: dict | None) -> dict:
         SLS_M_neg = max(0.0, SLS_M_neg)
         SLS_M_signed = SLS_M_pos - SLS_M_neg
         SLS_M = float(max(SLS_M_pos, SLS_M_neg))
-        SLS_V = float(state.get("sls_Vstar", 0.0) or 0.0)
-        assert abs(Vu - float(state.get("uls_Vstar", 0.0) or 0.0)) < 1e-9
-        assert abs(Nu - float(state.get("uls_Nstar", 0.0) or 0.0)) < 1e-9
+        SLS_V = float(
+            state.get("manual_sls_Vstar", state.get("sls_Vstar", 0.0)) or 0.0
+        )
 
         return {
             "Mu": Mu,
