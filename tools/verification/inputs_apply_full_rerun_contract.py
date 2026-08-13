@@ -53,14 +53,7 @@ def verify_committed_apply_never_forces_full_app_rerun() -> None:
             calls.append(("rerun", scope))
 
     original_store = routing.ApplyTransactionStore
-    original_wake = routing.request_inputs_fragment_wake
     routing.ApplyTransactionStore = _ApplyStoreStub
-    routing.request_inputs_fragment_wake = (
-        lambda _st, name, revision=None: calls.append(
-            ("fragment_wake", {"name": name, "revision": revision})
-        )
-        or True
-    )
     try:
         routing.handle_inputs_apply_buttons(
             st_module=_StreamlitStub(),
@@ -77,7 +70,6 @@ def verify_committed_apply_never_forces_full_app_rerun() -> None:
         )
     finally:
         routing.ApplyTransactionStore = original_store
-        routing.request_inputs_fragment_wake = original_wake
 
     assert state["marked_committed"] == "cold-mu-200"
     assert state["uls_Mstar"] == 200.0
@@ -85,12 +77,11 @@ def verify_committed_apply_never_forces_full_app_rerun() -> None:
     assert state["uls_Vstar"] == 0.0
     assert calls == [
         (
-            "apply_triggered_rerun",
-            {"path": "handle_apply_buttons_committed_fallback"},
-        ),
-        (
-            "fragment_wake",
-            {"name": "engineering_workspace", "revision": None},
+            "apply_committed_in_current_workspace_transaction",
+            {
+                "path": "button_callback_then_single_workspace_render",
+                "revision": None,
+            },
         ),
     ]
 

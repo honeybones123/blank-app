@@ -58,6 +58,7 @@ from inputs_application.v2_engineering_calculation_adapter import (
 )
 from inputs_application.load_analysis_state_store import LoadAnalysisStateStore
 from inputs_application.action_source_control import (
+    ACTION_SOURCE_COMMIT_KEYS,
     LOAD_ANALYSIS_ACTION_SOURCE_TOGGLE_KEY,
     render_action_source_toggle,
     synchronize_load_analysis_actions_for_inputs,
@@ -1464,7 +1465,14 @@ def render_sfd_bmd_page():
         _request_inputs_engineering_commit(
             "inputs_action_source_toggle",
             changed_keys=tuple(
-                sorted({"actions_mode", "actions_source", *projected_keys})
+                sorted(
+                    {
+                        "actions_mode",
+                        "actions_source",
+                        *ACTION_SOURCE_COMMIT_KEYS,
+                        *projected_keys,
+                    }
+                )
             ),
         )
 

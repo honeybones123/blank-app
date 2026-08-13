@@ -24,7 +24,6 @@ def _direct_rerun_calls(path: Path) -> list[int]:
 def test_general_result_pages_are_fragment_scoped() -> None:
     source = (ROOT / "app.py").read_text(encoding="utf-8-sig")
     expected = {
-        "start": "_render_start_page_fragment",
         "bending": "_render_bending_page_fragment",
         "shear": "_render_shear_page_fragment",
         "creep": "_render_creep_page_fragment",
@@ -36,6 +35,14 @@ def test_general_result_pages_are_fragment_scoped() -> None:
         assert f'"{slug}": (' in source
         assert f'"{slug}": (' in source and renderer in source
         assert f"def {renderer}():" in source
+        assert f"@st.fragment\ndef {renderer}():" in source
+
+    assert '"bending": ("Bending", _render_bending_page_fragment)' in source
+    assert '"shear": ("Shear", _render_shear_page_fragment)' in source
+    assert '"creep": ("Creep", _render_creep_page_fragment)' in source
+    assert '"shrinkage": ("Shrinkage", _render_shrinkage_page_fragment)' in source
+    assert '"crack": ("Crack Control", _render_crack_page_fragment)' in source
+    assert '"deflection": ("Deflection", _render_deflection_page_fragment)' in source
 
 
 def test_global_header_actions_are_fragment_scoped() -> None:
@@ -138,6 +145,29 @@ def test_apply_routing_never_requests_an_explicit_rerun_or_polling_wake() -> Non
     assert ".rerun(" not in source
     assert "request_inputs_fragment_wake" not in source
     assert "current_inputs_fragment_id" not in source
+
+
+def test_runtime_has_no_background_design_brain_publication_path() -> None:
+    production_paths = (
+        ROOT / "app.py",
+        ROOT / "state_and_helpers.py",
+        ROOT / "inputs_application" / "engineering_workspace.py",
+        ROOT / "inputs_application" / "page_runtime" / "setup.py",
+    )
+    forbidden = (
+        "design_brain_polling",
+        "start_design_brain_polling",
+        "refresh_inputs_design_brain_result_background",
+        "DesignBrainJobService",
+    )
+    for path in production_paths:
+        source = path.read_text(encoding="utf-8-sig")
+        for symbol in forbidden:
+            assert symbol not in source, f"{path.name} retains {symbol}"
+
+    assert not (ROOT / "inputs_application" / "design_brain_polling.py").exists()
+    assert not (ROOT / "inputs_application" / "design_brain_job_service.py").exists()
+    assert not (ROOT / "inputs_application" / "design_brain_job_worker.py").exists()
 
 
 def test_design_brain_renderer_only_projects_completed_authoritative_result() -> None:

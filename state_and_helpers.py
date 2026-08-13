@@ -1282,12 +1282,16 @@ SHARED_DEFAULTS = {
     "uls_Mstar_neg_manual": 0.0,
     "uls_Vstar": 0.0,
     "uls_Nstar": 0.0,
+    "manual_uls_Vstar": 0.0,
+    "manual_uls_Nstar": 0.0,
 
     "sls_Mstar": 0.0,
     "sls_Mstar_pos_manual": 0.0,
     "sls_Mstar_neg_manual": 0.0,
     "sls_Vstar": 0.0,
     "sls_Nstar": 0.0,
+    "manual_sls_Vstar": 0.0,
+    "manual_sls_Nstar": 0.0,
     # Canonical signed manual moment pair (ULS)
     "Mu_star_manual": 0.0,  # legacy single signed manual moment
     "Mu_star_pos_manual": 0.0,
@@ -1634,11 +1638,15 @@ NEW_BEAM_STARTER_DEFAULTS = {
     "uls_Mstar_neg_manual": 0.0,
     "uls_Vstar": 0.0,
     "uls_Nstar": 0.0,
+    "manual_uls_Vstar": 0.0,
+    "manual_uls_Nstar": 0.0,
     "sls_Mstar": 0.0,
     "sls_Mstar_pos_manual": 0.0,
     "sls_Mstar_neg_manual": 0.0,
     "sls_Vstar": 0.0,
     "sls_Nstar": 0.0,
+    "manual_sls_Vstar": 0.0,
+    "manual_sls_Nstar": 0.0,
     "Mu_star_manual": 0.0,
     "Mu_star_pos_manual": 0.0,
     "Mu_star_neg_manual": 0.0,
@@ -1666,11 +1674,15 @@ NEW_BEAM_ACTION_SHARED_KEYS = {
     "uls_Mstar_neg_manual",
     "uls_Vstar",
     "uls_Nstar",
+    "manual_uls_Vstar",
+    "manual_uls_Nstar",
     "sls_Mstar",
     "sls_Mstar_pos_manual",
     "sls_Mstar_neg_manual",
     "sls_Vstar",
     "sls_Nstar",
+    "manual_sls_Vstar",
+    "manual_sls_Nstar",
     "Mu_star_manual",
     "Mu_star_pos_manual",
     "Mu_star_neg_manual",
@@ -1739,11 +1751,15 @@ BEAM_PROJECT_PARAM_KEYS = [
     "uls_Mstar_neg_manual",
     "uls_Vstar",
     "uls_Nstar",
+    "manual_uls_Vstar",
+    "manual_uls_Nstar",
     "sls_Mstar",
     "sls_Mstar_pos_manual",
     "sls_Mstar_neg_manual",
     "sls_Vstar",
     "sls_Nstar",
+    "manual_sls_Vstar",
+    "manual_sls_Nstar",
     "Mu_star_manual",
     "Mu_star_pos_manual",
     "Mu_star_neg_manual",
@@ -6949,21 +6965,6 @@ def _request_inputs_engineering_commit(
             "woken": bool(workspace_woken),
             "source": "input_transaction",
         }
-        # Summary, Design Brain, controls, Apply, and diagrams all render in
-        # this one workspace.  Waking the removed sibling fragment names left
-        # the visible controls on a new revision while the summary retained an
-        # older authoritative result.  No legacy sibling wake path remains.
-        from inputs_application.design_brain_polling import (
-            INITIAL_DESIGN_BRAIN_WAKE_INTERVAL_S,
-            start_design_brain_polling,
-        )
-
-        start_design_brain_polling(
-            st.session_state,
-            reason=f"input_transaction:{resolved_widget_key}",
-            revision=int(committed.revision),
-            interval_s=INITIAL_DESIGN_BRAIN_WAKE_INTERVAL_S,
-        )
     return committed
 
 
@@ -7007,10 +7008,15 @@ def _compose_sync_callback(widget_key: str, shared_key: str):
             # it is not an engineering edit and must not create a transaction.
             return
         widget_owner_slug = _engineering_widget_owner_slug(widget_key)
+        shared_action_projection_on_result_page = bool(
+            str(widget_key or "").startswith("inputs_load_")
+            and rendered_slug in {"bending", "shear", "crack", "deflection"}
+        )
         if (
             widget_owner_slug
             and rendered_slug
             and widget_owner_slug != rendered_slug
+            and not shared_action_projection_on_result_page
         ):
             # Browser widget state can arrive one rerun after route selection.
             # Only the page that rendered the widget may publish its value.

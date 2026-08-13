@@ -199,6 +199,16 @@ def hydrate_design_action_widgets_from_shared(
     def _display_value(spec: dict) -> float:
         shared_key = str(spec["shared_key"])
         if not design_controls:
+            manual_owner_key = {
+                "uls_Vstar": "manual_uls_Vstar",
+                "uls_Nstar": "manual_uls_Nstar",
+                "sls_Vstar": "manual_sls_Vstar",
+                "sls_Nstar": "manual_sls_Nstar",
+            }.get(shared_key)
+            if manual_owner_key in st_module.session_state:
+                return float(
+                    st_module.session_state.get(manual_owner_key, 0.0) or 0.0
+                )
             return float(get_param_fn(shared_key, 0.0) or 0.0)
 
         # In Load Analysis mode the manual ULS/SLS fields remain untouched.
@@ -475,6 +485,18 @@ def sync_design_action_widget_to_shared(
             pass
     mark_user_edit_fn(widget_key, shared_key)
     set_shared_fn(shared_key, numeric_value, source="design_action_widget_sync")
+    manual_owner_key = {
+        "uls_Vstar": "manual_uls_Vstar",
+        "uls_Nstar": "manual_uls_Nstar",
+        "sls_Vstar": "manual_sls_Vstar",
+        "sls_Nstar": "manual_sls_Nstar",
+    }.get(shared_key)
+    if manual_owner_key:
+        set_shared_fn(
+            manual_owner_key,
+            numeric_value,
+            source="design_action_widget_sync",
+        )
     if proxy_key:
         set_shared_fn(proxy_key, numeric_value, source="design_action_widget_sync")
     if shared_key.endswith("_Mstar_pos_manual") or shared_key.endswith("_Mstar_neg_manual"):
@@ -489,20 +511,23 @@ def sync_design_action_widget_to_shared(
             set_shared_fn("load_Mstar_proxy", float(pos - neg), source="design_action_widget_sync")
     if shared_key in {"uls_Nstar", "sls_Nstar"}:
         set_shared_fn("N_star", numeric_value, source="design_action_widget_sync")
+    affected_keys = [
+        key for key in (shared_key, manual_owner_key, proxy_key) if key
+    ]
     invalidate_inputs_summary_packs_fn(
         source="design_action_widget_sync",
-        updated_keys=[k for k in (shared_key, proxy_key) if k],
+        updated_keys=affected_keys,
     )
     st_module.session_state["cached_results"] = None
     st_module.session_state["_cached_compute_results"] = None
     st_module.session_state["_last_compute_fp"] = None
     queue_inputs_refresh_fn(
         "design_action_widget_sync",
-        [k for k in (shared_key, proxy_key) if k],
+        affected_keys,
     )
     invalidate_design_guide_caches_fn(
         reason="design_action_widget_sync",
-        updated_keys=[k for k in (shared_key, proxy_key) if k],
+        updated_keys=affected_keys,
         preserve_apply_banner=False,
     )
     st_module.session_state.pop("pending_recommendation", None)

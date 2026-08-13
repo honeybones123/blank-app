@@ -5144,15 +5144,87 @@ def _render_crack_page():
 def _render_deflection_page():
     return _render_lazy_page("deflection", "render_deflection")
 
-# Compatibility names retained for architecture probes and diagnostics. These
-# are plain render callables (not fragment decorators).
-def _render_start_page_fragment(): return _render_start_page()
-def _render_bending_page_fragment(): return _render_bending_page()
-def _render_shear_page_fragment(): return _render_shear_page()
-def _render_creep_page_fragment(): return _render_creep_page()
-def _render_shrinkage_page_fragment(): return _render_shrinkage_page()
-def _render_crack_page_fragment(): return _render_crack_page()
-def _render_deflection_page_fragment(): return _render_deflection_page()
+def _record_result_page_fragment_render(slug: str) -> None:
+    """Record one page-local render without creating engineering authority."""
+
+    counts = dict(st.session_state.get("_result_page_fragment_render_counts") or {})
+    counts[slug] = int(counts.get(slug, 0) or 0) + 1
+    st.session_state["_result_page_fragment_render_counts"] = counts
+
+
+def _refresh_result_page_fragment_calculations() -> None:
+    """Commit one coherent legacy-result projection for a page-local edit.
+
+    The detailed result pages still consume the shared ``RESULT_KEYS`` view.
+    Keep that projection and its cache together so a later shell navigation
+    cannot restore the result that preceded the fragment edit.
+    """
+
+    recalc_derived_values()
+    compute_all_results()
+    update_results()
+    result_values = {
+        key: copy.deepcopy(st.session_state.get(key))
+        for key in RESULT_KEYS
+        if key in st.session_state
+    }
+    result_buckets = copy.deepcopy(st.session_state.get("results") or {})
+    st.session_state["_cached_compute_results"] = {
+        "result_values": result_values,
+        "result_buckets": result_buckets,
+    }
+    st.session_state["cached_results"] = copy.deepcopy(result_buckets)
+    st.session_state["inputs_dirty"] = False
+    st.session_state["_inputs_dirty"] = False
+    st.session_state["run_design_clicked"] = False
+
+
+@st.fragment
+def _render_bending_page_fragment():
+    _record_result_page_fragment_render("bending")
+    _refresh_result_page_fragment_calculations()
+    _ensure_general_page_engineering_publication("bending")
+    return _render_bending_page()
+
+
+@st.fragment
+def _render_shear_page_fragment():
+    _record_result_page_fragment_render("shear")
+    _refresh_result_page_fragment_calculations()
+    _ensure_general_page_engineering_publication("shear")
+    return _render_shear_page()
+
+
+@st.fragment
+def _render_creep_page_fragment():
+    _record_result_page_fragment_render("creep")
+    _refresh_result_page_fragment_calculations()
+    _ensure_general_page_engineering_publication("creep")
+    return _render_creep_page()
+
+
+@st.fragment
+def _render_shrinkage_page_fragment():
+    _record_result_page_fragment_render("shrinkage")
+    _refresh_result_page_fragment_calculations()
+    _ensure_general_page_engineering_publication("shrinkage")
+    return _render_shrinkage_page()
+
+
+@st.fragment
+def _render_crack_page_fragment():
+    _record_result_page_fragment_render("crack")
+    _refresh_result_page_fragment_calculations()
+    _ensure_general_page_engineering_publication("crack")
+    return _render_crack_page()
+
+
+@st.fragment
+def _render_deflection_page_fragment():
+    _record_result_page_fragment_render("deflection")
+    _refresh_result_page_fragment_calculations()
+    _ensure_general_page_engineering_publication("deflection")
+    return _render_deflection_page()
 
 
 _GENERAL_ENGINEERING_RESULT_PAGES = frozenset(
@@ -5187,12 +5259,12 @@ PAGES = {
     "start": ("Start", _render_start_page),
     "inputs": ("Beam Inputs", inputs_page.render_inputs),
     "design": ("Load Analysis", _render_design_page),
-    "bending": ("Bending", _render_bending_page),
-    "shear": ("Shear", _render_shear_page),
-    "creep": ("Creep", _render_creep_page),
-    "shrinkage": ("Shrinkage", _render_shrinkage_page),
-    "crack": ("Crack Control", _render_crack_page),
-    "deflection": ("Deflection", _render_deflection_page),
+    "bending": ("Bending", _render_bending_page_fragment),
+    "shear": ("Shear", _render_shear_page_fragment),
+    "creep": ("Creep", _render_creep_page_fragment),
+    "shrinkage": ("Shrinkage", _render_shrinkage_page_fragment),
+    "crack": ("Crack Control", _render_crack_page_fragment),
+    "deflection": ("Deflection", _render_deflection_page_fragment),
 }
 
 # Page-level headings belong to the shared application shell so every route
@@ -6353,12 +6425,6 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
     _page_dispatch_started_perf = time.perf_counter()
     st.session_state["_user_latency_page_dispatch_started_perf"] = _page_dispatch_started_perf
     same_page_inputs_root_shell = selected_slug == "inputs" and not page_changed
-
-    # General result pages project the same authoritative V2 calculation used
-    # by Inputs.  Resolve it centrally before entering a page fragment so a
-    # direct visit, navigation after an edit, or Apply cannot expose an empty
-    # or stale summary pack.
-    _ensure_general_page_engineering_publication(selected_slug)
 
     def _render_inputs_root_dispatch_stable_shell() -> None:
         st.markdown(

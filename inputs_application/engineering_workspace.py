@@ -14,7 +14,6 @@ from application.guidance_result_adapter import (
 from inputs_application.design_guide_fragment_store import (
     DesignGuideFragmentState,
 )
-from inputs_application.design_brain_polling import start_design_brain_polling
 from inputs_application.page_runtime import InputsPageRuntime
 from inputs_application.region_contexts import (
     InputsCalculationRegionContext,
@@ -575,18 +574,6 @@ def prepare_engineering_workspace_transaction(
         revision=workspace_revision,
         result=authoritative_result,
     )
-    # The unified Runtime path requested the complete authoritative result,
-    # including the final Design Brain publication, before rendering begins.
-    # It therefore has nothing to poll.  Polling remains only for the isolated
-    # rollback/measurement path where calculation and Design Brain are still
-    # intentionally separate.
-    if not include_design_brain:
-        start_design_brain_polling(
-            st_module.session_state,
-            reason="calculation_revision_ready",
-            revision=workspace_revision,
-            interval_s=0.1,
-        )
     fragment_state = fragment_store.current()
     return {
         "reconciled_design_action_keys": reconciled_keys,

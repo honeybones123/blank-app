@@ -6,19 +6,14 @@ import copy
 
 import html
 
-import os
-
 import json
 
 import time
 
 from datetime import datetime
 
-from pathlib import Path
-
 from typing import Any
 
-from uuid import uuid4
 
 import streamlit as st
 
@@ -70,7 +65,6 @@ from inputs_application.design_brain_composition import (
     calculate_v2_authoritative_result,
     v2_engineering_calculation_contract_version,
 )
-from inputs_application.design_brain_job_service import DesignBrainJobService
 
 from inputs_application.canonical_runtime_contracts import CanonicalConvenienceResyncRuntime, CanonicalDesignStatePackRuntime
 from inputs_page_modules.app_bridge.canonical_convenience_resync import _apply_canonical_convenience_resync_to_shared, convenience_scalar_differs
@@ -1292,144 +1286,6 @@ def refresh_inputs_design_brain_result() -> Any | None:
         include_design_brain=True
     )
 
-
-def _design_brain_outputs_root() -> Path:
-    configured = str(os.environ.get("BEAM_OUTPUTS_DIR") or "").strip()
-    if configured:
-        return Path(configured).expanduser().resolve()
-    return Path(__file__).resolve().parents[3] / "complete-app - Outputs"
-
-
-def refresh_inputs_design_brain_result_background() -> Any | None:
-    """Submit/poll Design Brain without running its search on the session thread."""
-
-    engineering_result = _ensure_authoritative_design_result_current_coordinator(
-        include_design_brain=False
-    )
-    if engineering_result is None:
-        return None
-    services = InputsSessionServices.from_mapping(st.session_state)
-    input_store = services.input_snapshots
-    transaction = input_store.current()
-    current_state = input_store.committed()
-    input_revision = int(transaction.revision or 0)
-    snapshot = _build_live_engineering_input_snapshot_current_coordinator(
-        current_state
-    )
-    if engineering_result.engineering_hash != snapshot.engineering_hash:
-        raise ValueError("engineering result changed before Design Brain submission")
-    existing = services.engineering_results.current()
-    if (
-        existing is not None
-        and existing.engineering_hash == snapshot.engineering_hash
-        and services.engineering_results.source_input_revision() == input_revision
-        and bool(existing.final_publication)
-    ):
-        return existing
-    active_beam_id = str(st.session_state.get("active_beam_id") or "").strip()
-    owner_id = str(
-        st.session_state.get("_inputs_design_brain_job_owner_id") or ""
-    ).strip()
-    if not owner_id:
-        owner_id = uuid4().hex
-        st.session_state["_inputs_design_brain_job_owner_id"] = owner_id
-    # Reclassify every new revision.  The prior publication family remains
-    # diagnostic evidence only and must not override the family sorter.
-    family_override = None
-    guidance_context = application_guidance_context(
-        current_state,
-        st.session_state,
-    )
-    session_seed = {
-        key: st.session_state.get(key)
-        for key in (
-            "_dev_mode",
-            "_design_guide_post_cleanup_acceptance_enabled",
-            "_design_guide_post_cleanup_acceptance_fp",
-        )
-        if key in st.session_state
-    }
-    service = DesignBrainJobService(
-        outputs_root=_design_brain_outputs_root(),
-        app_root=Path(__file__).resolve().parents[2],
-    )
-    poll = service.poll_or_submit(
-        owner_id=owner_id,
-        beam_id=active_beam_id,
-        input_revision=input_revision,
-        engineering_snapshot=snapshot,
-        engineering_calculations=dict(
-            engineering_result.current_calculations or {}
-        ),
-        guidance_context=guidance_context,
-        family_override=str(family_override or "").strip() or None,
-        guidance_debug_verbose=_design_guide_sidebar_debug_enabled(),
-        session_seed=session_seed,
-    )
-    st.session_state["_inputs_design_brain_job_probe"] = {
-        "status": poll.status,
-        "input_revision": poll.input_revision,
-        "engineering_hash": poll.engineering_hash,
-        "job_id": poll.job_id,
-        "elapsed_ms": poll.elapsed_ms,
-        "error": poll.error,
-    }
-    if poll.status == "failed":
-        return engineering_result
-    if poll.status != "ready" or not isinstance(poll.result, dict):
-        return engineering_result
-    result = AuthoritativeDesignResult(**dict(poll.result))
-    if result.engineering_hash != snapshot.engineering_hash:
-        raise ValueError("Design Brain worker returned a different engineering hash")
-    expected_authority_hash = (
-        result.with_publication_authority_hash().publication_authority_hash
-    )
-    if result.publication_authority_hash != expected_authority_hash:
-        raise ValueError("Design Brain worker returned an invalid authority hash")
-    latest_transaction = input_store.current()
-    latest_snapshot = _build_live_engineering_input_snapshot_current_coordinator(
-        input_store.committed()
-    )
-    if (
-        int(latest_transaction.revision or 0) != input_revision
-        or latest_snapshot.engineering_hash != result.engineering_hash
-    ):
-        st.session_state["_inputs_design_brain_job_probe"]["status"] = (
-            "stale_result_rejected"
-        )
-        return engineering_result
-    services.engineering_results.store(
-        result,
-        source_input_revision=input_revision,
-    )
-    if active_beam_id:
-        result_map = dict(
-            st.session_state.get(
-                "_inputs_authoritative_design_result_by_beam_v1"
-            )
-            or {}
-        )
-        result_map[active_beam_id] = result
-        st.session_state[
-            "_inputs_authoritative_design_result_by_beam_v1"
-        ] = result_map
-        revision_map = dict(
-            st.session_state.get(
-                "_inputs_authoritative_design_result_revision_by_beam_v1"
-            )
-            or {}
-        )
-        revision_map[active_beam_id] = input_revision
-        st.session_state[
-            "_inputs_authoritative_design_result_revision_by_beam_v1"
-        ] = revision_map
-    prepare_guidance_ui_state(
-        st.session_state,
-        current_state,
-        preserve_apply_banner=True,
-        clear_transient=_clear_design_guide_transient_ui_state,
-    )
-    return result
 
 def render_inputs_pre_widget_apply_and_render_setup_coordinator(*, ss: dict, fast_get_param):
     corrected_invalid_shear_state = bool(st.session_state.pop("_inputs_shear_shared_normalised_this_run", False))

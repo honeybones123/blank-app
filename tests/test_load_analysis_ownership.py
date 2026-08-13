@@ -74,13 +74,13 @@ def test_load_analysis_page_has_no_inputs_or_design_brain_publication_authority(
     assert "before_commit=load_analysis_store.capture_widgets" in source
 
 
-def test_design_brain_worker_has_one_v2_execution_path_and_no_legacy_entrypoint() -> None:
-    worker_path = RUNTIME_ROOT / "inputs_application" / "design_brain_job_worker.py"
-    worker = worker_path.read_text(encoding="utf-8")
-
-    assert 'selected_adapter == "legacy"' not in worker
-    assert "guidance_entrypoint" not in worker
-    assert "SimpleNamespace" not in worker
+def test_runtime_has_no_alternative_design_brain_worker_or_legacy_entrypoint() -> None:
+    assert not (
+        RUNTIME_ROOT / "inputs_application" / "design_brain_job_worker.py"
+    ).exists()
+    assert not (
+        RUNTIME_ROOT / "inputs_application" / "design_brain_job_service.py"
+    ).exists()
     assert not (RUNTIME_ROOT / "inputs_application" / "guidance_entrypoint.py").exists()
     assert not (
         RUNTIME_ROOT / "inputs_application" / "guidance_runtime_contracts.py"

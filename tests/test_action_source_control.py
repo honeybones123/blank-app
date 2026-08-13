@@ -350,6 +350,42 @@ def test_projection_supports_selected_section_uls_and_sls() -> None:
     assert projection["design_M_sls_kNm_signed"] == -55.0
 
 
+def test_source_round_trip_restores_distinct_manual_uls_and_sls_actions() -> None:
+    state = {
+        "actions_mode": "manual",
+        "actions_source": MANUAL_ACTIONS_SOURCE,
+        "uls_Vstar": 80.0,
+        "uls_Nstar": 12.0,
+        "sls_Vstar": 53.0,
+        "sls_Nstar": 7.0,
+        "loads_edit_mode": "ULS",
+        "inputs_load_Vstar_proxy": 81.0,
+        INPUTS_ACTION_SOURCE_TOGGLE_KEY: True,
+    }
+
+    assert commit_action_source_toggle(
+        state, INPUTS_ACTION_SOURCE_TOGGLE_KEY
+    ) is True
+    state.update(
+        load_analysis_action_projection(
+            draft={},
+            results={
+                "sfd_Vmax_abs_kN": 240.0,
+                "sfd_Vsls_max_kN": 150.0,
+            },
+        )
+    )
+
+    state[INPUTS_ACTION_SOURCE_TOGGLE_KEY] = False
+    assert commit_action_source_toggle(
+        state, INPUTS_ACTION_SOURCE_TOGGLE_KEY
+    ) is True
+    assert state["uls_Vstar"] == 81.0
+    assert state["uls_Nstar"] == 12.0
+    assert state["sls_Vstar"] == 53.0
+    assert state["sls_Nstar"] == 7.0
+
+
 def test_design_mode_widgets_display_resolved_uls_and_sls_projection() -> None:
     class _FakeStreamlit:
         def __init__(self) -> None:
@@ -453,6 +489,33 @@ def test_forced_manual_hydration_projects_authoritative_value() -> None:
     )
 
     assert fake.session_state["inputs_load_Mstar_pos_proxy"] == 50.0
+
+
+def test_forced_manual_hydration_uses_dedicated_shear_owner() -> None:
+    class _FakeStreamlit:
+        def __init__(self) -> None:
+            self.session_state = {
+                "manual_uls_Vstar": 80.0,
+                "uls_Vstar": 0.0,
+                "uls_Mstar_pos_manual": 0.0,
+                "uls_Mstar_neg_manual": 0.0,
+                "uls_Nstar": 0.0,
+                "P_star": 0.0,
+                "Tu_star": 0.0,
+            }
+
+    fake = _FakeStreamlit()
+    hydrate_design_action_widgets_from_shared(
+        "uls",
+        st_module=fake,
+        get_param_fn=lambda key, default=0.0: fake.session_state.get(key, default),
+        state_hc_log_fn=lambda *args, **kwargs: None,
+        design_action_widget_specs_fn=design_action_widget_specs,
+        design_controls=False,
+        force=True,
+    )
+
+    assert fake.session_state["inputs_load_Vstar_proxy"] == 80.0
 
 
 def test_design_actions_renderer_has_no_action_source_or_rerun_authority() -> None:

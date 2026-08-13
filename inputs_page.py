@@ -23,6 +23,7 @@ from inputs_application.engineering_workspace import (
 from inputs_application.workspace_context import InputsWorkspaceContext
 from inputs_application.engineering_input_store import InputSnapshotStore
 from inputs_application.action_source_control import (
+    ACTION_SOURCE_COMMIT_KEYS,
     INPUTS_ACTION_SOURCE_TOGGLE_KEY,
     authoritative_action_source_projection,
     render_action_source_toggle,
@@ -163,7 +164,14 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, 
         _request_inputs_engineering_commit(
             INPUTS_ACTION_SOURCE_TOGGLE_KEY,
             changed_keys=tuple(
-                sorted({"actions_mode", "actions_source", *projected_keys})
+                sorted(
+                    {
+                        "actions_mode",
+                        "actions_source",
+                        *ACTION_SOURCE_COMMIT_KEYS,
+                        *projected_keys,
+                    }
+                )
             ),
             # The toggle callback already causes the owning fragment to rerun.
             # Scheduling another fragment wake here creates overlapping runs
@@ -177,6 +185,11 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, 
     render_action_source_toggle(
         st,
         widget_key=INPUTS_ACTION_SOURCE_TOGGLE_KEY,
+        # Commit the visible ULS/SLS action widgets before changing their
+        # source. This is the same single transaction boundary used before
+        # calculation and prevents Streamlit's callback ordering from saving
+        # an older manual action when the source switch is pressed.
+        before_commit=_INPUTS_PAGE_RUNTIME.reconcile_design_actions,
         after_commit=_commit_selected_action_source,
     )
 
