@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from application.contracts.design_brain import AuthoritativeDesignResult
 from inputs_application.v2_design_guide_renderer import render_v2_design_guide_card
 
@@ -35,6 +37,18 @@ class _ClickedStreamlit:
         if callback is not None:
             callback(*tuple(kwargs.get("args") or ()))
         return True
+
+
+def test_card_contains_scoped_morning_transaction_shell() -> None:
+    source = Path(__file__).parents[1].joinpath(
+        "inputs_application", "v2_design_guide_renderer.py"
+    ).read_text(encoding="utf-8-sig")
+
+    assert "inputs-v2-design-brain-runtime-loading" in source
+    assert "Updating Design Brain" in source
+    assert 'stStatusWidget' in source
+    assert 'st-key-v2_design_guide_apply_scope' in source
+    assert "stAppViewContainer" in source
 
 
 def test_apply_click_commits_before_workspace_fragment_renders() -> None:

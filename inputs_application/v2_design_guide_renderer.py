@@ -143,6 +143,21 @@ def render_v2_design_guide_card(
         st_module.markdown(
             "<style>"
             ".inputs-v2-root .inputs-v2-card-label{color:#343a40;font-size:1.05rem;font-weight:700;border-bottom:1px solid #dce3ec;padding-bottom:.55rem;margin:.25rem 0 .85rem;}"
+            ".inputs-v2-brain-runtime-loading-shell{display:none;align-items:center;gap:.7rem;min-height:58px;padding:.85rem 1rem;margin:.7rem 0;border:1px solid #cbd5e1;border-left:5px solid #98a2b3;border-radius:10px;background:#fff;color:#475569;}"
+            ".inputs-v2-brain-runtime-loading-icon{font-size:1.25rem;line-height:1;}"
+            ".inputs-v2-brain-runtime-loading-copy{font-weight:700;color:#334155;}"
+            ".inputs-v2-brain-runtime-loading-dot{display:inline-block;width:.42rem;height:.42rem;margin-left:.18rem;border-radius:999px;background:#94a3b8;animation:inputs-v2-runtime-pulse 1s infinite alternate;}"
+            ".inputs-v2-brain-runtime-loading-dot:nth-child(2){animation-delay:.2s;}"
+            ".inputs-v2-brain-runtime-loading-dot:nth-child(3){animation-delay:.4s;}"
+            "@keyframes inputs-v2-runtime-pulse{from{opacity:.25}to{opacity:1}}"
+            # Use the same morning transaction shell: Streamlit's status
+            # widget appears immediately when a widget command is in flight.
+            # Hide only this Design Brain publication and its CTA until the
+            # unified workspace returns a revision-matched replacement.  The
+            # summaries, diagram and controls remain visible and unchanged.
+            "div[data-testid=\"stAppViewContainer\"]:has([data-testid=\"stStatusWidget\"]) .inputs-v2-brain-runtime-loading-shell{display:flex;}"
+            "div[data-testid=\"stAppViewContainer\"]:has([data-testid=\"stStatusWidget\"]) div[data-testid=\"stVerticalBlock\"]:has(> div[data-testid=\"stElementContainer\"] .inputs-v2-brain-runtime-loading-shell) > div[data-testid=\"stLayoutWrapper\"] div[data-testid=\"stExpander\"]{display:none!important;}"
+            "div[data-testid=\"stAppViewContainer\"]:has([data-testid=\"stStatusWidget\"]) [class*=\"st-key-v2_design_guide_apply_scope\"]{display:none!important;}"
             "/* Mirrored from the latest V2 Design Guide presentation: a native expander is the clickable shell. */"
             "div[data-testid=\"stExpander\"]:has(.inputs-v2-design-guide-copy){border:1px solid #cbd5e1;border-radius:10px;overflow:hidden;background:#f8fafc;margin:.7rem 0;}"
             "div[data-testid=\"stExpander\"]:has(.inputs-v2-design-guide-copy) summary{min-height:56px;padding:.85rem 1rem;font-weight:700;color:#0f172a;}"
@@ -186,7 +201,14 @@ def render_v2_design_guide_card(
             "div[data-testid=\"stVerticalBlock\"][class*=\"st-key-v2_design_guide_apply_scope_warn\"] div[data-testid=\"stButton\"]>button:not(:disabled){background:#f08c00 !important;border-color:#f08c00 !important;color:#fff !important;}"
             "div[data-testid=\"stVerticalBlock\"][class*=\"st-key-v2_design_guide_apply_scope_info\"] div[data-testid=\"stButton\"]>button:not(:disabled){background:#64748b !important;border-color:#64748b !important;color:#fff !important;}"
             "</style>"
-            '<div class="inputs-v2-root"><div class="inputs-v2-card-label">Design Brain</div></div>'
+            '<div class="inputs-v2-root"><div class="inputs-v2-card-label">Design Brain</div>'
+            '<div data-testid="inputs-v2-design-brain-runtime-loading" class="inputs-v2-brain-runtime-loading-shell" role="status" aria-live="polite">'
+            '<span class="inputs-v2-brain-runtime-loading-icon" aria-hidden="true">&#129504;</span>'
+            '<span class="inputs-v2-brain-runtime-loading-copy">Updating Design Brain'
+            '<span class="inputs-v2-brain-runtime-loading-dot"></span>'
+            '<span class="inputs-v2-brain-runtime-loading-dot"></span>'
+            '<span class="inputs-v2-brain-runtime-loading-dot"></span>'
+            '</span></div></div>'
             f'<span data-testid="v2-design-guide-card" class="inputs-v2-brain-state-{html.escape(state)}" aria-hidden="true">{html.escape(family)}</span>',
             unsafe_allow_html=True,
         )
