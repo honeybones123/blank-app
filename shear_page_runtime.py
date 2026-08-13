@@ -3671,7 +3671,7 @@ $$\\large \\varepsilon_{{x,2}} = \\frac{{{numerator_2:,.0f}}}{{{denom2:,.0f}}} =
 
 **Derived material properties:**
 
-- $E_c = 4700\sqrt{{f'_c}} = 4700\sqrt{{{fc:.1f}}} = {_fmt(Ec,0)}$ MPa  
+- $E_c = 4700\\sqrt{{f'_c}} = 4700\\sqrt{{{fc:.1f}}} = {_fmt(Ec,0)}$ MPa  
 - $Eceff = \\dfrac{{E_c}}{{1+\\varphi_{{cc}}(t)}} = {_fmt(get_param('Eceff', Ec),0)}$ MPa  
 - $A_{{ct}} = {_fmt(A_ct,1)}$ mm² (concrete area term in Equation (2) path, when used)  
 
@@ -4358,7 +4358,7 @@ This step gives the steel contribution only. It is then added to the concrete co
         # Check 8 — COMBINED SHEAR STRENGTH AND SECTIONAL CHECK
         # =====================================================
         check8_calc_md = f"""
-*Purpose: Combine concrete and steel contributions and check $\phi V_u$ against $V_{{eq}}^*$.*  
+*Purpose: Combine concrete and steel contributions and check $\\phi V_u$ against $V_{{eq}}^*$.*  
 
 
 

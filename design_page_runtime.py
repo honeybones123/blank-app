@@ -1255,7 +1255,7 @@ def render_derivation(case, L, params, results):
             )
             st.markdown(f"- R_A = `{RA:.3g}` kN (down)  \n- R_B = `{RB:.3g}` kN (up)")
 
-        st.markdown("### Step 3 – Shear function \(V(x)\)")
+            st.markdown(r"### Step 3 – Shear function \(V(x)\)")
 
         if case == "Simple beam – UDL over entire span":
             st.latex(
@@ -1315,7 +1315,7 @@ def render_derivation(case, L, params, results):
                 r"\end{cases}"
             )
 
-        st.markdown("### Step 4 – Moment function \(M(x)\)")
+            st.markdown(r"### Step 4 – Moment function \(M(x)\)")
 
         if case == "Simple beam – UDL over entire span":
             st.latex(

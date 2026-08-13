@@ -2317,7 +2317,7 @@ def calcbox(
     uid: str | None = None,
     accent: str | None = None,
 ):
-    """
+    r"""
     Render a status-aware calculation box with LaTeX support.
     
     Args:

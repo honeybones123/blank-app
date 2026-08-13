@@ -2094,7 +2094,7 @@ so \(n\) is usually in the range **6â€“10**.
 - $E_c = {Ec:.0f}$ MPa  
 - Concrete modulus derivation:  
   $$
-  E_c = 4700\sqrt{{f'_c}}
+  E_c = 4700\\sqrt{{f'_c}}
   $$
 
 ---
