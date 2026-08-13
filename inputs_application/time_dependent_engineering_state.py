@@ -14,7 +14,7 @@ from typing import Any, Mapping, MutableMapping
 
 from calculations.deflection import derive_sustained_stress_ratio
 from calculations.design_actions import resolve_design_actions_from_state
-from inputs_application.engineering_input_store import InputSnapshotStore
+from inputs_application.engineering_input_store import InputSnapshotState, InputSnapshotStore
 from inputs_application.engineering_state_projection import (
     rebuild_engineering_derived_state,
 )
@@ -58,7 +58,7 @@ def resolve_time_dependent_engineering_state(
     snapshot = (
         store.current_for_beam(resolved_beam_id)
         if resolved_beam_id
-        else store.current()
+        else InputSnapshotState()
     )
     if not snapshot.snapshot:
         # Old saved sessions are readable during migration, but this fallback is

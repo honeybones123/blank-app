@@ -1,11 +1,17 @@
 import pytest
 
+from inputs_v2.domain.beam_inputs import (
+    BeamInputs,
+    ServiceabilityInputs,
+    TimeDependentInputs,
+)
 from inputs_v2.engineering.deflection import (
     DeflectionInput,
     calculate_deflection,
     derive_equivalent_udl_from_actions,
     resolve_equivalent_loads,
 )
+from inputs_v2.engineering.engineering_calculator import EngineeringCalculator
 from inputs_v2.engineering.legacy_snapshot.deflection import (
     calc_deflection_as3600,
     calc_ief_simplified,
@@ -81,3 +87,95 @@ def test_deflection_rejects_non_finite_inputs() -> None:
     values = DeflectionInput(6.0, 30000.0, 32.0, 300.0, 300.0, 550.0, float("nan"), 0.0, 8.0, 3.0, 0.4, "Simply supported")
     with pytest.raises(ValueError, match="tension_steel_area_mm2 must be finite"):
         calculate_deflection(values)
+
+
+def test_simply_supported_deflection_matches_independent_mechanics_equation() -> None:
+    values = DeflectionInput(
+        6.0, 30_000.0, 40.0, 300.0, 300.0, 550.0, 2_000.0, 500.0,
+        8.0, 2.0, 0.4, "Simply supported",
+    )
+    result = calculate_deflection(values)
+    span_mm = 6_000.0
+    total_load_n_per_mm = 10.0
+    sustained_load_n_per_mm = 8.8
+    expected_short = (
+        (5.0 / 384.0)
+        * total_load_n_per_mm
+        * span_mm**4
+        / (30_000.0 * result.effective_inertia_mm4)
+    )
+    expected_sustained = (
+        (5.0 / 384.0)
+        * sustained_load_n_per_mm
+        * span_mm**4
+        / (30_000.0 * result.effective_inertia_mm4)
+    )
+    expected_kcs = max(2.0 - 1.2 * 500.0 / 2_000.0, 0.8)
+
+    assert result.short_term_mm == pytest.approx(expected_short)
+    assert result.sustained_short_term_mm == pytest.approx(expected_sustained)
+    assert result.long_term_addition_mm == pytest.approx(expected_kcs * expected_sustained)
+    assert result.total_mm == pytest.approx(expected_short + expected_kcs * expected_sustained)
+
+
+@pytest.mark.parametrize(
+    ("support", "coefficient"),
+    [
+        ("Simply supported", 5.0 / 384.0),
+        ("Pinned-Pinned", 5.0 / 384.0),
+        ("Continuous", 1.5 / 384.0),
+        ("Continuous - end span", 2.4 / 384.0),
+        ("Continuous - interior span", 1.5 / 384.0),
+        ("Fixed-ended", 1.0 / 384.0),
+        ("Fixed-Pinned", 1.0 / 185.0),
+        ("Pinned-Fixed", 1.0 / 185.0),
+        ("Cantilever", 1.0 / 8.0),
+    ],
+)
+def test_all_supported_boundary_conditions_use_their_mechanics_coefficient(
+    support: str, coefficient: float,
+) -> None:
+    values = DeflectionInput(
+        6.0, 30_000.0, 40.0, 300.0, 300.0, 550.0, 2_000.0, 500.0,
+        8.0, 2.0, 0.4, support,
+    )
+    result = calculate_deflection(values)
+    expected = coefficient * 10.0 * 6_000.0**4 / (
+        30_000.0 * result.effective_inertia_mm4
+    )
+
+    assert result.support_coefficient == pytest.approx(coefficient)
+    assert result.short_term_mm == pytest.approx(expected)
+
+
+def test_authoritative_deflection_uses_input_modulus_and_flanged_widths() -> None:
+    serviceability = ServiceabilityInputs(
+        moment_knm=100.0,
+        permanent_udl_knm_per_m=8.0,
+        imposed_udl_knm_per_m=2.0,
+    )
+    common = dict(
+        width_mm=300.0,
+        depth_mm=600.0,
+        span_mm=6_000.0,
+        section_shape="T",
+        flange_width_mm=900.0,
+        flange_thickness_mm=120.0,
+        web_width_mm=300.0,
+        serviceability=serviceability,
+    )
+    low_modulus = BeamInputs(
+        **common,
+        time_dependent=TimeDependentInputs(concrete_modulus_mpa=25_000.0),
+    ).validated()
+    high_modulus = BeamInputs(
+        **common,
+        time_dependent=TimeDependentInputs(concrete_modulus_mpa=35_000.0),
+    ).validated()
+    low = EngineeringCalculator().calculate(low_modulus).families["serviceability"]
+    high = EngineeringCalculator().calculate(high_modulus).families["serviceability"]
+
+    assert low["deflection_mm"] > high["deflection_mm"]
+    assert low["deflection_mm"] / high["deflection_mm"] == pytest.approx(
+        35_000.0 / 25_000.0
+    )

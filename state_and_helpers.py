@@ -6853,6 +6853,21 @@ def _request_inputs_engineering_commit(
     # persistence, and navigation all observe the same values and revision.
     stage_started_ns = time.perf_counter_ns()
     live_snapshot = get_beam_project_param_snapshot()
+    # A selected Load Analysis result is a derived workspace input, not a
+    # Beam Inputs manual action.  Include its typed ULS/SLS projection in the
+    # committed engineering identity so the zero/manual workspace cannot be
+    # reused after the source toggle changes.  This does not copy any value to
+    # the independent manual owners; it records only the selected calculated
+    # action provenance consumed by calculations and the Design Brain.
+    from inputs_application.action_source_control import (
+        authoritative_action_source_projection,
+        uses_load_analysis_actions,
+    )
+
+    if uses_load_analysis_actions(st.session_state):
+        live_snapshot.update(
+            authoritative_action_source_projection(st.session_state)
+        )
     legacy_mirrors = build_legacy_longitudinal_mirrors_from_rows(live_snapshot)
     for key, value in legacy_mirrors.items():
         if key in BEAM_PROJECT_PARAM_KEYS:
@@ -6908,6 +6923,10 @@ def _request_inputs_engineering_commit(
         persisted_params = persisted_record.get("params")
         if isinstance(persisted_params, dict):
             live_snapshot = copy.deepcopy(persisted_params)
+            if uses_load_analysis_actions(st.session_state):
+                live_snapshot.update(
+                    authoritative_action_source_projection(st.session_state)
+                )
 
     stage_started_ns = time.perf_counter_ns()
     committed = InputSnapshotStore(st.session_state).commit_active_beam(
@@ -7029,6 +7048,27 @@ def _compose_sync_callback(widget_key: str, shared_key: str):
             return
         mark_user_edit(widget_key, shared_key)
         assign_callback()
+        atomic_shear_changed_keys: list[str] = []
+        if str(shared_key or "") in {"lig_d", "lig_legs"}:
+            from inputs_application.shear_state_normalization import (
+                normalize_shear_link_pair,
+            )
+
+            pair = normalize_shear_link_pair(
+                {
+                    "lig_d": st.session_state.get("lig_d", 0),
+                    "lig_legs": st.session_state.get("lig_legs", 0),
+                },
+                changed_key=str(shared_key),
+            )
+            owner_prefix = str(widget_key).removesuffix(str(shared_key))
+            for pair_key, pair_value in pair.items():
+                if st.session_state.get(pair_key) != pair_value:
+                    atomic_shear_changed_keys.append(pair_key)
+                st.session_state[pair_key] = pair_value
+                owner_widget_key = f"{owner_prefix}{pair_key}"
+                if owner_widget_key != widget_key:
+                    st.session_state[owner_widget_key] = pair_value
         # Display-only controls are already inside the Inputs workspace
         # fragment. Streamlit schedules that fragment rerun automatically
         # after the callback returns; explicitly calling st.rerun() here is a
@@ -7037,6 +7077,9 @@ def _compose_sync_callback(widget_key: str, shared_key: str):
             return
         commit_changed_keys = _synchronize_manual_design_action_proxy_for_commit(
             str(shared_key or "")
+        )
+        commit_changed_keys = sorted(
+            set(commit_changed_keys) | set(atomic_shear_changed_keys)
         )
         # Keep every engineering widget on the same commit boundary.  The
         # design-action callbacks already invalidate these caches; geometry,

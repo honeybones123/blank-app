@@ -58,7 +58,12 @@ class InputsWorkspaceStore:
         self._state = session_state
 
     def current_revision(self) -> int:
-        committed_revision = InputSnapshotStore(self._state).current().revision
+        beam_id = str(self._state.get("active_beam_id") or "").strip()
+        committed_revision = (
+            InputSnapshotStore(self._state).current_for_beam(beam_id).revision
+            if beam_id
+            else 0
+        )
         if committed_revision:
             return int(committed_revision)
         return int(self._state.get(self.REVISION_KEY, 0) or 0)
@@ -66,7 +71,12 @@ class InputsWorkspaceStore:
     def record_refresh(self, request: InputsWorkspaceRefresh) -> None:
         payload = asdict(request)
         payload["rerun_class"] = request.rerun_class.value
-        committed_revision = InputSnapshotStore(self._state).current().revision
+        beam_id = str(self._state.get("active_beam_id") or "").strip()
+        committed_revision = (
+            InputSnapshotStore(self._state).current_for_beam(beam_id).revision
+            if beam_id
+            else 0
+        )
         self._state[self.REVISION_KEY] = max(
             int(committed_revision or 0),
             int(request.revision),

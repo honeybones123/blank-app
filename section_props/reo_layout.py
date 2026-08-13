@@ -431,6 +431,14 @@ def compute_longitudinal_reo_layout_T_I(
     shape = shape_name
     from state_runtime_gateway import get_longitudinal_row_inputs
 
+    # Main web bars are enclosed by the web ligature.  Cover is measured to
+    # the outside of that link, so the first bar surface starts one complete
+    # link diameter farther inward.  Flange-only distribution bars are not
+    # moved by the web ligature.
+    link_diameter = max(float(reo.get("lig_d", 0.0) or 0.0), 0.0)
+    link_legs = int(float(reo.get("lig_legs", 0) or 0))
+    web_link_inset = link_diameter if link_diameter > 0.0 and link_legs >= 2 else 0.0
+
     def _row_model_rows(section_key: str) -> List[Dict[str, Any]]:
         nested_key = "top_rows" if section_key == "top" else "bottom_rows"
         canonical_rows = reo.get(nested_key)
@@ -487,13 +495,13 @@ def compute_longitudinal_reo_layout_T_I(
         prev_dia = None
         for row in top_rows:
             dia = float(row.get("dia", 0.0) or 0.0)
-            y = cover_top + dia / 2.0 if prev_y is None else prev_y + prev_dia / 2.0 + rowgap_top + dia / 2.0
+            y = cover_top + web_link_inset + dia / 2.0 if prev_y is None else prev_y + prev_dia / 2.0 + rowgap_top + dia / 2.0
             if y + dia / 2.0 > tf + 1e-9:
                 warnings.append(f"Top web row {int(row.get('row_index', 1))} does not fit within flange thickness; row ignored.")
                 continue
             # Web longitudinal bars must remain inside the web band.
-            x0_t = x_web0 + cover_side + dia / 2.0
-            x1_t = x_web1 - cover_side - dia / 2.0
+            x0_t = x_web0 + cover_side + web_link_inset
+            x1_t = x_web1 - cover_side - web_link_inset
             width_top = x1_t - x0_t
             if width_top <= 0:
                 warnings.append("Top web bars: no horizontal room after covers.")
@@ -521,12 +529,12 @@ def compute_longitudinal_reo_layout_T_I(
         prev_dia = None
         for row in bottom_rows:
             dia = float(row.get("dia", 0.0) or 0.0)
-            y = D - cover_bot - dia / 2.0 if prev_y is None else prev_y - prev_dia / 2.0 - rowgap_bot - dia / 2.0
+            y = D - cover_bot - web_link_inset - dia / 2.0 if prev_y is None else prev_y - prev_dia / 2.0 - rowgap_bot - dia / 2.0
             if y - dia / 2.0 < tf - 1e-9:
                 warnings.append(f"Bottom web row {int(row.get('row_index', 1))} does not fit within available web depth; row ignored.")
                 continue
-            x0_b = x_web0 + cover_side + dia / 2.0
-            x1_b = x_web1 - cover_side - dia / 2.0
+            x0_b = x_web0 + cover_side + web_link_inset
+            x1_b = x_web1 - cover_side - web_link_inset
             width_bot = x1_b - x0_b
             if width_bot <= 0:
                 warnings.append("Bottom web bars: no horizontal room after covers.")
@@ -621,12 +629,12 @@ def compute_longitudinal_reo_layout_T_I(
         prev_dia = None
         for row in top_rows:
             dia = float(row.get("dia", 0.0) or 0.0)
-            y = cover_top + dia / 2.0 if prev_y is None else prev_y + prev_dia / 2.0 + rowgap_top + dia / 2.0
+            y = cover_top + web_link_inset + dia / 2.0 if prev_y is None else prev_y + prev_dia / 2.0 + rowgap_top + dia / 2.0
             if y + dia / 2.0 > tf + 1e-9:
                 warnings.append(f"Top web row {int(row.get('row_index', 1))} does not fit within top flange; row ignored.")
                 continue
-            x0_t = ((bf - tw) / 2.0) + cover_side + dia / 2.0
-            x1_t = ((bf + tw) / 2.0) - cover_side - dia / 2.0
+            x0_t = ((bf - tw) / 2.0) + cover_side + web_link_inset
+            x1_t = ((bf + tw) / 2.0) - cover_side - web_link_inset
             width_top = x1_t - x0_t
             if width_top <= 0:
                 warnings.append("Top web bars: no horizontal room after covers.")
@@ -654,12 +662,12 @@ def compute_longitudinal_reo_layout_T_I(
         prev_dia = None
         for row in bottom_rows:
             dia = float(row.get("dia", 0.0) or 0.0)
-            y = D - cover_bot - dia / 2.0 if prev_y is None else prev_y - prev_dia / 2.0 - rowgap_bot - dia / 2.0
+            y = D - cover_bot - web_link_inset - dia / 2.0 if prev_y is None else prev_y - prev_dia / 2.0 - rowgap_bot - dia / 2.0
             if y - dia / 2.0 < (D - tf) - 1e-9:
                 warnings.append(f"Bottom web row {int(row.get('row_index', 1))} does not fit within bottom flange; row ignored.")
                 continue
-            x0_b = ((bf - tw) / 2.0) + cover_side + dia / 2.0
-            x1_b = ((bf + tw) / 2.0) - cover_side - dia / 2.0
+            x0_b = ((bf - tw) / 2.0) + cover_side + web_link_inset
+            x1_b = ((bf + tw) / 2.0) - cover_side - web_link_inset
             width_bot = x1_b - x0_b
             if width_bot <= 0:
                 warnings.append("Bottom web bars: no horizontal room after covers.")

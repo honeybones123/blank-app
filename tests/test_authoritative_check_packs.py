@@ -12,10 +12,11 @@ from inputs_application.engineering_input_store import InputSnapshotStore
 
 
 def _state_with_pack(*, revision_offset: int = 0) -> dict:
-    state: dict = {}
+    state: dict = {"active_beam_id": "beam-a"}
     inputs = InputSnapshotStore(state)
-    inputs.capture_draft({"b": 250.0}, source="test")
-    transaction = inputs.commit_draft(source="test")
+    transaction = inputs.commit_for_beam(
+        "beam-a", {"b": 250.0}, source="test"
+    )
     result = AuthoritativeDesignResult(
         engineering_hash="engineering-hash",
         current_calculations={
@@ -50,6 +51,12 @@ def _state_with_pack(*, revision_offset: int = 0) -> dict:
         result,
         source_input_revision=transaction.revision + revision_offset,
     )
+    state["_inputs_authoritative_design_result_by_beam_v1"] = {
+        "beam-a": result
+    }
+    state["_inputs_authoritative_design_result_revision_by_beam_v1"] = {
+        "beam-a": transaction.revision + revision_offset
+    }
     return state
 
 

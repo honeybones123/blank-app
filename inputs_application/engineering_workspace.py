@@ -520,8 +520,11 @@ def prepare_engineering_workspace_transaction(
         )
         or {}
     )
+    active_beam_id = str(
+        st_module.session_state.get("active_beam_id") or ""
+    ).strip()
     committed_revision = int(
-        services.input_snapshots.current().revision
+        services.input_snapshots.current_for_beam(active_beam_id).revision
         or input_transaction.get("revision", workspace_revision)
         or workspace_revision
     )

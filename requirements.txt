@@ -1,4 +1,4 @@
-./vendor/beamapp_inputs_v2-0.1.1-py3-none-any.whl
+./vendor/beamapp_inputs_v2-0.1.2-py3-none-any.whl
 streamlit>=1.43.0
 pandas
 numpy

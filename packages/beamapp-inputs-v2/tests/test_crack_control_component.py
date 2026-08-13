@@ -1,5 +1,12 @@
 import pytest
 
+from inputs_v2.domain.beam_inputs import (
+    BeamInputs,
+    ServiceabilityInputs,
+    TimeDependentInputs,
+)
+from inputs_v2.engineering.engineering_calculator import EngineeringCalculator
+
 from inputs_v2.engineering.crack_control import (
     CrackControlInput,
     calculate_crack_control,
@@ -18,7 +25,7 @@ from inputs_v2.engineering.legacy_snapshot.crack_control import (
         (40.0, 300.0, 0.3, "Primarily tension", 0.0, "bottom"),
     ],
 )
-def test_crack_control_preserves_snapshot_numerical_parity(
+def test_crack_control_uses_clause_8623_effective_tension_area(
     diameter: float,
     spacing: float,
     limit: float,
@@ -44,6 +51,7 @@ def test_crack_control_preserves_snapshot_numerical_parity(
         shrinkage_strain=650e-6,
         bond_factor=0.8,
         strain_distribution_factor=0.5,
+        neutral_axis_depth_mm=180.0,
         tension_face=face,
     )
     current = calculate_crack_control(values).as_family_values()
@@ -67,12 +75,61 @@ def test_crack_control_preserves_snapshot_numerical_parity(
         k2=values.strain_distribution_factor,
         crack_tension_face=values.tension_face,
     )
-    assert current.keys() == legacy.keys()
-    for key, expected in legacy.items():
+    # Table-method fields are unchanged; the direct-width calculation is
+    # independently checked against Clause 8.6.2.3 rather than the superseded
+    # snapshot equation.
+    for key in (
+        "sigma_table_A",
+        "sigma_table_B",
+        "sigma_table_combined",
+        "sigma_08fsy",
+        "sigma_allow_table",
+        "utilisation_table",
+        "passes_table",
+    ):
+        expected = legacy[key]
         if isinstance(expected, bool):
             assert current[key] is expected
         else:
             assert current[key] == pytest.approx(expected, rel=0.0, abs=1e-12)
+
+    tension_zone_depth = values.cover_mm + values.bar_diameter_mm / 2.0
+    expected_height = min(
+        2.5 * tension_zone_depth,
+        (values.depth_mm - values.neutral_axis_depth_mm) / 3.0,
+        values.depth_mm / 2.0,
+    )
+    expected_area = values.width_mm * expected_height
+    expected_ratio = values.steel_area_mm2 / expected_area
+    expected_fct = 0.6 * values.concrete_strength_mpa**0.5
+    expected_ne = (
+        (1.0 + values.creep_coefficient)
+        * values.steel_modulus_mpa
+        / values.concrete_modulus_mpa
+    )
+    expected_strain = max(
+        values.outer_steel_stress_mpa / values.steel_modulus_mpa
+        - 0.6
+        * expected_fct
+        / (values.steel_modulus_mpa * expected_ratio)
+        * (1.0 + expected_ne * expected_ratio)
+        + values.shrinkage_strain,
+        0.6 * values.outer_steel_stress_mpa / values.steel_modulus_mpa,
+    )
+    expected_spacing = (
+        3.4 * values.cover_mm
+        + 0.3
+        * values.bond_factor
+        * values.strain_distribution_factor
+        * values.bar_diameter_mm
+        / expected_ratio
+    )
+    assert current["height_eff"] == pytest.approx(expected_height)
+    assert current["Aceff"] == pytest.approx(expected_area)
+    assert current["rho_eff"] == pytest.approx(expected_ratio)
+    assert current["eps_diff"] == pytest.approx(expected_strain)
+    assert current["sr_max"] == pytest.approx(expected_spacing)
+    assert current["w_calc"] == pytest.approx(expected_spacing * expected_strain)
 
 
 def test_crack_control_rejects_non_finite_inputs() -> None:
@@ -94,6 +151,41 @@ def test_crack_control_rejects_non_finite_inputs() -> None:
         shrinkage_strain=650e-6,
         bond_factor=0.8,
         strain_distribution_factor=0.5,
+        neutral_axis_depth_mm=180.0,
     )
     with pytest.raises(ValueError, match="width_mm must be finite"):
         calculate_crack_control(values)
+
+
+def test_authoritative_cracked_section_uses_the_input_concrete_modulus() -> None:
+    inputs = BeamInputs(
+        width_mm=300.0,
+        depth_mm=600.0,
+        serviceability=ServiceabilityInputs(moment_knm=120.0),
+        time_dependent=TimeDependentInputs(concrete_modulus_mpa=25_000.0),
+    ).validated()
+    result = EngineeringCalculator().calculate(inputs).families["crack_control"]
+
+    steel_area = inputs.bottom.bars * 3.141592653589793 * inputs.bottom.diameter_mm**2 / 4.0
+    effective_depth = inputs.depth_mm - inputs.bottom.cover_mm - inputs.bottom.diameter_mm / 2.0
+    transformed_area = 200_000.0 / 25_000.0 * steel_area
+    coefficient = inputs.width_mm / 2.0
+    neutral_axis = (
+        -transformed_area
+        + (
+            transformed_area**2
+            + 4.0 * coefficient * transformed_area * effective_depth
+        ) ** 0.5
+    ) / (2.0 * coefficient)
+    cracked_inertia = (
+        inputs.width_mm * neutral_axis**3 / 3.0
+        + transformed_area * (effective_depth - neutral_axis) ** 2
+    )
+    expected_stress = (
+        200_000.0
+        * (120.0 * 1_000_000.0)
+        / (25_000.0 * cracked_inertia)
+        * (effective_depth - neutral_axis)
+    )
+
+    assert result["sigma_sr"] == pytest.approx(expected_stress)

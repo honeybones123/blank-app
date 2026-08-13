@@ -236,6 +236,55 @@ def test_runtime_aliases_preserve_shear_method_and_time_dependent_inputs() -> No
     assert current.time_dependent.age_at_loading_days == 56.0
 
 
+def test_runtime_snapshot_propagates_equation_inputs_without_hidden_defaults() -> None:
+    snapshot = EngineeringInputSnapshot(
+        geometry={"b": 300.0, "D": 500.0, "L": 4000.0, "sec_shape": "RECT"},
+        materials={"fc": 40.0, "fsy": 500.0},
+        reinforcement={
+            "bot_row_1_bars": 4,
+            "bot_row_1_dia": 20,
+            "cover_bot": 35.0,
+            "cover_side": 35.0,
+            "top_bars": 2,
+            "db_top": 12,
+            "cover_top": 35.0,
+            "lig_d": 12,
+            "lig_legs": 2,
+            "s_lig": 150.0,
+        },
+        design_actions={"Mu": 150.0, "Vu": 160.0, "Tu": 60.0},
+        design_settings={
+            "deflection_support_condition": "Continuous",
+            "k_v_method": "AS 3600 Clause 8.2.4.2 general method",
+        },
+    )
+    api = _v2_api()
+    current, _rows, _loads = _beam_inputs_from_snapshot(
+        snapshot,
+        api,
+        revision=12,
+        resolved_inputs={
+            "Ec": 25_000.0,
+            "t_shrink": 730.0,
+            "t_creep": 540.0,
+            "age_at_loading": 56.0,
+        },
+    )
+
+    assert current.side_cover_mm == pytest.approx(35.0)
+    assert current.time_dependent.concrete_modulus_mpa == pytest.approx(25_000.0)
+    assert current.time_dependent.shrinkage_time_days == pytest.approx(730.0)
+    assert current.time_dependent.creep_time_days == pytest.approx(540.0)
+    assert current.time_dependent.age_at_loading_days == pytest.approx(56.0)
+    assert current.deflection.support_condition == "Continuous"
+
+    families = api["EngineeringCalculator"]().calculate(current).families
+    assert families["shear"]["A_oh"] == pytest.approx(
+        (300.0 - 2.0 * (35.0 + 6.0))
+        * (500.0 - 2.0 * (35.0 + 6.0))
+    )
+
+
 @pytest.mark.parametrize(
     ("label", "expected"),
     (
@@ -378,7 +427,7 @@ def test_bending_summary_publishes_every_authoritative_detailed_check() -> None:
     )
     assert (
         result.current_calculations["calculation_contract_version"]
-        == "inputs_v2.calculation.v6"
+        == "inputs_v2.calculation.v7"
     )
     rows = result.current_calculations["packs"]["bending"]["rows"]
     rows_by_uid = {row["uid"]: row for row in rows}

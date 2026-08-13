@@ -37,7 +37,7 @@ class InputsWorkspaceContext:
         input_state = (
             services.input_snapshots.current_for_beam(str(beam_id))
             if beam_id
-            else services.input_snapshots.current()
+            else InputSnapshotState()
         )
         result = services.engineering_results.current()
         return cls(
@@ -73,7 +73,7 @@ class InputsWorkspaceContext:
             return self.services.input_snapshots.current_for_beam(
                 self.active_beam_id
             )
-        return self.services.input_snapshots.current()
+        return InputSnapshotState()
 
 
 __all__ = ["InputsWorkspaceContext"]

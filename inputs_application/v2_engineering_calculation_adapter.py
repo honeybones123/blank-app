@@ -20,7 +20,7 @@ from calculations.deflection import derive_sustained_stress_ratio
 from section_props.props import compute_gross_props
 
 
-V2_ENGINEERING_CALCULATION_CONTRACT_VERSION = "inputs_v2.calculation.v6"
+V2_ENGINEERING_CALCULATION_CONTRACT_VERSION = "inputs_v2.calculation.v7"
 
 
 def _mapping(value: Any) -> dict[str, Any]:
@@ -378,9 +378,17 @@ def _beam_inputs_from_snapshot(
         or settings.get("shear_k_v_method")
         or ""
     )
+    from inputs_application.shear_state_normalization import normalize_shear_link_pair
+
+    shear_pair = normalize_shear_link_pair(
+        {
+            "lig_d": _integer(reinforcement, "lig_d", default=0),
+            "lig_legs": _integer(reinforcement, "lig_legs", default=0),
+        }
+    )
     shear = api["ShearReinforcement"](
-        diameter_mm=_integer(reinforcement, "lig_d", default=0),
-        legs=_integer(reinforcement, "lig_legs", default=0),
+        diameter_mm=shear_pair["lig_d"],
+        legs=shear_pair["lig_legs"],
         spacing_mm=_number(reinforcement, "s_lig", default=200.0),
         kv_method=_v2_kv_method(kv_method_value, api),
     )

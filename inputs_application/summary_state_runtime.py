@@ -8,6 +8,7 @@ from typing import Any, Callable, MutableMapping
 from inputs_application.engineering_state_projection import (
     rebuild_engineering_derived_state,
 )
+from inputs_application.action_source_control import uses_load_analysis_actions
 from inputs_page_modules.session import (
     build_inputs_normalized_shear_truth_overlay_snapshot,
     build_inputs_shear_widget_mirror_overlay_plan,
@@ -45,6 +46,33 @@ SUMMARY_OVERLAY_SKIP_SHARED_KEYS = (
     "actions_source",
     "design_actions_source",
 )
+DESIGN_GOVERNED_MANUAL_ACTION_KEYS = (
+    "uls_Mstar",
+    "uls_Mstar_pos_manual",
+    "uls_Mstar_neg_manual",
+    "uls_Vstar",
+    "uls_Nstar",
+    "manual_uls_Vstar",
+    "manual_uls_Nstar",
+    "sls_Mstar",
+    "sls_Mstar_pos_manual",
+    "sls_Mstar_neg_manual",
+    "sls_Vstar",
+    "sls_Nstar",
+    "manual_sls_Vstar",
+    "manual_sls_Nstar",
+)
+
+
+def summary_overlay_skip_shared_keys(
+    session_state: MutableMapping[str, Any],
+) -> tuple[str, ...]:
+    """Return widget mirrors that cannot own this summary transaction."""
+
+    skipped = set(SUMMARY_OVERLAY_SKIP_SHARED_KEYS)
+    if uses_load_analysis_actions(session_state):
+        skipped.update(DESIGN_GOVERNED_MANUAL_ACTION_KEYS)
+    return tuple(sorted(skipped))
 SUMMARY_OVERLAY_SKIP_LONGITUDINAL_KEYS = (
     "bot_row_count", "top_row_count", "bot1_layout_mode", "bot1_count",
     "bot1_spacing", "db_bot_1", "bot2_layout_mode", "bot2_count",
@@ -187,11 +215,17 @@ def resolve_inputs_summary_state(
     )
     shared_only_mode = bool(decision.shared_only_mode)
     shared_only_reason = str(decision.reason)
+    # The action widgets remain mounted as disabled projections while Load
+    # Analysis owns the action source.  On the first render after a page switch
+    # they can still contain the previous manual values because the summary is
+    # rendered before the widget section hydrates.  Never let those
+    # non-authoritative mirrors replace the derived ULS/SLS projection.
+    summary_overlay_skip_keys = summary_overlay_skip_shared_keys(session)
     shaped = build_inputs_summary_source_shaping_snapshot(
         base_state=base,
         source_state=session,
         input_tab_keys=INPUTS_PAGE_TAB_KEYS,
-        skip_shared_keys=SUMMARY_OVERLAY_SKIP_SHARED_KEYS,
+        skip_shared_keys=summary_overlay_skip_keys,
         skip_longitudinal_keys=SUMMARY_OVERLAY_SKIP_LONGITUDINAL_KEYS,
         skip_prefixes=SUMMARY_OVERLAY_SKIP_PREFIXES,
         deferred_overlay_keys=SHEAR_TRIPLE_DEFERRED_OVERLAY_KEYS,
@@ -303,4 +337,8 @@ def resolve_inputs_summary_state(
     return resolved, debug
 
 
-__all__ = ["InputsSummaryStateRuntime", "resolve_inputs_summary_state"]
+__all__ = [
+    "InputsSummaryStateRuntime",
+    "resolve_inputs_summary_state",
+    "summary_overlay_skip_shared_keys",
+]

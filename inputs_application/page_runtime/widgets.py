@@ -485,8 +485,6 @@ def _render_section_2d_diagram_block_current(
     input_state = input_store.current_for_beam(beam_id)
     if not input_state.engineering_hash and workspace_context is not None:
         input_state = workspace_context.current_input_state()
-    if not input_state.engineering_hash:
-        input_state = input_store.current()
     explicit_state = dict(
         input_state.snapshot
         or model_state
@@ -519,8 +517,6 @@ def _render_section_2d_diagram_block_current(
 
     def _current_identity() -> RevisionIdentity:
         current = input_store.current_for_beam(beam_id)
-        if not current.engineering_hash:
-            current = input_store.current()
         return RevisionIdentity(
             input_revision=int(current.revision),
             engineering_hash=str(
@@ -587,8 +583,6 @@ def _render_3d_diagram_block_current(
     input_state = input_store.current_for_beam(beam_id)
     if not input_state.engineering_hash and workspace_context is not None:
         input_state = workspace_context.current_input_state()
-    if not input_state.engineering_hash:
-        input_state = input_store.current()
     explicit_state = dict(
         input_state.snapshot
         or model_state
@@ -625,8 +619,6 @@ def _render_3d_diagram_block_current(
 
     def _current_identity() -> RevisionIdentity:
         current = input_store.current_for_beam(beam_id)
-        if not current.engineering_hash:
-            current = input_store.current()
         return RevisionIdentity(
             input_revision=int(current.revision),
             engineering_hash=str(

@@ -167,7 +167,7 @@ def test_serviceability_failure_is_not_hidden_by_uls_overdesign() -> None:
 
 def test_minimum_tensile_failure_is_routed_to_bending_repair_not_overdesign() -> None:
     inputs = replace(
-        BeamInputs(actions=ActionInputs(bending_moment_knm=10.0)),
+        BeamInputs(depth_mm=500.0, actions=ActionInputs(bending_moment_knm=10.0)),
         bottom=LongitudinalReinforcement(bars=2, diameter_mm=10),
     ).validated()
     result = calculate_legacy_shadow_current(inputs)

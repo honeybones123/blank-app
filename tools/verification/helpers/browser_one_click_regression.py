@@ -290,6 +290,47 @@ def _wait_for_solver_state(page, *, timeout_ms: int = 45_000) -> tuple[dict[str,
     return last_state, True
 
 
+def _values_match(actual: Any, expected: Any) -> bool:
+    if isinstance(actual, (int, float)) and not isinstance(actual, bool) and isinstance(
+        expected, (int, float)
+    ) and not isinstance(expected, bool):
+        return abs(float(actual) - float(expected)) <= 1e-6
+    return actual == expected
+
+
+def _wait_for_product_apply_state(
+    page,
+    *,
+    expected_updates: dict[str, Any],
+    timeout_ms: int,
+) -> tuple[dict[str, Any], bool]:
+    """Wait for the real Apply button to publish its committed input projection."""
+
+    deadline = time.time() + (timeout_ms / 1000.0)
+    last_state: dict[str, Any] = {}
+    while time.time() < deadline:
+        try:
+            last_state = _load_browser_state(
+                page,
+                fallback_timeout_ms=1_000,
+                preferred_updates=expected_updates,
+            )
+        except Exception:
+            time.sleep(0.25)
+            continue
+        feedback = dict(last_state.get("one_click_feedback") or {})
+        if feedback.get("error") or feedback.get("status") == "error":
+            return last_state, False
+        summary = dict(last_state.get("summary_state_probe") or {})
+        if expected_updates and all(
+            key in summary and _values_match(summary.get(key), expected)
+            for key, expected in expected_updates.items()
+        ):
+            return last_state, False
+        time.sleep(0.25)
+    return last_state, True
+
+
 def _wait_for_post_render_state(
     page,
     *,
@@ -548,7 +589,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, default=8511, help="Local Streamlit port to use.")
     parser.add_argument("--base-url", default=None, help="Use an already-running app instead of starting Streamlit.")
     parser.add_argument("--click-one-click", action="store_true", help="Click the visible one-click button when present.")
+    parser.add_argument(
+        "--click-apply",
+        action="store_true",
+        help="Click the production Apply recommendation button and verify committed updates.",
+    )
     parser.add_argument("--headed", action="store_true", help="Run Chromium headed instead of headless.")
+    parser.add_argument(
+        "--browser-channel",
+        default=None,
+        help="Optional Playwright browser channel, for example msedge on Windows.",
+    )
     parser.add_argument(
         "--app-script",
         default="app.py",
@@ -608,7 +659,23 @@ def main(argv: list[str] | None = None) -> int:
             _wait_for_http(base_url)
 
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=not args.headed)
+            launch_options = {"headless": not args.headed}
+            if args.browser_channel:
+                launch_options["channel"] = args.browser_channel
+            try:
+                browser = playwright.chromium.launch(**launch_options)
+            except Exception as exc:
+                if args.browser_channel or os.name != "nt":
+                    raise
+                print(
+                    "Bundled Chromium was unavailable; retrying with the installed "
+                    f"Microsoft Edge channel ({exc.__class__.__name__}).",
+                    file=sys.stderr,
+                )
+                browser = playwright.chromium.launch(
+                    headless=not args.headed,
+                    channel="msedge",
+                )
             results = {}
             for name in names:
                 context = browser.new_context()
@@ -642,6 +709,8 @@ def main(argv: list[str] | None = None) -> int:
                 solver_state_timeout = False
                 tracer_offset = TRACER_PATH.stat().st_size if TRACER_PATH.exists() else 0
                 run_end_event = None
+                product_apply_expected_updates: dict[str, Any] = {}
+                product_apply_updates_committed = False
                 click_started_ms = None
                 if args.auto_invoke:
                     click_started_ms = int(time.time() * 1000)
@@ -681,6 +750,30 @@ def main(argv: list[str] | None = None) -> int:
                             )
                     except PlaywrightTimeoutError:
                         button_found = False
+                if args.click_apply:
+                    contract = dict(final_state.get("primary_button_contract") or {})
+                    expected_updates = dict(contract.get("updates") or {})
+                    product_apply_expected_updates = expected_updates
+                    button = page.get_by_role("button", name="Apply recommendation")
+                    try:
+                        button.wait_for(state="visible", timeout=10_000)
+                        button_found = True
+                        click_started_ms = int(time.time() * 1000)
+                        button.click(timeout=10_000)
+                        final_state, solver_state_timeout = _wait_for_product_apply_state(
+                            page,
+                            expected_updates=expected_updates,
+                            timeout_ms=int(max(args.transaction_timeout_sec, 1.0) * 1000),
+                        )
+                        product_apply_updates_committed = not solver_state_timeout
+                        run_end_event, _ = _wait_for_run_end(
+                            tracer_offset,
+                            timeout_s=2.0,
+                            start_time_ms=click_started_ms,
+                            expected_updates=expected_updates,
+                        )
+                    except PlaywrightTimeoutError:
+                        button_found = False
                 visible_button_labels = page.evaluate(
                     """
                     () => Array.from(document.querySelectorAll("button"))
@@ -702,6 +795,8 @@ def main(argv: list[str] | None = None) -> int:
                     "post_render_timeout": post_render_timeout,
                     "solver_state_timeout": solver_state_timeout,
                     "run_end_event": run_end_event,
+                    "product_apply_expected_updates": product_apply_expected_updates,
+                    "product_apply_updates_committed": product_apply_updates_committed,
                     "visible_button_labels": visible_button_labels,
                 }
                 context.close()
@@ -723,6 +818,12 @@ def main(argv: list[str] | None = None) -> int:
                         ),
                         "solver_state_timeout": result.get(
                             "solver_state_timeout"
+                        ),
+                        "product_apply_updates_committed": result.get(
+                            "product_apply_updates_committed"
+                        ),
+                        "product_apply_expected_updates": result.get(
+                            "product_apply_expected_updates"
                         ),
                         "solver_result": _compact_solver_transaction(
                             solver_result
@@ -766,5 +867,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-

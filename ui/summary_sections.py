@@ -308,17 +308,87 @@ def summary_card_css() -> str:
 }
 @media (max-width: 720px) {
   .summary-check-card summary {
-    grid-template-columns: 1fr 24px;
-    gap: 0.8rem;
+    grid-template-columns: minmax(82px, 1.25fr) repeat(3, minmax(48px, 0.75fr)) minmax(48px, 0.65fr) 12px;
+    gap: 0.16rem;
+    min-height: 48px;
+    padding: 0.34rem 0.28rem 0.34rem 0.58rem;
   }
-  .summary-title-block,
-  .summary-metric,
-  .summary-status-wrap { grid-column: 1 / 2; }
-  .summary-card-chevron { grid-column: 2 / 3; grid-row: 1; align-self: start; margin-top: 1rem; }
-  .summary-metric,
-  .summary-status-wrap { border-left: 0; padding-left: 0; }
-  .summary-status-wrap { justify-items: start; }
-  .summary-util .summary-metric-value { font-size: 1.2rem; }
+  .summary-title-block { gap: 0.2rem; }
+  .summary-icon-tile { display: none; }
+  .summary-check-title {
+    font-size: 0.62rem;
+    line-height: 1.05;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .summary-metric {
+    border-left: 1px solid rgba(148,163,184,0.28);
+    padding-left: 0.18rem;
+    overflow: hidden;
+  }
+  .summary-metric-label {
+    font-size: 0.48rem;
+    line-height: 1;
+    margin-bottom: 0.12rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .summary-metric-value,
+  .summary-util .summary-metric-value {
+    font-size: 0.6rem;
+    line-height: 1.05;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .summary-status-wrap {
+    justify-items: center;
+    gap: 0.08rem;
+    border-left: 1px solid rgba(148,163,184,0.28);
+    padding-left: 0.16rem;
+    overflow: hidden;
+  }
+  .summary-status-pill {
+    min-width: 0;
+    max-width: 100%;
+    padding: 0.2rem 0.28rem;
+    font-size: 0.48rem;
+    white-space: nowrap;
+  }
+  .summary-status-threshold { font-size: 0.44rem; white-space: nowrap; }
+  .summary-card-chevron {
+    grid-column: auto;
+    grid-row: auto;
+    align-self: center;
+    margin-top: 0;
+    font-size: 0.7rem;
+  }
+  .summary-detail-shell { padding: 0 0.3rem 0.42rem 0.58rem; }
+  .summary-detail-title { margin-bottom: 0.25rem; font-size: 0.62rem; }
+  .summary-detail-inner { overflow-x: hidden; }
+  .summary-detail-table {
+    min-width: 0;
+    width: 100%;
+    table-layout: fixed;
+    font-size: 0.5rem;
+  }
+  .summary-detail-table th,
+  .summary-detail-table td {
+    padding: 0.24rem 0.16rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .summary-detail-status-pill {
+    padding: 0.08rem 0.16rem;
+    font-size: 0.46rem;
+    white-space: nowrap;
+  }
+  .summary-detail-row .hint,
+  .summary-row-chevron { display: none; }
+  .summary-detail-table .row-link { gap: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
 </style>
 """

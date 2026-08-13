@@ -58,3 +58,42 @@ def test_runtime_has_one_design_brain_family_classifier_consumer() -> None:
         if "classify_design_family_selection(" in path.read_text(encoding="utf-8"):
             consumers.append(path.relative_to(src).as_posix())
     assert consumers == ["application/design_guide_orchestrator.py"]
+
+
+def test_retired_beam_snapshot_mirror_has_no_runtime_consumer() -> None:
+    """Old sessions migrate once; no page/router may revive the old store."""
+
+    retired_key = "_inputs_committed_engineering_state_by_beam_v1"
+    allowed_migration_owner = ROOT / "inputs_application" / "engineering_input_store.py"
+    offenders: list[str] = []
+    for path in ROOT.rglob("*.py"):
+        relative = path.relative_to(ROOT).as_posix()
+        if relative.startswith(("tests/", "tools/", "packages/", ".venv/")):
+            continue
+        if path == allowed_migration_owner:
+            continue
+        if retired_key in path.read_text(encoding="utf-8-sig"):
+            offenders.append(relative)
+    assert offenders == []
+
+
+def test_global_input_snapshot_view_has_no_engineering_authority() -> None:
+    """Only the no-beam migration branch may read the compatibility view."""
+
+    permitted = {
+        "inputs_application/engineering_input_store.py",
+        "inputs_application/page_runtime/setup.py",
+    }
+    offenders: list[str] = []
+    for path in ROOT.rglob("*.py"):
+        relative = path.relative_to(ROOT).as_posix()
+        if relative.startswith(("tests/", "tools/", "packages/", ".venv/")):
+            continue
+        source = path.read_text(encoding="utf-8-sig")
+        uses_global_view = (
+            "input_store.current()" in source
+            or "input_snapshots.current()" in source
+        )
+        if uses_global_view and relative not in permitted:
+            offenders.append(relative)
+    assert offenders == []

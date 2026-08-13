@@ -208,98 +208,56 @@ def resolve_design_actions_from_state(source_state: dict | None) -> dict:
         Mu_signed = float(
             state.get(
                 "design_M_uls_kNm_signed",
-                state.get("design_M_uls_kNm", state.get("Mu_star", 0.0)),
+                state.get("design_M_uls_kNm", 0.0),
             )
             or 0.0
         )
         Mu_pos = max(0.0, Mu_signed)
         Mu_neg = max(0.0, -Mu_signed)
         Mu = float(max(Mu_pos, Mu_neg))
-        Vu = float(state.get("design_V_uls_kN", state.get("Vu_star", 0.0)) or 0.0)
+        Vu = float(state.get("design_V_uls_kN", 0.0) or 0.0)
         SLS_M_signed = float(
             state.get(
                 "design_M_sls_kNm_signed",
-                state.get("design_M_sls_kNm", state.get("sls_Mstar", 0.0)),
+                state.get("design_M_sls_kNm", 0.0),
             )
             or 0.0
         )
         SLS_M_pos = max(0.0, SLS_M_signed)
         SLS_M_neg = max(0.0, -SLS_M_signed)
         SLS_M = float(max(SLS_M_pos, SLS_M_neg))
-        SLS_V = float(state.get("design_V_sls_kN", state.get("sls_Vstar", 0.0)) or 0.0)
+        SLS_V = float(state.get("design_V_sls_kN", 0.0) or 0.0)
     else:
-        Mu_pos = float(
-            state.get(
-                "M_pos_max_uls_kNm",
-                state.get("uls_Mstar_pos_manual", state.get("Mu_star_pos_manual", 0.0)),
-            )
-            or 0.0
-        )
+        Mu_pos = max(0.0, float(state.get("M_pos_max_uls_kNm", 0.0) or 0.0))
         Mu_neg = float(
             abs(
                 min(
                     0.0,
-                    float(
-                        state.get(
-                            "M_neg_min_uls_kNm",
-                            -float(
-                                state.get(
-                                    "uls_Mstar_neg_manual",
-                                    state.get("Mu_star_neg_manual", 0.0),
-                                )
-                                or 0.0
-                            ),
-                        )
-                        or 0.0
-                    ),
+                    float(state.get("M_neg_min_uls_kNm", 0.0) or 0.0),
                 )
             )
         )
-        if abs(Mu_pos) <= 1e-9 and abs(Mu_neg) <= 1e-9:
-            Mu_pos = float(
-                state.get(
-                    "uls_Mstar_pos_manual",
-                    state.get("Mu_star_pos_manual", 0.0),
-                )
-                or 0.0
-            )
-            Mu_neg = float(
-                state.get(
-                    "uls_Mstar_neg_manual",
-                    state.get("Mu_star_neg_manual", 0.0),
-                )
-                or 0.0
-            )
-        Mu_abs_raw = state.get("sfd_Mmax_abs_kNm", None)
+        Mu_abs_raw = float(state.get("sfd_Mmax_abs_kNm", 0.0) or 0.0)
         Mu_from_extremes = float(max(Mu_pos, Mu_neg))
-        Mu = float(
-            Mu_abs_raw
-            if Mu_abs_raw not in (None, "")
-            else state.get("Mu_star", 0.0) or 0.0
-        )
-        if abs(Mu) <= 1e-9 and Mu_from_extremes > 1e-9:
-            Mu = Mu_from_extremes
+        Mu = max(abs(Mu_abs_raw), Mu_from_extremes)
+        # Some legacy Load Analysis result records contain only the absolute
+        # maximum. They are still derived Load Analysis data, so infer a
+        # sagging case rather than borrowing a Beam Inputs manual moment.
+        if Mu_from_extremes <= 1e-9 and Mu > 1e-9:
+            Mu_pos = Mu
         Mu_signed = float(Mu_pos) if Mu_pos >= Mu_neg else -float(Mu_neg)
-        Vu = float(
-            state.get(
-                "sfd_Vmax_abs_kN",
-                state.get("Vu_star", state.get("uls_Vstar", 0.0)),
-            )
-            or 0.0
+        Vu = float(state.get("sfd_Vmax_abs_kN", 0.0) or 0.0)
+        SLS_M_pos = max(
+            0.0, float(state.get("M_pos_max_sls_kNm", 0.0) or 0.0)
         )
-        SLS_M_pos = float(state.get("M_pos_max_sls_kNm", 0.0) or 0.0)
         SLS_M_neg = float(abs(min(0.0, float(state.get("M_neg_min_sls_kNm", 0.0) or 0.0))))
-        SLS_M_abs_raw = state.get("sfd_Msls_max_kNm", None)
+        SLS_M_abs_raw = float(state.get("sfd_Msls_max_kNm", 0.0) or 0.0)
         SLS_M_from_extremes = float(max(SLS_M_pos, SLS_M_neg))
-        SLS_M = float(
-            SLS_M_abs_raw
-            if SLS_M_abs_raw not in (None, "")
-            else state.get("sls_Mstar", 0.0) or 0.0
-        )
-        if abs(SLS_M) <= 1e-9 and SLS_M_from_extremes > 1e-9:
-            SLS_M = SLS_M_from_extremes
+        SLS_M = max(abs(SLS_M_abs_raw), SLS_M_from_extremes)
+        if SLS_M_from_extremes <= 1e-9 and SLS_M > 1e-9:
+            SLS_M_pos = SLS_M
         SLS_M_signed = float(SLS_M_pos) if SLS_M_pos >= SLS_M_neg else -float(SLS_M_neg)
-        SLS_V = float(state.get("sfd_Vsls_max_kN", state.get("sls_Vstar", 0.0)) or 0.0)
+        SLS_V = float(state.get("sfd_Vsls_max_kN", 0.0) or 0.0)
     Nu = float(state.get("Nu_star", state.get("N_star", state.get("uls_Nstar", 0.0))) or 0.0)
 
     actions = {
@@ -389,93 +347,26 @@ def derive_design_action_session_updates(source_state: dict | None) -> dict:
         actions_mode = "manual"
 
     if actions_mode == "design":
-        source = working.get("design_actions_source", "max")
-        if source == "section":
-            uls_M_signed = float(
-                working.get(
-                    "design_M_uls_kNm_signed",
-                    working.get("design_M_uls_kNm", 0.0),
-                )
-                or 0.0
-            )
-            uls_pos = max(0.0, uls_M_signed)
-            uls_neg = max(0.0, -uls_M_signed)
-            uls_V = float(working.get("design_V_uls_kN", 0.0) or 0.0)
-            sls_M_signed = float(
-                working.get(
-                    "design_M_sls_kNm_signed",
-                    working.get("design_M_sls_kNm", 0.0),
-                )
-                or 0.0
-            )
-            sls_pos = max(0.0, sls_M_signed)
-            sls_neg = max(0.0, -sls_M_signed)
-            sls_V = float(working.get("design_V_sls_kN", 0.0) or 0.0)
-        else:
-            uls_pos = float(
-                working.get(
-                    "M_pos_max_uls_kNm",
-                    working.get(
-                        "uls_Mstar_pos_manual",
-                        working.get("Mu_star_pos_manual", 0.0),
-                    ),
-                )
-                or 0.0
-            )
-            uls_neg = float(
-                abs(
-                    min(
-                        0.0,
-                        float(
-                            working.get(
-                                "M_neg_min_uls_kNm",
-                                -float(
-                                    working.get(
-                                        "uls_Mstar_neg_manual",
-                                        working.get("Mu_star_neg_manual", 0.0),
-                                    )
-                                    or 0.0
-                                ),
-                            )
-                            or 0.0
-                        ),
-                    )
-                )
-            )
-            if abs(uls_pos) <= 1e-9 and abs(uls_neg) <= 1e-9:
-                uls_pos = float(
-                    working.get(
-                        "uls_Mstar_pos_manual",
-                        working.get("Mu_star_pos_manual", 0.0),
-                    )
-                    or 0.0
-                )
-                uls_neg = float(
-                    working.get(
-                        "uls_Mstar_neg_manual",
-                        working.get("Mu_star_neg_manual", 0.0),
-                    )
-                    or 0.0
-                )
-            uls_M_signed = uls_pos if uls_pos >= uls_neg else -uls_neg
-            uls_V = float(working.get("sfd_Vmax_abs_kN", 0.0) or 0.0)
-            sls_pos = float(working.get("M_pos_max_sls_kNm", 0.0) or 0.0)
-            sls_neg = float(abs(min(0.0, float(working.get("M_neg_min_sls_kNm", 0.0) or 0.0))))
-            sls_M_signed = sls_pos if sls_pos >= sls_neg else -sls_neg
-            sls_V = float(working.get("sfd_Vsls_max_kN", 0.0) or 0.0)
-
+        # Resolve design-owned actions once.  This avoids a second legacy
+        # derivation path with different fallback rules and ensures the
+        # compatibility result aliases always match the engineering contract.
+        design_actions = resolve_design_actions_from_state(working)
         shared_N = float(working.get("N_star", 0.0) or 0.0)
         updates.update(
             {
-                "uls_Mstar": float(uls_M_signed),
-                "uls_Mstar_pos_manual": float(max(0.0, uls_pos)),
-                "uls_Mstar_neg_manual": float(max(0.0, uls_neg)),
-                "uls_Vstar": float(uls_V),
+                "uls_Mstar": float(
+                    design_actions.get("Mu_signed", design_actions.get("Mu", 0.0))
+                    or 0.0
+                ),
+                "uls_Vstar": float(design_actions.get("Vu", 0.0) or 0.0),
                 "uls_Nstar": shared_N,
-                "sls_Mstar": float(sls_M_signed),
-                "sls_Mstar_pos_manual": float(max(0.0, sls_pos)),
-                "sls_Mstar_neg_manual": float(max(0.0, sls_neg)),
-                "sls_Vstar": float(sls_V),
+                "sls_Mstar": float(
+                    design_actions.get(
+                        "SLS_M_signed", design_actions.get("SLS_M", 0.0)
+                    )
+                    or 0.0
+                ),
+                "sls_Vstar": float(design_actions.get("SLS_V", 0.0) or 0.0),
                 "sls_Nstar": shared_N,
             }
         )
@@ -486,14 +377,18 @@ def derive_design_action_session_updates(source_state: dict | None) -> dict:
         {
             "Mu_star_manual": float(working.get("uls_Mstar", 0.0) or 0.0),
             "Mu_star_pos_manual": float(
-                working.get(
+                actions.get("Mu_pos", 0.0)
+                if actions_mode == "design"
+                else working.get(
                     "uls_Mstar_pos_manual",
                     max(0.0, working.get("uls_Mstar", 0.0) or 0.0),
                 )
                 or 0.0
             ),
             "Mu_star_neg_manual": float(
-                working.get(
+                actions.get("Mu_neg", 0.0)
+                if actions_mode == "design"
+                else working.get(
                     "uls_Mstar_neg_manual",
                     max(0.0, -(working.get("uls_Mstar", 0.0) or 0.0)),
                 )

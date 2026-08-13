@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 _SUPPORT_COEFFICIENTS = {
     "Simply supported": 5.0 / 384.0,
+    "Continuous": 1.5 / 384.0,
     "Pinned–Pinned": 5.0 / 384.0,
     "Continuous – end span": 2.4 / 384.0,
     "Continuous – interior span": 1.5 / 384.0,
@@ -16,6 +17,26 @@ _SUPPORT_COEFFICIENTS = {
     "Pinned–Fixed": 1.0 / 185.0,
     "Cantilever": 1.0 / 8.0,
 }
+
+
+def _support_coefficient(value: str) -> float:
+    """Resolve supported aliases without silently changing the end condition."""
+
+    raw = str(value or "").strip()
+    if raw in _SUPPORT_COEFFICIENTS:
+        return _SUPPORT_COEFFICIENTS[raw]
+    normalised = raw.replace("–", "-").replace("—", "-").lower()
+    aliases = {
+        "pinned-pinned": "Pinned–Pinned",
+        "continuous - end span": "Continuous – end span",
+        "continuous - interior span": "Continuous – interior span",
+        "fixed-pinned": "Fixed–Pinned",
+        "pinned-fixed": "Pinned–Fixed",
+    }
+    canonical = aliases.get(normalised)
+    if canonical is not None:
+        return _SUPPORT_COEFFICIENTS[canonical]
+    return _SUPPORT_COEFFICIENTS["Simply supported"]
 
 
 @dataclass(frozen=True)
@@ -126,9 +147,7 @@ def calculate_deflection(values: DeflectionInput) -> DeflectionResult:
         tension_steel_area_mm2=values.tension_steel_area_mm2,
     )
     span_mm = values.span_m * 1000.0
-    coefficient = _SUPPORT_COEFFICIENTS.get(
-        values.support_condition, _SUPPORT_COEFFICIENTS["Simply supported"]
-    )
+    coefficient = _support_coefficient(values.support_condition)
     denominator = max(values.concrete_modulus_mpa, 1.0) * max(inertia, 1.0)
     total_load = values.permanent_udl_kn_per_m + values.imposed_udl_kn_per_m
     sustained_load = (

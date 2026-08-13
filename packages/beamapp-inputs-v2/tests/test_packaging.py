@@ -11,7 +11,7 @@ def test_distribution_metadata_matches_runtime_contract() -> None:
         "project"
     ]
     assert project["name"] == "beamapp-inputs-v2"
-    assert project["version"] == "0.1.1"
+    assert project["version"] == "0.1.2"
     assert {"numpy", "plotly", "streamlit"} <= set(project["dependencies"])
     assert metadata.version("beamapp-inputs-v2") == project["version"]
 

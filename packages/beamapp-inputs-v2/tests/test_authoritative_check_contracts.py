@@ -92,13 +92,32 @@ def _high_ku_design(*, demand_fraction: float, verified: bool) -> tuple[dict, di
     return result.families["bending"], result.families["ductility"]
 
 
-def test_ductility_limit_is_mandatory_even_at_low_demand() -> None:
+def test_clause_815_additional_requirements_do_not_trigger_at_low_demand() -> None:
     bending, ductility = _high_ku_design(demand_fraction=0.70, verified=False)
 
     assert bending["ku"] > 0.36
+    assert bending["util"] == pytest.approx(0.70)
+    assert ductility["conditional_triggered"] is False
+    assert ductility["status"] == "PASS"
+    assert ductility["failed_requirements"] == ()
+
+
+def test_clause_815_uses_strict_greater_than_eighty_percent_boundary() -> None:
+    bending, ductility = _high_ku_design(demand_fraction=0.80, verified=False)
+
+    assert bending["ku"] > 0.36
+    assert bending["util"] == pytest.approx(0.80)
+    assert ductility["conditional_triggered"] is False
+    assert ductility["status"] == "PASS"
+
+
+def test_clause_815_triggers_immediately_above_eighty_percent() -> None:
+    bending, ductility = _high_ku_design(demand_fraction=0.8001, verified=False)
+
+    assert bending["ku"] > 0.36
+    assert bending["util"] == pytest.approx(0.8001)
     assert ductility["conditional_triggered"] is True
     assert ductility["status"] == "FAIL"
-    assert "neutral_axis_limit_exceeded" in ductility["failed_requirements"]
 
 
 def test_clause_815_requires_all_conditional_evidence_above_eighty_percent() -> None:
@@ -115,13 +134,99 @@ def test_clause_815_requires_all_conditional_evidence_above_eighty_percent() -> 
     )
 
 
-def test_verified_conditional_evidence_does_not_override_the_runtime_ku_limit() -> None:
+def test_verified_clause_815_conditional_evidence_allows_the_section() -> None:
     _bending, ductility = _high_ku_design(demand_fraction=0.90, verified=True)
 
     assert ductility["conditional_triggered"] is True
     assert ductility["conditional_requirements_satisfied"] is True
-    assert ductility["failed_requirements"] == ("neutral_axis_limit_exceeded",)
-    assert ductility["status"] == "FAIL"
+    assert ductility["failed_requirements"] == ()
+    assert ductility["status"] == "PASS"
+
+
+def test_rectangular_minimum_flexural_steel_matches_clause_8161_equation() -> None:
+    inputs = BeamInputs(width_mm=300.0, depth_mm=600.0).validated()
+    bending = EngineeringCalculator().calculate(inputs).families["bending"]
+    d = float(bending["d_mm"])
+    fctf = 0.6 * math.sqrt(inputs.materials.concrete_strength_mpa)
+    expected = (
+        0.20
+        * (inputs.depth_mm / d) ** 2
+        * (fctf / inputs.materials.reinforcement_strength_mpa)
+        * inputs.width_mm
+        * d
+    )
+
+    assert bending["Ast_min_mm2"] == pytest.approx(expected)
+
+
+def test_i_section_minimum_flexural_steel_uses_flange_in_tension_coefficient() -> None:
+    inputs = BeamInputs(
+        width_mm=300.0,
+        depth_mm=600.0,
+        section_shape="I",
+        flange_width_mm=900.0,
+        flange_thickness_mm=100.0,
+        web_width_mm=300.0,
+    ).validated()
+    bending = EngineeringCalculator().calculate(inputs).families["bending"]
+    d = float(bending["d_mm"])
+    width_ratio = 900.0 / 300.0
+    alpha_b = max(
+        0.20 + (width_ratio - 1.0) * (0.25 * 100.0 / 600.0 - 0.08),
+        0.20 * width_ratio ** (2.0 / 3.0),
+    )
+    fctf = 0.6 * math.sqrt(inputs.materials.concrete_strength_mpa)
+    expected = (
+        alpha_b
+        * (inputs.depth_mm / d) ** 2
+        * (fctf / inputs.materials.reinforcement_strength_mpa)
+        * inputs.web_width_mm
+        * d
+    )
+
+    assert bending["Ast_min_mm2"] == pytest.approx(expected)
+
+
+def test_minimum_strength_compares_nominal_capacity_not_reduced_capacity() -> None:
+    inputs = BeamInputs(width_mm=300.0, depth_mm=600.0).validated()
+    bending = EngineeringCalculator().calculate(inputs).families["bending"]
+
+    assert bending["minimum_capacity_util"] == pytest.approx(
+        bending["minimum_capacity_knm"] / bending["Mu_nom_kNm"]
+    )
+
+
+def test_t_section_minimum_strength_uses_shape_specific_section_modulus() -> None:
+    inputs = BeamInputs(
+        width_mm=300.0,
+        depth_mm=600.0,
+        section_shape="T",
+        flange_width_mm=900.0,
+        flange_thickness_mm=120.0,
+        web_width_mm=300.0,
+    ).validated()
+    bending = EngineeringCalculator().calculate(inputs).families["bending"]
+    flange_area = 900.0 * 120.0
+    web_area = 300.0 * 480.0
+    centroid = (
+        flange_area * 60.0 + web_area * (120.0 + 240.0)
+    ) / (flange_area + web_area)
+    inertia = (
+        900.0 * 120.0**3 / 12.0
+        + flange_area * (60.0 - centroid) ** 2
+        + 300.0 * 480.0**3 / 12.0
+        + web_area * (360.0 - centroid) ** 2
+    )
+    bottom_modulus = inertia / (600.0 - centroid)
+    expected_minimum = (
+        1.2
+        * 0.6
+        * math.sqrt(inputs.materials.concrete_strength_mpa)
+        * bottom_modulus
+        / 1_000_000.0
+    )
+
+    assert bending["minimum_capacity_knm"] == pytest.approx(expected_minimum)
 
 
 def test_every_emitted_clause_record_is_complete_and_owned_by_the_check_registry() -> None:
@@ -233,11 +338,11 @@ def test_minimum_tensile_reinforcement_uses_the_accepted_flexural_tensile_streng
     effective_depth = result.families["ductility"]["effective_depth_mm"]
     expected_fctf = 0.6 * math.sqrt(current.materials.concrete_strength_mpa)
     expected_ast_min = (
-        0.4
-        * expected_fctf
+        0.20
+        * (current.depth_mm / effective_depth) ** 2
+        * (expected_fctf / current.materials.reinforcement_strength_mpa)
         * current.width_mm
         * effective_depth
-        / current.materials.reinforcement_strength_mpa
     )
 
     assert bending["Ast_min_mm2"] == pytest.approx(expected_ast_min)
@@ -259,6 +364,6 @@ def test_minimum_flexural_capacity_is_published_from_the_authoritative_check() -
     assert bending["Mcr_kNm"] == pytest.approx(expected_mcr)
     assert bending["minimum_capacity_knm"] == pytest.approx(expected_minimum)
     assert bending["minimum_capacity_util"] == pytest.approx(
-        expected_minimum / bending["phi_Mu_kNm"]
+        expected_minimum / bending["Mu_nom_kNm"]
     )
     assert bending["minimum_capacity_status"] in {"PASS", "FAIL"}

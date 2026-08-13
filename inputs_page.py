@@ -161,6 +161,20 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, 
 
     load_analysis_store = LoadAnalysisStateStore(st.session_state)
 
+    def _commit_manual_actions_before_source_change() -> None:
+        """Commit manual controls only when they are the current edit owner.
+
+        Streamlit updates the toggle widget before invoking its callback.  A
+        ``True`` value therefore means the user is leaving Beam Inputs and the
+        visible controls still contain manual actions that must be committed.
+        A ``False`` value means the user is leaving Load Analysis ownership;
+        those disabled controls contain a derived projection and must never be
+        reconciled into the preserved manual action owners.
+        """
+
+        if bool(st.session_state.get(INPUTS_ACTION_SOURCE_TOGGLE_KEY, False)):
+            _INPUTS_PAGE_RUNTIME.reconcile_design_actions()
+
     def _commit_selected_action_source(_selected: bool) -> None:
         projected_keys = synchronize_load_analysis_actions_for_inputs(
             st.session_state,
@@ -195,7 +209,7 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, 
         # source. This is the same single transaction boundary used before
         # calculation and prevents Streamlit's callback ordering from saving
         # an older manual action when the source switch is pressed.
-        before_commit=_INPUTS_PAGE_RUNTIME.reconcile_design_actions,
+        before_commit=_commit_manual_actions_before_source_change,
         after_commit=_commit_selected_action_source,
     )
 
@@ -238,14 +252,19 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, 
             wake_fragments=False,
         )
 
-    # A fragment rerun does not pass through the page-level setup boundary.
-    # Commit the visible design-action draft before consuming a queued Apply
-    # command so the candidate is applied to the same action state that was
-    # calculated and displayed.  Applying first can otherwise combine the
-    # candidate updates with an older zero-action beam snapshot while leaving
-    # the 200 kNm widget visible.
-    _INPUTS_PAGE_RUNTIME.reconcile_design_actions()
+    # Source changes reuse the same visible Streamlit controls.  Project the
+    # newly selected owner into those controls *before* reconciliation.  The
+    # reverse order treats the previous owner's display values as edits: when
+    # Load Analysis was switched off it wrote 9.7/19.5 into the preserved
+    # manual ULS fields and left the SLS result stale.  This ordering is the
+    # single source-switch transaction: pointer -> projection -> reconcile.
+    hydrate_committed_design_action_widgets(force=True)
+
     if not uses_load_analysis_actions(st.session_state):
+        # Only Beam Inputs owns editable action controls.  In Load Analysis
+        # mode the same widgets are disabled projections and must never enter
+        # manual reconciliation merely because the fragment rendered them.
+        _INPUTS_PAGE_RUNTIME.reconcile_design_actions()
         # Reconciliation writes the visible manual controls to their canonical
         # ULS/SLS owners.  Close that command by idempotently committing the
         # active action set before calculation/publication is read below.
@@ -285,19 +304,10 @@ def _render_v2_workspace_fragment(*, page_context: dict[str, Any]) -> dict[str, 
     beam_snapshot = input_store.current_for_beam(active_beam_id or "")
     hydrate_inputs_longitudinal_reo_widgets_for_revision(
         state=st.session_state,
-        revision=int(beam_snapshot.revision or input_store.current().revision or 0),
+        revision=int(beam_snapshot.revision or 0),
         active_beam_id=active_beam_id,
         copy_deepcopy_fn=copy.deepcopy,
     )
-
-    # Summary cards and the lower action controls must project the same
-    # committed action revision.  Hydrating here avoids the former two-stage
-    # render where the summary briefly showed the previous action set.
-    # The committed input snapshot is the transaction authority. Project it
-    # into the action controls before either summaries or widgets render so a
-    # remounted control cannot autopersist an older browser value and advance
-    # the revision behind the already-verified Design Brain candidate.
-    hydrate_committed_design_action_widgets(force=True)
 
     return render_engineering_workspace(
         st_module=st,
@@ -333,7 +343,7 @@ def render_inputs_page() -> None:
     beam_snapshot = input_store.current_for_beam(active_beam_id or "")
     hydrate_inputs_longitudinal_reo_widgets_for_revision(
         state=ss,
-        revision=int(beam_snapshot.revision or input_store.current().revision or 0),
+        revision=int(beam_snapshot.revision or 0),
         active_beam_id=active_beam_id,
         copy_deepcopy_fn=copy.deepcopy,
     )

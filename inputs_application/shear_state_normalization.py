@@ -11,6 +11,44 @@ PRACTICAL_SHEAR_DIAMETERS = (10, 12, 16)
 PRACTICAL_SHEAR_SPACINGS = (75, 100, 125, 150, 175, 200, 225, 250, 275, 300)
 
 
+def normalize_shear_link_pair(
+    state: dict,
+    *,
+    changed_key: str | None = None,
+) -> dict[str, int]:
+    """Return an atomic, valid diameter/leg pair for a UI selection.
+
+    The two selectboxes are one engineering input.  A rerun must never expose
+    the intermediate ``diameter > 0, legs == 0`` (or inverse) state to the
+    calculation adapter.
+    """
+
+    diameter = int_from_state(state, "lig_d", 0)
+    legs = int_from_state(state, "lig_legs", 0)
+    changed = str(changed_key or "").strip()
+
+    if changed == "lig_d":
+        if diameter <= 0:
+            return {"lig_d": 0, "lig_legs": 0}
+        return {"lig_d": diameter, "lig_legs": max(legs, 2)}
+
+    if changed == "lig_legs":
+        if legs < 2:
+            return {"lig_d": 0, "lig_legs": 0}
+        return {
+            "lig_d": diameter if diameter > 0 else PRACTICAL_SHEAR_DIAMETERS[0],
+            "lig_legs": legs,
+        }
+
+    if diameter <= 0 and legs < 2:
+        return {"lig_d": 0, "lig_legs": 0}
+    if diameter > 0 and legs < 2:
+        return {"lig_d": diameter, "lig_legs": 2}
+    if diameter <= 0 and legs >= 2:
+        return {"lig_d": PRACTICAL_SHEAR_DIAMETERS[0], "lig_legs": legs}
+    return {"lig_d": diameter, "lig_legs": legs}
+
+
 def _starter_shear_diameter(state: dict) -> int:
     current = int_from_state(state, "lig_d", 0)
     return current if current > 0 else PRACTICAL_SHEAR_DIAMETERS[0]
@@ -63,4 +101,4 @@ def normalize_invalid_shear_state_updates(
     return normalized
 
 
-__all__ = ["normalize_invalid_shear_state_updates"]
+__all__ = ["normalize_invalid_shear_state_updates", "normalize_shear_link_pair"]

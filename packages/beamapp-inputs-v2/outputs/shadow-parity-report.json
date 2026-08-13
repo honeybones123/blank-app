@@ -3,7 +3,7 @@
   "cases": [
     {
       "revision": 0,
-      "input_hash": "c57fcb5fcc2d592300278c3d714cbdc3235b4e6d16c2f08f10de5daea2f4cfba",
+      "input_hash": "1ffbd22f6eda1a26968c41caf973ecbaaf0e3de5dc3b8e3bc985b26060b98e76",
       "fixture_status": "fixture",
       "shadow_status": "production-shadow",
       "fixture_families": [],
@@ -24,7 +24,7 @@
     },
     {
       "revision": 0,
-      "input_hash": "fd8230780ff9798c94f6dd2028b37496905bb1f6db044c2bdc56b1f5eaad3727",
+      "input_hash": "52fdaae490cd137d83b0d59d110089a8e112fbdc0d3dd5c2c973f79aa990f7ef",
       "fixture_status": "fixture",
       "shadow_status": "production-shadow",
       "fixture_families": [],
@@ -45,7 +45,7 @@
     },
     {
       "revision": 0,
-      "input_hash": "66883b69959c750c350023492d0302a3ef9b805eb5889ef6d1eb5a6dca47e9a3",
+      "input_hash": "dda202f8b73bab3f679b6132fbf4f141388f34dedc101579334f3e9a03b9151e",
       "fixture_status": "fixture",
       "shadow_status": "production-shadow",
       "fixture_families": [],

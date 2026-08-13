@@ -130,6 +130,21 @@ def test_inputs_commits_do_not_enqueue_a_redundant_fragment_wake() -> None:
     assert "auto_rerun" not in commit_source
 
 
+def test_inputs_commit_identity_includes_selected_calculated_actions() -> None:
+    """The early workspace cache cannot reuse a preceding zero-action solve."""
+
+    source = (ROOT / "state_and_helpers.py").read_text(encoding="utf-8-sig")
+    start = source.index("def _request_inputs_engineering_commit(")
+    end = source.index("\ndef _engineering_widget_owner_slug(", start)
+    commit_source = source[start:end]
+
+    assert "uses_load_analysis_actions(st.session_state)" in commit_source
+    assert "authoritative_action_source_projection(st.session_state)" in commit_source
+    assert "live_snapshot.update(" in commit_source
+    assert 'live_snapshot["uls_Mstar_pos_manual"]' not in commit_source
+    assert 'live_snapshot["manual_uls_Vstar"]' not in commit_source
+
+
 def test_inputs_widget_coordinator_has_no_second_rerun_authority() -> None:
     source = (ROOT / "inputs_page_modules/widgets/render_coordinators.py").read_text(
         encoding="utf-8-sig"
@@ -137,6 +152,115 @@ def test_inputs_widget_coordinator_has_no_second_rerun_authority() -> None:
 
     assert "rerun_inputs_current_scope" not in source
     assert "_inputs_diagram_settle_revision" not in source
+
+
+def test_calculation_coordinator_never_hydrates_live_inputs_widgets() -> None:
+    """A calculation refresh may read a beam snapshot but cannot own widgets."""
+
+    source = (
+        ROOT / "inputs_application" / "page_runtime" / "setup.py"
+    ).read_text(encoding="utf-8-sig")
+    start = source.index(
+        "def _ensure_authoritative_design_result_current_coordinator("
+    )
+    read_boundary = source.index("    if uses_load_analysis_actions(", start)
+    snapshot_read_source = source[start:read_boundary]
+
+    assert "st.session_state[widget_key] =" not in snapshot_read_source
+    assert '"owner": "router_only"' in snapshot_read_source
+    assert '"applied": False' in snapshot_read_source
+
+
+def test_final_calculation_state_reapplies_selected_load_analysis_projection() -> None:
+    """The final beam-snapshot rebuild cannot discard derived actions."""
+
+    source = (
+        ROOT / "inputs_application" / "page_runtime" / "setup.py"
+    ).read_text(encoding="utf-8-sig")
+    committed_projection = source.index("    committed_projection = (")
+    final_rebuild = source.index(
+        "    current_state = rebuild_engineering_derived_state(committed_projection)",
+        committed_projection,
+    )
+    boundary = source[committed_projection:final_rebuild]
+
+    assert "if uses_load_analysis_actions(st.session_state):" in boundary
+    assert "committed_projection.update(" in boundary
+    assert "authoritative_action_source_projection(st.session_state)" in boundary
+
+
+def test_calculated_action_projection_participates_in_workspace_identity() -> None:
+    """A changed Load Analysis solve must invalidate the Inputs calculation."""
+
+    source = (
+        ROOT / "inputs_application" / "page_runtime" / "setup.py"
+    ).read_text(encoding="utf-8-sig")
+    start = source.index(
+        "def _canonical_input_transaction_state_current_coordinator("
+    )
+    end = source.index("\ndef _reconcile_initial_reinforcement_widget_state(", start)
+    transaction_source = source[start:end]
+
+    assert "if uses_load_analysis_actions(st.session_state):" in transaction_source
+    assert "transaction.update(" in transaction_source
+    assert (
+        "authoritative_action_source_projection(st.session_state)"
+        in transaction_source
+    )
+    # Derived action identity is included directly; it is never reassigned to
+    # the independent Beam Inputs manual owner fields.
+    assert 'transaction["uls_Mstar_pos_manual"]' not in transaction_source
+    assert 'transaction["manual_uls_Vstar"]' not in transaction_source
+
+
+def test_load_analysis_publishes_solved_actions_before_presentation_work() -> None:
+    """Cold navigation cannot interrupt action publication after the solve."""
+
+    source = (ROOT / "design_page_runtime.py").read_text(encoding="utf-8-sig")
+    solve_boundary = source.index("    M_pos_max_uls = ")
+    early_publication = source.index("    _publish_local_results(", solve_boundary)
+    presentation_work = source.index("    M_max_abs = ", solve_boundary)
+    publication = source[early_publication:presentation_work]
+
+    assert early_publication < presentation_work
+    for key in (
+        "sfd_Mmax_abs_kNm",
+        "sfd_Vmax_abs_kN",
+        "sfd_Msls_max_kNm",
+        "sfd_Vsls_max_kN",
+        "M_pos_max_uls_kNm",
+        "M_neg_min_uls_kNm",
+        "M_pos_max_sls_kNm",
+        "M_neg_min_sls_kNm",
+    ):
+        assert key in publication
+
+
+def test_action_source_switch_never_commits_derived_controls_as_manual_actions() -> None:
+    """Leaving Load Analysis must only move the source pointer.
+
+    The disabled action widgets display derived Load Analysis values.  Calling
+    the manual reconciliation routine before switching that source off writes
+    those derived values into the saved manual ULS/SLS owners.
+    """
+
+    fragment_source = (ROOT / "inputs_page.py").read_text(encoding="utf-8-sig")
+
+    assert "def _commit_manual_actions_before_source_change" in fragment_source
+    assert (
+        "if bool(st.session_state.get(INPUTS_ACTION_SOURCE_TOGGLE_KEY, False))"
+        in fragment_source
+    )
+    assert "before_commit=_commit_manual_actions_before_source_change" in fragment_source
+    assert "before_commit=_INPUTS_PAGE_RUNTIME.reconcile_design_actions" not in fragment_source
+    manual_branch = fragment_source.index(
+        "if not uses_load_analysis_actions(st.session_state):"
+    )
+    reconcile = fragment_source.index(
+        "_INPUTS_PAGE_RUNTIME.reconcile_design_actions()",
+        manual_branch,
+    )
+    assert manual_branch < reconcile
 
 
 def test_inputs_hydrates_committed_actions_before_summary_workspace_render() -> None:
@@ -148,6 +272,11 @@ def test_inputs_hydrates_committed_actions_before_summary_workspace_render() -> 
     hydrate_index = fragment_source.index(
         "hydrate_committed_design_action_widgets(force=True)"
     )
+    reconcile_index = fragment_source.index(
+        "_INPUTS_PAGE_RUNTIME.reconcile_design_actions()",
+        hydrate_index,
+    )
+    assert hydrate_index < reconcile_index
     assert hydrate_index < fragment_source.index("render_engineering_workspace(")
 
 

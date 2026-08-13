@@ -62,49 +62,51 @@ CREEP_FINAL_TABLE = {
 }
 
 
-# AS 3600:2018 Table 3.1.7.2 - final design drying shrinkage microstrain.
+# AS 3600:2018 Table 3.1.7.2 - typical final total design shrinkage
+# microstrain after 30 years.  This table is reference evidence only; the
+# time-dependent drying component is calculated from Cl. 3.1.7.2(4)-(5).
 SHRINKAGE_TABLE = {
     25: {
         "Arid": {50: 810, 100: 720, 200: 590, 400: 470},
-        "Interior": {50: 780, 100: 670, 200: 550, 400: 440},
-        "Temperate": {50: 740, 100: 630, 200: 520, 400: 410},
-        "Tropical": {50: 610, 100: 530, 200: 440, 400: 350},
+        "Interior": {50: 760, 100: 670, 200: 550, 400: 440},
+        "Temperate": {50: 710, 100: 630, 200: 520, 400: 410},
+        "Tropical": {50: 600, 100: 530, 200: 440, 400: 350},
     },
     32: {
         "Arid": {50: 800, 100: 720, 200: 590, 400: 470},
-        "Interior": {50: 770, 100: 670, 200: 560, 400: 440},
-        "Temperate": {50: 730, 100: 620, 200: 520, 400: 420},
-        "Tropical": {50: 600, 100: 520, 200: 440, 400: 360},
+        "Interior": {50: 750, 100: 670, 200: 560, 400: 440},
+        "Temperate": {50: 700, 100: 630, 200: 520, 400: 420},
+        "Tropical": {50: 600, 100: 540, 200: 450, 400: 360},
     },
     40: {
         "Arid": {50: 790, 100: 710, 200: 590, 400: 480},
         "Interior": {50: 740, 100: 670, 200: 560, 400: 450},
-        "Temperate": {50: 700, 100: 620, 200: 530, 400: 420},
-        "Tropical": {50: 580, 100: 500, 200: 440, 400: 360},
+        "Temperate": {50: 700, 100: 620, 200: 530, 400: 430},
+        "Tropical": {50: 600, 100: 540, 200: 460, 400: 380},
     },
     50: {
         "Arid": {50: 780, 100: 700, 200: 590, 400: 490},
         "Interior": {50: 730, 100: 660, 200: 560, 400: 460},
         "Temperate": {50: 690, 100: 620, 200: 530, 400: 440},
-        "Tropical": {50: 570, 100: 490, 200: 430, 400: 370},
+        "Tropical": {50: 600, 100: 540, 200: 470, 400: 390},
     },
     65: {
         "Arid": {50: 770, 100: 700, 200: 600, 400: 510},
-        "Interior": {50: 730, 100: 650, 200: 570, 400: 490},
-        "Temperate": {50: 690, 100: 610, 200: 530, 400: 450},
-        "Tropical": {50: 560, 100: 490, 200: 420, 400: 390},
+        "Interior": {50: 730, 100: 660, 200: 570, 400: 490},
+        "Temperate": {50: 690, 100: 630, 200: 550, 400: 470},
+        "Tropical": {50: 610, 100: 560, 200: 490, 400: 420},
     },
     80: {
         "Arid": {50: 750, 100: 690, 200: 610, 400: 530},
         "Interior": {50: 720, 100: 660, 200: 590, 400: 510},
-        "Temperate": {50: 680, 100: 630, 200: 550, 400: 470},
-        "Tropical": {50: 560, 100: 520, 200: 470, 400: 390},
+        "Temperate": {50: 680, 100: 630, 200: 560, 400: 490},
+        "Tropical": {50: 620, 100: 570, 200: 510, 400: 460},
     },
     100: {
         "Arid": {50: 740, 100: 690, 200: 620, 400: 560},
         "Interior": {50: 710, 100: 660, 200: 600, 400: 540},
-        "Temperate": {50: 680, 100: 640, 200: 580, 400: 520},
-        "Tropical": {50: 560, 100: 530, 200: 490, 400: 420},
+        "Temperate": {50: 680, 100: 640, 200: 580, 400: 530},
+        "Tropical": {50: 630, 100: 590, 200: 540, 400: 500},
     },
 }
 
@@ -292,12 +294,16 @@ def shrinkage_closest_th(th: float) -> int:
 
 
 def shrinkage_eps_final(fc: float, env_label: str, th_table: float) -> float:
-    """Return final design drying shrinkage as strain, not microstrain."""
-    fc_key = shrinkage_closest_fc_row(fc)
-    env_key = ENV_LABELS[env_label]
-    th_key = shrinkage_closest_th(th_table)
-    microstrain = SHRINKAGE_TABLE[fc_key][env_key][th_key]
-    return microstrain * 1e-6
+    """Return final drying shrinkage ``k4 * eps_csd.b`` as strain.
+
+    AS 3600:2018 Cl. 3.1.7.2(4)-(5) defines the drying component from
+    ``k1 * k4 * (0.9 - 0.005 f'c) * 800e-6``.  ``k1`` is applied later by
+    :func:`shrinkage_total_values`; the notional thickness argument remains in
+    this compatibility signature but must not quantise the basic strain.
+    """
+    del th_table
+    basic_drying = (0.9 - 0.005 * float(fc)) * 800e-6
+    return calc_k4(env_label) * basic_drying
 
 
 def calc_k1_shrinkage(t_days: float, th_mm: float) -> float:

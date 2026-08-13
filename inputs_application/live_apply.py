@@ -13,7 +13,7 @@ from inputs_application.adapters import (
 )
 from inputs_application.apply_transaction_store import ApplyTransactionStore
 from inputs_application.design_guide_fragment_store import DesignGuideFragmentStore
-from inputs_application.engineering_input_store import InputSnapshotStore
+from inputs_application.engineering_input_store import InputSnapshotState, InputSnapshotStore
 from inputs_application.contracts import (
     InputsApplyCommand,
     InputsPublicationResult,
@@ -33,16 +33,16 @@ def _current_apply_input_snapshot(
 ):
     """Resolve the committed snapshot owned by the beam receiving Apply.
 
-    The global snapshot is retained only for old sessions and tests that do not
-    yet have a routed beam.  It must not invalidate a current recommendation
-    merely because another beam was committed more recently.
+    Apply has no authority without a routed beam. It must never borrow the
+    session-global compatibility view because that view may belong to another
+    beam.
     """
 
     input_store = InputSnapshotStore(session_state)
     active_beam_id = str(session_state.get("active_beam_id") or "").strip()
     if active_beam_id:
         return input_store.current_for_beam(active_beam_id)
-    return input_store.current()
+    return InputSnapshotState()
 
 
 def execute_typed_apply(

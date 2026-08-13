@@ -656,7 +656,7 @@ def _canonical_input_transaction_state_current_coordinator(
             continue
         if owner_value == 0.0 and compatibility_value != 0.0:
             st.session_state[owner_key] = compatibility_value
-    return {
+    transaction = {
         key: copy.deepcopy(
             st.session_state.get(key, SHARED_DEFAULTS.get(key))
             if key in manual_action_owner_keys
@@ -668,6 +668,20 @@ def _canonical_input_transaction_state_current_coordinator(
         )
         for key in BEAM_PROJECT_PARAM_KEYS
     }
+    if uses_load_analysis_actions(st.session_state):
+        # A calculated-action workspace is identified by the selected derived
+        # ULS/SLS projection as well as by the beam geometry/reinforcement.
+        # These fields are immutable calculation inputs for this workspace,
+        # even though they remain owned by Load Analysis and are never copied
+        # into the preserved manual action owners.  Without them the input
+        # revision/cache key stayed identical to the preceding zero/manual
+        # workspace and reused its stale summaries and Design Brain result.
+        transaction.update(
+            copy.deepcopy(
+                authoritative_action_source_projection(st.session_state)
+            )
+        )
+    return transaction
 
 
 def _reconcile_initial_reinforcement_widget_state(
@@ -734,30 +748,21 @@ def _ensure_authoritative_design_result_current_coordinator(
     beam_committed_state = dict(beam_input_state.snapshot or {})
     if beam_committed_state:
         committed_state = copy.deepcopy(beam_committed_state)
-        # The beam-owned transaction is the navigation authority.  A page
-        # rerun can recreate Streamlit widget keys from defaults before the
-        # Inputs setup coordinator runs; letting those defaults overlay the
-        # committed result leaves the visible widgets on one revision while
-        # the Design Brain card remains on another.  Re-seed the widget mirror
-        # from the active beam snapshot before resolving any downstream state.
-        # Widget callbacks commit first, so this is also safe after a genuine
-        # edit: the snapshot already contains the new value.
-        hydrated_widget_keys: list[str] = []
-        for shared_key, widget_key in INPUTS_PAGE_TAB_KEYS.items():
-            if shared_key not in beam_committed_state:
-                continue
-            value = copy.deepcopy(beam_committed_state[shared_key])
-            if st.session_state.get(widget_key) != value:
-                st.session_state[widget_key] = value
-                hydrated_widget_keys.append(str(widget_key))
+        # This coordinator is a calculation/publication reader, never a
+        # widget hydration authority.  Widget callbacks publish the immutable
+        # beam snapshot and the router hydrates page widgets at navigation or
+        # explicit Apply boundaries.  Writing widget keys here creates a
+        # second authority and can replay the previous snapshot over a live
+        # edit while the owning fragment is rerunning.
         current_state = copy.deepcopy(beam_committed_state)
         current_state_debug = dict(current_state_debug)
         current_state_debug["beam_snapshot_widget_hydration"] = {
-            "applied": True,
+            "applied": False,
             "active_beam_id": active_beam_id,
             "source_revision": int(beam_input_state.revision or 0),
             "source_hash": beam_input_state.engineering_hash,
-            "hydrated_widget_keys": sorted(hydrated_widget_keys),
+            "hydrated_widget_keys": [],
+            "owner": "router_only",
         }
     if uses_load_analysis_actions(st.session_state):
         # The beam snapshot owns the selected source, while the current Load
@@ -778,11 +783,11 @@ def _ensure_authoritative_design_result_current_coordinator(
         and active_beam_id
         and committed_beam_id == active_beam_id
     )
-    latest_input_revision = int(input_store.current().revision or 0)
+    latest_input_revision = int(beam_input_state.revision or 0)
     route_snapshot_is_latest = bool(
-        not committed_beam_id
-        or committed_beam_id != active_beam_id
-        or int(beam_input_state.revision or 0) >= latest_input_revision
+        active_beam_id
+        and committed_beam_id == active_beam_id
+        and beam_input_state.snapshot
     )
     if same_beam_return_restore:
         result_map = dict(
@@ -892,9 +897,8 @@ def _ensure_authoritative_design_result_current_coordinator(
                 },
                 "source": "inputs_same_beam_route_return",
             }
-            # Re-align the legacy global transaction record with the beam-owned
-            # snapshot so downstream probes and renderers cannot observe the
-            # derived-only transaction that another route may have produced.
+            # Re-commit idempotently through the beam owner so the active
+            # workspace projection is aligned without creating a revision.
             restored_transaction = input_store.commit_active_beam(
                 committed_state,
                 changed_keys=(),
@@ -1101,7 +1105,23 @@ def _ensure_authoritative_design_result_current_coordinator(
         )
         input_transaction = input_store.current()
     st.session_state.pop("_inputs_route_return_pending", None)
-    current_state = rebuild_engineering_derived_state(input_store.committed())
+    committed_projection = (
+        input_store.current_for_beam(active_beam_id).to_dict()
+        if active_beam_id
+        else input_store.committed()
+    )
+    if uses_load_analysis_actions(st.session_state):
+        # The beam snapshot owns geometry, reinforcement, the source pointer
+        # and manual actions.  The current Load Analysis solve independently
+        # owns the selected derived ULS/SLS projection.  Reapply that
+        # projection at the final calculation boundary: rebuilding solely
+        # from the beam snapshot here used to discard the projection merged
+        # above, so disabled widgets displayed 9.7/19.5 while summaries,
+        # calculations and the Design Brain evaluated zero actions.
+        committed_projection.update(
+            authoritative_action_source_projection(st.session_state)
+        )
+    current_state = rebuild_engineering_derived_state(committed_projection)
     st.session_state["_inputs_engineering_input_transaction_probe"] = {
         "draft_hash": input_transaction.engineering_hash,
         "committed_hash": input_transaction.engineering_hash,

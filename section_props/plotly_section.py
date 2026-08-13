@@ -21,6 +21,7 @@ from section_props.uls_flexure import (
     solve_dn_from_T_T_I,
     compression_resultant_T_I,
 )
+from ui.diagrams.ligature_geometry import build_rounded_ligature_shapes
 
 
 def _build_flange_transverse_reo_geometry(
@@ -313,8 +314,6 @@ def make_sectionA_figure(
     lig_d = float(reo.get("lig_d", 0.0))
     lig_legs = int(reo.get("lig_legs", 0))
     has_shear = show_shear and lig_d > 0 and lig_legs >= 2
-    lig_line_width = max(1.0, min(4.0, abs(lig_d) / 3.0))
-
     if has_shear:
         is_rect = shape_key == "RECT"
         is_ti = shape_key in ("T", "I")
@@ -332,12 +331,15 @@ def make_sectionA_figure(
             )
             cage = shear.get("cage")
             if cage:
-                shapes.append(dict(type="rect", x0=cage["x0"], y0=cage["y0"], x1=cage["x1"], y1=cage["y1"],
-                                   line=dict(width=lig_line_width, color="black"), fillcolor="rgba(0,0,0,0)"))
-            for stirrup in shear.get("stirrups", []):
-                for leg in stirrup.get("legs", []):
-                    shapes.append(dict(type="line", x0=leg["x1"], y0=leg["y1"], x1=leg["x2"], y1=leg["y2"],
-                                       line=dict(width=lig_line_width * 0.8, color="black")))
+                shapes.extend(build_rounded_ligature_shapes(
+                    outside_x0=float(cage["x0"]),
+                    outside_y0=float(cage["y0"]),
+                    outside_x1=float(cage["x1"]),
+                    outside_y1=float(cage["y1"]),
+                    diameter_mm=lig_d,
+                    legs=lig_legs,
+                    color="black",
+                ))
         elif is_rect:
             b = float(dims.get("b", 0.0) or 0.0)
             D = float(dims.get("D", 0.0) or 0.0)
@@ -358,19 +360,15 @@ def make_sectionA_figure(
                 )
                 cage = shear.get("cage")
                 if cage:
-                    shapes.append(dict(
-                        type="rect",
-                        x0=cage["x0"], y0=cage["y0"], x1=cage["x1"], y1=cage["y1"],
-                        line=dict(color="black", width=2),
-                        fillcolor="rgba(0,0,0,0)",
+                    shapes.extend(build_rounded_ligature_shapes(
+                        outside_x0=float(cage["x0"]),
+                        outside_y0=float(cage["y0"]),
+                        outside_x1=float(cage["x1"]),
+                        outside_y1=float(cage["y1"]),
+                        diameter_mm=lig_d,
+                        legs=lig_legs,
+                        color="black",
                     ))
-                for stirrup in shear.get("stirrups", []):
-                    for leg in stirrup.get("legs", []):
-                        shapes.append(dict(
-                            type="line",
-                            x0=leg["x1"], y0=leg["y1"], x1=leg["x2"], y1=leg["y2"],
-                            line=dict(color="black", width=2),
-                        ))
 
     # ---- Longitudinal bars (canonical resolved model) ----
     has_layout_bars = any(

@@ -13,8 +13,12 @@ from inputs_application.action_source_control import (
     uses_load_analysis_actions,
 )
 from calculations.design_actions import resolve_design_actions_from_state
+from calculations.design_actions import derive_design_action_session_updates
 from inputs_application.state_projection import build_guidance_state_snapshot
-from inputs_application.summary_state_runtime import SUMMARY_OVERLAY_SKIP_SHARED_KEYS
+from inputs_application.summary_state_runtime import (
+    SUMMARY_OVERLAY_SKIP_SHARED_KEYS,
+    summary_overlay_skip_shared_keys,
+)
 from inputs_page_modules.session import build_inputs_summary_source_shaping_snapshot
 from inputs_page_modules.widgets.design_action_sync import (
     design_action_widget_specs,
@@ -272,6 +276,47 @@ def test_summary_shaping_cannot_restore_stale_manual_action_source_widget() -> N
     assert shaped.overlay_applied == {}
 
 
+def test_design_governed_summary_cannot_overlay_stale_manual_action_widgets() -> None:
+    session = {
+        "actions_mode": "design",
+        "actions_source": LOAD_ANALYSIS_ACTIONS_SOURCE,
+        "inputs_load_Mstar_pos_proxy": 200.0,
+        "inputs_load_Mstar_neg_proxy": 0.0,
+        "inputs_load_Vstar_proxy": 80.0,
+    }
+    skipped = summary_overlay_skip_shared_keys(session)
+    shaped = build_inputs_summary_source_shaping_snapshot(
+        base_state={
+            "actions_mode": "design",
+            "actions_source": LOAD_ANALYSIS_ACTIONS_SOURCE,
+            "design_actions_source": "max",
+            "sfd_Mmax_abs_kNm": 9.75,
+            "sfd_Vmax_abs_kN": 19.5,
+            "M_pos_max_uls_kNm": 9.75,
+            "M_neg_min_uls_kNm": 0.0,
+            "uls_Mstar_pos_manual": 200.0,
+            "manual_uls_Vstar": 80.0,
+        },
+        source_state=session,
+        input_tab_keys={
+            "uls_Mstar_pos_manual": "inputs_load_Mstar_pos_proxy",
+            "uls_Mstar_neg_manual": "inputs_load_Mstar_neg_proxy",
+            "manual_uls_Vstar": "inputs_load_Vstar_proxy",
+        },
+        skip_shared_keys=skipped,
+        skip_longitudinal_keys=(),
+        skip_prefixes=(),
+        deferred_overlay_keys=(),
+        shared_only_mode=False,
+        shared_only_reason="",
+    )
+    actions = resolve_design_actions_from_state(shaped.working_state)
+
+    assert actions["Mu"] == 9.75
+    assert actions["Vu"] == 19.5
+    assert shaped.overlay_applied == {}
+
+
 def test_authoritative_snapshot_projection_includes_load_analysis_results() -> None:
     projection = authoritative_action_source_projection(
         {
@@ -313,7 +358,7 @@ def test_authoritative_projection_does_not_claim_manual_action_ownership() -> No
     assert "sls_Vstar" not in projection
 
 
-def test_design_action_resolution_uses_committed_shear_fallback() -> None:
+def test_design_action_resolution_never_falls_back_to_manual_compatibility_values() -> None:
     actions = resolve_design_actions_from_state(
         {
             "actions_mode": "design",
@@ -327,9 +372,33 @@ def test_design_action_resolution_uses_committed_shear_fallback() -> None:
         }
     )
 
+    assert actions["Mu"] == 0.0
+    assert actions["Vu"] == 0.0
+    assert actions["SLS_M"] == 0.0
+    assert actions["SLS_V"] == 0.0
+
+
+def test_absolute_only_load_analysis_moment_is_resolved_as_derived_sagging() -> None:
+    actions = resolve_design_actions_from_state(
+        {
+            "actions_mode": "design",
+            "actions_source": LOAD_ANALYSIS_ACTIONS_SOURCE,
+            "design_actions_source": "max",
+            "sfd_Mmax_abs_kNm": 9.75,
+            "sfd_Vmax_abs_kN": 19.5,
+            "sfd_Msls_max_kNm": 7.5,
+            "sfd_Vsls_max_kN": 15.0,
+            "uls_Mstar_pos_manual": 200.0,
+            "sls_Mstar_pos_manual": 120.0,
+        }
+    )
+
     assert actions["Mu"] == 9.75
+    assert actions["Mu_pos"] == 9.75
+    assert actions["Mu_signed"] == 9.75
     assert actions["Vu"] == 19.5
     assert actions["SLS_M"] == 7.5
+    assert actions["SLS_M_pos"] == 7.5
     assert actions["SLS_V"] == 15.0
 
 
@@ -349,6 +418,35 @@ def test_manual_source_never_imports_load_analysis_actions() -> None:
     assert changed == ()
     assert "sfd_Mmax_abs_kNm" not in state
     assert state["uls_Mstar_pos_manual"] == 17.0
+
+
+def test_design_action_derivation_preserves_manual_moment_owners() -> None:
+    state = {
+        "actions_mode": "design",
+        "actions_source": LOAD_ANALYSIS_ACTIONS_SOURCE,
+        "design_actions_source": "max",
+        "M_pos_max_uls_kNm": 9.75,
+        "M_neg_min_uls_kNm": 0.0,
+        "sfd_Vmax_abs_kN": 19.5,
+        "M_pos_max_sls_kNm": 7.5,
+        "M_neg_min_sls_kNm": 0.0,
+        "sfd_Vsls_max_kN": 15.0,
+        "uls_Mstar_pos_manual": 200.0,
+        "uls_Mstar_neg_manual": 0.0,
+        "sls_Mstar_pos_manual": 120.0,
+        "sls_Mstar_neg_manual": 0.0,
+    }
+
+    updates = derive_design_action_session_updates(state)
+
+    assert updates["uls_Mstar"] == 9.75
+    assert updates["sls_Mstar"] == 7.5
+    assert "uls_Mstar_pos_manual" not in updates
+    assert "uls_Mstar_neg_manual" not in updates
+    assert "sls_Mstar_pos_manual" not in updates
+    assert "sls_Mstar_neg_manual" not in updates
+    assert state["uls_Mstar_pos_manual"] == 200.0
+    assert state["sls_Mstar_pos_manual"] == 120.0
 
 
 def test_projection_supports_selected_section_uls_and_sls() -> None:

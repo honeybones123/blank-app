@@ -137,11 +137,18 @@ def _render_design_check_summary(
         )
     )
     snapshot = build_engineering_input_snapshot_from_resolved_state(design_state)
+    active_beam_id = str(st.session_state.get("active_beam_id") or "").strip()
+    input_revision = int(
+        InputSnapshotStore(st.session_state)
+        .current_for_beam(active_beam_id)
+        .revision
+        or 0
+    )
     try:
         authoritative = calculate_v2_authoritative_result(
             engineering_snapshot=snapshot,
             resolved_inputs=design_state,
-            input_revision=int(InputSnapshotStore(st.session_state).current().revision or 0),
+            input_revision=input_revision,
         )
         st.session_state.pop("_design_summary_calculation_error", None)
     except Exception as exc:
@@ -2380,6 +2387,25 @@ Loads are automatically converted into **ULS and SLS combinations**, allowing yo
     M_neg_min_uls = float(min(0.0, float(np.min(M_uls_vals)))) if M_uls_vals is not None else 0.0
     M_pos_max_sls = float(max(0.0, float(np.max(M_sls_vals)))) if M_sls_vals is not None else 0.0
     M_neg_min_sls = float(min(0.0, float(np.min(M_sls_vals)))) if M_sls_vals is not None else 0.0
+
+    # Publish the complete derived action set at the calculation boundary,
+    # before diagrams, summaries and explanatory UI are rendered.  The old
+    # end-of-page publication made Load Analysis state depend on whether a
+    # long Streamlit render completed: cold sessions could expose the source
+    # toggle or allow navigation while the beam-owned result store still held
+    # zero/older actions.  Inputs then correctly read that stale publication.
+    # These values are one immutable solved projection; presentation below is
+    # only a consumer and must not be its publication authority.
+    _publish_local_results(
+        sfd_Msls_max_kNm=float(M_sls),
+        sfd_Vsls_max_kN=float(V_sls),
+        sfd_Mmax_abs_kNm=float(M_uls),
+        sfd_Vmax_abs_kN=float(V_uls),
+        M_pos_max_uls_kNm=float(M_pos_max_uls),
+        M_neg_min_uls_kNm=float(M_neg_min_uls),
+        M_pos_max_sls_kNm=float(M_pos_max_sls),
+        M_neg_min_sls_kNm=float(M_neg_min_sls),
+    )
     M_max_abs = float(np.max(np.abs(M))) if M is not None else 0.0
     V_max_abs = float(np.max(np.abs(V))) if V is not None else 0.0
     if V_uls_vals is not None and len(V_uls_vals) and x_uls is not None and len(x_uls):
@@ -4173,14 +4199,6 @@ M_{{\\max}} = \\frac{{wL^2}}{{2}} = {M_max:.3g}\\,\\text{{kNm}} \\text{{ (hoggin
     # the Design Brain never consume these values implicitly.
     _publish_local_results(
         sfd_case=case,                  # store current teaching case
-        sfd_Msls_max_kNm=float(M_sls),
-        sfd_Vsls_max_kN=float(V_sls),
-        sfd_Mmax_abs_kNm=float(M_uls),
-        sfd_Vmax_abs_kN=float(V_uls),
-        M_pos_max_uls_kNm=float(M_pos_max_uls),
-        M_neg_min_uls_kNm=float(M_neg_min_uls),
-        M_pos_max_sls_kNm=float(M_pos_max_sls),
-        M_neg_min_sls_kNm=float(M_neg_min_sls),
         shear_x=x_uls_list,
         shear_V=[float(abs(v)) for v in (V_uls_vals.tolist() if hasattr(V_uls_vals, "tolist") else list(V_uls_vals))],
         shear_V_signed=[float(v) for v in (V_uls_vals.tolist() if hasattr(V_uls_vals, "tolist") else list(V_uls_vals))],

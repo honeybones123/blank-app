@@ -46,6 +46,7 @@ class CrackControlInput:
     shrinkage_strain: float
     bond_factor: float
     strain_distribution_factor: float
+    neutral_axis_depth_mm: float
     tension_face: str = "bottom"
 
 
@@ -82,9 +83,14 @@ def calculate_crack_control(values: CrackControlInput) -> CrackControlResult:
         if values.tension_face == "bottom"
         else values.cover_mm + values.bar_diameter_mm / 2.0
     )
+    tension_zone_depth = (
+        values.depth_mm - d_eff
+        if values.tension_face == "bottom"
+        else d_eff
+    )
     height_eff = min(
-        2.5 * values.cover_mm,
-        max(values.depth_mm - d_eff, 0.0),
+        2.5 * max(tension_zone_depth, 0.0),
+        max(values.depth_mm - values.neutral_axis_depth_mm, 0.0) / 3.0,
         values.depth_mm / 2.0,
     )
     effective_area = values.width_mm * max(height_eff, 1.0)

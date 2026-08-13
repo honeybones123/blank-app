@@ -274,10 +274,33 @@ def test_apply_revision_is_owned_by_active_beam_not_global_compatibility_view() 
         {"beam_width": 400.0},
         source="beam-b-input",
     )
-    assert beam_b.revision > beam_a.revision
-    assert snapshots.current().revision == beam_b.revision
+    assert beam_a.revision == 1
+    assert beam_b.revision == 1
+    assert snapshots.current().revision > beam_b.revision
 
     current = _current_apply_input_snapshot(session)
 
     assert current.revision == beam_a.revision
     assert current.snapshot["beam_width"] == 250.0
+
+
+def test_each_beam_revision_advances_independently() -> None:
+    session: dict = {"active_beam_id": "beam-a"}
+    snapshots = InputSnapshotStore(session)
+    beam_a_v1 = snapshots.commit_for_beam(
+        "beam-a", {"beam_width": 250.0}, source="beam-a-v1"
+    )
+    beam_b_v1 = snapshots.commit_for_beam(
+        "beam-b", {"beam_width": 400.0}, source="beam-b-v1"
+    )
+    beam_b_same = snapshots.commit_for_beam(
+        "beam-b", {"beam_width": 400.0}, source="beam-b-noop"
+    )
+    beam_a_v2 = snapshots.commit_for_beam(
+        "beam-a", {"beam_width": 275.0}, source="beam-a-v2"
+    )
+
+    assert beam_a_v1.revision == beam_b_v1.revision == 1
+    assert beam_b_same.revision == beam_b_v1.revision
+    assert beam_a_v2.revision == 2
+    assert snapshots.current_for_beam("beam-b").revision == 1

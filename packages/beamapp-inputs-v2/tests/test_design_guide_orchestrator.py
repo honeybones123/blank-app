@@ -186,13 +186,14 @@ def test_no_design_actions_are_owned_by_typed_terminal_family_without_search() -
 
 def test_shear_in_band_does_not_hide_mandatory_bending_failure() -> None:
     base = BeamInputs(
-        width_mm=350.0,
-        depth_mm=600.0,
+        width_mm=250.0,
+        depth_mm=500.0,
+        bottom=LongitudinalReinforcement(bars=2, diameter_mm=10),
     ).validated()
     result = DesignBrainService()._calculator.calculate_current(base).result
     assert result is not None
     shear_capacity = float(result.families["shear"]["phi_Vu"])
-    current = replace(base, actions=ActionInputs(bending_moment_knm=1.0, shear_force_kn=0.96 * shear_capacity)).validated()
+    current = replace(base, actions=ActionInputs(bending_moment_knm=10.0, shear_force_kn=0.85 * shear_capacity)).validated()
     decision = DesignGuideOrchestrator().decide(current)
     assert decision.current_result.families["bending"]["minimum_tensile_status"] == "FAIL"
     assert decision.family is DesignFamily.BENDING_FAIL_GOVERNS
@@ -276,7 +277,6 @@ def test_shear_repair_apply_does_not_require_preserved_bending_to_enter_target_b
     assert decision.apply_allowed
     assert 0.85 <= proposed_shear_util <= 1.0
     assert proposed_bending_util <= 1.0
-    assert proposed_bending_util < 0.85
     assert decision.candidate is not None
 
 

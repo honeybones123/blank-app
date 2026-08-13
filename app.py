@@ -577,7 +577,6 @@ def _queue_inputs_refresh_after_shared_seed(source: str) -> None:
 
 
 _INPUTS_SAME_BEAM_RETURN_GUARD_KEY = "_inputs_same_beam_return_guard"
-_INPUTS_COMMITTED_STATE_BY_BEAM_KEY = "_inputs_committed_engineering_state_by_beam_v1"
 
 
 def _inputs_route_authority_handoff(selected_slug: str) -> bool:
@@ -600,24 +599,8 @@ def _inputs_route_authority_handoff(selected_slug: str) -> bool:
     ).strip()
     input_services = InputsSessionServices.from_mapping(st.session_state)
     input_store = input_services.input_snapshots
-    typed_current = input_store.current()
     typed_beam = input_store.current_for_beam(active_beam_id)
-    committed_by_beam = st.session_state.get(_INPUTS_COMMITTED_STATE_BY_BEAM_KEY)
-    current_committed = typed_current.snapshot
-    if (
-        isinstance(current_committed, dict)
-        and current_committed
-        and committed_beam_id == active_beam_id
-    ):
-        committed = dict(current_committed)
-    else:
-        committed = dict(typed_beam.snapshot or {})
-        if not committed:
-            committed = (
-                dict(committed_by_beam.get(active_beam_id) or {})
-                if isinstance(committed_by_beam, dict) and active_beam_id
-                else {}
-            )
+    committed = dict(typed_beam.snapshot or {})
     has_committed_state = isinstance(committed, dict) and bool(committed)
     authority_handoff_armed = bool(
         st.session_state.get("_inputs_route_authority_armed")
@@ -662,11 +645,10 @@ def _inputs_route_authority_handoff(selected_slug: str) -> bool:
             "from": "inputs",
             "to": selected,
             "committed_state": copy.deepcopy(dict(committed)),
-            "committed_revision": int(typed_beam.revision or typed_current.revision or 0),
+            "committed_revision": int(typed_beam.revision or 0),
             "result_input_revision": int(
                 input_services.engineering_results.source_input_revision()
                 or typed_beam.revision
-                or typed_current.revision
                 or 0
             ),
             "authoritative_result": committed_result,
@@ -692,11 +674,6 @@ def _inputs_route_authority_handoff(selected_slug: str) -> bool:
         guard["committed_revision"] = latest_revision
     if isinstance(guarded_committed, dict) and guarded_committed:
         committed = copy.deepcopy(guarded_committed)
-        committed_by_beam = dict(
-            st.session_state.get(_INPUTS_COMMITTED_STATE_BY_BEAM_KEY) or {}
-        )
-        committed_by_beam[active_beam_id] = copy.deepcopy(committed)
-        st.session_state[_INPUTS_COMMITTED_STATE_BY_BEAM_KEY] = committed_by_beam
     guarded_result = guard.get("authoritative_result")
     guarded_result_revision = int(guard.get("result_input_revision", guarded_revision) or 0)
     guarded_result_hash = (
@@ -5699,6 +5676,24 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
   background:#c92a2a !important;
   border-color:#c92a2a !important;
   color:#fff !important;
+}
+@media (max-width: 720px) {
+  /* Mobile-only header actions: retain the desktop structure and reduce the
+     controls to roughly 70% of their normal visual size. */
+  div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .beam-header-action-marker) div[data-testid="stButton"] > button,
+  div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .beam-header-action-marker) div[data-testid="stDownloadButton"] > button {
+    min-height: 1.75rem !important;
+    height: 1.75rem !important;
+    padding: 0.18rem 0.38rem !important;
+    border-radius: 0.35rem !important;
+    font-size: 0.62rem !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+  }
+  div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .beam-header-action-marker) div[data-testid="stButton"],
+  div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .beam-header-action-marker) div[data-testid="stDownloadButton"] {
+    margin: 0 !important;
+  }
 }
 </style>
 """, unsafe_allow_html=True)

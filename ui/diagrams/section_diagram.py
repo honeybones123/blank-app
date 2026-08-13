@@ -20,6 +20,7 @@ from .diagram_styles import (
     REO_TOP,
 )
 from .diagram_models import SectionDiagramResult
+from .ligature_geometry import build_rounded_ligature_shapes
 
 
 SectionFigureBuilder = Callable[..., go.Figure]
@@ -368,28 +369,16 @@ def build_summary_cross_section_result(
         y0, y1 = cover_top, D - cover_bot
 
         if x1 > x0 and y1 > y0:
-            fig.add_shape(
-                type="rect",
-                x0=x0,
-                y0=y0,
-                x1=x1,
-                y1=y1,
-                line=dict(color=LINK_STEEL, width=2),
-                fillcolor=DIAGRAM_TRANSPARENT,
-            )
-
-            if lig_legs > 2:
-                span = x1 - x0
-                for j in range(1, lig_legs - 1):
-                    x = x0 + span * j / (lig_legs - 1)
-                    fig.add_shape(
-                        type="line",
-                        x0=x,
-                        y0=y0,
-                        x1=x,
-                        y1=y1,
-                        line=dict(color=LINK_STEEL, width=2),
-                    )
+            for ligature_shape in build_rounded_ligature_shapes(
+                outside_x0=x0,
+                outside_y0=y0,
+                outside_x1=x1,
+                outside_y1=y1,
+                diameter_mm=lig_d,
+                legs=lig_legs,
+                color=LINK_STEEL,
+            ):
+                fig.add_shape(ligature_shape)
 
     apply_section_axes(fig, W=b, D=D)
     return SectionDiagramResult(_finalize_section_figure(fig, b, D))

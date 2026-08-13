@@ -34,6 +34,7 @@ class ShearCapacityInput:
     use_general_kv: bool
     sum_duct: float
     k_d: float
+    side_cover_mm: float = 40.0
 
 def effective_shear_depth_mm(D_mm: float, d_mm: float) -> float:
     """AS 3600 shear effective depth dv = max(0.72D, 0.9d)."""
@@ -55,13 +56,16 @@ def torsion_section_geometry_values(
     D_mm: float,
     *,
     cover_t_mm: float = 40.0,
+    link_diameter_mm: float = 0.0,
 ) -> dict[str, float]:
-    """Torsion section geometry values used by shear capacity and check displays."""
+    """Torsion geometry measured at the exterior closed-link centre-line."""
     b = float(b_mm or 0.0)
     D = float(D_mm or 0.0)
     cover_t = float(cover_t_mm or 0.0)
-    b_inside = max(b - cover_t, 0.0)
-    D_inside = max(D - cover_t, 0.0)
+    link_radius = max(float(link_diameter_mm or 0.0), 0.0) / 2.0
+    centreline_offset = max(cover_t, 0.0) + link_radius
+    b_inside = max(b - 2.0 * centreline_offset, 0.0)
+    D_inside = max(D - 2.0 * centreline_offset, 0.0)
     A_cp = b * D
     return {
         "b_used": b,
@@ -178,7 +182,12 @@ def compute_shear_capacity_values(inp: ShearCapacityInput) -> dict[str, Any]:
     sum_duct = float(inp.sum_duct)
     k_d = float(inp.k_d)
 
-    torsion_geometry = torsion_section_geometry_values(b, D)
+    torsion_geometry = torsion_section_geometry_values(
+        b,
+        D,
+        cover_t_mm=inp.side_cover_mm,
+        link_diameter_mm=lig_d,
+    )
     A_cp = torsion_geometry["A_cp"]
     u_c = torsion_geometry["u_c"]
     Ao = torsion_geometry["Ao"]
@@ -218,21 +227,34 @@ def compute_shear_capacity_values(inp: ShearCapacityInput) -> dict[str, Any]:
     d_v = effective_shear_depth_mm(D, d)
     s_safe = max(s, 1.0)
 
-    M_star_Nmm = abs(M_star) * 1e6
     d_v_safe = max(d_v, 1.0)
-    term_M = M_star_Nmm / d_v_safe
-
     Vprime_kN = abs(V_star) - P_v
     Vprime_N = Vprime_kN * 1e3
+    # AS 3600:2018+A1 Clause 8.2.4.2.2(a) requires the moment used
+    # to determine epsilon_x to be no less than (|V*| - P_v)d_v.
+    # Expressed after division by d_v, the moment-force term is
+    # therefore bounded below by |V*| - P_v.
+    moment_force_n = abs(M_star) * 1e6 / d_v_safe
+    term_M = max(moment_force_n, Vprime_N)
     Ao_safe = max(Ao, 1.0)
     uh_safe = max(uh, 1.0)
     T_used_Nmm = T_used * 1e6
-    torsion_N = 0.97 * T_used_Nmm * uh_safe / (2.0 * Ao_safe)
-    sqrt_inner = math.sqrt(Vprime_N**2 + torsion_N**2)
+    torsion_N = 0.9 * T_used_Nmm * uh_safe / (2.0 * Ao_safe)
+    if torsion_required:
+        flexure_shear_n = moment_force_n + Vprime_N
+        sqrt_inner = math.sqrt(flexure_shear_n**2 + torsion_N**2)
+        # AS 3600:2018+A1 Cl. 8.2.4.2.3(3).
+        sqrt_inner = max(sqrt_inner, Vprime_N + torsion_N)
+        longitudinal_action_n = sqrt_inner
+    else:
+        # AS 3600:2018+A1 Cl. 8.2.4.2.2(1), retaining the sign of
+        # (V* - Pv) rather than converting prestress relief into demand.
+        sqrt_inner = Vprime_N
+        longitudinal_action_n = term_M + Vprime_N
 
     N_star_N = 0.5 * N_star * 1e3
     A_pt_fpo_N = A_pt * f_po
-    numerator = term_M + sqrt_inner + N_star_N - A_pt_fpo_N
+    numerator = longitudinal_action_n + N_star_N - A_pt_fpo_N
 
     Ep = 195000.0
     denom1 = 2.0 * (Es * A_st + Ep * A_pt)

@@ -101,6 +101,63 @@ def _nonzero(value: float | None) -> bool:
         return False
 
 
+def _gross_section_properties_from_top(inputs: BeamInputs) -> tuple[float, float, float]:
+    """Return gross area, centroid and second moment about the centroid."""
+
+    D = float(inputs.depth_mm)
+    if inputs.section_shape == "RECT":
+        strips = ((0.0, D, float(inputs.width_mm)),)
+    else:
+        bf = float(inputs.flange_width_mm or inputs.width_mm)
+        tf = float(inputs.flange_thickness_mm or 0.0)
+        bw = float(inputs.web_width_mm or inputs.width_mm)
+        if inputs.section_shape == "T":
+            strips = ((0.0, tf, bf), (tf, D, bw))
+        else:
+            strips = ((0.0, tf, bf), (tf, D - tf, bw), (D - tf, D, bf))
+    areas = tuple(width * (end - start) for start, end, width in strips)
+    area = sum(areas)
+    centroid = sum(
+        strip_area * (start + end) / 2.0
+        for strip_area, (start, end, _width) in zip(areas, strips)
+    ) / area
+    inertia = sum(
+        width * (end - start) ** 3 / 12.0
+        + strip_area * (((start + end) / 2.0) - centroid) ** 2
+        for strip_area, (start, end, width) in zip(areas, strips)
+    )
+    return area, centroid, inertia
+
+
+def _minimum_flexural_steel_area(inputs: BeamInputs, effective_depth_mm: float) -> float:
+    """AS 3600:2018 Cl. 8.1.6.1(2), positive bending direction."""
+
+    D = float(inputs.depth_mm)
+    d = float(effective_depth_mm)
+    fctf = 0.6 * math.sqrt(float(inputs.materials.concrete_strength_mpa))
+    fsy = float(inputs.materials.reinforcement_strength_mpa)
+    bw = float(inputs.web_width_mm or inputs.width_mm)
+    alpha_b = 0.20
+    if inputs.section_shape in {"T", "I"}:
+        bef = float(inputs.flange_width_mm or bw)
+        Ds = float(inputs.flange_thickness_mm or 0.0)
+        width_ratio = bef / bw
+        if inputs.section_shape == "T":
+            # Positive bending puts the web in tension for the current
+            # top-flanged T-section contract.
+            alpha_b = max(
+                0.20 + (width_ratio - 1.0) * (0.4 * Ds / D - 0.18),
+                0.20 * width_ratio ** 0.25,
+            )
+        else:
+            # The bottom flange of the symmetric I-section is in tension.
+            alpha_b = max(
+                0.20 + (width_ratio - 1.0) * (0.25 * Ds / D - 0.08),
+                0.20 * width_ratio ** (2.0 / 3.0),
+            )
+    return alpha_b * (D / d) ** 2 * (fctf / fsy) * bw * d
+
+
 def _calculate_serviceability(
     inputs: BeamInputs,
     payload: dict[str, object],
@@ -165,12 +222,22 @@ def _calculate_serviceability(
     )
     if abs(float(g_used) + float(q_used)) <= 1e-12:
         return base
+    web_width = float(inputs.web_width_mm or inputs.width_mm)
+    compression_width = float(inputs.width_mm)
+    if inputs.section_shape == "I" and inputs.flange_width_mm is not None:
+        compression_width = float(inputs.flange_width_mm)
+    elif (
+        inputs.section_shape == "T"
+        and inputs.flange_width_mm is not None
+        and float(sls.moment_knm or 0.0) >= 0.0
+    ):
+        compression_width = float(inputs.flange_width_mm)
     result = calculate_deflection(DeflectionInput(
         span_m=span_m,
-        concrete_modulus_mpa=30000.0,
+        concrete_modulus_mpa=inputs.time_dependent.concrete_modulus_mpa,
         concrete_strength_mpa=inputs.materials.concrete_strength_mpa,
-        effective_width_mm=inputs.width_mm,
-        web_width_mm=inputs.width_mm,
+        effective_width_mm=compression_width,
+        web_width_mm=web_width,
         effective_depth_mm=effective_depth_mm,
         tension_steel_area_mm2=float(payload["Ast_bot"]),
         compression_steel_area_mm2=float(payload["Ast_top"]),
@@ -195,17 +262,17 @@ def _calculate_serviceability(
     }
 
 
-def _sls_outer_steel_stress(
+def _sls_cracked_section_response(
     inputs: BeamInputs,
     steel_area_mm2: float,
     effective_depth_mm: float,
-) -> float:
-    """Match the V1 cracked-section SLS outer-steel stress calculation."""
+) -> tuple[float, float]:
+    """Return outer-steel stress and cracked neutral-axis depth at SLS."""
 
     moment = float(inputs.serviceability.moment_knm)
     if not _nonzero(moment) or steel_area_mm2 <= 0.0 or effective_depth_mm <= 0.0:
-        return 0.0
-    ec = 30000.0
+        return 0.0, 0.0
+    ec = float(inputs.time_dependent.concrete_modulus_mpa)
     es = 200000.0
     transformed = (es / ec) * steel_area_mm2
     coefficient = inputs.width_mm / 2.0
@@ -217,9 +284,27 @@ def _sls_outer_steel_stress(
         + transformed * (effective_depth_mm - neutral_axis) ** 2
     )
     if cracked_inertia <= 0.0:
-        return 0.0
+        return 0.0, neutral_axis
     curvature = (moment * 1e6) / (ec * cracked_inertia)
-    return float(es * curvature * (effective_depth_mm - neutral_axis))
+    return (
+        float(es * curvature * (effective_depth_mm - neutral_axis)),
+        float(neutral_axis),
+    )
+
+
+def _sls_outer_steel_stress(
+    inputs: BeamInputs,
+    steel_area_mm2: float,
+    effective_depth_mm: float,
+) -> float:
+    """Return the cracked-section SLS outer-steel stress."""
+
+    stress, _neutral_axis = _sls_cracked_section_response(
+        inputs,
+        steel_area_mm2,
+        effective_depth_mm,
+    )
+    return stress
 
 
 def _calculate_crack_control(
@@ -256,7 +341,11 @@ def _calculate_crack_control(
         )
     else:
         inputs_for_stress = inputs
-    sigma_sr = _sls_outer_steel_stress(inputs_for_stress, steel_area, effective_depth_mm)
+    sigma_sr, neutral_axis_depth = _sls_cracked_section_response(
+        inputs_for_stress,
+        steel_area,
+        effective_depth_mm,
+    )
     crack = calculate_crack_control(CrackControlInput(
         width_mm=inputs.width_mm,
         depth_mm=inputs.depth_mm,
@@ -269,7 +358,7 @@ def _calculate_crack_control(
         bar_spacing_mm=spacing,
         steel_area_mm2=steel_area,
         concrete_strength_mpa=inputs.materials.concrete_strength_mpa,
-        concrete_modulus_mpa=30000.0,
+        concrete_modulus_mpa=inputs.time_dependent.concrete_modulus_mpa,
         steel_modulus_mpa=200000.0,
         steel_strength_mpa=inputs.materials.reinforcement_strength_mpa,
         crack_width_limit_mm=sls.crack_width_limit_mm,
@@ -279,6 +368,7 @@ def _calculate_crack_control(
         shrinkage_strain=sls.shrinkage_microstrain * 1e-6,
         bond_factor=sls.crack_k1,
         strain_distribution_factor=sls.crack_k2,
+        neutral_axis_depth_mm=neutral_axis_depth,
     ))
     util = max(crack.utilisation_table, crack.utilisation_w)
     return {
@@ -326,31 +416,41 @@ class EngineeringCalculator:
         # Row-level values consumed by the Runtime-style summary contract.
         # These are sourced from the same immutable calculation payload.
         bending["Ast_tension_mm2"] = float(payload["Ast_bot"])
-        # Keep the minimum-flexural-strength check on the accepted AS 3600
-        # project contract: f'ct.f = 0.6 * sqrt(f'c).
+        # AS 3600:2018 Cl. 8.1.6.1: the reinforcement expression is a
+        # deemed-to-satisfy route; the actual nominal Muo route remains valid.
         fctf = 0.6 * math.sqrt(float(inputs.materials.concrete_strength_mpa))
-        ast_min = 0.4 * (fctf / float(inputs.materials.reinforcement_strength_mpa)) * float(inputs.width_mm) * float(payload["d"])
+        ast_min = _minimum_flexural_steel_area(inputs, float(payload["d"]))
         bending["Ast_min_mm2"] = ast_min
-        bending["minimum_tensile_status"] = "PASS" if float(payload["Ast_bot"]) >= ast_min else "FAIL"
         bending["service_moment_knm"] = float(inputs.serviceability.moment_knm)
         # Publish the minimum flexural-strength check with the authoritative
         # bending result so no summary or family has to reconstruct it.
-        gross_section_modulus_mm3 = (
-            float(inputs.width_mm) * float(inputs.depth_mm) ** 2 / 6.0
+        _gross_area, gross_centroid_from_top, gross_inertia = (
+            _gross_section_properties_from_top(inputs)
+        )
+        gross_section_modulus_mm3 = gross_inertia / (
+            float(inputs.depth_mm) - gross_centroid_from_top
         )
         cracking_moment_knm = (
             fctf * gross_section_modulus_mm3 / 1_000_000.0
         )
         minimum_capacity_knm = 1.2 * cracking_moment_knm
-        phi_mu_knm = float(bending.get("phi_Mu_kNm", 0.0) or 0.0)
+        nominal_mu_knm = float(bending.get("Mu_nom_kNm", 0.0) or 0.0)
         minimum_capacity_util = (
-            minimum_capacity_knm / phi_mu_knm if phi_mu_knm > 0.0 else None
+            minimum_capacity_knm / nominal_mu_knm if nominal_mu_knm > 0.0 else None
         )
         bending["Mcr_kNm"] = cracking_moment_knm
         bending["minimum_capacity_knm"] = minimum_capacity_knm
         bending["minimum_capacity_util"] = minimum_capacity_util
         bending["minimum_capacity_status"] = (
-            "PASS" if phi_mu_knm >= minimum_capacity_knm else "FAIL"
+            "PASS" if nominal_mu_knm >= minimum_capacity_knm else "FAIL"
+        )
+        deemed_reinforcement_ok = float(payload["Ast_bot"]) >= ast_min
+        actual_strength_ok = nominal_mu_knm >= minimum_capacity_knm
+        bending["minimum_tensile_deemed_status"] = (
+            "PASS" if deemed_reinforcement_ok else "FAIL"
+        )
+        bending["minimum_tensile_status"] = (
+            "PASS" if deemed_reinforcement_ok or actual_strength_ok else "FAIL"
         )
         bending["check_metadata"] = check_metadata(
             "bending_capacity",
@@ -361,11 +461,15 @@ class EngineeringCalculator:
         ductility_limit = 0.36
         ku_is_valid = math.isfinite(ku) and ku > 0.0
         bending_util = float(bending.get("util", 0.0) or 0.0)
-        # Runtime's mandatory ductility policy treats the neutral-axis limit
-        # as a hard acceptance boundary.  Demand below 80% of flexural
-        # capacity must not hide a section with k_u > 0.36 from the summary or
-        # the Design Brain repair families.
-        conditional_triggered = bool(ku_is_valid and ku > ductility_limit)
+        # AS 3600:2018+A1 Clause 8.1.5 applies its additional requirements
+        # only where BOTH k_uo > 0.36 and M* > 0.8 phi M_uo.  A high neutral
+        # axis parameter at lower demand is therefore not, by itself, a
+        # mandatory failure.
+        conditional_triggered = bool(
+            ku_is_valid
+            and ku > ductility_limit
+            and bending_util > 0.8
+        )
         compression_steel_area = float(
             bending.get("compression_steel_area_mm2", 0.0) or 0.0
         )
@@ -385,7 +489,7 @@ class EngineeringCalculator:
             or (compression_steel_ok and analysis_verified and restraint_verified)
         )
         failed_requirements: list[str] = []
-        if conditional_triggered:
+        if conditional_triggered and not conditional_requirements_satisfied:
             failed_requirements.append("neutral_axis_limit_exceeded")
             if not analysis_verified:
                 failed_requirements.append("clause_815_analysis_not_verified")
@@ -395,8 +499,10 @@ class EngineeringCalculator:
                 failed_requirements.append("compression_reinforcement_restraint_not_verified")
         ductility = {
             "status": (
-                "NOT RUN" if not ku_is_valid
-                else "PASS" if ku <= ductility_limit
+                "NOT RUN"
+                if not ku_is_valid
+                else "PASS"
+                if not conditional_triggered or conditional_requirements_satisfied
                 else "FAIL"
             ),
             "ku": ku,
@@ -434,6 +540,7 @@ class EngineeringCalculator:
             use_general_kv=inputs.shear.kv_method is KvMethod.GENERAL,
             sum_duct=0.0,
             k_d=1.0,
+            side_cover_mm=inputs.side_cover_mm,
         )
         shear = compute_shear_capacity_values(shear_input)
         # Publish the exact authoritative general-method input mapping for
@@ -489,10 +596,11 @@ class EngineeringCalculator:
         )
         creep_th = creep_closest_th(time_geometry["th_raw"])
         shrinkage_th = shrinkage_closest_th(time_geometry["th_raw"])
+        equation_th = time_geometry["th_raw"]
         phi_cc_b = basic_creep_coeff(inputs.materials.concrete_strength_mpa)
-        k2 = calc_k2_creep(inputs.time_dependent.creep_time_days, creep_th)
+        k2 = calc_k2_creep(inputs.time_dependent.creep_time_days, equation_th)
         k4 = calc_k4(inputs.time_dependent.creep_environment)
-        k5 = calc_k5(inputs.materials.concrete_strength_mpa, creep_th, k4)
+        k5 = calc_k5(inputs.materials.concrete_strength_mpa, equation_th, k4)
         k6 = calc_k6(inputs.time_dependent.stress_ratio)
         phi_cc_t = creep_coefficient_value(
             k2=k2,
@@ -536,7 +644,7 @@ class EngineeringCalculator:
         }
         shrinkage_k1 = calc_k1_shrinkage(
             inputs.time_dependent.shrinkage_time_days,
-            shrinkage_th,
+            equation_th,
         )
         eps_cse = calc_eps_cse(
             inputs.materials.concrete_strength_mpa,

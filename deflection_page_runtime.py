@@ -170,9 +170,10 @@ def _deflection_core_cache_key() -> tuple:
         if key.startswith(_DEFLECTION_CORE_CACHE_PREFIXES):
             values.append((key, repr(st.session_state.get(key))))
 
+    active_beam_id = str(st.session_state.get("active_beam_id") or "").strip()
     revision = int(
         InputsSessionServices.from_mapping(st.session_state)
-        .input_snapshots.current()
+        .input_snapshots.current_for_beam(active_beam_id)
         .revision
         or 0
     )

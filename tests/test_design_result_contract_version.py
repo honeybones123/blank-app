@@ -41,14 +41,14 @@ def test_same_hash_result_from_old_calculation_contract_is_recomputed() -> None:
         snapshot=snapshot,
         compute_fn=lambda value: (
             calls.append(value.engineering_hash)
-            or _result(value, "inputs_v2.calculation.v6")
+            or _result(value, "inputs_v2.calculation.v7")
         ),
-        expected_calculation_contract_version="inputs_v2.calculation.v6",
+        expected_calculation_contract_version="inputs_v2.calculation.v7",
     )
 
     assert calls == [snapshot.engineering_hash]
     assert result.current_calculations["calculation_contract_version"] == (
-        "inputs_v2.calculation.v6"
+        "inputs_v2.calculation.v7"
     )
 
 
@@ -58,7 +58,7 @@ def test_old_contract_lru_entry_is_not_restored_after_switching_hashes() -> None
     state = {}
     store = EngineeringResultStore(state)
     store.store(_result(snapshot_a, "inputs_v2.calculation.v5"))
-    store.store(_result(snapshot_b, "inputs_v2.calculation.v6"))
+    store.store(_result(snapshot_b, "inputs_v2.calculation.v7"))
     calls = []
 
     result = ensure_design_result(
@@ -66,12 +66,12 @@ def test_old_contract_lru_entry_is_not_restored_after_switching_hashes() -> None
         snapshot=snapshot_a,
         compute_fn=lambda value: (
             calls.append(value.engineering_hash)
-            or _result(value, "inputs_v2.calculation.v6")
+            or _result(value, "inputs_v2.calculation.v7")
         ),
-        expected_calculation_contract_version="inputs_v2.calculation.v6",
+        expected_calculation_contract_version="inputs_v2.calculation.v7",
     )
 
     assert calls == [snapshot_a.engineering_hash]
     assert result.current_calculations["calculation_contract_version"] == (
-        "inputs_v2.calculation.v6"
+        "inputs_v2.calculation.v7"
     )

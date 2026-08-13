@@ -14,7 +14,7 @@ from typing import Any, Mapping
 
 from application.design_result_store import EngineeringResultStore
 from application.contracts.design_brain import coerce_authoritative_design_result
-from inputs_application.engineering_input_store import InputSnapshotStore
+from inputs_application.engineering_input_store import InputSnapshotState, InputSnapshotStore
 
 
 _RESULTS_BY_BEAM_KEY = "_inputs_authoritative_design_result_by_beam_v1"
@@ -60,7 +60,7 @@ def _current_result_and_input_state(
                     source_revision,
                 )
 
-    return result_store.current(), input_store.current(), result_store.source_input_revision()
+    return result_store.current(), InputSnapshotState(), result_store.source_input_revision()
 
 
 def current_authoritative_check_pack(
