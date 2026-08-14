@@ -96,6 +96,7 @@ from engineering_page_sections.compact_check_inputs import (
     format_number,
     join_summary,
 )
+from engineering_page_sections.lazy_check_tabs import render_lazy_check_tab_selector
 from inputs_application.action_source_control import uses_load_analysis_actions
 
 # Safe option lists for reinforcement inputs
@@ -732,10 +733,13 @@ def render_bending():
         _sid = str(_jt)
         if _sid.startswith("bending_sls_"):
             st.session_state[JUMP_NAV_TAB_KEY] = "SLS Checks"
+            st.session_state["bending_check_tab"] = "SLS Checks"
         elif _sid.startswith("bending_min_"):
             st.session_state[JUMP_NAV_TAB_KEY] = "Minimum strength checks"
+            st.session_state["bending_check_tab"] = "Minimum strength checks"
         else:
             st.session_state[JUMP_NAV_TAB_KEY] = "ULS Checks"
+            st.session_state["bending_check_tab"] = "ULS Checks"
     
     sync_callbacks = get_sync_callbacks()
     apply_global_widget_css()
@@ -1234,6 +1238,11 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
             )
             target_mode = uid_to_mode(target_uid)
             st.session_state["bending_active_mode"] = target_mode
+            st.session_state["bending_check_tab"] = {
+                "ULS": "ULS Checks",
+                "SLS": "SLS Checks",
+                "MIN": "Minimum strength checks",
+            }.get(target_mode, "ULS Checks")
 
             clicked_sign = (clicked_row or {}).get("moment_sign")
             if clicked_sign in {"positive", "negative"}:
@@ -1902,14 +1911,18 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                         "d": float(top_results_pos.get("d_mm", d_eff) or d_eff),
                     })
                 
-                # Render tabs - always render all tabs with content
-                # This ensures anchors exist for scrolling regardless of which tab is visible
-                # Streamlit will handle tab switching, and JavaScript will switch to correct tab on summary clicks
-                tab1, tab2, tab3 = st.tabs(["ULS Checks", "SLS Checks", "Minimum strength checks"])
-                
-                # Always render all tabs with their content
-                # This ensures all anchors exist for scrolling
-                with tab1:
+                # Use the same lazy check-group contract as the Shear page.
+                # Detailed cards are expensive, so render only the selected
+                # group instead of rebuilding all three on every navigation.
+                active_bending_tab = render_lazy_check_tab_selector(
+                    st,
+                    labels=("ULS Checks", "SLS Checks", "Minimum strength checks"),
+                    key="bending_check_tab",
+                    aria_label="Bending design checks",
+                    anchor_id="bending-check-tabs-anchor",
+                )
+
+                if active_bending_tab == "ULS Checks":
                     render_uls_tab(
                         top_results_active,
                         b,
@@ -1922,8 +1935,7 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                         Mu_star_override=Mu_uls_active,
                         moment_sign=detail_view,
                     )
-                
-                with tab2:
+                elif active_bending_tab == "SLS Checks":
                     render_sls_tab(
                         top_results_active,
                         b,
@@ -1936,16 +1948,11 @@ This page computes **ultimate flexural capacity**, **strain compatibility**, and
                         summary_mode=False,
                         moment_sign=detail_view,
                     )
-                
-                with tab3:
+                else:
                     render_min_strength_tab(
                         top_results_active, b, D, fc, fsy, Ast_active,
                         summary_mode=False,
                     )
-                
-                # Get current active mode (set by summary table clicks or defaults to ULS)
-                # JavaScript will switch to the correct tab based on the tab name in the summary table click
-                # The active_mode is used to determine which tab should be shown programmatically
                 
                 # Handle pending scroll after content has rendered
                 pending_scroll_uid = st.session_state.get("bending_pending_scroll_uid")

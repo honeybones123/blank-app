@@ -55,8 +55,13 @@ def test_shear_page_heading_has_one_shell_owner() -> None:
 
 def test_result_pages_use_one_neutral_refresh_contract() -> None:
     source = (ROOT / "app.py").read_text(encoding="utf-8-sig")
+    contract_start = source.index("def _render_result_page_fragment(")
+    contract_end = source.index("\n\n@st.fragment", contract_start)
+    contract_source = source[contract_start:contract_end]
+    assert contract_source.count("_prepare_result_page_workspace(slug)") == 1
+    assert contract_source.count("_ensure_general_page_engineering_publication(slug)") == 1
     for slug in ("bending", "shear", "creep", "shrinkage", "crack", "deflection"):
-        assert f'_prepare_result_page_workspace("{slug}")' in source
+        assert source.count(f'_render_result_page_fragment("{slug}",') == 1
     # One function definition plus its single call from the neutral contract.
     assert source.count("_refresh_result_page_fragment_calculations()") == 2
     assert "inputs_page.hydrate_committed_design_action_widgets(force=True)" in source
@@ -372,6 +377,6 @@ def test_each_result_page_has_one_workspace_refresh_authority() -> None:
             end = source.index("\ndef ", start + 5)
         fragment_source = source[start:end]
         assert fragment_source.count(
-            f'_prepare_result_page_workspace("{page}")'
+            f'_render_result_page_fragment("{page}",'
         ) == 1
         assert "_refresh_result_page_fragment_calculations()" not in fragment_source

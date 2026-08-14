@@ -5074,18 +5074,9 @@ def _get_compute_fingerprint():
 
 
 def _render_lazy_page(module_name: str, function_name: str):
-    module = importlib.import_module(module_name)
-    renderer = getattr(module, function_name, None)
-    if callable(renderer):
-        return renderer()
+    from application.page_module_registry import render_module_page
 
-    # Hot-reload can occasionally leave a stale partial module object around.
-    refreshed_module = importlib.reload(module)
-    refreshed_renderer = getattr(refreshed_module, function_name, None)
-    if callable(refreshed_renderer):
-        return refreshed_renderer()
-
-    raise AttributeError(f"module {module_name!r} has no attribute {function_name!r}")
+    return render_module_page(module_name, function_name)
 
 
 def _render_design_page():
@@ -5100,27 +5091,39 @@ def _render_start_page():
 
 
 def _render_bending_page():
-    return _render_lazy_page("bending_page", "render_bending")
+    from application.page_module_registry import render_calculation_page
+
+    return render_calculation_page("bending")
 
 
 def _render_shear_page():
-    return _render_lazy_page("shear_page", "render_shear")
+    from application.page_module_registry import render_calculation_page
+
+    return render_calculation_page("shear")
 
 
 def _render_creep_page():
-    return _render_lazy_page("creep", "render_creep")
+    from application.page_module_registry import render_calculation_page
+
+    return render_calculation_page("creep")
 
 
 def _render_shrinkage_page():
-    return _render_lazy_page("shrinkage", "render_shrinkage")
+    from application.page_module_registry import render_calculation_page
+
+    return render_calculation_page("shrinkage")
 
 
 def _render_crack_page():
-    return _render_lazy_page("crack_page", "render_crack_control")
+    from application.page_module_registry import render_calculation_page
+
+    return render_calculation_page("crack")
 
 
 def _render_deflection_page():
-    return _render_lazy_page("deflection", "render_deflection")
+    from application.page_module_registry import render_calculation_page
+
+    return render_calculation_page("deflection")
 
 def _record_result_page_fragment_render(slug: str) -> None:
     """Record one page-local render without creating engineering authority."""
@@ -5180,52 +5183,43 @@ def _prepare_result_page_workspace(page_slug: str) -> None:
     st.session_state["_result_page_workspace_audit"] = audit
 
 
+def _render_result_page_fragment(slug: str, renderer):
+    """Run the one repeated fragment contract for every result page."""
+
+    _record_result_page_fragment_render(slug)
+    _prepare_result_page_workspace(slug)
+    _ensure_general_page_engineering_publication(slug)
+    return renderer()
+
+
 @st.fragment
 def _render_bending_page_fragment():
-    _record_result_page_fragment_render("bending")
-    _prepare_result_page_workspace("bending")
-    _ensure_general_page_engineering_publication("bending")
-    return _render_bending_page()
+    return _render_result_page_fragment("bending", _render_bending_page)
 
 
 @st.fragment
 def _render_shear_page_fragment():
-    _record_result_page_fragment_render("shear")
-    _prepare_result_page_workspace("shear")
-    _ensure_general_page_engineering_publication("shear")
-    return _render_shear_page()
+    return _render_result_page_fragment("shear", _render_shear_page)
 
 
 @st.fragment
 def _render_creep_page_fragment():
-    _record_result_page_fragment_render("creep")
-    _prepare_result_page_workspace("creep")
-    _ensure_general_page_engineering_publication("creep")
-    return _render_creep_page()
+    return _render_result_page_fragment("creep", _render_creep_page)
 
 
 @st.fragment
 def _render_shrinkage_page_fragment():
-    _record_result_page_fragment_render("shrinkage")
-    _prepare_result_page_workspace("shrinkage")
-    _ensure_general_page_engineering_publication("shrinkage")
-    return _render_shrinkage_page()
+    return _render_result_page_fragment("shrinkage", _render_shrinkage_page)
 
 
 @st.fragment
 def _render_crack_page_fragment():
-    _record_result_page_fragment_render("crack")
-    _prepare_result_page_workspace("crack")
-    _ensure_general_page_engineering_publication("crack")
-    return _render_crack_page()
+    return _render_result_page_fragment("crack", _render_crack_page)
 
 
 @st.fragment
 def _render_deflection_page_fragment():
-    _record_result_page_fragment_render("deflection")
-    _prepare_result_page_workspace("deflection")
-    _ensure_general_page_engineering_publication("deflection")
-    return _render_deflection_page()
+    return _render_result_page_fragment("deflection", _render_deflection_page)
 
 
 _GENERAL_ENGINEERING_RESULT_PAGES = frozenset(
@@ -6534,6 +6528,12 @@ div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .
             render_timing_mark("app.page_dispatch.end", selected_slug=selected_slug, browser_test_mode=False)
             if _should_emit_browser_state_probe(selected_slug, "post_page_render"):
                 _emit_browser_test_state(selected_slug, None, probe_phase="post_page_render")
+    # Prepare the shared result-page modules only after the selected page has
+    # rendered.  This removes first-visit import latency without delaying the
+    # visible page and without giving any page a second execution path.
+    from application.page_module_registry import warm_calculation_pages_in_background
+
+    warm_calculation_pages_in_background()
     try:
         _latency_metrics = dict(st.session_state.get("_user_latency_metrics") or {})
         _latency_metrics.update(
